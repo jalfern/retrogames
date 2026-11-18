@@ -25,6 +25,7 @@ import {
     FIXED_DT, W, H, PANEL_X, TILE, LOT_X, LOT_Y, WIN_CONTENT,
     REL_NAMES,
     tileOf, CATALOG, NEEDS, SFX, EXT_ROOM,
+    wingPick, GARDEN, eastWing, DEFAULT_ANCHOR,   // #2689: the kit's site law, for the ghost, the button and the view
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork,   // #2470: tryUse moved to tryUseOrQueue below
     cmdQueue, queueCancel, queuePromote, orderBusy, tryUseOrQueue,   // #2470: the action queue — append while busy, cancel by chip; #2474 item 3: promote by pull
     WORK_START, WORK_END,   // #2470: the mail order is only queued while the window is honestly open
@@ -53,7 +54,7 @@ import {
     drawGround, drawGate, drawItem, drawPerson, nightTint, drawPanel, drawTopBar,
     drawIceTruck, TRUCK_W,   // #2508 item 1: the truck gets wheels — the view-side arrival and drive-off
     drawCurbKids, crowdKids,   // #2508 item 5: the crowd at the truck — draw-only kids, day-arithmetic count
-    drawCatalog, catalogHit, tabHit, speedHit, drawBuildCursor, drawThoughts, drawClouds,   // #2227: speedHit — the dial's tap route
+    drawCatalog, catalogHit, tabHit, speedHit, drawBuildCursor, drawWingGhost, drawThoughts, drawClouds,   // #2227: speedHit — the dial's tap route; #2689: drawWingGhost — the kit's site preview
     drawPet,   // #2197: Miso
     drawKid,   // #2203: Pip
     drawSay,   // #2135: the spoken-word bubble over the pair
@@ -73,6 +74,7 @@ const MESSAGES = [
     'Tap a fridge, a bed, the TV — they walk over and use it. Feed them, rest them.',
     'When a resident turns AMBER, the lot says what they need — tap the named object before the red alarm.',
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
+    'THE LOT GROWS TWICE — Spare Room kit one rises on the east lawn (point at a row to choose where); kit two raises a garden room out back.',
     'Morning brings the paper — the boy sweeps past and today\'s edition waits on the step. Tap it for a laugh.',
     'THE BELLS RING THREE TIMES A DAY — a warm plate waits by the kitchen. Tap to eat; eat together and BONDS rise.',
     'GARBAGE DAY EVERY THIRD DAY — the eve says WHEEL IT OUT, dawn sends the truck. Miss the curb and the lot gets skipped.',
@@ -484,7 +486,7 @@ const HomebodyGame = () => {
                     case 'room':
                         for (let i = 0; i < 3; i++) audioController.playTone(150 - i * 14, 0.07, 'square', 0.08, i * 0.11)
                         setTimeout(() => audioController.playSweep(240, 520, 0.3, 'triangle', 0.06), 340)
-                        if (live) { say('SPARE ROOM BUILT — THE LOT GROWS'); burst(LOT_X + 13 * TILE, LOT_Y + 4 * TILE, 14, '#c9b48a', 2.8) }
+                        if (live) { say(e.w === 'garden' ? 'GARDEN ROOM BUILT — THE BACK LAWN FILLS IN' : 'SPARE ROOM BUILT — THE LOT GROWS'); burst(e.w === 'garden' ? LOT_X + 2 * TILE : LOT_X + 13 * TILE, e.w === 'garden' ? LOT_Y + 9 * TILE : LOT_Y + 4 * TILE, 14, '#c9b48a', 2.8) }
                         break
                     case 'room-see':
                         audioController.playTone(740, 0.06, 'triangle', 0.04)
@@ -958,7 +960,13 @@ const HomebodyGame = () => {
                 }
             }
             if (sayB.life > 0) drawSay(ctx, sayB)   // #2135: the spoken line rides above the pair
-            if (live && g.build) drawBuildCursor(ctx, g, placeOk(g, g.cursor.r, g.cursor.c))
+            if (live && g.build) {
+                drawBuildCursor(ctx, g, placeOk(g, g.cursor.r, g.cursor.c))
+                // #2689: hold the Spare Room kit and the whole future wing shows
+                // where the hammer would fall — the row you point at is the row
+                // the room takes.
+                if (CATALOG[g.sel] && CATALOG[g.sel].room) drawWingGhost(ctx, wingPick(g, g.cursor.r, g.cursor.c), placeOk(g, g.cursor.r, g.cursor.c))
+            }
             for (const f of refuses) {   // #1823: refused cell — red fill pulsing out
                 const k = f.life / 36
                 ctx.globalAlpha = 0.45 * k
@@ -970,7 +978,7 @@ const HomebodyGame = () => {
                 ctx.globalAlpha = 1
             }
             ctx.restore()
-            nightTint(ctx, g.hour, g.ext)
+            nightTint(ctx, g.hour, g.ext, g.wings)
             drawTopBar(ctx, g)
             drawPanel(ctx, g, g.sec, live ? collapseCache : null, live ? hoverReveal : null)
             drawThoughts(ctx, g)
@@ -1373,6 +1381,7 @@ const HomebodyGame = () => {
                 speed: gs.speed,   // #2227: the dial is part of the contract view too
                 money: gs.money, content: gs.content, day: gs.day, hour: Math.round(gs.hour * 10) / 10,
                 items: gs.items.length, visitors: (gs.visitor ? 1 : 0) + (gs.ivy ? 1 : 0), ext: gs.ext,   // #2143: the lot can hold two neighbours
+                wings: gs.wings.map((w) => (w.id === 'garden' ? 'garden' : `east${w.r0}`)),   // #2689: which rooms stand, and where the east one landed
                 hero: [Math.round(gs.people[gs.active].x), Math.round(gs.people[gs.active].y)], cursor: [gs.cursor.r, gs.cursor.c],
                 needs: Object.fromEntries(gs.people.map((p) => [p.name, Object.fromEntries(NEEDS.map((n) => [n, Math.round(p.needs[n] * 100) / 100]))])),
                 hash: stateHash(gs),
@@ -1389,6 +1398,7 @@ const HomebodyGame = () => {
                     people: gs.people.map((p) => ({ name: p.name, x: Math.round(p.x), y: Math.round(p.y), needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0, mealTaken: p.mealTaken })),
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
                     ext: gs.ext,
+                    wings: gs.wings.map((w) => (w.id === 'garden' ? 'garden' : `east${w.r0}`)),   // #2689: the harness reads which rooms stand and where
                     rel: { house: gs.rel.house, fern: gs.rel.fern, ivy: gs.rel.ivy, neigh: gs.rel.neigh },   // #2143: third meter; #2588: the pair's own rung joins the view
                     spats: gs.spats, grudge: gs.grudge, spatFx: Math.round(gs.spatFx * 10) / 10,   // #2070/#2076
                     neiSpats: gs.neiSpats, neiGrudge: gs.neiGrudge, neiIgnore: Math.round(gs.neiIgnore),   // #2604: the pair's own quarrel ledger, visible to harness and panel-debug
@@ -1559,7 +1569,7 @@ const HomebodyGame = () => {
                 ] : ['attract'],
                 actions: [
                     { label: 'GIVE §500', run: () => { if (gs) gs.money += 500; return 'rent money' } },
-                    { label: 'BUILD ROOM', run: () => { if (gs && !gs.ext) { gs.money = Math.max(gs.money, EXT_ROOM.price); buildRoom(gs) } return gs && gs.ext ? 'spare room up — the lot grew' : 'already built / no sim' } },
+                    { label: 'BUILD ROOM', run: () => { if (!gs) return 'no sim'; if (gs.ext >= 2) return 'the lot is full — two rooms stand'; gs.money = Math.max(gs.money, GARDEN.price); const ok = buildRoom(gs, gs.ext >= 1 ? GARDEN : eastWing(DEFAULT_ANCHOR)); return ok ? (gs.ext === 2 ? 'garden room up — two rooms on the lot' : 'spare room up — the lot grew') : 'somewhere in the way' } },   // #2689: the button raises the next wing, wherever the law lets it
                     { label: 'ADOPT CAT', run: () => { if (gs && !gs.pet) { gs.money = Math.max(gs.money, PET.price); adoptPet(gs) } return gs && gs.pet ? 'Miso trots in through the gate' : 'already home / no sim' } },   // #2197
                     { label: 'ADOPT KID', run: () => { if (gs && !gs.kid) { gs.money = Math.max(gs.money, KID.price); adoptKid(gs) } return gs && gs.kid ? 'Pip moves in through the gate' : 'already home / no sim' } },   // #2203
                     { label: 'GRANT WISH', run: () => { if (gs) { gs.content = WIN_CONTENT } return 'wish banked — next content tick wins' } },

@@ -89,7 +89,7 @@ import {
     SPAT_DROP, SPAT_SOCIAL, SPAT_CD, MAKEUP_BOND, moodOf, avg,
     COOL_LINES, HOUSE_LINES, GRUDGE_FIRST_CD, GRUDGE_COOL_CD,   // #2135: the cooling beat
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
-    place, placeOk, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
+    place, placeOk, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk, canPlace,   // #2689: canPlace joins for the two-wing bedroom law
     manualMove,
     court, courtTarget, COO_BOND, AFFECTION_BOND, INSULT_DROP, CMD_CD, REL_EDGES,   // #2131
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court
@@ -119,6 +119,7 @@ import {
     ICE_HOLD_T, ICE_DRIPS, coneDripCount,   // #2508 item 3: the eat beat — the hold, its drips, the drip math
     SNEAK_DUE, SNEAK_WINDOW, SNEAK_LOOT, sneakNightDue, hasAlarm, ringSneak, SNEAK_CREEP, SNEAK_SIREN,   // #2520: the sneak — the window, the loot list, the parity, the alarm, the rig
     PROWL_DUE, PROWL_WINDOW, prowlNightDue, PET_PROWL_FUN, ringProwl, PROWL_PADS, PROWL_HOME_SFX,   // #2532: Miso's even-night prowl — the window, the parity, the cat-scale pay, the rig, the sound tables
+    eastWing, GARDEN, EAST_ANCHORS, DEFAULT_ANCHOR, wingPick, wingGeom, WINGS_MAX, groundAt,   // #2689: deeper multi-room — the anchor law, the garden cottage, the pick
 } from '../src/games/Homebody/sim.js'
 import { bondRows, pairStride, strollTrail, STRIDE_BOB } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail
 import { readFileSync } from 'node:fs'
@@ -294,7 +295,7 @@ section('SPARE ROOM (#1806): the lot grows, connectivity honest')
     g10.money = 9999
     g10.people[0].r = 4; g10.people[0].c = 13; g10.people[0].x = tileX(13) + 16; g10.people[0].y = tileY(4) + 16
     check('build refused while a resident stands on the footprint', !buildRoomOk(g10))
-    check('one expansion per lot', g9.ext === 1 && !buildRoom(g9))
+    check('the lot grows twice: kit two raises the garden, kit three is refused', g9.ext === 1 && buildRoom(g9) && g9.ext === 2 && !buildRoom(g9))   // #2689 lifts #1806's one-per-lot
 
     // keepsOpen inherits the new walls: once the room holds furniture, the
     // room-side door cell may not be blocked (it is the wing's only door)
@@ -321,6 +322,102 @@ section('SPARE ROOM (#1806): the lot grows, connectivity honest')
     const simSrc = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
     check('pin: solidAt asks groundOf (wing walls are real walls to the sim)', /function solidAt\(s, r, c\) \{[^}]*groundOf\(s, r, c\)/.test(simSrc))
     check('pin: the attract bot places by groundOf too', /function bot[\s\S]*?groundOf\(s, r, c\)/.test(simSrc))
+}
+
+section('WINGS (#2689): choose the row, raise the garden — deeper multi-room')
+{
+    // the anchor law is arithmetic off the map, not a taste table: a row is a
+    // site exactly when its punched door meets a house-floor cell
+    const derived = []
+    for (let r0 = 0; r0 + 5 < ROWS; r0++) if (groundAt(r0 + 2, 10) === 'floor') derived.push(r0)
+    check('EAST_ANCHORS IS the door-into-floor law (derived from MAP independently)', JSON.stringify(derived) === JSON.stringify(EAST_ANCHORS), `derived ${derived.join(',')}`)
+    check('row 3 is out — bricks west of its door', groundAt(5, 10) !== 'floor')
+
+    // every legal anchor stands, connects, and drains to the kerb
+    for (const r0 of EAST_ANCHORS) {
+        const g = newRun(501 + r0)
+        g.money = 99999
+        const w = eastWing(r0)
+        const ok = buildRoom(g, w)
+        const doorOk = walkable(g, w.door[0], w.door[1]) && groundAt(w.door[0], w.door[1] - 1) === 'floor'
+        const deepest = w.floor[w.floor.length - 1]
+        const intoHouse = !!bfsPath(g, { r: deepest[0], c: deepest[1] }, [{ r: 3, c: 3 }])
+        const toKerb = !!bfsPath(g, { r: deepest[0], c: deepest[1] }, [{ r: 12, c: 5 }])
+        const floorAll = w.floor.every(([r, c]) => walkable(g, r, c))
+        const wallAll = w.walls.every(([r, c]) => !walkable(g, r, c))
+        check(`anchor r0=${r0}: stands, door onto floor, room walkable, walls sealed, kerb+house reachable`, ok && doorOk && intoHouse && toKerb && floorAll && wallAll)
+    }
+
+    const g3 = newRun(507)
+    g3.money = 99999
+    check('a door onto bricks refuses — the law rejects an illegal anchor even by direct call', !buildRoomOk(g3, eastWing(3)) && !buildRoom(g3, eastWing(3)))
+
+    // the pick: west of the lawn keeps the classic row (muscle memory + bot);
+    // pointing east slides the anchor to the cursor and snaps illegal rows near
+    check('pick: cursor west of the lawn keeps the classic row', wingPick(newRun(1), 6, 8).r0 === DEFAULT_ANCHOR && DEFAULT_ANCHOR === 2)
+    check('pick: pointing at row 1 takes row 1', wingPick(newRun(1), 1, 13).r0 === 0)
+    check('pick: pointing at row 5 snaps off the illegal row 3', wingPick(newRun(1), 5, 12).r0 === 2)
+    check('pick: pointing at the bottom lawn takes row 5', wingPick(newRun(1), 11, 12).r0 === 5)
+    check('pick: once one wing stands, the card points at the garden', (() => { const s = newRun(2); s.money = 99999; buildRoom(s, eastWing(2)); return wingPick(s, 6, 8) === GARDEN })())
+
+    // the garden cottage: stands after any anchor, links the house, drains the lot
+    for (const r0 of EAST_ANCHORS) {
+        const g = newRun(601 + r0)
+        g.money = 99999
+        buildRoom(g, eastWing(r0))
+        const ok = buildRoom(g, GARDEN)
+        const links = walkable(g, 8, 2) && groundAt(7, 2) === 'floor'
+        const toHouse = !!bfsPath(g, { r: 9, c: 2 }, [{ r: 3, c: 3 }])
+        const toKerb = !!bfsPath(g, { r: 10, c: 3 }, [{ r: 12, c: 5 }])
+        const mailOk = targetsOf(g, { id: 'mail', r: 11, c: 6 }).some((t) => walkable(g, t.r, t.c) && !!bfsPath(g, { r: 12, c: 5 }, [{ r: t.r, c: t.c }]))
+        const gateOk = !!bfsPath(g, { r: 8, c: 5 }, [{ r: 12, c: 5 }])
+        check(`garden after r0=${r0}: stands, south door links house, kerb+mail+back-gate stay reachable`, ok && links && toHouse && toKerb && mailOk && gateOk)
+    }
+    check('WINGS_MAX is two — a third kit refuses', (() => { const s = newRun(611); s.money = 99999; buildRoom(s, eastWing(2)); buildRoom(s, GARDEN); return s.ext === WINGS_MAX && !buildRoom(s, eastWing(4)) })())
+
+    // the guards stay honest around the garden: a resident on a future wall cell
+    // (not even the footprint!) refuses the hammer — keepsWing, not roomClear
+    const gW = newRun(613)
+    gW.money = 99999
+    buildRoom(gW, eastWing(2))
+    gW.people[0].r = 9; gW.people[0].c = 4; gW.people[0].x = tileX(4) + 16; gW.people[0].y = tileY(9) + 16
+    check('the garden refuses while a resident stands on a future wall cell (keepsWing)', !buildRoomOk(gW, GARDEN) && !buildRoom(gW, GARDEN))
+    const gF = newRun(617)
+    gF.money = 99999
+    buildRoom(gF, eastWing(2))
+    gF.people[0].r = 10; gF.people[0].c = 1; gF.people[0].x = tileX(1) + 16; gF.people[0].y = tileY(10) + 16
+    check('and while one stands on the future planks (roomClear)', !buildRoomOk(gF, GARDEN))
+
+    // the bedroom bed fits either room's floorboards (#2272 law, now two homes)
+    const gB = newRun(619)
+    gB.money = 99999
+    buildRoom(gB, eastWing(2))
+    buildRoom(gB, GARDEN)
+    check('canopy bed fits the east wing AND the garden floorboards', canPlace(gB, DEF.canopy, 4, 13) && canPlace(gB, DEF.canopy, 9, 2) && !canPlace(gB, DEF.canopy, 5, 8))
+
+    // move-in reactions ride the NEWEST wing (#1814, now twice)
+    const gR = newRun(623)
+    gR.money = 99999
+    buildRoom(gR, eastWing(2))
+    for (const p of gR.people) p.roomSeen = true
+    buildRoom(gR, GARDEN)
+    check('the garden re-arms the move-in ledger and the reaction cells stand inside it', gR.roomReact === gR.people.length && GARDEN.react.every(([r, c]) => walkable(gR, r, c)) && wingGeom({ id: 'garden' }) === GARDEN)
+
+    // the hash carries WHICH rooms stand WHERE, twins stay one world
+    const tA = newRun(631); tA.money = 99999; buildRoom(tA, eastWing(2)); buildRoom(tA, GARDEN)
+    const tB = newRun(631); tB.money = 99999; buildRoom(tB, eastWing(2)); buildRoom(tB, GARDEN)
+    const tC = newRun(631); tC.money = 99999; buildRoom(tC, eastWing(4)); buildRoom(tC, GARDEN)
+    check('twins: same seed, same wings, one hash', stateHash(tA) === stateHash(tB))
+    check('a different anchor row is a different world', stateHash(tA) !== stateHash(tC))
+
+    // source pins: the law lives in the sim, the view only reads it
+    const wSrc = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const wJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: roomClear asks the links law before the hammer', /roomClear\(s, g\)[\s\S]*?g\.links\.every/.test(wSrc))
+    check('pin: place routes the kit through the pick — the cursor row is the site', /if \(def\.room\) \{[\s\S]*?wingPick\(s, r, c\)/.test(wSrc))
+    check('pin: nothing but wingPick hands the autopilot a site — the classic row is its only one', /if \(id === 'roomkit'\)[\s\S]*?place\(s, 0, 0\)/.test(wSrc))
+    check('pin: the marquee teaches the lot growing twice', /THE LOT GROWS TWICE/.test(wJsx))
+    check('pin: the ghost is a pure read — drawWingGhost takes geometry, never mutates', /export function drawWingGhost\(ctx, geom, ok\)/.test(readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')) && /drawWingGhost\(ctx, wingPick\(g, g\.cursor\.r, g\.cursor\.c\)/.test(wJsx))
 }
 
 section('WINNABLE (attract autopilot, several seeds)')
@@ -569,10 +666,10 @@ section('MOVE-IN (#1814): reactions, glow, honest edges')
     const sim2Src = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
     const artSrc = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
     const jsxSrc = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
-    check('pin: the ext bake paints windows from EXT_ROOM.windows', /for \(const \[r, c\] of EXT_ROOM\.windows\)/.test(artSrc))
-    check('pin: nightTint takes the ext flag and lights the wing panes', /function nightTint\(ctx, hour, ext\)[\s\S]*if \(ext\)[\s\S]*EXT_ROOM\.windows/.test(artSrc))
-    check('pin: the shell passes the live ext flag into the tint', /nightTint\(ctx, g\.hour, g\.ext\)/.test(jsxSrc))
-    check('pin: the bot buys the kit only onto a clear lot', /if \(id === 'roomkit'\)[\s\S]*?!roomClear\(s\)/.test(sim2Src))
+    check('pin: the wing bake paints windows from the geometry', /for \(const \[r, c\] of geom\.windows\)/.test(artSrc))   // #2689: one bake serves every site
+    check('pin: nightTint takes the ext flag and lights every standing wing', /function nightTint\(ctx, hour, ext, wings = null\)[\s\S]*if \(ext\)[\s\S]*wingGeom/.test(artSrc))
+    check('pin: the shell passes the live ext flag and wings into the tint', /nightTint\(ctx, g\.hour, g\.ext, g\.wings\)/.test(jsxSrc))
+    check('pin: the bot buys the kit only onto a clear lot', /if \(id === 'roomkit'\)[\s\S]*?!roomClear\(s, eastWing\(DEFAULT_ANCHOR\)\)/.test(sim2Src))   // #2689: the autopilot keeps the classic row — the law it asks is the classic site
     check('pin: the hammer arms the reaction ledger', /s\.roomReact = s\.people\.length/.test(sim2Src))
 }
 
@@ -632,7 +729,7 @@ section('CANOPY (#2272): wing-only bedroom bed, premium sleep')
     // source pins: the laws must not silently drop
     const cSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
     const cArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
-    check('pin: canPlace asks wingOnly against the wing floor under ext', /def\.wingOnly && !\(s\.ext && EXT_ROOM\.floor\.some/.test(cSim))
+    check('pin: canPlace asks wingOnly against any standing wing floor under ext', /def\.wingOnly && !\(s\.ext && s\.wings\.some/.test(cSim))   // #2689: east or garden, a wing's floorboards are bedroom boards
     check('pin: the sleep laws ride def.sleep, no bed-id checks left', /p\.use\.def\.sleep/.test(cSim) && !/p\.use\.def\.id === 'bed'/.test(cSim))
     check('pin: the view draws the canopy sprite and zzz-s every sleeper', /case 'canopy'/.test(cArt) && /p\.use\.def\.sleep/.test(cArt))
     check('pin: shelf cards size to the shelf, so HOME carries seven', /const shelfCW = \(n\)/.test(cArt) && /shelfCW\(cards\.length\)/.test(cArt) && CAT_TABS[0].ids.length === 7)
