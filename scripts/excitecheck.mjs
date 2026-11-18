@@ -19,6 +19,7 @@ import { makeGame, step, stateHash, CFG } from '../src/games/Excitebike/sim.js'
 import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, hasTestTrack, ownTerrain, PACE } from '../src/games/Excitebike/levels.js'
 import { plan, decide } from '../src/games/Excitebike/planner.js'
 import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, TOOLS } from '../src/games/Excitebike/custom.js'
+import { demoSeats, demoSeatTrack, demoSeatLabel } from '../src/games/Excitebike/attract.js'
 
 const MUT = process.argv.includes('--mutate')
 let pass = 0
@@ -1733,6 +1734,53 @@ section('GRADED PACK (customs ride a graded pack — terrain-derived pace, #2642
     // visible grammar: the splash row wears the grade (exciteplay drives the DOM).
     const sx = readFileSync(new URL('../src/games/Excitebike/index.jsx', import.meta.url), 'utf8')
     ok(/data-pack=\{PK\}/.test(sx) && /pack grade \$\{PK\} of 3/.test(sx), 'the splash stopped wearing the pack grade — customs lost their catalogue grammar')
+}
+
+// ---------------------------------------------------------------- attract seats ----
+section('ATTRACT DESIGN (viewer seats + rotation — the marquee flies your garage, #2647)')
+{
+    const sx = readFileSync(new URL('../src/games/Excitebike/index.jsx', import.meta.url), 'utf8')
+
+    // THE SEAT LAW, straight from the pure module the shell reads.
+    ok(JSON.stringify(demoSeats(0)) === '[0]', 'no designs saved and the marquee lost MOTOCROSS — zero-custom attract must stay byte-honest')
+    ok(JSON.stringify(demoSeats(3)) === '[0,1,2,3]', 'the seat rotation stopped being MOTOCROSS-then-designs-in-roster-order')
+    ok(JSON.stringify(demoSeats(-2)) === '[0]', 'a negative design count grew the seat ladder')
+    const seat3 = demoSeats(3)
+    ok(demoSeatTrack(seat3[1], TRACK_COUNT) === TRACK_COUNT && demoSeatTrack(seat3[3], TRACK_COUNT) === TRACK_COUNT + 2, 'seat→track drifted off the roster (CUSTOM k rides TRACK_COUNT+k−1)')
+    ok(demoSeatLabel(0) === 'MOTOCROSS' && demoSeatLabel(2) === 'CUSTOM 2', 'seat labels left the roster grammar (the badge must name what flies)')
+
+    // A design's seat rides REAL terrain: register the reference draft, then
+    // the seat's script is the SAME autopilot's honest one-lap — and twice,
+    // identically. (One lap is the attract seat: the whole draft in a breath.)
+    const ATTR = [{ kind: 'RAMP', x: 1200 }, { kind: 'WHOOPS', x: 2000 }, { kind: 'MUD', x: 2600 }, { kind: 'BOOST', x: 3200 }, { kind: 'WATER', x: 3800 }, { kind: 'STEP', x: 4400 }]
+    const attrBuilt = buildTrack(compileCustom(ATTR, 'ATRACT'))
+    ok(auditCustomData(attrBuilt, groundY).ok, 'the attract fixture draft refused — the fixture died before it was graded')
+    const aSeat = registerCustom(attrBuilt, 0)
+    ok(aSeat === TRACK_COUNT && track(aSeat).name === 'ATRACT', 'the fixture could not enter the roster as CUSTOM 1 — no seat to grade')
+    const lapA = plan({ track: aSeat, laps: 1 })
+    const lapB = plan({ track: aSeat, laps: 1 })
+    ok(lapA.end === 'win', `the autopilot could not finish the design's lap (${lapA.end ?? 'unfinished'}) — the attract seat has no script to fly`)
+    ok(lapA.ticks < 2000, `the attract one-lap ran ${lapA.ticks} ticks — laps:1 stopped reaching the seat's plan (the demo would marathon your design)`)
+    ok(lapA.script.length === lapA.ticks, 'the attract script does not cover the seat it was planned for')
+    ok(JSON.stringify(lapA.script) === JSON.stringify(lapB.script), 'the attract ride is not deterministic — the same design would fly different dirt each cycle')
+
+    // The lazy cache keys on terrain IDENTITY: re-saving swaps CACHE's object,
+    // so an identity miss re-plans and the demo never rides stale dirt.
+    const attrBefore = track(aSeat)
+    registerCustom(buildTrack(compileCustom(ATTR.map((s) => ({ ...s, x: s.x + 100 })), 'ATRACT v2')), 0)
+    ok(track(aSeat) !== attrBefore && track(aSeat).name === 'ATRACT v2', 'a re-save stopped swapping the terrain object — an identity-keyed cache would replay stale dirt forever')
+
+    // THE VIEWER LAW, source-pinned (exciteplay drives it with real frames).
+    // Before this law the MOTOCROSS replay reached its finish at t2561 and
+    // finish(true) wrote the BOT's score into excitebike.board, then the
+    // marquee froze on the over screen until a key was touched.
+    ok(/vsc === 'attract' \|\| vsc === 'tracks'/.test(sx), 'the viewer-seat guard left doSim — bot scores would land on the player’s leaderboard again')
+    ok(sx.indexOf("vsc === 'attract'") < sx.indexOf("else finish(gs.end === 'win')"), 'the viewer guard no longer sits BEFORE finish() — a demo end could submit before the seat law sees it')
+    ok(/demoSeq = \(demoSeq \+ 1\) % seats\.length/.test(sx), 'tickDemo stopped rotating the attract seat — saved designs are back to never entering the demo')
+    ok(/if \(idx === 0\) return provenRun\(\)/.test(sx), 'MOTOCROSS stopped riding the memoized proven run — the zero-custom demo lost its byte-honesty')
+    ok(/plan\(\{ track: idx, laps: 1 \}\)/.test(sx), 'attract seats no longer lazy-plan designs through the proven autopilot — the demo would fly scripts the engine never rolled')
+    ok(/demoCache\.has\(t\)/.test(sx), 'the lazy-plan cache lost its terrain-identity key — re-saved designs would ride stale demos')
+    ok(/data-demo-track/.test(sx) && /DEMO · \{demoTrack\}/.test(sx), 'the marquee stopped wearing the seat badge — the garage cannot see itself from across the room')
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

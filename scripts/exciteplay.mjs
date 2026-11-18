@@ -23,6 +23,7 @@
 //      a better rider hazard-hops the same body clean (#2420).
 // The terrain, ledger, slack rule and nine mutants live in excitecheck.mjs.
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
+import { encodeCustom } from '../src/games/Excitebike/custom.js'
 
 const URL = process.env.EXCITE_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/excitebike`
 await requireDevServer(URL)
@@ -1002,6 +1003,46 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     await page.keyboard.press('Enter'); await wait(250)
     p = await probe()
     r.check('MOTOCROSS still seats the two-lap book (#2377 promise intact)', p.screen === 'play' && p.track === 0 && p.laps === 2, JSON.stringify({ s: p.screen, tk: p.track, l: p.laps }))
+}
+
+// ---- ATTRACT DESIGN — the marquee flies your garage (#2647) ----
+{
+    const demoState = () => page.evaluate(() => ({
+        d: window.__bikeTest.demo(),
+        badge: (document.querySelector('[data-demo-track]') || {}).textContent || '',
+        board: (() => { try { return JSON.parse(localStorage.getItem('excitebike.board') || '[]').length } catch { return -1 } })(),
+    }))
+    await page.evaluate(() => localStorage.clear()) // clean battery: this leg owns the slots
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(900)
+    let d = await demoState()
+    r.check('no designs: the marquee flies MOTOCROSS alone (byte-honest seats)', JSON.stringify(d.d.seats) === '[0]' && d.badge === 'DEMO · MOTOCROSS', JSON.stringify(d))
+
+    await page.evaluate((enc) => localStorage.setItem('excitebike.tracks.v1', enc),
+        encodeCustom([{ name: 'SKATEPARK', stamps: [['RAMP', 1200], ['WHOOPS', 2000], ['MUD', 2600], ['BOOST', 3200], ['WATER', 3800], ['STEP', 4400]] }]))
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(900)
+    d = await demoState()
+    r.check('a saved design joins the seat ladder (MOTOCROSS, CUSTOM 1)', JSON.stringify(d.d.seats) === '[0,1]' && d.badge === 'DEMO · MOTOCROSS', JSON.stringify(d))
+
+    // Fast-forward the MOTOCROSS replay to its winning tick — the line is
+    // still crossed by REAL frames through doSim; only the clock is skipped.
+    await page.evaluate(() => window.__bikeTest.demoSkip())
+    await page.waitForFunction(() => window.__bikeTest.demo().seat === 1, null, { timeout: 5000 })
+    d = await demoState()
+    const pp = await probe()
+    r.check('the bot crossed the league line and the seat ROTATED (no frozen over-screen, the old t2561 bug)', pp.screen === 'attract' && d.d.seat === 1 && pp.tick < 30, JSON.stringify({ s: pp.screen, tk: pp.track, t: pp.tick }))
+    r.check('the finish line submitted NOTHING — the board stays empty', d.board === 0, `board=${d.board}`)
+    r.check('CUSTOM 1 rides real design terrain with its badge on', d.d.label === 'CUSTOM 1' && (await probe()).track === 6 && d.badge === 'DEMO · CUSTOM 1', JSON.stringify({ d, tk: (await probe()).track }))
+
+    // and the design's lap comes home the same honest way
+    await page.evaluate(() => window.__bikeTest.demoSkip())
+    await page.waitForFunction(() => window.__bikeTest.demo().seat === 0, null, { timeout: 5000 })
+    d = await demoState()
+    r.check('the design lapped and handed back to MOTOCROSS, board still empty', d.d.label === 'MOTOCROSS' && d.board === 0 && (await probe()).screen === 'attract', JSON.stringify(d))
+    await page.evaluate(() => localStorage.clear())
 }
 
 r.check('zero page errors across the whole ride', errors.length === 0, errors.slice(0, 4).join(' | '))

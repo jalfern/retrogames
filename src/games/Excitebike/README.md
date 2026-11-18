@@ -258,8 +258,29 @@ faster heat.
   range, slab→0, TRANSIENT grading, PACK_TIER seat receipts with ranks intact,
   a WOT ride still wins its own crowded course twice identically, source pin
   for the seat pips) + `paceK=0` mutant caught.
-- **Attract never sees your designs (#2625 stage 3, open):** the attract demo
-  still flies MOTOCROSS only; saved designs never enter it.
+- **CLOSED by #2647:** **ATTRACT RIDES YOUR DESIGNS** — the marquee honours
+  the garage (and stopped lying). Ground truth before the stage: the MOTOCROSS
+  replay reached its finish line at t2561 and `doSim` called `finish(true)` —
+  the BOT's score 14300 went into `excitebike.board` and the attract froze on
+  the over screen until a key was touched. Two laws now: **VIEWER SEATS** (a
+  demo end while the screen is `attract`/`tracks` submits nothing and never
+  leaves the screen — `play`, TEST and WATCH receipts untouched) and **SEAT
+  ROTATION** (`demoSeats`, pure in attract.js: MOTOCROSS first, then your
+  saved designs in roster order, wrapping; zero designs → `[0]`, the shipped
+  demo byte-honest). Each design is planned once lazily by the SAME autopilot,
+  `plan({track, laps:1})` — one lap is the whole draft in a breath — cached on
+  the compiled terrain's OBJECT identity, so a re-save swaps the object (the
+  registerCustom law) and the demo re-plans instead of riding stale dirt. The
+  screen wears a `DEMO · MOTOCROSS` / `DEMO · CUSTOM k` badge (a caption; the
+  #365 one-message rule holds). Proven: excitecheck ATTRACT DESIGN (+19: seat
+  law, roster mapping, one-lap autopilot completes a design twice byte-identical,
+  identity-invalidation, viewer-guard source pins; mutants — guard removed,
+  seats frozen at MOTOCROSS — both die by name) and exciteplay 137/137 (+6:
+  real frames drive the finish line via `demoSkip`, board stays empty across
+  both line-crossings, badge text == probe label, real 46 s marquee cycles).
+- **Attract name-tags seats by roster number:** the badge reads
+  `CUSTOM 1`, not the design's own name (`SKATEPARK`) — roster grammar;
+  showing saved names in the marquee is open polish.
 - **PER-COURSE LEAGUE (#2573 items 5+6):** every course carries a `pace`
    (MOTOCROSS/SUPERCROSS 0 — calibration, all receipts byte-honest; then
    +0.02/+0.03/+0.04, K.O. CROSS +0.06) and `PACK_TIER` [1,2/3,1/3,0,0] rides
