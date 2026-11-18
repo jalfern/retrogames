@@ -1474,7 +1474,7 @@ const FloorBossGame = () => {
                 if (performance.now() - overAt < 600) return
                 if (advanceShift()) return // #2346: a cleared night clocks into the next
                 setMode('attract')
-                gs = makeGame(1337)
+                gs = makeGame(ATTRACT_SEEDS[++demoSeed % ATTRACT_SEEDS.length]); warmAttract() // #2700: the shop window always opens on a hot floor
                 return
             }
             // #1637 WATCH: Y seats the proven floor manager; any driving key or
@@ -1513,7 +1513,7 @@ const FloorBossGame = () => {
             }
             if (screenRef.current === 'over' && performance.now() - overAt > 600) {
                 if (advanceShift()) return // #2346: tap clocks into the next night
-                setMode('attract'); gs = makeGame(1337); return
+                setMode('attract'); gs = makeGame(ATTRACT_SEEDS[++demoSeed % ATTRACT_SEEDS.length]); warmAttract(); return // #2700: back to the shop window, back to a hot floor
             }
             onCanvasClick(ev)
         }
@@ -1631,6 +1631,7 @@ const FloorBossGame = () => {
             })
         }
 
+        warmAttract() // #2700: the first shop-window loop is hot too — the mount demo ducks while you watch (fixed seed × fixed autopilot = the same floor every visit)
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
         canvas.addEventListener('pointerdown', onPointerDown)

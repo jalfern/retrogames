@@ -1639,6 +1639,7 @@ console.log('— manners polish (#2700, source pins + attract sweep) —')
     ok(/makeGame\(ATTRACT_SEEDS\[\+\+demoSeed % ATTRACT_SEEDS\.length\]\)/.test(ui), 'the attract cycles measured duck-rich seeds (#2700)')
     ok(/gs\.ev\.length = 0 \/\/ no minute of stale events/.test(ui), 'the warm-up drains stale events — no minute of sound bursts into the painter (#2700)')
     ok(/GIVE WAY — CARTS DUCK INTO BAYS AND PASS/.test(ui), 'the attract card sells the new grammar in the shop window (#2700)')
+    ok(/warmAttract\(\) \/\/ #2700: the first shop-window/.test(ui), 'the mount demo is warm too — the very first loop a visitor sees ducks (#2700)')
     const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
     ok(!simSrc.includes('#2700'), 'the sim is untouched — manners live painter-side, the engine law stays byte-law (#1917)')
     // honest sweep: every shop-window seed must deliver its duck while a visitor watches
