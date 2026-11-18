@@ -127,7 +127,7 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     : MUT_TEACH
                                                                     ? ['if (strandsFloor(gs, m.x, m.y) !== false) continue // an illegal plug teaches nothing', 'if (false) continue // MUTANT: legality check off', 'the teach ignores legality — a plug that would strand floor lights up as the fix (#2627 s2)']
                                                                     : MUT_LANE_TEACH
-                                                                    ? ['if (strandsFloor(gs, m.x, m.y) !== false) continue // illegal plug teaches nothing', 'if (false) continue // MUTANT: legality check off', 'the lane teach ignores legality — a plug that would strand a served rack lights up as the fix (#2622)']
+                                                                    ? ['if (strandsFloor(gs, m.x, m.y) !== false) continue // illegal plug teaches nothing', 'if (false) continue // MUTANT: legality check off', 'the lane teach ignores legality — a plug that would strand floor behind a mouth lights up as the fix (#2622)']
                                                                     : MUT_SWING
                                                                     ? ['if (a1[0] * a2[0] + a1[1] * a2[1] !== 0) continue // perpendicular only — a straight face doesn\'t swing', 'if (false) continue // MUTANT: perpendicular check off', 'the sweep paints straight corridor faces as elbows — the corridor skip is gone (#2627 s3)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
