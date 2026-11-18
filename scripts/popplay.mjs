@@ -3,6 +3,7 @@
 // with zero page errors and the drawn state tracking the sim after every
 // input. Needs `npm run dev` (or POP_URL).
 import { launch, openGame, Report, opt } from './lib/harness.mjs'
+import { DUEL_DUCK } from '../src/games/PrinceOfPersia/music.js'
 
 const URL = process.env.POP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/prince-of-persia`
 const r = new Report('popplay')
@@ -156,6 +157,64 @@ await page.evaluate(() => window.__dbg && window.__dbg.act('win'))
 await page.waitForTimeout(1200)
 const mEnd = await mus()
 r.check('the rescued hour drops the bed at the princess door', mEnd.track !== 'pop' || !mEnd.playing, `track ${mEnd.track} playing ${mEnd.playing}`)
+
+// ---- #2667 held duel duck: the measured bed at the live analyser ----------
+// The old per-hit duel duck left nothing long enough to measure (350 ms dip,
+// recover, pump). The held layback keeps the bus at DUEL_DUCK across the whole
+// exchange, so the duck-over-bed relationship can finally be proven at the
+// analyser tap: real arrows walk the prince into a real guard's wind-up on
+// L1 room 0 (drive validated tick-exact against the sim: engage tick 31,
+// release 129, two cues, unharmed with the block held), the bed audibly
+// lays back, and comes back up when the steel goes quiet.
+// Dismiss the end card AND confirm the reset actually ran before seating the
+// duel at L1: a single tap can land on the ~3 s level-CLEAR card (still not
+// the end card) and get consumed without clearing the end-seen latch — the
+// first held arrow would then re-kick a fresh L0 (no guards) under the drive.
+// Fresh-L0 signature: play + level 0 + zero guards (only L0 has none).
+for (let i = 0; i < 20; i++) {
+    const pD = await probe()
+    if (pD.status === 'play' && pD.level === 0 && (!pD.guards || pD.guards.length === 0)) break
+    await page.keyboard.press('ArrowRight')
+    await page.waitForTimeout(250)
+}
+await page.evaluate(() => window.__popTest.goto(1))
+await page.evaluate(() => window.__dbg && window.__dbg.act('give sword'))
+await page.waitForFunction(() => window.__popTest.musicState().playing, null, { timeout: 4000 })
+let baseMax = 0
+for (let i = 0; i < 12; i++) { baseMax = Math.max(baseMax, (await mus()).peak); await page.waitForTimeout(50) }
+await page.keyboard.down('ArrowRight')
+await page.keyboard.down('ArrowUp')
+let engaged = false
+const engTrace = []
+for (let i = 0; i < 100 && !engaged; i++) {
+    const mE = await mus()
+    engaged = mE.level === DUEL_DUCK
+    if (!engaged && i % 10 === 0) {
+        const p2 = await probe()
+        engTrace.push(`x${p2.x.toFixed(0)} st=${p2.status} L${p2.level}R${p2.room} hp${p2.hp} g0=${JSON.stringify(p2.guards && p2.guards[0])} lvl=${mE.level}`)
+    }
+    if (!engaged) await page.waitForTimeout(40)
+}
+r.check('stepping into a guard wind-up engages the held layback (#2667)',
+    engaged, engaged ? 'bus held at DUEL_DUCK' : `never engaged — ${engTrace.join(' | ')}`)
+let duckMax = 0
+for (let i = 0; i < 8; i++) { duckMax = Math.max(duckMax, (await mus()).peak); await page.waitForTimeout(50) }
+await page.keyboard.up('ArrowRight')
+await page.keyboard.down('ArrowLeft')
+let freed = false
+for (let i = 0; i < 120 && !freed; i++) {
+    freed = (await mus()).level === 1
+    if (!freed) await page.waitForTimeout(40)
+}
+await page.keyboard.up('ArrowLeft')
+await page.keyboard.up('ArrowUp')
+let recMax = 0
+for (let i = 0; i < 10; i++) { recMax = Math.max(recMax, (await mus()).peak); await page.waitForTimeout(50) }
+const mDuel = await mus()
+r.check('duck-over-bed MEASURED on the live analyser: bed peak falls while the exchange lays back (#2667)',
+    engaged && duckMax > 0 && duckMax < baseMax * 0.85, `base ${baseMax} -> laid back ${duckMax}`)
+r.check('the bed returns when the steel goes quiet — never silent, never stuck (#2667)',
+    freed && recMax > duckMax * 1.15 && mDuel.playing, `ducked ${duckMax} -> back ${recMax}, playing ${mDuel.playing}`)
 
 // --- the phone page (#2324): ✋ GRAB = Shift by thumb, end to end -------------
 // A fresh touch page (keyboard untouched — trusted keys hide the pad by law).

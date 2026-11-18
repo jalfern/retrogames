@@ -129,6 +129,9 @@ const PrinceOfPersiaGame = () => {
                 sword: g.sword, hang: !!g.p.hang, block: !!p_block(), gate: g.gateOpen[g.room],
                 exit: g.exitOpen, clock: g.clock, events: g.events.length,
                 music: trackFor(g),
+                // #2667: the duel drive needs the live guard line (who is in my
+                // room, how close, mid-wind) — read-back only, never a cheat.
+                guards: g.guards.map((q) => ({ x: +q.x.toFixed(1), room: q.room, dead: !!q.dead, wind: +q.wind.toFixed(0) })),
             }),
             hash: () => stateHash(g),
             watching: () => watchingRef.current, // #1637 watchcheck: is the prover running the hour?
