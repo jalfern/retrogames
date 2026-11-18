@@ -24,6 +24,9 @@
 //                                        sample offsets; deterministic — same
 //                                        seed/envelope the old synth baked, so
 //                                        what survives opus survives here too).
+//   The device replays the file from position 0 at EVERY getUserMedia (measured
+//   #2709, pinned by micprobe shape A2) — a suite may drive several takes
+//   through one launch; only the schedule itself is launch-fixed.
 //   fakeMicArgs(wavPath)              -> Chrome launch args (fake device +
 //                                        pre-granted bubble + this file).
 //   fakeMicInit                       -> page init script: wraps the REAL

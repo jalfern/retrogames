@@ -148,6 +148,62 @@ async function recordRun(extraArgs, synth) {
     }
 }
 
+// --- shape A2: per-gUM file replay (#2709 contract for multi-take suites) ---
+// claptestplay drives several takes through ONE launch (retries, the re-arm
+// second take, silent takes). That only holds while the fake-file device
+// replays the WAV from file position 0 at every getUserMedia — pin it, or the
+// suite goes mysteriously red when Chrome starts treating the device as a
+// continuous stream.
+{
+    const browser = await launch({ extraArgs: fakeMicArgs(wav) })
+    await requireDevServer(`http://localhost:${PORT}/retrogames/`)
+    const context = await browser.newContext({ viewport: { width: 900, height: 700 } })
+    await context.addInitScript(fakeMicInit)
+    const page = await context.newPage()
+    await page.goto(`http://localhost:${PORT}/retrogames/`, { waitUntil: 'load' })
+    const second = await page.evaluate(async () => {
+        const record = async (recMs) => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            const mime = ['audio/webm;codecs=opus', 'audio/webm'].find((m) => window.MediaRecorder.isTypeSupported(m)) || ''
+            const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+            const chunks = []
+            rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data) }
+            const done = new Promise((res) => { rec.onstop = res })
+            rec.start(500)
+            await new Promise((res) => setTimeout(res, recMs))
+            rec.stop(); await done
+            const b64 = await new Promise((res) => {
+                const fr = new FileReader()
+                fr.onload = () => res(String(fr.result).split(',')[1] || '')
+                fr.readAsDataURL(new Blob(chunks, { type: mime }))
+            })
+            stream.getTracks().forEach((t) => t.stop())
+            return { bytes: 0, b64 }
+        }
+        await record(5000) // first session drains to 5 s…
+        await new Promise((res) => setTimeout(res, 500))
+        return await record(5000) // …second gUM in the SAME launch must hear them again
+    })
+    let pcm2 = null
+    if (second.b64) {
+        pcm2 = await page.evaluate(async (b64) => {
+            const bin = atob(b64)
+            const bytes = new Uint8Array(bin.length)
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+            const ctx = new (window.AudioContext || window.webkitAudioContext)()
+            const buf = await ctx.decodeAudioData(bytes.buffer)
+            const o = { sr: buf.sampleRate, samples: Array.from(buf.getChannelData(0)) }
+            ctx.close()
+            return o
+        }, second.b64)
+    }
+    const onsets2 = pcm2 ? detectClaps(Float32Array.from(pcm2.samples), { sampleRate: pcm2.sr }) : []
+    const ms2 = onsets2.map((o) => Math.round(o / pcm2.sr * 1000))
+    r.check('fake-file replays from file-0 at every gUM (one launch, two takes)', onsets2.length === CLAP_MS.length,
+        ms2.length ? `${onsets2.length}/${CLAP_MS.length} at ${ms2.join(',')} ms` : `no claps in second session (bytes ${second.b64.length})`)
+    await browser.close()
+}
+
 // --- shape B: legacy WebAudio synth (informational while #2709 stands) ------
 {
     const out = await recordRun([], true)
