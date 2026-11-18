@@ -145,6 +145,7 @@ export function screenVerdict({ sampleRate, samples, rec, minPairs = CLAP_MIN_PA
         matched: v.matched || 0,
         unmatchedOnsets: v.unmatchedOnsets || 0,
         ignoredEdges: v.ignoredEdges || 0,
+        unmatchedTapMs: v.unmatchedTapMs || [],
         noTouches,
         worstMs: v.worstMs === undefined ? null : v.worstMs,
         report: clapReportRows(v, tolMs),

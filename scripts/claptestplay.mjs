@@ -312,6 +312,23 @@ async function runOnce(cfg, { requireGate, sink }) {
     r.info(`${pfx}phone verdict`, JSON.stringify(v))
     // #2205 item 5: the verdict also exists for screen readers.
     r.check(`${pfx}an aria-live region announces the verdict`, (await page.locator('[data-clap-phase="graded"] [aria-live="assertive"]').count()) === 1)
+
+    // #1711 report card: the DOM paints exactly the verdict's residue — one row
+    // per event, kinds in agreement (pairish = matched, notouch = unheard taps
+    // flipped, nosound = taps without claps). Paint == state, proven per take.
+    {
+        const domRows = await page.$$eval('[data-clap-row]', (els) => els.map((e) => e.getAttribute('data-clap-row'))).catch(() => null)
+        const rep = graded.report || []
+        const paint = !!domRows && domRows.length === rep.length && domRows.every((k, i) => k === rep[i].kind)
+        r.check(`${pfx}report card paints the verdict residue row-for-row`, paint, JSON.stringify({ dom: domRows, verdict: rep.map((x) => x.kind) }))
+        if (v) {
+            const kinds = rep.map((x) => x.kind)
+            const plaus = kinds.filter((k) => k === 'pair' || k === 'off').length === v.matched &&
+                kinds.filter((k) => k === 'notouch').length === v.unmatchedOnsets &&
+                kinds.filter((k) => k === 'nosound').length === (v.unmatchedTapMs ? v.unmatchedTapMs.length : 0)
+            r.check(`${pfx}report card counts agree with the verdict numbers (matched/unmatchedOnsets/unmatchedTaps)`, plaus, JSON.stringify({ kinds, v: { m: v.matched, uo: v.unmatchedOnsets, ut: (v.unmatchedTapMs || []).length } }))
+        }
+    }
     let coreOk = false
     if (!fast) {
         coreOk = true // graded + uploaded; the ms-shaped verdicts below can't be proven on this box
@@ -635,6 +652,13 @@ async function coachOnce(sink) {
     const vh = !!(v && !v.ok && v.claps === 2 && v.matched === 1 && /TOUCH/i.test(v.hint || ''))
     coreOk = coreOk && vh
     r.check('coach guided WITHOUT touching the measurement: honest verdict — 2 claps, 1 pair, hint names the touch half', vh, JSON.stringify(v))
+    // #1711 report card: the graded screen names each of the three slaps the
+    // same way the live coach named them mid-take — airborne NO TOUCH first,
+    // silent NO SOUND second, the honest slap PAIR/OFF last (time order).
+    const rowKinds = await page.$$eval('[data-clap-row]', (els) => els.map((e) => e.getAttribute('data-clap-row'))).catch(() => null)
+    const cardOk = !!(rowKinds && rowKinds.length === 3 && rowKinds[0] === 'notouch' && rowKinds[1] === 'nosound' && (rowKinds[2] === 'pair' || rowKinds[2] === 'off'))
+    coreOk = coreOk && cardOk
+    r.check('report card names all three slaps in time order: NO TOUCH, NO SOUND, PAIR/OFF', cardOk, JSON.stringify(rowKinds))
     return { coreOk, fast }
 }
 async function coachProof() {
