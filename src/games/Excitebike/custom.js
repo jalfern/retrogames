@@ -30,7 +30,22 @@ export const lapsOf = (v) => (Number.isInteger(v) && v >= LAPS_MIN && v <= LAPS_
 // backward wrap from the first stamp still lands on EXIT, so every menu-wrap
 // pin holds. LAP (#2625) joins it there — a SETTING tool, before the verbs,
 // and the strip still ends in EXIT (the wrap law is tested, not assumed).
-export const TOOLS = [...STAMP_KINDS, 'TEST', 'LAP', 'ERASE', 'SAVE', 'EXIT']
+export const TOOLS = [...STAMP_KINDS, 'TEST', 'LAP', 'ERASE', 'NAME', 'SAVE', 'EXIT']
+
+// #2651 NAME — the bay gives a design its own name (the NES asks for one when
+// you save your own course). Pure helpers so excitecheck grades the grammar:
+// a wheel of 27 glyphs (A–Z + a space), a 12-char cap that matches the
+// compileCustom slice, and the save-time normalisation — an unnamed (or pure
+// whitespace) draft still lands on the `CUSTOM` placeholder, so storage and the
+// attract fallback never see an empty name.
+export const NAME_MAX = 12
+export const NAME_WHEEL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ '
+export const pushName = (name, glyph) => (String(name || '').length >= NAME_MAX ? null : String(name || '') + glyph)
+export const popName = (name) => String(name || '').slice(0, -1)
+export const designName = (name) => {
+    const n = String(name || '').trim().replace(/\s+/g, ' ').toUpperCase().slice(0, NAME_MAX)
+    return n || 'CUSTOM'
+}
 export const CUR_STEP = 40           // cursor quantum; stamp footprints align to it
 export const MAX_STAMPS = 12
 

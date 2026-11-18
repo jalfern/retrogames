@@ -30,3 +30,15 @@ export function demoSeats(n) {
 export const demoSeatTrack = (seat, trackCount) => (seat === 0 ? 0 : trackCount + seat - 1)
 export const demoSeatLabel = (seat) => (seat === 0 ? 'MOTOCROSS' : `CUSTOM ${seat}`)
 
+// #2651 BADGE RIDES THE NAME — a saved design is called by its OWN name in the
+// marquee. The badge reads the design's stored name (collapsed, uppercased, the
+// bay's 12-char cap); roster grammar survives only as the FALLBACK: no name, a
+// whitespace mush, or a placeholder (`CUSTOM`, `CUSTOM k`) keeps `CUSTOM k`, so
+// every pre-naming save is byte-honest and MOTOCROSS is untouchable.
+const PLACEHOLDER = /^CUSTOM( \d+)?$/
+export const demoSeatName = (seat, savedName) => {
+    if (seat === 0) return 'MOTOCROSS'
+    const n = String(savedName == null ? '' : savedName).trim().replace(/\s+/g, ' ').toUpperCase().slice(0, 12)
+    return !n || PLACEHOLDER.test(n) ? `CUSTOM ${seat}` : n
+}
+

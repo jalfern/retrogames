@@ -278,9 +278,25 @@ faster heat.
   seats frozen at MOTOCROSS — both die by name) and exciteplay 137/137 (+6:
   real frames drive the finish line via `demoSkip`, board stays empty across
   both line-crossings, badge text == probe label, real 46 s marquee cycles).
-- **Attract name-tags seats by roster number:** the badge reads
-  `CUSTOM 1`, not the design's own name (`SKATEPARK`) — roster grammar;
-  showing saved names in the marquee is open polish.
+- **CLOSED by #2651:** THE BADGE RIDES THE NAME. The bay gained a **NAME**
+  tool (index 9, before the verbs): ←/→ walk a 27-glyph wheel (A–Z + space,
+  wrapping — the wheel is STATE, it keeps its letter between commits), A/SPACE
+  commits, Backspace (the pad's new DEL button) takes one back, and the 12-char
+  cap refuses the thirteenth letter BY NAME (`designName` uppercases/collapses/
+  caps at save, so storage sees one grammar). `abandonToBay` carries the name
+  with the stamps (#2603 promise extended — re-saving never silently renames),
+  splash rows speak saved names, and the attract badge calls a design by its
+  own name (`demoSeatName`, pure: MOTOCROSS untouchable; empty/whitespace or a
+  `CUSTOM`/`CUSTOM k` placeholder keeps byte-honest roster grammar). The strip
+  grew to 12 — type steps down to 6px with a 4px gutter (SAVE/EXIT were already
+  running off the 256px canvas at 11 tools and 8px/10). Proven: excitecheck
+  451/451 (+25 NAME block: wheel/push-pop/cap/placeholder law, end-to-end
+  seat naming, source pins; mutants — fallback removed, cap removed — die by
+  name) and exciteplay 151/151 (+14: real keys name a draft, cap refuses, DEL
+  trims, save speaks it, the marquee flies `DEMO · KU` over its own dirt with
+  `data-demo-name` in the DOM). Honest remainder: the keyboard has no direct
+  TYPE shortcut (the wheel is the law; KeyX/KeyG keep their jobs), and the
+  saved-name column shares the JALFERN watermark row at 7px.
 - **PER-COURSE LEAGUE (#2573 items 5+6):** every course carries a `pace`
    (MOTOCROSS/SUPERCROSS 0 — calibration, all receipts byte-honest; then
    +0.02/+0.03/+0.04, K.O. CROSS +0.06) and `PACK_TIER` [1,2/3,1/3,0,0] rides

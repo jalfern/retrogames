@@ -628,11 +628,13 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('SAVE batteries a legal draft into CUSTOM 1', p.customs === 1 && !!p.edit && p.edit.msg.includes('SAVED'), `customs=${p.customs} msg=${p.edit && p.edit.msg}`)
 
     // erase, then SAVE refuses the blank — the audit is the SAVE gate
-    await page.keyboard.press('ArrowUp'); await wait(40) // SAVE -> ERASE
+    await page.keyboard.press('ArrowUp'); await wait(40) // SAVE -> NAME
+    await page.keyboard.press('ArrowUp'); await wait(40) // NAME -> ERASE (#2651 grew the strip to 12)
     await page.keyboard.press('Space'); await wait(120)   // cursor 400 sits inside the RAMP footprint
     p = await probe()
     r.check('ERASE lifts the stamp under the cursor', p.customs === 1 && p.edit.stamps.length === 0, JSON.stringify(p.edit && p.edit.stamps))
-    await page.keyboard.press('ArrowDown'); await wait(40) // ERASE -> SAVE
+    await page.keyboard.press('ArrowDown'); await wait(40) // ERASE -> NAME
+    await page.keyboard.press('ArrowDown'); await wait(40) // NAME -> SAVE
     await page.keyboard.press('Space'); await wait(120)
     p = await probe()
     r.check('SAVE refuses an empty course (the audit refuses, so storage never sees it)', p.customs === 1 && p.edit.msg.includes('DRAW'), p.edit && p.edit.msg)
@@ -1005,6 +1007,77 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('MOTOCROSS still seats the two-lap book (#2377 promise intact)', p.screen === 'play' && p.track === 0 && p.laps === 2, JSON.stringify({ s: p.screen, tk: p.track, l: p.laps }))
 }
 
+// ---- NAME RIDES THE NAME (#2651): the naming wheel in real keys, the badge in real DOM ----
+{
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(700)
+    await page.keyboard.press('KeyZ'); await wait(250)
+    await page.keyboard.press('Digit0'); await wait(250)
+    await page.keyboard.press('Space'); await wait(120) // RAMP @ 120 — a legal seed draft
+    for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowUp'); await wait(40) } // RAMP → EXIT → SAVE → NAME
+    let e = (await probe()).edit
+    r.check('the tool strip reaches NAME (index 9, before the verbs)', !!e && e.tool === 'NAME', e && e.tool)
+
+    // the wheel: A–Z + space, wrapping both ways; the cursor law stays home
+    await page.keyboard.press('ArrowLeft'); await wait(40)
+    e = (await probe()).edit
+    r.check('the wheel wraps backward onto the space glyph', e.nameSel === 26, `nameSel=${e && e.nameSel}`)
+    for (let i = 0; i < 11; i++) { await page.keyboard.press('ArrowRight'); await wait(30) } // 26→0→10 ('K')
+    e = (await probe()).edit
+    r.check('the wheel wraps forward past Z onto A and walks to K, cursor law untouched', e.nameSel === 10 && e.cursor === 120, JSON.stringify(e && { ns: e.nameSel, c: e.cursor }))
+    await page.keyboard.press('Space'); await wait(80)
+    e = (await probe()).edit
+    r.check('A commits the wheel letter onto the draft', e.name === 'K', e && e.name)
+    for (let i = 0; i < 10; i++) { await page.keyboard.press('ArrowRight'); await wait(30) } // 10→20 ('U')
+    await page.keyboard.press('Space'); await wait(80)
+    r.check('the name builds letter by letter', (await probe()).edit.name === 'KU', (await probe()).edit.name)
+
+    // DEL takes back — and never undercuts empty
+    await page.keyboard.press('Backspace'); await wait(60)
+    await page.keyboard.press('Backspace'); await wait(60)
+    await page.keyboard.press('Backspace'); await wait(60)
+    e = (await probe()).edit
+    r.check('BACKSPACE takes letters back and stops at empty', e.name === '', e && e.name)
+
+    // rebuild KU, then the cap: the thirteenth letter refuses BY NAME.
+    // The wheel keeps its position (nameSel never resets) — walk LEFT from
+    // U (20) back to K (10), commit K, then right to U: the wheel is a state.
+    for (let i = 0; i < 10; i++) { await page.keyboard.press('ArrowLeft'); await wait(30) } // U(20) -> K(10)
+    await page.keyboard.press('Space'); await wait(60) // K
+    for (let i = 0; i < 10; i++) { await page.keyboard.press('ArrowRight'); await wait(30) } // K(10) -> U(20)
+    for (let i = 0; i < 11; i++) { await page.keyboard.press('Space'); await wait(30) } // U ×11 → cap hits after the 12th
+    e = (await probe()).edit
+    r.check('twelve letters fill the name', e.name.length === 12 && e.name === 'K' + 'U'.repeat(11), e && e.name)
+    await page.keyboard.press('Space'); await wait(80)
+    e = (await probe()).edit
+    r.check('the thirteenth letter is refused by name (the bay never lies)', e.msg.includes('MAX') && e.name.length === 12, JSON.stringify(e && { m: e.msg, n: e.name.length }))
+    for (let i = 0; i < 10; i++) { await page.keyboard.press('Backspace'); await wait(30) } // back to KU
+    e = (await probe()).edit
+    r.check('DEL trims back to the design', e.name === 'KU', e && e.name)
+
+    // save speaks the name; the roster and the splash catch it. The seat the
+    // save lands on depends on how many designs earlier blocks left in storage,
+    // so grade the grammar, not a hardcoded slot.
+    await page.keyboard.press('Digit3'); await wait(150)
+    let p = await probe()
+    const kuIdx = p.customNames.indexOf('KU')
+    r.check('SAVE stores the drafted name on a roster slot (others stay placeholder-honest)', kuIdx >= 0 && /^SAVED KU — TRACK \d+$/.test(p.edit.msg) && p.customNames.length === p.customs && p.customNames.filter((n) => n === 'CUSTOM').length === p.customs - 1, JSON.stringify({ m: p.edit && p.edit.msg, cn: p.customNames }))
+    await page.keyboard.press('KeyX'); await wait(200)
+    r.check('the splash row speaks the name it saved', (await page.locator('span', { hasText: /^KU$/ }).count()) >= 1, 'no KU row on the splash')
+
+    // the attract badge rides it: rotate through the seats by skipping scripts
+    const demoOf = () => page.evaluate(() => window.__bikeTest.demo())
+    await page.keyboard.press('Escape'); await wait(250) // splash → attract
+    for (let i = 0; i < 5 && (await demoOf()).label !== 'KU'; i++) { await page.evaluate(() => window.__bikeTest.demoSkip()); await wait(250) }
+    p = await probe()
+    const dmo = await demoOf()
+    const badgeName = await page.getAttribute('[data-demo-track]', 'data-demo-name')
+    const badgeText = await page.textContent('[data-demo-track]')
+    r.check('the marquee flies DEMO · KU over the design\'s own dirt', dmo.label === 'KU' && p.track === 6 + kuIdx && badgeName === 'KU' && badgeText === 'DEMO · KU', JSON.stringify({ lbl: dmo.label, tk: p.track, bn: badgeName, bt: badgeText }))
+    r.check('every design (named or not) is a seat on the rotation', dmo.seats.join() === Array.from({ length: p.customs + 1 }, (_, k) => k).join(), JSON.stringify(dmo.seats))
+}
+
 // ---- ATTRACT DESIGN — the marquee flies your garage (#2647) ----
 {
     const demoState = () => page.evaluate(() => ({
@@ -1035,7 +1108,8 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     const pp = await probe()
     r.check('the bot crossed the league line and the seat ROTATED (no frozen over-screen, the old t2561 bug)', pp.screen === 'attract' && d.d.seat === 1 && pp.tick < 30, JSON.stringify({ s: pp.screen, tk: pp.track, t: pp.tick }))
     r.check('the finish line submitted NOTHING — the board stays empty', d.board === 0, `board=${d.board}`)
-    r.check('CUSTOM 1 rides real design terrain with its badge on', d.d.label === 'CUSTOM 1' && (await probe()).track === 6 && d.badge === 'DEMO · CUSTOM 1', JSON.stringify({ d, tk: (await probe()).track }))
+    r.check('the seat flies the design\'s OWN NAME over real design terrain (#2651 rides #2647)', d.d.label === 'SKATEPARK' && (await probe()).track === 6 && d.badge === 'DEMO · SKATEPARK', JSON.stringify({ d, tk: (await probe()).track }))
+    r.check('the DOM wears the name beside the seat marker (#2651)', (await page.locator('[data-demo-name="SKATEPARK"]').count()) === 1, 'no [data-demo-name] match on the marquee badge')
 
     // and the design's lap comes home the same honest way
     await page.evaluate(() => window.__bikeTest.demoSkip())
