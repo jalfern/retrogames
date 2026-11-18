@@ -97,6 +97,19 @@ const post = async (base, body, headers = {}) => {
     const row1 = listed.sessions.find((s) => s.key === up1.key)
     ok(row1 && row2 && row1.game === 'gauntlet' && row1.seed === 11 && row1.ticks === 60 && row1.player === 'jon', 'listing fields survive the metadata round-trip', JSON.stringify(row1))
     ok(row2 && row2.audio === true && row1.audio === false, 'audio flag comes from the stored file, per row')
+    // #1711 honesty (Chrome 157 capture break, 2026-11-18): a v2 take that
+    // carries its voice SECTION but zero track bytes (finalize found nothing
+    // honest, the section still records the ask) must list audio:false. The
+    // section presence is not audio; bytes are.
+    const rec3 = mkRec(true)
+    rec3.voice = { tracks: [], declined: [] } // the exact Chrome-157 broken-capture shape that validated and uploaded live
+    const up3 = await uploadSession(rec3, { player: 'jon', consent: { motion: true, voice: true, at: 1 }, base: sim.base })
+    ok(up3.ok && !!up3.key, 'v2 take with zero track bytes still uploads (the ask stands)')
+    {
+        const listed3 = await listSessions({ base: sim.base, key: SIM_READ_KEY })
+        const row3 = listed3.sessions.find((s) => s.key === up3.key)
+        ok(row3 && row3.audio === false, 'ZERO-TRACK v2 lists audio:false (a voice section without bytes is not audio — the flag never lies)')
+    }
     ok(listed.sessions[0].key <= listed.sessions[1].key, 'listing is key-ordered (R2 lexicographic semantics preserved)')
 
     // key-shape refusals run through the worker's own regex (with the read

@@ -26,6 +26,16 @@
 //                                                  # on a quiet box (#2654). A contended
 //                                                  # witness run goes RED by design —
 //                                                  # witness again later, never launder.
+//                                                  # #1711 audit 2026-11-18 item 3:
+//                                                  # ONLY a --witness run counts as
+//                                                  # machine evidence for line 3; every
+//                                                  # default run stamps itself
+//                                                  # `line-3 evidence: NO`. And the
+//                                                  # skip now REFUSES the realtime-
+//                                                  # stamp signature — an offset within
+//                                                  # one opus frame (20 ms) of the
+//                                                  # take's own drift is stamped-red,
+//                                                  # not skipped (the bf1a96e pair).
 //
 // How it works: the store is the PRODUCTION worker running in Node (#1711 S5,
 // scripts/lib/relaysim.mjs — cfworkers shim + faithful R2 mock), so the whole
@@ -61,7 +71,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { validate } from '../src/utils/recording.js'
-import { detectClaps, clapVerdict, matchClapEdges, takeEdges, CLAP_TOL_MS, CLAP_SEARCH_MS, CLAP_MIN_PAIRS } from '../src/utils/clapSync.js'
+import { detectClaps, clapVerdict, matchClapEdges, clapPairGate, takeEdges, CLAP_TOL_MS, CLAP_SEARCH_MS, CLAP_MIN_PAIRS } from '../src/utils/clapSync.js'
 import { containerDurationMs, voiceDrift } from '../src/utils/voice.js'
 import { startRelaySim } from './lib/relaysim.mjs'
 import { STORE_DEFAULT } from '../src/utils/sessionStore.js'
@@ -508,28 +518,33 @@ if (MUTATE) {
     r.check(`MUTANT presses 500 ms from their claps -> verdict RED`, !verdict.ok, verdict.why)
     r.check('mutant run still recorded and uploaded (alignment, not plumbing, caught it)', !!(uploaded && uploaded.uploaded && onsets.length === CLAP_MS.length), `onsets ${onsets.length}`)
 } else {
-    // LOAD-HONEST PAIRING GATE (#1711, slot b, 2026-11-18). The synth path aims
-    // presses at the clap's wall instant through a CDP dispatch; when three
-    // browser lanes share the box (12–16 fps sustained) the arrival jitters by
-    // ~100 ms while the audio side stays rock-stable — the same confound that
-    // makes heistplay skip second-shaped gates and claptestplay skip its naming
-    // gates under load. So: when this take's OWN clock trace proves the world
-    // paced > CLAP_TOL off realtime (negative = late mic open, positive = tick
-    // starvation — both contention, see voiceDrift), and the worst offset sits
-    // WITHIN that demonstrated drift band (+tol), the measurement is noise:
-    // SKIP, named, never PASS. Anti-laundering: a desync LARGER than the proven
-    // drift goes RED regardless — the 500 ms mutant stays red on the busiest
-    // box, and --witness turns the skip off entirely for quiet-box proof.
+    // LOAD-HONEST PAIRING GATE (#1711, slot b, 2026-11-18; the 2026-11-18
+    // AUDIT item 3 moved the decision into the pure clapPairGate
+    // (src/utils/clapSync.js, recordcheck-pinned) and added the SIGNATURE ZONE:
+    // a red pair whose offset sits within one opus frame of the take's own
+    // drift REFUSES the skip — that coincidence is what audio stamped on wall
+    // clock instead of the frame clock measures (the bf1a96e run: 102.8 ms
+    // against 102 ms of drift), so the old band swallowed the very failure it
+    // must catch. Larger desync still goes RED; --witness turns skips off.
     const dg = track && Array.isArray(track.clock) && track.clock.length >= 2 ? voiceDrift(track.clock) : null
-    const driftMs = dg ? Math.abs(dg.maxLagMs) : 0
+    const driftMs = dg ? dg.maxLagMs : 0
     const gateLabel = `every clap lands within ±${CLAP_TOL_MS} ms of its frame`
-    if (verdict.ok) {
-        r.check(gateLabel, true, `worst ${verdict.worstMs} ms${driftMs > CLAP_TOL_MS ? ` (world paced ${dg.maxLagMs.toFixed(1)} ms off realtime and it STILL landed)` : ''}`)
-    } else if (!WITNESS && driftMs > CLAP_TOL_MS && Number.isFinite(verdict.worstMs) && verdict.worstMs <= driftMs + CLAP_TOL_MS) {
-        r.skip(gateLabel, `contended box: world paced ${dg.maxLagMs.toFixed(1)} ms off realtime @tick ${dg.worstTick}; worst offset ${verdict.worstMs} ms is inside that drift band (+${CLAP_TOL_MS}) — arrival jitter, not the pipeline. Rerun when the box is quiet, or --witness on a quiet box.`)
+    const gate = clapPairGate({ ok: verdict.ok, worstMs: verdict.worstMs, driftMs, witness: WITNESS })
+    if (gate.action === 'PASS') {
+        r.check(gateLabel, true, `worst ${verdict.worstMs} ms${driftMs > CLAP_TOL_MS ? ` (world paced ${driftMs.toFixed(1)} ms off realtime and it STILL landed)` : ''}`)
+    } else if (gate.action === 'SKIP') {
+        r.skip(gateLabel, `contended box: world paced ${driftMs.toFixed(1)} ms off realtime @tick ${dg.worstTick}; ${gate.why}`)
     } else {
-        r.check(gateLabel, false, `${verdict.why} (worst ${verdict.worstMs} ms${WITNESS ? ', strict --witness' : `, drift band ±${(driftMs + CLAP_TOL_MS).toFixed(0)} ms — exceeds it`})`)
+        r.check(gateLabel, false, `${gate.why} (worst ${verdict.worstMs} ms${WITNESS ? ', strict --witness' : ''}, drift ${driftMs.toFixed(1)} ms${gate.signature ? `, margin ${gate.marginMs} ms` : ''})`)
     }
+    // #1711 audit item 3 (2026-11-18): only a --witness run counts as machine
+    // evidence for line 3 ("audio lines up with the frames to within ±50 ms").
+    // Stamp every non-mutant run with its standing, so a green default run can
+    // never be quoted at the acceptance line by mistake — the human proof is a
+    // phone take with ≥3 clap-coincident taps graded by the analyze path.
+    r.info('line-3 machine evidence (#1711)', WITNESS
+        ? 'YES — strict --witness run, pair gate never skipped'
+        : 'NO — not a witness run. Quote this green for pipeline health only; line 3 closes on a --witness run or one human phone take.')
     r.check('onsets heard: exactly one clap per press', onsets.length === CLAP_MS.length, `${onsets.length}/${CLAP_MS.length}`)
 }
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
