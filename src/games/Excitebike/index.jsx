@@ -925,7 +925,7 @@ const ExcitebikeGame = () => {
                 try { localStorage.setItem(LAP_TIP_KEY, '1') } catch { /* it rides this session anyway */ }
                 draft.tip = tip; draft.tipT = 260
                 audioController.playTone(880, 0.06, 'triangle', 0.04, 0.28)
-            }
+            } else draft.tipT = 0 // the lesson belongs to the SAVE that earned it — a later receipt replaces it
         }
         const testDraft = () => {
             // ONE legality law (the same auditCustomData SAVE reads) — an
