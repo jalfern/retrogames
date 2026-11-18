@@ -113,7 +113,7 @@ import {
     SNEAK_DUE, SNEAK_WINDOW, SNEAK_LOOT, sneakNightDue, hasAlarm, ringSneak, SNEAK_CREEP, SNEAK_SIREN,   // #2520: the sneak — the window, the loot list, the parity, the alarm, the rig
     PROWL_DUE, PROWL_WINDOW, prowlNightDue, PET_PROWL_FUN, ringProwl, PROWL_PADS, PROWL_HOME_SFX,   // #2532: Miso's even-night prowl — the window, the parity, the cat-scale pay, the rig, the sound tables
 } from '../src/games/Homebody/sim.js'
-import { bondRows } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight
+import { bondRows, pairStride, strollTrail, STRIDE_BOB } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail
 import { readFileSync } from 'node:fs'
 
 const DT = FIXED_DT / 1000
@@ -1980,6 +1980,110 @@ section('NEIGH VIEW (#2599): pair bubbles, teal reunion, guest sulks, warmth spa
     check('pin: the ring is once per demo run, re-armed by the next street',
         /neighBeatRung = demoG/.test(nvJsx) && /freshDemo = \(\) => \{ neighBeatRung = null/.test(nvJsx))
     check('pin: the attract wires its marquee to the hook', /onIndex=\{\(i\) => \{ marqueeIx\.current = i \}\}/.test(nvJsx))
+}
+
+// ------------------------------------- NEIGH STROLL VIEW (#2618) ----
+// The lap's view pass: the pair strides facing each other, settles on arrival,
+// the route is named at the fire tick, the attract sells a lap, and the panel
+// pips walk. Pure view — sim.js must not learn any of these words.
+section('NEIGH STROLL VIEW (#2618): stride bob, facing turn, arrival settle, route trail, attract lap, panel pips')
+{
+    const svArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const svJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const svSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+
+    const hang = (g, key, name, r, c, hue) => {
+        g.visitAfter = 99; g.ivyAfter = 99; g.ivyGap = 0
+        g[key] = { name, r, c, x: tileX(c) + TILE / 2, y: tileY(r) + TILE / 2, path: null, state: 'hang',
+            t: 0, hue, face: 1, walkPhase: 0, chatT: 0, hangUntil: 9999, neighT: 0 }
+        return g[key]
+    }
+    const park = (p, r, c) => { p.r = r; p.c = c; p.x = tileX(c) + TILE / 2; p.y = tileY(r) + TILE / 2; p.path = null; p.goal = null; p.use = null; p.working = false; p.faintT = 0; if (p.queue) p.queue.length = 0; p.owner = null; if (p.needs) for (const n of ['hunger', 'energy', 'fun', 'social', 'bladder']) p.needs[n] = Math.max(p.needs[n], 0.55) }
+    const free = (g) => [[g.people[0], 6, 8], [g.people[1], 1, 1]]
+    const lap = (g, pairs, sec, sink) => { for (let i = 0; i < Math.round(sec / DT); i++) { pairs.forEach(([p, r, c]) => park(p, r, c)); g.hour = Math.min(g.hour, 10); advance(g, DT); if (sink) sink.push(...drain(g)); else drain(g) } }
+
+    // Data helpers first: pairStride answers ONLY mid-lap, aimed at the partner.
+    const v = newRun(2618); hang(v, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(v, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    check('pairStride answers null while both hang — no phantom stride on an idle pair',
+        pairStride(v.visitor, v.ivy) === null && pairStride(null, v.ivy) === null)
+    check('strollTrail honest on empty, cap three', strollTrail(null).length === 0 && strollTrail([]).length === 0 && strollTrail([{ r: 0, c: 0 }, { r: 0, c: 1 }, { r: 1, c: 1 }, { r: 2, c: 1 }]).length === 3)
+    const evF = []
+    lap(v, free(v), NEIGH_STROLL_T + 0.3, evF)
+    check('a lap is running for the view gates to read', evF.filter((e) => e.t === 'neigh-stroll').length === 1)
+    const mid = pairStride(v.visitor, v.ivy)
+    check('mid-lap: pairStride answers, and each face points at the partner',
+        !!mid && mid.aFace === (v.ivy.x >= v.visitor.x ? 1 : -1) && mid.bFace === (v.visitor.x >= v.ivy.x ? 1 : -1),
+        mid ? `${mid.aFace}/${mid.bFace}` : 'null')
+    const rowsMid = bondRows(v)
+    check('mid-lap: the NEIGH row carries the stroll flag — that row and ONLY that row',
+        rowsMid.find((r) => r.key === 'neigh').strolling === true && rowsMid.filter((r) => r.strolling).length === 1)
+    // the trail is the lead's own first steps, as pixel centres (the fire-tick capture)
+    const tr = strollTrail(v.visitor.path)
+    check('the trail rides the lead path: pixel centres of the first cells, nothing invented',
+        tr.length > 0 && tr.length <= 3 && tr.every((d, i) => d.x === tileX(v.visitor.path[i].c) + TILE / 2 && d.y === tileY(v.visitor.path[i].r) + TILE / 2))
+    const hB = stateHash(v)
+    pairStride(v.visitor, v.ivy); bondRows(v); strollTrail(v.visitor.path)
+    check('the view helpers are honest — reading them moves no state (hash identical)', stateHash(v) === hB)
+
+    // Run the lap to its landing: stride and pips must rest with it.
+    for (let i = 0; i < Math.round(16 / DT); i++) {
+        free(v).forEach(([p, r, c]) => park(p, r, c))
+        v.hour = Math.min(v.hour, 10)
+        advance(v, DT); drain(v)
+        if (!v.visitor.path && !v.ivy.path) break
+    }
+    check('arrived: the stride answers null and the panel pips rest',
+        pairStride(v.visitor, v.ivy) === null && bondRows(v).find((r) => r.key === 'neigh').strolling === false)
+
+    // Pins — the painter wears the stride.
+    check('pin: the stride deepens the bob past the solo walk (2.2 > 1.6) and gates on the view flag',
+        /export const STRIDE_BOB = 2\.2/.test(svArt) && STRIDE_BOB > 1.6 && /stride \? Math\.sin\(p\.walkPhase\) \* STRIDE_BOB/.test(svArt))
+    check('pin: mid-route the eyes lead toward the partner (the cold-war turn keeps its away-lean)',
+        /stride \? stride\.face \* 1\.4 : p\.face >= 0 \? 1\.4 : -1\.4/.test(svArt))
+    check('pin: the pair carries the flag through the painter — stride computed once per frame, worn per person',
+        /ps = pairStride\(g\.visitor, g\.ivy\)/.test(svJsx) && /o\.p === g\.visitor \? \{ face: ps\.aFace \} : o\.p === g\.ivy \? \{ face: ps\.bFace \}/.test(svJsx))
+    check('pin: a cold war never strides — the grudge outranks the beat and clears the walk flag',
+        /if \(g\.visitor && g\.ivy && !g\.neiGrudge\)/.test(svJsx) && /else stridePrevWalk = false/.test(svJsx))
+
+    // Pins — arrival.
+    check('pin: arrival counts walkers — it survives the lead landing first and fires when the last foot stops',
+        /if \(walkN === 2\) stridePrevWalk = true/.test(svJsx)
+        && /else if \(walkN === 0 && stridePrevWalk && g\.visitor\.state === 'hang' && g\.ivy\.state === 'hang'\)/.test(svJsx))
+    check('pin: the settle half-second holds the faces on each other',
+        /if \(!ps && neighArrive > 0\) ps = \{ aFace: g\.ivy\.x >= g\.visitor\.x \? 1 : -1, bFace: g\.visitor\.x >= g\.ivy\.x \? 1 : -1 \}/.test(svJsx))
+    check('pin: the arrival pays one soft note — live only, the attract pre-empts the audio unlock',
+        /if \(live\) audioController\.playTone\(523, 0\.09, 'sine', 0\.02\)/.test(svJsx) && /neighArrive = 0\.5/.test(svJsx))
+    check('pin: the settle and the route tell fade on the real clock',
+        /neighArrive = Math\.max\(0, neighArrive - dtMs \/ 1000\)/.test(svJsx)
+        && /if \(strollFx > 0\) strollFx = Math\.max\(0, strollFx - dtMs \/ 1000\)/.test(svJsx))
+
+    // Pins — the route tell.
+    check('pin: the trail captures off the lead path AT the fire tick and paints over 2.5 s',
+        /strollDots = strollTrail\(s\.visitor && s\.visitor\.path\)/.test(svJsx) && /strollFx = 2\.5/.test(svJsx)
+        && /if \(strollFx > 0\) drawStrollTrail\(ctx, strollDots, strollFx \/ 2\.5\)/.test(svJsx))
+    check('pin: the trail dots are the pair teal, shrinking down the route',
+        /i % 2 \? '#7fd0c0' : '#3aa08a'/.test(svArt) && /const s = 2\.4 - i \* 0\.5/.test(svArt))
+
+    // Pins — the attract sells a lap on the WALK copy beat.
+    check('pin: the STROLL marquee index derives from the copy, never a magic number',
+        /MESSAGES\.findIndex\(\(m\) => m\.startsWith\('WHILE THEY TALK'\)\)/.test(svJsx))
+    check('pin: on that beat the demo rings Ivy while Fern hangs, before dusk',
+        /marqueeIx\.current === STROLL_MARQUEE[\s\S]{0,200}demoG\.visitor && demoG\.visitor\.state === 'hang' && !demoG\.ivy && demoG\.hour < 19/.test(svJsx)
+        && /strollBeatRung = demoG[\s\S]{0,140}demoG\.ivyAfter = Math\.min\(demoG\.ivyAfter, Math\.floor\(demoG\.hour\)\); demoG\.ivyGap = 0/.test(svJsx))
+    check('pin: the lap ring is once per demo run, re-armed by the next street — and no stale view state crosses it',
+        /freshDemo = \(\) => \{ neighBeatRung = null; strollBeatRung = null; stridePrevWalk = false/.test(svJsx)
+        && /stridePrevWalk = false; neighArrive = 0; strollFx = 0; strollDots = null/.test(svJsx))
+
+    // Pins — the panel teaches the walk from the BONDS row.
+    check('pin: the lap flag rides the NEIGH row as derived data, read from the paths themselves',
+        /strolling: !!\(s\.visitor && s\.visitor\.path && s\.visitor\.path\.length \|\| s\.ivy && s\.ivy\.path && s\.ivy\.path\.length\)/.test(svArt))
+    check('pin: the panel walks two teal pips beside the flagged row, stepping on the clock',
+        /if \(row\.strolling\)/.test(svArt) && /Math\.floor\(t \* 4\) % 2/.test(svArt)
+        && /'#7fd0c0'[\s\S]{0,120}'#3aa08a'/.test(svArt))
+
+    // The pass stays on the view side of the wall.
+    check('pin: the view pass stays out of the sim — the economy never heard of these tells',
+        !/pairStride|strollTrail|STRIDE_BOB|neighArrive|strollFx|strollDots|strolling:/.test(svSim))
 }
 
 // ----------------------------------------------------------- PET (#2197) -----

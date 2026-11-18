@@ -23,6 +23,39 @@ import {
 // dress colours, so a line between THEM reads as theirs at a glance.
 export const PAIR_HUES = ['#4fae5f', '#a3579b']
 
+// #2618 item 1: the stroll stride — the pair's walk sell. Both guests mid-path
+// is a pair WALKING TOGETHER, not two sprites translating: the bob deepens past
+// the solo walk's 1.6 and each turns toward the other mid-route (chatting while
+// strolling, like the original's conversation ambles). Pure view math: it reads
+// only the two guests' paths, decides nothing, and answers null outside a lap.
+export const STRIDE_BOB = 2.2
+export function pairStride(a, b) {
+    if (!a || !b || !a.path || !a.path.length || !b.path || !b.path.length) return null
+    return { aFace: b.x >= a.x ? 1 : -1, bFace: a.x >= b.x ? 1 : -1 }
+}
+
+// #2618 item 3: the route tell — the fire tick names the road before feet hit
+// it. The first steps of the lead's path, as pixel centres; the painter rides
+// the fire tick and fades them on the real clock. Draw-only.
+export function strollTrail(path, n = 3) {
+    if (!path || !path.length) return []
+    return path.slice(0, n).map((c) => ({ x: tileX(c.c) + TILE / 2, y: tileY(c.r) + TILE / 2 }))
+}
+
+// #2618 item 3: the tell that paints the trail — small teal dots on the first
+// cells of the route, shrinking and fading as the lap walks them off. The pair's
+// teal, alternating with the light leaf of #2599's sparkles. k = time remaining.
+export function drawStrollTrail(ctx, dots, k) {
+    if (!dots || !dots.length || k <= 0) return
+    ctx.globalAlpha = Math.min(1, k)
+    dots.forEach((d, i) => {
+        const s = 2.4 - i * 0.5
+        ctx.fillStyle = i % 2 ? '#7fd0c0' : '#3aa08a'
+        ctx.beginPath(); ctx.arc(d.x, d.y, s, 0, 7); ctx.fill()
+    })
+    ctx.globalAlpha = 1
+}
+
 const P = {
     grass: '#69a23f', grass2: '#5d9236', grass3: '#77b04a',
     path: '#c9b48a', path2: '#bda87e',
@@ -526,8 +559,10 @@ export function drawGroundGift(ctx, g) {
     ctx.globalAlpha = 1
 }
 
-export function drawPerson(ctx, p, t, active, fx = null, lean = 0) {
-    const bob = p.path && p.path.length ? Math.sin(p.walkPhase) * 1.6 : Math.sin(t * 2 + p.x) * 0.6
+export function drawPerson(ctx, p, t, active, fx = null, lean = 0, stride = null) {
+    // #2618 item 1: stride while strolling together (deepens the solo walk's 1.6);
+    // arriving, the pair settles facing each other on the same view flag.
+    const bob = stride ? Math.sin(p.walkPhase) * STRIDE_BOB : p.path && p.path.length ? Math.sin(p.walkPhase) * 1.6 : Math.sin(t * 2 + p.x) * 0.6
     const x = Math.round(p.x), y = Math.round(p.y)
     const fainted = p.faintT > 0
     // shadow
@@ -546,7 +581,7 @@ export function drawPerson(ctx, p, t, active, fx = null, lean = 0) {
     }
     const leanA = fx === 'spat' ? lean * 0.14 + Math.sin(t * 22 + p.x) * 0.035 : fx === 'cold' ? lean * 0.07 : 0
     if (leanA) { ctx.save(); ctx.translate(x, y + 11); ctx.rotate(leanA); ctx.translate(-x, -(y + 11)) }
-    body(ctx, p, t, bob, fx, lean)
+    body(ctx, p, t, bob, fx, lean, stride)
     if (leanA) ctx.restore()
     // #2143: Ivy of FRIENDS+ arrives with the market basket — woven pixels,
     // greens and a tomato on top; it swings on the walk, rests when she hangs.
@@ -634,7 +669,7 @@ export function drawPerson(ctx, p, t, active, fx = null, lean = 0) {
     }
 }
 
-function body(ctx, p, t, bob, fx = null, lean = 0) {
+function body(ctx, p, t, bob, fx = null, lean = 0, stride = null) {
     const x = Math.round(p.x), y = Math.round(p.y)
     const leg = p.path && p.path.length ? Math.sin(p.walkPhase * 2) * 3 : 0
     // legs
@@ -662,9 +697,10 @@ function body(ctx, p, t, bob, fx = null, lean = 0) {
     // hair
     ctx.fillStyle = p.name === 'Fern' ? '#2f7d3a' : p.name === 'Mira' ? '#7a4a28' : p.name === 'Ivy' ? '#5d3b63' : '#3c2a17'
     ctx.beginPath(); ctx.arc(x, y - 12.4 + bob, 5.4, Math.PI, 0); ctx.fill()
-    // eyes — on a cold war they turn away from the partner (#2076)
+    // eyes — on a cold war they turn away from the partner (#2076); on a stroll
+    // they turn TOWARD it (#2618 item 1) — mid-route the pair talks faces.
     ctx.fillStyle = '#241a10'
-    const ex = (p.face >= 0 ? 1.4 : -1.4) + (fx === 'cold' ? lean * 1.1 : 0)
+    const ex = (stride ? stride.face * 1.4 : p.face >= 0 ? 1.4 : -1.4) + (fx === 'cold' ? lean * 1.1 : 0)
     ctx.fillRect(x - 2 + ex, y - 12 + bob, 1.4, 1.6)
     ctx.fillRect(x + 1 + ex, y - 12 + bob, 1.4, 1.6)
     // #2076: mid-spat the brows knife down toward the partner
@@ -1183,6 +1219,16 @@ export function drawPanel(ctx, s, t, collapse = null, hoverName = null) {
             const dx = row.x + 82, dy = row.y + 3.5
             ctx.beginPath(); ctx.moveTo(dx, dy - 3); ctx.lineTo(dx + 3, dy); ctx.lineTo(dx, dy + 3); ctx.lineTo(dx - 3, dy); ctx.closePath(); ctx.fill()
         }
+        if (row.strolling) {
+            // #2618 item 5: the lap teaches itself from the panel — two teal foot
+            // pips walking in step beside the NEIGH row while a lap is in flight
+            // (the ash-teal tell at the cold end, the walk at the warm one).
+            const step = Math.floor(t * 4) % 2
+            ctx.fillStyle = '#7fd0c0'
+            ctx.fillRect(row.x + 54, row.y + 2 - step, 2.4, 3.4)
+            ctx.fillStyle = '#3aa08a'
+            ctx.fillRect(row.x + 58, row.y + 2 + step, 2.4, 3.4)
+        }
     }
     const mood = petMood(s)
     if (mood !== null) {
@@ -1299,7 +1345,10 @@ export function bondRows(s) {
         // own colour (and from every other row hue in the phone-scale probe).
         // #2604: ash-teal while the pair's own grudge holds — the HOUSE row's
         // grudge-ash pattern, mirrored on the web's third strand.
-        { key: 'neigh', glyph: 'twin', col: s.neiGrudge ? '#2c6b5b' : '#3aa08a', lv: relLevel(s.rel.neigh), label: 'NEIGH', x: PANEL_X + 12, y: by + 54, pulse: relLevel(s.rel.neigh) === 3 },
+        // #2618 item 5: `strolling` marks a lap in flight — either guest carries
+        // a path. View-only, derived like `warm`; the panel teaches the walk law
+        // from the row the law belongs to.
+        { key: 'neigh', glyph: 'twin', col: s.neiGrudge ? '#2c6b5b' : '#3aa08a', lv: relLevel(s.rel.neigh), label: 'NEIGH', x: PANEL_X + 12, y: by + 54, pulse: relLevel(s.rel.neigh) === 3, strolling: !!(s.visitor && s.visitor.path && s.visitor.path.length || s.ivy && s.ivy.path && s.ivy.path.length) },
     ]
     if (s.kid) rows.push({ key: 'kid', glyph: 'star', col: '#ffd24a', lv: relLevel(s.rel.kid), label: 'PIP', x: PANEL_X + 12, y: by + 68, pulse: false })
     return rows
