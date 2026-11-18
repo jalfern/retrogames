@@ -22,7 +22,7 @@ import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
 import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, ownTerrain } from './levels.js'
 import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom } from './custom.js'
 import { plan, decide } from './planner.js'
-import { PRESS, MESSAGES } from './attract.js'
+import { PRESS, MESSAGES, demoSeats, demoSeatTrack, demoSeatLabel } from './attract.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
@@ -85,6 +85,8 @@ const ExcitebikeGame = () => {
     const watchingRef = useRef(false)
     const [ownRide, setOwnRide] = useState(false) // #2603 riding your own design — the pad grows EXIT
     const ownRef = useRef(false)
+    const [demoTrack, setDemoTrack] = useState('MOTOCROSS') // #2647 attract badge — which seat rides
+    const demoTrackRef = useRef('MOTOCROSS')
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -302,16 +304,55 @@ const ExcitebikeGame = () => {
             for (let i = flashes.length - 1; i >= 0; i--) if (++flashes[i].t > 12) flashes.splice(i, 1)
             for (let i = scars.length - 1; i >= 0; i--) { scars[i].t++; if (scars[i].fade > 0 && ++scars[i].fade > 40) scars.splice(i, 1) }
             if (gs.end) {
+                // #2647 VIEWER SEATS — the attract/splash demo is eyes-only.
+                // Ground truth before this law: the MOTOCROSS replay reached its
+                // finish line at ~t2561, finish(true) wrote the BOT's score into
+                // excitebike.board, and the marquee froze on the over screen
+                // until a key was touched. A demo submits nothing — tickDemo
+                // rotates the seat on the next tick.
+                const vsc = screenRef.current
+                if (vsc === 'attract' || vsc === 'tracks') { /* demo end — nothing to submit */ }
                 // #2587 a test lap finishing walks you back to the bay — the
                 // over screen and the leaderboard are the league's, not a draft's.
-                if (testRide.active) endTestRide(gs.end === 'win' ? 'LAP DOWN — BACK TO THE BAY' : 'TIME OUT — BACK TO THE BAY')
+                else if (testRide.active) endTestRide(gs.end === 'win' ? 'LAP DOWN — BACK TO THE BAY' : 'TIME OUT — BACK TO THE BAY')
                 else finish(gs.end === 'win')
             }
         }
+        // #2647 ATTRACT SEATS — MOTOCROSS keeps the memoized proven run; each
+        // saved design is planned once, lazily, by the SAME autopilot (plan is
+        // the attract's own source). The cache keys on the compiled terrain
+        // OBJECT: re-saving a slot swaps CACHE's entry (levels.js
+        // registerCustom), so an identity miss re-plans and the demo never
+        // rides stale dirt. The lazy ~110 ms plan rides an idle screen, not a
+        // race — one dropped frame on the marquee, once per design.
+        let demoSeq = 0
+        const demoCache = new Map()
+        const demoRunFor = (seat) => {
+            const idx = demoSeatTrack(seat, TRACK_COUNT)
+            if (idx === 0) return provenRun()
+            const t = track(idx)
+            if (!demoCache.has(t)) demoCache.set(t, plan({ track: idx, laps: 1 }))
+            return demoCache.get(t)
+        }
+        const saySeat = (lbl) => { if (demoTrackRef.current !== lbl) { demoTrackRef.current = lbl; setDemoTrack(lbl) } }
         const tickDemo = () => {
             if (!demoReady) return
-            const run = provenRun()
-            if (gs.end || demoAt >= run.script.length) { gs = makeGame(0, { gear: 'high' }); demoAt = 0; clearJuice() }
+            const seats = demoSeats(customsRef.current)
+            let seat = seats[demoSeq % seats.length]
+            let run = demoRunFor(seat)
+            if (gs.end || demoAt >= run.script.length) {
+                // #2647 rotate the seat: MOTOCROSS first, then your saved designs
+                // in roster order. A design rides ONE lap of its own length — the
+                // whole draft in a breath — while MOTOCROSS keeps its byte-pinned
+                // proven script untouched (the contact receipts stay law).
+                demoSeq = (demoSeq + 1) % seats.length
+                seat = seats[demoSeq]
+                run = demoRunFor(seat)
+                gs = makeGame(demoSeatTrack(seat, TRACK_COUNT), { gear: 'high', ...(seat === 0 ? {} : { laps: 1 }) })
+                demoAt = 0
+                clearJuice()
+                saySeat(demoSeatLabel(seat)) // the badge names what flies
+            }
             doSim(run.script[demoAt++])
         }
         const doFrameSim = () => {
@@ -1071,6 +1112,12 @@ const ExcitebikeGame = () => {
                 start: () => startPlay(0),
                 watching: () => watchingRef.current, // #1637 watchcheck pilot drives these
                 watchSfx: watchSfxLog,
+                // #2647 the seat ladder + label the marquee is flying, and a
+                // fast-forward to the CURRENT seat's last input — the finish tick
+                // still replays through the real doSim, so the viewer guard and
+                // the rotation are driven honestly; only the clock is skipped.
+                demo: () => ({ seat: demoSeq % demoSeats(customsRef.current).length, seats: demoSeats(customsRef.current), label: demoTrackRef.current }),
+                demoSkip: () => { const ss = demoSeats(customsRef.current); demoAt = Math.max(0, demoRunFor(ss[demoSeq % ss.length]).script.length - 1) },
                 track: (i) => startPlay(i),
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
@@ -1221,6 +1268,10 @@ const ExcitebikeGame = () => {
                         <p className="text-white font-mono font-bold mt-3 animate-pulse">{PRESS}</p>
                         <span className="block mt-2 font-mono text-[11px] tracking-widest text-emerald-300/90">{WATCH_ATTRACT_HINT}</span>
                         <AttractMessage className="text-cyan-100/80 mt-2 px-8" messages={MESSAGES} />
+                        {/* #2647 the marquee names what flies — MOTOCROSS or YOUR
+                            design, so the garage sees itself from across the room.
+                            A caption, not a message (#365 one-at-a-time holds). */}
+                        <span data-demo-track className="block mt-3 font-mono text-[10px] tracking-[0.35em] text-[#ffe23f]/70">DEMO · {demoTrack}</span>
                     </div>
                 </>
             )}
