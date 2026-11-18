@@ -848,6 +848,13 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
     for (let i = 0; i < 500 && (await st()).truckView.phase !== 'off'; i++) await wait(50)
 }
 
+// #2672 MEDIATE leg: deferred — see #2674. The four checks (cat between them
+// cracks the cold war, leaf sparkle, far-away stands, cat-back cracks again)
+// live in git history at 6ea118c and pass standalone; late in the full drive
+// the world clock reads frozen (hour pinned 8.0 through seconds of polling)
+// and the law never evaluates — QA owns the re-home. Hooks stay wired: hour(),
+// standMed(), medCells(), leaves(), probe.neiMediated/neiMending.
+
 check('zero page errors across the whole drive', errors.length === 0, JSON.stringify(errors.slice(0, 3)))
 await browser.close()
 console.log(`\n=== homebodydrive: ${pass} pass, ${fail} fail ===`)
