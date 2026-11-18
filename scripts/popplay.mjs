@@ -167,21 +167,43 @@ r.check('the rescued hour drops the bed at the princess door', mEnd.track !== 'p
 // release 129, two cues, unharmed with the block held), the bed audibly
 // lays back, and comes back up when the steel goes quiet.
 // Dismiss the end card AND confirm the reset actually ran before seating the
-// duel at L1: a single tap can land on the ~3 s level-CLEAR card (still not
-// the end card) and get consumed without clearing the end-seen latch — the
-// first held arrow would then re-kick a fresh L0 (no guards) under the drive.
-// Fresh-L0 signature: play + level 0 + zero guards (only L0 has none).
+// duel at L1. Two traps, both measured this session: an R-restart leaves the
+// end-seen latch set (the next arrow re-kicks a fresh L0 — no guards); and a
+// quick press() can fall entirely between polled input frames on a loaded box
+// (presses must be held long enough to be seen). Fresh-L0 signature: play +
+// level 0 + zero guards (only L0 has none).
+const arrowTap = async () => {
+    await page.keyboard.down('ArrowRight')
+    await page.waitForTimeout(150)
+    await page.keyboard.up('ArrowRight')
+    await page.waitForTimeout(150)
+}
 for (let i = 0; i < 20; i++) {
     const pD = await probe()
     if (pD.status === 'play' && pD.level === 0 && (!pD.guards || pD.guards.length === 0)) break
-    await page.keyboard.press('ArrowRight')
-    await page.waitForTimeout(250)
+    await arrowTap()
 }
-await page.evaluate(() => window.__popTest.goto(1))
+// Seat L1 and PROVE it sticks (guards present) — a late end-card kick can
+// land right after goto(1) and silently drop the drive back to L0.
+for (let i = 0; i < 10; i++) {
+    await page.evaluate(() => window.__popTest.goto(1))
+    await page.waitForTimeout(160)
+    const pS = await probe()
+    if (pS.level === 1 && pS.guards && pS.guards.length > 0) break
+}
 await page.evaluate(() => window.__dbg && window.__dbg.act('give sword'))
 await page.waitForFunction(() => window.__popTest.musicState().playing, null, { timeout: 4000 })
+// Base bed: only samples taken while the bus is at full level (the guard
+// closes into range within ~1 s of seating, and on a starved box wind-up can
+// land mid-sampling). The recovered window below also feeds the baseline, so
+// an early engage can't contaminate the ratio.
 let baseMax = 0
-for (let i = 0; i < 12; i++) { baseMax = Math.max(baseMax, (await mus()).peak); await page.waitForTimeout(50) }
+for (let i = 0; i < 16; i++) {
+    const mB = await mus()
+    if (mB.level !== 1) break
+    baseMax = Math.max(baseMax, mB.peak)
+    await page.waitForTimeout(50)
+}
 await page.keyboard.down('ArrowRight')
 await page.keyboard.down('ArrowUp')
 let engaged = false
@@ -211,6 +233,7 @@ await page.keyboard.up('ArrowUp')
 let recMax = 0
 for (let i = 0; i < 10; i++) { recMax = Math.max(recMax, (await mus()).peak); await page.waitForTimeout(50) }
 const mDuel = await mus()
+baseMax = Math.max(baseMax, recMax)
 r.check('duck-over-bed MEASURED on the live analyser: bed peak falls while the exchange lays back (#2667)',
     engaged && duckMax > 0 && duckMax < baseMax * 0.85, `base ${baseMax} -> laid back ${duckMax}`)
 r.check('the bed returns when the steel goes quiet — never silent, never stuck (#2667)',
