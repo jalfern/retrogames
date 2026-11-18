@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs'
 import { makeGame, step, stateHash, CFG } from '../src/games/Excitebike/sim.js'
 import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, hasTestTrack, ownTerrain, PACE } from '../src/games/Excitebike/levels.js'
 import { plan, decide } from '../src/games/Excitebike/planner.js'
-import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, TOOLS, NAME_MAX, NAME_WHEEL, pushName, popName, designName, lapLabel, overBookLabel, lapCycle, badgeCompact, lapTipFor, LAP_TIP } from '../src/games/Excitebike/custom.js'
+import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, TOOLS, NAME_MAX, NAME_WHEEL, pushName, popName, designName, lapLabel, overBookLabel, lapCycle, badgeCompact, lapTipFor, LAP_TIP, BOB_TICKS, bikeBob, KIND_COLOR, toolLabelColor } from '../src/games/Excitebike/custom.js'
 import { demoSeats, demoSeatTrack, demoSeatLabel, demoSeatName } from '../src/games/Excitebike/attract.js'
 
 const MUT = process.argv.includes('--mutate')
@@ -1858,6 +1858,34 @@ section('YOUR-LAPS POLISH (#2632): over-book line, book-end tells, compact badge
     ok(/lapTipFor\(draft\.laps, seenTip\)/.test(sx) && /LAP_TIP_KEY/.test(sx), '#2632: the first-SAVE tip stopped reading storage before it spoke')
     ok(/data-over-book=\{end\.book\}/.test(sx), '#2632: the over screen stopped wearing the book in the DOM — prod cannot see it rides')
     ok(/data-badge-compact=\{badgeCompact\(L\)\}/.test(sx), '#2632: the badge lost its compact phone form — the 375px row crowds the pack pips')
+}
+
+// ---- #2665 BAY STAMP AND KIND PALETTE ------------------------------------
+// The bay owed two view laws (README honest gap: "a silhouette + colour bar,
+// not the animated NES stamp cursor; palette labels are text"). The laws live
+// in custom.js; these pins grade the laws AND the wiring that paints them.
+section('BAY STAMP AND KIND PALETTE (#2665): bob law, splash cadence, colour-identity strip')
+{
+    const sx2 = readFileSync(new URL('../src/games/Excitebike/index.jsx', import.meta.url), 'utf8')
+    ok(BOB_TICKS === 15, '#2665: the bay bob left the splash cadence (BOB_TICKS must stay 15 ticks = the svg 0.5s steps(1) beat at 60fps)')
+    let vals = new Set()
+    for (let v = 0; v <= 900; v++) vals.add(bikeBob(v))
+    ok([...vals].sort().join(',') === '0,1', `#2665: bikeBob left its two frames (${[...vals].sort().join(',')}) — the NES stamp is A/B, not a glide`)
+    ok(bikeBob(0) === 0 && bikeBob(BOB_TICKS - 1) === 0 && bikeBob(BOB_TICKS) === 1 && bikeBob(2 * BOB_TICKS) === 0,
+        '#2665: the bob flipped off its boundaries (hold BOB_TICKS, flip once per period)')
+    const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8')
+    ok(/@keyframes bikebob/.test(css) && /bikebob 0\.5s steps\(1\)/.test(sx2) && BOB_TICKS * 2 / 60 === 0.5,
+        '#2665: bay and splash no longer beat as one clock (splash bikebob 0.5s ↔ BOB_TICKS*2 frames @60)')
+    const lawKinds = [...STAMP_KINDS, 'TEST', 'LAP', 'ERASE', 'SAVE', 'EXIT']
+    ok(lawKinds.every((k) => /^#[0-9a-f]{6}$/i.test(KIND_COLOR[k] || '')), '#2665: a tool lost its kind colour (or took an alpha — the strip colour must read straight off the pixels)')
+    ok(lawKinds.every((k) => toolLabelColor(k) === KIND_COLOR[k]) && toolLabelColor('NAME') === '#f8f8f8',
+        '#2665: toolLabelColor stopped mirroring KIND_COLOR (or the NAME fallback fell over)')
+    ok(lawKinds.every((k) => toolLabelColor(k).length === 7), '#2665: a label colour grew an alpha suffix — opaque is the pixel-proof law')
+    ok(!/const KIND_COLOR = \{/.test(sx2), '#2665: a second KIND_COLOR appeared in the page — the palette identity law lives in custom.js, once')
+    ok(/const by = Math\.round\(gy\) - bikeBob\(vclock\)/.test(sx2), '#2665: the bay stamp stopped seating on the surface and bobbing by the law')
+    ok(/bayPaint\.cx = cx; bayPaint\.gy = gy; bayPaint\.on = kind !== 'ERASE'/.test(sx2), '#2665: the probe stopped taking the stamp paint-time receipt (cx/gy/on)')
+    ok(/ctx\.fillStyle = toolLabelColor\(TOOLS\[i\]\)/.test(sx2) && !/rgba\(248,248,248,0\.5\)/.test(sx2),
+        '#2665: grey chalk is back on the palette strip — labels wear their kind colour now (law once, from custom.js)')
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
