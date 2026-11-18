@@ -426,6 +426,55 @@ export function laneEscapes(gs, x, y) {
     }
     return out
 }
+// #2711 s2 TEACH THE KNEE — the sixth law's refusal shows its honest truth on the
+// board, in the same green language the elbow and lane lessons speak (#2627 s2,
+// #2622 s1). A corner or lane refusal has a plug-answer: rack a mouth, a spur is
+// legal. The knee can never offer that — racks only ever SHRINK the knee net (each
+// added rack removes cells and swing paths, never frees one: monotonic), so no plug
+// makes a swing cell legal. What the law can prove is two-fold, and this answers
+// both, pure and zero-footprint (#1917, fixed NB order, no rng):
+//   BENDS — the turns the refused click sits inside: elbow cell B with the click at
+//     exactly `B + dIn + dOut`, both arms open, and both arms riding the knee net
+//     as it stands BEFORE the click — a turn the floor actually drives. Amber stays
+//     the law colour: this is the grammar the banner named.
+//   ALTS — the beside-place: cells adjacent to the swing that are legal clicks IN
+//     THEIR OWN RIGHT (all six laws hold, `strandsFloor === false`), so the lesson
+//     never suggests a refusal; racking there grows the warehouse where the law
+//     allows and keeps every swing the floor drives. A click that isn't knee-refused
+//     answers nothing; no legal neighbour, no green — the painter says the truth
+//     instead (`SWING STAYS OPEN`).
+export function kneeEscapes(gs, x, y) {
+    if (strandsFloor(gs, x, y) !== 'knee') return { bends: [], alts: [] }
+    const was = kneeNet(gs, null)
+    const open = (px, py) => inGrid(px, py) && map[py][px] === CELL.FLOOR
+        && !gs.racks.some((r) => r.x === px && r.y === py)
+    const bends = []
+    const seenB = new Set()
+    for (const [ix, iy] of NB) for (const [ox, oy] of NB) {
+        if (ix === ox && iy === oy) continue // straight — no sweep
+        if (ix === -ox && iy === -oy) continue // backpedal — the body stays in lane
+        const bx = x - ix - ox, by = y - iy - oy // the click sits on B + dIn + dOut by construction
+        if (!open(bx, by)) continue
+        if (!open(bx - ix, by - iy) || !open(bx + ox, by + oy)) continue // both arms exist
+        if (!was.has(`${bx - ix},${by - iy}`) || !was.has(`${bx + ox},${by + oy}`)) continue // unridable turn teaches nothing
+        const k = `${bx},${by},${ix},${iy},${ox},${oy}`
+        if (seenB.has(k)) continue
+        seenB.add(k)
+        bends.push({ x: bx, y: by, in: [ix, iy], out: [ox, oy] })
+    }
+    const alts = []
+    const seenA = new Set()
+    for (const [dx, dy] of NB) {
+        const ax = x + dx, ay = y + dy
+        if (!open(ax, ay)) continue
+        const k = `${ax},${ay}`
+        if (seenA.has(k)) continue
+        seenA.add(k)
+        if (strandsFloor(gs, ax, ay) !== false) continue // an illegal neighbour teaches nothing
+        alts.push({ x: ax, y: ay })
+    }
+    return { bends, alts }
+}
 // #2627 stage 3 SWING PAINT — the grammar made glanceable. Stages 1–2 made
 // the elbow law bite and teach on refusal; this answers "where does the
 // grammar live?" at a glance: a paint-query for LIVE elbows — cells where a

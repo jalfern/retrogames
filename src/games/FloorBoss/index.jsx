@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
-    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, swingMarkers, flowMarks, flowHeat, liveKnees,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, kneeEscapes, swingMarkers, flowMarks, flowHeat, liveKnees,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -281,9 +281,22 @@ const FloorBossGame = () => {
                         // #2711 KNEE refusal — the click sat in the swing of a turn
                         // the floor drives. No provable plug exists (demolition is
                         // not a verb and the elbow itself is not the offense — the
-                        // diagonal is), so the lesson is the cell: an amber
-                        // keep-clear box over the refusal, fading like the others.
-                        if (e.why === 'knee') kneeMark = { x: e.x, y: e.y, from: gs.tick, until: gs.tick + 150 }
+                        // diagonal is), so the lesson is the cell plus what the law
+                        // can prove about it (#2711 s2 TEACH THE KNEE): kneeEscapes
+                        // names the bends the click blocks (amber — the law's own
+                        // grammar) and the beside-place cells that are legal clicks
+                        // in their own right (green — the honest fix is beside the
+                        // swing, never in it; monotonicity says no plug frees one).
+                        if (e.why === 'knee') {
+                            const esc = kneeEscapes(gs, e.x, e.y)
+                            kneeMark = { x: e.x, y: e.y, bends: esc.bends, alts: esc.alts, from: gs.tick, until: gs.tick + 150 }
+                            if (esc.alts.length) {
+                                audioController.playTone(520, 0.05, 'triangle', 0.04); audioController.playTone(780, 0.07, 'triangle', 0.04, 0.07)
+                                fx('RACK BESIDE — KEEP THE SWING CLEAR', '#5dff8f', PX(e.x) + 13, PY(e.y) + 20)
+                            } else {
+                                fx('SWING STAYS OPEN', '#5dff8f', PX(e.x) + 13, PY(e.y) + 20)
+                            }
+                        }
                         // #2627 s2 TEACH THE ELBOW: a corner refusal shows its honest
                         // exit — the mouths that would spur the elbow light up green,
                         // so the fifth law self-teaches like the reach diamond taught
@@ -767,8 +780,13 @@ const FloorBossGame = () => {
             // #2711 NO KNEE keep-clear — the refused click sat in the swing of a
             // turn. Amber stays the law colour (#2622 grammar): a pulsing dashed
             // box on the cell with the quarter swing arc across its inner corner,
-            // fading over 2.5 world seconds like the elbow lesson. Rides the paint
-            // tick, deterministic — painter-only, the refusal itself is sim truth.
+            // fading over 2.5 world seconds like the elbow lesson. #2711 s2 adds
+            // what the law can prove: the BENDS the click blocks (dashed amber
+            // elbows, each with a quarter arc centred on its inner vertex opening
+            // toward the swing cell — the turn's own sweep line) and the honest
+            // beside-place ALTS in the lesson green (#2627 s2 idiom: dashed frame
+            // + word, HERE — rack here instead, the swing stays clear). Rides the
+            // paint tick, deterministic — painter-only, the refusal itself is sim truth.
             if (!kneeMark) return
             if (tick < (kneeMark.from || 0) || tick > kneeMark.until) { kneeMark = null; return }
             const k = (kneeMark.until - tick) / 150
@@ -781,7 +799,31 @@ const FloorBossGame = () => {
             ctx.strokeStyle = `rgba(255,210,63,${0.7 * k})`; ctx.lineWidth = 1.5
             ctx.beginPath(); ctx.arc(x, y, TILE * 0.9, 0, Math.PI / 2); ctx.stroke()
             ctx.fillStyle = `rgba(255,210,63,${0.85 * k})`; ctx.font = 'bold 6px monospace'; ctx.textAlign = 'center'
-            ctx.fillText('SWING', x + TILE / 2, y + TILE - 5); ctx.textAlign = 'left'
+            ctx.fillText('SWING', x + TILE / 2, y + TILE - 5)
+            for (const bd of kneeMark.bends || []) {
+                const bx = PX(bd.x), by = PY(bd.y)
+                ctx.fillStyle = `rgba(255,210,63,${0.07 * k})`
+                ctx.fillRect(bx + 3, by + 3, TILE - 6, TILE - 6)
+                ctx.strokeStyle = `rgba(255,210,63,${(0.3 + 0.3 * pulse) * k})`; ctx.lineWidth = 1.5
+                ctx.setLineDash([4, 3]); ctx.strokeRect(bx + 2, by + 2, TILE - 4, TILE - 4); ctx.setLineDash([])
+                // the sweep line: quarter arc centred on the elbow's inner vertex,
+                // spanning the 90° that faces the swing cell (dIn+dOut diagonal)
+                const vx = bx + ((bd.in[0] + bd.out[0]) > 0 ? TILE : 0)
+                const vy = by + ((bd.in[1] + bd.out[1]) > 0 ? TILE : 0)
+                const ak = Math.atan2(bd.in[1] + bd.out[1], bd.in[0] + bd.out[0])
+                ctx.strokeStyle = `rgba(255,210,63,${0.6 * k})`; ctx.lineWidth = 1.5
+                ctx.beginPath(); ctx.arc(vx, vy, TILE * 0.9, ak - Math.PI / 4, ak + Math.PI / 4); ctx.stroke()
+            }
+            for (const a of kneeMark.alts || []) {
+                const ax = PX(a.x), ay = PY(a.y)
+                ctx.fillStyle = `rgba(93,255,143,${(0.1 + 0.12 * pulse) * k})`
+                ctx.fillRect(ax + 3, ay + 3, TILE - 6, TILE - 6)
+                ctx.strokeStyle = `rgba(93,255,143,${(0.45 + 0.4 * pulse) * k})`; ctx.lineWidth = 2
+                ctx.setLineDash([4, 3]); ctx.strokeRect(ax + 2, ay + 2, TILE - 4, TILE - 4); ctx.setLineDash([])
+                ctx.fillStyle = `rgba(93,255,143,${0.85 * k})`; ctx.font = 'bold 6px monospace'
+                ctx.fillText('HERE', ax + TILE / 2, ay + TILE - 5)
+            }
+            ctx.textAlign = 'left'
         }
 
         const paintRobots = (tick) => {
@@ -1632,6 +1674,7 @@ const FloorBossGame = () => {
                 flow: () => flowMarks(gs).map((m) => ({ axis: m.axis, n: m.flow, cells: m.cells.map((c) => `${c.x},${c.y}`).join('|') })), // #2622 item 3: the two-way grammar, readable to QA
                 heat: () => flowHeat(gs).map((c) => ({ x: c.x, y: c.y, n: c.n })), // #2680: live traffic heat — route claims per cell, readable to QA
                 knees: () => liveKnees(gs).map((m) => ({ x: m.x, y: m.y, i: m.in, o: m.out, k: `${m.kx},${m.ky}` })), // #2711: knee-blocked turns on the live floor — QA eye
+                kneeTeach: (x, y) => kneeEscapes(gs, x, y), // #2711 s2: the lesson a refused click gets — bends + honest beside-places, QA eye
                 yields: () => gs.robots.filter((b) => b.yield).map((b) => ({ id: b.id, x: b.x, y: b.y, fx: b.yield.fx, fy: b.yield.fy, t: b.yield.t })), // #2692: carts holding shoulders — the pull-off, readable to QA
                 ducks: () => gs.ducks, // #2692: the shift's duck tally
                 duckTeach: () => (duckTeach ? { x: duckTeach.x, y: duckTeach.y, k: (duckTeach.until - gs.tick) / 150 } : null), // #2700 DEV eye: the GIVE WAY plate is live (play gates sample it atomically with pixels)

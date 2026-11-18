@@ -416,7 +416,35 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
     (jams need density the floor only reaches with an expanding manager).
     Residual honest gap stands: carts remain kinematic points — true swept
     volumes through corners stay faked; the routing now yields to traffic, it
-    does not measure the cart's body through the turn.
+    does not measure the cart's body through the turn. (#2711 legislated the
+    first cell of that body — see KNEE below.)
+ - **KNEE LAW shipped by #2711** — the sixth placement law: a loaded cart
+   turning 90° carries its nose through the OUTER diagonal cell (`kneeTurn`);
+   the loaded legs plan with the body (`bfsKnee` — to-stock/to-out routes never
+   turn where the swing clips), and a click that cuts any cell off the
+   `kneeNet` service side dies `why:'knee'` (NO KNEE — RACKED THE SWING,
+   money back, zero footprint #1917). Unloaded legs stay byte-identical to the
+   classic BFS; walls are not knees (#2546 spur doctrine — a rack is the
+   movable hazard, concrete is geometry). Tells: amber keep-clear after the
+   refusal, amber nose on loaded carts, duel seat-stamp; `floorbosscheck`
+   knee gates (throat rigs, path purity, autopilot invariant) +
+   `--mutate-knee`/`--mutate-knee-route` kills. **TEACH THE KNEE shipped by
+   this PR (#2711 s2):** the refusal self-teaches in the #2627/#2622 grammar —
+   `kneeEscapes(gs,x,y)` answers a knee refusal with the turns it blocks
+   (open elbows whose arms ride the knee net before the click — drawn amber,
+   quarter sweep arc centred on the elbow's inner vertex) and the honest
+   beside-place (cells adjacent to the swing that are legal clicks in their
+   own right — green frames, `HERE`, tail RACK BESIDE — KEEP THE SWING
+   CLEAR). Monotonicity says no plug ever frees a swing (racks only shrink
+   the knee net), so the lesson offers placement, never redemption — and when
+   nothing is provable (arms walled, neighbours racked) it goes silent and the
+   tail says SWING STAYS OPEN rather than decorate. Pure, fixed order, zero
+   footprint; `floorbosscheck` +15 gates (legal-click silence, two rig pins,
+   bend structure, beside-place legality + monotonic honesty, illegal-mouth
+   exclusion, honest fallback, purity/purity twins, presentation pins), a
+   `--mutate-knee-teach` kill, and DEV eye `kneeTeach`. Residual honest gap:
+   the sweep is one cell — load overhang beyond the outer diagonal and
+   forklift-lane widths stay modelled as points-plus-knee.
   - **MANNERS POLISH shipped by this PR (#2700):** the courtesy now reads as
     law-grammar mid-duel. The duck *steers*: the body slides into the shoulder
     over one cadence (ease-out, `gs.tick` clock per #1877) with a swing impulse

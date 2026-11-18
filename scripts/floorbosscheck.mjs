@@ -50,6 +50,7 @@
 //   node scripts/floorbosscheck.mjs --mutate-attract # the shop window loses its promised ducks — cold seeds come back, demand RED (#2700)
 //   node scripts/floorbosscheck.mjs --mutate-knee # the sixth law is blind — racks may stand in the swing and sever the knee net, demand RED (#2711)
 //   node scripts/floorbosscheck.mjs --mutate-knee-route # loaded carts route through racked corners again — the body is gone from the path planner, demand RED (#2711)
+//   node scripts/floorbosscheck.mjs --mutate-knee-teach # the knee lesson teaches illegal beside-places — the honest-fix filter is gone, demand RED (#2711 s2)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -62,7 +63,7 @@ import {
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
     shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, laneEscapes, swingMarkers, flowMarks, laneRuns, flowHeat,
     pullOff, YIELD_WAIT, YIELD_MAX, YIELD_CD,
-    kneeTurn, bfsKnee, kneeNet, liveKnees,
+    kneeTurn, bfsKnee, kneeNet, liveKnees, kneeEscapes,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -101,7 +102,8 @@ const MUT_MANNERS = ARGS.includes('--mutate-manners') // #2700: the give-way tea
 const MUT_ATTRACT = ARGS.includes('--mutate-attract') // #2700: the shop window seeds go cold again
 const MUT_KNEE = ARGS.includes('--mutate-knee') // #2711: the sixth law goes blind to the swing
 const MUT_KNEE_ROUTE = ARGS.includes('--mutate-knee-route') // #2711: loaded carts clip corners again
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE) {
+const MUT_KNEE_TEACH = ARGS.includes('--mutate-knee-teach') // #2711 s2: the lesson admits illegal beside-places
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const tgt = MUT_MANNERS || MUT_ATTRACT ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) : sim // #2700: presentation laws plant in the painter
     const src = readFileSync(tgt, 'utf8')
@@ -161,6 +163,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ['const after = kneeNet(gs, { x, y })', 'const after = kneeNet(gs, null)', 'the sixth law is blind — racks may stand in the swing and sever the knee network (#2711)']
                                                                     : MUT_KNEE_ROUTE
                                                                     ? ['if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // the knee is racked — the swing would clip it', 'if (false && turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // MUTANT', 'loaded carts clip corners again — the body is gone from the route planner (#2711)']
+                                                                    : MUT_KNEE_TEACH
+                                                                    ? ['if (strandsFloor(gs, ax, ay) !== false) continue // an illegal neighbour teaches nothing', 'if (false && strandsFloor(gs, ax, ay) !== false) continue // MUTANT', 'the knee lesson teaches illegal beside-places — racking a taught cell would refuse, the fix is a lie (#2711 s2)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
@@ -2052,6 +2056,93 @@ console.log('— knee law (#2711) — swept volumes: geometry, routing, and the 
         ok(/SWING/.test(ui) && /paintKnee/.test(ui), 'the refused swing gets its keep-clear box on the canvas (#2711)')
         ok(/rgba\(255,210,63,0\.4\)/.test(ui), 'loaded carts carry an amber nose on the leading edge — the sweeping cell is visible at a glance (#2711)')
         ok(/knees: \(\) => liveKnees\(gs\)/.test(ui), 'the DEV eye reads live knees for the browser gate (#2711)')
+    }
+}
+// ---- #2711 s2 TEACH THE KNEE — the refusal shows what it can prove ----
+console.log('— knee teach (#2711 s2) — bends, beside-places, and the honest fallback —')
+{
+    const mk = () => {
+        const g = makeGame(7); g.score = 9000; g.racks.length = 0; g.auto = false
+        g.robots.forEach((b, i) => { b.x = 23 - i; b.y = 12; b.task = { kind: 'idle' }; b.carry = null; b.path = [] })
+        return g
+    }
+    const put = (g, x, y) => { g.cursor = { x, y }; g.tool = 'rack'; const r = clickCell(g, x, y); if (r === 'build') g.tool = null; return r }
+    const NEED = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6]]
+    const rig = (extra) => { const g = mk(); for (const [x, y] of [...NEED, ...(extra || [])]) g.racks.push({ x, y, items: [], owner: -1 }); return g }
+    const DN = { '0,-1': 'N', '1,0': 'E', '0,1': 'S', '-1,0': 'W' }
+    const fmtB = (e) => e.bends.map((b) => `${b.x},${b.y}:${DN[b.in.join(',')]}${DN[b.out.join(',')]}`).join(' ')
+    const fmtA = (e) => e.alts.map((a) => `${a.x},${a.y}`).join(' ')
+    // a legal click — even beside the garden — teaches nothing
+    {
+        const e1 = kneeEscapes(mk(), 10, 10)
+        const e2 = kneeEscapes(rig(), 19, 7) // (19,7) is a legal click beside the NEED garden
+        ok(e1.bends.length === 0 && e1.alts.length === 0 && e2.bends.length === 0 && e2.alts.length === 0,
+            'kneeEscapes answers NOTHING for legal clicks — the lesson fires only on its own law (#2711 s2)')
+    }
+    // the throat rig: bends and beside-places, pinned to measured geometry
+    {
+        const g = rig()
+        ok(put(g, 18, 7) === 'aisle' && g.ev.at(-1)?.why === 'knee', 'throat plug refused (setup) (#2711 s2)')
+        const e = kneeEscapes(g, 18, 7)
+        ok(fmtB(e) === '17,8:NE 19,8:NW 17,8:EN 19,8:WN', `the four swings (18,7) blocks are named in fixed order: ${fmtB(e) || 'nothing'} (#2711 s2)`)
+        ok(fmtA(e) === '19,7 17,7', `the beside-place is exactly the two flank cells — the shaft cell and the mouth are not offered: ${fmtA(e) || 'nothing'} (#2711 s2)`)
+        // structure: click is the swept diagonal of every bend, arms open and riding the net
+        const was = kneeNet(g, null)
+        const openAt = (x, y) => x >= 1 && x <= 24 && y >= 1 && y <= 13 && !g.racks.some((r) => r.x === x && r.y === y)
+        let clean = e.bends.length > 0
+        for (const b of e.bends) {
+            if (b.x + b.in[0] + b.out[0] !== 18 || b.y + b.in[1] + b.out[1] !== 7) clean = false // click IS the knee cell
+            if (!openAt(b.x - b.in[0], b.y - b.in[1]) || !openAt(b.x + b.out[0], b.y + b.out[1])) clean = false
+            if (!was.has(`${b.x - b.in[0]},${b.y - b.in[1]}`) || !was.has(`${b.x + b.out[0]},${b.y + b.out[1]}`)) clean = false
+        }
+        ok(clean, 'every taught bend is structural: the click sits on B+dIn+dOut, both arms open and riding the knee net BEFORE the click — turns the floor actually drives (#2711 s2)')
+        // honesty of the beside-place: each alt builds on its own, and the swing stays law above it
+        let builds = true, holds = true
+        for (const a of e.alts) {
+            const q = rig()
+            if (put(q, a.x, a.y) !== 'build') builds = false // stands legal on its own garden
+            const w = rig([[a.x, a.y]])
+            if (!(put(w, 18, 7) === 'aisle' && w.ev.at(-1)?.why === 'knee')) holds = false // swing still law above the beside rack
+        }
+        ok(builds, 'every green cell is a legal click in its own right — the lesson never suggests a refusal (#2627 s2 honesty, #2711 s2)')
+        ok(holds, 'monotonic truth, taught honestly: with a beside-place stood, the swing cell is STILL refused — no plug frees a knee, so the lesson offers placement, not redemption (#2711 s2)')
+    }
+    // the shaft-wall rig: the lesson adapts to a different board's physics
+    {
+        const g = mk()
+        for (const [x, y] of [...NEED, [17, 8], [19, 8]]) put(g, x, y)
+        ok(put(g, 18, 9) === 'aisle' && g.ev.at(-1)?.why === 'knee', 'mouth seal refused (setup) (#2711 s2)')
+        const e = kneeEscapes(g, 18, 9)
+        ok(fmtB(e) === '17,10:NE 19,10:NW 17,10:EN 19,10:WN', `the lower throat names its own bends: ${fmtB(e) || 'nothing'} (#2711 s2)`)
+        ok(fmtA(e) === '19,9 17,9', `green offers only the flanks — the mouth (18,8) is an open neighbour but an illegal click, so it is never taught: ${fmtA(e)} (#2711 s2)`)
+        const q = mk()
+        for (const [x, y] of [...NEED, [17, 8], [19, 8]]) put(q, x, y)
+        ok(put(q, 18, 8) === 'aisle', 'and it IS illegal here: the open mouth that the filter hid would itself refuse (#2711 s2)')
+    }
+    // the honest fallback: nothing provable, nothing taught
+    {
+        const g = rig([[17, 7], [19, 7], [18, 8]])
+        ok(put(g, 18, 7) === 'aisle' && g.ev.at(-1)?.why === 'knee', 'flanked throat refused (setup) (#2711 s2)')
+        const e = kneeEscapes(g, 18, 7)
+        ok(e.bends.length === 0 && e.alts.length === 0, 'arms walled and neighbours racked: the lesson goes silent rather than decorate — the tail says SWING STAYS OPEN (#2711 s2)')
+    }
+    // purity, fixed order, zero footprint (#1917)
+    {
+        const g = rig()
+        const h0 = stateHash(g), n0 = g.racks.length
+        const e1 = kneeEscapes(g, 18, 7)
+        const e2 = kneeEscapes(g, 18, 7)
+        ok(JSON.stringify(e1) === JSON.stringify(e2) && stateHash(g) === h0 && g.racks.length === n0,
+            'kneeEscapes is pure and deterministic — same board same answer, hash unchanged, nothing lands (#1917, #2711 s2)')
+    }
+    // presentation pins: tails, labels, eye, sweep line
+    {
+        const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+        ok(/RACK BESIDE — KEEP THE SWING CLEAR/.test(ui), 'the green tail names the honest fix: rack beside, keep the swing clear (#2711 s2)')
+        ok(/SWING STAYS OPEN/.test(ui), 'the fallback tail speaks when nothing is provable (#2711 s2)')
+        ok(/HERE/.test(ui) && /kneeMark\.alts/.test(ui) && /kneeMark\.bends/.test(ui), 'bends and beside-places reach the canvas — amber elbows, green HERE frames (#2711 s2)')
+        ok(/ak - Math\.PI \/ 4/.test(ui), 'the elbow arc opens toward the swing cell — the quarter sweep is drawn where the turn happens (#2711 s2)')
+        ok(/kneeTeach: \(x, y\) => kneeEscapes\(gs, x, y\)/.test(ui), 'the DEV eye reads the lesson a refused click gets — QA drives it directly (#2711 s2)')
     }
 }
 console.log(fails ? `\nFLOOR BOSS CHECK: ${fails} FAILED` : '\nFLOOR BOSS CHECK: all green')
