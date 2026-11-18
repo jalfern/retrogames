@@ -120,10 +120,12 @@ import {
     SNEAK_DUE, SNEAK_WINDOW, SNEAK_LOOT, sneakNightDue, hasAlarm, ringSneak, SNEAK_CREEP, SNEAK_SIREN,   // #2520: the sneak — the window, the loot list, the parity, the alarm, the rig
     PROWL_DUE, PROWL_WINDOW, prowlNightDue, PET_PROWL_FUN, ringProwl, PROWL_PADS, PROWL_HOME_SFX,   // #2532: Miso's even-night prowl — the window, the parity, the cat-scale pay, the rig, the sound tables
     eastWing, GARDEN, EAST_ANCHORS, DEFAULT_ANCHOR, wingPick, wingGeom, WINGS_MAX, groundAt,   // #2689: deeper multi-room — the anchor law, the garden cottage, the pick
+    wingSets,   // #2705: the purpose view's floor question — exported from the law's own module
     TEND_HOURS, HARVEST_FOOD, HARVEST_FUN, LODGE_FUN,   // #2695: rooms with purpose — the sun law and the lodging law
 } from '../src/games/Homebody/sim.js'
 import { bondRows, pairStride, strollTrail, STRIDE_BOB } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail
 import { promiseTell, earReact, gardenLamp, EAR_REACT, PROMISE_TIGHTEN, EAR_HUES, PAIR_HUES, LOST_RING_T } from '../src/games/Homebody/art.js'   // #2688: the go-say tells and the garden lamp are pure derivations too
+import { ripenessOf, hamperLoad, sleepingCells, wingLodged, moonlitWait, HAMPER_CAP } from '../src/games/Homebody/art.js'   // #2705: the purpose view — ripeness ramp, harvest hamper, lodged panes, moonlit wait, all pure derivations
 import { readFileSync } from 'node:fs'
 
 const DT = FIXED_DT / 1000
@@ -778,8 +780,8 @@ section('MOVE-IN (#1814): reactions, glow, honest edges')
     const artSrc = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
     const jsxSrc = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
     check('pin: the wing bake paints windows from the geometry', /for \(const \[r, c\] of geom\.windows\)/.test(artSrc))   // #2689: one bake serves every site
-    check('pin: nightTint takes the ext flag and lights every standing wing', /function nightTint\(ctx, hour, ext, wings = null\)[\s\S]*if \(ext\)[\s\S]*wingGeom/.test(artSrc))
-    check('pin: the shell passes the live ext flag and wings into the tint', /nightTint\(ctx, g\.hour, g\.ext, g\.wings\)/.test(jsxSrc))
+    check('pin: nightTint takes the ext flag and lights every standing wing', /function nightTint\(ctx, hour, ext, wings = null, sleepers = null\)[\s\S]*if \(ext\)[\s\S]*wingGeom/.test(artSrc))   // #2705: the tint gained the sleepers arg — re-aimed, the ext law unchanged
+    check('pin: the shell passes the live ext flag and wings into the tint', /nightTint\(ctx, g\.hour, g\.ext, g\.wings, sleepingCells\(g\)\)/.test(jsxSrc))   // #2705: plus the night's sleepers, so lodged panes burn deeper
     check('pin: the bot buys the kit only onto a clear lot', /if \(id === 'roomkit'\)[\s\S]*?!roomClear\(s, eastWing\(DEFAULT_ANCHOR\)\)/.test(sim2Src))   // #2689: the autopilot keeps the classic row — the law it asks is the classic site
     check('pin: the hammer arms the reaction ledger', /s\.roomReact = s\.people\.length/.test(sim2Src))
 }
@@ -4699,7 +4701,7 @@ section('FEEL PASS (#2688): tightening ring, marching trail, hue wink, grey deat
         /fern: PAIR_HUES\[0\], ivy: PAIR_HUES\[1\], kid: '#ffd24a'/.test(fpArt))
     check('pin: the lamp paints from its own derivation and the one night curve, lit right after the tint',
         /const l = gardenLamp\(s\)/.test(fpArt) && /nightLevel\(s\.hour\)/.test(fpArt)
-        && /nightTint\(ctx, g\.hour, g\.ext, g\.wings\)\s*\n\s*drawGardenLamp\(ctx, g\)/.test(fpJsx))
+        && /nightTint\(ctx, g\.hour, g\.ext, g\.wings, sleepingCells\(g\)\)[^\n]*\n\s*drawGardenLamp\(ctx, g\)/.test(fpJsx))   // #2705: the tint call gained the sleepers arg — lamp still rides right after it
     check('pin: the tight range names both ends — react inside, tighten outside',
         EAR_REACT === 4 && PROMISE_TIGHTEN === 8 && LOST_RING_T > 0)
 }
@@ -4734,6 +4736,88 @@ section('POLISH 3 (#2704): the walking word wears legs; the garden arrives worke
         /else if \(kitPreview\)/.test(plJsx) &&
         /mouseHover = null; kitPreview = null; return/.test(plJsx) &&
         /kitPreview = null\n/.test(plJsx.replace(/\r/g, '')))
+}
+
+section('POLISH PASS (#2705): ripeness ramp on the bed, harvest hamper at the door, lodged panes, moonlit wait')
+{
+    const pvArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const pvSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const pvJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+
+    const pvLot = (seed) => { const g = newRun(seed); g.money = 9999; buildRoom(g, eastWing(DEFAULT_ANCHOR)); buildRoom(g, GARDEN); drain(g); return g }
+    const FLOOR = [...wingSets(wingGeom(eastWing(DEFAULT_ANCHOR))).floor][0].split(',').map(Number)
+
+    check('ripeness ramps the sun-law ledger exactly — and only the garden tends',
+        ripenessOf({ id: 'garden', tend: 0 }) === 0
+        && ripenessOf({ id: 'garden', tend: TEND_HOURS / 2 }) === 0.5
+        && ripenessOf({ id: 'garden', tend: TEND_HOURS }) === 1
+        && ripenessOf({ id: 'garden', tend: TEND_HOURS * 3 }) === 1
+        && ripenessOf({ id: 'east', r0: 2, sleptWell: 4 }) === 0 && ripenessOf(null) === 0)
+
+    const g = pvLot(7)
+    const wg = g.wings.find((w) => w.id === 'garden')
+    check('no harvest, no hamper — the door stands empty until the room pays', hamperLoad(g) === null)
+    wg.herbs = 2
+    const h2 = hamperLoad(g)
+    check('the hamper carries what the garden paid, at the garden door (9,2)', h2 && h2.n === 2 && h2.r === 9 && h2.c === 2)
+    wg.herbs = 9
+    check('the sprite caps; the ledger keeps counting', hamperLoad(g).n === HAMPER_CAP && HAMPER_CAP === 4 && wg.herbs === 9)
+    wg.herbs = 0
+    const gE = newRun(7); gE.money = 9999; buildRoom(gE, eastWing(DEFAULT_ANCHOR))
+    check('an east-only lot ships no hamper', hamperLoad(gE) === null)
+
+    const p0 = g.people[0]
+    p0.use = { it: null, def: DEF.canopy, t: 0, dur: 999, night: true }
+    p0.r = FLOOR[0]; p0.c = FLOOR[1]
+    const slp = sleepingCells(g)
+    check('sleepers are the lodging law\u2019s own — through-the-night sleepers only', slp.length === 1 && slp[0].r === FLOOR[0] && slp[0].c === FLOOR[1])
+    p0.use.night = false
+    check('a midday nap never lodges — the panes stay honest', sleepingCells(g).length === 0)
+    p0.use.night = true
+    const eastG = wingGeom(eastWing(DEFAULT_ANCHOR)), garG = wingGeom(GARDEN)
+    check('the lodged room is found by its OWN floor — east yes, garden never', wingLodged(eastG, slp) && !wingLodged(garG, slp))
+    p0.r = 3; p0.c = 5
+    check('a house-bed sleeper lodges no wing', !wingLodged(eastG, sleepingCells(g)) && !wingLodged(garG, sleepingCells(g)))
+    p0.use = null
+
+    const gm = pvLot(8)
+    const wgm = gm.wings.find((w) => w.id === 'garden')
+    gm.hour = 23; wgm.tend = TEND_HOURS / 2
+    check('the moonlit wait reads at dusk with a half-ripe bed', moonlitWait(gm) === true)
+    gm.hour = 12
+    check('by day the wait goes silent — the gold creep is the day\u2019s tell', moonlitWait(gm) === false)
+    gm.hour = 23; wgm.tend = 0
+    check('an empty bed waits for nothing', moonlitWait(gm) === false)
+    wgm.tend = TEND_HOURS
+    check('a full bed is past waiting', moonlitWait(gm) === false)
+    const gNg = newRun(8); gNg.hour = 23
+    check('no garden, no wait', moonlitWait(gNg) === false)
+
+    const gh = pvLot(9)
+    const wgh = gh.wings.find((w) => w.id === 'garden'); wgh.herbs = 3; wgh.tend = TEND_HOURS / 2; gh.hour = 23
+    const hBefore = stateHash(gh)
+    ripenessOf(wgh); hamperLoad(gh); sleepingCells(gh); moonlitWait(gh)
+    wingLodged(garG, sleepingCells(gh))
+    check('probing every tell leaves the world byte-identical — the hash never hears of the view', stateHash(gh) === hBefore)
+
+    check('draw-only doctrine: sim.js never learns a word of the view pass',
+        !/ripenessOf|hamperLoad|moonlitWait|wingLodged|sleepingCells|drawPurposeView|drawMoonlitWait|HAMPER_CAP/.test(pvSim))
+    check('the view draws no clock of its own — no rng, no Date, no wall-time in the #2705 block', (() => {
+        const block = pvArt.slice(pvArt.indexOf('#2705 purpose view pass'), pvArt.indexOf('HUD ----'))
+        return block.length > 500 && !/Math\.random|Date\.now|performance\.now/.test(block)
+    })())
+    check('the shell wires the view: bed + hamper sit under the furniture, the panes ask the sleepers, the glint rides over the tint',
+        /drawGround\(ctx, g\)\n\s*drawPurposeView\(ctx, g\)/.test(pvJsx)
+        && /nightTint\(ctx, g\.hour, g\.ext, g\.wings, sleepingCells\(g\)\)/.test(pvJsx)
+        && /drawGardenLamp\(ctx, g\)[^\n]*\n\s*drawMoonlitWait\(ctx, g, g\.sec\)/.test(pvJsx))
+    check('the lodged pane burns deep amber with a halo; unroused glass keeps its shipped colour',
+        /rgba\(255,186,84,/.test(pvArt) && /rgba\(255,224,138,\$\{\(a \* 0\.9\)/.test(pvArt) && /wingLodged\(wg, sleepers\)/.test(pvArt))
+    check('the ramp paints the bed itself — soil board, gold creep keyed to ripeness, sprouts that thicken',
+        /rgba\(72,48,26,0\.72\)/.test(pvArt) && /\(bw - 6\) \* r/.test(pvArt) && /1 \+ Math\.floor\(r \* 4\)/.test(pvArt))
+    check('moonlit glints are cool silver on a phase-only sine',
+        /rgba\(214,228,255,/.test(pvArt) && /sin\(sec \* 2\.1/.test(pvArt))
+    check('pin: the lodger question is the law\u2019s own geometry — art asks wingSets, and sim exports it for the view',
+        /export function wingLodged\(wg, sleepers\)/.test(pvArt) && /wingSets\(wg\)\.floor\.has/.test(pvArt) && /export function wingSets\(g\)/.test(pvSim))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

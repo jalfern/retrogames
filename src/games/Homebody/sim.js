@@ -967,7 +967,7 @@ const LODGE_LINES = [
 // geometry for a placed wing record ({ id, r0 }) — and the lookup sets.
 export function wingGeom(w) { return w.id === 'garden' ? GARDEN : eastWing(w.r0) }
 const wingSetCache = new Map()
-function wingSets(g) {
+export function wingSets(g) {   // #2705: exported for the purpose view — the panes ask the room's own floor who sleeps inside it
     const k = `${g.id}:${g.r0 ?? -1}`
     let s = wingSetCache.get(k)
     if (!s) {
