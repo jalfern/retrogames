@@ -365,6 +365,7 @@
     "plaicraft:grade": "node scripts/plaicraft-grade.mjs",
     "gradeselftest": "node scripts/plaicraft-grade.mjs --self-test",
     "claptestplay": "node scripts/claptestplay.mjs",
+    "micprobe": "node scripts/micprobe.mjs",
     "plaicraft:outbox": "node scripts/plaicraft-outbox.mjs",
     "furlongcheck": "node scripts/furlongcheck.mjs",
     "foxcheck": "node scripts/foxcheck.mjs"

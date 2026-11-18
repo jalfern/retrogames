@@ -8,7 +8,7 @@
 //   node scripts/voicedrive.mjs
 //
 // Chrome's fake media flags stand in for hardware: --use-fake-device-for-media-
-// capture generates a tone, --use-fake-ui-for-media-capture pre-grants the
+// stream generates a tone, --use-fake-ui-for-media-stream pre-grants the
 // browser permission bubble (our OWN consent overlay still appears and must be
 // clicked — the bubble is not consent, and that law holds even under fakes).
 
@@ -18,37 +18,27 @@ const PORT = process.env.DEV_PORT || 5173
 const URL = opt(process.argv, 'url', `http://localhost:${PORT}/retrogames/gauntlet`)
 
 const r = new Report('voicedrive')
+// #2709: headless Chrome 157 records ZERO chunks from a WebAudio gUM-override
+// stream — the old synth fallback here. Chrome's own fake capture device
+// (correct flag spelling: -for-media-stream) answers gUM natively and the
+// recorder flows; every layer under test stays real.
 const browser = await launch({ extraArgs: [
-    '--use-fake-device-for-media-capture',
-    '--use-fake-ui-for-media-capture',
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
 ] })
 await requireDevServer(URL)
 // Hardware gUM on macOS headless is dead at the TCC permission layer (raw
-// getUserMedia hangs/crashes the renderer here), so the driver installs a
-// WebAudio oscillator stream as getUserMedia — every layer under test (consent
-// flow, the real MediaRecorder path, chunking, tick clock, v2 assembly) runs
-// untouched; only the sound source is synthetic. VOICEDRIVE_HW=1 tries the
-// hardware/fake-device path first (Linux CI).
+// getUserMedia hangs/crashes the renderer here), so VOICEDRIVE_HW=1 asks the
+// real device first (Linux CI) and only then accepts the fake one; the wrapper
+// exists for the deviceId assert (#1257), never to synthesise the stream.
 const context = await browser.newContext({ viewport: { width: 900, height: 760 } })
 await context.addInitScript(({ tryHw }) => {
-    const synth = () => {
-        const ctx = new AudioContext()
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.frequency.value = 440
-        gain.gain.value = 0.25
-        const dest = ctx.createMediaStreamDestination()
-        osc.connect(gain)
-        gain.connect(dest)
-        osc.start()
-        return dest.stream
-    }
     const orig = navigator.mediaDevices && navigator.mediaDevices.getUserMedia
         ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null
     const gUM = async (c) => {
         window.__lastGum = c // #1257: assert the deviceId we asked for actually arrives
-        if (tryHw && orig) { try { const s = await orig(c); if (s && s.getAudioTracks().length) return s } catch { /* fall through to synth */ } }
-        return synth()
+        if (tryHw && orig) { try { const s = await orig({ audio: true }); if (s && s.getAudioTracks().length) return s } catch { /* fall through to the fake device */ } }
+        return orig(c)
     }
     if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia = gUM
     else Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: gUM, enumerateDevices: async () => [] }, configurable: true })
@@ -130,23 +120,11 @@ if (rec) {
 const flushCtx = await browser.newContext({ viewport: { width: 900, height: 760 } })
 const FLUSH_MS = 500
 await flushCtx.addInitScript(({ tryHw, flushMs }) => {
-    const synth = () => {
-        const ctx = new AudioContext()
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.frequency.value = 440
-        gain.gain.value = 0.25
-        const dest = ctx.createMediaStreamDestination()
-        osc.connect(gain)
-        gain.connect(dest)
-        osc.start()
-        return dest.stream
-    }
     const orig = navigator.mediaDevices && navigator.mediaDevices.getUserMedia
         ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null
     const gUM = async (c) => {
-        if (tryHw && orig) { try { const s = await orig(c); if (s && s.getAudioTracks().length) return s } catch { /* fall through to synth */ } }
-        return synth()
+        if (tryHw && orig) { try { const s = await orig({ audio: true }); if (s && s.getAudioTracks().length) return s } catch { /* fall through to the fake device */ } }
+        return orig(c)
     }
     if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia = gUM
     else Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: gUM, enumerateDevices: async () => [] }, configurable: true })
