@@ -44,6 +44,7 @@
 //   node scripts/floorbosscheck.mjs --mutate-corner    # corner stacks allowed — racks may choke a tight elbow, demand RED (#2627)
 //   node scripts/floorbosscheck.mjs --mutate-swing     # swing sweep paints corridor faces as elbows, demand RED (#2627 s3)
 //   node scripts/floorbosscheck.mjs --mutate-flow      # flow paint claims two-way traffic for spurs/too-long runs, demand RED (#2622 item 3)
+//   node scripts/floorbosscheck.mjs --mutate-flowheat   # the second route on a cell stops counting — live traffic heat dies, demand RED (#2680)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -54,7 +55,7 @@ import {
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE, OUT_CELLS,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
-    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, laneEscapes, swingMarkers, flowMarks, laneRuns,
+    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, laneEscapes, swingMarkers, flowMarks, laneRuns, flowHeat,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -87,7 +88,8 @@ const MUT_TEACH = ARGS.includes('--mutate-teach')
 const MUT_LANE_TEACH = ARGS.includes('--mutate-lane-teach')
 const MUT_SWING = ARGS.includes('--mutate-swing')
 const MUT_FLOW = ARGS.includes('--mutate-flow')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW) {
+const MUT_FLOWHEAT = ARGS.includes('--mutate-flowheat')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -134,6 +136,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ['if (a1[0] * a2[0] + a1[1] * a2[1] !== 0) continue // perpendicular only — a straight face doesn\'t swing', 'if (false) continue // MUTANT: perpendicular check off', 'the sweep paints straight corridor faces as elbows — the corridor skip is gone (#2627 s3)']
                                                                     : MUT_FLOW
                                                                     ? ["if (n < LANE_LONG && open(x - 1, y) && open(x1 + 1, y)) {", 'if (true) {', 'the flow paint claims two-way traffic for dead-end spurs and ignores the length law (#2622 item 3)']
+                                                                    : MUT_FLOWHEAT
+                                                                    ? ['counts.set(k, (counts.get(k) || 0) + 1)', 'counts.set(k, 1)', 'the second route on a cell stops counting — convergence, the heat ramp and the shared-lane read all die (#2680)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
@@ -1400,6 +1404,85 @@ console.log('— two-way flow paint (#2622 item 3) —')
     ok(ui.indexOf('paintFlow()') < ui.indexOf('paintSwing()') && ui.indexOf('paintSwing()') < ui.indexOf('paintTeach(tick)'), 'floor paint order: traffic arrows as the base coat, the amber law boxes above them, the louder refusal lesson on top (#2622 item 3, #2627 s3)')
     ok(/elbows\.has\(/.test(ui), 'the flow paint yields to the amber keep-clear box — law paint outranks traffic paint (#2622 item 3)')
     ok(/flow: \(\) => flowMarks\(gs\)/.test(ui), 'the DEV hook exposes the two-way grammar for the browser gate (#2622 item 3)')
+}
+
+// ---- live traffic heat (#2680) — aisles glow with the routes their bots drive ----
+console.log('— live traffic heat (#2680) —')
+{
+    const mk = () => {
+        const g = makeGame(11)
+        g.score = 9000; g.racks.length = 0; g.auto = false
+        const pads = [[23, 12], [24, 12], [22, 12], [21, 12]]
+        g.robots.forEach((b, i) => { b.x = pads[i % 4][0]; b.y = pads[i % 4][1]; b.task = { kind: 'idle' }; b.carry = null; b.moveT = 0; b.path = [] })
+        return g
+    }
+    const at = (h, x, y) => (h.find((c) => c.x === x && c.y === y) || {}).n || 0
+    {
+        // the read is routes, not decoration: a parked crew with no task claims
+        // exactly its own cells — nothing else on the floor lights up.
+        const g = mk()
+        const h = flowHeat(g)
+        ok(h.length === g.robots.length && h.every((c) => c.n === 1),
+            `a parked crew claims only its own cells (${h.map((c) => `${c.x},${c.y}:${c.n}`).join(' ') || 'nothing'}) — heat is occupancy-ahead, not ambience (#2680)`)
+        ok(h[h.length - 1].x === 24 && h[h.length - 1].y === 12, 'the answer is row-major — fixed order regardless of bot array order')
+    }
+    {
+        // the counting law itself: cross-bot sums, per-bot dedup.
+        const g = mk()
+        g.robots[0].path = [{ x: 22, y: 12 }, { x: 21, y: 12 }, { x: 20, y: 12 }, { x: 22, y: 12 }] // loop re-enters (22,12)
+        g.robots[1].path = [{ x: 21, y: 12 }, { x: 20, y: 12 }, { x: 19, y: 12 }]
+        const h = flowHeat(g)
+        ok(at(h, 21, 12) === 2 && at(h, 20, 12) === 2,
+            `two routes through one cell count TWO (21,12=${at(h, 21, 12)} 20,12=${at(h, 20, 12)}) — the convergence the jam law will name is readable one beat early (#2680)`)
+        ok(at(h, 22, 12) === 1, 'a route that crosses one cell twice credits it once — per-bot dedup (#2680)')
+        ok(at(h, 19, 12) === 1 && Math.max(...h.map((c) => c.n)) === 2, 'unshared tail cells stay at one claim; the board maximum is the true meeting size')
+    }
+    {
+        // display contract over a full REAL shift (autopilot traffic): every
+        // claim sits on drivable rack-free floor within crew size, every bot's
+        // own cell is claimed, purity holds every tick — and real traffic
+        // actually meets: the read has something to read.
+        const g = makeGame(4242)
+        const ap = createAutopilot()
+        let maxN = 0, convTicks = 0, total = 0
+        const lies = []
+        while (!g.end && g.tick < SHIFT + 10) {
+            step(g, [ap(g)])
+            const h = flowHeat(g)
+            total++
+            if (stateHash(g) === undefined) lies.push('hash throw')
+            let conv = 0
+            for (const c of h) {
+                if (c.n < 1 || c.n > g.robots.length) lies.push(`n=${c.n}@${c.x},${c.y}`)
+                if (g.racks.some((r) => r.x === c.x && r.y === c.y)) lies.push(`rack@${c.x},${c.y}`)
+                if (c.n >= 2) conv++
+                if (c.n > maxN) maxN = c.n
+            }
+            if (conv) convTicks++
+            for (const b of g.robots) if (!h.some((c) => c.x === b.x && c.y === b.y)) lies.push(`unclaimed bot cell ${b.x},${b.y}@${g.tick}`)
+        }
+        ok(lies.length === 0, `full autopilot shift — every claim truthful: drivable floor, no rack faces, ≤ crew size, every bot cell claimed (first lies: ${lies.slice(0, 3).join(' ') || 'none'}) (#2680)`)
+        ok(convTicks >= total * 0.1 && maxN >= 2,
+            `real traffic meets where the read says it will — ${convTicks}/${total} ticks carry a convergence, deepest n=${maxN} (#2680)`)
+    }
+    {
+        // purity + determinism (#1917): the read never steers the floor.
+        const g = mk()
+        g.robots[0].path = [{ x: 22, y: 12 }, { x: 21, y: 12 }]
+        g.robots[1].path = [{ x: 23, y: 12 }, { x: 22, y: 12 }]
+        const h0 = stateHash(g)
+        const one = JSON.stringify(flowHeat(g))
+        const two = JSON.stringify(flowHeat(g))
+        ok(one === two && stateHash(g) === h0, 'flowHeat is pure — same answer twice, board hash unchanged (#1917)')
+        g.robots.reverse()
+        ok(JSON.stringify(flowHeat(g)) === two, 'the heat answer is stable under bot-array reorder — order comes from the grid, not insertion (#2680)')
+    }
+    // the painter draws it between the legality tint and the amber law; the DEV eye reads it.
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/flowHeat\(gs\)/.test(ui) && /paintHeat\(tick\)/.test(ui), 'the painter draws the heat (flowHeat → paintHeat) (#2680)')
+    ok(ui.indexOf('paintFlow()') < ui.indexOf('paintHeat(tick)') && ui.indexOf('paintHeat(tick)') < ui.indexOf('paintSwing()'),
+        'floor paint order: legality tint, live heat beneath the amber law boxes — law paint outranks traffic paint (#2680, #2622 item 3)')
+    ok(/heat: \(\) => flowHeat\(gs\)/.test(ui), 'the DEV hook exposes live traffic heat for the browser gate (#2680)')
 }
 
 // ---- duel refusal seat stamp (#2622 item 4) — a banner names WHOSE click died ----

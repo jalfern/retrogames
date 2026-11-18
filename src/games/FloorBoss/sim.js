@@ -509,6 +509,43 @@ export function flowMarks(gs) {
     }
     return out
 }
+// #2680 LIVE TRAFFIC HEAT — who is driving where THIS tick. The two-way
+// grammar (#2622 item 3) marks which aisles CAN carry traffic from both
+// mouths; the residual it left open was the traffic itself: "the arrows mark
+// aisle legality, not bot traffic — live flow stays unsimulated kinematics".
+// This is the read, not the routing: `flowHeat` counts, per cell, how many
+// bots are ROUTED through it right now — each robot's current cell plus every
+// cell of its task path (its occupancy claim until it re-paths; the occupancy
+// law makes two claims on one cell SERIALISE, and the jam law at Manhattan 2
+// freezes them if neither backs off). n≥2 is therefore the honest forecast:
+// the cell where the next wait — and most jams — is born. A pure query of
+// sim truth (paths are bot state, no rng, no movement, zero footprint —
+// #1917: stateHash never learns it exists), fixed order: rows then columns
+// ascending, regardless of bot order. The painter paints it; the sim stays
+// the law. The swept-volume residual (#2627) stands: carts stay kinematic
+// points — this displays the paths, it does not re-route them.
+export function flowHeat(gs) {
+    const counts = new Map()
+    for (const b of gs.robots) {
+        const seen = new Set() // one credit per bot per cell (loops re-enter)
+        const claim = (x, y) => {
+            const k = `${x},${y}`
+            if (seen.has(k)) return
+            seen.add(k)
+            counts.set(k, (counts.get(k) || 0) + 1)
+        }
+        claim(b.x, b.y)
+        for (const c of b.path || []) claim(c.x, c.y)
+    }
+    const out = []
+    for (let y = 1; y < ROWS - 1; y++) {
+        for (let x = 1; x < COLS - 1; x++) {
+            const n = counts.get(`${x},${y}`)
+            if (n) out.push({ x, y, n })
+        }
+    }
+    return out
+}
 function strandsFloor(gs, x, y) {
     if (map[y][x] !== CELL.FLOOR || gs.racks.some((r) => r.x === x && r.y === y)) return false // other laws refuse first
     const before = serviceNet(gs, null)
