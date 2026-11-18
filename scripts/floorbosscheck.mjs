@@ -43,6 +43,7 @@
 //   node scripts/floorbosscheck.mjs --mutate-lane-teach # the lane teach lights a mouth that would strand a served rack, demand RED (#2622)
 //   node scripts/floorbosscheck.mjs --mutate-corner    # corner stacks allowed — racks may choke a tight elbow, demand RED (#2627)
 //   node scripts/floorbosscheck.mjs --mutate-swing     # swing sweep paints corridor faces as elbows, demand RED (#2627 s3)
+//   node scripts/floorbosscheck.mjs --mutate-flow      # flow paint claims two-way traffic for spurs/too-long runs, demand RED (#2622 item 3)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -53,7 +54,7 @@ import {
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE, OUT_CELLS,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
-    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, laneEscapes, swingMarkers,
+    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, laneEscapes, swingMarkers, flowMarks, laneRuns,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -85,7 +86,8 @@ const MUT_CORNER = ARGS.includes('--mutate-corner')
 const MUT_TEACH = ARGS.includes('--mutate-teach')
 const MUT_LANE_TEACH = ARGS.includes('--mutate-lane-teach')
 const MUT_SWING = ARGS.includes('--mutate-swing')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING) {
+const MUT_FLOW = ARGS.includes('--mutate-flow')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -130,6 +132,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ['if (strandsFloor(gs, m.x, m.y) !== false) continue // illegal plug teaches nothing', 'if (false) continue // MUTANT: legality check off', 'the lane teach ignores legality — a plug that would strand floor behind a mouth lights up as the fix (#2622)']
                                                                     : MUT_SWING
                                                                     ? ['if (a1[0] * a2[0] + a1[1] * a2[1] !== 0) continue // perpendicular only — a straight face doesn\'t swing', 'if (false) continue // MUTANT: perpendicular check off', 'the sweep paints straight corridor faces as elbows — the corridor skip is gone (#2627 s3)']
+                                                                    : MUT_FLOW
+                                                                    ? ["if (n < LANE_LONG && open(x - 1, y) && open(x1 + 1, y)) {", 'if (true) {', 'the flow paint claims two-way traffic for dead-end spurs and ignores the length law (#2622 item 3)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
@@ -1305,6 +1309,133 @@ console.log('— teach the lane (#2622) —')
     const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
     ok(/why === 'lane'/.test(ui) && /laneEscapes\(gs, e\.x, e\.y\)/.test(ui), 'the painter keys the bay lesson off the refused lane click — drain-time derivation (#2622)')
     ok(/LEAVE A BAY/.test(ui), 'the lane lesson names the doctrine when even the mouths are traps (#2622)')
+}
+
+// ---- two-way flow paint (#2622 item 3) — legal two-way aisles carry arrows ----
+console.log('— two-way flow paint (#2622 item 3) —')
+{
+    const mk = () => { const g = makeGame(11); g.score = 9000; g.racks.length = 0; return g }
+    const put = (g, x, y) => { g.tool = 'rack'; return clickCell(g, x, y) }
+    const onRow = (g, y) => flowMarks(g).filter((m) => m.cells.some((c) => c.y === y))
+    const onCol = (g, x) => flowMarks(g).filter((m) => m.cells.some((c) => c.x === x))
+    const TOP = [[9, 6], [10, 6], [11, 6]]
+    const BOT = [[9, 8], [10, 8], [11, 8]]
+    {
+        const g = mk()
+        ok(flowMarks(g).length === 0, 'the bare opening floor paints no flow — the grammar appears with the racks (#2614 country)')
+    }
+    {
+        const g = mk()
+        const fails = [...TOP, ...BOT].filter(([x, y]) => put(g, x, y) !== 'build')
+        ok(fails.length === 0, 'the 3-cell aisle rig builds clean — legal two-way by the length law')
+        const ms = onRow(g, 7)
+        ok(ms.length === 1 && ms[0].axis === 'h' && ms[0].flow === 3 && ms[0].cells.map((c) => `${c.x},${c.y}`).join(' ') === '9,7 10,7 11,7',
+            `a tight run of 3 with open mouths marks two-way once (${ms.map((m) => `${m.axis}${m.flow}`).join(' ') || 'nothing'})`)
+        ok(ms[0].mouths.map((c) => `${c.x},${c.y}`).join(' ') === '8,7 12,7', 'the mark carries both mouths — the arrows ride the mouths the traffic comes from')
+    }
+    {
+        // one-way by choice: plugging a mouth spurs the aisle (#2546) — the
+        // arrows must go with the second mouth, or the paint lies about traffic.
+        const g = mk()
+        for (const [x, y] of [...TOP, ...BOT]) put(g, x, y)
+        ok(put(g, 8, 7) === 'build', 'the mouth plug builds')
+        ok(onRow(g, 7).length === 0, 'a spurred dead-end carries no arrows — one-way by choice stays bare (#2546 ruling)')
+    }
+    {
+        // a bay notch stops the tight scan: the long aisle splits into two
+        // two-way segments instead of one lie.
+        const g = mk()
+        const seq = [[9, 6], [11, 6], [12, 6], [9, 8], [10, 8], [12, 8]] // (10,6),(11,8) stay open — bay notches
+        const fails = seq.filter(([x, y]) => put(g, x, y) !== 'build')
+        ok(fails.length === 0, 'the bay-notch rig builds clean')
+        const ms = onRow(g, 7).filter((m) => m.cells.every((c) => c.x >= 9 && c.x <= 12))
+        ok(ms.length === 2 && ms.every((m) => m.flow === 1),
+            `a notched aisle paints its two tight segments, not a phantom run (${ms.map((m) => `${m.axis}${m.flow}@${m.cells[0].x},${m.cells[0].y}`).join(' ') || 'nothing'}) — the bay cell is its own mark`)
+    }
+    {
+        // vertical mirror
+        const g = mk()
+        const seq = [[6, 9], [6, 10], [6, 11], [8, 9], [8, 10], [8, 11]]
+        const fails = seq.filter(([x, y]) => put(g, x, y) !== 'build')
+        ok(fails.length === 0, 'the vertical 3-run rig builds clean')
+        const ms = onCol(g, 7).filter((m) => m.cells.every((c) => c.y >= 9 && c.y <= 11))
+        ok(ms.length === 1 && ms[0].axis === 'v' && ms[0].flow === 3, 'the vertical aisle marks two-way like its horizontal twin')
+    }
+    // the law's own truth on every board: only honest two-way segments mark.
+    {
+        for (const seed of [7, 11]) {
+            const g = makeGame(seed)
+            const lies = flowMarks(g).filter((m) => m.flow < 1 || m.flow >= LANE_LONG
+                || m.cells.some((c) => g.racks.some((r) => r.x === c.x && r.y === c.y)))
+            ok(lies.length === 0, `opening seed ${seed}: ${flowMarks(g).length} flow mark(s), every one a legal 1..${LANE_LONG - 1}-cell run on open floor`)
+        }
+        const g = mk()
+        for (const [x, y] of [...TOP, ...BOT]) put(g, x, y)
+        ok(laneRuns(g).length === 0 && flowMarks(g).length >= 1,
+            'no no-pass lane stands on the marked floor — the paint and the refusal law cannot both speak on one aisle (#2614 complement)')
+    }
+    {
+        // purity + determinism (#1917): same answer twice, board hash unchanged
+        const g = mk()
+        for (const [x, y] of [...TOP, ...BOT]) put(g, x, y)
+        const h0 = stateHash(g)
+        const one = JSON.stringify(flowMarks(g))
+        const two = JSON.stringify(flowMarks(g))
+        ok(one === two && stateHash(g) === h0, 'flowMarks is pure — same answer twice, board hash unchanged (#1917)')
+    }
+    {
+        // the autopilot invariant shape: a full shift of bought racks, then the
+        // sweep — presentation never breaks a shift, and the law complement holds
+        // on whatever floor the bot builds.
+        const g = makeGame(4242)
+        const ap = createAutopilot()
+        while (!g.end && g.tick < SHIFT + 10) step(g, [ap(g)])
+        const ms = flowMarks(g)
+        ok(Array.isArray(ms) && ms.every((m) => m.flow >= 1 && m.flow < LANE_LONG),
+            `a full autopilot shift, then the sweep — ${ms.length} flow mark(s), no throw, none past the length law (#2622 item 3)`)
+    }
+    // the painter draws it, under the louder lesson; the DEV eye reads it.
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/flowMarks\(gs\)/.test(ui) && /paintFlow\(\)/.test(ui), 'the painter draws the flow paint (flowMarks → paintFlow) (#2622 item 3)')
+    ok(ui.indexOf('paintFlow()') < ui.indexOf('paintSwing()') && ui.indexOf('paintSwing()') < ui.indexOf('paintTeach(tick)'), 'floor paint order: traffic arrows as the base coat, the amber law boxes above them, the louder refusal lesson on top (#2622 item 3, #2627 s3)')
+    ok(/elbows\.has\(/.test(ui), 'the flow paint yields to the amber keep-clear box — law paint outranks traffic paint (#2622 item 3)')
+    ok(/flow: \(\) => flowMarks\(gs\)/.test(ui), 'the DEV hook exposes the two-way grammar for the browser gate (#2622 item 3)')
+}
+
+// ---- duel refusal seat stamp (#2622 item 4) — a banner names WHOSE click died ----
+console.log('— duel refusal seat stamp (#2622 item 4) —')
+{
+    const ROW5 = [[14, 5], [15, 5], [16, 5], [17, 5], [18, 5]]
+    const ROW3 = [[14, 3], [15, 3], [16, 3], [17, 3]]
+    const rig = (duel) => {
+        const g = makeGame(11, { duel })
+        g.score = 9000; g.racks.length = 0
+        for (const [x, y] of [...ROW5, ...ROW3]) { g.tool = 'rack'; if (clickCell(g, x, y, 0) !== 'build') return null }
+        return g
+    }
+    {
+        const g = rig(false)
+        ok(g !== null, 'the lane rig builds clean (solo control)')
+        g.tool = 'rack'
+        ok(clickCell(g, 18, 3, 0) === 'aisle' && g.ev.at(-1)?.s === 0, 'a solo refusal names seat 0 — the event carries its seat (#2622 item 4)')
+    }
+    {
+        const g = rig(true)
+        g.m.tool = 'rack'
+        const r = clickCell(g, 18, 3, 1)
+        const ev = g.ev.at(-1)
+        ok(r === 'aisle' && ev?.why === 'lane' && ev?.s === 1, 'seat M meets NO PASSING LANE mid-duel and the refusal names the MODEL seat (#2622 item 4)')
+        ok(g.racks.length === ROW5.length + ROW3.length && g.m.tool === 'rack', 'the refusal charges nothing and keeps seat M armed — law unchanged, seat added (#1917)')
+    }
+    {
+        const g = rig(true)
+        const h0 = stateHash(g)
+        g.tool = 'rack'; clickCell(g, 18, 3, 0)
+        ok(stateHash(g) === h0, 'refusal events stay out of stateHash — the seat stamp is chrome, the hash law is untouched (#1373)')
+    }
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/type: 'aisle', x, y, why: strand, s: seat/.test(readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')), 'the sim stamps every aisle refusal with its seat (#2622 item 4)')
+    ok(/gs\.duel && \(e\.why === 'lane' \|\| e\.why === 'corner'\)/.test(ui) && /e\.s === 1 \? 'MODEL' : 'YOU'/.test(ui), 'the painter stamps the refusal seat in the duel chrome — YOU vs MODEL under the amber law (#2622 item 4)')
 }
 
 // ---- swing paint (#2627 s3) — live elbows carry faint keep-clear paint ----

@@ -278,7 +278,7 @@ function laneChokes(gs, extra) {
     }
     return runs
 }
-function laneRuns(gs, extra) {
+export function laneRuns(gs, extra) {
     return laneChokes(gs, extra).map((r) => r.k)
 }
 // #2627 NO CORNER STACKS — the turn-radii tail of #2546/#2614: nothing at the
@@ -456,6 +456,59 @@ export function swingMarkers(gs) {
     for (const m of at.values()) out.push(m)
     return out
 }
+// #2622 item 3 TWO-WAY TRAFFIC, READABLE — which aisles carry traffic from
+// BOTH mouths? The lane law (#2614) only speaks when a click completes a trap;
+// the grammar it implies is silent: a TIGHT straight run (both flanks blocked,
+// no bay notch) of 1..LANE_LONG−1 cells whose mouths at BOTH ends are open is
+// a legal two-way aisle — short enough that every head-on meeting keeps a bot
+// at an open mouth to reverse into (the exact exemption LANE_LONG 5 encodes:
+// 1+2+1). A run of ≥LANE_LONG can't stand on the floor (the refusal law
+// forbids it), so it never appears here; a run with a closed mouth is a
+// dead-end spur — one-way by choice (#2546) — and stays bare; a bay cell stops
+// the tight scan, so bayed aisles carry no arrows either: the pull-off IS the
+// mark. `flow` names the aisle's width in its own paint: 4 cells is a committed
+// two-way lane (brightest), 1 is a stub (dimmest). Pure map+racks geometry,
+// fixed order (rows then columns, ascending), no rng, no movers, zero footprint
+// (#1917) — the same scan family as laneChokes/swingMarkers; the painter
+// draws it, the sim truth stays the law.
+export function flowMarks(gs) {
+    const open = (x, y) => inGrid(x, y) && map[y][x] === CELL.FLOOR
+        && !gs.racks.some((r) => r.x === x && r.y === y)
+    const out = []
+    for (let y = 1; y < ROWS - 1; y++) { // horizontal aisles
+        let x = 1
+        while (x < COLS - 1) {
+            if (open(x, y) && !open(x, y - 1) && !open(x, y + 1)) {
+                let x1 = x
+                while (open(x1 + 1, y) && !open(x1 + 1, y - 1) && !open(x1 + 1, y + 1)) x1++
+                const n = x1 - x + 1
+                if (n < LANE_LONG && open(x - 1, y) && open(x1 + 1, y)) {
+                    const cells = []
+                    for (let k = x; k <= x1; k++) cells.push({ x: k, y })
+                    out.push({ axis: 'h', cells, flow: n, mouths: [{ x: x - 1, y }, { x: x1 + 1, y }] })
+                }
+                x = x1 + 1
+            } else x++
+        }
+    }
+    for (let x = 1; x < COLS - 1; x++) { // vertical aisles
+        let y = 1
+        while (y < ROWS - 1) {
+            if (open(x, y) && !open(x - 1, y) && !open(x + 1, y)) {
+                let y1 = y
+                while (open(x, y1 + 1) && !open(x - 1, y1 + 1) && !open(x + 1, y1 + 1)) y1++
+                const n = y1 - y + 1
+                if (n < LANE_LONG && open(x, y - 1) && open(x, y1 + 1)) {
+                    const cells = []
+                    for (let k = y; k <= y1; k++) cells.push({ x, y: k })
+                    out.push({ axis: 'v', cells, flow: n, mouths: [{ x, y: y - 1 }, { x, y: y1 + 1 }] })
+                }
+                y = y1 + 1
+            } else y++
+        }
+    }
+    return out
+}
 function strandsFloor(gs, x, y) {
     if (map[y][x] !== CELL.FLOOR || gs.racks.some((r) => r.x === x && r.y === y)) return false // other laws refuse first
     const before = serviceNet(gs, null)
@@ -605,7 +658,7 @@ function cellClick(gs, x, y, seat = 0) {
         if (map[y][x] !== CELL.FLOOR) { gs.ev.push({ type: 'refuse', x, y }); return 'refuse' }
         if (gs.racks.length >= RACK_SPOTS.length + 4) { gs.ev.push({ type: 'refuse', x, y }); return 'refuse' }
         const strand = strandsFloor(gs, x, y)
-        if (strand) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' } // #2546: nothing is charged for a lane you cannot drive
+        if (strand) { gs.ev.push({ type: 'aisle', x, y, why: strand, s: seat }); return 'aisle' } // #2546: nothing is charged for a lane you cannot drive — #2622 item 4: name WHOSE lane it was (duel chrome; events stay out of stateHash, #1373)
         if (gs.score < RACK_COST) { gs.ev.push({ type: 'poor', x, y, s: seat }); return 'poor' }
         debit(gs, RACK_COST)
         gs.racks.push({ x, y, items: [], owner: seat })

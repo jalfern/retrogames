@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
-    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, swingMarkers,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, swingMarkers, flowMarks,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -269,6 +269,16 @@ const FloorBossGame = () => {
                             } else {
                                 fx(e.why === 'corner' ? 'LEAVE THE ELBOW FREE' : 'LEAVE A BAY', '#5dff8f', PX(e.x) + 13, PY(e.y) + 20)
                             }
+                        }
+                        // #2622 item 4 DUEL REFUSAL SEAT STAMP — mid-duel the clock
+                        // runs and both managers share the floor: a banner that does
+                        // not say WHOSE click died reads as an accusation against
+                        // you. In duel, the refusal names its seat in the seat's own
+                        // colour beneath the amber law (events stay out of stateHash,
+                        // #1373 — this is chrome, the law stays sim truth).
+                        if (gs.duel && (e.why === 'lane' || e.why === 'corner')) {
+                            fx(`${e.why === 'lane' ? 'LANE' : 'ELBOW'}: ${e.s === 1 ? 'MODEL' : 'YOU'}`,
+                                e.s === 1 ? '#57c7ff' : '#ffd23f', PX(e.x) + 13, PY(e.y) + (elbowTeach && elbowTeach.cells.length ? 32 : 20))
                         }
                         break
                     }
@@ -563,6 +573,40 @@ const FloorBossGame = () => {
                 ctx.moveTo(cx + a1[0] * TILE, cy + a1[1] * TILE)
                 ctx.quadraticCurveTo(cx, cy, cx + a2[0] * TILE, cy + a2[1] * TILE)
                 ctx.stroke()
+            }
+        }
+        const paintFlow = () => {
+            // #2622 item 3 TWO-WAY TRAFFIC, READABLE — cyan flow arrows at both
+            // mouths of every legal two-way aisle (flowMarks in sim.js): a tight
+            // run of 1..4 with open mouths at both ends. Spurred dead-ends and
+            // bayed aisles stay bare — one-way by choice, and the bay cell is
+            // its own mark. Aisle tint + arrows, never on rack faces; the elbow
+            // service cells are excluded — the corner keeps the amber keep-clear
+            // box for itself (#2627 s3): law paint outranks traffic paint, and
+            // an elbow is not a through-lane. Cyan = traffic colour (the bots'
+            // own livery); width is the aisle's own truth — a committed 4-cell
+            // lane paints brightest, a stub dimmest. Painter-only, deterministic:
+            // pure geometry of the board, no rng, no pulse.
+            const elbows = new Set(swingMarkers(gs).map((m) => `${m.x},${m.y}`))
+            for (const m of flowMarks(gs)) {
+                const alpha = 0.04 + 0.03 * m.flow
+                for (const c of m.cells) {
+                    if (elbows.has(`${c.x},${c.y}`)) continue // the corner's amber box owns this cell
+                    ctx.fillStyle = `rgba(46,168,184,${alpha})`
+                    ctx.fillRect(PX(c.x) + 3, PY(c.y) + 3, TILE - 6, TILE - 6)
+                }
+                ctx.strokeStyle = `rgba(120,220,235,${0.28 + 0.09 * m.flow})`; ctx.lineWidth = 2
+                for (const [mi, mouth] of m.mouths.entries()) {
+                    const cx = PX(mouth.x) + TILE / 2, cy = PY(mouth.y) + TILE / 2
+                    const s = mi === 0 ? 1 : -1 // arrowhead points INTO the aisle from each mouth
+                    const ax = m.axis === 'h' ? s : 0, ay = m.axis === 'h' ? 0 : s
+                    const px = m.axis === 'h' ? 0 : s, py = m.axis === 'h' ? s : 0
+                    ctx.beginPath()
+                    ctx.moveTo(cx + ax * -5 + px * 4, cy + ay * -5 + py * 4)
+                    ctx.lineTo(cx + ax * 4, cy + ay * 4)
+                    ctx.lineTo(cx + ax * -5 - px * 4, cy + ay * -5 - py * 4)
+                    ctx.stroke()
+                }
             }
         }
         const paintTeach = (tick) => {
@@ -1176,6 +1220,7 @@ const FloorBossGame = () => {
             paintConveyor(tick)
             paintOutbound(tick)
             paintRacks()
+            paintFlow()
             paintSwing()
             paintTeach(tick)
             paintArm(tick)
@@ -1404,6 +1449,7 @@ const FloorBossGame = () => {
                 servoFx: () => ({ arcs: arcItems.filter((a) => a.servo).length, diamond: diamondA, dmode: gs.arm.swing > 0 ? 'swing' : gs.tool === 'rack' ? 'rack' : gs.arm.held ? 'pulse' : 'off', tool: gs.tool, sway: gripSway, shud: gripShud }),
                 // #2627 s3 eye on the swing paint — live elbows the painter marks (renderer-only query, sim untouched)
                 swing: () => swingMarkers(gs).map((m) => ({ x: m.x, y: m.y, h: m.h })),
+                flow: () => flowMarks(gs).map((m) => ({ axis: m.axis, n: m.flow, cells: m.cells.map((c) => `${c.x},${c.y}`).join('|') })), // #2622 item 3: the two-way grammar, readable to QA
                 // #2561 eyes on the twin-till ceremony (renderer-only state): when
                 // each seat's chip last armed its growth blink, and the live spend
                 // flash (label + color) so the browser gate can name model buys.
