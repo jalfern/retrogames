@@ -1,72 +1,75 @@
-# STATE — session 333 slot b close-out (THE BADGE RIDES THE NAME shipped)
-
-Slot-b run ~01:35–04:05Z. Warden's #1711 REFUSED (slot a live, 20 min old).
-Ladder empty (steer/next/game-queue), feedback items exist but QA MASTER is
-live (:5176) → borrow blocked → flagship gaps spent → never-dry rung:
-`idle-kick` = EXCITEBIKE gap 0 (score 4). Filed #2651, claimed, shipped.
-AGENTS rule 4 satisfied: game code merged.
+# STATE — session 332 slot a close-out
 
 ## Shipped this session
-- **#2651 THE BADGE RIDES THE NAME — CLOSED shipped** (PR #2656, squash
-  `1cdabe7`, live: chunk `index-DJyXOx4T.js` carries `data-demo-name`).
-  NAME tool (index 9, before SAVE): ←/→ walk a 27-glyph wheel (A–Z + space,
-  wrapping; the wheel is STATE — nameSel never resets on commit), A/SPACE
-  commits, Backspace/pad-DEL takes back, `designName` uppercases/collapses/
-  caps-12 at save (storage sees ONE grammar; unnamed → `CUSTOM` placeholder).
-  `demoSeatName` badge law (pure, attract.js): MOTOCROSS untouchable; real
-  names ride; empty/placeholder keeps byte-honest `CUSTOM k` (#2647 pre-naming
-  reads exactly as before). abandonToBay carries the name (#2603 extended);
-  splash rows speak names; SAVE receipts speak it; `data-demo-name` DOM byte.
-  STRIP FIX: 12 tools don't fit 256px at 8px/10 — SAVE/EXIT were ALREADY
-  off-canvas at 11 (by-hand shot proved it); type steps to 6px/gutter 4 at ≥12.
-  Proof: excitecheck 451/451 (+25 NAME block; by-hand mutants — fallback
-  removed, cap removed — die by name), exciteplay 151/151 (+14 real-key
-  naming drive, marquee flies `DEMO · KU` over its own dirt). eslint +
-  lint:mario/fps/ai + build green. Honest remainders (README + comment on
-  QA #2632): no direct TYPE shortcut; naming line shares the watermark row;
-  12-char names untested at phone widths; 6px strip type vs ART.md at 1x.
+- **CLAPTEST: LIVE PAIR COACH — PR #2653 merged `a39b7aa`** (Part of
+  #1711; static SUCCESS; prod verified: chunk `index-DN4fVHE_.js` at
+  jalfern.com/retrogames/claptest carries the coach text). Root cause was
+  measured, not guessed — decoded Jon's three Nov-16 claptest takes from the
+  store bytes: `seed144524` heard its only clap at 5624 ms while its only pad
+  press was at 8500 ms (silent glass tap + later airborne clap);
+  `seed828591` blank; `seed978353` two near-full-scale claps (peaks 6.5/5.6)
+  and ZERO touches. The pill (#2466) teaches "make a sound"; nothing taught
+  "sound AND touch, same instant" mid-take. Build: pure pair coach in
+  `clapTestCore` (pair in CLAP_SEARCH_MS, green in CLAP_TOL_MS — the grader's
+  own constants; supersede/double-pair/once-only guards), `window.__liveClap`
+  fan-out stamp at the recorder's analyser onset (take bytes/sim/verdict
+  untouched), live badge `PAIR ✓ ±ms` / `OFF ms` / `NO TOUCH` / `NO SOUND` +
+  running matched count (`data-clap-coach-live`, `data-clap-pairs`).
+  Harness: recordcheck **240/240** (+18 pins; hand-mutant `d<=tol -> d>=tol`
+  killed 4 named pins); claptestplay +coachProof driving the two measured
+  shapes + one honest coincident slap (46/46 structural on the accepted
+  attempt; naming gates honest-SKIP at 12–16 fps — three browser lanes shared
+  the box all evening; QA #2654 asked to witness green on a quiet machine).
+  Also harness-only `0e20ba3`: cached-consent pill gate no longer
+  mispredicts #2466's re-arm→re-learn path (asserts flag+state, not the
+  paint-time `kind`).
+- **#1711 TARGET — evidence + ship.** First-pass audit (posted): all 14 store
+  takes PLAIGRADE-marked, nightly grader armed/green (schedule run
+  44126455014), line-1 3/3, line-2 10/10, line-4 shipped — then the coach
+  shipped as the stage's next code increment. #1711 released to `next`
+  (line 3 = one completed phone take from Jon; nightly self-grades it).
+
+## Claims / board
+- #1711 claimed at warden order, released to `next` after evidence + ship.
+- Filed: jonq **#2652** (S1 line 3: take it this week, or waive the phone
+  shape — default keeps waiting, nightly grades); QA **#2654**
+  (CLAP TEST live-coach polish pass incl. witnessing naming gates on a quiet
+  box). game-queue empty; `next` = #1711 only.
 
 ## Next queued
-- `next` = #1711 — needs JON's ≥3-slaps `/claptest` take before a lane can
-  close S1 (slot a holds the building label; check claim liveness anyway).
-- game-queue EMPTY. Next builder: re-run `node scripts/idle-kick.mjs` (my
-  pick was EXCITEBIKE gap 0 at tip `1c9aad0`; gap 0 is now CLOSED — the pick
-  will have moved; re-derive, don't trust this file). QA MASTER was live
-  :5176 late shift — feedback-borrow stays blocked unless `pgrep -f "QA
-  MASTER"` is empty.
-- #2632 (QA EXCITEBIKE YOUR-LAPS pass) stays QA's; I extended it with the
-  four naming-polish surfaces above. Don't touch what QA holds.
+- `node scripts/idle-kick.mjs` answers `KICK EXCITEBIKE 0 weak` at
+  `a39b7aa`: the never-dry pick re-lands on EXCITEBIKE — take its oldest
+  unowned README honest-gap (per #1571 file `POLISH — EXCITEBIKE: …` +
+  claim), unless the warden has queued something or #1711's line 3 earned
+  (check store for a jalfern/claptest take with ≥3 pairs first — closing
+  #1711 promotes #1712 to `next`).
+- QA MASTER ran all evening on :5176 (finished ~my merge); slot b shipped
+  #2656 (badge name) mid-session — no collisions with this lane's files.
 
 ## Open questions (issues, not here — #605)
-- None. jonq games lane empty at close.
+- #2652 (jonq, platform lane) — phone take vs waiver for S1 line 3.
 
 ## Catches for the next session (each cost probes this shift)
-- **`git stash` does NOT bisect committed work.** I committed the core, then
-  stashed "to test pristine main" — the stash only took the uncommitted
-  playtest edits, so the "base" run still had my game code and its FAILs were
-  my new game vs OLD checks. To bisect honestly: `git checkout <sha> -- .`
-  or a worktree at origin/main, not stash.
-- **Tool-index adjacency is load-bearing in exciteplay.** Inserting NAME at 9
-  broke `SAVE→ERASE in one ArrowUp` in the legacy #2576 block (silent wrong
-  tool → Space hit the wrong branch → phantom saves cascaded 8 FAILs). Grep
-  `ArrowUp.*SAVE` when you grow the strip.
-- **Playwright key repeats at 30ms survive arrow handling but read every
-  step** — the wheel-position model must account for nameSel persisting
-  across BACKSPACE (it does NOT reset).
-- **exciteplay :350 toast-drain wait flakes locally** (passed 2 runs, hung
-  2; CI nightly green on the same code; isolated rig shows the toast never
-  even raises). Local-only; don't chase past one rerun (rule 3).
-- Also valid: prod BFS via relative-ref resolution (~5 fetches once the BFS
-  walks `./index-*.js` from the root chunks); shell eats backticks even in
-  `gh issue comment --body` (use --body-file); stale long-lived dev servers
-  HMR can wedge a suite at a wait — restart before blaming code.
+- **`window.__clapCoach.kind` is a paint-time snapshot** — it keeps naming
+  the pill after `coachMarkLearned` flips flag+state mid-take. Assert
+  flag/state for device-truth gates (now fixed in claptestplay).
+- **Three browser lanes on one Mac = 12–16 fps sustained**: every ms-shaped
+  gate SKIPs honestly; structural/upload gates still pass. Witness
+  time-shaped gates only after `pgrep "QA MASTER|FORGE on slot b"` is empty.
+- **A coach scenario needs the synth-mic init script installed** — without
+  it the fake-UI flag opens the REAL mic silently and `__clapWall` stays
+  empty; the precondition-fail message looks like a synth bug (extracted to
+  `synthMicInit`, shared now).
+- **`gh issue view --jq` on a non-existent field exits 1 with no output** —
+  several "empty" answers this shift were jq shape, not missing data.
+- Prod-verify content-not-hash still: grep a shipped literal inside the
+  entry chunk (claptest is not lazy — it rides `index-*.js`); apex 308 to
+  www, use `curl -L`.
 
 ## Lanes clean
-- Main checkout: I never checked out main (worktree only); detached at
-  `origin/main` after merge (rule-5 tail).
-- STATE.md lands via its own STATE PR (game merged, so step 9 allows it);
-  parked slot-scoped then shared (`statepark park b`).
-- Lane worktree `retrogames-forge-excite-attract-names` pruned after merge;
-  local branch gone with the remote one.
-- :5178 stopped by this lane; foreign ports (:5173 slot a, :5176 QA)
+- Main checkout detached at `origin/main`; tree clean after this STATE
+  commit. My :5173 dev server stopped; foreign ports (:5176 QA, :5178 slot
+  b) untouched.
+- My worktree `retrogames-forge-plaicraft-s1-grade` removed (branch deleted
+  with the merge); its `.env.local` copy went with it; foreign worktrees
   untouched.
