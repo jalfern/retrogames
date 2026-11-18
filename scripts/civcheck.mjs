@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makeTrade, canTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, portsOfRealm, suppliedSea, hullSupplied, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats, eraCrossNote, eraBoughtInfo } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makeTrade, canTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, portsOfRealm, suppliedSea, hullSupplied, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats, eraCrossNote, eraBoughtInfo, BUILDINGS, BUILDING_IDS, bldKind, bldDeny, hasBuilding, BLD_PREFIX } from '../src/games/CivilizationV/sim.js'
 import { decide, plan, RESEARCH_ORDER } from '../src/games/CivilizationV/planner.js'
 import { readFileSync } from 'fs'
 
@@ -2487,6 +2487,105 @@ console.log('43. era-curve polish — crossings speak, crowns teach (#2128)')
     ok(!/className="ml-1 text-red-300">×\{r\.back\}/.test(view), 'the ×N vs you badge left its static grey-red behind')
 
     CFG.capitalSizeToWin = keepCap; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
+}
+
+// ---- 44. city buildings — the lot rises (#2671) ----
+console.log('44. city buildings — the lot rises (#2671)')
+{
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.turnLimit = 9999
+
+    // (a) the table is sane before anything rides it
+    ok(BUILDING_IDS.length === 5, 'a). five named buildings — Granary, Library, Market, Workshop, Walls')
+    ok(BUILDING_IDS.every((id) => TECH[BUILDINGS[id].tech] && BUILDINGS[id].cost >= 30 && BUILDINGS[id].cost <= 60
+        && ((BUILDINGS[id].y && Object.keys(BUILDINGS[id].y).length === 1) || BUILDINGS[id].def > 0)),
+        'a). every building names a real tech, costs 30–60 shields, and carries one numeric effect')
+    ok(bldKind('BLD_GRANARY') && !bldKind('ARK_COCKPIT') && !bldKind('WARRIOR') && !bldKind(null),
+        'a). one queue-kind namespace — buildings, plates and units read one string space apart')
+
+    const gs = newGame(2, 0)
+    const s0 = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s0.id, found: true })
+    step(gs, { endTurn: true })
+    const cap = gs.cities.find((c) => c.alive && c.civ === 0)
+    ok(cap && cap.bld && Object.keys(cap.bld).length === 0, 'b). a fresh city opens with an empty lot')
+
+    // (c) tech gates the order, and the refusal says which tech
+    ok(canQueue(gs, 0, 'BLD_GRANARY') === false, 'c). Pottery unknown — no Granary order yet')
+    step(gs, { queue: 'BLD_GRANARY' })
+    ok(!cap.queue.some((k) => bldKind(k)) && gs.events.some((e) => e.type === 'deny' && /Pottery/.test(e.reason || '')),
+        'c). the refused order names the tech it needs')
+    grantTech(gs, 0, 'POTTERY')
+    ok(queueDeny(gs, 0, 'BLD_GRANARY') === null, 'c). Pottery learned — the yard opens for it')
+
+    // (d) one project at a time; the yard banks shields and the building rises
+    step(gs, { queue: 'BLD_GRANARY' })
+    ok(cap.queue.includes('BLD_GRANARY'), 'd). the capital takes the Granary order by default')
+    cap.buildP = BUILDINGS.GRANARY.cost + 7
+    step(gs, { endTurn: true })
+    ok(hasBuilding(cap, 'GRANARY') && !cap.queue.includes('BLD_GRANARY') && cap.buildP >= 7,
+        'd). the Granary stands on the turn end, cost deducted, surplus keeps banking')
+    ok(gs.events.some((e) => e.type === 'building' && e.id === 'GRANARY' && e.civ === 0),
+        'd). the realm announces the raise (building event, player civ)')
+    const fYes = cityYield(gs, cap).f
+    cap.bld.GRANARY = false; const fNo = cityYield(gs, cap).f; cap.bld.GRANARY = true
+    eq(fYes, fNo + BUILDINGS.GRANARY.y.f, 'd). cityYield reads the lot — pull the Granary, food drops by exactly its effect')
+
+    // (e) per-city, not per-realm: once here, twice in the kingdom
+    step(gs, { queue: 'BLD_GRANARY' })
+    ok(gs.events.some((e) => e.type === 'deny' && /already stands/.test(e.reason || '')),
+        'e). one Granary per city — the second order is refused, honestly')
+    const site = gs.tiles.find((t) => canFound(gs, 0, t.c, t.r) === true)
+    ok(!!site, 'e). a second legal site exists')
+    const s2 = spawnUnit(gs, 0, 'SETTLER', site.c, site.r)
+    step(gs, { select: s2.id, found: true })
+    const col = gs.cities.find((c) => c.alive && c.civ === 0 && c !== cap)
+    step(gs, { queue: 'BLD_GRANARY', city: col.id })
+    ok(col.queue.includes('BLD_GRANARY'), 'e). the SAME building may rise in the next city — buildings belong to cities, not realms (unlike plates)')
+    step(gs, { queue: 'BLD_GRANARY', city: col.id })
+    ok(gs.events.some((e) => e.type === 'deny' && /already in/.test(e.reason || '')),
+        'e). never twice on one yard — the queued duplicate is refused')
+
+    // (f) Walls raise the defence — flat, before the wonder\'s multiplier
+    const d0 = cityDefense(gs, col)
+    col.bld.WALLS = true
+    const dw = cityDefense(gs, col)
+    eq(dw - d0, BUILDINGS.WALLS.def, 'f). Walls add their flat defence bonus')
+    gs.wonders.GREAT_WALL = 0
+    const dwg = cityDefense(gs, col)
+    ok(dwg === Math.round(dw * CFG.wallDefMult) && dwg > d0 + BUILDINGS.WALLS.def,
+        'f). the Great Wall multiplies the walled city too — rampart then wonder, stack order pinned')
+    delete gs.wonders.GREAT_WALL; col.bld.WALLS = false
+
+    // (g) a captured city keeps what stands (the capture reset touches food/queue, never the lot)
+    const src = readFileSync(new URL('../src/games/CivilizationV/sim.js', import.meta.url), 'utf8')
+    const capReset = src.match(/city\.storedFood = 0; city\.buildP = 0; city\.queue = \[\]/)
+    ok(!!capReset, 'g). the capture reset is found at its single home')
+    ok(capReset && !/\.bld\b/.test(src.slice(capReset.index, capReset.index + 200)),
+        'g). capture clears the yard but never the lot — buildings survive the flag (as in the original)')
+
+    // (h) the AI raises its lots too — the shelf demo and autopilot see buildings rise
+    const ga = newGame(7, 0)
+    let aiBld = false
+    for (let t = 0; t < 60 && !ga.end && !aiBld; t++) {
+        step(ga, { endTurn: true })
+        aiBld = ga.cities.some((c) => c.alive && c.civ !== 0 && c.civ < BARB && Object.values(c.bld || {}).some(Boolean))
+    }
+    ok(aiBld, 'h). the AI build their first buildings within 60 turns — granaries rise in rival cities, deterministic')
+
+    // (i) determinism: the whole run folds the same twice
+    const run = (seed) => { const g = newGame(seed, 0); for (let t = 0; t < 25 && !g.end; t++) step(g, { endTurn: true }); return stateHash(g) }
+    eq(run(11), run(11), 'i). buildings ride the deterministic clock — same seed replays identical')
+
+    // (j) the paint is wired to the law (the (k) convention)
+    const view = readFileSync(new URL('../src/games/CivilizationV/index.jsx', import.meta.url), 'utf8')
+    ok(/pickBuilding\b[\s\S]{0,900}queue: kind/.test(view) && /BLD_/.test(view),
+        'j). the BUILD panel orders through the same queue input as the keys — law, not a parallel path')
+    ok(/e\.type === 'building'/.test(view), 'j). the UI listens for the building event (toast + panel refresh)')
+    ok(/queueDeny\(gs, 0, kind\)\n\s+if \(why\)/.test(view), 'j). WELD\'s deny-check fixed: a null (allowed) no longer reads as refusal')
+    ok(/!bOpen && !vOpen/.test(view), 'j). the touch pad hides while the BUILD panel is open')
+
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
