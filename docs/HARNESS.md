@@ -249,9 +249,11 @@ version, and names the state before a suite red-herrings it). The replacement sh
 fake capture device fed by a baked WAV (`scripts/lib/fakemic.mjs`): hum + full-scale claps at exact
 sample offsets, delivered through **real** gUM, so consent, MediaRecorder, opus, the tick clock, v2
 assembly and the upload all run untouched on real bytes. Measured device priming: **+17.6 ms,
-spread 0.2 ms** (folded into `PRIME_MS`). `plaicraft-clap` and `voicedrive` are migrated;
-`claptestplay` still needs its per-schedule file restructure (several clap schedules share one
-browser today — one file serves one schedule). Honest-source rule: every run stamps its capture
+spread 0.2 ms** (folded into `PRIME_MS`). `plaicraft-clap` and `voicedrive` migrated in #2716;
+`claptestplay` in #2709 — its several clap schedules each ride their own browser launch
+(one baked file serves one schedule; the fake-file flag is fixed at launch), with the device's
+localStorage memory (verdict history, cached consent, coach flag) handed across relaunches via
+`context.storageState()`. Honest-source rule: every run stamps its capture
 source (`mic capture: fake-file (baked wav)`); a fake-file witness never launders as phone audio —
 line 3 still closes on the audited human take. Under cross-lane load the recorder and rAF starve
 together — that is why the clap drivers carry the #2205 quiet-box preflight: SKIP honestly, never
