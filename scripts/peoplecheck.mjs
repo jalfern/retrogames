@@ -94,7 +94,7 @@ import {
     court, courtTarget, COO_BOND, AFFECTION_BOND, INSULT_DROP, CMD_CD, REL_EDGES,   // #2131
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court
     courtReach, courtPickSet,   // #2235: choose your court target
-    cmdGoSay, goSayTarget, GO_SAY_CHASE, COURT_REACH,   // #2683: go-say — the far tap walks the word over
+    cmdGoSay, goSayTarget, GO_SAY_CHASE, GO_SAY_SETTLE, COURT_REACH,   // #2683: go-say — the far tap walks the word over; #2697: the settle cadence
     cmdQueue, orderBusy,   // #2470: the queue law the promise rides
     ivyChatPool, IVY_CHAT, IVY_FADE, IVY_GIFT_HUNGER, IVY_GIFT_CASH,   // #2143
     adoptPet, adoptOk, PET, PET_COOS,   // #2197: Miso
@@ -1486,7 +1486,7 @@ section('GO-SAY (#2683)')   // choose WHICH two share the ring — a far tap wal
         g3.people[0].goal !== null && g3.people[0].goal.kind === 'gosay' && !seen3.some((e) => e.t === 'coo' && e.k === 'fern') && !seen3.some((e) => e.t === 'go-say'))
     const seen3b = []
     for (let i = 0; i < Math.round(6 / DT); i++) { g3.visitor.r = 3; g3.visitor.c = 4; g3.visitor.path = null; g3.people[1].r = 6; g3.people[1].c = 6; g3.people[1].path = null; advance(g3, DT); seen3b.push(...drain(g3)) }
-    check('when the cooldown clears the held word fires at once',
+    check('when the cooldown clears the held word lands — frozen breath first, then the pay (#2697)',
         g3.people[0].goal === null && seen3b.filter((e) => e.t === 'coo' && e.k === 'fern').length === 1
         && seen3b.some((e) => e.t === 'go-say' && e.stage === 'fire'))
 
@@ -1497,6 +1497,48 @@ section('GO-SAY (#2683)')   // choose WHICH two share the ring — a far tap wal
     check('an ear that starts to leave takes the promise with her — lost, unpaid',
         evs4.some((e) => e.t === 'go-say' && e.stage === 'lost') && g4.people[0].goal === null && g4.rel.fern === 0
         && !evs4.some((e) => e.t === 'coo'))
+
+    // #2697 tail 1: the face-and-breath. Park the errand in-ring with the ear and
+    // watch the cadence: meet the ring, hold GO_SAY_SETTLE ticks, THEN pay.
+    const gSe = far(newRun(214))
+    gSe.people[0].r = 3; gSe.people[0].c = 3
+    gSe.people[0].path = null
+    gSe.people[0].goal = { kind: 'gosay', k: 'fern', tries: 0 }
+    let tickBreath = -1, tickFire = -1, cooInHold = 0
+    for (let i = 0; i < Math.round(4 / DT); i++) {
+        gSe.visitor.r = 3; gSe.visitor.c = 4; gSe.visitor.path = null
+        gSe.people[1].r = 6; gSe.people[1].c = 6; gSe.people[1].path = null
+        advance(gSe, DT)
+        const ev = drain(gSe)
+        if (tickBreath < 0 && gSe.people[0].settleT > 0) tickBreath = i
+        if (ev.some((e) => e.t === 'go-say' && e.stage === 'fire')) { tickFire = i; break }   // the pay tick is not the hold
+        if (tickBreath >= 0) cooInHold += ev.filter((e) => e.t === 'coo').length
+    }
+    check('#2697 the errand breathes — fire lands exactly GO_SAY_SETTLE ticks after the ring is met',
+        tickBreath >= 0 && tickFire >= 0 && tickFire - tickBreath === GO_SAY_SETTLE - 1)
+    check('#2697 the hold is silent — nothing pays before the breath ends',
+        cooInHold === 0 && gSe.rel.fern >= COO_BOND && gSe.rel.fern <= COO_BOND * 1.5)
+    check('#2697 the breath is spent with the word — no stale hold rides the next errand',
+        gSe.people[0].settleT === 0)
+
+    // #2697 tail 2: the errand narrates its own stakes — issue and blocked-loss,
+    // both fixed text (no rng spend, so every stored hash on this page stands).
+    const gTh = far(newRun(215))
+    cmdGoSay(gTh, gTh.people[0], 'fern')
+    check('#2697 the errand names itself at issue — one fixed thought on the sheet',
+        gTh.thoughts[0] && gTh.thoughts[0].text === 'You cross the lot to say the thing you mean.')
+    const gTh2 = far(newRun(216))
+    gTh2.people[0].goal = { kind: 'gosay', k: 'fern', tries: 0 }
+    gTh2.people[0].path = null
+    let shutLine = ''
+    for (let i = 0; i < 8; i++) {
+        gTh2.visitor.r = -3; gTh2.visitor.c = -3; gTh2.visitor.path = null
+        gTh2.people[1].r = 6; gTh2.people[1].c = 6; gTh2.people[1].path = null
+        advance(gTh2, DT)
+        if (gTh2.people[0].goal === null) { shutLine = gTh2.thoughts[0] ? gTh2.thoughts[0].text : ''; break }
+    }
+    check('#2697 the blocked errand speaks honestly — the shut-way line rides the loss',
+        gTh2.people[0].goal === null && shutLine === 'The way over is shut — the kind word waits for another day.')
 
     const g5 = far(newRun(206))
     g5.hour = 23   // the child's nap is the dark's law — the fold must be tested while she truly sleeps
