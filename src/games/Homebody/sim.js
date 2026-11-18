@@ -940,6 +940,30 @@ export const GARDEN = {
 
 export const WINGS_MAX = 2
 
+// #2695: rooms with purpose — a room earns its keep by being USED, not by
+// standing. Purpose state lives ON the wing records (it joins the existing
+// `s.wings` hash loop, so a lot with no rooms hashes exactly as before —
+// the #2689 empty-loop hygiene). The garden room ripens in the sun: tending
+// accrues only through daylit hours, and at ripeness it harvests — the
+// hungriest resident eats what was picked, the house takes the pride. At
+// night the garden sleeps: no growth, but a ripening bed waits. The Spare
+// Room law is lodging: sleep the night through on a bed standing INSIDE the
+// east wing and the morning pays a rested joy (once-per-day the room keeps
+// its tally — one lodging per night, whoever wakes in it).
+export const TEND_HOURS = 2      // daylit sim-hours a garden needs to ripen a harvest
+export const HARVEST_FOOD = 0.18 // the hungriest resident eats what the garden picked
+export const HARVEST_FUN = 0.06
+export const LODGE_FUN = 0.10    // waking rested in a room that lodged you well
+const HARVEST_LINES = [
+    '{p} picks supper from the garden room — the basket nearly overflows.',
+    'The garden room ripens; {p} carries in tomatoes still warm from the sun.',
+    'Beans, herbs, and one very fat courgette — the garden room pays for itself.',
+]
+const LODGE_LINES = [
+    '{p} wakes in the wing stretched and grinning — the room kept the night kind.',
+    'Sunlight finds the wing first; {p} rises rested, the room having done its job.',
+]
+
 // geometry for a placed wing record ({ id, r0 }) — and the lookup sets.
 export function wingGeom(w) { return w.id === 'garden' ? GARDEN : eastWing(w.r0) }
 const wingSetCache = new Map()
@@ -1832,7 +1856,9 @@ export function buildRoom(s, g) {
     if (!roomClear(s, geom) || s.money < geom.price) return false
     if (!keepsWing(s, geom)) return false
     s.money -= geom.price
-    s.wings.push(geom.id === 'garden' ? { id: 'garden' } : { id: 'east', r0: geom.r0 })
+    s.wings.push(geom.id === 'garden'
+        ? { id: 'garden', tend: 0, herbs: 0 }                                  // #2695: the ripening ledger rides the room
+        : { id: 'east', r0: geom.r0, sleptWell: 0, lodgeDay: -1 })           // #2695: and so does the lodging one
     s.ext = s.wings.length
     s.roomReact = s.people.length   // #1814: the wing gets its move-in reactions
     s.events.push({ t: 'room', w: geom.id })
@@ -3053,6 +3079,7 @@ const moodMul = (p) => (p.needs.energy < 0.2 ? 0.6 : p.needs.hunger < 0.2 ? 0.75
 function finishUse(s, p) {
     const { def } = p.use
     const it = p.use.it
+    const nightSleep = !!p.use.night   // #2695: the lodging law asks whether the night was spent here
     // #2244: one helping per bell — the plate this resident already ate (or a
     // phantom whose plate went cold, shared away or rotted out from under the
     // walk) feeds nothing; the wasted steps are the cost, the stamp is the law.
@@ -3118,6 +3145,23 @@ function finishUse(s, p) {
     s.events.push({ t: 'content', n, id: def.id })
     s.events.push({ t: 'satisfied', need: def.need, name: p.name })
     think(s, doneLine(s, p, def, before))
+    // #2695: the lodging law. A bed that stands INSIDE the Spare Room and
+    // carried a resident through the night pays a rested joy at waking —
+    // the room earning its keep, distinct from the canopy's deeper sleep
+    // (that law owns the energy curve; this one owns the morning's spirits
+    // and the room's tally). One lodging counts per night, whoever wakes
+    // in it — the day stamp is the law, the fun lands for every waker.
+    if (def.sleep && nightSleep && s.ext) {
+        for (const w of s.wings) {
+            if (w.id !== 'east') continue
+            if (!wingSets(wingGeom(w)).floor.has(`${it.r},${it.c}`)) continue
+            p.needs.fun = Math.min(1, p.needs.fun + LODGE_FUN)
+            if (w.lodgeDay !== s.day) { w.lodgeDay = s.day; w.sleptWell = (w.sleptWell || 0) + 1 }
+            s.events.push({ t: 'lodged', name: p.name })
+            think(s, pick(s, LODGE_LINES).replace('{p}', p.name))
+            break
+        }
+    }
     // #2244: the table law. A plate is claimed by the household, not by one
     // stomach — when EVERY resident has eaten the same plate they sat down
     // together: social all round, the house bond climbs, one contentment,
@@ -3389,6 +3433,35 @@ export function advance(s, dt) {
     updateIceCream(s)       // #2503: and the jingle — the cone lands, the window runs out
     updateSneak(s, dt)      // #2520: and the night — odd nights a shadow tries the gate, the alarm answers
     updateProwl(s, simDt)     // #2532: and Miso keeps the even ones — the parities are the lot's night watch
+
+    // #2695: the sun law. Tending accrues only through daylit hours, and a
+    // ripe bed harvests without waiting for hands: the hungriest resident
+    // eats what the garden picked (ties go to the roster order — fixed, pure),
+    // the whole house takes the pride (one contentment, the meal-table
+    // pattern). Night stops the clock; a ripening bed waits for morning.
+    // The payoff rides the wing record, so a lot with no garden is untouched.
+    function updatePurpose(st, hrs) {
+        if (!st.ext) return
+        for (const w of st.wings) {
+            if (w.id !== 'garden') continue
+            if (isNight(st)) continue
+            w.tend = (w.tend || 0) + hrs
+            if (w.tend < TEND_HOURS) continue
+            w.tend = 0
+            w.herbs = (w.herbs || 0) + 1
+            let eater = null
+            for (const q of st.people) if (!eater || q.needs.hunger < eater.needs.hunger) eater = q
+            if (eater) {
+                eater.needs.hunger = Math.min(1, eater.needs.hunger + HARVEST_FOOD)
+                eater.needs.fun = Math.min(1, eater.needs.fun + HARVEST_FUN)
+                st.events.push({ t: 'harvest', name: eater.name, r: GARDEN.door[0], c: GARDEN.door[1] })
+                think(st, pick(st, HARVEST_LINES).replace('{p}', eater.name))
+            }
+            st.content = Math.min(WIN_CONTENT, st.content + 1)
+            st.events.push({ t: 'content', n: 1, id: 'garden' })
+        }
+    }
+    updatePurpose(s, dh)      // #2695: and the rooms earn their keep — the garden ripens while the sun is up
 
     for (const p of s.people) {
         p.mood = avg(p)
@@ -3676,7 +3749,12 @@ export function stateHash(s) {
     const mix = (v) => { h ^= Math.round(v * 1000) | 0; h = Math.imul(h, 16777619) }
     mix(s.tick); mix(s.day); mix(s.hour); mix(s.money); mix(s.content); mix(s.rank)
     mix(s.ext)
-    for (const w of s.wings) mix(w.id === 'garden' ? -7777 : w.r0 + 1)   // #2689: which wing stood where rides it too
+    for (const w of s.wings) {
+        mix(w.id === 'garden' ? -7777 : w.r0 + 1)   // #2689: which wing stood where rides it too
+        mix(Math.round((w.tend || 0) * 1000))        // #2695: purpose rides with the room it belongs to —
+        mix(w.herbs || 0)                            //     a lot with no wings gains no new mixes at all
+        mix(w.sleptWell || 0); mix((w.lodgeDay ?? -1) + 1)
+    }
     mix(s.tab)                       // #2222: the open catalog shelf is state too
     mix(s.speed)                     // #2227: so is the speed dial — replays pin it
     mix(s.rel.house); mix(s.rel.fern)   // #1817: bonds ride the hash

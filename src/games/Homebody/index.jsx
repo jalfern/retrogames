@@ -408,6 +408,18 @@ const HomebodyGame = () => {
                         audioController.playFilteredNoise(0.05, 0.025, 420)
                         if (live) { burst(e.x, e.y + 6, 5, '#c9b48a', 1.6); if (e.honey) say('IVY LEFT HONEY BY THE TILL') }
                         break
+                    case 'harvest': {   // #2695: the garden ripens — green-and-gold glints at the south door, plucky triad
+                        audioController.playTone(587, 0.06, 'triangle', 0.05)
+                        setTimeout(() => audioController.playTone(784, 0.06, 'triangle', 0.05), 80)
+                        setTimeout(() => audioController.playTone(988, 0.12, 'triangle', 0.05), 160)
+                        if (live) { say(`THE GARDEN RIPENS — HERBS ${gs.wings.reduce((a, w) => a + (w.herbs || 0), 0)}`); burst(tilePx(e.c), tilePy(e.r) + 8, 6, '#7ec850', 1.8) }
+                        break
+                    }
+                    case 'lodged':   // #2695: morning in the wing — a soft sunrise pair, no burst (the joy is quiet)
+                        audioController.playTone(392, 0.08, 'sine', 0.04)
+                        setTimeout(() => audioController.playTone(523, 0.16, 'sine', 0.04), 110)
+                        if (live) say(`${e.name.toUpperCase()} SLEPT WELL IN THE WING`)
+                        break
                     case 'rel-up':
                         audioController.playTone(659, 0.07, 'sine', 0.05)
                         setTimeout(() => audioController.playTone(988, 0.14, 'sine', 0.05), 90)
@@ -1412,6 +1424,7 @@ const HomebodyGame = () => {
                 money: gs.money, content: gs.content, day: gs.day, hour: Math.round(gs.hour * 10) / 10,
                 items: gs.items.length, visitors: (gs.visitor ? 1 : 0) + (gs.ivy ? 1 : 0), ext: gs.ext,   // #2143: the lot can hold two neighbours
                 wings: gs.wings.map((w) => (w.id === 'garden' ? 'garden' : `east${w.r0}`)),   // #2689: which rooms stand, and where the east one landed
+                purpose: gs.wings.map((w) => `${w.id === 'garden' ? 'garden' : 'east'}:${w.herbs || 0}:${w.sleptWell || 0}`),   // #2695: and what each room has earned
                 hero: [Math.round(gs.people[gs.active].x), Math.round(gs.people[gs.active].y)], cursor: [gs.cursor.r, gs.cursor.c],
                 needs: Object.fromEntries(gs.people.map((p) => [p.name, Object.fromEntries(NEEDS.map((n) => [n, Math.round(p.needs[n] * 100) / 100]))])),
                 hash: stateHash(gs),
@@ -1429,6 +1442,7 @@ const HomebodyGame = () => {
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
                     ext: gs.ext,
                     wings: gs.wings.map((w) => (w.id === 'garden' ? 'garden' : `east${w.r0}`)),   // #2689: the harness reads which rooms stand and where
+                    purpose: gs.wings.map((w) => `${w.id}:${w.herbs || 0}:${w.sleptWell || 0}:${Math.round((w.tend || 0) * 100) / 100}:${w.lodgeDay ?? -1}`),   // #2695: and what each room is earning, live
                     rel: { house: gs.rel.house, fern: gs.rel.fern, ivy: gs.rel.ivy, neigh: gs.rel.neigh },   // #2143: third meter; #2588: the pair's own rung joins the view
                     spats: gs.spats, grudge: gs.grudge, spatFx: Math.round(gs.spatFx * 10) / 10,   // #2070/#2076
                     neiSpats: gs.neiSpats, neiGrudge: gs.neiGrudge, neiIgnore: Math.round(gs.neiIgnore),   // #2604: the pair's own quarrel ledger, visible to harness and panel-debug

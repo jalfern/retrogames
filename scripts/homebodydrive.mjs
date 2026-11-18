@@ -235,6 +235,28 @@ check('#2689 garden stands after the chosen row too — two rooms, both paid', w
 await page.keyboard.press('KeyB')
 await wait(150)
 
+// #2695 PURPOSE: the garden ripens on the live lot. Park the clock at dawn,
+// crank FAST, and the herb ledger must grow on the probe while the sun is up
+// — the east room never tends, and the ledger reads before and after.
+const pu0 = await st()
+check('#2695 fresh rooms open with clean ledgers',
+    (pu0.purpose || []).length === 2 && pu0.purpose.every((p) => Number(p.split(':')[1]) === 0 && Number(p.split(':')[2]) === 0), JSON.stringify(pu0.purpose))
+const h0 = pu0.hour
+await page.evaluate(() => window.__homebodyTest.hour(8))
+await page.keyboard.press('Digit3')   // FAST — the harvest must land in seconds, not minutes
+let pu1 = pu0
+for (let i = 0; i < 60; i++) {
+    pu1 = await st()
+    if ((pu1.purpose || []).some((p) => p.startsWith('garden:') && Number(p.split(':')[1]) >= 1)) break
+    await wait(250)
+}
+check('#2695 the garden ripens with the sun — the live ledger grows',
+    (pu1.purpose || []).some((p) => p.startsWith('garden:') && Number(p.split(':')[1]) >= 1)
+    && (pu1.purpose || []).every((p) => p.split(':')[0] === 'garden' || Number(p.split(':')[1]) === 0), JSON.stringify(pu1.purpose))
+await page.keyboard.press('Digit2')   // back to NORMAL for the legs that follow
+await page.evaluate((h) => window.__homebodyTest.hour(h), h0)   // scenario-clock rewind (#2672 idiom) — later legs meet the clock they expect
+await wait(120)
+
 // switch residents with G
 const g0 = await st()
 await page.keyboard.press('KeyG')

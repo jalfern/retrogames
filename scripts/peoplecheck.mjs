@@ -120,6 +120,7 @@ import {
     SNEAK_DUE, SNEAK_WINDOW, SNEAK_LOOT, sneakNightDue, hasAlarm, ringSneak, SNEAK_CREEP, SNEAK_SIREN,   // #2520: the sneak — the window, the loot list, the parity, the alarm, the rig
     PROWL_DUE, PROWL_WINDOW, prowlNightDue, PET_PROWL_FUN, ringProwl, PROWL_PADS, PROWL_HOME_SFX,   // #2532: Miso's even-night prowl — the window, the parity, the cat-scale pay, the rig, the sound tables
     eastWing, GARDEN, EAST_ANCHORS, DEFAULT_ANCHOR, wingPick, wingGeom, WINGS_MAX, groundAt,   // #2689: deeper multi-room — the anchor law, the garden cottage, the pick
+    TEND_HOURS, HARVEST_FOOD, HARVEST_FUN, LODGE_FUN,   // #2695: rooms with purpose — the sun law and the lodging law
 } from '../src/games/Homebody/sim.js'
 import { bondRows, pairStride, strollTrail, STRIDE_BOB } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail
 import { promiseTell, earReact, gardenLamp, EAR_REACT, PROMISE_TIGHTEN, EAR_HUES, PAIR_HUES, LOST_RING_T } from '../src/games/Homebody/art.js'   // #2688: the go-say tells and the garden lamp are pure derivations too
@@ -419,6 +420,115 @@ section('WINGS (#2689): choose the row, raise the garden — deeper multi-room')
     check('pin: nothing but wingPick hands the autopilot a site — the classic row is its only one', /if \(id === 'roomkit'\)[\s\S]*?place\(s, 0, 0\)/.test(wSrc))
     check('pin: the marquee teaches the lot growing twice', /THE LOT GROWS TWICE/.test(wJsx))
     check('pin: the ghost is a pure read — drawWingGhost takes geometry, never mutates', /export function drawWingGhost\(ctx, geom, ok\)/.test(readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')) && /drawWingGhost\(ctx, wingPick\(g, g\.cursor\.r, g\.cursor\.c\)/.test(wJsx))
+}
+
+section('PURPOSE (#2695): a room earns its keep — ripening gardens, lodging wings')
+{
+    // the sun law: tending accrues only through daylit hours, ripe at exactly
+    // TEND_HOURS — no early, no late. dh is re-derived per tick exactly the
+    // way advance() does it (the work clock runs 8×, granularity included).
+    const Dh = (st) => FIXED_DT / 1000 / HOUR_SEC * (st.people.some((p) => p.working) ? 8 : 1)
+    const ripen = (st, capTicks = 60 * 60) => {
+        let cum = 0
+        for (let i = 0; i < capTicks; i++) {
+            cum += Dh(st)
+            advance(st, FIXED_DT / 1000)
+            if (st.wings.some((w) => w.id === 'garden' && (w.herbs || 0) > 0)) break
+        }
+        return cum
+    }
+    const s1 = newRun(701); s1.money = 99999; buildRoom(s1, GARDEN); s1.hour = 8
+    const h1 = ripen(s1)
+    const gw1 = s1.wings.find((w) => w.id === 'garden')
+    check(`first harvest at exactly TEND_HOURS (${TEND_HOURS}) — not early, not late`, gw1.herbs === 1 && Math.abs(h1 - TEND_HOURS) < 0.05, `elapsed ${h1.toFixed(3)}h, leftover tend ${gw1.tend.toFixed(3)}`)
+    check('a second bed ripens on the reset clock', Math.abs(gw1.tend) < 0.01 && gw1.herbs === 1)
+
+    // night silences the garden — the ripening bed waits for morning
+    const s2 = newRun(702); s2.money = 99999; buildRoom(s2, GARDEN)
+    s2.hour = 8
+    for (let i = 0; i < 60 * 60; i++) { advance(s2, FIXED_DT / 1000); if (s2.wings[0].tend >= 1) break }   // a bed half-ripened
+    const half = s2.wings[0].tend
+    const c2 = s2.content
+    check('sanity: the midday bed is ripening between 1 and TEND_HOURS', half >= 1 && half < TEND_HOURS, `tend ${half.toFixed(3)}`)
+    s2.hour = 23
+    for (let i = 0; i < 60 * 20; i++) advance(s2, FIXED_DT / 1000)   // four sim-hours of dark, still before dawn
+    check('night stops the clock — no tending, no harvest, no pride', s2.wings[0].tend === half && s2.wings[0].herbs === 0 && s2.content <= c2, `tend ${half}→${s2.wings[0].tend}`)
+
+    // the hungriest eats what was picked; ties keep roster order — fixed, pure
+    const s3 = newRun(703); s3.money = 99999; buildRoom(s3, GARDEN); s3.hour = 8
+    s3.people.forEach((p, i) => { p.needs.hunger = i === 1 ? 0.2 : 0.5 })
+    ripen(s3)
+    check('harvest feeds the hungriest resident (named event)', s3.events.some((e) => e.t === 'harvest' && e.name === s3.people[1].name))
+    const s3t = newRun(704); s3t.money = 99999; buildRoom(s3t, GARDEN); s3t.hour = 8
+    s3t.people.forEach((p) => { p.needs.hunger = 0.3 })
+    ripen(s3t)
+    check('an even hunger is settled by roster order, not the rng', s3t.events.some((e) => e.t === 'harvest' && e.name === s3t.people[0].name))
+    const s3j = newRun(705); s3j.money = 99999; buildRoom(s3j, GARDEN); s3j.hour = 8
+    const c3 = s3j.content
+    ripen(s3j)
+    check('the house takes the pride — one contentment per harvest', s3j.content === c3 + 1)
+
+    // the Spare Room law: lodging rides the GEOMETRY, one lodging per night
+    const lodge = (st, p, bed) => {
+        p.use = { it: bed, def: DEF.canopy, t: 0, dur: 9, night: true }
+        st.hour = 10   // the morning the existing sleep law wakes night sleepers
+        for (let i = 0; i < 60 * 3 && p.use; i++) advance(st, FIXED_DT / 1000)
+    }
+    const s4 = newRun(706); s4.money = 99999; buildRoom(s4, eastWing(2))
+    s4.items.push({ uid: 91, id: 'canopy', r: 4, c: 12 })
+    const bed4 = s4.items[s4.items.length - 1]
+    const f4a = s4.people[0].needs.fun; const f4b = s4.people[1].needs.fun
+    lodge(s4, s4.people[0], bed4)
+    const ew4 = s4.wings.find((w) => w.id === 'east')
+    check('waking in the wing pays the rested joy', s4.people[0].needs.fun > f4a + LODGE_FUN - 0.03 && s4.events.some((e) => e.t === 'lodged' && e.name === s4.people[0].name))
+    check('the room keeps one lodging per night', ew4.sleptWell === 1 && ew4.lodgeDay === s4.day)
+    lodge(s4, s4.people[1], bed4)
+    check('the second waker still feels it — but the night is one lodging', ew4.sleptWell === 1 && s4.people[1].needs.fun > f4b + LODGE_FUN - 0.03)
+
+    // a bed outside the room lodges nothing — the law is the geometry
+    const s5 = newRun(707); s5.money = 99999; buildRoom(s5, eastWing(2))
+    const bedHome = s5.items.find((it) => it.id === 'bed')
+    lodge(s5, s5.people[0], bedHome)
+    check('the house bed never lodges — only a bed inside the room counts', !s5.events.some((e) => e.t === 'lodged') && s5.wings.find((w) => w.id === 'east').sleptWell === 0)
+
+    // a garden lodges nobody (the east room is the lodging one) and an east
+    // wing never ripens — each room keeps to its own purpose
+    const s6 = newRun(708); s6.money = 99999; buildRoom(s6, eastWing(2)); s6.hour = 8
+    for (let i = 0; i < 60 * 60; i++) advance(s6, FIXED_DT / 1000)
+    check('the Spare Room never tends — ripening is the garden\u2019s own', s6.wings.find((w) => w.id === 'east').tend === undefined)
+
+    // an unbuilt lot gains NOTHING: purpose rides only the wing records, and a
+    // no-wings run hashes exactly as the pre-#2699 world did (queuecheck's
+    // seed-exact pin 3836882361 re-passed untouched against this sim)
+    const s7 = newRun(709)
+    check('purpose is the room\u2019s own ledger, not the house\u2019s state', !('herbs' in s7) && !('tend' in s7) && s7.wings.length === 0)
+
+    // twins: purpose rides the hash, determinism stays one world
+    const drive = (seed) => {
+        const st = newRun(seed); st.money = 99999
+        buildRoom(st, GARDEN); buildRoom(st, eastWing(2))
+        st.items.push({ uid: 92, id: 'canopy', r: 5, c: 13 })
+        const bed = st.items[st.items.length - 1]
+        st.hour = 8
+        lodge(st, st.people[0], bed)
+        for (let i = 0; i < 60 * 240; i++) advance(st, FIXED_DT / 1000)   // sun up, sun down
+        return st
+    }
+    const tP1 = drive(711); const tP2 = drive(711)
+    check('twins with purpose still one world — determinism green', stateHash(tP1) === stateHash(tP2) && tP1.wings[0].herbs === tP2.wings[0].herbs)
+    const tNoRoom = newRun(711); tNoRoom.money = 99999
+    for (let i = 0; i < 60 * 240; i++) advance(tNoRoom, FIXED_DT / 1000)
+    check('purpose is state — rooms with a harvest hash differently than bare lots', stateHash(tP1) !== stateHash(tNoRoom))
+
+    // source pins: the laws live in the sim, the shell only voices them
+    const pSrc = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const pJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: purpose mixes ride INSIDE the wings loop — an empty lot adds no mixes', /for \(const w of s\.wings\) \{[\s\S]*?w\.tend[\s\S]*?w\.herbs[\s\S]*?w\.sleptWell[\s\S]*?\}/.test(pSrc.match(/export function stateHash[\s\S]*?\n\}/)[0]))
+    check('pin: night silences the garden in the sim itself', /if \(isNight\(st\)\) continue/.test(pSrc))
+    check('pin: lodging asks the room geometry, never an item id', /floor\.has\(`\$\{it\.r\},\$\{it\.c\}`\)/.test(pSrc))
+    check('pin: the lodging tally stamps the day — one night, one lodging', /w\.lodgeDay !== s\.day/.test(pSrc))
+    check('pin: the shell voices ripening and lodging', /THE GARDEN RIPENS/.test(pJsx) && /SLEPT WELL IN THE WING/.test(pJsx))
+    check('pin: the view carries what each room earned', /purpose: gs\.wings\.map/.test(pJsx))
 }
 
 section('WINNABLE (attract autopilot, several seeds)')
