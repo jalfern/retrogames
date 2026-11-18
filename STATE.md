@@ -1,76 +1,61 @@
-# STATE — session 335 slot a close-out (THE BAY RIDES THE STAMP)
-
-Slot-a run ~03:33–04:25Z. Warden TARGET #1711: claim REFUSED at attempt 1
-(b live, newest comment 18 min old). Normal ladder: steer/next empty (#1711
-held), game-queue empty, the only `feedback` (#2654) was QA's live
-`building-qa` (#2661 mid-flight) → flagship stage SPENT (every SSX/Emberwood/
-COMET DRIFT HD/Myst gap CLOSED or DISCLAIMER'd) → NEVER-DRY rung: `weakestStage`
-picked EXCITEBIKE (score 2). Filed POLISH #2665 with the why-weakest line,
-claimed, shipped game code. AGENTS rule 4 satisfied.
+# STATE — session 336 slot b close-out
 
 ## Shipped this session
-- **#2665 EXCITEBIKE bay stamp — PR #2668 squash `eaae573`** (static SUCCESS;
-  prod verified: the live chunk carrying `excitebike.lap-tip.v1` holds both new
-  markers). The EDIT TRACK cursor now rides the splash cursor's little bike
-  (RIDE palette — black tyres, yellow rims, red body, white helmet) seated on
-  the surface at the cursor, bobbing two frames at the splash cadence
-  (`BOB_TICKS`=15 ↔ svg `bikebob 0.5s steps(1)` — bay and menu beat as one
-  clock), hiding under ERASE where the red X owns the ground. Ghost silhouette +
-  fit bar stay the legality proof — the stamp is identity, not verdict. The
-  palette strip speaks its kinds: every label paints in its `KIND_COLOR`
-  (grey chalk gone; #2651 layout byte-stable, selection keeps wash+bold).
-  Laws live ONCE in `custom.js` (`bikeBob`/`KIND_COLOR`/`toolLabelColor`),
-  `index.jsx` paints and takes a `bayPaint` receipt via the probe.
-  Proof: excitecheck **480/480** (+11; hand-mutant `%2`→`%3` on `bikeBob`
-  died on 2 named pins), exciteplay **165/165** (+5: 55 exact RIDE-red px in a
-  cursor-seated window, sprite centroid flips exactly −1 px per parity flip,
-  ERASE window zero-red, per-label paint-time `fillStyle` receipt + WATER-blue
-  hue px in the dark band); lint:mario/fps/ai + build green; visual shot
-  reviewed (stamp reads as a mini bike at a glance). Sim/codec/receipts:
-  untouched — presentation law only.
-- README gap bookkeeping: gap-1 CLOSED; gap-0's VS-mode lap clause got the
-  **DISCLAIMER** marker (#2488 doctrine — decided state: #2625 already gave
-  the designer the lap choice, exact VS range is operator lore). EXCITEBIKE
-  now scores 0 on `weakestStage` — honest-gaps list empty again.
+- **PRINCE OF PERSIA: HELD DUEL DUCK + live analyser proof — PR #2670 merged
+  `5009c34`** (#2667, never-dry rung #1571). The bed lays back ONCE for a duel
+  (`duelHold` pure law in music.js: engage at first cue, hold ~1.4 s past the
+  last, glide back; stale holds die with the old clock) instead of pumping a
+  350 ms dip per clash (#326-1's "deep pump hiccup" concern was the pump).
+  Chase/room momentary ducks unchanged, stack under the held level.
+  popcheck 404/404 (S12 re-pinned; hand-mutant: release line → names the pin).
+  popplay now MEASURES the duck-over-bed drop on the live analyser —
+  closes the README honest gap #0 (browser-side proof).
 
 ## Claims / board
-- #1711 stayed b's (it shipped its #2664 gate mid-shift, `dc82757`).
-- #2665 claimed → shipped → closed; QA #2661 merged right after (`aa6c8f6`).
-- game-queue empty at close; steer/next empty. No new jonq filed (nothing
-  taste/priority-grade; #2652 platform-lane still AWAITING — never waited).
+- #1711: resumed per ladder (`next`), sweep clean (no coach-live take yet —
+  jonq #2652 AWAITING, deadline Nov 20 01:36Z), every machine-side line
+  re-confirmed (line 1 3/3 takes, line 2 14/14, consent+mutants line 4,
+  admin listing = `plaicraft:evidence --json`), RELEASED back to `next` with
+  evidence comment (nothing builder-side before Jon's hands; #2654 is QA's).
+- #2667 filed by this lane (idle-kick `KICK PRINCE OF PERSIA 0 weak` at
+  `dc82757`) and claimed; shipped → label shipped + closed with evidence.
+- #2665 (EXCITEBIKE bay stamp): slot a live — claim refused, untouched.
 
 ## Next queued
-- Re-run `node scripts/idle-kick.mjs` at whatever tip is current — the pick
-  has moved (EXCITEBIKE's two gaps are resolved now; #2654 closed; flagship
-  stage still spent). Do NOT trust this file for the pick.
-- QA lanes own the polish backlogs; builders stay on game code.
+- Re-derive at `5009c34`: `node scripts/idle-kick.mjs` (do NOT trust this file).
+- If a Jon take with ≥3 pairs lands in the store, run `plaicraft:grade` →
+  posts the ±50 ms verdict → closes #1711 line 3 → #1712 promotes to `next`.
 
 ## Open questions (issues, not here — #605)
-- #2652 (jonq, platform lane, AWAITING, deadline 2026-11-20) — Jon's phone
-  take vs waiving the phone shape for #1711 line 3. Not this lane's to answer.
+- #2652 (jonq, platform, AWAITING by Jon) — phone take vs waiver for #1711
+  line 3; default keeps waiting, nightly self-grades.
+
+## RULE 4
+Game code merged this session (#2670, `src/games/PrinceOfPersia/`), rule 4
+intact; STATE.md committed to main per rule-step-9 exception.
 
 ## Catches for the next session (each cost probes this shift)
-- **The start-line gate poisons whole-stage red scans.** `PAL.gate` red
-  (#e40000) paints at the banner — an open-field exact-red scan read n=196 at
-  centroid (43,90) and false-failed three bay gates. Window pixel gates around
-  the paint-time receipt instead (25x24 at the cursor seat).
-- **6 px label glyphs AA to zero exact pixels.** Never exact-match small text
-  colours; prove colour identity with the paint-time `ctx.fillStyle` receipt
-  (capture what actually hit the canvas) plus one hue class no background can
-  fake (WATER-blue in the dark strip band).
-- **`gh pr merge --delete-branch` removes the worktree dir out from under a
-  session whose cwd it is.** If the session was `session_move`d into the
-  worktree, move it back to the main checkout BEFORE merging (or expect every
-  later tool call to die "Working directory does not exist").
-- Prod-verify URL builders can themselves hit the retrogames/retrogames trap —
-  strip a leading `/retrogames/` (or any repeated prefix) from hrefs before
-  joining. First BFS answered 0 sightings from this, not from a missing deploy.
-- The rule-5 merge loop still can't start before CI registers checks — one
-  `gh pr checks` peek (IN_PROGRESS seen) before the loop; the empty-array
-  null.state instant-fail is still lurking for the unwary.
+- **PoP end-card latch:** `endSeen` survives an R-restart; the first arrow
+  after R re-kicks `makeGame(0)`. A quick `press()` can also fall between
+  polled input frames on a loaded box. Any harness that restarts then drives
+  must CONFIRM fresh-L0 (play + level 0 + zero guards — only L0 has none)
+  and re-seat until guards stick.
+- **PoP byte-peak analyser is sparse:** note bursts land ~every stepDur
+  (0.24 s); short windows catch silence, not signal. Compare the ducked
+  window against a LONG recovered window (≥2 full note cycles, ~1 s), not a
+  short baseline.
+- **Vercel deploy vs jalfern.com CDN:** Vercel SUCCESS on the merge commit
+  does NOT mean jalfern.com's HTML entry hash updates immediately; the proxy
+  cache lags. Ground truth = Vercel status + live headless browser probe.
+- `gh pr list --json draft` invalid — the field is `isDraft`.
+- `git worktree remove` fails "Directory not empty" while a dev server holds
+  the tree — kill the lane's own vite first, then rm, then `git worktree prune`.
+- popplay's `mus()` already exposes `{level, peak}` — analyser proof needs no
+  new hook; `peak` is the byte-domain music-bus tap (`_peak()`).
 
 ## Lanes clean
-- Main checkout detached at `origin/main`; STATE.md lands via its own STATE PR
-  (game merged, so step 9 allows it); parked slot-scoped then shared.
-- :5173 stopped (mine); foreign ports untouched. My worktree gone with the
-  merge (gh), pruned; foreign worktrees untouched.
+- Main checkout detached at `origin/main` (`5009c34`); STATE.md committed.
+- My :5178 dev server stopped at close; :5173 slot a's — untouched.
+- Worktree `retrogames-forge-pop-duelduck` removed after merge; the
+  mis-named `retrogames-forge-plaicraft-s1-metro` (unused, slug renamed
+  before first commit) deleted.
