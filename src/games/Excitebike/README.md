@@ -297,6 +297,31 @@ faster heat.
   `data-demo-name` in the DOM). Honest remainder: the keyboard has no direct
   TYPE shortcut (the wheel is the law; KeyX/KeyG keep their jobs), and the
   saved-name column shares the JALFERN watermark row at 7px.
+- **CLOSED by #2632 (your-laps polish):** the four view-layer tells the QA
+  pass asked for, all as PURE helpers in custom.js (the law lives once; the
+  page paints it): (1) the over screen announces the book — a custom off the
+  house book ends on `CUSTOM 1 · 5 LAPS` (`overBookLabel`; league seats and
+  default-book runs stay the plain line byte-honest), like the NES edit runs
+  that said their distance; (2) the LAP bump tells at the ends of the book —
+  arriving at 8 and wrapping to 1 flinch the tool cell white (5-frame decay)
+  and the step tone becomes a double-note, a rising fifth home / a falling
+  drop off the wrap (`lapCycle` names the ends); (3) the splash badge has a
+  compact form under `sm` (`★ 3L`, default-book silent `★`) so a deviating row
+  clears the pack-pip column at 375px — a clearance law in exciteplay in the
+  wordmark-law grammar (#2573 item 2), with the full `★ YOURS · 3 LAPS`
+  unchanged from sm up and one `[data-custom-laps]` holder either way; (4) the
+  first default-book SAVE teaches the tool once per storage (`TIP: LAP SETS
+  YOUR RACE LENGTH`, flag `excitebike.lap-tip.v1`; a designer who sets their
+  own length never sees it, and the lesson line belongs to the SAVE that
+  earned it — a later receipt replaces it). Proven: excitecheck 469/469
+  (+18 pins; hand-mutant `>=`→`>` on the wrap condition dies on 2 named
+  lines) and exciteplay 160/160 (+9: top/wrap flinch live in the probe, a
+  mid-book press earns none, 375px badge geometry clears the pips, the
+  over-book DOM line, tip fires-once / stays-quiet / not-for-lapsed /
+  flag-unspent). Honest remainder: the tip is bay-canvas text (no DOM mirror —
+  the probe carries it instead), the flash decays on draw frames so a
+  background-tab bay skips its tell, and the compact badge at phone widths is
+  the star without the word "YOURS" (the aria-label carries it).
 - **PER-COURSE LEAGUE (#2573 items 5+6):** every course carries a `pace`
    (MOTOCROSS/SUPERCROSS 0 — calibration, all receipts byte-honest; then
    +0.02/+0.03/+0.04, K.O. CROSS +0.06) and `PACK_TIER` [1,2/3,1/3,0,0] rides
