@@ -127,7 +127,13 @@ const FloorBossGame = () => {
         // back-in/park/drive-off wall-clock gates flaked on main for it. The
         // catch-up clamp (8 ticks/frame) keeps a stalled tab from teleporting.
         let lastPaintTick = 0
-        const botAnim = new Map() // bot id -> { dir, turn, trail }
+        const botAnim = new Map() // bot id -> { dir, turn, sway, trail }
+        // #2700 manners polish — renderer-only, hashes untouched (same law as #1877):
+        const duckSlide = new Map() // bot id -> { ox, oy, t0 } — a duck steps the body into the bay over one cadence, it does not blink
+        let duckTaughtOn = null // the game instance whose first duck has been named (new makeGame resets per identity; shiftstart re-names per night)
+        let duckTeach = null // { x, y, from, until } — the GIVE WAY plate on a shift's first duck
+        const givenAt = new Map() // "x,y" -> tick — the moment a rival crossed a vacated cell: that bay reads GIVEN
+        const ATTRACT_SEEDS = [2053, 102, 241, 412, 858] // #2700 measured: every seed wins WITH ducks, first duck ≤ ~4400 — courtesy in the shop window
         const orderEnter = new Map() // order id -> slide-in ticks left
         const arcItems = [] // transfer ghosts { x0,y0,x1,y1,k,n?,kind,servo? } — bay handoff + servo carry (#1877)
         let armTip = { x: 0, y: 0 }
@@ -235,10 +241,30 @@ const FloorBossGame = () => {
                     case 'jam': audioController.playTone(140, 0.12, 'square', 0.08); audioController.playTone(110, 0.1, 'square', 0.06, 0.12); audioController.playNoise(0.06, 0.05); fx('JAM!', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'jamclear': audioController.playSweep(220, 480, 0.09, 'square', 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 3, '#7ec8ff', 1.2); break
                     case 'jamauto': audioController.playSweep(200, 380, 0.12, 'square', 0.04); break
-                    case 'duck': // #2692 DUCK & PASS — a cart taking the bay reads quiet and cyan: courtesy, not alarm
+                    case 'duck': { // #2692 DUCK & PASS — a cart taking the bay reads quiet and cyan: courtesy, not alarm
                         audioController.playSweep(620, 380, 0.06, 'triangle', 0.035); burst(PX(e.fx) + 13, PY(e.fy) + 13, 3, '#78dceb', 1.1)
+                        // #2700: a duck is a STEER, not a teleport — slide the body into
+                        // the shoulder over one cadence (ease-out), and give the backpedal
+                        // the swing impulse a 180° flip never triggers through dir-change.
+                        const db = gs.robots.find((b) => b.yield && b.yield.fx === e.fx && b.yield.fy === e.fy && b.x === e.x && b.y === e.y)
+                        if (db) {
+                            duckSlide.set(db.id, { ox: e.fx - e.x, oy: e.fy - e.y, t0: gs.tick })
+                            const an = botAnim.get(db.id)
+                            if (an && (((db.dir - an.dir) % 4 + 4) % 4) === 2) an.sway = 1
+                        }
+                        // #2700 TEACH THE COURTESY: the first duck of a shift names itself
+                        // once — like the reach diamond taught patience (#1877) and
+                        // refusals teach plugs (#2627), the give-way reads as law
+                        // grammar, not decoration.
+                        if (duckTaughtOn !== gs) {
+                            duckTaughtOn = gs
+                            duckTeach = { x: e.x, y: e.y, from: gs.tick, until: gs.tick + 150 }
+                            audioController.playTone(660, 0.05, 'triangle', 0.04); audioController.playTone(880, 0.07, 'triangle', 0.04, 0.07)
+                            fx('GIVE WAY', '#78dceb', PX(e.x) + 13, PY(e.y) + 20)
+                        }
                         if (gs.duel && e.s >= 0) fx(`BAY: ${e.s === 1 ? 'MODEL' : 'YOU'}`, e.s === 1 ? '#57c7ff' : '#ffd23f', PX(e.x) + 13, PY(e.y) + 8)
-                        break
+                        break;
+                    }
                     case 'turbo': audioController.playTone(900 + Math.random() * 300, 0.03, 'square', 0.03); repairPulse.set(`${e.x},${e.y}`, gs.tick); break
                     case 'break': audioController.playNoise(0.18, 0.09); audioController.playSweep(300, 90, 0.24, 'sawtooth', 0.07); shake = 7; fx('BREAKDOWN', '#ff5a4f', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'repaired': audioController.playSweep(400, 900, 0.14, 'triangle', 0.06); burst(PX(e.x) + 13, PY(e.y) + 13, 5, '#7ec8ff', 1.5); break
@@ -294,7 +320,7 @@ const FloorBossGame = () => {
                     case 'rush': audioController.playSweep(420, 880, 0.3, 'sawtooth', 0.06); audioController.playSweep(880, 420, 0.3, 'sawtooth', 0.05, 0.3); fx('RUSH HOUR', '#ffd23f', W / 2, 170); break
                     // #2352: the sim stamps the clock-in — the painter takes the stamp
                     // and slams the rung onto the floor (paintClockIn).
-                    case 'shiftstart': clockIn = { shift: e.shift, quota: e.quota, until: gs.tick + 130 }; break
+                    case 'shiftstart': clockIn = { shift: e.shift, quota: e.quota, until: gs.tick + 130 }; duckTaughtOn = null; break // #2700: a new night names the courtesy again
                     default: break
                 }
             }
@@ -335,6 +361,7 @@ const FloorBossGame = () => {
             // #2352: the ladder itself is a scoreboard — remember the deepest rung any
             // run reached, so the board reads "how deep did you get", not just points.
             if (gs.shift > 1) { const deep = +(localStorage.getItem('floorboss.deep') || 0); if (gs.shift > deep) localStorage.setItem('floorboss.deep', String(gs.shift)) }
+            if (gs.ducks > 0) { const mb = +(localStorage.getItem('floorboss.bays') || 0); if (gs.ducks > mb) localStorage.setItem('floorboss.bays', String(gs.ducks)) } // #2700: manners are countable — the smoothest floor keeps the board tally
             closeEpisode(won)
             if (won) audioController.playFanfare(); else audioController.playDeath()
             setMode('over')
@@ -342,10 +369,23 @@ const FloorBossGame = () => {
 
         const livePad = () => ({ left: keys.left, right: keys.right, up: keys.up, down: keys.down, a: edgeA, b: edgeB })
 
+        // #2700: ducks are earned by traffic, and traffic peaks late on a shift —
+        // measured across 4000 seeds, the first autopilot duck lands at tick 3780+
+        // (congestion builds as the floor expands). A cold clock-in almost never
+        // shows the courtesy, so the attract demo clocks in mid-heat: fixed seeds
+        // × fixed autopilot = every loop the same hot floor, ducks a few seconds
+        // after a visitor arrives — and the first live duck names itself (the
+        // GIVE WAY teach stays armed through the warm-up).
+        const warmAttract = () => {
+            while (gs.tick < 3600 && !gs.end) step(gs, [ap(gs)])
+            gs.ev.length = 0 // no minute of stale events bursts into the painter
+            duckSlide.clear(); givenAt.clear(); botAnim.clear(); elbowTeach = null; duckTeach = null
+        }
+
         const doSim = () => {
             const sc = screenRef.current
             if (sc === 'attract') {
-                if (gs.end) { gs = makeGame(1000 + (++demoSeed % 900)); beginEpisode() }
+                if (gs.end) { gs = makeGame(ATTRACT_SEEDS[++demoSeed % ATTRACT_SEEDS.length]); beginEpisode(); warmAttract() }
                 step(gs, [ap(gs)])
                 handleEvents(gs.ev, gs.tick)
                 return
@@ -649,12 +689,47 @@ const FloorBossGame = () => {
                 const ox = PX(b.yield.fx), oy = PY(b.yield.fy)
                 ctx.fillStyle = `rgba(46,168,184,${0.06 + 0.05 * pulse})`
                 ctx.fillRect(ox + 3, oy + 3, TILE - 6, TILE - 6)
-                const cx = PX(b.x) + TILE / 2, cy = PY(b.y) + TILE / 2
+                // #2700 GIVEN: a hold is directional courtesy — the instant a rival
+                // crosses the vacated cell, that bay stamps who gave way to whom.
+                const vk = `${b.yield.fx},${b.yield.fy}`
+                if (gs.robots.some((r) => r.id !== b.id && !r.broken && r.x === b.yield.fx && r.y === b.yield.fy)) givenAt.set(vk, tick)
+                if (tick - (givenAt.get(vk) ?? -999) < 36) {
+                    ctx.fillStyle = '#7fe9f5'; ctx.font = 'bold 6px monospace'; ctx.textAlign = 'center'
+                    ctx.fillText('GIVEN', ox + TILE / 2, oy + TILE - 4); ctx.textAlign = 'left'
+                }
+                const s2 = duckSlide.get(b.id) // the ring rides the slide until the body settles (paintRobots consumes it at rest)
+                const so = s2 ? Math.max(0, 1 - (tick - s2.t0) / 14) : 0
+                const cx = PX(b.x) + TILE / 2 + (s2 ? s2.ox * TILE * so : 0), cy = PY(b.y) + TILE / 2 + (s2 ? s2.oy * TILE * so : 0)
                 ctx.strokeStyle = `rgba(120,220,235,${0.5 + 0.35 * pulse})`; ctx.lineWidth = 2
                 ctx.setLineDash([3, 3])
                 ctx.beginPath(); ctx.arc(cx, cy, TILE * 0.46, 0, Math.PI * 2); ctx.stroke()
                 ctx.setLineDash([])
+                // #2700 shoulder chevron — points OUT of the aisle, the way this cart
+                // pulled off; mid-duel the glance says which side opens.
+                const ddx = b.x - b.yield.fx, ddy = b.y - b.yield.fy
+                const ang = Math.atan2(ddy, ddx)
+                ctx.strokeStyle = `rgba(127,233,245,${0.55 + 0.3 * pulse})`; ctx.lineWidth = 2
+                ctx.beginPath()
+                ctx.moveTo(cx + Math.cos(ang - 2.45) * 6.5, cy + Math.sin(ang - 2.45) * 6.5); ctx.lineTo(cx + Math.cos(ang) * 11.5, cy + Math.sin(ang) * 11.5)
+                ctx.moveTo(cx + Math.cos(ang + 2.45) * 6.5, cy + Math.sin(ang + 2.45) * 6.5); ctx.lineTo(cx + Math.cos(ang) * 11.5, cy + Math.sin(ang) * 11.5)
+                ctx.stroke()
             }
+            // #2700 TEACH THE COURTESY — the first duck of a shift names itself once:
+            // a dashed cyan frame on the bay cell with the GIVE WAY tail, fading over
+            // ~2.5 world seconds (the green plug-lesson idiom, courtesy's own colour).
+            if (duckTeach) {
+                if (tick < duckTeach.from || tick > duckTeach.until) duckTeach = null
+                else {
+                    const k = (duckTeach.until - tick) / 150
+                    const tp = 0.5 + 0.5 * Math.sin(tick * 0.22)
+                    const x = PX(duckTeach.x), y = PY(duckTeach.y)
+                    ctx.strokeStyle = `rgba(120,220,235,${(0.5 + 0.35 * tp) * k})`; ctx.lineWidth = 2
+                    ctx.setLineDash([4, 3]); ctx.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4); ctx.setLineDash([])
+                    ctx.fillStyle = `rgba(127,233,245,${0.9 * k})`; ctx.font = 'bold 6px monospace'; ctx.textAlign = 'center'
+                    ctx.fillText('GIVE WAY', x + TILE / 2, y - 3); ctx.textAlign = 'left'
+                }
+            }
+            for (const [k, t0] of givenAt) if (tick - t0 > 36) givenAt.delete(k)
         }
         const paintTeach = (tick) => {
             // #2627 s2 TEACH THE ELBOW — a corner refusal lights the honest exits:
@@ -687,23 +762,33 @@ const FloorBossGame = () => {
                 // personality: a rotational impulse when heading changes (sway),
                 // and a deterministic shudder while a JAM brake holds the bot
                 let anim = botAnim.get(b.id)
-                if (!anim) { anim = { dir: b.dir, turn: 0, trail: [] }; botAnim.set(b.id, anim) }
+                if (!anim) { anim = { dir: b.dir, turn: 0, sway: 0, trail: [] }; botAnim.set(b.id, anim) }
                 if (anim.dir !== b.dir) {
                     const d = ((b.dir - anim.dir) % 4 + 4) % 4
                     anim.turn = d === 1 ? 1 : d === 3 ? -1 : 0
                     anim.dir = b.dir
                 }
                 if (anim.turn) { anim.turn *= 0.85; if (Math.abs(anim.turn) < 0.05) anim.turn = 0 }
+                if (anim.sway) { anim.sway *= 0.8; if (Math.abs(anim.sway) < 0.04) anim.sway = 0 } // #2700: the backpedal's swing settles
+                // #2700 duck slide: the body steers into the bay (ease-out over one
+                // cadence, riding gs.tick like every other painter clock, #1877 law).
+                let psx = 0, psy = 0
+                const sl = duckSlide.get(b.id)
+                if (sl) {
+                    const k = (tick - sl.t0) / 14
+                    if (k >= 1 || k < 0) duckSlide.delete(b.id)
+                    else { const es = 1 - (1 - k) * (1 - k); psx = sl.ox * TILE * (1 - es); psy = sl.oy * TILE * (1 - es) }
+                }
                 const jx = b.jam ? Math.sin(tick * 1.31 + b.id * 9.7) * 0.9 : 0
                 const jy = b.jam ? Math.cos(tick * 1.73 + b.id * 5.3) * 0.6 : 0
-                const bx = x + jx, by = y + jy
+                const bx = x + jx + psx, by = y + jy + psy
                 ctx.fillStyle = 'rgba(0,0,0,0.3)'
                 ctx.beginPath(); ctx.ellipse(bx, by + 8, 9, 3, 0, 0, Math.PI * 2); ctx.fill()
                 const body = b.broken ? '#5e4a44' : b.jam ? '#c98a2f' : '#2ea8b8'
                 const edge = b.broken ? '#3a2c28' : b.jam ? '#7c5217' : '#1c6c78'
                 ctx.save()
                 ctx.translate(bx, by)
-                ctx.rotate(anim.turn * 0.16)
+                ctx.rotate(anim.turn * 0.16 + anim.sway * 0.12) // #2700: a flipped-back duck swings as it shoulders off the line
                 ctx.fillStyle = edge; ctx.fillRect(-9, -8, 18, 16)
                 ctx.fillStyle = body; ctx.fillRect(-8, -7, 16, 14)
                 ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(-8, -7, 16, 3)
@@ -1208,13 +1293,20 @@ const FloorBossGame = () => {
             if (board.length) {
                 ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 9px monospace'
                 const deep = Math.max(1, ...board.map((e) => e.shift || 1), +(localStorage.getItem('floorboss.deep') || 0)) // #2352: the ladder is the scoreboard
-                ctx.fillText(`BEST RUN: ${board[0].score}${deep > 1 ? ` · DEEPEST SHIFT ${deep}` : ''}`, W / 2, 206) // #2346: runs now span the ladder
+                const manners = +(localStorage.getItem('floorboss.bays') || 0) // #2700: the smoothest floor gets named too
+                ctx.fillText(`BEST RUN: ${board[0].score}${deep > 1 ? ` · DEEPEST SHIFT ${deep}` : ''}${manners > 0 ? ` · BAYS ${manners}` : ''}`, W / 2, 206) // #2346: runs now span the ladder
             }
             // #2555: the duel door — cyan chip, tappable or D
             ctx.fillStyle = 'rgba(87,199,255,0.10)'; ctx.fillRect(W / 2 - 110, 236, 220, 24)
             ctx.strokeStyle = '#57c7ff'; ctx.lineWidth = 1.2; ctx.strokeRect(W / 2 - 110.5, 236.5, 221, 23)
             ctx.fillStyle = '#9fdcff'; ctx.font = 'bold 9px monospace'
             ctx.fillText('D — DUEL THE MODEL · TWO SEATS ONE FLOOR', W / 2, 251)
+            // #2700: shop-window grammar card — the give-way is part of the floor's
+            // law now, and the demo floor ducks too (measured seeds, warm clock-in).
+            ctx.fillStyle = 'rgba(120,220,235,0.08)'; ctx.fillRect(W / 2 - 110, 266, 220, 16)
+            ctx.strokeStyle = 'rgba(120,220,235,0.45)'; ctx.lineWidth = 1; ctx.strokeRect(W / 2 - 110.5, 266.5, 221, 15)
+            ctx.fillStyle = '#9fdcff'; ctx.font = 'bold 8px monospace'
+            ctx.fillText('GIVE WAY — CARTS DUCK INTO BAYS AND PASS', W / 2, 277)
             ctx.textAlign = 'left'
         }
 
@@ -1241,6 +1333,8 @@ const FloorBossGame = () => {
             ctx.font = '8px monospace'; ctx.fillStyle = '#9fc0d8'
             ctx.fillText(`NIGHTS BANKED ${gs.cleared} · CAREER ${gs.score}`, W / 2, 210)
             ctx.fillText(`SHIPPED ${gs.shipped} · STOWS ${gs.stows} · EXPIRED ${gs.expired}/${STRIKES}`, W / 2, 226)
+            ctx.fillStyle = gs.ducks > 0 ? '#7fe9f5' : '#5b7688' // #2700: manners countable on the whistle — courtesy rides the sheet even when it earns nothing
+            ctx.fillText(gs.ducks > 0 ? `BAYS TAKEN ${gs.ducks} — THE FLOOR REMEMBERS` : 'BAYS TAKEN 0', W / 2, 254)
             // #1921: the freight ledger — what the trailers earned, cost and left behind
             ctx.fillStyle = '#7e9cb0'
             ctx.fillText(`FREIGHT +${gs.freight} · EXPRESS −${gs.fees}${gs.escrow ? ` · ${gs.escrow} STRANDED ON THE PAD` : ' · PAD CLEAN'}`, W / 2, 242)
@@ -1502,6 +1596,8 @@ const FloorBossGame = () => {
                 heat: () => flowHeat(gs).map((c) => ({ x: c.x, y: c.y, n: c.n })), // #2680: live traffic heat — route claims per cell, readable to QA
                 yields: () => gs.robots.filter((b) => b.yield).map((b) => ({ id: b.id, x: b.x, y: b.y, fx: b.yield.fx, fy: b.yield.fy, t: b.yield.t })), // #2692: carts holding shoulders — the pull-off, readable to QA
                 ducks: () => gs.ducks, // #2692: the shift's duck tally
+                duckTeach: () => (duckTeach ? { x: duckTeach.x, y: duckTeach.y, k: (duckTeach.until - gs.tick) / 150 } : null), // #2700 DEV eye: the GIVE WAY plate is live (play gates sample it atomically with pixels)
+                given: () => [...givenAt.keys()], // #2700 DEV eye: cells that just stamped GIVEN
                 // #2561 eyes on the twin-till ceremony (renderer-only state): when
                 // each seat's chip last armed its growth blink, and the live spend
                 // flash (label + color) so the browser gate can name model buys.
