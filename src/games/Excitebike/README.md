@@ -330,8 +330,12 @@ faster heat.
    autopilot's FIRST margin to 3.1px and died on every SLACK tax, and even
    +0.01 at SUPERCROSS broke its CONTACT phase pins — the bite tops out where
    a taxed win survives. Customs/TEST drafts carried no `pace` key (baseline pack)
-   until #2642 taught them to grade — see GRADED PACK above. The lap book is UNIFORM two laps: the original's
-   lap-count variation is VS-mode options this port does not model. Both laws
+   until #2642 taught them to grade — see GRADED PACK above. **DISCLAIMER** (the
+   decided half of item 6 — #2488 doctrine, this clause must not score on
+   `weakestStage`): the lap book is UNIFORM two laps; the original's lap-count
+   variation is VS-mode operator options this port does not model — the exact VS
+   range is operator lore, and #2625 already gave the DESIGNER the choice (1–8,
+   the port's book), so no live work remains here. Both laws
    pinned by excitecheck's PER-COURSE LEAGUE and GRADED PACK sections.
 - **CLOSED by #2573 (splash feel):** the last three items of the splash pass.
   (2) The wordmark no longer crowds the app chrome at phone widths — it shrinks
@@ -345,8 +349,23 @@ faster heat.
   Seating a course revs the engine once before the countdown, keyed to the
   gear you seated in — LOW grinds 160→480 Hz, HIGH winds 220→760 Hz — with
   `revLog` receipts on the probe so the tie is provable, not vibes.
-- The bay's ghost preview is a silhouette + colour bar, not the animated
-  NES stamp cursor; palette labels are text.
+- **CLOSED by #2665 (bay stamp):** the bay cursor rides the splash law — the
+  little bike (RIDE palette: black tyres, yellow rims, red body, white helmet)
+  seated on the surface at the cursor, bobbing two frames at the splash cadence
+  (`BOB_TICKS` = 15 ↔ the svg `bikebob 0.5s steps(1)`; law in custom.js, paint
+  in index.jsx, `bayPaint` receipt on the probe), yielding to ERASE's red X.
+  The ghost silhouette + fit bar stay the legality proof — the stamp is
+  identity, not verdict. The palette strip speaks its kinds: every label paints
+  in its `KIND_COLOR` (#2651's measured layout byte-stable; selection keeps its
+  yellow wash + bold weight). Proof: excitecheck +11 (bob law/cadence/CSS
+  cross-pin, palette identity, wiring; a `%2`→`%3` mutant dies on 2 named pins),
+  exciteplay +5 (55 exact RIDE-red px in a cursor-seated window — the first
+  open-field scan proved the start-line gate poisons whole-stage red counts at
+  PAL.gate red; the sprite flips exactly 1 px on the parity flip; ERASE window
+  zero-red; per-label paint-time `fillStyle` receipt + WATER-blue hue pixels in
+  the dark band, since 6 px glyphs AA to zero exact text pixels). Residual,
+  honestly: no pictogram glyphs beside the labels — 12 labels at fsz 6 across
+  256 px is already the strip's measured capacity (#2651).
 
 ## Juice layer (#2387)
 

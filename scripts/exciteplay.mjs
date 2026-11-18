@@ -1197,5 +1197,87 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     await page.evaluate(() => localStorage.clear())
 }
 
+// ---- #2665 THE BAY RIDES THE STAMP: the splash cursor's little bike lives in
+// the workshop now — seated on the surface at the cursor, bobbing one pixel at
+// the splash cadence, hiding under ERASE — and every palette label wears its
+// kind's colour. All of it proven off the real canvas, not off the probe.
+// The scan windows matter: the start-line gate paints PAL.gate red somewhere in
+// the field (the first honest run proved it — centroid (43,90), n=196), so the
+// stamp scan is a window around the cursor's receipt, where nothing but the
+// stamp can land. And 6px label glyphs AA to sub-pixel coverage (exact hues:
+// zero pixels), so colour identity is proven by the paint-time fillStyle
+// receipt PLUS one hue no background can fake: WATER blue in the dark band. ----
+{
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(700)
+    await page.keyboard.press('KeyZ'); await wait(150)
+    await page.keyboard.press('Digit0'); await wait(250) // fresh bay: cursor 120, tool RAMP
+    const stampPx = (cx, gy) => page.evaluate(([cx0, gy0]) => {
+        const g = document.querySelector('canvas[data-bike-stage]').getContext('2d')
+        const x0 = Math.max(0, Math.round(cx0) - 12), y0 = Math.max(0, Math.round(gy0) - 20)
+        const d = g.getImageData(x0, y0, 25, 24).data // 25x24 around the stamp's seat
+        let n = 0, sx = 0, sy = 0
+        for (let y = 0; y < 24; y++) for (let x = 0; x < 25; x++) {
+            const i = (y * 25 + x) * 4
+            if (d[i] === 0xe4 && d[i + 1] === 0x00 && d[i + 2] === 0x00) { n++; sx += x + x0; sy += y + y0 }
+        }
+        return { n, cx: n ? sx / n : -1, cy: n ? sy / n : -1 }
+    }, [cx, gy])
+    let p = await probe()
+    let px = await stampPx(p.edit.stamp.cx, p.edit.stamp.gy)
+    r.check('#2665: the bay wears the little bike — RIDE-red body pixels sit on the surface at the cursor',
+        px.n >= 20 && Math.abs(px.cx - p.edit.stamp.cx) <= 8 && px.cy > p.edit.stamp.gy - 18 && px.cy < p.edit.stamp.gy + 2,
+        JSON.stringify({ px, st: p.edit && p.edit.stamp }))
+    r.check('#2665: the paint-time receipt agrees — the stamp rides and bob is one of its two frames',
+        !!p.edit && p.edit.stamp.on === true && (p.edit.stamp.bob === 0 || p.edit.stamp.bob === 1),
+        JSON.stringify(p.edit && p.edit.stamp))
+    // Bob: poll for a parity flip; the sprite must move exactly one pixel with it
+    // (the window holds ONLY the stamp, so the centroid IS the sprite).
+    // Starved bays (fewer than ~10 fps) flip slower than the 3 s budget — those
+    // SKIP by name, never launder: the paint gate above already proved the stamp.
+    let sawFlip = null
+    {
+        const t0 = Date.now()
+        let prev = { bob: p.edit.stamp.bob, cy: px.cy }
+        while (Date.now() - t0 < 3000) {
+            await wait(120)
+            const st = (await probe()).edit.stamp
+            const qpx = await stampPx(st.cx, st.gy)
+            if (qpx.n === 0) continue
+            if (st.bob !== prev.bob) { sawFlip = { from: prev.bob, to: st.bob, dCy: +(qpx.cy - prev.cy).toFixed(2) }; break }
+            prev = { bob: st.bob, cy: qpx.cy }
+        }
+    }
+    if (sawFlip) {
+        r.check('#2665: the stamp bobs at the splash cadence — the whole sprite flips one pixel',
+            Math.abs(Math.abs(sawFlip.dCy) - 1) <= 0.5, JSON.stringify(sawFlip))
+    } else {
+        console.log('  SKIP  #2665 bob flip — starved-clock bay (no parity flip inside 3 s); the paint gate above still proved the stamp')
+    }
+    // ERASE owns the ground: the stamp yields to its red X.
+    for (let i = 0; i < 4; i++) { await page.keyboard.press('ArrowUp'); await wait(45) } // RAMP(0)->EXIT->SAVE->NAME->ERASE
+    p = await probe(); px = await stampPx(p.edit.stamp.cx, p.edit.stamp.gy)
+    r.check('#2665: ERASE hides the stamp — its red X owns that ground',
+        !!p.edit && p.edit.tool === 'ERASE' && px.n === 0, JSON.stringify({ tool: p.edit && p.edit.tool, red: px.n }))
+    // The strip speaks colour: every label's paint-time fillStyle is its kind's
+    // colour (grey chalk is gone), and WATER blue pixels sit in the dark band —
+    // a hue no background there can produce (band-blended terrain is warm, the
+    // old grey was neutral).
+    p = await probe()
+    const L = p.edit.labels || []
+    const want = { RAMP: '#ffe23f', MUD: '#8a5a1a', WATER: '#60a0ff', WHOOPS: '#c98a3a', SAVE: '#80e000', EXIT: '#f8f8f8' }
+    const labelOk = L.length === 12 && L.every((l) => want[l.t] === undefined || l.c === want[l.t])
+    const blue = await page.evaluate(() => {
+        const g = document.querySelector('canvas[data-bike-stage]').getContext('2d')
+        const d = g.getImageData(0, 218, 256, 18).data // rows 218..235 — inside the strip band
+        let n = 0
+        for (let i = 0; i < 18 * 256; i++) if (d[i * 4 + 2] - d[i * 4] > 25) n++ // blue-dominant
+        return n
+    })
+    r.check('#2665: the palette strip wears its kinds — every label paints in its kind colour (receipt) and WATER blue lands in the band',
+        labelOk && blue >= 3, JSON.stringify({ n: L.length, mud: L.find((l) => l.t === 'MUD'), water: L.find((l) => l.t === 'WATER'), blue }))
+}
+
 r.check('zero page errors across the whole ride', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)
