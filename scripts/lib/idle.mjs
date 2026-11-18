@@ -88,7 +88,11 @@ export function ownsGap(qaIssues, game, gap, handleLen = 40) {
 // needs the same skip the FORGE playbook promises, from the issue list).
 export function heldGames(buildingQaIssues) {
     return FLAGSHIPS.filter((g) => buildingQaIssues.some(
-        (q) => norm(`${q.title || ''} ${q.body || ''}`).includes(norm(g))))
+        // #2571: title-only — QA/POLISH issue TITLES always name their game,
+        // while bodies are exactly where why-weakest derivations verbatim-name
+        // the SKIPPED candidates ("SSX/Emberwood/COMET/Myst gap-free"). Body
+        // matching phantom-held every quoted title out of idle-kick.
+        (q) => norm(q.title || '').includes(norm(g))))
 }
 
 // Pick the flagship polish stage. gapsByGame: { <FLAGSHIPS name>: string[] }
@@ -220,7 +224,8 @@ export function heldDirs(games, issues) {
     return games.filter((g) => issues.some((q) => {
         const lbl = q.labels || []
         if (!lbl.includes('building') && !lbl.includes('building-qa')) return false
-        const n = norm(`${q.title || ''} ${q.body || ''}`)
+        // #2571: title-only, same law as heldGames — bodies quote ladders.
+        const n = norm(q.title || '')
         return (g.label && n.includes(norm(g.label))) || n.includes(dirWords(g.dir)) || n.includes(norm(g.dir))
     })).map((g) => g.dir)
 }
