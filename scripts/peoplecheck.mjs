@@ -421,7 +421,9 @@ section('WINGS (#2689): choose the row, raise the garden — deeper multi-room')
     check('pin: roomClear asks the links law before the hammer', /roomClear\(s, g\)[\s\S]*?g\.links\.every/.test(wSrc))
     check('pin: place routes the kit through the pick — the cursor row is the site', /if \(def\.room\) \{[\s\S]*?wingPick\(s, r, c\)/.test(wSrc))
     check('pin: nothing but wingPick hands the autopilot a site — the classic row is its only one', /if \(id === 'roomkit'\)[\s\S]*?place\(s, 0, 0\)/.test(wSrc))
-    check('pin: the marquee teaches the lot growing twice', /THE LOT GROWS TWICE/.test(wJsx))
+    // #2714: the demo runs the real economy to a win one wing deep — the marquee
+    // teaches kit two as a savings goal (§300), never as a second growth that lands.
+    check('pin: the marquee teaches one growth — kit two is copy, not a promise', /THE LOT GROWS — Spare Room kit one/.test(wJsx) && /save a second §300/.test(wJsx) && !/GROWS TWICE/.test(wJsx))
     check('pin: the ghost is a pure read — drawWingGhost takes geometry, never mutates', /export function drawWingGhost\(ctx, geom, ok\)/.test(readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')) && /drawWingGhost\(ctx, wingPick\(g, g\.cursor\.r, g\.cursor\.c\)/.test(wJsx))
 }
 
@@ -609,6 +611,19 @@ section('WINNABLE (attract autopilot, several seeds)')
     let tTour = 0
     while (!gTour.done && tTour++ < 60 * 60 * 45) { autoStep(gTour, DT); for (const e of gTour.events) if (e.t === 'pet' || e.t === 'kid') tourSeen.push(e.t); gTour.events.length = 0 }
     check('the till tours the family in order — cat, then child', tourSeen.join(',') === 'pet,kid', tourSeen.join(','))
+    // #2714: honest attract — the winning demo ends ext=1 with the till spent;
+    // kit two (§300) never sits in the register mid-run, so no attract line may
+    // promise two growths inside demo time. Copy and economy pinned together.
+    {
+        const jsx14 = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+        let maxAfter1 = -1
+        const g14 = newRun(7)
+        let t14 = 0
+        while (!g14.done && t14++ < 60 * 60 * 45) { autoStep(g14, DT); g14.events.length = 0; if (g14.ext >= 1) maxAfter1 = Math.max(maxAfter1, g14.money) }
+        check('#2714: the demo wins one wing deep — kit two never funds, so the marquee never says twice',
+            g14.done === 'win' && g14.ext === 1 && maxAfter1 < GARDEN.price && !/GROWS TWICE/.test(jsx14),
+            `done=${g14.done} ext=${g14.ext} max$=${Math.round(maxAfter1)}/${GARDEN.price}`)
+    }
 }
 
 section('POLISH (#929): distinct need SFX + red-cross alarm')
