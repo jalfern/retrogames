@@ -84,8 +84,9 @@ Landing juice (#2214): a correct drop adds a low sheet-metal thud under the
 ding, a deeper first-frame squash (0.32) with a faster recovery, a rim dip on
 the struck bin and a light shake; smash gets three bright after-tinkles.
 
-Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb` — `wave` collapses the table
-to one shift's waves; `amb` flattens the ambience eras (#2234); named gates go red.
+Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell` — `wave` collapses the table
+to one shift's waves; `amb` flattens the ambience eras (#2234); `vis` freezes the
+bin meters (#2678); `tell` silences the grab-read telegraphs (#2684); named gates go red.
 
 ## Honest gaps
 
@@ -112,7 +113,11 @@ to one shift's waves; `amb` flattens the ambience eras (#2234); named gates go r
   the quota gauge keeps its own pulse.
 - Still open from #2214: wobble/rotation telegraphs for glass clusters and
   barrel pairs — an off-axis grab or a shatter risk on the belt carries no
-  pre-warning today.
+  pre-warning today. — **CLOSED by #2684** (see §Grab-read telegraphs): the
+  catch ring says *now* whether jaws bite, the jaw arc says *this descent
+  slips*, and the slam column says *this fall shatters* until feathered
+  green. (Adjacent remains open: what the foreman crane is diving on is
+  still unreadable — a rival-intent tell was NOT part of this gap.)
 
 ## Wave read & rhythm (#2223 — QA polish pass)
 
@@ -165,3 +170,38 @@ to one shift's waves; `amb` flattens the ambience eras (#2234); named gates go r
 - **Also here:** the carried-CAN pixel gate waits for a PAINTED frame instead
   of a fixed 34 ms — same #2136 lesson as WAVE-INK above; the chase loop
   never yields to rAF, so loaded boxes sampled stale canvas bits.
+
+## Grab-read telegraphs (#2684 — never-dry polish, #2214 tail)
+
+- **Catch ring:** every barrel on the belt wears a hoop that mirrors the jaw
+  law — green while `barrelUpright` (a clamp this tick WOULD bite; the window
+  is ~27 % of the roll cycle and flips every few frames at late-shift speed),
+  dark red while off-axis. It imports `barrelUpright` straight from the sim
+  (the sim exports the predicate now — one source, so the paint can never
+  drift from the jaws). `catchRing` state rides the contract as `barrelTell`.
+- **Jaw warn:** a claw descending whose grab-window load is an off-axis
+  barrel grows a red arc on its jaws for the whole descent — *this* dip
+  slips; abort (A) or re-time. The lead-timed chase puts the crane at the
+  meeting point, so the arc is a short ~2-frame confirmation; the ring is the
+  approach tell (green/red the whole ride).
+- **Slam meter:** fragile cargo carried over a bin column paints a pip
+  column from cargo to the lip: red while the projected landing exceeds
+  `BREAK_VY`, green inside the feather zone. Carry height lands at 9.0
+  against a law of 8.0 — *every* high release shatters, and now the player
+  sees why. The projection re-runs the sim's DISCRETE fall (`vy += GRAV;
+  y += vy`), not √(v0²+2ad): the naive continuous form cries wolf in the
+  dy 60–63 boundary band where the Euler fall actually arrives at exactly
+  8.0, which the law accepts. `slamTell` rides the contract.
+- **Fragile glint:** bottles on the belt twinkle a shoulder spark — the
+  risk is taught before the grab, ahead of the carried column.
+- **Proven:** pickcheck §TELL (Node — RING-TRUTH ring ≡ `barrelUpright` on
+  every barrel frame of seed 7's whole line (876 ok / 2376 off states);
+  RING-PREDICTS pinned off-axis slips / upright clamps clean with the ring
+  and jaw states agreeing all the way; SLAM-LAW at both ends + a 13-height
+  sweep where the tell's colour IS the physics verdict — 4 red heights
+  shatter, 9 green land; SLAM-SILENT where the column has no meaning;
+  TELL-PURE idempotent reads with the state hash unmoved) plus live
+  `BARREL-RING` / `BARREL-STATE` / `SLAM-TELL` (canvas annulus sampling,
+  real contract-driven feather to green then a clean score). The DEV eye's
+  `tells()` pairs every ring with an independently written upright verdict.
+  `PICK_MUT=tell` (the belt goes mute) reddens 6 named gates.
