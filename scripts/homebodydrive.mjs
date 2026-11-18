@@ -175,6 +175,66 @@ check('wing floor is drawn as plank, not grass', fr > fb && fr > 90 && fr < 230 
 await page.keyboard.press('KeyB')
 await wait(150)
 
+// #2689 WINGS: kit two raises the garden — ghost first (hover paints the
+// future cottage's door tick green), then the tap, then drawn planks and glass.
+await page.evaluate(() => window.__homebodyTest.money(1000))
+await page.keyboard.press('KeyB')
+await wait(150)
+await page.keyboard.press('KeyR')
+await wait(150)
+await page.mouse.move(8 + 2 * 32 + 16, 40 + 9 * 32 + 16)   // hover the future garden — no click
+await wait(120)
+const [gtr, gtg, gtb] = await pxAt(88, 312)   // the ghost's door tick at (8,2)
+check('#2689 kit two ghosts the garden — green door tick over the back lawn', gtg > 150 && gtg > gtr + 40 && gtg > gtb + 40, `rgb(${gtr},${gtg},${gtb})`)
+await tap(8 + 2 * 32 + 16, 40 + 9 * 32 + 16)
+await wait(250)
+const w2 = await st()
+check('#2689 the second kit raises the garden room', w2.ext === 2 && JSON.stringify(w2.wings) === JSON.stringify(['east2', 'garden']), JSON.stringify(w2.wings))
+await wait(800)
+const [gfr, gfg, gfb] = await pxAt(8 + 1 * 32 + 16, 40 + 10 * 32 + 20)   // garden plank cell, clear of the gold move-in burst and the residents
+check('#2689 the garden floor is drawn as plank where lawn was', gfr > gfb && gfr > 90 && gfr < 230 && gfb < 130, `rgb(${gfr},${gfg},${gfb})`)
+const [gwr, gwg, gwb] = await pxAt(8 + 4 * 32 + 9, 40 + 10 * 32 + 13)   // garden lower east window glass — below the glint, clear of mullions, off the walk-in route
+check('#2689 the garden wears its east window', gwb > gwg && gwb > 120, `rgb(${gwr},${gwg},${gwb})`)
+const moneyBefore = (await st()).money
+await tap(8 + 2 * 32 + 16, 40 + 9 * 32 + 16)   // a third kit — the lot is full
+await wait(250)
+const w3 = await st()
+check('#2689 a third kit refuses — two rooms is the lot (no money spent)', w3.ext === 2 && w3.money === moneyBefore)
+await page.keyboard.press('KeyB')
+await wait(150)
+
+// #2689 choose the row: fresh lot, point high on the east lawn, the wing
+// takes the top row — the ghost tick rides the cursor before the hammer.
+await page.evaluate(() => window.__game.reset())
+await wait(300)
+await page.keyboard.press('Space')
+await wait(400)
+await page.evaluate(() => window.__homebodyTest.money(1000))
+await page.keyboard.press('KeyB')
+await wait(150)
+await page.keyboard.press('KeyR')
+await wait(150)
+await page.keyboard.down('ArrowRight'); await wait(220); await page.keyboard.up('ArrowRight')   // walk the ghost east onto the lawn column (arrows drive the build cursor)
+await page.keyboard.down('ArrowRight'); await wait(220); await page.keyboard.up('ArrowRight')
+await page.keyboard.down('ArrowRight'); await wait(220); await page.keyboard.up('ArrowRight')
+for (const k of ['ArrowUp', 'ArrowUp', 'ArrowUp', 'ArrowUp', 'ArrowUp']) { await page.keyboard.down(k); await wait(140); await page.keyboard.up(k); await wait(60) }
+const [otr, otg, otb] = await pxAt(8 + 11 * 32 + 16, 40 + 2 * 32 + 16)   // ghost door tick at (2,11)
+check('#2689 pointing high moves the ghost too — green tick at the top-row door', otg > 150 && otg > otr + 40 && otg > otb + 40, `rgb(${otr},${otg},${otb})`)
+await tap(8 + 13 * 32 + 16, 40 + 1 * 32 + 16)
+await wait(250)
+const wH = await st()
+check('#2689 the hammer lands where you pointed — wing stands at the top row', wH.ext === 1 && JSON.stringify(wH.wings) === JSON.stringify(['east0']), JSON.stringify(wH.wings))
+await wait(800)
+const [hwr, hwg, hwb] = await pxAt(8 + 15 * 32 + 9, 40 + 2 * 32 + 18)   // top-row east window at (2,15) — below the glint and the mullions
+check('#2689 the chosen wing glows its own windows where lawn was', hwb > hwg && hwb > 120, `rgb(${hwr},${hwg},${hwb})`)
+const mH = wH.money
+await tap(8 + 2 * 32 + 16, 40 + 9 * 32 + 16)   // garden still fits after a top-row wing
+await wait(250)
+const wH2 = await st()
+check('#2689 garden stands after the chosen row too — two rooms, both paid', wH2.ext === 2 && wH2.money === mH - 300 && JSON.stringify(wH2.wings) === JSON.stringify(['east0', 'garden']), JSON.stringify(wH2.wings))
+await page.keyboard.press('KeyB')
+await wait(150)
+
 // switch residents with G
 const g0 = await st()
 await page.keyboard.press('KeyG')

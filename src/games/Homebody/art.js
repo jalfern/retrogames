@@ -8,7 +8,7 @@
 
 import {
     W, H, TILE, COLS, ROWS, LOT_Y, PANEL_X, MAP, relLevel,
-    tileX, tileY, CATALOG, DEF, NEEDS, WIN_CONTENT, RED_AT, EXT_ROOM,
+    tileX, tileY, CATALOG, DEF, NEEDS, WIN_CONTENT, RED_AT, wingGeom,   // #2689: wing geometry for the bake, the ghost and the glow
     CAT_TABS, tabCards,   // #2222: the catalog's category shelves
     SPEED_MULT,   // #2227: the speed dial
     petMood, PET_FEED_T,   // #2200: Miso's mood row + the lingering bowl
@@ -122,18 +122,22 @@ export function groundCanvas() {
 
 export function drawGround(ctx, s) {
     ctx.drawImage(groundCanvas(), 0, 0)
-    if (s && s.ext) ctx.drawImage(extCanvas(), 0, 0)
+    if (s && s.ext) for (const w of s.wings) ctx.drawImage(wingCanvas(wingGeom(w)), 0, 0)   // #2689: every wing in its build order
 }
 
 // -------------------------------------------------------- spare room bake ----
 // The #1806 expansion overlay: the same plank/brick styles the main ground bake
-// uses, painted at the EXT_ROOM cells, so the new wing looks native — plus a
-// swung-open door in the shared wall at (4,11), two east-wall windows and a
-// wallpaper strip along the new north wall. Static geometry, baked once.
-let extLayer = null
-function extCanvas() {
-    if (extLayer) return extLayer
-    const cv = document.createElement('canvas')
+// uses, painted at the wing cells, so the new wing looks native — plus a
+// swung-open door in the shared wall, two east-wall windows and a
+// wallpaper strip along the new north wall. Static geometry, baked once per
+// wing site (#2689: anchors and the garden cottage share one bake, cached by
+// id+row so a chosen row costs one bake).
+const wingLayers = new Map()
+function wingCanvas(geom) {
+    const key = `${geom.id}:${geom.r0 ?? -1}`
+    let cv = wingLayers.get(key)
+    if (cv) return cv
+    cv = document.createElement('canvas')
     cv.width = W; cv.height = H
     const g = cv.getContext('2d')
     const bakeWall = (x, y, r) => {
@@ -150,11 +154,11 @@ function extCanvas() {
         g.fillRect(x, y, TILE, 1)
         g.fillRect(x + (r % 2 ? 10 : 22), y, 1, TILE)
     }
-    for (const [r, c] of EXT_ROOM.walls) bakeWall(tileX(c), tileY(r), r)
-    for (const [r, c] of EXT_ROOM.floor) bakeFloor(tileX(c), tileY(r), r)
+    for (const [r, c] of geom.walls) bakeWall(tileX(c), tileY(r), r)
+    for (const [r, c] of geom.floor) bakeFloor(tileX(c), tileY(r), r)
     // doorway in the shared wall: planked threshold, slab swung into the room
     {
-        const [dr, dc] = EXT_ROOM.door
+        const [dr, dc] = geom.door
         const x = tileX(dc), y = tileY(dr)
         bakeFloor(x, y, dr)
         g.fillStyle = P.wallLine; g.fillRect(x, y, 1, TILE); g.fillRect(x + TILE - 1, y, 1, TILE)
@@ -162,9 +166,9 @@ function extCanvas() {
         g.fillStyle = '#5f3c22'; g.fillRect(x + 22, y + 3, 4, 1); g.fillRect(x + 22, y + 28, 4, 1)
         g.fillStyle = '#ffd24a'; g.fillRect(x + 23, y + 7, 2, 2)
     }
-    // windows in the east wall (from EXT_ROOM.windows — the single source the
-    // night-lit pass lights up after dusk)
-    for (const [r, c] of EXT_ROOM.windows) {
+    // windows in the east wall (from the wing's own windows — the single source
+    // the night-lit pass lights up after dusk)
+    for (const [r, c] of geom.windows) {
         const x = tileX(c), y = tileY(r)
         bakeWall(x, y, r)
         g.fillStyle = '#5f3c22'; g.fillRect(x + 4, y + 8, 20, 14)
@@ -174,14 +178,26 @@ function extCanvas() {
         g.fillStyle = '#96653f'; g.fillRect(x + 3, y + 22, 22, 2)
         g.fillStyle = 'rgba(255,240,170,0.35)'; g.fillRect(x + 7, y + 11, 5, 2)
     }
-    // wallpaper strip along the room's north wall, matching the house's own
-    for (const c of [12, 13, 14]) {
-        const x = tileX(c)
-        g.fillStyle = P.paper; g.fillRect(x, tileY(2) + TILE - 8, TILE, 8)
-        g.fillStyle = P.paperStripe
-        for (let i = 0; i < 4; i++) g.fillRect(x + 3 + i * 8, tileY(2) + TILE - 8, 2, 8)
+    if (geom.id === 'east') {
+        // wallpaper strip along the room's north wall, matching the house's own
+        for (const c of [12, 13, 14]) {
+            const x = tileX(c)
+            g.fillStyle = P.paper; g.fillRect(x, tileY(geom.r0) + TILE - 8, TILE, 8)
+            g.fillStyle = P.paperStripe
+            for (let i = 0; i < 4; i++) g.fillRect(x + 3 + i * 8, tileY(geom.r0) + TILE - 8, 2, 8)
+        }
+    } else {
+        // #2689 the garden cottage: a potting bench along the north wall — clay
+        // pots and a green row, so the room reads garden the moment it stands
+        for (const c of [0, 1, 3]) {
+            const x = tileX(c), y = tileY(9)
+            g.fillStyle = '#96653f'; g.fillRect(x + 2, y + 4, TILE - 4, 8)
+            g.fillStyle = '#7a4a28'; g.fillRect(x + 2, y + 12, TILE - 4, 2)
+            g.fillStyle = '#5d8a3c'; g.fillRect(x + 6, y - 2, 6, 6); g.fillRect(x + 18, y, 5, 4)
+            g.fillStyle = '#c96a3c'; g.fillRect(x + 5, y + 4, 8, 4)
+        }
     }
-    extLayer = cv
+    wingLayers.set(key, cv)
     return cv
 }
 
@@ -942,7 +958,7 @@ export function drawKid(ctx, p, t) {
 
 // #2264: the tint curve is one source with the steam/glow law — nightLevel
 // lives in sim.js (pure, gateable) and this pass paints exactly what it says.
-export function nightTint(ctx, hour, ext) {
+export function nightTint(ctx, hour, ext, wings = null) {
     const a = nightLevel(hour)
     if (a <= 0) return
     ctx.fillStyle = `rgba(24,32,72,${a.toFixed(3)})`
@@ -957,14 +973,18 @@ export function nightTint(ctx, hour, ext) {
             ctx.fillRect(x + 15, y + 12, 2, 14)
         }
         // #1814: the wing glows too once it stands — warm panes over the
-        // baked sky-blue glass, same mullions, selling "someone moved in"
+        // baked sky-blue glass, same mullions, selling "someone moved in".
+        // #2689: every standing wing glows, east or garden.
         if (ext) {
-            for (const [wr, wc] of EXT_ROOM.windows) {
-                const x = tileX(wc), y = tileY(wr)
-                ctx.fillStyle = `rgba(255,224,138,${(a * 0.9).toFixed(3)})`
-                ctx.fillRect(x + 6, y + 10, 16, 10)
-                ctx.fillStyle = `rgba(120,86,34,${(a * 0.5).toFixed(3)})`
-                ctx.fillRect(x + 13, y + 10, 2, 10); ctx.fillRect(x + 6, y + 14, 16, 2)
+            const wlist = (wings && wings.length ? wings : [{ id: 'east', r0: 2 }]).map(wingGeom)
+            for (const wg of wlist) {
+                for (const [wr, wc] of wg.windows) {
+                    const x = tileX(wc), y = tileY(wr)
+                    ctx.fillStyle = `rgba(255,224,138,${(a * 0.9).toFixed(3)})`
+                    ctx.fillRect(x + 6, y + 10, 16, 10)
+                    ctx.fillStyle = `rgba(120,86,34,${(a * 0.5).toFixed(3)})`
+                    ctx.fillRect(x + 13, y + 10, 2, 10); ctx.fillRect(x + 6, y + 14, 16, 2)
+                }
             }
         }
     }
@@ -1498,6 +1518,32 @@ export function drawBuildCursor(ctx, s, ok) {
         drawItemAt(ctx, CATALOG[s.sel].id, x, y, 0)
         ctx.globalAlpha = 1
     }
+}
+
+// #2689: the kit's site preview. While the Spare Room card is held, the whole
+// future wing shows as a ghost where the hammer would fall: planks washed
+// green (or red when refused), walls hatched, the punched door ticked. The
+// ghost is pure view — it reads state, never writes it.
+export function drawWingGhost(ctx, geom, ok) {
+    const col = ok ? '#7fe08a' : '#ff6a5c'
+    ctx.globalAlpha = 0.14
+    ctx.fillStyle = col
+    for (const [r, c] of geom.floor) ctx.fillRect(tileX(c) + 2, tileY(r) + 2, TILE - 4, TILE - 4)
+    ctx.globalAlpha = 0.22
+    for (const [r, c] of geom.walls) ctx.fillRect(tileX(c) + 1, tileY(r) + 1, TILE - 2, TILE - 2)
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = col
+    ctx.lineWidth = 2
+    ctx.setLineDash([6, 4])
+    const cells = [...geom.walls, ...geom.floor, geom.door]
+    const r0 = Math.min(...cells.map(([r]) => r))
+    const r1 = Math.max(...cells.map(([r]) => r))
+    const c0 = Math.min(...cells.map(([, c]) => c))
+    const c1 = Math.max(...cells.map(([, c]) => c))
+    ctx.strokeRect(tileX(c0) + 1, tileY(r0) + 1, (c1 - c0 + 1) * TILE - 2, (r1 - r0 + 1) * TILE - 2)
+    ctx.setLineDash([])
+    ctx.fillStyle = col
+    ctx.fillRect(tileX(geom.door[1]) + TILE / 2 - 3, tileY(geom.door[0]) + TILE / 2 - 3, 6, 6)
 }
 
 // -------------------------------------------------------------- say -------

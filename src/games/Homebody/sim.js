@@ -874,35 +874,105 @@ export function cycleSpeed(s, dir) {
 export const attractSpeed = (s) => (s.hour >= 8 && s.hour < 10 ? 2 : 1)
 
 // ------------------------------------------------------- spare room (#1806) --
-// The lot grows once: buy the Spare Room kit and the house's east wall gains a
+// The lot grows: buy the Spare Room kit and the house's east wall gains a
 // 3×4 room — plank floor, brick band walls, a doorway punched into the shared
-// wall at (4,11), windows in the east wall. The layer never edits MAP: it rides
-// `s.ext`, and `groundOf` is the single honest ground question for every
-// sim-side walker and guard (keepsOpen sees the new walls for free).
+// wall, windows in the east wall. The layer never edits MAP: it rides
+// `s.wings` (and `s.ext`, the count), and `groundOf` is the single honest
+// ground question for every sim-side walker and guard (keepsOpen sees the new
+// walls for free).
+// #2689 deepens it: the wing's anchor row is the player's to choose — point
+// the ghost at the east lawn; a site is legal exactly where its punched door
+// meets real house floor. A second kit raises the Garden Room on the back
+// lawn, door punched through the house's south wall. `EAST_ANCHORS` is derived
+// from that door law, not a taste table: rows r0 where the house floor sits at
+// (r0+2, 10) — rows 2,3,4,6,7 of the east wall.
 export const EXT_ROOM = {
+    id: 'east', r0: 2,
     price: 300,
     floor: [[3, 12], [3, 13], [3, 14], [4, 12], [4, 13], [4, 14], [5, 12], [5, 13], [5, 14], [6, 12], [6, 13], [6, 14]],
     walls: [[2, 12], [2, 13], [2, 14], [2, 15], [3, 15], [4, 15], [5, 15], [6, 15], [7, 12], [7, 13], [7, 14], [7, 15], [3, 11], [6, 11], [7, 11]],
     door: [4, 11],
+    links: [[4, 10]],   // #2689: the door qualifies onto this house-floor cell (eastWing(2) is this instance cell-for-cell)
     windows: [[4, 15], [6, 15]],   // #1814: one source — the bake paints them, nightTint lights them
+    react: [[4, 13], [6, 13]],
+}
+
+// The east-column sites the door law admits, top to bottom. Row 3 is out: the
+// house wall there has no floor west of it — a door there opens onto bricks.
+export const EAST_ANCHORS = [0, 1, 2, 4, 5]
+export const DEFAULT_ANCHOR = 2   // muscle memory, the attract marquee and the autopilot all keep the classic row
+
+// The wing that rises when the kit lands at anchor row r0 (walls listed without
+// duplicates; the classic r0=2 instance is EXT_ROOM's cell-for-cell).
+export function eastWing(r0) {
+    const floor = []
+    for (let r = r0 + 1; r <= r0 + 4; r++) for (let c = 12; c <= 14; c++) floor.push([r, c])
+    const walls = []
+    const pushW = (r, c) => { if (!walls.some(([wr, wc]) => wr === r && wc === c)) walls.push([r, c]) }
+    for (let c = 12; c <= 15; c++) pushW(r0, c)            // north wall
+    for (let r = r0; r <= r0 + 5; r++) pushW(r, 15)         // east wall — the lot line
+    for (let c = 11; c <= 15; c++) pushW(r0 + 5, c)         // south wall
+    pushW(r0 + 1, 11); pushW(r0 + 4, 11); pushW(r0 + 5, 11) // west segments against the house
+    return {
+        id: 'east', r0, price: 300, floor, walls,
+        door: [r0 + 2, 11],
+        links: [[r0 + 2, 10]],   // #2689: the anchor law — the door qualifies only onto these house-floor cells
+        windows: [[r0 + 2, 15], [r0 + 4, 15]],
+        react: [[r0 + 2, 13], [r0 + 4, 13]],
+    }
+}
+
+// #2689: the second room. A garden cottage on the back lawn — 2×4 planks, a
+// door punched through the house's south wall at (8,2) (real floor at (7,2)),
+// windows on its east wall, the lot edge on the west. It stands clear of the
+// back gate at (8,5), the path and the mail, and clear of every legal east
+// anchor — the two rooms never touch, and the west lawn lane stays open.
+export const GARDEN = {
+    id: 'garden',
+    price: 300,
+    floor: [[9, 0], [9, 1], [9, 2], [9, 3], [10, 0], [10, 1], [10, 2], [10, 3]],
+    walls: [[8, 0], [8, 1], [8, 3], [8, 4], [9, 4], [10, 4], [11, 0], [11, 1], [11, 2], [11, 3], [11, 4]],
+    door: [8, 2],
+    links: [[7, 2]],   // #2689: the punched south door qualifies onto the house floor north of it
+    windows: [[9, 4], [10, 4]],
+    react: [[9, 2], [10, 2]],
+}
+
+export const WINGS_MAX = 2
+
+// geometry for a placed wing record ({ id, r0 }) — and the lookup sets.
+export function wingGeom(w) { return w.id === 'garden' ? GARDEN : eastWing(w.r0) }
+const wingSetCache = new Map()
+function wingSets(g) {
+    const k = `${g.id}:${g.r0 ?? -1}`
+    let s = wingSetCache.get(k)
+    if (!s) {
+        s = {
+            floor: new Set(g.floor.map(([r, c]) => `${r},${c}`)),
+            wall: new Set(g.walls.map(([r, c]) => `${r},${c}`)),
+            door: `${g.door[0]},${g.door[1]}`,
+        }
+        wingSetCache.set(k, s)
+    }
+    return s
 }
 
 // #1814 move-in reactions: the hammer falls and the residents react once.
-// Preferred glance cells inside the wing (any free room cell as fallback);
-// lines for the moment they arrive.
-export const ROOM_REACT = [[4, 13], [6, 13]]
+// Preferred glance cells live on each wing's geometry (`react`) — #2689 moved
+// them with the sites; the lines below stay the shared voice of the move-in.
 export const ROOM_SEE_LINES = [
     'The new room smells like fresh paint.',
     '{p} takes a victory lap through the new room.',
     '{p} tries the new floorboards — they creak approvingly.',
 ]
-const extFloor = new Set(EXT_ROOM.floor.map(([r, c]) => `${r},${c}`))
-const extWall = new Set(EXT_ROOM.walls.map(([r, c]) => `${r},${c}`))
 export function groundOf(s, r, c) {
     if (s && s.ext) {
         const k = `${r},${c}`
-        if (extWall.has(k)) return 'wall'
-        if (extFloor.has(k) || k === `${EXT_ROOM.door[0]},${EXT_ROOM.door[1]}`) return 'floor'
+        for (const w of s.wings) {
+            const g = wingSets(wingGeom(w))
+            if (g.wall.has(k)) return 'wall'
+            if (g.floor.has(k) || k === g.door) return 'floor'
+        }
     }
     return groundAt(r, c)
 }
@@ -1044,6 +1114,7 @@ export function newRun(seed) {
         demo: false,
         ext: 0,
         roomReact: 0,            // #1814: residents still owed a move-in glance
+        wings: [],               // #2689: the wings the lot has grown (ext is the count)
         ambience: 0, happyHours: 0,
     }
     scheduleVisit(s)
@@ -1654,11 +1725,9 @@ function issueOrder(s, p, o) {
 // ---------------------------------------------------------- building ------
 export function canPlace(s, def, r, c) {
     if (r < 0 || c < 0 || r + def.h - 1 >= ROWS || c >= COLS) return false
-    // #2272: the wing's bedroom bed — it fits ONLY on the wing's floorboards.
-    // Before the hammer falls those cells are lawn; after it, they are the
-    // room. Either way the refusal is the same rule: the bed belongs to the
-    // bedroom, so the Spare Room finally sells furniture that reads bedroom.
-    if (def.wingOnly && !(s.ext && EXT_ROOM.floor.some(([fr, fc]) => fr === r && fc === c))) return false
+    // #2272: the wing's bedroom bed — it fits ONLY on a wing's floorboards
+    // (#2689: any wing — east or garden — is a bedroom floorboards home).
+    if (def.wingOnly && !(s.ext && s.wings.some((w) => wingSets(wingGeom(w)).floor.has(`${r},${c}`)))) return false
     for (let rr = r; rr < r + def.h; rr++) {
         if (groundOf(s, rr, c) === 'wall') return false
         if (solidAt(s, rr, c)) return false
@@ -1695,36 +1764,96 @@ function keepsOpen(s, r, c) {
 
 // can the expansion stand? the footprint must be free of residents, the
 // visitor and any placed piece — the lawn under the future room is still lawn
-// until the hammer falls
-function roomClear(s) {
-    if (s.done || s.ext) return false
-    for (const [r, c] of EXT_ROOM.floor) {
+// until the hammer falls. #2689: two rooms never share a cell, and the lot
+// holds WINGS_MAX.
+function roomClear(s, g) {
+    if (s.done || s.ext >= WINGS_MAX) return false
+    if (!g.links.every(([r, c]) => groundAt(r, c) === 'floor')) return false   // #2689: a door onto bricks is no door — the anchor law in one line
+    for (const [r, c] of g.floor) {
         if (cellItem(s, r, c)) return false
         if (s.people.some((p) => p.r === r && p.c === c)) return false
     }
-    if (s.visitor && EXT_ROOM.floor.some(([r, c]) => r === s.visitor.r && c === s.visitor.c)) return false
-    if (s.ivy && EXT_ROOM.floor.some(([r, c]) => r === s.ivy.r && c === s.ivy.c)) return false   // #2143: Ivy stands where the wing would rise
+    if (s.visitor && g.floor.some(([r, c]) => r === s.visitor.r && c === s.visitor.c)) return false
+    if (s.ivy && g.floor.some(([r, c]) => r === s.ivy.r && c === s.ivy.c)) return false   // #2143: Ivy stands where the wing would rise
+    for (const w of s.wings) {
+        const o = wingSets(wingGeom(w))
+        if (g.floor.some(([r, c]) => o.floor.has(`${r},${c}`) || o.wall.has(`${r},${c}`))) return false
+        if (o.floor.has(`${g.door[0]},${g.door[1]}`)) return false
+    }
     return true
 }
 
-export function buildRoom(s) {
-    if (!roomClear(s) || s.money < EXT_ROOM.price) return false
-    s.money -= EXT_ROOM.price
-    s.ext = 1
+// #2689: the hammer's honest guard — new walls may not seal anyone out. Flood
+// the lot with the wing's walls counted as solid; the kerb gate, every resident
+// and every solid piece's use cell must still answer. (The classic kit skipped
+// this because its lawn sat clear; a chosen row and the garden cottage must ask.)
+function keepsWing(s, g) {
+    const wall = wingSets(g).wall
+    const test = (rr, cc) => solidAt(s, rr, cc) || wall.has(`${rr},${cc}`)
+    if (test(8, 5)) return false
+    const seen = new Set(['8,5'])
+    const q = [[8, 5]]
+    while (q.length) {
+        const [a, b] = q.shift()
+        for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nr = a + dr, nc = b + dc, k = `${nr},${nc}`
+            if (seen.has(k) || nr < 0 || nc < 0 || nr >= ROWS || nc >= COLS) continue
+            if (test(nr, nc)) continue
+            seen.add(k)
+            q.push([nr, nc])
+        }
+    }
+    if (!seen.has('12,5')) return false
+    for (const p of s.people) if (!seen.has(`${p.r},${p.c}`)) return false
+    for (const it of s.items) {
+        const d = DEF[it.id]
+        if (!d || d.decor || !d.solid) continue
+        if (!targetsOf(s, it).some((t) => seen.has(`${t.r},${t.c}`))) return false
+    }
+    return true
+}
+
+// the site the kit ghost shows for cursor (r, c): the second kit has one home
+// (the garden); the first slides its anchor to the cursor once it points at
+// the east column, snapping an illegal row (3 — bricks west of the door) to
+// its nearest legal neighbour. Cursor west of the lawn keeps the classic row.
+export function wingPick(s, r, c) {
+    if (s.ext >= 1) return GARDEN
+    if (c < 11) return eastWing(DEFAULT_ANCHOR)
+    let r0 = Math.max(0, Math.min(EAST_ANCHORS[EAST_ANCHORS.length - 1], r - 2))
+    if (!EAST_ANCHORS.includes(r0)) {
+        r0 = EAST_ANCHORS.reduce((best, a) => (Math.abs(a - (r - 2)) < Math.abs(best - (r - 2)) ? a : best), EAST_ANCHORS[0])
+    }
+    return eastWing(r0)
+}
+
+export function buildRoom(s, g) {
+    const geom = g || (s.ext >= 1 ? GARDEN : eastWing(DEFAULT_ANCHOR))
+    if (!roomClear(s, geom) || s.money < geom.price) return false
+    if (!keepsWing(s, geom)) return false
+    s.money -= geom.price
+    s.wings.push(geom.id === 'garden' ? { id: 'garden' } : { id: 'east', r0: geom.r0 })
+    s.ext = s.wings.length
     s.roomReact = s.people.length   // #1814: the wing gets its move-in reactions
-    s.events.push({ t: 'room' })
-    think(s, 'The east wall rolls open and a spare room rises — plank floor, two windows, room to grow.')
+    s.events.push({ t: 'room', w: geom.id })
+    think(s, geom.id === 'garden'
+        ? 'The back lawn rolls open and a garden room rises — planks, a south door, morning on the planks by noon.'
+        : 'The east wall rolls open and a spare room rises — plank floor, two windows, room to grow.')
     return true
 }
 
-export function buildRoomOk(s) { return roomClear(s) && s.money >= EXT_ROOM.price }
+export function buildRoomOk(s, g) {
+    const geom = g || (s.ext >= 1 ? GARDEN : eastWing(DEFAULT_ANCHOR))
+    return roomClear(s, geom) && s.money >= geom.price && keepsWing(s, geom)
+}
 
 export function place(s, r, c) {
     const def = CATALOG[s.sel]
     if (!def) return false
     if (def.room) {
-        if (buildRoom(s)) return true
-        s.events.push({ t: 'refuse', r: EXT_ROOM.door[0], c: EXT_ROOM.door[1] })
+        const g = wingPick(s, r, c)
+        if (buildRoom(s, g)) return true
+        s.events.push({ t: 'refuse', r: g.door[0], c: g.door[1] })
         return false
     }
     // #2197: the adoption counter — the cat arrives through the gate, so the
@@ -1758,7 +1887,7 @@ export function place(s, r, c) {
 export function placeOk(s, r, c) {
     const def = CATALOG[s.sel]
     if (!def) return false
-    if (def.room) return buildRoomOk(s)
+    if (def.room) return buildRoomOk(s, wingPick(s, r, c))
     if (def.pet) return adoptOk(s)
     if (def.kid) return adoptKidOk(s)
     if (s.money < def.price || !canPlace(s, def, r, c)) return false
@@ -3371,8 +3500,9 @@ export function advance(s, dt) {
         // #1814: the hammer fell and this resident hasn't looked yet — send
         // them through the doorway; re-offered if the player interrupts the walk
         if (s.ext && s.roomReact > 0 && !p.roomSeen) {
-            const pref = ROOM_REACT[s.people.indexOf(p) % ROOM_REACT.length]
-            const tg = (walkable(s, pref[0], pref[1]) ? [pref] : EXT_ROOM.floor)
+            const g = wingGeom(s.wings[s.wings.length - 1])   // #2689: the newest room gets the first look
+            const pref = g.react[s.people.indexOf(p) % g.react.length]
+            const tg = (walkable(s, pref[0], pref[1]) ? [pref] : g.floor)
                 .map(([r, c]) => ({ r, c }))
             const path = bfsPath(s, { r: p.r, c: p.c }, tg)
             if (path) { p.path = path; p.goal = { kind: 'room' }; p.owner = 'ai' }
@@ -3486,7 +3616,7 @@ export function bot(s) {
             // reflow — the room owns itself via `ext`, and only buys when the
             // footprint is honestly clear (never wedge the bot on a refusal)
             if (id === 'roomkit') {
-                if (s.ext || s.money < EXT_ROOM.price || !roomClear(s)) continue
+                if (s.ext || s.money < EXT_ROOM.price || !roomClear(s, eastWing(DEFAULT_ANCHOR))) continue
                 const keep = s.sel
                 setSel(s, CATALOG.findIndex((d) => d.id === 'roomkit'))   // #2222: the shelf follows the pick
                 place(s, 0, 0)   // the room ignores the cursor; the lot owns the spot
@@ -3546,6 +3676,7 @@ export function stateHash(s) {
     const mix = (v) => { h ^= Math.round(v * 1000) | 0; h = Math.imul(h, 16777619) }
     mix(s.tick); mix(s.day); mix(s.hour); mix(s.money); mix(s.content); mix(s.rank)
     mix(s.ext)
+    for (const w of s.wings) mix(w.id === 'garden' ? -7777 : w.r0 + 1)   // #2689: which wing stood where rides it too
     mix(s.tab)                       // #2222: the open catalog shelf is state too
     mix(s.speed)                     // #2227: so is the speed dial — replays pin it
     mix(s.rel.house); mix(s.rel.fern)   // #1817: bonds ride the hash

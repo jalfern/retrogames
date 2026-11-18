@@ -30,21 +30,35 @@ see §Speed dial.
   spots must stay reachable from the front door, or the placement is refused.
   (This guard earned its scar: a 2-tile bed once sealed a 2-row bedroom and the
   whole sim starved in an unreachable house.)
-- Spare Room (#1806): card 14 / `R` in buy mode, §300, one per lot. The lot
-  overlay `s.ext` replaces the lawn east of the house with a 3×4 wing — plank
-  floor, brick walls, a punched doorway at (4,11), two east windows. Ground is
-  asked through `groundOf(s, r, c)` everywhere the sim walks or guards, so
-  `keepsOpen`, BFS, the attract bot and manual movement all treat the wing as
-  built the tick the hammer falls; the door's room-side cell (4,12) may never
-  be blocked once the room holds furniture. `ext` rides `stateHash`.
-- Move-in (#1814): buying the kit arms `s.roomReact = 2`; the moment each
-  resident is otherwise idle they path once through the doorway to a glance
-  cell in the wing (preferred cells `ROOM_REACT`, any free room cell as
-  fallback). Arrival pays a thought line, +0.15 fun, a `room-see` event and a
-  banner — once per resident, ever; a player interrupting the walk re-offers
-  it later. The wing's east windows (`EXT_ROOM.windows` — one source for the
-  bake and the glow) light warm after dusk like the house's own. The attract
-  bot buys the kit second so the demo sells the reflow.
+- Spare Room (#1806, deepened by #2689): card 14 / `R` in buy mode, §300,
+  two per lot. The lot overlay `s.wings` (with `s.ext` as its count — the
+  number #1806 shipped) replaces lawn with rooms the tick the hammer falls:
+  east-wing instances `eastWing(r0)` (3×4 planks, brick walls, a punched
+  doorway, two east windows) and the Garden Room `GARDEN` (2×4 planks on the
+  back lawn, door through the house's south wall at (8,2)). #2689's anchor
+  law: an east site is legal exactly when its door cell (r0+2,11) meets a
+  house-floor cell west of it (`links`) — rows 0,1,2,4,5; a pointed cursor
+  (col ≥ 11) slides the anchor to its row (illegal rows snap to the nearest
+  legal), an unpointed kit keeps the classic row 2 (muscle memory, marquee
+  and the autopilot's `place(s, 0, 0)` all stay byte-identical — the bot
+  never buys kit two, so no-tap autoplay hashes unchanged). Ground is asked
+  through `groundOf(s, r, c)` everywhere the sim walks or guards, so
+  `keepsOpen`, BFS, the attract bot and manual movement all treat every wing
+  as built; each room's own door-side cell may never be blocked once it
+  holds furniture; every hammer passes `keepsWing` — the new walls flood test
+  first (kerb gate, residents, solid-piece targets must stay reachable). The
+  wings ride `stateHash`: `ext` plus a loop mixing which rooms stand and where
+  (`id`/anchor row), twin seeds stay one world.
+- Move-in (#1814, riding both wings since #2689): buying a kit arms
+  `s.roomReact = 2`; the moment each resident is otherwise idle they path once
+  through the doorway to a glance cell in the newest wing (preferred cells are
+  the geometry's own `react`, any free room cell as fallback — #2689 moved them
+  from the old `ROOM_REACT` constant onto each wing). Arrival pays a thought
+  line, +0.15 fun, a `room-see` event and a banner — once per resident per
+  hammer; a player interrupting the walk re-offers it later. Each wing's
+  windows (from the wing geometry — one source for the bake and the glow)
+  light warm after dusk like the house's own. The attract bot buys the kit
+  second so the demo sells the reflow (kit two is the player's).
 - Bonds (#1817): `s.rel = { house, fern }` climb while people actually talk —
   Fern-chat +0.07/s while a resident chats beside her, household co-presence
   +0.05/s while both residents are unengaged within 2 tiles of each other.
@@ -271,7 +285,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 876 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), mediators — reach-both ring, soft pay, mending lane, once-per-spat ledger, cat-before-kid, hash, seed-exact mediation (#2672), neighbours stroll — mobile-chat bank, fixed 3-spot circuit with lead/trail, walk-freeze, claim-carry, spat/absence zeroing, cold-war refusal, hash, seed-exact lap (#2611), stroll view pass — pair stride bob + facing turn, arrival settle, route trail, attract lap beat, panel walk pips (#2618), neighbour view pass — pair-hue bubbles, teal leaf reunion, guest sulks, warmth sparkle, meet-up wave beat, cold-war murmur, attract pair-ring hook (#2599), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), go-say — far tap walks over, arrival coo once, pick promotion, cooldown wait, leaving/asleep folds, bounded chase, queue re-issue, speaks-as-itself, hash, seed-exact, attract invariant (#2683), winnable seeds, determinism
+npm run peoplecheck          # 906 gates: boot, rules, spare-room wing (#1806) + deeper multi-room — anchor law derived from MAP, garden room after any anchor, keepsWing refusals, two-per-lot, canopy fits both rooms, hash carries which-where, links in source (#2689), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), mediators — reach-both ring, soft pay, mending lane, once-per-spat ledger, cat-before-kid, hash, seed-exact mediation (#2672), neighbours stroll — mobile-chat bank, fixed 3-spot circuit with lead/trail, walk-freeze, claim-carry, spat/absence zeroing, cold-war refusal, hash, seed-exact lap (#2611), stroll view pass — pair stride bob + facing turn, arrival settle, route trail, attract lap beat, panel walk pips (#2618), neighbour view pass — pair-hue bubbles, teal leaf reunion, guest sulks, warmth sparkle, meet-up wave beat, cold-war murmur, attract pair-ring hook (#2599), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), go-say — far tap walks over, arrival coo once, pick promotion, cooldown wait, leaving/asleep folds, bounded chase, queue re-issue, speaks-as-itself, hash, seed-exact, attract invariant (#2683), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -315,7 +329,7 @@ npm run peoplecheck          # 876 gates: boot, rules, spare-room wing (#1806), 
 # crossing gates go red (712 → 709/3); restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
-DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels + #2244 bells live: ring, steaming-plate pixels, parallel tap-orders, shared-table hearts + #2240 live: FAMILY basket lands with weave/greens/tomato/honey pixels on the depth line and a 5 s stage, BONDS reads at 390-px phone scale (ink, four rows since #2588, FAMILY gold — sampled across the pulse's phases), and the attract run shows Ivy on the lot and rings her once
+DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels + #2244 bells live: ring, steaming-plate pixels, parallel tap-orders, shared-table hearts + #2240 live: FAMILY basket lands with weave/greens/tomato/honey pixels on the depth line and a 5 s stage, BONDS reads at 390-px phone scale (ink, four rows since #2588, FAMILY gold — sampled across the pulse's phases), and the attract run shows Ivy on the lot and rings her once + #2689 live: kit two ghosts the garden (green door-tick pixel over the back lawn), garden planks and east glass appear where lawn was, a third kit refuses with the purse untouched, pointing high moves the whole ghost and the hammer lands the wing at the top row (east@0, windows where lawn was), and the garden still fits after the chosen row
 ```
 Drive it: tap objects to order the active resident; G switches residents; B
 opens buy mode (time stops); `[` `]` flip the catalog shelves and 1-9 pick a
@@ -1087,10 +1101,20 @@ the speaker to `s.active` — exactly the speaks-as-itself gate goes red
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
   one per lot).
-- Deeper multi-room building (choose placement, second wing, rooms with purpose) —
-  the self-declared open tail of the line above, hidden under that #1806 strike
-  until #2683's honest accounting (Nov 18) surfaced it as its own bullet; the
-  picker could not see it.
+- **CLOSED by #2689:** deeper multi-room building — two of its three clauses.
+  Choose placement: hold the Spare Room kit and the whole wing ghosts under
+  the cursor; a site is legal exactly where its punched door meets house floor
+  (the east rows 0,1,2,4,5 — the anchor list is that law, and peoplecheck
+  derives it from MAP independently). Second wing: kit two raises the Garden
+  Room on the back lawn — 2×4 planks at rows 9–10, door punched through the
+  house's south wall at (8,2), east windows, potting bench. Two rooms per lot;
+  a third kit refuses; every hammer passes `keepsWing` (no resident, the mail
+  or the kerb gets sealed), and a garden under a standing wing's row overlap
+  refuses too.
+- Rooms with purpose — rooms that carry a name and a mechanic of their own
+  beyond the canopy bed's bedroom law (a study, a playroom, a purpose bonus) —
+  the third clause of the deeper multi-room tail (#1806 lineage; placement
+  and the second room closed by #2689, this half still open).
 - **CLOSED by #1814 (QA pass, partial):** the wing glows at night and the
   residents react to the build. #2076 taught the bond law on the attract
   marquee (the bonds line of that list). #2135's pass closed chat speech
