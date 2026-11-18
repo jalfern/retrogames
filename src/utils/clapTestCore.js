@@ -14,7 +14,7 @@
 //    (detectClaps + takeEdges + matchClapEdges, ±50 ms line untouched), plus
 //    the plain-language hint #2156 asks for when the phone fails itself.
 
-import { detectClaps, matchClapEdges, takeEdges, CLAP_TOL_MS, CLAP_MIN_PAIRS } from './clapSync.js'
+import { detectClaps, matchClapEdges, takeEdges, CLAP_TOL_MS, CLAP_SEARCH_MS, CLAP_MIN_PAIRS } from './clapSync.js'
 
 export const FIXED_DT = 1000 / 60
 export const SLAPS_NEEDED = 3 // #2156: "slap the screen 3 times" — and CLAP_MIN_PAIRS stays 3
@@ -146,3 +146,77 @@ export function screenVerdict({ sampleRate, samples, rec, minPairs = CLAP_MIN_PA
         hint,
     }
 }
+
+// --- live pair coach (#1711) ---------------------------------------------------
+// Jon's three phone attempts (seed144524/828591/978353, stored bytes measured
+// 2026-11-17) show the ±50 ms line misses by HALF, not by timing: one take
+// heard two near-full-scale claps with an EMPTY touch stream (airborne clap),
+// another paired a silent tap with a clap 2.9 s late. The pill (#2466) teaches
+// "make a sound"; nothing taught "the sound and the touch are the SAME instant"
+// while the take was running — the verdict only said it after. The pair coach
+// mirrors the grading windows live (pair inside CLAP_SEARCH_MS, green inside
+// CLAP_TOL_MS — the same constants the studio grades with, not a second law)
+// and names each event the moment it is decidable:
+//   pair    clap + touch in window within tolerance
+//   off     paired, but apart past the line (still a pair, still short of ok)
+//   notouch a clap whose window closed with no press — the airborne clap
+//   nosound a press whose window closed with no clap — the silent tap
+// The bias is #2466's, one-sided on purpose: the live watcher is coarser than
+// the final detector (frame-level loudness, not samples), so nosound PROMPTS
+// ("slap harder") and never claims the take is broken. Guidance only — nothing
+// here touches the sim, the hash, the take bytes or screenVerdict.
+
+export function createPairCoach() {
+    return { openT: null, openC: null, pairs: 0, last: null, seq: 0 }
+}
+
+// pairCoachFeed(st, 'tap'|'clap', ms) — events tagged with a monotonic ms clock
+// (the page stamps performance.now() on both sides: the pad edge handler and the
+// recorder's analyser publish, so the live pairing rides one clock).
+export function pairCoachFeed(st, kind, ms, opts = {}) {
+    if (!st || (kind !== 'tap' && kind !== 'clap') || !Number.isFinite(ms)) return st
+    const win = Number.isFinite(opts.windowMs) ? opts.windowMs : CLAP_SEARCH_MS
+    const tol = Number.isFinite(opts.tolMs) ? opts.tolMs : CLAP_TOL_MS
+    const mine = kind === 'tap' ? 'openT' : 'openC'
+    const other = kind === 'tap' ? 'openC' : 'openT'
+    if (st[other] !== null && Math.abs(ms - st[other]) <= win) {
+        const d = Math.abs(ms - st[other])
+        st.pairs += 1
+        st.last = { kind: d <= tol ? 'pair' : 'off', ms: Math.round(d), n: st.pairs }
+        st.seq += 1
+        st[other] = null
+        st[mine] = null // both consumed — one slap cannot double-pair
+        return st
+    }
+    st[mine] = ms // most recent wins; a superseded open costs at most a nag
+    return st
+}
+
+// pairCoachAge(st, nowMs) — close windows the clock has passed. Called from the
+// page's loop every frame; an event that never met its counterpart in the
+// window becomes its named failure exactly once.
+export function pairCoachAge(st, nowMs, opts = {}) {
+    const win = Number.isFinite(opts.windowMs) ? opts.windowMs : CLAP_SEARCH_MS
+    if (!st || !Number.isFinite(nowMs)) return st
+    if (st.openC !== null && nowMs - st.openC > win) {
+        st.openC = null
+        st.last = { kind: 'notouch', ms: 0 }
+        st.seq += 1
+    }
+    if (st.openT !== null && nowMs - st.openT > win) {
+        st.openT = null
+        st.last = { kind: 'nosound', ms: 0 }
+        st.seq += 1
+    }
+    return st
+}
+
+// The page paints text verbatim from this table (kept pure so the pins can
+// read the words the player reads).
+export const COACH_LIVE_TEXT = {
+    pair: (ms) => `PAIR ✓ ${ms} ms`,
+    off: (ms) => `OFF ${ms} ms — hit the glass WITH the sound`,
+    notouch: 'NO TOUCH — the palm must hit the glass while it claps',
+    nosound: 'NO SOUND — slap harder (louder, closer)',
+}
+

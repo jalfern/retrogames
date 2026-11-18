@@ -247,7 +247,15 @@ function liveLevelTap(stream) {
             for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128))
             window.__voiceLevel = Math.min(1, (peak / 128) * 2.5)
             watch = liveClapWatch(watch, window.__voiceLevel)
-            if (watch.claps > clapsHeard) { clapsHeard = watch.claps; coachMarkLearned() }
+            if (watch.claps > clapsHeard) {
+                clapsHeard = watch.claps
+                coachMarkLearned()
+                // live pair coach (#1711): publish the onset so the ClapTest page
+                // can pair heard claps with pad presses WHILE the take runs. A
+                // fan-out stamp only — same rule as __voiceLevel above: nothing
+                // here enters the take bytes, the sim or the verdict.
+                window.__liveClap = { n: clapsHeard, ms: performance.now() }
+            }
             raf = requestAnimationFrame(step)
         }
         raf = requestAnimationFrame(step)
