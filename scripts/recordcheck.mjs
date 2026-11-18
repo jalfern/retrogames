@@ -901,7 +901,7 @@ const bucketRowBySeed = (seed) => {
     ok(stillInFlight.last === null, 'naming waits the FULL window — never nags a slap still in flight')
 
     // consumption + supersede + idempotence guards
-    const d1 = pairCoachFeed(pairCoachAge(pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 0), 'clap', 10), 'clap', 20), 20 + WIN + 1)
+    const d1 = pairCoachAge(pairCoachFeed(pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 0), 'clap', 10), 'clap', 20), 20 + WIN + 1)
     ok(d1.pairs === 1 && d1.last.kind === 'notouch', 'one slap cannot double-pair: the extra clap ages out as its own notouch')
     const d2 = pairCoachFeed(pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 0), 'tap', 100), 'clap', 120)
     ok(d2.pairs === 1 && d2.last.ms === 20, 'supersede: a lone clap pairs with the MOST RECENT open tap')
