@@ -283,6 +283,40 @@ export const WONDER = {
 }
 export const WONDER_IDS = Object.keys(WONDER)
 
+// ---- city buildings (#2671) ---------------------------------------------------
+// The arcade once cut the building class whole (README honest gap): cities
+// built only units, wonders and Ark plates. These five are the first slice,
+// riding the machinery #2077 proved — a named project on the city queue, one
+// at a time, shields banked at the yard. Unlike wonders (one in the world)
+// and plates (one in the realm), a building belongs to a CITY: every city may
+// raise each once, and a captured city keeps what stands (as in the original).
+// Queue kinds are 'BLD_<ID>' so one string space serves all projects.
+export const BLD_PREFIX = 'BLD_'
+export const BUILDINGS = {
+    GRANARY: { name: 'Granary', tech: 'POTTERY', cost: 25, y: { f: 2 }, effect: '+2 food' },
+    LIBRARY: { name: 'Library', tech: 'WRITING', cost: 30, y: { sci: 2 }, effect: '+2 science' },
+    MARKET: { name: 'Market', tech: 'CURRENCY', cost: 40, y: { g: 3 }, effect: '+3 gold' },
+    WORKSHOP: { name: 'Workshop', tech: 'THE_WHEEL', cost: 35, y: { p: 2 }, effect: '+2 production' },
+    WALLS: { name: 'Walls', tech: 'BRONZE_WORKING', cost: 30, def: 6, effect: '+6 city defence' },
+}
+export const BUILDING_IDS = Object.keys(BUILDINGS)
+export const bldKind = (kind) => typeof kind === 'string' && kind.startsWith(BLD_PREFIX)
+export const bldOfKind = (kind) => (bldKind(kind) ? BUILDINGS[kind.slice(BLD_PREFIX.length)] || null : null)
+export const bldKindOf = (id) => BLD_PREFIX + id
+export const hasBuilding = (city, id) => !!(city && city.bld && city.bld[id])
+// City-scoped refusal, null = allowed: the civ-level gates live in queueDeny;
+// what only a city knows (what already stands here, what sits on this yard)
+// lives here. The player path (step input) and the AI ask the pair.
+export function bldDeny(gs, city, kind) {
+    const b = bldOfKind(kind)
+    if (!b) return 'unknown project'
+    const id = kind.slice(BLD_PREFIX.length)
+    if (!hasTech(gs, city.civ, b.tech)) return 'requires ' + TECH[b.tech].name
+    if (hasBuilding(city, id)) return `${b.name} already stands in ${city.name}`
+    if ((city.queue || []).includes(kind)) return `${b.name} is already in ${city.name}'s yard`
+    return null
+}
+
 // ---- great people (Stage 6) ----------------------------------------------------
 // Every city banks one point per type each turn; the palace seats an extra
 // engineer and each connected luxury sends a merchant. When a pool crosses the
@@ -600,6 +634,12 @@ export function setResearch(gs, civ, id) {
 }
 export function canQueue(gs, civ, kind) {
     const st = UNIT[kind]
+    if (bldKind(kind)) {                                       // #2671: buildings ride the queue
+        const b = bldOfKind(kind)
+        if (!b) return false
+        if (!hasTech(gs, civ, b.tech)) return false
+        return true
+    }
     if (arkKind(kind)) {
         const pi = arkPartOfKind(kind)
         if (pi < 0) return false
@@ -719,6 +759,12 @@ export function roadCost(gs, u, c, r) {
 }
 export function queueDeny(gs, civ, kind) {
     const st = UNIT[kind]
+    if (bldKind(kind)) {                                       // #2671: civ-level gates; the city-scoped pair is bldDeny
+        const b = bldOfKind(kind)
+        if (!b) return 'unknown project'
+        if (!hasTech(gs, civ, b.tech)) return 'requires ' + TECH[b.tech].name
+        return null
+    }
     if (arkKind(kind)) {
         const pi = arkPartOfKind(kind)
         if (pi < 0) return null
@@ -1217,6 +1263,12 @@ export function cityYield(gs, city) {
     // Stage 6 wonders
     if (gs.wonders && gs.wonders.STONEHENGE === city.civ) out.cult += CFG.stoneCult
     if (gs.wonders && gs.wonders.GREAT_LIBRARY === city.civ) out.sci += CFG.librarySci
+    // #2671: buildings — what stands in THIS city (per-city, unlike wonders)
+    if (city.bld) for (const id in city.bld) {
+        const y = BUILDINGS[id] && BUILDINGS[id].y
+        if (!city.bld[id] || !y) continue
+        for (const k in y) out[k] += y[k]
+    }
     // Stage 4: strategic resources in the connected network feed the city
     const net = resourceNetwork(gs, city.civ)
     const seat = [cy, ...neighbors(city.c, city.r).map(([c, r]) => idx(c, r))]
@@ -1236,7 +1288,7 @@ export function canFound(gs, civ, c, r, self) {
 }
 function foundCity(gs, civ, c, r) {
     const tl = gs.tiles[idx(c, r)]
-    const city = { id: gs.cities.length, civ, c, r, size: 1, storedFood: 0, alive: true, name: cityName(civ, gs.civs[civ].cities || 0), capital: (gs.civs[civ].cities || 0) === 0, culture: 0, border: 1, hp: CFG.cityHp, wallMax: CFG.cityHp, buildP: 0, queue: [] }
+    const city = { id: gs.cities.length, civ, c, r, size: 1, storedFood: 0, alive: true, name: cityName(civ, gs.civs[civ].cities || 0), capital: (gs.civs[civ].cities || 0) === 0, culture: 0, border: 1, hp: CFG.cityHp, wallMax: CFG.cityHp, buildP: 0, queue: [], bld: {} }
     gs.cities.push(city)
     tl.city = city.id
     gs.civs[civ].cities = (gs.civs[civ].cities || 0) + 1
@@ -1341,7 +1393,8 @@ export function defenseBonus(gs, u) {
 export function cityDefense(gs, city) {
     let d = CFG.cityBaseDef + 3 * city.size
     if (city.civ != null && city.civ < BARB && happinessOf(gs, city.civ).unhappy) d = Math.floor(d * CFG.angryDef)   // angry cities dig in worse
-    if (city.civ != null && gs.wonders && gs.wonders.GREAT_WALL === city.civ) d = Math.round(d * CFG.wallDefMult)     // the wall is the city
+    if (city.bld && city.bld.WALLS) d += BUILDINGS.WALLS.def                    // #2671: the rampart stands (flat, before the wonder's multiplier)
+    if (city.civ != null && city.civ < BARB && gs.wonders && gs.wonders.GREAT_WALL === city.civ) d = Math.round(d * CFG.wallDefMult)     // the wall is the city
     return d
 }
 
@@ -1616,8 +1669,20 @@ function endPlayerTurn(gs) {
 
 function pumpCityQueue(gs, city) {
     city.queue = city.queue || []
+    city.bld = city.bld || {}
     while (city.queue.length) {
         const kind = city.queue[0]
+        if (bldKind(kind)) {                                        // #2671: a named building rises here
+            const id = kind.slice(BLD_PREFIX.length)
+            if (!BUILDINGS[id] || city.bld[id] || !hasTech(gs, city.civ, BUILDINGS[id].tech)) {
+                city.queue.shift(); continue                        // stale order — tech lost, twice built
+            }
+            if (city.buildP < BUILDINGS[id].cost) break
+            city.buildP -= BUILDINGS[id].cost; city.queue.shift()
+            city.bld[id] = true
+            gs.events.push({ type: 'building', civ: city.civ, city: city.id, id, name: BUILDINGS[id].name, c: city.c, r: city.r })
+            continue
+        }
         if (arkKind(kind)) {                                          // #2077: Ark plates are city industry
             const pi = arkPartOfKind(kind)
             if (pi < 0) { city.queue.shift(); continue }
@@ -2050,7 +2115,21 @@ function aiTurn(gs, civ) {
     for (const city of gs.cities) {
         if (city.civ !== civ || !city.alive) continue
         city.queue = city.queue || []
+        city.bld = city.bld || {}
         if (city.queue.length >= 3) continue
+        // #2671: an empire that feeds, banks and walls itself outlasts one that
+        // only marches. Every city raises its lot on the way — granary while the
+        // village is small, walls the moment steel walks, the engines (library,
+        // market, workshop) when there is breathing room. Deterministic hash2
+        // gates so armies still come out of the same yards.
+        {
+            const want = BUILDING_IDS.filter((id) => bldDeny(gs, city, BLD_PREFIX + id) === null
+                && ((id === 'GRANARY' && city.size <= 2) || (id === 'WALLS' && warring)
+                    || id === 'LIBRARY' || id === 'MARKET' || id === 'WORKSHOP'))
+            if (want.length && hash2(city.id, gs.turn, civ ^ 61) < 0.55) {
+                city.queue.push(BLD_PREFIX + want[(city.id * 2 + civ + gs.turn) % want.length]); continue
+            }
+        }
         // Stage 7: coastal cities lay a keel — wartime fleets, peace patrols.
         // Stage 8: once Astronomy is in, the yard prefers the port-storming Galleon.
         const ship = canQueue(gs, civ, 'GALLEON') === true && hash2(city.id, gs.turn, civ ^ 43) < 0.5 ? 'GALLEON' : 'GALLEY'
@@ -2175,13 +2254,15 @@ export function step(gs, input = {}) {
     if (input.peace != null) makePeace(gs, 0, input.peace)
     if (input.trade != null) makeTrade(gs, 0, input.trade)
     if (input.gift != null) giftCS(gs, 0, input.gift)
-    if (input.queue && (UNIT[input.queue] || WONDER[input.queue] || arkKind(input.queue))) {
-        const deny = queueDeny(gs, 0, input.queue)
+    if (input.queue && (UNIT[input.queue] || WONDER[input.queue] || arkKind(input.queue) || bldKind(input.queue))) {
+        let deny = queueDeny(gs, 0, input.queue)
+        const tCity = input.city != null ? gs.cities[input.city]
+            : UNIT[input.queue] && UNIT[input.queue].naval ? coastalCityOf(gs, 0)
+                : gs.cities.find((c) => c.civ === 0 && c.alive)
+        if (!deny && bldKind(input.queue) && tCity && tCity.alive && tCity.civ === 0) deny = bldDeny(gs, tCity, input.queue)
         if (deny) gs.events.push({ type: 'deny', reason: deny, c: -1, r: -1 })
         else {
-            const city = input.city != null ? gs.cities[input.city]
-                : UNIT[input.queue] && UNIT[input.queue].naval ? coastalCityOf(gs, 0)
-                    : gs.cities.find((c) => c.civ === 0 && c.alive)
+            const city = tCity
             if (city && city.alive && city.civ === 0 && city.queue.length < 3) { city.queue.push(input.queue); gs.events.push({ type: 'queued', civ: 0, unit: input.queue }) }
             else if (city && city.alive && city.civ === 0) gs.events.push({ type: 'deny', reason: `${city.name}'s yard is full`, c: -1, r: -1 })
         }

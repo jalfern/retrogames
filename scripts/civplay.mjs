@@ -522,6 +522,68 @@ for (const shape of [{ w: 760, h: 620, tag: 'desktop' }, { w: 390, h: 844, tag: 
     await ux.close()
 }
 
+// ---- 9. THE CITY LOT (#2671): BUILD opens, a real click raises a Granary ----
+{
+    const bx = await browser.newPage({ viewport: { width: 760, height: 620 }, deviceScaleFactor: 1 })
+    bx.setDefaultTimeout(180000)
+    const bxErrors = []
+    bx.on('pageerror', (e) => bxErrors.push(`[pageerror] ${e.message}`))
+    bx.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) bxErrors.push(`[console.error] ${m.text()}`) })
+    await bx.goto(URL, { waitUntil: 'domcontentloaded' })
+    for (let i = 0; i < 120; i++) { if (await bx.evaluate(() => !!window.__civTest)) break; await wait(200) }
+    await bx.keyboard.press('Enter')
+    await wait(500)
+    await bx.keyboard.press('KeyE')          // settle the capital
+    await wait(500)
+    const b0 = (await bx.evaluate(() => window.__civTest.buildings())).filter((c) => c.civ === 0)
+    r.check('#2671 the capital opens with an empty lot', b0.length === 1 && Object.keys(b0[0].bld).length === 0, `cities ${b0.length}, bld ${JSON.stringify(b0[0] && b0[0].bld)}`)
+    const hasText = async (phrase, ms = 2400) => {
+        const t0 = Date.now()
+        while (Date.now() - t0 < ms) {
+            const txt = await bx.evaluate(() => document.body.innerText)
+            if (txt.includes(phrase)) return true
+            await wait(120)
+        }
+        return false
+    }
+    await bx.keyboard.press('KeyA')          // BUILD panel
+    await wait(400)
+    const txt1 = await bx.evaluate(() => document.body.innerText)
+    r.check('#2671 A opens BUILD with the named rows and the YARD', /BUILD/.test(txt1) && /Granary/.test(txt1) && /Walls/.test(txt1) && /YARD/.test(txt1))
+    // a locked row refuses honestly, by name
+    await bx.locator('button', { hasText: 'Granary' }).first().click()
+    r.check('#2671 the locked Granary says which tech it needs', await hasText('REQUIRES POTTERY'))
+    const qLocked = (await bx.evaluate(() => window.__civTest.buildings())).filter((c) => c.civ === 0)
+    r.check('#2671 the refusal left the yard untouched', qLocked.every((c) => !c.queue.some((k) => k.startsWith('BLD_'))))
+    // learn Pottery, click the row for real — the order lands on the yard
+    await bx.evaluate(() => window.__civTest.learn('POTTERY'))
+    await wait(350)
+    await bx.locator('button', { hasText: 'Granary' }).first().click()
+    r.check('#2671 the click ordered the Granary at the yard', await hasText('GRANARY →'))
+    const q1 = (await bx.evaluate(() => window.__civTest.buildings())).filter((c) => c.civ === 0)
+    r.check('#2671 the queue shows the order (BLD_GRANARY at the capital)', q1.some((c) => c.queue.includes('BLD_GRANARY')))
+    // live turns weld the shields — the building stands on a real turn end
+    let rose = null
+    for (let i = 0; i < 60 && !rose; i++) {
+        await bx.keyboard.press('Space')
+        await wait(220)
+        const bs = (await bx.evaluate(() => window.__civTest.buildings())).filter((c) => c.civ === 0)
+        rose = bs.find((c) => c.bld.GRANARY) || null
+        if (await bx.evaluate(() => !!window.__civTest.probe().end)) break
+    }
+    r.check('#2671 the Granary stands after live turns (queue emptied, cost banked)', !!rose, rose ? `${rose.name} holds ${Object.keys(rose.bld).join(',')}` : 'never rose')
+    // once stands, never again in this city — and the panel says so on the row
+    const txt2 = await bx.evaluate(() => document.body.innerText)
+    r.check('#2671 the standing building reads STANDING on its row', /STANDING/.test(txt2), rose ? '' : 'panel state unchecked')
+    // the WELD path fixed itself too: Q without Spaceflight refuses by reason, never NULL (#2077 UI bug)
+    await bx.keyboard.press('KeyQ')
+    await wait(300)
+    const txt3 = await bx.evaluate(() => document.body.innerText)
+    r.check('#2671 WELD/Q no longer answers NULL on a denied plate', !/\bNULL\b/.test(txt3) && !await hasText('NULL', 400), txt3.match(/NULL[^\n]*/)?.[0] || 'no NULL on screen')
+    r.check('#2671 BUILD run is error-free', bxErrors.length === 0, bxErrors.slice(0, 2).join(' | '))
+    await bx.close()
+}
+
 const clean = errors.filter((e) => !/favicon|Download the React DevTools|WebGL|GPU stall|Automatic fallback|SwiftShader/i.test(e))
 r.check('zero page errors', clean.length === 0, clean.slice(0, 3).join(' | '))
 

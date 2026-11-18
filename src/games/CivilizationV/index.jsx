@@ -21,7 +21,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, suppliedSea, canQueue, queueDeny, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats, eraCrossNote, eraBoughtInfo } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, suppliedSea, canQueue, queueDeny, bldKind, bldDeny, BUILDINGS, BUILDING_IDS, BLD_PREFIX, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats, eraCrossNote, eraBoughtInfo } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -68,6 +68,9 @@ const CivilizationVGame = () => {
     const [dpanel, setDpanel] = useState(null)
     const [dOpen, setDOpen] = useState(false)
     const dOpenRef = useRef(false)
+    const [bpanel, setBpanel] = useState(null)   // #2671: BUILD — the city lot
+    const [bOpen, setBOpen] = useState(false)
+    const bOpenRef = useRef(false)
     const [vpanel, setVpanel] = useState(null)
     const [vOpen, setVOpen] = useState(false)
     const vOpenRef = useRef(false)
@@ -286,6 +289,14 @@ const CivilizationVGame = () => {
                     audioController.playTone(523 + e.part * 98, 0.14, 'triangle', 0.06)
                     audioController.playTone(784 + e.part * 98, 0.22, 'sine', 0.04)
                 }
+                else if (e.type === 'building' && e.civ === 0) {
+                    // #2671: a named building rises — the yard announces it
+                    const dn = e.city != null && gs.cities[e.city] ? String(gs.cities[e.city].name).toUpperCase() : 'THE YARD'
+                    say(`🏗 ${String(e.name).toUpperCase()} RAISED IN ${dn}`)
+                    audioController.playTone(392, 0.1, 'triangle', 0.05)
+                    audioController.playTone(523, 0.18, 'triangle', 0.04)
+                    if (bOpenRef.current) refreshBPanel()
+                }
                 else if (e.type === 'arkLost' && e.civ === 0) {
                     say(`${e.name.toUpperCase()} NOT NEEDED — THE HULL ALREADY HAS ONE`)
                     audioController.playTone(196, 0.1, 'square', 0.05)
@@ -407,6 +418,7 @@ const CivilizationVGame = () => {
             if (uOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshUPanel() }
             if (gOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshGPanel() }
             if (dOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshDPanel() }
+            if (bOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshBPanel() }
             if (vOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshVPanel() }
             const C = gs.civs[0]
             const cap = gs.cities.find((c) => c.civ === 0 && c.capital)
@@ -421,8 +433,9 @@ const CivilizationVGame = () => {
             if (h.build) {
                 const city = gs.cities.find((c) => c.civ === 0 && c.alive)
                 const q = city && city.queue && city.queue[0]
-                const qcost = q ? (UNIT[q] ? UNIT[q].cost : WONDER[q].cost) : 0
-                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${qcost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · N trireme · K musket · L galleon · U wonders · Q welds an Ark plate'
+                // any project kind may head the queue — units, wonders, plates, buildings (#2671: a BLD head once crashed this line)
+                const qcost = q ? (UNIT[q] ? UNIT[q].cost : WONDER[q] ? WONDER[q].cost : bldKind(q) && BUILDINGS[q.slice(BLD_PREFIX.length)] ? BUILDINGS[q.slice(BLD_PREFIX.length)].cost : 0) : 0
+                h.build.textContent = q ? `BUILDING ${q.replace(BLD_PREFIX, '')} ${Math.floor(city.buildP || 0)}/${qcost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · N trireme · K musket · L galleon · U wonders · Q welds an Ark plate'
                 h.build.style.display = city ? '' : 'none'
             }
             if (h.worker) {
@@ -519,7 +532,7 @@ const CivilizationVGame = () => {
             if (!inb(c, r)) return
             if (!gs.explored[0][r * CFG.W + c]) { say('UNKNOWN LAND'); return }
             const own = gs.units.find((u) => u.alive && !u.loaded && u.civ === 0 && u.c === c && u.r === r)
-            if (own) { gs.selected = own.id; pending = { select: own.id }; audioController.playTone(440, 0.03, 'sine', 0.04); return }
+            if (own) { gs.selected = own.id; pending = { ...pending, select: own.id }; audioController.playTone(440, 0.03, 'sine', 0.04); return }
             const sel = gs.units.find((u) => u.id === gs.selected && u.alive && !u.loaded && u.civ === 0)
             const hostile = gs.units.find((u) => u.alive && !u.loaded && u.c === c && u.r === r && atWar(gs, 0, u.civ))
             const tl = gs.tiles[r * CFG.W + c]
@@ -564,7 +577,7 @@ const CivilizationVGame = () => {
             if (open) { pending = { land: [open[0], open[1]] }; audioController.playTone(260, 0.04, 'triangle', 0.05); return }
             say('NO BEACH IN REACH'); audioController.playTone(120, 0.05, 'square', 0.04)
         }
-        const endTurn = () => { pending = { endTurn: true }; audioController.playTone(200, 0.05, 'sine', 0.04) }
+        const endTurn = () => { pending = { ...pending, endTurn: true }; audioController.playTone(200, 0.05, 'sine', 0.04) }
 
         const refreshPanel = () => {
             const R = gs.tech[0]
@@ -780,7 +793,7 @@ const CivilizationVGame = () => {
         const pickPlate = (pid) => {
             const kind = 'ARK_' + pid
             const why = queueDeny(gs, 0, kind)
-            if (why !== true) { say(String(why).toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            if (why) { say(String(why).toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05); return }
             const ys = gs.cities.filter((c) => c.alive && c.civ === 0)
             if (!ys.length) { say('FOUND A CITY FIRST'); audioController.playTone(110, 0.08, 'square', 0.05); return }
             const city = ys.find((c) => c.id === yardCity) || ys[0]
@@ -796,7 +809,52 @@ const CivilizationVGame = () => {
             const i = Math.max(0, ys.findIndex((c) => c.id === yardCity))
             yardCity = ys[(i + d + ys.length) % ys.length].id
             refreshVPanel()
+            if (bOpenRef.current) refreshBPanel()
             audioController.playTone(300, 0.03, 'sine', 0.04)
+        }
+        // #2671 BUILD — the city lot. Five named buildings ride the yard of the
+        // ordered city (the same ◀▶ selector the Ark plates use): every city may
+        // raise each once, one project at a time, and a captured city keeps what
+        // stands. Costs are arcade shields banked at the yard, as with plates.
+        const refreshBPanel = () => {
+            const ys = gs.cities.filter((c) => c.alive && c.civ === 0)
+            if (!ys.some((c) => c.id === yardCity)) yardCity = ys.length ? ys[0].id : -1
+            const yc = ys.find((c) => c.id === yardCity) || null
+            if (!yc) { setBpanel(null); return }
+            setBpanel({
+                yardName: String(yc.name).toUpperCase(),
+                capital: !!yc.capital,
+                queue: [...(yc.queue || [])],
+                size: yc.size,
+                rows: BUILDING_IDS.map((id) => ({
+                    id, name: BUILDINGS[id].name, cost: BUILDINGS[id].cost, effect: BUILDINGS[id].effect,
+                    tech: TECH[BUILDINGS[id].tech].name,
+                    why: bldDeny(gs, yc, 'BLD_' + id),
+                    queued: (yc.queue || []).includes('BLD_' + id),
+                    built: !!(yc.bld && yc.bld[id]),
+                    prog: (yc.queue || [])[0] === 'BLD_' + id ? Math.floor(yc.buildP || 0) : 0,
+                })),
+            })
+        }
+        const pickBuilding = (bid) => {
+            const kind = 'BLD_' + bid
+            const ys = gs.cities.filter((c) => c.alive && c.civ === 0)
+            if (!ys.length) { say('FOUND A CITY FIRST'); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            const city = ys.find((c) => c.id === yardCity) || ys[0]
+            const why = queueDeny(gs, 0, kind) || bldDeny(gs, city, kind)
+            if (why) { say(String(why).toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            if (city.queue.length >= 3) { say(`${String(city.name).toUpperCase()}'S YARD IS FULL`); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            pending = { ...pending, queue: kind, city: city.id }
+            say(`🏗 ${BUILDINGS[bid].name.toUpperCase()} → ${String(city.name).toUpperCase()}`)
+            refreshBPanel()
+            audioController.playTone(330, 0.04, 'triangle', 0.05)
+        }
+        const closeBPanel = () => { bOpenRef.current = false; setBOpen(false); audioController.playTone(240, 0.04, 'sine', 0.04) }
+        const toggleBPanel = () => {
+            bOpenRef.current = !bOpenRef.current
+            setBOpen(bOpenRef.current)
+            if (bOpenRef.current) refreshBPanel()
+            audioController.playTone(bOpenRef.current ? 470 : 240, 0.04, 'sine', 0.04)
         }
         const refreshVPanel = () => {
             const taken = [1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length
@@ -834,7 +892,7 @@ const CivilizationVGame = () => {
             if (vOpenRef.current) refreshVPanel()
             audioController.playTone(vOpenRef.current ? 330 : 240, 0.05, 'triangle', 0.05)
         }
-        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy, toggleUPanel, closeUPanel, pickWonder, toggleGPanel, closeGPanel, pickRecruit, pickUseGP, toggleDPanel, closeDPanel, pickDeclare, pickPeace, pickTrade, pickGift, pickPlate, cycleYard, toggleVPanel, closeVPanel, recenter }
+        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy, toggleUPanel, closeUPanel, pickWonder, toggleGPanel, closeGPanel, pickRecruit, pickUseGP, toggleDPanel, closeDPanel, pickDeclare, pickPeace, pickTrade, pickGift, pickPlate, cycleYard, pickBuilding, toggleBPanel, closeBPanel, toggleVPanel, closeVPanel, recenter }
 
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
@@ -876,6 +934,7 @@ const CivilizationVGame = () => {
             if (e.code === 'KeyW') { if (screenRef.current === 'play') toggleWPanel(); return }
             if (e.code === 'KeyP') { if (screenRef.current === 'play') togglePPanel(); return }
             if (e.code === 'KeyU') { if (screenRef.current === 'play') toggleUPanel(); return }
+            if (e.code === 'KeyA') { if (screenRef.current === 'play') toggleBPanel(); return }
             if (e.code === 'KeyG') { if (screenRef.current === 'play') toggleGPanel(); return }
             if (e.code === 'KeyD') { if (screenRef.current === 'play') toggleDPanel(); return }
             if (e.code === 'KeyI') { if (screenRef.current === 'play') toggleVPanel(); return } // #1637: VICTORY panel moved Y -> I (Y is the WATCH key everywhere)
@@ -992,7 +1051,7 @@ const CivilizationVGame = () => {
                     selected: gs.selected, units0: gs.units.filter((u) => u.civ === 0 && u.alive).map((u) => ({ id: u.id, kind: u.kind, c: u.c, r: u.r, moves: u.moves, hp: u.hp })),
                     barbsVisible: gs.units.filter((u) => u.alive && u.civ === BARB && gs.visible[0][u.r * CFG.W + u.c]).length,
                     campsAlive: gs.camps.filter((c) => c.alive).length, wars: Object.keys(gs.wars).length,
-                    queue: gs.cities.filter((c) => c.civ === 0 && c.alive).map((c) => ({ id: c.id, name: c.name, queue: [...(c.queue || [])], p: Math.floor(c.buildP || 0) })),
+                    queue: gs.cities.filter((c) => c.civ === 0 && c.alive).map((c) => ({ id: c.id, name: c.name, queue: [...(c.queue || [])], p: Math.floor(c.buildP || 0), bld: { ...(c.bld || {}) } })),
                     tech: { known: TECH_IDS.filter((id) => hasTech(gs, 0, id)), research: gs.tech[0].research, prog: Math.floor(gs.tech[0].prog),
                         ai: CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => ({ civ: c.id, name: c.name, n: Object.keys(gs.tech[c.id].known).length, researching: gs.tech[c.id].research })) },
                     workers: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').map((u) => ({ id: u.id, c: u.c, r: u.r, busy: u.busy })),
@@ -1017,6 +1076,8 @@ const CivilizationVGame = () => {
                 recenter: () => recenter(),
                 move: (c, r) => { pending = { move: [c, r] } }, settle: () => { pending = { found: true } }, endTurn: () => { pending = { endTurn: true } },
                 attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k, city) => { pending = { ...pending, queue: k, ...(city != null ? { city } : {}) } },
+                buildings: () => gs.cities.filter((c) => c.alive).map((c) => ({ id: c.id, civ: c.civ, name: c.name, capital: !!c.capital, size: c.size, bld: { ...(c.bld || {}) }, queue: [...(c.queue || [])], p: Math.floor(c.buildP || 0) })), // #2671 readback
+                building: (bid, city) => { pending = { ...pending, queue: 'BLD_' + bid, ...(city != null ? { city } : {}) } }, // #2671 order a building at a city
                 research: (id) => { pending = { ...pending, research: id } }, learn: (id) => { grantTech(gs, 0, id) },
                 improve: (kind) => { pending = { ...pending, improve: kind } },
                 policy: (id) => { pending = { ...pending, policy: id } },
@@ -1155,6 +1216,7 @@ const CivilizationVGame = () => {
                     <button onClick={() => actRef.current.toggleWPanel && actRef.current.toggleWPanel()} className="pointer-events-auto border border-lime-300/50 rounded px-2 py-0.5 bg-black/40 text-lime-100 text-[11px]">W · WORK</button>
                     <button onClick={() => actRef.current.togglePPanel && actRef.current.togglePPanel()} className="pointer-events-auto border border-violet-300/50 rounded px-2 py-0.5 bg-black/40 text-violet-100 text-[11px]">P · POLICY</button>
                     <button onClick={() => actRef.current.toggleUPanel && actRef.current.toggleUPanel()} className="pointer-events-auto border border-amber-300/50 rounded px-2 py-0.5 bg-black/40 text-amber-100 text-[11px]">U · WONDERS</button>
+                    <button onClick={() => actRef.current.toggleBPanel && actRef.current.toggleBPanel()} className="pointer-events-auto border border-stone-300/50 rounded px-2 py-0.5 bg-black/40 text-stone-100 text-[11px]">A · BUILD</button>
                     <button onClick={() => actRef.current.toggleGPanel && actRef.current.toggleGPanel()} className="pointer-events-auto border border-rose-300/50 rounded px-2 py-0.5 bg-black/40 text-rose-100 text-[11px]">G · LEGENDS</button>
                     <button onClick={() => actRef.current.toggleDPanel && actRef.current.toggleDPanel()} className="pointer-events-auto border border-teal-300/50 rounded px-2 py-0.5 bg-black/40 text-teal-100 text-[11px]">D · DIPLOMACY</button>
                     <button onClick={() => actRef.current.toggleVPanel && actRef.current.toggleVPanel()} className="pointer-events-auto border border-yellow-300/60 rounded px-2 py-0.5 bg-black/40 text-yellow-100 text-[11px]">I · VICTORY</button>
@@ -1288,6 +1350,38 @@ const CivilizationVGame = () => {
                             ))}
                         </div>
                         <div className="text-[10px] text-amber-200/60 mt-2">the first builder takes it forever · wonders queue in your capital beside units · U closes</div>
+                    </div>
+                </div>
+            )}
+
+            {screen === 'play' && bOpen && bpanel && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none" onPointerDown={(e) => e.stopPropagation()}>
+                    <div className="pointer-events-auto w-[min(94vw,720px)] rounded-lg border border-stone-300/40 bg-[#0d0b08]/95 shadow-[0_18px_60px_#000] px-4 py-3 font-mono text-stone-100">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <h3 className="text-lg font-black tracking-[0.25em] text-stone-300">BUILD</h3>
+                            <div className="flex items-center gap-1 text-[11px]">
+                                <span className="opacity-70">YARD</span>
+                                <button onClick={() => actRef.current.cycleYard && actRef.current.cycleYard(-1)} className="border border-white/30 rounded px-1.5 py-0.5 hover:bg-white/10">◀</button>
+                                <span className="min-w-[80px] text-center text-stone-200">{bpanel.yardName}{bpanel.capital ? ' ★' : ''}</span>
+                                <button onClick={() => actRef.current.cycleYard && actRef.current.cycleYard(1)} className="border border-white/30 rounded px-1.5 py-0.5 hover:bg-white/10">▶</button>
+                            </div>
+                            <button onClick={() => actRef.current.closeBPanel && actRef.current.closeBPanel()} className="text-[11px] border border-stone-300/40 rounded px-2 py-0.5 hover:bg-stone-300/10">CLOSE ✕</button>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {bpanel.rows.map((r) => (
+                                <button key={r.id} onClick={() => actRef.current.pickBuilding && actRef.current.pickBuilding(r.id)}
+                                    className={`w-full text-left rounded border px-2 py-1 transition-colors ${r.built ? 'border-emerald-400/50 bg-emerald-900/30 text-emerald-200' : r.why === null ? (r.queued ? 'border-amber-300 bg-amber-700/40' : 'border-white/30 bg-white/5 hover:bg-white/10') : 'border-white/10 bg-black/30 text-white/30'}`}>
+                                    <div className="flex justify-between text-[12px] font-bold">
+                                        <span>{r.built ? '✓ ' : '🏗 '}{r.name}</span>
+                                        <span className="opacity-70">{r.built ? 'STANDING' : r.queued ? `QUEUED ${Math.min(r.prog, r.cost)}/${r.cost}` : `⚒ ${r.cost}`}</span>
+                                    </div>
+                                    {r.queued && !r.built && <div className="h-1 rounded bg-black/60 mt-1"><div className="h-full bg-amber-300" style={{ width: `${Math.min(100, Math.round((r.prog / r.cost) * 100))}%` }} /></div>}
+                                    <div className="text-[10px] opacity-70 mt-0.5">{r.effect} · needs {r.tech}</div>
+                                    {r.why !== null && !r.built && <div className="text-[10px] text-red-300/80 mt-0.5">{r.why}</div>}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="text-[10px] text-stone-200/60 mt-2">every city raises each building once · one project at a time on the yard · a captured city keeps what stands · the yard is shared with the Ark welds (I panel) · A closes</div>
                     </div>
                 </div>
             )}
@@ -1503,7 +1597,7 @@ const CivilizationVGame = () => {
                     <WatchButton on={watching} />
                 </div>
             )}
-            <VirtualControls visible={play && !paused && !panelOpen && !wOpen && !pOpen && !uOpen && !gOpen && !dOpen && !vOpen} secondAction={{ label: 'E', code: 'KeyE' }} />
+            <VirtualControls visible={play && !paused && !panelOpen && !wOpen && !pOpen && !uOpen && !gOpen && !dOpen && !bOpen && !vOpen} secondAction={{ label: 'E', code: 'KeyE' }} />
         </div>
     )
 }

@@ -15,8 +15,8 @@ src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog,
                                     musketeers, CS beacons, HP bars, arrows, FX
 src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research/worker/policy/
                                     wonders/legends/diplomacy/victory panels
-scripts/civcheck.mjs                Node harness (npm run civcheck) — 662 checks
-scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 99 checks
+scripts/civcheck.mjs                Node harness (npm run civcheck) — 703 checks
+scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 109 checks
 scripts/civclock.mjs                frame budget of the late game (npm run civclock)
 ```
 
@@ -190,13 +190,38 @@ screen measures ~13 fps here — so `civclock` never claims fps as a property
 of the game; it gates on the loop ratio (≥0.9x at full speed) and prints
 fps/p50/p95 for whoever tunes the pipeline. Mutant proof #6 below.
 
+**City buildings (#2671) — the lot rises.** The arcade once cut the building
+class whole: cities built units, wonders and Ark plates only. Five named
+buildings now ride the yard in `BUILDINGS` (`sim.js`) — Granary 25⚒ +2 food
+(Pottery), Library 30⚒ +2 science (Writing), Walls 30Ⓐ +6 city defence
+(Bronze Working), Workshop 35⚒ +2 production (the Wheel), Market 40⚒ +3 gold
+(Currency). Queue kinds share one string space (`BLD_<ID>` beside `ARK_<ID>`),
+the head-of-queue pump extends #2077's `pumpCityQueue`, and `cityYield` /
+`cityDefense` read what stands (`Walls` land flat, before the Great Wall's
+multiplier). Buildings are per-city — unlike plates, every city may raise each
+once, and a captured city keeps what stands, as in the original. Costs sit at
+25–40 deliberately: the golden shortcut crowns a size-4 capital around t10, so
+the first lot has to be the cheapest thing on the board or no winning run ever
+sees a building. The AI raises lots too (granary while small, walls the moment
+steel walks, engines between; `hash2`-gated so armies still come out — §44h).
+UI: **A** opens BUILD — five rows on the ordered city, the same yard ◀ ▶
+selector the plates use; a locked row refuses by naming its tech; the yard
+announces the raise (`building` event). Two shipped bugs surfaced on the way
+and died here: the HUD build-slot writer read `WONDER[q].cost` unguarded and
+pageerror-crashed on any non-unit queue head (latent for Ark plate heads too),
+and `endTurn`/`select` overwrote `pending`, so a Space pressed within a frame
+of ordering silently dropped the order — orders now merge through. §44 (25
+pins) and civplay §9 (10 live checks: panel, refusal-by-name, real click,
+live turns to STANDING) pin law and paint.
+
 ## Controls
 
 Click/tap a tile to move; a hostile hex to strike. Keys: Space/Enter end turn ·
 E settle · 1/2/3 warrior/archer/settler · 4 worker · C catapult · V legion ·
 H chariot · **K musket** · N trireme · **L galleon** (coastal cities) ·
 **W** WORK panel (F farm · M mine · O road) · **T** RESEARCH (R next) ·
-**P** POLICY · **U** WONDERS · **G** LEGENDS · **D** DIPLOMACY ·
+**P** POLICY · **U** WONDERS · **A** BUILD (raise named buildings on the
+ordered city's yard, #2671) · **G** LEGENDS · **D** DIPLOMACY ·
 **I** VICTORY (three race tracks + rival progress; YARD ◀ ▶ picks the city,
 ⚒ WELD mobilises a plate) · **Q** weld the next missing plate at the chosen
 yard (#2077; `I` because Y is the WATCH key, #1637) ·
@@ -209,7 +234,7 @@ the hold. The Y panel is reachable by touch (on-screen button).
 ## Verify
 
 ```bash
-npm run civcheck          # 662 Node checks: boot, determinism, founding, economy, combat, barbarians,
+npm run civcheck          # 703 Node checks: boot, determinism, founding, economy, combat, barbarians,
                           # cities, production, tech (§16-18, now 21 techs / 6 eras), improvements (§19-20),
                           # resources (§21-22), borders (§23), happiness (§24), policies (§25), wonders
                           # (§26), great people (§27), stage-6 integration + slack (§28), city-states §29,
@@ -240,11 +265,21 @@ npm run civcheck          # 662 Node checks: boot, determinism, founding, econom
                            # a raw deficit with age-named copy, rivals ride the same curve, the AND
                            # across courts, dead ghost-books skipped, income law untouched, seed-7
                            # determinism, source pins: sim and panel read one exported walk)
+                           # CITY BUILDINGS §44 (#2671): five named per-city projects on the yard —
+                           # table sanity, tech gates refuse by name, one-of-each per city but twice
+                           # per realm, pump completes at cost with surplus banking, cityYield/cityDefense
+                           # read what stands (Walls flat, before the Great Wall's multiplier), capture
+                           # keeps the lot, AI raises its own lots within 60 turns, seed determinism,
+                           # paint pins incl. the fixed WELD deny-check and the pad-hide while BUILD is open)
 npm run civplay           # Chrome, real keys: I opens VICTORY (three tracks + rivals), K/L answer with
                           # Musket and Galleon on a seed-4 COASTAL capital (real keel, no escape clause),
                           # J/E refuse the transport paths by name, the four plates mobilise at the yards
                           # and weld on live turns (panel tracks + delivery toast + weld copy), win screen
-                          # names the victory type, zero errors; then a ?lite=1 page: same world painted,
+                          # names the victory type, zero errors; the city lot §9 (#2671): A opens BUILD,
+                          # a locked row refuses by tech name, a real click orders the Granary at the yard
+                          # and live turns raise it (queue empties, the row reads STANDING), the empty lot
+                          # at founding, no NULL on a denied WELD (the fixed pickPlate path), zero errors;
+                          # then a ?lite=1 page: same world painted,
                           # dpr capped to 1, no errors
 npm run civclock          # late-board frame budget, full vs ?lite=1 at CPU throttle 1/4/8:
                           # fps, loop ratio (the gate: >=0.9x at full speed), p50/p95 frame ms
@@ -324,8 +359,15 @@ npm run lint:civ          # eslint gate for the game + its scripts
   bullet: no World Congress, no Ideology gifting of tourism, no great-work
   slotting.
 - Wonders stay six, great people three, policies six, city-states two, happiness
-  one empire-wide face; no buildings/city screen, no world congress, no
-  religion, no trade routes, no great-engineer wonders of the modern age.
+  one empire-wide face; no world congress, no religion, no trade routes, no
+  great-engineer wonders of the modern age. ~~no buildings/city screen~~
+  **CLOSED by #2673 (first slice)**: five named buildings — Granary, Library,
+  Walls, Workshop, Market — rise on city yards: per-city once, tech-gated,
+  effects read by `cityYield`/`cityDefense`, the AI raises its lots, the A
+  panel is proven live (civcheck §44, civplay §9). Still owed honestly from
+  this bullet: a true per-city screen (rush/buy/purchase live at the city in
+  the original — the BUILD panel is yard-scoped, not a city screen) and the
+  wider building tree (Monument … Aqueduct …).
 
 These are the arcade's cuts, decided from Stage 1: eight stages, forty turns,
 one phone-sized board — the shape of the whole campaign.
