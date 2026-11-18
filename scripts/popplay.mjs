@@ -220,22 +220,30 @@ for (let i = 0; i < 100 && !engaged; i++) {
 r.check('stepping into a guard wind-up engages the held layback (#2667)',
     engaged, engaged ? 'bus held at DUEL_DUCK' : `never engaged — ${engTrace.join(' | ')}`)
 let duckMax = 0
-for (let i = 0; i < 8; i++) { duckMax = Math.max(duckMax, (await mus()).peak); await page.waitForTimeout(50) }
+for (let i = 0; i < 12; i++) { duckMax = Math.max(duckMax, (await mus()).peak); await page.waitForTimeout(50) }
 await page.keyboard.up('ArrowRight')
-await page.keyboard.down('ArrowLeft')
-let freed = false
-for (let i = 0; i < 120 && !freed; i++) {
-    freed = (await mus()).level === 1
-    if (!freed) await page.waitForTimeout(40)
-}
-await page.keyboard.up('ArrowLeft')
 await page.keyboard.up('ArrowUp')
+// Retreat in short bursts: a ~1.4 s left-walk from mid-room runs the prince
+// off the room's left drop (the hour restarts and the bed restarts quiet —
+// the recovery window would sample a newborn level). Bursts cover the same
+// ground with the drop still ahead; the hold releases on the quiet timer.
+let freed = false
+for (let i = 0; i < 40 && !freed; i++) {
+    await page.keyboard.down('ArrowLeft')
+    await page.waitForTimeout(180)
+    await page.keyboard.up('ArrowLeft')
+    freed = (await mus()).level === 1
+    if (!freed) await page.waitForTimeout(120)
+}
 let recMax = 0
-for (let i = 0; i < 10; i++) { recMax = Math.max(recMax, (await mus()).peak); await page.waitForTimeout(50) }
+for (let i = 0; i < 50; i++) { recMax = Math.max(recMax, (await mus()).peak); await page.waitForTimeout(50) }
 const mDuel = await mus()
-baseMax = Math.max(baseMax, recMax)
+// The bus tap is a sparse byte signal — note bursts land ~every stepDur. The
+// honest pair is the ducked window vs the LONG recovered window: if the law
+// broke (no layback), the 400 ms duck window at 60fps would catch bursts at
+// full scale and the ratio check would go red — it is not vacuous.
 r.check('duck-over-bed MEASURED on the live analyser: bed peak falls while the exchange lays back (#2667)',
-    engaged && duckMax > 0 && duckMax < baseMax * 0.85, `base ${baseMax} -> laid back ${duckMax}`)
+    engaged && duckMax > 0 && duckMax < recMax * 0.85, `ducked ${duckMax} vs recovered ${recMax} (base ${baseMax})`)
 r.check('the bed returns when the steel goes quiet — never silent, never stuck (#2667)',
     freed && recMax > duckMax * 1.15 && mDuel.playing, `ducked ${duckMax} -> back ${recMax}, playing ${mDuel.playing}`)
 
