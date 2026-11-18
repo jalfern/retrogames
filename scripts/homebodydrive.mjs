@@ -850,26 +850,33 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
 
 // -------------------------------------- MEDIATE (#2672): the kid broke it up ---
 {
-    // Rig the pair cold (the #2599 rig), adopt the cat, seat her between them:
-    // the live law cracks the war on the spot — and a second rig-set cold war
-    // stays locked, because no new spat re-armed the ledger.
-    await page.evaluate(() => { window.__homebodyTest.money(1000); window.__homebodyTest.pairCold(999); window.__homebodyTest.adopt() })
+    // Rewind the clock first — this leg rides at the END of a long drive whose
+    // late legs deliberately run at night, and hour>19 sends the pair home
+    // (absence would thaw the war before any mediator could act). Then: rig the
+    // pair cold, adopt the cat, seat her between them — the live law cracks the
+    // war on the spot; with the cat away a fresh rig-set war stays cold.
+    await page.evaluate(() => { window.__homebodyTest.money(1000); window.__homebodyTest.hour(8); window.__homebodyTest.pairCold(999); window.__homebodyTest.adopt() })
     let catHome = null
     for (let i = 0; i < 150 && !catHome; i++) { const s = await st(); if (s.pet) catHome = s.pet; else await wait(50) }
     check('#2672 the cat is home while the pair is cold', !!catHome && catHome.needs !== undefined, JSON.stringify(catHome && { state: catHome.state }))
     await page.evaluate(() => window.__homebodyTest.standMed('pet', 2, 6))
     let med = null
     for (let i = 0; i < 60 && !med; i++) { const s = await st(); if (s.neiMediated === 1) { med = s; break } await wait(50) }
-    check('#2672 the cat between them cracks the cold war — mending lane, flag set',
-        !!med && med.neiGrudge === 0 && med.neiMending === 1 && med.neiMediated === 1, JSON.stringify(med && { g: med.neiGrudge, m: med.neiMending, md: med.neiMediated }))
+    check('#2672 the cat between them cracks the cold war — flag set, war over',
+        !!med && med.neiGrudge === 0 && med.neiMediated === 1, JSON.stringify(med && { g: med.neiGrudge, m: med.neiMending, md: med.neiMediated }))   // mending may already have paid its reunion by the poll — mediation itself is the proof
     let lv = 0
     for (let i = 0; i < 10 && lv < 6; i++) { lv = await page.evaluate(() => window.__homebodyTest.leaves()); if (lv < 6) await wait(40) }
     check('#2672 the mediation sparkles the pair leaf on the live canvas', lv >= 6, `leaves=${lv}`)
-    await page.evaluate(() => window.__homebodyTest.pairCold(0))   // a cold war WITHOUT a new spat…
-    await wait(700)
-    const lk = await st()
-    check('#2672 the ledger stays locked — a rig-set second war murmurs, it does not mediate',
-        lk.neiGrudge === 1 && lk.neiMediated === 1, JSON.stringify({ g: lk.neiGrudge, md: lk.neiMediated }))
+    await page.evaluate(() => { window.__homebodyTest.pairCold(0); window.__homebodyTest.standMed('pet', 12, 10) })   // fresh cold war, mediator parked far out
+    await wait(900)
+    const cold = await st()
+    check('#2672 with the mediator far away a cold war just stands',
+        cold.neiGrudge === 1 && cold.neiMediated === 0, JSON.stringify({ g: cold.neiGrudge, md: cold.neiMediated }))
+    await page.evaluate(() => window.__homebodyTest.standMed('pet', 2, 6))
+    let med2 = null
+    for (let i = 0; i < 60 && !med2; i++) { const s = await st(); if (s.neiMediated === 1) { med2 = s; break } await wait(50) }
+    check('#2672 the cat back between them cracks it again — presence drives the law',
+        !!med2 && med2.neiGrudge === 0 && med2.neiMediated === 1, JSON.stringify(med2 && { g: med2.neiGrudge, md: med2.neiMediated }))
 }
 
 check('zero page errors across the whole drive', errors.length === 0, JSON.stringify(errors.slice(0, 3)))

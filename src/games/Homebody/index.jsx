@@ -1383,6 +1383,7 @@ const HomebodyGame = () => {
                 win: () => { if (gs) { gs.content = WIN_CONTENT; gs.done = 'win'; gs.endMsg = 'forced' } },
                 collapseAll: () => { if (gs) for (const p of gs.people) p.faintT = 2 },
                 money: (v) => { if (gs) gs.money = v },
+                hour: (h) => { if (gs) gs.hour = h },   // #2672: scenario-clock rewind — the drive's late legs (sneak/prowl) run past the visitors' dusk, and a mediation leg needs the pair still on the lot
                 select: (i) => { if (gs) setSel(gs, i) },   // #2222: the shelf follows the pick
                 bond: (k, v) => { if (gs && gs.rel[k] !== undefined) gs.rel[k] = v },
                 attractIvy: () => (demoG ? { ivy: !!demoG.ivy, demoIvy: demoG.demoIvy, hour: +demoG.hour.toFixed(1), rungFx: demoG.ivy ? demoG.ivy.state : null } : null),   // #2240: the attract's own sim is demoG, not gs
