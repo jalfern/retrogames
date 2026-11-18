@@ -17,11 +17,43 @@ import {
     ICE_HOLD_T, ICE_DRIPS,   // #2508 item 3: the eat beat — how long the cone rides in hand, and its drip ticks
     nightLevel,   // #2264: one night curve for the tint, the steam and the plate halo
     NEIGH_WARM_AT,   // #2599: cross-warmth — the rung that deepens each neighbour's chat
+    goSayTarget,   // #2688: the promised ear — the view derives the errand the same way the sim resolves it
 } from './sim.js'
 
 // #2599 item 1: the pair's own hues — Fern-green and Ivy-plum, the two guests'
 // dress colours, so a line between THEM reads as theirs at a glance.
 export const PAIR_HUES = ['#4fae5f', '#a3579b']
+
+// #2688 feel pass — the GO-SAY promise told in motion (#2683's tails 2 & 6).
+// Pure view math on the errand the sim already runs: the ring tightens as the
+// walker nears, gold dots walk the remaining route, and the ear the word is
+// addressed to knows it's coming once the errand is EAR_REACT tiles away.
+// Nothing here decides anything — sim.js never hears of these words.
+export const EAR_REACT = 4          // tiles — the target wakes to the approach at this range
+export const PROMISE_TIGHTEN = 8    // tiles — the ring starts closing this far out
+export const LOST_RING_T = 1.3      // real seconds the dead ring flickers before it's gone
+
+// one hue per promised ear: the guests wear their dress colours (PAIR_HUES),
+// Pip wears her star gold — the same identities the BONDS panel paints.
+export const EAR_HUES = { fern: PAIR_HUES[0], ivy: PAIR_HUES[1], kid: '#ffd24a' }
+
+export function promiseTell(s) {
+    const p = s.people && s.people.find((q) => q.goal && q.goal.kind === 'gosay')
+    if (!p) return null
+    const v = goSayTarget(s, p.goal.k)
+    if (!v) return null
+    const d = Math.abs(p.r - v.r) + Math.abs(p.c - v.c)
+    const tight = Math.max(0, Math.min(1, 1 - d / PROMISE_TIGHTEN))
+    const trail = (p.path || []).map((cell, i, a) => ({ r: cell.r, c: cell.c, k: a.length > 1 ? i / (a.length - 1) : 1 }))
+    return { d, tight, trail, hue: EAR_HUES[p.goal.k] || '#ffd24a', vx: v.x, vy: v.y }
+}
+
+// the ear knows (#2688 tail 6): the target answers the approach with a hue wink.
+export function earReact(s) {
+    const t = promiseTell(s)
+    if (!t || t.d > EAR_REACT) return null
+    return { x: t.vx, y: t.vy, hue: t.hue }
+}
 
 // #2618 item 1: the stroll stride — the pair's walk sell. Both guests mid-path
 // is a pair WALKING TOGETHER, not two sprites translating: the bob deepens past
@@ -988,6 +1020,29 @@ export function nightTint(ctx, hour, ext, wings = null) {
             }
         }
     }
+}
+
+// #2688 handoff 3 — the garden's potting bench keeps a lamp after dusk. The
+// wings' panes lit (#1814/#2689) but the garden room stayed dark furniture;
+// a small warm pool under the bench ties the two rooms together at night.
+// Pure derivation from the wing geometry + the one night curve; day, or a lot
+// without the garden, paints nothing.
+export function gardenLamp(s) {
+    if (!s || !s.ext || !s.wings) return null
+    const wg = s.wings.map(wingGeom).find((w) => w.id === 'garden')
+    if (!wg || nightLevel(s.hour) <= 0.2) return null   // same dusk floor as the lit panes
+    return { r: 9, c: 1 }   // the bake paints the bench along the garden's north wall (cols 0–3)
+}
+
+export function drawGardenLamp(ctx, s) {
+    const l = gardenLamp(s)
+    if (!l) return
+    const a = nightLevel(s.hour)
+    const lx = tileX(l.c) + TILE / 2, ly = tileY(l.r) + 20
+    ctx.fillStyle = `rgba(255,214,120,${(a * 0.45).toFixed(3)})`
+    ctx.beginPath(); ctx.ellipse(lx, ly, 26, 9, 0, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = `rgba(255,240,170,${(a * 0.95).toFixed(3)})`
+    ctx.fillRect(lx - 2, ly - 18, 4, 5)   // the little lamp above the pots
 }
 
 // ------------------------------------------------------------------ HUD ----
