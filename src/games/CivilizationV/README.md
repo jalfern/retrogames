@@ -359,8 +359,15 @@ npm run lint:civ          # eslint gate for the game + its scripts
   bullet: no World Congress, no Ideology gifting of tourism, no great-work
   slotting.
 - Wonders stay six, great people three, policies six, city-states two, happiness
-  one empire-wide face; no buildings/city screen, no world congress, no
-  religion, no trade routes, no great-engineer wonders of the modern age.
+  one empire-wide face; no world congress, no religion, no trade routes, no
+  great-engineer wonders of the modern age. ~~no buildings/city screen~~
+  **CLOSED by #2673 (first slice)**: five named buildings — Granary, Library,
+  Walls, Workshop, Market — rise on city yards: per-city once, tech-gated,
+  effects read by `cityYield`/`cityDefense`, the AI raises its lots, the A
+  panel is proven live (civcheck §44, civplay §9). Still owed honestly from
+  this bullet: a true per-city screen (rush/buy/purchase live at the city in
+  the original — the BUILD panel is yard-scoped, not a city screen) and the
+  wider building tree (Monument … Aqueduct …).
 
 These are the arcade's cuts, decided from Stage 1: eight stages, forty turns,
 one phone-sized board — the shape of the whole campaign.
