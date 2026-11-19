@@ -1,80 +1,58 @@
-# STATE.md — The Forge (rewritten at close of session 356, slot a — 2026-11-19;
-# session 355's reports are on main and in git history.)
-
-## SHIPPED THIS SESSION — CONTRA S2 MERGED (`8ada95b`, PR #2786)
-**CONTRA — the waterfall + boss gate.** #2779 stage 2 (stage 1 shipped by slot a as
-#2781). `static` SUCCESS, squash merged via rule-5. Issue #2779 stays OPEN with `next`
-(multi-stage commission #1530; S3 = the hangar run is the next slice).
-
-**What landed** (`src/games/Contra/{sim,art,index}.js(x)` + `contracheck.mjs`):
-- Phases `jungle → falls → boss` through one `step()` law: ratchet camera (never
-  retreats past the gate view), water drowns (life + safe-point respawn), one-way
-  shelves with honest geometry (rise ≤ 44, gap ≤ 55 — inside the jump envelope),
-  vertical wake law (off-screen enemies sleep until they can see you).
-- Boss gate: armored core (8 hp) behind a shutter (opens 70 frames every 120),
-  two cannons (aimed rounds + steep drop-shots), spawn door capped at 1 soldier.
-  Core break → doors open, cascade +5000, `won`.
-- Autopilot wins in-game, no warps: 40/40 seeds, 0 deaths. Tactics (zigzag
-  patrol, hop flats, sidestep drops, face the charger, never turn into an inbound
-  round) + the tuning trail are in `src/games/Contra/README.md` — including a
-  reverted rule that measured *worse* (back-pedal to dodge: 0/12).
-- Gates: `contracheck` 52/52 (S1 battery + QA #2784's checks + 12 S2 laws);
-  `--mutant` names two harms (spawn-shield; sealed-core "0/6 seeds can finish");
-  `contractcheck` contra 15/15; lint mario/fps/ai; build.
-- Live: https://jalfern.com/retrogames/contra (prod bundle carries S2 strings).
+# STATE.md — The Forge (rewritten at close of session 357, slot b — 2026-11-19;
+# committed: the forge game MERGED this session (086554e), so per FORGE step 9 the
+# report rides main, not just the park.)
 
 ## PLAYABLE
-`/retrogames/contra` is now a full two-stage run: jungle, waterfall climb, boss
-gate, win screen. Everything else on the shelf unchanged (floor-boss #2783 by slot b).
+- **/retrogames/contra — S3 live (merged `086554e`, PR #2788):** the weapon wall — capsule wheel
+  (S/M/F/L, three altitudes), MG stream (cool 3), piercing undulating FIRE, piercing LASER, 4
+  tree-line snipers (flashing scope-glint telegraph, 3.2 px/t), 3 vest grenadiers (arcing lobs,
+  ground blast). `contracheck` 69/69, `--mutant` 56/56 (4 named harms incl. 2 new: silent-MG,
+  non-piercing-beam), seeds 1..12 win with the new roster, contractcheck 15/15.
+- /retrogames/floor-boss, /retrogames/contra S1+S2 — unchanged.
 
 ## BOARD
-- **#2779 (open, `next`, lane:games)** — S3: the hangar run (final stage of #1530).
-  Design notes + stage specs live on the issue; sim already has the phase machine
-  and ratchet to extend.
-- **#1711 (open, `next`)** — waits ONLY on Jon's clap take (jonq #2652 AWAITING,
-  deadline 2026-11-20 01:36Z). No lane-side work left; sweep at claim.
+- **#2779 CONTRA — released to `next`, S4 remains** (co-op: CPU ally seat default per Jon's
+  multiplayer rule + 2-player keyboard option; sim takes one hero today). S1/S2/S3 all merged.
+- **#1711 PLAICRAFT S1 — re-verified wait-state twice, released to `next`.** Store unchanged
+  (16 takes, newest human = Nov-16 seed12), grade dry → nothing new; #2652 AWAITING (deadline
+  2026-11-20T01:36Z, default = keep waiting). Lines: 1 hold · 2 hold · 3 open (human clap take
+  only; machine half green nightly, run 44567204499) · 4 hold. No lane-side work exists.
+- **#2789 filed (feedback): arms-depot salvage** — slot a's parallel S3 read (10-hit depot slab,
+  hatch, capsule-volley payout, 5x5 glyphs, 6 voices) from `origin/forge/contra-weapon-wall`
+  @ `29fa62b`+, unshipped. Rebase onto main; port what survives. This is S4-follow territory,
+  NOT an S3 re-ship.
+- **COLLISION #2779 (2nd in 24h, reversed):** slot a built S3 blind while b held the resumed
+  claim — `forge-claim.sh` resume posts no comment, so liveness never saw b. Full evidence +
+  salvage path on the issue (b's 22:5xZ note). If you resume a claim, comment one line.
 
 ## QUEUE (re-derive at main — never plan from a remembered snapshot)
-1. `git fetch && git checkout --detach origin/main`, `node scripts/idle-kick.mjs`,
-   then the #1045 ladder. CONTRA S3 (#2779) is the obvious big slice; budget a
-   full session (third phase + finale art + a new check section + autopilot end).
-2. #1711 — check the store for Jon's clap take; if #2652 defaulted, follow its
-   recorded default.
+1. `git fetch && git checkout --detach origin/main` + the #1045 ladder. `next` = #2779 (S4,
+   the last Contra stage) and #1711 (wait-state: skip unless #2652 answered/defaulted —
+   check `node scripts/jonq.mjs list games` first).
+2. `game-queue` holds #2787 (FloorBoss turn-hold **plan-time** reservation — session 356-b
+   measured that a runtime defer moves 4 rng-order goldens; budget a full session, design note
+   on the issue).
+3. Slot a was live on `forge/contra-weapon-wall` at session end (vite on 5173, pushing at
+   ~23:0xZ). Expect a duplicate-S3 PR risk despite the warning — a red flag to check before
+   merging anything Contra; the salvage path is #2789.
 
 ## QUESTIONS OUT (jonq issues, not STATE.md — #605)
-- #2652 (AWAITING, lane:platform, deadline 2026-11-20 01:36Z) — Jon's phone-clap
-  take or waive the phone shape.
-- #2751 (AWAITING, lane:qa, deadline 2026-11-21 03:40Z) — QA focus.
-- Nothing filed from slot a this session — tuning and stage design followed spec.
+- #2652 (AWAITING, lane:platform, deadline 2026-11-20T01:36Z) — Jon's clap take or waive the
+  phone shape; default = keep waiting. Gates only line 3 of #1711.
+- #2751 (AWAITING, lane:qa, deadline 2026-11-21T03:40Z) — QA focus.
+- Nothing filed from slot b this session (ship decisions were mechanical, not taste).
 
 ## HARNESS NOTES FOR THE NEXT LANE
-- **Foreign-rebase incident:** this worktree was found mid-`git rebase -i` started
-  by another process (replaying our pre-rebase tip `e70c141` onto slot b's main).
-  Aborted it, redid the rebase deliberately, verified `git status` before touching
-  anything. If you find rebase state you did not start: abort, verify PR head,
-  then act. `git rebase --continue` hangs without `GIT_EDITOR=true`.
-- **Mid-build merges of shared files are the cost of two lanes on one game.**
-  QA #2784 rewrote the same three Contra files; resolve as UNION, not side-pick:
-  the harness file kept both check suites (union = 52 checks); `--theirs`/`--ours`
-  side-picks silently drop the other lane's tests. (`checkout --theirs` also
-  no-op'd once mid-conflict — recover authoritative content via
-  `git show <sha>:<path>`.)
-- QA's world-tick msg-rotation and blue-sea pixel checks pass unchanged on S2:
-  attract paint stays jungle-phase and `drawWater` keeps the bottom band blue in
-  every phase — keep that invariant if S3 re-works the palette.
-- Core-window tuning that shipped (README has the full trail): hp 8, window
-  open 120/190, gun cadence 170+rnd·110 @ speed 2.0, hero patrol band
-  x∈[136,158]. Initial hp 20 was provably unwinnable by the honest-percept
-  autopilot — that number is the floor to re-measure, not to re-guess.
-- Mutant runs rewrite tracked files in place: never `git add` while one is live
-  (mutateguard stamps `.mutant-running`; check `node scripts/lib/mutateguard.mjs --check`).
-
-## SLOT A LOG
-Warden target #2783 refused (slot b held it — they shipped it as #2785 while we
-watched). Ladder → #2779 (`next`). Built S2 sim → art → shell → harness; tuning
-loop moved autopilot from 4/12 to 40/40 (levers + reverted rule, all on #2779
-ck1/ck2). Collision-rebased onto main mid-session after #2784/#2785 landed;
-all gates re-run green at the rebased tip; merged via rule-5; STATE committed
-directly to main (established pattern); slot parked (`statepark park a`).
-Dev server for slot a was on :5173 (stopped at close). Worktree
-`~/Dev/retrogames-forge-contra-waterfall` left detached at main — purge when idle.
+- **Lane-aim law (Contra, new):** enemies aim `p.lane` (hero's last grounded feet-y); snipers
+  fire only at grounded targets. Without it, aimed rounds track mid-air bodies and the 12-seed
+  win proof dies — the hop must ALWAYS answer an aimed round. Don't "fix" aim back onto p.y.
+- **Resume claims must speak:** `forge-claim.sh` prints "already yours" silently. Post
+  `FORGE (<slot>): resumed claim — <what>` on the issue or the other lane can't see you
+  (this cost two collisions on #2779 in 24h).
+- **Mutant/harness counting trap:** when proving kills, count only pushed test subjects —
+  seed-5's roster is pre-dead in those probes; counting `soldiers.filter(dead)` survived a
+  no-pierce mutant once (fixed in a follow-up commit on main).
+- **Beware stage-order contamination in the browser leg:** a live-fire test that destroys the
+  core leaves screen=clear; force `window.__game.reset(seed)` before death-path legs.
+- `stateHash` now covers weapon/bullet kinds, pierce counts, capsule kind, snipers, lane, vest
+  hp. Determinism leg is self-consistency (no pinned goldens) — extend it when you extend gs.
