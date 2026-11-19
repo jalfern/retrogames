@@ -30,6 +30,19 @@ const C = {
     fall: '#2a6a8f', fallLit: '#bfe4ef', fallLo: '#14405e',
     steel: '#78838f', steelLit: '#a8b2bc', steelLo: '#4a5460', rust: '#8a5a3a',
     coreRed: '#ff3b30', coreDark: '#701812', shutter: '#5a616c', shutterLit: '#8a929e',
+    // S3 — the weapon wall
+    concrete: '#525c66', concreteM: '#3a4148', concreteD: '#242a30',
+    hazardRed: '#c22f28', hatchLit: '#131a22', ember: '#ff7a3c',
+    laser: '#59f2ff', laserTail: '#c9fbff', flame: '#ff6a2a', flameLit: '#ffd23c',
+    mgTracer: '#ffe98c', sniperBeret: '#d8433a', cap: '#20242c', bandolier: '#d8c07a',
+}
+
+// The capsule's letter, 5x5 pixel glyphs — M F L S as the cabinet stamps them.
+const GLYPH = {
+    S: [0b11111, 0b10000, 0b11111, 0b00001, 0b11111],
+    M: [0b10001, 0b11011, 0b10101, 0b10001, 0b10001],
+    F: [0b11111, 0b10000, 0b11110, 0b10000, 0b10000],
+    L: [0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
 }
 
 export function drawBackground (ctx, cam, tick) {
@@ -229,13 +242,28 @@ export function drawSoldier (ctx, s, _tick) {
     ctx.fillRect(-5, -20, 10, 9)
     ctx.fillStyle = C.skin
     ctx.fillRect(-3, -26, 6, 6)
-    ctx.fillStyle = C.beret
-    ctx.fillRect(-4 + dir, -28, 8, 3)
+    const K = s.kind || 'grunt'
+    if (K === 'gren') {          // grenade soldier: dark cap + bandolier
+        ctx.fillStyle = C.cap
+        ctx.fillRect(-4 + dir, -28, 8, 3)
+        ctx.fillStyle = C.bandolier
+        for (let i = 0; i < 4; i++) ctx.fillRect(-4 + i, -19 + i, 2, 1)
+    } else if (K === 'sniper') { // sniper: bright red beret, darkened chest
+        ctx.fillStyle = C.sniperBeret
+        ctx.fillRect(-4 + dir, -28, 8, 3)
+        ctx.fillStyle = C.uniDark
+        ctx.fillRect(-5, -20, 10, 2)
+    } else {
+        ctx.fillStyle = C.beret
+        ctx.fillRect(-4 + dir, -28, 8, 3)
+    }
     const recoil = s.flash > 0 ? -dir : 0
+    const gunLen = K === 'sniper' ? 12 : 8
     ctx.fillStyle = C.gunMetal
-    ctx.fillRect((dir > 0 ? 2 : -10) + recoil, -16, 8, 2)
+    ctx.fillRect((dir > 0 ? 2 : -2 - gunLen) + recoil, -16, gunLen, 2)
+    if (K === 'sniper') { ctx.fillStyle = C.steel || '#78838f'; ctx.fillRect(dir > 0 ? 6 : -8, -18, 2, 2) } // scope nub
     if (s.flash > 0) { // muzzle flash: two-frame star at the barrel tip
-        const mx = (dir > 0 ? 11 : -11) + recoil
+        const mx = (dir > 0 ? gunLen + 3 : -gunLen - 3) + recoil
         ctx.fillStyle = s.flash > 2 ? '#fff6c8' : '#ffb347'
         ctx.fillRect(mx - 2, -18, 4, 4)
         ctx.fillRect(mx - (dir > 0 ? 0 : 4), -17, 3, 2)
@@ -262,6 +290,42 @@ export function drawTurret (ctx, t) {
     ctx.restore()
 }
 
+// S3 arms depot: a concrete slab with a firing slit, a supply hatch and a
+// crack pattern that deepens as its hp drops. The roof is the sniper's perch.
+export function drawDepot (ctx, d, tick) {
+    ctx.save(); ctx.translate(Math.round(d.x), Math.round(d.y))
+    // body
+    ctx.fillStyle = C.concrete
+    ctx.fillRect(-18, -44, 36, 44)
+    ctx.fillStyle = C.concreteM
+    ctx.fillRect(-14, -40, 28, 40)
+    for (let r = 0; r < 5; r++) ctx.fillRect(-14, -38 + r * 8, 28, 1) // seam lines
+    // cap with hazard teeth
+    ctx.fillStyle = C.concreteD
+    ctx.fillRect(-20, -48, 40, 5)
+    ctx.fillStyle = C.hazardRed
+    for (let i = 0; i < 5; i++) ctx.fillRect(-18 + i * 8, -48, 4, 3)
+    // firing slit + gun barrel tracking the hero
+    ctx.fillStyle = C.hatchLit
+    ctx.fillRect(-10, -30, 20, 5)
+    ctx.strokeStyle = C.steel
+    ctx.lineWidth = 3
+    ctx.beginPath(); ctx.moveTo(0, -28); ctx.lineTo(Math.cos(d.aim) * 15, -28 + Math.sin(d.aim) * 15); ctx.stroke()
+    // supply hatch (the grenadier's door — it breathes open before a spill)
+    ctx.fillStyle = C.concreteD
+    ctx.fillRect(4, -16, 12, 14)
+    if (d.spawnT < 50) { ctx.fillStyle = C.hatchLit; ctx.fillRect(5, -15, 10, 12) }
+    ctx.fillStyle = C.bandolier
+    ctx.fillRect(6, -9, 3, 3); ctx.fillRect(11, -9, 3, 3)
+    // damage: cracks deepen, embers glow before the break
+    const dmg = CFG.depotHp - d.hp
+    const CRACKS = [[-12, -34], [8, -22], [-6, -12], [14, -36], [-2, -36], [10, -8], [-14, -20], [2, -18], [-8, -26], [4, -30]]
+    ctx.fillStyle = C.concreteD
+    for (let i = 0; i < dmg; i++) { const [cx, cy] = CRACKS[i]; ctx.fillRect(cx, cy, 2, 4); ctx.fillRect(cx + 1, cy + 3, 2, 2) }
+    if (dmg >= 7 && Math.floor(tick / 6) % 2 === 0) { ctx.fillStyle = C.ember; ctx.fillRect(-10, -30, 20, 2) }
+    ctx.restore()
+}
+
 export function drawBarrel (ctx, br) {
     ctx.save(); ctx.translate(Math.round(br.x), Math.round(br.y))
     ctx.fillStyle = C.barrel
@@ -282,17 +346,50 @@ export function drawCapsule (ctx, c, tick) {
     ctx.fillRect(-8, -6, 16, 12)
     ctx.fillStyle = C.capsuleWin
     ctx.fillRect(-5, -3, 10, 6)
-    ctx.fillStyle = C.capsule
-    ctx.fillRect(-3, -2, 2, 4); ctx.fillRect(1, -2, 2, 4)
+    // the stamped letter (S / M / F / L) — dark ink on the bright window
+    ctx.fillStyle = '#241708'
+    const rows = GLYPH[c.letter] || GLYPH.S
+    for (let r = 0; r < 5; r++) { for (let bit = 0; bit < 5; bit++) if (rows[r] & (1 << (4 - bit))) ctx.fillRect(-2 + bit, -2 + r, 1, 1) }
     // sparkle trail
     ctx.fillStyle = pulse ? '#fff2b0' : '#ffb347'
     ctx.fillRect(10, -1, 3, 2); ctx.fillRect(15, -2 + (tick % 3), 2, 1)
     ctx.restore()
 }
 
-export function drawBullet (ctx, b, enemy) {
+export function drawBullet (ctx, b, enemy, tick) {
+    const x = Math.round(b.x); const y = Math.round(b.y)
+    if (!enemy && b.pierce) { // laser: a fast cyan bolt with a bright tail
+        ctx.fillStyle = C.laser
+        ctx.fillRect(x - 3, y - 1, 8, 2)
+        ctx.fillStyle = C.laserTail
+        ctx.fillRect(x + 4, y - 1, 2, 1)
+        return
+    }
+    if (!enemy && b.kind === 'fire') { // flame: a rolling two-tone fireball
+        ctx.fillStyle = C.flame
+        ctx.fillRect(x - 3, y - 2, 6, 4)
+        ctx.fillStyle = C.flameLit
+        ctx.fillRect(x - 1 - ((tick >> 1) % 2), y - 1, 3, 2)
+        ctx.fillStyle = '#ffe9a8'
+        ctx.fillRect(x + 1, y, 1, 1)
+        return
+    }
+    if (!enemy && b.kind === 'mg') { // the machine gun's heavier tracer
+        ctx.fillStyle = C.mgTracer
+        ctx.fillRect(x - 2, y - 1, 5, 2)
+        ctx.fillStyle = '#a8683c'
+        ctx.fillRect(x - 4, y, 2, 1)
+        return
+    }
+    if (enemy && b.g) { // grenade: dark body, fuse spark ticking
+        ctx.fillStyle = '#23282f'
+        ctx.fillRect(x - 1, y - 1, 3, 3)
+        ctx.fillStyle = tick % 2 ? '#ffd23c' : '#ff7a3c'
+        ctx.fillRect(x + 1, y - 2, 1, 1)
+        return
+    }
     ctx.fillStyle = enemy ? '#ff5a3c' : '#ffe27a'
-    ctx.fillRect(Math.round(b.x) - 2, Math.round(b.y) - 1, enemy ? 3 : 4, 2)
+    ctx.fillRect(x - 2, y - 1, enemy ? 3 : 4, 2)
 }
 
 // the hero's death tumble (ART.md bar 2/5: dies animate, 2-4 frames). The

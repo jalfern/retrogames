@@ -202,7 +202,7 @@ function fire (gs) {
         }
         gs.ev.push({ type: 'spread' })
     } else if (p.weapon === 'machine') {
-        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.bulletSpeed, vy: p.ay * CFG.bulletSpeed })
+        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.bulletSpeed, vy: p.ay * CFG.bulletSpeed, kind: 'mg' })
         gs.ev.push({ type: 'mg' })
     } else if (p.weapon === 'fire') {
         gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.fireSpeed, vy: p.ay * CFG.fireSpeed, kind: 'fire' })
