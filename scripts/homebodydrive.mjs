@@ -567,6 +567,14 @@ check('#2227 the drive leaves the house at NORMAL', sd.speed === 1)
     check('#2240 the gift basket lands on the kitchen floor — weave, greens, tomato and FAMILY honey all paint',
         !!gp && gp.weave > 20 && gp.greens > 0 && gp.tomato > 0 && gp.honey > 0, JSON.stringify(gp))
     check('#2240 the set-down times itself (5 s of real clock)', !!gp && gp.t > 0 && gp.t <= 5, gp ? `t=${gp.t}` : 'no landing')
+    // #2752: furnish a wing through the drive hook before the phone-scale
+    // sampling — a Bookshelf on the standing wing's floorboards puts a study
+    // badge on the doorstep, and the loop below keeps the #2743 `badges`
+    // probe, which until now had nothing to look at at phone size.
+    const wtOk = await page.evaluate(() => window.__homebodyTest.wingToy())
+    const wtProbe = await st()
+    check('#2752 the rig stands its Bookshelf on the wing floor — the derivation names the room before the scale-down',
+        !!wtOk && wtOk.kind === 'study' && wtProbe.purpose.some((p) => p.includes('study')), JSON.stringify({ wtOk, purpose: wtProbe.purpose }))
     // Phone scale: resample at the CSS box the compositor shows on a 390-px
     // viewport and prove the panel survives the blur — glyph + label ink on
     // every row, three separated label bands, and the FAMILY gold pulse.
@@ -586,8 +594,13 @@ check('#2227 the drive leaves the house at NORMAL', sd.speed === 1)
                 const p = bp.rows[j] || r
                 return { ...r, glyph: Math.max(r.glyph, p.glyph), labelInk: Math.max(r.labelInk, p.labelInk), pips: Math.max(r.pips, p.pips), gold: Math.max(r.gold, p.gold) }
             }),
+            badges: (b.badges || []).map((x, j) => {   // #2752: the door badges ride the same phase-max merge (the glyph is static, the fill pulses with plays)
+                const p = (bp.badges || [])[j] || x
+                return { ...x, glyph: Math.max(x.glyph, p.glyph), rampTrack: Math.max(x.rampTrack, p.rampTrack), rampFill: Math.max(x.rampFill, p.rampFill) }
+            }),
         }
-        if (bp && bp.rows.every((r) => r.glyph > 0 && r.labelInk > 0) && bp.rows.some((r) => r.gold > 0)) break
+        if (bp && bp.rows.every((r) => r.glyph > 0 && r.labelInk > 0) && bp.rows.some((r) => r.gold > 0)
+            && (bp.badges || []).every((x) => x.glyph > 0 && x.rampTrack > 0)) break   // #2752: keep sampling till the badge ink reads too
         await wait(120)
     }
     await page.setViewportSize(vp)
@@ -598,6 +611,12 @@ check('#2227 the drive leaves the house at NORMAL', sd.speed === 1)
     check('#2240 the bond rows (now four, #2588 included) stay separated at phone size, and the FAMILY pulse keeps its gold',
         !!bp && bp.bands >= 3 && bp.rows.some((r) => r.key !== 'kid' && r.gold > 0),
         JSON.stringify(bp && { bands: bp.bands, gold: bp.rows.map((r) => r.gold) }))
+    check('#2752 the phone-scale probe carries the door badge — the named room rides the resample',
+        !!bp && Array.isArray(bp.badges) && bp.badges.length === 1 && bp.badges[0].kind === 'study',
+        JSON.stringify(bp && bp.badges))
+    check('#2752 badge ink survives the 390-px blur — the book glyph and the dark ramp track both read at phone size',
+        !!bp && (bp.badges || []).length === 1 && bp.badges.every((x) => x.glyph > 0 && x.rampTrack > 0),
+        JSON.stringify(bp && bp.badges && bp.badges.map((x) => `${x.kind}:${x.glyph}/${x.rampTrack}`)))
 }
 
 // frame matches: sprite position follows state

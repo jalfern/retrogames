@@ -375,10 +375,11 @@ placed ON ITS OWN FLOORBOARDS and becomes the kind of room it is furnished as
   tallies join `stateHash` INSIDE the existing `s.wings` loop — a lot with
   no rooms gains no new mixes, and the no-tap seed-exact pin 3998885235
   re-passed untouched (that frozen run buys nothing — no wings stand). The
-  attract bot never furnishes wings: its placement scan meets house floor
-  before wing planks, so demo behaviour is byte-unchanged and the five
-  WINNABLE seeds win as shipped. Player-facing consequence: named rooms are
-  the player's move, and the game-over/attract stays honest about it.
+  attract bot furnishes wings ONLY through #2752's surplus clause below; its
+  generic placement scan still meets house floor before wing planks, so every
+  other demo buy behaves byte-unchanged and the five WINNABLE seeds win as
+  shipped. Named rooms are the player's move, and the demo now shows one
+  honestly — paid by the fund, not by the till.
 
 - **The naming beat (#2743).** `place` asks the wing who it was before the
   piece lands and who it is after (`archetypeOf` twice, no rng); a wing that
@@ -400,6 +401,30 @@ placed ON ITS OWN FLOORBOARDS and becomes the kind of room it is furnished as
   glyph, ramp track and ramp-fill pixel counts, aimed at `roomBadges(gs)` so
   the probe can't chase a stale seat (the #2729 jar-row method).
 
+- **THE JAR'S SURPLUS CLAUSE (#2752).** Once both kits stand, Pip's round
+  keeps pouring into a jar that has no kit left to fund — dead surplus, since
+  `JAR_CAP` is exactly one cottage. That surplus now buys the wing ONE radio:
+  `buyWingToy(s)` (sim.js) fires from the attract bot, high in the order
+  because no walk rides it — the busy-resident guard would miss the window
+  (measured: the morning commute eats it on 2 of the 3 surplus seeds). It
+  lands on the floorboards of the first standing wing that has earned no name
+  yet, so `place`'s #2743 beat sounds at the doorstep, the playroom badge
+  hangs there through the win, and the funnel-fun law starts earning plays.
+  Economy law: the pay comes from the JAR (`jar -= 90`), never the till — the
+  till's measured peak after kit two is §10 on every WINNABLE seed, so a toy
+  was never the till's to buy, and byte-still till money keeps every stored
+  tour economy alive (#2721's invariant). Once-per-run derives from what
+  STANDS (`wingToyOn` scans wing floors for radio/tv/book) — no new state,
+  no new hash mixes; a lot that never completes two kits never hears of the
+  clause, and seed 42's d2h19.8 win outruns the dawn refill, so that demo
+  stays honest-empty (#2240's quiet-night pattern). The clause skips wings
+  that already have a name (a canopy bedroom sells itself).
+  Drive hook `wingToy` rigs the phone-scale proof: stand east on a bare lot,
+  then lay a Bookshelf on the first unnamed wing's floorboards through the
+  real `place` law (the issue's own suggestion) — the clause's surplus path
+  is peoplecheck-proven in node; the drive's 390-px badges leg needs a named
+  wing, whatever money named it.
+
 Gates: `peoplecheck` §PERSONALITY (36: naming by contents incl. priority,
 both kits, bare-floor and no-wing nulls; three-read pay with exact fun
 (+0.4/+0.4/+0.55) and content (+2/+2/+3) deltas and once-only `studied`;
@@ -407,14 +432,18 @@ house-shelf silence with landing control; pull beats a nearer house toy
 (distance stated), bare-lot nearest-law unchanged, books don't pull; delight
 pays once per third play with bond ≥ 0.5 and pride, seed-exact twins;
 sold-mid-walk unpaid; unearned sheet keeps shape, paid rows amber/gold,
-badge law on all four cases; hash-loop/source pins). Mutants proven:
+badge law on all four cases; hash-loop/source pins). §#2752 (5: surplus seeds
+7/1234/20261023 fire once before the win with doorstep beat + badge + still-win;
+seeds 42/99 silent by economy; till never moves on a buy tick; once derives
+from the standing radio; no-kit-two refusal keeps the jar's money). Mutants proven:
 `onWingFloor` in the study law → `s.wings[0]` — exactly the house-shelf gate
 goes red (1077/1); pull forced to 0 — the gravitate gate + the delight
-trio (5) go red; restore both.
+trio (5) go red; drop the jar deduction in `buyWingToy` — exactly the
+till/jar-invariant gate (#2752) goes red (1100/1); restore all.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 1078 gates: personality — rooms named by contents, study insights + playroom pull/delight, badges & ledger rows (#2736), settle beat — arrival face-and-breath cadence, errand names itself, shut-way line (#2697), feel pass — promise ring tightens + marching trail + ear hue-wink + grey death ring + garden night lamp (#2688), boot, rules, spare-room wing (#1806) + deeper multi-room — anchor law derived from MAP, garden room after any anchor, keepsWing refusals, two-per-lot, canopy fits both rooms, hash carries which-where, links in source (#2689), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), mediators — reach-both ring, soft pay, mending lane, once-per-spat ledger, cat-before-kid, hash, seed-exact mediation (#2672), neighbours stroll — mobile-chat bank, fixed 3-spot circuit with lead/trail, walk-freeze, claim-carry, spat/absence zeroing, cold-war refusal, hash, seed-exact lap (#2611), stroll view pass — pair stride bob + facing turn, arrival settle, route trail, attract lap beat, panel walk pips (#2618), neighbour view pass — pair-hue bubbles, teal leaf reunion, guest sulks, warmth sparkle, meet-up wave beat, cold-war murmur, attract pair-ring hook (#2599), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), go-say — far tap walks over, arrival coo once, pick promotion, cooldown wait, leaving/asleep folds, bounded chase, queue re-issue, speaks-as-itself, hash, seed-exact, attract invariant (#2683), rooms with purpose — exact ripeness arithmetic, night silence, hungriest-eats with roster ties, lodging joy with the one-night stamp, geometry-not-item, empty-lot hash hygiene (#2695), polish pass — walking chip glyph+timbre, worked-garden bake, kit hover-preview, geometry byte-untouched (#2704), purpose view pass — ripeness ramp on the bed, harvest hamper, lodged panes, moonlit wait, hash byte-identical (#2705), ledger sheet — pause pips read both room tallies, bare-lot null keeps every other help sheet byte-identical, overlay game-blind, pip cap, purity pin (#2713 tail 4), winnable seeds, determinism
+npm run peoplecheck          # 1101 gates: jar surplus clause — fires once-before-win on seeds 7/1234/20261023, silent on 42/99, till byte-still, once-from-what-stands, no-kit-two refusal (#2752), personality — rooms named by contents, study insights + playroom pull/delight, badges & ledger rows (#2736), settle beat — arrival face-and-breath cadence, errand names itself, shut-way line (#2697), feel pass — promise ring tightens + marching trail + ear hue-wink + grey death ring + garden night lamp (#2688), boot, rules, spare-room wing (#1806) + deeper multi-room — anchor law derived from MAP, garden room after any anchor, keepsWing refusals, two-per-lot, canopy fits both rooms, hash carries which-where, links in source (#2689), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), mediators — reach-both ring, soft pay, mending lane, once-per-spat ledger, cat-before-kid, hash, seed-exact mediation (#2672), neighbours stroll — mobile-chat bank, fixed 3-spot circuit with lead/trail, walk-freeze, claim-carry, spat/absence zeroing, cold-war refusal, hash, seed-exact lap (#2611), stroll view pass — pair stride bob + facing turn, arrival settle, route trail, attract lap beat, panel walk pips (#2618), neighbour view pass — pair-hue bubbles, teal leaf reunion, guest sulks, warmth sparkle, meet-up wave beat, cold-war murmur, attract pair-ring hook (#2599), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), go-say — far tap walks over, arrival coo once, pick promotion, cooldown wait, leaving/asleep folds, bounded chase, queue re-issue, speaks-as-itself, hash, seed-exact, attract invariant (#2683), rooms with purpose — exact ripeness arithmetic, night silence, hungriest-eats with roster ties, lodging joy with the one-night stamp, geometry-not-item, empty-lot hash hygiene (#2695), polish pass — walking chip glyph+timbre, worked-garden bake, kit hover-preview, geometry byte-untouched (#2704), purpose view pass — ripeness ramp on the bed, harvest hamper, lodged panes, moonlit wait, hash byte-identical (#2705), ledger sheet — pause pips read both room tallies, bare-lot null keeps every other help sheet byte-identical, overlay game-blind, pip cap, purity pin (#2713 tail 4), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -1396,10 +1425,12 @@ garden stands in demo time and ripens on screen; the autopilot pin re-sampled to
 - **CLOSED by #2736:** rooms with a personality — the study and the playroom
   (§Rooms with a personality above): contents name a room, three reads make an
   insight, three in-room plays a delight, the child crosses the lot for the
-  room's toy. Honest tails left open: the attract bot never furnishes wings
-  (its scan meets house floor first), so the demo never shows a named room;
-  a room whose furniture is sold keeps its paid ledgers but loses its badge —
-  whether earnings should ever cool is un-decided; and the third archetype
+  room's toy. **CLOSED by #2752:** the demo now shows a named room — the jar's
+  surplus clause (§ above) buys the wing one radio inside the winning attract
+  run, and the drive's 390-px leg proves the badge ink survives the blur.
+  Honest tails left open: a room whose furniture is sold keeps its paid
+  ledgers but loses its badge — whether earnings should ever cool is
+  un-decided (#2751 asks Jon); and the third archetype
   (a gym that strengthens? a kitchen annexe?) waits its own floor.
 - **CLOSED by #1814 (QA pass, partial):** the wing glows at night and the
   residents react to the build. #2076 taught the bond law on the attract
