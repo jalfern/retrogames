@@ -473,10 +473,21 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
    twin determinism, +`--mutate-turn` (pivot-sort death restores staircases)
    and +`--mutate-repath-land` (racks land on claimed routes) kills.
    Residual honest gap: the sweep is still one cell (overhang and lane
-   widths stay points-plus-knee above), and `bot.dir` records movement, not
-   facing — the planner's back-pedal-facing (#2711) is invisible outside the
-   sim, so an external live knee-audit cannot reconstruct which diagonal a
-   load sweeps; filed as feedback for the engine's next visit.
+   widths stay points-plus-knee above). The facing gap closed (#2732):
+   `bot.face` now rides the sim state and the DEV eye — reversing keeps
+   the facing, pivots adopt their bearing, at every movement site (plan
+   step, duck, nudge) — and the painter reads the body (loaded nose,
+   amber eye and turn impulse ride the facing). With facing observable,
+   `floorbosscheck` runs the live knee audit #2724 had to remove:
+   external reconstruction over three driven careers (0 divergences,
+   1319 bearing-keeping back-pedals), a deterministic back-pedal-then-
+   pivot rig, and a bearing-contrast rig proving the `bfsKnee` seed
+   heading is load-bearing — with a pinned tripwire of 14 live
+   body-doctrine clips naming the planner's dir-seed as a real physics
+   lie on traffic (#2738: seeding from the facing moves the autopilot's
+   physics and needs the career/attract re-measure; the tripwire count
+   must move in that PR). `--mutate-face` (facing degrades back to
+   movement) kills.
   - **MANNERS POLISH shipped by this PR (#2700):** the courtesy now reads as
     law-grammar mid-duel. The duck *steers*: the body slides into the shoulder
     over one cadence (ease-out, `gs.tick` clock per #1877) with a swing impulse
