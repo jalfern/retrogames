@@ -12,7 +12,14 @@
 //                                             #   missing its clap axis must not
 //                                             #   become permanent evidence; the next
 //                                             #   run retries it (marker idempotence
-//                                             #   only marks posted verdicts).
+//                                             #   only marks posted verdicts). The
+//                                             #   hold is EVERY-mode law since Nov 19
+//                                             #   (#1711, slot b): a lane run without
+//                                             #   a dev server once posted "PASS / clap:
+//                                             #   not run" markers over Jon's phone
+//                                             #   takes and stranded the axis a later
+//                                             #   nightly would have had to retry.
+//                                             #   --no-clap stays an explicit opt-out.
 //   npm run plaicraft:grade -- --dry-run      # print verdicts, post nothing
 //   npm run plaicraft:grade -- --key=<k> [--key=<k2>]  # force specific takes
 //   npm run plaicraft:grade -- --self-test    # offline proof (relaysim, no gh)
@@ -182,7 +189,10 @@ function postComment(body) {
 
 async function gradeRows(rows, base, jonKey, opts = {}) {
     const out = []
-    const clapPossible = opts.noClap ? false : await devServerUp(PORT)
+    // clapPossible is injectable so the self-test can prove the hold with the
+    // server provably absent, no matter what port the author's lane is serving.
+    const clapPossible = opts.noClap ? false
+        : opts.clapPossible === undefined ? await devServerUp(PORT) : !!opts.clapPossible
     for (const row of rows) {
         const ev = await runEvidence(row.key, base, jonKey) || {
             key: row.key, ok: false, replayOk: false, voiceOk: null, error: 'evidence run produced no report',
@@ -191,11 +201,16 @@ async function gradeRows(rows, base, jonKey, opts = {}) {
         if (row.player) ev.player = row.player
         let clap = null
         if (ev.audio) clap = clapPossible ? await runClap(row.key, base, jonKey) : { ran: false, why: `no dev server on :${PORT} — start npm run dev -- --port ${PORT} to grade the clap` }
-        // #1711 nightly: hold, don't launder. A verdict without its clap axis
-        // (infra died, the player didn't skip the test) is incomplete — posting it
-        // would write the PLAIGRADE marker and make the take un-regradeable by any
-        // later lane run. Skip the post; the missing marker makes the next run retry.
-        if (opts.nightly && ev.audio && clap && clap.ran === false) {
+        // #1711: hold, don't launder — EVERY mode, not just nightly. A verdict
+        // without its clap axis (infra died, the player didn't skip the test) is
+        // incomplete — posting it would write the PLAIGRADE marker and make the take
+        // un-regradeable by any later run (marker idempotence skips marked keys).
+        // Slot b proved the gap live on Nov 19: a lane run without a dev server
+        // posted "PASS / clap: not run" over Jon's two phone takes — the exact
+        // evidence line 3 needed — and only a manual --key force could regrade them.
+        // Skip the post; the missing marker makes the next run retry. --no-clap is
+        // the explicit opt-out (self-test fixtures, deliberate axis-free sweeps).
+        if (!opts.noClap && ev.audio && clap && clap.ran === false) {
             console.log(`grade: HELD ${row.key} — clap step did not run (${(clap && clap.why) || 'clap unavailable'}); no verdict posted, marker stays free for the next run`)
             out.push({ key: row.key, ev, clap, held: true })
             continue
@@ -254,7 +269,7 @@ async function runLive() {
     const bad = results.filter((x) => x.postError).length
     if (bad) { console.error(`grade: ${bad} verdict comment(s) failed to post`); return 1 }
     const held = results.filter((x) => x.held).length
-    if (held) console.log(`::warning::grade: ${held} take(s) HELD — clap infra missing this run; verdicts deferred to the next nightly (no markers posted)`)
+    if (held) console.log(`::warning::grade: ${held} take(s) HELD — clap infra missing this run; verdicts deferred to the next run (no markers posted)`)
     console.log(`grade: ${results.length - held} verdict(s) ${argv.includes('--dry-run') ? 'printed (dry-run)' : 'posted on #' + ISSUE}${held ? `, ${held} held` : ''}`)
     return 0
 }
@@ -378,7 +393,7 @@ async function runSelfTest() {
     //    idempotence skips marked keys). No-audio takes have no clap axis to
     //    wait for, so they grade complete even here.
     const heldOut = await gradeRows([{ key: keys[0], player: 'jon', game: 'gauntlet' }], sim.base, SIM_READ_KEY,
-        { dry: true, noClap: true, nightly: true, gradedBy: 'self-test' })
+        { dry: true, clapPossible: false, nightly: true, gradedBy: 'self-test' })
     ok(heldOut.length === 1 && heldOut[0].held === true && !heldOut[0].body,
         'nightly: audio take with clap infra missing is HELD — no verdict body produced', JSON.stringify(Object.keys(heldOut[0] || {})))
     ok(extractMarkers(heldOut.map((x) => x.body || '').join('\n')).size === 0,
@@ -390,6 +405,22 @@ async function runSelfTest() {
         { dry: true, noClap: true, nightly: true, gradedBy: 'self-test' })
     ok(silent.length === 1 && !silent[0].held && !!silent[0].body && /^PLAIGRADE \S+ — PASS$/m.test(silent[0].body) && /clap: n-a \(no audio\)/.test(silent[0].body),
         'nightly: no-audio take is NOT held — its verdict is complete as graded', silent[0] && silent[0].body ? silent[0].body.split('\n')[0] : 'no body')
+
+    // 5) #1711 (2026-11-19, slot b): the hold is EVERY-mode law, not nightly-only.
+    // A lane run with the dev server absent must hold an audio take too — a live
+    // lane posted "PASS / clap: not run" markers over Jon's Nov-19 phone takes and
+    // stranded the axis any later run would need to retry (only --key force saved
+    // them). Explicit --no-clap stays an opt-out: every fixture above relies on it.
+    const laneHeld = await gradeRows([{ key: keys[0], player: 'jon', game: 'gauntlet' }], sim.base, SIM_READ_KEY,
+        { dry: true, clapPossible: false, gradedBy: 'self-test' })
+    ok(laneHeld.length === 1 && laneHeld[0].held === true && !laneHeld[0].body,
+        'lane mode, server absent: audio take HELD — no verdict body, clap axis stays retryable', JSON.stringify(Object.keys(laneHeld[0] || {})))
+    ok(extractMarkers(laneHeld.map((x) => x.body || '').join('\n')).size === 0,
+        'lane mode, server absent: no PLAIGRADE marker written — the next run sees the take as new again')
+    const optOut = await gradeRows([{ key: keys[0], player: 'jon', game: 'gauntlet' }], sim.base, SIM_READ_KEY,
+        { dry: true, clapPossible: false, noClap: true, gradedBy: 'self-test' })
+    ok(optOut.length === 1 && !optOut[0].held && /clap: not run/.test(optOut[0].body || ''),
+        '--no-clap stays the explicit opt-out — an intentional sweep still posts', optOut[0] && optOut[0].body ? optOut[0].body.split('\n')[0] : 'no body')
 
     delete process.env.JON_KEY
     sim.close()
