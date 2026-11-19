@@ -1706,8 +1706,8 @@ const HomebodyGame = () => {
                         return {
                             kind: b.kind, p: +b.p.toFixed(3), n: b.n,
                             glyph: count(bx + 5, by + 2, bx + 19, by + 11, hue),
-                            rampTrack: count(bx + 5, by + 12, bx + 19, by + 14, (d, i) => at(d, i) && d[i] < 90 && d[i + 1] < 70 && d[i + 2] < 40),
-                            rampFill: b.p > 0 ? count(bx + 5, by + 12, bx + 5 + Math.ceil(14 * b.p), by + 14, hue) : 0,
+                            rampTrack: count(bx + 5, by + 12, bx + 19, by + 15, (d, i) => at(d, i) && d[i] < 90 && d[i + 1] < 70 && d[i + 2] < 40),
+                            rampFill: b.p > 0 ? count(bx + 5, by + 12, bx + 5 + Math.ceil(14 * b.p), by + 15, hue) : 0,
                         }
                     })
                     return { k: +k.toFixed(3), rows, bands, jar, badges: rb }

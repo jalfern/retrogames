@@ -857,7 +857,8 @@ section('PERSONALITY (#2736): rooms read their own furniture — a study that re
     check('#2743 pin: the naming beat is wired into the shell with its own callout',
         /case 'room-named'/.test(hbIdx) && /THIS ROOM IS A \$\{e\.kind\.toUpperCase\(\)\}/.test(hbIdx))
     check('#2743 pin: the ramp paints a track always and fills from the badge\u2019s own p',
-        /rgba\(24,16,6,0\.55\)/.test(artSrc) && /Math\.round\(14 \* b\.p\)/.test(artSrc))
+        /rgba\(24,16,6,0\.72\)/.test(artSrc) && /Math\.round\(14 \* b\.p\)/.test(artSrc) &&
+        /#2752: the track is 0\.72-dark and 3 px tall/.test(artSrc))   // #2752 re-pinned: alpha 0.55→0.72, height 2→3 — the drive's live 390-px leg read rampTrack 0 on the old line and 8px on this one
     check('#2743 pin: the phone-scale probe aims at roomBadges(gs) and rides the probe return',
         /const rb = roomBadges\(gs\)/.test(hbIdx) && /badges: rb/.test(hbIdx))
 }
@@ -917,16 +918,20 @@ section('WINNABLE (attract autopilot, several seeds)')
 section('#2752 (the jar buys the wing one radio)')
 {
     const fired = [], silent = []
-    let tillHonored = true
+    let tillHonored = true, jarHonored = true
     for (const seed of [7, 42, 1234, 99, 20261023]) {
         const g = newRun(seed)
         let t = 0
         let toys = 0, named = null
         while (!g.done && t++ < 60 * 60 * 45) {
-            const m0 = g.money
+            const m0 = g.money, j0 = g.jar
             autoStep(g, DT)
             for (const e of drain(g)) {
-                if (e.t === 'wing-toy') { toys++; if (g.money !== m0) tillHonored = false }
+                if (e.t === 'wing-toy') {
+                    toys++
+                    if (g.money !== m0) tillHonored = false
+                    if (j0 - g.jar !== DEF.radio.price) jarHonored = false   // the pay comes OUT of the fund — exactly one radio's price
+                }
                 if (e.t === 'room-named' && e.kind === 'playroom') named = named || `d${g.day}h${g.hour.toFixed(1)}`
             }
         }
@@ -940,7 +945,7 @@ section('#2752 (the jar buys the wing one radio)')
         JSON.stringify(fired))
     check('#2752 the clause stays silent where the economy says so — seed 42 wins before the refill, seed 99 never completes the lot',
         silent.length === 2 && silent.includes(42) && silent.includes(99), JSON.stringify(silent))
-    check('#2752 the clause pays from the jar only — the till never moved on a buy tick', tillHonored)
+    check('#2752 the clause pays from the fund only — till byte-still on a buy tick, and the jar drops by exactly one radio', tillHonored && jarHonored)
     {
         const g7 = newRun(7)
         let t7 = 0, fired7 = false
