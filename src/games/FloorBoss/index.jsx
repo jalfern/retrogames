@@ -832,11 +832,13 @@ const FloorBossGame = () => {
                 // personality: a rotational impulse when heading changes (sway),
                 // and a deterministic shudder while a JAM brake holds the bot
                 let anim = botAnim.get(b.id)
-                if (!anim) { anim = { dir: b.dir, turn: 0, sway: 0, trail: [] }; botAnim.set(b.id, anim) }
-                if (anim.dir !== b.dir) {
-                    const d = ((b.dir - anim.dir) % 4 + 4) % 4
+                if (!anim) { anim = { dir: b.face, turn: 0, sway: 0, trail: [] }; botAnim.set(b.id, anim) }
+                if (anim.dir !== b.face) {
+                    // #2732: the body pivots on FACING changes — reversing keeps
+                    // the bearing (the cart drives backwards without rotating).
+                    const d = ((b.face - anim.dir) % 4 + 4) % 4
                     anim.turn = d === 1 ? 1 : d === 3 ? -1 : 0
-                    anim.dir = b.dir
+                    anim.dir = b.face
                 }
                 if (anim.turn) { anim.turn *= 0.85; if (Math.abs(anim.turn) < 0.05) anim.turn = 0 }
                 if (anim.sway) { anim.sway *= 0.8; if (Math.abs(anim.sway) < 0.04) anim.sway = 0 } // #2700: the backpedal's swing settles
@@ -869,8 +871,9 @@ const FloorBossGame = () => {
                 ctx.fillRect(-10, -6, 2, 5); ctx.fillRect(8, -6, 2, 5)
                 ctx.fillRect(-10, 1, 2, 5); ctx.fillRect(8, 1, 2, 5)
                 ctx.restore()
-                // amber eye toward heading
-                const d = [[0, -2], [2.5, 0], [0, 2], [-2.5, 0]][b.dir % 4]
+                // amber eye toward facing (#2732: the eye rides the body —
+                // backpedalling drives off without swinging the head)
+                const d = [[0, -2], [2.5, 0], [0, 2], [-2.5, 0]][b.face % 4]
                 ctx.fillStyle = b.broken ? '#ff5a4f' : tick % 100 < 5 ? '#fff2a0' : '#ffc23f'
                 ctx.beginPath(); ctx.arc(bx + d[0], by - 1 + d[1], 2, 0, Math.PI * 2); ctx.fill()
                 // status glyphs
@@ -931,9 +934,10 @@ const FloorBossGame = () => {
                 }
                 if (b.carry) {
                     // #2711: a loaded cart shows its body — the amber nose sits on
-                    // the leading edge (the cell that knee law sweeps), so the
-                    // swing that cannot pass a rack corner is visible at a glance.
-                    const nv = [[0, -1], [1, 0], [0, 1], [-1, 0]][b.dir] || [0, -1]
+                    // the FACING edge (the side whose diagonals knee law sweeps,
+                    // #2732), so the swing that cannot pass a rack corner is
+                    // visible at a glance even while the cart reverses.
+                    const nv = [[0, -1], [1, 0], [0, 1], [-1, 0]][b.face] || [0, -1]
                     ctx.fillStyle = 'rgba(255,210,63,0.4)'
                     ctx.fillRect(bx + nv[0] * 10 - 3, by + nv[1] * 10 - 3, 6, 6)
                     drawItem(ctx, b.carry, bx, by - 14 + Math.sin(tick * 0.12) * 1, 0.85)
