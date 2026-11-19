@@ -36,6 +36,18 @@ const C = {
     coreRed: '#ff3b30', coreDark: '#701812', shutter: '#5a616c', shutterLit: '#8a929e',
 }
 
+// The capsule's letter, 5x5 pixel glyphs — S M F L as the cabinet stamps them
+// (salvaged from #2789: crisp bitmap stamps replace antialiased fillText on the
+// pixel grid, per docs/ART.md). Row bits: bit4 = leftmost pixel.
+const GLYPH = {
+    S: [0b11111, 0b10000, 0b11111, 0b00001, 0b11111],
+    M: [0b10001, 0b11011, 0b10101, 0b10001, 0b10001],
+    F: [0b11111, 0b10000, 0b11110, 0b10000, 0b10000],
+    L: [0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+}
+const LETTER_OF = { machine: 'M', fire: 'F', laser: 'L', spread: 'S' }
+const INK_OF = { machine: 'letterM', fire: 'letterF', laser: 'letterL', spread: 'letterS' }
+
 export function drawBackground (ctx, cam, tick) {
     // sky + far parallax live in screen space (caller draws before the camera
     // translate); returns nothing, just paints the window.
@@ -347,14 +359,12 @@ export function drawCapsule (ctx, c, tick) {
     ctx.fillRect(-8, -6, 16, 12)
     ctx.fillStyle = C.capsuleWin
     ctx.fillRect(-5, -3, 10, 6)
-    // the letter wheel: every capsule carries its gun (S/M/F/L)
+    // the letter wheel: every capsule carries its gun (S/M/F/L) — stamped as
+    // a crisp 5x5 bitmap (#2789 salvage), no antialiased font on the pixel grid
     const kind = c.kind || 'spread'
-    ctx.fillStyle = kind === 'machine' ? C.letterM : kind === 'fire' ? C.letterF : kind === 'laser' ? C.letterL : C.letterS
-    ctx.font = 'bold 7px "Courier New", monospace'
-    ctx.textBaseline = 'middle'
-    const letter = kind === 'machine' ? 'M' : kind === 'fire' ? 'F' : kind === 'laser' ? 'L' : 'S'
-    ctx.fillText(letter, -2, 1)
-    ctx.textBaseline = 'top'
+    ctx.fillStyle = C[INK_OF[kind] || INK_OF.spread]
+    const rows = GLYPH[LETTER_OF[kind] || LETTER_OF.spread]
+    for (let r = 0; r < 5; r++) { for (let bit = 0; bit < 5; bit++) if (rows[r] & (1 << (4 - bit))) ctx.fillRect(-2 + bit, -2 + r, 1, 1) }
     // sparkle trail
     ctx.fillStyle = pulse ? '#fff2b0' : '#ffb347'
     ctx.fillRect(10, -1, 3, 2); ctx.fillRect(15, -2 + (tick % 3), 2, 1)

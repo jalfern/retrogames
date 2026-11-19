@@ -148,7 +148,9 @@ ground; the vest eats two rounds** · **winnable: autopilot clears
 jungle+falls+boss on seeds 1..12 with the new roster**, not cherry-picked ·
 GAME OVER path · attract self-demo · real keys start/run/jump/fire/die/
 restart · **live MG stream and live capsule letter in the browser** · live
-warp + armor law · **S4 co-op: the blue seat fires unasked and advances ·
+warp + armor law · **capsule letters are crisp 5x5 bitmap stamps, not fonts**
+(#2789 salvage: S17/M13/F12/L9 pixel counts, wheel inks, no text APIs) ·
+**S4 co-op: the blue seat fires unasked and advances ·
 earns an attributable kill with the hero silent · the sniper re-leads the
 nearer blue lane (down-solo vs flat-coop) · capsules and kills are per seat ·
 GAME OVER needs both banks · the blue death never freezes the world · respawn
