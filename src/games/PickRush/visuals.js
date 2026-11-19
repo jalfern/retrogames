@@ -81,6 +81,59 @@ export const dropVoice = (bin, combo) => {
 
 export const makeWhip = () => ({ y: 0, v: 0 })
 
+// ---- carriage inertia (#2755 QA polish 2) ---------------------------------
+// A 1.4-ton gantry does not stop dead. The carriage PAINT rides a heavy
+// spring toward its velocity-lag target: press and the paint eases in (it
+// trails the sim further as speed builds), release and it glides out with a
+// slight rail-flex rebound before settling EXACTLY on the sim position — the
+// PIXELS law (#1184 sampling) keeps holding at rest, and mid-motion the cable
+// cargo column visibly leans on the #2678 whip. Pad law, sim and hashes never
+// see any of it: stepCrane reads the already-stepped arm velocity like the
+// whip spring does, so seed + pads keep producing identical state hashes.
+// CRANE is mutable (not bare consts) for the same reason BIN_VIS is:
+// `PICK_MUT=ease` kills the trail and named gates go red.
+export const CRANE = { trail: 2.2, k: 0.3, d: 0.5, clamp: 4.5 }
+
+export const makeCraneVis = () => ({ off: 0, v: 0 })
+
+// vx = this tick's sim carriage velocity (px/tick, ARM_SPEED = 2.4).
+export function stepCrane(c, vx) {
+    const target = -(vx / 2.4) * CRANE.trail
+    c.v += (target - c.off) * CRANE.k - c.v * CRANE.d
+    c.off += c.v
+    if (c.off > CRANE.clamp) { c.off = CRANE.clamp; c.v = Math.min(c.v, 0) }
+    if (c.off < -CRANE.clamp) { c.off = -CRANE.clamp; c.v = Math.max(c.v, 0) }
+    // at rest the paint lands exactly on the sim — no residual lean
+    if (target === 0 && Math.abs(c.off) < 0.02 && Math.abs(c.v) < 0.02) { c.off = 0; c.v = 0 }
+    return c.off
+}
+
+// ---- first-shift feather lesson (#2755 QA polish 2) ----------------------
+// The slam meter explains glass ONCE you are already carrying it, but nothing
+// ever told a fresh player that DOWN feathers at all. Law: the first fragile
+// the claw lifts by the end of shift 2 (the era glass joins the line; bottles
+// simply do not exist in shift 1, so in practice this is the first bottle), a one-
+// time cue arms under the cargo — chevrons + FEATHER — and fades on its own
+// clock. Gone by shift 3: shift 3+ never arms it again, and it only ever
+// arms once per shift. Non-nagging: it appears at the claw, at the exact
+// moment the law can bite, and never interrupts the slam meter's own story.
+// Pure derivation of stepped sim state + a paint-side timer — hash-clean.
+// FEATHER_CUE mutable for the `feather` mutant (the lesson never arms).
+export const FEATHER_CUE = { ticks: 150 }
+
+export const makeFeatherCue = () => ({ t: 0, shown: false })
+
+// Step once per sim tick while PLAYING (attract never teaches). Returns the
+// live timer: > 0 means a fragile is aboard with the lesson lit.
+export function stepFeatherCue(cv, gs, seat) {
+    if (cv.t > 0) cv.t--
+    const arm = gs.arms[seat]
+    if (!arm || arm.held === null || gs.shift > 1 || cv.shown) return cv.t // gs.shift is 0-based: 1 = the second shift, glass era
+    const it = gs.items.find((i2) => i2.id === arm.held)
+    if (it && it.fragile) { cv.t = FEATHER_CUE.ticks; cv.shown = true }
+    return cv.t
+}
+
 // The tilt a steady slide deserves (the pre-#2678 static model).
 export const whipTarget = (vx) => Math.max(-4, Math.min(4, -vx * 1.6))
 

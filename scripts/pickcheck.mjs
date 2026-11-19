@@ -30,7 +30,7 @@
 import * as s from '../src/games/PickRush/sim.js'
 import { readFileSync } from 'node:fs' // §CB pins the marquee colour from the painter's source
 import { AMB_ZONES, zoneForShift, fireAt } from '../src/games/PickRush/ambience.js'
-import { BIN_VIS, makeBinVis, stepBinVis, pushBinKind, dropVoice, DROP_THUD, makeWhip, stepWhip, whipTarget, TELL, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from '../src/games/PickRush/visuals.js'
+import { BIN_VIS, makeBinVis, stepBinVis, pushBinKind, dropVoice, DROP_THUD, makeWhip, stepWhip, whipTarget, CRANE, makeCraneVis, stepCrane, FEATHER_CUE, makeFeatherCue, stepFeatherCue, TELL, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from '../src/games/PickRush/visuals.js'
 import { scriptFor } from './lib/contractGames.mjs'
 import { collectRun, planner, OUTCOME_BY_EVENT, makeReplayDriver } from './pickrush-export.mjs'
 import { validateEpisode, exportEpisodes } from '../src/utils/robot/episode.js'
@@ -46,7 +46,7 @@ const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fai
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
 if (MUT) {
-    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim', 'rec', 'perfect', 'spoil', 'voice'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim', 'rec', 'perfect', 'spoil', 'voice', 'ease', 'feather'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
     console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 }
 const applyMut = () => {
@@ -64,6 +64,8 @@ const applyMut = () => {
     if (MUT === 'perfect') s.PERFECT_PAY.fill(0) // mastery pays nothing — the reward dies (#2742)
     if (MUT === 'spoil') s.PERFECT_SPOIL.splice(s.PERFECT_SPOIL.indexOf('miss'), 1) // the line forgives every miss (#2742)
     if (MUT === 'voice') for (const t of DROP_THUD) t.hz = 120 // every bin thuds the same note — the variety dies (#2739)
+    if (MUT === 'ease') CRANE.trail = 0 // the gantry stops dead again — inertia dies (#2755)
+    if (MUT === 'feather') FEATHER_CUE.ticks = 0 // the first-shift lesson never arms (#2755)
 }
 applyMut()
 
@@ -711,6 +713,115 @@ section('JUICE — bin meters, full lamp, cable whip are render-only (#2678)')
     ok(maxAbs <= BIN_VIS.clamp + 1e-9, `WHIP-SPRING: the offset stays clamped (max ${maxAbs.toFixed(1)} ≤ ${BIN_VIS.clamp}) — the cable never paints off the crane`)
     for (let t = 0; t < 240; t++) stepWhip(w, whipTarget(0))
     ok(Math.abs(w.y) < 0.05, 'WHIP-SPRING: at rest the cable hangs straight again')
+}
+
+section('INERTIA — carriage ease-in/out, render-only (#2755)')
+{
+    // The paint rides a heavy spring off the SAME sim clock the gates drive:
+    // press deepens the lag, release glides out, rest lands EXACTLY on the sim.
+    const gs = makeGame(7, 1)
+    const c = makeCraneVis()
+    const twin = []
+    let clamped = true, trailGrew = true, peak = 0, prevAbs = 0
+    for (let t = 0; t < 30; t++) {
+        step(gs, [{ right: true }])
+        stepCrane(c, gs.arms[0].vx)
+        twin.push([gs.arms[0].x, gs.hash])
+        if (Math.abs(c.off) > CRANE.clamp + 1e-9) clamped = false
+        // ramp proof: the lag deepens strictly through the first four ticks and
+        // carries most of its steady lean by t4 (a hard snap would be full at t1)
+        if (t > 0 && t <= 4) trailGrew = trailGrew && Math.abs(c.off) > prevAbs
+        if (t === 4) trailGrew = trailGrew && Math.abs(c.off) >= 0.6 * CRANE.trail
+        peak = Math.max(peak, -c.off) // rightward => paint sits BEHIND (off < 0)
+        prevAbs = Math.abs(c.off)
+    }
+    // sequential twin (item ids ride a module counter — interleaved games would
+    // compare id 1 vs id 2, #1142's determinism gates all re-make between runs)
+    const gs2 = makeGame(7, 1)
+    let desync = false, desyncAt = -1
+    for (let t = 0; t < 30; t++) {
+        step(gs2, [{ right: true }])
+        if (gs2.arms[0].x !== twin[t][0] || gs2.hash !== twin[t][1]) { desync = true; if (desyncAt < 0) desyncAt = t }
+    }
+    ok(!desync, `INERTIA-SIM-PURE: the seed-7 stream ticks identical positions + hashes against the ease-less twin — pad law and state hashes never see the carriage weight${desyncAt >= 0 ? ` (first diff tick ${desyncAt})` : ''}`)
+    ok(peak >= 1.2, `INERTIA-TRAIL: a held press paints the carriage behind the sim, deepening to ${peak.toFixed(2)} px (≥1.2) — a 1.4-ton gantry does not stop dead`)
+    ok(trailGrew, `INERTIA-EASE-IN: the lag deepens tick over tick through the ramp (peak ${peak.toFixed(2)}) — the carriage spins up, it never snaps`)
+    ok(clamped, `INERTIA-CLAMP: the lag stays inside ${CRANE.clamp} px — the paint never drifts off the rail`)
+    const off0 = c.off
+    let glideTicks = 0, rebound = 0
+    for (let t = 0; t < 600; t++) {
+        step(gs, [{}])
+        stepCrane(c, gs.arms[0].vx)
+        if (Math.abs(c.off) > 0.02) glideTicks = t + 1
+        rebound = Math.max(rebound, c.off) // gliding past rest the other way = rail flex
+    }
+    ok(off0 < -0.5 && glideTicks >= 3, `INERTIA-EASE-OUT: released, the paint glides ${glideTicks} ticks from ${off0.toFixed(2)} px toward rest — mass, not a switch`)
+    ok(rebound >= 0.25, `INERTIA-REBOUND: the stop flexes the rail ${rebound.toFixed(2)} px past rest before settling — the gantry nods like a crane`)
+    ok(c.off === 0 && c.v === 0, 'INERTIA-REST: at rest the paint sits EXACTLY on the sim position — the #1184 PIXELS sampling law keeps holding')
+}
+
+section('FEATHER — one-time first-shift lesson at the claw (#2755)')
+{
+    const gs = makeGame(7, 1)
+    const cv = makeFeatherCue()
+    const litShifts = new Set()
+    let firedAt = -1, firedShift = -1, maxLit = 0
+    for (let t = 0; t < SHIFT_TICKS * 4 + 600 && !gs.end; t++) {
+        step(gs, [autopilot(gs, 0)])
+        stepFeatherCue(cv, gs, 0)
+        if (cv.t > 0) {
+            litShifts.add(gs.shift)
+            maxLit = Math.max(maxLit, cv.t)
+            if (firedAt < 0) { firedAt = gs.tick; firedShift = gs.shift }
+        }
+    }
+    ok(firedAt > 0 && firedShift === 1, `FEATHER-FIRE: the first bottle of the line arms the lesson (tick ${firedAt}, shift index ${firedShift} — the glass era) — a fresh player is taught the glass law BEFORE the slam meter needs it`)
+    ok(litShifts.size === 1 && litShifts.has(1), 'FEATHER-ERA: the cue never burns outside the glass era — gone by the third shift, exactly as owed')
+    ok(maxLit === FEATHER_CUE.ticks && cv.t === 0, `FEATHER-DECAY: armed at the lift, it fades on its own ${FEATHER_CUE.ticks}-tick clock — it never nags`)
+    ok(cv.shown, 'FEATHER-ONCE: the lesson marks itself shown once armed — one lesson, not a caption track')
+    const gs3 = makeGame(7, 1)
+    const cv3 = makeFeatherCue()
+    cv3.shown = true // a seat that already learned
+    let lit3 = 0
+    for (let t = 0; t < SHIFT_TICKS * 3 + 600 && !gs3.end; t++) { step(gs3, [autopilot(gs3, 0)]); stepFeatherCue(cv3, gs3, 0); if (cv3.t > 0) lit3++ }
+    ok(lit3 === 0, 'FEATHER-LEARNED: after the first lesson the floor stays quiet all contract long')
+}
+
+section('DEMO-REP — attract rotation teaches the three risk laws (#2755)')
+{
+    // The old 1337+(n%97) rotation opened every demo at shift 1, where none of
+    // the risk laws exist yet. The rotation now pre-rolls measured seeds into
+    // the busy era; re-measure every pinned seed from the PREROLL mark here.
+    const src = readFileSync(new URL('../src/games/PickRush/index.jsx', import.meta.url), 'utf8')
+    const ms = src.match(/DEMO_SEEDS = \[(\d+), (\d+), (\d+)\]/)
+    const mp = src.match(/DEMO_PREROLL = (\d+)/)
+    ok(!!ms && !!mp, 'DEMO-SEEDS: the attract spins three pinned seeds behind a pinned pre-roll')
+    if (ms && mp) {
+        const seeds = [+ms[1], +ms[2], +ms[3]]
+        const PREROLL = +mp[1]
+        ok(new Set(seeds).size === 3, `DEMO-SET: three distinct seeds (${seeds.join(', ')})`)
+        let unionSlip = false, unionBottle = false, unionCatch = false
+        for (const seed of seeds) {
+            const g = makeGame(seed, 2)
+            let slip = 0, bottle = 0, catchB = 0, tSlip = 1e9, tBottle = 1e9, tCatch = 1e9
+            for (let t = 0; t < 30000 && !g.end; t++) {
+                step(g, [autopilot(g, 0), autopilot(g, 1)])
+                if (g.tick <= PREROLL) continue
+                for (const e of g.ev) {
+                    if (e.type === 'slip') { slip++; tSlip = Math.min(tSlip, g.tick - PREROLL) }
+                    else if (e.type === 'drop' && e.kind === 'bottle') { bottle++; tBottle = Math.min(tBottle, g.tick - PREROLL) }
+                    else if (e.type === 'drop' && e.kind === 'barrel') { catchB++; tCatch = Math.min(tCatch, g.tick - PREROLL) }
+                }
+            }
+            ok(slip >= 5 && bottle >= 5 && catchB >= 5 && g.endReason === 'ALL SHIFTS CLEARED',
+                `DEMO-REP[${seed}]: shows slips ${slip}, feathered bottle lands ${bottle}, barrel catches ${catchB} and still clears the contract`)
+            ok(tSlip <= 400 && tBottle <= 700 && tCatch <= 1200,
+                `DEMO-LAW-CLOCK[${seed}]: slip @${tSlip}, glass land @${tBottle}, barrel catch @${tCatch} ticks after the pre-roll — five seconds of attract, three laws`)
+            unionSlip = unionSlip || tSlip <= 400; unionBottle = unionBottle || tBottle <= 700; unionCatch = unionCatch || tCatch <= 1200
+        }
+        ok(unionSlip && unionBottle && unionCatch, 'DEMO-UNION: across one spin the rotation shows every risk law inside the first screenful of seconds')
+        ok(!src.includes('demoAt % 97'), 'DEMO-OLD-ROTATION: the unmeasured 1337+(n%97) seed counter is gone')
+    }
 }
 
 section('INTERIOR — stacked silhouettes + a voice per bin (#2739)')
@@ -1498,6 +1609,78 @@ if (!NODE_ONLY) {
         rep.check('WHIP-PIXELS: at the biggest whip the painted cable centroid sits off the trolley line',
             whipGate.inkOff !== null && Math.abs(whipGate.inkOff) >= 2, `centroid ${whipGate.inkOff} device px off centre`)
         rep.check('WHIP-REST: steady again, the cable hangs straight', Math.abs(whipGate.settle) < 0.5, `settle ${Number(whipGate.settle).toFixed(2)} px`)
+
+        // INERTIA live (#2755): a real held stroke trails the paint behind the
+        // sim, and after the release the ease glides out and lands EXACTLY on
+        // the sim position (the #1184 PIXELS law is unbroken at rest).
+        await page.evaluate(() => {
+            const g = window.__game
+            g.reset(7, 1)
+            g.release()
+            window.__easeRec = { min: 0, rec: true }
+            const loop = () => {
+                if (!window.__easeRec.rec) return
+                window.__easeRec.min = Math.min(window.__easeRec.min, g.state().ease)
+                requestAnimationFrame(loop)
+            }
+            requestAnimationFrame(loop)
+        })
+        await page.keyboard.down('ArrowRight')
+        await page.waitForTimeout(320)
+        await page.keyboard.up('ArrowRight')
+        await page.waitForTimeout(500)
+        const easeGate = await page.evaluate(() => {
+            window.__easeRec.rec = false
+            const st = window.__game.state()
+            return { min: window.__easeRec.min, settle: st.ease, paint: window.__pickrushTest.ease() }
+        })
+        rep.check('INERTIA-PIXELS: a real held stroke paints the carriage behind the sim (trails ≥1 px mid-run)',
+            easeGate.min <= -1, `min lag ${Number(easeGate.min).toFixed(2)} px`)
+        rep.check('INERTIA-REST live: after the release the ease glides out to exactly zero on the sim line',
+            easeGate.settle === 0 && easeGate.paint.paintX === Math.round(easeGate.paint.simX),
+            JSON.stringify(easeGate.paint))
+
+        // FEATHER lesson live (#2755): grab a spawned bottle through the rig,
+        // and the chevron + FEATHER caption is really INKED under the carriage.
+        const featherGate = await page.evaluate(async () => {
+            const g = window.__game
+            g.reset(7, 1)
+            window.__dbg.act('spawn bottle')
+            let pressed = false
+            for (let i = 0; i < 300; i++) {
+                const s0 = g.state()
+                if (s0.carried === 'bottle') break
+                const item = s0.items.find((x) => x[0] === 'bottle' && x[3] === -1)
+                if (!item) break
+                const dx = item[1] - s0.pos
+                const lead = s0.beltV * Math.ceil((97 - s0.clawY) / 3)
+                const pad = { left: false, right: false, a: false }
+                if (!pressed) {
+                    const want = dx - lead
+                    if (want > 1.5) pad.right = true
+                    else if (want < -1.5) pad.left = true
+                    else { pad.a = true; pressed = true }
+                } else if (s0.carried === '') {
+                    if (dx > 8) pad.right = true
+                    else if (dx < -8) pad.left = true
+                }
+                g.step([pad], 1)
+            }
+            const lit = g.state().feather
+            if (lit <= 0) return { carried: g.state().carried, lit, ink: false }
+            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 50))))
+            const s1 = g.state()
+            const px = Math.round((s1.pos + s1.ease) * 2)
+            const c = window.__pickrushTest.canvas()
+            const d = c.getContext('2d').getImageData(px - 16, 66, 32, 48).data
+            let ink = false
+            for (let k = 0; k < d.length; k += 4) {
+                if (d[k] > 190 && d[k + 1] > 140 && d[k + 1] < 230 && d[k + 2] < 130) ink = true
+            }
+            return { carried: s1.carried, lit, ink }
+        })
+        rep.check('FEATHER-INK: the eased bottle grab shows the one-time lesson painted under the carriage',
+            featherGate.carried === 'bottle' && featherGate.lit > 0 && featherGate.ink, JSON.stringify(featherGate))
 
         // METER (#2678): the fill column paints at the matching height and the
         // full bin thunks — lamp lit, tag-coloured rim flashed, column wrapped.

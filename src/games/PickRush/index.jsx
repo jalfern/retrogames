@@ -16,7 +16,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { AMB_ZONES, zoneForShift, fireAt } from './ambience'
-import { BIN_VIS, makeBinVis, stepBinVis, pushBinKind, dropVoice, makeWhip, stepWhip, whipTarget, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from './visuals'
+import { BIN_VIS, makeBinVis, stepBinVis, pushBinKind, dropVoice, makeWhip, stepWhip, whipTarget, makeCraneVis, stepCrane, makeFeatherCue, stepFeatherCue, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from './visuals'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -160,6 +160,7 @@ const PickRushGame = () => {
         let gs = makeGame(1337, 2)
         let raf = 0, last = 0, acc = 0
         let demoAt = 0
+        let demoSpin = 0 // #2755 attract repertoire: a curated seed rotation, not a counter
         let shake = 0, flash = 0
         let musicZone = 0
         let contractSeed = 4242
@@ -168,6 +169,8 @@ const PickRushGame = () => {
         const waveCues = [] // #2223 wave-cue ledger {name, fam, wi, step, tick} for the gate
         const binVis = makeBinVis(BINS.length) // #2678 per-bin fill meter + full lamp (render-only)
         const whips = [makeWhip(), makeWhip()] // #2678 cable whip spring, one per seat
+        const craneVis = [makeCraneVis(), makeCraneVis()] // #2755 carriage inertia, render-only
+        const featherVis = makeFeatherCue() // #2755 first-shift feather lesson, render-only
         let boost = 0
         let attractAt = 0
         const keys = { left: false, right: false, down: false }
@@ -438,14 +441,36 @@ const PickRushGame = () => {
         }
 
         const whipSim = () => {
-            for (let s = 0; s < gs.arms.length; s++) stepWhip(whips[s], whipTarget(gs.arms[s].vx))
+            for (let s = 0; s < gs.arms.length; s++) {
+                stepWhip(whips[s], whipTarget(gs.arms[s].vx))
+                stepCrane(craneVis[s], gs.arms[s].vx) // #2755 carriage inertia, same sim clock as the whip
+            }
         }
+
+        // #2755 attract repertoire. The old rotation (1337 + n%97) opened every
+        // demo at shift 1: the three risk laws — feathered glass landings,
+        // barrel slips, upright barrel catches — arrive 2–2.5 minutes later and
+        // nobody watches attract that long. Spin through MEASURED seeds instead
+        // and pre-roll each straight into the busy era, so five seconds of the
+        // demo shows all three laws playing out (#2724's FloorBoss re-measure
+        // spirit). Evidence re-measured by pickcheck §DEMO-REP, ticks are
+        // post-preroll: seeds show slips + barrel catches + glass drops and
+        // every one still clears the whole contract. Attract-only staging —
+        // play always starts at shift 1 like the rules say.
+        const DEMO_SEEDS = [1427, 1766, 1873]
+        const DEMO_PREROLL = 8350
+        const demoRewind = () => {
+            gs = makeGame(DEMO_SEEDS[demoSpin++ % DEMO_SEEDS.length], 2)
+            while (gs.tick < DEMO_PREROLL && !gs.end) step(gs, [autopilot(gs, 0), autopilot(gs, 1)])
+            gs.ev.length = 0 // the pre-roll paints nothing — the laws are ahead, not behind
+        }
+        demoRewind() // the floor opens mid-shift so a load-time viewer learns at once
 
         const doSim = () => {
             ensureHum()
             const sc = screenRef.current
             if (sc === 'attract') {
-                if (demoAt > 90 && gs.end) { gs = makeGame(1337 + (demoAt % 97), 2); demoAt = 0 }
+                if (demoAt > 90 && gs.end) { demoRewind(); demoAt = 0 }
                 step(gs, [autopilot(gs, 0), autopilot(gs, 1)])
                 whipSim()
                 handleEvents(gs.ev)
@@ -458,6 +483,7 @@ const PickRushGame = () => {
             whipSim() // #2678 cable spring rides the sim clock, not paint rate — steady at any fps
             edgeA = false; edgeB = false; edge2A = false
             recordTick(pads) // #2734 the pads THAT tick + this tick's judging labels
+            stepFeatherCue(featherVis, gs, 0) // #2755 the lesson arms at the claw, play only
             handleEvents(gs.ev)
             // #2234: scheduled ambience — the floor's era follows the shift.
             for (const cue of fireAt(zoneForShift(gs.shift), gs.tick, true)) playAmb(cue)
@@ -629,6 +655,7 @@ const PickRushGame = () => {
                 // as pieces settle, and a thunked full pallet compresses into a
                 // ghost pancake for `settle` ticks. Kinds ride vis.stack (pushed
                 // beside the same drop that climbed the meter); paint-only.
+                const fill = vis.fill // hoisted: squash reads it, and const-TDZ once crashed paintBins here (main since #2739)
                 for (let k = 0; k < vis.fill; k++) {
                     const col = k % 3, row = Math.floor(k / 3)
                     const bxp = b.x + 13 + col * 16
@@ -651,7 +678,6 @@ const PickRushGame = () => {
                 }
                 // #2678 fill meter: the bin's tag-coloured ink column climbs the
                 // right wall as the bin fills; a full bin flashes its whole rim.
-                const fill = vis.fill
                 const tag = BIN_TAG[i]
                 const mTop = y + 8, mBot = FLOOR_Y - 3, mx = b.x + b.w - 6
                 ctx.fillStyle = '#0a0f16'; ctx.fillRect(mx, mTop, 4, mBot - mTop)
@@ -686,7 +712,10 @@ const PickRushGame = () => {
             const arm = gs.arms[seat]
             const skin = ARM_SKIN[seat], dark = ARM_DARK[seat]
             const ry = seat === 0 ? RAIL_Y : RAIL_Y + 9
-            const x = Math.round(arm.x)
+            // #2755 carriage inertia: the paint rides the heavy ease, so the
+            // gantry eases in when the pad bites and glides out (with a hair of
+            // rail-flex rebound) before landing EXACTLY on the sim position.
+            const x = Math.round(arm.x + craneVis[seat].off)
             // cable on a whip spring (#2678), stepped in doSim at sim rate; the
             // painter just reads where the head hangs this frame
             const whip = whips[seat].y
@@ -710,6 +739,18 @@ const PickRushGame = () => {
             // green once feathered into the safe zone. Feather visibly and the
             // drop turns safe under your thumb.
             const slam = slamTell(gs, seat)
+            // #2755 first-shift feather lesson: the first bottle of shift 2 wears
+            // a one-time chevron + FEATHER under the carriage — the moment the
+            // glass law can bite. Fades on its own clock; shift 3 never arms it.
+            if (seat === 0 && featherVis.t > 0 && arm.held !== null) {
+                const fade = Math.min(1, featherVis.t / 30)
+                ctx.globalAlpha = fade * (tick % 24 < 14 ? 0.95 : 0.6)
+                ctx.fillStyle = '#ffd257'
+                ctx.beginPath(); ctx.moveTo(x - 4, ry + 12); ctx.lineTo(x + 4, ry + 12); ctx.lineTo(x, ry + 17); ctx.closePath(); ctx.fill()
+                ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'
+                ctx.fillText('FEATHER', x, ry + 25)
+                ctx.textAlign = 'left'; ctx.globalAlpha = 1
+            }
             if (slam) {
                 ctx.fillStyle = slam.safe ? RING_OK : RING_OFF
                 ctx.globalAlpha = slam.safe ? 0.95 : 0.85
@@ -1121,7 +1162,7 @@ const PickRushGame = () => {
         }
         const onPointerDown = () => {
             if (screenRef.current === 'attract') startPlay()
-            else if (screenRef.current === 'over' && performance.now() - overAt > 600) { setMode('attract'); gs = makeGame(1337, 2) }
+            else if (screenRef.current === 'over' && performance.now() - overAt > 600) { setMode('attract'); demoRewind() }
             // #1637 WATCH: a touch on the belt means you want the claw — hand back.
             // (The WATCH pill stopPropagations its press; the pad's own keydowns
             // already take over.)
@@ -1149,6 +1190,8 @@ const PickRushGame = () => {
             binVis: binVis.map((v) => v.fill), // #2678 fill-meter columns (render-only)
             binLamp: binVis.map((v) => v.flash > 0), // #2678 full-bin lamps lit now
             whip: Math.round(whips[0].y * 100) / 100, // #2678 cable head offset, world px
+            ease: Math.round(craneVis[0].off * 100) / 100, // #2755 carriage paint lag behind the sim, world px
+            feather: featherVis.t, // #2755 feather-lesson timer (>0 while lit, shift-2 carry only)
             barrelTell: gs.items.reduce((acc, it) => {
                 const r = it.onBelt && it.carriedBy === -1 ? catchRing(it) : null
                 if (r) acc.push([it.id, r, Math.round(it.x)])
@@ -1181,6 +1224,8 @@ const PickRushGame = () => {
                 waveCues.length = 0
                 perfectRun.n = 0; perfectRun.list.length = 0 // #2742 harness resets start on a clean sheet
                 binVis.forEach((v) => { v.base = 0; v.fill = 0; v.flash = 0 }) // #2678 counters step only on PAINT frames, so a frame painted between two contractcheck DRIVEs leaks a stale fill into the final-JSON equality; the rig zeroing them makes drives agree at any paint timing
+                craneVis.forEach((c) => { c.off = 0; c.v = 0 }) // #2755 same paint-timing law: the ease is rig-zeroed so DRIVE bursts agree at any paint timing
+                featherVis.t = 0; featherVis.shown = false // #2755 the lesson restarts unshown
                 humanSeat2Ref.current = false
                 episode = null // #2734 a harness-driven shift is a test rig, not a take — never bank it
                 setEnd(null)
@@ -1193,6 +1238,7 @@ const PickRushGame = () => {
                 }
                 step(gs, pads && pads.length ? pads : [pad])
                 whipSim()
+                stepFeatherCue(featherVis, gs, 0) // #2755 rig ticks arm the lesson too, so gates see the same law thumbs get
                 handleEvents(gs.ev)
                 if (gs.end && screenRef.current === 'play') finish()
             },
@@ -1237,6 +1283,26 @@ const PickRushGame = () => {
                 // has fired this run ({cue, tick, shift}). Gates read this.
                 ambience: () => ({ zone: zoneForShift(gs.shift), shift: gs.shift, fired: ambFired.slice() }),
                 ambZones: AMB_ZONES,
+                // #2755 carriage inertia: the paint offset the gantry is riding
+                // this frame (world px behind the sim position). Gates read it to
+                // prove the ease eases in, eases out and lands exactly on the sim.
+                ease: () => ({ off: craneVis[0].off, v: craneVis[0].v, simX: gs.arms[0].x, paintX: Math.round(gs.arms[0].x + craneVis[0].off) }),
+                // #2755 attract repertoire: the seeds the demo cycles and the
+                // tick each law shows at, per seed, measured live here.
+                demoRep: () => DEMO_SEEDS.map((seed) => {
+                    const g = makeGame(seed, 2)
+                    let slip = 0, bottle = 0, catchB = 0, tSlip = -1, tBottle = -1, tCatch = -1
+                    for (let i = 0; i < 30000 && !g.end; i++) {
+                        step(g, [autopilot(g, 0), autopilot(g, 1)])
+                        if (g.tick <= DEMO_PREROLL) continue
+                        for (const e of g.ev) {
+                            if (e.type === 'slip') { slip++; if (tSlip < 0) tSlip = g.tick - DEMO_PREROLL }
+                            else if (e.type === 'drop' && e.kind === 'bottle') { bottle++; if (tBottle < 0) tBottle = g.tick - DEMO_PREROLL }
+                            else if (e.type === 'drop' && e.kind === 'barrel') { catchB++; if (tCatch < 0) tCatch = g.tick - DEMO_PREROLL }
+                        }
+                    }
+                    return { seed, slip, bottle, catchB, tSlip, tBottle, tCatch, cleared: g.endReason === 'ALL SHIFTS CLEARED' }
+                }),
                 // #2742 clean sheets: each seat's live PERFECT flag + every
                 // PERFECT banked this run ({seat, shift, pts, tick}).
                 perfects: () => ({
