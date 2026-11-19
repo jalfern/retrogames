@@ -31,6 +31,17 @@ export const BREAK_VX = 3.2
 export const SHIFT_TICKS = 4200   // 70 s shift
 export const FUSES = 3
 
+// #2742 PERFECT SHIFT — mastery pays. A seat that finishes a quota-clearing
+// shift with a clean sheet banks PERFECT_PAY[shift]. The clean sheet is the
+// SIM's own failure ledger: any fault named in PERFECT_SPOIL blemishes the
+// seat it happened to (a belt-end miss has no owner — the shared line spoils
+// every seat). A squandered grip is not in the ledger: SLIP excuses — jaws
+// bouncing off the belt loses nothing, and the telegraph law (#2684) already
+// tells you not to try it. Tables are the law's data: pickcheck pins the
+// amounts by literal and a named mutant kills each boundary.
+export const PERFECT_PAY = [200, 250, 300, 350]
+export const PERFECT_SPOIL = ['miss', 'wrong', 'shatter', 'floor']
+
 export const KINDS = {
     crate:  { w: 15, h: 14, fragile: false, roll: false, bin: 0 },
     can:    { w: 12, h: 16, fragile: false, roll: false, bin: 1 },
@@ -156,6 +167,7 @@ export function makeGame(seed = 1, players = 1) {
             held: null,         // item id
             clamp: 0,           // clamp-close animation frames
             score: 0,           // this seat's bank (head-to-head)
+            clean: true,        // #2742 — no spoiling fault since the last whistle
             // autopilot memory
             target: -1, walk: 0, commit: 0,
         })
@@ -172,6 +184,14 @@ const quotaFor = (gs) => SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].quota
 const itemById = (gs, id) => gs.items.find((it) => it.id === id) || null
 
 const clampX = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+
+// #2742 — a spoiling fault marks its seat's clean sheet false. seat < 0 is
+// the unowned case (the belt swallowed a piece nobody was assigned): the
+// shared line spoils every seat at the table.
+const spoil = (gs, seat, kind) => {
+    if (!PERFECT_SPOIL.includes(kind)) return
+    for (let i = 0; i < gs.arms.length; i++) if (seat < 0 || i === seat) gs.arms[i].clean = false
+}
 
 // exported so the #2684 paint tells can import THE catch law instead of
 // re-deriving it — the ring can't drift from what the jaws actually do
@@ -191,6 +211,19 @@ function fault(gs, seat, type, x, y, msg) {
 function endShift(gs) {
     const q = quotaFor(gs)
     if (gs.correct >= q) {
+        // #2742 — the whistle pays mastery: every seat whose sheet is clean
+        // since the last whistle banks the shift's PERFECT bonus. The final
+        // shift pays before the win closes the book, so the over-card score
+        // already holds it.
+        for (let s = 0; s < gs.arms.length; s++) {
+            const a = gs.arms[s]
+            if (!a.clean) continue
+            const pts = PERFECT_PAY[Math.min(gs.shift, PERFECT_PAY.length - 1)]
+            gs.score += pts
+            a.score += pts
+            gs.ev.push({ type: 'perfect', seat: s, shift: gs.shift, pts })
+            gs.fx.push({ t: 'perfect', msg: `PERFECT SHIFT +${pts}`, x: VIEW_W / 2, y: VIEW_H / 2 + 4, k: 0 })
+        }
         gs.ev.push({ type: 'shift', shift: gs.shift, correct: gs.correct })
         gs.fx.push({ t: 'shift', msg: `SHIFT ${gs.shift + 1} CLEAR`, k: 0 })
         if (gs.shift >= SHIFTS.length - 1) {
@@ -203,6 +236,7 @@ function endShift(gs) {
         gs.shiftTick = 0
         gs.correct = 0
         gs.warnings = 0
+        for (const a of gs.arms) a.clean = true // #2742 — new shift, new sheet
         gs.score += 500
         gs.wave = { wi: 0, ki: 0 }   // next shift starts on its own line
     } else {
@@ -307,6 +341,7 @@ function stepItems(gs) {
                 it.lost = true
                 gs.combo = 0
                 gs.score = Math.max(0, gs.score - 50)
+                spoil(gs, -1, 'miss') // #2742 — the line swallowed a piece: nobody's sheet stays clean
                 gs.ev.push({ type: 'miss', kind: it.kind, x: it.x, y: BELT_Y })
                 gs.fx.push({ t: 'missline', msg: 'MISSED −50', x: BELT_END - 30, y: BELT_Y - 16, k: 0 })
             }
@@ -328,6 +363,7 @@ function stepItems(gs) {
                     if (it.fragile && (it.vy > BREAK_VY || Math.abs(it.vx) > BREAK_VX)) {
                         gs.ev.push({ type: 'shatter', kind: it.kind, seat: it.lastSeat ?? -1, x: it.x, y: BIN_TOP })
                         gs.fx.push({ t: 'shatter', msg: 'SMASHED!', x: it.x, y: BIN_TOP - 14, k: 0 })
+                        spoil(gs, it.lastSeat ?? -1, 'shatter') // #2742 — the crane that smashed it
                         fault(gs, -1, 'break', it.x, BIN_TOP, 'FRAGILE SMASHED')
                     } else if (want) {
                         it.landed = true
@@ -344,6 +380,7 @@ function stepItems(gs) {
                     } else {
                         gs.ev.push({ type: 'wrong', kind: it.kind, seat: it.lastSeat ?? -1, x: it.x, y: BIN_TOP })
                         gs.fx.push({ t: 'wrong', msg: 'WRONG BIN', x: it.x, y: BIN_TOP - 14, k: 0 })
+                        spoil(gs, it.lastSeat ?? -1, 'wrong') // #2742 — the crane that mislabelled it
                         fault(gs, -1, 'wrong', it.x, BIN_TOP, 'WRONG BIN')
                     }
                     gs.items.splice(i, 1)
@@ -352,6 +389,7 @@ function stepItems(gs) {
             }
             if (bottom >= FLOOR_Y) {
                 gs.fx.push({ t: 'miss', msg: 'NOT IN BIN', x: it.x, y: FLOOR_Y - 12, k: 0 })
+                spoil(gs, it.lastSeat ?? -1, 'floor') // #2742 — the crane that dropped it
                 fault(gs, -1, 'floor', it.x, FLOOR_Y, 'DROPPED ON FLOOR')
                 gs.items.splice(i, 1)
                 continue
