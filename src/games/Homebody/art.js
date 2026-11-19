@@ -19,6 +19,7 @@ import {
     NEIGH_WARM_AT,   // #2599: cross-warmth — the rung that deepens each neighbour's chat
     goSayTarget,   // #2688: the promised ear — the view derives the errand the same way the sim resolves it
     TEND_HOURS, wingSets,   // #2705: the purpose view reads the sun-law's own constant and the room's own floor
+    GARDEN, EXT_ROOM,   // #2721: the room card prices the NEXT kit, and the jar rides beside it
 } from './sim.js'
 
 // #2599 item 1: the pair's own hues — Fern-green and Ivy-plum, the two guests'
@@ -1672,7 +1673,14 @@ export function drawCatalog(ctx, s) {
         const d = CATALOG[gi]
         const x = 6 + k * (cw + gap)
         const cy = y + CARD_Y
-        const afford = s.money >= d.price
+        // #2721: the room card buys the NEXT kit — the east wing from the till,
+        // the garden cottage from Pip's round money — so the price line reads
+        // the honest purse for what the card will actually raise, and a full
+        // jar shows as full.
+        const kit = d.room ? (s.ext >= 1 ? GARDEN : EXT_ROOM) : null
+        const cost = kit ? kit.price : d.price
+        const fund = kit && kit.id === 'garden' ? s.jar : 0
+        const afford = s.money + fund >= cost
         ctx.fillStyle = gi === s.sel ? '#3a4c74' : '#232d44'
         ctx.fillRect(x, cy, cw, TRAY_H - CARD_Y - 4)
         ctx.strokeStyle = gi === s.sel ? '#ffd24a' : afford ? '#41527a' : '#31405e'
@@ -1682,7 +1690,7 @@ export function drawCatalog(ctx, s) {
         ctx.globalAlpha = 1
         ctx.fillStyle = afford ? '#cfe0ff' : '#5f7095'
         ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'
-        ctx.fillText(`§${d.price}`, x + cw / 2, cy + TRAY_H - CARD_Y - 16)
+        ctx.fillText(kit && kit.id === 'garden' ? `§${cost} JAR ${s.jar}/${cost}` : `§${cost}`, x + cw / 2, cy + TRAY_H - CARD_Y - 16)
         ctx.fillStyle = '#7186ad'; ctx.textAlign = 'left'
         ctx.fillText(String(k + 1), x + 3, cy + 2)   // digit badges — per shelf, every card
     })

@@ -58,7 +58,9 @@ see §Speed dial.
   hammer; a player interrupting the walk re-offers it later. Each wing's
   windows (from the wing geometry — one source for the bake and the glow)
   light warm after dusk like the house's own. The attract bot buys the kit
-  second so the demo sells the reflow (kit two is the player's).
+  second so the demo sells the reflow (kit two was the player's until #2721 gave
+  it a purse — the round money buys it, so the bot buys it too; see §Kit-two
+  economy window).
 - Bonds (#1817): `s.rel = { house, fern }` climb while people actually talk —
   Fern-chat +0.07/s while a resident chats beside her, household co-presence
   +0.05/s while both residents are unengaged within 2 tiles of each other.
@@ -320,7 +322,9 @@ eat well. Homebody pays through the room, its own two laws:
   byte-for-byte unchanged. Tail 6 (#2705: an attract ripening beat) is
   deliberately NOT built: the demo's honest economy wins before the second
   §300 exists — the kit-two economy window is #2714's own question, and no
-  bot change may launder it with attract-only money.
+  bot change may launder it with attract-only money. (#2721 answered that
+  question from the economy side, not the bot side — see §Kit-two economy
+  window; the ripening beat rides the attract for free now.)
 - **Determinism:** no purpose law draws rng; harvest timing is pure clock.
   Purpose fields join `stateHash` INSIDE the existing `s.wings` loop, so a
   no-wings lot hashes byte-identical (queuecheck's seed-exact pin
@@ -1183,7 +1187,53 @@ one before the wish lands (~day 3, 12:30h), so a second §300 never arrives
 honestly inside a winning run. Selling kit two in the demo needs an economy
 call, not a staging beat — a money grant launders the economy the win
 proves, and re-cutting the #2209 family-first tour starves Pip out of the
-demo again (that gate is exact: `pet,kid`).
+demo again (that gate is exact: `pet,kid`). **CLOSED by #2721** — the economy
+call landed (§ Kit-two economy window below): kit two now has a purse of its own
+and the attract buys it.
+
+## Kit-two economy window (#2721) — THE LOT GROWS TWICE
+
+The wall was measured, not assumed (#2714): the honest winning tour earns §520
+start + two §100 paydays = §720 and spends phone+pet+kid+kit one = §710, winning
+with §8–10 in the till. A second §300 could not arrive before the wish on any
+seed. A money grant would launder the economy the win proves, and re-cutting the
+#2209 family-first tour starves Pip — so kit two got its **own purse** instead of
+a richer till:
+
+- **Pip's morning round** (`updateRoute`, `ROUTE = { cash: 90, hour: 7 }`): while a
+  child lives on the lot, one beat per morning (the day stamp is the law — #2238's
+  idiom) carries the subs money into `s.jar`, never into `s.money`. Fixed thought
+  text, no rng: every shipped tour, twin seed and thin margin survives exactly as
+  measured until the hammer falls. `jar` joins `stateHash` (a saved fund is a room
+  standing); `routeDay` is a clock like `lastToast` and stays off it.
+- **The jar is earmarked** (`JAR_CAP = GARDEN.price`): it caps at the kit price — a
+  full jar reads full, no over-saving theatre — and buys exactly one thing.
+  `buildRoom`/`buildRoomOk` ask `fund = geom.id === 'garden' ? s.jar : 0` and drain
+  the jar *before* the till, so the east wing, every furniture piece and every
+  refusal behave as shipped; §90 in the jar cannot buy a fern, a roof or a favour.
+- **The cottage prices itself**: §90, not the placeholder §300 — 8 planks against
+  the wing's 12, a door punched through a wall that already stands, no brick band.
+  The catalog card reads the honest purse for the kit it will raise (`§90 JAR
+  90/90`), the marquee teaches the whole law in one line ("THE LOT GROWS TWICE —
+  … Pip's morning paper round fills the garden jar, and a full jar raises the
+  cottage out back"), the registry controls say it, and the F1 eye reads and fills
+  the jar (`FILL JAR`, `SEND ROUND`).
+- **What the demo shows now:** seed 7 raises east at d2 ~17:30 (the till) and the
+  garden moments later (the jar), pulls 4 harvests before the wish at d3 11.2h, and
+  ends `ext = 2`. Four of the five WINNABLE seeds end ext=2; seed 99 grants its wish
+  seconds after its hammer, before the sun finishes the first bed — the honest
+  residual on the *fastest* wins is ripening time, not money. The tour gate stays
+  exactly `pet,kid` and every seed still wins.
+
+Gates: `peoplecheck` §GARDEN JAR (23 — no-child silence, one-beat-per-day
+arithmetic, the cap, purity ×2 (decor, the east wing), jar-first payment and the
+shortfall maths, hash join + clock hygiene, determinism twin, the source pins
+(no till, no rng, one arithmetic), and the copy pins (marquee, card, dev eye,
+registry)); the #2714 pin flipped to its opposite (the demo grows TWICE and ripens
+before the wish, copy and economy pinned together); #2689's refusal gate now reads
+"the lot grows twice, and a third kit refuses". Mutant proven: `fund = 0` (the jar
+stops paying at the counter) kills exactly the four economy gates — 1033 → 1029/4;
+restore green.
 
 ## Polish pass (#2704 QA) — the walk shows its legs, the garden shows its work
 
@@ -1245,8 +1295,10 @@ Mutants proven (combined hand-mutant): zero the creep width, drop the hamper
 cap, drop the `use.night` filter, open the wait to full beds — exactly the
 four named view gates go red (988 → 984/4); restore.
 
-Still open from #2705 (re-filed): the pause-sheet lodging pips (tail 4) and
-the attract ripening beat (tail 6 — mind the autopilot pin `3836882361`).
+Still open from #2705 (re-filed): the pause-sheet lodging pips (tail 4). Tail 6,
+the attract ripening beat, is **CLOSED by #2721** (the jar funds kit two, so the
+garden stands in demo time and ripens on screen; the autopilot pin re-sampled to
+`3998885235`).
 
 ## Honest gaps (filed to QA #…)
 

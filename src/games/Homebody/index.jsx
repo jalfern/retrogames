@@ -78,7 +78,7 @@ const MESSAGES = [
     'Tap a fridge, a bed, the TV — they walk over and use it. Feed them, rest them.',
     'When a resident turns AMBER, the lot says what they need — tap the named object before the red alarm.',
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
-    'THE LOT GROWS — Spare Room kit one rises on the east lawn (point at a row to choose where); save a second §300 and kit two raises a garden room out back.',
+    'THE LOT GROWS TWICE — Spare Room kit one rises on the east lawn (point at a row to choose where); Pip\'s morning paper round fills the garden jar, and a full jar raises the cottage out back.',
     'Morning brings the paper — the boy sweeps past and today\'s edition waits on the step. Tap it for a laugh.',
     'THE BELLS RING THREE TIMES A DAY — a warm plate waits by the kitchen. Tap to eat; eat together and BONDS rise.',
     'GARBAGE DAY EVERY THIRD DAY — the eve says WHEEL IT OUT, dawn sends the truck. Miss the curb and the lot gets skipped.',
@@ -418,6 +418,12 @@ const HomebodyGame = () => {
                         audioController.playFilteredNoise(0.05, 0.025, 420)
                         if (live) { burst(e.x, e.y + 6, 5, '#c9b48a', 1.6); if (e.honey) say('IVY LEFT HONEY BY THE TILL') }
                         break
+                    case 'route': {   // #2721: Pip's round comes home — a coin pair and gold pips at the gate
+                        audioController.playTone(880, 0.05, 'square', 0.045)
+                        setTimeout(() => audioController.playTone(1319, 0.09, 'square', 0.045), 70)
+                        if (live) { say(`PIP'S ROUND — §${e.cash} INTO THE GARDEN JAR (${e.jar}/${GARDEN.price})`); burst(tilePx(5), tilePy(12) + 8, 5, '#ffd24a', 1.9) }
+                        break
+                    }
                     case 'harvest': {   // #2695: the garden ripens — green-and-gold glints at the south door, plucky triad
                         audioController.playTone(587, 0.06, 'triangle', 0.05)
                         setTimeout(() => audioController.playTone(784, 0.06, 'triangle', 0.05), 80)
@@ -1665,12 +1671,14 @@ const HomebodyGame = () => {
             mountDbg({
                 title: 'HOMEBODY',
                 getState: () => gs ? [
-                    `d${gs.day} ${gs.hour.toFixed(1)}h §${gs.money} wish ${gs.content}/${WIN_CONTENT} items=${gs.items.length} build=${gs.build}${gs.visitor ? ' Fern!' : ''}${gs.ivy ? ` Ivy${gs.ivy.gift ? '🧺' : ''}!` : ''}${gs.pet ? ' 🐈 Miso' : ''}${gs.kid ? ' ★ Pip' : ''} ⏱${SPEED_NAMES[gs.speed]}`,   // #2227: the dial reads here
+                    `d${gs.day} ${gs.hour.toFixed(1)}h §${gs.money} jar=${gs.jar}/${GARDEN.price} wish ${gs.content}/${WIN_CONTENT} items=${gs.items.length} build=${gs.build}${gs.visitor ? ' Fern!' : ''}${gs.ivy ? ` Ivy${gs.ivy.gift ? '🧺' : ''}!` : ''}${gs.pet ? ' 🐈 Miso' : ''}${gs.kid ? ' ★ Pip' : ''} ⏱${SPEED_NAMES[gs.speed]}`,   // #2227: the dial reads here · #2721: so does the garden jar
                     gs.people.map((p) => `${p.name}:${NEEDS.map((n) => Math.round(p.needs[n] * 100)).join('/')}${p.working ? ' @work' : ''}${p.faintT > 0 ? ' FAINT' : ''}`).join('  '),
                 ] : ['attract'],
                 actions: [
                     { label: 'GIVE §500', run: () => { if (gs) gs.money += 500; return 'rent money' } },
                     { label: 'BUILD ROOM', run: () => { if (!gs) return 'no sim'; if (gs.ext >= 2) return 'the lot is full — two rooms stand'; gs.money = Math.max(gs.money, GARDEN.price); const ok = buildRoom(gs, gs.ext >= 1 ? GARDEN : eastWing(DEFAULT_ANCHOR)); return ok ? (gs.ext === 2 ? 'garden room up — two rooms on the lot' : 'spare room up — the lot grew') : 'somewhere in the way' } },   // #2689: the button raises the next wing, wherever the law lets it
+                    { label: 'FILL JAR', run: () => { if (gs) gs.jar = GARDEN.price; return gs ? `the garden jar reads ${gs.jar}/${GARDEN.price} — kit two buys` : 'no sim' } },   // #2721: the kit-two fund, for the eye
+                    { label: 'SEND ROUND', run: () => { if (!gs) return 'no sim'; if (!gs.kid) return 'no child on the lot — the round needs Pip'; gs.routeDay = -1; return `the round re-arms — jar ${gs.jar}/${GARDEN.price}, next 07:00 it pays` } },   // #2721
                     { label: 'ADOPT CAT', run: () => { if (gs && !gs.pet) { gs.money = Math.max(gs.money, PET.price); adoptPet(gs) } return gs && gs.pet ? 'Miso trots in through the gate' : 'already home / no sim' } },   // #2197
                     { label: 'ADOPT KID', run: () => { if (gs && !gs.kid) { gs.money = Math.max(gs.money, KID.price); adoptKid(gs) } return gs && gs.kid ? 'Pip moves in through the gate' : 'already home / no sim' } },   // #2203
                     { label: 'GRANT WISH', run: () => { if (gs) { gs.content = WIN_CONTENT } return 'wish banked — next content tick wins' } },

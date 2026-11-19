@@ -201,7 +201,7 @@ section('HASH & REPLAY')
     // #2474 QA recalibration: this constant predated #2503 (ice-cream truck) —
     // truckHour/binAt/iceDay/serial/cone all ride stateHash now, so the frozen
     // 1609037625 was red on main before this branch (verified at 096faac).
-    check('no-tap play is seed-exact', stateHash(p) === 3836882361, `got ${stateHash(p)} (recomputed at main 68e1cf1 — the sneak #2520, prowl #2532, stroll-neiWalk #2611 and mediation-neiMediated #2672 hash joins all landed after the #2508 pin; autoplay twin-gate green, pin re-sampled)`)
+    check('no-tap play is seed-exact', stateHash(p) === 3998885235, `got ${stateHash(p)} (re-sampled for #2721: the garden jar joins the hash, Pip's round shifts the attract tour by nothing in the till but the wing lands a beat earlier; the last join was 3836882361 at 68e1cf1 — sneak #2520, prowl #2532, stroll-neiWalk #2611, mediation-neiMediated #2672; autoplay twin-gate green)`)
     let sawQueue = false
     const q = newRun(5)
     for (let i = 0; i < 60 * 900 && !q.done; i++) { autoStep(q, DT); drain(q); if (q.people.some((pp) => pp.queue.length)) sawQueue = true }
