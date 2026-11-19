@@ -654,6 +654,82 @@ export function tailTurn(gs, x, y, dIn, dOut, extra = null) {
     if (dIn[0] === -dOut[0] && dIn[1] === -dOut[1]) return false // backpedal — body stays in lane
     return kneeRack(gs, x - dIn[0] - dOut[0], y - dIn[1] - dOut[1], extra)
 }
+// ---- #2783 THE SWING READS BODIES — courtesy keeps out of it ----
+// The knee (#2711) and tail (#2760) diagonals became law against RACKS; the
+// #2783 audit measured what the racks law does NOT cover: over ten autopilot
+// careers 47 loaded pivots swung through a rival standing on the knee cell and
+// 40 through the tail cell — and, worst, 12 of 64 courtesy ducks parked the
+// yielding cart exactly on a swing cell of the blocking plan: courtesy became
+// the jam it ducked for. THIS PR legislates the courtesy half (pullOff skips
+// swing cells — pure, zero cadence cost). The turn-hold half (a cart refusing
+// to pivot while a body sits in its swing) was BUILT and MEASURED and is held
+// back honestly: at cadence granularity holds cascade on congested floors —
+// seed 107 held 97 pivots and missed quota; escalate-to-jam over-called (56
+// jams), repath-on-timeout oscillated (two carts un-steering each other,
+// scores 44/21). Turn rights need body-reservation (a pivot reserves its sweep
+// against rivals' next cells too) plus a cooldown law — the next slice's spec,
+// numbers above. Until then liveRights() makes the residual measurable per floor.
+// The pivot a loaded cart is about to execute: standing at its cell facing
+// bot.face, stepping to (nx,ny) rotates the body at the CURRENT cell — the
+// exact convention kneeTurn/tailTurn use (pivot cell = where the cart stands
+// when it turns). Answers the swept diagonals, or null when the step is not a
+// loaded pivot (empty legs carry only forks, #2711 doctrine; straights and
+// reversals sweep nothing). Pure, zero footprint (#1917).
+export function pivotSweep(bot, nx, ny) {
+    if (!bot.carry) return null
+    const d = nbDir(nx - bot.x, ny - bot.y)
+    if (d === bot.face || d === (bot.face + 2) % 4) return null // straight or backpedal — the body stays in lane
+    const [hx, hy] = NB[bot.face], [ox, oy] = NB[d]
+    return {
+        dir: d,
+        knee: { x: bot.x + hx + ox, y: bot.y + hy + oy },
+        tail: { x: bot.x - hx - ox, y: bot.y - hy - oy },
+    }
+}
+// A rival standing in a cart's own swept cells — the body-in-the-swing query.
+function swingHeld(gs, bot, nx, ny) {
+    const sw = pivotSweep(bot, nx, ny)
+    if (!sw) return null
+    const blocker = gs.robots.find((r) => r.id !== bot.id && !r.broken
+        && ((r.x === sw.knee.x && r.y === sw.knee.y) || (r.x === sw.tail.x && r.y === sw.tail.y)))
+    return blocker ? { sw, blocker } : null
+}
+// SWING-AWARE COURTESY — every cell the rival's own plan will swing a
+// loaded body through: the knee/tail diagonals of each pivot along its route
+// (empty legs have no body to spare, #2711). Fixed order, pure, deterministic
+// (#1917): same floor, same paths, same answer — the courtesy law reads it to
+// keep a yielding cart out of the traffic it ducked to let through.
+export function swingOf(rival) {
+    const out = new Set()
+    if (!rival.carry || !rival.path || !rival.path.length) return out
+    const cells = [{ x: rival.x, y: rival.y }, ...rival.path.map((c) => ({ x: c.x, y: c.y }))]
+    let f = rival.face
+    for (let i = 1; i < cells.length; i++) {
+        const dx = cells[i].x - cells[i - 1].x, dy = cells[i].y - cells[i - 1].y
+        if (Math.abs(dx) + Math.abs(dy) !== 1) break // plan discontinuity — the plan ends here
+        const d = nbDir(dx, dy)
+        if (d !== f && d !== (f + 2) % 4) {
+            const [hx, hy] = NB[f], [ox, oy] = NB[d]
+            out.add(`${cells[i - 1].x + hx + ox},${cells[i - 1].y + hy + oy}`) // knee
+            out.add(`${cells[i - 1].x - hx - ox},${cells[i - 1].y - hy - oy}`) // tail
+        }
+        f = d === (f + 2) % 4 ? f : d // reversing keeps the facing (#2732)
+    }
+    return out
+}
+// the QA eye: pivots currently facing a body in the swing on the live floor —
+// the residual this slice documents but does not yet legislate (see header).
+// Pure, fixed order, zero footprint (#1917).
+export function liveRights(gs) {
+    const out = []
+    for (const b of gs.robots) {
+        if (b.broken || b.jam || b.yield || !b.path || !b.path.length) continue
+        const nx = b.path[0]
+        const hit = swingHeld(gs, b, nx.x, nx.y)
+        if (hit) out.push({ id: b.id, x: b.x, y: b.y, dir: hit.sw.dir, by: hit.blocker.id, at: [hit.blocker.x, hit.blocker.y] })
+    }
+    return out
+}
 // The knee-driven service net: same anchors as serviceNet (docks, pads, bay),
 // same fixed flood, but a seeded turn is only rideable if its knee is clear.
 // States are (cell, heading) — every anchor can be entered facing any way; a
@@ -1292,13 +1368,21 @@ export function pullOff(gs, bot, nx) {
     if (!nx || bot.yield || bot.yieldCd > 0 || bot.broken || bot.jam || bot.pickT > 0 || bot.task.kind === 'idle' || bot.wait < YIELD_WAIT) return null
     const rival = gs.robots.find((r) => r.id !== bot.id && r.x === nx.x && r.y === nx.y)
     if (!rival || rival.broken) return null
+    // #2783 SWING-AWARE COURTESY — a shoulder in the rival's own swing is not a
+    // shoulder: the loaded rival will drive its body through the bay the yield
+    // just took, and courtesy becomes the jam it ducked for (measured: 12 of 64
+    // ducks landed on a knee/tail cell of the blocking plan). Skip such cells;
+    // when the aisle offers only swinging shoulders, the backpedal law below (or
+    // no answer — the old jam) decides honestly, exactly as #2692 left it.
+    const sw = swingOf(rival)
+    const inSwing = (px, py) => sw.has(`${px},${py}`)
     const sides = nx.y === bot.y ? [[0, -1], [0, 1]] : [[-1, 0], [1, 0]]
     for (const [sx, sy] of sides) {
         const px = bot.x + sx, py = bot.y + sy
-        if (!blocked(gs, px, py, bot.id)) return { x: px, y: py }
+        if (!inSwing(px, py) && !blocked(gs, px, py, bot.id)) return { x: px, y: py }
     }
     const back = { x: bot.x + (bot.x - nx.x), y: bot.y + (bot.y - nx.y) }
-    if (!blocked(gs, back.x, back.y, bot.id)) return back
+    if (!inSwing(back.x, back.y) && !blocked(gs, back.x, back.y, bot.id)) return back
     return null
 }
 // stall helper: the rival adjacent to a routeless cart whose corridor its body
