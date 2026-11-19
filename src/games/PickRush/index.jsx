@@ -174,6 +174,7 @@ const PickRushGame = () => {
         const keys2 = { left: false, right: false, down: false }
         let edgeA = false, edgeB = false, edge2A = false
         const evLog = []
+        const perfectRun = { n: 0, list: [] } // #2742 — PERFECT shifts banked this run (over-card tally + gate eye)
         let overAt = 0
 
         // #2734 Plaicraft episode recorder — every played shift banks as a
@@ -357,6 +358,22 @@ const PickRushGame = () => {
                     } else {
                         audioController.playTone(784 * stepHz, 0.05, 'triangle', 0.04)
                         audioController.playTone(1175 * stepHz, 0.07, 'triangle', 0.035, 0.06)
+                    }
+                }
+                else if (e.type === 'perfect') {
+                    // #2742 — mastery pays: a rising triangle sparkle that sits
+                    // ON TOP of the whistle (which the 'shift' event rings in the
+                    // same tick), so the clean sheet reads as extra, not instead.
+                    audioController.playTone(1046, 0.07, 'triangle', 0.05)
+                    audioController.playTone(1318, 0.07, 'triangle', 0.05, 0.08)
+                    audioController.playTone(1568, 0.07, 'triangle', 0.05, 0.16)
+                    audioController.playTone(2093, 0.16, 'triangle', 0.045, 0.26)
+                    perfectRun.n++
+                    perfectRun.list.push({ seat: e.seat, shift: e.shift, pts: e.pts, tick: gs.tick })
+                    shake = Math.max(shake, 3)
+                    for (let i = 0; i < 14; i++) {
+                        const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.8, sp = 1 + Math.random() * 2.6
+                        parts.push({ x: e.x ?? VIEW_W / 2, y: VIEW_H / 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.6, t: 0, col: i % 3 ? '#ffd23f' : '#fff3c4', g: 0.1 })
                     }
                 }
                 else if (e.type === 'shift') {
@@ -764,6 +781,14 @@ const PickRushGame = () => {
                     ctx.fillStyle = 'rgba(10,14,20,0.8)'; ctx.fillRect(VIEW_W / 2 - 90, VIEW_H / 2 - 26, 180, 20)
                     ctx.fillStyle = col; ctx.font = 'bold 13px monospace'
                     ctx.fillText(f.msg, VIEW_W / 2, VIEW_H / 2 - 12)
+                } else if (f.t === 'perfect') {
+                    // #2742 — the gold sub-line rides the CLEAR card: same
+                    // center column, just under the plate, fading with it.
+                    ctx.globalAlpha = Math.min(1, f.k / 6) * Math.max(0, 1 - f.k / 46)
+                    ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 11px monospace'
+                    ctx.fillText(f.msg, f.x, f.y)
+                    ctx.fillStyle = '#fff3c4'; ctx.font = 'bold 7px monospace'
+                    ctx.fillText('CLEAN SHEET', f.x, f.y + 9)
                 } else if (f.t === 'wave') {
                     // marquee (#2214): the incoming wave is announced as a lit
                     // banner over the belt mouth — plate, corner lamps and a
@@ -914,7 +939,13 @@ const PickRushGame = () => {
             ctx.font = 'bold 14px monospace'; ctx.fillStyle = '#ffffff'
             ctx.fillText(`SCORE ${gs.score}`, VIEW_W / 2, 136)
             ctx.font = '9px monospace'; ctx.fillStyle = '#8fa8c0'
+            // #2742 — the run's PERFECT count rides the detail line, gold when earned.
             ctx.fillText(`BEST COMBO ×${gs.bestCombo} — SHIFT ${gs.shift + 1} — PIECES ${gs.binFill.reduce((a, b) => a + b, 0)}`, VIEW_W / 2, 152)
+            if (perfectRun.n > 0) {
+                ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#ffd23f'
+                ctx.fillText(`PERFECT SHIFTS ×${perfectRun.n} (+${perfectRun.list.reduce((a, p) => a + p.pts, 0)})`, VIEW_W / 2, 126)
+                ctx.font = '9px monospace'; ctx.fillStyle = '#8fa8c0'
+            }
             if (gs.players > 1) {
                 const s2 = gs.arms[1].score || 0
                 ctx.fillStyle = ARM_SKIN[1]
@@ -1010,6 +1041,7 @@ const PickRushGame = () => {
             parts.length = 0; gs.fx.length = 0; landings.length = 0; boost = 0
             ambFired.length = 0 // #2234 a new contract starts on the quiet early floor
             waveCues.length = 0 // #2223 the line's rhythm restarts with it
+            perfectRun.n = 0; perfectRun.list.length = 0 // #2742 clean sheets start with the contract
             watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             setEnd(null)
             beginEpisode() // #2734 the shift you're about to play gets banked
@@ -1126,6 +1158,7 @@ const PickRushGame = () => {
                 parts.length = 0
                 landings.length = 0; boost = 0
                 waveCues.length = 0
+                perfectRun.n = 0; perfectRun.list.length = 0 // #2742 harness resets start on a clean sheet
                 humanSeat2Ref.current = false
                 episode = null // #2734 a harness-driven shift is a test rig, not a take — never bank it
                 setEnd(null)
@@ -1182,6 +1215,13 @@ const PickRushGame = () => {
                 // has fired this run ({cue, tick, shift}). Gates read this.
                 ambience: () => ({ zone: zoneForShift(gs.shift), shift: gs.shift, fired: ambFired.slice() }),
                 ambZones: AMB_ZONES,
+                // #2742 clean sheets: each seat's live PERFECT flag + every
+                // PERFECT banked this run ({seat, shift, pts, tick}).
+                perfects: () => ({
+                    clean: gs.arms.map((a) => a.clean),
+                    n: perfectRun.n,
+                    banked: perfectRun.list.slice(),
+                }),
                 // #2223 per-wave pitch step: the cue ledger the gate reads
                 waveCues: () => waveCues.slice(),
                 // #2684 ring-truth eye: every rolling piece's ring state next to
