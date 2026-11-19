@@ -2031,8 +2031,20 @@ export function place(s, r, c) {
     if (s.paper && s.paper.r === r && s.paper.c === c) { s.items = s.items.filter((x) => x !== s.paper); s.paper = null }
     // #2244: same law for a plate — no meal may be buried under furniture.
     if (s.meal && s.meal.r === r && s.meal.c === c) { s.items = s.items.filter((x) => x !== s.meal); s.meal = null; s.mealEaten = [] }
+    // #2743: the naming beat — the piece that GIVES a room its name speaks.
+    // Ask the room who it was before the piece lands and who it is after; a
+    // wing that newly reads study/playroom pushes a `room-named` event at its
+    // own doorstep. Pure derivation (the #2736 doctrine): no rng, no ledger
+    // write — the beat only tells what archetypeOf already knows.
+    const nbWas = (() => { const w = onWingFloor(s, r, c); return w ? archetypeOf(s, w) : null })()
     s.items.push({ uid: s.nextUid++, id: def.id, r, c })
+    const nbW = onWingFloor(s, r, c)
+    const nbIs = nbW ? archetypeOf(s, nbW) : null
     s.events.push({ t: 'place', r, c, id: def.id })
+    if ((nbIs === 'study' || nbIs === 'playroom') && nbIs !== nbWas) {
+        const nbD = wingGeom(nbW).door
+        s.events.push({ t: 'room-named', r: nbD[0], c: nbD[1], kind: nbIs })
+    }
     reflow(s)
     return true
 }
@@ -3121,7 +3133,7 @@ function updateKid(s, dt) {
                     relAdd(s, 'kid', KID_ROOM_BOND)
                     s.content = Math.min(WIN_CONTENT, s.content + 1)
                     k.giggleT = 1.6
-                    s.events.push({ t: 'kid-laugh', name: k.name, x: k.x, y: k.y })
+                    s.events.push({ t: 'kid-laugh', name: k.name, x: k.x, y: k.y, room: archetypeOf(s, w) || 'playroom' })   // #2743: the banner names the room that paid
                     think(s, pick(s, ROOM_LAUGH_LINES).replace('{n}', k.name))
                 }
             }
@@ -3332,7 +3344,7 @@ function finishUse(s, p) {
                 w.insights = (w.insights || 0) + 1
                 p.needs.fun = Math.min(1, p.needs.fun + READ_INSIGHT_FUN)
                 s.content = Math.min(WIN_CONTENT, s.content + 1)
-                s.events.push({ t: 'studied', name: p.name, r: it.r, c: it.c })
+                s.events.push({ t: 'studied', name: p.name, r: it.r, c: it.c, room: archetypeOf(s, w) || 'study' })   // #2743: the banner names the room that paid
                 think(s, pick(s, STUDY_LINES).replace('{p}', p.name))
             }
         }

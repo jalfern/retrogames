@@ -652,6 +652,8 @@ section('PERSONALITY (#2736): rooms read their own furniture — a study that re
         JSON.stringify(deltas.map((d) => Math.round(d.fun * 1000) / 1000)))
     check('quiet pride — the paying read adds one contentment on top',
         deltas[0].content === deltas[1].content && deltas[2].content === deltas[0].content + 1, JSON.stringify(deltas.map((d) => d.content)))
+    const studEv = sink.find((e) => e.t === 'studied')
+    check('#2743 the insight event names the room that paid', !!studEv && studEv.room === 'study', studEv ? String(studEv.room) : 'no studied event')
 
     // the living-room shelf stays plain: the clause is the ROOM's, not the item's
     const hl = mkEast(707)
@@ -720,21 +722,23 @@ section('PERSONALITY (#2736): rooms read their own furniture — a study that re
         const w = g.wings[0]
         const rel0 = g.rel.kid
         const c0 = g.content
-        let laughs = 0, sessions = 0
+        let laughs = 0, sessions = 0, laRoom = null
         for (let i = 0; i < 60 * 400 && sessions < PLAYS_DELIGHT + 1; i++) {
             g.hour = 8
             if (!k.playObj && !k.food && !k.treat && k.state !== 'bed' && k.state !== 'sleep') k.needs.fun = Math.min(k.needs.fun, 0.2)
             advance(g, DT)
             const ev = drain(g)
-            if (ev.some((e) => e.t === 'kid-laugh')) laughs++
+            const la = ev.find((e) => e.t === 'kid-laugh')
+            if (la) { laughs++; laRoom = la.room }   // #2743: catch which room the laugh names
             if (ev.some((e) => e.t === 'kid-play')) sessions++
         }
-        return { g, w, laughs, sessions, dRel: g.rel.kid - rel0, dContent: g.content - c0, h: stateHash(g) }
+        return { g, w, laughs, sessions, dRel: g.rel.kid - rel0, dContent: g.content - c0, h: stateHash(g), laRoom }
     }
     const dl = delight(711)
     check('plays accrue at the room toy and cash at the third — delight paid once',
         dl.w.delights === 1 && dl.w.plays === 1, `delights=${dl.w.delights} plays=${dl.w.plays} sessions=${dl.sessions}`)
     check('exactly one kid-laugh lands in the run', dl.laughs === 1, `laughs=${dl.laughs}`)
+    check('#2743 the delight event names the room that paid', dl.laRoom === 'playroom', String(dl.laRoom))
     check('the delight pays the kid: bond and pride ride the pay',
         dl.dRel >= KID_ROOM_BOND - 0.01 && dl.dContent >= 1, `dRel=${Math.round(dl.dRel * 100) / 100} dContent=${dl.dContent}`)
     const dl2 = delight(711)
@@ -783,6 +787,78 @@ section('PERSONALITY (#2736): rooms read their own furniture — a study that re
     const lawSrc = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
     const studyBlock = lawSrc.slice(lawSrc.indexOf("if (def.id === 'book' && s.ext)"), lawSrc.indexOf("if (def.id === 'book' && s.ext)") + 900)
     check('pin: the study timing is counter-pure — no rng in the law, the way #2695 keeps purpose', !studyBlock.includes('s.rng'))
+
+    // ---- #2743 polish: the naming beat, the badge ramp, the room word ----
+    const shelfSel = CATALOG.findIndex((d) => d.id === 'book')
+    const bedSel = CATALOG.findIndex((d) => d.id === 'canopy')
+    const radioSel = CATALOG.findIndex((d) => d.id === 'radio')
+
+    // the beat: the piece that GIVES a wing its name rings once at the door
+    const nmS = mkEast(726); nmS.sel = shelfSel
+    const nmSok = place(nmS, 3, 13)
+    const nmSev = drain(nmS).filter((e) => e.t === 'room-named')
+    check('#2743 the shelf that names the study rings the beat at the doorstep',
+        nmSok && nmSev.length === 1 && nmSev[0].kind === 'study' && nmSev[0].r === 4 && nmSev[0].c === 11, JSON.stringify(nmSev))
+    const nmS2ok = place(nmS, 5, 13)
+    check('#2743 the second shelf adds books, not a renaming', nmS2ok && drain(nmS).filter((e) => e.t === 'room-named').length === 0)
+    const nmP = mkEast(729); nmP.sel = radioSel
+    const nmPok = place(nmP, 5, 12)
+    const nmPEv = drain(nmP).filter((e) => e.t === 'room-named')
+    check('#2743 the radio rings the playroom name', nmPok && nmPEv.length === 1 && nmPEv[0].kind === 'playroom', JSON.stringify(nmPEv))
+    const nmB = mkEast(727); nmB.sel = bedSel
+    const nmBok = place(nmB, 6, 13)
+    check('#2743 the bed names the bedroom but the beat keeps its seat — the panes already speak (#2705)',
+        nmBok && archetypeOf(nmB, nmB.wings[0]) === 'bedroom' && drain(nmB).filter((e) => e.t === 'room-named').length === 0)
+    const nmR = mkEast(730); nmR.sel = shelfSel
+    place(nmR, 3, 13); drain(nmR)
+    nmR.sel = bedSel
+    const nmRok = place(nmR, 6, 13)
+    check('#2743 the bed buries the study name silently — no badge, no beat',
+        nmRok && archetypeOf(nmR, nmR.wings[0]) === 'bedroom' && drain(nmR).filter((e) => e.t === 'room-named').length === 0)
+    let nmHcell = null
+    const nmH = newRun(728); nmH.money = 99999; nmH.sel = shelfSel
+    for (let r = 0; r < ROWS && !nmHcell; r++) for (let c = 0; c < COLS && !nmHcell; c++) {
+        if (groundAt(r, c) !== 'floor' || c >= 11) continue
+        if (place(nmH, r, c)) nmHcell = { r, c }
+    }
+    check('#2743 control: the house-floor shelf actually lands', !!nmHcell, JSON.stringify(nmHcell))
+    check('#2743 a living-room shelf never rings — the clause is the room\u2019s, not the item\u2019s',
+        drain(nmH).filter((e) => e.t === 'room-named').length === 0)
+
+    // determinism: the beat is pure derivation — no rng, twins still match
+    check('#2743 the naming beat draws no rng — twins with a named room hash identical',
+        (() => {
+            const twinN = (seed) => { const g = mkEast(seed); g.sel = shelfSel; place(g, 3, 13); return stateHash(g) }
+            return twinN(731) === twinN(731)
+        })())
+    const beatBlock = lawSrc.slice(lawSrc.indexOf('const nbWas'), lawSrc.indexOf('reflow(s)\n    return true'))
+    check('#2743 pin: the beat block itself is rng-free', beatBlock.length > 0 && !beatBlock.includes('s.rng'))
+
+    // the badge shows the pay COMING — p ramps to the room's next payout
+    const bpS = mkEast(732); bpS.items.push({ uid: 2732, id: 'book', r: 4, c: 12 })
+    bpS.wings[0].pages = 2; bpS.wings[0].insights = 3
+    const bpp = roomBadges(bpS)
+    check('#2743 the study badge rides pages on p and its bank on n',
+        bpp.length === 1 && Math.abs(bpp[0].p - 2 / PAGES_INSIGHT) < 1e-9 && bpp[0].n === 3, JSON.stringify(bpp))
+    const bpP = mkEast(733); bpP.items.push({ uid: 2733, id: 'radio', r: 6, c: 14 })
+    bpP.wings[0].plays = 1
+    const bppP = roomBadges(bpP)
+    check('#2743 the playroom badge ramps the same way',
+        bppP.length === 1 && Math.abs(bppP[0].p - 1 / PLAYS_DELIGHT) < 1e-9 && bppP[0].n === 0, JSON.stringify(bppP))
+    const bpZ = mkEast(734); bpZ.items.push({ uid: 2734, id: 'book', r: 4, c: 12 })
+    roomBadges(bpZ)
+    check('#2743 asking the badge never writes the tally — the ramp is view-only', (bpZ.wings[0].pages || 0) === 0)
+
+    // pins: the banners, the shell wiring, the ramp paint, the phone probe aim
+    const hbIdx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('#2743 pin: the pay banners carry the paying room\u2019s own word',
+        /THE \$\{\(e\.room \|\| 'study'\)\.toUpperCase\(\)\} PAYS/.test(hbIdx) && /THE \$\{\(e\.room \|\| 'playroom'\)\.toUpperCase\(\)\} GIGGLES/.test(hbIdx))
+    check('#2743 pin: the naming beat is wired into the shell with its own callout',
+        /case 'room-named'/.test(hbIdx) && /THIS ROOM IS A \$\{e\.kind\.toUpperCase\(\)\}/.test(hbIdx))
+    check('#2743 pin: the ramp paints a track always and fills from the badge\u2019s own p',
+        /rgba\(24,16,6,0\.55\)/.test(artSrc) && /Math\.round\(14 \* b\.p\)/.test(artSrc))
+    check('#2743 pin: the phone-scale probe aims at roomBadges(gs) and rides the probe return',
+        /const rb = roomBadges\(gs\)/.test(hbIdx) && /badges: rb/.test(hbIdx))
 }
 
 section('WINNABLE (attract autopilot, several seeds)')
@@ -5215,7 +5291,7 @@ section('GARDEN JAR (#2721): Pip\u2019s round pays for kit two — earmarked mon
     check('#2729 the cottage stands — the row retires, its lesson taught', buildRoom(gv, GARDEN) && jarRow(gv) === null && gv.jar === 0, `jar=${gv.jar}`)
     check('#2729 pin: the panel paints the row and gives Miso a lower seat', /const jr = jarRow\(s\)/.test(jarArt) && /s\.kid \? \(jr \? 96 : 82\) : 68/.test(jarArt) && /label: 'JAR'/.test(jarArt))
     check('#2729 pin: the honest n/cap reads beside the label, amber like the fund', jarArt.includes('`${s.jar}/${JAR_CAP}`') && /ctx\.fillStyle = '#f2c14e'/.test(jarArt))
-    check('#2729 pin: the phone-scale probe aims at the same derivation, not stale seats', /const jr = jarRow\(gs\)/.test(jarIdx) && /return \{ k: \+k\.toFixed\(3\), rows, bands, jar \}/.test(jarIdx))
+    check('#2729 pin: the phone-scale probe aims at the same derivation, not stale seats', /const jr = jarRow\(gs\)/.test(jarIdx) && /return \{ k: \+k\.toFixed\(3\), rows, bands, jar, badges: rb \}/.test(jarIdx))   // #2743: the return now carries the door badges too
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

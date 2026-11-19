@@ -63,7 +63,7 @@ import {
     PAIR_HUES,   // #2599: the pair's own hues for pair-spoken bubbles
     promiseTell, earReact, drawGardenLamp, LOST_RING_T,   // #2688: the promise told in motion + the garden's night lamp
     drawPurposeView, sleepingCells, drawMoonlitWait,   // #2705: the purpose view — ripeness bed, harvest hamper, lodged panes, moonlit wait
-    drawRoomBadges,   // #2736: rooms with a personality — the study book / playroom star at the door
+    drawRoomBadges, roomBadges,   // #2736: rooms with a personality — the study book / playroom star at the door · #2743: the probe asks the same derivation
     pauseLedger,   // #2713 tail 4: the rooms' tallies read on the pause sheet
     pairStride, strollTrail, drawStrollTrail,   // #2618: the stroll stride, the route tell, the walk sell
     drawGroundGift, bondRows, jarRow,   // #2240: the set-down basket + the BONDS rows as data · #2729: the jar row too
@@ -441,15 +441,21 @@ const HomebodyGame = () => {
                     case 'studied': {   // #2736: the study pays — two thoughtful plucks, lamp amber on the book
                         audioController.playTone(494, 0.07, 'triangle', 0.045)
                         setTimeout(() => audioController.playTone(659, 0.14, 'triangle', 0.045), 90)
-                        if (live) { say(`THE STUDY PAYS — INSIGHTS ${gs.wings.reduce((a, w) => a + (w.insights || 0), 0)}`); burst(tilePx(e.c) + 8, tilePy(e.r) + 8, 5, '#d9b23c', 1.8) }
+                        if (live) { say(`THE ${(e.room || 'study').toUpperCase()} PAYS — INSIGHTS ${gs.wings.reduce((a, w) => a + (w.insights || 0), 0)}`); burst(tilePx(e.c) + 8, tilePy(e.r) + 8, 5, '#d9b23c', 1.8) }   // #2743: the banner names the room that paid
                         break
                     }
                     case 'kid-laugh':   // #2736: the playroom pays — the giggle arpeggio at the room's own toy, star gold
                         audioController.playTone(659, 0.05, 'triangle', 0.045)
                         setTimeout(() => audioController.playTone(880, 0.05, 'triangle', 0.045), 55)
                         setTimeout(() => audioController.playTone(1175, 0.09, 'triangle', 0.045), 110)
-                        if (live) { say(`THE PLAYROOM GIGGLES — DELIGHTS ${gs.wings.reduce((a, w) => a + (w.delights || 0), 0)}`); burst(e.x, e.y - 8, 6, '#ffd24a', 2.2) }
+                        if (live) { say(`THE ${(e.room || 'playroom').toUpperCase()} GIGGLES — DELIGHTS ${gs.wings.reduce((a, w) => a + (w.delights || 0), 0)}`); burst(e.x, e.y - 8, 6, '#ffd24a', 2.2) }   // #2743: the banner names the room that paid
                         break
+                    case 'room-named': {   // #2743: the room puts on its name — a bright discovery pair at the doorstep, sparkles in the badge's colour
+                        audioController.playTone(523, 0.06, 'sine', 0.05)
+                        setTimeout(() => audioController.playTone(784, 0.14, 'sine', 0.05), 90)
+                        if (live) { say(`THIS ROOM IS A ${e.kind.toUpperCase()}`); burst(LOT_X + e.c * TILE + 8, LOT_Y + e.r * TILE + 8, 6, e.kind === 'study' ? '#d9b23c' : '#ffd24a', 2.0) }
+                        break
+                    }
                     case 'rel-up':
                         audioController.playTone(659, 0.07, 'sine', 0.05)
                         setTimeout(() => audioController.playTone(988, 0.14, 'sine', 0.05), 90)
@@ -1673,7 +1679,21 @@ const HomebodyGame = () => {
                         labelInk: count(jr.x + 50, jr.y, jr.x + 68, jr.y + 8, labelHue),
                         countInk: count(jr.x + 68, jr.y, jr.x + 92, jr.y + 8, hueOf('#f2c14e', 90)),
                     } : null
-                    return { k: +k.toFixed(3), rows, bands, jar }
+                    // #2743: the door badges at phone scale — same compositor method
+                    // as the jar row (#2729): aim at roomBadges(gs), the one derivation
+                    // the painter uses, so the probe can't chase a stale seat. Checks
+                    // the ~14px glyph survives the blur and the ramp track paints.
+                    const rb = roomBadges(gs).map((b) => {
+                        const bx = LOT_X + b.c * TILE, by = LOT_Y + b.r * TILE
+                        const hue = hueOf(b.kind === 'study' ? '#d9b23c' : '#ffd24a', 70)
+                        return {
+                            kind: b.kind, p: +b.p.toFixed(3), n: b.n,
+                            glyph: count(bx + 5, by + 2, bx + 19, by + 11, hue),
+                            rampTrack: count(bx + 5, by + 12, bx + 19, by + 14, (d, i) => at(d, i) && d[i] < 90 && d[i + 1] < 70 && d[i + 2] < 40),
+                            rampFill: b.p > 0 ? count(bx + 5, by + 12, bx + 5 + Math.ceil(14 * b.p), by + 14, hue) : 0,
+                        }
+                    })
+                    return { k: +k.toFixed(3), rows, bands, jar, badges: rb }
                 },
                 hash: () => (gs ? stateHash(gs) : 0),
             }
