@@ -1,0 +1,58 @@
+name: PLAICRAFT clap witness (advisory, #1711)
+
+# Line-3 machine evidence ("audio lines up with the frames to within ±50 ms")
+# can only come from a STRICT `--witness` run of plaicraft:clap — a contended
+# witness goes RED by design (#2654: re-witness, never launder). All week this
+# box was the only witness stand and it was never quiet (three lanes + omlx),
+# so the strict run lands here instead: a hosted runner is quiet by contract,
+# every night. Fake-file capture (#2709) is proven green on the runner —
+# #2723 verified the shape via a grade-nightly dispatch.
+#
+# Advisory in every direction (#1358 blast-radius law): OUTSIDE nightly.yml,
+# its own concurrency group, continue-on-error, no secrets (the synth run
+# uploads to relaysim, the in-process production worker — JON_KEY never
+# enters) and no issue posting. A red run here is a note naming line 3, never
+# a freeze; the acceptance line closes on Jon's phone take (#2652) with these
+# greens as the machine half.
+#
+# The stamp that matters is in the log: `line-3 machine evidence: YES` from a
+# run that never skipped the ±50 ms pair gate. Quote it at the audit.
+
+on:
+  schedule:
+    - cron: '15 7 * * *'   # after grade-nightly (06:45 UTC) and the nightly verdict (06:15) — quiet window
+  workflow_dispatch:
+
+concurrency:
+  group: plaicraft-witness-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  witness:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # advisory: red here is a note, never a freeze
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24   # npm >=11, see the note in ci.yml's static job
+          cache: npm
+      - name: Strict clap witness run (#1711 line 3)
+        run: |
+          npm ci
+          npx playwright-core install --with-deps chromium
+          npm run dev > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5173/retrogames/gauntlet > /dev/null; then
+              echo "dev server up after ${i}s"; break
+            fi
+            if [ "$i" = "60" ]; then echo "dev server never came up"; cat /tmp/vite.log; exit 1; fi
+            sleep 1
+          done
+          npm run plaicraft:clap -- --witness
+      - name: Dev server log (on failure)
+        if: failure()
+        run: cat /tmp/vite.log
