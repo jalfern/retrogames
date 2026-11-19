@@ -1,79 +1,80 @@
-# STATE.md — The Forge (rewritten at close of session 355, slot b — 2026-11-19;
-# folds session 354's report: its shipped lines are on main and in git history.)
+# STATE.md — The Forge (rewritten at close of session 356, slot a — 2026-11-19;
+# session 355's reports are on main and in git history.)
 
-## SHIPPED THIS SESSION — #2783 CLOSED (FORGE: shipped)
-**FLOOR BOSS swing-aware courtesy.** PR #2785 (branch `forge/floorboss-body-sweep`);
-`static` SUCCESS, squash merged; #2783 closed `shipped`. Never-dry ladder pick:
-`idle-kick` answered `KICK FLOOR BOSS 0 weak` — the only unowned honest gap on the
-shelf (flagship stage spent; all flagship README gaps CLOSED).
+## SHIPPED THIS SESSION — CONTRA S2 MERGED (`8ada95b`, PR #2786)
+**CONTRA — the waterfall + boss gate.** #2779 stage 2 (stage 1 shipped by slot a as
+#2781). `static` SUCCESS, squash merged via rule-5. Issue #2779 stays OPEN with `next`
+(multi-stage commission #1530; S3 = the hangar run is the next slice).
 
-**Measured first, then legislated (numbers live on #2783):**
-- 10 autopilot careers: loaded pivots ghost-swing THROUGH rivals 47 knee + 40 tail
-  times; **12 of 64 courtesy ducks parked on a sweep cell of the blocking plan** —
-  courtesy became the jam it ducked for.
-- Shipped: `pullOff` skips knee/tail cells of the blocking rival's plan (`swingOf`,
-  pure, fixed order, zero footprint). Post-law: 0 ducks in any sweep, courtesy alive,
-  10/10 audited seeds still win shift 1, jams 0, twins byte-identical.
-- `floorbosscheck` §COURTESY +8 gates; `--mutate-courtesy` **killed** (mutant RED).
-- New exports for the next slice: `pivotSweep`/`swingOf`/`liveRights` + `swingBodies`
-  DEV eye (index.jsx).
-
-**Refused as measured, not assumed (spec carried on #2783 + README):**
-- Deep-rack placement at radius 2: kneeNet 142,653 reachable cells / 500 boards,
-  radius-2 net strands **2,230** — netdiff ≠ 0 (#2760's netdiff=0 stops at radius √2).
-  Needs blueprint re-placement, not a traffic tweak.
-- Turn-hold (right of way at pivots): built + measured + HELD BACK — congested floors
-  cascade (seed 107: 97 holds, missed quota; jam-escalation ×56 over-call;
-  repath-on-timeout oscillated to scores 44/21). Next slice's spec: body-reservation
-  (reserve sweep against rivals' next cells) + hold cooldown; `swingBodies` is the
-  live audit. Straight tip-space (49/10 careers) unenforced — collides with jam law.
-- Honesty note posted on #2783: an early checkpoint quoted a netdiff measurement
-  before the run finished; corrected with measured numbers in ck2. Rule-8 lesson:
-  the output before the number.
+**What landed** (`src/games/Contra/{sim,art,index}.js(x)` + `contracheck.mjs`):
+- Phases `jungle → falls → boss` through one `step()` law: ratchet camera (never
+  retreats past the gate view), water drowns (life + safe-point respawn), one-way
+  shelves with honest geometry (rise ≤ 44, gap ≤ 55 — inside the jump envelope),
+  vertical wake law (off-screen enemies sleep until they can see you).
+- Boss gate: armored core (8 hp) behind a shutter (opens 70 frames every 120),
+  two cannons (aimed rounds + steep drop-shots), spawn door capped at 1 soldier.
+  Core break → doors open, cascade +5000, `won`.
+- Autopilot wins in-game, no warps: 40/40 seeds, 0 deaths. Tactics (zigzag
+  patrol, hop flats, sidestep drops, face the charger, never turn into an inbound
+  round) + the tuning trail are in `src/games/Contra/README.md` — including a
+  reverted rule that measured *worse* (back-pedal to dodge: 0/12).
+- Gates: `contracheck` 52/52 (S1 battery + QA #2784's checks + 12 S2 laws);
+  `--mutant` names two harms (spawn-shield; sealed-core "0/6 seeds can finish");
+  `contractcheck` contra 15/15; lint mario/fps/ai; build.
+- Live: https://jalfern.com/retrogames/contra (prod bundle carries S2 strings).
 
 ## PLAYABLE
-`/retrogames/floor-boss` — unchanged surface; courtesy bays now dodge the rival's
-sweep. `/retrogames/contra` joined the shelf this afternoon (slot a, #2781/#2784).
+`/retrogames/contra` is now a full two-stage run: jungle, waterfall climb, boss
+gate, win screen. Everything else on the shelf unchanged (floor-boss #2783 by slot b).
 
 ## BOARD
-- **#1711 (open, `next`)** — S1 waits ONLY on Jon's ≥3-pair phone clap take
-  (jonq **#2652** AWAITING, deadline 2026-11-20 01:36Z; default = keep waiting).
-  Lines 1/2/4 hold; line 3 machine half re-proven (witness schedule run
-  44567204499 green on main). Swept at claim and release; no lane-side work left.
-- **#2779 CONTRA** — slot a's building issue; S1+S1-polish merged, stage may stay
-  open (multi-stage commission #1530) — check its PR body `Part of` lines next sweep.
-- **#2783 — CLOSED shipped this session.**
+- **#2779 (open, `next`, lane:games)** — S3: the hangar run (final stage of #1530).
+  Design notes + stage specs live on the issue; sim already has the phase machine
+  and ratchet to extend.
+- **#1711 (open, `next`)** — waits ONLY on Jon's clap take (jonq #2652 AWAITING,
+  deadline 2026-11-20 01:36Z). No lane-side work left; sweep at claim.
 
 ## QUEUE (re-derive at main — never plan from a remembered snapshot)
-1. `git fetch && git checkout --detach origin/main`, then `node scripts/idle-kick.mjs`,
-   then the #1045 ladder. Expect a FLOOR BOSS weak-kick again if the lane wants the
-   next body slice — its spec is the turn-hold churn data on #2783 (body-reservation
-   + cooldown; budget a full session, it changes cadence economics and needs the
-   career/attract marks re-measured, like #2724/#2760).
-2. #1711 — sweep the store for Jon's clap take; if #2652 defaulted by then, follow
-   its recorded default.
+1. `git fetch && git checkout --detach origin/main`, `node scripts/idle-kick.mjs`,
+   then the #1045 ladder. CONTRA S3 (#2779) is the obvious big slice; budget a
+   full session (third phase + finale art + a new check section + autopilot end).
+2. #1711 — check the store for Jon's clap take; if #2652 defaulted, follow its
+   recorded default.
 
 ## QUESTIONS OUT (jonq issues, not STATE.md — #605)
-- #2652 (AWAITING, lane:platform, deadline 2026-11-20 01:36Z) — Jon's clap take or
-  waive the phone shape.
+- #2652 (AWAITING, lane:platform, deadline 2026-11-20 01:36Z) — Jon's phone-clap
+  take or waive the phone shape.
 - #2751 (AWAITING, lane:qa, deadline 2026-11-21 03:40Z) — QA focus.
-- Nothing filed from slot b this session — the slice followed spec; refusals were
-  measurement calls with numbers, not taste questions.
+- Nothing filed from slot a this session — tuning and stage design followed spec.
 
 ## HARNESS NOTES FOR THE NEXT LANE
-- `pullOff` now consults `swingOf(rival)` — a parked rival with an empty path owns
-  no swing (the filter is plan-driven); expect fewer, safer ducks (~9 vs ~64 per ten
-  careers at the audited seeds). #2700's attract-window gate still passes as-is;
-  if a future cadence law changes duck timing, re-sweep ATTRACT_SEEDS honestly.
-- Body-in-swing audits must use **commit-time (pre-tick) occupancy** — post-tick
-  positions fabricate same-cadence cross-clips (this session burned a cycle on it).
-- mutateguard refused `--mutate-*` on a dirty tree (#2047 law) — commit first, then
-  mutate; the refusal exit (1) is NOT a mutant kill.
+- **Foreign-rebase incident:** this worktree was found mid-`git rebase -i` started
+  by another process (replaying our pre-rebase tip `e70c141` onto slot b's main).
+  Aborted it, redid the rebase deliberately, verified `git status` before touching
+  anything. If you find rebase state you did not start: abort, verify PR head,
+  then act. `git rebase --continue` hangs without `GIT_EDITOR=true`.
+- **Mid-build merges of shared files are the cost of two lanes on one game.**
+  QA #2784 rewrote the same three Contra files; resolve as UNION, not side-pick:
+  the harness file kept both check suites (union = 52 checks); `--theirs`/`--ours`
+  side-picks silently drop the other lane's tests. (`checkout --theirs` also
+  no-op'd once mid-conflict — recover authoritative content via
+  `git show <sha>:<path>`.)
+- QA's world-tick msg-rotation and blue-sea pixel checks pass unchanged on S2:
+  attract paint stays jungle-phase and `drawWater` keeps the bottom band blue in
+  every phase — keep that invariant if S3 re-works the palette.
+- Core-window tuning that shipped (README has the full trail): hp 8, window
+  open 120/190, gun cadence 170+rnd·110 @ speed 2.0, hero patrol band
+  x∈[136,158]. Initial hp 20 was provably unwinnable by the honest-percept
+  autopilot — that number is the floor to re-measure, not to re-guess.
+- Mutant runs rewrite tracked files in place: never `git add` while one is live
+  (mutateguard stamps `.mutant-running`; check `node scripts/lib/mutateguard.mjs --check`).
 
-## SLOT B LOG
-Claimed #1711 by warden target → swept clean → released to `next` with evidence.
-Filed POLISH #2783 from the never-dry kick, claimed, built in
-`retrogames-forge-floorboss-body` (dir vanished mid-session — branch safe on origin;
-worktree recreated by the merge lane, prune stale registrations with
-`git worktree prune` if it complains). Gates: floorbosscheck all green ×2 + mutant
-kill + lint(mario/fps/ai) + eslint + build green. Merged via rule-5 command.
+## SLOT A LOG
+Warden target #2783 refused (slot b held it — they shipped it as #2785 while we
+watched). Ladder → #2779 (`next`). Built S2 sim → art → shell → harness; tuning
+loop moved autopilot from 4/12 to 40/40 (levers + reverted rule, all on #2779
+ck1/ck2). Collision-rebased onto main mid-session after #2784/#2785 landed;
+all gates re-run green at the rebased tip; merged via rule-5; STATE committed
+directly to main (established pattern); slot parked (`statepark park a`).
+Dev server for slot a was on :5173 (stopped at close). Worktree
+`~/Dev/retrogames-forge-contra-waterfall` left detached at main — purge when idle.
