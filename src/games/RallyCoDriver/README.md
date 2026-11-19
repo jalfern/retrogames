@@ -143,6 +143,11 @@ different seed → different state.
   expose it. rallylinkcheck tier-8 static audit +7 (43 → 50): import, open
   after badge, close on stop, hooks, export, records-nothing honesty,
   one-bar markup. RED on the pre-fix source (the natural mutant).
+ - #1711 live take proof: `npm run cooptakes -- --game=rally` drives a
+   `?seat=model` run phone-shaped (consent gate, seed-birth recorder, a full
+   pace-brain lap), lands the take in relaysim and replay-verifies it through
+   `plaicraft:evidence` — and the take says so honestly: seat 0 stays `model`
+   (the #2058 humanSeats:false opt-out proven live, not just pinned).
 - #1427 depth shipped: a checkpoint clock (one time-control mark per lap at
   the midpoint of the stage's longest straight — `controlS` is pure geometry,
   far from any corner, weather-stable; crossings stamp S-splits, echoed as a

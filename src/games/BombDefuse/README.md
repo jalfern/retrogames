@@ -61,6 +61,10 @@ kwick→quick; 3-4 letters 1 edit, 5+ two — "pear" stays silent) and the wire
 pair hears its own slips (wier), so "cut the green wier" coaches the wire,
 not the needle; defusecheck's voice-grammar + accent-tolerance battery pin
 every rung (#1812 item 9, #2363), including the documented HEAT→seat cost.
+Live-path proof (#1711): `npm run cooptakes -- --game=bd` drives this spine
+phone-shaped — gate up at start, recorder at seed-birth, the fuse ledger ending
+the run naturally, the take landing in relaysim and replay-verifying through
+`plaicraft:evidence` (seat 0 honest: the #2058 human stamp).
 
 ## Online room (#1819 — `net.js` + shared Lobby)
 

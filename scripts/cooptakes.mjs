@@ -79,9 +79,9 @@ const ONLY = argv.find((a) => a.startsWith('--game='))?.split('=').slice(1).join
 // drives (`?seat=model`) and the game opted OUT of the stamp — an honest take
 // with NO human seat (the #2058 opt-out, proven live for the first time).
 const GAMES = [
-    { key: 'sos', game: 'short-order-shout', label: 'SHORT ORDER SHOUT', secs: 168, overMs: 180000, expectSeats: (seats) => seats[0] === 'human' && seats.length >= 1, seatsWhy: 'seat 0 human (#2058 stamp)' },
-    { key: 'bd', game: 'bomb-defuse', label: 'BOMB DEFUSE', secs: 168, overMs: 180000, expectSeats: (seats) => seats[0] === 'human' && seats.length >= 1, seatsWhy: 'seat 0 human (#2058 stamp)' },
-    { key: 'rally', game: 'rally-co-driver', label: 'RALLY CO-DRIVER', query: '&seat=model', secs: 130, overMs: 240000, expectSeats: (seats) => seats[0] === 'model', seatsWhy: 'seat 0 honestly model (pace brain, #2058 opt-out)' },
+    { key: 'sos', game: 'short-order-shout', route: '/short-order-shout', label: 'SHORT ORDER SHOUT', secs: 168, overMs: 180000, expectSeats: (seats) => seats[0] === 'human' && seats.length >= 1, seatsWhy: 'seat 0 human (#2058 stamp)' },
+    { key: 'bd', game: 'bomb-defuse', route: '/bomb-defuse', label: 'BOMB DEFUSE', secs: 168, overMs: 180000, expectSeats: (seats) => seats[0] === 'human' && seats.length >= 1, seatsWhy: 'seat 0 human (#2058 stamp)' },
+    { key: 'rally', game: 'rally-co-driver', route: '/rally-co-driver', label: 'RALLY CO-DRIVER', query: '&seat=model', secs: 130, overMs: 240000, expectSeats: (seats) => seats[0] === 'model', seatsWhy: 'seat 0 honestly model (pace brain, #2058 opt-out)' },
 ].filter((g) => !ONLY || g.key === ONLY)
 if (!GAMES.length) { console.error(`cooptakes: --game=${ONLY} matched nothing (sos|bd|rally)`); process.exit(2) }
 
@@ -137,7 +137,7 @@ async function phoneRun(g, { voice = true, decline = false } = {}) {
     const url = `http://localhost:${PORT}/retrogames${g.route}?store=${encodeURIComponent(BASE)}${g.query || ''}`
     await page.goto(url, { waitUntil: 'load' })
 
-    const out = { ok: false, uploaded: false, key: null, last: null, row: null, ev: null, rec: null, why: '' }
+    const out = { ok: false, uploaded: false, key: null, last: null, row: null, ev: null, rec: null, gateUp: false, why: '' }
 
     // attract -> human start (one tap; every game starts on any input)
     try { await page.waitForSelector('canvas', { timeout: 15000 }) } catch { out.why = 'canvas never mounted'; await context.close(); return out }
@@ -242,7 +242,7 @@ for (const g of cleanRuns) {
     r.info(`${g.label}: driving a full natural run (worst case ${(g.overMs / 1000) | 0} s)`)
     const res = await phoneRun(g)
     const p = (label, pass, detail = '') => r.check(`${g.key}: ${label}`, pass, detail)
-    p('the consent gate went up at human start', res.gateUp !== false)
+    p('the consent gate went up at human start', res.gateUp === true, res.why || '')
     p('both switches default OFF (Jon\'s rule)', res.offByDefault === true)
     p('SAVE refused while the WHO field was empty (#1711 audit 1)', res.nameRequired === true)
     p('recorder open at seed-birth after consent', res.armed === true, JSON.stringify({ armed: res.armed, voice: res.voiceOpen }))
