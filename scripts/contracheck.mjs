@@ -487,10 +487,11 @@ if (MUTANT) {
                 const gs = mod.makeGame(5)
                 gs.p.weapon = 'laser'
                 for (const s of gs.soldiers) s.dead = true
-                gs.soldiers.push({ x: gs.p.x + 70, y: mod.CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 })
-                gs.soldiers.push({ x: gs.p.x + 110, y: mod.CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 })
+                const a = { x: gs.p.x + 70, y: mod.CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
+                const b = { x: gs.p.x + 110, y: mod.CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
+                gs.soldiers.push(a, b)
                 for (let i = 0; i < 80; i++) { mod.step(gs, { b: i === 0 }); gs.ev.length = 0 }
-                const kills = gs.soldiers.filter((s) => s.dead).length
+                const kills = (a.dead ? 1 : 0) + (b.dead ? 1 : 0)
                 return kills <= 1 ? `HARM NAMED: the laser stops at one body (${kills}/2) - piercing was the wheel's signature, now it is just a fast rifle` : null
             },
         },
