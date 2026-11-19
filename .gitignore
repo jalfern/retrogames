@@ -30,6 +30,11 @@ data/plaicraft/*
 !data/plaicraft/sample.jsonl
 !data/plaicraft/results.json
 !data/plaicraft/export-stats.json
+# #2734: the PICK RUSH grasp-and-place corpus regenerates from seed — the
+# JSONL ride out of git (10 MB/commit), README + summary stay as the evidence
+data/pickrush/*
+!data/pickrush/README.md
+!data/pickrush/summary.json
 qa-art/
 
 # mutateguard stamps this while a --mutant run owns the worktree (AGENTS.md gotcha:
