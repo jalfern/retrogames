@@ -290,6 +290,38 @@ export function drawTurret (ctx, t) {
     ctx.restore()
 }
 
+// S3.5 arms depot: a concrete emplacement — seam-slab body, hazard-toothed
+// cap, aimed slit gun, supply hatch (it breathes open before a spill), and a
+// crack pattern that deepens to ember glow as the ten hp burn down.
+export function drawDepot (ctx, d, tick) {
+    ctx.save(); ctx.translate(Math.round(d.x), Math.round(d.y))
+    ctx.fillStyle = '#525c66'
+    ctx.fillRect(-18, -44, 36, 44)
+    ctx.fillStyle = '#3a4148'
+    ctx.fillRect(-14, -40, 28, 40)
+    for (let r = 0; r < 5; r++) ctx.fillRect(-14, -38 + r * 8, 28, 1)
+    ctx.fillStyle = '#242a30'
+    ctx.fillRect(-20, -48, 40, 5)
+    ctx.fillStyle = '#c22f28'
+    for (let i = 0; i < 5; i++) ctx.fillRect(-18 + i * 8, -48, 4, 3)
+    ctx.fillStyle = '#131a22'
+    ctx.fillRect(-10, -30, 20, 5)
+    ctx.strokeStyle = '#78838f'
+    ctx.lineWidth = 3
+    ctx.beginPath(); ctx.moveTo(0, -28); ctx.lineTo(Math.cos(d.aim) * 15, -28 + Math.sin(d.aim) * 15); ctx.stroke()
+    ctx.fillStyle = '#242a30'
+    ctx.fillRect(4, -16, 12, 14)
+    if (d.spawnT < 50) { ctx.fillStyle = '#131a22'; ctx.fillRect(5, -15, 10, 12) }
+    ctx.fillStyle = '#d8c07a'
+    ctx.fillRect(6, -9, 3, 3); ctx.fillRect(11, -9, 3, 3)
+    const dmg = 10 - d.hp
+    const CRACKS = [[-12, -34], [8, -22], [-6, -12], [14, -36], [-2, -36], [10, -8], [-14, -20], [2, -18], [-8, -26], [4, -30]]
+    ctx.fillStyle = '#181d22'
+    for (let i = 0; i < dmg; i++) { const [cx, cy] = CRACKS[i]; ctx.fillRect(cx, cy, 2, 4); ctx.fillRect(cx + 1, cy + 3, 2, 2) }
+    if (dmg >= 7 && Math.floor(tick / 6) % 2 === 0) { ctx.fillStyle = '#ff7a3c'; ctx.fillRect(-10, -30, 20, 2) }
+    ctx.restore()
+}
+
 export function drawBarrel (ctx, br) {
     ctx.save(); ctx.translate(Math.round(br.x), Math.round(br.y))
     ctx.fillStyle = C.barrel
