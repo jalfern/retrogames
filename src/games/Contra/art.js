@@ -5,6 +5,8 @@
 // viridian darks, olive soldier uniforms, the hero's white tank + blue pants
 // + red bandana, hazard-orange capsules.
 
+import { CFG } from './sim.js'
+
 const C = {
     skyTop: '#04140b', skyMid: '#0b3018', skyLow: '#17512a',
     mtnFar: '#0a2416', mtnNear: '#0e301d',
@@ -21,6 +23,13 @@ const C = {
     barrel: '#8a5a2b', barrelDark: '#5c3a17', barrelBand: '#d8c07a',
     capsule: '#ff8c1a', capsuleLit: '#ffd23c', capsuleWin: '#fff6e0',
     ink: '#f4f2e6', gold: '#ffd23c',
+    // S2 — the waterfall canyon & the gate
+    rockHi: '#5d6672', rock: '#414a58', rockLo: '#2a303c', rockDeep: '#171c26',
+    moss: '#3f7a3a', mossLit: '#5fae52',
+    waterTop: '#1c4a6e', waterMid: '#123a5c', waterLo: '#0a2440', foam2: '#7fb8d4',
+    fall: '#2a6a8f', fallLit: '#bfe4ef', fallLo: '#14405e',
+    steel: '#78838f', steelLit: '#a8b2bc', steelLo: '#4a5460', rust: '#8a5a3a',
+    coreRed: '#ff3b30', coreDark: '#701812', shutter: '#5a616c', shutterLit: '#8a929e',
 }
 
 export function drawBackground (ctx, cam, tick) {
@@ -204,7 +213,7 @@ export function drawPlayer (ctx, p, tick) {
 
 // --- enemy soldier: olive uniform, red beret; three-frame run at speed, a
 // held-rifle idle, muzzle flash + recoil on the shot (s.flash rides the sim) ---
-export function drawSoldier (ctx, s, tick) {
+export function drawSoldier (ctx, s, _tick) {
     ctx.save(); ctx.translate(Math.round(s.x), Math.round(s.y))
     const dir = Math.sign(s.walkDir || -1)
     const moving = !s.hold
@@ -377,3 +386,191 @@ export function drawHud (ctx, gs, hiscore) {
     ctx.fillStyle = gs.p.weapon === 'spread' ? C.capsuleLit : C.ink
     ctx.fillText(gs.p.weapon === 'spread' ? 'SPREAD' : 'RIFLE', 320, 4)
 }
+
+// ================================================================ S2 ════════
+// The waterfall canyon. Konami's vertical section: a slate gorge, the torrent
+// thundering down the face, moss-lipped rock shelves zigzagging to the top,
+// and the white foam line chasing you at the bottom of the screen.
+
+const h1 = (n) => { let x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x) }
+
+// Canyon backdrop — screen space (caller draws before the camera translate).
+export function drawCanyon (ctx, camY, tick) {
+    const g = ctx.createLinearGradient(0, 0, 0, 224)
+    g.addColorStop(0, '#0d1622'); g.addColorStop(0.6, '#122232'); g.addColorStop(1, '#0a141f')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, 384, 224)
+    // far wall mist bands, slow parallax
+    ctx.fillStyle = 'rgba(70,110,140,0.14)'
+    for (let i = 0; i < 4; i++) {
+        const my = ((i * 61 - camY * 0.25 + tick * 0.12) % 250 + 250) % 250 - 14
+        ctx.fillRect(0, my, 384, 6 + (i % 3) * 3)
+    }
+    // jagged rock edges both sides (stable in world space via camY)
+    const edge = (side) => {
+        ctx.fillStyle = side < 0 ? C.rockLo : C.rock
+        const step = 16
+        for (let sy = -(camY % step); sy < 224 + step; sy += step) {
+            const wy = Math.round(camY + sy)
+            const j = Math.floor(h1(side * 31 + Math.floor(wy / step) * 7) * 9)
+            const xw = 10 + j
+            if (side < 0) ctx.fillRect(0, sy, xw, step + 1)
+            else ctx.fillRect(384 - xw, sy, xw, step + 1)
+        }
+        ctx.fillStyle = C.rockDeep
+        for (let sy = -(camY % (step * 2)); sy < 224 + step * 2; sy += step * 2) {
+            const wy = Math.round(camY + sy)
+            if (side < 0) ctx.fillRect(0, sy, 4 + Math.floor(h1(wy * 1.7) * 4), step * 2)
+            else ctx.fillRect(384 - 4 - Math.floor(h1(wy * 2.3) * 4), sy, 8, step * 2)
+        }
+    }
+    edge(-1); edge(1)
+    // the cascade: broad blue face down the middle-back, streaks running down
+    ctx.fillStyle = 'rgba(30,74,110,0.55)'
+    ctx.fillRect(150, 0, 84, 224)
+    ctx.fillStyle = 'rgba(18,58,92,0.5)'
+    ctx.fillRect(138, 0, 10, 224); ctx.fillRect(236, 0, 10, 224)
+    for (let i = 0; i < 16; i++) {
+        const sx = 152 + h1(i * 11.3) * 80
+        const len = 18 + h1(i * 5.1) * 26
+        const sy = ((tick * (3 + h1(i) * 2) + h1(i * 3.7) * 240) % (224 + len)) - len
+        ctx.fillStyle = i % 3 === 0 ? 'rgba(191,228,239,0.5)' : 'rgba(120,180,210,0.35)'
+        ctx.fillRect(Math.round(sx), Math.round(sy), 2, len)
+    }
+    // spray motes near the bottom
+    for (let i = 0; i < 10; i++) {
+        const mx = ((i * 47 + tick * (1 + h1(i * 9) * 2)) % 420) - 18
+        const my = 170 + h1(i * 7.7) * 40
+        ctx.fillStyle = (Math.floor(tick / 9) + i) % 2 === 0 ? 'rgba(207,232,242,0.7)' : 'rgba(127,184,212,0.4)'
+        ctx.fillRect(Math.round(mx), Math.round(my), 1, 1)
+    }
+}
+
+// A rock shelf — one-way like the jungle walkways, but cut from the gorge wall.
+export function drawLedge (ctx, l) {
+    ctx.fillStyle = C.rockLo
+    ctx.fillRect(l.x, l.y + 2, l.w, 9)
+    ctx.fillStyle = C.rock
+    ctx.fillRect(l.x, l.y, l.w, 5)
+    ctx.fillStyle = C.rockHi
+    ctx.fillRect(l.x + 2, l.y - 1, l.w - 4, 2)
+    // moss lips, drips off the front edge
+    ctx.fillStyle = C.moss
+    for (let gx = l.x + 3; gx < l.x + l.w - 3; gx += 6) {
+        if (h1(gx * 3.1) > 0.5) ctx.fillRect(gx, l.y - 2, 3, 2)
+    }
+    ctx.fillStyle = C.mossLit
+    for (let gx = l.x + 5; gx < l.x + l.w - 4; gx += 11) {
+        if (h1(gx * 7.9) > 0.62) ctx.fillRect(gx, l.y - 3, 2, 1)
+    }
+    ctx.fillStyle = 'rgba(127,184,212,0.5)'
+    for (let gx = l.x + 8; gx < l.x + l.w - 6; gx += 23) {
+        if (h1(gx * 1.7) > 0.5) ctx.fillRect(gx, l.y + 10, 1, 3)
+    }
+}
+
+// The torrent at the bottom of the screen — screen space, drawn last.
+export function drawWater (ctx, tick) {
+    const top = 208
+    const g = ctx.createLinearGradient(0, top, 0, 224)
+    g.addColorStop(0, C.foam2); g.addColorStop(0.25, C.waterTop); g.addColorStop(1, C.waterLo)
+    ctx.fillStyle = g
+    ctx.fillRect(0, top, 384, 16)
+    // wave crests
+    ctx.fillStyle = C.foam
+    for (let x = 0; x < 384; x += 8) {
+        const bob = Math.sin(tick / 6 + x / 9) * 1.6
+        ctx.fillRect(x, Math.round(top + bob), 5, 2)
+    }
+    ctx.fillStyle = 'rgba(207,232,242,0.45)'
+    for (let x = 2; x < 384; x += 13) {
+        const bob = Math.sin(tick / 5 + x / 7 + 2) * 1.2
+        ctx.fillRect(x + ((tick % 13) - 6), Math.round(top + 4 + bob), 3, 1)
+    }
+}
+
+// The fortress gate: the wall right of the arena, cannon emplacements, the
+// spawn door, and the core — armored while its shutter rides, a red furnace
+// when it opens (stage 1's real finish).
+export function drawGateStructure (ctx, boss, tick) {
+    const open = (boss.coreT % CFG.coreCycle) < CFG.coreOpen
+    // wall blocks the whole right reach
+    ctx.fillStyle = C.steelLo
+    ctx.fillRect(168, 16, 216, 134)
+    ctx.fillStyle = C.steel
+    for (let ry = 0; ry < 7; ry++) {
+        for (let rx = 0; rx < 9; rx++) {
+            const off = (ry % 2) * 12
+            ctx.fillRect(170 + rx * 24 + off, 18 + ry * 19, 22, 17)
+        }
+    }
+    ctx.fillStyle = C.steelLit
+    ctx.fillRect(168, 16, 216, 2)
+    ctx.fillStyle = C.rust
+    for (let i = 0; i < 8; i++) {
+        const rx = 174 + Math.floor(h1(i * 13.7) * 200)
+        const ry = 22 + Math.floor(h1(i * 9.1) * 118)
+        ctx.fillRect(rx, ry, 2 + Math.floor(h1(i * 3.3) * 3), 1)
+    }
+    // bolts along the wall face
+    ctx.fillStyle = C.steelLit
+    for (let by = 24; by < 148; by += 22) { ctx.fillRect(172, by, 2, 2); ctx.fillRect(378, by, 2, 2) }
+    // cannon emplacements
+    for (const g of boss.guns) {
+        ctx.fillStyle = C.rockLo
+        ctx.fillRect(g.x - 11, g.y - 9, 22, 18)
+        ctx.fillStyle = '#141820'
+        ctx.fillRect(g.x - 7, g.y - 5, 14, 10)
+        ctx.fillStyle = recharging(g, tick) ? '#ff8c1a' : '#3c4650'
+        ctx.fillRect(g.x - 2, g.y - 2, 5, 4)
+    }
+    // spawn doors: the arch in the gate wall, and a rock postern in the left cliff
+    const d = boss.doors[0]
+    ctx.fillStyle = '#10141c'
+    ctx.fillRect(d.x - 14, d.y - 34, 28, 34)
+    ctx.fillStyle = C.steelLo
+    ctx.fillRect(d.x - 16, d.y - 36, 32, 3)
+    ctx.fillStyle = open ? '#e23b2e' : '#5a201c'
+    ctx.fillRect(d.x - 14, d.y - 34, 28, 2)
+    const d2 = boss.doors[1]
+    ctx.fillStyle = '#0c1118'
+    ctx.fillRect(d2.x - 4, d2.y - 30, 22, 30)
+    ctx.fillStyle = C.rockLo
+    ctx.fillRect(d2.x - 6, d2.y - 32, 26, 3)
+    ctx.fillStyle = C.rockHi
+    ctx.fillRect(d2.x - 6, d2.y - 32, 8, 2)
+    // the core housing
+    ctx.fillStyle = C.rockLo
+    ctx.fillRect(176, 74, 48, 44)
+    ctx.fillStyle = C.steelLo
+    ctx.fillRect(180, 78, 40, 36)
+    if (open) {
+        const pulse = Math.floor(tick / 6) % 2
+        ctx.fillStyle = pulse ? C.coreRed : '#ff6a4a'
+        ctx.fillRect(186, 84, 28, 24)
+        ctx.fillStyle = '#ffd0a0'
+        ctx.fillRect(192 + Math.floor(h1(tick % 7) * 8), 90 + Math.floor(h1(tick % 5) * 8), 4, 4)
+        ctx.fillStyle = C.coreDark
+        ctx.fillRect(186, 84, 28, 2); ctx.fillRect(186, 106, 28, 2)
+    } else {
+        ctx.fillStyle = C.shutter
+        ctx.fillRect(184, 82, 32, 28)
+        ctx.fillStyle = C.shutterLit
+        for (let sy = 84; sy < 110; sy += 4) ctx.fillRect(184, sy, 32, 2)
+        ctx.fillStyle = '#20242c'
+        ctx.fillRect(198, 82, 4, 28)
+    }
+    // damage cracks as the core weakens
+    if (boss.core <= CFG.coreHp - 3) {
+        ctx.fillStyle = '#20242c'
+        ctx.fillRect(178, 80, 1, 30); ctx.fillRect(222, 76, 1, 26)
+    }
+    if (boss.core <= CFG.coreHp / 2) {
+        ctx.fillStyle = '#ff8c1a'
+        for (let i = 0; i < 3; i++) ctx.fillRect(178 + Math.floor(h1(i * 17.3 + (tick >> 4)) * 40), 76 + Math.floor(h1(i * 7.9) * 30), 2, 2)
+    }
+}
+
+function recharging (g, tick) { return g.t < 24 && Math.floor(tick / 3) % 2 === 0 }
+
+// the arena floor before the gate (falls phase draws it as a full-width shelf)
