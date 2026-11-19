@@ -802,13 +802,29 @@ const rackAt = (gs, x, y) => gs.racks.find((r) => r.x === x && r.y === y) || nul
 // (kneeTurn above). Straight steps are free; unloaded carts never consult
 // this (their paths stay byte-identical to the classic BFS). dIn0 is the
 // cart's current facing — the knee at its very next turn is real too.
+// #2724 TURN-COUNT: drivers count their pivots, not just their cells — every
+// 90° maneuver is time, swing risk and wear, and real yards route for fewer
+// bends, not just fewer feet. Uniform BFS answers the SHORTEST knee-legal route
+// in fixed NB order, and on an open grid that answer is a staircase: when the
+// target needs dx east and dy north, the stair-step ties win by expansion order
+// and every loaded cart walks its route sideways. This planner keeps the exact
+// same physics and the exact same hop count — but among the knee-legal paths of
+// MINIMAL length it takes the one with the FEWEST pivots, ties broken by the
+// fixed NB expansion order as before. Implementation: BFS by hop layer, each
+// layer relaxed in (pivots, arrival) order; states are (cell, heading) and a
+// state is expanded when reached with fewest pivots so far (Map holds that
+// mark). V8's sort is spec-stable and the comparator is a total order (arrival
+// is unique per layer), so Node and Chrome decide identically. Unloaded legs
+// never call this and stay byte-identical (#1917 discipline); the refusal
+// semantics of #2711 are untouched — the same cells are legal, the floor just
+// drives them the way a driver would.
 export function bfsKnee(gs, fx, fy, pred, ignoreId, dIn0) {
     if (pred(fx, fy)) return []
-    const seen = new Set([`${fx},${fy},${dIn0}`])
-    let frontier = [{ x: fx, y: fy, i: dIn0, path: [] }]
-    while (frontier.length) {
+    const seen = new Map() // `x,y,i` -> fewest pivots this state has been ridden at (lower re-expands)
+    let layer = [{ x: fx, y: fy, i: dIn0, t: 0, path: [], seq: 0 }]
+    while (layer.length) {
         const next = []
-        for (const n of frontier) {
+        for (const n of layer) {
             for (let i = 0; i < 4; i++) {
                 const [dx, dy] = NB[i]
                 const [hx, hy] = NB[n.i]
@@ -818,13 +834,18 @@ export function bfsKnee(gs, fx, fy, pred, ignoreId, dIn0) {
                 const back = hx === -dx && hy === -dy // backpedal — legal: forklifts drive both ways, load trailing; the knee never sweeps the reverse
                 const turn = !back && (hx !== dx || hy !== dy)
                 if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // the knee is racked — the swing would clip it
-                const p = n.path.concat([{ x, y }])
-                if (pred(x, y)) return p
-                const k2 = `${x},${y},${back ? n.i : i}` // reversing keeps the facing — the body never rotates
-                if (!seen.has(k2)) { seen.add(k2); next.push({ x, y, i: back ? n.i : i, path: p }) }
+                const t = n.t + (turn ? 1 : 0) // #2724: count the pivot
+                const i2 = back ? n.i : i // reversing keeps the facing — the body never rotates
+                const k2 = `${x},${y},${i2}`
+                const prev = seen.get(k2)
+                if (prev !== undefined && prev <= t) continue // this state rides cheaper (or equally, first-come = fixed order)
+                seen.set(k2, t)
+                next.push({ x, y, i: i2, t, path: n.path.concat([{ x, y }]), seq: next.length })
             }
         }
-        frontier = next
+        next.sort((a, b) => a.t - b.t || a.seq - b.seq) // pivots first, fixed arrival order breaks ties — total, stable
+        for (const n of next) if (pred(n.x, n.y)) return n.path // first hit in sorted order: fewest pivots at minimal hops
+        layer = next
     }
     return null
 }
@@ -903,6 +924,27 @@ function cellClick(gs, x, y, seat = 0) {
         if (gs.score < RACK_COST) { gs.ev.push({ type: 'poor', x, y, s: seat }); return 'poor' }
         debit(gs, RACK_COST)
         gs.racks.push({ x, y, items: [], owner: seat })
+        // #2724 REPATH-ON-LAND: a rack landing on a planned route must not
+        // leave traffic driving the old geometry. Only plans the landing
+        // actually breaks re-plan — a route that walks into the new cell, or
+        // pivots a turn whose sweep diagonal it became (the live knee audit
+        // caught the crossing-only version lying: the swing clips a wall that
+        // appeared after the plan). Untouched routes keep their bytes; the
+        // pocket/knee laws guarantee the targets stay reachable, so a
+        // replan always finds a road. Deterministic, no rng, O(path) scan.
+        for (const b of gs.robots) {
+            if (!b.path.length) continue
+            let broken = false
+            let px = b.x, py = b.y, pd = b.dir
+            for (const c of b.path) {
+                if (c.x === x && c.y === y) { broken = true; break } // walks into the wall
+                const d = NB.findIndex(([ax, ay]) => c.x - px === ax && c.y - py === ay)
+                if (d !== -1 && d !== pd && d !== (pd + 2) % 4 &&
+                    px + NB[pd][0] + NB[d][0] === x && py + NB[pd][1] + NB[d][1] === y) { broken = true; break } // sweeps through it
+                px = c.x; py = c.y; pd = d
+            }
+            if (broken) repath(gs, b)
+        }
         gs.ev.push({ type: 'build', x, y, s: seat })
         me.tool = null
         return 'build'

@@ -445,6 +445,38 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
    `--mutate-knee-teach` kill, and DEV eye `kneeTeach`. Residual honest gap:
    the sweep is one cell — load overhang beyond the outer diagonal and
    forklift-lane widths stay modelled as points-plus-knee.
+   - **TURN-COUNT ROUTING + REPATH-ON-LAND shipped by this PR (#2724):**
+   loaded legs count maneuvers, not just feet. Among the knee-legal paths of
+   minimal hops, the one with the FEWEST 90° pivots wins (ties: fixed NB
+   expansion order) — the driver's law, the last "routing stays faked" half
+   of the point-cart residual. Uniform BFS answered equal-length routes in
+   expansion order, which is a staircase on open ground; drivers corner.
+   Implementation: hop-layered BFS, each layer relaxed in (pivots, arrival)
+   order, states (cell, heading) expanded at their cheapest pivot count —
+   a total-order comparator, spec-stable sort, no rng: twin runs are
+   byte-identical, and empty legs never call the planner (toRack/toArm stay
+   byte-identical classic BFS, #1917). Measured live against a stair-step
+   reference (double implementation, same board, per-plan): hop count equal
+   every plan, pivots strictly fewer in aggregate on every audited seed
+   (seed 4242 2306 vs 10875 running totals) and pivots the minority of
+   driven steps (332/2342). Win proof transfers: 14/15 single shifts (thin
+   seed 12 stays thin), knee floor 6/7, zero jams, waits flat-to-lower per
+   night; the marks moved with the physics and were re-pinned honestly
+   (career depth now measures 2–6 — post-knee chaos re-shuffles the back of
+   the ladder both ways, mean still clears four; the shop-window seeds
+   re-measured to 48/94/6/72/3, first courtesy 4719–5283). And a rack that
+   lands across a planned route now REPATHES the tick it lands — crossing or
+   turn-sweep only, plans the landing actually breaks — traffic never drives
+   claimed into a fresh wall, and the #2680 heat can no longer lie about a
+   rack cell (its stale-path hole, exposed by the new timing, closes).
+   `floorbosscheck` +12 gates incl. the double-implementation comparison and
+   twin determinism, +`--mutate-turn` (pivot-sort death restores staircases)
+   and +`--mutate-repath-land` (racks land on claimed routes) kills.
+   Residual honest gap: the sweep is still one cell (overhang and lane
+   widths stay points-plus-knee above), and `bot.dir` records movement, not
+   facing — the planner's back-pedal-facing (#2711) is invisible outside the
+   sim, so an external live knee-audit cannot reconstruct which diagonal a
+   load sweeps; filed as feedback for the engine's next visit.
   - **MANNERS POLISH shipped by this PR (#2700):** the courtesy now reads as
     law-grammar mid-duel. The duck *steers*: the body slides into the shoulder
     over one cadence (ease-out, `gs.tick` clock per #1877) with a swing impulse
