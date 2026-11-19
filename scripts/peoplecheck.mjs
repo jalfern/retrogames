@@ -125,7 +125,7 @@ import {
     TEND_HOURS, HARVEST_FOOD, HARVEST_FUN, LODGE_FUN,   // #2695: rooms with purpose — the sun law and the lodging law
     ROUTE, JAR_CAP,   // #2721: the kit-two economy window — Pip's round and the earmarked garden jar
 } from '../src/games/Homebody/sim.js'
-import { bondRows, pairStride, strollTrail, STRIDE_BOB } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail
+import { bondRows, pairStride, strollTrail, STRIDE_BOB, jarRow } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail · #2729: and the jar row
 import { promiseTell, earReact, gardenLamp, EAR_REACT, PROMISE_TIGHTEN, EAR_HUES, PAIR_HUES, LOST_RING_T } from '../src/games/Homebody/art.js'   // #2688: the go-say tells and the garden lamp are pure derivations too
 import { ripenessOf, hamperLoad, sleepingCells, wingLodged, moonlitWait, HAMPER_CAP, pauseLedger } from '../src/games/Homebody/art.js'   // #2705: the purpose view — ripeness ramp, harvest hamper, lodged panes, moonlit wait, all pure derivations (+ #2713 the pause-sheet ledger)
 import { readFileSync } from 'node:fs'
@@ -5001,6 +5001,27 @@ section('GARDEN JAR (#2721): Pip\u2019s round pays for kit two — earmarked mon
     check('the catalog card prices the NEXT kit and shows the jar', /d\.room \? \(s\.ext >= 1 \? GARDEN : EXT_ROOM\)/.test(jarArt) && /JAR \$\{s\.jar\}/.test(jarArt))
     check('the dev eye reads and fills the jar', jarIdx.includes('jar=${gs.jar}/${GARDEN.price}') && /label: 'FILL JAR'/.test(jarIdx))
     check('the registry teaches the fund', readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8').includes('garden jar'))
+
+    // #2729 — the fund READS in the panel, not just in the catalog: jarRow(s) is
+    // pure view data (painter, bondsPix probe and this gate read one derivation).
+    const gv = newRun(7)
+    check('#2729 no Pip, no jar row', jarRow(gv) === null)
+    gv.money = 999
+    adoptKid(gv)
+    const jv = jarRow(gv)
+    const kidRow = bondRows(gv).find((r) => r.key === 'kid')
+    check('#2729 Pip home, cottage still to raise — the row stands under PIP', !!jv && jv.lv === 0 && jv.label === 'JAR' && kidRow && jv.y === kidRow.y + 14, jv && `lv=${jv.lv} y=${jv.y}`)
+    gv.jar = 44
+    check('#2729 the pips track the fund (a partial fill reads partial)', jarRow(gv).lv === 1 && !jarRow(gv).pulse, `lv=${jarRow(gv).lv}`)
+    gv.jar = 89
+    check('#2729 an almost-full jar still reads 3 of 4 — the full read is earned', jarRow(gv).lv === 3 && !jarRow(gv).pulse)
+    gv.jar = JAR_CAP
+    check('#2729 a full jar reads 4 of 4 and pulses — buy the cottage now', jarRow(gv).lv === 4 && jarRow(gv).pulse === true)
+    gv.money = 0
+    check('#2729 the cottage stands — the row retires, its lesson taught', buildRoom(gv, GARDEN) && jarRow(gv) === null && gv.jar === 0, `jar=${gv.jar}`)
+    check('#2729 pin: the panel paints the row and gives Miso a lower seat', /const jr = jarRow\(s\)/.test(jarArt) && /s\.kid \? \(jr \? 96 : 82\) : 68/.test(jarArt) && /label: 'JAR'/.test(jarArt))
+    check('#2729 pin: the honest n/cap reads beside the label, amber like the fund', jarArt.includes('`${s.jar}/${JAR_CAP}`') && /ctx\.fillStyle = '#f2c14e'/.test(jarArt))
+    check('#2729 pin: the phone-scale probe aims at the same derivation, not stale seats', /const jr = jarRow\(gs\)/.test(jarIdx) && /return \{ k: \+k\.toFixed\(3\), rows, bands, jar \}/.test(jarIdx))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
