@@ -26,11 +26,12 @@
 //   rec   — the export's label law lies: a drop stops being a hit (#2734)
 //   perfect — the PERFECT ladder pays nothing (mastery reward dies, #2742)
 //   spoil — a belt-end miss stops spoiling the clean sheet (#2742)
+//   brag  — the best-take reel offers no window (#2764)
 
 import * as s from '../src/games/PickRush/sim.js'
 import { readFileSync } from 'node:fs' // §CB pins the marquee colour from the painter's source
 import { AMB_ZONES, zoneForShift, fireAt } from '../src/games/PickRush/ambience.js'
-import { BIN_VIS, makeBinVis, stepBinVis, pushBinKind, dropVoice, DROP_THUD, makeWhip, stepWhip, whipTarget, CRANE, makeCraneVis, stepCrane, FEATHER_CUE, makeFeatherCue, stepFeatherCue, TELL, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from '../src/games/PickRush/visuals.js'
+import { BIN_VIS, makeBinVis, stepBinVis, pushBinKind, dropVoice, DROP_THUD, makeWhip, stepWhip, whipTarget, CRANE, makeCraneVis, stepCrane, FEATHER_CUE, makeFeatherCue, stepFeatherCue, TELL, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE, TAKE, bestTakeWindow } from '../src/games/PickRush/visuals.js'
 import { scriptFor } from './lib/contractGames.mjs'
 import { collectRun, planner, OUTCOME_BY_EVENT, makeReplayDriver } from './pickrush-export.mjs'
 import { validateEpisode, exportEpisodes } from '../src/utils/robot/episode.js'
@@ -46,7 +47,7 @@ const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fai
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
 if (MUT) {
-    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim', 'rec', 'perfect', 'spoil', 'voice', 'ease', 'feather'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim', 'rec', 'perfect', 'spoil', 'voice', 'ease', 'feather', 'brag'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
     console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 }
 const applyMut = () => {
@@ -66,6 +67,7 @@ const applyMut = () => {
     if (MUT === 'voice') for (const t of DROP_THUD) t.hz = 120 // every bin thuds the same note — the variety dies (#2739)
     if (MUT === 'ease') CRANE.trail = 0 // the gantry stops dead again — inertia dies (#2755)
     if (MUT === 'feather') FEATHER_CUE.ticks = 0 // the first-shift lesson never arms (#2755)
+    if (MUT === 'brag') TAKE.span = 0 // the reel offers nothing — the brag dies (#2764)
 }
 applyMut()
 
@@ -1274,6 +1276,49 @@ section('EXPORT — Plaicraft episodes (#2734)')
     ok(dPlan < dAuto, `EXPORT-RNG-FREE: the corpus planner draws fewer seeded numbers than the autopilot (${dPlan} vs ${dAuto} by tick 2000) — a pad stream carries pads, not draws, so replay hinges on this`)
 }
 
+// ---------------------------------------------------------------- BRAG — best-moment reel (#2764)
+section('BRAG — best-moment reel (#2764)')
+{
+    // The over card reels the take's best 10 s — a RE-RUN of the file's own
+    // world (seed + pads). Node pins the window law against literals written
+    // INLINE (an independent scan of the same file), and proves the reel's
+    // instant pre-roll lands EXACTLY on the recorded world: every checkpoint
+    // hash inside the offered window must match when the take is re-stepped
+    // from its seed. `PICK_MUT=brag` (no window offered) reddens these by name.
+    const file = collectRun(7).file
+    const win = bestTakeWindow(file)
+    ok(!!win && win.end - win.start + 1 === TAKE.span && win.start >= 1 && win.end <= file.ticks,
+        `BRAG-WINDOW: the seed-7 take offers a ${TAKE.span}-tick window clamped inside it (${win ? `${win.start}..${win.end}` : 'none'})`)
+    // independent peak scan — most pts wins, ties to the later one, misses ignored
+    const top = file.episode.labels.reduce((a, l) => (l.ok && (!a || l.pts > a.pts || (l.pts === a.pts && l.t > a.t))) ? l : a, null)
+    ok(!!top && !!win && win.focus === top.t && win.pts === top.pts,
+        `BRAG-FOCUS: the window centres on the peak hit (independent scan: t${top && top.t} +${top && top.pts}; reel says t${win && win.focus} +${win && win.pts})`)
+    ok(!!win && (win.end === file.ticks || win.end - win.focus <= TAKE.span - TAKE.lead + 1),
+        `BRAG-LEAD: the moment rides late in its clip — payoff ≤ ${TAKE.span - TAKE.lead + 1} ticks at the tail (${win ? `focus ${win.focus}, end ${win.end} of ${file.ticks}` : 'n/a'})`)
+    // synthetic files pin the law independently of what seed 7 banked
+    const fake = (ticks, labels) => ({ ticks, episode: { labels } })
+    ok(bestTakeWindow(fake(30, [])) === null, 'BRAG-SHORT: a 30-tick take is too short to brag about — no window')
+    ok(bestTakeWindow(fake(900, []))?.focus === 900, 'BRAG-END: a take with no hits reels its closing seconds')
+    const w2 = bestTakeWindow(fake(2000, [{ t: 100, ok: true, pts: 50 }, { t: 500, ok: true, pts: 175 }, { t: 800, ok: false, pts: 0 }, { t: 1500, ok: true, pts: 175 }]))
+    ok(!!w2 && w2.focus === 1500 && w2.pts === 175 && w2.start === 1051 && w2.end === 1650,
+        `BRAG-PIN: peak pts, tie→later, misses ignored — start ${w2 && w2.start} end ${w2 && w2.end} focus ${w2 && w2.focus}`)
+    const w3 = bestTakeWindow(fake(700, [{ t: 120, ok: true, pts: 125 }]))
+    ok(!!w3 && w3.start === 1 && w3.end === 600, `BRAG-CLAMP: an early peak clamps the window to the take's head (${w3 ? `${w3.start}..${w3.end}` : 'none'})`)
+    // mid-run anchoring — the reel pre-rolls instantly to an ARBITRARY tick and
+    // must land on the take's exact world there, then stay there.
+    const gs = makeGame(file.seed >>> 0, file.players)
+    const want = new Map(file.hashes.map((h) => [h.t, h.h]))
+    let checked = 0, lie = null
+    for (let t = 0; win && t < win.end && !lie; t++) {
+        step(gs, file.slots.map((sl) => decodePad(sl.pads[t], file.method)))
+        if (gs.tick >= win.start && want.has(gs.tick)) {
+            checked++
+            if (gs.hash !== want.get(gs.tick)) lie = { tick: gs.tick, want: want.get(gs.tick), got: gs.hash }
+        }
+    }
+    ok(checked >= 18 && !lie, `BRAG-REPLAY: mid-run anchoring — ${checked} checkpoint hashes inside the window all match the take re-run from its seed${lie ? ` — lie @t${lie.tick} want ${lie.want} got ${lie.got}` : ''}`)
+}
+
 // ---------------------------------------------------------------- Chrome
 if (!NODE_ONLY) {
     const { openGame, launch, requireDevServer, Report } = await import('./lib/harness.mjs')
@@ -1956,6 +2001,30 @@ if (!NODE_ONLY) {
         await page.waitForFunction(() => window.__pickrushTest.state().mode === 'over', null, { timeout: 8000 })
         const recQuiet = await page.evaluate(() => window.__pickrushTest.epStats().saved)
         rep.check('REC-NOICE: contract drives end the shift but bank no episode', recQuiet === recBase + 1, `stored ${recQuiet}, expected ${recBase + 1}`)
+
+        // #2764 brag reel — the over card of a banked take rolls its best 10 s.
+        // The take banked above is live in memory; R re-runs it through the
+        // painter, any key cuts. Node §BRAG already proved the world matches;
+        // this proves the OFFER, the ROLL and the CUT are wired live.
+        const bragWin = await page.evaluate(() => window.__pickrushTest.replayWin())
+        rep.check('BRAG-OFFER: the over card of a banked take names a best moment inside the take',
+            !!bragWin && bragWin.start >= 1 && bragWin.end > bragWin.start && bragWin.focus >= bragWin.start && bragWin.focus <= bragWin.end,
+            JSON.stringify(bragWin))
+        await page.keyboard.press('KeyR')
+        const bragRoll = await page.evaluate(async () => {
+            const t = window.__pickrushTest
+            const mode0 = t.state().mode
+            await new Promise((r) => setTimeout(r, 250))
+            return { mode0, s: t.replayState() }
+        })
+        rep.check('BRAG-ROLL: R runs the reel — replay mode steps the re-run world tick-for-tick from the window start',
+            bragRoll.mode0 === 'replay' && !!bragRoll.s && bragRoll.s.at >= 3
+            && bragRoll.s.tick === bragRoll.s.start + bragRoll.s.at - 1 && bragRoll.s.start === bragWin.start && bragRoll.s.end === bragWin.end,
+            JSON.stringify(bragRoll))
+        await page.keyboard.press('Space')
+        const bragCut = await page.evaluate(() => ({ mode: window.__pickrushTest.state().mode, s: window.__pickrushTest.replayState() }))
+        rep.check('BRAG-CUT: any key cuts the reel back to attract and clears it',
+            bragCut.mode === 'attract' && bragCut.s === null, JSON.stringify(bragCut))
 
         rep.check('ZERO page errors', pageErrors === 0, String(pageErrors))
     } finally {

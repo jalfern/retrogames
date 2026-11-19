@@ -16,12 +16,13 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { AMB_ZONES, zoneForShift, fireAt } from './ambience'
-import { BIN_VIS, makeBinVis, stepBinVis, pushBinKind, dropVoice, makeWhip, stepWhip, whipTarget, makeCraneVis, stepCrane, makeFeatherCue, stepFeatherCue, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from './visuals'
+import { BIN_VIS, makeBinVis, stepBinVis, pushBinKind, dropVoice, makeWhip, stepWhip, whipTarget, makeCraneVis, stepCrane, makeFeatherCue, stepFeatherCue, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE, bestTakeWindow } from './visuals'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { createEpisode, saveEpisode, episodeStats } from '../../utils/robot/episode.js'
+import { decodePad } from '../../utils/recording.js'
 import {
     makeGame, step, autopilot,
     VIEW_W, VIEW_H, RAIL_Y, BELT_Y, BELT_END,
@@ -137,6 +138,8 @@ const PickRushGame = () => {
     const [end, setEnd] = useState(null)
     const [watching, setWatching] = useState(false) // #1637 WATCH: pickcheck's autopilot runs seat 1
     const watchingRef = useRef(false)
+    const [canWatch, setCanWatch] = useState(false) // #2764 over card: a banked take exists → offer the reel
+    const watchRef = useRef(null) // bridges the pill to the loop's watchTake
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const humanSeat2Ref = useRef(false)
@@ -234,6 +237,31 @@ const PickRushGame = () => {
             } catch { /* storage full — the take rides on localStorage policy */ }
             episode = null
         }
+
+        // #2764 brag reel — the over card offers the take's best 10 s back.
+        // The sim is seed+pads deterministic (#1142/#2734), so a replay is a
+        // RE-RUN of the file's own world: makeGame(seed), instant pre-roll on
+        // the file's pads to the window start, then the normal painter steps
+        // one tick per frame to the window end. Outside the sim's book: no
+        // recorder, no store, no hash — same law as the #2678 whip spring.
+        let rp = null // { file, start, end, focus, pts, at } while the reel rolls
+        const watchTake = (file) => {
+            const win = bestTakeWindow(file)
+            if (!win) return false
+            try {
+                gs = makeGame(file.seed >>> 0, file.players || 1)
+                const padsAt = (t) => file.slots.map((sl) => decodePad(sl.pads[t], file.method))
+                for (let t = 0; t < win.start - 1; t++) step(gs, padsAt(t))
+                parts.length = 0; landings.length = 0; boost = 0 // the reel starts clean
+                gs.ev.length = 0 // the pre-roll paints nothing (the #2755 law)
+                rp = { file, ...win, at: 0 }
+                setMode('replay')
+                audioController.playTone(880, 0.08, 'square', 0.05)
+                audioController.playTone(1320, 0.1, 'square', 0.05, 0.09)
+                return true
+            } catch { rp = null; return false }
+        }
+        watchRef.current = () => !!(lastBank && watchTake(lastBank.file)) // #2764 the pill's hand
 
         const say = (msg, col = '#ffd23f') => {
             hudRef.current.toast && (hudRef.current.toast.textContent = msg)
@@ -410,6 +438,7 @@ const PickRushGame = () => {
             const won = gs.end === 'win'
             overAt = performance.now()
             closeEpisode(won) // #2734 bank the take before the card paints
+            setCanWatch(!!lastBank) // #2764 the reel offer appears with a banked take
             setEnd({
                 won,
                 score: gs.score,
@@ -466,6 +495,9 @@ const PickRushGame = () => {
         }
         demoRewind() // the floor opens mid-shift so a load-time viewer learns at once
 
+        // #2764 cutting the reel lands on the demo loop, fresh and mid-shift.
+        const stopReplay = () => { rp = null; demoRewind(); setMode('attract') }
+
         const doSim = () => {
             ensureHum()
             const sc = screenRef.current
@@ -475,6 +507,16 @@ const PickRushGame = () => {
                 whipSim()
                 handleEvents(gs.ev)
                 demoAt++
+                return
+            }
+            if (sc === 'replay') { // #2764 the brag reel: re-run the take's best 10 s
+                if (!rp) { stopReplay(); return }
+                const t = rp.start - 1 + rp.at // pad index for the tick about to run
+                step(gs, rp.file.slots.map((sl) => decodePad(sl.pads[t], rp.file.method)))
+                whipSim() // the cable and carriage lean exactly like they did live
+                handleEvents(gs.ev) // the take's own sounds ride the reel
+                rp.at++
+                if (rp.at >= rp.end - rp.start + 1 || gs.end) stopReplay()
                 return
             }
             if (sc !== 'play') return
@@ -1020,12 +1062,35 @@ const PickRushGame = () => {
             if (lastBank) {
                 ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#9fc0d8'
                 ctx.fillText(`TAKE BANKED — HITS ${lastBank.hits} · MISSES ${lastBank.misses} · EPISODES STORED ${episodeStats().saved}`, VIEW_W / 2, 182)
+                ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#5dff8f'
+                ctx.fillText('R — SEE YOUR BEST 10s', VIEW_W / 2, 210) // #2764 the brag offer
             }
             if (tick % 60 < 40) {
                 ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#ffffff'
                 ctx.fillText('PRESS ANY KEY TO CLOCK BACK IN', VIEW_W / 2, 196)
             }
             ctx.textAlign = 'left'
+        }
+
+        // #2764 — the reel paints over the re-run world: a dashcam badge (red
+        // REC dot, house fuse-pulse cadence), a progress line along the bezel,
+        // and the moment's caption fading in over the first two seconds.
+        const paintReplay = (tick) => {
+            ctx.fillStyle = 'rgba(8,10,16,0.72)'; ctx.fillRect(6, 6, 86, 15)
+            ctx.strokeStyle = '#3a4c60'; ctx.lineWidth = 1; ctx.strokeRect(6.5, 6.5, 85, 14)
+            if (tick % 40 < 26) { ctx.fillStyle = '#ff5a4f'; circle(ctx, 14, 13.5, 3); ctx.fill() }
+            ctx.textAlign = 'left'; ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#ffffff'
+            ctx.fillText('REPLAY', 21, 17)
+            const span = Math.max(1, rp.end - rp.start + 1)
+            ctx.fillStyle = '#2c3a4a'; ctx.fillRect(8, VIEW_H - 9, VIEW_W - 16, 2)
+            ctx.fillStyle = '#ffd23f'; ctx.fillRect(8, VIEW_H - 9, Math.round((VIEW_W - 16) * rp.at / span), 2)
+            if (rp.at < 150) {
+                ctx.save()
+                ctx.globalAlpha = Math.min(1, (150 - rp.at) / 45)
+                ctx.textAlign = 'center'; ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#ffd23f'
+                ctx.fillText(rp.pts > 0 ? `BEST SAVE +${rp.pts}` : 'FINAL SECONDS', VIEW_W / 2, 58)
+                ctx.restore()
+            }
         }
 
         const paint = () => {
@@ -1074,6 +1139,7 @@ const PickRushGame = () => {
             if (flash > 0) { ctx.fillStyle = `rgba(255,60,50,${flash / 40})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); flash-- }
             if (screenRef.current === 'attract') { paintAttract(tick); attractAt++ } else attractAt = 0
             if (screenRef.current === 'over') paintOver(tick)
+            if (screenRef.current === 'replay' && rp) paintReplay(tick) // #2764 dashcam badge + progress + moment caption
             // toast
             if (hudRef.current.toastT > 0) { hudRef.current.toastT--; if (hudRef.current.toastT === 0 && hudRef.current.toast) hudRef.current.toast.textContent = '' }
             setHum(screenRef.current === 'play' || screenRef.current === 'attract', SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed, screenRef.current === 'play' ? zoneForShift(gs.shift) : 0)
@@ -1105,6 +1171,7 @@ const PickRushGame = () => {
             waveCues.length = 0 // #2223 the line's rhythm restarts with it
             perfectRun.n = 0; perfectRun.list.length = 0 // #2742 clean sheets start with the contract
             watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
+            setCanWatch(false) // #2764 the reel offer belongs to the shift you just finished
             setEnd(null)
             beginEpisode() // #2734 the shift you're about to play gets banked
             setMode('play')
@@ -1125,8 +1192,10 @@ const PickRushGame = () => {
                 startPlay()
                 return
             }
+            if (screenRef.current === 'replay') { rp = null; demoRewind(); setMode('attract'); return } // any key cuts the reel (#2764)
             if (screenRef.current === 'over') {
                 if (performance.now() - overAt < 600) return
+                if (e.code === 'KeyR' && lastBank && watchTake(lastBank.file)) return // #2764 R — watch the best 10 s
                 setMode('attract')
                 gs = makeGame(1337, 2)
                 return
@@ -1162,6 +1231,7 @@ const PickRushGame = () => {
         }
         const onPointerDown = () => {
             if (screenRef.current === 'attract') startPlay()
+            else if (screenRef.current === 'replay') { rp = null; demoRewind(); setMode('attract') } // #2764 a tap cuts the reel
             else if (screenRef.current === 'over' && performance.now() - overAt > 600) { setMode('attract'); demoRewind() }
             // #1637 WATCH: a touch on the belt means you want the claw — hand back.
             // (The WATCH pill stopPropagations its press; the pad's own keydowns
@@ -1342,6 +1412,12 @@ const PickRushGame = () => {
                 epRun: () => ({ recording: !!episode, ticks: episode ? episode.ticks : 0, hits: epHits, misses: epMisses }),
                 epLast: () => lastBank,
                 epStats: () => episodeStats(),
+                // #2764 brag-reel eyes: the window law over the banked take and
+                // the live reel state (null when nothing is rolling). watchTake()
+                // starts the reel from the last banked file, exactly like R.
+                replayWin: () => (lastBank ? bestTakeWindow(lastBank.file) : null),
+                replayState: () => (rp ? { start: rp.start, end: rp.end, focus: rp.focus, pts: rp.pts, at: rp.at, tick: gs.tick, score: gs.score } : null),
+                watchTake: () => !!(lastBank && watchTake(lastBank.file)),
                 canvas: () => canvas,
                 sim: () => gs,
                 step: (n = 1, pad = {}, pads = null) => { for (let i = 0; i < n; i++) step(gs, pads || [pad]) },
@@ -1404,6 +1480,18 @@ const PickRushGame = () => {
                 <div className="absolute bottom-8 inset-x-0 flex flex-col items-center gap-2 pointer-events-none">
                     <AttractMessage messages={PICK_ATTRACT} ms={2600} className="text-amber-200/80" />
                     <span className="font-mono font-bold tracking-wider text-amber-200/70">{WATCH_ATTRACT_HINT}</span>
+                </div>
+            )}
+            {screen === 'over' && end && canWatch && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center" style={{ bottom: '26%' }}>
+                    <button
+                        type="button"
+                        className="font-mono text-[11px] font-bold tracking-wider text-black bg-amber-300 rounded px-3 py-1"
+                        onPointerDown={(ev) => ev.stopPropagation()}
+                        onClick={(ev) => { ev.stopPropagation(); watchRef.current && watchRef.current() }}
+                    >
+                        ▶ BEST 10s
+                    </button>
                 </div>
             )}
             {screen === 'over' && end && (
