@@ -1,71 +1,51 @@
-# STATE — session 347 slot a close-out
-
-(Latest-close note: this rewrites slot b's 348 close, whose facts are folded in
-below — PICK RUSH PERFECT SHIFT `0875750` (#2742/#2745) and FLOOR BOSS
-knee-from-nose `e4ea224` (#2738/#2747) are shipped and prod-side.)
+# STATE — session 349, slot a (2026-11-19 ~06:10Z)
 
 ## Shipped this session
-- **HOMEBODY — ROOMS WITH A PERSONALITY (#2736) — PR #2740 merged `46cd4fc`, prod-verified.**
-  A standing wing reads its OWN floorboards: a Bookshelf makes it a STUDY (three
-  finished in-room reads → insight: reader +0.15 fun, house +1 content, `studied`
-  plucks), a TV/radio a PLAYROOM (Pip's fun-pick pulls to the in-room toy over
-  nearer house things; three finished in-room plays → delight: +0.2 fun, rel.kid
-  +0.5, house +1, `kid-laugh`). `archetypeOf` names rooms (bedroom > study >
-  playroom, view-only); paid-only ledger rows ride the pause sheet; open-book /
-  giggle-star badges sit at the doors. No rng timing; tallies join `stateHash`
-  INSIDE the wings loop — bare lots gain no mixes, no-tap pin 3998885235
-  re-passed untouched, 5/5 WINNABLE seeds hold. Proof: peoplecheck **1078/0**
-  (+36 §PERSONALITY); mutants die named (`onWingFloor`→`s.wings[0]` → exactly
-  the house-shelf gate red; pull→0 → gravitate+delight five red); queuecheck
-  99/99; contractcheck 14/14; eslint + lint gates + build green. Prod: live
-  chunk `index-BZ2wAyxk.js` carries both banners + ledger shapes —
-  https://jalfern.com/retrogames/homebody is the shipped sim.
-- **Docs trail:** `docs/HARNESS.md` content-verify recipe #2746 — WRONG in its
-  first form, corrected by #2748 (see catches).
+- **#2757 (merged): `cooptakes`** — live proof the co-op games put human takes in the
+  PLAICRAFT store (#1711 S1 machine half). `scripts/cooptakes.mjs` + npm alias drives
+  real shells: consent gate answered like a phone (granted / declined / silent, plus a
+  mid-run **voice revoke** at the post-run dialog), seed straight in, real key + tap
+  input, **natural game-over only**, then the take is asked of the store and
+  byte-audited (v1/v2 envelope, press counts, humanSeats, audio flag), then handed to
+  the real evidence auditor. 43/43 green: SOS ×3 seeds (natural ~3050-tick runs),
+  BD ×5 seeds at 2 players (1577 pressed pads booked — solo's stream is partner
+  cover, not a human seat), rally ×5 seeds `?seat=model` (~8400 ticks, honest
+  humanSeats:[false,true] — live proof of the #2058 opt-out). One hand mutant
+  (`sessionStore.js` ignoring `gate.strips`) caught red by the revoke axis: the mic
+  was live, the user said no at the last moment, the check saw the section ride into
+  the store, mutateguard pulled clean. README notes per game + docs/HARNESS.md para.
 
-## Board
-- Warden target #2734 REFUSED at claim (slot b live-held; shipped as #2737).
-  Ladder: #1711 skipped WAIT-state (phone take absent — `plaicraft:grade
-  --dry-run` "nothing new"; jonq #2652 AWAITING, deadline Nov 20 01:36Z,
-  default keeps waiting); steer/game-queue empty; #2732 taken by QA (#2741
-  `bot.face`); flagship stage spent → never-dry: weakestStage score 1 =
-  HOMEBODY's lone unowned gap. Filed #2736, claimed, shipped.
-- Filed QA polish pass **#2743** (named rooms short of the original — QA's next).
+## Playable now
+ unchanged from session 348 — today's PR is proof plumbing, not a new title. The
+ whole arcade's recorded-take path (co-op games → store → evidence) is now gated
+ nightly-adjacent: run `npm run cooptakes` against any dev port.
 
-## Next queue
-- Re-derive at main (`node scripts/idle-kick.mjs`) — do NOT trust this line.
-  At close: `KICK PICK RUSH -1 weak` (score from feedback naming PICK RUSH —
-  #2739 slot b's polish pass — with zero unowned README gaps; QA owns both
-  open feedbacks (#2739, #2743) while QA MASTER is live, so builders go
-  flagship/never-dry). #1711 stays WAIT until a take lands (check the store).
-  FLOOR BOSS "telegraph the knee" (STATE 346 note, unowned) remains the
-  honest games-lane candidate if the ladder reaches feedback with QA busy —
-  file POLISH first (#841).
+## Ops finding — filed as #2758
+ A reaped slot-a session's **children kept running** in the shared `opencode serve`
+ daemon tonight; the warden forked the replacement at 22:25Z and both writers shared
+ `~/Dev/retrogames-forge-plaicraft-coop-takes` for ~70 min. Mutateguard held (one
+ mutant run self-refused on the dirty tree), nothing shipped wrong, and the two
+ sessions' edits merged cleanly into one PR — but reaping should kill the process
+ group, not just opencode. Worth a small warden PR: `pkill -P` the slot's tree before
+ spawning.
 
-## Catches learned
-- **Route chunks share the ENTRY's name.** Every game compiles to
-  `assets/index-<hash>.js`; games are NOT in the entry (HTML → entry → grep is a
-  broken detector — it faked 20 min of "stale prod" while #2740 was live all
-  along). Recipe (codified HARNESS.md #2748): collect every chunk the live entry
-  references, identify the game's chunk by a marker stable since a known ship,
-  re-grep THAT for new markers; count with `grep -o | wc -l` (minified = one
-  line, `grep -c` caps at 1); a deployment `success` for the merge SHA outranks
-  any HTML edge-cache age (`x-vercel-cache: HIT` can sit minutes past a deploy).
-  Filed the wrong lesson (#2746), found ground truth, corrected same session
-  (#2748) — re-test notes against reality before codifying them.
-- **peoplecheck errands run to completion:** tick to the `satisfied` event, not
-  `while (p.use)`; deltas `[0,0,0]` named the sampling bug instantly (rule 8).
-- **The attract bot never furnishes wings** (scan meets house floor before wing
-  planks) — wing-law changes stay player-visible; demo bytes unchanged.
-- Live-drive co-presence/meal legs flake at load ~5 (failures MOVE between
-  runs); pure-sim twins green = contention per rule 3.
-- A parallel lane can remove your forge worktree while closing their session —
-  nothing local ever mattered once pushed; keep checkpoints pushed every step.
-- (Re-confirmed) remote is the source of truth; `curl -L`; content markers.
+## Open questions / board
+- **#1711 stays OPEN** — Jon's phone takes are the human half; jonq **#2652 AWAITING**
+  (deadline 2026-11-20 01:36Z, default: keep waiting). Machine half of lines 1–3 now
+  has: claptest + Gauntlet (live), co-op live takes (this), rules pinned (recordcheck),
+  nightly witness loop (plaicraft-witness-nightly).
+- Slot b: #2755 was pending merge at session-348 close — check it landed; else the
+  rule-5 loop applies.
 
-## Housekeeping
-- #2736 closed (shipped). Merged this session: #2740, #2744 (STATE v1 —
-  superseded by this v3), #2746, #2748. Filed: #2736, #2743.
-- No jonq filed this session; open questions link: #2652 (AWAITING, platform).
-- Dev server 5173 killed at close; slot-a worktree pruned by slot b's close —
-  all branches were merged/deleted as intended.
+## Next PICK candidates (slot a)
+1. **Warden process-group reap** (ops finding above) — small, self-contained, keeps
+   this exact race from shipping a wrong byte someday.
+2. #1711 S2 — if Jon answers #2652 with phone takes, grade them through the same
+   store path (the check above already audits downloaded objects).
+3. Backlog scan via `gh issue list -l forge` — the arcade needs its next title, not a
+   fourth harness check.
+
+## Rules in play
+ Rule 4 counter: this session changed no `src/games/**` game code — **1 session** of
+ harness-only work (counter resets on any game-code PR). Rule 5 merge command used
+ verbatim. Main checkout stays detached; STATE pushed as a docs-only direct commit.
