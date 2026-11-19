@@ -155,12 +155,39 @@ named gates go red. (`vis` reddens the meters AND the #2739 interiors it feeds �
   existing PIXELS-at-rest gates keep holding — the ease converges to zero.
   `PICK_MUT=ease` reddens 4 named gates, `PICK_MUT=feather` reddens 2.
 
+## Brag reel — watch your best 10s back (#2764 — QA polish, #2755's stretch item)
+
+- **The offer.** A banked take (#2734) is now braggable: the over card adds
+  `R — SEE YOUR BEST 10s` (and a ▶ BEST 10s pill for thumbs) whenever a take
+  exists. The window law (`bestTakeWindow` in `visuals.js`): focus = the peak
+  hit (most pts, ties to the later one), or the closing seconds if the take
+  banked no hits; a 600-tick clip with the moment ~450 in (payoff in the last
+  2.5 s), clamped inside the take; takes shorter than a minute offer nothing.
+- **The reel is a re-run, not a video.** Seed + pads ⇒ identical world
+  (#1142/#2734), so replay = `makeGame(file.seed)` + instant pre-roll on the
+  file's own pads to the window start, then the NORMAL painter steps one tick
+  per frame (`doSim`'s `replay` mode) with the whip/crane springs and the
+  take's own event SFX riding along. Dashcam badge (REC dot at the house
+  fuse-pulse cadence), progress line, `BEST SAVE +n` / `FINAL SECONDS` caption
+  fading over the first two seconds. Any key or tap cuts to attract. The reel
+  records nothing, stores nothing, and never touches hashes or the pad law.
+- **Proven:** pickcheck §BRAG (Node — WINDOW/FOCUS against an independent
+  peak scan of the seed-7 take, LEAD, SHORT/END/PIN/CLAMP synthetic law pins,
+  REPLAY mid-run anchoring: 20 checkpoint hashes inside the window all match
+  the take re-stepped from its seed) + Chrome BRAG-OFFER/ROLL/CUT on a real
+  banked take (the REC-BANKED one, live in memory — R rolls it tick-for-tick,
+  Space cuts). `PICK_MUT=brag` (no window offered) reddens 7 named gates.
+- **Over-card law kept:** Space and taps still clock back in — only `R`/the
+  pill enter the reel, so every pre-existing over-screen driver is untouched.
+
 ## Honest gaps
 
 - Plaicraft/SimReady episode export (labelled grasp-and-place episodes as
   training data) — **CLOSED by #2734** (see §Plaicraft episode export): live
   takes bank through the #1141 kit with a per-drop label track, and
   `npm run pickrush-export` produces the replay-verified corpus.
+- Watching a banked take back (#2755's stretch item) — **CLOSED by #2764**
+  (see §Brag reel).
 - **DISCLAIMER** — No second on-screen touchpad for seat 2 (Jon's rule — keyboard-only 2P).
 - Sound is event-synthesized; no per-shift ambience change yet. — **CLOSED by
   #2234** (`ambience.js`: three eras keyed to the shift — early floor with a

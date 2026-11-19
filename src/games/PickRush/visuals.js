@@ -290,3 +290,28 @@ export const ringClaim = (gs, it, me = 0) => {
     for (let s = 0; s < gs.arms.length; s++) if (s !== me && near(s)) return 'rival'
     return null
 }
+
+// #2764 — the brag reel window. A banked take (#2734) carries seed + pads +
+// labels; the over card offers the take's BEST 10 s: the peak hit (most pts,
+// ties to the later one), or the closing seconds when the take banks no hits.
+// The clip runs TAKE.span ticks with the moment ~TAKE.lead in (its payoff
+// rides the last 2.5 s), clamped inside the recording. Pure over the file —
+// no rng, no sim touch; the same law the gate re-derives INLINE.
+// Mutable like BIN_VIS so the `brag` mutant kills the offer at its root.
+export const TAKE = { span: 600, lead: 450 }
+
+export function bestTakeWindow(file) {
+    if (TAKE.span < 60) return null // dead reel — the mutant kills the offer here
+    if (!file || !Number.isInteger(file.ticks) || file.ticks < 60) return null
+    const labels = (file.episode && file.episode.labels) || []
+    let focus = null
+    for (const l of labels) {
+        if (!l || l.ok !== true) continue
+        const pts = Number.isInteger(l.pts) ? l.pts : 0
+        if (!focus || pts > focus.pts || (pts === focus.pts && l.t > focus.t)) focus = { t: l.t, pts }
+    }
+    const peak = focus ? focus.t : file.ticks
+    const end = Math.min(file.ticks, Math.max(TAKE.span, peak + (TAKE.span - TAKE.lead)))
+    const start = Math.max(1, end - TAKE.span + 1)
+    return { start, end, focus: peak, pts: focus ? focus.pts : 0 }
+}
