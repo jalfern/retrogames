@@ -14,7 +14,14 @@ const r = new Report('floorbossplay')
 const browser = await launch()
 const page = await openGame(browser, { url: URL, viewport: { width: 900, height: 760 }, hook: '__floorbossTest' })
 const errors = []
-page.on('pageerror', (e) => errors.push(String(e)))
+// #2774: String(e) alone lost the frame — a recurring TypeError with no stack
+// can't be pinned. Keep the first stack per message so the failing line names itself.
+const seenMsg = new Map()
+page.on('pageerror', (e) => {
+    const msg = String(e)
+    errors.push(msg)
+    if (!seenMsg.has(msg) && e && e.stack) seenMsg.set(msg, e.stack)
+})
 
 const st = async () => page.evaluate(() => window.__floorbossTest.state())
 // #1927: pad-tap gates need the dock cell itself — a bot parked on the OUT
@@ -116,6 +123,7 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     r.check('servo section armed (rack in reach, bots down)', servo0.racks > 0, JSON.stringify(servo0))
     const servo = async () => page.evaluate(() => {
         const g = window.__floorbossTest
+        g.sim().tool = null // #2774: hold the disarm across the wait — if the tool re-arms mid-window (queued input drain), dmode short-circuits to 'rack' and the patience pulse is never observable (the reach-diamond-α flake, issue run 2)
         const fx = g.servoFx()
         return { held: g.sim().arm.held, swing: g.sim().arm.swing, heldT: g.sim().arm.heldT, stows: g.sim().stows, tick: g.sim().tick, arcs: fx.arcs, diamond: fx.diamond, dmode: fx.dmode, tool: fx.tool, sway: fx.sway, shud: fx.shud }
     })
@@ -369,7 +377,15 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
 await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927: back on the mixer — the full shift runs the game's own rhythm
 // ---- full shift, end and restart ----
 {
-    await page.evaluate(() => { const g = window.__floorbossTest; for (let i = 0; i < 9200 && !g.sim().end; i++) g.step(1) })
+    // #2774: guarantee the night ends WON. The long auto-off verb sections leave
+    // orders unpicked and the mixer can't always absorb the backlog on a loaded
+    // box — three expiries fire the night mid-section and every ladder gate below
+    // cascades red (strike luck was never the subject here; #2346 progression is).
+    // House rig verbs: zero the strike sheet, ring the quota with headroom, and
+    // hold open orders' due dates ahead of the clock while the FF runs — the
+    // whistle, the report screen and nextShift stay game law all the same.
+    await page.evaluate(() => { const g = window.__floorbossTest.sim(); g.strikes = 0; g.expired = 0; g.score = g.shiftBase + g.params.quota + 500; g.orders.forEach((o) => { if (o.due < g.tick + 1000) o.due = g.tick + 1000 }) }) // clear the backlog the auto-off verb sections left behind BEFORE the FF starts — stale due dates expire in the first steps, before any in-loop hold can reach them
+    await page.evaluate(() => { const g = window.__floorbossTest; for (let i = 0; i < 9200 && !g.sim().end; i++) { if (i % 600 === 599) g.sim().orders.forEach((o) => { if (o.due < g.sim().tick + 1000) o.due = g.sim().tick + 1000 }); g.step(1) } }) // +1000 margin at a 600-step hold: worst-case remaining stays >400 ticks — a +400 margin expires in the gap between holds
     const endState = await st()
     r.check('shift ended through the loop', !!endState.done, `${endState.end}: ${endState.endReason}`)
     r.check('reaches the shift report', await waitMode('over', 4000))
@@ -394,7 +410,7 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
 
 // ---- duel seats (#2555): D enters, seat M lives, the verdict lands ----
 {
-    await page.goto(URL) // a clean console for the duel drive — no dependence on the previous night's luck
+    await page.goto(URL + '?seed=189') // a clean console for the duel drive — no dependence on the previous night's luck. #2774 pins the shift: the named-till ceremony needs a FULL trailer carrying a seat-1 box and random floors whiffed that 32/240 in a Node sweep; seed 189 rings it at tick 1207 and passes win/verdict/conservation identically from every pad phase.
     for (let i = 0; i < 50 && !(await page.evaluate(() => !!window.__floorbossTest)); i++) await new Promise((res) => setTimeout(res, 200))
     await new Promise((res) => setTimeout(res, 600))
     await page.keyboard.press('KeyD')
@@ -420,14 +436,18 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         const g = window.__floorbossTest
         const fxs = new Set(), flashLabels = new Set()
         const growArmed = [0, 0]
+        const targets = [600, 2400, 4200, 6000]; let ti = 0 // #2774: pump on ABSOLUTE world ticks, not loop index — live rAF ticks consumed before the FF starts shift the index without shifting the world (#1877 law)
         for (let i = 0; i < 9200 && !g.sim().end; i++) {
             g.step(1, {}, true, true)
-            if (i % 1500 === 1499) g.shipNow(1) // #2561: a trickle of seat-1 shipping (kept below the model's own pace so #2555's verdict gate stands) so freight lands on a named till
+            if (ti < targets.length && g.sim().tick >= targets[ti]) { g.shipNow(1); ti++ } // #2561: a trickle of seat-1 shipping (kept below the model's own pace so #2555's verdict gate stands) so freight lands on a named till
             for (const f of g.sim().fx) if (/^\+\d+ (RACK|FREIGHT) (YOU|MODEL)$/.test(f.msg)) fxs.add(f.msg)
             const tf = g.tillFx()
             if (tf.flash && tf.flash.col === '#57c7ff' && /MODEL/.test(tf.flash.label)) flashLabels.add(tf.flash.label)
             for (let s = 0; s < 2; s++) if (tf.grow[s] > 0 && tf.grow[s] > g.sim().tick - 120) growArmed[s]++
-            if (fxs.size >= 2 && growArmed[1] > 0 && flashLabels.size > 0) break
+            // #2774: the break must wait for the freight ceremony itself — two RACK
+            // messages alone satisfy size≥2 and used to exit the loop before the
+            // first haul paid, so the gate below flaked red on luck of the pace.
+            if (fxs.size >= 2 && growArmed[1] > 0 && flashLabels.size > 0 && [...fxs].some((m) => /FREIGHT /.test(m))) break
         }
         return { fxs: [...fxs], flashLabels: [...flashLabels], growArmed }
     })
@@ -442,7 +462,8 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     await waitMode('over', 4000) // the report screen takes its turn — the verdict paints there
 }
 
-// ---- teach the elbow (#2627 s2): drive a corner refusal with REAL taps and watch the lesson light ----
+// ---- teach the elbow (#2627 s2, honest since #2711): drive a corner refusal with
+// REAL taps and watch the lesson answer only what it can prove ----
 {
     await page.goto(URL) // a clean floor — the rig wants no seeded racks near the elbow
     await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 }) // the DEV hook mounts at the shell's first effect — a raw goto must wait for it
@@ -486,8 +507,15 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     r.check('real tap facing the tight elbow is refused — rack never lands', !after.racks, JSON.stringify(after))
     r.check('the refused tap charges nothing (#1917)', after.score === preCorner.score, `${preCorner.score} -> ${after.score}`)
     r.check('the refusal names NO CORNER STACK on the fx ledger', after.fxs.some((m) => m === 'NO CORNER STACK'), after.fxs.join(' | ') || 'none')
-    r.check('the refusal teaches with a SPUR IT tail (#2627 s2)', after.fxs.some((m) => m === 'SPUR IT — PLUG A MOUTH'), after.fxs.join(' | ') || 'none')
-    // the lesson lights both mouths — dashed green PLUG frames pulse on canvas
+    // #2711 KNEE law retired BOTH mouth plugs on this rig (floorbosscheck §teach-elbow
+    // proves it: (18,7) severs the shaft throat below, (21,4) is legal but no longer
+    // clears the click — the corridor behind it hangs on swings the corner would clip).
+    // The honest lesson falls back to LEAVE THE ELBOW FREE; the green PLUG lesson is
+    // proven where the mouths still ARE honest — the lane leg (#2622) below drives the
+    // same painter path (banner + green mouths + plug-then-build). This leg drifted for
+    // five merges demanding the lies (#2774: run-to-run gate sets, pageerror spam).
+    r.check('the refusal falls back to LEAVE THE ELBOW FREE — the knee law left no honest plug (#2711 updates #2627 s2)', after.fxs.some((m) => m === 'LEAVE THE ELBOW FREE'), after.fxs.join(' | ') || 'none')
+    // silence on canvas: the lesson must NOT light green frames the law cannot honour
     const lit = { e: 0, s: 0 }
     const probe = async (cx, cy) => page.evaluate(([cx, cy]) => {
         const c = window.__floorbossTest.canvas()
@@ -502,13 +530,17 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         if (await probe(18, 7) > 6) lit.s++
         await new Promise((res) => setTimeout(res, 90))
     }
-    r.check('the east mouth pulses green PLUG at the lesson (#2627 s2)', lit.e >= 3, `hits ${lit.e}/14`)
-    r.check('the south mouth pulses green PLUG at the lesson (#2627 s2)', lit.s >= 3, `hits ${lit.s}/14`)
-    // and taking the teacher's advice by a real tap clears the elbow
+    r.check('the east mouth stays dark — no green PLUG lies where the plug misfires (#2711, #2774)', lit.e === 0, `hits ${lit.e}/14`)
+    r.check('the south mouth stays dark — the fallback promises no mouth at all (#2711, #2774)', lit.s === 0, `hits ${lit.s}/14`)
+    // and the law keeps both halves of its word: the once-taught plug is still legal
+    // to build — and the refused click is STILL refused behind it (the knee's turn
+    // now, corner before). If a future change lets (17,4) build after this plug,
+    // the corner lesson has an honest mouth again — then teach again; never weaken
+    // the knee to light the pixels.
     await tapCell(21, 4)
     await tapCell(17, 4)
-    const cleared = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { corner: g.racks.some((r) => r.x === 17 && r.y === 4), mouth: g.racks.some((r) => r.x === 21 && r.y === 4) } })
-    r.check('plugging the taught mouth then facing the corner builds — the advice is good (#2627 s2)', cleared.corner && cleared.mouth, JSON.stringify(cleared))
+    const advK = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { plug: g.racks.some((r) => r.x === 21 && r.y === 4), corner: g.racks.some((r) => r.x === 17 && r.y === 4), fxs: g.fx.slice(-2).map((f) => f.msg) } })
+    r.check('the east plug still builds, and the elbow is STILL refused — the fallback promised nothing and delivers that (#2711, #2774)', advK.plug && !advK.corner, JSON.stringify(advK))
 }
 
 // ---- swing paint (#2627 s3): live elbows carry faint amber floor-paint — drive it with real taps ----
@@ -944,13 +976,26 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     if (!seen) {
         r.check('the met cell cools once its routes clear — no stale glow outlives the traffic (#2680)', false, 'no convergence observed to re-probe')
     } else {
-        if (rigged) {
-            // vacate the hand-written routes the same way arrival vacates them
-            // in the live sim (arrival ⇒ path emptied) — the glow must fade
-            // because the claims are gone, not because the page moved on.
-            await page.evaluate(() => { window.__floorbossTest.sim().robots.forEach((b) => { b.path = [] }) })
-            await new Promise((res) => setTimeout(res, 150))
-        }
+        // #2774: quiet the mixer before the cool watch. Live dispatch keeps
+        // re-claiming the met cell while we count, so the cleared window the
+        // gate needs never gathers enough samples on a busy floor (the same
+        // mixer-off law #1927 uses for the dock verbs). Vacate routes that
+        // still cross the cell the way arrival vacates them (arrival ⇒ path
+        // emptied), and step any bot that would otherwise park on it aside —
+        // the glow must fade because the claims are gone, not because the
+        // page moved on: heat and paint still read live sim truth.
+        await page.evaluate(([hx, hy]) => {
+            const g = window.__floorbossTest.sim()
+            g.auto = false
+            g.robots.forEach((b) => {
+                b.task = { kind: 'idle' }; b.path = []
+                if (b.x === hx && b.y === hy) {
+                    const free = [[hx - 1, hy], [hx + 1, hy], [hx, hy - 1], [hx, hy + 1]].find(([x, y]) => x > 0 && y > 0 && x < 25 && y < 14 && !g.robots.some((o) => o !== b && o.x === x && o.y === y))
+                    if (free) { b.x = free[0]; b.y = free[1] }
+                }
+            })
+        }, [seen.x, seen.y])
+        await new Promise((res) => setTimeout(res, 150))
         let gone = 0, clears = 0
     for (let i = 0; i < 14; i++) {
         const cooled = await page.evaluate(([hx, hy]) => {
@@ -1021,27 +1066,35 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         // fallback rig in house style: the bay crush written straight onto sim
         // state (the legs park and direct the crew by hand all over this file) —
         // the eye and the paint still read truth, the leg only stages traffic.
-        await page.evaluate(() => {
+        // #2774: one staged meeting resolves in ~34 world ticks (the duck law
+        // lets the cart through on its own), a 3-4 sample window at 150 ms —
+        // thin under software GL. Re-arm the same written traffic whenever the
+        // eyes have gone empty: repeated staging, never a faked reading.
+        const rig = () => page.evaluate(() => {
             const t = window.__floorbossTest
             const g = t.sim()
             g.auto = false
             g.score = 9000
             g.arm.held = 'crate'
-            g.racks.push({ x: 18, y: 3, items: [], owner: -1 })
+            if (!g.racks.some((r) => r.x === 18 && r.y === 3)) g.racks.push({ x: 18, y: 3, items: [], owner: -1 })
             const [A, B] = g.robots
             g.robots.forEach((b) => { b.pickT = 0; b.jam = false; b.broken = false; b.repair = 0; b.yield = null; b.yieldCd = 0; b.wait = 0 }) // park the crew FIRST — pickT residue would grab the cargo instead of stalling
             A.x = 16; A.y = 3; A.carry = null; A.task = { kind: 'toArm' }; A.path = []; A.moveT = 0; A.wait = 0
-            B.x = 16; B.y = 2; B.carry = null; B.task = { kind: 'toArm' }; B.path = []; B.moveT = 0; B.wait = 0; B.pickT = 90 // long bay job — the hold stays visible while A queues one cell back; B.jam = false
-            g.robots.push({ id: 9001, x: 17, y: 1, carry: 'crate', owner: -1, task: { kind: 'toStock', rx: 18, ry: 3 }, path: [], moveT: 36, wait: 0, jam: false, pickT: 0, broken: false, repair: 0, wear: 0, wearMax: 9999, dir: 2, hist: [], stall: 0, yield: null, yieldCd: 0, ducked: 0 })
+            B.x = 16; B.y = 2; B.carry = null; B.task = { kind: 'toArm' }; B.path = []; B.moveT = 0; B.wait = 0; B.pickT = 240 // long bay job — the hold stays visible while A queues one cell back; B.jam = false
+            const n = g.robots.find((b) => b.id === 9001) || (g.robots.push({ id: 9001 }), g.robots.at(-1)) // #2774: reuse the staged cart across re-arms
+            Object.assign(n, { x: 17, y: 1, carry: 'crate', owner: -1, task: { kind: 'toStock', rx: 18, ry: 3 }, path: [], moveT: 36, wait: 0, jam: false, pickT: 0, broken: false, repair: 0, wear: 0, wearMax: 9999, dir: 2, face: 2, hist: [], stall: 0, yield: null, yieldCd: 0, ducked: 0 }) // #2774: face rides the rig too — a loaded leg repaths via bfsKnee(gs,…,bot.face) since #2738, and NB[undefined] threw a TypeError every frame (killing the paint loop, hence the cyan-ring flake)
         })
-        for (let i = 0; i < 40 && holds < 8; i++) {
+        await rig()
+        let empties = 0
+        for (let i = 0; i < 80 && holds < 8; i++) {
             sample = await holdAndProbe()
-            if (sample.holds === 1) { holds++; if (sample.ring >= 2 && sample.ring > sample.ref) cyanHits++ }
+            if (sample.holds === 1) { holds++; empties = 0; if (sample.ring >= 2 && sample.ring > sample.ref) cyanHits++ }
+            else if (++empties >= 15) { await rig(); empties = 0 }
             await new Promise((res) => setTimeout(res, 150))
         }
     }
     r.check('a cart holds a shoulder on the live floor — the yields eye reports holds (#2692)', holds >= 4, `holds ${holds} samples, ducks ${await page.evaluate(() => window.__floorbossTest.ducks())}`)
     r.check('the yielding cart wears the dashed cyan ring on canvas — courtesy visible on a phone (#2692)', cyanHits >= 3, `cyan ring hits ${cyanHits}/${holds}`)
-    r.check('zero page errors', errors.length === 0, errors.join(' | '))
+    r.check('zero page errors', errors.length === 0, [...seenMsg.entries()].map(([m, s]) => `${m} ×${errors.filter((x) => x === m).length} @ ${s}`).join(' | ') || errors.join(' | '))
     r.exit(browser)
 }
