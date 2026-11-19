@@ -29,9 +29,14 @@
 //
 // Consent axes (the S1 line-4 shape, game-side):
 //   declined — a refused gate records NOTHING and the store count does not move.
-//   silent   — motion yes + voice no lands a v1 take with audio:false.
+//   silent   — motion yes + voice no lands a v1 take with audio:false (the mic
+//              never opened — consent is asked BEFORE capture).
+//   revoke   — voice granted, mic open, then REVOKED mid-run (the consent entry
+//              flipped under the live player's id, as settings would): the
+//              last-moment gate in sessionStore.js must strip the voice section —
+//              the take still lands, silent and honest (defence in depth).
 //   mutant   — `--mutant=strip` replaces sessionStore.js's last-moment strip
-//              line with one that keeps the voice section; the silent run then
+//              line with one that keeps the voice section; the REVOKE run then
 //              goes RED at exactly that check (the acceptance asks for the
 //              mutant that tries). Guarded by mutateguard; commit before running.
 //
@@ -126,7 +131,7 @@ async function browserFor(secs) {
 
 // One phone-shaped run: gate -> seed-birth recorder -> real input -> natural
 // over -> upload. `voice` decides the second switch; `decline` refuses.
-async function phoneRun(g, { voice = true, decline = false } = {}) {
+async function phoneRun(g, { voice = true, decline = false, revoke = false } = {}) {
     const b = await browserFor(g.secs)
     const context = await b.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
     await context.addInitScript(fakeMicInit)
@@ -197,19 +202,38 @@ async function phoneRun(g, { voice = true, decline = false } = {}) {
     if (!armed) { out.why = 'recorder never opened after consent'; await context.close(); return out }
 
     // real input for a few seconds: keyboard arrows + space (what VirtualControls
-    // dispatches) and pointer taps on the A button.
-    const held = { ArrowLeft: false, ArrowRight: false }
+    // dispatches) and pointer taps on the A button. The tap carries a SHORT
+    // timeout on purpose: bd's first-vent teach panel (#1812) overlays the pad
+    // while it's due, so an actionability wait can burn 30 s per tap — that
+    // starved the whole run (#1711 review: bd banked 1/1082 pads with a 3.5-min
+    // leg; the same loop minus the tap banks 229/1058 and ends naturally in
+    // 18 s). A tap that lands is a bonus; the keyboard path is what VirtualControls
+    // dispatches anyway, so it carries the proof either way.
+    let heldK = null
     for (let i = 0; i < 6; i++) {
         const k = i % 2 ? 'ArrowRight' : 'ArrowLeft'
-        if (held[k === 'ArrowLeft' ? 'ArrowRight' : 'ArrowLeft']) await page.keyboard.up(held.ArrowLeft ? 'ArrowLeft' : 'ArrowRight')
+        if (heldK && heldK !== k) await page.keyboard.up(heldK).catch(() => {})
         await page.keyboard.down(k)
-        held[k] = true
+        heldK = k
         await page.waitForTimeout(420)
         await page.keyboard.press('Space').catch(() => {})
-        await page.tap('[data-vc="a"]').catch(() => {})
+        await page.tap('[data-vc="a"]', { timeout: 1500 }).catch(() => {})
         await page.waitForTimeout(330)
     }
+    if (heldK) await page.keyboard.up(heldK).catch(() => {})
     for (const k of ['ArrowLeft', 'ArrowRight']) await page.keyboard.up(k).catch(() => {})
+
+    // mid-run revocation: the live player's voice grant flips off (what the
+    // settings would do); endRun's last-moment gate must then strip the voice.
+    if (revoke) {
+        await page.evaluate(() => {
+            const KEY = 'retrogames-consent-v1'
+            try {
+                const m = JSON.parse(localStorage.getItem(KEY) || '{}')
+                if (m.qabot) { m.qabot.voice = false; m.qabot.at = Date.now(); localStorage.setItem(KEY, JSON.stringify(m)) }
+            } catch { /* the gate below reports the miss honestly */ }
+        })
+    }
 
     // run to its NATURAL end; endRun uploads on the over path
     const lastWanted = `${g.game}-natural-over`
