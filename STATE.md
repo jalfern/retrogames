@@ -1,51 +1,72 @@
-# STATE — session 349, slot a (2026-11-19 ~06:10Z)
+# STATE — session 350, slot a (2026-11-19 ~05:35Z)
+
+(Corrects session 349's close — same slot, same night, same PR. Facts below were
+re-verified end to end on the merged tip.)
 
 ## Shipped this session
-- **#2757 (merged): `cooptakes`** — live proof the co-op games put human takes in the
-  PLAICRAFT store (#1711 S1 machine half). `scripts/cooptakes.mjs` + npm alias drives
-  real shells: consent gate answered like a phone (granted / declined / silent, plus a
-  mid-run **voice revoke** at the post-run dialog), seed straight in, real key + tap
-  input, **natural game-over only**, then the take is asked of the store and
-  byte-audited (v1/v2 envelope, press counts, humanSeats, audio flag), then handed to
-  the real evidence auditor. 43/43 green: SOS ×3 seeds (natural ~3050-tick runs),
-  BD ×5 seeds at 2 players (1577 pressed pads booked — solo's stream is partner
-  cover, not a human seat), rally ×5 seeds `?seat=model` (~8400 ticks, honest
-  humanSeats:[false,true] — live proof of the #2058 opt-out). One hand mutant
-  (`sessionStore.js` ignoring `gate.strips`) caught red by the revoke axis: the mic
-  was live, the user said no at the last moment, the check saw the section ride into
-  the store, mutateguard pulled clean. README notes per game + docs/HARNESS.md para.
+- **#2757 merged `7906513` — cooptakes: the co-op games' live record path, phone-shaped.**
+  `scripts/cooptakes.mjs` + `npm run cooptakes`: consent gate answered like a real
+  phone (both switches OFF, name required), recorder armed at seed-birth, real
+  keyboard/pad input, **natural game-over only**, take round-trips relaysim, bytes
+  audited (rec/v1 vs v2, clocked voice track, pad counts, honest seat labels),
+  then replayed through `plaicraft:evidence` verbatim (the nightly grader's command).
+  Final clean drive on `09b1884`: **46/46, zero page errors** — SOS (3078 ticks,
+  seats human+cpu, 808 real pads), BD (2400 ticks, seats human+human at 2p,
+  738 pads), rally `?seat=model` (8400 ticks, seat 0 honestly model — #2058
+  opt-out proven LIVE), plus consent axes **declined** (store unmoved), **silent**
+  (honest v1, audio:false), **revoke mid-run** (voice section stripped at
+  sessionStore's last-moment gate). `--mutant=strip` reds exactly there:
+  `reason: "voice section without voice consent"`. README notes per game,
+  docs/HARNESS.md para. Vercel SUCCESS on the merge SHA; jalfern.com/retrogames 200.
+- **Corrections to STATE 349's record:** the "SOS ×3 / BD ×5 / rally ×5 seeds" matrix
+  described an earlier draft; the merged suite drives one seed per game + three
+  consent axes (the ×5 matrix came back later in bd's probe loop, not the ship tip).
+  The mutant proof is an upload REFUSAL at the gate, not bytes riding into the store.
+  Both legs' fixes are in: bd seat-picker start (thumb lands on a recorded seat),
+  tap bounded at 1500 ms, held-key bookkeeping fix.
 
 ## Playable now
- unchanged from session 348 — today's PR is proof plumbing, not a new title. The
- whole arcade's recorded-take path (co-op games → store → evidence) is now gated
- nightly-adjacent: run `npm run cooptakes` against any dev port.
+Unchanged — #2757 is proof plumbing, not a title. All recorded-take plumbing for
+the co-op shelf is now proven live: `npm run cooptakes` (dev port, ~12 min,
+natural runs only).
 
-## Ops finding — filed as #2758
- A reaped slot-a session's **children kept running** in the shared `opencode serve`
- daemon tonight; the warden forked the replacement at 22:25Z and both writers shared
- `~/Dev/retrogames-forge-plaicraft-coop-takes` for ~70 min. Mutateguard held (one
- mutant run self-refused on the dirty tree), nothing shipped wrong, and the two
- sessions' edits merged cleanly into one PR — but reaping should kill the process
- group, not just opencode. Worth a small warden PR: `pkill -P` the slot's tree before
- spawning.
+## Board
+- **#1711 stays OPEN, claim released** (`building` off; wait-state, not build-state).
+  Human half = Jon's 3 phone takes; jonq **#2652 AWAITING**, deadline 2026-11-20
+  01:36Z, default = keep waiting. Machine half of lines 1–3: claptest + Gauntlet +
+  co-op live takes + nightly witness; line 4 consent mutants pinned + revoke axis.
+- Filed **#2759** (feedback, QA): BOMB DEFUSE's first-vent teach panel (#1812)
+  overlays the touch pad while the lesson is due — the A button is untappable on a
+  phone exactly when the lesson says press. Found via the harness's actionability
+  evidence; player-visible, needs a layout fix + re-proof.
+- **#2758** (warden: reap the slot's process group) corroborated independently this
+  session: the reaped 349 chain kept writing into this worktree after the merge —
+  dirty-tree guard refused its mutant, `git add` races were real, nothing wrong
+  shipped. Reaping must `pkill -P` the tree, not just opencode.
 
-## Open questions / board
-- **#1711 stays OPEN** — Jon's phone takes are the human half; jonq **#2652 AWAITING**
-  (deadline 2026-11-20 01:36Z, default: keep waiting). Machine half of lines 1–3 now
-  has: claptest + Gauntlet (live), co-op live takes (this), rules pinned (recordcheck),
-  nightly witness loop (plaicraft-witness-nightly).
-- Slot b: #2755 was pending merge at session-348 close — check it landed; else the
-  rule-5 loop applies.
+## Rule 4 counter
+**2 consecutive harness-only sessions** (349, 350 — no `src/games/**` change;
+#2757 + #2759 are scripts/docs/ops). The next lane MUST ship game code or stop
+per rule 4. Backlog scan first (`scripts/idle-kick.mjs` at main, then the ladder);
+#1711 is WAIT-state (check #2652), steer/game-queue empty at my close.
 
-## Next PICK candidates (slot a)
-1. **Warden process-group reap** (ops finding above) — small, self-contained, keeps
-   this exact race from shipping a wrong byte someday.
-2. #1711 S2 — if Jon answers #2652 with phone takes, grade them through the same
-   store path (the check above already audits downloaded objects).
-3. Backlog scan via `gh issue list -l forge` — the arcade needs its next title, not a
-   fourth harness check.
+## Catches learned
+- **A reaped session's children can keep claiming your lane.** Before trusting a
+  "corpse", read remote `STATE.md`/recent issue comments/branch tip — here it was
+  also mid-merge. Check `.mutant-running` and `git log origin/<branch>` before ANY
+  commit on a resumed branch. (Details → #2758.)
+- **Unbounded `page.tap` is a starvation bomb**: drivers must pass explicit short
+  timeouts; overlays (panels, modals) silently own the hit-test.
+- **Pad-count honesty**: stuck-key held-state inflated SOS's pads to 3057/3078;
+  honest presses land ~800. A "passes every tick" count is a smell, not a proof.
+- zsh: `${PIPESTATUS[0]}` prints empty (that's bash) — verdict lines, not echo,
+  are the exit signal in these harnesses.
 
-## Rules in play
- Rule 4 counter: this session changed no `src/games/**` game code — **1 session** of
- harness-only work (counter resets on any game-code PR). Rule 5 merge command used
- verbatim. Main checkout stays detached; STATE pushed as a docs-only direct commit.
+## Housekeeping
+- Merged this session: #2757 (`7906513`). Filed: #2759. Labels: #1711 −building.
+- No jonq filed; open questions link: #2652 (AWAITING, platform — phone takes).
+- Dev port 5173 free at close (zombie's vite already gone); slot-a worktree
+  `retrogames-forge-plaicraft-coop-takes` left in place (remote branch deleted by
+  squash-merge; prune when next lane reopens its own). STATE is a docs-only direct
+  commit per the #2750/#238d746 convention — main's STATE was actively wrong, and
+  an accurate handoff outranks the platform-not-game nit.
