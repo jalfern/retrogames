@@ -13,14 +13,15 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, CFG, PLATFORMS, makeGame, step, autopilot, stateHash } from './sim.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawBullet, drawGate, drawHud, drawDeathTumble, drawFireball } from './art.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss } from './sim.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawBullet, drawGate, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball } from './art.js'
 
 const SIM_MS = 1000 / 60
 
 const MESSAGES = [
-    'THE JUNGLE RUNS NORTH OF THE BASE',
+    'THE JUNGLE RUNS NORTH TO THE FALLS',
     'CATCH THE CAPSULE — SPREAD KILLS WIDER',
+    'THE CORE SHINES WHEN IT IS OPEN — HIT IT THEN',
     'ONE HIT KILLS. BOTH SIDES.',
     'PRESS ANY KEY',
 ]
@@ -36,15 +37,24 @@ const sfx = {
     spark: () => audioController.playNoise(0.05, 0.03),
     // capsule: the rise plus a bass answer (the original's jingles answer low)
     pickup: () => { audioController.playSweep(320, 980, 0.18, 'triangle', 0.08); setTimeout(() => audioController.playTone(196, 0.16, 'triangle', 0.05), 90) },
+    splash: () => audioController.playNoise(0.06, 0.025),
     respawn: () => audioController.playSweep(700, 220, 0.16, 'triangle', 0.06),
     gameover: () => audioController.playSweep(320, 60, 0.6, 'sawtooth', 0.08),
-    splash: () => audioController.playNoise(0.06, 0.025),
     // stage clear: a 4-note call answered by a bass line (ART.md bar 4 — the
     // original's fanfare is a call-and-response, not a plain triad)
     clear: () => {
-        [660, 880, 1046, 1318].forEach((f, i) => setTimeout(() => audioController.playTone(f, i === 3 ? 0.24 : 0.12, 'square', 0.07), i * 130))
-        [0, 1, 2, 3].forEach((i) => setTimeout(() => audioController.playTone([165, 220, 262, 330][i], 0.16, 'triangle', 0.05), 65 + i * 130))
+        const call = [660, 880, 1046, 1318]
+        call.forEach((f, i) => setTimeout(() => audioController.playTone(f, i === 3 ? 0.24 : 0.12, 'square', 0.07), i * 130))
+        const bass = [165, 220, 262, 330]
+        bass.forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.16, 'triangle', 0.05), 65 + i * 130))
     },
+    enter: () => audioController.playSweep(140, 340, 0.35, 'triangle', 0.07),
+    drown: () => { audioController.playNoise(0.22, 0.09); audioController.playSweep(300, 70, 0.3, 'sine', 0.07) },
+    cannon: () => { audioController.playSweep(220, 90, 0.12, 'square', 0.07); audioController.playNoise(0.06, 0.05) },
+    coreHit: () => { audioController.playTone(1180, 0.05, 'square', 0.06); audioController.playSweep(700, 1100, 0.06, 'sawtooth', 0.04) },
+    unlock: () => audioController.playTone(980, 0.07, 'triangle', 0.05),
+    door: () => audioController.playSweep(180, 120, 0.1, 'square', 0.05),
+    roar: () => { audioController.playNoise(0.9, 0.14); audioController.playSweep(120, 30, 0.9, 'sawtooth', 0.1); setTimeout(() => audioController.playSweep(90, 25, 0.6, 'triangle', 0.09), 250) },
 }
 
 export default function ContraGame () {
@@ -105,13 +115,14 @@ export default function ContraGame () {
                 }
             }
             // shoreline splash: landing on the sand lip kicks droplets off the
-            // water line just below (the sea is at the bottom edge, #2782.1)
+            // water line just below (the sea is at the bottom edge, #2782.1);
+            // in the canyon the same landing reads as torrent spray
             if (gs.p.dead === 0 && gs.p.onGround && !wasGround && gs.p.y >= CFG.ground - 0.5) {
                 sfx.splash()
                 for (let i = 0; i < 7; i++) {
                     const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.4
                     const v = 0.9 + Math.random() * 1.5
-                    part.push({ x: gs.p.x + (Math.random() - 0.5) * 12, y: CFG.ground + 8, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 12 + Math.random() * 8, c: i % 2 ? 3 : 4 })
+                    part.push({ x: gs.p.x + (Math.random() - 0.5) * 12, y: gs.phase === 'jungle' ? CFG.ground + 8 : gs.p.y + 8, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 12 + Math.random() * 8, c: i % 2 ? 3 : 4 })
                 }
             }
             wasGround = gs.p.onGround
@@ -155,12 +166,19 @@ export default function ContraGame () {
             shake = Math.max(0, shake - 0.5)
             const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0
             const sy = shake > 0 ? (Math.random() - 0.5) * shake : 0
-            drawBackground(ctx, gs.cam, gs.tick)
+            const jungle = gs.phase === 'jungle'
+            if (jungle) drawBackground(ctx, gs.cam, gs.tick)
+            else drawCanyon(ctx, gs.camY, gs.tick)
             ctx.save()
-            ctx.translate(-Math.round(gs.cam) + Math.round(sx), Math.round(sy))
-            drawGround(ctx, gs.cam, gs.tick)
-            for (const pl of PLATFORMS) drawPlatform(ctx, pl)
-            drawGate(ctx)
+            ctx.translate(-Math.round(gs.cam) + Math.round(sx), (jungle ? 0 : -Math.round(gs.camY)) + Math.round(sy))
+            if (jungle) {
+                drawGround(ctx, gs.cam, gs.tick)
+                for (const pl of PLATFORMS) drawPlatform(ctx, pl)
+                drawGate(ctx)
+            } else {
+                if (gs.phase === 'boss' && gs.boss) drawGateStructure(ctx, gs.boss, gs.tick)
+                for (const pl of FALLS_LEDGES) drawLedge(ctx, pl)
+            }
             for (const br of gs.barrels) if (!br.gone) drawBarrel(ctx, br)
             for (const t of gs.turrets) if (!t.dead) drawTurret(ctx, t)
             for (const s of gs.soldiers) if (!s.dead && s.awake) drawSoldier(ctx, s, gs.tick)
@@ -183,7 +201,8 @@ export default function ContraGame () {
                 ctx.fillRect(Math.round(q.x), Math.round(q.y), q.c === 2 ? 1 : 2, q.c === 2 ? 1 : 2)
             }
             ctx.restore()
-            drawFringe(ctx, gs.cam)
+            if (jungle) drawFringe(ctx, gs.cam)
+            else drawWater(ctx, gs.tick)
             drawHud(ctx, gs, hiscore)
 
             ctx.textBaseline = 'top'
@@ -193,7 +212,7 @@ export default function ContraGame () {
                 ctx.fillText('CONTRA', 132, 40)
                 ctx.fillStyle = '#ffd23c'
                 ctx.font = 'bold 9px "Courier New", monospace'
-                ctx.fillText('OPERATION — THE JUNGLE', 138, 76)
+                ctx.fillText('OPERATION — JUNGLE AND BASE', 136, 76)
                 // message rotation rides WORLD ticks, not paint frames: a slow
                 // software-rendered page must not cycle attract copy at half speed
                 const msg = Math.floor(gs.tick / 150) % MESSAGES.length
@@ -210,7 +229,7 @@ export default function ContraGame () {
                 ctx.fillText('STAGE CLEAR', 140, 92)
                 ctx.fillStyle = '#cdeea8'
                 ctx.font = 'bold 9px "Courier New", monospace'
-                ctx.fillText('THE BASE WAITS BEYOND THE FALLS', 108, 116)
+                ctx.fillText('THE CORE IS DUST — THE BASE IS BROKEN', 96, 116)
             } else if (screen === 'over') {
                 ctx.fillStyle = '#e23b2e'
                 ctx.font = 'bold 16px "Courier New", monospace'
@@ -300,6 +319,9 @@ export default function ContraGame () {
                 probe: () => ({
                     screen, tick: gs.tick, x: +gs.p.x.toFixed(2), y: +gs.p.y.toFixed(2), onGround: gs.p.onGround,
                     lives: gs.lives, score: gs.score, weapon: gs.p.weapon, end: gs.end, cam: Math.round(gs.cam),
+                    phase: gs.phase, camY: +gs.camY.toFixed(2),
+                    core: gs.boss ? gs.boss.core : null,
+                    coreOpen: gs.boss ? (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen : null,
                     soldiersAlive: gs.soldiers.filter((s) => !s.dead).length, turretsAlive: gs.turrets.filter((t) => !t.dead).length,
                     barrelsLeft: gs.barrels.filter((b) => !b.gone).length, pb: gs.pb.length, eb: gs.eb.length,
                     capsule: gs.capsule ? { x: +gs.capsule.x.toFixed(1), y: gs.capsule.y } : null,
@@ -311,10 +333,14 @@ export default function ContraGame () {
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
                     if (screen !== 'play') return false
+                    if (opts.warp === 'falls') warpFalls(gs)
+                    if (opts.warp === 'boss') warpBoss(gs)
                     if (opts.x !== undefined) gs.p.x = opts.x
                     if (opts.lives !== undefined) gs.lives = opts.lives
                     if (opts.weapon) gs.p.weapon = opts.weapon
                     if (opts.inv !== undefined) gs.p.inv = opts.inv
+                    if (opts.coreOpen !== undefined && gs.boss) gs.boss.coreT = opts.coreOpen ? 0 : CFG.coreOpen + 20
+                    if (opts.clearBoss && gs.boss) { gs.boss.guns.forEach((g) => { g.t = 1e9 }); gs.boss.doors.forEach((d) => { d.t = 1e9 }); gs.soldiers.length = 0 }
                     if (opts.capsuleNear) gs.capsule = { x: gs.p.x + 8, y: gs.p.y - 14, vx: 0 }
                     if (opts.kill) { gs.p.inv = 0; gs.eb.push({ x: gs.p.x + 2, y: gs.p.y - 14, vx: 0.1, vy: 0 }) }
                     if (opts.clearEnemies) for (const s of gs.soldiers) s.dead = true
@@ -324,8 +350,8 @@ export default function ContraGame () {
             mountDbg({
                 title: 'CONTRA',
                 getState: () => [
-                    `x ${gs.p.x.toFixed(0)}/${CFG.worldW}  cam ${Math.round(gs.cam)}  y ${gs.p.y.toFixed(0)}  ground ${gs.p.onGround ? 1 : 0}`,
-                    `score ${gs.score}  lives ${gs.lives}  weapon ${gs.p.weapon}  inv ${gs.p.inv}  end ${gs.end || '-'}`,
+                    `x ${gs.p.x.toFixed(0)}/${CFG.worldW}  cam ${Math.round(gs.cam)}/${Math.round(gs.camY)}  y ${gs.p.y.toFixed(0)}  ground ${gs.p.onGround ? 1 : 0}  phase ${gs.phase}`,
+                    `score ${gs.score}  lives ${gs.lives}  weapon ${gs.p.weapon}  inv ${gs.p.inv}  end ${gs.end || '-'}` + (gs.boss ? `  core ${gs.boss.core}/${CFG.coreHp} ${gs.boss.dying ? 'DYING' : (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen ? 'OPEN' : 'SHUT'}` : ''),
                     `soldiers ${gs.soldiers.filter((s) => !s.dead).length}/${gs.soldiers.length} alive  turrets ${gs.turrets.filter((t) => !t.dead).length}  barrels ${gs.barrels.filter((b) => !b.gone).length}  bullets p/e ${gs.pb.length}/${gs.eb.length}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
@@ -333,7 +359,8 @@ export default function ContraGame () {
                     { label: '+1 LIFE', run: () => { gs.lives += 1; return 'extra life' } },
                     { label: 'SPREAD NOW', run: () => { gs.p.weapon = 'spread'; return 'spread gun racked' } },
                     { label: 'CAPSULE HERE', run: () => { gs.capsule = { x: gs.p.x + 24, y: gs.p.y - 14, vx: 0 }; return 'capsule inbound' } },
-                    { label: 'WARP 400', run: () => { gs.p.x += 400; return 'jumped ahead 400' } },
+                    { label: 'TO WATERFALL', run: () => { warpFalls(gs); return 'into the canyon' } },
+                    { label: 'TO THE GATE', run: () => { warpBoss(gs); return 'before the core' } },
                 ],
             })
             exposeGame({
@@ -342,8 +369,6 @@ export default function ContraGame () {
                 reset: (seed) => {
                     gs = makeGame(seed >>> 0)
                     part.length = 0
-                    fire.length = 0
-                    wasGround = true
                     keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false
                     screen = 'play'
                     setMode('play')
@@ -360,6 +385,7 @@ export default function ContraGame () {
                     tick: gs.tick, score: gs.score, done: gs.end !== null,
                     seed: gs.seed, lives: gs.lives,
                     x: Math.round(gs.p.x), y: Math.round(gs.p.y), weapon: gs.p.weapon,
+                    phase: gs.phase, core: gs.boss ? gs.boss.core : null,
                     soldiersAlive: gs.soldiers.filter((s) => !s.dead).length,
                     hash: stateHash(gs),
                 }),

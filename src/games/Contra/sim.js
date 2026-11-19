@@ -483,6 +483,11 @@ export function step (gs, pad = PAD0) {
     })
 }
 
+// --- S2 hazards warp helpers (DEV harness/DebugKit): drop straight into a
+// vertical phase with fully constructed state (no cheat physics). ---
+export function warpFalls (gs) { enterFalls(gs) }
+export function warpBoss (gs) { enterFalls(gs); makeBoss(gs) }
+
 // --- attract autopilot: the demo drives the seat, and so does the harness's
 // "it can be won" leg. Honest-percept law: reads only what a player on the
 // screen can see (own position, visible enemies/bullets/capsules). ---

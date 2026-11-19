@@ -1,24 +1,26 @@
-// contracheck.mjs — CONTRA S1 (the jungle, #2779): boots, rules hold, it can
-// be won, and the check can be seen to fail.
+// contracheck.mjs — CONTRA (#2779): boots, rules hold, it can be won, and the
+// check can be seen to fail.
 //
 //   node scripts/contracheck.mjs               # sim core + browser leg
-//   node scripts/contracheck.mjs --mutant    # plant the spawn-shield regression
+//   node scripts/contracheck.mjs --mutant    # plant regressions, demand named harm
 //
 // The sim core runs in plain Node (sim.js is DOM-free): determinism, the 8-way
 // run-and-gun law, one-hit death + respawn mercy, the SPREAD capsule, barrel
-// chains, and a WINNABLE proof — the autopilot must clear the stage on every
-// seed it is given (1..12). The named regression guards the trap this game
-// almost shipped with: soldiers woken past the bullet-despawn edge were an
-// unshootable shield and the whole stage played itself (measured 2026-11-19:
-// autopilot won 8/8 with ZERO enemy bullets fired). `--mutant` replants that
-// exact line and demands red, naming the harm (#2142 direction).
+// chains, and the S2 laws — the waterfall ratchet camera, drowning torrent,
+// vertical wake law, the armored gate with its one weak point, and the door
+// that cannot spill an army. The WINNABLE proof drives the FULL stage (jungle +
+// falls + boss) with the honest-percept autopilot on seeds 1..12.
+// Named regressions guard the traps this game almost shipped with: soldiers
+// woken past the bullet-despawn edge (S1 — the stage played itself), and a
+// core that never opens (S2 — the stage cannot be won). `--mutant` replants
+// each and demands the harm is NAMED (#2142 direction).
 // The browser leg drives real key events through the shell: attract → seat →
-// run/jump/fire → die → restart, with zero page errors.
+// run/jump/fire → die → restart, plus a warped boss visit, with zero page errors.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss } from '../src/games/Contra/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -29,19 +31,23 @@ const MUTANT = process.argv.includes('--mutant')
 const r = new Report('contracheck')
 
 // ---------------------------------------------------------------- sim core ---
-const runSeed = (seed, policy = autopilot, max = 15000) => {
+const runSeed = (seed, policy = autopilot, max = 20000) => {
     const gs = makeGame(seed)
     const seen = { efire: 0, wakesOut: 0, booms: 0 }
     for (const s of gs.soldiers) s._woken = false
     while (!gs.end && gs.tick < max) {
         step(gs, policy(gs))
-        for (const s of gs.soldiers) if (s.awake && !s._woken) { s._woken = true; if (s.x >= gs.cam + WVIEW - 2) seen.wakesOut++ }
+        for (const s of gs.soldiers) if (s.awake && !s._woken) {
+            s._woken = true
+            if (s.x >= gs.cam + WVIEW - 2 || s.y >= gs.camY + HVIEW - 2) seen.wakesOut++
+        }
         for (const e of gs.ev) { if (e.type === 'efire') seen.efire++; if (e.type === 'boom') seen.booms++ }
         gs.ev.length = 0
     }
     return { gs, ...seen }
 }
-const WVIEW = 384 // W re-exported below; kept literal here so the wake audit is independent of sim internals
+const WVIEW = 384
+const HVIEW = 224 // view spans kept literal here so the wake audit is independent of sim internals
 
 r.check('boots: makeGame/step/stateHash are wired', typeof makeGame === 'function' && typeof step === 'function' && typeof stateHash === 'function')
 
@@ -168,24 +174,128 @@ r.check('boots: makeGame/step/stateHash are wired', typeof makeGame === 'functio
         if (wakesOut > 0) allInside = false
     }
     r.check('the stage fights back: every autopilot seed takes enemy fire', minFire >= 1, `min efire across seeds = ${minFire}`)
-    r.check("no spawn shield: every soldier wakes inside the view (inside the bullets' reach)", allInside)
+    r.check('no spawn shield: every soldier wakes inside the view, both axes (inside the bullets reach)', allInside)
 }
 
-// winnable: the autopilot must clear every seed 1..12 (not cherry-picked)
+// winnable: the autopilot must clear the FULL stage (jungle+falls+boss) on
+// every seed 1..12 — not cherry-picked, and not just the easy half of it
 {
     const fails = []
+    const phases = new Set()
     for (let s = 1; s <= 12; s++) {
         const { gs } = runSeed(s)
         if (gs.end !== 'win') fails.push(`${s}:${gs.end}@${gs.tick}`)
+        if (gs.boss) phases.add(gs.boss.core === 0 ? 'bossKilled' : 'bossReached')
     }
-    r.check('can be won: autopilot clears seeds 1..12', fails.length === 0, fails.join(' ') || '12/12')
+    r.check('can be won: autopilot clears the whole stage on seeds 1..12', fails.length === 0, fails.join(' ') || '12/12')
+    r.check('the win is earned in the arena: every seed reached and killed the gate core', phases.has('bossKilled') && !phases.has('bossReached'), [...phases].join(','))
 }
 
-// the gate at the end really ends the run; the loss path really closes it
+// ------------------------------------------------------ S2: the waterfall ---
 {
-    const g1 = makeGame(21); g1.p.x = CFG.endX - 1
-    step(g1, { right: true })
-    r.check('reaching the base gate clears the stage', g1.end === 'win')
+    const gs = makeGame(21); gs.p.x = CFG.endX - 1
+    step(gs, { right: true })
+    r.check('the gate is a door, not a wall: reaching it drops the hero into the waterfall', gs.phase === 'falls' && gs.end === null && gs.camY > 400, `phase=${gs.phase} camY=${gs.camY.toFixed(0)}`)
+}
+{
+    // the torrent: stand still in the canyon and the water takes you; the
+    // camera ratchets (never retreats); respawn lands on the last shelf.
+    const gs = makeGame(5)
+    warpFalls(gs)
+    gs.p.x = FALLS_LEDGES[0].x + 40; gs.p.y = FALLS_LEDGES[0].y
+    let drowned = false, ratchet = true, prev = gs.camY
+    const l0 = gs.lives
+    while (!drowned && gs.tick < 3000) {
+        step(gs, {})
+        if (gs.camY > prev + 1e-9) ratchet = false
+        prev = gs.camY
+        drowned = gs.ev.some((e) => e.type === 'drown')
+        gs.ev.length = 0
+    }
+    r.check('the torrent drowns a hero who stops climbing', drowned && gs.lives === l0 - 1, `lives ${l0}->${gs.lives}`)
+    r.check('camera ratchet: the falls never scroll back down', ratchet)
+    let guard = 0
+    while (gs.p.dead > 0 && guard++ < 200) step(gs, {})
+    r.check('drowning respawns on the last safe shelf, not the jungle floor', gs.p.onGround && gs.p.y > 400, `y=${gs.p.y}`)
+}
+{
+    // one-way law on the shelves: land above, pass through from below
+    const gs = makeGame(31)
+    warpFalls(gs)
+    const l1 = FALLS_LEDGES[1]
+    gs.p.x = l1.x + l1.w / 2; gs.p.y = FALLS_LEDGES[0].y
+    let landed = false
+    for (let i = 0; i < 80 && !landed; i++) {
+        if (gs.p.onGround) { step(gs, { a: true }); continue }
+        step(gs, {})
+        if (gs.p.onGround && Math.abs(gs.p.y - l1.y) < 2) landed = true
+    }
+    r.check('falls shelf: a jump from the shelf below lands on top of it', landed, `y=${gs.p.y}`)
+    const gs2 = makeGame(32)
+    warpFalls(gs2)
+    const l2 = FALLS_LEDGES[2]
+    gs2.p.x = l2.x + 10; gs2.p.y = l2.y + 20; gs2.p.onGround = false; gs2.p.vy = -1
+    step(gs2, {})
+    r.check('falls shelf is one-way: rising passes through from below', !gs2.p.onGround)
+}
+{
+    // geometry honesty: every shelf hop is inside human reach (rise <= apex 48,
+    // horizontal edge gap <= ~55 of a jump's ~74px of travel)
+    let bad = []
+    for (let i = 1; i < FALLS_LEDGES.length; i++) {
+        const a = FALLS_LEDGES[i - 1], b = FALLS_LEDGES[i]
+        const rise = a.y - b.y
+        const gap = Math.max(0, Math.max(a.x - (b.x + b.w), b.x - (a.x + a.w)))
+        if (rise > 48 || gap > 55) bad.push(`${i}:rise${rise}/gap${gap}`)
+    }
+    r.check('the climb is honest: every shelf sits within one jump of the one below', bad.length === 0, bad.join(' ') || '12 hops ok')
+}
+
+// -------------------------------------------------------- S2: the gate ------
+const mkBoss = (seed = 7) => {
+    const gs = makeGame(seed)
+    warpBoss(gs)
+    gs.p.x = 150; gs.p.y = CFG.bossFloor; gs.p.onGround = true; gs.p.vy = 0
+    gs.boss.guns.forEach((g) => { g.t = 1e9 }); gs.boss.doors.forEach((d) => { d.t = 1e9 })
+    return gs
+}
+{
+    const open = mkBoss(11); open.boss.coreT = 5
+    let hits = 0
+    for (let i = 0; i < 100; i++) { step(open, { right: true, up: true, b: true }); hits += open.ev.filter((e) => e.type === 'coreHit').length; open.ev.length = 0 }
+    r.check('the open core takes the 45-degree fire line from the wall face', hits >= 4, `hits=${hits}`)
+    const shut = mkBoss(11); shut.boss.coreT = CFG.coreOpen + 10
+    const hp0 = shut.boss.core
+    let sparks = 0, hits2 = 0
+    for (let i = 0; i < 55; i++) { step(shut, { right: true, up: true, b: true }); hits2 += shut.ev.filter((e) => e.type === 'coreHit').length; sparks += shut.ev.filter((e) => e.type === 'spark').length; shut.ev.length = 0 }
+    r.check('armor law: rounds on the SHUT shutter spark and never dent it', hits2 === 0 && sparks > 0 && shut.boss.core === hp0, `hits=${hits2} sparks=${sparks}`)
+}
+{
+    const gs = mkBoss(9); gs.boss.core = 1
+    let won = false, bonusAt = -1, scoreBefore = gs.score, sDelta = 0
+    for (let i = 0; i < 300 && !won; i++) {
+        const pre = gs.score
+        step(gs, { right: true, up: true, b: true })
+        if (gs.boss.dying > 0 && bonusAt < 0) { bonusAt = gs.tick; sDelta = gs.score - pre }
+        won = gs.end === 'win'
+        gs.ev.length = 0
+    }
+    r.check('destroying the core ends stage 1 with a big score bonus', won && sDelta >= 5000, `won=${won} bonus=${sDelta} (from ${scoreBefore})`)
+}
+{
+    const gs = makeGame(13)
+    warpBoss(gs)
+    let maxLive = 0, cannonFired = 0
+    for (let i = 0; i < 1600; i++) {
+        step(gs, {})   // hero stands and does nothing: the door must still cap, the guns must talk
+        maxLive = Math.max(maxLive, gs.soldiers.filter((s) => !s.dead).length)
+        cannonFired += gs.ev.filter((e) => e.type === 'cannon').length
+        gs.ev.length = 0
+    }
+    r.check('the door cannot spill an army (spawn cap holds)', maxLive > 0 && maxLive <= CFG.doorCap, `max live=${maxLive}`)
+    r.check('the cannons talk: the gate fires while you stand before it', cannonFired >= 4, `cannon=${cannonFired}`)
+}
+{
     const g2 = makeGame(22)
     let guard = 0
     while (!g2.end && guard++ < 9000) { g2.p.inv = 0; g2.eb.push({ x: g2.p.x, y: g2.p.y - 14, vx: 0.1, vy: 0 }); step(g2, {}) }
@@ -210,32 +320,54 @@ r.check('boots: makeGame/step/stateHash are wired', typeof makeGame === 'functio
     r.check('walkway is one-way: rising passes through from below', !gs2.p.onGround)
 }
 
-// ------------------------------------------------------------- the mutant ---
+// ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
-    const ANCHOR = 'if (s.x < gs.cam + W - 4) { s.awake = true'
-    if (!src.includes(ANCHOR)) { console.error('MUTANT anchor missing — sim moved; the plant must be re-anchored'); process.exit(2) }
-    const planted = src.replace(ANCHOR, 'if (s.x < gs.cam + W + 40) { /* MUTANT(spawn-shield): soldiers wake past the bullet-despawn edge */ s.awake = true')
-    writeFileSync(SIM, planted)
-    let bad
-    try {
-        bad = 'dynamic-import'
-        const mod = await import(`../src/games/Contra/sim.js?mutant=${Date.now()}`)
-        const gs = mod.makeGame(13)
-        let wakesOut = 0
-        const seen = []
-        for (const s of gs.soldiers) s._w = false
-        while (!gs.end && gs.tick < 15000) {
-            mod.step(gs, mod.autopilot(gs))
-            for (const s of gs.soldiers) if (s.awake && !s._w) { s._w = true; if (s.x >= 384 + gs.cam - 2) wakesOut++ }
-            gs.ev.length = 0
+    const plants = [
+        {
+            name: 'spawn-shield',
+            anchor: 'if (s.x < gs.cam + W - 4 && s.y < gs.camY + H - 4) { s.awake = true',
+            plant: 'if (s.x < gs.cam + W + 40 && s.y < gs.camY + H - 4) { /* MUTANT(spawn-shield): soldiers wake past the bullet-despawn edge */ s.awake = true',
+            harm: async (mod) => {
+                const gs = mod.makeGame(13)
+                let wakesOut = 0
+                for (const s of gs.soldiers) s._w = false
+                while (!gs.end && gs.tick < 20000) {
+                    mod.step(gs, mod.autopilot(gs))
+                    for (const s of gs.soldiers) if (s.awake && !s._w) { s._w = true; if (s.x >= 384 + gs.cam - 2 || s.y >= gs.camY + 224 - 2) wakesOut++ }
+                    gs.ev.length = 0
+                }
+                return wakesOut > 0 ? `HARM NAMED: ${wakesOut} soldiers woke beyond the bullet-despawn edge - an unshootable shield; the stage plays itself` : null
+            },
+        },
+        {
+            name: 'sealed-core',
+            anchor: 'const open = (bo.coreT % CFG.coreCycle) < CFG.coreOpen\n                if (open) {',
+            plant: 'const open = false /* MUTANT(sealed-core): the shutter never rides */\n                if (open) {',
+            harm: async (mod) => {
+                let wins = 0
+                for (let s = 1; s <= 6; s++) {
+                    const gs = mod.makeGame(s)
+                    while (!gs.end && gs.tick < 20000) { mod.step(gs, mod.autopilot(gs)); gs.ev.length = 0 }
+                    if (gs.end === 'win') wins++
+                }
+                return wins === 0 ? 'HARM NAMED: the core never opens - 0/6 seeds can finish the stage; the gate is an unwinnable wall' : null
+            },
+        },
+    ]
+    for (const p of plants) {
+        if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
+        writeFileSync(SIM, src.replace(p.anchor, p.plant))
+        let bad
+        try {
+            bad = 'dynamic-import'
+            bad = await p.harm(await import(`../src/games/Contra/sim.js?mutant=${p.name}${Date.now()}`))
+        } finally {
+            writeFileSync(SIM, src)
         }
-        bad = wakesOut > 0 ? `HARM NAMED: ${wakesOut} soldiers woke beyond the bullet-despawn edge - an unshootable shield; the stage plays itself` : null
-    } finally {
-        writeFileSync(SIM, src)
+        r.check(`mutant(${p.name}) goes RED: harm named`, bad !== null, bad || 'harm NOT named — mutant survived')
     }
-    r.check('mutant(spawn-shield) goes RED: unshootable spawns named', bad !== null, bad || 'harm NOT named — mutant survived')
-    console.log('\nmutant run: expected red on the spawn-shield line.')
+    console.log('\nmutant run: expected red on the planted lines.')
     r.exit()
 }
 
@@ -245,7 +377,7 @@ const browser = await launch()
 {
     const page = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 600 })
     const errs = []
-    page.on('pageerror', (e) => errs.push(e.message))
+    page.on('pageerror', (e) => errs.push(e.stack || e.message))
 
     const attract1 = await page.evaluate(() => window.__contraTest.probe())
     await page.waitForTimeout(700)
@@ -282,6 +414,36 @@ const browser = await launch()
     const jumped = await page.evaluate(() => window.__contraTest.probe())
     r.check('Space jumps (the A button leaves the ground)', !jumped.onGround || jumped.y < 196, `y=${jumped.y}`)
     await page.keyboard.up('ArrowRight')
+
+    // S2 through the DEV warp: the canyon paints, and the armor law holds live
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'falls' }))
+    await page.waitForTimeout(120)
+    const falls = await page.evaluate(() => window.__contraTest.probe())
+    r.check('warp: the waterfall phase paints (phase falls, camera at the bottom)', falls.phase === 'falls' && falls.camY > 400, `phase=${falls.phase} camY=${falls.camY}`)
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', x: 150, coreOpen: false, clearBoss: true }))
+    await page.waitForTimeout(80)
+    const shutCore = await page.evaluate(() => window.__contraTest.probe().core)
+    await page.keyboard.down('ArrowRight')
+    await page.keyboard.down('ArrowUp')
+    await page.keyboard.down('KeyX')
+    await page.waitForTimeout(400)
+    await page.evaluate(() => window.__contraTest.setup({ coreOpen: false }))
+    await page.waitForTimeout(300)
+    await page.keyboard.up('KeyX')
+    await page.keyboard.up('ArrowUp')
+    await page.keyboard.up('ArrowRight')
+    const afterShut = await page.evaluate(() => window.__contraTest.probe())
+    r.check('live armor law: fire on the shut shutter does not dent the core', afterShut.phase === 'boss' && afterShut.core === shutCore, `core ${shutCore} -> ${afterShut.core}`)
+    await page.evaluate(() => window.__contraTest.setup({ coreOpen: true }))
+    await page.keyboard.down('ArrowRight')
+    await page.keyboard.down('ArrowUp')
+    await page.keyboard.down('KeyX')
+    await page.waitForTimeout(500)
+    await page.keyboard.up('KeyX')
+    await page.keyboard.up('ArrowUp')
+    await page.keyboard.up('ArrowRight')
+    const afterOpen = await page.evaluate(() => window.__contraTest.probe())
+    r.check('live core law: fire through the open shutter lands hits', afterOpen.core < shutCore, `core ${shutCore} -> ${afterOpen.core}`)
 
     // force the death path through the DEV setup hook, then restart with keys
     await page.evaluate(() => window.__contraTest.setup({ lives: 1 }))

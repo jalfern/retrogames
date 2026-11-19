@@ -1,18 +1,23 @@
-# CONTRA — stage 1: the jungle
+# CONTRA — Jon's #1530 commission, staged
 
-Jon's commission (#1530: "which title joins the arcade next? — **CONTRA**",
-answered 2026-11-03, filed and built as #2779). Konami's arcade run-and-gun
-(1987), RETRO bar (docs/ART.md): 384x224 native, everything generated in code.
+Konami's arcade run-and-gun (1987), RETRO bar (docs/ART.md): 384x224 native,
+everything generated in code. Filed and built as #2779, one PR per stage:
 
-## What S1 is
+- **S1 — the jungle** (merged `8b6dd17`): horizontal scroll, 8-way run-and-gun,
+  SPREAD capsule, soldiers/turrets/TNT, attract, `contracheck`.
+- **S2 — the base** (this): the waterfall vertical section + the boss gate with
+  the destructible core — stage 1's real finish.
 
-One horizontal jungle scroll (~6 screens, 2048 world px) to the bolted base
-gate. The signature set: 8-way aim while running/jumping, one-hit death with
-three lives and respawn mercy frames, the flying SPREAD capsule (kept until you
-die), soldiers that wake inside your view and open fire within a third of a
-second, ledge gunners on the walkways, sandbag turret posts, TNT barrels that
-chain, and a STAGE CLEAR leg. Attract runs the autopilot the harness proves
-against — any key or tap takes the seat.
+## What S2 is
+
+Reaching the bolted gate at the end of the jungle drops the hero into the
+**waterfall**: a vertical canyon where the camera ratchets up and never comes
+back down, the torrent at the bottom of the screen drowns you, and one-way rock
+shelves zigzag to the top under gunners firing down. The climb opens on the
+**boss gate** — a fortress wall sealing the arena, two cannon emplacements, a
+spawn door, and one weak point: the core, armored while its shutter rides, a
+red furnace when it opens. Eight hits kill it; the gate comes apart in a chain
+of blasts, +5000, STAGE CLEAR.
 
 ## Engine notes
 
@@ -33,61 +38,76 @@ against — any key or tap takes the seat.
   seed + pad streams replay hash-identical (`stateHash` = FNV-1a over the
   rounded state; `gs.ev` is the effect stream the shell drains — events are
   deliberately NOT hashed, same law as Joust's `events`).
-- The autopilot is honest-percept: it reads only what a seated player can see
-  (own position, visible bullets/barrels/capsule). Its two law-brains are the
-  smoke run's lessons: **dodge on approach** (a bullet bearing down on the
-  lane, ahead of the knees, is jumped — the first draft read the sign
-  inverted and stood there taking hits), and **ease off the trigger short of a
-  barrel** (your own catch on a barrel 20 px ahead is a self-blast; hop the
-  body instead).
-- The spawn-shield regression (#2779's own smoke test caught it live): a
-  soldier woken at `cam + W + 12` stands *past* the bullet-despawn edge —
-  an unshootable shield. The whole stage played itself (measured: autopilot
-  8/8 seeds, ZERO enemy bullets fired). Soldiers now wake at `cam + W - 4`
-  and open fire in 10-35 ticks; `contracheck` gates both the invariant
-  ("every autopilot seed takes enemy fire") and the wake geometry itself, and
-  `--mutant` replants the exact line and demands harm be NAMED (#2142).
-- Walkways are one-way solid-topped: land from above, pass through from below,
-  `DOWN + jump` drops off.
-- Taps are latched one tick in the shell: a press shorter than the 16.7 ms
-  poll must not evaporate between frames (the harness's `press()` outran the
-  loop and the jump check went red exactly this way).
-- Audio: every action synthesized via `audioController` (rifle/spread/efire
-  blips, jump sweep, boom = noise burst + sub sweep, capsule rise, stage-clear
-  triad). Attract music stays off per the shell contract.
+- **Phases**: `gs.phase` jungle | falls | boss, one sim. The bullet
+  despawn/wake bounds are vertical (`camY`) in the falls/boss phases and
+  degenerate to S1's behaviour with `camY = 0`. `stateHash` covers
+  phase/camY/safe-point/boss so the determinism leg tests the new spine too.
+- **Ratchet camera + torrent**: the falls camera sinks only upward — auto-rise
+  0.22 px/tick plus the hero pushing it above the anchor line — and drowning
+  is feet at `camY + H - 16`. Respawn uses `gs.safe`, the last ground/shelf
+  the feet actually touched (arcade checkpoints).
+- **Honest climb**: `FALLS_LEDGES` spacing is gated — every hop ≤ 44px rise
+  (apex ≈ 48) and ≤ 55px edge gap (~74px of jump travel). The gate checks
+  the geometry itself, so a future shelf edit cannot strand the stage.
+- **Vertical wake law**: soldiers wake inside `cam + W - 4` AND `camY + H - 4`
+  — S1's spawn-shield lesson spans both axes; the harness audits both.
+- **The gate**: the wall is scenery in front of the play plane (the arcade's
+  2D-plane law: only designated hitboxes register). The core box takes damage
+  only while `(coreT % 190) < 120`; rounds on the shut shutter spark and
+  bounce. Cannons fire aimed rounds (telegraphed by a flashing muzzle port);
+  the door spills runners but never more than `doorCap` live at once.
+- **Autopilot S2 lessons** (all honest-percept — screen state only, no
+  cheating reads): climb locks its target shelf until it lands there
+  (per-tick re-pick flips mid-jump); it leaps at the last moment when its own
+  shelf edge runs out (a shelf across a gap is unreachable by walking); flat
+  aimed rounds are HOPPED, not out-run — an aimed round only hits the thumb
+  that rests, so the boss patrol is a constant zigzag and the runner response
+  is to face the charger and shoot through it (back-pedalling points your gun
+  the wrong way). `gs.apT/apDir` are advisory autopilot memos: unhashed,
+  derived from hashed state, so replays stay identical.
+- Audio: every action synthesized via `audioController` (canyon enter sweep,
+  drown, cannon thud, core ping, shutter unlock, door clank, the death roar).
 - Keyboard: Arrows move + aim all 8 ways (down aims only airborne),
   SPACE/Z or the pad's A jumps, X/C or the pad's B fires. `?` pauses.
+  `warpFalls`/`warpBoss` construct phases properly (DEV hooks + DebugKit
+  buttons) — no cheat physics.
 
 ## Verify
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # another terminal
-npm run contracheck                      # sim core + browser leg (~40 s)
-npm run contracheck -- --mutant        # replants the spawn-shield line, names the harm
+npm run contracheck                      # sim core + browser leg
+npm run contracheck -- --mutant        # replants spawn-shield + sealed-core, names the harm
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
 `contracheck` proves: boot · determinism (seed+pads twice, other seed differs) ·
 the 8-way law · run/jump/gravity · rifle vs SPREAD counts · capsule→SPREAD and
 death→revert · one-hit death + respawn i-frames · barrel chains · the stage
-fights back on every seed tested · no spawn shield · **winnable: autopilot
-clears seeds 1..12, not cherry-picked** · the gate ends the run · GAME OVER
-path · walkway one-way law · attract self-demo · real keys start/run/jump/fire/
-die/restart · zero page errors.
+fights back on every seed tested · no spawn shield (both axes) · the gate is a
+door not a wall · the torrent drowns · the ratchet never retreats · shelf
+one-way + honest-hop geometry · open-core hits and shut-shutter armor · core
+destruction ends stage 1 with the bonus · the door caps and the cannons talk ·
+**winnable: autopilot clears jungle+falls+boss on seeds 1..12, not cherry-picked** ·
+GAME OVER path · attract self-demo · real keys start/run/jump/fire/die/restart ·
+live warp + armor law in the browser · zero page errors.
 
 ## Honest gaps
 
-- The waterfall vertical section and the **boss gate** (stage 1's real finish —
-  the bolted wall with the destructible core) are S2: the gate stands at the
-  end of the jungle but does not fight back yet.
-- Weapon shelf is thin: SPREAD is the only pickup. The original's MACHINE GUN,
-  FIRE BAR and LASER are S3, and the machine-gun audio seam is already wired
-  (`fireCool` reads the weapon).
+- The weapon shelf is thin: SPREAD is the only pickup. The original's MACHINE
+  GUN, FIRE BAR and LASER are S3, and the machine-gun audio seam is already
+  wired (`fireCool` reads the weapon).
 - Enemy roster: runners, ledge gunners and turrets only — the original's
   snipers-in-trees, grenade soldiers and flying pod carriers are S3.
 - Co-op: the cabinet is a two-player game; a CPU ally seat (and the second
   keyboard seat per Jon's multiplayer rule) is S4 — the sim takes one hero
   today.
-- Residual on what DID ship: soldiers carry rifles only (no shot-to-shot
-  variety), and the capsule always flies at one height; the original varied
-  couriers per wave.
+- Residual on what DID ship: the core is the gate's only destructible part
+  (the arcade's outer gun emplacements could also take damage); the cascade
+  blasts are random around the wall rather than scripted position-by-position;
+  the waterfall has one gunner set and one hazard (the rising torrent), while
+  the original also put the odd hanging vine/carrier on the way up; soldiers
+  carry rifles only, and the capsule flies at one height.
+- The arcade loops stage 1 with faster settings after the kill; here the run
+  ends at STAGE CLEAR and returns to attract — a looped second pass is S3+
+  territory.
