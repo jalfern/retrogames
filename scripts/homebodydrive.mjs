@@ -231,7 +231,7 @@ const mH = wH.money
 await tap(8 + 2 * 32 + 16, 40 + 9 * 32 + 16)   // garden still fits after a top-row wing
 await wait(250)
 const wH2 = await st()
-check('#2689 garden stands after the chosen row too — two rooms, both paid', wH2.ext === 2 && wH2.money === mH - 300 && JSON.stringify(wH2.wings) === JSON.stringify(['east0', 'garden']), JSON.stringify(wH2.wings))
+check('#2689 garden stands after the chosen row too — two rooms, both paid', wH2.ext === 2 && wH2.money === mH - 90 && JSON.stringify(wH2.wings) === JSON.stringify(['east0', 'garden']), JSON.stringify(wH2.wings))   // #2721: the cottage pays its own §90 (8 planks, a door through a standing wall), not the placeholder §300
 await page.keyboard.press('KeyB')
 await wait(150)
 
