@@ -340,10 +340,35 @@ lives:
 ## Verify
 
 ```bash
-npm run britanniacheck      # data integrity + rules + winnability (Node, no browser)
-npm run britannidrive       # real-key browser drive (needs `npm run dev` on $DEV_PORT)
-npm run dev                 # play at /retrogames/britannia
+npm run britanniacheck       # data integrity + rules + winnability (Node, no browser)
+npm run britannreadycheck    # readiness law (#2770): publish-after-stand + start-at-landing (dev server on $DEV_PORT)
+npm run britannidrive        # real-key browser drive (needs `npm run dev` on $DEV_PORT)
+npm run dev                  # play at /retrogames/britannia
 ```
+
+## Drivable at expose — the readiness law (#2770)
+
+The nightly bot hit `tick did not advance on step 1` (#2769): the DEV contract
+used to publish `__game` at mount, while the world still unrolled (fetch of
+`games/ultima4.jsdos` → inflate → star/land plots → `S = fresh(0)`). Inside that
+window `reset`/`tick` silently no-op (`if (S)`), so a harness that waits only
+for `__game` drives a corpse; on a loaded machine (multi-lane CI) the drive
+lands in the window and the run stalls at step 1. The law now: **nothing is
+published until the world stands** — `exposeGame`/`__britanniaTest`/DebugKit
+are *built* at mount (`devUp`) and *run* at the end of `load()`, so the first
+sight of `__game` is drivable: `state().ready` is true and the first `step`
+advances one tick.
+
+Same seam, player half: a key or tap that arrives while Britannia unrolls used
+to be dropped or leak as a stale buffered action. It now **arms the start** —
+the instant the map is ready the game begins (attract's "any key or tap" law,
+honoured early); held keys keep walking, stale one-shot taps are drained.
+
+Harness: `npm run britannreadycheck` (lane-advisory, listed in
+`MANUAL_CHECKS`) route-throttles the map fetch +2.5 s to widen the load window
+and proves both halves plus source laws pinning the shape. Mutant: calling
+`devUp()` at mount — 7 gates red, and the drivability probe reproduces the
+nightly signature verbatim (`ready:false, t0:0, t1:0`).
 
 ## Walk sprites + input latch (#1135 polish)
 
