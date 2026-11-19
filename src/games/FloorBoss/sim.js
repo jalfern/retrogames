@@ -730,6 +730,90 @@ export function liveRights(gs) {
     }
     return out
 }
+// ---- #2787 PLAN-TIME RIGHT OF WAY — pivots reserve their sweep ----
+// liveRights() counts the residual: a loaded pivot about to swing its knee/tail
+// through a cell a rival's committed plan reaches at the same cadence beat.
+// #2783 kept the COURTESY duck out of those cells; this legislates the other
+// half — the planner itself reserves the sweep at plan time. Rivals move on a
+// uniform cadence, so a committed route is a timeline: rival cell i is entered
+// about u + i·CADENCE ticks from now (u = its ticks-until-next-step). A pivot
+// entering its cell at beat t rotates its body across the diagonals for that
+// beat; a rival interval touching the window refuses the turn at the plan.
+// Zero-cadence-cost law (#2783 discipline, the measured-refusal lesson of
+// #2787's runtime draft): the reserved plan is taken ONLY when it reaches the
+// target at the SAME hop count with NO MORE pivots than the plain plan — a
+// right of way is never bought with delay. When no equal-cost reserved route
+// exists, today's route stands and the runtime duck/jam law decides exactly as
+// before. Geometry only — no rng, no deferral, no new draws: the module, dest
+// and weight streams never learn the difference; which legal corridor a cart
+// drives may move, and those are the honest routing marks (#2724/#2760 class).
+const CADENCE = STEP_TICKS + 1 // one step lands per STEP_TICKS decrement-ticks plus the execute tick
+// Ticks until this bot's next step: moveT === 0 executes on the current call.
+const nextStepIn = (b) => (b.moveT > 0 ? b.moveT : 0)
+// Committed occupancy timeline for the planner: Map cell-key -> [entry beat, …]
+// (ticks from gs.tick). Only committed MOVEMENT reserves — a broken, jammed or
+// yielding rival is a static obstacle blocked() already refuses, and it owes no
+// future cells: its path is rewritten the moment traffic clears. Fixed order,
+// pure, zero footprint (#1917).
+export function rivalTimeline(gs, bot) {
+    const res = new Map()
+    const add = (k, t) => {
+        const a = res.get(k)
+        if (a) a.push(t)
+        else res.set(k, [t])
+    }
+    for (const r of gs.robots) {
+        if (r.id === bot.id || r.broken) continue
+        if (r.jam) { add(`${r.x},${r.y}`, 0); continue } // jammed until the manager clicks or the timer backs it off — hold the cell
+        if (r.yield) { // parked in a bay for a known hold window — it owes no step until it clears
+            for (let t = 0; t <= r.yield.t; t += CADENCE) add(`${r.x},${r.y}`, t)
+            continue
+        }
+        add(`${r.x},${r.y}`, nextStepIn(r) - CADENCE) // its cell is held until the next step lands
+        if (!r.path || !r.path.length || r.task.kind === 'idle') continue
+        const u = nextStepIn(r)
+        r.path.forEach((c, i) => add(`${c.x},${c.y}`, u + i * CADENCE))
+    }
+    return res
+}
+// A rival's timeline touching the sweep diagonal during the beat the pivot
+// lands — the body-in-the-swing query, spacetime edition.
+function sweepCrossed(res, x, y, t) {
+    const a = res.get(`${x},${y}`)
+    if (!a) return false
+    for (const tr of a) if (Math.abs(tr - t) < CADENCE) return true
+    return false
+}
+// Loaded-leg plan with right of way: reserve unless the reservation costs a
+// single tick. plain = today's answer (min hops, fewest pivots); strict = the
+// same law with pivots that cross a rival's committed sweep refused. The
+// reserved route rides only when it is free-and-equal; otherwise plain stands
+// and the runtime courtesy/jam laws decide, as they always have (#2692/#2783).
+// Pushes a `right` event (out of stateHash, #1373) when courtesy is taken at
+// the plan, so the harness can see the law is alive, not decoration.
+function planRight(gs, bot, pred) {
+    const plain = bfsKnee(gs, bot.x, bot.y, pred, bot.id, bot.face)
+    if (plain == null) return null
+    const strict = bfsKnee(gs, bot.x, bot.y, pred, bot.id, bot.face, rivalTimeline(gs, bot), nextStepIn(bot))
+    if (strict && strict.length === plain.length && bfsPivots(bot, strict) <= bfsPivots(bot, plain) && JSON.stringify(strict) !== JSON.stringify(plain)) {
+        gs.ev.push({ type: 'right', x: bot.x, y: bot.y }) // the pivot right claimed at the plan, named
+        return strict
+    }
+    return plain
+}
+// pivot count of a stored plan from a cart's facing — the zero-cost check rides
+// the same walk the courtesy law uses (#2783 swingOf's cadence), pure.
+function bfsPivots(bot, path) {
+    let f = bot.face, t = 0
+    let px = bot.x, py = bot.y
+    for (const c of path) {
+        const d = nbDir(c.x - px, c.y - py)
+        if (d !== f && d !== (f + 2) % 4) t++
+        if (d !== (f + 2) % 4) f = d // reversing keeps the facing (#2732)
+        px = c.x; py = c.y
+    }
+    return t
+}
 // The knee-driven service net: same anchors as serviceNet (docks, pads, bay),
 // same fixed flood, but a seeded turn is only rideable if its knee is clear.
 // States are (cell, heading) — every anchor can be entered facing any way; a
@@ -949,7 +1033,7 @@ const rackAt = (gs, x, y) => gs.racks.find((r) => r.x === x && r.y === y) || nul
 // never call this and stay byte-identical (#1917 discipline); the refusal
 // semantics of #2711 are untouched — the same cells are legal, the floor just
 // drives them the way a driver would.
-export function bfsKnee(gs, fx, fy, pred, ignoreId, dIn0) {
+export function bfsKnee(gs, fx, fy, pred, ignoreId, dIn0, res = null, uB = 0) {
     if (pred(fx, fy)) return []
     const seen = new Map() // `x,y,i` -> fewest pivots this state has been ridden at (lower re-expands)
     let layer = [{ x: fx, y: fy, i: dIn0, t: 0, path: [], seq: 0 }]
@@ -966,6 +1050,12 @@ export function bfsKnee(gs, fx, fy, pred, ignoreId, dIn0) {
                 const turn = !back && (hx !== dx || hy !== dy)
                 if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // the knee is racked — the swing would clip it (#2711)
                 if (turn && kneeRack(gs, n.x - hx - dx, n.y - hy - dy)) continue // the tail is racked — the counterweight would clip it (#2760)
+                // #2787 PLAN-TIME RIGHT OF WAY: a rival's committed body owns the
+                // sweep at this beat — turn the other legal way when it costs nothing.
+                if (res && turn) {
+                    const tb = uB + n.path.length * CADENCE // beat this step lands (path[k] is entered at u + k·CADENCE)
+                    if (sweepCrossed(res, n.x + hx + dx, n.y + hy + dy, tb) || sweepCrossed(res, n.x - hx - dx, n.y - hy - dy, tb)) continue
+                }
                 const t = n.t + (turn ? 1 : 0) // #2724: count the pivot
                 const i2 = back ? n.i : i // reversing keeps the facing — the body never rotates
                 const k2 = `${x},${y},${i2}`
@@ -1205,9 +1295,9 @@ function repath(gs, bot) {
     // #2738: seed from bot.face, the doctrine-correct bearing (#2711: reversing
     // keeps the facing — bfsKnee's dIn0 is "the cart's current facing"). The
     // bearing-contrast rig in floorbosscheck holds the seed honest.
-    else if (t.kind === 'toStock') bot.path = bfsKnee(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id, bot.face)
+    else if (t.kind === 'toStock') bot.path = planRight(gs, bot, nearCell(t.rx, t.ry)) // #2787: reserve the sweep at the plan when it is free-and-equal
     else if (t.kind === 'toOut') bot.path = bot.carry
-        ? bfsKnee(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id, bot.face)
+        ? planRight(gs, bot, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y)) // #2787: same right-of-way law on the delivery leg
         : bfs(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id)
     else bot.path = []
     if (bot.path == null) { bot.path = []; bot.stall++ } else bot.stall = 0
