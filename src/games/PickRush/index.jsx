@@ -1159,6 +1159,7 @@ const PickRushGame = () => {
                 landings.length = 0; boost = 0
                 waveCues.length = 0
                 perfectRun.n = 0; perfectRun.list.length = 0 // #2742 harness resets start on a clean sheet
+                binVis.forEach((v) => { v.base = 0; v.fill = 0; v.flash = 0 }) // #2678 counters step only on PAINT frames, so a frame painted between two contractcheck DRIVEs leaks a stale fill into the final-JSON equality; the rig zeroing them makes drives agree at any paint timing
                 humanSeat2Ref.current = false
                 episode = null // #2734 a harness-driven shift is a test rig, not a take — never bank it
                 setEnd(null)
