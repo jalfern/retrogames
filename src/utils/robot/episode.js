@@ -11,6 +11,13 @@
 // consumers that want physics truth read poses + the hash checkpoints (the
 // replay proof that the poses are exactly what the physics produced).
 //
+// #2734 adds the label track: grasp-and-place games stamp the OUTCOME of
+// every drop at the tick it happens — { t, ok, kind?, seat?, bin?, pts?,
+// why? }. The kit is carrier, not judge: WHAT counts as a hit is the game's
+// law, spelled by the game (or its exporter) at harvest time. Like `poses`
+// and the assets pin, `labels` is additive — files without it validate and
+// replay exactly as before.
+//
 // Bulk export: EpisodeStore keeps finished episodes in localStorage (browser
 // only); exportEpisodes() serializes them as JSON-lines, one episode per
 // line — a dataset in one file.
@@ -23,17 +30,25 @@ export function createEpisode(opts = {}) {
     const { task = 'unspecified', poseEvery = EPISODE_POSE_EVERY, sources, assets = null, ...rest } = opts
     const rec = createRecorder({ ...rest, sources })
     const poses = []
+    const labels = []
     const methodsUsed = []
     let poseSeq = 0
 
     return {
         get ticks() { return rec.ticks },
         noteMethod(m) { if (m && !methodsUsed.includes(m)) methodsUsed.push(m) },
-        addTick(pads, raws = null, hash = null, posesNow = null, pings = null) {
+        addTick(pads, raws = null, hash = null, posesNow = null, pings = null, labelsNow = null) {
             rec.addTick(pads, raws, hash, pings)
             if (posesNow && rec.ticks % poseEvery === 0) {
                 poses.push({ t: rec.ticks, o: posesNow })
                 poseSeq++
+            }
+            // #2734: outcome labels ride the recorder's tick clock — stamped
+            // here, never by the caller, so a recorder started mid-run cannot
+            // mis-date them (the #1249 law). Several labels may share a tick
+            // (two seats faulting at once); order is preserved.
+            if (labelsNow && labelsNow.length) {
+                for (const l of labelsNow) labels.push({ t: rec.ticks, ...l })
             }
         },
         finish({ success = false, score = 0, finalHash = null } = {}) {
@@ -51,6 +66,7 @@ export function createEpisode(opts = {}) {
             // physics this run was played against — datasets stay honest about
             // the transcribed masses/frictions they were generated with.
             if (assets) file.episode.assets = assets
+            if (labels.length) { file.episode.labels = labels; file.episode.labelCount = labels.length }
             return file
         },
     }
@@ -81,6 +97,24 @@ export function validateEpisode(rec) {
     }
     if (!Array.isArray(ep.methodsUsed) || !ep.methodsUsed.length) return 'episode.methodsUsed must be a non-empty list'
     if (ep.assets !== undefined && (typeof ep.assets !== 'string' || !ep.assets)) return 'episode.assets must be a non-empty string'
+    // #2734 label track — optional and additive like the assets pin. Ticks
+    // are stamped by the recorder clock and may repeat (two seats, one tick);
+    // `ok` is the only required verdict field, the rest name what happened.
+    if (ep.labels !== undefined) {
+        if (!Array.isArray(ep.labels)) return 'episode.labels must be an array'
+        if (!Number.isInteger(ep.labelCount) || ep.labelCount !== ep.labels.length) return 'episode.labelCount must match labels'
+        let lLastT = 0
+        for (const x of ep.labels) {
+            if (!x || !Number.isInteger(x.t) || x.t < 1 || x.t > rec.ticks || x.t < lLastT) return 'episode label ticks must be within ticks and non-decreasing'
+            if (typeof x.ok !== 'boolean') return 'episode label ok must be boolean'
+            if (x.kind !== undefined && typeof x.kind !== 'string') return 'episode label kind must be a string'
+            if (x.why !== undefined && typeof x.why !== 'string') return 'episode label why must be a string'
+            for (const k of ['seat', 'bin', 'pts']) {
+                if (x[k] !== undefined && !Number.isInteger(x[k])) return `episode label ${k} must be an integer`
+            }
+            lLastT = x.t
+        }
+    }
     return null
 }
 

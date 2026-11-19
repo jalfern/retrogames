@@ -1,0 +1,260 @@
+{
+  "game": "pick-rush",
+  "task": "pick-rush-shift",
+  "method": "dpad",
+  "seeds": {
+    "practice": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "heldout": [
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107
+    ]
+  },
+  "episodes": 20,
+  "drops": 4461,
+  "hits": 4010,
+  "misses": 451,
+  "won": 20,
+  "verifiedAll": true,
+  "episodeValid": "all",
+  "perSeed": [
+    {
+      "seed": 0,
+      "ticks": 16800,
+      "won": true,
+      "score": 102525,
+      "correct": 53,
+      "hits": 203,
+      "misses": 25,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 1,
+      "ticks": 16800,
+      "won": true,
+      "score": 99525,
+      "correct": 52,
+      "hits": 201,
+      "misses": 26,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 2,
+      "ticks": 16800,
+      "won": true,
+      "score": 90725,
+      "correct": 54,
+      "hits": 201,
+      "misses": 24,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 3,
+      "ticks": 16800,
+      "won": true,
+      "score": 103525,
+      "correct": 53,
+      "hits": 204,
+      "misses": 28,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 4,
+      "ticks": 16800,
+      "won": true,
+      "score": 89225,
+      "correct": 43,
+      "hits": 192,
+      "misses": 26,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 5,
+      "ticks": 16800,
+      "won": true,
+      "score": 103050,
+      "correct": 54,
+      "hits": 204,
+      "misses": 20,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 6,
+      "ticks": 16800,
+      "won": true,
+      "score": 100900,
+      "correct": 47,
+      "hits": 198,
+      "misses": 21,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 7,
+      "ticks": 16800,
+      "won": true,
+      "score": 92650,
+      "correct": 52,
+      "hits": 201,
+      "misses": 18,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 8,
+      "ticks": 16800,
+      "won": true,
+      "score": 94175,
+      "correct": 46,
+      "hits": 196,
+      "misses": 23,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 9,
+      "ticks": 16800,
+      "won": true,
+      "score": 100950,
+      "correct": 49,
+      "hits": 199,
+      "misses": 24,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 10,
+      "ticks": 16800,
+      "won": true,
+      "score": 97100,
+      "correct": 53,
+      "hits": 200,
+      "misses": 22,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 11,
+      "ticks": 16800,
+      "won": true,
+      "score": 104775,
+      "correct": 54,
+      "hits": 205,
+      "misses": 23,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 100,
+      "ticks": 16800,
+      "won": true,
+      "score": 103150,
+      "correct": 55,
+      "hits": 207,
+      "misses": 18,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 101,
+      "ticks": 16800,
+      "won": true,
+      "score": 93950,
+      "correct": 47,
+      "hits": 195,
+      "misses": 27,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 102,
+      "ticks": 16800,
+      "won": true,
+      "score": 100500,
+      "correct": 46,
+      "hits": 198,
+      "misses": 28,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 103,
+      "ticks": 16800,
+      "won": true,
+      "score": 97975,
+      "correct": 49,
+      "hits": 200,
+      "misses": 22,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 104,
+      "ticks": 16800,
+      "won": true,
+      "score": 97650,
+      "correct": 53,
+      "hits": 202,
+      "misses": 26,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 105,
+      "ticks": 16800,
+      "won": true,
+      "score": 113425,
+      "correct": 54,
+      "hits": 205,
+      "misses": 14,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 106,
+      "ticks": 16800,
+      "won": true,
+      "score": 102750,
+      "correct": 49,
+      "hits": 200,
+      "misses": 15,
+      "verified": true,
+      "mismatch": null
+    },
+    {
+      "seed": 107,
+      "ticks": 16800,
+      "won": true,
+      "score": 92900,
+      "correct": 48,
+      "hits": 199,
+      "misses": 21,
+      "verified": true,
+      "mismatch": null
+    }
+  ]
+}
