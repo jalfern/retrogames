@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
-    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, kneeEscapes, swingMarkers, flowMarks, flowHeat, liveKnees,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, kneeEscapes, swingMarkers, flowMarks, flowHeat, liveKnees, liveTails,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -940,6 +940,13 @@ const FloorBossGame = () => {
                     const nv = [[0, -1], [1, 0], [0, 1], [-1, 0]][b.face] || [0, -1]
                     ctx.fillStyle = 'rgba(255,210,63,0.4)'
                     ctx.fillRect(bx + nv[0] * 10 - 3, by + nv[1] * 10 - 3, 6, 6)
+                    // #2760: and the body now has the other end too — a steel
+                    // counterweight nub on the edge OPPOSITE the facing, the side
+                    // whose diagonals the tail law sweeps. Amber stays the law
+                    // colour, steel is just mass: the backswing that re-routes a
+                    // plan (or triggers repath-on-land) is readable at a glance.
+                    ctx.fillStyle = 'rgba(150,170,192,0.55)'
+                    ctx.fillRect(bx - nv[0] * 10 - 3, by - nv[1] * 10 - 3, 6, 6)
                     drawItem(ctx, b.carry, bx, by - 14 + Math.sin(tick * 0.12) * 1, 0.85)
                 }
             }
@@ -1678,6 +1685,7 @@ const FloorBossGame = () => {
                 flow: () => flowMarks(gs).map((m) => ({ axis: m.axis, n: m.flow, cells: m.cells.map((c) => `${c.x},${c.y}`).join('|') })), // #2622 item 3: the two-way grammar, readable to QA
                 heat: () => flowHeat(gs).map((c) => ({ x: c.x, y: c.y, n: c.n })), // #2680: live traffic heat — route claims per cell, readable to QA
                 knees: () => liveKnees(gs).map((m) => ({ x: m.x, y: m.y, i: m.in, o: m.out, k: `${m.kx},${m.ky}` })), // #2711: knee-blocked turns on the live floor — QA eye
+                tails: () => liveTails(gs).map((m) => ({ x: m.x, y: m.y, i: m.in, o: m.out, t: `${m.tx},${m.ty}` })), // #2760: tail-blocked turns on the live floor — the counterweight diagonal a rack owns; QA eye
                 kneeTeach: (x, y) => kneeEscapes(gs, x, y), // #2711 s2: the lesson a refused click gets — bends + honest beside-places, QA eye
                 yields: () => gs.robots.filter((b) => b.yield).map((b) => ({ id: b.id, x: b.x, y: b.y, fx: b.yield.fx, fy: b.yield.fy, t: b.yield.t })), // #2692: carts holding shoulders — the pull-off, readable to QA
                 ducks: () => gs.ducks, // #2692: the shift's duck tally
