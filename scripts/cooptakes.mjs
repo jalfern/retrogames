@@ -72,7 +72,7 @@ const MUTANT = (() => {
     if (v !== 'strip') { console.error(`cooptakes: unknown --mutant=${v} (strip)`); process.exit(2) }
     return v
 })()
-const ONLY = argv.find((a) => a.startsWith('--game='))?.split('=').slice(1).join('=') || null
+const ONLY = argv.find((a) => a.startsWith('--game='))?.split('=').slice(1).join('=') || process.env.npm_config_game || null
 
 // Seat truth per game: which labels the take must carry when it lands.
 // sos/bd: autoStart stamps seat 0 human (#2058). rally here: the pace brain
@@ -80,8 +80,8 @@ const ONLY = argv.find((a) => a.startsWith('--game='))?.split('=').slice(1).join
 // with NO human seat (the #2058 opt-out, proven live for the first time).
 const GAMES = [
     { key: 'sos', game: 'short-order-shout', route: '/short-order-shout', label: 'SHORT ORDER SHOUT', secs: 168, overMs: 180000, expectSeats: (seats) => seats[0] === 'human' && seats.length >= 1, seatsWhy: 'seat 0 human (#2058 stamp)' },
-    { key: 'bd', game: 'bomb-defuse', route: '/bomb-defuse', label: 'BOMB DEFUSE', secs: 168, overMs: 180000, expectSeats: (seats) => seats[0] === 'human' && seats.length >= 1, seatsWhy: 'seat 0 human (#2058 stamp)' },
-    { key: 'rally', game: 'rally-co-driver', route: '/rally-co-driver', label: 'RALLY CO-DRIVER', query: '&seat=model', secs: 130, overMs: 240000, expectSeats: (seats) => seats[0] === 'model', seatsWhy: 'seat 0 honestly model (pace brain, #2058 opt-out)' },
+    { key: 'bd', game: 'bomb-defuse', route: '/bomb-defuse', label: 'BOMB DEFUSE', secs: 168, overMs: 180000, keyHint: 'ArrowRight', expectSeats: (seats) => seats[0] === 'human' && seats.length >= 1, seatsWhy: 'seat 0 human (#2058 stamp)' },
+    { key: 'rally', game: 'rally-co-driver', route: '/rally-co-driver', label: 'RALLY CO-DRIVER', query: '&seat=model', secs: 150, overMs: 240000, expectSeats: (seats) => seats[0] === 'model', seatsWhy: 'seat 0 honestly model (pace brain, #2058 opt-out)' },
 ].filter((g) => !ONLY || g.key === ONLY)
 if (!GAMES.length) { console.error(`cooptakes: --game=${ONLY} matched nothing (sos|bd|rally)`); process.exit(2) }
 
@@ -142,8 +142,10 @@ async function phoneRun(g, { voice = true, decline = false } = {}) {
     // attract -> human start (one tap; every game starts on any input)
     try { await page.waitForSelector('canvas', { timeout: 15000 }) } catch { out.why = 'canvas never mounted'; await context.close(); return out }
     await page.waitForTimeout(900) // let the attract sim wake so inputs land as START, not stray pads
-    await page.mouse.click(195, 300) // any tap wakes the attract (SOS: attract -> select)
+    await page.mouse.click(195, 300) // any tap wakes the attract (SOS/BD: attract -> select)
     await page.waitForTimeout(500)
+    if (g.keyHint) await page.keyboard.press(g.keyHint) // select screens: BD's seat picker (2 players -> the thumb lands on a recorded seat)
+    await page.waitForTimeout(200)
     await page.keyboard.press('Space') // select/kitchens confirm (SOS select, BD attract)
     await page.waitForTimeout(600)
     await page.keyboard.press('Enter') // and one of these lands on every game's start key
