@@ -43,6 +43,7 @@ export const CFG = {
     laserSpeed: 9.5,          // the fastest round in the game
     fireWob: 1.5,            // firebar vertical undulation (px/tick around its line)
     sniperSpeed: 3.2,         // the tree-line round: faster than any runner
+    depotHp: 10,              // S3.5 the arms depot — a shootable emplacement
     eBulletSpeed: 2.2,
     respawnFreeze: 50,
     invuln: 100,
@@ -128,6 +129,8 @@ const SNIPERS = [
     { x: 905, y: 136 },
     { x: 1270, y: 132 },
     { x: 1800, y: 126 },
+    // S3.5: one rides the arms depot roof (y = slab top) — blown off when it falls.
+    { x: 1700, y: 152 },
 ]
 
 // S3 capsule wheel — the letters that fly. Deterministic draw on spawn.
@@ -190,6 +193,8 @@ export function makeGame (seed) {
         barrels: BARREL_AT.map((x) => ({ x, y: CFG.ground, gone: false })),
         capsule: null,              // {x,y,vx} — flies in from the right edge
         nextCapsule: 240,
+        depot: { x: 1700, y: CFG.ground, hp: CFG.depotHp, aim: Math.PI, t: 70, dead: false, spawnT: 240 },
+        vc: [],                     // S3.5 volley capsules — the depot's payout {x,y,vx,kind}
         boss: null,                 // the gate, once the arena opens (see makeBoss)
         ev: [],                     // effect events (shell drains; not hashed)
     }
@@ -282,6 +287,7 @@ function enterFalls (gs) {
     gs.safe = { x: 190, y: 662 }
     gs.soldiers = FALLS_GUNNERS.map((d) => ({ x: d.x, y: d.y, hold: true, hp: 1, awake: false, t: 0, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }))
     gs.snipers = []   // the tree line stays in the jungle
+    gs.vc.length = 0  // the depot's payout flies in the jungle too
     gs.pb.length = 0; gs.eb.length = 0; gs.capsule = null
     gs.ev.push({ type: 'enter' })
 }
@@ -415,6 +421,26 @@ export function step (gs, pad = PAD0) {
                 if (Math.abs(b.x - g.x) <= 9 && Math.abs(b.y - g.y) <= 8) { gs.ev.push({ type: 'spark', x: b.x, y: b.y }); return false }
             }
         }
+        // S3.5 arms depot: the slab eats every round — pierce included, walls
+        // are walls. Ten hits cave it and the arcade's guns-and-prizes moment
+        // pays: a volley of M/F/L capsules at three altitudes. Mutant anchor line.
+        const dp = gs.depot
+        if (gs.phase === 'jungle' && dp && !dp.dead && Math.abs(b.x - dp.x) <= 18 && Math.abs(b.y - (dp.y - 14)) <= 22) {
+            dp.hp -= 1; gs.ev.push({ type: 'spark', x: b.x, y: b.y })
+            if (dp.hp <= 0) {
+                dp.hp = 0; dp.dead = true; gs.score += 1000
+                gs.ev.push({ type: 'boom', x: dp.x, y: dp.y - 16, kind: 'tnt' })
+                const roof = gs.snipers.find((sn) => sn.x === dp.x && !sn.dead)
+                if (roof) { roof.dead = true; gs.score += 150 }
+                gs.vc = [
+                    { x: dp.x + 22, y: CAP_ALT[2], vx: -1.2, kind: 'machine' },
+                    { x: dp.x + 36, y: CAP_ALT[1], vx: -1.2, kind: 'fire' },
+                    { x: dp.x + 50, y: CAP_ALT[0], vx: -1.2, kind: 'laser' },
+                ]
+                gs.ev.push({ type: 'volley' })
+            }
+            return false
+        }
         for (const [bi, br] of gs.barrels.entries()) {
             if (!br.gone && Math.hypot(b.x - br.x, b.y - (br.y - 10)) < 12) {
                 br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true)
@@ -529,6 +555,30 @@ export function step (gs, pad = PAD0) {
         }
     }
 
+    // --- S3.5 the arms depot: an armored emplacement with an aimed slit gun
+    // and a supply hatch that spills exactly one live grenadier at a time (the
+    // door law reused) — and only with the spill point inside the view (the
+    // spawn-shield law spans every way a soldier can arrive). ---
+    const dp2 = gs.depot
+    if (gs.phase === 'jungle' && dp2 && !dp2.dead) {
+        dp2.aim = Math.atan2((p.lane - 14) - (dp2.y - 14), p.x - dp2.x)
+        dp2.t -= 1
+        const onScreen = dp2.x > gs.cam && dp2.x < gs.cam + W + 8
+        if (dp2.t <= 0 && onScreen && Math.abs(p.x - dp2.x) < 300 && p.x < dp2.x) {
+            gs.eb.push({ x: dp2.x + Math.cos(dp2.aim) * 14, y: dp2.y - 14 + Math.sin(dp2.aim) * 14, vx: Math.cos(dp2.aim) * 2.2, vy: Math.sin(dp2.aim) * 2.2 })
+            gs.ev.push({ type: 'dfire' })
+            dp2.t = 95
+        }
+        dp2.spawnT -= 1
+        const liveNade = gs.soldiers.some((s) => !s.dead && s.nade)
+        if (dp2.spawnT <= 0 && !liveNade && dp2.x + 26 < gs.cam + W - 4) {
+            gs.soldiers.push(mkSoldier({ x: dp2.x + 26, y: CFG.ground, hold: false, nade: true }))
+            gs.soldiers[gs.soldiers.length - 1].awake = true
+            gs.ev.push({ type: 'door' })
+            dp2.spawnT = 320
+        }
+    }
+
     // --- barrels sitting on the ground: step into them and they go off ---
     if (gs.phase === 'jungle') {
         for (const br of gs.barrels) {
@@ -560,6 +610,18 @@ export function step (gs, pad = PAD0) {
             gs.nextCapsule = gs.tick + 300
         }
     }
+
+    // --- S3.5 volley capsules (the depot's payout): they fly the same honest
+    // line with their letters already stamped; same pickup, same despawn. ---
+    gs.vc = gs.vc.filter((c) => {
+        c.x += c.vx
+        if (p.inv >= 0 && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
+            if (p.weapon !== c.kind) { p.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind }) }
+            else gs.ev.push({ type: 'pickup', k: c.kind })
+            return false
+        }
+        return c.x > gs.cam - 16
+    })
 
     // --- the boss gate: shutter cycle, cannon fire, door spill, death cascade ---
     if (gs.phase === 'boss' && gs.boss) {
@@ -660,6 +722,12 @@ export function autopilot (gs) {
         // aim up at the capsule while firing, or up the tree line at nothing? no —
         // aim up only when the capsule is level with the gun
         if (gs.capsule && Math.abs(gs.capsule.x - p.x) < 14 && gs.capsule.y < p.y - 26) { pad.up = true }
+        // S3.5 volley: the depot's payout is the prize too — line up and hop
+        // into the arc; the low one comes to a run, the high ones want the jump.
+        if (!pad.a && gs.vc.length) {
+            const c = gs.vc.filter((v) => v.x > p.x - 6).sort((a, b) => a.x - b.x)[0]
+            if (c && c.x - p.x < 34 && c.y < p.y - 22) pad.a = true
+        }
         return pad
     }
 
@@ -774,6 +842,8 @@ export function stateHash (gs) {
     for (const br of gs.barrels) put(br.gone ? 1 : 0)
     put(gs.capsule ? gs.capsule.x : -9999); put(gs.nextCapsule)
     put(gs.capsule ? (CAP_KINDS.indexOf(gs.capsule.kind) + 1) : 0)
+    put(gs.depot ? gs.depot.hp : -1); put(gs.depot ? (gs.depot.dead ? 1 : 0) : -1); put(gs.depot ? gs.depot.t : -1); put(gs.depot ? gs.depot.spawnT : -1)
+    for (const c of gs.vc) put(c.x)
     if (gs.boss) {
         put(gs.boss.core); put(gs.boss.coreT); put(gs.boss.dying)
         for (const g of gs.boss.guns) put(g.t)

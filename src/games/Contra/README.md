@@ -28,6 +28,12 @@ detonate where they hit the ground — being airborne over the landing beats it)
 
 ## Engine notes
 
+- **S3.5 the arms depot (#2790)**: a shootable emplacement at x 1700 — 10-hit
+  slab (cracks deepen, embers glow), aimed slit gun (lane-aim law), a hatch
+  that spills one vest-grenadier at a time ONLY with the spill point inside the
+  view (door law + spawn-shield), a roof sniper that falls with it; its death
+  pays a volley of M/F/L capsules at three altitudes (+1000, same courier
+  physics). Pierce included — walls are walls.
 - **Lane-aim law (S3, new):** enemies aim at the hero's LAST GROUNDED line
   (`p.lane`), never at the airborne body; snipers additionally fire only at
   grounded targets. Formalizes the S2 autopilot lesson ("flat aimed rounds are
@@ -94,9 +100,10 @@ warp + armor law · zero page errors.
   keyboard seat per Jon's multiplayer rule) is S4 — the sim takes one hero
   today.
 - The original's flying pod carriers (weapon capsules dropped by low-flying
-  craft) are still missing — today only the crossing capsule delivers guns.
+  craft) are still missing — the depot pays a volley when it falls, but no
+  aircraft delivers guns yet.
 - Lasers/fire pierce bodies but are still consumed by the gate armor housings
-  (the arcade's emplacements could be shot off — carried from S2).
+  (the jungle's emplacement is now shootable — the gate's outer guns are next).
 - The cascade blasts at the gate are random around the wall rather than
   scripted position-by-position; the waterfall has one gunner set and one
   hazard (the rising torrent), while the original also put the odd hanging

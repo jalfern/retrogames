@@ -14,7 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss } from './sim.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawBullet, drawGrenade, drawSniper, drawGate, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball } from './art.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -62,6 +62,9 @@ const sfx = {
     coreHit: () => { audioController.playTone(1180, 0.05, 'square', 0.06); audioController.playSweep(700, 1100, 0.06, 'sawtooth', 0.04) },
     unlock: () => audioController.playTone(980, 0.07, 'triangle', 0.05),
     door: () => audioController.playSweep(180, 120, 0.1, 'square', 0.05),
+    // S3.5 arms depot: the slit gun's heavier bark and the payout arpeggio
+    dfire: () => { audioController.playSweep(200, 80, 0.11, 'square', 0.06); audioController.playNoise(0.05, 0.04) },
+    volley: () => { [520, 660, 780, 1040].forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.1, 'triangle', 0.06), i * 70)) },
     roar: () => { audioController.playNoise(0.9, 0.14); audioController.playSweep(120, 30, 0.9, 'sawtooth', 0.1); setTimeout(() => audioController.playSweep(90, 25, 0.6, 'triangle', 0.09), 250) },
 }
 
@@ -183,6 +186,7 @@ export default function ContraGame () {
             if (jungle) {
                 drawGround(ctx, gs.cam, gs.tick)
                 for (const pl of PLATFORMS) drawPlatform(ctx, pl)
+                if (gs.depot && !gs.depot.dead) drawDepot(ctx, gs.depot, gs.tick)
                 drawGate(ctx)
             } else {
                 if (gs.phase === 'boss' && gs.boss) drawGateStructure(ctx, gs.boss, gs.tick)
@@ -193,6 +197,7 @@ export default function ContraGame () {
             for (const sn of gs.snipers) if (!sn.dead && sn.awake) drawSniper(ctx, sn, gs.tick)
             for (const s of gs.soldiers) if (!s.dead && s.awake) drawSoldier(ctx, s, gs.tick)
             if (gs.capsule) drawCapsule(ctx, gs.capsule, gs.tick)
+            for (const c of gs.vc) drawCapsule(ctx, c, gs.tick)
             for (const b of gs.pb) drawBullet(ctx, b, false)
             for (const b of gs.eb) { if (b.gr) drawGrenade(ctx, b); else drawBullet(ctx, b, true) }
             if (gs.p.dead === 0 && !(gs.end === 'dead')) drawPlayer(ctx, gs.p, gs.tick)
@@ -335,6 +340,8 @@ export default function ContraGame () {
                     soldiersAlive: gs.soldiers.filter((s) => !s.dead).length, turretsAlive: gs.turrets.filter((t) => !t.dead).length,
                     barrelsLeft: gs.barrels.filter((b) => !b.gone).length, pb: gs.pb.length, eb: gs.eb.length,
                     capsule: gs.capsule ? { x: +gs.capsule.x.toFixed(1), y: gs.capsule.y, kind: gs.capsule.kind || 'spread' } : null,
+                    volley: gs.vc.length,
+                    depot: gs.depot ? { hp: gs.depot.hp, dead: gs.depot.dead } : null,
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     keys: { ...keys },
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],

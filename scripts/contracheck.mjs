@@ -429,6 +429,77 @@ const mkBoss = (seed = 7) => {
     r.check('walkway is one-way: rising passes through from below', !gs2.p.onGround)
 }
 
+// ------------------------------------------------- S3.5: the arms depot ---
+{
+    // ten rounds cave the slab, the roof gunner falls with it, and the
+    // arcade's guns-and-prizes moment pays: M/F/L at three altitudes, +1000.
+    const gs = makeGame(9); gs.p.x = 1610; gs.p.inv = 99999
+    const roof = gs.snipers.find((sn) => sn.x === 1700)
+    let sparks = 0
+    for (let i = 0; i < 260 && !gs.depot.dead; i++) { step(gs, { b: true }); sparks += gs.ev.filter((e) => e.type === 'spark').length; gs.ev.length = 0 }
+    const kinds = gs.vc.map((c) => c.kind).join(',')
+    const alts = new Set(gs.vc.map((c) => c.y)).size
+    r.check('S3.5 arms depot: ten rounds cave the slab', gs.depot.dead && sparks >= 10, `hp=${gs.depot.hp} sparks=${sparks}`)
+    r.check('S3.5 payout: the fallen depot releases M/F/L capsules at three altitudes (+1000), roof sniper blown off', kinds === 'machine,fire,laser' && alts === 3 && roof.dead && gs.score >= 1000, `kinds=${kinds} alts=${alts} roof=${roof.dead}`)
+    // the payout is real ordnance: touching the low capsule racks the MG
+    gs.vc[0].x = gs.p.x
+    step(gs, {})
+    r.check('S3.5 volley capsule grants its gun on contact', gs.p.weapon === 'machine', `weapon=${gs.p.weapon}`)
+}
+{
+    // walls are walls: even the piercing laser is eaten by the slab (chips hp).
+    const gs = makeGame(9); gs.p.x = 1610; gs.p.inv = 99999; gs.p.weapon = 'laser'
+    for (const s of gs.soldiers) if (Math.abs(s.x - 1610) < 320) s.dead = true
+    let hp0 = gs.depot.hp, hits = 0
+    for (let i = 0; i < 200 && !gs.depot.dead; i++) { step(gs, { b: true }); hits += gs.ev.filter((e) => e.type === 'spark').length; gs.ev.length = 0 }
+    r.check('S3.5 walls are walls: the laser is absorbed by the slab and dents it', gs.depot.dead && hp0 === 10 && hits >= 10, `hits=${hits}`)
+}
+{
+    // the hatch: it spills one vest-carrying grenadier at a time, and ONLY
+    // with the spill point inside the view (spawn-shield law for door arrivals).
+    const gs = makeGame(9); gs.p.x = 1500; gs.p.inv = 99999
+    for (const s of gs.soldiers) s.dead = true   // watch the hatch alone
+    let doors = 0, outOfView = 0, maxLive = 0
+    for (let i = 0; i < 1400; i++) {
+        const camBefore = gs.cam
+        step(gs, {})
+        if (gs.ev.some((e) => e.type === 'door')) {
+            doors++
+            const newest = gs.soldiers[gs.soldiers.length - 1]
+            if (newest.x >= camBefore + WVIEW - 4) outOfView++
+        }
+        maxLive = Math.max(maxLive, gs.soldiers.filter((s) => !s.dead && s.nade).length)
+        gs.ev.length = 0
+    }
+    r.check('S3.5 hatch spills grenadiers inside the view only', doors >= 1 && outOfView === 0, `doors=${doors} outside=${outOfView}`)
+    const g2 = makeGame(9); g2.p.x = 1350; g2.p.inv = 99999
+    for (const s of g2.soldiers) s.dead = true
+    let doorsFar = 0
+    for (let i = 0; i < 900; i++) { step(g2, {}); doorsFar += g2.ev.filter((e) => e.type === 'door').length; g2.ev.length = 0 }
+    r.check('S3.5 the hatch stays shut while its spill point is off-screen', doorsFar === 0, `doors@1350=${doorsFar}`)
+    r.check('S3.5 the hatch cannot spill an army — one live grenadier at a time (door law reused)', maxLive === 1, `max live=${maxLive}`)
+}
+{
+    // the honest win leg, depot included: every seed clears, most see the
+    // payout, and every soldier — door-born included — wakes inside the view.
+    const fails = []
+    let volleys = 0, wakesOut = 0
+    for (let s = 1; s <= 12; s++) {
+        const gs = makeGame(s)
+        for (const so of gs.soldiers) so._w = false
+        while (!gs.end && gs.tick < 20000) {
+            step(gs, autopilot(gs))
+            for (const so of gs.soldiers) if (so.awake && !so._w) { so._w = true; if (so.x >= gs.cam + WVIEW - 2) wakesOut++ }
+            if (gs.ev.some((e) => e.type === 'volley')) volleys++
+            gs.ev.length = 0
+        }
+        if (gs.end !== 'win') fails.push(`${s}:${gs.end}@${gs.tick}`)
+    }
+    r.check('S3.5 the depot cannot strand the stage: autopilot clears seeds 1..12', fails.length === 0, fails.join(' ') || '12/12')
+    r.check('S3.5 the emplacement falls under fire on 9+ seeds (the payout is reachable, not gated)', volleys >= 9, `volleys ${volleys}/12`)
+    r.check('S3.5 spawn-shield holds for the hatch too (all 12 seeds audited)', wakesOut === 0, `outside wakes=${wakesOut}`)
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -493,6 +564,19 @@ if (MUTANT) {
                 for (let i = 0; i < 80; i++) { mod.step(gs, { b: i === 0 }); gs.ev.length = 0 }
                 const kills = (a.dead ? 1 : 0) + (b.dead ? 1 : 0)
                 return kills <= 1 ? `HARM NAMED: the laser stops at one body (${kills}/2) - piercing was the wheel's signature, now it is just a fast rifle` : null
+            },
+        },
+        {
+            name: 'depot-impervious',
+            anchor: "dp.hp -= 1; gs.ev.push({ type: 'spark', x: b.x, y: b.y })",
+            plant: "dp.hp -= 0; /* MUTANT(depot-impervious): the emplacement cannot be caved */ gs.ev.push({ type: 'spark', x: b.x, y: b.y })",
+            harm: async (mod) => {
+                let volleys = 0
+                for (let s = 1; s <= 6; s++) {
+                    const gs = mod.makeGame(s)
+                    while (!gs.end && gs.tick < 20000) { if (gs.ev.some((e) => e.type === 'volley')) volleys++; gs.ev.length = 0; mod.step(gs, mod.autopilot(gs)) }
+                }
+                return volleys === 0 ? 'HARM NAMED: the arms depot is impervious - 0/6 seeds release the capsule volley; the arcade keeps its guns behind the wall' : null
             },
         },
     ]
