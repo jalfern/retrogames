@@ -170,7 +170,9 @@ export function collectRun(seed, opts = {}) {
     return {
         seed, file, rows,
         stats: {
-            ticks: gs.tick, won, score: gs.score, correct: gs.correct,
+            ticks: gs.tick, won, score: gs.score,
+            correctShift: gs.correct, // per-shift quota counter — resets at the whistle
+            lands: gs.binFill.reduce((a, b) => a + b, 0), // lifetime correct bins (ΣbinFill)
             hits, misses, verified: v.ok, mismatch: v.mismatch || null,
         },
     }

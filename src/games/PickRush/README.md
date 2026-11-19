@@ -56,6 +56,7 @@ npm run dev                # another terminal
 npm run pickcheck          # Node rules + determinism + win proof + real-key drive
 npm run pickcheck -- --mutate   # one rule silenced → NAMED checks go red
 npm run pickcheck -- --node    # Node-only gates (no browser)
+npm run pickrush-export    # the Plaicraft corpus: data/pickrush/ (episodes + drops + summary)
 CONTRACT_ONLY=pick-rush npm run contractcheck
 ```
 
@@ -84,19 +85,19 @@ Landing juice (#2214): a correct drop adds a low sheet-metal thud under the
 ding, a deeper first-frame squash (0.32) with a faster recovery, a rim dip on
 the struck bin and a light shake; smash gets three bright after-tinkles.
 
-Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell|aim` — `wave` collapses the table
+Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell|aim|rec` — `wave` collapses the table
 to one shift's waves; `amb` flattens the ambience eras (#2234); `vis` freezes the
 bin meters (#2678); `tell` silences the grab-read telegraphs (#2684); `aim` blinds
-rival intent and ring ownership (#2690); named gates go red.
+rival intent and ring ownership (#2690); `rec` makes the export's label law lie
+(a correct-bin land stops being a hit) and 9 EXPORT gates go red by name (#2734);
+named gates go red.
 
 ## Honest gaps
 
 - Plaicraft/SimReady episode export (labelled grasp-and-place episodes as
-  training data) — the raw material is already here: seed + per-seat pad
-  streams + per-drop `hit/miss` labels via the `retrogames-rec/v1` recorder.
-  (Note corrected #2234: this no longer "waits on #1141" — that kit SHIPPED;
-  what's left is wiring PICK RUSH drops through `scripts/plaicraft-export.mjs`,
-  an episode-pipeline task, not a feel task.)
+  training data) — **CLOSED by #2734** (see §Plaicraft episode export): live
+  takes bank through the #1141 kit with a per-drop label track, and
+  `npm run pickrush-export` produces the replay-verified corpus.
 - **DISCLAIMER** — No second on-screen touchpad for seat 2 (Jon's rule — keyboard-only 2P).
 - Sound is event-synthesized; no per-shift ambience change yet. — **CLOSED by
   #2234** (`ambience.js`: three eras keyed to the shift — early floor with a
@@ -272,3 +273,47 @@ rival intent and ring ownership (#2690); named gates go red.
   CLAIM-FLIP flips `rival`→`mine` on the contract as the geometry changes,
   with the DEV eye re-deriving inline. `PICK_MUT=aim` reddens 2 Node gates
   by name; `PICK_MUT=tell` reddens 8 (the whole telegraph family + these).
+
+## Plaicraft episode export (#2734 — never-dry polish, the #1141 kit's fifth game)
+
+- **Live takes bank.** Every shift you actually play records through the kit
+  (`createEpisode` → `retrogames-rec/v1` + `episode` block): seed, one pad
+  per seat per tick, checkpoint hashes, slot sources resolved at stop
+  (`human`/`model` for the watched claw, `human`/`cpu` for seat 2), and the
+  **label track** — the sim's own judging verdict for every drop
+  (`{t, ok, why, kind?, seat?, bin?, pts?}`; `drop` = the tagged bin caught
+  it = hit; `wrong`/`shatter`/`slip` = miss). The recorder sits outside the
+  sim (hashes untouched, attract silent); storage failure degrades to
+  silence. The harness never banks: every contract `reset()` drops the live
+  recorder, so QA bots and replays leave the store empty.
+- **Player-visible honesty.** A REC beacon (dashcam red, the house fuse-pulse
+  cadence) blinks under the HUD while your take is kept, and the game-over
+  card spells out the take: `TAKE BANKED — HITS n · MISSES m · EPISODES
+  STORED k`. Consent model is the house one: takes live in localStorage
+  (`retrogames-episodes`, capped 50) and leave the phone only through an
+  explicit export.
+- **Sim events carry the truth.** `slip/miss/shatter/wrong/drop` gained the
+  `kind`/`seat` fields a label needs (`seat: it.lastSeat ?? …` — the crane
+  that had it). Events never rode `stateHash`, so determinism and every
+  historical seed stream are untouched.
+- **The corpus.** `npm run pickrush-export` → `data/pickrush/`:
+  practice seeds 0..11 + held-out 100..107 (the #1625 split discipline),
+  each the full authored line completed by `planner()` — the crane law
+  WITHOUT the autopilot's seeded habits. The autopilot draws `gs.rng` at
+  every retarget (jitter ±3, skip 3 %); those draws pace the spawns through
+  the shared stream, and a pad stream carries pads, not draws — captured
+  with the autopilot, replay respawned the line differently (first lie:
+  seed 0, tick 210). So the corpus brain is RNG-free **by law**, and
+  `EXPORT-RNG-FREE` counts the draws to hold it (48 vs 92 by tick 2000).
+- **Proven:** `pickcheck` §EXPORT — per seed (7/101/2027): VALIDATE, REPLAY
+  (`verifyRecording`, hash-exact), LABELS-TRUTH (every label re-derived with
+  the law written INLINE against the file's own pads re-walked, first lie
+  quoted verbatim), HITS-CORRECT (Σhit ≡ ΣbinFill — `gs.correct` resets per
+  shift, `binFill` is the lifetime ledger), WIN, SHAPE; plus JSONL round-
+  trip through `exportEpisodes`. Chrome: REC-LIVE (real Space + real keys
+  record), REC-BANKED (storage, labels counted, pads per seat per tick,
+  seed honest), REC-NOICE (contract drives end the shift and bank nothing).
+  `PICK_MUT=rec` (drop stops being a hit) reddens 9 EXPORT gates by name.
+- **Corpus honesty:** the planner never mis-bins or slams glass, so corpus
+  misses are barrel slips only — an accurate profile of a precise model at
+  rotating cargo; the `wrong`/`shatter` labels come from human takes.
