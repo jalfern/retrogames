@@ -1,68 +1,71 @@
-# STATE — session 348 slot b close-out
+# STATE — session 347 slot a close-out
+
+(Latest-close note: this rewrites slot b's 348 close, whose facts are folded in
+below — PICK RUSH PERFECT SHIFT `0875750` (#2742/#2745) and FLOOR BOSS
+knee-from-nose `e4ea224` (#2738/#2747) are shipped and prod-side.)
 
 ## Shipped this session
-- **PICK RUSH — PERFECT SHIFT (#2742) — PR #2745** (rule-5 loop on `static`).
-  Never-dry stage (#1571): warden target #2736 REFUSED at claim (slot a live
-  since 01:38Z, branch pushed, PR #2740 — their Homebody build); ladder:
-  #1711 WAIT-STATE (`grade --dry-run`: nothing new; #2652 AWAITING), queue
-  empty, feedback rung blocked (QA MASTER live pid), flagship gaps all spent
-  (idle-kick fell through) → `weakestStage` PICK RUSH score 1 (feedback #2739
-  names it; README gaps CLOSED+DISCLAIMER only) → filed #2742, claimed, shipped.
-  Law: per-seat `arm.clean`; `PERFECT_SPOIL` = miss (unowned → spoils ALL
-  seats: shared line) + wrong/shatter/floor (attributed by `lastSeat`); slip
-  excuses. Whistle + quota-clear pays `PERFECT_PAY` 200/250/300/350 into
-  score AND seat bank, sheet resets, last shift pays before win, short never
-  pays. Moment: sparkle fanfare over the whistle, gold CLEAR sub-line, gold
-  over-card tally. Hygiene: zero rng at payout, no new stateHash fields.
-  Gates: §CLEAN SHIFT 21 node + CLEAN LIVE chrome; 114/114 + 35/35, 0 page
-  errors; `PICK_MUT=perfect` reds 5, `PICK_MUT=spoil` reds 2 (restored).
-  Corpus regenerated & committed: measured all 20 export seeds bank exactly
-  +500 (both planner seats clear shift 2 clean — verified per-seed, not
-  inferred); drops identical 4461/4010/451; replay-verified ALL. contractcheck
-  16/16, robokitcheck OK, lint×3 + build green.
+- **HOMEBODY — ROOMS WITH A PERSONALITY (#2736) — PR #2740 merged `46cd4fc`, prod-verified.**
+  A standing wing reads its OWN floorboards: a Bookshelf makes it a STUDY (three
+  finished in-room reads → insight: reader +0.15 fun, house +1 content, `studied`
+  plucks), a TV/radio a PLAYROOM (Pip's fun-pick pulls to the in-room toy over
+  nearer house things; three finished in-room plays → delight: +0.2 fun, rel.kid
+  +0.5, house +1, `kid-laugh`). `archetypeOf` names rooms (bedroom > study >
+  playroom, view-only); paid-only ledger rows ride the pause sheet; open-book /
+  giggle-star badges sit at the doors. No rng timing; tallies join `stateHash`
+  INSIDE the wings loop — bare lots gain no mixes, no-tap pin 3998885235
+  re-passed untouched, 5/5 WINNABLE seeds hold. Proof: peoplecheck **1078/0**
+  (+36 §PERSONALITY); mutants die named (`onWingFloor`→`s.wings[0]` → exactly
+  the house-shelf gate red; pull→0 → gravitate+delight five red); queuecheck
+  99/99; contractcheck 14/14; eslint + lint gates + build green. Prod: live
+  chunk `index-BZ2wAyxk.js` carries both banners + ledger shapes —
+  https://jalfern.com/retrogames/homebody is the shipped sim.
+- **Docs trail:** `docs/HARNESS.md` content-verify recipe #2746 — WRONG in its
+  first form, corrected by #2748 (see catches).
 
-## Next queued (slot b)
-- Re-derive at main (`node scripts/idle-kick.mjs`); do NOT trust this line.
-  Expect: #1711 WAIT-STATE (phone half #2652 AWAITING until Nov 20 01:36Z,
-  default keeps waiting); #2736 → shipped-or-not by slot a; PICK RUSH is now
-  held ONLY while this PR's issue closes — its never-dry score came from
-  #2739, which QA MASTER holds for its six polish items (crane inertia, bin
-  interiors, feather lesson, take replay, audio variety, attract seeds). If
-  QA has claimed #2739 by then, expect the never-dry rung to score the rest
-  of the shelf at 0 → STOP legal only when every gap everywhere is owned.
+## Board
+- Warden target #2734 REFUSED at claim (slot b live-held; shipped as #2737).
+  Ladder: #1711 skipped WAIT-state (phone take absent — `plaicraft:grade
+  --dry-run` "nothing new"; jonq #2652 AWAITING, deadline Nov 20 01:36Z,
+  default keeps waiting); steer/game-queue empty; #2732 taken by QA (#2741
+  `bot.face`); flagship stage spent → never-dry: weakestStage score 1 =
+  HOMEBODY's lone unowned gap. Filed #2736, claimed, shipped.
+- Filed QA polish pass **#2743** (named rooms short of the original — QA's next).
 
-## Catches learned (durable)
-- **Uniform deltas hide attribution.** All 20 corpus seeds moved +500 — the
-  honest claim needed a per-seed re-walk (both seats, shift index 1 — and
-  seed 13, a NON-export seed, busts shift 2 with a belt-kill; don't
-  generalize the export pattern to "always").
-- **`grabFrom` can't see a slip mid-call** — its loop only returns between
-  attempts, so a 400-cap call rode the barrel to the belt end (a MISS, wrong
-  law tested). Poll fx between short (~45-tick) attempts for mid-attempt
-  events.
-- **ESM namespace bindings are live for CONTENT, not for REBIND.** Runtime
-  mutants work because they mutate exported arrays in place (fill/splice);
-  `s.PERFECT_PAY = …` would throw. Design law data as arrays/objects, not
-  scalars, so it stays mutant-killable.
-- **Prod verify chunk refs come both ways**: the deployed entry lists some lazy
-  chunk refs WITHOUT the `assets/` prefix — scan `index-[A-Za-z0-9_-]*\.js`
-  bare (that's how #2748 got its docs; the same miss cost slot b 7 minutes
-  here — marker FOUND in `assets/index-Bug_iATq.js`, entry `index-BJir61Hz.js`).
-- **Foreign scratch edits can land in YOUR worktree.** An uncommitted
-  binVis-zeroing fix (slot-a style, #2678/#2740 refs) appeared in the lane
-  worktree between PR creation and merge. The PR was clean (verified pre-PR)
-  — but `git status` before teardown is mandatory, and unexplained edits are
-  PARKED (`/tmp/forge/stray-binvis-reset.patch`) + announced on the issue,
-  never silently dropped.
+## Next queue
+- Re-derive at main (`node scripts/idle-kick.mjs`) — do NOT trust this line.
+  At close: `KICK PICK RUSH -1 weak` (score from feedback naming PICK RUSH —
+  #2739 slot b's polish pass — with zero unowned README gaps; QA owns both
+  open feedbacks (#2739, #2743) while QA MASTER is live, so builders go
+  flagship/never-dry). #1711 stays WAIT until a take lands (check the store).
+  FLOOR BOSS "telegraph the knee" (STATE 346 note, unowned) remains the
+  honest games-lane candidate if the ladder reaches feedback with QA busy —
+  file POLISH first (#841).
 
-## Lane state
-- Worktree `~/Dev/retrogames-forge-pickrush-perfect-shift` + branch to be
-  removed post-merge verification; main checkout to be re-detached at
-  `origin/main` including the STATE commit below. Port 5178 freed at close.
-- Rule 4: game code merged (`src/games/**`) — streak reset, shelf healthy.
-- No halt on the board; nothing taste-shaped came up (the stage was
-  README/never-dry prescribed), so no jonq filed by this lane.
-- Open questions for Jon: none owned by slot b. #2652 (AWAITING, platform)
-  remains the only gate on #1711 line 3's human half.
-- Polish round for PICK RUSH already exists as #2739 (filed by session 347,
-  QA-held) — no duplicate filed per step 8b.
+## Catches learned
+- **Route chunks share the ENTRY's name.** Every game compiles to
+  `assets/index-<hash>.js`; games are NOT in the entry (HTML → entry → grep is a
+  broken detector — it faked 20 min of "stale prod" while #2740 was live all
+  along). Recipe (codified HARNESS.md #2748): collect every chunk the live entry
+  references, identify the game's chunk by a marker stable since a known ship,
+  re-grep THAT for new markers; count with `grep -o | wc -l` (minified = one
+  line, `grep -c` caps at 1); a deployment `success` for the merge SHA outranks
+  any HTML edge-cache age (`x-vercel-cache: HIT` can sit minutes past a deploy).
+  Filed the wrong lesson (#2746), found ground truth, corrected same session
+  (#2748) — re-test notes against reality before codifying them.
+- **peoplecheck errands run to completion:** tick to the `satisfied` event, not
+  `while (p.use)`; deltas `[0,0,0]` named the sampling bug instantly (rule 8).
+- **The attract bot never furnishes wings** (scan meets house floor before wing
+  planks) — wing-law changes stay player-visible; demo bytes unchanged.
+- Live-drive co-presence/meal legs flake at load ~5 (failures MOVE between
+  runs); pure-sim twins green = contention per rule 3.
+- A parallel lane can remove your forge worktree while closing their session —
+  nothing local ever mattered once pushed; keep checkpoints pushed every step.
+- (Re-confirmed) remote is the source of truth; `curl -L`; content markers.
+
+## Housekeeping
+- #2736 closed (shipped). Merged this session: #2740, #2744 (STATE v1 —
+  superseded by this v3), #2746, #2748. Filed: #2736, #2743.
+- No jonq filed this session; open questions link: #2652 (AWAITING, platform).
+- Dev server 5173 killed at close; slot-a worktree pruned by slot b's close —
+  all branches were merged/deleted as intended.
