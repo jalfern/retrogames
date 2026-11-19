@@ -1,0 +1,93 @@
+name: MICPROBE runner stamp (advisory, #2725)
+
+# The fake-file capture shape (#2709) is what every synth-mic suite depends on
+# since headless Chrome M157 killed the WebAudio-synth trick — but the matrix
+# was stamped on the Mac only (Chrome 157.0.8103.79). The GitHub runner's
+# Chrome had never been measured. This is that measurement, made permanent:
+# run `npm run micprobe` on the runner's chromium (the very engine the suites
+# use — same SHOT_CHANNEL, same harness launch) and post the chrome version +
+# fake-file verdict to #2725 when it changes or goes red. When the runner image
+# bumps engines mid-ladder, this names it before a suite red-herrings it.
+#
+# Advisory in every direction (#1358): it lives OUTSIDE nightly.yml —
+# nightlyverdictcheck pins that file to verdict jobs only and main-ok.sh reads
+# it only — so a Chromium hiccup here can never red-freeze merges. Its own
+# concurrency group; red here is a note to fix, not a freeze.
+# Quiet while the shape holds: the schedule posts to #2725 only when the probe
+# is RED or the runner's chrome major differs from the last posted marker;
+# a manual dispatch always posts (it exists to be read).
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # after plaicraft grading (06:45 UTC), quiet hours
+  workflow_dispatch:
+
+concurrency:
+  group: micprobe-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # advisory: red here is a note, never a freeze
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHOT_CHANNEL: chromium   # the harness launches playwright chromium — the suites' engine
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24   # npm >=11, see the note in ci.yml's static job
+          cache: npm
+      - name: Probe the runner's capture shape (#2725)
+        run: |
+          npm ci
+          npx playwright-core install --with-deps chromium
+          npm run dev > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5173/retrogames/ > /dev/null; then
+              echo "dev server up after ${i}s"; break
+            fi
+            if [ "$i" = "60" ]; then echo "dev server never came up"; cat /tmp/vite.log; exit 1; fi
+            sleep 1
+          done
+          PROBE_EXIT=0
+          npm run micprobe > /tmp/micprobe.log 2>&1 || PROBE_EXIT=$?   # redirect + ||, never tee into $? (#2723 catch: pipes mask exit codes)
+          cat /tmp/micprobe.log
+          chrome=$(grep -oE 'chrome +[0-9.]+' /tmp/micprobe.log | head -1)
+          ver=$(printf '%s' "$chrome" | grep -oE '[0-9]+' | head -1)
+          lines=$(grep -E 'fake-file capture delivers|replays from file-0|device priming|checks passed' /tmp/micprobe.log || true)
+          last=$(gh api "repos/jalfern/retrogames/issues/2725/comments?per_page=100" \
+            --jq '[.[] | select(.body | startswith("MICPROBE (CI runner):"))] | last | .body // ""' || echo '')
+          lastver=$(printf '%s' "$last" | grep -oE 'chrome +[0-9]+' | grep -oE '[0-9]+' | head -1)
+          forced=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then forced=true; fi
+          if [ "$PROBE_EXIT" = 0 ] && [ "$ver" = "$lastver" ] && [ "$forced" != true ]; then
+            echo "chrome major $ver matches the last stamp and the probe is green — no comment"
+            exit 0
+          fi
+          verdict='fake-file shape holds'
+          if [ "$PROBE_EXIT" != 0 ]; then verdict='PROBE RED — lines below'; fi
+          note=''
+          if [ -n "$ver" ] && [ "$ver" -lt 157 ]; then
+            note=$'\n\nNote: the runner\x27s chrome predates M157. When the runner image bumps to M157+ the WebAudio-synth capture shape dies mid-ladder (#2709) — this probe names the engine switch before the suites red-herring it.'
+          fi
+          # every physical line stays at the block indent: a line at column 0
+          # would END this YAML literal scalar and poison the parse (ciyamlcheck).
+          body="MICPROBE (CI runner): ${chrome:-chrome unknown} — ${verdict}"
+          body+=$'\n\n```\n'
+          body+="${lines:-no probe lines captured}"
+          body+=$'\n```'
+          body+="$note"
+          body+=$'\n\nRun: '"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # post failure must not mask the probe's true verdict — the run log carries the warning.
+          gh api repos/jalfern/retrogames/issues/2725/comments -f body="$body" --jq '.html_url' \
+            || echo 'WARN: could not post the MICPROBE marker comment to #2725'
+          exit "$PROBE_EXIT"
+      - name: Dev server log (on failure)
+        if: failure()
+        run: cat /tmp/vite.log

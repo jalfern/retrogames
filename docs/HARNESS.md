@@ -255,7 +255,9 @@ browser today — one file serves one schedule). Honest-source rule: every run s
 source (`mic capture: fake-file (baked wav)`); a fake-file witness never launders as phone audio —
 line 3 still closes on the audited human take. Under cross-lane load the recorder and rAF starve
 together — that is why the clap drivers carry the #2205 quiet-box preflight: SKIP honestly, never
-grade a starved box.
+grade a starved box. `micprobe-nightly.yml` (advisory, #2725) stamps the GitHub runner itself each
+night — the runner's chromium version + fake-file verdict posted to #2725 when they change — so a
+runner-image engine bump is named before a suite red-herrings it.
 
 ## The Forge (autonomous game production)
 `/forge` (route `ForgeBoard.jsx`) is the live progress board + request box: it reads the
