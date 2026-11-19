@@ -53,6 +53,7 @@
 //   node scripts/floorbosscheck.mjs --mutate-knee-teach # the knee lesson teaches illegal beside-places — the honest-fix filter is gone, demand RED (#2711 s2)
 //   node scripts/floorbosscheck.mjs --mutate-turn # loaded legs stop counting pivots — staircases return, demand RED (#2724)
 //   node scripts/floorbosscheck.mjs --mutate-repath-land # racks land on claimed routes — stale paths drive into fresh walls, demand RED (#2724)
+//   node scripts/floorbosscheck.mjs --mutate-face # reversing rotates the nose — bot.face becomes bot.dir again and the outside audit cannot see the body (#2732)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -107,7 +108,8 @@ const MUT_KNEE_ROUTE = ARGS.includes('--mutate-knee-route') // #2711: loaded car
 const MUT_KNEE_TEACH = ARGS.includes('--mutate-knee-teach') // #2711 s2: the lesson admits illegal beside-places
 const MUT_TURN = ARGS.includes('--mutate-turn') // #2724: the pivot sort is gone — staircases return
 const MUT_REPATH_LAND = ARGS.includes('--mutate-repath-land') // #2724: racks land on claimed routes — stale paths keep driving into them
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND) {
+const MUT_FACE = ARGS.includes('--mutate-face') // #2732: reversing rotates the nose — bot.face degrades back to bot.dir
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const tgt = MUT_MANNERS || MUT_ATTRACT ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) : sim // #2700: presentation laws plant in the painter
     const src = readFileSync(tgt, 'utf8')
@@ -173,6 +175,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ['next.sort((a, b) => a.t - b.t || a.seq - b.seq) // pivots first, fixed arrival order breaks ties — total, stable', 'next.sort((a, b) => a.seq - b.seq) // MUTANT: arrival order — the staircase is back', 'loaded carts count cells again, not maneuvers — every leg stair-steps, the driver law is gone (#2724)']
                                                                     : MUT_REPATH_LAND
                                                                     ? ['if (broken) repath(gs, b)', 'if (false && broken) repath(gs, b)', 'racks land on claimed routes — traffic plans drive into fresh walls and old diagonals, and the heat lies about them (#2724)']
+                                                                    : MUT_FACE
+                                                                    ? ['bot.dir = nbDir(nx.x - bot.x, nx.y - bot.y)\n    if (bot.dir !== (bot.face + 2) % 4) bot.face = bot.dir // #2732: reversing keeps the facing — the body never rotates (#2711 doctrine, now visible in state)', 'bot.dir = nbDir(nx.x - bot.x, nx.y - bot.y)\n    bot.face = bot.dir // MUTANT: reversing rotates the nose — the body law is gone (#2732)', 'bot.face records movement, not facing — the back-pedal facing is invisible outside the planner again (#2732)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
@@ -1600,7 +1604,7 @@ console.log('— duck & pass (#2692) —')
         const [A, B] = g.robots
         A.x = 16; A.y = 3; A.carry = null; A.task = { kind: 'toArm' }; A.path = []; A.moveT = 0; A.wait = 0; A.yield = null; A.yieldCd = 0
         B.x = 16; B.y = 2; B.carry = null; B.task = { kind: 'toArm' }; B.path = []; B.moveT = 0; B.wait = 0; B.pickT = 24; B.jam = false; B.broken = brokenRival; B.repair = brokenRival ? 400 : 0
-        g.robots.push({ id: 3, x: 17, y: 1, carry: 'crate', owner: -1, task: { kind: 'toStock', rx: 18, ry: 3 }, path: [], moveT: brokenRival ? 9999 : 36, wait: 0, jam: false, pickT: 0, broken: false, repair: 0, wear: 0, wearMax: 9999, dir: 2, hist: [], stall: 0, yield: null, yieldCd: 0, ducked: 0 })
+        g.robots.push({ id: 3, x: 17, y: 1, carry: 'crate', owner: -1, task: { kind: 'toStock', rx: 18, ry: 3 }, path: [], moveT: brokenRival ? 9999 : 36, wait: 0, jam: false, pickT: 0, broken: false, repair: 0, wear: 0, wearMax: 9999, dir: 2, face: 2, hist: [], stall: 0, yield: null, yieldCd: 0, ducked: 0 }) // #2732: synthetic bots carry the facing beside the movement
         return { g, A, B }
     }
     {
@@ -2278,13 +2282,52 @@ console.log('— turn-count routing (#2724): loaded legs corner instead of stair
             'empty legs never learn the pivot count — toRack/toArm stay byte-identical classic BFS (#1917)')
         ok(/else if \(t\.kind === 'toStock'\) bot\.path = bfsKnee\(/.test(simSrc), 'the loaded stow leg runs the body planner (#2711, #2724)')
     }
-    // (The live knee-audit probe this session wrote first was removed before
-    // merge: bot.dir records movement, not facing — the planner's back-pedal
-    // facing (#2711 doctrine) is invisible in sim state, so an external audit
-    // cannot reconstruct which diagonal a load actually sweeps. The law is
-    // enforced where it is observable — in the planner's own output (the
-    // hop-for-hop gates above + #2711's path-purity gates) — and the gap is
-    // filed as feedback for the engine's next visit.)
+    // #2732 LIVE KNEE AUDIT — bot.face now rides the state, so what #2724
+    // could not write IS writable: reconstruct bearings from the outside
+    // (carts start facing north out of the depot; reversing keeps the facing;
+    // a pivot adopts its movement bearing) over every real step, and check the
+    // engine's field tick by tick. Loaded PLAN pivots additionally sweep
+    // prev + NB[heading] + NB[step] under two doctrines: the SEEDED one the
+    // planner actually uses (dir) — that must be clean — and the BODY one the
+    // doctrine promises (face). The two disagree exactly where the seed lies:
+    // the pinned body-clip count is the live tripwire for #2738.
+    {
+        const NBF = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+        const CLIPS_BODY = 14 // #2738 tripwire: live body-doctrine clips on the three audited careers, measured 2026-11-19. Must move in the PR that seeds the knee planner from the facing — then this flips to 0.
+        let matches = 0, mismatches = 0, backs = 0, swept = 0, clipBody = 0
+        for (const seed of [4242, 1337, 99]) {
+            const gs = makeGame(seed)
+            const ap = createAutopilot()
+            const chain = new Map(gs.robots.map((r) => [r.id, r.face])) // reconstruction starts where the depot put the nose
+            while (!gs.end && gs.tick < SHIFT + 10) {
+                const prev = new Map(gs.robots.map((r) => [r.id, {
+                    x: r.x, y: r.y, carry: r.carry, f: chain.get(r.id), ef: r.face,
+                    head: r.path[0] ? `${r.path[0].x},${r.path[0].y}` : null,
+                }]))
+                step(gs, [ap(gs)])
+                for (const b of gs.robots) {
+                    const p = prev.get(b.id)
+                    if (!p || p.f === undefined) { chain.set(b.id, b.face); continue } // hired mid-shift — seed from the engine's own first report
+                    const d = NBF.findIndex(([ax, ay]) => ax === b.x - p.x && ay === b.y - p.y)
+                    if (d < 0) continue // stationary tick — the body trivially holds its bearing
+                    const back = d === (p.f + 2) % 4
+                    const f = back ? p.f : d // doctrine: reversing keeps the facing
+                    if (b.face === f) matches++; else mismatches++
+                    if (back) backs++
+                    chain.set(b.id, f)
+                    if (!(p.carry || b.carry) || !p.head || `${b.x},${b.y}` !== p.head) continue // loaded PLAN-steps only — the router's promise, kept
+                    if (back || d === p.f) continue // straight and reverse legs sweep no knee
+                    swept++
+                    const bx2 = p.x + NBF[p.ef][0] + NBF[d][0], by2 = p.y + NBF[p.ef][1] + NBF[d][1] // the NOSE the engine reported sweeping this diagonal
+                    if (gs.racks.some((r) => r.x === bx2 && r.y === by2)) clipBody++
+                }
+            }
+        }
+        ok(mismatches === 0, `facing law holds outside the planner: ${matches} steps reconstructed, ${backs} back-pedals kept the bearing, 0 divergences (#2732)`)
+        ok(swept > 0, `loaded plan-pivots sweep ${swept} audited diagonals — the live knee audit #2724 had to remove is writable from state alone (#2732)`)
+        ok(clipBody === CLIPS_BODY, `body-doctrine tripwire holds at ${clipBody} live clips — every one is the seed-vs-facing lie (#2738) on driven traffic; the count must move in the PR that fixes the seed (${clipBody})`)
+        ok(state(makeGame(1337)).robots.every((r) => Number.isInteger(r.face) && r.face >= 0 && r.face <= 3), 'the DEV eye reports the facing beside the movement (#2732)')
+    }
     {
         let piv = 0, steps = 0
         for (const seed of [4242, 1337, 99]) {
@@ -2309,6 +2352,80 @@ console.log('— turn-count routing (#2724): loaded legs corner instead of stair
             }
         }
         ok(steps > 0 && piv < steps * 0.6, `pivots are the minority of steps on a driven floor (${piv}/${steps}) — carts run straights, the yard reads like driving (#2724)`)
+    }
+    // #2732 deterministic back-pedal rig — the audit's teeth at field level:
+    // point a cart east, drive it west (a reverse — the bearing must survive),
+    // then north (a pivot — the bearing follows the movement).
+    {
+        const g = makeGame(11)
+        g.auto = false
+        const b = g.robots[0]
+        let cx = null, cy = null
+        scanA: for (let y = 2; y < 18; y++) for (let x = 2; x < 28; x++) {
+            if (blocked(g, x, y, b.id) || blocked(g, x - 1, y, b.id) || blocked(g, x - 1, y - 1, b.id)) continue
+            if (g.racks.some((r) => r.x === x && r.y === y - 1)) continue // the pivot's sweep must be clean
+            if (Math.abs(x - OUT_CELLS[0].x) + Math.abs(y - OUT_CELLS[0].y) <= 2) continue // stay clear of the docks' own tasking
+            cx = x; cy = y; break scanA
+        }
+        ok(cx !== null, `the rig finds a clear corridor cell to reverse in (${cx},${cy}) (setup) (#2732)`)
+        if (cx !== null) {
+            b.x = cx; b.y = cy
+            b.face = 1; b.dir = 1 // nose east
+            b.path = [{ x: cx - 1, y: cy }, { x: cx - 1, y: cy - 1 }] // west (reverse), then north (pivot)
+            b.task = { kind: 'toOut' }; b.carry = null // the path is hand-set; the empty toOut leg never re-plans while it stands
+            b.moveT = 0; b.jam = false; b.broken = false; b.pickT = 0; b.wait = 0; b.yield = null
+            ok(state(g).robots.find((r) => r.id === b.id).face === 1, 'the eye reads the east-facing cart before the drive (setup) (#2732)')
+            let teeth = 0
+            while (b.path.length && g.tick < 400) {
+                const was = b.path[0]
+                step(g, [{}])
+                if (b.x === was.x && b.y === was.y) {
+                    if (was.x === cx - 1 && was.y === cy) {
+                        teeth++
+                        ok(b.face === 1 && b.dir === 3, `the reverse drove west but the nose stayed east (face ${b.face}, dir ${b.dir}) — reversing keeps the facing (#2732)`)
+                    } else if (was.x === cx - 1 && was.y === cy - 1) {
+                        teeth++
+                        ok(b.face === 0 && b.dir === 0, `the pivot north took the nose with it (face ${b.face}) — turns adopt their bearing (#2732)`)
+                    }
+                }
+            }
+            ok(teeth === 2, `both legs of the back-pedal-then-pivot drove (teeth ${teeth}/2) — the rig itself is live, not skipped (setup) (#2732)`)
+            const uiF = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+            ok(/const nv = \[\[0, -1\], \[1, 0\], \[0, 1\], \[-1, 0\]\]\[b\.face\]/.test(uiF) && /\[\[0, -2\], \[2\.5, 0\], \[0, 2\], \[-2\.5, 0\]\]\[b\.face % 4\]/.test(uiF),
+                'the painter reads the body — loaded nose and amber eye ride the facing, not the movement (#2732)')
+        }
+    }
+    // #2732 the seed heading matters — with the nose east and a rack on the
+    // north-east, stepping north is a pivoting swing the law refuses; only a
+    // planner tricked into thinking the cart faces west (the naive "dir" after
+    // a back-pedal) would take the same step for free.
+    {
+        const g = makeGame(11)
+        g.auto = false
+        const b = g.robots[0]
+        let cx = null, cy = null
+        scanB: for (let y = 8; y < 17; y++) for (let x = 2; x < 27; x++) {
+            if (blocked(g, x, y, b.id) || blocked(g, x + 1, y - 1, b.id) || blocked(g, x, y - 1, b.id) || blocked(g, x + 1, y, b.id)) continue
+            if (blocked(g, x - 1, y - 1, b.id) || blocked(g, x + 2, y - 1, b.id) || blocked(g, x, y - 6, b.id)) continue
+            cx = x; cy = y; break scanB
+        }
+        ok(cx !== null, `the rig finds open room for the bearing contrast (${cx},${cy}) (setup) (#2732)`)
+        if (cx !== null) {
+            g.racks.push({ x: cx + 1, y: cy - 1, items: [] }) // the racked elbow, set straight on the map — this rig judges the planner, not the builder's laws
+            const pred = (x, y) => x === cx && y === cy - 6
+            const P = bfsKnee(g, cx, cy, pred, b.id, 1) // nose east: north is a pivot whose sweep hits the rack — refused
+            const Q = bfsKnee(g, cx, cy, pred, b.id, 3) // nose west: north is still a pivot but sweeps the clear north-west — taken
+            ok(P !== null && P[0] && !(P[0].x === cx && P[0].y === cy - 1), 'facing east, the planner never steps north through the racked elbow — the knee is in the route (#2732)')
+            ok(Q !== null && Q[0] && Q[0].x === cx && Q[0].y === cy - 1, 'the same north step is free facing west — the refusal is bearing-shaped, not cell-shaped: the geometry discriminates, so the seed input is load-bearing (#2732)')
+            const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
+            // The repath call sites still seed bfsKnee with bot.dir — and the
+            // two answers above PROVE that seed is load-bearing. Fixing the
+            // seed moves the autopilot's physics, re-shuffling the #2346 career
+            // marks and the #2700 attract-courtesy seeds; that honest
+            // re-measure is filed as its own feedback item (#2738).
+            ok(/, bot\.id, bot\.dir\)\n\s*: bfs\(gs, bot\.x, bot\.y, \(x, y\) => OUT_DOCKS/.test(simSrc),
+                'the seed gap is honest and tracked — repath still seeds from the movement, and this block says WHY (#2732 → #2738)')
+        }
     }
     // repath-on-land: a rack may not land on a claimed route. Task a loaded
     // cart, watch its plan cross the floor, drop a rack on the first crossing

@@ -1013,7 +1013,7 @@ function newRobot(gs, x, y, owner = -1) {
         id: gs.nextBotId++, x, y, carry: null, owner, // #2555: who hired it — −1 is the house (legacy floor)
         task: { kind: 'idle' }, path: [], moveT: 0, wait: 0, jam: false,
         pickT: 0, broken: false, repair: 0, wear: 0,
-        wearMax: 260 + Math.floor(gs.rng() * 180) - gs.params.wearCut, dir: 0, hist: [], stall: 0,
+        wearMax: 260 + Math.floor(gs.rng() * 180) - gs.params.wearCut, dir: 0, face: 0, hist: [], stall: 0, // #2732: face = the body's bearing, survives back-pedals (#2711 doctrine); dir = last movement
         yield: null, yieldCd: 0, ducked: 0, // #2692: { fx, fy, nx, ny, t } while holding a shoulder; CD ticks; career duck count
     }
 }
@@ -1049,6 +1049,9 @@ function nudge(gs, bot) {
     for (const c of cands) {
         if (!blocked(gs, c.x, c.y, bot.id)) {
             bot.hist.pop()
+            const nd = nbDir(c.x - bot.x, c.y - bot.y) // #2732: a nudge is a real step — record it like one
+            bot.dir = nd
+            if (nd !== (bot.face + 2) % 4) bot.face = nd
             bot.x = c.x; bot.y = c.y
             bot.jam = false; bot.wait = 0
             repath(gs, bot)
@@ -1064,6 +1067,11 @@ function repath(gs, bot) {
     else if (t.kind === 'toArm') bot.path = bfs(gs, bot.x, bot.y, nearCell(ARM_CELL.x, ARM_CELL.y), bot.id)
     // #2711: the loaded legs (stow home, deliver out) plan with the body —
     // a cart carrying freight will not turn where its swing clips a rack.
+    // #2732 NOTE: seeding still rides bot.dir. Seeding from bot.face (the
+    // doctrine-correct bearing) is proven load-bearing by the bearing-contrast
+    // rig in floorbosscheck — but it moves the autopilot's physics and would
+    // re-shuffle the #2346 career marks and the attract-courtesy seeds;
+    // that honest re-measure is filed as feedback #2738.
     else if (t.kind === 'toStock') bot.path = bfsKnee(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id, bot.dir)
     else if (t.kind === 'toOut') bot.path = bot.carry
         ? bfsKnee(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id, bot.dir)
@@ -1253,6 +1261,7 @@ function duckTo(gs, bot, p, rx, ry) {
     bot.hist.push({ x: fx, y: fy })
     if (bot.hist.length > 6) bot.hist.shift()
     bot.dir = nbDir(p.x - fx, p.y - fy)
+    if (bot.dir !== (bot.face + 2) % 4) bot.face = bot.dir // #2732: the pull-off steers unless it is a reverse — reversing keeps the facing
     bot.x = p.x; bot.y = p.y
     bot.wear += 1
     bot.moveT = STEP_TICKS
@@ -1412,6 +1421,7 @@ function stepRobot(gs, bot) {
     bot.hist.push({ x: bot.x, y: bot.y })
     if (bot.hist.length > 6) bot.hist.shift()
     bot.dir = nbDir(nx.x - bot.x, nx.y - bot.y)
+    if (bot.dir !== (bot.face + 2) % 4) bot.face = bot.dir // #2732: reversing keeps the facing — the body never rotates (#2711 doctrine, now visible in state)
     bot.x = nx.x; bot.y = nx.y
     bot.wear += 1
     bot.moveT = STEP_TICKS
@@ -1742,7 +1752,7 @@ export function state(gs) {
         cursor: [gs.cursor.x, gs.cursor.y],
         robots: gs.robots.map((b) => ({
             id: b.id, x: b.x, y: b.y, carry: b.carry, broken: b.broken, jam: b.jam,
-            wear: Math.round((b.wear / b.wearMax) * 100), task: b.task.kind, dir: b.dir,
+            wear: Math.round((b.wear / b.wearMax) * 100), task: b.task.kind, dir: b.dir, face: b.face, // #2732: facing rides the eye so an external audit can reconstruct the sweep
         })),
         racks: gs.racks.map((r) => ({ x: r.x, y: r.y, items: [...r.items] })),
         staging: [...gs.staging],
