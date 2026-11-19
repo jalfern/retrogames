@@ -23,6 +23,10 @@ const C = {
     barrel: '#8a5a2b', barrelDark: '#5c3a17', barrelBand: '#d8c07a',
     capsule: '#ff8c1a', capsuleLit: '#ffd23c', capsuleWin: '#fff6e0',
     ink: '#f4f2e6', gold: '#ffd23c',
+    // S3 — the weapon wheel + the new roster
+    letterM: '#2b6fd4', letterF: '#e23b2e', letterL: '#8a3ad4', letterS: '#ff8c1a',
+    laser: '#ff4ad4', laserCore: '#ffd6f6', flame: '#ff6a2a', flameHot: '#ffe27a',
+    nest: '#2b1c0c', nestLit: '#41290f', scope: '#8ad4ff', vest: '#2e3122',
     // S2 — the waterfall canyon & the gate
     rockHi: '#5d6672', rock: '#414a58', rockLo: '#2a303c', rockDeep: '#171c26',
     moss: '#3f7a3a', mossLit: '#5fae52',
@@ -207,6 +211,17 @@ export function drawPlayer (ctx, p, tick) {
     if (p.weapon === 'spread') {
         ctx.fillStyle = C.gunMetal
         ctx.fillRect(sx * 3.4 - 2, sy + ay * 8 - 2, 4, 4)
+    } else if (p.weapon === 'machine') {
+        ctx.fillStyle = '#5a6672'
+        ctx.fillRect(sx * 3.2 - 2, sy + ay * 8 - 2, 6, 3) // boxy MG receiver
+    } else if (p.weapon === 'fire') {
+        ctx.fillStyle = C.flame
+        ctx.fillRect(sx * 3.4 - 2, sy + ay * 8 - 2, 4, 4)
+        ctx.fillStyle = C.flameHot
+        ctx.fillRect(sx * 3.4 - 1, sy + ay * 8 - 1, 2, 2)
+    } else if (p.weapon === 'laser') {
+        ctx.fillStyle = C.laser
+        ctx.fillRect(sx * 3.4 - 1, sy + ay * 8 - 1, 3, 3)
     }
     ctx.restore()
 }
@@ -227,6 +242,19 @@ export function drawSoldier (ctx, s, _tick) {
     ctx.fillRect(-5, -2, 3, 2); ctx.fillRect(2, -2, 3, 2)
     ctx.fillStyle = C.uni
     ctx.fillRect(-5, -20, 10, 9)
+    // S3 grenadier: dark vest + shell bandolier, and the lob wind-up arm
+    if (s.nade) {
+        ctx.fillStyle = C.vest
+        ctx.fillRect(-5, -18, 10, 3)
+        ctx.fillStyle = '#8a7040'
+        for (let i = 0; i < 3; i++) ctx.fillRect(-4 + i * 3, -17, 2, 2)
+        if (s.throwT > 0 && s.throwT <= 20) {
+            ctx.fillStyle = C.skin
+            ctx.fillRect(dir > 0 ? 3 : -6, -24, 3, 6) // arm cocked back over the head
+            ctx.fillStyle = '#232a20'
+            ctx.fillRect(dir > 0 ? 4 : -6, -27, 3, 3) // bomb in hand
+        }
+    }
     ctx.fillStyle = C.skin
     ctx.fillRect(-3, -26, 6, 6)
     ctx.fillStyle = C.beret
@@ -282,8 +310,14 @@ export function drawCapsule (ctx, c, tick) {
     ctx.fillRect(-8, -6, 16, 12)
     ctx.fillStyle = C.capsuleWin
     ctx.fillRect(-5, -3, 10, 6)
-    ctx.fillStyle = C.capsule
-    ctx.fillRect(-3, -2, 2, 4); ctx.fillRect(1, -2, 2, 4)
+    // the letter wheel: every capsule carries its gun (S/M/F/L)
+    const kind = c.kind || 'spread'
+    ctx.fillStyle = kind === 'machine' ? C.letterM : kind === 'fire' ? C.letterF : kind === 'laser' ? C.letterL : C.letterS
+    ctx.font = 'bold 7px "Courier New", monospace'
+    ctx.textBaseline = 'middle'
+    const letter = kind === 'machine' ? 'M' : kind === 'fire' ? 'F' : kind === 'laser' ? 'L' : 'S'
+    ctx.fillText(letter, -2, 1)
+    ctx.textBaseline = 'top'
     // sparkle trail
     ctx.fillStyle = pulse ? '#fff2b0' : '#ffb347'
     ctx.fillRect(10, -1, 3, 2); ctx.fillRect(15, -2 + (tick % 3), 2, 1)
@@ -291,8 +325,90 @@ export function drawCapsule (ctx, c, tick) {
 }
 
 export function drawBullet (ctx, b, enemy) {
+    const x = Math.round(b.x), y = Math.round(b.y)
+    if (!enemy && b.k === 'f') {
+        // firebar: a flame ball, hottest at the core, flickering as it tumbles
+        const fl = Math.floor((b.ph || 0) * 4) % 2
+        ctx.fillStyle = C.flame
+        ctx.beginPath(); ctx.arc(x, y, 3 + fl, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = C.flameHot
+        ctx.beginPath(); ctx.arc(x, y, 1 + fl, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#ff9a4a'
+        ctx.fillRect(x - 4 - fl, y - 1, 2, 2)
+        return
+    }
+    if (!enemy && b.k === 'l') {
+        // laser: a long thin coherent streak along its travel
+        const m = Math.hypot(b.vx, b.vy) || 1
+        const ux = b.vx / m, uy = b.vy / m
+        ctx.strokeStyle = C.laser
+        ctx.lineWidth = 2
+        ctx.beginPath(); ctx.moveTo(x - ux * 10, y - uy * 10); ctx.lineTo(x, y); ctx.stroke()
+        ctx.strokeStyle = C.laserCore
+        ctx.lineWidth = 1
+        ctx.beginPath(); ctx.moveTo(x - ux * 7, y - uy * 7); ctx.lineTo(x, y); ctx.stroke()
+        return
+    }
+    if (!enemy && b.k === 'm') {
+        // machine gun: hotter, fatter tracers than the rifle's
+        ctx.fillStyle = '#ffd23c'
+        ctx.fillRect(x - 3, y - 1, 5, 2)
+        ctx.fillStyle = '#fff6c8'
+        ctx.fillRect(x + 1, y - 1, 2, 2)
+        return
+    }
     ctx.fillStyle = enemy ? '#ff5a3c' : '#ffe27a'
-    ctx.fillRect(Math.round(b.x) - 2, Math.round(b.y) - 1, enemy ? 3 : 4, 2)
+    ctx.fillRect(x - 2, y - 1, enemy ? 3 : 4, 2)
+}
+
+// S3 grenade: a dark iron bomb spinning on its arc (rides the eb stream)
+export function drawGrenade (ctx, b) {
+    const x = Math.round(b.x), y = Math.round(b.y)
+    ctx.fillStyle = '#232a20'
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = '#3f4a38'
+    ctx.fillRect(x - 1, y - 4, 2, 2)
+    ctx.fillStyle = '#ffb347'
+    ctx.fillRect(x + 1, y - 4, 1, 1) // fuse spark
+}
+
+// S3 tree-line sniper: a nest in the canopy, a prone body, a long rifle, and
+// the scope glint that flashes while the shot charges (t < 40 = telegraph).
+export function drawSniper (ctx, sn, tick) {
+    ctx.save(); ctx.translate(Math.round(sn.x), Math.round(sn.y))
+    // branch + nest
+    ctx.fillStyle = C.nest
+    ctx.fillRect(-14, -2, 28, 6)
+    ctx.fillStyle = C.nestLit
+    ctx.fillRect(-14, -2, 28, 2)
+    ctx.fillStyle = C.leafDark
+    ctx.fillRect(-17, -14, 6, 12); ctx.fillRect(11, -12, 6, 10)
+    ctx.fillStyle = C.leaf
+    ctx.fillRect(-17, -16, 5, 4); ctx.fillRect(12, -14, 5, 3)
+    // crouched body
+    ctx.fillStyle = C.uniDark
+    ctx.fillRect(-5, -9, 4, 7); ctx.fillRect(1, -8, 4, 6)
+    ctx.fillStyle = C.uni
+    ctx.fillRect(-5, -17, 10, 8)
+    ctx.fillStyle = C.skin
+    ctx.fillRect(-2, -22, 5, 5)
+    ctx.fillStyle = C.vest
+    ctx.fillRect(-5, -15, 10, 3)
+    // long rifle along the aim
+    const a = sn.aim
+    ctx.strokeStyle = C.gunMetal
+    ctx.lineWidth = 2
+    ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(Math.cos(a) * 16, -14 + Math.sin(a) * 16); ctx.stroke()
+    // scope glint: the telegraph — blinks while the round charges
+    if (sn.t < 40 && Math.floor(tick / 4) % 2 === 0) {
+        ctx.fillStyle = C.scope
+        ctx.fillRect(Math.cos(a) * 8 - 1, -16 + Math.sin(a) * 8, 3, 3)
+    }
+    if (sn.flash > 0) {
+        ctx.fillStyle = sn.flash > 4 ? '#fff6c8' : '#ffb347'
+        ctx.fillRect(Math.cos(a) * 16 - 2, -14 + Math.sin(a) * 16 - 2, 4, 4)
+    }
+    ctx.restore()
 }
 
 // the hero's death tumble (ART.md bar 2/5: dies animate, 2-4 frames). The
@@ -383,8 +499,10 @@ export function drawHud (ctx, gs, hiscore) {
         ctx.fillStyle = C.skin
         ctx.fillRect(150 + i * 10, 14, 6, 4)
     }
-    ctx.fillStyle = gs.p.weapon === 'spread' ? C.capsuleLit : C.ink
-    ctx.fillText(gs.p.weapon === 'spread' ? 'SPREAD' : 'RIFLE', 320, 4)
+    const wnames = { rifle: 'RIFLE', spread: 'SPREAD', machine: 'MGUN', fire: 'FIRE', laser: 'LASER' }
+    const wcols = { rifle: C.ink, spread: C.capsuleLit, machine: '#7fb2ff', fire: '#ff6a2a', laser: '#ff4ad4' }
+    ctx.fillStyle = wcols[gs.p.weapon] || C.ink
+    ctx.fillText(wnames[gs.p.weapon] || 'RIFLE', 314, 4)
 }
 
 // ================================================================ S2 ════════
