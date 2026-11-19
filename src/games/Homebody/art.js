@@ -19,7 +19,7 @@ import {
     NEIGH_WARM_AT,   // #2599: cross-warmth — the rung that deepens each neighbour's chat
     goSayTarget,   // #2688: the promised ear — the view derives the errand the same way the sim resolves it
     TEND_HOURS, wingSets,   // #2705: the purpose view reads the sun-law's own constant and the room's own floor
-    archetypeOf,   // #2736: rooms with a personality — the badge asks the room's own furniture
+    archetypeOf, PAGES_INSIGHT, PLAYS_DELIGHT,   // #2736: rooms with a personality — the badge asks the room's own furniture · #2743: and how far the next pay is
     GARDEN, EXT_ROOM,   // #2721: the room card prices the NEXT kit, and the jar rides beside it
     JAR_CAP,   // #2729: the panel's jar row reads the fund's own cap
 } from './sim.js'
@@ -1160,7 +1160,13 @@ export function roomBadges(s) {
         const a = archetypeOf(s, w)
         if (a !== 'study' && a !== 'playroom') continue
         const d = wingGeom(w).door
-        out.push({ r: d[0], c: d[1], kind: a })
+        // #2743: the badge shows the pay COMING — p is the ripeness toward
+        // this room's next payout (#2705's ramp pattern), n what it has banked.
+        out.push({
+            r: d[0], c: d[1], kind: a,
+            p: Math.min(1, (a === 'study' ? w.pages || 0 : w.plays || 0) / (a === 'study' ? PAGES_INSIGHT : PLAYS_DELIGHT)),
+            n: a === 'study' ? w.insights || 0 : w.delights || 0,
+        })
     }
     return out
 }
@@ -1184,6 +1190,15 @@ export function drawRoomBadges(ctx, s) {
             ctx.fillRect(x + 7, y + 5, 9, 3)
             ctx.fillStyle = '#fff3b0'
             ctx.fillRect(x + 11, y + 5, 1, 3)
+        }
+        // #2743: the progress ramp under the glyph — a dark track always,
+        // filled in the badge's own colour per finished page/play, so the
+        // payoff is seen COMING (the ripeness-ramp pattern, #2705).
+        ctx.fillStyle = 'rgba(24,16,6,0.55)'
+        ctx.fillRect(x + 5, y + 12, 14, 2)
+        if (b.p > 0) {
+            ctx.fillStyle = b.kind === 'study' ? '#d9b23c' : '#ffd24a'
+            ctx.fillRect(x + 5, y + 12, Math.max(2, Math.round(14 * b.p)), 2)
         }
     }
 }

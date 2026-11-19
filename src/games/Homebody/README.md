@@ -380,6 +380,26 @@ placed ON ITS OWN FLOORBOARDS and becomes the kind of room it is furnished as
   WINNABLE seeds win as shipped. Player-facing consequence: named rooms are
   the player's move, and the game-over/attract stays honest about it.
 
+- **The naming beat (#2743).** `place` asks the wing who it was before the
+  piece lands and who it is after (`archetypeOf` twice, no rng); a wing that
+  newly reads study/playroom pushes `room-named` at its own doorstep. The
+  shell answers with a bright discovery pair (523→784 sine) and a `THIS ROOM
+  IS A STUDY/PLAYROOM` callout in the badge's colour. The bedroom stays mute
+  (the lodged pane speaks for it) and a rename into bedroom (bed over a study)
+  is silent too — the beat only sounds when a badge goes ON.
+- **The payoff banners name their room (#2743).** `studied` and `kid-laugh`
+  carry `room: archetypeOf(s, w) || kind`, and the banners read `THE STUDY
+  PAYS — INSIGHTS n` / `THE BEDROOM GIGGLES — DELIGHTS n` when a bed shares
+  the lot with the law's toy — which room paid is no longer invisible.
+- **The badge shows the pay coming (#2743).** `roomBadges` rides `p` (the
+  room's pages/plays over its own target) and `n` (banked insights/delights);
+  `drawRoomBadges` paints a dark ramp track under the glyph, filled in lamp
+  amber / star gold per finished page or play — the ripeness-ramp pattern
+  (#2705) at the door. Pure view: asking the badge writes no tally.
+- **Phone-scale probe (#2743).** `bondsPix` now returns `badges` — the door
+  glyph, ramp track and ramp-fill pixel counts, aimed at `roomBadges(gs)` so
+  the probe can't chase a stale seat (the #2729 jar-row method).
+
 Gates: `peoplecheck` §PERSONALITY (36: naming by contents incl. priority,
 both kits, bare-floor and no-wing nulls; three-read pay with exact fun
 (+0.4/+0.4/+0.55) and content (+2/+2/+3) deltas and once-only `studied`;
