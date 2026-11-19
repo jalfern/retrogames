@@ -254,7 +254,7 @@ function stepArm(gs, seat, pad) {
             if (Math.abs(it.x - arm.x) > GRAB_DX) continue
             const K = KINDS[it.kind]
             if (K.roll && !barrelUpright(it)) {
-                gs.ev.push({ type: 'slip', seat, x: arm.x, y: arm.tip })
+                gs.ev.push({ type: 'slip', seat, kind: it.kind, x: arm.x, y: arm.tip })
                 gs.fx.push({ t: 'slip', msg: 'SLIPPED!', x: arm.x, y: arm.tip - 10, k: 0 })
                 arm.clamp = 10
                 if (arm.mode !== 'low') arm.mode = 'rising'
@@ -307,7 +307,7 @@ function stepItems(gs) {
                 it.lost = true
                 gs.combo = 0
                 gs.score = Math.max(0, gs.score - 50)
-                gs.ev.push({ type: 'miss', x: it.x, y: BELT_Y })
+                gs.ev.push({ type: 'miss', kind: it.kind, x: it.x, y: BELT_Y })
                 gs.fx.push({ t: 'missline', msg: 'MISSED −50', x: BELT_END - 30, y: BELT_Y - 16, k: 0 })
             }
         } else if (it.lost) {
@@ -326,7 +326,7 @@ function stepItems(gs) {
                 if (bin) {
                     const want = KINDS[it.kind].bin === BINS.indexOf(bin)
                     if (it.fragile && (it.vy > BREAK_VY || Math.abs(it.vx) > BREAK_VX)) {
-                        gs.ev.push({ type: 'shatter', x: it.x, y: BIN_TOP })
+                        gs.ev.push({ type: 'shatter', kind: it.kind, seat: it.lastSeat ?? -1, x: it.x, y: BIN_TOP })
                         gs.fx.push({ t: 'shatter', msg: 'SMASHED!', x: it.x, y: BIN_TOP - 14, k: 0 })
                         fault(gs, -1, 'break', it.x, BIN_TOP, 'FRAGILE SMASHED')
                     } else if (want) {
@@ -339,10 +339,10 @@ function stepItems(gs) {
                         credited.score += pts
                         gs.correct++
                         gs.binFill[BINS.indexOf(bin)]++
-                        gs.ev.push({ type: 'drop', kind: it.kind, bin: BINS.indexOf(bin), pts, combo: gs.combo, x: it.x })
+                        gs.ev.push({ type: 'drop', kind: it.kind, seat: it.lastSeat ?? 0, bin: BINS.indexOf(bin), pts, combo: gs.combo, x: it.x })
                         gs.fx.push({ t: 'ok', msg: `+${pts}`, x: it.x, y: BIN_TOP - 14, k: 0 })
                     } else {
-                        gs.ev.push({ type: 'wrong', x: it.x, y: BIN_TOP })
+                        gs.ev.push({ type: 'wrong', kind: it.kind, seat: it.lastSeat ?? -1, x: it.x, y: BIN_TOP })
                         gs.fx.push({ t: 'wrong', msg: 'WRONG BIN', x: it.x, y: BIN_TOP - 14, k: 0 })
                         fault(gs, -1, 'wrong', it.x, BIN_TOP, 'WRONG BIN')
                     }

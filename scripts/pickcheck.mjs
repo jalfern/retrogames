@@ -23,12 +23,16 @@
 //   whip  — the cable spring dies (no overshoot on reversal, #2678)
 //   tell  — the grab-read telegraphs go silent (ring/jaw/slam never warn, #2684)
 //   aim   — rival intent and ring ownership go blind (#2690)
+//   rec   — the export's label law lies: a drop stops being a hit (#2734)
 
 import * as s from '../src/games/PickRush/sim.js'
 import { readFileSync } from 'node:fs' // §CB pins the marquee colour from the painter's source
 import { AMB_ZONES, zoneForShift, fireAt } from '../src/games/PickRush/ambience.js'
 import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, TELL, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from '../src/games/PickRush/visuals.js'
 import { scriptFor } from './lib/contractGames.mjs'
+import { collectRun, planner, OUTCOME_BY_EVENT, makeReplayDriver } from './pickrush-export.mjs'
+import { validateEpisode, exportEpisodes } from '../src/utils/robot/episode.js'
+import { verifyRecording, decodePad } from '../src/utils/recording.js'
 
 const args = process.argv.slice(2)
 const NODE_ONLY = args.includes('--node')
@@ -40,7 +44,7 @@ const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fai
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
 if (MUT) {
-    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim', 'rec'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
     console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 }
 const applyMut = () => {
@@ -54,6 +58,7 @@ const applyMut = () => {
     if (MUT === 'whip') BIN_VIS.spring = { k: 0, d: 0.22 } // cable spring dead — the head never whips past the tilt (#2678)
     if (MUT === 'tell') TELL.freeze = true // the belt goes mute: ring never lights, jaws never warn, pips never paint (#2684)
     if (MUT === 'aim') TELL.aimFreeze = true // the second crane goes invisible: no intent beacon, no ring ownership (#2690)
+    if (MUT === 'rec') OUTCOME_BY_EVENT.drop = { ok: false, why: 'drop' } // the export calls a correct-bin land a MISS (#2734)
 }
 applyMut()
 
@@ -854,6 +859,75 @@ section('CB — the catch ring reads colour-blind (#2694)')
         `CB-RING: under deuteranopia at native res — ok/off verdict pair ΔE ${vOk}, ok/core ${vCoreOk}, off/core ${vCoreOff}, ring/glass-marquee ${vGlass} (thresholds 25/15/15/25; the ring also carries lineWidth + blink redundancy)`)
 }
 
+// ---------------------------------------------------------------- EXPORT — Plaicraft episodes (#2734)
+section('EXPORT — Plaicraft episodes (#2734)')
+{
+    // The gates below never borrow the exporter's verdict table: they replay
+    // each file's OWN pads back into the sim and re-label every terminal event
+    // with the law written INLINE (drop = the tagged bin caught it = hit;
+    // wrong/shatter/slip = miss). That independent truth is compared against
+    // what the dataset claims — and against the sim's own `correct` counter,
+    // one per seed. A mislabel by the pipeline, or a pad lane that cannot
+    // replay, names the seed red.
+    const walkRecording = (file) => {
+        const gs = makeGame(file.seed >>> 0, file.players)
+        const labels = []
+        let hits = 0, misses = 0
+        for (let t = 0; t < file.ticks; t++) {
+            step(gs, file.slots.map((sl) => decodePad(sl.pads[t], file.method)))
+            for (const e of gs.ev) {
+                const hit = e.type === 'drop'
+                if (!hit && !['wrong', 'shatter', 'slip'].includes(e.type)) continue
+                const l = { t: gs.tick, ok: hit, why: e.type }
+                if (e.kind !== undefined) l.kind = e.kind
+                if (typeof e.seat === 'number' && e.seat >= 0) l.seat = e.seat
+                if (e.bin !== undefined) l.bin = e.bin
+                if (e.pts !== undefined) l.pts = e.pts
+                labels.push(l)
+                if (hit) hits++; else misses++
+            }
+        }
+        // gs.correct resets at every whistle (per-shift quota counter) — the
+        // LIFETIME land count is ΣbinFill, the sim's own per-bin ledger.
+        return { labels, hits, misses, lifetime: gs.binFill.reduce((a, b) => a + b, 0), won: gs.end === 'win' }
+    }
+    const runDraws = (driver, seed, cap = 2000) => {
+        const gs = makeGame(seed >>> 0, 2)
+        let draws = 0
+        const raw = gs.rng
+        gs.rng = () => { draws++; return raw() }
+        for (let t = 0; t < cap && !gs.end; t++) step(gs, [driver(gs, 0), driver(gs, 1)])
+        return draws
+    }
+    const files = []
+    for (const seed of [7, 101, 2027]) {
+        const r = collectRun(seed)
+        files.push(r.file)
+        const bad = validateEpisode(r.file)
+        ok(bad === null, `EXPORT-VALID: seed ${seed}'s episode block validates${bad ? ` — ${bad}` : ''}`)
+        const v = verifyRecording(r.file, makeReplayDriver())
+        ok(v.ok, `EXPORT-REPLAY: seed ${seed} replays its recorded pads to identical hashes${v.ok ? '' : ` — mismatch @t${v.mismatch.tick}`}`)
+        const truth = walkRecording(r.file)
+        const lie = truth.labels.findIndex((l, i) => JSON.stringify(l) !== JSON.stringify(r.file.episode.labels[i]))
+        ok(r.file.episode.labels.length === truth.labels.length && lie === -1,
+            `EXPORT-LABELS-TRUTH: seed ${seed} — every label equals the independent re-walk (${truth.labels.length} drops, ${truth.hits} hits)${lie === -1 ? '' : ` — first lie at label ${lie}: dataset ${JSON.stringify(r.file.episode.labels[lie])} vs truth ${JSON.stringify(truth.labels[lie])}`}`)
+        ok(truth.hits === truth.lifetime && r.stats.hits === truth.hits,
+            `EXPORT-HITS-CORRECT: seed ${seed} — Σhit labels ≡ ΣbinFill, the sim's lifetime land ledger (${truth.hits}; gs.correct resets per shift)`)
+        ok(truth.won && r.file.episode.success === true && r.file.episode.task === 'pick-rush-shift',
+            `EXPORT-WIN: seed ${seed}'s planner completes the contract and the episode says so (score ${r.stats.score})`)
+        ok(r.file.slots.length === 2 && r.file.slots.every((sl) => sl.pads.length === r.file.ticks)
+            && r.file.episode.labels.every((l) => (l.ok ? l.why === 'drop' : ['wrong', 'shatter', 'slip'].includes(l.why))),
+            `EXPORT-SHAPE: seed ${seed} — one pad per tick per seat, every verdict legal (why ≡ its class)`)
+    }
+    const corpus = exportEpisodes(files)
+    const parsed = corpus.text.trim().split('\n').map((x) => JSON.parse(x))
+    ok(parsed.length === files.length && parsed.every((p, i) => validateEpisode(p) === null
+        && JSON.stringify(p.episode.labels) === JSON.stringify(files[i].episode.labels)),
+        `EXPORT-JSONL: ${parsed.length} episodes round-trip through exportEpisodes — validate clean, labels byte-equal`)
+    const dAuto = runDraws(autopilot, 7), dPlan = runDraws(planner, 7)
+    ok(dPlan < dAuto, `EXPORT-RNG-FREE: the corpus planner draws fewer seeded numbers than the autopilot (${dPlan} vs ${dAuto} by tick 2000) — a pad stream carries pads, not draws, so replay hinges on this`)
+}
+
 // ---------------------------------------------------------------- Chrome
 if (!NODE_ONLY) {
     const { openGame, launch, requireDevServer, Report } = await import('./lib/harness.mjs')
@@ -1414,6 +1488,50 @@ if (!NODE_ONLY) {
             return { equal: A === B, tick: JSON.parse(B).tick }
         }, script)
         rep.check('CONTRACT: 600 scripted ticks replay identically in the live page', det.equal && det.tick === 600, `ended at ${det.tick}`)
+
+        // #2734 REC — live takes bank as labelled episodes; harness drives
+        // never bank. Fresh page first so the store starts where we say it does.
+        await page.reload({ waitUntil: 'domcontentloaded' })
+        await page.waitForFunction(() => window.__pickrushTest && window.__pickrushTest.state().tick > 40, null, { timeout: 15000 })
+        const recBase = await page.evaluate(() => window.__pickrushTest.epStats().saved)
+        await page.keyboard.press('Space') // clock in for real
+        await page.waitForFunction(() => window.__pickrushTest.epRun().ticks > 30, null, { timeout: 8000 })
+        await page.keyboard.down('ArrowRight'); await page.waitForTimeout(240); await page.keyboard.up('ArrowRight')
+        await page.keyboard.press('Space'); await page.waitForTimeout(200)
+        const recLive = await page.evaluate(() => window.__pickrushTest.epRun())
+        rep.check('REC-LIVE: a take started with real keys records ticks',
+            recLive.recording && recLive.ticks > 30, JSON.stringify(recLive))
+        // arm and win through the DEV eye; the loop clocks out the shift and banks
+        await page.evaluate(() => { const gs = window.__pickrushTest.sim(); gs.correct = 99; gs.bestCombo = Math.max(gs.bestCombo, 2); gs.shift = 3; gs.shiftTick = 4199 })
+        await page.waitForFunction(() => !!window.__pickrushTest.epLast(), null, { timeout: 8000 })
+        const bank = await page.evaluate(() => {
+            const b = window.__pickrushTest.epLast()
+            const ls = (() => { try { return (JSON.parse(localStorage.getItem('retrogames-episodes') || '[]')).length } catch { return -1 } })()
+            return {
+                game: b.file.game, task: b.file.episode.task, success: b.file.episode.success,
+                seed: b.file.seed, ticksFile: b.file.ticks, ticks: b.ticks, hits: b.hits, misses: b.misses,
+                labels: (b.file.episode.labels || []).length,
+                padsOK: b.file.slots.length === 2 && b.file.slots.every((sl) => sl.pads.length === b.file.ticks),
+                stored: window.__pickrushTest.epStats().saved, ls,
+            }
+        })
+        rep.check('REC-BANKED: the real-key take closed as a Plaicraft episode in storage — pads per seat per tick, labels counted, seed honest',
+            bank.game === 'pick-rush' && bank.task === 'pick-rush-shift' && bank.success === true
+            && bank.padsOK && bank.labels === bank.hits + bank.misses && bank.stored === bank.ls && bank.stored === recBase + 1
+            && Number.isInteger(bank.seed) && bank.ticksFile === bank.ticks, JSON.stringify(bank))
+        // the harness lane stays silent: reset + scripted ticks + a forced end
+        // through the DEV eye must add NOTHING to the store (the loop owns the bank)
+        await page.evaluate(() => {
+            const g = window.__game
+            g.reset(9)
+            for (let i = 0; i < 200; i++) g.step([{ right: true }], 1)
+            g.release()
+            const gs = window.__pickrushTest.sim()
+            gs.end = 'fired'; gs.endReason = 'REC GATE'
+        })
+        await page.waitForFunction(() => window.__pickrushTest.state().mode === 'over', null, { timeout: 8000 })
+        const recQuiet = await page.evaluate(() => window.__pickrushTest.epStats().saved)
+        rep.check('REC-NOICE: contract drives end the shift but bank no episode', recQuiet === recBase + 1, `stored ${recQuiet}, expected ${recBase + 1}`)
 
         rep.check('ZERO page errors', pageErrors === 0, String(pageErrors))
     } finally {

@@ -21,6 +21,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
+import { createEpisode, saveEpisode, episodeStats } from '../../utils/robot/episode.js'
 import {
     makeGame, step, autopilot,
     VIEW_W, VIEW_H, RAIL_Y, BELT_Y, BELT_END,
@@ -175,6 +176,61 @@ const PickRushGame = () => {
         const evLog = []
         let overAt = 0
 
+        // #2734 Plaicraft episode recorder — every played shift banks as a
+        // labelled grasp-and-place episode through the #1141 kit: seed, one
+        // pad per seat per tick, checkpoint hashes, and the label track (the
+        // sim's own judging verdict per drop). Recording sits OUTSIDE the sim
+        // (same law as the #2678 whip spring): hashes untouched, attract never
+        // records, storage failure degrades to silence (episode = null).
+        let episode = null
+        let epHits = 0, epMisses = 0, lastBank = null
+        const LABEL_OK = { drop: true, wrong: false, shatter: false, slip: false } // the sim's judging law: drop = tagged bin
+        const beginEpisode = () => {
+            try {
+                episode = createEpisode({
+                    gameId: 'pick-rush', method: 'dpad', seed: gs.seed >>> 0, players: gs.players,
+                    // resolved at STOP (seats flip mid-run): seat 0 is your claw
+                    // unless the proven brain still holds it; seat 1 is a partner
+                    // only if P opened it for a human.
+                    sources: () => [
+                        { kind: watchingRef.current ? 'model' : 'human' },
+                        { kind: humanSeat2Ref.current ? 'human' : 'cpu' },
+                    ],
+                    task: 'pick-rush-shift',
+                })
+            } catch { episode = null }
+            epHits = 0; epMisses = 0
+        }
+        const recordTick = (pads) => {
+            if (!episode) return
+            try {
+                const labels = []
+                for (const e of gs.ev) {
+                    const ok = LABEL_OK[e.type]
+                    if (ok === undefined) continue
+                    const l = { ok, why: e.type } // why: drop|wrong|shatter|slip
+                    if (e.kind !== undefined) l.kind = e.kind
+                    if (typeof e.seat === 'number' && e.seat >= 0) l.seat = e.seat
+                    if (e.bin !== undefined) l.bin = e.bin
+                    if (e.pts !== undefined) l.pts = e.pts
+                    labels.push(l)
+                    if (ok) epHits++; else epMisses++
+                }
+                // hash rides the post-step state (gs.hash is stamped by step
+                // itself) — checkpoint t must hold what replay sees after t pads
+                episode.addTick(pads, null, gs.hash, null, null, labels)
+            } catch { episode = null }
+        }
+        const closeEpisode = (won) => {
+            if (!episode) return
+            try {
+                const file = episode.finish({ success: won, score: gs.score, finalHash: gs.hash })
+                lastBank = { ticks: file.ticks, hits: epHits, misses: epMisses, file }
+                saveEpisode(file)
+            } catch { /* storage full — the take rides on localStorage policy */ }
+            episode = null
+        }
+
         const say = (msg, col = '#ffd23f') => {
             hudRef.current.toast && (hudRef.current.toast.textContent = msg)
             hudRef.current.toast && (hudRef.current.toast.style.color = col)
@@ -324,6 +380,7 @@ const PickRushGame = () => {
         const finish = () => {
             const won = gs.end === 'win'
             overAt = performance.now()
+            closeEpisode(won) // #2734 bank the take before the card paints
             setEnd({
                 won,
                 score: gs.score,
@@ -370,9 +427,11 @@ const PickRushGame = () => {
                 return
             }
             if (sc !== 'play') return
-            step(gs, livePads())
+            const pads = livePads()
+            step(gs, pads)
             whipSim() // #2678 cable spring rides the sim clock, not paint rate — steady at any fps
             edgeA = false; edgeB = false; edge2A = false
+            recordTick(pads) // #2734 the pads THAT tick + this tick's judging labels
             handleEvents(gs.ev)
             // #2234: scheduled ambience — the floor's era follows the shift.
             for (const cue of fireAt(zoneForShift(gs.shift), gs.tick, true)) playAmb(cue)
@@ -772,6 +831,17 @@ const PickRushGame = () => {
                 ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 10px monospace'
                 ctx.fillText(`×${gs.combo}`, 92, 22)
             }
+            // #2734 REC beacon — night-shift dashcam: this take is being
+            // stored as a labelled Plaicraft episode. Its blink rides the
+            // house fuse pulse cadence; the dark phase goes ember-dim.
+            if (episode) {
+                const lit = tick % 40 < 24
+                ctx.fillStyle = lit ? '#ff5a4f' : '#5c2622'
+                circle(ctx, VIEW_W - 44, 24, 2.6); ctx.fill()
+                ctx.fillStyle = lit ? '#e8a49a' : '#7a4a44'
+                ctx.font = 'bold 7px monospace'
+                ctx.fillText('REC', VIEW_W - 8, 26)
+            }
             // wave-progress pips (#2223): one lamp per piece in the wave on the
             // line — still-coming pieces glow ice-blue, pieces that have ridden
             // in go dark, so the burst can be counted before it lands. The row
@@ -851,6 +921,12 @@ const PickRushGame = () => {
                 ctx.fillText(humanSeat2Ref.current
                     ? `LINE CHIEF: ${gs.arms[0].score || 0} — TRAINEE: ${s2}`
                     : `FOREMAN ${gs.arms[1].score || 0}`, VIEW_W / 2, 168)
+            }
+            // #2734 the take was banked as a labelled Plaicraft episode — the
+            // card says so: your drops, labelled by the same law that scored them.
+            if (lastBank) {
+                ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#9fc0d8'
+                ctx.fillText(`TAKE BANKED — HITS ${lastBank.hits} · MISSES ${lastBank.misses} · EPISODES STORED ${episodeStats().saved}`, VIEW_W / 2, 182)
             }
             if (tick % 60 < 40) {
                 ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#ffffff'
@@ -936,6 +1012,7 @@ const PickRushGame = () => {
             waveCues.length = 0 // #2223 the line's rhythm restarts with it
             watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             setEnd(null)
+            beginEpisode() // #2734 the shift you're about to play gets banked
             setMode('play')
             audioController.playTone(220, 0.08, 'square', 0.06)
             audioController.playTone(330, 0.12, 'square', 0.06, 0.09)
@@ -1050,6 +1127,7 @@ const PickRushGame = () => {
                 landings.length = 0; boost = 0
                 waveCues.length = 0
                 humanSeat2Ref.current = false
+                episode = null // #2734 a harness-driven shift is a test rig, not a take — never bank it
                 setEnd(null)
                 setMode('play')
             },
@@ -1130,6 +1208,12 @@ const PickRushGame = () => {
                     return { tick: gs.tick, held: arm ? arm.held !== null : false, live, parity: it ? (it.n ?? 0) % 2 : -1, aim: a, tag: a ? TAG[a.kind] : null }
                 },
                 hash: () => gs.hash,
+                // #2734 episode eyes: the live recorder's tally, and the last
+                // banked file (full recording + episode block) for gates that
+                // validate and recount labels against the sim's own events.
+                epRun: () => ({ recording: !!episode, ticks: episode ? episode.ticks : 0, hits: epHits, misses: epMisses }),
+                epLast: () => lastBank,
+                epStats: () => episodeStats(),
                 canvas: () => canvas,
                 sim: () => gs,
                 step: (n = 1, pad = {}, pads = null) => { for (let i = 0; i < n; i++) step(gs, pads || [pad]) },
@@ -1153,7 +1237,7 @@ const PickRushGame = () => {
                     { label: 'spawn barrel', run: () => { gs.items.push({ id: 9000 + gs.tick, kind: 'barrel', x: 250, y: BELT_Y - 8, vx: 0, vy: 0, rot: 1.1, onBelt: true, carriedBy: -1, fragile: false }); return 'barrel @250 off-axis' } },
                     { label: 'drop into BIN[1]', run: () => { gs.arms[0].x = 141; return 'arm -> CAN bin' } },
                     { label: 'force win', run: () => { gs.correct = 99; gs.shiftTick = SHIFT_TICKS - 1; gs.shift = SHIFTS.length - 1; return 'quota armed' } },
-                    { label: 'reset', run: () => { gs = makeGame(1337, 2); setMode('attract'); return 'rebooted' } },
+                    { label: 'reset', run: () => { gs = makeGame(1337, 2); episode = null; setMode('attract'); return 'rebooted' } },
                 ],
             })
         }
