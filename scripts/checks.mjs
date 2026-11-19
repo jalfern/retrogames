@@ -110,6 +110,9 @@ export const MANUAL_CHECKS = [
   "scripts/autopilotcheck.mjs",
   "scripts/blackholecheck.mjs",
   "scripts/blobcheck.mjs",
+  // #2770: BRITANNIA readiness gate — browser-driven (route-throttles the map
+  // fetch); advisory from the lane: npm run britannreadycheck.
+  "scripts/britanniareadycheck.mjs",
   "scripts/bombcheck.mjs",
   "scripts/boredomcheck.mjs",
   "scripts/cachecheck.mjs",
