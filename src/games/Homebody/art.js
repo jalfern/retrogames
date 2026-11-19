@@ -1194,11 +1194,15 @@ export function drawRoomBadges(ctx, s) {
         // #2743: the progress ramp under the glyph — a dark track always,
         // filled in the badge's own colour per finished page/play, so the
         // payoff is seen COMING (the ripeness-ramp pattern, #2705).
-        ctx.fillStyle = 'rgba(24,16,6,0.55)'
-        ctx.fillRect(x + 5, y + 12, 14, 2)
+        // #2752: the track is 0.72-dark and 3 px tall — the drive's live
+        // 390-px leg proved a 2 px / 55% line averages into the plank tan
+        // under the phone compositor's blur (rampTrack 0 at k≈0.6); a phone
+        // player must read the ramp too, not just the desktop painter.
+        ctx.fillStyle = 'rgba(24,16,6,0.72)'
+        ctx.fillRect(x + 5, y + 12, 14, 3)
         if (b.p > 0) {
             ctx.fillStyle = b.kind === 'study' ? '#d9b23c' : '#ffd24a'
-            ctx.fillRect(x + 5, y + 12, Math.max(2, Math.round(14 * b.p)), 2)
+            ctx.fillRect(x + 5, y + 12, Math.max(2, Math.round(14 * b.p)), 3)
         }
     }
 }

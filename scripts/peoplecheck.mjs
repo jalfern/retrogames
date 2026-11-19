@@ -125,6 +125,7 @@ import {
     TEND_HOURS, HARVEST_FOOD, HARVEST_FUN, LODGE_FUN,   // #2695: rooms with purpose — the sun law and the lodging law
     archetypeOf, onWingFloor, PAGES_INSIGHT, READ_INSIGHT_FUN, PLAYS_DELIGHT, KID_ROOM_FUN, KID_ROOM_BOND,   // #2736: rooms with a personality — the study and the playroom
     ROUTE, JAR_CAP,   // #2721: the kit-two economy window — Pip's round and the earmarked garden jar
+    wingToyOn, surplusToyOk, buyWingToy,   // #2752: the jar's surplus clause — the fund's next round names a room
 } from '../src/games/Homebody/sim.js'
 import { bondRows, pairStride, strollTrail, STRIDE_BOB, jarRow } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail · #2729: and the jar row
 import { promiseTell, earReact, gardenLamp, EAR_REACT, PROMISE_TIGHTEN, EAR_HUES, PAIR_HUES, LOST_RING_T } from '../src/games/Homebody/art.js'   // #2688: the go-say tells and the garden lamp are pure derivations too
@@ -856,7 +857,8 @@ section('PERSONALITY (#2736): rooms read their own furniture — a study that re
     check('#2743 pin: the naming beat is wired into the shell with its own callout',
         /case 'room-named'/.test(hbIdx) && /THIS ROOM IS A \$\{e\.kind\.toUpperCase\(\)\}/.test(hbIdx))
     check('#2743 pin: the ramp paints a track always and fills from the badge\u2019s own p',
-        /rgba\(24,16,6,0\.55\)/.test(artSrc) && /Math\.round\(14 \* b\.p\)/.test(artSrc))
+        /rgba\(24,16,6,0\.72\)/.test(artSrc) && /Math\.round\(14 \* b\.p\)/.test(artSrc) &&
+        /#2752: the track is 0\.72-dark and 3 px tall/.test(artSrc))   // #2752 re-pinned: alpha 0.55→0.72, height 2→3 — the drive's live 390-px leg read rampTrack 0 on the old line and 8px on this one
     check('#2743 pin: the phone-scale probe aims at roomBadges(gs) and rides the probe return',
         /const rb = roomBadges\(gs\)/.test(hbIdx) && /badges: rb/.test(hbIdx))
 }
@@ -903,6 +905,60 @@ section('WINNABLE (attract autopilot, several seeds)')
         check('#2721: the demo grows the lot TWICE — kit two funds inside the winning run, and the garden ripens on screen',
             done21 === 'win' && g21.ext === WINGS_MAX && harvestBeforeWin && /GROWS TWICE/.test(jsx21),
             `done=${done21} ext=${g21.ext} cottage@d${ext2At === Infinity ? 'never' : Math.round(ext2At / 60)}s harvest=${harvestBeforeWin ? 'yes' : 'no'}`)
+    }
+}
+
+// #2752: the jar's surplus clause. Once the cottage has paid, the fund's
+// next refill (JAR_CAP, §90) has nothing left to buy — that dead money now
+// buys the wing ONE radio: charged to the jar, the till untouched, ONCE per
+// run, and a standing wing with no name yet gets one through the #2743 beat.
+// Measured on the WINNABLE tour: the refill lands before the win on seeds
+// 7/1234/20261023; seed 42 wins d2h19.8 (the refill only comes at dawn) and
+// seed 99 never completes the lot — honest absence, the #2240 pattern.
+section('#2752 (the jar buys the wing one radio)')
+{
+    const fired = [], silent = []
+    let tillHonored = true, jarHonored = true
+    for (const seed of [7, 42, 1234, 99, 20261023]) {
+        const g = newRun(seed)
+        let t = 0
+        let toys = 0, named = null
+        while (!g.done && t++ < 60 * 60 * 45) {
+            const m0 = g.money, j0 = g.jar
+            autoStep(g, DT)
+            for (const e of drain(g)) {
+                if (e.t === 'wing-toy') {
+                    toys++
+                    if (g.money !== m0) tillHonored = false
+                    if (j0 - g.jar !== DEF.radio.price) jarHonored = false   // the pay comes OUT of the fund — exactly one radio's price
+                }
+                if (e.t === 'room-named' && e.kind === 'playroom') named = named || `d${g.day}h${g.hour.toFixed(1)}`
+            }
+        }
+        const play = g.wings.map((w) => archetypeOf(g, w)).includes('playroom')
+        const badge = roomBadges(g).some((b) => b.kind === 'playroom')
+        if (toys) fired.push({ seed, toys, named, play, badge, done: g.done })
+        else silent.push(seed)
+    }
+    check('#2752 surplus seeds name a playroom in the demo — radio on the wing floor, beat at the doorstep, badge through the win, and the run still wins',
+        fired.length === 3 && fired.every((f) => f.toys === 1 && f.named && f.play && f.badge && f.done === 'win'),
+        JSON.stringify(fired))
+    check('#2752 the clause stays silent where the economy says so — seed 42 wins before the refill, seed 99 never completes the lot',
+        silent.length === 2 && silent.includes(42) && silent.includes(99), JSON.stringify(silent))
+    check('#2752 the clause pays from the fund only — till byte-still on a buy tick, and the jar drops by exactly one radio', tillHonored && jarHonored)
+    {
+        const g7 = newRun(7)
+        let t7 = 0, fired7 = false
+        while (!g7.done && t7++ < 60 * 60 * 45) {
+            autoStep(g7, DT)
+            if (drain(g7).some((e) => e.t === 'wing-toy')) fired7 = true
+        }
+        check('#2752 once is the law, derived from what stands — wingToyOn reads the radio, surplusToyOk is closed after',
+            fired7 && wingToyOn(g7) && !surplusToyOk(g7))
+        const g0 = newRun(7)
+        g0.jar = JAR_CAP
+        check('#2752 no kit-two, no deal — surplusToyOk refuses before the lot is complete, and the jar keeps its money',
+            !surplusToyOk(g0) && buyWingToy(g0) === false && g0.jar === JAR_CAP)
     }
 }
 

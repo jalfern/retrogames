@@ -25,7 +25,7 @@ import {
     FIXED_DT, W, H, PANEL_X, TILE, LOT_X, LOT_Y, WIN_CONTENT,
     REL_NAMES,
     tileOf, CATALOG, NEEDS, SFX, EXT_ROOM,
-    wingPick, GARDEN, eastWing, DEFAULT_ANCHOR,   // #2689: the kit's site law, for the ghost, the button and the view
+    wingPick, GARDEN, eastWing, DEFAULT_ANCHOR, wingGeom, wingSets,   // #2689: the kit's site law, for the ghost, the button and the view · #2752: the drive rig asks the standing wing for its floorboards
     archetypeOf,   // #2736: rooms with a personality — the probe reads the room's own name
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork,   // #2470: tryUse moved to tryUseOrQueue below
     cmdQueue, queueCancel, queuePromote, orderBusy, tryUseOrQueue,   // #2470: the action queue — append while busy, cancel by chip; #2474 item 3: promote by pull
@@ -1563,6 +1563,23 @@ const HomebodyGame = () => {
                 press: (code) => onDown({ code, preventDefault: () => {} }),
                 release: (code) => onUp({ code }),   // #2171: the release half of the thumb-court gesture
                 room: () => (gs ? buildRoom(gs) : false),
+                wingToy: () => (gs ? (() => {   // #2752 scenario rig — the issue's own suggestion: place a Bookshelf once a spare room stands. Stands the east wing on a bare lot, banks the till, and puts the shelf on the first unnamed wing's floorboards through the real place() law (canPlace + keepsOpen + price); the drive's 390-px badges leg then asks the paint about the room this furnishing names. (The attract clause's surplus path is peoplecheck-proven in node; the phone leg only needs a named wing.)
+                    if (!gs.ext) { gs.money = Math.max(gs.money, EXT_ROOM.price); if (!buildRoom(gs, eastWing(DEFAULT_ANCHOR))) return false }
+                    gs.money = Math.max(gs.money, DEF.book.price)
+                    for (const w of gs.wings) {
+                        if (archetypeOf(gs, w)) continue
+                        const gw = wingGeom(w), set = wingSets(gw)
+                        for (const [r, c] of gw.floor) {
+                            if (`${r},${c}` === set.door || cellItem(gs, r, c)) continue
+                            const keep = gs.sel
+                            setSel(gs, CATALOG.findIndex((d) => d.id === 'book'))   // #2222: the shelf follows the pick
+                            const ok = place(gs, r, c)
+                            setSel(gs, keep)
+                            if (ok) return { r, c, kind: archetypeOf(gs, w) }
+                        }
+                    }
+                    return false
+                })() : false),
                 adopt: () => (gs ? adoptPet(gs) : false),   // #2197: the counter, straight
                 adoptOk: () => (gs ? adoptOk(gs) : false),
                 kid: () => (gs ? adoptKid(gs) : false),   // #2203: the child counter, straight
@@ -1689,8 +1706,8 @@ const HomebodyGame = () => {
                         return {
                             kind: b.kind, p: +b.p.toFixed(3), n: b.n,
                             glyph: count(bx + 5, by + 2, bx + 19, by + 11, hue),
-                            rampTrack: count(bx + 5, by + 12, bx + 19, by + 14, (d, i) => at(d, i) && d[i] < 90 && d[i + 1] < 70 && d[i + 2] < 40),
-                            rampFill: b.p > 0 ? count(bx + 5, by + 12, bx + 5 + Math.ceil(14 * b.p), by + 14, hue) : 0,
+                            rampTrack: count(bx + 5, by + 12, bx + 19, by + 15, (d, i) => at(d, i) && d[i] < 90 && d[i + 1] < 70 && d[i + 2] < 40),
+                            rampFill: b.p > 0 ? count(bx + 5, by + 12, bx + 5 + Math.ceil(14 * b.p), by + 15, hue) : 0,
                         }
                     })
                     return { k: +k.toFixed(3), rows, bands, jar, badges: rb }

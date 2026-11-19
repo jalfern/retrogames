@@ -3590,6 +3590,54 @@ function updateRoute(s) {
     think(s, `Pip comes back from the paper round, pockets heavy — §${cash} into the garden jar.`)
 }
 
+// #2752: THE JAR'S SURPLUS CLAUSE. Once both kits stand, the fund has paid
+// its only kit — yet Pip's round keeps coming, so the jar refills toward a
+// FULL it can never spend. That dead surplus now buys the wing ONE radio:
+// charged to the jar, the till untouched byte-for-byte (the #2721 invariant
+// that keeps every stored tour hash alive — the till never affords a toy in a
+// winning run anyway; the measured peak after kit two is §10), and ONCE per
+// run — the once-guard derives from what stands on wing floorboards
+// (`wingToyOn`), so no new state rides the hash and a lot that never grows
+// two kits never hears of this clause at all. The radio lands on a standing
+// wing that has earned no name yet, so place()'s #2743 beat fires at the
+// doorstep, the badge (#2736) hangs there through the win, and the playroom
+// funnel starts earning plays toward giggles. Where the win outruns the
+// surplus (measured: seeds 42/99) the clause never fires — honest absence,
+// the #2240 quiet-night pattern.
+export function wingToyOn(s) {
+    if (!s || !s.ext) return false
+    for (const it of s.items) if ((it.id === 'radio' || it.id === 'tv' || it.id === 'book') && onWingFloor(s, it.r, it.c)) return true
+    return false
+}
+export function surplusToyOk(s) {
+    return !!s && !s.done && s.ext >= WINGS_MAX && s.jar >= DEF.radio.price && !wingToyOn(s)
+}
+export function buyWingToy(s) {
+    if (!surplusToyOk(s)) return false
+    const def = DEF.radio
+    for (const w of s.wings) {
+        const g = wingGeom(w)
+        if (archetypeOf(s, w)) continue   // a named wing (a canopy bedroom, a furnished study) already sells itself
+        const set = wingSets(g)
+        for (const [r, c] of g.floor) {
+            if (`${r},${c}` === set.door) continue
+            if (cellItem(s, r, c)) continue
+            if (!canPlace(s, def, r, c) || !keepsOpen(s, r, c)) continue
+            s.jar -= def.price
+            s.money += def.price   // place() pays from the till; the jar fronts it inside this one tick, so the till never moves
+            const keep = s.sel
+            setSel(s, CATALOG.findIndex((d) => d.id === 'radio'))   // #2222: the shelf follows the pick
+            const ok = place(s, r, c)
+            setSel(s, keep)
+            if (!ok) { s.money -= def.price; s.jar += def.price; return false }   // the refusal costs nothing
+            s.events.push({ t: 'wing-toy', id: 'radio', r, c, jar: s.jar })
+            think(s, "Pip's paper money buys the new room a radio — a playroom, then.")
+            return true
+        }
+    }
+    return false
+}
+
 export function ambienceOf(s) {
     let d = 0
     for (const it of s.items) if (DECOR.includes(it.id)) d++
@@ -3872,6 +3920,14 @@ export function bot(s) {
             s.ivyAfter = Math.floor(s.hour); s.ivyGap = 0; s.demoIvy = 1
         }
     }
+    // #2752: the jar's surplus clause (see buyWingToy) — once the cottage has
+    // paid and the fund refills, the demo names a room: radio onto a standing
+    // wing's floorboards, doorstep sparkles, badge through the win. Jar money
+    // only, and no walk rides it, so it answers to the clock, not to the
+    // busy-resident guard below (measured: the morning commute eats the whole
+    // surplus window on two of the three surplus seeds). The till's shipped
+    // tour economy never moves.
+    if (buyWingToy(s)) return
     const p = s.people[0]
     if (p.working || p.faintT > 0 || p.path || p.use) return
     // #2238: the attract bot reads the paper left on the step — the demo
