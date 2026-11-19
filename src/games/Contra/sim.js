@@ -34,6 +34,15 @@ export const CFG = {
     spreadArc: Math.PI / 4.1,
     fireCool: 8,
     fireCoolSpread: 10,
+    // S3 weapon wall: per-gun cycles and muzzle speeds
+    fireCoolMachine: 3,       // the MG is a stream, not a rhythm
+    fireCoolFire: 9,
+    fireCoolLaser: 16,
+    machineSpeed: 5.5,
+    fireBallSpeed: 2.2,       // slow flame, heavy presence
+    laserSpeed: 9.5,          // the fastest round in the game
+    fireWob: 1.5,            // firebar vertical undulation (px/tick around its line)
+    sniperSpeed: 3.2,         // the tree-line round: faster than any runner
     eBulletSpeed: 2.2,
     respawnFreeze: 50,
     invuln: 100,
@@ -103,9 +112,29 @@ const SOLDIERS = [
     { x: 1400, y: 196, hold: false },
     { x: 1580, y: 150, hold: true },
     { x: 1900, y: 196, hold: false },
+    // S3 grenade soldiers: runners that lob arcing bombs on the approach
+    { x: 700, y: 196, hold: false, nade: true },
+    { x: 1150, y: 196, hold: false, nade: true },
+    { x: 1750, y: 196, hold: false, nade: true },
 ]
 const TURRET_AT = [470, 1050, 1650]
 const BARREL_AT = [640, 662, 980, 1300, 1840]
+
+// S3 tree-line snipers: fixed, elevated, long range, and the fastest aimed
+// round the jungle throws. The flashing scope glint (t < 40) is the telegraph
+// — the round always announces itself before it flies.
+const SNIPERS = [
+    { x: 520, y: 150 },
+    { x: 905, y: 136 },
+    { x: 1270, y: 132 },
+    { x: 1800, y: 126 },
+]
+
+// S3 capsule wheel — the letters that fly. Deterministic draw on spawn.
+const CAP_KINDS = ['spread', 'machine', 'fire', 'laser']
+const CAP_ALT = [124, 148, 172]  // low (stand), hop, full jump
+const WCODE = { rifle: 0, spread: 1, machine: 2, fire: 3, laser: 4 }
+const KCODE = { r: 0, s: 1, m: 2, f: 3, l: 4 }
 
 // Gunners holding the waterfall shelves (y = their shelf top).
 const FALLS_GUNNERS = [
@@ -121,6 +150,15 @@ const FALLS_GUNNERS = [
 const GUNS = [{ x: 190, y: 36 }, { x: 330, y: 60 }]
 const DOORS = [{ x: 250, y: 150 }, { x: 16, y: 150 }]
 
+// one soldier shape, one place (S3 adds the nade flag; throws ride a
+// deterministic per-x cadence so makeGame never touches gs.r)
+function mkSoldier (d) {
+    return {
+        x: d.x, y: d.y, hold: d.hold, hp: d.nade ? 2 : 1, awake: false, t: 0, walk: 0, walkDir: -1,
+        dead: false, flash: 0, nade: !!d.nade, throwT: d.nade ? 8 + ((d.x * 31) >>> 3) % 12 : 0,
+    }
+}
+
 export function makeGame (seed) {
     const gs = {
         seed: seed >>> 0,
@@ -134,8 +172,9 @@ export function makeGame (seed) {
         end: null,                  // 'dead' | 'win'
         p: {
             x: 40, y: CFG.ground, vy: 0, onGround: true, face: 1,
+            lane: CFG.ground,       // last grounded feet-y — enemies aim the LANE, not the airborne hero
             ax: 1, ay: 0,            // normalized 8-way aim (ax = straight ahead by default)
-            cool: 0, weapon: 'rifle', // 'rifle' | 'spread' — the weapon dies with you
+            cool: 0, weapon: 'rifle', // the wheel: rifle|spread|machine|fire|laser — the weapon dies with you
             inv: 120,               // spawn-in grace
             dead: 0,                // freeze ticks after a hit
             coyote: 0, drop: 0,     // coyote frames; ignore-platform frames
@@ -143,9 +182,10 @@ export function makeGame (seed) {
         },
         safe: { x: 40, y: CFG.ground },   // respawn point (last ground/shelf touched)
         prevA: false,
-        pb: [],                     // player bullets {x,y,vx,vy}
-        eb: [],                     // enemy bullets
-        soldiers: SOLDIERS.map((d) => ({ x: d.x, y: d.y, hold: d.hold, hp: 1, awake: false, t: 0, walk: 0, walkDir: -1, dead: false, flash: 0 })),
+        pb: [],                     // player bullets {x,y,vx,vy,k[,ph,hits]}
+        eb: [],                     // enemy bullets (gr = lobbed grenade)
+        soldiers: SOLDIERS.map(mkSoldier),
+        snipers: SNIPERS.map((d) => ({ x: d.x, y: d.y, hp: 1, awake: false, t: 0, aim: Math.PI, flash: 0, dead: false })),
         turrets: TURRET_AT.map((x, i) => ({ x, y: CFG.ground, hp: 2, aim: Math.PI, t: 40 + i * 27, dead: false })),
         barrels: BARREL_AT.map((x) => ({ x, y: CFG.ground, gone: false })),
         capsule: null,              // {x,y,vx} — flies in from the right edge
@@ -175,13 +215,32 @@ function fire (gs) {
         const base = Math.atan2(p.ay, p.ax)
         for (let k = -2; k <= 2; k++) {
             const a = base + k * (CFG.spreadArc / 2)
-            gs.pb.push({ x: o.x, y: o.y, vx: Math.cos(a) * CFG.spreadSpeed, vy: Math.sin(a) * CFG.spreadSpeed })
+            gs.pb.push({ x: o.x, y: o.y, vx: Math.cos(a) * CFG.spreadSpeed, vy: Math.sin(a) * CFG.spreadSpeed, k: 's' })
         }
         gs.ev.push({ type: 'spread' })
+    } else if (p.weapon === 'machine') {
+        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.machineSpeed, vy: p.ay * CFG.machineSpeed, k: 'm' })
+        gs.ev.push({ type: 'shot', k: 'machine' })
+    } else if (p.weapon === 'fire') {
+        // the firebar: a slow flame that undulates along its line and pierces
+        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.fireBallSpeed, vy: p.ay * CFG.fireBallSpeed, vy0: p.ay * CFG.fireBallSpeed, k: 'f', ph: (Math.abs(Math.round(o.x)) % 64) / 64 * Math.PI * 2, hits: [] })
+        gs.ev.push({ type: 'fshot' })
+    } else if (p.weapon === 'laser') {
+        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.laserSpeed, vy: p.ay * CFG.laserSpeed, k: 'l', hits: [] })
+        gs.ev.push({ type: 'lshot' })
     } else {
-        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.bulletSpeed, vy: p.ay * CFG.bulletSpeed })
+        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.bulletSpeed, vy: p.ay * CFG.bulletSpeed, k: 'r' })
         gs.ev.push({ type: 'shot' })
     }
+}
+
+// cycle length of the current gun — one place so the harness can name it
+function coolOf (weapon) {
+    return weapon === 'spread' ? CFG.fireCoolSpread
+        : weapon === 'machine' ? CFG.fireCoolMachine
+            : weapon === 'fire' ? CFG.fireCoolFire
+                : weapon === 'laser' ? CFG.fireCoolLaser
+                    : CFG.fireCool
 }
 
 // kind rides the (unhashed, cosmetic) event so the shell can size the blast:
@@ -221,7 +280,8 @@ function enterFalls (gs) {
     const p = gs.p
     p.x = 190; p.y = 662; p.vy = 0; p.onGround = true; p.drop = 0; p.coyote = 0
     gs.safe = { x: 190, y: 662 }
-    gs.soldiers = FALLS_GUNNERS.map((d) => ({ x: d.x, y: d.y, hold: true, hp: 1, awake: false, t: 0, walk: 0, walkDir: -1, dead: false, flash: 0 }))
+    gs.soldiers = FALLS_GUNNERS.map((d) => ({ x: d.x, y: d.y, hold: true, hp: 1, awake: false, t: 0, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }))
+    gs.snipers = []   // the tree line stays in the jungle
     gs.pb.length = 0; gs.eb.length = 0; gs.capsule = null
     gs.ev.push({ type: 'enter' })
 }
@@ -296,11 +356,12 @@ export function step (gs, pad = PAD0) {
         }
     }
     if (p.onGround) gs.safe = { x: p.x, y: p.y }
+    if (p.onGround) p.lane = p.y   // the lane enemies lead: the ground you run on
 
     if (p.cool > 0) p.cool -= 1
     if (pad.b && p.cool === 0) {
         fire(gs)
-        p.cool = p.weapon === 'spread' ? CFG.fireCoolSpread : CFG.fireCool
+        p.cool = coolOf(p.weapon)
     }
     if (p.inv > 0) p.inv -= 1
 
@@ -326,7 +387,11 @@ export function step (gs, pad = PAD0) {
     // --- bullets ---
     gs.pb = gs.pb.filter((b) => {
         b.x += b.vx; b.y += b.vy
+        if (b.k === 'f') { b.ph += 0.42; b.vy = b.vy0 + Math.sin(b.ph) * CFG.fireWob } // firebar undulation
         if (b.x < gs.cam - 8 || b.x > gs.cam + W + 8 || b.y < gs.camY - 8 || b.y > gs.camY + H + 8) return false
+        // S3: fire and laser are piercing — each body takes them once
+        const pierce = b.k === 'f' || b.k === 'l'
+        const hs = pierce ? (b.hits || (b.hits = [])) : null
         if (gs.phase === 'boss' && gs.boss && gs.boss.dying === 0) {
             // the gate: armor takes rounds with a spark but never dents; the
             // core is the ONE weak point — and only while its shutter is open.
@@ -349,14 +414,39 @@ export function step (gs, pad = PAD0) {
                 if (Math.abs(b.x - g.x) <= 9 && Math.abs(b.y - g.y) <= 8) { gs.ev.push({ type: 'spark', x: b.x, y: b.y }); return false }
             }
         }
-        for (const br of gs.barrels) {
-            if (!br.gone && Math.hypot(b.x - br.x, b.y - (br.y - 10)) < 12) { br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true); return false }
+        for (const [bi, br] of gs.barrels.entries()) {
+            if (!br.gone && Math.hypot(b.x - br.x, b.y - (br.y - 10)) < 12) {
+                br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true)
+                if (pierce) { hs.push('b' + bi); continue }
+                return false
+            }
         }
-        for (const s of gs.soldiers) {
-            if (!s.dead && s.awake && Math.abs(b.x - s.x) < 8 && Math.abs(b.y - (s.y - 12)) < 13) { killSoldier(gs, s); return false }
+        for (const [si, s] of gs.soldiers.entries()) {
+            if (!s.dead && s.awake && Math.abs(b.x - s.x) < 8 && Math.abs(b.y - (s.y - 12)) < 13) {
+                if (pierce && hs.includes('s' + si)) continue
+                if (s.hp > 1) {
+                    // armour vest (the grenadier takes two rounds): spark, keep running
+                    s.hp -= 1; gs.ev.push({ type: 'spark', x: s.x, y: s.y - 12 })
+                } else killSoldier(gs, s)
+                if (pierce) { hs.push('s' + si); continue }
+                return false
+            }
         }
-        for (const t of gs.turrets) {
-            if (!t.dead && Math.abs(b.x - t.x) < 10 && Math.abs(b.y - (t.y - 16)) < 14) { hitTurret(gs, t); return false }
+        for (const [ti, t] of gs.turrets.entries()) {
+            if (!t.dead && Math.abs(b.x - t.x) < 10 && Math.abs(b.y - (t.y - 16)) < 14) {
+                if (pierce && hs.includes('t' + ti)) continue
+                hitTurret(gs, t)
+                if (pierce) { hs.push('t' + ti); continue }
+                return false
+            }
+        }
+        for (const [ni, sn] of gs.snipers.entries()) {
+            if (!sn.dead && sn.awake && Math.abs(b.x - sn.x) < 9 && Math.abs(b.y - (sn.y - 12)) < 13) {
+                if (pierce && hs.includes('n' + ni)) continue
+                sn.dead = true; gs.score += 150; gs.ev.push({ type: 'boom', x: sn.x, y: sn.y - 12, kind: 'kill' })
+                if (pierce) { hs.push('n' + ni); continue }
+                return false
+            }
         }
         return true
     })
@@ -372,7 +462,7 @@ export function step (gs, pad = PAD0) {
             continue
         }
         const dx = p.x - s.x
-        const dy = (p.y - 14) - (s.y - 12)
+        const dy = (p.lane - 14) - (s.y - 12)   // aim the lane; a jump is the answer (lane-aim law)
         s.walk += 1
         if (s.flash > 0) s.flash -= 1
         if (!s.hold && Math.abs(dx) > 26) { s.x += Math.sign(dx) * 1.1; s.walkDir = Math.sign(dx) }
@@ -380,6 +470,13 @@ export function step (gs, pad = PAD0) {
         const range = s.hold ? (gs.phase === 'falls' ? 210 : 280) : 220
         const inCamX = gs.cam < s.x && s.x < gs.cam + W + 4
         const inCamY = s.y > gs.camY - 4 && s.y < gs.camY + H + 4
+        // S3 grenade lob: on the approach band, not too close, never off-screen
+        if (s.nade && s.throwT > 0) s.throwT -= 1
+        if (s.nade && s.throwT === 0 && !s.hold && Math.abs(dx) > 50 && Math.abs(dx) < 320 && inCamX && inCamY) {
+            gs.eb.push({ x: s.x, y: s.y - 18, vx: Math.sign(dx) * 1.9, vy: -3.4, gr: true })
+            gs.ev.push({ type: 'throw' })
+            s.throwT = 150 + ((s.x * 37) >>> 3) % 90
+        }
         if (s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) {
             const a = Math.atan2(dy, dx)
             const sp = s.hold ? (gs.phase === 'falls' ? 1.8 : CFG.eBulletSpeed) : CFG.eBulletSpeed
@@ -398,12 +495,36 @@ export function step (gs, pad = PAD0) {
         if (t.dead) continue
         const dx = p.x - t.x
         const inCam = t.x > gs.cam && t.x < gs.cam + W
-        t.aim = Math.atan2((p.y - 14) - (t.y - 18), dx)
+        t.aim = Math.atan2((p.lane - 14) - (t.y - 18), dx)
         t.t -= 1
         if (t.t <= 0 && inCam && Math.abs(dx) < 260) {
             gs.eb.push({ x: t.x + Math.cos(t.aim) * 12, y: t.y - 18 + Math.sin(t.aim) * 12, vx: Math.cos(t.aim) * CFG.eBulletSpeed, vy: Math.sin(t.aim) * CFG.eBulletSpeed })
             gs.ev.push({ type: 'efire', big: true })
             t.t = 85
+        }
+    }
+
+    // --- S3 snipers: fixed in the tree line, long range, the fast aimed
+    // round. The scope glint flashes while t < 40 — telegraph, then shot. ---
+    for (const sn of gs.snipers) {
+        if (sn.dead) continue
+        if (!sn.awake) {
+            if (sn.x < gs.cam + W - 4 && sn.y < gs.camY + H - 4) { sn.awake = true; sn.t = 40 + Math.floor(rnd(gs) * 50) }
+            continue
+        }
+        sn.aim = Math.atan2((p.lane - 14) - (sn.y - 14), p.x - sn.x)
+        if (sn.flash > 0) sn.flash -= 1
+        sn.t -= 1
+        const inCam = sn.x > gs.cam && sn.x < gs.cam + W
+        // fairness law: the sniper waits for a GROUNDED target — its fast round
+        // is aimed at the lane, and the answer is the same hop the cabinet
+        // teaches for every flat shot. Shooting at airborne heroes would make
+        // the fastest round in the game undodgeable.
+        if (sn.t <= 0 && inCam && p.onGround && Math.abs(p.x - sn.x) < 340) {
+            gs.eb.push({ x: sn.x + Math.cos(sn.aim) * 12, y: sn.y - 14 + Math.sin(sn.aim) * 12, vx: Math.cos(sn.aim) * CFG.sniperSpeed, vy: Math.sin(sn.aim) * CFG.sniperSpeed })
+            gs.ev.push({ type: 'sniper' })
+            sn.flash = 8
+            sn.t = 150 + Math.floor(rnd(gs) * 90)
         }
     }
 
@@ -414,20 +535,25 @@ export function step (gs, pad = PAD0) {
         }
     }
 
-    // --- the flying capsule: Contra's signature weapon courier (jungle runs) ---
+    // --- the flying capsule: Contra's signature weapon courier (jungle runs).
+    // S3: the wheel — every capsule draws its letter and its altitude. ---
     if (gs.phase === 'jungle') {
         if (!gs.capsule && gs.tick >= gs.nextCapsule) {
-            gs.capsule = { x: gs.cam + W + 10, y: 140, vx: -1.4 }
+            gs.capsule = {
+                x: gs.cam + W + 10, y: CAP_ALT[Math.floor(rnd(gs) * CAP_ALT.length)], vx: -1.4,
+                kind: CAP_KINDS[Math.floor(rnd(gs) * CAP_KINDS.length)],
+            }
         }
     }
     if (gs.capsule) {
         gs.capsule.x += gs.capsule.vx
         const c = gs.capsule
+        const kind = c.kind || 'spread'
         if (p.inv >= 0 && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
             gs.capsule = null
             gs.nextCapsule = gs.tick + 600 + Math.floor(rnd(gs) * 300)
-            if (p.weapon !== 'spread') { p.weapon = 'spread'; gs.score += 1000; gs.ev.push({ type: 'pickup' }) }
-            else gs.ev.push({ type: 'pickup' })
+            if (p.weapon !== kind) { p.weapon = kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: kind }) }
+            else gs.ev.push({ type: 'pickup', k: kind })
         } else if (c.x < gs.cam - 16) {
             gs.capsule = null
             gs.nextCapsule = gs.tick + 300
@@ -456,7 +582,7 @@ export function step (gs, pad = PAD0) {
             for (const g of bo.guns) {
                 g.t -= 1
                 if (g.t <= 0) {
-                    const a = Math.atan2((p.y - 14) - g.y, p.x - g.x)
+                    const a = Math.atan2((p.lane - 14) - g.y, p.x - g.x)
                     gs.eb.push({ x: g.x + Math.cos(a) * 12, y: g.y + Math.sin(a) * 12, vx: Math.cos(a) * 2.0, vy: Math.sin(a) * 2.0 })
                     gs.ev.push({ type: 'cannon' })
                     g.t = 170 + Math.floor(rnd(gs) * 110)
@@ -466,7 +592,7 @@ export function step (gs, pad = PAD0) {
             for (const d of bo.doors) {
                 d.t -= 1
                 if (d.t <= 0 && live < CFG.doorCap) {
-                    gs.soldiers.push({ x: d.x, y: d.y, hold: false, hp: 1, awake: true, t: 30, walk: 0, walkDir: d.x > 192 ? -1 : 1, dead: false, flash: 0 })
+                    gs.soldiers.push({ x: d.x, y: d.y, hold: false, hp: 1, awake: true, t: 30, walk: 0, walkDir: d.x > 192 ? -1 : 1, dead: false, flash: 0, nade: false, throwT: 0 })
                     gs.ev.push({ type: 'door' })
                     d.t = 300 + Math.floor(rnd(gs) * 150)
                 }
@@ -474,9 +600,14 @@ export function step (gs, pad = PAD0) {
         }
     }
 
-    // --- enemy bullets: one hit kills (inv frames aside) ---
+    // --- enemy bullets: one hit kills (inv frames aside). S3 grenades ride
+    // the same stream with a gravity arc and detonate where they land. ---
     gs.eb = gs.eb.filter((b) => {
         b.x += b.vx; b.y += b.vy
+        if (b.gr) {
+            b.vy += 0.16
+            if (gs.phase === 'jungle' && b.y >= CFG.ground - 2) { boom(gs, b.x, CFG.ground - 4, true, 'tnt'); return false }
+        }
         if (b.x < gs.cam - 8 || b.x > gs.cam + W + 8 || b.y < gs.camY - 8 || b.y > gs.camY + H + 8) return false
         if (p.inv <= 0 && p.dead === 0 && Math.abs(b.x - p.x) < 7 && Math.abs(b.y - (p.y - 14)) < 13) { killPlayer(gs); return false }
         return true
@@ -506,10 +637,19 @@ export function autopilot (gs) {
                 if (p.onGround && br.x - p.x < 22) pad.a = true
             }
         }
-        // dodge: jump when a bullet is bearing down on the lane ahead of the knees
+        // dodge: jump when a bullet is bearing down on the lane ahead of the
+        // knees — from EITHER side (the sniper round is faster than a retreat,
+        // so running away never outruns it; the hop is the answer).
         if (!pad.a) for (const b of gs.eb) {
+            if (b.gr) continue
             const dx = b.x - p.x
-            if (p.onGround && dx > 4 && dx < 46 && Math.abs(b.y - (p.y - 14)) < 12 && b.vy < 1.2) { pad.a = true; break }
+            const toward = (dx > 4 && dx < 46) || (dx < -4 && dx > -46 && b.vx < -0.3)
+            if (p.onGround && toward && b.vy < 1.2 && Math.abs(b.y - (p.y - 14)) < 12) { pad.a = true; break }
+        }
+        // S3 grenades: a bomb dropping into the lane gets hopped — the blast
+        // sits on the ground, so being airborne over it is the whole answer.
+        if (!pad.a) for (const b of gs.eb) {
+            if (b.gr && b.vy > 0 && p.onGround && Math.abs(b.x - p.x) < 34 && b.y > CFG.ground - 110) { pad.a = true; break }
         }
         // the capsule is the prize: chase its altitude
         if (!pad.a && gs.capsule) {
@@ -622,15 +762,17 @@ export function stateHash (gs) {
     put(gs.tick); put(gs.cam); put(gs.camY); put(gs.score); put(gs.lives); put(gs.seed); put(gs.r)
     put(gs.phase === 'jungle' ? 0 : gs.phase === 'falls' ? 1 : 2)
     put(gs.safe.x); put(gs.safe.y)
-    put(gs.p.x); put(gs.p.y); put(gs.p.vy); put(gs.p.onGround ? 1 : 0); put(gs.p.face)
-    put(gs.p.ax); put(gs.p.ay); put(gs.p.cool); put(gs.p.weapon === 'spread' ? 1 : 0)
+    put(gs.p.x); put(gs.p.y); put(gs.p.vy); put(gs.p.onGround ? 1 : 0); put(gs.p.face); put(gs.p.lane)
+    put(gs.p.ax); put(gs.p.ay); put(gs.p.cool); put(WCODE[gs.p.weapon] || 0)
     put(gs.p.inv); put(gs.p.dead); put(gs.prevA ? 1 : 0)
-    for (const b of gs.pb) { put(b.x); put(b.y); put(b.vx); put(b.vy) }
-    for (const b of gs.eb) { put(b.x); put(b.y); put(b.vx); put(b.vy) }
-    for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk) }
+    for (const b of gs.pb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(KCODE[b.k] || 0); put(b.hits ? b.hits.length : 0) }
+    for (const b of gs.eb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(b.gr ? 1 : 0) }
+    for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk); put(s.nade ? 1 : 0); put(s.hp) }
+    for (const sn of gs.snipers) { put(sn.awake ? 1 : 0); put(sn.dead ? 1 : 0); put(sn.x); put(sn.y); put(sn.t); put(sn.aim) }
     for (const t of gs.turrets) { put(t.dead ? 1 : 0); put(t.hp); put(t.aim); put(t.t) }
     for (const br of gs.barrels) put(br.gone ? 1 : 0)
     put(gs.capsule ? gs.capsule.x : -9999); put(gs.nextCapsule)
+    put(gs.capsule ? (CAP_KINDS.indexOf(gs.capsule.kind) + 1) : 0)
     if (gs.boss) {
         put(gs.boss.core); put(gs.boss.coreT); put(gs.boss.dying)
         for (const g of gs.boss.guns) put(g.t)
