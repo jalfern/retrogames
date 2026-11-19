@@ -85,7 +85,7 @@ Landing juice (#2214): a correct drop adds a low sheet-metal thud under the
 ding, a deeper first-frame squash (0.32) with a faster recovery, a rim dip on
 the struck bin and a light shake; smash gets three bright after-tinkles.
 
-Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell|aim|rec` — `wave` collapses the table
+Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell|aim|rec|perfect|spoil` — `wave` collapses the table
 to one shift's waves; `amb` flattens the ambience eras (#2234); `vis` freezes the
 bin meters (#2678); `tell` silences the grab-read telegraphs (#2684); `aim` blinds
 rival intent and ring ownership (#2690); `rec` makes the export's label law lie
@@ -317,3 +317,41 @@ named gates go red.
 - **Corpus honesty:** the planner never mis-bins or slams glass, so corpus
   misses are barrel slips only — an accurate profile of a precise model at
   rotating cargo; the `wrong`/`shatter` labels come from human takes.
+
+## Perfect shift (#2742 — never-dry polish, the mastery the risk laws teach)
+
+The arcade pays clean rounds more (Tapper, 1983). PICK RUSH's law:
+
+- **Sheet:** every seat carries `arm.clean` — true when the seat has committed
+  no spoiling fault since the last whistle. The spoiling classes are the
+  sim's own failure ledger: `miss` (piece off the belt end — unowned, spoils
+  EVERY seat: the line is shared), `wrong`, `shatter`, `floor` (each spoils
+  only the crane recorded on the item's `lastSeat`). A grip SLIP excuses —
+  jaws bouncing off a rolling barrel loses nothing, and #2684's telegraphs
+  already tell you not to try it.
+- **Pay:** at the shift whistle, if quota cleared, every clean seat banks
+  `PERFECT_PAY[shift]` = 200/250/300/350 — into `gs.score` AND its own seat
+  bank; the sheet resets for the new shift. The last shift pays before the
+  win closes the book. Quota short pays nothing — a clean sheet never buys
+  the shift.
+- **Moment:** `perfect` sim event (seat/shift/pts), a rising triangle sparkle
+  (C6-E6-G6-C7) over the whistle, gold particles, a `PERFECT SHIFT +n /
+  CLEAN SHEET` sub-line under the CLEAR card, and `PERFECT SHIFTS ×k (+Σ)`
+  in gold on the over card.
+- **Hygiene:** zero rng — the payout is pure bookkeeping of events the rules
+  already emit (`CLEAN-NO-RNG` counts draws at the whistle). `clean` is
+  derived state; nothing new joins `stateHash` — the score the hash already
+  mixes is the whole footprint.
+- **Proof:** `pickcheck` §CLEAN SHIFT — 21 gates: fire (exact Δ into score
+  and bank), ladder amounts by literal, final-shift-before-win, one bust gate
+  per fault class, slip-excused, per-seat independence in 2P, reset at the
+  whistle, short-never-pays, no-rng, determinism, autopilot wins intact, and
+  `CLEAN-AUTO` proves the CPU banks the moment too (measured 7×0 101×1
+  2027×1 — the demo shows the law). Chrome `CLEAN LIVE`: the DEV ledger
+  (`__pickrushTest.perfects()`) reads honest at the first tick of play.
+  `PICK_MUT=perfect` (reward dies) reddens 5 named gates;
+  `PICK_MUT=spoil` (misses forgiven) reddens 2 by name.
+- **Corpus:** `data/pickrush/summary.json` regenerated — every seed banks
+  exactly +500 (shift 2 is the miss-free stretch; both planner seats clear
+  it clean). Drop counts untouched; hashes are #2742 hashes, replay-verified
+  ALL.

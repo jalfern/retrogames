@@ -32,3 +32,11 @@ at rotating cargo, not a bug. Human takes banked in-browser (the live game
 records every shift) carry the full `wrong`/`shatter` mix and live in
 localStorage under `retrogames-episodes`, exportable through the kit's
 `exportEpisodes()`.
+
+Since #2742 the per-seed `score` includes PERFECT SHIFT payouts (the
+whistle pays any seat whose shift carried no miss/wrong/shatter/floor).
+Every seed banks exactly +500: shift 2 is the miss-free stretch of the
+authored line, and both planner seats clear it clean (250 × 2). Drop
+counts are untouched (the payout is scoring, not mechanics) — but the
+checkpoint hashes in `summary.json` are #2742 hashes: regenerate the
+corpus whenever the sim law changes, never hand-edit.
