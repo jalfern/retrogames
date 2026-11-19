@@ -14,7 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, PLATFORMS, makeGame, step, autopilot, stateHash } from './sim.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawBullet, drawGate, drawHud } from './art.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawBullet, drawGate, drawHud, drawDeathTumble, drawFireball } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -29,13 +29,22 @@ const sfx = {
     shot: () => audioController.playSweep(920, 540, 0.05, 'square', 0.05),
     spread: () => { audioController.playSweep(760, 420, 0.07, 'square', 0.06); audioController.playNoise(0.04, 0.05) },
     efire: () => audioController.playSweep(500, 300, 0.05, 'square', 0.035),
+    // the turret's crew-served gun gets its own heavier report (#2782.6)
+    efireBig: () => { audioController.playSweep(360, 150, 0.09, 'sawtooth', 0.045); audioController.playNoise(0.05, 0.03) },
     jump: () => audioController.playSweep(260, 520, 0.09, 'square', 0.05),
     boom: () => { audioController.playNoise(0.28, 0.12); audioController.playSweep(160, 40, 0.25, 'triangle', 0.09) },
     spark: () => audioController.playNoise(0.05, 0.03),
-    pickup: () => audioController.playSweep(320, 980, 0.18, 'triangle', 0.08),
+    // capsule: the rise plus a bass answer (the original's jingles answer low)
+    pickup: () => { audioController.playSweep(320, 980, 0.18, 'triangle', 0.08); setTimeout(() => audioController.playTone(196, 0.16, 'triangle', 0.05), 90) },
     respawn: () => audioController.playSweep(700, 220, 0.16, 'triangle', 0.06),
     gameover: () => audioController.playSweep(320, 60, 0.6, 'sawtooth', 0.08),
-    clear: () => { audioController.playTone(660, 0.12, 'square', 0.07); setTimeout(() => audioController.playTone(880, 0.12, 'square', 0.07), 130); setTimeout(() => audioController.playTone(1180, 0.24, 'square', 0.07), 260) },
+    splash: () => audioController.playNoise(0.06, 0.025),
+    // stage clear: a 4-note call answered by a bass line (ART.md bar 4 — the
+    // original's fanfare is a call-and-response, not a plain triad)
+    clear: () => {
+        [660, 880, 1046, 1318].forEach((f, i) => setTimeout(() => audioController.playTone(f, i === 3 ? 0.24 : 0.12, 'square', 0.07), i * 130))
+        [0, 1, 2, 3].forEach((i) => setTimeout(() => audioController.playTone([165, 220, 262, 330][i], 0.16, 'triangle', 0.05), 65 + i * 130))
+    },
 }
 
 export default function ContraGame () {
@@ -72,19 +81,22 @@ export default function ContraGame () {
         let clearHold = 0
         let overAt = 0
         let shake = 0
-        let msg = 0
-        let msgTick = 0
         let hiscore = Number(localStorage.getItem('contra:hiscore') || 0)
         const part = [] // cosmetic particles — Math.random is law here, never in sim
+        const fire = [] // expanding fireballs — sized by the boom's kind (#2782)
         const keys = { l: false, r: false, u: false, d: false, j: false, f: false }
         let jumpQ = false, fireQ = false
+        let wasGround = true
 
         const drain = () => {
             for (const e of gs.ev) {
-                if (sfx[e.type]) sfx[e.type]()
+                if (e.type === 'efire' && e.big) sfx.efireBig()
+                else if (sfx[e.type]) sfx[e.type]()
                 if (e.type === 'boom') {
                     shake = Math.min(6, shake + 5)
-                    for (let i = 0; i < 16; i++) {
+                    fire.push({ x: e.x, y: e.y, t: 0, kind: e.kind || 'tnt' })
+                    const n = e.kind === 'kill' ? 8 : e.kind === 'death' ? 12 : 16
+                    for (let i = 0; i < n; i++) {
                         const a = Math.random() * Math.PI * 2, v = 0.8 + Math.random() * 2.4
                         part.push({ x: e.x, y: e.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 0.6, t: 22 + Math.random() * 10, c: i % 3 })
                     }
@@ -92,6 +104,17 @@ export default function ContraGame () {
                     for (let i = 0; i < 5; i++) part.push({ x: e.x, y: e.y, vx: (Math.random() - 0.5) * 2, vy: -Math.random() * 1.6, t: 10 + Math.random() * 8, c: 2 })
                 }
             }
+            // shoreline splash: landing on the sand lip kicks droplets off the
+            // water line just below (the sea is at the bottom edge, #2782.1)
+            if (gs.p.dead === 0 && gs.p.onGround && !wasGround && gs.p.y >= CFG.ground - 0.5) {
+                sfx.splash()
+                for (let i = 0; i < 7; i++) {
+                    const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.4
+                    const v = 0.9 + Math.random() * 1.5
+                    part.push({ x: gs.p.x + (Math.random() - 0.5) * 12, y: CFG.ground + 8, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 12 + Math.random() * 8, c: i % 2 ? 3 : 4 })
+                }
+            }
+            wasGround = gs.p.onGround
             gs.ev.length = 0
         }
 
@@ -106,6 +129,8 @@ export default function ContraGame () {
         const startPlay = () => {
             gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0)
             part.length = 0
+            fire.length = 0
+            wasGround = true
             demoHold = 0
             setMode('play'); screen = 'play'
         }
@@ -133,7 +158,7 @@ export default function ContraGame () {
             drawBackground(ctx, gs.cam, gs.tick)
             ctx.save()
             ctx.translate(-Math.round(gs.cam) + Math.round(sx), Math.round(sy))
-            drawGround(ctx, gs.cam)
+            drawGround(ctx, gs.cam, gs.tick)
             for (const pl of PLATFORMS) drawPlatform(ctx, pl)
             drawGate(ctx)
             for (const br of gs.barrels) if (!br.gone) drawBarrel(ctx, br)
@@ -143,12 +168,18 @@ export default function ContraGame () {
             for (const b of gs.pb) drawBullet(ctx, b, false)
             for (const b of gs.eb) drawBullet(ctx, b, true)
             if (gs.p.dead === 0 && !(gs.end === 'dead')) drawPlayer(ctx, gs.p, gs.tick)
+            else if (gs.p.dead > 0) drawDeathTumble(ctx, gs.p.x, gs.p.y, Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4)
+            // expanding fireballs under the sparks (cosmetic, sized by kind)
+            for (let i = fire.length - 1; i >= 0; i--) {
+                if (!drawFireball(ctx, fire[i])) fire.splice(i, 1)
+                else fire[i].t += 1
+            }
             // particles (cosmetic layer)
             for (let i = part.length - 1; i >= 0; i--) {
                 const q = part[i]
                 q.x += q.vx; q.y += q.vy; q.vy += 0.08; q.t -= 1
                 if (q.t <= 0) { part.splice(i, 1); continue }
-                ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : '#d9dde2'
+                ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : q.c === 2 ? '#d9dde2' : q.c === 3 ? '#7cc7ff' : '#e8f6ff'
                 ctx.fillRect(Math.round(q.x), Math.round(q.y), q.c === 2 ? 1 : 2, q.c === 2 ? 1 : 2)
             }
             ctx.restore()
@@ -163,8 +194,9 @@ export default function ContraGame () {
                 ctx.fillStyle = '#ffd23c'
                 ctx.font = 'bold 9px "Courier New", monospace'
                 ctx.fillText('OPERATION — THE JUNGLE', 138, 76)
-                msgTick += 1
-                if (msgTick > 150) { msgTick = 0; msg = (msg + 1) % MESSAGES.length }
+                // message rotation rides WORLD ticks, not paint frames: a slow
+                // software-rendered page must not cycle attract copy at half speed
+                const msg = Math.floor(gs.tick / 150) % MESSAGES.length
                 ctx.font = 'bold 10px "Courier New", monospace'
                 ctx.fillStyle = msg === MESSAGES.length - 1 && Math.floor(gs.tick / 24) % 2 === 0 ? '#ffffff' : '#cdeea8'
                 const t = MESSAGES[msg]
@@ -272,6 +304,8 @@ export default function ContraGame () {
                     barrelsLeft: gs.barrels.filter((b) => !b.gone).length, pb: gs.pb.length, eb: gs.eb.length,
                     capsule: gs.capsule ? { x: +gs.capsule.x.toFixed(1), y: gs.capsule.y } : null,
                     keys: { ...keys },
+                    msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
+                    tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -308,6 +342,8 @@ export default function ContraGame () {
                 reset: (seed) => {
                     gs = makeGame(seed >>> 0)
                     part.length = 0
+                    fire.length = 0
+                    wasGround = true
                     keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false
                     screen = 'play'
                     setMode('play')
