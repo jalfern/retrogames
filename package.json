@@ -78,6 +78,7 @@
     "defuselinkdrive": "node scripts/defuselinkdrive.mjs",
     "tmdlinkdrive": "node scripts/tmdlinkdrive.mjs",
     "defusedrive": "node scripts/defusedrive.mjs",
+    "bdteachpad": "node scripts/bdteachpad.mjs",
     "britannidrive": "node scripts/britanniadrive.mjs",
     "bombdrive": "node scripts/bombdrive.mjs",
     "tmdphonecheck": "node scripts/tmdphonecheck.mjs",
