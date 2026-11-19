@@ -1,59 +1,62 @@
-# STATE — session 347 slot b close-out
+# STATE — session 347 slot a close-out
 
 ## Shipped this session
-- **PICK RUSH: LABELLED GRASP-AND-PLACE EPISODES (#2734) — PR #2737 merged
-  `954de29`** (rule-5 loop on `static`; prod-marked `index-Br-2CV4v.js`).
-  Never-dry stage (#1571): the ladder ran #2724 REFUSED (slot a live), #1711
-  WAIT-STATE (`grade --dry-run`: nothing new; jonq #2652 AWAITING), queue
-  empty, feedback QA-held (#2729 building-qa, QA MASTER live — no borrow) →
-  `weakestStage` PickRush score 1 → filed #2734, claimed, shipped.
-  Live takes bank through the #1141 kit (seed, pads per seat per tick,
-  hashes, sources resolved at stop, contract drives never bank); kit grew an
-  additive `episode.labels` track (validated, old files untouched);
-  sim events `slip/miss/shatter/wrong/drop` carry kind+seat (hashes
-  unaffected); `npm run pickrush-export` → 20 seeds (0..11 practice,
-  100..107 held-out), 20/20 contracts completed, replay-verified ALL,
-  4461 labelled drops (4010 hit/451 miss; corpus misses are barrel slips
-  only — humans supply wrong/shatter). REC beacon + `TAKE BANKED — HITS n ·
-  MISSES m · EPISODES STORED k` on the card. Gates: pickcheck 93/93 node +
-  34/34 browser, `PICK_MUT=rec` reddens 9 named gates (replay stays green);
-  robokitcheck OK; contractcheck 16/16; build green. QA polish pass filed
-  as #2739 (feedback).
+- **HOMEBODY — ROOMS WITH A PERSONALITY (#2736) — PR #2740 merged `46cd4fc`**
+  (rule-5 loop on `static`; verified via `git log origin/main` + content grep).
+  A standing wing reads its OWN floorboards: a Bookshelf makes it a STUDY (three
+  finished in-room reads → insight: reader +0.15 fun, house +1 content, `studied`
+  plucks), a TV/radio a PLAYROOM (Pip's fun-pick pulls to the in-room toy over
+  nearer house things; three finished in-room plays → delight: +0.2 fun, rel.kid
+  +0.5, house +1, `kid-laugh`). `archetypeOf` names rooms (bedroom > study >
+  playroom, view-only); paid-only ledger rows ride the pause sheet; open-book /
+  giggle-star badges sit at the doors. No rng timing; tallies join `stateHash`
+  INSIDE the wings loop — bare lots gain no mixes, the no-tap pin 3998885235
+  re-passed untouched (that frozen run buys nothing), 5/5 WINNABLE seeds hold.
+  Proof: peoplecheck **1078/0** (+36 §PERSONALITY); mutants die named
+  (`onWingFloor`→`s.wings[0]` → exactly the house-shelf gate red 1077/1;
+  pull→0 → gravitate+delight five red); homebodyqueuecheck 99/99;
+  contractcheck 14/14; eslint + lint:mario/fps/ai + build green.
+  `homebodydrive` advisory: 118/1, then shifted co-presence/meal fails under
+  load avg ~5 (3 lanes + CI on the box) — pure-sim twins green; rule-3
+  one-rerun-and-record, not chased.
 
-## Next queued (slot b)
-- Re-derive at main (`node scripts/idle-kick.mjs`); do NOT trust this line.
-  Expect: #1711 (`next`) still WAIT-STATE until a take lands — check
-  `plaicraft:grade --dry-run` before claiming; jonq #2652 deadline
-  Nov 20 01:36Z, default keeps waiting. #2732 (FloorBoss `bot.dir` vs
-  facing) is open `lane:games` feedback — QA-live still means no borrow;
-  slot a merged #2731, so #2724 is gone and #2732 is now the oldest real
-  builder-side feedback if the ladder's feedback rung ever frees. Flagship
-  gaps remain spent; PickRush's gap list is now CLOSED+DISCLAIMER only, so
-  weakestStage re-derives from scratch — let idle-kick name it.
+## Board
+- Warden target #2734 REFUSED at claim (slot b live-held 20 min; it shipped as
+  #2737 mid-session). Ladder: #1711 skipped WAIT-state (phone take still absent —
+  `plaicraft:grade --dry-run` answers "nothing new"; jonq #2652 AWAITING,
+  deadline Nov 20 01:36Z, default keeps waiting); steer/game-queue empty; the
+  only feedback (#2732) was taken and shipped by QA (`bot.face`, #2741) —
+  builders never borrow with QA MASTER live → flagship stage spent → never-dry:
+  weakestStage score 1 = HOMEBODY's lone unowned gap (only unheld title with
+  score > 0). Filed #2736 with the why-weakest line, claimed, shipped.
+- Filed QA polish pass **#2743** (named rooms short of the original — QA's next).
 
-## Catches learned (durable)
-- **A pad stream carries pads, not RNG draws.** The autopilot's retarget
-  draws advance the seeded stream that paces the spawns — capture with the
-  autopilot and replay respawns the line (first lie seed 0 tick 210). Any
-  export/replay corpus brain must be RNG-free; `EXPORT-RNG-FREE` now counts
-  draws (planner 48 vs autopilot 92 @2000) to hold the law.
-- **`gs.correct` resets at every whistle** (it's the per-shift quota
-  counter); the lifetime land ledger is Σ`binFill`. An invariant written
-  against `correct` over a whole contract is wrong in the naming, not the
-  data — EXPORT-HITS-CORRECT now says so in the gate text.
-- **Prod verification on jalfern.com needs `curl -L`** (bare URLs answer
-  15-byte "Redirecting…") and lazy game chunks are named `index-<hash>.js`
-  — extract chunk refs from the index bundle and scan them for the marker.
-- **Relative storage assertions beat absolute ones** for browser gates after
-  other suites have played (REC-BANKED counts `base+1`; an earlier
-  Space-started take legitimately banks).
+## Next queue
+- Re-derive at main (`node scripts/idle-kick.mjs`) — do NOT trust this line.
+  At close it answers `KICK HOMEBODY -1 weak`: score comes from feedback #2743
+  naming HOMEBODY, which the QA lane takes as its own while QA MASTER is live;
+  a builder with QA live skips it and goes flagship/never-dry. #1711 stays WAIT
+  until a phone take lands (check the store first). FLOOR BOSS "telegraph the
+  knee" (STATE 346 suggestion, unowned) is a good games-lane candidate if the
+  ladder reaches feedback with QA busy — file it as POLISH first, #841-style.
 
-## Lane state
-- Worktree `~/Dev/retrogames-forge-pickrush-episodes` + branch removed
-  post-merge; main checkout `~/Dev/retrogames` to be re-detached at
-  `origin/main` including the STATE commit below. Port 5178 freed.
-- Rule 4: game code merged (`src/games/**`) — streak reset, shelf healthy.
-- No halt on the board; nothing taste-shaped came up (the #2734 stage was
-  README-prescribed), so no jonq filed by this lane.
-- Open questions for Jon: none owned by slot b. #2652 (AWAITING, platform)
-  remains the only gate on #1711 line 3's human half.
+## Catches learned
+- **peoplecheck errands must run to completion.** `p.use` is only armed when the
+  WALK is assigned/advancing... tick to the `satisfied` event, not `while (p.use)`
+  — sampling before the law fires produced deltas `[0,0,0]` and four red gates
+  whose detail line named the fix instantly (rule 8: read your result).
+- **The attract bot never furnishes wings** — its scan meets house floor before
+  wing planks (r/c order). Wing-law changes are player-visible only; demo bytes
+  unchanged; the no-tap seed pin survives because the frozen run buys nothing.
+- Live-drive co-presence/meal legs flake at load ~5 (failures MOVE between runs);
+  pure-sim twins green = contention per rule 3 — record, don't chase.
+- (Re-confirmed 346 law) remote is the source of truth; `curl -L` jalfern
+  assets; verify prod by CONTENT markers, not chunk hashes.
+
+## Housekeeping
+- QA polish pass #2743 filed (feedback). No jonq filed this session (nothing
+  taste-shaped that isn't already open); open questions link: #2652 (AWAITING,
+  platform lane).
+- STATE committed via PR only because a GAME merged (#2740) — rule step 9.
+- Dev server 5173 killed at close; worktree `~/Dev/retrogames-forge-homebody-personality`
+  detached at origin/main after merge — removable.
