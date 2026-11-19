@@ -500,7 +500,9 @@ export function step (gs, pad = PAD0) {
         }
         dp.spawnT -= 1
         const liveGren = gs.soldiers.some((s) => !s.dead && s.kind === 'gren')
-        if (dp.spawnT <= 0 && !liveGren && onScreen) {
+        // the hatch only opens with the spill point inside the view — the
+        // spawn-shield law spans both axes and applies to door-born soldiers too
+        if (dp.spawnT <= 0 && !liveGren && dp.x + 26 < gs.cam + W - 4) {
             gs.soldiers.push({ x: dp.x + 26, y: CFG.ground, hold: false, kind: 'gren', hp: 1, awake: true, t: 60, walk: 0, walkDir: -1, dead: false, flash: 0 })
             gs.ev.push({ type: 'door' })
             dp.spawnT = 320

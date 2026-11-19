@@ -5,8 +5,24 @@ everything generated in code. Filed and built as #2779, one PR per stage:
 
 - **S1 — the jungle** (merged `8b6dd17`): horizontal scroll, 8-way run-and-gun,
   SPREAD capsule, soldiers/turrets/TNT, attract, `contracheck`.
-- **S2 — the base** (this): the waterfall vertical section + the boss gate with
-  the destructible core — stage 1's real finish.
+- **S2 — the base** (merged `8ada95b`): the waterfall vertical section + the boss
+  gate with the destructible core — stage 1's real finish.
+- **S3 — the weapon wall** (this): MG/fire/laser pickups on lettered capsules,
+  the arms depot with its M/F/L volley payout, snipers and a grenade soldier.
+
+## What S3 is
+
+The late jungle gains the **arms depot** — a concrete slab bristling an aimed
+gun, spitting one grenade soldier at a time through a supply hatch, with a
+sniper riding its roof (above level fire: aim up, or take it from the walkway).
+Ten rounds cave it, and Contra's signature payout flies: **three capsules —
+M, F, L — at three altitudes**. The routine flying capsule now carries a
+letter too (the serial cycles S→M→F→L, deterministic — no rng touched):
+**M** machine gun (3-tick cadence), **F** fire (slow, heavy — two armor
+points per landing), **L** laser (fast, pierces soldiers; the core shutter's
+armor law still stops it — armor stops everything). A second sniper holds the
+far walkway; grenade rounds arc under gravity 0.11 and burst with a 24px
+radius. Death reverts the gun like always — every new weapon dies with you.
 
 ## What S2 is
 
@@ -66,7 +82,15 @@ of blasts, +5000, STAGE CLEAR.
   the wrong way). `gs.apT/apDir` are advisory autopilot memos: unhashed,
   derived from hashed state, so replays stay identical.
 - Audio: every action synthesized via `audioController` (canyon enter sweep,
-  drown, cannon thud, core ping, shutter unlock, door clank, the death roar).
+  drown, cannon thud, core ping, shutter unlock, door clank, the death roar;
+  S3 adds the MG crack, the flame whoosh, the laser zip, the grenade lob, the
+  depot gun, the volley payout arpeggio, and the sniper's longer crack).
+- S3 laws in one line each: capsule serial stamps S/M/F/L (no rng); MG cadence
+  3 vs rifle 8; FIRE removes 2 turret hp; LASER pierces bodies but never shutter
+  armor; the depot absorbs every round (pierce included — walls are walls) and
+  pays 1000 + the M/F/L volley when it caves; hatch spills ≤ 1 live grenadier
+  (the door law reused); grenades arc (grav 0.11, fuse 100) and burst at radius
+  24; sniper holds ground, range 320, fixed reload 110.
 - Keyboard: Arrows move + aim all 8 ways (down aims only airborne),
   SPACE/Z or the pad's A jumps, X/C or the pad's B fires. `?` pauses.
   `warpFalls`/`warpBoss` construct phases properly (DEV hooks + DebugKit
@@ -77,7 +101,7 @@ of blasts, +5000, STAGE CLEAR.
 ```bash
 npm run dev -- --port 5173 --strictPort   # another terminal
 npm run contracheck                      # sim core + browser leg
-npm run contracheck -- --mutant        # replants spawn-shield + sealed-core, names the harm
+npm run contracheck -- --mutant        # replants spawn-shield + sealed-core + depot-impervious, names the harm
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -94,11 +118,12 @@ live warp + armor law in the browser · zero page errors.
 
 ## Honest gaps
 
-- The weapon shelf is thin: SPREAD is the only pickup. The original's MACHINE
-  GUN, FIRE BAR and LASER are S3, and the machine-gun audio seam is already
-  wired (`fireCool` reads the weapon).
-- Enemy roster: runners, ledge gunners and turrets only — the original's
-  snipers-in-trees, grenade soldiers and flying pod carriers are S3.
+- Enemy roster: the original's flying pod carriers (the popup weapon
+  suppliers) and the snipers-in-trees that fire as you pass under them are
+  still ahead — S3 shipped the walkway/depot snipers and one grenade soldier.
+- The arcade's MG/FIRE/LASER each had quirks this sim simplifies: the MG had
+  limited ammo, FIRE split and bounced on the ground, and LASER shortened per
+  pierce. Here they are cadence/weight/pierce takes on one round each.
 - Co-op: the cabinet is a two-player game; a CPU ally seat (and the second
   keyboard seat per Jon's multiplayer rule) is S4 — the sim takes one hero
   today.
@@ -107,7 +132,7 @@ live warp + armor law in the browser · zero page errors.
   blasts are random around the wall rather than scripted position-by-position;
   the waterfall has one gunner set and one hazard (the rising torrent), while
   the original also put the odd hanging vine/carrier on the way up; soldiers
-  carry rifles only, and the capsule flies at one height.
+  carry rifles only.
 - The arcade loops stage 1 with faster settings after the kill; here the run
-  ends at STAGE CLEAR and returns to attract — a looped second pass is S3+
+  ends at STAGE CLEAR and returns to attract — a looped second pass is S4+
   territory.

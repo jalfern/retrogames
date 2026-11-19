@@ -8,14 +8,19 @@
 // run-and-gun law, one-hit death + respawn mercy, the SPREAD capsule, barrel
 // chains, and the S2 laws — the waterfall ratchet camera, drowning torrent,
 // vertical wake law, the armored gate with its one weak point, and the door
-// that cannot spill an army. The WINNABLE proof drives the FULL stage (jungle +
-// falls + boss) with the honest-percept autopilot on seeds 1..12.
+// that cannot spill an army. S3 adds the weapon wall: lettered capsules cycling
+// S/M/F/L, MG cadence, the fire gun's heavy hit, the laser's pierce (which
+// armor still stops), the ten-hit arms depot and its M/F/L volley payout, the
+// sniper's range, arcing bursts, and guns that die with you. The WINNABLE proof
+// drives the FULL stage (jungle + falls + boss) with the honest-percept
+// autopilot on seeds 1..12 — depot included.
 // Named regressions guard the traps this game almost shipped with: soldiers
-// woken past the bullet-despawn edge (S1 — the stage played itself), and a
-// core that never opens (S2 — the stage cannot be won). `--mutant` replants
-// each and demands the harm is NAMED (#2142 direction).
-// The browser leg drives real key events through the shell: attract → seat →
-// run/jump/fire → die → restart, plus a warped boss visit, with zero page errors.
+// woken past the bullet-despawn edge (S1 — the stage played itself), a
+// core that never opens (S2 — the stage cannot be won), and an impervious
+// depot (S3 — the weapon wall keeps its guns). `--mutant` replants each and
+// demands the harm is NAMED (#2142 direction).
+// The browser leg drives real key events through the shell: attract -> seat ->
+// run/jump/fire -> die -> restart, plus a warped boss visit, with zero page errors.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -302,6 +307,132 @@ const mkBoss = (seed = 7) => {
     r.check('three hits and the run is over (GAME OVER path)', g2.end === 'dead' && g2.lives === 0)
 }
 
+// --------------------------------------------------- S3: the weapon wall ---
+{
+    // the capsule serial stamps letters, no rng: S -> M -> F -> L, every stage.
+    const gs = makeGame(5)
+    gs.lives = 9
+    gs.nextCapsule = 1
+    // stand where nothing can reach you while the courier cycles its letters
+    for (const s of gs.soldiers) s.dead = true
+    for (const t of gs.turrets) t.dead = true
+    const letters = []
+    let prev = null
+    for (let i = 0; i < 4000 && letters.length < 4; i++) {
+        step(gs, {})
+        if (gs.capsule && gs.capsule !== prev) { letters.push(gs.capsule.letter); prev = gs.capsule }
+        if (!gs.capsule) prev = null
+        gs.ev.length = 0
+    }
+    r.check('S3 capsules stamp letters, cycling S,M,F,L', letters.join(',') === 'S,M,F,L', letters.join(','))
+}
+{
+    // cadence law: the machine gun is a sustained 2x+ the rifle's rate.
+    const fireCount = (w, n = 60) => {
+        const g = makeGame(9); g.p.weapon = w; g.p.inv = 99999
+        let c = 0
+        for (let i = 0; i < n; i++) { step(g, { b: true }); c += g.ev.filter((e) => ['shot', 'mg', 'fsf', 'laser', 'spread'].includes(e.type)).length; g.ev.length = 0 }
+        return c
+    }
+    const rifle = fireCount('rifle'); const mg = fireCount('machine')
+    r.check('S3 machine gun: sustained cadence 2x+ the rifle', mg >= 15 && mg >= rifle * 1.8, `mg=${mg} rifle=${rifle}`)
+}
+{
+    // the fire gun is heavy: two armor points gone in one landing.
+    const t0 = (w) => {
+        const g = makeGame(9); g.p.weapon = w; g.p.x = 430; g.p.inv = 99999
+        for (const s of g.soldiers) s.dead = true
+        let n = 0
+        while (!g.turrets[0].dead && n < 400) { step(g, { b: true }); n++ }
+        return n
+    }
+    const f = t0('fire'); const rr = t0('rifle')
+    r.check('S3 fire gun drops a two-hit turret in one shot (the rifle needs two)', f > 0 && f < rr, `fire=${f} rifle=${rr}`)
+}
+{
+    // laser pierces bodies — one round marks two kills.
+    const g = makeGame(9); g.p.weapon = 'laser'; g.p.x = 100; g.p.inv = 99999
+    g.soldiers.length = 0
+    g.soldiers.push({ x: 160, y: 196, hold: false, kind: 'grunt', hp: 1, awake: true, t: 9999, walk: 0, walkDir: -1, dead: false, flash: 0 })
+    g.soldiers.push({ x: 240, y: 196, hold: false, kind: 'grunt', hp: 1, awake: true, t: 9999, walk: 0, walkDir: -1, dead: false, flash: 0 })
+    step(g, { b: true })
+    for (let i = 0; i < 30; i++) step(g, {})
+    r.check('S3 laser pierces: one round, two bodies', g.soldiers.every((s) => s.dead), `dead=${g.soldiers.map((s) => s.dead).join(',')}`)
+}
+{
+    // ...but armor stops EVERYTHING: the shut shutter sparks the laser too.
+    const gs = mkBoss(11); gs.boss.coreT = CFG.coreOpen + 20; gs.p.weapon = 'laser'
+    let coreHits = 0, sparks = 0
+    for (let i = 0; i < 40; i++) { step(gs, { right: true, up: true, b: true }); coreHits += gs.ev.filter((e) => e.type === 'coreHit').length; sparks += gs.ev.filter((e) => e.type === 'spark').length; gs.ev.length = 0 }
+    r.check('S3 armor law survives the laser: shut shutter sparks, never dents', coreHits === 0 && sparks > 0 && gs.boss.core === CFG.coreHp, `core=${gs.boss.core} sparks=${sparks}`)
+}
+{
+    // the arms depot: ten rounds cave the slab, and the payout flies.
+    const gs = makeGame(9); gs.p.x = 1580; gs.p.inv = 99999
+    for (const s of gs.soldiers) if ((s.kind || 'grunt') === 'grunt' && Math.abs(s.x - 1580) < 300) s.dead = true
+    const scoreBefore = gs.score
+    let volleyEv = 0, sparks = 0
+    for (let i = 0; i < 240 && !gs.depot.dead; i++) { step(gs, { b: true }); volleyEv += gs.ev.filter((e) => e.type === 'volley').length; sparks += gs.ev.filter((e) => e.type === 'spark').length; gs.ev.length = 0 }
+    const letters = gs.vc.map((c) => c.letter).join(',')
+    r.check('S3 arms depot: ten rounds cave the slab', gs.depot.dead && sparks >= 8, `hp=${gs.depot.hp} sparks=${sparks}`)
+    r.check('S3 payout: the fallen depot releases the M/F/L capsule volley', volleyEv === 1 && letters === 'M,F,L' && gs.score - scoreBefore >= 1000, `letters=${letters} bonus=${gs.score - scoreBefore}`)
+}
+{
+    // the sniper holds its mark and outruns the grunt rifle (range 220).
+    const gs = makeGame(5); gs.p.inv = 99999; gs.p.x = 1534
+    for (const s of gs.soldiers) if (!(s.kind === 'sniper' && s.x === 1800)) s.dead = true
+    const sn = gs.soldiers.find((s) => s.x === 1800)
+    let shots = 0
+    for (let i = 0; i < 300; i++) { step(gs, {}); shots += gs.ev.filter((e) => e.sniper).length; gs.ev.length = 0 }
+    r.check('S3 sniper holds ground and outruns the grunt rifle (fires from beyond 260px)', shots >= 1 && sn.x === 1800 && Math.abs(sn.x - gs.p.x) > 260, `shots=${shots} dx=${Math.abs(sn.x - gs.p.x)}`)
+}
+{
+    // grenades arc (up, then down) and burst with teeth.
+    const gs = makeGame(9); gs.p.x = 40; gs.p.inv = 99999
+    gs.soldiers.push({ x: 300, y: 196, hold: false, kind: 'gren', hp: 1, awake: true, t: 10, walk: 0, walkDir: -1, dead: false, flash: 0 })
+    let lobb = false, burst = false, arc = false
+    for (let i = 0; i < 400 && !burst; i++) {
+        step(gs, {})
+        if (gs.ev.some((e) => e.type === 'egren')) lobb = true
+        const gb = gs.eb.find((b) => b.g)
+        if (gb && gb.vy < 0) arc = true
+        if (lobb && gs.ev.some((e) => e.type === 'boom')) burst = true
+        gs.ev.length = 0
+    }
+    r.check('S3 grenades arc (up then down) and burst', lobb && arc && burst, `lobb=${lobb} arc=${arc} burst=${burst}`)
+    const g2 = makeGame(9); g2.p.inv = 99999; g2.p.x = 40
+    const victim = g2.soldiers.find((x) => x.x === 300)
+    g2.eb.push({ x: victim.x, y: victim.y - 14, vx: 0, vy: 0.2, g: 1, f: 99 })
+    let killed = false
+    for (let i = 0; i < 120 && !killed; i++) { step(g2, {}); killed = victim.dead; g2.ev.length = 0 }
+    r.check('S3 grenade burst kills a body inside its radius', killed)
+}
+{
+    // every new gun dies with you, like SPREAD before it.
+    const gs = makeGame(9); gs.p.weapon = 'machine'; gs.lives = 3; gs.p.inv = 0
+    gs.eb.push({ x: gs.p.x, y: gs.p.y - 14, vx: 0.1, vy: 0 })
+    step(gs, {})
+    let guard = 0
+    while (gs.p.dead > 0 && guard++ < 200) step(gs, {})
+    r.check('S3 new guns die with you: machine gun reverts to rifle at respawn', gs.p.weapon === 'rifle' && gs.p.inv > 0, `weapon=${gs.p.weapon} inv=${gs.p.inv}`)
+}
+{
+    // the whole stage, honest-percept, still clears — and the depot falls on
+    // every seed (the autopilot walks the flat line into the slab and pays for
+    // the payout in rifle rounds).
+    const fails = []
+    let depotDown = 0
+    for (let s = 1; s <= 12; s++) {
+        const gs = makeGame(s)
+        let volley = false
+        while (!gs.end && gs.tick < 20000) { step(gs, autopilot(gs)); if (gs.ev.some((e) => e.type === 'volley')) volley = true; gs.ev.length = 0 }
+        if (gs.end !== 'win') fails.push(`${s}:${gs.end}@${gs.tick}`)
+        if (volley) depotDown++
+    }
+    r.check('S3 hazards keep it honest: autopilot still clears seeds 1..12', fails.length === 0, fails.join(' ') || '12/12')
+    r.check('the depot falls under fire: volley released on every seed 1..12', depotDown === 12, `volleys ${depotDown}/12`)
+}
+
 // platforms: land above, walk through from below
 {
     const gs = makeGame(31)
@@ -352,6 +483,19 @@ if (MUTANT) {
                     if (gs.end === 'win') wins++
                 }
                 return wins === 0 ? 'HARM NAMED: the core never opens - 0/6 seeds can finish the stage; the gate is an unwinnable wall' : null
+            },
+        },
+        {
+            name: 'depot-impervious',
+            anchor: 'dp.hp -= 1; gs.ev.push({ type: \'spark\', x: b.x, y: b.y })',
+            plant: 'dp.hp -= 0; /* MUTANT(depot-impervious): the wall of guns cannot be caved */ gs.ev.push({ type: \'spark\', x: b.x, y: b.y })',
+            harm: async (mod) => {
+                let volleys = 0
+                for (let s = 1; s <= 6; s++) {
+                    const gs = mod.makeGame(s)
+                    while (!gs.end && gs.tick < 20000) { if (gs.ev.some((e) => e.type === 'volley')) volleys++; gs.ev.length = 0; mod.step(gs, mod.autopilot(gs)) }
+                }
+                return volleys === 0 ? 'HARM NAMED: the arms depot is impervious - 0/6 seeds release the capsule volley; the weapon wall keeps its guns' : null
             },
         },
     ]
