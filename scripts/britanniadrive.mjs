@@ -280,8 +280,12 @@ r.check('new moon: the open menu live-flips the road (VII -> IV, wheel +1)',
 // seat fresh AND follow the wheel when the day turns. Re-seat the Avatar
 // exactly on the gate tile first — openMenuOn's opener step leaves him one
 // tile south of it, and the walk-off is measured from the gate itself.
-// (#1876: the walk-off goes NORTH now — gate III's shrine stands two tiles
-// south at (161,23), and the chapel is stone.)
+// (#1876: the walk-off avoids gate III's shrine, two tiles south at (161,23)
+// — the chapel is stone.)
+// (#2772: it goes WEST now — #2494 gave the cottages substance and gate III's
+// north neighbour (161,20) AND its south neighbour (161,22) are cottage lots
+// in the town plot, so the old ArrowUp exit is barred by the cottage law. The
+// west road (160,21)/(159,21) is open ground.)
 await page.evaluate((i) => window.__britanniaTest.teleport(i), gi)
 await sleep(120)
 s2 = await st()
@@ -307,11 +311,11 @@ const pressFor = async (key, pred, ms = 3000) => {
 }
 s2 = await pressFor('KeyZ', (s) => s.gate === -1)
 r.check('new moon: Z cancels and the gate stays cancelled beside the avatar', s2.gate === -1 && s2.moonRoute === -1, JSON.stringify(s2))
-s2 = await pressFor('ArrowUp', (s) => s.y === 20)
-r.check('the first step off stays cancelled (the dismissal holds one tile)', s2.gate === -1 && s2.y === 20, JSON.stringify(s2))
-s2 = await pressFor('ArrowUp', (s) => s.y === 19)
-r.check('two steps off, the dismissal clears (no menu, no ghost)', s2.gate === -1 && s2.y === 19, JSON.stringify(s2))
-s2 = await pressFor('ArrowDown', (s) => s.gate === gi)
+s2 = await pressFor('ArrowLeft', (s) => s.x === 160)
+r.check('the first step off stays cancelled (the dismissal holds one tile)', s2.gate === -1 && s2.x === 160, JSON.stringify(s2))
+s2 = await pressFor('ArrowLeft', (s) => s.x === 159)
+r.check('two steps off, the dismissal clears (no menu, no ghost)', s2.gate === -1 && s2.x === 159, JSON.stringify(s2))
+s2 = await pressFor('ArrowRight', (s) => s.gate === gi)
 r.check('walking back re-opens the menu FRESH beside the same new-moon road (IV) — intentional, not sticky',
     s2.gate === gi && s2.moonRoute === 3 && s2.hoverRow === -1, JSON.stringify(s2))
 await page.evaluate((t) => window.__britanniaTest.setTime(t), DAY_TICKS + 100)
@@ -322,19 +326,31 @@ r.check('the re-opened menu is live: the day turns (new -> waxing crescent, +3) 
 
 // #1876 shrines: panel == node parity, and the chapel stone is REAL. Gate VI
 // (231,235, the dungeon star) plots its chapel due west at (229,235) — the one
-// cardinal its POI ring leaves; walking west onto the sanctum must be refused.
+// cardinal its POI ring leaves — but #2494 later put the town's cottage on
+// (230,235), so the approach detours (see below), and walking onto the
+// sanctum must be refused.
 await page.evaluate((sd) => { window.__game.reset(sd); window.__britanniaTest.teleport(6) }, seed0)
 await sleep(150)
 const sPar = await st()
 const wantSpots = plotShrines(sPar.gates.map(([x, y]) => ({ x, y })), (x, y) => world.get(x, y)).map(sv => (sv ? [sv.x, sv.y] : null))
 r.check('panel shrines match the Node sweep plot-for-plot (same eight tiles, same order)',
     JSON.stringify(sPar.shrines) === JSON.stringify(wantSpots), JSON.stringify({ got: sPar.shrines, want: wantSpots }))
+// #2772: teleport does NOT open the menu (only the step-detection law does),
+// and #2494 put a cottage on (230,235), gate VI's west exit, so the chapel
+// can no longer be touched from the gate plaza. The sanctum keeps the same law
+// from every other side: step SOUTH off the gate — the walk lands beside it and
+// the menu whirls open (the same arrival law the old west step demonstrated);
+// dismiss; slip west behind the cottage row (dismissal holds the adjacent
+// tile); and the NORTH step onto (229,235) takes the stone refusal — the
+// chapel is stone whichever way you come.
 let sS = await st()
-sS = await pressFor('ArrowLeft', (s) => s.gate === 6)
-r.check('gate VI: one step west stands beside the moongate (menu whirls open)', sS.x === 230 && sS.gate === 6, JSON.stringify({ x: sS.x, y: sS.y, gate: sS.gate }))
+sS = await pressFor('ArrowDown', (s) => s.gate === 6)
+r.check('gate VI: one step south stands beside the moongate (menu whirls open)', sS.x === 231 && sS.y === 236 && sS.gate === 6, JSON.stringify({ x: sS.x, y: sS.y, gate: sS.gate }))
 sS = await pressFor('KeyZ', (s) => s.gate === -1)
-sS = await pressFor('ArrowLeft', (s) => /is stone/.test(s.toastMsg) || s.bumped >= 1)
-r.check('the chapel is stone: the west step onto the sanctum is refused (x stays 230)', sS.x === 230 && sS.y === 235, JSON.stringify({ x: sS.x, y: sS.y }))
+sS = await pressFor('ArrowLeft', (s) => s.x === 230 && s.y === 236)
+sS = await pressFor('ArrowLeft', (s) => s.x === 229)
+sS = await pressFor('ArrowUp', (s) => /is stone/.test(s.toastMsg) || s.bumped >= 1)
+r.check('the chapel is stone: the north step onto the sanctum is refused (y stays 236)', sS.x === 229 && sS.y === 236, JSON.stringify({ x: sS.x, y: sS.y }))
 r.check('the refusal names the shrine and counts the touch', /is stone — about face/.test(sS.toastMsg) && sS.bumped >= 1, JSON.stringify({ toast: sS.toastMsg, bumped: sS.bumped }))
 await page.screenshot({ path: '/tmp/forge/britannia-shrine.png' })
 
