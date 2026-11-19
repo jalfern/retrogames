@@ -439,14 +439,15 @@ recording) now run their pipelines on the same sim, so when #1730 binds the buck
 `npm run plaicraft:evidence` against prod R2 is a mechanical finish, not first contact.
 
 
-**Verifying a prod ship by content (#2740 lessons).** Three traps stack in the
-`jalfern.com` verify poll: (1) small statically-imported games ride the ENTRY chunk
-(`index-*.js`), not a `<Game>-*.js` lazy chunk — grep the entry the live HTML names
-(Homebody lives in `index-*`; only heavy deps like three.js split per route);
-(2) minified bundles are ONE line — `grep -c` caps at 1, so count with
-`grep -o … | wc -l` before comparing a threshold; (3) the custom-domain edge can
-serve `x-vercel-cache: HIT` HTML for minutes AFTER a `success` production deployment
-(age 457 s observed with two merges invisible) — a content-stale answer is *stale,
-not broken*: check `deployments?environment=production` says `success` for the merge
-SHA, then wait the cache out. Diagnose order: markers in the local `dist` → live HTML
-entry name → marker counts in that entry → deployment status → cache age.
+**Verifying a prod ship by content (#2740 lessons).** The Vite build names every
+route chunk `index-<hash>.js` — the ENTRY shares that pattern, so "the entry is
+index-*" proves nothing and a game is NOT in the entry (this lane wasted 20 min
+grepping it for a missing banner — a broken detector, not stale prod). Reliable
+recipe: pull the live HTML's entry, collect every `assets/*.js` it references,
+fetch them (query-busting is pointless — the relay caches by path), grep the set
+for a marker STABLE since a known-shipped build to identify the game's chunk,
+then re-grep THAT chunk for the new build's markers. Two more traps: minified
+bundles are one line — count with `grep -o | wc -l`, never `grep -c`; and the
+HTML edge can sit `x-vercel-cache: HIT` for minutes after a deploy, so read
+`deployments?environment=production` (`success` for the merge SHA = shipped)
+before believing any staleness signal.
