@@ -70,7 +70,7 @@ import {
     shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, laneEscapes, swingMarkers, flowMarks, laneRuns, flowHeat,
     pullOff, YIELD_WAIT, YIELD_MAX, YIELD_CD,
     kneeTurn, bfsKnee, kneeNet, liveKnees, kneeEscapes, blocked,
-    tailTurn, liveTails, MAP, CELL, COLS, ROWS, BAY_CELL,
+    tailTurn, liveTails, swingOf, liveRights, MAP, CELL, COLS, ROWS, BAY_CELL,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -116,7 +116,8 @@ const MUT_FACE = ARGS.includes('--mutate-face') // #2732: reversing rotates the 
 const MUT_SEED = ARGS.includes('--mutate-seed') // #2738: the knee planner seeds from the movement again — reversed carts plan swings the body forbids
 const MUT_TAIL = ARGS.includes('--mutate-tail') // #2760: loaded carts turn into their own counterweight again — the tail clause is gone from the router
 const MUT_TAIL_LAND = ARGS.includes('--mutate-tail-land') // #2760: landings stop seeing the back diagonal — racks drop onto committed backswings
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND) {
+const MUT_COURTESY = ARGS.includes('--mutate-courtesy') // #2783: courtesy parks back into the swing — pullOff forgets the knee/tail cells of the blocking plan
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND || MUT_COURTESY) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const tgt = MUT_MANNERS || MUT_ATTRACT ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) : sim // #2700: presentation laws plant in the painter
     const src = readFileSync(tgt, 'utf8')
@@ -190,6 +191,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ['if (turn && kneeRack(gs, n.x - hx - dx, n.y - hy - dy)) continue // the tail is racked — the counterweight would clip it (#2760)', 'if (false && turn && kneeRack(gs, n.x - hx - dx, n.y - hy - dy)) continue // MUTANT', 'loaded carts clip their counterweight again — the tail is gone from the route planner, and ghost-clips return to every loaded leg (#2760)']
                                                                     : MUT_TAIL_LAND
                                                                     ? ['px - NB[pd][0] - NB[d][0] === x && py - NB[pd][1] - NB[d][1] === y)) { broken = true; break } // …or the counterweight tail does (#2760)', 'false)) { broken = true; break } // MUTANT: the back diagonal is blind again (#2760)', 'racks may land on committed backswings again — traffic keeps a plan whose counterweight now clips the fresh wall, and the heat lies about it (#2760)']
+                                                                    : MUT_COURTESY
+                                                                    ? ['if (!inSwing(px, py) && !blocked(gs, px, py, bot.id)) return { x: px, y: py }', 'if (!blocked(gs, px, py, bot.id)) return { x: px, y: py } // MUTANT: courtesy forgets the swing (#2783)', 'yielding carts park back into the rival\u2019s sweep again — duck-in-swing rises off zero and courtesy becomes the jam it ducked for (#2783)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
@@ -2837,5 +2840,46 @@ console.log('— tail law (#2760) —')
         ok(/ctx\.fillStyle = 'rgba\(150,170,192,0\.55\)'/.test(ui), 'loaded carts wear the steel counterweight nub — the swept side is visible at a glance; amber stays the law colour (#2760)')
     }
 }
+console.log('— #2783 SWING-AWARE COURTESY —')
+{
+    // geometry pin, hand-computed: an east-facing loaded rival stepping E,E,N
+    // pivots at its 3rd cell — knee (12,4), tail (10,6); nothing else swings.
+    const sw = swingOf({ carry: 'crate', face: 1, path: [{ x: 10, y: 5 }, { x: 11, y: 5 }, { x: 11, y: 4 }], x: 9, y: 5 })
+    ok(sw.has('12,4') && sw.has('10,6') && sw.size === 2, 'swingOf lays exactly the knee and tail diagonals of a plan pivot — hand-computed pins (E,E,N from (9,5): (12,4)/(10,6)) (#2783)')
+    ok(swingOf({ carry: null, face: 1, path: [{ x: 10, y: 5 }, { x: 11, y: 5 }, { x: 11, y: 4 }], x: 9, y: 5 }).size === 0, 'empty legs carry only forks — an unloaded rival owns no swing (#2711 doctrine, #2783)')
+    ok(swingOf({ carry: 'crate', face: 1, path: [{ x: 10, y: 5 }, { x: 9, y: 5 }], x: 9, y: 5 }).size === 0, 'a back-pedal keeps the facing and sweeps nothing — reversals swing no body (#2732 law, #2783)')
+    const gp = makeGame(7)
+    const hp = stateHash(gp)
+    const r1 = JSON.stringify(liveRights(gp)), r2 = JSON.stringify(liveRights(gp))
+    ok(r1 === r2 && stateHash(gp) === hp, 'liveRights is pure — same answer twice, board hash unchanged (#1917)')
+    const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
+    ok(/const sw = swingOf\(rival\)/.test(simSrc) && /!inSwing\(px, py\) && !blocked\(gs, px, py, bot\.id\)/.test(simSrc), 'pullOff consumes the swing — both the side bays and the backpedal skip cells the blocking plan sweeps (#2783)')
+    const uiSrc = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/swingBodies: \(\) => liveRights\(gs\)/.test(uiSrc), 'the DEV eye reads loaded pivots facing a body in their swing — the residual turn-rights audit has a live read (#2783)')
+    // the law end-to-end: across audited careers, courtesy still happens AND
+    // never lands on a swing cell of the plan it yielded to (pre-law: 12 of 64).
+    let ducks = 0, duckSwing = 0
+    for (const seed of [1337, 107, 42, 55]) {
+        const gs = makeGame(seed)
+        const ap = createAutopilot()
+        while (!gs.end && gs.tick < SHIFT + 10) {
+            const snap = gs.robots.map((r) => ({ id: r.id, x: r.x, y: r.y, carry: r.carry, face: r.face, path: (r.path || []).slice(), yielded: !!r.yield }))
+            step(gs, [ap(gs)])
+            for (const e of gs.ev) {
+                if (e.type !== 'duck') continue
+                ducks++
+                const dbed = snap.find((q) => !q.yielded && gs.robots.some((b) => b.id === q.id && b.yield))
+                if (!dbed) continue
+                for (const q of snap) {
+                    if (q.id === dbed.id) continue
+                    if (swingOf(q).has(`${e.x},${e.y}`)) { duckSwing++; break }
+                }
+            }
+        }
+    }
+    ok(ducks > 0, `courtesy is alive on audited careers — ${ducks} ducks across four seeds (the law is not decoration) (#2783)`)
+    ok(duckSwing === 0, `no duck parks into a sweep — ${ducks} shoulders taken, 0 on a knee/tail cell of the blocking plan (pre-law measured 12 of 64) (#2783)`)
+}
+
 console.log(fails ? `\nFLOOR BOSS CHECK: ${fails} FAILED` : '\nFLOOR BOSS CHECK: all green')
 process.exit(fails ? 1 : 0)
