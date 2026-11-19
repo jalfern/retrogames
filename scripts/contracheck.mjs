@@ -35,9 +35,15 @@ const runSeed = (seed, policy = autopilot, max = 20000) => {
     const gs = makeGame(seed)
     const seen = { efire: 0, wakesOut: 0, booms: 0 }
     for (const s of gs.soldiers) s._woken = false
+    for (const s of gs.snipers) s._woken = false
     while (!gs.end && gs.tick < max) {
         step(gs, policy(gs))
         for (const s of gs.soldiers) if (s.awake && !s._woken) {
+            s._woken = true
+            if (s.x >= gs.cam + WVIEW - 2 || s.y >= gs.camY + HVIEW - 2) seen.wakesOut++
+        }
+        // S3: the spawn-shield law spans the new roster too
+        for (const s of gs.snipers) if (s.awake && !s._woken) {
             s._woken = true
             if (s.x >= gs.cam + WVIEW - 2 || s.y >= gs.camY + HVIEW - 2) seen.wakesOut++
         }
@@ -302,6 +308,109 @@ const mkBoss = (seed = 7) => {
     r.check('three hits and the run is over (GAME OVER path)', g2.end === 'dead' && g2.lives === 0)
 }
 
+// ------------------------------------------------------- S3: weapon wheel ---
+{
+    // the MG: a stream, at least twice the rifle's rounds on the same hold
+    const mg = makeGame(5)
+    mg.p.weapon = 'machine'
+    let m = 0
+    for (let i = 0; i < 60; i++) { step(mg, { b: true }); m += mg.ev.filter((e) => e.type === 'shot' && e.k === 'machine').length; mg.ev.length = 0 }
+    const rf = makeGame(5)
+    let r2 = 0
+    for (let i = 0; i < 60; i++) { step(rf, { b: true }); r2 += rf.ev.filter((e) => e.type === 'shot').length; rf.ev.length = 0 }
+    r.check('MG streams: at least twice the rifle on the same hold', m >= 14 && m >= r2 * 2, `MG ${m} vs rifle ${r2} in 60 ticks`)
+    // the laser is the fastest round in the game
+    const lz = makeGame(5); lz.p.weapon = 'laser'
+    step(lz, { b: true })
+    r.check('laser outruns every other round (>= 9 px/tick)', Math.hypot(lz.pb[0].vx, lz.pb[0].vy) >= 9, `speed=${Math.hypot(lz.pb[0].vx, lz.pb[0].vy).toFixed(1)}`)
+    // the firebar undulates across its line of travel
+    const fb = makeGame(5); fb.p.weapon = 'fire'
+    step(fb, { b: true })
+    const b0 = fb.pb[0]
+    const vys = []
+    for (let i = 0; i < 30; i++) { step(fb, {}); if (fb.pb.includes(b0)) vys.push(b0.vy) }
+    r.check('firebar undulates: vy swings both sides of its line', vys.length > 10 && Math.min(...vys) < 0 && Math.max(...vys) > 0, `vy ${Math.min(...vys).toFixed(2)}..${Math.max(...vys).toFixed(2)}`)
+}
+{
+    // piercing belongs to the wheel: one flame / one beam mows two aligned
+    // soldiers; the plain rifle still stops at the first body.
+    const lineup = (weapon) => {
+        const gs = makeGame(5)
+        gs.p.weapon = weapon
+        for (const s of gs.soldiers) s.dead = true
+        const a = { x: gs.p.x + 70, y: CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
+        const b = { x: gs.p.x + 110, y: CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
+        gs.soldiers.push(a, b)
+        for (let i = 0; i < 80; i++) { step(gs, { b: i === 0 }); gs.ev.length = 0 }
+        return (a.dead ? 1 : 0) + (b.dead ? 1 : 0)
+    }
+    r.check('FIRE pierces: one flame kills two lined-up soldiers', lineup('fire') >= 2, `kills=${lineup('fire')}`)
+    r.check('LASER pierces: one beam kills two lined-up soldiers', lineup('laser') >= 2, `kills=${lineup('laser')}`)
+    r.check('the rifle round still stops at the first body', lineup('rifle') === 1)
+}
+{
+    // the wheel itself: every capsule letter becomes the gun it prints
+    const granted = []
+    for (const kind of ['spread', 'machine', 'fire', 'laser']) {
+        const gs = makeGame(9)
+        gs.capsule = { x: gs.p.x + 8, y: gs.p.y - 14, vx: 0, kind }
+        step(gs, {})
+        granted.push(gs.p.weapon)
+    }
+    r.check('capsules grant every wheel letter (S/M/F/L)', granted.join(',') === 'spread,machine,fire,laser', granted.join(','))
+    // and the spawn draw covers the wheel across seeds — no letter is dead code
+    const seen = new Set()
+    for (let s = 1; s <= 40; s++) {
+        const gs = makeGame(s)
+        for (let i = 0; i < 300; i++) { step(gs, {}); if (gs.capsule) seen.add(gs.capsule.kind) }
+    }
+    r.check('capsule draws cover all four letters across seeds', seen.size === 4, [...seen].sort().join(','))
+}
+// ------------------------------------------------ S3: snipers + grenadiers ---
+{
+    const gs = makeGame(13)
+    gs.p.x = 300; gs.p.inv = 99999
+    let shots = 0, fast = false, glintOk = true
+    for (let i = 0; i < 400 && shots < 2; i++) {
+        const charging = gs.snipers.some((s) => s.awake && !s.dead && s.t <= 40)
+        step(gs, {})
+        const fired = gs.ev.filter((e) => e.type === 'sniper').length
+        if (fired) {
+            shots += fired
+            if (!charging) glintOk = false
+            for (const b of gs.eb) if (Math.hypot(b.vx, b.vy) >= 3) fast = true
+        }
+        gs.ev.length = 0
+    }
+    r.check('snipers open fire from the tree line', shots >= 2, `shots=${shots}`)
+    r.check('the sniper round is the fast one (>= 3 px/tick)', fast)
+    r.check('every sniper shot was telegraphed (scope-glint window before the round)', glintOk)
+}
+{
+    // a grenade rides a true arc and detonates at the ground it lands on
+    const gs = makeGame(13)
+    gs.p.x = 620; gs.p.inv = 99999
+    let threw = false, vyMin = 0, vyMax = 0, groundBoom = false
+    for (let i = 0; i < 500 && !groundBoom; i++) {
+        step(gs, {})
+        const grs = gs.eb.filter((b) => b.gr)
+        if (gs.ev.some((e) => e.type === 'throw')) threw = true
+        for (const g of grs) { vyMin = Math.min(vyMin, g.vy); vyMax = Math.max(vyMax, g.vy) }
+        if (threw && gs.ev.some((e) => e.type === 'boom' && e.kind === 'tnt' && e.y >= CFG.ground - 8)) groundBoom = true
+        gs.ev.length = 0
+    }
+    r.check('grenadiers lob on the approach', threw)
+    r.check('a grenade flies a real arc (rises, then falls)', vyMin < -1 && vyMax > 1, `vy ${vyMin.toFixed(1)}..${vyMax.toFixed(1)}`)
+    r.check('the grenade detonates on the ground (blast at the landing)', groundBoom)
+    // the vest: the grenadier eats at least two rifle rounds
+    const g2 = makeGame(5)
+    const nade = g2.soldiers.find((s) => s.nade)
+    nade.x = g2.p.x + 40; nade.y = CFG.ground; nade.awake = true; nade.t = 99999
+    let shotsToKill = 0
+    for (let i = 0; i < 60 && !nade.dead; i++) { step(g2, { b: i % 8 === 0 }); shotsToKill += g2.ev.filter((e) => e.type === 'shot').length; g2.ev.length = 0 }
+    r.check('the grenadier vest eats rounds (two rifle hits minimum)', nade.dead && shotsToKill >= 2, `shots=${shotsToKill}`)
+}
+
 // platforms: land above, walk through from below
 {
     const gs = makeGame(31)
@@ -352,6 +461,37 @@ if (MUTANT) {
                     if (gs.end === 'win') wins++
                 }
                 return wins === 0 ? 'HARM NAMED: the core never opens - 0/6 seeds can finish the stage; the gate is an unwinnable wall' : null
+            },
+        },
+        {
+            // S3: the wheel must actually turn. Silence the MG's round and the
+            // letter M becomes a legend on the capsule instead of a gun.
+            name: 'no-stream',
+            anchor: `gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.machineSpeed, vy: p.ay * CFG.machineSpeed, k: 'm' })`,
+            plant: 'void 0 /* MUTANT(no-stream): the MG clicks on empty */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(5)
+                gs.p.weapon = 'machine'
+                let n = 0
+                for (let i = 0; i < 60; i++) { mod.step(gs, { b: true }); n += gs.pb.filter((b) => b.k === 'm').length; gs.pb.length = 0 }
+                return n === 0 ? 'HARM NAMED: MACHINE GUN fires nothing - the wheel lost M, 20 rounds promised and zero delivered' : null
+            },
+        },
+        {
+            // S3: piercing is the signature of F and L. Freeze the hit-list and
+            // the beam becomes just a fast, boring rifle.
+            name: 'no-pierce',
+            anchor: "const pierce = b.k === 'f' || b.k === 'l'",
+            plant: 'const pierce = false /* MUTANT(no-pierce): beams stop dead at the first body */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(5)
+                gs.p.weapon = 'laser'
+                for (const s of gs.soldiers) s.dead = true
+                gs.soldiers.push({ x: gs.p.x + 70, y: mod.CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 })
+                gs.soldiers.push({ x: gs.p.x + 110, y: mod.CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 })
+                for (let i = 0; i < 80; i++) { mod.step(gs, { b: i === 0 }); gs.ev.length = 0 }
+                const kills = gs.soldiers.filter((s) => s.dead).length
+                return kills <= 1 ? `HARM NAMED: the laser stops at one body (${kills}/2) - piercing was the wheel's signature, now it is just a fast rifle` : null
             },
         },
     ]
@@ -415,6 +555,16 @@ const browser = await launch()
     r.check('Space jumps (the A button leaves the ground)', !jumped.onGround || jumped.y < 196, `y=${jumped.y}`)
     await page.keyboard.up('ArrowRight')
 
+    // S3 live: the wheel in the browser — MG streams rounds, capsules carry letters
+    await page.evaluate(() => window.__contraTest.setup({ weapon: 'machine' }))
+    await page.keyboard.down('KeyX')
+    await page.waitForTimeout(420)
+    const mg = await page.evaluate(() => window.__contraTest.probe())
+    await page.keyboard.up('KeyX')
+    r.check('live MG: weapon reads machine and rounds stream on screen', mg.weapon === 'machine' && mg.pb >= 4, `weapon=${mg.weapon} pb=${mg.pb}`)
+    const capped = await page.evaluate(() => { window.__contraTest.setup({ capsuleNear: true, capsuleKind: 'laser' }); return window.__contraTest.probe() })
+    r.check('live capsule carries its letter (L)', capped.capsule && capped.capsule.kind === 'laser', JSON.stringify(capped.capsule))
+
     // S2 through the DEV warp: the canyon paints, and the armor law holds live
     await page.evaluate(() => window.__contraTest.setup({ warp: 'falls' }))
     await page.waitForTimeout(120)
@@ -445,8 +595,11 @@ const browser = await launch()
     const afterOpen = await page.evaluate(() => window.__contraTest.probe())
     r.check('live core law: fire through the open shutter lands hits', afterOpen.core < shutCore, `core ${shutCore} -> ${afterOpen.core}`)
 
-    // force the death path through the DEV setup hook, then restart with keys
-    await page.evaluate(() => window.__contraTest.setup({ lives: 1 }))
+    // force the death path through the DEV setup hook, then restart with keys.
+    // Fresh sim first: the earlier open-core leg may have already won the run
+    // (screen clear end=win), so reset to a live play state before forcing death.
+    await page.evaluate(() => { window.__game && window.__game.reset(99); window.__contraTest.setup({ lives: 1 }) })
+    await page.waitForTimeout(120)
     let over = null
     for (let guard = 0; guard < 40; guard++) {
         await page.evaluate(() => window.__contraTest.setup({ lives: 0, kill: true }))

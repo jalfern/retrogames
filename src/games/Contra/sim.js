@@ -313,6 +313,7 @@ export function step (gs, pad = PAD0) {
         if (p.dead === 0) {           // respawn at the last safe ground (arcade checkpoints),
             p.x = gs.safe.x           // weapon lost, flashing
             p.y = gs.safe.y; p.vy = 0; p.onGround = true
+            p.lane = p.y
             p.weapon = 'rifle'; p.inv = CFG.invuln
             gs.eb.length = 0
             gs.ev.push({ type: 'respawn' })

@@ -14,13 +14,15 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss } from './sim.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawBullet, drawGate, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball } from './art.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawBullet, drawGrenade, drawSniper, drawGate, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball } from './art.js'
 
 const SIM_MS = 1000 / 60
 
 const MESSAGES = [
     'THE JUNGLE RUNS NORTH TO THE FALLS',
-    'CATCH THE CAPSULE — SPREAD KILLS WIDER',
+    'CAPSULES CARRY THE WHEEL — S M F L',
+    'MACHINE GUN STREAMS · FIRE PIERCES · LASER RUNS HOT',
+    'WATCH THE SCOPE GLINT — THE SNIPER TELLS YOU FIRST',
     'THE CORE SHINES WHEN IT IS OPEN — HIT IT THEN',
     'ONE HIT KILLS. BOTH SIDES.',
     'PRESS ANY KEY',
@@ -51,6 +53,12 @@ const sfx = {
     enter: () => audioController.playSweep(140, 340, 0.35, 'triangle', 0.07),
     drown: () => { audioController.playNoise(0.22, 0.09); audioController.playSweep(300, 70, 0.3, 'sine', 0.07) },
     cannon: () => { audioController.playSweep(220, 90, 0.12, 'square', 0.07); audioController.playNoise(0.06, 0.05) },
+    // S3: the wheel's voices + the new roster
+    mshot: () => audioController.playSweep(840, 500, 0.03, 'square', 0.035),
+    fshot: () => { audioController.playSweep(420, 180, 0.12, 'sawtooth', 0.045); audioController.playNoise(0.08, 0.03) },
+    lshot: () => audioController.playSweep(1600, 420, 0.1, 'sawtooth', 0.05),
+    sniper: () => audioController.playSweep(1300, 240, 0.09, 'square', 0.055),
+    throw: () => audioController.playSweep(300, 560, 0.09, 'triangle', 0.04),
     coreHit: () => { audioController.playTone(1180, 0.05, 'square', 0.06); audioController.playSweep(700, 1100, 0.06, 'sawtooth', 0.04) },
     unlock: () => audioController.playTone(980, 0.07, 'triangle', 0.05),
     door: () => audioController.playSweep(180, 120, 0.1, 'square', 0.05),
@@ -101,6 +109,7 @@ export default function ContraGame () {
         const drain = () => {
             for (const e of gs.ev) {
                 if (e.type === 'efire' && e.big) sfx.efireBig()
+                else if (e.type === 'shot' && e.k === 'machine') sfx.mshot()
                 else if (sfx[e.type]) sfx[e.type]()
                 if (e.type === 'boom') {
                     shake = Math.min(6, shake + 5)
@@ -181,10 +190,11 @@ export default function ContraGame () {
             }
             for (const br of gs.barrels) if (!br.gone) drawBarrel(ctx, br)
             for (const t of gs.turrets) if (!t.dead) drawTurret(ctx, t)
+            for (const sn of gs.snipers) if (!sn.dead && sn.awake) drawSniper(ctx, sn, gs.tick)
             for (const s of gs.soldiers) if (!s.dead && s.awake) drawSoldier(ctx, s, gs.tick)
             if (gs.capsule) drawCapsule(ctx, gs.capsule, gs.tick)
             for (const b of gs.pb) drawBullet(ctx, b, false)
-            for (const b of gs.eb) drawBullet(ctx, b, true)
+            for (const b of gs.eb) { if (b.gr) drawGrenade(ctx, b); else drawBullet(ctx, b, true) }
             if (gs.p.dead === 0 && !(gs.end === 'dead')) drawPlayer(ctx, gs.p, gs.tick)
             else if (gs.p.dead > 0) drawDeathTumble(ctx, gs.p.x, gs.p.y, Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4)
             // expanding fireballs under the sparks (cosmetic, sized by kind)
@@ -324,7 +334,8 @@ export default function ContraGame () {
                     coreOpen: gs.boss ? (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen : null,
                     soldiersAlive: gs.soldiers.filter((s) => !s.dead).length, turretsAlive: gs.turrets.filter((t) => !t.dead).length,
                     barrelsLeft: gs.barrels.filter((b) => !b.gone).length, pb: gs.pb.length, eb: gs.eb.length,
-                    capsule: gs.capsule ? { x: +gs.capsule.x.toFixed(1), y: gs.capsule.y } : null,
+                    capsule: gs.capsule ? { x: +gs.capsule.x.toFixed(1), y: gs.capsule.y, kind: gs.capsule.kind || 'spread' } : null,
+                    snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     keys: { ...keys },
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
@@ -341,7 +352,7 @@ export default function ContraGame () {
                     if (opts.inv !== undefined) gs.p.inv = opts.inv
                     if (opts.coreOpen !== undefined && gs.boss) gs.boss.coreT = opts.coreOpen ? 0 : CFG.coreOpen + 20
                     if (opts.clearBoss && gs.boss) { gs.boss.guns.forEach((g) => { g.t = 1e9 }); gs.boss.doors.forEach((d) => { d.t = 1e9 }); gs.soldiers.length = 0 }
-                    if (opts.capsuleNear) gs.capsule = { x: gs.p.x + 8, y: gs.p.y - 14, vx: 0 }
+                    if (opts.capsuleNear) gs.capsule = { x: gs.p.x + 8, y: opts.capsuleY ?? gs.p.y - 14, vx: 0, kind: opts.capsuleKind || 'spread' }
                     if (opts.kill) { gs.p.inv = 0; gs.eb.push({ x: gs.p.x + 2, y: gs.p.y - 14, vx: 0.1, vy: 0 }) }
                     if (opts.clearEnemies) for (const s of gs.soldiers) s.dead = true
                     return true
@@ -352,12 +363,13 @@ export default function ContraGame () {
                 getState: () => [
                     `x ${gs.p.x.toFixed(0)}/${CFG.worldW}  cam ${Math.round(gs.cam)}/${Math.round(gs.camY)}  y ${gs.p.y.toFixed(0)}  ground ${gs.p.onGround ? 1 : 0}  phase ${gs.phase}`,
                     `score ${gs.score}  lives ${gs.lives}  weapon ${gs.p.weapon}  inv ${gs.p.inv}  end ${gs.end || '-'}` + (gs.boss ? `  core ${gs.boss.core}/${CFG.coreHp} ${gs.boss.dying ? 'DYING' : (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen ? 'OPEN' : 'SHUT'}` : ''),
-                    `soldiers ${gs.soldiers.filter((s) => !s.dead).length}/${gs.soldiers.length} alive  turrets ${gs.turrets.filter((t) => !t.dead).length}  barrels ${gs.barrels.filter((b) => !b.gone).length}  bullets p/e ${gs.pb.length}/${gs.eb.length}`,
+                    `soldiers ${gs.soldiers.filter((s) => !s.dead).length}/${gs.soldiers.length} alive  turrets ${gs.turrets.filter((t) => !t.dead).length}  snipers ${gs.snipers.filter((t) => !t.dead).length}  nades ${gs.eb.filter((b) => b.gr).length}  barrels ${gs.barrels.filter((b) => !b.gone).length}  bullets p/e ${gs.pb.length}/${gs.eb.length}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
                 actions: [
                     { label: '+1 LIFE', run: () => { gs.lives += 1; return 'extra life' } },
                     { label: 'SPREAD NOW', run: () => { gs.p.weapon = 'spread'; return 'spread gun racked' } },
+                    { label: 'CYCLE WHEEL', run: () => { const w = ['rifle', 'spread', 'machine', 'fire', 'laser']; gs.p.weapon = w[(w.indexOf(gs.p.weapon) + 1) % w.length]; return 'weapon: ' + gs.p.weapon } },
                     { label: 'CAPSULE HERE', run: () => { gs.capsule = { x: gs.p.x + 24, y: gs.p.y - 14, vx: 0 }; return 'capsule inbound' } },
                     { label: 'TO WATERFALL', run: () => { warpFalls(gs); return 'into the canyon' } },
                     { label: 'TO THE GATE', run: () => { warpBoss(gs); return 'before the core' } },
