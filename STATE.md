@@ -1,51 +1,68 @@
-# STATE — session 352, slot a (2026-11-19 ~17:05Z GitHub clock)
+# STATE — session 352, slot b (2026-11-19 ~14:20Z)
 
 ## Shipped this session
-- **#2760 FLOOR BOSS — tail law MERGED: `2b3eb7e` (PR #2768).** Resumed the
-  session-351 corpse per step 1b (warden target matched; claim landed with a
-  REFUSED-free retry after two GitHub network flakes). Sim + painter were done;
-  this session landed the harness + re-pins per the PR-body resume plan:
-  - §TAIL: ~19 gates — pivot geometry ×8 bearings, whole-body net ≡ kneeNet
-    (netdiff 0 across 6,543 boards — the click-refusal half stays refused as
-    dead code, #2692 doctrine), career clip-audit (pre-PR planner ghost-clips
-    tails 2,009×; live/stored/driven 0; 1,982 of 19,766 plans re-routed),
-    repath-back-diagonal rig + byte-stable control, liveTails purity/order,
-    twin determinism, source pins (`why:'tail'` never returns).
-  - Mutants `--mutate-tail` + `--mutate-tail-land` — each killed by name.
-  - Five honest re-pins: parity traces 1372/1288/1291; sealed rig asserts
-    `A.ducked === 0`; shifts seeds `[1,19,23,30,32]`; attract seeds
-    `[55,74,107,126,148]` (first courtesy 4593–5324, window unchanged);
-    #2724 stair reference carries the tail line (restores hop equality).
-  - Gates: floorbosscheck all green (2×), contractcheck 14/14, eslint +
-    lint:mario/fps/ai + vite build green. README carries the engine note +
-    honest residual (overhang beyond both diagonals, lane widths).
+- **#2770 shipped as `30a79ac` — BRITANNIA: drivable at expose.** The nightly
+  stall (#2769, seed 20261155: `tick did not advance on step 1`) was the DEV
+  contract publishing `__game` at mount while the world still unrolled
+  (fetch ultima4.jsdos → inflate → star/land plots → `S = fresh(0)`): in that
+  window reset/tick silently no-op (`if (S)`). Law now: nothing publishes
+  until the world stands — `exposeGame`/`__britanniaTest`/DebugKit built at
+  mount (`devUp`), fired at the end of `load()`. Player half at the same seam:
+  key/tap during the unroll **arms the start** — the game begins at the
+  landing, held keys walk, stale one-shot taps drain.
+  Gate: `npm run britannreadycheck` (lane-advisory, MANUAL_CHECKS) route-
+  throttles the map +2.5 s — 12/12; mutant (mount-time publish) → 7 red with
+  the nightly signature verbatim (`ready:false, t0:0, t1:0`), restore green.
+  britanniacheck all green; nightly britannia PASS at seed 20261155; lint
+  gates + build green. **Prod verified**: new shell `index-aaXgQXsM.js`; live
+  probe throttled the map on jalfern.com, held key mid-flight started the run
+  at the landing (`__feedbackInfo` tick 15, zero page errors).
+- Warden target #2760 was REFUSED at claim (slot a holds it, 75 min) — normal
+  ladder: steer/next/game-queue empty, feedback only #2769 (+QA live, no
+  borrow), flagship gaps all owned → never-dry rung: `weakestStage` named
+  BRITANNIA (score 1, gap index −1: the weakness WAS #2769). Filed #2770,
+  claimed, shipped.
 
 ## Playable now
-FloorBoss with counterweight routing at `https://jalfern.com/retrogames/floor-boss`
-(page live; the new bundle rides the Vercel alias flip behind slot b's `ef5bdb9`
-— steel-string asset probe pending at close). Main's arcade otherwise unchanged.
+- BRITANNIA: a key pressed while the map unrolls sets off the pilgrimage the
+  moment Britannia stands. `jalfern.com/retrogames/britannia`.
 
-## Ops notes
-- **`main` was checked out in another lane's worktree** (`retrogames-qa-2772`) —
-  gh's post-merge local bookkeeping died ("'main' is already used by worktree")
-  although the squash-merge completed server-side. Repair: fetch + detach in
-  own worktree; do NOT touch another lane's worktree. Strengthens #2758.
-- **Clock skew on this box**: `date -u` ran ~7 h behind GitHub's clock all
-  session (claim/checkpoint comments timestamped "10:45Z" while CI said 16:2xZ).
-  Consequence: forge-claim liveness math (`now - created_at`) under-counts the
-  age of MY OWN claims by ~7 h — a 90-min lock could read 0 min. Re-check the
-  box clock before trusting fresh-claim refusals; #2758 territory.
-- **floorbossplay flake filed as #2774** (feedback): repeating
-  `undefined is not iterable` TypeError, different red gate sets run-to-run,
-  unreproducible in two targeted probes + contractcheck; nightly never runs
-  play (checks.mjs has floorbosscheck only).
+## Board (as seen at close)
+- #2760 building (slot a, PR #2768 WIP — tail law resume lives in its body).
+- #2772 filed (feedback, lane:qa): britannidrive walk/chapel legs fail
+  IDENTICALLY at pristine main (gate-menu law drift since #2494/#2516) —
+  pre-existing, verified by A/B at origin/main, untouched by #2773.
+- #2769: root-cause comment posted; next green nightly should nightlyheal it.
+- Rule-4 counter reset: game code merged.
 
-## Board
-- #2760 shipped/closed (this slot). #2774 open feedback (play flake).
-- #2751, #2652 AWAITING (not this slot's lanes).
+## Next queue
+- Re-derive at main (`node scripts/idle-kick.mjs`, then the ladder) — do NOT
+  trust this line. #1711 stays wait-state behind #2652 (platform takes).
+
+## Catches learned
+- **A green mutant can be a false mutant.** First plant (`devUp()` at the load
+  call) went GREEN because the DEV-block assignment runs *after* load() in the
+  effect body — devUp was still null there. Plant where the original bug lived
+  (end of the mount body), not where the fix's flag happens to sit.
+- **`git stash pop` on a shared lane box pops someone else's stash.** My
+  push-pop found "no local changes" but still applied stash@{0} (slot a's old
+  STATE) under my worktree. Use `git checkout <ref> -- <file>` for A/B runs
+  at other revisions; never stash-pop blind.
+- **nightlybot's repro line double-adds the seed.** Issues print
+  `NIGHTLY_SEED=<SEED+index>` but the bot adds the game index again; to replay
+  seed 20261155 pass NIGHTLY_SEED=20261119 (SEED for 2026-11-19).
+- **Verify prod deploys by shell-hash change + behavioral probe**, not asset
+  names (mine 404'd for 10 min pre-deploy; www-redirect matters too).
+  `__feedbackInfo` is prod-safe (#1473) — that's the only drivability window
+  a prod probe has, and it's enough.
+
+## Housekeeping
+- STATE committed direct to main (game merged — allowed); parked at the
+  slot-b path via `statepark.mjs park b`. Shift report published.
+- Slot-b port 5178 dev server killed at close; my worktree
+  `~/Dev/retrogames-forge-britannia-ready` removed after detach; main checkout
+  detached at origin/main. `git worktree prune` run.
 
 ## Open questions
-None filed this session (the flake went as a bug issue, not a question).
-
-## Rule 4 counter
-Game code MERGED this session (#2760) — counter reset.
+- #2652 (AWAITING, lane:platform — Jon's phone take, deadline 2026-11-20
+  01:36Z). Nothing new filed by slot b this session.
