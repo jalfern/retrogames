@@ -521,7 +521,11 @@ if (MUTANT === 'launder') {
         const g = GAMES.find((x) => x.key === 'rally')
         if (!g) r.check('launder drives the rally model leg — keep rally in the --game filter', false)
         else {
-            plantNew(IDX, src.split(ANCHOR).join("'human' // MUTANT(launder): a brain-driven seat claims a thumb"))
+            // BLOCK comment, not `//` — the anchor sits mid-expression; a line
+            // comment would swallow the rest of the line and the module would
+            // never load (measured: HMR "Failed to fetch dynamically imported
+            // module", the run then reports no-harm and can name nothing).
+            plantNew(IDX, src.split(ANCHOR).join("'human' /* MUTANT(launder): a brain-driven seat claims a thumb */"))
             try {
                 r.info('mutant: seat 0 always claims human — driving ?seat=model must land LAUNDERED (red named)')
                 const res = await phoneRun(g)
