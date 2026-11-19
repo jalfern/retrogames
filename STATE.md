@@ -1,68 +1,61 @@
-# STATE — session 352, slot b (2026-11-19 ~14:20Z)
+# STATE.md — The Forge (rewritten at close of session 355, slot a — 2026-11-19;
+# folds session 354 slot b's park, which this lane read at step 1).
+# Committed: CONTRA S1 (game code) merged this session, so state rides the merge.
 
-## Shipped this session
-- **#2770 shipped as `30a79ac` — BRITANNIA: drivable at expose.** The nightly
-  stall (#2769, seed 20261155: `tick did not advance on step 1`) was the DEV
-  contract publishing `__game` at mount while the world still unrolled
-  (fetch ultima4.jsdos → inflate → star/land plots → `S = fresh(0)`): in that
-  window reset/tick silently no-op (`if (S)`). Law now: nothing publishes
-  until the world stands — `exposeGame`/`__britanniaTest`/DebugKit built at
-  mount (`devUp`), fired at the end of `load()`. Player half at the same seam:
-  key/tap during the unroll **arms the start** — the game begins at the
-  landing, held keys walk, stale one-shot taps drain.
-  Gate: `npm run britannreadycheck` (lane-advisory, MANUAL_CHECKS) route-
-  throttles the map +2.5 s — 12/12; mutant (mount-time publish) → 7 red with
-  the nightly signature verbatim (`ready:false, t0:0, t1:0`), restore green.
-  britanniacheck all green; nightly britannia PASS at seed 20261155; lint
-  gates + build green. **Prod verified**: new shell `index-aaXgQXsM.js`; live
-  probe throttled the map on jalfern.com, held key mid-flight started the run
-  at the landing (`__feedbackInfo` tick 15, zero page errors).
-- Warden target #2760 was REFUSED at claim (slot a holds it, 75 min) — normal
-  ladder: steer/next/game-queue empty, feedback only #2769 (+QA live, no
-  borrow), flagship gaps all owned → never-dry rung: `weakestStage` named
-  BRITANNIA (score 1, gap index −1: the weakness WAS #2769). Filed #2770,
-  claimed, shipped.
+## SHIPPED THIS SESSION — #2779 S1 (CONTRA, Jon's #1530 commission)
+**Resumed, verified, merged.** The prior slot-a session died after opening PR #2781
+(branch `forge/contra-jungle` @ `7c6ac5b`, full build note posted — a decodable corpse,
+step 1b). This lane refreshed the claim, re-verified at the tip, and shipped:
+- `contracheck` **31/31**; `--mutant` (spawn-shield) goes RED naming the harm
+  (8 soldiers past the bullet-despawn edge); `CONTRACT_ONLY=contra contractcheck` 15/15;
+  eslint + lint:mario/fps/ai + `npm run build` green; tree clean.
+- Merged squash `8b6dd17` through the rule-5 loop (static green, advisory ignored).
+- Prod live: https://jalfern.com/retrogames/contra 200, bundle hash carries `contra`.
+- **#2779 stays OPEN** (`Part of`, big-build rule): relabeled `building` → `next`.
+- Polish pass filed: **#2782** (`feedback`, QA lane) — water edge, hero death anim,
+  bigger explosions, soldier juice, attract audit, sound layering.
 
-## Playable now
-- BRITANNIA: a key pressed while the map unrolls sets off the pilgrimage the
-  moment Britannia stands. `jalfern.com/retrogames/britannia`.
+## PLAYABLE
+`/retrogames/contra` — 6-screen jungle run-and-gun: 8-way aim run/jump, one-hit death
++ 3 lives + respawn mercy, SPREAD capsule (kept till death), wake-in-view soldiers,
+ledge gunners, leading sandbag turrets, chaining TNT, attract autopilot, phones via
+d-pad + A/JUMP + B/FIRE.
 
-## Board (as seen at close)
-- #2760 building (slot a, PR #2768 WIP — tail law resume lives in its body).
-- #2772 filed (feedback, lane:qa): britannidrive walk/chapel legs fail
-  IDENTICALLY at pristine main (gate-menu law drift since #2494/#2516) —
-  pre-existing, verified by A/B at origin/main, untouched by #2773.
-- #2769: root-cause comment posted; next green nightly should nightlyheal it.
-- Rule-4 counter reset: game code merged.
+## BOARD
+- **#2779 (next, lane:games)** — CONTRA **S2**: waterfall vertical section + boss gate
+  with the destructible core (stage 1's real finish). Extend `src/games/Contra/`.
+- **#1711 (next)** — PLAICRAFT platformer. S1 shipped `0df5c2f`; lines 1–4 wait on
+  Jon's phone/R2 side; S2 coin arch only after #2652 lands or defaults.
+- **#2772 (needs-review, lane:qa)** — britannidrive identical-fail, #2711-family gate
+  drift; QA lane's job, not a builder claim.
+- **#2782 (feedback)** — CONTRA S1 polish pass (QA lane).
 
-## Next queue
-- Re-derive at main (`node scripts/idle-kick.mjs`, then the ladder) — do NOT
-  trust this line. #1711 stays wait-state behind #2652 (platform takes).
+## QUEUE (re-derive at main — never plan from a remembered snapshot)
+1. `git fetch && git checkout --detach origin/main`, then `node scripts/idle-kick.mjs`,
+   then the #1045 ladder.
+2. #2779 S2 — the ladder's `next` item once the previous stage settled.
+3. #1711 S2 — gated on #2652 (deadline 2026-11-20 01:36Z; past it the sweep default runs).
 
-## Catches learned
-- **A green mutant can be a false mutant.** First plant (`devUp()` at the load
-  call) went GREEN because the DEV-block assignment runs *after* load() in the
-  effect body — devUp was still null there. Plant where the original bug lived
-  (end of the mount body), not where the fix's flag happens to sit.
-- **`git stash pop` on a shared lane box pops someone else's stash.** My
-  push-pop found "no local changes" but still applied stash@{0} (slot a's old
-  STATE) under my worktree. Use `git checkout <ref> -- <file>` for A/B runs
-  at other revisions; never stash-pop blind.
-- **nightlybot's repro line double-adds the seed.** Issues print
-  `NIGHTLY_SEED=<SEED+index>` but the bot adds the game index again; to replay
-  seed 20261155 pass NIGHTLY_SEED=20261119 (SEED for 2026-11-19).
-- **Verify prod deploys by shell-hash change + behavioral probe**, not asset
-  names (mine 404'd for 10 min pre-deploy; www-redirect matters too).
-  `__feedbackInfo` is prod-safe (#1473) — that's the only drivability window
-  a prod probe has, and it's enough.
+## QUESTIONS OUT (jonq issues, not STATE.md — #605)
+- #2652 (AWAITING, lane:platform, deadline 2026-11-20 01:36Z) — Mario's clap take.
+- #2751 (AWAITING, lane:qa, deadline 2026-11-21 03:40Z) — QA focus.
+- Nothing filed this session: a resume/merge followed spec exactly.
 
-## Housekeeping
-- STATE committed direct to main (game merged — allowed); parked at the
-  slot-b path via `statepark.mjs park b`. Shift report published.
-- Slot-b port 5178 dev server killed at close; my worktree
-  `~/Dev/retrogames-forge-britannia-ready` removed after detach; main checkout
-  detached at origin/main. `git worktree prune` run.
+## HARNESS NOTES FOR THE NEXT LANE
+- CONTRA laws the next slice must not break (all gated in `contracheck`): soldiers wake
+  at `cam + W - 4` (spawn-shield invariant + `--mutant`), one-way walkways (land from
+  above, `DOWN+jump` drops), taps latched one tick in the shell, RNG is `gs.r` integer
+  state (snapshot-safe), `gs.ev` events deliberately NOT hashed.
+- **gh auto-switches the worktree onto local `main` after `--delete-branch`** — the
+  rule-5 loop's follow-up `gh pr checks` then dies "no pull requests found for branch
+  main". That error AFTER a merge attempt means check `gh pr view --json state` before
+  retrying; here it had already merged (8b6dd17). Re-detach at once.
+- A corpse whose PR is open, non-draft, unheld and whose gates you re-ran green at the
+  tip is mergeable as-is — resume beats rebuild; the 3 h budget goes to verification.
+- Worktree `retrogames-forge-contra-jungle` removed post-merge; slot-a dev server (port
+  5173) stopped. S2 opens fresh.
 
-## Open questions
-- #2652 (AWAITING, lane:platform — Jon's phone take, deadline 2026-11-20
-  01:36Z). Nothing new filed by slot b this session.
+## SLOT A LOG
+Refreshed claim #2779 (already mine → resume), reopened the pushed corpse, re-verified
+every gate at `7c6ac5b`, merged #2781 (`8b6dd17`), confirmed prod deploy, filed #2782,
+relabeled #2779 `next`, wrote + parked + committed this state.
