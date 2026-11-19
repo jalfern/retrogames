@@ -58,12 +58,12 @@ jobs:
           PROBE_EXIT=0
           npm run micprobe > /tmp/micprobe.log 2>&1 || PROBE_EXIT=$?   # redirect + ||, never tee into $? (#2723 catch: pipes mask exit codes)
           cat /tmp/micprobe.log
-          chrome=$(grep -oE 'chrome [0-9.]+' /tmp/micprobe.log | head -1)
+          chrome=$(grep -oE 'chrome +[0-9.]+' /tmp/micprobe.log | head -1)
           ver=$(printf '%s' "$chrome" | grep -oE '[0-9]+' | head -1)
           lines=$(grep -E 'fake-file capture delivers|replays from file-0|device priming|checks passed' /tmp/micprobe.log || true)
           last=$(gh api "repos/jalfern/retrogames/issues/2725/comments?per_page=100" \
             --jq '[.[] | select(.body | startswith("MICPROBE (CI runner):"))] | last | .body // ""' || echo '')
-          lastver=$(printf '%s' "$last" | grep -oE 'chrome [0-9]+' | grep -oE '[0-9]+' | head -1)
+          lastver=$(printf '%s' "$last" | grep -oE 'chrome +[0-9]+' | grep -oE '[0-9]+' | head -1)
           forced=false
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then forced=true; fi
           if [ "$PROBE_EXIT" = 0 ] && [ "$ver" = "$lastver" ] && [ "$forced" != true ]; then
