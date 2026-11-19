@@ -1,72 +1,54 @@
-# STATE — session 350, slot a (2026-11-19 ~05:35Z)
-
-(Corrects session 349's close — same slot, same night, same PR. Facts below were
-re-verified end to end on the merged tip.)
+# STATE — session 350 slot b close-out
 
 ## Shipped this session
-- **#2757 merged `7906513` — cooptakes: the co-op games' live record path, phone-shaped.**
-  `scripts/cooptakes.mjs` + `npm run cooptakes`: consent gate answered like a real
-  phone (both switches OFF, name required), recorder armed at seed-birth, real
-  keyboard/pad input, **natural game-over only**, take round-trips relaysim, bytes
-  audited (rec/v1 vs v2, clocked voice track, pad counts, honest seat labels),
-  then replayed through `plaicraft:evidence` verbatim (the nightly grader's command).
-  Final clean drive on `09b1884`: **46/46, zero page errors** — SOS (3078 ticks,
-  seats human+cpu, 808 real pads), BD (2400 ticks, seats human+human at 2p,
-  738 pads), rally `?seat=model` (8400 ticks, seat 0 honestly model — #2058
-  opt-out proven LIVE), plus consent axes **declined** (store unmoved), **silent**
-  (honest v1, audio:false), **revoke mid-run** (voice section stripped at
-  sessionStore's last-moment gate). `--mutant=strip` reds exactly there:
-  `reason: "voice section without voice consent"`. README notes per game,
-  docs/HARNESS.md para. Vercel SUCCESS on the merge SHA; jalfern.com/retrogames 200.
-- **Corrections to STATE 349's record:** the "SOS ×3 / BD ×5 / rally ×5 seeds" matrix
-  described an earlier draft; the merged suite drives one seed per game + three
-  consent axes (the ×5 matrix came back later in bd's probe loop, not the ship tip).
-  The mutant proof is an upload REFUSAL at the gate, not bytes riding into the store.
-  Both legs' fixes are in: bd seat-picker start (thumb lands on a recorded seat),
-  tap bounded at 1500 ms, held-key bookkeeping fix.
-
-## Playable now
-Unchanged — #2757 is proof plumbing, not a title. All recorded-take plumbing for
-the co-op shelf is now proven live: `npm run cooptakes` (dev port, ~12 min,
-natural runs only).
+- **#2752 merged `4a4e0ca` — HOMEBODY demo names a room.** The jar's surplus
+  clause: once both kits stand, Pip's round keeps refilling a jar with no kit
+  left to fund (`JAR_CAP` is exactly one cottage); the surplus now buys the
+  wing ONE radio — jar-paid, till byte-still (measured: till peaks at §10
+  after kit two on every WINNABLE seed — a toy was never the till's to buy),
+  once-per-run derived from what stands (no new state, no new hash mixes).
+  The radio lands on an unnamed wing's floorboards so the #2743 doorstep beat
+  fires, the playroom badge hangs there through the win, and the funnel-fun
+  law starts earning plays. Fires d3h7.0 on seeds 7/1234/20261023; honest
+  silence on 42/99. peoplecheck §#2752 (5 gates, 1101/0); mutant: drop the
+  jar deduction → exactly the economy gate red (1100/1).
+- **The 390-px badge ink leg** (issue sub-item 2): the drive now keeps the
+  #2743 `badges` probe through the phone-scale loop (phase-max merge) with a
+  `wingToy` scenario rig. First live read: ramp-track ink 0 at k≈0.6 —
+  genuine phone legibility, so the ART moved: track alpha 0.55→0.72,
+  height 2→3px; glyph 27px + track 8px survive now. Drive 122/0.
 
 ## Board
-- **#1711 stays OPEN, claim released** (`building` off; wait-state, not build-state).
-  Human half = Jon's 3 phone takes; jonq **#2652 AWAITING**, deadline 2026-11-20
-  01:36Z, default = keep waiting. Machine half of lines 1–3: claptest + Gauntlet +
-  co-op live takes + nightly witness; line 4 consent mutants pinned + revoke axis.
-- Filed **#2759** (feedback, QA): BOMB DEFUSE's first-vent teach panel (#1812)
-  overlays the touch pad while the lesson is due — the A button is untappable on a
-  phone exactly when the lesson says press. Found via the harness's actionability
-  evidence; player-visible, needs a layout fix + re-proof.
-- **#2758** (warden: reap the slot's process group) corroborated independently this
-  session: the reaped 349 chain kept writing into this worktree after the merge —
-  dirty-tree guard refused its mutant, `git add` races were real, nothing wrong
-  shipped. Reaping must `pkill -P` the tree, not just opencode.
+- Slot a live on #1711 (PLAICRAFT S1, PR #2757, warden-kicked session).
+  QA MASTER live on #2755 (PICK RUSH polish part 2).
+- Queue was empty at claim (no steer/next/game-queue; open feedback is QA's
+  while its master lives); the warden's #2752 target claim stood.
 
-## Rule 4 counter
-**2 consecutive harness-only sessions** (349, 350 — no `src/games/**` change;
-#2757 + #2759 are scripts/docs/ops). The next lane MUST ship game code or stop
-per rule 4. Backlog scan first (`scripts/idle-kick.mjs` at main, then the ladder);
-#1711 is WAIT-state (check #2652), steer/game-queue empty at my close.
+## Next queue
+- Re-derive at main (`node scripts/idle-kick.mjs`) — do NOT trust this line.
 
 ## Catches learned
-- **A reaped session's children can keep claiming your lane.** Before trusting a
-  "corpse", read remote `STATE.md`/recent issue comments/branch tip — here it was
-  also mid-merge. Check `.mutant-running` and `git log origin/<branch>` before ANY
-  commit on a resumed branch. (Details → #2758.)
-- **Unbounded `page.tap` is a starvation bomb**: drivers must pass explicit short
-  timeouts; overlays (panels, modals) silently own the hit-test.
-- **Pad-count honesty**: stuck-key held-state inflated SOS's pads to 3057/3078;
-  honest presses land ~800. A "passes every tick" count is a smell, not a proof.
-- zsh: `${PIPESTATUS[0]}` prints empty (that's bash) — verdict lines, not echo,
-  are the exit signal in these harnesses.
+- **Advisory browser suites starve under parallel load.** Running
+  peoplecheck+build alongside homebodydrive reddened the proximity-heart and
+  #2076 pink gates twice with drifting values (0.33→0.34, 0.32→0.32);
+  solo, the suite is 122/0. Game browser suites get solo CPU, or their reds
+  are not evidence.
+- **Phone-scale probes catch what node pins cannot.** The shipped 55%/2px
+  ramp track was green on every node gate and painted zero readable ink at
+  390px. When a view element must "survive the blur", its size/alpha IS
+  part of the spec.
+- **A drive hook may not trust the drive's own history.** At the phone block
+  the gs lot sat ext=1 with the garden site fouled by upstream legs, so a
+  hook that re-raised kits refused; the issue's own suggestion (a Bookshelf
+  onto the standing wing via the real place() law) is the robust rig. And
+  literal source-pins break when you edit the art they pin — move the pin in
+  the same PR, with the live measurement as the reason.
 
 ## Housekeeping
-- Merged this session: #2757 (`7906513`). Filed: #2759. Labels: #1711 −building.
-- No jonq filed; open questions link: #2652 (AWAITING, platform — phone takes).
-- Dev port 5173 free at close (zombie's vite already gone); slot-a worktree
-  `retrogames-forge-plaicraft-coop-takes` left in place (remote branch deleted by
-  squash-merge; prune when next lane reopens its own). STATE is a docs-only direct
-  commit per the #2750/#238d746 convention — main's STATE was actively wrong, and
-  an accurate handoff outranks the platform-not-game nit.
+- STATE committed via its own PR — the forge game merged this session.
+- Parked at the slot path (`statepark.mjs park b`).
+- Open questions: nothing new filed (nothing this session needed Jon's
+  taste — the funding path was measured, not chosen). #2751/#2652 sit with
+  their own lanes.
+- Dev server 5178 killed at close; worktree
+  `~/Dev/retrogames-forge-homebody-demo-wing` removed after the merge.
