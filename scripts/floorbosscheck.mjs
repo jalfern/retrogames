@@ -189,7 +189,7 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                              : MUT_TAIL
                                                                     ? ['if (turn && kneeRack(gs, n.x - hx - dx, n.y - hy - dy)) continue // the tail is racked — the counterweight would clip it (#2760)', 'if (false && turn && kneeRack(gs, n.x - hx - dx, n.y - hy - dy)) continue // MUTANT', 'loaded carts clip their counterweight again — the tail is gone from the route planner, and ghost-clips return to every loaded leg (#2760)']
                                                                     : MUT_TAIL_LAND
-                                                                    ? ['px - NB[pd][0] - NB[d][0] === x && py - NB[pd][1] - NB[d][1] === y)) { broken = true; break } // …or the counterweight tail does (#2760)', 'false)) { broken = true; break } // MUTANT: the back diagonal is blind again (#2760)']
+                                                                    ? ['px - NB[pd][0] - NB[d][0] === x && py - NB[pd][1] - NB[d][1] === y)) { broken = true; break } // …or the counterweight tail does (#2760)', 'false)) { broken = true; break } // MUTANT: the back diagonal is blind again (#2760)', 'racks may land on committed backswings again — traffic keeps a plan whose counterweight now clips the fresh wall, and the heat lies about it (#2760)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
