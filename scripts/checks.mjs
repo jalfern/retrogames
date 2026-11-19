@@ -128,6 +128,9 @@ export const MANUAL_CHECKS = [
   "scripts/cometdrifthdsandcheck.mjs",
   "scripts/cometdrifthdscenerycheck.mjs",
   "scripts/contractcheck.mjs",
+  // #2779: CONTRA S1 readiness gate — browser-driven (needs the dev server);
+  // advisory from the lane: npm run contracheck.
+  "scripts/contracheck.mjs",
   "scripts/creditscheck.mjs",
   "scripts/deepglasscheck.mjs",
   "scripts/defendercheck.mjs",

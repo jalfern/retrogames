@@ -40,7 +40,6 @@ const sfx = {
 
 export default function ContraGame () {
     const wrapRef = useRef(null)
-    const canvasRef = useRef(null)
     const [mode, setMode] = useState('attract')           // attract | play | over | clear
     const [paused, setPaused] = useState(false)
     const modeRef = useRef('attract')
@@ -52,7 +51,13 @@ export default function ContraGame () {
 
     useEffect(() => {
         const wrap = wrapRef.current
-        const canvas = canvasRef.current
+        // StrictMode law: the canvas is created inside the effect (JSX-mounted
+        // canvases are detached by the simulated unmount's cleanup — the whole
+        // screen goes black in dev and nobody notices until a screenshot).
+        const canvas = document.createElement('canvas')
+        canvas.className = 'block'
+        canvas.style.imageRendering = 'pixelated'
+        wrap.appendChild(canvas)
         canvas.width = W
         canvas.height = H
         const ctx = canvas.getContext('2d')
@@ -345,7 +350,6 @@ export default function ContraGame () {
 
     return (
         <div ref={wrapRef} className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none">
-            <canvas ref={canvasRef} className="block" style={{ imageRendering: 'pixelated' }} />
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'CONTRA')} onResume={handleResume} />}
             <VirtualControls visible={mode === 'play' && !paused} secondAction={{ label: 'FIRE', code: 'KeyX' }} />
         </div>

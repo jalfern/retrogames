@@ -272,6 +272,14 @@ const browser = await launch()
         return c && c.length > 2000
     })
     r.check('the canvas paints real pixels', png)
+    // and it is really IN the page: StrictMode's simulated-unmount cleanup can
+    // detach a JSX-mounted canvas while its buffer keeps answering frame() —
+    // the pixels are real but the player sees black (found live, #2779 review).
+    const mounted = await page.evaluate(() => {
+        const cs = [...document.querySelectorAll('canvas')]
+        return cs.length >= 1 && cs.every((c) => c.isConnected)
+    })
+    r.check('the canvas is mounted in the page (StrictMode law)', mounted)
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()
