@@ -22,8 +22,11 @@
 //              over path — no harness shortcuts, no unmount races.
 //   store    — relaysim lists the take with the right game, name and audio
 //              flag; the bytes validate as rec/v2 and carry honest seat labels
-//              (#2058: SOS/BD seat 0 is the thumb; Rally with `?seat=model`
-//              stays honestly model — the humanSeats:false opt-out LIVE).
+//              (#2058: SOS/BD seat 0 is the thumb; Rally proves BOTH seats
+//              honest — `?seat=model` stays model (the humanSeats:false opt-out
+//              LIVE), and the rallyh leg drives seat 0 with real keys until the
+//              stage finishes its own two laps, so it must land `human`
+//              (11-19 audit item 2: "add a Rally run with a human seat").
 //   grade    — `plaicraft:evidence` (the studio command, verbatim) replay-
 //              verifies the take and finds the voice clock sane.
 //
@@ -48,6 +51,13 @@
 //              the store seam for a dirty landing the worker can never allow,
 //              so the mutant mode could never pass (#2762). Guarded by
 //              mutateguard; commit before running.
+//   launder  — `--mutant=launder` hardcodes RallyCoDriver's seat-0 label to
+//              'human' (both places) and drives the ORIGINAL `?seat=model` leg:
+//              the pace brain still drives, so if the take lands `human` the
+//              label was minted by the line, not by the seat — model play
+//              laundered as a thumb. That is the #2142 laundering direction,
+//              and the rallyh leg's `human` verdict is only worth what this
+//              mutant proves: that the check watches the honest ternary.
 //
 // The mic is the #2716 fake-file device (a baked hum WAV at the device
 // boundary — gUM, MediaRecorder, opus, the tick clock, v2 assembly, upload and
@@ -60,8 +70,9 @@
 //
 //   npm run dev -- --port 5173 --strictPort     (or DEV_PORT)
 //   npm run cooptakes                            # all games + consent runs
-//   npm run cooptakes -- --game=sos|bd|rally    # one game
+//   npm run cooptakes -- --game=sos|bd|rally|rallyh  # one game
 //   npm run cooptakes -- --mutant=strip         # mutant that tries — exits 0 when the harm is named (#2762)
+//   npm run cooptakes -- --mutant=launder     # seat-label laundering mutant — same verdict shape
 //
 // Exit 0 every scheduled run passed; 1 any assertion failed; 2 preconditions
 // (no dev server / dev build missing).
@@ -72,6 +83,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validate } from '../src/utils/recording.js'
+import { createSim, tickSim, VMAX } from '../src/games/RallyCoDriver/sim.js'
+import { senseRally } from '../src/games/RallyCoDriver/sensors/pacecard.js'
 import { startRelaySim, SIM_READ_KEY } from './lib/relaysim.mjs'
 import { bakeFakeMicWav, fakeMicArgs, fakeMicInit } from './lib/fakemic.mjs'
 import { plantNew, pull } from './lib/mutateguard.mjs'
@@ -83,23 +96,77 @@ const MUTANT = (() => {
     const hit = argv.find((a) => a.startsWith('--mutant'))
     if (!hit) return null
     const v = hit.includes('=') ? hit.split('=')[1] : 'strip'
-    if (v !== 'strip') { console.error(`cooptakes: unknown --mutant=${v} (strip)`); process.exit(2) }
+    if (v !== 'strip' && v !== 'launder') { console.error(`cooptakes: unknown --mutant=${v} (strip|launder)`); process.exit(2) }
     return v
 })()
 const ONLY = argv.find((a) => a.startsWith('--game='))?.split('=').slice(1).join('=') || process.env.npm_config_game || null
+
+// rallyHumanPad(percept) — the harness's thumb for the rallyh leg. It reads
+// ONLY what the pace-card sensor reports (#1427: card + visible road, never
+// stage truth past the crests — rallycheck pins that trim) and answers with
+// the same decision law cpuDriverPad uses, so the keys move like the attract
+// demo's do. The browser half converts each decision into real trusted key
+// events — the game's own keyboard path — never a contract tick or a pad
+// injection: what the recorder banks is `driverPad()`, exactly what a driver
+// thumbs (11-19 audit item 2). Pure and Node-run: the pre-flight below proves
+// it finishes before the browser spends its minutes.
+function rallyHumanPad(p) {
+    const car = { lat: p.ego.x, align: p.ego.dir, v: p.extra.v, off: !!p.extra.off }
+    const pad = { up: true }
+    const note = p.extra.note
+    let seen = null
+    for (const c of p.extra.corners) { if (c.d < 300) { seen = c; break } }
+    const active = seen || (note && note.d < 340 ? note : null)
+    let desired = 0
+    if (active) desired = active.dir * (0.10 + 0.13 * active.sev) * (car.v / VMAX)
+    desired -= car.lat * 0.006
+    const diff = desired - car.align
+    if (diff < -0.05) pad.left = true
+    else if (diff > 0.05) pad.right = true
+    const threat = (seen && seen.d < 240) ? seen : (note && note.d < 340 ? note : null)
+    if (threat) {
+        if (threat.d < 50 + 30 * threat.sev) { pad.up = false; pad.down = true }
+        else if (threat.d < 95 + 55 * threat.sev) pad.up = false
+    }
+    if (car.v < 0.6) { pad.down = false; pad.up = true }
+    if (car.off) {
+        if (car.lat > 0) pad.left = true
+        else pad.right = true
+        pad.up = true
+        pad.down = false
+    }
+    return pad
+}
 
 // Seat truth per game: which labels the take must carry when it lands.
 // sos/bd: autoStart stamps seat 0 human (#2058). rally here: the pace brain
 // drives (`?seat=model`) and the game opted OUT of the stamp — an honest take
 // with NO human seat (the #2058 opt-out, proven live for the first time).
+// rallyh: no model seat — the keys drove seat 0 all the way, and the game's
+// own ternary must mint `human` (the same seat, driven by fingers instead of
+// the spine; the --mutant=launder mode proves the ternary is watched).
 const GAMES = [
     { key: 'sos', game: 'short-order-shout', route: '/short-order-shout', label: 'SHORT ORDER SHOUT', secs: 168, overMs: 180000, expectSeats: (seats) => seats[0] === 'human' && seats.length >= 1, seatsWhy: 'seat 0 human (#2058 stamp)' },
     { key: 'bd', game: 'bomb-defuse', route: '/bomb-defuse', label: 'BOMB DEFUSE', secs: 168, overMs: 180000, keyHint: 'ArrowRight', expectSeats: (seats) => seats[0] === 'human' && seats.length >= 1, seatsWhy: 'seat 0 human (#2058 stamp)' },
     { key: 'rally', game: 'rally-co-driver', route: '/rally-co-driver', label: 'RALLY CO-DRIVER', query: '&seat=model', secs: 150, overMs: 240000, expectSeats: (seats) => seats[0] === 'model', seatsWhy: 'seat 0 honestly model (pace brain, #2058 opt-out)' },
+    { key: 'rallyh', game: 'rally-co-driver', route: '/rally-co-driver', label: 'RALLY CO-DRIVER (human seat)', query: '&seed=42', secs: 220, overMs: 300000, overWaitMs: 30000, drive: 'rally', expectSeats: (seats) => seats[0] === 'human' && seats[1] === 'cpu', seatsWhy: 'seat 0 human (keys drove the stage), seat 1 cpu co' },
 ].filter((g) => !ONLY || g.key === ONLY)
-if (!GAMES.length) { console.error(`cooptakes: --game=${ONLY} matched nothing (sos|bd|rally)`); process.exit(2) }
+if (!GAMES.length) { console.error(`cooptakes: --game=${ONLY} matched nothing (sos|bd|rally|rallyh)`); process.exit(2) }
 
 const r = new Report('cooptakes')
+
+// Pre-flight (Node, no browser, ~1 s): the thumb must actually be able to
+// drive. Seed 42 (FELL) is the leg's pinned stage; 12000 ticks = 200 s of
+// stage time, where the measured controller lands ~144 s — a wide honest
+// band that still catches a broken controller before the browser burns 5 min.
+{
+    const gs = createSim(42, 2, 'clear')
+    let guard = 0
+    while (!gs.done && guard++ < 20000) tickSim(gs, [rallyHumanPad(senseRally(gs)), null])
+    r.check('rallyh pre-flight: the honest-percept controller finishes FELL (seed 42) in Node',
+        gs.done && gs.win && gs.tick < 12000 && gs.stats.offTicks < 1500,
+        `ticks:${gs.tick} win:${gs.win} offTicks:${gs.stats.offTicks}`)
+}
 const sim = await startRelaySim()
 const BASE = sim.base
 const storeCount = async () => ((await (await fetch(`${BASE}/sessions?limit=500`, { headers: sim.readHeaders })).json()).sessions || []).length
@@ -221,24 +288,65 @@ async function phoneRun(g, { voice = true, decline = false, revoke = false } = {
     // (touchstart → show), and the selector tap then lands in ~300 ms.
     const WAKE = { x: 195, y: 700 } // neutral gap in the pad row at 390x780
     let tapsLanded = 0
-    let heldK = null
-    for (let i = 0; i < 6; i++) {
-        const k = i % 2 ? 'ArrowRight' : 'ArrowLeft'
-        if (heldK && heldK !== k) await page.keyboard.up(heldK).catch(() => {})
-        await page.keyboard.down(k)
-        heldK = k
-        await page.waitForTimeout(420)
-        await page.keyboard.press('Space').catch(() => {})
-        if (!(await page.evaluate(() => !!document.querySelector('[data-vc="a"]')))) {
-            await page.touchscreen.tap(WAKE.x, WAKE.y).catch(() => {})
-            await page.waitForTimeout(120) // React re-mount of the pad
+    if (g.drive === 'rally') {
+        // #1711 audit 11-19 item 2: drive seat 0 with REAL key events until the
+        // stage finishes its two laps by its own rules. One CDP round-trip per
+        // poll (~5 ms local) outruns the 60 Hz sim; the decisions mirror
+        // cpuDriverPad (fair rules — see rallyHumanPad). Wake-then-tap on the
+        // A button keeps the #2759 tap route proven mid-drive; a Space tap is
+        // the handbrake — one tick of scrub, the proportional line eats it.
+        const KEYC = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }
+        const DEADLINE = Date.now() + g.overMs - 15000
+        const held = {}
+        let polls = 0
+        let lastTap = 0
+        while (Date.now() < DEADLINE) {
+            const p = await page.evaluate(() => (window.__rallyTest ? window.__rallyTest.sense() : null)).catch(() => null)
+            if (!p || !p.extra) break
+            const pad = rallyHumanPad(p)
+            for (const k of ['up', 'down', 'left', 'right']) {
+                if (!!pad[k] === !!held[k]) continue
+                if (pad[k]) await page.keyboard.down(KEYC[k])
+                else await page.keyboard.up(KEYC[k])
+                held[k] = !!pad[k]
+            }
+            polls++
+            if (p.extra.done) break
+            // poll rate here (~400/s locally) outruns the old loop's cadence,
+            // so space the taps by the WALL clock, cap at 6, and only on the
+            // straight — a handbrake tap mid-corner is a real perturbation.
+            if (tapsLanded < 6 && Date.now() - lastTap > 1200 && Math.abs(p.ego.dir) < 0.2 && !p.extra.off) {
+                lastTap = Date.now()
+                if (!(await page.evaluate(() => !!document.querySelector('[data-vc="a"]')))) {
+                    await page.touchscreen.tap(WAKE.x, WAKE.y).catch(() => {})
+                    await page.waitForTimeout(120)
+                }
+                if (await page.tap('[data-vc="a"]', { timeout: 1200 }).then(() => true).catch(() => false)) tapsLanded++
+            }
         }
-        if (await page.tap('[data-vc="a"]', { timeout: 1200 }).then(() => true).catch(() => false)) tapsLanded++
-        await page.waitForTimeout(330)
+        for (const k of Object.values(KEYC)) await page.keyboard.up(k).catch(() => {})
+        out.rallyPolls = polls
+        out.finished = !!(await page.evaluate(() => (window.__rallyTest ? window.__rallyTest.probe() : null)).catch(() => null))?.done
+    } else {
+        let heldK = null
+        for (let i = 0; i < 6; i++) {
+            const k = i % 2 ? 'ArrowRight' : 'ArrowLeft'
+            if (heldK && heldK !== k) await page.keyboard.up(heldK).catch(() => {})
+            await page.keyboard.down(k)
+            heldK = k
+            await page.waitForTimeout(420)
+            await page.keyboard.press('Space').catch(() => {})
+            if (!(await page.evaluate(() => !!document.querySelector('[data-vc="a"]')))) {
+                await page.touchscreen.tap(WAKE.x, WAKE.y).catch(() => {})
+                await page.waitForTimeout(120) // React re-mount of the pad
+            }
+            if (await page.tap('[data-vc="a"]', { timeout: 1200 }).then(() => true).catch(() => false)) tapsLanded++
+            await page.waitForTimeout(330)
+        }
+        if (heldK) await page.keyboard.up(heldK).catch(() => {})
+        for (const k of ['ArrowLeft', 'ArrowRight']) await page.keyboard.up(k).catch(() => {})
     }
     out.tapsLanded = tapsLanded
-    if (heldK) await page.keyboard.up(heldK).catch(() => {})
-    for (const k of ['ArrowLeft', 'ArrowRight']) await page.keyboard.up(k).catch(() => {})
 
     // mid-run revocation: the live player's voice grant flips off (what the
     // settings would do); endRun's last-moment gate must then strip the voice.
@@ -255,7 +363,7 @@ async function phoneRun(g, { voice = true, decline = false, revoke = false } = {
     // run to its NATURAL end; endRun uploads on the over path
     const lastWanted = `${g.game}-natural-over`
     try {
-        await page.waitForFunction(() => !!(window.__autoRecord && window.__autoRecord.last), null, { timeout: g.overMs })
+        await page.waitForFunction(() => !!(window.__autoRecord && window.__autoRecord.last), null, { timeout: g.overWaitMs || g.overMs })
     } catch { /* gate below names it */ }
     out.last = await page.evaluate(() => window.__autoRecord && window.__autoRecord.last || null).catch(() => null)
     out.lastWanted = lastWanted
@@ -319,6 +427,10 @@ for (const g of cleanRuns) {
     p('plaicraft:evidence replay-verifies the take (the nightly grader\'s own command)',
         !!res.ev && res.ev.replayOk === true, res.ev ? `${res.ev.error || ''} ticks:${res.ev.ticks}` : 'evidence run produced no report')
     p('the graded voice clock is sane (no frozen trace, cover honest)', !!res.ev && res.ev.voiceOk === true, res.ev && res.ev.error || '')
+    if (g.drive === 'rally') {
+        p('the stage was DRIVEN by the keys and finished its two laps NATURALLY',
+            res.finished === true, `controller polls ${res.rallyPolls}, finish seen:${res.finished}`)
+    }
     runs.push(res)
 }
 
@@ -390,6 +502,38 @@ if (MUTANT === 'strip') {
                     : `no observable harm (uploaded:${res.uploaded} reason:${res.last && res.last.reason})`)
         } finally {
             pull(SS)
+        }
+    }
+}
+
+// --- MUTANT: launder Rally seat 0 — the model leg must go RED -------------------
+// Both label sites in RallyCoDriver/index.jsx share one ternary. Hardcoding it
+// to 'human' mints a thumb for a stage the brain drove — the #2142 laundering
+// direction, in the game that the rallyh leg just proved lands honest. Red
+// (verdict OK, exit 0) = the laundered take really rides into the store as
+// 'human', so the seatsWhy check watches the ternary and not a fixture.
+if (MUTANT === 'launder') {
+    const IDX = path.join(HERE, '..', 'src', 'games', 'RallyCoDriver', 'index.jsx')
+    const src = fs.readFileSync(IDX, 'utf8')
+    const ANCHOR = "watchSeat.on || modelSeat.on ? 'model' : 'human'"
+    if (!src.includes(ANCHOR)) { r.check('launder mutant anchor present in RallyCoDriver/index.jsx', false, 'update the anchor to match the module') }
+    else {
+        const g = GAMES.find((x) => x.key === 'rally')
+        if (!g) r.check('launder drives the rally model leg — keep rally in the --game filter', false)
+        else {
+            plantNew(IDX, src.split(ANCHOR).join("'human' // MUTANT(launder): a brain-driven seat claims a thumb"))
+            try {
+                r.info('mutant: seat 0 always claims human — driving ?seat=model must land LAUNDERED (red named)')
+                const res = await phoneRun(g)
+                const seats = res.rec && res.rec.slots ? res.rec.slots.map((s) => s.source.kind) : null
+                const laundered = !!seats && seats[0] === 'human'
+                r.check('MUTANT launder: the brain-driven take lands labeled human (red = the label comes from the ternary, and the check sees it)',
+                    laundered,
+                    laundered ? `LAUNDRY: seats ${JSON.stringify(seats)} — pace brain rode in as a thumb; the honest ternary is load-bearing (see the rally leg: same drive, seats ["model","cpu"])`
+                        : `laundering not observed (uploaded:${res.uploaded} seats:${JSON.stringify(seats)})`)
+            } finally {
+                pull(IDX)
+            }
         }
     }
 }
