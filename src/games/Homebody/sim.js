@@ -929,7 +929,10 @@ export function eastWing(r0) {
 // anchor — the two rooms never touch, and the west lawn lane stays open.
 export const GARDEN = {
     id: 'garden',
-    price: 300,
+    // #2721: the cottage is a lean-to kit — 8 planks against the wing's 12, a
+    // door punched through a wall that already stands, no brick band — and it is
+    // the jar's own kit: one round's money raises it (§ ROUTE / JAR_CAP).
+    price: 90,
     floor: [[9, 0], [9, 1], [9, 2], [9, 3], [10, 0], [10, 1], [10, 2], [10, 3]],
     walls: [[8, 0], [8, 1], [8, 3], [8, 4], [9, 4], [10, 4], [11, 0], [11, 1], [11, 2], [11, 3], [11, 4]],
     door: [8, 2],
@@ -939,6 +942,20 @@ export const GARDEN = {
 }
 
 export const WINGS_MAX = 2
+
+// #2721: the kit-two economy window. The wall was measured, not guessed: the
+// honest winning tour (§520 start + two §100 paydays = §720) spends every coin
+// on phone+pet+kid+kit one (§710) and wins with §8–10 in the till — a second
+// §300 never arrives before the wish. Rather than launder the till with a
+// grant (the win economy is the proof the game can be won, so it must not be
+// topped up), the second kit gets its OWN honest purse: Pip's morning paper
+// round (§ ROUTE.cash a day, paid while a child lives on the lot) pours into
+// an earmarked garden jar that buys NOTHING else. The till is never touched,
+// so every shipped tour, twin seed and thin margin stays byte-identical up to
+// the hammer — and kit two then lands inside a winning run with its garden
+// ripening on screen (TEND_HOURS of sun after the hammer).
+export const ROUTE = { cash: 90, hour: 7 }        // the round: one beat per morning, from the day after Pip arrives
+export const JAR_CAP = GARDEN.price               // the jar reads FULL when the kit is buyable — no over-saving theatre
 
 // #2695: rooms with purpose — a room earns its keep by being USED, not by
 // standing. Purpose state lives ON the wing records (it joins the existing
@@ -1040,6 +1057,7 @@ export function newRun(seed) {
         rng: mulberry32((seed >>> 0) ^ 0x4b0bb0d1),
         tick: 0, sec: 0, hour: 7, day: 1,
         money: 520, rank: 1, workDays: 0, content: 0,
+        jar: 0, routeDay: -1,     // #2721: Pip's earmarked garden fund (the till stays the tour's)
         build: false, sel: 0,
         tab: 0,                                     // #2222: open catalog shelf
         speed: 1,                                   // #2227: the dial sits at normal on move-in
@@ -1890,15 +1908,22 @@ export function wingPick(s, r, c) {
 
 export function buildRoom(s, g) {
     const geom = g || (s.ext >= 1 ? GARDEN : eastWing(DEFAULT_ANCHOR))
-    if (!roomClear(s, geom) || s.money < geom.price) return false
+    // #2721: the garden cottage is the jar's kit — Pip's round money pays it
+    // first and the till covers only what the fund cannot. The east wing never
+    // touches the jar: the fund is earmarked, so the till's honest margins
+    // (#2209's tour, the thin WINNABLE seeds) are provably untouched.
+    const fund = geom.id === 'garden' ? s.jar : 0
+    if (!roomClear(s, geom) || s.money + fund < geom.price) return false
     if (!keepsWing(s, geom)) return false
-    s.money -= geom.price
+    const fromJar = Math.min(fund, geom.price)
+    s.jar -= fromJar
+    s.money -= geom.price - fromJar
     s.wings.push(geom.id === 'garden'
         ? { id: 'garden', tend: 0, herbs: 0 }                                  // #2695: the ripening ledger rides the room
         : { id: 'east', r0: geom.r0, sleptWell: 0, lodgeDay: -1 })           // #2695: and so does the lodging one
     s.ext = s.wings.length
     s.roomReact = s.people.length   // #1814: the wing gets its move-in reactions
-    s.events.push({ t: 'room', w: geom.id })
+    s.events.push({ t: 'room', w: geom.id, jar: fromJar })
     think(s, geom.id === 'garden'
         ? 'The back lawn rolls open and a garden room rises — planks, a south door, morning on the planks by noon.'
         : 'The east wall rolls open and a spare room rises — plank floor, two windows, room to grow.')
@@ -1907,7 +1932,9 @@ export function buildRoom(s, g) {
 
 export function buildRoomOk(s, g) {
     const geom = g || (s.ext >= 1 ? GARDEN : eastWing(DEFAULT_ANCHOR))
-    return roomClear(s, geom) && s.money >= geom.price && keepsWing(s, geom)
+    // #2721: the garden buys with the jar plus the till; the wing with the till
+    const fund = geom.id === 'garden' ? s.jar : 0
+    return roomClear(s, geom) && s.money + fund >= geom.price && keepsWing(s, geom)
 }
 
 export function place(s, r, c) {
@@ -3425,6 +3452,21 @@ function newDay(s) {
     s.events.push({ t: 'day', day: s.day })
 }
 
+// #2721: the morning round. While a child lives on the lot, the paper round
+// goes out at ROUTE.hour and the subs money comes home into the jar — the
+// garden fund, never the till. One beat per day (the day stamp is the law,
+// #2238's idiom); a fixed line, so the rng stream is untouched and every
+// stored twin hash survives to the re-sample.
+function updateRoute(s) {
+    if (!s.kid || s.routeDay === s.day || s.hour < ROUTE.hour) return
+    s.routeDay = s.day
+    const cash = Math.min(ROUTE.cash, JAR_CAP - s.jar)
+    if (cash <= 0) return
+    s.jar += cash
+    s.events.push({ t: 'route', cash, jar: s.jar })
+    think(s, `Pip comes back from the paper round, pockets heavy — §${cash} into the garden jar.`)
+}
+
 export function ambienceOf(s) {
     let d = 0
     for (const it of s.items) if (DECOR.includes(it.id)) d++
@@ -3470,6 +3512,7 @@ export function advance(s, dt) {
     updateIceCream(s)       // #2503: and the jingle — the cone lands, the window runs out
     updateSneak(s, dt)      // #2520: and the night — odd nights a shadow tries the gate, the alarm answers
     updateProwl(s, simDt)     // #2532: and Miso keeps the even ones — the parities are the lot's night watch
+    updateRoute(s)            // #2721: and Pip's morning round fills the garden jar
 
     // #2695: the sun law. Tending accrues only through daylit hours, and a
     // ripe bed harvests without waiting for hands: the hungriest resident
@@ -3714,7 +3757,12 @@ export function bot(s) {
     // #2244: and eats what the kitchen served — a hungry resident walks to
     // the plate, so the attract teaches the bells the same silent way.
     if (s.meal && p.needs.hunger < 0.75 && p.mealTaken !== s.mealSerial) { if (cmdUse(s, p, s.meal)) return }
-    if (s.money > 300 && s.content < WIN_CONTENT) {
+    // #2721: thrift until the NEXT kit is honestly in reach — the east wing
+    // from the till (exactly the shipped §300 bar), the garden from Pip's jar
+    // plus whatever the till can add. Items still pay from the till alone.
+    const kit = s.ext === 0 ? EXT_ROOM : s.ext === 1 ? GARDEN : null
+    const purse = s.money + (kit && kit.id === 'garden' ? s.jar : 0)
+    if (purse > (kit ? kit.price : 300) && s.content < WIN_CONTENT) {
         // #2209: the till sells the family first — cat, child, then roof (the
         // issue's own tour). Roomkit used to eat the whole register at daybreak,
         // the cat ate the next payday, and the §300 wall starved the kid card
@@ -3726,7 +3774,12 @@ export function bot(s) {
             // reflow — the room owns itself via `ext`, and only buys when the
             // footprint is honestly clear (never wedge the bot on a refusal)
             if (id === 'roomkit') {
-                if (s.ext || s.money < EXT_ROOM.price || !roomClear(s, eastWing(DEFAULT_ANCHOR))) continue
+                // #2721: the lot may grow TWICE on the bot's own money now — kit
+                // one from the till, kit two (the cottage) from the jar. The
+                // site law is the shipped one, via buildRoomOk (kit two has one
+                // home, the back lawn).
+                if (s.ext >= WINGS_MAX) continue
+                if (!buildRoomOk(s, s.ext === 0 ? eastWing(DEFAULT_ANCHOR) : GARDEN)) continue
                 const keep = s.sel
                 setSel(s, CATALOG.findIndex((d) => d.id === 'roomkit'))   // #2222: the shelf follows the pick
                 place(s, 0, 0)   // the room ignores the cursor; the lot owns the spot
@@ -3785,6 +3838,7 @@ export function stateHash(s) {
     let h = 2166136261
     const mix = (v) => { h ^= Math.round(v * 1000) | 0; h = Math.imul(h, 16777619) }
     mix(s.tick); mix(s.day); mix(s.hour); mix(s.money); mix(s.content); mix(s.rank)
+    mix(s.jar)                       // #2721: the garden fund is state — a round saved is a room standing
     mix(s.ext)
     for (const w of s.wings) {
         mix(w.id === 'garden' ? -7777 : w.r0 + 1)   // #2689: which wing stood where rides it too

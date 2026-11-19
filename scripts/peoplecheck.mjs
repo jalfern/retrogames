@@ -123,6 +123,7 @@ import {
     eastWing, GARDEN, EAST_ANCHORS, DEFAULT_ANCHOR, wingPick, wingGeom, WINGS_MAX, groundAt,   // #2689: deeper multi-room — the anchor law, the garden cottage, the pick
     wingSets,   // #2705: the purpose view's floor question — exported from the law's own module
     TEND_HOURS, HARVEST_FOOD, HARVEST_FUN, LODGE_FUN,   // #2695: rooms with purpose — the sun law and the lodging law
+    ROUTE, JAR_CAP,   // #2721: the kit-two economy window — Pip's round and the earmarked garden jar
 } from '../src/games/Homebody/sim.js'
 import { bondRows, pairStride, strollTrail, STRIDE_BOB } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail
 import { promiseTell, earReact, gardenLamp, EAR_REACT, PROMISE_TIGHTEN, EAR_HUES, PAIR_HUES, LOST_RING_T } from '../src/games/Homebody/art.js'   // #2688: the go-say tells and the garden lamp are pure derivations too
@@ -423,7 +424,7 @@ section('WINGS (#2689): choose the row, raise the garden — deeper multi-room')
     check('pin: nothing but wingPick hands the autopilot a site — the classic row is its only one', /if \(id === 'roomkit'\)[\s\S]*?place\(s, 0, 0\)/.test(wSrc))
     // #2714: the demo runs the real economy to a win one wing deep — the marquee
     // teaches kit two as a savings goal (§300), never as a second growth that lands.
-    check('pin: the marquee teaches one growth — kit two is copy, not a promise', /THE LOT GROWS — Spare Room kit one/.test(wJsx) && /save a second §300/.test(wJsx) && !/GROWS TWICE/.test(wJsx))
+    check('pin: the marquee teaches TWO growths — and the economy now funds the second (#2721)', /THE LOT GROWS TWICE/.test(wJsx) && /paper round fills the garden jar/.test(wJsx), wJsx.match(/THE LOT GROWS[^']*/)?.[0]?.slice(0, 90))
     check('pin: the ghost is a pure read — drawWingGhost takes geometry, never mutates', /export function drawWingGhost\(ctx, geom, ok\)/.test(readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')) && /drawWingGhost\(ctx, wingPick\(g, g\.cursor\.r, g\.cursor\.c\)/.test(wJsx))
 }
 
@@ -611,18 +612,27 @@ section('WINNABLE (attract autopilot, several seeds)')
     let tTour = 0
     while (!gTour.done && tTour++ < 60 * 60 * 45) { autoStep(gTour, DT); for (const e of gTour.events) if (e.t === 'pet' || e.t === 'kid') tourSeen.push(e.t); gTour.events.length = 0 }
     check('the till tours the family in order — cat, then child', tourSeen.join(',') === 'pet,kid', tourSeen.join(','))
-    // #2714: honest attract — the winning demo ends ext=1 with the till spent;
-    // kit two (§300) never sits in the register mid-run, so no attract line may
-    // promise two growths inside demo time. Copy and economy pinned together.
+    // #2721: the economy window — the same pin, flipped. Kit two used to sit
+    // outside demo time on every seed (§720 income against a §710 tour); now
+    // Pip's round money buys the cottage and the winning demo shows BOTH wings
+    // with the garden ripening. Copy and economy pinned together, still.
     {
-        const jsx14 = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
-        let maxAfter1 = -1
-        const g14 = newRun(7)
-        let t14 = 0
-        while (!g14.done && t14++ < 60 * 60 * 45) { autoStep(g14, DT); g14.events.length = 0; if (g14.ext >= 1) maxAfter1 = Math.max(maxAfter1, g14.money) }
-        check('#2714: the demo wins one wing deep — kit two never funds, so the marquee never says twice',
-            g14.done === 'win' && g14.ext === 1 && maxAfter1 < GARDEN.price && !/GROWS TWICE/.test(jsx14),
-            `done=${g14.done} ext=${g14.ext} max$=${Math.round(maxAfter1)}/${GARDEN.price}`)
+        const jsx21 = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+        let ext2At = Infinity, harvestBeforeWin = false, done21 = null
+        const g21 = newRun(7)
+        let t21 = 0
+        while (!g21.done && t21++ < 60 * 60 * 45) {
+            autoStep(g21, DT)
+            for (const e of g21.events) {
+                if (e.t === 'room' && e.w === 'garden' && ext2At === Infinity) ext2At = t21
+                if (e.t === 'harvest' && ext2At !== Infinity) harvestBeforeWin = true
+            }
+            g21.events.length = 0
+        }
+        done21 = g21.done
+        check('#2721: the demo grows the lot TWICE — kit two funds inside the winning run, and the garden ripens on screen',
+            done21 === 'win' && g21.ext === WINGS_MAX && harvestBeforeWin && /GROWS TWICE/.test(jsx21),
+            `done=${done21} ext=${g21.ext} cottage@d${ext2At === Infinity ? 'never' : Math.round(ext2At / 60)}s harvest=${harvestBeforeWin ? 'yes' : 'no'}`)
     }
 }
 
@@ -843,7 +853,7 @@ section('MOVE-IN (#1814): reactions, glow, honest edges')
     const gb = newRun(7)
     let bSeen = 0, bt = 0
     while (!gb.done && bt < 60 * 60 * 45) { autoStep(gb, DT); bSeen += drain(gb).filter((e) => e.t === 'room-see').length; bt++ }
-    check('attract builds the wing and its residents move in', gb.done === 'win' && gb.ext === 1 && bSeen === 2, `done=${gb.done} ext=${gb.ext} sees=${bSeen}`)
+    check('attract builds the wings and its residents move in', gb.done === 'win' && gb.ext === WINGS_MAX && bSeen >= 2, `done=${gb.done} ext=${gb.ext} sees=${bSeen}`)   // #2721: both hammers arm the reaction ledger; a run may grant the wish before the second pair walks
 
     // source pins: one window source, the glow asked for, the kit guard
     const sim2Src = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
@@ -852,7 +862,7 @@ section('MOVE-IN (#1814): reactions, glow, honest edges')
     check('pin: the wing bake paints windows from the geometry', /for \(const \[r, c\] of geom\.windows\)/.test(artSrc))   // #2689: one bake serves every site
     check('pin: nightTint takes the ext flag and lights every standing wing', /function nightTint\(ctx, hour, ext, wings = null, sleepers = null\)[\s\S]*if \(ext\)[\s\S]*wingGeom/.test(artSrc))   // #2705: the tint gained the sleepers arg — re-aimed, the ext law unchanged
     check('pin: the shell passes the live ext flag and wings into the tint', /nightTint\(ctx, g\.hour, g\.ext, g\.wings, sleepingCells\(g\)\)/.test(jsxSrc))   // #2705: plus the night's sleepers, so lodged panes burn deeper
-    check('pin: the bot buys the kit only onto a clear lot', /if \(id === 'roomkit'\)[\s\S]*?!roomClear\(s, eastWing\(DEFAULT_ANCHOR\)\)/.test(sim2Src))   // #2689: the autopilot keeps the classic row — the law it asks is the classic site
+    check('pin: the bot asks the kit law for BOTH wings', /if \(id === 'roomkit'\)[\s\S]*?!buildRoomOk\(s, s\.ext === 0 \? eastWing\(DEFAULT_ANCHOR\) : GARDEN\)/.test(sim2Src))   // #2721: the autopilot's thrift gate now spans kit two too — the law it asks is still the site law
     check('pin: the hammer arms the reaction ledger', /s\.roomReact = s\.people\.length/.test(sim2Src))
 }
 
@@ -1006,7 +1016,11 @@ section('FEEL — walk surfaces + refusal (#1823)')
     check('a broke kit refusal points at the lot edge', !place(g5, 0, 0) && drain(g5).some((e) => e.t === 'refuse' && e.r === EXT_ROOM.door[0] && e.c === EXT_ROOM.door[1]))
     g5.money = 520
     check('the kit builds once', place(g5, 0, 0) && drain(g5).some((e) => e.t === 'room'))
-    check('a second kit is refused too', !place(g5, 0, 0) && drain(g5).some((e) => e.t === 'refuse'))
+    // #2721: the second kit is no longer refused on price — the cottage (§90)
+    // affords out of the till's leftover, and the lot then stands full: it is
+    // the THIRD kit that refuses (WINGS_MAX, unchanged).
+    check('the lot grows twice — the cottage rises on the till\'s leftover', place(g5, 0, 0) && drain(g5).some((e) => e.t === 'room' && e.w === 'garden'))
+    check('a third kit is refused too', !place(g5, 0, 0) && drain(g5).some((e) => e.t === 'refuse'))
 
     // source pins: the events exist at the choke points the view depends on
     const feelSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
@@ -4917,6 +4931,76 @@ section('FAR-TAP KEY (#2708 tail 5): T picks the ear, C says it — the desktop 
     check('C with a hint runs the pointer\u2019s three legs (pick / list / walk)', ftIdx.includes("courtPickSet(gs, k); court(gs, 'coo')") && ftIdx.includes("{ kind: 'gosay', k }") && ftIdx.includes('cmdGoSay(gs, p, k)'))
     check('no second pad — the pad keeps exactly one build button', (ftIdx.match(/secondAction=\{\{[^}]*\}\}/g) || []).length === 1)
     check('the registry teaches the idiom', readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8').includes('T picks the ear'))
+}
+
+section('GARDEN JAR (#2721): Pip\u2019s round pays for kit two — earmarked money, honest till')
+{
+    const DTj = FIXED_DT / 1000
+    const runFor = (g, seconds) => { const ev = []; for (let i = 0; i < Math.round(seconds / DTj); i++) { advance(g, DTj); ev.push(...drain(g)) } return ev }
+
+    // no child on the lot, no round
+    const g0 = newRun(7)
+    const ev0 = runFor(g0, 3600)
+    check('no Pip, no paper round', g0.jar === 0 && !ev0.some((e) => e.t === 'route'))
+
+    // the round pays once, in the morning, into the jar — never the till
+    const g1 = newRun(7)
+    g1.money = 600
+    adoptKid(g1); drain(g1)
+    const ev1 = runFor(g1, 3600 * 26)
+    const routes = ev1.filter((e) => e.t === 'route')
+    check('the round lands once per morning', routes.length >= 1 && routes.every((e) => e.cash > 0), `routes=${routes.length}`)
+    check('the round pays one day one beat (the day stamp is the law)', routes.length <= 26, `routes=${routes.length} over 26h`)
+    check('the round\u2019s money is all in the jar (arithmetic exact)', g1.jar === Math.min(JAR_CAP, ROUTE.cash * routes.length), `jar=${g1.jar} routes=${routes.length}`)
+    check('the jar reads the money in it', routes.reduce((a, e) => e.jar, 0) === g1.jar || g1.jar === JAR_CAP, `jar=${g1.jar}`)
+
+    // the jar caps at the kit — no over-saving theatre
+    const g2 = newRun(7)
+    g2.money = 600; adoptKid(g2); drain(g2)
+    g2.jar = JAR_CAP
+    const before = g2.jar
+    runFor(g2, 3600 * 20)
+    check('a full jar stays full — the fund caps at the kit price', g2.jar === before && before === GARDEN.price, `jar=${g2.jar}/${GARDEN.price}`)
+
+    // purity: jar money buys the cottage and NOTHING else
+    const g3 = newRun(7)
+    g3.money = 0; g3.jar = JAR_CAP
+    g3.sel = CATALOG.findIndex((d) => d.id === 'plant')
+    check('the jar cannot buy decor', !place(g3, 5, 0) && g3.money === 0 && g3.jar === JAR_CAP)
+    check('the jar cannot buy the east wing (the fund is the garden\u2019s)', !buildRoom(g3, eastWing(DEFAULT_ANCHOR)) && g3.jar === JAR_CAP && g3.ext === 0)
+    const g4 = newRun(7)
+    g4.money = 10; g4.jar = JAR_CAP
+    const evR = (drain(g4), buildRoom(g4, GARDEN), drain(g4))
+    check('the cottage pays from the jar first — the till is left whole', g4.ext === 1 && g4.money === 10 && g4.jar === 0 && evR.some((e) => e.t === 'room' && e.w === 'garden' && e.jar === JAR_CAP),
+        `ext=${g4.ext} money=${g4.money} jar=${g4.jar}`)
+    const g6 = newRun(7)
+    g6.money = 70; g6.jar = 30
+    check('a short jar asks the till only for the shortfall', buildRoom(g6, GARDEN) && g6.money === 10 && g6.jar === 0, `money=${g6.money} jar=${g6.jar}`)   // 70 − (90 − 30)
+
+    // the fund is state: it rides the hash; the day stamp is a clock and does not
+    const ha = newRun(11); ha.jar = 90
+    const hb = newRun(11); hb.jar = 0
+    check('the jar rides stateHash', stateHash(ha) !== stateHash(hb))
+    const hc = newRun(11); hc.jar = 90; hc.routeDay = 5
+    check('the round\u2019s day stamp is a clock, not state', stateHash(hc) === stateHash(ha))
+    const twin = () => { const g = newRun(42); let t = 0; while (!g.done && t++ < 60 * 60 * 45) autoStep(g, DTj); return stateHash(g) }
+    check('the round keeps the sim deterministic', twin() === twin())
+
+    // the law ships pure: one beat, fixed text, no rng, no till
+    const jarSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const jarFn = jarSim.match(/function updateRoute\(s\) \{[\s\S]*?\n\}/)?.[0] || ''
+    check('pin: the round never reads the till and never rolls the rng', !!jarFn && !/s\.money/.test(jarFn) && !/pick\(|Math\.random/.test(jarFn))
+    check('pin: the round is wired into the world clock behind the other citizens', /updateProwl\(s, simDt\)[\s\S]{0,120}updateRoute\(s\)/.test(jarSim))
+    check('pin: the cottage price and the fund are one arithmetic (JAR_CAP = GARDEN.price)', /export const JAR_CAP = GARDEN\.price/.test(jarSim) && JAR_CAP === GARDEN.price)
+    check('pin: the kit builder drains the jar before the till', /const fund = geom\.id === 'garden' \? s\.jar : 0/.test(jarSim))
+
+    // the shell and the registry teach the beat
+    const jarIdx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const jarArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    check('the shell names the beat (banner + coin timbre)', /case 'route':/.test(jarIdx) && jarIdx.includes('GARDEN JAR'))
+    check('the catalog card prices the NEXT kit and shows the jar', /d\.room \? \(s\.ext >= 1 \? GARDEN : EXT_ROOM\)/.test(jarArt) && /JAR \$\{s\.jar\}/.test(jarArt))
+    check('the dev eye reads and fills the jar', jarIdx.includes('jar=${gs.jar}/${GARDEN.price}') && /label: 'FILL JAR'/.test(jarIdx))
+    check('the registry teaches the fund', readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8').includes('garden jar'))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
