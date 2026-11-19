@@ -981,6 +981,40 @@ const LODGE_LINES = [
     'Sunlight finds the wing first; {p} rises rested, the room having done its job.',
 ]
 
+// #2736: rooms with a personality — the purpose tail's next floor. A wing
+// reads its OWN furniture and becomes the kind of room it is furnished as,
+// the way the original graded rec rooms and libraries by what stood in them.
+// Two laws beyond the sun (#2695) and the bed:
+//   • THE STUDY READS — a Bookshelf standing on a wing's floorboards makes
+//     that room a study; every read that ENDS there turns a page, and at
+//     PAGES_INSIGHT the room pays: the reader surfaces wiser and lighter,
+//     the house takes one quiet pride. A bookshelf in the living room stays
+//     a plain bookshelf — the clause only exists on room floorboards.
+//   • THE PLAYROOM PLAYS — a TV or radio on the wing floor makes it a
+//     playroom, and the child gravitates: the funnel-fun pick prefers the
+//     in-room toy over nearer house things (the cone-before-toys doctrine,
+//     #2503, at room scale). Every fun session that ENDS at the in-room toy
+//     pays a play; at PLAYS_DELIGHT the room cashes in — giggles, a deeper
+//     kid bond, one pride.
+// Like #2695, no purpose line draws rng for its timing; tallies ride the
+// wing records and join stateHash inside the existing wings loop, so a lot
+// with no rooms gains no new mixes at all.
+export const PAGES_INSIGHT = 3    // finished reads in the study that make one insight
+export const READ_INSIGHT_FUN = 0.15
+export const PLAYS_DELIGHT = 3    // finished kid plays in the playroom that make one delight
+export const KID_ROOM_FUN = 0.20
+export const KID_ROOM_BOND = 0.5
+const STUDY_LINES = [
+    '{p} closes the last cover mid-sentence — the study keeps what it learned.',
+    'Three books deep in the study; {p} comes up smarter and quieter.',
+    'The study adds its quiet interest to the house; {p} could talk about this for hours.',
+]
+const ROOM_LAUGH_LINES = [
+    '{n} giggles where the room hums — the playroom keeps the volume.',
+    'Cartoons in the playroom; {n} cannot stop laughing at the good parts.',
+    'The playroom pays its rent in giggles, and {n} is rich.',
+]
+
 // geometry for a placed wing record ({ id, r0 }) — and the lookup sets.
 export function wingGeom(w) { return w.id === 'garden' ? GARDEN : eastWing(w.r0) }
 const wingSetCache = new Map()
@@ -996,6 +1030,35 @@ export function wingSets(g) {   // #2705: exported for the purpose view — the 
         wingSetCache.set(k, s)
     }
     return s
+}
+
+// #2736: which standing wing (if any) owns this cell's floorboards? The
+// personality laws ask the GEOMETRY, never an item id — the same question
+// the lodging law asks of beds (#2695), pointed at furniture instead.
+export function onWingFloor(s, r, c) {
+    if (!s || !s.ext) return null
+    const k = `${r},${c}`
+    for (const w of s.wings) if (wingSets(wingGeom(w)).floor.has(k)) return w
+    return null
+}
+
+// The room's name from what stands on it — view-only, like every #2705 tell.
+// Priority bedroom > study > playroom: the bed law (#2695/#2272) already
+// owns the sleeping room; a room full of everything is called by its deepest
+// purpose. Null on a bare floor — an empty room has earned no name.
+export function archetypeOf(s, w) {
+    if (!s || !s.ext || !w) return null
+    let bed = 0, study = 0, play = 0
+    const g = wingSets(wingGeom(w))
+    for (const it of s.items) {
+        if (!g.floor.has(`${it.r},${it.c}`)) continue
+        const d = DEF[it.id]
+        if (!d) continue
+        if (d.sleep) bed = 1
+        else if (it.id === 'book') study = 1
+        else if (it.id === 'tv' || it.id === 'radio') play = 1
+    }
+    return bed ? 'bedroom' : study ? 'study' : play ? 'playroom' : null
 }
 
 // #1814 move-in reactions: the hammer falls and the residents react once.
@@ -1919,8 +1982,8 @@ export function buildRoom(s, g) {
     s.jar -= fromJar
     s.money -= geom.price - fromJar
     s.wings.push(geom.id === 'garden'
-        ? { id: 'garden', tend: 0, herbs: 0 }                                  // #2695: the ripening ledger rides the room
-        : { id: 'east', r0: geom.r0, sleptWell: 0, lodgeDay: -1 })           // #2695: and so does the lodging one
+        ? { id: 'garden', tend: 0, herbs: 0, pages: 0, insights: 0, plays: 0, delights: 0 }              // #2695: the ripening ledger rides the room; #2736: so do the personality tallies
+        : { id: 'east', r0: geom.r0, sleptWell: 0, lodgeDay: -1, pages: 0, insights: 0, plays: 0, delights: 0 })   // #2695: and so does the lodging one; #2736: and the personality tallies
     s.ext = s.wings.length
     s.roomReact = s.people.length   // #1814: the wing gets its move-in reactions
     s.events.push({ t: 'room', w: geom.id, jar: fromJar })
@@ -2906,7 +2969,12 @@ function funTarget(s, k) {
         const tg = targetsOf(s, it)
         if (!tg.length) continue
         const dist = Math.min(...tg.map((t) => Math.abs(t.r - k.r) + Math.abs(t.c - k.c)))
-        if (dist < bd) { bd = dist; best = { it, tg } }
+        // #2736: the playroom pull — a TV or radio standing IN a room is the
+        // rec room of the original: the child crosses the lot for it while
+        // nearer house things wait. A 1000-point pull outranks any distance
+        // the map can offer; only toys count, a study's book is for grown-ups.
+        const pull = s.ext && (it.id === 'tv' || it.id === 'radio') && onWingFloor(s, it.r, it.c) ? 1000 : 0
+        if (dist - pull < bd) { bd = dist - pull; best = { it, tg } }
     }
     return best
 }
@@ -3024,16 +3092,40 @@ function updateKid(s, dt) {
         const ft = funTarget(s, k)
         if (ft) {
             const path = bfsPath(s, { r: k.r, c: k.c }, ft.tg)
-            if (path) { k.path = path; k.playObj = true; k.state = 'play' }
+            if (path) { k.path = path; k.playObj = true; k.playIt = ft.it; k.state = 'play' }   // #2736: the errand remembers WHICH toy it walked to
         }
     }
     if (k.playObj && !k.path) {
         k.playObj = false
+        const toy = k.playIt
+        k.playIt = null
         k.needs.fun = Math.min(1, k.needs.fun + 0.45)
         k.state = 'roam'
         k.giggleT = 1.4
         s.events.push({ t: 'kid-play', name: k.name, x: k.x, y: k.y })
         think(s, pick(s, KID_PLAY_LINES))
+        // #2736: the playroom pays. Fun finished at a TV or radio standing ON
+        // the room's own floorboards counts as a play for the room; every
+        // third play is a delight — extra giggles, a deeper kid bond, one
+        // house pride. A toy sold or carried off mid-walk leaves the room
+        // unpaid (the errand was honest; the room just wasn't there) — the
+        // same walk-cost doctrine as the adult's.
+        if (s.ext && toy && s.items.includes(toy) && (toy.id === 'tv' || toy.id === 'radio')) {
+            const w = onWingFloor(s, toy.r, toy.c)
+            if (w) {
+                w.plays = (w.plays || 0) + 1
+                if (w.plays >= PLAYS_DELIGHT) {
+                    w.plays = 0
+                    w.delights = (w.delights || 0) + 1
+                    k.needs.fun = Math.min(1, k.needs.fun + KID_ROOM_FUN)
+                    relAdd(s, 'kid', KID_ROOM_BOND)
+                    s.content = Math.min(WIN_CONTENT, s.content + 1)
+                    k.giggleT = 1.6
+                    s.events.push({ t: 'kid-laugh', name: k.name, x: k.x, y: k.y })
+                    think(s, pick(s, ROOM_LAUGH_LINES).replace('{n}', k.name))
+                }
+            }
+        }
     }
     // scamper the lot — every pick asks walkable AND reachable, every seed the same
     if (!k.path) {
@@ -3224,6 +3316,25 @@ function finishUse(s, p) {
             s.events.push({ t: 'lodged', name: p.name })
             think(s, pick(s, LODGE_LINES).replace('{p}', p.name))
             break
+        }
+    }
+    // #2736: the study law. A read that ENDS in a room carrying its own
+    // bookshelf turns a page ON THE ROOM; every third page is an insight —
+    // the reader surfaces lighter, the house takes the quiet pride. The
+    // question is the furniture's standing cell, never who read or where
+    // the walk started: a living-room bookshelf stays a plain bookshelf.
+    if (def.id === 'book' && s.ext) {
+        const w = onWingFloor(s, it.r, it.c)
+        if (w) {
+            w.pages = (w.pages || 0) + 1
+            if (w.pages >= PAGES_INSIGHT) {
+                w.pages = 0
+                w.insights = (w.insights || 0) + 1
+                p.needs.fun = Math.min(1, p.needs.fun + READ_INSIGHT_FUN)
+                s.content = Math.min(WIN_CONTENT, s.content + 1)
+                s.events.push({ t: 'studied', name: p.name, r: it.r, c: it.c })
+                think(s, pick(s, STUDY_LINES).replace('{p}', p.name))
+            }
         }
     }
     // #2244: the table law. A plate is claimed by the household, not by one
@@ -3845,6 +3956,8 @@ export function stateHash(s) {
         mix(Math.round((w.tend || 0) * 1000))        // #2695: purpose rides with the room it belongs to —
         mix(w.herbs || 0)                            //     a lot with no wings gains no new mixes at all
         mix(w.sleptWell || 0); mix((w.lodgeDay ?? -1) + 1)
+        mix(w.pages || 0); mix(w.insights || 0)     // #2736: personality tallies ride the same room loop —
+        mix(w.plays || 0); mix(w.delights || 0)     //     still zero new mixes on a lot with no rooms
     }
     mix(s.tab)                       // #2222: the open catalog shelf is state too
     mix(s.speed)                     // #2227: so is the speed dial — replays pin it

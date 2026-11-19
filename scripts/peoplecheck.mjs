@@ -123,11 +123,13 @@ import {
     eastWing, GARDEN, EAST_ANCHORS, DEFAULT_ANCHOR, wingPick, wingGeom, WINGS_MAX, groundAt,   // #2689: deeper multi-room — the anchor law, the garden cottage, the pick
     wingSets,   // #2705: the purpose view's floor question — exported from the law's own module
     TEND_HOURS, HARVEST_FOOD, HARVEST_FUN, LODGE_FUN,   // #2695: rooms with purpose — the sun law and the lodging law
+    archetypeOf, onWingFloor, PAGES_INSIGHT, READ_INSIGHT_FUN, PLAYS_DELIGHT, KID_ROOM_FUN, KID_ROOM_BOND,   // #2736: rooms with a personality — the study and the playroom
     ROUTE, JAR_CAP,   // #2721: the kit-two economy window — Pip's round and the earmarked garden jar
 } from '../src/games/Homebody/sim.js'
 import { bondRows, pairStride, strollTrail, STRIDE_BOB, jarRow } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail · #2729: and the jar row
 import { promiseTell, earReact, gardenLamp, EAR_REACT, PROMISE_TIGHTEN, EAR_HUES, PAIR_HUES, LOST_RING_T } from '../src/games/Homebody/art.js'   // #2688: the go-say tells and the garden lamp are pure derivations too
 import { ripenessOf, hamperLoad, sleepingCells, wingLodged, moonlitWait, HAMPER_CAP, pauseLedger } from '../src/games/Homebody/art.js'   // #2705: the purpose view — ripeness ramp, harvest hamper, lodged panes, moonlit wait, all pure derivations (+ #2713 the pause-sheet ledger)
+import { roomBadges } from '../src/games/Homebody/art.js'   // #2736: the door badge is a pure derivation too
 import { readFileSync } from 'node:fs'
 
 const DT = FIXED_DT / 1000
@@ -589,6 +591,198 @@ section('LEDGER SHEET (#2713 tail 4): the pause sheet reads what the rooms provi
     check('pin: pip rows cap at eight — a long tally can never eat the sheet', /Math\.min\(Math\.max\(row\.n \|\| 0, 0\), 8\)/.test(ovSrc))
     check('pin: the shell snaps the ledger at the pause toggle (a paused world is the truth)', /setLedgerSnap\(pausedRef\.current \? pauseLedger\(gs\)/.test(pSheetJsx) && /ledger=\{ledgerSnap\}/.test(pSheetJsx))
     check('pin: the pause sheet\u2019s copy lives in the view module, beside the other purpose derivations', /export function pauseLedger/.test(readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')))
+}
+
+section('PERSONALITY (#2736): rooms read their own furniture — a study that reads, a playroom the child gravitates to')
+{
+    const mkEast = (seed) => { const g = newRun(seed); g.money = 99999; buildRoom(g, eastWing(2)); g.hour = 8; return g }
+
+    // ---- naming by contents: the room is called by what stands on it ----
+    const a0 = mkEast(701)
+    check('an empty wing has earned no name', archetypeOf(a0, a0.wings[0]) === null)
+    a0.items.push({ uid: 2701, id: 'book', r: 3, c: 13 })
+    check('a bookshelf on the boards names the study', archetypeOf(a0, a0.wings[0]) === 'study')
+    a0.items.push({ uid: 2702, id: 'tv', r: 5, c: 13 })
+    check('a toy in the study is still a study — shelf outranks toy', archetypeOf(a0, a0.wings[0]) === 'study')
+    a0.items.push({ uid: 2703, id: 'canopy', r: 6, c: 13 })
+    check('the bed outranks everything — the deepest purpose names the room', archetypeOf(a0, a0.wings[0]) === 'bedroom')
+    const pOnly = mkEast(702); pOnly.items.push({ uid: 2704, id: 'radio', r: 5, c: 12 })
+    check('a radio alone names the playroom', archetypeOf(pOnly, pOnly.wings[0]) === 'playroom')
+    const gar = newRun(703); gar.money = 99999; buildRoom(gar, GARDEN); gar.hour = 8
+    gar.items.push({ uid: 2705, id: 'book', r: 9, c: 2 })
+    check('the garden cottage can study too — personality is contents, not kit', archetypeOf(gar, gar.wings[0]) === 'study')
+    const noext = newRun(704)
+    check('a lot without wings names nothing', archetypeOf(noext, noext.wings.length ? noext.wings[0] : null) === null)
+
+    // ---- the study law: three finished reads make an insight ----
+    const read = (g, p, it, sink) => {
+        cmdUse(g, p, it)
+        let n = 0
+        while (n++ < 60 * 60) {
+            g.hour = 8
+            advance(g, DT)
+            const ev = drain(g)
+            if (sink) sink.push(...ev)
+            if (ev.some((e) => e.t === 'satisfied' && e.name === p.name)) return true
+        }
+        return false
+    }
+    const st = mkEast(706)
+    st.items.push({ uid: 2706, id: 'book', r: 3, c: 13 })
+    const book = st.items[st.items.length - 1]
+    const otto = st.people[0]
+    const funAt = () => otto.needs.fun
+    const cAt = () => st.content
+    st.wings[0].insights = 0
+    const sink = []
+    const okReads = []
+    const deltas = []
+    for (let i = 0; i < PAGES_INSIGHT; i++) {
+        otto.needs = { hunger: 0.6, fun: 0.1, social: 0.6, energy: 0.6, bladder: 0.6 }
+        const f0 = funAt(); const c0 = cAt()
+        okReads.push(read(st, otto, book, sink))
+        deltas.push({ fun: funAt() - f0, content: cAt() - c0 })
+    }
+    const studied = sink.filter((e) => e.t === 'studied').length
+    check('all three errands land in the room', okReads.every(Boolean), JSON.stringify(okReads))
+    check('pages accrue one per finished read and reset on the pay', st.wings[0].pages === 0 && st.wings[0].insights === 1, `pages=${st.wings[0].pages} insights=${st.wings[0].insights}`)
+    check('the third read fires the studied event exactly once', studied === 1, `studied=${studied}`)
+    check('the insight lifts the reader — the paying read carries READ_INSIGHT_FUN extra',
+        Math.abs(deltas[0].fun - 0.4) < 0.001 && Math.abs(deltas[1].fun - 0.4) < 0.001 && Math.abs(deltas[2].fun - (0.4 + READ_INSIGHT_FUN)) < 0.001,
+        JSON.stringify(deltas.map((d) => Math.round(d.fun * 1000) / 1000)))
+    check('quiet pride — the paying read adds one contentment on top',
+        deltas[0].content === deltas[1].content && deltas[2].content === deltas[0].content + 1, JSON.stringify(deltas.map((d) => d.content)))
+
+    // the living-room shelf stays plain: the clause is the ROOM's, not the item's
+    const hl = mkEast(707)
+    let houseBook = null
+    for (let r = 0; r < ROWS && !houseBook; r++) for (let c = 0; c < COLS && !houseBook; c++) {
+        if (groundAt(r, c) !== 'floor' || c >= 11) continue   // any house-floor cell west of the rooms
+        hl.items.push({ uid: 2707, id: 'book', r, c })
+        houseBook = hl.items[hl.items.length - 1]
+    }
+    check('scenario: a living-room bookshelf found for the control', !!houseBook)
+    let houseReads = 0
+    for (let i = 0; i < PAGES_INSIGHT; i++) if (read(hl, hl.people[0], houseBook)) houseReads++
+    check('control: the house reads actually land', houseReads === PAGES_INSIGHT, `${houseReads}/${PAGES_INSIGHT}`)
+    check('a house-floor shelf turns no pages — three reads, still zero insight',
+        (hl.wings[0].pages || 0) === 0 && (hl.wings[0].insights || 0) === 0, `pages=${hl.wings[0].pages} insights=${hl.wings[0].insights}`)
+
+    // ---- the playroom pull: the child crosses the lot for the in-room toy ----
+    const kidRun = (seed) => { const g = mkEast(seed); g.money = 99999; adoptKid(g); g.hour = 8; return g }
+    const nearHouseFloor = (g, pr, pc) => {
+        let best = null, bd = 1e9
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < 10; c++) {   // house side only (cols < 10)
+            if (groundAt(r, c) !== 'floor') continue
+            const d = Math.abs(r - pr) + Math.abs(c - pc)
+            if (d < bd) { bd = d; best = { r, c } }
+        }
+        return best
+    }
+    const pull = kidRun(708)
+    const k8 = pull.kid
+    const near = nearHouseFloor(pull, k8.r, k8.c)
+    pull.items.push({ uid: 2708, id: 'radio', r: near.r, c: near.c })          // nearer toy, house floor
+    const wingTv = { uid: 2709, id: 'tv', r: 5, c: 13 }
+    pull.items.push(wingTv)                                                      // farther toy, the room
+    const dNear = Math.abs(near.r - k8.r) + Math.abs(near.c - k8.c)
+    const dWing = Math.abs(5 - k8.r) + Math.abs(13 - k8.c)
+    k8.needs.fun = 0.2
+    let pick = null
+    for (let i = 0; i < 60 * 5 && !pick; i++) { pull.hour = 8; advance(pull, DT); drain(pull); if (k8.playObj && k8.playIt) pick = k8.playIt }
+    check('the pull is real — the room toy stands farther than the house toy', dWing > dNear, `wing=${dWing} house=${dNear}`)
+    check('the child gravitates: the funnel pick prefers the in-room TV over the nearer radio', pick === wingTv, pick ? pick.id : 'no pick')
+    // control: without a room, the nearest law keeps its seat
+    const plain = kidRun(709)
+    const k9 = plain.kid
+    const near2 = nearHouseFloor(plain, k9.r, k9.c)
+    plain.items.push({ uid: 2710, id: 'radio', r: near2.r, c: near2.c })
+    k9.needs.fun = 0.2
+    let pick2 = null
+    for (let i = 0; i < 60 * 5 && !pick2; i++) { plain.hour = 8; advance(plain, DT); drain(plain); if (k9.playObj && k9.playIt) pick2 = k9.playIt }
+    check('no room, no pull — the nearest-fun law is byte-unchanged on a bare wing lot', pick2 && pick2.id === 'radio', pick2 ? pick2.id : 'no pick')
+    // a study does NOT pull the child — books are for grown-ups
+    const studieKid = kidRun(710)
+    const k10 = studieKid.kid
+    const near3 = nearHouseFloor(studieKid, k10.r, k10.c)
+    studieKid.items.push({ uid: 2711, id: 'book', r: 5, c: 13 })   // study in the room, far
+    studieKid.items.push({ uid: 2712, id: 'radio', r: near3.r, c: near3.c })   // radio near, house
+    k10.needs.fun = 0.2
+    let pick3 = null
+    for (let i = 0; i < 60 * 5 && !pick3; i++) { studieKid.hour = 8; advance(studieKid, DT); drain(studieKid); if (k10.playObj && k10.playIt) pick3 = k10.playIt }
+    check('the playroom pull is toys-only — a far book in a study never lures the child', pick3 && pick3.id === 'radio', pick3 ? pick3.id : 'no pick')
+
+    // ---- the delight: three finished in-room plays pay the room ----
+    const delight = (seed) => {
+        const g = kidRun(seed)
+        const k = g.kid
+        g.items.push({ uid: 2720 + seed % 7, id: 'tv', r: 5, c: 13 })
+        const w = g.wings[0]
+        const rel0 = g.rel.kid
+        const c0 = g.content
+        let laughs = 0, sessions = 0
+        for (let i = 0; i < 60 * 400 && sessions < PLAYS_DELIGHT + 1; i++) {
+            g.hour = 8
+            if (!k.playObj && !k.food && !k.treat && k.state !== 'bed' && k.state !== 'sleep') k.needs.fun = Math.min(k.needs.fun, 0.2)
+            advance(g, DT)
+            const ev = drain(g)
+            if (ev.some((e) => e.t === 'kid-laugh')) laughs++
+            if (ev.some((e) => e.t === 'kid-play')) sessions++
+        }
+        return { g, w, laughs, sessions, dRel: g.rel.kid - rel0, dContent: g.content - c0, h: stateHash(g) }
+    }
+    const dl = delight(711)
+    check('plays accrue at the room toy and cash at the third — delight paid once',
+        dl.w.delights === 1 && dl.w.plays === 1, `delights=${dl.w.delights} plays=${dl.w.plays} sessions=${dl.sessions}`)
+    check('exactly one kid-laugh lands in the run', dl.laughs === 1, `laughs=${dl.laughs}`)
+    check('the delight pays the kid: bond and pride ride the pay',
+        dl.dRel >= KID_ROOM_BOND - 0.01 && dl.dContent >= 1, `dRel=${Math.round(dl.dRel * 100) / 100} dContent=${dl.dContent}`)
+    const dl2 = delight(711)
+    check('the whole delighted life is seed-exact — twins giggle identically', dl.h === dl2.h && dl2.w.delights === 1 && dl2.laughs === 1)
+
+    // a toy sold mid-walk leaves the room unpaid — the walk was honest, the
+    // room just wasn't there (the adult walk-cost doctrine)
+    const sold = kidRun(713)
+    const kS = sold.kid
+    sold.items.push({ uid: 2713, id: 'tv', r: 5, c: 13 })
+    const tvS = sold.items[sold.items.length - 1]
+    kS.needs.fun = 0.2
+    for (let i = 0; i < 60 * 5 && !(kS.playObj && kS.playIt === tvS); i++) { sold.hour = 8; advance(sold, DT); drain(sold) }
+    sold.items = sold.items.filter((x) => x !== tvS)   // gone from the lot mid-errand
+    for (let i = 0; i < 60 * 40 && kS.playObj; i++) { sold.hour = 8; advance(sold, DT); drain(sold) }
+    check('a vanished toy pays the kid but never the room', kS.playObj === false && (sold.wings[0].plays || 0) === 0, `plays=${sold.wings[0].plays}`)
+
+    // ---- seen: ledger rows appear only when paid; badges name the room live ----
+    const sh = mkEast(714)
+    check('an unearned study shows no tally row — the sheet keeps its shipped shape', pauseLedger(sh).rows.length === 1 && pauseLedger(sh).rows[0].text === 'SPARE ROOM — lodged 0')
+    sh.wings[0].insights = 2; sh.wings[0].delights = 1
+    const Lp = pauseLedger(sh)
+    check('paid insights ride the sheet in lamp amber', Lp.rows.some((r) => r.text === 'STUDY — insights 2' && r.n === 2 && r.color === '#d9b23c'), JSON.stringify(Lp.rows))
+    check('paid giggles ride the sheet in star gold', Lp.rows.some((r) => r.text === 'PLAYROOM — giggles 1' && r.n === 1 && r.color === '#ffd24a'), JSON.stringify(Lp.rows))
+    check('badge silence on a bare floor — nothing stands, nothing is named', roomBadges(mkEast(715)).length === 0)
+    const bS = mkEast(716); bS.items.push({ uid: 2716, id: 'book', r: 4, c: 12 })
+    const bs = roomBadges(bS)
+    check('the study wears an open book at its own door', bs.length === 1 && bs[0].kind === 'study' && bs[0].r === 4 && bs[0].c === 11, JSON.stringify(bs))
+    const bP = mkEast(717); bP.items.push({ uid: 2717, id: 'radio', r: 6, c: 14 })
+    check('the playroom wears a star at the same post', roomBadges(bP).length === 1 && roomBadges(bP)[0].kind === 'playroom')
+    const bB = mkEast(718); bB.items.push({ uid: 2718, id: 'canopy', r: 6, c: 13 })
+    check('the bedroom needs no badge — its panes already burn amber (#2705)', roomBadges(bB).length === 0)
+    const bG = newRun(719); bG.money = 99999; buildRoom(bG, GARDEN); bG.items.push({ uid: 2719, id: 'tv', r: 10, c: 1 })
+    const bg = roomBadges(bG)
+    check('the cottage badges at its own south door too', bg.length === 1 && bg[0].r === 8 && bg[0].c === 2 && bg[0].kind === 'playroom', JSON.stringify(bg))
+
+    // ---- determinism + hygiene: tallies ride the hash, the view writes none ----
+    const twin = (seed) => { const g = mkEast(seed); g.wings[0].insights = 1; return stateHash(g) }
+    check('the personality ledgers ride stateHash inside the wings loop',
+        /for \(const w of s\.wings\) \{[\s\S]*?w\.insights[\s\S]*?w\.delights[\s\S]*?\}/.test(readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8').match(/export function stateHash[\s\S]*?\n\}/)[0])
+        && twin(721) === twin(721))
+    const artSrc = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    check('pin: the view never writes a tally — the painter only reads the room\u2019s ledger', !/\bw\w*\.(pages|insights|plays|delights)\s*=[^=]/.test(artSrc))
+    check('pin: the badge is exported from the view module and wired into the shell',
+        /export function roomBadges/.test(artSrc) && /drawRoomBadges\(ctx, g\)/.test(readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')))
+    const lawSrc = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const studyBlock = lawSrc.slice(lawSrc.indexOf("if (def.id === 'book' && s.ext)"), lawSrc.indexOf("if (def.id === 'book' && s.ext)") + 900)
+    check('pin: the study timing is counter-pure — no rng in the law, the way #2695 keeps purpose', !studyBlock.includes('s.rng'))
 }
 
 section('WINNABLE (attract autopilot, several seeds)')

@@ -26,6 +26,7 @@ import {
     REL_NAMES,
     tileOf, CATALOG, NEEDS, SFX, EXT_ROOM,
     wingPick, GARDEN, eastWing, DEFAULT_ANCHOR,   // #2689: the kit's site law, for the ghost, the button and the view
+    archetypeOf,   // #2736: rooms with a personality — the probe reads the room's own name
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork,   // #2470: tryUse moved to tryUseOrQueue below
     cmdQueue, queueCancel, queuePromote, orderBusy, tryUseOrQueue,   // #2470: the action queue — append while busy, cancel by chip; #2474 item 3: promote by pull
     WORK_START, WORK_END,   // #2470: the mail order is only queued while the window is honestly open
@@ -62,6 +63,7 @@ import {
     PAIR_HUES,   // #2599: the pair's own hues for pair-spoken bubbles
     promiseTell, earReact, drawGardenLamp, LOST_RING_T,   // #2688: the promise told in motion + the garden's night lamp
     drawPurposeView, sleepingCells, drawMoonlitWait,   // #2705: the purpose view — ripeness bed, harvest hamper, lodged panes, moonlit wait
+    drawRoomBadges,   // #2736: rooms with a personality — the study book / playroom star at the door
     pauseLedger,   // #2713 tail 4: the rooms' tallies read on the pause sheet
     pairStride, strollTrail, drawStrollTrail,   // #2618: the stroll stride, the route tell, the walk sell
     drawGroundGift, bondRows, jarRow,   // #2240: the set-down basket + the BONDS rows as data · #2729: the jar row too
@@ -435,6 +437,18 @@ const HomebodyGame = () => {
                         audioController.playTone(392, 0.08, 'sine', 0.04)
                         setTimeout(() => audioController.playTone(523, 0.16, 'sine', 0.04), 110)
                         if (live) say(`${e.name.toUpperCase()} SLEPT WELL IN THE WING`)
+                        break
+                    case 'studied': {   // #2736: the study pays — two thoughtful plucks, lamp amber on the book
+                        audioController.playTone(494, 0.07, 'triangle', 0.045)
+                        setTimeout(() => audioController.playTone(659, 0.14, 'triangle', 0.045), 90)
+                        if (live) { say(`THE STUDY PAYS — INSIGHTS ${gs.wings.reduce((a, w) => a + (w.insights || 0), 0)}`); burst(tilePx(e.c) + 8, tilePy(e.r) + 8, 5, '#d9b23c', 1.8) }
+                        break
+                    }
+                    case 'kid-laugh':   // #2736: the playroom pays — the giggle arpeggio at the room's own toy, star gold
+                        audioController.playTone(659, 0.05, 'triangle', 0.045)
+                        setTimeout(() => audioController.playTone(880, 0.05, 'triangle', 0.045), 55)
+                        setTimeout(() => audioController.playTone(1175, 0.09, 'triangle', 0.045), 110)
+                        if (live) { say(`THE PLAYROOM GIGGLES — DELIGHTS ${gs.wings.reduce((a, w) => a + (w.delights || 0), 0)}`); burst(e.x, e.y - 8, 6, '#ffd24a', 2.2) }
                         break
                     case 'rel-up':
                         audioController.playTone(659, 0.07, 'sine', 0.05)
@@ -886,6 +900,7 @@ const HomebodyGame = () => {
             if (iceCrowd.phase === 'gather' && (iceTruck.phase === 'out' || iceTruck.phase === 'off')) { iceCrowd.phase = 'flee'; iceCrowd.t0 = g.sec }
             if (iceCrowd.phase === 'flee') { const fk = (g.sec - iceCrowd.t0) / ICE_KID_FLEE_S; if (!(fk >= 0) || fk >= 1) iceCrowd.phase = 'off' }
             for (const it of g.items) drawItem(ctx, it, g.sec, nightLevel(g.hour))   // #2264: the meal sprite keeps night hours (steam dim/slow, warm halo)
+            drawRoomBadges(ctx, g)   // #2736: a named room wears its badge at the door, over the furniture
             // #2618: the pair's walk sell, painted per frame (view-only — the
             // sim never hears of any of it). Mid-lap both guests stride toward
             // each other; when the lap lands they settle facing one another for
@@ -1487,7 +1502,7 @@ const HomebodyGame = () => {
                 money: gs.money, content: gs.content, day: gs.day, hour: Math.round(gs.hour * 10) / 10,
                 items: gs.items.length, visitors: (gs.visitor ? 1 : 0) + (gs.ivy ? 1 : 0), ext: gs.ext,   // #2143: the lot can hold two neighbours
                 wings: gs.wings.map((w) => (w.id === 'garden' ? 'garden' : `east${w.r0}`)),   // #2689: which rooms stand, and where the east one landed
-                purpose: gs.wings.map((w) => `${w.id === 'garden' ? 'garden' : 'east'}:${w.herbs || 0}:${w.sleptWell || 0}`),   // #2695: and what each room has earned
+                purpose: gs.wings.map((w) => `${w.id === 'garden' ? 'garden' : 'east'}:${w.herbs || 0}:${w.sleptWell || 0}:${w.insights || 0}:${w.delights || 0}`),   // #2695: and what each room has earned; #2736: the personality tallies ride the same view
                 hero: [Math.round(gs.people[gs.active].x), Math.round(gs.people[gs.active].y)], cursor: [gs.cursor.r, gs.cursor.c],
                 needs: Object.fromEntries(gs.people.map((p) => [p.name, Object.fromEntries(NEEDS.map((n) => [n, Math.round(p.needs[n] * 100) / 100]))])),
                 hash: stateHash(gs),
@@ -1505,7 +1520,7 @@ const HomebodyGame = () => {
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
                     ext: gs.ext,
                     wings: gs.wings.map((w) => (w.id === 'garden' ? 'garden' : `east${w.r0}`)),   // #2689: the harness reads which rooms stand and where
-                    purpose: gs.wings.map((w) => `${w.id}:${w.herbs || 0}:${w.sleptWell || 0}:${Math.round((w.tend || 0) * 100) / 100}:${w.lodgeDay ?? -1}`),   // #2695: and what each room is earning, live
+                    purpose: gs.wings.map((w) => `${w.id}:${w.herbs || 0}:${w.sleptWell || 0}:${Math.round((w.tend || 0) * 100) / 100}:${w.lodgeDay ?? -1}:${w.insights || 0}:${w.delights || 0}:${archetypeOf(gs, w) || '-'}`),   // #2695: and what each room is earning, live; #2736: personality tallies + the room's own name appended (positional readers unaffected)
                     rel: { house: gs.rel.house, fern: gs.rel.fern, ivy: gs.rel.ivy, neigh: gs.rel.neigh },   // #2143: third meter; #2588: the pair's own rung joins the view
                     spats: gs.spats, grudge: gs.grudge, spatFx: Math.round(gs.spatFx * 10) / 10,   // #2070/#2076
                     neiSpats: gs.neiSpats, neiGrudge: gs.neiGrudge, neiIgnore: Math.round(gs.neiIgnore),   // #2604: the pair's own quarrel ledger, visible to harness and panel-debug

@@ -19,6 +19,7 @@ import {
     NEIGH_WARM_AT,   // #2599: cross-warmth — the rung that deepens each neighbour's chat
     goSayTarget,   // #2688: the promised ear — the view derives the errand the same way the sim resolves it
     TEND_HOURS, wingSets,   // #2705: the purpose view reads the sun-law's own constant and the room's own floor
+    archetypeOf,   // #2736: rooms with a personality — the badge asks the room's own furniture
     GARDEN, EXT_ROOM,   // #2721: the room card prices the NEXT kit, and the jar rides beside it
     JAR_CAP,   // #2729: the panel's jar row reads the fund's own cap
 } from './sim.js'
@@ -1134,11 +1135,56 @@ export function moonlitWait(s) {
 // The overlay stays generic: the WORDS are authored here, in the game.
 export function pauseLedger(s) {
     if (!s || !s.wings || !s.wings.length) return null
-    return {
-        title: 'THE HOUSE PROVIDES',
-        rows: s.wings.map((w) => (w.id === 'garden'
+    const rows = []
+    for (const w of s.wings) {
+        rows.push(w.id === 'garden'
             ? { text: `HERBS ${w.herbs || 0}`, n: w.herbs || 0, color: '#7ec850' }                        // the harvest green of the glints (#2695)
-            : { text: `SPARE ROOM — lodged ${w.sleptWell || 0}`, n: w.sleptWell || 0, color: '#a8d4ee' })),  // the moonlit pane blue (#2705)
+            : { text: `SPARE ROOM — lodged ${w.sleptWell || 0}`, n: w.sleptWell || 0, color: '#a8d4ee' })  // the moonlit pane blue (#2705)
+        // #2736: personality rows appear only once the room has actually
+        // been paid out — a room merely named by its furniture wears the
+        // door badge, not a tally; a room that has paid shows its earnings.
+        if ((w.insights || 0) > 0) rows.push({ text: `STUDY — insights ${w.insights}`, n: w.insights, color: '#d9b23c' })     // the study's reading-lamp amber
+        if ((w.delights || 0) > 0) rows.push({ text: `PLAYROOM — giggles ${w.delights}`, n: w.delights, color: '#ffd24a' })    // the giggle star gold (drawKid)
+    }
+    return { title: 'THE HOUSE PROVIDES', rows }
+}
+
+// #2736: the room reads its name at the door. Pure derivation (the #2076
+// view-only doctrine — painter and probe ask ONE function): each standing wing
+// that furniture has named gets its badge at its own doorstep; the bedroom
+// needs no badge — the lodged pane already burns amber for it (#2705).
+export function roomBadges(s) {
+    if (!s || !s.ext || !s.wings) return []
+    const out = []
+    for (const w of s.wings) {
+        const a = archetypeOf(s, w)
+        if (a !== 'study' && a !== 'playroom') continue
+        const d = wingGeom(w).door
+        out.push({ r: d[0], c: d[1], kind: a })
+    }
+    return out
+}
+
+// Drawn over the furniture so the badge reads IN FRONT of whatever stands in
+// the doorway: a study carries an open book (cream pages, the lamp amber of
+// its ledger row); a playroom carries the giggle star in its ledger gold.
+export function drawRoomBadges(ctx, s) {
+    for (const b of roomBadges(s)) {
+        const x = tileX(b.c), y = tileY(b.r)
+        if (b.kind === 'study') {
+            ctx.fillStyle = '#d9b23c'                                              // the book's cover, lamp amber
+            ctx.fillRect(x + 5, y + 2, 14, 9)
+            ctx.fillStyle = '#efe6c8'                                              // the open pages
+            ctx.fillRect(x + 7, y + 4, 5, 5); ctx.fillRect(x + 13, y + 4, 4, 5)
+            ctx.fillStyle = '#5a4212'                                              // the spine
+            ctx.fillRect(x + 12, y + 2, 1, 9)
+        } else {
+            ctx.fillStyle = '#ffd24a'                                              // the giggle star, room gold
+            ctx.fillRect(x + 10, y + 2, 3, 9)
+            ctx.fillRect(x + 7, y + 5, 9, 3)
+            ctx.fillStyle = '#fff3b0'
+            ctx.fillRect(x + 11, y + 5, 1, 3)
+        }
     }
 }
 
