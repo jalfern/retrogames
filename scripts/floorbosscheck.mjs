@@ -54,6 +54,7 @@
 //   node scripts/floorbosscheck.mjs --mutate-turn # loaded legs stop counting pivots — staircases return, demand RED (#2724)
 //   node scripts/floorbosscheck.mjs --mutate-repath-land # racks land on claimed routes — stale paths drive into fresh walls, demand RED (#2724)
 //   node scripts/floorbosscheck.mjs --mutate-face # reversing rotates the nose — bot.face becomes bot.dir again and the outside audit cannot see the body (#2732)
+//   node scripts/floorbosscheck.mjs --mutate-seed # the knee planner seeds from the movement again — reversed carts plan body-illegal swings (#2738)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -109,7 +110,8 @@ const MUT_KNEE_TEACH = ARGS.includes('--mutate-knee-teach') // #2711 s2: the les
 const MUT_TURN = ARGS.includes('--mutate-turn') // #2724: the pivot sort is gone — staircases return
 const MUT_REPATH_LAND = ARGS.includes('--mutate-repath-land') // #2724: racks land on claimed routes — stale paths keep driving into them
 const MUT_FACE = ARGS.includes('--mutate-face') // #2732: reversing rotates the nose — bot.face degrades back to bot.dir
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE) {
+const MUT_SEED = ARGS.includes('--mutate-seed') // #2738: the knee planner seeds from the movement again — reversed carts plan swings the body forbids
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const tgt = MUT_MANNERS || MUT_ATTRACT ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) : sim // #2700: presentation laws plant in the painter
     const src = readFileSync(tgt, 'utf8')
@@ -164,7 +166,7 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     : MUT_MANNERS
                                                                     ? ['if (duckTaughtOn !== gs) {', 'if (duckTaughtOn !== gs && false) {', 'the first duck never names itself — GIVE WAY stays decoration, the grammar goes unlearned (#2700)']
                                                                     : MUT_ATTRACT
-                                                                    ? ['const ATTRACT_SEEDS = [20, 42, 29, 40, 30]', 'const ATTRACT_SEEDS = [1337]', 'the shop window is cold again — the demo seed never ducks while a visitor watches (#2700 seeds re-measured #2711)']
+                                                                    ? ['const ATTRACT_SEEDS = [1, 20, 22, 26, 31]', 'const ATTRACT_SEEDS = [1337]', 'the shop window is cold again — the demo seed never ducks while a visitor watches (#2700 seeds re-measured #2738)']
                                                                     : MUT_KNEE
                                                                     ? ['const after = kneeNet(gs, { x, y })', 'const after = kneeNet(gs, null)', 'the sixth law is blind — racks may stand in the swing and sever the knee network (#2711)']
                                                                     : MUT_KNEE_ROUTE
@@ -177,6 +179,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ['if (broken) repath(gs, b)', 'if (false && broken) repath(gs, b)', 'racks land on claimed routes — traffic plans drive into fresh walls and old diagonals, and the heat lies about them (#2724)']
                                                                     : MUT_FACE
                                                                     ? ['bot.dir = nbDir(nx.x - bot.x, nx.y - bot.y)\n    if (bot.dir !== (bot.face + 2) % 4) bot.face = bot.dir // #2732: reversing keeps the facing — the body never rotates (#2711 doctrine, now visible in state)', 'bot.dir = nbDir(nx.x - bot.x, nx.y - bot.y)\n    bot.face = bot.dir // MUTANT: reversing rotates the nose — the body law is gone (#2732)', 'bot.face records movement, not facing — the back-pedal facing is invisible outside the planner again (#2732)']
+                                                                    : MUT_SEED
+                                                                    ? ['else if (t.kind === \'toStock\') bot.path = bfsKnee(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id, bot.face)\n    else if (t.kind === \'toOut\') bot.path = bot.carry\n        ? bfsKnee(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id, bot.face)', 'else if (t.kind === \'toStock\') bot.path = bfsKnee(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id, bot.dir) // MUTANT: the seed rides the movement again (#2738)\n    else if (t.kind === \'toOut\') bot.path = bot.carry\n        ? bfsKnee(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id, bot.dir)', 'the knee planner is blind to the nose — a just-reversed cart plans swings the body doctrine forbids, the live audit clips racks again (#2738)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
@@ -840,15 +844,16 @@ console.log('— shift ladder (#2346) —')
     // every 600-tick mark plus the whistle). The live engine must match at the
     // comma — the hash may differ only by the documented additive shift bits.
     const TRACE = {
-        // #2724 RE-PIN: turn-count routing — loaded legs take the corner
-        // instead of stair-stepping, so arrivals, packs and the marks move
-        // (avg −30 vs the #2711 marks; wins hold: all three careers end W
-        // at 1412/1310/1295). Traces regenerated from the live engine; the
-        // prior marks belonged to the stair-step knee floor (#2711 rig law:
-        // literal traces, re-measured, not vibes).
-        4242: '600:45:1:0|1200:144:2:0|1800:109:2:0|2400:114:3:0|3000:79:4:0|3600:110:5:0|4200:135:7:0|4800:268:8:0|5400:358:9:0|6000:675:10:0|6600:715:11:0|7200:830:12:0|7800:955:12:0|8400:980:15:0|9000:1412:16:0|END win 1412',
-        1337: '600:45:1:0|1200:113:2:0|1800:138:3:0|2400:93:4:0|3000:53:4:0|3600:117:6:0|4200:147:7:0|4800:-8:8:0|5400:140:9:0|6000:615:10:0|6600:720:11:0|7200:859:12:0|7800:1210:14:0|8400:1210:14:0|9000:1310:16:0|END win 1310',
-        777: '600:50:1:0|1200:50:2:0|1800:20:3:0|2400:45:4:0|3000:50:4:0|3600:11:5:0|4200:21:6:0|4800:34:7:0|5400:387:9:0|6000:432:10:0|6600:715:11:0|7200:835:12:0|7800:1275:13:0|8400:1290:14:0|9000:1295:15:0|END win 1295',
+        // #2738 RE-PIN: the knee planner now seeds from bot.face (the doctrine
+        // bearing), so just-reversed carts refuse the pivots their movement seed
+        // used to allow — the routed legs move again (marks vs the #2724 pin:
+        // 1382/1295/1626, avg +11; wins hold: all three careers end W, and the
+        // live body-clip tripwire in this file went 14 → 0 exactly as promised).
+        // Traces regenerated from the live engine (#2711 rig law: literal
+        // traces, re-measured, not vibes).
+        4242: '600:45:1:0|1200:144:2:0|1800:109:2:0|2400:114:3:0|3000:79:4:0|3600:110:5:0|4200:135:7:0|4800:268:8:0|5400:368:9:0|6000:633:10:0|6600:715:11:0|7200:1000:12:0|7800:1020:13:0|8400:1372:15:0|9000:1382:15:0|END win 1382',
+        1337: '600:45:1:0|1200:118:2:0|1800:138:3:0|2400:93:4:0|3000:53:4:0|3600:362:6:0|4200:397:7:0|4800:12:8:0|5400:145:9:0|6000:610:10:0|6600:725:11:0|7200:859:12:0|7800:1210:14:0|8400:1210:14:0|9000:1295:15:0|END win 1295',
+        777: '600:50:1:0|1200:50:2:0|1800:20:3:0|2400:45:4:0|3000:50:4:0|3600:21:5:0|4200:21:6:0|4800:46:7:0|5400:427:9:0|6000:467:10:0|6600:803:10:0|7200:1033:12:0|7800:1094:12:0|8400:1449:15:0|9000:1626:16:0|END win 1626',
     }
     let bad = null
     for (const seed of Object.keys(TRACE)) {
@@ -920,8 +925,10 @@ console.log('— shift ladder (#2346) —')
         // and each seed becomes a different chaotic world (single shifts all
         // still win; per-night waits are flat-to-lower and jams stay zero,
         // the floor drives smoother). Depth swings both ways vs the #2711
-        // band (4–6): measured 3/6/4/6/2. Honesty floor: every seed climbs
-        // past the first rung-and-a-bit, and the mean still clears four.
+        // band (4–6): #2724 measured 3/6/4/6/2; #2738's facing seed
+        // re-shuffled the draws again — measured 4/7/4/9/4. Honesty floor:
+        // every seed climbs past the first rung-and-a-bit, and the mean still
+        // clears four.
         ok(runs >= 2, `career seed ${seed}: the ladder climbs rung by rung (${runs} banked${end ? `, the ramp bites: ${end}` : ''})`)
     }
     ok(depth.reduce((s, r) => s + r, 0) / depth.length >= 4, `career depth averages ${depth.join('/')} — the mean still clears four rungs (#2724 re-measure)`)
@@ -1753,7 +1760,9 @@ console.log('— manners polish (#2700, source pins + attract sweep) —')
         // point-cart floor measured in #2700) — window widened to 36s of screen
         // time, still inside the first minute on the shop window.
         // #2724: turn-count routing re-measured the window — the five seeds above
-        // duck at 4719–5283, the same band, honest replacement not a wider gate.
+        // duck inside it, honest replacement not a wider gate.
+        // #2738: the facing seed re-shuffled the loops again; the new five duck
+        // at 4614–5478, the same 36–96s band, re-measured not widened.
         if (!(won && first > 3600 && first < 5800)) allDuck = false
     }
     ok(allDuck, `warm attract floors duck at ${JSON.stringify(detail)} — every demo loop shows courtesy inside the first minute on screen (#2700)`)
@@ -2293,7 +2302,7 @@ console.log('— turn-count routing (#2724): loaded legs corner instead of stair
     // the pinned body-clip count is the live tripwire for #2738.
     {
         const NBF = [[0, -1], [1, 0], [0, 1], [-1, 0]]
-        const CLIPS_BODY = 14 // #2738 tripwire: live body-doctrine clips on the three audited careers, measured 2026-11-19. Must move in the PR that seeds the knee planner from the facing — then this flips to 0.
+        const CLIPS_BODY = 0 // #2738 CLOSED: the knee planner seeds from bot.face, so the driven traffic keeps the body doctrine — live clips are a zero-tolerance law now; a regression to the movement seed makes the audited careers clip racks again and reddens this count.
         let matches = 0, mismatches = 0, backs = 0, swept = 0, clipBody = 0
         for (const seed of [4242, 1337, 99]) {
             const gs = makeGame(seed)
@@ -2325,7 +2334,7 @@ console.log('— turn-count routing (#2724): loaded legs corner instead of stair
         }
         ok(mismatches === 0, `facing law holds outside the planner: ${matches} steps reconstructed, ${backs} back-pedals kept the bearing, 0 divergences (#2732)`)
         ok(swept > 0, `loaded plan-pivots sweep ${swept} audited diagonals — the live knee audit #2724 had to remove is writable from state alone (#2732)`)
-        ok(clipBody === CLIPS_BODY, `body-doctrine tripwire holds at ${clipBody} live clips — every one is the seed-vs-facing lie (#2738) on driven traffic; the count must move in the PR that fixes the seed (${clipBody})`)
+        ok(clipBody === CLIPS_BODY, `body-doctrine holds on driven traffic: ${clipBody} live clips on the three audited careers — the seed-vs-facing lie (#2738) is closed, and any regression to a movement seed re-opens it here (${clipBody})`)
         ok(state(makeGame(1337)).robots.every((r) => Number.isInteger(r.face) && r.face >= 0 && r.face <= 3), 'the DEV eye reports the facing beside the movement (#2732)')
     }
     {
@@ -2418,13 +2427,14 @@ console.log('— turn-count routing (#2724): loaded legs corner instead of stair
             ok(P !== null && P[0] && !(P[0].x === cx && P[0].y === cy - 1), 'facing east, the planner never steps north through the racked elbow — the knee is in the route (#2732)')
             ok(Q !== null && Q[0] && Q[0].x === cx && Q[0].y === cy - 1, 'the same north step is free facing west — the refusal is bearing-shaped, not cell-shaped: the geometry discriminates, so the seed input is load-bearing (#2732)')
             const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
-            // The repath call sites still seed bfsKnee with bot.dir — and the
-            // two answers above PROVE that seed is load-bearing. Fixing the
-            // seed moves the autopilot's physics, re-shuffling the #2346 career
-            // marks and the #2700 attract-courtesy seeds; that honest
-            // re-measure is filed as its own feedback item (#2738).
-            ok(/, bot\.id, bot\.dir\)\n\s*: bfs\(gs, bot\.x, bot\.y, \(x, y\) => OUT_DOCKS/.test(simSrc),
-                'the seed gap is honest and tracked — repath still seeds from the movement, and this block says WHY (#2732 → #2738)')
+            // #2738: the seed gap #2732 filed is closed — both repath bfsKnee
+            // sites seed with bot.face, the doctrine-correct bearing this rig
+            // just proved load-bearing. Demand it here so a regression to the
+            // movement seed reddens this file at the rig that showed why.
+            const faceSites = (simSrc.match(/bfsKnee\([^;]*?\bbot\.face\)/g) || []).length
+            const dirSites = (simSrc.match(/bfsKnee\([^;]*?\bbot\.dir\)/g) || []).length
+            ok(faceSites === 2 && dirSites === 0,
+                `repath seeds the knee from the facing, not the movement — ${faceSites}/2 sites on bot.face, ${dirSites} stale on bot.dir (#2732 → #2738)`)
         }
     }
     // repath-on-land: a rack may not land on a claimed route. Task a loaded
