@@ -1067,14 +1067,12 @@ function repath(gs, bot) {
     else if (t.kind === 'toArm') bot.path = bfs(gs, bot.x, bot.y, nearCell(ARM_CELL.x, ARM_CELL.y), bot.id)
     // #2711: the loaded legs (stow home, deliver out) plan with the body —
     // a cart carrying freight will not turn where its swing clips a rack.
-    // #2732 NOTE: seeding still rides bot.dir. Seeding from bot.face (the
-    // doctrine-correct bearing) is proven load-bearing by the bearing-contrast
-    // rig in floorbosscheck — but it moves the autopilot's physics and would
-    // re-shuffle the #2346 career marks and the attract-courtesy seeds;
-    // that honest re-measure is filed as feedback #2738.
-    else if (t.kind === 'toStock') bot.path = bfsKnee(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id, bot.dir)
+    // #2738: seed from bot.face, the doctrine-correct bearing (#2711: reversing
+    // keeps the facing — bfsKnee's dIn0 is "the cart's current facing"). The
+    // bearing-contrast rig in floorbosscheck holds the seed honest.
+    else if (t.kind === 'toStock') bot.path = bfsKnee(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id, bot.face)
     else if (t.kind === 'toOut') bot.path = bot.carry
-        ? bfsKnee(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id, bot.dir)
+        ? bfsKnee(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id, bot.face)
         : bfs(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id)
     else bot.path = []
     if (bot.path == null) { bot.path = []; bot.stall++ } else bot.stall = 0

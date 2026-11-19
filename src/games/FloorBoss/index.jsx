@@ -133,7 +133,7 @@ const FloorBossGame = () => {
         let duckTaughtOn = null // the game instance whose first duck has been named (new makeGame resets per identity; shiftstart re-names per night)
         let duckTeach = null // { x, y, from, until } — the GIVE WAY plate on a shift's first duck
         const givenAt = new Map() // "x,y" -> tick — the moment a rival crossed a vacated cell: that bay reads GIVEN
-        const ATTRACT_SEEDS = [48, 94, 6, 72, 3] // #2724 re-measured after turn-count routing: the #2711 window seeds (20/42/29/40/30) went cold — legs corners take merges off the bay mouths, so those three never duck inside the minute. New window seeds win AND show their first courtesy at 4947/4719/5238/5117/5283 — inside the same 36–96s band a visitor watches
+        const ATTRACT_SEEDS = [1, 20, 22, 26, 31] // #2738 re-measured after the facing seed: the #2724 window seeds (48/94/6/72/3) went cold — a reversed cart's nose now refuses the pivots its tail used to take, so those loops stopped ducking inside the minute. New window seeds win AND show their first courtesy at 4704/5478/5448/5444/4614 — inside the same 36–96s band a visitor watches
         const orderEnter = new Map() // order id -> slide-in ticks left
         const arcItems = [] // transfer ghosts { x0,y0,x1,y1,k,n?,kind,servo? } — bay handoff + servo carry (#1877)
         let armTip = { x: 0, y: 0 }
