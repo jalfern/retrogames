@@ -637,6 +637,23 @@ export function kneeTurn(gs, x, y, dIn, dOut, extra = null) {
     if (dIn[0] === -dOut[0] && dIn[1] === -dOut[1]) return false // backpedal — body stays in lane (#2546 spur law)
     return kneeRack(gs, x + dIn[0] + dOut[0], y + dIn[1] + dOut[1], extra)
 }
+// ---- #2760 TAIL LAW — the counterweight's half of the body ----
+// #2711 gave the cart its knee: the load's NOSE swings through the outer
+// diagonal B + dIn + dOut. A body with weight only at its nose is still a
+// fiction: a yard vehicle pivots about its rear axle, and the counterweight
+// tail swings the OPPOSITE way, through the diagonal B − dIn − dOut. That is
+// why KEEP SWING CLEAR paint lives on BOTH sides of real yard bends — and it
+// is the exact cell the point-plus-knee model drives through blind today.
+// Same discipline as the knee: racks are the movable hazard, walls are fixed
+// geometry (#2546 doctrine); straights and backpedals sweep nothing; unloaded
+// legs carry only forks and never consult the body (byte-identical BFS,
+// #1917). The law as one question: does a loaded cart pivoting at (x,y)
+// clip a rack with its tail?
+export function tailTurn(gs, x, y, dIn, dOut, extra = null) {
+    if (dIn[0] === dOut[0] && dIn[1] === dOut[1]) return false // straight — no sweep
+    if (dIn[0] === -dOut[0] && dIn[1] === -dOut[1]) return false // backpedal — body stays in lane
+    return kneeRack(gs, x - dIn[0] - dOut[0], y - dIn[1] - dOut[1], extra)
+}
 // The knee-driven service net: same anchors as serviceNet (docks, pads, bay),
 // same fixed flood, but a seeded turn is only rideable if its knee is clear.
 // States are (cell, heading) — every anchor can be entered facing any way; a
@@ -677,7 +694,14 @@ export function kneeNet(gs, extra) {
     for (const k of seen) cells.add(k.slice(0, k.lastIndexOf(',')))
     return cells
 }
-// The knee-blocked turns standing on the LIVE floor: open cell B with open,
+// #2760 — the tail-driven service net lives in the harness now, as a twin
+// implementation: floorbosscheck §TAIL floods kneeNet and whole-body nets side
+// by side and gates them equal on every reachable board (that equality is the
+// proof the click-refusal half of the tail law would be dead code — measured
+// netdiff=0; see the strandsFloor note). The sim ships the physics: tailTurn
+// (the geometry), bfsKnee (loaded carts never turn into their tail),
+// repath-on-land (a rack landing across a route's backswing breaks it), and
+// liveTails (the QA eye).
 // perpendicular arms dIn/dOut and a rack on the swept diagonal B+dIn+dOut.
 // A loaded cart meeting this turns the long way — the painter/DEV eye read
 // it, the routers enforce it. Pure, fixed order, zero footprint.
@@ -695,6 +719,29 @@ export function liveKnees(gs) {
                 if (ix === -ox && iy === -oy) continue // backpedal — body stays in lane (and never in a plan)
                 if (!open(x + ox, y + oy)) continue
                 if (gs.racks.some((r) => r.x === x + ix + ox && r.y === y + iy + oy)) out.push({ x, y, in: i, out: j, kx: x + ix + ox, ky: y + iy + oy })
+            }
+        }
+    }
+    return out
+}
+// #2760 — the tail-blocked turns standing on the LIVE floor: open cell B with
+// open, perpendicular arms dIn/dOut and a rack on the COUNTERWEIGHT diagonal
+// B − dIn − dOut. The knee eye's mirror: the painter/DEV read it, the
+// routers enforce it. Pure, fixed order, zero footprint.
+export function liveTails(gs) {
+    const open = (x, y) => inGrid(x, y) && map[y][x] === CELL.FLOOR && !gs.racks.some((r) => r.x === x && r.y === y)
+    const out = []
+    for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < COLS - 1; x++) {
+        if (!open(x, y)) continue
+        for (let i = 0; i < 4; i++) {
+            const [ix, iy] = NB[i]
+            if (!open(x - ix, y - iy)) continue // the arrival arm: a cart comes INTO B from B − dIn
+            for (let j = 0; j < 4; j++) {
+                const [ox, oy] = NB[j]
+                if (ix === ox && iy === oy) continue // straight — no sweep
+                if (ix === -ox && iy === -oy) continue // backpedal — body stays in lane (and never in a plan)
+                if (!open(x + ox, y + oy)) continue
+                if (gs.racks.some((r) => r.x === x - ix - ox && r.y === y - iy - oy)) out.push({ x, y, in: i, out: j, tx: x - ix - ox, ty: y - iy - oy })
             }
         }
     }
@@ -730,6 +777,14 @@ function strandsFloor(gs, x, y) {
         if (!side(x, y)) return 'knee'
         for (const r of gs.racks) if (!side(r.x, r.y)) return 'knee'
     }
+    // #2760 note — the seventh law was MEASURED, not assumed, and the
+    // placement half was refused as dead code: a whole-body net (knee AND
+    // tail clear) holds the identical cells to kneeNet on every board this
+    // floor can reach (seed floors cell-by-cell, the 12-spot blueprint, dense
+    // rows, five careers sampled per second — netdiff=0 everywhere). A rack
+    // that would clip a sole-arrival bend's tail would already have fallen to
+    // the knee/pocket law at its own click. The counterweight ships where the
+    // physics actually bites: bfsKnee routing + repath-on-land + liveTails.
     return false
 }
 
@@ -833,7 +888,8 @@ export function bfsKnee(gs, fx, fy, pred, ignoreId, dIn0) {
                 if (blocked(gs, x, y, ignoreId)) continue
                 const back = hx === -dx && hy === -dy // backpedal — legal: forklifts drive both ways, load trailing; the knee never sweeps the reverse
                 const turn = !back && (hx !== dx || hy !== dy)
-                if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // the knee is racked — the swing would clip it
+                if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // the knee is racked — the swing would clip it (#2711)
+                if (turn && kneeRack(gs, n.x - hx - dx, n.y - hy - dy)) continue // the tail is racked — the counterweight would clip it (#2760)
                 const t = n.t + (turn ? 1 : 0) // #2724: count the pivot
                 const i2 = back ? n.i : i // reversing keeps the facing — the body never rotates
                 const k2 = `${x},${y},${i2}`
@@ -929,9 +985,11 @@ function cellClick(gs, x, y, seat = 0) {
         // actually breaks re-plan — a route that walks into the new cell, or
         // pivots a turn whose sweep diagonal it became (the live knee audit
         // caught the crossing-only version lying: the swing clips a wall that
-        // appeared after the plan). Untouched routes keep their bytes; the
-        // pocket/knee laws guarantee the targets stay reachable, so a
-        // replan always finds a road. Deterministic, no rng, O(path) scan.
+        // appeared after the plan). #2760 extends the sweep to the tail: the
+        // counterweight diagonal the nose audit never saw. Untouched routes
+        // keep their bytes; the pocket/knee laws guarantee the targets stay
+        // reachable, so a replan always finds a road. Deterministic, no rng,
+        // O(path) scan.
         for (const b of gs.robots) {
             if (!b.path.length) continue
             let broken = false
@@ -940,7 +998,8 @@ function cellClick(gs, x, y, seat = 0) {
                 if (c.x === x && c.y === y) { broken = true; break } // walks into the wall
                 const d = NB.findIndex(([ax, ay]) => c.x - px === ax && c.y - py === ay)
                 if (d !== -1 && d !== pd && d !== (pd + 2) % 4 &&
-                    px + NB[pd][0] + NB[d][0] === x && py + NB[pd][1] + NB[d][1] === y) { broken = true; break } // sweeps through it
+                    (px + NB[pd][0] + NB[d][0] === x && py + NB[pd][1] + NB[d][1] === y || // the nose sweeps through it (#2711)
+                     px - NB[pd][0] - NB[d][0] === x && py - NB[pd][1] - NB[d][1] === y)) { broken = true; break } // …or the counterweight tail does (#2760)
                 px = c.x; py = c.y; pd = d
             }
             if (broken) repath(gs, b)

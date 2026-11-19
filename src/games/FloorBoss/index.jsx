@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
-    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, kneeEscapes, swingMarkers, flowMarks, flowHeat, liveKnees,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, kneeEscapes, swingMarkers, flowMarks, flowHeat, liveKnees, liveTails,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -133,7 +133,7 @@ const FloorBossGame = () => {
         let duckTaughtOn = null // the game instance whose first duck has been named (new makeGame resets per identity; shiftstart re-names per night)
         let duckTeach = null // { x, y, from, until } — the GIVE WAY plate on a shift's first duck
         const givenAt = new Map() // "x,y" -> tick — the moment a rival crossed a vacated cell: that bay reads GIVEN
-        const ATTRACT_SEEDS = [1, 20, 22, 26, 31] // #2738 re-measured after the facing seed: the #2724 window seeds (48/94/6/72/3) went cold — a reversed cart's nose now refuses the pivots its tail used to take, so those loops stopped ducking inside the minute. New window seeds win AND show their first courtesy at 4704/5478/5448/5444/4614 — inside the same 36–96s band a visitor watches
+        const ATTRACT_SEEDS = [55, 74, 107, 126, 148] // #2760 re-measured after the tail law: the #2738 window seeds (1/20/22/26/31) went cold — counterweight routing reshuffles the congestion that produces courtesy, and four of those loops no longer duck inside the minute. Seeds 1–240 re-swept; these five win AND show their first courtesy at 5324/5220/5172/4827/4593 — mid-band, far from both window edges, inside the same 36–96s span a visitor watches
         const orderEnter = new Map() // order id -> slide-in ticks left
         const arcItems = [] // transfer ghosts { x0,y0,x1,y1,k,n?,kind,servo? } — bay handoff + servo carry (#1877)
         let armTip = { x: 0, y: 0 }
@@ -940,6 +940,13 @@ const FloorBossGame = () => {
                     const nv = [[0, -1], [1, 0], [0, 1], [-1, 0]][b.face] || [0, -1]
                     ctx.fillStyle = 'rgba(255,210,63,0.4)'
                     ctx.fillRect(bx + nv[0] * 10 - 3, by + nv[1] * 10 - 3, 6, 6)
+                    // #2760: and the body now has the other end too — a steel
+                    // counterweight nub on the edge OPPOSITE the facing, the side
+                    // whose diagonals the tail law sweeps. Amber stays the law
+                    // colour, steel is just mass: the backswing that re-routes a
+                    // plan (or triggers repath-on-land) is readable at a glance.
+                    ctx.fillStyle = 'rgba(150,170,192,0.55)'
+                    ctx.fillRect(bx - nv[0] * 10 - 3, by - nv[1] * 10 - 3, 6, 6)
                     drawItem(ctx, b.carry, bx, by - 14 + Math.sin(tick * 0.12) * 1, 0.85)
                 }
             }
@@ -1678,6 +1685,7 @@ const FloorBossGame = () => {
                 flow: () => flowMarks(gs).map((m) => ({ axis: m.axis, n: m.flow, cells: m.cells.map((c) => `${c.x},${c.y}`).join('|') })), // #2622 item 3: the two-way grammar, readable to QA
                 heat: () => flowHeat(gs).map((c) => ({ x: c.x, y: c.y, n: c.n })), // #2680: live traffic heat — route claims per cell, readable to QA
                 knees: () => liveKnees(gs).map((m) => ({ x: m.x, y: m.y, i: m.in, o: m.out, k: `${m.kx},${m.ky}` })), // #2711: knee-blocked turns on the live floor — QA eye
+                tails: () => liveTails(gs).map((m) => ({ x: m.x, y: m.y, i: m.in, o: m.out, t: `${m.tx},${m.ty}` })), // #2760: tail-blocked turns on the live floor — the counterweight diagonal a rack owns; QA eye
                 kneeTeach: (x, y) => kneeEscapes(gs, x, y), // #2711 s2: the lesson a refused click gets — bends + honest beside-places, QA eye
                 yields: () => gs.robots.filter((b) => b.yield).map((b) => ({ id: b.id, x: b.x, y: b.y, fx: b.yield.fx, fy: b.yield.fy, t: b.yield.t })), // #2692: carts holding shoulders — the pull-off, readable to QA
                 ducks: () => gs.ducks, // #2692: the shift's duck tally
