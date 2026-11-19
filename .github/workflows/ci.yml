@@ -534,18 +534,21 @@ jobs:
           done
           echo "dev server never came up"; cat /tmp/vite.log; exit 1
 
-      - name: Run the self-verifying suite
-        run: npm run verify -- --full
-
       # MICPROBE (#2725): stamp the RUNNER's Chrome capture shape for the
-      # fake-file suites (#2709). Rides this manual tier so a brand-new
-      # nightly file (micprobe-nightly.yml) can prove its command on a runner
-      # BEFORE its first merge — GitHub resolves workflow_dispatch only on the
-      # default branch, so the nightly itself cannot self-prove (rule 5a).
+      # fake-file suites (#2709) — FIRST among the browser steps, because the
+      # engine identity matters most on a run where the flaky suites go red.
+      # No SHOT_CHANNEL here on purpose: this tier (verify/fpscheck) runs the
+      # runner's system Chrome (channel 'chrome'), so the stamp measures the
+      # browser this job's own suite drives. The nightly tier (playwright
+      # chromium, `full-smoke`'s engine) is stamped by micprobe-nightly.yml.
+      # Also the rule-5a path: GitHub resolves workflow_dispatch only on the
+      # default branch, so the brand-new micprobe-nightly.yml cannot self-prove
+      # from a branch — the identical command proves on a runner through here.
       - name: Micprobe — runner Chrome capture shape (#2725)
         run: npm run micprobe
-        env:
-          SHOT_CHANNEL: chromium
+
+      - name: Run the self-verifying suite
+        run: npm run verify -- --full
 
       # TETRIS play-driver: real keys, pixels vs the DAS ledger, honest top-out.
       # It passes 24/24 locally but goes flaky under sustained CDP polling on the
