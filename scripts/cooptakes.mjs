@@ -151,7 +151,7 @@ async function phoneRun(g, { voice = true, decline = false, revoke = false } = {
     const url = `http://localhost:${PORT}/retrogames${g.route}?store=${encodeURIComponent(BASE)}${g.query || ''}`
     await page.goto(url, { waitUntil: 'load' })
 
-    const out = { ok: false, uploaded: false, key: null, last: null, row: null, ev: null, rec: null, gateUp: false, why: '' }
+    const out = { ok: false, uploaded: false, key: null, last: null, row: null, ev: null, rec: null, gateUp: false, why: '', tapsLanded: 0 }
 
     // attract -> human start (one tap; every game starts on any input)
     try { await page.waitForSelector('canvas', { timeout: 15000 }) } catch { out.why = 'canvas never mounted'; await context.close(); return out }
@@ -211,13 +211,16 @@ async function phoneRun(g, { voice = true, decline = false, revoke = false } = {
     if (!armed) { out.why = 'recorder never opened after consent'; await context.close(); return out }
 
     // real input for a few seconds: keyboard arrows + space (what VirtualControls
-    // dispatches) and pointer taps on the A button. The tap carries a SHORT
-    // timeout on purpose: bd's first-vent teach panel (#1812) overlays the pad
-    // while it's due, so an actionability wait can burn 30 s per tap — that
-    // starved the whole run (#1711 review: bd banked 1/1082 pads with a 3.5-min
-    // leg; the same loop minus the tap banks 229/1058 and ends naturally in
-    // 18 s). A tap that lands is a bonus; the keyboard path is what VirtualControls
-    // dispatches anyway, so it carries the proof either way.
+    // dispatches) and pointer taps on the A button. #2759: the old loop tapped
+    // right after keyboard.press — but VirtualControls HIDES the pad on trusted
+    // keydown (step-5 feel rule, #290), so the element unmounted and every tap
+    // burned its whole timeout (the pre-fix 30 s waits starved the bd run to
+    // 1/1082 pads in 3.5 min, #1711). It was never the teach panel: bdteachpad
+    // proves the panel is canvas paint and hit-test resolves to the A button
+    // itself while the lesson is due. A bare touchscreen tap re-shows the pad
+    // (touchstart → show), and the selector tap then lands in ~300 ms.
+    const WAKE = { x: 195, y: 700 } // neutral gap in the pad row at 390x780
+    let tapsLanded = 0
     let heldK = null
     for (let i = 0; i < 6; i++) {
         const k = i % 2 ? 'ArrowRight' : 'ArrowLeft'
@@ -226,9 +229,14 @@ async function phoneRun(g, { voice = true, decline = false, revoke = false } = {
         heldK = k
         await page.waitForTimeout(420)
         await page.keyboard.press('Space').catch(() => {})
-        await page.tap('[data-vc="a"]', { timeout: 1500 }).catch(() => {})
+        if (!(await page.evaluate(() => !!document.querySelector('[data-vc="a"]')))) {
+            await page.touchscreen.tap(WAKE.x, WAKE.y).catch(() => {})
+            await page.waitForTimeout(120) // React re-mount of the pad
+        }
+        if (await page.tap('[data-vc="a"]', { timeout: 1200 }).then(() => true).catch(() => false)) tapsLanded++
         await page.waitForTimeout(330)
     }
+    out.tapsLanded = tapsLanded
     if (heldK) await page.keyboard.up(heldK).catch(() => {})
     for (const k of ['ArrowLeft', 'ArrowRight']) await page.keyboard.up(k).catch(() => {})
 
@@ -302,6 +310,11 @@ for (const g of cleanRuns) {
         const pads = res.rec && res.rec.slots && res.rec.slots[0] ? res.rec.slots[0].pads : []
         const pressed = pads.filter((x) => Object.keys(x).length > 0).length
         p('the pad stream holds the thumb\'s real presses', pressed >= 3 && pads.length === res.rec.ticks, `${pressed}/${pads.length} non-empty pads of ${res.rec && res.rec.ticks} ticks`)
+        // #2759: the tap route must WORK, not just ride along. The pre-fix loop
+        // pressed a trusted key then tapped the pad the key had just hidden —
+        // every tap timed out and the missequencing hid behind a 1500 ms wait.
+        // Wake-then-tap: the touch re-shows the pad and taps land between keys.
+        p('pad taps land between keyboard presses (#2759 wake-then-tap)', res.tapsLanded >= 3, `${res.tapsLanded}/6 taps landed — a 0 means the pad hides on keydown again and the loop lost its wake`)
     }
     p('plaicraft:evidence replay-verifies the take (the nightly grader\'s own command)',
         !!res.ev && res.ev.replayOk === true, res.ev ? `${res.ev.error || ''} ticks:${res.ev.ticks}` : 'evidence run produced no report')
