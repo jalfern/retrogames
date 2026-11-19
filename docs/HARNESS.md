@@ -437,3 +437,16 @@ line from worker.js SOURCE — 5 gates red, restored green. `plaicraft:evidence 
 (18 gates) and `plaicraft:clap` (15 gates, ±50 ms clap proof through a real browser
 recording) now run their pipelines on the same sim, so when #1730 binds the bucket,
 `npm run plaicraft:evidence` against prod R2 is a mechanical finish, not first contact.
+
+
+**Verifying a prod ship by content (#2740 lessons).** Three traps stack in the
+`jalfern.com` verify poll: (1) small statically-imported games ride the ENTRY chunk
+(`index-*.js`), not a `<Game>-*.js` lazy chunk — grep the entry the live HTML names
+(Homebody lives in `index-*`; only heavy deps like three.js split per route);
+(2) minified bundles are ONE line — `grep -c` caps at 1, so count with
+`grep -o … | wc -l` before comparing a threshold; (3) the custom-domain edge can
+serve `x-vercel-cache: HIT` HTML for minutes AFTER a `success` production deployment
+(age 457 s observed with two merges invisible) — a content-stale answer is *stale,
+not broken*: check `deployments?environment=production` says `success` for the merge
+SHA, then wait the cache out. Diagnose order: markers in the local `dist` → live HTML
+entry name → marker counts in that entry → deployment status → cache age.
