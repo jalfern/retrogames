@@ -281,6 +281,7 @@
     "lint:lander": "eslint src/games/LunarLander src/components src/utils src/config src/main.jsx scripts/landercheck.mjs scripts/landerreplaycheck.mjs scripts/landerpolicycheck.mjs scripts/landerheat.mjs scripts/landerheatcheck.mjs scripts/landerplay.mjs scripts/lib",
     "landercheck": "node scripts/landercheck.mjs",
     "contractcheck": "node scripts/contractcheck.mjs",
+    "contracheck": "node scripts/contracheck.mjs",
     "claimcheck": "node scripts/claimcheck.mjs",
     "lanecheck": "node scripts/lanecheck.mjs",
     "sleepwatchcheck": "node scripts/sleepwatchcheck.mjs",

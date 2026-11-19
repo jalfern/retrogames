@@ -222,6 +222,7 @@ const RallyCoDriverGame = lazy(() => import('../games/RallyCoDriver'))
 
 // Bomb Defuse: the simultaneous two-hand co-op sim chunks with the game (#1800).
 const BombDefuseGame = lazy(() => import('../games/BombDefuse'))
+const ContraGame = lazy(() => import('../games/Contra'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1276,5 +1277,18 @@ export const GAMES = [
         theme: 'dark',
         description: 'An original simultaneous two-hand co-op defusal pair (#1800, PLAICRAFT #1711 fifth title): NOTHING ONE HAND DOES COUNTS. Every step of every bomb has ONE sync window and demands BOTH seats inside it - turn the two keys together (SYNC), snip both blades through the same lit color (CUT), or one player pins the stabilizer bar while the other seats the swinging pressure needle into the green (VENT: hold + seat, or the pressure surges). Strikes do not end the run - they EAT TIME: a broken sync window costs four seconds, nicking the wrong wire two, a vent surge six, and an unvented pressure step burns the fuse double while it waits. Three bombs (60/50/40 seconds) with windows shrinking from 1.25 s to 0.8 s and steps growing 3-4-5; zero fuse and the field unit is a smoking hole. Solo, an honest CPU partner covers seat 2 - it leads when you stall and follows the instant you arm a blade; at the select screen, CO-OP seats a second keyboard crew (WASD + F/G). Words coach but never act: V opens the mic and "both keys", "cut blue", "hold!" pulse the right controls (the pad commits). Seeded and deterministic (integer-hashed state - seed + per-seat pads replay to the same hashes) so the recorder and a future model seat can take either hand.',
         controls: ['Arrows / d-pad: UP/DOWN cycle your cutter arm through RED-BLUE-GREEN-YELLOW (CUT steps)', 'SPACE / ACT: turn your key (SYNC) - snip your blade (CUT) - seat the needle (VENT)', 'B / HOLD: pin the stabilizer bar while your partner seats the pressure needle', 'Both seats must land inside the flashing SYNC WINDOW - watch the bar drain', 'Attract: any key or tap - ARROWS pick SOLO (+CPU) or CO-OP (2P keyboard) - SPACE starts', 'Seat 2 (CO-OP): WASD aims the arm - F acts - G holds the bar', 'V: coaching words on the mic - "both", "cut red", "hold" - words pulse, pads commit', 'Nicking a wrong wire costs 2 s, a broken sync window 4 s, a surge 6 s; zero fuse = KABOOM; three bombs cleared = the run', WATCH_HELP + ' — the two-hand solver that clears all three bombs drives both seats — any input takes back your hand', '?: pause and read the crew card'],
+    },
+    {
+        path: '/contra',
+        pad: { layout: 'dpad', aLabel: 'JUMP', buttons: [{ label: 'FIRE', code: 'KeyX' }], reason: 'the cabinet seam: the thumb jumps and the finger fires — arrows run and aim all eight ways' },
+        builtBy: 'forge',
+        added: '2026-11-19',
+        visibility: 'private',
+        tapStart: true,
+        component: ContraGame,
+        label: 'CONTRA',
+        theme: 'dark',
+        description: 'The run-and-gun Jon commissioned for the shelf (#1530 — "which title joins the arcade next? — CONTRA"), stage 1 of Konami 1987\'s jungle. Arrows run and AIM IN EIGHT DIRECTIONS while you run; one hit kills — on both sides — and you carry three lives and a brief flicker of mercy on respawn. Military bullets trace toward you from soldiers that sprint in from the tree line and from SANDBAG TURRET POSTS that lead their shots; TNT BARRELS sit on the path and chain when shot, killing anything the blast reaches — including you if you linger. Catch the FLYING CAPSULE and the rifle becomes SPREAD — five shots fanned wide, the gun that made this game — and the weapon is yours until you die, then it is back to the rifle. Six screens of parallax jungle — mountains, canopy, the grass-lipped floor, the giant fronds framing the cabinet corners — run east to the bolted BASE GATE to clear the stage. The attract demo runs the autopilot the harness proves against: seed + pads replay to the same hashes, so a recording or a future model seat can take the run later.',
+        controls: ['Arrows / d-pad: run and aim all 8 ways (aim up, or diagonals while running; aim down only in mid-air)', 'SPACE / Z / A: jump — hold DOWN + jump on a walkway to drop through', 'X / C / B(FIRE): the trigger — hold for auto-fire', 'Catch the orange CAPSULE for SPREAD — five-way shots, kept until you die', 'Shoot TNT barrels to chain them — the blast kills soldiers and turrets, and you if you are too close', 'Touching a soldier is a hit; turret shots lead where you are running', 'Three lives, one hit each — reach the base gate at the end of the jungle to clear the stage', 'Attract: any key or tap takes the seat from the autopilot', '?: pause and read the ops card'],
     },
 ]

@@ -54,6 +54,7 @@ const GAMES = [
     { id: 'invaders', path: '/invaders' },
     { id: 'adventure', path: '/adventure' }, // POLISH #1568: join the spine — invisible to every shared harness before this
     { id: 'bomb-defuse', path: '/bomb-defuse' }, // #1800: the recorder's fifth title
+    { id: 'contra', path: '/contra' }, // #2779: Jon's #1530 commission, S1 the jungle
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
@@ -131,6 +132,10 @@ const PATTERNS = {
     // eat time, strikes only for broken windows) and whiffed VENT seats are
     // duds — worst-case costs stay far under bomb 0's 3600-frame fuse.
     'bomb-defuse': (i) => ({ up: i % 5 === 0, down: false, left: false, right: false, a: i % 16 === 0, b: true }),
+    // #2779: run-and-gun. Death is legal here (respawn keeps ticks flowing and
+    // the hashes deterministic); the pattern fires steadily, jumps every so
+    // often, and sweeps the aim so 8-way firing gets sampled.
+    contra: (i) => ({ left: i % 89 < 18, right: i % 89 >= 24 && i % 89 < 70, up: i % 53 < 8, down: i % 53 >= 30 && i % 53 < 38, a: i % 17 < 2, b: i % 5 < 3 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 
