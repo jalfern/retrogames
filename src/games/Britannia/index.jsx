@@ -100,6 +100,12 @@ const BritanniaGame = () => {
         // wallBlock bars the foot, openBy names the one tile that lets it in
         let walls = [], wallOpens = [], wallBlock = new Map(), openBy = new Map()
         let S = null
+        // #2770: the DEV contract + the start armed by input that lands while
+        // the map is still unrolling. devUp publishes __game only once the
+        // world stands (end of load()) — a harness must never observe the game
+        // in a state where reset/tick silently no-op (nightly step-1 stall).
+        let devUp = null
+        let startArmed = false
         const fresh = (seed = 0) => ({
             seed: seed >>> 0, tick: 0, x: gates[seed % Math.max(1, gates.length)]?.x ?? 93, y: gates[seed % Math.max(1, gates.length)]?.y ?? 67,
             ship: false, cd: 0, visited: gates.length ? new Set([0]) : new Set(),
@@ -145,7 +151,13 @@ const BritanniaGame = () => {
             openBy = new Map(wallOpens.map((o) => [o.x + ',' + o.y, o.gi]))
             S = fresh(0)
             S.camX = S.x * TILE; S.camY = S.y * TILE
-            setMode('attract')
+            // #2770: the contract publishes only now — the first state() is
+            // drivable, the first step advances. Input that arrived during the
+            // unroll starts the game at the landing (attract's law, honoured
+            // early); stale one-shot taps drain, held keys keep walking.
+            if (devUp) devUp()
+            if (startArmed || held.size > 0) { taps.clear(); startGame() } else setMode('attract')
+            startArmed = false
         }
         load().catch(() => setMode('error'))
 
@@ -1256,7 +1268,16 @@ const BritanniaGame = () => {
         }
         const onKey = (e) => {
             if (screenRef.current === 'attract' || screenRef.current === 'end') { startGame(); return }
-            if (screenRef.current !== 'play' && screenRef.current !== 'loading') return
+            if (screenRef.current === 'loading') {
+                // #2770: a key during the unroll arms the start — the pilgrim
+                // sets off the moment Britannia stands. Held keys walk; there is
+                // nothing to pause or flip yet, so the '?'/'c' branches stay away.
+                startArmed = true
+                const f = KEYS[e.code]
+                if (f) { held.add(f); e.preventDefault() }
+                return
+            }
+            if (screenRef.current !== 'play') return
             if (e.key === '?' || e.key === '`' || (e.key === 'Escape' && screenRef.current === 'play' && S && S.gate < 0)) {
                 pausedRef.current = !pausedRef.current
                 setPaused(pausedRef.current)
@@ -1292,6 +1313,7 @@ const BritanniaGame = () => {
         }
         const onTap = (e) => {
             if (screenRef.current === 'attract' || screenRef.current === 'end') { startGame(); return }
+            if (screenRef.current === 'loading') { startArmed = true; return } // #2770
             if (!S || screenRef.current !== 'play') return
             const rect = canvas.getBoundingClientRect()
             const fit = containMap(VIEW_W, VIEW_H, rect.width, rect.height)
@@ -1322,7 +1344,11 @@ const BritanniaGame = () => {
         exposeFeedbackState(() => ({ tick: S ? S.tick : 0, score: S ? S.visited.size : 0, done: S ? !!S.done : false, seed: S ? S.seed : 0 }))
 
         // --- DEV hooks + contract ---
+        // #2770: the publisher is *built* at mount but *run* at the end of
+        // load(), once the world stands — no harness can ever observe
+        // __game in a state where reset/tick silently no-op.
         if (import.meta.env.DEV) {
+            devUp = () => {
             exposeGame({
                 id: 'britannia',
                 buttons: ['up', 'down', 'left', 'right', 'a'],
@@ -1402,6 +1428,7 @@ const BritanniaGame = () => {
                     { label: 'all gates', run: () => { gates.forEach((g, i) => S.visited.add(i)); S.done = true; setMode('end') } },
                 ],
             })
+            }
         }
 
         raf = requestAnimationFrame(now => { last = now; raf = requestAnimationFrame(frame) })
