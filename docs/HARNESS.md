@@ -251,14 +251,20 @@ fake capture device fed by a baked WAV (`scripts/lib/fakemic.mjs`): hum + full-s
 sample offsets, delivered through **real** gUM, so consent, MediaRecorder, opus, the tick clock, v2
 assembly and the upload all run untouched on real bytes. Measured device priming: **+17.6 ms,
 spread 0.2 ms** (folded into `PRIME_MS`). `plaicraft-clap` and `voicedrive` are migrated;
-`claptestplay` still needs its per-schedule file restructure (several clap schedules share one
-browser today — one file serves one schedule). Honest-source rule: every run stamps its capture
+`claptestplay` got its per-schedule restructure in #2723 (one browser per clap schedule; the
+device replays its file from 0 at every gUM, so retries keep their shape inside a launch). Honest-source rule: every run stamps its capture
 source (`mic capture: fake-file (baked wav)`); a fake-file witness never launders as phone audio —
 line 3 still closes on the audited human take. Under cross-lane load the recorder and rAF starve
 together — that is why the clap drivers carry the #2205 quiet-box preflight: SKIP honestly, never
 grade a starved box. `micprobe-nightly.yml` (advisory, #2725) stamps the GitHub runner itself each
 night — the runner's chromium version + fake-file verdict posted to #2725 when they change — so a
 runner-image engine bump is named before a suite red-herrings it.
+`cooptakes` (#1711 S1, lane-run ~12 min) proves the co-op games' record path LIVE, phone-shaped
+(SOS / BOMB DEFUSE / RALLY CO-DRIVER: consent gate, seed-birth recorder, natural game-overs,
+relaysim round-trip, `plaicraft:evidence` replay, honest seat labels) plus the consent axes —
+declined leaves the store untouched, voiceless lands silent v1, and `--mutant=strip` (sessionStore's
+last-moment voice strip pinned to `[]`) goes red at exactly the audio gates. Until it existed the
+co-op titles had rules pinned (recordcheck) and replay drivers (evidence) but no live drive.
 
 ## The Forge (autonomous game production)
 `/forge` (route `ForgeBoard.jsx`) is the live progress board + request box: it reads the

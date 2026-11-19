@@ -67,6 +67,11 @@ Known CPU reference results (engine seeds): 2P CPU pair reaches quota on
   seat kinds so captures record `retrogames-rec` headers correctly, and the
   contract's #1247 voice path banks raw per-seat mic audio (consent prompt
   on real activation) into v2 files.
+- #1711 live take proof: `npm run cooptakes -- --game=sos` drives the whole
+  spine phone-shaped — consent gate at start (switches off, name required),
+  recorder open at seed-birth, real keystrokes banked, the shift ending by its
+  own whistle, the take landing in relaysim and replay-verifying through
+  `plaicraft:evidence`.
 
 ## Polish pass #1292 (QA studio, 2026-10-31)
 

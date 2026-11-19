@@ -364,6 +364,7 @@
     "plaicraft:evidence": "node scripts/plaicraft-evidence.mjs",
     "plaicraft:clap": "node scripts/plaicraft-clap.mjs",
     "plaicraft:grade": "node scripts/plaicraft-grade.mjs",
+    "cooptakes": "node scripts/cooptakes.mjs",
     "gradeselftest": "node scripts/plaicraft-grade.mjs --self-test",
     "claptestplay": "node scripts/claptestplay.mjs",
     "micprobe": "node scripts/micprobe.mjs",
