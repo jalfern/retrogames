@@ -35,10 +35,19 @@
 //              flipped under the live player's id, as settings would): the
 //              last-moment gate in sessionStore.js must strip the voice section —
 //              the take still lands, silent and honest (defence in depth).
-//   mutant   — `--mutant=strip` replaces sessionStore.js's last-moment strip
-//              line with one that keeps the voice section; the REVOKE run then
-//              goes RED at exactly that check (the acceptance asks for the
-//              mutant that tries). Guarded by mutateguard; commit before running.
+//   mutant   — `--mutant=strip` pins sessionStore.js's last-moment strip to
+//              [] — the acceptance's "mutant that tries". The harm is scored
+//              at the CLIENT seam (#2762): the revoked take's fate must differ
+//              observably from the honest green (v1/audio:false, uploaded).
+//              Red = the take LANDS DIRTY (v2-with-voice at the store — the
+//              worker's own consent door failed too) or is REFUSED with the
+//              voice reason (relay/core.js refuses a voice POST whose envelope
+//              says voice:false — the store door held, and the client strip is
+//              load-bearing for the honest landing). Either shape exits green
+//              with the harm NAMED at one check. The old criterion waited at
+//              the store seam for a dirty landing the worker can never allow,
+//              so the mutant mode could never pass (#2762). Guarded by
+//              mutateguard; commit before running.
 //
 // The mic is the #2716 fake-file device (a baked hum WAV at the device
 // boundary — gUM, MediaRecorder, opus, the tick clock, v2 assembly, upload and
@@ -52,7 +61,7 @@
 //   npm run dev -- --port 5173 --strictPort     (or DEV_PORT)
 //   npm run cooptakes                            # all games + consent runs
 //   npm run cooptakes -- --game=sos|bd|rally    # one game
-//   npm run cooptakes -- --mutant=strip         # voice-strip mutant (must go RED)
+//   npm run cooptakes -- --mutant=strip         # mutant that tries — exits 0 when the harm is named (#2762)
 //
 // Exit 0 every scheduled run passed; 1 any assertion failed; 2 preconditions
 // (no dev server / dev build missing).
@@ -354,10 +363,18 @@ if (MUTANT === 'strip') {
         try {
             r.info('mutant: sessionStore.js strips pinned to [] — a revoked-voice upload attempt must be caught HERE')
             const res = await phoneRun(g, { revoke: true })
-            const red = !!res.rec && (res.rec.format === 'retrogames-rec/v2' || res.rec.voice !== undefined)
-            r.check('MUTANT unstrip: the voice section rode the revoked run into the store (red = the check watches the strip)',
-                red, res.rec ? `format ${res.rec.format}, voice present ${res.rec.voice !== undefined} (the honest module must strip -> v1/audio:false)` : 'no bytes')
-            if (!red) r.check('MUTANT reached the store at all (uploaded)', res.uploaded, JSON.stringify(res.last || { why: res.why }))
+            // #2762: score the harm at the CLIENT seam. A dirty landing means
+            // the worker's consent door failed too; a refusal means the store
+            // door held — the client strip is load-bearing for the honest
+            // landing either way, and that difference IS the red.
+            const dirty = !!res.rec && (res.rec.format === 'retrogames-rec/v2' || res.rec.voice !== undefined)
+            const refused = !res.uploaded && !!res.last && /voice/i.test(String(res.last.reason || ''))
+            const red = dirty || refused
+            r.check('MUTANT unstrip: disarming the client strip observably changes the revoked take\'s fate (red = the check watches the strip)',
+                red,
+                dirty ? `STORE HOLE: v2 landed with voice (${res.rec.format}) — the worker door failed too`
+                    : refused ? `STORE DOOR HELD: POST refused (${JSON.stringify(res.last.reason)}) — client strip is load-bearing for the honest landing (which lands v1/audio:false — see the revoke axis)`
+                    : `no observable harm (uploaded:${res.uploaded} reason:${res.last && res.last.reason})`)
         } finally {
             pull(SS)
         }
