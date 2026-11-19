@@ -15,22 +15,68 @@ export const BIN_VIS = {
     clamp: 7,     // px the cable head may trail the trolley (world units)
 }
 
-export const makeBinVis = (n) => Array.from({ length: n }, () => ({ base: 0, fill: 0, flash: 0 }))
+export const makeBinVis = (n) => Array.from({ length: n }, () => ({ base: 0, fill: 0, flash: 0, stack: [], ghost: [], settle: 0 }))
+
+// #2739 bin interiors: the meter counts, but the INTERIOR shows WHAT landed.
+// The caller pushes each drop event's kind (pushBinKind) beside the raw count,
+// so the painter draws real crate/can/barrel/bottle silhouettes instead of a
+// tag-coloured fill column. `stack` mirrors `fill` (same law, one channel per
+// drop); when the pallet thunks full, the stack becomes `ghost` — a compressed
+// settle that squashes for `settle` ticks before the bin reads empty again.
+// Still render-only: sim/hash never see any of it (#1142).
+export const pushBinKind = (st, kind) => {
+    st.stack.push(kind)
+    if (st.stack.length > BIN_VIS.cap) st.stack.shift()
+}
 
 // Feed one bin's raw lifetime count (gs.binFill[i]) once per painted frame.
 // Returns true on the frame the bin crosses full: the caller plays the thunk.
-// A fresh game (raw < base) heals silently — no phantom thunk on restart.
+// A fresh game (raw < base) heals silently — no phantom thunk on restart,
+// and the interiors clear with it (no phantom crates on a fresh floor).
 export function stepBinVis(st, raw) {
-    if (raw < st.base) st.base = raw
+    if (raw < st.base) {
+        st.base = raw
+        st.stack.length = 0
+        st.ghost.length = 0
+        st.settle = 0
+    }
     st.fill = raw - st.base
+    // self-heal: the meter is the truth. A rewound raw (new game before any
+    // wrap — base still 0, so the branch above can't see it) leaves stale
+    // entries; the column truncates down to the meter it mirrors.
+    if (st.stack.length > st.fill) st.stack.length = st.fill
     if (st.fill >= BIN_VIS.cap) {
         st.base = raw
         st.fill = 0
         st.flash = 26
+        st.ghost = st.stack.slice() // the full pallet settles compressed…
+        st.stack.length = 0
+        st.settle = 14             // …for a beat before the empty bin reads empty
         return true
     }
     if (st.flash > 0) st.flash--
+    if (st.settle > 0) st.settle--
     return false
+}
+
+// #2739 audio variety: every correct drop used to thud the same sheet-metal
+// note. Each bin has its own voice now — CRATE a heavy pine knock, CAN a
+// brighter tin ring, BOTTLE the lightest tick (glass lands softest), COIL the
+// densest rubber thunk, SCRAP the deepest clatter — so the bin you hit is
+// audible, matching the JUICE contract the gauge already reads. A rarer
+// double-tink rides combo ≥ 4 so the streak is heard, not just counted.
+// Pure derivation, zero rng: the same drop always sounds the same (#1142).
+export const DROP_THUD = [
+    { hz: 110, gain: 0.058 }, // CRATE
+    { hz: 124, gain: 0.052 }, // CAN
+    { hz: 147, gain: 0.044 }, // BOTTLE
+    { hz: 98, gain: 0.062 },  // COIL
+    { hz: 87, gain: 0.056 },  // SCRAP
+]
+
+export const dropVoice = (bin, combo) => {
+    const t = DROP_THUD[bin] || DROP_THUD[0]
+    return { hz: t.hz, gain: t.gain, double: (combo | 0) >= 4 }
 }
 
 export const makeWhip = () => ({ y: 0, v: 0 })

@@ -85,12 +85,40 @@ Landing juice (#2214): a correct drop adds a low sheet-metal thud under the
 ding, a deeper first-frame squash (0.32) with a faster recovery, a rim dip on
 the struck bin and a light shake; smash gets three bright after-tinkles.
 
-Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell|aim|rec|perfect|spoil` — `wave` collapses the table
+Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell|aim|rec|perfect|spoil|voice` — `wave` collapses the table
 to one shift's waves; `amb` flattens the ambience eras (#2234); `vis` freezes the
 bin meters (#2678); `tell` silences the grab-read telegraphs (#2684); `aim` blinds
 rival intent and ring ownership (#2690); `rec` makes the export's label law lie
 (a correct-bin land stops being a hit) and 9 EXPORT gates go red by name (#2734);
-named gates go red.
+named gates go red. (`vis` reddens the meters AND the #2739 interiors it feeds — 6 gates; `voice` reddens 2.)
+
+## Bin interiors & a voice per bin (#2739 — QA polish pass)
+
+- **Stacked silhouettes:** the fill meter counts, the INTERIOR now shows WHAT
+  landed. Each drop event pushes its kind beside the same raw count that
+  climbed the meter (`pushBinKind` in `visuals.js`), and the painter draws
+  real tiny silhouettes — `drawItem(kind)` from the belt's own palette — so
+  the CAN bin shows barrels among the cans and the top row squashes as
+  pieces settle. Stack length ≡ meter fill by law; when a pallet thunks full
+  the stack becomes a compressed ghost pancake (`ghost`/`settle`, 14 ticks)
+  before the empty bin reads empty. Paint-only — sim/hash never see it.
+- **A thud per bin:** the correct-drop thud (#2214) used to be one fixed
+  sheet-metal 120 Hz. `DROP_THUD` gives every bin its own voice — CRATE 110
+  pine knock, CAN 124 tin ring, BOTTLE 147 light tick (glass lands softest),
+  COIL 98 rubber thunk, SCRAP 87 deep clatter — with per-bin gain, so which
+  bin you hit is audible. Combo ≥ 4 adds a bright 2093→2637 double-tink: the
+  streak is heard, not just counted. Pure derivation, zero rng — the same
+  drop always sounds the same.
+- **Self-heal:** the meter is the truth — a rewound raw (new game before any
+  wrap, where the `raw < base` branch can't see it) truncates stale
+  silhouettes down to the fill it mirrors; the below-base heal clears stack,
+  ghost and settle silently, like the #2678 restart heal.
+- **Proven:** pickcheck §INTERIOR (STACK-MIRROR climb/wrap, SETTLE ghost +
+  fade, both STACK-HEAL paths, LINE-PUSH/LINE-MIRROR/LINE-KINDS over seed
+  7's whole line — stack === fill every bin every tick, CAN's live stack IS
+  the tail of its real drop kinds, VOICE-PIN literals + VOICE-SET distinct
+  notes + DOUBLE-TINK combo gate + three SOURCE pins). `PICK_MUT=voice`
+  (all bins one note) reddens 2 gates by name.
 
 ## Honest gaps
 
@@ -167,7 +195,8 @@ named gates go red.
   twin-seed SIM-CLEAN, spring overshoot/clamp/settle) plus live
   `WHIP-SPRING` / `WHIP-PIXELS` / `WHIP-REST` / `METER` / `METER-FULL`
   (contract state + canvas sampling, real keyboard reversals). `PICK_MUT=vis`
-  (bins never fill) reddens 3 gates by name; `PICK_MUT=whip` (dead spring)
+  (bins never fill) reddens its 3 gates — plus the #2739
+   interiors it starves, 6 in all; `PICK_MUT=whip` (dead spring)
   reddens 2.
 - **Also here:** the carried-CAN pixel gate waits for a PAINTED frame instead
   of a fixed 34 ms — same #2136 lesson as WAVE-INK above; the chase loop

@@ -30,7 +30,7 @@
 import * as s from '../src/games/PickRush/sim.js'
 import { readFileSync } from 'node:fs' // §CB pins the marquee colour from the painter's source
 import { AMB_ZONES, zoneForShift, fireAt } from '../src/games/PickRush/ambience.js'
-import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, TELL, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from '../src/games/PickRush/visuals.js'
+import { BIN_VIS, makeBinVis, stepBinVis, pushBinKind, dropVoice, DROP_THUD, makeWhip, stepWhip, whipTarget, TELL, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from '../src/games/PickRush/visuals.js'
 import { scriptFor } from './lib/contractGames.mjs'
 import { collectRun, planner, OUTCOME_BY_EVENT, makeReplayDriver } from './pickrush-export.mjs'
 import { validateEpisode, exportEpisodes } from '../src/utils/robot/episode.js'
@@ -46,7 +46,7 @@ const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fai
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
 if (MUT) {
-    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim', 'rec', 'perfect', 'spoil'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim', 'rec', 'perfect', 'spoil', 'voice'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
     console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 }
 const applyMut = () => {
@@ -63,6 +63,7 @@ const applyMut = () => {
     if (MUT === 'rec') OUTCOME_BY_EVENT.drop = { ok: false, why: 'drop' } // the export calls a correct-bin land a MISS (#2734)
     if (MUT === 'perfect') s.PERFECT_PAY.fill(0) // mastery pays nothing — the reward dies (#2742)
     if (MUT === 'spoil') s.PERFECT_SPOIL.splice(s.PERFECT_SPOIL.indexOf('miss'), 1) // the line forgives every miss (#2742)
+    if (MUT === 'voice') for (const t of DROP_THUD) t.hz = 120 // every bin thuds the same note — the variety dies (#2739)
 }
 applyMut()
 
@@ -710,6 +711,73 @@ section('JUICE — bin meters, full lamp, cable whip are render-only (#2678)')
     ok(maxAbs <= BIN_VIS.clamp + 1e-9, `WHIP-SPRING: the offset stays clamped (max ${maxAbs.toFixed(1)} ≤ ${BIN_VIS.clamp}) — the cable never paints off the crane`)
     for (let t = 0; t < 240; t++) stepWhip(w, whipTarget(0))
     ok(Math.abs(w.y) < 0.05, 'WHIP-SPRING: at rest the cable hangs straight again')
+}
+
+section('INTERIOR — stacked silhouettes + a voice per bin (#2739)')
+{
+    // The stack rides beside the meter, one push per drop: same law, same wrap.
+    const st = makeBinVis(1)[0]
+    let aligned = true, wrapped = null
+    for (let k = 1; k <= 12; k++) {
+        pushBinKind(st, k % 2 ? 'can' : 'barrel')
+        if (stepBinVis(st, k)) wrapped = k
+        else aligned = aligned && st.stack.length === st.fill && st.stack.length === k
+    }
+    ok(aligned && wrapped === 12 && st.fill === 0 && st.stack.length === 0,
+        'STACK-MIRROR: silhouettes climb one per drop and vanish on the wrap — stack.length === fill every tick')
+    ok(st.ghost.length === 12 && st.settle === 14,
+        'SETTLE: the thunked pallet ghosts its 12 pieces, pressed, for 14 ticks')
+    for (let t = 0; t < 14; t++) stepBinVis(st, 12)
+    ok(st.settle === 0, 'SETTLE: the pancake fades out and the empty bin reads empty')
+    const rst = makeBinVis(1)[0]
+    pushBinKind(rst, 'crate'); stepBinVis(rst, 0) // meter at zero, one stale push
+    ok(!stepBinVis(rst, 0) && rst.fill === 0 && rst.stack.length === 0,
+        'STACK-HEAL: a rewound meter truncates stale silhouettes — no phantom crate at zero')
+    const wg = makeBinVis(1)[0]
+    for (let k = 1; k <= 12; k++) { pushBinKind(wg, 'can'); stepBinVis(wg, k) } // wrap once, then refill
+    pushBinKind(wg, 'crate'); stepBinVis(wg, 13)
+    wg.settle = 9
+    ok(!stepBinVis(wg, 0) && wg.base === 0 && wg.stack.length === 0 && wg.ghost.length === 0 && wg.settle === 0,
+        'STACK-HEAL: a fresh game below the wrap base clears silhouettes, the ghost and the settle silently')
+}
+{
+    // Seed-exact: drive the real line, push kinds exactly as the shell does,
+    // and the interiors mirror the meter for every bin on every tick.
+    const gs = makeGame(7, 2)
+    const vis = makeBinVis(BINS.length)
+    const hist = BINS.map(() => [])
+    let lies = 0, drops = 0
+    while (!gs.end && gs.tick < SHIFTS.length * SHIFT_TICKS + 900) {
+        step(gs, [autopilot(gs, 0), autopilot(gs, 1)])
+        for (const e of gs.ev) if (e.type === 'drop') { pushBinKind(vis[e.bin], e.kind); hist[e.bin].push(e.kind); drops++ }
+        for (let i = 0; i < BINS.length; i++) {
+            stepBinVis(vis[i], gs.binFill[i])
+            if (vis[i].stack.length !== vis[i].fill) lies++
+        }
+    }
+    ok(drops >= 12, `LINE-PUSH: seed 7's whole line banks ${drops} drops — enough to wrap pallets`)
+    ok(lies === 0, `LINE-MIRROR: interior stack === meter fill for every bin, every tick (seed 7 full line)`)
+    const b1 = hist[1], s1 = vis[1].stack
+    ok(s1.length === 0 || s1.join(',') === b1.slice(-s1.length).join(','),
+        'LINE-KINDS: the CAN bin\'s live stack IS the tail of its real drop kinds (barrels among cans)')
+}
+{
+    // One voice per bin, pinned by literal — five distinct notes, distinct gains.
+    const want = [110, 124, 147, 98, 87]
+    ok(DROP_THUD.length === want.length && DROP_THUD.every((t, i) => t.hz === want[i] && t.gain > 0 && t.gain < 0.1),
+        'VOICE-PIN: CRATE 110 · CAN 124 · BOTTLE 147 · COIL 98 · SCRAP 87 Hz, gains in range — each bin audible as itself')
+    ok(new Set(DROP_THUD.map((t) => t.hz)).size === 5, 'VOICE-SET: five distinct thud notes — the line never drones one note')
+    ok(dropVoice(0, 3).double === false && dropVoice(2, 4).double === true && dropVoice(4, 9).double === true && dropVoice(0).double === false,
+        'DOUBLE-TINK: the streak chime rides combo ≥ 4 only (and stays quiet without a combo)')
+    ok(dropVoice(0, 4).hz === DROP_THUD[0].hz && dropVoice(1, 4).gain === DROP_THUD[1].gain,
+        'VOICE-PICK: dropVoice hands the caller the bin\'s own note and gain')
+    const src = readFileSync(new URL('../src/games/PickRush/index.jsx', import.meta.url), 'utf8')
+    ok(src.includes('dropVoice(bi, e.combo)') && src.includes('pushBinKind(binVis[bi], e.kind)'),
+        'SOURCE: the shell\'s drop event rings dropVoice AND pushes the landed kind')
+    ok(/2093, 0\.05, 'sine'/.test(src) && /2637, 0\.05, 'sine'/.test(src),
+        'SOURCE: the combo double-tink (2093→2637 sine pair) is wired in the painter\'s file')
+    ok(/drawItem\(ctx, vis\.stack\[k\] \|\| b\.kind/.test(src) && /drawItem\(ctx, vis\.ghost\[k\]/.test(src),
+        'SOURCE: bins paint their own landed silhouettes (stack) and the settle pancake (ghost) via drawItem')
 }
 
 section('TELL — the grab-read telegraphs never lie (#2684)')
