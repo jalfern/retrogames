@@ -784,6 +784,49 @@ function sweepCrossed(res, x, y, t) {
     for (const tr of a) if (Math.abs(tr - t) < CADENCE) return true
     return false
 }
+function sweepTimeline(gs, bot) {
+    const res = new Map()
+    const add = (k, t) => { const a = res.get(k); if (a) a.push(t); else res.set(k, [t]) }
+    for (const r of gs.robots) {
+        if (r.id === bot.id || r.broken || !r.carry || !r.path || !r.path.length) continue
+        let f = r.face, px = r.x, py = r.y
+        const u = nextStepIn(r)
+        r.path.forEach((c, k) => {
+            const dx = c.x - px, dy = c.y - py
+            if (Math.abs(dx) + Math.abs(dy) !== 1) return
+            const d = nbDir(dx, dy)
+            if (d !== f && d !== (f + 2) % 4) {
+                const [hx, hy] = NB[f], [ox, oy] = NB[d]
+                const t = u + k * CADENCE
+                add(`${px + hx + ox},${py + hy + oy}`, t); add(`${px - hx - ox},${py - hy - oy}`, t)
+            }
+            f = d === (f + 2) % 4 ? f : d
+            px = c.x; py = c.y
+        })
+    }
+    return res
+}
+function sweepScore(gs, bot, path, res, sweeps) {
+    let n = 0
+    const uB = nextStepIn(bot)
+    let f = bot.face, px = bot.x, py = bot.y
+    for (let k = 0; k < path.length; k++) {
+        const c = path[k]
+        const dx = c.x - px, dy = c.y - py
+        if (Math.abs(dx) + Math.abs(dy) !== 1) break
+        const d = nbDir(dx, dy)
+        const t = uB + k * CADENCE
+        if (bot.carry && d !== f && d !== (f + 2) % 4) {
+            const [hx, hy] = NB[f], [ox, oy] = NB[d]
+            if (sweepCrossed(res, px + hx + ox, py + hy + oy, t)) n++
+            if (sweepCrossed(res, px - hx - ox, py - hy - oy, t)) n++
+        }
+        if (sweepCrossed(sweeps, c.x, c.y, t)) n++
+        f = d === (f + 2) % 4 ? f : d
+        px = c.x; py = c.y
+    }
+    return n
+}
 // Loaded-leg plan with right of way: reserve unless the reservation costs a
 // single tick. plain = today's answer (min hops, fewest pivots); strict = the
 // same law with pivots that cross a rival's committed sweep refused. The
@@ -796,8 +839,11 @@ function planRight(gs, bot, pred) {
     if (plain == null) return null
     const strict = bfsKnee(gs, bot.x, bot.y, pred, bot.id, bot.face, rivalTimeline(gs, bot), nextStepIn(bot))
     if (strict && strict.length === plain.length && bfsPivots(bot, strict) <= bfsPivots(bot, plain) && JSON.stringify(strict) !== JSON.stringify(plain)) {
-        gs.ev.push({ type: 'right', x: bot.x, y: bot.y }) // the pivot right claimed at the plan, named
-        return strict
+        const res = rivalTimeline(gs, bot), sweeps = sweepTimeline(gs, bot)
+        if (sweepScore(gs, bot, strict, res, sweeps) < sweepScore(gs, bot, plain, res, sweeps)) {
+            gs.ev.push({ type: 'right', x: bot.x, y: bot.y }) // the pivot right claimed at the plan, named
+            return strict
+        }
     }
     return plain
 }
