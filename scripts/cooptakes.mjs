@@ -266,7 +266,13 @@ const cleanRuns = MUTANT ? [] : GAMES
 const runs = []
 for (const g of cleanRuns) {
     r.info(`${g.label}: driving a full natural run (worst case ${(g.overMs / 1000) | 0} s)`)
-    const res = await phoneRun(g)
+    let res = await phoneRun(g)
+    if (!res.ok) {
+        // busy-box doctrine (#2205): a starved page can miss the natural end.
+        // A content failure repeats and stays red; a starved run gets one retry.
+        r.info(`${g.label}: attempt 1 ended without a stored take (starved box?) — retrying once`)
+        res = await phoneRun(g)
+    }
     const p = (label, pass, detail = '') => r.check(`${g.key}: ${label}`, pass, detail)
     p('the consent gate went up at human start', res.gateUp === true, res.why || '')
     p('both switches default OFF (Jon\'s rule)', res.offByDefault === true)
@@ -307,8 +313,6 @@ if (!MUTANT) {
 }
 
 // --- consent axis: motion yes + voice NO -> silent v1 take ----------------------
-// (same run shape the mutant reds on: sessionStore's last-moment strip is the
-// line keeping a voice section out of a voiceless upload)
 if (!MUTANT && GAMES.some((g) => g.key === 'sos')) {
     const g = GAMES.find((x) => x.key === 'sos')
     r.info(`${g.label}: motion YES, voice NO — the take must land SILENT (v1)`)
@@ -321,7 +325,24 @@ if (!MUTANT && GAMES.some((g) => g.key === 'sos')) {
     runs.push(res)
 }
 
-// --- MUTANT: unstrip sessionStore.js — the silent take must then go RED -------
+// --- consent axis: voice REVOKED mid-run -> the last-moment strip lands it silent
+// (the mic was live and the take HAS a voice section; only consent.js/
+// sessionStore.js can still keep it out of the store — this is the shape the
+// --mutant=strip red proves, with the honest module in place)
+if (!MUTANT && GAMES.some((g) => g.key === 'sos')) {
+    const g = GAMES.find((x) => x.key === 'sos')
+    r.info(`${g.label}: voice REVOKED mid-run — the last-moment strip must land it silent`)
+    let res = await phoneRun(g, { revoke: true })
+    if (!res.uploaded) { r.info('revoke: retrying once (busy-box doctrine)'); res = await phoneRun(g, { revoke: true }) }
+    r.check('revoke: the take uploaded', res.uploaded, JSON.stringify(res.last || { why: res.why }))
+    r.check('revoke: the store row says audio:false (voice stripped at the last moment)', !!res.row && res.row.audio === false, JSON.stringify(res.row))
+    r.check('revoke: the bytes are an honest v1 file (voice section stripped + retagged)',
+        !!res.rec && res.rec.format === 'retrogames-rec/v1' && res.rec.voice === undefined && validate(res.rec) === null,
+        res.rec ? `${res.rec.format} voice:${res.rec.voice !== undefined}` : 'no bytes')
+    runs.push(res)
+}
+
+// --- MUTANT: unstrip sessionStore.js — the REVOKED-voice take must then go RED --
 if (MUTANT === 'strip') {
     const SS = path.join(HERE, '..', 'src', 'utils', 'sessionStore.js')
     const src = fs.readFileSync(SS, 'utf8')
@@ -331,10 +352,10 @@ if (MUTANT === 'strip') {
         const g = GAMES.find((x) => x.key === 'sos') || GAMES[0]
         plantNew(SS, src.replace(ANCHOR, 'const strips = [] // MUTANT: the last-moment voice strip never fires'))
         try {
-            r.info('mutant: sessionStore.js strips pinned to [] — a voiceless upload attempt must be caught HERE')
-            const res = await phoneRun(g, { voice: false })
+            r.info('mutant: sessionStore.js strips pinned to [] — a revoked-voice upload attempt must be caught HERE')
+            const res = await phoneRun(g, { revoke: true })
             const red = !!res.rec && (res.rec.format === 'retrogames-rec/v2' || res.rec.voice !== undefined)
-            r.check('MUTANT unstrip: the voice section rode the silent run into the store (red = the check watches the strip)',
+            r.check('MUTANT unstrip: the voice section rode the revoked run into the store (red = the check watches the strip)',
                 red, res.rec ? `format ${res.rec.format}, voice present ${res.rec.voice !== undefined} (the honest module must strip -> v1/audio:false)` : 'no bytes')
             if (!red) r.check('MUTANT reached the store at all (uploaded)', res.uploaded, JSON.stringify(res.last || { why: res.why }))
         } finally {
