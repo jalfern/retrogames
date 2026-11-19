@@ -85,7 +85,7 @@ Landing juice (#2214): a correct drop adds a low sheet-metal thud under the
 ding, a deeper first-frame squash (0.32) with a faster recovery, a rim dip on
 the struck bin and a light shake; smash gets three bright after-tinkles.
 
-Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell|aim|rec|perfect|spoil|voice` — `wave` collapses the table
+Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell|aim|rec|perfect|spoil|voice|ease|feather` — `wave` collapses the table
 to one shift's waves; `amb` flattens the ambience eras (#2234); `vis` freezes the
 bin meters (#2678); `tell` silences the grab-read telegraphs (#2684); `aim` blinds
 rival intent and ring ownership (#2690); `rec` makes the export's label law lie
@@ -119,6 +119,41 @@ named gates go red. (`vis` reddens the meters AND the #2739 interiors it feeds �
   the tail of its real drop kinds, VOICE-PIN literals + VOICE-SET distinct
   notes + DOUBLE-TINK combo gate + three SOURCE pins). `PICK_MUT=voice`
   (all bins one note) reddens 2 gates by name.
+
+## Carriage weight, the feather lesson & a teaching attract (#2755 — QA polish 2)
+
+- **Crane inertia (render-only):** the carriage PAINT rides a heavy spring off
+  the sim clock (`stepCrane` in `visuals.js`, stepped in `whipSim` beside the
+  #2678 cable). A press deepens a trailing lag (spins up over ~5 ticks to
+  ~2.2 px behind); a release glides out over ~a dozen ticks with a small
+  rail-flex rebound (measured +0.33 px past rest) and lands EXACTLY on the sim
+  position — so the mid-run gantry leans and settles while the cable whip
+  rides along, yet the #1184 PIXELS sampling law and every state hash are
+  untouched. The ease is rig-zeroed in the contract `reset` (the #2754
+  paint-timing law). Contract key `ease`; DEV eye `ease()`.
+- **First-shift feather lesson:** glass arrives on the second shift, yet the
+  slam meter only speaks once you're already carrying. The first fragile the
+  claw lifts by then arms a one-time lesson — a down-chevron + `FEATHER` under
+  the carriage — that fades on its own 150-tick clock and never arms again
+  (`stepFeatherCue`; gone by shift 3, once per run, play-only — attract never
+  teaches). Contract key `feather`; gates drive the SAME law thumbs get.
+- **Teaching attract:** the old demo rotation (`1337 + n%97`) opened every game
+  at shift 1, where none of the risk laws exist — the demo needed minutes
+  before a slip or a feathered glass land. The attract now spins three
+  MEASURED seeds (1427, 1766, 1873) pre-rolled to tick 8350 (the busy era), so
+  five seconds of the demo shows all three laws: barrel slips @85–303 ticks,
+  feathered bottle lands @168–591, upright barrel catches @179–1176, and every
+  seed still clears the whole contract. Attract-only staging — play always
+  starts at shift 1.
+- **Proven:** pickcheck §INERTIA (SIM-PURE twin hashes, TRAIL ≥1.2 px, ramped
+  EASE-IN, EASE-OUT glide ≥3 ticks, REBOUND ≥0.25 px, CLAMP, REST exact) +
+  §FEATHER (FIRE on the era's first carry, ERA window, DECAY clock, ONCE +
+  LEARNED) + §DEMO-REP (per-seed law counts + law-clock + contract clear,
+  union, and the old `% 97` counter gone). Live Chrome: `INERTIA-PIXELS`
+  (real held stroke trails ≥1 px) + `INERTIA-REST` (settles onto the sim
+  line) + `FEATHER-INK` (caption really painted under the carriage); the
+  existing PIXELS-at-rest gates keep holding — the ease converges to zero.
+  `PICK_MUT=ease` reddens 4 named gates, `PICK_MUT=feather` reddens 2.
 
 ## Honest gaps
 
