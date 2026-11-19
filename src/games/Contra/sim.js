@@ -92,7 +92,7 @@ export function makeGame (seed) {
         prevA: false,
         pb: [],                     // player bullets {x,y,vx,vy}
         eb: [],                     // enemy bullets
-        soldiers: SOLDIERS.map((d) => ({ x: d.x, y: d.y, hold: d.hold, hp: 1, awake: false, t: 0, walk: 0, walkDir: -1, dead: false })),
+        soldiers: SOLDIERS.map((d) => ({ x: d.x, y: d.y, hold: d.hold, hp: 1, awake: false, t: 0, walk: 0, walkDir: -1, dead: false, flash: 0 })),
         turrets: TURRET_AT.map((x, i) => ({ x, y: CFG.ground, hp: 2, aim: Math.PI, t: 40 + i * 27, dead: false })),
         barrels: BARREL_AT.map((x) => ({ x, y: CFG.ground, gone: false })),
         capsule: null,              // {x,y,vx} — flies in from the right edge
@@ -130,8 +130,10 @@ function fire (gs) {
     }
 }
 
-function boom (gs, x, y, hurtTurrets) {
-    gs.ev.push({ type: 'boom', x, y })
+// kind rides the (unhashed, cosmetic) event so the shell can size the blast:
+// 'tnt' = barrel/turret demolition, 'kill' = a soldier dropped, 'death' = hero.
+function boom (gs, x, y, hurtTurrets, kind) {
+    gs.ev.push({ type: 'boom', x, y, kind: kind || 'tnt' })
     for (const s of gs.soldiers) if (!s.dead && Math.hypot(s.x - x, s.y - y - 12) < CFG.blastR) killSoldier(gs, s)
     if (hurtTurrets) for (const t of gs.turrets) if (!t.dead && Math.hypot(t.x - x, t.y - 18 - y) < CFG.blastR) hitTurret(gs, t)
     if (gs.p.dead === 0 && gs.p.inv <= 0 && Math.hypot(gs.p.x - x, gs.p.y - 12 - y) < CFG.blastPlayerR) killPlayer(gs)
@@ -140,19 +142,19 @@ function boom (gs, x, y, hurtTurrets) {
 function killSoldier (gs, s) {
     s.dead = true
     gs.score += 100
-    gs.ev.push({ type: 'boom', x: s.x, y: s.y - 12 })
+    gs.ev.push({ type: 'boom', x: s.x, y: s.y - 12, kind: 'kill' })
 }
 
 function hitTurret (gs, t) {
     t.hp -= 1
     gs.ev.push({ type: 'spark', x: t.x, y: t.y - 18 })
-    if (t.hp <= 0) { t.dead = true; gs.score += 300; gs.ev.push({ type: 'boom', x: t.x, y: t.y - 18 }) }
+    if (t.hp <= 0) { t.dead = true; gs.score += 300; gs.ev.push({ type: 'boom', x: t.x, y: t.y - 18, kind: 'tnt' }) }
 }
 
 function killPlayer (gs) {
     gs.p.dead = CFG.respawnFreeze
     gs.lives -= 1
-    gs.ev.push({ type: 'boom', x: gs.p.x, y: gs.p.y - 12 })
+    gs.ev.push({ type: 'boom', x: gs.p.x, y: gs.p.y - 12, kind: 'death' })
     if (gs.lives <= 0) { gs.lives = 0; gs.end = 'dead'; gs.ev.push({ type: 'gameover' }) }
 }
 
@@ -242,6 +244,7 @@ export function step (gs, pad = PAD0) {
         }
         const dx = p.x - s.x
         s.walk += 1
+        if (s.flash > 0) s.flash -= 1
         if (!s.hold && Math.abs(dx) > 26) { s.x += Math.sign(dx) * 1.1; s.walkDir = Math.sign(dx) }
         s.t -= 1
         const range = s.hold ? 280 : 220
@@ -249,6 +252,7 @@ export function step (gs, pad = PAD0) {
             const a = Math.atan2((p.y - 14) - (s.y - 12), p.x - s.x)
             gs.eb.push({ x: s.x + Math.cos(a) * 8, y: s.y - 12 + Math.sin(a) * 8, vx: Math.cos(a) * CFG.eBulletSpeed, vy: Math.sin(a) * CFG.eBulletSpeed })
             gs.ev.push({ type: 'efire' })
+            s.flash = 4
             s.t = (s.hold ? 40 : 45) + Math.floor(rnd(gs) * 45)
         }
         // touching a live runner is a hit, as on the cabinet
@@ -265,7 +269,7 @@ export function step (gs, pad = PAD0) {
         t.t -= 1
         if (t.t <= 0 && inCam && Math.abs(dx) < 260) {
             gs.eb.push({ x: t.x + Math.cos(t.aim) * 12, y: t.y - 18 + Math.sin(t.aim) * 12, vx: Math.cos(t.aim) * CFG.eBulletSpeed, vy: Math.sin(t.aim) * CFG.eBulletSpeed })
-            gs.ev.push({ type: 'efire' })
+            gs.ev.push({ type: 'efire', big: true })
             t.t = 85
         }
     }

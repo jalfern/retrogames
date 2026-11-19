@@ -17,6 +17,7 @@ const C = {
     hair: '#241a10',
     uni: '#6b7a3a', uniDark: '#485226', beret: '#a3283c', gunMetal: '#3c4650',
     sand: '#b49a6a', sandDark: '#7d6a45', turret: '#4a5a30',
+    water: '#1d4f7a', waterLit: '#2a6ea0', waterDeep: '#123450', foam: '#dcedf5',
     barrel: '#8a5a2b', barrelDark: '#5c3a17', barrelBand: '#d8c07a',
     capsule: '#ff8c1a', capsuleLit: '#ffd23c', capsuleWin: '#fff6e0',
     ink: '#f4f2e6', gold: '#ffd23c',
@@ -78,24 +79,44 @@ export function drawFringe (ctx, cam) {
 }
 
 // jungle floor + trunk pillars, world space (camera translate applied).
-export function drawGround (ctx, cam) {
+// The world floor is a shoreline (the commission's "water at the bottom
+// edge"): walkable sand at 196, a foaming lip, then the sea to the screen
+// bottom. tick animates the ripple crests and the foam; deterministic — the
+// art reads the sim tick, never Math.random.
+export function drawGround (ctx, cam, tick) {
     const x0 = cam - 8, x1 = cam + 392
-    ctx.fillStyle = C.dirt
-    ctx.fillRect(x0, 196, x1 - x0, 28)
+    // sand beach the hero walks on
+    ctx.fillStyle = C.sand
+    ctx.fillRect(x0, 196, x1 - x0, 12)
     ctx.fillStyle = C.grass
-    ctx.fillRect(x0, 194, x1 - x0, 4)
+    ctx.fillRect(x0, 194, x1 - x0, 3)
     ctx.fillStyle = C.grassLit
     for (let gx = Math.floor(x0 / 8) * 8; gx < x1; gx += 8) {
         if (((gx * 7919) >>> 3) % 3 === 0) ctx.fillRect(gx, 192, 2, 2)
         if (((gx * 104729) >>> 2) % 4 === 0) ctx.fillRect(gx + 3, 191, 1, 3)
     }
-    ctx.fillStyle = C.dirtDark
+    ctx.fillStyle = C.sandDark
     for (let gx = Math.floor(x0 / 12) * 12; gx < x1; gx += 12) {
-        if (((gx * 48271) >>> 4) % 2 === 0) ctx.fillRect(gx + ((gx >> 5) % 7), 202 + ((gx >> 3) % 3) * 4, 3, 2)
+        if (((gx * 48271) >>> 4) % 2 === 0) ctx.fillRect(gx + ((gx >> 5) % 7), 199 + ((gx >> 3) % 3) * 3, 3, 2)
     }
-    ctx.fillStyle = C.dirtLit
+    // the sea: two-tone bands with drifting crest lines
+    ctx.fillStyle = C.water
+    ctx.fillRect(x0, 208, x1 - x0, 16)
+    ctx.fillStyle = C.waterDeep
+    for (let gx = Math.floor(x0 / 24) * 24; gx < x1; gx += 24) {
+        const wy = 212 + (((gx >> 3) % 3) * 3)
+        ctx.fillRect(gx + ((tick >> 2) % 24), wy, 10, 2)
+    }
+    ctx.fillStyle = C.waterLit
     for (let gx = Math.floor(x0 / 16) * 16; gx < x1; gx += 16) {
-        if (((gx * 16807) >>> 5) % 2 === 1) ctx.fillRect(gx + ((gx >> 4) % 9), 201 + ((gx >> 2) % 4) * 3, 2, 1)
+        const wy = 209 + (((gx + tick) >> 3) % 2) * 7
+        ctx.fillRect(gx - ((tick >> 1) % 16), wy, 6 + ((gx >> 4) % 5), 1)
+    }
+    // foam lip at the sand line — dashes breathing in and out
+    const wob = Math.floor(Math.sin(tick / 9) * 1.5 + 1.5)
+    ctx.fillStyle = C.foam
+    for (let gx = Math.floor(x0 / 6) * 6; gx < x1; gx += 6) {
+        if (((gx * 2654435761) >>> 6) % 3 !== 0) ctx.fillRect(gx, 206 + (((gx >> 2) + wob) % 2), 4, 2)
     }
     // trunk pillars every ~180 world px, behind entities
     for (let tx = Math.floor(x0 / 180) * 180; tx < x1; tx += 180) {
@@ -181,14 +202,18 @@ export function drawPlayer (ctx, p, tick) {
     ctx.restore()
 }
 
-// --- enemy soldier: olive uniform, red beret, two-frame run, muzzle flash ---
-export function drawSoldier (ctx, s, _tick) {
+// --- enemy soldier: olive uniform, red beret; three-frame run at speed, a
+// held-rifle idle, muzzle flash + recoil on the shot (s.flash rides the sim) ---
+export function drawSoldier (ctx, s, tick) {
     ctx.save(); ctx.translate(Math.round(s.x), Math.round(s.y))
     const dir = Math.sign(s.walkDir || -1)
-    const f = Math.floor(s.walk / 5) % 2
+    const moving = !s.hold
+    const f = moving ? Math.floor(s.walk / 5) % 3 : 0
     ctx.fillStyle = C.uniDark
     ctx.fillRect(-4, -11, 3, 8); ctx.fillRect(1, -11, 3, 8)
-    if (f === 0) { ctx.fillRect(-5, -11, 3, 9); ctx.fillRect(2, -12, 3, 8) }
+    if (moving && f === 0) { ctx.fillRect(-6, -11, 3, 9); ctx.fillRect(3, -12, 3, 8) }      // long stride
+    else if (moving && f === 1) { ctx.fillRect(-3, -11, 3, 9); ctx.fillRect(0, -11, 3, 9) }  // passing
+    else if (moving) { ctx.fillRect(-5, -12, 3, 8); ctx.fillRect(2, -10, 3, 8) }             // push-off
     ctx.fillStyle = '#303020'
     ctx.fillRect(-5, -2, 3, 2); ctx.fillRect(2, -2, 3, 2)
     ctx.fillStyle = C.uni
@@ -197,8 +222,15 @@ export function drawSoldier (ctx, s, _tick) {
     ctx.fillRect(-3, -26, 6, 6)
     ctx.fillStyle = C.beret
     ctx.fillRect(-4 + dir, -28, 8, 3)
+    const recoil = s.flash > 0 ? -dir : 0
     ctx.fillStyle = C.gunMetal
-    ctx.fillRect(dir > 0 ? 2 : -10, -16, 8, 2)
+    ctx.fillRect((dir > 0 ? 2 : -10) + recoil, -16, 8, 2)
+    if (s.flash > 0) { // muzzle flash: two-frame star at the barrel tip
+        const mx = (dir > 0 ? 11 : -11) + recoil
+        ctx.fillStyle = s.flash > 2 ? '#fff6c8' : '#ffb347'
+        ctx.fillRect(mx - 2, -18, 4, 4)
+        ctx.fillRect(mx - (dir > 0 ? 0 : 4), -17, 3, 2)
+    }
     ctx.restore()
 }
 
@@ -252,6 +284,60 @@ export function drawCapsule (ctx, c, tick) {
 export function drawBullet (ctx, b, enemy) {
     ctx.fillStyle = enemy ? '#ff5a3c' : '#ffe27a'
     ctx.fillRect(Math.round(b.x) - 2, Math.round(b.y) - 1, enemy ? 3 : 4, 2)
+}
+
+// the hero's death tumble (ART.md bar 2/5: dies animate, 2-4 frames). The
+// sim's freeze law is untouched — this is the body the shell draws during the
+// respawn freeze: the original spins the hero away from the hit.
+export function drawDeathTumble (ctx, x, y, frame) {
+    ctx.save()
+    ctx.translate(Math.round(x), Math.round(y) - 14)
+    ctx.rotate((frame * Math.PI) / 2 + 0.3)
+    ctx.fillStyle = C.tank
+    ctx.fillRect(-4, -8, 8, 10)
+    ctx.fillStyle = C.pants
+    ctx.fillRect(-4, 2, 8, 6)
+    ctx.fillStyle = C.skin
+    ctx.fillRect(-3, -13, 6, 5)
+    ctx.fillStyle = C.band
+    ctx.fillRect(-3, -14, 6, 3)
+    ctx.fillStyle = C.boots
+    ctx.fillRect(-5, 7, 4, 3); ctx.fillRect(1, 7, 4, 3)
+    ctx.restore()
+}
+
+// Expanding fireball (ART.md bar 5: juice on every impact). kind sizes it:
+// 'tnt' = full demolition multi-ring; 'kill' = a crisp snap for one soldier;
+// 'death' = the hero's red burst. t counts up in shell-cosmetic ticks.
+export function drawFireball (ctx, f) {
+    const life = f.kind === 'kill' ? 16 : 26
+    if (f.t >= life) return false
+    const p = f.t / life
+    ctx.save()
+    ctx.translate(Math.round(f.x), Math.round(f.y))
+    ctx.globalAlpha = 1 - p * p
+    const ring = (r, col) => {
+        if (r <= 0) return
+        ctx.fillStyle = col
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill()
+    }
+    if (f.kind === 'kill') {
+        ring(2 + 9 * p, '#ff6a2a')
+        ring(1 + 5 * p, p < 0.5 ? '#fff6c8' : '#ffd23c')
+    } else {
+        ring(4 + 24 * p, '#d0342c')          // outer fire ring
+        ring(3 + 17 * p, '#ff6a2a')         // middle ring
+        ring(2 + 9 * p, p < 0.45 ? '#ffffff' : '#ffd23c') // flash then core
+        // ember flecks riding the shockwave
+        ctx.fillStyle = '#ffb347'
+        for (let i = 0; i < 5; i++) {
+            const a = (i / 5) * Math.PI * 2 + 0.5
+            const r = 8 + 26 * p
+            ctx.fillRect(Math.cos(a) * r, Math.sin(a) * r, 2, 2)
+        }
+    }
+    ctx.restore()
+    return true
 }
 
 // the base gate at the end of the jungle — S2's door, bolted shut.

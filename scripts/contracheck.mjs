@@ -132,8 +132,30 @@ r.check('boots: makeGame/step/stateHash are wired', typeof makeGame === 'functio
     gs.soldiers.push({ x: near.x, y: near.y, hold: false, hp: 1, awake: true, t: 9999, walk: 0, walkDir: -1, dead: false })
     gs.p.x = 560; gs.prevA = false
     let booms = 0
-    for (let i = 0; i < 60; i++) { step(gs, { right: false, b: true }); booms += gs.ev.filter((e) => e.type === 'boom').length; gs.ev.length = 0 }
+    const kinds = []
+    for (let i = 0; i < 60; i++) { step(gs, { right: false, b: true }); booms += gs.ev.filter((e) => e.type === 'boom').length; kinds.push(...gs.ev.filter((e) => e.type === 'boom').map((e) => e.kind)); gs.ev.length = 0 }
     r.check('TNT barrel: a round sets it off and the blast clears the soldier beside it', br.gone && gs.soldiers[gs.soldiers.length - 1].dead && booms >= 2, `booms=${booms}`)
+    // #2782: the shell sizes blast visuals by kind — the sim must NAME the source
+    r.check('blast events name their source (tnt demolition vs kill snap)', kinds.includes('tnt') && kinds.includes('kill'), `kinds=${kinds.join(',')}`)
+}
+
+// the turret answers with its own heavier report (#2782.6): a flagged efire
+{
+    const gs = makeGame(5)
+    for (const s of gs.soldiers) s.dead = true
+    gs.p.x = 360; gs.p.inv = 9999
+    let big = 0
+    for (let i = 0; i < 300 && !gs.end; i++) { step(gs, {}); big += gs.ev.filter((e) => e.type === 'efire' && e.big).length; gs.ev.length = 0 }
+    r.check('turret fire is flagged big (distinct heavier report)', big >= 1, `big efires=${big}`)
+}
+
+// soldier muzzle-flash timer rides the sim tick (deterministic, undecorated truth)
+{
+    const gs = makeGame(7)
+    gs.p.x = 250; gs.p.inv = 99999   // stand and be shot at; soldier 1 at x300 engages
+    let flashed = false
+    for (let i = 0; i < 120 && !flashed; i++) { step(gs, {}); flashed = gs.soldiers.some((s) => s.flash > 0); gs.ev.length = 0 }
+    r.check('firing soldiers carry a muzzle-flash timer', flashed)
 }
 
 // soldiers fight back (the named regression): enemies must open fire and shots
@@ -230,6 +252,19 @@ const browser = await launch()
     const attract2 = await page.evaluate(() => window.__contraTest.probe())
     r.check('attract: the demo runs itself before any key', attract1.screen === 'attract' && attract2.tick > attract1.tick, `tick ${attract1.tick} -> ${attract2.tick}`)
 
+    // ART.md §6 audit (#2782.5): the attract shows the game and rolls one
+    // cycling message. The rotation is WORLD-tick bound (index = tick/150), so
+    // one full cycle is 2.5 WORLD seconds regardless of render rate — software
+    // CI Chrome paints at ~16 fps and would starve a paint-counted window.
+    const msgA = attract1.msg
+    let msgB = msgA
+    for (let guard = 0; guard < 40 && msgB === msgA; guard++) {
+        await page.waitForTimeout(100)
+        msgB = (await page.evaluate(() => window.__contraTest.probe())).msg
+    }
+    r.check('attract: one cycling message rotates (ART §6, world-tick bound)',
+        typeof msgA === 'string' && msgA.length > 0 && msgB !== msgA, `"${msgA}" -> "${msgB}"`)
+
     await page.keyboard.press('Space')
     await page.waitForTimeout(300)
     const started = await page.evaluate(() => window.__contraTest.probe())
@@ -280,6 +315,28 @@ const browser = await launch()
         return cs.length >= 1 && cs.every((c) => c.isConnected)
     })
     r.check('the canvas is mounted in the page (StrictMode law)', mounted)
+
+    // #2782.1: the bottom edge is a shoreline, not dry dirt — sample the sea
+    // band and demand blue dominate (r>b brown everywhere = the old regression).
+    const wet = await page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(8, 212, 368, 10).data
+        let blue = 0, n = 0
+        for (let i = 0; i < d.length; i += 4) { n++; if (d[i + 2] > d[i] + 20) blue++ }
+        return n ? blue / n : 0
+    })
+    r.check('water on the bottom edge: the sea band reads blue (not dry dirt)', wet > 0.5, `blue fraction=${wet.toFixed(2)}`)
+
+    // #2782.2: during the respawn freeze the corpse tumbles — the probe frame
+    // advances while dead (the sim freeze law itself is checked sim-side).
+    await page.evaluate(() => window.__contraTest.setup({ lives: 2, kill: true }))
+    let t1 = null, t2 = null
+    for (let guard = 0; guard < 20 && !(t1 && t2); guard++) {
+        const p = await page.evaluate(() => window.__contraTest.probe())
+        if (p.tumble >= 0) { if (!t1) t1 = { f: p.tumble, at: Date.now() }; else if (Date.now() - t1.at > 200) t2 = p.tumble }
+        await page.waitForTimeout(60)
+    }
+    r.check('death tumble animates during the respawn freeze', t1 !== null && t2 !== null && t2 !== t1.f, `frames ${t1 && t1.f} -> ${t2}`)
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()

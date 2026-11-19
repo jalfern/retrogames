@@ -16,6 +16,17 @@ against — any key or tap takes the seat.
 
 ## Engine notes
 
+- #2782 polish pass (2026-11-19): the world floor is a SHORELINE (sand under
+  foot, animated two-tone sea + foam lip to the screen bottom — the
+  commission's "water at the bottom edge"); landings kick splash droplets off
+  the water line (shell-cosmetic, `c:3/4` particles). Booms carry a `kind`
+  on the (unhashed) event — `'tnt'` / `'kill'` / `'death'` — so the shell sizes
+  an expanding `drawFireball` per source; turret shots carry `big` for their own
+  heavier report; soldiers carry a deterministic `flash` timer for the muzzle.
+  The hero's respawn freeze draws a 4-frame `drawDeathTumble` — the sim freeze
+  law itself is untouched. Attract copy rotates on WORLD ticks
+  (`floor(gs.tick / 150)`), never paint frames — software CI Chrome paints at
+  ~16 fps and starved the old paint-counted cycle (contracheck caught it live).
 - `sim.js` is the whole truth, pure Node: fixed 60 Hz `step(gs, pad)`.
   Every sim random rides `gs.r` (mulberry32 as an integer state — no
   functions inside `gs`), so snapshot/restore survive JSON and
