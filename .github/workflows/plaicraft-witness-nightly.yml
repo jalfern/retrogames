@@ -18,10 +18,28 @@ name: PLAICRAFT clap witness (advisory, #1711)
 # The stamp that matters is in the log: `line-3 machine evidence: YES` from a
 # run that never skipped the ±50 ms pair gate. Quote it at the audit.
 
+# `pull_request` exists for rule 5a physics: GitHub refuses `workflow_dispatch`
+# for a workflow absent from the default branch, so a NEW nightly's first CI pass
+# can only ride the PR that introduces it. Paths-limited to the clap pipeline —
+# the nightly schedule is the steady-state witness; this trigger is the proof.
+
 on:
   schedule:
     - cron: '15 7 * * *'   # after grade-nightly (06:45 UTC) and the nightly verdict (06:15) — quiet window
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/plaicraft-witness-nightly.yml
+      - scripts/plaicraft-clap.mjs
+      - scripts/lib/fakemic.mjs
+      - scripts/lib/relaysim.mjs
+      - scripts/lib/harness.mjs
+      - src/utils/clapSync.js
+      - src/utils/voice.js
+      - src/utils/voiceCapture.js
+      - src/utils/recording.js
+      - src/utils/sessionStore.js
+      - src/games/Gauntlet/index.jsx
 
 concurrency:
   group: plaicraft-witness-nightly
