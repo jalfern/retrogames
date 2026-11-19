@@ -16,7 +16,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { AMB_ZONES, zoneForShift, fireAt } from './ambience'
-import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from './visuals'
+import { BIN_VIS, makeBinVis, stepBinVis, pushBinKind, dropVoice, makeWhip, stepWhip, whipTarget, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from './visuals'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -310,9 +310,18 @@ const PickRushGame = () => {
                 else if (e.type === 'drop') {
                     audioController.playTone(660 + Math.min(6, e.combo) * 90, 0.07, 'square', 0.06)
                     audioController.playTone(990 + Math.min(6, e.combo) * 90, 0.12, 'square', 0.05, 0.07)
-                    audioController.playTone(120, 0.06, 'square', 0.05) // sheet-metal thud under the ding (#2214)
+                    // the sheet-metal thud (#2214) now rings PER BIN (#2739):
+                    // dropVoice picks the bin's own note + gain, and combo ≥ 4
+                    // adds a bright double-tink so the streak is audible too.
+                    const bi = e.bin ?? BINS.findIndex((bn) => e.x >= bn.x && e.x <= bn.x + bn.w)
+                    const dv = dropVoice(bi, e.combo)
+                    audioController.playTone(dv.hz, 0.06, 'square', dv.gain)
+                    if (dv.double) {
+                        audioController.playTone(2093, 0.05, 'sine', 0.03)
+                        audioController.playTone(2637, 0.05, 'sine', 0.022, 0.06)
+                    }
                     burst(e.x, BIN_TOP, 5, TAG[e.kind], 2)
-                    const bi = BINS.findIndex((bn) => e.x >= bn.x && e.x <= bn.x + bn.w)
+                    if (bi >= 0) pushBinKind(binVis[bi], e.kind) // what landed, remembered (#2739)
                     if (landings.length < 8) landings.push({ kind: e.kind, x: e.x, t: 0, bin: bi })
                     shake = Math.max(shake, 1.6)
                     if (e.combo >= 4) say(`COMBO ×${e.combo}`, '#ffd23f')
@@ -615,23 +624,35 @@ const PickRushGame = () => {
                     audioController.playTone(72, 0.14, 'sine', 0.03) // full-pallet thunk
                     audioController.playNoise(0.09, 0.02)
                 }
-                // landed stock: the bin's own kind, stacking and squashing in
-                const fill = vis.fill
-                const tag = BIN_TAG[i]
-                for (let k = 0; k < fill; k++) {
-                    const bxp = b.x + 8 + (k % 3) * 18 + ((k * 13) % 6)
-                    const byp = FLOOR_Y - 6 - Math.floor(k / 3) * 9
-                    if (byp <= y + 8) continue
-                    const squash = k >= fill - 3 ? 0.75 : 1
-                    ctx.globalAlpha = 0.55
-                    ctx.fillStyle = tag
-                    if (k % 3 === 2) { circle(ctx, bxp + 6, byp + 4, 5); ctx.fill() } else ctx.fillRect(bxp, byp + 8 - 8 * squash, 12, 8 * squash)
-                    ctx.globalAlpha = 0.25
-                    ctx.fillStyle = '#0a0f16'; ctx.fillRect(bxp, byp + 8 - 8 * squash + 5, 12 * (k % 3 === 2 ? 0.8 : 1), 2)
+                // landed stock: real silhouettes of WHAT landed here (#2739) —
+                // the CAN bin shows barrels among the cans, the top row squashes
+                // as pieces settle, and a thunked full pallet compresses into a
+                // ghost pancake for `settle` ticks. Kinds ride vis.stack (pushed
+                // beside the same drop that climbed the meter); paint-only.
+                for (let k = 0; k < vis.fill; k++) {
+                    const col = k % 3, row = Math.floor(k / 3)
+                    const bxp = b.x + 13 + col * 16
+                    const byp = FLOOR_Y - 9 - row * 8
+                    if (byp <= y + 10) continue
+                    const squash = k >= fill - 3 ? 0.78 : 1
+                    ctx.globalAlpha = 0.88
+                    drawItem(ctx, vis.stack[k] || b.kind, bxp, byp, ((k * 7) % 5 - 2) * 0.14, true, squash)
+                    ctx.globalAlpha = 1
+                }
+                // the full-pallet settle: the emptied pallet ghosts down, squashed
+                if (vis.settle > 0 && vis.ghost.length > 0) {
+                    const q = vis.settle / 14
+                    ctx.globalAlpha = 0.55 * q
+                    for (let k = 0; k < vis.ghost.length; k++) {
+                        const col = k % 3, row = Math.floor(k / 3)
+                        drawItem(ctx, vis.ghost[k], b.x + 13 + col * 16, FLOOR_Y - 6 - row * 8 * 0.42, 0, true, 0.32 + 0.24 * q)
+                    }
                     ctx.globalAlpha = 1
                 }
                 // #2678 fill meter: the bin's tag-coloured ink column climbs the
                 // right wall as the bin fills; a full bin flashes its whole rim.
+                const fill = vis.fill
+                const tag = BIN_TAG[i]
                 const mTop = y + 8, mBot = FLOOR_Y - 3, mx = b.x + b.w - 6
                 ctx.fillStyle = '#0a0f16'; ctx.fillRect(mx, mTop, 4, mBot - mTop)
                 const inkH = Math.round((mBot - mTop - 2) * (fill / BIN_VIS.cap))
