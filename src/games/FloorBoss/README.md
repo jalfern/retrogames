@@ -228,7 +228,7 @@ score; three expired orders and you're fired. Quota: 1000.
 
 ## Verify
 ```bash
-npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921) + freight tiers: side-stream golden, tiered bonus, road law, dest spread (#1927) + load weight: dest+weight goldens, mix sentinels, rate literals 60/54, dock speed 14/14/28 (#1931)
+npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921) + freight tiers: side-stream golden, tiered bonus, road law, dest spread (#1927) + load weight: dest+weight goldens, mix sentinels, rate literals 60/54, dock speed 14/14/28 (#1931) + tail law: pivot geometry ×8 bearings, whole-net≡kneeNet dead-code proof (6543 boards), career clip-audit (pre-PR planner clips 2009, live 0), repath back-diagonal rig + control, liveTails eye, twin determinism (#2760)
 node scripts/floorbosscheck.mjs --mutate-yield   # servo bay-yield law can fail
 node scripts/floorbosscheck.mjs --mutate-reach   # servo reach law can fail
 node scripts/floorbosscheck.mjs --mutate-cap     # the dock cannot pack past the pad (#1911)
@@ -239,6 +239,8 @@ node scripts/floorbosscheck.mjs --mutate-miles   # the truck cannot answer insta
 node scripts/floorbosscheck.mjs --mutate-weight  # heavy crates cannot claim their rate (#1931)
 node scripts/floorbosscheck.mjs --mutate-slow    # heavies cannot cost the dock their ticks (#1931)
 node scripts/floorbosscheck.mjs --mutate-bands   # the inverted dest band (REGIONAL 72%) cannot return (#1931)
+node scripts/floorbosscheck.mjs --mutate-tail    # loaded carts turn into their own counterweight — the tail clause dies in the router, ghost-clips return (#2760)
+node scripts/floorbosscheck.mjs --mutate-tail-land # the land scan goes blind to the back diagonal — racks drop onto committed backswings (#2760)
 node scripts/floorbosscheck.mjs --mutate-duel    # bot stows cannot bypass the rack-owner credit law (#2555)
 node scripts/floorbosscheck.mjs --mutate-lane    # long tight aisles cannot be sealed into one-way traps (#2614)
 node scripts/floorbosscheck.mjs --mutate-corner   # racks cannot choke a tight elbow at its swing (#2627)
@@ -509,3 +511,32 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
     ducks in-window) and mutants `--mutate-manners` (the teach never fires) and
     `--mutate-attract` (cold seeds return) — each dies. Zero footprint: the sim
     is byte-identical; all law unchanged.
+  - **TAIL LAW shipped by this PR (#2760):** the cart body's other half. A
+    pivot sweeps the counterweight diagonal `B − dIn − dOut`, not just the knee's
+    outer cell — yard vehicles pivot about the rear axle, so the tail swings out
+    where the nose swings in, and `tailTurn` asks the mirror cell of #2711's
+    `kneeTurn`. Routing half: `bfsKnee` refuses any loaded pivot whose tail
+    diagonal holds a rack, and repath-on-land (#2724) sweeps the back diagonal
+    too — a rack landing across a committed route's backswing re-routes that
+    tick. Presentation: loaded carts wear a steel nub on their back (amber stays
+    the law colour — steel is just mass), and the DEV eye `tails` reads
+    tail-blocked turns on the live floor. **Measured, and the plan pivoted:**
+    re-running every loaded plan over eight autopilot careers, 1,982 of 19,766
+    plans re-route under the tail law — and the pre-PR planner ghost-clips
+    racks with its tail **2,009 times** on the same boards; that's the lie
+    this PR kills. The click-refusal half (`why:'tail'`) was **refused as dead
+    code** (#2692 doctrine): a whole-body service net (knee AND tail clear)
+    holds the identical cells to `kneeNet` — netdiff 0 across 6,543 boards
+    (seed floors cell-by-cell, the 12-spot blueprint, dense rows, careers
+    sampled per second); a rack that would clip a sole-arrival bend's
+    backswing already falls to the knee/pocket law at its own click. Economy
+    untouched where it counts: the 5-seed shifts still go 5/5 wins, 0 jams
+    (the shift and attract seed sets re-swept under the new congestion —
+    floorbosscheck §TAIL carries the honest re-pins). `floorbosscheck` §TAIL:
+    pivot geometry ×8 bearings, whole-net twin equality, the career clip-audit
+    (old planner clips > 0; live, stored and driven clips === 0), a
+    repath-back-diagonal rig + byte-stable control, `liveTails` purity/order,
+    twin determinism, source pins — and `--mutate-tail` /
+    `--mutate-tail-land` kills. Residual honest gap: the body is now two
+    diagonals — overhang beyond the outer nose/tail swings and forklift-lane
+    widths stay modelled as points-plus-diagonals.

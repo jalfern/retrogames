@@ -55,6 +55,8 @@
 //   node scripts/floorbosscheck.mjs --mutate-repath-land # racks land on claimed routes — stale paths drive into fresh walls, demand RED (#2724)
 //   node scripts/floorbosscheck.mjs --mutate-face # reversing rotates the nose — bot.face becomes bot.dir again and the outside audit cannot see the body (#2732)
 //   node scripts/floorbosscheck.mjs --mutate-seed # the knee planner seeds from the movement again — reversed carts plan body-illegal swings (#2738)
+//   node scripts/floorbosscheck.mjs --mutate-tail # loaded carts turn into their counterweight again — the tail clause dies in the router (#2760)
+//   node scripts/floorbosscheck.mjs --mutate-tail-land # racks land on committed backswings — the land scan goes blind to the tail diagonal (#2760)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -68,6 +70,7 @@ import {
     shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, laneEscapes, swingMarkers, flowMarks, laneRuns, flowHeat,
     pullOff, YIELD_WAIT, YIELD_MAX, YIELD_CD,
     kneeTurn, bfsKnee, kneeNet, liveKnees, kneeEscapes, blocked,
+    tailTurn, liveTails, MAP, CELL, COLS, ROWS, BAY_CELL,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -111,7 +114,9 @@ const MUT_TURN = ARGS.includes('--mutate-turn') // #2724: the pivot sort is gone
 const MUT_REPATH_LAND = ARGS.includes('--mutate-repath-land') // #2724: racks land on claimed routes — stale paths keep driving into them
 const MUT_FACE = ARGS.includes('--mutate-face') // #2732: reversing rotates the nose — bot.face degrades back to bot.dir
 const MUT_SEED = ARGS.includes('--mutate-seed') // #2738: the knee planner seeds from the movement again — reversed carts plan swings the body forbids
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED) {
+const MUT_TAIL = ARGS.includes('--mutate-tail') // #2760: loaded carts turn into their own counterweight again — the tail clause is gone from the router
+const MUT_TAIL_LAND = ARGS.includes('--mutate-tail-land') // #2760: landings stop seeing the back diagonal — racks drop onto committed backswings
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const tgt = MUT_MANNERS || MUT_ATTRACT ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) : sim // #2700: presentation laws plant in the painter
     const src = readFileSync(tgt, 'utf8')
@@ -166,7 +171,7 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     : MUT_MANNERS
                                                                     ? ['if (duckTaughtOn !== gs) {', 'if (duckTaughtOn !== gs && false) {', 'the first duck never names itself — GIVE WAY stays decoration, the grammar goes unlearned (#2700)']
                                                                     : MUT_ATTRACT
-                                                                    ? ['const ATTRACT_SEEDS = [1, 20, 22, 26, 31]', 'const ATTRACT_SEEDS = [1337]', 'the shop window is cold again — the demo seed never ducks while a visitor watches (#2700 seeds re-measured #2738)']
+                                                                    ? ['const ATTRACT_SEEDS = [55, 74, 107, 126, 148]', 'const ATTRACT_SEEDS = [1337]', 'the shop window is cold again — the demo seed never ducks while a visitor watches (#2700 seeds re-measured #2760)']
                                                                     : MUT_KNEE
                                                                     ? ['const after = kneeNet(gs, { x, y })', 'const after = kneeNet(gs, null)', 'the sixth law is blind — racks may stand in the swing and sever the knee network (#2711)']
                                                                     : MUT_KNEE_ROUTE
@@ -181,6 +186,10 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ['bot.dir = nbDir(nx.x - bot.x, nx.y - bot.y)\n    if (bot.dir !== (bot.face + 2) % 4) bot.face = bot.dir // #2732: reversing keeps the facing — the body never rotates (#2711 doctrine, now visible in state)', 'bot.dir = nbDir(nx.x - bot.x, nx.y - bot.y)\n    bot.face = bot.dir // MUTANT: reversing rotates the nose — the body law is gone (#2732)', 'bot.face records movement, not facing — the back-pedal facing is invisible outside the planner again (#2732)']
                                                                     : MUT_SEED
                                                                     ? ['else if (t.kind === \'toStock\') bot.path = bfsKnee(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id, bot.face)\n    else if (t.kind === \'toOut\') bot.path = bot.carry\n        ? bfsKnee(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id, bot.face)', 'else if (t.kind === \'toStock\') bot.path = bfsKnee(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id, bot.dir) // MUTANT: the seed rides the movement again (#2738)\n    else if (t.kind === \'toOut\') bot.path = bot.carry\n        ? bfsKnee(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id, bot.dir)', 'the knee planner is blind to the nose — a just-reversed cart plans swings the body doctrine forbids, the live audit clips racks again (#2738)']
+                                                                             : MUT_TAIL
+                                                                    ? ['if (turn && kneeRack(gs, n.x - hx - dx, n.y - hy - dy)) continue // the tail is racked — the counterweight would clip it (#2760)', 'if (false && turn && kneeRack(gs, n.x - hx - dx, n.y - hy - dy)) continue // MUTANT', 'loaded carts clip their counterweight again — the tail is gone from the route planner, and ghost-clips return to every loaded leg (#2760)']
+                                                                    : MUT_TAIL_LAND
+                                                                    ? ['px - NB[pd][0] - NB[d][0] === x && py - NB[pd][1] - NB[d][1] === y)) { broken = true; break } // …or the counterweight tail does (#2760)', 'false)) { broken = true; break } // MUTANT: the back diagonal is blind again (#2760)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
@@ -844,16 +853,17 @@ console.log('— shift ladder (#2346) —')
     // every 600-tick mark plus the whistle). The live engine must match at the
     // comma — the hash may differ only by the documented additive shift bits.
     const TRACE = {
-        // #2738 RE-PIN: the knee planner now seeds from bot.face (the doctrine
-        // bearing), so just-reversed carts refuse the pivots their movement seed
-        // used to allow — the routed legs move again (marks vs the #2724 pin:
-        // 1382/1295/1626, avg +11; wins hold: all three careers end W, and the
-        // live body-clip tripwire in this file went 14 → 0 exactly as promised).
-        // Traces regenerated from the live engine (#2711 rig law: literal
-        // traces, re-measured, not vibes).
-        4242: '600:45:1:0|1200:144:2:0|1800:109:2:0|2400:114:3:0|3000:79:4:0|3600:110:5:0|4200:135:7:0|4800:268:8:0|5400:368:9:0|6000:633:10:0|6600:715:11:0|7200:1000:12:0|7800:1020:13:0|8400:1372:15:0|9000:1382:15:0|END win 1382',
-        1337: '600:45:1:0|1200:118:2:0|1800:138:3:0|2400:93:4:0|3000:53:4:0|3600:362:6:0|4200:397:7:0|4800:12:8:0|5400:145:9:0|6000:610:10:0|6600:725:11:0|7200:859:12:0|7800:1210:14:0|8400:1210:14:0|9000:1295:15:0|END win 1295',
-        777: '600:50:1:0|1200:50:2:0|1800:20:3:0|2400:45:4:0|3000:50:4:0|3600:21:5:0|4200:21:6:0|4800:46:7:0|5400:427:9:0|6000:467:10:0|6600:803:10:0|7200:1033:12:0|7800:1094:12:0|8400:1449:15:0|9000:1626:16:0|END win 1626',
+        // #2760 RE-PIN: the tail law moves routing — loaded pivots now refuse
+        // the counterweight diagonal too, so the three careers re-route (see
+        // the §TAIL audit: 1982 plans re-routed, 2068 ghost clips killed over
+        // these same seed families). Traces regenerated from the live engine
+        // (#2711 rig law: literal traces, re-measured, not vibes). Wins hold:
+        // all three careers end W (avg 1317 vs the #2738 pin's 1434 — the
+        // honest cost of driving the long way around a racked backswing);
+        // jams stay 0 and the 5-seed shift set still goes 5/5 (#2692 re-pin).
+        4242: '600:45:1:0|1200:144:2:0|1800:109:2:0|2400:114:3:0|3000:79:4:0|3600:110:5:0|4200:135:6:0|4800:268:8:0|5400:363:8:0|6000:498:10:0|6600:715:11:0|7200:1000:12:0|7800:1020:13:0|8400:1362:15:0|9000:1372:16:0|END win 1372',
+        1337: '600:45:1:0|1200:118:2:0|1800:138:3:0|2400:93:4:0|3000:53:4:0|3600:362:6:0|4200:397:7:0|4800:7:8:0|5400:145:9:0|6000:712:10:0|6600:737:11:0|7200:847:12:0|7800:1198:14:0|8400:1198:14:0|9000:1288:15:0|END win 1288',
+        777: '600:50:1:0|1200:50:2:0|1800:20:3:0|2400:45:4:0|3000:50:4:0|3600:21:5:0|4200:21:7:0|4800:41:7:0|5400:417:9:0|6000:452:10:0|6600:793:10:0|7200:923:11:0|7800:953:12:0|8400:1276:14:0|9000:1291:16:0|END win 1291',
     }
     let bad = null
     for (const seed of Object.keys(TRACE)) {
@@ -1656,12 +1666,15 @@ console.log('— duck & pass (#2692) —')
         ok(duckAt === '16,3->16,4', `both sides walled, the cart backs off the mouth instead (${duckAt}) — the queue case has an honest shoulder too (#2692)`)
     }
     {
-        // honesty where it must fail: sealed on every side — no courtesy to fake
+        // honesty where it must fail: sealed on every side — no courtesy to fake.
+        // #2760 RE-PIN: the assertion is about cart A, not the whole floor —
+        // with tail routing the traffic pattern breathes, and another cart may
+        // legitimately duck at another bay while this one stays walled in.
         const { g, A } = bayRig({ sealW: true, sealE: true, sealS: true })
         let deep = 0
         for (let t = 0; t < 200 && !g.end; t++) { step(g, [{}]); if (A.wait >= YIELD_WAIT && !A.yield) deep++ }
-        ok(g.ducks === 0 && deep > 0 && A.yield === null,
-            `no shoulder, no duck — the cart waits like it always did (wait≥${YIELD_WAIT} for ${deep} ticks, ducks ${g.ducks}) — yield never teleports a cart through racks (#2692)`)
+        ok(A.ducked === 0 && deep > 0 && A.yield === null,
+            `no shoulder, no duck — the cart waits like it always did (wait≥${YIELD_WAIT} for ${deep} ticks, A.ducked ${A.ducked}) — yield never teleports a cart through racks (#2692; #2760: the rig judges cart A; traffic elsewhere may duck)`)
     }
     {
         // a rival that never moves is a breakdown, not traffic — ducking lies
@@ -1702,7 +1715,11 @@ console.log('— duck & pass (#2692) —')
     }
     {
         // the live floor ducks on its own: the shelf-proof seeds, autopilot seats
-        const seeds = [1337, 11, 13, 17, 42]
+        // #2760 RE-PIN: tail routing reshuffles congestion, and the old set
+        // (1337/11/13/17/42) drives a clean 0 ducks. Seeds 1–60 re-swept:
+        // every-seed-duck winners 1(2 ducks),19,23,30,32,35,36,39,46,49,50,
+        // 52,55(2) — first five adopted, all 5/5 wins with zero jams.
+        const seeds = [1, 19, 23, 30, 32]
         let ducks = 0, jams = 0, wins = 0
         for (const seed of seeds) {
             const g = makeGame(seed)
@@ -2218,6 +2235,7 @@ console.log('— turn-count routing (#2724): loaded legs corner instead of stair
                     const back = hx === -dx && hy === -dy
                     const turn = !back && (hx !== dx || hy !== dy)
                     if (turn && kneeTurn(g, n.x, n.y, NB4[n.i], NB4[i])) continue
+                    if (turn && tailTurn(g, n.x, n.y, NB4[n.i], NB4[i])) continue // #2760: the reference carries the tail too — same physics, different route order; without this line the comparison is knee-only traffic vs whole-body traffic and the hop-equality law dies
                     const p = n.path.concat([{ x, y }])
                     if (pred(x, y)) return p
                     const k2 = `${x},${y},${back ? n.i : i}`
@@ -2485,6 +2503,338 @@ console.log('— turn-count routing (#2724): loaded legs corner instead of stair
             return stateHash(g3)
         }
         ok(twin() === twin(), 'twin autopilots stay byte-identical across build-time replans — the turn counter is geometry, no rng (#2724)')
+    }
+}
+// ---- tail law (#2760) — the cart's other half: pivots sweep the counterweight diagonal ----
+console.log('— tail law (#2760) —')
+{
+    const NBT = [[0, -1], [1, 0], [0, 1], [-1, 0]] // N,E,S,W
+    const inGridC = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS
+    const rackQ = (gs, x, y) => gs.racks.some((r) => r.x === x && r.y === y)
+    const botQ = (gs, x, y) => gs.robots.some((r) => r.x === x && r.y === y)
+    const walksClips = (g, sx, sy, p, face0) => {
+        let n = 0, f = face0, px = sx, py = sy
+        for (const c of p) {
+            const d = NBT.findIndex(([ax, ay]) => c.x - px === ax && c.y - py === ay)
+            if (d === -1) { px = c.x; py = c.y; continue }
+            const back = d === (f + 2) % 4
+            if (!back && d !== f && tailTurn(g, px, py, NBT[f], NBT[d])) n++
+            if (!back) f = d
+            px = c.x; py = c.y
+        }
+        return n
+    }
+    // geometry: tailTurn asks B − dIn − dOut — the OPPOSITE diagonal from the
+    // knee — and only on pivots (straights and backpedals sweep nothing).
+    {
+        const g = makeGame(7)
+        const h0 = stateHash(g)
+        ok(!tailTurn(g, 13, 7, NBT[0], NBT[0]) && !tailTurn(g, 13, 7, NBT[0], NBT[2]),
+            'straights and backpedals sweep no tail — the counterweight stays in lane (body doctrine, #2546 spur law)')
+        let cases = 0, bad = 0
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+                if (i === j || (i + 2) % 4 === j) continue
+                const tx = 13 - NBT[i][0] - NBT[j][0], ty = 7 - NBT[i][1] - NBT[j][1] // the counterweight diagonal
+                const nx = 13 + NBT[i][0] + NBT[j][0], ny = 7 + NBT[i][1] + NBT[j][1] // the nose diagonal
+                g.racks.push({ x: tx, y: ty, items: [] })
+                if (!tailTurn(g, 13, 7, NBT[i], NBT[j])) bad++ // its own diagonal, refused
+                if (kneeTurn(g, 13, 7, NBT[i], NBT[j])) bad++ // the nose does not ask the tail's cell
+                g.racks.pop()
+                g.racks.push({ x: nx, y: ny, items: [] })
+                if (tailTurn(g, 13, 7, NBT[i], NBT[j])) bad++ // the tail does not ask the nose's cell
+                if (!kneeTurn(g, 13, 7, NBT[i], NBT[j])) bad++
+                g.racks.pop()
+                // the same bend seen backwards: driving the reverse through B
+                // puts the counterweight exactly where the forward knee swung
+                if (tailTurn(g, 13, 7, NBT[i], NBT[j], { x: tx, y: ty }) !== kneeTurn(g, 13, 7, NBT[(j + 2) % 4], NBT[(i + 2) % 4], { x: tx, y: ty })) bad++
+                cases++
+            }
+        }
+        ok(bad === 0 && cases === 8, `all eight pivots refuse exactly the counterweight diagonal — tail and knee ask opposite cells, never each other's (${cases} cases) (#2760)`)
+        ok(tailTurn(g, 13, 7, NBT[0], NBT[1], { x: 12, y: 8 }) && !tailTurn(g, 13, 7, NBT[0], NBT[1]) && stateHash(g) === h0,
+            'the hypothetical form answers on a phantom rack and leaves the board untouched — the extra-cell discipline kneeNet uses (#1917)')
+    }
+    // the whole-body service net (knee AND tail) vs the knee net: equal on every
+    // board this floor can reach. That equality is the proof the CLICK-REFUSAL
+    // half of the tail law is dead code — a rack that would clip a sole-arrival
+    // backswing already falls to the knee/pocket law at its own click. Refused
+    // per the #2692 doctrine (dead laws are debt); the counterweight ships only
+    // where the physics bites: bfsKnee, repath-on-land, liveTails.
+    {
+        const rackCell = (gs, x, y, extra) => rackQ(gs, x, y) || !!(extra && extra.x === x && extra.y === y)
+        const wholeNet = (gs, extra) => { // kneeNet verbatim, plus the tail refusal at turns
+            const seen = new Set()
+            let frontier = []
+            const floor = (x, y) => inGridC(x, y) && MAP[y][x] === CELL.FLOOR && !rackCell(gs, x, y, extra)
+            const seed = (x, y) => {
+                if (!floor(x, y)) return
+                for (let i = 0; i < 4; i++) { const k = `${x},${y},${i}`; if (!seen.has(k)) { seen.add(k); frontier.push({ x, y, i }) } }
+            }
+            for (const o of OUT_CELLS) for (const [dx, dy] of NBT) if (MAP[o.y + dy][o.x + dx] === CELL.FLOOR) seed(o.x + dx, o.y + dy)
+            for (const p of [{ x: 23, y: 12 }, { x: 24, y: 12 }, { x: 22, y: 12 }, { x: 21, y: 12 }]) seed(p.x, p.y)
+            for (const [dx, dy] of NBT) seed(BAY_CELL.x + dx, BAY_CELL.y + dy)
+            while (frontier.length) {
+                const next = []
+                for (const n of frontier) {
+                    for (let i = 0; i < 4; i++) {
+                        const [dx, dy] = NBT[i]
+                        const [hx, hy] = NBT[n.i]
+                        if (!floor(n.x + dx, n.y + dy)) continue
+                        const back = hx === -dx && hy === -dy
+                        const turn = !back && (hx !== dx || hy !== dy)
+                        if (turn && rackCell(gs, n.x + hx + dx, n.y + hy + dy, extra)) continue
+                        if (turn && rackCell(gs, n.x - hx - dx, n.y - hy - dy, extra)) continue
+                        const k = `${n.x + dx},${n.y + dy},${back ? n.i : i}`
+                        if (!seen.has(k)) { seen.add(k); next.push({ x: n.x + dx, y: n.y + dy, i: back ? n.i : i }) }
+                    }
+                }
+                frontier = next
+            }
+            const cells = new Set()
+            for (const k of seen) cells.add(k.slice(0, k.lastIndexOf(',')))
+            return cells
+        }
+        const netdiff = (gs, extra) => {
+            const a = kneeNet(gs, extra)
+            const b = wholeNet(gs, extra)
+            let d = 0
+            for (const k of a) if (!b.has(k)) d++
+            for (const k of b) if (!a.has(k)) d++
+            return d
+        }
+        let boards = 0, diffBoards = 0
+        const probe = (gs, extra) => { boards++; if (netdiff(gs, extra)) diffBoards++ }
+        for (const seed of [7, 11, 13, 17, 42, 99, 777, 1337, 4242]) {
+            const gs = makeGame(seed)
+            probe(gs, null)
+            for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < COLS - 1; x++) {
+                if (MAP[y][x] !== CELL.FLOOR || rackQ(gs, x, y)) continue
+                probe(gs, { x, y })
+            }
+            const bp = makeGame(seed) // the 12-spot blueprint, then one more rack everywhere
+            for (const s of RACK_SPOTS) bp.racks.push({ x: s.x, y: s.y, items: [], owner: -1 })
+            probe(bp, null)
+            for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < COLS - 1; x++) {
+                if (MAP[y][x] !== CELL.FLOOR || rackQ(bp, x, y)) continue
+                probe(bp, { x, y })
+            }
+            const dr = makeGame(seed) // dense rows: maximum rack density the shelf allows
+            for (let x = 1; x < COLS - 1; x++) {
+                if (MAP[5][x] === CELL.FLOOR) dr.racks.push({ x, y: 5, items: [], owner: -1 })
+                if (MAP[7][x] === CELL.FLOOR) dr.racks.push({ x, y: 7, items: [], owner: -1 })
+            }
+            probe(dr, null)
+            const cv = makeGame(seed) // careers, sampled every second — the live floor, all shift long
+            const ap = createAutopilot()
+            while (!cv.end && cv.tick < SHIFT + 10) { step(cv, [ap(cv)]); if (cv.tick % 60 === 0) probe(cv, null) }
+        }
+        ok(diffBoards === 0 && boards > 6000, `whole-body net ≡ kneeNet on ${boards} boards, netdiff 0 — the placement half of the tail law would refuse nothing the knee law missed; dead code refused (#2692 doctrine), the physics ships instead (#2760)`)
+    }
+    // liveTails — the QA eye on tail-blocked turns: the knee eye's mirror.
+    {
+        const g = makeGame(7)
+        g.racks.push({ x: 12, y: 8, items: [] }) // the counterweight diagonal of the (13,7) N→E bend
+        const a = JSON.stringify(liveTails(g))
+        const b2 = JSON.stringify(liveTails(g))
+        const h0 = stateHash(g)
+        ok(a === b2 && stateHash(g) === h0, 'liveTails is pure — same answer twice, hash unchanged (#1917)')
+        const t = JSON.parse(a)
+        ok(t.some((m) => m.x === 13 && m.y === 7 && m.in === 0 && m.out === 1 && m.tx === 12 && m.ty === 8), 'the racked backswing reads as a tail-blocked turn — in N, out E, tail on (12,8) (#2760)')
+        let ordered = true
+        for (let k = 1; k < t.length; k++) if (t[k].y < t[k - 1].y || (t[k].y === t[k - 1].y && t[k].x < t[k - 1].x)) ordered = false
+        ok(ordered, `liveTails answers row-major (${t.length} turns) — fixed order, deterministic eye (#1917)`)
+        const kEye = liveKnees(g)
+        ok(!kEye.some((m) => m.x === 13 && m.y === 7 && m.in === 0 && m.out === 1), 'the knee eye stays blind to the tail cell — each eye names its own diagonal, the grammar does not smear (#2711 vs #2760)')
+    }
+    // career clip-audit: the lie this PR kills, measured. The pre-#2760 planner
+    // (bfsKnee verbatim minus the tail line — a double implementation on the
+    // same live boards) ghost-clips racks with tails; the live planner drives
+    // zero, and the driven traffic never once turns with a rack on its
+    // backswing. Facing doctrine on the walk: reversing keeps the bearing,
+    // pivots adopt theirs (#2732) — a movement-bearing walk would invent clips
+    // the body never swept.
+    {
+        const oldKnee = (g, fx, fy, pred, ignoreId, dIn0) => {
+            if (pred(fx, fy)) return []
+            const seen = new Map()
+            let layer = [{ x: fx, y: fy, i: dIn0, t: 0, path: [], seq: 0 }]
+            while (layer.length) {
+                const next = []
+                for (const n of layer) {
+                    for (let i = 0; i < 4; i++) {
+                        const [dx, dy] = NBT[i]
+                        const [hx, hy] = NBT[n.i]
+                        const x = n.x + dx, y = n.y + dy
+                        if (!inGridC(x, y)) continue
+                        if (blocked(g, x, y, ignoreId)) continue
+                        const back = hx === -dx && hy === -dy
+                        const turn = !back && (hx !== dx || hy !== dy)
+                        if (turn && rackQ(g, n.x + hx + dx, n.y + hy + dy)) continue
+                        const t = n.t + (turn ? 1 : 0)
+                        const i2 = back ? n.i : i
+                        const k2 = `${x},${y},${i2}`
+                        const prev = seen.get(k2)
+                        if (prev !== undefined && prev <= t) continue
+                        seen.set(k2, t)
+                        next.push({ x, y, i: i2, t, path: n.path.concat([{ x, y }]), seq: next.length })
+                    }
+                }
+                next.sort((a, b) => a.t - b.t || a.seq - b.seq)
+                for (const n of next) if (pred(n.x, n.y)) return n.path
+                layer = next
+            }
+            return null
+        }
+        let plans = 0, rerouted = 0, oldClips = 0, liveClips = 0, storedClips = 0
+        let driven = 0, drivenClips = 0
+        for (const seed of [4242, 1337, 777, 99, 7, 11, 13, 17]) {
+            const gs = makeGame(seed)
+            const ap = createAutopilot()
+            const prev = new Map()
+            while (!gs.end && gs.tick < SHIFT + 10) {
+                for (const r of gs.robots) prev.set(r.id, {
+                    x: r.x, y: r.y, carry: r.carry, ef: r.face,
+                    head: r.path[0] ? `${r.path[0].x},${r.path[0].y}` : null,
+                })
+                step(gs, [ap(gs)])
+                for (const b of gs.robots) {
+                    const p = prev.get(b.id)
+                    if (p) { // driven-step audit needs a before/after; the plan audit below runs every tick
+                        const d = NBT.findIndex(([ax, ay]) => ax === b.x - p.x && ay === b.y - p.y)
+                        if (d >= 0) { // stationary ticks simply skip this half
+                            const back = d === (p.ef + 2) % 4
+                            if ((p.carry || b.carry) && p.head && `${b.x},${b.y}` === p.head && !back && d !== p.ef) {
+                                driven++ // a loaded plan-pivot — the router's promise, kept on the floor
+                                if (rackQ(gs, p.x - NBT[p.ef][0] - NBT[d][0], p.y - NBT[p.ef][1] - NBT[d][1])) drivenClips++
+                            }
+                        }
+                    }
+                    if (!b.carry || b.task.kind !== 'toStock' || b.path.length < 3) continue
+                    storedClips += walksClips(gs, b.x, b.y, b.path, b.face)
+                    const pred = (x, y) => Math.abs(x - b.task.rx) + Math.abs(y - b.task.ry) === 1
+                    const P = bfsKnee(gs, b.x, b.y, pred, b.id, b.face)
+                    const Q = oldKnee(gs, b.x, b.y, pred, b.id, b.face)
+                    if (!P || !Q) continue
+                    plans++
+                    if (JSON.stringify(P) !== JSON.stringify(Q)) rerouted++
+                    oldClips += walksClips(gs, b.x, b.y, Q, b.face)
+                    liveClips += walksClips(gs, b.x, b.y, P, b.face)
+                }
+            }
+        }
+        ok(plans > 10000 && rerouted > 500, `the tail law steers: ${rerouted} of ${plans} loaded plans re-route around their own counterweight over eight careers — physics, not decoration (#2760)`)
+        ok(oldClips > 500, `the pre-#2760 planner ghost-clips racks with its tail ${oldClips} times on these same boards — the exact lie this PR kills (measured, not assumed) (#2760)`)
+        ok(liveClips === 0 && storedClips === 0 && drivenClips === 0 && driven > 1000,
+            `the live floor sweeps clean: ${driven} driven plan-pivots, fresh plans and stored paths audited, ${liveClips + storedClips + drivenClips} tail clips — loaded carts never turn into their tail (#2760)`)
+    }
+    // repath-on-land, tail half: a rack landing on a committed plan's BACK
+    // diagonal breaks it the same tick — the cart was already committed to a
+    // pivot whose counterweight now owns the new wall's cell. Control: a click
+    // off every sweep diagonal leaves the plan byte-stable (repath fires on
+    // breakage, not on every build).
+    {
+        const g = makeGame(11)
+        g.score = 9000
+        g.auto = false
+        g.tool = 'rack'
+        ok(clickCell(g, 14, 2, 0) === 'build', 'the rig stocks against a legal rack at (14,2) (setup) (#2760)')
+        g.tool = null
+        const b = g.robots[0]
+        b.carry = 'crate'
+        b.task = { kind: 'toStock', rx: 14, ry: 2 }
+        b.path = []
+        step(g, [{}])
+        const P = b.path.slice()
+        ok(P.length > 4, `the loaded cart plans across the floor to its rack (${P.length} cells) (setup) (#2760)`)
+        // bearings along the plan, seeded by the cart's facing (#2732 doctrine);
+        // every cell a pivot of this plan sweeps (nose AND tail) is off-limits
+        // to the control click.
+        const cellsOnRoute = new Set(P.map((c) => `${c.x},${c.y}`))
+        const diagonals = new Set()
+        let f = b.face, pd = b.dir, px = b.x, py = b.y
+        for (const c of P) {
+            const d = NBT.findIndex(([ax, ay]) => c.x - px === ax && c.y - py === ay)
+            if (d !== -1) {
+                const back = d === (f + 2) % 4
+                if (!back && d !== f) {
+                    diagonals.add(`${px + NBT[f][0] + NBT[d][0]},${py + NBT[f][1] + NBT[d][1]}`)
+                    diagonals.add(`${px - NBT[f][0] - NBT[d][0]},${py - NBT[f][1] - NBT[d][1]}`)
+                }
+                if (!back) f = d
+                if (d !== pd && (d + 2) % 4 !== pd) { // the sim scan runs on movement bearings — exclude its diagonals too
+                    diagonals.add(`${px + NBT[pd][0] + NBT[d][0]},${py + NBT[pd][1] + NBT[d][1]}`)
+                    diagonals.add(`${px - NBT[pd][0] - NBT[d][0]},${py - NBT[pd][1] - NBT[d][1]}`)
+                }
+                pd = d
+            }
+            px = c.x; py = c.y
+        }
+        let tailHit = null
+        f = b.face; pd = b.dir; px = b.x; py = b.y
+        for (const c of P) {
+            const d = NBT.findIndex(([ax, ay]) => c.x - px === ax && c.y - py === ay)
+            if (d !== -1) {
+                const back = d === (f + 2) % 4
+                if (!back && d !== f && pd === f) { // doctrine and scan agree here — the landing is provably seen by both
+                    const tx = px - NBT[f][0] - NBT[d][0], ty = py - NBT[f][1] - NBT[d][1]
+                    if (inGridC(tx, ty) && MAP[ty][tx] === CELL.FLOOR && !cellsOnRoute.has(`${tx},${ty}`) && !rackQ(g, tx, ty) && !(Math.abs(tx - 14) + Math.abs(ty - 2) <= 1)) {
+                        g.tool = 'rack'
+                        if (clickCell(g, tx, ty, 0) === 'build') { tailHit = { tx, ty, bx: px, by: py }; break }
+                        g.tool = null
+                    }
+                }
+                if (!back) f = d
+                pd = d
+            }
+            px = c.x; py = c.y
+        }
+        ok(tailHit !== null, `the rig lands a rack on a committed plan's back diagonal (${tailHit ? `${tailHit.tx},${tailHit.ty}, owned by pivot ${tailHit.bx},${tailHit.by}` : 'none found'}) (#2760)`)
+        if (tailHit) {
+            ok(JSON.stringify(b.path) !== JSON.stringify(P), 'the plan whose backswing was racked is recomputed the tick the rack lands — traffic never drives a pivot that clips its new counterweight wall (#2724 → #2760)')
+            ok(b.path.length > 0, 'the replan finds a road — the pocket law keeps the delivery alive behind the new geometry (#2546)')
+            ok(walksClips(g, b.x, b.y, b.path, b.face) === 0, 'the fresh plan sweeps its own tail clean — the replan obeys the tail law (#2760)')
+        }
+        // control: a lawful click off every route cell and sweep diagonal must not stir the plan
+        let calm = null
+        outerCalm: for (let y = ROWS - 2; y >= 1; y--) for (let x = COLS - 2; x >= 1; x--) {
+            const k = `${x},${y}`
+            if (MAP[y][x] !== CELL.FLOOR || cellsOnRoute.has(k) || diagonals.has(k)) continue
+            if (rackQ(g, x, y) || botQ(g, x, y)) continue
+            g.tool = 'rack'
+            if (clickCell(g, x, y, 0) === 'build') { calm = { x, y }; break outerCalm }
+            g.tool = null
+        }
+        ok(calm !== null, `the control click finds a lawful cell off every sweep diagonal (${calm ? `${calm.x},${calm.y}` : 'none found'}) (setup) (#2760)`)
+        if (calm) {
+            const before = b.path.slice()
+            g.tool = 'rack'
+            clickCell(g, calm.x, calm.y, 0)
+            ok(JSON.stringify(b.path) === JSON.stringify(before), 'a build nowhere near the swing leaves the claimed route untouched — repath fires on breakage, never as decoration (#2724 control, #2760)')
+        }
+    }
+    // determinism: the tail is geometry, no rng — twins agree byte-for-byte
+    {
+        const twinTail = () => {
+            const g = makeGame(4242)
+            const ap = createAutopilot()
+            while (!g.end && g.tick < SHIFT + 10) step(g, [ap(g)])
+            return stateHash(g)
+        }
+        ok(twinTail() === twinTail(), 'twin careers stay byte-identical end to end — the tail law is pure geometry, no rng (#2760)')
+    }
+    // source pins: the physics ships, the dead placement half stays dead, the
+    // body reads on screen.
+    {
+        const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
+        ok(/export function tailTurn/.test(simSrc), 'the sim exports tailTurn — the counterweight geometry is one exported question (#2760)')
+        ok(simSrc.includes('if (turn && kneeRack(gs, n.x - hx - dx, n.y - hy - dy)) continue // the tail is racked'), 'bfsKnee refuses loaded pivots whose tail diagonal is racked — the routing half is live (#2760)')
+        ok(simSrc.includes('px - NB[pd][0] - NB[d][0] === x && py - NB[pd][1] - NB[d][1] === y'), 'repath-on-land sees the back diagonal — landings across a committed backswing re-route (#2760)')
+        ok(/export function liveTails/.test(simSrc), 'liveTails is exported — the QA eye on tail-blocked turns (#2760)')
+        ok(!simSrc.includes("return 'tail'"), 'the seventh placement law stays refused — why:tail never comes back; netdiff 0 made it dead code, and dead code is debt (#2692 doctrine, #2760)')
+        const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+        ok(ui.includes('liveTails') && /tails: \(\) => liveTails\(gs\)/.test(ui), 'the DEV eye reads the tail-blocked turns for the browser gate (#2760)')
+        ok(/ctx\.fillStyle = 'rgba\(150,170,192,0\.55\)'/.test(ui), 'loaded carts wear the steel counterweight nub — the swept side is visible at a glance; amber stays the law colour (#2760)')
     }
 }
 console.log(fails ? `\nFLOOR BOSS CHECK: ${fails} FAILED` : '\nFLOOR BOSS CHECK: all green')
