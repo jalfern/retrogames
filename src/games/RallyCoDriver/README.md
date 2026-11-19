@@ -148,6 +148,17 @@ different seed → different state.
    pace-brain lap), lands the take in relaysim and replay-verifies it through
    `plaicraft:evidence` — and the take says so honestly: seat 0 stays `model`
    (the #2058 humanSeats:false opt-out proven live, not just pinned).
+ - #1711 human seat leg (11-19 audit item 2): `npm run cooptakes --
+   --game=rallyh` drives the SAME record path with seat 0 on the KEYS — a
+   fair-rule controller (reads only `senseRally`: pace card + road visible
+   past no crest, mirroring `cpuDriverPad`'s decision law) answers through
+   real trusted key events until FELL (seed 42) finishes its two laps by its
+   own rules. The take must land seat 0 `human`, seat 1 `cpu`, voice on, and
+   replay-verify; a Node pre-flight proves the controller finishes (~144 s of
+   stage time measured) before the browser spends its minutes. The label's
+   honesty is mutant-backed: `--mutant=launder` hardcodes the seat-0 ternary
+   to 'human' and the `?seat=model` leg goes RED (a brain-driven take riding
+   in as a thumb is named as the harm — #2142's laundering direction).
 - #1427 depth shipped: a checkpoint clock (one time-control mark per lap at
   the midpoint of the stage's longest straight — `controlS` is pure geometry,
   far from any corner, weather-stable; crossings stamp S-splits, echoed as a
