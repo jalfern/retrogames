@@ -24,6 +24,8 @@
 //   tell  — the grab-read telegraphs go silent (ring/jaw/slam never warn, #2684)
 //   aim   — rival intent and ring ownership go blind (#2690)
 //   rec   — the export's label law lies: a drop stops being a hit (#2734)
+//   perfect — the PERFECT ladder pays nothing (mastery reward dies, #2742)
+//   spoil — a belt-end miss stops spoiling the clean sheet (#2742)
 
 import * as s from '../src/games/PickRush/sim.js'
 import { readFileSync } from 'node:fs' // §CB pins the marquee colour from the painter's source
@@ -44,7 +46,7 @@ const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fai
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
 if (MUT) {
-    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim', 'rec'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim', 'rec', 'perfect', 'spoil'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
     console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 }
 const applyMut = () => {
@@ -59,6 +61,8 @@ const applyMut = () => {
     if (MUT === 'tell') TELL.freeze = true // the belt goes mute: ring never lights, jaws never warn, pips never paint (#2684)
     if (MUT === 'aim') TELL.aimFreeze = true // the second crane goes invisible: no intent beacon, no ring ownership (#2690)
     if (MUT === 'rec') OUTCOME_BY_EVENT.drop = { ok: false, why: 'drop' } // the export calls a correct-bin land a MISS (#2734)
+    if (MUT === 'perfect') s.PERFECT_PAY.fill(0) // mastery pays nothing — the reward dies (#2742)
+    if (MUT === 'spoil') s.PERFECT_SPOIL.splice(s.PERFECT_SPOIL.indexOf('miss'), 1) // the line forgives every miss (#2742)
 }
 applyMut()
 
@@ -66,7 +70,7 @@ const {
     makeGame, step, autopilot, stateHash, barrelUpright,
     BELT_Y, BIN_TOP, BELT_END, CARRY_TIP, CLAW_DOWN, FUSES, SHIFT_TICKS,
     VIEW_H, GRAB_DX, BREAK_VY, ATTEMPT_TIP, CLAW_SPEED, BARREL_R, beltV,
-    KINDS, BINS, SHIFTS, WAVES,
+    KINDS, BINS, SHIFTS, WAVES, PERFECT_PAY, PERFECT_SPOIL,
 } = s
 
 const CAN_BIN = BINS[1]
@@ -279,6 +283,169 @@ section('ECONOMY — shifts, quota, win')
     gs.shiftTick = SHIFT_TICKS - 1
     step(gs, [{ a: false }])
     ok(gs.end === 'win', 'WIN: clearing the last shift completes the contract')
+}
+
+section('CLEAN SHIFT — the perfect-sheet law (#2742)')
+{
+    // one scripted CAN→CAN land on a quiet belt: the sheet stays clean.
+    const cleanLand = (gs) => {
+        const it = spawnAt(gs, 'can', 200)
+        gs.arms[0].x = it.x
+        if (!grabFrom(gs, it)) return false
+        dropOver(gs, CAN_BIN.x + CAN_BIN.w / 2)
+        resolve(gs)
+        return gs.arms[0].clean === true
+    }
+    const fresh = (seed) => { const g = makeGame(seed, 1); while (g.tick < 40) step(g, [{}]); clearLine(g); return g }
+    const whistle = (gs, shiftIdx) => {
+        gs.correct = SHIFTS[shiftIdx].quota
+        gs.shiftTick = SHIFT_TICKS - 1
+        step(gs, [{ a: false }])
+        return gs.ev.filter((e) => e.type === 'perfect')
+    }
+
+    const gs = fresh(40)
+    ok(cleanLand(gs), 'CLEAN-FIRE: a scripted correct-bin land keeps the sheet clean')
+    {
+        const s0 = gs.score, a0 = gs.arms[0].score
+        const p = whistle(gs, 0)
+        ok(p.length === 1 && p[0].seat === 0 && p[0].shift === 0 && p[0].pts === 200
+            && gs.score === s0 + 700 && gs.arms[0].score === a0 + 200,
+            `CLEAN-FIRE: quota-clear with a clean sheet pays PERFECT 200 on top of the 500 promotion, into score AND the seat bank (Δscore ${gs.score - s0}, Δbank ${gs.arms[0].score - a0})`)
+    }
+    {
+        const got = []
+        let finalOk = true
+        for (let i = 0; i < SHIFTS.length; i++) {
+            const g = makeGame(41 + i, 1)
+            g.shift = i
+            const p = whistle(g, i)
+            got.push(p.length === 1 ? p[0].pts : 0)
+            if (i === SHIFTS.length - 1) finalOk = p.length === 1 && p[0].pts === 350 && g.end === 'win'
+        }
+        ok(got.join() === '200,250,300,350' && PERFECT_PAY.join() === '200,250,300,350',
+            `CLEAN-AMOUNTS: the ladder pays ${got.join('/')} — literals pinned, table agrees`)
+        ok(finalOk, 'CLEAN-FINAL: the last shift pays PERFECT 350 before the win closes the book')
+    }
+
+    // every fault class the sim records spoils the sheet — one gate each.
+    const bustMiss = (g) => {
+        spawnAt(g, 'can', BELT_END - 1)
+        let n = 0
+        while (n < 60 && g.arms[0].clean) { step(g, [{ a: false }]); n++ }
+    }
+    const bustWrong = (g) => {
+        const it = spawnAt(g, 'can', 200)
+        g.arms[0].x = it.x
+        grabFrom(g, it)
+        dropOver(g, CRATE_BIN.x + CRATE_BIN.w / 2) // CAN into CRATE — the law's own wrong-bin
+        resolve(g)
+    }
+    const bustShatter = (g) => {
+        const it = spawnAt(g, 'bottle', 200)
+        g.arms[0].x = it.x
+        grabFrom(g, it)
+        dropOver(g, BOTTLE_BIN.x + BOTTLE_BIN.w / 2) // slam from carry height breaks it
+        resolve(g)
+    }
+    const bustFloor = (g) => {
+        const it = spawnAt(g, 'crate', 200)
+        g.arms[0].x = it.x
+        grabFrom(g, it)
+        dropOver(g, 108) // between bins, over the bare floor
+        resolve(g)
+    }
+    for (const [name, bust] of [['MISS', bustMiss], ['WRONG', bustWrong], ['SHATTER', bustShatter], ['FLOOR', bustFloor]]) {
+        const g = fresh(45)
+        bust(g)
+        const spoiled = g.arms[0].clean === false
+        const p = whistle(g, 0)
+        ok(spoiled && p.length === 0, `CLEAN-BUST-${name}: a ${name.toLowerCase()} spoils the sheet — the whistle pays nothing`)
+    }
+    {
+        const g = fresh(46)
+        const br = spawnAt(g, 'barrel', 200)
+        br.rot = 1.1
+        g.arms[0].x = br.x
+        const g0 = g.tick
+        // short attempts, polled: the slip must land WELL before the belt
+        // carries the barrel off the end (206 ticks at line speed) — otherwise
+        // the gate tests the wrong law (a miss, not a slip).
+        let slipped = false
+        while (!slipped && g.tick - g0 < 190 && !g.end && g.arms[0].held === null && br.onBelt) {
+            grabFrom(g, br, 45, () => { br.rot = 1.1 })
+            slipped = g.fx.some((f) => f.t === 'slip')
+        }
+        const p = whistle(g, 0)
+        ok(slipped && br.onBelt && g.arms[0].clean === true && p.length === 1,
+            `CLEAN-SLIP: jaws bouncing off a rolling barrel loses nothing — the sheet forgives, the whistle pays (slip @${g.tick - g0}, perfect ${p.length})`)
+    }
+    {
+        const g = fresh(47)
+        ok(cleanLand(g), 'CLEAN-2P setup: seat 0 lands its CAN clean')
+        // attribute a CAN→CRATE wrong-bin to seat 1 directly: the crane that
+        // mislabelled it carries the fault, not the belt.
+        const it = { id: 9500, n: 500, kind: 'can', x: CRATE_BIN.x + CRATE_BIN.w / 2, y: BIN_TOP - 2, vx: 0, vy: 1, rot: 0, onBelt: false, carriedBy: -1, fragile: false, lastSeat: 1 }
+        g.players = 2
+        g.arms.push({ x: 300, vx: 0, tip: 52, mode: 'up', held: null, clamp: 0, score: 0, clean: true, target: -1, walk: 0, commit: 0 })
+        g.items.push(it)
+        let n = 0
+        while (n < 40 && g.items.length && g.arms[1].clean) { step(g, [{ a: false }, { a: false }]); n++ }
+        ok(g.arms[1].clean === false && g.arms[0].clean === true,
+            'CLEAN-2P: a wrong bin attributed to seat 1 blemishes ONLY seat 1')
+        const b0 = g.arms[0].score, b1 = g.arms[1].score
+        const p = whistle(g, 0)
+        ok(p.length === 1 && p[0].seat === 0 && g.arms[0].score === b0 + 200 && g.arms[1].score === b1,
+            'CLEAN-2P: the whistle pays one seat a clear sheet and nothing to the blemished one')
+    }
+    {
+        const g = fresh(48)
+        bustWrong(g)
+        whistle(g, 0) // quota met but blemished: promotion, no pay
+        ok(g.shift === 1 && g.arms[0].clean === true, 'CLEAN-RESET: crossing the whistle opens a brand-new sheet (the blemish is last shift\'s)')
+        ok(cleanLand(g), 'CLEAN-RESET setup: shift 2 starts clean')
+        const p = whistle(g, 1)
+        ok(p.length === 1 && p[0].pts === 250 && p[0].shift === 1,
+            'CLEAN-RESET: a clean shift 2 pays 250 even after a blemished shift 1')
+    }
+    {
+        const g = makeGame(49, 1)
+        g.correct = SHIFTS[0].quota - 1
+        g.shiftTick = SHIFT_TICKS - 1
+        step(g, [{ a: false }])
+        ok(g.end === 'fired' && !g.ev.some((e) => e.type === 'perfect'),
+            'CLEAN-SHORT: quota short at the whistle is fired — a clean sheet never buys the shift')
+    }
+    {
+        const g = fresh(50)
+        cleanLand(g)
+        const raw = g.rng
+        let draws = 0
+        g.rng = () => { draws++; return raw() }
+        whistle(g, 0)
+        ok(draws === 0, `CLEAN-NO-RNG: the perfect payout consumes ZERO seeded draws (${draws}) — pure bookkeeping, the line is untouched`)
+    }
+    {
+        const runOnce = (seed) => {
+            const g = makeGame(seed, 1)
+            let banked = 0
+            for (let t = 0; t < 20000 && !g.end; t++) {
+                step(g, [autopilot(g, 0)])
+                for (const e of g.ev) if (e.type === 'perfect') banked++
+            }
+            return { banked, score: g.score, hash: g.hash, won: g.end === 'win' }
+        }
+        const a = runOnce(7), b = runOnce(7), c = runOnce(101), d = runOnce(2027)
+        ok(a.banked === b.banked && a.hash === b.hash && a.score === b.score,
+            'CLEAN-DETERMINISM: two autopilot runs of seed 7 bank identical perfects to identical hashes')
+        ok([a.won, c.won, d.won].every(Boolean),
+            'CLEAN-WINS: the perfect law never breaks the shipped autopilot\'s wins (7/101/2027 still complete the contract)')
+        const m = [7, 101, 2027].map((sd, i) => `${sd}×${[a, c, d][i].banked}`).join(' ')
+        ok([a, c, d].some((r) => r.banked > 0),
+            `CLEAN-AUTO: the CPU earns the gold moment too — measured ${m} (attract shows the law; zero would mean the reward is unreachable in the demo)`)
+    }
+    ok(PERFECT_SPOIL.join() === 'miss,wrong,shatter,floor',
+        `CLEAN-SPOIL: the spoil table is exactly the sim's fault classes (${PERFECT_SPOIL.join('/')}) — grip slips stay excused`)
 }
 
 section('WAVES — the authored line (#2210)')
@@ -958,6 +1125,12 @@ if (!NODE_ONLY) {
         await page.keyboard.press('Space')
         await page.waitForTimeout(200)
         rep.check('START: a real SPACE leaves attract', await page.evaluate(() => window.__pickrushTest.state().mode === 'play'))
+
+        // #2742 the clean-sheet ledger is live from the first tick of play
+        const clean0 = await page.evaluate(() => window.__pickrushTest.perfects())
+        rep.check('CLEAN LIVE: every seat starts on a clean sheet, nothing banked yet',
+            Array.isArray(clean0.clean) && clean0.clean.length >= 1 && clean0.clean.every(Boolean) && clean0.n === 0 && clean0.banked.length === 0,
+            JSON.stringify(clean0))
 
         // real strokes move the crane, and the cable is painted where it says
         const before = await page.evaluate(() => window.__pickrushTest.state())
