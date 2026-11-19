@@ -64,7 +64,7 @@ import {
     drawPurposeView, sleepingCells, drawMoonlitWait,   // #2705: the purpose view — ripeness bed, harvest hamper, lodged panes, moonlit wait
     pauseLedger,   // #2713 tail 4: the rooms' tallies read on the pause sheet
     pairStride, strollTrail, drawStrollTrail,   // #2618: the stroll stride, the route tell, the walk sell
-    drawGroundGift, bondRows,   // #2240: the set-down basket + the BONDS rows as data
+    drawGroundGift, bondRows, jarRow,   // #2240: the set-down basket + the BONDS rows as data · #2729: the jar row too
     queueHit,   // #2470: the queue chips' tap route (shares the painter's geometry)
     QCELL,   // #2474 item 3: the chip pitch — the drag threshold derives from it
     queueGlyphFor,   // #2474: the chip glyph from an event id — one source for paint and timbre
@@ -1549,6 +1549,7 @@ const HomebodyGame = () => {
                 win: () => { if (gs) { gs.content = WIN_CONTENT; gs.done = 'win'; gs.endMsg = 'forced' } },
                 collapseAll: () => { if (gs) for (const p of gs.people) p.faintT = 2 },
                 money: (v) => { if (gs) gs.money = v },
+                jar: (v) => { if (gs) gs.jar = v },   // #2729: stage the fund for the panel read (shots, drive setup)
                 hour: (h) => { if (gs) gs.hour = h },   // #2672: scenario-clock rewind — the drive's late legs (sneak/prowl) run past the visitors' dusk, and a mediation leg needs the pair still on the lot
                 select: (i) => { if (gs) setSel(gs, i) },   // #2222: the shelf follows the pick
                 bond: (k, v) => { if (gs && gs.rel[k] !== undefined) gs.rel[k] = v },
@@ -1647,7 +1648,17 @@ const HomebodyGame = () => {
                         if (ink && !prevBand) bands++
                         prevBand = ink
                     }
-                    return { k: +k.toFixed(3), rows, bands }
+                    // #2729: the JAR row at phone scale — same method as the bond
+                    // rows (glyph ink, filled pips, label ink + the amber count),
+                    // derived from jarRow so the probe can't aim at a stale seat.
+                    const jr = jarRow(gs)
+                    const jar = jr ? {
+                        glyph: count(jr.x, jr.y - 1, jr.x + 12, jr.y + 8, hueOf(jr.col, 60)),
+                        pips: count(jr.x + 14, jr.y, jr.x + 46, jr.y + 8, hueOf(jr.col, 60)),
+                        labelInk: count(jr.x + 50, jr.y, jr.x + 68, jr.y + 8, labelHue),
+                        countInk: count(jr.x + 68, jr.y, jr.x + 92, jr.y + 8, hueOf('#f2c14e', 90)),
+                    } : null
+                    return { k: +k.toFixed(3), rows, bands, jar }
                 },
                 hash: () => (gs ? stateHash(gs) : 0),
             }

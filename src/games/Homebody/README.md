@@ -1412,3 +1412,21 @@ Gates: `peoplecheck` §FEEL PASS (25 pins — tight monotone, ear range, trail
 shape, leaving-ear silence, hue table, lamp law, source pins). Mutants proven:
 zero `tight` → the monotone gate red; drop the garden test from `gardenLamp` →
 the east-alone gate red; restore.
+
+## The jar reads on its own (#2729 — QA polish on #2721)
+
+The round pays the fund at the gate, but until the catalog opened the fill was
+invisible. `jarRow(s)` (art.js) is the panel's own view of the fund — pure
+data like `bondRows`: an amber jar glyph at the honey-jar palette, four pips at
+the quartiles of `JAR_CAP`, the honest `n/90` count in money-amber, and the
+FAMILY gold ring on pip 4 when the jar is full (the kit is buyable NOW). It
+rides directly under Pip's BONDS row (the round is hers); Miso's seat moves one
+row down to make room. The row appears with Pip and retires when the cottage
+stands — a spent fund has nothing left to teach. The phone-scale probe
+(`bondsPix.jar`) counts glyph ink, pips, label and the amber count through the
+compositor's blur, aiming at the same `jarRow` so painter and probe cannot drift.
+
+Gates: `peoplecheck` §GARDEN JAR grew 9 view checks (no-child silence, row
+under PIP, quartile tracking, full-pulse, retire-on-hammer, three source pins).
+Mutant proven: drop the retire clause from `jarRow` → the retire gate red
+(1041/1); restore → 1042/0.

@@ -20,6 +20,7 @@ import {
     goSayTarget,   // #2688: the promised ear — the view derives the errand the same way the sim resolves it
     TEND_HOURS, wingSets,   // #2705: the purpose view reads the sun-law's own constant and the room's own floor
     GARDEN, EXT_ROOM,   // #2721: the room card prices the NEXT kit, and the jar rides beside it
+    JAR_CAP,   // #2729: the panel's jar row reads the fund's own cap
 } from './sim.js'
 
 // #2599 item 1: the pair's own hues — Fern-green and Ivy-plum, the two guests'
@@ -1448,9 +1449,21 @@ export function drawPanel(ctx, s, t, collapse = null, hoverName = null) {
             ctx.fillRect(row.x + 58, row.y + 2 + step, 2.4, 3.4)
         }
     }
+    // #2729: the jar row — the fund reads live under Pip's BONDS row, so the
+    // money the round pays is seen filling without ever opening the catalog.
+    const jr = jarRow(s)
+    if (jr) {
+        bondRow(ctx, jr.x, jr.y, jr.glyph, jr.col, jr.lv, jr.label)
+        ctx.fillStyle = '#f2c14e'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+        ctx.fillText(`${s.jar}/${JAR_CAP}`, jr.x + 68, jr.y + 2)   // the honest count, amber like the fund
+        if (jr.pulse && Math.floor(t * 2.5) % 2 === 0) {
+            ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
+            ctx.strokeRect(jr.x + 3 * 8 + 0.5, jr.y + 0.5, 5, 5)
+        }
+    }
     const mood = petMood(s)
     if (mood !== null) {
-        const py = by + (s.kid ? 82 : 68)   // #2588: the NEIGH row moved the cat's seat down one
+        const py = by + (s.kid ? (jr ? 96 : 82) : 68)   // #2588: the NEIGH row moved the cat's seat down one · #2729: so does the JAR row
         bondRow(ctx, PANEL_X + 12, py, 'paw', '#d98e4a', Math.round(mood * 4), 'MISO')
         if (mood <= RED_AT && Math.floor(t * 3) % 2 === 0) {
             ctx.strokeStyle = '#ff6a5c'; ctx.lineWidth = 1
@@ -1577,6 +1590,26 @@ export function bondRows(s) {
     return rows
 }
 
+// #2729 — THE JAR READS ON ITS OWN. #2721 pays Pip's round into the fund at the
+// gate, but until the catalog opens the fill was invisible — a phone player who
+// never buys anything never learns the cottage is being saved for. The row rides
+// the BONDS vocabulary (amber jar glyph, four pips at the quartiles of JAR_CAP,
+// a live n/cap read) directly under Pip's own row, since the round is hers.
+// It appears with Pip and retires when the cottage stands — the fund has no
+// purpose after the hammer. Pure view data (like bondRows): painter and the
+// phone-scale probe (bondsPix.jar) read the same numbers, and the sim never
+// hears of it — the jar itself already rides stateHash.
+export function jarRow(s) {
+    if (!s.kid || s.wings.some((w) => w.id === 'garden')) return null
+    const by = LOT_Y + 26 + s.people.length * 74 + 2
+    return {
+        key: 'jar', glyph: 'jar', col: '#e8a13a',
+        lv: s.jar >= JAR_CAP ? 4 : Math.floor((s.jar / JAR_CAP) * 4),
+        label: 'JAR', x: PANEL_X + 12, y: by + 82,
+        pulse: s.jar >= JAR_CAP,   // a full jar blinks the FAMILY ring — the kit is buyable NOW
+    }
+}
+
 function bondRow(ctx, x, y, glyph, col, lv, label) {
     if (glyph === 'heart') {
         ctx.fillStyle = col
@@ -1605,6 +1638,14 @@ function bondRow(ctx, x, y, glyph, col, lv, label) {
         ctx.fillStyle = col
         for (const [dx, dy] of [[-3, 0.4], [0, -1], [3, 0.4]]) { ctx.beginPath(); ctx.arc(x + 5.5 + dx, y + 1.2 + dy, 1.15, 0, 7); ctx.fill() }
         ctx.beginPath(); ctx.ellipse(x + 5.5, y + 4.6, 2.7, 2.1, 0, 0, 7); ctx.fill()
+    } else if (glyph === 'jar') {
+        // #2729: the garden fund — an amber preserve jar with a gold lid, the
+        // honey-jar family (drawGroundGift) shrunk to row size.
+        ctx.fillStyle = col
+        ctx.fillRect(x + 1.5, y + 0.5, 8.5, 6.5)
+        ctx.fillStyle = 'rgba(255,233,168,0.8)'; ctx.fillRect(x + 2.8, y + 1.8, 1.4, 3.4)   // shine
+        ctx.fillStyle = '#c9821f'; ctx.fillRect(x + 1.5, y + 4.2, 8.5, 1)                     // preserve line
+        ctx.fillStyle = '#ffd24a'; ctx.fillRect(x + 0.5, y - 1, 10.5, 2)                      // lid
     } else {
         ctx.fillStyle = col
         for (const [dx, dy] of [[0, -2.3], [2.3, 0], [0, 2.3], [-2.3, 0]]) { ctx.beginPath(); ctx.arc(x + 5 + dx, y + 3 + dy, 1.9, 0, 7); ctx.fill() }
