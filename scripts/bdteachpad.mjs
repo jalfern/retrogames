@@ -1,18 +1,19 @@
-// bdteachpad.mjs — #2759 probe: is the A button really unhittable while the
-// first-vent teach panel is due? Phone scale (390x780, touch), pointer-only
-// start (trusted keyboard hides the pad — that alone breaks taps, see below).
+// bdteachpad.mjs — #2759 gate: was the A button really unhittable while the
+// first-vent teach panel is due? NO — the filed claim does not reproduce, and
+// the cooptakes stalls had a different cause. Phone scale (390x780, touch),
+// pointer-only start (trusted keyboard hides the pad — that alone breaks taps).
 //
-// Three discriminating probes:
-//  1) reach a live VENT step (panel due) at phone scale and hit-test
+// Three discriminating probes (all must pass; exits non-zero on any FAIL):
+//  1) park a live VENT step (panel due) at phone scale and hit-test
 //     document.elementFromPoint over the center of [data-vc="a"] — the
 //     teach panel is CANVAS paint (drawVentPanel), the pad row is fixed z-50,
-//     so the panel cannot intercept pointer events by construction. Verify.
+//     so the panel cannot intercept pointer events by construction.
 //  2) page.keyboard.press('Space') then immediately page.tap('[data-vc=a]') —
-//     VirtualControls hides the pad on trusted keydown (step-5 feel rule), so
-//     the element is gone and Playwright times out. This is the candidate the
-//     cooptakes 30-s stalls were really caused by (their loop presses Space
-//     BEFORE every tap).
-//  3) tap FIRST, keyboard after — the same tap that (2) failed must pass.
+//     the stall is the LAW (VirtualControls hides the pad on trusted keydown,
+//     step-5 feel rule #290): this tap MUST time out. It is what starved the
+//     cooptakes runs (their loop pressed Space before every tap).
+//  3) a bare touchscreen tap re-shows the pad (touchstart → show) and the
+//     selector tap lands fast — cooptakes' wake-then-tap (#2759).
 //
 // npm: node scripts/bdteachpad.mjs   (DEV_PORT, default 5173)
 import { launch } from './lib/harness.mjs'
@@ -50,25 +51,50 @@ const hitA = () => page.evaluate(() => {
     return { present: true, panel: !!(window.__bdTest.panel && window.__bdTest.panel()), hitIsA: !!hit && (hit === el || el.contains(hit)) }
 })
 
-// 1) walk to a live VENT step (panel due) and hit-test
-let panelUp = null
-for (let i = 0; i < 900; i++) {
-    const s = await page.evaluate(() => { window.__bdTest.solve(1); const p = window.__bdTest.probeStep(); return p ? { k: p.kind, panel: !!(window.__bdTest.panel && window.__bdTest.panel()) } : { k: 'DONE' } })
-    if (s.panel) { panelUp = s; break }
-    if (s.k === 'DONE') break
+// 1) walk to a live VENT step (panel due) and hit-test. #2759 lesson: step()
+// is ONE tick and solvePads only fires presses on scheduled stepT ticks, so a
+// solve(1)-per-evaluate walk needs tick-scale budget (the old 900-loop won the
+// game). Kind is checked on BOTH sides of each solve, and the sim PARKS at the
+// first VENT (never solve past it); then wait a paint (the panel is view state
+// — hud.panel lands on the driver tick) and hit-test.
+let parked = null
+const seen = []
+const kindNow = () => page.evaluate(() => {
+    const p = window.__bdTest.probeStep()
+    return p ? p.kind : 'DONE' // VENT = 2 (engine.js)
+})
+for (let i = 0; i < 1500 && !parked; i++) {
+    const a = await kindNow()
+    seen.push(a)
+    if (a === 2) { parked = true; break }
+    if (a === 'DONE') break
+    await page.evaluate(() => window.__bdTest.solve(1))
+    const b = await kindNow()
+    seen.push(b)
+    if (b === 2) { parked = true; break }
+    if (b === 'DONE') break
 }
-if (panelUp) {
+if (parked) {
+    await sleep(150) // one driver tick for hud.panel to reflect the parked vent step
     const h = await hitA()
-    ok('panel due + A button resolves to itself (no DOM overlay)', h.present && h.hitIsA, JSON.stringify(h))
+    ok('panel due + A button resolves to itself (no DOM overlay)', h.present && h.panel && h.hitIsA, JSON.stringify(h))
 } else {
-    ok('reached a live teach-panel window', false, 'walk never saw panel=true (walk or solve raced past VENT — next session: drive with real pads, or use a seed pinned by defusecheck toVentFresh)')
+    const hist = seen.reduce((m, k) => ((m[k] = (m[k] || 0) + 1), m), {})
+    const dbg = await page.evaluate(() => {
+        const p = window.__bdTest.probeStep()
+        return { screen: window.__bdTest.screen(), step: p && p.step, bomb: p && p.bomb, ventTaught: window.__bdTest.ventTaught(), panelGone: window.__bdTest.panelGone(), panel: !!window.__bdTest.panel() }
+    }).catch((e) => ({ err: String(e) }))
+    ok('reached a live teach-panel window', false, `walk never reached a VENT step — kinds seen ${JSON.stringify(hist)} state ${JSON.stringify(dbg)}`)
 }
 
-// 2) keyboard-then-tap (cooptakes' exact order)
+// 2) keyboard-then-tap (the OLD cooptakes order): the stall is the LAW —
+// VirtualControls hides the pad on trusted keydown (step-5 feel rule, #290),
+// so the element is gone and the tap must time out. Green = the feel rule
+// holds; red = hide-on-keyboard changed and #2759's harness law needs revisiting.
 await page.keyboard.press('Space').catch(() => {})
 const t2 = Date.now()
 const r2 = await page.tap('[data-vc="a"]', { timeout: 4000 }).then(() => 'ok').catch(() => 'timeout')
-ok('tap right after keyboard press', r2 === 'ok', `${r2} in ${Date.now() - t2}ms — pad hidden by VirtualControls hide-on-keyboard (trusted keydown) if this times out`)
+ok('hide-on-keyboard holds: tap right after a trusted keydown stalls (expected)', r2 === 'timeout', `${r2} in ${Date.now() - t2}ms — if ok, VirtualControls no longer hides on keydown (#290) and cooptakes' wake step is dead weight`)
 
 // 3) touch wakes the pad; tap-first passes. NOTE: viewport coords via
 // touchscreen.tap — page.tap(selector,{position}) is ELEMENT-relative and lands
@@ -77,9 +103,10 @@ await page.touchscreen.tap(195, 700).catch(() => {})
 await sleep(150)
 const t3 = Date.now()
 const r3 = await page.tap('[data-vc="a"]', { timeout: 4000 }).then(() => 'ok').catch(() => 'timeout')
-ok('tap works once a touch has re-shown the pad', r3 === 'ok', `${r3} in ${Date.now() - t3}ms`)
+ok('a bare touch re-shows the pad and the tap lands (<1 s)', r3 === 'ok', `${r3} in ${Date.now() - t3}ms — this is cooptakes' wake-then-tap (#2759)`)
 
 console.log(results.join('\n'))
 console.log('pageerrors:', errs.length ? errs.slice(0, 3) : 'none')
 await context.close()
 await browser.close()
+process.exit(results.some((l) => l.startsWith('FAIL')) || errs.length ? 1 : 0)
