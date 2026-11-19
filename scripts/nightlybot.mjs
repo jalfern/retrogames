@@ -323,6 +323,15 @@ function selftest() {
     ok(planFilings(F, []).length === 1, 'a fresh failure files')
     ok(planFilings(F, ['QA — tetris: nightly ' + failureShape(F[0].flags[0])]).length === 0,
         'the same failure shape does not file twice')
+    // #2776 — the seed printed into a filed repro must round-trip: the replay
+    // re-adds the game index (gameSeed), so the printed base has to strip it.
+    // britannia sits deep in the roster (index > 0), making this non-vacuous;
+    // the numbers are the real #2769 pair (run 20261155 ← base 20261119).
+    {
+        const gb = GAMES.find(g => g.id === 'britannia')
+        ok(GAMES.indexOf(gb) > 0 && reproSeed('britannia', gameSeed(20261119, gb)) === 20261119,
+            'filed repro replays the failing seed: printed base + index round-trips the run seed (#2776)')
+    }
     ok(planFilings([{ ...F[0], flags: ['3 page error(s): boom'] }], ['QA — tetris: nightly softlock']).length === 1,
         'a different failure shape for the same game still files')
     ok(planFilings([{ ...F[0], flags: ['softlock: frozen at tick 9123 (hash invariant over last 30 steps), score 7'] }],
@@ -413,6 +422,16 @@ function selftest() {
 const args = process.argv.slice(2)
 const ONLY = process.env.NIGHTLY_ONLY
 const SEED = process.env.NIGHTLY_SEED ? +process.env.NIGHTLY_SEED : nightlySeed(new Date().toISOString().slice(0, 10))
+// #2776 — one home for the per-game seed law. A run drives SEED + indexOf;
+// the seed PRINTED into a filed issue must be the base NIGHTLY_SEED takes, so
+// replaying the printed line lands on the SAME seed that failed — an as-is
+// seed replayed re-adds the index and drives a different run (#2769 printed
+// britannia 20261155 but replayed at 20261191).
+function gameSeed(base, game) { return base + GAMES.indexOf(game) }
+function reproSeed(id, runSeed) {
+    const i = GAMES.findIndex(g => g.id === id)
+    return i < 0 ? runSeed : runSeed - i
+}
 const PORT = process.env.NIGHTLY_PORT || 5199
 const MUTATE = process.env.NIGHTLY_MUTATE
 
@@ -675,7 +694,7 @@ async function main() {
     try {
         const browser = await launch()
         for (const game of games) {
-            const seed = SEED + GAMES.indexOf(game)
+            const seed = gameSeed(SEED, game)
             console.log(`[${game.id}] seed=${seed}`)
             const res = await play(browser, base, game, seed, MUTATE)
             results.push(res)
@@ -724,7 +743,7 @@ async function main() {
             '--label', 'feedback', '--json', 'title'], { encoding: 'utf8' })).map(i => i.title)
         for (const f of planFilings(failed, open)) {
             const body = `Found by the nightly bot run (${doc.generated}, seed ${f.seed}).\n\n` +
-                `**what happened:** ${f.reason}\n**seed:** ${f.seed}\n**repro:** \`NIGHTLY_ONLY=${f.id} NIGHTLY_SEED=${f.seed} node scripts/nightlybot.mjs\` (starts its own dev server on :5199)\n` +
+                `**what happened:** ${f.reason}\n**seed:** ${f.seed}\n**repro:** \`NIGHTLY_ONLY=${f.id} NIGHTLY_SEED=${reproSeed(f.id, f.seed)} node scripts/nightlybot.mjs\` (starts its own dev server on :5199)\n` +
                 `_Filed automatically by scripts/nightlybot.mjs (#1040)._`
             execFileSync('gh', ['issue', 'create', '--repo', 'jalfern/retrogames', '--label', 'feedback', '--label', 'lane:qa',
                 '--title', `QA — ${f.id}: nightly ${f.shape}`, '--body', body])
