@@ -17,6 +17,12 @@
 // fortress wall with two cannons and spawn doors; the one weak point is the
 // core — armored when shut, vulnerable when open. Destroy it and stage 1 is
 // truly finished (#2779 "stage 1's real finish").
+//
+// S4 (#2779, co-op): gs.p2 — a second soldier with his own physics bank, his
+// own lives, his own weapon. A deterministic honest-perception brain drives the
+// CPU seat (visible things only, like every autopilot law); a human takes it
+// drop-in on WASD + F/G and keeps it. Enemies aim at the NEARER hero's lane —
+// the hop answers aimed rounds for both seats. GAME OVER needs both banks empty.
 
 export const W = 384
 export const H = 224
@@ -43,6 +49,10 @@ export const CFG = {
     laserSpeed: 9.5,          // the fastest round in the game
     fireWob: 1.5,            // firebar vertical undulation (px/tick around its line)
     sniperSpeed: 3.2,         // the tree-line round: faster than any runner
+    hopBand: 40,              // autopilot/ally hop window (px): S4 re-tune 46→40 —
+                              //   with two soldiers on screen the rounds thicken and the
+                              //   early hop descends into the round it jumped for; 36/36
+                              //   seeds clear with the later, tighter hop
     depotHp: 10,              // S3.5 the arms depot — a shootable emplacement
     eBulletSpeed: 2.2,
     respawnFreeze: 50,
@@ -61,6 +71,10 @@ export const CFG = {
     coreOpen: 120,        // vulnerable window (ticks)
     coreCycle: 190,       // open, then armored shut
     doorCap: 1,           // doors never spill more than this many live runners
+    // --- S4 co-op: the blue seat (Jon's multiplayer rule: CPU ally by default,
+    // human drop-in on the desktop keyboard) ---
+    allySpawnDX: -26,     // the ally arrives at your shoulder
+    allyLives: 3,         // his own bank; the run ends only when BOTH are empty
 }
 
 const PAD0 = { left: false, right: false, up: false, down: false, a: false, b: false }
@@ -162,6 +176,150 @@ function mkSoldier (d) {
     }
 }
 
+// S4 aim target: enemies lead the NEARER live hero's lane (both seats answer
+// the hop law — a jump dodges for whoever the round was aimed at).
+function aimTarget (gs, x) {
+    const p = gs.p, q = gs.p2
+    const hp = !p.out && p.dead === 0
+    const hq = !q.out && q.dead === 0
+    if (hp && hq) return Math.abs(p.x - x) <= Math.abs(q.x - x) ? p : q
+    if (hp) return p
+    if (hq) return q
+    return null
+}
+
+// The seat law (S4): BOTH heroes run this same function — run, 8-way aim,
+// coyote, one-way ledges, drop-through, the fire cadence. Identical physics
+// is structural here, not copy-pasted: whatever law the hero obeys, the blue
+// seat obeys, because it's the same load-bearing code.
+function seatStep (gs, h, pad, ledges, floorY, owner) {
+    const aim = aimFrom(pad, h)
+    h.ax = aim.ax; h.ay = aim.ay
+    const runDir = (pad.right ? 1 : 0) - (pad.left ? 1 : 0)
+    if (runDir) { h.x += runDir * CFG.run; h.walk += 1 }
+    if (gs.phase === 'jungle') h.x = Math.max(4, Math.min(CFG.worldW - 4, h.x))
+    else h.x = Math.max(8, Math.min(gs.phase === 'boss' ? CFG.wallX - 10 : W - 8, h.x))
+    h.px = h.x
+
+    if (h.onGround) h.coyote = CFG.coyote
+    else if (h.coyote > 0) h.coyote -= 1
+    const jumpEdge = pad.a && !h.prevA
+    h.prevA = pad.a
+    if (jumpEdge && h.onGround) {
+        const onPlat = ledges.some((pl) => h.px >= pl.x && h.px <= pl.x + pl.w && Math.abs(h.y - pl.y) < 2)
+        if (pad.down && onPlat) { h.drop = 12; h.y += 2; h.onGround = false; h.vy = 0.5 }
+        else { h.vy = CFG.jumpV; h.onGround = false; gs.ev.push({ type: 'jump', o: owner }) }
+    }
+    if (h.drop > 0) h.drop -= 1
+
+    h.vy += CFG.grav
+    h.y += h.vy
+    h.onGround = false
+    if (h.y >= floorY) { h.y = floorY; h.vy = 0; h.onGround = true }
+    else if (h.vy > 0 && h.drop === 0) {
+        h.px = h.x
+        for (const pl of ledges) {
+            if (h.px >= pl.x - 3 && h.px <= pl.x + pl.w + 3 && h.y >= pl.y && h.y - h.vy <= pl.y + 1) {
+                h.y = pl.y; h.vy = 0; h.onGround = true; break
+            }
+        }
+    }
+    if (h.onGround) h.lane = h.y   // the lane enemies lead: the ground you run on
+
+    if (h.cool > 0) h.cool -= 1
+    if (pad.b && h.cool === 0) {
+        fire(gs, h, owner)
+        h.cool = coolOf(h.weapon)
+    }
+    if (h.inv > 0) h.inv -= 1
+}
+
+// S4 CPU seat: deterministic honest perception (visible things only — the same
+// law the autopilot lives by, and no rng: the brain is a pure function of gs).
+// He rides YOUR shoulder, not a fixed post: an arcade partner stays in frame
+// with P1, and it matters mechanically — a teammate parked on another lane
+// steals aim and threads rounds through the hero's line. Shadowing behind keeps
+// the nearer-hero law mostly on the hero (as if he were solo), while the blue
+// gun still adds firepower, takes capsules that reach him, and hops the same
+// threats. Falls: he climbs the hero's shelf-line. Boss: he shadows the band.
+function allyBrain (gs) {
+    const q = gs.p2
+    const pad = { left: false, right: false, up: false, down: false, a: false, b: true }
+    if (q.dead > 0 || q.out || gs.end) { pad.b = false; return pad }
+    const p = gs.p
+    const heroLive = !p.out && p.dead === 0
+
+    if (gs.phase === 'falls') {
+        pad.right = false; pad.left = false
+        // climb the hero's line — when the torrent has him in the low third,
+        // skip straight to the hero's own shelf and jump at every footfall;
+        // a lagging partner re-joins the climb or the water takes him
+        const desperate = q.y > gs.camY + H - 90
+        let ti = heroLive && gs.apT != null && gs.apT >= 0 ? (desperate ? gs.apT : Math.max(0, gs.apT - 1)) : q.tIdx
+        let t = ti >= 0 && ti < FALLS_LEDGES.length ? FALLS_LEDGES[ti] : null
+        const landedHere = t && q.onGround && Math.abs(q.y - t.y) < 2
+        if (!t || landedHere || q.y > t.y + 60) {
+            const cand = FALLS_LEDGES.filter((l) => l.y < q.y - 4 && l.y >= gs.camY - 20)
+            t = cand.length ? cand.reduce((a, b) => (a.y > b.y ? a : b)) : null
+            ti = t ? FALLS_LEDGES.indexOf(t) : -1
+        }
+        q.tIdx = ti
+        if (t) {
+            if (q.x < t.x + 4) pad.right = true
+            else if (q.x > t.x + t.w - 4) pad.left = true
+            if (q.onGround && q.x >= t.x - 6 && q.x <= t.x + t.w + 6) pad.a = true
+        }
+        if (desperate && q.onGround && !pad.a) {
+            // the foam is closing: hop off solid rock NOW — sprinting across a
+            // gap toward the hero is how a partner drowns mid-leap
+            pad.right = false; pad.left = false
+            pad.a = true
+        }
+        return pad
+    }
+
+    if (gs.phase === 'boss') {
+        pad.right = false; pad.left = false
+        // shadow the hero's patrol, clamped off the left spawn-door step
+        const anchor = heroLive ? Math.max(90, p.x - 24) : 100
+        const d = anchor - q.x
+        pad.right = d > 8; pad.left = d < -8
+        pad.up = gs.tick % 140 < 78          // diagonals reach the core from the band
+        const runner = gs.soldiers.filter((s) => !s.dead && s.awake).sort((a, b) => Math.abs(a.x - q.x) - Math.abs(b.x - q.x))[0]
+        if (runner) { pad.up = false; pad.right = runner.x > q.x + 2; pad.left = runner.x < q.x - 2 }
+        for (const b of gs.eb) {
+            const dx = b.x - q.x
+            const toward = (dx > 0 && b.vx < -0.3) || (dx < 0 && b.vx > 0.3) || (b.vy > 0.5 && Math.abs(dx) < 14)
+            if (toward && Math.abs(b.y - (q.y - 14)) < 34 && Math.abs(dx) < 60 && Math.abs(b.vy) < 1.2 && q.onGround) { pad.a = true; break }
+        }
+        return pad
+    }
+
+    // jungle: ride the hero's shoulder (or press on when his bank is gone)
+    const anchor = heroLive ? p.x - 26 : gs.cam + 60
+    const d = anchor - q.x
+    pad.right = d > 8; pad.left = d < -8
+    for (const br of gs.barrels) if (!br.gone && br.x > q.x - 6 && br.x - q.x < 22 && q.onGround) pad.a = true
+    if (!pad.a) for (const b of gs.eb) {
+        if (b.gr) {
+            if (b.vy > 0 && q.onGround && Math.abs(b.x - q.x) < 34 && b.y > CFG.ground - 110) { pad.a = true; break }
+            continue
+        }
+        const dx = b.x - q.x
+        const toward = (dx > 4 && dx < CFG.hopBand) || (dx < -4 && dx > -CFG.hopBand && b.vx < -0.3)
+        if (q.onGround && toward && b.vy < 1.2 && Math.abs(b.y - (q.y - 14)) < 12) { pad.a = true; break }
+    }
+    const c = gs.capsule
+    if (c && Math.abs(c.x - q.x) < 60 && c.x <= p.x + 10) {
+        // the capsule is fair game when the hero isn't already at it
+        if (!pad.a && c.y < q.y - 22 && q.onGround) pad.a = true
+        if (Math.abs(c.x - q.x) < 16 && c.y < q.y - 26) pad.up = true
+    }
+    const v = gs.vc.filter((k) => k.x > q.x - 6).sort((a, b) => a.x - b.x)[0]
+    if (!pad.a && v && v.x - q.x < 40 && v.y < q.y - 22) pad.a = true
+    return pad
+}
+
 export function makeGame (seed) {
     const gs = {
         seed: seed >>> 0,
@@ -182,6 +340,19 @@ export function makeGame (seed) {
             dead: 0,                // freeze ticks after a hit
             coyote: 0, drop: 0,     // coyote frames; ignore-platform frames
             walk: 0,                // animation phase (world ticks)
+            out: false,             // bank empty — the seat is down, the run goes on without it
+            prevA: false,           // jump latch (edge-detect for taps)
+        },
+        // S4 the second seat: mirror of p with its own bank. CPU-brained until
+        // a human takes it drop-in (q.human). Same physics laws — both seats run
+        // through the same seatStep, so the hop-law/lane law is structural.
+        p2: {
+            x: 40 + CFG.allySpawnDX, y: CFG.ground, vy: 0, onGround: true, face: 1,
+            lane: CFG.ground, ax: 1, ay: 0,
+            cool: 0, weapon: 'rifle',
+            inv: 120, dead: 0, coyote: 0, drop: 0, walk: 0, out: false,
+            lives: CFG.allyLives, human: false, tIdx: -1, zz: 1, prevA: false,
+            safe: { x: 40 + CFG.allySpawnDX, y: CFG.ground },
         },
         safe: { x: 40, y: CFG.ground },   // respawn point (last ground/shelf touched)
         prevA: false,
@@ -201,41 +372,43 @@ export function makeGame (seed) {
     return gs
 }
 
-function aimFrom (pad, gs) {
+function aimFrom (pad, h) {
     const dx = pad.right ? 1 : pad.left ? -1 : 0
     let dy = 0
     if (pad.up) dy = -1
-    else if (pad.down && !gs.p.onGround) dy = 1 // aim down only in mid-air, as on the cabinet
+    else if (pad.down && !h.onGround) dy = 1 // aim down only in mid-air, as on the cabinet
     let ax = dx, ay = dy
-    if (dx === 0 && dy === 0) { ax = gs.p.face; ay = 0 }
-    else if (dx !== 0) { gs.p.face = dx }
+    if (dx === 0 && dy === 0) { ax = h.face; ay = 0 }
+    else if (dx !== 0) { h.face = dx }
     const m = Math.hypot(ax, ay) || 1
     return { ax: ax / m, ay: ay / m }
 }
 
-function fire (gs) {
-    const p = gs.p
+// owner: 0 = the hero's round, 1 = the ally's (rides the bullet so the harness
+// can name which seat fired; also hashed — the two guns are sim truth).
+function fire (gs, h = gs.p, owner = 0) {
+    const p = h
     const o = { x: p.x + p.ax * 10, y: p.y - 16 + p.ay * 10 }
     if (p.weapon === 'spread') {
         const base = Math.atan2(p.ay, p.ax)
         for (let k = -2; k <= 2; k++) {
             const a = base + k * (CFG.spreadArc / 2)
-            gs.pb.push({ x: o.x, y: o.y, vx: Math.cos(a) * CFG.spreadSpeed, vy: Math.sin(a) * CFG.spreadSpeed, k: 's' })
+            gs.pb.push({ x: o.x, y: o.y, vx: Math.cos(a) * CFG.spreadSpeed, vy: Math.sin(a) * CFG.spreadSpeed, k: 's', o: owner })
         }
-        gs.ev.push({ type: 'spread' })
+        gs.ev.push({ type: 'spread', o: owner })
     } else if (p.weapon === 'machine') {
-        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.machineSpeed, vy: p.ay * CFG.machineSpeed, k: 'm' })
-        gs.ev.push({ type: 'shot', k: 'machine' })
+        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.machineSpeed, vy: p.ay * CFG.machineSpeed, k: 'm', o: owner })
+        gs.ev.push({ type: 'shot', k: 'machine', o: owner })
     } else if (p.weapon === 'fire') {
         // the firebar: a slow flame that undulates along its line and pierces
-        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.fireBallSpeed, vy: p.ay * CFG.fireBallSpeed, vy0: p.ay * CFG.fireBallSpeed, k: 'f', ph: (Math.abs(Math.round(o.x)) % 64) / 64 * Math.PI * 2, hits: [] })
-        gs.ev.push({ type: 'fshot' })
+        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.fireBallSpeed, vy: p.ay * CFG.fireBallSpeed, vy0: p.ay * CFG.fireBallSpeed, k: 'f', ph: (Math.abs(Math.round(o.x)) % 64) / 64 * Math.PI * 2, hits: [], o: owner })
+        gs.ev.push({ type: 'fshot', o: owner })
     } else if (p.weapon === 'laser') {
-        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.laserSpeed, vy: p.ay * CFG.laserSpeed, k: 'l', hits: [] })
-        gs.ev.push({ type: 'lshot' })
+        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.laserSpeed, vy: p.ay * CFG.laserSpeed, k: 'l', hits: [], o: owner })
+        gs.ev.push({ type: 'lshot', o: owner })
     } else {
-        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.bulletSpeed, vy: p.ay * CFG.bulletSpeed, k: 'r' })
-        gs.ev.push({ type: 'shot' })
+        gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.bulletSpeed, vy: p.ay * CFG.bulletSpeed, k: 'r', o: owner })
+        gs.ev.push({ type: 'shot', o: owner })
     }
 }
 
@@ -254,7 +427,9 @@ function boom (gs, x, y, hurtTurrets, kind) {
     gs.ev.push({ type: 'boom', x, y, kind: kind || 'tnt' })
     for (const s of gs.soldiers) if (!s.dead && Math.hypot(s.x - x, s.y - y - 12) < CFG.blastR) killSoldier(gs, s)
     if (hurtTurrets) for (const t of gs.turrets) if (!t.dead && Math.hypot(t.x - x, t.y - 18 - y) < CFG.blastR) hitTurret(gs, t)
-    if (gs.p.dead === 0 && gs.p.inv <= 0 && Math.hypot(gs.p.x - x, gs.p.y - 12 - y) < CFG.blastPlayerR) killPlayer(gs)
+    if (gs.p.dead === 0 && gs.p.inv <= 0 && !gs.p.out && Math.hypot(gs.p.x - x, gs.p.y - 12 - y) < CFG.blastPlayerR) killPlayer(gs)
+    // co-op: the blast is symmetric — it takes the blue seat too (#2779 S4)
+    if (gs.p2.dead === 0 && gs.p2.inv <= 0 && !gs.p2.out && Math.hypot(gs.p2.x - x, gs.p2.y - 12 - y) < CFG.blastPlayerR) killAlly(gs)
 }
 
 function killSoldier (gs, s) {
@@ -269,11 +444,40 @@ function hitTurret (gs, t) {
     if (t.hp <= 0) { t.dead = true; gs.score += 300; gs.ev.push({ type: 'boom', x: t.x, y: t.y - 18, kind: 'tnt' }) }
 }
 
+// S4 bank law: the arcade run ends only when BOTH seats are out of lives.
+function seatsDown (gs) {
+    return gs.lives <= 0 && gs.p2.lives <= 0
+}
+
 function killPlayer (gs) {
-    gs.p.dead = CFG.respawnFreeze
+    const p = gs.p
     gs.lives -= 1
-    gs.ev.push({ type: 'boom', x: gs.p.x, y: gs.p.y - 12, kind: 'death' })
-    if (gs.lives <= 0) { gs.lives = 0; gs.end = 'dead'; gs.ev.push({ type: 'gameover' }) }
+    gs.ev.push({ type: 'boom', x: p.x, y: p.y - 12, kind: 'death' })
+    if (gs.lives <= 0) {
+        // bank empty: the seat goes down for good — no freeze (the run goes on
+        // under whoever still has a life)
+        gs.lives = 0; p.out = true
+        gs.ev.push({ type: 'pdown' })
+        if (seatsDown(gs)) { gs.end = 'dead'; gs.ev.push({ type: 'gameover' }) }
+        return
+    }
+    p.dead = CFG.respawnFreeze
+}
+
+// The blue seat dies WITHOUT freezing the world (the hero is still playing):
+// his tumble counts down inside the live step, then he respawns at his own
+// last safe ground, weapon lost, flashing — the same mercy laws the hero gets.
+function killAlly (gs) {
+    const q = gs.p2
+    q.lives -= 1
+    gs.ev.push({ type: 'boom', x: q.x, y: q.y - 12, kind: 'death', o: 1 })
+    if (q.lives <= 0) {
+        q.lives = 0; q.out = true
+        gs.ev.push({ type: 'p2down' })
+        if (seatsDown(gs)) { gs.end = 'dead'; gs.ev.push({ type: 'gameover' }) }
+        return
+    }
+    q.dead = CFG.respawnFreeze
 }
 
 // --- S2: entering the waterfall. The gate swallows the run: fresh vertical
@@ -285,6 +489,14 @@ function enterFalls (gs) {
     const p = gs.p
     p.x = 190; p.y = 662; p.vy = 0; p.onGround = true; p.drop = 0; p.coyote = 0
     gs.safe = { x: 190, y: 662 }
+    // co-op: the blue seat follows the run into the canyon (spawn grace so the
+    // first gunner doesn't get him free on arrival)
+    const q = gs.p2
+    if (!q.out) {
+        q.x = 210; q.y = 662; q.vy = 0; q.onGround = true; q.drop = 0; q.coyote = 0
+        q.lane = q.y; q.inv = Math.max(q.inv, 60); q.tIdx = -1
+        q.safe = { x: 210, y: 662 }
+    }
     gs.soldiers = FALLS_GUNNERS.map((d) => ({ x: d.x, y: d.y, hold: true, hp: 1, awake: false, t: 0, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }))
     gs.snipers = []   // the tree line stays in the jungle
     gs.vc.length = 0  // the depot's payout flies in the jungle too
@@ -298,6 +510,12 @@ function makeBoss (gs) {
     const p = gs.p
     p.x = 60; p.y = CFG.bossFloor; p.vy = 0; p.onGround = true
     gs.safe = { x: 60, y: CFG.bossFloor }
+    const q = gs.p2
+    if (!q.out) {
+        q.x = 34; q.y = CFG.bossFloor; q.vy = 0; q.onGround = true; q.drop = 0; q.coyote = 0
+        q.lane = q.y; q.inv = Math.max(q.inv, 60); q.zz = 1
+        q.safe = { x: 34, y: CFG.bossFloor }
+    }
     gs.soldiers = []
     gs.pb.length = 0; gs.eb.length = 0
     gs.boss = {
@@ -310,9 +528,10 @@ function makeBoss (gs) {
     gs.ev.push({ type: 'enter' })
 }
 
-export function step (gs, pad = PAD0) {
+export function step (gs, pad = PAD0, pad2 = PAD0) {
     if (gs.end) { gs.tick += 1; return }
     const p = gs.p
+    const q = gs.p2
     gs.tick += 1
     if (p.dead > 0) {
         p.dead -= 1
@@ -327,50 +546,48 @@ export function step (gs, pad = PAD0) {
         return
     }
 
-    // --- player: run, aim, jump, fire ---
-    const aim = aimFrom(pad, gs)
-    p.ax = aim.ax; p.ay = aim.ay
-    const runDir = (pad.right ? 1 : 0) - (pad.left ? 1 : 0)
-    if (runDir) { p.x += runDir * CFG.run; p.walk += 1 }
-    if (gs.phase === 'jungle') p.x = Math.max(4, Math.min(CFG.worldW - 4, p.x))
-    else p.x = Math.max(8, Math.min(gs.phase === 'boss' ? CFG.wallX - 10 : W - 8, p.x))
-    p.px = p.x
-
     const ledges = gs.phase === 'jungle' ? PLATFORMS : FALLS_LEDGES
     const floorY = gs.phase === 'jungle' ? CFG.ground : (gs.phase === 'boss' ? CFG.bossFloor : Infinity)
 
-    if (p.onGround) p.coyote = CFG.coyote
-    else if (p.coyote > 0) p.coyote -= 1
-    const jumpEdge = pad.a && !gs.prevA
-    gs.prevA = pad.a
-    if (jumpEdge && p.onGround) {
-        const onPlat = ledges.some((pl) => p.px >= pl.x && p.px <= pl.x + pl.w && Math.abs(p.y - pl.y) < 2)
-        if (pad.down && onPlat) { p.drop = 12; p.y += 2; p.onGround = false; p.vy = 0.5 }
-        else { p.vy = CFG.jumpV; p.onGround = false; gs.ev.push({ type: 'jump' }) }
+    // --- the hero's seat (out once his bank is empty; the run goes on blue) ---
+    if (!p.out) {
+        seatStep(gs, p, pad, ledges, floorY, 0)
+        if (p.onGround) gs.safe = { x: p.x, y: p.y }
     }
-    if (p.drop > 0) p.drop -= 1
 
-    p.vy += CFG.grav
-    p.y += p.vy
-    p.onGround = false
-    if (p.y >= floorY) { p.y = floorY; p.vy = 0; p.onGround = true }
-    else if (p.vy > 0 && p.drop === 0) {
-        p.px = p.x
-        for (const pl of ledges) {
-            if (p.px >= pl.x - 3 && p.px <= pl.x + pl.w + 3 && p.y >= pl.y && p.y - p.vy <= pl.y + 1) {
-                p.y = pl.y; p.vy = 0; p.onGround = true; break
+    // --- S4 the blue seat: his tumble counts down inside the live step (only
+    // the hero's death freezes the world), then he respawns at his own last
+    // safe ground — weapon lost, flashing, same mercy laws as the hero. ---
+    if (!q.out) {
+        if (q.dead > 0) {
+            q.dead -= 1
+            if (q.dead === 0) {
+                const heroLive = !p.out && p.dead === 0 && p.onGround
+                if (heroLive) {
+                    // arcade drop-in: the partner re-enters at your side, not
+                    // wherever he fell (this is what keeps him ahead of the
+                    // torrent and off the boss's door-step)
+                    q.x = Math.max(8, Math.min(gs.phase === 'jungle' ? CFG.worldW - 4 : gs.phase === 'boss' ? CFG.wallX - 10 : W - 8, p.x - 26))
+                    q.y = p.lane
+                } else {
+                    q.x = q.safe.x; q.y = q.safe.y
+                }
+                q.vy = 0; q.onGround = true
+                q.drop = 0; q.coyote = 0; q.lane = q.y
+                q.weapon = 'rifle'; q.inv = CFG.invuln
+                // never respawn below the torrent — the arcade puts you back on
+                // the climb, not back in the water
+                if (gs.phase === 'falls' && q.y > gs.camY + H - CFG.drownAt - 40) {
+                    q.y = gs.camY + 60
+                    q.x = Math.max(20, Math.min(W - 20, p.out ? q.x : p.x))
+                }
+                gs.ev.push({ type: 'respawn', o: 1 })
             }
+        } else {
+            seatStep(gs, q, q.human ? pad2 : allyBrain(gs), ledges, floorY, 1)
+            if (q.onGround) q.safe = { x: q.x, y: q.y }
         }
     }
-    if (p.onGround) gs.safe = { x: p.x, y: p.y }
-    if (p.onGround) p.lane = p.y   // the lane enemies lead: the ground you run on
-
-    if (p.cool > 0) p.cool -= 1
-    if (pad.b && p.cool === 0) {
-        fire(gs)
-        p.cool = coolOf(p.weapon)
-    }
-    if (p.inv > 0) p.inv -= 1
 
     // --- camera + stage progression per phase ---
     if (gs.phase === 'jungle') {
@@ -383,6 +600,12 @@ export function step (gs, pad = PAD0) {
         const anchorY = p.y - CFG.anchor
         if (anchorY < gs.camY) gs.camY = anchorY
         if (gs.camY < 0) gs.camY = 0
+        // co-op: the torrent takes both seats (the hero check keeps its freeze
+        // and its return — the blue seat's drown is local, the fight goes on)
+        if (q.dead === 0 && !q.out && q.y >= gs.camY + H - CFG.drownAt) {
+            gs.ev.push({ type: 'drown', o: 1 })
+            killAlly(gs)
+        }
         if (p.y >= gs.camY + H - CFG.drownAt) {         // the torrent takes you
             gs.ev.push({ type: 'drown' })
             killPlayer(gs)
@@ -488,23 +711,24 @@ export function step (gs, pad = PAD0) {
             if (s.x < gs.cam + W - 4 && s.y < gs.camY + H - 4) { s.awake = true; s.t = 10 + Math.floor(rnd(gs) * 25) }
             continue
         }
-        const dx = p.x - s.x
-        const dy = (p.lane - 14) - (s.y - 12)   // aim the lane; a jump is the answer (lane-aim law)
+        const tgt = aimTarget(gs, s.x)
+        const dx = tgt ? tgt.x - s.x : 9999
+        const dy = tgt ? (tgt.lane - 14) - (s.y - 12) : 9999   // aim the lane; a jump is the answer (lane-aim law)
         s.walk += 1
         if (s.flash > 0) s.flash -= 1
-        if (!s.hold && Math.abs(dx) > 26) { s.x += Math.sign(dx) * 1.1; s.walkDir = Math.sign(dx) }
+        if (!s.hold && tgt && Math.abs(dx) > 26) { s.x += Math.sign(dx) * 1.1; s.walkDir = Math.sign(dx) }
         s.t -= 1
         const range = s.hold ? (gs.phase === 'falls' ? 210 : 280) : 220
         const inCamX = gs.cam < s.x && s.x < gs.cam + W + 4
         const inCamY = s.y > gs.camY - 4 && s.y < gs.camY + H + 4
         // S3 grenade lob: on the approach band, not too close, never off-screen
         if (s.nade && s.throwT > 0) s.throwT -= 1
-        if (s.nade && s.throwT === 0 && !s.hold && Math.abs(dx) > 50 && Math.abs(dx) < 320 && inCamX && inCamY) {
+        if (s.nade && s.throwT === 0 && !s.hold && tgt && Math.abs(dx) > 50 && Math.abs(dx) < 320 && inCamX && inCamY) {
             gs.eb.push({ x: s.x, y: s.y - 18, vx: Math.sign(dx) * 1.9, vy: -3.4, gr: true })
             gs.ev.push({ type: 'throw' })
             s.throwT = 150 + ((s.x * 37) >>> 3) % 90
         }
-        if (s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) {
+        if (tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) {
             const a = Math.atan2(dy, dx)
             const sp = s.hold ? (gs.phase === 'falls' ? 1.8 : CFG.eBulletSpeed) : CFG.eBulletSpeed
             gs.eb.push({ x: s.x + Math.cos(a) * 8, y: s.y - 12 + Math.sin(a) * 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp })
@@ -512,19 +736,22 @@ export function step (gs, pad = PAD0) {
             s.flash = 4
             s.t = (s.hold ? (gs.phase === 'falls' ? 100 : 40) : 45) + Math.floor(rnd(gs) * 60)
         }
-        // touching a live runner is a hit, as on the cabinet
-        if (!s.hold && p.inv <= 0 && Math.abs(p.x - s.x) < 9 && Math.abs(p.y - s.y) < 20) killPlayer(gs)
+        // touching a live runner is a hit, as on the cabinet — and it takes
+        // either seat (S4: the blue soldier can be rushed too)
+        if (!s.hold && p.inv <= 0 && !p.out && Math.abs(p.x - s.x) < 9 && Math.abs(p.y - s.y) < 20) killPlayer(gs)
+        if (!s.hold && q.inv <= 0 && !q.out && q.dead === 0 && Math.abs(q.x - s.x) < 9 && Math.abs(q.y - s.y) < 20) killAlly(gs)
         if (p.dead > 0) break
     }
 
-    // --- turrets: scan, fire aimed bursts while in range ---
+    // --- turrets: scan, fire aimed bursts while in range (at the nearer hero) ---
     for (const t of gs.turrets) {
         if (t.dead) continue
-        const dx = p.x - t.x
+        const tgt = aimTarget(gs, t.x)
+        const dx = tgt ? tgt.x - t.x : 9999
         const inCam = t.x > gs.cam && t.x < gs.cam + W
-        t.aim = Math.atan2((p.lane - 14) - (t.y - 18), dx)
+        t.aim = tgt ? Math.atan2((tgt.lane - 14) - (t.y - 18), dx) : Math.PI
         t.t -= 1
-        if (t.t <= 0 && inCam && Math.abs(dx) < 260) {
+        if (t.t <= 0 && inCam && tgt && Math.abs(dx) < 260) {
             gs.eb.push({ x: t.x + Math.cos(t.aim) * 12, y: t.y - 18 + Math.sin(t.aim) * 12, vx: Math.cos(t.aim) * CFG.eBulletSpeed, vy: Math.sin(t.aim) * CFG.eBulletSpeed })
             gs.ev.push({ type: 'efire', big: true })
             t.t = 85
@@ -539,15 +766,17 @@ export function step (gs, pad = PAD0) {
             if (sn.x < gs.cam + W - 4 && sn.y < gs.camY + H - 4) { sn.awake = true; sn.t = 40 + Math.floor(rnd(gs) * 50) }
             continue
         }
-        sn.aim = Math.atan2((p.lane - 14) - (sn.y - 14), p.x - sn.x)
+        const tgt = aimTarget(gs, sn.x)
+        sn.aim = tgt ? Math.atan2((tgt.lane - 14) - (sn.y - 14), tgt.x - sn.x) : Math.PI
         if (sn.flash > 0) sn.flash -= 1
         sn.t -= 1
         const inCam = sn.x > gs.cam && sn.x < gs.cam + W
         // fairness law: the sniper waits for a GROUNDED target — its fast round
         // is aimed at the lane, and the answer is the same hop the cabinet
         // teaches for every flat shot. Shooting at airborne heroes would make
-        // the fastest round in the game undodgeable.
-        if (sn.t <= 0 && inCam && p.onGround && Math.abs(p.x - sn.x) < 340) {
+        // the fastest round in the game undodgeable. (S4: either seat's hop
+        // answers — the round chases the nearer hero's lane.)
+        if (sn.t <= 0 && inCam && tgt && tgt.onGround && Math.abs(tgt.x - sn.x) < 340) {
             gs.eb.push({ x: sn.x + Math.cos(sn.aim) * 12, y: sn.y - 14 + Math.sin(sn.aim) * 12, vx: Math.cos(sn.aim) * CFG.sniperSpeed, vy: Math.sin(sn.aim) * CFG.sniperSpeed })
             gs.ev.push({ type: 'sniper' })
             sn.flash = 8
@@ -561,10 +790,11 @@ export function step (gs, pad = PAD0) {
     // spawn-shield law spans every way a soldier can arrive). ---
     const dp2 = gs.depot
     if (gs.phase === 'jungle' && dp2 && !dp2.dead) {
-        dp2.aim = Math.atan2((p.lane - 14) - (dp2.y - 14), p.x - dp2.x)
+        const tgt = aimTarget(gs, dp2.x)
+        dp2.aim = tgt ? Math.atan2((tgt.lane - 14) - (dp2.y - 14), tgt.x - dp2.x) : Math.PI
         dp2.t -= 1
         const onScreen = dp2.x > gs.cam && dp2.x < gs.cam + W + 8
-        if (dp2.t <= 0 && onScreen && Math.abs(p.x - dp2.x) < 300 && p.x < dp2.x) {
+        if (dp2.t <= 0 && onScreen && tgt && Math.abs(tgt.x - dp2.x) < 300 && tgt.x < dp2.x) {
             gs.eb.push({ x: dp2.x + Math.cos(dp2.aim) * 14, y: dp2.y - 14 + Math.sin(dp2.aim) * 14, vx: Math.cos(dp2.aim) * 2.2, vy: Math.sin(dp2.aim) * 2.2 })
             gs.ev.push({ type: 'dfire' })
             dp2.t = 95
@@ -579,10 +809,12 @@ export function step (gs, pad = PAD0) {
         }
     }
 
-    // --- barrels sitting on the ground: step into them and they go off ---
+    // --- barrels sitting on the ground: step into them and they go off (
+    // either soldier's boots light the fuse) ---
     if (gs.phase === 'jungle') {
         for (const br of gs.barrels) {
-            if (!br.gone && Math.abs(p.x - br.x) < 10 && p.y > br.y - 24) { br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true) }
+            if (!br.gone && Math.abs(p.out ? 9999 : p.x - br.x) < 10 && p.y > br.y - 24) { br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true) }
+            if (!br.gone && !q.out && q.dead === 0 && Math.abs(q.x - br.x) < 10 && q.y > br.y - 24) { br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true) }
         }
     }
 
@@ -600,11 +832,18 @@ export function step (gs, pad = PAD0) {
         gs.capsule.x += gs.capsule.vx
         const c = gs.capsule
         const kind = c.kind || 'spread'
-        if (p.inv >= 0 && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
+        if (p.inv >= 0 && !p.out && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
             gs.capsule = null
             gs.nextCapsule = gs.tick + 600 + Math.floor(rnd(gs) * 300)
             if (p.weapon !== kind) { p.weapon = kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: kind }) }
             else gs.ev.push({ type: 'pickup', k: kind })
+        } else if (q.inv >= 0 && !q.out && q.dead === 0 && Math.abs(q.x - c.x) < 12 && Math.abs(q.y - 14 - c.y) < 16) {
+            // co-op: the capsule goes to whoever touches it first — capture is
+            // per-seat, and the blue seat's wheel is his own
+            gs.capsule = null
+            gs.nextCapsule = gs.tick + 600 + Math.floor(rnd(gs) * 300)
+            if (q.weapon !== kind) { q.weapon = kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: kind, o: 1 }) }
+            else gs.ev.push({ type: 'pickup', k: kind, o: 1 })
         } else if (c.x < gs.cam - 16) {
             gs.capsule = null
             gs.nextCapsule = gs.tick + 300
@@ -615,9 +854,14 @@ export function step (gs, pad = PAD0) {
     // line with their letters already stamped; same pickup, same despawn. ---
     gs.vc = gs.vc.filter((c) => {
         c.x += c.vx
-        if (p.inv >= 0 && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
+        if (p.inv >= 0 && !p.out && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
             if (p.weapon !== c.kind) { p.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind }) }
             else gs.ev.push({ type: 'pickup', k: c.kind })
+            return false
+        }
+        if (q.inv >= 0 && !q.out && q.dead === 0 && Math.abs(q.x - c.x) < 12 && Math.abs(q.y - 14 - c.y) < 16) {
+            if (q.weapon !== c.kind) { q.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind, o: 1 }) }
+            else gs.ev.push({ type: 'pickup', k: c.kind, o: 1 })
             return false
         }
         return c.x > gs.cam - 16
@@ -642,10 +886,11 @@ export function step (gs, pad = PAD0) {
             const open = (bo.coreT % CFG.coreCycle) < CFG.coreOpen
             if (open && !bo.wasOpen) gs.ev.push({ type: 'unlock' })
             bo.wasOpen = open
+            const tgt = aimTarget(gs, CFG.wallX)
             for (const g of bo.guns) {
                 g.t -= 1
-                if (g.t <= 0) {
-                    const a = Math.atan2((p.lane - 14) - g.y, p.x - g.x)
+                if (g.t <= 0 && tgt) {
+                    const a = Math.atan2((tgt.lane - 14) - g.y, tgt.x - g.x)
                     gs.eb.push({ x: g.x + Math.cos(a) * 12, y: g.y + Math.sin(a) * 12, vx: Math.cos(a) * 2.0, vy: Math.sin(a) * 2.0 })
                     gs.ev.push({ type: 'cannon' })
                     g.t = 170 + Math.floor(rnd(gs) * 110)
@@ -672,7 +917,8 @@ export function step (gs, pad = PAD0) {
             if (gs.phase === 'jungle' && b.y >= CFG.ground - 2) { boom(gs, b.x, CFG.ground - 4, true, 'tnt'); return false }
         }
         if (b.x < gs.cam - 8 || b.x > gs.cam + W + 8 || b.y < gs.camY - 8 || b.y > gs.camY + H + 8) return false
-        if (p.inv <= 0 && p.dead === 0 && Math.abs(b.x - p.x) < 7 && Math.abs(b.y - (p.y - 14)) < 13) { killPlayer(gs); return false }
+        if (p.inv <= 0 && p.dead === 0 && !p.out && Math.abs(b.x - p.x) < 7 && Math.abs(b.y - (p.y - 14)) < 13) { killPlayer(gs); return false }
+        if (q.inv <= 0 && q.dead === 0 && !q.out && Math.abs(b.x - q.x) < 7 && Math.abs(b.y - (q.y - 14)) < 13) { killAlly(gs); return false }
         return true
     })
 }
@@ -706,7 +952,7 @@ export function autopilot (gs) {
         if (!pad.a) for (const b of gs.eb) {
             if (b.gr) continue
             const dx = b.x - p.x
-            const toward = (dx > 4 && dx < 46) || (dx < -4 && dx > -46 && b.vx < -0.3)
+            const toward = (dx > 4 && dx < CFG.hopBand) || (dx < -4 && dx > -CFG.hopBand && b.vx < -0.3)
             if (p.onGround && toward && b.vy < 1.2 && Math.abs(b.y - (p.y - 14)) < 12) { pad.a = true; break }
         }
         // S3 grenades: a bomb dropping into the lane gets hopped — the blast
@@ -833,8 +1079,12 @@ export function stateHash (gs) {
     put(gs.safe.x); put(gs.safe.y)
     put(gs.p.x); put(gs.p.y); put(gs.p.vy); put(gs.p.onGround ? 1 : 0); put(gs.p.face); put(gs.p.lane)
     put(gs.p.ax); put(gs.p.ay); put(gs.p.cool); put(WCODE[gs.p.weapon] || 0)
-    put(gs.p.inv); put(gs.p.dead); put(gs.prevA ? 1 : 0)
-    for (const b of gs.pb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(KCODE[b.k] || 0); put(b.hits ? b.hits.length : 0) }
+    put(gs.p.inv); put(gs.p.dead); put(gs.p.prevA ? 1 : 0); put(gs.p.out ? 1 : 0)
+    // S4 the blue seat is sim truth — his position, wheel, bank all ride the hash
+    put(gs.p2.x); put(gs.p2.y); put(gs.p2.vy); put(gs.p2.onGround ? 1 : 0); put(gs.p2.face); put(gs.p2.lane)
+    put(gs.p2.ax); put(gs.p2.ay); put(gs.p2.cool); put(WCODE[gs.p2.weapon] || 0)
+    put(gs.p2.inv); put(gs.p2.dead); put(gs.p2.prevA ? 1 : 0); put(gs.p2.lives); put(gs.p2.out ? 1 : 0); put(gs.p2.human ? 1 : 0)
+    for (const b of gs.pb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(KCODE[b.k] || 0); put(b.hits ? b.hits.length : 0); put(b.o || 0) }
     for (const b of gs.eb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(b.gr ? 1 : 0) }
     for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk); put(s.nade ? 1 : 0); put(s.hp) }
     for (const sn of gs.snipers) { put(sn.awake ? 1 : 0); put(sn.dead ? 1 : 0); put(sn.x); put(sn.y); put(sn.t); put(sn.aim) }
