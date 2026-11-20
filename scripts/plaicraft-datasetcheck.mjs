@@ -34,8 +34,10 @@ import { uploadSession } from '../src/utils/sessionStore.js'
 import { createRecorder } from '../src/utils/recording.js'
 import { TICK_MS } from '../src/utils/voice.js'
 import { stateHash, step } from '../src/games/Gauntlet/sim.js'
+import { makeGame as fbMakeGame, step as fbStep, stateHash as fbHash } from '../src/games/FloorBoss/sim.js'
+import { N_FEAT as FB_N_FEAT } from '../src/games/FloorBoss/model.js'
 import { newGame, heroFromPad, p2FromPad } from './plaicraft-export.mjs'
-import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset } from './plaicraft-dataset.mjs'
+import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows } from './plaicraft-dataset.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 // Local Report (harness.mjs pulls playwright-core at import; this check is
@@ -61,10 +63,29 @@ const shaHex = (buf) => createHash('sha256').update(buf).digest('hex')
 // the house cadence — what verifyRecording (and the builder's adapter) will
 // re-run tick-for-tick. Non-gauntlet fixtures skip the sim (no adapter);
 // they only need structural validity.
-function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null }) {
-    const gs = game === 'gauntlet' ? newGame(seed, rules || {}, seats[1] && seats[1].kind !== 'off') : null
+// #2805 item 5: hand-crafted EBML/WebM skeleton declaring a Duration (the
+// parser's lineage, #2058) — real enough that containerDurationMs answers >0;
+// the fake bytes could never prove the reader works. micprobe keeps recording
+// the true-mic spot checks; this pins the PARSER.
+const craftWebm = (durationMs) => {
+    const d = Buffer.alloc(8)
+    d.writeDoubleBE(durationMs, 0)
+    return Buffer.concat([
+        Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x80]), // EBML header (empty)
+        Buffer.from([0x18, 0x53, 0x80, 0x67, 0x92]), // Segment, 18 bytes
+        Buffer.from([0x15, 0x49, 0xa9, 0x66, 0x8d]), // Info, 13 bytes
+        Buffer.from([0x44, 0x89, 0x88]), // Duration, float64
+        d,
+    ]).toString('base64')
+}
+
+function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false }) {
+    const method = game === 'floor-boss' ? 'dpad' : 'stick'
+    const gs = game === 'gauntlet' ? newGame(seed, rules || {}, seats[1] && seats[1].kind !== 'off')
+        : game === 'floor-boss' ? fbMakeGame(seed, { duel: seats.length >= 2 })
+            : null
     const rec = createRecorder({
-        gameId: game, method: 'stick', seed, players: seats.length, build: 'test',
+        gameId: game, method, seed, players: seats.length, build: 'test',
         sources: seats.map((s) => ({ kind: s.kind === 'relabeled' ? 'human' : s.kind })),
         rules: () => rules || {},
     })
@@ -76,28 +97,40 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
             up: rnd() < 0.3, down: rnd() < 0.2, left: rnd() < 0.2, right: rnd() < 0.3,
             a: rnd() < 0.15, ax: Math.cos(rnd() * 6.28), ay: Math.sin(rnd() * 6.28),
         }))
-        if (gs) step(gs, heroFromPad(pads[0]), p2FromPad(pads[1] || {}))
-        rec.addTick(pads, null, gs && gs.tick % 30 === 0 ? stateHash(gs) : null)
+        if (game === 'gauntlet') step(gs, heroFromPad(pads[0]), p2FromPad(pads[1] || {}))
+        if (game === 'floor-boss') fbStep(gs, pads)
+        rec.addTick(pads, null, gs && gs.tick % 30 === 0 ? (game === 'gauntlet' ? stateHash(gs) : fbHash(gs)) : null)
         if (callAt.has(t + 1)) {
             const c = calls.find((q) => q.t === t + 1)
-            rec.addVoiceCmd({ said: c.said, intent: c.intent || null, ok: !!c.ok })
+            rec.addVoiceCmd({ said: c.said, intent: c.intent || null, ok: !!c.ok, ...(Number.isInteger(c.seat) ? { seat: c.seat } : {}) }) // #2805 seat stamp
         }
     }
-    const final = gs ? stateHash(gs) : 12345
+    const final = gs ? (game === 'gauntlet' ? stateHash(gs) : fbHash(gs)) : 12345
     if (voice) {
         const clock = []
         for (let t = 60; t <= ticks; t += 60) clock.push({ t, ms: Math.round(t * TICK_MS) })
         const bytes = new Uint8Array(48).fill(7) // deterministic stand-in bytes (validate wants b64 of len%4==0)
-        return rec.finish(final, {
-            tracks: [{
-                slots: voice.slots, consent: true, headset: false,
-                mime: 'audio/webm;codecs=opus', ms: Math.round(ticks * TICK_MS), clock,
-                b64: Buffer.from(bytes).toString('base64'),
-            }],
-            declined: [],
+        const tracks = [{
+            slots: voice.slots, consent: true, headset: false,
+            mime: 'audio/webm;codecs=opus', ms: Math.round(ticks * TICK_MS), clock,
+            b64: Buffer.from(bytes).toString('base64'),
+        }]
+        // #2805 guest mic: covers seat 1, cuts early (partial), and its
+        // container DECLARES a duration that disagrees with ms by >10% —
+        // audioLonger + sessionsWithPartialVoice + per-seat clips must all bite.
+        if (voice.guest) tracks.push({
+            slots: [1], consent: true, headset: false,
+            mime: 'audio/webm;codecs=opus', ms: 500, partial: true,
+            clock: [{ t: 1, ms: 0 }, { t: 30, ms: 498 }],
+            b64: craftWebm(1234.5),
         })
+        const file = rec.finish(final, { tracks, declined: [] })
+        if (tamper && file.hashes.length) file.hashes[file.hashes.length - 1].h = 'cafebabe'
+        return file
     }
-    return rec.finish(final)
+    const file = rec.finish(final)
+    if (tamper && file.hashes.length) file.hashes[file.hashes.length - 1].h = 'cafebabe'
+    return file
 }
 
 const relabelSeat = (rec, seat) => {
@@ -151,13 +184,16 @@ try {
         ['dave', relabelSeat(scriptedTake({ seed: 11, seats: [{ kind: 'relabeled' }, { kind: 'cpu' }] }), 0)],
         ['qabot', scriptedTake({ seed: 12, seats: [{ kind: 'model' }, { kind: 'cpu' }] })],
         ['erin', scriptedTake({ game: 'claptest', seed: 13, ticks: 120, seats: [{ kind: 'human' }] })],
+        // #2805: floor-boss duel take — model seat replays too; host + stamped
+        // guest calls; guest mic partial + container disagreement.
+        ['gina', scriptedTake({ game: 'floor-boss', seed: 21, ticks: 240, seats: [{ kind: 'human' }, { kind: 'model' }], voice: { slots: [0], guest: true }, calls: [{ t: 100, said: 'rack two', intent: null, ok: true }, { t: 120, said: 'watch the fork', intent: null, ok: true, seat: 1 }] })],
     ]
     let up = 0
     for (const [player, rec] of uploads) {
         const res = await uploadSession(rec, { player, consent: { motion: true, voice: !!rec.voice }, base: sim.base })
         if (res.ok) up++
     }
-    r.check('fixture store provisioned (6 consented takes uploaded)', up === 6, `${up}/6`)
+    r.check('fixture store provisioned (7 consented takes uploaded)', up === 7, `${up}/7`)
 
     // determinism: two full builds against the store, twice. In-process
     // (not a blocked spawnSync child: the sim lives on THIS event loop).
@@ -191,8 +227,8 @@ try {
         if (c.cls === 'human') humanKeys.add(s.key)
         else flaggedKeys.add(s.key)
     }
-    r.check('fixtures classify as expected: 3 human, 3 flagged',
-        humanKeys.size === 3 && flaggedKeys.size === 3,
+    r.check('fixtures classify as expected: 4 human, 3 flagged',
+        humanKeys.size === 4 && flaggedKeys.size === 3,
         `human=[${[...humanKeys].map((k) => envByKey.get(k).player)}] flagged=[${[...flaggedKeys].map((k) => envByKey.get(k).player)}]`)
 
     const trainRows = rows.filter((x) => x.split === 'train')
@@ -220,7 +256,7 @@ try {
     const audioIdx = fs.existsSync(path.join(outA, 'audio/index.jsonl'))
         ? fs.readFileSync(path.join(outA, 'audio/index.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
         : []
-    r.check('audio index written for consented human takes', audioIdx.length === 3, `${audioIdx.length}/3`)
+    r.check('audio index written for consented human takes (gina carries host + guest tracks)', audioIdx.length === 5, `${audioIdx.length}/5`)
     const aliceIdx = audioIdx.find((x) => x.player === 'alice')
     let verbatim = false
     if (aliceIdx && fs.existsSync(path.join(outA, aliceIdx.file))) {
@@ -241,9 +277,52 @@ try {
         .map(({ path: p }) => [p, shaHex(fs.readFileSync(path.join(outA, p)))].join('\0') + '\n')
         .sort().join(''))
     r.check('manifest self-proves: files recompute to card.version', recomputed === card.version && man.version === card.version)
-    r.check('card reports honest coverage (2 human games via carol\'s take)',
-        card.coverage.gamesCovered.pass && card.coverage.audio.pass && card.splits.player.heldout.length >= 1,
+    r.check('card reports honest coverage (3 human games: gauntlet, bomb-defuse, floor-boss)',
+        card.coverage.gamesCovered.pass && card.coverage.gamesCovered.games.includes('floor-boss') && card.coverage.audio.pass && card.splits.player.heldout.length >= 1,
         `games=${JSON.stringify(card.coverage.gamesCovered.games)} heldout=${JSON.stringify(card.splits.player.heldout)}`)
+
+    // ---- #2805: floor-boss engine, per-seat attribution, container truth, card lines
+    const fbRows = rows.filter((x) => x.g === 'floor-boss')
+    r.check('floor-boss rows carry THE 37 seat features + encoded actions (#2805)',
+        fbRows.length > 0 && fbRows.every((x) => Array.isArray(x.feat) && x.feat.length === FB_N_FEAT && x.feat.every((v) => Number.isFinite(v)) && typeof x.act === 'object'),
+        `rows=${fbRows.length}`)
+    const ginaIdx = audioIdx.filter((x) => x.player === 'gina')
+    const gHost = ginaIdx.find((x) => (x.seats || []).includes(0))
+    const gGuest = ginaIdx.find((x) => (x.seats || []).includes(1))
+    r.check('per-seat voice attribution (#2805): a stamped call rides its mic only, never the host track',
+        ginaIdx.length === 2 && gGuest && gGuest.clips.length === 1 && gGuest.clips[0].said === 'watch the fork' && gGuest.clips[0].seat === 1
+        && gHost && gHost.clips.some((c) => c.said === 'rack two') && gHost.clips.every((c) => c.said !== 'watch the fork'))
+    r.check('container truth (#2805): crafted WebM parses >0; >10% disagreement mirrors audioLonger; partial surfaces',
+        !!gGuest && gGuest.containerMs === 1235 && gGuest.audioLonger === true && gGuest.partial === true
+        && !!gHost && gHost.containerMs === null && gHost.audioLonger === undefined && gHost.partial === undefined,
+        `guest containerMs=${gGuest && gGuest.containerMs} ms=${gGuest && gGuest.ms}`)
+    r.check('card counts partial-voice sessions (RL lane short-audio warning, #2805)', card.totals.sessionsWithPartialVoice === 1, `=${card.totals.sessionsWithPartialVoice}`)
+    r.check('card per-player rows accounting (#2805, #1713 hand-off)',
+        Object.values(card.players).every((p) => Number.isInteger(p.rows)) && (card.players.gina?.rows || 0) > 0
+        && Object.values(card.players).reduce((a, p) => a + p.rows, 0) === card.totals.humanRows,
+        JSON.stringify(Object.fromEntries(Object.entries(card.players).map(([k, v]) => [k, `${v.rows}rows/${v.voiceSessions}v`]))))
+    { // unit: the adapter verifies clean, refuses tampered at the exact tick
+        const clean = scriptedTake({ game: 'floor-boss', seed: 41, ticks: 180, seats: [{ kind: 'human' }] })
+        const good = floorBossRows('unit/clean', clean)
+        const badRec = JSON.parse(JSON.stringify(clean))
+        badRec.hashes[badRec.hashes.length - 1].h = 'cafebabe'
+        const bad = floorBossRows('unit/tamper', badRec)
+        r.check('floor-boss adapter: clean take verifies (180 rows), tampered refuses at its tick (#2805)',
+            good.ok && good.rows.length === 180 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
+            bad.mismatch ? `tick ${bad.mismatch.tick}` : 'no mismatch?!')
+    }
+    { // integration: on a live store, ONE tampered floor-boss take must fail the
+        // whole build — the S1 100%-verifiable line, engine two (#2805).
+        const sim2 = await startRelaySim()
+        try {
+            const tT = scriptedTake({ game: 'floor-boss', seed: 55, ticks: 150, seats: [{ kind: 'human' }], tamper: true })
+            const upT = await uploadSession(tT, { player: 'mallory', consent: { motion: true, voice: false }, base: sim2.base })
+            const bT = await buildDataset({ base: sim2.base, out: path.join(tmp, 'tamper'), limit: 50, jonKey: SIM_READ_KEY })
+            r.check('tampered floor-boss take fails the whole build, tick named (#2805 — unverified rows are never shipped)',
+                upT.ok && !bT.ok && Array.isArray(bT.rejected) && bT.rejected.length === 1 && bT.rejected[0].mismatch.tick > 0,
+                bT.reason || 'build was GREEN with a tampered take?!')
+        } finally { sim2.close() }
+    }
 } catch (e) {
     r.check('check completed without unexpected failure', false, String(e && e.stack || e))
 }
@@ -279,6 +358,37 @@ if (MUTATE) {
         pull(DS)
     }
     if (!r.failed) console.log('mutant: expected RED, got green — holdout is NOT load-bearing?')
+
+    // mutant 2 (#2805): the floor-boss checkpoint-compare skipped in place —
+    // the tampered take must ESCAPE the build for the check to bite; if it is
+    // still refused, the new engine's replay-verify is not load-bearing.
+    const src2 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR2 = 'if (want.has(t1)) {\n            const got = fbHash(gs)'
+    if (!src2.includes(ANCHOR2)) {
+        console.log('FAIL   floor-boss hash-check anchor not found — update the mutant (#2805)')
+        r.failed++
+    } else {
+        plant(DS, src2.replace(ANCHOR2, 'if (false && want.has(t1)) {\n            const got = fbHash(gs)'))
+        try {
+            const sim2 = await startRelaySim()
+            try {
+                const tT = scriptedTake({ game: 'floor-boss', seed: 55, ticks: 150, seats: [{ kind: 'human' }], tamper: true })
+                await uploadSession(tT, { player: 'mallory', consent: { motion: true, voice: false }, base: sim2.base })
+                const cli = await new Promise((resolve) => {
+                    const p = spawn(process.execPath, [DS, '--store', sim2.base, '--out', path.join(tmp, 'tamper-mut'), '--limit', '50'],
+                        { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                    let stdout = ''
+                    p.stdout.on('data', (d) => { stdout += d })
+                    p.on('exit', (code) => resolve({ status: code, stdout }))
+                })
+                const escaped = cli.status === 0
+                r.check('tampered floor-boss take refused by the engine (RED under the hash-skip mutant, #2805)', !escaped, escaped ? 'tamper ESCAPED the build' : 'still refused')
+            } finally { sim2.close() }
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src2) { console.log('FAIL   mutant restore: exact original bytes not back'); r.failed++ }
+        }
+    }
 }
 
 sim.close()

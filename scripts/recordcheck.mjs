@@ -23,7 +23,7 @@ import { createVoiceClock, tickToMs } from '../src/utils/voice.js'
 import { loadConsent, grantConsent, revokeConsent, consentFor, uploadAllowed, CONSENT_LS_KEY, CONSENT_GRACE_MS, ANON_ID } from '../src/utils/consent.js'
 import { playerId, loadLastPlayer, rememberPlayer, planGate, canGrant } from '../src/utils/player.js'
 import { validateSessionEnvelope, sessionKey, sessionMeta, sessionRow } from '../relay/core.js'
-import { uploadSession, listSessions, probeStore, storeFromQuery, tickSeconds } from '../src/utils/sessionStore.js'
+import { uploadSession, listSessions, fetchSession, probeStore, storeFromQuery, tickSeconds } from '../src/utils/sessionStore.js'
 import { planRun, decideMerge } from '../src/utils/autoRecordCore.js'
 import { armLiveCapture, autoStart, autoStop, recordLiveTick, isRecording } from '../src/utils/gameContract.js'
 import fs from 'node:fs'
@@ -260,6 +260,25 @@ const bucketRowBySeed = (seed) => {
 
     const back = await (await fetch(`${BASE}/sessions/${encodeURI(up.key)}`)).json()
     ok(JSON.stringify(back) === JSON.stringify(rec), 'GET the key back byte-identical')
+
+    // #2805 (#1712 follow-up): pin the proven single-read client the dataset
+    // builder rides — key escaping, lockdown header, honest failure shapes.
+    const back2 = await fetchSession(up.key, { base: BASE })
+    ok(back2.ok && JSON.stringify(back2.recording) === JSON.stringify(rec), 'fetchSession GETs the key back verbatim (#2805)')
+    let lastUrl = ''
+    let lastHdr = null
+    const spy = (url, init) => {
+        lastUrl = String(url)
+        lastHdr = init && init.headers ? init.headers['x-session-key'] : null
+        return globalThis.fetch(url, init)
+    }
+    await fetchSession('weird/key with spaces&x', { base: BASE, key: 'sekret', fetchImpl: spy })
+    ok(lastUrl.endsWith(`/sessions/${encodeURIComponent('weird/key with spaces&x')}`), 'fetchSession escapes the key once, correctly', lastUrl)
+    ok(lastHdr === 'sekret', 'fetchSession rides the read-lockdown header — keys ride opts, never hardcode (#1711 S8)')
+    const gone = await fetchSession('no/such/key', { base: BASE, fetchImpl: spy })
+    ok(gone.ok === false && typeof gone.reason === 'string' && gone.reason.length > 0, 'missing key answers ok:false with the store reason verbatim', gone.reason)
+    const down = await fetchSession('k', { base: BASE, fetchImpl: () => { throw new Error('socket closed') } })
+    ok(down.ok === false && /unreachable/.test(down.reason), 'unreachable store answers honestly', down.reason)
 
     // Replay-verify the STORED file against a deterministic synthetic sim:
     // acceptance line "100% of them replay-verify against the sim", structural.

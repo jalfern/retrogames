@@ -121,9 +121,9 @@ export function featurize(gs, who, mem) {
 }
 
 // the seat's manager channel: seat 0 rides gs.cursor/tool; seat 1 (duel)
-// rides gs.m (#2555). Returns null when the seat doesn't exist alive.
+// rides gs.m (#2555). Returns null only when the seat has no channel (no duel
+// seat 1) — the end state still reads (a replay may feature the closing tick).
 export function seatChannel(gs, seat) {
-    if (gs.end) return null
     if (seat === 0) return { x: gs.cursor.x, y: gs.cursor.y, tool: gs.tool }
     if (seat === 1 && gs.duel && gs.m) return { x: gs.m.cursor.x, y: gs.m.cursor.y, tool: gs.m.tool }
     return null

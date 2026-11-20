@@ -49,9 +49,11 @@ import { execFileSync } from 'node:child_process'
 import { listSessions, fetchSession, tickSeconds } from '../src/utils/sessionStore.js'
 import { readKey } from './lib/localkey.mjs'
 import { decodePad, encodePad } from '../src/utils/recording.js'
-import { voiceReexport, tickToMs } from '../src/utils/voice.js'
+import { voiceReexport, tickToMs, containerDurationMs } from '../src/utils/voice.js'
 import { makeGame, step, stateHash } from '../src/games/Gauntlet/sim.js'
 import { featurize } from '../src/games/Gauntlet/model.js'
+import { makeGame as fbMakeGame, step as fbStep, stateHash as fbHash } from '../src/games/FloorBoss/sim.js'
+import { featurize as fbFeaturize, seatChannel } from '../src/games/FloorBoss/model.js'
 import { newGame, heroFromPad, p2FromPad, seatedPartner } from './plaicraft-export.mjs'
 
 const argv = process.argv.slice(2)
@@ -170,7 +172,40 @@ function gauntletRows(key, rec) {
     return { ok, mismatch: null, rows }
 }
 
-const ADAPTERS = { gauntlet: gauntletRows }
+// floor-boss adapter (#2805): the sim is Node-clean (floorbosscheck runs it
+// here), so takes replay-verify against their checkpoints and carry THE
+// model.js seat features (37, src/games/FloorBoss/model.js). A duel take
+// (#2555, 2 seats) re-runs with its model seat; every slot keeps its action
+// row (the house's hands are data too), feat null only where no channel exists.
+export function floorBossRows(key, rec) {
+    const gs = fbMakeGame(rec.seed, { duel: rec.players >= 2 })
+    const want = new Map(rec.hashes.map((x) => [x.t, x.h]))
+    const mems = {}
+    const rows = []
+    const finalT = rec.hashes.length ? rec.hashes[rec.hashes.length - 1] : null
+    for (let t = 0; t < rec.ticks; t++) {
+        const pads = rec.slots.map((s) => decodePad(s.pads[t], rec.method))
+        fbStep(gs, pads)
+        const t1 = t + 1
+        if (want.has(t1)) {
+            const got = fbHash(gs)
+            if (got !== want.get(t1)) return { ok: false, mismatch: { tick: t1, want: want.get(t1), got }, rows }
+        }
+        for (let i = 0; i < rec.slots.length; i++) {
+            const who = seatChannel(gs, i)
+            let feat = null
+            if (who) {
+                if (!mems[i]) mems[i] = {}
+                feat = fbFeaturize(gs, who, mems[i]).map((v) => +v.toFixed(3))
+            }
+            rows.push({ k: key, g: rec.game, s: rec.seed, t: t1, lvl: gs.shift, seat: i, act: encodePad(pads[i]), feat })
+        }
+    }
+    const ok = !finalT || finalT.h === fbHash(gs)
+    return { ok, mismatch: null, rows }
+}
+
+const ADAPTERS = { gauntlet: gauntletRows, 'floor-boss': floorBossRows }
 
 // --- audio -----------------------------------------------------------------------
 // Clips: voiceCmd calls (what was SAID, on the tick clock) cut to ms windows
@@ -183,6 +218,11 @@ export function trackClips(rec, track) {
     const calls = (rec.voiceCmd || []).filter((c) => c && Number.isInteger(c.t))
     const clips = []
     for (const c of calls) {
+        // #2805 per-seat attribution: a recorder-stamped call (voiceCmd.seat)
+        // belongs to that mic's track ONLY. Un-stamped calls are the host-mic
+        // law (slot 0) — honest default, never a guess onto another seat.
+        const owner = Number.isInteger(c.seat) ? c.seat : 0
+        if (!(track.slots || []).includes(owner)) continue
         const ms = tickToMs(track.clock, c.t)
         if (ms === null) continue
         const start = Math.max(0, Math.round(ms - CLIP_BEFORE_MS))
@@ -190,6 +230,7 @@ export function trackClips(rec, track) {
         const clip = { t: c.t, msStart: start, msEnd: end, said: c.said }
         if (c.intent) clip.intent = c.intent
         clip.ok = c.ok
+        if (Number.isInteger(c.seat)) clip.seat = c.seat
         clips.push(clip)
     }
     return clips
@@ -226,6 +267,7 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
     const perGame = {}
     const perPlayer = {}
     let sessionsWithVoice = 0
+    let sessionsWithPartialVoice = 0 // #2805: human sessions whose voice track cut before the run ended
     let humanRows = 0
     let flaggedRows = 0
 
@@ -235,12 +277,13 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
         const player = String(envelope.player || rec.player || '')
         const human = cls === 'human'
         if (rec.voice && Array.isArray(rec.voice.tracks) && rec.voice.tracks.length) sessionsWithVoice++
+        if (human && rec.voice && Array.isArray(rec.voice.tracks) && rec.voice.tracks.some((tr) => tr.partial)) sessionsWithPartialVoice++
         const stats = perGame[game] || (perGame[game] = { takes: 0, humanTakes: 0, ticks: 0 })
         stats.takes++
         stats.ticks += rec.ticks
         if (human) {
             stats.humanTakes++
-            const pp = perPlayer[player] || (perPlayer[player] = { takes: 0, games: new Set(), ticks: 0, voiceSessions: 0 })
+            const pp = perPlayer[player] || (perPlayer[player] = { takes: 0, games: new Set(), ticks: 0, voiceSessions: 0, rows: 0 })
             pp.takes++
             pp.games.add(game)
             pp.ticks += rec.ticks
@@ -276,7 +319,7 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
                     : 'train'
         for (const row of res.rows) {
             row.split = splitOf
-            if (human) humanRows++
+            if (human) { humanRows++; perPlayer[player].rows++ }
             else flaggedRows++
             lines.push(JSON.stringify(row))
         }
@@ -289,9 +332,17 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
             const re = voiceReexport(track, safeFile(envelope.key) + '.seat' + track.slots.join('-'))
             const file = `audio/${re.filename}`
             audioFiles.push({ file, bytes: re.bytes })
+            const containerMs = containerDurationMs(track)
             audioIndex.push({
                 key: envelope.key, file, seats: track.slots, player: player || null,
-                human, mime: re.mime, ms: track.ms, clock: track.clock,
+                human, mime: re.mime, ms: track.ms, containerMs,
+                // #2805 mirror of #2058: when the container disagrees with the
+                // declared ms by >10%, name which clock is the longer one.
+                ...(containerMs !== null && track.ms > 0 && Math.abs(containerMs - track.ms) > track.ms * 0.1 ? { audioLonger: containerMs >= track.ms } : {}),
+                // #2805: partial tracks (guest mic cut before end of run) ride
+                // the index honestly — audio may be short of the take.
+                ...(track.partial ? { partial: true } : {}),
+                clock: track.clock,
                 clips: trackClips(rec, track),
             })
         }
@@ -322,6 +373,7 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
         }])),
         players: Object.fromEntries(Object.entries(perPlayer).map(([p, s]) => [p, {
             takes: s.takes, games: [...s.games].sort(), hours: hours(s.ticks), voiceSessions: s.voiceSessions,
+            rows: s.rows, // #2805 (#1713 hand-off): holdout accounting per person, not just totals
             split: heldPlayers.has(p) ? 'heldout' : 'train',
         }])),
         totals: {
@@ -330,6 +382,7 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
             hours: hours(pre.reduce((a, t) => a + t.rec.ticks, 0)),
             humanHours: hours(humanTakes.reduce((a, t) => a + t.rec.ticks, 0)),
             sessionsWithVoice,
+            sessionsWithPartialVoice, // #2805: RL lane — these sessions' audio may run short of the take
             rows: lines.length,
             humanRows,
             flaggedRows,

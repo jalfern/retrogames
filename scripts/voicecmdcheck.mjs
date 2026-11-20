@@ -272,6 +272,17 @@ console.log('recording — the voiceCmd channel:')
     ok(validate(rec) === null, 'a v1 file with voiceCmd still validates (metadata, like ping)', validate(rec) || '')
     ok(rec.voiceCmd.length === 2 && rec.voiceCmd[1].intent === null && rec.voiceCmd[1].why === 'NOT SURE', 'said/understood/ok all banked')
     ok(recDownload(rec).filename.includes('seed3'), 'download names still flow')
+    // #2805: two-mic co-op attribution — the recorder stamps WHICH mic heard
+    // the call (seat), so a downstream reader never guesses the speaker.
+    {
+        const twoMic = createRecorder({ gameId: 'gauntlet', method: 'stick', seed: 4, players: 2, build: 'check' })
+        twoMic.addTick([{ up: true }, { left: true }], null, null)
+        twoMic.addVoiceCmd({ said: 'left door', intent: 'left', ok: true, seat: 0 })
+        twoMic.addVoiceCmd({ said: 'behind you', intent: null, ok: true, seat: 1 })
+        const f2 = twoMic.finish()
+        ok(f2.voiceCmd[0].seat === 0 && f2.voiceCmd[1].seat === 1 && validate(f2) === null, 'the recorder banks the seat stamp (#2805)', JSON.stringify(f2.voiceCmd))
+        ok(validate({ ...f2, voiceCmd: [{ ...f2.voiceCmd[0], seat: 5 }] }) !== null, 'a seat outside the seat count fails the format gate')
+    }
     let threw = ''
     try { createRecorder({ gameId: 'x', seed: 1 }).addVoiceCmd({ intent: 'key', ok: true }) } catch (e) { threw = e.message }
     ok(threw.includes('said'), 'an entry without the words is refused')

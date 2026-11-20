@@ -185,6 +185,11 @@ export function createRecorder(opts = {}) {
             const entry = { t, said: e.said, intent: e.intent || null, ok: e.ok }
             if (e.dir) entry.dir = String(e.dir)
             if (e.why) entry.why = String(e.why)
+            // #2805: a two-mic rig can say WHICH mic heard the call. The stamp
+            // is the recorder's to give (the recognition layer knows its device;
+            // a downstream reader must never guess the speaker); absent = the
+            // host-mic law (slot 0), kept honest, never inferred.
+            if (Number.isInteger(e.seat) && e.seat >= 0) entry.seat = e.seat
             voiceCmd.push(entry)
         },
         finish(finalHash = null, voice = null) {
@@ -281,6 +286,7 @@ export function validate(rec) {
             if (typeof x.said !== 'string' || !x.said) return 'voiceCmd entries must carry what was said'
             if (typeof x.ok !== 'boolean') return 'voiceCmd entries must carry ok'
             if (!(x.intent === null || typeof x.intent === 'string')) return 'voiceCmd intent must be a string or null'
+            if (x.seat !== undefined && !(Number.isInteger(x.seat) && x.seat >= 0 && x.seat < rec.players)) return 'voiceCmd seat must be a seat index'
             lastCt = x.t
         }
     }
