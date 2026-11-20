@@ -378,6 +378,8 @@ if (MUTANT) {
             plant: 'return false /* MUTANT(barrel-ghost): the props stop being solid */',
             harm: async (mod) => {
                 const gs = mod.makeGame(22)
+                gs.camLock = true; gs.camX = 280          // same seat as the pin: no camera warp
+                gs.waveIdx = 9; gs.waveActive = false      // no wave mid-fixture
                 const bar = gs.barrels.find((q) => q.x === 430)
                 gs.billy.x = 400; gs.billy.y = bar.y; gs.billy.face = 1
                 for (let i = 0; i < 60; i++) { mod.step(gs, { right: true }); gs.events.length = 0 }
