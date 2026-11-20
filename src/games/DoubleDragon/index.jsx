@@ -11,7 +11,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH } from './sim.js'
-import { drawBackground, drawBilly, drawEnemy, drawPickup, drawProp, PROPS, drawHud, drawBanner, drawAttract } from './art.js'
+import { drawBackground, drawBilly, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, PROPS, drawHud, drawBanner, drawAttract } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'double-dragon:hiscore'
@@ -61,6 +61,11 @@ export default function DoubleDragon() {
             chargewind: () => audioController.playFilteredNoise(0.5, 0.06, 240),
             charge: () => { audioController.playSweep(160, 70, 0.24, 'sawtooth', 0.14); shake = Math.max(shake, 2) },
             stomp: () => { audioController.playTone(70, 0.1, 'square', 0.18); shake = Math.max(shake, 3) },
+            throw: () => audioController.playSweep(900, 300, 0.12, 'triangle', 0.10),
+            whip: () => { audioController.playNoise(0.06, 0.14); audioController.playSweep(1600, 300, 0.08, 'sawtooth', 0.08) },
+            knife_hit: () => { audioController.playTone(180, 0.12, 'square', 0.16); shake = Math.max(shake, 3) },
+            barrel_hit: () => { audioController.playTone(110, 0.06, 'square', 0.12); shake = Math.max(shake, 2) },
+            barrel_break: () => { audioController.playNoise(0.18, 0.16); audioController.playTone(70, 0.14, 'square', 0.14, 0.03); shake = Math.max(shake, 5) },
             clear: () => {
                 const notes = [523, 659, 784, 1046, 784, 1046]
                 notes.forEach((f, i) => audioController.playTone(f, 0.12, 'square', 0.12, i * 0.12))
@@ -138,13 +143,16 @@ export default function DoubleDragon() {
             ctx.translate(Math.round(sx), Math.round(sy))
             // one depth-sorted army: nearest feet drawn last
             const beings = [...gs.enemies.map((e) => ({ y: e.y, kind: 'enemy', o: e })), { y: gs.billy.y, kind: 'billy', o: gs.billy }]
+            for (const bar of gs.barrels) beings.push({ y: bar.y, kind: 'barrel', o: bar })
             for (const p of gs.pickups) if (p.y < PROPS_DEPTH) beings.push({ y: p.y, kind: 'pick', o: p })
             beings.sort((a, b) => a.y - b.y)
             for (const q of beings) {
                 if (q.kind === 'enemy') drawEnemy(ctx, q.o, gs.camX)
                 else if (q.kind === 'billy') drawBilly(ctx, q.o, gs.camX)
+                else if (q.kind === 'barrel') drawBarrel(ctx, q.o, gs.camX)
                 else drawPickup(ctx, q.o, gs.camX)
             }
+            for (const pr of gs.projectiles) drawProjectile(ctx, pr, gs.camX)
             // particles (juice layer — Math.random law: never reaches state)
             for (let i = part.length - 1; i >= 0; i--) {
                 const q = part[i]
@@ -240,6 +248,8 @@ export default function DoubleDragon() {
                     scoreFlash: gs.scoreFlash ? gs.scoreFlash.v : 0,
                     enemyKinds: gs.enemies.map((e) => e.kind + ':' + e.state).join(','),
                     billyState: gs.billy.state, camX: Math.round(gs.camX),
+                    barrels: gs.barrels.length, projectiles: gs.projectiles.length,
+                    pickups: gs.pickups.map((p) => p.kind).join(','),
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -250,6 +260,9 @@ export default function DoubleDragon() {
                     if (opts.inv !== undefined) gs.billy.inv = opts.inv
                     if (opts.weapon) gs.billy.weapon = opts.weapon
                     if (opts.spawnStick) gs.pickups.push({ x: gs.billy.x + 6, y: gs.billy.y, kind: 'stick', bob: 0 })
+                    if (opts.spawnWeapon) { gs.billy.weapon = null; gs.pickups.push({ x: gs.billy.x + 6, y: gs.billy.y, kind: opts.spawnWeapon, bob: 0 }) }
+                    if (opts.barrelAt) gs.barrels.push({ id: 99 + gs.barrels.length, x: opts.barrelAt[0], y: opts.barrelAt[1], hp: 3, shake: 0 })
+                    if (opts.clearBarrels) gs.barrels.length = 0
                     if (opts.killBilly) { gs.billy.inv = 0; const e = { id: gs.nextId++, kind: 'williams', x: gs.billy.x + 8, y: gs.billy.y, face: -1, hp: 4, state: 'attack', stateT: 2, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 60, inv: 0, spinHit: false }; gs.enemies.push(e) }
                     if (opts.clearEnemies) gs.enemies.length = 0
                     if (opts.warp === 'abobo') {
@@ -271,6 +284,9 @@ export default function DoubleDragon() {
                 actions: [
                     { label: '+1 LIFE', run: () => { gs.billy.lives += 1; return 'extra life' } },
                     { label: 'GIVE STICK', run: () => { gs.billy.weapon = 'stick'; return 'stick in hand' } },
+                    { label: 'GIVE KNIFE', run: () => { gs.billy.weapon = 'knife'; return 'steel in hand — PUNCH throws' } },
+                    { label: 'GIVE WHIP', run: () => { gs.billy.weapon = 'whip'; return 'coil in hand — PUNCH lashes' } },
+                    { label: 'SPAWN BARREL', run: () => { gs.barrels.push({ id: 90 + gs.barrels.length, x: gs.billy.x + 24, y: gs.billy.y, hp: 3, shake: 0 }); return 'a barrel rolls in' } },
                     { label: 'TO ABOBO', run: () => { window.__ddTest.setup({ warp: 'abobo' }); return 'before the giant' } },
                     { label: 'SPAWN GOON', run: () => { gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: gs.billy.x + 40, y: gs.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 30, inv: 0, spinHit: false }); return 'a Williams arrives' } },
                     { label: 'CLEAR WAVE', run: () => { gs.enemies.length = 0; return 'street is clear' } },
@@ -300,6 +316,7 @@ export default function DoubleDragon() {
                     x: Math.round(gs.billy.x), y: gs.billy.y, z: Math.round(gs.billy.z),
                     billyState: gs.billy.state, weapon: gs.billy.weapon || '-',
                     waveIdx: gs.waveIdx, enemies: gs.enemies.length,
+                    barrels: gs.barrels.length, projectiles: gs.projectiles.length,
                     cleared: gs.cleared ? 1 : 0,
                     hash: stateHash(gs),
                 }),

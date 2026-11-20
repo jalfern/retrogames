@@ -249,6 +249,57 @@ export function drawProp(ctx, p, camX) {
     }
 }
 
+// S2 weapons-wall sprites (#2807): the barrel that hides the steel, and the
+// blade in flight. Same law as everything else here — cut in code, designed
+// from the cabinet, drawn at native res.
+export function drawBarrel(ctx, bar, camX) {
+    const sx = Math.round(bar.x - camX)
+    if (sx < -30 || sx > W + 30) return
+    const jx = bar.shake > 0 ? (bar.shake % 2 ? 1 : -1) : 0
+    const x = sx + jx
+    const y = Math.round(bar.y)
+    drawShadow(ctx, sx, y + 1, 15, 0.35)
+    ctx.fillStyle = '#7a4a26'
+    ctx.fillRect(x - 7, y - 18, 14, 18)
+    ctx.fillStyle = '#8f5a2e'                       // lit belly staves
+    ctx.fillRect(x - 4, y - 18, 3, 18)
+    ctx.fillStyle = '#5f3a1e'                       // seam staves
+    ctx.fillRect(x - 1, y - 18, 1, 18); ctx.fillRect(x + 4, y - 18, 1, 18)
+    ctx.fillStyle = '#3c2612'                       // iron hoops
+    ctx.fillRect(x - 8, y - 16, 16, 2); ctx.fillRect(x - 8, y - 5, 16, 2)
+    ctx.fillStyle = '#916134'                       // rim
+    ctx.fillRect(x - 7, y - 19, 14, 2)
+    if (bar.hp <= 2) {                              // cracks tell the story
+        ctx.fillStyle = '#241408'
+        ctx.fillRect(x + 1, y - 14, 1, 6); ctx.fillRect(x + 2, y - 9, 1, 3)
+    }
+    if (bar.hp <= 1) {
+        ctx.fillRect(x - 5, y - 12, 1, 7); ctx.fillRect(x - 4, y - 6, 2, 1)
+        ctx.fillRect(x - 8, y - 16, 16, 1)         // hoop splitting
+    }
+}
+
+export function drawProjectile(ctx, pr, camX) {
+    const sx = Math.round(pr.x - camX)
+    if (sx < -20 || sx > W + 20) return
+    const y = Math.round(pr.y) - 14                // flat throw, blade height
+    const horiz = pr.spin % 10 < 5
+    if (horiz) {
+        const dir = pr.vx >= 0 ? 1 : -1
+        ctx.fillStyle = '#cfd6de'
+        ctx.fillRect(sx - 4 * dir, y, 8, 2)
+        ctx.fillStyle = '#eef2f6'
+        ctx.fillRect(sx + 4 * dir, y, 3, 1)        // point catches the lamp
+        ctx.fillStyle = '#3a2c1c'
+        ctx.fillRect(sx - 7 * dir, y, 3, 2)        // grip
+    } else {
+        ctx.fillStyle = '#cfd6de'
+        ctx.fillRect(sx, y - 4, 2, 8)
+        ctx.fillStyle = '#3a2c1c'
+        ctx.fillRect(sx, y + 4, 2, 3)
+    }
+}
+
 export function drawShadow(ctx, x, y, w = 16, a = 0.35) {
     ctx.fillStyle = `rgba(0,0,0,${a})`
     ctx.beginPath(); ctx.ellipse(Math.round(x), Math.round(y), w / 2, 3, 0, 0, Math.PI * 2); ctx.fill()
@@ -371,6 +422,8 @@ export function drawBilly(ctx, b, camX) {
     else if (b.state === 'punch') pose = b.stateT >= CFG.punchOn ? 'punch' : 'windup'
     else if (b.state === 'kick') pose = b.stateT >= CFG.kickOn ? 'kick' : 'windup'
     else if (b.state === 'spin') pose = 'spin'
+    else if (b.state === 'throw') pose = b.stateT >= 4 ? 'punch' : 'windup'
+    else if (b.state === 'whip') pose = b.stateT >= 8 ? 'attack' : 'windup'
     else if (b.state === 'grabbed') pose = 'grabbed'
     else if (b.state === 'dying') pose = 'dying'
     drawShadow(ctx, sx, sy + 1, 14, 0.35 - b.z * 0.02)
@@ -384,6 +437,26 @@ export function drawBilly(ctx, b, camX) {
         ctx.fillStyle = '#8a6a3c'
         const stickAt = pose === 'punch' || pose === 'attack' ? 16 : pose === 'spin' ? 12 : 7
         ctx.fillRect(sx + (pose === 'windup' ? -12 : stickAt * b.face), sy - lift - 21, 9 * b.face, 2)
+    } else if (b.weapon === 'knife') {
+        ctx.fillStyle = '#cfd6de'                   // blade kept low at the hip
+        ctx.fillRect(sx + 4 * b.face, sy - lift - 16, 6 * b.face, 2)
+        ctx.fillStyle = '#3a2c1c'
+        ctx.fillRect(sx + 2 * b.face, sy - lift - 16, 2 * b.face, 2)
+    } else if (b.weapon === 'whip') {
+        ctx.fillStyle = '#5a3a20'                   // coil at the belt
+        ctx.fillRect(sx - 4, sy - lift - 13, 8, 2)
+        ctx.fillRect(sx - 4, sy - lift - 11, 2, 2)
+    }
+    if (b.state === 'whip' && b.stateT >= 8 && b.stateT <= 16) {
+        // the lash: a cracking line out to full reach, pixel-stepped
+        ctx.fillStyle = '#4a2f18'
+        const t = (b.stateT - 8) / 8
+        for (let i = 0; i <= 12; i++) {
+            const f = i / 12
+            const lx = sx + b.face * Math.round(6 + f * 28 * (0.6 + t * 0.4))
+            const ly = sy - lift - 20 + Math.round(Math.sin(f * Math.PI * (1.5 - t)) * 6 * f)
+            ctx.fillRect(lx, ly, 2, 1)
+        }
     }
     ctx.globalAlpha = 1
 }
@@ -422,11 +495,28 @@ export function drawPickup(ctx, p, camX) {
     const sx = Math.round(p.x - camX)
     if (sx < -20 || sx > W + 20) return
     const bobY = Math.round(Math.sin(p.bob / 9) * 2)
+    const y = Math.round(p.y) + bobY
     drawShadow(ctx, sx, Math.round(p.y) + 1, 12, 0.3)
-    ctx.fillStyle = '#b58a4a'
-    ctx.fillRect(sx - 6, Math.round(p.y) - 10 + bobY, 12, 2)
-    ctx.fillStyle = '#e8c87a'
-    ctx.fillRect(sx - 6, Math.round(p.y) - 10 + bobY, 4, 2)
+    if (p.kind === 'knife') {
+        ctx.fillStyle = '#cfd6de'
+        ctx.fillRect(sx - 5, y - 8, 9, 2)
+        ctx.fillStyle = '#eef2f6'
+        ctx.fillRect(sx + 4, y - 8, 2, 1)
+        ctx.fillStyle = '#3a2c1c'
+        ctx.fillRect(sx - 7, y - 8, 2, 2)
+    } else if (p.kind === 'whip') {
+        ctx.fillStyle = '#5a3a20'
+        ctx.fillRect(sx - 5, y - 9, 10, 2)         // coiled lash
+        ctx.fillRect(sx - 5, y - 7, 2, 3)
+        ctx.fillRect(sx + 3, y - 7, 2, 3)
+        ctx.fillStyle = '#8a6a3c'
+        ctx.fillRect(sx - 1, y - 10, 3, 2)         // handle
+    } else {
+        ctx.fillStyle = '#b58a4a'
+        ctx.fillRect(sx - 6, y - 10, 12, 2)
+        ctx.fillStyle = '#e8c87a'
+        ctx.fillRect(sx - 6, y - 10, 4, 2)
+    }
 }
 
 // ------------------------------------------------------------------- HUD ---
@@ -446,7 +536,8 @@ export function drawHud(ctx, gs) {
         ctx.fillStyle = '#e8e8ec'
         ctx.fillRect(222 + i * 12 + 2, 5, 4, 3)
     }
-    if (gs.billy.weapon === 'stick') label(ctx, 'STICK', 78, 11, '#e8c87a', 1)
+    const WL = { stick: 'STICK', knife: 'KNIFE', whip: 'WHIP' }
+    if (gs.billy.weapon) label(ctx, WL[gs.billy.weapon] || 'STICK', 78, 11, '#e8c87a', 1)
     // #2810 item 6: wave ticks where the cabinet shows the stage number — the
     // current wave blinks before it starts, fills gold once it is live/cleared
     for (let i = 0; i < 3; i++) {
@@ -477,6 +568,7 @@ export function drawAttract(ctx, phase, tick) {
         ['DOUBLE DRAGON', '#c8302f', 2],
         ['2 AGAINST THE WALL', '#fff', 1],
         ['WALNUTS STREET', '#ffd98a', 1],
+        ['KNIFE  WHIP  BARRELS', '#e8c87a', 1],
         ['PUNCH  KICK  JUMP', '#8fd0ff', 1],
     ]
     const [s, col, sc] = msgs[phase % msgs.length]
