@@ -30,6 +30,8 @@ const isForge = (path) => path === rel('./forge') || path.startsWith(rel('./forg
 // Standalone demo pages (public/demos/*.html) are not the shell: a navigation
 // there must not be cached AS index.html, or the offline arcade would open a demo.
 const isDemo = (path) => path.startsWith(rel('./demos/'))
+// The friends' how-to (public/join/) is a standalone page too (#1712 / #2799).
+const isJoin = (path) => path === rel('./join') || path.startsWith(rel('./join/'))
 const isImmutable = (path) => path.startsWith(rel('./assets/'))
 
 self.addEventListener('install', (event) => {
@@ -89,7 +91,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url)
   if (url.origin !== self.location.origin) return
   const path = url.pathname
-  if (isForge(path) || isDemo(path)) return
+  if (isForge(path) || isDemo(path) || isJoin(path)) return
   if (!path.startsWith(SCOPE.replace(/\/$/, '')) && path !== SCOPE) return
   if (req.mode === 'navigate' || req.destination === 'document') {
     event.respondWith(networkFirstShell(req))
