@@ -30,6 +30,14 @@ data/plaicraft/*
 !data/plaicraft/sample.jsonl
 !data/plaicraft/results.json
 !data/plaicraft/export-stats.json
+# #1712: the human-play dataset regenerates from the S1 store (npm run
+# plaicraft:dataset) — rows and audio ride out of git; the card, train
+# sample and version pointer stay as the reviewable evidence.
+data/plaicraft-dataset/*
+!data/plaicraft-dataset/README.md
+!data/plaicraft-dataset/sample.jsonl
+!data/plaicraft-dataset/card.json
+!data/plaicraft-dataset/index.json
 # #2734: the PICK RUSH grasp-and-place corpus regenerates from seed — the
 # JSONL ride out of git (10 MB/commit), README + summary stay as the evidence
 data/pickrush/*

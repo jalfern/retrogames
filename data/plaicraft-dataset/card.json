@@ -1,0 +1,89 @@
+{
+ "dataset": "plaicraft-human-v1",
+ "version": "c7183de605fa68fe45a871693a488f597f3d59a580a5e2d55e50d022ba28e88f",
+ "source": {
+  "store": "https://retrogames.jalfern.workers.dev",
+  "listed": 18
+ },
+ "games": {
+  "bomb-defuse": {
+   "takes": 2,
+   "humanTakes": 0,
+   "hours": 0.01,
+   "featureAdapter": false,
+   "inRegistry": true
+  },
+  "claptest": {
+   "takes": 5,
+   "humanTakes": 0,
+   "hours": 0.0139,
+   "featureAdapter": false,
+   "inRegistry": false
+  },
+  "gauntlet": {
+   "takes": 11,
+   "humanTakes": 4,
+   "hours": 0.2094,
+   "featureAdapter": true,
+   "inRegistry": true
+  }
+ },
+ "players": {
+  "jalfern": {
+   "takes": 4,
+   "games": [
+    "gauntlet"
+   ],
+   "hours": 0.1106,
+   "voiceSessions": 4,
+   "split": "train"
+  }
+ },
+ "totals": {
+  "takes": 18,
+  "humanTakes": 4,
+  "hours": 0.2334,
+  "humanHours": 0.1106,
+  "sessionsWithVoice": 16,
+  "rows": 95638,
+  "humanRows": 47800,
+  "flaggedRows": 47838,
+  "audioTracks": 4
+ },
+ "splits": {
+  "player": {
+   "heldout": [],
+   "blocked": "need-2-players"
+  },
+  "seed": {
+   "rule": "sha256(seed) % 100 >= 80",
+   "heldoutSeeds": [
+    4,
+    12
+   ]
+  }
+ },
+ "coverage": {
+  "deterministic": "proven by plaicraft:datasetcheck (byte-identical rebuild)",
+  "gamesCovered": {
+   "need": 2,
+   "have": 1,
+   "games": [
+    "gauntlet"
+   ],
+   "pass": false
+  },
+  "audio": {
+   "tracks": 4,
+   "pass": true
+  },
+  "heldoutClean": {
+   "playersHeldout": 0,
+   "pass": null,
+   "blocked": "need-2-human-players"
+  },
+  "humanPlayers": [
+   "jalfern"
+  ]
+ }
+}

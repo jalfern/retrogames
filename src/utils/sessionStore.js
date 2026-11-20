@@ -119,6 +119,28 @@ export async function listSessions(opts = {}) {
     }
 }
 
+// fetchSession (#1712) — read ONE stored take back as a parsed recording
+// (the dataset builder pulls every listed key through here). Same read
+// lockdown as listSessions: the JON_KEY rides x-session-key; honest
+// ok:false with a reason when the store refuses or is unreachable.
+export async function fetchSession(key, opts = {}) {
+    const { base = STORE_DEFAULT, key: jonKey = null, fetchImpl = null } = opts
+    const f = fetchImpl || globalThis.fetch
+    try {
+        const res = await f(`${base}/sessions/${encodeURIComponent(String(key))}`,
+            jonKey ? { headers: { 'x-session-key': String(jonKey) } } : undefined)
+        if (!res.ok) {
+            let err = `http ${res.status}`
+            try { const j = await res.json(); if (j && j.err) err = j.err } catch { /* ignore */ }
+            return { ok: false, reason: err }
+        }
+        const rec = await res.json()
+        return { ok: true, recording: rec }
+    } catch (e) {
+        return { ok: false, reason: `store unreachable: ${String((e && e.message) || e)}` }
+    }
+}
+
 // tickSeconds converts a tick count to world-seconds for the admin listing
 // (fixed timestep 60 Hz — WORLD seconds, per the harness law).
 export const tickSeconds = (ticks) => Math.round((ticks / 60) * 10) / 10
