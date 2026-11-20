@@ -250,6 +250,8 @@ const runBot = (seed, max = 20000) => {
 { // S2 — barrels: solid, walk-aroundable, breakable, and they carry the steel
     const gs = makeGame(22)
     const bar = gs.barrels.find((q) => q.x === 430)
+    gs.camLock = true; gs.camX = 280
+    gs.waveIdx = 9; gs.waveActive = false
     gs.billy.x = 400; gs.billy.y = bar.y; gs.billy.face = 1
     for (let i = 0; i < 60; i++) { step(gs, { right: true }); gs.events.length = 0 }
     r.check('barrel: boots stop at the wood — props are solid, not paint', gs.billy.x <= bar.x - 9.5, `x=${gs.billy.x.toFixed(1)} vs barrel ${bar.x}`)
@@ -259,6 +261,7 @@ const runBot = (seed, max = 20000) => {
     r.check('barrel: change lanes and the road opens again', around, `x=${gs.billy.x.toFixed(1)}`)
     const scoreBefore = gs.score
     const bar2 = gs.barrels.find((q) => q.x === 250)
+    gs.camX = 106
     gs.billy.x = bar2.x - 14; gs.billy.y = bar2.y; gs.billy.face = 1
     for (let i = 0; i < 70; i++) { step(gs, { b: i % 20 === 0 }); gs.events.length = 0 }
     r.check('barrel: three kicks splinter it (+100)', !gs.barrels.includes(bar2) && gs.score >= scoreBefore + 100, `gone=${!gs.barrels.includes(bar2)} score ${scoreBefore}->${gs.score}`)

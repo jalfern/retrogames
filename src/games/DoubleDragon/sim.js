@@ -144,25 +144,35 @@ export function makeBarrels() {
     ]
 }
 
-export function blocked(gs, x, y) {
-    return gs.barrels.some((bar) => Math.abs(bar.x - x) <= 10 && Math.abs(bar.y - y) <= 11)
+export function blocked(gs, x, y, radius = 0) {
+    return gs.barrels.some((bar) => Math.abs(bar.x - x) <= 10 + radius && Math.abs(bar.y - y) <= 11 + radius)
 }
 
-// axis-separated move so a snagged x never eats the y (and vice versa)
-function moveEntity(gs, ent, dx, dy) {
-    if (dx && !blocked(gs, ent.x + dx, ent.y)) ent.x += dx
-    if (dy && !blocked(gs, ent.x, ent.y + dy)) ent.y += dy
+// axis-separated move so a snagged x never eats the y (and vice versa).
+// If a wanted x-step is denied by a prop, k-slip depth to the nearest open
+// lane — real thugs walk AROUND the barrels, they do not lean on them.
+function moveEntity(gs, ent, dx, dy, radius = 0) {
+    let movedX = false
+    if (dx && !blocked(gs, ent.x + dx, ent.y, radius)) { ent.x += dx; movedX = true }
+    if (dy && !blocked(gs, ent.x, ent.y + dy, radius)) ent.y += dy
+    if (dx && !movedX) {
+        for (let k = 2; k <= 32; k++) {
+            const dn = clamp(ent.y + k, DEEP_TOP, DEEP_BOT), up = clamp(ent.y - k, DEEP_TOP, DEEP_BOT)
+            if (dn !== ent.y && !blocked(gs, ent.x, dn, radius)) { ent.y = dn; return }
+            if (up !== ent.y && !blocked(gs, ent.x, up, radius)) { ent.y = up; return }
+        }
+    }
 }
 
 // Corner deadlock: a body pressed into a footprint corner can have BOTH axes
 // blocked (every single-step destination is still inside). Slide the depth
 // axis outward to the nearest open lane — nobody freezes on a barrel.
-function stuckFree(gs, ent) {
-    if (!blocked(gs, ent.x, ent.y)) return
+function stuckFree(gs, ent, radius = 0) {
+    if (!blocked(gs, ent.x, ent.y, radius)) return
     for (let k = 1; k <= 32; k++) {
         const dn = ent.y + k, up = ent.y - k
-        if (dn <= DEEP_BOT && !blocked(gs, ent.x, dn)) { ent.y = dn; return }
-        if (up >= DEEP_TOP && !blocked(gs, ent.x, up)) { ent.y = up; return }
+        if (dn <= DEEP_BOT && !blocked(gs, ent.x, dn, radius)) { ent.y = dn; return }
+        if (up >= DEEP_TOP && !blocked(gs, ent.x, up, radius)) { ent.y = up; return }
     }
     ent.x += ent.x <= gs.camX + W / 2 ? -12 : 12
 }
@@ -460,6 +470,12 @@ function enemyNearest(gs) {
 function updateEnemy(gs, e) {
     const b = gs.billy
     const def = ENEMY_DEF[e.kind]
+    // Solidity is center-line: a body-radius INFLATES the footprint until the
+    // pocket between barrel and street-edge has no open step — bodies re-pin
+    // (seeds 7/8/10/19/21/23 all froze this way). Center-line + k-slip keeps
+    // the street flowing; a few px of sprite overlap at the rim is the honest
+    // arcade abstraction.
+    const rad = 0
     if (e.inv > 0) e.inv -= 1
     e.anim += 1
 
@@ -470,19 +486,39 @@ function updateEnemy(gs, e) {
         const tx = e.x < b.x ? gs.camX + 26 : gs.camX + W - 26
         const dx = Math.sign(tx - e.x)
         const sp = def.speed + 0.5
-        if (dx > 0 && !blocked(gs, e.x + sp, e.y)) e.x += sp
-        else if (dx < 0 && !blocked(gs, e.x - sp, e.y)) e.x -= sp
+        if (dx > 0 && !blocked(gs, e.x + sp, e.y, rad)) { e.x += sp; e.dodge = 0 }
+        else if (dx < 0 && !blocked(gs, e.x - sp, e.y, rad)) { e.x -= sp; e.dodge = 0 }
         else {
-            // slip AWAY from the blocking barrel's lane, consistently — a
-            // direction re-derived from the current y every tick just ping-pongs
+            // slip AWAY from the blocking barrel lane, and keep the direction
+            // while the road stays shut. Three traps, all pinned by seeds 1..24:
+            // re-deriving dir from the current y ping-pongs on the mid-line; a
+            // clamp at the depth edge returns ny === e.y (a vacuous dodge - the
+            // Abobo freeze at barrel 3 near lip); and at rad 8 the barrel band
+            // can cover the whole pocket, so the only open lane may be the
+            // barrels own side - hence try both directions, keep the first one
+            // that actually moves.
             const bar = gs.barrels.reduce((a, q) => (Math.abs(q.x - e.x) < Math.abs(a.x - e.x) ? q : a), gs.barrels[0])
-            let dir = e.y >= bar.y ? CFG.deepSpeed : -CFG.deepSpeed
+            let dir = e.dodge || (e.y >= bar.y ? CFG.deepSpeed : -CFG.deepSpeed)
             let ny = clamp(e.y + dir, DEEP_TOP, DEEP_BOT)
-            if (ny === e.y) { dir = -dir; ny = clamp(e.y + dir, DEEP_TOP, DEEP_BOT) }
-            if (!blocked(gs, e.x, ny)) e.y = ny
+            if (ny === e.y || blocked(gs, e.x, ny, rad)) {
+                const f = -dir
+                const fy = clamp(e.y + f, DEEP_TOP, DEEP_BOT)
+                if (fy !== ny && !blocked(gs, e.x, fy, rad)) { dir = f; ny = fy }
+            }
+            e.dodge = ny !== e.y ? dir : 0
+            if (ny !== e.y && !blocked(gs, e.x, ny, rad)) e.y = ny
+            // still pinned (deep body in a shallow pocket: floor + barrel):
+            // k-slip depth to the nearest lane that truly opens
+            if (e.dodge === 0) {
+                for (let k = 2; k <= 32; k++) {
+                    const dn = clamp(e.y + k, DEEP_TOP, DEEP_BOT), up = clamp(e.y - k, DEEP_TOP, DEEP_BOT)
+                    if (dn !== e.y && !blocked(gs, e.x, dn, rad)) { e.y = dn; e.dodge = CFG.deepSpeed; break }
+                    if (up !== e.y && !blocked(gs, e.x, up, rad)) { e.y = up; e.dodge = -CFG.deepSpeed; break }
+                }
+            }
         }
         e.face = Math.sign(b.x - e.x) || 1
-        if ((dx > 0 && e.x >= gs.camX + 26) || (dx < 0 && e.x <= gs.camX + W - 26)) { e.state = 'walk'; e.stateT = 0 }
+        if ((dx > 0 && e.x >= gs.camX + 26 && !blocked(gs, e.x, e.y, rad)) || (dx < 0 && e.x <= gs.camX + W - 26 && !blocked(gs, e.x, e.y, rad))) { e.state = 'walk'; e.stateT = 0 }
         break
     }
     case 'walk': {
@@ -525,7 +561,7 @@ function updateEnemy(gs, e) {
         const wantX = b.x - Math.sign(dx || 1) * (def.reach - 4 + slot * 14)
         moveEntity(gs, e,
             Math.abs(wantX - e.x) > 3 ? clamp(wantX - e.x, -def.speed, def.speed) : 0,
-            Math.abs(dy) > 2 ? clamp(dy, -def.speed * 0.8, def.speed * 0.8) : 0)
+            Math.abs(dy) > 2 ? clamp(dy, -def.speed * 0.8, def.speed * 0.8) : 0, rad)
         break
     }
     case 'windup': {
@@ -539,12 +575,19 @@ function updateEnemy(gs, e) {
         e.stateT += 1
         e.face = Math.sign(b.x - e.x) || e.face
         if (Math.abs(b.y - e.y) > 2) e.y += clamp(b.y - e.y, -def.speed * 0.6, def.speed * 0.6)
+        e.y = clamp(e.y, DEEP_TOP, DEEP_BOT)
+        stuckFree(gs, e, rad)
         if (e.stateT >= 16) { e.state = 'charge'; e.stateT = 0; gs.events.push('charge') }
         break
     }
     case 'charge': {
         e.stateT += 1
-        e.x += e.face * 2.8
+        const dash = e.face * 2.8
+        if (blocked(gs, e.x + dash, e.y, rad)) {
+            // the shoulder meets wood — Abobo splinters it (#2807 props law)
+            const bar = gs.barrels.find((q) => Math.abs(q.x - (e.x + dash)) <= 10 + rad && Math.abs(q.y - e.y) <= 11 + rad)
+            if (bar) hurtBarrel(gs, bar)
+        } else e.x += dash
         if (e.stateT > 2) {
             const hit = b.z <= 6 && Math.abs(e.x - b.x) <= 16 && Math.abs(e.y - b.y) <= 8 && b.state !== 'grabbed'
             if (hit && b.inv <= 0 && b.state !== 'dying' && gs.mode === 'play') {
@@ -570,7 +613,7 @@ function updateEnemy(gs, e) {
     }
     case 'back': {
         e.stateT += 1
-        moveEntity(gs, e, -e.face * def.speed * 0.7, 0)
+        moveEntity(gs, e, -e.face * def.speed * 0.7, 0, rad)
         if (e.stateT >= 24) { e.state = 'walk'; e.stateT = 0 }
         break
     }
@@ -578,12 +621,12 @@ function updateEnemy(gs, e) {
         // holding Billy; the escape/timeout is resolved in updateBilly
         e.face = Math.sign(b.x - e.x) || e.face
         const drag = clamp(b.x - e.face * 10 - e.x, -1, 1)
-        if (!blocked(gs, e.x + drag, e.y)) e.x += drag
+        if (!blocked(gs, e.x + drag, e.y, rad)) e.x += drag
         break
     }
     case 'stagger': {
         e.stateT -= 1
-        moveEntity(gs, e, -e.face * 0.4, 0)
+        moveEntity(gs, e, -e.face * 0.4, 0, rad)
         if (e.stateT <= 0) { e.state = 'walk'; e.stateT = 0 }
         break
     }
@@ -603,7 +646,7 @@ function updateEnemy(gs, e) {
     }
     }
     e.y = clamp(e.y, DEEP_TOP, DEEP_BOT)
-    if (e.state !== 'dying' && e.state !== 'down' && e.state !== 'getup') stuckFree(gs, e)
+    if (e.state !== 'dying' && e.state !== 'down' && e.state !== 'getup') stuckFree(gs, e, rad)
 }
 
 export function step(gs, pad = {}) {
@@ -715,10 +758,18 @@ export function autopilot(gs) {
     const adx = Math.abs(dx)
     // bail out of a windup about to land near us — Abobo's charge telegraph
     // reads from further off, so the sidestep window is wider (#2810 item 3)
-    const threat = gs.enemies.find((e) => Math.abs(e.y - b.y) <= 7 && (
-        ((e.state === 'windup' || e.state === 'attack') && Math.abs(e.x - b.x) < 30)
-        || ((e.state === 'chargewind' || e.state === 'charge') && Math.abs(e.x - b.x) < 46)))
+    const threat = gs.enemies.find((e) => (
+        ((e.state === 'windup' || e.state === 'attack') && Math.abs(e.x - b.x) < 30 && Math.abs(e.y - b.y) <= 7)
+        || ((e.state === 'chargewind' || e.state === 'charge') && Math.abs(e.x - b.x) < 60 && Math.abs(e.y - b.y) <= 14)))
     if (threat && b.z === 0) {
+        if (threat.state === 'chargewind' || threat.state === 'charge') {
+            // a shouldering giant outruns boots — slip off the lane, don't flee down it
+            let dir = b.y > threat.y ? 1 : b.y < threat.y ? -1 : 1
+            const ny = b.y + dir * 16
+            if (ny < DEEP_TOP || ny > DEEP_BOT) dir = -dir
+            pad[dir < 0 ? 'up' : 'down'] = true
+            return pad
+        }
         if (gs.tick % 3 === 0) pad.up = gs.tick % 6 === 0
         pad.left = threat.x > b.x
         pad.right = threat.x < b.x
