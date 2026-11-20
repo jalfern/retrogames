@@ -224,6 +224,8 @@ const RallyCoDriverGame = lazy(() => import('../games/RallyCoDriver'))
 const BombDefuseGame = lazy(() => import('../games/BombDefuse'))
 const ContraGame = lazy(() => import('../games/Contra'))
 const DoubleDragonGame = lazy(() => import('../games/DoubleDragon'))
+// R-TYPE too: its own chunk, like every canvas title since the js-dos lesson.
+const RTypeGame = lazy(() => import('../games/RType'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1304,5 +1306,18 @@ export const GAMES = [
         theme: 'dark',
         description: 'The belt-scroll brawl Jon commissioned for the shelf (#2795 — "both flagships starting with double dragon"), stage 1 of Technōs 1987\'s street classic. Billy Lee walks NIGHT-WALNUTS STREET in deep space: the street is a BAND and UP/DOWN steps toward or away from the fence — a half-step back and a thug\'s swing flies past your nose. SPACE hops, X roundhouse-KICKs (knockdowns), Z jabs; a swing asked for while TWO goons close in comes out as the signature SPIN BACK-HEEL, boots in both directions. One hit from an enemy costs a life — arcade lethal — and you carry three and a flicker of mercy on respawn. Goons TELEGRAPH: shoulders coil for a beat before the fist lands; hit them in the windup and the stagger eats their turn. Never three at once — the crowd takes turns like the original. A KO\'d Amons drops his STICK: reach doubles, damage doubles, until you die. Three waves — Williams caps, then Amons (one armed), then ABOBO, the charcoal giant who wants to hold you and knee you — and Walnuts Street is yours; the stage loops, the score carries, the night goes on.',
         controls: ['Arrows / d-pad: walk the street — UP/DOWN is DEPTH: step out of a swing, circle behind a goon', 'SPACE / A: jump — a hop beats a grab attempt', 'X / KICK: the roundhouse — knockdowns; kick a downed goon to stomp him', 'Z / PUNCH: quick jab — jabs out-stagger a windup', 'Surrounded (two within reach)? Your next swing is the SPIN BACK-HEEL', 'Grabbed? Mash KICK three times before the knee lands', 'KO an armed Amon, catch the STICK — reach and damage double until you die', 'One hit kills you. Three lives. The hi-score burns in the cabinet', 'Attract: any key or tap takes the seat from the autopilot', '?: pause and read the ops card'],
+    },
+    {
+        path: '/r-type',
+        pad: { layout: 'dpad', aLabel: 'FIRE', buttons: [{ label: 'FIRE', code: 'KeyX' }], reason: 'the cabinet seam: the thumb flies the R-7C through the lane war, the finger owns the trigger — hold it for the wave' },
+        builtBy: 'forge',
+        added: '2026-11-20',
+        visibility: 'private',
+        tapStart: true,
+        component: RTypeGame,
+        label: 'R-TYPE',
+        theme: 'dark',
+        description: 'The pod-shooter Jon commissioned for the shelf (#2795 — "both flagships", queued behind Double Dragon by his word), stage 1 of Irem 1987\'s bio-mechanical nightmare. The camera crawls right and NEVER gives ground — linger against the left edge and the hull grinds you flat. One hit kills; three lives; a mercy flicker on respawn, and dying reverts your arm to the VULCAN stream. Catch the ORANGE CAPSULE and the arm becomes the WAVE CANNON — hold the trigger to charge three sizes, release to sweep a piercing crescent through a whole lane. The Bydo come in waves: larvae in sine formations peel off and kamikaze your lane; armour HULL-SEGMENTS block the corridor with edge-turrets that LEAD your position; missile pods fly in, halt mid-screen and loose slow TURNING HUNTERS — out-fly them, or win the head-on duel (they home hard for a second, then straighten: a passed hunter is a past hunter). Then the dreadnought: the camera LOCKS, the field plates fall away, and the PHASE-1 BIO-SHIP fills the right screen — plated mass, tracking eyes, two turrets, a missile pod… and a maw whose armour cycles. The core takes damage ONLY while the gape is open. Break it: STAGE CLEAR, +5000, the score carries and the loop begins again. Parallax starfield at 320x224, all sprites and sound generated in code; the attract demo flies the same autopilot the harness proves.',
+        controls: ['Arrows / d-pad: fly the R-7C — the left screen edge is death, the camera never reverses', 'SPACE / X / FIRE: the trigger — hold for the Vulcan stream', 'Catch the ORANGE CAPSULE: VULCAN ⇄ WAVE CANNON', 'WAVE: hold FIRE to charge (watch the gauge under the lane), release to loose a piercing crescent — three sizes', 'Dying reverts the arm to VULCAN — one hit kills, three lives, respawn flickers', 'Missiles home hard at launch, then straighten — swing perpendicular and the hunter sails past', 'Turret rounds LEAD you: keep moving sideways', 'PHASE-1: the maw-armour cycles — pour fire into the core only while it gapes', 'STAGE CLEAR banks +5000; extra life every 20,000', 'Attract: any key or tap takes the seat from the autopilot', '?: pause and read the ops card'],
     },
 ]
