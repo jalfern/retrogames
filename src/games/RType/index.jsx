@@ -323,10 +323,11 @@ export default function RType() {
                     if (opts.force && !gs.pod) gs.pod = { id: gs.nextId++, state: 'attached', x: gs.ship.x + POD.noseX, y: gs.ship.y }
                     if (opts.crushShip) gs.ship.x = gs.camX
                     if (opts.toPhase1) { gs.camX = STAGE_END; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
-                    if (opts.toPhase2) { gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
+                    if (opts.toPhase2) { gs.p1 = null; gs.enemies = gs.enemies.filter((e) => e.on !== 'p1'); gs.bullets.length = 0; gs.camLock = false; gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
                     if (opts.openMouth && gs.p1) { gs.p1.mouth = 'open'; gs.p1.mouthT = 10000 }
                     if (opts.coreHp !== undefined && gs.p1) gs.p1.coreHp = opts.coreHp
                     if (opts.openVents && gs.p2) { for (const c of gs.p2.cores) if (c.hp > 0) { c.mouth = 'open'; c.mouthT = 10000 } }
+                    if (opts.y !== undefined) gs.ship.y = opts.y
                     if (opts.p2hp && gs.p2) gs.p2.cores.forEach((c, ci) => { if (opts.p2hp[ci] !== undefined) c.hp = opts.p2hp[ci] })
                     return true
                 },

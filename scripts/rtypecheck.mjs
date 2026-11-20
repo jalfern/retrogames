@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, W, makeGame, step, autopilot, stateHash } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, CORE_Y, W, makeGame, step, autopilot, stateHash } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -116,7 +116,7 @@ const runBot = (seed, max = 20000) => {
     const s0 = gs.score
     gs.caps.push({ id: 2, x: gs.ship.x + 4, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'force' })
     step(gs, {}); gs.events.length = 0
-    r.check('a spare capsule pays points, not a second shell', !!gs.pod && gs.score === s0 + 1000, `pod=${gs.pod ? gs.pod.state : 'gone'} score +${gs.score - s0}`)
+    r.check('a spare S.E.E.D. chains a BIT — never a second shell', !!gs.pod && gs.bits.length === 1 && gs.score === s0 + 500, `pod=${gs.pod ? gs.pod.state : 'gone'} bits=${gs.bits.length} score +${gs.score - s0}`)
 }
 
 { // THE FORCE — the ram plugs fire: shells eat bullets and hunters alike
@@ -310,13 +310,13 @@ const runBot = (seed, max = 20000) => {
     for (let i = 0; i < 120; i++) { step(gs, { a: true }); gs.events.length = 0 }
     r.check('the gape is the only window — aligned fire lands on the core', gs.p1.coreHp < hp0, `core ${hp0} -> ${gs.p1.coreHp}`)
     gs.p1.coreHp = 1
-    for (let i = 0; i < 260 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 }
-    r.check('break the core and STAGE CLEAR rolls', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
+    for (let i = 0; i < 260 && gs.p1 && gs.leg === 1; i++) { step(gs, { a: true }); gs.events.length = 0 }
+    r.check('break the core and the convoy presses on — LEG 2 opens, the stage is NOT over', gs.leg === 2 && gs.mode === 'play' && !gs.cleared, `leg=${gs.leg} mode=${gs.mode} cleared=${gs.cleared ? 1 : 0}`)
 }
 
-{ // the machine re-runs honestly: a real CLEAR, the banner falls, the field
-//   restarts with the score carried. Driven through the deterministic cascade
-//   instead of bot luck (the old form passed vacuously on score alone).
+{ // the machine re-runs honestly: BOTH dreads fall, the banner rolls, and the
+//   field restarts with the score carried. Driven through the deterministic
+//   cascades instead of bot luck (the old form passed vacuously on score alone).
     const gs = makeGame(10)
     gs.camX = STAGE_END
     step(gs, {}); gs.events.length = 0
@@ -324,8 +324,17 @@ const runBot = (seed, max = 20000) => {
     for (let i = 0; i < 360 && gs.p1.x > gs.camX + W - 120; i++) { step(gs, {}); gs.events.length = 0 }
     gs.p1.mouth = 'open'; gs.p1.mouthT = 99999
     gs.p1.coreHp = 1
-    for (let i = 0; i < 240 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 } // core + death roll
-    r.check('the drive ends on the banner', gs.mode === 'clear', `mode=${gs.mode}`)
+    for (let i = 0; i < 400 && gs.leg === 1; i++) { step(gs, { a: true }); gs.events.length = 0 } // core + death roll + handoff
+    r.check('the Phase-1 wreck hands over: LEG 2 scrolls on', gs.leg === 2 && gs.mode === 'play' && !gs.cleared, `leg=${gs.leg} mode=${gs.mode}`)
+    for (let i = 0; i < 2200 && !gs.p2; i++) { step(gs, autopilot(gs)); gs.events.length = 0 }
+    r.check('LEG 2 ends at the twin-core fortress', !!gs.p2 && gs.camLock, `p2=${!!gs.p2} camLock=${gs.camLock}`)
+    gs.ship.inv = 999999
+    for (const c of gs.p2.cores) { c.mouth = 'open'; c.mouthT = 99999; c.hp = 1 }
+    gs.ship.y = CORE_Y[0]
+    for (let i = 0; i < 120 && gs.p2.cores[0].hp > 0; i++) { step(gs, { a: true }); gs.events.length = 0 } // first heart, upper vent
+    gs.ship.y = CORE_Y[1]
+    for (let i = 0; i < 420 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 } // second heart + cascade
+    r.check('both hearts stopped at last: STAGE CLEAR rolls', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
     const clearedScore = gs.score
     for (let i = 0; i < 200 && gs.mode === 'clear'; i++) { step(gs, {}); gs.events.length = 0 }
     r.check('the machine rolls onward: banner falls, the field re-runs with the score carried',
@@ -410,9 +419,116 @@ const runBot = (seed, max = 20000) => {
     }
     r.check('the stricken hull recoils into the dark (not a frozen slab)', gs.p1 === null || gs.p1.x > x0 + 20, `drift ${gs.p1 ? Math.round(gs.p1.x - x0) : 'gone'}`)
     r.check('the cascade rakes across the whole hull face', booms >= 10 && bands.size >= 3, `booms=${booms} bands=${bands.size}`)
-    r.check('the cascade ends in STAGE CLEAR', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
+    for (let i = 0; i < 60 && gs.leg === 1; i++) { step(gs, { a: true }); gs.events.length = 0 }
+    r.check('the cascade hands the convoy onward — LEG 2, no premature clear', gs.leg === 2 && gs.mode === 'play' && !gs.cleared, `leg=${gs.leg} mode=${gs.mode}`)
 }
 
+// --------------------------------------------------------------- S3 laws ---
+{ // BITS — the chain: newest at the nose, the older shoved down the line
+    const gs = makeGame(21)
+    for (let n = 0; n < 2; n++) gs.caps.push({ id: 9 + n, x: gs.ship.x + 4, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'bit' })
+    step(gs, {}); gs.events.length = 0
+    r.check('green capsules chain bits: two aboard, newest at the nose', gs.bits.length === 2 &&
+        gs.bits[0].px > gs.ship.x + 10 && gs.bits[1].px < gs.ship.x - 10, `bits=${gs.bits.length} nose ${Math.round(gs.bits[0].px - gs.ship.x)} tail ${Math.round(gs.bits[1].px - gs.ship.x)}`)
+    // a chained hull outguns: every bit draws a stream
+    gs.shots.length = 0; gs.ship.weapon = 'vulcan'; gs.ship.cd = 0
+    step(gs, { a: true }); gs.events.length = 0
+    r.check('a chained vulcan draws extra streams from the bits', gs.shots.length === 3, `streams=${gs.shots.length}`)
+    // the fourth completes the shield — the orbit throws the outermost bit wide
+    gs.bits.push({ id: 87 }); gs.bits.push({ id: 88 })
+    step(gs, {}); gs.events.length = 0
+    r.check('the fourth bit swings the shield', gs.bits.length === 4 && Math.hypot(gs.bits[3].px - gs.ship.x, gs.bits[3].py - gs.ship.y) > 10, `bit3 orbit r=${Math.round(Math.hypot(gs.bits[3].px - gs.ship.x, gs.bits[3].py - gs.ship.y))}`)
+    // three bits is a chain, not yet a wall
+    gs.bits.length = 3
+    gs.ship.inv = 0
+    gs.bullets.push({ id: 77, x: gs.ship.x + 26, y: gs.ship.y, vx: -1.3, vy: 0 })
+    for (let i = 0; i < 40 && gs.lives === 3; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('THREE bits are a chain, not a wall — lead still reaches the pilot', gs.lives < 3 || gs.ship.dead, `lives=${gs.lives}`)
+}
+
+{ // THE SHIELD — a rotating wall against lead and flesh, never against armour
+    const gs = makeGame(22)
+    for (let n = 0; n < 4; n++) gs.bits.unshift({ id: n + 1 })
+    gs.ship.inv = 0
+    step(gs, {}); gs.events.length = 0 // write px/py before aiming at the bits
+    let plugged = 0
+    for (let round = 0; round < 6 && plugged < 2; round++) {
+        const bt = gs.bits[round % 4]
+        gs.bullets.push({ id: 100 + round, x: bt.px, y: bt.py, vx: -1.3, vy: 0 })
+        for (let i = 0; i < 20; i++) {
+            step(gs, {})
+            if (gs.events.includes('deflect')) plugged += 1
+            gs.events.length = 0
+            if (!gs.bullets.some((b) => b.id === 100 + round)) break
+        }
+    }
+    r.check('the orbit shield swallows rounds aimed at the pilot', plugged >= 2 && gs.lives === 3, `deflected=${plugged} lives=${gs.lives}`)
+    // hunters too
+    const bt = gs.bits[0]
+    gs.missiles.push({ id: 55, x: bt.px, y: bt.py, a: Math.PI, spd: 0.9, t: 300 })
+    let hunterDown = false
+    for (let i = 0; i < 30 && !hunterDown; i++) { step(gs, {}); hunterDown = gs.events.includes('deflect'); gs.events.length = 0 }
+    r.check('…and wipes a hunter off the orbit', hunterDown && gs.lives === 3, `lives=${gs.lives}`)
+    // soft bodies break on the fist
+    const s0 = gs.score
+    gs.enemies.push({ id: 66, kind: 'larva', x: gs.bits[1].px, y: gs.bits[1].py, baseY: gs.bits[1].py, sine: 0, dive: false, state: 'sine', stateT: 0, vx: 0, vy: 0, hp: 1, anim: 0, inv: 0 })
+    let ground = false
+    for (let i = 0; i < 30 && !ground; i++) { step(gs, {}); ground = gs.score >= s0 + 100; gs.events.length = 0 }
+    r.check('soft Bydo grind on the rotating fist', ground, `score +${gs.score - s0}`)
+    // armour is still king: a hull-plate sitting on the orbit takes nothing
+    const gs2 = makeGame(22)
+    for (let n = 0; n < 4; n++) gs2.bits.unshift({ id: n + 1 })
+    gs2.ship.inv = 999999
+    const wallX = gs2.ship.x + 20
+    gs2.enemies.push({ id: 8, kind: 'hullseg', x: wallX, y0: 26, y1: 214, len: 60, vx: 0, hp: Infinity, inv: Infinity })
+    let hurt = false
+    for (let i = 0; i < 60; i++) { step(gs2, {}); gs2.events.length = 0 }
+    r.check('the shield never bites armour — plates ride untouched', !hurt && gs2.enemies.some((e) => e.id === 8), `plate=${gs2.enemies.some((e) => e.id === 8)}`)
+    // death strips the chain: a round already INSIDE the orbit reaches the pilot
+    gs.ship.inv = 0
+    gs.bullets.push({ id: 99, x: gs.ship.x + 3, y: gs.ship.y + 6, vx: 0, vy: -1.4 })
+    for (let i = 0; i < 40 && gs.lives === 3; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('death strips the chain — bits are power armour', gs.lives === 2 && gs.bits.length === 0, `lives=${gs.lives} bits=${gs.bits.length}`)
+}
+
+{ // PHASE 2 — twin cores: plating eats fire, each vent gapes on its own clock
+    const gs = makeGame(23)
+    gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick
+    step(gs, {}); gs.events.length = 0
+    r.check('LEG 2 locks at the twin-core fortress', gs.camLock && !!gs.p2 && gs.p2.cores.length === 2, `p2=${!!gs.p2}`)
+    gs.ship.inv = 999999
+    for (let i = 0; i < 400 && gs.p2.x > gs.camX + W - 120; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('the fortress closes to fighting range', gs.p2.x <= gs.camX + W - 100, `x-cam ${Math.round(gs.p2.x - gs.camX)}`)
+    for (const c of gs.p2.cores) { c.mouth = 'closed'; c.mouthT = 9999 }
+    const hp0 = [gs.p2.cores[0].hp, gs.p2.cores[1].hp]
+    for (let i = 0; i < 60; i++) { step(gs, { a: true }); gs.events.length = 0 }
+    r.check('sealed plating eats the stream — no core drops', hp0.every((h, i) => gs.p2.cores[i].hp === h), `cores ${gs.p2.cores.map((c) => c.hp).join('/')}`)
+    // only the gaped core takes fire: open the UPPER vent, shoot the lanes
+    gs.p2.cores[0].mouth = 'open'; gs.p2.cores[0].mouthT = 9999
+    gs.ship.y = 92
+    for (let i = 0; i < 80; i++) { step(gs, { a: true }); gs.events.length = 0 }
+    r.check('a gaped vent falls to aimed fire — the sealed twin does not', gs.p2.cores[0].hp < hp0[0] && gs.p2.cores[1].hp === hp0[1], `cores ${gs.p2.cores.map((c) => c.hp).join('/')}`)
+    // break one heart: the survivor enrages, the stage is NOT over
+    gs.p2.cores[1].mouth = 'open'; gs.p2.cores[1].mouthT = 9999
+    gs.p2.cores[0].hp = 1; gs.p2.cores[1].hp = 1
+    gs.ship.y = 148
+    let sawDown = false
+    for (let i = 0; i < 120 && !sawDown; i++) { step(gs, { a: true }); sawDown = gs.events.includes('coredown'); gs.events.length = 0 }
+    const alive = gs.p2.cores.find((c) => c.hp > 0)
+    r.check('a broken core enrages the survivor — and the fortress still stands', sawDown && gs.mode === 'play' && !!alive && alive.enraged && gs.p2.dyingT === 0, `cores ${gs.p2.cores.map((c) => `${c.hp}${c.enraged ? '!' : ''}`).join('/')} mode=${gs.mode}`)
+    // the enrage is real: the survivor's closed wait runs at double speed
+    alive.mouth = 'closed'; alive.mouthT = 160
+    let enragedToOpen = 0
+    for (let i = 0; i < 120 && alive.mouth !== 'open'; i++) { step(gs, {}); enragedToOpen += 1; gs.events.length = 0 }
+    r.check('the enraged vent cycles at double time', enragedToOpen > 0 && enragedToOpen < 120, `${enragedToOpen} ticks closed→open (190 base unhasted)`)
+    // both hearts stop together
+    alive.hp = 1
+    gs.ship.y = CORE_Y[gs.p2.cores.indexOf(alive)]
+    for (let i = 0; i < 420 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 }
+    r.check('both hearts down: the fortress falls and CLEAR finally rolls', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
+}
+
+// ---------------------------------------------------- WINNABILITY (S3 bar) ---
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12
     let wins = 0
     const detail = []
@@ -460,6 +576,23 @@ if (MUTANT) {
                 for (let i = 0; i < 40 && gs.lives === 3; i++) { mod.step(gs, {}); gs.events.length = 0 }
                 return gs.lives < 3
                     ? `HARM NAMED: a round walked straight through the S.E.E.D. shell and killed the pilot (lives ${gs.lives}) — the plug IS the force pod; blind, the blue capsule is a lie and S2's whole identity is gone`
+                    : null
+            },
+        },
+        {
+            name: 'shield-blind',
+            anchor: "if (!frozen && shieldOn(gs)) {\n            let deflected = false\n            for (const bt of gs.bits) {\n                if (Math.abs(b.x - bt.px) < BIT.rad",
+            plant: "if (false && shieldOn(gs)) { /* MUTANT(shield-blind): the orbit stops reading bullets */\n            let deflected = false\n            for (const bt of gs.bits) {\n                if (Math.abs(b.x - bt.px) < BIT.rad",
+            harm: async (mod) => {
+                const gs = mod.makeGame(22)
+                for (let n = 0; n < 4; n++) gs.bits.unshift({ id: n + 1 })
+                mod.step(gs, {}); gs.events.length = 0 // write px/py
+                gs.ship.inv = 0
+                const bt = gs.bits.find((q) => Math.abs(q.px - gs.ship.x - 15) < 4 && q.py < gs.ship.y) || gs.bits[0]
+                gs.bullets.push({ id: 1, x: bt.px, y: bt.py, vx: -1.3, vy: 0 })
+                for (let i = 0; i < 40 && gs.lives === 3; i++) { mod.step(gs, {}); gs.events.length = 0 }
+                return gs.lives < 3
+                    ? `HARM NAMED: a round walked through the SHIELD and killed a chained pilot (lives ${gs.lives}) — the orbit wall is S3's whole promise; blind, four green bits are decoration and the twin-core leg is a lie of design`
                     : null
             },
         },
@@ -538,14 +671,33 @@ const browser = await launch()
     // Pulse the trigger: with a charge arm in hand (the capsule cycle can hand
     // you LASER now) a dead-held key charges forever — a player releases.
     let p1 = await page.evaluate(() => window.__rTest.probe())
-    for (let i = 0; i < 110 && !(p1.cleared === 1 || (p1.p1 !== '-' && Number(p1.p1.split(':')[1]) < 12)); i++) {
+    for (let i = 0; i < 110 && !(p1.cleared === 1 || p1.leg === 2 || (p1.p1 !== '-' && Number(p1.p1.split(':')[1]) < 12)); i++) {
       await page.keyboard.down('Space')
       await page.waitForTimeout(250)
       await page.keyboard.up('Space')
       await page.waitForTimeout(120)
       p1 = await page.evaluate(() => window.__rTest.probe())
     }
-    r.check('Phase-1 through the shell: the open maw falls to sustained fire', /clear|play/.test(p1.mode) && (p1.cleared === 1 || (p1.p1 !== '-' && Number(p1.p1.split(':')[1]) < 12)), `p1=${p1.p1} mode=${p1.mode} cleared=${p1.cleared}`)
+    r.check('Phase-1 through the shell: the open maw falls to sustained fire', /clear|play/.test(p1.mode) && (p1.cleared === 1 || p1.leg === 2 || (p1.p1 !== '-' && Number(p1.p1.split(':')[1]) < 12)), `p1=${p1.p1} leg=${p1.leg} mode=${p1.mode} cleared=${p1.cleared}`)
+
+    // S3 through the shell: the chain, the shield, and the twin-core fortress
+    await page.evaluate(() => window.__rTest.setup({ giveBits: true, inv: 999999 }))
+    const sh = await page.evaluate(() => window.__rTest.probe())
+    r.check('four bits put the SHIELD up through the shell', sh.bits === 4 && sh.shield === 1, `bits=${sh.bits} shield=${sh.shield}`)
+    await page.evaluate(() => window.__rTest.setup({ toPhase2: true, openVents: true, inv: 999999 }))
+    let p2p = await page.evaluate(() => window.__rTest.probe())
+    let p2wounded = p2p.p2 !== '-' && p2p.p2.split('/').some((h) => Number(h) < 8)
+    for (let i = 0; i < 110 && !(p2p.cleared === 1 || p2wounded); i++) {
+      // sweep the twin lanes: the cores sit above and below the mid-line
+      await page.evaluate((yy) => window.__rTest.setup({ y: yy, openVents: true }), i % 2 ? 148 : 92)
+      await page.keyboard.down('Space')
+      await page.waitForTimeout(250)
+      await page.keyboard.up('Space')
+      await page.waitForTimeout(120)
+      p2p = await page.evaluate(() => window.__rTest.probe())
+      p2wounded = p2p.p2 !== '-' && p2p.p2.split('/').some((h) => Number(h) < 8)
+    }
+    r.check('Phase-2 through the shell: the gaped vents fall to sustained fire', p2wounded || p2p.cleared === 1, `p2=${p2p.p2} cleared=${p2p.cleared}`)
 
     await page.evaluate(() => window.__rTest.setup({ lives: 1, inv: 0, crushShip: true }))
     let dead = { screen: 'play' }
