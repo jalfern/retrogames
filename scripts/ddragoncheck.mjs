@@ -10,10 +10,11 @@
 // mash, the crowd law (never three at once), and the three-wave stage. The
 // WINNABLE proof drives the full street with the honest-percept autopilot on
 // seeds 1..12 — the same brain the attract demo shows.
-// Named regressions guard the trap this genre almost always ships with: a hit
+// Named regressions guard the traps this genre almost always ships with: a hit
 // that ignores the depth axis, which would play the game for itself (you could
-// never dodge) and silently un-faithful. --mutant replants it and demands the
-// harm is NAMED (#2142 direction).
+// never dodge) and silently un-faithful — and the S2 ghost-barrel, which would
+// erase the weapons wall. --mutant replants them and demands the harm is NAMED
+// (#2142 direction).
 // The browser leg drives real key events through the shell: attract -> seat ->
 // walk/kick -> die -> restart, zero page errors.
 
@@ -21,7 +22,7 @@ import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, W } from '../src/games/DoubleDragon/sim.js'
+import { makeGame, step, autopilot, stateHash, W, CFG } from '../src/games/DoubleDragon/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -204,6 +205,78 @@ const runBot = (seed, max = 20000) => {
     r.check('the stick dies with you', gs.billy.lives === 2 && gs.billy.weapon === null, `lives=${gs.billy.lives} weapon=${gs.billy.weapon}`)
 }
 
+{ // S2 — the knife: pickup, throw, kill, and the steel comes back (#2807)
+    const gs = makeGame(20)
+    gs.pickups.push({ x: gs.billy.x + 5, y: gs.billy.y, kind: 'knife', bob: 0 })
+    step(gs, {}); gs.events.length = 0
+    r.check('knife: the steel is in your hand', gs.billy.weapon === 'knife', `weapon=${gs.billy.weapon}`)
+    const e = mk('williams', gs.billy.x + 90, gs.billy.y, { attackCooldown: 999 })
+    gs.enemies.push(e)
+    step(gs, { punch: true }); gs.events.length = 0
+    r.check('knife: PUNCH throws it — the hand empties, the blade flies',
+        gs.billy.state === 'throw' && gs.billy.weapon === null, `state=${gs.billy.state} weapon=${gs.billy.weapon}`)
+    let sawBlade = false
+    let killed = false
+    let reborn = false
+    for (let i = 0; i < 80; i++) {
+        step(gs, {}); gs.events.length = 0
+        if (gs.projectiles.length > 0) sawBlade = true
+        if (e.state === 'dying') killed = true
+        if (gs.pickups.some((p) => p.kind === 'knife')) reborn = true
+    }
+    r.check('knife: a thrown blade flat-kills a Williams (4 dmg)', sawBlade && killed, `flew=${sawBlade} dead=${killed}`)
+    r.check('knife: reusable steel — the knife lands back on the street', reborn, `pickups=${gs.pickups.map((p) => p.kind).join(',')}`)
+}
+
+{ // S2 — the whip: the long lash catches the whole line, and skips the downed
+    const gs = makeGame(21)
+    gs.billy.weapon = 'whip'
+    gs.billy.face = 1
+    const a = mk('williams', gs.billy.x + 28, gs.billy.y, { attackCooldown: 999 })
+    const c = mk('williams', gs.billy.x + 33, gs.billy.y + 5, { attackCooldown: 999 })
+    gs.enemies.push(a, c)
+    step(gs, { punch: true }); gs.events.length = 0
+    r.check('whip: PUNCH lashes (never throws the coil away)', gs.billy.state === 'whip' && gs.billy.weapon === 'whip', `state=${gs.billy.state} weapon=${gs.billy.weapon}`)
+    for (let i = 0; i < 22; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('whip: the sweep catches EVERY standing man out to reach 34', a.hp < 4 && c.hp < 4, `hp ${a.hp}/${c.hp}`)
+    const d = mk('williams', gs.billy.x + 28, gs.billy.y, { state: 'down', stateT: 5, attackCooldown: 999 })
+    gs.enemies.push(d)
+    const dHp = d.hp
+    step(gs, { punch: true }); gs.events.length = 0
+    for (let i = 0; i < 22; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('whip: a downed man escapes the lash', d.hp === dHp, `hp=${d.hp}`)
+}
+
+{ // S2 — barrels: solid, walk-aroundable, breakable, and they carry the steel
+    const gs = makeGame(22)
+    const bar = gs.barrels.find((q) => q.x === 430)
+    gs.billy.x = 400; gs.billy.y = bar.y; gs.billy.face = 1
+    for (let i = 0; i < 60; i++) { step(gs, { right: true }); gs.events.length = 0 }
+    r.check('barrel: boots stop at the wood — props are solid, not paint', gs.billy.x <= bar.x - 9.5, `x=${gs.billy.x.toFixed(1)} vs barrel ${bar.x}`)
+    let around = false
+    for (let i = 0; i < 40 && gs.billy.y > bar.y - 12; i++) { step(gs, { up: true, right: true }); gs.events.length = 0 }
+    for (let i = 0; i < 120 && !around; i++) { step(gs, { right: true }); gs.events.length = 0; if (gs.billy.x > bar.x + 11) around = true }
+    r.check('barrel: change lanes and the road opens again', around, `x=${gs.billy.x.toFixed(1)}`)
+    const scoreBefore = gs.score
+    const bar2 = gs.barrels.find((q) => q.x === 250)
+    gs.billy.x = bar2.x - 14; gs.billy.y = bar2.y; gs.billy.face = 1
+    for (let i = 0; i < 70; i++) { step(gs, { b: i % 20 === 0 }); gs.events.length = 0 }
+    r.check('barrel: three kicks splinter it (+100)', !gs.barrels.includes(bar2) && gs.score >= scoreBefore + 100, `gone=${!gs.barrels.includes(bar2)} score ${scoreBefore}->${gs.score}`)
+    r.check('barrel: and it spits out the steel inside', gs.pickups.some((p) => ['knife', 'whip', 'stick'].includes(p.kind)), `dropped=${gs.pickups.map((p) => p.kind).join(',') || 'nothing'}`)
+    r.check('barrel: mid-lane wood never wedges a body — stuckFree keeps the street flowing', gs.billy.x > 0 && gs.barrels.length >= 1, `billy x=${gs.billy.x.toFixed(0)} barrels=${gs.barrels.length}`)
+}
+
+{ // S2 — one weapon in hand; and the stage loop re-arms the street
+    const gs = makeGame(23)
+    gs.billy.weapon = 'knife'
+    gs.pickups.push({ x: gs.billy.x + 4, y: gs.billy.y, kind: 'whip', bob: 0 })
+    step(gs, {}); gs.events.length = 0
+    r.check('one in hand: walking over a second weapon changes nothing', gs.billy.weapon === 'knife' && gs.pickups.length === 1, `weapon=${gs.billy.weapon} pickups=${gs.pickups.length}`)
+    const g2 = runBot(10)
+    for (let i = 0; i < 200 && g2.mode !== 'play'; i++) { step(g2, autopilot(g2)); g2.events.length = 0 }
+    r.check('the loop re-arms Walnuts Street: barrels refill for the next pass', g2.mode === 'play' && g2.barrels.length === 3 && g2.barrels.every((q) => q.hp === CFG.barrelHp), `mode=${g2.mode} barrels=${g2.barrels.map((q) => q.hp).join('/')}`)
+}
+
 { // WINNABLE: the honest autopilot clears the street on 12 seeds
     const fails = []
     for (let seed = 1; seed <= 12; seed++) if (runBot(seed).mode !== 'clear') fails.push(seed)
@@ -296,6 +369,20 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            name: 'barrel-ghost',
+            anchor: 'return gs.barrels.some((bar) => Math.abs(bar.x - x) <= 10 && Math.abs(bar.y - y) <= 11)',
+            plant: 'return false /* MUTANT(barrel-ghost): the props stop being solid */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(22)
+                const bar = gs.barrels.find((q) => q.x === 430)
+                gs.billy.x = 400; gs.billy.y = bar.y; gs.billy.face = 1
+                for (let i = 0; i < 60; i++) { mod.step(gs, { right: true }); gs.events.length = 0 }
+                return gs.billy.x > bar.x + 11
+                    ? `HARM NAMED: Billy strolled straight through mid-lane wood (x ${gs.billy.x.toFixed(0)} past barrel ${bar.x}) — solid props are the weapons wall; ghosts erase the cover, the hop and the lane-play the S2 street is built on`
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
@@ -352,6 +439,16 @@ const browser = await launch()
     await page.waitForTimeout(400)
     const armed = await page.evaluate(() => window.__ddTest.probe())
     r.check('a stick on the street gets picked up (weapon live in state)', armed.weapon === 'stick', `weapon=${armed.weapon}`)
+
+    // S2 leg: knife through the real key path — Z is the contextual verb
+    await page.evaluate(() => window.__ddTest.setup({ spawnWeapon: 'knife' }))
+    await page.waitForTimeout(300)
+    const armedKnife = await page.evaluate(() => window.__ddTest.probe())
+    r.check('S2: a knife on the street gets picked up too', armedKnife.weapon === 'knife', `weapon=${armedKnife.weapon}`)
+    await page.keyboard.press('KeyZ')
+    await page.waitForTimeout(120)
+    const thrown = await page.evaluate(() => window.__ddTest.probe())
+    r.check('S2: Z with a knife THROWS it through the shell (hand empties, blade in flight)', thrown.weapon === null && (thrown.projectiles === 1 || thrown.billyState === 'throw' || thrown.pickups.includes('knife')), `weapon=${thrown.weapon} state=${thrown.billyState} projectiles=${thrown.projectiles}`)
 
     // drawn-vs-logical: the frame is something, and it changed across inputs
     const frameA = await page.evaluate(() => window.__game && window.__game.frame())

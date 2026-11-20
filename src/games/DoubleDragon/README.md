@@ -1,7 +1,7 @@
-# DOUBLE DRAGON — S1 "Walnuts Street"
+# DOUBLE DRAGON — S1 "Walnuts Street" + S2 "the weapons wall"
 
-Jon's #2795 commission ("both flagships starting with double dragon"), stage 1
-of Technōs Japan's 1987 arcade belt-scroller. Issue: #2807 (S2–S4 to follow).
+Jon's #2795 commission ("both flagships starting with double dragon"), stages 1–2
+of Technōs Japan's 1987 arcade belt-scroller. Issue: #2807 (S3–S4 to follow).
 
 ## Layout
 
@@ -41,6 +41,25 @@ of Technōs Japan's 1987 arcade belt-scroller. Issue: #2807 (S2–S4 to follow).
 - **Stick**: armed Amon drops it on KO; reach + damage double; it dies with you.
 - **Stage loop**: three waves → banner → Walnuts Street re-runs, score carries.
 
+S2 (the weapons wall, #2807):
+
+- **Contextual PUNCH** — bare = jab; knife = THROW (the delivery, not a wave);
+  whip = LASH. KICK stays a kick whatever you hold.
+- **Reusable steel** — a thrown knife flies flat down its lane (4 dmg, kills a
+  Williams outright) and lands back on the street as a pickup, hit or missed.
+- **The whip** — reach 34, catches EVERY standing man on the line, and skips
+  downed ones (standing swings don't stomp; the lash doesn't either).
+- **Barrels are solid.** Three squat on the street; Billy and the goons must
+  ask `blocked()` and walk round them — or hop the waist-high ones (z > 8).
+  Three clean hits splinter one: +100, and it spits out the steel inside
+  (knife / whip / stick, seeded). Two traps this taught, both pinned: a goon
+  slipping off a barrel must move AWAY from its lane (re-deriving the slide
+  direction from the current y ping-pongs on the mid-line), and a body in the
+  footprint corner has both axes blocked — `stuckFree` slides depth to the
+  nearest open lane.
+- **One weapon in hand** — walking over a second weapon while armed does
+  nothing; death costs what you hold (the stick law, generalized).
+
 ## Controls
 
 Arrows walk (UP/DOWN = depth) · SPACE jump · X kick · Z punch · ? ops card.
@@ -59,13 +78,15 @@ Roster notes: joined BOTH lists at once — `scripts/lib/contractGames.mjs`
 (and its PATTERNS) and the `nightlybot.mjs` soak roster (#1525 law, the lesson
 of nightly 44762398189).
 
-## Honest gaps (S1 by design — the S2–S4 map on #2807)
+## Honest gaps (S2 by design — the S3–S4 map on #2807)
 
-- Single stage; the city and the hideout (S3) are still to come.
-- Thrown knives, whip, smashable barrels — S2 weapons wall.
+- Two stages; the hideout and Marian's rescue (S3) are still to come.
 - No second player yet; S4 seats CPU-ally Jimmy by default (Jon's rule), then
   the keyboard drop-in.
 - No combos/chain scoring bonuses; the original scores per-KO with a simple
   chain multiplier — carry added, chain not.
 - Marian is not kidnapped yet (she rides the S3 story).
 - Enemy knockback is positional, not sprite-true physics; fine at this scale.
+- Goons don't wield knives or the whip yet (S1 law: only the stick rides an
+  armed Amon); and the thrown knife is Billy-only — the original's goons
+  never threw steel either.
