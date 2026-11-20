@@ -13,6 +13,10 @@
 // S2 (the weapons wall, #2807): thrown knives (reusable steel), the whip
 // (long multi-hit lash), smashable barrels (solid props hiding a weapon),
 // one weapon in hand — contextual PUNCH: bare jab / knife throw / whip lash.
+// S3 (the hideout, #2807): a second stage — the industrial yard. Knife-casting
+// Williamses turn the weapons wall against you; the arcade's stage-2 boss
+// Williams duels with steel; and Marian waits tied at the yard's end — the
+// rescue that ends the run-loop (score carried, arcade continuation law).
 
 export const W = 320
 export const H = 224
@@ -49,12 +53,19 @@ export const CFG = {
     knifeDmg: 4,          // a thrown blade kills a Williams outright
     whip: { startup: 8, active: 8, recover: 12, reach: 34, dmg: 2, depth: 9 },
     barrelHp: 3,
+    // --- S3 the hideout (#2807) ---
+    goonKnife: { windup: 16, speed: 3.0 },  // aimed cast; lethal on the line
+    duelHp: 10, duelScore: 800, duelSpeed: 1.05, duelReach: 17,
+    rescueRange: 22, rescueCuts: 2, rescueBonus: 1000, rescueCheer: 100,
 }
 
 export const ENEMY_DEF = {
     williams: { hp: 4, speed: 0.85, score: 200, reach: 16, tall: 32, color: 'williams' },
     amon: { hp: 6, speed: 0.95, score: 300, reach: 17, tall: 36, color: 'amon' },
     abobo: { hp: 14, speed: 0.7, score: 1000, reach: 20, tall: 44, color: 'abobo' },
+    // S3 duel: Williams the lieutenant (the arcade's stage-2 boss) — faster,
+    // tougher than his cap-wearing namesakes, and he fights with steel.
+    duel: { hp: CFG.duelHp, speed: CFG.duelSpeed, score: CFG.duelScore, reach: CFG.duelReach, tall: 34, color: 'duel' },
 }
 
 export const WAVES = [
@@ -62,6 +73,15 @@ export const WAVES = [
     { triggerX: 340, spawns: [{ kind: 'amon', side: 'right', stick: true }, { kind: 'amon', side: 'left' }] },
     { triggerX: 560, spawns: [{ kind: 'abobo', side: 'right' }, { kind: 'williams', side: 'left' }, { kind: 'williams', side: 'right' }] },
 ]
+
+// S3 — the hideout: casters first (the arcade stage-2 trademark), then the
+// duel with Williams himself. No third wheel in the duel: one man, one lie.
+export const WAVES_S2 = [
+    { triggerX: 90, spawns: [{ kind: 'williams', side: 'left' }, { kind: 'williams', side: 'right' }] },
+    { triggerX: 360, spawns: [{ kind: 'williams', side: 'left', knife: true }, { kind: 'williams', side: 'right' }] },
+    { triggerX: 620, spawns: [{ kind: 'duel', side: 'right', knife: true }] },
+]
+export const wavesFor = (gs) => (gs.stage === 2 ? WAVES_S2 : WAVES)
 
 // mulberry32 — the one seeded rng the sim consumes.
 export function mulberry32(seed) {
@@ -97,13 +117,16 @@ export function makeGame(seed = 1) {
         tick: 0, mode: 'play',   // play | clear | gameover
         score: 0, hi: 0,
         cleared: false,
+        stage: 1,               // 1 Walnuts Street · 2 the hideout (#2807 S3)
         camX: 0, camLock: false,
         billy: makeBilly(),
         enemies: [],
         pickups: [],
-        barrels: makeBarrels(),
+        barrels: makeBarrels(1),   // stage props: barrels out front, crates in the yard
         projectiles: [],
         waveIdx: 0, waveActive: false, banner: 0,
+        marian: null,           // set when stage 2 opens — tied at the yard's end
+        rescueT: 0,             // cheer ticks after the ropes part
         scoreFlash: null, // { v, t } — HUD score delta on a KO/pickup (juice, not scored state)
         events: [],   // one-shot cues drained by the shell (sound/juice only)
         k: 0,         // KO streak timer helper
@@ -122,6 +145,7 @@ function spawnEnemy(gs, kind, side, stick) {
         face: side === 'left' ? 1 : -1,
         hp: def.hp, state: 'enter', stateT: 0, anim: Math.floor(rng(gs) * 8),
         hasStick: !!stick, stickDropped: false,
+        hasKnife: false, castCooldown: 0,   // S3: steel in a goon's hand
         attackCooldown: 30 + Math.floor(rng(gs) * 60),
         inv: 0, spinHit: false,
     }
@@ -136,7 +160,16 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
 // moves asks blocked() (the lamppost law) — Billy walks around them or hops
 // the waist-high ones; goons slide the depth axis to get round them. Three
 // clean hits splinter one and it gives up the steel inside.
-export function makeBarrels() {
+// S3: the hideout yard stacks CRATES instead — same solidity law (the props
+// array keeps its name; `kind` only steers the art), laid out for the duel.
+export function makeBarrels(stage = 1) {
+    if (stage === 2) {
+        return [
+            { id: 1, x: 240, y: DEEP_BOT - 10, hp: CFG.barrelHp, shake: 0, kind: 'crate' },
+            { id: 2, x: 420, y: DEEP_TOP + 10, hp: CFG.barrelHp, shake: 0, kind: 'crate' },
+            { id: 3, x: 540, y: DEEP_BOT - 6, hp: CFG.barrelHp, shake: 0, kind: 'crate' },
+        ]
+    }
     return [
         { id: 1, x: 250, y: DEEP_TOP + 8, hp: CFG.barrelHp, shake: 0 },
         { id: 2, x: 430, y: 168, hp: CFG.barrelHp, shake: 0 },
@@ -226,8 +259,15 @@ function hurtBarrel(gs, bar) {
 
 function throwKnife(gs) {
     const b = gs.billy
-    gs.projectiles.push({ id: gs.nextId++, x: b.x + b.face * 10, y: b.y, vx: b.face * CFG.knifeSpeed, spin: 0 })
+    gs.projectiles.push({ id: gs.nextId++, x: b.x + b.face * 10, y: b.y, vx: b.face * CFG.knifeSpeed, spin: 0, side: 'billy' })
     gs.events.push('throw')
+}
+
+// S3: a Williams lets one fly — flat down its own lane, the arcade's stage-2
+// cast. The depth law is the only answer: same lane, it takes the life.
+function goonCast(gs, e) {
+    gs.projectiles.push({ id: gs.nextId++, x: e.x + e.face * 10, y: e.y, vx: e.face * CFG.goonKnife.speed, spin: 0, side: 'goon' })
+    gs.events.push('goon_throw')
 }
 
 function billyDies(gs) {
@@ -264,6 +304,11 @@ function hurtEnemy(gs, e, dmg, knockdown, onDowned) {
         if (e.hasStick && !e.stickDropped) {
             e.hasStick = false
             gs.pickups.push({ x: e.x, y: e.y, kind: 'stick', bob: 0 })
+        }
+        // S3: armed goons pay out their steel when they go down
+        if (e.hasKnife) {
+            e.hasKnife = false
+            gs.pickups.push({ x: e.x, y: e.y, kind: 'knife', bob: 0 })
         }
         return true
     }
@@ -502,7 +547,7 @@ function updateEnemy(gs, e) {
     // (seeds 7/8/10/19/21/23 all froze this way). Center-line + k-slip keeps
     // the street flowing; a few px of sprite overlap at the rim is the honest
     // arcade abstraction.
-    const rad = e.kind === 'abobo' ? 8 : e.kind === 'amon' ? 5 : 4
+    const rad = e.kind === 'abobo' ? 8 : e.kind === 'amon' || e.kind === 'duel' ? 5 : 4
     if (e.inv > 0) e.inv -= 1
     e.anim += 1
 
@@ -555,6 +600,7 @@ function updateEnemy(gs, e) {
         const dy = b.y - e.y
         const adx = Math.abs(dx)
         if (e.attackCooldown > 0) e.attackCooldown -= 1
+        if (e.castCooldown > 0) e.castCooldown -= 1
 
         // Abobo's shoulder charge (#2810 item 3): from mid-distance the giant
         // telegraphs two beats of run-up, then body-checks the lane. Telegraph
@@ -563,6 +609,17 @@ function updateEnemy(gs, e) {
             && e.attackCooldown <= 0 && attackerCount(gs) < CFG.attackersMax) {
             e.state = 'chargewind'; e.stateT = 0
             gs.events.push('chargewind')
+            break
+        }
+
+        // S3: the casters. Steel stays steel at range — an armed goon holds its
+        // ground mid-field and aims a throw down the lane (16 ticks of readable
+        // windup; the depth axis is the dodge). Close men fight with fists.
+        if (e.hasKnife && b.z === 0 && b.inv <= 0 && b.state !== 'dying'
+            && adx >= 34 && adx <= 130 && Math.abs(dy) <= 12
+            && e.castCooldown <= 0 && attackerCount(gs) < CFG.attackersMax) {
+            e.state = 'aim'; e.stateT = 0
+            gs.events.push('aim')
             break
         }
 
@@ -630,6 +687,31 @@ function updateEnemy(gs, e) {
         if (e.stateT >= 60 || off) { e.state = 'back'; e.stateT = 0; e.attackCooldown = 70 + Math.floor(rng(gs) * 40) }
         break
     }
+    case 'aim': {
+        // the read before the cast: feet planted, blade cocked, depth drifts
+        // onto Billy's lane so a lazy lane-share still gets punished
+        e.stateT += 1
+        e.face = Math.sign(b.x - e.x) || e.face
+        if (Math.abs(b.y - e.y) > 3) {
+            const stepY = clamp(b.y - e.y, -def.speed * 0.5, def.speed * 0.5)
+            if (!blocked(gs, e.x, e.y + stepY, rad)) e.y += stepY
+        }
+        e.y = clamp(e.y, DEEP_TOP, DEEP_BOT)
+        if (e.stateT >= CFG.goonKnife.windup) { e.state = 'cast'; e.stateT = 0 }
+        break
+    }
+    case 'cast': {
+        e.stateT += 1
+        if (e.stateT === 3) {
+            goonCast(gs, e)
+            // Williams spends the knife he threw; the lieutenant carries a belt
+            // full (the arcade duel never runs dry) — cooldown is his reload
+            if (e.kind !== 'duel') e.hasKnife = false
+            e.castCooldown = e.kind === 'duel' ? 80 + Math.floor(rng(gs) * 50) : 70 + Math.floor(rng(gs) * 50)
+        }
+        if (e.stateT >= 14) { e.state = 'back'; e.stateT = 0; e.attackCooldown = 40 }
+        break
+    }
     case 'attack': {
         e.stateT += 1
         if (e.stateT === 3) {
@@ -679,25 +761,61 @@ function updateEnemy(gs, e) {
     if (e.state !== 'dying' && e.state !== 'down' && e.state !== 'getup') stuckFree(gs, e, rad)
 }
 
+// ------------------------------------------------------------ S3 the yard ---
+// The hideout (issue #2807 stage 3): a fresh industrial field, crates where
+// the barrels were, Marian tied at the far end. Winning the duel unlocks the
+// rescue; freeing her loops the whole run with `cleared` earned.
+function clearField(gs) {
+    gs.waveIdx = 0
+    gs.waveActive = false
+    gs.camLock = false
+    gs.enemies = []
+    gs.pickups = []
+    gs.projectiles = []
+    gs.camX = 0
+    const b = gs.billy
+    b.x = 40; b.inv = CFG.respawnIFrames
+    b.grabFrom = null
+    if (b.state === 'grabbed') b.state = 'idle'
+}
+
+export function enterStage2(gs) {
+    gs.stage = 2
+    clearField(gs)
+    gs.barrels = makeBarrels(2)
+    gs.marian = { x: 912, y: 170, freed: false, cuts: 0, cutT: 0, cheer: 0 }
+    gs.bannerKind = 'stage2'
+    gs.banner = 90   // the yard announces itself for a beat and a half
+    gs.mode = 'play'
+    gs.events.push('stage')
+}
+
+function loopRun(gs) {
+    gs.mode = 'play'
+    gs.cleared = true
+    gs.stage = 1
+    gs.marian = null
+    gs.rescueT = 0
+    clearField(gs)
+    gs.barrels = makeBarrels(1)
+    gs.bannerKind = null
+}
+
+export function rescueReady(gs) {
+    return gs.stage === 2 && gs.mode === 'play' && !!gs.marian && !gs.marian.freed &&
+        gs.waveIdx >= WAVES_S2.length && gs.enemies.length === 0
+}
+
 export function step(gs, pad = {}) {
     gs.tick += 1
+    if (gs.mode === 'play' && gs.banner > 0) gs.banner -= 1
     if (gs.scoreFlash && --gs.scoreFlash.t <= 0) gs.scoreFlash = null
 
     if (gs.mode === 'clear') {
         gs.banner -= 1
         if (gs.banner <= 0) {
-            // the loop re-runs Walnuts Street, score carried (arcade law)
-            gs.mode = 'play'
-            gs.cleared = true
-            gs.waveIdx = 0
-            gs.waveActive = false
-            gs.enemies = []
-            gs.pickups = []
-            gs.barrels = makeBarrels()
-            gs.projectiles = []
-            gs.camX = 0
-            const b = gs.billy
-            b.x = 40; b.inv = CFG.respawnIFrames
+            if (gs.stage === 1) enterStage2(gs)          // the road runs on: the hideout
+            else loopRun(gs)                             // Marian freed — Walnuts again, score carried
         }
         return gs
     }
@@ -718,11 +836,14 @@ export function step(gs, pad = {}) {
     b.x = clamp(b.x, gs.camX + 8, gs.camX + W - 8)
 
     // wave triggers
-    if (!gs.waveActive && gs.waveIdx < WAVES.length && b.x >= WAVES[gs.waveIdx].triggerX) {
-        const w = WAVES[gs.waveIdx]
+    if (!gs.waveActive && gs.waveIdx < wavesFor(gs).length && b.x >= wavesFor(gs)[gs.waveIdx].triggerX) {
+        const w = wavesFor(gs)[gs.waveIdx]
         gs.waveActive = true
         gs.camLock = true
-        w.spawns.forEach((s) => spawnEnemy(gs, s.kind, s.side, s.stick))
+        w.spawns.forEach((s) => {
+            const e = spawnEnemy(gs, s.kind, s.side, s.stick)
+            if (s.knife) e.hasKnife = true
+        })
         gs.events.push('wave')
     }
 
@@ -730,22 +851,43 @@ export function step(gs, pad = {}) {
     gs.enemies = gs.enemies.filter((e) => !(e.state === 'dying' && e.stateT > 30))
 
     // thrown blades: flat flight down the lane; steel is reusable — a knife
-    // that hits (or reaches the end of the street) lands as a pickup again.
+    // that hits (or leaves the frame) lands as a pickup again.
+    // S3: blades now have a side. Billy's cut the enemy line; a Williams'
+    // cast cuts Billy's — lethal ON the lane, harmless off it (depth law),
+    // stopped by wood, and landing as pickable steel either way.
     for (let i = gs.projectiles.length - 1; i >= 0; i--) {
         const pr = gs.projectiles[i]
         pr.x += pr.vx
         pr.spin += 1
         let done = false
-        for (const e of gs.enemies) {
-            if (e.state === 'dying' || e.state === 'down' || e.inv > 0) continue
-            if (Math.abs(pr.x - e.x) <= 10 && Math.abs(pr.y - e.y) <= 7) {
-                hurtEnemy(gs, e, CFG.knifeDmg, true)
-                gs.events.push('knife_hit')
-                done = true
-                break
+        if (pr.side === 'goon') {
+            for (const bar of gs.barrels) {
+                if (Math.abs(pr.x - bar.x) <= 10 && Math.abs(pr.y - bar.y) <= 11) {
+                    hurtBarrel(gs, bar)
+                    gs.events.push('blade_wood')
+                    done = true
+                    break
+                }
             }
+            if (!done && gs.mode === 'play' && gs.billy.inv <= 0 && gs.billy.state !== 'dying'
+                && gs.billy.z <= 6 && Math.abs(pr.x - gs.billy.x) <= 10 && Math.abs(pr.y - gs.billy.y) <= 7) {
+                billyDies(gs)
+                gs.events.push('blade_hit')
+                done = true
+            }
+            if (!done && (pr.x < gs.camX - 24 || pr.x > gs.camX + W + 24)) done = true
+        } else {
+            for (const e of gs.enemies) {
+                if (e.state === 'dying' || e.state === 'down' || e.inv > 0) continue
+                if (Math.abs(pr.x - e.x) <= 10 && Math.abs(pr.y - e.y) <= 7) {
+                    hurtEnemy(gs, e, CFG.knifeDmg, true)
+                    gs.events.push('knife_hit')
+                    done = true
+                    break
+                }
+            }
+            if (!done && (pr.x < 8 || pr.x > STAGE_W - 8)) done = true
         }
-        if (!done && (pr.x < 8 || pr.x > STAGE_W - 8)) done = true
         if (done) {
             gs.projectiles.splice(i, 1)
             gs.pickups.push({ x: clamp(pr.x, 8, STAGE_W - 8), y: pr.y, kind: 'knife', bob: 0 })
@@ -758,12 +900,48 @@ export function step(gs, pad = {}) {
         gs.waveActive = false
         gs.camLock = false
         gs.waveIdx += 1
-        if (gs.waveIdx >= WAVES.length) {
-            gs.mode = 'clear'
-            gs.banner = CFG.clearHold
-            gs.score += 500
-            gs.hi = Math.max(gs.hi, gs.score)
-            gs.events.push('clear')
+        if (gs.waveIdx >= wavesFor(gs).length) {
+            if (gs.stage === 1) {
+                gs.mode = 'clear'
+                gs.banner = CFG.clearHold
+                gs.bannerKind = 'stage1'
+                gs.score += 500
+                gs.hi = Math.max(gs.hi, gs.score)
+                gs.events.push('clear')
+            }
+            // stage 2: the duel is won — the ropes are next (see rescue below)
+        }
+    }
+
+    // S3 the hideout — Marian. Ropes hold until the duel is answered; two
+    // punches cut them. Then the cheer, and the yard sets the whole run free.
+    if (gs.marian) {
+        const m = gs.marian
+        if (m.cutT > 0) m.cutT -= 1
+        if (!m.freed && rescueReady(gs)) {
+            const b = gs.billy
+            if (pad.punch && m.cutT <= 0 && Math.abs(b.x - m.x) <= CFG.rescueRange && Math.abs(b.y - m.y) <= 8) {
+                m.cuts += 1
+                m.cutT = 10
+                gs.events.push('rope')
+                if (m.cuts >= CFG.rescueCuts) {
+                    m.freed = true
+                    gs.rescueT = CFG.rescueCheer
+                    gs.score += CFG.rescueBonus
+                    gs.hi = Math.max(gs.hi, gs.score)
+                    gs.scoreFlash = { v: CFG.rescueBonus, t: 48 }
+                    gs.events.push('rescue')
+                }
+            }
+        }
+        if (m.freed) {
+            m.cheer += 1
+            if (gs.rescueT > 0 && --gs.rescueT <= 0) {
+                gs.mode = 'clear'
+                gs.banner = CFG.clearHold
+                gs.bannerKind = 'rescue'
+                gs.events.push('clear')
+            }
         }
     }
     return gs
@@ -773,9 +951,32 @@ export function step(gs, pad = {}) {
 // Used by the attract demo AND the harness WINNABLE proof.
 export function autopilot(gs) {
     const b = gs.billy
-    const pad = { left: false, right: false, up: false, down: false, a: false, b: false }
+    const pad = { left: false, right: false, up: false, down: false, a: false, b: false, punch: false }
     if (gs.mode !== 'play' || b.state === 'grabbed') {
         if (b.state === 'grabbed' && gs.tick % 4 === 0) pad.b = true // mash free
+        return pad
+    }
+    // S3: the duel is won and the ropes are waiting — walk to Marian and cut
+    if (gs.stage === 2 && rescueReady(gs)) {
+        const m = gs.marian
+        const dxm = m.x - b.x; const dym = m.y - b.y
+        if (Math.abs(dxm) > 14 || Math.abs(dym) > 3) {
+            pad.right = dxm > 0; pad.left = dxm < 0
+            if (Math.abs(dym) > 3) { pad.up = dym < 0; pad.down = dym > 0 }
+            return laneChange(gs, pad)
+        }
+        if (gs.tick % 12 < 2) pad.punch = true
+        return pad
+    }
+    // S3: steel in the air is the first thing a fair player answers — slip off
+    // the blade's lane before it arrives (the depth law, thrown edition)
+    const blade = gs.projectiles.find((pr) => pr.side === 'goon' &&
+        ((pr.vx > 0 && pr.x < b.x + 8) || (pr.vx < 0 && pr.x > b.x - 8)) &&
+        Math.abs(pr.y - b.y) <= 9 && Math.abs(pr.x - b.x) < 64)
+    if (blade && b.z === 0) {
+        let dir = blade.y < b.y ? 1 : blade.y > b.y ? -1 : (b.y > (DEEP_TOP + DEEP_BOT) / 2 ? -1 : 1)
+        if (b.y + dir * 14 < DEEP_TOP || b.y + dir * 14 > DEEP_BOT) dir = -dir
+        pad[dir > 0 ? 'down' : 'up'] = true
         return pad
     }
     const target = enemyNearest(gs)
@@ -787,10 +988,12 @@ export function autopilot(gs) {
     const dy = target.y - b.y
     const adx = Math.abs(dx)
     // bail out of a windup about to land near us — Abobo's charge telegraph
-    // reads from further off, so the sidestep window is wider (#2810 item 3)
+    // reads from further off, so the sidestep window is wider (#2810 item 3);
+    // an armed Williams' aim reads at cast range.
     const threat = gs.enemies.find((e) => (
         ((e.state === 'windup' || e.state === 'attack') && Math.abs(e.x - b.x) < 30 && Math.abs(e.y - b.y) <= 7)
-        || ((e.state === 'chargewind' || e.state === 'charge') && Math.abs(e.x - b.x) < 60 && Math.abs(e.y - b.y) <= 14)))
+        || ((e.state === 'chargewind' || e.state === 'charge') && Math.abs(e.x - b.x) < 60 && Math.abs(e.y - b.y) <= 14)
+        || (e.state === 'aim' && Math.abs(e.x - b.x) < 140 && Math.abs(e.y - b.y) <= 12)))
     if (threat && b.z === 0) {
         if (threat.state === 'chargewind' || threat.state === 'charge') {
             // a shouldering giant outruns boots — slip off the lane, don't flee down it
@@ -798,6 +1001,13 @@ export function autopilot(gs) {
             const ny = b.y + dir * 16
             if (ny < DEEP_TOP || ny > DEEP_BOT) dir = -dir
             pad[dir < 0 ? 'up' : 'down'] = true
+            return pad
+        }
+        if (threat.state === 'aim') {
+            // the cast is aimed at THIS lane — leave before the blade answers
+            let dir = b.y > threat.y ? 1 : b.y < threat.y ? -1 : (b.y > (DEEP_TOP + DEEP_BOT) / 2 ? -1 : 1)
+            if (b.y + dir * 14 < DEEP_TOP || b.y + dir * 14 > DEEP_BOT) dir = -dir
+            pad[dir > 0 ? 'down' : 'up'] = true
             return pad
         }
         if (gs.tick % 3 === 0) pad.up = gs.tick % 6 === 0
@@ -848,6 +1058,8 @@ export function stateHash(gs) {
     mix(gs.mode === 'play' ? 1 : gs.mode === 'clear' ? 2 : 3)
     mix(gs.camX)
     mix(gs.waveIdx)
+    mix(gs.stage)
+    mix(gs.marian ? (gs.marian.freed ? 2 : 1) : 0)
     const b = gs.billy
     mix(b.x); mix(b.y); mix(b.z); mix(b.lives)
     mix(b.state.length); mix(b.face); mix(b.weapon ? 1 : 0)
