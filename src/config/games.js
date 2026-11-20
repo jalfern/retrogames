@@ -223,6 +223,7 @@ const RallyCoDriverGame = lazy(() => import('../games/RallyCoDriver'))
 // Bomb Defuse: the simultaneous two-hand co-op sim chunks with the game (#1800).
 const BombDefuseGame = lazy(() => import('../games/BombDefuse'))
 const ContraGame = lazy(() => import('../games/Contra'))
+const DoubleDragonGame = lazy(() => import('../games/DoubleDragon'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1290,5 +1291,18 @@ export const GAMES = [
         theme: 'dark',
         description: 'The run-and-gun Jon commissioned for the shelf (#1530 — "which title joins the arcade next? — CONTRA"), stage 1 of Konami 1987\'s jungle. Arrows run and AIM IN EIGHT DIRECTIONS while you run; one hit kills — on both sides — and you carry three lives and a brief flicker of mercy on respawn. Military bullets trace toward you from soldiers that sprint in from the tree line and from SANDBAG TURRET POSTS that lead their shots; TNT BARRELS sit on the path and chain when shot, killing anything the blast reaches — including you if you linger. Catch the FLYING CAPSULE and the rifle becomes one of the wheel — SPREAD five-way, MACHINE GUN stream, FIREBAR, LASER — and the weapon is yours until you die, then it is back to the rifle. A blue soldier fights at your side: a CPU ally with his own lives, his own gun, his own capsules — and on the desktop keyboard a second player drops into his seat (WASD + F/G) and keeps it. Parallax jungle runs east to the waterfall canyon, and the canyon climbs to the armored BASE GATE: two cannons, spawn doors, and one core that shines when its shutter rides open. The attract demo runs the autopilot the harness proves against: seed + pads replay to the same hashes, so a recording or a future model seat can take either soldier later.',
         controls: ['Arrows / d-pad: run and aim all 8 ways (aim up, or diagonals while running; aim down only in mid-air)', 'SPACE / Z / A: jump — hold DOWN + jump on a walkway to drop through', 'X / C / B(FIRE): the trigger — hold for auto-fire', 'Catch the orange CAPSULE for a letter of the wheel — S SPREAD, M MACHINE GUN, F FIRE, L LASER; capture dies with you', 'Shoot TNT barrels to chain them — the blast kills soldiers and turrets, and either soldier if he lingers', 'Touching a soldier is a hit; turret and sniper rounds lead the NEARER soldier\'s lane — a hop is the answer', 'Three lives each — BLUE, the CPU ally, carries his own bank; the run ends only when BOTH banks are empty', 'Seat 2 (desktop): WASD move — F jump — G fire — the first touch takes the blue soldier out of the CPU\'s hands', 'Reach the base gate, climb the waterfall, break the core to clear the stage', 'Attract: any key or tap takes the seat from the autopilot', '?: pause and read the ops card'],
+    },
+    {
+        path: '/double-dragon',
+        pad: { layout: 'dpad', aLabel: 'JUMP', buttons: [{ label: 'KICK', code: 'KeyX' }, { label: 'PUNCH', code: 'KeyZ', pad: 2 }], reason: 'the cabinet seam: thumb walks the street (depth is the dodge), the two fingers hold the fight — kick knocks down, punch jabs quick' },
+        builtBy: 'forge',
+        added: '2026-11-20',
+        visibility: 'private',
+        tapStart: true,
+        component: DoubleDragonGame,
+        label: 'DOUBLE DRAGON',
+        theme: 'dark',
+        description: 'The belt-scroll brawl Jon commissioned for the shelf (#2795 — "both flagships starting with double dragon"), stage 1 of Technōs 1987\'s street classic. Billy Lee walks NIGHT-WALNUTS STREET in deep space: the street is a BAND and UP/DOWN steps toward or away from the fence — a half-step back and a thug\'s swing flies past your nose. SPACE hops, X roundhouse-KICKs (knockdowns), Z jabs; a swing asked for while TWO goons close in comes out as the signature SPIN BACK-HEEL, boots in both directions. One hit from an enemy costs a life — arcade lethal — and you carry three and a flicker of mercy on respawn. Goons TELEGRAPH: shoulders coil for a beat before the fist lands; hit them in the windup and the stagger eats their turn. Never three at once — the crowd takes turns like the original. A KO\'d Amons drops his STICK: reach doubles, damage doubles, until you die. Three waves — Williams caps, then Amons (one armed), then ABOBO, the charcoal giant who wants to hold you and knee you — and Walnuts Street is yours; the stage loops, the score carries, the night goes on.',
+        controls: ['Arrows / d-pad: walk the street — UP/DOWN is DEPTH: step out of a swing, circle behind a goon', 'SPACE / A: jump — a hop beats a grab attempt', 'X / KICK: the roundhouse — knockdowns; kick a downed goon to stomp him', 'Z / PUNCH: quick jab — jabs out-stagger a windup', 'Surrounded (two within reach)? Your next swing is the SPIN BACK-HEEL', 'Grabbed? Mash KICK three times before the knee lands', 'KO an armed Amon, catch the STICK — reach and damage double until you die', 'One hit kills you. Three lives. The hi-score burns in the cabinet', 'Attract: any key or tap takes the seat from the autopilot', '?: pause and read the ops card'],
     },
 ]
