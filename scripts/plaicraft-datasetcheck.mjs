@@ -125,11 +125,14 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
             b64: craftWebm(1234.5),
         })
         const file = rec.finish(final, { tracks, declined: [] })
-        if (tamper && file.hashes.length) file.hashes[file.hashes.length - 1].h = 'cafebabe'
+        // tamper a MID-RUN checkpoint (not the final hash — the end-of-run
+        // compare would catch that even if the in-loop check is skipped, and a
+        // mutant must prove the line it plants is load-bearing) (#2805)
+        if (tamper && file.hashes.length) file.hashes[Math.max(0, file.hashes.length - 2)].h = 'cafebabe'
         return file
     }
     const file = rec.finish(final)
-    if (tamper && file.hashes.length) file.hashes[file.hashes.length - 1].h = 'cafebabe'
+    if (tamper && file.hashes.length) file.hashes[Math.max(0, file.hashes.length - 2)].h = 'cafebabe'
     return file
 }
 
