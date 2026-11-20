@@ -177,6 +177,33 @@ function stuckFree(gs, ent, radius = 0) {
     ent.x += ent.x <= gs.camX + W / 2 ? -12 : 12
 }
 
+// The barrel-law shared by every walking branch: when a body wants to step
+// but wood owns the destination, slide the DEPTH axis until the lane opens.
+// Keep the chosen direction while the road stays shut (re-derived dirs
+// ping-pong on the mid-line); flip when the clamp eats the step (the pocket
+// at DEEP_BOT under barrel 3 — the Abobo freeze); k-slip out if ±0.9 can't
+// clear the band at this x at all. Seeds 1..24 pin every shape of this.
+function depthSlip(gs, ent, radius = 0) {
+    if (gs.barrels.length === 0) return
+    const bar = gs.barrels.reduce((a, q) => (Math.abs(q.x - ent.x) < Math.abs(a.x - ent.x) ? q : a), gs.barrels[0])
+    let dir = ent.dodge || (ent.y >= bar.y ? CFG.deepSpeed : -CFG.deepSpeed)
+    let ny = clamp(ent.y + dir, DEEP_TOP, DEEP_BOT)
+    if (ny === ent.y || blocked(gs, ent.x, ny, radius)) {
+        const f = -dir
+        const fy = clamp(ent.y + f, DEEP_TOP, DEEP_BOT)
+        if (fy !== ny && !blocked(gs, ent.x, fy, radius)) { dir = f; ny = fy }
+    }
+    ent.dodge = ny !== ent.y ? dir : 0
+    if (ny !== ent.y && !blocked(gs, ent.x, ny, radius)) ent.y = ny
+    if (ent.dodge === 0) {
+        for (let k = 2; k <= 32; k++) {
+            const dn = clamp(ent.y + k, DEEP_TOP, DEEP_BOT), up = clamp(ent.y - k, DEEP_TOP, DEEP_BOT)
+            if (dn !== ent.y && !blocked(gs, ent.x, dn, radius)) { ent.y = dn; ent.dodge = CFG.deepSpeed; break }
+            if (up !== ent.y && !blocked(gs, ent.x, up, radius)) { ent.y = up; ent.dodge = -CFG.deepSpeed; break }
+        }
+    }
+}
+
 function rollWeaponDrop(gs, x, y) {
     const roll = rng(gs)
     const kind = roll < 0.4 ? 'knife' : roll < 0.8 ? 'whip' : 'stick'
@@ -475,7 +502,7 @@ function updateEnemy(gs, e) {
     // (seeds 7/8/10/19/21/23 all froze this way). Center-line + k-slip keeps
     // the street flowing; a few px of sprite overlap at the rim is the honest
     // arcade abstraction.
-    const rad = 0
+    const rad = e.kind === 'abobo' ? 8 : e.kind === 'amon' ? 5 : 4
     if (e.inv > 0) e.inv -= 1
     e.anim += 1
 
@@ -559,9 +586,12 @@ function updateEnemy(gs, e) {
         // approach: close x and match depth; back-row thugs hang slightly off
         const slot = gs.enemies.filter((o) => o !== e && o.state !== 'dying' && Math.sign(o.x - b.x) === Math.sign(e.x - b.x) && Math.abs(o.x - b.x) < 26).length
         const wantX = b.x - Math.sign(dx || 1) * (def.reach - 4 + slot * 14)
-        moveEntity(gs, e,
-            Math.abs(wantX - e.x) > 3 ? clamp(wantX - e.x, -def.speed, def.speed) : 0,
-            Math.abs(dy) > 2 ? clamp(dy, -def.speed * 0.8, def.speed * 0.8) : 0, rad)
+        const stepX = Math.abs(wantX - e.x) > 3 ? clamp(wantX - e.x, -def.speed, def.speed) : 0
+        const stepY = Math.abs(dy) > 2 ? clamp(dy, -def.speed * 0.8, def.speed * 0.8) : 0
+        const px = e.x, py = e.y
+        moveEntity(gs, e, stepX, stepY, rad)
+        if ((stepX !== 0 && e.x === px) || (stepY !== 0 && e.y === py)) depthSlip(gs, e, rad)
+        else if (stepX !== 0) e.dodge = 0
         break
     }
     case 'windup': {
