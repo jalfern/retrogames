@@ -274,7 +274,7 @@ if (MUTATE) {
         // card still names the heldout players (split math untouched), but no
         // row carries the split — a held-out player's rows leak into train.
         const vanishing = heldM.length === 0 && cardM && cardM.splits.player.heldout.length > 0
-        r.check('mutant: player-heldout rows vanish (split ignored)', vanishing, `heldRows=${heldM.length}`)
+        r.check('player-heldout rows exist (RED under the split mutant)', !vanishing, `heldRows=${heldM.length}`)
     } finally {
         pull(DS)
     }
@@ -285,8 +285,9 @@ sim.close()
 try { fs.rmSync(tmp, { recursive: true, force: true }) } catch { /* temp cleanup best-effort */ }
 
 if (MUTATE) {
-    console.log(`\nplaicraft:datasetcheck ${mutated ? '(mutant) ' : ''}${r.rows.length - r.failed}/${r.rows.length} checks`)
-    if (mutated) process.exit(r.failed ? 0 : 1) // red IS the pass under --mutant
+    console.log(`\nplaicraft:datasetcheck (mutant) ${r.rows.length - r.failed}/${r.rows.length} checks`)
+    if (r.failed) { console.log('RED BY DESIGN (--mutant): ignoring the player split empties the held-out rows — the line is load-bearing.'); process.exit(0) }
+    console.log('mutant: expected RED, got green — the split is NOT load-bearing?'); process.exit(1)
 }
 console.log(`\nplaicraft:datasetcheck ${r.failed ? 'FAILED' : 'PASSED'} (${r.rows.length - r.failed}/${r.rows.length})`)
 process.exit(r.failed ? 1 : 0)
