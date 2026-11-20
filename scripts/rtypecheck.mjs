@@ -202,10 +202,11 @@ if (MUTANT) {
                 const gs = mod.makeGame(10)
                 gs.camX = mod.STAGE_END
                 mod.step(gs, {}); gs.events.length = 0
+                gs.p1.x = gs.camX + 235
                 gs.ship.inv = 999999
-                gs.p1.mouth = 'closed'; gs.p1.mouthT = 999
+                gs.p1.mouth = 'closed'; gs.p1.mouthT = 9999
                 const hp0 = gs.p1.coreHp
-                for (let i = 0; i < 40; i++) { mod.step(gs, { a: true }); gs.events.length = 0 }
+                for (let i = 0; i < 120; i++) { mod.step(gs, { a: true }); gs.events.length = 0 }
                 return gs.p1.coreHp < hp0
                     ? `HARM NAMED: fire killed through the SEALED maw (core ${hp0} -> ${gs.p1.coreHp}) — the gape-timed armour is Phase-1; without it the dreadnought is a target range and the whole stage is decided by who shoots first`
                     : null
