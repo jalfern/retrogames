@@ -10,8 +10,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH } from './sim.js'
-import { drawBackground, drawBilly, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, PROPS, drawHud, drawBanner, drawAttract } from './art.js'
+import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH, enterStage2 } from './sim.js'
+import { drawBackground, drawBilly, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'double-dragon:hiscore'
@@ -66,6 +66,18 @@ export default function DoubleDragon() {
             knife_hit: () => { audioController.playTone(180, 0.12, 'square', 0.16); shake = Math.max(shake, 3) },
             barrel_hit: () => { audioController.playTone(110, 0.06, 'square', 0.12); shake = Math.max(shake, 2) },
             barrel_break: () => { audioController.playNoise(0.18, 0.16); audioController.playTone(70, 0.14, 'square', 0.14, 0.03); shake = Math.max(shake, 5) },
+            // S3 the hideout cues
+            stage: () => { audioController.playSweep(160, 420, 0.3, 'square', 0.12); audioController.playTone(523, 0.12, 'square', 0.1, 0.24) },
+            aim: () => audioController.playTone(980, 0.05, 'square', 0.05),
+            goon_throw: () => audioController.playSweep(1100, 400, 0.1, 'triangle', 0.09),
+            blade_wood: () => { audioController.playTone(120, 0.05, 'square', 0.12); shake = Math.max(shake, 2) },
+            blade_hit: () => { audioController.playSweep(300, 60, 0.3, 'sawtooth', 0.16); shake = Math.max(shake, 4) },
+            rope: () => audioController.playNoise(0.05, 0.08),
+            rescue: () => {
+                const notes = [659, 784, 988, 1319, 988, 1319, 1568]
+                notes.forEach((f, i) => audioController.playTone(f, 0.13, 'square', 0.12, i * 0.11))
+                shake = Math.max(shake, 3)
+            },
             clear: () => {
                 const notes = [523, 659, 784, 1046, 784, 1046]
                 notes.forEach((f, i) => audioController.playTone(f, 0.12, 'square', 0.12, i * 0.12))
@@ -86,6 +98,7 @@ export default function DoubleDragon() {
                 if (ev === 'hit') sparks(4, true, 1)
                 else if (ev === 'hit_hard' || ev === 'ko') sparks(8, true, 0)
                 else if (ev === 'stomp') sparks(6, true, 2)
+                else if (ev === 'rescue') sparks(14, true, 1)
             }
             gs.events.length = 0
         }
@@ -138,18 +151,20 @@ export default function DoubleDragon() {
             shake = Math.max(0, shake - 0.4)
             const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0
             const sy = shake > 0 ? (Math.random() - 0.5) * shake : 0
-            drawBackground(ctx, gs.camX, gs.tick)
+            drawBackground(ctx, gs.camX, gs.tick, gs.stage)
             ctx.save()
             ctx.translate(Math.round(sx), Math.round(sy))
             // one depth-sorted army: nearest feet drawn last
             const beings = [...gs.enemies.map((e) => ({ y: e.y, kind: 'enemy', o: e })), { y: gs.billy.y, kind: 'billy', o: gs.billy }]
             for (const bar of gs.barrels) beings.push({ y: bar.y, kind: 'barrel', o: bar })
+            if (gs.marian) beings.push({ y: gs.marian.y, kind: 'marian', o: gs.marian })
             for (const p of gs.pickups) if (p.y < PROPS_DEPTH) beings.push({ y: p.y, kind: 'pick', o: p })
             beings.sort((a, b) => a.y - b.y)
             for (const q of beings) {
                 if (q.kind === 'enemy') drawEnemy(ctx, q.o, gs.camX)
                 else if (q.kind === 'billy') drawBilly(ctx, q.o, gs.camX)
                 else if (q.kind === 'barrel') drawBarrel(ctx, q.o, gs.camX)
+                else if (q.kind === 'marian') drawMarian(ctx, q.o, gs.camX)
                 else drawPickup(ctx, q.o, gs.camX)
             }
             for (const pr of gs.projectiles) drawProjectile(ctx, pr, gs.camX)
@@ -161,7 +176,7 @@ export default function DoubleDragon() {
                 ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : '#d9dde2'
                 ctx.fillRect(Math.round(q.x - gs.camX), Math.round(q.y), 2, 2)
             }
-            for (const p of PROPS) drawProp(ctx, p, gs.camX)
+            for (const p of (gs.stage === 2 ? PROPS_YARD : PROPS)) drawProp(ctx, p, gs.camX)
             ctx.restore()
             drawHud(ctx, gs)
             if (screen === 'attract') drawAttract(ctx, Math.floor(gs.tick / 150), gs.tick)
@@ -250,6 +265,10 @@ export default function DoubleDragon() {
                     billyState: gs.billy.state, camX: Math.round(gs.camX),
                     barrels: gs.barrels.length, projectiles: gs.projectiles.length,
                     pickups: gs.pickups.map((p) => p.kind).join(','),
+                    stage: gs.stage,
+                    marian: gs.marian ? (gs.marian.freed ? 'free' : 'tied:' + gs.marian.cuts) : 'none',
+                    duel: gs.enemies.some((e) => e.kind === 'duel') ? 1 : 0,
+                    casts: gs.enemies.filter((e) => e.hasKnife).length,
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -270,15 +289,33 @@ export default function DoubleDragon() {
                         gs.waveIdx = 2; gs.waveActive = true; gs.camLock = true
                         gs.enemies.push({ id: gs.nextId++, kind: 'abobo', x: 640, y: 170, face: -1, hp: 14, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 40, inv: 0, spinHit: false })
                     }
+                    if (opts.warp === 'hideout' && gs.stage === 1) {
+                        enterStage2(gs)
+                        gs.billy.y = 170
+                    }
+                    if (opts.warp === 'marian') {
+                        if (gs.stage === 1) enterStage2(gs)
+                        gs.waveIdx = 3; gs.waveActive = false; gs.camLock = false
+                        gs.enemies.length = 0
+                        gs.camX = 640
+                        gs.billy.x = 870; gs.billy.y = gs.marian.y
+                    }
+                    if (opts.knifeGoon) {
+                        gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: gs.billy.x + 70, y: gs.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 20, attackCooldown: 999, inv: 0, spinHit: false })
+                    }
+                    if (opts.duel) {
+                        gs.enemies.push({ id: gs.nextId++, kind: 'duel', x: gs.billy.x + 90, y: gs.billy.y, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 40, attackCooldown: 60, inv: 0, spinHit: false })
+                    }
+                    if (opts.marianFree && gs.marian) { gs.marian.freed = true; gs.marian.cuts = CFG.rescueCuts; gs.rescueT = CFG.rescueCheer }
                     return true
                 },
             }
             mountDbg({
                 title: 'DOUBLE DRAGON',
                 getState: () => [
-                    `x ${gs.billy.x.toFixed(0)}/960  y ${gs.billy.y}  z ${gs.billy.z.toFixed(0)}  cam ${Math.round(gs.camX)}${gs.camLock ? ' LOCK' : ''}  wave ${gs.waveIdx}/3`,
+                    `x ${gs.billy.x.toFixed(0)}/960  y ${gs.billy.y}  z ${gs.billy.z.toFixed(0)}  cam ${Math.round(gs.camX)}${gs.camLock ? ' LOCK' : ''}  stage ${gs.stage}  wave ${gs.waveIdx}/3${gs.marian ? `  marian ${gs.marian.freed ? 'FREE' : 'tied (' + gs.marian.cuts + '/' + CFG.rescueCuts + ')'}` : ''}`,
                     `score ${gs.score}  hi ${Math.max(hiscore, gs.hi)}  lives ${gs.billy.lives}  weapon ${gs.billy.weapon || '-'}  inv ${gs.billy.inv}  mode ${gs.mode}`,
-                    `enemies ${gs.enemies.map((e) => `${e.kind} ${e.state}${e.hasStick ? '+' : ''}(${e.hp})`).join(' | ') || 'none'}`,
+                    `enemies ${gs.enemies.map((e) => `${e.kind} ${e.state}${e.hasStick ? '+stick' : ''}${e.hasKnife ? '+knife' : ''}(${e.hp})`).join(' | ') || 'none'}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
                 actions: [
@@ -288,6 +325,11 @@ export default function DoubleDragon() {
                     { label: 'GIVE WHIP', run: () => { gs.billy.weapon = 'whip'; return 'coil in hand — PUNCH lashes' } },
                     { label: 'SPAWN BARREL', run: () => { gs.barrels.push({ id: 90 + gs.barrels.length, x: gs.billy.x + 24, y: gs.billy.y, hp: 3, shake: 0 }); return 'a barrel rolls in' } },
                     { label: 'TO ABOBO', run: () => { window.__ddTest.setup({ warp: 'abobo' }); return 'before the giant' } },
+                    { label: 'TO HIDEOUT', run: () => { window.__ddTest.setup({ warp: 'hideout' }); return 'stage 2 — the yard opens' } },
+                    { label: 'TO MARIAN', run: () => { window.__ddTest.setup({ warp: 'marian' }); return 'the duel is won — the ropes await' } },
+                    { label: 'TO THE DUEL', run: () => { window.__ddTest.setup({ warp: 'marian', duel: true }); return 'Williams himself steps into the light' } },
+                    { label: 'FREE MARIAN', run: () => { window.__ddTest.setup({ warp: 'marian', marianFree: true }); return 'ropes cut — the cheer' } },
+                    { label: 'SPAWN CASTER', run: () => { window.__ddTest.setup({ knifeGoon: true }); return 'a Williams fingers a knife' } },
                     { label: 'SPAWN GOON', run: () => { gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: gs.billy.x + 40, y: gs.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 30, inv: 0, spinHit: false }); return 'a Williams arrives' } },
                     { label: 'CLEAR WAVE', run: () => { gs.enemies.length = 0; return 'street is clear' } },
                 ],
@@ -306,7 +348,7 @@ export default function DoubleDragon() {
                 tick: (pad) => {
                     step(gs, {
                         left: !!pad.left, right: !!pad.right, up: !!pad.up, down: !!pad.down,
-                        a: !!pad.a, b: !!pad.b,
+                        a: !!pad.a, b: !!pad.b, punch: !!pad.punch,
                     })
                     drain()
                 },
@@ -317,6 +359,8 @@ export default function DoubleDragon() {
                     billyState: gs.billy.state, weapon: gs.billy.weapon || '-',
                     waveIdx: gs.waveIdx, enemies: gs.enemies.length,
                     barrels: gs.barrels.length, projectiles: gs.projectiles.length,
+                    stage: gs.stage,
+                    marian: gs.marian ? (gs.marian.freed ? 2 : 1) : 0,
                     cleared: gs.cleared ? 1 : 0,
                     hash: stateHash(gs),
                 }),
