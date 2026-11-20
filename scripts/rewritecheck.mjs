@@ -189,6 +189,10 @@ ok('explicit /research/ keeps its own destination ahead of the generic rule',
 ok('/retrogames/research/<page>.html resolves to the research file',
     resolveEdge('/retrogames/research/handweights.html', vc.rewrites) === '/research/handweights.html' &&
     existsSync(join(ROOT, 'public/research/handweights.html')))
+ok('/retrogames/join and /join/ resolve to the friends how-to page',
+    resolveEdge('/retrogames/join', vc.rewrites) === '/join/index.html' &&
+    resolveEdge('/retrogames/join/', vc.rewrites) === '/join/index.html' &&
+    existsSync(join(ROOT, 'public/join/index.html')))
 
 console.log(`\nrewritecheck: ${failed ? `${failed} FAILED` : 'OK'}`)
 process.exit(failed ? 1 : 0)

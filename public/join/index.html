@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="How to play a few arcade games on your phone, with your voice, to help train the PLAICRAFT bot.">
+<title>Player Two Wanted</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=Press+Start+2P&display=swap">
+<style>
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+/* Layout: a comic-book page — a grid of inked panels, caption boxes and speech
+   bubbles, read top to bottom; one column on phones. Deliberately one look
+   (four-colour newsprint), so colors are set explicitly, not themed. */
+:root {
+  --paper: #fff6d8;
+  --ink: #16121c;
+  --red: #e5352b;
+  --cyan: #1d9fdb;
+  --yellow: #ffd23f;
+  --magenta: #e2418f;
+  --green: #39ff14;
+  --screen: #101018;
+  --muted: #5b5160;
+  --display: 'Bangers', 'Impact', 'Arial Black', sans-serif;
+  --body: 'Comic Neue', 'Comic Sans MS', 'Trebuchet MS', sans-serif;
+  --pixel: 'Press Start 2P', 'Courier New', monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--paper);
+  background-image: radial-gradient(rgba(229,53,43,.13) 1.2px, transparent 1.4px);
+  background-size: 9px 9px;
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+.page { max-width: 1040px; margin: 0 auto; display: grid; gap: 18px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.panel {
+  position: relative; background: #fff; border: 4px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--ink); padding: 22px 20px 20px; min-width: 0;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.w6 { grid-column: span 6; } .w4 { grid-column: span 4; } .w3 { grid-column: span 3; } .w2 { grid-column: span 2; }
+@media (max-width: 760px) { .w4, .w3, .w2 { grid-column: span 6; } }
+.tilt-l { transform: rotate(-.6deg); } .tilt-r { transform: rotate(.5deg); }
+@media (prefers-reduced-motion: reduce) { .tilt-l, .tilt-r { transform: none; } }
+
+h1, h2, h3 { font-family: var(--display); font-weight: 400; letter-spacing: .04em; margin: 0; text-wrap: balance; line-height: 1; }
+h2 { font-size: clamp(28px, 4.2vw, 38px); }
+h3 { font-size: 24px; }
+p { margin: 0; max-width: 62ch; }
+
+.caption {
+  align-self: flex-start; background: var(--yellow); border: 3px solid var(--ink);
+  font-family: var(--display); letter-spacing: .08em; font-size: 17px; padding: 3px 10px 1px;
+  margin: -36px 0 0 -8px; box-shadow: 3px 3px 0 var(--ink);
+}
+.stepnum { background: var(--red); color: #fff; }
+
+/* SPLASH */
+.splash {
+  background: var(--cyan);
+  background-image:
+    repeating-conic-gradient(from 0deg at 72% 38%, rgba(255,255,255,.18) 0 6deg, transparent 6deg 14deg),
+    radial-gradient(rgba(22,18,28,.18) 1.4px, transparent 1.6px);
+  background-size: auto, 8px 8px;
+  padding: 28px 24px 26px; overflow: hidden;
+  display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: center;
+}
+@media (max-width: 760px) { .splash { grid-template-columns: minmax(0,1fr); } }
+.issue { font-family: var(--display); letter-spacing: .1em; font-size: 16px; display: flex; gap: 10px; flex-wrap: wrap; }
+.issue span { background: var(--ink); color: var(--yellow); padding: 2px 8px 0; }
+.splash h1 {
+  font-size: clamp(54px, 10vw, 104px); color: var(--yellow);
+  -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill;
+  text-shadow: 5px 5px 0 var(--ink); margin: 10px 0 8px;
+}
+.hey { font-family: var(--display); font-size: clamp(24px, 3.4vw, 32px); color: #fff; -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; letter-spacing: .05em; }
+.splash p.lede { background: #fff; border: 3px solid var(--ink); padding: 12px 14px; box-shadow: 4px 4px 0 var(--ink); font-size: 18px; margin-top: 14px; }
+.hero-art { position: relative; min-width: 0; }
+.hero-art svg { width: 100%; height: auto; display: block; max-width: 380px; margin: 0 auto; }
+
+/* SPEECH */
+.bubble {
+  position: relative; background: #fff; border: 3px solid var(--ink); border-radius: 22px;
+  padding: 10px 14px; font-weight: 700; font-size: 17px; max-width: 34ch;
+}
+.bubble::after {
+  content: ""; position: absolute; left: 26px; bottom: -16px; width: 22px; height: 18px;
+  background: #fff; border-right: 3px solid var(--ink); border-bottom: 3px solid var(--ink);
+  transform: skewX(-35deg) rotate(8deg); border-bottom-right-radius: 4px;
+}
+.bubble.right { align-self: flex-end; }
+.bubble.right::after { left: auto; right: 26px; transform: skewX(35deg) rotate(-8deg); border-right: 0; border-left: 3px solid var(--ink); border-bottom-left-radius: 4px; border-bottom-right-radius: 0; }
+.bubble.shout { background: var(--yellow); font-family: var(--display); font-weight: 400; letter-spacing: .05em; font-size: 24px; border-radius: 6px; }
+.bubble.shout::after { background: var(--yellow); }
+.who { font-family: var(--display); letter-spacing: .08em; font-size: 15px; color: var(--muted); }
+
+/* PHONE MOCKS */
+.phone {
+  width: 100%; max-width: 300px; margin: 4px auto 0; background: var(--ink); border-radius: 30px;
+  padding: 14px 10px 18px; box-shadow: 5px 5px 0 var(--red);
+}
+.screen { background: var(--screen); border-radius: 18px; padding: 14px 12px; color: #e8e8f0; font-family: var(--pixel); font-size: 8.5px; line-height: 1.7; }
+.gate { border: 2px solid #ffd840; border-radius: 10px; padding: 10px; display: grid; gap: 8px; }
+.gate .t { color: #ffd840; text-align: center; font-size: 10px; letter-spacing: .08em; }
+.gate .sub { color: #9a9aa8; font-size: 7px; text-align: center; }
+.field { border: 1.5px solid var(--green); border-radius: 6px; padding: 6px 8px; color: #fff; font-size: 9px; }
+.field small { display: block; color: #9a9aa8; font-size: 6.5px; margin-bottom: 3px; }
+.sw { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1.5px solid var(--green); background: rgba(57,255,20,.1); border-radius: 6px; padding: 6px 8px; }
+.sw b { font-weight: 400; color: #fff; }
+.sw i { font-style: normal; display: block; color: #9a9aa8; font-size: 6px; }
+.knob { flex: none; width: 30px; height: 17px; border-radius: 10px; border: 1.5px solid var(--green); background: rgba(57,255,20,.3); position: relative; }
+.knob::after { content: ""; position: absolute; right: 2px; top: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.btns { display: flex; gap: 6px; }
+.btns div { flex: 1; min-width: 0; text-align: center; border: 2px solid; border-radius: 6px; padding: 7px 3px; font-size: 6.5px; overflow-wrap: anywhere; }
+.sw > span:first-child { min-width: 0; }
+.yes { border-color: var(--green) !important; color: var(--green); background: rgba(57,255,20,.15); }
+.no { border-color: #777 !important; color: #bbb; }
+.tapme { position: relative; }
+.tapme::before {
+  content: "TAP!"; position: absolute; right: -14px; top: -18px; z-index: 2;
+  font-family: var(--display); font-size: 18px; letter-spacing: .05em; color: var(--ink);
+  background: var(--yellow); border: 2px solid var(--ink); padding: 0 6px; transform: rotate(10deg);
+}
+
+/* game screen mock */
+.arena { position: relative; height: 150px; background: #1a1424; border-radius: 10px; overflow: hidden;
+  background-image: linear-gradient(#2a2238 2px, transparent 2px), linear-gradient(90deg, #2a2238 2px, transparent 2px);
+  background-size: 22px 22px; }
+.pill { position: absolute; right: 8px; top: 8px; font-size: 7px; color: var(--ink); background: var(--green); border-radius: 10px; padding: 4px 7px; }
+.hero-dot, .ally-dot, .ghost, .key { position: absolute; width: 14px; height: 14px; }
+.hero-dot { left: 40%; top: 55%; background: #ffd840; border-radius: 3px; }
+.ally-dot { left: 30%; top: 62%; background: #5ab0ff; border-radius: 3px; }
+.ghost { left: 70%; top: 30%; background: #e2e2f0; border-radius: 7px 7px 2px 2px; }
+.ghost.g2 { left: 78%; top: 52%; }
+.key { left: 14%; top: 18%; width: 16px; height: 8px; background: #ffd840; border-radius: 4px; }
+.pad { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+.stick { width: 54px; height: 54px; border-radius: 50%; border: 2px solid #555; display: grid; place-items: center; }
+.stick::after { content: ""; width: 22px; height: 22px; border-radius: 50%; background: #666; }
+.abtns { display: flex; gap: 8px; }
+.abtns span { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 6.5px; border: 2px solid #555; color: #ccc; }
+.abtns span:first-child { border-color: var(--red); color: #ff8a80; }
+
+.badge-row { display: grid; gap: 10px; }
+.badge { font-family: var(--pixel); font-size: 10px; padding: 8px 12px; border-radius: 20px; border: 2px solid var(--ink); display: inline-flex; gap: 8px; align-items: center; justify-self: start; }
+.badge.up { background: var(--green); }
+.badge.q { background: var(--yellow); }
+
+/* misc */
+.kit { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+.kit div { border: 3px solid var(--ink); padding: 10px; background: var(--paper); font-weight: 700; display: flex; gap: 10px; align-items: center; }
+.kit svg { flex: none; width: 34px; height: 34px; }
+.link-box { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.url { font-family: var(--pixel); font-size: 11px; background: var(--ink); color: var(--yellow); padding: 10px 12px; word-break: break-all; min-width: 0; }
+.copy { font-family: var(--display); font-size: 18px; letter-spacing: .06em; border: 3px solid var(--ink); background: var(--red); color: #fff; padding: 6px 14px 4px; cursor: pointer; box-shadow: 3px 3px 0 var(--ink); }
+.copy:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--ink); }
+.copy:focus-visible, a:focus-visible { outline: 3px solid var(--magenta); outline-offset: 3px; }
+#qr { background: #fff; padding: 8px; border: 3px solid var(--ink); align-self: flex-start; }
+#qr img, #qr canvas { display: block; width: 132px; height: 132px; }
+.row { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+.row > * { min-width: 0; }
+ul.calls { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+ul.calls li { font-family: var(--display); font-size: 21px; letter-spacing: .05em; background: var(--yellow); border: 3px solid var(--ink); padding: 3px 10px 0; transform: rotate(-1deg); }
+ul.calls li:nth-child(even) { transform: rotate(1.2deg); background: #fff; }
+.games { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+@media (max-width: 560px) { .games { grid-template-columns: minmax(0,1fr); } }
+.game { border: 3px solid var(--ink); padding: 12px; background: var(--paper); display: grid; gap: 6px; align-content: start; }
+.game a { font-family: var(--display); font-size: 22px; letter-spacing: .05em; color: var(--red); text-decoration: none; }
+.game a:hover { text-decoration: underline; }
+.game.star { background: var(--yellow); }
+.game small { font-family: var(--display); letter-spacing: .08em; font-size: 14px; }
+.mission { background: var(--magenta); color: #fff; }
+.mission h2 { color: var(--yellow); -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.checks li { display: flex; gap: 12px; align-items: flex-start; font-size: 18px; font-weight: 700; }
+.checks li::before { content: ""; flex: none; width: 24px; height: 24px; border: 3px solid var(--ink); background: #fff; margin-top: 1px; box-shadow: 2px 2px 0 var(--ink); }
+.fine { background: #fff; }
+.fine dl { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin: 0; }
+.fine dt { font-family: var(--display); letter-spacing: .05em; font-size: 19px; }
+.fine dd { margin: 0; font-size: 16px; }
+.pow { font-family: var(--display); color: var(--red); font-size: 44px; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; transform: rotate(-8deg); align-self: flex-end; line-height: .9; letter-spacing: .03em; }
+.footer { text-align: center; font-family: var(--display); letter-spacing: .1em; font-size: 18px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- SPLASH -->
+  <section class="panel w6 splash">
+    <div>
+      <div class="issue"><span>PLAICRAFT COMICS</span><span>ISSUE #1</span><span>FREE · 20 MIN</span></div>
+      <h1>PLAYER TWO WANTED!</h1>
+      <div class="hey" id="hey">HEY, FRIEND OF JON!</div>
+      <p class="lede">Jon is training an AI that plays arcade games <b>with</b> people, and listens when a teammate yells
+        &ldquo;grab the key!&rdquo; It can only learn from real humans playing for real. The bot's never met you.
+        Grab your phone, play a few rounds, and talk while you do. Your clumsy runs teach it as much as your great ones.</p>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <svg viewBox="0 0 320 300">
+        <!-- burst -->
+        <polygon points="160,8 186,70 250,40 222,104 300,112 232,150 292,206 214,192 222,270 168,218 120,284 116,204 36,226 90,164 18,124 98,106 70,40 134,72" fill="#ffd23f" stroke="#16121c" stroke-width="5" stroke-linejoin="round"/>
+        <!-- robot -->
+        <line x1="160" y1="78" x2="160" y2="98" stroke="#16121c" stroke-width="5"/>
+        <circle cx="160" cy="72" r="9" fill="#e5352b" stroke="#16121c" stroke-width="4"/>
+        <rect x="108" y="98" width="104" height="80" rx="14" fill="#fff" stroke="#16121c" stroke-width="5"/>
+        <rect x="122" y="112" width="76" height="40" rx="8" fill="#101018"/>
+        <rect x="134" y="122" width="14" height="14" fill="#39ff14"/>
+        <rect x="172" y="122" width="14" height="14" fill="#39ff14"/>
+        <rect x="146" y="160" width="28" height="6" rx="3" fill="#16121c"/>
+        <rect x="118" y="182" width="84" height="56" rx="10" fill="#1d9fdb" stroke="#16121c" stroke-width="5"/>
+        <text x="160" y="218" text-anchor="middle" font-family="Bangers, Impact, sans-serif" font-size="22" fill="#fff" stroke="#16121c" stroke-width="1">P2?</text>
+        <rect x="80" y="190" width="38" height="14" rx="7" fill="#fff" stroke="#16121c" stroke-width="4" transform="rotate(-30 99 197)"/>
+        <rect x="202" y="186" width="38" height="14" rx="7" fill="#fff" stroke="#16121c" stroke-width="4" transform="rotate(25 221 193)"/>
+        <!-- gamepad in hand -->
+        <rect x="226" y="194" width="52" height="30" rx="12" fill="#e2418f" stroke="#16121c" stroke-width="4"/>
+        <circle cx="266" cy="206" r="4" fill="#fff"/><circle cx="256" cy="214" r="4" fill="#fff"/>
+        <rect x="234" y="206" width="12" height="4" fill="#fff"/><rect x="238" y="202" width="4" height="12" fill="#fff"/>
+        <!-- bubble -->
+        <path d="M18 18 h120 a14 14 0 0 1 14 14 v30 a14 14 0 0 1 -14 14 h-58 l-18 22 l2 -22 h-46 a14 14 0 0 1 -14 -14 v-30 a14 14 0 0 1 14 -14 z" fill="#fff" stroke="#16121c" stroke-width="4"/>
+        <text x="78" y="44" text-anchor="middle" font-family="Bangers, Impact, sans-serif" font-size="17" fill="#16121c">TEACH ME</text>
+        <text x="78" y="64" text-anchor="middle" font-family="Bangers, Impact, sans-serif" font-size="17" fill="#e5352b">TO PLAY!!</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- KIT -->
+  <section class="panel w3 tilt-l">
+    <div class="caption">YOUR KIT</div>
+    <h2>What you'll need</h2>
+    <div class="kit">
+      <div><svg viewBox="0 0 34 34" aria-hidden="true"><rect x="9" y="2" width="16" height="30" rx="4" fill="#1d9fdb" stroke="#16121c" stroke-width="3"/><rect x="12" y="6" width="10" height="18" fill="#fff"/></svg>A phone (Safari or Chrome)</div>
+      <div><svg viewBox="0 0 34 34" aria-hidden="true"><rect x="12" y="3" width="10" height="18" rx="5" fill="#e5352b" stroke="#16121c" stroke-width="3"/><path d="M7 15 a10 10 0 0 0 20 0 M17 25 v6" fill="none" stroke="#16121c" stroke-width="3"/></svg>Your voice</div>
+      <div><svg viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="14" fill="#ffd23f" stroke="#16121c" stroke-width="3"/><path d="M17 9 v9 l6 4" fill="none" stroke="#16121c" stroke-width="3"/></svg>About 20 minutes</div>
+      <div><svg viewBox="0 0 34 34" aria-hidden="true"><path d="M4 26 l6 -10 l6 6 l6 -12 l8 16 z" fill="#39ff14" stroke="#16121c" stroke-width="3" stroke-linejoin="round"/></svg>Wi-Fi or data</div>
+    </div>
+    <p>No account, no app to install. It's a web page.</p>
+  </section>
+
+  <!-- LINK -->
+  <section class="panel w3 tilt-r">
+    <div class="caption stepnum">STEP 1</div>
+    <h2>Open the arcade</h2>
+    <div class="row">
+      <div id="qr" aria-label="QR code for the Gauntlet link"></div>
+      <div style="display:grid; gap:10px; flex:1 1 180px">
+        <p>Reading this on a computer? Point your phone camera at the square. On your phone already? Tap the link.</p>
+        <div class="link-box">
+          <a class="url" id="url" href="/retrogames/gauntlet" target="_blank" rel="noopener">jalfern.com/retrogames/gauntlet</a>
+          <button class="copy" id="copy" type="button">COPY</button>
+        </div>
+      </div>
+    </div>
+    <div class="bubble shout">Turn the phone sideways!</div>
+  </section>
+
+  <!-- CONSENT -->
+  <section class="panel w4">
+    <div class="caption stepnum">STEP 2</div>
+    <h2>The &ldquo;Record this player?&rdquo; screen</h2>
+    <p>Tap to start. Before the first run, the game asks if it can record you. Nothing is switched on until you switch it on.</p>
+    <div class="row" style="align-items:center">
+      <div class="phone" style="flex: 1 1 240px">
+        <div class="screen">
+          <div class="gate">
+            <div class="t">RECORD THIS PLAYER?</div>
+            <div class="sub">One answer per person · private research store</div>
+            <div class="field"><small>Who is playing?</small><span id="mockname">benwen</span>▌</div>
+            <div class="sw"><span><b>Record my play</b><i>controller, touches, seed</i></span><span class="knob"></span></div>
+            <div class="sw"><span><b>Record my voice</b><i>mic audio, lined up</i></span><span class="knob"></span></div>
+            <div class="btns"><div class="yes tapme" id="mocksave">SAVE AS BENWEN</div><div class="no">NO THANKS</div></div>
+          </div>
+        </div>
+      </div>
+      <ol style="flex: 1 1 220px; margin:0; padding-left: 22px; display:grid; gap:10px; font-weight:700">
+        <li>Type your name. <span style="font-weight:400">Use the <b>same name every time</b>, on every game. That's how the bot knows all your runs are one person.</span></li>
+        <li>Flip <b>both</b> switches green. <span style="font-weight:400">The voice one matters most.</span></li>
+        <li>Tap <b>SAVE AS <span id="savename">YOU</span></b>.</li>
+        <li>When the phone asks for the <b>microphone</b>, tap Allow.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="panel w2 tilt-l" style="background: var(--yellow)">
+    <div class="caption" style="background:#fff">MEANWHILE…</div>
+    <div class="bubble">Sharing a phone with someone?</div>
+    <div class="bubble right">Each person gets their own name and their own answer. Never play under someone else's name!</div>
+    <div class="pow">NO TWINS!</div>
+  </section>
+
+  <!-- PLAY -->
+  <section class="panel w6">
+    <div class="caption stepnum">STEP 3</div>
+    <h2>Play Gauntlet… and talk the whole time</h2>
+    <div class="row">
+      <div class="phone" style="max-width: 340px; flex: 1 1 280px; margin: 0">
+        <div class="screen">
+          <div class="arena">
+            <div class="pill">MIC ON · LISTENING</div>
+            <div class="key"></div><div class="hero-dot"></div><div class="ally-dot"></div><div class="ghost"></div><div class="ghost g2"></div>
+          </div>
+          <div class="pad"><div class="stick"></div><div class="abtns"><span>A</span><span>BOW</span></div></div>
+        </div>
+      </div>
+      <div style="flex: 1 1 320px; display:grid; gap:14px">
+        <p>You're the yellow hero. A <b>blue CPU partner</b> follows you through the maze. Left thumb walks, <b>A</b> swings your sword, <b>BOW</b> shoots arrows. Find keys, open doors, eat food when your health gets low.</p>
+        <p><b>Now the important bit:</b> tap the <b>MIC</b> pill in the corner and boss your partner around. It actually listens. Try these:</p>
+        <ul class="calls">
+          <li>&ldquo;Follow me!&rdquo;</li><li>&ldquo;Grab the key!&rdquo;</li><li>&ldquo;Hold here!&rdquo;</li><li>&ldquo;Take the upper right!&rdquo;</li>
+        </ul>
+        <p>Then just keep talking like you would to a friend on the couch: &ldquo;ugh, ghosts&rdquo;, &ldquo;wait, where's the door?&rdquo;, &ldquo;nope nope nope.&rdquo; That out-loud chatter is exactly what the bot needs to hear.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- UPLOAD -->
+  <section class="panel w3 tilt-r">
+    <div class="caption stepnum">STEP 4</div>
+    <h2>Watch for the badge</h2>
+    <p>When a run ends, a little badge pops up. Either one means it worked:</p>
+    <div class="badge-row">
+      <div class="badge up">✓ TAKE UPLOADED</div>
+      <div class="badge q">⏳ TAKE SAVED — WILL SYNC</div>
+    </div>
+    <p>&ldquo;Will sync&rdquo; means your signal was weak. It sends the next time you open the arcade with a connection, so open the link again later.</p>
+  </section>
+
+  <section class="panel w3 tilt-l" style="background: var(--cyan)">
+    <div class="caption">THE BOT SAYS…</div>
+    <div class="bubble">Don't try to play perfectly!</div>
+    <div class="bubble right">I learn from the mistakes, the panic and the &ldquo;wait, go back!&rdquo; moments too.</div>
+    <div class="bubble">And play solo with the CPU partner. Online rooms with friends aren't recorded yet.</div>
+  </section>
+
+  <!-- SECOND GAME -->
+  <section class="panel w6">
+    <div class="caption stepnum">STEP 5</div>
+    <h2>Then play a second game</h2>
+    <p>The bot has to learn more than one game, so play at least one of these too. Same name, both switches on. Find the mic button and talk here too.</p>
+    <div class="games">
+      <div class="game star">
+        <small>★ START HERE</small>
+        <a href="/retrogames/short-order-shout" target="_blank" rel="noopener">SHORT ORDER SHOUT</a>
+        <p>An all-night diner. Burgers, soup and burner fires, with the CPU cook across the counter. Hold the MIC button and yell orders.</p>
+      </div>
+      <div class="game">
+        <small>SWEATY PALMS</small>
+        <a href="/retrogames/bomb-defuse" target="_blank" rel="noopener">BOMB DEFUSE</a>
+        <p>Two hands, one bomb. Both of you turn the keys together or nothing counts. Try &ldquo;cut blue!&rdquo; and &ldquo;hold!&rdquo;</p>
+      </div>
+      <div class="game">
+        <small>MUDDY</small>
+        <a href="/retrogames/rally-co-driver" target="_blank" rel="noopener">RALLY CO-DRIVER</a>
+        <p>Drive blind on a rally stage. The pace notes are all you know. Read them out loud: &ldquo;left two!&rdquo;, &ldquo;hard right!&rdquo;</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- MISSION -->
+  <section class="panel w3 mission tilt-r">
+    <div class="caption">MISSION CARD</div>
+    <h2>Mission complete when…</h2>
+    <ul class="checks">
+      <li>You played Gauntlet a few times (3 or more is great)</li>
+      <li>You played at least one other game from Step 5 a couple of times</li>
+      <li>Voice was on, and you talked</li>
+      <li>You used the same name every time</li>
+      <li>You texted Jon your name so he can thank you</li>
+    </ul>
+  </section>
+
+  <!-- FINE PRINT -->
+  <section class="panel w3 fine">
+    <div class="caption">THE FINE PRINT (IT'S SHORT)</div>
+    <dl>
+      <div><dt>What's recorded</dt><dd>Your button presses and touches, the game's random seed and checkpoints so the run can be replayed, and your mic audio, but only if you turned the voice switch on.</dd></div>
+      <div><dt>Where it goes</dt><dd>A private research store that only Jon can see. It's used to train his game bot and nothing else.</dd></div>
+      <div><dt>Saying no</dt><dd>Tap NO THANKS and the game plays exactly the same. Nothing leaves the phone.</dd></div>
+      <div><dt>Changing your mind</dt><dd>Your answer stays on that phone for 90 days, then it asks again. Want your recordings deleted? Tell Jon and he'll remove them.</dd></div>
+    </dl>
+  </section>
+
+  <div class="footer w6">THANKS FOR PLAYING, PLAYER TWO · TO BE CONTINUED IN ISSUE #2: &ldquo;THE BOT PLAYS BACK&rdquo;</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(function () {
+  var URL_ = 'https://jalfern.com/retrogames/gauntlet';
+  // Personalise from #name (e.g. …#benwen)
+  function apply() {
+    var raw = decodeURIComponent((location.hash || '').slice(1)).replace(/[^a-zA-Z0-9 _-]/g, '').trim();
+    var name = raw ? raw.slice(0, 24) : '';
+    var id = name ? name.toLowerCase().replace(/\s+/g, '') : 'yourname';
+    document.getElementById('hey').textContent = name ? 'HEY ' + name.toUpperCase() + '!' : 'HEY, FRIEND OF JON!';
+    document.getElementById('mockname').textContent = id;
+    document.getElementById('mocksave').textContent = 'SAVE AS ' + id.toUpperCase();
+    document.getElementById('savename').textContent = name ? id.toUpperCase() : 'YOU';
+  }
+  apply();
+  window.addEventListener('hashchange', apply);
+
+  try {
+    if (window.QRCode) new QRCode(document.getElementById('qr'), { text: URL_, width: 264, height: 264, colorDark: '#16121c', colorLight: '#ffffff' });
+    else document.getElementById('qr').hidden = true;
+  } catch (e) { document.getElementById('qr').hidden = true; }
+
+  var btn = document.getElementById('copy');
+  btn.addEventListener('click', function () {
+    var done = function () { btn.textContent = 'COPIED!'; setTimeout(function () { btn.textContent = 'COPY'; }, 1600); };
+    var fallback = function () {
+      var r = document.createRange(); r.selectNodeContents(document.getElementById('url'));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = 'SELECTED';
+    };
+    try { navigator.clipboard.writeText(URL_).then(done, fallback); } catch (e) { fallback(); }
+  });
+})();
+</script>
+</body>
+</html>
