@@ -134,6 +134,9 @@ export const MANUAL_CHECKS = [
   // #2807: DOUBLE DRAGON S1 readiness gate — browser leg needs the dev server;
   // advisory from the lane: npm run ddragoncheck.
   "scripts/ddragoncheck.mjs",
+  // #2808: R-TYPE S1 readiness gate — browser-driven; advisory from the lane:
+  // npm run rtypecheck.
+  "scripts/rtypecheck.mjs",
   "scripts/creditscheck.mjs",
   "scripts/deepglasscheck.mjs",
   "scripts/defendercheck.mjs",

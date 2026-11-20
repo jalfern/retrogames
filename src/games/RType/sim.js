@@ -177,12 +177,13 @@ function startPhase1(gs) {
 // ---- death / clear ---------------------------------------------------------
 
 function killShip(gs, why) {
-    if (gs.ship.dead || gs.ship.inv > 0 || gs.mode !== 'play') return
+    if (gs.ship.dead || gs.ship.inv > 0 || gs.mode !== 'play') return false
     gs.ship.dead = true
     gs.dyingT = CFG.dying
     gs.events.push('die')
     gs.lastDeath = why
     gs.lives -= 1
+    return true
 }
 
 function respawn(gs) {
@@ -261,7 +262,7 @@ function runWorld(gs, pad, frozen) {
     }
     if (s.x < gs.camX + 2) s.x = gs.camX + 2
     if (s.x > gs.camX + W - 10) s.x = gs.camX + W - 10
-    if (!frozen && s.x - CFG.crushX <= gs.camX) { killShip(gs, 'crush'); return }
+    if (!frozen && s.x - CFG.crushX <= gs.camX && killShip(gs, 'crush')) return
 
     // --- ship
     if (!frozen) {
@@ -375,6 +376,7 @@ function runWorld(gs, pad, frozen) {
             }
             if (e.x < gs.camX - 24) { gs.enemies.splice(i, 1); continue }
         } else if (e.kind === 'turret') {
+            e.aim = Math.atan2(gs.ship.y - e.y, gs.ship.x - e.x)
             e.cd -= 1
             if (e.cd <= 0 && !frozen && e.x > gs.camX && e.x < gs.camX + W + 10) {
                 const dx = s.x - e.x, dy = s.y - e.y
@@ -432,6 +434,7 @@ function runWorld(gs, pad, frozen) {
                 else if (e.kind === 'pod') struck = Math.abs(e.x - q.x) < 11 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 : 8)
                 if (!struck) continue
                 if (e.kind === 'hullseg') { gs.events.push('clank'); dead = true; break } // armour eats it
+                gs.lastHitX = e.x; gs.lastHitY = e.y
                 e.hp -= q.kind === 'w' ? 2 : 1
                 q.hit.push(e.id)
                 gs.events.push('hit')
@@ -503,11 +506,11 @@ function runWorld(gs, pad, frozen) {
             else if (e.kind === 'turret') hit = Math.abs(e.x - s.x) < 9 && Math.abs(e.y - s.y) < 8
             else if (e.kind === 'pod') hit = Math.abs(e.x - s.x) < 11 && Math.abs(e.y - s.y) < 9
             else if (e.kind === 'hullseg') hit = s.x + 5 > e.x && s.x - 5 < e.x + e.len && s.y + 4 > e.y0 && s.y - 4 < e.y1
-            if (hit) { killShip(gs, 'body:' + e.kind); return }
+            if (hit) { if (killShip(gs, 'body:' + e.kind)) return }
         }
         if (p1 && p1.dyingT === 0 && p1.x < gs.camX + W - 4 && s.x + 5 > p1.x + 4) {
-            killShip(gs, 'hull') // the bio-ship's flank is a death wall, top to bottom
-            return
+            // the bio-ship's flank is a death wall, top to bottom
+            if (killShip(gs, 'hull')) return
         }
     }
 }

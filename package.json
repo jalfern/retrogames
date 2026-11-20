@@ -283,6 +283,7 @@
     "contractcheck": "node scripts/contractcheck.mjs",
     "contracheck": "node scripts/contracheck.mjs",
     "ddragoncheck": "node scripts/ddragoncheck.mjs",
+    "rtypecheck": "node scripts/rtypecheck.mjs",
     "claimcheck": "node scripts/claimcheck.mjs",
     "lanecheck": "node scripts/lanecheck.mjs",
     "sleepwatchcheck": "node scripts/sleepwatchcheck.mjs",

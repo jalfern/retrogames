@@ -56,6 +56,7 @@ const GAMES = [
     { id: 'bomb-defuse', path: '/bomb-defuse' }, // #1800: the recorder's fifth title
     { id: 'contra', path: '/contra' }, // #2779: Jon's #1530 commission, S1 the jungle
     { id: 'double-dragon', path: '/double-dragon' }, // #2807: Jon's #2795 commission, S1 Walnuts Street
+    { id: 'r-type', path: '/r-type' }, // #2808: Jon's #2795 second flagship, S1 Armament
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
@@ -138,6 +139,10 @@ const PATTERNS = {
     // often, and sweeps the aim so 8-way firing gets sampled.
     'double-dragon': (i) => ({ left: i % 53 < 14, right: i % 53 >= 20 && i % 53 < 38, up: i % 61 < 8, down: i % 61 >= 26 && i % 61 < 40, a: i % 97 < 2, b: i % 7 < 2 }),
     contra: (i) => ({ left: i % 89 < 18, right: i % 89 >= 24 && i % 89 < 70, up: i % 53 < 8, down: i % 53 >= 30 && i % 53 < 38, a: i % 17 < 2, b: i % 5 < 3 }),
+    // #2808: the pod-shooter — steady stream, sideways sway to sample the
+    // lane war, occasional thrusts (death by edge is legal; respawn keeps
+    // ticks flowing and hashes deterministic, contra-style).
+    'r-type': (i) => ({ right: i % 89 < 30, left: i % 89 >= 60 && i % 89 < 72, up: i % 61 < 12, down: i % 61 >= 30 && i % 61 < 42, a: i % 5 < 4 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 

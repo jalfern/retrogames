@@ -107,6 +107,7 @@ export const GAMES = [
     { id: 'bomb-defuse', path: '/bomb-defuse' }, // #1800: same index as contractGames
     { id: 'contra', path: '/contra' }, // #2796 grew contractGames; the soak roster missed it — nightly run 44762398189 reddened main (#1525 law: never grow one list without the other)
     { id: 'double-dragon', path: '/double-dragon' }, // #2807: join BOTH lists at once (#1525)
+    { id: 'r-type', path: '/r-type' }, // #2808: join BOTH lists at once (#1525)
 ]
 const CAP = 9000
 
