@@ -54,7 +54,9 @@ const G = {
     '+': '.....|..#..|..#..|#####|..#..|..#..|.....',
 }
 
-export function textWidth(s, sc = 1) { return s.length * 6 * sc - sc }
+// 2 px letter-gap: 5-wide glyphs at a 7px advance sit a hair looser and read
+// far better scaled up on phone screens (#2818: the cube font was a touch tight)
+export function textWidth(s, sc = 1) { return s.length * 7 * sc - sc }
 
 export function drawText(ctx, s, x, y, color, sc = 1) {
     ctx.fillStyle = color
@@ -63,7 +65,7 @@ export function drawText(ctx, s, x, y, color, sc = 1) {
         const rows = g.split('|')
         for (let r = 0; r < 7; r++) {
             for (let c = 0; c < 5; c++) {
-                if (rows[r][c] === '#') ctx.fillRect(x + i * 6 * sc + c * sc, y + r * sc, sc, sc)
+                if (rows[r][c] === '#') ctx.fillRect(x + i * 7 * sc + c * sc, y + r * sc, sc, sc)
             }
         }
     }
@@ -221,9 +223,19 @@ export function drawBackground(ctx, camX, tick) {
 // --------------------------------------------------------------- pieces ----
 export function drawShip(ctx, ship, camX) {
     if (ship.dead) return
-    if (ship.inv > 0 && (ship.inv >> 2) % 2 === 0) return // mercy flicker
+    // mercy state reads as a SHIELD, not as a missing ship (#2818: full-invisible
+    // flicker frames over a bright starfield looked like a dropped sprite)
+    const ghost = ship.inv > 0 && (ship.inv >> 2) % 2 === 0
+    if (ghost) ctx.globalAlpha = 0.38
     const f = (ship.anim >> 2) % 2
-    ctx.drawImage(SPR.ship[f], Math.round(ship.x - camX) - 13, Math.round(ship.y) - 8)
+    const sx = Math.round(ship.x - camX) - 13, sy = Math.round(ship.y) - 8
+    ctx.drawImage(SPR.ship[f], sx, sy)
+    if (ghost) {
+        ctx.globalAlpha = 1
+        ctx.strokeStyle = 'rgba(55,208,255,0.55)'
+        ctx.lineWidth = 1
+        ctx.strokeRect(sx - 1.5, sy - 1.5, 29, 19)
+    }
 }
 
 export function drawLarva(ctx, e, camX) {
@@ -312,6 +324,16 @@ export function drawSeg(ctx, e, camX) {
 
 // the Phase-1 bio-ship: plated dread mass with eyes and the maw
 export function drawP1(ctx, p1, camX, tick) {
+    // death roll (#2818): a stricken hull lurches, shudders and lists over
+    const dying = p1.dyingT > 0
+    const k = dying ? 170 - p1.dyingT : 0
+    ctx.save()
+    if (dying) {
+        const cx = Math.round(p1.x - camX) + 60, cy = 120
+        ctx.translate(cx, cy)
+        ctx.rotate(k * 0.0011)
+        ctx.translate(-cx + (((tick * 13) % 3) - 1), -cy + (((tick * 7) % 3) - 1))
+    }
     const x = Math.round(p1.x - camX)
     const top = 34, bot = 200
     // body
@@ -363,14 +385,28 @@ export function drawP1(ctx, p1, camX, tick) {
         ctx.fillRect(mouthX - 2, coreY - 18, 34, 4)
         ctx.fillRect(mouthX - 2, coreY + 14, 34, 4)
     }
+    if (dying) {
+        // breaking-up cascade: plates strobe hot and the maw spasms wide (#2818)
+        if ((tick >> 1) % 3 !== 0) {
+            ctx.fillStyle = 'rgba(255,150,40,0.16)'
+            ctx.fillRect(x - 4, top, W + 40, bot - top)
+        }
+        ctx.fillStyle = '#ff8a2a'
+        for (let i = 0; i < 4; i++) {
+            const fx = x + 16 + ((k * 7 + i * 37) % 120)
+            const fy = top + 10 + ((k * 5 + i * 53) % (bot - top - 20))
+            ctx.fillRect(fx, fy, 3 + (k % 4), 3 + ((k >> 1) % 3))
+        }
+    }
+    ctx.restore()
 }
 
 // ---------------------------------------------------------------- HUD ----
 export function drawHud(ctx, gs) {
     drawText(ctx, '1UP', 8, 8, (gs.tick % 50) < 36 ? '#e03030' : '#601010')
     drawText(ctx, String(gs.score).padStart(7, '0'), 44, 8, '#f0f0f0')
-    drawText(ctx, 'HI', 200, 8, '#37d0ff')
-    drawText(ctx, String(Math.max(gs.hi, gs.score)).padStart(7, '0'), 224, 8, '#f0f0f0')
+    drawText(ctx, 'HI', 196, 8, '#37d0ff')
+    drawText(ctx, String(Math.max(gs.hi, gs.score)).padStart(7, '0'), 220, 8, '#f0f0f0')
     for (let i = 0; i < Math.min(gs.lives - 1, 5); i++) ctx.drawImage(SPR.shipIcon, 8 + i * 15, H - 12)
     const wl = gs.ship.weapon === 'wave' ? 'WAVE' : 'VULCAN'
     drawText(ctx, wl, 90, H - 12, gs.ship.weapon === 'wave' ? '#37d0ff' : '#9ac93c')
@@ -385,32 +421,34 @@ export function drawHud(ctx, gs) {
 }
 
 export function drawBanner(ctx, gs) {
+    const center = (s, y, col, sc = 1) => drawText(ctx, s, Math.round((W - textWidth(s, sc)) / 2), y, col, sc)
     if (gs.mode === 'clear') {
-        drawText(ctx, 'STAGE CLEAR', 76, 96, '#37d0ff', 2)
-        drawText(ctx, String(gs.score).padStart(7, '0'), 116, 124, '#f0f0f0')
+        center('STAGE CLEAR', 96, '#37d0ff', 2)
+        center(String(gs.score).padStart(7, '0'), 124, '#f0f0f0')
     } else if (gs.tick < 140 && gs.mode === 'play') {
-        drawText(ctx, 'STAGE 1  OUTER SPACE', 84, 100, '#9ac93c')
+        center('STAGE 1  OUTER SPACE', 100, '#9ac93c')
     }
 }
 
 export function drawAttract(ctx, phase, tick) {
     // the logo: blocky cyan-blue with a white top edge
-    const lx = (W - textWidth('R-TYPE', 5)) / 2
+    const lx = Math.round((W - textWidth('R-TYPE', 5)) / 2)
     drawText(ctx, 'R-TYPE', lx + 3, 53, '#101830', 5)
     drawText(ctx, 'R-TYPE', lx, 50, '#37d0ff', 5)
     for (let i = 0; i < 'R-TYPE'.length; i++) {
         const g = G['R-TYPE'[i]].split('|')
         ctx.fillStyle = '#eaffff'
-        for (let c = 0; c < 5; c++) if (g[0][c] === '#') ctx.fillRect(lx + i * 30 + c * 5, 50, 5, 5)
+        for (let c = 0; c < 5; c++) if (g[0][c] === '#') ctx.fillRect(lx + i * 35 + c * 5, 50, 5, 5)
     }
-    drawText(ctx, 'THE FIGHTING FANTASY', 84, 92, '#8ae8ff')
+    const center = (s, y, col, sc = 1) => drawText(ctx, s, Math.round((W - textWidth(s, sc)) / 2), y, col, sc)
+    center('THE FIGHTING FANTASY', 92, '#8ae8ff')
     const msgs = [
         'ENEMY BIOMECHANICAL FLEET : BYDO',
         'WAVE CANNON : HOLD FIRE, RELEASE',
         'SHOOT THE MAW WHEN IT GAPES',
         'THE LEFT EDGE DOES NOT FORGIVE',
     ]
-    drawText(ctx, msgs[phase % msgs.length], (W - textWidth(msgs[phase % msgs.length])) / 2, 124, '#f0f0f0')
-    if ((tick >> 4) % 2 === 0) drawText(ctx, 'PUSH ANY KEY', (W - textWidth('PUSH ANY KEY')) / 2, 152, '#ffd23c')
-    drawText(ctx, 'IREM-ERA CABINET, REBUILT IN CODE', 52, 176, '#3c4c68')
+    center(msgs[phase % msgs.length], 124, '#f0f0f0')
+    if ((tick >> 4) % 2 === 0) center('PUSH ANY KEY', 152, '#ffd23c')
+    center('IREM-ERA CABINET, REBUILT IN CODE', 176, '#3c4c68')
 }

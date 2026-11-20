@@ -7,7 +7,7 @@ escorts you to the core.
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL
-node scripts/rtypecheck.mjs       # sim + browser: 21 laws + the named mutant
+node scripts/rtypecheck.mjs       # sim + browser: 41 checks incl. the #2818 polish laws
 node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core`
 ```
 `rtypecheck` covers: the camera law (right only, the left edge grinds), one-hit
@@ -19,6 +19,14 @@ pass, larvae die when the carrier dies), and the winnability proof (autopilot
 clears ≥ ⅓ of seeds 1..12).
 
 ## The design decisions worth knowing
+- **#2818 polish (QA lane):** pods ease into their hover (speed bleeds to a
+  creep, bob ramps in from the settle); volley gaps are arithmetic per pod,
+  never a fixed 170; the maw announces its cycle (`mawopen`/`mawshut` events
+  → horn / seal-clank); a broken core sends the hull recoiling right under a
+  death roll with rakes across its face; mercy reads as a ghost + shield
+  outline, not a vanished ship. These stay RNG-free on purpose: gs.rng draws
+  are byte-identical to the tuned baseline, so the winnability law measures
+  the same waters the forge calibrated.
 - **`src/games/RType/sim.js` is DOM-free and seed-deterministic** — all random
   rides `gs.state.rng` (mulberry32). The React shell is thin; the contract
   harness (`__rTest`) and the nightly bot drive the same sim.
