@@ -298,7 +298,7 @@ export default function DoubleDragon() {
                         gs.waveIdx = 3; gs.waveActive = false; gs.camLock = false
                         gs.enemies.length = 0
                         gs.camX = 640
-                        gs.billy.x = 870; gs.billy.y = gs.marian.y
+                        gs.billy.x = 894; gs.billy.y = gs.marian.y
                     }
                     if (opts.knifeGoon) {
                         gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: gs.billy.x + 70, y: gs.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 20, attackCooldown: 999, inv: 0, spinHit: false })

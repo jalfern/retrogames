@@ -600,6 +600,17 @@ const browser = await launch()
     const thrown = await page.evaluate(() => window.__ddTest.probe())
     r.check('S2: Z with a knife THROWS it through the shell (hand empties, blade in flight)', thrown.weapon === null && (thrown.projectiles === 1 || thrown.billyState === 'throw' || thrown.pickups.includes('knife')), `weapon=${thrown.weapon} state=${thrown.billyState} projectiles=${thrown.projectiles}`)
 
+    // S3 leg: warp to the yard's end and cut the ropes through the real key path
+    await page.evaluate(() => window.__ddTest.setup({ warp: 'marian' }))
+    await page.waitForTimeout(300)
+    const tied = await page.evaluate(() => window.__ddTest.probe())
+    await page.keyboard.press('KeyZ')
+    await page.waitForTimeout(220)
+    await page.keyboard.press('KeyZ')
+    await page.waitForTimeout(300)
+    const freed = await page.evaluate(() => window.__ddTest.probe())
+    r.check('S3: Z cuts Marian loose through the shell — tied to free on real keystrokes', tied.stage === 2 && tied.marian === 'tied:0' && freed.marian === 'free', `stage=${tied.stage} before=${tied.marian} after=${freed.marian}`)
+
     // drawn-vs-logical: the frame is something, and it changed across inputs
     const frameA = await page.evaluate(() => window.__game && window.__game.frame())
     r.check('the canvas paints (contract frame is not black-static)', typeof frameA === 'string' && frameA.length > 5000, `frame ${frameA ? frameA.length : 'null'} bytes`)
