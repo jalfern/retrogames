@@ -175,6 +175,11 @@ export const MANUAL_CHECKS = [
   "scripts/neonraincheck.mjs",
   "scripts/oceancheck.mjs",
   "scripts/padlinkcheck.mjs",
+  // #1712: the human-dataset gate — relaysim round-trip of scripted takes,
+  // split purity, verbatim audio and determinism; --mutant proves the split
+  // line is load-bearing. Pure Node, deterministic, lane-driven
+  // (npm run plaicraft:datasetcheck).
+  "scripts/plaicraft-datasetcheck.mjs",
   // #1625: the Plaicraft gate regenerates 20 recorded runs and rolls the
   // trained seat — ~40 s per pass; advisory-only, driven from the lane
   // (npm run plaicraftcheck). Deterministic: same commit, same numbers.
