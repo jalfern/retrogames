@@ -40,3 +40,4 @@ qa-art/
 # mutateguard stamps this while a --mutant run owns the worktree (AGENTS.md gotcha:
 # plant() rewrites TRACKED files in place — never stage while it exists)
 .mutant-running
+node_modules
