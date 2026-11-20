@@ -12,9 +12,10 @@
 // seeds 1..12 — the same brain the attract demo shows.
 // Named regressions guard the traps this genre almost always ships with: a hit
 // that ignores the depth axis, which would play the game for itself (you could
-// never dodge) and silently un-faithful — and the S2 ghost-barrel, which would
-// erase the weapons wall. --mutant replants them and demands the harm is NAMED
-// (#2142 direction).
+// never dodge) and silently un-faithful — the S2 ghost-barrel, which would
+// erase the weapons wall — and the S3 pair: casters whose steel ignores the
+// belt, and a Marian who can never be cut free (a run with no ending).
+// --mutant replants them and demands the harm is NAMED (#2142 direction).
 // The browser leg drives real key events through the shell: attract -> seat ->
 // walk/kick -> die -> restart, zero page errors.
 
@@ -22,7 +23,7 @@ import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, W, CFG } from '../src/games/DoubleDragon/sim.js'
+import { makeGame, step, autopilot, stateHash, W, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady } from '../src/games/DoubleDragon/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -49,6 +50,19 @@ const runBot = (seed, max = 20000) => {
         step(gs, autopilot(gs))
         gs.events.length = 0
         if (gs.mode !== 'play') break
+    }
+    return gs
+}
+
+// S3: the whole commission in one drive — Walnuts Street, the hideout, the
+// duel, Marian freed, and the loop home. Done = cleared back on stage 1.
+const runFull = (seed, max = 60000) => {
+    const gs = makeGame(seed)
+    while (gs.tick < max) {
+        step(gs, autopilot(gs))
+        gs.events.length = 0
+        if (gs.mode === 'gameover') break
+        if (gs.cleared && gs.mode === 'play' && gs.stage === 1) break
     }
     return gs
 }
@@ -183,10 +197,10 @@ const runBot = (seed, max = 20000) => {
     }
     r.check('the street locks while a wave lives (you fight where you were caught)', sawLock, `camLock seen=${sawLock}`)
     r.check('the stage is CLEARED, banner and all', clearedMode === 'clear', `mode=${clearedMode}`)
-    r.check('and the loop re-runs Walnuts Street with the score carried', (() => {
-        for (let i = 0; i < 200; i++) step(gs, autopilot(gs))
-        return gs.mode === 'play' && gs.waveIdx === 0 && gs.score > 0 && gs.cleared
-    })(), `mode=${gs.mode} wave=${gs.waveIdx} score=${gs.score}`)
+    r.check('and the road runs on: clearing Walnuts Street opens the hideout (score carried)', (() => {
+        for (let i = 0; i < 200 && gs.mode !== 'play'; i++) step(gs, autopilot(gs))
+        return gs.mode === 'play' && gs.stage === 2 && gs.waveIdx === 0 && gs.score > 0 && !gs.cleared
+    })(), `mode=${gs.mode} stage=${gs.stage} wave=${gs.waveIdx} score=${gs.score}`)
 }
 
 { // the stick: pickup, double reach, lost on death
@@ -275,15 +289,113 @@ const runBot = (seed, max = 20000) => {
     gs.pickups.push({ x: gs.billy.x + 4, y: gs.billy.y, kind: 'whip', bob: 0 })
     step(gs, {}); gs.events.length = 0
     r.check('one in hand: walking over a second weapon changes nothing', gs.billy.weapon === 'knife' && gs.pickups.length === 1, `weapon=${gs.billy.weapon} pickups=${gs.pickups.length}`)
-    const g2 = runBot(10)
-    for (let i = 0; i < 200 && g2.mode !== 'play'; i++) { step(g2, autopilot(g2)); g2.events.length = 0 }
-    r.check('the loop re-arms Walnuts Street: barrels refill for the next pass', g2.mode === 'play' && g2.barrels.length === 3 && g2.barrels.every((q) => q.hp === CFG.barrelHp), `mode=${g2.mode} barrels=${g2.barrels.map((q) => q.hp).join('/')}`)
+    const g2 = runFull(10)
+    for (let i = 0; i < 300 && !(g2.mode === 'play' && g2.stage === 1); i++) { step(g2, autopilot(g2)); g2.events.length = 0 }
+    r.check('the loop re-arms Walnuts Street: barrels refill for the next pass', g2.mode === 'play' && g2.stage === 1 && g2.barrels.length === 3 && g2.barrels.every((q) => q.hp === CFG.barrelHp), `mode=${g2.mode} stage=${g2.stage} barrels=${g2.barrels.map((q) => q.hp).join('/')}`)
+}
+
+// ----------------------------------------------------------- S3 the hideout ---
+{ // the stage door: the yard opens furnished
+    const gs = runBot(10)
+    const carried = gs.score
+    const clearedS1 = gs.mode === 'clear' && gs.bannerKind === 'stage1'
+    for (let i = 0; i < 200 && gs.mode !== 'play'; i++) { step(gs, autopilot(gs)); gs.events.length = 0 }
+    r.check('S3: the yard opens when Walnuts Street falls — stage 2, banner, score carried',
+        clearedS1 && gs.mode === 'play' && gs.stage === 2 && gs.waveIdx === 0 && gs.score >= carried,
+        `s1clear=${clearedS1} mode=${gs.mode} stage=${gs.stage} banner=${gs.bannerKind}`)
+    r.check('S3: the yard is furnished for the duel — crates solid, Marian tied at the end',
+        gs.barrels.length === 3 && gs.barrels.every((q) => q.kind === 'crate' && q.hp === CFG.barrelHp) && !!gs.marian && !gs.marian.freed,
+        `props=${gs.barrels.map((q) => q.kind).join(',')} marian=${gs.marian ? (gs.marian.freed ? 'free' : 'tied') : 'none'}`)
+}
+
+{ // S3 casters: telegraphed steel — aim before the blade, lethal ON the lane
+    const gs = makeGame(40)
+    gs.billy.inv = 0
+    gs.enemies.push({ id: 910, kind: 'williams', x: gs.billy.x + 80, y: gs.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 0, attackCooldown: 9999, inv: 0, spinHit: false })
+    let sawAim = false
+    let bladeAfterAim = false
+    for (let i = 0; i < 120; i++) {
+        step(gs, {}); gs.events.length = 0
+        const e = gs.enemies[0]
+        if (e && e.state === 'aim') sawAim = true
+        if (gs.projectiles.length > 0) { bladeAfterAim = sawAim; break }
+    }
+    r.check('S3: an armed Williams telegraphs — a beat of aim before the blade flies', sawAim && bladeAfterAim, `aim=${sawAim}`)
+    for (let i = 0; i < 60; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('S3: goon steel ON the line takes the life it finds', gs.billy.lives === 2, `lives=${gs.billy.lives}`)
+
+    // depth law, thrown edition: the same cast 10px off the lane whizzes past
+    // (and lands as pickable steel — reusable in both directions)
+    const g2 = makeGame(41)
+    g2.billy.inv = 0
+    g2.billy.y = 180
+    g2.projectiles.push({ id: 999, x: g2.billy.x - 40, y: 170, vx: 3, spin: 0, side: 'goon' })
+    for (let i = 0; i < 150 && g2.projectiles.length; i++) { step(g2, {}); g2.events.length = 0 }
+    r.check('S3: the same blade 10 deep flies past an empty lane — depth is the dodge', g2.billy.lives === 3, `lives=${g2.billy.lives}`)
+    r.check('S3: steel is steel whoever throws it — the escaped blade lands as a pickup', g2.pickups.some((p) => p.kind === 'knife'), `pickups=${g2.pickups.map((p) => p.kind).join(',') || 'none'}`)
+    const g3 = makeGame(41)
+    g3.billy.inv = 0
+    g3.billy.y = 180
+    g3.projectiles.push({ id: 998, x: g3.billy.x - 40, y: 176, vx: 3, spin: 0, side: 'goon' })
+    for (let i = 0; i < 40; i++) { step(g3, {}); g3.events.length = 0 }
+    r.check('S3: and 4 deep is ON the line — the band is real against thrown steel too', g3.billy.lives === 2, `lives=${g3.billy.lives}`)
+
+    // wood stops steel: a crate between thrower and Billy eats the cast
+    const g4 = makeGame(42)
+    g4.billy.inv = CFG.respawnIFrames
+    g4.billy.x = 120
+    g4.barrels.push({ id: 98, x: 90, y: g4.billy.y, hp: CFG.barrelHp, shake: 0, kind: 'crate' })
+    g4.projectiles.push({ id: 997, x: 40, y: g4.billy.y, vx: 3, spin: 0, side: 'goon' })
+    for (let i = 0; i < 40; i++) { step(g4, {}); g4.events.length = 0 }
+    r.check('S3: the yard cover works — crates eat thrown steel before it eats you', g4.billy.lives === 3 && g4.barrels.find((q) => q.id === 98 && q.hp < CFG.barrelHp), `lives=${g4.billy.lives} crateHp=${g4.barrels.find((q) => q.id === 98)?.hp}`)
+
+    // KO an armed Williams and it pays out the steel
+    const g6 = makeGame(43)
+    g6.billy.inv = CFG.respawnIFrames
+    g6.enemies.push({ id: 912, kind: 'williams', x: g6.billy.x + 14, y: g6.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 99999, attackCooldown: 9999, inv: 0, spinHit: false })
+    for (let i = 0; i < 80; i++) { step(g6, { b: i % 20 === 0 }); g6.events.length = 0 }
+    r.check('S3: armed men drop their steel when they go down', g6.enemies.every((e) => e.state === 'dying') && g6.pickups.some((p) => p.kind === 'knife'), `enemies=${g6.enemies.map((e) => e.state).join(',')} pickups=${g6.pickups.map((p) => p.kind).join(',')}`)
+}
+
+{ // S3 the duel: Williams himself — ten hit-points, and the wave ends with him
+    r.check('S3: the lieutenant is cut from harder cloth (10 hp, 800 pts)', ENEMY_DEF.duel.hp === 10 && ENEMY_DEF.duel.score === 800, `hp=${ENEMY_DEF.duel.hp} score=${ENEMY_DEF.duel.score}`)
+    const gs = makeGame(44)
+    enterStage2(gs)
+    gs.waveIdx = 2; gs.waveActive = true; gs.camLock = true
+    gs.enemies.push({ id: 920, kind: 'duel', x: gs.camX + W + 44, y: 170, face: -1, hp: CFG.duelHp, state: 'enter', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 60, attackCooldown: 40, inv: 0, spinHit: false })
+    for (let i = 0; i < 5000 && gs.mode === 'play' && gs.waveIdx < WAVES_S2.length; i++) { step(gs, autopilot(gs)); gs.events.length = 0 }
+    r.check('S3: the duel is won the honest way — the wave closes only when he falls', gs.waveIdx >= WAVES_S2.length && gs.mode === 'play', `wave=${gs.waveIdx} mode=${gs.mode} lives=${gs.billy.lives}`)
+    r.check('S3: winning the duel does NOT clear the stage — the rescue must be earned', gs.mode === 'play' && !!gs.marian && !gs.marian.freed && rescueReady(gs), `mode=${gs.mode} ready=${rescueReady(gs)}`)
+}
+
+{ // S3 Marian: locked while the duel lives; two cuts and the run goes home
+    const gs = makeGame(45)
+    enterStage2(gs)
+    gs.waveIdx = 2; gs.waveActive = true; gs.camLock = true; gs.camX = 640
+    gs.enemies.push({ id: 921, kind: 'duel', x: 760, y: 150, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, castCooldown: 999999, attackCooldown: 999999, inv: 0, spinHit: false })
+    gs.billy.x = 890; gs.billy.y = gs.marian.y; gs.billy.inv = CFG.respawnIFrames
+    for (let i = 0; i < 40; i++) { step(gs, { punch: i % 3 === 0 }); gs.events.length = 0 }
+    r.check('S3: the ropes hold while a duelist still stands — no rescue on a live floor', gs.marian.cuts === 0 && !gs.marian.freed, `cuts=${gs.marian.cuts}`)
+    gs.enemies.length = 0
+    for (let i = 0; i < 40 && !gs.marian.freed; i++) { step(gs, { punch: i % 3 === 0 }); gs.events.length = 0 }
+    r.check('S3: two punches cut her loose (+1000 and the cabinet says so)', gs.marian.freed && gs.marian.cuts >= 2 && gs.score >= CFG.rescueBonus, `cuts=${gs.marian.cuts} score=${gs.score}`)
+    for (let i = 0; i < 400 && !(gs.mode === 'play' && gs.stage === 1); i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('S3: the cheer carries the run home — back on Walnuts Street, cleared earned', gs.mode === 'play' && gs.stage === 1 && gs.cleared && gs.marian === null && gs.barrels.every((q) => q.hp === CFG.barrelHp), `mode=${gs.mode} stage=${gs.stage} cleared=${gs.cleared}`)
 }
 
 { // WINNABLE: the honest autopilot clears the street on 12 seeds
     const fails = []
     for (let seed = 1; seed <= 12; seed++) if (runBot(seed).mode !== 'clear') fails.push(seed)
     r.check('winnable: the attract autopilot clears Walnuts Street on seeds 1..12', fails.length === 0, fails.length ? `stuck seeds ${fails.join(',')}` : '12/12')
+}
+
+{ // WINNABLE (the whole commission): both stages, the duel, Marian freed
+    const fails = []
+    for (let seed = 1; seed <= 12; seed++) {
+        const g = runFull(seed)
+        if (!(g.cleared && g.mode === 'play' && g.stage === 1)) fails.push(seed)
+    }
+    r.check('winnable: the FULL run — Walnuts, the yard, the duel, Marian freed — seeds 1..12', fails.length === 0, fails.length ? `stuck seeds ${fails.join(',')}` : '12/12')
 }
 
 { // #2810 item 6 — the score delta flashes on the HUD when a man goes down
@@ -385,6 +497,39 @@ if (MUTANT) {
                 for (let i = 0; i < 60; i++) { mod.step(gs, { right: true }); gs.events.length = 0 }
                 return gs.billy.x > bar.x + 11
                     ? `HARM NAMED: Billy strolled straight through mid-lane wood (x ${gs.billy.x.toFixed(0)} past barrel ${bar.x}) — solid props are the weapons wall; ghosts erase the cover, the hop and the lane-play the S2 street is built on`
+                    : null
+            },
+        },
+        {
+            name: 'blade-blind',
+            anchor: 'gs.billy.z <= 6 && Math.abs(pr.x - gs.billy.x) <= 10 && Math.abs(pr.y - gs.billy.y) <= 7',
+            plant: 'gs.billy.z <= 6 && Math.abs(pr.x - gs.billy.x) <= 10 && Math.abs(pr.y - gs.billy.y) <= 400 /* MUTANT(blade-blind): thrown steel ignores the belt */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(41)
+                gs.billy.inv = 0
+                gs.billy.y = 180
+                gs.projectiles.push({ id: 999, x: gs.billy.x - 40, y: 170, vx: 3, spin: 0, side: 'goon' })
+                for (let i = 0; i < 60; i++) { mod.step(gs, {}); gs.events.length = 0 }
+                return gs.billy.lives < 3
+                    ? `HARM NAMED: a cast blade crossed ten pixels of open lane and took a life anyway (lives 3 -> ${gs.billy.lives}) — if thrown steel ignores the depth axis, the casters cannot be dodged and the weapons wall is a coin-flip`
+                    : null
+            },
+        },
+        {
+            name: 'rescue-blind',
+            anchor: 'if (!m.freed && rescueReady(gs)) {',
+            plant: 'if (false && !m.freed && rescueReady(gs)) { /* MUTANT(rescue-blind): the ropes ignore every cut */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(2)
+                const max = 60000
+                while (gs.tick < max) {
+                    mod.step(gs, mod.autopilot(gs))
+                    gs.events.length = 0
+                    if (gs.mode === 'gameover') break
+                    if (gs.cleared && gs.mode === 'play' && gs.stage === 1) break
+                }
+                return !(gs.cleared && gs.stage === 1)
+                    ? `HARM NAMED: the honest autopilot ran 60,000 ticks and never brought Marian home (stage ${gs.stage}, freed ${gs.marian ? gs.marian.freed : 'n/a'}) — if the ropes ignore the cut, the commission has no ending and the loop can never be won`
                     : null
             },
         },
