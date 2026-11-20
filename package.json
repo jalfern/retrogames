@@ -364,6 +364,8 @@
     "plaicraftcheck": "node scripts/plaicraftcheck.mjs",
     "netdemocheck": "node scripts/netdemocheck.mjs",
     "plaicraft:export": "node scripts/plaicraft-export.mjs",
+    "plaicraft:dataset": "node scripts/plaicraft-dataset.mjs",
+    "plaicraft:datasetcheck": "node scripts/plaicraft-datasetcheck.mjs",
     "plaicraft:evidence": "node scripts/plaicraft-evidence.mjs",
     "plaicraft:clap": "node scripts/plaicraft-clap.mjs",
     "plaicraft:grade": "node scripts/plaicraft-grade.mjs",
