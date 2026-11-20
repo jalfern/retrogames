@@ -255,11 +255,17 @@ function allyBrain (gs) {
         // skip straight to the hero's own shelf and jump at every footfall;
         // a lagging partner re-joins the climb or the water takes him
         const desperate = q.y > gs.camY + H - 90
+        const foot = q.onGround ? q.y : q.lane
         let ti = heroLive && gs.apT != null && gs.apT >= 0 ? (desperate ? gs.apT : Math.max(0, gs.apT - 1)) : q.tIdx
         let t = ti >= 0 && ti < FALLS_LEDGES.length ? FALLS_LEDGES[ti] : null
-        const landedHere = t && q.onGround && Math.abs(q.y - t.y) < 2
-        if (!t || landedHere || q.y > t.y + 60) {
-            const cand = FALLS_LEDGES.filter((l) => l.y < q.y - 4 && l.y >= gs.camY - 20)
+        // Reachability is measured from his FEET, not his airborne body: a
+        // shelf more than one jump (apex ~48) above the rock he stands on is a
+        // lie. Chasing the hero's shelf from mid-air steered him right across
+        // the x140-170 gap on the descent — the same grave at x=172,y=640 on
+        // every seed (#2798: repeated identical ally drown = brain bug).
+        const reach = (sh) => !!sh && sh.y < foot - 4 && sh.y >= foot - 52
+        if (!reach(t)) {
+            const cand = FALLS_LEDGES.filter((l) => l.y < foot - 4 && l.y >= gs.camY - 20)
             t = cand.length ? cand.reduce((a, b) => (a.y > b.y ? a : b)) : null
             ti = t ? FALLS_LEDGES.indexOf(t) : -1
         }
@@ -267,12 +273,23 @@ function allyBrain (gs) {
         if (t) {
             if (q.x < t.x + 4) pad.right = true
             else if (q.x > t.x + t.w - 4) pad.left = true
-            if (q.onGround && q.x >= t.x - 6 && q.x <= t.x + t.w + 6) pad.a = true
+            if (q.onGround) {
+                const inBand = q.x >= t.x - 6 && q.x <= t.x + t.w + 6
+                // the hero's edge law: when the target lies past the edge of my
+                // own shelf, leap at the last step — a shelf across a gap is
+                // jumped, never walked off (the autopilot climbs exactly this way)
+                const sup = FALLS_LEDGES.find((l) => Math.abs(q.y - l.y) < 2 && q.x >= l.x - 3 && q.x <= l.x + l.w + 3)
+                const offEdgeSoon = sup && ((t.x + t.w > sup.x + sup.w + 6 && q.x + CFG.run >= sup.x + sup.w - 1) || (t.x < sup.x - 6 && q.x - CFG.run <= sup.x + 1))
+                if (inBand || offEdgeSoon) pad.a = true
+            }
         }
-        if (desperate && q.onGround && !pad.a) {
-            // the foam is closing: hop off solid rock NOW — sprinting across a
-            // gap toward the hero is how a partner drowns mid-leap
-            pad.right = false; pad.left = false
+        if (desperate && q.onGround && !pad.a && !t) {
+            // panic-hop only when NOTHING reachable is above him. While a
+            // target exists, walk to it — the edge law jumps it at the last
+            // step. An early hop under an across-gap shelf wastes the run-up:
+            // seed 2's ally launched 14px before shelf 3's edge, grazed the
+            // apex ~2px short of shelf 4 and hit the torrent in the
+            // x190-230 gap (the same grave at x=234,y=511 on most seeds).
             pad.a = true
         }
         return pad
@@ -291,6 +308,24 @@ function allyBrain (gs) {
             const dx = b.x - q.x
             const toward = (dx > 0 && b.vx < -0.3) || (dx < 0 && b.vx > 0.3) || (b.vy > 0.5 && Math.abs(dx) < 14)
             if (toward && Math.abs(b.y - (q.y - 14)) < 34 && Math.abs(dx) < 60 && Math.abs(b.vy) < 1.2 && q.onGround) { pad.a = true; break }
+        }
+        // Never fall back into a round still in the road: once a shot is
+        // inbound on his side, drive away from its nose until it passes behind
+        // — but the left spawn-door step stays out of bounds: the arcade answer
+        // to a shot from the left while cornered is the hop, not a retreat into
+        // the gunners' door (the #2798 sweep saw him retreat to x=10 and take
+        // the next round point-blank).
+        for (const b of gs.eb) {
+            if (b.gr || Math.abs(b.y - (q.y - 14)) > 30) continue
+            const dx = b.x - q.x
+            if (dx > 0 && b.vx < -0.3 && dx < 70) {
+                if (q.x > 90) { pad.right = false; pad.left = true } else { pad.a = true }
+                break
+            }
+            if (dx < 0 && b.vx > 0.3 && dx > -70) {
+                if (q.x > 40) { pad.left = false; pad.right = true } else { pad.a = true }
+                break
+            }
         }
         return pad
     }

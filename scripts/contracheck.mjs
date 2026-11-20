@@ -608,6 +608,37 @@ const mkBoss = (seed = 7) => {
     r.check('S4 pad2 drives the claimed seat: human walks left where the CPU would hold, fires his own rounds',
         gs.p2.x < x0 - 20 && blueShot, `dx=${(gs.p2.x - x0).toFixed(0)}`)
 }
+{
+    // #2798 playtest law: repeated identical ally deaths are a BRAIN bug, not
+    // fortune. The S4 sweep found the blue seat drowning at x=172,y=640 on
+    // most seeds (the desperate clause zeroed his directions and he hopped in
+    // place under the falls) — and landing into the same boss-band lob at
+    // x=124. The honest brain must climb the falls with the hero, and never
+    // dig the same grave twice across seeds.
+    const graves = []
+    const fails = []
+    for (let s = 1; s <= 12; s++) {
+        const gs = makeGame(s)
+        let pd = 0
+        for (let i = 0; i < 60 * 300 && !gs.end; i++) {
+            step(gs, autopilot(gs))
+            if (gs.p2.dead > 0 && pd === 0 && (gs.phase === 'falls' || gs.phase === 'boss')) {
+                graves.push(`${s}:${gs.phase}@${Math.round(gs.p2.x)},${Math.round(gs.p2.y)}`)
+            }
+            pd = gs.p2.dead > 0 ? 1 : 0
+        }
+        if (gs.end !== 'win') fails.push(`${s}:${gs.end}`)
+    }
+    const seen = new Map()
+    const dbl = []
+    for (const g of graves) {
+        const sig = g.slice(g.indexOf(':') + 1)
+        seen.set(sig, (seen.get(sig) || 0) + 1)
+    }
+    for (const [sig, n] of seen) if (n > 1) dbl.push(`${sig}x${n}`)
+    r.check('#2798 S4 ally climbs the falls and never digs the same grave twice (12-seed sweep)',
+        fails.length === 0 && dbl.length === 0, `wins ${12 - fails.length}/12, graves=[${graves.join(' ')}]${dbl.length ? ' REPEAT ' + dbl.join(',') : ''}`)
+}
 // ---- #2789 salvage: capsule letters are 5x5 bitmap stamps, not fonts ------
 // docs/ART.md bar: every pixel generated in code, crisp on the pixel grid.
 // fillText smuggles the browser's antialiased font rasterizer into the capsule

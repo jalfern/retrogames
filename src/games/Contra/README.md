@@ -51,6 +51,13 @@ The laws the blue seat lives under, all proven in `contracheck`:
   running.
 - **Respawn at your side**, not where he fell (arcade drop-in), with i-frames
   and a clean rifle; in the falls he never respawns below the torrent.
+- **Climb by feet, retreat by road** (#2798): a falls target must be reachable
+  from his FEET (apex-window), never steered by a shelf that is only in reach
+  from mid-air — chasing one walked him into the same gap-grave at x=172 on
+  most seeds; the desperate hop fires only when NOTHING above is reachable;
+  and he never fall back into a round still in the road (the hero's zigzag
+  law, ported — spawn-door side excepted, where the hop answers instead). The
+  12-seed sweep check demands no repeated identical ally grave.
 - **Nearest-hero aim law**: enemies lead the NEARER live hero's lane — put the
   blue soldier on a walkway and the sniper's round re-leads from down-sloppy
   to flat (proven by the vy delta).
