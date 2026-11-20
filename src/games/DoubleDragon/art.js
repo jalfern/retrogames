@@ -604,6 +604,9 @@ const SKIN = '#d8a06a', SKIN_D = '#b57d46'
 const CFG = { punchOn: 4, kickOn: 6 }
 const PAL = {
     billy: { head: '#e8e8ec', body: '#dcdce4', trim: '#c8302f', legs: '#dcdce4', shoes: '#5a3a24', band: '#c8302f' },
+    // S4 the second dragon: Jimmy Lee — same white gi, the BLUE headband.
+    // The arcade's whole poster lives in this one line of colour.
+    jimmy: { head: '#e8e8ec', body: '#dcdce4', trim: '#2f5fd0', legs: '#dcdce4', shoes: '#5a3a24', band: '#2f5fd0' },
     williams: { head: '#d8d8dc', body: '#2f8f74', trim: '#1d6b52', legs: '#3a3f52', shoes: '#22262f', band: '#2f8f74' },
     amon: { head: '#8a5a34', body: '#8a5a34', trim: '#5f3d22', legs: '#2c2f3c', shoes: '#1c1e26', band: null },
     abobo: { head: '#6a4a2c', body: '#2e3138', trim: '#1c1e24', legs: '#17191f', shoes: '#0e0f13', band: null },
@@ -675,7 +678,7 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
     if (pal.band) R(-5 + hx, -16 + bob, 10 + 2 * bulk, 3, pal.trim)
     // head
     R(-4 + hx - bulk, -30 + bob, 8 + 2 * bulk, 8, pal.head)
-    if (pal === PAL.billy) { R(-4 + hx, -30 + bob, 8, 2, pal.band); R(-7 + hx, -29 + bob, 3, 2, pal.band) } // headband + tail
+    if (pal === PAL.billy || pal === PAL.jimmy) { R(-4 + hx, -30 + bob, 8, 2, pal.band); R(-7 + hx, -29 + bob, 3, 2, pal.band) } // headband + tail (both dragons)
     if (pal === PAL.williams) { R(-5 + hx, -31 + bob, 10, 3, pal.band); R(2 + hx, -30 + bob, 4, 2, '#1d6b52') } // cap + brim
     if (pal === PAL.duel) {
         R(-5 + hx, -31 + bob, 10, 3, pal.band); R(2 + hx, -30 + bob, 5, 2, '#174a38')   // cap + longer brim
@@ -712,7 +715,10 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
     ctx.restore()
 }
 
-export function drawBilly(ctx, b, camX, props) {
+export function drawBilly(ctx, b, camX, props) { drawFighter(ctx, b, camX, PAL.billy, props) }
+export function drawJimmy(ctx, p, camX, props) { drawFighter(ctx, p, camX, PAL.jimmy, props) }
+
+function drawFighter(ctx, b, camX, pal, props) {
     const sx = Math.round(b.x - camX)
     const sy = Math.round(b.y)
     if (sx < -40 || sx > W + 40) return
@@ -740,7 +746,7 @@ export function drawBilly(ctx, b, camX, props) {
         if (b.stateT > 26) return
         if (b.stateT > 16) ctx.globalAlpha = 1 - (b.stateT - 16) / 10
     }
-    fighter(ctx, sx, sy - lift, b.face, pose, b.anim, PAL.billy, 1, hop ? 1 : 0)
+    fighter(ctx, sx, sy - lift, b.face, pose, b.anim, pal, 1, hop ? 1 : 0)
     if (b.weapon === 'stick') {
         ctx.fillStyle = '#8a6a3c'
         const stickAt = pose === 'punch' || pose === 'attack' ? 16 : pose === 'spin' ? 12 : 7
