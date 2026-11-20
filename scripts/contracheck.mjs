@@ -21,6 +21,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss } from '../src/games/Contra/sim.js'
+import { drawCapsule } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -607,10 +608,43 @@ const mkBoss = (seed = 7) => {
     r.check('S4 pad2 drives the claimed seat: human walks left where the CPU would hold, fires his own rounds',
         gs.p2.x < x0 - 20 && blueShot, `dx=${(gs.p2.x - x0).toFixed(0)}`)
 }
+// ---- #2789 salvage: capsule letters are 5x5 bitmap stamps, not fonts ------
+// docs/ART.md bar: every pixel generated in code, crisp on the pixel grid.
+// fillText smuggles the browser's antialiased font rasterizer into the capsule
+// window; the cabinet STAMPS S/M/F/L. These laws demand the stamps: zero text
+// API touches by drawCapsule, the exact lit-pixel count per letter, and each
+// letter keeping its wheel ink (the shipped letter-identity palette).
+{
+    const EXPECT = { spread: ['S', 17, '#ff8c1a'], machine: ['M', 13, '#2b6fd4'], fire: ['F', 12, '#e23b2e'], laser: ['L', 9, '#8a3ad4'] }
+    const stampProbe = (kind) => {
+        const o = { text: 0, ink: null, px: 0, inks: new Set() }
+        const ctx = {
+            save () {}, restore () {}, translate () {},
+            fillText () { o.text++ },
+            measureText () { o.text++; return { width: 7 } },
+            set font (_) { o.text++ }, get font () { return '' },
+            set textBaseline (_) { o.text++ }, get textBaseline () { return 'top' },
+            set fillStyle (v) { o.ink = v }, get fillStyle () { return o.ink },
+            fillRect (x, y, w, h) { if (w === 1 && h === 1 && x >= -2 && x <= 2 && y >= -2 && y <= 2) { o.px++; o.inks.add(o.ink) } },
+        }
+        drawCapsule(ctx, { x: 0, y: 0, kind }, 0)
+        return o
+    }
+    let fontsUsed = 0, miscount = [], misink = []
+    for (const [kind, [letter, want, ink]] of Object.entries(EXPECT)) {
+        const o = stampProbe(kind)
+        fontsUsed += o.text
+        if (o.px !== want) miscount.push(`${kind}/${letter}:${o.px}≠${want}`)
+        if (o.inks.size !== 1 || !o.inks.has(ink)) misink.push(`${kind}:${[...o.inks].join('|')}≠${ink}`)
+    }
+    const odd = stampProbe('shotgun') // unknown kind falls back to S without throwing
+    r.check('#2789 capsule letters are bitmap stamps — drawCapsule never touches the text APIs', fontsUsed === 0 && odd.px === 17, `text touches=${fontsUsed} fallback px=${odd.px}`)
+    r.check('#2789 every stamp carries its exact glyph pixels (S17 M13 F12 L9)', miscount.length === 0, miscount.join(' ') || 'all counts exact')
+    r.check('#2789 each letter keeps its wheel ink (M blue, F red, L purple, S orange)', misink.length === 0, misink.join(' ') || 'all inks hold')
+}
 
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
-    const src = readFileSync(SIM, 'utf8')
     const plants = [
         {
             name: 'spawn-shield',
@@ -710,16 +744,40 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #2789: the letter IS the gun label. Erase the stamp and every
+            // capsule is an anonymous orange box - the wheel goes blind.
+            name: 'letter-erased',
+            file: join(ROOT, 'src/games/Contra/art.js'),
+            mod: 'art.js',
+            anchor: 'if (rows[r] & (1 << (4 - bit))) ctx.fillRect(-2 + bit, -2 + r, 1, 1)',
+            plant: 'if (false && (rows[r] & (1 << (4 - bit)))) ctx.fillRect(-2 + bit, -2 + r, 1, 1) /* MUTANT(letter-erased): the window stays blank */',
+            harm: async (mod) => {
+                const o = { text: 0, ink: null, px: 0 }
+                const ctx = {
+                    save () {}, restore () {}, translate () {},
+                    fillText () { o.text++ }, measureText () { o.text++; return { width: 7 } },
+                    set font (_) { o.text++ }, get font () { return '' },
+                    set textBaseline (_) { o.text++ }, get textBaseline () { return 'top' },
+                    set fillStyle (v) { o.ink = v }, get fillStyle () { return o.ink },
+                    fillRect (x, y, w, h) { if (w === 1 && h === 1 && x >= -2 && x <= 2 && y >= -2 && y <= 2) o.px++ },
+                }
+                mod.drawCapsule(ctx, { x: 0, y: 0, kind: 'machine' }, 0)
+                return o.px === 0 ? 'HARM NAMED: capsules stamp no letter - M/F/L/S are blank orange boxes; the player cannot tell which gun the capsule carries' : null
+            },
+        },
     ]
     for (const p of plants) {
-        if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
-        writeFileSync(SIM, src.replace(p.anchor, p.plant))
+        const f = p.file || SIM
+        const src = readFileSync(f, 'utf8')
+        if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — ${p.mod || 'sim.js'} moved; the plant must be re-anchored`); process.exit(2) }
+        writeFileSync(f, src.replace(p.anchor, p.plant))
         let bad
         try {
             bad = 'dynamic-import'
-            bad = await p.harm(await import(`../src/games/Contra/sim.js?mutant=${p.name}${Date.now()}`))
+            bad = await p.harm(await import(`../src/games/Contra/${p.mod || 'sim.js'}?mutant=${p.name}${Date.now()}`))
         } finally {
-            writeFileSync(SIM, src)
+            writeFileSync(f, src)
         }
         r.check(`mutant(${p.name}) goes RED: harm named`, bad !== null, bad || 'harm NOT named — mutant survived')
     }
