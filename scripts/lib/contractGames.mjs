@@ -55,6 +55,7 @@ const GAMES = [
     { id: 'adventure', path: '/adventure' }, // POLISH #1568: join the spine — invisible to every shared harness before this
     { id: 'bomb-defuse', path: '/bomb-defuse' }, // #1800: the recorder's fifth title
     { id: 'contra', path: '/contra' }, // #2779: Jon's #1530 commission, S1 the jungle
+    { id: 'double-dragon', path: '/double-dragon' }, // #2807: Jon's #2795 commission, S1 Walnuts Street
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
@@ -135,6 +136,7 @@ const PATTERNS = {
     // #2779: run-and-gun. Death is legal here (respawn keeps ticks flowing and
     // the hashes deterministic); the pattern fires steadily, jumps every so
     // often, and sweeps the aim so 8-way firing gets sampled.
+    'double-dragon': (i) => ({ left: i % 53 < 14, right: i % 53 >= 20 && i % 53 < 38, up: i % 61 < 8, down: i % 61 >= 26 && i % 61 < 40, a: i % 97 < 2, b: i % 7 < 2 }),
     contra: (i) => ({ left: i % 89 < 18, right: i % 89 >= 24 && i % 89 < 70, up: i % 53 < 8, down: i % 53 >= 30 && i % 53 < 38, a: i % 17 < 2, b: i % 5 < 3 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))

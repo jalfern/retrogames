@@ -131,6 +131,9 @@ export const MANUAL_CHECKS = [
   // #2779: CONTRA S1 readiness gate — browser-driven (needs the dev server);
   // advisory from the lane: npm run contracheck.
   "scripts/contracheck.mjs",
+  // #2807: DOUBLE DRAGON S1 readiness gate — browser leg needs the dev server;
+  // advisory from the lane: npm run ddragoncheck.
+  "scripts/ddragoncheck.mjs",
   "scripts/creditscheck.mjs",
   "scripts/deepglasscheck.mjs",
   "scripts/defendercheck.mjs",

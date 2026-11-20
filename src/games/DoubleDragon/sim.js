@@ -16,6 +16,7 @@ export const H = 224
 export const DEEP_TOP = 132   // far edge of the street band (feet y)
 export const DEEP_BOT = 206   // near edge of the street band
 export const STAGE_W = 960     // three screens to the clear
+export const PROPS_DEPTH = DEEP_BOT + 4 // foreground props sit nearer than the fight band
 
 export const CFG = {
     walkSpeed: 1.2,
@@ -64,8 +65,6 @@ export function mulberry32(seed) {
     }
 }
 
-let NEXT_ID = 1
-
 function makeBilly() {
     return {
         x: 40, y: (DEEP_TOP + DEEP_BOT) / 2 | 0, face: 1,
@@ -82,9 +81,10 @@ function makeBilly() {
 }
 
 export function makeGame(seed = 1) {
-    const rnd = mulberry32(seed)
+    // rng rides IN the state so snapshot/restore is byte-exact (#391):
+    // a JSON deep-copy of gs carries the generator integer, not a closure.
     const gs = {
-        seed: seed >>> 0, rnd,
+        seed: seed >>> 0, rngState: seed >>> 0, nextId: 1,
         tick: 0, mode: 'play',   // play | clear | gameover
         score: 0, hi: 0,
         cleared: false,
@@ -96,20 +96,19 @@ export function makeGame(seed = 1) {
         events: [],   // one-shot cues drained by the shell (sound/juice only)
         k: 0,         // KO streak timer helper
     }
-    NEXT_ID = 1
     return gs
 }
 
 function spawnEnemy(gs, kind, side, stick) {
     const def = ENEMY_DEF[kind]
     const e = {
-        id: NEXT_ID++, kind,
+        id: gs.nextId++, kind,
         x: side === 'left' ? gs.camX - 20 : gs.camX + W + 20,
-        y: DEEP_TOP + Math.floor(gs.rnd() * (DEEP_BOT - DEEP_TOP)),
+        y: DEEP_TOP + Math.floor(rng(gs) * (DEEP_BOT - DEEP_TOP)),
         face: side === 'left' ? 1 : -1,
-        hp: def.hp, state: 'enter', stateT: 0, anim: Math.floor(gs.rnd() * 8),
+        hp: def.hp, state: 'enter', stateT: 0, anim: Math.floor(rng(gs) * 8),
         hasStick: !!stick, stickDropped: false,
-        attackCooldown: 30 + Math.floor(gs.rnd() * 60),
+        attackCooldown: 30 + Math.floor(rng(gs) * 60),
         inv: 0, spinHit: false,
     }
     gs.enemies.push(e)
@@ -136,8 +135,9 @@ function billyDies(gs) {
 }
 
 // hit an enemy; returns true if it died
-function hurtEnemy(gs, e, dmg, knockdown) {
-    if (e.inv > 0 || e.state === 'down' || e.state === 'getup' || e.state === 'dying') return false
+function hurtEnemy(gs, e, dmg, knockdown, onDowned) {
+    if (e.inv > 0 || e.state === 'dying' || e.state === 'getup') return false
+    if (e.state === 'down' && !onDowned) return false
     e.hp -= dmg
     gs.events.push(knockdown ? 'hit_hard' : 'hit')
     if (e.hp <= 0) {
@@ -158,9 +158,10 @@ function hurtEnemy(gs, e, dmg, knockdown) {
 function billyAttack(gs, kind) {
     const b = gs.billy
     if (b.state === 'punch' || b.state === 'kick' || b.state === 'spin') return
-    // the signature spin back-heel: a swing asked for while surrounded
+    // the signature spin back-heel: a swing asked for while surrounded —
+    // surround counts radially (the heel boots BOTH ways), unlike a aimed swing
     const grounded = gs.enemies.filter((e) => e.state !== 'dying' && e.state !== 'down' && e.inv <= 0)
-    const near = grounded.filter((e) => Math.abs(e.x - b.x) <= CFG.spin.reach + 6 && Math.abs(e.y - b.y) <= 10 && e !== null && nearish(e, b, CFG.spin.reach))
+    const near = grounded.filter((e) => Math.abs(e.x - b.x) <= CFG.spin.reach + 6 && Math.abs(e.y - b.y) <= 10)
     if (b.z === 0 && near.length >= 2) {
         b.state = 'spin'; b.stateT = 0; b.attackHit = new Set()
         gs.events.push('whoosh')
@@ -234,7 +235,7 @@ function applyStomp(gs) {
         if (Math.abs(e.x - b.x) <= reachFor(b, 'kick') && Math.abs(e.y - b.y) <= 9) {
             b.attackHit.add(e.id)
             e.inv = 0
-            hurtEnemy(gs, e, 1, false)
+            hurtEnemy(gs, e, 1, false, true)
             if (e.hp > 0) { e.state = 'down'; e.stateT = Math.floor(CFG.downTime / 2) }
             gs.events.push('stomp')
         }
@@ -279,10 +280,11 @@ function updateBilly(gs, pad) {
 
     // new attack inputs
     if (pad.b) billyAttack(gs, 'kick')
-    else if (pad.a === 'punch' || pad.punch) billyAttack(gs, 'punch')
+    else if (pad.punch) billyAttack(gs, 'punch')
 
-    // jump
-    if (pad.up && b.z === 0 && b.state !== 'punch' && b.state !== 'kick' && b.state !== 'spin') {
+    // jump: the A verb (Space / pad.a). ArrowUp/Down are the DEPTH axis —
+    // in a belt-scroller the stick walks the street, the buttons do the tricks.
+    if ((pad.a || pad.jump) && b.z === 0 && b.state !== 'punch' && b.state !== 'kick' && b.state !== 'spin') {
         b.z = 0.001; b.zv = CFG.jumpV
         b.state = 'jump'; b.stateT = 0
         gs.events.push('jump')
@@ -401,7 +403,7 @@ function updateEnemy(gs, e) {
                 billyDies(gs)
             }
         }
-        if (e.stateT >= 14) { e.state = 'back'; e.stateT = 0; e.attackCooldown = 50 + Math.floor(gs.rnd() * 50) }
+        if (e.stateT >= 14) { e.state = 'back'; e.stateT = 0; e.attackCooldown = 50 + Math.floor(rng(gs) * 50) }
         break
     }
     case 'back': {
@@ -536,6 +538,13 @@ export function autopilot(gs) {
         else if (surrounded && gs.tick % 7 < 2) pad.b = true // spin back-heel
     }
     return pad
+}
+
+export function rng(gs) {
+    gs.rngState = (gs.rngState + 0x6D2B79F5) | 0
+    let t = Math.imul(gs.rngState ^ (gs.rngState >>> 15), 1 | gs.rngState)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
 }
 
 export function stateHash(gs) {
