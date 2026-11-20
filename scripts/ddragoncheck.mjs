@@ -374,7 +374,7 @@ if (MUTANT) {
         },
         {
             name: 'barrel-ghost',
-            anchor: 'return gs.barrels.some((bar) => Math.abs(bar.x - x) <= 10 && Math.abs(bar.y - y) <= 11)',
+            anchor: 'return gs.barrels.some((bar) => Math.abs(bar.x - x) <= 10 + radius && Math.abs(bar.y - y) <= 11 + radius)',
             plant: 'return false /* MUTANT(barrel-ghost): the props stop being solid */',
             harm: async (mod) => {
                 const gs = mod.makeGame(22)
