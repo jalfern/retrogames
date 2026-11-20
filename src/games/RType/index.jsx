@@ -10,8 +10,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, STAGE_END, makeGame, step, autopilot, stateHash } from './sim.js'
-import { drawBackground, drawShip, drawLarva, drawTurret, drawPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawHud, drawBanner, drawAttract, drawText, textWidth } from './art.js'
+import { W, H, STAGE_END, POD, makeGame, step, autopilot, stateHash } from './sim.js'
+import { drawBackground, drawShip, drawLarva, drawTurret, drawPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'r-type:hiscore'
@@ -43,6 +43,7 @@ export default function RType() {
         let shake = 0
         const part = []
         const keys = { l: false, r: false, u: false, d: false, f: false }
+        let podQ = false // POD is a press-verb: latch so sub-frame taps (bots) still reach the sim
         let hiscore = Number(localStorage.getItem(HS_KEY) || 0)
 
         const sfx = {
@@ -61,6 +62,13 @@ export default function RType() {
             mawopen: () => { audioController.playSweep(58, 138, 0.55, 'sawtooth', 0.13); audioController.playTone(92, 0.5, 'triangle', 0.08) },
             mawshut: () => { audioController.playSweep(190, 52, 0.26, 'square', 0.12); audioController.playNoise(0.1, 0.09); shake = Math.max(shake, 2) },
             missile: () => { audioController.playTone(620, 0.06, 'square', 0.08); audioController.playTone(520, 0.06, 'square', 0.08, 0.09) },
+            laser: () => audioController.playSweep(1400, 320, 0.18, 'sawtooth', 0.11),
+            force: () => { const n = [523, 784, 1046, 1568]; n.forEach((f, i) => audioController.playTone(f, 0.08, 'triangle', 0.11, i * 0.06)) },
+            podlaunch: () => audioController.playSweep(500, 1150, 0.14, 'square', 0.08),
+            poddock: () => { audioController.playTone(240, 0.05, 'square', 0.09); audioController.playTone(360, 0.06, 'square', 0.09, 0.05) },
+            plug: () => audioController.playTone(150, 0.03, 'triangle', 0.07),
+            ram: () => { audioController.playNoise(0.08, 0.1); audioController.playTone(90, 0.07, 'sawtooth', 0.12); shake = Math.max(shake, 2) },
+            podlost: () => audioController.playSweep(420, 90, 0.3, 'triangle', 0.1),
             warn: () => audioController.playTone(500, 0.05, 'square', 0.06),
             tsfire: () => audioController.playTone(340, 0.04, 'square', 0.06),
             '1up': () => { const n = [523, 659, 784, 1046]; n.forEach((f, i) => audioController.playTone(f, 0.09, 'square', 0.1, i * 0.09)) },
@@ -82,6 +90,9 @@ export default function RType() {
                 else if (ev === 'corehit') bursts(6, gs.p1 ? gs.p1.x + 20 - sx : 40, 120, 2)
                 else if (ev === 'bigboom') bursts(40, gs.p1 ? gs.p1.x + 30 - sx : 60, 120, 0)
                 else if (ev === 'die') bursts(22, gs.ship.x - sx, gs.ship.y, 2)
+                else if (ev === 'plug') bursts(4, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 3)
+                else if (ev === 'ram') bursts(8, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 0)
+                else if (ev === 'force') bursts(12, gs.ship.x + 14 - sx, gs.ship.y, 3)
             }
             gs.events.length = 0
         }
@@ -113,7 +124,11 @@ export default function RType() {
             if (gs.mode === 'gameover' && screen === 'play') endTo('over')
         }
 
-        const simPad = () => ({ left: keys.l, right: keys.r, up: keys.u, down: keys.d, a: keys.f })
+        const simPad = () => {
+            const p = { left: keys.l, right: keys.r, up: keys.u, down: keys.d, a: keys.f, b: podQ }
+            podQ = false
+            return p
+        }
 
         const paint = () => {
             shake = Math.max(0, shake - 0.45)
@@ -136,15 +151,17 @@ export default function RType() {
             for (const m of gs.missiles) drawMissile(ctx, m, gs.camX)
             for (const q of gs.shots) {
                 if (q.kind === 'v') drawBullet(ctx, { x: q.x + 8, y: q.y }, gs.camX)
+                else if (q.kind === 'l') drawLance(ctx, q, gs.camX)
                 else drawWave(ctx, q, gs.camX)
             }
             drawShip(ctx, gs.ship, gs.camX)
+            if (gs.pod) drawSeedPod(ctx, gs.pod, gs.camX, !gs.ship.dead)
             // particles (juice layer — Math.random law: never reaches state)
             for (let i = part.length - 1; i >= 0; i--) {
                 const p = part[i]
                 p.x += p.vx; p.y += p.vy; p.t -= 1
                 if (p.t <= 0) { part.splice(i, 1); continue }
-                ctx.fillStyle = p.c === 0 ? (p.t % 4 < 2 ? '#ffd23c' : '#ff6a2a') : p.c === 1 ? '#9ac93c' : '#d9dde2'
+                ctx.fillStyle = p.c === 0 ? (p.t % 4 < 2 ? '#ffd23c' : '#ff6a2a') : p.c === 1 ? '#9ac93c' : p.c === 3 ? '#8ae0ff' : '#d9dde2'
                 ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2)
             }
             ctx.restore()
@@ -199,6 +216,7 @@ export default function RType() {
             if (e.code === 'ArrowUp') keys.u = true
             if (e.code === 'ArrowDown') keys.d = true
             if (e.code === 'Space' || e.code === 'KeyX' || e.code === 'KeyZ') keys.f = true
+            if ((e.code === 'KeyB' || e.code === 'KeyC') && !e.repeat) podQ = true
         }
         const onUp = (e) => {
             if (e.code === 'ArrowLeft') keys.l = false
@@ -237,6 +255,7 @@ export default function RType() {
                     mode: gs.mode, cleared: gs.cleared ? 1 : 0,
                     enemies: gs.enemies.length, bullets: gs.bullets.length,
                     missiles: gs.missiles.length, shots: gs.shots.length,
+                    pod: gs.pod ? gs.pod.state : '-', podX: gs.pod ? Math.round(gs.pod.x) : 0,
                     p1: gs.p1 ? `${gs.p1.mouth}:${gs.p1.coreHp}` : '-',
                 }),
                 start: startPlay,
@@ -249,7 +268,9 @@ export default function RType() {
                     if (opts.weapon) gs.ship.weapon = opts.weapon
                     if (opts.clearEnemies) { gs.enemies.length = 0; gs.missiles.length = 0 }
                     if (opts.clearBullets) { gs.bullets.length = 0 }
-                    if (opts.spawnCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0 })
+                    if (opts.spawnCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'weapon' })
+                    if (opts.spawnFCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'force' })
+                    if (opts.force && !gs.pod) gs.pod = { id: gs.nextId++, state: 'attached', x: gs.ship.x + POD.noseX, y: gs.ship.y }
                     if (opts.crushShip) gs.ship.x = gs.camX
                     if (opts.toPhase1) { gs.camX = STAGE_END; step(gs, { left: false, right: false, up: false, down: false, a: false }) }
                     if (opts.openMouth && gs.p1) { gs.p1.mouth = 'open'; gs.p1.mouthT = 10000 }
@@ -262,12 +283,15 @@ export default function RType() {
                 getState: () => [
                     `x ${Math.round(gs.ship.x)} (screen ${Math.round(gs.ship.x - gs.camX)})  y ${Math.round(gs.ship.y)}  cam ${Math.round(gs.camX)}${gs.camLock ? ' LOCK' : ''}`,
                     `score ${gs.score}  hi ${Math.max(hiscore, gs.score)}  lives ${gs.lives}  arm ${gs.ship.weapon}${gs.ship.charge ? ` charge ${gs.ship.charge}` : ''}  inv ${gs.ship.inv}  mode ${gs.mode}`,
-                    `enemies ${gs.enemies.length}  bullets ${gs.bullets.length}  missiles ${gs.missiles.length}  shots ${gs.shots.length}  phase1 ${gs.p1 ? `${gs.p1.mouth} core ${gs.p1.coreHp}/${gs.p1.coreMax}` : 'field'}`,
+                    `pod ${gs.pod ? `${gs.pod.state} @${Math.round(gs.pod.x - gs.camX)}` : 'none'}  enemies ${gs.enemies.length}  bullets ${gs.bullets.length}  missiles ${gs.missiles.length}  shots ${gs.shots.length}  phase1 ${gs.p1 ? `${gs.p1.mouth} core ${gs.p1.coreHp}/${gs.p1.coreMax}` : 'field'}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
                 actions: [
                     { label: '+1 LIFE', run: () => { gs.lives += 1; return 'extra life' } },
                     { label: 'GIVE WAVE', run: () => { gs.ship.weapon = 'wave'; return 'wave cannon armed' } },
+                    { label: 'GIVE LASER', run: () => { gs.ship.weapon = 'laser'; return 'laser lance armed' } },
+                    { label: 'GIVE POD', run: () => { if (!gs.pod) gs.pod = { id: gs.nextId++, state: 'attached', x: gs.ship.x + POD.noseX, y: gs.ship.y }; return gs.pod.state === 'attached' ? 'force pod on the nose' : 'pod already riding' } },
+                    { label: 'POD OUT/IN', run: () => { if (!gs.pod) return 'no pod — GIVE POD first'; gs.pod.state = gs.pod.state === 'attached' ? 'fly' : 'return'; return `pod → ${gs.pod.state}` } },
                     { label: 'TO PHASE-1', run: () => { window.__rTest.setup({ toPhase1: true }); return 'the dreadnought looms' } },
                     { label: 'OPEN MAW', run: () => { window.__rTest.setup({ openMouth: true }); return 'the maw gapes' } },
                     { label: 'CLEAR FIRE', run: () => { gs.bullets.length = 0; gs.missiles.length = 0; return 'lane swept' } },
@@ -275,16 +299,17 @@ export default function RType() {
             })
             exposeGame({
                 id: 'r-type',
-                buttons: ['left', 'right', 'up', 'down', 'a'],
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reset: (seed) => {
                     gs = makeGame(seed >>> 0)
                     part.length = 0
                     keys.l = keys.r = keys.u = keys.d = keys.f = false
+                    podQ = false
                     screen = 'play'
                     setMode('play')
                 },
                 tick: (pad) => {
-                    step(gs, { left: !!pad.left, right: !!pad.right, up: !!pad.up, down: !!pad.down, a: !!pad.a })
+                    step(gs, { left: !!pad.left, right: !!pad.right, up: !!pad.up, down: !!pad.down, a: !!pad.a, b: !!pad.b })
                     drain()
                 },
                 state: () => ({
@@ -292,6 +317,7 @@ export default function RType() {
                     seed: gs.seed, lives: gs.lives,
                     x: Math.round(gs.ship.x), y: Math.round(gs.ship.y),
                     weapon: gs.ship.weapon, charge: gs.ship.charge,
+                    pod: gs.pod ? gs.pod.state : 'none',
                     waveIdx: gs.waveIdx, enemies: gs.enemies.length,
                     cleared: gs.cleared ? 1 : 0,
                     hash: stateHash(gs),
@@ -322,7 +348,7 @@ export default function RType() {
     return (
         <div ref={wrapRef} className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none">
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'R-TYPE')} onResume={handleResume} />}
-            <VirtualControls visible={mode === 'play' && !paused} />
+            <VirtualControls visible={mode === 'play' && !paused} secondAction={{ label: 'POD', code: 'KeyB' }} />
         </div>
     )
 }
