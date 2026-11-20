@@ -332,7 +332,7 @@ export async function buildDataset({ base, out, limit = 500, key = null, log = c
     if (humanGames.length < 2) card.honestGaps.push(`human takes cover ${humanGames.length || 0} game(s) (${humanGames.join(', ') || 'none'}); "covers 2 or more games" means human takes in 2+ games (audit: claptest is not one)`)
     if (!humanVoiceSessions.size) card.honestGaps.push('no consenting-voice human take yet')
 
-    const dir = `${out}/${version.replace(/\+/g, '-')}`
+    const dir = `${out}/v1-${digest.slice(0, 12)}` // flat: the version string's '/' stays inside the files, not in the path
     rmSync(dir, { recursive: true, force: true })
     for (const [name, content] of Object.entries(files)) {
         const p = `${dir}/${name}`

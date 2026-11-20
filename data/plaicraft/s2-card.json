@@ -1,0 +1,63 @@
+{
+ "version": "plaicraft-ds/v1+e7ba4f44e46a",
+ "versionedAs": "plaicraft-ds/v1",
+ "store": "https://retrogames.jalfern.workers.dev",
+ "rebuiltBy": "npm run plaicraft:s2",
+ "games": {
+  "bomb-defuse": {
+   "takes": 2,
+   "humanTakes": 0,
+   "ticks": 2164,
+   "humanTicks": 0,
+   "humanVoice": 0,
+   "engine": null,
+   "hours": 0,
+   "featurizer": null
+  },
+  "claptest": {
+   "takes": 5,
+   "humanTakes": 0,
+   "ticks": 3006,
+   "humanTicks": 0,
+   "humanVoice": 0,
+   "engine": null,
+   "hours": 0,
+   "featurizer": null
+  },
+  "gauntlet": {
+   "takes": 11,
+   "humanTakes": 8,
+   "ticks": 45234,
+   "humanTicks": 36439,
+   "humanVoice": 0,
+   "engine": "gauntlet/model-v2 (#2299, 31 features)",
+   "hours": 10.122,
+   "featurizer": "gauntlet/model-v2 (#2299, 31 features)"
+  }
+ },
+ "players": {
+  "namedHumans": [
+   "jalfern"
+  ],
+  "legacyMerged": "jalfern"
+ },
+ "humanHours": 10.122,
+ "sessionsWithVoice": 8,
+ "rows": {
+  "train": 28239,
+  "heldoutPlayers": 0,
+  "heldoutSeeds": 5800
+ },
+ "heldoutPlayers": [],
+ "splitsNote": "only 1 named human in the store — the players split is degenerate; \"no held-out player appears in train\" is vacuous-but-enforced until more people record (#1712 audit)",
+ "acceptance": {
+  "rebuildsDeterministically": "proven by plaicraft:s2check (double export, byte-compare); live rebuilds against an unchanged store answer the same digest",
+  "covers2PlusGames": false,
+  "audioIncluded": true,
+  "noHeldoutPlayerInTrain": true
+ },
+ "honestGaps": [
+  "named humans = 1; the 2-real-people line needs friends'/co-op takes (ask filed via jonq) — legacy 'player' merges to jalfern and never counts as a second player",
+  "human takes cover 1 game(s) (gauntlet); \"covers 2 or more games\" means human takes in 2+ games (audit: claptest is not one)"
+ ]
+}

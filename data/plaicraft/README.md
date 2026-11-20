@@ -37,3 +37,30 @@ trained on; scored ONCE for the write-up (the weight-surgery discipline).
 
 `sample.jsonl` is the first 100 rows of practice seed 0, committed so the
 format is reviewable without the (regenerable, large) full corpus.
+
+## S2 — the store dataset (#1712, `npm run plaicraft:s2`)
+
+Different corpus, same lineage: S2 pulls the HUMAN takes from the S1 store
+(relay worker + R2, #1711) and writes `data/plaicraft-dataset/v1-<digest>/`
+— splits by whole PLAYERS and whole SEEDS, tick-aligned voice clips, a
+manifest, and a card reporting every #1712 acceptance line honestly
+(`s2-card.json` / `s2-sample.jsonl` committed here for review without the
+corpus; the full directory is regenerable and gitignored).
+
+- Provenance is mechanical (audit 2026-11-20): native human seats only
+  (`countsAsHumanSource`, relay/core.js) — relabeled takes are an audit
+  trace, not a thumb, and sit in `dev/synthetic/`; qabot/anon likewise;
+  `claptest` is ignored (not a game); the legacy fixed label `player`
+  merges to `jalfern` with `legacy:true` and never counts as a second
+  player. Gauntlet human takes must replay-verify 100% before rows enter
+  (#1793) — tampered files are rejected with the divergence tick named in
+  `takes.json`, bytes kept.
+- Determinism: same store + same build => byte-identical output dir
+  (digest over per-file sha256s; proven twice live + twice per CI check run).
+- Store reads need the key: `JON_KEY` resolves from `.env.local` (#2157).
+- Harness: `npm run plaicraft:s2check` (fixture store via relaysim,
+  `--mutate` proves the split scan load-bearing).
+- Honest gaps while the store holds one named human (jonq #2802 asks Jon for
+  friends'/co-op takes): 2+ players and human-takes-in-2+games stay FALSE
+  on the live card until those arrive — the pipeline enforces the lines, it
+  does not narrow them.

@@ -30,6 +30,8 @@ data/plaicraft/*
 !data/plaicraft/sample.jsonl
 !data/plaicraft/results.json
 !data/plaicraft/export-stats.json
+!data/plaicraft/s2-card.json
+!data/plaicraft/s2-sample.jsonl
 data/plaicraft-dataset/
 # #2734: the PICK RUSH grasp-and-place corpus regenerates from seed — the
 # JSONL ride out of git (10 MB/commit), README + summary stay as the evidence
