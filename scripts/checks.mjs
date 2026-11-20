@@ -175,6 +175,10 @@ export const MANUAL_CHECKS = [
   "scripts/neonraincheck.mjs",
   "scripts/oceancheck.mjs",
   "scripts/padlinkcheck.mjs",
+  // #1712 S2: dataset pipeline gate — pure Node against relaysim fixtures (the
+  // production worker in-process); ~30 s per pass, deterministic, lane-driven
+  // (npm run plaicraft:s2check).
+  "scripts/plaicraft-s2check.mjs",
   // #1625: the Plaicraft gate regenerates 20 recorded runs and rolls the
   // trained seat — ~40 s per pass; advisory-only, driven from the lane
   // (npm run plaicraftcheck). Deterministic: same commit, same numbers.
