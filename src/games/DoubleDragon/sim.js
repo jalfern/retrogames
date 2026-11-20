@@ -1,0 +1,557 @@
+// sim.js — DOUBLE DRAGON S1 "Walnuts Street" — the pure brawler engine.
+// DOM-free: Node (ddragoncheck) and the browser shell share THIS truth.
+// Determinism law: every sim random derives from the seed (mulberry32);
+// Math.random() may only feed juice in the shell (particles, shake).
+//
+// The spec (issue #2807, the original: Technōs arcade 1987):
+//  - belt-scroll brawl with a depth axis (8-way walk, y = depth, draw order)
+//  - weighted strikes: punch / kick / jump kick; stagger, knockdown, get-up
+//  - the signature spin back-heel when surrounded
+//  - one hit costs Billy a life (arcade lethal); 3 lives, respawn i-frames
+//  - stick pickup extends reach and damage
+//  - waves: Williams goons -> Amons (one armed) -> Abobo mini-boss
+
+export const W = 320
+export const H = 224
+export const DEEP_TOP = 132   // far edge of the street band (feet y)
+export const DEEP_BOT = 206   // near edge of the street band
+export const STAGE_W = 960     // three screens to the clear
+
+export const CFG = {
+    walkSpeed: 1.2,
+    deepSpeed: 0.9,
+    jumpV: 4.7,
+    jumpG: 0.23,
+    punch: { startup: 4, active: 4, recover: 6, reach: 15, depth: 7, dmg: 1 },
+    kick: { startup: 6, active: 5, recover: 8, reach: 21, depth: 7, dmg: 2 },
+    stickPunchReach: 23,
+    stickKickReach: 27,
+    stickDmg: 2,
+    spin: { total: 26, reach: 24, dmg: 2 },
+    jumpKickDmg: 3,
+    hitstun: 14,          // enemy stagger on a non-knockdown hit
+    downTime: 44,         // ticks flat on the street
+    getupTime: 22,        // then this many ticks of enemy i-frames
+    respawnIFrames: 100,
+    grabRange: 15,
+    grabEscape: 3,        // presses to break free
+    grabTimeout: 52,      // ticks held before the thug's knee lands (a life)
+    attackersMax: 2,      // crowd law: never three at once
+    lives: 3,
+    clearHold: 150,       // STAGE CLEAR banner ticks before the loop re-runs
+}
+
+export const ENEMY_DEF = {
+    williams: { hp: 4, speed: 0.85, score: 200, reach: 16, tall: 32, color: 'williams' },
+    amon: { hp: 6, speed: 0.95, score: 300, reach: 17, tall: 36, color: 'amon' },
+    abobo: { hp: 14, speed: 0.7, score: 1000, reach: 20, tall: 44, color: 'abobo' },
+}
+
+export const WAVES = [
+    { triggerX: 90, spawns: [{ kind: 'williams', side: 'left' }, { kind: 'williams', side: 'right' }] },
+    { triggerX: 340, spawns: [{ kind: 'amon', side: 'right', stick: true }, { kind: 'amon', side: 'left' }] },
+    { triggerX: 560, spawns: [{ kind: 'abobo', side: 'right' }, { kind: 'williams', side: 'left' }, { kind: 'williams', side: 'right' }] },
+]
+
+// mulberry32 — the one seeded rng the sim consumes.
+export function mulberry32(seed) {
+    let a = seed >>> 0
+    return function () {
+        a |= 0; a = (a + 0x6D2B79F5) | 0
+        let t = Math.imul(a ^ (a >>> 15), 1 | a)
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+}
+
+let NEXT_ID = 1
+
+function makeBilly() {
+    return {
+        x: 40, y: (DEEP_TOP + DEEP_BOT) / 2 | 0, face: 1,
+        z: 0, zv: 0,
+        state: 'idle',    // idle|walk|jump|punch|kick|spin|grabbed|dying
+        stateT: 0, anim: 0,
+        attackHit: null,  // set of enemy ids hit by the current swing
+        inv: CFG.respawnIFrames, // merciful flicker at the start
+        weapon: null,     // null | 'stick'
+        grabFrom: null,   // enemy id holding him
+        presses: 0, pressCooldown: 0,
+        lives: CFG.lives,
+    }
+}
+
+export function makeGame(seed = 1) {
+    const rnd = mulberry32(seed)
+    const gs = {
+        seed: seed >>> 0, rnd,
+        tick: 0, mode: 'play',   // play | clear | gameover
+        score: 0, hi: 0,
+        cleared: false,
+        camX: 0, camLock: false,
+        billy: makeBilly(),
+        enemies: [],
+        pickups: [],
+        waveIdx: 0, waveActive: false, banner: 0,
+        events: [],   // one-shot cues drained by the shell (sound/juice only)
+        k: 0,         // KO streak timer helper
+    }
+    NEXT_ID = 1
+    return gs
+}
+
+function spawnEnemy(gs, kind, side, stick) {
+    const def = ENEMY_DEF[kind]
+    const e = {
+        id: NEXT_ID++, kind,
+        x: side === 'left' ? gs.camX - 20 : gs.camX + W + 20,
+        y: DEEP_TOP + Math.floor(gs.rnd() * (DEEP_BOT - DEEP_TOP)),
+        face: side === 'left' ? 1 : -1,
+        hp: def.hp, state: 'enter', stateT: 0, anim: Math.floor(gs.rnd() * 8),
+        hasStick: !!stick, stickDropped: false,
+        attackCooldown: 30 + Math.floor(gs.rnd() * 60),
+        inv: 0, spinHit: false,
+    }
+    gs.enemies.push(e)
+    return e
+}
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
+
+function billyDies(gs) {
+    const b = gs.billy
+    b.lives -= 1
+    b.weapon = null
+    gs.events.push('billy_die')
+    if (b.lives <= 0) {
+        gs.mode = 'gameover'
+        b.state = 'dying'; b.stateT = 0
+        return
+    }
+    b.state = 'idle'; b.stateT = 0; b.z = 0; b.zv = 0
+    b.inv = CFG.respawnIFrames
+    b.x = clamp(gs.camX + 30, 8, STAGE_W - 8)
+    b.grabFrom = null
+    gs.enemies.forEach((e) => { if (e.state === 'grab') { e.state = 'stagger'; e.stateT = CFG.hitstun } })
+}
+
+// hit an enemy; returns true if it died
+function hurtEnemy(gs, e, dmg, knockdown) {
+    if (e.inv > 0 || e.state === 'down' || e.state === 'getup' || e.state === 'dying') return false
+    e.hp -= dmg
+    gs.events.push(knockdown ? 'hit_hard' : 'hit')
+    if (e.hp <= 0) {
+        e.state = 'dying'; e.stateT = 0
+        gs.score += ENEMY_DEF[e.kind].score
+        gs.hi = Math.max(gs.hi, gs.score)
+        gs.events.push('ko')
+        if (e.hasStick && !e.stickDropped) {
+            e.hasStick = false
+            gs.pickups.push({ x: e.x, y: e.y, kind: 'stick', bob: 0 })
+        }
+        return true
+    }
+    if (knockdown) { e.state = 'down'; e.stateT = 0 } else { e.state = 'stagger'; e.stateT = CFG.hitstun }
+    return false
+}
+
+function billyAttack(gs, kind) {
+    const b = gs.billy
+    if (b.state === 'punch' || b.state === 'kick' || b.state === 'spin') return
+    // the signature spin back-heel: a swing asked for while surrounded
+    const grounded = gs.enemies.filter((e) => e.state !== 'dying' && e.state !== 'down' && e.inv <= 0)
+    const near = grounded.filter((e) => Math.abs(e.x - b.x) <= CFG.spin.reach + 6 && Math.abs(e.y - b.y) <= 10 && e !== null && nearish(e, b, CFG.spin.reach))
+    if (b.z === 0 && near.length >= 2) {
+        b.state = 'spin'; b.stateT = 0; b.attackHit = new Set()
+        gs.events.push('whoosh')
+        return
+    }
+    if (b.z > 0) { b.state = kind === 'punch' ? 'punch' : 'kick'; b.attackHit = new Set(); gs.events.push('whoosh'); return }
+    b.state = kind
+    b.stateT = 0
+    b.attackHit = new Set()
+    gs.events.push('whoosh')
+}
+
+function nearish(e, b, reach) {
+    const dx = (e.x - b.x) * b.face
+    return dx > -6 && dx <= reach && Math.abs(e.y - b.y) <= CFG.punch.depth + 2
+}
+
+function reachFor(b, kind) {
+    const stick = b.weapon === 'stick'
+    if (kind === 'punch') return stick ? CFG.stickPunchReach : CFG.punch.reach
+    return stick ? CFG.stickKickReach : CFG.kick.reach
+}
+
+function applySwing(gs) {
+    const b = gs.billy
+    const cfg = CFG[b.state]
+    if (!cfg) return
+    if (b.stateT < cfg.startup || b.stateT >= cfg.startup + cfg.active) return
+    const reach = reachFor(b, b.state)
+    const dmg = b.weapon === 'stick' ? CFG.stickDmg : cfg.dmg
+    for (const e of gs.enemies) {
+        if (b.attackHit.has(e.id)) continue
+        if (e.state === 'dying') continue
+        if (e.state === 'down') continue   // standing swings do not stomp
+        if (nearish(e, b, reach)) {
+            b.attackHit.add(e.id)
+            hurtEnemy(gs, e, dmg, b.state === 'kick' || b.weapon === 'stick')
+        }
+    }
+}
+
+function applyJumpKick(gs) {
+    const b = gs.billy
+    if (b.z <= 2) return
+    for (const e of gs.enemies) {
+        if (b.attackHit.has(e.id) || e.state === 'dying' || e.state === 'down') continue
+        if (Math.abs(e.x - b.x) <= 18 && Math.abs(e.y - b.y) <= CFG.punch.depth) {
+            b.attackHit.add(e.id)
+            hurtEnemy(gs, e, CFG.jumpKickDmg, true)
+        }
+    }
+}
+
+function applySpin(gs) {
+    const b = gs.billy
+    for (const e of gs.enemies) {
+        if (b.attackHit.has(e.id) || e.state === 'dying' || e.state === 'down') continue
+        const dx = Math.abs(e.x - b.x)
+        if (dx <= CFG.spin.reach && Math.abs(e.y - b.y) <= 10) {
+            b.attackHit.add(e.id)
+            hurtEnemy(gs, e, CFG.spin.dmg, true)
+        }
+    }
+}
+
+function applyStomp(gs) {
+    const b = gs.billy
+    if (b.z > 0) return
+    for (const e of gs.enemies) {
+        if (e.state !== 'down' || b.attackHit.has(e.id)) continue
+        if (Math.abs(e.x - b.x) <= reachFor(b, 'kick') && Math.abs(e.y - b.y) <= 9) {
+            b.attackHit.add(e.id)
+            e.inv = 0
+            hurtEnemy(gs, e, 1, false)
+            if (e.hp > 0) { e.state = 'down'; e.stateT = Math.floor(CFG.downTime / 2) }
+            gs.events.push('stomp')
+        }
+    }
+}
+
+function updateBilly(gs, pad) {
+    const b = gs.billy
+    if (b.state === 'dying') { b.stateT += 1; return }
+    if (b.inv > 0) b.inv -= 1
+    if (b.pressCooldown > 0) b.pressCooldown -= 1
+
+    // grabbed: mash B (kick) to break free
+    if (b.state === 'grabbed') {
+        b.stateT += 1
+        if (pad.b && b.pressCooldown <= 0) { b.presses += 1; b.pressCooldown = 6; gs.events.push('struggle') }
+        const holder = gs.enemies.find((e) => e.id === b.grabFrom)
+        if (b.presses >= CFG.grabEscape) {
+            b.state = 'idle'; b.stateT = 0; b.presses = 0; b.grabFrom = null
+            if (holder) { holder.state = 'stagger'; holder.stateT = CFG.hitstun; holder.attackCooldown = 80 }
+            gs.events.push('escape')
+        } else if (b.stateT >= CFG.grabTimeout) {
+            b.state = 'idle'; b.presses = 0; b.grabFrom = null
+            billyDies(gs)
+        }
+        return
+    }
+
+    // attack state machines
+    if (b.state === 'punch' || b.state === 'kick') {
+        b.stateT += 1
+        const cfg = CFG[b.state]
+        applySwing(gs)
+        applyJumpKick(gs)
+        applyStomp(gs)
+        if (b.stateT >= cfg.startup + cfg.active + cfg.recover) { b.state = b.z > 0 ? 'jump' : 'idle'; b.stateT = 0 }
+    } else if (b.state === 'spin') {
+        b.stateT += 1
+        applySpin(gs)
+        if (b.stateT >= CFG.spin.total) { b.state = 'idle'; b.stateT = 0 }
+    }
+
+    // new attack inputs
+    if (pad.b) billyAttack(gs, 'kick')
+    else if (pad.a === 'punch' || pad.punch) billyAttack(gs, 'punch')
+
+    // jump
+    if (pad.up && b.z === 0 && b.state !== 'punch' && b.state !== 'kick' && b.state !== 'spin') {
+        b.z = 0.001; b.zv = CFG.jumpV
+        b.state = 'jump'; b.stateT = 0
+        gs.events.push('jump')
+    }
+    if (b.z > 0 || b.zv > 0) {
+        b.z += b.zv
+        b.zv -= CFG.jumpG
+        if (b.z <= 0) {
+            b.z = 0; b.zv = 0
+            if (b.state === 'jump') { b.state = 'idle'; b.stateT = 0 }
+            gs.events.push('land')
+        }
+    }
+
+    // walking (locked out mid-swing on the ground; air keeps drift)
+    let moving = false
+    const canWalk = b.z > 0 || b.state === 'idle' || b.state === 'walk'
+    if (canWalk) {
+        if (pad.left) { b.x -= CFG.walkSpeed; b.face = -1; moving = true }
+        if (pad.right) { b.x += CFG.walkSpeed; b.face = 1; moving = true }
+        if (pad.up && b.z === 0) { b.y -= CFG.deepSpeed; moving = true }
+        if (pad.down && b.z === 0) { b.y += CFG.deepSpeed; moving = true }
+    }
+    b.x = clamp(b.x, 8, STAGE_W - 8)
+    b.y = clamp(b.y, DEEP_TOP, DEEP_BOT)
+    if (b.z === 0) b.state = moving ? 'walk' : (b.state === 'walk' ? 'idle' : b.state)
+    if (moving || b.state !== 'idle') b.anim += 1
+
+    // stick pickup
+    for (let i = gs.pickups.length - 1; i >= 0; i--) {
+        const p = gs.pickups[i]
+        p.bob += 1
+        if (Math.abs(p.x - b.x) <= 10 && Math.abs(p.y - b.y) <= 8 && !b.weapon) {
+            gs.pickups.splice(i, 1)
+            b.weapon = 'stick'
+            gs.score += 100
+            gs.events.push('pickup')
+        }
+    }
+}
+
+function attackerCount(gs) {
+    return gs.enemies.filter((e) => e.state === 'attack' || e.state === 'windup').length
+}
+
+function enemyNearest(gs) {
+    const b = gs.billy
+    let best = null, bd = 1e9
+    for (const e of gs.enemies) {
+        if (e.state === 'dying' || e.state === 'enter') continue
+        const d = Math.abs(e.x - b.x) + Math.abs(e.y - b.y) * 0.6
+        if (d < bd) { bd = d; best = e }
+    }
+    return best
+}
+
+function updateEnemy(gs, e) {
+    const b = gs.billy
+    const def = ENEMY_DEF[e.kind]
+    if (e.inv > 0) e.inv -= 1
+    e.anim += 1
+
+    switch (e.state) {
+    case 'enter': {
+        // walk onto the street from the spawn side
+        const tx = e.x < b.x ? gs.camX + 24 : gs.camX + W - 24
+        const dx = Math.sign(tx - e.x)
+        e.x += dx * (def.speed + 0.5)
+        e.face = Math.sign(b.x - e.x) || 1
+        if ((dx > 0 && e.x >= gs.camX + 10) || (dx < 0 && e.x <= gs.camX + W - 10)) { e.state = 'walk'; e.stateT = 0 }
+        break
+    }
+    case 'walk': {
+        if (b.state === 'dying' || gs.mode === 'gameover') break
+        e.face = Math.sign(b.x - e.x) || 1
+        const dx = b.x - e.x
+        const dy = b.y - e.y
+        const adx = Math.abs(dx)
+        if (e.attackCooldown > 0) e.attackCooldown -= 1
+
+        // grab attempt (grounded, uninvited Billy)
+        const grabOk = (e.kind === 'amon' || e.kind === 'abobo')
+        if (grabOk && b.z === 0 && b.inv <= 0 && b.state !== 'grabbed'
+            && b.state !== 'dying' && adx <= CFG.grabRange && Math.abs(dy) <= 5 && e.attackCooldown <= 0
+            && attackerCount(gs) < CFG.attackersMax) {
+            e.state = 'grab'; e.stateT = 0
+            b.state = 'grabbed'; b.stateT = 0; b.presses = 0; b.grabFrom = e.id
+            gs.events.push('grabbed')
+            break
+        }
+
+        // attack decision
+        const inRange = adx <= def.reach && Math.abs(dy) <= 6 && b.state !== 'dying'
+        if (inRange && e.attackCooldown <= 0 && attackerCount(gs) < CFG.attackersMax) {
+            e.state = 'windup'; e.stateT = 0
+            break
+        }
+        // approach: close x and match depth; back-row thugs hang slightly off
+        const slot = gs.enemies.filter((o) => o !== e && o.state !== 'dying' && Math.sign(o.x - b.x) === Math.sign(e.x - b.x) && Math.abs(o.x - b.x) < 26).length
+        const wantX = b.x - Math.sign(dx || 1) * (def.reach - 4 + slot * 14)
+        if (Math.abs(wantX - e.x) > 3) e.x += clamp(wantX - e.x, -def.speed, def.speed)
+        if (Math.abs(dy) > 2) e.y += clamp(dy, -def.speed * 0.8, def.speed * 0.8)
+        break
+    }
+    case 'windup': {
+        e.stateT += 1
+        e.face = Math.sign(b.x - e.x) || e.face
+        if (e.stateT >= 12) { e.state = 'attack'; e.stateT = 0 }
+        break
+    }
+    case 'attack': {
+        e.stateT += 1
+        if (e.stateT === 3) {
+            const hit = b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 && Math.abs(e.y - b.y) <= 8 && b.state !== 'grabbed'
+            if (hit && b.inv <= 0 && b.state !== 'dying' && gs.mode === 'play') {
+                billyDies(gs)
+            }
+        }
+        if (e.stateT >= 14) { e.state = 'back'; e.stateT = 0; e.attackCooldown = 50 + Math.floor(gs.rnd() * 50) }
+        break
+    }
+    case 'back': {
+        e.stateT += 1
+        e.x -= e.face * def.speed * 0.7
+        if (e.stateT >= 24) { e.state = 'walk'; e.stateT = 0 }
+        break
+    }
+    case 'grab': {
+        // holding Billy; the escape/timeout is resolved in updateBilly
+        e.face = Math.sign(b.x - e.x) || e.face
+        e.x += clamp(b.x - e.face * 10 - e.x, -1, 1)
+        break
+    }
+    case 'stagger': {
+        e.stateT -= 1
+        e.x -= e.face * 0.4
+        if (e.stateT <= 0) { e.state = 'walk'; e.stateT = 0 }
+        break
+    }
+    case 'down': {
+        e.stateT += 1
+        if (e.stateT >= CFG.downTime) { e.state = 'getup'; e.stateT = 0; e.inv = CFG.getupTime }
+        break
+    }
+    case 'getup': {
+        e.stateT += 1
+        if (e.stateT >= CFG.getupTime) { e.state = 'walk'; e.stateT = 0; e.attackCooldown = 20 }
+        break
+    }
+    case 'dying': {
+        e.stateT += 1
+        break
+    }
+    }
+    e.y = clamp(e.y, DEEP_TOP, DEEP_BOT)
+}
+
+export function step(gs, pad = {}) {
+    gs.tick += 1
+
+    if (gs.mode === 'clear') {
+        gs.banner -= 1
+        if (gs.banner <= 0) {
+            // the loop re-runs Walnuts Street, score carried (arcade law)
+            gs.mode = 'play'
+            gs.cleared = true
+            gs.waveIdx = 0
+            gs.waveActive = false
+            gs.enemies = []
+            gs.pickups = []
+            gs.camX = 0
+            const b = gs.billy
+            b.x = 40; b.inv = CFG.respawnIFrames
+        }
+        return gs
+    }
+    if (gs.mode === 'gameover') {
+        updateBilly(gs, {})
+        gs.enemies.forEach((e) => updateEnemy(gs, e))
+        return gs
+    }
+
+    const b = gs.billy
+    updateBilly(gs, pad)
+
+    // camera: follow, then lock while a wave lives
+    if (!gs.camLock) {
+        const target = clamp(b.x - Math.floor(W * 0.45), 0, STAGE_W - W)
+        gs.camX += clamp(target - gs.camX, -3, 3)
+    }
+    b.x = clamp(b.x, gs.camX + 8, gs.camX + W - 8)
+
+    // wave triggers
+    if (!gs.waveActive && gs.waveIdx < WAVES.length && b.x >= WAVES[gs.waveIdx].triggerX) {
+        const w = WAVES[gs.waveIdx]
+        gs.waveActive = true
+        gs.camLock = true
+        w.spawns.forEach((s) => spawnEnemy(gs, s.kind, s.side, s.stick))
+        gs.events.push('wave')
+    }
+
+    gs.enemies.forEach((e) => updateEnemy(gs, e))
+    gs.enemies = gs.enemies.filter((e) => !(e.state === 'dying' && e.stateT > 30))
+
+    // wave cleared?
+    if (gs.waveActive && gs.enemies.length === 0 && gs.mode === 'play') {
+        gs.waveActive = false
+        gs.camLock = false
+        gs.waveIdx += 1
+        if (gs.waveIdx >= WAVES.length) {
+            gs.mode = 'clear'
+            gs.banner = CFG.clearHold
+            gs.score += 500
+            gs.hi = Math.max(gs.hi, gs.score)
+            gs.events.push('clear')
+        }
+    }
+    return gs
+}
+
+// The honest-percept autopilot: reads the same truth the screen shows.
+// Used by the attract demo AND the harness WINNABLE proof.
+export function autopilot(gs) {
+    const b = gs.billy
+    const pad = { left: false, right: false, up: false, down: false, a: false, b: false }
+    if (gs.mode !== 'play' || b.state === 'grabbed') {
+        if (b.state === 'grabbed' && gs.tick % 4 === 0) pad.b = true // mash free
+        return pad
+    }
+    const target = enemyNearest(gs)
+    if (!target) {
+        pad.right = true
+        return pad
+    }
+    const dx = target.x - b.x
+    const dy = target.y - b.y
+    const adx = Math.abs(dx)
+    // bail out of a windup about to land near us
+    const threat = gs.enemies.find((e) => (e.state === 'windup' || e.state === 'attack') && Math.abs(e.x - b.x) < 30 && Math.abs(e.y - b.y) <= 7)
+    if (threat && b.z === 0) {
+        if (gs.tick % 3 === 0) pad.up = gs.tick % 6 === 0
+        pad.left = threat.x > b.x
+        pad.right = threat.x < b.x
+        return pad
+    }
+    if (Math.abs(dy) > 3) { pad.up = dy < 0; pad.down = dy > 0 }
+    if (adx > 16) { pad.right = dx > 0; pad.left = dx < 0 }
+    else {
+        const surrounded = gs.enemies.filter((e) => e.state !== 'dying' && e.state !== 'down' && Math.abs(e.x - b.x) <= CFG.spin.reach + 6 && Math.abs(e.y - b.y) <= 10).length >= 2
+        if (!surrounded && gs.tick % 9 < 2) pad.b = true // kick (kicks knock down)
+        else if (surrounded && gs.tick % 7 < 2) pad.b = true // spin back-heel
+    }
+    return pad
+}
+
+export function stateHash(gs) {
+    let h = 2166136261
+    const mix = (v) => { h ^= Math.round(v * 1000) & 0xffffffff; h = Math.imul(h, 16777619) }
+    mix(gs.tick)
+    mix(gs.score)
+    mix(gs.mode === 'play' ? 1 : gs.mode === 'clear' ? 2 : 3)
+    mix(gs.camX)
+    mix(gs.waveIdx)
+    const b = gs.billy
+    mix(b.x); mix(b.y); mix(b.z); mix(b.lives)
+    mix(b.state.length); mix(b.face); mix(b.weapon ? 1 : 0)
+    mix(gs.enemies.length)
+    for (const e of gs.enemies) {
+        mix(e.id); mix(e.x); mix(e.y); mix(e.hp); mix(e.state.length); mix(e.inv)
+    }
+    return h >>> 0
+}
