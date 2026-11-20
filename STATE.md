@@ -11,10 +11,9 @@
   (5 named harms incl. new `depot-impervious`), seeds 1..12 still win (depot = third
   emplacement), contractcheck 15/15.
 - /retrogames/contra S1+S2+S3, /retrogames/floor-boss — unchanged.
-- **PROD as of 00:22Z still serves `index-7bvPdNqk.js`** (pre-S3.5) — Vercel queue congestion
-  affects every lane today, not a build problem (our Vercel preview + `static` were green on
-  #2791). Verify: poll `curl -sL 'https://jalfern.com/retrogames/?cb=N'` for a new chunk
-  hash, then `LC_ALL=C grep -c volley` on it (must be > 0).
+- **PROD VERIFIED live** (~00:2xZ): shell `index-CgbG8ska.js`, Contra chunk
+  `index-DQr6N20e.js` carries `depotHp:10`, the `volley` event + lane-aim law verbatim.
+  (Deploy lagged merge ~55 min — Vercel queue congestion across lanes, not a build problem.)
 
 ## BOARD
 - **#2779 CONTRA — S4 remains (last stage):** co-op — CPU ally seat default (Jon's
