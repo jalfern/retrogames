@@ -93,6 +93,7 @@ export function makeGame(seed = 1) {
         enemies: [],
         pickups: [],
         waveIdx: 0, waveActive: false, banner: 0,
+        scoreFlash: null, // { v, t } — HUD score delta on a KO/pickup (juice, not scored state)
         events: [],   // one-shot cues drained by the shell (sound/juice only)
         k: 0,         // KO streak timer helper
     }
@@ -103,7 +104,9 @@ function spawnEnemy(gs, kind, side, stick) {
     const def = ENEMY_DEF[kind]
     const e = {
         id: gs.nextId++, kind,
-        x: side === 'left' ? gs.camX - 20 : gs.camX + W + 20,
+        // #2810 item 5: spawn well off-screen so the enter FSM is actually
+        // SEEN marching in — the old ±20 px faded in at the very pixel edge.
+        x: side === 'left' ? gs.camX - 44 : gs.camX + W + 44,
         y: DEEP_TOP + Math.floor(rng(gs) * (DEEP_BOT - DEEP_TOP)),
         face: side === 'left' ? 1 : -1,
         hp: def.hp, state: 'enter', stateT: 0, anim: Math.floor(rng(gs) * 8),
@@ -144,6 +147,7 @@ function hurtEnemy(gs, e, dmg, knockdown, onDowned) {
         e.state = 'dying'; e.stateT = 0
         gs.score += ENEMY_DEF[e.kind].score
         gs.hi = Math.max(gs.hi, gs.score)
+        gs.scoreFlash = { v: ENEMY_DEF[e.kind].score, t: 48 } // #2810 item 6
         gs.events.push('ko')
         if (e.hasStick && !e.stickDropped) {
             e.hasStick = false
@@ -321,6 +325,7 @@ function updateBilly(gs, pad) {
             gs.pickups.splice(i, 1)
             b.weapon = 'stick'
             gs.score += 100
+            gs.scoreFlash = { v: 100, t: 48 }
             gs.events.push('pickup')
         }
     }
@@ -349,12 +354,13 @@ function updateEnemy(gs, e) {
 
     switch (e.state) {
     case 'enter': {
-        // walk onto the street from the spawn side
-        const tx = e.x < b.x ? gs.camX + 24 : gs.camX + W - 24
+        // walk onto the street from the spawn side (#2810 item 5: the walk-in
+        // runs deep into the frame — 70 px of visible march, not a edge-fade)
+        const tx = e.x < b.x ? gs.camX + 26 : gs.camX + W - 26
         const dx = Math.sign(tx - e.x)
         e.x += dx * (def.speed + 0.5)
         e.face = Math.sign(b.x - e.x) || 1
-        if ((dx > 0 && e.x >= gs.camX + 10) || (dx < 0 && e.x <= gs.camX + W - 10)) { e.state = 'walk'; e.stateT = 0 }
+        if ((dx > 0 && e.x >= gs.camX + 26) || (dx < 0 && e.x <= gs.camX + W - 26)) { e.state = 'walk'; e.stateT = 0 }
         break
     }
     case 'walk': {
@@ -364,6 +370,16 @@ function updateEnemy(gs, e) {
         const dy = b.y - e.y
         const adx = Math.abs(dx)
         if (e.attackCooldown > 0) e.attackCooldown -= 1
+
+        // Abobo's shoulder charge (#2810 item 3): from mid-distance the giant
+        // telegraphs two beats of run-up, then body-checks the lane. Telegraph
+        // first, depth still decides (a lane over, it whooses past).
+        if (e.kind === 'abobo' && adx >= 40 && adx <= 150 && Math.abs(dy) <= 14
+            && e.attackCooldown <= 0 && attackerCount(gs) < CFG.attackersMax) {
+            e.state = 'chargewind'; e.stateT = 0
+            gs.events.push('chargewind')
+            break
+        }
 
         // grab attempt (grounded, uninvited Billy)
         const grabOk = (e.kind === 'amon' || e.kind === 'abobo')
@@ -393,6 +409,29 @@ function updateEnemy(gs, e) {
         e.stateT += 1
         e.face = Math.sign(b.x - e.x) || e.face
         if (e.stateT >= 12) { e.state = 'attack'; e.stateT = 0 }
+        break
+    }
+    case 'chargewind': {
+        // two running frames + a dip — the read before the body-check lands
+        e.stateT += 1
+        e.face = Math.sign(b.x - e.x) || e.face
+        if (Math.abs(b.y - e.y) > 2) e.y += clamp(b.y - e.y, -def.speed * 0.6, def.speed * 0.6)
+        if (e.stateT >= 16) { e.state = 'charge'; e.stateT = 0; gs.events.push('charge') }
+        break
+    }
+    case 'charge': {
+        e.stateT += 1
+        e.x += e.face * 2.8
+        if (e.stateT > 2) {
+            const hit = b.z <= 6 && Math.abs(e.x - b.x) <= 16 && Math.abs(e.y - b.y) <= 8 && b.state !== 'grabbed'
+            if (hit && b.inv <= 0 && b.state !== 'dying' && gs.mode === 'play') {
+                billyDies(gs)
+                e.state = 'back'; e.stateT = 0; e.attackCooldown = 90
+                break
+            }
+        }
+        const off = e.x < gs.camX - 10 || e.x > gs.camX + W + 10
+        if (e.stateT >= 60 || off) { e.state = 'back'; e.stateT = 0; e.attackCooldown = 70 + Math.floor(rng(gs) * 40) }
         break
     }
     case 'attack': {
@@ -444,6 +483,7 @@ function updateEnemy(gs, e) {
 
 export function step(gs, pad = {}) {
     gs.tick += 1
+    if (gs.scoreFlash && --gs.scoreFlash.t <= 0) gs.scoreFlash = null
 
     if (gs.mode === 'clear') {
         gs.banner -= 1
@@ -522,8 +562,11 @@ export function autopilot(gs) {
     const dx = target.x - b.x
     const dy = target.y - b.y
     const adx = Math.abs(dx)
-    // bail out of a windup about to land near us
-    const threat = gs.enemies.find((e) => (e.state === 'windup' || e.state === 'attack') && Math.abs(e.x - b.x) < 30 && Math.abs(e.y - b.y) <= 7)
+    // bail out of a windup about to land near us — Abobo's charge telegraph
+    // reads from further off, so the sidestep window is wider (#2810 item 3)
+    const threat = gs.enemies.find((e) => Math.abs(e.y - b.y) <= 7 && (
+        ((e.state === 'windup' || e.state === 'attack') && Math.abs(e.x - b.x) < 30)
+        || ((e.state === 'chargewind' || e.state === 'charge') && Math.abs(e.x - b.x) < 46)))
     if (threat && b.z === 0) {
         if (gs.tick % 3 === 0) pad.up = gs.tick % 6 === 0
         pad.left = threat.x > b.x
