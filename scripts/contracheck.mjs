@@ -307,17 +307,20 @@ const mkBoss = (seed = 7) => {
 }
 {
     const g2 = makeGame(22)
-    g2.p2.human = true   // pin seat 2 still; this leg drives the banks deliberately
-    let guard = 0, earlyEnd = false
+    g2.p2.human = true   // pin seat 2 still; this leg drains the SHARED pool deliberately
+    let guard = 0, earlyEnd = false, partnerHeld = false
     while (!g2.end && guard++ < 4000) {
         g2.p.inv = 0; g2.p.dead = 0
-        if (g2.lives > 0) g2.eb.push({ x: g2.p.x, y: g2.p.y - 14, vx: 0.1, vy: 0 })
-        else g2.eb.push({ x: g2.p2.x, y: g2.p2.y - 14, vx: 0.1, vy: 0 })   // hero down — drain the blue bank too
+        if (!g2.p.out) g2.eb.push({ x: g2.p.x, y: g2.p.y - 14, vx: 0.1, vy: 0 })
+        else g2.eb.push({ x: g2.p2.x, y: g2.p2.y - 14, vx: 0.1, vy: 0 })   // hero down — the partner holds the line alone
         step(g2, {})
-        if (g2.end && g2.lives > 0 && g2.p2.lives > 0) earlyEnd = true
+        if (g2.end && (!g2.p.out || !g2.p2.out)) earlyEnd = true
+        if (!g2.end && g2.p.out && g2.p2.dead === 0 && g2.tick > 0) partnerHeld = true
     }
-    r.check('GAME OVER needs both banks empty (never while a seat still fights)',
-        !earlyEnd && g2.end === 'dead' && g2.lives === 0 && g2.p2.lives === 0, `end=${g2.end} early=${earlyEnd}`)
+    r.check('#2814 GAME OVER needs BOTH seats down, never while one still stands (shared pool)',
+        !earlyEnd && g2.end === 'dead' && g2.lives === 0 && g2.p.out && g2.p2.out, `end=${g2.end} early=${earlyEnd} pool=${g2.lives}`)
+    r.check('#2814 a hero down leaves the partner running the run (arcade carry-on)',
+        partnerHeld, `partnerHeld=${partnerHeld}`)
 }
 
 // ------------------------------------------------------- S3: weapon wheel ---
@@ -585,7 +588,7 @@ const mkBoss = (seed = 7) => {
     gs.p2.inv = 0
     gs.eb.push({ x: gs.p2.x + 2, y: gs.p2.y - 14, vx: 0.1, vy: 0 })
     step(gs, {})
-    r.check('S4 blue death costs the blue bank only', gs.p2.lives === CFG.allyLives - 1 && gs.lives === 3 && gs.end === null, `p2 bank=${gs.p2.lives} hero=${gs.lives}`)
+    r.check('#2814 blue death costs the SHARED pool — the partner pays with the team', gs.lives === 2 && gs.p2.dead > 0 && gs.end === null, `pool=${gs.lives}`)
     gs.p.x = 300; gs.p.vy = 0; gs.p.onGround = true; gs.p.lane = CFG.ground; gs.p.inv = 99999
     for (let i = 0; i < CFG.respawnFreeze + 5; i++) { step(gs, {}, {}); gs.pb.length = 0 }
     r.check("S4 respawn: partner re-enters at the hero's side, flashing, rifle back",
@@ -593,7 +596,7 @@ const mkBoss = (seed = 7) => {
 }
 {
     // human drop-in (Node mirror of the shell law): once seat 2 is claimed by
-    // a human, pad2 alone drives it — walk and fire, own bank.
+    // a human, pad2 alone drives it — walk and fire (#2814: the pool is shared).
     const gs = makeGame(5)
     gs.p.x = 300; gs.p.inv = 99999
     gs.p2.human = true
@@ -754,24 +757,42 @@ if (MUTANT) {
             },
         },
         {
-            // S4: the co-op contract. Ignore seat 2's bank and a solo death
-            // murders the run while the blue player still has lives in —
-            // the cabinet would never do that.
+            // #2814 re-forged: ignore the partner's SEAT and the run GAME OVERs
+            // the instant the hero's pool empties while the blue soldier still
+            // stands — the cabinet never ends a run under a living second player.
             name: 'one-bank-lie',
-            anchor: 'return gs.lives <= 0 && gs.p2.lives <= 0',
-            plant: 'return gs.lives <= 0 /* MUTANT(one-bank-lie): the blue bank is ignored - hero down ends the run */',
+            anchor: 'return gs.p.out && gs.p2.out',
+            plant: 'return gs.p.out /* MUTANT(one-bank-lie): seat 2 ignored - hero down ends the run */',
             harm: async (mod) => {
                 const gs = mod.makeGame(11)
                 gs.p.x = 40
-                gs.p2.human = true; gs.p2.x = 60; gs.p2.inv = 100000   // pin seat 2, full bank, out of the line of fire
+                gs.p2.human = true; gs.p2.x = 60; gs.p2.inv = 100000   // pin seat 2 up, out of the line of fire
                 for (let k = 0; k < 3; k++) {
                     gs.p.inv = 0; gs.p.dead = 0
                     gs.eb.push({ x: gs.p.x + 2, y: gs.p.y - 14, vx: 0.1, vy: 0 })
                     mod.step(gs, {}, {})
                     for (let i = 0; i < 60; i++) { mod.step(gs, {}, {}); gs.ev.length = 0 }
                 }
-                return gs.end === 'dead' && gs.p2.lives > 0 && !gs.p2.out
-                    ? `HARM NAMED: seat 2's bank is ignored - the run GAME OVERs with ${gs.p2.lives} blue lives still in; co-op is a lie`
+                return gs.end === 'dead' && !gs.p2.out && gs.p2.dead === 0
+                    ? 'HARM NAMED: seat 2 is ignored - the run GAME OVERs while the blue soldier still stands; the cabinet ends it only when both seats are down'
+                    : null
+            },
+        },
+        {
+            // #2814: blue deaths must drain the SHARED pool. Let them ride free
+            // and the volunteer is an immortal tank — co-op is a lie the other
+            // way: the partner costs the team nothing.
+            name: 'blue-death-is-free',
+            anchor: "    if (gs.lives > 0) gs.lives -= 1\n    if (gs.lives <= 0) {\n        gs.lives = 0; q.out = true",
+            plant: "    /* MUTANT(blue-death-is-free): the volunteer costs the team nothing */\n    if (gs.lives <= 0) {\n        gs.lives = 0; q.out = true",
+            harm: async (mod) => {
+                const gs = mod.makeGame(9)
+                gs.p.inv = 100000
+                gs.p2.inv = 0
+                gs.eb.push({ x: gs.p2.x + 2, y: gs.p2.y - 14, vx: 0.1, vy: 0 })
+                mod.step(gs, {}, {})
+                return gs.lives === 3 && gs.p2.dead > 0
+                    ? 'HARM NAMED: blue deaths drain nothing - the partner is an immortal tank; the cabinet makes EVERY death cost the shared pool'
                     : null
             },
         },
@@ -921,7 +942,7 @@ const browser = await launch()
     // force the death path through the DEV setup hook, then restart with keys.
     // Fresh sim first: the earlier open-core leg may have already won the run
     // (screen clear end=win), so reset to a live play state before forcing death.
-    await page.evaluate(() => { window.__game && window.__game.reset(99); window.__contraTest.setup({ lives: 1, allyOut: true }) })   // bank law: stand seat 2 down, then the hero's last life must end the run deterministically
+    await page.evaluate(() => { window.__game && window.__game.reset(99); window.__contraTest.setup({ lives: 1, allyOut: true }) })   // #2814 shared-pool law: seat 2 stood down, the hero's last pool life must end the run deterministically
     await page.waitForTimeout(120)
     let over = null
     for (let guard = 0; guard < 40; guard++) {

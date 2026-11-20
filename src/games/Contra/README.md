@@ -45,10 +45,13 @@ The laws the blue seat lives under, all proven in `contracheck`:
 - **Shared physics, structurally**: both seats run the SAME `seatStep()` —
   run, 8-way aim, coyote, one-way ledges, hop, fire cadence. Identical physics
   is not a promise, it's the same load-bearing function.
-- **Two banks**: GAME OVER only when BOTH seats are out of lives
-  (`seatsDown()`); a blue death costs the blue bank only and does not freeze
-  the world — his tumble counts down inside the live step while the hero keeps
-  running.
+- **Shared pool (#2814, the cabinet's law)**: ONE life bank serves BOTH seats —
+  any death, hero's or blue's, drains the shared counter. A seat that dies with
+  the pool empty is down for good and leaves the HUD; GAME OVER lands the
+  arcade way — the instant both seats are down (`seatsDown()`). A partner who
+  volunteers can cost the team a life, exactly like the machine. The blue
+  death still never freezes the world — his tumble counts down inside the live
+  step while the hero keeps running.
 - **Respawn at your side**, not where he fell (arcade drop-in), with i-frames
   and a clean rifle; in the falls he never respawns below the torrent.
 - **Climb by feet, retreat by road** (#2798): a falls target must be reachable
@@ -75,12 +78,23 @@ The laws the blue seat lives under, all proven in `contracheck`:
   until then `allyBrain(gs)` returns the pad, and it is deterministic: same
   seed, same fight, hash-stable (`stateHash` extended over the p2 fields and
   every bullet's owner `o`).
-- **Divergence on purpose — banks:** the original shares ONE life pool between
-  the players; here each seat carries its own bank (hero 3, blue 3). A partner
-  who volunteers shouldn't drain the host's lives, and the two-bank law is what
-  makes the seat provably alive in a harness (`one-bank-lie` mutant kills any
-  build where the blue bank stops mattering). GAME OVER still lands the arcade
-  way — the instant nobody left in the world has a life.
+- **Shared pool (#2814) — the divergence is closed:** S4 shipped two banks
+  (hero 3, blue 3) because the two-bank law was easy to pin; the original
+  Konami cabinet shares ONE pool between both seats. Fidelity beats
+  provability (AGENTS.md), so the cabinet rule now ships: `gs.lives` is the
+  single pool, `killPlayer`/`killAlly` both drain it, and GAME OVER lands when
+  both seats are down. Proving moved with the rule: `contracheck` pins that a
+  blue death costs the pool, that a hero down leaves the partner running the
+  run, and that GAME OVER needs both seats down — and the mutant set grew:
+  `one-bank-lie` (seat 2 ignored — hero down ends the run) plus
+  `blue-death-is-free` (the volunteer costs nothing — the partner becomes an
+  immortal tank). Seed 1 taught the honest cost: with one pool, rounds aimed at
+  the i-framed hero sail through to the partner's chest, so the partner now
+  **hops the arc, not the line** (the dodge judges a round's height AT
+  ARRIVAL — `pred = b.y + b.vy·min(eta,16)` — the same law ported into the
+  autopilot, plus **stay-in-line** (never outrun a live hero into the uncleared
+  kill zone) and **watch-your-back** (turn and shoot the walker that got
+  behind the nose gun). Seeds 1..12 still clear, determinism intact.
 - **`hopBand` 46→40** (S4 re-tune): the autopilot/ally hop window in px. At 46
   the ally jumped too early under the falls' gun lines and three sweep seeds
   stalled; 40 wins all 36 sweep seeds (the hero's own autopilot hops marginally
@@ -135,7 +149,8 @@ npm run dev -- --port 5173 --strictPort   # another terminal
 npm run contracheck                      # sim core + browser leg
 npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   silent-MG, non-piercing-beam,
-                                       #   impervious-depot, one-bank-lie
+                                       #   impervious-depot, one-bank-lie,
+                                       #   blue-death-is-free
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -160,17 +175,17 @@ warp + armor law · **capsule letters are crisp 5x5 bitmap stamps, not fonts**
 **S4 co-op: the blue seat fires unasked and advances ·
 earns an attributable kill with the hero silent · the sniper re-leads the
 nearer blue lane (down-solo vs flat-coop) · capsules and kills are per seat ·
-GAME OVER needs both banks · the blue death never freezes the world · respawn
+#2814 shared pool: a blue death costs the shared counter · a hero down leaves
+the partner running the run · GAME OVER needs BOTH seats down · the blue death never freezes the world · respawn
 lands at the hero's side · pad2 drives a claimed seat · live drop-in with
 KeyA** · zero page errors.
 
 ## Honest gaps
 
-- Co-op here diverges from the cabinet in two ways: each seat carries its own
-  life bank (the original shares one pool — see Engine notes for why), and a
-  claimed seat can't be released again (drop-out): once human, human for the
+- A claimed seat can't be released again (drop-out): once human, human for the
   run. The arcade also let 2P arrive mid-level at a screen edge; our drop-in
-  claims the standing ally wherever he is.
+  claims the standing ally wherever he is. (The shared life pool that used to
+  sit in this gap is CLOSED — the cabinet's one-pool law shipped in #2814.)
 - The original's flying pod carriers (weapon capsules dropped by low-flying
   craft) are still missing — the depot pays a volley when it falls, but no
   aircraft delivers guns yet.
