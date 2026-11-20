@@ -142,7 +142,7 @@ const PATTERNS = {
     // #2808: the pod-shooter — steady stream, sideways sway to sample the
     // lane war, occasional thrusts (death by edge is legal; respawn keeps
     // ticks flowing and hashes deterministic, contra-style).
-    'r-type': (i) => ({ right: i % 89 < 30, left: i % 89 >= 60 && i % 89 < 72, up: i % 61 < 12, down: i % 61 >= 30 && i % 61 < 42, a: i % 5 < 4 }),
+    'r-type': (i) => ({ right: i % 89 < 30, left: i % 89 >= 60 && i % 89 < 72, up: i % 61 < 12, down: i % 61 >= 30 && i % 61 < 42, a: i % 5 < 4, b: i % 97 === 0 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 

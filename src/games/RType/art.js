@@ -1,10 +1,11 @@
-// art.js — R-TYPE S1 look, designed from the 1987 Irem M-72 cabinet:
+// art.js — R-TYPE S1+S2 look, designed from the 1987 Irem M-72 cabinet:
 // deep indigo space under three parallax star layers, a chunky white-blue-red
 // R-7C with a living engine flame, sickly green Bydo flesh, rust-armoured
-// hull plates, and the Phase-1 bio-ship whose maw glows when it gapes.
+// hull plates, the Phase-1 bio-ship whose maw glows when it gapes — and the
+// S.E.E.D. force pod: a rotating cyan energy ball with a blue capsule seed.
 // Everything generated in code; nothing borrowed. 320x224, no smoothing.
 
-import { W, H, FIELD_TOP, FIELD_BOT } from './sim.js'
+import { W, H, FIELD_TOP, FIELD_BOT, POD } from './sim.js'
 
 // ------------------------------------------------------------ pixel font ---
 // 5x7 arcade-cube glyphs cut for this cabinet (rows: '#' = ink).
@@ -154,6 +155,35 @@ const SPR = has ? {
         g.fillStyle = '#fff4c0'
         g.fillRect(f ? 5 : 7, 4, 2, 2)
     })),
+    // S.E.E.D. force capsule: blue where the weapon capsule is orange,
+    // with a white spark mark instead of the amber core
+    fcap: [0, 1, 2].map((f) => makeSpr(16, 10, (g) => {
+        g.fillStyle = '#0e3c78'
+        g.fillRect(1, 1, 14, 8)
+        g.fillStyle = '#2e7ad0'
+        g.fillRect(2, 2, 12, 6)
+        g.fillStyle = '#8ae0ff'
+        g.fillRect(3 + (f === 1 ? 2 : 0), 3, 4, 4)
+        g.fillStyle = '#eaffff'
+        g.fillRect(4 + (f === 1 ? 2 : 0), 4, 2, 2)
+        g.fillStyle = '#08284e' // capsule seam
+        g.fillRect(7, 1, 2, 8)
+    })),
+    // the force pod itself: an energy ball with a dark band rotating around it
+    seed: [0, 1, 2, 3].map((f) => makeSpr(12, 12, (g) => {
+        g.fillStyle = '#0e4a86'
+        g.fillRect(2, 1, 8, 10); g.fillRect(1, 2, 10, 8); g.fillRect(0, 3, 12, 6)
+        g.fillStyle = '#2e8ad8'
+        g.fillRect(2, 2, 8, 8)
+        g.fillStyle = '#8ae0ff'
+        g.fillRect(3, 3, 6, 6)
+        g.fillStyle = '#eaffff'
+        g.fillRect(4, 3, 3, 2)
+        g.fillStyle = '#083c6e' // equatorial band, walking down the ball to sell the spin
+        const bandY = 5 + (f % 3)
+        g.fillRect(1, bandY, 10, 1)
+        g.fillRect(0, bandY + 1, 12, 1)
+    })),
     shipIcon: makeSpr(13, 8, (g) => {
         g.fillStyle = '#e8f0ff'
         g.fillRect(1, 3, 9, 2)
@@ -281,7 +311,29 @@ export function drawBullet(ctx, b, camX) {
 }
 
 export function drawCap(ctx, c, camX) {
-    ctx.drawImage(SPR.cap[Math.floor(Date.now() / 250) % 2], Math.round(c.x - camX) - 8, Math.round(c.y) - 5)
+    const set = c.type === 'force' ? SPR.fcap : SPR.cap
+    const f = Math.floor(Date.now() / 250) % set.length
+    ctx.drawImage(set[f], Math.round(c.x - camX) - 8, Math.round(c.y) - 5)
+}
+
+// the force pod (S.E.E.D.): a live energy ball, brighter at the nose than parked
+export function drawSeedPod(ctx, pod, camX, shipAlive) {
+    const x = Math.round(pod.x - camX), y = Math.round(pod.y)
+    const f = Math.floor(Date.now() / 90) % 4
+    if (shipAlive) { ctx.fillStyle = 'rgba(138,224,255,0.22)'; ctx.fillRect(x - 7, y - 7, 14, 14) } // halo while it plugs fire
+    ctx.drawImage(SPR.seed[f], x - 6, y - 6)
+}
+
+// charge-and-release laser lance: length is the charge tier; hot white tip
+export function drawLance(ctx, q, camX) {
+    const x = Math.round(q.x - camX), y = Math.round(q.y)
+    const len = POD.laserTiers[q.size]
+    ctx.fillStyle = q.size === 2 ? '#ff2a5a' : q.size === 1 ? '#ff5a3c' : '#ffb03c'
+    ctx.fillRect(x, y - 2, len, 4)
+    ctx.fillStyle = q.size === 2 ? '#ffd0e0' : q.size === 1 ? '#ffe0c8' : '#fff0c0'
+    ctx.fillRect(x, y - 1, len, 2)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(x + len - 4, y - 2, 4, 4)
 }
 
 export function drawWave(ctx, q, camX) {
@@ -408,13 +460,16 @@ export function drawHud(ctx, gs) {
     drawText(ctx, 'HI', 196, 8, '#37d0ff')
     drawText(ctx, String(Math.max(gs.hi, gs.score)).padStart(7, '0'), 220, 8, '#f0f0f0')
     for (let i = 0; i < Math.min(gs.lives - 1, 5); i++) ctx.drawImage(SPR.shipIcon, 8 + i * 15, H - 12)
-    const wl = gs.ship.weapon === 'wave' ? 'WAVE' : 'VULCAN'
-    drawText(ctx, wl, 90, H - 12, gs.ship.weapon === 'wave' ? '#37d0ff' : '#9ac93c')
-    if (gs.ship.weapon === 'wave') {
-        // charge gauge: three tier boxes
+    const wl = gs.ship.weapon === 'wave' ? 'WAVE' : gs.ship.weapon === 'laser' ? 'LASER' : 'VULCAN'
+    const wcol = gs.ship.weapon === 'wave' ? '#37d0ff' : gs.ship.weapon === 'laser' ? '#ff5a7a' : '#9ac93c'
+    drawText(ctx, wl, 90, H - 12, wcol)
+    if (gs.pod) ctx.drawImage(SPR.seed[Math.floor(Date.now() / 90) % 4], 172, H - 14) // the shell rides with you
+    if (gs.ship.weapon === 'wave' || gs.ship.weapon === 'laser') {
+        // charge gauge: three tier boxes (cyan for the crescent, hot for the lance)
+        const hot = gs.ship.weapon === 'laser'
         for (let i = 0; i < 3; i++) {
             const lit = gs.ship.charge >= [10, 25, 50][i]
-            ctx.fillStyle = lit ? (i === 2 ? '#eaffff' : '#8ae8ff') : '#1c2c44'
+            ctx.fillStyle = lit ? (i === 2 ? (hot ? '#ffe8ee' : '#eaffff') : hot ? '#ff8aa0' : '#8ae8ff') : hot ? '#40121e' : '#1c2c44'
             ctx.fillRect(140 + i * 10, H - 12, 8, 7)
         }
     }
@@ -445,7 +500,9 @@ export function drawAttract(ctx, phase, tick) {
     const msgs = [
         'ENEMY BIOMECHANICAL FLEET : BYDO',
         'WAVE CANNON : HOLD FIRE, RELEASE',
+        'LASER : CHARGE THE LANCE, PIERCE THE LINE',
         'SHOOT THE MAW WHEN IT GAPES',
+        'THE FORCE POD : B DEPLOYS, B RETRIEVES',
         'THE LEFT EDGE DOES NOT FORGIVE',
     ]
     center(msgs[phase % msgs.length], 124, '#f0f0f0')
