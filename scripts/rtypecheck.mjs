@@ -181,6 +181,37 @@ const runBot = (seed, max = 20000) => {
     r.check('a shell left behind is ground by the wall — nothing parks forever', ground, `pod=${gs.pod ? gs.pod.state : 'grinded'}`)
 }
 
+{ // #2823 polish laws — deploy has air (dock grace), and armour grinding the
+  // shell makes itself heard (the strain event the shell turns into friction)
+    const gs = makeGame(17)
+    gs.caps.push({ id: 1, x: gs.ship.x + 4, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'force' })
+    step(gs, {}); gs.events.length = 0
+    step(gs, { b: true }); gs.events.length = 0 // deploy: the grace window opens
+    // park the shell just ahead of the nose and nudge: proximity must NOT
+    // snap it home inside the grace window (the pre-fix dock radius caught it)
+    gs.pod.state = 'park'
+    gs.pod.x = gs.ship.x + 17
+    gs.pod.y = gs.ship.y
+    let snappedAt = -1
+    for (let i = 0; i < 24 && snappedAt < 0; i++) {
+        step(gs, { right: true }); gs.events.length = 0
+        if (gs.pod.state === 'attached') snappedAt = i
+    }
+    r.check('deploy has air — a nudge never snaps a fresh shell straight home', snappedAt === -1 || snappedAt >= 6, `attached at nudge tick ${snappedAt}`)
+    r.check('once the grace window passes, a nudge still catches the shell', snappedAt >= 0, `state=${gs.pod.state}`)
+    // the refusal grunts: drive the shell at a hull-plate and listen
+    const g3 = makeGame(18)
+    g3.caps.push({ id: 1, x: g3.ship.x + 4, y: g3.ship.y, baseY: g3.ship.y, bob: 0, type: 'force' })
+    step(g3, {}); g3.events.length = 0
+    g3.ship.inv = 999999
+    const wallX = g3.ship.x + 40
+    g3.enemies.push({ id: 8, kind: 'hullseg', x: wallX, y0: 26, y1: 214, len: 60, vx: 0, hp: Infinity, inv: Infinity })
+    step(g3, { b: true }); g3.events.length = 0
+    let heard = false
+    for (let i = 0; i < 24; i++) { step(g3, {}); if (g3.events.includes('strain')) heard = true; g3.events.length = 0 }
+    r.check('refusal grunts — armour clamping the shell cries out (strain)', heard)
+}
+
 { // THE FORCE — die attached and the shell burns with you
     const gs = makeGame(15)
     gs.caps.push({ id: 1, x: gs.ship.x + 4, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'force' })
