@@ -549,7 +549,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
     const ledges = gs.phase === 'jungle' ? PLATFORMS : FALLS_LEDGES
     const floorY = gs.phase === 'jungle' ? CFG.ground : (gs.phase === 'boss' ? CFG.bossFloor : Infinity)
 
-    // --- the hero's seat (out once his bank is empty; the run goes on blue) ---
+    // --- player: run, aim, jump, fire (the seat stays out once his bank is empty) ---
     if (!p.out) {
         seatStep(gs, p, pad, ledges, floorY, 0)
         if (p.onGround) gs.safe = { x: p.x, y: p.y }

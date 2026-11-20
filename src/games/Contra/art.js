@@ -165,13 +165,18 @@ export function drawPlatform (ctx, pl) {
     ctx.fillRect(pl.x + pl.w - 6, pl.y + 9, 2, 196 - pl.y - 8)
 }
 
-// --- hero: white tank, blue pants, red bandana; run/jump frames, 8-way arm ---
-export function drawPlayer (ctx, p, tick) {
+// --- hero: white tank, blue pants, red bandana; run/jump frames, 8-way arm.
+// S4 blue seat: the same body, arcade P2 palette (blue bandana, cold tank,
+// navy pants) — the palette swap IS the original's co-op language. ---
+export function drawPlayer (ctx, p, tick, blue = false) {
     if (p.inv > 0 && Math.floor(tick / 4) % 2 === 0) return // respawn flicker
+    const band = blue ? '#2b6fd4' : C.band
+    const tank = blue ? '#a8cfe0' : C.tank
+    const pants = blue ? '#16265c' : C.pants
     ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y))
     const f = p.onGround ? Math.floor(p.walk / 4) % 4 : 9
     // legs
-    ctx.fillStyle = C.pants
+    ctx.fillStyle = pants
     if (!p.onGround) {
         ctx.fillRect(-5, -12, 4, 7); ctx.fillRect(1, -14, 4, 8) // tuck
         ctx.fillStyle = C.boots
@@ -186,7 +191,7 @@ export function drawPlayer (ctx, p, tick) {
         ctx.fillRect(0 + spread / 2, -3, 4, 3)
     }
     // torso
-    ctx.fillStyle = C.tank
+    ctx.fillStyle = tank
     ctx.fillRect(-4, -22, 8, 10)
     ctx.fillStyle = C.skin
     ctx.fillRect(-4, -24, 8, 3) // shoulders / arms base skin
@@ -195,7 +200,7 @@ export function drawPlayer (ctx, p, tick) {
     ctx.fillRect(-3 + p.face, -31, 6, 7)
     ctx.fillStyle = C.hair
     ctx.fillRect(-3 + p.face * 2, -32, 4, 2)
-    ctx.fillStyle = C.band
+    ctx.fillStyle = band
     ctx.fillRect(-4, -32, 8, 3)
     // bandana tails stream behind, snapping in the wind
     ctx.fillRect(-p.face * 4 - (p.face > 0 ? 3 : -1), -31 + Math.floor(Math.sin(tick / 5) * 1.5), 4, 2)
@@ -445,18 +450,19 @@ export function drawSniper (ctx, sn, tick) {
 
 // the hero's death tumble (ART.md bar 2/5: dies animate, 2-4 frames). The
 // sim's freeze law is untouched — this is the body the shell draws during the
-// respawn freeze: the original spins the hero away from the hit.
-export function drawDeathTumble (ctx, x, y, frame) {
+// respawn freeze: the original spins the hero away from the hit. blue = S4
+// seat 2's palette (the arcade swaps the whole body, seat-for-seat).
+export function drawDeathTumble (ctx, x, y, frame, blue = false) {
     ctx.save()
     ctx.translate(Math.round(x), Math.round(y) - 14)
     ctx.rotate((frame * Math.PI) / 2 + 0.3)
-    ctx.fillStyle = C.tank
+    ctx.fillStyle = blue ? '#a8cfe0' : C.tank
     ctx.fillRect(-4, -8, 8, 10)
-    ctx.fillStyle = C.pants
+    ctx.fillStyle = blue ? '#16265c' : C.pants
     ctx.fillRect(-4, 2, 8, 6)
     ctx.fillStyle = C.skin
     ctx.fillRect(-3, -13, 6, 5)
-    ctx.fillStyle = C.band
+    ctx.fillStyle = blue ? '#2b6fd4' : C.band
     ctx.fillRect(-3, -14, 6, 3)
     ctx.fillStyle = C.boots
     ctx.fillRect(-5, 7, 4, 3); ctx.fillRect(1, 7, 4, 3)
@@ -535,6 +541,20 @@ export function drawHud (ctx, gs, hiscore) {
     const wcols = { rifle: C.ink, spread: C.capsuleLit, machine: '#7fb2ff', fire: '#ff6a2a', laser: '#ff4ad4' }
     ctx.fillStyle = wcols[gs.p.weapon] || C.ink
     ctx.fillText(wnames[gs.p.weapon] || 'RIFLE', 314, 4)
+    // S4 co-op: seat 2 reads blue — his bank under his tag, his wheel below
+    // the hero's line. A seat that's down leaves the HUD entirely.
+    if (gs.p2 && !gs.p2.out) {
+        ctx.fillStyle = '#7fb2ff'
+        ctx.fillText('2UP', 232, 4)
+        for (let i = 0; i < gs.p2.lives; i++) {
+            ctx.fillStyle = '#2b6fd4'
+            ctx.fillRect(234 + i * 10, 12, 6, 2)
+            ctx.fillStyle = C.skin
+            ctx.fillRect(234 + i * 10, 14, 6, 4)
+        }
+        ctx.fillStyle = wcols[gs.p2.weapon] || C.ink
+        ctx.fillText(wnames[gs.p2.weapon] || 'RIFLE', 314, 12)
+    }
 }
 
 // ================================================================ S2 ════════
