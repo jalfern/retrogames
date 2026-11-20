@@ -1,4 +1,4 @@
-// sim.js — R-TYPE S1 "Armament" — the pure side-scroll engine.
+// sim.js — R-TYPE S2 "the force" — the pure side-scroll engine.
 // DOM-free: Node (rtypecheck) and the browser shell share THIS truth.
 // Determinism law: every sim random derives from the seed (mulberry32
 // riding IN gs); Math.random() may only feed juice in the shell.
@@ -6,8 +6,13 @@
 // The spec (issue #2808, the original: Irem M-72 arcade 1987):
 //  - side-scroll, right-only camera; the left edge grinds you flat
 //  - one hit kills; three lives; respawn mercy-flicker; death reverts the arm
-//  - armament: VULCAN stream + WAVE CANNON (hold-charge, pierce a lane);
-//    power capsules cycle VULCAN -> WAVE -> VULCAN (laser/pod join in S2)
+//  - armament: VULCAN stream + LASER (hold-charge lance, pierces) + WAVE
+//    CANNON (hold-charge crescent, pierces a lane); capsules cycle
+//    VULCAN -> LASER -> WAVE -> VULCAN
+//  - THE FORCE (S2): a blue force capsule seeds the S.E.E.D. pod — attach it
+//    to the nose and it plugs enemy fire and crushes soft Bydo on contact;
+//    B deploys it to the screen edge (still plugging), B again recalls it;
+//    armour shrugs it off and the left wall grinds a parked pod
 //  - Bydo dread: sine larvae divers, armour hull-segments with leading
 //    turrets, a missile pod loosing slow turning hunters, and the PHASE-1
 //    bio-ship: camera locks, the maw-core only takes damage while it gapes
@@ -37,6 +42,22 @@ export const CFG = {
     missileWarn: 30,   // pre-launch chirp ticks (the shell sounds it)
 }
 
+// the S.E.E.D. force pod (S2) + the laser arm. The pod is the issue's "bite":
+// it plugs fire and rams soft Bydo, but armour pushes back and the left wall
+// grinds it like everything else.
+export const POD = {
+    noseX: 14,          // attached: pod centre rides this far off the nose
+    launch: 3.6,        // deploy speed forward
+    recall: 3.2,        // retrieve speed back to the nose
+    rad: 6,             // shell radius for plugging/ramming reads
+    dock: 13,           // this close and the pod snaps home
+    parkPad: 14,        // parked at camX + W - parkPad (never leaves the screen)
+    laserMin: 8,        // laser: ticks of hold before a release looses anything
+    laserSpeed: 6.2,
+    laserTiers: [24, 42, 62],   // lance lengths at charge <25 / <50 / max
+}
+export const CYCLE = ['vulcan', 'laser', 'wave']
+
 // stage script: camX triggers -> delayed spawns (queue keeps spacing seeded-free:
 // the schedule is authored, only enemy jitter draws rng).
 export const WAVES = [
@@ -44,6 +65,7 @@ export const WAVES = [
         { kind: 'larva', d: 0, y: 92 }, { kind: 'larva', d: 26, y: 134 },
         { kind: 'larva', d: 52, y: 60 }, { kind: 'larva', d: 78, y: 176 },
         { kind: 'larva', d: 104, y: 112 } ] },
+    { at: 150, fcap: 1 },
     { at: 170, caps: 1 },
     { at: 210, spawn: [
         { kind: 'larva', d: 0, y: 70, dive: 1 }, { kind: 'larva', d: 18, y: 150 },
@@ -53,6 +75,7 @@ export const WAVES = [
     { at: 380, caps: 1 },
     { at: 430, pod: { y: 64, missiles: 3 } },
     { at: 500, seg: { y0: 118, y1: FIELD_BOT, len: 150, turret: 118 } },
+    { at: 520, fcap: 1 },
     { at: 560, spawn: [
         { kind: 'larva', d: 0, y: 80, dive: 1 }, { kind: 'larva', d: 20, y: 160 },
         { kind: 'larva', d: 40, y: 52, dive: 1 }, { kind: 'larva', d: 60, y: 196 },
@@ -94,6 +117,8 @@ export function makeGame(seed = 1) {
         ship: makeShip(),
         lives: CFG.lives, dyingT: 0,
         weaponName: 'vulcan',           // mirror of ship.weapon for HUD/state
+        pod: null,                     // S2 force pod: {id,state,x,y} attached|fly|park|return
+        bHeld: false,                  // edge-detector for the POD button
         shots: [],                   // player: {id,x,y,kind,size,hit[]}
         bullets: [],               // enemy: {id,x,y,vx,vy}
         missiles: [],              // {id,x,y,a,spd,t}
@@ -123,7 +148,12 @@ function spawnLarva(gs, y, dive) {
 
 function spawnCaps(gs) {
     const y = 60 + Math.floor(rng(gs) * 120)
-    gs.caps.push({ id: gs.nextId++, x: gs.camX + W + 14, y, baseY: y, bob: rng(gs) * 6 })
+    gs.caps.push({ id: gs.nextId++, x: gs.camX + W + 14, y, baseY: y, bob: rng(gs) * 6, type: 'weapon' })
+}
+
+function spawnForceCap(gs) {
+    const y = 70 + Math.floor(rng(gs) * 100)
+    gs.caps.push({ id: gs.nextId++, x: gs.camX + W + 14, y, baseY: y, bob: rng(gs) * 6, type: 'force' })
 }
 
 function spawnSeg(gs, cfg) {
@@ -183,6 +213,8 @@ function killShip(gs, why) {
     gs.events.push('die')
     gs.lastDeath = why
     gs.lives -= 1
+    // an attached shell burns with its pilot; one parked out front survives
+    if (gs.pod && gs.pod.state === 'attached') gs.pod = null
     return true
 }
 
@@ -222,6 +254,7 @@ function loopStage(gs) {
     gs.banner = 0
     respawn(gs)
     gs.ship.inv = CFG.respawnIFrames
+    if (gs.pod) { gs.pod.state = 'attached'; gs.pod.x = gs.ship.x + POD.noseX; gs.pod.y = gs.ship.y }
     // the loop re-runs Walnuts-style: score and lives carry, the arm stays
 }
 
@@ -254,6 +287,8 @@ export function step(gs, pad) {
 
 function runWorld(gs, pad, frozen) {
     const s = gs.ship
+    const bPress = !!pad.b && !gs.bHeld   // POD button is edge-triggered
+    gs.bHeld = !!pad.b
 
     // --- camera: right only, ever
     if (!gs.camLock) {
@@ -283,6 +318,17 @@ function runWorld(gs, pad, frozen) {
                 s.cd = CFG.vulcanCd
                 gs.events.push('shot')
             }
+        } else if (s.weapon === 'laser') {
+            // charge-and-release per the issue: the lance scales with the hold
+            if (pad.a) { if (s.charge < CFG.waveMax) s.charge += 1 }
+            else if (s.charge > 0) {
+                if (s.charge >= POD.laserMin) {
+                    const tier = s.charge >= 50 ? 2 : s.charge >= 25 ? 1 : 0
+                    gs.shots.push({ id: gs.nextId++, x: s.x + 12, y: s.y - 1, kind: 'l', size: tier, pierce: true, hit: [] })
+                    gs.events.push('laser')
+                }
+                s.charge = 0
+            }
         } else {
             if (pad.a) { if (s.charge < CFG.waveMax) s.charge += 1 }
             else if (s.charge > 0) {
@@ -303,6 +349,7 @@ function runWorld(gs, pad, frozen) {
             wv.fired = true
             gs.waveIdx = wv.idx + 1
             if (wv.caps) spawnCaps(gs)
+            if (wv.fcap) spawnForceCap(gs)
             if (wv.seg) spawnSeg(gs, wv.seg)
             if (wv.pod) spawnPod(gs, wv.pod.y, wv.pod.missiles)
             if (wv.spawn) {
@@ -322,7 +369,18 @@ function runWorld(gs, pad, frozen) {
         if (c.x < gs.camX - 20) { gs.caps.splice(i, 1); continue }
         if (!frozen && Math.abs(c.x - s.x) < 12 && Math.abs(c.y - s.y) < 12) {
             gs.caps.splice(i, 1)
-            s.weapon = s.weapon === 'vulcan' ? 'wave' : 'vulcan'
+            if (c.type === 'force') {
+                if (!gs.pod) {
+                    gs.pod = { id: gs.nextId++, state: 'attached', x: s.x + POD.noseX, y: s.y }
+                    addScore(gs, 500)
+                    gs.events.push('force')
+                } else {
+                    addScore(gs, 1000) // a spare S.E.E.D. is worth pure points
+                    gs.events.push('capsule')
+                }
+                continue
+            }
+            s.weapon = CYCLE[(CYCLE.indexOf(s.weapon) + 1) % CYCLE.length]
             s.charge = 0
             gs.weaponName = s.weapon
             addScore(gs, 500)
@@ -355,6 +413,41 @@ function runWorld(gs, pad, frozen) {
             gs.events.push('boom')
         }
         if (p1.dyingT <= 0) { gs.p1 = null; stageClear(gs) }
+    }
+
+    // --- force pod (S2): attached rides the nose; B deploys to the edge; B
+    // again (or touching it) recalls; armour rejects it; the wall grinds it
+    if (gs.pod) {
+        const pd = gs.pod
+        if (!frozen && bPress) {
+            if (pd.state === 'attached') { pd.state = 'fly'; gs.events.push('podlaunch') }
+            else if (pd.state !== 'return') pd.state = 'return'
+        }
+        if (pd.state === 'attached') { pd.x = s.x + POD.noseX; pd.y = s.y }
+        else if (pd.state === 'fly') {
+            pd.x += POD.launch
+            if (pd.x >= gs.camX + W - POD.parkPad) { pd.x = gs.camX + W - POD.parkPad; pd.state = 'park' }
+        }
+        if (!frozen && (pd.state === 'fly' || pd.state === 'park') &&
+            Math.hypot(pd.x - s.x, pd.y - s.y) <= POD.dock) { pd.state = 'attached'; gs.events.push('poddock') }
+        if (pd.state === 'return') {
+            const dx = s.x + POD.noseX - pd.x, dy = s.y - pd.y
+            const m = Math.max(1e-6, Math.hypot(dx, dy))
+            if (m <= POD.dock) { pd.state = 'attached'; gs.events.push('poddock') }
+            else { pd.x += (dx / m) * POD.recall; pd.y += (dy / m) * POD.recall }
+        }
+        if (pd.state !== 'attached') {
+            // armour shrugs the shell off — the pod cannot push a dread forward
+            for (const e of gs.enemies) {
+                if (e.kind !== 'hullseg') continue
+                if (pd.x + POD.rad > e.x && pd.y > e.y0 - 4 && pd.y < e.y1 + 4) {
+                    pd.x = e.x - POD.rad
+                    if (pd.state === 'fly') pd.state = 'park'
+                }
+            }
+            if (p1 && p1.dyingT === 0 && pd.x + POD.rad > p1.x && pd.y > 34 && pd.y < 200) pd.x = p1.x - POD.rad
+            if (pd.x < gs.camX - 6) { gs.pod = null; gs.events.push('podlost') }
+        }
     }
 
     // --- enemies
@@ -426,16 +519,17 @@ function runWorld(gs, pad, frozen) {
     }
 
     // --- player shots
+    const lance = (q) => (q.kind === 'l' ? POD.laserTiers[q.size] : 0)
     for (let i = gs.shots.length - 1; i >= 0; i--) {
         const q = gs.shots[i]
-        q.x += q.kind === 'v' ? CFG.vulcanSpeed : CFG.waveSpeed
+        q.x += q.kind === 'v' ? CFG.vulcanSpeed : q.kind === 'l' ? POD.laserSpeed : CFG.waveSpeed
         if (q.x > gs.camX + W + 20) { gs.shots.splice(i, 1); continue }
         let dead = false
 
         // vs missiles (any shot can down a hunter)
         for (let m = gs.missiles.length - 1; m >= 0; m--) {
             const ms = gs.missiles[m]
-            if (Math.abs(ms.x - q.x) < 8 && Math.abs(ms.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] : 6)) {
+            if (ms.x > q.x - 8 && ms.x < q.x + lance(q) + 8 && Math.abs(ms.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] : q.kind === 'l' ? 5 : 6)) {
                 gs.missiles.splice(m, 1); addScore(gs, 50); gs.events.push('boom')
                 if (!q.pierce) dead = true
                 break
@@ -448,14 +542,20 @@ function runWorld(gs, pad, frozen) {
                 const e = gs.enemies[m]
                 if (q.hit.includes(e.id)) continue
                 let struck = false
-                if (e.kind === 'hullseg') struck = q.x + 2 > e.x && q.x < e.x + e.len && q.y > e.y0 && q.y < e.y1
-                else if (e.kind === 'larva') struck = Math.abs(e.x - q.x) < 9 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 : 6)
-                else if (e.kind === 'turret') struck = Math.abs(e.x - q.x) < 9 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 : 7)
-                else if (e.kind === 'pod') struck = Math.abs(e.x - q.x) < 11 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 : 8)
+                if (e.kind === 'hullseg') struck = q.x + lance(q) + 2 > e.x && q.x < e.x + e.len && q.y > e.y0 && q.y < e.y1
+                else if (e.kind === 'larva') struck = q.kind === 'l'
+                    ? e.x > q.x - 5 && e.x < q.x + lance(q) + 5 && Math.abs(e.y - q.y) < 6
+                    : Math.abs(e.x - q.x) < 9 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 : 6)
+                else if (e.kind === 'turret') struck = q.kind === 'l'
+                    ? e.x > q.x - 5 && e.x < q.x + lance(q) + 5 && Math.abs(e.y - q.y) < 7
+                    : Math.abs(e.x - q.x) < 9 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 : 7)
+                else if (e.kind === 'pod') struck = q.kind === 'l'
+                    ? e.x > q.x - 7 && e.x < q.x + lance(q) + 7 && Math.abs(e.y - q.y) < 8
+                    : Math.abs(e.x - q.x) < 11 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 : 8)
                 if (!struck) continue
                 if (e.kind === 'hullseg') { gs.events.push('clank'); dead = true; break } // armour eats it
                 gs.lastHitX = e.x; gs.lastHitY = e.y
-                e.hp -= q.kind === 'w' ? 2 : 1
+                e.hp -= q.kind === 'w' ? 2 : q.kind === 'l' ? q.size + 1 : 1
                 q.hit.push(e.id)
                 gs.events.push('hit')
                 if (e.hp <= 0) {
@@ -469,10 +569,10 @@ function runWorld(gs, pad, frozen) {
         }
 
         // vs Phase-1: armour unless the maw gapes
-        if (!dead && p1 && p1.dyingT === 0 && q.x >= p1.x) {
+        if (!dead && p1 && p1.dyingT === 0 && q.x + lance(q) >= p1.x) {
             const coreY = 120
             if (p1.mouth === 'open' && Math.abs(q.y - coreY) < 16) {
-                p1.coreHp -= q.kind === 'w' ? 2 : 1
+                p1.coreHp -= q.kind === 'w' ? 2 : q.kind === 'l' ? q.size + 1 : 1
                 gs.events.push('corehit')
                 if (p1.coreHp <= 0) {
                     p1.dyingT = 170
@@ -496,6 +596,7 @@ function runWorld(gs, pad, frozen) {
         const b = gs.bullets[i]
         b.x += b.vx; b.y += b.vy
         if (b.x < gs.camX - 8 || b.x > gs.camX + W + 8 || b.y < FIELD_TOP - 4 || b.y > FIELD_BOT + 4) { gs.bullets.splice(i, 1); continue }
+        if (!frozen && gs.pod && Math.abs(b.x - gs.pod.x) < 8 && Math.abs(b.y - gs.pod.y) < 7) { gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('plug'); continue }
         if (!frozen && s.inv <= 0 && Math.abs(b.x - s.x) < 5 && Math.abs(b.y - s.y) < 4) { gs.bullets.splice(i, 1); killShip(gs, 'bullet'); return }
     }
 
@@ -515,7 +616,29 @@ function runWorld(gs, pad, frozen) {
         m.x += Math.cos(m.a) * m.spd
         m.y += Math.sin(m.a) * m.spd
         if (m.t <= 0 || m.x < gs.camX - 14 || m.x > gs.camX + W + 14 || m.y < FIELD_TOP - 6 || m.y > FIELD_BOT + 6) { gs.missiles.splice(i, 1); continue }
+        if (!frozen && gs.pod && Math.abs(m.x - gs.pod.x) < 9 && Math.abs(m.y - gs.pod.y) < 8) { gs.missiles.splice(i, 1); gs.lastHitX = m.x; gs.lastHitY = m.y; gs.events.push('plug'); continue }
         if (!frozen && s.inv <= 0 && Math.abs(m.x - s.x) < 7 && Math.abs(m.y - s.y) < 6) { gs.missiles.splice(i, 1); killShip(gs, 'missile'); return }
+    }
+
+    // --- pod ram: the shell crushes soft Bydo before they reach the pilot;
+    // armour was already refused the pod above and stays untouched
+    if (!frozen && gs.pod) {
+        const pd = gs.pod
+        for (let i = gs.enemies.length - 1; i >= 0; i--) {
+            const e = gs.enemies[i]
+            if (e.kind === 'hullseg') continue
+            const rx = e.kind === 'larva' ? 10 : e.kind === 'pod' ? 12 : 10
+            const ry = e.kind === 'larva' ? 8 : 9
+            if (Math.abs(e.x - pd.x) < rx && Math.abs(e.y - pd.y) < ry) {
+                e.hp -= 3
+                gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
+                if (e.hp <= 0) {
+                    gs.enemies.splice(i, 1)
+                    addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : 300)
+                    gs.events.push('boom')
+                }
+            }
+        }
     }
 
     // --- bodies vs the ship (tiny core hitbox, honest dread)
@@ -541,7 +664,7 @@ function runWorld(gs, pad, frozen) {
 // steer to the safest — never into the lane the last dodge forgot.
 
 export function autopilot(gs) {
-    const pad = { left: false, right: false, up: false, down: false, a: false }
+    const pad = { left: false, right: false, up: false, down: false, a: false, b: false }
     const s = gs.ship
     if (gs.mode !== 'play' || s.dead) return pad
     const px = s.x, py = s.y
@@ -632,8 +755,8 @@ export function autopilot(gs) {
     if (px - gs.camX < 26) { pad.right = true; pad.left = false }
     if (p1 && p1.dyingT === 0 && p1.x - px < 80) pad.right = false
 
-    // trigger discipline: vulcan streams; wave charges when the lane breathes
-    if (s.weapon === 'wave') pad.a = lane.risk > 18
+    // trigger discipline: vulcan streams; the charge arms fire when the lane breathes
+    if (s.weapon === 'wave' || s.weapon === 'laser') pad.a = lane.risk > 18
     else pad.a = true
     return pad
 }
@@ -648,9 +771,12 @@ export function stateHash(gs) {
     mix(gs.camX); mix(gs.waveIdx)
     const s = gs.ship
     mix(s.x); mix(s.y); mix(gs.lives)
-    mix(s.weapon === 'wave' ? 1 : 0); mix(s.charge); mix(s.inv); mix(s.dead ? 1 : 0)
+    mix({ vulcan: 0, laser: 1, wave: 2 }[s.weapon] ?? 3); mix(s.charge); mix(s.inv); mix(s.dead ? 1 : 0)
+    const pd = gs.pod
+    mix(pd ? 1 : 0)
+    if (pd) { mix(pd.x); mix(pd.y); mix(pd.state.length); mix(pd.state.charCodeAt(0)) }
     mix(gs.shots.length)
-    for (const q of gs.shots) { mix(q.x); mix(q.y); mix(q.kind === 'w' ? q.size + 1 : 0) }
+    for (const q of gs.shots) { mix(q.x); mix(q.y); mix(q.kind === 'w' ? q.size + 1 : q.kind === 'l' ? q.size + 4 : 0) }
     mix(gs.bullets.length)
     for (const b of gs.bullets) { mix(b.x); mix(b.y) }
     mix(gs.missiles.length)
