@@ -1,75 +1,68 @@
-# STATE.md — The Forge (rewritten at close of session — slot b, 2026-11-20;
-# committed: the forge game MERGED this session (207d056), so per FORGE step 9 the
-# report rides main, not just the park.)
+# STATE.md — The Forge (rewritten at close of session 364, slot a — 2026-11-20;
+# committed: DOUBLE DRAGON S1 merged this session — PR #2809, squash efd79e1,
+# game code `src/games/DoubleDragon/**` + demos-of-one's-honesty in ddragoncheck.)
 
 ## PLAYABLE
-- **/retrogames/contra — S4 CO-OP live (merged `207d056`, PR #2796, closes #2779):**
-  the blue soldier fights beside you — CPU ally by default (shadow the hero, own rifle
-  cadence, hops the same rounds, climbs the hero's shelf line in the falls, honest
-  perception: visible state only, never `gs.r`); a human claims the seat any time with
-  WASD + F/G (Jon's rule — no second touchpad). Both seats run the SAME `seatStep()`
-  (identical physics = same function). Two banks: GAME OVER only when both are empty;
-  blue death never freezes the world; respawn at the hero's side; enemies lead the
-  NEARER hero's lane; capsules per seat. `hopBand` 46→40 (46 stalled 3/36 sweep seeds
-  under the falls guns; 40 wins all 36). `contracheck` 89/89 + `--mutant` 6/6 named
-  (new `one-bank-lie`), contractcheck 15/15, lint gates + build green.
-- **#1530's stage plan is COMPLETE:** jungle (S1) → falls+gate (S2) → weapon wheel
-  (S3) → depot (S3.5) → co-op (S4).
-- **PROD VERIFIED live** (~01:3xZ): registry `index-BUblBW1l.js` carries the co-op
-  description; Contra chunk `index-BLaIYGSN.js` carries `#2b6fd4` (blue palette), the
-  `2UP` HUD tag and `p2join` (drop-in law).
+- /retrogames/contra — S1..S4 co-op LIVE (unchanged).
+- /retrogames/double-dragon — NEW this session: S1 Walnuts Street LIVE on prod
+  (verified bundle index-BibHc76X.js, route 200; visibility private until Jon
+  promotes, #379). Full belt engine: depth-dodge (|dy| gates every hit),
+  punch/kick/jump-kick/stomp, spin back-heel when surrounded, grabs w/
+  mash-out, stick pickup, 3 waves + Abobo mini-boss, stage-clear loop.
+  ddragoncheck 34/34 + mutant(depth-blind) RED-with-name.
+- Studio-side: plaicraft S2 dataset pipeline (#1712); slot b inside S2 polish (#2805).
+
+## WHAT THIS SESSION DID
+- Warden target #1712 REFUSED (held by b, live 12 min) -> normal ladder:
+  halt ∅ steer ∅ next ∅ game-queue ∅; feedback #2805 held by b; jonq: #2799
+  AWAITING (never wait). #2795 CLOSED ANSWERED by Jon: "both flagships starting
+  with double dragon" -> executed: filed #2807 (DOUBLE DRAGON) + #2808 (R-TYPE,
+  queued behind), claimed #2807, built + shipped S1 (PR #2809, squash efd79e1).
+- Red main: nightly 44762398189 failure (nightlybotcheck soak roster missed
+  contra) was already fixed on main (#2804) at session start; the re-proving
+  nightly 44778290100 was cancelled mid-run (main-ok.sh accepts cancelled),
+  and the #2809 merge kicked a fresh nightly that now re-proves the roster fix
+  AND double-dragon's new soak entry — glance at it in the morning.
+- Shipped game code: sim.js/art.js/index.jsx/README + registry + ddragoncheck
+  (+package alias, MANUAL_CHECKS park, contractGames+PATTERNS, nightlybot soak
+  — both rosters at once, #1525 law).
+- QA polish pass filed: #2810 (feedback) — walk bob, death tumble, Abobo
+  charge, ambience, wave legibility, HUD wave tick.
 
 ## BOARD
-- **No open builder stage for Contra.** #2779 closed shipped. QA owns polish now:
-  #2798 (S4 feel/drop-in/HUD/palette — filed at close), #2789 + PR #2793 (capsule
-  bitmap salvage, static green — QA lane's, do not touch).
-- **#2795 AWAITING (deadline 2026-11-22T00:54Z):** next flagship commission — default
-  R-TYPE. Do NOT start a new title before the deadline; builder lanes take the
-  default at the sweep if Jon hasn't answered.
-- **#838 MYST** remains the big existing-title depth item on the board.
-
-## QUEUE (re-derive at main — never plan from a remembered snapshot)
-1. `git fetch && git checkout --detach origin/main` + the #1045 ladder. Likely `next`
-   for the next builder session: nothing Contra remains; check whether #2795 passed its
-   deadline (then R-TYPE S1 per default) or Jon answered; else the ladder's pick
-   (#2787 FloorBoss turn-hold was a full-session reservation — verify still open).
-2. If you touch Contra anyway (QA fixes from #2798): branch from main, run
-   `DEV_PORT=<own> npm run contracheck` (89 legs) before pushing; pre-S4 legs pin the
-   ally down (`p2.out`) or filter by owner (`b.o`/`e.o`) — keep that discipline so the
-   solo laws stay provable.
+- #2807 stays OPEN (multi-stage — PR says Part of): S2 weapons wall (knives/
+  whip/barrels/grab refinements), S3 hideout + Marian, S4 co-op (CPU Jimmy).
+- #2808 R-TYPE sits `game-queue` — next free lane takes it (Jon's second
+  flagship, queued behind Double Dragon by his own words).
+- #1712/#2805 — slot b's. #2798/#2789/#2793 — QA's.
+- Rule 4: game-code merges this week #2788/#2791/#2796/#2809 — loop turning.
 
 ## QUESTIONS OUT (jonq issues, not STATE.md — #605)
-- #2795 (lane:games, deadline 2026-11-22) — default: commission R-TYPE.
-- #2751 (lane:qa, deadline 2026-11-21) — QA focus; default keep forever.
-- Nothing filed from slot b this session (all ship calls were mechanical).
+- #2799 (lane:games, AWAITING, deadline 2026-11-22T16:09Z) — friends' takes
+  for #1712 human coverage; default = stage stays open, never narrow.
+- #2751 (lane:qa) — QA's.
 
 ## HARNESS NOTES FOR THE NEXT LANE
-- **Co-op laws (new, S4):** `gs.p2` mirrors `gs.p` field-for-field; both seats run
-  `seatStep(gs, seat, pad, ledges, floorY, owner)`; `step(gs, pad, pad2)` reads pad2
-  only once `p2.human`. `seatsDown()` is the ONLY game-over bank check — never set
-  `out` manually in ways that bypass `killPlayer`/`killAlly` (test hooks do it to
-  stand a seat down on purpose; legs that assert game-over must kill for real).
-  `stateHash` covers the p2 fields + every bullet's `o` — extend it with new state.
-- **Owner tags are load-bearing for the harness:** bullets/boots/kill events carry
-  `o` (0 hero, 1 ally). When proving kills or cadence in probes, filter by `o` — or
-  pin `p2.out = true`. The `no-pierce` mutant initially survived because the CPU
-  ally's own rifle killed both lineup bodies; every harm that counts kills must pin
-  or filter.
-- **Never clear `gs.pb` mid-loop when you want rounds to CONNECT** (clearing each
-  tick deletes them before hit detection; only clear to bound memory when counting
-  events instead).
-- **Lane-aim law (inherited, now two-seat):** enemies aim `aimTarget(gs,x)` = nearer
-  live hero's `lane`; snipers fire only at grounded targets; hop always answers an
-  aimed round. Depot gun + turrets obey it too.
-- **Depot laws (inherited):** view + spawn-shield gate gun AND hatch; hash covers
-  depot + capsule volley. See README + git log bb56470.
-- **zsh locale trap:** grep bundled JS via file + `LC_ALL=C`; `grep -c` on a missing
-  file exits 1 — treat "0" and "missing" alike in poll loops. jalfern.com 308s to
-  www.jalfern.com — `curl -sL` or you verify 15 bytes of "Redirecting...".
+- double-dragon is in the nightly soak now: change the pad/contract and change
+  BOTH rosters (scripts/lib/contractGames.mjs + scripts/nightlybot.mjs) in the
+  same commit (#1525 law — this exact miss reddened main with the Contra merge).
+- Pad semantics: A(Space)=JUMP -> sim pad.a; B(KeyX)=KICK -> pad.b;
+  C(KeyZ)=PUNCH -> pad.punch (thirdAction held contract #2324). UP/DOWN are
+  the DEPTH axis only; sim jumps on pad.a||pad.jump. The autopilot never
+  jumps, so bot pad.a is safe.
+- Contract `done` = gameover only; the stage-clear loop keeps done=false on
+  purpose (600-tick determinism samples ride mid-run).
+- ciscope #1575: new aliased checks must be scoped or MANUAL_CHECKS-parked in
+  the same commit (ddragoncheck parked — its browser leg needs the dev server).
+- main-ok.sh treats a CANCELLED latest-nightly as not-red; if the fresh nightly
+  after efd79e1 fails, rule 5a applies (fix, or quarantine naming an open issue).
 
 ## WORKTREES
-- `../retrogames-forge-contra-coop` (slot b) — shipped S4 worktree; detached at
-  207d056, clean. Safe to prune.
-- `../retrogames-forge-contra-arms-depot` — shipped S3.5 worktree (detached). Prune.
-- `../retrogames-forge-contra-weapon-wall` — superseded duplicate (`29fa62b` pushed
-  unmerged; content salvaged into #2789/#2790). Now that S4 shipped, safe to prune.
+- Main checkout ~/Dev/retrogames: detached at origin/main (this STATE commit's
+  parent +1); STATE.md committed here (game merged, so the step-9 exception).
+- ~/Dev/retrogames-forge-double-dragon — was reaped by merge bookkeeping
+  mid-close (uncommitted STATE vaporized once; recreated). The next lane's
+  --delete-branch cleanup may reap it again at any time: keep STATE.md's
+  lifetime OUTSIDE the lane dir (park + commit early).
+- Port 5173 dev server (slot a) killed at close. Never touch 5176 (QA) or
+  5178 (slot b).
