@@ -540,7 +540,8 @@ export function drawHud (ctx, gs, hiscore) {
     ctx.fillText(String(Math.max(hiscore, gs.score)).padStart(6, '0'), 84, 12)
     ctx.fillStyle = C.ink
     ctx.fillText('CONTRA', 176, 4)
-    // lives as mini hero heads
+    // #2814 SHARED POOL: the cabinet shows ONE lives counter for the whole
+    // team — these heads are every life both seats have left.
     for (let i = 0; i < gs.lives; i++) {
         ctx.fillStyle = C.band
         ctx.fillRect(150 + i * 10, 12, 6, 2)
@@ -551,17 +552,12 @@ export function drawHud (ctx, gs, hiscore) {
     const wcols = { rifle: C.ink, spread: C.capsuleLit, machine: '#7fb2ff', fire: '#ff6a2a', laser: '#ff4ad4' }
     ctx.fillStyle = wcols[gs.p.weapon] || C.ink
     ctx.fillText(wnames[gs.p.weapon] || 'RIFLE', 314, 4)
-    // S4 co-op: seat 2 reads blue — his bank under his tag, his wheel below
-    // the hero's line. A seat that's down leaves the HUD entirely.
+    // S4 co-op: seat 2 reads blue — his tag and his wheel. #2814: NO bank of
+    // his own anymore — the single head-row is the SHARED pool, the cabinet's
+    // one-pool law (#2814). A seat that's down leaves the HUD entirely.
     if (gs.p2 && !gs.p2.out) {
         ctx.fillStyle = '#7fb2ff'
         ctx.fillText('2UP', 232, 4)
-        for (let i = 0; i < gs.p2.lives; i++) {
-            ctx.fillStyle = '#2b6fd4'
-            ctx.fillRect(234 + i * 10, 12, 6, 2)
-            ctx.fillStyle = C.skin
-            ctx.fillRect(234 + i * 10, 14, 6, 4)
-        }
         ctx.fillStyle = wcols[gs.p2.weapon] || C.ink
         ctx.fillText(wnames[gs.p2.weapon] || 'RIFLE', 314, 12)
     }

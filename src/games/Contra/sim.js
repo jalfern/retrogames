@@ -18,11 +18,16 @@
 // core — armored when shut, vulnerable when open. Destroy it and stage 1 is
 // truly finished (#2779 "stage 1's real finish").
 //
-// S4 (#2779, co-op): gs.p2 — a second soldier with his own physics bank, his
-// own lives, his own weapon. A deterministic honest-perception brain drives the
-// CPU seat (visible things only, like every autopilot law); a human takes it
-// drop-in on WASD + F/G and keeps it. Enemies aim at the NEARER hero's lane —
-// the hop answers aimed rounds for both seats. GAME OVER needs both banks empty.
+// S4 (#2779, co-op): gs.p2 — a second soldier with his own physics bank and
+// his own weapon. A deterministic honest-perception brain drives the CPU seat
+// (visible things only, like every autopilot law); a human takes it drop-in on
+// WASD + F/G and keeps it. Enemies aim at the NEARER hero's lane — the hop
+// answers aimed rounds for both seats.
+// #2814 shared pool (the cabinet's law): ONE life bank serves BOTH seats. Any
+// death — hero's or blue's — drains the shared `gs.lives`; a seat that dies
+// with the pool empty is down for good, and GAME OVER lands the arcade way —
+// the instant both seats are down. A partner can lose the run for the team,
+// exactly like the machine.
 
 export const W = 384
 export const H = 224
@@ -74,7 +79,9 @@ export const CFG = {
     // --- S4 co-op: the blue seat (Jon's multiplayer rule: CPU ally by default,
     // human drop-in on the desktop keyboard) ---
     allySpawnDX: -26,     // the ally arrives at your shoulder
-    allyLives: 3,         // his own bank; the run ends only when BOTH are empty
+    // #2814: NO allyLives — the cabinet shares ONE pool (gs.lives) between both
+    // seats; a blue death costs the team, and GAME OVER lands when both seats
+    // are down with the pool empty.
 }
 
 const PAD0 = { left: false, right: false, up: false, down: false, a: false, b: false }
@@ -330,10 +337,24 @@ function allyBrain (gs) {
         return pad
     }
 
-    // jungle: ride the hero's shoulder (or press on when his bank is gone)
+    // jungle: ride the hero's shoulder (or press on when the pool is gone)
     const anchor = heroLive ? p.x - 26 : gs.cam + 60
     const d = anchor - q.x
     pad.right = d > 8; pad.left = d < -8
+    // #2814 stay-in-line law: a partner never outruns a live hero into the
+    // uncleared kill zone (seed 1's grave at x=1726 was two bodies past the
+    // line — the prize is not worth the pool).
+    if (heroLive && p.dead === 0 && q.x > p.x + 4) { pad.right = false; pad.left = true }
+    // #2814 watch-your-back law: the honest killer of a trailing partner is
+    // the walker that got behind the nose gun (seed 1: two contact deaths from
+    // his blind side). A fair player turns and shoots — so does he.
+    let behind = null
+    for (const s of gs.soldiers) {
+        if (s.dead || !s.awake) continue
+        const sdx = s.x - q.x
+        if (sdx < 0 && sdx > -90 && Math.abs(s.y - q.y) < 20 && (!behind || s.x > behind.x)) behind = s
+    }
+    if (behind) { pad.right = false; pad.left = true }
     for (const br of gs.barrels) if (!br.gone && br.x > q.x - 6 && br.x - q.x < 22 && q.onGround) pad.a = true
     if (!pad.a) for (const b of gs.eb) {
         if (b.gr) {
@@ -342,7 +363,13 @@ function allyBrain (gs) {
         }
         const dx = b.x - q.x
         const toward = (dx > 4 && dx < CFG.hopBand) || (dx < -4 && dx > -CFG.hopBand && b.vx < -0.3)
-        if (q.onGround && toward && b.vy < 1.2 && Math.abs(b.y - (q.y - 14)) < 12) { pad.a = true; break }
+        // #2814 hop the ARC, not the line: turret and sniper rounds curve
+        // (vy 0.5-1.0), so judge the round's HEIGHT AT ARRIVAL, not where it
+        // sits now — seed 1's ally died at dx=8 because the flat window only
+        // opened when the hop could no longer lift his chest.
+        const eta = Math.abs(dx) / Math.max(0.5, Math.abs(b.vx))
+        const pred = Math.abs(b.y + b.vy * Math.min(eta, 16) - (q.y - 14))
+        if (q.onGround && toward && b.vy < 1.2 && pred < 12) { pad.a = true; break }
     }
     const c = gs.capsule
     if (c && Math.abs(c.x - q.x) < 60 && c.x <= p.x + 10) {
@@ -375,18 +402,20 @@ export function makeGame (seed) {
             dead: 0,                // freeze ticks after a hit
             coyote: 0, drop: 0,     // coyote frames; ignore-platform frames
             walk: 0,                // animation phase (world ticks)
-            out: false,             // bank empty — the seat is down, the run goes on without it
+            out: false,             // pool spent on this seat — the run goes on without it
             prevA: false,           // jump latch (edge-detect for taps)
         },
-        // S4 the second seat: mirror of p with its own bank. CPU-brained until
-        // a human takes it drop-in (q.human). Same physics laws — both seats run
-        // through the same seatStep, so the hop-law/lane law is structural.
+        // S4 the second seat: mirror of p — #2814: no bank of his own, his
+        // deaths drain the shared gs.lives pool like the hero's. CPU-brained
+        // until a human takes it drop-in (q.human). Same physics laws — both
+        // seats run through the same seatStep, so the hop-law/lane law is
+        // structural.
         p2: {
             x: 40 + CFG.allySpawnDX, y: CFG.ground, vy: 0, onGround: true, face: 1,
             lane: CFG.ground, ax: 1, ay: 0,
             cool: 0, weapon: 'rifle',
             inv: 120, dead: 0, coyote: 0, drop: 0, walk: 0, out: false,
-            lives: CFG.allyLives, human: false, tIdx: -1, zz: 1, prevA: false,
+            human: false, tIdx: -1, zz: 1, prevA: false,
             safe: { x: 40 + CFG.allySpawnDX, y: CFG.ground },
         },
         safe: { x: 40, y: CFG.ground },   // respawn point (last ground/shelf touched)
@@ -479,18 +508,21 @@ function hitTurret (gs, t) {
     if (t.hp <= 0) { t.dead = true; gs.score += 300; gs.ev.push({ type: 'boom', x: t.x, y: t.y - 18, kind: 'tnt' }) }
 }
 
-// S4 bank law: the arcade run ends only when BOTH seats are out of lives.
+// #2814 the cabinet's law: ONE pool serves both seats. A seat is DOWN when it
+// dies with the pool empty; GAME OVER lands the arcade way — the instant both
+// seats are down. A hero who pays the last life leaves his partner running the
+// run alone, and the partner's next death ends it (nothing left to respawn on).
 function seatsDown (gs) {
-    return gs.lives <= 0 && gs.p2.lives <= 0
+    return gs.p.out && gs.p2.out
 }
 
 function killPlayer (gs) {
     const p = gs.p
-    gs.lives -= 1
     gs.ev.push({ type: 'boom', x: p.x, y: p.y - 12, kind: 'death' })
+    if (gs.lives > 0) gs.lives -= 1
     if (gs.lives <= 0) {
-        // bank empty: the seat goes down for good — no freeze (the run goes on
-        // under whoever still has a life)
+        // pool empty: this seat goes down for good — no freeze (the run goes on
+        // under whoever still stands)
         gs.lives = 0; p.out = true
         gs.ev.push({ type: 'pdown' })
         if (seatsDown(gs)) { gs.end = 'dead'; gs.ev.push({ type: 'gameover' }) }
@@ -502,12 +534,14 @@ function killPlayer (gs) {
 // The blue seat dies WITHOUT freezing the world (the hero is still playing):
 // his tumble counts down inside the live step, then he respawns at his own
 // last safe ground, weapon lost, flashing — the same mercy laws the hero gets.
+// #2814: his death pays from the SHARED pool — the partner who volunteers can
+// cost the team a life, exactly like the cabinet.
 function killAlly (gs) {
     const q = gs.p2
-    q.lives -= 1
     gs.ev.push({ type: 'boom', x: q.x, y: q.y - 12, kind: 'death', o: 1 })
-    if (q.lives <= 0) {
-        q.lives = 0; q.out = true
+    if (gs.lives > 0) gs.lives -= 1
+    if (gs.lives <= 0) {
+        gs.lives = 0; q.out = true
         gs.ev.push({ type: 'p2down' })
         if (seatsDown(gs)) { gs.end = 'dead'; gs.ev.push({ type: 'gameover' }) }
         return
@@ -584,7 +618,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
     const ledges = gs.phase === 'jungle' ? PLATFORMS : FALLS_LEDGES
     const floorY = gs.phase === 'jungle' ? CFG.ground : (gs.phase === 'boss' ? CFG.bossFloor : Infinity)
 
-    // --- player: run, aim, jump, fire (the seat stays out once his bank is empty) ---
+    // --- player: run, aim, jump, fire (the seat stays out once the pool is spent) ---
     if (!p.out) {
         seatStep(gs, p, pad, ledges, floorY, 0)
         if (p.onGround) gs.safe = { x: p.x, y: p.y }
@@ -983,12 +1017,16 @@ export function autopilot (gs) {
         }
         // dodge: jump when a bullet is bearing down on the lane ahead of the
         // knees — from EITHER side (the sniper round is faster than a retreat,
-        // so running away never outruns it; the hop is the answer).
+        // so running away never outruns it; the hop is the answer). #2814:
+        // judge the round's height AT ARRIVAL (rounds curve) — the ally and
+        // the autopilot obey the same arc law, structural fairness.
         if (!pad.a) for (const b of gs.eb) {
             if (b.gr) continue
             const dx = b.x - p.x
             const toward = (dx > 4 && dx < CFG.hopBand) || (dx < -4 && dx > -CFG.hopBand && b.vx < -0.3)
-            if (p.onGround && toward && b.vy < 1.2 && Math.abs(b.y - (p.y - 14)) < 12) { pad.a = true; break }
+            const eta = Math.abs(dx) / Math.max(0.5, Math.abs(b.vx))
+            const pred = Math.abs(b.y + b.vy * Math.min(eta, 16) - (p.y - 14))
+            if (p.onGround && toward && b.vy < 1.2 && pred < 12) { pad.a = true; break }
         }
         // S3 grenades: a bomb dropping into the lane gets hopped — the blast
         // sits on the ground, so being airborne over it is the whole answer.
@@ -1115,10 +1153,11 @@ export function stateHash (gs) {
     put(gs.p.x); put(gs.p.y); put(gs.p.vy); put(gs.p.onGround ? 1 : 0); put(gs.p.face); put(gs.p.lane)
     put(gs.p.ax); put(gs.p.ay); put(gs.p.cool); put(WCODE[gs.p.weapon] || 0)
     put(gs.p.inv); put(gs.p.dead); put(gs.p.prevA ? 1 : 0); put(gs.p.out ? 1 : 0)
-    // S4 the blue seat is sim truth — his position, wheel, bank all ride the hash
+    // S4 the blue seat is sim truth — his position and wheel ride the hash;
+    // #2814 his lives ARE gs.lives (the shared pool hashes above)
     put(gs.p2.x); put(gs.p2.y); put(gs.p2.vy); put(gs.p2.onGround ? 1 : 0); put(gs.p2.face); put(gs.p2.lane)
     put(gs.p2.ax); put(gs.p2.ay); put(gs.p2.cool); put(WCODE[gs.p2.weapon] || 0)
-    put(gs.p2.inv); put(gs.p2.dead); put(gs.p2.prevA ? 1 : 0); put(gs.p2.lives); put(gs.p2.out ? 1 : 0); put(gs.p2.human ? 1 : 0)
+    put(gs.p2.inv); put(gs.p2.dead); put(gs.p2.prevA ? 1 : 0); put(gs.p2.out ? 1 : 0); put(gs.p2.human ? 1 : 0)
     for (const b of gs.pb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(KCODE[b.k] || 0); put(b.hits ? b.hits.length : 0); put(b.o || 0) }
     for (const b of gs.eb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(b.gr ? 1 : 0) }
     for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk); put(s.nade ? 1 : 0); put(s.hp) }

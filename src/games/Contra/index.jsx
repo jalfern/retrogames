@@ -378,7 +378,7 @@ export default function ContraGame () {
                     volley: gs.vc.length,
                     depot: gs.depot ? { hp: gs.depot.hp, dead: gs.depot.dead } : null,
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
-                    ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, lives: gs.p2.lives, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead },
+                    ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead },
                     keys: { ...keys },
                     keys2: { ...keys2 },
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
@@ -404,7 +404,7 @@ export default function ContraGame () {
                     if (opts.allyX !== undefined) gs.p2.x = opts.allyX
                     if (opts.allyWeapon) gs.p2.weapon = opts.allyWeapon
                     if (opts.killAlly) { gs.p2.human = true; gs.p2.inv = 0; gs.eb.push({ x: gs.p2.x + 2, y: gs.p2.y - 14, vx: 0.1, vy: 0 }) }
-                    if (opts.allyOut) { gs.p2.lives = 0; gs.p2.out = true }
+                    if (opts.allyOut) { gs.p2.out = true }   // #2814: seats don't hold banks — the pin stands the seat down
                     return true
                 },
             }
@@ -413,7 +413,7 @@ export default function ContraGame () {
                 getState: () => [
                     `x ${gs.p.x.toFixed(0)}/${CFG.worldW}  cam ${Math.round(gs.cam)}/${Math.round(gs.camY)}  y ${gs.p.y.toFixed(0)}  ground ${gs.p.onGround ? 1 : 0}  phase ${gs.phase}`,
                     `score ${gs.score}  lives ${gs.lives}  weapon ${gs.p.weapon}  inv ${gs.p.inv}  end ${gs.end || '-'}` + (gs.boss ? `  core ${gs.boss.core}/${CFG.coreHp} ${gs.boss.dying ? 'DYING' : (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen ? 'OPEN' : 'SHUT'}` : ''),
-                    `ALLY ${gs.p2.out ? 'DOWN' : `x ${gs.p2.x.toFixed(0)}  y ${gs.p2.y.toFixed(0)}  lives ${gs.p2.lives}  ${gs.p2.human ? 'HUMAN' : 'CPU'}  ${gs.p2.weapon}`}`,
+                    `ALLY ${gs.p2.out ? 'DOWN' : `x ${gs.p2.x.toFixed(0)}  y ${gs.p2.y.toFixed(0)}  ${gs.p2.human ? 'HUMAN' : 'CPU'}  ${gs.p2.weapon}`}  POOL ${gs.lives}`,
                     `soldiers ${gs.soldiers.filter((s) => !s.dead).length}/${gs.soldiers.length} alive  turrets ${gs.turrets.filter((t) => !t.dead).length}  snipers ${gs.snipers.filter((t) => !t.dead).length}  nades ${gs.eb.filter((b) => b.gr).length}  barrels ${gs.barrels.filter((b) => !b.gone).length}  bullets p/e ${gs.pb.length}/${gs.eb.length}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
@@ -453,7 +453,9 @@ export default function ContraGame () {
                     x: Math.round(gs.p.x), y: Math.round(gs.p.y), weapon: gs.p.weapon,
                     phase: gs.phase, core: gs.boss ? gs.boss.core : null,
                     soldiersAlive: gs.soldiers.filter((s) => !s.dead).length,
-                    allyLives: gs.p2.lives, allyWeapon: gs.p2.weapon, allyOut: gs.p2.out,
+                    // #2814: one pool — `lives` above IS both seats' bank; the
+                    // seat's own bank no longer exists, only its standing state.
+                    allyWeapon: gs.p2.weapon, allyOut: gs.p2.out,
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,
