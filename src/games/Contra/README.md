@@ -7,8 +7,12 @@ everything generated in code. Filed and built as #2779, one PR per stage:
   SPREAD capsule, soldiers/turrets/TNT, attract, `contracheck`.
 - **S2 — the base** (merged `8ada95b`): the waterfall vertical section + the
   boss gate with the destructible core — stage 1's real finish.
-- **S3 — the weapon wall** (this): the capsule wheel (S/M/F/L), the MACHINE
-  GUN stream, the FIREBAR, the LASER, tree-line snipers, grenade soldiers.
+- **S3 — the weapon wall** (merged `086554e`, #2788): the capsule wheel (S/M/F/L),
+  the MACHINE GUN stream, the FIREBAR, the LASER, tree-line snipers, grenade
+  soldiers — plus the S3.5 arms depot (`bb56470`, #2791).
+- **S4 — two-seat co-op** (this): the blue soldier. A CPU ally fights beside
+  you by default; on a desktop keyboard a second player claims his seat any
+  time with WASD + F (jump) + G (fire).
 
 ## What S3 is
 
@@ -26,8 +30,58 @@ The jungle also recruits the cabinet's ambushers: four tree-line **snipers**
 three **grenade soldiers** (armoured two-hit vests, lob arcing bombs that
 detonate where they hit the ground — being airborne over the landing beats it).
 
+## What S4 is
+
+The cabinet's other half: **a second soldier in blue**. He is fielded from the
+drop — shadowing your shoulder, shooting his own rifle cadence, hopping the
+same rounds you hop, taking the same hazards — and any moment a human touches
+WASD/F/G on the same keyboard the seat is claimed: the blue `2UP` tag in the
+HUD starts answering the pad, and the CPU hands over for the rest of the run.
+That ordering is
+Jon's multiplayer rule: CPU ally by default (phones keep working — there is no
+second touchpad), two players as the desktop option.
+
+The laws the blue seat lives under, all proven in `contracheck`:
+- **Shared physics, structurally**: both seats run the SAME `seatStep()` —
+  run, 8-way aim, coyote, one-way ledges, hop, fire cadence. Identical physics
+  is not a promise, it's the same load-bearing function.
+- **Two banks**: GAME OVER only when BOTH seats are out of lives
+  (`seatsDown()`); a blue death costs the blue bank only and does not freeze
+  the world — his tumble counts down inside the live step while the hero keeps
+  running.
+- **Respawn at your side**, not where he fell (arcade drop-in), with i-frames
+  and a clean rifle; in the falls he never respawns below the torrent.
+- **Nearest-hero aim law**: enemies lead the NEARER live hero's lane — put the
+  blue soldier on a walkway and the sniper's round re-leads from down-sloppy
+  to flat (proven by the vy delta).
+- **Capsules are per seat**: whoever touches the letter takes the gun; the
+  other keeps his.
+- **Honest brain**: `allyBrain` sees only visible state (positions, bullets,
+  hero's lane), never `gs.r`, never off-screen enemies — the same rule the
+  autopilot obeys, so the ally is as good (and as fooled) as a fair player.
+
 ## Engine notes
 
+- **S4 `gs.p2`**: the seat object mirrors `gs.p` field-for-field (lane, cool,
+  weapon, inv, dead, safe) so every hazard loop simply iterates both seats.
+  `step(gs, pad, pad2)` — `pad2` is read only once the seat is human-claimed;
+  until then `allyBrain(gs)` returns the pad, and it is deterministic: same
+  seed, same fight, hash-stable (`stateHash` extended over the p2 fields and
+  every bullet's owner `o`).
+- **Divergence on purpose — banks:** the original shares ONE life pool between
+  the players; here each seat carries its own bank (hero 3, blue 3). A partner
+  who volunteers shouldn't drain the host's lives, and the two-bank law is what
+  makes the seat provably alive in a harness (`one-bank-lie` mutant kills any
+  build where the blue bank stops mattering). GAME OVER still lands the arcade
+  way — the instant nobody left in the world has a life.
+- **`hopBand` 46→40** (S4 re-tune): the autopilot/ally hop window in px. At 46
+  the ally jumped too early under the falls' gun lines and three sweep seeds
+  stalled; 40 wins all 36 sweep seeds (the hero's own autopilot hops marginally
+  later too — the attract demo shows it).
+- **Phases carry the partner**: `enterFalls`/`makeBoss` place blue with 60-frame
+  spawn grace (the arriving gunner shouldn't get him free), and the falls
+  climb uses the hero's target-shelf index (`gs.apT`) as his line, dropping to
+  his own lowest-reachable-shelf logic when the hero is out.
 - **S3.5 the arms depot (#2790)**: a shootable emplacement at x 1700 — 10-hit
   slab (cracks deepen, embers glow), aimed slit gun (lane-aim law), a hatch
   that spills one vest-grenadier at a time ONLY with the spill point inside the
@@ -63,8 +117,9 @@ detonate where they hit the ground — being airborne over the landing beats it)
   the lob's whistle answer the existing set.
 - Keyboard: Arrows move + aim all 8 ways (down aims only airborne),
   SPACE/Z or the pad's A jumps, X/C or the pad's B fires. `?` pauses.
+  Seat 2 (drop-in): WASD + F jump + G fire — the first touch claims the seat.
   `warpFalls`/`warpBoss` construct phases properly (DEV hooks + DebugKit);
-  DebugKit gained a CYCLE WHEEL cheat button.
+  DebugKit gained CYCLE WHEEL and P2: HUMAN SEAT cheat buttons.
 
 ## Verify
 
@@ -72,7 +127,8 @@ detonate where they hit the ground — being airborne over the landing beats it)
 npm run dev -- --port 5173 --strictPort   # another terminal
 npm run contracheck                      # sim core + browser leg
 npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
-                                       #   silent-MG, non-piercing-beam; names harm
+                                       #   silent-MG, non-piercing-beam,
+                                       #   impervious-depot, one-bank-lie
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -92,13 +148,20 @@ ground; the vest eats two rounds** · **winnable: autopilot clears
 jungle+falls+boss on seeds 1..12 with the new roster**, not cherry-picked ·
 GAME OVER path · attract self-demo · real keys start/run/jump/fire/die/
 restart · **live MG stream and live capsule letter in the browser** · live
-warp + armor law · zero page errors.
+warp + armor law · **S4 co-op: the blue seat fires unasked and advances ·
+earns an attributable kill with the hero silent · the sniper re-leads the
+nearer blue lane (down-solo vs flat-coop) · capsules and kills are per seat ·
+GAME OVER needs both banks · the blue death never freezes the world · respawn
+lands at the hero's side · pad2 drives a claimed seat · live drop-in with
+KeyA** · zero page errors.
 
 ## Honest gaps
 
-- Co-op: the cabinet is a two-player game; a CPU ally seat (and the second
-  keyboard seat per Jon's multiplayer rule) is S4 — the sim takes one hero
-  today.
+- Co-op here diverges from the cabinet in two ways: each seat carries its own
+  life bank (the original shares one pool — see Engine notes for why), and a
+  claimed seat can't be released again (drop-out): once human, human for the
+  run. The arcade also let 2P arrive mid-level at a screen edge; our drop-in
+  claims the standing ally wherever he is.
 - The original's flying pod carriers (weapon capsules dropped by low-flying
   craft) are still missing — the depot pays a volley when it falls, but no
   aircraft delivers guns yet.

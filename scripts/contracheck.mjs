@@ -98,15 +98,18 @@ r.check('boots: makeGame/step/stateHash are wired', typeof makeGame === 'functio
     r.check('jump: leaves the ground and gravity brings it back', CFG.ground - peak > 30 && gs.p.onGround, `apex rise ${(CFG.ground - peak).toFixed(0)}px`)
 }
 
-// rifle vs SPREAD
+// rifle vs SPREAD (S4: counts are per-seat — the blue gun fires on its own
+// cadence; owner 0 = the hero's rounds)
 {
     const g1 = makeGame(5)
     step(g1, { b: true })
-    r.check('rifle fires one round', g1.pb.length === 1, `pb=${g1.pb.length}`)
+    r.check('rifle fires one round', g1.pb.filter((b) => !b.o).length === 1, `pb=${g1.pb.filter((b) => !b.o).length}`)
+    r.check('S4: the CPU ally fires his own round unasked', g1.pb.some((b) => b.o === 1))
     const g2 = makeGame(5)
     g2.p.weapon = 'spread'
     step(g2, { b: true })
-    r.check('SPREAD fires five rounds, fanned', g2.pb.length === 5 && new Set(g2.pb.map((b) => Math.round(b.vy * 10))).size >= 4, `pb=${g2.pb.length}`)
+    const mine = g2.pb.filter((b) => !b.o)
+    r.check('SPREAD fires five rounds, fanned', mine.length === 5 && new Set(mine.map((b) => Math.round(b.vy * 10))).size >= 4, `pb=${mine.length}`)
 }
 
 // capsule -> spread; death reverts the gun
@@ -303,9 +306,17 @@ const mkBoss = (seed = 7) => {
 }
 {
     const g2 = makeGame(22)
-    let guard = 0
-    while (!g2.end && guard++ < 9000) { g2.p.inv = 0; g2.eb.push({ x: g2.p.x, y: g2.p.y - 14, vx: 0.1, vy: 0 }); step(g2, {}) }
-    r.check('three hits and the run is over (GAME OVER path)', g2.end === 'dead' && g2.lives === 0)
+    g2.p2.human = true   // pin seat 2 still; this leg drives the banks deliberately
+    let guard = 0, earlyEnd = false
+    while (!g2.end && guard++ < 4000) {
+        g2.p.inv = 0; g2.p.dead = 0
+        if (g2.lives > 0) g2.eb.push({ x: g2.p.x, y: g2.p.y - 14, vx: 0.1, vy: 0 })
+        else g2.eb.push({ x: g2.p2.x, y: g2.p2.y - 14, vx: 0.1, vy: 0 })   // hero down — drain the blue bank too
+        step(g2, {})
+        if (g2.end && g2.lives > 0 && g2.p2.lives > 0) earlyEnd = true
+    }
+    r.check('GAME OVER needs both banks empty (never while a seat still fights)',
+        !earlyEnd && g2.end === 'dead' && g2.lives === 0 && g2.p2.lives === 0, `end=${g2.end} early=${earlyEnd}`)
 }
 
 // ------------------------------------------------------- S3: weapon wheel ---
@@ -314,10 +325,10 @@ const mkBoss = (seed = 7) => {
     const mg = makeGame(5)
     mg.p.weapon = 'machine'
     let m = 0
-    for (let i = 0; i < 60; i++) { step(mg, { b: true }); m += mg.ev.filter((e) => e.type === 'shot' && e.k === 'machine').length; mg.ev.length = 0 }
+    for (let i = 0; i < 60; i++) { step(mg, { b: true }); m += mg.ev.filter((e) => e.type === 'shot' && e.k === 'machine' && !e.o).length; mg.ev.length = 0 }
     const rf = makeGame(5)
     let r2 = 0
-    for (let i = 0; i < 60; i++) { step(rf, { b: true }); r2 += rf.ev.filter((e) => e.type === 'shot').length; rf.ev.length = 0 }
+    for (let i = 0; i < 60; i++) { step(rf, { b: true }); r2 += rf.ev.filter((e) => e.type === 'shot' && !e.o).length; rf.ev.length = 0 }
     r.check('MG streams: at least twice the rifle on the same hold', m >= 14 && m >= r2 * 2, `MG ${m} vs rifle ${r2} in 60 ticks`)
     // the laser is the fastest round in the game
     const lz = makeGame(5); lz.p.weapon = 'laser'
@@ -337,6 +348,7 @@ const mkBoss = (seed = 7) => {
     const lineup = (weapon) => {
         const gs = makeGame(5)
         gs.p.weapon = weapon
+        gs.p2.out = true // the solo lineup law is the hero's gun alone; the co-op kill-cross is covered in the S4 section
         for (const s of gs.soldiers) s.dead = true
         const a = { x: gs.p.x + 70, y: CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
         const b = { x: gs.p.x + 110, y: CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
@@ -370,6 +382,7 @@ const mkBoss = (seed = 7) => {
 {
     const gs = makeGame(13)
     gs.p.x = 300; gs.p.inv = 99999
+    gs.p2.out = true // pinned solo: the tree-line leg aims at the hero, not the shadow (the co-op aim-swap law is in the S4 section)
     let shots = 0, fast = false, glintOk = true
     for (let i = 0; i < 400 && shots < 2; i++) {
         const charging = gs.snipers.some((s) => s.awake && !s.dead && s.t <= 40)
@@ -500,6 +513,101 @@ const mkBoss = (seed = 7) => {
     r.check('S3.5 spawn-shield holds for the hatch too (all 12 seeds audited)', wakesOut === 0, `outside wakes=${wakesOut}`)
 }
 
+// ------------------------------------------------- S4: two-seat co-op ---
+{
+    // the blue seat is fielded from the drop: it fires its own rifle cadence
+    // unasked and keeps advancing on the hero's shoulder.
+    const gs = makeGame(42)
+    let allyShots = 0
+    const firstX = gs.p2.x
+    for (let i = 0; i < 300; i++) {
+        allyShots += gs.ev.filter((e) => ['shot', 'spread', 'fshot', 'lshot'].includes(e.type) && e.o === 1).length
+        gs.ev.length = 0
+        step(gs, autopilot(gs))
+    }
+    r.check('S4 co-op seat fielded by default: fires on its own and advances', allyShots > 0 && gs.p2.x > firstX + 100, `shots=${allyShots} x=${gs.p2.x.toFixed(0)}`)
+}
+{
+    // an attributable kill: the blue seat kills a soldier under its own fire
+    // while the hero never fires a round (owner tags make it provable).
+    const gs = makeGame(5)
+    gs.p.x = 60
+    for (const s of gs.soldiers) s.dead = true
+    gs.p2.human = true
+    gs.p2.x = 200; gs.p2.y = CFG.ground; gs.p2.onGround = true; gs.p2.lane = CFG.ground; gs.p2.inv = 99999
+    const victim = { x: 270, y: CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
+    gs.soldiers.push(victim)
+    let heroFired = false
+    for (let i = 0; i < 200 && !victim.dead; i++) {
+        step(gs, {}, { b: true })
+        if (gs.ev.some((e) => e.type === 'shot' && !e.o)) heroFired = true
+        gs.ev.length = 0
+    }
+    r.check('S4 the blue seat kills under his own fire (attributable, hero never fired)', victim.dead && !heroFired)
+}
+{
+    // nearest-hero aim law: enemies lead the NEARER hero's lane. The sniper at
+    // x=520 aims down at the grounded hero (vy > 0.4); put a seat on the
+    // walkway at y=150 closer to the muzzle and the round goes flat instead.
+    const solo = makeGame(13); solo.p.x = 300; solo.p.inv = 99999; solo.p2.out = true
+    let vsolo = null
+    for (let i = 0; i < 500 && vsolo == null; i++) {
+        step(solo, {}, {})
+        if (solo.ev.some((e) => e.type === 'sniper')) vsolo = solo.eb[solo.eb.length - 1].vy
+    }
+    const coop = makeGame(13)
+    coop.p.x = 300; coop.p.inv = 99999
+    coop.p2.human = true
+    coop.p2.x = 380; coop.p2.y = 150; coop.p2.onGround = true; coop.p2.lane = 150; coop.p2.inv = 99999
+    let vcoop = null
+    for (let i = 0; i < 500 && vcoop == null; i++) {
+        step(coop, {}, {})
+        if (coop.ev.some((e) => e.type === 'sniper')) vcoop = coop.eb[coop.eb.length - 1].vy
+    }
+    r.check('S4 nearest-hero aim swap: the sniper re-leads the closer blue lane (down-solo, flat-coop)',
+        vsolo != null && vcoop != null && vsolo > 0.4 && Math.abs(vcoop) < 0.15, `solo vy=${vsolo && vsolo.toFixed(2)} coop vy=${vcoop && vcoop.toFixed(2)}`)
+}
+{
+    // capsule per seat: whoever touches it takes the gun — the other keeps his.
+    const gs = makeGame(5)
+    gs.p2.human = true
+    gs.p2.x = 200; gs.p2.y = CFG.ground; gs.p2.onGround = true; gs.p2.lane = CFG.ground; gs.p2.inv = 99999
+    gs.capsule = { x: gs.p2.x, y: gs.p2.y - 14, vx: -0.01, kind: 'spread' }   // hero stays back at the spawn
+    step(gs, {}, {})
+    r.check('S4 capsule lands on the seat that touches it (per-seat guns)', gs.p2.weapon === 'spread' && gs.p.weapon === 'rifle', `p=${gs.p.weapon} p2=${gs.p2.weapon}`)
+}
+{
+    // the blue death does NOT freeze the world: the hero keeps running and
+    // firing through the tumble, and the partner respawns at his side (the
+    // arcade drop-in law) with i-frames and a clean rifle.
+    const gs = makeGame(7)
+    gs.p2.inv = 0
+    gs.eb.push({ x: gs.p2.x + 2, y: gs.p2.y - 14, vx: 0.1, vy: 0 })
+    step(gs, {})
+    r.check('S4 blue death costs the blue bank only', gs.p2.lives === CFG.allyLives - 1 && gs.lives === 3 && gs.end === null, `p2 bank=${gs.p2.lives} hero=${gs.lives}`)
+    gs.p.x = 300; gs.p.vy = 0; gs.p.onGround = true; gs.p.lane = CFG.ground; gs.p.inv = 99999
+    for (let i = 0; i < CFG.respawnFreeze + 5; i++) { step(gs, {}, {}); gs.pb.length = 0 }
+    r.check("S4 respawn: partner re-enters at the hero's side, flashing, rifle back",
+        gs.p2.dead === 0 && Math.abs(gs.p2.x - (gs.p.x - 26)) <= 2 && gs.p2.inv > 0 && gs.p2.weapon === 'rifle', `dx=${(gs.p2.x - (gs.p.x - 26)).toFixed(0)} inv=${gs.p2.inv}`)
+}
+{
+    // human drop-in (Node mirror of the shell law): once seat 2 is claimed by
+    // a human, pad2 alone drives it — walk and fire, own bank.
+    const gs = makeGame(5)
+    gs.p.x = 300; gs.p.inv = 99999
+    gs.p2.human = true
+    gs.p2.x = 200; gs.p2.y = CFG.ground; gs.p2.onGround = true; gs.p2.lane = CFG.ground; gs.p2.inv = 99999
+    const x0 = gs.p2.x
+    let blueShot = false
+    for (let i = 0; i < 40; i++) {
+        step(gs, {}, { left: true, b: i % 5 === 0 })
+        if (gs.pb.some((b) => b.o === 1)) blueShot = true
+        gs.pb.length = 0
+    }
+    r.check('S4 pad2 drives the claimed seat: human walks left where the CPU would hold, fires his own rounds',
+        gs.p2.x < x0 - 20 && blueShot, `dx=${(gs.p2.x - x0).toFixed(0)}`)
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -538,7 +646,7 @@ if (MUTANT) {
             // S3: the wheel must actually turn. Silence the MG's round and the
             // letter M becomes a legend on the capsule instead of a gun.
             name: 'no-stream',
-            anchor: `gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.machineSpeed, vy: p.ay * CFG.machineSpeed, k: 'm' })`,
+            anchor: `gs.pb.push({ x: o.x, y: o.y, vx: p.ax * CFG.machineSpeed, vy: p.ay * CFG.machineSpeed, k: 'm', o: owner })`,
             plant: 'void 0 /* MUTANT(no-stream): the MG clicks on empty */',
             harm: async (mod) => {
                 const gs = mod.makeGame(5)
@@ -557,6 +665,7 @@ if (MUTANT) {
             harm: async (mod) => {
                 const gs = mod.makeGame(5)
                 gs.p.weapon = 'laser'
+                gs.p2.out = true // pinned solo: attribute the line to the hero's beam, not the blue rifle
                 for (const s of gs.soldiers) s.dead = true
                 const a = { x: gs.p.x + 70, y: mod.CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
                 const b = { x: gs.p.x + 110, y: mod.CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
@@ -577,6 +686,28 @@ if (MUTANT) {
                     while (!gs.end && gs.tick < 20000) { if (gs.ev.some((e) => e.type === 'volley')) volleys++; gs.ev.length = 0; mod.step(gs, mod.autopilot(gs)) }
                 }
                 return volleys === 0 ? 'HARM NAMED: the arms depot is impervious - 0/6 seeds release the capsule volley; the arcade keeps its guns behind the wall' : null
+            },
+        },
+        {
+            // S4: the co-op contract. Ignore seat 2's bank and a solo death
+            // murders the run while the blue player still has lives in —
+            // the cabinet would never do that.
+            name: 'one-bank-lie',
+            anchor: 'return gs.lives <= 0 && gs.p2.lives <= 0',
+            plant: 'return gs.lives <= 0 /* MUTANT(one-bank-lie): the blue bank is ignored - hero down ends the run */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(11)
+                gs.p.x = 40
+                gs.p2.human = true; gs.p2.x = 60; gs.p2.inv = 100000   // pin seat 2, full bank, out of the line of fire
+                for (let k = 0; k < 3; k++) {
+                    gs.p.inv = 0; gs.p.dead = 0
+                    gs.eb.push({ x: gs.p.x + 2, y: gs.p.y - 14, vx: 0.1, vy: 0 })
+                    mod.step(gs, {}, {})
+                    for (let i = 0; i < 60; i++) { mod.step(gs, {}, {}); gs.ev.length = 0 }
+                }
+                return gs.end === 'dead' && gs.p2.lives > 0 && !gs.p2.out
+                    ? `HARM NAMED: seat 2's bank is ignored - the run GAME OVERs with ${gs.p2.lives} blue lives still in; co-op is a lie`
+                    : null
             },
         },
     ]
@@ -650,6 +781,24 @@ const browser = await launch()
     const capped = await page.evaluate(() => { window.__contraTest.setup({ capsuleNear: true, capsuleKind: 'laser' }); return window.__contraTest.probe() })
     r.check('live capsule carries its letter (L)', capped.capsule && capped.capsule.kind === 'laser', JSON.stringify(capped.capsule))
 
+    // S4 live co-op: the blue seat is on the field from the drop, and a WASD
+    // press claims it — the human takes the pad from the CPU.
+    await page.evaluate(() => { window.__game && window.__game.reset(99) })
+    await page.waitForTimeout(200)
+    const withAlly = await page.evaluate(() => window.__contraTest.probe())
+    r.check("S4 live: the blue seat rides the hero's shoulder from the drop",
+        withAlly.ally && !withAlly.ally.out && withAlly.ally.x <= withAlly.x + 6 && withAlly.ally.human === false,
+        `ally=${withAlly.ally && withAlly.ally.x.toFixed(0)} hero=${withAlly.x.toFixed(0)}`)
+    await page.evaluate(() => window.__contraTest.setup({ allyX: 220 }))
+    await page.waitForTimeout(80)
+    const ax0 = (await page.evaluate(() => window.__contraTest.probe())).ally.x
+    await page.keyboard.down('KeyA')
+    await page.waitForTimeout(600)
+    const drop = await page.evaluate(() => window.__contraTest.probe())
+    await page.keyboard.up('KeyA')
+    r.check('S4 live drop-in: KeyA claims seat 2 and the human pad drives him left',
+        drop.ally.human === true && drop.ally.x < ax0 - 10, `human=${drop.ally.human} dx=${(drop.ally.x - ax0).toFixed(0)}`)
+
     // S2 through the DEV warp: the canyon paints, and the armor law holds live
     await page.evaluate(() => window.__contraTest.setup({ warp: 'falls' }))
     await page.waitForTimeout(120)
@@ -683,7 +832,7 @@ const browser = await launch()
     // force the death path through the DEV setup hook, then restart with keys.
     // Fresh sim first: the earlier open-core leg may have already won the run
     // (screen clear end=win), so reset to a live play state before forcing death.
-    await page.evaluate(() => { window.__game && window.__game.reset(99); window.__contraTest.setup({ lives: 1 }) })
+    await page.evaluate(() => { window.__game && window.__game.reset(99); window.__contraTest.setup({ lives: 1, allyOut: true }) })   // bank law: stand seat 2 down, then the hero's last life must end the run deterministically
     await page.waitForTimeout(120)
     let over = null
     for (let guard = 0; guard < 40; guard++) {

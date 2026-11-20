@@ -24,6 +24,8 @@ const MESSAGES = [
     'MACHINE GUN STREAMS · FIRE PIERCES · LASER RUNS HOT',
     'WATCH THE SCOPE GLINT — THE SNIPER TELLS YOU FIRST',
     'THE CORE SHINES WHEN IT IS OPEN — HIT IT THEN',
+    'BLUE TAKES THE SECOND SEAT — TWO GUNS, ONE JUNGLE',
+    '2P DROP-IN: WASD MOVE · F JUMP · G FIRE',
     'ONE HIT KILLS. BOTH SIDES.',
     'PRESS ANY KEY',
 ]
@@ -42,6 +44,10 @@ const sfx = {
     splash: () => audioController.playNoise(0.06, 0.025),
     respawn: () => audioController.playSweep(700, 220, 0.16, 'triangle', 0.06),
     gameover: () => audioController.playSweep(320, 60, 0.6, 'sawtooth', 0.08),
+    // S4 co-op: the blue seat's voices — a warmer join chirp, a deeper fall
+    p2join: () => { audioController.playSweep(440, 880, 0.12, 'square', 0.05); setTimeout(() => audioController.playTone(1100, 0.1, 'square', 0.04), 90) },
+    pdown: () => audioController.playSweep(300, 90, 0.3, 'square', 0.07),
+    p2down: () => audioController.playSweep(240, 70, 0.3, 'sawtooth', 0.07),
     // stage clear: a 4-note call answered by a bass line (ART.md bar 4 — the
     // original's fanfare is a call-and-response, not a plain triad)
     clear: () => {
@@ -107,6 +113,10 @@ export default function ContraGame () {
         const fire = [] // expanding fireballs — sized by the boom's kind (#2782)
         const keys = { l: false, r: false, u: false, d: false, j: false, f: false }
         let jumpQ = false, fireQ = false
+        // S4 seat 2 (desktop keyboard, drop-in): WASD move, F jump, G fire.
+        // No second touchpad — the phone keeps the CPU ally (Jon's rule).
+        const keys2 = { l: false, r: false, u: false, d: false, j: false, f: false }
+        let jumpQ2 = false, fireQ2 = false
         let wasGround = true
 
         const drain = () => {
@@ -149,6 +159,12 @@ export default function ContraGame () {
             return pad
         }
 
+        const simPad2 = () => {
+            const pad = { left: keys2.l, right: keys2.r, up: keys2.u, down: keys2.d, a: keys2.j || jumpQ2, b: keys2.f || fireQ2 }
+            jumpQ2 = fireQ2 = false
+            return pad
+        }
+
         const startPlay = () => {
             gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0)
             part.length = 0
@@ -168,7 +184,7 @@ export default function ContraGame () {
         }
 
         const stepSim = (pad) => {
-            step(gs, pad)
+            step(gs, pad, simPad2())
             drain()
             if (gs.end === 'win') { if (screen === 'play') { endTo('clear'); clearHold = 220 } }
             else if (gs.end === 'dead') { if (screen === 'play') endTo('over') }
@@ -200,6 +216,9 @@ export default function ContraGame () {
             for (const c of gs.vc) drawCapsule(ctx, c, gs.tick)
             for (const b of gs.pb) drawBullet(ctx, b, false)
             for (const b of gs.eb) { if (b.gr) drawGrenade(ctx, b); else drawBullet(ctx, b, true) }
+            // S4: the blue seat draws at his own body, under the hero
+            if (gs.p2.dead === 0 && !gs.p2.out && !(gs.end === 'dead')) drawPlayer(ctx, gs.p2, gs.tick, true)
+            else if (gs.p2.dead > 0) drawDeathTumble(ctx, gs.p2.x, gs.p2.y, Math.floor((CFG.respawnFreeze - gs.p2.dead) / 12) % 4, true)
             if (gs.p.dead === 0 && !(gs.end === 'dead')) drawPlayer(ctx, gs.p, gs.tick)
             else if (gs.p.dead > 0) drawDeathTumble(ctx, gs.p.x, gs.p.y, Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4)
             // expanding fireballs under the sparks (cosmetic, sized by kind)
@@ -299,6 +318,16 @@ export default function ContraGame () {
             if (e.code === 'ArrowDown') keys.d = true
             if (e.code === 'Space' || e.code === 'KeyZ') { keys.j = true; jumpQ = true }
             if (e.code === 'KeyX' || e.code === 'KeyC') { keys.f = true; fireQ = true }
+            // S4 seat 2 keys — and the drop-in law: the first touch of a P2
+            // key hands the blue soldier to a human for the rest of the run.
+            const isP2 = e.code === 'KeyA' || e.code === 'KeyD' || e.code === 'KeyW' || e.code === 'KeyS' || e.code === 'KeyF' || e.code === 'KeyG'
+            if (e.code === 'KeyA') keys2.l = true
+            if (e.code === 'KeyD') keys2.r = true
+            if (e.code === 'KeyW') keys2.u = true
+            if (e.code === 'KeyS') keys2.d = true
+            if (e.code === 'KeyF') { keys2.j = true; jumpQ2 = true }
+            if (e.code === 'KeyG') { keys2.f = true; fireQ2 = true }
+            if (isP2 && !gs.p2.human && !gs.p2.out) { gs.p2.human = true; sfx.p2join() }
         }
         const onUp = (e) => {
             if (e.code === 'ArrowLeft') keys.l = false
@@ -307,8 +336,14 @@ export default function ContraGame () {
             if (e.code === 'ArrowDown') keys.d = false
             if (e.code === 'Space' || e.code === 'KeyZ') keys.j = false
             if (e.code === 'KeyX' || e.code === 'KeyC') keys.f = false
+            if (e.code === 'KeyA') keys2.l = false
+            if (e.code === 'KeyD') keys2.r = false
+            if (e.code === 'KeyW') keys2.u = false
+            if (e.code === 'KeyS') keys2.d = false
+            if (e.code === 'KeyF') keys2.j = false
+            if (e.code === 'KeyG') keys2.f = false
         }
-        const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false }
+        const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false; keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false }
         const onPointer = () => {
             if (screen === 'attract') { startPlay(); return }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract') }
@@ -343,7 +378,9 @@ export default function ContraGame () {
                     volley: gs.vc.length,
                     depot: gs.depot ? { hp: gs.depot.hp, dead: gs.depot.dead } : null,
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
+                    ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, lives: gs.p2.lives, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead },
                     keys: { ...keys },
+                    keys2: { ...keys2 },
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
                 }),
@@ -362,6 +399,12 @@ export default function ContraGame () {
                     if (opts.capsuleNear) gs.capsule = { x: gs.p.x + 8, y: opts.capsuleY ?? gs.p.y - 14, vx: 0, kind: opts.capsuleKind || 'spread' }
                     if (opts.kill) { gs.p.inv = 0; gs.eb.push({ x: gs.p.x + 2, y: gs.p.y - 14, vx: 0.1, vy: 0 }) }
                     if (opts.clearEnemies) for (const s of gs.soldiers) s.dead = true
+                    // S4 co-op hooks for the browser legs
+                    if (opts.allyHuman) gs.p2.human = true
+                    if (opts.allyX !== undefined) gs.p2.x = opts.allyX
+                    if (opts.allyWeapon) gs.p2.weapon = opts.allyWeapon
+                    if (opts.killAlly) { gs.p2.human = true; gs.p2.inv = 0; gs.eb.push({ x: gs.p2.x + 2, y: gs.p2.y - 14, vx: 0.1, vy: 0 }) }
+                    if (opts.allyOut) { gs.p2.lives = 0; gs.p2.out = true }
                     return true
                 },
             }
@@ -370,6 +413,7 @@ export default function ContraGame () {
                 getState: () => [
                     `x ${gs.p.x.toFixed(0)}/${CFG.worldW}  cam ${Math.round(gs.cam)}/${Math.round(gs.camY)}  y ${gs.p.y.toFixed(0)}  ground ${gs.p.onGround ? 1 : 0}  phase ${gs.phase}`,
                     `score ${gs.score}  lives ${gs.lives}  weapon ${gs.p.weapon}  inv ${gs.p.inv}  end ${gs.end || '-'}` + (gs.boss ? `  core ${gs.boss.core}/${CFG.coreHp} ${gs.boss.dying ? 'DYING' : (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen ? 'OPEN' : 'SHUT'}` : ''),
+                    `ALLY ${gs.p2.out ? 'DOWN' : `x ${gs.p2.x.toFixed(0)}  y ${gs.p2.y.toFixed(0)}  lives ${gs.p2.lives}  ${gs.p2.human ? 'HUMAN' : 'CPU'}  ${gs.p2.weapon}`}`,
                     `soldiers ${gs.soldiers.filter((s) => !s.dead).length}/${gs.soldiers.length} alive  turrets ${gs.turrets.filter((t) => !t.dead).length}  snipers ${gs.snipers.filter((t) => !t.dead).length}  nades ${gs.eb.filter((b) => b.gr).length}  barrels ${gs.barrels.filter((b) => !b.gone).length}  bullets p/e ${gs.pb.length}/${gs.eb.length}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
@@ -378,6 +422,7 @@ export default function ContraGame () {
                     { label: 'SPREAD NOW', run: () => { gs.p.weapon = 'spread'; return 'spread gun racked' } },
                     { label: 'CYCLE WHEEL', run: () => { const w = ['rifle', 'spread', 'machine', 'fire', 'laser']; gs.p.weapon = w[(w.indexOf(gs.p.weapon) + 1) % w.length]; return 'weapon: ' + gs.p.weapon } },
                     { label: 'CAPSULE HERE', run: () => { gs.capsule = { x: gs.p.x + 24, y: gs.p.y - 14, vx: 0 }; return 'capsule inbound' } },
+                    { label: 'P2: HUMAN SEAT', run: () => { gs.p2.human = !gs.p2.human; return 'blue seat: ' + (gs.p2.human ? 'human (WASD/F/G)' : 'CPU') } },
                     { label: 'TO WATERFALL', run: () => { warpFalls(gs); return 'into the canyon' } },
                     { label: 'TO THE GATE', run: () => { warpBoss(gs); return 'before the core' } },
                 ],
@@ -389,6 +434,8 @@ export default function ContraGame () {
                     gs = makeGame(seed >>> 0)
                     part.length = 0
                     keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false
+                    keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false
+                    jumpQ2 = fireQ2 = false
                     screen = 'play'
                     setMode('play')
                 },
@@ -406,6 +453,7 @@ export default function ContraGame () {
                     x: Math.round(gs.p.x), y: Math.round(gs.p.y), weapon: gs.p.weapon,
                     phase: gs.phase, core: gs.boss ? gs.boss.core : null,
                     soldiersAlive: gs.soldiers.filter((s) => !s.dead).length,
+                    allyLives: gs.p2.lives, allyWeapon: gs.p2.weapon, allyOut: gs.p2.out,
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,
