@@ -46,7 +46,9 @@ export default function RType() {
         let hiscore = Number(localStorage.getItem(HS_KEY) || 0)
 
         const sfx = {
-            shot: () => audioController.playTone(880, 0.03, 'square', 0.05),
+            // vulcan body: alternating pitch + a crackle layer so the stream
+            // reads as a chain-gun, not a beep repeater (#2818)
+            shot: () => { audioController.playTone(860 + (gs.tick % 2) * 70, 0.03, 'square', 0.05); audioController.playNoise(0.02, 0.035) },
             wave: () => audioController.playSweep(220, 940, 0.22, 'triangle', 0.12),
             capsule: () => { audioController.playTone(660, 0.07, 'square', 0.1); audioController.playTone(880, 0.07, 'square', 0.1, 0.07); audioController.playTone(1320, 0.1, 'square', 0.1, 0.14) },
             hit: () => audioController.playTone(300, 0.05, 'square', 0.08),
@@ -55,6 +57,9 @@ export default function RType() {
             corehit: () => { audioController.playTone(120, 0.09, 'sawtooth', 0.14); shake = Math.max(shake, 2) },
             bigboom: () => { audioController.playNoise(0.5, 0.2); audioController.playSweep(200, 30, 0.6, 'sawtooth', 0.16); shake = Math.max(shake, 7) },
             die: () => { audioController.playSweep(400, 50, 0.5, 'sawtooth', 0.18); shake = Math.max(shake, 6) },
+            // the maw speaks: a dread horn warns the gape, a seal-clank ends it (#2818)
+            mawopen: () => { audioController.playSweep(58, 138, 0.55, 'sawtooth', 0.13); audioController.playTone(92, 0.5, 'triangle', 0.08) },
+            mawshut: () => { audioController.playSweep(190, 52, 0.26, 'square', 0.12); audioController.playNoise(0.1, 0.09); shake = Math.max(shake, 2) },
             missile: () => { audioController.playTone(620, 0.06, 'square', 0.08); audioController.playTone(520, 0.06, 'square', 0.08, 0.09) },
             warn: () => audioController.playTone(500, 0.05, 'square', 0.06),
             tsfire: () => audioController.playTone(340, 0.04, 'square', 0.06),
@@ -102,6 +107,9 @@ export default function RType() {
         const stepSim = (pad) => {
             step(gs, pad)
             drain()
+            // charge tell: a rising whine as the wave cannon drinks (#2818)
+            const ch = gs.ship.charge
+            if (ch > 0 && ch % 9 === 0) audioController.playTone(180 + ch * 9, 0.05, 'triangle', 0.045)
             if (gs.mode === 'gameover' && screen === 'play') endTo('over')
         }
 

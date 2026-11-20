@@ -166,16 +166,103 @@ const runBot = (seed, max = 20000) => {
     r.check('break the core and STAGE CLEAR rolls', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
 }
 
-{ // the stage loop carries the score and re-runs the field
-    const gs = runBot(3)
-    let sawClear = gs.mode === 'clear'
-    let carried = false
-    for (let i = 0; i < 400 && !carried; i++) {
-        step(gs, autopilot(gs))
+{ // the machine re-runs honestly: a real CLEAR, the banner falls, the field
+//   restarts with the score carried. Driven through the deterministic cascade
+//   instead of bot luck (the old form passed vacuously on score alone).
+    const gs = makeGame(10)
+    gs.camX = STAGE_END
+    step(gs, {}); gs.events.length = 0
+    gs.ship.inv = 999999
+    for (let i = 0; i < 360 && gs.p1.x > gs.camX + W - 120; i++) { step(gs, {}); gs.events.length = 0 }
+    gs.p1.mouth = 'open'; gs.p1.mouthT = 99999
+    gs.p1.coreHp = 1
+    for (let i = 0; i < 240 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 } // core + death roll
+    r.check('the drive ends on the banner', gs.mode === 'clear', `mode=${gs.mode}`)
+    const clearedScore = gs.score
+    for (let i = 0; i < 200 && gs.mode === 'clear'; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('the machine rolls onward: banner falls, the field re-runs with the score carried',
+        gs.mode === 'play' && gs.camX < 50 && gs.score >= clearedScore, `mode=${gs.mode} camX=${Math.round(gs.camX)} score=${gs.score}`)
+}
+
+// ---------------------------------------------------- polish laws (#2818) ---
+{ // the maw speaks: a horn on every gape, a clank on every seal
+    const gs = makeGame(10)
+    gs.camX = STAGE_END
+    step(gs, {}); gs.events.length = 0
+    gs.ship.inv = 999999
+    let sawOpen = 0, sawShut = 0
+    for (let i = 0; i < 620; i++) {
+        step(gs, {})
+        if (gs.events.includes('mawopen')) sawOpen += 1
+        if (gs.events.includes('mawshut')) sawShut += 1
         gs.events.length = 0
-        if (gs.mode === 'play' && gs.camX < 100 && gs.score > 5000) carried = true
+        if (sawOpen >= 1 && sawShut >= 1) break
     }
-    r.check('clear or not, the machine rolls onward (banner then loop)', sawClear || gs.mode === 'clear' || carried || gs.score > 5000, `mode=${gs.mode} score=${gs.score} camX=${Math.round(gs.camX)}`)
+    r.check('the maw cycle speaks (horn on gape, clank on seal)', sawOpen === 1 && sawShut === 1, `open=${sawOpen} shut=${sawShut}`)
+}
+
+{ // pods ease into their station — they bleed speed, they do not hit a wall
+    const gs = makeGame(11)
+    gs.camX = 430
+    step(gs, {}); gs.events.length = 0 // the wave script seats a missile pod
+    gs.ship.inv = 999999 // watch the pod; don't die to the grinder mid-look
+    r.check('stage script seats a missile pod', gs.enemies.some((e) => e.kind === 'pod'))
+    const dxs = []
+    let jumped = 0, eased = false
+    for (let i = 0; i < 240 && !eased; i++) {
+        const p = gs.enemies.find((e) => e.kind === 'pod'); if (!p) break
+        const bx = p.x, by = p.y
+        step(gs, {}); gs.events.length = 0
+        const q = gs.enemies.find((e) => e.kind === 'pod'); if (!q) break
+        if (q.state === 'enter') dxs.push(bx - q.x)
+        else {
+            eased = true
+            jumped = Math.abs(q.y - by) // the settle hands to the bob at the same height
+        }
+    }
+    let nonincreasing = dxs.length > 4
+    for (let i = 1; i < dxs.length; i++) if (dxs[i] > dxs[i - 1] + 1e-9) nonincreasing = false
+    r.check('a pod eases into its hover (approach decelerates to a creep)',
+        nonincreasing && dxs[0] >= 0.85 && dxs[dxs.length - 1] <= 0.5, `dx ${dxs[0].toFixed(2)} -> ${dxs[dxs.length - 1].toFixed(2)} over ${dxs.length} ticks`)
+    r.check('…and the settle is seamless (no y-teleport into the bob)', eased && jumped < 0.5, `jump ${jumped.toFixed(2)}`)
+}
+
+{ // volley cadence is alive: successive volleys from one pod do not share a beat
+    const gs = makeGame(11)
+    gs.camX = 430
+    step(gs, {}); gs.events.length = 0
+    gs.ship.inv = 999999
+    const at = []
+    for (let i = 0; i < 1400 && at.length < 3; i++) {
+        step(gs, {})
+        if (gs.events.includes('missile')) at.push(i)
+        gs.events.length = 0
+    }
+    const g = [at[1] - at[0], at[2] - at[1]]
+    r.check('pod volleys stagger — one pod never fires on a fixed beat', at.length >= 3 && g[0] !== g[1], `gaps [${g.join(' ')}]`)
+}
+
+{ // kill the dreadnought and it dies BIG: recoil, cascading rakes, then CLEAR
+    const gs = makeGame(10)
+    gs.camX = STAGE_END
+    step(gs, {}); gs.events.length = 0
+    gs.ship.inv = 999999
+    for (let i = 0; i < 360 && gs.p1.x > gs.camX + W - 120; i++) { step(gs, {}); gs.events.length = 0 }
+    gs.p1.mouth = 'open'; gs.p1.mouthT = 99999
+    gs.p1.coreHp = 1
+    for (let i = 0; i < 60 && gs.p1.dyingT === 0; i++) { step(gs, { a: true }); gs.events.length = 0 }
+    r.check('a broken core tips the hull into its death', !!gs.p1 && gs.p1.dyingT > 0, gs.p1 ? `dyingT=${gs.p1.dyingT}` : 'p1 gone')
+    const x0 = gs.p1.x
+    const bands = new Set()
+    let booms = 0
+    for (let i = 0; i < 175 && gs.mode === 'play'; i++) {
+        step(gs, { a: true })
+        if (gs.events.includes('boom') && gs.p1) { booms += 1; bands.add(Math.floor((gs.lastHitX - gs.p1.x) / 40)) }
+        gs.events.length = 0
+    }
+    r.check('the stricken hull recoils into the dark (not a frozen slab)', gs.p1 === null || gs.p1.x > x0 + 20, `drift ${gs.p1 ? Math.round(gs.p1.x - x0) : 'gone'}`)
+    r.check('the cascade rakes across the whole hull face', booms >= 10 && bands.size >= 3, `booms=${booms} bands=${bands.size}`)
+    r.check('the cascade ends in STAGE CLEAR', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
 }
 
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12

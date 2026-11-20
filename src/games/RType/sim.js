@@ -146,7 +146,7 @@ function spawnPod(gs, y, missiles) {
     gs.enemies.push({
         id: gs.nextId++, kind: 'pod', x: gs.camX + W + 16, y,
         baseY: y, bob: rng(gs) * 4, hp: 6, cd: 90, shots: missiles,
-        state: 'enter', vx: -0.9, inv: 0, anim: 0, anchorX: gs.camX + 252,
+        state: 'enter', vx: -0.9, inv: 0, anim: 0, anchorX: gs.camX + 252, hover: 0,
     })
 }
 
@@ -337,14 +337,23 @@ function runWorld(gs, pad, frozen) {
         // maw cycle: closed -> opening -> open -> closing
         p1.mouthT -= 1
         if (p1.mouthT <= 0) {
-            if (p1.mouth === 'closed') { p1.mouth = 'opening'; p1.mouthT = 30 }
+            if (p1.mouth === 'closed') { p1.mouth = 'opening'; p1.mouthT = 30; gs.events.push('mawopen') }
             else if (p1.mouth === 'opening') { p1.mouth = 'open'; p1.mouthT = 110 }
             else if (p1.mouth === 'open') { p1.mouth = 'closing'; p1.mouthT = 30 }
-            else { p1.mouth = 'closed'; p1.mouthT = 170 + Math.floor(rng(gs) * 60) }
+            else { p1.mouth = 'closed'; p1.mouthT = 170 + Math.floor(rng(gs) * 60); gs.events.push('mawshut') }
         }
     } else if (p1 && p1.dyingT > 0) {
         p1.dyingT -= 1
-        if (gs.tick % 5 === 0) gs.events.push('boom')
+        // death cascade (#2818): the stricken hull recoils into the dark,
+        // shuddering, its own armour raking apart along the whole face.
+        // Positions derive from tick arithmetic (not gs.rng) so the sim's
+        // random stream stays exactly where the tuned baseline left it.
+        p1.x += 0.5
+        if (gs.tick % 5 === 0) {
+            gs.lastHitX = p1.x + 12 + ((gs.tick * 37) % 131)
+            gs.lastHitY = 40 + ((gs.tick * 61) % 156)
+            gs.events.push('boom')
+        }
         if (p1.dyingT <= 0) { gs.p1 = null; stageClear(gs) }
     }
 
@@ -388,14 +397,25 @@ function runWorld(gs, pad, frozen) {
             }
         } else if (e.kind === 'pod') {
             if (e.state === 'enter') {
-                e.x += e.vx
-                if (e.x <= e.anchorX) { e.state = 'hold'; e.baseY = e.y }
+                // ease into the station: the arcade pod bleeds speed as it
+                // reaches its post, it does not hit a wall and stop (#2818).
+                // Approach speed never exceeds the old steady 0.9 — the polish
+                // must not pull the volley clock earlier than the script meant.
+                e.x -= Math.max(0.22, Math.min(0.9, (e.x - e.anchorX) * 0.05))
+                if (e.x <= e.anchorX) { e.state = 'hold'; e.baseY = e.y; e.bob = 0; e.hover = 0 }
             } else if (e.state === 'hold') {
-                e.y = e.baseY + Math.sin((e.bob += 0.05)) * 10
+                // lazy hover: the bob eases in over ~¾ s from the settle
+                e.hover = (e.hover || 0) + 1
+                e.y = e.baseY + Math.sin((e.bob += 0.045)) * 10 * Math.min(1, e.hover / 45)
                 e.cd -= 1
                 if (e.cd <= 0 && e.shots > 0 && !frozen && e.x > gs.camX + 10 && e.x < gs.camX + W + 10) {
                     gs.missiles.push({ id: gs.nextId++, x: e.x - 6, y: e.y, a: Math.PI, spd: 0.75, t: 300 })
-                    e.shots -= 1; e.cd = 170; gs.events.push('missile')
+                    e.shots -= 1
+                    // staggered cadence: a fixed 170-tick volley reads metronomic
+                    // (#2818). Arithmetic on (id, shots) — NOT gs.rng — so the
+                    // stream stays byte-identical to the tuned baseline: the
+                    // autopilot law stays an honest, stable measure.
+                    e.cd = 152 + ((e.id * 17 + e.shots * 41) % 36); gs.events.push('missile')
                     if (e.shots <= 0) { e.state = 'flee'; e.vx = -1.4 }
                 }
             } else { e.x += e.vx }
