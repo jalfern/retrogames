@@ -176,7 +176,7 @@ function fenceHedge(ctx, camX) {
     }
 }
 
-export function drawBackground(ctx, camX, tick) {
+export function drawBackground(ctx, camX, _tick) {
     sky(ctx)
     houses(ctx, camX)
     pylons(ctx, camX)
@@ -408,19 +408,21 @@ export function drawPickup(ctx, p, camX) {
 // ------------------------------------------------------------------- HUD ---
 export function drawHud(ctx, gs) {
     ctx.fillStyle = 'rgba(4,6,14,0.72)'
-    ctx.fillRect(0, 0, W, 16)
-    label(ctx, '1UP', 8, 5, '#ff5a52', 1)
-    label(ctx, String(gs.score).padStart(6, '0'), 32, 5, '#fff', 1)
-    label(ctx, 'HI', 110, 5, '#ffd98a', 1)
-    label(ctx, String(Math.max(gs.hi, gs.score)).padStart(6, '0'), 126, 5, '#fff', 1)
+    ctx.fillRect(0, 0, W, 17)
+    // the app chrome wears the top-left corner (ARCADE badge + FEEDBACK); the
+    // cabinet reads one line below it, and lives sit clear of the sound chip
+    label(ctx, '1UP', 78, 6, '#ff5a52', 1)
+    label(ctx, String(gs.score).padStart(6, '0'), 102, 6, '#fff', 1)
+    label(ctx, 'HI', 150, 6, '#ffd98a', 1)
+    label(ctx, String(Math.max(gs.hi, gs.score)).padStart(6, '0'), 166, 6, '#fff', 1)
     // lives as headbands
     for (let i = 0; i < gs.billy.lives; i++) {
         ctx.fillStyle = '#c8302f'
-        ctx.fillRect(240 + i * 12, 7, 8, 3)
+        ctx.fillRect(222 + i * 12, 8, 8, 3)
         ctx.fillStyle = '#e8e8ec'
-        ctx.fillRect(240 + i * 12 + 2, 4, 4, 3)
+        ctx.fillRect(222 + i * 12 + 2, 5, 4, 3)
     }
-    if (gs.billy.weapon === 'stick') label(ctx, 'STICK', 200, 5, '#e8c87a', 1)
+    if (gs.billy.weapon === 'stick') label(ctx, 'STICK', 78, 11, '#e8c87a', 1)
 }
 
 // wave / banner one-message-at-a-time overlays (never over the HUD)
@@ -445,5 +447,6 @@ export function drawAttract(ctx, phase, tick) {
     const w = textWidth(s, sc)
     const y = phase === 0 ? 54 : 78
     if (tick % 40 < 30) label(ctx, s, Math.round((W - w) / 2), y, col, sc)
-    label(ctx, 'PRESS ANY KEY', Math.round((W - textWidth('PRESS ANY KEY', 1)) / 2), 150, Math.floor(tick / 24) % 2 ? '#fff' : '#9fb3e8', 1)
+    // shell branding sits low-center; the coin-op invite stays above it
+    label(ctx, 'PRESS ANY KEY', Math.round((W - textWidth('PRESS ANY KEY', 1)) / 2), 118, Math.floor(tick / 24) % 2 ? '#fff' : '#9fb3e8', 1)
 }
