@@ -1,82 +1,91 @@
-# STATE.md — The Forge (rewritten at close of session 365, slot a — 2026-11-20;
-# committed: DOUBLE DRAGON S1 merged this session via #2809 — game-code, so per
-# step 9 the report rides main.)
+# STATE.md — The Forge (rewritten at close of session 364, slot b — 2026-11-20;
+# committed to main because game code merged: src/games/FloorBoss/model.js +
+# the floor-boss engine landed via PR #2811, closing #2805. Slot a closed
+# session 364/365 in parallel in this same checkout — its Double Dragon report
+# was main's STATE before mine; both lanes' work is folded in here.)
 
 ## PLAYABLE
-- /retrogames/double-dragon — NEW, LIVE on prod (private until Jon promotes,
-  #379). S1 Walnuts Street: belt depth-dodge, jab/roundhouse/jump-kick/stomp,
-  spin back-heel when surrounded, Amon/Abobo grabs w/ kick-mash, stick pickup,
-  one-hit lethal + 3 lives + respawn mercy, 3 waves + ABOBO, wave-lock camera,
-  stage loop, attract-first demo. ddragoncheck 34/34 + named depth-blind mutant.
-- /retrogames/contra — S1..S4 co-op LIVE (unchanged since #2796). Rest of the
-  shelf unchanged since #2794; all prod-verified by earlier sessions.
-- Studio-side: `npm run plaicraft:dataset` pipeline LIVE (S2 #1712, #2801);
-  slot b inside S2 polish (#2805) as this session closed.
+- /retrogames/contra — S1..S4 co-op LIVE; /retrogames/double-dragon — S1 joins
+  today (slot a, #2809). Rest of the shelf unchanged; all prod-verified.
+- Studio-side (not player-facing): `npm run plaicraft:dataset` (S2, #1712) now
+  replays+featurizes TWO games (gauntlet + floor-boss), with per-mic voice
+  attribution, partial/container-truth card lines and per-player accounting
+  (#2805 via #2811). datasetcheck 37/37, 2/2 mutants RED by design.
 
-## WHAT THIS SESSION DID
-- Resumed #2807 per TARGET; it was NO corpse — session 364 had SURVIVED its
-  17:57 warden kick (the #2758 kill-loop class: children outlive `opencode`)
-  and ran CONCURRENTLY in the same worktree. Two slot-a sessions, one issue,
-  one squash — PR #2809 merged clean (`efd79e1`, both lanes converged on it).
-  364 filed QA pass #2810 (18:07Z) and pushed its (accurate) STATE commit
-  6b1b611 before exiting; this report is the later close and folds it in.
-- Re-verified sound before merging (ddragoncheck 34/34 on tip 435987f).
-  Prod verified here too: bundle `index-BibHc76X.js` carries WALNUTS STREET /
-  ABOBO / DOUBLE DRAGON; route live.
-- #2807 released to `next` (multi-stage: S2 weapons wall, S3 hideout+Marian,
-  S4 co-op) with live-URL comment.
-- Reaped ~/Dev/retrogames-forge-double-dragon (after 364's last push landed);
-  :5173 released. Recycled the orphaned vite holding my port (lsof → same-slot
-  worktree verified before kill).
+## WHAT THIS SESSION DID (slot b, warden target #2805)
+- RED MAIN (rule 5a): the roster fix (#2804) was already merged when the slot
+  opened; the re-proof nightly got cancelled mid-freeze (cancels clear main-ok
+  but not #2800); another dispatched at 18:22Z — a SUCCESS nightly tonight
+  closes #2800.
+- Fixed #2803's own red required check: ciscope #1575 (plaicraft:s2check alias
+  unparked) — parked in MANUAL_CHECKS, static went SUCCESS.
+- COLLISION adjudication: while main was frozen, slot a merged the SAME S2
+  pipeline as #2801 (`scripts/plaicraft-dataset.mjs`). Merging #2803 too would
+  have shipped two pipelines doing one job (rule 6) — #2803 closed superseded
+  (unmerged, nothing lost; explained on the PR) and every #2805 item PORTED
+  onto the survivor: shipped as PR #2811 (squash 294d9ed), closing #2805.
+- #2805 items shipped: 1) floor-boss engine `ADAPTERS['floor-boss']` + NEW
+  `src/games/FloorBoss/model.js` (37 entity-relative senses — rays through the
+  sim's blocked(), quota clock, orders pressure, arm/robot/rack/pad/truck/belt
+  bearings, tool-in-hand, prev-pad; duel re-runs the model seat; tampered takes
+  fail the WHOLE build at their tick); 2) fetchSession pinned in recordcheck
+  (escape/lockdown/honest-failure — item 2's lift already shipped with #2801);
+  3) voiceCmd recorder-side `seat` stamp + per-seat clip attribution (host-mic
+  law as honest fallback) — voicecmdcheck + datasetcheck pins; 4) card
+  sessionsWithPartialVoice + audioLonger/containerMs/partial on the audio index
+  (#2058 mirror, >10%); 5) craftWebm EBML fixture — the Duration parser proves
+  >0 live (true-mic bytes stay micprobe's job); 6) card per-player rows next to
+  takes/hours/voiceSessions/split, sum = humanRows.
+- Gates: datasetcheck 37/37 + --mutant 2/2 RED (split line + a NEW hash-skip
+  mutant on the in-loop checkpoint compare — tamper proven load-bearing),
+  recordcheck 281/281, voicecmdcheck 81/81, eslint/lint:mario|fps|ai/build/
+  ciscope green.
 
 ## BOARD
-- #2807 `next` — DOUBLE DRAGON S2 (weapons wall) is the top builder pick.
-- #2808 R-TYPE sits `game-queue` — Jon's second flagship, behind DD by his word.
-- #1712 `next` (blocked on human takes via #2799) + #2805 `building` — slot b's.
-- #2798/#2810 feedback — QA lane's. #2800 (needs-approval) — nightly-red tracker;
-  fix is on main, tonight's 07:15Z cron nightly on efd79e1+ re-proves it.
-- Rule 4 green: game-code merges this week #2796/#2791/#2788/#2809 — loop turning.
+- #1712 building (research lane) — pipeline stage DONE on main; issue stays
+  open per big-build rule 4 (human-takes lines; jonq #2799 AWAITING).
+- #2800 open — cleared only by a SUCCESS nightly (dispatched 18:22Z, or the
+  scheduled 07:15Z one).
+- #2808 R-TYPE S1 — slot a queued it today (pre-empting #2795's default).
+- #2798/#2789/#2793/#2810 — QA lane's; never builder.
+- Rule 4: game code merged today: #2796 (contra S4), #2809 (double dragon),
+  #2811 (FloorBoss model.js engine loop). Loop is turning.
 
 ## QUESTIONS OUT (jonq issues, not STATE.md — #605)
-- #2799 (lane:games, AWAITING, deadline 2026-11-22T16:09Z) — friends' takes for
-  #1712 coverage; default = stage stays open, never narrow.
-- #2751 (lane:qa) — QA's. No new questions this session (DD S2/R-TYPE are both
-  already commissioned on #2795 — nothing taste/priority to ask).
+- #2799 (AWAITING, lane:games, deadline 2026-11-22T16:09Z) — human takes for
+  the 2-players line; default: stage open, never narrow.
+- #2795 (AWAITING, lane:games, deadline 2026-11-22T00:54Z) — new flagship;
+  default R-TYPE S1 — already commissioned as #2808, so a defaulted sweep just
+  releases #2808 to `next`.
+- #2751 (lane:qa) — QA's.
 
 ## HARNESS NOTES FOR THE NEXT LANE
-- **Reports must be written AFTER the merge prints.** Session 364's first
-  report draft claimed LIVE + `#<QA-NUMBER>` before the merge happened; its
-  final committed version (6b1b611) only became true because the merge landed
-  under it. Verify prod yourself; distrust parked claims.
-- **`warden.sh` kills opencode, not its children (#2758).** A "kicked" session
-  can keep working — if a FORGE checkpoint < 90 min old names YOUR slot and
-  TARGET says take the same issue, you are probably the ghost's twin, not its
-  successor. forge-claim.sh says "already yours" in both cases — re-read the
-  issue's latest comment to tell resume from double-run.
-- `gh pr merge --squash --delete-branch` can exit 1 with "could not determine
-  current branch" AFTER a successful merge (it detaches the worktree first).
-  Check `gh pr view --json state` before retrying — #2809 merged on the first
-  try despite the red exit.
-- Dead lanes orphan their dev server: `lsof -nP -iTCP:<port> -sTCP:LISTEN`, read
-  the cwd from the command line, recycle only if it's your slot's worktree.
-- Nightly: dispatch 44792119481 on `efd79e1` (18:22Z) re-proves the roster fix
-  AND double-dragon's first soak entry — glance at it in the morning (#2800's
-  real clearance). The stale manual 44778290100 still shows in_progress;
-  main-ok treats in-progress nightlies as non-blocking ("nightly cancelled" =
-  latest COMPLETED). If anything reddens, #2176 clock applies to whoever sees it.
-- Nightly soak now includes double-dragon: if the contract/pad mapping changes,
-  change BOTH rosters (contractGames.mjs + nightlybot.mjs) in the same commit
-  (#1525 both-lists law).
-- DD pad: A(Space)=JUMP, B(KeyX)=KICK, C(KeyZ)=PUNCH (thirdAction hold);
-  UP/DOWN are DEPTH. Contract `done` = gameover only — the STAGE CLEAR loop
-  keeps done=false on purpose (a 600-tick sample stays mid-run).
-- ciscope #1575: any new aliased *check must be wired in checks.mjs or parked
-  in MANUAL_CHECKS in the same commit (ddragoncheck is parked — S2 keeps it).
+- COLLISION LAW (this session's shape): two lanes, one feature, main frozen —
+  the merged one wins by right of merge; the loser's PR closes SUPERSEDED with
+  a no-loss note and its work ports onto the survivor in a fresh PR. Never
+  merge the duplicate; never silently drop the branch's unique work.
+- STATE.md is a shared file with two closing lanes: park IMMEDIATELY after
+  writing, diff origin/main before committing, expect the parallel slot's
+  report to have replaced yours on disk (mine was re-composed from session
+  context after slot a's close landed). A stray `git stash` in the shared
+  checkout can pop an ANCIENT unrelated stash when yours is empty — check
+  `git stash list` before `pop`; #2811-era Excitebike conflict noise, zero
+  loss (reset --hard + parks).
+- Mutant doctrine refined: tamper a MID-RUN checkpoint, not the final hash —
+  the end-of-run compare catches a final-hash tamper even when the in-loop
+  compare is skipped, so the wrong line looks load-bearing (#2811's v1 fix).
+- relaysim binds port 0 — a second in-process instance is cheap and keeps a
+  poisoning fixture (tampered take) out of the main fixture store.
+- `fetchSession` (main) IS the readSession #2805 asked to lift — verify naming
+  before duplicating; pins ride recordcheck.
+- ciscope #1575: any scripts/*check*.mjs with an npm alias needs a scope or a
+  MANUAL_CHECKS park IN THE SAME PR (bit both S2 PRs).
+- #2797 still open (warden kick loop). Liveness law unchanged: holder = newest
+  `^(QA|FORGE) \(slot\): claimed|checkpoint`, <90 min.
 
 ## WORKTREES
-- Main checkout: detached at `efd79e1` (+ this STATE commit). :5173 free at close.
-- Session 364's report preserved at /tmp/forge/STATE.a364.preserved.md (its
-  claims were premature; kept for forensics). Slot b's report lives at
-  /tmp/forge/STATE.b.parked.md (already parked when I found it in this
-  checkout's STATE.md — folded, not clobbered).
-- Other lanes' worktrees untouched (plaicraft-s2*, qa-*, legacy horse/viper).
+- Main checkout: detached at origin/main (294d9ed); STATE.md committed per rule.
+- `~/Dev/retrogames-forge-plaicraft-s2-polish` — #2811 merged, re-detached at
+  close; `~/Dev/retrogames-forge-plaicraft-s2` — orphan of the closed #2803
+  lineage, branch deleted, detached. Both reaped this session.
+- Legacy worktrees (horse/carpet/viper/qa-*) — not this lane's to reap.
