@@ -7,7 +7,7 @@ ram, deploy/retrieve — and the LASER charge arm.
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 51 laws incl. the #2818 polish laws
+node scripts/rtypecheck.mjs       # sim + browser: 64 laws incl. the #2818/#2823 polish laws
 node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
@@ -22,6 +22,17 @@ burning an attached pod, and the laser: tap no-things, held release looses a
 tiered piercing lance that rakes a line of turrets.
 
 ## The design decisions worth knowing
+- **#2823 polish (QA lane):** capture is a ceremony (merge flash + sparks that
+  converge INTO the nose, not just out); the plug pitch rotates per catch so a
+  stream eaten by the shell reads as a stream; a plugged hunter pops with a
+  cyan ring + white core; a deployed shell keeps a wobbling 1-px energy tether
+  to the ship (skip when attached/pilot-down); lance tiers THICKEN with charge
+  (4/6/8 px + side-glow) on top of the documented lengths; a fresh deploy gets
+  `POD.dockGrace = 10` ticks of air before proximity can re-dock it (commanded
+  recall is NOT gated — the B-press law stays instant); and armour clamping the
+  shell pushes a `strain` event the shell throttles (8-tick gate) into a
+  churning friction grind. None of it draws gs.rng — the tuned stream and the
+  winnability law are untouched.
 - **#2818 polish (QA lane):** pods ease into their hover (speed bleeds to a
   creep, bob ramps in from the settle); volley gaps are arithmetic per pod,
   never a fixed 170; the maw announces its cycle (`mawopen`/`mawshut` events
@@ -83,7 +94,7 @@ capsule list beyond three arms (Options, Double, Speed Up, Half-Capsules).
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 51 sim+browser laws, two named mutants
+- `scripts/rtypecheck.mjs` — 64 sim+browser laws, two named mutants
   (`armour-blind p1 core`, `pod-blind`).
 - `__rTest` DEV hook: `probe()` (incl. pod state + x) / `setup({…})`
   (`force`, `spawnFCap`, `toPhase1`, `openMouth`, `coreHp`, …) / `start()`.

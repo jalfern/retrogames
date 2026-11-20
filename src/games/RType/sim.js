@@ -51,6 +51,8 @@ export const POD = {
     recall: 3.2,        // retrieve speed back to the nose
     rad: 6,             // shell radius for plugging/ramming reads
     dock: 13,           // this close and the pod snaps home
+    dockGrace: 10,      // #2823: ticks of air after leaving the nose — a nudge
+                        // must not snap a freshly deployed shell straight back
     parkPad: 14,        // parked at camX + W - parkPad (never leaves the screen)
     laserMin: 8,        // laser: ticks of hold before a release looses anything
     laserSpeed: 6.2,
@@ -371,7 +373,7 @@ function runWorld(gs, pad, frozen) {
             gs.caps.splice(i, 1)
             if (c.type === 'force') {
                 if (!gs.pod) {
-                    gs.pod = { id: gs.nextId++, state: 'attached', x: s.x + POD.noseX, y: s.y }
+                    gs.pod = { id: gs.nextId++, state: 'attached', x: s.x + POD.noseX, y: s.y, grace: 0 }
                     addScore(gs, 500)
                     gs.events.push('force')
                 } else {
@@ -419,8 +421,9 @@ function runWorld(gs, pad, frozen) {
     // again (or touching it) recalls; armour rejects it; the wall grinds it
     if (gs.pod) {
         const pd = gs.pod
+        if (pd.grace > 0) pd.grace -= 1 // #2823: the deploy/recall rhythm
         if (!frozen && bPress) {
-            if (pd.state === 'attached') { pd.state = 'fly'; gs.events.push('podlaunch') }
+            if (pd.state === 'attached') { pd.state = 'fly'; pd.grace = POD.dockGrace; gs.events.push('podlaunch') }
             else if (pd.state !== 'return') pd.state = 'return'
         }
         if (pd.state === 'attached') { pd.x = s.x + POD.noseX; pd.y = s.y }
@@ -428,7 +431,7 @@ function runWorld(gs, pad, frozen) {
             pd.x += POD.launch
             if (pd.x >= gs.camX + W - POD.parkPad) { pd.x = gs.camX + W - POD.parkPad; pd.state = 'park' }
         }
-        if (!frozen && (pd.state === 'fly' || pd.state === 'park') &&
+        if (!frozen && (pd.state === 'fly' || pd.state === 'park') && !(pd.grace > 0) &&
             Math.hypot(pd.x - s.x, pd.y - s.y) <= POD.dock) { pd.state = 'attached'; gs.events.push('poddock') }
         if (pd.state === 'return') {
             const dx = s.x + POD.noseX - pd.x, dy = s.y - pd.y
@@ -441,11 +444,12 @@ function runWorld(gs, pad, frozen) {
             for (const e of gs.enemies) {
                 if (e.kind !== 'hullseg') continue
                 if (pd.x + POD.rad > e.x && pd.y > e.y0 - 4 && pd.y < e.y1 + 4) {
+                    gs.events.push('strain') // #2823: the refusal grunts (shell throttles the cadence)
                     pd.x = e.x - POD.rad
                     if (pd.state === 'fly') pd.state = 'park'
                 }
             }
-            if (p1 && p1.dyingT === 0 && pd.x + POD.rad > p1.x && pd.y > 34 && pd.y < 200) pd.x = p1.x - POD.rad
+            if (p1 && p1.dyingT === 0 && pd.x + POD.rad > p1.x && pd.y > 34 && pd.y < 200) { gs.events.push('strain'); pd.x = p1.x - POD.rad }
             if (pd.x < gs.camX - 6) { gs.pod = null; gs.events.push('podlost') }
         }
     }

@@ -11,7 +11,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, STAGE_END, POD, makeGame, step, autopilot, stateHash } from './sim.js'
-import { drawBackground, drawShip, drawLarva, drawTurret, drawPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance } from './art.js'
+import { drawBackground, drawShip, drawLarva, drawTurret, drawPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'r-type:hiscore'
@@ -42,6 +42,9 @@ export default function RType() {
         let overAt = 0
         let shake = 0
         const part = []
+        let attachFlash = 0 // #2823: capture ceremony countdown (frames)
+        let lastStrain = -99 // #2823: throttle for the armour-grind strain tick
+        let plugN = 0 // #2823: per-hit pitch rotation for the plug tick
         const keys = { l: false, r: false, u: false, d: false, f: false }
         let podQ = false // POD is a press-verb: latch so sub-frame taps (bots) still reach the sim
         let hiscore = Number(localStorage.getItem(HS_KEY) || 0)
@@ -66,7 +69,12 @@ export default function RType() {
             force: () => { const n = [523, 784, 1046, 1568]; n.forEach((f, i) => audioController.playTone(f, 0.08, 'triangle', 0.11, i * 0.06)) },
             podlaunch: () => audioController.playSweep(500, 1150, 0.14, 'square', 0.08),
             poddock: () => { audioController.playTone(240, 0.05, 'square', 0.09); audioController.playTone(360, 0.06, 'square', 0.09, 0.05) },
-            plug: () => audioController.playTone(150, 0.03, 'triangle', 0.07),
+            // #2823: the plug speaks — pitch rotates per catch so a vulcan
+            // stream eaten by the shell reads as a stream, not as nothing
+            plug: () => { audioController.playTone(132 + (plugN++ % 5) * 26, 0.035, 'triangle', 0.08); audioController.playNoise(0.015, 0.03) },
+            // #2823: strain — the refusal grinds; the sim cries every clamp
+            // tick, throttle it into a chugging friction (8-tick gate)
+            strain: () => { if (gs.tick - lastStrain >= 8) { lastStrain = gs.tick; audioController.playTone(88 + (gs.tick % 3) * 14, 0.045, 'square', 0.055); audioController.playNoise(0.02, 0.025) } },
             ram: () => { audioController.playNoise(0.08, 0.1); audioController.playTone(90, 0.07, 'sawtooth', 0.12); shake = Math.max(shake, 2) },
             podlost: () => audioController.playSweep(420, 90, 0.3, 'triangle', 0.1),
             warn: () => audioController.playTone(500, 0.05, 'square', 0.06),
@@ -81,6 +89,16 @@ export default function RType() {
             }
         }
 
+        // #2823: capture ceremony particles — they run INWARD to the nose,
+        // the force gathering itself into the shell (math.random: juice only)
+        const converge = (n, x, y, col) => {
+            for (let i = 0; i < n; i++) {
+                const a = (i / n) * Math.PI * 2 + Math.random() * 0.6
+                const r = 15 + Math.random() * 9
+                part.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, vx: -Math.cos(a) * 1.7, vy: -Math.sin(a) * 1.7, t: 9 + Math.floor(Math.random() * 4), c: col })
+            }
+        }
+
         const drain = () => {
             const sx = gs.camX
             for (const ev of gs.events) {
@@ -90,9 +108,13 @@ export default function RType() {
                 else if (ev === 'corehit') bursts(6, gs.p1 ? gs.p1.x + 20 - sx : 40, 120, 2)
                 else if (ev === 'bigboom') bursts(40, gs.p1 ? gs.p1.x + 30 - sx : 60, 120, 0)
                 else if (ev === 'die') bursts(22, gs.ship.x - sx, gs.ship.y, 2)
-                else if (ev === 'plug') bursts(4, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 3)
+                else if (ev === 'plug') { bursts(6, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 3); bursts(2, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 2) } // #2823: a plugged hunter POPS — cyan ring, white core
                 else if (ev === 'ram') bursts(8, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 0)
-                else if (ev === 'force') bursts(12, gs.ship.x + 14 - sx, gs.ship.y, 3)
+                else if (ev === 'force') { // #2823: attach ceremony — flash + converging sparks at the nose
+                    bursts(12, gs.ship.x + 14 - sx, gs.ship.y, 3)
+                    converge(8, gs.ship.x + 14 - sx, gs.ship.y, 3)
+                    attachFlash = 14
+                }
             }
             gs.events.length = 0
         }
@@ -155,7 +177,14 @@ export default function RType() {
                 else drawWave(ctx, q, gs.camX)
             }
             drawShip(ctx, gs.ship, gs.camX)
-            if (gs.pod) drawSeedPod(ctx, gs.pod, gs.camX, !gs.ship.dead)
+            if (gs.pod) {
+                drawPodTether(ctx, gs.pod, gs.ship, gs.camX, gs.tick) // #2823: the pair reads as one
+                drawSeedPod(ctx, gs.pod, gs.camX, !gs.ship.dead)
+                if (attachFlash > 0) { // capture ceremony flash at the nose
+                    drawForceMerge(ctx, Math.round(gs.ship.x - gs.camX + POD.noseX), Math.round(gs.ship.y), attachFlash)
+                    attachFlash -= 1
+                }
+            }
             // particles (juice layer — Math.random law: never reaches state)
             for (let i = part.length - 1; i >= 0; i--) {
                 const p = part[i]

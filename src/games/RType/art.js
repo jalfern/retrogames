@@ -324,16 +324,56 @@ export function drawSeedPod(ctx, pod, camX, shipAlive) {
     ctx.drawImage(SPR.seed[f], x - 6, y - 6)
 }
 
-// charge-and-release laser lance: length is the charge tier; hot white tip
+// #2823: the S.E.E.D. force reads as a PAIR — a faint 1-px energy thread
+// keeps shell and ship visually connected while the pod is out. Skipped when
+// attached (the shell rides the nose) and while the pilot is down.
+export function drawPodTether(ctx, pod, ship, camX, tick) {
+    if (!ship || ship.dead || pod.state === 'attached') return
+    const px = Math.round(pod.x - camX) + 0.5, py = Math.round(pod.y) + 0.5
+    const sx = Math.round(ship.x - camX) + 12 + 0.5, sy = Math.round(ship.y) + 0.5
+    const mx = Math.round((px + sx) / 2) + 0.5
+    const my = Math.round((py + sy) / 2 + Math.sin(tick * 0.35) * 2.2) + 0.5
+    ctx.strokeStyle = 'rgba(138,224,255,0.40)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(sx, sy)
+    ctx.quadraticCurveTo(mx, my, px, py)
+    ctx.stroke()
+}
+
+// #2823: capture ceremony — the arcade flashes the pod into existence over
+// the ship. k counts down from ~14: a white-hot seed and an expanding ring.
+export function drawForceMerge(ctx, x, y, k) {
+    const a = k / 14
+    const r = Math.round(16 * (1 - a)) + 3
+    ctx.strokeStyle = `rgba(138,224,255,${(a * 0.8).toFixed(2)})`
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.arc(x + 0.5, y + 0.5, r, 0, Math.PI * 2)
+    ctx.stroke()
+    if (k > 8) { ctx.fillStyle = '#eaffff'; ctx.fillRect(x - 2, y - 2, 5, 5) }
+    if (k > 11) { ctx.fillStyle = 'rgba(234,255,255,0.5)'; ctx.fillRect(x - 5, y - 1, 11, 2); ctx.fillRect(x - 1, y - 5, 2, 11) }
+}
+
+// charge-and-release laser lance: length AND heat scale with the charge tier
+// (#2823: the cabinet's beam thickens as it drinks — tier 0 a needle, tier 2
+// a bar, with a brighter core and hot side-glow so tiers read at a glance)
 export function drawLance(ctx, q, camX) {
     const x = Math.round(q.x - camX), y = Math.round(q.y)
     const len = POD.laserTiers[q.size]
+    const hh = [2, 3, 4][q.size] // half-height: 4 / 6 / 8 px of beam
+    const ch = [1, 1, 2][q.size] // core half-height
+    if (q.size > 0) {
+        ctx.fillStyle = q.size === 2 ? 'rgba(255,42,90,0.30)' : 'rgba(255,90,60,0.22)'
+        ctx.fillRect(x, y - hh - 1, len, 1)
+        ctx.fillRect(x, y + hh, len, 1)
+    }
     ctx.fillStyle = q.size === 2 ? '#ff2a5a' : q.size === 1 ? '#ff5a3c' : '#ffb03c'
-    ctx.fillRect(x, y - 2, len, 4)
+    ctx.fillRect(x, y - hh, len, hh * 2)
     ctx.fillStyle = q.size === 2 ? '#ffd0e0' : q.size === 1 ? '#ffe0c8' : '#fff0c0'
-    ctx.fillRect(x, y - 1, len, 2)
+    ctx.fillRect(x, y - ch, len, ch * 2)
     ctx.fillStyle = '#ffffff'
-    ctx.fillRect(x + len - 4, y - 2, 4, 4)
+    ctx.fillRect(x + len - 4, y - hh, 4, hh * 2)
 }
 
 export function drawWave(ctx, q, camX) {
