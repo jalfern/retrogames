@@ -58,6 +58,8 @@ export default function DoubleDragon() {
             escape: () => audioController.playSweep(300, 700, 0.12, 'square', 0.12),
             die: () => { audioController.playSweep(400, 60, 0.5, 'sawtooth', 0.18); shake = Math.max(shake, 6) },
             wave: () => audioController.playSweep(120, 240, 0.3, 'triangle', 0.12),
+            chargewind: () => audioController.playFilteredNoise(0.5, 0.06, 240),
+            charge: () => { audioController.playSweep(160, 70, 0.24, 'sawtooth', 0.14); shake = Math.max(shake, 2) },
             stomp: () => { audioController.playTone(70, 0.1, 'square', 0.18); shake = Math.max(shake, 3) },
             clear: () => {
                 const notes = [523, 659, 784, 1046, 784, 1046]
@@ -81,6 +83,19 @@ export default function DoubleDragon() {
                 else if (ev === 'stomp') sparks(6, true, 2)
             }
             gs.events.length = 0
+        }
+
+        // #2810 item 4: Walnuts Street after dark breathes — a very quiet,
+        // filtered-noise bed (distant crowd + wind) under the fists. Only ever
+        // one burst in flight and never louder than a footprint.
+        let ambienceAt = 0
+        const ambience = () => {
+            if (pausedRef.current) return
+            const t = gs.tick
+            if (t - ambienceAt >= 112) {
+                ambienceAt = t
+                audioController.playFilteredNoise(1.8, 0.022, 320)
+            }
         }
 
         const simPad = () => {
@@ -110,6 +125,7 @@ export default function DoubleDragon() {
         const stepSim = (pad) => {
             step(gs, pad)
             drain()
+            ambience()
             if (gs.mode === 'gameover' && screen === 'play') endTo('over')
         }
 
@@ -221,6 +237,7 @@ export default function DoubleDragon() {
                     screen, tick: gs.tick, x: +gs.billy.x.toFixed(2), y: gs.billy.y, z: +gs.billy.z.toFixed(2),
                     lives: gs.billy.lives, score: gs.score, weapon: gs.billy.weapon,
                     mode: gs.mode, waveIdx: gs.waveIdx, enemies: gs.enemies.length,
+                    scoreFlash: gs.scoreFlash ? gs.scoreFlash.v : 0,
                     enemyKinds: gs.enemies.map((e) => e.kind + ':' + e.state).join(','),
                     billyState: gs.billy.state, camX: Math.round(gs.camX),
                 }),

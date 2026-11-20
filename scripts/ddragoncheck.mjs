@@ -21,7 +21,7 @@ import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash } from '../src/games/DoubleDragon/sim.js'
+import { makeGame, step, autopilot, stateHash, W } from '../src/games/DoubleDragon/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -210,14 +210,66 @@ const runBot = (seed, max = 20000) => {
     r.check('winnable: the attract autopilot clears Walnuts Street on seeds 1..12', fails.length === 0, fails.length ? `stuck seeds ${fails.join(',')}` : '12/12')
 }
 
+{ // #2810 item 6 — the score delta flashes on the HUD when a man goes down
+    const gs = makeGame(12)
+    gs.enemies.push(mk('williams', gs.billy.x + 14, gs.billy.y, { hp: 1 }))
+    step(gs, { b: true }); gs.events.length = 0
+    for (let i = 0; i < 12; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('KO flashes the delta: score popup carries the killed man\'s value', gs.scoreFlash && gs.scoreFlash.v === 200, `flash=${gs.scoreFlash && gs.scoreFlash.v}`)
+    for (let i = 0; i < 60; i++) step(gs, {})
+    r.check('the flash fades out on its own', gs.scoreFlash === null, `flash=${JSON.stringify(gs.scoreFlash)}`)
+}
+
+{ // #2810 item 3 — Abobo's shoulder charge: telegraph first, and depth still decides
+    const gs = makeGame(13)
+    gs.billy.inv = 0
+    gs.enemies.push(mk('abobo', gs.billy.x + 90, gs.billy.y, { attackCooldown: 0 }))
+    const saw = { wind: 0, dash: 0 }
+    let windBeforeDash = false
+    for (let i = 0; i < 200; i++) {
+        step(gs, {}); gs.events.length = 0
+        const e = gs.enemies[0]
+        if (!e) break
+        if (e.state === 'chargewind') { saw.wind = Math.max(saw.wind, e.stateT); if (saw.dash === 0) windBeforeDash = true }
+        if (e.state === 'charge') saw.dash = Math.max(saw.dash, e.stateT)
+        if (gs.billy.lives < 3 || e.state === 'back') break
+    }
+    r.check('the giant telegraphs: a beat of running frames precedes the body-check', windBeforeDash && saw.wind >= 14 && saw.dash > 0, `wind=${saw.wind} dash=${saw.dash}`)
+    r.check('the body-check on the line takes the life it finds', gs.billy.lives === 2, `lives=${gs.billy.lives}`)
+    const g2 = makeGame(13)
+    g2.billy.inv = 0
+    g2.billy.y = 180
+    g2.enemies.push(mk('abobo', g2.billy.x + 40, 168, { state: 'charge', stateT: 3, face: -1 }))
+    for (let i = 0; i < 40; i++) { step(g2, {}); g2.events.length = 0 }
+    r.check('depth law rides the charge: a committed dash on another lane whooses past', g2.billy.lives === 3, `lives=${g2.billy.lives}`)
+    const g3 = makeGame(13)
+    g3.billy.inv = 0
+    g3.billy.y = 180
+    g3.enemies.push(mk('abobo', g3.billy.x + 40, 178, { state: 'charge', stateT: 3, face: -1 }))
+    for (let i = 0; i < 40; i++) { step(g3, {}); g3.events.length = 0 }
+    r.check('and the same dash ON the line lands — the band is real here too', g3.billy.lives === 2, `lives=${g3.billy.lives}`)
+}
+
+{ // #2810 item 5 — wave goons march in from off-screen; the enter FSM is visible
+    const gs = makeGame(14)
+    gs.billy.x = 90 // just past the first trigger
+    step(gs, {})
+    const fresh = gs.enemies.filter((e) => e.state === 'enter')
+    const off = fresh.filter((e) => e.x >= gs.camX + W + 40 || e.x <= gs.camX - 40)
+    r.check('a wave opens off-screen, not at the pixel edge', fresh.length > 0 && off.length === fresh.length, `${off.length}/${fresh.length} spawns fully off-screen`)
+    for (let i = 0; i < 60; i++) { step(gs, {}); gs.events.length = 0 }
+    const visible = gs.enemies.filter((e) => e.state !== 'enter' && e.x > gs.camX && e.x < gs.camX + W)
+    r.check('then walks them into the frame before the fight starts', visible.length > 0, `${visible.length} on screen after the march-in`)
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
     const plants = [
         {
             name: 'depth-blind',
-            anchor: 'Math.abs(e.y - b.y) <= 8 && b.state !== \'grabbed\'',
-            plant: 'Math.abs(e.y - b.y) <= 400 /* MUTANT(depth-blind): the belt axis stops mattering */ && b.state !== \'grabbed\'',
+            anchor: 'b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 && Math.abs(e.y - b.y) <= 8',
+            plant: 'b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 && Math.abs(e.y - b.y) <= 400 /* MUTANT(depth-blind): the belt axis stops mattering */',
             harm: async (mod) => {
                 const gs = mod.makeGame(2)
                 gs.billy.inv = 0
@@ -226,6 +278,21 @@ if (MUTANT) {
                 for (let i = 0; i < 8; i++) { mod.step(gs, {}); gs.events.length = 0 }
                 return gs.billy.lives < 3
                     ? `HARM NAMED: a swing on a lane 30 deep reached Billy anyway (lives ${3} -> ${gs.billy.lives}) — depth is the dodge in a belt-scroller; without it you can never avoid a fight, and the genre is dead`
+                    : null
+            },
+        },
+        {
+            name: 'charge-blind',
+            anchor: 'b.z <= 6 && Math.abs(e.x - b.x) <= 16 && Math.abs(e.y - b.y) <= 8',
+            plant: 'b.z <= 6 && Math.abs(e.x - b.x) <= 16 && Math.abs(e.y - b.y) <= 400 /* MUTANT(charge-blind): the body-check ignores the belt */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(13)
+                gs.billy.inv = 0
+                gs.billy.y = 180
+                gs.enemies.push({ id: 902, kind: 'abobo', x: gs.billy.x + 40, y: 168, face: -1, hp: 14, state: 'charge', stateT: 3, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 0, inv: 0, spinHit: false })
+                for (let i = 0; i < 40; i++) { mod.step(gs, {}); gs.events.length = 0 }
+                return gs.billy.lives < 3
+                    ? `HARM NAMED: Abobo's charge crossed 12 pixels of open lane and took a life anyway (lives 3 -> ${gs.billy.lives}) — the telegraph becomes worthless if you cannot sidestep it on the depth axis`
                     : null
             },
         },

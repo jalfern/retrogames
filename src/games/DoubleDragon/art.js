@@ -273,8 +273,15 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1) {
     const walk = pose === 'walk' ? Math.floor(t / 6) % 4 : 0
     const breathe = pose === 'idle' ? (Math.floor(t / 24) % 2) : 0
     const legSwing = [[-3, 3], [-1, 1], [3, -3], [1, -1]][walk]
+    // #2810 item 1: the cabinet's fighters bounce on the balls of their feet —
+    // a small vertical bob on the stride plus a shoulder counter-swing that
+    // leans the torso against the leading leg.
+    const bobY = pose === 'walk' ? [0, -1, -1, 0][walk] : 0
+    const sway = pose === 'walk' ? -Math.sign(legSwing[0]) : 0
+    const hx = sway + (pose === 'charge' ? 3 : 0) // lean: shoulders lead the body-check
+    const bulk = s >= 1.3 ? 1 : 0                  // #2810 item 8: Abobo's slabs wider
     ctx.save()
-    if (pose === 'down' || pose === 'dying') {
+    if (pose === 'down') {
         // sprawled flat
         R(-9, -6, 20, 6, pal.body)
         R(11, -9, 7, 7, pal.head)
@@ -282,7 +289,22 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1) {
         R(-11, -4, 4, 4, pal.legs)
         ctx.restore(); return
     }
-    const bob = pose === 'jump' ? -1 : breathe
+    if (pose === 'dying') {
+        // #2810 item 2: tumble out backwards off the hit — the body pivots
+        // over the heels, arms and legs flail, then it settles into the sprawl.
+        const p = Math.min(1, t / 12)
+        const fl = t < 10 ? (Math.floor(t / 2) % 2 ? -3 : 2) : 0
+        ctx.translate(sx, sy)
+        ctx.rotate(-face * 1.25 * p)
+        const F = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(u(x) * face, u(y), u(w), u(h)) }
+        F(-9, -6 + Math.abs(fl), 20, 6, pal.body)
+        F(11, -9 + Math.abs(fl), 7, 7, pal.head)
+        if (pal.band) F(11, -9 + Math.abs(fl), 7, 2, pal.band)
+        F(-11, -4 - fl, 4, 4, pal.legs)
+        F(-6, -11 - fl, 4, 3, SKIN)
+        ctx.restore(); return
+    }
+    const bob = (pose === 'jump' ? -1 : breathe) + bobY
     // legs
     if (pose === 'kick') {
         R(-2, -10, 4, 10, pal.legs)                       // stand leg
@@ -300,16 +322,15 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1) {
         R(-4, -1, 5, 2, pal.shoes); R(1, -1, 5, 2, pal.shoes)
     }
     // torso
-    R(-5, -22 + bob, 10, 12, pal.body)
-    if (pal.band) R(-5, -16 + bob, 10, 3, pal.trim)
+    R(-5 + hx, -22 + bob, 10 + 2 * bulk, 12, pal.body)
+    if (pal.band) R(-5 + hx, -16 + bob, 10 + 2 * bulk, 3, pal.trim)
     // head
-    R(-4, -30 + bob, 8, 8, pal.head)
-    if (pal === PAL.billy) { R(-4, -30 + bob, 8, 2, pal.band); R(-7, -29 + bob, 3, 2, pal.band) } // headband + tail
-    if (pal === PAL.williams) { R(-5, -31 + bob, 10, 3, pal.band); R(2, -30 + bob, 4, 2, '#1d6b52') } // cap + brim
-    if (pal === PAL.abobo) { R(-5, -31 + bob, 10, 2, '#14161b'); R(-4, -26 + bob, 8, 2, SKIN_D) }   // dark brow band, shadowed face
-    if (pal === PAL.amon) { R(-4, -26 + bob, 8, 2, SKIN_D) }
-    ctx.fillStyle = '#1a1208'
-    R(2, -27 + bob, 1, 1, '#1a1208') // eye toward the fight
+    R(-4 + hx - bulk, -30 + bob, 8 + 2 * bulk, 8, pal.head)
+    if (pal === PAL.billy) { R(-4 + hx, -30 + bob, 8, 2, pal.band); R(-7 + hx, -29 + bob, 3, 2, pal.band) } // headband + tail
+    if (pal === PAL.williams) { R(-5 + hx, -31 + bob, 10, 3, pal.band); R(2 + hx, -30 + bob, 4, 2, '#1d6b52') } // cap + brim
+    if (pal === PAL.abobo) { R(-6 + hx, -31 + bob, 12, 2, '#14161b'); R(-5 + hx, -26 + bob, 10, 2, SKIN_D) }   // dark brow band, shadowed face
+    if (pal === PAL.amon) { R(-4 + hx, -26 + bob, 8, 2, SKIN_D) }
+    R(2 + hx, -27 + bob, 1, 1, '#1a1208') // eye toward the fight
     // arms
     if (pose === 'punch') {
         R(3, -20 + bob, 11, 3, SKIN)                 // jab out
@@ -332,8 +353,8 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1) {
     } else if (pose === 'hurt') {
         R(-7, -20 + bob, 3, 8, SKIN); R(4, -18 + bob, 3, 6, SKIN)
     } else {
-        R(3, -20 + bob, 3, 8, SKIN)                  // guard stance
-        R(-6, -19 + bob, 3, 7, SKIN)
+        R(3 + sway, -20 + bob, 3, 8, SKIN)                  // guard stance (arms counter-swing on the walk)
+        R(-6 - sway, -19 + bob, 3, 7, SKIN)
     }
     ctx.restore()
 }
@@ -351,12 +372,12 @@ export function drawBilly(ctx, b, camX) {
     else if (b.state === 'kick') pose = b.stateT >= CFG.kickOn ? 'kick' : 'windup'
     else if (b.state === 'spin') pose = 'spin'
     else if (b.state === 'grabbed') pose = 'grabbed'
-    else if (b.state === 'dying') pose = 'down'
+    else if (b.state === 'dying') pose = 'dying'
     drawShadow(ctx, sx, sy + 1, 14, 0.35 - b.z * 0.02)
     const lift = Math.round(b.z)
     if (b.state === 'dying') {
-        if (b.stateT > 14) return
-        ctx.globalAlpha = 1 - b.stateT / 14
+        if (b.stateT > 26) return
+        if (b.stateT > 16) ctx.globalAlpha = 1 - (b.stateT - 16) / 10
     }
     fighter(ctx, sx, sy - lift, b.face, pose, b.anim, PAL.billy)
     if (b.weapon === 'stick') {
@@ -377,9 +398,12 @@ export function drawEnemy(ctx, e, camX) {
     else if (e.state === 'windup') pose = 'windup'
     else if (e.state === 'attack') pose = 'attack'
     else if (e.state === 'stagger') pose = 'hurt'
-    else if (e.state === 'down' || e.state === 'dying') pose = 'down'
+    else if (e.state === 'down') pose = 'down'
+    else if (e.state === 'dying') pose = 'dying'
     else if (e.state === 'getup') pose = 'getup'
     else if (e.state === 'grab') pose = 'grab'
+    else if (e.state === 'chargewind') pose = 'windup'
+    else if (e.state === 'charge') pose = 'charge'
     if ((e.state === 'getup') && Math.floor(e.inv / 3) % 2 === 0) return
     drawShadow(ctx, sx, sy + 1, 14 * def, 0.35)
     if (e.state === 'dying') {
@@ -423,6 +447,18 @@ export function drawHud(ctx, gs) {
         ctx.fillRect(222 + i * 12 + 2, 5, 4, 3)
     }
     if (gs.billy.weapon === 'stick') label(ctx, 'STICK', 78, 11, '#e8c87a', 1)
+    // #2810 item 6: wave ticks where the cabinet shows the stage number — the
+    // current wave blinks before it starts, fills gold once it is live/cleared
+    for (let i = 0; i < 3; i++) {
+        const live = i < gs.waveIdx || (i === gs.waveIdx && gs.waveActive)
+        ctx.fillStyle = live ? '#ffd98a' : (i === gs.waveIdx && gs.tick % 30 < 18 ? '#8a7333' : '#3a3f52')
+        ctx.fillRect(102 + i * 6, 19, 4, 3)
+    }
+    // score delta floats under the HUD on each KO/pickup, arcade-style
+    if (gs.scoreFlash && gs.scoreFlash.t % 8 < 6) {
+        const s = '+' + gs.scoreFlash.v
+        label(ctx, s, Math.round((W - textWidth(s, 1)) / 2), 26, '#ffd93c', 1)
+    }
 }
 
 // wave / banner one-message-at-a-time overlays (never over the HUD)

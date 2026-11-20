@@ -31,7 +31,13 @@ of Technōs Japan's 1987 arcade belt-scroller. Issue: #2807 (S2–S4 to follow).
 - **Spin back-heel** fires when a swing is asked for with two live goons within
   radial reach — boots both ways.
 - **Grabs** (Amon/Abobo): mash KICK 3× within `grabTimeout` (52 ticks) or the
-  knee takes the life.
+  knee takes a life.
+- **The charge** (#2810): from mid-distance Abobo telegraphs 16 ticks of
+  run-up (`chargewind`), then body-checks the lane at 2.8px/t until it leaves
+  the frame — depth still decides; a committed dash whooses past an empty lane.
+  The autopilot reads the telegraph wider than a punch's and sidesteps.
+- **KO flash**: `gs.scoreFlash` rides the HUD (delta popup + three wave ticks);
+  juice only — never mixed into `stateHash`.
 - **Stick**: armed Amon drops it on KO; reach + damage double; it dies with you.
 - **Stage loop**: three waves → banner → Walnuts Street re-runs, score carries.
 
@@ -44,8 +50,8 @@ Pad: JUMP / KICK / PUNCH (`thirdAction`, #2324).
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 34 checks: boots, laws, winnable 12/12, browser leg
-npm run ddragoncheck -- --mutant      # the depth-blind plant must go RED (named)
+npm run ddragoncheck                    # 42 checks: boots, laws, charge, winnable 12/12, browser leg
+npm run ddragoncheck -- --mutant     # depth-blind AND charge-blind plants must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
