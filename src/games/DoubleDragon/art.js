@@ -4,7 +4,7 @@
 // palette at a glance: sodium-lamp blue-black night, Billy's red headband and
 // white gi, Williams' green cap, Amon's brown vest, Abobo's slab of charcoal.
 
-import { W, H, DEEP_TOP, DEEP_BOT } from './sim.js'
+import { W, H, DEEP_TOP, DEEP_BOT, rescueReady } from './sim.js'
 
 // ------------------------------------------------------------- pixel font ---
 // 5x7, one string per glyph, '#' = ink. Original to this repo (arcade-cabinet
@@ -176,7 +176,178 @@ function fenceHedge(ctx, camX) {
     }
 }
 
-export function drawBackground(ctx, camX, _tick) {
+// S3 the hideout (issue #2807): the yard look — corrugated rust wall, high
+// transoms, pipes, hanging chain-lamps, oily concrete. Same law as everything
+// else here: cut in code at native res, designed from the cabinet.
+let wallCache = null
+function wall(ctx) {
+    if (wallCache) { ctx.drawImage(wallCache, 0, 0); return }
+    const c = document.createElement('canvas')
+    c.width = W; c.height = DEEP_TOP + 2
+    const g = c.getContext('2d')
+    for (let y = 0; y < c.height; y++) {
+        const t = y / c.height
+        g.fillStyle = `rgb(${Math.round(15 + t * 10)},${Math.round(12 + t * 7)},${Math.round(15 + t * 6)})`
+        g.fillRect(0, y, W, 1)
+    }
+    wallCache = c
+    ctx.drawImage(c, 0, 0)
+}
+
+function corrugation(ctx, camX) {
+    const off = Math.round(camX * 0.7)
+    for (let x = -8; x < W + 8; x += 6) {
+        const wx = x + off
+        const ph = ((wx % 6) + 6) % 6
+        if (ph < 1) { ctx.fillStyle = '#2b211d'; ctx.fillRect(x, 6, 1, DEEP_TOP - 4) }
+        else if (ph >= 3 && ph < 4) { ctx.fillStyle = '#0d0a0e'; ctx.fillRect(x, 6, 1, DEEP_TOP - 4) }
+    }
+    // sheet joins every 96 world px + rivet rows
+    const jx = ((-off % 96) + 96) % 96
+    for (let x = jx - 96; x < W + 96; x += 96) {
+        ctx.fillStyle = '#0b0809'; ctx.fillRect(x, 6, 2, DEEP_TOP - 4)
+        ctx.fillStyle = '#392d24'
+        for (const ry of [14, 60, 106]) { ctx.fillRect(x - 3, ry, 2, 2); ctx.fillRect(x + 3, ry, 2, 2) }
+    }
+}
+
+function transoms(ctx, camX, tick) {
+    const off = Math.round((camX * 0.7) % 92)
+    for (let i = -1; i < 5; i++) {
+        const bx = i * 92 - off
+        const seed = Math.floor(camX * 0.7 / 92) + i
+        ctx.fillStyle = '#18171b'
+        ctx.fillRect(bx, 12, 34, 20)
+        ctx.fillStyle = '#241d16'
+        ctx.fillRect(bx - 2, 10, 38, 3)
+        // mullions
+        ctx.fillStyle = '#2e2820'
+        ctx.fillRect(bx + 10, 12, 2, 20); ctx.fillRect(bx + 22, 12, 2, 20)
+        if (R(seed * 7) > 0.55) {                    // some glass wears sodium light
+            const flick = R(seed * 3) > 0.8 && tick % 90 < 12
+            ctx.fillStyle = flick ? '#3d2f16' : '#54401d'
+            ctx.fillRect(bx + 2, 14, 7, 16); ctx.fillRect(bx + 13, 14, 8, 16)
+            ctx.fillStyle = 'rgba(255,217,138,0.25)'
+            ctx.fillRect(bx + 2, 14, 7, 5); ctx.fillRect(bx + 13, 14, 8, 5)
+        }
+        // grime streaks under the glass
+        ctx.fillStyle = 'rgba(8,6,10,0.55)'
+        ctx.fillRect(bx + 4 + Math.floor(R(seed) * 8), 32, 2, 8 + Math.floor(R(seed + 5) * 10))
+    }
+}
+
+function pipes(ctx, camX) {
+    const off = Math.round((camX * 0.7) % 118)
+    ctx.fillStyle = '#37302a'
+    ctx.fillRect(0, 44, W, 3)
+    ctx.fillStyle = '#241f1a'
+    ctx.fillRect(0, 47, W, 1)
+    for (let i = -1; i < 4; i++) {
+        const px = i * 118 - off
+        ctx.fillStyle = '#453b30'
+        ctx.fillRect(px, 42, 4, 7)                    // flanges
+        ctx.fillStyle = '#3d342a'
+        ctx.fillRect(px + 46, 47, 3, 10)             // short drop
+        ctx.fillStyle = '#59493a'
+        ctx.fillRect(px + 44, 57, 7, 2)
+        // valve wheel
+        ctx.fillStyle = '#6b2f28'
+        ctx.fillRect(px + 84, 50, 8, 2)
+        ctx.fillRect(px + 87, 47, 2, 8)
+    }
+}
+
+function graffiti(ctx, camX) {
+    const tags = [{ x: 150, s: 'DD' }, { x: 640, s: '87' }, { x: 430, s: 'DD' }]
+    for (const t of tags) {
+        const sx = t.x - camX
+        if (sx > -24 && sx < W + 24) {
+            ctx.save()
+            ctx.globalAlpha = 0.8
+            text(ctx, t.s, sx, 84, '#6b2b22', 1)
+            ctx.restore()
+        }
+    }
+}
+
+function hangingLamps(ctx, camX, tick) {
+    const off = Math.round((camX * 0.85) % 176)
+    for (let i = -1; i < 3; i++) {
+        const lx = i * 176 - off + 60
+        const seed = Math.floor(camX * 0.85 / 176) + i
+        const sway = Math.round(Math.sin(tick / 34 + seed * 2) * 1.5)
+        // chain
+        ctx.fillStyle = '#2c2620'
+        for (let s = 0; s < 46; s += 3) ctx.fillRect(lx + Math.round(sway * (s / 46)), s, 1, 2)
+        // shade + bulb
+        const bx = lx + sway
+        ctx.fillStyle = '#3f3527'
+        ctx.fillRect(bx - 7, 46, 14, 4)
+        ctx.fillRect(bx - 5, 50, 10, 2)
+        ctx.fillStyle = '#ffd98a'
+        ctx.fillRect(bx - 2, 52, 4, 3)
+    }
+}
+
+function yardFloor(ctx, camX) {
+    for (let y = DEEP_TOP; y < H; y++) {
+        const t = (y - DEEP_TOP) / (H - DEEP_TOP)
+        ctx.fillStyle = `rgb(${Math.round(48 + t * 16)},${Math.round(42 + t * 13)},${Math.round(36 + t * 11)})`
+        ctx.fillRect(0, y, W, 1)
+    }
+    // skirt where wall meets floor + hazard stripes
+    ctx.fillStyle = '#171310'
+    ctx.fillRect(0, DEEP_TOP - 4, W, 4)
+    const so = Math.round(camX % 16)
+    for (let x = -16; x < W + 16; x += 16) {
+        const wx = x + so
+        if (((wx % 32) + 32) % 32 < 16) { ctx.fillStyle = '#8a6a1e'; ctx.fillRect(x, DEEP_TOP - 4, 8, 3) }
+    }
+    // concrete pours
+    const jo = Math.round(camX % 64)
+    ctx.fillStyle = '#221c18'
+    for (let x = -64; x < W + 64; x += 64) ctx.fillRect(x - jo, DEEP_TOP + 2, 1, H - DEEP_TOP - 2)
+    ctx.fillRect(0, 174, W, 1)
+    // oil + swarf
+    for (let i = 0; i < 4; i++) {
+        const wx = 150 * i + 70
+        const sx = wx - camX
+        if (sx > -46 && sx < W + 46) {
+            ctx.fillStyle = 'rgba(8,8,12,0.55)'
+            ctx.beginPath(); ctx.ellipse(sx, DEEP_BOT - 2 - (i % 2) * 18, 20 + (i % 3) * 6, 4 + (i % 2) * 2, 0, 0, Math.PI * 2); ctx.fill()
+        }
+    }
+    for (let gy = DEEP_TOP + 6; gy < H; gy += 5) {
+        for (let gx = 0; gx < W; gx += 5) {
+            const wx = Math.floor((gx + camX) / 5)
+            if (R(wx * 71 + gy * 13) > 0.9) { ctx.fillStyle = '#39312a'; ctx.fillRect(gx, gy, 2, 1) }
+        }
+    }
+}
+
+function drawWarehouse(ctx, camX, tick) {
+    wall(ctx)
+    corrugation(ctx, camX)
+    transoms(ctx, camX, tick)
+    pipes(ctx, camX)
+    graffiti(ctx, camX)
+    hangingLamps(ctx, camX, tick)
+    yardFloor(ctx, camX)
+    // warm pools under the lamps, brighter than the street's sodium haze
+    const off = Math.round((camX * 0.85) % 176)
+    for (let i = -1; i < 3; i++) {
+        const lx = i * 176 - off + 60
+        const g = ctx.createRadialGradient(lx, DEEP_TOP + 16, 2, lx, DEEP_TOP + 16, 60)
+        g.addColorStop(0, 'rgba(255,196,110,0.14)')
+        g.addColorStop(0.7, 'rgba(255,196,110,0.05)')
+        g.addColorStop(1, 'rgba(255,196,110,0)')
+        ctx.fillStyle = g
+        ctx.beginPath(); ctx.arc(lx, DEEP_TOP + 16, 60, 0, Math.PI * 2); ctx.fill()
+    }
+}
+
+export function drawBackground(ctx, camX, _tick, stage = 1) {
+    if (stage === 2) { drawWarehouse(ctx, camX, _tick); return }
     sky(ctx)
     houses(ctx, camX)
     pylons(ctx, camX)
@@ -240,6 +411,24 @@ export function drawProp(ctx, p, camX) {
         ctx.fillRect(sx - 8, p.y - 18, 16, 3)
         ctx.fillStyle = '#1a242f'
         ctx.fillRect(sx - 5, p.y - 12, 10, 2)
+    } else if (p.kind === 'drum') {
+        ctx.fillStyle = '#4e3a22'                    // rusted oil drum
+        ctx.fillRect(sx - 7, p.y - 18, 14, 18)
+        ctx.fillStyle = '#66502e'
+        ctx.fillRect(sx - 7, p.y - 18, 4, 18)
+        ctx.fillStyle = '#2c2012'
+        ctx.fillRect(sx - 8, p.y - 16, 16, 2); ctx.fillRect(sx - 8, p.y - 6, 16, 2)
+        ctx.fillStyle = '#755c34'
+        ctx.fillRect(sx - 4, p.y - 20, 8, 3)
+        ctx.fillStyle = '#1c150c'
+        ctx.fillRect(sx + 2, p.y - 12, 3, 4)        // weeping stain
+    } else if (p.kind === 'pallet') {
+        ctx.fillStyle = '#5a4326'                    // stacked pallets
+        ctx.fillRect(sx - 12, p.y - 4, 24, 3)
+        ctx.fillRect(sx - 10, p.y - 7, 20, 3)
+        ctx.fillStyle = '#3c2c18'
+        ctx.fillRect(sx - 12, p.y - 1, 24, 1)
+        ctx.fillRect(sx - 4, p.y - 7, 2, 6); ctx.fillRect(sx + 3, p.y - 7, 2, 6)
     } else {
         ctx.fillStyle = '#7a2a2a'
         ctx.fillRect(sx - 3, p.y - 12, 6, 12)
@@ -252,12 +441,105 @@ export function drawProp(ctx, p, camX) {
 // S2 weapons-wall sprites (#2807): the barrel that hides the steel, and the
 // blade in flight. Same law as everything else here — cut in code, designed
 // from the cabinet, drawn at native res.
+// S3: crates are the yard's version of the barrel — same solidity, X-braced
+// pine, and the same three-hit story written in the wood.
+function drawCrate(ctx, x, y, sx, bar) {
+    drawShadow(ctx, sx, y + 1, 16, 0.35)
+    ctx.fillStyle = '#5f4220'
+    ctx.fillRect(x - 9, y - 20, 18, 20)
+    ctx.fillStyle = '#77562c'                       // lit boards
+    ctx.fillRect(x - 9, y - 19, 18, 3)
+    ctx.fillRect(x - 9, y - 11, 18, 3)
+    ctx.fillRect(x - 9, y - 3, 18, 3)
+    ctx.fillStyle = '#3c2812'                       // X brace + border
+    for (let i = 0; i < 18; i++) {
+        ctx.fillRect(x - 9 + i, y - 17 + Math.round(i * 14 / 18), 1, 2)
+        ctx.fillRect(x - 9 + i, y - 3 - Math.round(i * 14 / 18), 1, 2)
+    }
+    ctx.fillRect(x - 9, y - 20, 18, 1)
+    ctx.fillRect(x - 9, y - 1, 18, 1)
+    if (bar.hp <= 2) {
+        ctx.fillStyle = '#1c1208'
+        ctx.fillRect(x + 2, y - 16, 1, 7); ctx.fillRect(x + 3, y - 10, 1, 3)
+    }
+    if (bar.hp <= 1) {
+        ctx.fillRect(x - 6, y - 14, 1, 8); ctx.fillRect(x - 5, y - 7, 3, 1)
+        ctx.fillRect(x - 9, y - 20, 18, 1)         // lid splitting
+    }
+}
+
+// S3 foreground for the yard: oil drum and pallet, nearer than the fight band
+export const PROPS_YARD = [
+    { x: 180, y: DEEP_BOT + 7, kind: 'drum' },
+    { x: 470, y: DEEP_BOT + 9, kind: 'pallet' },
+    { x: 780, y: DEEP_BOT + 7, kind: 'drum' },
+]
+
+// Marian — tied to the yard post all stage 2 (#2807: "Marian's rescue
+// ending"). Two rope bands until Billy cuts them; then the cheer.
+export function drawMarian(ctx, m, camX) {
+    const sx = Math.round(m.x - camX)
+    if (sx < -30 || sx > W + 30) return
+    const hop = m.freed && Math.floor(m.cheer / 8) % 2 === 0 ? -2 : 0
+    const y = Math.round(m.y) + hop
+    drawShadow(ctx, sx, Math.round(m.y) + 1, 12, 0.3)
+    // the post
+    ctx.fillStyle = '#3c2c18'
+    ctx.fillRect(sx + 4, Math.round(m.y) - 30, 4, 30)
+    ctx.fillStyle = '#281d10'
+    ctx.fillRect(sx + 4, Math.round(m.y) - 30, 1, 30)
+    // legs + skirt
+    ctx.fillStyle = '#3a5a8c'
+    ctx.fillRect(sx - 4, y - 12, 8, 6)
+    ctx.fillStyle = '#d8a06a'
+    ctx.fillRect(sx - 3, y - 6, 2, 6); ctx.fillRect(sx + 1, y - 6, 2, 6)
+    ctx.fillStyle = '#8a3040'
+    ctx.fillRect(sx - 4, y - 1, 3, 2); ctx.fillRect(sx + 1, y - 1, 3, 2)
+    // torso
+    ctx.fillStyle = '#d0507a'
+    ctx.fillRect(sx - 4, y - 22, 8, 10)
+    // arms — bound in front, up in the cheer
+    ctx.fillStyle = '#d8a06a'
+    if (!m.freed) {
+        ctx.fillRect(sx + 3, y - 19, 3, 2)
+        ctx.fillRect(sx - 6, y - 19, 3, 2)
+    } else {
+        ctx.fillRect(sx - 6, y - 28, 2, 7)
+        ctx.fillRect(sx + 4, y - 28, 2, 7)
+    }
+    // head + hair
+    ctx.fillStyle = '#e8b98a'
+    ctx.fillRect(sx - 3, y - 30, 6, 6)
+    ctx.fillStyle = '#6a4022'
+    ctx.fillRect(sx - 4, y - 31, 8, 3)
+    ctx.fillRect(sx - 4, y - 28, 2, 8)
+    ctx.fillRect(sx + 2, y - 28, 2, 8)
+    ctx.fillStyle = '#1a1208'
+    ctx.fillRect(sx - 1, y - 28, 1, 1)
+    // ropes hold until the cut
+    if (!m.freed) {
+        ctx.fillStyle = '#cbbf9a'
+        ctx.fillRect(sx - 5, y - 17, 13, 2)
+        ctx.fillRect(sx - 5, y - 11, 13, 2)
+        ctx.fillStyle = '#9c8f6d'
+        ctx.fillRect(sx + 4, y - 17, 4, 2)
+        if (m.cuts === 1) {                         // one band parted
+            ctx.fillStyle = '#332724'
+            ctx.fillRect(sx - 1, y - 17, 3, 2)
+        }
+    } else {
+        ctx.fillStyle = '#9c8f6d'                   // cut rope on the boards
+        ctx.fillRect(sx - 4, Math.round(m.y) - 3, 8, 2)
+    }
+}
+
 export function drawBarrel(ctx, bar, camX) {
     const sx = Math.round(bar.x - camX)
     if (sx < -30 || sx > W + 30) return
     const jx = bar.shake > 0 ? (bar.shake % 2 ? 1 : -1) : 0
     const x = sx + jx
     const y = Math.round(bar.y)
+    if (bar.kind === 'crate') return drawCrate(ctx, x, y, sx, bar)
     drawShadow(ctx, sx, y + 1, 15, 0.35)
     ctx.fillStyle = '#7a4a26'
     ctx.fillRect(x - 7, y - 18, 14, 18)
@@ -313,6 +595,9 @@ const PAL = {
     williams: { head: '#d8d8dc', body: '#2f8f74', trim: '#1d6b52', legs: '#3a3f52', shoes: '#22262f', band: '#2f8f74' },
     amon: { head: '#8a5a34', body: '#8a5a34', trim: '#5f3d22', legs: '#2c2f3c', shoes: '#1c1e26', band: null },
     abobo: { head: '#6a4a2c', body: '#2e3138', trim: '#1c1e24', legs: '#17191f', shoes: '#0e0f13', band: null },
+    // S3 the duel: Williams the lieutenant — the same green, worn better:
+    // deeper shade, tan canvas pants, and the red sweep over the cap.
+    duel: { head: '#d8d8dc', body: '#26775d', trim: '#174a38', legs: '#8a7550', shoes: '#22262f', band: '#26775d', sweep: '#b03030' },
 }
 
 // generic pixel fighter. pose: idle|walk|jump|punch|kick|spin|windup|attack|
@@ -379,6 +664,10 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1) {
     R(-4 + hx - bulk, -30 + bob, 8 + 2 * bulk, 8, pal.head)
     if (pal === PAL.billy) { R(-4 + hx, -30 + bob, 8, 2, pal.band); R(-7 + hx, -29 + bob, 3, 2, pal.band) } // headband + tail
     if (pal === PAL.williams) { R(-5 + hx, -31 + bob, 10, 3, pal.band); R(2 + hx, -30 + bob, 4, 2, '#1d6b52') } // cap + brim
+    if (pal === PAL.duel) {
+        R(-5 + hx, -31 + bob, 10, 3, pal.band); R(2 + hx, -30 + bob, 5, 2, '#174a38')   // cap + longer brim
+        R(-5 + hx, -28 + bob, 10, 2, pal.sweep)                                            // red sweep
+    }
     if (pal === PAL.abobo) { R(-6 + hx, -31 + bob, 12, 2, '#14161b'); R(-5 + hx, -26 + bob, 10, 2, SKIN_D) }   // dark brow band, shadowed face
     if (pal === PAL.amon) { R(-4 + hx, -26 + bob, 8, 2, SKIN_D) }
     R(2 + hx, -27 + bob, 1, 1, '#1a1208') // eye toward the fight
@@ -465,10 +754,12 @@ export function drawEnemy(ctx, e, camX) {
     const sx = Math.round(e.x - camX)
     if (sx < -50 || sx > W + 50) return
     const sy = Math.round(e.y)
-    const def = { williams: 1, amon: 1.12, abobo: 1.38 }[e.kind]
+    const def = { williams: 1, amon: 1.12, abobo: 1.38, duel: 1.18 }[e.kind]
     let pose = 'walk'
     if (e.state === 'idle') pose = 'idle'
     else if (e.state === 'windup') pose = 'windup'
+    else if (e.state === 'aim') pose = 'windup'
+    else if (e.state === 'cast') pose = 'attack'
     else if (e.state === 'attack') pose = 'attack'
     else if (e.state === 'stagger') pose = 'hurt'
     else if (e.state === 'down') pose = 'down'
@@ -487,6 +778,15 @@ export function drawEnemy(ctx, e, camX) {
     if (e.hasStick) {
         ctx.fillStyle = '#8a6a3c'
         ctx.fillRect(sx + (pose === 'attack' ? 16 : pose === 'windup' ? -12 : 8) * e.face, sy - 22 * def, 10 * e.face, 2)
+    }
+    if (e.hasKnife) {
+        // S3 steel in a goon's hand: held low at the hip, cocked back in the
+        // aim, arm out the instant it flies
+        ctx.fillStyle = '#cfd6de'
+        const kx = pose === 'windup' ? -11 : pose === 'attack' ? 13 : 7
+        ctx.fillRect(sx + kx * e.face, sy - 18 * def, 7 * e.face, 2)
+        ctx.fillStyle = '#3a2c1c'
+        ctx.fillRect(sx + (kx - 3) * e.face, sy - 18 * def, 3 * e.face, 2)
     }
     ctx.globalAlpha = 1
 }
@@ -545,6 +845,8 @@ export function drawHud(ctx, gs) {
         ctx.fillStyle = live ? '#ffd98a' : (i === gs.waveIdx && gs.tick % 30 < 18 ? '#8a7333' : '#3a3f52')
         ctx.fillRect(102 + i * 6, 19, 4, 3)
     }
+    // S3: the cabinet numbers its chapters — Walnuts Street or the hideout
+    label(ctx, gs.stage === 2 ? '2-1' : '1-1', 124, 19, gs.stage === 2 ? '#ff9a7a' : '#8fd0ff', 1)
     // score delta floats under the HUD on each KO/pickup, arcade-style
     if (gs.scoreFlash && gs.scoreFlash.t % 8 < 6) {
         const s = '+' + gs.scoreFlash.v
@@ -555,10 +857,24 @@ export function drawHud(ctx, gs) {
 // wave / banner one-message-at-a-time overlays (never over the HUD)
 export function drawBanner(ctx, gs) {
     if (gs.mode === 'clear') {
-        label(ctx, 'STAGE CLEAR!', 96, 84, '#ffd98a', 2)
-        label(ctx, 'BONUS 500', 118, 112, '#fff', 1)
+        if (gs.bannerKind === 'rescue') {
+            label(ctx, 'MARIAN SAVED!', 84, 76, '#ff9ec0', 2)
+            label(ctx, 'THANKS, BILLY!', 108, 108, '#fff', 1)
+            label(ctx, 'BONUS 1000', 118, 124, '#ffd98a', 1)
+        } else {
+            label(ctx, 'STAGE CLEAR!', 96, 78, '#ffd98a', 2)
+            label(ctx, 'BONUS 500', 118, 106, '#fff', 1)
+            label(ctx, 'TO THE HIDEOUT', 104, 122, '#ff9a7a', 1)
+        }
     } else if (gs.mode === 'gameover') {
         label(ctx, 'GAME OVER', 104, 92, '#ff5a52', 2)
+    } else if (gs.mode === 'play' && gs.stage === 2) {
+        if (gs.banner > 0 && (gs.banner > 20 || gs.banner % 6 < 4)) {
+            label(ctx, 'STAGE 2', 116, 78, '#ff9a7a', 2)
+            label(ctx, 'THE HIDEOUT', 102, 108, '#fff', 1)
+        } else if (rescueReady(gs) && gs.tick % 40 < 28) {
+            label(ctx, 'CUT HER LOOSE!', 96, 84, '#ff9ec0', 1)
+        }
     }
 }
 
@@ -568,7 +884,9 @@ export function drawAttract(ctx, phase, tick) {
         ['DOUBLE DRAGON', '#c8302f', 2],
         ['2 AGAINST THE WALL', '#fff', 1],
         ['WALNUTS STREET', '#ffd98a', 1],
+        ['THE HIDEOUT', '#ff9a7a', 1],
         ['KNIFE  WHIP  BARRELS', '#e8c87a', 1],
+        ['RESCUE MARIAN', '#ff9ec0', 1],
         ['PUNCH  KICK  JUMP', '#8fd0ff', 1],
     ]
     const [s, col, sc] = msgs[phase % msgs.length]
