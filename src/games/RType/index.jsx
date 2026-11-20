@@ -241,7 +241,8 @@ export default function RType() {
                     if (opts.weapon) gs.ship.weapon = opts.weapon
                     if (opts.clearEnemies) { gs.enemies.length = 0; gs.missiles.length = 0 }
                     if (opts.clearBullets) { gs.bullets.length = 0 }
-                    if (opts.spawnCap) gs.caps.push({ id: gs.nextId++, x: gs.camX + 120, y: 100, baseY: 100, bob: 0 })
+                    if (opts.spawnCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0 })
+                    if (opts.crushShip) gs.ship.x = gs.camX
                     if (opts.toPhase1) { gs.camX = STAGE_END; step(gs, { left: false, right: false, up: false, down: false, a: false }) }
                     if (opts.openMouth && gs.p1) { gs.p1.mouth = 'open'; gs.p1.mouthT = 10000 }
                     if (opts.coreHp !== undefined && gs.p1) gs.p1.coreHp = opts.coreHp

@@ -17,7 +17,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, makeGame, step, autopilot, stateHash } from '../src/games/RType/sim.js'
+import { STAGE_END, W, makeGame, step, autopilot, stateHash } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -276,9 +276,12 @@ const browser = await launch()
     await page.keyboard.up('Space')
     r.check('Phase-1 through the shell: the open maw falls to sustained fire', /clear|play/.test(p1.mode) && (p1.cleared === 1 || (p1.p1 !== '-' && Number(p1.p1.split(':')[1]) < 12)), `p1=${p1.p1} mode=${p1.mode} cleared=${p1.cleared}`)
 
-    await page.evaluate(() => window.__rTest.setup({ lives: 1, inv: 0 }))
-    await page.waitForTimeout(1100)
-    const dead = await page.evaluate(() => window.__rTest.probe())
+    await page.evaluate(() => window.__rTest.setup({ lives: 1, inv: 0, crushShip: true }))
+    let dead = { screen: 'play' }
+    for (let i = 0; i < 30 && dead.screen !== 'over'; i++) {
+      await page.waitForTimeout(100)
+      dead = await page.evaluate(() => window.__rTest.probe())
+    }
     r.check('the game-over screen lands when the last life burns', dead.screen === 'over' || dead.mode === 'gameover', `screen=${dead.screen} mode=${dead.mode}`)
 
     r.check('zero page errors across the whole leg', errs.length === 0, errs.join(' | ') || 'clean')

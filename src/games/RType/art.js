@@ -269,7 +269,7 @@ export function drawBullet(ctx, b, camX) {
 }
 
 export function drawCap(ctx, c, camX) {
-    ctx.drawImage(SPR.cap[(Date.now() >> 2) % 2], Math.round(c.x - camX) - 8, Math.round(c.y) - 5)
+    ctx.drawImage(SPR.cap[Math.floor(Date.now() / 250) % 2], Math.round(c.x - camX) - 8, Math.round(c.y) - 5)
 }
 
 export function drawWave(ctx, q, camX) {
