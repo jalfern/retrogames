@@ -5,7 +5,7 @@
 // S.E.E.D. force pod: a rotating cyan energy ball with a blue capsule seed.
 // Everything generated in code; nothing borrowed. 320x224, no smoothing.
 
-import { W, H, FIELD_TOP, FIELD_BOT, POD } from './sim.js'
+import { W, H, FIELD_TOP, FIELD_BOT, POD, CORE_Y } from './sim.js'
 
 // ------------------------------------------------------------ pixel font ---
 // 5x7 arcade-cube glyphs cut for this cabinet (rows: '#' = ink).
@@ -169,6 +169,32 @@ const SPR = has ? {
         g.fillStyle = '#08284e' // capsule seam
         g.fillRect(7, 1, 2, 8)
     })),
+    // BIT capsule (S3): the green drone-case — same silhouette, moss palette,
+    // a white crystal shard stamped on it
+    bcap: [0, 1, 2].map((f) => makeSpr(16, 10, (g) => {
+        g.fillStyle = '#1c4a10'
+        g.fillRect(1, 1, 14, 8)
+        g.fillStyle = '#3e8c1e'
+        g.fillRect(2, 2, 12, 6)
+        g.fillStyle = '#7ad64a'
+        g.fillRect(3 + (f === 2 ? 2 : 0), 3, 4, 4)
+        g.fillStyle = '#e8ffe0'
+        g.fillRect(4 + (f === 2 ? 2 : 0), 4, 2, 2)
+        g.fillStyle = '#0e2c08' // capsule seam
+        g.fillRect(7, 1, 2, 8)
+    })),
+    // the bit drone (S3): a green crystal chip with a spinning facet
+    bit: [0, 1, 2, 3].map((f) => makeSpr(10, 10, (g) => {
+        g.fillStyle = '#1e5c14'
+        g.fillRect(3, 0, 4, 10); g.fillRect(1, 2, 8, 6); g.fillRect(0, 3, 10, 4)
+        g.fillStyle = '#46a02a'
+        g.fillRect(3, 1, 4, 8); g.fillRect(2, 2, 6, 6)
+        g.fillStyle = '#7ad64a'
+        const fx = 2 + (f % 3), fy = 2 + ((f + 1) % 3)
+        g.fillRect(fx, fy, 3, 3)
+        g.fillStyle = '#e8ffe0'
+        g.fillRect(fx + 1, fy + 1, 1, 1)
+    })),
     // the force pod itself: an energy ball with a dark band rotating around it
     seed: [0, 1, 2, 3].map((f) => makeSpr(12, 12, (g) => {
         g.fillStyle = '#0e4a86'
@@ -311,7 +337,7 @@ export function drawBullet(ctx, b, camX) {
 }
 
 export function drawCap(ctx, c, camX) {
-    const set = c.type === 'force' ? SPR.fcap : SPR.cap
+    const set = c.type === 'force' ? SPR.fcap : c.type === 'bit' ? SPR.bcap : SPR.cap
     const f = Math.floor(Date.now() / 250) % set.length
     ctx.drawImage(set[f], Math.round(c.x - camX) - 8, Math.round(c.y) - 5)
 }
@@ -493,6 +519,107 @@ export function drawP1(ctx, p1, camX, tick) {
     ctx.restore()
 }
 
+// the bit drone (S3): rides its slot; in shield orbit it wears a green sheen
+export function drawBit(ctx, bt, camX, shielded) {
+    if (bt.px == null) return
+    const x = Math.round(bt.px - camX), y = Math.round(bt.py)
+    const f = Math.floor(Date.now() / 110) % SPR.bit.length
+    if (shielded) { ctx.fillStyle = 'rgba(122,214,74,0.20)'; ctx.fillRect(x - 8, y - 8, 16, 16) }
+    ctx.drawImage(SPR.bit[f], x - 5, y - 5)
+}
+
+// the PHASE-2 fortress (S3): blue-black plating over the twin core ports —
+// darker and colder than Phase-1's flesh, its two red eye-columns stacked
+export function drawP2(ctx, p2, camX, tick) {
+    const dying = p2.dyingT > 0
+    const k = dying ? 190 - p2.dyingT : 0
+    ctx.save()
+    if (dying) {
+        const cx = Math.round(p2.x - camX) + 60, cy = 120
+        ctx.translate(cx, cy)
+        ctx.rotate(-k * 0.0009)
+        ctx.translate(-cx + (((tick * 11) % 3) - 1), -cy + (((tick * 17) % 3) - 1))
+    }
+    const x = Math.round(p2.x - camX)
+    const top = 30, bot = 210
+    ctx.fillStyle = '#20263c'
+    ctx.fillRect(x - 4, top, W + 40, bot - top)
+    ctx.fillStyle = '#323c58'
+    ctx.fillRect(x + 2, top + 4, W + 30, bot - top - 8)
+    ctx.fillStyle = '#4a5878'
+    for (let px = 0; px + x < W; px += 24) ctx.fillRect(x + px + 4, top + 8, 16, bot - top - 16)
+    ctx.fillStyle = '#5e6c8e'
+    for (let px = 8; px + x < W; px += 24) ctx.fillRect(x + px, top + 6, 2, bot - top - 12)
+    ctx.fillStyle = '#161b2c'
+    for (let py = top + 14; py < bot - 8; py += 20) ctx.fillRect(x + 6, py, W, 2)
+    // rivet rows along the face
+    ctx.fillStyle = '#7c8ab0'
+    for (let py = top + 6; py < bot - 4; py += 12) ctx.fillRect(x + 3, py, 2, 2)
+    // twin eyes watching the lane, one per core column
+    for (const cy of CORE_Y) {
+        ctx.fillStyle = '#701414'
+        ctx.fillRect(x + 34, cy - 3, 6, 6)
+        ctx.fillStyle = ((tick >> 4) % 8 === 0) ? '#ffa0a0' : '#e03030'
+        ctx.fillRect(x + 35, cy - 2, 4, 4)
+    }
+    // the two core ports: armour lips over a hot throat, on their own clocks
+    for (const [ci, core] of p2.cores.entries()) {
+        const py = CORE_Y[ci]
+        const mouthX = x + 2
+        if (core.hp <= 0) {
+            // a burned-out port: a smoking hole, edges slagged
+            ctx.fillStyle = '#0a0c14'
+            ctx.fillRect(mouthX, py - 14, 30, 28)
+            ctx.fillStyle = '#3a2018'
+            ctx.fillRect(mouthX + 4, py - 10, 22, 20)
+            if ((tick >> 1) % 3 !== 0) {
+                ctx.fillStyle = tick % 4 < 2 ? '#ff8a2a' : '#7a3410'
+                ctx.fillRect(mouthX + 8 + ((tick * 5) % 12), py - 6 + ((tick * 3) % 10), 3, 3)
+            }
+            continue
+        }
+        if (core.mouth === 'open' || core.mouth === 'opening' || core.mouth === 'closing') {
+            const full = core.enraged ? 20 : 16
+            const openAmt = core.mouth === 'open' ? full : core.mouth === 'opening'
+                ? Math.round(full * (1 - core.mouthT / 30)) : Math.round(full * (core.mouthT / 30))
+            ctx.fillStyle = '#12080c'
+            ctx.fillRect(mouthX, py - openAmt, 30, openAmt * 2)
+            const pulse = ((tick >> 3) % 3) * 2
+            ctx.fillStyle = core.enraged ? '#ff2a3a' : '#ff8a2a'
+            ctx.fillRect(mouthX + 8, py - 8 + pulse / 2, 14, 16 - pulse)
+            ctx.fillStyle = core.enraged ? '#ffd0d8' : '#ffe080'
+            ctx.fillRect(mouthX + 12, py - 4, 8, 8)
+            ctx.fillStyle = '#5e6c8e'
+            ctx.fillRect(mouthX - 2, py - openAmt - 4, 34, 4)
+            ctx.fillRect(mouthX - 2, py + openAmt, 34, 4)
+            ctx.fillStyle = core.enraged ? '#ff5a6a' : '#d02020'
+            ctx.fillRect(mouthX, py - openAmt - 1, 30, 1)
+            ctx.fillRect(mouthX, py + openAmt, 30, 1)
+        } else {
+            ctx.fillStyle = '#4a1020'
+            ctx.fillRect(mouthX, py - 14, 30, 28)
+            ctx.fillStyle = core.enraged ? '#ff5a6a' : '#d02020'
+            ctx.fillRect(mouthX + 2, py - 1, 26, 2)
+            ctx.fillStyle = '#5e6c8e'
+            ctx.fillRect(mouthX - 2, py - 18, 34, 4)
+            ctx.fillRect(mouthX - 2, py + 14, 34, 4)
+        }
+    }
+    if (dying) {
+        if ((tick >> 1) % 3 !== 0) {
+            ctx.fillStyle = 'rgba(160,190,255,0.12)'
+            ctx.fillRect(x - 4, top, W + 40, bot - top)
+        }
+        ctx.fillStyle = '#9ac9ff'
+        for (let i = 0; i < 5; i++) {
+            const fx = x + 14 + ((k * 9 + i * 41) % 130)
+            const fy = top + 10 + ((k * 7 + i * 59) % (bot - top - 20))
+            ctx.fillRect(fx, fy, 3 + (k % 4), 3 + ((k >> 1) % 3))
+        }
+    }
+    ctx.restore()
+}
+
 // ---------------------------------------------------------------- HUD ----
 export function drawHud(ctx, gs) {
     drawText(ctx, '1UP', 8, 8, (gs.tick % 50) < 36 ? '#e03030' : '#601010')
@@ -504,6 +631,13 @@ export function drawHud(ctx, gs) {
     const wcol = gs.ship.weapon === 'wave' ? '#37d0ff' : gs.ship.weapon === 'laser' ? '#ff5a7a' : '#9ac93c'
     drawText(ctx, wl, 90, H - 12, wcol)
     if (gs.pod) ctx.drawImage(SPR.seed[Math.floor(Date.now() / 90) % 4], 172, H - 14) // the shell rides with you
+    // bit pips (S3): one diamond per chained drone; the full chain spells SHIELD
+    for (let i = 0; i < gs.bits.length; i++) {
+        const bx = 200 + i * 10, by = H - 9
+        ctx.fillStyle = gs.bits.length === 4 ? '#7ad64a' : '#46a02a'
+        ctx.fillRect(bx + 2, by, 4, 4); ctx.fillRect(bx + 1, by + 1, 6, 2); ctx.fillRect(bx + 3, by - 1, 2, 6)
+    }
+    if (gs.bits.length === 4) drawText(ctx, 'SHIELD', 246, H - 12, (gs.tick % 40) < 28 ? '#7ad64a' : '#2c5018')
     if (gs.ship.weapon === 'wave' || gs.ship.weapon === 'laser') {
         // charge gauge: three tier boxes (cyan for the crescent, hot for the lance)
         const hot = gs.ship.weapon === 'laser'
@@ -520,6 +654,10 @@ export function drawBanner(ctx, gs) {
     if (gs.mode === 'clear') {
         center('STAGE CLEAR', 96, '#37d0ff', 2)
         center(String(gs.score).padStart(7, '0'), 124, '#f0f0f0')
+    } else if (gs.p2 && gs.tick - gs.p2.at < 150) {
+        center('PHASE 2 : TWIN CORES', 100, gs.tick % 20 < 12 ? '#ff5a6a' : '#802030')
+    } else if (gs.leg === 2 && gs.tick - gs.legAt < 130) {
+        center('THE CONVOY RESUMES', 100, '#9ac93c')
     } else if (gs.tick < 140 && gs.mode === 'play') {
         center('STAGE 1  OUTER SPACE', 100, '#9ac93c')
     }
@@ -541,6 +679,8 @@ export function drawAttract(ctx, phase, tick) {
         'ENEMY BIOMECHANICAL FLEET : BYDO',
         'WAVE CANNON : HOLD FIRE, RELEASE',
         'LASER : CHARGE THE LANCE, PIERCE THE LINE',
+        'GREEN BIT CAPSULES : CHAIN FOUR FOR THE SHIELD',
+        'PHASE 2 HAS TWO HEARTS : HUNT THE VENTS',
         'SHOOT THE MAW WHEN IT GAPES',
         'THE FORCE POD : B DEPLOYS, B RETRIEVES',
         'THE LEFT EDGE DOES NOT FORGIVE',

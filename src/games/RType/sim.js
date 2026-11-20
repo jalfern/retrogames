@@ -162,6 +162,7 @@ export function makeGame(seed = 1) {
         bHeld: false,                  // edge-detector for the POD button
         bits: [],                      // S3 bit chain: [{id,px,py}] newest-first; 4 => shield
         leg: 1,                        // S3: 1 until Phase-1 falls, then 2 (the twin-core leg)
+        legAt: 0,                      // tick LEG 2 opened (banner timing)
         p2: null,                      // S3 Phase-2 fortress: {x,cores:[{hp,mouth,mouthT,enraged}],dyingT,at}
         shots: [],                   // player: {id,x,y,kind,size,hit[]}
         bullets: [],               // enemy: {id,x,y,vx,vy}
@@ -338,6 +339,7 @@ function startLeg2(gs) {
     gs.schedule = WAVES2.map((w, i) => ({ ...w, idx: 50 + i, fired: false }))
     gs.banner = 0
     if (gs.pod && gs.pod.state === 'park') gs.pod.x = gs.camX + W - POD.parkPad
+    gs.legAt = gs.tick
     gs.events.push('leg2')
 }
 
