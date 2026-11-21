@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, CORE_Y, W, WAVES2, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, CORE_Y, W, POD, WAVES2, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -868,6 +868,87 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
     r.check('relieved (V), the wingman brain resumes station-keeping', gs.wing.x - gs.camX > sc0 + 4, `screen x ${Math.round(sc0)} -> ${Math.round(gs.wing.x - gs.camX)}`)
 }
 
+// ---------------------------------------------------- #2841 S4 polish laws ---
+{ // cargo law: the wing FETCHES what it reaches first — spillage is no longer
+  // seat one's exclusive chase when seat one is nowhere near it
+    const gs = coopGame(6)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    for (let i = 0; i < 30; i++) { step(gs, {}); gs.events.length = 0 }
+    gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0
+    gs.ship.y = 170 // seat one rides low; the pod spills in the high lane
+    gs.wing.y = 118
+    const capY = 58
+    gs.caps.push({ id: 901, x: gs.wing.x + 55, y: capY, baseY: capY, bob: 0, type: 'force' })
+    const y0 = gs.wing.y
+    let fetched = false
+    for (let i = 0; i < 120 && !fetched; i++) { step(gs, {}); gs.events.length = 0; fetched = !!gs.wing.pod }
+    r.check('#2841 the wing fetches the capsule it reaches first (cargo law)',
+        fetched && gs.wing.pod && gs.wing.pod.state === 'attached' && gs.wing.y < y0 - 30,
+        `pod=${gs.wing.pod ? gs.wing.pod.state : 'none'} wingY ${Math.round(y0)} -> ${Math.round(gs.wing.y)}`)
+}
+
+{ // courtesy survives the fetch law: seat one nearer => seat one's, wing holds lane
+    const gs = coopGame(6)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    for (let i = 0; i < 30; i++) { step(gs, {}); gs.events.length = 0 }
+    gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0
+    gs.ship.y = 170 // seat one holds the loot lane; the capsule is its cargo
+    gs.wing.y = 126
+    const ly = gs.wing.y
+    gs.caps.push({ id: 902, x: gs.ship.x + 46, y: 170, baseY: 170, bob: 0, type: 'weapon' })
+    let dived = false, taken = false
+    for (let i = 0; i < 120 && !taken; i++) {
+        step(gs, {}); gs.events.length = 0
+        taken = gs.ship.weapon !== 'vulcan'
+        if (gs.wing.y > ly + 12) dived = true
+    }
+    r.check('#2841 courtesy kept: a capsule seat one can reach stays seat one\'s — the wing holds its lane',
+        taken && !dived, `p1 arm=${gs.ship.weapon} dived=${dived}`)
+}
+
+{ // vent-hunt: a gaped core pulls the wingman's whole stream into the throat
+    const gs = coopGame(7)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.p1 = null; gs.enemies = gs.enemies.filter((e) => e.on !== 'p1')
+    gs.bullets.length = 0; gs.missiles.length = 0; gs.caps.length = 0
+    gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick
+    step(gs, {}); gs.events.length = 0
+    gs.p2.cores[0].mouth = 'open'; gs.p2.cores[0].mouthT = 10000
+    gs.ship.y = 180 // seat one idles out of the fight; only seat two hunts
+    gs.wing.y = 180
+    gs.wing.inv = 999999
+    const hp0 = gs.p2.cores[0].hp
+    let snapped = false
+    for (let i = 0; i < 240; i++) {
+        step(gs, {}); gs.events.length = 0
+        gs.ship.y = 180
+        if (Math.abs(gs.wing.y - (CORE_Y[0] + gs.p2.swayOff)) <= 8) snapped = true
+    }
+    r.check('#2841 the wing hunts the gaped vent — lane snaps, stream bites (armour law intact)',
+        snapped && gs.p2.cores[0].hp < hp0,
+        `snapped=${snapped} core0 ${hp0}->${gs.p2.cores[0].hp}`)
+}
+
+{ // pods pass between pilots (R-Type II courtesy): seat one CALLS a spare shell
+  // with its own POD button while bare — and the wing keeps its gear unasked
+    const gs = coopGame(5)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.wing.pod = { id: 77, state: 'attached', x: gs.wing.x + POD.noseX, y: gs.wing.y, grace: 0 }
+    gs.bullets.length = 0
+    let kept = true
+    for (let i = 0; i < 60; i++) { step(gs, {}); gs.events.length = 0; if (gs.pod || !gs.wing.pod) kept = false }
+    r.check('#2841 gear stays per-hull unasked (no free gift)', kept && gs.wing.pod && !gs.pod, `kept=${kept}`)
+    let got = false
+    for (let i = 0; i < 90 && !got; i++) { step(gs, { b: i === 0 }); gs.events.length = 0; got = !!gs.pod }
+    r.check('#2841 the call lands: bare seat one presses POD, the wing flies its spare over',
+        got && gs.pod.state === 'attached' && !gs.wing.pod,
+        `pod=${gs.pod ? gs.pod.state : 'none'} wing=${gs.wing.pod ? gs.wing.pod.state : 'bare'}`)
+}
+
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12
     let wins = 0
@@ -994,6 +1075,29 @@ if (MUTANT) {
                 for (let t = 0; t < 1600 && salvos < 2; t++) { gs.ship.inv = 999999; mod.step(gs, {}); if (gs.events.includes('p2salvo')) salvos++; gs.events.length = 0 }
                 return salvos < 2
                     ? `HARM NAMED: the fortress sat 1600 ticks and answered with ${salvos} salvos — the traded salvo is the twin cores' menace; mute, the face is a free shooting gallery and Phase-2 loses its whole argument`
+                    : null
+            },
+        },
+        {
+            name: 'vent-blind',
+            anchor: "if (ventY >= 0) ty0 = clamp(ventY, FIELD_TOP + 8, FIELD_BOT - 8)",
+            plant: "if (false && ventY >= 0) ty0 = clamp(ventY, FIELD_TOP + 8, FIELD_BOT - 8) /* MUTANT(vent-blind): the wingman stops hunting the gaped vent */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                mod.enableCoop(gs)
+                gs.ship.inv = 999999
+                gs.wing.inv = 999999
+                gs.p1 = null; gs.enemies = gs.enemies.filter((e) => e.on !== 'p1')
+                gs.bullets.length = 0; gs.missiles.length = 0; gs.caps.length = 0
+                gs.leg = 2; gs.camX = mod.STAGE_END2; gs.legAt = gs.tick
+                mod.step(gs, {}); gs.events.length = 0
+                gs.p2.cores[0].mouth = 'open'; gs.p2.cores[0].mouthT = 10000
+                gs.ship.y = 180
+                gs.wing.y = 180
+                const hp0 = gs.p2.cores[0].hp
+                for (let i = 0; i < 240; i++) { mod.step(gs, {}); gs.events.length = 0; gs.ship.y = 180 }
+                return gs.p2.cores[0].hp === hp0
+                    ? `HARM NAMED: the near core gaped 240 ticks while the wingman sat its lane (core ${hp0} -> ${gs.p2.cores[0].hp}) — vent-hunting is how the second pilot fights the boss; blind, seat two is decoy law decoration and the co-op fortress fight is seat one alone`
                     : null
             },
         },
