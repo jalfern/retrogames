@@ -515,7 +515,19 @@ export function updateFighter(gs, p, pad) {
     if (p.state === 'grabbed') {
         p.stateT += 1
         if (pad.b && p.pressCooldown <= 0) { p.presses += 1; p.pressCooldown = 6; gs.events.push(blue(p.tag, 'struggle')) }
-        const holder = gs.enemies.find((e) => e.id === p.grabFrom)
+        const holder = gs.enemies.find((e) => e.state === 'grab' && e.tgt === p.tag)
+        // #2851 release law: a grip is only as strong as the thug holding it.
+        // When a partner's fists stagger or drop the holder, his prize comes
+        // loose — the arcade freed you when the grabber took a hit. Short
+        // i-frames so the next windup can't re-steal the seat mid-relief.
+        // (matched by grip, not id: the harness fixtures reuse ids; the law
+        // must read the same truth the eye sees — who is holding me?)
+        if (!holder) {
+            p.state = 'idle'; p.stateT = 0; p.presses = 0; p.grabFrom = null
+            p.inv = Math.max(p.inv, 24)
+            gs.events.push(blue(p.tag, 'escape'))
+            return
+        }
         if (p.presses >= CFG.grabEscape) {
             p.state = 'idle'; p.stateT = 0; p.presses = 0; p.grabFrom = null
             if (holder) { holder.state = 'stagger'; holder.stateT = CFG.hitstun; holder.attackCooldown = 80 }
@@ -1126,7 +1138,16 @@ export function dragonBrain(gs, b, ally = null) {
         pad[dir > 0 ? 'down' : 'up'] = true
         return pad
     }
-    const target = nearestEnemy(gs, b)
+    // #2851 guardian law: a brother in a thug's grip outranks my own nearest
+    // target — the ally seat sprints the holder and works him off (the arcade
+    // freed you when the grabber took a hit; the seat's job is landing that
+    // hit). Billy's solo autopilot passes no ally, so the attract demo and
+    // the harness WINNABLE stream keep the old law and their hashes.
+    let target = nearestEnemy(gs, b)
+    if (ally && ally.state === 'grabbed') {
+        const holder = gs.enemies.find((e) => e.state === 'grab' && e.tgt === ally.tag)
+        if (holder) target = holder
+    }
     if (!target) {
         pad.right = true
         // #2833: on the quiet street the blue dragon falls in beside his
@@ -1192,7 +1213,16 @@ export function dragonBrain(gs, b, ally = null) {
         // the heel still only boots when two are genuinely within reach.
         const surroundPad = ally ? 14 : 6
         const surrounded = gs.enemies.filter((e) => e.state !== 'dying' && e.state !== 'down' && Math.abs(e.x - b.x) <= CFG.spin.reach + surroundPad && Math.abs(e.y - b.y) <= 10).length >= 2
-        if (!surrounded && gs.tick % 9 < 2) pad.b = true // kick (kicks knock down)
+        if (!surrounded && ally) {
+            // #2851 technician's cadence: the arcade duo split by school —
+            // Billy=power (the 9-beat hammer-kick), Jimmy=technique. The blue
+            // seat jabs-jabs-crosses on a 13-beat; 13 ⊥ 9, so the dragons
+            // interleave instead of swinging the same bar in lockstep.
+            const ph = gs.tick % 13
+            if (ph < 2 || (ph >= 3 && ph < 5)) pad.punch = true
+            else if (ph >= 6 && ph < 8) pad.b = true
+        }
+        else if (!surrounded && gs.tick % 9 < 2) pad.b = true // kick (kicks knock down)
         else if (surrounded && gs.tick % (ally ? 5 : 7) < 2) pad.b = true // spin back-heel
     }
     return laneChange(gs, b, pad)

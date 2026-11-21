@@ -569,7 +569,12 @@ const runFull = (seed, max = 60000) => {
     gs.enemies.push(mk('williams', gs.camX + 260, 190))
     for (let i = 0; i < 30; i++) { step(gs, {}, {}); gs.events.length = 0 }
     r.check('S4: the crowd splits by NEAREST dragon — a thug on Jimmy\'s tail works Jimmy, not the name Billy',
-        gs.enemies[0].tgt === 'jimmy' && gs.enemies[0].x < gs.camX + 260, `tgt=${gs.enemies[0].tgt} x=${gs.enemies[0].x.toFixed(0)}`)
+        gs.enemies[0].tgt === 'jimmy' && Math.abs(gs.enemies[0].x - gs.jimmy.x) <= 40,
+        // #2851: proxy moved from camX+260 to Jimmy's tail distance — the
+        // blue seat's jab cadence (#2851) staggers the thug off the spawn
+        // edge, which the old camera proxy misread. The law is "works Jimmy",
+        // not "stands where he spawned".
+        `tgt=${gs.enemies[0].tgt} dx=${(gs.enemies[0].x - gs.jimmy.x).toFixed(0)}`)
 
     // mid-action commitment: a windup already thrown at Jimmy does not
     // teleport to Billy when Billy struts close
@@ -772,6 +777,65 @@ const runFull = (seed, max = 60000) => {
         `state=${gs6.jimmy.state} out=${gs6.jimmy.out} blue=${ev6.filter((e) => e.endsWith('_b')).join('|') || 'none'}`)
 }
 
+// ------------------------------------------- #2851 partner personality pass ---
+{ // the blue seat stops being a mirror: the guardian law, the release law,
+  // and the technician's cadence — the personality layer on the ally seat.
+    const gs = makeGame(51, { coop: true })
+    gs.enemies.length = 0; gs.barrels.length = 0; gs.pickups.length = 0; gs.projectiles.length = 0
+    // Billy is in a thug's grip across the block; a stray sits BEHIND Jimmy.
+    const holder = mk('amon', 300, 180, { state: 'grab', attackCooldown: 9999 })
+    holder.id = 1400; holder.tgt = 'billy' // mk spreads only over.rest — the grip needs its target
+    gs.enemies.push(holder)
+    gs.enemies.push(mk('williams', 112, 180, { hp: 30, attackCooldown: 9999 }))
+    gs.billy.state = 'grabbed'; gs.billy.grabFrom = holder.id; gs.billy.stateT = 0
+    gs.billy.x = 292; gs.billy.y = 180; gs.billy.inv = 999
+    gs.jimmy.x = 140; gs.jimmy.y = 180; gs.jimmy.inv = 999
+    const gAlly = dragonBrain(gs, gs.jimmy, gs.billy)
+    const gSolo = dragonBrain(gs, gs.jimmy)
+    r.check('#2851 guardian: a brother in grips outranks my nearest mark — sprint the holder, not the stray',
+        gAlly.right && !gAlly.left && gSolo.left && !gSolo.right,
+        `guardian L=${gAlly.left}/R=${gAlly.right} mirror L=${gSolo.left}/R=${gSolo.right}`)
+
+    // release law: a partner's fist on the grabber frees the seat — the arcade
+    // freed you when the grabber took a hit. The seat is pinned human with an
+    // empty pad so mash-escape cannot fake the rescue.
+    const gs3 = makeGame(53, { coop: true })
+    gs3.enemies.length = 0; gs3.barrels.length = 0; gs3.pickups.length = 0; gs3.projectiles.length = 0
+    const holder3 = mk('amon', 200, 180, { state: 'grab', attackCooldown: 99999 })
+    holder3.id = 1503; holder3.tgt = 'jimmy' // grip identity lives on tgt, not the reused x-id
+    gs3.enemies.push(holder3)
+    gs3.jimmy.state = 'grabbed'; gs3.jimmy.grabFrom = holder3.id; gs3.jimmy.stateT = 0
+    gs3.jimmy.x = 192; gs3.jimmy.y = 180; gs3.jimmy.inv = 999; gs3.jimmy.human = true
+    gs3.billy.x = 188; gs3.billy.y = 180; gs3.billy.inv = 999
+    const ev3 = []
+    for (let i = 0; i < 12; i++) { step(gs3, { punch: true }, {}); ev3.push(...gs3.events); gs3.events.length = 0 }
+    r.check('#2851 release: the holder takes a red fist and drops his prize — idle, unstuck, iframed, blue sweep',
+        gs3.jimmy.state === 'idle' && gs3.jimmy.grabFrom === null && gs3.jimmy.inv >= 24 &&
+        ev3.includes('hit') && ev3.includes('escape_b'),
+        `state=${gs3.jimmy.state} grab=${gs3.jimmy.grabFrom} inv=${gs3.jimmy.inv} ev=${ev3.join(',')}`)
+
+    // cadence split: Billy's hammer is a 9-beat kick; the blue seat jabs-jabs-
+    // crosses on a 13-beat (13 ⊥ 9) — at the top of the bar the dragons answer
+    // different bars, the tell that the mirror is gone.
+    const gs4 = makeGame(54, { coop: true })
+    gs4.enemies.length = 0; gs4.barrels.length = 0; gs4.pickups.length = 0; gs4.projectiles.length = 0
+    gs4.enemies.push(mk('williams', 150, 180, { hp: 30, attackCooldown: 9999 }))
+    gs4.jimmy.x = 140; gs4.jimmy.y = 180; gs4.jimmy.inv = 999
+    gs4.billy.x = 60; gs4.billy.y = 150; gs4.billy.inv = 999
+    let allyAsks = ''; let soloAsks = ''
+    for (let t = 0; t < 13; t++) {
+        gs4.tick = t
+        const pa = dragonBrain(gs4, gs4.jimmy, gs4.billy)
+        const ps = dragonBrain(gs4, gs4.jimmy)
+        allyAsks += pa.punch ? 'J' : pa.b ? 'K' : '.'
+        soloAsks += ps.b ? 'K' : ps.punch ? 'J' : '.'
+    }
+    r.check('#2851 cadence: the blue seat jabs-jabs-crosses on 13 while the hammer kicks on 9 — the lockstep mirror is broken',
+        allyAsks === 'JJ.JJ.KK.....' && soloAsks === 'KK.......KK..' &&
+        allyAsks[0] === 'J' && soloAsks[0] === 'K',
+        `blue=${allyAsks} red=${soloAsks}`)
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -911,6 +975,66 @@ if (MUTANT) {
                 for (let i = 0; i < 8; i++) { mod.step(gs, {}, {}); ev.push(...gs.events); gs.events.length = 0 }
                 return !ev.some((e) => e.endsWith('_b'))
                     ? `HARM NAMED: the blue seat swung and nothing carried a _b tag (${ev.join('|') || 'silence'}) — one shared voice for two dragons means the ear cannot tell who is fighting; the seats blur`
+                    : null
+            },
+        },
+        {
+            name: 'guardian-deaf',
+            anchor: '        if (holder) target = holder',
+            plant: '        if (false && holder) target = holder /* MUTANT(guardian-deaf): the seat stops seeing its brother in grips */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(51, { coop: true })
+                gs.enemies.length = 0; gs.barrels.length = 0; gs.pickups.length = 0; gs.projectiles.length = 0
+                const holder = mk('amon', 300, 180, { state: 'grab', attackCooldown: 9999 })
+                holder.id = 1400; holder.tgt = 'billy'
+                gs.enemies.push(holder)
+                gs.enemies.push(mk('williams', 112, 180, { hp: 30, attackCooldown: 9999 }))
+                gs.billy.state = 'grabbed'; gs.billy.grabFrom = holder.id; gs.billy.stateT = 0
+                gs.billy.x = 292; gs.billy.y = 180; gs.billy.inv = 999
+                gs.jimmy.x = 140; gs.jimmy.y = 180; gs.jimmy.inv = 999
+                const gAlly = mod.dragonBrain(gs, gs.jimmy, gs.billy)
+                return gAlly.left && !gAlly.right
+                    ? 'HARM NAMED: Billy dangles in a grip across the block and the blue seat strolls after its own nearest stray — a partner that cannot see you caught is furniture, and the phone seat loses the one rescue the co-op was promised'
+                    : null
+            },
+        },
+        {
+            name: 'grip-permanent',
+            anchor: '        if (!holder) {',
+            plant: '        if (false && !holder) { /* MUTANT(grip-permanent): staggered holders stop dropping their prize */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(53, { coop: true })
+                gs.enemies.length = 0; gs.barrels.length = 0; gs.pickups.length = 0; gs.projectiles.length = 0
+                const holder = mk('amon', 200, 180, { state: 'grab', attackCooldown: 99999 })
+                holder.id = 1503; holder.tgt = 'jimmy'
+                gs.enemies.push(holder)
+                gs.jimmy.state = 'grabbed'; gs.jimmy.grabFrom = holder.id; gs.jimmy.stateT = 0
+                gs.jimmy.x = 192; gs.jimmy.y = 180; gs.jimmy.inv = 999; gs.jimmy.human = true
+                gs.billy.x = 188; gs.billy.y = 180; gs.billy.inv = 999
+                for (let i = 0; i < 12; i++) { mod.step(gs, { punch: true }, {}); gs.events.length = 0 }
+                return gs.jimmy.state === 'grabbed'
+                    ? 'HARM NAMED: the holder went down and the seat stayed in his arms — a grip that survives its owner is a rubber band, and every caught run still pays the knee'
+                    : null
+            },
+        },
+        {
+            name: 'cadence-mirror',
+            anchor: '        if (!surrounded && ally) {',
+            plant: '        if (false && !surrounded && ally) { /* MUTANT(cadence-mirror): the blue seat snaps back onto the red hammer beat */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(54, { coop: true })
+                gs.enemies.length = 0; gs.barrels.length = 0; gs.pickups.length = 0; gs.projectiles.length = 0
+                gs.enemies.push(mk('williams', 150, 180, { hp: 30, attackCooldown: 9999 }))
+                gs.jimmy.x = 140; gs.jimmy.y = 180; gs.jimmy.inv = 999
+                gs.billy.x = 60; gs.billy.y = 150; gs.billy.inv = 999
+                let allyAsks = ''
+                for (let t = 0; t < 13; t++) {
+                    gs.tick = t
+                    const pa = mod.dragonBrain(gs, gs.jimmy, gs.billy)
+                    allyAsks += pa.punch ? 'J' : pa.b ? 'K' : '.'
+                }
+                return allyAsks === 'KK.......KK..'
+                    ? 'HARM NAMED: the two dragons swing the same bar again (blue=' + allyAsks + ') — a mirror in a second sprite is one player wearing a costume; the duo read as one until the seats answer different beats'
                     : null
             },
         },
