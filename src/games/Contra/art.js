@@ -467,12 +467,22 @@ export function drawCarrier (ctx, cr, tick) {
     ctx.fillStyle = '#20242c'
     ctx.fillRect(-12, 5, 22, 1)
     ctx.fillRect(-10, 3, 1, 3); ctx.fillRect(6, 3, 1, 3)
-    // rotor: mast + a blade line that chops (length pulses over 4 phases)
+    // rotor: mast + a blurred disc (the cabinet's wide chop, #2852) — a
+    // translucent sweep under two counter-phase blade lines, so it never
+    // reads as a lone antenna at a glance. Art reads the tick; no rng.
     ctx.fillStyle = '#20242c'
     ctx.fillRect(-1, -11, 2, 4)
-    const chop = [20, 14, 20, 10][Math.floor(tick / 3) % 4]
+    ctx.globalAlpha = 0.25
+    ctx.fillStyle = '#c8d0bc'
+    ctx.fillRect(-19, -12, 38, 2)
+    ctx.globalAlpha = 1
+    const ph = Math.floor(tick / 3) % 4
+    const wA = [20, 14, 20, 10][ph]
+    const wB = [10, 20, 10, 20][ph]
     ctx.fillStyle = '#aab4a0'
-    ctx.fillRect(-chop, -12, chop * 2, 1)
+    ctx.fillRect(-wA, -12, wA * 2, 1)
+    ctx.fillStyle = '#87917e'
+    ctx.fillRect(-wB, -11, wB * 2, 1)
     ctx.fillStyle = '#5a6450'
     ctx.fillRect(-1, -13, 2, 2)
     // wounded: embers streaming from the nacelle (deterministic — tick-phased)
@@ -487,7 +497,16 @@ export function drawCarrier (ctx, cr, tick) {
 }
 
 export function drawCapsule (ctx, c, tick) {
-    ctx.save(); ctx.translate(Math.round(c.x), Math.round(c.y))
+    const recoil = c.recoil || 0   // #2852: jettison snap (freshly-cut pod only)
+    const puff = c.puff || 0       // #2852: sand kick on touchdown
+    const lift = recoil >= 4 ? -2 : recoil > 0 ? -1 : 0
+    ctx.save(); ctx.translate(Math.round(c.x), Math.round(c.y) + lift)
+    if (recoil > 0) {
+        // the hooks: two cable stubs off the top, tips flicking open as they part
+        ctx.fillStyle = '#20242c'
+        ctx.fillRect(-6, -9, 1, 3); ctx.fillRect(5, -9, 1, 3)
+        if (recoil <= 3) { ctx.fillStyle = '#5a6450'; ctx.fillRect(-8, -11, 1, 3); ctx.fillRect(7, -11, 1, 3) }
+    }
     const pulse = Math.floor(tick / 8) % 2
     ctx.fillStyle = pulse ? C.capsuleLit : C.capsule
     ctx.fillRect(-8, -6, 16, 12)
@@ -502,6 +521,14 @@ export function drawCapsule (ctx, c, tick) {
     // sparkle trail
     ctx.fillStyle = pulse ? '#fff2b0' : '#ffb347'
     ctx.fillRect(10, -1, 3, 2); ctx.fillRect(15, -2 + (tick % 3), 2, 1)
+    if (puff > 0) {
+        // #2852 touchdown: three sand specks kicked out, deterministic arcing
+        const k = 12 - puff
+        ctx.fillStyle = k % 2 ? '#c2a06a' : '#8f7750'
+        ctx.fillRect(-9 - k, 3 + (k % 3), 2, 2)
+        ctx.fillRect(8 + k, 4 - (k % 2), 2, 1)
+        ctx.fillRect(-2 - Math.floor(k / 2), 5, 1, 1)
+    }
     ctx.restore()
 }
 

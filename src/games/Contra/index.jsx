@@ -83,8 +83,12 @@ const sfx = {
     volley: () => { [520, 660, 780, 1040].forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.1, 'triangle', 0.06), i * 70)) },
     // #2847 pod carriers: the courier's low engine wash, and the cargo thunk
     // as the pod leaves the hooks (ART.md bar 4 — a sound on every action).
-    flyin: () => { audioController.playSweep(90, 150, 0.5, 'sawtooth', 0.028); audioController.playSweep(140, 90, 0.5, 'sawtooth', 0.022) },
+    // #2852: the wash gains a ~6 Hz rotor beat (three delayed thumps) — the
+    // cabinet's courier arrives with a chop, not a hum; and the pod's landing
+    // gets a soft sand hiss of its own.
+    flyin: () => { audioController.playSweep(90, 150, 0.5, 'sawtooth', 0.028); audioController.playSweep(140, 90, 0.5, 'sawtooth', 0.022); for (let i = 0; i < 3; i++) audioController.playTone(64, 0.05, 'triangle', 0.05, i * 0.16) },
     cargo: () => { audioController.playSweep(420, 180, 0.14, 'triangle', 0.06); audioController.playNoise(0.05, 0.03) },
+    dust: () => { audioController.playNoise(0.07, 0.05); audioController.playSweep(200, 90, 0.08, 'triangle', 0.03) },
     roar: () => { audioController.playNoise(0.9, 0.14); audioController.playSweep(120, 30, 0.9, 'sawtooth', 0.1); setTimeout(() => audioController.playSweep(90, 25, 0.6, 'triangle', 0.09), 250) },
 }
 

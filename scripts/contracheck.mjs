@@ -21,7 +21,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT } from '../src/games/Contra/sim.js'
-import { drawCapsule, seatTagState, TAG_WARN } from '../src/games/Contra/art.js'
+import { drawCapsule, drawCarrier, seatTagState, TAG_WARN } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -925,6 +925,85 @@ const mkBoss = (seed = 7) => {
     g2.carriers.push({ x: 300, y: CARRIER_ALT[1], vx: CFG.carrierVx, hp: 2, kind: 'laser', dead: false })
     r.check('#2847 couriers ride the state hash (a dropped courier diverges)', stateHash(g1) !== stateHash(g2))
 }
+{
+    // ---- #2852 pod-carrier polish: the snap, the puff, the rotor disc ----
+    // Jettison snap: the pod hangs at release while the cable recoil lasts,
+    // THEN falls — nothing just appears-and-drops. Touchdown kicks exactly one
+    // dust event with a 12-tick speck puff, and the pod stays collectable.
+    const gs = makeGame(11)
+    gs.p2.out = true
+    const yC = CARRIER_ALT[0]
+    gs.carriers.push({ x: gs.p.x + 60, y: yC, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: 'spread', dead: false })
+    for (let i = 0; i < 2 && gs.carriers.length; i++) {
+        gs.pb.push({ x: gs.carriers[0].x, y: yC + 5, vx: 5.5, vy: 0, k: 'r' })
+        step(gs, {})
+    }
+    const pod = gs.pods[0]
+    r.check('#2852 jettison stamps a cable-recoil snap on the pod', !!pod && pod.recoil > 0 && pod.recoil <= 6, pod ? `recoil=${pod.recoil}` : 'no pod')
+    if (pod) {
+        const yHold = pod.y
+        let snapTicks = 0
+        while (pod.recoil > 0 && snapTicks < 8) { step(gs, {}); snapTicks++ }
+        r.check('#2852 the load hangs while the hooks part (no fall during snap)', pod.y === yHold && snapTicks >= 4, `dy=${(pod.y - yHold).toFixed(2)} snapTicks=${snapTicks}`)
+        let fell = false
+        for (let i = 0; i < 8 && !fell; i++) { step(gs, {}); fell = pod.y > yHold }
+        r.check('#2852 gravity resumes the beat after the snap', fell)
+        let dusts = 0
+        let landed = -1
+        gs.ev.length = 0
+        for (let i = 0; i < 300 && (landed < 0 || i < landed + 14); i++) {
+            step(gs, {})
+            dusts += gs.ev.filter((e) => e.type === 'dust').length
+            gs.ev.length = 0
+            if (landed < 0 && pod.puff > 0 && pod.y >= CFG.ground - 2) landed = i
+        }
+        r.check('#2852 touchdown kicks exactly one dust event at the deck', dusts === 1 && landed >= 0, `dusts=${dusts} landed@${landed}`)
+        r.check('#2852 the puff rides the pod and the pod stays collectable', pod.puff >= 0 && pod.y >= CFG.ground - 2, `puff=${pod.puff}`)
+        gs.p.x = pod.x; gs.p.inv = 100000
+        step(gs, {})
+        r.check('#2852 the snapped, puffed pod still delivers its gun', gs.p.weapon === 'spread' && gs.pods.length === 0, `weapon=${gs.p.weapon} pods=${gs.pods.length}`)
+    } else {
+        r.check('#2852 the load hangs while the hooks part (no fall during snap)', false, 'no pod to hang')
+        r.check('#2852 gravity resumes the beat after the snap', false, 'no pod')
+        r.check('#2852 touchdown kicks exactly one dust event at the deck', false, 'no pod')
+        r.check('#2852 the puff rides the pod and the pod stays collectable', false, 'no pod')
+        r.check('#2852 the snapped, puffed pod still delivers its gun', false, 'no pod')
+    }
+    // rotor read: a translucent disc sweep under TWO counter-phase blade rows —
+    // never a single 1-px antenna line (the #2852 complaint).
+    {
+        const calls = []
+        let alpha = 1
+        const ctx = {
+            save () {}, restore () {}, translate () {},
+            set fillStyle (v) { this.f = v }, get fillStyle () { return this.f },
+            set globalAlpha (v) { alpha = v }, get globalAlpha () { return alpha },
+            fillRect (x, y, w, h) { calls.push({ x, y, w, h, a: alpha }) },
+        }
+        drawCarrier(ctx, { x: 0, y: 0, hp: 2 }, 0)
+        const disc = calls.some((k) => k.a < 1 && k.w >= 30)
+        const bladeA = calls.some((k) => k.h === 1 && k.y === -12 && k.w >= 20)
+        const bladeB = calls.some((k) => k.h === 1 && k.y === -11 && k.w >= 20)
+        r.check('#2852 the rotor reads as a disc: translucent sweep + two blade rows', disc && bladeA && bladeB, `disc=${disc} blades=${bladeA}/${bladeB}`)
+    }
+    // hook frames: a recoiling pod draws its cut cables, tips flicking open.
+    {
+        const frames = (recoil) => {
+            const calls = []
+            const ctx = {
+                save () {}, restore () {}, translate () {},
+                set fillStyle (v) { this.f = v }, get fillStyle () { return this.f },
+                set globalAlpha (v) {}, get globalAlpha () { return 1 },
+                fillRect (x, y, w, h) { calls.push({ x, y, w, h }) },
+            }
+            drawCapsule(ctx, { x: 0, y: 0, kind: 'laser', recoil }, 0)
+            return calls
+        }
+        const early = frames(6), late = frames(2)
+        r.check('#2852 the jettison draws cut-cable stubs that flick open', early.filter((k) => k.y === -9 && k.h === 3).length === 2 && late.some((k) => k.y === -11), `stubs=${early.filter((k) => k.y === -9 && k.h === 3).length} tips=${late.some((k) => k.y === -11)}`)
+        r.check('#2852 a settled pod draws no hooks (cables only at the snap)', frames(0).filter((k) => k.y === -9 && k.h === 3).length === 0)
+    }
+}
 
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
@@ -1146,6 +1225,113 @@ if (MUTANT) {
                 return crossed
                     ? null
                     : 'HARM NAMED: beams die at the cannon housings again - the laser stops dead at the mount where the bodies law says it flies on; pierce stops at the wall'
+            },
+        },
+        // #2852 pod-carrier polish laws — each named harm must kill a pin.
+        {
+            name: 'no-snap',
+            anchor: 'vx: CFG.podVx, vy: 0, kind: cr.kind, recoil: 6, puff: 0',
+            plant: 'vx: CFG.podVx, vy: 0, kind: cr.kind, recoil: 0, puff: 0 /* MUTANT(no-snap): the cargo drops dead on the cut */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(11)
+                gs.p2.out = true
+                gs.carriers.push({ x: gs.p.x + 60, y: mod.CARRIER_ALT[0], vx: mod.CFG.carrierVx, hp: mod.CFG.carrierHp, kind: 'spread', dead: false })
+                for (let i = 0; i < 2 && gs.carriers.length; i++) {
+                    gs.pb.push({ x: gs.carriers[0].x, y: mod.CARRIER_ALT[0] + 5, vx: 5.5, vy: 0, k: 'r' })
+                    mod.step(gs, {})
+                }
+                const pod = gs.pods[0]
+                return pod && !(pod.recoil > 0)
+                    ? 'HARM NAMED: the jettison has no snap - the pod appears and drops with nothing selling the release; the hooks never part'
+                    : null
+            },
+        },
+        {
+            name: 'dry-landing',
+            anchor: "if (c.vy > 0) { c.puff = 12; gs.ev.push({ type: 'dust', k: c.kind }) }",
+            plant: 'if (false && c.vy > 0) { /* MUTANT(dry-landing): touchdown kicks no sand */ }',
+            harm: async (mod) => {
+                const gs = mod.makeGame(11)
+                gs.p2.out = true
+                gs.carriers.push({ x: gs.p.x + 60, y: mod.CARRIER_ALT[0], vx: mod.CFG.carrierVx, hp: mod.CFG.carrierHp, kind: 'spread', dead: false })
+                for (let i = 0; i < 2 && gs.carriers.length; i++) {
+                    gs.pb.push({ x: gs.carriers[0].x, y: mod.CARRIER_ALT[0] + 5, vx: 5.5, vy: 0, k: 'r' })
+                    mod.step(gs, {})
+                }
+                gs.ev.length = 0
+                let touched = false
+                for (let i = 0; i < 240 && !touched; i++) {
+                    mod.step(gs, {})
+                    if (gs.ev.some((e) => e.type === 'dust')) touched = 'dust'
+                    if (gs.pods[0] && gs.pods[0].puff > 0) touched = touched || 'puff'
+                    gs.ev.length = 0
+                    if (gs.pods[0] && gs.pods[0].y >= mod.CFG.ground - 2 && gs.pods[0].vy === 0 && touched === true) break
+                }
+                const settled = gs.pods[0] && gs.pods[0].y >= mod.CFG.ground - 2
+                return settled && !touched
+                    ? 'HARM NAMED: the pod lands dry - cargo hits the deck with no puff and no sound; the eye never sees the touchdown'
+                    : null
+            },
+        },
+        {
+            name: 'antenna-rotor',
+            file: join(ROOT, 'src/games/Contra/art.js'),
+            mod: 'art.js',
+            anchor: 'ctx.fillRect(-19, -12, 38, 2)',
+            plant: '/* MUTANT(antenna-rotor): the translucent disc sweep is gone */',
+            harm: async (mod) => {
+                const calls = []
+                let alpha = 1
+                const ctx = {
+                    save () {}, restore () {}, translate () {},
+                    set fillStyle (v) { this.f = v }, get fillStyle () { return this.f },
+                    set globalAlpha (v) { alpha = v }, get globalAlpha () { return alpha },
+                    fillRect (x, y, w, h) { calls.push({ x, y, w, h, a: alpha }) },
+                }
+                mod.drawCarrier(ctx, { x: 0, y: 0, hp: 2 }, 0)
+                return !calls.some((k) => k.a < 1 && k.w >= 30)
+                    ? 'HARM NAMED: the rotor lost its disc sweep - two chopping lines over bare sky read as an antenna, the exact #2852 complaint'
+                    : null
+            },
+        },
+        {
+            name: 'one-blade',
+            file: join(ROOT, 'src/games/Contra/art.js'),
+            mod: 'art.js',
+            anchor: 'ctx.fillRect(-wB, -11, wB * 2, 1)',
+            plant: '/* MUTANT(one-blade): the counter-phase blade line is gone */',
+            harm: async (mod) => {
+                const calls = []
+                const ctx = {
+                    save () {}, restore () {}, translate () {},
+                    set fillStyle (v) { this.f = v }, get fillStyle () { return this.f },
+                    set globalAlpha (v) {}, get globalAlpha () { return 1 },
+                    fillRect (x, y, w, h) { calls.push({ x, y, w, h }) },
+                }
+                mod.drawCarrier(ctx, { x: 0, y: 0, hp: 2 }, 0)
+                return !calls.some((k) => k.h === 1 && k.y === -11 && k.w >= 20)
+                    ? 'HARM NAMED: a single blade line again - without the counter-phase row the chop reads as a stick, not a spinning disc'
+                    : null
+            },
+        },
+        {
+            name: 'no-hooks',
+            file: join(ROOT, 'src/games/Contra/art.js'),
+            mod: 'art.js',
+            anchor: 'ctx.fillRect(-6, -9, 1, 3); ctx.fillRect(5, -9, 1, 3)',
+            plant: '/* MUTANT(no-hooks): the cut cables never draw */',
+            harm: async (mod) => {
+                const calls = []
+                const ctx = {
+                    save () {}, restore () {}, translate () {},
+                    set fillStyle (v) { this.f = v }, get fillStyle () { return this.f },
+                    set globalAlpha (v) {}, get globalAlpha () { return 1 },
+                    fillRect (x, y, w, h) { calls.push({ x, y, w, h }) },
+                }
+                mod.drawCapsule(ctx, { x: 0, y: 0, kind: 'laser', recoil: 6 }, 0)
+                return calls.filter((k) => k.y === -9 && k.h === 3).length === 0
+                    ? 'HARM NAMED: a recoiling pod draws no cables - nothing ever held it, so the snap is invisible'
+                    : null
             },
         },
     ]
