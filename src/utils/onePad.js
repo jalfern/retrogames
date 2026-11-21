@@ -349,7 +349,7 @@ export function clearSlot(n) {
 // True while slot n has anything held down (direction, button, stick, aim, pointer).
 export function slotActive(n) {
     const p = slot(n)
-    return p.up || p.down || p.left || p.right || p.a || p.b || p.start
+    return p.up || p.down || p.left || p.right || p.a || p.b || p.start || p.boost
         || p.x !== 0 || p.y !== 0 || p.ax !== 0 || p.ay !== 0
         || p.aimUp || p.aimDown || p.aimLeft || p.aimRight
         || p.pointer.down || p.pointer.alt
