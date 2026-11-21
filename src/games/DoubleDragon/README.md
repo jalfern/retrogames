@@ -64,6 +64,13 @@ S2 (the weapons wall, #2807):
   nearest open lane.
 - **One weapon in hand** — walking over a second weapon while armed does
   nothing; death costs what you hold (the stick law, generalized).
+- **The stick beat** (#2819 polish) — landed steel stands in the asphalt ~20
+  ticks, quivering, before it becomes grabbable; a blade in the ground cannot
+  be yanked out. The whip holds a white crack-flash for 4 ticks on the tick
+  it bites (`b.lash`); splintered wood reports its spot (`gs.fx`, juice-only)
+  so the shell showers staves there, and its cargo clatters out with two
+  decaying hops (`p.clatter`). Labels tint per weapon (steel white / leather
+  brown / wood gold) and a knife on the street winks steel every 24 frames.
 
 S3 (the hideout, #2807):
 
@@ -95,7 +102,7 @@ Pad: JUMP / KICK / PUNCH (`thirdAction`, #2324).
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 74 checks: boots, laws, casters, duel, rescue, winnable, browser leg
+npm run ddragoncheck                    # 81 checks: boots, laws, casters, duel, rescue, winnable, browser leg
 npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```

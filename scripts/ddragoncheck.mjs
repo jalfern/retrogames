@@ -294,6 +294,56 @@ const runFull = (seed, max = 60000) => {
     r.check('the loop re-arms Walnuts Street: barrels refill for the next pass', g2.mode === 'play' && g2.stage === 1 && g2.barrels.length === 3 && g2.barrels.every((q) => q.hp === CFG.barrelHp), `mode=${g2.mode} stage=${g2.stage} barrels=${g2.barrels.map((q) => q.hp).join('/')}`)
 }
 
+{ // #2819 S2 polish laws: the blade sticks before it is steel again, the whip
+// flashes on the bite tick, and splintered wood clatters its cargo out
+    const gs = makeGame(24)
+    gs.waveIdx = 9; gs.waveActive = false
+    gs.projectiles.push({ id: 900, x: 100, y: 170, vx: CFG.knifeSpeed, spin: 0, side: 'billy' })
+    let stuckP = null
+    for (let i = 0; i < 400 && !stuckP; i++) {
+        step(gs, {}); gs.events.length = 0
+        stuckP = gs.pickups.find((p) => p.kind === 'knife' && p.stick > 0) || null
+    }
+    r.check('polish: landed steel stands in the ground for a beat before it becomes a pickup',
+        !!stuckP && stuckP.stick > 0 && stuckP.stick <= CFG.knifeStick, `stick=${stuckP ? stuckP.stick : 'never'}`)
+    gs.billy.x = stuckP.x; gs.billy.y = stuckP.y
+    // park the camera with him — an unlocked cam drags a man at the stage's
+    // edge back onto the visible band (the seated-fixture law, edge edition)
+    gs.camLock = true; gs.camX = Math.max(0, stuckP.x - 160)
+    step(gs, {}); gs.events.length = 0
+    r.check('polish: a blade in the ground cannot be yanked out — the stick beat holds',
+        gs.billy.weapon === null && stuckP.stick > 0 && Math.abs(gs.billy.x - stuckP.x) <= 10,
+        `weapon=${gs.billy.weapon} stick=${stuckP.stick} gap=${(gs.billy.x - stuckP.x).toFixed(1)}`)
+    for (let i = 0; i < 30 && gs.billy.weapon === null; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('polish: when the stick beat ends the steel is yours again',
+        gs.billy.weapon === 'knife', `weapon=${gs.billy.weapon} stick=${stuckP.stick}`)
+
+    const g2 = makeGame(25)
+    g2.billy.weapon = 'whip'; g2.billy.face = 1
+    const w = mk('williams', g2.billy.x + 28, g2.billy.y, { attackCooldown: 999 })
+    g2.enemies.push(w)
+    let flashed = false
+    step(g2, { punch: true }); g2.events.length = 0
+    for (let i = 0; i < 28; i++) { step(g2, {}); g2.events.length = 0; if (g2.billy.lash > 0 && w.hp < 4) flashed = true }
+    r.check('polish: the whip crack-flashes on the tick it bites', flashed, `lash=${g2.billy.lash} hp=${w.hp}`)
+
+    const g3 = makeGame(26)
+    g3.camLock = true; g3.waveIdx = 9; g3.waveActive = false
+    const bar = g3.barrels.find((q) => q.x === 250)
+    g3.camX = 106
+    g3.billy.x = bar.x - 14; g3.billy.y = bar.y; g3.billy.face = 1
+    let dropped = null, clatterAt = 0, fxAt = null
+    for (let i = 0; i < 70; i++) {
+        step(g3, { b: i % 20 === 0 }); g3.events.length = 0
+        if (!fxAt && g3.fx) fxAt = { x: g3.fx.x, y: g3.fx.y }
+        if (!dropped) { const d = g3.pickups.find((p) => ['knife', 'whip', 'stick'].includes(p.kind)); if (d) { dropped = d; clatterAt = d.clatter || 0 } }
+    }
+    r.check('polish: the break tells the shell where the wood went (shard spawn point)',
+        !!fxAt && Math.abs(fxAt.x - bar.x) <= 2, `fx=${fxAt ? fxAt.x : 'never'} vs barrel ${bar.x}`)
+    r.check('polish: the splintered wood spits its steel with a clatter (bounce)',
+        !!dropped && clatterAt >= 10, `dropped=${dropped ? dropped.kind : 'nothing'} clatter@spawn=${clatterAt}`)
+}
+
 // ----------------------------------------------------------- S3 the hideout ---
 { // the stage door: the yard opens furnished
     const gs = runBot(10)

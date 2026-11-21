@@ -64,6 +64,7 @@ export default function DoubleDragon() {
             throw: () => audioController.playSweep(900, 300, 0.12, 'triangle', 0.10),
             whip: () => { audioController.playNoise(0.06, 0.14); audioController.playSweep(1600, 300, 0.08, 'sawtooth', 0.08) },
             knife_hit: () => { audioController.playTone(180, 0.12, 'square', 0.16); shake = Math.max(shake, 3) },
+            blade_stick: () => { audioController.playTone(150, 0.05, 'triangle', 0.1); audioController.playTone(1150, 0.04, 'square', 0.04, 0.02) },
             barrel_hit: () => { audioController.playTone(110, 0.06, 'square', 0.12); shake = Math.max(shake, 2) },
             barrel_break: () => { audioController.playNoise(0.18, 0.16); audioController.playTone(70, 0.14, 'square', 0.14, 0.03); shake = Math.max(shake, 5) },
             // S3 the hideout cues
@@ -99,6 +100,19 @@ export default function DoubleDragon() {
                 else if (ev === 'hit_hard' || ev === 'ko') sparks(8, true, 0)
                 else if (ev === 'stomp') sparks(6, true, 2)
                 else if (ev === 'rescue') sparks(14, true, 1)
+                // #2819 item 3: the cabinet showers staves outward when a barrel goes
+                else if (ev === 'barrel_break' && gs.fx) {
+                    const fx = gs.fx
+                    gs.fx = null
+                    for (let i = 0; i < 10; i++) {
+                        part.push({
+                            x: fx.x + (Math.random() - 0.5) * 12,
+                            y: fx.y - 10 + (Math.random() - 0.5) * 8,
+                            vx: (Math.random() - 0.5) * 3.2, vy: -Math.random() * 2.2 - 0.4,
+                            t: 14 + Math.floor(Math.random() * 10), c: 3,
+                        })
+                    }
+                }
             }
             gs.events.length = 0
         }
@@ -162,7 +176,7 @@ export default function DoubleDragon() {
             beings.sort((a, b) => a.y - b.y)
             for (const q of beings) {
                 if (q.kind === 'enemy') drawEnemy(ctx, q.o, gs.camX)
-                else if (q.kind === 'billy') drawBilly(ctx, q.o, gs.camX)
+                else if (q.kind === 'billy') drawBilly(ctx, q.o, gs.camX, gs.barrels)
                 else if (q.kind === 'barrel') drawBarrel(ctx, q.o, gs.camX)
                 else if (q.kind === 'marian') drawMarian(ctx, q.o, gs.camX)
                 else drawPickup(ctx, q.o, gs.camX)
@@ -173,7 +187,7 @@ export default function DoubleDragon() {
                 const q = part[i]
                 q.x += q.vx; q.y += q.vy; q.vy += 0.1; q.t -= 1
                 if (q.t <= 0) { part.splice(i, 1); continue }
-                ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : '#d9dde2'
+                ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : q.c === 3 ? '#a8763a' : '#d9dde2'
                 ctx.fillRect(Math.round(q.x - gs.camX), Math.round(q.y), 2, 2)
             }
             for (const p of (gs.stage === 2 ? PROPS_YARD : PROPS)) drawProp(ctx, p, gs.camX)
