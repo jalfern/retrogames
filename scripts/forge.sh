@@ -150,7 +150,7 @@ PROMPT="You are THE FORGE on slot $SLOT. Open scripts/FORGE.md and execute its s
 # #1258: the slot names its port and its claim script — the playbook's ladder
 # stays the same, only claim mechanics and the dev server differ per slot.
 export DEV_PORT=$DEV
-PROMPT="$PROMPT Slot notes (#1258): claim with scripts/forge-claim.sh <n> $SLOT \"<plan>\"; your dev server port is $DEV — start yours with \`npm run dev -- --port $DEV --strictPort\` (DEV_PORT is exported; browser scripts read it). Never use or stop another lane's port."
+PROMPT="$PROMPT Slot notes (#1258): claim with scripts/forge-claim.sh <n> $SLOT \"<plan>\"; your dev server port is $DEV — start yours with \`npm run dev -- --port $DEV --strictPort\` (DEV_PORT is exported; browser scripts read it). Never use or stop another lane's port. Stop your dev server ONLY with \`scripts/devstop.sh\` (kills by port); never \`pkill -f\` a pattern — lane prompts contain \"npm run dev\", so a pattern kill ends the lanes themselves."
 
 # target (#1258): the warden writes its assignment to /tmp/forge/target-<slot>
 # right before kickstart; fresh (<20 min) means it belongs to THIS fire. A
