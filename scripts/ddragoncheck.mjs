@@ -26,7 +26,8 @@ import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, W, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain } from '../src/games/DoubleDragon/sim.js'
+import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain } from '../src/games/DoubleDragon/sim.js'
+import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD } from '../src/games/DoubleDragon/art.js'
 import { p2Merge, p2Seat } from '../src/games/DoubleDragon/p2pad.js'
 import { pressSlot, releaseSlot, slotPad, slotActive, clearAllSlots } from '../src/utils/onePad.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -1179,8 +1180,125 @@ if (MUTANT) {
         }
         r.check('mutant(seat-swap) goes RED: harm named', bad !== null, bad || 'harm NOT named — mutant survived')
     }
+    {
+        // #2877 — the yard art mutants: light law flipped, street gate broken,
+        // seeded floor turned to shuffle. Each must be seen to do its harm.
+        const ART = join(ROOT, 'src/games/DoubleDragon/art.js')
+        const artPlants = [
+            {
+                name: 'same-phase',
+                anchor: 'export const castAt = (wx, tick, camX) => -lampSwayAt(lampNAt(wx, camX), tick)',
+                plant: 'export const castAt = (wx, tick, camX) => lampSwayAt(lampNAt(wx, camX), tick) /* MUTANT(same-phase): shadows ride WITH the lamp */',
+                harm: async () => {
+                    const m = await import(`../src/games/DoubleDragon/art.js?mutant=same-phase${Date.now()}`)
+                    const sw = m.lampSwayAt(3, 100)
+                    return sw !== 0 && m.castAt(740, 100, 640) === sw
+                        ? 'HARM NAMED: the shadow hangs on the LAMP side of the body — light leans west, shadow leans east, and every grounded sprite reads as floating toward the light; the yard\'s depth (the belt\'s whole language) collapses'
+                        : null
+                },
+            },
+            {
+                name: 'street-on',
+                anchor: 'export const castPx = (wx) => (castOn ? castAt(wx, castTick, castCam) : 0)',
+                plant: 'export const castPx = (wx) => (castOn ? 0 : castAt(wx, castTick, castCam)) /* MUTANT(street-on): the gate flips */',
+                harm: async () => {
+                    const m = await import(`../src/games/DoubleDragon/art.js?mutant=street-on${Date.now()}`)
+                    m.setLampLight(100, 640, false)
+                    return m.castPx(740) !== 0
+                        ? 'HARM NAMED: Walnuts Street shadows drift under sodium fittings that stand dead still — the floor betrays its own light source, and the two stages read as two different games wearing one skin'
+                        : null
+                },
+            },
+            {
+                name: 'shimmer',
+                anchor: 'wx: 150 * i + 70 + Math.round((R(i * 91 + c * 17) - 0.5) * 52),',
+                plant: 'wx: 150 * i + 70 + Math.round((Math.random() - 0.5) * 52), /* MUTANT(shimmer): unseeded floor */',
+                harm: async () => {
+                    const a = await import(`../src/games/DoubleDragon/art.js?mutant=shimmerA${Date.now()}`)
+                    const b = await import(`../src/games/DoubleDragon/art.js?mutant=shimmerB${Date.now() + 1}`)
+                    return JSON.stringify(a.SWARF_SPOTS) === JSON.stringify(b.SWARF_SPOTS)
+                        ? null
+                        : 'HARM NAMED: the swarf re-rolls every mount — the ground shimmers under still air, fight-reads relative to the floor jitter, and the concrete stops being the same yard twice in a row'
+                },
+            },
+        ]
+        for (const p of artPlants) {
+            const asrc = readFileSync(ART, 'utf8')
+            if (!asrc.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — art.js moved; the plant must be re-anchored`); process.exit(2) }
+            writeFileSync(ART, asrc.replace(p.anchor, p.plant))
+            let bad
+            try {
+                bad = 'dynamic-import'
+                bad = await p.harm()
+            } finally {
+                writeFileSync(ART, asrc)
+            }
+            r.check(`mutant(${p.name}) goes RED: harm named`, bad !== null, bad || 'harm NOT named — mutant survived')
+        }
+    }
     console.log('\nmutant run: expected red on the planted line.')
     r.exit()
+}
+
+// ------------------------------------------- #2877: the yard art laws ---
+// cast law: the swaying chain-lamps are the yard's key light — the pools ride
+// them and every grounded shadow leans AGAINST the lamp overhead; the street's
+// dead sodium fittings cast nothing. Plus the seeded floor: swarf that never
+// shimmers, and one drum that keeps the drip's beat.
+{
+    const SEEDS = [0, 7, 34, 60, 100, 170, 213, 999]
+    const CAMS = [0, 55, 137, 420, 640, 900]
+    let identOk = true, maxAbs = 0
+    for (const t of SEEDS) for (const cam of CAMS) for (let n = -2; n <= 8; n++) {
+        const wx = n * 176 + 60 + cam * 0.15          // the floor point under lamp n
+        if (lampNAt(wx, cam) !== n || castAt(wx, t, cam) !== -lampSwayAt(n, t)) identOk = false
+        maxAbs = Math.max(maxAbs, Math.abs(castAt(wx, t, cam)))
+    }
+    r.check('#2877 cast law: every floor point reads its nearest lamp; the cast is anti-phase with its sway (the pools ride the same formula)',
+        identOk && maxAbs <= 2, `max|cast|=${maxAbs}`)
+    const seen = new Set()
+    for (let t = 0; t < 214; t++) seen.add(castAt(740, t, 640))
+    r.check('#2877: the yard breathes — one lamp cycle drives the cast through every lean',
+        seen.size >= 3, `values=${[...seen].sort((a, b) => a - b).join(',')}`)
+    setLampLight(100, 640, false)
+    let streetStill = true
+    for (let t = 0; t < 214; t++) if (castPx(740) !== 0) streetStill = false
+    r.check('#2877: the street stands still — the cast law gates off outside the yard (sodium lamps are dead fittings)',
+        streetStill, 'street cast off')
+    let yardDrift = false
+    for (let t = 0; t < 214; t++) { setLampLight(t, 640, true); if (castPx(740) !== 0) yardDrift = true }
+    r.check('#2877: inside the yard the cast actually moves', yardDrift, 'drift present')
+    setLampLight(0, 0, false)
+}
+{
+    const seeps = [70, 220, 370, 520]                     // the yard's four oil pools
+    const intsOk = SWARF_SPOTS.length === 28 && SWARF_SPOTS.every((s) => Number.isInteger(s.wx) && Number.isInteger(s.wy) && [0, 1, 2].includes(s.kind))
+    r.check('#2877 swarf: 28 integer spots cut three ways (bolt head / swarf curl / steel chip)',
+        intsOk, `n=${SWARF_SPOTS.length}`)
+    const nearOil = SWARF_SPOTS.every((s) => seeps.some((c) => Math.abs(s.wx - c) <= 26))
+    r.check('#2877 swarf: the pickings lie by the oil seeps — the floor lives between the pours, not at random',
+        nearOil, 'all within 26px of a seep')
+    const bandOk = SWARF_SPOTS.every((s) => s.wy >= DEEP_TOP + 8 && s.wy <= H - 6)
+    const frozen = Object.isFrozen(SWARF_SPOTS) && SWARF_SPOTS.every(Object.isFrozen)
+    r.check('#2877 swarf: spots sit on the floor band and freeze once built — the ground never shimmers',
+        bandOk && frozen, `band=${bandOk} frozen=${frozen}`)
+}
+{
+    let cycleOk = true, splashes = 0, prev = false
+    for (let t = 0; t < 144; t++) {
+        const d = dripPhase(t)
+        if (d.ph < 40 && !(d.fall >= 0 && d.fall <= 8)) cycleOk = false
+        if (d.ph >= 40 && d.fall !== -1) cycleOk = false
+        if (d.splash && !prev) splashes += 1
+        prev = d.splash
+        const e = dripPhase(t + DRIP_T)
+        if (e.fall !== d.fall || e.splash !== d.splash) cycleOk = false
+    }
+    r.check('#2877 drip: one 72-tick beat — speck falls 0..8, hides, and the wet spot pulses exactly once per cycle',
+        cycleOk && splashes === 2 && DRIP_T === 72, `splashes=${splashes}`)
+    const leaks = PROPS_YARD.filter((p) => p.leak)
+    r.check('#2877: exactly one drum leaks — one beat in the yard, not a chorus',
+        leaks.length === 1 && leaks[0].kind === 'drum', `leaks=${leaks.length}`)
 }
 
 // ------------------------------------------------------------- browser leg ---
@@ -1347,6 +1465,56 @@ const browser = await launch()
     await page.waitForTimeout(300)
     const backHome = await page.evaluate(() => window.__ddTest.probe())
     r.check('game over returns to attract on any key', backHome.screen === 'attract', `screen=${backHome.screen}`)
+
+    // #2877 pixel legs: in the yard the ground shadow exists AND it MOVES.
+    // Fresh cabinet, warp to the end; park the dragon at x 850 — inside the
+    // camera's clamp (it stays 640 there) and clear of crates, drums, seeps
+    // and Marian herself.
+    await page.evaluate(() => window.__game.reset(23))
+    await page.waitForTimeout(150)
+    await page.evaluate(() => { window.__ddTest.setup({ warp: 'marian', clearEnemies: true }); window.__ddTest.setup({ x: 850 }) })
+    await page.waitForTimeout(600)
+    const yardP = await page.evaluate(() => window.__ddTest.probe())
+    r.check('#2877 setup: the yard stands with the end camera locked (cast law live)',
+        yardP.stage === 2 && Math.abs(yardP.cam - 640) < 1 && Math.abs(yardP.x - 850) < 1, `stage=${yardP.stage} cam=${yardP.cam} x=${yardP.x}`)
+    const shadowAt = () => page.evaluate(() => {
+        const p = window.__ddTest.probe()
+        const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+        if (!cv) return { tick: p.tick, off: 0, delta: -1, white: 99 }
+        const g = cv.getContext('2d')
+        const sx = Math.round(p.x - p.cam)
+        const sy = p.y + 1                       // the shadow ellipse's centre row
+        const d = g.getImageData(sx - 14, sy, 29, 1).data
+        const lum = (i) => 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]
+        let dark = 0, dl = Infinity, white = 0
+        const refs = []
+        for (let i = 0; i < 29; i++) {
+            const l = lum(i)
+            if (l > 180) white += 1              // banner glyphs — the road sign has passed when this is 0
+            if (i >= 5 && i <= 23 && l < dl) { dl = l; dark = i - 14 }
+            if (i < 5 || i > 23) refs.push(l)
+        }
+        return { tick: p.tick, off: dark, delta: refs.reduce((a, b) => a + b, 0) / refs.length - dl, white }
+    })
+    // the stage-entry banner rides the yard for a couple of seconds — its dark
+    // board lies about the floor, so the probe waits for the sign to clear.
+    let firstShadow = await shadowAt()
+    for (let i = 0; i < 45 && (firstShadow.white > 0 || firstShadow.delta < 10); i++) {
+        await page.waitForTimeout(100)
+        firstShadow = await shadowAt()
+    }
+    r.check('#2877: the dragon casts a shadow in the yard — the floor row under his feet darkens (banner cleared first)',
+        firstShadow.delta >= 10 && firstShadow.white === 0, `floor−dark=${firstShadow.delta.toFixed(1)} white=${firstShadow.white}`)
+    const cols = new Set()
+    const tSh = firstShadow.tick
+    for (let i = 0; i < 70; i++) {
+        const s = await shadowAt()
+        cols.add(s.off)
+        if (s.tick - tSh >= 220) break
+        await page.waitForTimeout(40)
+    }
+    r.check('#2877: the shadow MOVES — one lamp cycle slides the darkest column across the concrete',
+        cols.size >= 2, `columns=${[...cols].sort((a, b) => a - b).join(',')}`)
 
     r.check('zero page errors across the whole leg', errs.length === 0, errs.join(' | ') || 'clean')
 }

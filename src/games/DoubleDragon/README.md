@@ -21,8 +21,9 @@ are all shipped).
   silhouettes with lit windows, pylons and sagging wires, chain-link + hedge,
   asphalt with deterministic grain, sodium-lamp glow pools) and the S3 yard —
   corrugated rust wall with riveted sheet joins, transom windows wearing
-  sodium light, pipes and valve wheels, swaying chain-lamps, hazard stripes,
-  oily concrete, `DD`/`87` graffiti. The pixel fighters
+  sodium light, pipes and valve wheels, swaying chain-lamps (the cast law —
+  pools and grounded shadows ride them), hazard stripes, oily concrete with
+  seeded swarf and a leaking drum, `DD`/`87` graffiti. The pixel fighters
   (one parameterised `fighter()` per palette/pose, incl. the duel lieutenant's
   cap-and-sweep), Marian on the post, HUD, banners, and an original 5×7 arcade
   font (43 glyphs, width-checked).
@@ -98,6 +99,14 @@ S3 (the hideout, #2807):
   `rescue-blind` (a run that can never end) is a named mutant.
 - **Stage readout** — the HUD wears `1-1` / `2-1` beside the wave ticks;
   the rescue pays the cabinet's THANKS, BILLY.
+- **The cast law** (#2877) — the swaying chain-lamps are the yard's key
+  light: the warm pools ride their lamp's sway, and every grounded shadow
+  (dragons, goons, Marian, crates, drums, spilled steel) leans AGAINST the
+  lamp overhead, per-spot phase. The street's sodium fittings are dead — the
+  cast gates off outside the yard. Shadows are juice: they ride the render
+  clock, never the sim, never `stateHash`. Same pass: 28 frozen-hash swarf
+  chips by the oil seeps, and one leaking drum keeps a 72-tick drip beat.
+  `same-phase`, `street-on`, `shimmer` name the harms if it breaks.
 
 S4 (the second dragon, #2807):
 
@@ -229,8 +238,8 @@ or the PADS pill) — A jump · B kick · square/triangle/LB punch · d-pad walk
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 126 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, winnable, browser leg
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap must go RED (named)
+npm run ddragoncheck                    # 138 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), winnable, browser leg
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -248,8 +257,10 @@ of nightly 44762398189).
   friend's own controller — a second gamepad or a linked phone (A jump · B
   kick · square/triangle/LB punch), any input seats them drop-in. Two pairs
   of hands, zero shared keys. (The pure keyboard seat remains WASD+F/G/V.)
-- The yard's light pools sway but cast no moving shadows and the floor carries
-  no swarf/drip dressing (#2825 items deferred to a future art pass).
+- **CLOSED by #2877** — the yard now breathes: pools ride the swaying lamps,
+  every grounded shadow leans anti-phase with its lamp (#2825's deferred art
+  pass), the concrete carries seeded swarf by the seeps, and one drum leaks
+  on a 72-tick beat.
 - No combos/chain scoring bonuses; the original scores per-KO with a simple
   chain multiplier — carry added, chain not.
 - Marian arrives tied (S3) but the game opens without the original's
