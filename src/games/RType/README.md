@@ -172,7 +172,7 @@ has that a QA pass could deepen.
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 107 sim+browser laws, four named mutants
+- `scripts/rtypecheck.mjs` — 113 sim+browser laws, four named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
