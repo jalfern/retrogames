@@ -778,6 +778,10 @@ export const GAMES = [
         // that exists today; 'ram' (the Z-machine object tree) and 'hybrid'
         // arrive with AI-PLAN §7 stage 4a/4b.
         sensors: ['transcript'],
+        // #2876: the terminal owns the bottom band (prompt row + AI strip) and
+        // the fixed JALFERN.COM mark sat on the strip's WATCH hint at desktop
+        // sizes — MYST precedent, footer opts out.
+        footer: 'none',
         description: 'The Great Underground Empire. Explore a vast underground world full of treasures, puzzles, and dangers. Watch out for Grues.',
         controls: ['Type commands: GO NORTH, TAKE LAMP, OPEN MAILBOX', 'LOOK: Examine surroundings', 'INVENTORY: Check items', 'SAVE / RESTORE: Save and load game', WATCH_HELP + ' — the explorer brain types the commands (empty prompt: Y; type Y/N answers freely mid-word)'],
     },
@@ -789,6 +793,9 @@ export const GAMES = [
         label: 'ZORK II',
         theme: 'dark',
         sensors: ['transcript'],
+        // #2876: same bottom-band ownership as ZORK I — the strip and prompt
+        // row occupy it, so the fixed watermark opts out.
+        footer: 'none',
         description: 'The Wizard of Frobozz. Continue your underground adventure, but beware the capricious Wizard who haunts these depths.',
         controls: ['Type commands: GO NORTH, TAKE LAMP, OPEN MAILBOX', 'LOOK: Examine surroundings', 'INVENTORY: Check items', 'SAVE / RESTORE: Save and load game']
     },
@@ -800,6 +807,9 @@ export const GAMES = [
         label: 'ZORK III',
         theme: 'dark',
         sensors: ['transcript'],
+        // #2876: same bottom-band ownership as ZORK I — the strip and prompt
+        // row occupy it, so the fixed watermark opts out.
+        footer: 'none',
         description: 'The Dungeon Master. The final chapter of the Zork trilogy. Prove your worth to become the Dungeon Master.',
         controls: ['Type commands: GO NORTH, TAKE LAMP, OPEN MAILBOX', 'LOOK: Examine surroundings', 'INVENTORY: Check items', 'SAVE / RESTORE: Save and load game']
     },
