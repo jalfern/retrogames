@@ -1,68 +1,70 @@
-# STATE.md — The Forge (rewritten at close of slot b, 2026-11-21; committed to
-# main because game code merged: src/games/Contra/sim.js shipped in PR #2856 ->
-# 8f5f534. Rule 4 keeps turning: #2850, #2853, #2855, #2856 — four game-code
-# PRs in a row across the two slots.)
+# STATE.md — The Forge (rewritten at close of slot a, 2026-11-21; committed to
+# main because game code merged: src/games/ShortOrderShout/model.js +
+# src/games/RallyCoDriver/model.js shipped in PR #2861 -> e1de37d. Rule 4 keeps
+# turning: #2853, #2855, #2856, #2861.)
 
 ## PLAYABLE
-- /retrogames/contra — S1–S4 + seat ceremony + pod carriers + **gate pierce
-  law**: fire/laser spark through the cannon housings and keep flying (one
-  take per housing per beam, the bodies law verbatim); ordinary rounds still
-  die at the mount; the shuttered core remains the ONE weak point — a laser
-  bought from the depot now rewrites the gate fight like it rewrites the
-  jungle. Zero gs.r draws; winnable seeds unmoved. contracheck 126/126,
-  mutants 11/11 named (#2854 -> PR #2856).
-- /retrogames/double-dragon — partner personality live (slot a, #2855):
-  guardian law, release law, 13-beat technician cadence. ddragoncheck 112/112.
-- /retrogames/r-type — S1–S4 + S4 wing polish (#2841 -> #2853).
-- Rest of shelf unchanged.
+- /retrogames/contra, /retrogames/double-dragon, /retrogames/r-type — unchanged
+  from slot b's close (gate pierce, partner personality, S4 wings).
+- SOS + Rally pages re-verified 200 post-deploy; gameplay untouched (soscheck
+  107/107, rallycheck 172/172 on the merge — the only game-code diff was three
+  additive `export` keywords in the SOS engine).
 
-## WHAT THIS SESSION DID (slot b)
-- Warden target #2851 REFUSED at claim (slot a's checkpoint 18 min fresh —
-  correct; slot a shipped it as #2855 mid-my-session). Ladder: no steer/halt;
-  `next` #1712 REFUSED (slot a's completion comment 46 min fresh); game-queue
-  empty; QA borrow closed (QA MASTER alive at 5176); flagship stage spent;
-  NEVER-DRY rung: `weakestStage` scored CONTRA weakest at 6 (fb #2852 + #2842
-  + 4 unowned README gaps; DD/R-TYPE held at the time). Filed POLISH #2854,
-  claimed slot b, shipped ~1 h in one PR.
+## WHAT THIS SESSION DID (slot a)
+- Warden target #1712 claimed clean (first try). Shipped PR #2861 (squash
+  e1de37d): PLAICRAFT S2 adapters for SHORT ORDER SHOUT (55 seat features) and
+  RALLY CO-DRIVER (41) — seat-senses model.js per title + replay-verify
+  adapters in the dataset builder. Rally keeps the split-information law in the
+  corpus: driver rows never carry pace-book features, co rows never carry
+  headlight features; weather rides rules->replay ("the rain take reads rain").
+- Evidence: datasetcheck 59/59 (+11 pins: seat partition, crest-honesty race
+  4960 reads/0 leaks, weather round-trip, clean/tampered units ×2, tampered
+  SOS+rally store fails the whole build); 7 mutants RED by design, named
+  (new: SOS + rally adapter-bypass). Production rebuilt twice — version
+  **5dcb62ac…** byte-identical to #2849's: line-neutral, as intended.
+- #1712 stays OPEN + `next` (big-build rule 3: `covers 2+ games` waits on
+  friends' play, not code). All four named co-op titles are now
+  trainable-on-arrival — a friend take from /retrogames/join closes the games
+  line with zero pipeline work in between.
 
 ## BOARD (at close)
-- building: none. building-qa: #2842 (CONTRA ceremony — QA's, per slot a).
-- game-queue: empty. idle-kick at close: `KICK DOUBLE DRAGON 0 weak` — DD is
-  again the weakest unheld title; next free slot takes DD gaps #1..#7 (#3,
-  chain scoring, is the meatiest; slot a's note).
-- feedback (nobody-owned): **#2852** (CONTRA pod-carrier polish — rotor read,
-  pod-hook moment, land juice), **#2857** (DD polish pass, new from slot a),
-  **#2839** harness bug (claim-status.mjs ignores the `FORGE (<slot>):`
-  checkpoint format → liveness locks read dead; small, any lane).
-- #1712 stays `next` (wait-state: friends' takes via /retrogames/join).
-- QA MASTER alive at close (5176).
-- Open jonq (link only): **#2844** (S2 fold ruling; default keep fold),
+- building: #2860 (POLISH DD — friend takes the blue seat, slot b, alive —
+  checkpoint mid-session). building-qa: #2842 (CONTRA ceremony — QA's).
+- game-queue: empty. #1712 `next` (wait-state: friends' takes).
+- feedback (nobody-owned): **#2852** (CONTRA pod-carrier polish), **#2857**
+  (DD partner-personality polish), **#2839** harness bug (claim-status.mjs
+  ignores the `FORGE (<slot>):` checkpoint format → liveness reads dead;
+  small, any lane).
+- Open jonq (link only): **#2844** (S2 fold ruling; default A fold),
   **#2846** (flagship public promotion; default keep private).
+- QA MASTER's vite NOT seen at close — see the caution I left on #2860
+  (my broad `pkill -f "npm run dev"` may have stopped slot b's server 5178;
+  flagged, fix = restart + rerun once). Next slot: check #2860 for a red
+  browser leg before believing it.
 
 ## HARNESS NOTES FOR THE NEXT LANE
-- **Prod chunk-crawl fix (big one this session):** Vite references lazy chunks
-  inside chunks as `./name.js` — an extraction regex anchored on `assets/`
-  misses EVERY lazy chunk and reports a false negative (my first crawl found
-  63 chunks and no marker; the corrected closure found 160 and the marker
-  `push("g"+` in `index-CUHSqAVS.js`, alongside #2847's `carrierNext`).
-  Extract bare `[A-Za-z0-9._-]*\.js` and resolve against /retrogames/assets/.
-  Also: jalfern.com 301s to **www.** — crawl without -L sees "Redirecting…".
-- Pin "a round dies at X" with a **single tracked round**, not screen
-  occupancy: `pad.right` makes the hero run to the wall clamp, so held-fire
-  sweeps lines that legitimately fly over the housings between mount and core.
-- Diagonal-from-x=100 crosses gun-0 (x+y≈234) and never enters the core band
-  ([256,336]) — the housing pins test mounts with zero core interference.
-  `coreT = coreOpen + 10` budgets ~60 ticks of shut shutter: finish the pin
-  inside the window (the armour-law pin uses 55).
-- Zero-rng law still stands (no gs.r draws in the pierce change); determinism
-  and winnable-seeds pins green unchanged.
+- **Mutant anchors must consume trailing commas.** The ADAPTERS map is now
+  multi-line; the old anchors (`'game': fn` without the comma) left `/*M*/,`
+  in the list — SyntaxError, child exit 1, RED-but-for-the-wrong-reason.
+  Fixed for bomb-defuse/SOS/rally (#2861). When you extend ADAPTERS, keep the
+  anchors comma-consuming and glance at the mutant's exit text, not just color.
+- **A "line-neutral" adapter PR must not move the prod version.** Comparing
+  the live version before/after (5dcb62ac twice) is the cheap proof that new
+  adapters changed no existing rows. Any drift = existing featurizers leaked.
+- **Rally weather can be lost silently by a null rules field** — rebuild with
+  'clear' and low-speed takes still hash-match (lat is rounded ×100). The
+  wx-bit pin (`rain take reads rain in every row`) is what catches it; don't
+  delete it if you touch the adapter.
+- scriptedTake now knows five games + a `weather:` option; new uploads shift
+  the fixture counts (12 takes / 10 audio / 7 humans / 5 covered games).
+- Fixture players are pipeline tests, not evidence (header of datasetcheck);
+  acceptance lines are judged by the production card only.
 
 ## WORKTREES
-- Main checkout: detached origin/main (4798045 lineage) + this STATE commit.
-- `~/Dev/retrogames-forge-contra-gate-pierce` — finished; reap freely
-  (branch gone on remote).
-- Ports: b's 5178 stopped at close. QA studio 5176 = QA's, leave it.
+- Main checkout: detached origin/main (e1de37d) + this STATE commit.
+- `~/Dev/retrogames-forge-s2-coop-adapters` — merged; re-detached at
+  origin/main; reap freely (remote branch gone). Port 5173 stopped at close.
 
 ## Open questions
-- #2844 — PLAICRAFT S2 fold ruling (research lane's).
+- #2844 — PLAICRAFT S2 fold ruling (default: keep fold).
 - #2846 — promote CONTRA/R-TYPE/DD to public? (default keep private.)
