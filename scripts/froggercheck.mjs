@@ -148,6 +148,36 @@ console.log('watch driver: crossings proven on the shipped tick (#1637 b25)')
     const gsO = makeRun(4242)
     gsO.over = true
     ok(watchStep(gsO) === null, 'driver: silent at game over (watch never lingers)')
+
+    // #2867 certification pin: the watchcheck frogger leg is pinned to seed 4242
+    // and needs a ride home shortly after its 8 s advance window. The planner
+    // livelocks (row1/row2 bounce) on ~32% of random seeds with 900-1250-tick
+    // home-ride gaps — CI tick debt then outruns the leg's 30 s takeover window
+    // (nightly 44914600702). Stamp the shape here so any planner change that
+    // re-slows this seed goes red at the source, not in the nightly.
+    {
+        const gsL = makeRun(4242)
+        gsL.watching = true
+        const rides = []
+        let fDeaths = 0, fLevels = 0, fOver = false
+        for (let t = 0; t < 2400 && !fOver; t++) {
+            const ev = tickFrogger(gsL)
+            if (ev.died) fDeaths++
+            if (ev.level) fLevels++
+            if (gsL.frog.state === 'home') rides.push(t)
+            fOver = gsL.over
+        }
+        const after = rides.filter(t => t >= 480)
+        const firstGap = after.length ? after[0] - 480 : Infinity
+        let worstRideGap = 0
+        for (let i = 1; i < after.length; i++) worstRideGap = Math.max(worstRideGap, after[i] - after[i - 1])
+        ok(fDeaths === 0 && !fOver && fLevels >= 2,
+            'watch-leg seed 4242: zero deaths, no game over, >=2 levels in 40 s',
+            `deaths ${fDeaths}, levels ${fLevels}, over ${fOver}`)
+        ok(firstGap <= 300 && worstRideGap <= 300,
+            'watch-leg seed 4242: ride-home gaps <= 300 ticks after the seat window (#2867 livelock guard)',
+            `first ${firstGap}, worst ${worstRideGap}, rides ${after.length}`)
+    }
 }
 
 if (process.argv.includes('--mutate')) {

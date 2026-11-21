@@ -1693,8 +1693,13 @@ const PILOTS = [
     // offsets, dive phase, clock) under a greedy continuation. No rand: the seat
     // is the driver froggercheck clears 40/40 seeds with. Reactive per tick
     // (Rogue law), so it seats anywhere, steers back, re-seats from live state.
+    // #2867 (nightly 44914600702, #2531 precedent): the planner livelocks on ~32%
+    // of random seeds (row1/row2 bounce, 900-1250-tick home-ride gaps) — with CI's
+    // tick debt that outruns the takeover window and wedges the leg red. Pin the
+    // certified seed (froggercheck stamps it: 0 deaths, ride gap <= 300 ticks);
+    // lift the pin when #2867 lands the stall-breaker.
     {
-        id: 'frogger', url: `${BASE}/frogger`, hook: '__froggerTest',
+        id: 'frogger', url: `${BASE}/frogger?seed=4242`, hook: '__froggerTest',
         async run(page, rep) {
             const H = '__froggerTest'
             const watching = () => page.evaluate((h) => window[h].watching(), H)

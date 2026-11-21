@@ -54,3 +54,9 @@ byte-equal, every seed banks ≥1 level, 36/40 zero-death, ≥20 homes per seed,
   life to a dive-phase shuffle on the turtle lane (it still banks levels there).
   It plans 7 s ahead (420 ticks) plus a 15 s drift carry-out projection; a
   pattern beyond that reads as horizon, not as danger.
+- Worse than shedding a life, it can STALL (#2867): on ~32% of seeds the frog
+  bounces row1<->row2 for up to ~1250 ticks waiting for a ride to carry it
+  under an open house — sitting still always scores safe inside the horizon, so
+  no "commit to the house" branch wins. watchcheck's leg pins seed 4242 until a
+  stall-breaker lands; froggercheck certifies that seed's ride-gap so a
+  regression here goes red in Node.
