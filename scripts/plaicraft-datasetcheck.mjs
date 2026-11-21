@@ -562,9 +562,9 @@ if (MUTATE) {
             const rowsM5 = cli5.status === 0 && fs.existsSync(path.join(outM5, 'dataset.jsonl'))
                 ? fs.readFileSync(path.join(outM5, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
                 : []
-            const leaked = rowsM5.some((x) => x.g === 'talk-me-down' && x.split === 'train')
-            r.check('trainable gate is load-bearing: no feat:null row in train (RED under the leak-reopen mutant, #1712)',
-                !leaked, leaked ? 'no-adapter take LEAKED into train' : 'gate held')
+            const leaked = rowsM5.some((x) => x.g === 'talk-me-down' && x.split !== 'flagged')
+            r.check('trainable gate is load-bearing: no-adapter rows never ride a split (RED under the leak-reopen mutant, #1712)',
+                !leaked, leaked ? 'no-adapter take LEAKED into a split' : 'gate held')
         } finally {
             pull(DS)
             if (fs.readFileSync(DS, 'utf8') !== src5) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 gate)'); r.failed++ }
