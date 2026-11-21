@@ -1716,10 +1716,32 @@ const PILOTS = [
             // animation (45 ticks) a steer press hands the wheel back WITHOUT
             // stepping into traffic — the honest window in a game where every
             // stray hop can cost a life.
-            await page.waitForFunction((h) => {
-                const p = window[h].probe()
-                return window[h].watching() && p.frogState === 'home'
-            }, H, { timeout: 30000 })
+            // #2864 — the fixed 30 s waitForFunction lost nightly 44914600702:
+            // after the 4th home the planner can spend up to ~3200 WORLD ticks
+            // banking the next one (measured over seeds 0..399: p50 483,
+            // p90 1313, max 3215), and CI's software-rendered Chrome delivers
+            // far fewer than 60 tps — the tick debt (#2036) again, one helper
+            // away from pollAdvance's world-time fix. Budget in ticks (AGENTS:
+            // harness budgets are WORLD seconds). And ride through the honest
+            // loss: froggercheck's floor pins the driver losing lives to a
+            // dive-phase shuffle on ~0.5% of seeds, and game over releases the
+            // seat silently — then Y starts a fresh seated run (pilot law).
+            let rodeHome = false
+            for (let attempt = 0; attempt < 3 && !rodeHome; attempt++) {
+                const t0 = await probe()
+                const ceiling = Date.now() + 150000
+                while (Date.now() < ceiling) {
+                    const p = await probe()
+                    if (p.frogState === 'home') { rodeHome = await watching(); break }
+                    if (p.over) break // traffic won — re-seat below with a fresh run
+                    if (p.tick - t0.tick > 3600) break // a stalled planner is a real bug
+                    await page.waitForTimeout(100)
+                }
+                if (rodeHome) break
+                await key(page, 'KeyY')
+                await seatPoll(page, H)
+            }
+            if (!rodeHome) throw new Error('frogger: no home ride while watching across 3 runs / 3600-tick budgets')
             await page.keyboard.press('ArrowUp')
             rep.check('frogger: steer key takes over', !(await watching()))
             rep.check('frogger: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
