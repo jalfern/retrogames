@@ -387,7 +387,9 @@ export function drawForceMerge(ctx, x, y, k) {
 export function drawLance(ctx, q, camX) {
     const x = Math.round(q.x - camX), y = Math.round(q.y)
     const len = POD.laserTiers[q.size]
-    const hh = [2, 3, 4][q.size] // half-height: 4 / 6 / 8 px of beam
+    // #2831: bits riding the chain widen the lance (+1px half-height each,
+    // cap 4) — the same spread the hit boxes use, drawn where it bites
+    const hh = [2, 3, 4][q.size] + Math.min(4, q.wy ?? 0)
     const ch = [1, 1, 2][q.size] // core half-height
     if (q.size > 0) {
         ctx.fillStyle = q.size === 2 ? 'rgba(255,42,90,0.30)' : 'rgba(255,90,60,0.22)'
@@ -404,7 +406,9 @@ export function drawLance(ctx, q, camX) {
 
 export function drawWave(ctx, q, camX) {
     const x = Math.round(q.x - camX), y = Math.round(q.y)
-    const hh = [9, 14, 20][q.size]
+    // #2831: bits broaden the crescent (+2px half-height each) — the sweep
+    // the collision law grants is the sweep the player sees
+    const hh = [9, 14, 20][q.size] + (q.hx ?? 0) * 2
     const cols = ['#eaffff', '#8ae8ff', '#37b8e8']
     for (let i = 0; i < 3; i++) {
         ctx.strokeStyle = cols[i]
@@ -520,12 +524,18 @@ export function drawP1(ctx, p1, camX, tick) {
 }
 
 // the bit drone (S3): rides its slot; in shield orbit it wears a green sheen
-export function drawBit(ctx, bt, camX, shielded) {
+export function drawBit(ctx, bt, camX, shielded, tick) {
     if (bt.px == null) return
-    const x = Math.round(bt.px - camX), y = Math.round(bt.py)
+    // #2831: a bit that just ate a round (or ground a body) flashes white and
+    // shudders — the shield reads as work done, not a silent erase
+    const fl = bt.flash ?? 0
+    const jx = fl > 0 ? ((tick * 5 + bt.id) % 3) - 1 : 0
+    const jy = fl > 0 ? ((tick * 7 + bt.id * 2) % 3) - 1 : 0
+    const x = Math.round(bt.px - camX) + jx, y = Math.round(bt.py) + jy
     const f = Math.floor(Date.now() / 110) % SPR.bit.length
     if (shielded) { ctx.fillStyle = 'rgba(122,214,74,0.20)'; ctx.fillRect(x - 8, y - 8, 16, 16) }
     ctx.drawImage(SPR.bit[f], x - 5, y - 5)
+    if (fl > 0) { ctx.fillStyle = `rgba(255,255,255,${(Math.min(1, fl / 8) * 0.85).toFixed(2)})`; ctx.fillRect(x - 5, y - 5, 10, 10) }
 }
 
 // the PHASE-2 fortress (S3): blue-black plating over the twin core ports —

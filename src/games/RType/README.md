@@ -9,7 +9,7 @@ Phase-2 twin-core fortress.
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 84 laws (S1, #2818/#2823 polish, S2, S3)
+node scripts/rtypecheck.mjs       # sim + browser: 90 laws (S1, #2818/#2823 polish, S2, S3, #2831 polish)
 node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
@@ -24,7 +24,13 @@ three-is-not-a-wall, the four-bit orbit shield deflects rounds AND hunters
 and grinds soft bodies but never bites armour, death strips the chain, LEG 2
 handoff after Phase-1's wreck, twin cores gape on their own staggered clocks,
 sealed plating eats fire, one core down enrages the survivor (double-speed
-vents), both hearts down ⇒ STAGE CLEAR.
+vents), both hearts down ⇒ STAGE CLEAR. The #2831 polish pass adds six more:
+FIRE×bits spread-fans the vulcan (the flank bit shoots outward, the nose stays
+true; the orbit sweeps both wings), LASER×bits widens the lance (a 9-px offset
+is clean bare, dead with three), WAVE×bits broadens the crescent (18 px off
+the line needs four), a deflected round flashes the bit white and the strain
+fades, and a hunter swatted off the orbit bursts AT THE BIT ('hunterring' at
+the bit's position, shell strained).
 
 ## The design decisions worth knowing
 - **#2823 polish (QA lane):** capture is a ceremony (merge flash + sparks that
@@ -38,6 +44,19 @@ vents), both hearts down ⇒ STAGE CLEAR.
   shell pushes a `strain` event the shell throttles (8-tick gate) into a
   churning friction grind. None of it draws gs.rng — the tuned stream and the
   winnability law are untouched.
+- **#2831 polish (QA lane):** the bit×arm matrix ships — the gun reshapes
+  around the chain: vulcan streams FAN outward by the firing bit's offset
+  (`vy`, clamped ±0.5; orbiting bits sweep both wings), the laser lance
+  widens by +2 px per bit (`q.wy` stamped at release — hit boxes and art
+  agree), and the wave crescent broadens by +2 px half-height per bit
+  (`q.hx`). Deflects are no longer silent erases: the bit that ate a round
+  flashes white and shudders (`bt.flash` — a juice countdown written by the
+  sim, read by `drawBit`, never hashed, so contract replay and the RNG
+  stream stay byte-identical); grinding a larva strains the bit too
+  (flash 5); and a hunter popped by the orbit bursts as a cyan ring AT THE
+  BIT (`hunterring` event; `lastHit` moved from the missile's corpse to the
+  bit's body). The autopilot never carries bits, so the winnability floor
+  (5/12) still measures the waters the forge calibrated.
 - **#2818 polish (QA lane):** pods ease into their hover (speed bleeds to a
   creep, bob ramps in from the settle); volley gaps are arithmetic per pod,
   never a fixed 170; the maw announces its cycle (`mawopen`/`mawshut` events
@@ -118,9 +137,10 @@ vents), both hearts down ⇒ STAGE CLEAR.
 ## Known gaps (S4+)
 Co-op with a CPU wingman (S4), core speed-up after 1000, Stage 2
 "Dobkeratops", the full capsule list beyond three arms (Options, Double,
-Speed Up, Half-Capsules), the bit×arm modification matrix (Fire/Laser/Wave
-bits reshaping the shot — S3 ships the generic extra streams), and an
-armed Williams-style duelist for variety.
+Speed Up, Half-Capsules), and an
+armed Williams-style duelist for variety. Still open from the #2831 polish
+pass: bit pods (airborne carriers whose bits break loose on death), Phase-2
+port salvos + body sway, and the walking port-to-port Phase-2 death cascade.
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
