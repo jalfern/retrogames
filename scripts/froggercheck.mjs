@@ -140,7 +140,7 @@ console.log('watch driver: crossings proven on the shipped tick (#1637 b25)')
     }
     ok(det === 40, 'driver: 40/40 seeds replay byte-equal (watchStep draws no rand)')
     ok(clears === 40, 'driver: every seed banks at least one full level in 120 s', `${clears}/40`)
-    ok(clean >= 38, 'driver: zero-death runs on ≥38 seeds (#2869 measured 40/40 since the rank fix; was 36 — 2 lives of margin)', `${clean}/40`)
+    ok(clean >= 38, 'driver: zero-death runs on ≥38 seeds (#2869 measured 40/40 since the away-lane generalization; was 36 — 2 lives of margin)', `${clean}/40`)
     ok(minH >= 20, 'driver: ≥20 homes landed on every seed', `min ${minH}`)
     ok(homes >= 1800, 'driver: ≥1800 homes across the 40-seed sweep', `${homes}`)
     const gsA = makeRun(4242, { attract: true })
@@ -160,7 +160,7 @@ console.log('watch driver: crossings proven on the shipped tick (#1637 b25)')
     const STALL = 1800
     const SEEDS = [...new Set([...[...Array(40)].map((_, k) => 1000 + k * 97),
         103, 3910, 1679, 1970, 3328, 3425, 2940, 3134, 4492])]
-    let maxGap = 0, worst = -1, done = false
+    let maxGap = 0, worst = -1, done = false, homes = 0, deaths = 0
     for (const seed of SEEDS) {
         const gs = makeRun(seed)
         gs.watching = true
@@ -168,36 +168,15 @@ console.log('watch driver: crossings proven on the shipped tick (#1637 b25)')
         for (let t = 0; t < 7200 && !gs.over && !done; t++) {
             const ev = tickFrogger(gs)
             gap = ev.home ? 0 : gap + 1
+            homes += ev.home
+            if (ev.died) deaths++
             if (gap >= STALL) { maxGap = gap; worst = seed; done = true; break }
             if (gap > maxGap) { maxGap = gap; worst = seed }
         }
     }
     ok(!done, `gapsweep: no stalled 30 s window across ${SEEDS.length} seeds`, `seed ${worst} gap ${maxGap}`)
-}
-
-// #2869 part two: the two cures OVERLAP — with one removed the other still banks
-// homes under the 1800-tick bar (rank cure alone: worst sweep gap 642; loop cure
-// alone: 1340), so the stall threshold left BOTH cure-mutants alive in a local
-// run (13/15, 2026-11-21). Each cure is load-bearing at the historical stall
-// seeds, just sub-1800 there — measured base gap → gap with that cure removed:
-//   103  273 → 434 (loop cure)   3134  314 → 1340 (rank cure)   3425  470 → 642 loop / 1110 rank.
-// Pin those seeds' home-to-home gap ceilings between the two states (sim is
-// byte-equal deterministic, so the ceilings are exact regression lines): each
-// mutant breaks TWO ceilings, the base passes all with ≥77 ticks of margin.
-{
-    const CEIL = { 103: 350, 3134: 520, 3425: 555 }
-    for (const [seedStr, ceil] of Object.entries(CEIL)) {
-        const seed = Number(seedStr)
-        const gs = makeRun(seed)
-        gs.watching = true
-        let gap = 0, maxGap = 0
-        for (let t = 0; t < 7200 && !gs.over; t++) {
-            const ev = tickFrogger(gs)
-            gap = ev.home ? 0 : gap + 1
-            if (gap > maxGap) maxGap = gap
-        }
-        ok(maxGap <= ceil, `gap-ceiling #2869: seed ${seed} banks a home within ${ceil} ticks`, `gap ${maxGap}`)
-    }
+    ok(homes >= 2850, 'gapsweep: ≥2850 homes on the sweep (#2869 measured 2926; muting the loop-break ~6% lower)', `${homes}`)
+    ok(deaths === 0, 'gapsweep: zero deaths across the sweep (#2869 measured)', `${deaths}`)
 }
 
 // #601 main-fix (nightly 44914600702): watchcheck's frogger pilot rides a PINNED
@@ -294,13 +273,9 @@ if (process.argv.includes('--mutate')) {
             `        for (const b of noGo) if (b.row === r && Math.abs(xx - b.x) <= LOOP_TOL) return true`,
             `        for (const b of noGo) if (false && b.row === r && Math.abs(xx - b.x) <= LOOP_TOL) return true`,
             'src/games/Frogger/sim.js'],
-        ['away-lane rank fix removed (park-loop stall returns, #2869)',
-            `    if (row >= RIVER_TOP && row <= RIVER_BOT && ridesAway(gs, row, x)) {
-        value = survived * 10 + (distToBank(gs, x) - bestD) * 0.2
-    }`,
-            `    if (false) {
-        value = survived * 10 + (distToBank(gs, x) - bestD) * 0.2
-    }`,
+        ['away-lane descent trigger narrowed back to row 1/columns-left (park-loop stall returns, #2869)',
+            `            const houseBehind = ridesAway(gs, row, x) // #2869: was row-1/columns-left only`,
+            `            const houseBehind = row === RIVER_TOP && openSide(gs, x) === -1`,
             'src/games/Frogger/sim.js'],
     ]
     let died = 0
