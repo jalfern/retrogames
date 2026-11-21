@@ -278,3 +278,21 @@ slide resumes only on ground.
   transport), not picked from a vault the wings alone could seal (in this CA the
   digger can always dig where the fly can fly — so the ferry's exclusivity is
   supply arithmetic + the loaded-only mine law, proven by the strand test).
+
+## First-timer pass (#2875 — shell/renderer only, sim untouched)
+Playing cave 1 reading only the screen, four things hid the game from a
+newcomer. All four live in `index.jsx`; watchphonecheck now pins the geometry
+(`bd:` rules) so none can drift back:
+- **HUD vs chrome**: the strip spanned the viewport, so the fixed ARCADE
+  button sat on the level name and PAUSE+mute covered the score. The row is
+  inset `5.5rem` / `8.25rem` past the corner clusters — clear at any aspect.
+- **WATCH pill**: docked bottom-left it sat over the spawn chamber for the
+  whole run. It now hides while a human drives (seats via the attract pill,
+  the PAUSE row, or Y) and appears only *while watching*, at the fleet
+  3.5rem-under-PAUSE dock, as the ◼ TAKE switch.
+- **Open exit**: meeting the quota only greened the tiny HUD word; the door
+  stayed a dark square with one green pixel and got dug past. The door now
+  flashes on the CA's own beat (8-tick) under a one-cell green halo — and
+  since attract paints the same block, the demo teaches the door too.
+- **Time bar**: it shrank unlabeled. It now reads `TIME` with a live seconds
+  countdown beside the bar (`meta.timeTicks / caHz`, synced with the HUD).

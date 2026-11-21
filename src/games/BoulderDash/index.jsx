@@ -517,12 +517,26 @@ const DashGame = () => {
                 ctx.fillRect(tx + 4, ty + 4, TS - 8, TS - 8)
             }
 
-            // exit door + spawn marker
+            // exit door + spawn marker. #2875: a NEWcomer dug straight past the
+            // open door — only the tiny HUD word turned green. When the quota is
+            // met the door now FLASHES on the CA's own beat (8-tick period) and
+            // wears a one-cell halo, so it reads from across the cave. Attract
+            // paints through the same block, so the demo teaches the door too.
             const ex = meta.exit.x * TS, ey = meta.exit.y * TS
             const open = gs.have >= meta.need
-            ctx.fillStyle = open ? '#1d3a1d' : '#3a2a1a'; ctx.fillRect(ex + 2, ey + 1, TS - 4, TS - 2)
-            ctx.fillStyle = open ? '#59e05e' : '#7a6a4a'
-            ctx.beginPath(); ctx.arc(ex + TS - 5, ey + 8, 1.6, 0, Math.PI * 2); ctx.fill()
+            if (open) {
+                const pulse = gs.tick % 8 < 4
+                ctx.fillStyle = pulse ? 'rgba(89,224,94,0.5)' : 'rgba(89,224,94,0.26)'
+                ctx.fillRect(ex - TS + 4, ey - TS + 4, TS * 3 - 8, TS * 3 - 8)
+                ctx.fillStyle = pulse ? '#59e05e' : '#2c5f2e'
+                ctx.fillRect(ex + 2, ey + 1, TS - 4, TS - 2)
+                ctx.fillStyle = pulse ? '#1d3a1d' : '#a6ffab'
+                ctx.beginPath(); ctx.arc(ex + TS - 5, ey + 8, 1.6, 0, Math.PI * 2); ctx.fill()
+            } else {
+                ctx.fillStyle = '#3a2a1a'; ctx.fillRect(ex + 2, ey + 1, TS - 4, TS - 2)
+                ctx.fillStyle = '#7a6a4a'
+                ctx.beginPath(); ctx.arc(ex + TS - 5, ey + 8, 1.6, 0, Math.PI * 2); ctx.fill()
+            }
 
             // the flies — a bright dart trailing its glow. #2438: the butterfly
             // reads APART from the firefly — ice-blue body, a wing pair that
@@ -570,6 +584,7 @@ const DashGame = () => {
             if (now - lastHud < 90) return
             lastHud = now
             if (hud.time) hud.time.style.width = `${Math.max(0, 100 * (1 - gs.tick / meta.timeTicks))}%`
+            if (hud.timeSec) hud.timeSec.textContent = String(Math.max(0, Math.ceil((meta.timeTicks - gs.tick) / CFG.caHz)))
             if (hud.gems) hud.gems.textContent = `${gs.have}/${meta.need}`
             if (hud.score) hud.score.textContent = String(gs.score).padStart(6, '0')
             if (hud.lvl) hud.lvl.textContent = `${levelIdx + 1}. ${meta.name}`
@@ -780,11 +795,20 @@ const DashGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-amber-50 font-mono text-xs">
+                {/* #2875: the strip used to span the viewport — the fixed ARCADE
+                    button sat on the level name and PAUSE covered the score.
+                    The HUD now starts clear of the chrome cluster (ARCADE ends
+                    ≈4.25rem; PAUSE+mute end ≈7.75rem) so no button ever lands
+                    on HUD text at any aspect ratio. */}
+                <div className="absolute top-2 flex items-center gap-3 text-amber-50 font-mono text-xs" style={{ left: 'calc(5.5rem + var(--sal, 0px))', right: 'calc(8.25rem + var(--sar, 0px))' }}>
                     <span id="dash-lvl" ref={setHud('lvl')} className="font-bold tracking-widest text-sm" />
+                    <span className="font-bold tracking-widest text-[10px] opacity-80">TIME</span>
                     <div className="w-28 h-2.5 bg-black/50 rounded overflow-hidden border border-black/50">
                         <div ref={setHud('time')} className="h-full" style={{ background: 'linear-gradient(90deg,#59e05e,#ffd83d,#e23b3b)', width: '100%' }} />
                     </div>
+                    {/* #2875: the bar had no label and no number — a newcomer
+                        couldn't tell it was a countdown until it ran out. */}
+                    <span ref={setHud('timeSec')} className="font-bold tabular-nums -ml-1" />
                     <span>GEMS <span ref={setHud('gems')} className="font-bold text-cyan-300" /></span>
                     <span ref={setHud('exit')}>EXIT</span>
                     <span className="ml-auto text-xl font-bold" style={{ textShadow: '0 2px 5px #000' }}>
@@ -828,9 +852,15 @@ const DashGame = () => {
                     <AttractWatchButton />
                 </div>
             )}
-            {screen === 'play' && !paused && (
-                <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(12.5rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
-                    <WatchButton on={watching} />
+            {/* #2875 — the in-play pill covered the start chamber (bottom-left
+                sat right on the spawn cells) for the whole run. It now HIDES
+                while a human drives: seating is the attract pill, the PAUSE
+                overlay's WATCH row (#1656 paths), or Y; the pill reappears
+                docked at the fleet chrome convention (3.5rem under PAUSE) as
+                the ◼ TAKE switch while the prover digs. */}
+            {screen === 'play' && !paused && watching && (
+                <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on />
                 </div>
             )}
             <VirtualControls visible={play && !paused} />
