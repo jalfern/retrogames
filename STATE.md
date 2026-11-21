@@ -1,69 +1,73 @@
-# STATE.md — The Forge (rewritten at close of slot b, 2026-11-21; committed to
-# main because game code merged: R-TYPE S3 polish II shipped as PR #2843 ->
-# 5ed1b2f, a borrowed QA item (#2835). Slot a shipped CONTRA seat ceremony
-# mid-session (#2840 -> 06e6806), so both lines landed tonight.)
+# STATE.md — The Forge (rewritten at close of slot a, 2026-11-21; committed to
+# main because game code merged: src/games/BombDefuse/model.js shipped in PR
+# #2849 -> c40af50. Rule 4 counter: three game-code PRs in a
+# row — #2840, #2843, #2849. Loop is turning.)
 
 ## PLAYABLE
-- /retrogames/r-type — **S1–S4 live**, and S3 now bites like the arcade:
-  airborne **bitpods** ferry 2–3 chainable bit capsules (WAVES2 camX 150/380);
-  the Phase-2 core fires **alternating telegraphed 3-shot salvos** (next-port
-  glint warns, burned ports inherit turn) and **sways ±6px** tracked by aim +
-  save-hash; dying cores **walk port-to-port** in a 380-tick cascade from the
-  last-fallen core. rtypecheck 126/126, mutants 6/6 (new `cargo-blind`,
-  `salvo-blind`). All new mechanics are pure tick arithmetic — zero rng draws,
-  so the tuned stream and contract hashes stand (#2835).
-- /retrogames/contra — S1–S4 + **seat ceremony** (rappel arrival, 10 s
-  drop-out to wingman brain); contracheck 105/105, mutants 92/92 (#2837).
-- /retrogames/double-dragon — S1–S4 co-op live (#2795 commission complete).
-- Rest of shelf unchanged.
+- /retrogames/r-type — S1–S4 incl. S3 arcade bite (slot b, #2843).
+- /retrogames/contra — S1–S4 + seat ceremony (#2840/#2837).
+- /retrogames/double-dragon — S1–S4 co-op. Rest of shelf unchanged.
+- Nothing player-visible shipped this session (data-pipeline stage, see below).
 
-## WHAT THIS SESSION DID (slot b)
-- Warden target #2837 REFUSED at claim (slot a's checkpoint 14 min fresh) —
-  correct: slot a shipped it this session. Ladder: no steer/halt; `next` =
-  #1712 (lane:research, builders skip); game-queue empty; QA borrow was open
-  (no QA MASTER alive at the time) -> took oldest unowned feedback #2835
-  (R-TYPE S3 polish II; idle.mjs `weakestStage` independently scored R-TYPE
-  weakest — both derivations agreed). Claimed via qa-claim.sh, shipped ~2 h:
-  carriers + salvos/sway + walking death, 13 new pins, 2 mutants, README.
-- Solo winnability is now **exactly 4/12** (salvos bite; co-op 12/12).
-  Deterministic, not flaky — but at the law's floor; don't re-tune without a
-  full rtypecheck re-run.
-- Rule 4: game code merged — loop turning.
+## WHAT THIS SESSION DID (slot a)
+- Warden target #1712 (PLAICRAFT S2): resume-path claim (own fresh checkpoint);
+  live store audit unchanged — 18 takes, NO friends' takes yet, so the two data
+  acceptance lines stay blocked by design.
+- Shipped **PR #2849 (squash c40af50)**: `BombDefuse/model.js` — 35 seat
+  features/tick (Gauntlet/FloorBoss doctrine; effort-split game, so both seats
+  read the shared panel + seatAsk debts + prev-pad autoregression) wired as the
+  `bomb-defuse` dataset adapter (replay-verified; both live qabot takes tick-verify).
+  Plus the **trainable gate**: no-adapter takes now stay `flagged` (the builder's
+  comment always said so; the code never enforced it — a named human on an
+  unadapted game could reach train with feat:null rows and flip `covers 2+ games`).
+  Consent gates flagged, adapter gates train/heldout/players/coverage; consented
+  human audio still lands (separate gate, pinned). Also fixed floor-boss
+  `mem.pa` banking (prev-pad features rode zero forever).
+- Evidence: datasetcheck 48/48; **5 mutants RED by design** (split-ignore,
+  hash-skip, fold-disable, adapter-bypass, leak-reopen — M5's signature is
+  "no-adapter rows ride ANY split": seed-heldout also proves the gate).
+  Live rebuild deterministic twice `5dcb62ac` (was `696c85888e42`). Card
+  **line-neutral**: games=[gauntlet], holdout need-2-players.
+- Vercel prod green at c40af50; scripts/pipeline-only for the app bundle.
 
 ## BOARD
-- building: #1712 PLAICRAFT S2 only (lane:research/big-build — builder skip).
-- game-queue: empty. waiting-jon: #2844 (research's) + **#2846** (filed by b:
-  promote CONTRA/R-TYPE/DD to public? default keep-private — only Jon promotes
-  per #379; all three are live but off the public Arcade menu).
-- QA lane's, never builder: **#2833** DD co-op polish (`building-qa`) — a QA
-  MASTER is **alive right now** on port 5176 and may pick it up. Fresh
-  feedback for QA's next round: #2841 (R-TYPE S4 wing polish, filed by b),
-  #2842 (CONTRA ceremony polish).
-- Open harness bug nobody owns: **#2839** — `claim-status.mjs` ignores the
-  `FORGE (<slot>):` checkpoint comment format, so liveness locks read as dead.
-  Any lane can fix; small.
+- #1712 OPEN, released to `next` (wait-state): the next real events are
+  friends' takes landing via /retrogames/join — they close both data lines
+  immediately **in an adapted game** (gauntlet, floor-boss, bomb-defuse) and
+  `npm run plaicraft:dataset` re-covers with zero new code.
+- game-queue empty; no steer; no halt; no `building`.
+- Open jonq (link only): **#2844** (S2 fold ruling; default keep fold),
+  **#2846** (flagship public promotion — Jon's call, default keep-private).
+- QA lane's: #2833 (`building-qa`), fresh feedback #2841, #2842.
+- Unowned harness bug: **#2839** (claim-status.mjs ignores
+  `FORGE (<slot>):` comments → liveness reads dead). Any lane can fix; small.
 
 ## HARNESS NOTES FOR THE NEXT LANE
-- **Prod verify, refined:** after a merge, jalfern apex+www and even the origin
-  (retrogames-psi) can serve the PREVIOUS HTML for ~10 min (Next proxy edge
-  cache; the stale HTML's last-modified equals the *previous* deploy's
-  completion time — a convincing liar). Content-verify by crawling the full
-  transitive `./index-*.js` closure from origin and grepping game-chunk
-  strings. **DEV-only strings are stripped from prod builds** (DebugKit
-  labels, `__rtype` probe fields) — verify on sim-level markers (`bitfree`,
-  `p2salvo`, `swayOff`), not probe/DebugKit text.
-- macOS scripting traps: zsh does NOT word-split unquoted vars; system bash is
-  3.2 (no `declare -A`). Crawl loops need plain sorted lists (`comm`) or
-  `bash` arrays with index arithmetic only.
-- `gh --json labels` returns objects, not strings — `map(.name)` or held/owned
-  filters silently fail (bug seen live this session).
-- `scripts/lib/idle.mjs` `weakestStage` + the QA-backlog scan can agree on an
-  item — two independent derivations matching is a strong claim signal when the
-  ladder is empty.
+- **Next adapters (each ~model.js + register + fixtures):** talk-me-down,
+  short-order-shout, garden-guard, pick-rush, rally-co-driver — the recorder
+  titles still feat:null. Recipe (done twice, ~1 session each is overkill):
+  engine must be Node-clean + integer hash → `model.js` with FEAT_NAMES/
+  N_FEAT/N_ACT + featurize(gs, who, mem) (bank `mem.pa` after the label!) →
+  ADAPTERS entry with checkpoint-compare → fixtures (clean/tamper/prev-pad) +
+  one mutant (adapter-bypass). BombDefuse/model.js is the compact exemplar.
+- `forge-claim.sh` resume path ("already yours") exits 0 WITHOUT re-applying
+  the `building` label — after a resume, add it yourself so the board truth
+  matches the lock (done manually this session).
+- trainable doctrine: `human` = consent level (audio, identity); `trainable` =
+  human AND adapted (splits, players, lines). Any new attribution policy must
+  stay line-neutral unless Jon rules otherwise (#2844 governs the fold).
+- Lines flip ONLY by native named humans; folded rows (`lg:1`) can never
+  satisfy gamesCovered/heldoutClean.
+- Store probe: `node scripts/sessions.mjs` = fastest truth about takes.
+- mutateguard refuses mutant runs on a dirty tree (good — commit before
+  `--mutant`, it caught me once this session).
 
 ## WORKTREES
-- Main checkout: detached origin/main (97484f3 lineage) + this STATE commit.
-- `~/Dev/retrogames-qa-2835` — finished; reap freely (branch gone on remote).
-- `~/Dev/retrogames-forge-contra-seat-ceremony` — slot a's, re-detached; reap.
-- Ports: b's 5178 stopped at close. QA studio 5176 is the live QA session's —
-  leave it. 5173 free.
+- Main checkout: detached origin/main (c40af50) with this STATE commit.
+- `~/Dev/retrogames-forge-plaicraft-s2` — merged; re-detached at origin/main;
+  reap freely (remote branch gone). Slot a dev server (5173) never started —
+  pipeline stage, no browser needed; port left free.
+
+## Open questions
+- #2844 (PLAICRAFT S2 fold ruling; default: keep fold).
+- #2846 (flagship public promotion; default: keep private).
