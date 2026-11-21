@@ -434,7 +434,7 @@ function applySwing(gs, p) {
         if (dx > -6 && dx <= reach && Math.abs(e.y - p.y) <= tol) {
             p.attackHit.add(e.id)
             hurtEnemy(gs, e, dmg, down)
-            if (b.state === 'whip') b.lash = CFG.whipFlash   // #2819: crack on the bite tick
+            if (p.state === 'whip') p.lash = CFG.whipFlash   // #2819: crack on the bite tick
         }
     }
     // barrels take the blows too — that is how the steel comes out
@@ -445,7 +445,7 @@ function applySwing(gs, p) {
         if (dx > -6 && dx <= reach && Math.abs(bar.y - p.y) <= tol) {
             p.attackHit.add(key)
             hurtBarrel(gs, bar)
-            if (b.state === 'whip') b.lash = CFG.whipFlash
+            if (p.state === 'whip') p.lash = CFG.whipFlash
         }
     }
 }

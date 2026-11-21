@@ -143,7 +143,7 @@ Pad: JUMP / KICK / PUNCH (`thirdAction`, #2324).
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 91 checks: boots, laws, casters, duel, rescue, co-op seats, winnable, browser leg
+npm run ddragoncheck                    # 97 checks: boots, laws, casters, duel, rescue, co-op seats, winnable, browser leg
 npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
