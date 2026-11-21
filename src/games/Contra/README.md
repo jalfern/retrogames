@@ -156,6 +156,15 @@ The laws the blue seat lives under, all proven in `contracheck`:
   touch box, capture kills the wheel). Contact is non-lethal — cargo, not a
   weapon; an untouched courier escapes WITH its pod and reschedules (+380..620
   ticks). The canyon clears the sky; carriers and pods ride `stateHash`.
+- **Gate pierce law (#2854)**: the fortress gate's cannon housings no longer
+  swallow piercing rounds. An `f`/`l` round meeting a housing sparks once and
+  **keeps flying** (`hits` tags `'g' + gi` — one take per housing per beam,
+  the soldiers/turrets/snipers/carriers law verbatim). Ordinary rounds still
+  spark and stop dead at the mount, and the core branch is untouched: the
+  shuttered core remains the ONE weak point — opening it is still the fight.
+  Zero `gs.r` draws; the winnable-seeds pin stands unchanged. A laser bought
+  from the depot now rewrites the gate fight exactly like it rewrites the
+  jungle: line a beam through the guns and it reaches past them.
 - Audio: every new action synthesized via `audioController` — the MG's ripping
   pop, the firebar's breath, the laser's falling zap, the sniper's crack and
   the lob's whistle answer the existing set.
@@ -174,7 +183,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   silent-MG, non-piercing-beam,
                                        #   impervious-depot, one-bank-lie,
                                        #   blue-death-is-free, never-release,
-                                       #   cargo-jettison, carrier-impervious
+                                       #   cargo-jettison, carrier-impervious,
+                                       #   housings-eat-beams
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -213,7 +223,11 @@ pod · pod falls, settles at the deck, delivers its gun on contact · capture is
 per-seat · contact non-lethal · the band never eats ground fire · one courier
 over the jungle at a time · an untouched courier escapes with its pod and
 reschedules · the waterfall clears the sky · couriers ride the hash · live
-courier and deck-pod delivery in the browser** · zero page errors.
+courier and deck-pod delivery in the browser** · **#2854 gate pierce law: a
+laser and the firebar spark through a cannon housing and keep flying, each
+housing one take per beam · ordinary rounds still die at the mount · a beam on
+the SHUT shutter still dies there (the ONE weak point never moved)** · zero
+page errors.
 
 ## Honest gaps
 
@@ -224,8 +238,13 @@ courier and deck-pod delivery in the browser** · zero page errors.
   lettered capsule each across the jungle; two rounds down the courier and its
   pod drops to the deck, obeying the capsule pickup law verbatim. See the Pod
   carriers note below.
-- Lasers/fire pierce bodies but are still consumed by the gate armor housings
-  (the jungle's emplacement is now shootable — the gate's outer guns are next).
+- **CLOSED by #2854**: gate pierce law shipped — fire and laser spark through
+  the cannon housings and keep flying (one take per housing per beam, the
+  bodies law verbatim); ordinary rounds still spark and stop dead, and the
+  shuttered core remains the ONE weak point. See the Gate pierce law note above.
+- The fortress gate's cannon housings are indestructible scenery and fire
+  forever — "the gate's outer guns are next": the jungle's arms depot caves
+  under ten rounds, the gate's guns still cannot be answered.
 - The cascade blasts at the gate are random around the wall rather than
   scripted position-by-position; the waterfall has one gunner set and one
   hazard (the rising torrent), while the original also put the odd hanging

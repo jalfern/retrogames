@@ -281,6 +281,51 @@ const mkBoss = (seed = 7) => {
     r.check('armor law: rounds on the SHUT shutter spark and never dent it', hits2 === 0 && sparks > 0 && shut.boss.core === hp0, `hits=${hits2} sparks=${sparks}`)
 }
 {
+    // #2854 gate pierce law: the housing box sits on a 45-degree line no core
+    // line touches — from patrol x=100, up-right fire crosses x∈[190,199] at
+    // y∈[35,44] (gun 0), and that line's x+y=234 never enters the core's
+    // [256,336] band. So this line tests ONLY the housings.
+    const beam = mkBoss(7); beam.p.x = 100; beam.p.weapon = 'laser'; beam.p.inv = 99999
+    let sparksB = 0, crossed = 0
+    for (let i = 0; i < 90; i++) {
+        step(beam, { right: true, up: true, b: true })
+        sparksB += beam.ev.filter((e) => e.type === 'spark').length
+        crossed += beam.pb.filter((b) => b.k === 'l' && b.hits && b.hits.includes('g0') && b.y < 28).length
+        beam.ev.length = 0
+    }
+    r.check('#2854 LASER sparks through a cannon housing and keeps flying', sparksB >= 1 && crossed >= 1, `sparks=${sparksB} crossed=${crossed}`)
+    const flame = mkBoss(7); flame.p.x = 100; flame.p.weapon = 'fire'; flame.p.inv = 99999
+    let crossedF = 0
+    for (let i = 0; i < 140; i++) {
+        step(flame, { right: true, up: true, b: true })
+        crossedF += flame.pb.filter((b) => b.k === 'f' && b.hits && b.hits.includes('g0') && b.y < 28).length
+        flame.ev.length = 0
+    }
+    r.check('#2854 the firebar crosses the housings too (pierce is pierce)', crossedF >= 1, `crossed=${crossedF}`)
+    const solid = mkBoss(7); solid.p.x = 100; solid.p.inv = 99999; solid.p2.out = true // rifle, pinned solo
+    step(solid, { right: true, up: true, b: true })        // one round from x=100 onto the gun-0 line
+    const round = solid.pb[0]
+    let sparksR = solid.ev.filter((e) => e.type === 'spark').length
+    for (let i = 0; i < 60 && solid.pb.includes(round); i++) {
+        step(solid, {})
+        sparksR += solid.ev.filter((e) => e.type === 'spark').length
+        solid.ev.length = 0
+    }
+    r.check('#2854 ordinary rounds still die at the housing (the armour law stands)', !solid.pb.includes(round) && round.y >= 28 && sparksR >= 1, `diedAtY=${round.y} sparks=${sparksR} alive=${solid.pb.includes(round)}`)
+    const shut2 = mkBoss(11); shut2.boss.coreT = CFG.coreOpen + 10; shut2.p.weapon = 'laser'; shut2.p.inv = 99999; shut2.p2.out = true
+    step(shut2, { right: true, up: true, b: true })        // one beam from x=150 onto the core lane (shut window: 60 ticks)
+    const beamR = shut2.pb[0]
+    let hits3 = shut2.ev.filter((e) => e.type === 'coreHit').length
+    let sparks3 = shut2.ev.filter((e) => e.type === 'spark').length
+    for (let i = 0; i < 60 && shut2.pb.includes(beamR); i++) {
+        step(shut2, {})
+        hits3 += shut2.ev.filter((e) => e.type === 'coreHit').length
+        sparks3 += shut2.ev.filter((e) => e.type === 'spark').length
+        shut2.ev.length = 0
+    }
+    r.check('#2854 the SHUT shutter still eats a beam — the ONE weak point never moved', !shut2.pb.includes(beamR) && beamR.y >= CFG.coreY - CFG.coreHH && hits3 === 0 && sparks3 >= 1, `diedAtY=${beamR.y} hits=${hits3} sparks=${sparks3}`)
+}
+{
     const gs = mkBoss(9); gs.boss.core = 1
     let won = false, bonusAt = -1, scoreBefore = gs.score, sDelta = 0
     for (let i = 0; i < 300 && !won; i++) {
@@ -1048,6 +1093,30 @@ if (MUTANT) {
                 return gs.carriers.length === 1
                     ? 'HARM NAMED: the courier cannot be downed - 30 rounds spark off and the pod is never released; no gun on the wheel can be earned from the sky'
                     : null
+            },
+        },
+        {
+            // #2854: the housing pierce branch is the whole stage. Revoke it and
+            // the wall swallows beams again — the laser stops where a rank of
+            // soldiers would fly through.
+            name: 'housings-eat-beams',
+            anchor: "if (pierce) { hs.push('g' + gi); continue }",
+            plant: "if (false) { hs.push('g' + gi); continue } /* MUTANT(housings-eat-beams): the mount swallows beams again */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                mod.warpBoss(gs)
+                gs.p.x = 100; gs.p.y = mod.CFG.bossFloor; gs.p.onGround = true; gs.p.vy = 0
+                gs.p.weapon = 'laser'; gs.p.inv = 99999
+                gs.boss.guns.forEach((g) => { g.t = 1e9 }); gs.boss.doors.forEach((d) => { d.t = 1e9 })
+                let crossed = false
+                for (let i = 0; i < 90; i++) {
+                    mod.step(gs, { right: true, up: true, b: true })
+                    if (gs.pb.some((b) => b.k === 'l' && b.y < 28)) crossed = true
+                    gs.ev.length = 0
+                }
+                return crossed
+                    ? null
+                    : 'HARM NAMED: beams die at the cannon housings again - the laser stops dead at the mount where the bodies law says it flies on; pierce stops at the wall'
             },
         },
     ]
