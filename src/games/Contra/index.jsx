@@ -444,7 +444,7 @@ export default function ContraGame () {
                     capsule: gs.capsule ? { x: +gs.capsule.x.toFixed(1), y: gs.capsule.y, kind: gs.capsule.kind || 'spread' } : null,
                     volley: gs.vc.length,
                     carriers: gs.carriers.length,
-                    pods: gs.pods.map((c) => ({ x: +c.x.toFixed(1), y: +c.y.toFixed(1), kind: c.kind })),
+                    pods: gs.pods.map((c) => ({ x: +c.x.toFixed(1), y: +c.y.toFixed(1), kind: c.kind, r: c.recoil || 0, pf: c.puff || 0 })),
                     depot: gs.depot ? { hp: gs.depot.hp, dead: gs.depot.dead } : null,
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
