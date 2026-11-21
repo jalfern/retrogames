@@ -1,70 +1,74 @@
-# STATE.md — The Forge (rewritten at close of slot a, 2026-11-21; committed to
-# main because game code merged: src/games/ShortOrderShout/model.js +
-# src/games/RallyCoDriver/model.js shipped in PR #2861 -> e1de37d. Rule 4 keeps
-# turning: #2853, #2855, #2856, #2861.)
+# STATE.md — The Forge (rewritten at close of slot b, 2026-11-21; committed to
+# main because game code merged: src/games/DoubleDragon/p2pad.js shipped in
+# PR #2862 -> 7b2bc7c. Rule 4 keeps turning: #2850, #2853, #2855, #2856,
+# #2862 — five game-code PRs in a row across the two slots.)
 
 ## PLAYABLE
-- /retrogames/contra, /retrogames/double-dragon, /retrogames/r-type — unchanged
-  from slot b's close (gate pierce, partner personality, S4 wings).
-- SOS + Rally pages re-verified 200 post-deploy; gameplay untouched (soscheck
-  107/107, rallycheck 172/172 on the merge — the only game-code diff was three
-  additive `export` keywords in the SOS engine).
+- /retrogames/double-dragon — **a friend's own pad or phone takes the blue
+  seat** (#2860, shipped this session): slot-2 input (2nd gamepad via #492,
+  linked iPhone via ?pads=1/#893) drives Jimmy — d-pad walk · A jump · B kick ·
+  square/triangle/LB punch; any input seats drop-in for the run, chime once;
+  kb WASD+FGV unions untouched; solo declines. ddragoncheck 126/126,
+  mutants 12/12 named, vpadcheck 714/714. Partner personality (guardian/
+  release/cadence, #2855) unchanged underneath.
+- /retrogames/contra — gate-pierce law (#2854 -> #2856), pod carriers (#2847).
+  contracheck 126/126.
+- /retrogames/r-type — S1–S4 + S4 wing polish (#2853).
+- Rest of shelf unchanged.
 
-## WHAT THIS SESSION DID (slot a)
-- Warden target #1712 claimed clean (first try). Shipped PR #2861 (squash
-  e1de37d): PLAICRAFT S2 adapters for SHORT ORDER SHOUT (55 seat features) and
-  RALLY CO-DRIVER (41) — seat-senses model.js per title + replay-verify
-  adapters in the dataset builder. Rally keeps the split-information law in the
-  corpus: driver rows never carry pace-book features, co rows never carry
-  headlight features; weather rides rules->replay ("the rain take reads rain").
-- Evidence: datasetcheck 59/59 (+11 pins: seat partition, crest-honesty race
-  4960 reads/0 leaks, weather round-trip, clean/tampered units ×2, tampered
-  SOS+rally store fails the whole build); 7 mutants RED by design, named
-  (new: SOS + rally adapter-bypass). Production rebuilt twice — version
-  **5dcb62ac…** byte-identical to #2849's: line-neutral, as intended.
-- #1712 stays OPEN + `next` (big-build rule 3: `covers 2+ games` waits on
-  friends' play, not code). All four named co-op titles are now
-  trainable-on-arrival — a friend take from /retrogames/join closes the games
-  line with zero pipeline work in between.
+## WHAT THIS SESSION DID (slot b)
+- Warden target #1712 REFUSED at claim — slot a's `FORGE (a): claimed
+  05:56Z` checkpoint ~9 min fresh, correct; slot a is building S2 adapters
+  there. Ladder: no steer/halt; `next` empty (#1712 already building);
+  game-queue empty; QA borrow closed (QA MASTER alive at 5176); flagship
+  stage spent. NEVER-DRY rung: `weakestStage` scored DOUBLE DRAGON weakest
+  at 8 (7 unowned README gaps + fb #2857; Contra held #2842). Filed POLISH
+  #2860, claimed, shipped ~1h30m in one PR: p2pad.js pure merge + seat law,
+  slotFieldsFrom/GamepadBridge gain `boost` (square/triangle/LB -> slot's
+  third action; phone Y already lands there), slotActive counts boost,
+  registry text, README laws + gap CLOSED. Filed QA polish pass **#2863**
+  (2P-ready greeting, join juice, rumble parity, seat-release taste, phone
+  labels). Prod verified via www chunk-crawl (marker `triangle/LB`).
 
 ## BOARD (at close)
-- building: #2860 (POLISH DD — friend takes the blue seat, slot b, alive —
-  checkpoint mid-session). building-qa: #2842 (CONTRA ceremony — QA's).
-- game-queue: empty. #1712 `next` (wait-state: friends' takes).
+- building: **#1712** (PLAICRAFT S2 — slot a's; its plan per claim comment:
+  SHORT ORDER SHOUT + RALLY CO-DRIVER adapters). building-qa: **#2842**
+  (CONTRA ceremony — QA's).
+- game-queue: empty at close. DD README gaps #1..#6 remain unowned (chain
+  scoring is the meatiest left); `idle-kick` will point the next free slot
+  there — re-derive, don't trust this note.
 - feedback (nobody-owned): **#2852** (CONTRA pod-carrier polish), **#2857**
-  (DD partner-personality polish), **#2839** harness bug (claim-status.mjs
-  ignores the `FORGE (<slot>):` checkpoint format → liveness reads dead;
-  small, any lane).
-- Open jonq (link only): **#2844** (S2 fold ruling; default A fold),
+  (DD partner-personality polish), **#2863** (DD pad/phone seat polish).
+- Open jonq (link only): **#2844** (S2 fold ruling; default keep fold),
   **#2846** (flagship public promotion; default keep private).
-- QA MASTER's vite NOT seen at close — see the caution I left on #2860
-  (my broad `pkill -f "npm run dev"` may have stopped slot b's server 5178;
-  flagged, fix = restart + rerun once). Next slot: check #2860 for a red
-  browser leg before believing it.
+- QA MASTER was alive mid-session at 5176 — leave that port.
 
 ## HARNESS NOTES FOR THE NEXT LANE
-- **Mutant anchors must consume trailing commas.** The ADAPTERS map is now
-  multi-line; the old anchors (`'game': fn` without the comma) left `/*M*/,`
-  in the list — SyntaxError, child exit 1, RED-but-for-the-wrong-reason.
-  Fixed for bomb-defuse/SOS/rally (#2861). When you extend ADAPTERS, keep the
-  anchors comma-consuming and glance at the mutant's exit text, not just color.
-- **A "line-neutral" adapter PR must not move the prod version.** Comparing
-  the live version before/after (5dcb62ac twice) is the cheap proof that new
-  adapters changed no existing rows. Any drift = existing featurizers leaked.
-- **Rally weather can be lost silently by a null rules field** — rebuild with
-  'clear' and low-speed takes still hash-match (lat is rounded ×100). The
-  wx-bit pin (`rain take reads rain in every row`) is what catches it; don't
-  delete it if you touch the adapter.
-- scriptedTake now knows five games + a `weather:` option; new uploads shift
-  the fixture counts (12 takes / 10 audio / 7 humans / 5 covered games).
-- Fixture players are pipeline tests, not evidence (header of datasetcheck);
-  acceptance lines are judged by the production card only.
+- **Fake-pad browser legs work** (ddragoncheck #2860 is the reference):
+  `Object.defineProperty(navigator,'getGamepads',…)` AFTER page load is fine —
+  GamepadBridge polls every rAF. Three traps: button array needs **17**
+  entries (d-pad is buttons 12–15); the bridge slots by LIVE-list position,
+  so return `[idlePad1, pad2]` — a lone pad in the array is pad 1 and will
+  drive keyboard codes; `state()` lives on `__game` (exposeGame), NOT on the
+  game's `__ddTest` hook (that cost one red run).
+- Hash-equivalence recipe for seat merges: run the sim twice on one seed,
+  feed the same scripted stream via kb booleans vs `pressSlot(2, …)` +
+  `slotPad(2,'dpad')`, compare `stateHash` every tick — pins the whole
+  translation table in one check. Seat the human explicitly in both runs or
+  the drop-in divergence pollutes the stream.
+- `boost` added to slotFieldsFrom/writeSlot/slotActive is additive —
+  vpadcheck's exact-enumeration pins unaffected (714/714).
+- ddragoncheck is now **126 checks**; cadence/one-voice pins from #2851 all
+  still pass untouched. Browser-leg Z-key flake note from slot a still
+  stands: rerun once before believing a fresh-HMR red.
 
 ## WORKTREES
-- Main checkout: detached origin/main (e1de37d) + this STATE commit.
-- `~/Dev/retrogames-forge-s2-coop-adapters` — merged; re-detached at
-  origin/main; reap freely (remote branch gone). Port 5173 stopped at close.
+- Main checkout ~/Dev/retrogames: detached origin/main (this STATE commit on
+  top of 7b2bc7c lineage).
+- `~/Dev/retrogames-forge-dd-p2pad` — finished; re-detached at origin/main;
+  reap freely (remote branch gone on merge).
+- Ports: b's 5178 stopped at close. QA studio 5176 = QA's, leave it.
 
 ## Open questions
-- #2844 — PLAICRAFT S2 fold ruling (default: keep fold).
+- #2844 — PLAICRAFT S2 fold ruling (research lane's).
 - #2846 — promote CONTRA/R-TYPE/DD to public? (default keep private.)
