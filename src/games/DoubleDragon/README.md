@@ -233,6 +233,34 @@ S4 (the second dragon, #2807):
 - The `seat-swap` mutant names the seat's translator breaking (A goes dead
   air while the hop migrates onto B).
 
+#2857 partner-personality read (forge) — the guardian laws now read like game-feel:
+
+- **Guardian telegraph** — a dragon sprinting the thug who grips his brother
+  wears seat-tinted speed lines off the trailing shoulder (`p.guard`, 8 ticks,
+  re-stamped each tick he actually closes — a seat that ignores the grip earns
+  no promise; honest like the blade law). The guard clock rides the fighter,
+  never `stateHash`.
+- **Grip-break impact** — when the release law fires, `gs.gripFx` reports where
+  the hold broke; the shell answers with a white flash and seat-tinted sparks at
+  the holder, and the freed seat throws a 9-tick arms-up relief pose (both the
+  partner-freeing and the mash-freeing paths pay it).
+- **Cadence readability** — the blue seat's bare jab bites as `jab_b` (294 Hz,
+  snappier than the shared 233 `hit_b`) and every bare hit he lands rocks the
+  thug with a wider stagger wobble (`e.wob` 7 vs Billy's 4; the draw sways 3 px
+  vs 2). Technique vs power at an eye and an ear; Billy's sounds are untouched.
+- **Post-KO flair** — the seat whose fist drops a fighter struts for 20 ticks:
+  wrist flick (white spark) then a cocked shoulder check, with a snap `flair`
+  (880 Hz red / 1175 Hz blue). A barrel or crate splinter pays score but never
+  the pose — it is a KO strut (`flair-dead` mutant guards it).
+- **Steel outranks the sprint** — the blade-dodge sits above the guardian law in
+  the brain, and the ropes-phase QA leg (real keystrokes, duel knife still in
+  the air) proves the CPU guardian keeps its lives on the way to the rescue.
+- **Drop-in honesty fix** (this leg found it): the keyboard seat-take was not
+  gated on P2's keys — *any* key was stealing Jimmy from his CPU for the rest
+  of the run (arrows from P1 included, and the p2join chime rang on them).
+  `isP2` now guards the seat line; the pad seat (#2860) is unaffected.
+- The `glint-deaf` and `flair-dead` mutants name the two tells going dark.
+
 ## Controls
 
 Arrows walk (UP/DOWN = depth) · SPACE jump · X kick · Z punch · ? ops card.
@@ -245,8 +273,8 @@ or the PADS pill) — A jump · B kick · square/triangle/LB punch · d-pad walk
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 138 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), winnable, browser leg
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer must go RED (named)
+npm run ddragoncheck                    # 168 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), winnable, browser leg
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -258,8 +286,13 @@ of nightly 44762398189).
 
 - **DISCLAIMER** — the arcade had no CPU partner to imitate: Jimmy's
   personality is designed, not restored (#2851: the guardian law, the
-  release law, a 13-beat technician's cadence over #2833's manners).
-  Seat-specific throws and post-KO flair are open craft, not fidelity gaps.
+  release law, a 13-beat technician's cadence over #2833's manners, #2857's
+  read: glint, relief, flair). Seat-specific throws remain open craft.
+- **CLOSED by #2857** — the partner-personality read: the guardian sprint
+  shows its coming (seat-tinted glint trail), grip breaks flash and pay a
+  relief pose, the blue jab has its own bite and a wider wobble, and every
+  own-hand KO gets its 20-tick strut — all juice, all hash-pure, with the
+  ropes-phase guardian proven end-to-end on real keystrokes.
 - **CLOSED by #2860** — two humans at one keyboard: P2 now also takes a
   friend's own controller — a second gamepad or a linked phone (A jump · B
   kick · square/triangle/LB punch), any input seats them drop-in. Two pairs

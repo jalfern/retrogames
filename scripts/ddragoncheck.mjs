@@ -20,6 +20,9 @@
 // #2882 adds chain scoring — takes in a row multiply the payout ×2/×3/×4 and
 // the streak dies on damage or a ~3 s lapse; chain-frozen plants a window that
 // never cools and the pin must name the unearned flurry bonus.
+// #2857 adds the partner-personality juice read — glint on the guardian sprint,
+// flash + relief on a grip break, a jab voice and wobble that split the schools,
+// a KO strut — all hash-pure; glint-deaf and flair-dead name the two collapses.
 // --mutant replants them and demands the harm is NAMED (#2142 direction).
 // The browser leg drives real key events through the shell: attract -> seat ->
 // walk/kick -> die -> restart, zero page errors; S4 adds the default blue
@@ -810,7 +813,7 @@ const runFull = (seed, max = 60000) => {
     step(gs, {}, { punch: true }); ev.push(...gs.events); gs.events.length = 0
     for (let i = 0; i < 8; i++) { step(gs, {}, {}); ev.push(...gs.events); gs.events.length = 0 }
     r.check('#2833 audio: the blue seat sounds blue — Jimmy\'s whoosh and bite carry _b',
-        ev.includes('whoosh_b') && ev.includes('hit_b'), ev.join(','))
+        ev.includes('whoosh_b') && ev.includes('jab_b'), ev.join(',')) // #2857: the bare jab's bite is now its own voice
     gs.enemies.push(mk('williams', 72, 180, { hp: 30, attackCooldown: 999 }))
     ev = []
     step(gs, { punch: true }, {}); ev.push(...gs.events); gs.events.length = 0
@@ -933,6 +936,144 @@ const runFull = (seed, max = 60000) => {
         allyAsks === 'JJ.JJ.KK.....' && soloAsks === 'KK.......KK..' &&
         allyAsks[0] === 'J' && soloAsks[0] === 'K',
         `blue=${allyAsks} red=${soloAsks}`)
+}
+
+// --------------------------------------------- #2857 partner-personality juice ---
+// The guardian law reads like game-feel now: a glint while help sprints, a
+// flash and relief when the grip breaks, a voice and a wobble that split the
+// two schools, and a strut over the fallen. All juice — none of it may move
+// stateHash, and each tell must be honest (it stamps only when it is true).
+{
+    // the glint rides an honest sprint: CPU Jimmy dashes the holder of his
+    // brother — speed lines appear while he closes, gone when the rescue lands.
+    // (He starts 40px off: the knee timer is 52 ticks, and a full-street sprint
+    // would let the pin time out on the fixture, not on the law.)
+    const gs = makeGame(57, { coop: true })
+    gs.enemies.length = 0; gs.barrels.length = 0; gs.pickups.length = 0; gs.projectiles.length = 0
+    const holder = mk('amon', 300, 180, { state: 'grab', attackCooldown: 99999 })
+    holder.id = 1700; holder.tgt = 'billy'
+    gs.enemies.push(holder)
+    gs.billy.state = 'grabbed'; gs.billy.grabFrom = holder.id; gs.billy.stateT = 0
+    gs.billy.x = 292; gs.billy.y = 180; gs.billy.inv = 999
+    gs.jimmy.x = 260; gs.jimmy.y = 180; gs.jimmy.inv = 999
+    let glint = 0, broke = -1, gripAt = null, reliefSeen = 0
+    for (let i = 0; i < 60 && broke < 0; i++) {
+        step(gs, {}, {}); gs.events.length = 0
+        if (gs.jimmy.guard > 0) glint += 1
+        if (gs.billy.state !== 'grabbed' && gs.billy.lives === CFG.lives && broke < 0) broke = i
+        if (gs.gripFx) { gripAt = { ...gs.gripFx }; gs.gripFx = null }
+        if (gs.billy.relief > 0) reliefSeen = Math.max(reliefSeen, gs.billy.relief)
+    }
+    r.check('#2857 glint: the rescue wears a trail — guard stamps while the blue seat sprints the holder',
+        glint > 0, `glint ticks=${glint}`)
+    r.check('#2857 glint decays: the trail is a sprint, not a paint job — it fades once he stops closing',
+        gs.jimmy.guard === 0 || gs.jimmy.state === 'grabbed' || gs.jimmy.guard < 8, `guard=${gs.jimmy.guard}`)
+    r.check('#2857 relief: the freed seat throws his arms up — relief pose pays the freed dragon',
+        broke >= 0 && reliefSeen > 0 && reliefSeen <= 9, `broke@${broke} relief=${reliefSeen}`)
+    r.check('#2857 grip-break reports its spot — the shell flashes where the hold broke',
+        gripAt !== null && Math.abs(gripAt.x - 300) <= 8 && Math.abs(gripAt.y - 180) <= 8, JSON.stringify(gripAt))
+
+    // the glint is honest: a seat that ignores the grip earns no promise
+    const gsH = makeGame(58, { coop: true })
+    gsH.enemies.length = 0; gsH.barrels.length = 0; gsH.pickups.length = 0; gsH.projectiles.length = 0
+    const holderH = mk('amon', 300, 180, { state: 'grab', attackCooldown: 99999 })
+    holderH.id = 1701; holderH.tgt = 'billy'
+    gsH.enemies.push(holderH)
+    gsH.billy.state = 'grabbed'; gsH.billy.grabFrom = holderH.id; gsH.billy.stateT = 0
+    gsH.billy.x = 292; gsH.billy.y = 180; gsH.billy.inv = 999
+    gsH.jimmy.x = 140; gsH.jimmy.y = 180; gsH.jimmy.inv = 999; gsH.jimmy.human = true
+    let glintIdle = 0
+    for (let i = 0; i < 40; i++) { step(gsH, {}, {}); gsH.events.length = 0; if (gsH.jimmy.guard > 0) glintIdle += 1 }
+    r.check('#2857 glint is honest — a seat that stands still while its brother dangles promises nothing',
+        glintIdle === 0, `glint=${glintIdle}`)
+
+    // the blue jab has its own bite; the red seat's voice is untouched
+    const gsV = makeGame(59, { coop: true })
+    gsV.enemies.length = 0; gsV.barrels.length = 0; gsV.pickups.length = 0; gsV.projectiles.length = 0
+    gsV.jimmy.human = true
+    gsV.jimmy.inv = 999; gsV.jimmy.x = 140; gsV.jimmy.y = 180
+    gsV.billy.inv = 999; gsV.billy.x = 60; gsV.billy.y = 180
+    gsV.enemies.push(mk('williams', 152, 180, { hp: 30, attackCooldown: 9999 }))
+    let evB = []
+    step(gsV, {}, { punch: true }); evB.push(...gsV.events); gsV.events.length = 0
+    for (let i = 0; i < 8; i++) { step(gsV, {}, {}); evB.push(...gsV.events); gsV.events.length = 0 }
+    gsV.enemies.push(mk('williams', 72, 180, { hp: 30, attackCooldown: 9999 }))
+    let evR = []
+    step(gsV, { punch: true }, {}); evR.push(...gsV.events); gsV.events.length = 0
+    for (let i = 0; i < 8; i++) { step(gsV, {}, {}); evR.push(...gsV.events); gsV.events.length = 0 }
+    r.check('#2857 cadence at an ear: the blue jab snaps as jab_b — technique split from the shared bite',
+        evB.includes('jab_b') && !evB.includes('hit_b'), evB.join(','))
+    r.check('#2857 cadence at an ear: Billy keeps the shared hit — the split is the blue seat\'s tell, not a renamed cabinet',
+        evR.includes('hit') && !evR.includes('jab'), evR.join(','))
+
+    // the wobble: the technician rocks a man wider than the hammer's jab does
+    const wobOf = (seat) => {
+        const g = makeGame(60 + (seat === 'jimmy' ? 0 : 1), { coop: true })
+        g.enemies.length = 0; g.barrels.length = 0; g.pickups.length = 0; g.projectiles.length = 0
+        const thug = mk('williams', 152, 180, { hp: 30, attackCooldown: 9999 })
+        g.enemies.push(thug)
+        if (seat === 'jimmy') { g.jimmy.human = true; g.jimmy.inv = 999; g.jimmy.x = 140; g.jimmy.y = 180; g.billy.inv = 999 }
+        else { g.billy.x = 140; g.billy.y = 180; g.billy.inv = 999; g.jimmy.inv = 999 }
+        step(g, seat === 'billy' ? { punch: true } : {}, seat === 'jimmy' ? { punch: true } : {})
+        let hitTick = 0
+        for (let i = 0; i < 14; i++) { step(g, {}, {}); g.events.length = 0; hitTick = Math.max(hitTick, g.enemies[0] ? g.enemies[0].wob || 0 : 0) }
+        return { hitTick, settled: thug.wob || 0 }
+    }
+    const wobB = wobOf('jimmy'), wobR = wobOf('billy')
+    // stamps are 7 (blue) / 4 (red); the enemy's own decay tick lands inside
+    // the same step, so the observed post-hit max is one below — and the draw
+    // maps >5 to the 3px sway, 1..5 to 2px. Deterministic, so pinned exactly.
+    r.check('#2857 cadence at a glance: a blue jab rocks the man wider than a red one (3px vs 2)',
+        wobB.hitTick === 6 && wobR.hitTick === 3 && wobB.settled === 0 && wobR.settled === 0,
+        `blue=${wobB.hitTick} red=${wobR.hitTick}`)
+
+    // post-KO flair: the seat that dropped him poses — and only for a KO
+    const gsF = makeGame(62, { coop: true })
+    gsF.enemies.length = 0; gsF.barrels.length = 0; gsF.pickups.length = 0; gsF.projectiles.length = 0
+    const victim = mk('williams', 56, 180, { hp: 1, attackCooldown: 9999 })
+    gsF.enemies.push(victim)
+    gsF.billy.x = 40; gsF.billy.y = 180; gsF.billy.inv = 999; gsF.jimmy.inv = 999
+    let flairEv = false
+    for (let i = 0; i < 14; i++) { step(gsF, { punch: true }, {}); if (gsF.events.includes('flair')) flairEv = true; gsF.events.length = 0 }
+    const flourishTop = gsF.billy.flourish
+    r.check('#2857 flair: the fist that drops a man poses over him — 20 ticks and a snap, red seat red voice',
+        flourishTop > 0 && flourishTop <= 20 && flairEv, `flourish=${flourishTop} flair=${flairEv}`)
+    for (let i = 0; i < 25; i++) { step(gsF, {}, {}); gsF.events.length = 0 }
+    r.check('#2857 flair expires — the strut is a beat, not a pose lock', gsF.billy.flourish === 0, `flourish=${gsF.billy.flourish}`)
+    const gsW = makeGame(63, { coop: true })
+    gsW.enemies.length = 0
+    gsW.billy.x = 40; gsW.billy.y = 180; gsW.billy.inv = 999; gsW.jimmy.inv = 999
+    gsW.barrels.length = 0
+    gsW.barrels.push({ id: 991, x: 58, y: 180, hp: 3, shake: 0, kind: 'barrel' })
+    for (let i = 0; i < 90 && gsW.score === 0; i++) { step(gsW, { b: true }, {}); gsW.events.length = 0 }
+    r.check('#2857 flair is a KO strut, not a chore — splintered wood pays score but never the pose',
+        gsW.score > 0 && gsW.billy.flourish === 0, `score=${gsW.score} flourish=${gsW.billy.flourish}`)
+
+    // steel outranks the rescue: the guardian answers the lane BEFORE sprinting
+    // the holder — the ropes-phase law, at the brain
+    const gsS = makeGame(64, { coop: true })
+    gsS.enemies.length = 0; gsS.barrels.length = 0; gsS.pickups.length = 0; gsS.projectiles.length = 0
+    const holderS = mk('amon', 300, 180, { state: 'grab', attackCooldown: 99999 })
+    holderS.id = 1702; holderS.tgt = 'billy'
+    gsS.enemies.push(holderS)
+    gsS.billy.state = 'grabbed'; gsS.billy.grabFrom = holderS.id; gsS.billy.stateT = 0
+    gsS.billy.x = 292; gsS.billy.y = 180; gsS.billy.inv = 999
+    gsS.jimmy.x = 140; gsS.jimmy.y = 180; gsS.jimmy.inv = 999
+    gsS.projectiles.push({ id: 771, x: 180, y: 180, vx: -3, spin: 0, side: 'goon' })
+    const pSteel = dragonBrain(gsS, gsS.jimmy, gsS.billy)
+    r.check('#2857 steel outranks the sprint — a guardian that runs into a blade is no guardian',
+        (pSteel.up || pSteel.down) && !pSteel.right, `L=${pSteel.left} R=${pSteel.right} U=${pSteel.up} D=${pSteel.down}`)
+
+    // juice law: none of these tells may move the cabinet's truth
+    const gA = makeGame(65, { coop: true })
+    for (let i = 0; i < 300; i++) { step(gA, autopilot(gA), {}); gA.events.length = 0 }
+    const pureBefore = stateHash(gA)
+    gA.billy.guard = 8; gA.billy.relief = 5; gA.billy.flourish = 12
+    gA.jimmy.guard = 3; gA.jimmy.relief = 2; gA.jimmy.flourish = 19
+    gA.gripFx = { x: 10, y: 20 }
+    if (gA.enemies[0]) gA.enemies[0].wob = 7
+    r.check('#2857 juice law — glint/relief/flourish/wob/gripFx never enter stateHash',
+        stateHash(gA) === pureBefore)
 }
 
 // ------------------------------------------------------- p2 pad seat (#2860) ---
@@ -1259,6 +1400,41 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            name: 'glint-deaf',
+            anchor: 'if (holder && (holder.x - px0) * mx + (holder.y - py0) * my > 0) p.guard = CFG.guardTicks',
+            plant: 'if (false && holder && (holder.x - px0) * mx + (holder.y - py0) * my > 0) p.guard = CFG.guardTicks /* MUTANT(glint-deaf): help sprints in, invisible */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(57, { coop: true })
+                gs.enemies.length = 0; gs.barrels.length = 0; gs.pickups.length = 0; gs.projectiles.length = 0
+                const holder = mk('amon', 300, 180, { state: 'grab', attackCooldown: 99999 })
+                holder.id = 1700; holder.tgt = 'billy'
+                gs.enemies.push(holder)
+                gs.billy.state = 'grabbed'; gs.billy.grabFrom = holder.id; gs.billy.stateT = 0
+                gs.billy.x = 292; gs.billy.y = 180; gs.billy.inv = 999
+                gs.jimmy.x = 140; gs.jimmy.y = 180; gs.jimmy.inv = 999
+                let glint = 0
+                for (let i = 0; i < 200 && gs.billy.state === 'grabbed'; i++) { mod.step(gs, {}, {}); gs.events.length = 0; if (gs.jimmy.guard > 0) glint += 1 }
+                return glint === 0
+                    ? 'HARM NAMED: the blue seat sprinted the holder and never wore the tell — a rescue that arrives unseen reads as a partner who ignored you; the guardian law stops being readable and phone players never learn to bait the grab'
+                    : null
+            },
+        },
+        {
+            name: 'flair-dead',
+            anchor: "if (hero) { hero.flourish = CFG.flourishTicks; gs.events.push(blue(seat, 'flair')) }",
+            plant: 'if (hero) { /* MUTANT(flair-dead): nobody ever poses over the fall */ }',
+            harm: async (mod) => {
+                const gs = mod.makeGame(62, { coop: true })
+                gs.enemies.length = 0; gs.barrels.length = 0; gs.pickups.length = 0; gs.projectiles.length = 0
+                gs.enemies.push(mk('williams', 56, 180, { hp: 1, attackCooldown: 9999 }))
+                gs.billy.x = 40; gs.billy.y = 180; gs.billy.inv = 999; gs.jimmy.inv = 999
+                for (let i = 0; i < 14 && !gs.enemies.some((e) => e.state === 'dying'); i++) { mod.step(gs, { punch: true }, {}); gs.events.length = 0 }
+                return gs.billy.flourish === 0
+                    ? 'HARM NAMED: a man fell and the seat that dropped him kept standing like furniture — without the KO strut the cabinet never celebrates a take, and the arcade duo loses the swagger that sells every hit'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
@@ -1572,7 +1748,10 @@ const browser = await launch()
     // S4: one seat falling is NOT the end — the partner carries on. Game over
     // is both banks drained; the browser leg kills both dragons through the
     // real key path and proves the cabinet still finds its game over.
-    await page.evaluate(() => window.__ddTest.setup({ killBilly: true, lives: 1, killAlly: true, allyLives: 1 }))
+    // #2857 honesty note: the seat is pinned HUMAN-idle here — an awake CPU
+    // dodges the executioner (the threat branch), and a dodging partner is not
+    // a drained bank. The leg is about both pools emptying, not about dodging.
+    await page.evaluate(() => window.__ddTest.setup({ killBilly: true, lives: 1, killAlly: true, allyLives: 1, allyHuman: true }))
     await page.waitForTimeout(700)
     const dead = await page.evaluate(() => window.__ddTest.probe())
     r.check('dying is real: both banks drained ends the run', dead.screen === 'over' || dead.mode === 'gameover', `screen=${dead.screen} mode=${dead.mode}`)
@@ -1581,6 +1760,37 @@ const browser = await launch()
     await page.waitForTimeout(300)
     const backHome = await page.evaluate(() => window.__ddTest.probe())
     r.check('game over returns to attract on any key', backHome.screen === 'attract', `screen=${backHome.screen}`)
+
+    // #2857 guardian telegraph on the live cabinet: a thug takes Billy, and the
+    // CPU seat that sprints to the rescue wears the glint the phone player reads.
+    await page.evaluate(() => window.__game.reset(29))
+    await page.waitForTimeout(150)
+    await page.evaluate(() => window.__ddTest.setup({ clearEnemies: true, allyGrip: [300, 180], allyX: 140, allyY: 180, allyInv: 999 }))
+    let glintLive = false
+    try { await page.waitForFunction(() => window.__ddTest.probe().jimmyGuard > 0, { timeout: 5000 }); glintLive = true } catch {}
+    r.check('#2857 guardian on the live cabinet — help is visibly on the way (glint while the CPU sprints the holder)',
+        glintLive, `glint=${glintLive}`)
+
+    // #2857 item 5: the ropes phase with steel still in the air. The CPU guardian
+    // must answer the blade before it walks to its brother's rescue — driven here
+    // on real keystrokes: Billy walks the last stretch and cuts while Jimmy lives.
+    await page.evaluate(() => window.__game.reset(37))
+    await page.waitForTimeout(150)
+    await page.evaluate(() => window.__ddTest.setup({ warp: 'marian', clearEnemies: true, allyX: 830, allyY: 160, allyInv: 0 }))
+    await page.evaluate(() => window.__ddTest.setup({ flyKnife: true }))
+    const steelLeg0 = await page.evaluate(() => window.__ddTest.probe())
+    await page.keyboard.down('ArrowRight')
+    await page.waitForTimeout(700)
+    await page.keyboard.up('ArrowRight')
+    await page.keyboard.press('KeyZ')
+    await page.waitForTimeout(250)
+    await page.keyboard.press('KeyZ')
+    let ropeCut = false
+    try { await page.waitForFunction(() => window.__ddTest.probe().marian === 'free', { timeout: 6000 }); ropeCut = true } catch {}
+    const steelLeg1 = await page.evaluate(() => window.__ddTest.probe())
+    r.check('#2857 ropes-phase guardian — steel in the air, seat intact, ropes cut on real keystrokes',
+        steelLeg0.projectiles >= 1 && ropeCut && Number(steelLeg1.jimmy.split(':')[2]) === 3,
+        `knives=${steelLeg0.projectiles} cut=${ropeCut} jimmy=${steelLeg1.jimmy}`)
 
     // #2877 pixel legs: in the yard the ground shadow exists AND it MOVES.
     // Fresh cabinet, warp to the end; park the dragon at x 850 — inside the

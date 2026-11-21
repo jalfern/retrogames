@@ -91,6 +91,13 @@ export default function DoubleDragon() {
             throw_b: () => audioController.playSweep(980, 330, 0.12, 'triangle', 0.10),
             whip_b: () => { audioController.playNoise(0.06, 0.14); audioController.playSweep(1750, 330, 0.08, 'sawtooth', 0.08) },
             knife_hit_b: () => { audioController.playTone(196, 0.12, 'square', 0.16); shake = Math.max(shake, 3) },
+            // #2857 cadence readability: the blue seat's bare jab is a SNAP, a
+            // step up in pitch from the shared bite — technique vs power at an ear.
+            jab_b: () => { audioController.playTone(294, 0.05, 'square', 0.10); audioController.playNoise(0.02, 0.05) },
+            // #2857 post-KO flair snaps — the red seat at the shoulder, the
+            // blue one a minor third brighter, detuned like the rest of his voice.
+            flair: () => audioController.playTone(880, 0.05, 'triangle', 0.07),
+            flair_b: () => audioController.playTone(1175, 0.05, 'triangle', 0.07),
             grabbed: () => audioController.playTone(90, 0.16, 'sawtooth', 0.14),
             struggle: () => audioController.playNoise(0.03, 0.05),
             escape: () => audioController.playSweep(300, 700, 0.12, 'square', 0.12),
@@ -174,6 +181,23 @@ export default function DoubleDragon() {
                             y: fx.y - 10 + (Math.random() - 0.5) * 8,
                             vx: (Math.random() - 0.5) * 3.2, vy: -Math.random() * 2.2 - 0.4,
                             t: 14 + Math.floor(Math.random() * 10), c: 3,
+                        })
+                    }
+                }
+                // #2857 grip-break juice: a white flash and a burst of seat-tinted
+                // sparks where the freeing blow landed — the break reads on the
+                // holder, not only as the blue escape sweep on the freed seat.
+                else if ((ev === 'escape' || ev === 'escape_b') && gs.gripFx) {
+                    const fx = gs.gripFx
+                    gs.gripFx = null
+                    part.push({ x: fx.x - 2, y: fx.y - 20, vx: 0, vy: 0, t: 3, c: 4, s: 5 })
+                    const col = ev === 'escape_b' ? 5 : 1
+                    for (let i = 0; i < 6; i++) {
+                        part.push({
+                            x: fx.x + (Math.random() - 0.5) * 10,
+                            y: fx.y - 14 + (Math.random() - 0.5) * 10,
+                            vx: (Math.random() - 0.5) * 2.8, vy: -Math.random() * 1.8 - 0.2,
+                            t: 9 + Math.floor(Math.random() * 8), c: col,
                         })
                     }
                 }
@@ -346,8 +370,8 @@ export default function DoubleDragon() {
                 const q = part[i]
                 q.x += q.vx; q.y += q.vy; q.vy += 0.1; q.t -= 1
                 if (q.t <= 0) { part.splice(i, 1); continue }
-                ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : q.c === 3 ? '#a8763a' : '#d9dde2'
-                ctx.fillRect(Math.round(q.x - gs.camX), Math.round(q.y), 2, 2)
+                ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : q.c === 3 ? '#a8763a' : q.c === 4 ? '#eef6ff' : q.c === 5 ? '#5a8ae8' : '#d9dde2'
+                ctx.fillRect(Math.round(q.x - gs.camX), Math.round(q.y), q.s || 2, q.s || 2)
             }
             for (const p of (gs.stage === 2 ? PROPS_YARD : PROPS)) drawProp(ctx, p, gs.camX, gs.tick)
             ctx.restore()
@@ -404,7 +428,10 @@ export default function DoubleDragon() {
             // for the rest of the run.
             const isP2 = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyV'].includes(e.code)
             if (isP2) e.preventDefault()
-            if (gs.jimmy && !gs.jimmy.human && !gs.jimmy.out) { gs.jimmy.human = true; sfx.p2join() }
+            // #2857 fix: the seat belongs to P2's keys only — Billy's arrows must
+            // not steal the blue dragon from his CPU (the drop-in law names the
+            // keys; the guard said everything). Exposed by the ropes-phase leg.
+            if (isP2 && gs.jimmy && !gs.jimmy.human && !gs.jimmy.out) { gs.jimmy.human = true; sfx.p2join() }
             if (e.code === 'KeyA') keys2.l = true
             if (e.code === 'KeyD') keys2.r = true
             if (e.code === 'KeyW') keys2.u = true
@@ -476,6 +503,12 @@ export default function DoubleDragon() {
                     coop: gs.coop ? 1 : 0,
                     jimmy: gs.jimmy ? `${gs.jimmy.x.toFixed(0)}:${gs.jimmy.y}:${gs.jimmy.lives}:${gs.jimmy.human ? 'HUMAN' : 'CPU'}${gs.jimmy.out ? ':OUT' : ''}:${gs.jimmy.state}` : 'none',
                     jimmyZ: gs.jimmy ? +gs.jimmy.z.toFixed(2) : 0,
+                    // #2857 juice tells for the harness legs
+                    guard: gs.billy.guard, relief: gs.billy.relief, flourish: gs.billy.flourish,
+                    jimmyGuard: gs.jimmy ? gs.jimmy.guard : -1,
+                    jimmyRelief: gs.jimmy ? gs.jimmy.relief : -1,
+                    jimmyFlourish: gs.jimmy ? gs.jimmy.flourish : -1,
+                    gripFx: gs.gripFx ? 1 : 0,
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -519,12 +552,26 @@ export default function DoubleDragon() {
                     if (opts.allyX !== undefined && gs.jimmy) gs.jimmy.x = opts.allyX
                     if (opts.allyY !== undefined && gs.jimmy) gs.jimmy.y = opts.allyY
                     if (opts.allyLives !== undefined && gs.jimmy) gs.jimmy.lives = opts.allyLives
+                    if (opts.allyInv !== undefined && gs.jimmy) gs.jimmy.inv = opts.allyInv
                     if (opts.killAlly && gs.jimmy) {
                         gs.jimmy.inv = 0; gs.jimmy.lives = 1
                         gs.jimmy.x = gs.camX + 100; gs.jimmy.y = 170
                         gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: gs.jimmy.x + 8, y: gs.jimmy.y, face: -1, hp: 4, state: 'attack', stateT: 2, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, castCooldown: 999, tgt: 'jimmy', attackCooldown: 60, inv: 0, spinHit: false })
                     }
                     if (opts.allyOut && gs.jimmy) { gs.jimmy.lives = 0; gs.jimmy.out = true; gs.jimmy.state = 'idle'; gs.jimmy.stateT = 0 }
+                    // #2857: a thug gripping Billy while the CPU seat watches —
+                    // the guardian-leg fixture. And steel still in the air on the
+                    // ropes-phase doorstep — the guardian-blade QA fixture.
+                    if (opts.allyGrip && gs.jimmy) {
+                        const [gx, gy] = opts.allyGrip
+                        const gid = gs.nextId++
+                        gs.enemies.push({ id: gid, kind: 'amon', x: gx, y: gy, face: gx > gs.billy.x ? -1 : 1, hp: 6, state: 'grab', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, castCooldown: 999, tgt: 'billy', attackCooldown: 99999, inv: 0, spinHit: false, wob: 0 })
+                        gs.billy.x = gx - 8; gs.billy.y = gy; gs.billy.inv = 999
+                        gs.billy.state = 'grabbed'; gs.billy.grabFrom = gid; gs.billy.stateT = 0; gs.billy.presses = 0
+                    }
+                    if (opts.flyKnife && gs.jimmy) {
+                        gs.projectiles.push({ id: gs.nextId++, x: gs.jimmy.x + 52, y: gs.jimmy.y, vx: -CFG.goonKnife.speed, spin: 0, side: 'goon' })
+                    }
                     if (opts.makeSolo && gs.jimmy) { gs.coop = false; gs.jimmy = null }
                     return true
                 },

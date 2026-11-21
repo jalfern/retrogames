@@ -804,6 +804,22 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
     } else if (pose === 'grab' || pose === 'grabbed') {
         R(3, -21 + bob, 8, 3, SKIN)                  // reaching/clutched arms
         R(9, -22 + bob, 3, 4, SKIN_D)
+    } else if (pose === 'relief') {
+        // #2857: freed from a grip — arms thrown up, fists clear of the crown.
+        R(4, -32 + bob, 3, 11, SKIN); R(-7, -31 + bob, 3, 10, SKIN)
+        R(4, -34 + bob, 3, 2, SKIN_D); R(-7, -33 + bob, 3, 2, SKIN_D)
+    } else if (pose === 'flourish') {
+        // #2857: the KO strut, two beats — t counts down from the CFG's
+        // flourishTicks. First half: a flick of the wrist off the shoulder;
+        // second half: a cocked shoulder check back toward the fallen man.
+        if (t > 10) {
+            R(3, -20 + bob, 9, 3, SKIN)               // arm flicked out
+            R(12, -24 + bob, 3, 5, SKIN_D)            // hand snapped up
+            R(15, -26 + bob, 2, 2, '#ffffff')         // the flick's spark
+        } else {
+            R(2, -18 + bob, 6, 4, SKIN)               // arm cocked across the chest
+            R(-6, -19 + bob, 3, 7, SKIN)
+        }
     } else if (pose === 'hurt') {
         R(-7, -20 + bob, 3, 8, SKIN); R(4, -18 + bob, 3, 6, SKIN)
     } else {
@@ -837,6 +853,10 @@ function drawFighter(ctx, b, camX, pal, props) {
     else if (b.state === 'whip') pose = b.stateT >= 8 ? 'attack' : 'windup'
     else if (b.state === 'grabbed') pose = 'grabbed'
     else if (b.state === 'dying') pose = 'dying'
+    // #2857 seat tells over the neutral states — relief after a freed grip,
+    // the KO flourish over an idle or a walk. Juice rides the pose, nothing else.
+    if (b.relief > 0 && pose === 'idle') pose = 'relief'
+    else if (b.flourish > 0 && (pose === 'idle' || pose === 'walk')) pose = 'flourish'
     if (hop) drawShadow(ctx, sx + castPx(b.x), sy + 1, 10, 0.22)
     else drawShadow(ctx, sx + castPx(b.x), sy + 1, 14, 0.35 - b.z * 0.02)
     const lift = Math.round(b.z)
@@ -844,7 +864,21 @@ function drawFighter(ctx, b, camX, pal, props) {
         if (b.stateT > 26) return
         if (b.stateT > 16) ctx.globalAlpha = 1 - (b.stateT - 16) / 10
     }
-    fighter(ctx, sx, sy - lift, b.face, pose, b.anim, pal, 1, hop ? 1 : 0)
+    fighter(ctx, sx, sy - lift, b.face, pose, pose === 'flourish' ? b.flourish : b.anim, pal, 1,
+        hop ? 1 : pose === 'flourish' && b.flourish <= 10 ? 1 : 0)
+    // #2857 guardian telegraph: speed lines off the trailing shoulder while
+    // this dragon sprints the holder of his brother — seat-tinted by the
+    // band (red answers red, blue answers blue), shimmering on the guard clock.
+    if (b.guard > 0 && b.state !== 'grabbed' && b.state !== 'dying') {
+        ctx.globalAlpha = b.guard > 5 ? 0.8 : b.guard > 2 ? 0.55 : 0.3
+        for (let i = 0; i < 3; i++) {
+            if ((b.guard + i) % 2) continue
+            ctx.fillStyle = pal.band || pal.trim
+            ctx.fillRect(sx - b.face * (10 + i * 4), sy - lift - 13 - i * 4, 3, 2)
+        }
+        if (b.guard % 2 === 0) { ctx.fillStyle = '#ffffff'; ctx.fillRect(sx - b.face * 6, sy - lift - 22, 1, 1) }
+        ctx.globalAlpha = 1
+    }
     if (b.weapon === 'stick') {
         ctx.fillStyle = '#8a6a3c'
         const stickAt = pose === 'punch' || pose === 'attack' ? 16 : pose === 'spin' ? 12 : 7
@@ -898,12 +932,16 @@ export function drawEnemy(ctx, e, camX) {
     else if (e.state === 'chargewind') pose = 'windup'
     else if (e.state === 'charge') pose = 'charge'
     if ((e.state === 'getup') && Math.floor(e.inv / 3) % 2 === 0) return
+    // #2857 cadence readability: the blue seat's jabs rock a man wider than
+    // the red's do — a 3 px wobble vs 2, read at a glance over the yard.
+    // The shadow stays planted; only the body sways.
+    const jx = pose === 'hurt' && e.wob > 0 ? ((Math.floor(e.anim / 2) % 2) ? 1 : -1) * (e.wob > 5 ? 3 : 2) : 0
     drawShadow(ctx, sx + castPx(e.x), sy + 1, 14 * def, 0.35)
     if (e.state === 'dying') {
         if (e.stateT > 30) return
         ctx.globalAlpha = 1 - e.stateT / 30
     }
-    fighter(ctx, sx, sy, e.face, pose === 'getup' ? 'jump' : pose, e.anim, PAL[e.kind], def)
+    fighter(ctx, sx + jx, sy, e.face, pose === 'getup' ? 'jump' : pose, e.anim, PAL[e.kind], def)
     if (e.hasStick) {
         ctx.fillStyle = '#8a6a3c'
         ctx.fillRect(sx + (pose === 'attack' ? 16 : pose === 'windup' ? -12 : 8) * e.face, sy - 22 * def, 10 * e.face, 2)
