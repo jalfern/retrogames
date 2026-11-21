@@ -140,7 +140,7 @@ console.log('watch driver: crossings proven on the shipped tick (#1637 b25)')
     }
     ok(det === 40, 'driver: 40/40 seeds replay byte-equal (watchStep draws no rand)')
     ok(clears === 40, 'driver: every seed banks at least one full level in 120 s', `${clears}/40`)
-    ok(clean >= 34, 'driver: zero-death runs on ≥34 seeds (measured 36; the odd seed loses one life to a dive-phase shuffle)', `${clean}/40`)
+    ok(clean >= 38, 'driver: zero-death runs on ≥38 seeds (#2869 measured 40/40 since the away-lane generalization; was 36 — 2 lives of margin)', `${clean}/40`)
     ok(minH >= 20, 'driver: ≥20 homes landed on every seed', `min ${minH}`)
     ok(homes >= 1800, 'driver: ≥1800 homes across the 40-seed sweep', `${homes}`)
     const gsA = makeRun(4242, { attract: true })
@@ -148,6 +148,35 @@ console.log('watch driver: crossings proven on the shipped tick (#1637 b25)')
     const gsO = makeRun(4242)
     gsO.over = true
     ok(watchStep(gsO) === null, 'driver: silent at game over (watch never lingers)')
+}
+
+// #2869: every pin above is an OUTCOME over 120 s — clears, homes, deaths — and a
+// ~2000-tick zigzag/park stall still cleared the bars (that is how seeds 103/3910
+// hid until a nightly rolled one). Pin the metric directly: across the certified
+// family plus every known stall seed (pre-fix 2940/3134/3910; loop-break-era
+// 1970/3328/3425; cross-repo 103/1679/4492), NO home-to-home gap may reach
+// 1800 ticks (the 30 s watchcheck leg budget). Pure sim, deterministic, no browser.
+{
+    const STALL = 1800
+    const SEEDS = [...new Set([...[...Array(40)].map((_, k) => 1000 + k * 97),
+        103, 3910, 1679, 1970, 3328, 3425, 2940, 3134, 4492])]
+    let maxGap = 0, worst = -1, done = false, homes = 0, deaths = 0
+    for (const seed of SEEDS) {
+        const gs = makeRun(seed)
+        gs.watching = true
+        let gap = 0
+        for (let t = 0; t < 7200 && !gs.over && !done; t++) {
+            const ev = tickFrogger(gs)
+            gap = ev.home ? 0 : gap + 1
+            homes += ev.home
+            if (ev.died) deaths++
+            if (gap >= STALL) { maxGap = gap; worst = seed; done = true; break }
+            if (gap > maxGap) { maxGap = gap; worst = seed }
+        }
+    }
+    ok(!done, `gapsweep: no stalled 30 s window across ${SEEDS.length} seeds`, `seed ${worst} gap ${maxGap}`)
+    ok(homes >= 2850, 'gapsweep: ≥2850 homes on the sweep (#2869 measured 2926; muting the loop-break ~6% lower)', `${homes}`)
+    ok(deaths === 0, 'gapsweep: zero deaths across the sweep (#2869 measured)', `${deaths}`)
 }
 
 // #601 main-fix (nightly 44914600702): watchcheck's frogger pilot rides a PINNED
@@ -236,11 +265,17 @@ if (process.argv.includes('--mutate')) {
             `        if (hi >= 0 && !gs.houses[hi].filled) return { ok: true, value: 1e6 }`,
             'src/games/Frogger/sim.js'],
         ['row 1 never shuffles back for houses behind',
-            `            const houseBehind = row === RIVER_TOP
-                && !gs.houses.some((h, i) => !h.filled && HOUSE_COLS[i] * CELL + CELL / 2 >= x)
-            if (rem <= 60 || houseBehind) {`,
-            `            const houseBehind = false
-            if (rem <= 60 || houseBehind) {`,
+            `            const houseBehind = ridesAway(gs, row, x) // #2869: was row-1/columns-left only`,
+            `            const houseBehind = false`,
+            'src/games/Frogger/sim.js'],
+        // #2869 — the two stall cures, each pinned by the gap-ceiling block above.
+        ['the position-loop break is blind (zigzag stall returns, #2869)',
+            `        for (const b of noGo) if (b.row === r && Math.abs(xx - b.x) <= LOOP_TOL) return true`,
+            `        for (const b of noGo) if (false && b.row === r && Math.abs(xx - b.x) <= LOOP_TOL) return true`,
+            'src/games/Frogger/sim.js'],
+        ['away-lane descent trigger narrowed back to row 1/columns-left (park-loop stall returns, #2869)',
+            `            const houseBehind = ridesAway(gs, row, x) // #2869: was row-1/columns-left only`,
+            `            const houseBehind = row === RIVER_TOP && openSide(gs, x) === -1`,
             'src/games/Frogger/sim.js'],
     ]
     let died = 0
