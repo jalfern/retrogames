@@ -608,7 +608,7 @@ if (MUTATE) {
     // lose THE features and its human (carol) falls back to flagged. If the
     // 35-feature rows still appear, the adapter registration is not load-bearing.
     const src4 = fs.readFileSync(DS, 'utf8')
-    const ANCHOR4 = "'bomb-defuse': bombDefuseRows"
+    const ANCHOR4 = "'bomb-defuse': bombDefuseRows,"
     if (!src4.includes(ANCHOR4)) {
         console.log('FAIL   adapter anchor not found — update the mutant (#1712)')
         r.failed++
@@ -670,7 +670,7 @@ if (MUTATE) {
     // rows lose THE 55 features and carla falls back to flagged. If the
     // feature rows still appear, the registration is not load-bearing.
     const src6 = fs.readFileSync(DS, 'utf8')
-    const ANCHOR6 = "'short-order-shout': shortOrderShoutRows"
+    const ANCHOR6 = "'short-order-shout': shortOrderShoutRows,"
     if (!src6.includes(ANCHOR6)) {
         console.log('FAIL   SOS adapter anchor not found — update the mutant (#1712)')
         r.failed++
@@ -700,7 +700,7 @@ if (MUTATE) {
     // mutant 7 (#1712 adapter): rally-co-driver removed from ADAPTERS — same
     // contract for the pace-note engine.
     const src7 = fs.readFileSync(DS, 'utf8')
-    const ANCHOR7 = "'rally-co-driver': rallyCoDriverRows"
+    const ANCHOR7 = "'rally-co-driver': rallyCoDriverRows,"
     if (!src7.includes(ANCHOR7)) {
         console.log('FAIL   rally adapter anchor not found — update the mutant (#1712)')
         r.failed++
