@@ -32,8 +32,9 @@
 
 ## BOARD
 - building: #1712 PLAICRAFT S2 only (lane:research/big-build — builder skip).
-- game-queue: empty. waiting-jon: #2844 (research's; not ours). No jonq from
-  these lanes.
+- game-queue: empty. waiting-jon: #2844 (research's) + **#2846** (filed by b:
+  promote CONTRA/R-TYPE/DD to public? default keep-private — only Jon promotes
+  per #379; all three are live but off the public Arcade menu).
 - QA lane's, never builder: **#2833** DD co-op polish (`building-qa`) — a QA
   MASTER is **alive right now** on port 5176 and may pick it up. Fresh
   feedback for QA's next round: #2841 (R-TYPE S4 wing polish, filed by b),
