@@ -13,11 +13,14 @@
 // Named regressions guard the traps this genre almost always ships with: a hit
 // that ignores the depth axis, which would play the game for itself (you could
 // never dodge) and silently un-faithful — the S2 ghost-barrel, which would
-// erase the weapons wall — and the S3 pair: casters whose steel ignores the
-// belt, and a Marian who can never be cut free (a run with no ending).
+// erase the weapons wall — the S3 pair: casters whose steel ignores the belt,
+// and a Marian who can never be cut free (a run with no ending) — and the S4
+// pair: a crowd that only sees Billy (co-op collapses to solo-with-a-statue)
+// and a game over that fires on one drained seat (the partner's run, ended).
 // --mutant replants them and demands the harm is NAMED (#2142 direction).
 // The browser leg drives real key events through the shell: attract -> seat ->
-// walk/kick -> die -> restart, zero page errors.
+// walk/kick -> die -> restart, zero page errors; S4 adds the default blue
+// seat and the WASD drop-in through real keystrokes.
 
 import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
@@ -500,6 +503,148 @@ const runFull = (seed, max = 60000) => {
     r.check('then walks them into the frame before the fight starts', visible.length > 0, `${visible.length} on screen after the march-in`)
 }
 
+// ------------------------------------------------------------------ S4 co-op ---
+// Issue #2807 stage 4: the second dragon. Jimmy Lee fights beside Billy by
+// default (CPU seat), the crowd splits by nearest, both pools must drain for
+// game over, and a fallen dragon rides the second wind at the next stage.
+{
+    const solo = makeGame(5)
+    r.check('S4: the sim default is one dragon — S1..S3 law fixtures stay honest', !solo.jimmy && !solo.coop)
+    const gs0 = makeGame(5, { coop: true })
+    r.check('S4: the blue seat stands ready — Jimmy, own bank of three, CPU by default',
+        !!gs0.jimmy && gs0.jimmy.tag === 'jimmy' && gs0.jimmy.lives === CFG.lives && gs0.jimmy.human === false && gs0.coop)
+
+    // nearest-dragon commitment
+    const gs = makeGame(21, { coop: true })
+    gs.waveIdx = 9; gs.camLock = true; gs.camX = 200
+    gs.billy.x = gs.camX + 40; gs.billy.y = 140; gs.billy.inv = 999
+    gs.jimmy.x = gs.camX + 240; gs.jimmy.y = 190; gs.jimmy.inv = 999
+    gs.enemies.push(mk('williams', gs.camX + 260, 190))
+    for (let i = 0; i < 30; i++) { step(gs, {}, {}); gs.events.length = 0 }
+    r.check('S4: the crowd splits by NEAREST dragon — a thug on Jimmy\'s tail works Jimmy, not the name Billy',
+        gs.enemies[0].tgt === 'jimmy' && gs.enemies[0].x < gs.camX + 260, `tgt=${gs.enemies[0].tgt} x=${gs.enemies[0].x.toFixed(0)}`)
+
+    // mid-action commitment: a windup already thrown at Jimmy does not
+    // teleport to Billy when Billy struts close
+    const gs2 = makeGame(22, { coop: true })
+    gs2.waveIdx = 9; gs2.camLock = true; gs2.camX = 200
+    gs2.jimmy.x = gs2.camX + 240; gs2.jimmy.y = 190; gs2.jimmy.inv = 0; gs2.jimmy.human = true
+    gs2.billy.x = gs2.camX + 40; gs2.billy.y = 140; gs2.billy.inv = 999
+    gs2.enemies.push(mk('williams', gs2.camX + 250, 190, { state: 'windup', stateT: 1 }))
+    gs2.enemies[0].tgt = 'jimmy'
+    for (let i = 0; i < 25; i++) { step(gs2, {}, {}); gs2.events.length = 0 }
+    r.check('S4: the commitment holds mid-swing — a blade cocked at Jimmy lands on Jimmy even with Billy walking up',
+        gs2.jimmy.lives === CFG.lives - 1 && gs2.billy.lives === CFG.lives, `jimmy ${gs2.jimmy.lives} billy ${gs2.billy.lives}`)
+
+    // arcade lethal wears on BOTH seats, and one seat falling is not the end
+    const gs3 = makeGame(23, { coop: true })
+    gs3.waveIdx = 9; gs3.camLock = true; gs3.camX = 200
+    gs3.jimmy.x = gs3.camX + 240; gs3.jimmy.y = 190; gs3.jimmy.inv = 0; gs3.jimmy.human = true
+    gs3.billy.x = gs3.camX + 40; gs3.billy.y = 140; gs3.billy.inv = 999
+    gs3.enemies.push(mk('williams', gs3.camX + 248, 190, { state: 'attack', stateT: 2 }))
+    gs3.enemies[0].tgt = 'jimmy'
+    for (let i = 0; i < 40; i++) { step(gs3, {}, {}); gs3.events.length = 0 }
+    r.check('S4: one clean hit takes the seat it finds — Jimmy pays, Billy keeps his bank, the run lives',
+        gs3.jimmy.lives === CFG.lives - 1 && gs3.jimmy.inv > 0 && gs3.billy.lives === CFG.lives && gs3.mode === 'play',
+        `jimmy ${gs3.jimmy.lives}/${gs3.jimmy.inv}f billy ${gs3.billy.lives} mode=${gs3.mode}`)
+
+    // game over only when BOTH banks are empty
+    const gs4 = makeGame(24, { coop: true })
+    gs4.jimmy.lives = 0; gs4.jimmy.out = true; gs4.jimmy.state = 'idle'; gs4.jimmy.stateT = 0
+    gs4.waveIdx = 9; gs4.camLock = true; gs4.camX = 200
+    gs4.billy.x = gs4.camX + 40; gs4.billy.y = 170; gs4.billy.inv = 0; gs4.billy.lives = 1
+    gs4.enemies.push(mk('williams', gs4.camX + 48, 170, { state: 'attack', stateT: 2 }))
+    for (let i = 0; i < 40; i++) { step(gs4, {}, {}); gs4.events.length = 0 }
+    r.check('S4: the run ends only when both banks run dry — seat down, last Billy life out, GAME OVER',
+        gs4.mode === 'gameover', `mode=${gs4.mode}`)
+    const gs4b = makeGame(24, { coop: true })
+    gs4b.jimmy.lives = 0; gs4b.jimmy.out = true; gs4b.jimmy.state = 'idle'; gs4b.jimmy.stateT = 0
+    for (let i = 0; i < 200; i++) { step(gs4b, {}, {}); gs4b.events.length = 0 }
+    r.check('S4: an empty bank is not game over — the partner carries the street alone',
+        gs4b.mode === 'play', `mode=${gs4b.mode}`)
+
+    // second wind: a drained seat returns with one life when a new stage opens
+    const gs5 = makeGame(25, { coop: true })
+    gs5.jimmy.lives = 0; gs5.jimmy.out = true; gs5.jimmy.state = 'dying'; gs5.jimmy.stateT = 30
+    enterStage2(gs5)
+    r.check('S4: second wind — the hideout opens with both dragons standing, the fallen one on its last life',
+        !gs5.jimmy.out && gs5.jimmy.lives === 1 && gs5.stage === 2, `out=${gs5.jimmy.out} lives=${gs5.jimmy.lives}`)
+
+    // Marian's ropes answer EITHER dragon's fists
+    const gs6 = makeGame(26, { coop: true })
+    enterStage2(gs6)
+    gs6.waveIdx = WAVES_S2.length; gs6.enemies = []; gs6.camLock = false; gs6.camX = 640
+    gs6.billy.x = 700; gs6.billy.y = 140; gs6.billy.inv = 999          // Billy stays down the yard
+    gs6.jimmy.x = gs6.marian.x - 12; gs6.jimmy.y = gs6.marian.y; gs6.jimmy.human = true
+    for (let i = 0; i < 60 && !gs6.marian.freed; i++) {
+        step(gs6, {}, { punch: gs6.tick % 14 === 0 })
+        gs6.events.length = 0
+    }
+    r.check('S4: Jimmy alone cuts Marian loose — the rescue is a two-man job, either seat\'s fists count',
+        gs6.marian.freed && gs6.score >= CFG.rescueBonus && gs6.billy.x < gs6.marian.x - 100,
+        `freed=${gs6.marian.freed} score=${gs6.score} billy@${gs6.billy.x}`)
+
+    // thrown steel hits whichever dragon owns the lane
+    const gs7 = makeGame(27, { coop: true })
+    gs7.waveIdx = 9; gs7.camLock = true; gs7.camX = 200
+    gs7.billy.x = gs7.camX + 100; gs7.billy.y = 140; gs7.billy.inv = 999
+    gs7.jimmy.x = gs7.camX + 120; gs7.jimmy.y = 190; gs7.jimmy.inv = 0; gs7.jimmy.human = true
+    gs7.projectiles.push({ id: 999, x: gs7.camX + 40, y: 190, vx: 3, spin: 0, side: 'goon' })
+    for (let i = 0; i < 60; i++) { step(gs7, {}, {}); gs7.events.length = 0 }
+    r.check('S4: a cast blade takes the dragon on its lane — Jimmy\'s lane, Jimmy\'s life; Billy off-lane is safe',
+        gs7.jimmy.lives === CFG.lives - 1 && gs7.billy.lives === CFG.lives, `jimmy ${gs7.jimmy.lives} billy ${gs7.billy.lives}`)
+
+    // no friendly fire: dragons share a lane and swing without costing each other
+    const gs8 = makeGame(28, { coop: true })
+    gs8.waveIdx = 9; gs8.camLock = true; gs8.camX = 200
+    gs8.billy.x = gs8.camX + 100; gs8.billy.y = 170
+    gs8.jimmy.x = gs8.camX + 110; gs8.jimmy.y = 170
+    for (let i = 0; i < 40; i++) { step(gs8, { b: gs8.tick % 8 === 0 }, {}); gs8.events.length = 0 }
+    r.check('S4: strikes pass beside your own dragon — Billy\'s roundhouse next to Jimmy costs nobody a life',
+        gs8.jimmy.lives === CFG.lives && gs8.billy.lives === CFG.lives, `jimmy ${gs8.jimmy.lives} billy ${gs8.billy.lives}`)
+
+    // crowd law grows: three deep with two dragons, still never four; solo stays two
+    const crowdProbe = (coop) => {
+        const g = makeGame(31, { coop })
+        g.waveIdx = 9; g.camLock = true; g.camX = 200
+        g.billy.x = g.camX + 100; g.billy.y = 170; g.billy.lives = 9; g.billy.inv = 999
+        if (g.jimmy) { g.jimmy.x = g.camX + 108; g.jimmy.y = 176; g.jimmy.lives = 9; g.jimmy.inv = 999 }
+        for (let k = 0; k < 4; k++) g.enemies.push(mk('williams', g.camX + 114 + k, 168 + k * 4, { attackCooldown: 0 }))
+        let maxAtk = 0
+        for (let i = 0; i < 30; i++) {
+            step(g, {}, {})
+            maxAtk = Math.max(maxAtk, g.enemies.filter((e) => e.state === 'windup' || e.state === 'attack').length)
+            g.events.length = 0
+        }
+        return maxAtk
+    }
+    const deep3 = crowdProbe(true), deep2 = crowdProbe(false)
+    r.check('S4: the crowd law grows with the street — three attackers with two dragons, two with one, never four',
+        deep3 === 3 && deep2 === 2, `coop max=${deep3} solo max=${deep2}`)
+
+    // the co-op winnable proof: Billy's proven autopilot + Jimmy's own brain
+    const runFullCoop = (seed, max = 60000) => {
+        const g = makeGame(seed, { coop: true })
+        while (g.tick < max) {
+            step(g, autopilot(g), {})
+            g.events.length = 0
+            if (g.mode === 'gameover') break
+            if (g.cleared && g.stage === 1 && g.mode === 'play') break
+        }
+        return g
+    }
+    let wins = 0
+    for (let seed = 1; seed <= 6; seed++) {
+        const g = runFullCoop(seed)
+        if (g.cleared && g.stage === 1 && g.mode === 'play') wins += 1
+    }
+    r.check(`S4 winnable: Billy's autopilot + Jimmy's own brain clear the FULL run on seeds 1..6`, wins === 6, `${wins}/6`)
+
+    // determinism rides the co-op path too
+    const coopHash = () => { const g = makeGame(9, { coop: true }); for (let i = 0; i < 400; i++) { step(g, autopilot(g), {}); g.events.length = 0 } return stateHash(g) }
+    r.check('S4: the co-op timeline is deterministic — seed + inputs replay to the same hash', coopHash() === coopHash())
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -552,8 +697,8 @@ if (MUTANT) {
         },
         {
             name: 'blade-blind',
-            anchor: 'gs.billy.z <= 6 && Math.abs(pr.x - gs.billy.x) <= 10 && Math.abs(pr.y - gs.billy.y) <= 7',
-            plant: 'gs.billy.z <= 6 && Math.abs(pr.x - gs.billy.x) <= 10 && Math.abs(pr.y - gs.billy.y) <= 400 /* MUTANT(blade-blind): thrown steel ignores the belt */',
+            anchor: 'if (p.inv <= 0 && p.z <= 6 && Math.abs(pr.x - p.x) <= 10 && Math.abs(pr.y - p.y) <= 7)',
+            plant: 'if (p.inv <= 0 && p.z <= 6 && Math.abs(pr.x - p.x) <= 10 && Math.abs(pr.y - p.y) <= 400 /* MUTANT(blade-blind): thrown steel ignores the belt */)',
             harm: async (mod) => {
                 const gs = mod.makeGame(41)
                 gs.billy.inv = 0
@@ -580,6 +725,46 @@ if (MUTANT) {
                 }
                 return !(gs.cleared && gs.stage === 1)
                     ? `HARM NAMED: the honest autopilot ran 60,000 ticks and never brought Marian home (stage ${gs.stage}, freed ${gs.marian ? gs.marian.freed : 'n/a'}) — if the ropes ignore the cut, the commission has no ending and the loop can never be won`
+                    : null
+            },
+        },
+        {
+            name: 'ally-blind',
+            anchor: '    const cands = activeFighters(gs)\n    if (cands.length === 0) return gs.billy',
+            plant: '    return gs.billy /* MUTANT(ally-blind): the crowd only ever sees Billy */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(21, { coop: true })
+                gs.waveIdx = 9; gs.camLock = true; gs.camX = 200
+                gs.billy.x = gs.camX + 40; gs.billy.y = 140; gs.billy.inv = 999
+                gs.jimmy.x = gs.camX + 240; gs.jimmy.y = 190; gs.jimmy.inv = 999
+                gs.jimmy.human = true   // seated idle — the test is what the CROWD does
+                gs.enemies.push({ id: 911, kind: 'williams', x: gs.camX + 260, y: 190, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 0, inv: 0, spinHit: false })
+                let minX = Infinity
+                let sawBillyTgt = false
+                for (let i = 0; i < 150; i++) {
+                    mod.step(gs, {}, {})
+                    const q = gs.enemies[0]
+                    if (q) { minX = Math.min(minX, q.x); if (q.tgt === 'billy') sawBillyTgt = true }
+                    gs.events.length = 0
+                }
+                return (sawBillyTgt || minX < gs.camX + 200)
+                    ? `HARM NAMED: a thug 20px off Jimmy's shoulder marched over 60 pixels across the screen to work Billy instead (closest x=${minX.toFixed(0)}, tgt=${sawBillyTgt ? 'billy' : 'never set'}) — if the crowd only sees the first dragon, co-op collapses into solo-with-a-statue and the second player is scenery`
+                    : null
+            },
+        },
+        {
+            name: 'seat-blind',
+            anchor: "        if (activeFighters(gs).length === 0) { gs.mode = 'gameover'; return }",
+            plant: "        if (true) { gs.mode = 'gameover'; return } /* MUTANT(seat-blind): one drained seat ends the run */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(23, { coop: true })
+                gs.waveIdx = 9; gs.camLock = true; gs.camX = 200
+                gs.jimmy.x = gs.camX + 240; gs.jimmy.y = 190; gs.jimmy.inv = 0; gs.jimmy.lives = 1; gs.jimmy.human = true
+                gs.billy.x = gs.camX + 40; gs.billy.y = 140; gs.billy.inv = 999
+                gs.enemies.push({ id: 912, kind: 'williams', x: gs.camX + 248, y: 190, face: -1, hp: 4, state: 'attack', stateT: 2, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 0, inv: 0, spinHit: false, tgt: 'jimmy' })
+                for (let i = 0; i < 40; i++) { mod.step(gs, {}, {}); gs.events.length = 0 }
+                return gs.mode === 'gameover' && gs.billy.lives === CFG.lives
+                    ? `HARM NAMED: Jimmy's last life fell and the whole run ended while Billy stood there with all 3 lives (mode=${gs.mode}, billy=${gs.billy.lives}) — the arcade co-op promise is that the partner carries you; one bank empty is a seat down, not a game over`
                     : null
             },
         },
@@ -665,10 +850,32 @@ const browser = await launch()
     const frameA = await page.evaluate(() => window.__game && window.__game.frame())
     r.check('the canvas paints (contract frame is not black-static)', typeof frameA === 'string' && frameA.length > 5000, `frame ${frameA ? frameA.length : 'null'} bytes`)
 
-    await page.evaluate(() => window.__ddTest.setup({ killBilly: true, lives: 1 }))
+    // S4 leg: the blue dragon is on the street by default (Jon's rule), and a
+    // real WASD press takes the seat drop-in — the Contra S4 law, browser-proved.
+    await page.evaluate(() => window.__game.reset(17))
+    await page.waitForTimeout(120)
+    const seat0 = await page.evaluate(() => window.__ddTest.probe())
+    r.check('S4: co-op is the default seat — Jimmy fights beside Billy on a fresh cabinet',
+        seat0.coop === 1 && /CPU/.test(seat0.jimmy) && seat0.jimmy.split(':')[2] === '3', `jimmy=${seat0.jimmy}`)
+    const jimmyBefore = Number(String(seat0.jimmy).split(':')[0])
+    await page.keyboard.down('KeyW')
+    await page.waitForTimeout(300)
+    await page.keyboard.up('KeyW')
+    await page.keyboard.down('KeyD')
+    await page.waitForTimeout(300)
+    await page.keyboard.up('KeyD')
+    const seated = await page.evaluate(() => window.__ddTest.probe())
+    const jimmyAfter = Number(String(seated.jimmy).split(':')[0])
+    r.check('S4: a real W press seats the human and WASD drives the blue dragon (depth + walk)',
+        /HUMAN/.test(seated.jimmy) && jimmyAfter > jimmyBefore, `jimmy ${seat0.jimmy} -> ${seated.jimmy}`)
+
+    // S4: one seat falling is NOT the end — the partner carries on. Game over
+    // is both banks drained; the browser leg kills both dragons through the
+    // real key path and proves the cabinet still finds its game over.
+    await page.evaluate(() => window.__ddTest.setup({ killBilly: true, lives: 1, killAlly: true, allyLives: 1 }))
     await page.waitForTimeout(700)
     const dead = await page.evaluate(() => window.__ddTest.probe())
-    r.check('dying is real: last life out ends the run', dead.screen === 'over' || dead.mode === 'gameover', `screen=${dead.screen} mode=${dead.mode}`)
+    r.check('dying is real: both banks drained ends the run', dead.screen === 'over' || dead.mode === 'gameover', `screen=${dead.screen} mode=${dead.mode}`)
     await page.waitForTimeout(1100)
     await page.keyboard.press('Space')
     await page.waitForTimeout(300)

@@ -604,6 +604,8 @@ const SKIN = '#d8a06a', SKIN_D = '#b57d46'
 const CFG = { punchOn: 4, kickOn: 6 }
 const PAL = {
     billy: { head: '#e8e8ec', body: '#dcdce4', trim: '#c8302f', legs: '#dcdce4', shoes: '#5a3a24', band: '#c8302f' },
+    // Jimmy (S4 blue seat): same skin, blue everything else — 1987 arcade palette
+    jimmy: { head: '#e8e8ec', body: '#dcdce4', trim: '#2f5fd0', legs: '#dcdce4', shoes: '#5a3a24', band: '#2f5fd0' },
     williams: { head: '#d8d8dc', body: '#2f8f74', trim: '#1d6b52', legs: '#3a3f52', shoes: '#22262f', band: '#2f8f74' },
     amon: { head: '#8a5a34', body: '#8a5a34', trim: '#5f3d22', legs: '#2c2f3c', shoes: '#1c1e26', band: null },
     abobo: { head: '#6a4a2c', body: '#2e3138', trim: '#1c1e24', legs: '#17191f', shoes: '#0e0f13', band: null },
@@ -675,7 +677,7 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
     if (pal.band) R(-5 + hx, -16 + bob, 10 + 2 * bulk, 3, pal.trim)
     // head
     R(-4 + hx - bulk, -30 + bob, 8 + 2 * bulk, 8, pal.head)
-    if (pal === PAL.billy) { R(-4 + hx, -30 + bob, 8, 2, pal.band); R(-7 + hx, -29 + bob, 3, 2, pal.band) } // headband + tail
+    if (pal === PAL.billy || pal === PAL.jimmy) { R(-4 + hx, -30 + bob, 8, 2, pal.band); R(-7 + hx, -29 + bob, 3, 2, pal.band) } // headband + tail (both dragons)
     if (pal === PAL.williams) { R(-5 + hx, -31 + bob, 10, 3, pal.band); R(2 + hx, -30 + bob, 4, 2, '#1d6b52') } // cap + brim
     if (pal === PAL.duel) {
         R(-5 + hx, -31 + bob, 10, 3, pal.band); R(2 + hx, -30 + bob, 5, 2, '#174a38')   // cap + longer brim
@@ -712,7 +714,10 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
     ctx.restore()
 }
 
-export function drawBilly(ctx, b, camX, props) {
+export function drawBilly(ctx, b, camX, props) { drawFighter(ctx, b, camX, PAL.billy, props) }
+export function drawJimmy(ctx, b, camX, props) { drawFighter(ctx, b, camX, PAL.jimmy, props) }
+
+function drawFighter(ctx, b, camX, pal, props) {
     const sx = Math.round(b.x - camX)
     const sy = Math.round(b.y)
     if (sx < -40 || sx > W + 40) return
@@ -740,7 +745,7 @@ export function drawBilly(ctx, b, camX, props) {
         if (b.stateT > 26) return
         if (b.stateT > 16) ctx.globalAlpha = 1 - (b.stateT - 16) / 10
     }
-    fighter(ctx, sx, sy - lift, b.face, pose, b.anim, PAL.billy, 1, hop ? 1 : 0)
+    fighter(ctx, sx, sy - lift, b.face, pose, b.anim, pal, 1, hop ? 1 : 0)
     if (b.weapon === 'stick') {
         ctx.fillStyle = '#8a6a3c'
         const stickAt = pose === 'punch' || pose === 'attack' ? 16 : pose === 'spin' ? 12 : 7
@@ -879,6 +884,22 @@ export function drawHud(ctx, gs) {
         ctx.fillStyle = '#e8e8ec'
         ctx.fillRect(222 + i * 12 + 2, 5, 4, 3)
     }
+    // co-op (S4): 2P sits right of 1UP; blue headbands, blue label (2023's
+    // blue-Billy is exactly this trim blue). Out seat: dimmed slot + the ready
+    // blink when its bank still holds lives — the arcade's seat invitation.
+    if (gs.jimmy) {
+        if (gs.jimmy.out) {
+            ctx.fillStyle = '#3a3f52'
+            ctx.fillRect(222 + 4 * 12 + 4, 8, 8, 3)
+            if (gs.jimmy.lives > 0 && gs.tick % 40 < 24) label(ctx, 'READY', 222 + 4 * 12 + 16, 8, '#2f5fd0', 1)
+        }
+        for (let i = 0; i < Math.min(gs.jimmy.lives, 4); i++) {
+            ctx.fillStyle = gs.jimmy.out ? '#3a3f52' : '#2f5fd0'
+            ctx.fillRect(222 + 4 * 12 + 4 + i * 12, 8, 8, 3)
+            ctx.fillStyle = gs.jimmy.out ? '#5a5f72' : '#e8e8ec'
+            ctx.fillRect(222 + 4 * 12 + 4 + i * 12 + 2, 5, 4, 3)
+        }
+    }
     const WL = { stick: 'STICK', knife: 'KNIFE', whip: 'WHIP' }
     // #2819 item 5: the cabinet tints the weapon label per type — steel white,
     // leather brown, wood gold — so the HUD reads the hand at a glance
@@ -928,6 +949,7 @@ export function drawBanner(ctx, gs) {
 export function drawAttract(ctx, phase, tick) {
     const msgs = [
         ['DOUBLE DRAGON', '#c8302f', 2],
+        ['BLUE DRAGON: JIMMY LEE', '#2f5fd0', 1],
         ['2 AGAINST THE WALL', '#fff', 1],
         ['WALNUTS STREET', '#ffd98a', 1],
         ['THE HIDEOUT', '#ff9a7a', 1],

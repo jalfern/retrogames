@@ -11,10 +11,14 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH, enterStage2 } from './sim.js'
-import { drawBackground, drawBilly, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract } from './art.js'
+import { drawBackground, drawBilly, drawJimmy, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'double-dragon:hiscore'
+// S4 (#2807, Jon's multiplayer rule): the arcade plays DOUBLE — Jimmy Lee
+// fights beside Billy by default (CPU seat, so phones and the harness work).
+// `?solo=1` declines the partner. A human takes the blue seat drop-in.
+const coopOn = () => new URLSearchParams(window.location.search).get('solo') !== '1'
 
 export default function DoubleDragon() {
     const wrapRef = useRef(null)
@@ -32,7 +36,7 @@ export default function DoubleDragon() {
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
 
-        let gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0)
+        let gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0, { coop: coopOn() })
         let screen = 'attract'
         let raf = 0
         let last = 0
@@ -43,6 +47,10 @@ export default function DoubleDragon() {
         const part = []
         const keys = { l: false, r: false, u: false, d: false, j: false, k: false, p: false }
         let jumpQ = false, kickQ = false, punchQ = false
+        // S4 seat 2 keys — WASD walk · F punch · G kick · V jump. Like Contra S4,
+        // the first touch of any of them hands the blue dragon to a human.
+        const keys2 = { l: false, r: false, u: false, d: false, j: false, k: false, p: false }
+        let jumpQ2 = false, kickQ2 = false, punchQ2 = false
         let hiscore = Number(localStorage.getItem(HS_KEY) || 0)
 
         const sfx = {
@@ -57,6 +65,11 @@ export default function DoubleDragon() {
             struggle: () => audioController.playNoise(0.03, 0.05),
             escape: () => audioController.playSweep(300, 700, 0.12, 'square', 0.12),
             die: () => { audioController.playSweep(400, 60, 0.5, 'sawtooth', 0.18); shake = Math.max(shake, 6) },
+            // S4 co-op cues: the blue seat falling, a seat down but the run
+            // alive, and the drop-in chime when a human takes the second dragon
+            jimmy_die: () => { audioController.playSweep(360, 70, 0.45, 'sawtooth', 0.16); shake = Math.max(shake, 5) },
+            seat_down: () => audioController.playSweep(300, 140, 0.22, 'triangle', 0.10),
+            p2join: () => { audioController.playSweep(440, 880, 0.12, 'square', 0.05); audioController.playTone(1100, 0.1, 'square', 0.04, 0.1) },
             wave: () => audioController.playSweep(120, 240, 0.3, 'triangle', 0.12),
             chargewind: () => audioController.playFilteredNoise(0.5, 0.06, 240),
             charge: () => { audioController.playSweep(160, 70, 0.24, 'sawtooth', 0.14); shake = Math.max(shake, 2) },
@@ -135,9 +148,14 @@ export default function DoubleDragon() {
             jumpQ = kickQ = punchQ = false
             return pad
         }
+        const simPad2 = () => {
+            const pad = { left: keys2.l, right: keys2.r, up: keys2.u, down: keys2.d, a: keys2.j || jumpQ2, b: keys2.k || kickQ2, punch: keys2.p || punchQ2 }
+            jumpQ2 = kickQ2 = punchQ2 = false
+            return pad
+        }
 
         const startPlay = () => {
-            gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0)
+            gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0, { coop: coopOn() })
             gs.hi = hiscore
             part.length = 0
             demoHold = 0
@@ -155,7 +173,7 @@ export default function DoubleDragon() {
         }
 
         const stepSim = (pad) => {
-            step(gs, pad)
+            step(gs, pad, simPad2())
             drain()
             ambience()
             if (gs.mode === 'gameover' && screen === 'play') endTo('over')
@@ -170,6 +188,7 @@ export default function DoubleDragon() {
             ctx.translate(Math.round(sx), Math.round(sy))
             // one depth-sorted army: nearest feet drawn last
             const beings = [...gs.enemies.map((e) => ({ y: e.y, kind: 'enemy', o: e })), { y: gs.billy.y, kind: 'billy', o: gs.billy }]
+            if (gs.jimmy) beings.push({ y: gs.jimmy.y, kind: 'jimmy', o: gs.jimmy })
             for (const bar of gs.barrels) beings.push({ y: bar.y, kind: 'barrel', o: bar })
             if (gs.marian) beings.push({ y: gs.marian.y, kind: 'marian', o: gs.marian })
             for (const p of gs.pickups) if (p.y < PROPS_DEPTH) beings.push({ y: p.y, kind: 'pick', o: p })
@@ -177,6 +196,7 @@ export default function DoubleDragon() {
             for (const q of beings) {
                 if (q.kind === 'enemy') drawEnemy(ctx, q.o, gs.camX)
                 else if (q.kind === 'billy') drawBilly(ctx, q.o, gs.camX, gs.barrels)
+                else if (q.kind === 'jimmy') drawJimmy(ctx, q.o, gs.camX, gs.barrels)
                 else if (q.kind === 'barrel') drawBarrel(ctx, q.o, gs.camX)
                 else if (q.kind === 'marian') drawMarian(ctx, q.o, gs.camX)
                 else drawPickup(ctx, q.o, gs.camX)
@@ -210,7 +230,7 @@ export default function DoubleDragon() {
                         if (screen === 'play') {
                             stepSim(simPad())
                         } else if (screen === 'attract') {
-                            if (demoHold > 0) { demoHold -= 1; if (demoHold === 0) gs = makeGame((gs.seed + 7) >>> 0) }
+                            if (demoHold > 0) { demoHold -= 1; if (demoHold === 0) gs = makeGame((gs.seed + 7) >>> 0, { coop: coopOn() }) }
                             else { stepSim(autopilot(gs)); if (gs.mode !== 'play') demoHold = 120 }
                             gs.tick += 0 // attract demo world-ticks ride stepSim
                         } else if (screen === 'over') {
@@ -237,6 +257,19 @@ export default function DoubleDragon() {
             if (e.code === 'Space') { keys.j = true; jumpQ = true }
             if (e.code === 'KeyX') { keys.k = true; kickQ = true }
             if (e.code === 'KeyZ') { keys.p = true; punchQ = true }
+            // S4 seat 2 — WASD walk · F punch · G kick · V jump. Drop-in law
+            // (Contra S4): the first touch takes Jimmy out of the CPU's hands
+            // for the rest of the run.
+            const isP2 = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyV'].includes(e.code)
+            if (isP2) e.preventDefault()
+            if (gs.jimmy && !gs.jimmy.human && !gs.jimmy.out) { gs.jimmy.human = true; sfx.p2join() }
+            if (e.code === 'KeyA') keys2.l = true
+            if (e.code === 'KeyD') keys2.r = true
+            if (e.code === 'KeyW') keys2.u = true
+            if (e.code === 'KeyS') keys2.d = true
+            if (e.code === 'KeyV') { keys2.j = true; jumpQ2 = true }
+            if (e.code === 'KeyG') { keys2.k = true; kickQ2 = true }
+            if (e.code === 'KeyF') { keys2.p = true; punchQ2 = true }
         }
         const onUp = (e) => {
             if (e.code === 'ArrowLeft') keys.l = false
@@ -246,8 +279,15 @@ export default function DoubleDragon() {
             if (e.code === 'Space') keys.j = false
             if (e.code === 'KeyX') keys.k = false
             if (e.code === 'KeyZ') keys.p = false
+            if (e.code === 'KeyA') keys2.l = false
+            if (e.code === 'KeyD') keys2.r = false
+            if (e.code === 'KeyW') keys2.u = false
+            if (e.code === 'KeyS') keys2.d = false
+            if (e.code === 'KeyV') keys2.j = false
+            if (e.code === 'KeyG') keys2.k = false
+            if (e.code === 'KeyF') keys2.p = false
         }
-        const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.j = keys.k = keys.p = false }
+        const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.j = keys.k = keys.p = keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.k = keys2.p = false }
         const onPointer = () => {
             if (screen === 'attract') { startPlay(); return }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract') }
@@ -283,6 +323,8 @@ export default function DoubleDragon() {
                     marian: gs.marian ? (gs.marian.freed ? 'free' : 'tied:' + gs.marian.cuts) : 'none',
                     duel: gs.enemies.some((e) => e.kind === 'duel') ? 1 : 0,
                     casts: gs.enemies.filter((e) => e.hasKnife).length,
+                    coop: gs.coop ? 1 : 0,
+                    jimmy: gs.jimmy ? `${gs.jimmy.x.toFixed(0)}:${gs.jimmy.y}:${gs.jimmy.lives}:${gs.jimmy.human ? 'HUMAN' : 'CPU'}${gs.jimmy.out ? ':OUT' : ''}:${gs.jimmy.state}` : 'none',
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -321,6 +363,18 @@ export default function DoubleDragon() {
                         gs.enemies.push({ id: gs.nextId++, kind: 'duel', x: gs.billy.x + 90, y: gs.billy.y, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 40, attackCooldown: 60, inv: 0, spinHit: false })
                     }
                     if (opts.marianFree && gs.marian) { gs.marian.freed = true; gs.marian.cuts = CFG.rescueCuts; gs.rescueT = CFG.rescueCheer }
+                    // S4 co-op fixtures
+                    if (opts.allyHuman !== undefined && gs.jimmy) gs.jimmy.human = !!opts.allyHuman
+                    if (opts.allyX !== undefined && gs.jimmy) gs.jimmy.x = opts.allyX
+                    if (opts.allyY !== undefined && gs.jimmy) gs.jimmy.y = opts.allyY
+                    if (opts.allyLives !== undefined && gs.jimmy) gs.jimmy.lives = opts.allyLives
+                    if (opts.killAlly && gs.jimmy) {
+                        gs.jimmy.inv = 0; gs.jimmy.lives = 1
+                        gs.jimmy.x = gs.camX + 100; gs.jimmy.y = 170
+                        gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: gs.jimmy.x + 8, y: gs.jimmy.y, face: -1, hp: 4, state: 'attack', stateT: 2, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, castCooldown: 999, tgt: 'jimmy', attackCooldown: 60, inv: 0, spinHit: false })
+                    }
+                    if (opts.allyOut && gs.jimmy) { gs.jimmy.lives = 0; gs.jimmy.out = true; gs.jimmy.state = 'idle'; gs.jimmy.stateT = 0 }
+                    if (opts.makeSolo && gs.jimmy) { gs.coop = false; gs.jimmy = null }
                     return true
                 },
             }
@@ -329,11 +383,14 @@ export default function DoubleDragon() {
                 getState: () => [
                     `x ${gs.billy.x.toFixed(0)}/960  y ${gs.billy.y}  z ${gs.billy.z.toFixed(0)}  cam ${Math.round(gs.camX)}${gs.camLock ? ' LOCK' : ''}  stage ${gs.stage}  wave ${gs.waveIdx}/3${gs.marian ? `  marian ${gs.marian.freed ? 'FREE' : 'tied (' + gs.marian.cuts + '/' + CFG.rescueCuts + ')'}` : ''}`,
                     `score ${gs.score}  hi ${Math.max(hiscore, gs.hi)}  lives ${gs.billy.lives}  weapon ${gs.billy.weapon || '-'}  inv ${gs.billy.inv}  mode ${gs.mode}`,
+                    gs.jimmy ? `JIMMY ${gs.jimmy.out ? 'DOWN (second wind at the next stage)' : `x ${gs.jimmy.x.toFixed(0)}  y ${gs.jimmy.y}  lives ${gs.jimmy.lives}  ${gs.jimmy.human ? 'HUMAN' : 'CPU'}  weapon ${gs.jimmy.weapon || '-'}`}` : 'SOLO — no partner',
                     `enemies ${gs.enemies.map((e) => `${e.kind} ${e.state}${e.hasStick ? '+stick' : ''}${e.hasKnife ? '+knife' : ''}(${e.hp})`).join(' | ') || 'none'}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
                 actions: [
                     { label: '+1 LIFE', run: () => { gs.billy.lives += 1; return 'extra life' } },
+                    { label: 'P2: HUMAN SEAT', run: () => { if (!gs.jimmy) return 'no partner this run (?solo=1)'; gs.jimmy.human = !gs.jimmy.human; return gs.jimmy.human ? 'blue seat: human (WASD FGV)' : 'blue seat: CPU' } },
+                    { label: 'TAKE A HIT (P2)', run: () => { if (!gs.jimmy) return 'no partner'; gs.jimmy.lives = 1; window.__ddTest.setup({ killAlly: true }); return 'a goon swings at Jimmy' } },
                     { label: 'GIVE STICK', run: () => { gs.billy.weapon = 'stick'; return 'stick in hand' } },
                     { label: 'GIVE KNIFE', run: () => { gs.billy.weapon = 'knife'; return 'steel in hand — PUNCH throws' } },
                     { label: 'GIVE WHIP', run: () => { gs.billy.weapon = 'whip'; return 'coil in hand — PUNCH lashes' } },
@@ -352,10 +409,11 @@ export default function DoubleDragon() {
                 id: 'double-dragon',
                 buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reset: (seed) => {
-                    gs = makeGame(seed >>> 0)
+                    gs = makeGame(seed >>> 0, { coop: coopOn() })
                     part.length = 0
                     keys.l = keys.r = keys.u = keys.d = keys.j = keys.k = keys.p = false
-                    jumpQ = kickQ = punchQ = false
+                    keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.k = keys2.p = false
+                    jumpQ = kickQ = punchQ = jumpQ2 = kickQ2 = punchQ2 = false
                     screen = 'play'
                     setMode('play')
                 },
@@ -363,6 +421,9 @@ export default function DoubleDragon() {
                     step(gs, {
                         left: !!pad.left, right: !!pad.right, up: !!pad.up, down: !!pad.down,
                         a: !!pad.a, b: !!pad.b, punch: !!pad.punch,
+                    }, {
+                        left: !!pad.p2_left, right: !!pad.p2_right, up: !!pad.p2_up, down: !!pad.p2_down,
+                        a: !!pad.p2_a, b: !!pad.p2_b, punch: !!pad.p2_punch,
                     })
                     drain()
                 },
@@ -376,6 +437,11 @@ export default function DoubleDragon() {
                     stage: gs.stage,
                     marian: gs.marian ? (gs.marian.freed ? 2 : 1) : 0,
                     cleared: gs.cleared ? 1 : 0,
+                    coop: gs.coop ? 1 : 0,
+                    jimmyLives: gs.jimmy ? gs.jimmy.lives : 0,
+                    jimmyHuman: gs.jimmy && gs.jimmy.human ? 1 : 0,
+                    jimmyOut: gs.jimmy && gs.jimmy.out ? 1 : 0,
+                    jimmyX: gs.jimmy ? Math.round(gs.jimmy.x) : 0,
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,

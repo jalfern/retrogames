@@ -100,11 +100,17 @@ export function mulberry32(seed) {
     }
 }
 
-function makeBilly() {
+// S4 (#2807, co-op): a seat is a fighter — Billy and Jimmy share the exact
+// physics bank (strikes, lethal law, weapons, pickups). `tag` names the seat
+// for events/hash; `human` is the Contra S4 drop-in flag (a first touch of a
+// P2 key hands the CPU seat to a person for the rest of the run); `out` means
+// the pool is empty — the seat goes dark until a second wind at the next stage.
+function makeFighter(tag) {
     return {
-        x: 40, y: (DEEP_TOP + DEEP_BOT) / 2 | 0, face: 1,
+        tag,
+        x: tag === 'billy' ? 40 : 24, y: (DEEP_TOP + DEEP_BOT) / 2 | 0, face: 1,
         z: 0, zv: 0,
-        state: 'idle',    // idle|walk|jump|punch|kick|spin|grabbed|dying
+        state: 'idle',    // idle|walk|jump|punch|kick|spin|throw|whip|grabbed|dying
         stateT: 0, anim: 0,
         attackHit: null,  // set of enemy ids hit by the current swing
         inv: CFG.respawnIFrames, // merciful flicker at the start
@@ -113,12 +119,51 @@ function makeBilly() {
         presses: 0, pressCooldown: 0,
         lash: 0,          // #2819: white crack-flash ticks left on the whip
         lives: CFG.lives,
+        human: false,
+        out: false,
     }
 }
 
-export function makeGame(seed = 1) {
+const makeBilly = () => makeFighter('billy')
+
+// The dragons on the street: always Billy; Jimmy when the co-op seat exists.
+// Seats with empty pools (out) don't fight, breathe or get targeted.
+export function fighters(gs) {
+    return gs.jimmy ? [gs.billy, gs.jimmy] : [gs.billy]
+}
+const activeFighters = (gs) => fighters(gs).filter((p) => !p.out && p.state !== 'dying')
+
+// Crowd law (S4): two thugs pile on one lone dragon; three when the street
+// holds two — the arcade's co-op crowds are visibly deeper.
+const attackerCap = (gs) => (gs.coop ? CFG.attackersMax + 1 : CFG.attackersMax)
+
+// Commitment with hysteresis: a goon works the nearest dragon and only
+// switches when the other gets 24px meaningfully closer — no dithering
+// between two men standing side by side.
+function targetOf(gs, e) {
+    const cands = activeFighters(gs)
+    if (cands.length === 0) return gs.billy
+    const dist = (p) => Math.abs(p.x - e.x) + Math.abs(p.y - e.y) * 0.6
+    let cur = cands.find((p) => p.tag === e.tgt)
+    // mid-action, the commitment holds: a grab, a swing or a committed cast
+    // never teleports to the other dragon half-way through
+    if (cur && COMMITTED.has(e.state)) return cur
+    let best = cands[0]
+    for (const p of cands) if (dist(p) < dist(best)) best = p
+    if (!cur || dist(best) + 24 < dist(cur)) { e.tgt = best.tag; return best }
+    return cur
+}
+
+// states where the thug is committed to its chosen dragon
+const COMMITTED = new Set(['windup', 'chargewind', 'charge', 'aim', 'cast', 'attack', 'grab'])
+
+export function makeGame(seed = 1, opts = {}) {
     // rng rides IN the state so snapshot/restore is byte-exact (#391):
     // a JSON deep-copy of gs carries the generator integer, not a closure.
+    // S4: co-op is a GAME option — the shell plays co-op by default (Jon's
+    // multiplayer rule), the sim defaults solo so every S1..S3 law fixture
+    // still drives exactly one dragon.
+    const coop = opts.coop === true
     const gs = {
         seed: seed >>> 0, rngState: seed >>> 0, nextId: 1,
         tick: 0, mode: 'play',   // play | clear | gameover
@@ -126,7 +171,9 @@ export function makeGame(seed = 1) {
         cleared: false,
         stage: 1,               // 1 Walnuts Street · 2 the hideout (#2807 S3)
         camX: 0, camLock: false,
+        coop,                   // S4: Jimmy Lee fights beside Billy (#2807)
         billy: makeBilly(),
+        jimmy: coop ? makeFighter('jimmy') : null,
         enemies: [],
         pickups: [],
         barrels: makeBarrels(1),   // stage props: barrels out front, crates in the yard
@@ -154,6 +201,7 @@ function spawnEnemy(gs, kind, side, stick) {
         hp: def.hp, state: 'enter', stateT: 0, anim: Math.floor(rng(gs) * 8),
         hasStick: !!stick, stickDropped: false,
         hasKnife: false, castCooldown: 0,   // S3: steel in a goon's hand
+        tgt: null,                          // S4: which dragon this thug works
         attackCooldown: 30 + Math.floor(rng(gs) * 60),
         inv: 0, spinHit: false,
     }
@@ -197,10 +245,15 @@ function moveEntity(gs, ent, dx, dy, radius = 0) {
     if (dx && !blocked(gs, ent.x + dx, ent.y, radius)) { ent.x += dx; movedX = true }
     if (dy && !blocked(gs, ent.x, ent.y + dy, radius)) ent.y += dy
     if (dx && !movedX) {
+        // k-slip: the wanted x was refused — open the depth axis toward the
+        // direction the body ALREADY wanted (dy). Down-first k-slip fought
+        // depthSlip's up-pull over a crate corner and froze both dragons and a
+        // Williams in a tug-of-war for 57,000 ticks (the S4 co-op seed-2 stall).
         for (let k = 2; k <= 32; k++) {
             const dn = clamp(ent.y + k, DEEP_TOP, DEEP_BOT), up = clamp(ent.y - k, DEEP_TOP, DEEP_BOT)
-            if (dn !== ent.y && !blocked(gs, ent.x, dn, radius)) { ent.y = dn; return }
-            if (up !== ent.y && !blocked(gs, ent.x, up, radius)) { ent.y = up; return }
+            const first = dy < 0 ? [up, dn] : [dn, up]
+            if (first[0] !== ent.y && !blocked(gs, ent.x, first[0], radius)) { ent.y = first[0]; return }
+            if (first[1] !== ent.y && !blocked(gs, ent.x, first[1], radius)) { ent.y = first[1]; return }
         }
     }
 }
@@ -266,9 +319,8 @@ function hurtBarrel(gs, bar) {
     }
 }
 
-function throwKnife(gs) {
-    const b = gs.billy
-    gs.projectiles.push({ id: gs.nextId++, x: b.x + b.face * 10, y: b.y, vx: b.face * CFG.knifeSpeed, spin: 0, side: 'billy' })
+function throwKnife(gs, p) {
+    gs.projectiles.push({ id: gs.nextId++, x: p.x + p.face * 10, y: p.y, vx: p.face * CFG.knifeSpeed, spin: 0, side: p.tag })
     gs.events.push('throw')
 }
 
@@ -279,23 +331,26 @@ function goonCast(gs, e) {
     gs.events.push('goon_throw')
 }
 
-function billyDies(gs) {
-    const b = gs.billy
-    b.lives -= 1
-    b.weapon = null
-    gs.events.push('billy_die')
-    if (b.lives <= 0) {
-        gs.mode = 'gameover'
-        b.state = 'dying'; b.stateT = 0
+// A seat takes a hit that costs a life. Arcade lethal stands for BOTH dragons;
+// game over only when every pool is empty (S4: the partner carries on).
+function playerDies(gs, p) {
+    p.lives -= 1
+    p.weapon = null
+    gs.events.push(p.tag === 'billy' ? 'billy_die' : 'jimmy_die')
+    if (p.lives <= 0) {
+        p.out = true
+        p.state = 'dying'; p.stateT = 0
+        if (activeFighters(gs).length === 0) { gs.mode = 'gameover'; return }
+        gs.events.push('seat_down')
         return
     }
-    b.state = 'idle'; b.stateT = 0; b.z = 0; b.zv = 0
-    b.inv = CFG.respawnIFrames
-    b.x = clamp(gs.camX + 30, 8, STAGE_W - 8)
+    p.state = 'idle'; p.stateT = 0; p.z = 0; p.zv = 0
+    p.inv = CFG.respawnIFrames
+    p.x = clamp(gs.camX + (p.tag === 'billy' ? 30 : 44), 8, STAGE_W - 8)
     let nudge = 0
-    while (blocked(gs, b.x, b.y) && nudge++ < 60) b.x = clamp(b.x + 8, 8, STAGE_W - 8)
-    b.grabFrom = null
-    gs.enemies.forEach((e) => { if (e.state === 'grab') { e.state = 'stagger'; e.stateT = CFG.hitstun } })
+    while (blocked(gs, p.x, p.y) && nudge++ < 60) p.x = clamp(p.x + 8, 8, STAGE_W - 8)
+    p.grabFrom = null
+    gs.enemies.forEach((e) => { if (e.state === 'grab' && e.tgt === p.tag) { e.state = 'stagger'; e.stateT = CFG.hitstun } })
 }
 
 // hit an enemy; returns true if it died
@@ -325,117 +380,112 @@ function hurtEnemy(gs, e, dmg, knockdown, onDowned) {
     return false
 }
 
-function billyAttack(gs, kind) {
-    const b = gs.billy
-    if (b.state === 'punch' || b.state === 'kick' || b.state === 'spin' || b.state === 'throw' || b.state === 'whip') return
+function fighterAttack(gs, p, kind) {
+    if (p.state === 'punch' || p.state === 'kick' || p.state === 'spin' || p.state === 'throw' || p.state === 'whip') return
     // the signature spin back-heel: a swing asked for while surrounded —
     // surround counts radially (the heel boots BOTH ways), unlike a aimed swing
     const grounded = gs.enemies.filter((e) => e.state !== 'dying' && e.state !== 'down' && e.inv <= 0)
-    const near = grounded.filter((e) => Math.abs(e.x - b.x) <= CFG.spin.reach + 6 && Math.abs(e.y - b.y) <= 10)
-    if (b.z === 0 && near.length >= 2) {
-        b.state = 'spin'; b.stateT = 0; b.attackHit = new Set()
+    const near = grounded.filter((e) => Math.abs(e.x - p.x) <= CFG.spin.reach + 6 && Math.abs(e.y - p.y) <= 10)
+    if (p.z === 0 && near.length >= 2) {
+        p.state = 'spin'; p.stateT = 0; p.attackHit = new Set()
         gs.events.push('whoosh')
         return
     }
     // contextual PUNCH — the weapons wall (#2807): the knife is thrown, not
     // waved; the whip lashes. KICK stays a kick whatever you hold.
-    if (kind === 'punch' && b.z === 0 && b.weapon === 'knife') {
-        b.weapon = null
-        b.state = 'throw'; b.stateT = 0
+    if (kind === 'punch' && p.z === 0 && p.weapon === 'knife') {
+        p.weapon = null
+        p.state = 'throw'; p.stateT = 0
         return
     }
-    if (kind === 'punch' && b.z === 0 && b.weapon === 'whip') {
-        b.state = 'whip'; b.stateT = 0; b.attackHit = new Set()
+    if (kind === 'punch' && p.z === 0 && p.weapon === 'whip') {
+        p.state = 'whip'; p.stateT = 0; p.attackHit = new Set()
         gs.events.push('whip')
         return
     }
-    if (b.z > 0) { b.state = kind === 'punch' ? 'punch' : 'kick'; b.attackHit = new Set(); gs.events.push('whoosh'); return }
-    b.state = kind
-    b.stateT = 0
-    b.attackHit = new Set()
+    if (p.z > 0) { p.state = kind === 'punch' ? 'punch' : 'kick'; p.attackHit = new Set(); gs.events.push('whoosh'); return }
+    p.state = kind
+    p.stateT = 0
+    p.attackHit = new Set()
     gs.events.push('whoosh')
 }
 
-function reachFor(b, kind) {
+function reachFor(p, kind) {
     if (kind === 'whip') return CFG.whip.reach
-    const stick = b.weapon === 'stick'
+    const stick = p.weapon === 'stick'
     if (kind === 'punch') return stick ? CFG.stickPunchReach : CFG.punch.reach
     return stick ? CFG.stickKickReach : CFG.kick.reach
 }
 
-function applySwing(gs) {
-    const b = gs.billy
-    const cfg = CFG[b.state]
+function applySwing(gs, p) {
+    const cfg = CFG[p.state]
     if (!cfg) return
-    if (b.stateT < cfg.startup || b.stateT >= cfg.startup + cfg.active) return
-    const reach = reachFor(b, b.state)
-    const stick = b.weapon === 'stick'
-    const dmg = stick ? CFG.stickDmg : b.state === 'whip' ? CFG.whip.dmg : cfg.dmg
-    const down = b.state === 'kick' || stick || b.state === 'whip'
-    const tol = b.state === 'whip' ? CFG.whip.depth : CFG.punch.depth + 2
+    if (p.stateT < cfg.startup || p.stateT >= cfg.startup + cfg.active) return
+    const reach = reachFor(p, p.state)
+    const stick = p.weapon === 'stick'
+    const dmg = stick ? CFG.stickDmg : p.state === 'whip' ? CFG.whip.dmg : cfg.dmg
+    const down = p.state === 'kick' || stick || p.state === 'whip'
+    const tol = p.state === 'whip' ? CFG.whip.depth : CFG.punch.depth + 2
     for (const e of gs.enemies) {
-        if (b.attackHit.has(e.id)) continue
+        if (p.attackHit.has(e.id)) continue
         if (e.state === 'dying') continue
         if (e.state === 'down') continue   // standing swings do not stomp
-        const dx = (e.x - b.x) * b.face
-        if (dx > -6 && dx <= reach && Math.abs(e.y - b.y) <= tol) {
-            b.attackHit.add(e.id)
+        const dx = (e.x - p.x) * p.face
+        if (dx > -6 && dx <= reach && Math.abs(e.y - p.y) <= tol) {
+            p.attackHit.add(e.id)
             hurtEnemy(gs, e, dmg, down)
-            if (b.state === 'whip') b.lash = CFG.whipFlash   // #2819: crack on the bite tick
+            if (p.state === 'whip') p.lash = CFG.whipFlash   // #2819: crack on the bite tick
         }
     }
     // barrels take the blows too — that is how the steel comes out
     for (const bar of gs.barrels) {
         const key = 'b' + bar.id
-        if (b.attackHit.has(key)) continue
-        const dx = (bar.x - b.x) * b.face
-        if (dx > -6 && dx <= reach && Math.abs(bar.y - b.y) <= tol) {
-            b.attackHit.add(key)
+        if (p.attackHit.has(key)) continue
+        const dx = (bar.x - p.x) * p.face
+        if (dx > -6 && dx <= reach && Math.abs(bar.y - p.y) <= tol) {
+            p.attackHit.add(key)
             hurtBarrel(gs, bar)
-            if (b.state === 'whip') b.lash = CFG.whipFlash
+            if (p.state === 'whip') p.lash = CFG.whipFlash
         }
     }
 }
 
-function applyJumpKick(gs) {
-    const b = gs.billy
-    if (b.z <= 2) return
+function applyJumpKick(gs, p) {
+    if (p.z <= 2) return
     for (const e of gs.enemies) {
-        if (b.attackHit.has(e.id) || e.state === 'dying' || e.state === 'down') continue
-        if (Math.abs(e.x - b.x) <= 18 && Math.abs(e.y - b.y) <= CFG.punch.depth) {
-            b.attackHit.add(e.id)
+        if (p.attackHit.has(e.id) || e.state === 'dying' || e.state === 'down') continue
+        if (Math.abs(e.x - p.x) <= 18 && Math.abs(e.y - p.y) <= CFG.punch.depth) {
+            p.attackHit.add(e.id)
             hurtEnemy(gs, e, CFG.jumpKickDmg, true)
         }
     }
 }
 
-function applySpin(gs) {
-    const b = gs.billy
+function applySpin(gs, p) {
     for (const e of gs.enemies) {
-        if (b.attackHit.has(e.id) || e.state === 'dying' || e.state === 'down') continue
-        const dx = Math.abs(e.x - b.x)
-        if (dx <= CFG.spin.reach && Math.abs(e.y - b.y) <= 10) {
-            b.attackHit.add(e.id)
+        if (p.attackHit.has(e.id) || e.state === 'dying' || e.state === 'down') continue
+        const dx = Math.abs(e.x - p.x)
+        if (dx <= CFG.spin.reach && Math.abs(e.y - p.y) <= 10) {
+            p.attackHit.add(e.id)
             hurtEnemy(gs, e, CFG.spin.dmg, true)
         }
     }
     for (const bar of gs.barrels) {
         const key = 'b' + bar.id
-        if (b.attackHit.has(key)) continue
-        if (Math.abs(bar.x - b.x) <= CFG.spin.reach && Math.abs(bar.y - b.y) <= 10) {
-            b.attackHit.add(key)
+        if (p.attackHit.has(key)) continue
+        if (Math.abs(bar.x - p.x) <= CFG.spin.reach && Math.abs(bar.y - p.y) <= 10) {
+            p.attackHit.add(key)
             hurtBarrel(gs, bar)
         }
     }
 }
 
-function applyStomp(gs) {
-    const b = gs.billy
-    if (b.z > 0) return
+function applyStomp(gs, p) {
+    if (p.z > 0) return
     for (const e of gs.enemies) {
-        if (e.state !== 'down' || b.attackHit.has(e.id)) continue
-        if (Math.abs(e.x - b.x) <= reachFor(b, 'kick') && Math.abs(e.y - b.y) <= 9) {
-            b.attackHit.add(e.id)
+        if (e.state !== 'down' || p.attackHit.has(e.id)) continue
+        if (Math.abs(e.x - p.x) <= reachFor(p, 'kick') && Math.abs(e.y - p.y) <= 9) {
+            p.attackHit.add(e.id)
             e.inv = 0
             hurtEnemy(gs, e, 1, false, true)
             if (e.hp > 0) { e.state = 'down'; e.stateT = Math.floor(CFG.downTime / 2) }
@@ -444,63 +494,64 @@ function applyStomp(gs) {
     }
 }
 
-function updateBilly(gs, pad) {
-    const b = gs.billy
-    if (b.state === 'dying') { b.stateT += 1; return }
-    if (b.inv > 0) b.inv -= 1
-    if (b.pressCooldown > 0) b.pressCooldown -= 1
-    if (b.lash > 0) b.lash -= 1
+export function updateFighter(gs, p, pad) {
+    // #2819: a bitten whip keeps its crack-flash a beat past the bite tick
+    if (p.lash > 0) p.lash -= 1
+    if (p.out) { if (p.state === 'dying') p.stateT += 1; return }
+    if (p.state === 'dying') { p.stateT += 1; return }
+    if (p.inv > 0) p.inv -= 1
+    if (p.pressCooldown > 0) p.pressCooldown -= 1
 
     // grabbed: mash B (kick) to break free
-    if (b.state === 'grabbed') {
-        b.stateT += 1
-        if (pad.b && b.pressCooldown <= 0) { b.presses += 1; b.pressCooldown = 6; gs.events.push('struggle') }
-        const holder = gs.enemies.find((e) => e.id === b.grabFrom)
-        if (b.presses >= CFG.grabEscape) {
-            b.state = 'idle'; b.stateT = 0; b.presses = 0; b.grabFrom = null
+    if (p.state === 'grabbed') {
+        p.stateT += 1
+        if (pad.b && p.pressCooldown <= 0) { p.presses += 1; p.pressCooldown = 6; gs.events.push('struggle') }
+        const holder = gs.enemies.find((e) => e.id === p.grabFrom)
+        if (p.presses >= CFG.grabEscape) {
+            p.state = 'idle'; p.stateT = 0; p.presses = 0; p.grabFrom = null
             if (holder) { holder.state = 'stagger'; holder.stateT = CFG.hitstun; holder.attackCooldown = 80 }
             gs.events.push('escape')
-        } else if (b.stateT >= CFG.grabTimeout) {
-            b.state = 'idle'; b.presses = 0; b.grabFrom = null
-            billyDies(gs)
+        } else if (p.stateT >= CFG.grabTimeout) {
+            p.state = 'idle'; p.presses = 0; p.grabFrom = null
+            playerDies(gs, p)
         }
         return
     }
 
     // attack state machines
-    if (b.state === 'punch' || b.state === 'kick' || b.state === 'whip') {
-        b.stateT += 1
-        const cfg = CFG[b.state]
-        applySwing(gs)
-        if (b.state !== 'whip') { applyJumpKick(gs); applyStomp(gs) }
-        if (b.stateT >= cfg.startup + cfg.active + cfg.recover) { b.state = b.z > 0 ? 'jump' : 'idle'; b.stateT = 0 }
-    } else if (b.state === 'throw') {
-        b.stateT += 1
-        if (b.stateT === CFG.throwK.startup) throwKnife(gs)
-        if (b.stateT >= CFG.throwK.total) { b.state = 'idle'; b.stateT = 0 }
-    } else if (b.state === 'spin') {
-        b.stateT += 1
-        applySpin(gs)
-        if (b.stateT >= CFG.spin.total) { b.state = 'idle'; b.stateT = 0 }
+    if (p.state === 'punch' || p.state === 'kick' || p.state === 'whip') {
+        p.stateT += 1
+        const cfg = CFG[p.state]
+        applySwing(gs, p)
+        if (p.state !== 'whip') { applyJumpKick(gs, p); applyStomp(gs, p) }
+        if (p.stateT >= cfg.startup + cfg.active + cfg.recover) { p.state = p.z > 0 ? 'jump' : 'idle'; p.stateT = 0 }
+    } else if (p.state === 'throw') {
+        p.stateT += 1
+        if (p.stateT === CFG.throwK.startup) throwKnife(gs, p)
+        if (p.stateT >= CFG.throwK.total) { p.state = 'idle'; p.stateT = 0 }
+    } else if (p.state === 'spin') {
+        p.stateT += 1
+        applySpin(gs, p)
+        if (p.stateT >= CFG.spin.total) { p.state = 'idle'; p.stateT = 0 }
     }
 
     // new attack inputs
-    if (pad.b) billyAttack(gs, 'kick')
-    else if (pad.punch) billyAttack(gs, 'punch')
+    if (pad.b) fighterAttack(gs, p, 'kick')
+    else if (pad.punch) fighterAttack(gs, p, 'punch')
 
     // jump: the A verb (Space / pad.a). ArrowUp/Down are the DEPTH axis —
     // in a belt-scroller the stick walks the street, the buttons do the tricks.
-    if ((pad.a || pad.jump) && b.z === 0 && b.state !== 'punch' && b.state !== 'kick' && b.state !== 'spin' && b.state !== 'throw' && b.state !== 'whip') {
-        b.z = 0.001; b.zv = CFG.jumpV
-        b.state = 'jump'; b.stateT = 0
+    if ((pad.a || pad.jump) && p.z === 0 && p.state !== 'punch' && p.state !== 'kick' && p.state !== 'spin' && p.state !== 'throw' && p.state !== 'whip') {
+        p.z = 0.001; p.zv = CFG.jumpV
+        p.state = 'jump'; p.stateT = 0
         gs.events.push('jump')
     }
-    if (b.z > 0 || b.zv > 0) {
-        b.z += b.zv
-        b.zv -= CFG.jumpG
-        if (b.z <= 0) {
-            b.z = 0; b.zv = 0
-            if (b.state === 'jump') { b.state = 'idle'; b.stateT = 0 }
+    if (p.z > 0 || p.zv > 0) {
+        p.z += p.zv
+        p.zv -= CFG.jumpG
+        if (p.z <= 0) {
+            p.z = 0; p.zv = 0
+            if (p.state === 'jump') { p.state = 'idle'; p.stateT = 0 }
             gs.events.push('land')
         }
     }
@@ -508,29 +559,30 @@ function updateBilly(gs, pad) {
     // walking (locked out mid-swing on the ground; air keeps drift).
     // Barrels are solid to grounded bodies — walk round them, hop over them.
     let moving = false
-    const canWalk = b.z > 0 || b.state === 'idle' || b.state === 'walk'
-    const solid = b.z <= 8
+    const canWalk = p.z > 0 || p.state === 'idle' || p.state === 'walk'
+    const solid = p.z <= 8
     if (canWalk) {
-        if (pad.left) { b.face = -1; if (!(solid && blocked(gs, b.x - CFG.walkSpeed, b.y))) { b.x -= CFG.walkSpeed; moving = true } }
-        if (pad.right) { b.face = 1; if (!(solid && blocked(gs, b.x + CFG.walkSpeed, b.y))) { b.x += CFG.walkSpeed; moving = true } }
-        if (pad.up && b.z === 0 && !(blocked(gs, b.x, b.y - CFG.deepSpeed))) { b.y -= CFG.deepSpeed; moving = true }
-        if (pad.down && b.z === 0 && !(blocked(gs, b.x, b.y + CFG.deepSpeed))) { b.y += CFG.deepSpeed; moving = true }
+        if (pad.left) { p.face = -1; if (!(solid && blocked(gs, p.x - CFG.walkSpeed, p.y))) { p.x -= CFG.walkSpeed; moving = true } }
+        if (pad.right) { p.face = 1; if (!(solid && blocked(gs, p.x + CFG.walkSpeed, p.y))) { p.x += CFG.walkSpeed; moving = true } }
+        if (pad.up && p.z === 0 && !(blocked(gs, p.x, p.y - CFG.deepSpeed))) { p.y -= CFG.deepSpeed; moving = true }
+        if (pad.down && p.z === 0 && !(blocked(gs, p.x, p.y + CFG.deepSpeed))) { p.y += CFG.deepSpeed; moving = true }
     }
-    b.x = clamp(b.x, 8, STAGE_W - 8)
-    b.y = clamp(b.y, DEEP_TOP, DEEP_BOT)
-    if (b.z <= 8) stuckFree(gs, b)
-    if (b.z === 0) b.state = moving ? 'walk' : (b.state === 'walk' ? 'idle' : b.state)
-    if (moving || b.state !== 'idle') b.anim += 1
+    p.x = clamp(p.x, 8, STAGE_W - 8)
+    p.y = clamp(p.y, DEEP_TOP, DEEP_BOT)
+    if (p.z <= 8) stuckFree(gs, p)
+    if (p.z === 0) p.state = moving ? 'walk' : (p.state === 'walk' ? 'idle' : p.state)
+    if (moving || p.state !== 'idle') p.anim += 1
 
-    // weapon pickups — one in hand, the original carries no armoury
+    // weapon pickups — one in hand, the original carries no armoury. First
+    // dragon home takes the steel (S4: both seats may arm, never one seat two).
     for (let i = gs.pickups.length - 1; i >= 0; i--) {
-        const p = gs.pickups[i]
-        p.bob += 1
-        if (p.clatter > 0) p.clatter -= 1
-        if (p.stick > 0) { p.stick -= 1; continue }   // still standing in the asphalt
-        if (Math.abs(p.x - b.x) <= 10 && Math.abs(p.y - b.y) <= 8 && !b.weapon) {
+        const q = gs.pickups[i]
+        q.bob += 1
+        if (q.clatter > 0) q.clatter -= 1
+        if (q.stick > 0) { q.stick -= 1; continue }   // still standing in the asphalt
+        if (Math.abs(q.x - p.x) <= 10 && Math.abs(q.y - p.y) <= 8 && !p.weapon) {
             gs.pickups.splice(i, 1)
-            b.weapon = p.kind
+            p.weapon = q.kind
             gs.score += 100
             gs.scoreFlash = { v: 100, t: 48 }
             gs.events.push('pickup')
@@ -542,19 +594,20 @@ function attackerCount(gs) {
     return gs.enemies.filter((e) => e.state === 'attack' || e.state === 'windup').length
 }
 
-function enemyNearest(gs) {
-    const b = gs.billy
+function nearestEnemy(gs, self) {
     let best = null, bd = 1e9
     for (const e of gs.enemies) {
         if (e.state === 'dying' || e.state === 'enter') continue
-        const d = Math.abs(e.x - b.x) + Math.abs(e.y - b.y) * 0.6
+        const d = Math.abs(e.x - self.x) + Math.abs(e.y - self.y) * 0.6
         if (d < bd) { bd = d; best = e }
     }
     return best
 }
 
 function updateEnemy(gs, e) {
-    const b = gs.billy
+    // S4: a thug works the nearest dragon (commitment + hysteresis above),
+    // not Billy by name — with two seats on the street the crowd splits.
+    const b = targetOf(gs, e)
     const def = ENEMY_DEF[e.kind]
     // Solidity is center-line: a body-radius INFLATES the footprint until the
     // pocket between barrel and street-edge has no open step — bodies re-pin
@@ -620,7 +673,7 @@ function updateEnemy(gs, e) {
         // telegraphs two beats of run-up, then body-checks the lane. Telegraph
         // first, depth still decides (a lane over, it whooses past).
         if (e.kind === 'abobo' && adx >= 40 && adx <= 150 && Math.abs(dy) <= 14
-            && e.attackCooldown <= 0 && attackerCount(gs) < CFG.attackersMax) {
+            && e.attackCooldown <= 0 && attackerCount(gs) < attackerCap(gs)) {
             e.state = 'chargewind'; e.stateT = 0
             gs.events.push('chargewind')
             break
@@ -631,7 +684,7 @@ function updateEnemy(gs, e) {
         // windup; the depth axis is the dodge). Close men fight with fists.
         if (e.hasKnife && b.z === 0 && b.inv <= 0 && b.state !== 'dying'
             && adx >= 34 && adx <= 130 && Math.abs(dy) <= 12
-            && e.castCooldown <= 0 && attackerCount(gs) < CFG.attackersMax) {
+            && e.castCooldown <= 0 && attackerCount(gs) < attackerCap(gs)) {
             e.state = 'aim'; e.stateT = 0
             gs.events.push('aim')
             break
@@ -641,7 +694,7 @@ function updateEnemy(gs, e) {
         const grabOk = (e.kind === 'amon' || e.kind === 'abobo')
         if (grabOk && b.z === 0 && b.inv <= 0 && b.state !== 'grabbed'
             && b.state !== 'dying' && adx <= CFG.grabRange && Math.abs(dy) <= 5 && e.attackCooldown <= 0
-            && attackerCount(gs) < CFG.attackersMax) {
+            && attackerCount(gs) < attackerCap(gs)) {
             e.state = 'grab'; e.stateT = 0
             b.state = 'grabbed'; b.stateT = 0; b.presses = 0; b.grabFrom = e.id
             gs.events.push('grabbed')
@@ -650,7 +703,7 @@ function updateEnemy(gs, e) {
 
         // attack decision
         const inRange = adx <= def.reach && Math.abs(dy) <= 6 && b.state !== 'dying'
-        if (inRange && e.attackCooldown <= 0 && attackerCount(gs) < CFG.attackersMax) {
+        if (inRange && e.attackCooldown <= 0 && attackerCount(gs) < attackerCap(gs)) {
             e.state = 'windup'; e.stateT = 0
             break
         }
@@ -692,7 +745,7 @@ function updateEnemy(gs, e) {
         if (e.stateT > 2) {
             const hit = b.z <= 6 && Math.abs(e.x - b.x) <= 16 && Math.abs(e.y - b.y) <= 8 && b.state !== 'grabbed'
             if (hit && b.inv <= 0 && b.state !== 'dying' && gs.mode === 'play') {
-                billyDies(gs)
+                playerDies(gs, b)
                 e.state = 'back'; e.stateT = 0; e.attackCooldown = 90
                 break
             }
@@ -731,7 +784,7 @@ function updateEnemy(gs, e) {
         if (e.stateT === 3) {
             const hit = b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 && Math.abs(e.y - b.y) <= 8 && b.state !== 'grabbed'
             if (hit && b.inv <= 0 && b.state !== 'dying' && gs.mode === 'play') {
-                billyDies(gs)
+                playerDies(gs, b)
             }
         }
         if (e.stateT >= 14) { e.state = 'back'; e.stateT = 0; e.attackCooldown = 50 + Math.floor(rng(gs) * 50) }
@@ -787,10 +840,16 @@ function clearField(gs) {
     gs.pickups = []
     gs.projectiles = []
     gs.camX = 0
-    const b = gs.billy
-    b.x = 40; b.inv = CFG.respawnIFrames
-    b.grabFrom = null
-    if (b.state === 'grabbed') b.state = 'idle'
+    // S4 second wind: when the road opens a fresh stage, a drained seat
+    // returns with one life — the dragons enter the next street together.
+    for (const p of fighters(gs)) {
+        p.out = false
+        p.lives = Math.max(p.lives, 1)
+        p.state = 'idle'; p.stateT = 0; p.z = 0; p.zv = 0
+        p.inv = CFG.respawnIFrames
+        p.grabFrom = null
+        p.x = p.tag === 'billy' ? 40 : 24
+    }
 }
 
 export function enterStage2(gs) {
@@ -820,7 +879,7 @@ export function rescueReady(gs) {
         gs.waveIdx >= WAVES_S2.length && gs.enemies.length === 0
 }
 
-export function step(gs, pad = {}) {
+export function step(gs, pad = {}, pad2 = {}) {
     gs.tick += 1
     if (gs.mode === 'play' && gs.banner > 0) gs.banner -= 1
     if (gs.scoreFlash && --gs.scoreFlash.t <= 0) gs.scoreFlash = null
@@ -834,23 +893,29 @@ export function step(gs, pad = {}) {
         return gs
     }
     if (gs.mode === 'gameover') {
-        updateBilly(gs, {})
+        updateFighter(gs, gs.billy, {})
+        if (gs.jimmy) updateFighter(gs, gs.jimmy, {})
         gs.enemies.forEach((e) => updateEnemy(gs, e))
         return gs
     }
 
-    const b = gs.billy
-    updateBilly(gs, pad)
+    updateFighter(gs, gs.billy, pad)
+    // S4: the blue seat runs on its own honest-percept brain until a human
+    // takes it drop-in (Contra S4 law) — the shell passes pad2 only then.
+    const jpad = gs.jimmy ? (gs.jimmy.human ? pad2 : jimmyBrain(gs)) : null
+    if (gs.jimmy) updateFighter(gs, gs.jimmy, jpad)
 
-    // camera: follow, then lock while a wave lives
+    // camera: the front dragon leads, then lock while a wave lives
+    const active = activeFighters(gs)
+    const leadX = active.reduce((m, p) => Math.max(m, p.x), gs.billy.x)
     if (!gs.camLock) {
-        const target = clamp(b.x - Math.floor(W * 0.45), 0, STAGE_W - W)
+        const target = clamp(leadX - Math.floor(W * 0.45), 0, STAGE_W - W)
         gs.camX += clamp(target - gs.camX, -3, 3)
     }
-    b.x = clamp(b.x, gs.camX + 8, gs.camX + W - 8)
+    for (const p of active) p.x = clamp(p.x, gs.camX + 8, gs.camX + W - 8)
 
-    // wave triggers
-    if (!gs.waveActive && gs.waveIdx < wavesFor(gs).length && b.x >= wavesFor(gs)[gs.waveIdx].triggerX) {
+    // wave triggers (the front dragon opens the next fight)
+    if (!gs.waveActive && gs.waveIdx < wavesFor(gs).length && leadX >= wavesFor(gs)[gs.waveIdx].triggerX) {
         const w = wavesFor(gs)[gs.waveIdx]
         gs.waveActive = true
         gs.camLock = true
@@ -883,11 +948,15 @@ export function step(gs, pad = {}) {
                     break
                 }
             }
-            if (!done && gs.mode === 'play' && gs.billy.inv <= 0 && gs.billy.state !== 'dying'
-                && gs.billy.z <= 6 && Math.abs(pr.x - gs.billy.x) <= 10 && Math.abs(pr.y - gs.billy.y) <= 7) {
-                billyDies(gs)
-                gs.events.push('blade_hit')
-                done = true
+            if (!done && gs.mode === 'play') {
+                for (const p of activeFighters(gs)) {
+                    if (p.inv <= 0 && p.z <= 6 && Math.abs(pr.x - p.x) <= 10 && Math.abs(pr.y - p.y) <= 7) {
+                        playerDies(gs, p)
+                        gs.events.push('blade_hit')
+                        done = true
+                        break
+                    }
+                }
             }
             if (!done && (pr.x < gs.camX - 24 || pr.x > gs.camX + W + 24)) done = true
         } else {
@@ -932,12 +1001,16 @@ export function step(gs, pad = {}) {
 
     // S3 the hideout — Marian. Ropes hold until the duel is answered; two
     // punches cut them. Then the cheer, and the yard sets the whole run free.
+    // S4: either dragon's fists count — the rescue is a two-man job now.
     if (gs.marian) {
         const m = gs.marian
         if (m.cutT > 0) m.cutT -= 1
         if (!m.freed && rescueReady(gs)) {
-            const b = gs.billy
-            if (pad.punch && m.cutT <= 0 && Math.abs(b.x - m.x) <= CFG.rescueRange && Math.abs(b.y - m.y) <= 8) {
+            const punchers = [{ p: gs.billy, v: pad.punch }]
+            if (gs.jimmy) punchers.push({ p: gs.jimmy, v: jpad && jpad.punch })
+            const hit = punchers.find((c) => !c.p.out && c.p.state !== 'grabbed' && c.v &&
+                Math.abs(c.p.x - m.x) <= CFG.rescueRange && Math.abs(c.p.y - m.y) <= 8)
+            if (hit && m.cutT <= 0) {
                 m.cuts += 1
                 m.cutT = 10
                 gs.events.push('rope')
@@ -964,10 +1037,11 @@ export function step(gs, pad = {}) {
     return gs
 }
 
-// The honest-percept autopilot: reads the same truth the screen shows.
-// Used by the attract demo AND the harness WINNABLE proof.
-export function autopilot(gs) {
-    const b = gs.billy
+// The honest-percept brain: reads the same truth the screen shows, for
+// WHICHEVER dragon it drives. Powers the attract demo and the harness
+// WINNABLE proof (Billy's seat), and Jimmy's CPU seat in co-op (#2807 S4) —
+// both seats play by the same percept law, no cheat sheet.
+export function dragonBrain(gs, b) {
     const pad = { left: false, right: false, up: false, down: false, a: false, b: false, punch: false }
     if (gs.mode !== 'play' || b.state === 'grabbed') {
         if (b.state === 'grabbed' && gs.tick % 4 === 0) pad.b = true // mash free
@@ -980,7 +1054,7 @@ export function autopilot(gs) {
         if (Math.abs(dxm) > 14 || Math.abs(dym) > 3) {
             pad.right = dxm > 0; pad.left = dxm < 0
             if (Math.abs(dym) > 3) { pad.up = dym < 0; pad.down = dym > 0 }
-            return laneChange(gs, pad)
+            return laneChange(gs, b, pad)
         }
         if (gs.tick % 12 < 2) pad.punch = true
         return pad
@@ -996,10 +1070,10 @@ export function autopilot(gs) {
         pad[dir > 0 ? 'down' : 'up'] = true
         return pad
     }
-    const target = enemyNearest(gs)
+    const target = nearestEnemy(gs, b)
     if (!target) {
         pad.right = true
-        return laneChange(gs, pad)
+        return laneChange(gs, b, pad)
     }
     const dx = target.x - b.x
     const dy = target.y - b.y
@@ -1030,23 +1104,30 @@ export function autopilot(gs) {
         if (gs.tick % 3 === 0) pad.up = gs.tick % 6 === 0
         pad.left = threat.x > b.x
         pad.right = threat.x < b.x
-        return laneChange(gs, pad)
+        return laneChange(gs, b, pad)
     }
     if (Math.abs(dy) > 3) { pad.up = dy < 0; pad.down = dy > 0 }
-    if (adx > 16) { pad.right = dx > 0; pad.left = dx < 0 }
+    // close BOTH axes: a target 20px deep across a crate is not in kick range —
+    // mashing depth into wood is the stall the co-op seeds found. Walk to the
+    // target's side of the prop, then the lane opens underneath you.
+    if (adx > 16 || Math.abs(dy) > 10) { pad.right = dx > 0; pad.left = dx < 0 }
     else {
         const surrounded = gs.enemies.filter((e) => e.state !== 'dying' && e.state !== 'down' && Math.abs(e.x - b.x) <= CFG.spin.reach + 6 && Math.abs(e.y - b.y) <= 10).length >= 2
         if (!surrounded && gs.tick % 9 < 2) pad.b = true // kick (kicks knock down)
         else if (surrounded && gs.tick % 7 < 2) pad.b = true // spin back-heel
     }
-    return laneChange(gs, pad)
+    return laneChange(gs, b, pad)
 }
+
+// The two seats' default drivers: Billy's autopilot (attract demo + harness
+// WINNABLE proof) and Jimmy's CPU seat (S4) — the same brain, different dragon.
+export const autopilot = (gs) => dragonBrain(gs, gs.billy)
+export const jimmyBrain = (gs) => dragonBrain(gs, gs.jimmy || gs.billy)
 
 // The weapons wall final pass (#2807): if the direction being pressed runs
 // into a barrel on our own lane, change lanes instead — solid props are
 // part of the road.
-function laneChange(gs, pad) {
-    const b = gs.billy
+function laneChange(gs, b, pad) {
     const pressX = pad.right ? 1 : pad.left ? -1 : 0
     if (!pressX || b.z !== 0 || pad.b) return pad
     const bar = gs.barrels.find((q) => Math.abs(q.y - b.y) <= 12 && (q.x - b.x) * pressX > 0 && Math.abs(q.x - b.x) < 24)
@@ -1077,9 +1158,14 @@ export function stateHash(gs) {
     mix(gs.waveIdx)
     mix(gs.stage)
     mix(gs.marian ? (gs.marian.freed ? 2 : 1) : 0)
-    const b = gs.billy
-    mix(b.x); mix(b.y); mix(b.z); mix(b.lives)
-    mix(b.state.length); mix(b.face); mix(b.weapon ? 1 : 0)
+    mix(gs.coop ? 1 : 0)
+    const mixFighter = (p) => {
+        mix(p.x); mix(p.y); mix(p.z); mix(p.lives)
+        mix(p.state.length); mix(p.face); mix(p.weapon ? 1 : 0); mix(p.out ? 1 : 0)
+    }
+    mixFighter(gs.billy)
+    mix(gs.jimmy ? 1 : 0)
+    if (gs.jimmy) mixFighter(gs.jimmy)
     mix(gs.enemies.length)
     for (const e of gs.enemies) {
         mix(e.id); mix(e.x); mix(e.y); mix(e.hp); mix(e.state.length); mix(e.inv)
