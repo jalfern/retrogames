@@ -84,6 +84,17 @@ export const CFG = {
     coreOpen: 120,        // vulnerable window (ticks)
     coreCycle: 190,       // open, then armored shut
     doorCap: 1,           // doors never spill more than this many live runners
+    // --- #2885 hanging vines: the canyon's carriers (falls phase) ---
+    vinePeriod: 96,           // pendulum period (ticks) — pure tick math, zero gs.r
+    vineAmp: 1.1,            // swing amplitude (rad): a rope-swing, ± ~70 px wide,
+                             //   ~44 px of tip rise — enough to be a carrier
+    vineHang: 26,            // rider's feet hang this far below the tip (one-armed)
+    vineGrabHW: 9, vineGrabVH: 15,   // the touch box around the swinging tip
+    vineCarryMin: 20,        // the carrier law: a rider is flung at least this
+                             //   above where they caught the vine
+    vineRideMax: 100,        // safety: no seat hangs past one full swing + margin
+    vineLiftBoost: 0.5,      // the fling's extra pop at the far apex
+    cascadeStep: 8,          // #2885 scripted finale: one site every 8 ticks
     // --- S4 co-op: the blue seat (Jon's multiplayer rule: CPU ally by default,
     // human drop-in on the desktop keyboard) ---
     allySpawnDX: -26,     // the ally arrives at your shoulder
@@ -194,6 +205,57 @@ const FALLS_GUNNERS = [
 const GUNS = [{ x: 190, y: 36 }, { x: 330, y: 60 }]
 const DOORS = [{ x: 250, y: 150 }, { x: 16, y: 150 }]
 
+// #2885 SCRIPTED FINALE — the original's gate dies position-by-position, not
+// as random noise around the wall. The chain walks the fortress: the guns are
+// silenced first, then the wall comes apart in tiers, bottom to top, and the
+// heart goes last. Same sites on EVERY seed (zero gs.r — a replay and a fresh
+// fight show the identical fire), same sites the wall art draws.
+export const CASCADE = [
+    { x: GUNS[0].x, y: GUNS[0].y - 4 },          // the near gun blows out
+    { x: 210, y: 134 },                           // wall foot, left tier
+    { x: 250, y: 118 },                           // under the spawn arch
+    { x: GUNS[1].x, y: GUNS[1].y - 4 },          // the far gun follows
+    { x: 306, y: 122 },
+    { x: 354, y: 138 },                           // foot tier complete
+    { x: 222, y: 62 },                            // second tier, beside the core
+    { x: 288, y: 50 },
+    { x: 342, y: 76 },
+    { x: 214, y: 26 },                            // top tier along the parapet
+    { x: 300, y: 22 },
+    { x: 368, y: 42 },
+    { x: 186, y: 110 },                           // the core housing cracks
+    { x: 200, y: 96 },                            // and the heart goes last
+]
+
+// #2885 hanging vines — the original put the odd vine on the way up. Each
+// hangs from a canyon overhang so its LOW point sits at chest height over a
+// shelf's middle; swinging (pure tick arithmetic, zero gs.r) the tip sweeps
+// ± ~70 px across the shelf and rises ~44 px. A hero who catches a tip
+// AIRBORNE rides the arc; the vine flings its rider at least vineCarryMin
+// above the catch — the gorge's carriers, an alternate line up the climb.
+// The torrent still takes a low-hanging rider: hazard law untouched.
+export const VINES = [
+    { x: 190, y: 568, len: 80, ph: 0 },                 // above the entry lip
+    { x: 140, y: 348, len: 80, ph: Math.PI / 2 },       // mid-gorge, left face
+    { x: 315, y: 224, len: 72, ph: Math.PI },           // right face, upper third
+    { x: 155, y: 100, len: 72, ph: Math.PI * 1.5 },     // below the arena floor
+]
+
+const VINE_W0 = Math.PI * 2 / CFG.vinePeriod
+
+export function vineTheta (gs, i) {
+    return CFG.vineAmp * Math.sin(gs.tick * VINE_W0 + VINES[i].ph)
+}
+export function vineOmega (gs) {
+    return CFG.vineAmp * VINE_W0 * Math.cos(gs.tick * VINE_W0)
+}
+export function vineTip (gs, i) {
+    const v = VINES[i]
+    const th = CFG.vineAmp * Math.sin(gs.tick * VINE_W0 + v.ph)
+    const w = CFG.vineAmp * VINE_W0 * Math.cos(gs.tick * VINE_W0 + v.ph)
+    return { x: v.x + Math.sin(th) * v.len, y: v.y + Math.cos(th) * v.len, vy: -Math.sin(th) * w * v.len }
+}
+
 // one soldier shape, one place (S3 adds the nade flag; throws ride a
 // deterministic per-x cadence so makeGame never touches gs.r)
 function mkSoldier (d) {
@@ -232,6 +294,35 @@ function seatStep (gs, h, pad, ledges, floorY, owner) {
     else if (h.coyote > 0) h.coyote -= 1
     const jumpEdge = pad.a && !h.prevA
     h.prevA = pad.a
+
+    // #2885 hanging vines (falls): a seat that catches a swinging tip AIRBORNE
+    // rides the arc — no steering on the rope (the cabinet's drop law), but the
+    // trigger still answers. The vine FLINGS its rider at the far apex, at least
+    // vineCarryMin above the catch — the canyon's carrier. Jump releases early
+    // with the swing's momentum. It lives in seatStep, so the blue seat rides
+    // under the identical law — structural, not copy-pasted.
+    if (gs.phase === 'falls' && h.vine >= 0) {
+        const tp = vineTip(gs, h.vine)
+        h.x = Math.max(8, Math.min(W - 8, tp.x))
+        h.y = tp.y + CFG.vineHang
+        h.vx = 0; h.vy = 0; h.onGround = false
+        h.face = tp.vy < 0 ? 1 : -1 // read the swing: rising faces the climb
+        if (pad.b && h.cool === 0) { fire(gs, h, owner); h.cool = coolOf(h.weapon) }
+        if (h.inv > 0) h.inv -= 1
+        h.rideT += 1
+        const lifted = h.vineAtY - h.y
+        const apexFling = lifted >= CFG.vineCarryMin && tp.vy < -0.05
+        if (jumpEdge || apexFling || h.rideT > CFG.vineRideMax) {
+            const v = VINES[h.grabI]
+            const thG = CFG.vineAmp * Math.sin(gs.tick * VINE_W0 + v.ph)
+            const wG = CFG.vineAmp * VINE_W0 * Math.cos(gs.tick * VINE_W0 + v.ph)
+            h.vine = -1; h.grabI = -1; h.rideT = 0
+            h.vx = Math.max(-2.4, Math.min(2.4, Math.cos(thG) * wG * v.len))
+            h.vy = Math.min(-1.8, -Math.sin(thG) * wG * v.len - CFG.vineLiftBoost)
+            gs.ev.push({ type: 'unvine', o: owner })
+        }
+        return
+    }
     if (jumpEdge && h.onGround) {
         const onPlat = ledges.some((pl) => h.px >= pl.x && h.px <= pl.x + pl.w && Math.abs(h.y - pl.y) < 2)
         if (pad.down && onPlat) { h.drop = 12; h.y += 2; h.onGround = false; h.vy = 0.5 }
@@ -239,6 +330,9 @@ function seatStep (gs, h, pad, ledges, floorY, owner) {
     }
     if (h.drop > 0) h.drop -= 1
 
+    // #2885 fling momentum: horizontal carry after a vine release, decaying —
+    // the swing keeps pushing you after you let go, then the run takes over.
+    if (h.vx) { h.x = Math.max(8, Math.min(gs.phase === 'boss' ? CFG.wallX - 10 : W - 8, h.x + h.vx)); h.vx *= 0.92; if (Math.abs(h.vx) < 0.08) h.vx = 0 }
     h.vy += CFG.grav
     h.y += h.vy
     h.onGround = false
@@ -251,7 +345,23 @@ function seatStep (gs, h, pad, ledges, floorY, owner) {
             }
         }
     }
-    if (h.onGround) h.lane = h.y   // the lane enemies lead: the ground you run on
+    if (h.onGround) { h.lane = h.y; h.vx = 0 }   // the lane enemies lead: the ground you run on
+
+    // #2885 grab: airborne, REACHING (the jump key held — a punch of intent,
+    // the same law the cabinet's rope grabs obey), body inside the box around a
+    // swinging tip. Grounded contact never takes the vine — the climb keeps its
+    // own two feet.
+    if (gs.phase === 'falls' && !h.onGround && h.vine < 0 && pad.a) {
+        for (let vi = 0; vi < VINES.length; vi++) {
+            const tp = vineTip(gs, vi)
+            if (Math.abs(h.x - tp.x) <= CFG.vineGrabHW && Math.abs((h.y - 14) - tp.y) <= CFG.vineGrabVH) {
+                h.vine = vi; h.grabI = vi; h.rideT = 0; h.vineAtY = h.y
+                h.vx = 0; h.vy = 0
+                gs.ev.push({ type: 'vine', o: owner })
+                break
+            }
+        }
+    }
 
     if (h.cool > 0) h.cool -= 1
     if (pad.b && h.cool === 0) {
@@ -424,6 +534,9 @@ export function makeGame (seed) {
             walk: 0,                // animation phase (world ticks)
             out: false,             // pool spent on this seat — the run goes on without it
             prevA: false,           // jump latch (edge-detect for taps)
+            // #2885 vine law: vine = tip being ridden (-1 free), grabI keeps the
+            // index through the release tick; vx is the fling's decayed momentum.
+            vine: -1, grabI: -1, rideT: 0, vineAtY: 0, vx: 0,
         },
         // S4 the second seat: mirror of p — #2814: no bank of his own, his
         // deaths drain the shared gs.lives pool like the hero's. CPU-brained
@@ -440,6 +553,8 @@ export function makeGame (seed) {
             // auto-release law watches it, so harness shortcuts stay pinned);
             // enterT counts the arrival descent; idle the drop-out patience.
             enterT: 0, idle: 0, padClaim: false,
+            // #2885: the same vine law, structurally — seatStep carries it
+            vine: -1, grabI: -1, rideT: 0, vineAtY: 0, vx: 0,
             safe: { x: 40 + CFG.allySpawnDX, y: CFG.ground },
         },
         safe: { x: 40, y: CFG.ground },   // respawn point (last ground/shelf touched)
@@ -461,6 +576,9 @@ export function makeGame (seed) {
         carrierN: 0,            // courier index for this run (letter/alt seed)
         depot: { x: 1700, y: CFG.ground, hp: CFG.depotHp, aim: Math.PI, t: 70, dead: false, spawnT: 240 },
         vc: [],                     // S3.5 volley capsules — the depot's payout {x,y,vx,kind}
+        // #2885 hanging vines live only in the falls; riders ride the seat fields
+        // (p.vine / p2.vine), the tips are pure tick math — nothing mutable here.
+        vines: [],
         boss: null,                 // the gate, once the arena opens (see makeBoss)
         ev: [],                     // effect events (shell drains; not hashed)
     }
@@ -657,6 +775,10 @@ function enterFalls (gs) {
     gs.vc.length = 0  // the depot's payout flies in the jungle too
     gs.carriers.length = 0; gs.pods.length = 0   // #2847: the canyon owns the vertical — no sky couriers below the falls
     gs.pb.length = 0; gs.eb.length = 0; gs.capsule = null
+    // #2885: the vines live here — the gorge's carriers, both seats unhooked.
+    gs.vines = VINES.map((v, i) => ({ ...v, i }))
+    p.vine = -1; p.grabI = -1; p.rideT = 0; p.vx = 0
+    if (!q.out) { q.vine = -1; q.grabI = -1; q.rideT = 0; q.vx = 0 }
     gs.ev.push({ type: 'enter' })
 }
 
@@ -674,6 +796,9 @@ function makeBoss (gs) {
     }
     gs.soldiers = []
     gs.pb.length = 0; gs.eb.length = 0
+    gs.vines.length = 0          // #2885: the arena has no canopy — the fight is on the deck
+    p.vine = -1; p.grabI = -1; p.rideT = 0; p.vx = 0
+    q.vine = -1; q.grabI = -1; q.rideT = 0; q.vx = 0
     gs.boss = {
         core: CFG.coreHp,
         coreT: 30,                                  // start armored; first opening soon
@@ -696,6 +821,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             p.y = gs.safe.y; p.vy = 0; p.onGround = true
             p.lane = p.y
             p.weapon = 'rifle'; p.inv = CFG.invuln
+            p.vine = -1; p.grabI = -1; p.rideT = 0; p.vx = 0   // #2885 the vine lets go of the dead
             gs.eb.length = 0
             gs.ev.push({ type: 'respawn' })
         }
@@ -750,6 +876,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                 q.vy = 0; q.onGround = true
                 q.drop = 0; q.coyote = 0; q.lane = q.y
                 q.weapon = 'rifle'; q.inv = CFG.invuln
+                q.vine = -1; q.grabI = -1; q.rideT = 0; q.vx = 0   // #2885 same release for the blue seat
                 // never respawn below the torrent — the arcade puts you back on
                 // the climb, not back in the water
                 if (gs.phase === 'falls' && q.y > gs.camY + H - CFG.drownAt - 40) {
@@ -821,7 +948,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                     bo.core -= 1
                     gs.score += 100
                     gs.ev.push({ type: 'coreHit', x: CFG.coreX, y: CFG.coreY })
-                    if (bo.core <= 0) { bo.core = 0; bo.dying = 110; gs.score += 5000; gs.ev.push({ type: 'roar' }) }
+                    if (bo.core <= 0) { bo.core = 0; bo.dying = CASCADE.length * CFG.cascadeStep; gs.score += 5000; gs.ev.push({ type: 'roar' }) }
                 } else {
                     gs.ev.push({ type: 'spark', x: b.x, y: b.y })
                 }
@@ -1163,13 +1290,13 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         const bo = gs.boss
         bo.coreT += 1
         if (bo.dying > 0) {
-            // the core fell — the gate comes apart in a chain of blasts, then
-            // the stage is truly clear.
+            // the core fell — the gate comes apart at SCRIPTED sites (#2885):
+            // guns first, then the wall in tiers bottom-to-top, the heart last.
+            // Zero gs.r — the same finale on every seed, the original's choreo.
             bo.dying -= 1
-            if (bo.dying % 8 === 0) {
-                const a = rnd(gs) * Math.PI * 2
-                boom(gs, CFG.wallX + 20 + rnd(gs) * 180, 30 + rnd(gs) * 110, false)
-                void a
+            if (bo.dying % CFG.cascadeStep === 0) {
+                const site = CASCADE[CASCADE.length - 1 - bo.dying / CFG.cascadeStep]
+                boom(gs, site.x, site.y, false, 'tnt')
             }
             if (bo.dying === 0) { gs.end = 'win'; gs.ev.push({ type: 'clear' }) }
             gs.eb.length = 0
@@ -1382,6 +1509,8 @@ export function stateHash (gs) {
     put(gs.p.x); put(gs.p.y); put(gs.p.vy); put(gs.p.onGround ? 1 : 0); put(gs.p.face); put(gs.p.lane)
     put(gs.p.ax); put(gs.p.ay); put(gs.p.cool); put(WCODE[gs.p.weapon] || 0)
     put(gs.p.inv); put(gs.p.dead); put(gs.p.prevA ? 1 : 0); put(gs.p.out ? 1 : 0)
+    put(gs.p.vine); put(gs.p2.vine)   // #2885 who rides a vine is sim truth
+    for (let vi = 0; vi < VINES.length; vi++) { const tp = vineTip(gs, vi); put(tp.x); put(tp.y) }
     // S4 the blue seat is sim truth — his position and wheel ride the hash;
     // #2814 his lives ARE gs.lives (the shared pool hashes above)
     put(gs.p2.x); put(gs.p2.y); put(gs.p2.vy); put(gs.p2.onGround ? 1 : 0); put(gs.p2.face); put(gs.p2.lane)

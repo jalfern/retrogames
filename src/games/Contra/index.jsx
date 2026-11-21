@@ -13,8 +13,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat } from './sim.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, seatTagState } from './art.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip } from './sim.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -25,6 +25,7 @@ const MESSAGES = [
     'WATCH THE SCOPE GLINT — THE SNIPER TELLS YOU FIRST',
     'SHOOT THE CARRIER DOWN — ITS POD CARRIES THE WHEEL',
     'THE CORE SHINES WHEN IT IS OPEN — HIT IT THEN',
+    'VINES SWING OVER THE FALLS — HOLD JUMP TO GRAB ONE',
     'BLUE TAKES THE SECOND SEAT — TWO GUNS, ONE JUNGLE',
     '2P DROP-IN: WASD MOVE · F JUMP · G FIRE',
     'STAND UP FROM THE BLUE SEAT — THE WINGMAN STEPS BACK IN',
@@ -90,6 +91,10 @@ const sfx = {
     cargo: () => { audioController.playSweep(420, 180, 0.14, 'triangle', 0.06); audioController.playNoise(0.05, 0.03) },
     dust: () => { audioController.playNoise(0.07, 0.05); audioController.playSweep(200, 90, 0.08, 'triangle', 0.03) },
     roar: () => { audioController.playNoise(0.9, 0.14); audioController.playSweep(120, 30, 0.9, 'sawtooth', 0.1); setTimeout(() => audioController.playSweep(90, 25, 0.6, 'triangle', 0.09), 250) },
+    // #2885 the vine's voices: the grab is a wet whip-catch, the fling a
+    // rising whoosh — the carrier announces itself (ART.md bar 4).
+    vine: () => { audioController.playSweep(240, 560, 0.09, 'triangle', 0.05); audioController.playNoise(0.03, 0.02) },
+    unvine: () => audioController.playSweep(480, 1020, 0.14, 'square', 0.045),
 }
 
 export default function ContraGame () {
@@ -253,6 +258,11 @@ export default function ContraGame () {
             } else {
                 if (gs.phase === 'boss' && gs.boss) drawGateStructure(ctx, gs.boss, gs.tick)
                 for (const pl of FALLS_LEDGES) drawLedge(ctx, pl)
+                // #2885: the gorge's carriers sway over the climb
+                for (const v of gs.vines) {
+                    const rv = gs.p.vine === v.i ? gs.p.y - 22 : (gs.p2.vine === v.i ? gs.p2.y - 22 : null)
+                    drawVine(ctx, v, vineTheta(gs, v.i), rv)
+                }
             }
             for (const br of gs.barrels) if (!br.gone) drawBarrel(ctx, br)
             for (const t of gs.turrets) if (!t.dead) drawTurret(ctx, t)
@@ -273,10 +283,10 @@ export default function ContraGame () {
             if (gs.p2.dead === 0 && !gs.p2.out && !(gs.end === 'dead')) {
                 const rappelling = gs.p2.enterT > 0
                 if (rappelling) drawRappel(ctx, gs.p2.x, (gs.phase === 'jungle' ? 0 : gs.camY) - 4, gs.p2.y)
-                drawPlayer(ctx, gs.p2, gs.tick, true, rappelling, rappelling)
+                drawPlayer(ctx, gs.p2, gs.tick, true, rappelling, rappelling || gs.p2.vine >= 0)
             }
             else if (gs.p2.dead > 0) drawDeathTumble(ctx, gs.p2.x, gs.p2.y, Math.floor((CFG.respawnFreeze - gs.p2.dead) / 12) % 4, true)
-            if (gs.p.dead === 0 && !(gs.end === 'dead')) drawPlayer(ctx, gs.p, gs.tick)
+            if (gs.p.dead === 0 && !(gs.end === 'dead')) drawPlayer(ctx, gs.p, gs.tick, false, false, gs.p.vine >= 0)
             else if (gs.p.dead > 0) drawDeathTumble(ctx, gs.p.x, gs.p.y, Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4)
             // expanding fireballs under the sparks (cosmetic, sized by kind)
             for (let i = fire.length - 1; i >= 0; i--) {
@@ -447,6 +457,8 @@ export default function ContraGame () {
                     pods: gs.pods.map((c) => ({ x: +c.x.toFixed(1), y: +c.y.toFixed(1), kind: c.kind, r: c.recoil || 0, pf: c.puff || 0 })),
                     depot: gs.depot ? { hp: gs.depot.hp, dead: gs.depot.dead } : null,
                     gateGuns: gs.boss ? gs.boss.guns.map((g) => ({ hp: g.hp, dead: g.dead })) : null, // #2880
+                    cascadeDying: gs.boss ? gs.boss.dying : null, // #2885 scripted finale countdown
+                    vine: { p: gs.p.vine, q: gs.p2.vine, tips: gs.vines.map((v) => { const tp = vineTip(gs, v.i); return { x: +tp.x.toFixed(1), y: +tp.y.toFixed(1) } }) },
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
                     keys: { ...keys },
@@ -475,6 +487,14 @@ export default function ContraGame () {
                     // #2847: stand a courier off the hero's right for the browser legs
                     if (opts.carrierHere) gs.carriers.push({ x: gs.p.x + (opts.carrierDX ?? 120), y: opts.carrierY ?? 164, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: opts.carrierKind || 'laser', dead: false })
                     if (opts.podHere) gs.pods.push({ x: gs.p.x + (opts.podDX ?? 40), y: CFG.ground - 2, vx: CFG.podVx, vy: 0, kind: opts.podKind || 'laser' })
+                    // #2885: hide the canopy (pixel-baseline leg) or stand the hero
+                    // airborne right on vine 0's tip for the grab leg
+                    if (opts.vinesGone) { gs.vines.length = 0 }
+                    if (opts.vineAt0) {
+                        if (gs.phase !== 'falls') warpFalls(gs)
+                        const tp = vineTip(gs, 0)
+                        gs.p.x = tp.x; gs.p.y = tp.y + 14; gs.p.vy = -1; gs.p.onGround = false
+                    }
                     if (opts.kill) { gs.p.inv = 0; gs.eb.push({ x: gs.p.x + 2, y: gs.p.y - 14, vx: 0.1, vy: 0 }) }
                     if (opts.clearEnemies) for (const s of gs.soldiers) s.dead = true
                     // S4 co-op hooks for the browser legs
@@ -496,6 +516,7 @@ export default function ContraGame () {
                     `ALLY ${gs.p2.out ? 'DOWN' : `x ${gs.p2.x.toFixed(0)}  y ${gs.p2.y.toFixed(0)}  ${gs.p2.human ? 'HUMAN' : 'CPU'}  ${gs.p2.weapon}`}  POOL ${gs.lives}`,
                     `soldiers ${gs.soldiers.filter((s) => !s.dead).length}/${gs.soldiers.length} alive  turrets ${gs.turrets.filter((t) => !t.dead).length}  snipers ${gs.snipers.filter((t) => !t.dead).length}  nades ${gs.eb.filter((b) => b.gr).length}  barrels ${gs.barrels.filter((b) => !b.gone).length}  bullets p/e ${gs.pb.length}/${gs.eb.length}`,
                     `SKY ${gs.carriers.length ? `carrier hp ${gs.carriers[0].hp} ${gs.carriers[0].kind}` : 'clear'}  pods ${gs.pods.length}  next courier t${gs.nextCarrier}`,
+                    `VINES ${gs.p.vine >= 0 ? `HERO RIDING #${gs.p.vine}` : gs.p2.vine >= 0 ? `ALLY RIDING #${gs.p2.vine}` : `${gs.vines.length} swaying`}  ${gs.boss && gs.boss.dying ? `CASCADE t${gs.boss.dying}` : ''}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
                 actions: [
