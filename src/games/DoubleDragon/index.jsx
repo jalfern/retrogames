@@ -13,7 +13,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import { slotPad, slotActive } from '../../utils/onePad'
 import { p2Merge, p2Seat } from './p2pad.js'
 import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH, enterStage2 } from './sim.js'
-import { drawBackground, drawBilly, drawJimmy, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract } from './art.js'
+import { drawBackground, drawBilly, drawJimmy, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract, setLampLight, DRIP_T } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'double-dragon:hiscore'
@@ -57,6 +57,7 @@ export default function DoubleDragon() {
 
         const sfx = {
             whoosh: () => audioController.playNoise(0.05, 0.08),
+            drip: () => audioController.playSweep(1250, 720, 0.05, 'sine', 0.045),
             hit: () => audioController.playTone(220, 0.08, 'square', 0.12),
             hitHard: () => { audioController.playTone(140, 0.14, 'square', 0.16); shake = Math.max(shake, 3) },
             ko: () => { audioController.playSweep(520, 90, 0.28, 'square', 0.14); shake = Math.max(shake, 4) },
@@ -171,6 +172,7 @@ export default function DoubleDragon() {
         // filtered-noise bed (distant crowd + wind) under the fists. Only ever
         // one burst in flight and never louder than a footprint.
         let ambienceAt = 0
+        let dripCycle = -1
         const ambience = () => {
             if (pausedRef.current) return
             const t = gs.tick
@@ -178,6 +180,16 @@ export default function DoubleDragon() {
                 ambienceAt = t
                 audioController.playFilteredNoise(1.8, 0.022, 320)
             }
+            // #2877: the yard's leaking drum keeps time — one soft water blip
+            // per fall, only while the drum is on screen, quieter than the bed.
+            if (gs.stage === 2) {
+                const c = Math.floor(t / DRIP_T)
+                if (c !== dripCycle) {
+                    dripCycle = c
+                    const sx = PROPS_YARD[0].x - gs.camX
+                    if (sx > -24 && sx < W + 24) sfx.drip()
+                }
+            } else dripCycle = -1
         }
 
         const simPad = () => {
@@ -225,6 +237,9 @@ export default function DoubleDragon() {
             shake = Math.max(0, shake - 0.4)
             const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0
             const sy = shake > 0 ? (Math.random() - 0.5) * shake : 0
+            // #2877: the lamps are the yard's key light — tell the cast law
+            // where the light is this frame (stage 2 only; street lamps are dead).
+            setLampLight(gs.tick, gs.camX, gs.stage === 2)
             drawBackground(ctx, gs.camX, gs.tick, gs.stage)
             ctx.save()
             ctx.translate(Math.round(sx), Math.round(sy))
@@ -252,7 +267,7 @@ export default function DoubleDragon() {
                 ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : q.c === 3 ? '#a8763a' : '#d9dde2'
                 ctx.fillRect(Math.round(q.x - gs.camX), Math.round(q.y), 2, 2)
             }
-            for (const p of (gs.stage === 2 ? PROPS_YARD : PROPS)) drawProp(ctx, p, gs.camX)
+            for (const p of (gs.stage === 2 ? PROPS_YARD : PROPS)) drawProp(ctx, p, gs.camX, gs.tick)
             ctx.restore()
             drawHud(ctx, gs)
             if (screen === 'attract') drawAttract(ctx, Math.floor(gs.tick / 150), gs.tick)

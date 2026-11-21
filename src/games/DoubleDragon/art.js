@@ -275,7 +275,7 @@ function hangingLamps(ctx, camX, tick) {
     for (let i = -1; i < 3; i++) {
         const lx = i * 176 - off + 60
         const seed = Math.floor(camX * 0.85 / 176) + i
-        const sway = Math.round(Math.sin(tick / 34 + seed * 2) * 1.5)
+        const sway = lampSwayAt(seed, tick)
         // chain
         ctx.fillStyle = '#2c2620'
         for (let s = 0; s < 46; s += 3) ctx.fillRect(lx + Math.round(sway * (s / 46)), s, 1, 2)
@@ -325,6 +325,48 @@ function yardFloor(ctx, camX) {
     }
 }
 
+// #2877 — swarf: the concrete between the pours lives. Bolt heads, swarf
+// curls and flat steel chips scatter around the yard's four oil seeps,
+// world-anchored so they scroll as one skin with the pours. Spots are built
+// once from the deterministic hash — the floor never shimmers frame to frame.
+export const SWARF_SPOTS = []
+for (let i = 0; i < 4; i++) {
+    for (let c = 0; c < 7; c++) {
+        SWARF_SPOTS.push({
+            wx: 150 * i + 70 + Math.round((R(i * 91 + c * 17) - 0.5) * 52),
+            wy: DEEP_TOP + 8 + Math.round(R(i * 53 + c * 29) * (H - DEEP_TOP - 14)),
+            kind: R(i * 7 + c * 3) > 0.66 ? 2 : R(i * 11 + c * 5) > 0.5 ? 1 : 0,
+        })
+    }
+}
+SWARF_SPOTS.forEach(Object.freeze)
+Object.freeze(SWARF_SPOTS)
+
+function swarf(ctx, camX) {
+    for (const s of SWARF_SPOTS) {
+        const sx = s.wx - camX
+        if (sx < -4 || sx > W + 4) continue
+        if (s.kind === 2) {                            // bolt head: dark with a glint
+            ctx.fillStyle = '#4b5058'; ctx.fillRect(sx, s.wy, 2, 2)
+            ctx.fillStyle = '#9aa2ac'; ctx.fillRect(sx, s.wy, 1, 1)
+        } else if (s.kind === 1) {                     // swarf curl: three stepped slivers
+            ctx.fillStyle = '#6d737c'
+            ctx.fillRect(sx, s.wy, 2, 1); ctx.fillRect(sx + 1, s.wy + 1, 2, 1); ctx.fillRect(sx + 2, s.wy + 2, 1, 1)
+        } else {                                       // flat steel chip
+            ctx.fillStyle = '#828a94'; ctx.fillRect(sx, s.wy, 3, 1)
+        }
+    }
+}
+
+// #2877 — the leaking drum: set-dressing on a beat. A speck gathers at the
+// weep stain, falls eight pixels, and the wet spot at the drum's foot pulses
+// on the splash. Pure render-side cycle — nothing enters the sim.
+export const DRIP_T = 72
+export function dripPhase(tick) {
+    const ph = ((tick % DRIP_T) + DRIP_T) % DRIP_T
+    return { ph, fall: ph < 40 ? Math.round(ph * 0.2) : -1, splash: ph >= 40 && ph < 48 }
+}
+
 function drawWarehouse(ctx, camX, tick) {
     wall(ctx)
     corrugation(ctx, camX)
@@ -333,16 +375,21 @@ function drawWarehouse(ctx, camX, tick) {
     graffiti(ctx, camX)
     hangingLamps(ctx, camX, tick)
     yardFloor(ctx, camX)
-    // warm pools under the lamps, brighter than the street's sodium haze
+    swarf(ctx, camX)
+    // warm pools under the lamps, brighter than the street's sodium haze —
+    // #2877: the pool rides its lamp. A swinging shade over a frozen pool is
+    // wallpaper; light sliding across the concrete is a yard.
     const off = Math.round((camX * 0.85) % 176)
     for (let i = -1; i < 3; i++) {
         const lx = i * 176 - off + 60
-        const g = ctx.createRadialGradient(lx, DEEP_TOP + 16, 2, lx, DEEP_TOP + 16, 60)
+        const seed = Math.floor(camX * 0.85 / 176) + i
+        const px = lx + lampSwayAt(seed, tick)
+        const g = ctx.createRadialGradient(px, DEEP_TOP + 16, 2, px, DEEP_TOP + 16, 60)
         g.addColorStop(0, 'rgba(255,196,110,0.14)')
         g.addColorStop(0.7, 'rgba(255,196,110,0.05)')
         g.addColorStop(1, 'rgba(255,196,110,0)')
         ctx.fillStyle = g
-        ctx.beginPath(); ctx.arc(lx, DEEP_TOP + 16, 60, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(px, DEEP_TOP + 16, 60, 0, Math.PI * 2); ctx.fill()
     }
 }
 
@@ -401,7 +448,7 @@ export const PROPS = [
     { x: 810, y: DEEP_BOT + 6, kind: 'bin' },
 ]
 
-export function drawProp(ctx, p, camX) {
+export function drawProp(ctx, p, camX, tick = 0) {
     const sx = Math.round(p.x - camX)
     if (sx < -30 || sx > W + 30) return
     if (p.kind === 'bin') {
@@ -412,6 +459,10 @@ export function drawProp(ctx, p, camX) {
         ctx.fillStyle = '#1a242f'
         ctx.fillRect(sx - 5, p.y - 12, 10, 2)
     } else if (p.kind === 'drum') {
+        // #2877: the yard's drums sit IN the lamp light — a grounded shadow
+        // that leans with the cast, and on one of them the weep stain finally
+        // weeps: a speck falls on a beat, the wet spot pulses at the foot.
+        drawShadow(ctx, sx + castPx(p.x), p.y + 1, 15, 0.32)
         ctx.fillStyle = '#4e3a22'                    // rusted oil drum
         ctx.fillRect(sx - 7, p.y - 18, 14, 18)
         ctx.fillStyle = '#66502e'
@@ -422,7 +473,17 @@ export function drawProp(ctx, p, camX) {
         ctx.fillRect(sx - 4, p.y - 20, 8, 3)
         ctx.fillStyle = '#1c150c'
         ctx.fillRect(sx + 2, p.y - 12, 3, 4)        // weeping stain
+        if (p.leak) {
+            const d = dripPhase(tick)
+            if (d.fall >= 0) {
+                ctx.fillStyle = '#8fa2b0'
+                ctx.fillRect(sx + 3, p.y - 8 + d.fall, 1, 2)
+            }
+            ctx.fillStyle = d.splash ? '#2a2118' : '#191309'
+            ctx.fillRect(sx + 2, p.y - 1, d.splash ? 5 : 3, 1)
+        }
     } else if (p.kind === 'pallet') {
+        drawShadow(ctx, sx + castPx(p.x), p.y + 1, 20, 0.3)
         ctx.fillStyle = '#5a4326'                    // stacked pallets
         ctx.fillRect(sx - 12, p.y - 4, 24, 3)
         ctx.fillRect(sx - 10, p.y - 7, 20, 3)
@@ -444,7 +505,7 @@ export function drawProp(ctx, p, camX) {
 // S3: crates are the yard's version of the barrel — same solidity, X-braced
 // pine, and the same three-hit story written in the wood.
 function drawCrate(ctx, x, y, sx, bar) {
-    drawShadow(ctx, sx, y + 1, 16, 0.35)
+    drawShadow(ctx, sx + castPx(bar.x), y + 1, 16, 0.35)
     ctx.fillStyle = '#5f4220'
     ctx.fillRect(x - 9, y - 20, 18, 20)
     ctx.fillStyle = '#77562c'                       // lit boards
@@ -470,7 +531,7 @@ function drawCrate(ctx, x, y, sx, bar) {
 
 // S3 foreground for the yard: oil drum and pallet, nearer than the fight band
 export const PROPS_YARD = [
-    { x: 180, y: DEEP_BOT + 7, kind: 'drum' },
+    { x: 180, y: DEEP_BOT + 7, kind: 'drum', leak: true },
     { x: 470, y: DEEP_BOT + 9, kind: 'pallet' },
     { x: 780, y: DEEP_BOT + 7, kind: 'drum' },
 ]
@@ -487,7 +548,7 @@ export function drawMarian(ctx, m, camX, tick = 0) {
     const hair = Math.floor(tick / 16) % 2 ? 1 : 0
     const blink = !m.freed && tick % 170 < 4
     const y = Math.round(m.y) + hop
-    drawShadow(ctx, sx, Math.round(m.y) + 1, 12, 0.3)
+    drawShadow(ctx, sx + castPx(m.x), Math.round(m.y) + 1, 12, 0.3)
     // the post — coil of cut rope at its foot once she's free
     ctx.fillStyle = '#3c2c18'
     ctx.fillRect(sx + 4, Math.round(m.y) - 30, 4, 30)
@@ -618,6 +679,24 @@ export function drawShadow(ctx, x, y, w = 16, a = 0.35) {
     ctx.fillStyle = `rgba(0,0,0,${a})`
     ctx.beginPath(); ctx.ellipse(Math.round(x), Math.round(y), w / 2, 3, 0, 0, Math.PI * 2); ctx.fill()
 }
+
+// ---- #2877: the cast law (S3 yard) -------------------------------------
+// The swaying chain-lamps are the yard's only key light: the shade swings,
+// the pool follows it across the concrete, and every grounded shadow leans
+// AGAINST the lamp above it. On the street (stage 1) the sodium lamps are
+// dead fittings — there the cast stays off and shadows stand under the feet.
+// This is render state only: juice, never sim, never stateHash (KO-flash law).
+let castOn = false, castTick = 0, castCam = 0
+export function setLampLight(tick, camX, on) { castOn = !!on; castTick = tick; castCam = camX }
+// lamp n's sway, the one formula hangingLamps, the pools and the cast all
+// share: seeded phase, ±1.5px, one cycle per 34*2π ticks (≈214).
+export const lampSwayAt = (n, tick) => Math.round(Math.sin(tick / 34 + n * 2) * 1.5)
+// lamp n hangs at screen x = n*176 + 60 − camX*0.85; a floor point at world x
+// sits under lamp n when n = (wx − camX*0.15 − 60) / 176 (nearest), so the
+// drift is per-spot: the yard breathes in phases as it scrolls.
+export const lampNAt = (wx, camX) => Math.round((wx - camX * 0.15 - 60) / 176)
+export const castAt = (wx, tick, camX) => -lampSwayAt(lampNAt(wx, camX), tick)
+const castPx = (wx) => (castOn ? castAt(wx, castTick, castCam) : 0)
 
 // ------------------------------------------------------------- the fighters ---
 const SKIN = '#d8a06a', SKIN_D = '#b57d46'
@@ -758,8 +837,8 @@ function drawFighter(ctx, b, camX, pal, props) {
     else if (b.state === 'whip') pose = b.stateT >= 8 ? 'attack' : 'windup'
     else if (b.state === 'grabbed') pose = 'grabbed'
     else if (b.state === 'dying') pose = 'dying'
-    if (hop) drawShadow(ctx, sx, sy + 1, 10, 0.22)
-    else drawShadow(ctx, sx, sy + 1, 14, 0.35 - b.z * 0.02)
+    if (hop) drawShadow(ctx, sx + castPx(b.x), sy + 1, 10, 0.22)
+    else drawShadow(ctx, sx + castPx(b.x), sy + 1, 14, 0.35 - b.z * 0.02)
     const lift = Math.round(b.z)
     if (b.state === 'dying') {
         if (b.stateT > 26) return
@@ -819,7 +898,7 @@ export function drawEnemy(ctx, e, camX) {
     else if (e.state === 'chargewind') pose = 'windup'
     else if (e.state === 'charge') pose = 'charge'
     if ((e.state === 'getup') && Math.floor(e.inv / 3) % 2 === 0) return
-    drawShadow(ctx, sx, sy + 1, 14 * def, 0.35)
+    drawShadow(ctx, sx + castPx(e.x), sy + 1, 14 * def, 0.35)
     if (e.state === 'dying') {
         if (e.stateT > 30) return
         ctx.globalAlpha = 1 - e.stateT / 30
