@@ -61,6 +61,20 @@ export default function DoubleDragon() {
             jump: () => audioController.playSweep(180, 420, 0.16, 'square', 0.10),
             land: () => audioController.playNoise(0.04, 0.05),
             pickup: () => { audioController.playTone(660, 0.07, 'square', 0.1); audioController.playTone(880, 0.07, 'square', 0.1, 0.07); audioController.playTone(1320, 0.1, 'square', 0.1, 0.14) },
+            // #2833: the blue seat's voice — every seat-centric sound the sim
+            // tags `_b` lands here detuned a few percent, so at an ear Billy
+            // stays red and Jimmy stays blue without looking at the screen.
+            whoosh_b: () => audioController.playFilteredNoise(0.05, 0.08, 700),
+            hit_b: () => audioController.playTone(233, 0.08, 'square', 0.12),
+            hit_hard_b: () => { audioController.playTone(156, 0.14, 'square', 0.16); shake = Math.max(shake, 3) },
+            jump_b: () => audioController.playSweep(200, 460, 0.16, 'square', 0.10),
+            land_b: () => audioController.playNoise(0.05, 0.045),
+            pickup_b: () => { audioController.playTone(698, 0.07, 'square', 0.1); audioController.playTone(932, 0.07, 'square', 0.1, 0.07); audioController.playTone(1397, 0.1, 'square', 0.1, 0.14) },
+            struggle_b: () => audioController.playNoise(0.03, 0.045),
+            escape_b: () => audioController.playSweep(330, 740, 0.12, 'square', 0.12),
+            throw_b: () => audioController.playSweep(980, 330, 0.12, 'triangle', 0.10),
+            whip_b: () => { audioController.playNoise(0.06, 0.14); audioController.playSweep(1750, 330, 0.08, 'sawtooth', 0.08) },
+            knife_hit_b: () => { audioController.playTone(196, 0.12, 'square', 0.16); shake = Math.max(shake, 3) },
             grabbed: () => audioController.playTone(90, 0.16, 'sawtooth', 0.14),
             struggle: () => audioController.playNoise(0.03, 0.05),
             escape: () => audioController.playSweep(300, 700, 0.12, 'square', 0.12),
