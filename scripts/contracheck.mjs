@@ -21,7 +21,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT } from '../src/games/Contra/sim.js'
-import { drawCapsule } from '../src/games/Contra/art.js'
+import { drawCapsule, seatTagState, TAG_WARN } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -715,6 +715,35 @@ const mkBoss = (seed = 7) => {
             return stateHash(g)
         }
         r.check('#2837 the ceremony is deterministic — same seed + same pads, same hash', runCer(11) === runCer(11))
+    }
+    {
+        // #2842 (Node mirror): the 2UP tag is the seat's arrival tell — the
+        // paint reads it through seatTagState(), so pin the tell itself: steady
+        // for a seated seat, absent when the seat is down, blink-in on the
+        // rope, steady the instant the soles touch, and the gold warning
+        // opens exactly two seconds before patience runs out.
+        const gs = makeGame(5)
+        for (let i = 0; i < 40; i++) step(gs, {}, {})
+        r.check('#2842 a seated CPU seat lights the tag steady', seatTagState(gs) === 'lit', seatTagState(gs))
+        gs.p2.out = true
+        r.check('#2842 a seat that is down shows no tag at all', seatTagState(gs) === 'off', seatTagState(gs))
+        gs.p2.out = false
+        dropIn(gs)
+        r.check('#2842 the tag blinks-in all the way down the rope', seatTagState(gs) === 'arrive', seatTagState(gs))
+        let land = -1
+        for (let i = 0; i < CFG.dropInT + 120 && land < 0; i++) { step(gs, {}, {}); gs.eb.length = 0; if (gs.p2.enterT === 0 && gs.p2.onGround) land = i }
+        r.check('#2842 the tag goes steady the instant the soles touch the deck', land >= 0 && seatTagState(gs) === 'lit', `land=${land} tag=${seatTagState(gs)}`)
+        let warnIdle = -1, warnTicks = 0, relAt = -1
+        for (let i = 0; relAt < 0 && i < CFG.seatIdle + 60; i++) {
+            step(gs, {}, {}); gs.eb.length = 0
+            if (seatTagState(gs) === 'warn') { warnTicks += 1; if (warnIdle < 0) warnIdle = gs.p2.idle }
+            if (!gs.p2.human) relAt = i
+        }
+        r.check('#2842 the drop-out warning opens one beat after patience minus two seconds',
+            warnIdle === CFG.seatIdle - TAG_WARN + 1, `idle@warn=${warnIdle} (want ${CFG.seatIdle - TAG_WARN + 1})`)
+        r.check('#2842 the warning holds for exactly two seconds and the release restores the steady tag',
+            warnTicks === TAG_WARN && relAt > 0 && seatTagState(gs) === 'lit',
+            `warn ticks=${warnTicks}/${TAG_WARN} rel=${relAt} tag=${seatTagState(gs)}`)
     }
 }
 {

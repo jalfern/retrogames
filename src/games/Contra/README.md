@@ -216,7 +216,12 @@ KeyA · #2837 seat ceremony: the rappel arrives at the hero-side spot (never
 where the wingman stood) with mercy and a clean rifle · drop-out fires exactly
 at patience, cost-free · one touch resets the patience · harness-pinned seats
 immune · arrival beats the death tumble · ceremony hash-stable · zero page
-errors · **#2847 pod carriers: deterministic fly-in (zero gs.r — soldier wake
+errors · **#2842 ceremony polish: cling-rappel pose + touchdown dust · a
+chopper silhouette hovers the rope and flies the wingman out (the vanishing
+seat has an exit) · the 2UP tag blinks-in all the way down the rope and
+gold-blinks the last two seconds of patience before the wingman takes the
+seat back · p2gone answers its fall with a rising handoff chirp (6 tag-state
+pins)** · **#2847 pod carriers: deterministic fly-in (zero gs.r — soldier wake
 timing byte-identical to a carriers-free run) · letters cover the wheel and
 both bands fly across seeds · two-hit airframe (+500) jettisons its lettered
 pod · pod falls, settles at the deck, delivers its gun on contact · capture is
