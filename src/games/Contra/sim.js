@@ -826,9 +826,19 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                 return false
             }
             // cannon housings take rounds with a spark (the wall itself is just
-            // scenery behind the play plane — arcade planes don't block shots)
-            for (const g of bo.guns) {
-                if (Math.abs(b.x - g.x) <= 9 && Math.abs(b.y - g.y) <= 8) { gs.ev.push({ type: 'spark', x: b.x, y: b.y }); return false }
+            // scenery behind the play plane — arcade planes don't block shots).
+            // #2854 gate pierce law: a piercing round sparks through a housing
+            // and keeps flying — one take per beam, the bodies law verbatim
+            // (soldiers, turrets, snipers, #2847 carriers). Ordinary rounds
+            // still spark and stop dead: the armour law of the wall stands, and
+            // the shuttered core above stays the ONE weak point — untouched.
+            for (const [gi, g] of bo.guns.entries()) {
+                if (Math.abs(b.x - g.x) <= 9 && Math.abs(b.y - g.y) <= 8) {
+                    if (pierce && hs.includes('g' + gi)) continue
+                    gs.ev.push({ type: 'spark', x: b.x, y: b.y })
+                    if (pierce) { hs.push('g' + gi); continue }
+                    return false
+                }
             }
         }
         // S3.5 arms depot: the slab eats every round — pierce included, walls
