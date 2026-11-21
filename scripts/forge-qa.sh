@@ -39,8 +39,11 @@ REPO="$HOME/Dev/retrogames"
 STUDIO_MODEL=$(jq -r '.model' "$REPO/opencode.json" 2>/dev/null)
 EXTRA=""
 case "$NODE" in
-    mini)    MODEL="omlxmini/Qwen3.8-27B-oQ8e-mtp"; PORT=18000; TAG="";         DEV=5174 ;;
-    mini2)   MODEL="omlxmini/Qwen3.8-27B-oQ8e-mtp"; PORT=18000; TAG="mini2-";   DEV=5179
+    # Inkling trial (Jon, 2026-11-21): both mini slots on Inkling 2 Mini oQ4e (17.5 GB vs 29 GB for 27B oQ8e;
+    # bench: same work in half the time, much shorter thinking; ~/Dev/infra/omlx/UPGRADES.md on the studio).
+    # Judge it on QA outcomes vs the 27B history. Roll back = put Qwen3.8-27B-oQ8e-mtp back on both lines.
+    mini)    MODEL="omlxmini/Inkling-2-Mini-oQ4e-mtp"; PORT=18000; TAG="";         DEV=5174 ;;
+    mini2)   MODEL="omlxmini/Inkling-2-Mini-oQ4e-mtp"; PORT=18000; TAG="mini2-";   DEV=5179
              # #2280: the mini's second QA slot — same model stream as mini (Jon
              # accepted shared inference for the two; back off to one slot in
              # warden.sh step 5 if it does not pay).
