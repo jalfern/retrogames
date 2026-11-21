@@ -79,6 +79,12 @@ export const CFG = {
     // --- S4 co-op: the blue seat (Jon's multiplayer rule: CPU ally by default,
     // human drop-in on the desktop keyboard) ---
     allySpawnDX: -26,     // the ally arrives at your shoulder
+    // #2837 seat ceremony: the drop-in descent (ticks, px/tick toward the
+    // hero-side spot) and the drop-out patience — a pad-claimed seat that
+    // hears nothing for seatIdle ticks returns to the wingman brain.
+    dropInT: 30,
+    dropInV: 8,
+    seatIdle: 600,
     // #2814: NO allyLives — the cabinet shares ONE pool (gs.lives) between both
     // seats; a blue death costs the team, and GAME OVER lands when both seats
     // are down with the pool empty.
@@ -416,6 +422,10 @@ export function makeGame (seed) {
             cool: 0, weapon: 'rifle',
             inv: 120, dead: 0, coyote: 0, drop: 0, walk: 0, out: false,
             human: false, tIdx: -1, zz: 1, prevA: false,
+            // #2837: padClaim marks a seat a HUMAN claimed at the keyboard (the
+            // auto-release law watches it, so harness shortcuts stay pinned);
+            // enterT counts the arrival descent; idle the drop-out patience.
+            enterT: 0, idle: 0, padClaim: false,
             safe: { x: 40 + CFG.allySpawnDX, y: CFG.ground },
         },
         safe: { x: 40, y: CFG.ground },   // respawn point (last ground/shelf touched)
@@ -549,6 +559,61 @@ function killAlly (gs) {
     q.dead = CFG.respawnFreeze
 }
 
+// #2837 the arcade-drop-in spot: the side of the hero, not where the seat
+// fell (the law the respawn branch already kept — extracted so the arrival
+// drop and the death respawn choose the same shoulder, phase-clamped).
+function allySideSpot (gs) {
+    const p = gs.p
+    const q = gs.p2
+    const heroLive = !p.out && p.dead === 0 && p.onGround
+    if (heroLive) {
+        return {
+            x: Math.max(8, Math.min(gs.phase === 'jungle' ? CFG.worldW - 4 : gs.phase === 'boss' ? CFG.wallX - 10 : W - 8, p.x + CFG.allySpawnDX)),
+            y: p.lane,
+        }
+    }
+    return { x: q.safe.x, y: q.safe.y }
+}
+
+// #2837 drop-in ceremony: the human doesn't hijack the standing wingman where
+// he is — the wingman pulls out and a fresh blue soldier rappels in at the
+// hero's side (the cabinet's entry: helicopter drop / respawn are arrivals, the
+// same mercy laws: inv, clean rifle). Arriving also beats the death tumble:
+// the player at the keys never waits out the CPU respawn timer.
+export function dropIn (gs) {
+    const q = gs.p2
+    if (q.out || gs.end || q.human) return false
+    q.human = true
+    q.padClaim = true
+    q.dead = 0
+    q.enterT = CFG.dropInT
+    q.idle = 0
+    q.prevA = false
+    q.x = allySideSpot(gs).x
+    q.y = (gs.phase === 'jungle' ? 0 : gs.camY) - 6      // above the camera — the sky
+    q.vy = 0; q.onGround = false; q.drop = 0; q.coyote = 0
+    q.weapon = 'rifle'
+    q.inv = CFG.invuln + CFG.dropInT                       // descent + the usual grace
+    gs.ev.push({ type: 'p2join' })
+    return true
+}
+
+// #2837 drop-out: a pad-claimed seat nobody is driving returns to the wingman
+// brain — the port's default state (Jon's rule: CPU ally is the seat's idle
+// face). Costs nothing from the shared pool; keeps ground and gun; a short
+// mercy window so handing over mid-line doesn't read as a cheap death.
+// Direct sim-claims (harness shortcuts, no padClaim) are never auto-released.
+export function releaseSeat (gs) {
+    const q = gs.p2
+    if (!q.human || !q.padClaim) return false
+    q.human = false
+    q.padClaim = false
+    q.idle = 0
+    if (q.inv < 60) q.inv = 60
+    gs.ev.push({ type: 'p2gone' })
+    return true
+}
+
 // --- S2: entering the waterfall. The gate swallows the run: fresh vertical
 // space, fresh gunners, the weapon (the fight is not your reward for dying). ---
 function enterFalls (gs) {
@@ -628,19 +693,38 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
     // the hero's death freezes the world), then he respawns at his own last
     // safe ground — weapon lost, flashing, same mercy laws as the hero. ---
     if (!q.out) {
-        if (q.dead > 0) {
+        if (q.enterT > 0) {
+            // #2837 the arrival descent: rappelling toward the hero-side spot.
+            // The pad is silent while he's on the rope (the cabinet gives you
+            // no steering mid-drop); presses still count as presence so a
+            // passenger who never left is never auto-released. If the ceremony
+            // timer runs out before touchdown (hero climbed while he fell),
+            // ordinary gravity finishes the job the next tick.
+            q.enterT -= 1
+            const spot = allySideSpot(gs)
+            q.x = spot.x
+            q.y = Math.min(spot.y, q.y + CFG.dropInV)
+            if (q.inv > 0) q.inv -= 1
+            if (pad2.left || pad2.right || pad2.up || pad2.down || pad2.a || pad2.b) q.idle = 0
+            if (q.y >= spot.y) {                 // touchdown — the seat is live
+                q.enterT = 0                     // no leftover rope ticks: patience starts here
+                q.vy = 0; q.onGround = true
+                q.drop = 0; q.coyote = 0; q.lane = q.y
+                // never land below the torrent (the respawn law, same canyon)
+                if (gs.phase === 'falls' && q.y > gs.camY + H - CFG.drownAt - 40) {
+                    q.y = gs.camY + 60
+                    q.x = Math.max(20, Math.min(W - 20, p.out ? q.x : p.x))
+                }
+                gs.ev.push({ type: 'respawn', o: 1 })
+            }
+        } else if (q.dead > 0) {
             q.dead -= 1
             if (q.dead === 0) {
-                const heroLive = !p.out && p.dead === 0 && p.onGround
-                if (heroLive) {
-                    // arcade drop-in: the partner re-enters at your side, not
-                    // wherever he fell (this is what keeps him ahead of the
-                    // torrent and off the boss's door-step)
-                    q.x = Math.max(8, Math.min(gs.phase === 'jungle' ? CFG.worldW - 4 : gs.phase === 'boss' ? CFG.wallX - 10 : W - 8, p.x - 26))
-                    q.y = p.lane
-                } else {
-                    q.x = q.safe.x; q.y = q.safe.y
-                }
+                // arcade drop-in: the partner re-enters at your side, not
+                // wherever he fell (#2837: same spot law the arrival drop uses,
+                // so both entrances of the blue seat share one shoulder rule)
+                const spot = allySideSpot(gs)
+                q.x = spot.x; q.y = spot.y
                 q.vy = 0; q.onGround = true
                 q.drop = 0; q.coyote = 0; q.lane = q.y
                 q.weapon = 'rifle'; q.inv = CFG.invuln
@@ -652,9 +736,23 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                 }
                 gs.ev.push({ type: 'respawn', o: 1 })
             }
+            // #2837 patience runs through the tumble too: a passenger who
+            // stood up mid-death leaves no puppet behind when he comes back.
+            if (q.padClaim) {
+                if (pad2.left || pad2.right || pad2.up || pad2.down || pad2.a || pad2.b) q.idle = 0
+                else q.idle += 1
+                if (q.idle > CFG.seatIdle) releaseSeat(gs)
+            }
         } else {
             seatStep(gs, q, q.human ? pad2 : allyBrain(gs), ledges, floorY, 1)
             if (q.onGround) q.safe = { x: q.x, y: q.y }
+            // #2837 drop-out: a pad-claimed seat that hears nothing (no held
+            // key, no tap) for seatIdle ticks returns to the wingman brain.
+            if (q.padClaim) {
+                if (pad2.left || pad2.right || pad2.up || pad2.down || pad2.a || pad2.b) q.idle = 0
+                else q.idle += 1
+                if (q.idle > CFG.seatIdle) releaseSeat(gs)
+            }
         }
     }
 
@@ -1158,6 +1256,9 @@ export function stateHash (gs) {
     put(gs.p2.x); put(gs.p2.y); put(gs.p2.vy); put(gs.p2.onGround ? 1 : 0); put(gs.p2.face); put(gs.p2.lane)
     put(gs.p2.ax); put(gs.p2.ay); put(gs.p2.cool); put(WCODE[gs.p2.weapon] || 0)
     put(gs.p2.inv); put(gs.p2.dead); put(gs.p2.prevA ? 1 : 0); put(gs.p2.out ? 1 : 0); put(gs.p2.human ? 1 : 0)
+    // #2837 ceremony state is sim truth too — descent and drop-out patience
+    // must ride the hash or a replay could silently diverge mid-rope.
+    put(gs.p2.enterT); put(gs.p2.idle); put(gs.p2.padClaim ? 1 : 0)
     for (const b of gs.pb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(KCODE[b.k] || 0); put(b.hits ? b.hits.length : 0); put(b.o || 0) }
     for (const b of gs.eb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(b.gr ? 1 : 0) }
     for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk); put(s.nade ? 1 : 0); put(s.hp) }

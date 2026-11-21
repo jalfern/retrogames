@@ -20,7 +20,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat } from '../src/games/Contra/sim.js'
 import { drawCapsule } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
@@ -612,6 +612,67 @@ const mkBoss = (seed = 7) => {
         gs.p2.x < x0 - 20 && blueShot, `dx=${(gs.p2.x - x0).toFixed(0)}`)
 }
 {
+    // #2837 seat ceremony (Node mirror): drop-in ARRIVES — the standing ally is
+    // pulled onto the rope and the soldier rappels to the hero-side spot, not
+    // where he stood. Landing carries the mercy laws. A seat nobody drives
+    // returns to the wingman brain after seatIdle, cost-free; presence resets
+    // the patience; harness-pinned seats are immune; a re-touch arrives again;
+    // an arrival beats the death tumble; and all of it hashes deterministically.
+    const gs = makeGame(7)
+    gs.p.x = 300; gs.p.inv = 99999
+    gs.soldiers.forEach((s) => { s.dead = true }); gs.turrets.forEach((t) => { t.dead = true }); gs.snipers.forEach((s) => { s.dead = true }); gs.barrels.forEach((b) => { b.gone = true })
+    gs.p2.x = 200; gs.p2.y = CFG.ground; gs.p2.onGround = true; gs.p2.lane = CFG.ground; gs.p2.inv = 99999
+    const xStand = gs.p2.x
+    const joinEv = dropIn(gs)
+    r.check('#2837 dropIn pulls the standing seat onto the rope (human, padClaim, above the camera, clean rifle)',
+        joinEv === true && gs.p2.human === true && gs.p2.padClaim === true && gs.p2.enterT === CFG.dropInT && gs.p2.y < 0 && gs.p2.weapon === 'rifle',
+        `human=${gs.p2.human} pc=${gs.p2.padClaim} enterT=${gs.p2.enterT} y=${gs.p2.y.toFixed(0)}`)
+    let descent = 0
+    while (!gs.p2.onGround && descent < 60) { step(gs, {}, {}); gs.eb.length = 0; descent++ }
+    r.check('#2837 the rappel lands at the hero-side spot, not where the ally stood, with mercy left',
+        gs.p2.onGround && Math.abs(gs.p2.x - (gs.p.x + CFG.allySpawnDX)) <= 2 && Math.abs(gs.p2.x - xStand) > 40 && gs.p2.inv > CFG.invuln - CFG.dropInT,
+        `x=${gs.p2.x.toFixed(0)} (stood ${xStand}, spot ${(gs.p.x + CFG.allySpawnDX).toFixed(0)}) inv=${gs.p2.inv}`)
+    const lives0 = gs.lives
+    let rel = -1
+    for (let i = 0; i < CFG.seatIdle + 2 && rel < 0; i++) { step(gs, {}, {}); gs.eb.length = 0; if (!gs.p2.human) rel = i }
+    r.check('#2837 drop-out: an idle pad-claimed seat returns to the wingman brain, exactly at patience, cost-free',
+        rel === CFG.seatIdle && gs.lives === lives0 && gs.p2.padClaim === false && gs.p2.inv >= 60,
+        `rel=${rel} (want ${CFG.seatIdle}) pool ${lives0}->${gs.lives} inv=${gs.p2.inv}`)
+    r.check('#2837 re-touch after release arrives on the rope again',
+        dropIn(gs) === true && gs.p2.enterT === CFG.dropInT && gs.p2.human === true && gs.p2.padClaim === true,
+        `enterT=${gs.p2.enterT} human=${gs.p2.human}`)
+    let early = -1
+    for (let i = 0; i < CFG.seatIdle; i++) { step(gs, {}, i === 300 ? { right: true } : {}); gs.eb.length = 0; if (!gs.p2.human) early = i }
+    r.check('#2837 presence resets the patience: one touch and the seat stays claimed the whole window',
+        early === -1 && gs.p2.human === true, `released at ${early}`)
+    {
+        const pinned = makeGame(5)
+        pinned.p2.human = true
+        for (let i = 0; i < CFG.seatIdle + 100; i++) step(pinned, {}, {})
+        r.check('#2837 harness-pinned seats (human without padClaim) never auto-release', pinned.p2.human === true)
+    }
+    {
+        const gs4 = makeGame(7)
+        gs4.p2.inv = 0
+        gs4.eb.push({ x: gs4.p2.x + 2, y: gs4.p2.y - 14, vx: 0.1, vy: 0 })
+        step(gs4, {})
+        const tumble = gs4.p2.dead
+        dropIn(gs4)
+        r.check('#2837 drop-in beats the death tumble: the arriving player never waits out the CPU timer',
+            tumble > 0 && gs4.p2.dead === 0 && gs4.p2.enterT > 0 && gs4.p2.human === true, `tumble=${tumble} enterT=${gs4.p2.enterT}`)
+    }
+    {
+        const runCer = (seed) => {
+            const g = makeGame(seed)
+            for (let i = 0; i < 50; i++) step(g, {}, {})
+            dropIn(g)
+            for (let i = 0; i < CFG.seatIdle + 40; i++) step(g, {}, { right: i === 500 })
+            return stateHash(g)
+        }
+        r.check('#2837 the ceremony is deterministic — same seed + same pads, same hash', runCer(11) === runCer(11))
+    }
+}
+{
     // #2798 playtest law: repeated identical ally deaths are a BRAIN bug, not
     // fortune. The S4 sweep found the blue seat drowning at x=172,y=640 on
     // most seeds (the desperate clause zeroed his directions and he hopped in
@@ -818,6 +879,24 @@ if (MUTANT) {
                 return o.px === 0 ? 'HARM NAMED: capsules stamp no letter - M/F/L/S are blank orange boxes; the player cannot tell which gun the capsule carries' : null
             },
         },
+        {
+            // #2837: a passenger who stands up must leave a drivable seat. If
+            // the patience never fires, the abandoned puppet stays human forever
+            // and the wingman never steps back in.
+            name: 'never-release',
+            anchor: 'seatIdle: 600,',
+            plant: 'seatIdle: 2147483647, /* MUTANT(never-release): the patience never runs out */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.p.x = 300; gs.p.inv = 100000
+                gs.soldiers.forEach((s) => { s.dead = true }); gs.turrets.forEach((t) => { t.dead = true }); gs.snipers.forEach((s) => { s.dead = true }); gs.barrels.forEach((b) => { b.gone = true })
+                mod.dropIn(gs)
+                for (let i = 0; i < 700; i++) { mod.step(gs, {}, {}); gs.eb.length = 0 }
+                return gs.p2.human === true
+                    ? 'HARM NAMED: nobody drove the seat for ten seconds and it was never taken back - the abandoned human seat just stands there while the wingman brain watches'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -903,11 +982,23 @@ const browser = await launch()
     await page.waitForTimeout(80)
     const ax0 = (await page.evaluate(() => window.__contraTest.probe())).ally.x
     await page.keyboard.down('KeyA')
+    const cer = await page.evaluate(() => window.__contraTest.probe())
     await page.waitForTimeout(600)
     const drop = await page.evaluate(() => window.__contraTest.probe())
     await page.keyboard.up('KeyA')
+    r.check('#2837 live drop-in: KeyA calls for the drop — the soldier is on the rope the moment the seat is claimed',
+        cer.ally.human === true && cer.ally.padClaim === true && cer.ally.enter > 0 && !cer.ally.onGround,
+        `human=${cer.ally.human} pc=${cer.ally.padClaim} enter=${cer.ally.enter} ground=${cer.ally.onGround}`)
     r.check('S4 live drop-in: KeyA claims seat 2 and the human pad drives him left',
         drop.ally.human === true && drop.ally.x < ax0 - 10, `human=${drop.ally.human} dx=${(drop.ally.x - ax0).toFixed(0)}`)
+    // #2837 ceremony via DEV hooks: release hands the seat back, and the
+    // patience is visible in the probe (the 10 s law itself is pinned in Node).
+    const relA = await page.evaluate(() => { window.__contraTest.setup({ allyRelease: true }); return window.__contraTest.probe() })
+    r.check('#2837 live release: the wingman takes the claimed seat back (padClaim cleared)',
+        relA.ally.human === false && relA.ally.padClaim === false, `human=${relA.ally.human} pc=${relA.ally.padClaim}`)
+    const dropB = await page.evaluate(() => { window.__contraTest.setup({ allyDrop: true }); return window.__contraTest.probe() })
+    r.check('#2837 live re-arrival: the seat comes back on the rope after a release',
+        dropB.ally.human === true && dropB.ally.enter > 0, `human=${dropB.ally.human} enter=${dropB.ally.enter}`)
 
     // S2 through the DEV warp: the canyon paints, and the armor law holds live
     await page.evaluate(() => window.__contraTest.setup({ warp: 'falls' }))
