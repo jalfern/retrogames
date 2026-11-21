@@ -182,11 +182,33 @@ The laws the blue seat lives under, all proven in `contracheck`:
   and the shuttered core stays the ONE win: guns are an answer, not a second
   door. `hp`/`dead` ride `stateHash` (a replay that caves a gun diverges
   loudly); zero `gs.r` — hits are deterministic, the cadence rnd untouched.
+- **Scripted finale + vine carriers (#2885)**: two laws from the waterfall.
+  (1) When the core falls, the gate dies SCRIPTED: `CASCADE` is an ordered
+  site list — near gun, wall foot tier, spawn arch, far gun, mid tier, parapet
+  tier, core housing, and the heart last — one blast every `cascadeStep` (8)
+  ticks. Zero `gs.r`: the same fire walks the same wall on every seed (pinned
+  cross-seed, `r` untouched through the whole dying phase). (2) The gorge's
+  hanging vines (`VINES`, falls only): rope-swing arcs on pure tick math
+  (period 96, amp 1.1 rad — tips sweep ±~70 px and rise ~44 px). The reach
+  law: catch a tip AIRBORNE with the jump key HELD (intent) while the body is
+  in the tip box; grounded contact never grabs. A rider hangs (one-armed
+  pose, fire still live), and the vine FLINGS them at the far apex at least
+  `vineCarryMin` (20 px) above the catch, momentum and all — an alternate
+  line up the climb; jump releases early with the swing's speed, and
+  `vineRideMax` guarantees nobody hangs past one swing. The torrent still
+  takes a low rider — hazard law untouched. `seatStep` carries the whole law,
+  so the blue seat rides under the identical code; riders and tips ride
+  `stateHash`. The 12-seed autopilot sweep still clears 12/12 — its pulse
+  taps (never holds) so the demo line keeps its feet, and when it DOES catch
+  a vine on a launch tick the arc drops it on the climb (4 seeds show a vine
+  ride in attract — the mechanic advertises itself).
 - Audio: every new action synthesized via `audioController` — the MG's ripping
   pop, the firebar's breath, the laser's falling zap, the sniper's crack and
   the lob's whistle answer the existing set.
 - Keyboard: Arrows move + aim all 8 ways (down aims only airborne),
-  SPACE/Z or the pad's A jumps, X/C or the pad's B fires. `?` pauses.
+  SPACE/Z or the pad's A jumps — and HELD through a swinging vine tip in the
+  canyon, it GRABS the vine (tap again to fly off). X/C or the pad's B fires.
+  `?` pauses.
   Seat 2 (drop-in): WASD + F jump + G fire — the first touch claims the seat.
   `warpFalls`/`warpBoss` construct phases properly (DEV hooks + DebugKit);
   DebugKit gained CYCLE WHEEL and P2: HUMAN SEAT cheat buttons.
@@ -201,7 +223,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   impervious-depot, one-bank-lie,
                                        #   blue-death-is-free, never-release,
                                        #   cargo-jettison, carrier-impervious,
-                                       #   housings-eat-beams
+                                       #   housings-eat-beams, cascade-random,
+                                       #   vine-deadwood, vine-sink
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -248,8 +271,16 @@ reschedules · the waterfall clears the sky · couriers ride the hash · live
 courier and deck-pod delivery in the browser** · **#2854 gate pierce law: a
 laser and the firebar spark through a cannon housing and keep flying, each
 housing one take per beam · ordinary rounds still die at the mount · a beam on
-the SHUT shutter still dies there (the ONE weak point never moved)** · zero
-page errors.
+the SHUT shutter still dies there (the ONE weak point never moved)** ·
+**#2885 scripted finale: the dying gate's blast list walks the CASCADE sites
+position-by-position, guns first and the heart last, byte-identical on every
+seed with gs.r untouched through the whole countdown · #2885 vine carriers:
+reach law (airborne + jump held + tip box; grounded never grabs), carrier law
+(flung ≥ vineCarryMin above the catch with upward momentum), structural law
+(the blue seat rides the same seatStep), hazard law intact (the torrent takes
+a low rider), riders ride the hash · live canyon paints vines over a
+bare-canyon pixel baseline · live grab, live release, and the script-length
+finale countdown through real keys** · zero page errors.
 
 ## Honest gaps
 
@@ -275,10 +306,13 @@ page errors.
   named blast and +300; the gun falls silent, the muzzle light dies and the
   wreck smokes. A caved housing stops eating rounds (pierce included); the
   shuttered core stays the ONE weak point. See the Gate guns cave note above.
-- The cascade blasts at the gate are random around the wall rather than
-  scripted position-by-position; the waterfall has one gunner set and one
-  hazard (the rising torrent), while the original also put the odd hanging
-  vine/carrier on the way up.
+- **CLOSED by #2885**: the waterfall's two signature absences shipped — the
+  dying gate now blows at SCRIPTED sites position-by-position (guns, wall
+  tiers, heart last; zero gs.r, identical every seed), and the gorge carries
+  four hanging vines: airborne + jump held catches a swinging tip, the arc
+  flings the rider at least vineCarryMin above the catch, jump releases
+  early. Both seats, hash-clean, torrent law verbatim. The ORIGINAL's full
+  vertical set (mid-boss gunships, hangar door) still stands below.
 - The arcade loops stage 1 with faster settings after the kill; here the run
   ends at STAGE CLEAR and returns to attract — a looped second pass is
   post-S4 territory.
