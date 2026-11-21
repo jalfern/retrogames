@@ -50,6 +50,13 @@ are all shipped).
   The autopilot reads the telegraph wider than a punch's and sidesteps.
 - **KO flash**: `gs.scoreFlash` rides the HUD (delta popup + three wave ticks);
   juice only — never mixed into `stateHash`.
+- **Chain scoring** (#2882): consecutive takes multiply the payout — 1st KO
+  ×1, then ×2, ×3, capped ×4 (Abobo pays 4000 at the cap). A take is a fighter
+  KO or a barrel/crate splinter; pickups, stage bonuses and the rescue pay
+  flat. The chain dies the moment a seat eats a blow (`playerDies`) or the
+  ~3 s window (`chainWindow`, 180 ticks) lapses without a new take; stage
+  transitions carry the score, never the streak. `chain`/`chainT` ride
+  `stateHash` (pure arithmetic, zero `gs.r`); the ×N HUD tag rides the flash.
 - **Stick**: armed Amon drops it on KO; reach + damage double; it dies with you.
 - **Stage loop**: three waves → banner → Walnuts Street re-runs, score carries.
 
@@ -261,8 +268,9 @@ of nightly 44762398189).
   every grounded shadow leans anti-phase with its lamp (#2825's deferred art
   pass), the concrete carries seeded swarf by the seeps, and one drum leaks
   on a 72-tick beat.
-- No combos/chain scoring bonuses; the original scores per-KO with a simple
-  chain multiplier — carry added, chain not.
+- **CLOSED by #2882** — the board pays flurries now: consecutive takes
+  multiply the payout ×2/×3/×4, capped at ×4, and a hit or a ~3 s lapse cools
+  the chain back to ×1 (see the chain law above).
 - Marian arrives tied (S3) but the game opens without the original's
   kidnapping cutscene — the rescue carries the story instead.
 - Enemy knockback is positional, not sprite-true physics; fine at this scale.

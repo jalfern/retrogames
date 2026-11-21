@@ -63,6 +63,9 @@ export const CFG = {
     goonKnife: { windup: 16, speed: 3.0, keep: 34 },  // aimed cast; lethal on the line; #2825 thrower's distance
     duelHp: 10, duelScore: 800, duelSpeed: 1.05, duelReach: 17,
     rescueRange: 22, rescueCuts: 2, rescueBonus: 1000, rescueCheer: 100,
+    // --- #2882 chain scoring ---
+    chainWindow: 180,   // a hot chain cools after this many ticks without a take (~3 s)
+    chainMax: 4,        // the escalation tops out at ×4 (Abobo pays 4000 at the cap)
 }
 
 export const ENEMY_DEF = {
@@ -186,7 +189,8 @@ export function makeGame(seed = 1, opts = {}) {
         scoreFlash: null, // { v, t } — HUD score delta on a KO/pickup (juice, not scored state)
         fx: null,       // { x, y } — where the last barrel splintered (shell shard spawn, juice)
         events: [],   // one-shot cues drained by the shell (sound/juice only)
-        k: 0,         // KO streak timer helper
+        chain: 0,     // #2882: consecutive takes; the payout rides min(chain, chainMax)
+        chainT: 0,    // ticks left in the chain window — a lapse cools the chain to 0
     }
     return gs
 }
@@ -306,6 +310,21 @@ function rollWeaponDrop(gs, x, y, clatter = 0) {
     gs.pickups.push({ x: clamp(x, 8, STAGE_W - 8), y, kind, bob: 0, clatter })
 }
 
+// #2882 chain scoring — the arcade pays flurries. Every takedown (a fighter
+// KO, a barrel/crate splinter) is a TAKE: consecutive takes multiply the base
+// payout ×2, ×3, capped at ×4. Damage (playerDies) or a window lapse cools it.
+// The escalation is sim truth — chain/chainT ride stateHash; the ×N tag on the
+// popup is juice. Zero gs.r: pure arithmetic on existing per-KO values.
+function payTakedown(gs, base) {
+    const mult = Math.min(gs.chain + 1, CFG.chainMax)
+    gs.score += base * mult
+    gs.hi = Math.max(gs.hi, gs.score)
+    gs.chain = mult
+    gs.chainT = CFG.chainWindow
+    if (mult > 1) gs.events.push('chain')
+    return base * mult
+}
+
 // a swing/blade met a barrel — hp down, splinter when empty
 // #2825: the yard's crates report their own events — pine takes the blows
 // with a heavier thud and splits louder than the street's barrels.
@@ -315,8 +334,8 @@ function hurtBarrel(gs, bar) {
     gs.events.push(bar.kind === 'crate' ? 'crate_hit' : 'barrel_hit')
     if (bar.hp <= 0) {
         gs.barrels = gs.barrels.filter((q) => q !== bar)
-        gs.score += 100
-        gs.hi = Math.max(gs.hi, gs.score)
+        const v = payTakedown(gs, 100)
+        gs.scoreFlash = { v, t: 48, m: gs.chain }
         gs.fx = { x: bar.x, y: bar.y }   // #2819: the shell throws wood shards here
         gs.events.push(bar.kind === 'crate' ? 'crate_break' : 'barrel_break')
         rollWeaponDrop(gs, bar.x, bar.y, CFG.clatterTicks)
@@ -345,6 +364,9 @@ function goonCast(gs, e) {
 function playerDies(gs, p) {
     p.lives -= 1
     p.weapon = null
+    // #2882: damage is the full stop — whoever eats the blow, the shared
+    // score board cools its chain (the arcade rewards pressing on untouched).
+    gs.chain = 0; gs.chainT = 0
     gs.events.push(p.tag === 'billy' ? 'billy_die' : 'jimmy_die')
     if (p.lives <= 0) {
         p.out = true
@@ -370,9 +392,8 @@ function hurtEnemy(gs, e, dmg, knockdown, onDowned, seat) {
     gs.events.push(blue(seat, knockdown ? 'hit_hard' : 'hit'))
     if (e.hp <= 0) {
         e.state = 'dying'; e.stateT = 0
-        gs.score += ENEMY_DEF[e.kind].score
-        gs.hi = Math.max(gs.hi, gs.score)
-        gs.scoreFlash = { v: ENEMY_DEF[e.kind].score, t: 48 } // #2810 item 6
+        const v = payTakedown(gs, ENEMY_DEF[e.kind].score)
+        gs.scoreFlash = { v, t: 48, m: gs.chain } // #2810 item 6, #2882 rides the tag
         gs.events.push('ko')
         if (e.hasStick && !e.stickDropped) {
             e.hasStick = false
@@ -907,6 +928,7 @@ function clearField(gs) {
 export function enterStage2(gs) {
     gs.stage = 2
     clearField(gs)
+    gs.chain = 0; gs.chainT = 0   // #2882: the road carries the score, not the chain
     gs.barrels = makeBarrels(2)
     gs.marian = { x: 912, y: 170, freed: false, cuts: 0, cutT: 0, cheer: 0 }
     gs.bannerKind = 'stage2'
@@ -921,6 +943,7 @@ function loopRun(gs) {
     gs.stage = 1
     gs.marian = null
     gs.rescueT = 0
+    gs.chain = 0; gs.chainT = 0   // #2882: the run carries the score, not the chain
     clearField(gs)
     gs.barrels = makeBarrels(1)
     gs.bannerKind = null
@@ -936,6 +959,7 @@ export function step(gs, pad = {}, pad2 = {}) {
     if (gs.mode === 'play' && gs.banner > 0) gs.banner -= 1
     if (gs.duelIntro > 0) gs.duelIntro -= 1
     if (gs.scoreFlash && --gs.scoreFlash.t <= 0) gs.scoreFlash = null
+    if (gs.chainT > 0 && --gs.chainT <= 0) gs.chain = 0   // #2882: the window lapses, the chain cools
 
     if (gs.mode === 'clear') {
         gs.banner -= 1
@@ -1264,6 +1288,7 @@ export function stateHash(gs) {
     const mix = (v) => { h ^= Math.round(v * 1000) & 0xffffffff; h = Math.imul(h, 16777619) }
     mix(gs.tick)
     mix(gs.score)
+    mix(gs.chain); mix(gs.chainT)   // #2882: the chain is sim truth
     mix(gs.mode === 'play' ? 1 : gs.mode === 'clear' ? 2 : 3)
     mix(gs.camX)
     mix(gs.waveIdx)

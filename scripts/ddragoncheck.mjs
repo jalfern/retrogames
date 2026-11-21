@@ -17,6 +17,9 @@
 // and a Marian who can never be cut free (a run with no ending) — and the S4
 // pair: a crowd that only sees Billy (co-op collapses to solo-with-a-statue)
 // and a game over that fires on one drained seat (the partner's run, ended).
+// #2882 adds chain scoring — takes in a row multiply the payout ×2/×3/×4 and
+// the streak dies on damage or a ~3 s lapse; chain-frozen plants a window that
+// never cools and the pin must name the unearned flurry bonus.
 // --mutant replants them and demands the harm is NAMED (#2142 direction).
 // The browser leg drives real key events through the shell: attract -> seat ->
 // walk/kick -> die -> restart, zero page errors; S4 adds the default blue
@@ -58,6 +61,16 @@ const runBot = (seed, max = 20000) => {
         if (gs.mode !== 'play') break
     }
     return gs
+}
+
+// #2882: fell a one-hit Williams on Billy's line and report the score delta
+// (id spaced away from mk()'s 900+ range so a lingering corpse never shadows
+// the pin). Kicks until the score moves — the kill tick IS the measurement.
+const koPay = (gs, idBase = 4000) => {
+    const before = gs.score
+    gs.enemies.push(mk('williams', gs.billy.x + 14, gs.billy.y, { hp: 1, rest: { id: idBase + gs.tick } }))
+    for (let i = 0; i < 60 && gs.score === before; i++) { step(gs, { b: i % 3 === 0 }); gs.events.length = 0 }
+    return gs.score - before
 }
 
 // S3: the whole commission in one drive — Walnuts Street, the hideout, the
@@ -509,6 +522,89 @@ const runFull = (seed, max = 60000) => {
     r.check('KO flashes the delta: score popup carries the killed man\'s value', gs.scoreFlash && gs.scoreFlash.v === 200, `flash=${gs.scoreFlash && gs.scoreFlash.v}`)
     for (let i = 0; i < 60; i++) step(gs, {})
     r.check('the flash fades out on its own', gs.scoreFlash === null, `flash=${JSON.stringify(gs.scoreFlash)}`)
+}
+
+{ // #2882 — chain scoring: takes in a row multiply the payout, capped at ×4
+    const gs = makeGame(31)
+    const p1 = koPay(gs), p2 = koPay(gs), p3 = koPay(gs), p4 = koPay(gs), p5 = koPay(gs)
+    r.check('#2882 a flurry pays: four straight takes climb ×1 ×2 ×3 ×4',
+        p1 === 200 && p2 === 400 && p3 === 600 && p4 === 800, `pays=${p1},${p2},${p3},${p4}`)
+    r.check('#2882 the escalation caps at ×4 — a fifth take pays the cap, never ×5',
+        p5 === 800 && gs.chain === CFG.chainMax, `pay=${p5} chain=${gs.chain}`)
+    r.check('#2882 the popup rides the tag: v carries the multiplied delta, m the multiplier',
+        !!gs.scoreFlash && gs.scoreFlash.v === 800 && gs.scoreFlash.m === 4, `flash=${JSON.stringify(gs.scoreFlash)}`)
+    for (let i = 0; i < CFG.chainWindow + 10; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('#2882 the window lapses: ~3 s without a take cools the chain back to zero',
+        gs.chain === 0 && gs.chainT === 0, `chain=${gs.chain}/${gs.chainT}`)
+    const p6 = koPay(gs)
+    r.check('#2882 after a lapse the next take starts fresh at ×1', p6 === 200 && gs.chain === 1, `pay=${p6} chain=${gs.chain}`)
+}
+
+{ // #2882 — damage is the full stop, whoever eats it
+    const gs = makeGame(32)
+    const q1 = koPay(gs)
+    r.check('#2882 (setup) the take heats the chain to ×1', q1 === 200 && gs.chain === 1 && gs.chainT > 0, `chain=${gs.chain}/${gs.chainT}`)
+    for (let i = 0; i < 30 && gs.billy.state !== 'idle'; i++) { step(gs, {}); gs.events.length = 0 } // let the kick fully resolve — a live swing would bowl over the test's attacker
+    gs.billy.inv = 0
+    gs.enemies.push(mk('williams', gs.billy.x + 10, gs.billy.y, { state: 'attack', stateT: 1, attackCooldown: 0 }))
+    for (let i = 0; i < 8 && gs.billy.lives === 3; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('#2882 eating a blow kills a fresh chain dead — the reward is for pressing on untouched',
+        gs.billy.lives === 2 && gs.chain === 0 && gs.chainT === 0, `lives=${gs.billy.lives} chain=${gs.chain}/${gs.chainT}`)
+    const q2 = koPay(gs)
+    r.check('#2882 the chain restarts from ×1 after the hit', q2 === 200 && gs.chain === 1, `pay=${q2} chain=${gs.chain}`)
+}
+
+{ // #2882 — the road carries the score, not the streak
+    const gs = makeGame(34)
+    const a = koPay(gs, 6000)
+    enterStage2(gs)
+    r.check('#2882 the hideout opens cold: score carried, chain cooled',
+        a === 200 && gs.score >= 200 && gs.chain === 0 && gs.chainT === 0, `score=${gs.score} chain=${gs.chain}`)
+    const p = koPay(gs, 6500)
+    r.check('#2882 takes in the yard start fresh at ×1', p === 200 && gs.chain === 1, `pay=${p} chain=${gs.chain}`)
+    // Marian's bonus is not a take — the rescue pays its posted value flat
+    const b = gs.score
+    gs.waveIdx = WAVES_S2.length; gs.waveActive = false; gs.enemies.length = 0
+    gs.camX = 640   // the end-of-yard camera (enterStage2 left it at the gate; the clamp would drag Billy back)
+    gs.billy.x = 890; gs.billy.y = gs.marian.y; gs.billy.inv = CFG.respawnIFrames
+    for (let i = 0; i < 40 && !gs.marian.freed; i++) { step(gs, { punch: i % 3 === 0 }); gs.events.length = 0 }
+    r.check('#2882 the rescue bonus never rides the chain — flat 1000 on a hot board',
+        gs.marian.freed && gs.score - b === CFG.rescueBonus && gs.chain === 1, `delta=${gs.score - b} chain=${gs.chain}`)
+    for (let i = 0; i < 400 && !(gs.mode === 'play' && gs.stage === 1); i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('#2882 Marian goes home with a cool chain too — the loop runs back to ×1',
+        gs.mode === 'play' && gs.stage === 1 && gs.chain === 0 && gs.chainT === 0, `stage=${gs.stage} chain=${gs.chain}`)
+}
+
+{ // #2882 — steel is not a take: pickups stay flat +100
+    const gs = makeGame(35)
+    gs.chain = 2; gs.chainT = 60   // hot chain on the board — inventory must not ride it
+    gs.pickups.push({ x: gs.billy.x + 6, y: gs.billy.y, kind: 'knife', bob: 0 })
+    const b = gs.score
+    for (let i = 0; i < 20 && gs.score === b; i++) { step(gs, { right: true }); gs.events.length = 0 }
+    r.check('#2882 a weapon pickup pays flat +100 on a hot chain',
+        gs.score - b === 100 && gs.chain === 2, `delta=${gs.score - b} chain=${gs.chain}`)
+}
+
+{ // #2882 — the chain is sim truth, not juice: it rides the hash
+    const gs = makeGame(36)
+    const before = stateHash(gs)
+    koPay(gs, 7000)
+    const hot = stateHash(gs)
+    gs.chain = 0
+    const cooled = stateHash(gs)
+    r.check('#2882 stateHash sees the streak: the same board with a dead chain hashes different',
+        hot !== before && cooled !== hot, `before=${before} hot=${hot} cooled=${cooled}`)
+}
+
+{ // #2882 — the cabinet announces an escalation (shell cue for the rising blip)
+    const gs = makeGame(37)
+    koPay(gs, 7500)
+    const ev = []
+    const before = gs.score
+    gs.enemies.push(mk('williams', gs.billy.x + 14, gs.billy.y, { hp: 1, rest: { id: 8000 + gs.tick } }))
+    for (let i = 0; i < 60 && gs.score === before; i++) { step(gs, { b: i % 3 === 0 }); ev.push(...gs.events); gs.events.length = 0 }
+    r.check('#2882 the second straight take rings a chain cue next to the KO',
+        ev.includes('chain') && ev.includes('ko'), `events=${[...new Set(ev)].join(',')}`)
 }
 
 { // #2810 item 3 — Abobo's shoulder charge: telegraph first, and depth still decides
@@ -1140,6 +1236,26 @@ if (MUTANT) {
                 }
                 return allyAsks === 'KK.......KK..'
                     ? 'HARM NAMED: the two dragons swing the same bar again (blue=' + allyAsks + ') — a mirror in a second sprite is one player wearing a costume; the duo read as one until the seats answer different beats'
+                    : null
+            },
+        },
+        {
+            name: 'chain-frozen',
+            anchor: 'if (gs.chainT > 0 && --gs.chainT <= 0) gs.chain = 0   // #2882: the window lapses, the chain cools',
+            plant: 'if (false && gs.chainT > 0 && --gs.chainT <= 0) gs.chain = 0 /* MUTANT(chain-frozen): the window never lapses */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(31)
+                const pay = (idBase) => {
+                    const before = gs.score
+                    gs.enemies.push(mk('williams', gs.billy.x + 14, gs.billy.y, { hp: 1, rest: { id: idBase + gs.tick } }))
+                    for (let i = 0; i < 60 && gs.score === before; i++) { mod.step(gs, { b: i % 3 === 0 }); gs.events.length = 0 }
+                    return gs.score - before
+                }
+                pay(4000)
+                for (let i = 0; i < mod.CFG.chainWindow + 40; i++) { mod.step(gs, {}); gs.events.length = 0 }
+                const later = pay(4500)
+                return later !== 200
+                    ? `HARM NAMED: a take ${mod.CFG.chainWindow + 40} ticks after the last one still paid ${later} — the window never lapses, so dawdling earns the flurry bonus; chain scoring stops meaning "consecutive" and every score from the second KO onward is unearned`
                     : null
             },
         },

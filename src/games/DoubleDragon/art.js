@@ -1024,7 +1024,16 @@ export function drawHud(ctx, gs) {
     // score delta floats under the HUD on each KO/pickup, arcade-style
     if (gs.scoreFlash && gs.scoreFlash.t % 8 < 6) {
         const s = '+' + gs.scoreFlash.v
-        label(ctx, s, Math.round((W - textWidth(s, 1)) / 2), 26, '#ffd93c', 1)
+        const px = Math.round((W - textWidth(s, 1)) / 2)
+        label(ctx, s, px, 26, '#ffd93c', 1)
+        // #2882: the chain rides the popup — the cabinet tags a hot take ×N
+        if (gs.scoreFlash.m > 1) label(ctx, 'X' + gs.scoreFlash.m, px + textWidth(s, 1) + 5, 26, '#ff7a3c', 1)
+    }
+    // #2882: while the chain is hot the HUD wears its multiplier — a blinking
+    // X2/X3/X4 on the right, so the streak reads at a glance between popups
+    if (gs.chain >= 2 && gs.chainT > 0 && gs.tick % 20 < 14) {
+        const t = 'X' + gs.chain
+        label(ctx, t, W - textWidth(t, 1) - 4, 19, '#ff7a3c', 1)
     }
 }
 
