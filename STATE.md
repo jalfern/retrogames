@@ -1,73 +1,69 @@
-# STATE.md — The Forge (rewritten at close of slot a, 2026-11-21; committed to
-# main because game code merged: src/games/BombDefuse/model.js shipped in PR
-# #2849 -> c40af50. Rule 4 counter: three game-code PRs in a
-# row — #2840, #2843, #2849. Loop is turning.)
+# STATE.md — The Forge (rewritten at close of slot b, 2026-11-21; committed to
+# main because game code merged: CONTRA pod carriers shipped as PR #2850 ->
+# a034c4a, off the never-dry rung. Slot a kept #1712 PLAICRAFT S2 all session.)
 
 ## PLAYABLE
-- /retrogames/r-type — S1–S4 incl. S3 arcade bite (slot b, #2843).
-- /retrogames/contra — S1–S4 + seat ceremony (#2840/#2837).
-- /retrogames/double-dragon — S1–S4 co-op. Rest of shelf unchanged.
-- Nothing player-visible shipped this session (data-pipeline stage, see below).
+- /retrogames/contra — S1–S4 + seat ceremony + **pod carriers**: low gunships
+  ferry one lettered capsule across the jungle; two rounds down the courier
+  (+500) and its pod drops, falls light, settles on the deck, and grants its
+  gun — the capsule pickup law verbatim, per seat. Fly-in/letter/band are
+  seed/tick arithmetic (**zero gs.r draws** — the tuned stream stands; a pin
+  diffs gs.r against a carriers-free drive). Fairness pinned: band above the
+  gun-line (never eats ground fire), contact non-lethal, one courier at a
+  time, escapes with its pod, falls clear the sky, all rides stateHash.
+  contracheck 122/122, mutants 10/10 (#2847 -> PR #2850).
+- /retrogames/r-type — S1–S4 live (#2843). Solo winnability exactly 4/12 —
+  deterministic, at the law's floor; don't re-tune without a full re-run.
+- /retrogames/double-dragon — S1–S4 co-op live; **S4 partner-personality
+  polish building now in another lane (#2851)** — don't touch DD files.
+- Rest of shelf unchanged.
 
-## WHAT THIS SESSION DID (slot a)
-- Warden target #1712 (PLAICRAFT S2): resume-path claim (own fresh checkpoint);
-  live store audit unchanged — 18 takes, NO friends' takes yet, so the two data
-  acceptance lines stay blocked by design.
-- Shipped **PR #2849 (squash c40af50)**: `BombDefuse/model.js` — 35 seat
-  features/tick (Gauntlet/FloorBoss doctrine; effort-split game, so both seats
-  read the shared panel + seatAsk debts + prev-pad autoregression) wired as the
-  `bomb-defuse` dataset adapter (replay-verified; both live qabot takes tick-verify).
-  Plus the **trainable gate**: no-adapter takes now stay `flagged` (the builder's
-  comment always said so; the code never enforced it — a named human on an
-  unadapted game could reach train with feat:null rows and flip `covers 2+ games`).
-  Consent gates flagged, adapter gates train/heldout/players/coverage; consented
-  human audio still lands (separate gate, pinned). Also fixed floor-boss
-  `mem.pa` banking (prev-pad features rode zero forever).
-- Evidence: datasetcheck 48/48; **5 mutants RED by design** (split-ignore,
-  hash-skip, fold-disable, adapter-bypass, leak-reopen — M5's signature is
-  "no-adapter rows ride ANY split": seed-heldout also proves the gate).
-  Live rebuild deterministic twice `5dcb62ac` (was `696c85888e42`). Card
-  **line-neutral**: games=[gauntlet], holdout need-2-players.
-- Vercel prod green at c40af50; scripts/pipeline-only for the app bundle.
+## WHAT THIS SESSION DID (slot b)
+- Warden target #1712 REFUSED at claim (slot a's checkpoint 28 min fresh) —
+  correct. Ladder: no steer/halt/next; game-queue empty; QA MASTER alive
+  (5176) so no QA borrow -> NEVER-DRY rung (#1571): `weakestStage` scored
+  CONTRA weakest at 6 (fb #2842 + 5 unowned gaps; runner-up R-TYPE 1).
+  Filed POLISH #2847, claimed slot b, shipped ~2 h in one PR.
+- Rule 4: game code merged — loop turning.
 
-## BOARD
-- #1712 OPEN, released to `next` (wait-state): the next real events are
-  friends' takes landing via /retrogames/join — they close both data lines
-  immediately **in an adapted game** (gauntlet, floor-boss, bomb-defuse) and
-  `npm run plaicraft:dataset` re-covers with zero new code.
-- game-queue empty; no steer; no halt; no `building`.
-- Open jonq (link only): **#2844** (S2 fold ruling; default keep fold),
-  **#2846** (flagship public promotion — Jon's call, default keep-private).
-- QA lane's: #2833 (`building-qa`), fresh feedback #2841, #2842.
-- Unowned harness bug: **#2839** (claim-status.mjs ignores
-  `FORGE (<slot>):` comments → liveness reads dead). Any lane can fix; small.
-
-## HARNESS NOTES FOR THE NEXT LANE
-- **Next adapters (each ~model.js + register + fixtures):** talk-me-down,
-  short-order-shout, garden-guard, pick-rush, rally-co-driver — the recorder
-  titles still feat:null. Recipe (done twice, ~1 session each is overkill):
-  engine must be Node-clean + integer hash → `model.js` with FEAT_NAMES/
-  N_FEAT/N_ACT + featurize(gs, who, mem) (bank `mem.pa` after the label!) →
-  ADAPTERS entry with checkpoint-compare → fixtures (clean/tamper/prev-pad) +
-  one mutant (adapter-bypass). BombDefuse/model.js is the compact exemplar.
-- `forge-claim.sh` resume path ("already yours") exits 0 WITHOUT re-applying
-  the `building` label — after a resume, add it yourself so the board truth
-  matches the lock (done manually this session).
-- trainable doctrine: `human` = consent level (audio, identity); `trainable` =
-  human AND adapted (splits, players, lines). Any new attribution policy must
-  stay line-neutral unless Jon rules otherwise (#2844 governs the fold).
-- Lines flip ONLY by native named humans; folded rows (`lg:1`) can never
-  satisfy gamesCovered/heldoutClean.
-- Store probe: `node scripts/sessions.mjs` = fastest truth about takes.
-- mutateguard refuses mutant runs on a dirty tree (good — commit before
-  `--mutant`, it caught me once this session).
-
-## WORKTREES
-- Main checkout: detached origin/main (c40af50) with this STATE commit.
-- `~/Dev/retrogames-forge-plaicraft-s2` — merged; re-detached at origin/main;
-  reap freely (remote branch gone). Slot a dev server (5173) never started —
-  pipeline stage, no browser needed; port left free.
+## BOARD (at close)
+- building: **#2851 POLISH — DOUBLE DRAGON partner personality** (claimed by
+  another lane mid-session), #1712 PLAICRAFT S2 (slot a, lane:research).
+- game-queue: empty. idle-kick (builder) at close: `KICK CONTRA 0 weak` —
+  CONTRA is STILL the weakest title (gap 0 now = gate-armor housings eat
+  pierce rounds); next builder takes that unless the board changes.
+- feedback (QA's, nobody-owned): **#2852** (new: pod-carrier polish — rotor
+  read, pod-hook moment, land juice), #2841 R-TYPE S4 wings, #2842 CONTRA
+  ceremony, **#2839 harness bug: claim-status.mjs ignores the FORGE (<slot>):
+  checkpoint format so liveness locks read dead** (any lane; small — still
+  unowned; this session hit it: slot a's lock looked alive to forge-claim but
+  the board tooling disagrees).
+- QA MASTER alive at close (port 5176).
 
 ## Open questions
-- #2844 (PLAICRAFT S2 fold ruling; default: keep fold).
-- #2846 (flagship public promotion; default: keep private).
+- #2846 — promote CONTRA/R-TYPE/DD to public? (default keep-private; only Jon
+  promotes per #379.)
+- #2844 — PLAICRAFT S2 pre-audit takes (research lane's).
+
+## HARNESS NOTES FOR THE NEXT LANE
+- **Zero-rng additions work.** Contra's carriers derive letter/band/schedule
+  from `seed ^ carrierN` arithmetic; the `zero rng law` pin keeps gs.r
+  byte-identical vs a carriers-free drive, and winnable seeds 1..12 never
+  moved. Prefer this over gs.r draws for any new Contra mechanic.
+- Letter coverage via seed rotation (`(seed + carrierN) % 4`) — a bit-mix of
+  small seeds (1..8) through `>>>3` collapsed to 2 kinds and failed its pin;
+  plain `% 4` on the seed spreads. Don't trust shift-fold entropy for small ints.
+- Prod verify (refines last session's note): after merge, crawl origin's
+  transitive chunk closure and grep **property names** (`nextCarrier`,
+  `carrierHp`, `'cargo'`) — property names survive terser; DEV strings
+  (`__contraTest`, DebugKit labels) do not ship.
+- `weakestStage` re-scores immediately after your README gap list changes —
+  run `node scripts/idle-kick.mjs` right after closing a gap to tell the next
+  lane what's next.
+
+## WORKTREES
+- Main checkout: detached origin/main (a034c4a lineage) + this STATE commit.
+- `~/Dev/retrogames-forge-contra-pod-carriers` — finished; reap freely
+  (branch gone on remote).
+- Ports: b's 5178 stopped at close. QA studio 5176 = live QA session, leave
+  it. 5173 free.
