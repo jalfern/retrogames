@@ -121,6 +121,7 @@ function makeFighter(tag) {
         lives: CFG.lives,
         human: false,
         out: false,
+        backAt: -9999, // #2833: tick a drained seat returned on second wind (HUD flash window)
     }
 }
 
@@ -878,7 +879,10 @@ function clearField(gs) {
     gs.camX = 0
     // S4 second wind: when the road opens a fresh stage, a drained seat
     // returns with one life — the dragons enter the next street together.
+    // #2833: the return stamps `backAt` so the cabinet can blink the seat
+    // home — a revived bank should read at a glance, not whisper.
     for (const p of fighters(gs)) {
+        if (p.out) p.backAt = gs.tick
         p.out = false
         p.lives = Math.max(p.lives, 1)
         p.state = 'idle'; p.stateT = 0; p.z = 0; p.zv = 0
@@ -1091,19 +1095,16 @@ export function dragonBrain(gs, b, ally = null) {
     // S3: the duel is won and the ropes are waiting — walk to Marian and cut
     if (gs.stage === 2 && rescueReady(gs)) {
         const m = gs.marian
-        // #2833: the ropes are no excuse to walk into steel — a lethal
-        // telegraph on this seat's doorstep answers first, and the seat that
-        // is NOT the cutter turns to hold the guards off the post.
-        const killer = gs.enemies.some((e) =>
-            ((e.state === 'windup' || e.state === 'attack') && Math.abs(e.x - b.x) < 26 && Math.abs(e.y - b.y) <= 8)
-            || ((e.state === 'chargewind' || e.state === 'charge') && Math.abs(e.x - b.x) < 60 && Math.abs(e.y - b.y) <= 14)
-            || (e.state === 'aim' && Math.abs(e.x - b.x) < 140 && Math.abs(e.y - b.y) <= 12))
+        // #2833: the ropes are no excuse to walk into steel. The duel's last
+        // blades can still be in the air when the field empties (rescueReady
+        // means no live goons — a cast knife outruns its thrower), so the
+        // cutter answers flying steel before it walks to the post. A cocked
+        // blade on the doorstep never gates here: rescueReady already proves
+        // every goon is down — guard-holding lives in the waves, where the
+        // hang-back law keeps the blue seat circling in beside its brother.
         const fly = gs.projectiles.some((pr) => pr.side === 'goon' && Math.abs(pr.y - b.y) <= 9 &&
             ((pr.vx > 0 && pr.x < b.x + 8 && pr.x > b.x - 64) || (pr.vx < 0 && pr.x > b.x - 8 && pr.x < b.x + 64)))
-        const covering = mate &&
-            Math.abs(m.x - mate.x) + Math.abs(m.y - mate.y) + 24 < Math.abs(m.x - b.x) + Math.abs(m.y - b.y) &&
-            gs.enemies.some((e) => e.state !== 'dying' && e.state !== 'down' && Math.abs(e.x - b.x) < 40 && Math.abs(e.y - b.y) <= 12)
-        if (!killer && !fly && !covering) {
+        if (!fly) {
             const dxm = m.x - b.x; const dym = m.y - b.y
             if (Math.abs(dxm) > 14 || Math.abs(dym) > 3) {
                 pad.right = dxm > 0; pad.left = dxm < 0
