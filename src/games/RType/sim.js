@@ -584,6 +584,10 @@ function runWorld(gs, pad, frozen, pad2) {
     const sAlive = !s.dead // S4: seat one may hang while the wing works
     const bPress = !!pad.b && !gs.bHeld   // POD button is edge-triggered
     gs.bHeld = !!pad.b
+    // #2841 (S4 polish): a bare seat CALLS for the shell — pressing POD with no
+    // pod of your own asks the wing to fly its spare over. Per-hull gear is still
+    // the rule (no press, no hand-off); the original passed pods between pilots.
+    if (!frozen && bPress && !gs.pod && gs.wing && !gs.wing.dead && !gs.wing.out && gs.wing.pod) gs.wing.pod.hand = true
     refreshBits(gs)
 
     // --- camera: right only, ever; LEG 2 ends at the twin-core fortress
@@ -1273,8 +1277,13 @@ function runWing(gs, pad2, frozen) {
     // its own S.E.E.D.: the same state machine as seat one — plug, deploy,
     // park, recall, armour refusal, and the wall grinding a shell left behind
     const pd = w.pod
+    const s = gs.ship
     if (pd) {
         if (pd.grace > 0) pd.grace -= 1
+        // #2841: a pod that's been called away launches (no grace — it was
+        // commanded) and gives up the errand if the caller no longer needs it.
+        if (pd.hand && (gs.pod || s.dead || s.out)) pd.hand = false
+        if (!frozen && pd.hand && pd.state === 'attached') pd.state = 'return'
         if (!frozen && wB) {
             if (pd.state === 'attached') { pd.state = 'fly'; pd.grace = POD.dockGrace; gs.events.push('podlaunch') }
             else if (pd.state !== 'return') pd.state = 'return'
@@ -1287,9 +1296,17 @@ function runWing(gs, pad2, frozen) {
         if (!frozen && (pd.state === 'fly' || pd.state === 'park') && !(pd.grace > 0) &&
             Math.hypot(pd.x - w.x, pd.y - w.y) <= POD.dock) { pd.state = 'attached'; gs.events.push('poddock') }
         if (pd.state === 'return') {
-            const dx = w.x + POD.noseX - pd.x, dy = w.y - pd.y
+            // #2841: an asked-for shell flies to the CALLER — seat one pressed POD
+            // bare, so this pod is now bound for its nose and hands itself over.
+            const tgt = pd.hand && !gs.pod && !s.dead && !s.out ? { x: s.x + POD.noseX, y: s.y } : { x: w.x + POD.noseX, y: w.y }
+            const dx = tgt.x - pd.x, dy = tgt.y - pd.y
             const m = Math.max(1e-6, Math.hypot(dx, dy))
-            if (m <= POD.dock) { pd.state = 'attached'; gs.events.push('poddock') }
+            if (pd.hand && m <= POD.dock) {
+                gs.pod = { id: pd.id, state: 'attached', x: s.x + POD.noseX, y: s.y, grace: 0 }
+                w.pod = null
+                gs.events.push('poddock'); gs.events.push('force')
+            }
+            else if (m <= POD.dock) { pd.state = 'attached'; gs.events.push('poddock') }
             else { pd.x += (dx / m) * POD.recall; pd.y += (dy / m) * POD.recall }
         }
         if (pd.state !== 'attached') {
@@ -1319,7 +1336,16 @@ export function wingBrain(gs) {
     const p1down = s.dead || s.out
     const tx = p1down ? gs.camX + WING.stationX : s.x - WING.backX
     const sy = p1down ? 120 : s.y
-    const ty0 = clamp(sy < 120 ? sy + WING.laneGap : sy - WING.laneGap, FIELD_TOP + 8, FIELD_BOT - 8)
+    let ty0 = clamp(sy < 120 ? sy + WING.laneGap : sy - WING.laneGap, FIELD_TOP + 8, FIELD_BOT - 8)
+
+    // #2841 vent-hunt: with a fortress vent gaped the wingman takes the lane
+    // and puts its stream into the throat — mirrors the autopilot's vent lock.
+    let ventY = -1
+    if (gs.p2 && gs.p2.dyingT === 0) {
+        const oi = gs.p2.cores.findIndex((c) => c.hp > 0 && c.mouth === 'open')
+        if (oi >= 0) ventY = CORE_Y[oi] + (gs.p2.swayOff || 0)
+    }
+    if (ventY >= 0) ty0 = clamp(ventY, FIELD_TOP + 8, FIELD_BOT - 8)
 
     const riskAt = (y) => {
         let risk = 999
@@ -1352,6 +1378,24 @@ export function wingBrain(gs) {
         return risk
     }
 
+    // #2841 capsule chase: spillage and stray pods are the nearer pilot's to
+    // fetch — seat one keeps the tie (the courtesy law), the wing never dives
+    // into an hot lane for loot, and a gaped vent outranks cargo.
+    if (ventY < 0) {
+        let chase = null
+        for (const c of gs.caps) {
+            if (c.x <= gs.camX + 26 || c.x - w.x > 150) continue
+            const dw = Math.hypot(c.x - w.x, c.y - w.y)
+            const ds = p1down ? Infinity : Math.hypot(c.x - s.x, c.y - s.y)
+            if (dw >= ds || dw > 150) continue
+            if (!chase || dw < chase.dw) chase = { c, dw }
+        }
+        if (chase) {
+            const cy = clamp(chase.c.y, FIELD_TOP + 8, FIELD_BOT - 8)
+            if (riskAt(cy) >= 12) ty0 = cy
+        }
+    }
+
     const cands = [ty0, w.y]
     if (riskAt(ty0) < 14) {
         cands.push(clamp(w.y + (w.y < sy ? -24 : 24), FIELD_TOP + 8, FIELD_BOT - 8))
@@ -1366,7 +1410,11 @@ export function wingBrain(gs) {
     pad.up = dy < -1.2
     pad.down = dy > 1.2
 
-    const dxw = w.x - tx
+    // #2841 formation drift: on a quiet lane the wing eases half a body-length
+    // toward its partner (the originals flew as a pair, not a spaced pair);
+    // it falls back to station the moment the lane heats up.
+    const txEff = !p1down && tx < s.x - 2 && riskAt(w.y) >= 30 ? tx + 8 : tx
+    const dxw = w.x - txEff
     pad.right = dxw < -4
     pad.left = dxw > 4
     if (w.x - gs.camX < WING.crushSafe) { pad.right = true; pad.left = false }

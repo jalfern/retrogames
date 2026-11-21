@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 126 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind`
+node scripts/rtypecheck.mjs       # sim + browser: 130 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -39,7 +39,7 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
  one, per-hull S.E.E.D./bit gear (the spare-seed law holds per hull), Bydo
  guns take the nearer hull (decoy), pad2 flies a human seat / dead-stick holds
  the line / V resumes the brain, and co-op clears 12/12 seeds against the 4/12
- solo floor. The #2835 polish pass adds the stage-2 signature: LEG 2 fields
+ solo floor (9/12 since the #2841 wing earned its hazard pay). The #2835 polish pass adds the stage-2 signature: LEG 2 fields
  BIT CARRIERS (armoured `bitpod` ferries on script-authored y/n — no rng),
  kill one (fire or shell ram) and its 2–3 bits spill as chainable capsules
  (`bitfree`), the orbit grinds larvae but the carrier shrugs the shield
@@ -165,9 +165,27 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   seat one takes any capsule the hulls share. Decoy law: turrets, divers and
   hunters acquire the NEARER hull — crowding the wing makes it bait. Any of
   WASD/F/G hands the seat to a human; V relieves them and the brain resumes.
-  Co-op winnability measures 12/12 seeds (the second stream is worth ~7
-  seeds): the harness pins co-op strictly above the solo floor, and the
-  solo law still proves the harder floor stands alone.
+  Co-op winnability measures 9/12 seeds post-#2841 (was 12/12 — a wing that
+  fetches cargo and hunts vents is also a wing that walks into fire): the
+  harness pins co-op strictly above the solo floor, and the solo law still
+  proves the harder floor stands alone.
+- **#2841 polish (QA lane):** the wing fights like a partner now. CARGO LAW:
+  a capsule the wing reaches strictly first (seat one keeps every tie, and a
+  gaped vent outranks loot) gets fetched — lane commits only if `riskAt`
+  reads the loot lane survivable. VENT-HUNT: with the fortress open, ty0
+  snaps to the gaped core's lane (sway included), so seat two's stream bites
+  the throat instead of spraying formation. FORMATION DRIFT: on a quiet lane
+  the wing eases 8 px toward its partner and falls back to station when the
+  lane heats. POD HAND-OFF: gear stays per-hull UNASKED, but pressing POD
+  with a bare hull calls the wing's spare shell over — it flies to seat one's
+  nose and hands itself on dock (`force` ceremony at the caller; the original
+  passed pods between pilots). Dark-seat rescue rides the same two rails:
+  with seat one down the courtesy gate lifts (the wing fetches freely) and
+  the spare goes to the partner when they return. The HUD now carries
+  `SEAT 2 : WASD+F` by the dual pools for the whole CPU flight — the drop-in
+  keys should be found mid-run, not from attract memory. P1's own death
+  already shakes harder than the wing's (die 6 vs wingdie 3) — the loss
+  asymmetry the playtest asked for was standing.
 
 ## Known gaps (S5+)
 Core speed-up after 1000, Stage 2 "Dobkeratops", the full capsule list beyond
@@ -177,16 +195,16 @@ Williams-style duelist for variety. #2835 closed the last three #2831 carry-over
 what is still thin there: carriers never answer back (no launched interceptors
 when fired upon), salvos fly straight once loosed, and the autopilot does not
 pre-dodge the volley lane — it eats some of what the cabinet's pilot would
-side-step. The wing (S4) is faithful-but-simple: it never chases capsules or
-vents on purpose, its brain never deploys its shell (a human seat two can, via
-G), and there is no pod/bit hand-off between hulls or a rescue revive for a
-dark seat — seat-two flavour the original's 2P has that a QA pass could deepen.
+side-step. The wing (S4) got its partner-pass in #2841 (fetch, vent-hunt,
+drift, called hand-off); still open: the wing brain never deploys its shell
+on its own initiative (a human seat two can, via G), and a dark seat gets no
+free life — seat-two flavour left for a later pass.
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 126 sim+browser laws, six named mutants
+- `scripts/rtypecheck.mjs` — 130 sim+browser laws, seven named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
-  `cargo-blind`, `salvo-blind`).
+  `cargo-blind`, `salvo-blind`, `vent-blind`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,

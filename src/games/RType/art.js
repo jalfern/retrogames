@@ -763,6 +763,9 @@ export function drawHud(ctx, gs) {
         if (gs.wing.out) drawText(ctx, 'SEAT DARK', 30, 16, '#5a6478')
         else if (gs.wing.dead) drawText(ctx, 'DOWN', 30, 16, (gs.tick % 30) < 20 ? '#e03030' : '#701818')
         else for (let i = 0; i < Math.min(gs.wing.lives - 1, 5); i++) ctx.drawImage(SPR.shipIconP2, 30 + i * 15, 15)
+        // #2841: the drop-in keys sit by the dual pools all flight — attract
+        // says them once, but seat two is found mid-run, not from memory
+        if (!gs.wing.human && !gs.wing.out) drawText(ctx, 'SEAT 2 : WASD+F', 112, 16, '#3c5c80')
     }
 }
 
