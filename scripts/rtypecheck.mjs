@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, CORE_Y, W, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, CORE_Y, W, WAVES2, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -333,7 +333,7 @@ const runBot = (seed, max = 20000) => {
     gs.ship.y = CORE_Y[0]
     for (let i = 0; i < 120 && gs.p2.cores[0].hp > 0; i++) { step(gs, { a: true }); gs.events.length = 0 } // first heart, upper vent
     gs.ship.y = CORE_Y[1]
-    for (let i = 0; i < 420 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 } // second heart + cascade
+    for (let i = 0; i < 700 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 } // second heart + the #2835 double walk
     r.check('both hearts stopped at last: STAGE CLEAR rolls', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
     const clearedScore = gs.score
     for (let i = 0; i < 200 && gs.mode === 'clear'; i++) { step(gs, {}); gs.events.length = 0 }
@@ -625,8 +625,111 @@ const runBot = (seed, max = 20000) => {
     // both hearts stop together
     alive.hp = 1
     gs.ship.y = CORE_Y[gs.p2.cores.indexOf(alive)]
-    for (let i = 0; i < 420 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 }
+    for (let i = 0; i < 700 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 }
     r.check('both hearts down: the fortress falls and CLEAR finally rolls', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
+}
+
+// ---------------------------------------------------- #2835 law set ------
+{ // bit carriers — the stage-2 set-piece joins LEG 2
+    const gs = makeGame(7)
+    gs.leg = 2
+    gs.schedule = WAVES2.map((w, i) => ({ ...w, idx: 50 + i, fired: false }))
+    let seen = null
+    for (let t = 0; t < 1400 && !seen; t++) { gs.ship.inv = 999999; step(gs, {}); seen = gs.enemies.find((e) => e.kind === 'bitpod') || null; gs.events.length = 0 }
+    r.check('#2835: LEG 2 fields an airborne bit carrier', !!seen, seen ? `n=${seen.n} hp=${seen.hp}` : 'no carrier')
+    // kill it: cargo must spill as chainable bit capsules
+    const gs2 = makeGame(3)
+    gs2.ship.inv = 999999
+    gs2.enemies.length = 0
+    gs2.enemies.push({ id: 900, kind: 'bitpod', x: gs2.ship.x + 60, y: gs2.ship.y, baseY: gs2.ship.y, bob: 0.5, hp: 7, n: 3, vx: -0.7, inv: 0, anim: 0, holdT: 40, anchorX: gs2.camX, state: 'hold' })
+    let free = false
+    for (let t = 0; t < 80 && !free; t++) { step(gs2, { a: true }); free = gs2.events.includes('bitfree'); gs2.events.length = 0 }
+    const bits0 = gs2.caps.filter((c) => c.type === 'bit').length
+    r.check('a downed carrier spills its bits as capsules', free && bits0 >= 3, `caps ${bits0}`)
+    let chained = 0
+    for (let t = 0; t < 400 && chained < 3; t++) {
+        const near = gs2.caps.filter((c) => c.type === 'bit').sort((a, b) => Math.abs(a.y - gs2.ship.y) - Math.abs(b.y - gs2.ship.y))[0]
+        step(gs2, near ? { up: near.y < gs2.ship.y - 2, down: near.y > gs2.ship.y + 2 } : {}); chained = gs2.bits.length; gs2.events.length = 0
+    }
+    r.check('the freed cargo chains like any bit', chained >= 3, `bits ${chained}`)
+    // armour law: the rotating fist grinds larvae, NOT an armoured ferry
+    const gs3 = makeGame(4)
+    for (let n = 0; n < 4; n++) gs3.bits.unshift({ id: n + 1 })
+    gs3.ship.inv = 999999
+    gs3.enemies.length = 0
+    gs3.enemies.push({ id: 901, kind: 'bitpod', x: gs3.ship.x + 16, y: gs3.ship.y, baseY: gs3.ship.y, bob: 0, hp: 7, n: 2, vx: 0, inv: 0, anim: 0, holdT: 40, anchorX: gs3.camX, state: 'hold' })
+    let grindDead = false
+    for (let t = 0; t < 60; t++) { step(gs3, {}); grindDead = grindDead || !gs3.enemies.some((e) => e.id === 901); gs3.events.length = 0 }
+    r.check('the orbit grinds larvae, not armour — the carrier shrugs the shield', !grindDead, `carrier alive=${!grindDead}`)
+    // the S.E.E.D. shell CAN down one, cargo included
+    const gs4 = makeGame(4)
+    gs4.ship.inv = 999999
+    gs4.enemies.length = 0
+    gs4.pod = { id: 5, state: 'fly', x: gs4.ship.x + 60, y: gs4.ship.y, grace: 0 }
+    gs4.enemies.push({ id: 902, kind: 'bitpod', x: gs4.ship.x + 66, y: gs4.ship.y, baseY: gs4.ship.y, bob: 0, hp: 7, n: 2, vx: 0, inv: 0, anim: 0, holdT: 40, anchorX: gs4.camX, state: 'hold' })
+    let rammed = false
+    for (let t = 0; t < 80 && !rammed; t++) { step(gs4, {}); rammed = gs4.events.includes('bitfree'); gs4.events.length = 0 }
+    r.check('the shell rams carriers down too — and takes the cargo with it', rammed, `bitfree=${rammed}`)
+}
+
+{ // Phase-2 offense — telegraphed, alternating port salvos, and a swaying mass
+    const gs = makeGame(5)
+    gs.ship.inv = 999999
+    gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick
+    step(gs, {})
+    r.check('the fortress carries its salvo clock', gs.p2 && gs.p2.port === 0 && gs.p2.cascade === 380, `port ${gs.p2 && gs.p2.port}`)
+    let minS = 9, maxS = -9
+    const salvos = []
+    const horns = { 0: [], 1: [] }
+    const prev = ['closed', 'closed']
+    for (let t = 0; t < 1600 && salvos.length < 4; t++) {
+        gs.ship.inv = 999999
+        step(gs, {})
+        minS = Math.min(minS, gs.p2.swayOff); maxS = Math.max(maxS, gs.p2.swayOff)
+        gs.p2.cores.forEach((c, ci) => { if (prev[ci] === 'closed' && c.mouth === 'opening') horns[ci].push(gs.tick); prev[ci] = c.mouth })
+        if (gs.events.includes('p2salvo')) salvos.push({ tick: gs.tick, y: gs.bullets[gs.bullets.length - 1] ? gs.bullets[gs.bullets.length - 1].y : -1 })
+        gs.events.length = 0
+    }
+    const lanes = salvos.map((s) => (s.y < 120 ? 0 : 1))
+    let alt = lanes.length >= 4
+    for (let i = 1; i < lanes.length; i++) alt = alt && lanes[i] !== lanes[i - 1]
+    r.check('ports alternate volleys — one gapes, the OTHER speaks', alt, `lanes ${lanes.join('>')}`)
+    r.check('every salvo is telegraphed: 30 ticks after its port horn',
+        salvos.length >= 4 && salvos.every((s) => horns[s.y < 120 ? 0 : 1].some((h) => s.tick - h === 30)),
+        `salvos ${salvos.map((s) => s.tick).join(' ')}`)
+    r.check('the whole mass sways ±6 px on pure tick arithmetic', minS < -3.5 && maxS > 3.5, `${minS.toFixed(1)}..${maxS.toFixed(1)}`)
+    // aim law rides the sway: centring on the OPEN port's swaying lane kills it
+    gs.p2.cores[0].mouth = 'open'; gs.p2.cores[0].mouthT = 10000
+    const h0 = gs.p2.cores[0].hp
+    for (let t = 0; t < 120 && gs.p2.cores[0].hp === h0; t++) {
+        gs.ship.inv = 999999
+        gs.ship.y = CORE_Y[0] + gs.p2.swayOff
+        step(gs, { a: true }); gs.events.length = 0
+    }
+    r.check('aiming follows the sway — the tracked lane still kills the core', gs.p2.cores[0].hp < h0, `hp ${h0}->${gs.p2.cores[0].hp}`)
+}
+
+{ // walking death — the fire starts at the port that fell LAST, runs ~2×
+    const gs = makeGame(11)
+    gs.ship.inv = 999999
+    gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick
+    step(gs, {})
+    gs.p2.cores[0].mouth = 'open'; gs.p2.cores[0].mouthT = 10000
+    gs.p2.cores[1].mouth = 'open'; gs.p2.cores[1].mouthT = 10000
+    gs.p2.cores[0].hp = 1; gs.p2.cores[1].hp = 2
+    for (let t = 0; t < 300 && gs.p2.cores[0].hp > 0; t++) { gs.ship.inv = 999999; gs.ship.y = CORE_Y[0] + gs.p2.swayOff; step(gs, { a: true }); gs.events.length = 0 }
+    r.check('the first heart falls and the face still fights', gs.p2.dyingT === 0 && gs.p2.cores[0].hp === 0)
+    for (let t = 0; t < 300 && gs.p2.dyingT === 0; t++) { gs.ship.inv = 999999; gs.ship.y = CORE_Y[1] + gs.p2.swayOff; step(gs, { a: true }); gs.events.length = 0 }
+    r.check('the wreck walk starts at the last-fallen port, double-length', gs.p2.lastCore === 1 && gs.p2.dyingT > 300, `last ${gs.p2.lastCore} dyingT ${gs.p2.dyingT}`)
+    const booms = []
+    for (let t = 0; t < 640 && gs.mode === 'play'; t++) { gs.ship.inv = 999999; step(gs, {}); if (gs.events.includes('boom') && gs.p2) booms.push({ x: gs.lastHitX, y: gs.lastHitY }); gs.events.length = 0 }
+    const third = Math.ceil(booms.length / 3)
+    const upper = booms.filter((b) => b.y < 120).length
+    const lower = booms.filter((b) => b.y >= 120).length
+    const firstL = booms.slice(0, third).filter((b) => b.y >= 120).length
+    r.check('death walks port-to-port and CLEAR waits for the whole walk',
+        gs.mode === 'clear' && upper > 5 && lower > 5 && firstL >= third * 0.9 && booms[booms.length - 1].x > booms[0].x + 40,
+        `mode=${gs.mode} up=${upper} lo=${lower} firstL=${firstL}/${third}`)
 }
 
 // --------------------------------------------------------------- S4 laws ---
@@ -859,6 +962,38 @@ if (MUTANT) {
                 for (let i = 0; i < 20 && !gs.wing.dead; i++) { mod.step(gs, {}); gs.events.length = 0 }
                 return !gs.wing.dead
                     ? 'HARM NAMED: seat two ate a point-blank round and walked away — dual pools ARE the co-op contract; a pool that cannot burn turns GAME OVER into a single-seat fiction and the wingman into an untouchable ghost'
+                    : null
+            },
+        },
+        {
+            name: 'cargo-blind',
+            anchor: "if (e.kind === 'bitpod') releaseBits(gs, e) // #2835: the cargo breaks loose",
+            plant: "if (false && e.kind === 'bitpod') releaseBits(gs, e) /* MUTANT(cargo-blind): carriers die empty */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(3)
+                gs.ship.inv = 999999
+                gs.enemies.length = 0
+                gs.enemies.push({ id: 900, kind: 'bitpod', x: gs.ship.x + 60, y: gs.ship.y, baseY: gs.ship.y, bob: 0.5, hp: 7, n: 3, vx: -0.7, inv: 0, anim: 0, holdT: 40, anchorX: gs.camX, state: 'hold' })
+                let free = false
+                for (let t = 0; t < 80 && !free; t++) { mod.step(gs, { a: true }); free = gs.events.includes('bitfree'); gs.events.length = 0 }
+                return !free
+                    ? 'HARM NAMED: the carrier died WITHOUT spilling its bits — the cargo IS the stage-2 set-piece; empty hulls turn the carrier hunt into pointless volume and cut the bit chain off from its signature supply'
+                    : null
+            },
+        },
+        {
+            name: 'salvo-blind',
+            anchor: "if (gs.p2.port === ci) { fireSalvo(gs, ci); gs.p2.port = 1 - ci }",
+            plant: "if (false && gs.p2.port === ci) { fireSalvo(gs, ci); gs.p2.port = 1 - ci } /* MUTANT(salvo-blind): the fortress stops trading */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(5)
+                gs.ship.inv = 999999
+                gs.leg = 2; gs.camX = mod.STAGE_END2; gs.legAt = gs.tick
+                mod.step(gs, {})
+                let salvos = 0
+                for (let t = 0; t < 1600 && salvos < 2; t++) { gs.ship.inv = 999999; mod.step(gs, {}); if (gs.events.includes('p2salvo')) salvos++; gs.events.length = 0 }
+                return salvos < 2
+                    ? `HARM NAMED: the fortress sat 1600 ticks and answered with ${salvos} salvos — the traded salvo is the twin cores' menace; mute, the face is a free shooting gallery and Phase-2 loses its whole argument`
                     : null
             },
         },

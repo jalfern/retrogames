@@ -11,14 +11,14 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 113 laws (S1, #2818/#2823 polish, S2, S3, #2831 polish, S4)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind`
+node scripts/rtypecheck.mjs       # sim + browser: 126 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
 tiers, the pod-3 rescue, the Phase-1 maw law and its 20 s cycle, hunter
 home-phases, winnability (autopilot clears >= 4 of seeds 1..12 — now THROUGH
-both dreads, measured 5/12) — plus the #2818 polish laws, S2 (capture, plug,
+both dreads, measured 4/12) — plus the #2818 polish laws, S2 (capture, plug,
 ram, deploy→park, recall, grind, death-drop, tiered piercing lance), and S3:
 bit capture order (newest at the nose, chain shoved back), the spare-S.E.E.D.
 converts to a BIT (never a second shell), chained-vulcan extra streams,
@@ -38,8 +38,18 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
  the wing fights on its own account, capsules held over both hulls go to seat
  one, per-hull S.E.E.D./bit gear (the spare-seed law holds per hull), Bydo
  guns take the nearer hull (decoy), pad2 flies a human seat / dead-stick holds
- the line / V resumes the brain, and co-op clears 12/12 seeds against the 5/12
- solo floor.
+ the line / V resumes the brain, and co-op clears 12/12 seeds against the 4/12
+ solo floor. The #2835 polish pass adds the stage-2 signature: LEG 2 fields
+ BIT CARRIERS (armoured `bitpod` ferries on script-authored y/n — no rng),
+ kill one (fire or shell ram) and its 2–3 bits spill as chainable capsules
+ (`bitfree`), the orbit grinds larvae but the carrier shrugs the shield
+ (armour law holds); the Phase-2 mass SWAYS ±6 px on pure tick sine (rides
+ core hit windows, guns and hash — aiming law tracks it), ports ALTERNATE
+ aimed 3-shot salvos fired at the OPEN transition, 30 ticks after the port
+ horn (the next salvo port glints), a burned port's turn inherits to the
+ enraged survivor; the twin-core wreck WALKS port-to-port from the last
+ fallen heart across 380 ticks (~2× Phase-1) with the seam advancing while
+ plating sheds in rows, and STAGE CLEAR waits for the whole walk.
 
 ## The design decisions worth knowing
 - **#2823 polish (QA lane):** capture is a ceremony (merge flash + sparks that
@@ -162,27 +172,30 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 ## Known gaps (S5+)
 Core speed-up after 1000, Stage 2 "Dobkeratops", the full capsule list beyond
 three arms (Options, Double, Speed Up, Half-Capsules), and an armed
-Williams-style duelist for variety. Still open from the #2831 polish pass:
-bit pods (airborne carriers whose bits break loose on death), Phase-2 port
-salvos + body sway, and the walking port-to-port Phase-2 death cascade. The
-wing (S4) is faithful-but-simple: it never chases capsules or vents on
-purpose, its brain never deploys its shell (a human seat two can, via G),
-and there is no pod/bit hand-off between
-hulls or a rescue revive for a dark seat — seat-two flavour the original's 2P
-has that a QA pass could deepen.
+Williams-style duelist for variety. #2835 closed the last three #2831 carry-overs
+(bit pods, Phase-2 port salvos + body sway, the walking port-to-port death);
+what is still thin there: carriers never answer back (no launched interceptors
+when fired upon), salvos fly straight once loosed, and the autopilot does not
+pre-dodge the volley lane — it eats some of what the cabinet's pilot would
+side-step. The wing (S4) is faithful-but-simple: it never chases capsules or
+vents on purpose, its brain never deploys its shell (a human seat two can, via
+G), and there is no pod/bit hand-off between hulls or a rescue revive for a
+dark seat — seat-two flavour the original's 2P has that a QA pass could deepen.
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 113 sim+browser laws, four named mutants
-  (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`).
+- `scripts/rtypecheck.mjs` — 126 sim+browser laws, six named mutants
+  (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
+  `cargo-blind`, `salvo-blind`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
   `openMouth`, `openVents`, `coreHp`, `p2hp`, `y`, `wingLives`, `wingOut`,
   `wingHuman`, `wingInv`, `wingY`, `giveWingPod`, `giveWingBits`,
-  `spawnCapWing`, `coopOff`, …) / `start()`.
+  `spawnCapWing`, `coopOff`, `spawnBitPod:{y,n,x}`, `p2Port`, …) / `start()`.
+  Probe also reports `bitpods`, `sway`, `p2port`, `p2dying`, `p2last` (#2835).
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
-  GIVE LASER, TO PHASE-1, OPEN MAW, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
+  SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
   GEAR THE WING.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern
   taps `b` every 97 ticks) and the nightly soak roster (`nightlybot.mjs`).

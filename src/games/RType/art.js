@@ -378,6 +378,28 @@ export function drawPod(ctx, e, camX) {
     ctx.drawImage(SPR.pod[(e.anim >> 3) % 2], Math.round(e.x - camX) - 8, Math.round(e.y) - 6)
 }
 
+// #2835 bit carrier: an armoured ferry with a lit cargo bay — the bits glow
+// behind the ribs, so the payload reads before the shot that frees it.
+export function drawBitPod(ctx, e, camX) {
+    const x = Math.round(e.x - camX), y = Math.round(e.y)
+    ctx.fillStyle = '#20263c'
+    ctx.fillRect(x - 13, y - 9, 26, 18)
+    ctx.fillStyle = '#46506c'
+    ctx.fillRect(x - 11, y - 7, 22, 14)
+    ctx.fillStyle = '#5e6c8e'
+    ctx.fillRect(x - 13, y - 9, 26, 2)
+    ctx.fillRect(x - 13, y + 7, 26, 2)
+    ctx.fillStyle = '#0c1018'
+    ctx.fillRect(x - 8, y - 4, 16, 8) // cargo bay
+    for (let i = 0; i < e.n; i++) {
+        ctx.fillStyle = ((e.anim >> 3) % 2) ? '#c9ff5c' : '#9ac93c'
+        ctx.fillRect(x - 6 + i * 5, y - 2, 4, 4)
+    }
+    ctx.fillStyle = '#7c8ab0'
+    ctx.fillRect(x - 12, y - 3, 2, 2) // jaw rivets
+    ctx.fillRect(x - 12, y + 1, 2, 2)
+}
+
 export function drawMissile(ctx, m, camX) {
     const x = Math.round(m.x - camX), y = Math.round(m.y)
     ctx.save()
@@ -597,7 +619,8 @@ export function drawBit(ctx, bt, camX, shielded, tick) {
 // darker and colder than Phase-1's flesh, its two red eye-columns stacked
 export function drawP2(ctx, p2, camX, tick) {
     const dying = p2.dyingT > 0
-    const k = dying ? 190 - p2.dyingT : 0
+    const cs = p2.cascade || 190 // #2835: the twin-core death runs its own (double) length
+    const k = dying ? cs - p2.dyingT : 0
     ctx.save()
     if (dying) {
         const cx = Math.round(p2.x - camX) + 60, cy = 120
@@ -605,6 +628,9 @@ export function drawP2(ctx, p2, camX, tick) {
         ctx.rotate(-k * 0.0009)
         ctx.translate(-cx + (((tick * 11) % 3) - 1), -cy + (((tick * 17) % 3) - 1))
     }
+    // #2835: the whole mass sways — the draw rides the sim's swayOff so the
+    // picture and the hit windows never disagree
+    ctx.translate(0, Math.round(p2.swayOff || 0))
     const x = Math.round(p2.x - camX)
     const top = 30, bot = 210
     ctx.fillStyle = '#20263c'
@@ -660,6 +686,11 @@ export function drawP2(ctx, p2, camX, tick) {
             ctx.fillStyle = core.enraged ? '#ff5a6a' : '#d02020'
             ctx.fillRect(mouthX, py - openAmt - 1, 30, 1)
             ctx.fillRect(mouthX, py + openAmt, 30, 1)
+            // #2835: the port that holds the NEXT salvo glints while it gapes
+            if (!dying && p2.port === ci) {
+                ctx.fillStyle = (tick >> 2) % 2 ? '#ffd23c' : '#ff8a2a'
+                ctx.fillRect(mouthX + 13, py - 1, 4, 2)
+            }
         } else {
             ctx.fillStyle = '#4a1020'
             ctx.fillRect(mouthX, py - 14, 30, 28)
@@ -675,11 +706,25 @@ export function drawP2(ctx, p2, camX, tick) {
             ctx.fillStyle = 'rgba(160,190,255,0.12)'
             ctx.fillRect(x - 4, top, W + 40, bot - top)
         }
-        ctx.fillStyle = '#9ac9ff'
-        for (let i = 0; i < 5; i++) {
-            const fx = x + 14 + ((k * 9 + i * 41) % 130)
-            const fy = top + 10 + ((k * 7 + i * 59) % (bot - top - 20))
-            ctx.fillRect(fx, fy, 3 + (k % 4), 3 + ((k >> 1) % 3))
+        // #2835 walking death: a hot seam crosses the face from the port that
+        // fell last toward its twin, and whole rows of plating shed behind it.
+        const lane = Math.max(0, p2.lastCore)
+        const seamLane = k < cs / 2 ? lane : 1 - lane
+        const sx = x + 10 + Math.floor(k * 0.3)
+        const sy = CORE_Y[seamLane]
+        ctx.fillStyle = 'rgba(255,140,60,0.30)'
+        ctx.fillRect(sx - 4, sy - 18, 9, 36)
+        ctx.fillStyle = '#ffd23c'
+        ctx.fillRect(sx, sy - 6 + ((k * 13) % 7), 3, 3)
+        ctx.fillStyle = '#ff8a2a'
+        ctx.fillRect(sx - 6, sy + 8 - ((k * 7) % 9), 3, 3)
+        for (let r = 0; r < 6; r++) {
+            const rp = k - 12 - r * 22
+            if (rp < 0 || rp > 64) continue
+            const a = (1 - rp / 64) * 0.85
+            ctx.fillStyle = `rgba(94,108,142,${a.toFixed(2)})`
+            const ry = top + 10 + r * 28
+            for (let c2 = 4; c2 + x < W; c2 += 26) ctx.fillRect(x + c2 + ((r * 7 + c2) % 5), ry + rp, 14, 5)
         }
     }
     ctx.restore()

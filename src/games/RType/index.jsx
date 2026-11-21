@@ -12,7 +12,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, STAGE_END, STAGE_END2, POD, makeGame, step, autopilot, stateHash, shieldOn, shieldOnAt, enableCoop } from './sim.js'
-import { drawBackground, drawShip, drawShipWing, drawLarva, drawTurret, drawPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge } from './art.js'
+import { drawBackground, drawShip, drawShipWing, drawLarva, drawTurret, drawPod, drawBitPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'r-type:hiscore'
@@ -94,6 +94,10 @@ export default function RType() {
             leg2: () => { audioController.playTone(392, 0.12, 'square', 0.1); audioController.playTone(523, 0.14, 'square', 0.1, 0.1) },
             p2arrive: () => { audioController.playSweep(70, 110, 0.7, 'sawtooth', 0.14); audioController.playTone(140, 0.6, 'triangle', 0.07) },
             p2open: () => audioController.playSweep(70, 150, 0.45, 'sawtooth', 0.11),
+            // #2835: the salvo is the horn's punchline — three low reports in a
+            // walking rhythm; the carrier's death is a hiss into a green chirp.
+            p2salvo: () => { audioController.playTone(150, 0.05, 'square', 0.1); audioController.playTone(132, 0.05, 'square', 0.1, 0.06); audioController.playTone(114, 0.06, 'square', 0.1, 0.12); audioController.playNoise(0.05, 0.05) },
+            bitfree: () => { audioController.playNoise(0.08, 0.07); const n = [700, 880, 1050, 1320]; n.forEach((f, i) => audioController.playTone(f, 0.05, 'triangle', 0.08, i * 0.04)) },
             p2shut: () => { audioController.playSweep(200, 60, 0.2, 'square', 0.1); audioController.playNoise(0.08, 0.08) },
             coredown: () => { audioController.playNoise(0.3, 0.18); audioController.playSweep(240, 40, 0.4, 'sawtooth', 0.14); shake = Math.max(shake, 5) },
             enrage: () => { audioController.playTone(880, 0.09, 'square', 0.1); audioController.playTone(660, 0.09, 'square', 0.1, 0.1); audioController.playTone(880, 0.09, 'square', 0.1, 0.2) },
@@ -146,6 +150,7 @@ export default function RType() {
                 else if (ev === 'die') bursts(22, gs.ship.x - sx, gs.ship.y, 2)
                 else if (ev === 'plug') { bursts(6, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 3); bursts(2, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 2) } // #2823: a plugged hunter POPS — cyan ring, white core
                 else if (ev === 'ram') bursts(8, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 0)
+                else if (ev === 'bitfree') bursts(12, (gs.lastHitX ?? gs.ship.x + 40) - sx, gs.lastHitY ?? gs.ship.y, 1) // the cargo scatters green
                 else if (ev === 'force') { // #2823: attach ceremony — flash + converging sparks at the nose
                     bursts(12, gs.ship.x + 14 - sx, gs.ship.y, 3)
                     converge(8, gs.ship.x + 14 - sx, gs.ship.y, 3)
@@ -224,6 +229,7 @@ export default function RType() {
                 if (e.kind === 'larva') drawLarva(ctx, e, gs.camX)
                 else if (e.kind === 'turret') drawTurret(ctx, e, gs.camX)
                 else if (e.kind === 'pod') drawPod(ctx, e, gs.camX)
+                else if (e.kind === 'bitpod') drawBitPod(ctx, e, gs.camX)
             }
             for (const c of gs.caps) drawCap(ctx, c, gs.camX)
             for (const b of gs.bullets) drawBullet(ctx, b, gs.camX)
@@ -379,6 +385,13 @@ export default function RType() {
                     p1: gs.p1 ? `${gs.p1.mouth}:${gs.p1.coreHp}` : '-',
                     bits: gs.bits.length, shield: shieldOn(gs) ? 1 : 0, leg: gs.leg,
                     p2: gs.p2 ? `${gs.p2.cores[0].hp}/${gs.p2.cores[1].hp}` : '-',
+                    // #2835 fixtures: carriers on screen, the mass's sway, the
+                    // salvo clock and the walking-death walk, all observable
+                    bitpods: gs.enemies.filter((e) => e.kind === 'bitpod').length,
+                    sway: gs.p2 ? Math.round(gs.p2.swayOff * 10) / 10 : 0,
+                    p2port: gs.p2 ? gs.p2.port : -1,
+                    p2dying: gs.p2 ? gs.p2.dyingT : 0,
+                    p2last: gs.p2 ? gs.p2.lastCore : -1,
                     wing: gs.wing ? (gs.wing.out ? 'out' : gs.wing.dead ? 'down' : 'live') : 'none',
                     wingX: gs.wing ? Math.round(gs.wing.x) : 0, wingY: gs.wing ? Math.round(gs.wing.y) : 0,
                     wingLives: gs.wing ? gs.wing.lives : 0, wingHuman: gs.wing && gs.wing.human ? 1 : 0,
@@ -419,6 +432,12 @@ export default function RType() {
                     if (opts.giveWingPod && gs.wing && !gs.wing.pod) gs.wing.pod = { id: gs.nextId++, state: 'attached', x: gs.wing.x + POD.noseX, y: gs.wing.y }
                     if (opts.giveWingBits && gs.wing) { while (gs.wing.bits.length < 4) gs.wing.bits.unshift({ id: gs.nextId++ }) }
                     if (opts.coopOff) gs.wing = null
+                    // #2835 fixtures
+                    if (opts.spawnBitPod && screen === 'play') {
+                        const by = opts.spawnBitPod.y ?? gs.ship.y
+                        gs.enemies.push({ id: gs.nextId++, kind: 'bitpod', x: gs.ship.x + (opts.spawnBitPod.x ?? 70), y: by, baseY: by, bob: 0.5, hp: 7, n: opts.spawnBitPod.n ?? 3, vx: 0, inv: 0, anim: 0, holdT: 40, anchorX: gs.camX, state: 'hold' })
+                    }
+                    if (opts.p2Port !== undefined && gs.p2) gs.p2.port = opts.p2Port
                     return true
                 },
             }
@@ -428,7 +447,7 @@ export default function RType() {
                     `x ${Math.round(gs.ship.x)} (screen ${Math.round(gs.ship.x - gs.camX)})  y ${Math.round(gs.ship.y)}  cam ${Math.round(gs.camX)}${gs.camLock ? ' LOCK' : ''}`,
                     `score ${gs.score}  hi ${Math.max(hiscore, gs.score)}  lives ${gs.lives}  arm ${gs.ship.weapon}${gs.ship.charge ? ` charge ${gs.ship.charge}` : ''}  inv ${gs.ship.inv}  mode ${gs.mode}`,
                     `pod ${gs.pod ? `${gs.pod.state} @${Math.round(gs.pod.x - gs.camX)}` : 'none'}  enemies ${gs.enemies.length}  bullets ${gs.bullets.length}  missiles ${gs.missiles.length}  shots ${gs.shots.length}  phase1 ${gs.p1 ? `${gs.p1.mouth} core ${gs.p1.coreHp}/${gs.p1.coreMax}` : 'field'}`,
-                    `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}` : (gs.leg === 2 ? 'inbound' : '-')}`,
+                    `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}  sway ${Math.round(gs.p2.swayOff)}px salvo-port ${gs.p2.port}${gs.p2.dyingT > 0 ? `  WALK ${gs.p2.dyingT} from port ${gs.p2.lastCore}` : ''}` : (gs.leg === 2 ? 'inbound' : '-')}  carriers ${gs.enemies.filter((e) => e.kind === 'bitpod').length}`,
                     `wing ${gs.wing ? `${gs.wing.out ? 'OUT' : gs.wing.dead ? 'DOWN' : `(${Math.round(gs.wing.x - gs.camX)},${Math.round(gs.wing.y)})`}  lives ${gs.wing.lives}  ${gs.wing.human ? 'HUMAN' : 'CPU'}  arm ${gs.wing.weapon}  pod ${gs.wing.pod ? gs.wing.pod.state : 'none'}  bits ${gs.wing.bits.length}` : 'off'}  p1out ${gs.ship.out ? 'yes' : 'no'}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
@@ -441,6 +460,7 @@ export default function RType() {
                     { label: 'GIVE BITS', run: () => { if (shieldOn(gs)) return 'shield already up'; while (gs.bits.length < 4) gs.bits.unshift({ id: gs.nextId++ }); return shieldOn(gs) ? 'shield — four bits orbiting' : 'bits chained' } },
                     { label: 'TO PHASE-2', run: () => { window.__rTest.setup({ toPhase2: true }); return 'the twin-core fortress looms' } },
                     { label: 'OPEN VENTS', run: () => { if (!gs.p2) return 'no fortress on screen — TO PHASE-2 first'; window.__rTest.setup({ openVents: true }); return 'both vents gape' } },
+                    { label: 'SPAWN BIT POD', run: () => { window.__rTest.setup({ spawnBitPod: { y: Math.round(gs.ship.y) } }); return 'a bit carrier closes in — feed it fire' } },
                     { label: 'TO PHASE-1', run: () => { window.__rTest.setup({ toPhase1: true }); return 'the dreadnought looms' } },
                     { label: 'OPEN MAW', run: () => { window.__rTest.setup({ openMouth: true }); return 'the maw gapes' } },
                     { label: 'CLEAR FIRE', run: () => { gs.bullets.length = 0; gs.missiles.length = 0; return 'lane swept' } },
