@@ -59,6 +59,13 @@ export const CFG = {
                               //   early hop descends into the round it jumped for; 36/36
                               //   seeds clear with the later, tighter hop
     depotHp: 10,              // S3.5 the arms depot — a shootable emplacement
+    // --- #2847 pod carriers: the sky couriers (README gap 0) ---
+    carrierHp: 2,
+    carrierVx: -1.1,
+    carrierHW: 16, carrierHH: 9,   // the airframe's hit box
+    carrierFirst: 320,             // first courier of the run (ticks)
+    carrierNext: 380,             // + up to 240 more, seed arithmetic (no gs.r)
+    podGrav: 0.06, podFallMax: 1.6, podVx: -0.6,
     eBulletSpeed: 2.2,
     respawnFreeze: 50,
     invuln: 100,
@@ -165,6 +172,11 @@ const CAP_KINDS = ['spread', 'machine', 'fire', 'laser']
 const CAP_ALT = [124, 148, 172]  // low (stand), hop, full jump
 const WCODE = { rifle: 0, spread: 1, machine: 2, fire: 3, laser: 4 }
 const KCODE = { r: 0, s: 1, m: 2, f: 3, l: 4 }
+
+// #2847 pod carriers — the flight band sits ABOVE the gun-line (a plane never
+// eats a round aimed at the ground; deliberate up-aim or a hop takes it), yet
+// low enough that a grounded 45° climbs to it within ~20 px of travel.
+export const CARRIER_ALT = [150, 164]
 
 // Gunners holding the waterfall shelves (y = their shelf top).
 const FALLS_GUNNERS = [
@@ -383,7 +395,7 @@ function allyBrain (gs) {
         if (!pad.a && c.y < q.y - 22 && q.onGround) pad.a = true
         if (Math.abs(c.x - q.x) < 16 && c.y < q.y - 26) pad.up = true
     }
-    const v = gs.vc.filter((k) => k.x > q.x - 6).sort((a, b) => a.x - b.x)[0]
+    const v = gs.vc.concat(gs.pods).filter((k) => k.x > q.x - 6).sort((a, b) => a.x - b.x)[0]
     if (!pad.a && v && v.x - q.x < 40 && v.y < q.y - 22) pad.a = true
     return pad
 }
@@ -438,6 +450,13 @@ export function makeGame (seed) {
         barrels: BARREL_AT.map((x) => ({ x, y: CFG.ground, gone: false })),
         capsule: null,              // {x,y,vx} — flies in from the right edge
         nextCapsule: 240,
+        // #2847 pod carriers: low gunships ferrying one lettered pod each.
+        // ZERO gs.r draws — schedule, altitude and letter ride seed/tick
+        // arithmetic (the R-TYPE S3 lesson #2835: the tuned stream stands).
+        carriers: [],             // {x,y,vx,hp,kind}
+        pods: [],               // released cargo {x,y,vx,vy,kind} — falls, settles, collectable
+        nextCarrier: CFG.carrierFirst,
+        carrierN: 0,            // courier index for this run (letter/alt seed)
         depot: { x: 1700, y: CFG.ground, hp: CFG.depotHp, aim: Math.PI, t: 70, dead: false, spawnT: 240 },
         vc: [],                     // S3.5 volley capsules — the depot's payout {x,y,vx,kind}
         boss: null,                 // the gate, once the arena opens (see makeBoss)
@@ -634,6 +653,7 @@ function enterFalls (gs) {
     gs.soldiers = FALLS_GUNNERS.map((d) => ({ x: d.x, y: d.y, hold: true, hp: 1, awake: false, t: 0, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }))
     gs.snipers = []   // the tree line stays in the jungle
     gs.vc.length = 0  // the depot's payout flies in the jungle too
+    gs.carriers.length = 0; gs.pods.length = 0   // #2847: the canyon owns the vertical — no sky couriers below the falls
     gs.pb.length = 0; gs.eb.length = 0; gs.capsule = null
     gs.ev.push({ type: 'enter' })
 }
@@ -831,6 +851,28 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             }
             return false
         }
+        // #2847 pod carriers: the airframe takes two rounds — spark, then the
+        // courier falls in a named boom and jettisons its pod (the original's
+        // power-up courier: the prize is earned with aim). Mutant anchor line
+        // (`cargo-jettison`). The band rides above the gun-line, so this box
+        // never intercepts ground fire — hitting it is a deliberate up-aim.
+        for (const [ci, cr] of gs.carriers.entries()) {
+            if (!cr.dead && Math.abs(b.x - cr.x) <= CFG.carrierHW && Math.abs(b.y - cr.y) <= CFG.carrierHH) {
+                if (pierce && hs.includes('c' + ci)) continue
+                cr.hp -= 1
+                gs.ev.push({ type: 'spark', x: b.x, y: b.y })
+                if (cr.hp <= 0) {
+                    cr.dead = true
+                    gs.score += 500
+                    gs.ev.push({ type: 'boom', x: cr.x, y: cr.y, kind: 'kill' })
+                    gs.pods.push({ x: cr.x, y: cr.y + 12, vx: CFG.podVx, vy: 0, kind: cr.kind })
+                    if (gs.pods.length > 4) gs.pods.shift()
+                    gs.ev.push({ type: 'cargo', k: cr.kind })
+                }
+                if (pierce) { hs.push('c' + ci); continue }
+                return false
+            }
+        }
         for (const [bi, br] of gs.barrels.entries()) {
             if (!br.gone && Math.hypot(b.x - br.x, b.y - (br.y - 10)) < 12) {
                 br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true)
@@ -1017,6 +1059,58 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         }
     }
 
+    // --- #2847 pod carriers: one courier in the sky at a time (the capsule
+    // law — the jungle sends its guns one honest flight at a time). Schedule,
+    // altitude and letter are seed/tick arithmetic — zero gs.r draws, so the
+    // tuned stream is untouched; the courier is non-lethal on contact (it is
+    // a delivery, not an attacker) and an untouched run escapes with its pod,
+    // rescheduling the next flight. ---
+    if (gs.phase === 'jungle' && gs.carriers.length === 0 && gs.tick >= gs.nextCarrier) {
+        const pick = (gs.seed + gs.carrierN) % CAP_KINDS.length
+        const band = gs.seed + gs.carrierN * 7
+        gs.carriers.push({
+            x: gs.cam + W + 18,
+            y: CARRIER_ALT[band & 1],
+            vx: CFG.carrierVx, hp: CFG.carrierHp,
+            kind: CAP_KINDS[pick],
+            dead: false,
+        })
+        gs.carrierN += 1
+        gs.ev.push({ type: 'flyin', k: gs.carriers[0].kind })
+    }
+    if (gs.carriers.length) {
+        let reschedule = 0
+        for (const cr of gs.carriers) {
+            cr.x += cr.vx
+            if (cr.dead || cr.x < gs.cam - 20) reschedule = gs.tick
+        }
+        gs.carriers = gs.carriers.filter((cr) => !cr.dead && cr.x >= gs.cam - 20)
+        if (reschedule) gs.nextCarrier = reschedule + CFG.carrierNext + (((gs.seed ^ (reschedule * 2654435761)) >>> 19) % 240)
+    }
+
+    // --- #2847 released pods: cargo falls (light chute gravity), settles on
+    // the deck, and obeys the capsule's pickup law verbatim — per-seat, same
+    // touch box, capture kills the wheel. Despawn is the scroll, as ever. ---
+    gs.pods = gs.pods.filter((c) => {
+        c.x += c.vx
+        if (c.y < CFG.ground - 2) {
+            c.vy = Math.min(CFG.podFallMax, c.vy + CFG.podGrav)
+            c.y = Math.min(CFG.ground - 2, c.y + c.vy)
+            if (c.y >= CFG.ground - 2) c.vy = 0
+        }
+        if (p.inv >= 0 && !p.out && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
+            if (p.weapon !== c.kind) { p.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind }) }
+            else gs.ev.push({ type: 'pickup', k: c.kind })
+            return false
+        }
+        if (q.inv >= 0 && !q.out && q.dead === 0 && Math.abs(q.x - c.x) < 12 && Math.abs(q.y - 14 - c.y) < 16) {
+            if (q.weapon !== c.kind) { q.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind, o: 1 }) }
+            else gs.ev.push({ type: 'pickup', k: c.kind, o: 1 })
+            return false
+        }
+        return c.x > gs.cam - 16
+    })
+
     // --- S3.5 volley capsules (the depot's payout): they fly the same honest
     // line with their letters already stamped; same pickup, same despawn. ---
     gs.vc = gs.vc.filter((c) => {
@@ -1145,6 +1239,12 @@ export function autopilot (gs) {
             const c = gs.vc.filter((v) => v.x > p.x - 6).sort((a, b) => a.x - b.x)[0]
             if (c && c.x - p.x < 34 && c.y < p.y - 22) pad.a = true
         }
+        // #2847 released pods ride the same prize law — hop the ones still
+        // falling, run down the ones settling on the deck.
+        if (!pad.a && gs.pods.length) {
+            const c = gs.pods.filter((v) => v.x > p.x - 6).sort((a, b) => a.x - b.x)[0]
+            if (c && c.x - p.x < 34 && c.y < p.y - 22) pad.a = true
+        }
         return pad
     }
 
@@ -1267,6 +1367,11 @@ export function stateHash (gs) {
     for (const br of gs.barrels) put(br.gone ? 1 : 0)
     put(gs.capsule ? gs.capsule.x : -9999); put(gs.nextCapsule)
     put(gs.capsule ? (CAP_KINDS.indexOf(gs.capsule.kind) + 1) : 0)
+    // #2847 the sky couriers are sim truth — schedule, airframes and pods ride
+    // the hash (a replay that dropped a carrier must diverge loudly).
+    put(gs.nextCarrier); put(gs.carrierN)
+    for (const cr of gs.carriers) { put(cr.x); put(cr.y); put(cr.hp); put(CAP_KINDS.indexOf(cr.kind) + 1) }
+    for (const c of gs.pods) { put(c.x); put(c.y); put(c.vy); put(CAP_KINDS.indexOf(c.kind) + 1) }
     put(gs.depot ? gs.depot.hp : -1); put(gs.depot ? (gs.depot.dead ? 1 : 0) : -1); put(gs.depot ? gs.depot.t : -1); put(gs.depot ? gs.depot.spawnT : -1)
     for (const c of gs.vc) put(c.x)
     if (gs.boss) {

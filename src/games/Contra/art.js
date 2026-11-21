@@ -364,6 +364,61 @@ export function drawBarrel (ctx, br) {
     ctx.restore()
 }
 
+// #2847 pod carrier — Konami's power-up courier: a chunky dark-olive gunship
+// running low across the jungle, pod slung on twin cables under the belly.
+// The rotor is a chopping disc (the blade line sweeps 4 phases), the cockpit
+// glass catches the sky, and a wounded airframe (hp 1) trails deterministic
+// embers. Art reads the tick — no rng on the pixel grid.
+export function drawCarrier (ctx, cr, tick) {
+    ctx.save(); ctx.translate(Math.round(cr.x), Math.round(cr.y))
+    // cargo cables + the pod it ferries (the prize visible before the fight)
+    ctx.fillStyle = '#20242c'
+    ctx.fillRect(-6, 7, 1, 6); ctx.fillRect(5, 7, 1, 6)
+    drawCapsule(ctx, { x: 0, y: 15 }, tick)
+    // tail boom + fin
+    ctx.fillStyle = '#4a5430'
+    ctx.fillRect(10, -4, 14, 5)
+    ctx.fillStyle = '#38401f'
+    ctx.fillRect(21, -10, 3, 7)
+    ctx.fillStyle = '#e23b2e'
+    ctx.fillRect(22, -9, 2, 2)
+    // airframe: hull, lit belly line, engine nacelle
+    ctx.fillStyle = '#55623a'
+    ctx.fillRect(-14, -7, 26, 12)
+    ctx.fillStyle = '#6d7c48'
+    ctx.fillRect(-14, -7, 26, 3)
+    ctx.fillStyle = '#38401f'
+    ctx.fillRect(-14, 3, 26, 2)
+    ctx.fillStyle = '#3c4650'
+    ctx.fillRect(-18, -2, 6, 7)
+    // cockpit glass, catching the canopy green
+    ctx.fillStyle = '#8ad4ff'
+    ctx.fillRect(-12, -5, 5, 4)
+    ctx.fillStyle = '#dcedf5'
+    ctx.fillRect(-12, -5, 2, 2)
+    // landing skids
+    ctx.fillStyle = '#20242c'
+    ctx.fillRect(-12, 5, 22, 1)
+    ctx.fillRect(-10, 3, 1, 3); ctx.fillRect(6, 3, 1, 3)
+    // rotor: mast + a blade line that chops (length pulses over 4 phases)
+    ctx.fillStyle = '#20242c'
+    ctx.fillRect(-1, -11, 2, 4)
+    const chop = [20, 14, 20, 10][Math.floor(tick / 3) % 4]
+    ctx.fillStyle = '#aab4a0'
+    ctx.fillRect(-chop, -12, chop * 2, 1)
+    ctx.fillStyle = '#5a6450'
+    ctx.fillRect(-1, -13, 2, 2)
+    // wounded: embers streaming from the nacelle (deterministic — tick-phased)
+    if (cr.hp <= 1) {
+        for (let i = 0; i < 4; i++) {
+            const e = (Math.floor(tick / 2) + i * 5) % 16
+            ctx.fillStyle = e % 2 ? '#ff8c1a' : '#7d848c'
+            ctx.fillRect(7 + e, 2 + ((i + Math.floor(tick / 4)) % 3), 2, 2)
+        }
+    }
+    ctx.restore()
+}
+
 export function drawCapsule (ctx, c, tick) {
     ctx.save(); ctx.translate(Math.round(c.x), Math.round(c.y))
     const pulse = Math.floor(tick / 8) % 2
