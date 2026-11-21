@@ -1449,35 +1449,44 @@ const browser = await launch()
     r.check('game over returns to attract on any key', backHome.screen === 'attract', `screen=${backHome.screen}`)
 
     // #2877 pixel legs: in the yard the ground shadow exists AND it MOVES.
-    // Fresh cabinet, warp to the fixed end-camera (clamped 640 — it cannot
-    // drift), park the dragon at x 740: no crate, drum, seep or pick nearby.
+    // Fresh cabinet, warp to the end; park the dragon at x 850 — inside the
+    // camera's clamp (it stays 640 there) and clear of crates, drums, seeps
+    // and Marian herself.
     await page.evaluate(() => window.__game.reset(23))
     await page.waitForTimeout(150)
-    await page.evaluate(() => { window.__ddTest.setup({ warp: 'marian', clearEnemies: true }); window.__ddTest.setup({ x: 740 }) })
+    await page.evaluate(() => { window.__ddTest.setup({ warp: 'marian', clearEnemies: true }); window.__ddTest.setup({ x: 850 }) })
     await page.waitForTimeout(600)
     const yardP = await page.evaluate(() => window.__ddTest.probe())
     r.check('#2877 setup: the yard stands with the end camera locked (cast law live)',
-        yardP.stage === 2 && Math.abs(yardP.cam - 640) < 1 && Math.abs(yardP.x - 740) < 1, `stage=${yardP.stage} cam=${yardP.cam} x=${yardP.x}`)
+        yardP.stage === 2 && Math.abs(yardP.cam - 640) < 1 && Math.abs(yardP.x - 850) < 1, `stage=${yardP.stage} cam=${yardP.cam} x=${yardP.x}`)
     const shadowAt = () => page.evaluate(() => {
         const p = window.__ddTest.probe()
-        const cv = window.__game.canvas()
+        const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+        if (!cv) return { tick: p.tick, off: 0, delta: -1, white: 99 }
         const g = cv.getContext('2d')
         const sx = Math.round(p.x - p.cam)
         const sy = p.y + 1                       // the shadow ellipse's centre row
         const d = g.getImageData(sx - 14, sy, 29, 1).data
         const lum = (i) => 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]
-        let dark = 0, dl = Infinity
+        let dark = 0, dl = Infinity, white = 0
         const refs = []
         for (let i = 0; i < 29; i++) {
             const l = lum(i)
+            if (l > 180) white += 1              // banner glyphs — the road sign has passed when this is 0
             if (i >= 5 && i <= 23 && l < dl) { dl = l; dark = i - 14 }
             if (i < 5 || i > 23) refs.push(l)
         }
-        return { tick: p.tick, off: dark, delta: refs.reduce((a, b) => a + b, 0) / refs.length - dl }
+        return { tick: p.tick, off: dark, delta: refs.reduce((a, b) => a + b, 0) / refs.length - dl, white }
     })
-    const firstShadow = await shadowAt()
-    r.check('#2877: the dragon casts a shadow in the yard — the floor row under his feet darkens',
-        firstShadow.delta >= 10, `floor−dark=${firstShadow.delta.toFixed(1)}`)
+    // the stage-entry banner rides the yard for a couple of seconds — its dark
+    // board lies about the floor, so the probe waits for the sign to clear.
+    let firstShadow = await shadowAt()
+    for (let i = 0; i < 45 && (firstShadow.white > 0 || firstShadow.delta < 10); i++) {
+        await page.waitForTimeout(100)
+        firstShadow = await shadowAt()
+    }
+    r.check('#2877: the dragon casts a shadow in the yard — the floor row under his feet darkens (banner cleared first)',
+        firstShadow.delta >= 10 && firstShadow.white === 0, `floor−dark=${firstShadow.delta.toFixed(1)} white=${firstShadow.white}`)
     const cols = new Set()
     const tSh = firstShadow.tick
     for (let i = 0; i < 70; i++) {
