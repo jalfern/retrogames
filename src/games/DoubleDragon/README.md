@@ -179,6 +179,25 @@ S4 (the second dragon, #2807):
   was removed rather than pinned — guard-holding lives inside the waves, where
   the hang-back law keeps the pair arriving in order.
 
+#2851 partner personality (forge) — the mirror stops being a mirror:
+
+- **Guardian law** — when the seatmate is in a thug's grip, the blue seat
+  abandons its own nearest mark and sprints the holder (grip identity is
+  `state === 'grab' && tgt === tag`, not the id — fixtures reuse ids). The
+  solo autopilot passes no ally, so attract and the WINNABLE stream keep the
+  old law and their hashes.
+- **Release law** — a grip is only as strong as the thug holding it: when the
+  holder is staggered, dropped or killed while gripping a dragon, his prize
+  comes loose (idle, unstuck, 24 ticks of mercy i-frames, a blue escape
+  sweep). Symmetric across seats — a human P1 breaking a grip frees CPU
+  Jimmy, and vice versa. Matches the arcade: hit the grabber, he lets go.
+- **Technician's cadence** — the arcade duo split by school, Billy=power /
+  Jimmy=technique. The ally seat abandons the mirror's 9-beat hammer-kick
+  for a 13-beat jab-jab-cross (13 ⊥ 9): the dragons interleave instead of
+  swinging the same bar in lockstep.
+- The `guardian-deaf`, `grip-permanent` and `cadence-mirror` mutants name
+  each law's collapse.
+
 ## Controls
 
 Arrows walk (UP/DOWN = depth) · SPACE jump · X kick · Z punch · ? ops card.
@@ -189,8 +208,8 @@ Pad: JUMP / KICK / PUNCH (`thirdAction`, #2324).
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 97 checks: boots, laws, casters, duel, rescue, co-op seats, winnable, browser leg
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind must go RED (named)
+npm run ddragoncheck                    # 112 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), winnable, browser leg
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -200,9 +219,10 @@ of nightly 44762398189).
 
 ## Honest gaps (the whole commission shipped; what's still short)
 
-- Jimmy's CPU brain is the player's own brain with an ally lens (#2833 spacing,
-  spin and drift); the arcade had no CPU partner to imitate, so the
-  personality is inference, not restoration.
+- **DISCLAIMER** — the arcade had no CPU partner to imitate: Jimmy's
+  personality is designed, not restored (#2851: the guardian law, the
+  release law, a 13-beat technician's cadence over #2833's manners).
+  Seat-specific throws and post-KO flair are open craft, not fidelity gaps.
 - Two humans at one keyboard is always cramped; P2 (WASD+F/G/V) lives to the
   left of P1's arrows cluster by necessity.
 - The yard's light pools sway but cast no moving shadows and the floor carries
