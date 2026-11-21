@@ -477,17 +477,24 @@ export const PROPS_YARD = [
 
 // Marian — tied to the yard post all stage 2 (#2807: "Marian's rescue
 // ending"). Two rope bands until Billy cuts them; then the cheer.
-export function drawMarian(ctx, m, camX) {
+// #2825 item 2: she lives while she waits — a sway, a hair flick, a blink;
+// and the freed cheer hops, waves and throws a heart.
+export function drawMarian(ctx, m, camX, tick = 0) {
     const sx = Math.round(m.x - camX)
     if (sx < -30 || sx > W + 30) return
     const hop = m.freed && Math.floor(m.cheer / 8) % 2 === 0 ? -2 : 0
+    const sway = m.freed ? 0 : (Math.floor(tick / 24) % 2 ? 1 : 0)   // worried shifting
+    const hair = Math.floor(tick / 16) % 2 ? 1 : 0
+    const blink = !m.freed && tick % 170 < 4
     const y = Math.round(m.y) + hop
     drawShadow(ctx, sx, Math.round(m.y) + 1, 12, 0.3)
-    // the post
+    // the post — coil of cut rope at its foot once she's free
     ctx.fillStyle = '#3c2c18'
     ctx.fillRect(sx + 4, Math.round(m.y) - 30, 4, 30)
     ctx.fillStyle = '#281d10'
     ctx.fillRect(sx + 4, Math.round(m.y) - 30, 1, 30)
+    ctx.fillStyle = '#4a3620'
+    ctx.fillRect(sx + 3, Math.round(m.y) - 1, 6, 1)
     // legs + skirt
     ctx.fillStyle = '#3a5a8c'
     ctx.fillRect(sx - 4, y - 12, 8, 6)
@@ -495,27 +502,32 @@ export function drawMarian(ctx, m, camX) {
     ctx.fillRect(sx - 3, y - 6, 2, 6); ctx.fillRect(sx + 1, y - 6, 2, 6)
     ctx.fillStyle = '#8a3040'
     ctx.fillRect(sx - 4, y - 1, 3, 2); ctx.fillRect(sx + 1, y - 1, 3, 2)
-    // torso
+    // torso (sways while tied)
     ctx.fillStyle = '#d0507a'
-    ctx.fillRect(sx - 4, y - 22, 8, 10)
-    // arms — bound in front, up in the cheer
+    ctx.fillRect(sx - 4 + sway, y - 22, 8, 10)
+    // arms — bound in front, waving in the cheer
     ctx.fillStyle = '#d8a06a'
     if (!m.freed) {
         ctx.fillRect(sx + 3, y - 19, 3, 2)
         ctx.fillRect(sx - 6, y - 19, 3, 2)
-    } else {
-        ctx.fillRect(sx - 6, y - 28, 2, 7)
-        ctx.fillRect(sx + 4, y - 28, 2, 7)
+    } else if (Math.floor(m.cheer / 6) % 2) {          // left up, right pumping
+        ctx.fillRect(sx - 7, y - 29, 2, 8)
+        ctx.fillRect(sx + 4, y - 25, 2, 6)
+    } else {                                            // right up, left pumping
+        ctx.fillRect(sx + 5, y - 29, 2, 8)
+        ctx.fillRect(sx - 6, y - 25, 2, 6)
     }
-    // head + hair
+    // head + hair (flicks at the tips)
     ctx.fillStyle = '#e8b98a'
-    ctx.fillRect(sx - 3, y - 30, 6, 6)
+    ctx.fillRect(sx - 3 + sway, y - 30, 6, 6)
     ctx.fillStyle = '#6a4022'
-    ctx.fillRect(sx - 4, y - 31, 8, 3)
-    ctx.fillRect(sx - 4, y - 28, 2, 8)
-    ctx.fillRect(sx + 2, y - 28, 2, 8)
-    ctx.fillStyle = '#1a1208'
-    ctx.fillRect(sx - 1, y - 28, 1, 1)
+    ctx.fillRect(sx - 4 + sway, y - 31, 8, 3)
+    ctx.fillRect(sx - 4 + sway, y - 28, 2, 8)
+    ctx.fillRect(sx + 2 + sway, y - 28, 2, 7 + hair)
+    if (!m.freed && !blink) {
+        ctx.fillStyle = '#1a1208'
+        ctx.fillRect(sx - 1 + sway, y - 28, 1, 1)
+    }
     // ropes hold until the cut
     if (!m.freed) {
         ctx.fillStyle = '#cbbf9a'
@@ -528,8 +540,16 @@ export function drawMarian(ctx, m, camX) {
             ctx.fillRect(sx - 1, y - 17, 3, 2)
         }
     } else {
-        ctx.fillStyle = '#9c8f6d'                   // cut rope on the boards
+        ctx.fillStyle = '#9c8f6d'                   // cut rope coiled on the boards
         ctx.fillRect(sx - 4, Math.round(m.y) - 3, 8, 2)
+        ctx.fillRect(sx - 3, Math.round(m.y) - 5, 6, 2)
+        // #2825: the cheer throws a heart — it floats up and fades out
+        if (m.cheer < 80 && Math.floor(m.cheer / 3) % 2) {
+            const hy = y - 36 - Math.floor(m.cheer / 3)
+            ctx.fillStyle = m.cheer < 56 ? '#ff9ec0' : '#e86a92'
+            ctx.fillRect(sx - 2, hy, 2, 2); ctx.fillRect(sx + 1, hy, 2, 2)
+            ctx.fillRect(sx - 2, hy + 2, 5, 2); ctx.fillRect(sx, hy + 4, 1, 1)
+        }
     }
 }
 
@@ -939,6 +959,10 @@ export function drawBanner(ctx, gs) {
         if (gs.banner > 0 && (gs.banner > 20 || gs.banner % 6 < 4)) {
             label(ctx, 'STAGE 2', 116, 78, '#ff9a7a', 2)
             label(ctx, 'THE HIDEOUT', 102, 108, '#fff', 1)
+        } else if (gs.duelIntro > 0) {
+            // #2825 item 4: the boss wave announces itself before the exchange
+            label(ctx, 'WILLIAMS', 112 + (gs.duelIntro % 8 < 4 ? 0 : 1), 78, '#ff5a52', 2)
+            label(ctx, 'THE LIEUTENANT', 96, 108, '#fff', 1)
         } else if (rescueReady(gs) && gs.tick % 40 < 28) {
             label(ctx, 'CUT HER LOOSE!', 96, 84, '#ff9ec0', 1)
         }

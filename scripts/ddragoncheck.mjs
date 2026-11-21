@@ -421,6 +421,53 @@ const runFull = (seed, max = 60000) => {
     r.check('S3: winning the duel does NOT clear the stage — the rescue must be earned', gs.mode === 'play' && !!gs.marian && !gs.marian.freed && rescueReady(gs), `mode=${gs.mode} ready=${rescueReady(gs)}`)
 }
 
+{ // #2825 item 4: the duel announces itself — name cue, intro clock, held pose
+    const gs = makeGame(63)
+    enterStage2(gs)
+    gs.waveIdx = 2; gs.camX = 340; gs.billy.x = 620; gs.billy.inv = CFG.respawnIFrames
+    gs.events.length = 0
+    step(gs, {})
+    const sawDuel = gs.events.includes('duel') && gs.duelIntro > 0
+    let frozen = false
+    for (let i = 0; i < 200 && gs.duelIntro > 0; i++) {
+        step(gs, {}); gs.events.length = 0
+        const d = gs.enemies.find((e) => e.kind === 'duel')
+        if (d && d.state === 'walk') { const x0 = d.x; step(gs, {}); gs.events.length = 0; frozen = d.x === x0; break }
+    }
+    r.check('S3 #2825: the boss wave announces itself — WILLIAMS cue, intro clock, held pose at the frame edge', sawDuel && frozen, `cue=${sawDuel} frozen=${frozen}`)
+    for (let i = 0; i < 200 && gs.duelIntro > 0; i++) { step(gs, {}); gs.events.length = 0 }
+    const d2 = gs.enemies.find((e) => e.kind === 'duel')
+    r.check('S3 #2825: the lieutenant answers when the announce ends — the duel is on', !!d2 && gs.duelIntro === 0, `intro=${gs.duelIntro}`)
+}
+
+{ // #2825 item 3: throwers keep thrower's distance — back-pedal, don't brawl
+    const gs = makeGame(64)
+    gs.billy.inv = CFG.respawnIFrames
+    gs.billy.x = 100
+    gs.enemies.push({ id: 930, kind: 'duel', x: 120, y: gs.billy.y, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 99999, attackCooldown: 99999, inv: 0, spinHit: false })
+    for (let i = 0; i < 30; i++) { step(gs, {}); gs.events.length = 0 }
+    const e = gs.enemies[0]
+    r.check('S3 #2825: an armed thrower at punching range back-pedals to a fresh angle instead of trading fists', e && e.x > 130 && gs.billy.lives === 3, `x 120->${e ? e.x.toFixed(0) : 'gone'} lives=${gs.billy.lives}`)
+}
+
+{ // #2825 item 7: the yard reports in pine — crates own their sounds
+    const hits1 = []
+    const gs = makeGame(61)
+    gs.billy.inv = CFG.respawnIFrames
+    const bar = gs.barrels.find((q) => q.x === 250)
+    gs.billy.x = bar.x - 12; gs.billy.y = bar.y
+    for (let i = 0; i < 60; i++) { step(gs, { punch: i % 10 === 0 }); hits1.push(...gs.events); gs.events.length = 0 }
+    r.check('the street still reports oak — barrels keep barrel_hit/break', hits1.includes('barrel_hit') && !hits1.includes('crate_hit') && !gs.barrels.includes(bar), `hits=${[...new Set(hits1)].join(',')}`)
+    const hits2 = []
+    const g2 = makeGame(62)
+    enterStage2(g2)
+    const crate = g2.barrels.find((q) => q.kind === 'crate')
+    g2.billy.inv = CFG.respawnIFrames
+    g2.billy.x = crate.x - 12; g2.billy.y = crate.y
+    for (let i = 0; i < 80 && g2.barrels.includes(crate); i++) { step(g2, { punch: i % 10 === 0 }); hits2.push(...g2.events); g2.events.length = 0 }
+    r.check('S3 #2825: crates speak their own heavier tongue — crate_hit/crate_break, never barrel_*', hits2.includes('crate_hit') && hits2.includes('crate_break') && !hits2.includes('barrel_hit') && !hits2.includes('barrel_break'), `hits=${[...new Set(hits2)].join(',')}`)
+}
+
 { // S3 Marian: locked while the duel lives; two cuts and the run goes home
     const gs = makeGame(45)
     enterStage2(gs)

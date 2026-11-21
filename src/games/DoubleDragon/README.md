@@ -133,6 +133,24 @@ S4 (the second dragon, #2807):
   axes toward a target (walk to the target's side of wood; never mash depth
   into it).
 
+#2825 polish (QA) on S3:
+
+- **The cast is HEARD coming** — `aim` rides a rising wind-up whoosh under
+  the blip, and the cast itself rings steel (1560 Hz + a noise tick), so a
+  pad player can hear the lane they must leave.
+- **Throwers keep thrower's distance** — an armed Williams at punching range
+  back-pedals and strafes to a fresh angle instead of idling into the fist
+  fight (walk FSM; a spinner with its reload still up, or a cornered man,
+  still brawls). The duel holds his distance always.
+- **The duel announces itself** — the boss wave fires a `duel` cue and a
+  `WILLIAMS / THE LIEUTENANT` banner; the lieutenant marches in and HOLDS his
+  pose at the frame edge (`gs.duelIntro`, 90 ticks) before the exchange.
+- **The yard reports in pine** — crates push `crate_hit`/`crate_break` (a
+  heavier thud and split) so stage 2 sounds different from the barrels.
+- **Marian lives** — she sways, flicks her hair and blinks while tied; the
+  freed cheer hops, waves alternately and floats a pixel heart; the post
+  wears its rope coil after the cut.
+
 ## Controls
 
 Arrows walk (UP/DOWN = depth) · SPACE jump · X kick · Z punch · ? ops card.
@@ -160,6 +178,8 @@ of nightly 44762398189).
   fodder, not a missing rule.
 - Two humans at one keyboard is always cramped; P2 (WASD+F/G/V) lives to the
   left of P1's arrows cluster by necessity.
+- The yard's light pools sway but cast no moving shadows and the floor carries
+  no swarf/drip dressing (#2825 items deferred to a future art pass).
 - No combos/chain scoring bonuses; the original scores per-KO with a simple
   chain multiplier — carry added, chain not.
 - Marian arrives tied (S3) but the game opens without the original's
