@@ -66,6 +66,10 @@ export const CFG = {
     // --- #2882 chain scoring ---
     chainWindow: 180,   // a hot chain cools after this many ticks without a take (~3 s)
     chainMax: 4,        // the escalation tops out at ×4 (Abobo pays 4000 at the cap)
+    // --- #2857 partner-personality juice (all render-side laws: hash-free) ---
+    guardTicks: 8,      // a guardian sprint keeps its glint trail this long
+    reliefTicks: 9,     // freed from a grip: arms-up relief pose
+    flourishTicks: 20,  // own-hand KO: flick of the wrist, then the shoulder check
 }
 
 export const ENEMY_DEF = {
@@ -125,6 +129,9 @@ function makeFighter(tag) {
         human: false,
         out: false,
         backAt: -9999, // #2833: tick a drained seat returned on second wind (HUD flash window)
+        guard: 0,      // #2857: ticks left wearing the guardian glint (sprinting the holder)
+        relief: 0,     // #2857: ticks left of the freed-seat arms-up pose
+        flourish: 0,   // #2857: ticks left of the post-KO flourish (flick → shoulder check)
     }
 }
 
@@ -188,6 +195,7 @@ export function makeGame(seed = 1, opts = {}) {
         rescueT: 0,             // cheer ticks after the ropes part
         scoreFlash: null, // { v, t } — HUD score delta on a KO/pickup (juice, not scored state)
         fx: null,       // { x, y } — where the last barrel splintered (shell shard spawn, juice)
+        gripFx: null,   // #2857 { x, y } — where a grip just broke (shell impact flash, juice)
         events: [],   // one-shot cues drained by the shell (sound/juice only)
         chain: 0,     // #2882: consecutive takes; the payout rides min(chain, chainMax)
         chainT: 0,    // ticks left in the chain window — a lapse cools the chain to 0
@@ -210,6 +218,7 @@ function spawnEnemy(gs, kind, side, stick) {
         tgt: null,                          // S4: which dragon this thug works
         attackCooldown: 30 + Math.floor(rng(gs) * 60),
         inv: 0, spinHit: false,
+        wob: 0,                             // #2857: stagger wobble juice (never hashed)
     }
     gs.enemies.push(e)
     return e
@@ -385,16 +394,24 @@ function playerDies(gs, p) {
 }
 
 // hit an enemy; returns true if it died
-function hurtEnemy(gs, e, dmg, knockdown, onDowned, seat) {
+function hurtEnemy(gs, e, dmg, knockdown, onDowned, seat, kind) {
     if (e.inv > 0 || e.state === 'dying' || e.state === 'getup') return false
     if (e.state === 'down' && !onDowned) return false
     e.hp -= dmg
-    gs.events.push(blue(seat, knockdown ? 'hit_hard' : 'hit'))
+    // #2857 cadence readability: the blue seat's bare jab bites with its own
+    // voice — a snap, not a slam — so technique reads apart from power at an
+    // ear. Billy's sounds and every knockdown keep the shared hit/hit_hard.
+    const jab = seat === 'jimmy' && kind === 'punch' && !knockdown
+    gs.events.push(blue(seat, jab ? 'jab' : knockdown ? 'hit_hard' : 'hit'))
     if (e.hp <= 0) {
         e.state = 'dying'; e.stateT = 0
         const v = payTakedown(gs, ENEMY_DEF[e.kind].score)
         gs.scoreFlash = { v, t: 48, m: gs.chain } // #2810 item 6, #2882 rides the tag
         gs.events.push('ko')
+        // #2857 post-KO flair: the seat that dropped him poses over the body —
+        // the arcade strut. A barrel's splinter pays score but never the pose.
+        const hero = fighters(gs).find((pp) => pp.tag === seat)
+        if (hero) { hero.flourish = CFG.flourishTicks; gs.events.push(blue(seat, 'flair')) }
         if (e.hasStick && !e.stickDropped) {
             e.hasStick = false
             gs.pickups.push({ x: e.x, y: e.y, kind: 'stick', bob: 0 })
@@ -406,7 +423,13 @@ function hurtEnemy(gs, e, dmg, knockdown, onDowned, seat) {
         }
         return true
     }
-    if (knockdown) { e.state = 'down'; e.stateT = 0 } else { e.state = 'stagger'; e.stateT = CFG.hitstun }
+    if (knockdown) { e.state = 'down'; e.stateT = 0 }
+    else {
+        e.state = 'stagger'; e.stateT = CFG.hitstun
+        // #2857: the technician's jabs leave a wider wobble on the man they
+        // rock — the blue seat's hits read bigger at a glance than the red's.
+        e.wob = seat === 'jimmy' ? 7 : 4
+    }
     return false
 }
 
@@ -463,7 +486,7 @@ function applySwing(gs, p) {
         const dx = (e.x - p.x) * p.face
         if (dx > -6 && dx <= reach && Math.abs(e.y - p.y) <= tol) {
             p.attackHit.add(e.id)
-            hurtEnemy(gs, e, dmg, down, undefined, p.tag)
+            hurtEnemy(gs, e, dmg, down, undefined, p.tag, p.state)
             if (p.state === 'whip') p.lash = CFG.whipFlash   // #2819: crack on the bite tick
         }
     }
@@ -486,7 +509,7 @@ function applyJumpKick(gs, p) {
         if (p.attackHit.has(e.id) || e.state === 'dying' || e.state === 'down') continue
         if (Math.abs(e.x - p.x) <= 18 && Math.abs(e.y - p.y) <= CFG.punch.depth) {
             p.attackHit.add(e.id)
-            hurtEnemy(gs, e, CFG.jumpKickDmg, true, undefined, p.tag)
+            hurtEnemy(gs, e, CFG.jumpKickDmg, true, undefined, p.tag, 'jumpkick')
         }
     }
 }
@@ -497,7 +520,7 @@ function applySpin(gs, p) {
         const dx = Math.abs(e.x - p.x)
         if (dx <= CFG.spin.reach && Math.abs(e.y - p.y) <= 10) {
             p.attackHit.add(e.id)
-            hurtEnemy(gs, e, CFG.spin.dmg, true, undefined, p.tag)
+            hurtEnemy(gs, e, CFG.spin.dmg, true, undefined, p.tag, 'spin')
         }
     }
     for (const bar of gs.barrels) {
@@ -517,7 +540,7 @@ function applyStomp(gs, p) {
         if (Math.abs(e.x - p.x) <= reachFor(p, 'kick') && Math.abs(e.y - p.y) <= 9) {
             p.attackHit.add(e.id)
             e.inv = 0
-            hurtEnemy(gs, e, 1, false, true, p.tag)
+            hurtEnemy(gs, e, 1, false, true, p.tag, 'stomp')
             if (e.hp > 0) { e.state = 'down'; e.stateT = Math.floor(CFG.downTime / 2) }
             gs.events.push('stomp')
         }
@@ -529,11 +552,17 @@ export function updateFighter(gs, p, pad) {
     if (p.lash > 0) p.lash -= 1
     if (p.out) { if (p.state === 'dying') p.stateT += 1; return }
     if (p.state === 'dying') { p.stateT += 1; return }
+    // #2857 juice beats: the relief pose and the KO flourish fade on their own
+    // clocks; the glint fades with the sprint (re-stamped while closing).
+    if (p.relief > 0) p.relief -= 1
+    if (p.flourish > 0) p.flourish -= 1
+    const px0 = p.x, py0 = p.y
     if (p.inv > 0) p.inv -= 1
     if (p.pressCooldown > 0) p.pressCooldown -= 1
 
     // grabbed: mash B (kick) to break free
     if (p.state === 'grabbed') {
+        p.guard = 0   // #2857: a seat in grips is the rescue's problem, not a glint's
         p.stateT += 1
         if (pad.b && p.pressCooldown <= 0) { p.presses += 1; p.pressCooldown = 6; gs.events.push(blue(p.tag, 'struggle')) }
         const holder = gs.enemies.find((e) => e.state === 'grab' && e.tgt === p.tag)
@@ -544,14 +573,21 @@ export function updateFighter(gs, p, pad) {
         // (matched by grip, not id: the harness fixtures reuse ids; the law
         // must read the same truth the eye sees — who is holding me?)
         if (!holder) {
+            // #2857 grip-break juice: the impact reports where it landed (the
+            // shell flashes steel-blue there) and the freed seat throws his
+            // arms up — relief you can read across the yard.
+            const gone = gs.enemies.find((q) => q.tgt === p.tag && q.state !== 'grab')
+            gs.gripFx = { x: gone ? gone.x : p.x, y: gone ? gone.y : p.y }
             p.state = 'idle'; p.stateT = 0; p.presses = 0; p.grabFrom = null
             p.inv = Math.max(p.inv, 24)
+            p.relief = CFG.reliefTicks
             gs.events.push(blue(p.tag, 'escape'))
             return
         }
         if (p.presses >= CFG.grabEscape) {
             p.state = 'idle'; p.stateT = 0; p.presses = 0; p.grabFrom = null
-            if (holder) { holder.state = 'stagger'; holder.stateT = CFG.hitstun; holder.attackCooldown = 80 }
+            if (holder) { holder.state = 'stagger'; holder.stateT = CFG.hitstun; holder.attackCooldown = 80; gs.gripFx = { x: holder.x, y: holder.y } }
+            p.relief = CFG.reliefTicks
             gs.events.push(blue(p.tag, 'escape'))
         } else if (p.stateT >= CFG.grabTimeout) {
             p.state = 'idle'; p.presses = 0; p.grabFrom = null
@@ -615,6 +651,20 @@ export function updateFighter(gs, p, pad) {
     if (p.z === 0) p.state = moving ? 'walk' : (p.state === 'walk' ? 'idle' : p.state)
     if (moving || p.state !== 'idle') p.anim += 1
 
+    // #2857 guardian telegraph: a dragon sprinting the thug who holds his
+    // brother wears a glint trail — help is visibly on the way before it
+    // lands. Honest by construction: it stamps only when boots actually move
+    // toward the holder this tick, so a seat ignoring the grip earns no
+    // promise. Juice only — the trail never touches stateHash.
+    if (gs.jimmy) {
+        const ally = p === gs.billy ? gs.jimmy : gs.billy
+        const holder = ally && !ally.out && ally.state === 'grabbed'
+            ? gs.enemies.find((e) => e.state === 'grab' && e.tgt === ally.tag) : null
+        const mx = p.x - px0, my = p.y - py0
+        if (holder && (holder.x - px0) * mx + (holder.y - py0) * my > 0) p.guard = CFG.guardTicks
+        else if (p.guard > 0) p.guard -= 1
+    }
+
     // weapon pickups — one in hand, the original carries no armoury. First
     // dragon home takes the steel (S4: both seats may arm, never one seat two).
     for (let i = gs.pickups.length - 1; i >= 0; i--) {
@@ -659,6 +709,7 @@ function updateEnemy(gs, e) {
     const rad = e.kind === 'abobo' ? 8 : e.kind === 'amon' || e.kind === 'duel' ? 5 : 4
     if (e.inv > 0) e.inv -= 1
     e.anim += 1
+    if (e.wob > 0) e.wob -= 1   // #2857: the stagger wobble settles as he recovers
 
     // #2825 item 4: the duel intro — the lieutenant holds his pose at the
     // frame edge while the banner says his name. He marches IN (the arcade
