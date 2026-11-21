@@ -13,8 +13,8 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { slotPad, slotActive } from '../../utils/onePad'
 import { p2Merge, p2Seat } from './p2pad.js'
-import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH, enterStage2 } from './sim.js'
-import { drawBackground, drawBilly, drawJimmy, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract, setLampLight, DRIP_T } from './art.js'
+import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH, enterStage2, INTRO, endIntro } from './sim.js'
+import { drawBackground, drawBilly, drawJimmy, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, drawIntroMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract, setLampLight, DRIP_T } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'double-dragon:hiscore'
@@ -22,6 +22,10 @@ const HS_KEY = 'double-dragon:hiscore'
 // fights beside Billy by default (CPU seat, so phones and the harness work).
 // `?solo=1` declines the partner. A human takes the blue seat drop-in.
 const coopOn = () => new URLSearchParams(window.location.search).get('solo') !== '1'
+// #2891: the human start gets Technōs' opening movie (attract -> the crime ->
+// Walnuts Street). The sim/contract/reset streams default to none; `?nointro=1`
+// declines it on the cabinet too.
+const introOn = () => new URLSearchParams(window.location.search).get('nointro') !== '1'
 
 export default function DoubleDragon() {
     const wrapRef = useRef(null)
@@ -53,6 +57,7 @@ export default function DoubleDragon() {
         // reached for WASD.
         let seat2At = -1
         const part = []
+        let takenSeen = false   // #2891: the movie's caption fired this run (probe/legs)
         const keys = { l: false, r: false, u: false, d: false, j: false, k: false, p: false }
         let jumpQ = false, kickQ = false, punchQ = false
         // S4 seat 2 keys — WASD walk · F punch · G kick · V jump. Like Contra S4,
@@ -150,6 +155,18 @@ export default function DoubleDragon() {
                 notes.forEach((f, i) => audioController.playTone(f, 0.13, 'square', 0.12, i * 0.11))
                 shake = Math.max(shake, 3)
             },
+            // #2891 the opening: Marian's cry over the street, and the sting the
+            // gang leaves behind — the crime the whole run answers.
+            scream: () => {
+                audioController.playSweep(720, 1080, 0.14, 'sine', 0.09)
+                audioController.playSweep(1080, 640, 0.2, 'sine', 0.08, 0.15)
+            },
+            taken: () => {
+                audioController.playTone(392, 0.16, 'square', 0.12)
+                audioController.playTone(311, 0.16, 'square', 0.12, 0.16)
+                audioController.playTone(233, 0.3, 'square', 0.12, 0.32)
+                shake = Math.max(shake, 4)
+            },
             clear: () => {
                 const notes = [523, 659, 784, 1046, 784, 1046]
                 notes.forEach((f, i) => audioController.playTone(f, 0.12, 'square', 0.12, i * 0.12))
@@ -167,6 +184,7 @@ export default function DoubleDragon() {
         const drain = () => {
             for (const ev of gs.events) {
                 if (sfx[ev]) sfx[ev]()
+                if (ev === 'taken') takenSeen = true
                 if (ev === 'hit') sparks(4, true, 1)
                 else if (ev === 'hit_hard' || ev === 'ko') sparks(8, true, 0)
                 else if (ev === 'stomp') sparks(6, true, 2)
@@ -245,11 +263,12 @@ export default function DoubleDragon() {
             return pad
         }
 
-        const startPlay = () => {
-            gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0, { coop: coopOn() })
+        const startPlay = (intro = introOn()) => {
+            gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0, { coop: coopOn(), intro })
             gs.hi = hiscore
             part.length = 0
             demoHold = 0
+            takenSeen = false
             seat2At = -1 // a fresh run hands the blue seat back to the CPU
             setMode('play')
             screen = 'play'
@@ -314,10 +333,13 @@ export default function DoubleDragon() {
             },
             rules: () => (coopOn() ? { seat2At } : {}),
             reset: (seed, players) => {
-                gs = makeGame(seed >>> 0, { coop: (players | 0) >= 2 })
+                // replay rebuilds the live run exactly — movie first if the
+                // cabinet played it (the banked presses carry the same skip beat)
+                gs = makeGame(seed >>> 0, { coop: (players | 0) >= 2, intro: introOn() })
                 gs.hi = hiscore
                 part.length = 0
                 demoHold = 0
+                takenSeen = false
                 seat2At = -1
                 keys.l = keys.r = keys.u = keys.d = keys.j = keys.k = keys.p = false
                 keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.k = keys2.p = false
@@ -354,6 +376,7 @@ export default function DoubleDragon() {
             if (gs.jimmy) beings.push({ y: gs.jimmy.y, kind: 'jimmy', o: gs.jimmy })
             for (const bar of gs.barrels) beings.push({ y: bar.y, kind: 'barrel', o: bar })
             if (gs.marian) beings.push({ y: gs.marian.y, kind: 'marian', o: gs.marian })
+            if (gs.intro && gs.intro.marian) beings.push({ y: gs.intro.marian.y, kind: 'introMarian', o: gs.intro.marian })
             for (const p of gs.pickups) if (p.y < PROPS_DEPTH) beings.push({ y: p.y, kind: 'pick', o: p })
             beings.sort((a, b) => a.y - b.y)
             for (const q of beings) {
@@ -362,6 +385,7 @@ export default function DoubleDragon() {
                 else if (q.kind === 'jimmy') drawJimmy(ctx, q.o, gs.camX, gs.barrels)
                 else if (q.kind === 'barrel') drawBarrel(ctx, q.o, gs.camX)
                 else if (q.kind === 'marian') drawMarian(ctx, q.o, gs.camX, gs.tick)
+                else if (q.kind === 'introMarian') drawIntroMarian(ctx, q.o, gs.camX, gs.tick)
                 else drawPickup(ctx, q.o, gs.camX)
             }
             for (const pr of gs.projectiles) drawProjectile(ctx, pr, gs.camX)
@@ -415,6 +439,9 @@ export default function DoubleDragon() {
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             if (screen === 'attract') { humanStart(); return }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract'); return }
+            // #2891: any key lifts the curtain — and lands as a real input the
+            // same instant (skip into gameplay, never eat the press).
+            if (screen === 'play' && gs.intro && gs.intro.t > INTRO.grace) endIntro(gs)
             if (pausedRef.current || e.repeat) return
             if (e.code === 'ArrowLeft') keys.l = true
             if (e.code === 'ArrowRight') keys.r = true
@@ -459,7 +486,8 @@ export default function DoubleDragon() {
         const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.j = keys.k = keys.p = keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.k = keys2.p = false }
         const onPointer = () => {
             if (screen === 'attract') { humanStart(); return }
-            if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract') }
+            if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract'); return }
+            if (screen === 'play' && gs.intro && gs.intro.t > INTRO.grace) endIntro(gs)
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
@@ -498,6 +526,12 @@ export default function DoubleDragon() {
                     pickups: gs.pickups.map((p) => p.kind).join(','),
                     stage: gs.stage,
                     marian: gs.marian ? (gs.marian.freed ? 'free' : 'tied:' + gs.marian.cuts) : 'none',
+                    // #2891: the opening movie — legs watch the curtain rise,
+                    // hold and caption, then confirm the street reopened clean.
+                    intro: gs.intro ? gs.intro.t : -1,
+                    introMarian: gs.intro ? (gs.intro.marian.grabbed ? 'held' : gs.intro.marian.scared ? 'fleeing' : 'walking') : 'none',
+                    introLift: gs.intro ? gs.intro.marian.lift : -1,
+                    introTaken: gs.intro && gs.intro.takenT > 0 ? 1 : takenSeen ? 2 : 0,
                     duel: gs.enemies.some((e) => e.kind === 'duel') ? 1 : 0,
                     casts: gs.enemies.filter((e) => e.hasKnife).length,
                     coop: gs.coop ? 1 : 0,
@@ -510,7 +544,7 @@ export default function DoubleDragon() {
                     jimmyFlourish: gs.jimmy ? gs.jimmy.flourish : -1,
                     gripFx: gs.gripFx ? 1 : 0,
                 }),
-                start: startPlay,
+                start: () => startPlay(false),   // harness straight to the street — no movie (#2891)
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
                     if (screen !== 'play') return false
