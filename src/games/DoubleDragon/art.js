@@ -893,13 +893,17 @@ export function drawHud(ctx, gs) {
     ctx.fillRect(0, 0, W, 17)
     // the app chrome wears the top-left corner (ARCADE badge + FEEDBACK); the
     // cabinet reads one line below it, and lives sit clear of the sound chip
-    label(ctx, '1UP', 78, 6, '#ff5a52', 1)
+    // #2833: second wind at a glance — a seat that came back from drained
+    // blinks its tag and bands white for a beat and a half (the banner's
+    // length), so the fresh life reads without hunting the bank.
+    const wind = (p) => p && gs.tick - p.backAt < 90 && gs.tick % 12 < 6
+    label(ctx, '1UP', 78, 6, wind(gs.billy) ? '#ffffff' : '#ff5a52', 1)
     label(ctx, String(gs.score).padStart(6, '0'), 102, 6, '#fff', 1)
     label(ctx, 'HI', 150, 6, '#ffd98a', 1)
     label(ctx, String(Math.max(gs.hi, gs.score)).padStart(6, '0'), 166, 6, '#fff', 1)
     // lives as headbands
     for (let i = 0; i < gs.billy.lives; i++) {
-        ctx.fillStyle = '#c8302f'
+        ctx.fillStyle = wind(gs.billy) ? '#ffffff' : '#c8302f'
         ctx.fillRect(222 + i * 12, 8, 8, 3)
         ctx.fillStyle = '#e8e8ec'
         ctx.fillRect(222 + i * 12 + 2, 5, 4, 3)
@@ -908,13 +912,17 @@ export function drawHud(ctx, gs) {
     // blue-Billy is exactly this trim blue). Out seat: dimmed slot + the ready
     // blink when its bank still holds lives — the arcade's seat invitation.
     if (gs.jimmy) {
+        // #2833: the tiny blue 2P tag — 12px of chrome in the gap between
+        // the HI score and the band column; it clears the weapon label zone
+        // (x=78, y=11) by a street.
+        label(ctx, '2P', 204, 6, wind(gs.jimmy) ? '#ffffff' : '#5a8ae8', 1)
         if (gs.jimmy.out) {
             ctx.fillStyle = '#3a3f52'
             ctx.fillRect(222 + 4 * 12 + 4, 8, 8, 3)
             if (gs.jimmy.lives > 0 && gs.tick % 40 < 24) label(ctx, 'READY', 222 + 4 * 12 + 16, 8, '#2f5fd0', 1)
         }
         for (let i = 0; i < Math.min(gs.jimmy.lives, 4); i++) {
-            ctx.fillStyle = gs.jimmy.out ? '#3a3f52' : '#2f5fd0'
+            ctx.fillStyle = gs.jimmy.out ? '#3a3f52' : wind(gs.jimmy) ? '#ffffff' : '#2f5fd0'
             ctx.fillRect(222 + 4 * 12 + 4 + i * 12, 8, 8, 3)
             ctx.fillStyle = gs.jimmy.out ? '#5a5f72' : '#e8e8ec'
             ctx.fillRect(222 + 4 * 12 + 4 + i * 12 + 2, 5, 4, 3)

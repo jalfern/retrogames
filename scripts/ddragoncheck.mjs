@@ -26,7 +26,7 @@ import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, W, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady } from '../src/games/DoubleDragon/sim.js'
+import { makeGame, step, autopilot, stateHash, W, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain } from '../src/games/DoubleDragon/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -692,6 +692,86 @@ const runFull = (seed, max = 60000) => {
     r.check('S4: the co-op timeline is deterministic — seed + inputs replay to the same hash', coopHash() === coopHash())
 }
 
+// --------------------------------------------------- #2833 co-op feel pass ---
+{ // the blue seat's personality, ear, rescue manners, drop-in edges, and the
+  // second-wind return stamp — every polish law the feel pass shipped.
+    const gs = makeGame(31, { coop: true })
+    gs.enemies.length = 0; gs.barrels.length = 0; gs.pickups.length = 0; gs.projectiles.length = 0
+    // the blue seat sounds blue: Jimmy's swings bite with a `_b`, Billy's plain
+    gs.jimmy.human = true
+    gs.jimmy.inv = 999; gs.jimmy.x = 140; gs.jimmy.y = 180
+    gs.billy.inv = 999; gs.billy.x = 60; gs.billy.y = 180
+    gs.enemies.push(mk('williams', 152, 180, { hp: 30, attackCooldown: 999 }))
+    let ev = []
+    step(gs, {}, { punch: true }); ev.push(...gs.events); gs.events.length = 0
+    for (let i = 0; i < 8; i++) { step(gs, {}, {}); ev.push(...gs.events); gs.events.length = 0 }
+    r.check('#2833 audio: the blue seat sounds blue — Jimmy\'s whoosh and bite carry _b',
+        ev.includes('whoosh_b') && ev.includes('hit_b'), ev.join(','))
+    gs.enemies.push(mk('williams', 72, 180, { hp: 30, attackCooldown: 999 }))
+    ev = []
+    step(gs, { punch: true }, {}); ev.push(...gs.events); gs.events.length = 0
+    for (let i = 0; i < 8; i++) { step(gs, {}, {}); ev.push(...gs.events); gs.events.length = 0 }
+    r.check('#2833 audio: Billy stays red at an ear — the same swing lands unsuffixed',
+        ev.includes('whoosh') && ev.includes('hit'), ev.join(','))
+
+    // hang-back: with Billy already locked on, Jimmy circles in at his
+    // shoulder instead of piling onto the same goon
+    const gs2 = makeGame(32, { coop: true })
+    gs2.enemies.length = 0; gs2.barrels.length = 0; gs2.pickups.length = 0
+    gs2.enemies.push(mk('williams', 200, 180, { hp: 30, attackCooldown: 999 }))
+    gs2.billy.x = 185; gs2.billy.y = 180; gs2.billy.inv = 999
+    gs2.jimmy.x = 175; gs2.jimmy.y = 180; gs2.jimmy.inv = 999
+    const pAlly = dragonBrain(gs2, gs2.jimmy, gs2.billy)
+    const pSolo = dragonBrain(gs2, gs2.jimmy)
+    r.check('#2833 hang-back: half a beat behind the first dragon — Jimmy holds outside a scrap Billy is already in',
+        pAlly.left && !pAlly.right && pSolo.right && !pSolo.left,
+        `ally L=${pAlly.left}/R=${pAlly.right} solo R=${pSolo.right}/L=${pSolo.left}`)
+
+    // calm drift: no goons on the block — the blue seat falls in beside his
+    // brother instead of marching alone
+    const gs3 = makeGame(33, { coop: true })
+    gs3.enemies.length = 0; gs3.barrels.length = 0; gs3.pickups.length = 0
+    gs3.billy.x = 100; gs3.billy.y = 150; gs3.billy.inv = 999
+    gs3.jimmy.x = 90; gs3.jimmy.y = 190; gs3.jimmy.inv = 999
+    const dAlly = dragonBrain(gs3, gs3.jimmy, gs3.billy)
+    const dSolo = dragonBrain(gs3, gs3.jimmy)
+    r.check('#2833 drift: on the quiet street Jimmy matches his brother\'s depth and holds a shoulder gap',
+        dAlly.up && !dAlly.right && dSolo.right, `drift U=${dAlly.up}/R=${dAlly.right} solo R=${dSolo.right}`)
+
+    // rescue steel: the duel's last knives outrun their throwers — a cutter
+    // walking the ropes still slips the lane before it walks into steel
+    const gs4 = makeGame(34, { coop: true })
+    enterStage2(gs4)
+    gs4.waveIdx = WAVES_S2.length
+    gs4.enemies.length = 0
+    gs4.billy.x = 880; gs4.billy.y = 170; gs4.billy.inv = 999
+    gs4.jimmy.x = 820; gs4.jimmy.y = 170; gs4.jimmy.inv = 999
+    gs4.projectiles.push({ id: 1, x: 850, y: 176, vx: -4, spin: 0, side: 'goon' })
+    const rPad = dragonBrain(gs4, gs4.jimmy, gs4.billy)
+    r.check('#2833 rescue steel: the cutter answers flying blades before walking the ropes (live goons can\'t gate this — rescueReady means the field is empty)',
+        (rPad.up || rPad.down) && !rPad.right, `U=${rPad.up}/D=${rPad.down}/R=${rPad.right}`)
+
+    // second wind with a visible stamp: the drained seat returns beside its
+    // brother, ghosted, and backAt marks the tick the cabinet blinks it home
+    const gs5 = makeGame(35, { coop: true })
+    gs5.jimmy.lives = 0; gs5.jimmy.out = true; gs5.jimmy.state = 'dying'; gs5.jimmy.stateT = 0
+    enterStage2(gs5)
+    r.check('#2833 second wind: the drained seat lands beside its brother, ghosted and stamped (backAt)',
+        gs5.jimmy.out === false && gs5.jimmy.lives === 1 && gs5.jimmy.inv > 60 &&
+        Math.abs(gs5.jimmy.x - gs5.billy.x) <= 20 && gs5.jimmy.backAt === gs5.tick && gs5.billy.backAt === -9999,
+        `out=${gs5.jimmy.out} lives=${gs5.jimmy.lives} inv=${gs5.jimmy.inv} dx=${(gs5.jimmy.x - gs5.billy.x).toFixed(0)} backAt=${gs5.jimmy.backAt}`)
+
+    // drop-in edge: a falling seat takes no input — buttons must not
+    // resurrect a drained dragon mid-tumble
+    const gs6 = makeGame(36, { coop: true })
+    gs6.jimmy.lives = 0; gs6.jimmy.out = true; gs6.jimmy.state = 'dying'; gs6.jimmy.stateT = 0; gs6.jimmy.human = true
+    let ev6 = []
+    for (let i = 0; i < 12; i++) { step(gs6, {}, { punch: true, b: true, jump: true, right: true, up: true }); ev6.push(...gs6.events); gs6.events.length = 0 }
+    r.check('#2833 drop-in edge: no button resurrects a drained dragon mid-tumble',
+        gs6.jimmy.out && gs6.jimmy.state === 'dying' && gs6.jimmy.lives === 0 && !ev6.some((e) => e.endsWith('_b')),
+        `state=${gs6.jimmy.state} out=${gs6.jimmy.out} blue=${ev6.filter((e) => e.endsWith('_b')).join('|') || 'none'}`)
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -812,6 +892,25 @@ if (MUTANT) {
                 for (let i = 0; i < 40; i++) { mod.step(gs, {}, {}); gs.events.length = 0 }
                 return gs.mode === 'gameover' && gs.billy.lives === CFG.lives
                     ? `HARM NAMED: Jimmy's last life fell and the whole run ended while Billy stood there with all 3 lives (mode=${gs.mode}, billy=${gs.billy.lives}) — the arcade co-op promise is that the partner carries you; one bank empty is a seat down, not a game over`
+                    : null
+            },
+        },
+        {
+            name: 'one-voice',
+            anchor: "const blue = (seat, ev) => (seat === 'jimmy' ? ev + '_b' : ev)",
+            plant: 'const blue = (seat, ev) => ev /* MUTANT(one-voice): both dragons share one voice */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(31, { coop: true })
+                gs.enemies.length = 0; gs.barrels.length = 0; gs.pickups.length = 0
+                gs.jimmy.human = true
+                gs.jimmy.inv = 999; gs.jimmy.x = 140; gs.jimmy.y = 180
+                gs.billy.inv = 999
+                gs.enemies.push({ id: 913, kind: 'williams', x: 152, y: 180, face: -1, hp: 30, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 999, inv: 0, spinHit: false })
+                const ev = []
+                mod.step(gs, {}, { punch: true }); ev.push(...gs.events); gs.events.length = 0
+                for (let i = 0; i < 8; i++) { mod.step(gs, {}, {}); ev.push(...gs.events); gs.events.length = 0 }
+                return !ev.some((e) => e.endsWith('_b'))
+                    ? `HARM NAMED: the blue seat swung and nothing carried a _b tag (${ev.join('|') || 'silence'}) — one shared voice for two dragons means the ear cannot tell who is fighting; the seats blur`
                     : null
             },
         },

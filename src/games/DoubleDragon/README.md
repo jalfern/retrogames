@@ -151,6 +151,34 @@ S4 (the second dragon, #2807):
   freed cheer hops, waves alternately and floats a pixel heart; the post
   wears its rope coil after the cut.
 
+#2833 polish (QA) on co-op:
+
+- **Jimmy has a personality now** — `dragonBrain(gs, b, ally)` runs the blue
+  seat with an ally lens: he hangs half a beat outside a scrap Billy is
+  already locked into (circling in at mate.x−30, not piling on), goes for the
+  showy spin a notch sooner (reach+14, snapping out on a faster %5 beat), and
+  on a quiet street falls in beside his brother — depth matched, a shoulder's
+  width behind. Billy's brain stays the sober one; the crowd law, reach law
+  and no-friendly-fire law are untouched.
+- **The blue seat sounds blue** — seat-centric sim events carry a `_b` suffix
+  when Jimmy acts (throw/whip/whoosh/jump/land/pickup/struggle/escape/hit/
+  hit_hard/knife_hit) and the shell answers with detuned variants, so the two
+  dragons sit apart at an ear. Events never ride `stateHash` (juice law).
+  The `one-voice` mutant names a shared-voice regression.
+- **Second wind shows its work** — a drained seat revived by `clearField`
+  stamps `backAt`; the cabinet blinks its tag and headbands white for 90
+  ticks so the fresh life reads at a glance. The blue seat also wears a tiny
+  `2P` tag in the HUD gap between the HI score and the band column.
+- **Drop-in edge: a falling seat takes no input** — buttons pressed while a
+  drained dragon is tumbling must not resurrect input before stand-up;
+  `updateFighter` returns at the `out` gate before any pad touch.
+- **Rescue manners, honestly scoped** — the cutter answers steel still in the
+  air while walking the ropes (duel knives outrun their throwers). Live goons
+  can't gate the ropes: `rescueReady` already means the field is empty, so
+  the "hold the guards off the post" idea was dead code by construction and
+  was removed rather than pinned — guard-holding lives inside the waves, where
+  the hang-back law keeps the pair arriving in order.
+
 ## Controls
 
 Arrows walk (UP/DOWN = depth) · SPACE jump · X kick · Z punch · ? ops card.
@@ -172,10 +200,9 @@ of nightly 44762398189).
 
 ## Honest gaps (the whole commission shipped; what's still short)
 
-- Jimmy's CPU brain is the player's own brain re-seated (`dragonBrain`), not a
-  distinct personality; the arcade had no CPU partner to imitate, so a more
-  distinctive ally style (his own spacing, occasional showy spins) is polish
-  fodder, not a missing rule.
+- Jimmy's CPU brain is the player's own brain with an ally lens (#2833 spacing,
+  spin and drift); the arcade had no CPU partner to imitate, so the
+  personality is inference, not restoration.
 - Two humans at one keyboard is always cramped; P2 (WASD+F/G/V) lives to the
   left of P1's arrows cluster by necessity.
 - The yard's light pools sway but cast no moving shadows and the floor carries

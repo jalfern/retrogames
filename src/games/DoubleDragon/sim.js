@@ -121,6 +121,7 @@ function makeFighter(tag) {
         lives: CFG.lives,
         human: false,
         out: false,
+        backAt: -9999, // #2833: tick a drained seat returned on second wind (HUD flash window)
     }
 }
 
@@ -322,9 +323,14 @@ function hurtBarrel(gs, bar) {
     }
 }
 
+// #2833: the blue seat sounds blue. Seat-centric sounds take a `_b` suffix
+// when Jimmy is the one swinging — the shell detunes them so the two dragons
+// sit apart at an ear. Nothing here rides stateHash (events are juice).
+const blue = (seat, ev) => (seat === 'jimmy' ? ev + '_b' : ev)
+
 function throwKnife(gs, p) {
     gs.projectiles.push({ id: gs.nextId++, x: p.x + p.face * 10, y: p.y, vx: p.face * CFG.knifeSpeed, spin: 0, side: p.tag })
-    gs.events.push('throw')
+    gs.events.push(blue(p.tag, 'throw'))
 }
 
 // S3: a Williams lets one fly — flat down its own lane, the arcade's stage-2
@@ -357,11 +363,11 @@ function playerDies(gs, p) {
 }
 
 // hit an enemy; returns true if it died
-function hurtEnemy(gs, e, dmg, knockdown, onDowned) {
+function hurtEnemy(gs, e, dmg, knockdown, onDowned, seat) {
     if (e.inv > 0 || e.state === 'dying' || e.state === 'getup') return false
     if (e.state === 'down' && !onDowned) return false
     e.hp -= dmg
-    gs.events.push(knockdown ? 'hit_hard' : 'hit')
+    gs.events.push(blue(seat, knockdown ? 'hit_hard' : 'hit'))
     if (e.hp <= 0) {
         e.state = 'dying'; e.stateT = 0
         gs.score += ENEMY_DEF[e.kind].score
@@ -391,7 +397,7 @@ function fighterAttack(gs, p, kind) {
     const near = grounded.filter((e) => Math.abs(e.x - p.x) <= CFG.spin.reach + 6 && Math.abs(e.y - p.y) <= 10)
     if (p.z === 0 && near.length >= 2) {
         p.state = 'spin'; p.stateT = 0; p.attackHit = new Set()
-        gs.events.push('whoosh')
+        gs.events.push(blue(p.tag, 'whoosh'))
         return
     }
     // contextual PUNCH — the weapons wall (#2807): the knife is thrown, not
@@ -403,14 +409,14 @@ function fighterAttack(gs, p, kind) {
     }
     if (kind === 'punch' && p.z === 0 && p.weapon === 'whip') {
         p.state = 'whip'; p.stateT = 0; p.attackHit = new Set()
-        gs.events.push('whip')
+        gs.events.push(blue(p.tag, 'whip'))
         return
     }
-    if (p.z > 0) { p.state = kind === 'punch' ? 'punch' : 'kick'; p.attackHit = new Set(); gs.events.push('whoosh'); return }
+    if (p.z > 0) { p.state = kind === 'punch' ? 'punch' : 'kick'; p.attackHit = new Set(); gs.events.push(blue(p.tag, 'whoosh')); return }
     p.state = kind
     p.stateT = 0
     p.attackHit = new Set()
-    gs.events.push('whoosh')
+    gs.events.push(blue(p.tag, 'whoosh'))
 }
 
 function reachFor(p, kind) {
@@ -436,7 +442,7 @@ function applySwing(gs, p) {
         const dx = (e.x - p.x) * p.face
         if (dx > -6 && dx <= reach && Math.abs(e.y - p.y) <= tol) {
             p.attackHit.add(e.id)
-            hurtEnemy(gs, e, dmg, down)
+            hurtEnemy(gs, e, dmg, down, undefined, p.tag)
             if (p.state === 'whip') p.lash = CFG.whipFlash   // #2819: crack on the bite tick
         }
     }
@@ -459,7 +465,7 @@ function applyJumpKick(gs, p) {
         if (p.attackHit.has(e.id) || e.state === 'dying' || e.state === 'down') continue
         if (Math.abs(e.x - p.x) <= 18 && Math.abs(e.y - p.y) <= CFG.punch.depth) {
             p.attackHit.add(e.id)
-            hurtEnemy(gs, e, CFG.jumpKickDmg, true)
+            hurtEnemy(gs, e, CFG.jumpKickDmg, true, undefined, p.tag)
         }
     }
 }
@@ -470,7 +476,7 @@ function applySpin(gs, p) {
         const dx = Math.abs(e.x - p.x)
         if (dx <= CFG.spin.reach && Math.abs(e.y - p.y) <= 10) {
             p.attackHit.add(e.id)
-            hurtEnemy(gs, e, CFG.spin.dmg, true)
+            hurtEnemy(gs, e, CFG.spin.dmg, true, undefined, p.tag)
         }
     }
     for (const bar of gs.barrels) {
@@ -490,7 +496,7 @@ function applyStomp(gs, p) {
         if (Math.abs(e.x - p.x) <= reachFor(p, 'kick') && Math.abs(e.y - p.y) <= 9) {
             p.attackHit.add(e.id)
             e.inv = 0
-            hurtEnemy(gs, e, 1, false, true)
+            hurtEnemy(gs, e, 1, false, true, p.tag)
             if (e.hp > 0) { e.state = 'down'; e.stateT = Math.floor(CFG.downTime / 2) }
             gs.events.push('stomp')
         }
@@ -508,12 +514,12 @@ export function updateFighter(gs, p, pad) {
     // grabbed: mash B (kick) to break free
     if (p.state === 'grabbed') {
         p.stateT += 1
-        if (pad.b && p.pressCooldown <= 0) { p.presses += 1; p.pressCooldown = 6; gs.events.push('struggle') }
+        if (pad.b && p.pressCooldown <= 0) { p.presses += 1; p.pressCooldown = 6; gs.events.push(blue(p.tag, 'struggle')) }
         const holder = gs.enemies.find((e) => e.id === p.grabFrom)
         if (p.presses >= CFG.grabEscape) {
             p.state = 'idle'; p.stateT = 0; p.presses = 0; p.grabFrom = null
             if (holder) { holder.state = 'stagger'; holder.stateT = CFG.hitstun; holder.attackCooldown = 80 }
-            gs.events.push('escape')
+            gs.events.push(blue(p.tag, 'escape'))
         } else if (p.stateT >= CFG.grabTimeout) {
             p.state = 'idle'; p.presses = 0; p.grabFrom = null
             playerDies(gs, p)
@@ -547,7 +553,7 @@ export function updateFighter(gs, p, pad) {
     if ((pad.a || pad.jump) && p.z === 0 && p.state !== 'punch' && p.state !== 'kick' && p.state !== 'spin' && p.state !== 'throw' && p.state !== 'whip') {
         p.z = 0.001; p.zv = CFG.jumpV
         p.state = 'jump'; p.stateT = 0
-        gs.events.push('jump')
+        gs.events.push(blue(p.tag, 'jump'))
     }
     if (p.z > 0 || p.zv > 0) {
         p.z += p.zv
@@ -555,7 +561,7 @@ export function updateFighter(gs, p, pad) {
         if (p.z <= 0) {
             p.z = 0; p.zv = 0
             if (p.state === 'jump') { p.state = 'idle'; p.stateT = 0 }
-            gs.events.push('land')
+            gs.events.push(blue(p.tag, 'land'))
         }
     }
 
@@ -588,7 +594,7 @@ export function updateFighter(gs, p, pad) {
             p.weapon = q.kind
             gs.score += 100
             gs.scoreFlash = { v: 100, t: 48 }
-            gs.events.push('pickup')
+            gs.events.push(blue(p.tag, 'pickup'))
         }
     }
 }
@@ -873,7 +879,10 @@ function clearField(gs) {
     gs.camX = 0
     // S4 second wind: when the road opens a fresh stage, a drained seat
     // returns with one life — the dragons enter the next street together.
+    // #2833: the return stamps `backAt` so the cabinet can blink the seat
+    // home — a revived bank should read at a glance, not whisper.
     for (const p of fighters(gs)) {
+        if (p.out) p.backAt = gs.tick
         p.out = false
         p.lives = Math.max(p.lives, 1)
         p.state = 'idle'; p.stateT = 0; p.z = 0; p.zv = 0
@@ -998,8 +1007,8 @@ export function step(gs, pad = {}, pad2 = {}) {
             for (const e of gs.enemies) {
                 if (e.state === 'dying' || e.state === 'down' || e.inv > 0) continue
                 if (Math.abs(pr.x - e.x) <= 10 && Math.abs(pr.y - e.y) <= 7) {
-                    hurtEnemy(gs, e, CFG.knifeDmg, true)
-                    gs.events.push('knife_hit')
+                    hurtEnemy(gs, e, CFG.knifeDmg, true, undefined, pr.side)
+                    gs.events.push(blue(pr.side, 'knife_hit'))
                     done = true
                     break
                 }
@@ -1076,8 +1085,9 @@ export function step(gs, pad = {}, pad2 = {}) {
 // WHICHEVER dragon it drives. Powers the attract demo and the harness
 // WINNABLE proof (Billy's seat), and Jimmy's CPU seat in co-op (#2807 S4) —
 // both seats play by the same percept law, no cheat sheet.
-export function dragonBrain(gs, b) {
+export function dragonBrain(gs, b, ally = null) {
     const pad = { left: false, right: false, up: false, down: false, a: false, b: false, punch: false }
+    const mate = ally && !ally.out && ally.state !== 'dying' && ally.state !== 'grabbed' ? ally : null
     if (gs.mode !== 'play' || b.state === 'grabbed') {
         if (b.state === 'grabbed' && gs.tick % 4 === 0) pad.b = true // mash free
         return pad
@@ -1085,14 +1095,25 @@ export function dragonBrain(gs, b) {
     // S3: the duel is won and the ropes are waiting — walk to Marian and cut
     if (gs.stage === 2 && rescueReady(gs)) {
         const m = gs.marian
-        const dxm = m.x - b.x; const dym = m.y - b.y
-        if (Math.abs(dxm) > 14 || Math.abs(dym) > 3) {
-            pad.right = dxm > 0; pad.left = dxm < 0
-            if (Math.abs(dym) > 3) { pad.up = dym < 0; pad.down = dym > 0 }
-            return laneChange(gs, b, pad)
+        // #2833: the ropes are no excuse to walk into steel. The duel's last
+        // blades can still be in the air when the field empties (rescueReady
+        // means no live goons — a cast knife outruns its thrower), so the
+        // cutter answers flying steel before it walks to the post. A cocked
+        // blade on the doorstep never gates here: rescueReady already proves
+        // every goon is down — guard-holding lives in the waves, where the
+        // hang-back law keeps the blue seat circling in beside its brother.
+        const fly = gs.projectiles.some((pr) => pr.side === 'goon' && Math.abs(pr.y - b.y) <= 9 &&
+            ((pr.vx > 0 && pr.x < b.x + 8 && pr.x > b.x - 64) || (pr.vx < 0 && pr.x > b.x - 8 && pr.x < b.x + 64)))
+        if (!fly) {
+            const dxm = m.x - b.x; const dym = m.y - b.y
+            if (Math.abs(dxm) > 14 || Math.abs(dym) > 3) {
+                pad.right = dxm > 0; pad.left = dxm < 0
+                if (Math.abs(dym) > 3) { pad.up = dym < 0; pad.down = dym > 0 }
+                return laneChange(gs, b, pad)
+            }
+            if (gs.tick % 12 < 2) pad.punch = true
+            return pad
         }
-        if (gs.tick % 12 < 2) pad.punch = true
-        return pad
     }
     // S3: steel in the air is the first thing a fair player answers — slip off
     // the blade's lane before it arrives (the depth law, thrown edition)
@@ -1108,6 +1129,13 @@ export function dragonBrain(gs, b) {
     const target = nearestEnemy(gs, b)
     if (!target) {
         pad.right = true
+        // #2833: on the quiet street the blue dragon falls in beside his
+        // brother — match his depth, keep a shoulder's width behind him.
+        if (mate) {
+            const gy = mate.y - b.y
+            if (Math.abs(gy) > 3) { pad.up = gy < 0; pad.down = gy > 0 }
+            if (mate.x - b.x < 16) pad.right = false
+        }
         return laneChange(gs, b, pad)
     }
     const dx = target.x - b.x
@@ -1142,14 +1170,30 @@ export function dragonBrain(gs, b) {
         return laneChange(gs, b, pad)
     }
     if (Math.abs(dy) > 3) { pad.up = dy < 0; pad.down = dy > 0 }
+    // #2833: half a beat behind the first dragon — when the seatmate is
+    // already locked onto MY closest goon and I'm still outside the scrap,
+    // circle in beside him instead of piling in early.
+    const mateFighting = mate && target.state !== 'dying' && target.state !== 'down' &&
+        Math.abs(target.x - mate.x) <= 30 && Math.abs(target.y - mate.y) <= 12
+    if (mateFighting && adx > 20) {
+        const gy = mate.y - b.y
+        if (Math.abs(gy) > 4) { pad.up = gy < 0; pad.down = gy > 0 }
+        const sx = mate.x - 30
+        pad.right = b.x < sx - 2; pad.left = b.x > sx + 8
+        return laneChange(gs, b, pad)
+    }
     // close BOTH axes: a target 20px deep across a crate is not in kick range —
     // mashing depth into wood is the stall the co-op seeds found. Walk to the
     // target's side of the prop, then the lane opens underneath you.
     if (adx > 16 || Math.abs(dy) > 10) { pad.right = dx > 0; pad.left = dx < 0 }
     else {
-        const surrounded = gs.enemies.filter((e) => e.state !== 'dying' && e.state !== 'down' && Math.abs(e.x - b.x) <= CFG.spin.reach + 6 && Math.abs(e.y - b.y) <= 10).length >= 2
+        // #2833: the blue seat goes for the showy spin a notch sooner than the
+        // player's own brain would, and snaps it out faster — flamboyant, but
+        // the heel still only boots when two are genuinely within reach.
+        const surroundPad = ally ? 14 : 6
+        const surrounded = gs.enemies.filter((e) => e.state !== 'dying' && e.state !== 'down' && Math.abs(e.x - b.x) <= CFG.spin.reach + surroundPad && Math.abs(e.y - b.y) <= 10).length >= 2
         if (!surrounded && gs.tick % 9 < 2) pad.b = true // kick (kicks knock down)
-        else if (surrounded && gs.tick % 7 < 2) pad.b = true // spin back-heel
+        else if (surrounded && gs.tick % (ally ? 5 : 7) < 2) pad.b = true // spin back-heel
     }
     return laneChange(gs, b, pad)
 }
@@ -1157,7 +1201,9 @@ export function dragonBrain(gs, b) {
 // The two seats' default drivers: Billy's autopilot (attract demo + harness
 // WINNABLE proof) and Jimmy's CPU seat (S4) — the same brain, different dragon.
 export const autopilot = (gs) => dragonBrain(gs, gs.billy)
-export const jimmyBrain = (gs) => dragonBrain(gs, gs.jimmy || gs.billy)
+// #2833: the same brain, wearing an ally's manners — half a beat behind, a
+// showier spin, a habit of drifting toward his brother (see dragonBrain ally).
+export const jimmyBrain = (gs) => dragonBrain(gs, gs.jimmy || gs.billy, gs.jimmy ? gs.billy : null)
 
 // The weapons wall final pass (#2807): if the direction being pressed runs
 // into a barrel on our own lane, change lanes instead — solid props are
