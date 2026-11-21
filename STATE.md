@@ -1,73 +1,58 @@
-# STATE.md — The Forge (rewritten at close of slot a's verification session,
-# 2026-11-21; committed to main because game code merged while this session was
-# live: DOUBLE DRAGON S4 co-op squash-landed as 1b28783 — stage 4/4 of #2807,
-# Jon's #2795 commission COMPLETE. This session resumed the interrupted lineage
-# and completed its close-out: local verify, prod verify, board, cleanup.)
+# STATE — forge lanes (2026-11-21, slot b close-out)
 
-## PLAYABLE
-- /retrogames/double-dragon — **THE WHOLE COMMISSION LIVE**: S1 Walnuts Street,
-  S2 weapons wall, S3 hideout + Marian rescue, S4 co-op (CPU Jimmy Lee default
-  in the blue seat; keyboard 2P drop-in WASD·F/G/V any time; dual life banks —
-  a drained seat returns with one life at the next stage; crowd cap 3; either
-  seat cuts Marian loose; `?solo=1` opts out). QA polish waves #2819/#2829/#2832
-  all live. Verified this session: ddragoncheck 97/97 on merged main.
-- /retrogames/r-type — S1–S3 live (bits, orbit shield, phase-2 twin cores #2828).
-  S4 co-op BUILDING on slot b (#2808, live). Contra S1–S4 + shared pool live.
+## HEADLINE
+**R-TYPE is COMPLETE.** S4 — the second pilot (co-op) shipped: PR #2838 →
+main `59483e0`. Simultaneous co-op per R-Type II (Irem 1989): blue R7 wingman
+with a deterministic brain (zero rng draws), keyboard drop-in (WASD+F fire, G
+pod, V relief), independent pools (3 lives each), one hit kills one hull, GAME
+OVER only when both burn; decoy law (Bydo pick the nearer hull); capsule seats
+one. Solo streams byte-identical (`gs.wing === null`). rtypecheck **113/113**
+(my 23 laws folded over QA's six from #2836), mutants 4/4 named red
+(`pool-blind` new), contractcheck 769/769. Co-op 12/12 seeds vs solo floor
+5/12. Production alias was still flipping at close (Vercel green on `59483e0`,
+jalfern HTML cache lagging) — poller log: shell sh_1fc1014c800152.
 
-## WHAT THIS SESSION DID (slot a — resume + close-out)
-- Step 1b caught the corpse: PR #2830 pushed, rebased, 97/97 — the build was
-  done; the interrupted lineage then completed its OWN merge via its detached
-  rule-5 loop (green `static`, 01:05:54Z) and pushed a STATE commit, but died
-  before step 8's board work and left its dev server orphaned on 5173.
-- Verified independently on top of the merge: `ddragoncheck` **97/97** on
-  `1b28783` (incl. the 16 S4 pins + seat-as-fighter laws), zero page errors.
-- Prod verified by CONTENT: served entry `index-CKqeCi8s.js` (post-#2832 deploy)
-  carries the S4 registry text (`plays DOUBLE`, `2P drop-in (keyboard)…`).
-- Board: SHIPPED line + prod URL posted on #2807; `shipped` label added
-  (`next` removed); filed a co-op polish pass (#2834) — discovered #2833 already
-  filed at 01:09Z and claimed by QA (`building-qa`) — closed mine as duplicate.
-- Killed the orphaned slot-a vite on 5173 (never touched 5178/5176). Rule 4:
-  game code merged this session — loop turning.
+## Lanes
+- **b (this lane)**: shipped #2808. Worktree reaped post-merge; main checkout
+  detached at `06e6806` (CONTRA #2840 landed after mine). 5178 free.
+- **a**: shipped DD S4 (#2830, closed #2807), then CONTRA seat ceremony
+  (#2840 → `06e6806`). Active elsewhere.
+- Both R-TYPE and Double Dragon commissions (#2795 family) are DONE.
 
-## BOARD
-- `building`: #2808 R-TYPE S4 (slot b, LIVE — claimed 00:59Z).
-- `next` (claimable): #1712 PLAICRAFT S2 — research lane only; do not narrow.
-- QA lane's, never builder: #2833 (DD co-op polish, building-qa), #2831
-  (R-TYPE S3 polish).
-- game-queue empty; no open jonq questions (#2799 answered+closed).
-- Nightly green at the merge (main-ok passed; re-passed this session).
+## Board
+- #2808 closed shipped (all 4 stages). #2807 closed shipped (a).
+- QA queue: #2831 done (#2836), new **#2841** — R-TYPE S4 polish (wing AI
+  depth: capsule/vent chasing, auto pod-deploy, shell hand-off, dark-seat
+  rescue; join-UX readability; co-op-too-generous check — tune `wingBrain`
+  fire discipline before enemy HP).
+- Filed **#2839** (harness bug): claim-status.mjs liveness regex only matches
+  `**BUILD checkpoint` lines, missing the prevailing `FORGE (<slot>): checkpoint
+  —` format — the lock silently never applied; near-miss double-build on #2807
+  this session (b yielded; a shipped). One-line widen + test proposed.
 
-## HARNESS NOTES FOR THE NEXT LANE
-- **A detached rule-5 merge loop outlives its session and posts NOTHING.**
-  Resume lanes: check PR state FIRST (`gh pr view <n> --json state,mergeCommit`).
-  If already MERGED, do not re-merge — complete step 8 yourself: content-verify
-  prod, comment the live URL, fix labels. The prod hash will have moved again if
-  another PR landed meanwhile (here D28nRhsa → CKqeCi8s via #2832) — grep for
-  registry DESCRIPTION fragments, they survive minification, hashes don't.
-- **Liveness is keyword-based; phantoms outlive yields.** Slot b's claim of
-  #2807 (00:56Z) landed because the S4 checkpoint lines dropped the literal
-  `checkpoint` keyword; b yielded at 00:59 but its `claimed` comment still
-  answers `holder()` — forge-claim.sh will REFUSE #2807-style phantoms to the
-  true owner for 90 min. Step 1b needs no claim: resume the pushed branch
-  directly. Keep the keyword in every handoff comment.
-- Rename vs QA polish collision rule (from the S4 lineage, still current):
-  after any rebase over a polish PR, lint first (no-undef stragglers), then read
-  every polish hunk for single-seat assumptions (`gs.billy`) and generalize —
-  green lint can still hide a blue seat that never gets the mechanic.
-- jalfern.com answers 308 without the trailing slash — prod content polls must
-  use `curl -L`.
-- Mutant anchors are line-pattern based: re-run `--mutant` after every rebase,
-  never trust the pre-rebase green (blade-blind moved to the dual-seat line).
-- Co-op determinism: contract replay includes the CPU ally — keep brains
-  pure-sim (no Math.random in brains) or the contract's hash checks break.
-- Sim default is SOLO (`makeGame`); the SHELL defaults co-op via `coopOn()`.
-  Co-op tests must NOT pass `?solo=1`; S1–S3 fixtures depend on the solo default.
+## Playable now (https://jalfern.com/retrogames/)
+- **R-TYPE** — /retrogames/r-type: S1–S4 incl. co-op. Solo play stays solo;
+  a second pilot joins live at any time with WASD/F/G/V (V relieves).
+- Double Dragon arcade — /retrogames/double-dragon (AI partner + drop-in).
+- Contra (seat ceremony), Arena Archery, Breakout, Galaga, Invaders, Asteroids,
+  Joust, Frogger, Pac-Man, Spy Hunter, Rampage, Bubble Bobble, Excitebike,
+  Boulderdash, Lode Runner, Mario, Donkey Kong, Bulky Mario, Princes,
+  Minesweeper, MTA, Iron Keep, DOS/IF shelf.
 
-## WORKTREES
-- Main checkout: detached origin/main (aa3acf9) + this STATE commit.
-- `~/Dev/retrogames-forge-double-dragon-s4` — re-detached at origin/main after
-  the merge (gh did the switch); branch deleted. Not this session's to reap,
-  harmless as-is.
-- Active other lanes (do not touch): slot b `retrogames-forge-r-type-s4`
-  (dev 5178), QA studio `retrogames-qa-2825` (dev 5176).
-- Slot a dev server (5173) stopped at this close.
+## Harness
+- rtypecheck 113 laws; two flakes fixed this session (station law sampled only
+  while P1 alive; KeyG/pod law retries press while the fixture arms liveWing).
+- Rebase lesson: QA's `q.y += q.vy` drift silently NaN'd wing shots until wing
+  fire stamped vy/wy/hx — the 113-law re-run is what caught it. Rebases over
+  same-file merges need the FULL gate, not just lint.
+- mutateguard ran clean; no commits while `.mutant-running` existed.
+
+## Open questions for Jon
+- None filed (rule 7): design choices followed the original directly; the one
+  taste call (co-op generosity) is in QA's hands via #2841 with a stated knob.
+
+## Notes
+- PR-number collisions with the QA lane happened twice-ish (#2836 phantom
+  create); passing explicit PR numbers to `gh pr checks/merge` is stable and
+  stays in the merge loop.
+- Rule-5 merge used with explicit PR number; `static` was the only wait.
