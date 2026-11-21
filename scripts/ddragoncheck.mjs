@@ -697,8 +697,8 @@ if (MUTANT) {
         },
         {
             name: 'blade-blind',
-            anchor: 'gs.billy.z <= 6 && Math.abs(pr.x - gs.billy.x) <= 10 && Math.abs(pr.y - gs.billy.y) <= 7',
-            plant: 'gs.billy.z <= 6 && Math.abs(pr.x - gs.billy.x) <= 10 && Math.abs(pr.y - gs.billy.y) <= 400 /* MUTANT(blade-blind): thrown steel ignores the belt */',
+            anchor: 'if (p.inv <= 0 && p.z <= 6 && Math.abs(pr.x - p.x) <= 10 && Math.abs(pr.y - p.y) <= 7)',
+            plant: 'if (p.inv <= 0 && p.z <= 6 && Math.abs(pr.x - p.x) <= 10 && Math.abs(pr.y - p.y) <= 400 /* MUTANT(blade-blind): thrown steel ignores the belt */)',
             harm: async (mod) => {
                 const gs = mod.makeGame(41)
                 gs.billy.inv = 0
@@ -737,10 +737,18 @@ if (MUTANT) {
                 gs.waveIdx = 9; gs.camLock = true; gs.camX = 200
                 gs.billy.x = gs.camX + 40; gs.billy.y = 140; gs.billy.inv = 999
                 gs.jimmy.x = gs.camX + 240; gs.jimmy.y = 190; gs.jimmy.inv = 999
+                gs.jimmy.human = true   // seated idle — the test is what the CROWD does
                 gs.enemies.push({ id: 911, kind: 'williams', x: gs.camX + 260, y: 190, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 0, inv: 0, spinHit: false })
-                for (let i = 0; i < 30; i++) { mod.step(gs, {}, {}); gs.events.length = 0 }
-                return gs.enemies[0].tgt === 'billy'
-                    ? `HARM NAMED: a thug standing 20px off Jimmy's shoulder marched away from him to work Billy instead (tgt=${gs.enemies[0].tgt}) — if the crowd only sees the first dragon, co-op collapses into solo-with-a-statue and the second player is scenery`
+                let minX = Infinity
+                let sawBillyTgt = false
+                for (let i = 0; i < 150; i++) {
+                    mod.step(gs, {}, {})
+                    const q = gs.enemies[0]
+                    if (q) { minX = Math.min(minX, q.x); if (q.tgt === 'billy') sawBillyTgt = true }
+                    gs.events.length = 0
+                }
+                return (sawBillyTgt || minX < gs.camX + 200)
+                    ? `HARM NAMED: a thug 20px off Jimmy's shoulder marched over 60 pixels across the screen to work Billy instead (closest x=${minX.toFixed(0)}, tgt=${sawBillyTgt ? 'billy' : 'never set'}) — if the crowd only sees the first dragon, co-op collapses into solo-with-a-statue and the second player is scenery`
                     : null
             },
         },
