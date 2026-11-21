@@ -126,6 +126,28 @@ for (const { path, dir } of entries) {
 ok(mounted === entries.length - Object.keys(SKIP_ATTRACT).length,
     `attract WATCH on ${mounted} titles = all advertised minus the named skips`)
 
+// ── #2875 BOULDER DASH first-timer geometry (browser-free) ──────────────────
+// The first-time pass moved chrome off the cave and labelled the clock. Each
+// law is pinned from source so the layout cannot drift back: the HUD strip
+// starts/ends clear of the fixed corner buttons (ARCADE ends ≈4.25rem, PAUSE+
+// mute end ≈7.75rem), the in-play pill hides while a human drives (it used to
+// sit on the spawn chamber for the whole run), and an open exit door FLASHES
+// on the CA's own beat instead of staying a dark square with one green pixel.
+{
+    const src = read('src/games/BoulderDash/index.jsx')
+    ok(/left: 'calc\(5\.5rem \+ var\(--sal, 0px\)\)', right: 'calc\(8\.25rem \+ var\(--sar, 0px\)\)'/.test(src),
+        'bd: HUD strip is inset clear of the ARCADE / PAUSE+mute chrome cluster')
+    ok(/>TIME</.test(src) && /hud\.timeSec/.test(src),
+        'bd: the time bar carries a TIME label and a live seconds readout')
+    ok(/screen === 'play' && !paused && watching &&/.test(src),
+        'bd: the in-play pill hides while a human drives (seats via attract pill, pause row or Y)')
+    ok(!/bottom: 'calc\(12\.5rem/.test(src),
+        'bd: no pill floating over the spawn chamber any more')
+    const door = src.slice(src.indexOf('// exit door'), src.indexOf('// exit door') + 1800)
+    ok(/if \(open\) \{/.test(door) && /gs\.tick % 8/.test(door) && /rgba\(89,224,94/.test(door),
+        'bd: the open exit door flashes and wears a halo (readable from across the cave)')
+}
+
 // ── self-wiring ───────────────────────────────────────────────────────────────
 ok(JSON.parse(read('package.json')).scripts.watchphonecheck === 'node scripts/watchphonecheck.mjs', 'npm alias registered')
 ok(read('.github/workflows/ci.yml').includes('npm run watchphonecheck'), 'ci.yml runs it (static job)')
