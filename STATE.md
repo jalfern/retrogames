@@ -1,63 +1,68 @@
-# STATE.md — The Forge (rewritten at close of slot a, 2026-11-21; committed to
-# main because game code merged: CONTRA seat ceremony shipped as PR #2840 ->
-# 06e6806, a NEVER-DRY stage (#1571) after the flagship rungs came up spent.
-# Slot b's lineage also completed during this session: R-TYPE S4 (#2838), so
-# Jon's #2795 twin-commission is fully live on both titles.)
+# STATE.md — The Forge (rewritten at close of slot b, 2026-11-21; committed to
+# main because game code merged: R-TYPE S3 polish II shipped as PR #2843 ->
+# 5ed1b2f, a borrowed QA item (#2835). Slot a shipped CONTRA seat ceremony
+# mid-session (#2840 -> 06e6806), so both lines landed tonight.)
 
 ## PLAYABLE
-- /retrogames/contra — S1 jungle + S2 waterfall + S3 weapon wall + depot +
-  S4 two-seat co-op, and now the **seat ceremony**: P2 arrives on a rappel at
-  the hero's side (mercy inv, clean rifle, beats the death tumble), and a seat
-  nobody drives for 10 s returns to the wingman brain (cost-free, 60-tick
-  mercy, p2gone chirp, any touch resets patience). contracheck 105/105,
-  mutants 92/92 (new `never-release`).
-- /retrogames/r-type — **S1–S4 live**: bits, orbit shield, Phase-2 twin cores,
-  S4 co-op (slot b, #2838). QA polish #2820/#2826/#2836 live.
-- /retrogames/double-dragon — S1–S4 co-op live (commission #2795 complete).
+- /retrogames/r-type — **S1–S4 live**, and S3 now bites like the arcade:
+  airborne **bitpods** ferry 2–3 chainable bit capsules (WAVES2 camX 150/380);
+  the Phase-2 core fires **alternating telegraphed 3-shot salvos** (next-port
+  glint warns, burned ports inherit turn) and **sways ±6px** tracked by aim +
+  save-hash; dying cores **walk port-to-port** in a 380-tick cascade from the
+  last-fallen core. rtypecheck 126/126, mutants 6/6 (new `cargo-blind`,
+  `salvo-blind`). All new mechanics are pure tick arithmetic — zero rng draws,
+  so the tuned stream and contract hashes stand (#2835).
+- /retrogames/contra — S1–S4 + **seat ceremony** (rappel arrival, 10 s
+  drop-out to wingman brain); contracheck 105/105, mutants 92/92 (#2837).
+- /retrogames/double-dragon — S1–S4 co-op live (#2795 commission complete).
 - Rest of shelf unchanged.
 
-## WHAT THIS SESSION DID (slot a)
-- Warden target #2808 REFUSED at claim (slot b's lock mechanically fresh — b
-  was alive and shipped it as #2838 during this session). Normal ladder: no
-  steer; `next` = #1712 (lane:research, not builder); game-queue empty; QA
-  borrow blocked (live QA session) -> flagship stage spent (all four flagship
-  READMEs gap-free) -> NEVER-DRY rung: `weakestStage` scored CONTRA 6 (six
-  unowned README gaps; DoubleDragon/R-Type held). Filed POLISH #2837, claimed,
-  shipped in ~1.5 h: sim ceremony, rappel paint, 8 new pins, 1 mutant, docs.
+## WHAT THIS SESSION DID (slot b)
+- Warden target #2837 REFUSED at claim (slot a's checkpoint 14 min fresh) —
+  correct: slot a shipped it this session. Ladder: no steer/halt; `next` =
+  #1712 (lane:research, builders skip); game-queue empty; QA borrow was open
+  (no QA MASTER alive at the time) -> took oldest unowned feedback #2835
+  (R-TYPE S3 polish II; idle.mjs `weakestStage` independently scored R-TYPE
+  weakest — both derivations agreed). Claimed via qa-claim.sh, shipped ~2 h:
+  carriers + salvos/sway + walking death, 13 new pins, 2 mutants, README.
+- Solo winnability is now **exactly 4/12** (salvos bite; co-op 12/12).
+  Deterministic, not flaky — but at the law's floor; don't re-tune without a
+  full rtypecheck re-run.
 - Rule 4: game code merged — loop turning.
 
 ## BOARD
-- building: empty (both commissions done; queue drained).
-- `next` (claimable): #1712 PLAICRAFT S2 — lane:research/big-build; STATE has
-  marked it research-only since November — builder lanes skip.
-- QA lane's, never builder: #2835 (R-TYPE S3 polish II), #2833 (DD co-op
-  polish). Fresh builder-ignorable: #2842 (CONTRA ceremony polish, feedback —
-  presentation only, for QA's next round).
-- Slot b filed #2839 (forge-claim lock bug) + #2841 (R-TYPE wing polish).
-- game-queue: empty. No open jonq questions.
+- building: #1712 PLAICRAFT S2 only (lane:research/big-build — builder skip).
+- game-queue: empty. waiting-jon: #2844 (research's; not ours). No jonq from
+  these lanes.
+- QA lane's, never builder: **#2833** DD co-op polish (`building-qa`) — a QA
+  MASTER is **alive right now** on port 5176 and may pick it up. Fresh
+  feedback for QA's next round: #2841 (R-TYPE S4 wing polish, filed by b),
+  #2842 (CONTRA ceremony polish).
+- Open harness bug nobody owns: **#2839** — `claim-status.mjs` ignores the
+  `FORGE (<slot>):` checkpoint comment format, so liveness locks read as dead.
+  Any lane can fix; small.
 
 ## HARNESS NOTES FOR THE NEXT LANE
-- **jalfern.com proxies Next-cached HTML**: after a merge the proxied
-  index.html keeps naming the PREVIOUS entry for ~10+ min (x-vercel-cache HIT)
-  while the ORIGIN (retrogames-psi.vercel.app) already serves the new build.
-  Verify prod by fetching a NEWLY HASHED chunk by name through jalfern (asset
-  paths proxy live) — the HTML's own marker poll lies until the edge ages.
-- Game chunks are referenced from deeper chunks with RELATIVE `./index-*.js`
-  names — a `grep assets/` sweep of the entry misses half the graph. Expand
-  `./` refs recursively when content-verifying prod.
-- The 62-chunk `assets/` sweep finding no marker may just mean you searched
-  the wrong graph level — prove against your own `dist/` first (this session
-  burned 20 min before checking local dist had the string).
-- Seat ceremony (Contra): `padClaim` distinguishes keyboard claims from
-  harness-pinned `human=true` seats — auto-release only watches padClaim, so
-  every pre-S5 pin stands. Touchdown zeroes `enterT`; patience counts lives
-  ticks only (hero-death freeze pauses it, by design).
-- Liveness keywords (`claimed`/`checkpoint`) in every issue line; warden
-  replay prompts don't change board state.
+- **Prod verify, refined:** after a merge, jalfern apex+www and even the origin
+  (retrogames-psi) can serve the PREVIOUS HTML for ~10 min (Next proxy edge
+  cache; the stale HTML's last-modified equals the *previous* deploy's
+  completion time — a convincing liar). Content-verify by crawling the full
+  transitive `./index-*.js` closure from origin and grepping game-chunk
+  strings. **DEV-only strings are stripped from prod builds** (DebugKit
+  labels, `__rtype` probe fields) — verify on sim-level markers (`bitfree`,
+  `p2salvo`, `swayOff`), not probe/DebugKit text.
+- macOS scripting traps: zsh does NOT word-split unquoted vars; system bash is
+  3.2 (no `declare -A`). Crawl loops need plain sorted lists (`comm`) or
+  `bash` arrays with index arithmetic only.
+- `gh --json labels` returns objects, not strings — `map(.name)` or held/owned
+  filters silently fail (bug seen live this session).
+- `scripts/lib/idle.mjs` `weakestStage` + the QA-backlog scan can agree on an
+  item — two independent derivations matching is a strong claim signal when the
+  ladder is empty.
 
 ## WORKTREES
-- Main checkout: detached origin/main (53d0899) + this STATE commit.
-- `~/Dev/retrogames-forge-contra-seat-ceremony` — re-detached at origin/main
-  after the merge; branch deleted on remote. Reap freely.
-- Slot b dev server 5178 was stopped by its own lane; QA studio 5176
-  untouched. Slot a dev server (5173) stopped at this close.
+- Main checkout: detached origin/main (97484f3 lineage) + this STATE commit.
+- `~/Dev/retrogames-qa-2835` — finished; reap freely (branch gone on remote).
+- `~/Dev/retrogames-forge-contra-seat-ceremony` — slot a's, re-detached; reap.
+- Ports: b's 5178 stopped at close. QA studio 5176 is the live QA session's —
+  leave it. 5173 free.
