@@ -60,7 +60,7 @@ export const CFG = {
     whipFlash: 4,
     clatterTicks: 14,
     // --- S3 the hideout (#2807) ---
-    goonKnife: { windup: 16, speed: 3.0 },  // aimed cast; lethal on the line
+    goonKnife: { windup: 16, speed: 3.0, keep: 34 },  // aimed cast; lethal on the line; #2825 thrower's distance
     duelHp: 10, duelScore: 800, duelSpeed: 1.05, duelReach: 17,
     rescueRange: 22, rescueCuts: 2, rescueBonus: 1000, rescueCheer: 100,
 }
@@ -179,6 +179,7 @@ export function makeGame(seed = 1, opts = {}) {
         barrels: makeBarrels(1),   // stage props: barrels out front, crates in the yard
         projectiles: [],
         waveIdx: 0, waveActive: false, banner: 0,
+        duelIntro: 0,       // #2825: the lieutenant announces himself (banner + held pose)
         marian: null,           // set when stage 2 opens — tied at the yard's end
         rescueT: 0,             // cheer ticks after the ropes part
         scoreFlash: null, // { v, t } — HUD score delta on a KO/pickup (juice, not scored state)
@@ -305,16 +306,18 @@ function rollWeaponDrop(gs, x, y, clatter = 0) {
 }
 
 // a swing/blade met a barrel — hp down, splinter when empty
+// #2825: the yard's crates report their own events — pine takes the blows
+// with a heavier thud and splits louder than the street's barrels.
 function hurtBarrel(gs, bar) {
     bar.hp -= 1
     bar.shake = 6
-    gs.events.push('barrel_hit')
+    gs.events.push(bar.kind === 'crate' ? 'crate_hit' : 'barrel_hit')
     if (bar.hp <= 0) {
         gs.barrels = gs.barrels.filter((q) => q !== bar)
         gs.score += 100
         gs.hi = Math.max(gs.hi, gs.score)
         gs.fx = { x: bar.x, y: bar.y }   // #2819: the shell throws wood shards here
-        gs.events.push('barrel_break')
+        gs.events.push(bar.kind === 'crate' ? 'crate_break' : 'barrel_break')
         rollWeaponDrop(gs, bar.x, bar.y, CFG.clatterTicks)
     }
 }
@@ -618,6 +621,14 @@ function updateEnemy(gs, e) {
     if (e.inv > 0) e.inv -= 1
     e.anim += 1
 
+    // #2825 item 4: the duel intro — the lieutenant holds his pose at the
+    // frame edge while the banner says his name. He marches IN (the arcade
+    // entrance), but nothing else until the announce is done.
+    if (e.kind === 'duel' && gs.duelIntro > 0 && e.state !== 'enter' && e.state !== 'dying') {
+        e.face = Math.sign(b.x - e.x) || e.face
+        return
+    }
+
     switch (e.state) {
     case 'enter': {
         // walk onto the street from the spawn side (#2810 item 5: the walk-in
@@ -688,6 +699,26 @@ function updateEnemy(gs, e) {
             e.state = 'aim'; e.stateT = 0
             gs.events.push('aim')
             break
+        }
+
+        // #2825 item 3: throwers keep thrower's distance. An armed Williams at
+        // punching range back-pedals to a fresh angle instead of idling into
+        // the fist fight (the arcade's casters dance). A spinner with its
+        // reload still up closes to brawl; cornered ones always swing — the
+        // retreat only holds while the yard leaves them room.
+        if (e.hasKnife && (e.kind === 'duel' || e.castCooldown <= 0)
+            && adx < CFG.goonKnife.keep && !(e.kind === 'amon' || e.kind === 'abobo')) {
+            const retreat = -Math.sign(dx || 1)
+            const nx = e.x + retreat * def.speed * 0.9
+            if (nx >= gs.camX + 16 && nx <= gs.camX + W - 16 && !blocked(gs, nx, e.y, rad)) {
+                const px = e.x, py = e.y
+                const strafe = Math.abs(dy) > 3
+                    ? clamp(dy, -def.speed * 0.5, def.speed * 0.5)
+                    : (gs.tick % 60 < 30 ? CFG.deepSpeed : -CFG.deepSpeed)
+                moveEntity(gs, e, retreat * def.speed * 0.9, strafe, rad)
+                if ((e.x === px) || (strafe !== 0 && e.y === py)) depthSlip(gs, e, rad)
+                break
+            }
         }
 
         // grab attempt (grounded, uninvited Billy)
@@ -882,6 +913,7 @@ export function rescueReady(gs) {
 export function step(gs, pad = {}, pad2 = {}) {
     gs.tick += 1
     if (gs.mode === 'play' && gs.banner > 0) gs.banner -= 1
+    if (gs.duelIntro > 0) gs.duelIntro -= 1
     if (gs.scoreFlash && --gs.scoreFlash.t <= 0) gs.scoreFlash = null
 
     if (gs.mode === 'clear') {
@@ -922,6 +954,9 @@ export function step(gs, pad = {}, pad2 = {}) {
         w.spawns.forEach((s) => {
             const e = spawnEnemy(gs, s.kind, s.side, s.stick)
             if (s.knife) e.hasKnife = true
+            // #2825 item 4: the boss wave announces itself — WILLIAMS rides the
+            // banner while he holds his pose at the frame edge, then the duel.
+            if (s.kind === 'duel') { gs.duelIntro = 90; gs.events.push('duel') }
         })
         gs.events.push('wave')
     }

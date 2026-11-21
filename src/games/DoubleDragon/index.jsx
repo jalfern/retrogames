@@ -80,10 +80,31 @@ export default function DoubleDragon() {
             blade_stick: () => { audioController.playTone(150, 0.05, 'triangle', 0.1); audioController.playTone(1150, 0.04, 'square', 0.04, 0.02) },
             barrel_hit: () => { audioController.playTone(110, 0.06, 'square', 0.12); shake = Math.max(shake, 2) },
             barrel_break: () => { audioController.playNoise(0.18, 0.16); audioController.playTone(70, 0.14, 'square', 0.14, 0.03); shake = Math.max(shake, 5) },
+            // #2825: the yard's pine speaks a heavier tongue than the street's
+            crate_hit: () => { audioController.playTone(88, 0.09, 'square', 0.15); audioController.playNoise(0.05, 0.07); shake = Math.max(shake, 3) },
+            crate_break: () => {
+                audioController.playNoise(0.24, 0.18)
+                audioController.playTone(62, 0.18, 'square', 0.16, 0.03)
+                audioController.playTone(148, 0.05, 'square', 0.08, 0.09)
+                shake = Math.max(shake, 5)
+            },
+            // #2825: the duel's arrival sting — low, deliberate, a name on screen
+            duel: () => { audioController.playSweep(220, 55, 0.45, 'sawtooth', 0.14); audioController.playTone(660, 0.1, 'square', 0.08, 0.5) },
             // S3 the hideout cues
             stage: () => { audioController.playSweep(160, 420, 0.3, 'square', 0.12); audioController.playTone(523, 0.12, 'square', 0.1, 0.24) },
-            aim: () => audioController.playTone(980, 0.05, 'square', 0.05),
-            goon_throw: () => audioController.playSweep(1100, 400, 0.1, 'triangle', 0.09),
+            aim: () => {
+                // #2825: the cast must be HEARD coming — a rising wind-up whoosh
+                // under the blip, so a thumb-on-pad player knows to leave the lane
+                audioController.playSweep(420, 1050, 0.28, 'triangle', 0.06)
+                audioController.playFilteredNoise(0.3, 0.05, 900)
+                audioController.playTone(980, 0.05, 'square', 0.05, 0.22)
+            },
+            goon_throw: () => {
+                audioController.playSweep(1100, 400, 0.1, 'triangle', 0.09)
+                // #2825: harder metallic ring on the cast — steel leaving the hand
+                audioController.playTone(1560, 0.09, 'square', 0.07, 0.02)
+                audioController.playNoise(0.04, 0.06, 0.05)
+            },
             blade_wood: () => { audioController.playTone(120, 0.05, 'square', 0.12); shake = Math.max(shake, 2) },
             blade_hit: () => { audioController.playSweep(300, 60, 0.3, 'sawtooth', 0.16); shake = Math.max(shake, 4) },
             rope: () => audioController.playNoise(0.05, 0.08),
@@ -198,7 +219,7 @@ export default function DoubleDragon() {
                 else if (q.kind === 'billy') drawBilly(ctx, q.o, gs.camX, gs.barrels)
                 else if (q.kind === 'jimmy') drawJimmy(ctx, q.o, gs.camX, gs.barrels)
                 else if (q.kind === 'barrel') drawBarrel(ctx, q.o, gs.camX)
-                else if (q.kind === 'marian') drawMarian(ctx, q.o, gs.camX)
+                else if (q.kind === 'marian') drawMarian(ctx, q.o, gs.camX, gs.tick)
                 else drawPickup(ctx, q.o, gs.camX)
             }
             for (const pr of gs.projectiles) drawProjectile(ctx, pr, gs.camX)
