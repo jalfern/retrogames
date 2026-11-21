@@ -155,6 +155,10 @@ export function makeRun(seed, opts = {}) {
         over: false,
         attract: !!opts.attract,
         watching: false,
+        // #2869 sticky shuffle: the river row the escape descended FROM, plus
+        // the undo-window ticks left while climbing back onto it is forbidden.
+        watchBan: -1,
+        watchBanT: 0,
         levelFlash: 0,
         demoTick: 0,
         riverLanes: [],
@@ -367,6 +371,7 @@ const supportedAtT = (gs, row, x, dt, m) => {
 
 export const WATCH_HORIZON = 420 // ticks the rollouts scan ahead (7 s)
 const DRIFT_CAP = 900            // + carried-log projection cap (15 s)
+const BAN_TICKS = 60           // #2869 undo-window: a descent owns its lane for 1 s
 
 // Greedy continuation used inside the rollout: hop up whenever the landing is
 // proven safe at that future instant (open house on the homes row), else the
@@ -375,14 +380,23 @@ const DRIFT_CAP = 900            // + carried-log projection cap (15 s)
 // obvious way", which is exactly the seat's behaviour one tick at a time.
 // Mutates its scalar copies; returns ticks survived (horizon + 1 = escaped the
 // window alive) and whether a home was reached (with the dt it landed).
-function greedyRun(gs, m, dt0, row0, x0, riding0, time0) {
+function greedyRun(gs, m, dt0, row0, x0, riding0, time0, ban0 = -1, commit0 = 0) {
     let row = row0
     let x = x0
     let riding = riding0
     let time = time0
     let dt = dt0
+    // #2869 sticky shuffle inside the rollout: mirror the seat's undo-window —
+    // a descent commits to its new lane; climbing back onto the row just
+    // escaped is forbidden for BAN_TICKS, enough carry to bank real progress,
+    // short enough to re-climb when that lane is genuinely best again. Without
+    // this the rollout valued the undo-climb equal to the escape, and the seat
+    // oscillated tick-for-tick between two opposite-drift lanes (#2869).
+    let ban = ban0
+    let banT = ban0 >= 0 ? commit0 : 0
     for (; dt <= WATCH_HORIZON; dt++) {
         if (--time <= 0) return { died: dt, home: 0 }
+        if (ban >= 0 && --banT <= 0) ban = -1
         if (riding >= 0) {
             const lane = gs.riverLanes[riding]
             x += lane.dir * lane.speed * m
@@ -403,6 +417,7 @@ function greedyRun(gs, m, dt0, row0, x0, riding0, time0) {
                 continue
             }
             if (nr < HOME_ROW) continue
+            if (nr === ban) continue // #2869: committed escape — the escaped lane waits
             if (!supportedAtT(gs, nr, nx, dt, m)) continue
             if (crushedAtT(gs, nr, nx, dt, m)) continue
             row = nr; x = nx
@@ -435,6 +450,7 @@ function greedyRun(gs, m, dt0, row0, x0, riding0, time0) {
                         const nxx = x + sx
                         if (sx !== 0 && (nxx < CELL / 2 + 2 || nxx > W - CELL / 2 - 2)) continue
                         if (!supportedAtT(gs, nr, nxx, dt, m)) continue
+                        if (nr <= RIVER_BOT) { ban = row; banT = BAN_TICKS } else ban = -1 // median ends the shuffle
                         row = nr; x = nxx
                         riding = (nr >= RIVER_TOP && nr <= RIVER_BOT) ? nr - RIVER_TOP : -1
                         moved = true
@@ -452,7 +468,7 @@ function greedyRun(gs, m, dt0, row0, x0, riding0, time0) {
 // greedy continuation (the brain re-decides next tick, so the rollout owes
 // only this hop plus the obvious play after it).
 // Returns { ok, value }; ok=false when the hop itself is illegal (off bounds).
-function rollout(gs, dx, dy) {
+function rollout(gs, dx, dy, ban0 = gs.watchBan, commit0 = gs.watchBanT) {
     const frog = gs.frog
     if (frog.state !== 'alive') return { ok: false, value: -1 }
     const nx = frog.x + dx * CELL
@@ -476,7 +492,7 @@ function rollout(gs, dx, dy) {
     }
     if (crushedAtT(gs, row, x, 0, m)) return { ok: true, value: 1 }
 
-    const r = greedyRun(gs, m, 1, row, x, riding, gs.timeLeft)
+    const r = greedyRun(gs, m, 1, row, x, riding, gs.timeLeft, ban0, commit0)
     if (r.home) return { ok: true, value: 1e6 + (WATCH_HORIZON - r.home) }
     let survived = r.died
     // A frog still riding at the horizon end gets its carry-out projected: the
@@ -509,13 +525,34 @@ export function watchStep(gs) {
     if (gs.frog.state !== 'alive') return null
     let best = null
     let bestV = -Infinity
+    const frog = gs.frog
+    // #2869 sticky shuffle: a descent onto a river lane is an ESCAPE — its
+    // carry is bringing the frog toward the side its current lane was carrying
+    // it away from. Re-deciding freely every tick let the climb candidate (row
+    // bonus) undo the descent on the very next tick, and two opposite-drift
+    // lanes shuffled the frog in place for whole clocks (stalled crossings,
+    // seed 103/3910, ~1 in 60 roll seeds). So the commitment outlives one
+    // tick: for BAN_TICKS after a descent the row just escaped is out of
+    // reach — enough carry to bank real progress — and after that the climb is
+    // judged fresh, so a lane that is genuinely best again stays reachable.
+    if (gs.watchBan >= 0 && --gs.watchBanT <= 0) gs.watchBan = -1
     for (const [dx, dy] of CANDIDATES) {
-        const r = rollout(gs, dx, dy)
+        if (gs.watchBan >= 0 && dy < 0 && frog.row + dy === gs.watchBan) continue
+        let b = gs.watchBan
+        let c = gs.watchBanT
+        if (dy > 0 && frog.row >= RIVER_TOP && frog.row <= RIVER_BOT) {
+            const nr = frog.row + dy
+            if (nr <= RIVER_BOT) { b = frog.row; c = BAN_TICKS } else { b = -1; c = 0 } // median ends the shuffle
+        }
+        const r = rollout(gs, dx, dy, b, c)
         if (!r.ok) continue
         if (r.value > bestV) { bestV = r.value; best = [dx, dy] }
     }
     if (!best) return null
     if (best[0] === 0 && best[1] === 0) return null
+    if (best[1] === 1 && frog.row >= RIVER_TOP && frog.row <= RIVER_BOT) {
+        if (frog.row + 1 <= RIVER_BOT) { gs.watchBan = frog.row; gs.watchBanT = BAN_TICKS } else gs.watchBan = -1
+    }
     return { dx: best[0], dy: best[1] }
 }
 
