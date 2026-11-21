@@ -370,6 +370,7 @@ export default function DoubleDragon() {
                     casts: gs.enemies.filter((e) => e.hasKnife).length,
                     coop: gs.coop ? 1 : 0,
                     jimmy: gs.jimmy ? `${gs.jimmy.x.toFixed(0)}:${gs.jimmy.y}:${gs.jimmy.lives}:${gs.jimmy.human ? 'HUMAN' : 'CPU'}${gs.jimmy.out ? ':OUT' : ''}:${gs.jimmy.state}` : 'none',
+                    jimmyZ: gs.jimmy ? +gs.jimmy.z.toFixed(2) : 0,
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),

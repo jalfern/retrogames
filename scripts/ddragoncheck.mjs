@@ -27,6 +27,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { makeGame, step, autopilot, stateHash, W, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain } from '../src/games/DoubleDragon/sim.js'
+import { p2Merge, p2Seat } from '../src/games/DoubleDragon/p2pad.js'
+import { pressSlot, releaseSlot, slotPad, slotActive, clearAllSlots } from '../src/utils/onePad.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -836,6 +838,108 @@ const runFull = (seed, max = 60000) => {
         `blue=${allyAsks} red=${soloAsks}`)
 }
 
+// ------------------------------------------------------- p2 pad seat (#2860) ---
+// Two humans at one keyboard are always cramped — this seat lifts a friend's
+// own pad (or linked phone) onto the blue dragon with no keyboard at all.
+// The law: slot 2 merges with the keyboard's P2 keys (either drives, both
+// together union); A jumps, B kicks, the third channel (`boost` — square /
+// triangle / LB on a pad, Y on a phone) punches; any live input takes the
+// seat for the run exactly like the WASD drop-in. And the slotcheck law:
+// same stream, kb or pad, ⇒ same state hash — translation lives in p2Merge
+// alone.
+
+console.log('p2 pad seat (#2860)')
+{
+    const kbIdle = { l: false, r: false, u: false, d: false, j: false, k: false, p: false }
+
+    const kbOnly = p2Merge({ l: true, r: false, u: false, d: true, j: true, k: true, p: true }, null)
+    r.check('#2860 kb-only stream is byte-identical to the pre-pad shell (V jump / G kick / F punch)',
+        kbOnly.left && kbOnly.down && kbOnly.a && kbOnly.b && kbOnly.punch && !kbOnly.right && !kbOnly.up,
+        JSON.stringify(kbOnly))
+
+    clearAllSlots()
+    for (const f of ['right', 'up', 'a', 'boost']) pressSlot(2, f)
+    const padOnly = p2Merge(kbIdle, slotPad(2, 'dpad'))
+    r.check('#2860 pad-only stream drives walk + A jump + third-action punch through the slot layer',
+        padOnly.right && padOnly.up && padOnly.a && padOnly.punch && !padOnly.b && !padOnly.left,
+        JSON.stringify(padOnly))
+    clearAllSlots()
+
+    pressSlot(2, 'left')
+    const union = p2Merge({ ...kbIdle, r: true }, slotPad(2, 'dpad'))
+    clearAllSlots()
+    r.check('#2860 keyboard and pad union — two friends on one machine never silence each other',
+        union.left && union.right, JSON.stringify(union))
+
+    pressSlot(2, 'b')
+    const kick = p2Merge(kbIdle, slotPad(2, 'dpad'))
+    clearAllSlots()
+    r.check('#2860 B is the kick — the pad reaches the sim shape complete', kick.b === true, JSON.stringify(kick))
+
+    pressSlot(2, 'boost')
+    const activeBoost = slotActive(2)
+    clearAllSlots()
+    r.check('#2860 the punch key counts as live input — a boost-only press wakes slot 2 (seats the friend)',
+        activeBoost === true)
+
+    const gsSeat = makeGame(77, { coop: true })
+    const took1 = p2Seat(gsSeat, true)
+    const took2 = p2Seat(gsSeat, true)
+    r.check('#2860 seat law: the first live input seats the human, the chime pays once',
+        took1 === true && took2 === false && gsSeat.jimmy.human === true)
+    const gsSolo = makeGame(78, { coop: false })
+    const soloHit = p2Seat(gsSolo, true)
+    const gsOut = makeGame(79, { coop: true })
+    gsOut.jimmy.out = true
+    const outHit = p2Seat(gsOut, true)
+    const idleHit = p2Seat(makeGame(80, { coop: true }), false)
+    r.check('#2860 seat law: solo declines, a fallen dragon is not resurrected by a wiggle, idle seats nobody',
+        soloHit === false && gsSolo.jimmy === null && outHit === false && gsOut.jimmy.human === false && idleHit === false)
+
+    // equivalence: 240 ticks of scripted directions and verbs run twice on
+    // seed 91 — once through the keyboard's P2 booleans, once written into
+    // slot 2 the way the bridge/phone writes them (jump→a, kick→b, punch→
+    // boost). Same seat, same world, hash after hash.
+    const STREAM = Array.from({ length: 240 }, (_, i) => ({
+        l: i % 53 < 12, r: i % 53 >= 18 && i % 53 < 34,
+        u: i % 71 < 15, d: i % 71 >= 22 && i % 71 < 30,
+        j: i % 37 < 3, k: i % 23 < 2, p: i % 41 < 2,
+    }))
+    const runSeat = (viaSlot) => {
+        const gs = makeGame(91, { coop: true })
+        gs.enemies.length = 0; gs.barrels.length = 0; gs.pickups.length = 0; gs.projectiles.length = 0
+        gs.jimmy.human = true
+        clearAllSlots()
+        const hashes = []
+        let jumped = false, kicked = false, punched = false
+        const x0 = gs.jimmy.x
+        for (let i = 0; i < STREAM.length; i++) {
+            const s = STREAM[i]
+            if (viaSlot) {
+                const map = { left: s.l, right: s.r, up: s.u, down: s.d, a: s.j, b: s.k, boost: s.p }
+                for (const [f, v] of Object.entries(map)) { if (v) pressSlot(2, f); else releaseSlot(2, f) }
+            }
+            const merged = viaSlot ? p2Merge(kbIdle, slotPad(2, 'dpad')) : p2Merge(s, null)
+            step(gs, {}, merged)
+            gs.events.length = 0
+            if (gs.jimmy.z > 0) jumped = true
+            if (gs.jimmy.state === 'kick') kicked = true
+            if (gs.jimmy.state === 'punch') punched = true
+            hashes.push(stateHash(gs))
+        }
+        clearAllSlots()
+        return { hashes, moved: gs.jimmy.x - x0, jumped, kicked, punched }
+    }
+    const viaKb = runSeat(false)
+    const viaPad = runSeat(true)
+    const same = viaKb.hashes.length === viaPad.hashes.length && viaKb.hashes.every((h, i) => h === viaPad.hashes[i])
+    r.check('#2860 same stream, kb or slot 2, lands on the same world (240-tick hash equivalence)',
+        same, `first divergence tick ${viaKb.hashes.findIndex((h, i) => h !== viaPad.hashes[i])}`)
+    r.check('#2860 the pad stream is alive in the sim — walk, hop, kick and punch off pad fields alone',
+        viaPad.jumped && viaPad.kicked && viaPad.punched && viaPad.moved > 0,
+        `moved ${viaPad.moved.toFixed(0)}px jump=${viaPad.jumped} kick=${viaPad.kicked} punch=${viaPad.punched}`)
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -1051,6 +1155,30 @@ if (MUTANT) {
         }
         r.check(`mutant(${p.name}) goes RED: harm named`, bad !== null, bad || 'harm NOT named — mutant survived')
     }
+    {
+        // the seat's own translator: swap A onto B and the friend's jump goes
+        // dead under the thumb; the p2Merge pins must name it.
+        const PP = join(ROOT, 'src/games/DoubleDragon/p2pad.js')
+        const psrc = readFileSync(PP, 'utf8')
+        const panchor = 'a: !!kb.j || !!p.a,           // jump'
+        const pplant = 'a: !!kb.j || !!p.b,           // MUTANT(seat-swap): the friend\'s jump migrates onto B'
+        if (!psrc.includes(panchor)) { console.error('MUTANT anchor (seat-swap) missing — p2pad moved; the plant must be re-anchored'); process.exit(2) }
+        writeFileSync(PP, psrc.replace(panchor, pplant))
+        let bad
+        try {
+            bad = 'dynamic-import'
+            bad = await (async () => {
+                const mod = await import(`../src/games/DoubleDragon/p2pad.js?mutant=seat-swap${Date.now()}`)
+                const m = mod.p2Merge({ l: false, r: false, u: false, d: false, j: false, k: false, p: false }, { left: false, right: false, up: false, down: false, a: true, b: false, boost: false })
+                return !m.a && !m.b
+                    ? 'HARM NAMED: the friend pressed A — the button every cabinet puts jump on — and the dragon answered nothing; the seat\'s translation is the friend\'s only contract with the game, and a broken one teaches them to drop the pad'
+                    : null
+            })()
+        } finally {
+            writeFileSync(PP, psrc)
+        }
+        r.check('mutant(seat-swap) goes RED: harm named', bad !== null, bad || 'harm NOT named — mutant survived')
+    }
     console.log('\nmutant run: expected red on the planted line.')
     r.exit()
 }
@@ -1138,6 +1266,56 @@ const browser = await launch()
     const jimmyAfter = Number(String(seated.jimmy).split(':')[0])
     r.check('S4: a real W press seats the human and WASD drives the blue dragon (depth + walk)',
         /HUMAN/.test(seated.jimmy) && jimmyAfter > jimmyBefore, `jimmy ${seat0.jimmy} -> ${seated.jimmy}`)
+
+    // #2860: the friend's own pad. navigator.getGamepads is stubbed — pad 1
+    // idle, pad 2 live — and GamepadBridge's rAF poll, onePad slot 2, the
+    // p2Merge seat and the sim run for real off the fake. No keyboard key is
+    // pressed in this leg; the WASD seat above proves the keyboard path.
+    await page.evaluate(() => window.__game.reset(31))
+    await page.waitForTimeout(150)
+    await page.evaluate(() => {
+        const mkButtons = () => Array.from({ length: 17 }, () => ({ pressed: false, value: 0, touched: false }))
+        const mkPad = (id) => ({ connected: true, id, index: 0, mapping: 'standard', buttons: mkButtons(), axes: [0, 0, 0, 0], timestamp: 0 })
+        window.__fakePads = [mkPad('fake-one'), mkPad('fake-two')]
+        Object.defineProperty(navigator, 'getGamepads', { value: () => window.__fakePads, configurable: true })
+    })
+    const pad0 = await page.evaluate(() => ({ ...window.__ddTest.probe(), s: window.__game.state() }))
+    r.check('#2860 a fresh cabinet hands Jimmy to the CPU — the seat is open, not pre-taken',
+        /CPU/.test(pad0.jimmy) && pad0.s.jimmyHuman === 0, `jimmy=${pad0.jimmy}`)
+
+    const held = (pad, btn, v) => page.evaluate(({ pad, btn, v }) => { window.__fakePads[pad].buttons[btn].pressed = v }, { pad, btn, v })
+    await held(1, 15, true) // d-pad right on the friend's pad
+    let padErr = null
+    try {
+        await page.waitForFunction(() => window.__game.state().jimmyHuman === 1, { timeout: 4000 })
+    } catch { padErr = 'seat never taken' }
+    await page.waitForTimeout(450) // keep the thumb on d-pad right and let the walk accrue
+    const padWalk = await page.evaluate(() => ({ ...window.__ddTest.probe(), s: window.__game.state() }))
+    r.check('#2860 a live second pad seats the human through the real bridge — no keyboard touched',
+        padErr === null && padWalk.s.jimmyHuman === 1, padErr || `jimmy=${padWalk.jimmy}`)
+    r.check('#2860 d-pad right walks the blue dragon and Billy stays planted (slot 2 does not leak to P1)',
+        padWalk.s.jimmyX > pad0.s.jimmyX + 8 && Math.abs(padWalk.x - pad0.x) < 2, `jimmyX ${pad0.s.jimmyX} -> ${padWalk.s.jimmyX}, billy x ${pad0.x} -> ${padWalk.x}`)
+
+    await held(1, 15, false)
+    await held(1, 0, true) // A — the hop
+    let jumpSeen = false
+    try { await page.waitForFunction(() => window.__ddTest.probe().jimmyZ > 0 || /:jump/.test(window.__ddTest.probe().jimmy), { timeout: 3000 }); jumpSeen = true } catch {}
+    await held(1, 0, false)
+    await held(1, 1, true) // B — the kick
+    let kickSeen = false
+    try { await page.waitForFunction(() => /:kick/.test(window.__ddTest.probe().jimmy), { timeout: 3000 }); kickSeen = true } catch {}
+    await held(1, 1, false)
+    await held(1, 2, true) // square — the third action (slot boost)
+    let punchSeen = false
+    try { await page.waitForFunction(() => /:punch/.test(window.__ddTest.probe().jimmy), { timeout: 3000 }); punchSeen = true } catch {}
+    r.check('#2860 A hops, B kicks, square punches — all three verbs answer the friend\'s pad through the bridge',
+        jumpSeen && kickSeen && punchSeen, `jump=${jumpSeen} kick=${kickSeen} punch=${punchSeen}`)
+
+    await held(1, 2, false)
+    await page.waitForTimeout(300)
+    const seatKept = await page.evaluate(() => window.__game.state())
+    r.check('#2860 releasing the pad keeps the seat — drop-in is for the run, the same law as the keys',
+        seatKept.jimmyHuman === 1, `jimmyHuman=${seatKept.jimmyHuman}`)
 
     // S4: one seat falling is NOT the end — the partner carries on. Game over
     // is both banks drained; the browser leg kills both dragons through the
