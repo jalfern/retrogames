@@ -861,14 +861,42 @@ export function drawGateStructure (ctx, boss, tick) {
     // bolts along the wall face
     ctx.fillStyle = C.steelLit
     for (let by = 24; by < 148; by += 22) { ctx.fillRect(172, by, 2, 2); ctx.fillRect(378, by, 2, 2) }
-    // cannon emplacements
+    // cannon emplacements — #2880: a caved housing reads ruined. Live slab
+    // keeps the armour law look (and cracks over half its HP, so the dents
+    // are visible before the cave); a wreck is a blackened slab with a
+    // collapsed muzzle, ember flicker in the hole and a rising smoke wisp.
     for (const g of boss.guns) {
         ctx.fillStyle = C.rockLo
         ctx.fillRect(g.x - 11, g.y - 9, 22, 18)
+        if (!g.dead && g.hp <= CFG.gunHp / 2) {
+            ctx.fillStyle = C.rockDeep // spalled concrete toward the muzzle
+            ctx.fillRect(g.x - 9, g.y - 7, 4 + (g.hp & 1), 3)
+            ctx.fillRect(g.x + 3, g.y + 2, 5, 3)
+            ctx.fillRect(g.x - 2, g.y - 8, 2, 2)
+        }
         ctx.fillStyle = '#141820'
         ctx.fillRect(g.x - 7, g.y - 5, 14, 10)
-        ctx.fillStyle = recharging(g, tick) ? '#ff8c1a' : '#3c4650'
-        ctx.fillRect(g.x - 2, g.y - 2, 5, 4)
+        if (g.dead) {
+            ctx.fillStyle = C.rust // soot ring around the blown muzzle
+            ctx.fillRect(g.x - 8, g.y - 6, 16, 2)
+            ctx.fillRect(g.x - 8, g.y + 4, 16, 2)
+            ctx.fillStyle = C.rockDeep // collapsed barrel stub in the opening
+            ctx.fillRect(g.x - 4, g.y - 3, 6, 6)
+            if (Math.floor(tick / 7 + g.x) % 3 === 0) { // dying ember in the hole
+                ctx.fillStyle = '#b34a1e'
+                ctx.fillRect(g.x - 2, g.y - 1, 3, 2)
+            }
+            const sp = tick % 48 // one thin smoke wisp, anchored, rising
+            for (let i = 0; i < 3; i++) {
+                const a = (sp + i * 16) % 48
+                if (a > 40) continue
+                ctx.fillStyle = a < 16 ? '#6a707a' : '#454c58'
+                ctx.fillRect(g.x - 2 + Math.floor(Math.sin((a + g.x) / 6) * 2), g.y - 10 - a, 2, 2)
+            }
+        } else {
+            ctx.fillStyle = recharging(g, tick) ? '#ff8c1a' : '#3c4650'
+            ctx.fillRect(g.x - 2, g.y - 2, 5, 4)
+        }
     }
     // spawn doors: the arch in the gate wall, and a rock postern in the left cliff
     const d = boss.doors[0]

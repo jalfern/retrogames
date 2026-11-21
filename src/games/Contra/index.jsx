@@ -446,6 +446,7 @@ export default function ContraGame () {
                     carriers: gs.carriers.length,
                     pods: gs.pods.map((c) => ({ x: +c.x.toFixed(1), y: +c.y.toFixed(1), kind: c.kind, r: c.recoil || 0, pf: c.puff || 0 })),
                     depot: gs.depot ? { hp: gs.depot.hp, dead: gs.depot.dead } : null,
+                    gateGuns: gs.boss ? gs.boss.guns.map((g) => ({ hp: g.hp, dead: g.dead })) : null, // #2880
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
                     keys: { ...keys },
@@ -465,6 +466,11 @@ export default function ContraGame () {
                     if (opts.inv !== undefined) gs.p.inv = opts.inv
                     if (opts.coreOpen !== undefined && gs.boss) gs.boss.coreT = opts.coreOpen ? 0 : CFG.coreOpen + 20
                     if (opts.clearBoss && gs.boss) { gs.boss.guns.forEach((g) => { g.t = 1e9 }); gs.boss.doors.forEach((d) => { d.t = 1e9 }); gs.soldiers.length = 0 }
+                    // #2880: stand a caved (or dented) near housing for the browser legs
+                    if (opts.gunHp0 !== undefined && gs.boss) {
+                        gs.boss.guns[0].hp = Math.max(0, opts.gunHp0)
+                        if (gs.boss.guns[0].hp === 0) gs.boss.guns[0].dead = true
+                    }
                     if (opts.capsuleNear) gs.capsule = { x: gs.p.x + 8, y: opts.capsuleY ?? gs.p.y - 14, vx: 0, kind: opts.capsuleKind || 'spread' }
                     // #2847: stand a courier off the hero's right for the browser legs
                     if (opts.carrierHere) gs.carriers.push({ x: gs.p.x + (opts.carrierDX ?? 120), y: opts.carrierY ?? 164, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: opts.carrierKind || 'laser', dead: false })

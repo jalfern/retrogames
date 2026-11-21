@@ -59,6 +59,7 @@ export const CFG = {
                               //   early hop descends into the round it jumped for; 36/36
                               //   seeds clear with the later, tighter hop
     depotHp: 10,              // S3.5 the arms depot — a shootable emplacement
+    gunHp: 10,              // #2880 the gate's cannon housings — same slab law, ten rounds
     // --- #2847 pod carriers: the sky couriers (README gap 0) ---
     carrierHp: 2,
     carrierVx: -1.1,
@@ -188,7 +189,8 @@ const FALLS_GUNNERS = [
 ]
 
 // The gate: two cannon emplacements and two spawn doors (world == screen y
-// once the camera locks at 0). The wall itself is armor — only the core hurts.
+// once the camera locks at 0). The wall itself is armor — only the core hurts
+// the gate; but each housing is a depot slab: ten rounds cave one (#2880).
 const GUNS = [{ x: 190, y: 36 }, { x: 330, y: 60 }]
 const DOORS = [{ x: 250, y: 150 }, { x: 16, y: 150 }]
 
@@ -676,7 +678,7 @@ function makeBoss (gs) {
         core: CFG.coreHp,
         coreT: 30,                                  // start armored; first opening soon
         dying: 0,                                   // cascade countdown after the core falls
-        guns: GUNS.map((g, i) => ({ x: g.x, y: g.y, t: 90 + i * 55 })),
+        guns: GUNS.map((g, i) => ({ x: g.x, y: g.y, t: 90 + i * 55, hp: CFG.gunHp, dead: false })),
         doors: DOORS.map((d, i) => ({ x: d.x, y: d.y, t: 150 + i * 120 })),
     }
     gs.ev.push({ type: 'enter' })
@@ -832,10 +834,23 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             // (soldiers, turrets, snipers, #2847 carriers). Ordinary rounds
             // still spark and stop dead: the armour law of the wall stands, and
             // the shuttered core above stays the ONE weak point — untouched.
+            // #2880 the depot slab law reaches the gate: ten rounds cave a
+            // housing — spark per hit, then a named blast and +300, and that
+            // gun is silent for the rest of the fight. A caved housing stops
+            // intercepting rounds entirely (the mount was the armour, not the
+            // wall), pierce "one take" included; the core stays the only win.
+            // Mutant anchor line (`gate-armor-forever`).
             for (const [gi, g] of bo.guns.entries()) {
+                if (g.dead) continue
                 if (Math.abs(b.x - g.x) <= 9 && Math.abs(b.y - g.y) <= 8) {
                     if (pierce && hs.includes('g' + gi)) continue
+                    g.hp -= 1
                     gs.ev.push({ type: 'spark', x: b.x, y: b.y })
+                    if (g.hp <= 0) {
+                        g.hp = 0; g.dead = true
+                        gs.score += 300
+                        gs.ev.push({ type: 'boom', x: g.x, y: g.y - 6, kind: 'tnt' })
+                    }
                     if (pierce) { hs.push('g' + gi); continue }
                     return false
                 }
@@ -1164,6 +1179,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             bo.wasOpen = open
             const tgt = aimTarget(gs, CFG.wallX)
             for (const g of bo.guns) {
+                if (g.dead) continue // #2880 a caved housing is silent — and unlit
                 g.t -= 1
                 if (g.t <= 0 && tgt) {
                     const a = Math.atan2((tgt.lane - 14) - g.y, tgt.x - g.x)
@@ -1391,7 +1407,9 @@ export function stateHash (gs) {
     for (const c of gs.vc) put(c.x)
     if (gs.boss) {
         put(gs.boss.core); put(gs.boss.coreT); put(gs.boss.dying)
-        for (const g of gs.boss.guns) put(g.t)
+        // #2880: housing damage is sim truth — a replay that caved a gun must
+        // diverge loudly, so hp/dead ride the hash alongside the cadence.
+        for (const g of gs.boss.guns) { put(g.t); put(g.hp); put(g.dead ? 1 : 0) }
         for (const d of gs.boss.doors) put(d.t)
     } else put(-1)
     put(gs.end ? (gs.end === 'win' ? 2 : 1) : 0)
