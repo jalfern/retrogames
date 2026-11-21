@@ -1,9 +1,17 @@
 {
  "dataset": "plaicraft-human-v1",
- "version": "c7183de605fa68fe45a871693a488f597f3d59a580a5e2d55e50d022ba28e88f",
+ "version": "696c85888e426714bed7a029570918d50eb49af8e08c56d399e65e2eb9ca5793",
  "source": {
   "store": "https://retrogames.jalfern.workers.dev",
   "listed": 18
+ },
+ "legacy": {
+  "owner": "jalfern",
+  "anchored": true,
+  "takes": 4,
+  "rows": 25078,
+  "hours": 0.0581,
+  "note": "pre-audit unnamed-player takes with native human seats, attributed per the #1712 audit (\"today every human take is jalfern's\"); relabeled/model seats and everything unnamed without an anchor stay flagged"
  },
  "games": {
   "bomb-defuse": {
@@ -22,7 +30,7 @@
   },
   "gauntlet": {
    "takes": 11,
-   "humanTakes": 4,
+   "humanTakes": 8,
    "hours": 0.2094,
    "featureAdapter": true,
    "inRegistry": true
@@ -30,25 +38,31 @@
  },
  "players": {
   "jalfern": {
-   "takes": 4,
+   "takes": 8,
    "games": [
     "gauntlet"
    ],
-   "hours": 0.1106,
-   "voiceSessions": 4,
+   "hours": 0.1687,
+   "voiceSessions": 8,
+   "rows": 72878,
+   "legacyTakes": 4,
    "split": "train"
   }
  },
  "totals": {
   "takes": 18,
   "humanTakes": 4,
+  "legacyTakes": 4,
+  "legacyHours": 0.0581,
+  "humanTakesIncludingLegacy": 8,
   "hours": 0.2334,
   "humanHours": 0.1106,
   "sessionsWithVoice": 16,
+  "sessionsWithPartialVoice": 0,
   "rows": 95638,
-  "humanRows": 47800,
-  "flaggedRows": 47838,
-  "audioTracks": 4
+  "humanRows": 72878,
+  "flaggedRows": 22760,
+  "audioTracks": 8
  },
  "splits": {
   "player": {
@@ -74,7 +88,7 @@
    "pass": false
   },
   "audio": {
-   "tracks": 4,
+   "tracks": 8,
    "pass": true
   },
   "heldoutClean": {
