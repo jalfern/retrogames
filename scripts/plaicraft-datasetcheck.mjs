@@ -18,7 +18,8 @@
 //     proves; a truncated file breaks it).
 //  7. legacy fold (#1712): pre-audit unnamed take attributes to the anchor
 //     owner, rows carry lg, player set and coverage lines stay native-only.
-//  8. mutants: player-split ignored / floor-boss hash-skip / fold disabled —
+//  8. mutants: player-split ignored / floor-boss hash-skip / fold disabled /
+//     bomb-defuse adapter bypassed / trainable-gate reopened —
 //     each must go RED (each line is load-bearing).
 //
 // FIXTURES ARE PIPELINE TESTS, NOT EVIDENCE: the fixture players are scripted
@@ -39,8 +40,10 @@ import { TICK_MS } from '../src/utils/voice.js'
 import { stateHash, step } from '../src/games/Gauntlet/sim.js'
 import { makeGame as fbMakeGame, step as fbStep, stateHash as fbHash } from '../src/games/FloorBoss/sim.js'
 import { N_FEAT as FB_N_FEAT } from '../src/games/FloorBoss/model.js'
+import { createGame as bdMakeGame, step as bdStep, hash as bdHash } from '../src/games/BombDefuse/engine.js'
+import { N_FEAT as BD_N_FEAT } from '../src/games/BombDefuse/model.js'
 import { newGame, heroFromPad, p2FromPad } from './plaicraft-export.mjs'
-import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
+import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 // Local Report (harness.mjs pulls playwright-core at import; this check is
@@ -83,10 +86,12 @@ const craftWebm = (durationMs) => {
 }
 
 function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false }) {
-    const method = game === 'floor-boss' ? 'dpad' : 'stick'
+    const method = game === 'floor-boss' || game === 'bomb-defuse' ? 'dpad' : 'stick'
     const gs = game === 'gauntlet' ? newGame(seed, rules || {}, seats[1] && seats[1].kind !== 'off')
         : game === 'floor-boss' ? fbMakeGame(seed, { duel: seats.length >= 2 })
-            : null
+            : game === 'bomb-defuse' ? bdMakeGame(seed, seats.length >= 2 ? 2 : 1)
+                : null
+    const hashOf = game === 'gauntlet' ? stateHash : game === 'floor-boss' ? fbHash : game === 'bomb-defuse' ? bdHash : null
     const rec = createRecorder({
         gameId: game, method, seed, players: seats.length, build: 'test',
         sources: seats.map((s) => ({ kind: s.kind === 'relabeled' ? 'human' : s.kind })),
@@ -98,17 +103,18 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
     for (let t = 0; t < ticks; t++) {
         const pads = seats.map(() => ({
             up: rnd() < 0.3, down: rnd() < 0.2, left: rnd() < 0.2, right: rnd() < 0.3,
-            a: rnd() < 0.15, ax: Math.cos(rnd() * 6.28), ay: Math.sin(rnd() * 6.28),
+            a: rnd() < 0.15, b: rnd() < 0.15, ax: Math.cos(rnd() * 6.28), ay: Math.sin(rnd() * 6.28),
         }))
         if (game === 'gauntlet') step(gs, heroFromPad(pads[0]), p2FromPad(pads[1] || {}))
         if (game === 'floor-boss') fbStep(gs, pads)
-        rec.addTick(pads, null, gs && gs.tick % 30 === 0 ? (game === 'gauntlet' ? stateHash(gs) : fbHash(gs)) : null)
+        if (game === 'bomb-defuse') bdStep(gs, pads)
+        rec.addTick(pads, null, gs && gs.tick % 30 === 0 ? hashOf(gs) : null)
         if (callAt.has(t + 1)) {
             const c = calls.find((q) => q.t === t + 1)
             rec.addVoiceCmd({ said: c.said, intent: c.intent || null, ok: !!c.ok, ...(Number.isInteger(c.seat) ? { seat: c.seat } : {}) }) // #2805 seat stamp
         }
     }
-    const final = gs ? (game === 'gauntlet' ? stateHash(gs) : fbHash(gs)) : 12345
+    const final = gs ? hashOf(gs) : 12345
     if (voice) {
         const clock = []
         for (let t = 60; t <= ticks; t += 60) clock.push({ t, ms: Math.round(t * TICK_MS) })
@@ -198,13 +204,17 @@ try {
         // voice). The fold must route the legacy take's rows to jalfern.
         ['jalfern', scriptedTake({ seed: 61, voice: { slots: [0] } })],
         ['player', scriptedTake({ seed: 62, ticks: 200, voice: { slots: [0] } })],
+        // #1712 trainable-gate fixture: named human on an ADAPTER-LESS game —
+        // consented voice lands, but the take must stay flagged (no-adapter):
+        // no split, no player slot, no coverage credit.
+        ['hank', scriptedTake({ game: 'talk-me-down', seed: 44, ticks: 150, seats: [{ kind: 'human' }], voice: { slots: [0] } })],
     ]
     let up = 0
     for (const [player, rec] of uploads) {
         const res = await uploadSession(rec, { player, consent: { motion: true, voice: !!rec.voice }, base: sim.base })
         if (res.ok) up++
     }
-    r.check('fixture store provisioned (9 consented takes uploaded)', up === 9, `${up}/9`)
+    r.check('fixture store provisioned (10 consented takes uploaded)', up === 10, `${up}/10`)
 
     // determinism: two full builds against the store, twice. In-process
     // (not a blocked spawnSync child: the sim lives on THIS event loop).
@@ -247,8 +257,8 @@ try {
         if (foldDecision(c.cls, c.native, c.relabeled, nativeHumans)) foldedKeys.add(s.key)
         else if (!humanKeys.has(s.key)) flaggedKeys.add(s.key)
     }
-    r.check('fixtures classify as expected: 5 human, 1 legacy-folded, 3 flagged',
-        humanKeys.size === 5 && foldedKeys.size === 1 && flaggedKeys.size === 3,
+    r.check('fixtures classify as expected: 6 human, 1 legacy-folded, 3 flagged',
+        humanKeys.size === 6 && foldedKeys.size === 1 && flaggedKeys.size === 3,
         `human=[${[...humanKeys].map((k) => envByKey.get(k).player)}] folded=[${[...foldedKeys].map((k) => envByKey.get(k).player)}] flagged=[${[...flaggedKeys].map((k) => envByKey.get(k).player)}]`)
 
     const trainRows = rows.filter((x) => x.split === 'train')
@@ -256,19 +266,28 @@ try {
     const seedRows = rows.filter((x) => x.split === 'seed-heldout')
     const flagRows = rows.filter((x) => x.split === 'flagged')
     r.check('all splits present', trainRows.length > 0 && heldRows.length > 0 && flagRows.length > 0 && seedRows.length >= 0)
-    r.check('holdout purity: no flagged take in train/heldout',
-        [...trainRows, ...heldRows].every((x) => humanKeys.has(x.k) || foldedKeys.has(x.k)))
+    r.check('holdout purity: no flagged take in train/heldout (adapter-gate included — a human take on an unadapted game may not ride a split)',
+        [...trainRows, ...heldRows].every((x) => (humanKeys.has(x.k) && card.games[x.g].featureAdapter === true) || foldedKeys.has(x.k)))
     r.check('no held-out player appears in any train row (acceptance line 4; folded takes judged by their OWNER)',
         !trainRows.some((x) => heldout.has(foldedKeys.has(x.k) ? LEGACY_OWNER : envByKey.get(x.k)?.player)),
         `heldout=${[...heldout]} trainPlayers=${[...new Set(trainRows.map((x) => foldedKeys.has(x.k) ? LEGACY_OWNER + '(folded)' : envByKey.get(x.k)?.player))]}`)
-    r.check('every human take lands train/player-heldout/seed-heldout (never flagged)',
-        rows.filter((x) => humanKeys.has(x.k)).every((x) => x.split !== 'flagged'))
+    r.check('every TRAINABLE take (human/folded on an adapted game) lands train/player-heldout/seed-heldout — never flagged',
+        rows.filter((x) => humanKeys.has(x.k) && card.games[x.g].featureAdapter === true).every((x) => x.split !== 'flagged'))
+    r.check('no-adapter gate (#1712): named human on an unadapted game lands flagged and stays out of players/coverage',
+        rows.some((x) => x.g === 'talk-me-down') && rows.filter((x) => x.g === 'talk-me-down').every((x) => x.split === 'flagged' && x.feat === null)
+        && !card.players.hank && !card.coverage.humanPlayers.includes('hank')
+        && card.totals.unadaptedHumanTakes === 1 && !card.coverage.gamesCovered.games.includes('talk-me-down')
+        && card.games['talk-me-down'].featureAdapter === false && card.games['talk-me-down'].humanTakes === 0)
+    r.check('bomb-defuse rows carry THE 35 seat features + encoded actions (#1712 adapter)',
+        rows.filter((x) => x.g === 'bomb-defuse').every((x) => Array.isArray(x.feat) && x.feat.length === BD_N_FEAT && x.feat.every((v) => Number.isFinite(v)) && typeof x.act === 'object')
+        && rows.some((x) => x.g === 'bomb-defuse' && x.split !== 'flagged'),
+        `rows=${rows.filter((x) => x.g === 'bomb-defuse').length}`)
     r.check('seed axis auditable: train rows keep seedHeldout false, seed-heldout rows true (player axis outranks)',
         rows.every((x) => x.split === 'train' ? !seedHeldout(x.s) : x.split === 'seed-heldout' ? seedHeldout(x.s) : true))
     r.check('gauntlet rows carry real features (adapter) and encoded actions',
         rows.filter((x) => x.g === 'gauntlet').every((x) => Array.isArray(x.feat) && x.feat.length === 31 && typeof x.act === 'object'))
-    r.check('no-adapter game still contributes action rows, feat honest-null',
-        rows.some((x) => x.g === 'bomb-defuse' && x.feat === null))
+    r.check('no-adapter game still contributes action rows, feat honest-null (flagged at the gate above)',
+        rows.some((x) => x.g === 'talk-me-down' && x.feat === null))
     r.check('tool rows flagged with not-a-game reason in card coverage',
         flagRows.some((x) => x.g === 'claptest'))
 
@@ -276,7 +295,7 @@ try {
     const audioIdx = fs.existsSync(path.join(outA, 'audio/index.jsonl'))
         ? fs.readFileSync(path.join(outA, 'audio/index.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
         : []
-    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded carry voice)', audioIdx.length === 7, `${audioIdx.length}/7`)
+    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank carry voice)', audioIdx.length === 8, `${audioIdx.length}/8`)
     const aliceIdx = audioIdx.find((x) => x.player === 'alice')
     let verbatim = false
     if (aliceIdx && fs.existsSync(path.join(outA, aliceIdx.file))) {
@@ -331,6 +350,23 @@ try {
             good.ok && good.rows.length === 180 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
             bad.mismatch ? `tick ${bad.mismatch.tick}` : 'no mismatch?!')
     }
+    { // unit: bomb-defuse adapter (#1712) — same contract, and solo takes verify
+        const clean = scriptedTake({ game: 'bomb-defuse', seed: 51, ticks: 240, seats: [{ kind: 'human' }] })
+        const good = bombDefuseRows('unit/bd-clean', clean)
+        const badRec = JSON.parse(JSON.stringify(clean))
+        badRec.hashes[Math.max(0, badRec.hashes.length - 2)].h = 'cafebabe'
+        const bad = bombDefuseRows('unit/bd-tamper', badRec)
+        r.check('bomb-defuse adapter: clean solo take verifies (240 rows), tampered refuses at its tick (#1712)',
+            good.ok && good.rows.length === 240 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
+            bad.mismatch ? `tick ${bad.mismatch.tick}` : (good.ok ? `${good.rows.length} rows` : 'no mismatch?!'))
+        // the autoregressive lane: the model.js contract says the caller banks
+        // mem.pa after the label — prev-pad features must be LIVE, not zero-forever.
+        const anyPrev = good.rows.some((x) => x.feat.slice(BD_N_FEAT - 6).some((v) => v === 1))
+        r.check('bomb-defuse prev-pad lane banked: some row carries a nonzero prev-pad feature (#1712)',
+            anyPrev && BD_N_FEAT === 35)
+    }
+    r.check('floor-boss prev-pad lane banked too (model.js contract, was riding zero forever, #1712)',
+        fbRows.some((x) => x.feat.slice(FB_N_FEAT - 6).some((v) => v === 1)))
     { // integration: on a live store, ONE tampered floor-boss take must fail the
         // whole build — the S1 100%-verifiable line, engine two (#2805).
         const sim2 = await startRelaySim()
@@ -372,8 +408,10 @@ try {
         JSON.stringify(card.legacy && { ...card.legacy, note: undefined }))
     r.check('folded take audio written under the owner (consented human data, #1712)',
         audioIdx.some((x) => x.key === foldedKey && x.player === LEGACY_OWNER && x.human === true))
-    r.check('coverage lines stay native-only: fold cannot add a human game (#1712)',
-        card.coverage.gamesCovered.games.length === 3 && !card.coverage.gamesCovered.games.includes('player'))
+    r.check('coverage lines stay native-only and adapter-only: fold cannot add a human game, unadapted games cannot (#1712)',
+        card.coverage.gamesCovered.games.length === 3 && !card.coverage.gamesCovered.games.includes('player')
+        && !card.coverage.gamesCovered.games.includes('talk-me-down'),
+        JSON.stringify(card.coverage.gamesCovered.games))
 } catch (e) {
     r.check('check completed without unexpected failure', false, String(e && e.stack || e))
 }
@@ -469,6 +507,67 @@ if (MUTATE) {
         } finally {
             pull(DS)
             if (fs.readFileSync(DS, 'utf8') !== src3) { console.log('FAIL   mutant restore: exact original bytes not back (#1712)'); r.failed++ }
+        }
+    }
+    // mutant 4 (#1712 adapter): bomb-defuse removed from ADAPTERS — its rows
+    // lose THE features and its human (carol) falls back to flagged. If the
+    // 35-feature rows still appear, the adapter registration is not load-bearing.
+    const src4 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR4 = "'bomb-defuse': bombDefuseRows"
+    if (!src4.includes(ANCHOR4)) {
+        console.log('FAIL   adapter anchor not found — update the mutant (#1712)')
+        r.failed++
+    } else {
+        plant(DS, src4.replace(ANCHOR4, '/* MUTANT: bomb-defuse adapter bypassed */'))
+        try {
+            const outM4 = path.join(tmp, 'adapter-mut')
+            const cli4 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM4, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout = ''
+                p.stdout.on('data', (d) => { stdout += d })
+                p.on('exit', (code) => resolve({ status: code, stdout }))
+            })
+            const rowsM4 = cli4.status === 0 && fs.existsSync(path.join(outM4, 'dataset.jsonl'))
+                ? fs.readFileSync(path.join(outM4, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+                : []
+            const featBd = rowsM4.some((x) => x.g === 'bomb-defuse' && Array.isArray(x.feat) && x.feat.length === BD_N_FEAT)
+            r.check('bomb-defuse adapter is load-bearing: 35-feature rows exist (RED under the adapter-bypass mutant, #1712)',
+                featBd, `featRows=${featBd ? 'yes' : 'no'}${cli4.status !== 0 ? ' build exit ' + cli4.status : ''}`)
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src4) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 adapter)'); r.failed++ }
+        }
+    }
+
+    // mutant 5 (#1712 trainable gate): adapter gate reopened — the consented
+    // human on the adapter-less game (hank) leaks into train with feat:null
+    // rows. If it still lands flagged, the gate is load-bearing.
+    const src5 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR5 = 'const trainable = human && !!ADAPTERS[game]'
+    if (!src5.includes(ANCHOR5)) {
+        console.log('FAIL   trainable-gate anchor not found — update the mutant (#1712)')
+        r.failed++
+    } else {
+        plant(DS, src5.replace(ANCHOR5, 'const trainable = human /* MUTANT: no-adapter leak reopened */'))
+        try {
+            const outM5 = path.join(tmp, 'gate-mut')
+            const cli5 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM5, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout = ''
+                p.stdout.on('data', (d) => { stdout += d })
+                p.on('exit', (code) => resolve({ status: code, stdout }))
+            })
+            const rowsM5 = cli5.status === 0 && fs.existsSync(path.join(outM5, 'dataset.jsonl'))
+                ? fs.readFileSync(path.join(outM5, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+                : []
+            const leaked = rowsM5.some((x) => x.g === 'talk-me-down' && x.split === 'train')
+            r.check('trainable gate is load-bearing: no feat:null row in train (RED under the leak-reopen mutant, #1712)',
+                !leaked, leaked ? 'no-adapter take LEAKED into train' : 'gate held')
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src5) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 gate)'); r.failed++ }
         }
     }
 }

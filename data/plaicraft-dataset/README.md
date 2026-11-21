@@ -15,10 +15,10 @@ files. The full corpus (rows + audio) rides out of git; `sample.jsonl`,
 | `g`   | game id |
 | `s`   | seed of the take |
 | `t`   | tick (1-based) within the take |
-| `lvl` | level index (null for games without a feature adapter) |
+| `lvl` | level index (gauntlet level / floor-boss shift / bomb index; null for games without a feature adapter) |
 | `seat`| seat index this row describes |
 | `act` | that seat's compact pad that tick (`rec/v1` pad codec) |
-| `feat`| game-state features for that seat — gauntlet: THE 31 features of `src/games/Gauntlet/model.js`, computed while replaying the take against THE sim with every recorded checkpoint verified; other games: `null` until an adapter exists |
+| `feat`| game-state features for that seat — gauntlet: THE 31 features of `src/games/Gauntlet/model.js`; floor-boss: THE 37 of `src/games/FloorBoss/model.js`; bomb-defuse: THE 35 of `src/games/BombDefuse/model.js` (#1712) — always computed while replaying the take against THE sim with every recorded checkpoint verified; other games: `null` until an adapter exists |
 | `split` | `train` \| `player-heldout` \| `seed-heldout` \| `flagged` |
 
 - `audio/<file>.webm` — consented human voice tracks, decoded verbatim from

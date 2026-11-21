@@ -46,6 +46,15 @@
 //    train, flagged lg on every row. Relabeled/model seats never fold; splits
 //    and coverage lines judge native named humans only — the fold adds
 //    volume, never a second player and never a new human game.
+//  - Trainable gate (#1712, this pass): consent puts a take on the board; the
+//    ADAPTER puts it in train. A take whose game has no replay adapter cannot
+//    be verified tick-for-tick (S1's law: unverified rows are never shipped)
+//    and carries feat:null (acceptance line 1 wants features per tick) — so it
+//    lands split 'flagged' (reason no-adapter), stays out of the player split
+//    and the coverage lines, and its count rides card.totals.unadaptedHumanTakes.
+//    Consented HUMAN audio still lands: consent and replayability are separate
+//    gates, and voice data keeps its value even when the actions must wait for
+//    an adapter.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -60,6 +69,8 @@ import { makeGame, step, stateHash } from '../src/games/Gauntlet/sim.js'
 import { featurize } from '../src/games/Gauntlet/model.js'
 import { makeGame as fbMakeGame, step as fbStep, stateHash as fbHash } from '../src/games/FloorBoss/sim.js'
 import { featurize as fbFeaturize, seatChannel } from '../src/games/FloorBoss/model.js'
+import { createGame as bdMakeGame, step as bdStep, hash as bdHash } from '../src/games/BombDefuse/engine.js'
+import { featurize as bdFeaturize } from '../src/games/BombDefuse/model.js'
 import { newGame, heroFromPad, p2FromPad, seatedPartner } from './plaicraft-export.mjs'
 
 const argv = process.argv.slice(2)
@@ -227,6 +238,8 @@ export function floorBossRows(key, rec) {
             if (who) {
                 if (!mems[i]) mems[i] = {}
                 feat = fbFeaturize(gs, who, mems[i]).map((v) => +v.toFixed(3))
+                mems[i].pa = pads[i] // #1712: bank the autoregressive lane AFTER the label —
+                // model.js documents this contract; without it the prev-pad features rode zero forever.
             }
             rows.push({ k: key, g: rec.game, s: rec.seed, t: t1, lvl: gs.shift, seat: i, act: encodePad(pads[i]), feat })
         }
@@ -235,7 +248,38 @@ export function floorBossRows(key, rec) {
     return { ok, mismatch: null, rows }
 }
 
-const ADAPTERS = { gauntlet: gauntletRows, 'floor-boss': floorBossRows }
+// bomb-defuse adapter (#1712): engine.js is Node-clean and integer-only (the
+// #1793 lesson applied at its birth), so takes replay-verify against their
+// checkpoints and carry THE 35 seat features (src/games/BombDefuse/model.js).
+// Solo takes record ONE slot — seat 2 lives inside the sim (engine.partnerPad);
+// its hands are visible to the player through the partner lamps, which ride
+// the features (this game splits EFFORT, not information).
+export function bombDefuseRows(key, rec) {
+    const gs = bdMakeGame(rec.seed, rec.players >= 2 ? 2 : 1)
+    const want = new Map(rec.hashes.map((x) => [x.t, x.h]))
+    const mems = {}
+    const rows = []
+    const finalT = rec.hashes.length ? rec.hashes[rec.hashes.length - 1] : null
+    for (let t = 0; t < rec.ticks; t++) {
+        const pads = rec.slots.map((s) => decodePad(s.pads[t], rec.method))
+        bdStep(gs, pads)
+        const t1 = t + 1
+        if (want.has(t1)) {
+            const got = bdHash(gs)
+            if (got !== want.get(t1)) return { ok: false, mismatch: { tick: t1, want: want.get(t1), got }, rows }
+        }
+        for (let i = 0; i < rec.slots.length; i++) {
+            if (!mems[i]) mems[i] = {}
+            const feat = bdFeaturize(gs, i, mems[i]).map((v) => +v.toFixed(3))
+            mems[i].pa = pads[i] // bank the autoregressive lane after the label
+            rows.push({ k: key, g: rec.game, s: rec.seed, t: t1, lvl: gs.bomb, seat: i, act: encodePad(pads[i]), feat })
+        }
+    }
+    const ok = !finalT || finalT.h === bdHash(gs)
+    return { ok, mismatch: null, rows }
+}
+
+const ADAPTERS = { gauntlet: gauntletRows, 'floor-boss': floorBossRows, 'bomb-defuse': bombDefuseRows }
 
 // --- audio -----------------------------------------------------------------------
 // Clips: voiceCmd calls (what was SAID, on the tick clock) cut to ms windows
@@ -298,7 +342,18 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
         t.folded = foldDecision(t.cls, t.native, t.relabeled, humans)
         if (t.folded) { legacyTakes++; legacyTicks += t.rec.ticks }
     }
-    const { heldout: heldPlayers, blocked: holdoutBlocked } = playerSplit(humans)
+    // Trainable doctrine (#1712): CONSENT routes a take out of 'flagged' (the
+    // audit classes above), and the ADAPTER gate routes it into train/heldout —
+    // an adapter-less take cannot be replay-verified here (S1's law: unverified
+    // rows are never shipped) and its feat:null rows cannot meet acceptance
+    // line 1 ("game state features per tick"). Named humans on unadapted games
+    // keep their consent (audio lands, identity is on the card's games block)
+    // but never a split, never a player slot, never a coverage line.
+    const trainableHumans = new Set()
+    for (const t of pre) {
+        if (t.cls === 'human' && ADAPTERS[t.rec.game]) trainableHumans.add(String(t.envelope.player || t.rec.player))
+    }
+    const { heldout: heldPlayers, blocked: holdoutBlocked } = playerSplit(trainableHumans)
 
     const lines = []
     const audioIndex = []
@@ -318,12 +373,13 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
         const game = rec.game
         const player = folded ? LEGACY_OWNER : String(envelope.player || rec.player || '')
         const human = cls === 'human' || folded
+        const trainable = human && !!ADAPTERS[game] // consent AND replay-verified features (see trainable doctrine above)
         if (rec.voice && Array.isArray(rec.voice.tracks) && rec.voice.tracks.length) sessionsWithVoice++
         if (human && rec.voice && Array.isArray(rec.voice.tracks) && rec.voice.tracks.some((tr) => tr.partial)) sessionsWithPartialVoice++
         const stats = perGame[game] || (perGame[game] = { takes: 0, humanTakes: 0, ticks: 0 })
         stats.takes++
         stats.ticks += rec.ticks
-        if (human) {
+        if (trainable) {
             stats.humanTakes++
             const pp = perPlayer[player] || (perPlayer[player] = { takes: 0, games: new Set(), ticks: 0, voiceSessions: 0, rows: 0, legacyTakes: 0 })
             pp.takes++
@@ -353,7 +409,7 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
             rejected.push({ key: envelope.key, cls, mismatch: res.mismatch })
             continue
         }
-        const splitOf = !human
+        const splitOf = !trainable
             ? 'flagged'
             : heldPlayers.has(player)
                 ? 'player-heldout'
@@ -362,7 +418,7 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
                     : 'train'
         for (const row of res.rows) {
             row.split = splitOf
-            if (human) { humanRows++; perPlayer[player].rows++ }
+            if (trainable) { humanRows++; perPlayer[player].rows++ }
             else flaggedRows++
             if (folded) { legacyRows++; row.lg = 1 } // fold marker rides every row: an RL loader can filter on it
             lines.push(JSON.stringify(row))
@@ -405,10 +461,13 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
     const version = shaHex(contentHashes.map(([p, h]) => `${p}\0${h}\n`).join(''))
 
     const hours = (ticks) => Math.round((ticks / 60 / 3600) * 10000) / 10000
-    // Coverage lines judge NATIVE named humans only — the fold adds train
-    // volume, never a second player and never a new human game (#1712 lines
-    // are closed by friends' takes, not by attributing old labels).
-    const humanTakes = pre.filter((t) => t.cls === 'human')
+    // Coverage lines judge NATIVE named humans with replay-verified (adapted)
+    // takes only — the fold adds train volume, never a second player and never
+    // a new human game (#1712 lines are closed by friends' takes, not by
+    // attributing old labels), and an unadapted game cannot close the games
+    // line because its rows carry no features (trainable doctrine, above).
+    const humanTakes = pre.filter((t) => t.cls === 'human' && ADAPTERS[t.rec.game])
+    const unadaptedHumanTakes = pre.filter((t) => t.cls === 'human' && !ADAPTERS[t.rec.game])
     const gamesWithHuman = [...new Set(humanTakes.map((t) => t.rec.game))].sort()
     const legacyAnchored = humans.has(LEGACY_OWNER)
     const card = {
@@ -437,7 +496,8 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
         }])),
         totals: {
             takes: pre.length,
-            humanTakes: humanTakes.length, // native named humans only (fold counted separately)
+            humanTakes: humanTakes.length, // native named humans with adapted takes (fold counted separately)
+            unadaptedHumanTakes: unadaptedHumanTakes.length, // consented humans held out of train by the adapter gate (flagged, reason no-adapter)
             legacyTakes,
             legacyHours: hours(legacyTicks),
             humanTakesIncludingLegacy: humanTakes.length + legacyTakes,
@@ -461,10 +521,10 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
             audio: { tracks: audioFiles.length, pass: audioFiles.length > 0 },
             heldoutClean: {
                 playersHeldout: heldPlayers.size,
-                pass: humans.size >= 2 ? heldPlayers.size >= 1 : null, // null = not yet judgeable
-                blocked: humans.size < 2 ? 'need-2-human-players' : null,
+                pass: trainableHumans.size >= 2 ? heldPlayers.size >= 1 : null, // null = not yet judgeable
+                blocked: trainableHumans.size < 2 ? 'need-2-human-players' : null,
             },
-            humanPlayers: [...humans].sort(),
+            humanPlayers: [...trainableHumans].sort(), // trainable natives (consent AND adapter) — an unadapted-only friend is named in card.games players, not here
         },
     }
 
