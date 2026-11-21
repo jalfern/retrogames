@@ -42,6 +42,7 @@ export default function RType() {
         let overAt = 0
         let shake = 0
         const part = []
+        const rings = [] // #2831: expanding cyan rings for hunter-kills on the orbit
         let attachFlash = 0 // #2823: capture ceremony countdown (frames)
         let lastStrain = -99 // #2823: throttle for the armour-grind strain tick
         let plugN = 0 // #2823: per-hit pitch rotation for the plug tick
@@ -81,6 +82,8 @@ export default function RType() {
             bit: () => { audioController.playTone(700, 0.06, 'square', 0.09); audioController.playTone(1050, 0.08, 'square', 0.09, 0.06) },
             shield: () => { const n = [523, 659, 784, 1046, 1318]; n.forEach((f, i) => audioController.playTone(f, 0.1, 'triangle', 0.1, i * 0.05)) },
             deflect: () => audioController.playTone(210, 0.03, 'square', 0.06),
+            // #2831: a hunter popped by the orbit bursts as a cyan ring at the bit
+            hunterring: () => { audioController.playSweep(980, 240, 0.14, 'square', 0.09); audioController.playNoise(0.05, 0.06) },
             bitslost: () => audioController.playSweep(500, 120, 0.25, 'triangle', 0.09),
             leg2: () => { audioController.playTone(392, 0.12, 'square', 0.1); audioController.playTone(523, 0.14, 'square', 0.1, 0.1) },
             p2arrive: () => { audioController.playSweep(70, 110, 0.7, 'sawtooth', 0.14); audioController.playTone(140, 0.6, 'triangle', 0.07) },
@@ -118,6 +121,11 @@ export default function RType() {
                 else if (ev === 'hit') bursts(3, (gs.lastHitX ?? gs.ship.x + 40) - sx, gs.lastHitY ?? gs.ship.y, 1)
                 else if (ev === 'corehit') bursts(6, gs.lastHitX ? gs.lastHitX - sx : (gs.p1 ? gs.p1.x + 20 : 40), gs.lastHitY ?? 120, 2)
                 else if (ev === 'deflect') bursts(4, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 3)
+                else if (ev === 'hunterring') { // #2831: the pop reads at the BIT — ring + white core
+                    bursts(10, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 3)
+                    bursts(3, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 2)
+                    rings.push({ x: (gs.lastHitX ?? gs.ship.x + 14) - sx, y: gs.lastHitY ?? gs.ship.y, k: 12 })
+                }
                 else if (ev === 'coredown') bursts(24, (gs.lastHitX ?? 60) - sx, gs.lastHitY ?? 120, 0)
                 else if (ev === 'bit') bursts(8, gs.ship.x - sx, gs.ship.y, 1)
                 else if (ev === 'shield') bursts(14, gs.ship.x - sx, gs.ship.y, 1)
@@ -138,6 +146,7 @@ export default function RType() {
             gs = makeGame(freshSeed())
             gs.hi = hiscore
             part.length = 0
+            rings.length = 0
             demoHold = 0
             setMode('play')
             screen = 'play'
@@ -201,7 +210,7 @@ export default function RType() {
                     attachFlash -= 1
                 }
             }
-            for (const bt of gs.bits) drawBit(ctx, bt, gs.camX, shieldOn(gs))
+            for (const bt of gs.bits) drawBit(ctx, bt, gs.camX, shieldOn(gs), gs.tick)
             // particles (juice layer — Math.random law: never reaches state)
             for (let i = part.length - 1; i >= 0; i--) {
                 const p = part[i]
@@ -209,6 +218,17 @@ export default function RType() {
                 if (p.t <= 0) { part.splice(i, 1); continue }
                 ctx.fillStyle = p.c === 0 ? (p.t % 4 < 2 ? '#ffd23c' : '#ff6a2a') : p.c === 1 ? '#9ac93c' : p.c === 3 ? '#8ae0ff' : '#d9dde2'
                 ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2)
+            }
+            // #2831: hunter-kills on the orbit bloom as a ring at the bit's position
+            for (let i = rings.length - 1; i >= 0; i--) {
+                const g = rings[i]
+                g.k -= 1
+                if (g.k <= 0) { rings.splice(i, 1); continue }
+                ctx.strokeStyle = `rgba(138,224,255,${(g.k / 12 * 0.8).toFixed(2)})`
+                ctx.lineWidth = 1
+                ctx.beginPath()
+                ctx.arc(Math.round(g.x) + 0.5, Math.round(g.y) + 0.5, 12 - g.k + 3, 0, Math.PI * 2)
+                ctx.stroke()
             }
             ctx.restore()
             drawHud(ctx, gs)
@@ -361,6 +381,7 @@ export default function RType() {
                 reset: (seed) => {
                     gs = makeGame(seed >>> 0)
                     part.length = 0
+            rings.length = 0
                     keys.l = keys.r = keys.u = keys.d = keys.f = false
                     podQ = false
                     screen = 'play'

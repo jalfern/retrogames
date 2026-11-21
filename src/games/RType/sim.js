@@ -221,10 +221,13 @@ export function bitPos(gs, i) {
 export const shieldOn = (gs) => gs.bits.length === 4
 
 // px/py are written once per tick so drawing and collision never disagree.
+// flash (#2831) is a juice countdown the draw layer reads — never hashed, so
+// contract replays are untouched by the feedback pass.
 function refreshBits(gs) {
     for (let i = 0; i < gs.bits.length; i++) {
         const p = bitPos(gs, i)
         gs.bits[i].px = p.x; gs.bits[i].py = p.y
+        if (gs.bits[i].flash > 0) gs.bits[i].flash -= 1
     }
 }
 
@@ -463,11 +466,15 @@ function runWorld(gs, pad, frozen) {
         if (s.cd > 0) s.cd -= 1
         if (s.weapon === 'vulcan') {
             if (pad.a && s.cd <= 0) {
-                gs.shots.push({ id: gs.nextId++, x: s.x + 12, y: s.y - 1, kind: 'v', size: 0, pierce: false, hit: [] })
+                gs.shots.push({ id: gs.nextId++, x: s.x + 12, y: s.y - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
                 // a chained hull outguns the convoy: every bit draws its own
-                // stream from where it rides (the original's bit-fire spread)
+                // stream from where it rides. #2831 bit×arm matrix: the streams
+                // FAN — a bit off the hull line shoots outward in proportion to
+                // its offset, so the chain buys lanes, not just volume (the
+                // original's spread). Orbiting bits sweep their fan as they spin.
                 for (const bt of gs.bits) {
-                    gs.shots.push({ id: gs.nextId++, x: (bt.px ?? s.x) + 10, y: (bt.py ?? s.y) - 1, kind: 'v', size: 0, pierce: false, hit: [] })
+                    const by = bt.py ?? s.y
+                    gs.shots.push({ id: gs.nextId++, x: (bt.px ?? s.x) + 10, y: by - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: clamp((by - s.y) * 0.045, -0.5, 0.5) })
                 }
                 s.cd = CFG.vulcanCd
                 gs.events.push('shot')
@@ -478,7 +485,8 @@ function runWorld(gs, pad, frozen) {
             else if (s.charge > 0) {
                 if (s.charge >= POD.laserMin) {
                     const tier = s.charge >= 50 ? 2 : s.charge >= 25 ? 1 : 0
-                    gs.shots.push({ id: gs.nextId++, x: s.x + 12, y: s.y - 1, kind: 'l', size: tier, pierce: true, hit: [] })
+                    // #2831 matrix: every bit riding the chain widens the lance
+                    gs.shots.push({ id: gs.nextId++, x: s.x + 12, y: s.y - 1, kind: 'l', size: tier, pierce: true, hit: [], wy: gs.bits.length })
                     gs.events.push('laser')
                 }
                 s.charge = 0
@@ -488,7 +496,8 @@ function runWorld(gs, pad, frozen) {
             else if (s.charge > 0) {
                 if (s.charge >= CFG.waveMin) {
                     const tier = s.charge >= 50 ? 2 : s.charge >= 25 ? 1 : 0
-                    gs.shots.push({ id: gs.nextId++, x: s.x + 10, y: s.y, kind: 'w', size: tier, pierce: true, hit: [] })
+                    // #2831 matrix: every bit broadens the crescent's sweep
+                    gs.shots.push({ id: gs.nextId++, x: s.x + 10, y: s.y, kind: 'w', size: tier, pierce: true, hit: [], hx: gs.bits.length })
                     gs.events.push('wave')
                 }
                 s.charge = 0
@@ -706,13 +715,17 @@ function runWorld(gs, pad, frozen) {
     for (let i = gs.shots.length - 1; i >= 0; i--) {
         const q = gs.shots[i]
         q.x += q.kind === 'v' ? CFG.vulcanSpeed : q.kind === 'l' ? POD.laserSpeed : CFG.waveSpeed
+        if (q.vy) {
+            q.y += q.vy // fanned bit-streams drift outward; gone when they leave the field
+            if (q.y < FIELD_TOP || q.y > FIELD_BOT) { gs.shots.splice(i, 1); continue }
+        }
         if (q.x > gs.camX + W + 20) { gs.shots.splice(i, 1); continue }
         let dead = false
 
         // vs missiles (any shot can down a hunter)
         for (let m = gs.missiles.length - 1; m >= 0; m--) {
             const ms = gs.missiles[m]
-            if (ms.x > q.x - 8 && ms.x < q.x + lance(q) + 8 && Math.abs(ms.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] : q.kind === 'l' ? 5 : 6)) {
+            if (ms.x > q.x - 8 && ms.x < q.x + lance(q) + 8 && Math.abs(ms.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + (q.hx ?? 0) : q.kind === 'l' ? 5 + (q.wy ?? 0) : 6)) {
                 gs.missiles.splice(m, 1); addScore(gs, 50); gs.events.push('boom')
                 if (!q.pierce) dead = true
                 break
@@ -727,14 +740,14 @@ function runWorld(gs, pad, frozen) {
                 let struck = false
                 if (e.kind === 'hullseg') struck = q.x + lance(q) + 2 > e.x && q.x < e.x + e.len && q.y > e.y0 && q.y < e.y1
                 else if (e.kind === 'larva') struck = q.kind === 'l'
-                    ? e.x > q.x - 5 && e.x < q.x + lance(q) + 5 && Math.abs(e.y - q.y) < 6
-                    : Math.abs(e.x - q.x) < 9 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 : 6)
+                    ? e.x > q.x - 5 && e.x < q.x + lance(q) + 5 && Math.abs(e.y - q.y) < 6 + (q.wy ?? 0) * 2
+                    : Math.abs(e.x - q.x) < 9 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 + (q.hx ?? 0) * 2 : 6)
                 else if (e.kind === 'turret') struck = q.kind === 'l'
-                    ? e.x > q.x - 5 && e.x < q.x + lance(q) + 5 && Math.abs(e.y - q.y) < 7
-                    : Math.abs(e.x - q.x) < 9 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 : 7)
+                    ? e.x > q.x - 5 && e.x < q.x + lance(q) + 5 && Math.abs(e.y - q.y) < 7 + (q.wy ?? 0) * 2
+                    : Math.abs(e.x - q.x) < 9 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 + (q.hx ?? 0) * 2 : 7)
                 else if (e.kind === 'pod') struck = q.kind === 'l'
-                    ? e.x > q.x - 7 && e.x < q.x + lance(q) + 7 && Math.abs(e.y - q.y) < 8
-                    : Math.abs(e.x - q.x) < 11 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 : 8)
+                    ? e.x > q.x - 7 && e.x < q.x + lance(q) + 7 && Math.abs(e.y - q.y) < 8 + (q.wy ?? 0) * 2
+                    : Math.abs(e.x - q.x) < 11 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 + (q.hx ?? 0) * 2 : 8)
                 if (!struck) continue
                 if (e.kind === 'hullseg') { gs.events.push('clank'); dead = true; break } // armour eats it
                 gs.lastHitX = e.x; gs.lastHitY = e.y
@@ -818,6 +831,7 @@ function runWorld(gs, pad, frozen) {
             let deflected = false
             for (const bt of gs.bits) {
                 if (Math.abs(b.x - bt.px) < BIT.rad && Math.abs(b.y - bt.py) < BIT.rad) {
+                    bt.flash = 8 // #2831: the bit that ate the round flashes white + shudders
                     gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('deflect'); deflected = true; break
                 }
             }
@@ -847,7 +861,10 @@ function runWorld(gs, pad, frozen) {
             let deflected = false
             for (const bt of gs.bits) {
                 if (Math.abs(m.x - bt.px) < BIT.rad + 1 && Math.abs(m.y - bt.py) < BIT.rad) {
-                    gs.missiles.splice(i, 1); gs.lastHitX = m.x; gs.lastHitY = m.y; gs.events.push('deflect'); deflected = true; break
+                    // #2831: a hunter swatted out of the sky bursts AT THE BIT —
+                    // cyan ring at the point of the hit, and the bit strains white
+                    bt.flash = 10
+                    gs.missiles.splice(i, 1); gs.lastHitX = bt.px; gs.lastHitY = bt.py; gs.events.push('deflect'); gs.events.push('hunterring'); deflected = true; break
                 }
             }
             if (deflected) continue
@@ -883,6 +900,7 @@ function runWorld(gs, pad, frozen) {
             if (e.kind !== 'larva') continue
             for (const bt of gs.bits) {
                 if (Math.abs(e.x - bt.px) < BIT.crushR && Math.abs(e.y - bt.py) < BIT.crushR) {
+                    bt.flash = Math.max(bt.flash ?? 0, 5) // #2831: grinding a body, the bit visibly strains
                     e.hp -= 3
                     gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
                     if (e.hp <= 0) {

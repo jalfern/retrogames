@@ -491,6 +491,107 @@ const runBot = (seed, max = 20000) => {
     r.check('death strips the chain — bits are power armour', gs.lives === 2 && gs.bits.length === 0, `lives=${gs.lives} bits=${gs.bits.length}`)
 }
 
+{ // #2831 POLISH — the bit×arm matrix: the gun reshapes around the chain
+    const gs = makeGame(5)
+    gs.enemies.length = 0
+    gs.bullets.length = 0
+    for (let n = 0; n < 3; n++) gs.bits.unshift({ id: n + 1 }) // nose, tail, top
+    gs.ship.inv = 999999
+    step(gs, {}); gs.events.length = 0 // write px/py before reading the fan
+    gs.shots.length = 0
+    step(gs, { a: true })
+    const fan = gs.shots.filter((q) => q.kind === 'v')
+    const up = fan.find((q) => q.vy < -0.3)
+    r.check('FIRE × bits: a chained vulcan FANS — the flank bit shoots outward, the nose stays true',
+        fan.length === 4 && !!up && fan[0].vy === 0, `streams=${fan.length} upvy=${up ? up.vy.toFixed(2) : 'flat'}`)
+    // the orbit throws the fan both wings over one full spin
+    gs.bits.unshift({ id: 4 })
+    let wingUp = 0, wingDown = 0
+    for (let t = 0; t < 76; t++) {
+        gs.ship.inv = 999999
+        gs.shots.length = 0
+        step(gs, { a: true })
+        for (const q of gs.shots) {
+            if (q.kind !== 'v' || q.vy === 0) continue
+            if (q.vy < -0.3) wingUp += 1
+            else if (q.vy > 0.3) wingDown += 1
+        }
+        gs.events.length = 0
+    }
+    r.check('the SHIELD spread sweeps the whole lane — both wings catch fire', wingUp > 0 && wingDown > 0, `up=${wingUp} down=${wingDown}`)
+}
+
+{ // #2831 — LASER × bits: the lance rides wider with the chain (and the bare lance misses there)
+    const gs = makeGame(12)
+    gs.enemies.length = 0; gs.bullets.length = 0
+    gs.ship.weapon = 'laser'
+    gs.ship.inv = 999999
+    const offY = (id) => gs.enemies.push({ id, kind: 'larva', x: gs.ship.x + 60, y: gs.ship.y + 9, baseY: gs.ship.y + 9, sine: 0, dive: false, state: 'dive', stateT: 0, vx: 0, vy: 0, hp: 1, anim: 0, inv: 0 })
+    const release = () => {
+        for (let t = 0; t < 10; t++) { step(gs, { a: true }); gs.events.length = 0 }
+        step(gs, {}); gs.events.length = 0 // release the lance
+        let hit = false
+        for (let t = 0; t < 16; t++) { step(gs, {}); hit = hit || gs.events.includes('hit'); gs.events.length = 0 }
+        return hit
+    }
+    offY(77)
+    const bare = release()
+    for (let n = 0; n < 3; n++) gs.bits.unshift({ id: n + 1 })
+    offY(78)
+    const wide = release()
+    r.check('LASER × bits: the lance widens with the chain — a 9-px offset is clean bare, dead with three bits',
+        !bare && wide, `bare=${bare} three-bit=${wide}`)
+}
+
+{ // #2831 — WAVE × bits: the crescent broadens its sweep
+    const gs = makeGame(13)
+    gs.enemies.length = 0; gs.bullets.length = 0
+    gs.ship.weapon = 'wave'
+    gs.ship.inv = 999999
+    const release = () => {
+        for (let t = 0; t < 12; t++) { step(gs, { a: true }); gs.events.length = 0 }
+        step(gs, {}); gs.events.length = 0
+        let hit = false
+        for (let t = 0; t < 40; t++) { step(gs, {}); hit = hit || gs.events.includes('hit'); gs.events.length = 0 }
+        return hit
+    }
+    gs.enemies.push({ id: 79, kind: 'larva', x: gs.ship.x + 70, y: gs.ship.y + 18, baseY: gs.ship.y + 18, sine: 0, dive: false, state: 'dive', stateT: 0, vx: 0, vy: 0, hp: 1, anim: 0, inv: 0 })
+    const bare = release()
+    for (let n = 0; n < 4; n++) gs.bits.unshift({ id: n + 1 })
+    gs.enemies.push({ id: 80, kind: 'larva', x: gs.ship.x + 70, y: gs.ship.y + 18, baseY: gs.ship.y + 18, sine: 0, dive: false, state: 'dive', stateT: 0, vx: 0, vy: 0, hp: 1, anim: 0, inv: 0 })
+    const broad = release()
+    r.check('WAVE × bits: the crescent broadens with the chain — 18 px off the line needs four bits',
+        !bare && broad, `bare=${bare} four-bit=${broad}`)
+}
+
+{ // #2831 — deflect feedback: the bit that ate the round SHOWS it
+    const gs = makeGame(14)
+    for (let n = 0; n < 4; n++) gs.bits.unshift({ id: n + 1 })
+    gs.ship.inv = 999999
+    gs.enemies.length = 0
+    step(gs, {}); gs.events.length = 0 // write px/py
+    const bt = gs.bits.find((q) => q.px > gs.ship.x) || gs.bits[0]
+    gs.bullets.push({ id: 91, x: bt.px, y: bt.py, vx: -1.3, vy: 0 })
+    step(gs, {})
+    const flashed = bt.flash > 0 && gs.events.includes('deflect') && !gs.events.includes('hunterring')
+    gs.events.length = 0
+    let decayed = bt.flash === 0
+    for (let t = 0; t < 9 && !decayed; t++) { step(gs, {}); decayed = bt.flash === 0; gs.events.length = 0 }
+    r.check('deflected lead FLASHES the bit white, and the strain fades', flashed && decayed, `flash@hit=${flashed} faded=${decayed}`)
+    // a hunter popped by the orbit bursts AT THE BIT — ring event, mark at the bit
+    const bt2 = gs.bits[0]
+    gs.missiles.push({ id: 92, x: bt2.px, y: bt2.py, a: Math.PI, spd: 0.9, t: 300 })
+    let ringAt = null
+    for (let t = 0; t < 8 && !ringAt; t++) {
+        step(gs, {})
+        if (gs.events.includes('hunterring')) ringAt = { x: gs.lastHitX, y: gs.lastHitY, flash: bt2.flash }
+        gs.events.length = 0
+    }
+    r.check('a hunter swatted off the orbit bursts at the BIT — cyan ring, strained shell',
+        !!ringAt && Math.abs(ringAt.x - bt2.px) < 3 && Math.abs(ringAt.y - bt2.py) < 3 && ringAt.flash > 0,
+        ringAt ? `ring@(${Math.round(ringAt.x)},${Math.round(ringAt.y)}) bit@(${Math.round(bt2.px)},${Math.round(bt2.py)}) flash=${ringAt.flash}` : 'no ring event')
+}
+
 { // PHASE 2 — twin cores: plating eats fire, each vent gapes on its own clock
     const gs = makeGame(23)
     gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick
