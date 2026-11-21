@@ -581,6 +581,7 @@ export default function DoubleDragon() {
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: gs.mode === 'gameover',
                     seed: gs.seed, lives: gs.billy.lives,
+                    chain: gs.chain, chainT: gs.chainT,   // #2882: QA legs can read the streak
                     x: Math.round(gs.billy.x), y: gs.billy.y, z: Math.round(gs.billy.z),
                     billyState: gs.billy.state, weapon: gs.billy.weapon || '-',
                     waveIdx: gs.waveIdx, enemies: gs.enemies.length,
