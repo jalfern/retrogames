@@ -1191,12 +1191,30 @@ const browser = await launch()
     const errs = []
     page.on('pageerror', (e) => errs.push(e.stack || e.message))
 
+    // #1712: DD now asks the S2 consent question before seed-birth (autoRecord
+    // gate, fixed inset-0 z-9990 — it swallows scripted starts until clicked).
+    // Answer it the way gauntletplay/touchselectcheck do: its own NO THANKS
+    // button — a real decline, never a grant (#2091). Where the store is
+    // silent the gate never rises and this is a no-op.
+    const defuseGate = async () => {
+        const declined = await page.evaluate(() => {
+            const gate = document.querySelector('[data-auto-record-gate]')
+            if (!gate) return false
+            const btn = [...gate.querySelectorAll('button')].find((el) => /NO THANKS/i.test(el.textContent || ''))
+            if (btn) btn.click()
+            return true
+        })
+        if (declined) await page.waitForTimeout(400)
+        return declined
+    }
+
     const attract1 = await page.evaluate(() => window.__ddTest.probe())
     await page.waitForTimeout(700)
     const attract2 = await page.evaluate(() => window.__ddTest.probe())
     r.check('attract: the demo runs itself before any key', attract1.screen === 'attract' && attract2.tick > attract1.tick, `tick ${attract1.tick} -> ${attract2.tick}`)
 
     await page.keyboard.press('Space')
+    await defuseGate()
     await page.waitForTimeout(300)
     const started = await page.evaluate(() => window.__ddTest.probe())
     r.check('any key takes the seat (attract -> play)', started.screen === 'play', `screen=${started.screen}`)
