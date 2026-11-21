@@ -40,6 +40,12 @@
 //  - Fewer than 2 human players means the player split cannot honestly
 //    hold anyone out: the card says holdoutBlocked, it does NOT fake a
 //    split by carving one person's sessions.
+//  - Legacy fold (#1712, ruling ask #2844): pre-audit takes labeled 'player'
+//    with native human seats are attributed to LEGACY_OWNER (declared
+//    constant, anchor-proven) so the store owner's own pre-audit play reaches
+//    train, flagged lg on every row. Relabeled/model seats never fold; splits
+//    and coverage lines judge native named humans only — the fold adds
+//    volume, never a second player and never a new human game.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -136,6 +142,30 @@ export function playerSplit(players) {
 }
 
 export const seedHeldout = (seed) => shaOf('plaicraft-seed-split-v1:' + seed) % BigInt(SEED_HELDOUT_MOD) >= BigInt(SEED_HELDOUT_FROM)
+
+// --- legacy fold (#1712, this session) ---------------------------------------------
+// The store's pre-audit-1 takes carry the fixed 'player' label: recorded by the
+// device's human before identity existed, all with consented voice. The #1712
+// audit (Claude for Jon, 2026-11-20) states as fact: "today every human take is
+// jalfern's". So anonymity here is a labeling gap, not an unknown person — the
+// fold attributes those takes to the owner so honest human play reaches train
+// (rule: relabeled/bot/tool stays out — foldDecision below).
+//   LEGACY_OWNER is a DECLARED attribution, printed on the card with its anchor
+//   proof, so the claim is reviewable rather than inferred. Ruling ask: #2844
+//   (default A: keep fold; revert = one constant + deterministic rebuild).
+//   The fold NEVER touches an acceptance line: playerSplit and coverage judge
+//   native named humans only; folded takes can add volume, never a second
+//   player, never a new human game.
+export const LEGACY_OWNER = 'jalfern'
+
+// Pure fold gate: a take folds iff it is the legacy unnamed label, carries a
+// NATIVE human seat with NO relabeled seat anywhere in it (the audit's
+// relabeled exclusion outranks the fold), and the owner has a native named take
+// in the same store — the attribution anchor. No anchor, no fold: anonymity is
+// never attributed to a person the store cannot independently prove.
+export function foldDecision(cls, native, relabeled, nativeHumans) {
+    return cls === 'unnamed' && native > 0 && relabeled === 0 && nativeHumans.has(LEGACY_OWNER)
+}
 
 // --- game adapters ---------------------------------------------------------------
 // A game adapter replays a stored take against THE sim (every recorded
@@ -258,6 +288,16 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
         if (c.cls === 'human') humans.add(String(t.envelope.player || t.rec.player))
         return { ...t, cls: c.cls, reasons: c.reasons, native: c.native, relabeled: c.relabeled }
     })
+    // Legacy fold (see LEGACY_OWNER note): unnamed native takes attribute to
+    // the owner, whose anchor must be a native named human in THIS store.
+    // Decided after classification so the anchor fact (humans) exists; `humans`
+    // itself is never enlarged by the fold — splits and coverage stay native.
+    let legacyTakes = 0
+    let legacyTicks = 0
+    for (const t of pre) {
+        t.folded = foldDecision(t.cls, t.native, t.relabeled, humans)
+        if (t.folded) { legacyTakes++; legacyTicks += t.rec.ticks }
+    }
     const { heldout: heldPlayers, blocked: holdoutBlocked } = playerSplit(humans)
 
     const lines = []
@@ -270,12 +310,14 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
     let sessionsWithPartialVoice = 0 // #2805: human sessions whose voice track cut before the run ended
     let humanRows = 0
     let flaggedRows = 0
+    let legacyRows = 0
 
     for (const t of pre) {
         const { envelope, rec, cls } = t
+        const folded = t.folded === true
         const game = rec.game
-        const player = String(envelope.player || rec.player || '')
-        const human = cls === 'human'
+        const player = folded ? LEGACY_OWNER : String(envelope.player || rec.player || '')
+        const human = cls === 'human' || folded
         if (rec.voice && Array.isArray(rec.voice.tracks) && rec.voice.tracks.length) sessionsWithVoice++
         if (human && rec.voice && Array.isArray(rec.voice.tracks) && rec.voice.tracks.some((tr) => tr.partial)) sessionsWithPartialVoice++
         const stats = perGame[game] || (perGame[game] = { takes: 0, humanTakes: 0, ticks: 0 })
@@ -283,10 +325,11 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
         stats.ticks += rec.ticks
         if (human) {
             stats.humanTakes++
-            const pp = perPlayer[player] || (perPlayer[player] = { takes: 0, games: new Set(), ticks: 0, voiceSessions: 0, rows: 0 })
+            const pp = perPlayer[player] || (perPlayer[player] = { takes: 0, games: new Set(), ticks: 0, voiceSessions: 0, rows: 0, legacyTakes: 0 })
             pp.takes++
             pp.games.add(game)
             pp.ticks += rec.ticks
+            if (folded) pp.legacyTakes++
             if (rec.voice && rec.voice.tracks.length) pp.voiceSessions++
         }
 
@@ -321,6 +364,7 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
             row.split = splitOf
             if (human) { humanRows++; perPlayer[player].rows++ }
             else flaggedRows++
+            if (folded) { legacyRows++; row.lg = 1 } // fold marker rides every row: an RL loader can filter on it
             lines.push(JSON.stringify(row))
         }
 
@@ -361,12 +405,26 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
     const version = shaHex(contentHashes.map(([p, h]) => `${p}\0${h}\n`).join(''))
 
     const hours = (ticks) => Math.round((ticks / 60 / 3600) * 10000) / 10000
+    // Coverage lines judge NATIVE named humans only — the fold adds train
+    // volume, never a second player and never a new human game (#1712 lines
+    // are closed by friends' takes, not by attributing old labels).
     const humanTakes = pre.filter((t) => t.cls === 'human')
     const gamesWithHuman = [...new Set(humanTakes.map((t) => t.rec.game))].sort()
+    const legacyAnchored = humans.has(LEGACY_OWNER)
     const card = {
         dataset: 'plaicraft-human-v1',
         version,
         source: { store: base, listed: listed.sessions.length },
+        // Legacy fold record (#1712, ruling ask #2844): declared attribution,
+        // anchor proof, and volume — reviewable, reversible, line-neutral.
+        legacy: {
+            owner: LEGACY_OWNER,
+            anchored: legacyAnchored,
+            takes: legacyTakes,
+            rows: legacyRows,
+            hours: hours(legacyTicks),
+            note: 'pre-audit unnamed-player takes with native human seats, attributed per the #1712 audit ("today every human take is jalfern\'s"); relabeled/model seats and everything unnamed without an anchor stay flagged',
+        },
         games: Object.fromEntries(Object.entries(perGame).map(([g, s]) => [g, {
             takes: s.takes, humanTakes: s.humanTakes, hours: hours(s.ticks),
             featureAdapter: !!ADAPTERS[g], inRegistry: registry.has(g),
@@ -374,11 +432,15 @@ export async function buildDataset({ base, out, limit = 500, jonKey = null, regi
         players: Object.fromEntries(Object.entries(perPlayer).map(([p, s]) => [p, {
             takes: s.takes, games: [...s.games].sort(), hours: hours(s.ticks), voiceSessions: s.voiceSessions,
             rows: s.rows, // #2805 (#1713 hand-off): holdout accounting per person, not just totals
+            ...(s.legacyTakes ? { legacyTakes: s.legacyTakes } : {}),
             split: heldPlayers.has(p) ? 'heldout' : 'train',
         }])),
         totals: {
             takes: pre.length,
-            humanTakes: humanTakes.length,
+            humanTakes: humanTakes.length, // native named humans only (fold counted separately)
+            legacyTakes,
+            legacyHours: hours(legacyTicks),
+            humanTakesIncludingLegacy: humanTakes.length + legacyTakes,
             hours: hours(pre.reduce((a, t) => a + t.rec.ticks, 0)),
             humanHours: hours(humanTakes.reduce((a, t) => a + t.rec.ticks, 0)),
             sessionsWithVoice,
@@ -445,7 +507,7 @@ if (process.argv[1] && process.argv[1].endsWith('plaicraft-dataset.mjs')) {
     }
     const c = res.card
     console.log(`version ${res.version}`)
-    console.log(`takes ${c.totals.takes} (human ${c.totals.humanTakes}) rows ${c.totals.rows} (flagged ${c.totals.flaggedRows}) audio tracks ${c.totals.audioTracks} sessions-with-voice ${c.totals.sessionsWithVoice}`)
+    console.log(`takes ${c.totals.takes} (human ${c.totals.humanTakes} + legacy-folded ${c.totals.legacyTakes}) rows ${c.totals.rows} (flagged ${c.totals.flaggedRows}) audio tracks ${c.totals.audioTracks} sessions-with-voice ${c.totals.sessionsWithVoice}`)
     console.log(`games human ${c.coverage.gamesCovered.games.join(',') || '(none)'} — need ${c.coverage.gamesCovered.need}: ${c.coverage.gamesCovered.pass ? 'PASS' : 'NOT YET'}`)
     console.log(`players ${Object.keys(c.players).join(',') || '(none)'} | heldout ${c.splits.player.heldout.join(',') || '(none)'}${c.splits.player.blocked ? ` [blocked: ${c.splits.player.blocked}]` : ''}`)
     console.log(`out ${out}`)

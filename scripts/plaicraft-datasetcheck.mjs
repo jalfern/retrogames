@@ -16,7 +16,10 @@
 //     acceptance line, mechanically).
 //  6. integrity: manifest hashes recompute to card.version (artifact self-
 //     proves; a truncated file breaks it).
-//  7. mutant: player-split ignored -> held-out rows vanish -> RED.
+//  7. legacy fold (#1712): pre-audit unnamed take attributes to the anchor
+//     owner, rows carry lg, player set and coverage lines stay native-only.
+//  8. mutants: player-split ignored / floor-boss hash-skip / fold disabled —
+//     each must go RED (each line is load-bearing).
 //
 // FIXTURES ARE PIPELINE TESTS, NOT EVIDENCE: the fixture players are scripted
 // takes stamped consent-only to exercise the split logic. Acceptance lines on
@@ -37,7 +40,7 @@ import { stateHash, step } from '../src/games/Gauntlet/sim.js'
 import { makeGame as fbMakeGame, step as fbStep, stateHash as fbHash } from '../src/games/FloorBoss/sim.js'
 import { N_FEAT as FB_N_FEAT } from '../src/games/FloorBoss/model.js'
 import { newGame, heroFromPad, p2FromPad } from './plaicraft-export.mjs'
-import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows } from './plaicraft-dataset.mjs'
+import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 // Local Report (harness.mjs pulls playwright-core at import; this check is
@@ -190,13 +193,18 @@ try {
         // #2805: floor-boss duel take — model seat replays too; host + stamped
         // guest calls; guest mic partial + container disagreement.
         ['gina', scriptedTake({ game: 'floor-boss', seed: 21, ticks: 240, seats: [{ kind: 'human' }, { kind: 'model' }], voice: { slots: [0], guest: true }, calls: [{ t: 100, said: 'rack two', intent: null, ok: true }, { t: 120, said: 'watch the fork', intent: null, ok: true, seat: 1 }] })],
+        // #1712 fold fixtures: an owner anchor (named native) + a legacy
+        // pre-audit take (envelope label 'player', native human seat, consented
+        // voice). The fold must route the legacy take's rows to jalfern.
+        ['jalfern', scriptedTake({ seed: 61, voice: { slots: [0] } })],
+        ['player', scriptedTake({ seed: 62, ticks: 200, voice: { slots: [0] } })],
     ]
     let up = 0
     for (const [player, rec] of uploads) {
         const res = await uploadSession(rec, { player, consent: { motion: true, voice: !!rec.voice }, base: sim.base })
         if (res.ok) up++
     }
-    r.check('fixture store provisioned (7 consented takes uploaded)', up === 7, `${up}/7`)
+    r.check('fixture store provisioned (9 consented takes uploaded)', up === 9, `${up}/9`)
 
     // determinism: two full builds against the store, twice. In-process
     // (not a blocked spawnSync child: the sim lives on THIS event loop).
@@ -224,15 +232,24 @@ try {
     const envByKey = new Map(listing.sessions.map((s) => [s.key, s]))
     const humanKeys = new Set()
     const flaggedKeys = new Set()
+    const foldedKeys = new Set()
+    const infos = []
     for (const s of listing.sessions) {
         const got = await fetchSession(s.key, { base: sim.base, key: SIM_READ_KEY })
         const c = classifyTake(s, got.recording, registry)
+        infos.push([s, c])
         if (c.cls === 'human') humanKeys.add(s.key)
-        else flaggedKeys.add(s.key)
     }
-    r.check('fixtures classify as expected: 4 human, 3 flagged',
-        humanKeys.size === 4 && flaggedKeys.size === 3,
-        `human=[${[...humanKeys].map((k) => envByKey.get(k).player)}] flagged=[${[...flaggedKeys].map((k) => envByKey.get(k).player)}]`)
+    // fold decision mirrors the builder: anchor = native named humans (never
+    // enlarged by folds); relabeled/bot/tool can never fold.
+    const nativeHumans = new Set([...humanKeys].map((k) => String(envByKey.get(k).player)))
+    for (const [s, c] of infos) {
+        if (foldDecision(c.cls, c.native, c.relabeled, nativeHumans)) foldedKeys.add(s.key)
+        else if (!humanKeys.has(s.key)) flaggedKeys.add(s.key)
+    }
+    r.check('fixtures classify as expected: 5 human, 1 legacy-folded, 3 flagged',
+        humanKeys.size === 5 && foldedKeys.size === 1 && flaggedKeys.size === 3,
+        `human=[${[...humanKeys].map((k) => envByKey.get(k).player)}] folded=[${[...foldedKeys].map((k) => envByKey.get(k).player)}] flagged=[${[...flaggedKeys].map((k) => envByKey.get(k).player)}]`)
 
     const trainRows = rows.filter((x) => x.split === 'train')
     const heldRows = rows.filter((x) => x.split === 'player-heldout')
@@ -240,10 +257,10 @@ try {
     const flagRows = rows.filter((x) => x.split === 'flagged')
     r.check('all splits present', trainRows.length > 0 && heldRows.length > 0 && flagRows.length > 0 && seedRows.length >= 0)
     r.check('holdout purity: no flagged take in train/heldout',
-        [...trainRows, ...heldRows].every((x) => humanKeys.has(x.k)))
-    r.check('no held-out player appears in any train row (acceptance line 4)',
-        !trainRows.some((x) => heldout.has(envByKey.get(x.k)?.player)),
-        `heldout=${[...heldout]} trainPlayers=${[...new Set(trainRows.map((x) => envByKey.get(x.k)?.player))]}`)
+        [...trainRows, ...heldRows].every((x) => humanKeys.has(x.k) || foldedKeys.has(x.k)))
+    r.check('no held-out player appears in any train row (acceptance line 4; folded takes judged by their OWNER)',
+        !trainRows.some((x) => heldout.has(foldedKeys.has(x.k) ? LEGACY_OWNER : envByKey.get(x.k)?.player)),
+        `heldout=${[...heldout]} trainPlayers=${[...new Set(trainRows.map((x) => foldedKeys.has(x.k) ? LEGACY_OWNER + '(folded)' : envByKey.get(x.k)?.player))]}`)
     r.check('every human take lands train/player-heldout/seed-heldout (never flagged)',
         rows.filter((x) => humanKeys.has(x.k)).every((x) => x.split !== 'flagged'))
     r.check('seed axis auditable: train rows keep seedHeldout false, seed-heldout rows true (player axis outranks)',
@@ -259,7 +276,7 @@ try {
     const audioIdx = fs.existsSync(path.join(outA, 'audio/index.jsonl'))
         ? fs.readFileSync(path.join(outA, 'audio/index.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
         : []
-    r.check('audio index written for consented human takes (gina carries host + guest tracks)', audioIdx.length === 5, `${audioIdx.length}/5`)
+    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded carry voice)', audioIdx.length === 7, `${audioIdx.length}/7`)
     const aliceIdx = audioIdx.find((x) => x.player === 'alice')
     let verbatim = false
     if (aliceIdx && fs.existsSync(path.join(outA, aliceIdx.file))) {
@@ -326,6 +343,37 @@ try {
                 bT.reason || 'build was GREEN with a tampered take?!')
         } finally { sim2.close() }
     }
+
+    // ---- #1712 legacy fold -------------------------------------------------------
+    r.check('fold gate units: named/bot/tool never fold; relabeled never folds; no-anchor never folds',
+        foldDecision('unnamed', 1, 0, new Set(['jalfern'])) === true
+        && foldDecision('human', 1, 0, new Set(['jalfern'])) === false
+        && foldDecision('bot', 1, 0, new Set(['jalfern'])) === false
+        && foldDecision('tool', 1, 0, new Set(['jalfern'])) === false
+        && foldDecision('relabeled', 0, 1, new Set(['jalfern'])) === false
+        && foldDecision('unnamed', 0, 1, new Set(['jalfern'])) === false
+        && foldDecision('unnamed', 1, 1, new Set(['jalfern'])) === false
+        && foldDecision('unnamed', 1, 0, new Set(['alice'])) === false)
+    const lgRows = rows.filter((x) => x.lg === 1)
+    const foldedKey = [...foldedKeys][0]
+    const wantFoldSplit = heldout.has(LEGACY_OWNER) ? 'player-heldout' : seedHeldout(62) ? 'seed-heldout' : 'train'
+    r.check('legacy take folds into the corpus: rows exist, never flagged, carry lg, mirror the owner split rule (#1712)',
+        lgRows.length === 400 && foldedKey && lgRows.every((x) => x.k === foldedKey && x.split !== 'flagged' && x.split === wantFoldSplit && x.g === 'gauntlet'),
+        `rows=${lgRows.length} want=${wantFoldSplit}`)
+    r.check('fold never enlarges the player set: humans stay native-5, label "player" is no player, volume separate (#1712)',
+        card.coverage.humanPlayers.length === 5 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 5
+        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 6
+        && card.splits.player.heldout.length >= 1 && !card.splits.player.heldout.includes('player'),
+        `humans=${JSON.stringify(card.coverage.humanPlayers)} legacy=${card.totals.legacyTakes}`)
+    r.check('folded volume lands in the owner ledger + card legacy block (anchor declared, rows match)',
+        card.players.jalfern && card.players.jalfern.legacyTakes === 1 && card.players.jalfern.takes === 2
+        && card.legacy.owner === LEGACY_OWNER && card.legacy.anchored === true && card.legacy.rows === lgRows.length
+        && card.totals.humanRows >= lgRows.length,
+        JSON.stringify(card.legacy && { ...card.legacy, note: undefined }))
+    r.check('folded take audio written under the owner (consented human data, #1712)',
+        audioIdx.some((x) => x.key === foldedKey && x.player === LEGACY_OWNER && x.human === true))
+    r.check('coverage lines stay native-only: fold cannot add a human game (#1712)',
+        card.coverage.gamesCovered.games.length === 3 && !card.coverage.gamesCovered.games.includes('player'))
 } catch (e) {
     r.check('check completed without unexpected failure', false, String(e && e.stack || e))
 }
@@ -390,6 +438,37 @@ if (MUTATE) {
         } finally {
             pull(DS)
             if (fs.readFileSync(DS, 'utf8') !== src2) { console.log('FAIL   mutant restore: exact original bytes not back'); r.failed++ }
+        }
+    }
+
+    // mutant 3 (#1712 fold): fold decision disabled — the legacy take falls
+    // back to flagged and its lg rows vanish. If they still land, the fold
+    // decision is not load-bearing.
+    const src3 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR3 = 't.folded = foldDecision('
+    if (!src3.includes(ANCHOR3)) {
+        console.log('FAIL   fold anchor not found — update the mutant (#1712)')
+        r.failed++
+    } else {
+        plant(DS, src3.replace(ANCHOR3, 't.folded = false && foldDecision('))
+        try {
+            const outM3 = path.join(tmp, 'fold-mut')
+            const cli3 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM3, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout = ''
+                p.stdout.on('data', (d) => { stdout += d })
+                p.on('exit', (code) => resolve({ status: code, stdout }))
+            })
+            const rowsM3 = cli3.status === 0 && fs.existsSync(path.join(outM3, 'dataset.jsonl'))
+                ? fs.readFileSync(path.join(outM3, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+                : []
+            const lgMut = rowsM3.filter((x) => x.lg === 1)
+            r.check('legacy fold is load-bearing: lg rows exist (RED under the fold-disable mutant, #1712)', lgMut.length > 0,
+                `lgRows=${lgMut.length}${cli3.status !== 0 ? ' build exit ' + cli3.status : ''}`)
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src3) { console.log('FAIL   mutant restore: exact original bytes not back (#1712)'); r.failed++ }
         }
     }
 }
