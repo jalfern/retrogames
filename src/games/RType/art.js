@@ -218,6 +218,39 @@ const SPR = has ? {
         g.fillStyle = '#e03030'
         g.fillRect(10, 3, 2, 2)
     }),
+    // seat two (S4): the 2P livery in the arcade two-player tradition — the
+    // wing flips seat one's white/red scheme: deep blue hull, steel wings,
+    // cyan nose-tip, amber cockpit, cool-blue exhaust
+    wingShip: [0, 1].map((f) => makeSpr(26, 16, (g) => {
+        g.fillStyle = '#2e5aa8'
+        g.fillRect(6, 9, 12, 5); g.fillRect(9, 11, 14, 3)
+        g.fillStyle = '#1e3e78'
+        g.fillRect(6, 13, 10, 2)
+        g.fillStyle = '#6fa8e8'
+        g.fillRect(2, 6, 22, 3)
+        g.fillStyle = '#c8e4ff'
+        g.fillRect(3, 4, 18, 2); g.fillRect(6, 3, 12, 1)
+        g.fillStyle = '#2e5aa8'
+        g.fillRect(2, 9, 20, 2)
+        g.fillStyle = '#37d0ff'
+        g.fillRect(22, 5, 3, 4)
+        g.fillStyle = '#ffd23c'
+        g.fillRect(14, 5, 4, 2)
+        g.fillStyle = '#16294e'
+        g.fillRect(0, 5, 4, 6)
+        g.fillStyle = f ? '#8ae0ff' : '#4aa8e0'
+        g.fillRect(f ? -4 : -2, 7, f ? 4 : 2, 2)
+        g.fillStyle = '#2e8ad8'
+        g.fillRect(f ? -6 : -3, 7, 2, 2)
+    })),
+    shipIconP2: makeSpr(13, 8, (g) => {
+        g.fillStyle = '#c8e4ff'
+        g.fillRect(1, 3, 9, 2)
+        g.fillStyle = '#2e5aa8'
+        g.fillRect(4, 5, 6, 2)
+        g.fillStyle = '#37d0ff'
+        g.fillRect(10, 3, 2, 2)
+    }),
 } : {}
 
 // ----------------------------------------------------------- background ----
@@ -291,6 +324,28 @@ export function drawShip(ctx, ship, camX) {
         ctx.strokeStyle = 'rgba(55,208,255,0.55)'
         ctx.lineWidth = 1
         ctx.strokeRect(sx - 1.5, sy - 1.5, 29, 19)
+    }
+}
+
+// seat two (S4): same silhouette in the 2P blue livery; a human at the seat
+// gets a thin cyan halo so the takeover reads at a glance
+export function drawShipWing(ctx, w, camX) {
+    if (!w || w.dead || w.out) return
+    const ghost = w.inv > 0 && (w.inv >> 2) % 2 === 0
+    if (ghost) ctx.globalAlpha = 0.38
+    const f = (w.anim >> 2) % 2
+    const sx = Math.round(w.x - camX) - 13, sy = Math.round(w.y) - 8
+    ctx.drawImage(SPR.wingShip[f], sx, sy)
+    if (ghost) {
+        ctx.globalAlpha = 1
+        ctx.strokeStyle = 'rgba(55,208,255,0.55)'
+        ctx.lineWidth = 1
+        ctx.strokeRect(sx - 1.5, sy - 1.5, 29, 19)
+    }
+    if (w.human) {
+        ctx.strokeStyle = 'rgba(138,224,255,0.35)'
+        ctx.lineWidth = 1
+        ctx.strokeRect(sx - 3.5, sy - 3.5, 33, 23)
     }
 }
 
@@ -657,6 +712,13 @@ export function drawHud(ctx, gs) {
             ctx.fillRect(140 + i * 10, H - 12, 8, 7)
         }
     }
+    // dual pools (S4): seat two keeps its tickets in a blue row under 1UP
+    if (gs.wing) {
+        drawText(ctx, '2P', 8, 16, gs.wing.out ? '#4a5568' : '#2e8ad8')
+        if (gs.wing.out) drawText(ctx, 'SEAT DARK', 30, 16, '#5a6478')
+        else if (gs.wing.dead) drawText(ctx, 'DOWN', 30, 16, (gs.tick % 30) < 20 ? '#e03030' : '#701818')
+        else for (let i = 0; i < Math.min(gs.wing.lives - 1, 5); i++) ctx.drawImage(SPR.shipIconP2, 30 + i * 15, 15)
+    }
 }
 
 export function drawBanner(ctx, gs) {
@@ -670,6 +732,11 @@ export function drawBanner(ctx, gs) {
         center('THE CONVOY RESUMES', 100, '#9ac93c')
     } else if (gs.tick < 140 && gs.mode === 'play') {
         center('STAGE 1  OUTER SPACE', 100, '#9ac93c')
+    }
+    // seat two banners (S4) keep their own line at y=118 — never over another
+    if (gs.wing && gs.mode !== 'clear') {
+        if (gs.tick - gs.wingAt < 130 && gs.tick >= 40) center('PILOT TWO JOINS THE FIGHT', 118, '#6fa8e8')
+        else if (gs.wing.out && gs.tick - (gs.wingLostAt || 0) < 110) center('PILOT TWO DOWN', 118, '#8a98b8')
     }
 }
 
@@ -693,6 +760,8 @@ export function drawAttract(ctx, phase, tick) {
         'PHASE 2 HAS TWO HEARTS : HUNT THE VENTS',
         'SHOOT THE MAW WHEN IT GAPES',
         'THE FORCE POD : B DEPLOYS, B RETRIEVES',
+        'PILOT TWO FLIES FREE : WASD + F + G',
+        'V RELIEVES SEAT TWO : WINGMAN BACK ON DUTY',
         'THE LEFT EDGE DOES NOT FORGIVE',
     ]
     center(msgs[phase % msgs.length], 124, '#f0f0f0')

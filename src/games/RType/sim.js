@@ -1,4 +1,4 @@
-// sim.js — R-TYPE S3 "bits and the dread" — the pure side-scroll engine.
+// sim.js — R-TYPE S4 "the second pilot" — the pure side-scroll engine.
 // DOM-free: Node (rtypecheck) and the browser shell share THIS truth.
 // Determinism law: every sim random derives from the seed (mulberry32
 // riding IN gs); Math.random() may only feed juice in the shell.
@@ -25,6 +25,12 @@
 //    turrets, a missile pod loosing slow turning hunters, and the PHASE-1
 //    bio-ship: camera locks, the maw-core only takes damage while it gapes
 //  - clear both dreads: STAGE CLEAR, score carries, the stage loops
+//  - THE WING (S4): a second R-7 flies by default — CPU pilot out of the box,
+//    a human seat via WASD+F+G (V drops out). Independent lives, arm, pod and
+//    bits: one hit kills one hull, the partner keeps flying, GAME OVER only
+//    when BOTH pools burn. Capsules go to seat one on a tie; Bydo guns take
+//    the nearer hull, so the wing reads as bait when it crowds you.
+//    gs.wing === null by default — every S1–S3 stream stays byte-identical.
 
 export const W = 320
 export const H = 224
@@ -69,6 +75,15 @@ export const POD = {
     laserTiers: [24, 42, 62],   // lance lengths at charge <25 / <50 / max
 }
 export const CYCLE = ['vulcan', 'laser', 'wave']
+
+// the wing (S4): seat two's station relative to seat one. The wing holds
+// BEHIND and on the OPPOSITE lane — two lanes of coverage, never a blocker.
+export const WING = {
+    backX: 20,        // this far behind seat one's nose
+    laneGap: 44,      // requested vertical separation from seat one
+    stationX: 46,     // hold here when seat one is down
+    crushSafe: 24,    // panic-thrust line from the left wall
+}
 
 // the bit chain (S3): attach slots newest-first — nose, tail, top, bottom,
 // as the original shoves older drones down the line when a new one docks.
@@ -140,13 +155,38 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
 
 function makeShip() {
     return {
-        x: 60, y: 120, dead: false,
+        x: 60, y: 120, dead: false, out: false,
         inv: CFG.respawnIFrames,
         weapon: 'vulcan',   // vulcan | wave
         charge: 0,
         cd: 0,
         anim: 0,
     }
+}
+
+// seat two (S4): a full pilot — own lives, arm, pod and bit chain. Lives and
+// the seat flag ride the object; `out` means the ticket burned (dark seat).
+function makeWing(gs) {
+    const s = gs.ship
+    const anchor = s.dead || s.out ? gs.camX + W - 30 : s.x
+    return {
+        ...makeShip(),
+        x: clamp(anchor - WING.backX, gs.camX + 26, gs.camX + W - 40),
+        y: clamp((s.dead || s.out ? 120 : s.y) < 120 ? 164 : 76, FIELD_TOP + 8, FIELD_BOT - 8),
+        lives: CFG.lives,
+        dyingT: 0,
+        human: false,
+        pod: null,
+        bits: [],
+        bHeld: false,
+    }
+}
+
+// The shell opts co-op in at the seat (and in the attract); the S1–S3 sim,
+// hash and winnability floor stay untouched while gs.wing is null.
+export function enableCoop(gs) {
+    if (!gs.wing) { gs.wing = makeWing(gs); gs.wingAt = gs.tick }
+    return gs.wing
 }
 
 export function makeGame(seed = 1) {
@@ -164,6 +204,8 @@ export function makeGame(seed = 1) {
         leg: 1,                        // S3: 1 until Phase-1 falls, then 2 (the twin-core leg)
         legAt: 0,                      // tick LEG 2 opened (banner timing)
         p2: null,                      // S3 Phase-2 fortress: {x,cores:[{hp,mouth,mouthT,enraged}],dyingT,at}
+        wing: null,                    // S4 seat two: null until enableCoop — full pilot object when live
+        wingAt: 0,                     // tick the wing joined (banner timing)
         shots: [],                   // player: {id,x,y,kind,size,hit[]}
         bullets: [],               // enemy: {id,x,y,vx,vy}
         missiles: [],              // {id,x,y,a,spd,t}
@@ -208,37 +250,41 @@ function spawnBitCap(gs) {
 
 // Where bit i rides THIS tick: chained at its slot, or swinging the shield
 // orbit when the chain is complete. The sim writes px/py once per tick, so
-// the draw layer and every collision read the same truth.
-export function bitPos(gs, i) {
-    const s = gs.ship
-    if (gs.bits.length === 4) {
-        const a = gs.tick * BIT.spin + (i * Math.PI) / 2
-        return { x: s.x + Math.cos(a) * BIT.shieldR, y: s.y + Math.sin(a) * BIT.shieldR }
+// the draw layer and every collision read the same truth. Seat-parameterised
+// (S4): seat one's chain rides gs.ship/gs.bits; the wing carries its own.
+export function bitPosAt(ship, bits, tick, i) {
+    if (bits.length === 4) {
+        const a = tick * BIT.spin + (i * Math.PI) / 2
+        return { x: ship.x + Math.cos(a) * BIT.shieldR, y: ship.y + Math.sin(a) * BIT.shieldR }
     }
     const sl = BIT.slots[i]
-    return { x: s.x + sl[0], y: s.y + sl[1] }
+    return { x: ship.x + sl[0], y: ship.y + sl[1] }
 }
+export function bitPos(gs, i) { return bitPosAt(gs.ship, gs.bits, gs.tick, i) }
 export const shieldOn = (gs) => gs.bits.length === 4
+export const shieldOnAt = (host) => host.bits.length === 4
 
 // px/py are written once per tick so drawing and collision never disagree.
 // flash (#2831) is a juice countdown the draw layer reads — never hashed, so
 // contract replays are untouched by the feedback pass.
-function refreshBits(gs) {
-    for (let i = 0; i < gs.bits.length; i++) {
-        const p = bitPos(gs, i)
-        gs.bits[i].px = p.x; gs.bits[i].py = p.y
-        if (gs.bits[i].flash > 0) gs.bits[i].flash -= 1
+function refreshBits(gs) { refreshBitsOn(gs.ship, gs.bits, gs.tick) }
+function refreshBitsOn(ship, bits, tick) {
+    for (let i = 0; i < bits.length; i++) {
+        const p = bitPosAt(ship, bits, tick, i)
+        bits[i].px = p.x; bits[i].py = p.y
+        if (bits[i].flash > 0) bits[i].flash -= 1
     }
 }
 
 // Chain a bit to the hull — newest at the nose, the rest shoved down the
 // line (the original's attach order). The fourth completes the shield.
-function addBit(gs) {
-    if (gs.bits.length >= 4) return false
-    gs.bits.unshift({ id: gs.nextId++ })
-    refreshBits(gs)
+function addBit(gs) { return addBitOn(gs, gs.ship, gs.bits, false) }
+function addBitOn(gs, ship, bits, isWing) {
+    if (bits.length >= 4) return false
+    bits.unshift({ id: gs.nextId++ })
+    refreshBitsOn(ship, bits, gs.tick)
     addScore(gs, 500)
-    gs.events.push(shieldOn(gs) ? 'shield' : 'bit')
+    gs.events.push(bits.length === 4 ? (isWing ? 'wshield' : 'shield') : (isWing ? 'wbit' : 'bit'))
     return true
 }
 
@@ -342,30 +388,66 @@ function startLeg2(gs) {
     gs.schedule = WAVES2.map((w, i) => ({ ...w, idx: 50 + i, fired: false }))
     gs.banner = 0
     if (gs.pod && gs.pod.state === 'park') gs.pod.x = gs.camX + W - POD.parkPad
+    if (gs.wing && gs.wing.pod && gs.wing.pod.state === 'park') gs.wing.pod.x = gs.camX + W - POD.parkPad
     gs.legAt = gs.tick
     gs.events.push('leg2')
 }
 
 // ---- death / clear ---------------------------------------------------------
 
-function killShip(gs, why) {
-    if (gs.ship.dead || gs.ship.inv > 0 || gs.mode !== 'play') return false
-    gs.ship.dead = true
-    gs.dyingT = CFG.dying
-    gs.events.push('die')
+// One law per hull (S4): a hit kills, the attached shell burns, the chain
+// comes off. host === gs is seat one (lives on gs.lives, timer on gs.dyingT);
+// gs.wing carries its own pool, timer, pod and bits.
+function killShip(gs, s, host, why) {
+    if (s.dead || s.inv > 0 || gs.mode !== 'play') return false
+    s.dead = true
+    const wing = host !== gs
+    if (wing) { s.dyingT = CFG.dying; host.lives -= 1; gs.lastWreckX = s.x; gs.lastWreckY = s.y }
+    else { gs.dyingT = CFG.dying; gs.lives -= 1 }
+    gs.events.push(wing ? 'wingdie' : 'die')
     gs.lastDeath = why
-    gs.lives -= 1
     // an attached shell burns with its pilot; one parked out front survives
-    if (gs.pod && gs.pod.state === 'attached') gs.pod = null
+    if (host.pod && host.pod.state === 'attached') host.pod = null
     // the bit chain is power armour — it comes off with the pilot (S3)
-    if (gs.bits.length) { gs.bits.length = 0; gs.events.push('bitslost') }
+    if (host.bits.length) { host.bits.length = 0; gs.events.push(wing ? 'wbitslost' : 'bitslost') }
     return true
 }
+const killWing = (gs, s, why) => killShip(gs, s, s, why)
 
 function respawn(gs) {
     gs.ship = makeShip()
     gs.ship.x = gs.camX + 34
     gs.ship.y = 120
+}
+
+// the wing returns under the same mercy, on the opposite side of seat one
+function respawnWing(gs) {
+    const w = gs.wing
+    const s = gs.ship
+    const fresh = makeShip()
+    fresh.x = gs.camX + 26
+    fresh.y = clamp((s.dead || s.out ? 120 : s.y) < 120 ? 164 : 76, FIELD_TOP + 8, FIELD_BOT - 8)
+    Object.assign(w, fresh) // lives / human / out stay on the seat object
+    gs.events.push('wingin')
+}
+
+// GAME OVER only when both tickets burn (S4): solo semantics preserved —
+// gs.wing null means seat two never existed.
+function seatsGone(gs) {
+    const p1 = gs.ship.out || (gs.ship.dead && gs.dyingT <= 0 && gs.lives <= 0)
+    if (!p1) return false
+    if (!gs.wing) return true
+    const w = gs.wing
+    return w.out || (w.dead && w.dyingT <= 0 && w.lives <= 0)
+}
+
+// Bydo guns take the NEAREST live hull (S4) — no wing, same old target range.
+function nearestPilot(gs, x, y) {
+    const s = gs.ship
+    if (!gs.wing) return s
+    const dp = s.dead || s.out ? Infinity : Math.hypot(s.x - x, s.y - y)
+    const dw = gs.wing.dead || gs.wing.out ? Infinity : Math.hypot(gs.wing.x - x, gs.wing.y - y)
+    return dw < dp ? gs.wing : s
 }
 
 function addScore(gs, n) {
@@ -398,15 +480,24 @@ function loopStage(gs) {
     gs.schedule = WAVES.map((w, i) => ({ ...w, idx: i, fired: false }))
     gs.waveIdx = 0
     gs.banner = 0
-    respawn(gs)
+    if (gs.lives > 0) respawn(gs) // (S4) a dark seat is not reborn by a clear
+    else gs.ship.dead = true
     gs.ship.inv = CFG.respawnIFrames
     if (gs.pod) { gs.pod.state = 'attached'; gs.pod.x = gs.ship.x + POD.noseX; gs.pod.y = gs.ship.y }
+    // seat two carries (S4): tickets carry, the hull re-seats beside the leader
+    if (gs.wing && !gs.wing.out && gs.wing.lives > 0) {
+        const fresh = makeShip()
+        fresh.x = gs.camX + 26
+        fresh.y = 76
+        Object.assign(gs.wing, fresh)
+        if (gs.wing.pod) { gs.wing.pod.state = 'attached'; gs.wing.pod.x = fresh.x + POD.noseX; gs.wing.pod.y = fresh.y }
+    }
     // the loop re-runs Walnuts-style: score and lives carry, the arm stays
 }
 
 // ---- the step --------------------------------------------------------------
 
-export function step(gs, pad) {
+export function step(gs, pad, pad2) {
     gs.events.length = 0
     if (gs.mode === 'gameover') return
     gs.tick += 1
@@ -417,22 +508,28 @@ export function step(gs, pad) {
         return
     }
 
-    // --- dying pause: the wreck hangs, then mercy or curtain
+    // --- dying pause: the wreck hangs, then mercy or curtain. In co-op the
+    // living partner keeps working — the world only stands still when BOTH
+    // cockpits hang (solo semantics byte-identical: wing null ⇒ frozen).
     if (gs.ship.dead) {
         gs.dyingT -= 1
-        runWorld(gs, pad, true)
+        const wc = !!gs.wing && !gs.wing.out && gs.wing.lives > 0
+        runWorld(gs, pad, !wc, pad2)
         if (gs.dyingT <= 0) {
             if (gs.lives > 0) respawn(gs)
-            else gs.mode = 'gameover'
+            else gs.ship.out = true // dark seat: the wing carries the run
         }
+        if (gs.mode === 'play' && seatsGone(gs)) gs.mode = 'gameover'
         return
     }
 
-    runWorld(gs, pad, false)
+    runWorld(gs, pad, false, pad2)
+    if (gs.mode === 'play' && seatsGone(gs)) gs.mode = 'gameover'
 }
 
-function runWorld(gs, pad, frozen) {
+function runWorld(gs, pad, frozen, pad2) {
     const s = gs.ship
+    const sAlive = !s.dead // S4: seat one may hang while the wing works
     const bPress = !!pad.b && !gs.bHeld   // POD button is edge-triggered
     gs.bHeld = !!pad.b
     refreshBits(gs)
@@ -449,10 +546,10 @@ function runWorld(gs, pad, frozen) {
     }
     if (s.x < gs.camX + 2) s.x = gs.camX + 2
     if (s.x > gs.camX + W - 10) s.x = gs.camX + W - 10
-    if (!frozen && s.x - CFG.crushX <= gs.camX && killShip(gs, 'crush')) return
+    if (!frozen && sAlive && s.x - CFG.crushX <= gs.camX && killShip(gs, s, gs, 'crush')) return
 
     // --- ship
-    if (!frozen) {
+    if (!frozen && sAlive) {
         if (pad.left) s.x -= CFG.shipSpeed
         if (pad.right) s.x += CFG.shipSpeed
         if (pad.up) s.y -= CFG.shipSpeed
@@ -505,6 +602,9 @@ function runWorld(gs, pad, frozen) {
         }
     }
 
+    // --- seat two (S4): full pilot — move, fire, shell, chain, own death rite
+    runWing(gs, pad2, frozen)
+
     // --- stage schedule
     if (!gs.camLock) {
         for (const wv of gs.schedule) {
@@ -531,8 +631,10 @@ function runWorld(gs, pad, frozen) {
         const c = gs.caps[i]
         c.x -= 0.85; c.bob += 0.06; c.y = c.baseY + Math.sin(c.bob) * 16
         if (c.x < gs.camX - 20) { gs.caps.splice(i, 1); continue }
-        if (!frozen && Math.abs(c.x - s.x) < 12 && Math.abs(c.y - s.y) < 12) {
+        let taken = false
+        if (!frozen && sAlive && Math.abs(c.x - s.x) < 12 && Math.abs(c.y - s.y) < 12) {
             gs.caps.splice(i, 1)
+            taken = true
             if (c.type === 'force') {
                 if (!gs.pod) {
                     gs.pod = { id: gs.nextId++, state: 'attached', x: s.x + POD.noseX, y: s.y, grace: 0 }
@@ -556,6 +658,30 @@ function runWorld(gs, pad, frozen) {
             s.weapon = CYCLE[(CYCLE.indexOf(s.weapon) + 1) % CYCLE.length]
             s.charge = 0
             gs.weaponName = s.weapon
+            addScore(gs, 500)
+            gs.events.push('capsule')
+        }
+        // seat two takes what seat one yields (S4): tie goes to seat one
+        const w = gs.wing
+        if (!taken && !frozen && w && !w.out && !w.dead && Math.abs(c.x - w.x) < 12 && Math.abs(c.y - w.y) < 12) {
+            gs.caps.splice(i, 1)
+            if (c.type === 'force') {
+                if (!w.pod) {
+                    w.pod = { id: gs.nextId++, state: 'attached', x: w.x + POD.noseX, y: w.y, grace: 0 }
+                    addScore(gs, 500)
+                    gs.events.push('wforce')
+                } else if (!addBitOn(gs, w, w.bits, true)) {
+                    addScore(gs, 1000)
+                    gs.events.push('capsule')
+                }
+                continue // spare S.E.E.D. law applies per hull
+            }
+            if (c.type === 'bit') {
+                if (!addBitOn(gs, w, w.bits, true)) { addScore(gs, 1000); gs.events.push('capsule') }
+                continue
+            }
+            w.weapon = CYCLE[(CYCLE.indexOf(w.weapon) + 1) % CYCLE.length]
+            w.charge = 0
             addScore(gs, 500)
             gs.events.push('capsule')
         }
@@ -609,7 +735,7 @@ function runWorld(gs, pad, frozen) {
     if (gs.pod) {
         const pd = gs.pod
         if (pd.grace > 0) pd.grace -= 1 // #2823: the deploy/recall rhythm
-        if (!frozen && bPress) {
+        if (!frozen && sAlive && bPress) {
             if (pd.state === 'attached') { pd.state = 'fly'; pd.grace = POD.dockGrace; gs.events.push('podlaunch') }
             else if (pd.state !== 'return') pd.state = 'return'
         }
@@ -618,7 +744,7 @@ function runWorld(gs, pad, frozen) {
             pd.x += POD.launch
             if (pd.x >= gs.camX + W - POD.parkPad) { pd.x = gs.camX + W - POD.parkPad; pd.state = 'park' }
         }
-        if (!frozen && (pd.state === 'fly' || pd.state === 'park') && !(pd.grace > 0) &&
+        if (!frozen && sAlive && (pd.state === 'fly' || pd.state === 'park') && !(pd.grace > 0) &&
             Math.hypot(pd.x - s.x, pd.y - s.y) <= POD.dock) { pd.state = 'attached'; gs.events.push('poddock') }
         if (pd.state === 'return') {
             const dx = s.x + POD.noseX - pd.x, dy = s.y - pd.y
@@ -657,7 +783,8 @@ function runWorld(gs, pad, frozen) {
                 e.stateT -= 1
                 e.x -= 0.35
                 if (e.stateT <= 0) {
-                    const dx = s.x - e.x, dy = s.y - e.y
+                    const tp = nearestPilot(gs, e.x, e.y) // S4 decoy law: divers take the nearest hull
+                    const dx = tp.x - e.x, dy = tp.y - e.y
                     const m = Math.max(1e-6, Math.hypot(dx, dy))
                     e.vx = (dx / m) * 1.9; e.vy = (dy / m) * 1.9
                     e.state = 'dive'; gs.events.push('warn')
@@ -670,10 +797,11 @@ function runWorld(gs, pad, frozen) {
             }
             if (e.x < gs.camX - 24) { gs.enemies.splice(i, 1); continue }
         } else if (e.kind === 'turret') {
-            e.aim = Math.atan2(gs.ship.y - e.y, gs.ship.x - e.x)
+            const tp = nearestPilot(gs, e.x, e.y) // S4: the guns take the nearer hull
+            e.aim = Math.atan2(tp.y - e.y, tp.x - e.x)
             e.cd -= 1
             if (e.cd <= 0 && !frozen && e.x > gs.camX && e.x < gs.camX + W + 10) {
-                const dx = s.x - e.x, dy = s.y - e.y
+                const dx = tp.x - e.x, dy = tp.y - e.y
                 const m = Math.max(1e-6, Math.hypot(dx, dy))
                 gs.bullets.push({ id: gs.nextId++, x: e.x, y: e.y + (e.edgeUp ? -6 : 6), vx: (dx / m) * 1.3, vy: (dy / m) * 1.3 })
                 e.cd = 95 + Math.floor(rng(gs) * 55)
@@ -837,7 +965,21 @@ function runWorld(gs, pad, frozen) {
             }
             if (deflected) continue
         }
-        if (!frozen && s.inv <= 0 && Math.abs(b.x - s.x) < 5 && Math.abs(b.y - s.y) < 4) { gs.bullets.splice(i, 1); killShip(gs, 'bullet'); return }
+        // seat two plugs too (S4): the wing's shell and orbit eat their own lead
+        if (!frozen && gs.wing && !gs.wing.out && gs.wing.pod && Math.abs(b.x - gs.wing.pod.x) < 8 && Math.abs(b.y - gs.wing.pod.y) < 7) { gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('plug'); continue }
+        if (!frozen && gs.wing && !gs.wing.out && shieldOnAt(gs.wing)) {
+            let dfl = false
+            for (const bt of gs.wing.bits) {
+                if (Math.abs(b.x - bt.px) < BIT.rad && Math.abs(b.y - bt.py) < BIT.rad) {
+                    bt.flash = 8 // #2831 feedback generalizes to seat two
+                    gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('deflect'); dfl = true; break
+                }
+            }
+            if (dfl) continue
+        }
+        if (!frozen && sAlive && s.inv <= 0 && Math.abs(b.x - s.x) < 5 && Math.abs(b.y - s.y) < 4) { gs.bullets.splice(i, 1); killShip(gs, s, gs, 'bullet'); return }
+        const wgB = gs.wing
+        if (!frozen && wgB && !wgB.out && !wgB.dead && wgB.inv <= 0 && Math.abs(b.x - wgB.x) < 5 && Math.abs(b.y - wgB.y) < 4) { gs.bullets.splice(i, 1); killWing(gs, wgB, 'bullet') }
     }
 
     // --- homing missiles: strong hunt at launch, then they straighten and
@@ -846,7 +988,8 @@ function runWorld(gs, pad, frozen) {
         const m = gs.missiles[i]
         m.t -= 1
         if (!frozen && m.t > 240) {
-            const want = Math.atan2(s.y - m.y, s.x - m.x)
+            const th = nearestPilot(gs, m.x, m.y) // S4: hunters chase the nearer hull
+            const want = Math.atan2(th.y - m.y, th.x - m.x)
             let da = want - m.a
             while (da > Math.PI) da -= Math.PI * 2
             while (da < -Math.PI) da += Math.PI * 2
@@ -869,70 +1012,286 @@ function runWorld(gs, pad, frozen) {
             }
             if (deflected) continue
         }
-        if (!frozen && s.inv <= 0 && Math.abs(m.x - s.x) < 7 && Math.abs(m.y - s.y) < 6) { gs.missiles.splice(i, 1); killShip(gs, 'missile'); return }
+        if (!frozen && gs.wing && !gs.wing.out && gs.wing.pod && Math.abs(m.x - gs.wing.pod.x) < 9 && Math.abs(m.y - gs.wing.pod.y) < 8) { gs.missiles.splice(i, 1); gs.lastHitX = m.x; gs.lastHitY = m.y; gs.events.push('plug'); continue }
+        if (!frozen && gs.wing && !gs.wing.out && shieldOnAt(gs.wing)) {
+            let dfl = false
+            for (const bt of gs.wing.bits) {
+                if (Math.abs(m.x - bt.px) < BIT.rad + 1 && Math.abs(m.y - bt.py) < BIT.rad) {
+                    bt.flash = 10 // #2831: the ring belongs to the bit, both seats
+                    gs.missiles.splice(i, 1); gs.lastHitX = bt.px; gs.lastHitY = bt.py; gs.events.push('deflect'); gs.events.push('hunterring'); dfl = true; break
+                }
+            }
+            if (dfl) continue
+        }
+        if (!frozen && sAlive && s.inv <= 0 && Math.abs(m.x - s.x) < 7 && Math.abs(m.y - s.y) < 6) { gs.missiles.splice(i, 1); killShip(gs, s, gs, 'missile'); return }
+        const wgM = gs.wing
+        if (!frozen && wgM && !wgM.out && !wgM.dead && wgM.inv <= 0 && Math.abs(m.x - wgM.x) < 7 && Math.abs(m.y - wgM.y) < 6) { gs.missiles.splice(i, 1); killWing(gs, wgM, 'missile') }
     }
 
     // --- pod ram: the shell crushes soft Bydo before they reach the pilot;
     // armour was already refused the pod above and stays untouched
-    if (!frozen && gs.pod) {
-        const pd = gs.pod
-        for (let i = gs.enemies.length - 1; i >= 0; i--) {
-            const e = gs.enemies[i]
-            if (e.kind === 'hullseg') continue
-            const rx = e.kind === 'larva' ? 10 : e.kind === 'pod' ? 12 : 10
-            const ry = e.kind === 'larva' ? 8 : 9
-            if (Math.abs(e.x - pd.x) < rx && Math.abs(e.y - pd.y) < ry) {
-                e.hp -= 3
-                gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
-                if (e.hp <= 0) {
-                    gs.enemies.splice(i, 1)
-                    addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : 300)
-                    gs.events.push('boom')
-                }
-            }
-        }
-    }
+    if (!frozen && gs.pod) podRamInto(gs, gs.pod)
+    if (!frozen && gs.wing && !gs.wing.out && !gs.wing.dead && gs.wing.pod) podRamInto(gs, gs.wing.pod)
 
     // --- the shield also grinds: soft Bydo meet the rotating fist and break
-    if (!frozen && shieldOn(gs)) {
-        for (let i = gs.enemies.length - 1; i >= 0; i--) {
-            const e = gs.enemies[i]
-            if (e.kind !== 'larva') continue
-            for (const bt of gs.bits) {
-                if (Math.abs(e.x - bt.px) < BIT.crushR && Math.abs(e.y - bt.py) < BIT.crushR) {
-                    bt.flash = Math.max(bt.flash ?? 0, 5) // #2831: grinding a body, the bit visibly strains
-                    e.hp -= 3
-                    gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
-                    if (e.hp <= 0) {
-                        gs.enemies.splice(i, 1)
-                        addScore(gs, 100)
-                        gs.events.push('boom')
-                    }
-                    break
-                }
-            }
-        }
-    }
+    if (!frozen && shieldOn(gs)) shieldGrind(gs, gs.ship, gs.bits)
+    if (!frozen && gs.wing && !gs.wing.out && !gs.wing.dead && shieldOnAt(gs.wing)) shieldGrind(gs, gs.wing, gs.wing.bits)
 
     // --- bodies vs the ship (tiny core hitbox, honest dread)
-    if (!frozen && s.inv <= 0) {
+    if (!frozen && sAlive && s.inv <= 0) {
         for (const e of gs.enemies) {
             let hit = false
             if (e.kind === 'larva') hit = Math.abs(e.x - s.x) < 9 && Math.abs(e.y - s.y) < 7
             else if (e.kind === 'turret') hit = Math.abs(e.x - s.x) < 9 && Math.abs(e.y - s.y) < 8
             else if (e.kind === 'pod') hit = Math.abs(e.x - s.x) < 11 && Math.abs(e.y - s.y) < 9
             else if (e.kind === 'hullseg') hit = s.x + 5 > e.x && s.x - 5 < e.x + e.len && s.y + 4 > e.y0 && s.y - 4 < e.y1
-            if (hit) { if (killShip(gs, 'body:' + e.kind)) return }
+            if (hit) { if (killShip(gs, s, gs, 'body:' + e.kind)) return }
         }
         if (p1 && p1.dyingT === 0 && p1.x < gs.camX + W - 4 && s.x + 5 > p1.x + 4) {
             // the bio-ship's flank is a death wall, top to bottom
-            if (killShip(gs, 'hull')) return
+            if (killShip(gs, s, gs, 'hull')) return
         }
         if (p2 && p2.dyingT === 0 && p2.x < gs.camX + W - 4 && s.x + 5 > p2.x + 4) {
             // the fortress keeps the same law: its face is a wall
-            if (killShip(gs, 'fortress')) return
+            if (killShip(gs, s, gs, 'fortress')) return
         }
     }
+    // ...and the same walls hold for seat two (S4) — its death hangs its own
+    // wreck, never the run
+    const wgBody = gs.wing
+    if (!frozen && wgBody && !wgBody.out && !wgBody.dead && wgBody.inv <= 0) {
+        for (const e of gs.enemies) {
+            let hit = false
+            if (e.kind === 'larva') hit = Math.abs(e.x - wgBody.x) < 9 && Math.abs(e.y - wgBody.y) < 7
+            else if (e.kind === 'turret') hit = Math.abs(e.x - wgBody.x) < 9 && Math.abs(e.y - wgBody.y) < 8
+            else if (e.kind === 'pod') hit = Math.abs(e.x - wgBody.x) < 11 && Math.abs(e.y - wgBody.y) < 9
+            else if (e.kind === 'hullseg') hit = wgBody.x + 5 > e.x && wgBody.x - 5 < e.x + e.len && wgBody.y + 4 > e.y0 && wgBody.y - 4 < e.y1
+            if (hit) { killWing(gs, wgBody, 'body:' + e.kind); break }
+        }
+        if (wgBody.dead) return // the wing hung — its hull reads the same walls
+        if (p1 && p1.dyingT === 0 && p1.x < gs.camX + W - 4 && wgBody.x + 5 > p1.x + 4) killWing(gs, wgBody, 'hull')
+        else if (p2 && p2.dyingT === 0 && p2.x < gs.camX + W - 4 && wgBody.x + 5 > p2.x + 4) killWing(gs, wgBody, 'fortress')
+    }
+}
+
+// ---- seat two (S4) ----------------------------------------------------------
+// Reusable per-hull laws, shared by the shell and the wing so the two pilots
+// obey exactly the same physics the S1–S3 pins established.
+
+function podRamInto(gs, pd) {
+    for (let i = gs.enemies.length - 1; i >= 0; i--) {
+        const e = gs.enemies[i]
+        if (e.kind === 'hullseg') continue
+        const rx = e.kind === 'larva' ? 10 : e.kind === 'pod' ? 12 : 10
+        const ry = e.kind === 'larva' ? 8 : 9
+        if (Math.abs(e.x - pd.x) < rx && Math.abs(e.y - pd.y) < ry) {
+            e.hp -= 3
+            gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
+            if (e.hp <= 0) {
+                gs.enemies.splice(i, 1)
+                addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : 300)
+                gs.events.push('boom')
+            }
+        }
+    }
+}
+
+function shieldGrind(gs, ship, bits) {
+    for (let i = gs.enemies.length - 1; i >= 0; i--) {
+        const e = gs.enemies[i]
+        if (e.kind !== 'larva') continue
+        for (const bt of bits) {
+            if (Math.abs(e.x - bt.px) < BIT.crushR && Math.abs(e.y - bt.py) < BIT.crushR) {
+                bt.flash = Math.max(bt.flash ?? 0, 5) // #2831: grinding a body, the bit visibly strains
+                e.hp -= 3
+                gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
+                if (e.hp <= 0) {
+                    gs.enemies.splice(i, 1)
+                    addScore(gs, 100)
+                    gs.events.push('boom')
+                }
+                break
+            }
+        }
+    }
+}
+
+// The wing's whole turn: its own death rite, station-keeping, fire discipline,
+// shell and chain. Runs whether or not seat one is breathing — only the both-
+// cockpit wipe freezes it (frozen), and even then its wreck keeps counting.
+function runWing(gs, pad2, frozen) {
+    const w = gs.wing
+    if (!w) return
+    if (w.dead && !w.out) {
+        w.dyingT -= 1
+        if (w.dyingT <= 0) {
+            if (w.lives > 0) respawnWing(gs)
+            else { w.out = true; gs.events.push('winglost'); gs.wingLostAt = gs.tick }
+        }
+        return
+    }
+    if (w.out) return
+    refreshBitsOn(w, w.bits, gs.tick)
+    if (w.x < gs.camX + 2) w.x = gs.camX + 2
+    if (w.x > gs.camX + W - 10) w.x = gs.camX + W - 10
+    if (!frozen && w.x - CFG.crushX <= gs.camX && killWing(gs, w, 'crush')) return
+
+    const pad = w.human && pad2 ? pad2 : wingBrain(gs)
+    const wB = !!pad.b && !w.bHeld // pod is a press-verb here too
+    w.bHeld = !!pad.b
+    if (w.inv > 0) w.inv -= 1
+    w.anim += 1
+    if (w.cd > 0) w.cd -= 1
+
+    if (!frozen) {
+        if (pad.left) w.x -= CFG.shipSpeed
+        if (pad.right) w.x += CFG.shipSpeed
+        if (pad.up) w.y -= CFG.shipSpeed
+        if (pad.down) w.y += CFG.shipSpeed
+        w.y = clamp(w.y, FIELD_TOP + 6, FIELD_BOT - 4)
+        w.x = clamp(w.x, gs.camX + 2, gs.camX + W - 10)
+
+        if (w.weapon === 'vulcan') {
+            if (pad.a && w.cd <= 0) {
+                gs.shots.push({ id: gs.nextId++, x: w.x + 12, y: w.y - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+                // the #2831 bit×arm matrix generalizes to seat two: the wing's
+                // chain fans and widens its own streams
+                for (const bt of w.bits) {
+                    const by = bt.py ?? w.y
+                    gs.shots.push({ id: gs.nextId++, x: (bt.px ?? w.x) + 10, y: by - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: clamp((by - w.y) * 0.045, -0.5, 0.5) })
+                }
+                w.cd = CFG.vulcanCd
+                gs.events.push('shot')
+            }
+        } else if (w.weapon === 'laser') {
+            if (pad.a) { if (w.charge < CFG.waveMax) w.charge += 1 }
+            else if (w.charge > 0) {
+                if (w.charge >= POD.laserMin) {
+                    const tier = w.charge >= 50 ? 2 : w.charge >= 25 ? 1 : 0
+                    gs.shots.push({ id: gs.nextId++, x: w.x + 12, y: w.y - 1, kind: 'l', size: tier, pierce: true, hit: [], wy: w.bits.length })
+                    gs.events.push('laser')
+                }
+                w.charge = 0
+            }
+        } else {
+            if (pad.a) { if (w.charge < CFG.waveMax) w.charge += 1 }
+            else if (w.charge > 0) {
+                if (w.charge >= CFG.waveMin) {
+                    const tier = w.charge >= 50 ? 2 : w.charge >= 25 ? 1 : 0
+                    gs.shots.push({ id: gs.nextId++, x: w.x + 10, y: w.y, kind: 'w', size: tier, pierce: true, hit: [], hx: w.bits.length })
+                    gs.events.push('wave')
+                }
+                w.charge = 0
+            }
+        }
+    }
+
+    // its own S.E.E.D.: the same state machine as seat one — plug, deploy,
+    // park, recall, armour refusal, and the wall grinding a shell left behind
+    const pd = w.pod
+    if (pd) {
+        if (pd.grace > 0) pd.grace -= 1
+        if (!frozen && wB) {
+            if (pd.state === 'attached') { pd.state = 'fly'; pd.grace = POD.dockGrace; gs.events.push('podlaunch') }
+            else if (pd.state !== 'return') pd.state = 'return'
+        }
+        if (pd.state === 'attached') { pd.x = w.x + POD.noseX; pd.y = w.y }
+        else if (pd.state === 'fly') {
+            pd.x += POD.launch
+            if (pd.x >= gs.camX + W - POD.parkPad) { pd.x = gs.camX + W - POD.parkPad; pd.state = 'park' }
+        }
+        if (!frozen && (pd.state === 'fly' || pd.state === 'park') && !(pd.grace > 0) &&
+            Math.hypot(pd.x - w.x, pd.y - w.y) <= POD.dock) { pd.state = 'attached'; gs.events.push('poddock') }
+        if (pd.state === 'return') {
+            const dx = w.x + POD.noseX - pd.x, dy = w.y - pd.y
+            const m = Math.max(1e-6, Math.hypot(dx, dy))
+            if (m <= POD.dock) { pd.state = 'attached'; gs.events.push('poddock') }
+            else { pd.x += (dx / m) * POD.recall; pd.y += (dy / m) * POD.recall }
+        }
+        if (pd.state !== 'attached') {
+            for (const e of gs.enemies) {
+                if (e.kind !== 'hullseg') continue
+                if (pd.x + POD.rad > e.x && pd.y > e.y0 - 4 && pd.y < e.y1 + 4) {
+                    gs.events.push('strain'); pd.x = e.x - POD.rad
+                    if (pd.state === 'fly') pd.state = 'park'
+                }
+            }
+            if (gs.p1 && gs.p1.dyingT === 0 && pd.x + POD.rad > gs.p1.x && pd.y > 34 && pd.y < 200) { gs.events.push('strain'); pd.x = gs.p1.x - POD.rad }
+            if (gs.p2 && gs.p2.dyingT === 0 && pd.x + POD.rad > gs.p2.x && pd.y > 34 && pd.y < 200) { gs.events.push('strain'); pd.x = gs.p2.x - POD.rad }
+            if (pd.x < gs.camX - 6) { w.pod = null; gs.events.push('podlost') }
+        }
+    }
+}
+
+// The default wing pilot (S4): station behind seat one, opposite lane, lanes
+// scored the same potential-field way the attract brain uses — but PURE tick
+// arithmetic, zero gs.rng draws: the tuned stream and every S1–S3 law stay
+// byte-identical the moment a co-op run starts.
+export function wingBrain(gs) {
+    const pad = { left: false, right: false, up: false, down: false, a: false, b: false }
+    const w = gs.wing
+    if (!w || w.out || w.dead || w.human || gs.mode !== 'play') return pad
+    const s = gs.ship
+    const p1down = s.dead || s.out
+    const tx = p1down ? gs.camX + WING.stationX : s.x - WING.backX
+    const sy = p1down ? 120 : s.y
+    const ty0 = clamp(sy < 120 ? sy + WING.laneGap : sy - WING.laneGap, FIELD_TOP + 8, FIELD_BOT - 8)
+
+    const riskAt = (y) => {
+        let risk = 999
+        const consider = (t) => { if (t > 0 && t < risk) risk = t }
+        for (const b of gs.bullets) {
+            if (b.x - w.x < -4 || b.vx >= 0) continue
+            const t = (w.x - b.x) / (-b.vx + 0.45)
+            if (t < 34 && Math.abs(b.y + b.vy * t - y) < 10) consider(t)
+        }
+        for (const e of gs.enemies) {
+            if (e.kind === 'larva') {
+                if (e.state === 'dive' && e.vx < 0 && e.x > w.x - 6) {
+                    const t = (w.x - e.x) / (-e.vx + 0.45)
+                    if (t < 40 && Math.abs(e.y + e.vy * t - y) < 12) consider(t)
+                } else if (e.x > w.x) {
+                    const t = (e.x - w.x) / 1.6
+                    if (t < 44 && Math.abs(e.baseY + Math.sin(e.sine + t * 0.08) * 22 - y) < 10) consider(t)
+                }
+            }
+            if (e.kind === 'hullseg' && w.x + 6 > e.x - 16 && w.x < e.x + e.len && y > e.y0 - 12 && y < e.y1 + 12) consider(0.5)
+            if ((e.kind === 'turret' || e.kind === 'pod') && Math.abs(e.x - w.x) < 30 && Math.abs(e.y - y) < 22) consider(0.5)
+        }
+        for (const m of gs.missiles) {
+            const dx = m.x - w.x
+            if (dx < -6) { consider(Math.max(1, -dx / (m.spd + 0.6))); continue }
+            if (dx > 150) continue
+            const t = dx / m.spd
+            if (t < 40 && Math.abs(m.y - y) < 12 + t * 0.06) consider(t * 0.7)
+        }
+        return risk
+    }
+
+    const cands = [ty0, w.y]
+    if (riskAt(ty0) < 14) {
+        cands.push(clamp(w.y + (w.y < sy ? -24 : 24), FIELD_TOP + 8, FIELD_BOT - 8))
+        cands.push(clamp(ty0 + (ty0 < 120 ? 34 : -34), FIELD_TOP + 8, FIELD_BOT - 8))
+    }
+    let bestY = ty0, bestV = -Infinity
+    for (const cy of cands) {
+        const v = riskAt(cy) - Math.abs(cy - ty0) * 0.15
+        if (v > bestV) { bestV = v; bestY = cy }
+    }
+    const dy = bestY - w.y
+    pad.up = dy < -1.2
+    pad.down = dy > 1.2
+
+    const dxw = w.x - tx
+    pad.right = dxw < -4
+    pad.left = dxw > 4
+    if (w.x - gs.camX < WING.crushSafe) { pad.right = true; pad.left = false }
+    if (gs.p1 && gs.p1.dyingT === 0 && gs.p1.x - w.x < 84) pad.right = false
+    if (gs.p2 && gs.p2.dyingT === 0 && gs.p2.x - w.x < 84) pad.right = false
+
+    // trigger discipline: vulcan streams; charge arms loose when its lane breathes
+    pad.a = w.weapon === 'vulcan' ? true : riskAt(w.y) > 18
+    return pad
 }
 
 // ---- autopilot: the attract pilot; harness proves against the same code ----
@@ -1078,6 +1437,16 @@ export function stateHash(gs) {
     if (gs.p2) {
         mix(gs.p2.x)
         for (const c of gs.p2.cores) { mix(c.hp); mix(c.mouth.length); mix(c.enraged ? 1 : 0) }
+    }
+    const wg = gs.wing // S4 seat two (null => solo: one mix, old-era shape)
+    mix(wg ? 1 : 0)
+    if (wg) {
+        mix(wg.x); mix(wg.y); mix(wg.lives); mix(wg.dead ? 1 : 0); mix(wg.out ? 1 : 0); mix(wg.human ? 1 : 0)
+        mix({ vulcan: 0, laser: 1, wave: 2 }[wg.weapon] ?? 3); mix(wg.inv)
+        mix(wg.bits.length)
+        for (const bt of wg.bits) { mix(bt.px ?? 0); mix(bt.py ?? 0) }
+        mix(wg.pod ? 1 : 0)
+        if (wg.pod) { mix(wg.pod.x); mix(wg.pod.y); mix(wg.pod.state.length) }
     }
     return h >>> 0
 }

@@ -4,13 +4,15 @@ Irem's 1987 pod-shooter, built stage by stage. S1 "Armament": the convoy run
 and the Phase-1 bio-ship. S2 "the force": the S.E.E.D. pod — capture, plug,
 ram, deploy/retrieve — and the LASER charge arm. S3 "bits and the dread": the
 bit chain and its orbit shield, plus the stage's second heart — LEG 2 and the
-Phase-2 twin-core fortress.
+Phase-2 twin-core fortress. S4 "the second pilot": co-op, per R-Type II (Irem
+1989) where simultaneous two-player play was born — a CPU wingman by default,
+a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 90 laws (S1, #2818/#2823 polish, S2, S3, #2831 polish)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind`
+node scripts/rtypecheck.mjs       # sim + browser: 113 laws (S1, #2818/#2823 polish, S2, S3, #2831 polish, S4)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -30,7 +32,14 @@ true; the orbit sweeps both wings), LASER×bits widens the lance (a 9-px offset
 is clean bare, dead with three), WAVE×bits broadens the crescent (18 px off
 the line needs four), a deflected round flashes the bit white and the strain
 fades, and a hunter swatted off the orbit bursts AT THE BIT ('hunterring' at
-the bit's position, shell strained).
+the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
+ behind seat one in the opposite lane (nose never crossed), one hit hangs ONE
+ wreck (dual pools, independent mercy), GAME OVER only when both pools burn,
+ the wing fights on its own account, capsules held over both hulls go to seat
+ one, per-hull S.E.E.D./bit gear (the spare-seed law holds per hull), Bydo
+ guns take the nearer hull (decoy), pad2 flies a human seat / dead-stick holds
+ the line / V resumes the brain, and co-op clears 12/12 seeds against the 5/12
+ solo floor.
 
 ## The design decisions worth knowing
 - **#2823 polish (QA lane):** capture is a ceremony (merge flash + sparks that
@@ -133,23 +142,47 @@ the bit's position, shell strained).
 - **Autopilot** additions: hunts the open vent (`targetY` snaps to the gaped
   core, mid-line when both seal), and never thrusts into the fortress face.
   It never uses bits/shield — winnability (5/12) is the pod-less floor.
+- **Co-op seat (S4)**: `gs.wing === null` by default — every S1–S3 stream,
+  hash shape and the 5/12 winnability floor stay byte-identical until
+  `enableCoop(gs)` (the shell seats co-op at the seat AND in the attract).
+  The wing is a FULL pilot: own lives (3), own arm (capsules cycle per hull,
+  death reverts it), own S.E.E.D. and bit chain, own mercy flicker; one hit
+  hangs one wreck and only both-pools-burned raises the curtain (a dark seat
+  reads `SEAT DARK` on the HUD and is not reborn by a stage clear).
+  `wingBrain` scores candidate lanes — bullets, divers, hunters, slabs, guns
+  — the way autopilot does, but on PURE tick arithmetic: zero gs.rng draws,
+  so the stream the S1–S3 laws calibrate never shifts. Capsule courtesy:
+  seat one takes any capsule the hulls share. Decoy law: turrets, divers and
+  hunters acquire the NEARER hull — crowding the wing makes it bait. Any of
+  WASD/F/G hands the seat to a human; V relieves them and the brain resumes.
+  Co-op winnability measures 12/12 seeds (the second stream is worth ~7
+  seeds): the harness pins co-op strictly above the solo floor, and the
+  solo law still proves the harder floor stands alone.
 
-## Known gaps (S4+)
-Co-op with a CPU wingman (S4), core speed-up after 1000, Stage 2
-"Dobkeratops", the full capsule list beyond three arms (Options, Double,
-Speed Up, Half-Capsules), and an
-armed Williams-style duelist for variety. Still open from the #2831 polish
-pass: bit pods (airborne carriers whose bits break loose on death), Phase-2
-port salvos + body sway, and the walking port-to-port Phase-2 death cascade.
+## Known gaps (S5+)
+Core speed-up after 1000, Stage 2 "Dobkeratops", the full capsule list beyond
+three arms (Options, Double, Speed Up, Half-Capsules), and an armed
+Williams-style duelist for variety. Still open from the #2831 polish pass:
+bit pods (airborne carriers whose bits break loose on death), Phase-2 port
+salvos + body sway, and the walking port-to-port Phase-2 death cascade. The
+wing (S4) is faithful-but-simple: it never chases capsules or vents on
+purpose, its brain never deploys its shell (a human seat two can, via G),
+and there is no pod/bit hand-off between
+hulls or a rescue revive for a dark seat — seat-two flavour the original's 2P
+has that a QA pass could deepen.
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 84 sim+browser laws, three named mutants
-  (`armour-blind p1 core`, `pod-blind`, `shield-blind`).
-- `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2) / `setup({…})`
+- `scripts/rtypecheck.mjs` — 113 sim+browser laws, four named mutants
+  (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`).
+- `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
+  wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
-  `openMouth`, `openVents`, `coreHp`, `p2hp`, `y`, …) / `start()`.
+  `openMouth`, `openVents`, `coreHp`, `p2hp`, `y`, `wingLives`, `wingOut`,
+  `wingHuman`, `wingInv`, `wingY`, `giveWingPod`, `giveWingBits`,
+  `spawnCapWing`, `coopOff`, …) / `start()`.
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
-  GIVE LASER, TO PHASE-1, OPEN MAW.
+  GIVE LASER, TO PHASE-1, OPEN MAW, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
+  GEAR THE WING.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern
   taps `b` every 97 ticks) and the nightly soak roster (`nightlybot.mjs`).
