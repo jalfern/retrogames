@@ -604,8 +604,7 @@ const SKIN = '#d8a06a', SKIN_D = '#b57d46'
 const CFG = { punchOn: 4, kickOn: 6 }
 const PAL = {
     billy: { head: '#e8e8ec', body: '#dcdce4', trim: '#c8302f', legs: '#dcdce4', shoes: '#5a3a24', band: '#c8302f' },
-    // S4 the second dragon: Jimmy Lee — same white gi, the BLUE headband.
-    // The arcade's whole poster lives in this one line of colour.
+    // Jimmy (S4 blue seat): same skin, blue everything else — 1987 arcade palette
     jimmy: { head: '#e8e8ec', body: '#dcdce4', trim: '#2f5fd0', legs: '#dcdce4', shoes: '#5a3a24', band: '#2f5fd0' },
     williams: { head: '#d8d8dc', body: '#2f8f74', trim: '#1d6b52', legs: '#3a3f52', shoes: '#22262f', band: '#2f8f74' },
     amon: { head: '#8a5a34', body: '#8a5a34', trim: '#5f3d22', legs: '#2c2f3c', shoes: '#1c1e26', band: null },
@@ -716,7 +715,7 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
 }
 
 export function drawBilly(ctx, b, camX, props) { drawFighter(ctx, b, camX, PAL.billy, props) }
-export function drawJimmy(ctx, p, camX, props) { drawFighter(ctx, p, camX, PAL.jimmy, props) }
+export function drawJimmy(ctx, b, camX, props) { drawFighter(ctx, b, camX, PAL.jimmy, props) }
 
 function drawFighter(ctx, b, camX, pal, props) {
     const sx = Math.round(b.x - camX)
@@ -885,6 +884,22 @@ export function drawHud(ctx, gs) {
         ctx.fillStyle = '#e8e8ec'
         ctx.fillRect(222 + i * 12 + 2, 5, 4, 3)
     }
+    // co-op (S4): 2P sits right of 1UP; blue headbands, blue label (2023's
+    // blue-Billy is exactly this trim blue). Out seat: dimmed slot + the ready
+    // blink when its bank still holds lives — the arcade's seat invitation.
+    if (gs.jimmy) {
+        if (gs.jimmy.out) {
+            ctx.fillStyle = '#3a3f52'
+            ctx.fillRect(222 + 4 * 12 + 4, 8, 8, 3)
+            if (gs.jimmy.lives > 0 && gs.tick % 40 < 24) label(ctx, 'READY', 222 + 4 * 12 + 16, 8, '#2f5fd0', 1)
+        }
+        for (let i = 0; i < Math.min(gs.jimmy.lives, 4); i++) {
+            ctx.fillStyle = gs.jimmy.out ? '#3a3f52' : '#2f5fd0'
+            ctx.fillRect(222 + 4 * 12 + 4 + i * 12, 8, 8, 3)
+            ctx.fillStyle = gs.jimmy.out ? '#5a5f72' : '#e8e8ec'
+            ctx.fillRect(222 + 4 * 12 + 4 + i * 12 + 2, 5, 4, 3)
+        }
+    }
     const WL = { stick: 'STICK', knife: 'KNIFE', whip: 'WHIP' }
     // #2819 item 5: the cabinet tints the weapon label per type — steel white,
     // leather brown, wood gold — so the HUD reads the hand at a glance
@@ -934,6 +949,7 @@ export function drawBanner(ctx, gs) {
 export function drawAttract(ctx, phase, tick) {
     const msgs = [
         ['DOUBLE DRAGON', '#c8302f', 2],
+        ['BLUE DRAGON: JIMMY LEE', '#2f5fd0', 1],
         ['2 AGAINST THE WALL', '#fff', 1],
         ['WALNUTS STREET', '#ffd98a', 1],
         ['THE HIDEOUT', '#ff9a7a', 1],

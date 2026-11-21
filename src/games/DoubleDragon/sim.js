@@ -245,10 +245,15 @@ function moveEntity(gs, ent, dx, dy, radius = 0) {
     if (dx && !blocked(gs, ent.x + dx, ent.y, radius)) { ent.x += dx; movedX = true }
     if (dy && !blocked(gs, ent.x, ent.y + dy, radius)) ent.y += dy
     if (dx && !movedX) {
+        // k-slip: the wanted x was refused — open the depth axis toward the
+        // direction the body ALREADY wanted (dy). Down-first k-slip fought
+        // depthSlip's up-pull over a crate corner and froze both dragons and a
+        // Williams in a tug-of-war for 57,000 ticks (the S4 co-op seed-2 stall).
         for (let k = 2; k <= 32; k++) {
             const dn = clamp(ent.y + k, DEEP_TOP, DEEP_BOT), up = clamp(ent.y - k, DEEP_TOP, DEEP_BOT)
-            if (dn !== ent.y && !blocked(gs, ent.x, dn, radius)) { ent.y = dn; return }
-            if (up !== ent.y && !blocked(gs, ent.x, up, radius)) { ent.y = up; return }
+            const first = dy < 0 ? [up, dn] : [dn, up]
+            if (first[0] !== ent.y && !blocked(gs, ent.x, first[0], radius)) { ent.y = first[0]; return }
+            if (first[1] !== ent.y && !blocked(gs, ent.x, first[1], radius)) { ent.y = first[1]; return }
         }
     }
 }
@@ -1102,7 +1107,10 @@ export function dragonBrain(gs, b) {
         return laneChange(gs, b, pad)
     }
     if (Math.abs(dy) > 3) { pad.up = dy < 0; pad.down = dy > 0 }
-    if (adx > 16) { pad.right = dx > 0; pad.left = dx < 0 }
+    // close BOTH axes: a target 20px deep across a crate is not in kick range —
+    // mashing depth into wood is the stall the co-op seeds found. Walk to the
+    // target's side of the prop, then the lane opens underneath you.
+    if (adx > 16 || Math.abs(dy) > 10) { pad.right = dx > 0; pad.left = dx < 0 }
     else {
         const surrounded = gs.enemies.filter((e) => e.state !== 'dying' && e.state !== 'down' && Math.abs(e.x - b.x) <= CFG.spin.reach + 6 && Math.abs(e.y - b.y) <= 10).length >= 2
         if (!surrounded && gs.tick % 9 < 2) pad.b = true // kick (kicks knock down)
