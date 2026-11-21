@@ -56,9 +56,11 @@
 
 ## NOTES for the next lane
 - Prod verify recipe: marker strings survive minification (attract messages);
-  crawl the asset graph from the entry with redirect:follow. This slot's
-  crawler: /tmp/forge/prodcheck-2885.mjs (marker "VINES SWING OVER THE
-  FALLS"). Vercel took >10 min after merge for the new index-*.js to serve.
+  crawl the asset graph from the entry. Two traps cost this slot 20 min:
+  jalfern.com 308-redirects to **www.**jalfern.com (curl needs -L) and chunk
+  refs are `"./index-<hash>.js"` (regex must allow the `./` prefix) — without
+  both you crawl redirect stubs and cry NOT FOUND forever. Marker did land:
+  chunk index-DrEmC4qW.js carries "VINES SWING OVER THE FALLS" (#2885).
 - #2890 merged while an old worktree (retrogames-qa-mini-rollback) still
   holds a `main` checkout: gh pr merge --squash deletes the branch and
   MERGES fine, but its post-merge local re-checkout dies on "main already
