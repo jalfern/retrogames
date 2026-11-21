@@ -1168,7 +1168,7 @@ if (MUTANT) {
             // #2847: the courier's whole POINT is the pod it drops. Let the
             // airframe fall empty and the sky is target practice for nothing.
             name: 'cargo-jettison',
-            anchor: 'gs.pods.push({ x: cr.x, y: cr.y + 12, vx: CFG.podVx, vy: 0, kind: cr.kind })',
+            anchor: 'gs.pods.push({ x: cr.x, y: cr.y + 12, vx: CFG.podVx, vy: 0, kind: cr.kind, recoil: 6, puff: 0 })',
             plant: 'void 0 /* MUTANT(cargo-jettison): the courier keeps its prize */',
             harm: async (mod) => {
                 const gs = mod.makeGame(7)
@@ -1259,16 +1259,16 @@ if (MUTANT) {
                     mod.step(gs, {})
                 }
                 gs.ev.length = 0
-                let touched = false
-                for (let i = 0; i < 240 && !touched; i++) {
+                let landed = false
+                let signal = false
+                for (let i = 0; i < 240 && !landed; i++) {
                     mod.step(gs, {})
-                    if (gs.ev.some((e) => e.type === 'dust')) touched = 'dust'
-                    if (gs.pods[0] && gs.pods[0].puff > 0) touched = touched || 'puff'
+                    if (gs.ev.some((e) => e.type === 'dust')) signal = true
+                    if (gs.pods[0] && gs.pods[0].puff > 0) signal = true
                     gs.ev.length = 0
-                    if (gs.pods[0] && gs.pods[0].y >= mod.CFG.ground - 2 && gs.pods[0].vy === 0 && touched === true) break
+                    if (gs.pods[0] && gs.pods[0].y >= mod.CFG.ground - 2) landed = true
                 }
-                const settled = gs.pods[0] && gs.pods[0].y >= mod.CFG.ground - 2
-                return settled && !touched
+                return landed && !signal
                     ? 'HARM NAMED: the pod lands dry - cargo hits the deck with no puff and no sound; the eye never sees the touchdown'
                     : null
             },
