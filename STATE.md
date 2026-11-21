@@ -1,66 +1,51 @@
-# STATE.md — The Forge (rewritten at close of slot b, 2026-11-21; committed to
-# main because game code merged: CONTRA pod-carrier polish #2852 -> PR #2872 ->
-# 71ebad3. Rule 4 turning strongly: #2858, #2871, #2872 game/harness in a row.)
+# STATE.md — The Forge (rewritten at close of slot a, 2026-11-21; committed to
+# main because game code merged: DOUBLE DRAGON S2 trainable #1712-part -> PR
+# #2878 -> 420ae96, plus the red-main watchcheck fix #2871 -> 10ffd45.)
 
 ## PLAYABLE
-- /retrogames/contra — pod carriers land like the cabinet (#2852, shipped this
-  session): rotor = translucent disc sweep + two counter-phase blade lines;
-  jettison SNAPS (6-tick recoil, hooks flick open); touchdown kicks a `dust`
-  event + 12-tick sand specks + its own sound; fly-in carries three delayed
-  ~6 Hz rotor thumps. All deterministic (fields ride stateHash, zero gs.r).
-  contracheck 141/141, mutants 17/17 named. Coexists with QA's #2842 ceremony
-  polish (merged mid-session): seat `land` thud + pod `dust` puff.
-- /retrogames/frogger — watchcheck leg pinned to certified seed 4242 (#2871,
-  slot a); planner stall-breaker owned by #2869 (now building-qa).
+- /retrogames/double-dragon — now TRAINABLE-ON-ARRIVAL (#2878, slot a): the S2
+  consent gate (#1711) goes up before seed-birth, decline still plays; consented
+  runs bank every consumed pad pair (`armLiveCapture` + `recordLiveTick`), the
+  drop-in tick rides `rules.seat2At`, and `doubleDragonRows` feeds it to the
+  PLAICRAFT builder — DD is the 6th trainable game. datasetcheck 64/64
+  (571-row scripted take, seat-1 begins AT seat2At, tamper + mutant 8 red),
+  ddragoncheck 126/126, recordcheck 281/281, vpadcheck 714/714.
+- /retrogames/frogger — watchcheck pilot rides its certified seed 1776 (#2871,
+  the #601 red-main fix; ~1-in-60 random seeds hit the river zigzag stall and
+  starve the leg — Node sweep 25/1500, e.g. 3910). Planner stall-breaker owned
+  by #2869.
 - Rest of shelf unchanged.
 
-## WHAT THIS SESSION DID (slot b)
-- Warden target #2852 claimed and shipped (~1h20m, one PR). Six asks -> all
-  landed incl. near-left-edge pod playtest (deaths only happen where the pod
-  can land collectable; browser leg proves deck delivery). +9 pins, +5 mutants
-  (no-snap, dry-landing, antenna-rotor, one-blade, no-hooks); cargo-jettison
-  mutant re-anchored past the recoil field; probe exposes pod `r`/`pf`.
-- MAIN FIX (#601): nightly #110 red = watchcheck frogger takeover window.
-  Root-caused in Node: planner stalls (row1<->row2 bounce) on 129/400 seeds,
-  gaps 900-1250 ticks, 0 deaths. Filed #2867; slot a landed #2871 (same seed
-  pin) first — yielded: closed my PR #2870 + dup issue, folded the scan data
-  into #2869. Nightly re-dispatch to clear the freeze got cancelled by the
-  lanes' own follow-up dispatches (concurrency); main-ok treated `cancelled`
-  as passable — worth knowing.
-- shiftreport published (headline: Contra's gunship finally lands like the
-  arcade's).
+## WHAT THIS SESSION DID (slot a)
+- Red main 44914600702: root-caused to watchcheck's frogger pilot rolling a
+  random start seed; pinned it (precedent smash-tv #2531), proved two mutants
+  red, froggercheck 35/35. #2871 -> 10ffd45 (main green again; nightly rerun
+  44937167937 then went cancelled-by-newer-push — main-ok rc=0).
+- Warden target #1712 (S2 dataset): made DOUBLE DRAGON trainable in one PR
+  #2878 -> 420ae96. New `src/games/DoubleDragon/model.js` (60 features:
+  camera-window masking with crest honesty, per-seat honest zeros, prev-pad
+  incl. boost); punch rides the canonical `boost` one-pad channel
+  (DIGITAL_FIELDS/PAD_FIELDS additive).
+- Harness lesson worth repeating: this Mac's store probe comes back LIVE, so the
+  consent gate RISES on scripted starts and swallows every key until clicked.
+  Any new browser check on a gate-bearing game must include the NO THANKS
+  defuse helper (copy gauntletplay/touchselectcheck; #2091 — decline, never
+  grant). ddragoncheck now does.
 
-## BOARD (at close)
-- building: #1712 (PLAICRAFT S2, slot a), #2877 (POLISH — DOUBLE DRAGON yard
-  shadows/dressing — someone's never-dry pick).
-- building-qa: #2876 (ZORK I first-time-player pass), #2869 (FROGGER planner
-  stall-breaker — QA holds the game-code fix; my scan data is in the thread).
-- game-queue: empty. feedback-unowned sample: #2857 (DD partner personality),
-  #2863 (DD pad/phone seat).
-- jonq open (links only): #2844, #2846.
+## OPEN
+- #1712 stays open: acceptance still needs real friend takes (someone GRANTING
+  consent on a real device) — DD can now bank them; fold/attribution ruling is
+  #2844 (open jonq).
+- #2869 — frogger planner zigzag (feedback -> building-qa): proper fix is a
+  lane-alternating planner, traces on the issue.
+- #2846 — flagship public promotion (AWAITING, not lane a).
+- Open question issues: none from this session.
 
-## HARNESS NOTES FOR THE NEXT LANE
-- Art QA at phone widths: VirtualControls covers the play area's lower corners.
-  Use a >=1000px viewport for screenshots; `?` pause hides the pad and freezes
-  the sim (freeze on transient FX windows: snap is ~100ms, puff ~200ms).
-- Pod/pickup traps: a pod landing next to the hero is CONSUMED the same tick
-  (no puff visible) — walk away before touchdown when filming landings.
-- Local `--throttle 64` does NOT reproduce CI tick debt (our sim clock survives
-  the CDP throttle); trust Node tick-math + the nightly itself (#2176 lesson).
-- Frogger cert (in froggercheck now): seed 4242 — 0 deaths, first-gap 35,
-  worst ride-gap 282 across 3 levels. Lift the url pin only when #2869 lands
-  and keep a per-seed gap pin.
-- `scripts/devstop.sh <port>` is the port-safe server killer now (#2866) —
-  never pkill -f across lanes.
-
-## WORKTREES
-- Main checkout ~/Dev/retrogames: detached origin/main (this STATE commit on top).
-- ~/Dev/retrogames-forge-contra-pod-polish — finished (merged #2872), re-
-  detached; reap freely (remote branch gone).
-- ~/Dev/retrogames-forge-frogger-seed — superseded by slot a's #2871; detached;
-  reap freely. (Slot a's own retrogames-fix-frogger-seed is theirs.)
-- Ports: b's 5178 stopped at close (devstop). QA studio 5176 = QA's, leave it.
-
-## Open questions
-- #2844 — PLAICRAFT S2 fold ruling (research lane's).
-- #2846 — promote CONTRA/R-TYPE/DD to public? (default keep private.)
+## NOTES for the next lane
+- `?seed=` pins DD too (seedFromQuery); `__ddTest` hook API is probe/setup/tick;
+  browser leg defuses the gate once per page (fresh context per page = fresh LS).
+- Vite dev on this box answers /api/store via proxy → probe.sessions TRUE in
+  dev; CI Chrome sees the store silent (gate never rises there — checks must
+  work both ways; the defuse helper no-ops when the gate is absent).
+- prod verify after this STATE push: bundle marker `seat2At` in the DD chunk at
+  jalfern.com — confirmed in preview of #2878; production sweep at close.
