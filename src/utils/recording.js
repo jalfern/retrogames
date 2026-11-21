@@ -79,7 +79,7 @@ export const DEFAULT_HASH_EVERY = 30
 
 export const PING_EVERY_TICKS = 30
 
-const DIGITAL_FIELDS = [...DIR_FIELDS, 'a', 'b', 'start', ...AIM_FIELDS]
+const DIGITAL_FIELDS = [...DIR_FIELDS, 'a', 'b', 'start', 'boost', ...AIM_FIELDS]
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0)
 
 // --- pad codec -----------------------------------------------------------------

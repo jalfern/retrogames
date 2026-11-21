@@ -75,6 +75,8 @@ import { createGame as sosMakeGame, stepGame as sosStep, hashState as sosHash } 
 import { featurize as sosFeaturize } from '../src/games/ShortOrderShout/model.js'
 import { createSim as rcMakeSim, tickSim as rcStep, stateHash as rcHash } from '../src/games/RallyCoDriver/sim.js'
 import { featurize as rcFeaturize } from '../src/games/RallyCoDriver/model.js'
+import { makeGame as ddMakeGame, step as ddStep, stateHash as ddHash } from '../src/games/DoubleDragon/sim.js'
+import { featurize as ddFeaturize } from '../src/games/DoubleDragon/model.js'
 import { newGame, heroFromPad, p2FromPad, seatedPartner } from './plaicraft-export.mjs'
 
 const argv = process.argv.slice(2)
@@ -349,12 +351,56 @@ export function rallyCoDriverRows(key, rec) {
     return { ok, mismatch: null, rows }
 }
 
+// double-dragon adapter (#1712): sim.js is Node-clean and seed-pure (every
+// die rides mulberry32 — ddragoncheck replays byte-equal), so takes
+// replay-verify against their checkpoints and carry THE 60 seat features
+// (src/games/DoubleDragon/model.js). The shell banks the pad PAIR it consumed
+// (Jimmy's CPU personality lives inside the sim, like SOS's cook emitters),
+// and rules.seat2At stamps the tick the drop-in law handed the blue seat to a
+// person — the seed cannot know when a friend reached for WASD. Seat-1 rows
+// begin AT that tick: before the seat is taken its stream is nobody's, and
+// rows must never teach the CPU's habits as a person's. The camera is the
+// crest: model features mask to the visible window (the honest-zero law).
+export function doubleDragonRows(key, rec) {
+    const players = Math.max(1, Math.min(2, (rec.players || 1) | 0))
+    const gs = ddMakeGame(rec.seed, { coop: players >= 2 })
+    const want = new Map(rec.hashes.map((x) => [x.t, x.h]))
+    const mems = {}
+    const rows = []
+    const finalT = rec.hashes.length ? rec.hashes[rec.hashes.length - 1] : null
+    const seat2At = rec.rules && Number.isInteger(rec.rules.seat2At) ? rec.rules.seat2At : -1
+    for (let t = 0; t < rec.ticks; t++) {
+        if (gs.jimmy && seat2At >= 0 && t === seat2At - 1) gs.jimmy.human = true
+        const decoded = rec.slots.map((s) => decodePad(s.pads[t], rec.method))
+        const p1 = decoded[0] || {}
+        const p2 = decoded[1] || {}
+        ddStep(gs,
+            { left: !!p1.left, right: !!p1.right, up: !!p1.up, down: !!p1.down, a: !!p1.a, b: !!p1.b, punch: !!p1.boost },
+            { left: !!p2.left, right: !!p2.right, up: !!p2.up, down: !!p2.down, a: !!p2.a, b: !!p2.b, punch: !!p2.boost })
+        const t1 = t + 1
+        if (want.has(t1)) {
+            const got = ddHash(gs)
+            if (got !== want.get(t1)) return { ok: false, mismatch: { tick: t1, want: want.get(t1), got }, rows }
+        }
+        for (let i = 0; i < rec.slots.length; i++) {
+            if (i === 1 && (seat2At < 0 || t1 < seat2At)) continue // seat-1 rows begin when a person took it
+            if (!mems[i]) mems[i] = {}
+            const feat = ddFeaturize(gs, i, mems[i]).map((v) => +v.toFixed(3))
+            mems[i].pa = decoded[i] // bank the autoregressive lane after the label
+            rows.push({ k: key, g: rec.game, s: rec.seed, t: t1, lvl: gs.stage, seat: i, act: encodePad(decoded[i]), feat })
+        }
+    }
+    const ok = !finalT || finalT.h === ddHash(gs)
+    return { ok, mismatch: null, rows }
+}
+
 const ADAPTERS = {
     gauntlet: gauntletRows,
     'floor-boss': floorBossRows,
     'bomb-defuse': bombDefuseRows,
     'short-order-shout': shortOrderShoutRows,
     'rally-co-driver': rallyCoDriverRows,
+    'double-dragon': doubleDragonRows,
 }
 
 // --- audio -----------------------------------------------------------------------

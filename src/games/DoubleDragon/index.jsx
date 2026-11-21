@@ -9,7 +9,8 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, armLiveCapture } from '../../utils/gameContract'
+import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { slotPad, slotActive } from '../../utils/onePad'
 import { p2Merge, p2Seat } from './p2pad.js'
 import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH, enterStage2 } from './sim.js'
@@ -46,6 +47,11 @@ export default function DoubleDragon() {
         let demoHold = 0
         let overAt = 0
         let shake = 0
+        // #1712 S2: the tick the blue seat went HUMAN (-1 while it is the
+        // CPU's). Rides the take's rules so a replay seats Jimmy at the exact
+        // tick the drop-in law did — the seed alone cannot know when a friend
+        // reached for WASD.
+        let seat2At = -1
         const part = []
         const keys = { l: false, r: false, u: false, d: false, j: false, k: false, p: false }
         let jumpQ = false, kickQ = false, punchQ = false
@@ -201,8 +207,21 @@ export default function DoubleDragon() {
             gs.hi = hiscore
             part.length = 0
             demoHold = 0
+            seat2At = -1 // a fresh run hands the blue seat back to the CPU
             setMode('play')
             screen = 'play'
+        }
+
+        // #1711 S2 consent gate: the question goes up BEFORE the first take's
+        // seed-birth; decline still plays (autoRecord honest-degrades — the
+        // recorder simply never opens), and beginRun() only ships bytes the
+        // stored grant covers.
+        const humanStart = () => {
+            if (startBusy()) return
+            setStartBusy(true)
+            askConsent()
+                .then(() => { startPlay(); beginRun() })
+                .finally(() => setStartBusy(false))
         }
 
         const endTo = (what) => {
@@ -211,14 +230,70 @@ export default function DoubleDragon() {
             if (what === 'over') {
                 overAt = performance.now()
                 if (gs.score > hiscore) { hiscore = gs.score; localStorage.setItem(HS_KEY, String(hiscore)) }
+                endRun() // #1711: the take ends with the run (no-op when idle/declined)
             }
         }
 
         const stepSim = (pad) => {
-            step(gs, pad, simPad2())
+            const p2 = simPad2()
+            step(gs, pad, p2)
             drain()
             ambience()
-            if (gs.mode === 'gameover' && screen === 'play') endTo('over')
+            if (screen === 'play') {
+                // #1712 S2: bank exactly what THIS tick consumed (attract demo
+                // ticks never enter a take), and latch the drop-in tick for the
+                // take's rules — replay seats Jimmy by it.
+                recordLiveTick([toBank(pad), toBank(p2)])
+                if (gs.jimmy && gs.jimmy.human && seat2At < 0) seat2At = gs.tick
+                if (gs.mode === 'gameover' && screen === 'play') endTo('over')
+            }
+        }
+
+        // #1712 S2 — the live-capture spec (same wiring as SOS/BombDefuse):
+        // the shell banks THE PAD PAIR IT CONSUMED each play tick, so replay
+        // needs no CPU re-run of Jimmy's personality — the drop-in moment
+        // rides rules.seat2At (the sim's human flip is a law the seed cannot
+        // know). method dpad: the pads are digital; boost is the punch.
+        const toBank = (p) => ({
+            left: !!p.left, right: !!p.right, up: !!p.up, down: !!p.down,
+            a: !!p.a, b: !!p.b, boost: !!p.punch,
+        })
+        const recSpec = {
+            id: 'double-dragon',
+            method: 'dpad',
+            players: coopOn() ? 2 : 1,
+            buttons: ['a', 'b', 'boost'],
+            reads: ['up', 'down', 'left', 'right', 'a', 'b', 'boost'],
+            sources: () => {
+                const out = [{ kind: 'human' }]
+                if (coopOn()) out.push(gs.jimmy && gs.jimmy.human ? { kind: 'human' } : { kind: 'cpu' })
+                return out
+            },
+            rules: () => (coopOn() ? { seat2At } : {}),
+            reset: (seed, players) => {
+                gs = makeGame(seed >>> 0, { coop: (players | 0) >= 2 })
+                gs.hi = hiscore
+                part.length = 0
+                demoHold = 0
+                seat2At = -1
+                keys.l = keys.r = keys.u = keys.d = keys.j = keys.k = keys.p = false
+                keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.k = keys2.p = false
+                jumpQ = kickQ = punchQ = jumpQ2 = kickQ2 = punchQ2 = false
+                screen = 'play'
+                setMode('play')
+            },
+            tick: (pad, pads) => {
+                if (gs.mode === 'gameover') return
+                const p1 = pads && pads[0] ? pads[0] : pad
+                const p2 = (pads && pads[1]) || {}
+                step(gs,
+                    { left: !!p1.left, right: !!p1.right, up: !!p1.up, down: !!p1.down, a: !!p1.a, b: !!p1.b, punch: !!p1.boost },
+                    { left: !!p2.left, right: !!p2.right, up: !!p2.up, down: !!p2.down, a: !!p2.a, b: !!p2.b, punch: !!p2.boost })
+                drain()
+                if (gs.mode === 'gameover' && screen === 'play') endTo('over')
+            },
+            state: () => ({ tick: gs.tick, score: gs.score, done: gs.mode === 'gameover', seed: gs.seed, hash: stateHash(gs) }),
+            canvas: () => canvas,
         }
 
         const paint = () => {
@@ -292,7 +367,7 @@ export default function DoubleDragon() {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
-            if (screen === 'attract') { startPlay(); return }
+            if (screen === 'attract') { humanStart(); return }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract'); return }
             if (pausedRef.current || e.repeat) return
             if (e.code === 'ArrowLeft') keys.l = true
@@ -334,13 +409,18 @@ export default function DoubleDragon() {
         }
         const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.j = keys.k = keys.p = keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.k = keys2.p = false }
         const onPointer = () => {
-            if (screen === 'attract') { startPlay(); return }
+            if (screen === 'attract') { humanStart(); return }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract') }
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
         window.addEventListener('pointerdown', onPointer)
+        // #1711 S2: arm the live capture for every build (DEV re-arms the
+        // identical wiring inside exposeGame); banking only happens while a
+        // consented auto capture runs (autoRecord.js).
+        initAutoRecord()
+        armLiveCapture(recSpec)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -500,6 +580,7 @@ export default function DoubleDragon() {
 
         return () => {
             unexposeFeedbackState()
+            endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
             if (import.meta.env.DEV) { if (window.__ddTest) delete window.__ddTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
