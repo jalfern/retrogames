@@ -779,14 +779,14 @@ function runWorld(gs, pad, frozen, pad2) {
         p2.cores.forEach((c, ci) => { if (c.hp > 0) vent(c, gs, ci) })
     } else if (p2 && p2.dyingT > 0) {
         p2.dyingT -= 1
-        p2.x += 0.5
+        p2.x += 0.25 // half the old recoil: doubled cascade, same exit frame — the walk stays on screen
         // #2835 walking death: the fire starts at the port that fell LAST,
         // crosses the face to its twin, and the plating sheds in rows behind
         // it. ~2× Phase-1's roll — the dread takes its time going under.
         const k = p2.cascade - p2.dyingT
         if (gs.tick % 3 === 0) {
             const lane = k < p2.cascade / 2 ? Math.max(0, p2.lastCore) : 1 - Math.max(0, p2.lastCore)
-            gs.lastHitX = p2.x + 10 + Math.floor(k * 0.34) + ((k * 41) % 9)
+            gs.lastHitX = p2.x + 10 + Math.floor(k * 0.3) + ((k * 41) % 9)
             gs.lastHitY = CORE_Y[lane] + ((k * 67) % 13) - 6
             gs.events.push('boom')
         }

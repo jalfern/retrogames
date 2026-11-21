@@ -710,7 +710,7 @@ export function drawP2(ctx, p2, camX, tick) {
         // fell last toward its twin, and whole rows of plating shed behind it.
         const lane = Math.max(0, p2.lastCore)
         const seamLane = k < cs / 2 ? lane : 1 - lane
-        const sx = x + 10 + Math.floor(k * 0.34)
+        const sx = x + 10 + Math.floor(k * 0.3)
         const sy = CORE_Y[seamLane]
         ctx.fillStyle = 'rgba(255,140,60,0.30)'
         ctx.fillRect(sx - 4, sy - 18, 9, 36)
