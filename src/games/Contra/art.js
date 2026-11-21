@@ -792,6 +792,49 @@ export function drawCanyon (ctx, camY, tick) {
     }
 }
 
+// #2885 hanging vine — braided strand from an overhang knob to a leaf-knot
+// tip, swaying on the sim's swing angle (θ rides gs.tick through vineTheta,
+// so the pixel sway and the sim grab box agree to the pixel). A rider hangs
+// from the tip: the stub continues down to their hand.
+export function drawVine (ctx, v, theta, riderY = null) {
+    const knot = '#2c4a22'
+    const sA = '#3f6b2f'; const sB = '#57903e'; const sLit = '#74ab52'
+    // overhang knob the vine roots in
+    ctx.fillStyle = C.rockLo; ctx.fillRect(v.x - 5, v.y - 4, 10, 6)
+    ctx.fillStyle = C.rock; ctx.fillRect(v.x - 4, v.y - 5, 8, 3)
+    ctx.fillStyle = C.moss; ctx.fillRect(v.x - 5, v.y - 6, 6, 2)
+    const N = 8
+    let px = v.x, py = v.y
+    for (let k = 1; k <= N; k++) {
+        const u = k / N
+        const th = theta * u * u           // whip: the tail swings widest
+        const nx = v.x + Math.sin(th) * v.len * u
+        const ny = v.y + Math.cos(th) * v.len * u
+        ctx.fillStyle = k % 2 ? sA : sB
+        const steps = Math.max(1, Math.round(Math.hypot(nx - px, ny - py) / 3))
+        for (let s = 1; s <= steps; s++) {
+            ctx.fillStyle = ((k + s) % 2) ? sA : sB
+            ctx.fillRect(Math.round(px + ((nx - px) * s) / steps), Math.round(py + ((ny - py) * s) / steps), 2, 2)
+        }
+        if (k === 4 || k === 6) {        // leaf pairs mid-strand
+            ctx.fillStyle = sLit
+            ctx.fillRect(Math.round(nx) - 3, Math.round(ny) - 1, 2, 2)
+            ctx.fillRect(Math.round(nx) + 2, Math.round(ny) + 1, 2, 2)
+        }
+        px = nx; py = ny
+    }
+    // leaf-knot tip
+    ctx.fillStyle = knot; ctx.fillRect(Math.round(px) - 2, Math.round(py) - 2, 4, 4)
+    ctx.fillStyle = sLit
+    ctx.fillRect(Math.round(px) - 4, Math.round(py) - 1, 2, 2)
+    ctx.fillRect(Math.round(px) + 3, Math.round(py), 2, 2)
+    // rider stub: the vine tail runs to the hanging hand
+    if (riderY != null) {
+        ctx.fillStyle = sA
+        for (let yy = Math.round(py) + 2; yy < Math.round(riderY); yy += 2) ctx.fillRect(Math.round(px), yy, 2, 2)
+    }
+}
+
 // A rock shelf — one-way like the jungle walkways, but cut from the gorge wall.
 export function drawLedge (ctx, l) {
     ctx.fillStyle = C.rockLo
