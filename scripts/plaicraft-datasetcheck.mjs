@@ -47,8 +47,10 @@ import { createGame as sosMakeGame, stepGame as sosStep, hashState as sosHash } 
 import { N_FEAT as SOS_N_FEAT, featurize as sosFeaturize } from '../src/games/ShortOrderShout/model.js'
 import { createSim as rcMakeSim, tickSim as rcStep, stateHash as rcHash, cpuDriverPad, cpuCoDriverPad, FOG_RANGE, cornerAhead } from '../src/games/RallyCoDriver/sim.js'
 import { N_FEAT as RC_N_FEAT, featurize as rcFeaturize } from '../src/games/RallyCoDriver/model.js'
+import { makeGame as ddMakeGame, step as ddStep, stateHash as ddHash } from '../src/games/DoubleDragon/sim.js'
+import { N_FEAT as DD_N_FEAT, featurize as ddFeaturize } from '../src/games/DoubleDragon/model.js'
 import { newGame, heroFromPad, p2FromPad } from './plaicraft-export.mjs'
-import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, shortOrderShoutRows, rallyCoDriverRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
+import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, shortOrderShoutRows, rallyCoDriverRows, doubleDragonRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 // Local Report (harness.mjs pulls playwright-core at import; this check is
@@ -90,24 +92,28 @@ const craftWebm = (durationMs) => {
     ]).toString('base64')
 }
 
-function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false, weather = null }) {
-    const method = game === 'floor-boss' || game === 'bomb-defuse' || game === 'short-order-shout' || game === 'rally-co-driver' ? 'dpad' : 'stick'
+function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false, weather = null, seat2At = -1 }) {
+    const method = game === 'floor-boss' || game === 'bomb-defuse' || game === 'short-order-shout' || game === 'rally-co-driver' || game === 'double-dragon' ? 'dpad' : 'stick'
     const wx = weather || 'clear'
     const gs = game === 'gauntlet' ? newGame(seed, rules || {}, seats[1] && seats[1].kind !== 'off')
         : game === 'floor-boss' ? fbMakeGame(seed, { duel: seats.length >= 2 })
             : game === 'bomb-defuse' ? bdMakeGame(seed, seats.length >= 2 ? 2 : 1)
                 : game === 'short-order-shout' ? sosMakeGame(seed, Math.max(1, Math.min(4, seats.length)))
                     : game === 'rally-co-driver' ? rcMakeSim(seed, seats.length >= 2 ? 2 : 1, wx)
-                        : null
+                        : game === 'double-dragon' ? ddMakeGame(seed, { coop: seats.length >= 2 })
+                            : null
     const hashOf = game === 'gauntlet' ? stateHash
         : game === 'floor-boss' ? fbHash
             : game === 'bomb-defuse' ? bdHash
                 : game === 'short-order-shout' ? sosHash
-                    : game === 'rally-co-driver' ? rcHash : null
+                    : game === 'rally-co-driver' ? rcHash
+                        : game === 'double-dragon' ? ddHash : null
     const rec = createRecorder({
         gameId: game, method, seed, players: seats.length, build: 'test',
         sources: seats.map((s) => ({ kind: s.kind === 'relabeled' ? 'human' : s.kind })),
-        rules: () => (game === 'rally-co-driver' ? { weather: wx } : rules || {}),
+        rules: () => (game === 'rally-co-driver' ? { weather: wx }
+            : game === 'double-dragon' ? { seat2At }
+                : rules || {}),
     })
     let x = (seed >>> 0) + 1
     const rnd = () => ((x = (x * 1103515245 + 12345) >>> 0) / 4294967296)
@@ -116,12 +122,20 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
         const pads = seats.map(() => ({
             up: rnd() < 0.3, down: rnd() < 0.2, left: rnd() < 0.2, right: rnd() < 0.3,
             a: rnd() < 0.15, b: rnd() < 0.15, ax: Math.cos(rnd() * 6.28), ay: Math.sin(rnd() * 6.28),
+            // DD drives its punch on the boost channel; the rnd() is consumed
+            // only for double-dragon so every other game's dice stay frozen.
+            ...(game === 'double-dragon' ? { boost: rnd() < 0.12 } : {}),
         }))
         if (game === 'gauntlet') step(gs, heroFromPad(pads[0]), p2FromPad(pads[1] || {}))
         if (game === 'floor-boss') fbStep(gs, pads)
         if (game === 'bomb-defuse') bdStep(gs, pads)
         if (game === 'short-order-shout') sosStep(gs, pads)
         if (game === 'rally-co-driver') rcStep(gs, pads)
+        if (game === 'double-dragon') {
+            if (seat2At >= 0 && t === seat2At - 1) gs.jimmy.human = true
+            const toSim = (p) => ({ left: !!p.left, right: !!p.right, up: !!p.up, down: !!p.down, a: !!p.a, b: !!p.b, punch: !!p.boost })
+            ddStep(gs, toSim(pads[0]), toSim(pads[1] || {}))
+        }
         rec.addTick(pads, null, gs && gs.tick % 30 === 0 ? hashOf(gs) : null)
         if (callAt.has(t + 1)) {
             const c = calls.find((q) => q.t === t + 1)
@@ -227,13 +241,17 @@ try {
         // rain). These stand for the friends' takes the coverage lines wait on.
         ['carla', scriptedTake({ game: 'short-order-shout', seed: 71, ticks: 240, seats: [{ kind: 'human' }, { kind: 'cpu' }], voice: { slots: [0] } })],
         ['otto', scriptedTake({ game: 'rally-co-driver', seed: 72, ticks: 300, seats: [{ kind: 'human' }, { kind: 'cpu' }], voice: { slots: [0] }, weather: 'rain' })],
+        // #1712 street take: Billy human, Jimmy the CPU until tick 30, when a
+        // friend drops into the blue seat (rules.seat2At) — the shape a real
+        // two-friend run ships from /retrogames/join.
+        ['sam', scriptedTake({ game: 'double-dragon', seed: 73, ticks: 300, seats: [{ kind: 'human' }, { kind: 'cpu' }], voice: { slots: [0] }, seat2At: 30 })],
     ]
     let up = 0
     for (const [player, rec] of uploads) {
         const res = await uploadSession(rec, { player, consent: { motion: true, voice: !!rec.voice }, base: sim.base })
         if (res.ok) up++
     }
-    r.check('fixture store provisioned (12 consented takes uploaded)', up === 12, `${up}/12`)
+    r.check('fixture store provisioned (13 consented takes uploaded)', up === 13, `${up}/13`)
 
     // determinism: two full builds against the store, twice. In-process
     // (not a blocked spawnSync child: the sim lives on THIS event loop).
@@ -276,8 +294,8 @@ try {
         if (foldDecision(c.cls, c.native, c.relabeled, nativeHumans)) foldedKeys.add(s.key)
         else if (!humanKeys.has(s.key)) flaggedKeys.add(s.key)
     }
-    r.check('fixtures classify as expected: 8 human, 1 legacy-folded, 3 flagged',
-        humanKeys.size === 8 && foldedKeys.size === 1 && flaggedKeys.size === 3,
+    r.check('fixtures classify as expected: 9 human, 1 legacy-folded, 3 flagged',
+        humanKeys.size === 9 && foldedKeys.size === 1 && flaggedKeys.size === 3,
         `human=[${[...humanKeys].map((k) => envByKey.get(k).player)}] folded=[${[...foldedKeys].map((k) => envByKey.get(k).player)}] flagged=[${[...flaggedKeys].map((k) => envByKey.get(k).player)}]`)
 
     const trainRows = rows.filter((x) => x.split === 'train')
@@ -314,7 +332,7 @@ try {
     const audioIdx = fs.existsSync(path.join(outA, 'audio/index.jsonl'))
         ? fs.readFileSync(path.join(outA, 'audio/index.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
         : []
-    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank + carla kitchen + otto stage carry voice)', audioIdx.length === 10, `${audioIdx.length}/10`)
+    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank + carla kitchen + otto stage + sam street carry voice)', audioIdx.length === 11, `${audioIdx.length}/11`)
     const aliceIdx = audioIdx.find((x) => x.player === 'alice')
     let verbatim = false
     if (aliceIdx && fs.existsSync(path.join(outA, aliceIdx.file))) {
@@ -335,8 +353,9 @@ try {
         .map(({ path: p }) => [p, shaHex(fs.readFileSync(path.join(outA, p)))].join('\0') + '\n')
         .sort().join(''))
     r.check('manifest self-proves: files recompute to card.version', recomputed === card.version && man.version === card.version)
-    r.check('card reports honest coverage (5 human games: gauntlet, bomb-defuse, floor-boss, short-order-shout, rally-co-driver)',
-        card.coverage.gamesCovered.pass && card.coverage.gamesCovered.games.includes('floor-boss') && card.coverage.gamesCovered.games.includes('short-order-shout') && card.coverage.gamesCovered.games.includes('rally-co-driver') && card.coverage.audio.pass && card.splits.player.heldout.length >= 1,
+    r.check('card reports honest coverage (6 human games: gauntlet, bomb-defuse, floor-boss, short-order-shout, rally-co-driver, double-dragon)',
+        card.coverage.gamesCovered.pass && card.coverage.gamesCovered.games.includes('floor-boss') && card.coverage.gamesCovered.games.includes('short-order-shout') && card.coverage.gamesCovered.games.includes('rally-co-driver')
+        && card.coverage.gamesCovered.games.includes('double-dragon') && card.coverage.audio.pass && card.splits.player.heldout.length >= 1,
         `games=${JSON.stringify(card.coverage.gamesCovered.games)} heldout=${JSON.stringify(card.splits.player.heldout)}`)
 
     // ---- #2805: floor-boss engine, per-seat attribution, container truth, card lines
@@ -414,6 +433,40 @@ try {
         `rows=${rcRows.length}`)
     r.check('rally prev-pad lane banked too (#1712)',
         rcRows.some((x) => x.feat.slice(RC_N_FEAT - 6).some((v) => v === 1)) && RC_N_FEAT === 41)
+    // ---- #1712 street adapter: DOUBLE DRAGON rows, drop-in seat law, camera crest
+    const ddRows = rows.filter((x) => x.g === 'double-dragon')
+    r.check('double-dragon rows carry THE 60 seat features + encoded actions, never flagged (#1712)',
+        ddRows.length === 571 && ddRows.every((x) => Array.isArray(x.feat) && x.feat.length === DD_N_FEAT && x.feat.every((v) => Number.isFinite(v)) && typeof x.act === 'object')
+        && ddRows.every((x) => x.split !== 'flagged'),
+        `rows=${ddRows.length}`)
+    r.check('DD prev-pad lane banked incl boost->punch: some row carries a nonzero prev-pad feature (#1712)',
+        ddRows.some((x) => x.feat.slice(DD_N_FEAT - 8, DD_N_FEAT - 1).some((v) => v === 1)) && DD_N_FEAT === 60)
+    r.check('DD seat-1 rows begin AT the drop-in tick, never before — nobody drives an un-taken seat (#1712)',
+        ddRows.filter((x) => x.seat === 1).length === 271 && ddRows.filter((x) => x.seat === 1).every((x) => x.t >= 30)
+        && ddRows.some((x) => x.seat === 1 && x.t === 30))
+    { // the camera is the crest: a thug beyond the visible window reads ZERO —
+        // the honest-zero law pinned directly on the featurizer.
+        const g = ddMakeGame(5, { coop: true })
+        g.enemies.push({ id: 900, kind: 'williams', x: g.camX + 320 + 200, y: 170, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, castCooldown: 999, tgt: 'billy', attackCooldown: 60, inv: 0, spinHit: false })
+        g.projectiles.push({ id: 901, x: g.camX + 320 + 120, y: 170, vx: -3, spin: 0, side: 'goon' })
+        const off = ddFeaturize(g, 0, {})
+        g.enemies[0].x = g.camX + 60
+        g.projectiles[0].x = g.camX + 300
+        const on = ddFeaturize(g, 0, {})
+        r.check('DD camera crest: enemy and blade beyond the window read zero, inside read true (#1712 — the honest-zero law)',
+            off[19] === 0 && off[28] === 0 && off[40] === 0
+            && on[19] === 1 && on[20] !== 0 && on[40] > 0)
+    }
+    { // unit: DD adapter verifies clean, refuses tampered at its tick
+        const clean = scriptedTake({ game: 'double-dragon', seed: 93, ticks: 240, seats: [{ kind: 'human' }, { kind: 'cpu' }], seat2At: 60 })
+        const good = doubleDragonRows('unit/dd-clean', clean)
+        const badRec = JSON.parse(JSON.stringify(clean))
+        badRec.hashes[Math.max(0, badRec.hashes.length - 2)].h = 'cafebabe'
+        const bad = doubleDragonRows('unit/dd-tamper', badRec)
+        r.check('DD adapter: clean drop-in take verifies (421 rows), tampered refuses at its tick (#1712)',
+            good.ok && good.rows.length === 421 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
+            bad.mismatch ? `tick ${bad.mismatch.tick}` : (good.ok ? `${good.rows.length} rows` : 'no mismatch?!'))
+    }
     r.check('rally seat blocks are partitioned: driver rows never carry pace-book features, co rows never carry headlight features (#1712 — the split-information law survives the dataset)',
         rcRows.filter((x) => x.seat === 0).every((x) => x.feat.slice(24, 31).every((v) => v === 0))
         && rcRows.filter((x) => x.seat === 1).every((x) => x.feat.slice(16, 24).every((v) => v === 0)))
@@ -421,7 +474,8 @@ try {
         rcRows.length > 0 && rcRows.every((x) => x.feat[10] === 1 && x.feat[8] === 0))
     r.check('card games block names both new adapters honestly (featureAdapter true, humanTakes 1 each, #1712)',
         card.games['short-order-shout'] && card.games['short-order-shout'].featureAdapter === true && card.games['short-order-shout'].humanTakes === 1
-        && card.games['rally-co-driver'] && card.games['rally-co-driver'].featureAdapter === true && card.games['rally-co-driver'].humanTakes === 1)
+        && card.games['rally-co-driver'] && card.games['rally-co-driver'].featureAdapter === true && card.games['rally-co-driver'].humanTakes === 1
+        && card.games['double-dragon'] && card.games['double-dragon'].featureAdapter === true && card.games['double-dragon'].humanTakes === 1)
     { // crest honesty on the source side: a pure-CPU night stage, the driver block
         // may only name corners the fog + crests admit (visibleAhead truth).
         const g = rcMakeSim(11, 2, 'rain')
@@ -466,11 +520,13 @@ try {
         try {
             const tS = scriptedTake({ game: 'short-order-shout', seed: 81, ticks: 150, seats: [{ kind: 'human' }], tamper: true })
             const tR = scriptedTake({ game: 'rally-co-driver', seed: 82, ticks: 180, seats: [{ kind: 'human' }, { kind: 'cpu' }], tamper: true })
+            const tD = scriptedTake({ game: 'double-dragon', seed: 83, ticks: 180, seats: [{ kind: 'human' }, { kind: 'cpu' }], seat2At: 40, tamper: true })
             const upS = await uploadSession(tS, { player: 'nina', consent: { motion: true, voice: false }, base: sim3.base })
             const upR = await uploadSession(tR, { player: 'omar', consent: { motion: true, voice: false }, base: sim3.base })
+            const upD = await uploadSession(tD, { player: 'pat', consent: { motion: true, voice: false }, base: sim3.base })
             const b3 = await buildDataset({ base: sim3.base, out: path.join(tmp, 'tamper-sos-rc'), limit: 50, jonKey: SIM_READ_KEY })
-            r.check('tampered SOS + rally takes fail the whole build, both ticks named (#1712 — unverified rows are never shipped)',
-                upS.ok && upR.ok && !b3.ok && Array.isArray(b3.rejected) && b3.rejected.length === 2 && b3.rejected.every((x) => x.mismatch && x.mismatch.tick > 0),
+            r.check('tampered SOS + rally + double-dragon takes fail the whole build, all ticks named (#1712 — unverified rows are never shipped)',
+                upS.ok && upR.ok && upD.ok && !b3.ok && Array.isArray(b3.rejected) && b3.rejected.length === 3 && b3.rejected.every((x) => x.mismatch && x.mismatch.tick > 0),
                 b3.reason || 'build was GREEN with tampered takes?!')
         } finally { sim3.close() }
     }
@@ -491,9 +547,9 @@ try {
     r.check('legacy take folds into the corpus: rows exist, never flagged, carry lg, mirror the owner split rule (#1712)',
         lgRows.length === 400 && foldedKey && lgRows.every((x) => x.k === foldedKey && x.split !== 'flagged' && x.split === wantFoldSplit && x.g === 'gauntlet'),
         `rows=${lgRows.length} want=${wantFoldSplit}`)
-    r.check('fold never enlarges the player set: humans stay native-7, label "player" is no player, volume separate (#1712)',
-        card.coverage.humanPlayers.length === 7 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 7
-        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 8
+    r.check('fold never enlarges the player set: humans stay native-8, label "player" is no player, volume separate (#1712)',
+        card.coverage.humanPlayers.length === 8 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 8
+        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 9
         && card.splits.player.heldout.length >= 1 && !card.splits.player.heldout.includes('player'),
         `humans=${JSON.stringify(card.coverage.humanPlayers)} legacy=${card.totals.legacyTakes}`)
     r.check('folded volume lands in the owner ledger + card legacy block (anchor declared, rows match)',
@@ -504,7 +560,7 @@ try {
     r.check('folded take audio written under the owner (consented human data, #1712)',
         audioIdx.some((x) => x.key === foldedKey && x.player === LEGACY_OWNER && x.human === true))
     r.check('coverage lines stay native-only and adapter-only: fold cannot add a human game, unadapted games cannot (#1712)',
-        card.coverage.gamesCovered.games.length === 5 && !card.coverage.gamesCovered.games.includes('player')
+        card.coverage.gamesCovered.games.length === 6 && !card.coverage.gamesCovered.games.includes('player')
         && !card.coverage.gamesCovered.games.includes('talk-me-down'),
         JSON.stringify(card.coverage.gamesCovered.games))
 } catch (e) {
@@ -724,6 +780,36 @@ if (MUTATE) {
         } finally {
             pull(DS)
             if (fs.readFileSync(DS, 'utf8') !== src7) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 rally adapter)'); r.failed++ }
+        }
+    }
+
+    // mutant 8 (#1712 adapter): double-dragon removed from ADAPTERS — its rows
+    // fall back to flagged. The registration is load-bearing.
+    const src8 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR8 = "'double-dragon': doubleDragonRows,"
+    if (!src8.includes(ANCHOR8)) {
+        console.log('FAIL   double-dragon adapter anchor not found — update the mutant (#1712)')
+        r.failed++
+    } else {
+        plant(DS, src8.replace(ANCHOR8, '/* MUTANT: double-dragon adapter bypassed */'))
+        try {
+            const outM8 = path.join(tmp, 'dd-adapter-mut')
+            const cli8 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM8, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout8 = ''
+                p.stdout.on('data', (d) => { stdout8 += d })
+                p.on('exit', (code) => resolve({ status: code, stdout: stdout8 }))
+            })
+            const rowsM8 = cli8.status === 0 && fs.existsSync(path.join(outM8, 'dataset.jsonl'))
+                ? fs.readFileSync(path.join(outM8, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+                : []
+            const featDd = rowsM8.some((x) => x.g === 'double-dragon' && Array.isArray(x.feat) && x.feat.length === DD_N_FEAT)
+            r.check('double-dragon adapter is load-bearing: 60-feature rows exist (RED under the double-dragon adapter-bypass mutant, #1712)',
+                featDd, `featRows=${featDd ? 'yes' : 'no'}${cli8.status !== 0 ? ' build exit ' + cli8.status : ''}`)
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src8) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 double-dragon adapter)'); r.failed++ }
         }
     }
 }

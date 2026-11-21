@@ -32,7 +32,7 @@ export const METHODS = ['dpad', 'stick', 'pointer']
 export const DIR_FIELDS = ['up', 'down', 'left', 'right']
 
 // The one-pad's top-level field names (the meta surface a game reports it reads).
-export const PAD_FIELDS = ['up', 'down', 'left', 'right', 'a', 'b', 'start', 'x', 'y', 'ax', 'ay', 'aimUp', 'aimDown', 'aimLeft', 'aimRight', 'pointer']
+export const PAD_FIELDS = ['up', 'down', 'left', 'right', 'a', 'b', 'start', 'boost', 'x', 'y', 'ax', 'ay', 'aimUp', 'aimDown', 'aimLeft', 'aimRight', 'pointer']
 
 // The digital AIM direction fields (#496, the twin-stick second vector).
 export const AIM_FIELDS = ['aimUp', 'aimDown', 'aimLeft', 'aimRight']
