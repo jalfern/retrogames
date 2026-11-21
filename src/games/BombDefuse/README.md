@@ -66,6 +66,21 @@ phone-shaped — gate up at start, recorder at seed-birth, the fuse ledger endin
 the run naturally, the take landing in relaysim and replay-verifying through
 `plaicraft:evidence` (seat 0 honest: the #2058 human stamp).
 
+## Dataset model (#1712 S2 — `model.js`)
+
+`model.js` is THE seat-senses definition: 35 features per tick per seat
+(`FEAT_NAMES`), the same doctrine as Gauntlet/FloorBoss — what a player at this
+seat can NOTICE. Bomb Defuse splits EFFORT, not information, so both seats read
+the shared panel (fuse ledger, step kind, window bar, target one-hot + the
+shortest cutter walk, needle/zone/in-zone, both seats' latches) plus their own
+role facts (`holderIsMe`, `myAsk`/`partnerAsk` from engine.seatAsk) and the
+autoregressive prev-pad. The S2 dataset featurizes through it
+(`ADAPTERS['bomb-defuse']` in `scripts/plaicraft-dataset.mjs`): takes
+replay-verify against their checkpoints with THE engine, then carry THESE
+features — a trained seat can never eat one world and play another. The gate
+proves in `plaicraft:datasetcheck` (fixture carol verifies with 35 feats; the
+adapter-bypass and leak-reopen mutants go RED).
+
 ## Online room (#1819 — `net.js` + shared Lobby)
 
 Two boxes, one bomb: `?net=host` opens a DEFUSE CREW room, a friend opens the

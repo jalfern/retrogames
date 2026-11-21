@@ -15,10 +15,10 @@ files. The full corpus (rows + audio) rides out of git; `sample.jsonl`,
 | `g`   | game id |
 | `s`   | seed of the take |
 | `t`   | tick (1-based) within the take |
-| `lvl` | level index (null for games without a feature adapter) |
+| `lvl` | level index (gauntlet level / floor-boss shift / bomb index; null for games without a feature adapter) |
 | `seat`| seat index this row describes |
 | `act` | that seat's compact pad that tick (`rec/v1` pad codec) |
-| `feat`| game-state features for that seat — gauntlet: THE 31 features of `src/games/Gauntlet/model.js`, computed while replaying the take against THE sim with every recorded checkpoint verified; other games: `null` until an adapter exists |
+| `feat`| game-state features for that seat — gauntlet: THE 31 features of `src/games/Gauntlet/model.js`; floor-boss: THE 37 of `src/games/FloorBoss/model.js`; bomb-defuse: THE 35 of `src/games/BombDefuse/model.js` (#1712) — always computed while replaying the take against THE sim with every recorded checkpoint verified; other games: `null` until an adapter exists |
 | `split` | `train` \| `player-heldout` \| `seed-heldout` \| `flagged` |
 
 - `audio/<file>.webm` — consented human voice tracks, decoded verbatim from
@@ -48,7 +48,13 @@ seed alone. Fewer than two human players: `card.splits.player.blocked =
 "need-2-players"` — the card says so instead of faking a holdout.
 
 ## Today (store as of this export)
-Human: **jalfern, gauntlet only** — 4 takes, all replay-verified. Coverage
-lines `covers 2+ games` and `no held-out player in train` need Jon's
-friends' takes (see the question on #1712); the pipeline and determinism are
-proven by `npm run plaicraft:datasetcheck` (30/30 + mutant RED proof).
+Human: **jalfern, gauntlet only** — 4 native takes (+4 legacy-folded, `lg:1`),
+all replay-verified. Coverage lines `covers 2+ games` and `no held-out player
+in train` need Jon's friends' takes (see the question on #1712); the pipeline
+and determinism are proven by `npm run plaicraft:datasetcheck` (48/48 + five
+mutants RED by design). Adaptered games (a friend's take there closes lines
+immediately): **gauntlet, floor-boss, bomb-defuse** (#1712 pass: 35 features,
+`src/games/BombDefuse/model.js`). A friend recording an adapter-LESS registry
+game still consents and lands (audio + flagged rows,
+`card.totals.unadaptedHumanTakes`), but their split/coverage credit waits for
+that game's adapter — the trainable gate, load-bearing under mutant.
