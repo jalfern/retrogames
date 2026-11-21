@@ -1,6 +1,6 @@
 {
  "dataset": "plaicraft-human-v1",
- "version": "696c85888e426714bed7a029570918d50eb49af8e08c56d399e65e2eb9ca5793",
+ "version": "5dcb62ace819d42042ee9c5a09b881fc8bdc0e43aa6e30a3c8de1ae936fbc579",
  "source": {
   "store": "https://retrogames.jalfern.workers.dev",
   "listed": 18
@@ -18,7 +18,7 @@
    "takes": 2,
    "humanTakes": 0,
    "hours": 0.01,
-   "featureAdapter": false,
+   "featureAdapter": true,
    "inRegistry": true
   },
   "claptest": {
@@ -52,6 +52,7 @@
  "totals": {
   "takes": 18,
   "humanTakes": 4,
+  "unadaptedHumanTakes": 0,
   "legacyTakes": 4,
   "legacyHours": 0.0581,
   "humanTakesIncludingLegacy": 8,
