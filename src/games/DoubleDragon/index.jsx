@@ -372,6 +372,7 @@ export default function DoubleDragon() {
             window.__ddTest = {
                 probe: () => ({
                     screen, tick: gs.tick, x: +gs.billy.x.toFixed(2), y: gs.billy.y, z: +gs.billy.z.toFixed(2),
+                    cam: Math.round(gs.camX * 100) / 100,   // #2877: pixel legs need the screen mapping
                     lives: gs.billy.lives, score: gs.score, weapon: gs.billy.weapon,
                     mode: gs.mode, waveIdx: gs.waveIdx, enemies: gs.enemies.length,
                     scoreFlash: gs.scoreFlash ? gs.scoreFlash.v : 0,

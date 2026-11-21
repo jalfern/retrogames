@@ -696,7 +696,7 @@ export const lampSwayAt = (n, tick) => Math.round(Math.sin(tick / 34 + n * 2) * 
 // drift is per-spot: the yard breathes in phases as it scrolls.
 export const lampNAt = (wx, camX) => Math.round((wx - camX * 0.15 - 60) / 176)
 export const castAt = (wx, tick, camX) => -lampSwayAt(lampNAt(wx, camX), tick)
-const castPx = (wx) => (castOn ? castAt(wx, castTick, castCam) : 0)
+export const castPx = (wx) => (castOn ? castAt(wx, castTick, castCam) : 0) // exported: ddragoncheck pins the street gate
 
 // ------------------------------------------------------------- the fighters ---
 const SKIN = '#d8a06a', SKIN_D = '#b57d46'
