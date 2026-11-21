@@ -10,6 +10,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import { slotPad, slotActive } from '../../utils/onePad'
+import { p2Merge, p2Seat } from './p2pad.js'
 import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH, enterStage2 } from './sim.js'
 import { drawBackground, drawBilly, drawJimmy, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract } from './art.js'
 
@@ -184,7 +186,12 @@ export default function DoubleDragon() {
             return pad
         }
         const simPad2 = () => {
-            const pad = { left: keys2.l, right: keys2.r, up: keys2.u, down: keys2.d, a: keys2.j || jumpQ2, b: keys2.k || kickQ2, punch: keys2.p || punchQ2 }
+            // #2860: the keyboard seat unions with slot 2 — a friend's own pad
+            // or linked phone drives Jimmy with no keyboard at all.
+            const pad = p2Merge(keys2, slotPad(2, 'dpad'))
+            pad.a = pad.a || jumpQ2
+            pad.b = pad.b || kickQ2
+            pad.punch = pad.punch || punchQ2
             jumpQ2 = kickQ2 = punchQ2 = false
             return pad
         }
@@ -263,6 +270,9 @@ export default function DoubleDragon() {
                     acc += ft
                     while (acc >= SIM_MS) {
                         if (screen === 'play') {
+                            // #2860 drop-in: any live pad-2 input takes the blue
+                            // seat, the same law the WASD keys obey, chime and all.
+                            if (p2Seat(gs, slotActive(2))) sfx.p2join()
                             stepSim(simPad())
                         } else if (screen === 'attract') {
                             if (demoHold > 0) { demoHold -= 1; if (demoHold === 0) gs = makeGame((gs.seed + 7) >>> 0, { coop: coopOn() }) }
@@ -360,6 +370,7 @@ export default function DoubleDragon() {
                     casts: gs.enemies.filter((e) => e.hasKnife).length,
                     coop: gs.coop ? 1 : 0,
                     jimmy: gs.jimmy ? `${gs.jimmy.x.toFixed(0)}:${gs.jimmy.y}:${gs.jimmy.lives}:${gs.jimmy.human ? 'HUMAN' : 'CPU'}${gs.jimmy.out ? ':OUT' : ''}:${gs.jimmy.state}` : 'none',
+                    jimmyZ: gs.jimmy ? +gs.jimmy.z.toFixed(2) : 0,
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),

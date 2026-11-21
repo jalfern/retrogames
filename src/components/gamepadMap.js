@@ -115,6 +115,12 @@ export function slotFieldsFrom(pad, state = { engaged: false, lastCodes: [], aim
     const fields = {
         left: pressed(14), right: pressed(15), up: pressed(12), down: pressed(13),
         a: pressed(0), b: pressed(1), start: pressed(9),
+        // #2860: the THIRD face action. A slot already carries a/b/start, but a
+        // three-action game (Double Dragon: jump/kick/punch) hit the ceiling —
+        // and a linked phone already sends its Y button as `boost` (#893). The
+        // pad gains the same channel: square, triangle or LB all mean "the
+        // third", so pad and phone friends reach every action.
+        boost: pressed(2) || pressed(3) || pressed(4),
         x: 0, y: 0,
         ax: 0, ay: 0, aimUp: false, aimDown: false, aimLeft: false, aimRight: false,
     }

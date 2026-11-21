@@ -47,7 +47,7 @@ const GamepadBridge = ({ secondAction, extraButtons }) => {
             setAimVec(0, 0)
         }
         const writeSlot = (slotN, f) => {
-            for (const k of ['left', 'right', 'up', 'down', 'a', 'b', 'start', 'aimUp', 'aimDown', 'aimLeft', 'aimRight']) {
+            for (const k of ['left', 'right', 'up', 'down', 'a', 'b', 'start', 'boost', 'aimUp', 'aimDown', 'aimLeft', 'aimRight']) {
                 if (f[k]) pressSlot(slotN, k)
                 else releaseSlot(slotN, k)
             }
