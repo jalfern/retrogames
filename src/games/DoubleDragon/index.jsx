@@ -428,7 +428,10 @@ export default function DoubleDragon() {
             // for the rest of the run.
             const isP2 = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyV'].includes(e.code)
             if (isP2) e.preventDefault()
-            if (gs.jimmy && !gs.jimmy.human && !gs.jimmy.out) { gs.jimmy.human = true; sfx.p2join() }
+            // #2857 fix: the seat belongs to P2's keys only — Billy's arrows must
+            // not steal the blue dragon from his CPU (the drop-in law names the
+            // keys; the guard said everything). Exposed by the ropes-phase leg.
+            if (isP2 && gs.jimmy && !gs.jimmy.human && !gs.jimmy.out) { gs.jimmy.human = true; sfx.p2join() }
             if (e.code === 'KeyA') keys2.l = true
             if (e.code === 'KeyD') keys2.r = true
             if (e.code === 'KeyW') keys2.u = true
@@ -549,6 +552,7 @@ export default function DoubleDragon() {
                     if (opts.allyX !== undefined && gs.jimmy) gs.jimmy.x = opts.allyX
                     if (opts.allyY !== undefined && gs.jimmy) gs.jimmy.y = opts.allyY
                     if (opts.allyLives !== undefined && gs.jimmy) gs.jimmy.lives = opts.allyLives
+                    if (opts.allyInv !== undefined && gs.jimmy) gs.jimmy.inv = opts.allyInv
                     if (opts.killAlly && gs.jimmy) {
                         gs.jimmy.inv = 0; gs.jimmy.lives = 1
                         gs.jimmy.x = gs.camX + 100; gs.jimmy.y = 170
