@@ -67,6 +67,13 @@ export default function DoubleDragon() {
             hit: () => audioController.playTone(220, 0.08, 'square', 0.12),
             hitHard: () => { audioController.playTone(140, 0.14, 'square', 0.16); shake = Math.max(shake, 3) },
             ko: () => { audioController.playSweep(520, 90, 0.28, 'square', 0.14); shake = Math.max(shake, 4) },
+            // #2882: the chain blip climbs with the multiplier — ×2 answers a
+            // little higher than ×1's KO tail, ×4 rings the loudest of them all
+            chain: () => {
+                const m = gs.scoreFlash && gs.scoreFlash.m > 1 ? gs.scoreFlash.m : 2
+                audioController.playTone(520 * m, 0.09, 'square', 0.12)
+                audioController.playTone(780 * m, 0.1, 'square', 0.1, 0.08)
+            },
             jump: () => audioController.playSweep(180, 420, 0.16, 'square', 0.10),
             land: () => audioController.playNoise(0.04, 0.05),
             pickup: () => { audioController.playTone(660, 0.07, 'square', 0.1); audioController.playTone(880, 0.07, 'square', 0.1, 0.07); audioController.playTone(1320, 0.1, 'square', 0.1, 0.14) },
@@ -454,6 +461,8 @@ export default function DoubleDragon() {
                     screen, tick: gs.tick, x: +gs.billy.x.toFixed(2), y: gs.billy.y, z: +gs.billy.z.toFixed(2),
                     cam: Math.round(gs.camX * 100) / 100,   // #2877: pixel legs need the screen mapping
                     lives: gs.billy.lives, score: gs.score, weapon: gs.billy.weapon,
+                    chain: gs.chain, chainT: gs.chainT,   // #2882: chain legs read the streak
+                    flashM: gs.scoreFlash && gs.scoreFlash.m ? gs.scoreFlash.m : 1,
                     mode: gs.mode, waveIdx: gs.waveIdx, enemies: gs.enemies.length,
                     scoreFlash: gs.scoreFlash ? gs.scoreFlash.v : 0,
                     enemyKinds: gs.enemies.map((e) => e.kind + ':' + e.state).join(','),
