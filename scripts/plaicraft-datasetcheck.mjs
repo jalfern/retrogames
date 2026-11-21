@@ -19,8 +19,9 @@
 //  7. legacy fold (#1712): pre-audit unnamed take attributes to the anchor
 //     owner, rows carry lg, player set and coverage lines stay native-only.
 //  8. mutants: player-split ignored / floor-boss hash-skip / fold disabled /
-//     bomb-defuse adapter bypassed / trainable-gate reopened —
-//     each must go RED (each line is load-bearing).
+//     bomb-defuse adapter bypassed / trainable-gate reopened / SOS adapter
+//     bypassed / rally adapter bypassed — each must go RED (each line is
+//     load-bearing).
 //
 // FIXTURES ARE PIPELINE TESTS, NOT EVIDENCE: the fixture players are scripted
 // takes stamped consent-only to exercise the split logic. Acceptance lines on
@@ -42,8 +43,12 @@ import { makeGame as fbMakeGame, step as fbStep, stateHash as fbHash } from '../
 import { N_FEAT as FB_N_FEAT } from '../src/games/FloorBoss/model.js'
 import { createGame as bdMakeGame, step as bdStep, hash as bdHash } from '../src/games/BombDefuse/engine.js'
 import { N_FEAT as BD_N_FEAT } from '../src/games/BombDefuse/model.js'
+import { createGame as sosMakeGame, stepGame as sosStep, hashState as sosHash } from '../src/games/ShortOrderShout/engine.js'
+import { N_FEAT as SOS_N_FEAT, featurize as sosFeaturize } from '../src/games/ShortOrderShout/model.js'
+import { createSim as rcMakeSim, tickSim as rcStep, stateHash as rcHash, cpuDriverPad, cpuCoDriverPad, FOG_RANGE, cornerAhead } from '../src/games/RallyCoDriver/sim.js'
+import { N_FEAT as RC_N_FEAT, featurize as rcFeaturize } from '../src/games/RallyCoDriver/model.js'
 import { newGame, heroFromPad, p2FromPad } from './plaicraft-export.mjs'
-import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
+import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, shortOrderShoutRows, rallyCoDriverRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 // Local Report (harness.mjs pulls playwright-core at import; this check is
@@ -85,17 +90,24 @@ const craftWebm = (durationMs) => {
     ]).toString('base64')
 }
 
-function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false }) {
-    const method = game === 'floor-boss' || game === 'bomb-defuse' ? 'dpad' : 'stick'
+function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false, weather = null }) {
+    const method = game === 'floor-boss' || game === 'bomb-defuse' || game === 'short-order-shout' || game === 'rally-co-driver' ? 'dpad' : 'stick'
+    const wx = weather || 'clear'
     const gs = game === 'gauntlet' ? newGame(seed, rules || {}, seats[1] && seats[1].kind !== 'off')
         : game === 'floor-boss' ? fbMakeGame(seed, { duel: seats.length >= 2 })
             : game === 'bomb-defuse' ? bdMakeGame(seed, seats.length >= 2 ? 2 : 1)
-                : null
-    const hashOf = game === 'gauntlet' ? stateHash : game === 'floor-boss' ? fbHash : game === 'bomb-defuse' ? bdHash : null
+                : game === 'short-order-shout' ? sosMakeGame(seed, Math.max(1, Math.min(4, seats.length)))
+                    : game === 'rally-co-driver' ? rcMakeSim(seed, seats.length >= 2 ? 2 : 1, wx)
+                        : null
+    const hashOf = game === 'gauntlet' ? stateHash
+        : game === 'floor-boss' ? fbHash
+            : game === 'bomb-defuse' ? bdHash
+                : game === 'short-order-shout' ? sosHash
+                    : game === 'rally-co-driver' ? rcHash : null
     const rec = createRecorder({
         gameId: game, method, seed, players: seats.length, build: 'test',
         sources: seats.map((s) => ({ kind: s.kind === 'relabeled' ? 'human' : s.kind })),
-        rules: () => rules || {},
+        rules: () => (game === 'rally-co-driver' ? { weather: wx } : rules || {}),
     })
     let x = (seed >>> 0) + 1
     const rnd = () => ((x = (x * 1103515245 + 12345) >>> 0) / 4294967296)
@@ -108,6 +120,8 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
         if (game === 'gauntlet') step(gs, heroFromPad(pads[0]), p2FromPad(pads[1] || {}))
         if (game === 'floor-boss') fbStep(gs, pads)
         if (game === 'bomb-defuse') bdStep(gs, pads)
+        if (game === 'short-order-shout') sosStep(gs, pads)
+        if (game === 'rally-co-driver') rcStep(gs, pads)
         rec.addTick(pads, null, gs && gs.tick % 30 === 0 ? hashOf(gs) : null)
         if (callAt.has(t + 1)) {
             const c = calls.find((q) => q.t === t + 1)
@@ -208,13 +222,18 @@ try {
         // consented voice lands, but the take must stay flagged (no-adapter):
         // no split, no player slot, no coverage credit.
         ['hank', scriptedTake({ game: 'talk-me-down', seed: 44, ticks: 150, seats: [{ kind: 'human' }], voice: { slots: [0] } })],
+        // #1712 co-op adapters: a named human kitchen (SOS seat 0 + CPU cook
+        // stream) and a named human night stage (driver + CPU co-driver calls,
+        // rain). These stand for the friends' takes the coverage lines wait on.
+        ['carla', scriptedTake({ game: 'short-order-shout', seed: 71, ticks: 240, seats: [{ kind: 'human' }, { kind: 'cpu' }], voice: { slots: [0] } })],
+        ['otto', scriptedTake({ game: 'rally-co-driver', seed: 72, ticks: 300, seats: [{ kind: 'human' }, { kind: 'cpu' }], voice: { slots: [0] }, weather: 'rain' })],
     ]
     let up = 0
     for (const [player, rec] of uploads) {
         const res = await uploadSession(rec, { player, consent: { motion: true, voice: !!rec.voice }, base: sim.base })
         if (res.ok) up++
     }
-    r.check('fixture store provisioned (10 consented takes uploaded)', up === 10, `${up}/10`)
+    r.check('fixture store provisioned (12 consented takes uploaded)', up === 12, `${up}/12`)
 
     // determinism: two full builds against the store, twice. In-process
     // (not a blocked spawnSync child: the sim lives on THIS event loop).
@@ -257,8 +276,8 @@ try {
         if (foldDecision(c.cls, c.native, c.relabeled, nativeHumans)) foldedKeys.add(s.key)
         else if (!humanKeys.has(s.key)) flaggedKeys.add(s.key)
     }
-    r.check('fixtures classify as expected: 6 human, 1 legacy-folded, 3 flagged',
-        humanKeys.size === 6 && foldedKeys.size === 1 && flaggedKeys.size === 3,
+    r.check('fixtures classify as expected: 8 human, 1 legacy-folded, 3 flagged',
+        humanKeys.size === 8 && foldedKeys.size === 1 && flaggedKeys.size === 3,
         `human=[${[...humanKeys].map((k) => envByKey.get(k).player)}] folded=[${[...foldedKeys].map((k) => envByKey.get(k).player)}] flagged=[${[...flaggedKeys].map((k) => envByKey.get(k).player)}]`)
 
     const trainRows = rows.filter((x) => x.split === 'train')
@@ -295,7 +314,7 @@ try {
     const audioIdx = fs.existsSync(path.join(outA, 'audio/index.jsonl'))
         ? fs.readFileSync(path.join(outA, 'audio/index.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
         : []
-    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank carry voice)', audioIdx.length === 8, `${audioIdx.length}/8`)
+    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank + carla kitchen + otto stage carry voice)', audioIdx.length === 10, `${audioIdx.length}/10`)
     const aliceIdx = audioIdx.find((x) => x.player === 'alice')
     let verbatim = false
     if (aliceIdx && fs.existsSync(path.join(outA, aliceIdx.file))) {
@@ -316,8 +335,8 @@ try {
         .map(({ path: p }) => [p, shaHex(fs.readFileSync(path.join(outA, p)))].join('\0') + '\n')
         .sort().join(''))
     r.check('manifest self-proves: files recompute to card.version', recomputed === card.version && man.version === card.version)
-    r.check('card reports honest coverage (3 human games: gauntlet, bomb-defuse, floor-boss)',
-        card.coverage.gamesCovered.pass && card.coverage.gamesCovered.games.includes('floor-boss') && card.coverage.audio.pass && card.splits.player.heldout.length >= 1,
+    r.check('card reports honest coverage (5 human games: gauntlet, bomb-defuse, floor-boss, short-order-shout, rally-co-driver)',
+        card.coverage.gamesCovered.pass && card.coverage.gamesCovered.games.includes('floor-boss') && card.coverage.gamesCovered.games.includes('short-order-shout') && card.coverage.gamesCovered.games.includes('rally-co-driver') && card.coverage.audio.pass && card.splits.player.heldout.length >= 1,
         `games=${JSON.stringify(card.coverage.gamesCovered.games)} heldout=${JSON.stringify(card.splits.player.heldout)}`)
 
     // ---- #2805: floor-boss engine, per-seat attribution, container truth, card lines
@@ -380,6 +399,82 @@ try {
         } finally { sim2.close() }
     }
 
+    // ---- #1712 co-op adapters: SOS + Rally rows, seat partition, crest honesty
+    const sosRows = rows.filter((x) => x.g === 'short-order-shout')
+    r.check('short-order-shout rows carry THE 55 seat features + encoded actions, never flagged (#1712)',
+        sosRows.length === 480 && sosRows.every((x) => Array.isArray(x.feat) && x.feat.length === SOS_N_FEAT && x.feat.every((v) => Number.isFinite(v)) && typeof x.act === 'object')
+        && sosRows.every((x) => x.split !== 'flagged'),
+        `rows=${sosRows.length}`)
+    r.check('SOS prev-pad lane banked: some row carries a nonzero prev-pad feature (#1712)',
+        sosRows.some((x) => x.feat.slice(SOS_N_FEAT - 6).some((v) => v === 1)) && SOS_N_FEAT === 55)
+    const rcRows = rows.filter((x) => x.g === 'rally-co-driver')
+    r.check('rally-co-driver rows carry THE 41 seat features + encoded actions, never flagged (#1712)',
+        rcRows.length === 600 && rcRows.every((x) => Array.isArray(x.feat) && x.feat.length === RC_N_FEAT && x.feat.every((v) => Number.isFinite(v)) && typeof x.act === 'object')
+        && rcRows.every((x) => x.split !== 'flagged'),
+        `rows=${rcRows.length}`)
+    r.check('rally prev-pad lane banked too (#1712)',
+        rcRows.some((x) => x.feat.slice(RC_N_FEAT - 6).some((v) => v === 1)) && RC_N_FEAT === 41)
+    r.check('rally seat blocks are partitioned: driver rows never carry pace-book features, co rows never carry headlight features (#1712 — the split-information law survives the dataset)',
+        rcRows.filter((x) => x.seat === 0).every((x) => x.feat.slice(24, 31).every((v) => v === 0))
+        && rcRows.filter((x) => x.seat === 1).every((x) => x.feat.slice(16, 24).every((v) => v === 0)))
+    r.check('rally weather rides rules -> replay: the rain take reads rain in every row (hashes verified it rebuilt wet, #1712)',
+        rcRows.length > 0 && rcRows.every((x) => x.feat[10] === 1 && x.feat[8] === 0))
+    r.check('card games block names both new adapters honestly (featureAdapter true, humanTakes 1 each, #1712)',
+        card.games['short-order-shout'] && card.games['short-order-shout'].featureAdapter === true && card.games['short-order-shout'].humanTakes === 1
+        && card.games['rally-co-driver'] && card.games['rally-co-driver'].featureAdapter === true && card.games['rally-co-driver'].humanTakes === 1)
+    { // crest honesty on the source side: a pure-CPU night stage, the driver block
+        // may only name corners the fog + crests admit (visibleAhead truth).
+        const g = rcMakeSim(11, 2, 'rain')
+        let checked = 0
+        let leaked = 0
+        while (!g.done && g.tick < 9000) {
+            rcStep(g, [cpuDriverPad(g), cpuCoDriverPad(g)])
+            const f = rcFeaturize(g, 0, {})
+            if (f[16] === 1) {
+                checked++
+                const dd = f[19] * FOG_RANGE
+                const visible = cornerAhead(g.stage, g.car.s, g.vis)
+                if (dd > g.vis + 1 || !visible.some((c) => Math.abs(c.d - dd) < 2)) leaked++
+            }
+        }
+        r.check('rally driver block never names a corner the crest hides (rain stage, pure-CPU race, #1712)',
+            leaked === 0 && checked > 50, `checked=${checked} leaked=${leaked}`)
+    }
+    { // unit: SOS adapter verifies clean, refuses tampered at the exact tick
+        const clean = scriptedTake({ game: 'short-order-shout', seed: 91, ticks: 180, seats: [{ kind: 'human' }] })
+        const good = shortOrderShoutRows('unit/sos-clean', clean)
+        const badRec = JSON.parse(JSON.stringify(clean))
+        badRec.hashes[Math.max(0, badRec.hashes.length - 2)].h = 'cafebabe'
+        const bad = shortOrderShoutRows('unit/sos-tamper', badRec)
+        r.check('SOS adapter: clean solo take verifies (180 rows), tampered refuses at its tick (#1712)',
+            good.ok && good.rows.length === 180 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
+            bad.mismatch ? `tick ${bad.mismatch.tick}` : (good.ok ? `${good.rows.length} rows` : 'no mismatch?!'))
+    }
+    { // unit: rally adapter — duel take, tampered refuses
+        const clean = scriptedTake({ game: 'rally-co-driver', seed: 92, ticks: 240, seats: [{ kind: 'human' }, { kind: 'cpu' }] })
+        const good = rallyCoDriverRows('unit/rc-clean', clean)
+        const badRec = JSON.parse(JSON.stringify(clean))
+        badRec.hashes[Math.max(0, badRec.hashes.length - 2)].h = 'cafebabe'
+        const bad = rallyCoDriverRows('unit/rc-tamper', badRec)
+        r.check('rally adapter: clean take verifies (480 rows), tampered refuses at its tick (#1712)',
+            good.ok && good.rows.length === 480 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
+            bad.mismatch ? `tick ${bad.mismatch.tick}` : (good.ok ? `${good.rows.length} rows` : 'no mismatch?!'))
+    }
+    { // integration: ONE tampered take per new engine must fail the WHOLE build
+        // (the S1 100%-verifiable line, engines four and five).
+        const sim3 = await startRelaySim()
+        try {
+            const tS = scriptedTake({ game: 'short-order-shout', seed: 81, ticks: 150, seats: [{ kind: 'human' }], tamper: true })
+            const tR = scriptedTake({ game: 'rally-co-driver', seed: 82, ticks: 180, seats: [{ kind: 'human' }, { kind: 'cpu' }], tamper: true })
+            const upS = await uploadSession(tS, { player: 'nina', consent: { motion: true, voice: false }, base: sim3.base })
+            const upR = await uploadSession(tR, { player: 'omar', consent: { motion: true, voice: false }, base: sim3.base })
+            const b3 = await buildDataset({ base: sim3.base, out: path.join(tmp, 'tamper-sos-rc'), limit: 50, jonKey: SIM_READ_KEY })
+            r.check('tampered SOS + rally takes fail the whole build, both ticks named (#1712 — unverified rows are never shipped)',
+                upS.ok && upR.ok && !b3.ok && Array.isArray(b3.rejected) && b3.rejected.length === 2 && b3.rejected.every((x) => x.mismatch && x.mismatch.tick > 0),
+                b3.reason || 'build was GREEN with tampered takes?!')
+        } finally { sim3.close() }
+    }
+
     // ---- #1712 legacy fold -------------------------------------------------------
     r.check('fold gate units: named/bot/tool never fold; relabeled never folds; no-anchor never folds',
         foldDecision('unnamed', 1, 0, new Set(['jalfern'])) === true
@@ -396,9 +491,9 @@ try {
     r.check('legacy take folds into the corpus: rows exist, never flagged, carry lg, mirror the owner split rule (#1712)',
         lgRows.length === 400 && foldedKey && lgRows.every((x) => x.k === foldedKey && x.split !== 'flagged' && x.split === wantFoldSplit && x.g === 'gauntlet'),
         `rows=${lgRows.length} want=${wantFoldSplit}`)
-    r.check('fold never enlarges the player set: humans stay native-5, label "player" is no player, volume separate (#1712)',
-        card.coverage.humanPlayers.length === 5 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 5
-        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 6
+    r.check('fold never enlarges the player set: humans stay native-7, label "player" is no player, volume separate (#1712)',
+        card.coverage.humanPlayers.length === 7 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 7
+        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 8
         && card.splits.player.heldout.length >= 1 && !card.splits.player.heldout.includes('player'),
         `humans=${JSON.stringify(card.coverage.humanPlayers)} legacy=${card.totals.legacyTakes}`)
     r.check('folded volume lands in the owner ledger + card legacy block (anchor declared, rows match)',
@@ -409,7 +504,7 @@ try {
     r.check('folded take audio written under the owner (consented human data, #1712)',
         audioIdx.some((x) => x.key === foldedKey && x.player === LEGACY_OWNER && x.human === true))
     r.check('coverage lines stay native-only and adapter-only: fold cannot add a human game, unadapted games cannot (#1712)',
-        card.coverage.gamesCovered.games.length === 3 && !card.coverage.gamesCovered.games.includes('player')
+        card.coverage.gamesCovered.games.length === 5 && !card.coverage.gamesCovered.games.includes('player')
         && !card.coverage.gamesCovered.games.includes('talk-me-down'),
         JSON.stringify(card.coverage.gamesCovered.games))
 } catch (e) {
@@ -513,7 +608,7 @@ if (MUTATE) {
     // lose THE features and its human (carol) falls back to flagged. If the
     // 35-feature rows still appear, the adapter registration is not load-bearing.
     const src4 = fs.readFileSync(DS, 'utf8')
-    const ANCHOR4 = "'bomb-defuse': bombDefuseRows"
+    const ANCHOR4 = "'bomb-defuse': bombDefuseRows,"
     if (!src4.includes(ANCHOR4)) {
         console.log('FAIL   adapter anchor not found — update the mutant (#1712)')
         r.failed++
@@ -568,6 +663,67 @@ if (MUTATE) {
         } finally {
             pull(DS)
             if (fs.readFileSync(DS, 'utf8') !== src5) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 gate)'); r.failed++ }
+        }
+    }
+
+    // mutant 6 (#1712 adapter): short-order-shout removed from ADAPTERS — its
+    // rows lose THE 55 features and carla falls back to flagged. If the
+    // feature rows still appear, the registration is not load-bearing.
+    const src6 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR6 = "'short-order-shout': shortOrderShoutRows,"
+    if (!src6.includes(ANCHOR6)) {
+        console.log('FAIL   SOS adapter anchor not found — update the mutant (#1712)')
+        r.failed++
+    } else {
+        plant(DS, src6.replace(ANCHOR6, '/* MUTANT: SOS adapter bypassed */'))
+        try {
+            const outM6 = path.join(tmp, 'sos-adapter-mut')
+            const cli6 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM6, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout6 = ''
+                p.stdout.on('data', (d) => { stdout6 += d })
+                p.on('exit', (code) => resolve({ status: code, stdout: stdout6 }))
+            })
+            const rowsM6 = cli6.status === 0 && fs.existsSync(path.join(outM6, 'dataset.jsonl'))
+                ? fs.readFileSync(path.join(outM6, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+                : []
+            const featSos = rowsM6.some((x) => x.g === 'short-order-shout' && Array.isArray(x.feat) && x.feat.length === SOS_N_FEAT)
+            r.check('SOS adapter is load-bearing: 55-feature rows exist (RED under the SOS adapter-bypass mutant, #1712)',
+                featSos, `featRows=${featSos ? 'yes' : 'no'}${cli6.status !== 0 ? ' build exit ' + cli6.status : ''}`)
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src6) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 SOS adapter)'); r.failed++ }
+        }
+    }
+
+    // mutant 7 (#1712 adapter): rally-co-driver removed from ADAPTERS — same
+    // contract for the pace-note engine.
+    const src7 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR7 = "'rally-co-driver': rallyCoDriverRows,"
+    if (!src7.includes(ANCHOR7)) {
+        console.log('FAIL   rally adapter anchor not found — update the mutant (#1712)')
+        r.failed++
+    } else {
+        plant(DS, src7.replace(ANCHOR7, '/* MUTANT: rally adapter bypassed */'))
+        try {
+            const outM7 = path.join(tmp, 'rc-adapter-mut')
+            const cli7 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM7, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout7 = ''
+                p.stdout.on('data', (d) => { stdout7 += d })
+                p.on('exit', (code) => resolve({ status: code, stdout: stdout7 }))
+            })
+            const rowsM7 = cli7.status === 0 && fs.existsSync(path.join(outM7, 'dataset.jsonl'))
+                ? fs.readFileSync(path.join(outM7, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+                : []
+            const featRc = rowsM7.some((x) => x.g === 'rally-co-driver' && Array.isArray(x.feat) && x.feat.length === RC_N_FEAT)
+            r.check('rally adapter is load-bearing: 41-feature rows exist (RED under the rally adapter-bypass mutant, #1712)',
+                featRc, `featRows=${featRc ? 'yes' : 'no'}${cli7.status !== 0 ? ' build exit ' + cli7.status : ''}`)
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src7) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 rally adapter)'); r.failed++ }
         }
     }
 }

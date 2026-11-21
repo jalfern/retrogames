@@ -71,6 +71,10 @@ import { makeGame as fbMakeGame, step as fbStep, stateHash as fbHash } from '../
 import { featurize as fbFeaturize, seatChannel } from '../src/games/FloorBoss/model.js'
 import { createGame as bdMakeGame, step as bdStep, hash as bdHash } from '../src/games/BombDefuse/engine.js'
 import { featurize as bdFeaturize } from '../src/games/BombDefuse/model.js'
+import { createGame as sosMakeGame, stepGame as sosStep, hashState as sosHash } from '../src/games/ShortOrderShout/engine.js'
+import { featurize as sosFeaturize } from '../src/games/ShortOrderShout/model.js'
+import { createSim as rcMakeSim, tickSim as rcStep, stateHash as rcHash } from '../src/games/RallyCoDriver/sim.js'
+import { featurize as rcFeaturize } from '../src/games/RallyCoDriver/model.js'
 import { newGame, heroFromPad, p2FromPad, seatedPartner } from './plaicraft-export.mjs'
 
 const argv = process.argv.slice(2)
@@ -279,7 +283,79 @@ export function bombDefuseRows(key, rec) {
     return { ok, mismatch: null, rows }
 }
 
-const ADAPTERS = { gauntlet: gauntletRows, 'floor-boss': floorBossRows, 'bomb-defuse': bombDefuseRows }
+// short-order-shout adapter (#1712): engine.js is Node-clean (soscheck runs it
+// here) and hashState is integer-only FNV, so takes replay-verify against their
+// checkpoints and carry THE 55 seat features (src/games/ShortOrderShout/
+// model.js). The shell banks the MERGED pad stream — human keys AND the CPU
+// cook emitters (liveTick records exactly what stepGame consumed) — so replay
+// needs no emitter re-run: the stored streams ARE the run. Solo takes record
+// one seat; the other cooks exist only in files whose players say so.
+export function shortOrderShoutRows(key, rec) {
+    const gs = sosMakeGame(rec.seed, Math.max(1, Math.min(4, (rec.players || 1) | 0)))
+    const want = new Map(rec.hashes.map((x) => [x.t, x.h]))
+    const mems = {}
+    const rows = []
+    const finalT = rec.hashes.length ? rec.hashes[rec.hashes.length - 1] : null
+    for (let t = 0; t < rec.ticks; t++) {
+        const pads = rec.slots.map((s) => decodePad(s.pads[t], rec.method))
+        sosStep(gs, pads)
+        const t1 = t + 1
+        if (want.has(t1)) {
+            const got = sosHash(gs)
+            if (got !== want.get(t1)) return { ok: false, mismatch: { tick: t1, want: want.get(t1), got }, rows }
+        }
+        for (let i = 0; i < rec.slots.length; i++) {
+            if (!mems[i]) mems[i] = {}
+            const feat = sosFeaturize(gs, i, mems[i]).map((v) => +v.toFixed(3))
+            mems[i].pa = pads[i] // bank the autoregressive lane after the label
+            rows.push({ k: key, g: rec.game, s: rec.seed, t: t1, lvl: null, seat: i, act: encodePad(pads[i]), feat })
+        }
+    }
+    const ok = !finalT || finalT.h === sosHash(gs)
+    return { ok, mismatch: null, rows }
+}
+
+// rally-co-driver adapter (#1712): sim.js is Node-clean and quantized (the
+// stateHash rounds its floats — the cross-platform determinism law), so takes
+// replay-verify against their checkpoints and carry THE 41 seat features
+// (src/games/RallyCoDriver/model.js). Weather is NOT seed-fixed (#1711 S3
+// stamped rules.weather into the file for exactly this); seat 0 drives, seat 1
+// reads the pace book — and the model keeps that information split honest, so
+// a train row can never teach a driver what the crest hides. The shell banks
+// the pad pair it consumed (CPU co-driver calls included), like SOS.
+export function rallyCoDriverRows(key, rec) {
+    const weather = rec.rules && typeof rec.rules.weather === 'string' ? rec.rules.weather : 'clear'
+    const gs = rcMakeSim(rec.seed, (rec.players || 1) >= 2 ? 2 : 1, weather)
+    const want = new Map(rec.hashes.map((x) => [x.t, x.h]))
+    const mems = {}
+    const rows = []
+    const finalT = rec.hashes.length ? rec.hashes[rec.hashes.length - 1] : null
+    for (let t = 0; t < rec.ticks; t++) {
+        const pads = rec.slots.map((s) => decodePad(s.pads[t], rec.method))
+        rcStep(gs, pads)
+        const t1 = t + 1
+        if (want.has(t1)) {
+            const got = rcHash(gs)
+            if (got !== want.get(t1)) return { ok: false, mismatch: { tick: t1, want: want.get(t1), got }, rows }
+        }
+        for (let i = 0; i < rec.slots.length; i++) {
+            if (!mems[i]) mems[i] = {}
+            const feat = rcFeaturize(gs, i, mems[i]).map((v) => +v.toFixed(3))
+            mems[i].pa = pads[i] // bank the autoregressive lane after the label
+            rows.push({ k: key, g: rec.game, s: rec.seed, t: t1, lvl: gs.lapsDone, seat: i, act: encodePad(pads[i]), feat })
+        }
+    }
+    const ok = !finalT || finalT.h === rcHash(gs)
+    return { ok, mismatch: null, rows }
+}
+
+const ADAPTERS = {
+    gauntlet: gauntletRows,
+    'floor-boss': floorBossRows,
+    'bomb-defuse': bombDefuseRows,
+    'short-order-shout': shortOrderShoutRows,
+    'rally-co-driver': rallyCoDriverRows,
+}
 
 // --- audio -----------------------------------------------------------------------
 // Clips: voiceCmd calls (what was SAID, on the tick clock) cut to ms windows

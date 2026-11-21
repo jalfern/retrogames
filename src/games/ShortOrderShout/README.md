@@ -302,3 +302,22 @@ the guide — Y no-ops there (#1656 law). The watch releases with the shift
 house gap (shared with bomb-defuse's play-screen pill): the `watchcheck
 --phone` section waits for the pill on the title screen; this boot is
 multi-screen, so the pill rides the play screen only.
+
+## Dataset model (#1712 S2 — `model.js`)
+
+`model.js` is THE seat-senses definition: 55 features per tick per cook
+(`FEAT_NAMES`), the same doctrine as Gauntlet/FloorBoss/BombDefuse — what a
+line cook at THIS seat can NOTICE. SOS splits effort, not information: every
+cook sees every ticket, burner, the pot and the floor, so the vector rides the
+shared board (shift clock, score/quota, strikes, ticket rail, the engine's own
+`needs`/`actionable` advisory lists — cpuPlan's senses, `SOUP_TICKS`/`STIR_GAP`/
+`SEAR_TICKS` exported for the heat reads) plus this cook's body (position,
+face, held-item ledger, move cooldown, the walk distance to every station), the
+crew (nearest other living cook: relative pose + hands), and the autoregressive
+prev-pad. A seat out of range reads honest zeros — never a phantom cook. The S2
+dataset featurizes through it (`ADAPTERS['short-order-shout']` in
+`scripts/plaicraft-dataset.mjs`): takes replay-verify against their checkpoints
+with THE engine — the shell banks the MERGED pad stream (`liveTick` records
+what `stepGame` consumed, CPU-cook emits included), so replay needs no emitter
+re-run — then carry THESE features. Proven in `plaicraft:datasetcheck`
+(carla's kitchen verifies with 55 feats; the SOS adapter-bypass mutant goes RED).

@@ -193,3 +193,21 @@ different seed → different state.
   live analyser stream alongside recognition — level only, nothing recorded.
 - A `rallyplay` browser-drive gate could mirror sosplay if the lane needs
   a second surface.
+
+## Dataset model (#1712 S2 — `model.js`)
+
+`model.js` is THE seat-senses definition: 41 features per tick per seat
+(`FEAT_NAMES`), the same doctrine as Gauntlet/FloorBoss/BombDefuse. Rally is
+the one dataset title that splits INFORMATION, not effort, so the vector has
+three blocks: shared car/sky facts (v, lat, align, off, lap, weather, vis,
+progress, the notes ledger), a DRIVER block (the nearest corner the headlights
+admit via `cornerAhead(..., gs.vis)` + the nearest heard card note), and a
+CO-DRIVER block (the pace-book truth: next un-called corner's dir/sev/dist,
+its call stamp, ticks-since-call). The shell's no-leak law survives the
+dataset: driver rows carry zeros where the pace book lives and vice versa —
+a trained driver can never learn what the crest hides, and `datasetcheck`
+pins both the partition and the crest honesty on a rain pure-CPU stage.
+Weather is NOT seed-fixed: takes stamp `rules.weather` at seed-birth, and the
+adapter rebuilds from it (otto's rain rows read rain — verified wet by THE
+engine). `ADAPTERS['rally-co-driver']`; the rally adapter-bypass mutant goes
+RED in `plaicraft:datasetcheck`.
