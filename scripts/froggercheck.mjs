@@ -150,6 +150,39 @@ console.log('watch driver: crossings proven on the shipped tick (#1637 b25)')
     ok(watchStep(gsO) === null, 'driver: silent at game over (watch never lingers)')
 }
 
+// #601 main-fix (nightly 44914600702): watchcheck's frogger pilot rides a PINNED
+// seed (?seed=1776) because ~1 in 60 roll seeds lose a life and then zigzag the
+// middle river lanes without banking a home inside the leg's 30 s lily-pad window
+// (#2869 owns the planner zigzag). This pin replays the leg ITSELF against the
+// shipped tick — seat at Space+400 ms, the 8 s advance probe, the 30 s home wait
+// (with margin), handback, re-seat, the 8 s resume — so a sim tweak that drifts
+// the pinned route goes red HERE, deterministically, before the nightly lottery
+// re-opens. Also pins the pin: the pilot URL must carry the seed.
+{
+    const wcSrc = readFileSync('scripts/watchcheck.mjs', 'utf8')
+    ok(/id: 'frogger', url: `\$\{BASE\}\/frogger\?seed=1776`/.test(wcSrc),
+        'watchcheck frogger pilot carries the certified seed pin')
+    const HOME_WAIT = 1800 // 30 s world ticks, the leg's browser wait
+    const gs = makeRun(1776)
+    let t = 0, died = 0, homeTick = -1
+    for (; t < 24; t++) tickFrogger(gs) // Space, 400 ms, then Y seats
+    gs.watching = true
+    for (; t < 504; t++) { const e = tickFrogger(gs); if (e.died) died++ }
+    ok(gs.score > 0 || gs.houses.some(h => h.filled), 'pin: advance probe sees progress at +8 s', `score ${gs.score}`)
+    for (; t < 504 + HOME_WAIT; t++) {
+        const e = tickFrogger(gs); if (e.died) died++
+        if (gs.frog.state === 'home') { homeTick = t - 504; break }
+    }
+    ok(homeTick >= 0 && homeTick < HOME_WAIT / 2, 'pin: first home banks inside half the browser window', `tick ${homeTick}/${HOME_WAIT}`)
+    gs.watching = false // ArrowUp takeover
+    tickFrogger(gs)
+    gs.watching = true // KeyY re-seat
+    const cScore = gs.score
+    for (let k = 0; k < 480 && !gs.over; k++) { const e = tickFrogger(gs); if (e.died) died++ }
+    ok(!gs.over && (gs.score > cScore || gs.houses.some(h => h.filled)), 'pin: resume climbs after re-seat', `score ${cScore} -> ${gs.score}`)
+    ok(died === 0 && gs.lives === 3, 'pin: leg is zero-death (no life lottery in the browser leg)', `deaths ${died}`)
+}
+
 if (process.argv.includes('--mutate')) {
     console.log('mutants (each MUST die)')
     const F = 'src/games/Frogger/attract.js'
