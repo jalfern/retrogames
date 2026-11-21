@@ -1,4 +1,4 @@
-// sim.js — R-TYPE S2 "the force" — the pure side-scroll engine.
+// sim.js — R-TYPE S3 "bits and the dread" — the pure side-scroll engine.
 // DOM-free: Node (rtypecheck) and the browser shell share THIS truth.
 // Determinism law: every sim random derives from the seed (mulberry32
 // riding IN gs); Math.random() may only feed juice in the shell.
@@ -13,10 +13,18 @@
 //    to the nose and it plugs enemy fire and crushes soft Bydo on contact;
 //    B deploys it to the screen edge (still plugging), B again recalls it;
 //    armour shrugs it off and the left wall grinds a parked pod
+//  - BITS (S3): a green Bit Capsule chains a drone to the hull (newest at
+//    the nose, the older shoved to tail/flanks); four bits swing into a
+//    rotating SHIELD that wipes rounds, hunters and soft bodies — armour
+//    still refuses it. A chained hull draws extra streams from every bit
+//  - the dread doubles (S3): break Phase-1 and the convoy presses on —
+//    LEG 2 ends at the PHASE-2 fortress, twin cores stacked, each venting on
+//    its own clock; a lost core enrages the survivor; BOTH hearts stop before
+//    STAGE CLEAR
 //  - Bydo dread: sine larvae divers, armour hull-segments with leading
 //    turrets, a missile pod loosing slow turning hunters, and the PHASE-1
 //    bio-ship: camera locks, the maw-core only takes damage while it gapes
-//  - clear the core: STAGE CLEAR, score carries, the stage loops
+//  - clear both dreads: STAGE CLEAR, score carries, the stage loops
 
 export const W = 320
 export const H = 224
@@ -24,6 +32,8 @@ export const FIELD_TOP = 26
 export const FIELD_BOT = 214
 export const SCROLL = 0.45
 export const STAGE_END = 900 // camX where the Phase-1 hull locks the screen
+export const STAGE_END2 = 520 // camX where the Phase-2 fortress locks (LEG 2)
+export const CORE_Y = [92, 148]  // the twin cores' lanes on the Phase-2 face
 
 export const CFG = {
     shipSpeed: 2.1,
@@ -60,6 +70,17 @@ export const POD = {
 }
 export const CYCLE = ['vulcan', 'laser', 'wave']
 
+// the bit chain (S3): attach slots newest-first — nose, tail, top, bottom,
+// as the original shoves older drones down the line when a new one docks.
+// With all four aboard they stop riding the hull and ORBIT: the shield.
+export const BIT = {
+    slots: [[16, 0], [-16, 0], [0, -14], [0, 14]],
+    rad: 8,            // deflect reach of an orbiting bit (rounds, hunters)
+    crushR: 11,        // the rotating fist grinds soft bodies this close
+    shieldR: 15,       // orbit radius once the chain is complete
+    spin: 0.09,        // rad/tick of the orbit
+}
+
 // stage script: camX triggers -> delayed spawns (queue keeps spacing seeded-free:
 // the schedule is authored, only enemy jitter draws rng).
 export const WAVES = [
@@ -73,6 +94,7 @@ export const WAVES = [
         { kind: 'larva', d: 0, y: 70, dive: 1 }, { kind: 'larva', d: 18, y: 150 },
         { kind: 'larva', d: 36, y: 104, dive: 1 }, { kind: 'larva', d: 54, y: 186 },
         { kind: 'larva', d: 72, y: 44 }, { kind: 'larva', d: 90, y: 128, dive: 1 } ] },
+    { at: 250, bcap: 1 },
     { at: 300, seg: { y0: FIELD_TOP, y1: 96, len: 130, turret: 96 } },
     { at: 380, caps: 1 },
     { at: 430, pod: { y: 64, missiles: 3 } },
@@ -82,11 +104,28 @@ export const WAVES = [
         { kind: 'larva', d: 0, y: 80, dive: 1 }, { kind: 'larva', d: 20, y: 160 },
         { kind: 'larva', d: 40, y: 52, dive: 1 }, { kind: 'larva', d: 60, y: 196 },
         { kind: 'larva', d: 80, y: 120, dive: 1 }, { kind: 'larva', d: 100, y: 96 } ] },
+    { at: 610, bcap: 1 },
     { at: 640, pod: { y: 168, missiles: 4 } },
     { at: 700, seg: { y0: FIELD_TOP, y1: 82, len: 170, turret: 82 } },
     { at: 770, spawn: [
         { kind: 'larva', d: 0, y: 140, dive: 1 }, { kind: 'larva', d: 22, y: 74 },
         { kind: 'larva', d: 44, y: 180, dive: 1 }, { kind: 'larva', d: 66, y: 108 } ] },
+]
+
+// LEG 2 (S3): the convoy resumes after Phase-1 falls — thinner field, two
+// more bit capsules, and the run ends at the PHASE-2 fortress (STAGE_END2).
+export const WAVES2 = [
+    { at: 40, spawn: [
+        { kind: 'larva', d: 0, y: 100 }, { kind: 'larva', d: 24, y: 150, dive: 1 },
+        { kind: 'larva', d: 48, y: 70 }, { kind: 'larva', d: 72, y: 182, dive: 1 } ] },
+    { at: 120, bcap: 1 },
+    { at: 180, seg: { y0: FIELD_TOP, y1: 92, len: 140, turret: 92 } },
+    { at: 260, pod: { y: 152, missiles: 3 } },
+    { at: 330, spawn: [
+        { kind: 'larva', d: 0, y: 84, dive: 1 }, { kind: 'larva', d: 26, y: 160 },
+        { kind: 'larva', d: 52, y: 120, dive: 1 } ] },
+    { at: 400, bcap: 1 },
+    { at: 450, seg: { y0: 126, y1: FIELD_BOT, len: 130, turret: 126 } },
 ]
 
 // mulberry32 as a state-carried step (snapshot/restore stays byte-exact).
@@ -121,6 +160,10 @@ export function makeGame(seed = 1) {
         weaponName: 'vulcan',           // mirror of ship.weapon for HUD/state
         pod: null,                     // S2 force pod: {id,state,x,y} attached|fly|park|return
         bHeld: false,                  // edge-detector for the POD button
+        bits: [],                      // S3 bit chain: [{id,px,py}] newest-first; 4 => shield
+        leg: 1,                        // S3: 1 until Phase-1 falls, then 2 (the twin-core leg)
+        legAt: 0,                      // tick LEG 2 opened (banner timing)
+        p2: null,                      // S3 Phase-2 fortress: {x,cores:[{hp,mouth,mouthT,enraged}],dyingT,at}
         shots: [],                   // player: {id,x,y,kind,size,hit[]}
         bullets: [],               // enemy: {id,x,y,vx,vy}
         missiles: [],              // {id,x,y,a,spd,t}
@@ -156,6 +199,44 @@ function spawnCaps(gs) {
 function spawnForceCap(gs) {
     const y = 70 + Math.floor(rng(gs) * 100)
     gs.caps.push({ id: gs.nextId++, x: gs.camX + W + 14, y, baseY: y, bob: rng(gs) * 6, type: 'force' })
+}
+
+function spawnBitCap(gs) {
+    const y = 60 + Math.floor(rng(gs) * 120)
+    gs.caps.push({ id: gs.nextId++, x: gs.camX + W + 14, y, baseY: y, bob: rng(gs) * 6, type: 'bit' })
+}
+
+// Where bit i rides THIS tick: chained at its slot, or swinging the shield
+// orbit when the chain is complete. The sim writes px/py once per tick, so
+// the draw layer and every collision read the same truth.
+export function bitPos(gs, i) {
+    const s = gs.ship
+    if (gs.bits.length === 4) {
+        const a = gs.tick * BIT.spin + (i * Math.PI) / 2
+        return { x: s.x + Math.cos(a) * BIT.shieldR, y: s.y + Math.sin(a) * BIT.shieldR }
+    }
+    const sl = BIT.slots[i]
+    return { x: s.x + sl[0], y: s.y + sl[1] }
+}
+export const shieldOn = (gs) => gs.bits.length === 4
+
+// px/py are written once per tick so drawing and collision never disagree.
+function refreshBits(gs) {
+    for (let i = 0; i < gs.bits.length; i++) {
+        const p = bitPos(gs, i)
+        gs.bits[i].px = p.x; gs.bits[i].py = p.y
+    }
+}
+
+// Chain a bit to the hull — newest at the nose, the rest shoved down the
+// line (the original's attach order). The fourth completes the shield.
+function addBit(gs) {
+    if (gs.bits.length >= 4) return false
+    gs.bits.unshift({ id: gs.nextId++ })
+    refreshBits(gs)
+    addScore(gs, 500)
+    gs.events.push(shieldOn(gs) ? 'shield' : 'bit')
+    return true
 }
 
 function spawnSeg(gs, cfg) {
@@ -206,6 +287,62 @@ function startPhase1(gs) {
         state: 'hold', vx: 0, inv: 0, anim: 0 })
 }
 
+// The PHASE-2 fortress (S3): the original's stage-1 twin hearts. Each core
+// vents on its own clock (the stagger makes the double-gape a real window);
+// a flank gun pair and a hunter battery ride the plating.
+function startPhase2(gs) {
+    gs.camLock = true
+    gs.enemies = gs.enemies.filter((e) => e.kind !== 'hullseg' && typeof e.on !== 'number')
+    gs.bullets.length = 0
+    gs.missiles.length = 0
+    gs.p2 = {
+        x: gs.camX + W + 170, targetX: gs.camX + 176, vx: -0.9,
+        cores: [
+            { hp: 8, max: 8, mouth: 'closed', mouthT: 130, enraged: false },
+            { hp: 8, max: 8, mouth: 'closed', mouthT: 185, enraged: false },
+        ],
+        dyingT: 0, at: gs.tick,
+    }
+    gs.enemies.push({ id: gs.nextId++, kind: 'turret', on: 'p2', ox: 46, oy: 46,
+        x: gs.p2.x + 46, y: 46, face: -1, hp: 4, cd: 90, anim: 0, inv: 0, edgeUp: true })
+    gs.enemies.push({ id: gs.nextId++, kind: 'turret', on: 'p2', ox: 92, oy: 196,
+        x: gs.p2.x + 92, y: 196, face: -1, hp: 4, cd: 150, anim: 0, inv: 0, edgeUp: false })
+    gs.enemies.push({ id: gs.nextId++, kind: 'pod', on: 'p2', ox: 118, oy: 176,
+        x: gs.p2.x + 118, y: 176, baseY: 176, bob: 2, hp: 7, cd: 220, shots: 4,
+        state: 'hold', vx: 0, inv: 0, anim: 0 })
+    gs.events.push('p2arrive')
+}
+
+// one core's vent cycle; an enraged core runs its clock at double speed
+function vent(core, gs) {
+    core.mouthT -= core.enraged ? 2 : 1
+    if (core.mouthT <= 0) {
+        if (core.mouth === 'closed') { core.mouth = 'opening'; core.mouthT = 30; gs.events.push('p2open') }
+        else if (core.mouth === 'opening') { core.mouth = 'open'; core.mouthT = 110 }
+        else if (core.mouth === 'open') { core.mouth = 'closing'; core.mouthT = 30 }
+        else { core.mouth = 'closed'; core.mouthT = 150 + ((gs.tick * 7) % 50); gs.events.push('p2shut') }
+    }
+}
+
+// Phase-1's wreck hands the convoy onward: the field resets, LEG 2 scrolls
+// toward the twin-core fortress.
+function startLeg2(gs) {
+    gs.leg = 2
+    gs.camX = 0
+    gs.camLock = false
+    gs.enemies.length = 0
+    gs.bullets.length = 0
+    gs.missiles.length = 0
+    gs.shots.length = 0
+    gs.caps.length = 0
+    gs.pending.length = 0
+    gs.schedule = WAVES2.map((w, i) => ({ ...w, idx: 50 + i, fired: false }))
+    gs.banner = 0
+    if (gs.pod && gs.pod.state === 'park') gs.pod.x = gs.camX + W - POD.parkPad
+    gs.legAt = gs.tick
+    gs.events.push('leg2')
+}
+
 // ---- death / clear ---------------------------------------------------------
 
 function killShip(gs, why) {
@@ -217,6 +354,8 @@ function killShip(gs, why) {
     gs.lives -= 1
     // an attached shell burns with its pilot; one parked out front survives
     if (gs.pod && gs.pod.state === 'attached') gs.pod = null
+    // the bit chain is power armour — it comes off with the pilot (S3)
+    if (gs.bits.length) { gs.bits.length = 0; gs.events.push('bitslost') }
     return true
 }
 
@@ -251,7 +390,9 @@ function loopStage(gs) {
     gs.caps.length = 0
     gs.pending.length = 0
     gs.p1 = null
-    gs.schedule.forEach((s) => { s.fired = false })
+    gs.p2 = null
+    gs.leg = 1
+    gs.schedule = WAVES.map((w, i) => ({ ...w, idx: i, fired: false }))
     gs.waveIdx = 0
     gs.banner = 0
     respawn(gs)
@@ -291,11 +432,17 @@ function runWorld(gs, pad, frozen) {
     const s = gs.ship
     const bPress = !!pad.b && !gs.bHeld   // POD button is edge-triggered
     gs.bHeld = !!pad.b
+    refreshBits(gs)
 
-    // --- camera: right only, ever
+    // --- camera: right only, ever; LEG 2 ends at the twin-core fortress
     if (!gs.camLock) {
         gs.camX += SCROLL
-        if (gs.camX >= STAGE_END) { gs.camX = STAGE_END; startPhase1(gs) }
+        const end = gs.leg === 2 ? STAGE_END2 : STAGE_END
+        if (gs.camX >= end) {
+            gs.camX = end
+            if (gs.leg === 2) startPhase2(gs)
+            else startPhase1(gs)
+        }
     }
     if (s.x < gs.camX + 2) s.x = gs.camX + 2
     if (s.x > gs.camX + W - 10) s.x = gs.camX + W - 10
@@ -317,6 +464,11 @@ function runWorld(gs, pad, frozen) {
         if (s.weapon === 'vulcan') {
             if (pad.a && s.cd <= 0) {
                 gs.shots.push({ id: gs.nextId++, x: s.x + 12, y: s.y - 1, kind: 'v', size: 0, pierce: false, hit: [] })
+                // a chained hull outguns the convoy: every bit draws its own
+                // stream from where it rides (the original's bit-fire spread)
+                for (const bt of gs.bits) {
+                    gs.shots.push({ id: gs.nextId++, x: (bt.px ?? s.x) + 10, y: (bt.py ?? s.y) - 1, kind: 'v', size: 0, pierce: false, hit: [] })
+                }
                 s.cd = CFG.vulcanCd
                 gs.events.push('shot')
             }
@@ -352,6 +504,7 @@ function runWorld(gs, pad, frozen) {
             gs.waveIdx = wv.idx + 1
             if (wv.caps) spawnCaps(gs)
             if (wv.fcap) spawnForceCap(gs)
+            if (wv.bcap) spawnBitCap(gs)
             if (wv.seg) spawnSeg(gs, wv.seg)
             if (wv.pod) spawnPod(gs, wv.pod.y, wv.pod.missiles)
             if (wv.spawn) {
@@ -376,8 +529,17 @@ function runWorld(gs, pad, frozen) {
                     gs.pod = { id: gs.nextId++, state: 'attached', x: s.x + POD.noseX, y: s.y, grace: 0 }
                     addScore(gs, 500)
                     gs.events.push('force')
-                } else {
-                    addScore(gs, 1000) // a spare S.E.E.D. is worth pure points
+                } else if (!addBit(gs)) {
+                    addScore(gs, 1000) // four bits and a shell? now it pays points
+                    gs.events.push('capsule')
+                }
+                // NOTE (S3): a spare S.E.E.D. converts to a BIT, as the original
+                // converts a spare capsule into the bit chain — not a second shell.
+                continue
+            }
+            if (c.type === 'bit') {
+                if (!addBit(gs)) {
+                    addScore(gs, 1000) // a fifth bit is pure points
                     gs.events.push('capsule')
                 }
                 continue
@@ -414,7 +576,23 @@ function runWorld(gs, pad, frozen) {
             gs.lastHitY = 40 + ((gs.tick * 61) % 156)
             gs.events.push('boom')
         }
-        if (p1.dyingT <= 0) { gs.p1 = null; stageClear(gs) }
+        if (p1.dyingT <= 0) { gs.p1 = null; startLeg2(gs) }
+    }
+
+    // --- Phase-2 fortress (S3): twin cores, staggered vents, enraged survivor
+    const p2 = gs.p2
+    if (p2 && p2.dyingT === 0) {
+        if (p2.x > p2.targetX) p2.x += p2.vx
+        for (const c of p2.cores) if (c.hp > 0) vent(c, gs)
+    } else if (p2 && p2.dyingT > 0) {
+        p2.dyingT -= 1
+        p2.x += 0.5
+        if (gs.tick % 4 === 0) {
+            gs.lastHitX = p2.x + 12 + ((gs.tick * 41) % 131)
+            gs.lastHitY = 40 + ((gs.tick * 67) % 156)
+            gs.events.push('boom')
+        }
+        if (p2.dyingT <= 0) { gs.p2 = null; stageClear(gs) }
     }
 
     // --- force pod (S2): attached rides the nose; B deploys to the edge; B
@@ -459,9 +637,10 @@ function runWorld(gs, pad, frozen) {
         const e = gs.enemies[i]
         e.anim += 1
         if (e.inv > 0) e.inv -= 1
-        if (e.on === 'p1') {
-            if (p1 && p1.dyingT === 0) { e.x = p1.x + e.ox; e.y = e.oy + (e.kind === 'pod' ? Math.sin(gs.tick * 0.05) * 3 : 0) }
-            else if (p1) { gs.enemies.splice(i, 1); continue }
+        if (e.on === 'p1' || e.on === 'p2') {
+            const host = e.on === 'p1' ? p1 : p2
+            if (host && host.dyingT === 0) { e.x = host.x + e.ox; e.y = e.oy + (e.kind === 'pod' ? Math.sin(gs.tick * 0.05) * 3 : 0) }
+            else if (host) { gs.enemies.splice(i, 1); continue }
         }
         if (e.kind === 'larva') {
             if (e.state === 'dive') { e.x += e.vx; e.y += e.vy }
@@ -592,6 +771,39 @@ function runWorld(gs, pad, frozen) {
                 dead = true
             }
         }
+        // vs Phase-2: plating eats fire; the twin cores only open on their vents
+        if (!dead && p2 && p2.dyingT === 0 && q.x + lance(q) >= p2.x) {
+            let struckCore = -1
+            for (let ci = 0; ci < 2; ci++) {
+                const c = p2.cores[ci]
+                if (c.hp > 0 && c.mouth === 'open' && Math.abs(q.y - CORE_Y[ci]) < 16) { struckCore = ci; break }
+            }
+            if (struckCore >= 0) {
+                const c = p2.cores[struckCore]
+                c.hp -= q.kind === 'w' ? 2 : q.kind === 'l' ? q.size + 1 : 1
+                gs.lastHitX = p2.x + 14; gs.lastHitY = CORE_Y[struckCore]
+                gs.events.push('corehit')
+                if (c.hp <= 0) {
+                    c.hp = 0
+                    addScore(gs, 1500)
+                    gs.events.push('coredown')
+                    const other = p2.cores[1 - struckCore]
+                    if (other.hp > 0) {
+                        if (!other.enraged) { other.enraged = true; other.mouthT = Math.ceil(other.mouthT / 2); gs.events.push('enrage') }
+                    } else {
+                        p2.dyingT = 190
+                        addScore(gs, 2000)
+                        gs.events.push('bigboom')
+                        gs.enemies = gs.enemies.filter((e) => e.on !== 'p2')
+                        gs.bullets.length = 0
+                        gs.missiles.length = 0
+                    }
+                }
+            } else {
+                gs.events.push('clank')
+            }
+            dead = true // the blast dies on the plating, gape or not
+        }
         if (dead) gs.shots.splice(i, 1)
     }
 
@@ -601,6 +813,16 @@ function runWorld(gs, pad, frozen) {
         b.x += b.vx; b.y += b.vy
         if (b.x < gs.camX - 8 || b.x > gs.camX + W + 8 || b.y < FIELD_TOP - 4 || b.y > FIELD_BOT + 4) { gs.bullets.splice(i, 1); continue }
         if (!frozen && gs.pod && Math.abs(b.x - gs.pod.x) < 8 && Math.abs(b.y - gs.pod.y) < 7) { gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('plug'); continue }
+        // the completed bit chain is a rotating wall: lead does not get through
+        if (!frozen && shieldOn(gs)) {
+            let deflected = false
+            for (const bt of gs.bits) {
+                if (Math.abs(b.x - bt.px) < BIT.rad && Math.abs(b.y - bt.py) < BIT.rad) {
+                    gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('deflect'); deflected = true; break
+                }
+            }
+            if (deflected) continue
+        }
         if (!frozen && s.inv <= 0 && Math.abs(b.x - s.x) < 5 && Math.abs(b.y - s.y) < 4) { gs.bullets.splice(i, 1); killShip(gs, 'bullet'); return }
     }
 
@@ -621,6 +843,15 @@ function runWorld(gs, pad, frozen) {
         m.y += Math.sin(m.a) * m.spd
         if (m.t <= 0 || m.x < gs.camX - 14 || m.x > gs.camX + W + 14 || m.y < FIELD_TOP - 6 || m.y > FIELD_BOT + 6) { gs.missiles.splice(i, 1); continue }
         if (!frozen && gs.pod && Math.abs(m.x - gs.pod.x) < 9 && Math.abs(m.y - gs.pod.y) < 8) { gs.missiles.splice(i, 1); gs.lastHitX = m.x; gs.lastHitY = m.y; gs.events.push('plug'); continue }
+        if (!frozen && shieldOn(gs)) {
+            let deflected = false
+            for (const bt of gs.bits) {
+                if (Math.abs(m.x - bt.px) < BIT.rad + 1 && Math.abs(m.y - bt.py) < BIT.rad) {
+                    gs.missiles.splice(i, 1); gs.lastHitX = m.x; gs.lastHitY = m.y; gs.events.push('deflect'); deflected = true; break
+                }
+            }
+            if (deflected) continue
+        }
         if (!frozen && s.inv <= 0 && Math.abs(m.x - s.x) < 7 && Math.abs(m.y - s.y) < 6) { gs.missiles.splice(i, 1); killShip(gs, 'missile'); return }
     }
 
@@ -645,6 +876,26 @@ function runWorld(gs, pad, frozen) {
         }
     }
 
+    // --- the shield also grinds: soft Bydo meet the rotating fist and break
+    if (!frozen && shieldOn(gs)) {
+        for (let i = gs.enemies.length - 1; i >= 0; i--) {
+            const e = gs.enemies[i]
+            if (e.kind !== 'larva') continue
+            for (const bt of gs.bits) {
+                if (Math.abs(e.x - bt.px) < BIT.crushR && Math.abs(e.y - bt.py) < BIT.crushR) {
+                    e.hp -= 3
+                    gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
+                    if (e.hp <= 0) {
+                        gs.enemies.splice(i, 1)
+                        addScore(gs, 100)
+                        gs.events.push('boom')
+                    }
+                    break
+                }
+            }
+        }
+    }
+
     // --- bodies vs the ship (tiny core hitbox, honest dread)
     if (!frozen && s.inv <= 0) {
         for (const e of gs.enemies) {
@@ -658,6 +909,10 @@ function runWorld(gs, pad, frozen) {
         if (p1 && p1.dyingT === 0 && p1.x < gs.camX + W - 4 && s.x + 5 > p1.x + 4) {
             // the bio-ship's flank is a death wall, top to bottom
             if (killShip(gs, 'hull')) return
+        }
+        if (p2 && p2.dyingT === 0 && p2.x < gs.camX + W - 4 && s.x + 5 > p2.x + 4) {
+            // the fortress keeps the same law: its face is a wall
+            if (killShip(gs, 'fortress')) return
         }
     }
 }
@@ -673,6 +928,7 @@ export function autopilot(gs) {
     if (gs.mode !== 'play' || s.dead) return pad
     const px = s.x, py = s.y
     const p1 = gs.p1
+    const p2 = gs.p2
 
     const lanes = []
     for (const off of [-30, 0, 30]) {
@@ -724,6 +980,11 @@ export function autopilot(gs) {
         let launcher = null
         for (const e of gs.enemies) if (e.kind === 'pod' && e.state !== 'flee' && e.x > px - 6 && (!launcher || e.x < launcher.x)) launcher = e
         if (p1 && p1.dyingT === 0) targetY = 120
+        else if (p2 && p2.dyingT === 0) {
+            // hunt the open vent; hold mid when both seals hold
+            const oi = p2.cores.findIndex((c) => c.hp > 0 && c.mouth === 'open')
+            targetY = oi >= 0 ? CORE_Y[oi] : 120
+        }
         else if (launcher) targetY = launcher.y
         else if (incMis) targetY = incMis.y
         else {
@@ -758,6 +1019,7 @@ export function autopilot(gs) {
     pad.left = px - want > 5
     if (px - gs.camX < 26) { pad.right = true; pad.left = false }
     if (p1 && p1.dyingT === 0 && p1.x - px < 80) pad.right = false
+    if (p2 && p2.dyingT === 0 && p2.x - px < 80) pad.right = false
 
     // trigger discipline: vulcan streams; the charge arms fire when the lane breathes
     if (s.weapon === 'wave' || s.weapon === 'laser') pad.a = lane.risk > 18
@@ -779,6 +1041,9 @@ export function stateHash(gs) {
     const pd = gs.pod
     mix(pd ? 1 : 0)
     if (pd) { mix(pd.x); mix(pd.y); mix(pd.state.length); mix(pd.state.charCodeAt(0)) }
+    mix(gs.bits.length)
+    for (const bt of gs.bits) { mix(bt.px ?? 0); mix(bt.py ?? 0) }
+    mix(gs.leg)
     mix(gs.shots.length)
     for (const q of gs.shots) { mix(q.x); mix(q.y); mix(q.kind === 'w' ? q.size + 1 : q.kind === 'l' ? q.size + 4 : 0) }
     mix(gs.bullets.length)
@@ -791,5 +1056,10 @@ export function stateHash(gs) {
     for (const c of gs.caps) { mix(c.x); mix(c.y) }
     mix(gs.p1 ? 1 : 0)
     if (gs.p1) { mix(gs.p1.x); mix(gs.p1.coreHp); mix(gs.p1.mouth.length) }
+    mix(gs.p2 ? 1 : 0)
+    if (gs.p2) {
+        mix(gs.p2.x)
+        for (const c of gs.p2.cores) { mix(c.hp); mix(c.mouth.length); mix(c.enraged ? 1 : 0) }
+    }
     return h >>> 0
 }

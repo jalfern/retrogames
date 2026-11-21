@@ -2,24 +2,29 @@
 
 Irem's 1987 pod-shooter, built stage by stage. S1 "Armament": the convoy run
 and the Phase-1 bio-ship. S2 "the force": the S.E.E.D. pod — capture, plug,
-ram, deploy/retrieve — and the LASER charge arm.
+ram, deploy/retrieve — and the LASER charge arm. S3 "bits and the dread": the
+bit chain and its orbit shield, plus the stage's second heart — LEG 2 and the
+Phase-2 twin-core fortress.
 
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 64 laws incl. the #2818/#2823 polish laws
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind`
+node scripts/rtypecheck.mjs       # sim + browser: 84 laws (S1, #2818/#2823 polish, S2, S3)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
 tiers, the pod-3 rescue, the Phase-1 maw law and its 20 s cycle, hunter
-home-phases, winnability (autopilot clears >= 4 of seeds 1..12) — plus the
-#2818 polish laws and S2: capture (blue capsule → pod), the plug (bullets
-AND hunters die at the shell), the ram (larva/turret/gun-pod crush;
-hull-plates refuse the pod and it never crosses), deploy→park at the screen
-edge, recall (or fly into it), the left wall grinding a parked shell, death
-burning an attached pod, and the laser: tap no-things, held release looses a
-tiered piercing lance that rakes a line of turrets.
+home-phases, winnability (autopilot clears >= 4 of seeds 1..12 — now THROUGH
+both dreads, measured 5/12) — plus the #2818 polish laws, S2 (capture, plug,
+ram, deploy→park, recall, grind, death-drop, tiered piercing lance), and S3:
+bit capture order (newest at the nose, chain shoved back), the spare-S.E.E.D.
+converts to a BIT (never a second shell), chained-vulcan extra streams,
+three-is-not-a-wall, the four-bit orbit shield deflects rounds AND hunters
+and grinds soft bodies but never bites armour, death strips the chain, LEG 2
+handoff after Phase-1's wreck, twin cores gape on their own staggered clocks,
+sealed plating eats fire, one core down enrages the survivor (double-speed
+vents), both hearts down ⇒ STAGE CLEAR.
 
 ## The design decisions worth knowing
 - **#2823 polish (QA lane):** capture is a ceremony (merge flash + sparks that
@@ -87,17 +92,44 @@ tiered piercing lance that rakes a line of turrets.
   overflows int32 into negative indices and `drawImage(undefined)` throws
   every frame.
 
-## Known gaps (S3+)
-Bits and the shield formation (S3), Phase-2 twin-core boss (S3), co-op with a
-CPU wingman (S4), core speed-up after 1000, Stage 2 "Dobkeratops", the full
-capsule list beyond three arms (Options, Double, Speed Up, Half-Capsules).
+- **Bit chain (S3)**: slots `nose → tail → top → bottom`, newest-first (the
+  original shoves the older drones down the line). A spare S.E.E.D. converts
+  into a bit — the pin that read "pays points, not a second shell" in S2
+  evolved honestly with the stage. With four aboard the bits stop riding and
+  ORBIT at r=15 (`bitPos` writes px/py once per tick so draw and collision
+  never disagree): the shield erases bullets and hunters within r+8 of a bit,
+  grinds larvae, and still refuses armour (plates are not flesh). Every bit
+  also draws its own vulcan stream from where it rides. Death strips the whole
+  chain — bits are power armour, like the pod.
+- **Two-leg stage (S3)**: Phase-1's death cascade hands to `startLeg2` — field
+  resets, `WAVES2` scrolls 520 world-units, and the camera locks on the
+  PHASE-2 fortress (`CORE_Y = [92, 148]`). Each core vents on its own clock
+  (first gapes staggered 130/185 ticks; a gape ~110 ticks on a ~190-tick
+  cycle); shots wound only an OPEN core, everything else clanks. The first
+  core down enrages the survivor — its clock runs at double speed. The stage
+  clears only when both hearts stop; `loopStage` rebuilds the leg-1 schedule
+  (the loop re-runs both dreads). `__rTest.setup({ toPhase2 })` demolishes
+  any live Phase-1 first — a stale `camLock` would otherwise swallow the
+  fortress (the harness caught exactly that).
+- **Autopilot** additions: hunts the open vent (`targetY` snaps to the gaped
+  core, mid-line when both seal), and never thrusts into the fortress face.
+  It never uses bits/shield — winnability (5/12) is the pod-less floor.
+
+## Known gaps (S4+)
+Co-op with a CPU wingman (S4), core speed-up after 1000, Stage 2
+"Dobkeratops", the full capsule list beyond three arms (Options, Double,
+Speed Up, Half-Capsules), the bit×arm modification matrix (Fire/Laser/Wave
+bits reshaping the shot — S3 ships the generic extra streams), and an
+armed Williams-style duelist for variety.
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 64 sim+browser laws, two named mutants
-  (`armour-blind p1 core`, `pod-blind`).
-- `__rTest` DEV hook: `probe()` (incl. pod state + x) / `setup({…})`
-  (`force`, `spawnFCap`, `toPhase1`, `openMouth`, `coreHp`, …) / `start()`.
-- DebugKit (F1): GIVE POD, POD OUT/IN, GIVE LASER, TO PHASE-1, OPEN MAW.
+- `scripts/rtypecheck.mjs` — 84 sim+browser laws, three named mutants
+  (`armour-blind p1 core`, `pod-blind`, `shield-blind`).
+- `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2) / `setup({…})`
+  (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
+  `openMouth`, `openVents`, `coreHp`, `p2hp`, `y`, …) / `start()`.
+- DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
+  GIVE LASER, TO PHASE-1, OPEN MAW.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern
   taps `b` every 97 ticks) and the nightly soak roster (`nightlybot.mjs`).

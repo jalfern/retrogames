@@ -10,8 +10,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, STAGE_END, POD, makeGame, step, autopilot, stateHash } from './sim.js'
-import { drawBackground, drawShip, drawLarva, drawTurret, drawPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge } from './art.js'
+import { W, H, STAGE_END, STAGE_END2, POD, makeGame, step, autopilot, stateHash, shieldOn } from './sim.js'
+import { drawBackground, drawShip, drawLarva, drawTurret, drawPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'r-type:hiscore'
@@ -77,6 +77,17 @@ export default function RType() {
             strain: () => { if (gs.tick - lastStrain >= 8) { lastStrain = gs.tick; audioController.playTone(88 + (gs.tick % 3) * 14, 0.045, 'square', 0.055); audioController.playNoise(0.02, 0.025) } },
             ram: () => { audioController.playNoise(0.08, 0.1); audioController.playTone(90, 0.07, 'sawtooth', 0.12); shake = Math.max(shake, 2) },
             podlost: () => audioController.playSweep(420, 90, 0.3, 'triangle', 0.1),
+            // S3: the chain snaps on, the shield rings, deflected lead ticks off it
+            bit: () => { audioController.playTone(700, 0.06, 'square', 0.09); audioController.playTone(1050, 0.08, 'square', 0.09, 0.06) },
+            shield: () => { const n = [523, 659, 784, 1046, 1318]; n.forEach((f, i) => audioController.playTone(f, 0.1, 'triangle', 0.1, i * 0.05)) },
+            deflect: () => audioController.playTone(210, 0.03, 'square', 0.06),
+            bitslost: () => audioController.playSweep(500, 120, 0.25, 'triangle', 0.09),
+            leg2: () => { audioController.playTone(392, 0.12, 'square', 0.1); audioController.playTone(523, 0.14, 'square', 0.1, 0.1) },
+            p2arrive: () => { audioController.playSweep(70, 110, 0.7, 'sawtooth', 0.14); audioController.playTone(140, 0.6, 'triangle', 0.07) },
+            p2open: () => audioController.playSweep(70, 150, 0.45, 'sawtooth', 0.11),
+            p2shut: () => { audioController.playSweep(200, 60, 0.2, 'square', 0.1); audioController.playNoise(0.08, 0.08) },
+            coredown: () => { audioController.playNoise(0.3, 0.18); audioController.playSweep(240, 40, 0.4, 'sawtooth', 0.14); shake = Math.max(shake, 5) },
+            enrage: () => { audioController.playTone(880, 0.09, 'square', 0.1); audioController.playTone(660, 0.09, 'square', 0.1, 0.1); audioController.playTone(880, 0.09, 'square', 0.1, 0.2) },
             warn: () => audioController.playTone(500, 0.05, 'square', 0.06),
             tsfire: () => audioController.playTone(340, 0.04, 'square', 0.06),
             '1up': () => { const n = [523, 659, 784, 1046]; n.forEach((f, i) => audioController.playTone(f, 0.09, 'square', 0.1, i * 0.09)) },
@@ -105,7 +116,11 @@ export default function RType() {
                 if (sfx[ev]) sfx[ev]()
                 if (ev === 'boom') bursts(10, (gs.lastHitX ?? gs.ship.x + 40) - sx, gs.lastHitY ?? gs.ship.y, 0)
                 else if (ev === 'hit') bursts(3, (gs.lastHitX ?? gs.ship.x + 40) - sx, gs.lastHitY ?? gs.ship.y, 1)
-                else if (ev === 'corehit') bursts(6, gs.p1 ? gs.p1.x + 20 - sx : 40, 120, 2)
+                else if (ev === 'corehit') bursts(6, gs.lastHitX ? gs.lastHitX - sx : (gs.p1 ? gs.p1.x + 20 : 40), gs.lastHitY ?? 120, 2)
+                else if (ev === 'deflect') bursts(4, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 3)
+                else if (ev === 'coredown') bursts(24, (gs.lastHitX ?? 60) - sx, gs.lastHitY ?? 120, 0)
+                else if (ev === 'bit') bursts(8, gs.ship.x - sx, gs.ship.y, 1)
+                else if (ev === 'shield') bursts(14, gs.ship.x - sx, gs.ship.y, 1)
                 else if (ev === 'bigboom') bursts(40, gs.p1 ? gs.p1.x + 30 - sx : 60, 120, 0)
                 else if (ev === 'die') bursts(22, gs.ship.x - sx, gs.ship.y, 2)
                 else if (ev === 'plug') { bursts(6, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 3); bursts(2, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 2) } // #2823: a plugged hunter POPS — cyan ring, white core
@@ -160,6 +175,7 @@ export default function RType() {
             ctx.save()
             ctx.translate(sxo, syo)
             if (gs.p1) drawP1(ctx, gs.p1, gs.camX, gs.tick)
+            if (gs.p2) drawP2(ctx, gs.p2, gs.camX, gs.tick)
             for (const e of gs.enemies) {
                 if (e.kind === 'hullseg') drawSeg(ctx, e, gs.camX)
             }
@@ -185,6 +201,7 @@ export default function RType() {
                     attachFlash -= 1
                 }
             }
+            for (const bt of gs.bits) drawBit(ctx, bt, gs.camX, shieldOn(gs))
             // particles (juice layer — Math.random law: never reaches state)
             for (let i = part.length - 1; i >= 0; i--) {
                 const p = part[i]
@@ -286,6 +303,8 @@ export default function RType() {
                     missiles: gs.missiles.length, shots: gs.shots.length,
                     pod: gs.pod ? gs.pod.state : '-', podX: gs.pod ? Math.round(gs.pod.x) : 0,
                     p1: gs.p1 ? `${gs.p1.mouth}:${gs.p1.coreHp}` : '-',
+                    bits: gs.bits.length, shield: shieldOn(gs) ? 1 : 0, leg: gs.leg,
+                    p2: gs.p2 ? `${gs.p2.cores[0].hp}/${gs.p2.cores[1].hp}` : '-',
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -299,11 +318,17 @@ export default function RType() {
                     if (opts.clearBullets) { gs.bullets.length = 0 }
                     if (opts.spawnCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'weapon' })
                     if (opts.spawnFCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'force' })
+                    if (opts.spawnBCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'bit' })
+                    if (opts.giveBits) { while (gs.bits.length < 4) gs.bits.unshift({ id: gs.nextId++ }) }
                     if (opts.force && !gs.pod) gs.pod = { id: gs.nextId++, state: 'attached', x: gs.ship.x + POD.noseX, y: gs.ship.y }
                     if (opts.crushShip) gs.ship.x = gs.camX
-                    if (opts.toPhase1) { gs.camX = STAGE_END; step(gs, { left: false, right: false, up: false, down: false, a: false }) }
+                    if (opts.toPhase1) { gs.camX = STAGE_END; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
+                    if (opts.toPhase2) { gs.p1 = null; gs.enemies = gs.enemies.filter((e) => e.on !== 'p1'); gs.bullets.length = 0; gs.camLock = false; gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
                     if (opts.openMouth && gs.p1) { gs.p1.mouth = 'open'; gs.p1.mouthT = 10000 }
                     if (opts.coreHp !== undefined && gs.p1) gs.p1.coreHp = opts.coreHp
+                    if (opts.openVents && gs.p2) { for (const c of gs.p2.cores) if (c.hp > 0) { c.mouth = 'open'; c.mouthT = 10000 } }
+                    if (opts.y !== undefined) gs.ship.y = opts.y
+                    if (opts.p2hp && gs.p2) gs.p2.cores.forEach((c, ci) => { if (opts.p2hp[ci] !== undefined) c.hp = opts.p2hp[ci] })
                     return true
                 },
             }
@@ -313,6 +338,7 @@ export default function RType() {
                     `x ${Math.round(gs.ship.x)} (screen ${Math.round(gs.ship.x - gs.camX)})  y ${Math.round(gs.ship.y)}  cam ${Math.round(gs.camX)}${gs.camLock ? ' LOCK' : ''}`,
                     `score ${gs.score}  hi ${Math.max(hiscore, gs.score)}  lives ${gs.lives}  arm ${gs.ship.weapon}${gs.ship.charge ? ` charge ${gs.ship.charge}` : ''}  inv ${gs.ship.inv}  mode ${gs.mode}`,
                     `pod ${gs.pod ? `${gs.pod.state} @${Math.round(gs.pod.x - gs.camX)}` : 'none'}  enemies ${gs.enemies.length}  bullets ${gs.bullets.length}  missiles ${gs.missiles.length}  shots ${gs.shots.length}  phase1 ${gs.p1 ? `${gs.p1.mouth} core ${gs.p1.coreHp}/${gs.p1.coreMax}` : 'field'}`,
+                    `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}` : (gs.leg === 2 ? 'inbound' : '-')}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
                 actions: [
@@ -321,6 +347,9 @@ export default function RType() {
                     { label: 'GIVE LASER', run: () => { gs.ship.weapon = 'laser'; return 'laser lance armed' } },
                     { label: 'GIVE POD', run: () => { if (!gs.pod) gs.pod = { id: gs.nextId++, state: 'attached', x: gs.ship.x + POD.noseX, y: gs.ship.y }; return gs.pod.state === 'attached' ? 'force pod on the nose' : 'pod already riding' } },
                     { label: 'POD OUT/IN', run: () => { if (!gs.pod) return 'no pod — GIVE POD first'; gs.pod.state = gs.pod.state === 'attached' ? 'fly' : 'return'; return `pod → ${gs.pod.state}` } },
+                    { label: 'GIVE BITS', run: () => { if (shieldOn(gs)) return 'shield already up'; while (gs.bits.length < 4) gs.bits.unshift({ id: gs.nextId++ }); return shieldOn(gs) ? 'shield — four bits orbiting' : 'bits chained' } },
+                    { label: 'TO PHASE-2', run: () => { window.__rTest.setup({ toPhase2: true }); return 'the twin-core fortress looms' } },
+                    { label: 'OPEN VENTS', run: () => { if (!gs.p2) return 'no fortress on screen — TO PHASE-2 first'; window.__rTest.setup({ openVents: true }); return 'both vents gape' } },
                     { label: 'TO PHASE-1', run: () => { window.__rTest.setup({ toPhase1: true }); return 'the dreadnought looms' } },
                     { label: 'OPEN MAW', run: () => { window.__rTest.setup({ openMouth: true }); return 'the maw gapes' } },
                     { label: 'CLEAR FIRE', run: () => { gs.bullets.length = 0; gs.missiles.length = 0; return 'lane swept' } },
@@ -347,6 +376,8 @@ export default function RType() {
                     x: Math.round(gs.ship.x), y: Math.round(gs.ship.y),
                     weapon: gs.ship.weapon, charge: gs.ship.charge,
                     pod: gs.pod ? gs.pod.state : 'none',
+                    bits: gs.bits.length, shield: shieldOn(gs) ? 1 : 0, leg: gs.leg,
+                    p2: gs.p2 ? gs.p2.cores.map((c) => c.hp).join('/') : '-',
                     waveIdx: gs.waveIdx, enemies: gs.enemies.length,
                     cleared: gs.cleared ? 1 : 0,
                     hash: stateHash(gs),
