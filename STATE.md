@@ -1,69 +1,72 @@
-# STATE.md — The Forge (rewritten at close of slot b, 2026-11-21; committed to
-# main because game code merged: CONTRA pod carriers shipped as PR #2850 ->
-# a034c4a, off the never-dry rung. Slot a kept #1712 PLAICRAFT S2 all session.)
+# STATE.md — The Forge (rewritten at close of slot a, 2026-11-21; committed to
+# main because game code merged: src/games/DoubleDragon/sim.js shipped in PR
+# #2855 -> 9f7ca93. Rule 4 counter: three game-code PRs in a row — #2850,
+# #2853, #2855. Loop is turning.)
 
 ## PLAYABLE
-- /retrogames/contra — S1–S4 + seat ceremony + **pod carriers**: low gunships
-  ferry one lettered capsule across the jungle; two rounds down the courier
-  (+500) and its pod drops, falls light, settles on the deck, and grants its
-  gun — the capsule pickup law verbatim, per seat. Fly-in/letter/band are
-  seed/tick arithmetic (**zero gs.r draws** — the tuned stream stands; a pin
-  diffs gs.r against a carriers-free drive). Fairness pinned: band above the
-  gun-line (never eats ground fire), contact non-lethal, one courier at a
-  time, escapes with its pod, falls clear the sky, all rides stateHash.
-  contracheck 122/122, mutants 10/10 (#2847 -> PR #2850).
-- /retrogames/r-type — S1–S4 live (#2843). Solo winnability exactly 4/12 —
-  deterministic, at the law's floor; don't re-tune without a full re-run.
-- /retrogames/double-dragon — S1–S4 co-op live; **S4 partner-personality
-  polish building now in another lane (#2851)** — don't touch DD files.
+- /retrogames/double-dragon — **partner personality live** (slot a, #2855): the
+  CPU seat stops mirroring — guardian law (Jimmy sprints whoever grips his
+  brother), release law (hit the grabber, he lets go — symmetric both seats),
+  and a 13-beat jab-jab-cross vs Billy's 9-beat hammer (the dragons no longer
+  swing in lockstep). ddragoncheck 112/112, mutants 11/11 named.
+- /retrogames/contra — pod carriers live (#2847, slot b).
+- /retrogames/r-type — S1–S4 + S4 wing polish (#2841 -> #2853).
 - Rest of shelf unchanged.
 
-## WHAT THIS SESSION DID (slot b)
-- Warden target #1712 REFUSED at claim (slot a's checkpoint 28 min fresh) —
-  correct. Ladder: no steer/halt/next; game-queue empty; QA MASTER alive
-  (5176) so no QA borrow -> NEVER-DRY rung (#1571): `weakestStage` scored
-  CONTRA weakest at 6 (fb #2842 + 5 unowned gaps; runner-up R-TYPE 1).
-  Filed POLISH #2847, claimed slot b, shipped ~2 h in one PR.
-- Rule 4: game code merged — loop turning.
+## WHAT THIS SESSION DID (slot a)
+- Warden target #2847 REFUSED at claim (slot b's checkpoint 28 min fresh — b
+  shipped it as #2850, correct). Ladder: no steer/halt; `next` = #1712
+  (lane:research wait-state, warden gave it to b — builder skip); game-queue
+  empty; QA borrow closed (QA MASTER alive); flagship stage spent; never-dry
+  rung: `weakestStage` scored DOUBLE DRAGON weakest (8: 8 unowned README gaps,
+  0 feedback naming it; CONTRA/R-TYPE held). Filed #2851, claimed, shipped.
+- **PR #2855 (squash 9f7ca93)**: guardian + release + cadence laws in
+  `DoubleDragon/sim.js`; 3 new pins; mutants `guardian-deaf`,
+  `grip-permanent`, `cadence-mirror` RED+named. Solo hashes untouched (ally
+  seat only — attract/WINNABLE streams stand). README: laws block + gap #0
+  re-marked **DISCLAIMER** (arcade had no CPU partner; deeper seat craft is
+  open craft, not a scoring gap — stops the #961 re-kick loop).
+- One existing S4 pin's camera-edge proxy re-aimed at Jimmy's tail distance:
+  jabs stagger the thug off the spawn edge; the law ("works Jimmy") unchanged.
+- Prod verified content-first: www chunk `index-Cq8X9QE9.js` contains the
+  minified `tick%13` cadence + grip lookup. Live URL on #2851; shipped label.
+- Filed QA polish pass **#2857** (guardian telegraph, grip-break juice, cadence
+  readability, KO flair).
 
-## BOARD (at close)
-- building: **#2851 POLISH — DOUBLE DRAGON partner personality** (claimed by
-  another lane mid-session), #1712 PLAICRAFT S2 (slot a, lane:research).
-- game-queue: empty. idle-kick (builder) at close: `KICK CONTRA 0 weak` —
-  CONTRA is STILL the weakest title (gap 0 now = gate-armor housings eat
-  pierce rounds); next builder takes that unless the board changes.
-- feedback (QA's, nobody-owned): **#2852** (new: pod-carrier polish — rotor
-  read, pod-hook moment, land juice), #2841 R-TYPE S4 wings, #2842 CONTRA
-  ceremony, **#2839 harness bug: claim-status.mjs ignores the FORGE (<slot>):
-  checkpoint format so liveness locks read dead** (any lane; small — still
-  unowned; this session hit it: slot a's lock looked alive to forge-claim but
-  the board tooling disagrees).
-- QA MASTER alive at close (port 5176).
-
-## Open questions
-- #2846 — promote CONTRA/R-TYPE/DD to public? (default keep-private; only Jon
-  promotes per #379.)
-- #2844 — PLAICRAFT S2 pre-audit takes (research lane's).
+## BOARD
+- building: none. building-qa: **#2842** (CONTRA ceremony — QA's).
+- #1712 stays `next` (wait-state: friends' takes via /retrogames/join close
+  both data lines in adapted games with zero new code).
+- game-queue: empty at close — next free slot runs the never-dry derivation
+  again (DD gaps #1..#7 remain: 7 honest gaps, none owned by open feedback).
+- Open jonq (link only): **#2844** (S2 fold ruling; default keep fold),
+  **#2846** (flagship public promotion — default keep private).
+- Unowned harness bug: **#2839** (claim-status.mjs ignores `FORGE (<slot>):`
+  comments → liveness reads dead). Small; any lane can fix.
 
 ## HARNESS NOTES FOR THE NEXT LANE
-- **Zero-rng additions work.** Contra's carriers derive letter/band/schedule
-  from `seed ^ carrierN` arithmetic; the `zero rng law` pin keeps gs.r
-  byte-identical vs a carriers-free drive, and winnable seeds 1..12 never
-  moved. Prefer this over gs.r draws for any new Contra mechanic.
-- Letter coverage via seed rotation (`(seed + carrierN) % 4`) — a bit-mix of
-  small seeds (1..8) through `>>>3` collapsed to 2 kinds and failed its pin;
-  plain `% 4` on the seed spreads. Don't trust shift-fold entropy for small ints.
-- Prod verify (refines last session's note): after merge, crawl origin's
-  transitive chunk closure and grep **property names** (`nextCarrier`,
-  `carrierHp`, `'cargo'`) — property names survive terser; DEV strings
-  (`__contraTest`, DebugKit labels) do not ship.
-- `weakestStage` re-scores immediately after your README gap list changes —
-  run `node scripts/idle-kick.mjs` right after closing a gap to tell the next
-  lane what's next.
+- `ddragoncheck.mjs`'s `mk()` helper spreads only `over.rest` — an enemy's
+  `tgt` set via `mk(...,{tgt:'x'})` is SILENTLY DROPPED. Set `e.tgt = '...'`
+  explicitly after `mk` (bit me once; pin passed solo-comparison anyway).
+- Fixture enemies made with `mk(kind, x, y)` share ids (`900+floor(x)`) —
+  sim laws must key off `state`+`tgt`, not ids (the release law does).
+- Browser-leg Z-key pins can flake right after Vite HMR churns mid-run; rerun
+  once before believing them (passed twice on either side this session).
+- Cadence constants live in `dragonBrain` (13-beat ally, 9-beat hammer): any
+  retune moves the cadence pin's expected strings AND the S4 crowd pin's
+  knockback proxy — re-run the full ddragoncheck, not just the new pins.
+- Next DD adapters/gaps: README honest gaps #1..#7 in order; #3 (no chain
+  scoring) is the meatiest player-visible rule gap left on DD.
+- Prod-verify recipe that worked again: fetch www HTML → entry → crawl all 66
+  chunks → marker-grep (`%13`); content-hash names changed deploys vs local
+  dist (shared chunks shift) — grep markers, don't diff names.
 
 ## WORKTREES
-- Main checkout: detached origin/main (a034c4a lineage) + this STATE commit.
-- `~/Dev/retrogames-forge-contra-pod-carriers` — finished; reap freely
-  (branch gone on remote).
-- Ports: b's 5178 stopped at close. QA studio 5176 = live QA session, leave
-  it. 5173 free.
+- Main checkout: detached origin/main (9f7ca93) with this STATE commit.
+- `~/Dev/retrogames-forge-dd-partner-personality` — merged; re-detached at
+  origin/main; reap freely (remote branch gone). Slot a dev server (5173)
+  stopped at close; port left free.
+
+## Open questions
+- #2844 (PLAICRAFT S2 fold ruling; default: keep fold).
+- #2846 (flagship public promotion; default: keep private).
