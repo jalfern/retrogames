@@ -20,7 +20,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT } from '../src/games/Contra/sim.js'
 import { drawCapsule } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
@@ -738,6 +738,120 @@ const mkBoss = (seed = 7) => {
     r.check('#2789 each letter keeps its wheel ink (M blue, F red, L purple, S orange)', misink.length === 0, misink.join(' ') || 'all inks hold')
 }
 
+// ---- #2847 pod carriers: the capsules that fly in on aircraft --------------
+{
+    // the fly-in is seed/tick arithmetic (zero gs.r): same seed, same flight.
+    const fly = (seed) => {
+        const gs = makeGame(seed)
+        gs.p.inv = 100000
+        for (let i = 0; i < 900; i++) {
+            step(gs, {})
+            if (gs.carriers.length) return { tick: gs.tick, alt: gs.carriers[0].y, kind: gs.carriers[0].kind }
+        }
+        return null
+    }
+    const a = fly(7), b = fly(7)
+    r.check('#2847 courier fly-in is deterministic (same tick, altitude, letter)', !!a && JSON.stringify(a) === JSON.stringify(b), JSON.stringify(a))
+    const kinds = new Set(); const alts = new Set()
+    for (let s = 1; s <= 8; s++) { const f = fly(s); if (f) { kinds.add(f.kind); alts.add(f.alt) } }
+    r.check('#2847 courier letters cover the wheel across seeds', kinds.size === 4, [...kinds].sort().join(','))
+    r.check('#2847 couriers fly both bands across seeds', alts.size === 2, [...alts].sort((x, y) => x - y).join(','))
+    r.check('#2847 zero rng law: seeding the courier draws nothing from gs.r', (() => {
+        // the schedule must not consume gs.r — the tuned stream stands: every
+        // existing gs.r consumer (soldier wake timing) shifts exactly as if
+        // no carriers existed. Compare gs.r against a carriers-free drive.
+        const g1 = makeGame(21); g1.p.inv = 100000
+        const g2 = makeGame(21); g2.p.inv = 100000; g2.nextCarrier = 10 ** 9
+        for (let i = 0; i < 1500; i++) { step(g1, {}); step(g2, {}) }
+        return g1.r === g2.r
+    })())
+}
+{
+    // the two-hit law and the jettison: spark, then fall, and the pod carries
+    // the letter the plane was ferrying.
+    const gs = makeGame(7)
+    gs.p2.out = true
+    const y = CARRIER_ALT[1]
+    gs.carriers.push({ x: gs.p.x + 60, y, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: 'laser', dead: false })
+    gs.pb.push({ x: gs.carriers[0].x, y: y + 5, vx: 5.5, vy: 0, k: 'r' })
+    step(gs, {})
+    r.check('#2847 first hit sparks the airframe (no jettison yet)', gs.carriers[0] && gs.carriers[0].hp === 1 && gs.pods.length === 0, `hp=${gs.carriers[0] && gs.carriers[0].hp} pods=${gs.pods.length}`)
+    const sc = gs.score
+    gs.pb.push({ x: gs.carriers[0].x, y: y + 5, vx: 5.5, vy: 0, k: 'r' })
+    step(gs, {})
+    r.check('#2847 the second hit downes the courier (+500) and drops its pod', gs.carriers.length === 0 && gs.pods.length === 1 && gs.score - sc === 500 && gs.pods[0].kind === 'laser' && gs.ev.some((e) => e.type === 'cargo'), `pods=${gs.pods.length} dScore=${gs.score - sc}`)
+    // the pod falls, settles on the deck, and waits — then hands over its gun
+    let rest = -1
+    for (let i = 0; i < 300; i++) { step(gs, {}); if (gs.pods[0] && gs.pods[0].vy === 0 && gs.pods[0].y >= CFG.ground - 2) { rest = i; break } }
+    r.check('#2847 the pod falls and settles at the deck line', rest >= 0, `rest after ${rest}`)
+    if (gs.pods[0]) {
+        gs.p.x = gs.pods[0].x; gs.p.inv = 100000
+        step(gs, {})
+        r.check('#2847 a settled pod delivers its gun on contact', gs.p.weapon === 'laser' && gs.pods.length === 0, `weapon=${gs.p.weapon} pods=${gs.pods.length}`)
+    } else r.check('#2847 a settled pod delivers its gun on contact', false, 'pod vanished before pickup')
+}
+{
+    // per-seat capture: the blue seat takes a pod that reaches HIM, the hero
+    // keeps his gun (the capsule law, verbatim).
+    const gs = makeGame(9)
+    gs.p.x = 40
+    gs.p2.human = true; gs.p2.x = 200; gs.p2.y = CFG.ground; gs.p2.onGround = true; gs.p2.lane = CFG.ground; gs.p2.inv = 100000
+    gs.pods.push({ x: gs.p2.x + 2, y: CFG.ground - 2, vx: 0, vy: 0, kind: 'fire' })
+    step(gs, {}, {})
+    r.check('#2847 pods capture per-seat (the seat that touches takes the gun)', gs.p2.weapon === 'fire' && gs.p.weapon === 'rifle', `p=${gs.p.weapon} p2=${gs.p2.weapon}`)
+}
+{
+    // fairness laws: the sky courier is a delivery, not an attacker (contact
+    // never kills), the band sits above the gun-line (ground fire is not
+    // intercepted), and only one courier is over the jungle at a time.
+    const gs = makeGame(11)
+    gs.p.inv = 0; gs.p.onGround = true
+    gs.carriers.push({ x: gs.p.x + 2, y: CFG.ground - 14, vx: 0, hp: 2, kind: 'spread', dead: false })
+    step(gs, {})
+    r.check('#2847 contact with a courier is non-lethal (it is cargo, not a weapon)', gs.lives === 3 && gs.p.dead === 0, `lives=${gs.lives} dead=${gs.p.dead}`)
+    gs.carriers.length = 0
+    // ground fire passes under the band: kill a distant soldier with a flat
+    // round while a courier flies directly over it.
+    for (const s of gs.soldiers) s.dead = true
+    gs.p2.out = true; gs.p.inv = 100000
+    const victim = { x: gs.p.x + 90, y: CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
+    gs.soldiers.push(victim)
+    gs.carriers.push({ x: victim.x, y: CARRIER_ALT[1], vx: CFG.carrierVx, hp: 2, kind: 'machine', dead: false })
+    for (let i = 0; i < 40 && !victim.dead; i++) step(gs, { b: i === 0 })
+    r.check('#2847 the flight band never eats a round aimed at the ground', victim.dead && gs.carriers.length === 1 && gs.carriers[0].hp === 2, `victim=${victim.dead} carrierHp=${gs.carriers[0] && gs.carriers[0].hp}`)
+    // one courier at a time + escape reschedules the next flight
+    let maxOver = 0
+    for (let s = 1; s <= 6; s++) {
+        const g = makeGame(s)
+        g.p.inv = 100000; g.p2.inv = 100000
+        for (let i = 0; i < 2400 && !g.end; i++) { step(g, {}); maxOver = Math.max(maxOver, g.carriers.length) }
+    }
+    r.check('#2847 only one courier over the jungle at a time', maxOver === 1, `max ${maxOver}`)
+    {
+        const g = makeGame(7)
+        g.p.inv = 100000
+        let escaped = null
+        for (let i = 0; i < 1200; i++) {
+            step(g, {})
+            if (escaped == null && g.carriers.length === 0 && g.tick > 320) { escaped = { tick: g.tick, next: g.nextCarrier, pods: g.pods.length }; break }
+        }
+        r.check('#2847 an untouched courier escapes WITH its pod and reschedules', !!escaped && escaped.pods === 0 && escaped.next > escaped.tick + CFG.carrierNext, JSON.stringify(escaped))
+    }
+}
+{
+    // the canyon owns the vertical: entering the falls clears the sky, and
+    // the couriers ride the state hash (a replay that drops one diverges loudly).
+    const gs = makeGame(7)
+    gs.p.inv = 100000
+    gs.carriers.push({ x: 200, y: CARRIER_ALT[0], vx: CFG.carrierVx, hp: 2, kind: 'fire', dead: false })
+    gs.pods.push({ x: 150, y: 180, vx: CFG.podVx, vy: 0.5, kind: 'spread' })
+    warpFalls(gs)
+    r.check('#2847 the waterfall clears the sky (no couriers, no pods below the falls)', gs.carriers.length === 0 && gs.pods.length === 0, `carriers=${gs.carriers.length} pods=${gs.pods.length}`)
+    const g1 = makeGame(7), g2 = makeGame(7)
+    g2.carriers.push({ x: 300, y: CARRIER_ALT[1], vx: CFG.carrierVx, hp: 2, kind: 'laser', dead: false })
+    r.check('#2847 couriers ride the state hash (a dropped courier diverges)', stateHash(g1) !== stateHash(g2))
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const plants = [
@@ -894,6 +1008,45 @@ if (MUTANT) {
                 for (let i = 0; i < 700; i++) { mod.step(gs, {}, {}); gs.eb.length = 0 }
                 return gs.p2.human === true
                     ? 'HARM NAMED: nobody drove the seat for ten seconds and it was never taken back - the abandoned human seat just stands there while the wingman brain watches'
+                    : null
+            },
+        },
+        {
+            // #2847: the courier's whole POINT is the pod it drops. Let the
+            // airframe fall empty and the sky is target practice for nothing.
+            name: 'cargo-jettison',
+            anchor: 'gs.pods.push({ x: cr.x, y: cr.y + 12, vx: CFG.podVx, vy: 0, kind: cr.kind })',
+            plant: 'void 0 /* MUTANT(cargo-jettison): the courier keeps its prize */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.p2.out = true
+                gs.carriers.push({ x: gs.p.x + 60, y: mod.CARRIER_ALT[1], vx: mod.CFG.carrierVx, hp: mod.CFG.carrierHp, kind: 'laser', dead: false })
+                gs.pb.push({ x: gs.carriers[0].x, y: mod.CARRIER_ALT[1] + 5, vx: 5.5, vy: 0, k: 'r' })
+                mod.step(gs, {})
+                gs.pb.push({ x: gs.carriers[0].x, y: mod.CARRIER_ALT[1] + 5, vx: 5.5, vy: 0, k: 'r' })
+                mod.step(gs, {})
+                return gs.pods.length === 0
+                    ? 'HARM NAMED: a downed courier drops nothing - the plane is shot but no pod is jettisoned; the sky delivery never reaches the deck'
+                    : null
+            },
+        },
+        {
+            // #2847: two rounds must be enough. A steel courier keeps its cargo
+            // out of reach and the wheel stays in the sky.
+            name: 'carrier-impervious',
+            anchor: 'cr.hp -= 1\n                gs.ev.push({ type: \'spark\', x: b.x, y: b.y })',
+            plant: 'cr.hp -= 0 /* MUTANT(carrier-impervious): the airframe swallows rounds */\n                gs.ev.push({ type: \'spark\', x: b.x, y: b.y })',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.p2.out = true
+                gs.carriers.push({ x: gs.p.x + 60, y: mod.CARRIER_ALT[1], vx: mod.CFG.carrierVx, hp: mod.CFG.carrierHp, kind: 'laser', dead: false })
+                for (let i = 0; i < 30; i++) {
+                    gs.pb.push({ x: gs.carriers[0].x, y: mod.CARRIER_ALT[1] + 5, vx: 5.5, vy: 0, k: 'r' })
+                    mod.step(gs, {})
+                    if (!gs.carriers.length) break
+                }
+                return gs.carriers.length === 1
+                    ? 'HARM NAMED: the courier cannot be downed - 30 rounds spark off and the pod is never released; no gun on the wheel can be earned from the sky'
                     : null
             },
         },
@@ -1087,6 +1240,21 @@ const browser = await launch()
         await page.waitForTimeout(60)
     }
     r.check('death tumble animates during the respawn freeze', t1 !== null && t2 !== null && t2 !== t1.f, `frames ${t1 && t1.f} -> ${t2}`)
+
+    // #2847 browser legs: the courier flies, and cargo delivered to the deck
+    // actually changes the hero's gun through the real loop.
+    const skySet = await page.evaluate(() => window.__contraTest.setup({ carrierHere: true, carrierKind: 'laser' }))
+    const skyProbe = await page.evaluate(() => window.__contraTest.probe())
+    r.check('#2847 courier stands up in the live sim (shell draws it, no errors)', skySet && skyProbe.carriers === 1, JSON.stringify({ set: skySet, carriers: skyProbe.carriers }))
+    await page.evaluate(() => window.__contraTest.setup({ podHere: true, podKind: 'machine', podDX: 14 }))
+    let podWeapon = null
+    await page.keyboard.down('ArrowRight')
+    for (let guard = 0; guard < 40 && podWeapon !== 'machine'; guard++) {
+        await page.waitForTimeout(100)
+        podWeapon = (await page.evaluate(() => window.__contraTest.probe())).weapon
+    }
+    await page.keyboard.up('ArrowRight')
+    r.check('#2847 deck pod delivers its gun through real keys', podWeapon === 'machine', `weapon=${podWeapon}`)
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()

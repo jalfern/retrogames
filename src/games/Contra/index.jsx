@@ -14,7 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat } from './sim.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel } from './art.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -23,6 +23,7 @@ const MESSAGES = [
     'CAPSULES CARRY THE WHEEL — S M F L',
     'MACHINE GUN STREAMS · FIRE PIERCES · LASER RUNS HOT',
     'WATCH THE SCOPE GLINT — THE SNIPER TELLS YOU FIRST',
+    'SHOOT THE CARRIER DOWN — ITS POD CARRIES THE WHEEL',
     'THE CORE SHINES WHEN IT IS OPEN — HIT IT THEN',
     'BLUE TAKES THE SECOND SEAT — TWO GUNS, ONE JUNGLE',
     '2P DROP-IN: WASD MOVE · F JUMP · G FIRE',
@@ -75,6 +76,10 @@ const sfx = {
     // S3.5 arms depot: the slit gun's heavier bark and the payout arpeggio
     dfire: () => { audioController.playSweep(200, 80, 0.11, 'square', 0.06); audioController.playNoise(0.05, 0.04) },
     volley: () => { [520, 660, 780, 1040].forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.1, 'triangle', 0.06), i * 70)) },
+    // #2847 pod carriers: the courier's low engine wash, and the cargo thunk
+    // as the pod leaves the hooks (ART.md bar 4 — a sound on every action).
+    flyin: () => { audioController.playSweep(90, 150, 0.5, 'sawtooth', 0.028); audioController.playSweep(140, 90, 0.5, 'sawtooth', 0.022) },
+    cargo: () => { audioController.playSweep(420, 180, 0.14, 'triangle', 0.06); audioController.playNoise(0.05, 0.03) },
     roar: () => { audioController.playNoise(0.9, 0.14); audioController.playSweep(120, 30, 0.9, 'sawtooth', 0.1); setTimeout(() => audioController.playSweep(90, 25, 0.6, 'triangle', 0.09), 250) },
 }
 
@@ -216,8 +221,12 @@ export default function ContraGame () {
             for (const t of gs.turrets) if (!t.dead) drawTurret(ctx, t)
             for (const sn of gs.snipers) if (!sn.dead && sn.awake) drawSniper(ctx, sn, gs.tick)
             for (const s of gs.soldiers) if (!s.dead && s.awake) drawSoldier(ctx, s, gs.tick)
+            // #2847: the couriers run above the fight, pods under their bellies;
+            // released cargo draws on the same deck as the volley capsules.
+            for (const cr of gs.carriers) if (!cr.dead) drawCarrier(ctx, cr, gs.tick)
             if (gs.capsule) drawCapsule(ctx, gs.capsule, gs.tick)
             for (const c of gs.vc) drawCapsule(ctx, c, gs.tick)
+            for (const c of gs.pods) drawCapsule(ctx, c, gs.tick)
             for (const b of gs.pb) drawBullet(ctx, b, false)
             for (const b of gs.eb) { if (b.gr) drawGrenade(ctx, b); else drawBullet(ctx, b, true) }
             // S4: the blue seat draws at his own body, under the hero. #2837:
@@ -388,6 +397,8 @@ export default function ContraGame () {
                     barrelsLeft: gs.barrels.filter((b) => !b.gone).length, pb: gs.pb.length, eb: gs.eb.length,
                     capsule: gs.capsule ? { x: +gs.capsule.x.toFixed(1), y: gs.capsule.y, kind: gs.capsule.kind || 'spread' } : null,
                     volley: gs.vc.length,
+                    carriers: gs.carriers.length,
+                    pods: gs.pods.map((c) => ({ x: +c.x.toFixed(1), y: +c.y.toFixed(1), kind: c.kind })),
                     depot: gs.depot ? { hp: gs.depot.hp, dead: gs.depot.dead } : null,
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
@@ -409,6 +420,9 @@ export default function ContraGame () {
                     if (opts.coreOpen !== undefined && gs.boss) gs.boss.coreT = opts.coreOpen ? 0 : CFG.coreOpen + 20
                     if (opts.clearBoss && gs.boss) { gs.boss.guns.forEach((g) => { g.t = 1e9 }); gs.boss.doors.forEach((d) => { d.t = 1e9 }); gs.soldiers.length = 0 }
                     if (opts.capsuleNear) gs.capsule = { x: gs.p.x + 8, y: opts.capsuleY ?? gs.p.y - 14, vx: 0, kind: opts.capsuleKind || 'spread' }
+                    // #2847: stand a courier off the hero's right for the browser legs
+                    if (opts.carrierHere) gs.carriers.push({ x: gs.p.x + (opts.carrierDX ?? 120), y: opts.carrierY ?? 164, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: opts.carrierKind || 'laser', dead: false })
+                    if (opts.podHere) gs.pods.push({ x: gs.p.x + (opts.podDX ?? 40), y: CFG.ground - 2, vx: CFG.podVx, vy: 0, kind: opts.podKind || 'laser' })
                     if (opts.kill) { gs.p.inv = 0; gs.eb.push({ x: gs.p.x + 2, y: gs.p.y - 14, vx: 0.1, vy: 0 }) }
                     if (opts.clearEnemies) for (const s of gs.soldiers) s.dead = true
                     // S4 co-op hooks for the browser legs
@@ -429,6 +443,7 @@ export default function ContraGame () {
                     `score ${gs.score}  lives ${gs.lives}  weapon ${gs.p.weapon}  inv ${gs.p.inv}  end ${gs.end || '-'}` + (gs.boss ? `  core ${gs.boss.core}/${CFG.coreHp} ${gs.boss.dying ? 'DYING' : (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen ? 'OPEN' : 'SHUT'}` : ''),
                     `ALLY ${gs.p2.out ? 'DOWN' : `x ${gs.p2.x.toFixed(0)}  y ${gs.p2.y.toFixed(0)}  ${gs.p2.human ? 'HUMAN' : 'CPU'}  ${gs.p2.weapon}`}  POOL ${gs.lives}`,
                     `soldiers ${gs.soldiers.filter((s) => !s.dead).length}/${gs.soldiers.length} alive  turrets ${gs.turrets.filter((t) => !t.dead).length}  snipers ${gs.snipers.filter((t) => !t.dead).length}  nades ${gs.eb.filter((b) => b.gr).length}  barrels ${gs.barrels.filter((b) => !b.gone).length}  bullets p/e ${gs.pb.length}/${gs.eb.length}`,
+                    `SKY ${gs.carriers.length ? `carrier hp ${gs.carriers[0].hp} ${gs.carriers[0].kind}` : 'clear'}  pods ${gs.pods.length}  next courier t${gs.nextCarrier}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
                 actions: [
@@ -436,6 +451,7 @@ export default function ContraGame () {
                     { label: 'SPREAD NOW', run: () => { gs.p.weapon = 'spread'; return 'spread gun racked' } },
                     { label: 'CYCLE WHEEL', run: () => { const w = ['rifle', 'spread', 'machine', 'fire', 'laser']; gs.p.weapon = w[(w.indexOf(gs.p.weapon) + 1) % w.length]; return 'weapon: ' + gs.p.weapon } },
                     { label: 'CAPSULE HERE', run: () => { gs.capsule = { x: gs.p.x + 24, y: gs.p.y - 14, vx: 0 }; return 'capsule inbound' } },
+                    { label: 'CARRIER HERE', run: () => { if (gs.carriers.length) return 'a courier is already over the jungle'; gs.carriers.push({ x: gs.p.x + 120, y: 164, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: 'laser', dead: false }); return 'gunship inbound — shoot it down' } },
                     { label: 'P2: HUMAN SEAT', run: () => { if (gs.p2.out) return 'seat down — pool spent'; if (gs.p2.human) releaseSeat(gs); else dropIn(gs); return gs.p2.human ? 'human seat: the soldier rappels in (WASD/F/G)' : 'wingman back on the seat' } },
                     { label: 'TO WATERFALL', run: () => { warpFalls(gs); return 'into the canyon' } },
                     { label: 'TO THE GATE', run: () => { warpBoss(gs); return 'before the core' } },
@@ -470,6 +486,7 @@ export default function ContraGame () {
                     // #2814: one pool — `lives` above IS both seats' bank; the
                     // seat's own bank no longer exists, only its standing state.
                     allyWeapon: gs.p2.weapon, allyOut: gs.p2.out,
+                    carriers: gs.carriers.length, pods: gs.pods.length,
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,

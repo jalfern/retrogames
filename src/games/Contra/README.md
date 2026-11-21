@@ -144,6 +144,18 @@ The laws the blue seat lives under, all proven in `contracheck`:
   snipers, lane, nade vest hp). Events stay unhashed, per Joust's law.
 - **Phases**: `gs.phase` jungle | falls | boss. Snipers and grenades are
   jungle-only — the canyon and the gate keep their own roster.
+- **Pod carriers (#2847)**: `gs.carriers` — one courier at a time, scheduled
+  on seed/tick arithmetic (`nextCarrier`, letter and altitude derived from
+  `gs.seed ^ carrierN`) with ZERO `gs.r` draws: the tuned autopilot stream and
+  every rng-driven law byte-for-byte survive. The band (`CARRIER_ALT` =
+  [150, 164], box 16×9) sits ABOVE the gun-line — a plane never eats a round
+  aimed at the ground; taking it is a deliberate up-aim or a hop. Two hits
+  (`carrierHp`), +500, `cargo` event; the jettisoned pod (`gs.pods`) falls
+  with light chute gravity (`podGrav` 0.06, cap 1.6) to the deck line
+  (`ground − 2`), and the capsule pickup law applies verbatim per seat (same
+  touch box, capture kills the wheel). Contact is non-lethal — cargo, not a
+  weapon; an untouched courier escapes WITH its pod and reschedules (+380..620
+  ticks). The canyon clears the sky; carriers and pods ride `stateHash`.
 - Audio: every new action synthesized via `audioController` — the MG's ripping
   pop, the firebar's breath, the laser's falling zap, the sniper's crack and
   the lob's whistle answer the existing set.
@@ -161,7 +173,8 @@ npm run contracheck                      # sim core + browser leg
 npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   silent-MG, non-piercing-beam,
                                        #   impervious-depot, one-bank-lie,
-                                       #   blue-death-is-free, never-release
+                                       #   blue-death-is-free, never-release,
+                                       #   cargo-jettison, carrier-impervious
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -193,16 +206,24 @@ KeyA · #2837 seat ceremony: the rappel arrives at the hero-side spot (never
 where the wingman stood) with mercy and a clean rifle · drop-out fires exactly
 at patience, cost-free · one touch resets the patience · harness-pinned seats
 immune · arrival beats the death tumble · ceremony hash-stable · zero page
-errors.
+errors · **#2847 pod carriers: deterministic fly-in (zero gs.r — soldier wake
+timing byte-identical to a carriers-free run) · letters cover the wheel and
+both bands fly across seeds · two-hit airframe (+500) jettisons its lettered
+pod · pod falls, settles at the deck, delivers its gun on contact · capture is
+per-seat · contact non-lethal · the band never eats ground fire · one courier
+over the jungle at a time · an untouched courier escapes with its pod and
+reschedules · the waterfall clears the sky · couriers ride the hash · live
+courier and deck-pod delivery in the browser** · zero page errors.
 
 ## Honest gaps
 
 - **CLOSED by #2837**: seat ceremony shipped — drop-in rappels in at the
   hero's side (never puppeteers the standing wingman) and a seat idle 10 s
   returns to the wingman brain; see the Seat ceremony law above.
-- The original's flying pod carriers (weapon capsules dropped by low-flying
-  craft) are still missing — the depot pays a volley when it falls, but no
-  aircraft delivers guns yet.
+- **CLOSED by #2847**: flying pod carriers shipped — low gunships ferry one
+  lettered capsule each across the jungle; two rounds down the courier and its
+  pod drops to the deck, obeying the capsule pickup law verbatim. See the Pod
+  carriers note below.
 - Lasers/fire pierce bodies but are still consumed by the gate armor housings
   (the jungle's emplacement is now shootable — the gate's outer guns are next).
 - The cascade blasts at the gate are random around the wall rather than
