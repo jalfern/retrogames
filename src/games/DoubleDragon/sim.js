@@ -53,6 +53,12 @@ export const CFG = {
     knifeDmg: 4,          // a thrown blade kills a Williams outright
     whip: { startup: 8, active: 8, recover: 12, reach: 34, dmg: 2, depth: 9 },
     barrelHp: 3,
+    // #2819 S2 polish beats: landed steel stands in the ground for a moment
+    // before it can be picked up, the whip holds a white crack-flash on the
+    // tick it connects, and the wood spits its cargo with a bouncing clatter.
+    knifeStick: 20,
+    whipFlash: 4,
+    clatterTicks: 14,
     // --- S3 the hideout (#2807) ---
     goonKnife: { windup: 16, speed: 3.0 },  // aimed cast; lethal on the line
     duelHp: 10, duelScore: 800, duelSpeed: 1.05, duelReach: 17,
@@ -105,6 +111,7 @@ function makeBilly() {
         weapon: null,     // null | 'stick'
         grabFrom: null,   // enemy id holding him
         presses: 0, pressCooldown: 0,
+        lash: 0,          // #2819: white crack-flash ticks left on the whip
         lives: CFG.lives,
     }
 }
@@ -128,6 +135,7 @@ export function makeGame(seed = 1) {
         marian: null,           // set when stage 2 opens — tied at the yard's end
         rescueT: 0,             // cheer ticks after the ropes part
         scoreFlash: null, // { v, t } — HUD score delta on a KO/pickup (juice, not scored state)
+        fx: null,       // { x, y } — where the last barrel splintered (shell shard spawn, juice)
         events: [],   // one-shot cues drained by the shell (sound/juice only)
         k: 0,         // KO streak timer helper
     }
@@ -237,10 +245,10 @@ function depthSlip(gs, ent, radius = 0) {
     }
 }
 
-function rollWeaponDrop(gs, x, y) {
+function rollWeaponDrop(gs, x, y, clatter = 0) {
     const roll = rng(gs)
     const kind = roll < 0.4 ? 'knife' : roll < 0.8 ? 'whip' : 'stick'
-    gs.pickups.push({ x: clamp(x, 8, STAGE_W - 8), y, kind, bob: 0 })
+    gs.pickups.push({ x: clamp(x, 8, STAGE_W - 8), y, kind, bob: 0, clatter })
 }
 
 // a swing/blade met a barrel — hp down, splinter when empty
@@ -252,8 +260,9 @@ function hurtBarrel(gs, bar) {
         gs.barrels = gs.barrels.filter((q) => q !== bar)
         gs.score += 100
         gs.hi = Math.max(gs.hi, gs.score)
+        gs.fx = { x: bar.x, y: bar.y }   // #2819: the shell throws wood shards here
         gs.events.push('barrel_break')
-        rollWeaponDrop(gs, bar.x, bar.y)
+        rollWeaponDrop(gs, bar.x, bar.y, CFG.clatterTicks)
     }
 }
 
@@ -372,6 +381,7 @@ function applySwing(gs) {
         if (dx > -6 && dx <= reach && Math.abs(e.y - b.y) <= tol) {
             b.attackHit.add(e.id)
             hurtEnemy(gs, e, dmg, down)
+            if (b.state === 'whip') b.lash = CFG.whipFlash   // #2819: crack on the bite tick
         }
     }
     // barrels take the blows too — that is how the steel comes out
@@ -382,6 +392,7 @@ function applySwing(gs) {
         if (dx > -6 && dx <= reach && Math.abs(bar.y - b.y) <= tol) {
             b.attackHit.add(key)
             hurtBarrel(gs, bar)
+            if (b.state === 'whip') b.lash = CFG.whipFlash
         }
     }
 }
@@ -438,6 +449,7 @@ function updateBilly(gs, pad) {
     if (b.state === 'dying') { b.stateT += 1; return }
     if (b.inv > 0) b.inv -= 1
     if (b.pressCooldown > 0) b.pressCooldown -= 1
+    if (b.lash > 0) b.lash -= 1
 
     // grabbed: mash B (kick) to break free
     if (b.state === 'grabbed') {
@@ -514,6 +526,8 @@ function updateBilly(gs, pad) {
     for (let i = gs.pickups.length - 1; i >= 0; i--) {
         const p = gs.pickups[i]
         p.bob += 1
+        if (p.clatter > 0) p.clatter -= 1
+        if (p.stick > 0) { p.stick -= 1; continue }   // still standing in the asphalt
         if (Math.abs(p.x - b.x) <= 10 && Math.abs(p.y - b.y) <= 8 && !b.weapon) {
             gs.pickups.splice(i, 1)
             b.weapon = p.kind
@@ -890,7 +904,10 @@ export function step(gs, pad = {}) {
         }
         if (done) {
             gs.projectiles.splice(i, 1)
-            gs.pickups.push({ x: clamp(pr.x, 8, STAGE_W - 8), y: pr.y, kind: 'knife', bob: 0 })
+            // #2819 item 1: the cabinet sticks the blade in the dirt — it
+            // quivers there for a beat before it becomes grabbable steel.
+            gs.pickups.push({ x: clamp(pr.x, 8, STAGE_W - 8), y: pr.y, kind: 'knife', bob: 0, stick: CFG.knifeStick })
+            gs.events.push('blade_stick')
         }
     }
     gs.barrels.forEach((bar) => { if (bar.shake > 0) bar.shake -= 1 })
