@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, CORE_Y, W, makeGame, step, autopilot, stateHash } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, CORE_Y, W, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -629,6 +629,142 @@ const runBot = (seed, max = 20000) => {
     r.check('both hearts down: the fortress falls and CLEAR finally rolls', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
 }
 
+// --------------------------------------------------------------- S4 laws ---
+const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return gs }
+
+{ // co-op default AND the solo shape preserved
+    const gs = coopGame(1)
+    r.check('S4: the wing joins the run — CPU pilot, own ticket, station behind',
+        !!gs.wing && gs.wing.lives === 3 && !gs.wing.human && gs.wing.x < gs.ship.x,
+        `wing x ${Math.round(gs.wing.x)} vs ship ${Math.round(gs.ship.x)} lives ${gs.wing.lives}`)
+    r.check('without enableCoop the field is still the lone S1–S3 R-7', makeGame(1).wing === null)
+}
+
+{ // stations: behind the leader, opposite lane, never across the nose —
+  // measured ONLY while the leader leads (a downed leader sends the wing to
+  // its own station by design; that hand-off is its own law below)
+    const gs = coopGame(3)
+    gs.ship.inv = 999999
+    let crossed = false, opposite = 0, sightings = 0
+    for (let i = 0; i < 400; i++) {
+        step(gs, { right: gs.ship.x - gs.camX < 52, up: i % 160 < 80, down: i % 160 >= 80, a: true })
+        gs.events.length = 0
+        if (!gs.ship.dead && !gs.wing.dead && !gs.wing.out && gs.tick > 30) {
+            sightings++
+            if (gs.wing.x > gs.ship.x + 6) crossed = true
+            if ((gs.ship.y < 120 && gs.wing.y > gs.ship.y) || (gs.ship.y >= 120 && gs.wing.y < gs.ship.y)) opposite++
+        }
+    }
+    r.check('the wing holds station: behind the leader, opposite lane, nose never crossed',
+        !crossed && sightings > 300 && opposite > sightings * 0.5, `opposite ${opposite}/${sightings} crossed=${crossed}`)
+}
+
+{ // one hit kills ONE hull: dual pools, independent mercy
+    const gs = coopGame(9)
+    gs.ship.inv = 999999
+    gs.wing.inv = 0
+    gs.bullets.push({ id: 1, x: gs.wing.x, y: gs.wing.y, vx: -1, vy: 0 })
+    step(gs, {}); gs.events.length = 0
+    r.check('a round through seat two hangs ITS wreck only', gs.wing.dead && gs.wing.lives === 2 && gs.lives === 3, `wing ${gs.wing.lives} p1 ${gs.lives}`)
+    for (let i = 0; i < 80; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('seat two returns under mercy while seat one never blinked', !gs.wing.dead && gs.wing.inv > 0 && gs.lives === 3, `inv ${gs.wing.inv} p1 ${gs.lives}`)
+}
+
+{ // GAME OVER only when BOTH pools burn — and one dark seat is not the end
+    const gs = coopGame(9)
+    gs.wing.out = true
+    gs.lives = 1
+    gs.ship.inv = 0
+    gs.bullets.push({ id: 1, x: gs.ship.x, y: gs.ship.y, vx: -1, vy: 0 })
+    step(gs, {}); gs.events.length = 0
+    for (let i = 0; i < 90 && gs.mode === 'play'; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('seat one burns out with seat two dark: the curtain falls', gs.mode === 'gameover' && gs.ship.out, `mode=${gs.mode} out=${gs.ship.out}`)
+    const gs2 = coopGame(9)
+    gs2.lives = 0
+    gs2.ship.dead = true
+    gs2.dyingT = 1
+    for (let i = 0; i < 90 && gs2.mode === 'play'; i++) { step(gs2, {}); gs2.events.length = 0 }
+    r.check('a dark seat while the wing flies: the run lives on', gs2.mode === 'play' && gs2.ship.out && !gs2.wing.out, `mode=${gs2.mode}`)
+}
+
+{ // the wing outguns the convoy on its own account
+    const gs = coopGame(4)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    const s0 = gs.score
+    gs.enemies.push({ id: 71, kind: 'larva', x: gs.wing.x + 30, y: gs.wing.y, baseY: gs.wing.y, sine: 0, dive: false, state: 'sine', stateT: 0, vx: 0, vy: 0, hp: 1, anim: 0, inv: 0 })
+    let down = false
+    for (let i = 0; i < 60 && !down; i++) { step(gs, {}); down = gs.score >= s0 + 100; gs.events.length = 0 }
+    r.check('the wing downs Bydo on its own account (vulcan, seat one idle)', down, `score +${gs.score - s0}`)
+}
+
+{ // capsule courtesy: the tie goes to seat one
+    const gs = coopGame(4)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.wing.x = gs.ship.x
+    gs.wing.y = gs.ship.y + 3
+    gs.caps.push({ id: 1, x: gs.ship.x + 4, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'weapon' })
+    step(gs, {}); gs.events.length = 0
+    r.check('a capsule held over BOTH hulls goes to seat one', gs.ship.weapon === 'laser' && gs.wing.weapon === 'vulcan', `p1=${gs.ship.weapon} wing=${gs.wing.weapon}`)
+}
+
+{ // gear is PER HULL: the wing hosts its own S.E.E.D., bit law included
+    const gs = coopGame(12)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.caps.push({ id: 1, x: gs.wing.x + 4, y: gs.wing.y, baseY: gs.wing.y, bob: 0, type: 'force' })
+    step(gs, {}); gs.events.length = 0
+    r.check('the wing hosts its own S.E.E.D. (seat one stays bare)', !!gs.wing.pod && !gs.pod, `wing pod=${gs.wing.pod ? gs.wing.pod.state : 'none'}`)
+    gs.bullets.push({ id: 2, x: gs.wing.pod.x - 2, y: gs.wing.pod.y, vx: -1.3, vy: 0 })
+    step(gs, {}); gs.events.length = 0
+    r.check('…and its shell plugs fire aimed at IT', gs.bullets.length === 0 && !gs.wing.dead, `wing dead=${gs.wing.dead}`)
+    const ws = gs.score
+    gs.caps.push({ id: 3, x: gs.wing.x + 4, y: gs.wing.y, baseY: gs.wing.y, bob: 0, type: 'force' })
+    step(gs, {}); gs.events.length = 0
+    r.check('spare-S.E.E.D. becomes a BIT on the wing too — never a second shell',
+        gs.wing.bits.length === 1 && gs.wing.pod && gs.score === ws + 500, `wing bits ${gs.wing.bits.length}`)
+    gs.wing.inv = 0
+    gs.bullets.push({ id: 4, x: gs.wing.x + 3, y: gs.wing.y + 5, vx: 0, vy: -1.4 })
+    for (let i = 0; i < 40 && !gs.wing.dead; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('a dying wing loses ITS shell and chain — seat one keeps theirs', gs.wing.bits.length === 0 && !gs.wing.pod && gs.lives === 3, `wing bits ${gs.wing.bits.length}`)
+}
+
+{ // the decoy law: Bydo guns take the nearer hull
+    const gs = coopGame(4)
+    gs.enemies.length = 0
+    const t = { id: 51, kind: 'turret', x: 160, y: 174, face: -1, hp: 999, cd: 4, anim: 0, inv: 0, edgeUp: true }
+    gs.enemies.push(t)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    let first = null
+    for (let i = 0; i < 120 && !first; i++) {
+        gs.ship.x = 100; gs.ship.y = 40
+        gs.wing.x = 100; gs.wing.y = 178
+        step(gs, {})
+        gs.events.length = 0
+        if (gs.bullets.length) first = gs.bullets[gs.bullets.length - 1]
+    }
+    r.check('turrets aim the NEARER hull — seat two reads as bait', !!first && first.vy > -0.3 && first.vx < 0, first ? `vx ${first.vx.toFixed(2)} vy ${first.vy.toFixed(2)}` : 'no shot')
+}
+
+{ // seats are borrowed, not owned: pad2 steers a human wing; V hands it back
+    const gs = coopGame(4)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.wing.human = true
+    const y0 = gs.wing.y
+    for (let i = 0; i < 30; i++) { step(gs, {}, { up: true }); gs.events.length = 0 }
+    r.check('with the seat taken, pad2 flies it (W walks the wing up)', gs.wing.y < y0 - 20, `y ${Math.round(y0)} -> ${Math.round(gs.wing.y)}`)
+    const xAbs = gs.wing.x
+    for (let i = 0; i < 20; i++) { step(gs, {}, {}); gs.events.length = 0 }
+    r.check('dead-stick: a human holding nothing holds the line (no autopilot drift)', Math.abs(gs.wing.x - xAbs) < 1, `drift ${(gs.wing.x - xAbs).toFixed(2)}`)
+    gs.wing.human = false
+    const sc0 = gs.wing.x - gs.camX
+    for (let i = 0; i < 40; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('relieved (V), the wingman brain resumes station-keeping', gs.wing.x - gs.camX > sc0 + 4, `screen x ${Math.round(sc0)} -> ${Math.round(gs.wing.x - gs.camX)}`)
+}
+
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12
     let wins = 0
@@ -640,6 +776,19 @@ const runBot = (seed, max = 20000) => {
         detail.push(`${seed}:${won ? 'W' : gs.mode === 'clear' ? 'W' : (gs.lastDeath || '?')}`)
     }
     r.check('winnable by the honest autopilot on >= 4 of 12 seeds', wins >= 4, `${wins}/12 [${detail.join(' ')}]`)
+}
+
+{ // WINNABLE alongside the wingman (S4): two hulls must carry MORE of the field
+    let wins = 0
+    const detail = []
+    for (let seed = 1; seed <= 12; seed++) {
+        const gs = coopGame(seed)
+        while (gs.tick < 20000) { step(gs, autopilot(gs)); gs.events.length = 0; if (gs.mode !== 'play') break }
+        const won = gs.cleared && gs.mode !== 'gameover'
+        if (won) wins++
+        detail.push(`${seed}:${won ? 'W' : (gs.lastDeath || '?')}`)
+    }
+    r.check('co-op clears strictly more of the seeded field than the solo floor', wins >= 6, `${wins}/12 [${detail.join(' ')}]`)
 }
 
 // ----------------------------------------------------------------- mutant ---
@@ -694,6 +843,22 @@ if (MUTANT) {
                 for (let i = 0; i < 40 && gs.lives === 3; i++) { mod.step(gs, {}); gs.events.length = 0 }
                 return gs.lives < 3
                     ? `HARM NAMED: a round walked through the SHIELD and killed a chained pilot (lives ${gs.lives}) — the orbit wall is S3's whole promise; blind, four green bits are decoration and the twin-core leg is a lie of design`
+                    : null
+            },
+        },
+        {
+            name: 'pool-blind',
+            anchor: "const killWing = (gs, s, why) => killShip(gs, s, s, why)",
+            plant: "const killWing = (gs, s, why) => false /* MUTANT(pool-blind): seat two cannot be hit */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(9)
+                mod.enableCoop(gs)
+                gs.ship.inv = 999999
+                gs.wing.inv = 0
+                gs.bullets.push({ id: 1, x: gs.wing.x, y: gs.wing.y, vx: -1, vy: 0 })
+                for (let i = 0; i < 20 && !gs.wing.dead; i++) { mod.step(gs, {}); gs.events.length = 0 }
+                return !gs.wing.dead
+                    ? 'HARM NAMED: seat two ate a point-blank round and walked away — dual pools ARE the co-op contract; a pool that cannot burn turns GAME OVER into a single-seat fiction and the wingman into an untouchable ghost'
                     : null
             },
         },
@@ -800,13 +965,55 @@ const browser = await launch()
     }
     r.check('Phase-2 through the shell: the gaped vents fall to sustained fire', p2wounded || p2p.cleared === 1, `p2=${p2p.p2} cleared=${p2p.cleared}`)
 
+    // S4 through the shell: seat two answers to ITS keys, V relieves, G pods
+    const liveWing = async () => {
+        let p = await page.evaluate(() => window.__rTest.probe())
+        for (let i = 0; i < 40 && p.wing !== 'live'; i++) { await page.waitForTimeout(100); p = await page.evaluate(() => window.__rTest.probe()) }
+        return p
+    }
+    await page.evaluate(() => window.__rTest.setup({ wingInv: 999999 }))
+    let wA = await liveWing()
+    let wB = wA
+    for (let i = 0; i < 6 && !(wB.wingHuman === 1 && wB.wingY < wA.wingY - 4); i++) {
+        await liveWing()
+        wA = await page.evaluate(() => window.__rTest.probe())
+        await page.keyboard.down('KeyW')
+        await page.waitForTimeout(400)
+        await page.keyboard.up('KeyW')
+        wB = await page.evaluate(() => window.__rTest.probe())
+    }
+    r.check('WASD takes seat two mid-flight (drop-in) and W walks the wing up', wB.wingHuman === 1 && wB.wingY < wA.wingY - 4, `human=${wB.wingHuman} wingY ${wA.wingY} -> ${wB.wingY}`)
+    await page.keyboard.press('KeyV')
+    await page.waitForTimeout(200)
+    const wC = await page.evaluate(() => window.__rTest.probe())
+    r.check('V relieves the human — the wingman brain resumes the seat', wC.wingHuman === 0, `human=${wC.wingHuman}`)
+    await liveWing()
+    await page.evaluate(() => window.__rTest.setup({ giveWingPod: true, wingInv: 999999 }))
+    // press-and-hold-its-seat: the same G press takes the seat AND lances the
+    // shell; re-press until the press lands (transient wrecks eat a lone tap)
+    let wD = await page.evaluate(() => window.__rTest.probe())
+    for (let i = 0; i < 8 && wD.wingPod !== 'fly' && wD.wingPod !== 'park' && wD.wingPod !== 'return'; i++) {
+        await liveWing()
+        await page.evaluate(() => window.__rTest.setup({ giveWingPod: true, wingInv: 999999 }))
+        await page.keyboard.press('KeyG')
+        await page.waitForTimeout(150)
+        wD = await page.evaluate(() => window.__rTest.probe())
+    }
+    r.check('G sends the wing shell out through the shell', wD.wingPod === 'fly' || wD.wingPod === 'park' || wD.wingPod === 'return', `wing pod=${wD.wingPod}`)
+    await page.evaluate(() => window.__rTest.setup({ giveWingBits: true }))
+    const wE = await page.evaluate(() => window.__rTest.probe())
+    r.check('the wing raises its own four-bit shield', wE.wingBits === 4 && wE.wingShield === 1, `wing bits=${wE.wingBits} shield=${wE.wingShield}`)
+    await page.evaluate(() => window.__rTest.setup({ wingOut: true }))
+    const wF = await page.evaluate(() => window.__rTest.probe())
+    r.check('a burned seat reports dark while the game still plays on', wF.wing === 'out' && wF.screen === 'play' && wF.mode === 'play', `wing=${wF.wing} screen=${wF.screen}`)
+
     await page.evaluate(() => window.__rTest.setup({ lives: 1, inv: 0, crushShip: true }))
     let dead = { screen: 'play' }
     for (let i = 0; i < 30 && dead.screen !== 'over'; i++) {
       await page.waitForTimeout(100)
       dead = await page.evaluate(() => window.__rTest.probe())
     }
-    r.check('the game-over screen lands when the last life burns', dead.screen === 'over' || dead.mode === 'gameover', `screen=${dead.screen} mode=${dead.mode}`)
+    r.check('the game-over screen lands when the LAST pool burns (seat two already dark)', dead.screen === 'over' || dead.mode === 'gameover', `screen=${dead.screen} mode=${dead.mode}`)
 
     r.check('zero page errors across the whole leg', errs.length === 0, errs.join(' | ') || 'clean')
 }
