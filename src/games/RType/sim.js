@@ -129,16 +129,21 @@ export const WAVES = [
 
 // LEG 2 (S3): the convoy resumes after Phase-1 falls — thinner field, two
 // more bit capsules, and the run ends at the PHASE-2 fortress (STAGE_END2).
+// #2835: the original's stage-2 signature CARRIERS — airborne bitpods ferry
+// two-three bits; kill the hull and the cargo breaks loose as capsules.
+// y/n ride the script (no rng draws: the tuned stream stays byte-identical).
 export const WAVES2 = [
     { at: 40, spawn: [
         { kind: 'larva', d: 0, y: 100 }, { kind: 'larva', d: 24, y: 150, dive: 1 },
         { kind: 'larva', d: 48, y: 70 }, { kind: 'larva', d: 72, y: 182, dive: 1 } ] },
     { at: 120, bcap: 1 },
+    { at: 150, bpod: { y: 74, n: 3 } },
     { at: 180, seg: { y0: FIELD_TOP, y1: 92, len: 140, turret: 92 } },
     { at: 260, pod: { y: 152, missiles: 3 } },
     { at: 330, spawn: [
         { kind: 'larva', d: 0, y: 84, dive: 1 }, { kind: 'larva', d: 26, y: 160 },
         { kind: 'larva', d: 52, y: 120, dive: 1 } ] },
+    { at: 380, bpod: { y: 162, n: 2 } },
     { at: 400, bcap: 1 },
     { at: 450, seg: { y0: 126, y1: FIELD_BOT, len: 130, turret: 126 } },
 ]
@@ -248,6 +253,30 @@ function spawnBitCap(gs) {
     gs.caps.push({ id: gs.nextId++, x: gs.camX + W + 14, y, baseY: y, bob: rng(gs) * 6, type: 'bit' })
 }
 
+// The bit carrier (#2835): an armoured hull ferrying n bits. It eases into a
+// station like the missile pod (no rng — bob derives from id), bobs, and the
+// camera grinds it if the pilot never cuts it down. Its cargo law lives in
+// releaseBits: the bits only ever reach the pilot through the WRECK, so the
+// set-piece is "shoot the pod, chain the bits" — the original's stage-2 beat.
+function spawnBitPod(gs, y, n) {
+    gs.enemies.push({
+        id: gs.nextId++, kind: 'bitpod', x: gs.camX + W + 18, y,
+        baseY: y, bob: ((gs.nextId * 37) % 100) / 25, hp: 7, n,
+        vx: -0.7, inv: 0, anim: 0, holdT: 0,
+        anchorX: gs.camX + 238, state: 'enter',
+    })
+}
+
+// cargo spills as bit capsules — held in a tight, collectable cluster
+// (capsules bob ±16; a wider fan would shake the far bits out of reach)
+function releaseBits(gs, e) {
+    for (let i = 0; i < e.n; i++) {
+        const y = clamp(e.y + (i - (e.n - 1) / 2) * 10, FIELD_TOP + 6, FIELD_BOT - 6)
+        gs.caps.push({ id: gs.nextId++, x: e.x - 4 - i * 7, y, baseY: y, bob: ((e.id + i * 13) % 100) / 25, type: 'bit' })
+    }
+    gs.events.push('bitfree')
+}
+
 // Where bit i rides THIS tick: chained at its slot, or swinging the shield
 // orbit when the chain is complete. The sim writes px/py once per tick, so
 // the draw layer and every collision read the same truth. Seat-parameterised
@@ -351,6 +380,10 @@ function startPhase2(gs) {
             { hp: 8, max: 8, mouth: 'closed', mouthT: 185, enraged: false },
         ],
         dyingT: 0, at: gs.tick,
+        // #2835 offense/death: the mass sways (whole face, no rng — pure tick
+        // sine), ports alternate the aimed 3-shot salvo (port 0 speaks first),
+        // and the wreck walks port-to-port from the heart that fell LAST.
+        port: 0, swayOff: 0, lastCore: -1, cascade: 380, flashT: 0, flashCi: 0,
     }
     gs.enemies.push({ id: gs.nextId++, kind: 'turret', on: 'p2', ox: 46, oy: 46,
         x: gs.p2.x + 46, y: 46, face: -1, hp: 4, cd: 90, anim: 0, inv: 0, edgeUp: true })
@@ -362,12 +395,31 @@ function startPhase2(gs) {
     gs.events.push('p2arrive')
 }
 
-// one core's vent cycle; an enraged core runs its clock at double speed
-function vent(core, gs) {
+// one core's vent cycle; an enraged core runs its clock at double speed.
+// #2835: a port that gapes on ITS turn answers with a telegraphed 3-shot —
+// the horn of the opening (30 ticks) is the warning, the salvo lands as the
+// throat clears. Ports alternate volleys, so a double-gape means the OFF
+// port sits quiet — pick your side of the face.
+function fireSalvo(gs, ci) {
+    const p2 = gs.p2
+    const px = p2.x + 8, py = CORE_Y[ci] + p2.swayOff
+    const tp = nearestPilot(gs, px, py)
+    const base = Math.atan2(tp.y - py, tp.x - px)
+    for (const off of [-0.18, 0, 0.18]) {
+        gs.bullets.push({ id: gs.nextId++, x: px, y: py, vx: Math.cos(base + off) * 1.35, vy: Math.sin(base + off) * 1.35 })
+    }
+    p2.flashT = 7; p2.flashCi = ci
+    gs.events.push('p2salvo')
+}
+
+function vent(core, gs, ci) {
     core.mouthT -= core.enraged ? 2 : 1
     if (core.mouthT <= 0) {
         if (core.mouth === 'closed') { core.mouth = 'opening'; core.mouthT = 30; gs.events.push('p2open') }
-        else if (core.mouth === 'opening') { core.mouth = 'open'; core.mouthT = 110 }
+        else if (core.mouth === 'opening') {
+            core.mouth = 'open'; core.mouthT = 110
+            if (gs.p2.port === ci) { fireSalvo(gs, ci); gs.p2.port = 1 - ci }
+        }
         else if (core.mouth === 'open') { core.mouth = 'closing'; core.mouthT = 30 }
         else { core.mouth = 'closed'; core.mouthT = 150 + ((gs.tick * 7) % 50); gs.events.push('p2shut') }
     }
@@ -616,6 +668,7 @@ function runWorld(gs, pad, frozen, pad2) {
             if (wv.bcap) spawnBitCap(gs)
             if (wv.seg) spawnSeg(gs, wv.seg)
             if (wv.pod) spawnPod(gs, wv.pod.y, wv.pod.missiles)
+            if (wv.bpod) spawnBitPod(gs, wv.bpod.y, wv.bpod.n)
             if (wv.spawn) {
                 for (const it of wv.spawn) gs.pending.push({ t: gs.tick + it.d, kind: it.kind, y: it.y, dive: it.dive })
             }
@@ -718,13 +771,23 @@ function runWorld(gs, pad, frozen, pad2) {
     const p2 = gs.p2
     if (p2 && p2.dyingT === 0) {
         if (p2.x > p2.targetX) p2.x += p2.vx
-        for (const c of p2.cores) if (c.hp > 0) vent(c, gs)
+        // #2835: the whole mass sways — pure tick sine, no rng; rides the
+        // core hit windows, the guns and the draw. Cores stay OFF the
+        // mid-line, so the wall laws hold through the sway.
+        p2.swayOff = Math.sin(gs.tick * 0.013) * 6
+        if (p2.flashT > 0) p2.flashT -= 1
+        p2.cores.forEach((c, ci) => { if (c.hp > 0) vent(c, gs, ci) })
     } else if (p2 && p2.dyingT > 0) {
         p2.dyingT -= 1
         p2.x += 0.5
-        if (gs.tick % 4 === 0) {
-            gs.lastHitX = p2.x + 12 + ((gs.tick * 41) % 131)
-            gs.lastHitY = 40 + ((gs.tick * 67) % 156)
+        // #2835 walking death: the fire starts at the port that fell LAST,
+        // crosses the face to its twin, and the plating sheds in rows behind
+        // it. ~2× Phase-1's roll — the dread takes its time going under.
+        const k = p2.cascade - p2.dyingT
+        if (gs.tick % 3 === 0) {
+            const lane = k < p2.cascade / 2 ? Math.max(0, p2.lastCore) : 1 - Math.max(0, p2.lastCore)
+            gs.lastHitX = p2.x + 10 + Math.floor(k * 0.34) + ((k * 41) % 9)
+            gs.lastHitY = CORE_Y[lane] + ((k * 67) % 13) - 6
             gs.events.push('boom')
         }
         if (p2.dyingT <= 0) { gs.p2 = null; stageClear(gs) }
@@ -774,7 +837,7 @@ function runWorld(gs, pad, frozen, pad2) {
         if (e.inv > 0) e.inv -= 1
         if (e.on === 'p1' || e.on === 'p2') {
             const host = e.on === 'p1' ? p1 : p2
-            if (host && host.dyingT === 0) { e.x = host.x + e.ox; e.y = e.oy + (e.kind === 'pod' ? Math.sin(gs.tick * 0.05) * 3 : 0) }
+            if (host && host.dyingT === 0) { e.x = host.x + e.ox; e.y = e.oy + (host.swayOff || 0) + (e.kind === 'pod' ? Math.sin(gs.tick * 0.05) * 3 : 0) }
             else if (host) { gs.enemies.splice(i, 1); continue }
         }
         if (e.kind === 'larva') {
@@ -833,6 +896,18 @@ function runWorld(gs, pad, frozen, pad2) {
                 }
             } else { e.x += e.vx }
             if (e.x < gs.camX - 22) { gs.enemies.splice(i, 1); continue }
+        } else if (e.kind === 'bitpod') {
+            // carrier: eases into its station, bobs, creeps west; the camera
+            // grinds it down if nobody answers the invitation
+            if (e.state === 'enter') {
+                e.x -= Math.max(0.2, Math.min(0.9, (e.x - e.anchorX) * 0.05))
+                if (e.x <= e.anchorX) { e.state = 'hold'; e.holdT = 0 }
+            } else {
+                e.holdT += 1
+                e.x += e.vx
+            }
+            e.y = e.baseY + Math.sin((e.bob += 0.04)) * 7 * Math.min(1, (e.holdT || 0) / 40)
+            if (e.x < gs.camX - 24) { gs.enemies.splice(i, 1); continue }
         }
         // hullseg: anchored to world; scrolls out of life behind the camera
         if (e.kind === 'hullseg' && e.x + e.len < gs.camX - 8) { gs.enemies.splice(i, 1); continue }
@@ -876,6 +951,9 @@ function runWorld(gs, pad, frozen, pad2) {
                 else if (e.kind === 'pod') struck = q.kind === 'l'
                     ? e.x > q.x - 7 && e.x < q.x + lance(q) + 7 && Math.abs(e.y - q.y) < 8 + (q.wy ?? 0) * 2
                     : Math.abs(e.x - q.x) < 11 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 + (q.hx ?? 0) * 2 : 8)
+                else if (e.kind === 'bitpod') struck = q.kind === 'l'
+                    ? e.x > q.x - 9 && e.x < q.x + lance(q) + 9 && Math.abs(e.y - q.y) < 10 + (q.wy ?? 0) * 2
+                    : Math.abs(e.x - q.x) < 13 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 5 + (q.hx ?? 0) * 2 : 10)
                 if (!struck) continue
                 if (e.kind === 'hullseg') { gs.events.push('clank'); dead = true; break } // armour eats it
                 gs.lastHitX = e.x; gs.lastHitY = e.y
@@ -884,8 +962,9 @@ function runWorld(gs, pad, frozen, pad2) {
                 gs.events.push('hit')
                 if (e.hp <= 0) {
                     gs.enemies.splice(m, 1)
-                    addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : 300)
+                    addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : e.kind === 'bitpod' ? 400 : 300)
                     gs.events.push('boom')
+                    if (e.kind === 'bitpod') releaseBits(gs, e) // #2835: the cargo breaks loose
                 }
                 if (!q.pierce) { dead = true }
                 break
@@ -917,12 +996,12 @@ function runWorld(gs, pad, frozen, pad2) {
             let struckCore = -1
             for (let ci = 0; ci < 2; ci++) {
                 const c = p2.cores[ci]
-                if (c.hp > 0 && c.mouth === 'open' && Math.abs(q.y - CORE_Y[ci]) < 16) { struckCore = ci; break }
+                if (c.hp > 0 && c.mouth === 'open' && Math.abs(q.y - (CORE_Y[ci] + p2.swayOff)) < 16) { struckCore = ci; break }
             }
             if (struckCore >= 0) {
                 const c = p2.cores[struckCore]
                 c.hp -= q.kind === 'w' ? 2 : q.kind === 'l' ? q.size + 1 : 1
-                gs.lastHitX = p2.x + 14; gs.lastHitY = CORE_Y[struckCore]
+                gs.lastHitX = p2.x + 14; gs.lastHitY = CORE_Y[struckCore] + p2.swayOff
                 gs.events.push('corehit')
                 if (c.hp <= 0) {
                     c.hp = 0
@@ -931,8 +1010,10 @@ function runWorld(gs, pad, frozen, pad2) {
                     const other = p2.cores[1 - struckCore]
                     if (other.hp > 0) {
                         if (!other.enraged) { other.enraged = true; other.mouthT = Math.ceil(other.mouthT / 2); gs.events.push('enrage') }
+                        gs.p2.port = 1 - struckCore // #2835: the survivor inherits the salvo turn — a burned port never silences the face
                     } else {
-                        p2.dyingT = 190
+                        p2.dyingT = p2.cascade // #2835: double-length cascade, it walks the ports
+                        p2.lastCore = struckCore
                         addScore(gs, 2000)
                         gs.events.push('bigboom')
                         gs.enemies = gs.enemies.filter((e) => e.on !== 'p2')
@@ -1044,6 +1125,7 @@ function runWorld(gs, pad, frozen, pad2) {
             if (e.kind === 'larva') hit = Math.abs(e.x - s.x) < 9 && Math.abs(e.y - s.y) < 7
             else if (e.kind === 'turret') hit = Math.abs(e.x - s.x) < 9 && Math.abs(e.y - s.y) < 8
             else if (e.kind === 'pod') hit = Math.abs(e.x - s.x) < 11 && Math.abs(e.y - s.y) < 9
+            else if (e.kind === 'bitpod') hit = Math.abs(e.x - s.x) < 12 && Math.abs(e.y - s.y) < 10
             else if (e.kind === 'hullseg') hit = s.x + 5 > e.x && s.x - 5 < e.x + e.len && s.y + 4 > e.y0 && s.y - 4 < e.y1
             if (hit) { if (killShip(gs, s, gs, 'body:' + e.kind)) return }
         }
@@ -1065,6 +1147,7 @@ function runWorld(gs, pad, frozen, pad2) {
             if (e.kind === 'larva') hit = Math.abs(e.x - wgBody.x) < 9 && Math.abs(e.y - wgBody.y) < 7
             else if (e.kind === 'turret') hit = Math.abs(e.x - wgBody.x) < 9 && Math.abs(e.y - wgBody.y) < 8
             else if (e.kind === 'pod') hit = Math.abs(e.x - wgBody.x) < 11 && Math.abs(e.y - wgBody.y) < 9
+            else if (e.kind === 'bitpod') hit = Math.abs(e.x - wgBody.x) < 12 && Math.abs(e.y - wgBody.y) < 10
             else if (e.kind === 'hullseg') hit = wgBody.x + 5 > e.x && wgBody.x - 5 < e.x + e.len && wgBody.y + 4 > e.y0 && wgBody.y - 4 < e.y1
             if (hit) { killWing(gs, wgBody, 'body:' + e.kind); break }
         }
@@ -1082,15 +1165,16 @@ function podRamInto(gs, pd) {
     for (let i = gs.enemies.length - 1; i >= 0; i--) {
         const e = gs.enemies[i]
         if (e.kind === 'hullseg') continue
-        const rx = e.kind === 'larva' ? 10 : e.kind === 'pod' ? 12 : 10
-        const ry = e.kind === 'larva' ? 8 : 9
+        const rx = e.kind === 'larva' ? 10 : e.kind === 'pod' ? 12 : e.kind === 'bitpod' ? 13 : 10
+        const ry = e.kind === 'larva' ? 8 : e.kind === 'bitpod' ? 10 : 9
         if (Math.abs(e.x - pd.x) < rx && Math.abs(e.y - pd.y) < ry) {
             e.hp -= 3
             gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
             if (e.hp <= 0) {
                 gs.enemies.splice(i, 1)
-                addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : 300)
+                addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : e.kind === 'bitpod' ? 400 : 300)
                 gs.events.push('boom')
+                if (e.kind === 'bitpod') releaseBits(gs, e) // shell-down carriers spill too
             }
         }
     }
@@ -1256,7 +1340,7 @@ export function wingBrain(gs) {
                 }
             }
             if (e.kind === 'hullseg' && w.x + 6 > e.x - 16 && w.x < e.x + e.len && y > e.y0 - 12 && y < e.y1 + 12) consider(0.5)
-            if ((e.kind === 'turret' || e.kind === 'pod') && Math.abs(e.x - w.x) < 30 && Math.abs(e.y - y) < 22) consider(0.5)
+            if ((e.kind === 'turret' || e.kind === 'pod' || e.kind === 'bitpod') && Math.abs(e.x - w.x) < 30 && Math.abs(e.y - y) < 22) consider(0.5)
         }
         for (const m of gs.missiles) {
             const dx = m.x - w.x
@@ -1329,7 +1413,7 @@ export function autopilot(gs) {
                 }
             }
             if (e.kind === 'hullseg' && px + 6 > e.x - 16 && px < e.x + e.len && y > e.y0 - 12 && y < e.y1 + 12) consider(0.5)
-            if ((e.kind === 'turret' || e.kind === 'pod') && Math.abs(e.x - px) < 34 && Math.abs(e.y - y) < 24) consider(0.5)
+            if ((e.kind === 'turret' || e.kind === 'pod' || e.kind === 'bitpod') && Math.abs(e.x - px) < 34 && Math.abs(e.y - y) < 24) consider(0.5)
         }
         for (const m of gs.missiles) {
             const dx = m.x - px
@@ -1360,7 +1444,7 @@ export function autopilot(gs) {
         else if (p2 && p2.dyingT === 0) {
             // hunt the open vent; hold mid when both seals hold
             const oi = p2.cores.findIndex((c) => c.hp > 0 && c.mouth === 'open')
-            targetY = oi >= 0 ? CORE_Y[oi] : 120
+            targetY = oi >= 0 ? CORE_Y[oi] + (p2.swayOff || 0) : 120
         }
         else if (launcher) targetY = launcher.y
         else if (incMis) targetY = incMis.y
@@ -1436,6 +1520,7 @@ export function stateHash(gs) {
     mix(gs.p2 ? 1 : 0)
     if (gs.p2) {
         mix(gs.p2.x)
+        mix(gs.p2.swayOff); mix(gs.p2.port) // #2835: offense is state — the hash covers it
         for (const c of gs.p2.cores) { mix(c.hp); mix(c.mouth.length); mix(c.enraged ? 1 : 0) }
     }
     const wg = gs.wing // S4 seat two (null => solo: one mix, old-era shape)
