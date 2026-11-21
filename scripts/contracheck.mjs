@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES } from '../src/games/Contra/sim.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
@@ -394,6 +394,115 @@ const mkBoss = (seed = 7) => {
         gs.ev.length = 0
     }
     r.check('destroying the core ends stage 1 with a big score bonus', won && sDelta >= 5000, `won=${won} bonus=${sDelta} (from ${scoreBefore})`)
+}
+
+// ---- #2885: the scripted finale + the gorge's vine carriers ------------------
+{
+    const runCascade = (seed) => {
+        const gs = makeGame(seed); warpBoss(gs)
+        gs.boss.core = 1
+        gs.boss.coreT = 0            // shutter open — one aimed round finishes it
+        gs.pb.push({ x: CFG.coreX - 4, y: CFG.coreY, vx: 1, vy: 0, k: 'r' })
+        const sites = []
+        let rStart = null
+        for (let i = 0; i < 400 && !gs.end; i++) {
+            step(gs, {})
+            if (gs.boss.dying > 0 && rStart === null) rStart = gs.r
+            for (const e of gs.ev) if (e.type === 'boom' && e.kind === 'tnt') sites.push([e.x, e.y])
+            gs.ev.length = 0
+        }
+        return { sites, end: gs.end, rStart, rEnd: gs.r, guns: gs.boss.guns.map((g) => [g.x, g.y - 4]) }
+    }
+    const cA = runCascade(3), cB = runCascade(40031)
+    const want = CASCADE.map((s) => [s.x, s.y])
+    r.check('#2885 the gate finale is SCRIPTED — the blast list walks the CASCADE sites position-by-position',
+        JSON.stringify(cA.sites) === JSON.stringify(want), `sites=${cA.sites.length}/${want.length}`)
+    r.check('#2885 every seed shows the SAME finale — the cascade takes zero gs.r draws',
+        JSON.stringify(cA.sites) === JSON.stringify(cB.sites) && cA.rStart === cA.rEnd && cA.end === 'win' && cB.end === 'win',
+        `r held=${cA.rStart === cA.rEnd} seed-40031 sites=${cB.sites.length}`)
+    r.check('#2885 the choreography reads like the original — the guns go first, the heart goes last',
+        JSON.stringify(cA.sites[0]) === JSON.stringify(cA.guns[0]) && JSON.stringify(cA.sites[3]) === JSON.stringify(cA.guns[1]) &&
+        Math.hypot(cA.sites[cA.sites.length - 1][0] - CFG.coreX, cA.sites[cA.sites.length - 1][1] - CFG.coreY) < 2,
+        `first=(${cA.sites[0]}) fourth=(${cA.sites[3]}) last=(${cA.sites[cA.sites.length - 1]})`)
+}
+{
+    // reach law: airborne + jump held + the tip box catches a vine
+    const gs = makeGame(7); warpFalls(gs)
+    let vineEv = 0, attachedAt = -1
+    for (let i = 0; i < 300 && gs.p.vine < 0; i++) {
+        step(gs, { a: true })
+        vineEv += gs.ev.filter((e) => e.type === 'vine').length
+        gs.ev.length = 0
+        const tp = vineTip(gs, 0)
+        if (gs.p.vine < 0 && gs.p.dead === 0) { gs.p.x = tp.x; gs.p.y = tp.y + 14; gs.p.vy = -1; gs.p.onGround = false }
+        if (gs.p.vine >= 0) attachedAt = i
+    }
+    r.check('#2885 reach law: airborne + jump held + the tip box catches a vine (named event)',
+        attachedAt >= 0 && vineEv >= 1 && gs.p.vine === 0 && gs.p.grabI === 0, `tick=${attachedAt} ev=${vineEv}`)
+    // grounded contact never takes the vine — a full period under the sweep
+    const g2 = makeGame(7); warpFalls(g2)
+    let groundedGrab = false, passed = 0
+    for (let i = 0; i < CFG.vinePeriod; i++) {
+        step(g2, {})
+        const tp = vineTip(g2, 0)
+        if (g2.p.onGround && Math.abs(tp.x - g2.p.x) <= CFG.vineGrabHW) passed++
+        groundedGrab = groundedGrab || g2.p.vine >= 0
+        g2.ev.length = 0
+    }
+    r.check('#2885 grounded contact never grabs — feet stay on the rock (tip passed overhead)',
+        !groundedGrab && passed >= 1, `overhead-ticks=${passed} grab=${groundedGrab}`)
+    // carrier law: the fling leaves at least vineCarryMin above the catch
+    let peak = gs.p.y, unvineEv = 0
+    for (let i = 0; i < 140 && gs.p.vine >= 0; i++) {
+        step(gs, {})
+        peak = Math.min(peak, gs.p.y)
+        unvineEv += gs.ev.filter((e) => e.type === 'unvine').length
+        gs.ev.length = 0
+    }
+    r.check('#2885 carrier law: the rider is flung at least vineCarryMin above the catch, momentum and all',
+        gs.p.vine === -1 && gs.p.vineAtY - peak >= CFG.vineCarryMin && gs.p.vy < -1 && unvineEv >= 1,
+        `lift=${(gs.p.vineAtY - peak).toFixed(1)} vy=${gs.p.vy.toFixed(2)}`)
+    // release on command: jump again while riding
+    const g3 = makeGame(7); warpFalls(g3)
+    for (let i = 0; i < 300 && g3.p.vine < 0; i++) {
+        step(g3, { a: true })
+        const tp = vineTip(g3, 0)
+        if (g3.p.vine < 0 && g3.p.dead === 0) { g3.p.x = tp.x; g3.p.y = tp.y + 14; g3.p.vy = -1; g3.p.onGround = false }
+    }
+    step(g3, { a: true })        // held while riding: no edge, stays on
+    const midRide = g3.p.vine
+    step(g3, {})                 // let go of the key
+    step(g3, { a: true })        // press again — the rider flies off
+    r.check('#2885 the rider lets go on command — jump releases mid-swing with upward momentum',
+        midRide >= 0 && g3.p.vine === -1 && g3.p.vy <= -1.8, `mid=${midRide} vy=${g3.p.vy.toFixed(2)}`)
+    // structural law: the SAME seatStep carries the vine law — the blue seat rides
+    const g4 = makeGame(7); warpFalls(g4)
+    g4.p2.human = true
+    let qv = -1
+    for (let i = 0; i < 300 && qv < 0 && g4.tick < 800; i++) {
+        step(g4, {}, { a: true })
+        const tp = vineTip(g4, 0)
+        if (g4.p2.vine < 0 && g4.p2.dead === 0 && !g4.p2.out && g4.p2.enterT === 0) { g4.p2.x = tp.x; g4.p2.y = tp.y + 14; g4.p2.vy = -1; g4.p2.onGround = false }
+        qv = g4.p2.vine
+    }
+    r.check('#2885 the vine law is structural — the blue seat rides the same seatStep', qv >= 0, `qvine=${qv}`)
+    // hazard law untouched: the torrent still takes a rider
+    const g6 = makeGame(7); warpFalls(g6)
+    for (let i = 0; i < 300 && g6.p.vine < 0; i++) {
+        step(g6, { a: true })
+        const tp = vineTip(g6, 0)
+        if (g6.p.vine < 0 && g6.p.dead === 0) { g6.p.x = tp.x; g6.p.y = tp.y + 14; g6.p.vy = -1; g6.p.onGround = false }
+    }
+    const livesBefore = g6.lives
+    g6.camY = g6.p.y - (224 - CFG.drownAt) + 10    // the water climbs to the rider
+    step(g6, {})
+    r.check('#2885 hazard law untouched — the torrent still takes a vine rider (pool pays)',
+        g6.lives === livesBefore - 1 && g6.p.dead > 0, `lives ${livesBefore}->${g6.lives} dead=${g6.p.dead}`)
+    // sim truth: riders ride the hash
+    const g5 = makeGame(7); warpFalls(g5)
+    const ha = stateHash(g5)
+    g5.p.vine = 0
+    r.check('#2885 vine riders ride stateHash — a replay that catches a vine diverges loudly', ha !== stateHash(g5), `${ha}/${stateHash(g5)}`)
 }
 {
     const gs = makeGame(13)
@@ -1414,6 +1523,65 @@ if (MUTANT) {
                     : null
             },
         },
+        // #2885 finale + vine-carrier laws — each named harm must kill a pin.
+        {
+            name: 'cascade-random',
+            anchor: "                const site = CASCADE[CASCADE.length - 1 - bo.dying / CFG.cascadeStep]\n                boom(gs, site.x, site.y, false, 'tnt')",
+            plant: "                boom(gs, mod_wallX(gs) + 20 + rnd(gs) * 180, 30 + rnd(gs) * 110, false, 'tnt') /* MUTANT(cascade-random): noise around the wall, not the script */\n                function mod_wallX (g) { return 168 }",
+            harm: async (mod) => {
+                const run = (seed) => {
+                    const gs = mod.makeGame(seed); mod.warpBoss(gs)
+                    gs.boss.core = 1; gs.boss.coreT = 0
+                    gs.pb.push({ x: mod.CFG.coreX - 4, y: mod.CFG.coreY, vx: 1, vy: 0, k: 'r' })
+                    const sites = []
+                    for (let i = 0; i < 400 && !gs.end; i++) { mod.step(gs, {}); for (const e of gs.ev) if (e.type === 'boom' && e.kind === 'tnt') sites.push([Math.round(e.x), Math.round(e.y)]); gs.ev.length = 0 }
+                    return sites
+                }
+                const a = run(3), b = run(40031)
+                return JSON.stringify(a) !== JSON.stringify(b)
+                    ? 'HARM NAMED: the finale rerandomizes per seed - the fortress dies in noise, not the scripted walk the original choreographs'
+                    : null
+            },
+        },
+        {
+            name: 'vine-deadwood',
+            anchor: 'h.vine = vi; h.grabI = vi; h.rideT = 0; h.vineAtY = h.y',
+            plant: 'void 0 /* MUTANT(vine-deadwood): the tips stop catching */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7); mod.warpFalls(gs)
+                let rode = false
+                for (let i = 0; i < 300 && !rode; i++) {
+                    mod.step(gs, { a: true })
+                    const tp = mod.vineTip(gs, 0)
+                    if (gs.p.vine < 0 && gs.p.dead === 0) { gs.p.x = tp.x; gs.p.y = tp.y + 14; gs.p.vy = -1; gs.p.onGround = false }
+                    rode = gs.p.vine >= 0
+                }
+                return !rode
+                    ? 'HARM NAMED: a vine catches nobody - the carriers are deadwood and the climb loses its alternate line'
+                    : null
+            },
+        },
+        {
+            name: 'vine-sink',
+            anchor: 'h.y = tp.y + CFG.vineHang',
+            plant: 'h.y = h.vineAtY + CFG.vineHang /* MUTANT(vine-sink): the strand stops tracking the arc */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7); mod.warpFalls(gs)
+                for (let i = 0; i < 300 && gs.p.vine < 0; i++) {
+                    mod.step(gs, { a: true })
+                    const tp = mod.vineTip(gs, 0)
+                    if (gs.p.vine < 0 && gs.p.dead === 0) { gs.p.x = tp.x; gs.p.y = tp.y + 14; gs.p.vy = -1; gs.p.onGround = false }
+                }
+                if (gs.p.vine < 0) return 'HARM NAMED: rider never even caught the vine in the harness rig — cannot score this law'
+                const at = gs.p.vineAtY
+                let peak = gs.p.y
+                for (let i = 0; i < mod.CFG.vineRideMax + 40 && gs.p.vine >= 0; i++) { mod.step(gs, {}); peak = Math.min(peak, gs.p.y) }
+                const lift = at - peak
+                return lift < mod.CFG.vineCarryMin
+                    ? `HARM NAMED: the vine lifts its rider only ${lift.toFixed(1)}px (< ${mod.CFG.vineCarryMin}) — the arc is dead, riders are dropped back where they hung`
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -1648,6 +1816,94 @@ const browser = await launch()
         JSON.stringify({ live: liveGuns, wreck: wreckGuns }))
     r.check('#2880 the caved mount renders ruined — soot ring appears where the live slab was bare',
         wreckRust - liveRust >= 8, `live=${liveRust} wreck=${wreckRust}`)
+
+    // #2885 browser legs: the vines hang over the live canyon (pixels over a
+    // bare-canyon baseline), a held jump catches a swinging tip through real
+    // keys, and the scripted finale walks its countdown in the real loop.
+    // Prologue: an attract/over screen eats its first key (startPlay consumes
+    // the press before the pad latches) — guarantee play, and keep the hero
+    // out of the torrent while the polls sip seconds of world time.
+    const ensurePlay = async () => {
+        for (let guard = 0; guard < 50; guard++) {
+            const p = await page.evaluate(() => window.__contraTest.probe())
+            if (p.screen === 'play') return true
+            await page.keyboard.press('KeyX')
+            await page.waitForTimeout(120)
+        }
+        return false
+    }
+    await ensurePlay()
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'falls', inv: 99999, lives: 99 }))
+    const vineCol = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(112 * k), Math.round(150 * k), Math.round(156 * k), Math.round(72 * k)).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i + 1] > d[i] + 18 && d[i + 1] > d[i + 2] + 18) n++ // green strand beats the slate
+        return n
+    })
+    // Rider legs FIRST — the vine 3 strand is at dry altitude, but the pixel
+    // baseline's multi-second dwells sit at the lip, where the ratcheting
+    // torrent would drown-loop a hero parked between polls.
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'falls', vineAt: 3, inv: 99999, lives: 99 }))
+    await page.keyboard.down('Space')
+    let grabProbe = null
+    for (let guard = 0; guard < 30 && !(grabProbe && grabProbe.vine.p >= 0); guard++) {
+        await page.evaluate(() => window.__contraTest.setup({ vineAt: 3, inv: 99999, lives: 99 }))
+        await page.waitForTimeout(60)
+        grabProbe = await page.evaluate(() => window.__contraTest.probe())
+    }
+    r.check('#2885 live reach: hold jump at the swinging tip and the hero hangs (probe rider truth)',
+        grabProbe && grabProbe.vine.p >= 0, JSON.stringify(grabProbe && grabProbe.vine))
+    await page.keyboard.up('Space')
+    await page.waitForTimeout(80)
+    const preRide = (await page.evaluate(() => window.__contraTest.probe())).vine.p
+    // one-shot tap: jumpQ latches the press to a single tick of `a` — enough
+    // to release on the edge, too short to let the flung hero re-grab.
+    await page.keyboard.press('Space')
+    let freeProbe = null
+    for (let guard = 0; guard < 25 && !(freeProbe && freeProbe.vine.p === -1 && freeProbe.vine.tips.length > 0); guard++) {
+        await page.waitForTimeout(60)
+        freeProbe = await page.evaluate(() => window.__contraTest.probe())
+    }
+    r.check('#2885 live release: jump again and the rider comes off the vine',
+        preRide >= 0 && freeProbe && freeProbe.vine.p === -1 && freeProbe.vine.tips.length > 0, JSON.stringify({ preRide, vine: freeProbe && freeProbe.vine }))
+    // pixel presence: vines paint over the bare-canyon baseline
+    let withVines = 0
+    for (let guard = 0; guard < 20 && withVines === 0; guard++) { await page.waitForTimeout(100); withVines = await vineCol() }
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'falls', vinesGone: true, inv: 99999, lives: 99 }))
+    let bare = -1
+    for (let guard = 0; guard < 20; guard++) {
+        await page.waitForTimeout(100)
+        const b = await vineCol()
+        bare = bare < 0 ? b : Math.min(bare, b)
+    }
+    r.check('#2885 live canyon paints vines — green strand pixels over the bare-canyon baseline',
+        withVines - bare >= 12, `with=${withVines} bare=${bare}`)
+    // the scripted finale through the real loop: run to the firing band, put
+    // rounds into the open core, and watch the script-length countdown clear.
+    await ensurePlay()
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', inv: 99999, lives: 99 }))
+    await page.keyboard.down('ArrowRight')
+    let bandX = 0
+    for (let guard = 0; guard < 40 && bandX < 136; guard++) {
+        await page.waitForTimeout(80)
+        bandX = (await page.evaluate(() => window.__contraTest.probe())).x
+    }
+    await page.keyboard.down('ArrowUp')
+    await page.keyboard.down('KeyX')
+    let dyingSeen = 0, cleared = null, c0 = null
+    for (let guard = 0; guard < 220 && !cleared; guard++) {
+        await page.waitForTimeout(100)
+        const p = await page.evaluate(() => window.__contraTest.probe())
+        if (c0 === null) c0 = p.cascadeDying
+        if (p.cascadeDying > 0) dyingSeen = Math.max(dyingSeen, p.cascadeDying)
+        cleared = p.end === 'win' ? p.end : null
+    }
+    await page.keyboard.up('KeyX'); await page.keyboard.up('ArrowUp'); await page.keyboard.up('ArrowRight')
+    r.check('#2885 the scripted finale runs live — a full script-length countdown from the kill to STAGE CLEAR',
+        c0 === 0 && dyingSeen > 0 && dyingSeen <= CASCADE.length * CFG.cascadeStep && cleared === 'win',
+        `bandX=${bandX} c0=${c0} dying=${dyingSeen} end=${cleared}`)
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()

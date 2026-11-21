@@ -488,11 +488,12 @@ export default function ContraGame () {
                     if (opts.carrierHere) gs.carriers.push({ x: gs.p.x + (opts.carrierDX ?? 120), y: opts.carrierY ?? 164, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: opts.carrierKind || 'laser', dead: false })
                     if (opts.podHere) gs.pods.push({ x: gs.p.x + (opts.podDX ?? 40), y: CFG.ground - 2, vx: CFG.podVx, vy: 0, kind: opts.podKind || 'laser' })
                     // #2885: hide the canopy (pixel-baseline leg) or stand the hero
-                    // airborne right on vine 0's tip for the grab leg
+                    // airborne right on a swinging tip for the grab legs (vineAt
+                    // picks which vine; vineAt0 = vine 0)
                     if (opts.vinesGone) { gs.vines.length = 0 }
-                    if (opts.vineAt0) {
+                    if (opts.vineAt !== undefined || opts.vineAt0) {
                         if (gs.phase !== 'falls') warpFalls(gs)
-                        const tp = vineTip(gs, 0)
+                        const tp = vineTip(gs, opts.vineAt ?? 0)
                         gs.p.x = tp.x; gs.p.y = tp.y + 14; gs.p.vy = -1; gs.p.onGround = false
                     }
                     if (opts.kill) { gs.p.inv = 0; gs.eb.push({ x: gs.p.x + 2, y: gs.p.y - 14, vx: 0.1, vy: 0 }) }
