@@ -180,7 +180,7 @@ export function drawPlatform (ctx, pl) {
 // --- hero: white tank, blue pants, red bandana; run/jump frames, 8-way arm.
 // S4 blue seat: the same body, arcade P2 palette (blue bandana, cold tank,
 // navy pants) — the palette swap IS the original's co-op language. ---
-export function drawPlayer (ctx, p, tick, blue = false, solid = false) {
+export function drawPlayer (ctx, p, tick, blue = false, solid = false, rappel = false) {
     // #2837: `solid` suppresses the respawn flicker for the arrival rappel —
     // a soldier on the rope must be seen coming, not blinking in and out.
     if (!solid && p.inv > 0 && Math.floor(tick / 4) % 2 === 0) return // respawn flicker
@@ -191,7 +191,13 @@ export function drawPlayer (ctx, p, tick, blue = false, solid = false) {
     const f = p.onGround ? Math.floor(p.walk / 4) % 4 : 9
     // legs
     ctx.fillStyle = pants
-    if (!p.onGround) {
+    if (rappel) {
+        // #2842 the cling-rappel pose: legs braced long with the toes pointed,
+        // not the generic jump tuck — the eye reads hanging vs leaping.
+        ctx.fillRect(-5, -12, 4, 9); ctx.fillRect(1, -12, 4, 10)
+        ctx.fillStyle = C.boots
+        ctx.fillRect(-5, -3, 4, 3); ctx.fillRect(1, -2, 4, 3)
+    } else if (!p.onGround) {
         ctx.fillRect(-5, -12, 4, 7); ctx.fillRect(1, -14, 4, 8) // tuck
         ctx.fillStyle = C.boots
         ctx.fillRect(-5, -5, 4, 3); ctx.fillRect(2, -6, 4, 3)
@@ -218,7 +224,17 @@ export function drawPlayer (ctx, p, tick, blue = false, solid = false) {
     ctx.fillRect(-4, -32, 8, 3)
     // bandana tails stream behind, snapping in the wind
     ctx.fillRect(-p.face * 4 - (p.face > 0 ? 3 : -1), -31 + Math.floor(Math.sin(tick / 5) * 1.5), 4, 2)
-    // gun arm along the 8-way aim
+    // gun arm along the 8-way aim — #2842: on the rope both hands grip the
+    // line instead (it runs at p.x, straight overhead) and the rifle slings.
+    if (rappel) {
+        ctx.strokeStyle = '#20242c'; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.moveTo(-4, -13); ctx.lineTo(4, -23); ctx.stroke()
+        ctx.strokeStyle = C.skin; ctx.lineWidth = 2.4
+        ctx.beginPath(); ctx.moveTo(-2, -21); ctx.lineTo(0, -33); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(2, -21); ctx.lineTo(1, -33); ctx.stroke()
+        ctx.restore()
+        return
+    }
     const ax = p.ax, ay = p.ay
     const sx = 2 * ax, sy = -18 + 5 * ay
     ctx.strokeStyle = C.skin
@@ -255,6 +271,57 @@ export function drawRappel (ctx, x, topY, y) {
     ctx.fillRect(Math.round(x) - 1, Math.round(topY), 2, Math.max(0, Math.round(y - 24 - topY)))
     ctx.fillStyle = '#48583f'
     ctx.fillRect(Math.round(x) - 2, Math.round(y - 26), 4, 3)
+}
+
+// #2842 the 2UP tag is the seat's arrival tell, not a constant. 'arrive'
+// blinks until the soles touch (HUD tied to the body); 'warn' blinks the
+// last TAG_WARN ticks of drop-out patience — the wingman is about to take the
+// seat back. Pure function of sim truth, so contracheck can pin the tell.
+export const TAG_WARN = 120 // 2 s at patience's tail
+export function seatTagState (gs) {
+    const q = gs.p2
+    if (!q || q.out) return 'off'
+    if (q.enterT > 0) return 'arrive'
+    if (q.padClaim && q.human && q.idle > CFG.seatIdle - TAG_WARN) return 'warn'
+    return 'lit'
+}
+
+// #2842 the ceremony chopper — the wingman's ride out. A dark silhouette that
+// hovers over the rappel while the fresh soldier descends, then pulls off to
+// the right fading: the vanishing wingman finally has an exit (the original's
+// 2P helicopter). Pure paint — index.jsx owns the lifecycle, the sim never
+// sees it (zero gs.r, deterministic bob from tick).
+export function drawHeli (ctx, x, y, tick, fade = 1) {
+    ctx.save(); ctx.translate(Math.round(Math.max(26, x)), Math.round(y))
+    if (fade < 1) ctx.globalAlpha = Math.max(0.12, fade)
+    // hull, tail boom + fin with the red light. The night canopy is nearly
+    // black, so the silhouette rides a shade above the sky's darkest stop and
+    // carries a moonlit top line — the cabinet's chopper reads, so ours must.
+    ctx.fillStyle = '#2c3a1e'
+    ctx.fillRect(-4, -5, 22, 9)
+    ctx.fillRect(16, -3, 12, 3)
+    ctx.fillRect(25, -8, 3, 5)
+    ctx.fillStyle = '#e23b2e'
+    ctx.fillRect(26, -7, 2, 2)
+    ctx.fillStyle = '#47582d'
+    ctx.fillRect(-4, -5, 22, 2) // moonlit top
+    ctx.fillStyle = '#10170b'
+    ctx.fillRect(-4, 2, 22, 2) // belly shadow — the rope drops from here
+    ctx.fillStyle = '#8ad4ff'
+    ctx.fillRect(-2, -3, 4, 3) // cockpit glass, catching the sky
+    ctx.fillStyle = '#dcedf5'
+    ctx.fillRect(-2, -3, 2, 1)
+    // skids
+    ctx.fillStyle = '#141a10'
+    ctx.fillRect(-2, 4, 18, 1); ctx.fillRect(0, 3, 1, 1); ctx.fillRect(12, 3, 1, 1)
+    // rotor: mast + a wide bright blur disc that chops (the courier's chop,
+    // one span wider and brighter — the ceremony bird must out-read it)
+    ctx.fillStyle = '#141a10'
+    ctx.fillRect(-1, -9, 2, 4)
+    const chop = [30, 22, 30, 16][Math.floor(tick / 3) % 4]
+    ctx.fillStyle = 'rgba(168,178,168,0.72)'
+    ctx.fillRect(-chop, -11, chop * 2, 2)
+    ctx.restore()
 }
 
 export function drawSoldier (ctx, s, _tick) {
@@ -623,8 +690,17 @@ export function drawHud (ctx, gs, hiscore) {
     // his own anymore — the single head-row is the SHARED pool, the cabinet's
     // one-pool law (#2814). A seat that's down leaves the HUD entirely.
     if (gs.p2 && !gs.p2.out) {
-        ctx.fillStyle = '#7fb2ff'
-        ctx.fillText('2UP', 232, 4)
+        // #2842: the tag speaks — steady while seated, blink-in all the way
+        // down the rope (synced with the arrival), gold fast-blink for the
+        // last two seconds of drop-out patience.
+        const tag = seatTagState(gs)
+        const on = tag === 'warn' ? Math.floor(gs.tick / 4) % 2 === 0
+            : tag === 'arrive' ? Math.floor(gs.tick / 6) % 2 === 0
+            : true
+        if (on) {
+            ctx.fillStyle = tag === 'warn' ? C.gold : '#7fb2ff'
+            ctx.fillText('2UP', 232, 4)
+        }
         ctx.fillStyle = wcols[gs.p2.weapon] || C.ink
         ctx.fillText(wnames[gs.p2.weapon] || 'RIFLE', 314, 12)
     }

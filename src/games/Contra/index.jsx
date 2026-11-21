@@ -14,7 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat } from './sim.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel } from './art.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -49,8 +49,13 @@ const sfx = {
     // S4 co-op: the blue seat's voices — a warmer join chirp, a deeper fall
     p2join: () => { audioController.playSweep(440, 880, 0.12, 'square', 0.05); setTimeout(() => audioController.playTone(1100, 0.1, 'square', 0.04), 90) },
     // #2837 the release chirp: a falling answer to the join's rising one —
-    // the wingman taking the seat back.
-    p2gone: () => audioController.playSweep(880, 330, 0.14, 'square', 0.045),
+    // the wingman taking the seat back. #2842: the fall now gets a rising
+    // reply — call-and-response, so a handover reads as a handoff, not a loss.
+    p2gone: () => { audioController.playSweep(880, 330, 0.14, 'square', 0.045); setTimeout(() => audioController.playSweep(440, 880, 0.12, 'square', 0.04), 150) },
+    // #2842 the two-second drop-out warning: soft, well under the gunfire.
+    seatWarn: () => audioController.playTone(760, 0.035, 'square', 0.028),
+    // #2842 the arriving seat's boots on the sand — a dry thud under the dust.
+    land: () => audioController.playNoise(0.07, 0.025),
     pdown: () => audioController.playSweep(300, 90, 0.3, 'square', 0.07),
     p2down: () => audioController.playSweep(240, 70, 0.3, 'sawtooth', 0.07),
     // stage clear: a 4-note call answered by a bass line (ART.md bar 4 — the
@@ -127,12 +132,17 @@ export default function ContraGame () {
         const keys2 = { l: false, r: false, u: false, d: false, j: false, f: false }
         let jumpQ2 = false, fireQ2 = false
         let wasGround = true
+        // #2842 presentation state for the seat ceremony (never sim truth):
+        // the ceremony chopper, the drop-out warning edge, the rope tracker.
+        let heli = null
+        let warnArmed = false, warnTick = 0, lastEnterT = 0
 
         const drain = () => {
             for (const e of gs.ev) {
                 if (e.type === 'efire' && e.big) sfx.efireBig()
                 else if (e.type === 'shot' && e.k === 'machine') sfx.mshot()
                 else if (sfx[e.type]) sfx[e.type]()
+                if (e.type === 'p2join') heli = { x: gs.p2.x, t: 0 } // #2842 the bird comes with the drop
                 if (e.type === 'boom') {
                     shake = Math.min(6, shake + 5)
                     fire.push({ x: e.x, y: e.y, t: 0, kind: e.kind || 'tnt' })
@@ -157,6 +167,28 @@ export default function ContraGame () {
                 }
             }
             wasGround = gs.p.onGround
+            // #2842 ceremony lifecycle (cosmetic, but rides every sim tick —
+            // harness `tick()` included — so the drop-in reads identically for
+            // a bot-driven seat and a human one).
+            if (gs.p2.enterT === 0 && lastEnterT > 0 && gs.p2.onGround) {
+                // touchdown: the arriving seat's soles kick sand on the deck
+                sfx.land()
+                for (let i = 0; i < 7; i++) {
+                    const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.8
+                    const v = 0.5 + Math.random() * 1.1
+                    part.push({ x: gs.p2.x + (Math.random() - 0.5) * 10, y: gs.p2.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.7, t: 10 + Math.random() * 7, c: 5 })
+                }
+            }
+            lastEnterT = gs.p2.enterT
+            const warn = seatTagState(gs) === 'warn'
+            if (warn && !warnArmed) { warnArmed = true; warnTick = gs.tick; sfx.seatWarn() }
+            else if (!warn) warnArmed = false
+            if (warnArmed && gs.tick === warnTick + 60) sfx.seatWarn()
+            if (heli) {
+                if (gs.p2.enterT > 0) { heli.x = gs.p2.x; heli.t = 0 }
+                else { heli.t += 1; heli.x += 2.6 }
+                if (heli.t > 88 || heli.x > (gs.phase === 'jungle' ? gs.cam : 0) + W + 44) heli = null
+            }
             gs.ev.length = 0
         }
 
@@ -179,6 +211,7 @@ export default function ContraGame () {
             part.length = 0
             fire.length = 0
             wasGround = true
+            heli = null; warnArmed = false; lastEnterT = 0
             demoHold = 0
             setMode('play'); screen = 'play'
         }
@@ -231,11 +264,12 @@ export default function ContraGame () {
             for (const b of gs.eb) { if (b.gr) drawGrenade(ctx, b); else drawBullet(ctx, b, true) }
             // S4: the blue seat draws at his own body, under the hero. #2837:
             // while the arrival descent runs, his rope paints ahead of him and
-            // he doesn't flicker — you see him coming.
+            // he doesn't flicker — you see him coming. #2842: the seat itself
+            // rides with the clinging-rappel pose (drawPlayer's 6th flag).
             if (gs.p2.dead === 0 && !gs.p2.out && !(gs.end === 'dead')) {
                 const rappelling = gs.p2.enterT > 0
                 if (rappelling) drawRappel(ctx, gs.p2.x, (gs.phase === 'jungle' ? 0 : gs.camY) - 4, gs.p2.y)
-                drawPlayer(ctx, gs.p2, gs.tick, true, rappelling)
+                drawPlayer(ctx, gs.p2, gs.tick, true, rappelling, rappelling)
             }
             else if (gs.p2.dead > 0) drawDeathTumble(ctx, gs.p2.x, gs.p2.y, Math.floor((CFG.respawnFreeze - gs.p2.dead) / 12) % 4, true)
             if (gs.p.dead === 0 && !(gs.end === 'dead')) drawPlayer(ctx, gs.p, gs.tick)
@@ -250,12 +284,20 @@ export default function ContraGame () {
                 const q = part[i]
                 q.x += q.vx; q.y += q.vy; q.vy += 0.08; q.t -= 1
                 if (q.t <= 0) { part.splice(i, 1); continue }
-                ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : q.c === 2 ? '#d9dde2' : q.c === 3 ? '#7cc7ff' : '#e8f6ff'
+                ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : q.c === 2 ? '#d9dde2' : q.c === 3 ? '#7cc7ff' : q.c === 5 ? '#c9ae7c' : '#e8f6ff'
                 ctx.fillRect(Math.round(q.x), Math.round(q.y), q.c === 2 ? 1 : 2, q.c === 2 ? 1 : 2)
             }
             ctx.restore()
             if (jungle) drawFringe(ctx, gs.cam)
             else drawWater(ctx, gs.tick)
+            // #2842 the ceremony chopper rides ABOVE the canopy (the fringe is
+            // a foreground layer — drawing the bird before it buried the bird),
+            // and under the HUD. Pulls off right once the seat is down.
+            if (heli) {
+                ctx.save(); ctx.translate(-Math.round(gs.cam), jungle ? 0 : -Math.round(gs.camY))
+                drawHeli(ctx, heli.x, (jungle ? 0 : gs.camY) + 26 + Math.sin(gs.tick / 7) * 1.2, gs.tick, heli.t > 56 ? 1 - (heli.t - 56) / 32 : 1)
+                ctx.restore()
+            }
             drawHud(ctx, gs, hiscore)
 
             ctx.textBaseline = 'top'
