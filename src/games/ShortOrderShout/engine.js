@@ -147,9 +147,9 @@ export function hashState(gs) {
 const FACE_N = { up: 0, down: 1, left: 2, right: 3 }
 const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
 
-const SOUP_TICKS = 150 // rolling boil
-const STIR_GAP = 80 // stir every <80f or it boils over
-const SEAR_TICKS = 210
+export const SOUP_TICKS = 150 // rolling boil
+export const STIR_GAP = 80 // stir every <80f or it boils over
+export const SEAR_TICKS = 210
 export const SEAR_OK = 180 // window before it burns
 export const COOL_SIP = 60 // #2113 cool the pan: one cup of water knocks this many ticks of heat off a hot-but-not-burnt burner
 export const SEAR_TELL = 60 // #2119 scorch tell: the ready window's last minute shimmers, and the shift's first crossing teaches the counterplay
