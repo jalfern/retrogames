@@ -198,18 +198,39 @@ S4 (the second dragon, #2807):
 - The `guardian-deaf`, `grip-permanent` and `cadence-mirror` mutants name
   each law's collapse.
 
+#2860 a friend's own pad seat (forge) — two humans stop sharing one keyboard:
+
+- **The seat reads slot 2** — the GamepadBridge (#492) lands a second physical
+  pad (and LinkPads #893 a linked iPhone) in onePad slot 2; here it merges with
+  the keyboard's P2 keys — **either drives, both together union**.
+  The mapping mirrors P1's physical layout: d-pad/stick walks the street,
+  **A jump · B kick · square/triangle/LB punch** (the slot's third action,
+  `boost`, is new plumbing in `slotFieldsFrom`/`GamepadBridge` for pads —
+  a phone's Y button already lands on boost). The translation lives in
+  `p2pad.js` alone, pinned by the equivalence law: the same stream through
+  the keyboard and through slot 2 lands on identical state hashes.
+- **Drop-in, same clause** — the first live input on slot 2 (`slotActive`
+  counts boost, so punching also seats the friend) takes Jimmy for the run and
+  pays the join chime exactly once. Solo runs have no seat; a fallen dragon is
+  not resurrected by a wiggle; releasing the pad does NOT hand the seat back
+  to the CPU — the keyboard's drop-in law, verbatim.
+- The `seat-swap` mutant names the seat's translator breaking (A goes dead
+  air while the hop migrates onto B).
+
 ## Controls
 
 Arrows walk (UP/DOWN = depth) · SPACE jump · X kick · Z punch · ? ops card.
 Pad: JUMP / KICK / PUNCH (`thirdAction`, #2324).
 2P drop-in (keyboard): WASD walk · F punch · G kick · V jump.
+2P drop-in (pad/phone, #2860): a second gamepad or a linked phone (`?pads=1`
+or the PADS pill) — A jump · B kick · square/triangle/LB punch · d-pad walk.
 
 ## Verify
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 112 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), winnable, browser leg
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror must go RED (named)
+npm run ddragoncheck                    # 126 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, winnable, browser leg
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -223,8 +244,10 @@ of nightly 44762398189).
   personality is designed, not restored (#2851: the guardian law, the
   release law, a 13-beat technician's cadence over #2833's manners).
   Seat-specific throws and post-KO flair are open craft, not fidelity gaps.
-- Two humans at one keyboard is always cramped; P2 (WASD+F/G/V) lives to the
-  left of P1's arrows cluster by necessity.
+- **CLOSED by #2860** — two humans at one keyboard: P2 now also takes a
+  friend's own controller — a second gamepad or a linked phone (A jump · B
+  kick · square/triangle/LB punch), any input seats them drop-in. Two pairs
+  of hands, zero shared keys. (The pure keyboard seat remains WASD+F/G/V.)
 - The yard's light pools sway but cast no moving shadows and the floor carries
   no swarf/drip dressing (#2825 items deferred to a future art pass).
 - No combos/chain scoring bonuses; the original scores per-KO with a simple
