@@ -166,7 +166,8 @@ Williams-style duelist for variety. Still open from the #2831 polish pass:
 bit pods (airborne carriers whose bits break loose on death), Phase-2 port
 salvos + body sway, and the walking port-to-port Phase-2 death cascade. The
 wing (S4) is faithful-but-simple: it never chases capsules or vents on
-purpose, never deploys its shell, and there is no pod/bit hand-off between
+purpose, its brain never deploys its shell (a human seat two can, via G),
+and there is no pod/bit hand-off between
 hulls or a rescue revive for a dark seat — seat-two flavour the original's 2P
 has that a QA pass could deepen.
 The registry entry is `private` until Jon promotes it (#379).
