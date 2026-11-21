@@ -175,6 +175,31 @@ console.log('watch driver: crossings proven on the shipped tick (#1637 b25)')
     ok(!done, `gapsweep: no stalled 30 s window across ${SEEDS.length} seeds`, `seed ${worst} gap ${maxGap}`)
 }
 
+// #2869 part two: the two cures OVERLAP — with one removed the other still banks
+// homes under the 1800-tick bar (rank cure alone: worst sweep gap 642; loop cure
+// alone: 1340), so the stall threshold left BOTH cure-mutants alive in a local
+// run (13/15, 2026-11-21). Each cure is load-bearing at the historical stall
+// seeds, just sub-1800 there — measured base gap → gap with that cure removed:
+//   103  273 → 434 (loop cure)   3134  314 → 1340 (rank cure)   3425  470 → 642 loop / 1110 rank.
+// Pin those seeds' home-to-home gap ceilings between the two states (sim is
+// byte-equal deterministic, so the ceilings are exact regression lines): each
+// mutant breaks TWO ceilings, the base passes all with ≥77 ticks of margin.
+{
+    const CEIL = { 103: 350, 3134: 520, 3425: 555 }
+    for (const [seedStr, ceil] of Object.entries(CEIL)) {
+        const seed = Number(seedStr)
+        const gs = makeRun(seed)
+        gs.watching = true
+        let gap = 0, maxGap = 0
+        for (let t = 0; t < 7200 && !gs.over; t++) {
+            const ev = tickFrogger(gs)
+            gap = ev.home ? 0 : gap + 1
+            if (gap > maxGap) maxGap = gap
+        }
+        ok(maxGap <= ceil, `gap-ceiling #2869: seed ${seed} banks a home within ${ceil} ticks`, `gap ${maxGap}`)
+    }
+}
+
 // #601 main-fix (nightly 44914600702): watchcheck's frogger pilot rides a PINNED
 // seed (?seed=1776) because ~1 in 60 roll seeds lose a life and then zigzag the
 // middle river lanes without banking a home inside the leg's 30 s lily-pad window
@@ -264,7 +289,7 @@ if (process.argv.includes('--mutate')) {
             `            const houseBehind = ridesAway(gs, row, x) // #2869: was row-1/columns-left only`,
             `            const houseBehind = false`,
             'src/games/Frogger/sim.js'],
-        // #2869 — the two stall cures, each pinned by the gapsweep block above.
+        // #2869 — the two stall cures, each pinned by the gap-ceiling block above.
         ['the position-loop break is blind (zigzag stall returns, #2869)',
             `        for (const b of noGo) if (b.row === r && Math.abs(xx - b.x) <= LOOP_TOL) return true`,
             `        for (const b of noGo) if (false && b.row === r && Math.abs(xx - b.x) <= LOOP_TOL) return true`,
