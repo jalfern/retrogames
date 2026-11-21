@@ -1,7 +1,8 @@
-# DOUBLE DRAGON — S1 "Walnuts Street" + S2 "the weapons wall" + S3 "the hideout"
+# DOUBLE DRAGON — S1 "Walnuts Street" + S2 "the weapons wall" + S3 "the hideout" + S4 "the second dragon"
 
-Jon's #2795 commission ("both flagships starting with double dragon"), stages 1–3
-of Technōs Japan's 1987 arcade belt-scroller. Issue: #2807 (S4 co-op to follow).
+Jon's #2795 commission ("both flagships starting with double dragon"), the complete
+Technōs 1987 arcade belt-scroller. Issue: #2807 (S1..S4 — this issue's four stages
+are all shipped).
 
 ## Layout
 
@@ -11,6 +12,11 @@ of Technōs Japan's 1987 arcade belt-scroller. Issue: #2807 (S4 co-op to follow)
   the two-stage flow (`enterStage2`, `rescueReady`, Marian's ropes),
   `autopilot` (attract demo + harness brain), `stateHash`. The rng rides IN
   `gs` (`rngState`, `nextId`) so snapshot/restore is byte-exact (#391).
+  S4 generalizes the seat: `makeFighter(tag)` — `gs.jimmy` is a second fighter
+  on the same physics bank, `targetOf` picks which dragon each thug works,
+  `dragonBrain(gs, self)` drives any seat (Billy's autopilot and Jimmy's CPU
+  seat are literally the same function), `fighters/activeFighters` feed every
+  rule that used to name Billy.
 - `art.js` — night-suburb backdrop (sky gradient + stars + moon, parallax house
   silhouettes with lit windows, pylons and sagging wires, chain-link + hedge,
   asphalt with deterministic grain, sodium-lamp glow pools) and the S3 yard —
@@ -93,17 +99,52 @@ S3 (the hideout, #2807):
 - **Stage readout** — the HUD wears `1-1` / `2-1` beside the wave ticks;
   the rescue pays the cabinet's THANKS, BILLY.
 
+S4 (the second dragon, #2807):
+
+- **Co-op is the default seat** (Jon's multiplayer rule): Jimmy Lee fights beside
+  Billy on a fresh cabinet — same physics bank, own bank of three lives, CPU-driven
+  until a human takes the keys. `?solo=1` declines the partner; the SHELL defaults
+  co-op while `sim.makeGame(seed)` defaults solo so every S1..S3 law fixture still
+  drives exactly one dragon.
+- **The crowd splits by nearest** — a thug commits to the dragon closest and only
+  switches when the other gets 24px meaningfully closer; windups, charges, casts
+  and grabs finish on the dragon they started with (`ally-blind` mutant guards it).
+- **Arcade lethal wears on both seats** — a clean hit costs the seat it finds,
+  not Billy by name; lanes, blades and knees all resolve against whoever owns
+  the lane.
+- **Game over only when both banks run dry** — a drained seat goes dark, the
+  partner carries the street, and the fallen dragon rides the **second wind**:
+  one life back when the next stage opens (`seat-blind` mutant guards it).
+- **Crowd law grows**: two attackers pile on a lone dragon, three with two
+  dragons — never four.
+- **Marian's ropes answer either dragon's fists**; thrown knives fly from both
+  seats and blades take the dragon on the lane.
+- **No friendly fire** — dragons share a lane and swing without costing each
+  other (deviation from the 1987 board, recorded on the issue: the original had
+  no CPU partner, and a CPU seat that could cost you a life is not a partner;
+  Jon's phone-play rule points the other way).
+- **Drop-in law** (Contra S4): the first touch of a P2 key (WASD · F punch ·
+  G kick · V jump) hands Jimmy to a human for the rest of the run. No second
+  touchpad (Jon).
+- **The crate-corner deadlock** (this stage's hard lesson): a body k-slipping
+  around a prop while a lane-chaser pulls the other way froze dragons and a
+  Williams for 57,000 ticks on co-op seed 2. Two laws pin the fix — the
+  k-slip prefers the depth the body ALREADY wanted, and the brain closes BOTH
+  axes toward a target (walk to the target's side of wood; never mash depth
+  into it).
+
 ## Controls
 
 Arrows walk (UP/DOWN = depth) · SPACE jump · X kick · Z punch · ? ops card.
 Pad: JUMP / KICK / PUNCH (`thirdAction`, #2324).
+2P drop-in (keyboard): WASD walk · F punch · G kick · V jump.
 
 ## Verify
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 81 checks: boots, laws, casters, duel, rescue, winnable, browser leg
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind must go RED (named)
+npm run ddragoncheck                    # 91 checks: boots, laws, casters, duel, rescue, co-op seats, winnable, browser leg
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -111,10 +152,14 @@ Roster notes: joined BOTH lists at once — `scripts/lib/contractGames.mjs`
 (and its PATTERNS) and the `nightlybot.mjs` soak roster (#1525 law, the lesson
 of nightly 44762398189).
 
-## Honest gaps (S3 by design — the S4 map on #2807)
+## Honest gaps (the whole commission shipped; what's still short)
 
-- One stage left: S4 seats CPU-ally Jimmy by default (Jon's rule), then the
-  keyboard drop-in.
+- Jimmy's CPU brain is the player's own brain re-seated (`dragonBrain`), not a
+  distinct personality; the arcade had no CPU partner to imitate, so a more
+  distinctive ally style (his own spacing, occasional showy spins) is polish
+  fodder, not a missing rule.
+- Two humans at one keyboard is always cramped; P2 (WASD+F/G/V) lives to the
+  left of P1's arrows cluster by necessity.
 - No combos/chain scoring bonuses; the original scores per-KO with a simple
   chain multiplier — carry added, chain not.
 - Marian arrives tied (S3) but the game opens without the original's
