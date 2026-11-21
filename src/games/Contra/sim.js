@@ -707,6 +707,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             if (q.inv > 0) q.inv -= 1
             if (pad2.left || pad2.right || pad2.up || pad2.down || pad2.a || pad2.b) q.idle = 0
             if (q.y >= spot.y) {                 // touchdown — the seat is live
+                q.enterT = 0                     // no leftover rope ticks: patience starts here
                 q.vy = 0; q.onGround = true
                 q.drop = 0; q.coyote = 0; q.lane = q.y
                 // never land below the torrent (the respawn law, same canyon)

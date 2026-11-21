@@ -180,8 +180,10 @@ export function drawPlatform (ctx, pl) {
 // --- hero: white tank, blue pants, red bandana; run/jump frames, 8-way arm.
 // S4 blue seat: the same body, arcade P2 palette (blue bandana, cold tank,
 // navy pants) — the palette swap IS the original's co-op language. ---
-export function drawPlayer (ctx, p, tick, blue = false) {
-    if (p.inv > 0 && Math.floor(tick / 4) % 2 === 0) return // respawn flicker
+export function drawPlayer (ctx, p, tick, blue = false, solid = false) {
+    // #2837: `solid` suppresses the respawn flicker for the arrival rappel —
+    // a soldier on the rope must be seen coming, not blinking in and out.
+    if (!solid && p.inv > 0 && Math.floor(tick / 4) % 2 === 0) return // respawn flicker
     const band = blue ? '#2b6fd4' : C.band
     const tank = blue ? '#a8cfe0' : C.tank
     const pants = blue ? '#16265c' : C.pants
@@ -245,6 +247,16 @@ export function drawPlayer (ctx, p, tick, blue = false) {
 
 // --- enemy soldier: olive uniform, red beret; three-frame run at speed, a
 // held-rifle idle, muzzle flash + recoil on the shot (s.flash rides the sim) ---
+// #2837 the arrival rappel: the rope the fresh blue soldier drops in on —
+// drawn behind him from the top of the camera to his hands, with a knot.
+// Pure paint: the descent itself is sim truth (p2.enterT).
+export function drawRappel (ctx, x, topY, y) {
+    ctx.fillStyle = '#2c3a2c'
+    ctx.fillRect(Math.round(x) - 1, Math.round(topY), 2, Math.max(0, Math.round(y - 24 - topY)))
+    ctx.fillStyle = '#48583f'
+    ctx.fillRect(Math.round(x) - 2, Math.round(y - 26), 4, 3)
+}
+
 export function drawSoldier (ctx, s, _tick) {
     ctx.save(); ctx.translate(Math.round(s.x), Math.round(s.y))
     const dir = Math.sign(s.walkDir || -1)
