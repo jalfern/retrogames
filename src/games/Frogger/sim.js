@@ -366,6 +366,37 @@ const supportedAtT = (gs, row, x, dt, m) => {
 }
 
 export const WATCH_HORIZON = 420 // ticks the rollouts scan ahead (7 s)
+// #2869 helpers — ground toward the bank. distToBank: px from x to the nearest
+// OPEN house column centre (0 when the house row is done). openSide: -1 when
+// every open column sits strictly LEFT of x, +1 when strictly right, 0 when the
+// columns straddle x (or none are open). A river row whose lane drifts OPPOSITE
+// openSide carries the frog away from every reachable home — ground, not rows,
+// is then the only progress metric (#2869 park-loop: hold vs descent tied on
+// survival and the +50 row bonus picked the away-carrying lane).
+const distToBank = (gs, xx) => {
+    let d = Infinity
+    for (let i = 0; i < gs.houses.length; i++) {
+        if (gs.houses[i].filled) continue
+        const dd = Math.abs(xx - (HOUSE_COLS[i] * CELL + CELL / 2))
+        if (dd < d) d = dd
+    }
+    return d === Infinity ? 0 : d
+}
+const openSide = (gs, xx) => {
+    let l = false, r = false
+    for (let i = 0; i < gs.houses.length; i++) {
+        if (gs.houses[i].filled) continue
+        if (HOUSE_COLS[i] * CELL + CELL / 2 < xx) l = true
+        else r = true
+    }
+    return l && !r ? -1 : r && !l ? 1 : 0
+}
+// true on a river row whose ride drifts away from every open column.
+const ridesAway = (gs, row, xx) => {
+    if (row < RIVER_TOP || row > RIVER_BOT) return false
+    const side = openSide(gs, xx)
+    return side !== 0 && gs.riverLanes[row - RIVER_TOP].dir === -side
+}
 const DRIFT_CAP = 900            // + carried-log projection cap (15 s)
 
 // Greedy continuation used inside the rollout: hop up whenever the landing is
@@ -408,30 +439,23 @@ function greedyRun(gs, m, dt0, row0, x0, riding0, time0) {
     // #2869 refinement: an arcade shuffle that DRIFTS toward the bank is good
     // play and returns near its start all the time — only a loop that makes no
     // net ground toward any OPEN house column is a stall worth banning.
-    const distToBank = xx => {
-        let d = Infinity
-        for (let i = 0; i < gs.houses.length; i++) {
-            if (gs.houses[i].filled) continue
-            const dd = Math.abs(xx - (HOUSE_COLS[i] * CELL + CELL / 2))
-            if (dd < d) d = dd
-        }
-        return d === Infinity ? 0 : d
-    }
+    let bestD = distToBank(gs, x0)
     for (; dt <= WATCH_HORIZON; dt++) {
-        if (--time <= 0) return { died: dt, home: 0 }
+        if (--time <= 0) return { died: dt, home: 0, bestDist: bestD }
         if (riding >= 0) {
             const lane = gs.riverLanes[riding]
             x += lane.dir * lane.speed * m
-            if (lane.dive && mod(lane.t + dt, DIVE_CYCLE) >= DIVE_UP) return { died: dt, home: 0 }
+            if (lane.dive && mod(lane.t + dt, DIVE_CYCLE) >= DIVE_UP) return { died: dt, home: 0, bestDist: bestD }
         }
-        if (crushedAtT(gs, row, x, dt, m)) return { died: dt, home: 0 }
-        if (x < CELL * 0.4 || x > W - CELL * 0.4) return { died: dt, home: 0 }
-        if (row === ROAD_TOP) { /* keep scanning; step tries up below */ }
+        if (crushedAtT(gs, row, x, dt, m)) return { died: dt, home: 0, bestDist: bestD }
+        if (x < CELL * 0.4 || x > W - CELL * 0.4) return { died: dt, home: 0, bestDist: bestD }
         if (row >= RIVER_TOP && row <= RIVER_BOT) {
-            const f = firstVisit[row] || (firstVisit[row] = { x, dt, dist: distToBank(x) })
+            const d = distToBank(gs, x)
+            if (d < bestD) bestD = d
+            const f = firstVisit[row] || (firstVisit[row] = { x, dt, dist: d })
             const v = lastVisit[row]
             if (v && dt - v.dt >= 2 && dt - f.dt >= LOOP_GRACE
-                && Math.abs(x - v.x) <= LOOP_TOL && f.dist - distToBank(x) < LOOP_GAIN
+                && Math.abs(x - v.x) <= LOOP_TOL && f.dist - d < LOOP_GAIN
                 && noGo.length < LOOP_MAX) noGo.push({ row, x })
             lastVisit[row] = { x, dt }
         }
@@ -472,8 +496,7 @@ function greedyRun(gs, m, dt0, row0, x0, riding0, time0) {
                 if (toDive <= 0) return { died: dt, home: 0 }
                 rem = Math.min(rem, toDive)
             }
-            const houseBehind = row === RIVER_TOP
-                && !gs.houses.some((h, i) => !h.filled && HOUSE_COLS[i] * CELL + CELL / 2 >= x)
+            const houseBehind = ridesAway(gs, row, x) // #2869: was row-1/columns-left only
             if (rem <= 60 || houseBehind) {
                 const nr = row + 1
                 if (nr <= MEDIAN_ROW) {
@@ -491,7 +514,7 @@ function greedyRun(gs, m, dt0, row0, x0, riding0, time0) {
             }
         }
     }
-    return { died: 0, home: 0, survived: true, row, x, riding }
+    return { died: 0, home: 0, survived: true, row, x, riding, bestDist: bestD }
 }
 
 // Value one candidate action by replaying the game's OWN forward rules —
@@ -526,6 +549,7 @@ function rollout(gs, dx, dy) {
     const r = greedyRun(gs, m, 1, row, x, riding, gs.timeLeft)
     if (r.home) return { ok: true, value: 1e6 + (WATCH_HORIZON - r.home) }
     let survived = r.died
+    let bestD = r.bestDist
     // A frog still riding at the horizon end gets its carry-out projected: the
     // slow log lanes reach an edge well past the scan window, and the exact tick
     // the board drops it is pure scalar arithmetic (drift + dive phase).
@@ -534,12 +558,25 @@ function rollout(gs, dx, dy) {
         let xx = r.x
         for (let dt = WATCH_HORIZON + 1; dt < DRIFT_CAP; dt++) {
             xx += lane.dir * lane.speed * m
+            const dd = distToBank(gs, xx)
+            if (dd < bestD) bestD = dd
             if (lane.dive && mod(lane.t + dt, DIVE_CYCLE) >= DIVE_UP) { survived = dt; break }
             if (xx < CELL * 0.4 || xx > W - CELL * 0.4) { survived = dt; break }
         }
     }
     survived = survived || DRIFT_CAP
-    return { ok: true, value: survived * 10 + (START_ROW - row) * 50 }
+    let value = survived * 10 + (START_ROW - row) * 50
+    // #2869 park-loop rank fix: when the landing's own lane drifts away from
+    // EVERY open house column, the row bonus is a lie — the nearer row rides
+    // further from home, and hold-vs-escape candidates tie at the clock cap, so
+    // the +50 alone kept picking the away-carrying ride (seed 1970: row 1 held
+    // over the -1,1 descent onto the left-bound lane for whole clocks). Rank by
+    // ground actually made toward the bank: survived ticks still lead, then px
+    // gained (5 px = 1 tick, capped below any row shift). No rand, pure scalar.
+    if (row >= RIVER_TOP && row <= RIVER_BOT && ridesAway(gs, row, x)) {
+        value = survived * 10 + (distToBank(gs, x) - bestD) * 0.2
+    }
+    return { ok: true, value }
 }
 
 // Candidate order IS the tie-break: forward first, then the diagonals that
