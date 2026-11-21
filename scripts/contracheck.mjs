@@ -7,7 +7,8 @@
 // The sim core runs in plain Node (sim.js is DOM-free): determinism, the 8-way
 // run-and-gun law, one-hit death + respawn mercy, the SPREAD capsule, barrel
 // chains, and the S2 laws — the waterfall ratchet camera, drowning torrent,
-// vertical wake law, the armored gate with its one weak point, and the door
+// vertical wake law, the armored gate with its one weak point and its
+// ten-round cannon housings (#2880), and the door
 // that cannot spill an army. The WINNABLE proof drives the FULL stage (jungle +
 // falls + boss) with the honest-percept autopilot on seeds 1..12.
 // Named regressions guard the traps this game almost shipped with: soldiers
@@ -324,6 +325,63 @@ const mkBoss = (seed = 7) => {
         shut2.ev.length = 0
     }
     r.check('#2854 the SHUT shutter still eats a beam — the ONE weak point never moved', !shut2.pb.includes(beamR) && beamR.y >= CFG.coreY - CFG.coreHH && hits3 === 0 && sparks3 >= 1, `diedAtY=${beamR.y} hits=${hits3} sparks=${sparks3}`)
+}
+{
+    // #2880 the depot slab law reaches the gate: pin the hero at x=100 (the
+    // #2854 line crosses gun-0's box) and hold the trigger — ten rounds, a
+    // spark per hit, then one named boom, +300, and the housing is dead. The
+    // core never takes a hit on this line, gun 1 stands untouched.
+    const gs = mkBoss(7); gs.p.x = 100; gs.p.inv = 99999; gs.p2.out = true
+    const scoreBefore = gs.score
+    let sparks = 0, booms = 0, coreHits = 0, tickCaved = -1
+    for (let i = 0; i < 800 && tickCaved < 0; i++) {
+        gs.p.x = 100 // pin the fire line — the hero holds rather than sweeping
+        step(gs, { right: true, up: true, b: true })
+        sparks += gs.ev.filter((e) => e.type === 'spark').length
+        booms += gs.ev.filter((e) => e.type === 'boom').length
+        coreHits += gs.ev.filter((e) => e.type === 'coreHit').length
+        gs.ev.length = 0
+        if (gs.boss.guns[0].dead) tickCaved = i
+    }
+    r.check('#2880 ten aimed rounds cave the near housing — spark per hit, then a named blast (+300), core untouched',
+        tickCaved >= 0 && sparks === CFG.gunHp && booms === 1 && gs.score - scoreBefore === 300 && coreHits === 0 && gs.boss.guns[1].hp === CFG.gunHp,
+        `tick=${tickCaved} sparks=${sparks} booms=${booms} dScore=${gs.score - scoreBefore} coreHits=${coreHits}`)
+    // Silence: arm both mounts; the survivor keeps its cadence, the wreck's
+    // muzzle never speaks again (gun-0 rounds would spawn within its box:
+    // gun 1 sits 140px away and its line stays well below y<44 at x=190).
+    gs.boss.guns[0].t = 1; gs.boss.guns[1].t = 1
+    let cannonEv = 0, gun0Rounds = 0
+    for (let i = 0; i < 600; i++) {
+        gs.p.x = 100
+        step(gs, {})
+        cannonEv += gs.ev.filter((e) => e.type === 'cannon').length
+        gun0Rounds += gs.eb.filter((b) => Math.abs(b.x - 190) <= 16 && b.y <= 52 && b.x > 170).length
+        gs.ev.length = 0
+    }
+    r.check('#2880 the caved gun is silent for the fight — the survivor still answers',
+        cannonEv >= 1 && gun0Rounds === 0, `cannon=${cannonEv} gun0rounds=${gun0Rounds}`)
+    // The wreck no longer intercepts: rifle and laser both sail through the
+    // dead housing with no spark, and the laser takes no "one take" on it.
+    gs.pb.push({ x: 180, y: 36, vx: 2, vy: 0, k: 'r' })
+    gs.pb.push({ x: 180, y: 40, vx: 2, vy: 0, k: 'l', hits: [] })
+    const wR = gs.pb[gs.pb.length - 2]; const wL = gs.pb[gs.pb.length - 1]
+    let sparksW = 0
+    for (let i = 0; i < 24; i++) {
+        step(gs, {})
+        sparksW += gs.ev.filter((e) => e.type === 'spark').length
+        gs.ev.length = 0
+    }
+    r.check('#2880 a caved housing stops eating rounds — wrecks intercept nothing (rifle or beam)',
+        gs.pb.includes(wR) && gs.pb.includes(wL) && wR.x > 220 && sparksW === 0 && !wL.hits.includes('g0'),
+        `rifleX=${wR.x} alive=${gs.pb.includes(wR)} sparks=${sparksW} took=${wL.hits.includes('g0')}`)
+    // Sim truth: hp and dead ride the hash — a replay that caves a gun diverges.
+    const gsH = mkBoss(7)
+    const h0 = stateHash(gsH)
+    gsH.boss.guns[0].hp = 3
+    const h1 = stateHash(gsH)
+    gsH.boss.guns[0].dead = true
+    const h2 = stateHash(gsH)
+    r.check('#2880 housing damage is sim truth — hp and dead ride stateHash', h0 !== h1 && h1 !== h2, `${h0}/${h1}/${h2}`)
 }
 {
     const gs = mkBoss(9); gs.boss.core = 1
@@ -1085,6 +1143,28 @@ if (MUTANT) {
             },
         },
         {
+            // #2880: take the housings' HP away and the gate returns to the
+            // old forever-armour — ten rounds, a hundred rounds, the gun talks
+            // on. The harm names exactly the gap this stage closed.
+            name: 'gate-armor-forever',
+            anchor: 'g.hp -= 1',
+            plant: 'g.hp -= 0; /* MUTANT(gate-armor-forever): the cannon housings never dent */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                mod.warpBoss(gs)
+                gs.p.x = 150; gs.p.y = mod.CFG.bossFloor; gs.p.onGround = true; gs.p.vy = 0
+                gs.boss.guns.forEach((g) => { g.t = 1e9 }); gs.boss.doors.forEach((d) => { d.t = 1e9 })
+                gs.p.x = 100; gs.p.inv = 99999; gs.p2.out = true
+                let dead = false
+                for (let i = 0; i < 1200 && !dead; i++) {
+                    gs.p.x = 100
+                    mod.step(gs, { right: true, up: true, b: true })
+                    dead = gs.boss.guns[0].dead
+                }
+                return dead ? null : 'HARM NAMED: the gate housing is impervious - 1200 ticks of aimed fire at x=100 and the gun still cannot be answered; the depot law never reached the gate'
+            },
+        },
+        {
             // #2814 re-forged: ignore the partner's SEAT and the run GAME OVERs
             // the instant the hero's pool empties while the blue soldier still
             // stands — the cabinet never ends a run under a living second player.
@@ -1539,6 +1619,35 @@ const browser = await launch()
     }
     await page.keyboard.up('ArrowRight')
     r.check('#2847 deck pod delivers its gun through real keys', podWeapon === 'machine', `weapon=${podWeapon}`)
+
+    // #2880 browser legs: the probe carries housing truth through the real
+    // loop, and a caved mount renders as a blackened wreck — the rust ring
+    // around its blown muzzle is the marker; the live slab carries none there
+    // (the strip's static wall rivets are measured in both states, so only
+    // the wreck's ring moves the count).
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', clearBoss: true }))
+    const liveGuns = (await page.evaluate(() => window.__contraTest.probe())).gateGuns
+    const rustStrip = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(183 * k), Math.round(30 * k), Math.max(15, Math.round(15 * k)), Math.max(2, Math.round(2 * k))).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 110 && d[i + 1] > 60 && d[i + 1] < 115 && d[i + 2] < 90) n++
+        return n
+    })
+    const liveRust = await rustStrip()
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', gunHp0: 0 }))
+    const wreckGuns = (await page.evaluate(() => window.__contraTest.probe())).gateGuns
+    let wreckRust = 0
+    for (let guard = 0; guard < 20 && wreckRust < 8; guard++) {
+        await page.waitForTimeout(100) // let a frame paint after the warp (rAF, not sim)
+        wreckRust = await rustStrip()
+    }
+    r.check('#2880 probe carries housing truth live: hp 10 at the arena, dead once caved',
+        Array.isArray(liveGuns) && liveGuns[0].hp === 10 && !liveGuns[0].dead && wreckGuns && wreckGuns[0].dead,
+        JSON.stringify({ live: liveGuns, wreck: wreckGuns }))
+    r.check('#2880 the caved mount renders ruined — soot ring appears where the live slab was bare',
+        wreckRust - liveRust >= 8, `live=${liveRust} wreck=${wreckRust}`)
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()

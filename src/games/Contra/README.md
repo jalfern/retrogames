@@ -170,6 +170,18 @@ The laws the blue seat lives under, all proven in `contracheck`:
   Zero `gs.r` draws; the winnable-seeds pin stands unchanged. A laser bought
   from the depot now rewrites the gate fight exactly like it rewrites the
   jungle: line a beam through the guns and it reaches past them.
+- **Gate guns cave (#2880)**: the gate's outer guns are answered. Each cannon
+  housing is an arms-depot slab — `hp: 10`, spark per hit, **ten rounds cave
+  it**: a named `boom` and +300, and that gun is silent for the rest of the
+  fight (`dead` skips the firing cadence), its charge glow dies and the slab
+  draws blackened with a cracked muzzle, ember flicker and a rising smoke
+  wisp; half-dented armour shows spalled concrete before the cave. A caved
+  housing stops intercepting rounds altogether (the mount was the armour, not
+  the wall — arcade planes don't block shots), and takes no pierce "one take"
+  either. Live housings keep the armour law and the #2854 pierce law verbatim,
+  and the shuttered core stays the ONE win: guns are an answer, not a second
+  door. `hp`/`dead` ride `stateHash` (a replay that caves a gun diverges
+  loudly); zero `gs.r` — hits are deterministic, the cadence rnd untouched.
 - Audio: every new action synthesized via `audioController` — the MG's ripping
   pop, the firebar's breath, the laser's falling zap, the sniper's crack and
   the lob's whistle answer the existing set.
@@ -258,9 +270,11 @@ page errors.
   on touchdown (`dust` event + specks), and the fly-in gains a ~6 Hz rotor
   beat. The original's SECOND air layer (mid-boss gunships, hangar door) still
   stands below.
-- The fortress gate's cannon housings are indestructible scenery and fire
-  forever — "the gate's outer guns are next": the jungle's arms depot caves
-  under ten rounds, the gate's guns still cannot be answered.
+- **CLOSED by #2880**: the gate's outer guns are answered — each cannon
+  housing takes the depot slab law (ten rounds, spark per hit), caving with a
+  named blast and +300; the gun falls silent, the muzzle light dies and the
+  wreck smokes. A caved housing stops eating rounds (pierce included); the
+  shuttered core stays the ONE weak point. See the Gate guns cave note above.
 - The cascade blasts at the gate are random around the wall rather than
   scripted position-by-position; the waterfall has one gunner set and one
   hazard (the rising torrent), while the original also put the odd hanging
