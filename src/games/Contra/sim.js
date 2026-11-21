@@ -875,7 +875,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                     cr.dead = true
                     gs.score += 500
                     gs.ev.push({ type: 'boom', x: cr.x, y: cr.y, kind: 'kill' })
-                    gs.pods.push({ x: cr.x, y: cr.y + 12, vx: CFG.podVx, vy: 0, kind: cr.kind })
+                    gs.pods.push({ x: cr.x, y: cr.y + 12, vx: CFG.podVx, vy: 0, kind: cr.kind, recoil: 6, puff: 0 })
                     if (gs.pods.length > 4) gs.pods.shift()
                     gs.ev.push({ type: 'cargo', k: cr.kind })
                 }
@@ -1103,11 +1103,16 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
     // touch box, capture kills the wheel. Despawn is the scroll, as ever. ---
     gs.pods = gs.pods.filter((c) => {
         c.x += c.vx
-        if (c.y < CFG.ground - 2) {
+        if (c.recoil > 0) c.recoil -= 1                     // #2852 the cable snap holds the load a beat
+        else if (c.y < CFG.ground - 2) {
             c.vy = Math.min(CFG.podFallMax, c.vy + CFG.podGrav)
             c.y = Math.min(CFG.ground - 2, c.y + c.vy)
-            if (c.y >= CFG.ground - 2) c.vy = 0
+            if (c.y >= CFG.ground - 2) {
+                if (c.vy > 0) { c.puff = 12; gs.ev.push({ type: 'dust', k: c.kind }) } // #2852 sand kick on touchdown
+                c.vy = 0
+            }
         }
+        if (c.puff > 0) c.puff -= 1
         if (p.inv >= 0 && !p.out && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
             if (p.weapon !== c.kind) { p.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind }) }
             else gs.ev.push({ type: 'pickup', k: c.kind })

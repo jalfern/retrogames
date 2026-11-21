@@ -156,6 +156,11 @@ The laws the blue seat lives under, all proven in `contracheck`:
   touch box, capture kills the wheel). Contact is non-lethal — cargo, not a
   weapon; an untouched courier escapes WITH its pod and reschedules (+380..620
   ticks). The canyon clears the sky; carriers and pods ride `stateHash`.
+   #2852 polish: the jettison SNAPS (`recoil: 6` — the load hangs a beat while
+   the hooks flick open, then drops), and touchdown kicks a `dust` event with a
+   12-tick sand speck puff (`puff`) at the deck line; the rotor draws a
+   translucent disc sweep under two counter-phase blade lines, and the fly-in
+   carries three delayed low thumps (~6 Hz rotor beat).
 - **Gate pierce law (#2854)**: the fortress gate's cannon housings no longer
   swallow piercing rounds. An `f`/`l` round meeting a housing sparks once and
   **keeps flying** (`hits` tags `'g' + gi` — one take per housing per beam,
@@ -247,6 +252,12 @@ page errors.
   the cannon housings and keep flying (one take per housing per beam, the
   bodies law verbatim); ordinary rounds still spark and stop dead, and the
   shuttered core remains the ONE weak point. See the Gate pierce law note above.
+- **CLOSED by #2852**: pod-carrier polish shipped — the rotor reads as a
+  blurred disc (translucent sweep + two counter-phase blade lines), jettison
+  snaps (6-tick cable recoil with hook-open frames), the pod kicks a sand puff
+  on touchdown (`dust` event + specks), and the fly-in gains a ~6 Hz rotor
+  beat. The original's SECOND air layer (mid-boss gunships, hangar door) still
+  stands below.
 - The fortress gate's cannon housings are indestructible scenery and fire
   forever — "the gate's outer guns are next": the jungle's arms depot caves
   under ten rounds, the gate's guns still cannot be answered.
