@@ -1,6 +1,7 @@
-// R-TYPE — S1 "Armament" (Irem M-72 arcade 1987, issue #2808).
+// R-TYPE — S4 "the second pilot" (Irem 1987/89, issue #2808).
 // Shell plumbing per docs/GAME-SHELL.md: one loop, fixed timestep, attract
 // first, '?' ops card, phone pad (FIRE), DEV + contract hooks.
+// Seat two (S4): keyboard-only — WASD+F fire+G pod, V gives the seat back.
 // All rules live in sim.js; all look in art.js.
 
 import React, { useEffect, useRef, useState } from 'react'
@@ -10,8 +11,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, STAGE_END, STAGE_END2, POD, makeGame, step, autopilot, stateHash, shieldOn } from './sim.js'
-import { drawBackground, drawShip, drawLarva, drawTurret, drawPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge } from './art.js'
+import { W, H, STAGE_END, STAGE_END2, POD, makeGame, step, autopilot, stateHash, shieldOn, shieldOnAt, enableCoop } from './sim.js'
+import { drawBackground, drawShip, drawShipWing, drawLarva, drawTurret, drawPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'r-type:hiscore'
@@ -34,6 +35,7 @@ export default function RType() {
 
         const freshSeed = () => (seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0
         let gs = makeGame(freshSeed())
+        enableCoop(gs) // the cabinet shows two ships (S4) — co-op is the default
         let screen = 'attract'
         let raf = 0
         let last = 0
@@ -48,6 +50,10 @@ export default function RType() {
         let plugN = 0 // #2823: per-hit pitch rotation for the plug tick
         const keys = { l: false, r: false, u: false, d: false, f: false }
         let podQ = false // POD is a press-verb: latch so sub-frame taps (bots) still reach the sim
+        // seat two (S4): WASD + F fire + G pod, V relieves the human. No second
+        // touchpad — Jon's multiplayer rule: the pad stays seat one's.
+        const keys2 = { l: false, r: false, u: false, d: false, f: false }
+        let podQ2 = false
         let hiscore = Number(localStorage.getItem(HS_KEY) || 0)
 
         const sfx = {
@@ -91,6 +97,13 @@ export default function RType() {
             p2shut: () => { audioController.playSweep(200, 60, 0.2, 'square', 0.1); audioController.playNoise(0.08, 0.08) },
             coredown: () => { audioController.playNoise(0.3, 0.18); audioController.playSweep(240, 40, 0.4, 'sawtooth', 0.14); shake = Math.max(shake, 5) },
             enrage: () => { audioController.playTone(880, 0.09, 'square', 0.1); audioController.playTone(660, 0.09, 'square', 0.1, 0.1); audioController.playTone(880, 0.09, 'square', 0.1, 0.2) },
+            // S4 seat two: the wing's death is a smaller report than your own;
+            // relief is a chirp; a burned seat gets the long goodbye
+            wingdie: () => { audioController.playSweep(330, 60, 0.38, 'sawtooth', 0.13); shake = Math.max(shake, 3) },
+            wingin: () => { audioController.playTone(520, 0.05, 'triangle', 0.08); audioController.playTone(780, 0.07, 'triangle', 0.08, 0.05) },
+            winglost: () => { audioController.playSweep(300, 40, 0.7, 'triangle', 0.12); audioController.playNoise(0.2, 0.08) },
+            wforce: () => { const n = [440, 660, 880, 1320]; n.forEach((f, i) => audioController.playTone(f, 0.07, 'triangle', 0.09, i * 0.05)) },
+            wbitslost: () => audioController.playSweep(440, 110, 0.22, 'triangle', 0.08),
             warn: () => audioController.playTone(500, 0.05, 'square', 0.06),
             tsfire: () => audioController.playTone(340, 0.04, 'square', 0.06),
             '1up': () => { const n = [523, 659, 784, 1046]; n.forEach((f, i) => audioController.playTone(f, 0.09, 'square', 0.1, i * 0.09)) },
@@ -138,6 +151,13 @@ export default function RType() {
                     converge(8, gs.ship.x + 14 - sx, gs.ship.y, 3)
                     attachFlash = 14
                 }
+                // seat two (S4): its wrecks and ceremonies read at ITS position
+                else if (ev === 'wingdie') bursts(18, (gs.lastWreckX ?? gs.ship.x) - sx, gs.lastWreckY ?? gs.ship.y, 2)
+                else if (ev === 'wingin') { const w = gs.wing; if (w) bursts(8, w.x - sx, w.y, 3) }
+                else if (ev === 'winglost') { const w = gs.wing; if (w) bursts(14, w.x - sx, w.y, 0) }
+                else if (ev === 'wforce') { const w = gs.wing; if (w) { bursts(12, w.x + 14 - sx, w.y, 3); converge(8, w.x + 14 - sx, w.y, 3) } }
+                else if (ev === 'wbit') { const w = gs.wing; if (w) bursts(8, w.x - sx, w.y, 1) }
+                else if (ev === 'wshield') { const w = gs.wing; if (w) bursts(14, w.x - sx, w.y, 1) }
             }
             gs.events.length = 0
         }
@@ -145,9 +165,12 @@ export default function RType() {
         const startPlay = () => {
             gs = makeGame(freshSeed())
             gs.hi = hiscore
+            enableCoop(gs) // S4: the wingman is live from the first frame
             part.length = 0
             rings.length = 0
             demoHold = 0
+            keys2.l = keys2.r = keys2.u = keys2.d = keys2.f = false
+            podQ2 = false
             setMode('play')
             screen = 'play'
         }
@@ -161,8 +184,8 @@ export default function RType() {
             }
         }
 
-        const stepSim = (pad) => {
-            step(gs, pad)
+        const stepSim = (pad, pad2 = null) => {
+            step(gs, pad, pad2)
             drain()
             // charge tell: a rising whine as the wave cannon drinks (#2818)
             const ch = gs.ship.charge
@@ -175,6 +198,15 @@ export default function RType() {
             podQ = false
             return p
         }
+
+        // seat two (S4): its keys reach the sim every tick; the human flag is
+        // what hands the CPU wingman the yoke (any seat-two press takes the seat)
+        const simPad2 = () => {
+            const p = { left: keys2.l, right: keys2.r, up: keys2.u, down: keys2.d, a: keys2.f, b: podQ2 }
+            podQ2 = false
+            return p
+        }
+        const takeSeat2 = () => { if (gs.wing && !gs.wing.out) gs.wing.human = true }
 
         const paint = () => {
             shake = Math.max(0, shake - 0.45)
@@ -211,6 +243,15 @@ export default function RType() {
                 }
             }
             for (const bt of gs.bits) drawBit(ctx, bt, gs.camX, shieldOn(gs), gs.tick)
+            // seat two (S4): shell, chain and hull of the wing (drawn under seat one)
+            if (gs.wing) {
+                if (gs.wing.pod) {
+                    drawPodTether(ctx, gs.wing.pod, gs.wing, gs.camX, gs.tick)
+                    drawSeedPod(ctx, gs.wing.pod, gs.camX, !gs.wing.dead)
+                }
+                for (const bt of gs.wing.bits) drawBit(ctx, bt, gs.camX, shieldOnAt(gs.wing), gs.tick)
+                drawShipWing(ctx, gs.wing, gs.camX)
+            }
             // particles (juice layer — Math.random law: never reaches state)
             for (let i = part.length - 1; i >= 0; i--) {
                 const p = part[i]
@@ -256,9 +297,9 @@ export default function RType() {
                     acc += ft
                     while (acc >= SIM_MS) {
                         if (screen === 'play') {
-                            stepSim(simPad())
+                            stepSim(simPad(), simPad2())
                         } else if (screen === 'attract') {
-                            if (demoHold > 0) { demoHold -= 1; if (demoHold === 0) gs = makeGame((gs.seed + 7) >>> 0) }
+                            if (demoHold > 0) { demoHold -= 1; if (demoHold === 0) { gs = makeGame((gs.seed + 7) >>> 0); enableCoop(gs) } }
                             else { stepSim(autopilot(gs)); if (gs.mode !== 'play') demoHold = 130 }
                         } else if (screen === 'over') {
                             gs.tick += 1
@@ -283,6 +324,14 @@ export default function RType() {
             if (e.code === 'ArrowDown') keys.d = true
             if (e.code === 'Space' || e.code === 'KeyX' || e.code === 'KeyZ') keys.f = true
             if ((e.code === 'KeyB' || e.code === 'KeyC') && !e.repeat) podQ = true
+            // seat two (S4): any press at the seat takes it (drop-in); V relieves
+            if (e.code === 'KeyW') { keys2.u = true; takeSeat2() }
+            if (e.code === 'KeyA') { keys2.l = true; takeSeat2() }
+            if (e.code === 'KeyS') { keys2.d = true; takeSeat2() }
+            if (e.code === 'KeyD') { keys2.r = true; takeSeat2() }
+            if (e.code === 'KeyF') { keys2.f = true; takeSeat2() }
+            if (e.code === 'KeyG' && !e.repeat) { podQ2 = true; takeSeat2() }
+            if (e.code === 'KeyV' && !e.repeat && gs.wing) gs.wing.human = false
         }
         const onUp = (e) => {
             if (e.code === 'ArrowLeft') keys.l = false
@@ -290,8 +339,13 @@ export default function RType() {
             if (e.code === 'ArrowUp') keys.u = false
             if (e.code === 'ArrowDown') keys.d = false
             if (e.code === 'Space' || e.code === 'KeyX' || e.code === 'KeyZ') keys.f = false
+            if (e.code === 'KeyW') keys2.u = false
+            if (e.code === 'KeyA') keys2.l = false
+            if (e.code === 'KeyS') keys2.d = false
+            if (e.code === 'KeyD') keys2.r = false
+            if (e.code === 'KeyF') keys2.f = false
         }
-        const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.f = false }
+        const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.f = false; keys2.l = keys2.r = keys2.u = keys2.d = keys2.f = false }
         const onPointer = () => {
             if (screen === 'attract') { startPlay(); return }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract') }
@@ -325,6 +379,12 @@ export default function RType() {
                     p1: gs.p1 ? `${gs.p1.mouth}:${gs.p1.coreHp}` : '-',
                     bits: gs.bits.length, shield: shieldOn(gs) ? 1 : 0, leg: gs.leg,
                     p2: gs.p2 ? `${gs.p2.cores[0].hp}/${gs.p2.cores[1].hp}` : '-',
+                    wing: gs.wing ? (gs.wing.out ? 'out' : gs.wing.dead ? 'down' : 'live') : 'none',
+                    wingX: gs.wing ? Math.round(gs.wing.x) : 0, wingY: gs.wing ? Math.round(gs.wing.y) : 0,
+                    wingLives: gs.wing ? gs.wing.lives : 0, wingHuman: gs.wing && gs.wing.human ? 1 : 0,
+                    wingPod: gs.wing && gs.wing.pod ? gs.wing.pod.state : '-',
+                    wingBits: gs.wing ? gs.wing.bits.length : 0, wingShield: gs.wing && shieldOnAt(gs.wing) ? 1 : 0,
+                    wingWeapon: gs.wing ? gs.wing.weapon : '-', p1out: gs.ship.out ? 1 : 0,
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -349,6 +409,16 @@ export default function RType() {
                     if (opts.openVents && gs.p2) { for (const c of gs.p2.cores) if (c.hp > 0) { c.mouth = 'open'; c.mouthT = 10000 } }
                     if (opts.y !== undefined) gs.ship.y = opts.y
                     if (opts.p2hp && gs.p2) gs.p2.cores.forEach((c, ci) => { if (opts.p2hp[ci] !== undefined) c.hp = opts.p2hp[ci] })
+                    // S4 seat two fixtures
+                    if (opts.wingLives !== undefined && gs.wing) gs.wing.lives = opts.wingLives
+                    if (opts.wingOut && gs.wing) { gs.wing.out = true; gs.wing.dead = false; gs.wing.pod = null; gs.wing.bits.length = 0 }
+                    if (opts.wingHuman !== undefined && gs.wing) gs.wing.human = !!opts.wingHuman
+                    if (opts.wingInv !== undefined && gs.wing) gs.wing.inv = opts.wingInv
+                    if (opts.wingY !== undefined && gs.wing) gs.wing.y = opts.wingY
+                    if (opts.spawnCapWing && gs.wing) gs.caps.push({ id: gs.nextId++, x: gs.wing.x + 6, y: gs.wing.y, baseY: gs.wing.y, bob: 0, type: opts.capType || 'weapon' })
+                    if (opts.giveWingPod && gs.wing && !gs.wing.pod) gs.wing.pod = { id: gs.nextId++, state: 'attached', x: gs.wing.x + POD.noseX, y: gs.wing.y }
+                    if (opts.giveWingBits && gs.wing) { while (gs.wing.bits.length < 4) gs.wing.bits.unshift({ id: gs.nextId++ }) }
+                    if (opts.coopOff) gs.wing = null
                     return true
                 },
             }
@@ -359,6 +429,7 @@ export default function RType() {
                     `score ${gs.score}  hi ${Math.max(hiscore, gs.score)}  lives ${gs.lives}  arm ${gs.ship.weapon}${gs.ship.charge ? ` charge ${gs.ship.charge}` : ''}  inv ${gs.ship.inv}  mode ${gs.mode}`,
                     `pod ${gs.pod ? `${gs.pod.state} @${Math.round(gs.pod.x - gs.camX)}` : 'none'}  enemies ${gs.enemies.length}  bullets ${gs.bullets.length}  missiles ${gs.missiles.length}  shots ${gs.shots.length}  phase1 ${gs.p1 ? `${gs.p1.mouth} core ${gs.p1.coreHp}/${gs.p1.coreMax}` : 'field'}`,
                     `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}` : (gs.leg === 2 ? 'inbound' : '-')}`,
+                    `wing ${gs.wing ? `${gs.wing.out ? 'OUT' : gs.wing.dead ? 'DOWN' : `(${Math.round(gs.wing.x - gs.camX)},${Math.round(gs.wing.y)})`}  lives ${gs.wing.lives}  ${gs.wing.human ? 'HUMAN' : 'CPU'}  arm ${gs.wing.weapon}  pod ${gs.wing.pod ? gs.wing.pod.state : 'none'}  bits ${gs.wing.bits.length}` : 'off'}  p1out ${gs.ship.out ? 'yes' : 'no'}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
                 actions: [
@@ -373,6 +444,10 @@ export default function RType() {
                     { label: 'TO PHASE-1', run: () => { window.__rTest.setup({ toPhase1: true }); return 'the dreadnought looms' } },
                     { label: 'OPEN MAW', run: () => { window.__rTest.setup({ openMouth: true }); return 'the maw gapes' } },
                     { label: 'CLEAR FIRE', run: () => { gs.bullets.length = 0; gs.missiles.length = 0; return 'lane swept' } },
+                    { label: 'P2 SEAT IN/OUT', run: () => { if (!gs.wing) return 'co-op off'; gs.wing.human = !gs.wing.human; return gs.wing.human ? 'a human holds seat two' : 'wingman back on duty' } },
+                    { label: '+1 WING LIFE', run: () => { if (!gs.wing) return 'co-op off'; gs.wing.lives += 1; return `wing holds ${gs.wing.lives}` } },
+                    { label: 'WING OUT', run: () => { window.__rTest.setup({ wingOut: true }); return 'seat two dark' } },
+                    { label: 'GEAR THE WING', run: () => { window.__rTest.setup({ giveWingPod: true, giveWingBits: true }); return shieldOnAt(gs.wing) ? 'wing shield up' : 'wing geared' } },
                 ],
             })
             exposeGame({
@@ -380,10 +455,13 @@ export default function RType() {
                 buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reset: (seed) => {
                     gs = makeGame(seed >>> 0)
+                    enableCoop(gs) // the shipped default: co-op from tick one
                     part.length = 0
             rings.length = 0
                     keys.l = keys.r = keys.u = keys.d = keys.f = false
+                    keys2.l = keys2.r = keys2.u = keys2.d = keys2.f = false
                     podQ = false
+                    podQ2 = false
                     screen = 'play'
                     setMode('play')
                 },
@@ -401,6 +479,8 @@ export default function RType() {
                     p2: gs.p2 ? gs.p2.cores.map((c) => c.hp).join('/') : '-',
                     waveIdx: gs.waveIdx, enemies: gs.enemies.length,
                     cleared: gs.cleared ? 1 : 0,
+                    wing: gs.wing ? (gs.wing.out ? 'out' : gs.wing.dead ? 'down' : 'live') : 'none',
+                    wingLives: gs.wing ? gs.wing.lives : 0, wingHuman: gs.wing && gs.wing.human ? 1 : 0,
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,
