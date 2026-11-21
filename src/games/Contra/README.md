@@ -12,7 +12,8 @@ everything generated in code. Filed and built as #2779, one PR per stage:
   soldiers — plus the S3.5 arms depot (`bb56470`, #2791).
 - **S4 — two-seat co-op** (this): the blue soldier. A CPU ally fights beside
   you by default; on a desktop keyboard a second player claims his seat any
-  time with WASD + F (jump) + G (fire).
+  time with WASD + F (jump) + G fire — and stands up from it by simply
+  standing up (the seat comes back to the wingman; #2837).
 
 ## What S3 is
 
@@ -69,6 +70,16 @@ The laws the blue seat lives under, all proven in `contracheck`:
 - **Honest brain**: `allyBrain` sees only visible state (positions, bullets,
   hero's lane), never `gs.r`, never off-screen enemies — the same rule the
   autopilot obeys, so the ally is as good (and as fooled) as a fair player.
+- **Seat ceremony (#2837)**: drop-in ARRIVES — the first P2 touch doesn't
+  puppeteer the standing wingman where he is; he pulls out and a fresh soldier
+  rappels in at the hero-side spot (`allySideSpot`, the same shoulder law as
+  the death respawn), clean rifle, `inv` covering descent + the usual grace.
+  And a pad-claimed seat nobody drives for `seatIdle` = 600 live ticks (10 s
+  of no held key, no tap) hands itself back to the wingman brain — cost-free,
+  position and gun kept, 60-tick mercy window, `p2gone` chirp. Presence
+  (any P2 press) resets the patience; harness-pinned seats (`human` without
+  `padClaim`) are immune; a re-touch arrives on the rope again; and a touch
+  during the blue tumble skips the respawn wait entirely.
 
 ## Engine notes
 
@@ -150,7 +161,7 @@ npm run contracheck                      # sim core + browser leg
 npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   silent-MG, non-piercing-beam,
                                        #   impervious-depot, one-bank-lie,
-                                       #   blue-death-is-free
+                                       #   blue-death-is-free, never-release
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -178,14 +189,17 @@ nearer blue lane (down-solo vs flat-coop) · capsules and kills are per seat ·
 #2814 shared pool: a blue death costs the shared counter · a hero down leaves
 the partner running the run · GAME OVER needs BOTH seats down · the blue death never freezes the world · respawn
 lands at the hero's side · pad2 drives a claimed seat · live drop-in with
-KeyA** · zero page errors.
+KeyA · #2837 seat ceremony: the rappel arrives at the hero-side spot (never
+where the wingman stood) with mercy and a clean rifle · drop-out fires exactly
+at patience, cost-free · one touch resets the patience · harness-pinned seats
+immune · arrival beats the death tumble · ceremony hash-stable · zero page
+errors.
 
 ## Honest gaps
 
-- A claimed seat can't be released again (drop-out): once human, human for the
-  run. The arcade also let 2P arrive mid-level at a screen edge; our drop-in
-  claims the standing ally wherever he is. (The shared life pool that used to
-  sit in this gap is CLOSED — the cabinet's one-pool law shipped in #2814.)
+- **CLOSED by #2837**: seat ceremony shipped — drop-in rappels in at the
+  hero's side (never puppeteers the standing wingman) and a seat idle 10 s
+  returns to the wingman brain; see the Seat ceremony law above.
 - The original's flying pod carriers (weapon capsules dropped by low-flying
   craft) are still missing — the depot pays a volley when it falls, but no
   aircraft delivers guns yet.
