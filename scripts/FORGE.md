@@ -68,6 +68,8 @@ AGENTS.md wins.
      every step below — the main checkout is plumbing, not a workspace:
      `git worktree add "$HOME/Dev/retrogames-forge-<slug>" -b forge/<slug> origin/main`.
      Your dev server port is named in your prompt (5173 = slot a, 5178 = slot b).
+     Stop it only with `scripts/devstop.sh` (by port). Never `pkill -f` a pattern such as
+     "npm run dev": it matches every lane's `opencode run` (the prompt is in argv) and kills them.
     If the ladder points at a `feedback` item (the queue is empty — "builders
     the reverse", #1258), **borrow the QA lane's job instead.** Only if `pgrep -f "QA MASTER"` finds no live QA
     session (the two lanes must never double-claim): take that ONE open `feedback`

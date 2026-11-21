@@ -53,7 +53,7 @@ case "$NODE" in
              EXTRA=" You are in the builder's slot because no game is queued: do this one item, then exit." ;;
 esac
 export DEV_PORT=$DEV
-EXTRA="$EXTRA Your dev server port is $DEV: start yours with \`npm run dev -- --port $DEV --strictPort\` (DEV_PORT=$DEV is set; the browser scripts read it, and shot.mjs takes --url). Never use or stop the server on 5173 or any other lane's port."
+EXTRA="$EXTRA Your dev server port is $DEV: start yours with \`npm run dev -- --port $DEV --strictPort\` (DEV_PORT=$DEV is set; the browser scripts read it, and shot.mjs takes --url). Never use or stop the server on 5173 or any other lane's port. Stop your dev server ONLY with \`scripts/devstop.sh\` (kills by port); never \`pkill -f\` a pattern — lane prompts contain \"npm run dev\", so a pattern kill ends the lanes themselves."
 
 LOG_DIR="/tmp/forge"
 mkdir -p "$LOG_DIR"
