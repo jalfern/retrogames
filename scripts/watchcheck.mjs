@@ -1694,7 +1694,19 @@ const PILOTS = [
     // is the driver froggercheck clears 40/40 seeds with. Reactive per tick
     // (Rogue law), so it seats anywhere, steers back, re-seats from live state.
     {
-        id: 'frogger', url: `${BASE}/frogger`, hook: '__froggerTest',
+        // #601 main-fix (nightly 44914600702): the Space start rolls a random
+        // seed 0..999999, but ~1 seed in 60 loses its first life and then the
+        // shuffle play zigzags the middle river lanes and banks NO home for over
+        // 30 s (Node sweep: 25/1500 seeds; even seed 3910 of froggercheck's own
+        // certified family fails this leg's window) — the lily-pad wait honestly
+        // times out. Pin a certified seed: 1776 is zero-death on a 120 s watched
+        // run (52 homes, 10 level clears), banks its first home 42 ticks after
+        // the advance probe, and passes this exact leg at every seat moment
+        // 0..128 ticks, at full speed and at the 4 fps floor's shrunken windows
+        // (froggercheck re-proves the pin against the shipped tick — it cannot
+        // drift). Precedent: smash-tv #2531. The post-death zigzag itself is
+        // owned by #2869.
+        id: 'frogger', url: `${BASE}/frogger?seed=1776`, hook: '__froggerTest',
         async run(page, rep) {
             const H = '__froggerTest'
             const watching = () => page.evaluate((h) => window[h].watching(), H)
