@@ -88,6 +88,14 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
         const terminal = {
           print(text) {
             if (!text) return
+            // #2876: the story prints its own "> " prompt into the output stream
+            // right before every input request, and sendCommand echoes the typed
+            // command as its own amber `> cmd` line — every turn showed TWO
+            // prompts. The amber echo stays: it is the transcript record a reader
+            // (and the sensor pairing) reads. The bare one goes — a trailing
+            // prompt fragment never reaches the log or the screen.
+            text = text.replace(/\s*>\s*$/, '')
+            if (!text) return
             logRef.current.push(text)
             setLines(prev => {
               const newLines = [...prev]
@@ -141,6 +149,15 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
               bootedRef.current = true
               try { sensorRef.current.saw('look', logRef.current.join('')) }
               catch (e) { console.error('[zork sensor opening]', e) }
+              // #2876: a newcomer's first Enter earned "I beg your pardon?" —
+              // nothing on screen ever said this game is typed. One line under
+              // the banner, in the system colour so it reads as ours and not
+              // the story's. Deliberately NOT pushed to logRef: the brain's
+              // corpus stays the story's own words.
+              setLines(prev => [...prev, {
+                type: 'system',
+                text: 'type commands like LOOK, N, OPEN MAILBOX, INVENTORY — press ? for controls',
+              }])
             }
             inputResolverRef.current = callback
             setInputEnabled(true)
@@ -551,6 +568,7 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
 
         {/* Terminal output */}
         <div ref={outputRef}
+             data-testid="zork-transcript"
              className="flex-1 overflow-y-auto p-4 pb-0 scrollbar-thin"
              style={{ scrollbarColor: '#33ff33 #111' }}>
           {loading && !error && (
@@ -567,6 +585,31 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
             </div>
           ))}
         </div>
+
+        {/* Input line — #2876: the prompt rides the END of the transcript,
+            directly under the last story line. It used to sit below the
+            AI/SENSING/WATCH strip, i.e. under a band and near the fixed
+            watermark, and a newcomer could not tell where to type. The
+            scrollpane gives pb-0 so the caret line reads as the next line
+            of the story. */}
+        <form onSubmit={handleSubmit} className="flex items-center p-4 pt-2">
+          <span className="mr-2 select-none">&gt;</span>
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={!inputEnabled || paused || aiOn}
+            placeholder={aiOn ? 'the agent is driving — press any key to take over' : undefined}
+            autoCapitalize="none"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
+            className="flex-1 bg-transparent border-none outline-none caret-current"
+            style={{ color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit' }}
+          />
+        </form>
 
         {/* The AI strip. Rendered only when a brain is actually mounted here,
             which until stage 5a meant "never" on this page. */}
@@ -586,8 +629,8 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
               #1663: the pill docks into the status strip's right margin, not
               floating over the terminal — a story line or the prompt caret can
               never sit under it at any viewport (short windows, ?lite=1). The
-              strip is its own band between the scrollpane and the prompt row;
-              the pill still rides --sar (#1653 p1 law). */}
+              strip sits below the prompt row since #2876; the pill still rides
+              --sar (#1653 p1 law). */}
           {canWatch && !paused && (
             <div className="absolute pointer-events-auto z-50" style={{ top: '50%', right: 'calc(0.5rem + var(--sar, 0px))', transform: 'translateY(-50%)' }}>
               <WatchButton on={aiOn} disabled={!vmRef.current} />
@@ -597,26 +640,6 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
         )}
 
         {canWatch && aiOn && <WatchToast className="absolute z-50" />}
-
-        {/* Input line */}
-        <form onSubmit={handleSubmit} className="flex items-center p-4 pt-2">
-          <span className="mr-2 select-none">&gt;</span>
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={!inputEnabled || paused || aiOn}
-            placeholder={aiOn ? 'the agent is driving — press any key to take over' : undefined}
-            autoCapitalize="none"
-            autoCorrect="off"
-            autoComplete="off"
-            spellCheck={false}
-            className="flex-1 bg-transparent border-none outline-none caret-current"
-            style={{ color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit' }}
-          />
-        </form>
 
         {/* Scanline overlay for CRT effect */}
         <div className="absolute inset-0 pointer-events-none opacity-[0.03]"

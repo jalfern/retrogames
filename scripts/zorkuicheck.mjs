@@ -23,6 +23,10 @@
  *     field back, and say so on screen. An agent that cannot be interrupted is a
  *     broken feature however well it plays the game.
  *
+ *  #2876 adds a fifth block BEFORE these — the first-time player pass: a hint
+ *  on first load, exactly one prompt per turn, the caret above the AI strip,
+ *  and no fixed watermark on the page.
+ *
  * ─── the clock this file keeps, and why it is not a wall clock ────────────────
  *
  * One CI run went red on checks 2 and 3 ("1 rooms mapped", "the text field is
@@ -160,6 +164,57 @@ try {
   const booted = await until(() => page.evaluate(() => !!window.__zorkTest?.ready?.()), 60000)
   r.check('Zork boots in the browser', booted, errors.slice(0, 1).join(' | '))
   await until(() => page.evaluate(() => window.__zorkTest.state().inputEnabled), 60000)
+
+  // ── #2876 first-time player pass ─────────────────────────────────────────────
+  // A newcomer reads only the screen. Each check below matches a reported
+  // failure: a doubled prompt per turn (story ">" plus echo), the live caret
+  // stranded below the AI strip, the fixed watermark riding the strip's text,
+  // and silence about how a text adventure is played.
+  const firstScreen = await page.evaluate(() => document.body.innerText)
+  r.check('a newcomer is told how to type', /type commands like LOOK/i.test(firstScreen),
+    'no how-to-play hint on first load (#2876)')
+  r.check('the fixed watermark does not sit on this page', !/JALFERN\.COM/.test(firstScreen),
+    'footer mark overlaps the bottom strip (#2876)')
+  const barePrompts = () => page.evaluate(() =>
+    [...document.querySelector('[data-testid=zork-transcript]').children]
+      .filter((d) => d.textContent.trim() === '>').length)
+  r.check('the transcript shows no bare ">" line (one prompt per turn)', (await barePrompts()) === 0,
+    'story prompt and command echo doubled (#2876)')
+  const stacked = await page.evaluate(() => {
+    const input = document.querySelector('input[type=text]')
+    // Deepest div carrying SENSING: — document order is preorder, so the last
+    // candidate is the badge strip itself, not the page container that merely
+    // contains it (first probe took the container: strip top read 0).
+    const cands = [...document.querySelectorAll('div')].filter((d) => /SENSING:/.test(d.textContent || ''))
+    const strip = cands[cands.length - 1]
+    if (!input || !strip) return null
+    return { bottom: input.getBoundingClientRect().bottom, top: strip.getBoundingClientRect().top }
+  })
+  r.check('the live input rides the transcript, above the AI strip',
+    !!stacked && stacked.bottom <= stacked.top + 1,
+    stacked ? `input bottom ${Math.round(stacked.bottom)} vs strip top ${Math.round(stacked.top)}`
+      : 'input or AI strip not found')
+
+  // One REAL typed command — the human path, not `__zorkTest.send` — then the
+  // transcript is graded again: the echo must appear exactly once, and the raw
+  // story log must carry no prompt fragment at all.
+  const lookBefore = await page.evaluate(() => window.__zorkTest.state().exchanges)
+  await page.click('input[type=text]')
+  await page.keyboard.type('look')
+  await page.keyboard.press('Enter')
+  const lookBack = await until(() => page.evaluate((n) => window.__zorkTest.state().exchanges > n, lookBefore), 30000)
+  r.check('a typed command gets a reply', lookBack, 'no exchange after 30 s')
+  const afterLook = await page.evaluate(() => ({
+    echoed: [...document.querySelector('[data-testid=zork-transcript]').children]
+      .filter((d) => d.textContent.trim().toLowerCase() === '> look').length,
+    bare: [...document.querySelector('[data-testid=zork-transcript]').children]
+      .filter((d) => d.textContent.trim() === '>').length,
+    logPrompts: (window.__zorkTest.transcript().match(/(^|\n)\s*>\s*$/gm) || []).length,
+  }))
+  r.check('the echoed command shows once, un-doubled', afterLook.echoed === 1 && afterLook.bare === 0,
+    `echoes=${afterLook.echoed} bare=${afterLook.bare} (#2876)`)
+  r.check('the story log carries no prompt fragments', afterLook.logPrompts === 0,
+    `${afterLook.logPrompts} bare prompt lines in the raw log (#2876)`)
 
   // 1 ─ the affordance itself, in the DOM, clickable by a person.
   const hasButton = await page.evaluate(() => {
