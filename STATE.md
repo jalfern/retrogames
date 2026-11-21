@@ -1,58 +1,63 @@
-# STATE — forge lanes (2026-11-21, slot b close-out)
+# STATE.md — The Forge (rewritten at close of slot a, 2026-11-21; committed to
+# main because game code merged: CONTRA seat ceremony shipped as PR #2840 ->
+# 06e6806, a NEVER-DRY stage (#1571) after the flagship rungs came up spent.
+# Slot b's lineage also completed during this session: R-TYPE S4 (#2838), so
+# Jon's #2795 twin-commission is fully live on both titles.)
 
-## HEADLINE
-**R-TYPE is COMPLETE.** S4 — the second pilot (co-op) shipped: PR #2838 →
-main `59483e0`. Simultaneous co-op per R-Type II (Irem 1989): blue R7 wingman
-with a deterministic brain (zero rng draws), keyboard drop-in (WASD+F fire, G
-pod, V relief), independent pools (3 lives each), one hit kills one hull, GAME
-OVER only when both burn; decoy law (Bydo pick the nearer hull); capsule seats
-one. Solo streams byte-identical (`gs.wing === null`). rtypecheck **113/113**
-(my 23 laws folded over QA's six from #2836), mutants 4/4 named red
-(`pool-blind` new), contractcheck 769/769. Co-op 12/12 seeds vs solo floor
-5/12. Production alias was still flipping at close (Vercel green on `59483e0`,
-jalfern HTML cache lagging) — poller log: shell sh_1fc1014c800152.
+## PLAYABLE
+- /retrogames/contra — S1 jungle + S2 waterfall + S3 weapon wall + depot +
+  S4 two-seat co-op, and now the **seat ceremony**: P2 arrives on a rappel at
+  the hero's side (mercy inv, clean rifle, beats the death tumble), and a seat
+  nobody drives for 10 s returns to the wingman brain (cost-free, 60-tick
+  mercy, p2gone chirp, any touch resets patience). contracheck 105/105,
+  mutants 92/92 (new `never-release`).
+- /retrogames/r-type — **S1–S4 live**: bits, orbit shield, Phase-2 twin cores,
+  S4 co-op (slot b, #2838). QA polish #2820/#2826/#2836 live.
+- /retrogames/double-dragon — S1–S4 co-op live (commission #2795 complete).
+- Rest of shelf unchanged.
 
-## Lanes
-- **b (this lane)**: shipped #2808. Worktree reaped post-merge; main checkout
-  detached at `06e6806` (CONTRA #2840 landed after mine). 5178 free.
-- **a**: shipped DD S4 (#2830, closed #2807), then CONTRA seat ceremony
-  (#2840 → `06e6806`). Active elsewhere.
-- Both R-TYPE and Double Dragon commissions (#2795 family) are DONE.
+## WHAT THIS SESSION DID (slot a)
+- Warden target #2808 REFUSED at claim (slot b's lock mechanically fresh — b
+  was alive and shipped it as #2838 during this session). Normal ladder: no
+  steer; `next` = #1712 (lane:research, not builder); game-queue empty; QA
+  borrow blocked (live QA session) -> flagship stage spent (all four flagship
+  READMEs gap-free) -> NEVER-DRY rung: `weakestStage` scored CONTRA 6 (six
+  unowned README gaps; DoubleDragon/R-Type held). Filed POLISH #2837, claimed,
+  shipped in ~1.5 h: sim ceremony, rappel paint, 8 new pins, 1 mutant, docs.
+- Rule 4: game code merged — loop turning.
 
-## Board
-- #2808 closed shipped (all 4 stages). #2807 closed shipped (a).
-- QA queue: #2831 done (#2836), new **#2841** — R-TYPE S4 polish (wing AI
-  depth: capsule/vent chasing, auto pod-deploy, shell hand-off, dark-seat
-  rescue; join-UX readability; co-op-too-generous check — tune `wingBrain`
-  fire discipline before enemy HP).
-- Filed **#2839** (harness bug): claim-status.mjs liveness regex only matches
-  `**BUILD checkpoint` lines, missing the prevailing `FORGE (<slot>): checkpoint
-  —` format — the lock silently never applied; near-miss double-build on #2807
-  this session (b yielded; a shipped). One-line widen + test proposed.
+## BOARD
+- building: empty (both commissions done; queue drained).
+- `next` (claimable): #1712 PLAICRAFT S2 — lane:research/big-build; STATE has
+  marked it research-only since November — builder lanes skip.
+- QA lane's, never builder: #2835 (R-TYPE S3 polish II), #2833 (DD co-op
+  polish). Fresh builder-ignorable: #2842 (CONTRA ceremony polish, feedback —
+  presentation only, for QA's next round).
+- Slot b filed #2839 (forge-claim lock bug) + #2841 (R-TYPE wing polish).
+- game-queue: empty. No open jonq questions.
 
-## Playable now (https://jalfern.com/retrogames/)
-- **R-TYPE** — /retrogames/r-type: S1–S4 incl. co-op. Solo play stays solo;
-  a second pilot joins live at any time with WASD/F/G/V (V relieves).
-- Double Dragon arcade — /retrogames/double-dragon (AI partner + drop-in).
-- Contra (seat ceremony), Arena Archery, Breakout, Galaga, Invaders, Asteroids,
-  Joust, Frogger, Pac-Man, Spy Hunter, Rampage, Bubble Bobble, Excitebike,
-  Boulderdash, Lode Runner, Mario, Donkey Kong, Bulky Mario, Princes,
-  Minesweeper, MTA, Iron Keep, DOS/IF shelf.
+## HARNESS NOTES FOR THE NEXT LANE
+- **jalfern.com proxies Next-cached HTML**: after a merge the proxied
+  index.html keeps naming the PREVIOUS entry for ~10+ min (x-vercel-cache HIT)
+  while the ORIGIN (retrogames-psi.vercel.app) already serves the new build.
+  Verify prod by fetching a NEWLY HASHED chunk by name through jalfern (asset
+  paths proxy live) — the HTML's own marker poll lies until the edge ages.
+- Game chunks are referenced from deeper chunks with RELATIVE `./index-*.js`
+  names — a `grep assets/` sweep of the entry misses half the graph. Expand
+  `./` refs recursively when content-verifying prod.
+- The 62-chunk `assets/` sweep finding no marker may just mean you searched
+  the wrong graph level — prove against your own `dist/` first (this session
+  burned 20 min before checking local dist had the string).
+- Seat ceremony (Contra): `padClaim` distinguishes keyboard claims from
+  harness-pinned `human=true` seats — auto-release only watches padClaim, so
+  every pre-S5 pin stands. Touchdown zeroes `enterT`; patience counts lives
+  ticks only (hero-death freeze pauses it, by design).
+- Liveness keywords (`claimed`/`checkpoint`) in every issue line; warden
+  replay prompts don't change board state.
 
-## Harness
-- rtypecheck 113 laws; two flakes fixed this session (station law sampled only
-  while P1 alive; KeyG/pod law retries press while the fixture arms liveWing).
-- Rebase lesson: QA's `q.y += q.vy` drift silently NaN'd wing shots until wing
-  fire stamped vy/wy/hx — the 113-law re-run is what caught it. Rebases over
-  same-file merges need the FULL gate, not just lint.
-- mutateguard ran clean; no commits while `.mutant-running` existed.
-
-## Open questions for Jon
-- None filed (rule 7): design choices followed the original directly; the one
-  taste call (co-op generosity) is in QA's hands via #2841 with a stated knob.
-
-## Notes
-- PR-number collisions with the QA lane happened twice-ish (#2836 phantom
-  create); passing explicit PR numbers to `gh pr checks/merge` is stable and
-  stays in the merge loop.
-- Rule-5 merge used with explicit PR number; `static` was the only wait.
+## WORKTREES
+- Main checkout: detached origin/main (53d0899) + this STATE commit.
+- `~/Dev/retrogames-forge-contra-seat-ceremony` — re-detached at origin/main
+  after the merge; branch deleted on remote. Reap freely.
+- Slot b dev server 5178 was stopped by its own lane; QA studio 5176
+  untouched. Slot a dev server (5173) stopped at this close.
