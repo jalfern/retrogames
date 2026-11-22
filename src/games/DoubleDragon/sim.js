@@ -39,6 +39,24 @@ export const CFG = {
     jumpKickDmg: 3,
     hitstun: 14,          // enemy stagger on a non-knockdown hit
     downTime: 44,         // ticks flat on the street
+    // #2935 weight-true knockback: a landed blow imparts velocity scaled by
+    // the strike's weight and the man's mass, decaying with friction. x-only
+    // (the depth axis stays the dodge answer); props hold (blocked(), no
+    // k-slip — a shoved body never changes lanes). A bare jab travels about
+    // what the old uniform shuffle did (5-6 px — law-neutral); the weight is
+    // in the heavier strikes: kick, spin, jump kick, and the down-slide.
+    knock: {
+        punch: 0.75, kick: 2.25, jumpkick: 3.0, spin: 1.8, whip: 0.85, stomp: 0, // the foot pinning a downed man holds him — it does not shove him
+        stickMul: 1.3,   // steel adds bite to every pushed pound
+        downMul: 1.15,   // a knockdown skids further than the man was rocking
+        friction: 0.86,  // total travel ≈ v * friction / (1 - friction) ≈ 6.1 v
+        downFriction: 0.62, // the asphalt catches a flat body FAST: a knockdown
+                            // skids short and sharp (~1.6 v) — long enough to
+                            // read as thrown down, short enough that the classic
+                            // stomp-the-downed-man beat still reaches him
+        min: 0.06,       // below this the slide is sub-pixel — call it rest
+        mass: { williams: 1, amon: 1.15, abobo: 1.7, duel: 1.35 }, // giants barely rock
+    },
     getupTime: 22,        // then this many ticks of enemy i-frames
     respawnIFrames: 100,
     // #2874 first-timer readability: a life costs a VISIBLE beat — the seat
@@ -106,7 +124,7 @@ const mkIntroGoon = (id, kind, x, y) => ({
     id, kind, x, y, face: -1,
     hp: ENEMY_DEF[kind].hp, state: 'walk', stateT: 0, anim: 0,
     hasStick: false, stickDropped: false, hasKnife: false,
-    attackCooldown: 1e9, inv: 0, spinHit: false, wob: 0,
+    attackCooldown: 1e9, inv: 0, spinHit: false, wob: 0, kb: 0,
 })
 
 // seed the movie: cast and victim stand by off-frame, stage 1 fresh.
@@ -397,6 +415,7 @@ function spawnEnemy(gs, kind, side, stick) {
         attackCooldown: 30 + Math.floor(rng(gs) * 60),
         inv: 0, spinHit: false,
         wob: 0,                             // #2857: stagger wobble juice (never hashed)
+        kb: 0,                              // #2935: knockback velocity, px/t (sim truth)
     }
     gs.enemies.push(e)
     return e
@@ -585,6 +604,20 @@ function hurtEnemy(gs, e, dmg, knockdown, onDowned, seat, kind) {
     // ear. Billy's sounds and every knockdown keep the shared hit/hit_hard.
     const jab = seat === 'jimmy' && kind === 'punch' && !knockdown
     gs.events.push(blue(seat, jab ? 'jab' : knockdown ? 'hit_hard' : 'hit'))
+    // #2935 weight-true knockback: the blow imparts velocity by ITS weight,
+    // divided by the man's MASS (giants barely rock), away from the striker's
+    // x — the direction of the fist, not whatever way the goon faces. The
+    // impulse rides decay in updateEnemy through blocked(): props hold, the
+    // depth axis is never touched. Hashed — the slide is sim truth.
+    {
+        const K = CFG.knock
+        const hero = fighters(gs).find((pp) => pp.tag === seat)
+        const base = K[kind] ?? K.punch
+        const steel = hero && hero.weapon === 'stick' && (kind === 'punch' || kind === 'kick')
+        const dir = (hero ? Math.sign(e.x - hero.x) : 0) || -e.face
+        const mass = K.mass[e.kind] || 1
+        e.kb = dir * base * (steel ? K.stickMul : 1) * (knockdown ? K.downMul : 1) / mass
+    }
     if (e.hp <= 0) {
         e.state = 'dying'; e.stateT = 0
         const v = payTakedown(gs, ENEMY_DEF[e.kind].score)
@@ -781,7 +814,9 @@ export function updateFighter(gs, p, pad) {
         }
         if (p.presses >= CFG.grabEscape) {
             p.state = 'idle'; p.stateT = 0; p.presses = 0; p.grabFrom = null
-            if (holder) { holder.state = 'stagger'; holder.stateT = CFG.hitstun; holder.attackCooldown = 80; gs.gripFx = { x: holder.x, y: holder.y } }
+            // #2935: the struggle shoves the grabber off the seat — the
+            // release law (#2851) now carries the push its animation promised.
+            if (holder) { holder.state = 'stagger'; holder.stateT = CFG.hitstun; holder.attackCooldown = 80; gs.gripFx = { x: holder.x, y: holder.y }; holder.kb = (Math.sign(holder.x - p.x) || -holder.face) * CFG.knock.punch / (CFG.knock.mass[holder.kind] || 1) }
             p.relief = CFG.reliefTicks
             gs.events.push(blue(p.tag, 'escape'))
         } else if (p.stateT >= CFG.grabTimeout) {
@@ -913,6 +948,23 @@ function updateEnemy(gs, e) {
     if (e.kind === 'duel' && gs.duelIntro > 0 && e.state !== 'enter' && e.state !== 'dying') {
         e.face = Math.sign(b.x - e.x) || e.face
         return
+    }
+
+    // #2935: the knockback slide — velocity decays with friction every tick,
+    // in ANY state (stagger reels, a downed body skids, dying men travel).
+    // blocked() holds: a man shoved into a barrel stops at the wood. No
+    // k-slip on this axis — a pushed body NEVER changes lanes (the depth
+    // axis stays the only dodge answer, #2807). The slide lives inside the
+    // field margins the thugs' own footwork uses (the thrower-retreat bounds,
+    // camX±16): a shoved body is pressed against the wall of the screen, it
+    // is never launched through it — the wave-2 whiff-war (kb parked a body
+    // past Billy's camera-edge reach, seeds 4/8/12, this stage's found bug)
+    // was exactly that escape. A wall-stop still bleeds the velocity.
+    if (e.kb) {
+        let nx = e.x + e.kb
+        if (!blocked(gs, nx, e.y, rad)) e.x = nx
+        e.kb *= (e.state === 'down' || e.state === 'dying') ? CFG.knock.downFriction : CFG.knock.friction
+        if (Math.abs(e.kb) < CFG.knock.min) e.kb = 0
     }
 
     switch (e.state) {
@@ -1122,7 +1174,8 @@ function updateEnemy(gs, e) {
     }
     case 'stagger': {
         e.stateT -= 1
-        moveEntity(gs, e, -e.face * 0.4, 0, rad)
+        // #2935: the reel is the impulse (kb above), no longer a uniform
+        // shuffle — a jab rocks, a kick drives, by weight.
         if (e.stateT <= 0) { e.state = 'walk'; e.stateT = 0 }
         break
     }
@@ -1143,6 +1196,16 @@ function updateEnemy(gs, e) {
     }
     e.y = clamp(e.y, DEEP_TOP, DEEP_BOT)
     if (e.state !== 'dying' && e.state !== 'down' && e.state !== 'getup') stuckFree(gs, e, rad)
+    // #2935 field bounds: a thug that has entered the screen LIVES inside it —
+    // the thrower-retreat margins (camX±16) are the arena for every engaged
+    // state. Knockback presses a body against the wall of the screen; nothing
+    // walks or slides through it. (enter marches in from outside; charge is
+    // a committed dash that leaves the frame by design; dying leaves as a
+    // corpse where it fell.) Without this a pushed man parked outside
+    // Billy's own camera-edge reach and the wave could never end (#found).
+    if (e.state !== 'enter' && e.state !== 'charge' && e.state !== 'dying') {
+        e.x = clamp(e.x, gs.camX + 16, gs.camX + W - 16)
+    }
 }
 
 // ------------------------------------------------------------ S3 the yard ---
@@ -1559,6 +1622,8 @@ export function stateHash(gs) {
     mix(gs.enemies.length)
     for (const e of gs.enemies) {
         mix(e.id); mix(e.x); mix(e.y); mix(e.hp); mix(e.state.length); mix(e.inv)
+        mix(e.kb || 0)   // #2935: the slide's velocity is sim truth — same
+                        // hash means the same future, kb held invisible would break that
     }
     return h >>> 0
 }

@@ -347,12 +347,44 @@ Technōs opened its arcade by stating the crime; so does this board, between
   paint, the box outline/jitter and the stride airborne beat are pinned by
   five sim pins + five browser pixel legs.
 
+#2935 weight-true knockback (forge) — hits move bodies by their weight:
+
+- **The weight ladder** — every landed blow imparts a velocity authored in
+  `CFG.knock` by strike kind: whip lash < bare jab < stick steel < spin <
+  kick < flying knee (peak slides ≈ 2.5 / 5 / 6 / 5.3-per-leg / 7 / 9 px),
+  divided by the man's MASS (`knock.mass`: Williams 1, Amon 1.15, duel 1.35,
+  Abobo 1.7 — giants barely rock). The impulse decays with friction every
+  tick, in any state — stagger reels, downed bodies skid, dying men travel.
+- **Away from the striker** — the shove runs down the line of the fist
+  (`sign(e.x − hero.x)`), not away from whatever way the goon faces; the spin
+  back-heel shoves the crowd OUTWARD, left goes left, right goes right.
+- **Depth is never the push axis** — the impulse is x-only, no k-slip on the
+  shove: being hit cannot change your lane; `|dy| <= 8` stays the whole dodge
+  answer (#2807's core law, untouched).
+- **The street is solid, the screen is a wall** — the slide obeys `blocked()`
+  (a man punched at a barrel is pressed to the wood, never through it) and
+  lives inside the arena margins the thug footwork already keeps
+  (`camX±16`, the thrower-retreat bounds). #found this the hard way: the
+  first build parked a thug *past* Billy's camera-edge reach and three
+  winnable seeds could never end the wave.
+- **Down is a skid, not a glide** — flat bodies ride `downFriction` (0.62):
+  short and sharp, ~1.6× the initial push. Long enough to read as thrown
+  down, short enough that the classic stomp-the-downed-man beat still
+  reaches him (and the stomp's foot PINs — it shoves nobody: 0 impulse).
+- **The struggle shoves** — the release law (#2851) gained the push it
+  visually promised: tearing free of a grip drives the grabber off the seat.
+- **Hashed truth** — `kb` rides `stateHash` (same hash means the same
+  future); zero rng rides the shove; pressed streams replay hash-for-hash.
+- Winnability re-measured on the new physics: S1 seeds 1..12 12/12, the full
+  run 12/12, co-op seeds 1..6 6/6. `knock-flat` and `bounds-off` mutants
+  name the harm if the weight or the wall goes dark.
+
 ## Verify
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 221 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), winnable, browser legs
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone must go RED (named)
+npm run ddragoncheck                    # 242 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), winnable, browser legs
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -392,7 +424,12 @@ of nightly 44762398189).
   KO sprawl mirrors its extents for real (the face===-1 fragment fix) and
   settles in 8 ticks, HELP! gets its outline + jitter, and Marian's panicked
   stride gets an airborne frame with streaming hair.
-- Enemy knockback is positional, not sprite-true physics; fine at this scale.
+- **CLOSED by #2935** — knockback is weight-true now: every landed blow imparts
+  velocity by its own weight and the man's mass (jab rocks ~5px, a kick drives
+  ~7, the flying knee ~9; Abobo takes a third of the shove), knockdowns skid
+  short and sharp on asphalt friction, dying men travel, the struggle shoves
+  the grabber off the seat — and the screen keeps its wall (see the weight
+  ladder below).
 - Goons carry knives (S3) but not the whip or stick-and-steel rotations of
   the later arcade waves; the thrown knife is the goon's only cast (and the
   original's goons never threw whip or barrel either).

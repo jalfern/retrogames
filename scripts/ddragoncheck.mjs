@@ -1372,6 +1372,132 @@ console.log('p2 pad seat (#2860)')
         stateHash(gf) === hp1, `${hp1} vs ${stateHash(gf)}`)
 }
 
+// -------------------------------------- #2935 weight-true knockback ---
+{
+    // One man on Billy's line, one clean strike, measure the slide. hp is set
+    // so the target survives the probe — the measurement is MOVEMENT, not the
+    // kill. Hands come off after the strike; the impulse finishes on its own.
+    const knockRig = (seed, verb, kind = 'williams', extra = {}) => {
+        const gs = makeGame(seed)
+        gs.billy.inv = CFG.respawnIFrames
+        const e = mk(kind, extra.x ?? gs.billy.x + (extra.left ? -14 : 14), extra.y ?? gs.billy.y,
+            { hp: 30, attackCooldown: 9999, castCooldown: 99999 })
+        gs.enemies.push(e)
+        if (extra.face) gs.billy.face = extra.face
+        if (extra.weapon) gs.billy.weapon = extra.weapon
+        const x0 = e.x, y0 = e.y
+        let peak = 0
+        for (let i = 0; i < 40; i++) {
+            const pad = {}
+            if (verb === 'punch' && i === 0) pad.punch = true
+            if (verb === 'kick' && i === 0) pad.b = true
+            if (verb === 'jumpkick') { if (i === 0) pad.a = true; if (i === 9) pad.b = true }
+            step(gs, pad); gs.events.length = 0
+            // peak displacement in the shove's direction — a man walks back
+            // toward you after the stagger, and that footwork is not the hit
+            const d = e.x - x0
+            peak = Math.max(peak, extra.left ? -d : d)
+        }
+        return { d: peak, dy: e.y - y0, hp: e.hp, e }
+    }
+
+    const jab = knockRig(51, 'punch')
+    const kick = knockRig(51, 'kick')
+    const fly = knockRig(51, 'jumpkick')
+    const big = knockRig(51, 'kick', 'abobo', { hp: 40 })
+    r.check('#2935 weight ladder: a kick drives a man back farther than a jab drives him',
+        jab.hp === 29 && kick.hp === 28 && kick.d > 2 && kick.d > jab.d + 1, `jab=${jab.d.toFixed(1)} kick=${kick.d.toFixed(1)}`)
+    r.check('#2935 the flying knee is the biggest shove on the shelf',
+        fly.hp === 27 && fly.d > kick.d + 1, `kick=${kick.d.toFixed(1)} jumpkick=${fly.d.toFixed(1)}`)
+    r.check('#2935 mass is real: Abobo takes the same kick a third shallower',
+        big.hp === 28 && big.d > 0.5 && big.d * 1.4 < kick.d, `williams=${kick.d.toFixed(1)} abobo=${big.d.toFixed(1)}`)
+    r.check('#2935 the depth axis is never the push axis — no strike, any weight, moves a man across lanes',
+        jab.dy === 0 && kick.dy === 0 && fly.dy === 0 && big.dy === 0, `dy=${jab.dy}/${kick.dy}/${fly.dy}/${big.dy}`)
+    r.check('#2935 the shove runs AWAY from the striker: a man left of Billy slides left',
+        knockRig(52, 'punch', 'williams', { left: true, face: -1 }).d > 2, `d=${knockRig(52, 'punch', 'williams', { left: true, face: -1 }).d.toFixed(1)}`)
+
+    { // the spin boots both ways — and shoves both ways
+        const gs = makeGame(53)
+        gs.billy.inv = CFG.respawnIFrames
+        const L = mk('williams', gs.billy.x - 16, gs.billy.y, { hp: 30, attackCooldown: 9999, face: 1 })
+        const R = mk('williams', gs.billy.x + 16, gs.billy.y, { hp: 30, attackCooldown: 9999 })
+        gs.enemies.push(L, R)
+        const lx0 = L.x, rx0 = R.x
+        for (let i = 0; i < 40; i++) { step(gs, i === 0 ? { b: true } : {}); gs.events.length = 0 }
+        r.check('#2935 the spin back-heel shoves the crowd outward — left goes left, right goes right',
+            L.hp < 30 && R.hp < 30 && L.x < lx0 - 2 && R.x > rx0 + 2, `L=${(L.x - lx0).toFixed(1)} R=${(R.x - rx0).toFixed(1)}`)
+    }
+
+    { // props hold: a man punched at a barrel is pressed against the wood, never through it
+        const gs = makeGame(54)
+        gs.billy.inv = CFG.respawnIFrames
+        const bar = gs.barrels.find((q) => q.x === 250)
+        const e = mk('williams', bar.x - 14.5, bar.y, { hp: 30, attackCooldown: 9999 })
+        gs.enemies.push(e)
+        gs.billy.x = bar.x - 29; gs.billy.y = bar.y; gs.billy.face = 1
+        const x0 = e.x
+        let through = false
+        for (let i = 0; i < 40; i++) { step(gs, i === 0 ? { punch: true } : {}); gs.events.length = 0; if (e.x > bar.x - 14 + 0.001) through = true }
+        r.check('#2935 the street stays solid — a punched body is held by the barrel, never punched through it',
+            e.hp === 29 && !through && e.x - x0 < 1.5, `d=${(e.x - x0).toFixed(1)} hp=${e.hp}`)
+    }
+
+    { // the field is a wall: a pinned man cannot be shoved past camX±16, and stays reachable
+        const gs = makeGame(55)
+        gs.billy.inv = CFG.respawnIFrames
+        gs.billy.x = gs.camX + W - 18
+        const e = mk('williams', gs.camX + W - 17, gs.billy.y, { hp: 30, attackCooldown: 9999, castCooldown: 99999 })
+        gs.enemies.push(e)
+        let past = false
+        for (let i = 0; i < 240 && e.hp > 24; i++) {
+            step(gs, i % 24 === 0 ? { b: true } : {}); gs.events.length = 0
+            if (e.x > gs.camX + W - 16 + 0.001) past = true
+        }
+        r.check('#2935 field bounds: a thug pinned at the screen edge is driven INTO the wall — never through it, and stays hittable',
+            !past && e.hp <= 24, `x=${e.x.toFixed(1)} edge=${(gs.camX + W - 16).toFixed(1)} hp=${e.hp}`)
+    }
+
+    { // the release-shove: mashing free of a grip drives the grabber off the seat
+        const gs = makeGame(56)
+        gs.billy.inv = CFG.respawnIFrames
+        gs.billy.x = 100
+        const holder = mk('amon', 112, gs.billy.y, { hp: 30, attackCooldown: 9999 })
+        holder.state = 'grab'; holder.stateT = 1; holder.tgt = 'billy'
+        gs.enemies.push(holder)
+        gs.billy.state = 'grabbed'; gs.billy.stateT = 0; gs.billy.presses = 0; gs.billy.grabFrom = holder.id
+        const x0 = holder.x
+        for (let i = 0; i < 36; i++) { step(gs, gs.billy.state === 'grabbed' && i % 7 === 0 ? { b: true } : {}); gs.events.length = 0 }
+        r.check('#2935 the struggle shoves: tearing free of a grip pushes the grabber off the seat',
+            gs.billy.state !== 'grabbed' && holder.x - x0 > 1.5, `state=${gs.billy.state} shove=${(holder.x - x0).toFixed(1)}`)
+    }
+
+    r.check('#2935 the slide is sim truth: two men at the same pixel with different residual velocity hash differently',
+        (() => {
+            const a = makeGame(57); const b = makeGame(57)
+            const ea = mk('williams', 120, 160); const eb = mk('williams', 120, 160)
+            ea.kb = 0; eb.kb = 1.5
+            a.enemies.push(ea); b.enemies.push(eb)
+            return stateHash(a) !== stateHash(b)
+        })())
+
+    r.check('#2935 the weight table is authored and monotone (punch < spin < jumpkick; down-skid bites harder than air-friction)',
+        CFG.knock.punch < CFG.knock.spin && CFG.knock.spin < CFG.knock.jumpkick
+        && CFG.knock.kick > CFG.knock.punch && CFG.knock.whip < CFG.knock.kick
+        && CFG.knock.downFriction < CFG.knock.friction && CFG.knock.stickMul > 1
+        && CFG.knock.mass.abobo > CFG.knock.mass.williams)
+
+    r.check('#2935 zero rng rides the shove — identical streams replay hash-for-hash with the physics live',
+        (() => {
+            const drive = () => {
+                const gs = makeGame(58); const e = mk('williams', 60, gs.billy.y, { hp: 30, attackCooldown: 9999, castCooldown: 99999 })
+                gs.enemies.push(e)
+                for (let i = 0; i < 90; i++) { step(gs, { b: i % 11 === 0, right: i % 11 > 2 && i % 11 < 8 }); gs.events.length = 0 }
+                return stateHash(gs)
+            }
+            return drive() === drive()
+        })())
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -1729,6 +1855,40 @@ if (MUTANT) {
                 const am = gs.intro ? gs.intro.goons[1] : null
                 return am && am.x > mod.W + 50
                     ? 'HARM NAMED: the whole gang was gone a full second before the caption cleared — the street stood empty and frozen under MARIAN TAKEN!, and the arcade\'s shrinking frame (last thug mid-stride at the rim) sold the empting instead'
+                    : null
+            },
+        },
+        {
+            name: 'knock-flat',
+            anchor: 'e.kb = dir * base * (steel ? K.stickMul : 1) * (knockdown ? K.downMul : 1) / mass',
+            plant: 'e.kb = 0 /* MUTANT(knock-flat): blows stop moving bodies */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(51)
+                gs.billy.inv = mod.CFG.respawnIFrames
+                const e = { id: 921, kind: 'williams', x: gs.billy.x + 14, y: gs.billy.y, face: -1, hp: 30, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, castCooldown: 99999, attackCooldown: 9999, inv: 0, spinHit: false, wob: 0, kb: 0 }
+                gs.enemies.push(e)
+                const x0 = e.x
+                for (let i = 0; i < 40; i++) { mod.step(gs, i === 0 ? { b: true } : {}); gs.events.length = 0 }
+                return e.hp === 28 && Math.abs(e.x - x0) < 1
+                    ? 'HARM NAMED: a clean kick took 2 hp and the man never shifted an eye-width (' + (e.x - x0).toFixed(1) + 'px) — hits that move no body read as punching a ghost; weight is half of what a fist means'
+                    : null
+            },
+        },
+        {
+            name: 'bounds-off',
+            anchor: 'e.x = clamp(e.x, gs.camX + 16, gs.camX + W - 16)',
+            plant: '/* MUTANT(bounds-off): the screen stops being a wall */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(55)
+                gs.billy.inv = mod.CFG.respawnIFrames
+                gs.billy.x = gs.camX + mod.W - 18
+                const e = { id: 922, kind: 'williams', x: gs.camX + mod.W - 17, y: gs.billy.y, face: -1, hp: 30, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, castCooldown: 99999, attackCooldown: 9999, inv: 0, spinHit: false, wob: 0, kb: 0 }
+                gs.enemies.push(e)
+                let worst = e.x
+                for (let i = 0; i < 40; i++) { mod.step(gs, i === 0 ? { b: true } : {}); gs.events.length = 0; worst = Math.max(worst, e.x) }
+                const edge = gs.camX + mod.W - 16
+                return e.hp < 30 && worst > edge + 0.5
+                    ? `HARM NAMED: a kicked man slid to x=${worst.toFixed(1)} — past the arena edge (${edge.toFixed(1)}), onto ground outside the screen: the screen IS the belt-scroller's world (the same margin the thrower-retreat law enforces), and a thug pressed through the wall fights from off-camera, unreachable by the very camera that framed the fight`
                     : null
             },
         },
