@@ -183,6 +183,30 @@ const SPR = has ? {
         g.fillStyle = '#0e2c08' // capsule seam
         g.fillRect(7, 1, 2, 8)
     })),
+    // #2915 DOUBLE pod: the arcade's red D-case — same silhouette, crimson
+    // shell, a white twin-stamp marking (the paired stream it grants)
+    dcap: [0, 1, 2].map((f) => makeSpr(16, 10, (g) => {
+        g.fillStyle = '#6e1010'
+        g.fillRect(1, 1, 14, 8)
+        g.fillStyle = '#c83228'
+        g.fillRect(2, 2, 12, 6)
+        g.fillStyle = '#ffd0c8'
+        g.fillRect(4 + (f === 1 ? 2 : 0), 3, 2, 4) // twin rounds, stacked
+        g.fillRect(7 + (f === 1 ? 2 : 0), 3, 2, 4)
+        g.fillStyle = '#4a0808' // capsule seam
+        g.fillRect(10, 1, 2, 8)
+    })),
+    // #2915 SPEED UP pod: violet case with an arrow chevron walking forward
+    scap: [0, 1, 2].map((f) => makeSpr(16, 10, (g) => {
+        g.fillStyle = '#3c1070'
+        g.fillRect(1, 1, 14, 8)
+        g.fillStyle = '#7840d8'
+        g.fillRect(2, 2, 12, 6)
+        g.fillStyle = '#e4ccff'
+        for (let i = 0; i < 3; i++) g.fillRect(4 + i * 2 + (f === 2 ? 2 : 0), 3 + Math.abs(i - 1), 2, 2) // chevron >
+        g.fillStyle = '#260848' // capsule seam
+        g.fillRect(7, 1, 2, 8)
+    })),
     // the bit drone (S3): a green crystal chip with a spinning facet
     bit: [0, 1, 2, 3].map((f) => makeSpr(10, 10, (g) => {
         g.fillStyle = '#1e5c14'
@@ -414,7 +438,8 @@ export function drawBullet(ctx, b, camX) {
 }
 
 export function drawCap(ctx, c, camX) {
-    const set = c.type === 'force' ? SPR.fcap : c.type === 'bit' ? SPR.bcap : SPR.cap
+    const set = c.type === 'force' ? SPR.fcap : c.type === 'bit' ? SPR.bcap
+        : c.type === 'double' ? SPR.dcap : c.type === 'speed' ? SPR.scap : SPR.cap
     const f = Math.floor(Date.now() / 250) % set.length
     ctx.drawImage(set[f], Math.round(c.x - camX) - 8, Math.round(c.y) - 5)
 }
@@ -893,7 +918,7 @@ export function drawHud(ctx, gs) {
     // learns the rules changed without ever opening the F1 panel.
     if (gs.p1 && gs.p1.hotAnn > 0) drawText(ctx, 'HOT', 120, 8, ((gs.tick >> 2) % 2) ? '#ff7030' : '#7c2810')
     for (let i = 0; i < Math.min(gs.lives - 1, 5); i++) ctx.drawImage(SPR.shipIcon, 8 + i * 15, H - 12)
-    const wl = gs.ship.weapon === 'wave' ? 'WAVE' : gs.ship.weapon === 'laser' ? 'LASER' : 'VULCAN'
+    const wl = gs.ship.weapon === 'wave' ? 'WAVE' : gs.ship.weapon === 'laser' ? 'LASER' : gs.ship.weapon === 'double' ? 'DOUBLE' : 'VULCAN'
     const wcol = gs.ship.weapon === 'wave' ? '#37d0ff' : gs.ship.weapon === 'laser' ? '#ff5a7a' : '#9ac93c'
     drawText(ctx, wl, 90, H - 12, wcol)
     if (gs.pod) ctx.drawImage(SPR.seed[Math.floor(Date.now() / 90) % 4], 172, H - 14) // the shell rides with you

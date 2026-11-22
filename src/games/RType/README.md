@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 145 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute`
+node scripts/rtypecheck.mjs       # sim + browser: 162 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -236,6 +236,25 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   `wingBrain`) fold their predictions identically — the mirrored law lives
   next to `shieldOn` so nobody re-invents it wrong.
 
+- **#2915 special pods — Double & Speed Up (QA lane, capsule-list Part 1):**
+  **Fidelity interpretation (#237 rule, recorded):** the arcade's standard
+  capsules cycle V→L→W only — Double and Speed Up ride FIXED SPOTS, they are
+  not cycle steps. So the existing cycle pins stand byte-identical, and two
+  authored pods join leg 1 (dcap at 340, scap at 660 — schedule-authored y,
+  bob derived from id, zero rng; every seed's tuned stream stays itself).
+  Double (`type:'double'`) arms `weapon:'double'`: one press, two rounds
+  stacked 6 px (`y-4`/`y+2`), bits still fan from where they ride, and per the
+  full arcade list (V, D, L, W) a standard capsule taken while holding D hands
+  over to the LANCE, not back to Vulcan. Speed Up (`type:'speed'`) adds
+  `spd` levels (max 2, +0.65 px/tick each — the stick answers quicker, both
+  hulls per the S4 symmetry); spares pay 1000 like every spare law in the
+  house; `makeShip` zeroes it so the wreck strips arm AND speed (power-armour
+  law). Both ride `stateHash` (sim truth, the #2901 way). Pod art is the
+  house capsule silhouette in crimson (twin-stamp) and violet (chevron); D is a
+  stacked two-hit punch, S a rising shove. Wings' twin + per-hull `wingSpd`
+  probes and `giveDouble`/`giveSpeed`/`spawnDCap`/`spawnSCap` fixtures join
+  `__rTest`. Options and Half-Capsule stay open on the gap list (#2915).
+
 ## Honest gaps (S5+)
 
 - **CLOSED by #2901** — core speed-up past 1000: the desperation phase is
@@ -259,7 +278,8 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   The autopilot and wing fold their bullet predictions through the same bounce
   (`foldY`) — a ricochet lane never reads safe to the brains that must dodge it.
 - The full capsule list beyond three arms (Options, Double, Speed Up,
-  Half-Capsules).
+  Half-Capsules). — #2915 Part 1 landed: Double (twin vulcan) and Speed Up are
+  live as fixed-spot pods; Options and Half-Capsule remain.
 - An armed Williams-style duelist for variety.
 - Carriers never answer back — no launched interceptors when a bit pod is
   fired upon.
@@ -273,10 +293,11 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 154 sim+browser laws, fourteen named mutants
+- `scripts/rtypecheck.mjs` — 162 sim+browser laws, sixteen named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
-  `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`).
+  `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`,
+  `twin-collapse`, `speed-deaf`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
@@ -289,9 +310,11 @@ The registry entry is `private` until Jon promotes it (#379).
   twitch counters); setup takes `heat: n` (wind the desperation timer to n
   ticks from ignition, 0 = next tick). #2911 adds probe `p3`/`p3hp`/`p3x`/
   `p3mouth`/`p3walk`/`p3dying`/`p3fire` (the tank and its live ricochets) and
-  setup `toDobk`, `openDobk`, `dobkHp: n`.
+  setup `toDobk`, `openDobk`, `dobkHp: n`. #2915 adds probe `spd`/`wingSpd`
+  (speed levels) and setup `giveDouble`, `giveSpeed: n`, `spawnDCap`,
+  `spawnSCap`.
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
   SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
-  GEAR THE WING, TO DOBK, DOBK MAW.
+  GEAR THE WING, TO DOBK, DOBK MAW, GIVE DOUBLE, GIVE SPEED UP.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern
   taps `b` every 97 ticks) and the nightly soak roster (`nightlybot.mjs`).

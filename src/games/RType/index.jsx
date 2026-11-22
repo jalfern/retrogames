@@ -62,6 +62,10 @@ export default function RType() {
             shot: () => { audioController.playTone(860 + (gs.tick % 2) * 70, 0.03, 'square', 0.05); audioController.playNoise(0.02, 0.035) },
             wave: () => audioController.playSweep(220, 940, 0.22, 'triangle', 0.12),
             capsule: () => { audioController.playTone(660, 0.07, 'square', 0.1); audioController.playTone(880, 0.07, 'square', 0.1, 0.07); audioController.playTone(1320, 0.1, 'square', 0.1, 0.14) },
+            // #2915 special pods speak their own names: D is a stacked two-hit
+            // punch (the twin stream it grants), S is a rising shove (speed).
+            dcap: () => { audioController.playTone(520, 0.06, 'square', 0.11); audioController.playTone(780, 0.06, 'square', 0.11, 0.05); audioController.playTone(1040, 0.09, 'square', 0.1, 0.1) },
+            scap: () => { audioController.playSweep(320, 1100, 0.24, 'triangle', 0.12); audioController.playTone(220, 0.08, 'square', 0.06, 0.16) },
             hit: () => audioController.playTone(300, 0.05, 'square', 0.08),
             boom: () => { audioController.playNoise(0.16, 0.14); audioController.playSweep(160, 50, 0.2, 'sawtooth', 0.1); shake = Math.max(shake, 3) },
             clank: () => audioController.playTone(160, 0.04, 'square', 0.07),
@@ -395,6 +399,7 @@ export default function RType() {
                     screen, tick: gs.tick, x: Math.round(gs.ship.x), y: Math.round(gs.ship.y),
                     camX: Math.round(gs.camX), lives: gs.lives, score: gs.score,
                     weapon: gs.ship.weapon, charge: gs.ship.charge, inv: gs.ship.inv,
+                    spd: gs.ship.spd || 0, // #2915 Speed Up level
                     mode: gs.mode, cleared: gs.cleared ? 1 : 0,
                     enemies: gs.enemies.length, bullets: gs.bullets.length,
                     missiles: gs.missiles.length, shots: gs.shots.length,
@@ -428,7 +433,7 @@ export default function RType() {
                     wingLives: gs.wing ? gs.wing.lives : 0, wingHuman: gs.wing && gs.wing.human ? 1 : 0,
                     wingPod: gs.wing && gs.wing.pod ? gs.wing.pod.state : '-',
                     wingBits: gs.wing ? gs.wing.bits.length : 0, wingShield: gs.wing && shieldOnAt(gs.wing) ? 1 : 0,
-                    wingWeapon: gs.wing ? gs.wing.weapon : '-', p1out: gs.ship.out ? 1 : 0,
+                    wingWeapon: gs.wing ? gs.wing.weapon : '-', wingSpd: gs.wing ? gs.wing.spd || 0 : 0, p1out: gs.ship.out ? 1 : 0,
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -443,6 +448,11 @@ export default function RType() {
                     if (opts.spawnCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'weapon' })
                     if (opts.spawnFCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'force' })
                     if (opts.spawnBCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'bit' })
+                    // #2915 special-pod fixtures: spawn at the nose, arm outright, wind speed
+                    if (opts.spawnDCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'double' })
+                    if (opts.spawnSCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'speed' })
+                    if (opts.giveDouble) gs.ship.weapon = 'double'
+                    if (opts.giveSpeed !== undefined) gs.ship.spd = Math.max(0, Math.min(2, opts.giveSpeed))
                     if (opts.giveBits) { while (gs.bits.length < 4) gs.bits.unshift({ id: gs.nextId++ }) }
                     if (opts.force && !gs.pod) gs.pod = { id: gs.nextId++, state: 'attached', x: gs.ship.x + POD.noseX, y: gs.ship.y }
                     if (opts.crushShip) gs.ship.x = gs.camX
@@ -501,6 +511,8 @@ export default function RType() {
                     { label: 'DOBK MAW', run: () => { if (!gs.dobk) return 'no tank on screen — TO DOBK first'; window.__rTest.setup({ openDobk: true }); return 'the maw hangs open' } },
                     { label: 'OPEN VENTS', run: () => { if (!gs.p2) return 'no fortress on screen — TO PHASE-2 first'; window.__rTest.setup({ openVents: true }); return 'both vents gape' } },
                     { label: 'SPAWN BIT POD', run: () => { window.__rTest.setup({ spawnBitPod: { y: Math.round(gs.ship.y) } }); return 'a bit carrier closes in — feed it fire' } },
+                    { label: 'GIVE DOUBLE', run: () => { window.__rTest.setup({ giveDouble: true }); return 'twin vulcan — one press, two rounds' } },
+                    { label: 'GIVE SPEED UP', run: () => { window.__rTest.setup({ giveSpeed: (gs.ship.spd || 0) + 1 }); return `speed ${Math.min(2, (gs.ship.spd || 0))} — the stick answers quicker` } },
                     { label: 'TO PHASE-1', run: () => { window.__rTest.setup({ toPhase1: true }); return 'the dreadnought looms' } },
                     { label: 'OPEN MAW', run: () => { window.__rTest.setup({ openMouth: true }); return 'the maw gapes' } },
                     { label: 'HEAT CORE', run: () => { if (!gs.p1) return 'no dreadnought on screen — TO PHASE-1 first'; window.__rTest.setup({ heat: 0 }); return 'desperation timer at the mark — next tick it panics' } },
