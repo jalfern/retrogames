@@ -4,7 +4,7 @@
 // palette at a glance: sodium-lamp blue-black night, Billy's red headband and
 // white gi, Williams' green cap, Amon's brown vest, Abobo's slab of charcoal.
 
-import { W, H, DEEP_TOP, DEEP_BOT, rescueReady } from './sim.js'
+import { W, H, DEEP_TOP, DEEP_BOT, rescueReady, ENEMY_DEF, TIP } from './sim.js'
 
 // ------------------------------------------------------------- pixel font ---
 // 5x7, one string per glyph, '#' = ink. Original to this repo (arcade-cabinet
@@ -1000,6 +1000,22 @@ export function drawEnemy(ctx, e, camX) {
         ctx.globalAlpha = 1 - e.stateT / 30
     }
     fighter(ctx, sx + jx, sy, e.face, pose === 'getup' ? 'jump' : pose, e.anim, PAL[e.kind], def)
+    // #2874: hits SHOW — every landed blow lights the man white for a flash,
+    // and a wounded goon wears a thin bank over his head, so a newcomer sees
+    // the hits counting long before the KO popup pays.
+    if (e.flash > 0 && e.state !== 'dying') {
+        ctx.globalAlpha = 0.22 + e.flash * 0.05
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(sx - 7 * def, sy - 28 * def, 14 * def, 28 * def)
+        ctx.globalAlpha = 1
+    }
+    if (e.state !== 'dying' && e.hp > 0 && e.hp < ENEMY_DEF[e.kind].hp) {
+        const bw = Math.round(16 * def)
+        ctx.fillStyle = '#3a1d1d'
+        ctx.fillRect(sx - Math.round(bw / 2), sy - 33 * def, bw, 2)
+        ctx.fillStyle = '#ffd93c'
+        ctx.fillRect(sx - Math.round(bw / 2), sy - 33 * def, Math.max(2, Math.round(bw * e.hp / ENEMY_DEF[e.kind].hp)), 2)
+    }
     if (e.hasStick) {
         ctx.fillStyle = '#8a6a3c'
         ctx.fillRect(sx + (pose === 'attack' ? 16 : pose === 'windup' ? -12 : 8) * e.face, sy - 22 * def, 10 * e.face, 2)
@@ -1063,7 +1079,7 @@ export function drawPickup(ctx, p, camX) {
 }
 
 // ------------------------------------------------------------------- HUD ---
-export function drawHud(ctx, gs) {
+export function drawHud(ctx, gs, playing = true) {
     ctx.fillStyle = 'rgba(4,6,14,0.72)'
     ctx.fillRect(0, 0, W, 17)
     // the app chrome wears the top-left corner (ARCADE badge + FEEDBACK); the
@@ -1117,6 +1133,19 @@ export function drawHud(ctx, gs) {
     }
     // S3: the cabinet numbers its chapters — Walnuts Street or the hideout
     label(ctx, gs.stage === 2 ? '2-1' : '1-1', 124, 19, gs.stage === 2 ? '#ff9a7a' : '#8fd0ff', 1)
+    // #2874: show the cost — a lost life blinks its seat tag and bank at the
+    // HUD's left flank (the score popup owns the centre, so the two never
+    // crowd each other). A newcomer reads WHICH seat fell and how many left.
+    if (gs.livesFx && gs.livesFx.t % 8 < 6) {
+        const p = gs.livesFx.tag === 'billy' ? gs.billy : gs.jimmy
+        if (p) label(ctx, `${gs.livesFx.tag === 'billy' ? '1UP' : '2P'} LIVES X${Math.max(p.lives, 0)}`, 8, 26,
+            gs.livesFx.tag === 'billy' ? '#ff5a52' : '#5a8ae8', 1)
+    }
+    // #2874: the arcade marquee's promise, kept — for the first seconds of a
+    // fresh street the cabinet names its keys; then it gets out of the way.
+    if (playing && gs.tipT > 0 && gs.mode === 'play' && !gs.intro && (gs.tipT > 60 || gs.tipT % 8 < 6)) {
+        label(ctx, gs.tipText || TIP, Math.round((W - textWidth(gs.tipText || TIP, 1)) / 2), 34, '#8fd0ff', 1)
+    }
     // score delta floats under the HUD on each KO/pickup, arcade-style
     if (gs.scoreFlash && gs.scoreFlash.t % 8 < 6) {
         const s = '+' + gs.scoreFlash.v
@@ -1187,4 +1216,7 @@ export function drawAttract(ctx, phase, tick) {
     if (tick % 40 < 30) label(ctx, s, Math.round((W - w) / 2), y, col, sc)
     // shell branding sits low-center; the coin-op invite stays above it
     label(ctx, 'PRESS ANY KEY', Math.round((W - textWidth('PRESS ANY KEY', 1)) / 2), 118, Math.floor(tick / 24) % 2 ? '#fff' : '#9fb3e8', 1)
+    // #2874: and the invite finally says WHICH keys — permanent, quiet blue,
+    // never flashing (one-message law: the headline still owns the flicker).
+    label(ctx, TIP, Math.round((W - textWidth(TIP, 1)) / 2), 134, '#4a6db8', 1)
 }

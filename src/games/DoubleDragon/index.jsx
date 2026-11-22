@@ -399,7 +399,7 @@ export default function DoubleDragon() {
             }
             for (const p of (gs.stage === 2 ? PROPS_YARD : PROPS)) drawProp(ctx, p, gs.camX, gs.tick)
             ctx.restore()
-            drawHud(ctx, gs)
+            drawHud(ctx, gs, screen === 'play') // #2874: the key strip belongs to the street, not the demo
             if (screen === 'attract') drawAttract(ctx, Math.floor(gs.tick / 150), gs.tick)
             else drawBanner(ctx, gs)
         }
@@ -539,6 +539,9 @@ export default function DoubleDragon() {
                     jimmyZ: gs.jimmy ? +gs.jimmy.z.toFixed(2) : 0,
                     // #2857 juice tells for the harness legs
                     guard: gs.billy.guard, relief: gs.billy.relief, flourish: gs.billy.flourish,
+                    // #2874 first-timer tells: knockdown beat, lives flash, key strip
+                    knock: gs.billy.knock, livesFx: gs.livesFx ? `${gs.livesFx.tag}:${gs.livesFx.t}` : 'none',
+                    tipT: gs.tipT,
                     jimmyGuard: gs.jimmy ? gs.jimmy.guard : -1,
                     jimmyRelief: gs.jimmy ? gs.jimmy.relief : -1,
                     jimmyFlourish: gs.jimmy ? gs.jimmy.flourish : -1,
