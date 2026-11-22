@@ -2072,6 +2072,33 @@ const browser = await launch()
     r.check('#2925 the throw spends itself at the horizon — the mounts report bare',
         spentP.optsFly === 0 && spentP.opts === 0, `fly=${spentP.optsFly} opts=${spentP.opts}`)
 
+    // #2931 the thumb's turn: the phone pad carries THROW as its third action,
+    // and a tap on the button itself reaches the sim — the throw is no longer
+    // keyboard-only. The pad is the md:hidden query's guest, so the probe sits
+    // at phone width (the pad also hides at trusted keyboard input: touch first;
+    // the tap is a real pointer sequence on the button element).
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => window.__game.reset(3))
+    await page.waitForTimeout(150)
+    await page.evaluate(() => window.dispatchEvent(new Event('touchstart')))
+    const padHasThrow = await page.evaluate(() =>
+        [...document.querySelectorAll('button, div, span')].some((el) => el.textContent?.trim() === 'THROW' && el.getClientRects().length > 0))
+    r.check('#2931 the phone pad grows THROW — the throw has a home for thumbs', padHasThrow, `THROW on pad=${padHasThrow}`)
+    await page.evaluate(() => window.__rTest.setup({ giveOptions: true, inv: 999999 }))
+    const tapped = await page.evaluate(() => {
+        const el = [...document.querySelectorAll('button, div, span')].find((e) => e.textContent?.trim() === 'THROW' && e.getClientRects().length > 0)
+        if (!el) return 'no-element'
+        el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+        el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }))
+        return 'tapped'
+    })
+    await page.waitForTimeout(180)
+    const padThr = await page.evaluate(() => window.__rTest.probe())
+    r.check('#2931 a THROW tap hurls the pair from the pad — thumbs own the drone now',
+        tapped === 'tapped' && padThr.optsFly === 2 && padThr.optsDocked === 0,
+        `tap=${tapped} fly=${padThr.optsFly} docked=${padThr.optsDocked}`)
+    await page.setViewportSize({ width: 900, height: 760 })
+
     const frameA = await page.evaluate(() => window.__game && window.__game.frame())
     r.check('the canvas paints (contract frame is not black-static)', typeof frameA === 'string' && frameA.length > 5000, `frame ${frameA ? frameA.length : 'null'} bytes`)
 

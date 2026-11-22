@@ -659,7 +659,11 @@ export default function RType() {
     return (
         <div ref={wrapRef} className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none">
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'R-TYPE')} onResume={handleResume} />}
-            <VirtualControls visible={mode === 'play' && !paused} secondAction={{ label: 'POD', code: 'KeyB' }} />
+            {/* #2931 the thumb gets the throw too: VirtualControls' third verb
+                (established by Double Dragon/PoP/Excitebike — still ONE pad, Jon's
+                no-second-pad rule), dispatching the exact KeyN the keyboard path
+                already hears. With no orbs aboard the press is silence, per law. */}
+            <VirtualControls visible={mode === 'play' && !paused} secondAction={{ label: 'POD', code: 'KeyB' }} thirdAction={{ label: 'THROW', code: 'KeyN' }} />
         </div>
     )
 }

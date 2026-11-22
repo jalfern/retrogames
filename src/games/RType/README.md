@@ -11,7 +11,7 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 199 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch)
+node scripts/rtypecheck.mjs       # sim + browser: 201 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW)
 node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
@@ -329,9 +329,16 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   orbs, but B is already POD in this engine, so the throw got its own verb in
   each seat's cluster (N/M beside B/C; H beside G); and the issue's word is
   DISPOSABLE — no mid-flight recall, the spend is the hit.
-- Options-launch is keyboard-only — the phone pad keeps POD as its single B
-  button (Jon's no-second-pad rule), so a thumb can build the shield-gun wall
-  but never throw it.
+- **CLOSED by #2931** — Options-launch reaches the thumb: the phone pad grew
+  VirtualControls' third action (the shape Double Dragon/Prince of Persia/
+  Excitebike already use — still ONE pad, Jon's no-second-pad rule stands), a
+  **THROW** button beside POD dispatching the exact `KeyN` the keyboard throw
+  hears. A thumb with orbs docked trades the wall for the pair; with none
+  aboard the tap is silence, per law. Seat two stays keyboard-only (H) per the
+  multiplayer rule. Proven by two browser laws (pad carries the verb; a real
+  pointer tap on the button throws) — and the tap law goes red when the code
+  line is hand-mutated KeyN→KeyZ: the thumb's tap becomes a fire, the wall
+  stays docked, the law catches it.
 - An armed Williams-style duelist for variety.
 - Carriers never answer back — no launched interceptors when a bit pod is
   fired upon.
