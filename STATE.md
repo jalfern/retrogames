@@ -1,75 +1,70 @@
-# STATE.md — The Forge (rewritten at slot a close, 2026-11-22; COMMITTED: game
-# code merged this session — R-TYPE the duelist, PR #2936 → 57f8b7d.)
+# STATE — forge board snapshot (slot b close, 2026-11-22)
 
-## PLAYABLE (main)
-- /retrogames/r-type — THE DUELIST is live (#2934 → PR #2936 → 57f8b7d):
-  the shelf's first REACTIVE enemy, in the spirit of Defender (Williams 1981).
-  Authored entries (leg 1 ×2 y 76/158, leg 2 ×1 y 122 — zero rng, seed-blind).
-  Hunt: tracks the NEARER hull across lanes at 1.15 px/tick on a ~110-px
-  stand-off; gun: aimed round every 110 with a 24-tick eye-glow telegraph;
-  commit: at t=260 crouch 40 (hull shudder) then ONE straight pass at 1.75 —
-  never curves, the grinder takes what misses. Soft: vulcan ×2 / shell ram /
-  thrown orb / four-bit orbit fold it (300 pod-money); body kills at contact;
-  armour law untouched. rtypecheck 216/216 (15 new laws) + 22 named mutants
-  red-and-named (new: pursuit-deaf, commit-deaf). Floors: solo 8/12 (≥4 —
-  pre-duel was 7), co-op 11/12 (≥6). Prod verified (duelfire in
-  index-DBHF5OQO.js).
-- /retrogames/r-type — pad THROW (#2931), link-pad face labels (#2929), Options
-  launch/pods, Half-Capsule, SSE loops all on the shelf (private until Jon
-  promotes — #379).
-- /retrogames/contra — hangar sorties + fixed-spot pods; /retrogames/double-
-  dragon — opening movie + seat greet (#2863 → QA).
+## Shipped this session
+- **#2935 DOUBLE DRAGON weight-true knockback → PR #2939 → main `bc0aa49`, LIVE.**
+  Blows move bodies by weight: authored ladder (whip ~2.5 px < jab ~5 < stick
+  ~6 < kick ~7 < flying knee ~9 peak slide), divided by mass (Abobo 1.7 — giants
+  barely rock). Down skids on sharp asphalt friction (0.62); dying men travel;
+  the struggle shoves the grabber off the seat; the stomp foot PINs (0 impulse).
+  Shove runs away from the striker (spin kicks the crowd outward); x-only — the
+  depth axis stays the whole dodge answer; `blocked()` holds; `kb` rides
+  stateHash (zero rng, pressed streams replay hash-for-hash).
+  **Found + fixed a softlock on the way:** unbounded knockback parked a thug
+  past Billy's camera-edge reach and winnable seeds 4/8/12 could never end
+  wave 2 — the fix is field bounds `camX±16` (the thrower-retreat margins; the
+  screen is a wall). Floors re-measured: S1 12/12, full run 12/12, co-op 6/6.
+  ddragoncheck 230 → **242 laws**, mutants **208/208** named-red (new:
+  `knock-flat`, `bounds-off`). README gap closed + law section added.
+  Prod verified by chunk grep: jalfern.com `index-DHnSEBoo.js` carries
+  `downFriction`.
 
-## WHAT THIS SESSION DID (slot a)
-- Ladder empty (steer/next/game-queue none; only feedback #2889 QA-held; live
-  QA sessions → no borrow). idle.mjs answered honestly: flagshipStage AND
-  weakestStage both pick R-TYPE (score 5; DoubleDragon skipped, building-qa).
-  Filed POLISH #2934 (game-queue + lane:games), claimed via forge-claim.sh,
-  built in forge/rtype-duelist, gated, merged rule-5, prod-verified, shipped.
-- Winnability lesson (README records both numbers): first duel-strafe override
-  traded slab commitments for jinks → solo 2/12. Guard: strafe only when no
-  slab/hunter-commitment is live → solo 8/12. Autopilot+wing score windup and
-  dash lanes; hunt scores distant on purpose (no jitter).
-- Filed QA polish pass #2938 (armor-overlap read, distinct round, phone-scale
-  eye, dash trail, leg-3 duel candidate, dodge reward, wing cover-fire).
+## The merge chain on main today (all verified live)
+- `57f8b7d` R-TYPE duelist (#2934 → #2936, slot a) — armed Defender-style pursuit.
+- `bc0aa49` DD weight-true knockback (#2935 → #2939, slot b) — this session.
+- `36225c6` R-TYPE sting interceptor (#2937 → #2940, slot a) — carriers answer back.
 
-## OPEN
-- building-qa: #2889 (DD guardian-read) with QA; #2938 (duelist polish) is
-  fresh feedback — QA's pick, not ours.
-- game-queue: empty; R-Type README honest gaps stay unowned: carrier
-  interceptors, Phase-2 salvo pre-dodge, wing auto-shell, dark-seat life.
-  The shelf is not dry — idle-kick will answer R-TYPE 0 again (score now 4).
+## Board at close (idle.mjs, run live)
+- `flagshipStage` = **null**, `weakestStage` = **null** — every gap on the
+  shelf is owned or the title is held. QA holds both fighting flagships:
+  #2889 (DD guardian-read) and #2938 (R-TYPE duelist pass). No steer/next/
+  game-queue items open.
+- When QA releases them, the next weakest rungs are the still-unowned README
+  gaps: **R-TYPE** phase-2 volley dodge, wing-shell initiative, dark-seat
+  free life, drone mid-flight catch; then **DOUBLE DRAGON** goon whip/stick
+  rotations and the duel walk-to-retrieve re-arm. (Both skip while #2889/
+  #2938 keep their `building-qa`.)
 
-## NOTES for the next lane
-- DUEL numbers (sim.js export): close .9 back .7 range 110 track 1.15 fireCd
-  110 warn 24 hp 2 score 300 commitAt 260 windup 40 dash 1.75. States:
-  enter > hunt > windup > dash; removal at camX−24 and dash past W+30; y
-  clamped inside the rails; fire gated on !frozen + on-screen.
-- Mutant anchors this stage: `e.y += clamp(tp.y - e.y, -DUEL.track,
-  DUEL.track) // it answers the stick — just slower` (pursuit-deaf) and
-  `if (e.t >= DUEL.commitAt) { e.state = 'windup'; e.stateT = DUEL.windup;
-  gs.events.push('duelwind') }` (commit-deaf) — both unique strings.
-- Browser-law flake (this box, 3 runs, 3 different laws): press+short-wait
-  laws under software-Chrome rAF throttle (#2906 ember, #2925 N-throw).
-  New kill law drives contract `__game.step({a:true},30)` — immune; prefer
-  contract steps over wall-clock waits in new laws.
-- Prod-verify recipe: entry html → /retrogames/assets/index-*.js; sibling
-  lazy chunks appear as `index-<8hash>.js` references INSIDE the entry
-  (NOT `assets/…` prefixed) — enumerate those and grep bodies (duelfire).
-- Fixture: `__rTest.setup({ spawnDuelist: {y,x,state,t,cd} })`; probe
-  `duel/duelState/duelCd`; DebugKit SPAWN DUELIST; contract state `duel`.
+## Open questions for Jon (links only, #605)
+- #2846 — promote CONTRA / R-TYPE / DOUBLE DRAGON to public? (default keep
+  private, due 11-23).
+- #2908, #2930 (QA lane) — DD idle-seat / CPU-handback laws.
+- None new from this lane. The dry-shelf jonq ask (#2795 answered 11-20,
+  7-day cap) unlocks ~11-27 if the board is still empty by then.
 
-## WORKTREES
-- Main checkout ~/Dev/retrogames: detached origin/main, this STATE.md committed
-  on top (game merged → allowed) and pushed.
-- ~/Dev/retrogames-forge-rtype-duelist: worktree done; prune with
-  `git worktree remove --force ~/Dev/retrogames-forge-rtype-duelist`.
-- Port 5173 stopped with scripts/devstop.sh at close. Other lanes' ports
-  untouched all session.
+## Harness notes (cheap fixes, next touch)
+- **Browser pixel legs flake on a loaded box**: identical code red-passed
+  `#2897 KO-settle` (run 1: bar 5px, rerun: 26px) and one more leg varied
+  across three runs today — five lanes share software Chrome. Advisory; a
+  rerun-green is enough, don't chase.
+- `scripts/heistclock.mjs --pad` still latently broken (puppeteer
+  `page.setViewport` on a Playwright page → use `setViewportSize`). One-line
+  fix at the next harness visit (carry-over note).
+- dd browser rigs measure **peak** displacement (`maxx`), not final — thugs
+  walk back after a stagger and eat the slide (law-neutral measurement law).
+- Steel-beat budget: knockdown slide + spawn offset must stay ≤ stomp reach
+  (21 px) or the classic stomp-the-downed-man cadence breaks — this is what
+  tuned `downFriction`/impulses (and why the stomp shoves nobody).
 
-## Open questions
-- #2846 — promote CONTRA/R-TYPE/DOUBLE DRAGON to public? (default keep
-  private, due 11-23 — Jon; the duelist lands in R-Type either way.)
-- #2908/#2930 (QA lane) — DD idle-seat laws (not ours, linked for the board).
-- No new question filed this session — dry-shelf jonq stays unlockable ~11-27
-  (7-day rule after #2795); the board had work anyway.
+## Slots / ops
+- Slot b port **5178** stopped with `scripts/devstop.sh` at close; other
+  lanes' ports untouched all session.
+- Worktree `~/Dev/retrogames-forge-dd-knockback` pruned after merge (its
+  node_modules was a symlink — no disk kept).
+- Main checkout: detached `origin/main` @ `36225c6`, STATE.md committed on top
+  (game merged this session → allowed) and pushed.
+
+## Next lane starting here
+- Normal ladder first; expect it empty (QA holds the two passes). If the
+  flagship/never-dry rungs answer null like they did at this close, the board
+  is honestly dry — wait for QA to release #2889/#2938 (or pick their shipped
+  follow-ups) rather than re-owning gaps; jonq dry-shelf question opens ~11-27.
