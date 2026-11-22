@@ -447,15 +447,38 @@ main() {
             ACTIONS+=("lane-busy:$s")
             return 0
         fi
+        # #2797: target-held skip. The planner reads `building` LABELS and the
+        # comments are not in its input, so a slot can be targeted at an issue
+        # the OTHER slot is demonstrably live inside — the claim layer catches
+        # it (#878 REFUSED), but the session burns proving what the holder line
+        # already says, and the idle comments accumulate toward a false
+        # `stalled`. Same holder() rule as forge-claim.sh: newest claimed in
+        # the (QA|FORGE) namespace, age from newest claimed|checkpoint, 90 min.
+        # A dead holder (>90 min silent) still kicks — that is the step-1b
+        # corpse path, deliberately untouched.
+        local KICKS HOLDER HAGE
+        read -r KICKS HOLDER HAGE <<<"$(gh api "repos/$GH/issues/$n/comments?per_page=100" --jq '
+            [.[] | .body] as $b
+            | ($b | (map(startswith("WARDEN") | not) | rindex(true)) as $last
+               | $b[(($last // -1) + 1):] | map(select(startswith("WARDEN: builder '"$s"' idle"))) | length) as $kicks
+            | ([.[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): (claimed|checkpoint)"))] | last) as $q
+            | ([.[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): claimed"))] | last) as $c
+            | if $c == null or $q == null then "\($kicks) - 999"
+              else "\($kicks) \($c.body | capture("^(QA|FORGE) \\((?<name>[a-z0-9-]+)\\)").name) \(((now - ($q.created_at | fromdateiso8601)) / 60) | floor)" end' 2>/dev/null)"
+        KICKS=${KICKS:-0}; HOLDER=${HOLDER:--}; HAGE=${HAGE:-999}
+        if [[ "$HOLDER" != "-" && "$HOLDER" != "$s" && "$HAGE" -lt 90 ]]; then
+            log "#$n: slot $s skip-kick — target held by $HOLDER (${HAGE}m < 90m), live on the other slot (#2797)"
+            ACTIONS+=("target-held:${s}>${HOLDER}")
+            # Clear the slot's target: 4b's never-dry kick exempts slots a
+            # step-4 target owns — a skipped target is not owned work, and the
+            # slot must stay eligible for a stage it CAN claim.
+            if [[ "$s" == a ]]; then A_TARGET=""; else B_TARGET=""; fi
+            return 0
+        fi
         # Three kicks with no FORGE: comment in between = the slot keeps dying
         # before it reports anything. Stop kicking; that is Jon's call. Any
         # non-WARDEN comment restarts the count (per-slot since #1258: two
         # slots, two counters — one slow slot must not stall the other's game).
-        local KICKS
-        KICKS=$(gh api "repos/$GH/issues/$n/comments?per_page=100" --jq '
-            [.[] | .body] | (map(startswith("WARDEN") | not) | rindex(true)) as $last
-            | .[(($last // -1) + 1):] | map(select(startswith("WARDEN: builder '"$s"' idle"))) | length' 2>/dev/null)
-        KICKS=${KICKS:-0}
         if (( KICKS >= 3 )); then
             if key_dead "$s"; then
                 # #1614: NOT stalled. The lane dies at LAUNCH on a rotated oMLX
