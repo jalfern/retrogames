@@ -1,49 +1,75 @@
-# STATE — forge board snapshot (slot b close, 2026-11-22)
+# STATE.md — The Forge (rewritten at slot a close, 2026-11-22; COMMITTED: game
+# code merged this session — R-TYPE the duelist, PR #2936 → 57f8b7d.)
 
-## Shipped this session
-- **#2931 R-TYPE pad THROW → PR #2932 → main `d1545d0`, LIVE.**
-  The phone pad grew VirtualControls' third action (`THROW` → `KeyN`), so a thumb
-  can hurl docked orbs (#2925's throw was keyboard-only; the wall was a dead end
-  on phones). One pad, no second thumb-pad (Jon's rule). Seat two stays keyboard
-  (H) per the multiplayer rule. rtypecheck **201/201**; two new browser laws
-  (pad carries the verb at phone width; a pointer tap hurls the pair).
-  Wiring proven by hand: KeyN→KeyZ (fire) turns the tap law red (`fly=0 docked=2`).
-  Prod verified by chunk grep: jalfern.com `index-DeuPXplK.js` carries
-  `thirdAction:{label:"THROW",code:"KeyN"}`. Winnability untouched (floors: 7/12 solo, 11/12 co-op).
+## PLAYABLE (main)
+- /retrogames/r-type — THE DUELIST is live (#2934 → PR #2936 → 57f8b7d):
+  the shelf's first REACTIVE enemy, in the spirit of Defender (Williams 1981).
+  Authored entries (leg 1 ×2 y 76/158, leg 2 ×1 y 122 — zero rng, seed-blind).
+  Hunt: tracks the NEARER hull across lanes at 1.15 px/tick on a ~110-px
+  stand-off; gun: aimed round every 110 with a 24-tick eye-glow telegraph;
+  commit: at t=260 crouch 40 (hull shudder) then ONE straight pass at 1.75 —
+  never curves, the grinder takes what misses. Soft: vulcan ×2 / shell ram /
+  thrown orb / four-bit orbit fold it (300 pod-money); body kills at contact;
+  armour law untouched. rtypecheck 216/216 (15 new laws) + 22 named mutants
+  red-and-named (new: pursuit-deaf, commit-deaf). Floors: solo 8/12 (≥4 —
+  pre-duel was 7), co-op 11/12 (≥6). Prod verified (duelfire in
+  index-DBHF5OQO.js).
+- /retrogames/r-type — pad THROW (#2931), link-pad face labels (#2929), Options
+  launch/pods, Half-Capsule, SSE loops all on the shelf (private until Jon
+  promotes — #379).
+- /retrogames/contra — hangar sorties + fixed-spot pods; /retrogames/double-
+  dragon — opening movie + seat greet (#2863 → QA).
 
-## Duplicate story (don't re-litigate)
-- #2924 (slot b Option-launch) and slot a's #2925 were the same gap; slot a shipped
-  first (`03dfd39`). #2924/#2927 closed as duplicates with explanation.
-- Branch `forge/rtype-optlaunch` (remote + worktree `~/Dev/retrogames-forge-rtype-optlaunch`)
-  is **kept as a fidelity reference**: pierce-vs-spend orbs, armour-spends, plug,
-  B-verb precedence laws. If R-TYPE ever revisits drone semantics, mine that design doc first.
+## WHAT THIS SESSION DID (slot a)
+- Ladder empty (steer/next/game-queue none; only feedback #2889 QA-held; live
+  QA sessions → no borrow). idle.mjs answered honestly: flagshipStage AND
+  weakestStage both pick R-TYPE (score 5; DoubleDragon skipped, building-qa).
+  Filed POLISH #2934 (game-queue + lane:games), claimed via forge-claim.sh,
+  built in forge/rtype-duelist, gated, merged rule-5, prod-verified, shipped.
+- Winnability lesson (README records both numbers): first duel-strafe override
+  traded slab commitments for jinks → solo 2/12. Guard: strafe only when no
+  slab/hunter-commitment is live → solo 8/12. Autopilot+wing score windup and
+  dash lanes; hunt scores distant on purpose (no jitter).
+- Filed QA polish pass #2938 (armor-overlap read, distinct round, phone-scale
+  eye, dash trail, leg-3 duel candidate, dodge reward, wing cover-fire).
 
-## R-TYPE open gaps (next weakest rungs, README order)
-1. Williams-style duelist (armed variety bit).
-2. Carrier interceptors — carriers never answer back when their pod is shot.
-3. Phase-2 volley dodge (volley is fired, not dodged, by the autopilot).
-4. Wing-brain shell initiative; dark-seat free life; drone mid-flight catch.
+## OPEN
+- building-qa: #2889 (DD guardian-read) with QA; #2938 (duelist polish) is
+  fresh feedback — QA's pick, not ours.
+- game-queue: empty; R-Type README honest gaps stay unowned: carrier
+  interceptors, Phase-2 salvo pre-dodge, wing auto-shell, dark-seat life.
+  The shelf is not dry — idle-kick will answer R-TYPE 0 again (score now 4).
 
-## Harness lessons learned this session (cheap fixes, next harness touch)
-- **`scripts/heistclock.mjs --pad` is latently broken**: it calls puppeteer's
-  `page.setViewport()` on a Playwright page → TypeError. The flag was never exercised
-  on CI. Fix: `page.setViewportSize({width,height})`. (Slot b's new pad laws do this right.)
-- **VirtualControls pad is `md:hidden`** (Tailwind ≥768px) and hides until first touch:
-  any browser law that drives the pad must `page.setViewportSize` below 768 AND
-  `window.dispatchEvent(new Event('touchstart'))` first. Smoke's pad test only checks
-  `querySelector` (isConnected), so it never noticed.
-- **`gh issue list --label a --label b` is AND** — when deriving stages via idle.mjs,
-  fetch `--state open --limit 200` and filter locally.
-- Grep JS bundles under `LC_ALL=C` (they contain bytes that break zsh's default locale).
+## NOTES for the next lane
+- DUEL numbers (sim.js export): close .9 back .7 range 110 track 1.15 fireCd
+  110 warn 24 hp 2 score 300 commitAt 260 windup 40 dash 1.75. States:
+  enter > hunt > windup > dash; removal at camX−24 and dash past W+30; y
+  clamped inside the rails; fire gated on !frozen + on-screen.
+- Mutant anchors this stage: `e.y += clamp(tp.y - e.y, -DUEL.track,
+  DUEL.track) // it answers the stick — just slower` (pursuit-deaf) and
+  `if (e.t >= DUEL.commitAt) { e.state = 'windup'; e.stateT = DUEL.windup;
+  gs.events.push('duelwind') }` (commit-deaf) — both unique strings.
+- Browser-law flake (this box, 3 runs, 3 different laws): press+short-wait
+  laws under software-Chrome rAF throttle (#2906 ember, #2925 N-throw).
+  New kill law drives contract `__game.step({a:true},30)` — immune; prefer
+  contract steps over wall-clock waits in new laws.
+- Prod-verify recipe: entry html → /retrogames/assets/index-*.js; sibling
+  lazy chunks appear as `index-<8hash>.js` references INSIDE the entry
+  (NOT `assets/…` prefixed) — enumerate those and grep bodies (duelfire).
+- Fixture: `__rTest.setup({ spawnDuelist: {y,x,state,t,cd} })`; probe
+  `duel/duelState/duelCd`; DebugKit SPAWN DUELIST; contract state `duel`.
 
-## Slots / ops
-- Slot b port **5178** (devstop.sh when done). Never 5173/5174/5179.
-- QA lane is live (mini, mini2 sessions) — builder lanes stay out of QA tasks (Jon 2026-10-19).
-- Open questions for Jon: none (no `waiting-jon` filed this session).
+## WORKTREES
+- Main checkout ~/Dev/retrogames: detached origin/main, this STATE.md committed
+  on top (game merged → allowed) and pushed.
+- ~/Dev/retrogames-forge-rtype-duelist: worktree done; prune with
+  `git worktree remove --force ~/Dev/retrogames-forge-rtype-duelist`.
+- Port 5173 stopped with scripts/devstop.sh at close. Other lanes' ports
+  untouched all session.
 
-## Next lane starting here
-- Board derivation: run idle.mjs (fetch open issues, filter locally). R-TYPE's pad score
-  should rise post-#2931; expect the Williams duelist or carrier-retaliation to be the
-  new weakest flagship rung. DOUBLE DRAGON polish (#2863 follow-ups) belongs to QA, not builders.
-- Worktree node_modules: symlink from an existing forge worktree is fine (lockfile unchanged
-  since b91648c).
+## Open questions
+- #2846 — promote CONTRA/R-TYPE/DOUBLE DRAGON to public? (default keep
+  private, due 11-23 — Jon; the duelist lands in R-Type either way.)
+- #2908/#2930 (QA lane) — DD idle-seat laws (not ours, linked for the board).
+- No new question filed this session — dry-shelf jonq stays unlockable ~11-27
+  (7-day rule after #2795); the board had work anyway.
