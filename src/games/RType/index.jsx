@@ -47,6 +47,7 @@ export default function RType() {
         const rings = [] // #2831: expanding cyan rings for hunter-kills on the orbit
         let attachFlash = 0 // #2823: capture ceremony countdown (frames)
         let lastStrain = -99 // #2823: throttle for the armour-grind strain tick
+        let lastGrind = -99 // #2938: throttle for the duelist's scrape on steel
         let plugN = 0 // #2823: per-hit pitch rotation for the plug tick
         const keys = { l: false, r: false, u: false, d: false, f: false }
         let podQ = false // POD is a press-verb: latch so sub-frame taps (bots) still reach the sim
@@ -154,6 +155,9 @@ export default function RType() {
             // before the pass rises like a held breath.
             duelarrive: () => { audioController.playSweep(720, 280, 0.34, 'sawtooth', 0.09); audioController.playTone(220, 0.12, 'square', 0.07, 0.2) },
             duelfire: () => { audioController.playTone(430, 0.04, 'square', 0.08); audioController.playNoise(0.02, 0.03) },
+            // #2938 the duel grinds on armour: a short steel scrape, throttled
+            // like the shell's strain so a lip-dwell rattles instead of screams
+            duelgrind: () => { if (gs.tick - lastGrind >= 8) { lastGrind = gs.tick; audioController.playTone(120 + (gs.tick % 4) * 18, 0.05, 'square', 0.06); audioController.playNoise(0.03, 0.03) } },
             duelwind: () => { audioController.playSweep(170, 540, 0.38, 'square', 0.07); shake = Math.max(shake, 1) },
             // #2937 the carrier's answer: a bright spit from the bay — sharper
             // and higher than the duel's gun, because it is a dart, not a shot
@@ -480,6 +484,10 @@ export default function RType() {
                     duel: gs.enemies.filter((e) => e.kind === 'duelist').length,
                     duelState: (gs.enemies.find((e) => e.kind === 'duelist') || { state: '-' }).state,
                     duelCd: (gs.enemies.find((e) => e.kind === 'duelist') || { cd: -1 }).cd,
+                    // #2938 screen coords of the hunter, for the pixel laws (halo,
+                    // dart, trail — the light reads at phone scale, so measure it)
+                    duelX: ((d) => (d ? Math.round(d.x - gs.camX) : -99))(gs.enemies.find((e) => e.kind === 'duelist')),
+                    duelY: ((d) => (d ? Math.round(d.y) : -99))(gs.enemies.find((e) => e.kind === 'duelist')),
                     sway: gs.p2 ? Math.round(gs.p2.swayOff * 10) / 10 : 0,
                     p2port: gs.p2 ? gs.p2.port : -1,
                     p2dying: gs.p2 ? gs.p2.dyingT : 0,

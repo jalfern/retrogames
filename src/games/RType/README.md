@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 216 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf`
+node scripts/rtypecheck.mjs       # sim + browser: 233 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf` + `duel-ghost` + `coast-through` + `dart-plain` + `flash-deaf`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -377,6 +377,28 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   raises the same darts on every seed. Both brains read the intercept (its lane
   goes hot the way the duel's dash does: where it's going, not where it is),
   and the dart rides stateHash like every other body.
+- **CLOSED by #2938** — the duel on steel: the hunter obeys the armour it
+   hunts over. Read decision from the issue's fork (refuse-and-shove vs a
+   burn-off spark): BOTH, by phase. The prowling phases (enter/hunt/windup)
+   are shoved clear of the lip they reach over and cry once on the steel
+   (`duelgrind`) — the same law the shell and the thrown orb already obey
+   ("armour refuses and burns"), so a hover with wings inside a plate is gone.
+   A committed dash is different: it was sold to the pilot as *grind, edge, or
+   grave* — so against a slab it takes the edge and BURNS on the face (no
+   payout: the spend is the pass). The plate becomes cover: hiding the duel
+   behind a slab is the near-miss dodge made physical. Round two: the aimed
+   shot is now the hunter's OWN crimson dart (`dart` marker; hull-dark
+   fletching, hot tip) — the eye reads which gun fired before it finds the
+   shooter. The phone-scale telegraph grows: while cd <= warn the eye-halo
+   spills ahead of the nose and widens as the round loads; the dash trail is
+   three rows of heat, not two; the release flash (`flashT`) lands the crouch's
+   promise at the exact tick the pass launches. And the bridgehead duels:
+   leg 3 fields one authored hunter (at:200 y:100, zero rng, before the tank's
+   lock at 340) so the stage closes the way it opened — winnability holds at
+   7/12 (floor 4; still above the pre-duel 7). Proven by six sim+browser laws
+   and four named mutants (`duel-ghost`, `coast-through`, `dart-plain`,
+   `flash-deaf`). The issue's last two wants (near-miss dodge reward, wingman
+   cover-fire) stay follow-up feedback — taste and depth, not this pass.
 - Phase-2 salvos fly straight once loosed, and the autopilot does not
   pre-dodge the volley lane — it eats some of what the cabinet's pilot would
   side-step.
@@ -387,12 +409,13 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 216 sim+browser laws, twenty-two named mutants
+- `scripts/rtypecheck.mjs` — 233 sim+browser laws, twenty-six named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
   `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`,
   `twin-collapse`, `speed-deaf`, `mirror-deaf`, `opts-leak`,
-  `launch-deaf`, `rearm-deaf`, `pursuit-deaf`, `commit-deaf`).
+  `launch-deaf`, `rearm-deaf`, `pursuit-deaf`, `commit-deaf`,
+  `duel-ghost`, `coast-through`, `dart-plain`, `flash-deaf`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,

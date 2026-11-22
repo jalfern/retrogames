@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, OPT, DUEL, STING, WAVES, WAVES2, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, OPT, DUEL, STING, WAVES, WAVES2, WAVES3, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -1591,12 +1591,14 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
 // and commits to one straight pass when its duel-clock expires. Authored
 // entries, zero rng — these laws pin every phase, every kill path and the
 // brain reactions that make the duel fair.
-{ // authored on the scripts: leg 1 sends two duelists, leg 2 one — authored y, no rng
+{ // authored on the scripts: leg 1 sends two duelists, leg 2 one, leg 3 one
+    // (#2938 books the stage with the duel) — authored y, no rng
     const dl = WAVES.filter((w) => w.dlc)
     const dl2 = WAVES2.filter((w) => w.dlc)
-    r.check('#2934 the duel is scripted, not rolled: two entries on leg 1, one on leg 2, authored y',
-        dl.length === 2 && dl2.length === 1 && dl.every((w) => Number.isInteger(w.dlc.y)),
-        `leg1 ${dl.map((w) => w.at + '@' + w.dlc.y).join(',')} leg2 ${dl2.map((w) => w.at + '@' + w.dlc.y).join(',')}`)
+    const dl3 = WAVES3.filter((w) => w.dlc)
+    r.check('#2934/#2938 the duel is scripted, not rolled: two entries on leg 1, one on leg 2, one on leg 3, authored y',
+        dl.length === 2 && dl2.length === 1 && dl3.length === 1 && [...dl, ...dl2, ...dl3].every((w) => Number.isInteger(w.dlc.y)),
+        `leg1 ${dl.map((w) => w.at + '@' + w.dlc.y).join(',')} leg2 ${dl2.map((w) => w.at + '@' + w.dlc.y).join(',')} leg3 ${dl3.map((w) => w.at + '@' + w.dlc.y).join(',')}`)
 }
 
 { // zero rng: two seeds with the same pads raise the same duelist at the same tick
@@ -1776,6 +1778,104 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
     const p = autopilot(gs)
     r.check('#2934 the autopilot walks the duel: a hunter in the lane buys a moving pilot',
         (p.up || p.down) === true, `up=${p.up} down=${p.down}`)
+}
+
+// --------------------------------------- the duel on steel (#2938, #2808-S5) ---
+{ // armour reads: the slab refuses the duel too — the hunter is shoved clear of
+    // the plate it reaches over and cries on the steel; it never ghost-rides a
+    // slab with its wings through the armour (the #2934 read that looked a bug)
+    const gs = makeGame(7)
+    gs.ship.inv = 999999
+    gs.ship.y = 140
+    gs.enemies.length = 0
+    const s = { id: 901, kind: 'hullseg', x: gs.ship.x + 60, y0: FIELD_TOP, y1: 110, len: 160 }
+    gs.enemies.push(s)
+    gs.enemies.push({ id: 902, kind: 'duelist', x: gs.ship.x + 120, y: 60, baseY: 60, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    let ghosts = 0, cried = 0
+    for (let i = 0; i < 120; i++) {
+        step(gs, {})
+        if (gs.events.includes('duelgrind')) cried++
+        gs.events.length = 0
+        const e = gs.enemies.find((x) => x.kind === 'duelist')
+        if (!e) break
+        if (e.x + 7 > s.x && e.x - 7 < s.x + s.len && e.y > s.y0 - 5 && e.y < s.y1 + 5) ghosts++
+    }
+    const alv = gs.enemies.find((x) => x.kind === 'duelist')
+    r.check('#2938 armour reads: the slab refuses the duel — shoved to the lip, a cry on the steel, never a ghost through the plate',
+        cried >= 1 && ghosts === 0 && !!alv && (alv.y <= s.y0 - 5 || alv.y >= s.y1 + 5), `cried=${cried} ghosts=${ghosts}`)
+}
+
+{ // grind, edge, or grave — and here it is the edge: a committed pass that meets
+    // armour is SPENT on the face, and the plate becomes cover (not being behind
+    // it is the dodge the duel teaches, made physical)
+    const gs = makeGame(5)
+    gs.ship.inv = 999999
+    gs.ship.y = 140
+    gs.enemies.length = 0
+    const s = { id: 903, kind: 'hullseg', x: gs.ship.x + 30, y0: FIELD_TOP, y1: 130, len: 24 }
+    gs.enemies.push(s)
+    gs.enemies.push({ id: 904, kind: 'duelist', x: gs.ship.x + 140, y: 60, baseY: 60, hp: DUEL.hp, t: DUEL.commitAt, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    let cried = false, spent = false, passed = false, lives0 = gs.lives
+    for (let i = 0; i < 220; i++) {
+        step(gs, {})
+        if (gs.events.includes('duelgrind')) cried = true
+        gs.events.length = 0
+        const e = gs.enemies.find((x) => x.kind === 'duelist')
+        if (!e) { spent = true; break }
+        if (e.x < gs.ship.x + 24) { passed = true; break } // it reached the pilot — the plate was not cover
+    }
+    r.check('#2938 the pass burns: a dash into armour dies on the face and never reaches the hull behind it — the plate is cover',
+        cried && spent && !passed && gs.lives === lives0, `cried=${cried} spent=${spent} passed=${passed}`)
+}
+
+{ // its own round: the duelist's aimed shot is a dart of its own (sim marker —
+    // the art draws it crimson hull-red, but the identity is sim truth)
+    const gs = makeGame(6)
+    gs.ship.inv = 999999
+    gs.enemies.length = 0
+    gs.enemies.push({ id: 905, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: 0, cd: 4, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    let atFire = -1
+    for (let i = 0; i < 40; i++) {
+        step(gs, {})
+        if (gs.events.includes('duelfire')) atFire = gs.bullets.filter((b) => b.dart).length
+        gs.events.length = 0
+    }
+    r.check('#2938 the duel fires its own round: every duelfire looses a dart-marked bullet (the eye reads the gun)',
+        atFire === 1, `darts-at-fire=${atFire}`)
+}
+
+{ // the release announces itself: the crouch ends in light, not a whisper —
+    // flashT burns at the commit so the art can flash the nose at the release
+    const gs = makeGame(8)
+    gs.ship.inv = 999999
+    gs.enemies.length = 0
+    gs.enemies.push({ id: 906, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: DUEL.commitAt, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    let peak = 0
+    for (let i = 0; i < DUEL.windup + 12; i++) {
+        step(gs, {})
+        const e = gs.enemies.find((x) => x.kind === 'duelist')
+        if (e && e.state === 'dash') peak = Math.max(peak, e.flashT || 0)
+        gs.events.length = 0
+    }
+    r.check('#2938 the release flash: the dash is born in light (flashT > 0 at the commit, burning brief)',
+        peak >= 5, `flashT peak=${peak}`)
+}
+
+{ // the bridgehead fields its duel: the leg-3 script fires at camX 200 — mid-run,
+    // before the tank's lock at 340, so the stage closes the way it opened
+    const gs = makeGame(9)
+    gs.ship.inv = 999999
+    gs.leg = 3
+    gs.schedule = WAVES3.map((w, i) => ({ ...w, idx: 70 + i, fired: false }))
+    gs.camX = 190
+    let firedAt = -1
+    for (let i = 0; i < 40 && firedAt < 0; i++) {
+        step(gs, {})
+        if (gs.enemies.some((e) => e.kind === 'duelist')) firedAt = Math.round(gs.camX)
+        gs.events.length = 0
+    }
+    r.check('#2938 the bridgehead duels: leg 3 fields its hunter at camX 200 — authored, before the tank lock',
+        firedAt >= 200 && firedAt <= 210, `fired at camX ${firedAt}`)
 }
 
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
@@ -2425,6 +2525,96 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            name: 'duel-ghost', // #2938: the hunter back to riding slabs
+            anchor: "if (!(e.x + 7 > s.x && e.x - 7 < s.x + s.len && e.y > s.y0 - 5 && e.y < s.y1 + 5)) continue",
+            plant: "if (true /* MUTANT(duel-ghost): the plate means nothing */) continue",
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.ship.inv = 999999
+                gs.ship.y = 140
+                gs.enemies.length = 0
+                const s = { id: 901, kind: 'hullseg', x: gs.ship.x + 60, y0: mod.FIELD_TOP, y1: 110, len: 160 }
+                gs.enemies.push(s)
+                gs.enemies.push({ id: 902, kind: 'duelist', x: gs.ship.x + 120, y: 60, baseY: 60, hp: mod.DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+                let ghosts = 0
+                for (let i = 0; i < 120; i++) {
+                    mod.step(gs, {})
+                    gs.events.length = 0
+                    const e = gs.enemies.find((x) => x.kind === 'duelist')
+                    if (!e) break
+                    if (e.x + 7 > s.x && e.x - 7 < s.x + s.len && e.y > s.y0 - 5 && e.y < s.y1 + 5) ghosts++
+                }
+                return ghosts > 0
+                    ? `HARM NAMED: the duelist ghosted through armour on ${ghosts} ticks — a hunter parked in a plate with its wings through the steel reads as a rendering bug, and the slab stops being the shared rule it is for shell, orb and hull alike`
+                    : null
+            },
+        },
+        {
+            name: 'coast-through', // #2938: the committed pass rides through steel
+            anchor: "if (e.state === 'dash') {\n                    gs.events.push('duelgrind')",
+            plant: "if (false /* MUTANT(coast-through): the pass ignores the plate */ && e.state === 'dash') {\n                    gs.events.push('duelgrind')",
+            harm: async (mod) => {
+                const gs = mod.makeGame(5)
+                gs.ship.inv = 999999
+                gs.ship.y = 140
+                gs.enemies.length = 0
+                gs.enemies.push({ id: 903, kind: 'hullseg', x: gs.ship.x + 30, y0: mod.FIELD_TOP, y1: 130, len: 24 })
+                gs.enemies.push({ id: 904, kind: 'duelist', x: gs.ship.x + 140, y: 60, baseY: 60, hp: mod.DUEL.hp, t: mod.DUEL.commitAt, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+                let spentOnPlate = false, passed = false
+                for (let i = 0; i < 220; i++) {
+                    mod.step(gs, {})
+                    const e = gs.enemies.find((x) => x.kind === 'duelist')
+                    if (!e) { spentOnPlate = gs.lastHitX > gs.ship.x + 24; break }
+                    if (e.x < gs.ship.x + 24) { passed = true; break }
+                    gs.events.length = 0
+                }
+                return passed || !spentOnPlate
+                    ? 'HARM NAMED: the committed pass sailed past the plate that should have burned it — armour stops being cover from a hunter, and the dodge the duel teaches (be behind steel) stops paying'
+                    : null
+            },
+        },
+        {
+            name: 'dart-plain', // #2934's hunter back to spending the turret's ammo
+            anchor: "vy: (dyy / m) * 1.3, dart: 1 }) // #2938 its own dart-round",
+            plant: "vy: (dyy / m) * 1.3 }) /* MUTANT(dart-plain): the round is generic again */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(6)
+                gs.ship.inv = 999999
+                gs.enemies.length = 0
+                gs.enemies.push({ id: 905, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: mod.DUEL.hp, t: 0, cd: 4, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+                let darts = 0
+                for (let i = 0; i < 40; i++) {
+                    mod.step(gs, {})
+                    if (gs.events.includes('duelfire')) darts = gs.bullets.filter((b) => b.dart).length
+                    gs.events.length = 0
+                }
+                return darts === 0
+                    ? 'HARM NAMED: the duelist loosed the generic grey round — the eye cannot read which gun fired without finding the shooter, and the duel telegraph loses the colour-language that separates its lead from the turret chaff'
+                    : null
+            },
+        },
+        {
+            name: 'flash-deaf', // #2938: the crouch ends in a whisper again
+            anchor: "e.flashT = DUEL.flash // #2938 the release flash — the pass announces itself",
+            plant: "/* MUTANT(flash-deaf): the release stays dark */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(8)
+                gs.ship.inv = 999999
+                gs.enemies.length = 0
+                gs.enemies.push({ id: 906, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: mod.DUEL.hp, t: mod.DUEL.commitAt, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+                let peak = 0
+                for (let i = 0; i < mod.DUEL.windup + 12; i++) {
+                    mod.step(gs, {})
+                    const e = gs.enemies.find((x) => x.kind === 'duelist')
+                    if (e && e.state === 'dash') peak = Math.max(peak, e.flashT || 0)
+                    gs.events.length = 0
+                }
+                return peak < 5
+                    ? 'HARM NAMED: the pass launched silent and dark — a 1.75 px/tick commitment with no release flash is invisible at phone scale, and the windup crouch promised a tell it no longer delivers'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
@@ -2698,6 +2888,99 @@ const browser = await launch()
     })
     r.check('#2934 sustained fire through the shell folds the hunter — the duel can be won on screen',
         dDead.duel === 0, `duel=${dDead.duel}`)
+
+    // #2938 the duel reads at phone scale, through the shell. All three laws
+    // measure the CANVAS at the hunter's own screen coords (duelX/duelY) —
+    // sim truth decides the pose, the pixels prove the light.
+    await page.evaluate(() => window.__game.reset(3))
+    await page.waitForTimeout(150)
+    // (a) the warn halo widens ahead of the nose: sample the strip IN FRONT of
+    // the cannon while the gun is hot, then cold — the plate of light must be
+    // new when cd <= warn, and it must sit where the old 8px halo never reached
+    const haloWin = (mode) => page.evaluate((m) => new Promise((res) => {
+        const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+        if (!cv) return res(-1)
+        const p = window.__rTest.probe()
+        if (p.duel !== 1) return res(-2)
+        const d = cv.getContext('2d').getImageData(Math.max(0, p.duelX - 17), Math.max(0, p.duelY - 6), 8, 12).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] >= 150) n++
+        res(n)
+    }), mode)
+    await page.evaluate(() => window.__rTest.setup({ inv: 999999, clearEnemies: true, spawnDuelist: { y: 120, cd: 99 } }))
+    let coldPx = 0
+    for (let i = 0; i < 20 && coldPx === 0; i++) { coldPx = await haloWin('cold'); if (coldPx === 0) await page.waitForTimeout(60) }
+    await page.evaluate(() => window.__rTest.setup({ inv: 999999, clearEnemies: true, spawnDuelist: { y: 120, cd: 2 } }))
+    let hotPx = 0
+    try {
+        await page.waitForFunction(() => {
+            const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+            if (!cv) return false
+            const p = window.__rTest.probe()
+            if (p.duel !== 1) return false
+            const d = cv.getContext('2d').getImageData(Math.max(0, p.duelX - 17), Math.max(0, p.duelY - 6), 8, 12).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] >= 150) n++
+            window.__haloPx = n
+            return n >= 25
+        }, { timeout: 4000 })
+        hotPx = await page.evaluate(() => window.__haloPx)
+    } catch {}
+    r.check('#2938 the warn halo spills ahead of the nose while the round loads — a phone-scale eye sees the shot coming',
+        hotPx >= 25 && hotPx >= coldPx + 25, `hot=${hotPx} cold=${coldPx}`)
+
+    // (b) the dash drags a thick streak: spawn the pass at a fixed spot and
+    // measure rows of heat in the column just behind the hull — two rows was
+    // the hairline, three is the streak
+    await page.evaluate(() => window.__rTest.setup({ inv: 999999, clearEnemies: true, spawnDuelist: { y: 120, state: 'dash' } }))
+    let trailRows = 0
+    try {
+        await page.waitForFunction(() => {
+            const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+            if (!cv) return false
+            const p = window.__rTest.probe()
+            if (p.duel !== 1 || p.duelState !== 'dash') return false
+            const d = cv.getContext('2d').getImageData(p.duelX + 10, Math.max(0, p.duelY - 4), 3, 9).data
+            let rows = 0
+            for (let ry = 0; ry < 9; ry++) {
+                for (let rx = 0; rx < 3; rx++) {
+                    const i = (ry * 3 + rx) * 4
+                    if (d[i] > 90 && d[i] > d[i + 1] + 10) { rows++; break }
+                }
+            }
+            window.__rows = rows
+            return rows >= 3
+        }, { timeout: 3000 })
+        trailRows = await page.evaluate(() => window.__rows)
+    } catch {}
+    r.check('#2938 the dash trail is three rows of heat, not two — the pass is visible mid-streak',
+        trailRows >= 3, `rows=${trailRows}`)
+
+    // (c) its own round on screen: at the muzzle there is crimson where the
+    // shared grey bullet used to be — the gun reads by colour before position.
+    // Deterministic: contract-steps put the dart into the window before the
+    // pixel poll registers, so the law never races the rAF chain.
+    await page.evaluate(() => {
+        window.__rTest.setup({ inv: 999999, clearEnemies: true, spawnDuelist: { y: 120, cd: 1 } })
+        window.__game.step({}, 8)
+    })
+    let crimsonPx = 0
+    try {
+        await page.waitForFunction(() => {
+            const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+            if (!cv) return false
+            const p = window.__rTest.probe()
+            if (p.duel !== 1) return false
+            const d = cv.getContext('2d').getImageData(Math.max(0, p.duelX - 42), Math.max(0, p.duelY - 5), 36, 10).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] < 90 && d[i + 2] < 110) n++
+            window.__crimPx = n
+            return n >= 4
+        }, { timeout: 4000 })
+        crimsonPx = await page.evaluate(() => window.__crimPx)
+    } catch {}
+    r.check('#2938 the duel\'s round is crimson on canvas — the eye reads the gun without finding the shooter',
+        crimsonPx >= 4, `crimson px=${crimsonPx}`)
 
     r.check('zero page errors across the whole leg', errs.length === 0, errs.join(' | ') || 'clean')
 }
