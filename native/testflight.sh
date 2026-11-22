@@ -12,8 +12,9 @@
 # (App Manager; key file passed by path only). Export + upload use the Apple ID signed in to
 # Xcode > Settings > Accounts: that key may not use cloud distribution signing, Xcode's
 # account (Jon, account holder) may.
-# Build number = commit count of the commit being built, so it rises with every merge to main;
-# the version stays MARKETING_VERSION from the project.
+# Build number = the built commit's UTC commit time, YYYYMMDD.HHMM: from git, unique per
+# commit, and rising with every merge to main (a commit count would repeat across branches
+# and squash-merges). The version stays MARKETING_VERSION from the project.
 # Each port must already have an App Store Connect app record (Apple's API can't create
 # one): Joust, Emberwood, Gauntlet under com.jalfern.retrogames.<port>.
 set -euo pipefail
@@ -57,7 +58,7 @@ else
 fi
 (( ${#ports} )) || { sed -n '2,11p' $0; exit 2; }
 
-build=$(git -C $src rev-list --count HEAD)
+build=$(TZ=UTC git -C $src log -1 --format=%cd --date=format-local:%Y%m%d.%H%M)
 sha=$(git -C $src rev-parse --short HEAD)
 auth=(-allowProvisioningUpdates -authenticationKeyPath $KEY_PATH
       -authenticationKeyID $KEY_ID -authenticationKeyIssuerID $ISSUER)
