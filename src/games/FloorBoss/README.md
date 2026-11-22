@@ -348,6 +348,15 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   grammar, and nothing beyond it is scheduled.
 
 Recording honest gaps (#1712):
+- **Sheet truth (#2964, shipped):** the cleared sheet beats CLEAR — quota struck
+  through, `EARNED n ✓` beside it, and the ladder rungs (banked steady, the rung
+  just cleared lit, the next cyan) on an opaque plate, so win reads differently
+  from loss at phone scale — not just colour + fanfare. And while a consented
+  career take (#2958) holds the sheet, a `REC · TAKE OPEN` chip discloses that
+  the take is still banking: gated on `isRecording()` (the bank's own truth,
+  #2058) — never mid-play, never on a declined floor. Proof: floorbosscheck +6
+  source pins; floorbossplay pixel gates — beat pixels on the cleared sheet,
+  none on the lost one, zero hot-red chip pixels declined (the rig's own state).
 - ~~The take ends at the whistle — clocking into the NEXT shift from the over
   screen plays on but is not recorded as part of that take.~~ **CLOSED by
   #2958**: career takes — a cleared night keeps a consented take open; clocking

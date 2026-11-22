@@ -980,6 +980,20 @@ console.log('— shift ladder (#2346) —')
         'closeTake guards every real end: key-exit, tap-exit, contract reset, unmount (#2958)', )
     const ds = readFileSync(new URL('./plaicraft-dataset.mjs', import.meta.url), 'utf8')
     ok(/if \(gs\.end === 'win'\) fbNextShift\(gs\)/.test(ds), "the adapter seam: rows past a win clock the ladder in for replay (#2958)")
+    // #2964 sheet truth: the CLEAR beat is win-only, and the take disclosure
+    // asks the bank itself — a declined floor must never see the chip.
+    ok(/import \{[^}]*\bisRecording\b[^}]*\} from '\.\.\/\.\.\/utils\/gameContract'/.test(ui),
+        'the shell imports the bank truth (isRecording) from gameContract (#2964/#2058)')
+    ok(/if \(won && isRecording\(\)\)/.test(ui),
+        'the REC chip is gated on won AND a live take — disclosure obeys the bank, never decor (#2964)')
+    ok((ui.match(/REC · TAKE OPEN/g) || []).length === 1 && ui.indexOf('REC · TAKE OPEN') > ui.indexOf('const paintOver'),
+        'the chip text exists once, inside paintOver — sheet-only, never mid-play (#2964)')
+    ok(/const qs = `QUOTA \$\{gs\.params\.quota\}`/.test(ui) && /EARNED \$\{earned\} ✓/.test(ui),
+        'the cleared sheet strikes the rung\u2019s quota and names what it earned (#2964)')
+    ok(/else if \(i === gs\.cleared\) \{ ctx\.fillStyle = '#b5ffcf'/.test(ui),
+        'the ladder rung just cleared lights bright on the sheet — the +1 the eye catches at phone scale (#2964)')
+    ok(!/isRecording\(\)/.test(ui.slice(0, ui.indexOf('const paintOver'))),
+        'no disclosure drawn before the sheet exists — mid-play stays HUD-only (#2964)')
 }
 {
     // #2966 THE ORDER CARD CLICK WORKS — the finder referenced its own
