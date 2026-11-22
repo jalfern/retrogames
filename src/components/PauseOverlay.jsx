@@ -192,7 +192,11 @@ const PauseOverlay = ({ game, badge, ledger, onResume }) => {
     return (
         <div
             data-help-fit={groups && groups.length > 1 ? 'paged' : 'single'}
-            className="absolute inset-0 bg-black/80 flex flex-col items-center text-white z-50 p-6 font-mono overflow-hidden"
+            // #2899: the dim was translucent enough (black/80) that bright HUD
+            // ink drawn under it — attract titles, JALFERN.COM — still read at
+            // 20% and collided with the card copy. At /95 the frozen game is a
+            // whisper of presence; nothing underneath competes with the sheet.
+            className="absolute inset-0 bg-black/95 flex flex-col items-center text-white z-50 p-6 font-mono overflow-hidden"
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
         >
