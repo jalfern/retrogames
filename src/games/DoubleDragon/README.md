@@ -415,12 +415,50 @@ Technōs opened its arcade by stating the crime; so does this board, between
   run 12/12, co-op seeds 1..6 6/6. `knock-flat` and `bounds-off` mutants
   name the harm if the weight or the wall goes dark.
 
+#2945 goon weapon rotations (forge) — the later waves carry steel:
+
+- **The wind ladder** — the bigger the reach, the longer the telegraph: bare
+  fists wind 12 ticks (the law), the stick-man 14, the whip-man 18
+  (`CFG.goonWindup`). A life only ever costs the `attack` state — leather
+  never bites mid-wind, and hitting the wind-up man staggers his turn away
+  (the longer reach is borrowed, not free).
+- **The whip is a LINE catch** — a whip-Williams cracks at reach 34 along its
+  lane with depth tolerance 9 (`goonWhipReach/goonWhipDepth` — the same steel
+  constants the dragons own). Share the lane and it takes a life; fourteen deep
+  it cracks air. The depth axis stays the whole dodge (#2807's core law,
+  leather edition); the crack rings even on a whiff (`goon_whip`) so the
+  pad-player hears the lane they must leave.
+- **The stick owns the space past a kick** — a stick-Williams bites at 23+4
+  where bare fists (def+4) whiff; the armed-Amon's wood now winds an honest
+  14 and reads the same law the README always claimed for it.
+- **Knife stays the ONLY cast** — the original's goons never threw whip, barrel
+  or stick, so whip and stick are MELEE-only: 600 ticks of whip-and-stick fury
+  and not one blade in the air. The aimed knife remains the goon's only
+  projectile.
+- **Bodies pay out their steel** — KO a whip- or stick-man and the weapon falls
+  at the corpse and becomes pickable (same plumbing as the armed-Amon drop and
+  the barrel's cargo); the walk to the body re-arms the dragon and the
+  contextual PUNCH (lash / doubled steel) turns the rotation against the next
+  wave. The crowd law counts a whip wind: never more than two winds live.
+- **Waves**: the hideout arms its visitors — yard wave 1 opens with a
+  whip-Williams, wave 2 pairs the knife-caster with a stick-Williams; the duel
+  keeps only his belt of knives. S1 stays bare except the armed Amon (the
+  "later waves" are the yard).
+- **Hashed steel** — the weapon in a thug's hand decides his whole future
+  (reach, wind, drop), so the weapon bits ride `stateHash` (#2935's lesson).
+- **The autopilot predodges the crack** — the brain's threat bounds widen to
+  the whip (46px / depth 14, outside the strike's own geometry) and treat a
+  whip wind like a cast: leave the lane, don't flee down it. Winnable
+  re-measured on the armed yard: S1 12/12, full run 12/12, co-op 6/6.
+- The `whip-blind` and `rotation-dead` mutants name the harm if the line catch
+  or the payout dies.
+
 ## Verify
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 268 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), #2942 phone-scale QA (strut cut-continuity + edge clamp, chevron non-fuse at dock zoom, tag-blink duty, squash beat width, offline-rendered mix dB), winnable, browser legs
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, strut-pop, squash-missing, tag-deaf, mix-clash must go RED (named)
+npm run ddragoncheck                    # 288 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2945 goon rotations (wind-ladder/line-catch/reach/no-midwind/knife-only-cast/KO-pays-steel/crowd/hash/autopilot-predodge/won-run-live-cue/cue-voices + crack-to-the-display browser leg), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), #2942 phone-scale QA (strut cut-continuity + edge clamp, chevron non-fuse at dock zoom, tag-blink duty, squash beat width, offline-rendered mix dB), winnable, browser legs
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, strut-pop, squash-missing, tag-deaf, mix-clash, whip-blind, rotation-dead must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -484,8 +522,11 @@ of nightly 44762398189).
   mix is now *heard* through an offline render of the shipped DSP: the 882 Hz
   third sits ≥12 dB under the F#4 fundamental and ≥4 dB under where the old
   square left it at the chime's middle note.
-- Goons carry knives (S3) but not the whip or stick-and-steel rotations of
-  the later arcade waves; the thrown knife is the goon's only cast (and the
-  original's goons never threw whip or barrel either).
+- **CLOSED by #2945** — the goon whip and stick rotations of the later arcade
+  waves: a whip-Williams cracks 34px down its lane (depth 9, wind 18), a
+  stick-Williams owns 23+4 past a kick (wind 14), KO'd men pay their steel to
+  the street and the walk to the corpse re-arms the dragon, and the knife
+  stays the goon's only cast — melee-only leather and wood, wind-ups that scale
+  with reach, hashed steel, autopilot predodge and all.
 - The duel's re-arm is a cooldown, not a walk-to-the-body pickup like the
   arcade's knife retrieval.
