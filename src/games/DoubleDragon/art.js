@@ -954,8 +954,27 @@ export function glintMarks(guard) {
 export function flourishDrift(f, ticks = SIMCFG.flourishTicks) {
     if (f <= 0 || f >= ticks) return 0
     const pr = 1 - f / ticks
-    const ph = pr < 0.2 ? pr / 0.2 : pr > 0.85 ? (1 - pr) / 0.15 : 1
+    // #2942 item 4: the tail eased with a 0.15 fraction still left 2 px lit at
+    // the last tick — a phone's brightness makes a 2 px exit read as a slip.
+    // The tail mirrors the ramp (0.2), so the exit step is ≤1 px.
+    const ph = pr < 0.2 ? pr / 0.2 : pr > 0.8 ? (1 - pr) / 0.2 : 1
     return Math.max(0, Math.min(5, Math.round(5 * ph)))
+}
+
+// #2942 item 4: the drift rides the flourish CLOCK, not the flourish POSE.
+// The #2889 strut promised "no snap whether the pose finishes or a swing cuts
+// it" — but the paint was gated on the pose, so a seat that swung mid-strut
+// snapped 5 px home against the planted shadow in one frame. The step-back is
+// residual: it keeps easing home on the remaining clock through whatever pose
+// cuts it (≤2 px/tick by the curve, ≤1 px at the exits). Paint-only — the x
+// truth never moves, the shadow stays planted, and the clamp keeps the whole
+// body on canvas at the screen edges.
+export function strutDrift(b, sx) {
+    if (b.flourish <= 0 || b.state === 'grabbed' || b.state === 'dying') return 0
+    let d = -b.face * flourishDrift(b.flourish, SIMCFG.flourishTicks)
+    if (sx + d < -34) d = -34 - sx
+    else if (sx + d > W + 34) d = W + 34 - sx
+    return d
 }
 
 // #2889 item 4: weight at the moment of impact — a knocked-down man flattens
@@ -1006,16 +1025,11 @@ function drawFighter(ctx, b, camX, pal, props) {
     // the KO flourish over an idle or a walk. Juice rides the pose, nothing else.
     if (b.relief > 0 && pose === 'idle') pose = 'relief'
     else if (b.flourish > 0 && (pose === 'idle' || pose === 'walk')) pose = 'flourish'
-    // #2889 item 3: the arcade strut WALKED — the pose rode a step-back. The
-    // drift is render-only (x truth untouched, juice law): one step back (5 px)
-    // eased out and home on the flourish clock so nothing snaps when the pose
-    // ends or a swing cuts it. The shadow stays planted — the #2857 wobble law.
-    let drift = 0
-    if (pose === 'flourish') {
-        drift = -b.face * flourishDrift(b.flourish, SIMCFG.flourishTicks)
-        if (sx + drift < -34) drift = -34 - sx
-        else if (sx + drift > W + 34) drift = W + 34 - sx
-    }
+    // #2889 item 3 / #2942 item 4: the arcade strut WALKED — the pose rode a
+    // step-back. The drift is render-only (x truth untouched, juice law) and
+    // rides the flourish CLOCK (strutDrift), so a swing that clips the strut
+    // eases the step home instead of snapping it against the planted shadow.
+    const drift = strutDrift(b, sx)
     const bx = sx + drift
     if (hop) drawShadow(ctx, sx + castPx(b.x), sy + 1, 10, 0.22)
     else drawShadow(ctx, sx + castPx(b.x), sy + 1, 14, 0.35 - b.z * 0.02)

@@ -419,8 +419,8 @@ Technōs opened its arcade by stating the crime; so does this board, between
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 260 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), winnable, browser legs
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, squash-missing, tag-deaf, mix-clash must go RED (named)
+npm run ddragoncheck                    # 268 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), #2942 phone-scale QA (strut cut-continuity + edge clamp, chevron non-fuse at dock zoom, tag-blink duty, squash beat width, offline-rendered mix dB), winnable, browser legs
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, strut-pop, squash-missing, tag-deaf, mix-clash must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -470,8 +470,20 @@ of nightly 44762398189).
   chevron trail that survives dock zoom, the freed blue seat's relief blinks
   his own HUD tag, the KO strut takes its step back, knockdowns land with an
   easing squash beat, and the jab's phone-mix clash with the pickup chime is
-  gone (triangle timbre, F#4 kept). A physical-device fresh-ears listen
-  remains open craft — the fix is measured, not heard.
+  gone (triangle timbre, F#4 kept).
+- **CLOSED by #2942** — the on-device read pass over those five tells, put
+  through numbers instead of impressions: the strut's step-back now rides the
+  flourish CLOCK, not the pose (a swing that clips the strut used to snap the
+  whole 5 px home against the planted shadow in one frame — measured, fixed,
+  and `strut-pop` names it red; exits are ≤1 px and the clamp keeps the body
+  on canvas at the screen ends); two lit chevrons keep a 9-px daylight gap and
+  stay two clusters at 0.5× phone binning; the relief blink measures 5-lit-of-9
+  (~150 ms) — one flash-event, not a strobe fault; the KO squash beat is
+  exactly 8 painted frames (≈133 ms, inside the 100–200 ms classic window and
+  ≥ the #2897 paint floor — the 6-tick fallback is ruled out); and the jab
+  mix is now *heard* through an offline render of the shipped DSP: the 882 Hz
+  third sits ≥12 dB under the F#4 fundamental and ≥4 dB under where the old
+  square left it at the chime's middle note.
 - Goons carry knives (S3) but not the whip or stick-and-steel rotations of
   the later arcade waves; the thrown knife is the goon's only cast (and the
   original's goons never threw whip or barrel either).

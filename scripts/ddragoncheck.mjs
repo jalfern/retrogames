@@ -26,6 +26,9 @@
 // #2889 polishes that read for the phone: chevron glints, a relief-tag blink,
 // a walking strut, an 8-tick KO squash, a triangle jab in the mix; glint-flat,
 // strut-frozen, squash-missing, tag-deaf and mix-clash name those collapses.
+// #2942 measures those tells at phone scale: the strut drift rides the clock
+// (strut-pop names the pose-gated snap), chevrons stay separate at dock zoom,
+// the blink/squash windows carry numbers, and the mix is FFT'd offline.
 // #2891 adds the opening movie — the kidnapping of Marian as a fixed script
 // that gates the street, is skip-courteous, and lifts the curtain on a stage
 // bit-identical to a no-movie run (hash parity); movie-frozen/skip-deaf/
@@ -40,7 +43,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain, INTRO, TIP } from '../src/games/DoubleDragon/sim.js'
-import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD, drawHud, drawJoinFx, JOIN_T, glintMarks, flourishDrift, koSquash, reliefBlink } from '../src/games/DoubleDragon/art.js'
+import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD, drawHud, drawJoinFx, JOIN_T, glintMarks, flourishDrift, strutDrift, koSquash, reliefBlink } from '../src/games/DoubleDragon/art.js'
 import { p2Merge, p2Seat } from '../src/games/DoubleDragon/p2pad.js'
 import { pressSlot, releaseSlot, slotPad, slotActive, clearAllSlots } from '../src/utils/onePad.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -1114,8 +1117,8 @@ const runFull = (seed, max = 60000) => {
     r.check('#2889 strut drift: zero at both ends of the clock (no snap at finish or on a cut), exactly one step at the peak',
         dCurve[20] === 0 && dCurve[0] === 0 && Math.max(...dCurve) === 5 && dCurve.every((v) => v >= 0),
         dCurve.join(','))
-    r.check('#2889 strut drift holds the step through the pose and eases home only in the last three ticks',
-        dCurve[16] === 5 && dCurve[10] === 5 && dCurve[3] === 5 && dCurve[2] <= 3 && dCurve[1] <= 2,
+    r.check('#2889 strut drift holds the step through the pose and eases home only in the last ticks (≤1 px on the exit tick — #2942 tail)',
+        dCurve[16] === 5 && dCurve[10] === 5 && dCurve[4] === 5 && dCurve[3] <= 4 && dCurve[1] <= 1,
         dCurve.join(','))
 
     // item 4 — weight at impact: an 8-tick easing flatten at the knockdown
@@ -1157,6 +1160,72 @@ const runFull = (seed, max = 60000) => {
     const jline = idxSrc.match(/jab_b: \(\) => \{ audioController\.playTone\((\d+), [\d.]+, '(\w+)', ([\d.]+)\)/)
     r.check('#2889 phone mix: the jab keeps note 294 but leaves the square — F#4 on a triangle clears the 660/880/1320 chime band where the square beat it',
         !!jline && jline[1] === '294' && jline[2] === 'triangle', jline ? `${jline[1]} ${jline[2]}` : 'jab_b line not found')
+}
+
+// ---------------- #2942 QA on-device pass — the tells measured at phone scale ---
+// The forge shipped five render tells; this pass puts numbers on the questions
+// the harness had not asked: does the strut survive being CUT (not just end),
+// do two lit chevrons stay separate at dock-zoom, how wide is the squash beat
+// really, what duty does the relief blink run, and does the jab clear the
+// chime band by measured dB (browser leg below), not by waveform name alone.
+{
+    // item 4 — the cut. #2889 proved the drift CURVE; the paint rode the pose,
+    // so a seat that swung mid-strut snapped the whole step home against the
+    // planted shadow in one frame (QA repro: −5 → 0 at the punch tick). The law
+    // now rides the flourish clock through every state a cut can leave.
+    const cutStates = ['punch', 'kick', 'spin', 'throw', 'whip', 'hurt', 'stagger', 'down', 'getup', 'jump']
+    const survives = cutStates.every((st) =>
+        strutDrift({ flourish: 10, state: st, face: 1 }, 140) === -5 &&
+        strutDrift({ flourish: 10, state: st, face: -1 }, 140) === 5) &&
+        strutDrift({ flourish: 10, state: 'grabbed', face: 1 }, 140) === 0 &&
+        strutDrift({ flourish: 10, state: 'dying', face: 1 }, 140) === 0
+    r.check('#2942 the strut survives its cut: a seat that clips the swagger keeps the step-back (drift rides the clock through punch/kick/hurt — only grabs and deaths take it)',
+        survives, `states=${cutStates.length}`)
+    let prevD = 0, maxStep = 0
+    for (let f = 20; f >= 0; f--) {
+        const d = strutDrift({ flourish: f, state: f > 12 ? 'punch' : 'idle', face: 1 }, 140)
+        maxStep = Math.max(maxStep, Math.abs(d - prevD))
+        prevD = d
+    }
+    r.check('#2942 …and never pops: every drift step ≤2 px and both exits ≤1 px — no 5 px snap against the planted shadow at phone brightness',
+        maxStep <= 2 && prevD === 0, `maxStep=${maxStep}`)
+    r.check('#2942 strut at the edge: the back-step clamps on-canvas — a KO strutted at the screen end never walks the body past the cull line',
+        strutDrift({ flourish: 10, state: 'idle', face: -1 }, W + 30) === 4 &&
+        strutDrift({ flourish: 10, state: 'idle', face: 1 }, -30) === -4)
+
+    // item 2 — two lit chevrons at dock zoom: the groups must keep daylight
+    // between them even after a 0.5× average (the worst phone binning).
+    const cols = glintMarks(8).filter((q) => !q.core).flatMap((q) => Array.from({ length: q.w }, (_, k) => q.x + k)).sort((a, b) => a - b)
+    const clusters = []
+    for (const c of cols) {
+        const top = clusters[clusters.length - 1]
+        if (top && c <= top[1] + 1) top[1] = Math.max(top[1], c)
+        else clusters.push([c, c])
+    }
+    const gap = clusters.length === 2 ? clusters[1][0] - clusters[0][1] - 1 : -1
+    const half = [...new Set(cols.map((c) => Math.floor(c / 2)))].sort((a, b) => a - b)
+    const hcl = []
+    for (const c of half) {
+        const top = hcl[hcl.length - 1]
+        if (top && c <= top[1] + 1) top[1] = Math.max(top[1], c)
+        else hcl.push([c, c])
+    }
+    r.check('#2942 chevrons never fuse: the two lit marks keep a 9-px daylight gap native and stay two separate clusters at 0.5× phone binning — the trail reads as motion, never a solid line',
+        clusters.length === 2 && gap >= 8 && hcl.length === 2 && hcl[1][0] - hcl[0][1] - 1 >= 2,
+        `gap=${gap} half-clusters=${hcl.length}`)
+
+    // item 5 — the relief tag blink: five lit of a nine-count (~150 ms burst)
+    // is one attention event — registers peripherally, too short to strobe.
+    const litN = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(reliefBlink).length
+    r.check('#2942 tag blink measures as one flash-event: 5 lit ticks of the 9-count (duty ≈0.55, burst ≤167 ms) — peripheral-legible, under the HUD-fault strobe window',
+        litN === 5 && 5 / 9 >= 0.4 && 5 / 9 <= 0.65, `lit=${litN}/9`)
+
+    // item 3 — the squash beat: 8 painted frames = 133 ms at 60 fps, inside
+    // the classic 100–200 ms impact window AND ≥ the #2897 paint-survival
+    // floor — the phone-fallback of 6 ticks is the wrong knob on every box.
+    const beat = Array.from({ length: 10 }, (_, t) => koSquash('down', t) !== null)
+    r.check('#2942 squash beat measured: exactly 8 painted frames (≈133 ms) — inside the 100–200 ms classic window and ≥ the #2897 floor; the 6-tick fallback is ruled out',
+        beat.slice(0, 8).every(Boolean) && !beat[8] && !beat[9], beat.map((v) => (v ? '#' : '.')).join(''))
 }
 
 // ------------------------------------------------------- p2 pad seat (#2860) ---
@@ -2095,6 +2164,26 @@ if (MUTANT) {
                 },
             },
             {
+                // #2942 item 4: gate the drift on the pose again — the exact
+                // bug the on-device pass measured (5 px snap when a swing clips
+                // the strut). The curve survives; the paint dies with the pose.
+                name: 'strut-pop',
+                anchor: "    if (b.flourish <= 0 || b.state === 'grabbed' || b.state === 'dying') return 0",
+                plant: "    if (!(b.state === 'idle' || b.state === 'walk')) return 0 /* MUTANT(strut-pop): the drift dies with the pose */",
+                harm: async () => {
+                    const m = await import(`../src/games/DoubleDragon/art.js?mutant=strut-pop${Date.now()}`)
+                    let prev = 0, maxStep = 0
+                    for (let f = 20; f >= 0; f--) {
+                        const d = m.strutDrift({ flourish: f, state: f > 12 ? 'punch' : 'idle', face: 1 }, 140)
+                        maxStep = Math.max(maxStep, Math.abs(d - prev))
+                        prev = d
+                    }
+                    return maxStep >= 5
+                        ? `HARM NAMED: the step-back rides the pose instead of the clock — the instant a swing clips the strut the body snaps ${maxStep} px home against its planted shadow, the one slip #2942's edge-leg was filed to catch; at phone brightness a 5 px pop in a 30 px fighter is the whole read`
+                        : null
+                },
+            },
+            {
                 // #2889 item 4: take the weight out of the landing.
                 name: 'squash-missing',
                 anchor: "    if (state !== 'down' || stateT > 7) return null",
@@ -2857,6 +2946,94 @@ const defuseConsent = async (page) => {
         pd.headMin <= pd.sx - 7, `headMin=${pd.headMin} sx=${pd.sx}`)
     r.check('#2889 browser: the tells leg ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
     await page.close()
+}
+
+// ---------------- #2942 browser leg: the phone mix heard, not just named ------
+// Fresh ears, approximated honestly: play `jab_b` and the pickup chime through
+// the SAME synthesis path the shell uses (band-limited Web Audio oscillators,
+// the same exponential envelopes) in an OfflineAudioContext, and put a dB
+// number on the separation. The #2889 law says the triangle dropped the 882 Hz
+// third (a 2 Hz beat on the chime's 880 middle note) out of the chime's
+// shadow; this leg proves it with the shipped numbers, and compares against
+// the old square to show the fix direction is what's holding.
+{
+    const mixSrc = readFileSync(join(ROOT, 'src/games/DoubleDragon/index.jsx'), 'utf8')
+    const jbM = mixSrc.match(/jab_b: \(\) => \{ audioController\.playTone\((\d+), ([\d.]+), '(\w+)', ([\d.]+)\); audioController\.playNoise\(([\d.]+), ([\d.]+)\)/)
+    const pkM = mixSrc.match(/pickup: \(\) => \{ audioController\.playTone\((\d+), ([\d.]+), '(\w+)', ([\d.]+)\); audioController\.playTone\((\d+), ([\d.]+), '(\w+)', ([\d.]+), ([\d.]+)\); audioController\.playTone\((\d+), ([\d.]+), '(\w+)', ([\d.]+), ([\d.]+)\)/)
+    let sepDB = -999, sqGain = 0
+    if (jbM && pkM) {
+        const cfg = {
+            jab: { freq: +jbM[1], dur: +jbM[2], type: jbM[3], vol: +jbM[4], ndur: +jbM[5], nvol: +jbM[6] },
+            // group bases: tone 1 has no delay arg (groups 1..4), tones 2/3 do
+            chime: [0, 1, 2].map((k) => {
+                const base = [1, 5, 10][k]
+                return { freq: +pkM[base], dur: +pkM[base + 1], type: pkM[base + 2], vol: +pkM[base + 3], delay: k === 0 ? 0 : +pkM[base + 4] }
+            }),
+        }
+        const page = await openGame(browser, { url: `${BASE}/double-dragon`, hook: '__ddTest', wait: 600 })
+        const res = await page.evaluate(async (cfgIn) => {
+            const SR = 44100
+            const render = async (ops) => {
+                const ctx = new OfflineAudioContext(1, Math.ceil(0.32 * SR), SR)
+                for (const o of ops) {
+                    const g = ctx.createGain()
+                    g.gain.setValueAtTime(o.vol, o.at)
+                    g.gain.exponentialRampToValueAtTime(0.01, o.at + o.dur)
+                    g.connect(ctx.destination)
+                    if (o.noise) {
+                        const n = Math.ceil(o.dur * SR)
+                        const buf = ctx.createBuffer(1, n, SR)
+                        const d = buf.getChannelData(0)
+                        for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
+                        const src = ctx.createBufferSource(); src.buffer = buf
+                        src.connect(g); src.start(o.at)
+                    } else {
+                        const osc = ctx.createOscillator()
+                        osc.type = o.type
+                        osc.frequency.setValueAtTime(o.freq, o.at)
+                        osc.connect(g); osc.start(o.at); osc.stop(o.at + o.dur)
+                    }
+                }
+                return (await ctx.startRendering()).getChannelData(0)
+            }
+            const energy = (x, f0, f1) => {
+                let best = 0
+                for (let f = f0; f <= f1; f += 1) {
+                    const w = 2 * Math.PI * f / SR
+                    const c = 2 * Math.cos(w)
+                    let s1 = 0, s2 = 0
+                    for (let i = 0; i < x.length; i++) { const s0 = x[i] + c * s1 - s2; s2 = s1; s1 = s0 }
+                    best = Math.max(best, s2 * s2 + s1 * s1 - c * s1 * s2)
+                }
+                return best
+            }
+            const j = cfgIn.jab
+            const triOps = [{ at: 0, freq: j.freq, dur: j.dur, type: j.type, vol: j.vol }, { at: 0, dur: j.ndur, vol: j.nvol, noise: true }]
+            const sqOps = [{ at: 0, freq: j.freq, dur: j.dur, type: 'square', vol: j.vol }, { at: 0, dur: j.ndur, vol: j.nvol, noise: true }]
+            const chimeOps = cfgIn.chime.map((q) => ({ at: q.delay, freq: q.freq, dur: q.dur, type: q.type, vol: q.vol }))
+            const tri = await render(triOps)
+            const sq = await render(sqOps)
+            const chime = await render(chimeOps)
+            const mix = await render([...triOps, ...chimeOps])
+            const db = (a, b) => 10 * Math.log10(b > 0 ? a / b : 1e12)
+            const triFund = energy(tri, j.freq - 4, j.freq + 4)
+            const thirdBin = j.freq * 3
+            const triThird = energy(tri, thirdBin - 4, thirdBin + 4)
+            const chimeMid = energy(chime, 880 - 4, 880 + 4)
+            return {
+                sepDB: db(triFund, triThird),
+                sqDelta: db(triThird, energy(sq, thirdBin - 4, thirdBin + 4)),
+                mixMid: db(chimeMid, energy(tri, 880 - 4, 880 + 4)),
+                mixFund: db(chimeMid, energy(mix, j.freq - 4, j.freq + 4)) > -24,
+            }
+        }, cfg)
+        sepDB = res.sepDB; sqGain = -res.sqDelta
+        await page.close()
+    }
+    r.check('#2942 mix heard at the chime band: the jab\'s third (882 Hz, a 2 Hz beat on the chime middle note) sits ≥12 dB under its own fundamental in the shipped triangle — the punch and the pickup read as two sounds on a phone',
+        sepDB >= 12, `sep=${sepDB.toFixed(1)} dB`)
+    r.check('#2942 the fix direction holds: the triangle is ≥4 dB quieter at the chime middle than the old square at the same envelope — mix-clash can\'t creep back unnoticed',
+        sqGain >= 4, `triangle − square at 882 ≈ ${sqGain.toFixed(1)} dB`)
 }
 
 // ------------------------- #2899 browser leg: the chrome corner geometry ---
