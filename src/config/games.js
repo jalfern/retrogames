@@ -235,6 +235,10 @@ const RTypeGame = lazy(() => import('../games/RType'))
 // nothing reads the field yet (no hiding, no routes, no auth). New games
 // register `visibility: 'private'`; only Jon promotes a title to 'public',
 // and existing entries stay untagged until he decides each one.
+// Jon's decisions: #2846 (answered 2026-11-22, "promote all 3") promotes
+// CONTRA, DOUBLE DRAGON and R-TYPE to 'public'. visibilitycheck pins the exact
+// approved set — a 'public' flag on any other title dies there, so promotion
+// stays Jon's call.
 // `added`: date the entry was first registered (from git history).
 // The games list groups titles by `builtBy` and sorts each section newest
 // first by this date.
@@ -1296,7 +1300,7 @@ export const GAMES = [
         pad: { layout: 'dpad', aLabel: 'JUMP', buttons: [{ label: 'FIRE', code: 'KeyX' }], reason: 'the cabinet seam: the thumb jumps and the finger fires — arrows run and aim all eight ways' },
         builtBy: 'forge',
         added: '2026-11-19',
-        visibility: 'private',
+        visibility: 'public',
         tapStart: true,
         component: ContraGame,
         label: 'CONTRA',
@@ -1309,7 +1313,7 @@ export const GAMES = [
         pad: { layout: 'dpad', aLabel: 'JUMP', buttons: [{ label: 'KICK', code: 'KeyX' }, { label: 'PUNCH', code: 'KeyZ', pad: 2 }], reason: 'the cabinet seam: thumb walks the street (depth is the dodge), the two fingers hold the fight — kick knocks down, punch jabs quick' },
         builtBy: 'forge',
         added: '2026-11-20',
-        visibility: 'private',
+        visibility: 'public',
         tapStart: true,
         component: DoubleDragonGame,
         label: 'DOUBLE DRAGON',
@@ -1322,7 +1326,7 @@ export const GAMES = [
         pad: { layout: 'dpad', aLabel: 'FIRE', buttons: [{ label: 'FIRE', code: 'KeyX' }, { label: 'POD', code: 'KeyB', pad: 2 }], reason: 'the cabinet seam: the thumb flies the R-7C through the lane war, the fingers own the fight — hold FIRE for the charge arms, tap POD to deploy and recall the S.E.E.D.' },
         builtBy: 'forge',
         added: '2026-11-20',
-        visibility: 'private',
+        visibility: 'public',
         tapStart: true,
         component: RTypeGame,
         label: 'R-TYPE',
