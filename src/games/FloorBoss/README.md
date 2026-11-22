@@ -9,8 +9,11 @@ score; three expired orders and you're fired. Quota: 1000.
 - `sim.js` — pure, seeded, deterministic engine (no DOM, no React, no three).
   `makeGame(seed)`, `step(gs, pads)`, `state/hash`, `clickCell/setTool/
   cycleTool/toggleAuto/clickOrder/hireRobot`, `createAutopilot()`.
+- `taps.js` — #1712 S2: the ONE definition of what a canvas tap means
+  (geometry + verbs), shared by the shell and the dataset replay (Node).
 - `index.jsx` — canvas painter + shell (attract/play/over, HUD, orders panel,
-  audio, pad, contract, DebugKit, Plaicraft episode recording).
+  audio, pad, contract, DebugKit, Plaicraft episode recording, S2 consent gate
+  + auto-capture).
 
 ## Engine notes
 - **Kinematic grid, not cannon.** Top-down dispatch doesn't need the kit's
@@ -226,6 +229,29 @@ score; three expired orders and you're fired. Quota: 1000.
 - Duel hash segment `D[...]` (credits, spent, verdict, owners, seat-M channel) is
   duel-only — additive (#1373) and absent from every solo hash.
 
+## PLAICRAFT S2 — the floor records itself with consent (#1712)
+
+Floor-boss joined the PLAICRAFT auto-capture family (Part of #1712, big build
+S2). A human start (`Space`/tap at attract, `D` for the duel) now meets the
+#1711 consent gate BEFORE seed-birth; decline plays identically, the recorder
+just never opens. When the player grants:
+
+- **Banked stream**: every play tick banks exactly what `step` consumed —
+  d-pad cursors + `a`/`b` verbs, and canvas taps on the pad's
+  `pointer{x,y,down}` channel (onePad #420 units: 0..1 canvas space).
+  A tap APPLIES at click time (instant feel, fx drain as always) and BANKS
+  on the next tick; the dataset replay re-applies it before that same step
+  (`scripts/plaicraft-dataset.mjs floorBossRows` → `taps.js applyTap`), so
+  the rebuild hits every checkpoint the phone hashed. `npm run
+  plaicraft:datasetcheck` pins clean-tap verify + deleted-tap refusal.
+- **Seat stamps** (autoRecord resolves sources at finish): seat 0 is
+  `human` UNLESS the brain ever took the shift (any WATCH use stamps the
+  whole take `model` — model hands never train as a person's); duel seat M
+  is always `model`. `rules.duel` rides the take. `humanSeats:false` — the
+  game labels itself (Rally's #2058 precedent).
+- Replay contract: `__game.reset(seed, 2)` rebuilds a duel floor; a two-pad
+  `step` drives seat M's channel like the phone's stream did.
+
 ## Verify
 ```bash
 npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921) + freight tiers: side-stream golden, tiered bonus, road law, dest spread (#1927) + load weight: dest+weight goldens, mix sentinels, rate literals 60/54, dock speed 14/14/28 (#1931) + tail law: pivot geometry ×8 bearings, whole-net≡kneeNet dead-code proof (6543 boards), career clip-audit (pre-PR planner clips 2009, live 0), repath back-diagonal rig + control, liveTails eye, twin determinism (#2760)
@@ -315,3 +341,13 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   with the traffic read (#2680) and seat-stamped refusals (#2622) carrying it
   to the screen — the point-plus-diagonal body is the deliberate edge of that
   grammar, and nothing beyond it is scheduled.
+
+Recording honest gaps (#1712):
+- The take ends at the whistle — clocking into the NEXT shift from the over
+  screen plays on but is not recorded as part of that take.
+- Two taps landing inside one frame bank on consecutive ticks; a replay of
+  such a take refuses on the hash rather than shipping unverified rows —
+  a human thumb cannot click faster than the tick, a scripted rig can.
+- The WATCH stamp is conservative: one glance at the brain labels the whole
+  take `model`, so a mostly-human shift with a single Y press stays out of
+  train. Better an honest loss than laundered autopilot hands (#2058 law).

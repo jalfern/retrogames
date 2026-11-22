@@ -20,20 +20,21 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, recordLiveTick, armLiveCapture } from '../../utils/gameContract'
+import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
+import { W, H, TILE, GX, GY, CHIPS, orderRect, applyTap } from './taps.js'
 import { createEpisode, saveEpisode, episodeStats } from '../../utils/robot/episode.js'
 import { MANIFEST_REV } from '../../utils/robot/assets.js'
 import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
-    toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
+    toggleAuto, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
     BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, kneeEscapes, swingMarkers, flowMarks, flowHeat, liveKnees, liveTails, liveRights,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
-const W = 800, H = 520
-const TILE = 26
-const GX = 10, GY = 44
+// W/H/TILE/GX/GY + the tap geometry (#1712) live in taps.js — the shell and
+// the dataset replay share ONE definition of what a canvas point means.
 const PX = (x) => GX + x * TILE
 const PY = (y) => GY + y * TILE
 
@@ -115,6 +116,14 @@ const FloorBossGame = () => {
         let shake = 0, flash = 0
         const keys = { left: false, right: false, up: false, down: false }
         let edgeA = false, edgeB = false
+        // #1712 S2: canvas taps queue and apply at the tick that consumes them,
+        // so the banked stream and the sim advance by the same sequence (live ==
+        // replay, drain-one-per-tick). watchUsed: a shift where the brain ever
+        // took the floor is never labeled a human's hands (autoRecord sources
+        // resolve at finish — the conservative stamp keeps model hands out of
+        // train; honest gap in the README).
+        const tapQueue = []
+        let watchUsed = false
         let overAt = 0
         let episode = null
 
@@ -165,14 +174,8 @@ const FloorBossGame = () => {
             episode = null
         }
 
-        // HUD chip click zones (canvas space)
-        const CHIPS = {
-            auto: { x: 512, y: 6, w: 54, h: 28 },
-            rack: { x: 572, y: 6, w: 74, h: 28 },
-            hire: { x: 652, y: 6, w: 78, h: 28 },
-        }
-        const inRect = (r, x, y) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h
-        const orderRect = (i) => ({ x: 694, y: 46 + i * 74, w: 96, h: 66 })
+        // HUD chip click zones + geometry: imported from taps.js (#1712) so the
+        // painter, the banked tap and the Node replay share one truth.
 
         const burst = (x, y, n, col, spd = 2, up = -0.6) => {
             for (let i = 0; i < n; i++) {
@@ -385,6 +388,8 @@ const FloorBossGame = () => {
             closeEpisode(won)
             if (won) audioController.playFanfare(); else audioController.playDeath()
             setMode('over')
+            endRun() // #1711/1712: the take ends with the run (no-op when idle/declined)
+            tapQueue.length = 0 // #1712: a finished shift banks no more taps
         }
 
         const livePad = () => ({ left: keys.left, right: keys.right, up: keys.up, down: keys.down, a: edgeA, b: edgeB })
@@ -415,10 +420,24 @@ const FloorBossGame = () => {
             // pad — cursor + PICK/TOOL — and triages the live floor, so seating
             // or releasing mid-shift resumes from exactly where the floor stands;
             // floorbosscheck grades this same manager to quota).
+            // #1712 S2: the pointer bank rides the next tick the loop runs
+            // (taps apply at click time, onCanvasClick — replay mirrors:
+            // apply-before-step, identical state at every checkpoint).
+            let tapPad = null
+            if (tapQueue.length && !gs.end) {
+                const tap = tapQueue.shift()
+                // onePad's pointer channel is 0..1 canvas space (#420) — bank the
+                // normalized point; replay rebuilds pixels from it (deterministic).
+                tapPad = { x: tap.px / W, y: tap.py / H, down: true }
+            }
             const pad = watchingRef.current && !gs.end ? ap(gs) : livePad()
+            if (tapPad) pad.pointer = tapPad
             const mpad = duelMode && !gs.end ? apM(gs) : null // #2555: seat M drives its own slot beside you
             step(gs, mpad ? [pad, mpad] : [pad])
             recordTick(pad, mpad)
+            // #1712 S2: bank exactly what THIS tick consumed (attract ticks and
+            // post-over ticks never enter a take — autoRecord law).
+            recordLiveTick(mpad ? [pad, mpad] : [pad])
             edgeA = false; edgeB = false
             handleEvents(gs.ev, gs.tick)
             // the floor hums at 60 bpm while bots work — gain scales with how
@@ -1499,6 +1518,8 @@ const FloorBossGame = () => {
             // #1473: honor ?seed=N so a filed report replays this exact shift
             const pin = seedFromQuery()
             duelMode = duel // #2555: D at the attract seats the model manager beside you
+            tapQueue.length = 0 // #1712: a fresh floor starts with no pending taps
+            watchUsed = false // ...and gives the brain its clean slate
             gs = makeGame(pin != null ? pin >>> 0 : (Math.random() * 2 ** 31) | 0, { duel })
             parts.length = 0
             setEnd(null)
@@ -1509,6 +1530,19 @@ const FloorBossGame = () => {
             audioController.playTone(262, 0.08, 'square', 0.06)
             audioController.playTone(392, 0.08, 'square', 0.06, 0.09)
             audioController.playTone(523, 0.12, 'square', 0.06, 0.18)
+        }
+
+        // #1711 S2 consent gate: the question goes up BEFORE the first take's
+        // seed-birth; decline still plays (autoRecord honest-degrades — the
+        // recorder simply never opens), and beginRun() only ships bytes the
+        // stored grant covers. humanSeats:false — this game labels its seats
+        // honestly itself (watch/duel stamps below), Rally's precedent (#2058).
+        const humanStart = (duel = false) => {
+            if (startBusy()) return
+            setStartBusy(true)
+            askConsent()
+                .then(() => { startPlay(duel); beginRun({ humanSeats: false }) })
+                .finally(() => setStartBusy(false))
         }
 
         // #2346 shift ladder: a cleared night clocks into the next one — the
@@ -1538,18 +1572,14 @@ const FloorBossGame = () => {
             if (screenRef.current !== 'play' || pausedRef.current) return
             // #1637 WATCH: a click on the floor is the player managing — hand back first.
             if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
-            const { px, py, gx, gy } = toGrid(ev)
-            if (inRect(CHIPS.auto, px, py)) { toggleAuto(gs); return }
-            if (inRect(CHIPS.rack, px, py)) { setTool(gs, 'rack'); return }
-            if (inRect(CHIPS.hire, px, py)) { hireRobot(gs); return }
-            const open = gs.orders.slice(0, 5)
-            for (let i = 0; i < open.length; i++) {
-                if (inRect(orderRect(i), px, py)) { clickOrder(gs, open[i].id); return }
-            }
-            gs.cursor.x = Math.max(0, Math.min(COLS - 1, gx))
-            gs.cursor.y = Math.max(0, Math.min(ROWS - 1, gy))
-            clickCell(gs, gx, gy)
+            // #1712 S2: the tap applies NOW (feels instant, its fx drain before
+            // the next step like they always did) and BANKS onto the next tick's
+            // pad as pointer{down} — replay re-applies it before that same step,
+            // so state at every checkpoint matches what this thumb produced.
+            const { px, py } = toGrid(ev)
+            applyTap(gs, px, py)
             handleEvents(gs.ev, gs.tick)
+            tapQueue.push({ px, py })
         }
 
         const onKeyDown = (e) => {
@@ -1559,7 +1589,7 @@ const FloorBossGame = () => {
                 return
             }
             if (pausedRef.current) return
-            if (screenRef.current === 'attract') { startPlay(e.code === 'KeyD'); return } // #2555: D seats the model manager
+            if (screenRef.current === 'attract') { humanStart(e.code === 'KeyD'); return } // #2555: D seats the model manager; #1711: the gate asks first
             if (screenRef.current === 'over') {
                 if (performance.now() - overAt < 600) return
                 if (advanceShift()) return // #2346: a cleared night clocks into the next
@@ -1571,7 +1601,7 @@ const FloorBossGame = () => {
             // click takes the shift back (F/R/H are manager verbs — they drive).
             if (isWatchKey(e)) {
                 if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
-                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart(); watchUsed = true } // #1712: a brain-steered shift is never labeled a human's
                 return
             }
             if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
@@ -1598,8 +1628,8 @@ const FloorBossGame = () => {
                 const r = canvas.getBoundingClientRect()
                 const px = ((ev.clientX - r.left) / r.width) * W
                 const py = ((ev.clientY - r.top) / r.height) * H
-                if (px >= W / 2 - 110 && px <= W / 2 + 110 && py >= 236 && py <= 260) { startPlay(true); return }
-                startPlay(); return
+                if (px >= W / 2 - 110 && px <= W / 2 + 110 && py >= 236 && py <= 260) { humanStart(true); return } // #1711: consent first, then the duel
+                humanStart(); return
             }
             if (screenRef.current === 'over' && performance.now() - overAt > 600) {
                 if (advanceShift()) return // #2346: tap clocks into the next night
@@ -1613,20 +1643,36 @@ const FloorBossGame = () => {
             const s = state(gs)
             return { ...s, mode: screenRef.current }
         }
-        exposeGame({
+        // ---- capture spec (#1711 S2 + #1712) ----
+        // One spec for both arms: armLiveCapture makes the live bank exist in
+        // production (consent-gated via autoRecord), exposeGame re-arms the
+        // byte-identical wiring in DEV. Seats label themselves honestly: seat 0
+        // is the thumb UNLESS the brain ever took the shift (watchUsed — the
+        // conservative stamp), seat 1 in a duel is the MODEL's own hands.
+        const recSpec = {
             id: 'floor-boss',
             method: 'dpad',
             buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
-            players: 1,
-            reset: (seed) => {
+            reads: ['up', 'down', 'left', 'right', 'a', 'b'],
+            get players() { return duelMode ? 2 : 1 },
+            sources: () => {
+                const out = [{ kind: watchUsed ? 'model' : 'human' }]
+                if (duelMode) out.push({ kind: 'model' }) // seat M — #2555's model manager
+                return out
+            },
+            rules: () => ({ duel: duelMode }),
+            reset: (seed, players = 1) => {
                 contractSeed = seed >>> 0
-                gs = makeGame(contractSeed)
+                duelMode = (players | 0) >= 2 // #1712: a duel take rebuilds with its seats
+                tapQueue.length = 0
+                watchUsed = false
+                gs = makeGame(contractSeed, { duel: duelMode })
                 parts.length = 0
                 setEnd(null)
                 setMode('play')
                 return state(gs)
             },
-            tick: (pad) => {
+            tick: (pad, all = [pad]) => {
                 if (screenRef.current !== 'play') { screenRef.current = 'play'; setMode('play') }
                 // #2346: pad A on a cleared night clocks into the next shift —
                 // the ladder is contract-drivable (QA bots / replays / RL).
@@ -1636,7 +1682,7 @@ const FloorBossGame = () => {
                     setEnd(null)
                     return state(gs)
                 }
-                step(gs, [pad || {}])
+                step(gs, gs.duel && all.length >= 2 ? [pad || {}, all[1] || {}] : [pad || {}])
                 handleEvents(gs.ev, gs.tick)
                 if (gs.end && screenRef.current === 'play') finish()
                 return state(gs)
@@ -1644,7 +1690,13 @@ const FloorBossGame = () => {
             state: simState,
             canvas: () => canvas,
             // no snapshot/restore: the seeded rng is a closure (#391 family)
-        })
+        }
+        // #1711 S2: arm the live capture for every build (DEV re-arms the
+        // identical wiring inside exposeGame); banking only happens while a
+        // consented auto capture runs (autoRecord.js).
+        initAutoRecord()
+        armLiveCapture(recSpec)
+        exposeGame(recSpec)
 
         // DEV hook
         if (import.meta.env.DEV) {
@@ -1735,6 +1787,8 @@ const FloorBossGame = () => {
 
         return () => {
             unexposeFeedbackState()
+            endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
+            tapQueue.length = 0 // #1712: a dead mount carries no pending taps
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)

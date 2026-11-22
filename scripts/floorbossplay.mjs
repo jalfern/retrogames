@@ -44,9 +44,37 @@ const clientXY = async (px, py) => page.evaluate(([px, py, W, H, GX, GY, TILE]) 
     return { x: b.left + (GX + 0.5 * TILE + px * TILE) / W * b.width, y: b.top + (GY + 0.5 * TILE + py * TILE) / H * b.height }
 }, [px, py, W, H, GX, GY, TILE])
 
+// #1712: floor-boss is S2-wired — a scripted Space now meets the consent
+// gate (store live + fresh profile). Answer it the honest way, a real NO
+// THANKS click — declines, never grants (#2091, ddragoncheck's pattern).
+const defuseConsent = async (pg) => {
+    for (let i = 0; i < 40; i++) {
+        const s = await pg.evaluate(() => {
+            const gate = document.querySelector('[data-auto-record-gate]')
+            if (gate) {
+                const btn = [...gate.querySelectorAll('button')].find((el) => /NO THANKS/i.test(el.textContent || ''))
+                if (btn) { btn.click(); return 'clicked' }
+                return 'gate'
+            }
+            return window.__floorbossTest && window.__floorbossTest.state().mode === 'play' ? 'started' : 'waiting'
+        })
+        if (s === 'clicked' || s === 'started') return s
+        await pg.waitForTimeout(50)
+    }
+    return 'timeout'
+}
+// a queued tap lands within one sim tick (taps apply at consumption, #1712) —
+// poll, don't assume the click resolved before the next evaluate.
+const waitFor = async (fn, ms = 800) => {
+    const t0 = Date.now()
+    while (Date.now() - t0 < ms) { if (await fn()) return true; await new Promise((res) => setTimeout(res, 40)) }
+    return false
+}
+
 // ---- boot + start ----
 r.check('opens on attract', (await st()).mode === 'attract')
 await page.keyboard.press('Space')
+await defuseConsent(page)
 r.check('real Space clocks in (attract → play)', await waitMode('play'))
 
 // ---- real keys move the cursor + clicks land ----
@@ -72,7 +100,7 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
         return { x: b.left + (572 + 37) / 800 * b.width, y: b.top + (6 + 14) / 520 * b.height }
     })
     await page.mouse.click(chip.x, chip.y)
-    r.check('HUD chip click arms the rack tool', (await st()).tool === 'rack')
+    r.check('HUD chip click arms the rack tool', await waitFor(async () => (await st()).tool === 'rack'), `tool=${(await st()).tool}`)
     await page.keyboard.press('KeyB') // cycle tool off
 }
 
