@@ -1,75 +1,74 @@
-# STATE — forge board snapshot (slot b, 2026-11-22 — shipped)
+# STATE — forge board snapshot (slot a, 2026-11-22 — shipped)
 
 ## This session shipped
-- **FloorBoss joins PLAICRAFT S2** (#1712 → PR #2954 → main `d7ff731`,
-  prod-verified: Vercel deployment on the merge ref, `/retrogames/floor-boss`
-  200). The adapter existed since #2811 but the game had no consent gate /
-  auto-capture, and canvas taps mutated the sim OFF the pad stream — a
-  friend's floor-boss take could not land, and if it had, could not replay.
-  Now: consent gate before seed-birth; every play tick banks what `step`
-  consumed; taps apply at click time (feel unchanged) and bank on the pad's
-  `pointer{x,y,down}` channel (0..1 canvas units); replay re-applies via new
-  shared `src/games/FloorBoss/taps.js` (ONE geometry, shell + Node). Seat
-  stamps honest: any WATCH use → whole take `model` (#2058 law); duel seat
-  M `model`; `rules.duel`; `humanSeats:false` (Rally precedent). Contract
-  `reset(seed, players)` rebuilds duel floors. 7th trainable game.
-  Suites: datasetcheck 66/66 (3 new tap pins) + mutant 9 RED-BY-DESIGN
-  (tap-skip) 66/75 · floorbosscheck green · floorbossplay 96/96 (NO THANKS
-  defuse #2091) · plaicraftcheck · lint gates · build — all green.
+- **FloorBoss career takes** (#2958 → PR #2959 → main `ff6f58f`, prod-verified).
+  The slot TARGET. Built by slot b (`fec418c..88ff511`); its claim lapsed and
+  slot a resumed per 1b: full verification on port 5173 at `88ff511` —
+  floorbosscheck full (synth career take seed 4242, tamper refusal), named
+  mutants `--mutate-whistle`/`--mutate-career` RED-BY-DESIGN, datasetcheck
+  66/66, plaicraftcheck, floorbossplay 96/96, lint ×3, build. Merged when the
+  #601 freeze lifted (main-ok green, required `static` SUCCESS).
+- **R-TYPE volley pre-dodge** (#2951 → PR #2955 → main `b779123`,
+  prod-verified) — the parked merge-ready corpse from slot a's previous
+  session (post-rebase proof rtypecheck 242/242, mutants 240/240,
+  pre-dodge-deaf + cross-blind killed).
+- **Killed a harmful duplicate**: closed PR #2963 — it tightened the watchcheck
+  FLOORBOSS feed window to `{0,240}` while main carries `{0,300}` (#2962) and
+  the career-take engine grew the block to 294 chars. Merging it would have
+  re-reddened the nightly.
 
-## PLAYABLE on main right now (prod-verified; private until Jon promotes #2846)
-- `/retrogames/floor-boss` — now consent-records human takes (this session).
-- `/retrogames/r-type` — #2938 QA pass merged this morning (#2950 `594eb88`).
+## PLAYABLE on main right now (prod-verified)
+- `/retrogames/floor-boss` — cleared whistle keeps a consented take open;
+  clocking into the next shift banks on ONE seeded stream (#2958).
+- `/retrogames/r-type` — brains read the inbound salvo lane (#2955); duel
+  steel (#2950).
 - `/retrogames/double-dragon` — carrier rotations + duel steel (unchanged).
 
 ## Board at close
-- `building` = **#1712 stays open ON PURPOSE** (big-build rule 4: S2 closes
-  only when the store lines close). Store truth: 18 takes, gamesCovered 1/2
-  (gauntlet only), holdout `need-2-players`. The two open acceptance lines
-  are HUMAN DATA, not code — ask filed as **#2953** (friend-takes; default
-  "keep widening trainable adapters (Contra next)").
-- `game-queue` = empty. QA holds nothing lane-relevant (check QA board for
-  #2938 aftermath before borrowing feedback).
+- `game-queue` empty; `feedback` = #2952 held by QA (`building-qa`).
+- `building` = #1712 only (lane:research, big-build) — its remaining
+  acceptance lines are human data (friend takes, see #2953), not code.
+- Nightly `45058210042` dispatched on main `b779123` at 19:00Z — should go
+  green (both heads fully verified locally); next lane: glance before merging.
 
 ## Open questions for Jon (links only, #605)
-- #2953 (this session) — invite flow vs Jon collects friend takes; default
-  widen adapters.
-- #2846 — promote CONTRA / R-TYPE / DOUBLE DRAGON to public? (default keep
-  private, due 11-23).
-- #2908, #2930 (QA lane) — DD seat laws (due 11-24).
-
-## Harness notes (carry-overs)
-- **rec/v1 pointer channel is 0..1 CANVAS-NORMALIZED** (onePad #420) — bank
-  `px/W, py/H`; pixels through `normalizePad` clamp to 1 and silently destroy
-  coordinates. Floor-boss taps: apply-at-click, bank-on-next-tick; replay
-  applies before that step — state matches at every checkpoint. Two taps in
-  one frame bank on consecutive ticks → such takes refuse honestly (humans
-  can't, bots can; documented in the README).
-- `stateHash(gs)` does NOT include `tool`/`cursor`/`sel` — only world state.
-  Synthetic floor-boss takes must hash-visible-tap (AUTO chip or hire/cell
-  effects) or tamper-units pass vacuously.
-- Consent gate + scripted harnesses: seed DECLINED consent pre-script
-  (watchcheck's #2115 `DECLINED_CONSENT`) or poll-click NO THANKS
-  (ddragoncheck pattern, copied into floorbossplay). New human-start wiring
-  in a game = audit every script that presses real keys on its attract.
-- Vite first-load re-optimize still drops ~3 floorbossplay legs once after a
-  fresh node_modules clone — retry once before believing them (reconfirmed).
-- Worktrees' node_modules may be emptied by cleanup; dd-weapons' lockfile
-  matched today → `cp -cR` APFS-clone in seconds (verify lockfile sha first).
-
-## Slots / ops
-- Slot b port 5178: dev server STOPPED with `scripts/devstop.sh` at close;
-  other lanes' ports untouched.
-- Worktree left: `~/Dev/retrogames-forge-plaicraft-s2-export` (branch merged;
-  re-detached to origin/main; removable).
-- Main checkout: detached `origin/main`; STATE.md committed this session
-  (game merged) and parked via `statepark.mjs park b`.
+- #2846 — promote CONTRA / R-TYPE / DOUBLE DRAGON to public? (due 11-23,
+  default keep private).
+- #2953 — invite flow vs Jon collects friend takes; default widen adapters
+  (Contra next).
+- #2908, #2930 (QA lane) — DD idle-seat / CPU-handback laws (due 11-24).
 
 ## Next lane starting here
-- Ladder first. If #1712 is re-kicked: the ONLY honest progress is store
-  data (friend takes) — check `plaicraft:outbox`/admin list for new takes
-  before writing code; if #2953 is answered "widen adapters", Contra is the
-  next trainable game (co-op, phone-pad native; needs featurizer + adapter +
-  consent wiring — floor-boss's #2954 shape is the template).
-- If ladder, feedback and flagship stages all dry AND live `idle-kick.mjs`
-  dry: STOP is legal; the shelf gap today is human takes, not adapters.
+- Ladder (halt/steer/next/queue/feedback) is empty or QA-held; run
+  `scripts/idle-kick.mjs`: R-TYPE gap 0 and FloorBoss gap 0 both landed this
+  week, so it re-derives the weakest — FloorBoss's next "Recording honest
+  gaps (#1712)" bullet is the likely kick. File POLISH, claim, ship one
+  gameplay fix.
+- If #1712 is re-kicked: check `plaicraft:outbox`/admin for new human takes
+  BEFORE writing code — career takes (#2958) make back-to-back multi-shift
+  runs recordable, which serves the store's need-2-players holdout.
+
+## Harness notes (new / carried)
+- watchcheck FLOORBOSS feed window is `{0,300}` on main; the career engine's
+  block measures 294 — ONE more line between the pad pick and `recordTick`
+  re-reddens the nightly (the README states the law to the next editor).
+- Prod verification via shipped sourcemaps is the reliable path: chunk JS
+  mangles identifiers, and local-vs-prod entry hashes can differ across build
+  envs. Markers proved live: `closeTake` (FloorBoss `BWgQ2akX`),
+  `fanSlip` + 'SPAWN VOLLEY' (RType `CKmK6b2L`).
+- `cp -cR src/node_modules dest/` with an EXISTING empty dest copies INSIDE it
+  (nested `node_modules/node_modules`) — `rm -rf` the empty dir first
+  (refines the APFS-clone note).
+- `gh pr merge --delete-branch` dies on local bookkeeping when another
+  worktree holds `main` — detach the holder (`git -C <holder> checkout
+  --detach`). `retrogames-fix-deps` was the culprit; detached now.
+- rec/v1 pointer channel stays 0..1 canvas-normalized; consent gate before
+  seed-birth; stateHash excludes tool/cursor/sel (all unchanged, #2954 laws).
+
+## Slots / ops
+- Slot a port 5173: stale vite from the career-take resume session STOPPED
+  with `scripts/devstop.sh` at close; other lanes' ports untouched.
+- Worktrees cleaned: `forge-feed-window` removed; career-take + rtype-volley
+  re-detached, local branches deleted (remotes gone with the merges).
+- Main checkout: detached; STATE.md committed this session (game merged) and
+  parked via `statepark.mjs park a`.
