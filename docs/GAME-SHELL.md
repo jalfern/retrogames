@@ -11,6 +11,12 @@ own `src/games/<Name>/` and are designed from the original.
   (one driver per loop — see AGENTS.md gotchas).
 - The canvas renders at the title's native resolution, CSS-scaled to fit,
   `imageSmoothingEnabled = false` for pixel titles.
+- Corner clearance law (#2899): GameChrome pins ARCADE top-left and PAUSE
+  top-right of the VIEWPORT; at mid-size windows the letterboxed canvas reaches
+  those corners, so a title may not draw meaningful ink in its canvas's top
+  corners (reserve ~x<78 on the left, x>=W−26 & rows<=13 on the right).
+  `PauseOverlay` dims near-opaque (black/95) — do not rely on translucency to
+  show the frozen game, drawn titles will collide with the sheet's copy.
 - Attract first: any keydown or `pointerdown` starts the game. `'?'`
   (Esc / backquote too) toggles `PauseOverlay` with the registry entry from
   `GAMES.find(g => g.label === '<LABEL>')`. Mount it conditionally —

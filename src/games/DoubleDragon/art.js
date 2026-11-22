@@ -1092,12 +1092,17 @@ export function drawHud(ctx, gs, playing = true) {
     label(ctx, String(gs.score).padStart(6, '0'), 102, 6, '#fff', 1)
     label(ctx, 'HI', 150, 6, '#ffd98a', 1)
     label(ctx, String(Math.max(gs.hi, gs.score)).padStart(6, '0'), 166, 6, '#fff', 1)
-    // lives as headbands
-    for (let i = 0; i < gs.billy.lives; i++) {
+    // #2899 right-corner clearance law: the app chrome pins PAUSE at the
+    // viewport's top-right, and at mid-size windows (1280x800 and narrower)
+    // the letterboxed canvas is flush with that corner — the button covers the
+    // canvas's rightmost ~26 px of its top 13 rows. So HUD ink keeps out of
+    // that box: the headband banks ride 10px pitch columns ending at x=292,
+    // capped at four bands each. Mirrors the left flank's x=78 law (#2895).
+    for (let i = 0; i < Math.min(gs.billy.lives, 4); i++) {
         ctx.fillStyle = wind(gs.billy) ? '#ffffff' : '#c8302f'
-        ctx.fillRect(222 + i * 12, 8, 8, 3)
+        ctx.fillRect(214 + i * 10, 8, 8, 3)
         ctx.fillStyle = '#e8e8ec'
-        ctx.fillRect(222 + i * 12 + 2, 5, 4, 3)
+        ctx.fillRect(214 + i * 10 + 2, 5, 4, 3)
     }
     // co-op (S4): 2P sits right of 1UP; blue headbands, blue label (2023's
     // blue-Billy is exactly this trim blue). Out seat: dimmed slot + the ready
@@ -1105,18 +1110,23 @@ export function drawHud(ctx, gs, playing = true) {
     if (gs.jimmy) {
         // #2833: the tiny blue 2P tag — 12px of chrome in the gap between
         // the HI score and the band column; it clears the weapon label zone
-        // (x=78, y=11) by a street.
-        label(ctx, '2P', 204, 6, wind(gs.jimmy) ? '#ffffff' : '#5a8ae8', 1)
+        // (x=78, y=11) by a street. #2899: one px left, so the tag's drop
+        // shadow never touches the 1P column's first band.
+        label(ctx, '2P', 202, 6, wind(gs.jimmy) ? '#ffffff' : '#5a8ae8', 1)
         if (gs.jimmy.out) {
+            // #2899: the empty-seat slot rides column 0; the READY blink
+            // drops a row below the strip's band line (y=14), clear of the
+            // chrome corner box and of the X-chain tag (x>=305, y=19).
             ctx.fillStyle = '#3a3f52'
-            ctx.fillRect(222 + 4 * 12 + 4, 8, 8, 3)
-            if (gs.jimmy.lives > 0 && gs.tick % 40 < 24) label(ctx, 'READY', 222 + 4 * 12 + 16, 8, '#2f5fd0', 1)
+            ctx.fillRect(254, 8, 8, 3)
+            ctx.fillRect(256, 5, 4, 3)
+            if (gs.jimmy.lives > 0 && gs.tick % 40 < 24) label(ctx, 'READY', 254, 14, '#2f5fd0', 1)
         }
         for (let i = 0; i < Math.min(gs.jimmy.lives, 4); i++) {
             ctx.fillStyle = gs.jimmy.out ? '#3a3f52' : wind(gs.jimmy) ? '#ffffff' : '#2f5fd0'
-            ctx.fillRect(222 + 4 * 12 + 4 + i * 12, 8, 8, 3)
+            ctx.fillRect(254 + i * 10, 8, 8, 3)
             ctx.fillStyle = gs.jimmy.out ? '#5a5f72' : '#e8e8ec'
-            ctx.fillRect(222 + 4 * 12 + 4 + i * 12 + 2, 5, 4, 3)
+            ctx.fillRect(254 + i * 10 + 2, 5, 4, 3)
         }
     }
     const WL = { stick: 'STICK', knife: 'KNIFE', whip: 'WHIP' }

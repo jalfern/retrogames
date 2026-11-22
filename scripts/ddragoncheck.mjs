@@ -37,7 +37,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain, INTRO, TIP } from '../src/games/DoubleDragon/sim.js'
-import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD } from '../src/games/DoubleDragon/art.js'
+import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD, drawHud } from '../src/games/DoubleDragon/art.js'
 import { p2Merge, p2Seat } from '../src/games/DoubleDragon/p2pad.js'
 import { pressSlot, releaseSlot, slotPad, slotActive, clearAllSlots } from '../src/utils/onePad.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -1775,6 +1775,25 @@ if (MUTANT) {
                         : 'HARM NAMED: the swarf re-rolls every mount — the ground shimmers under still air, fight-reads relative to the floor jitter, and the concrete stops being the same yard twice in a row'
                 },
             },
+            {
+                name: 'corner-crowded',
+                anchor: 'ctx.fillRect(254 + i * 10, 8, 8, 3)',
+                plant: 'ctx.fillRect(274 + i * 12, 8, 8, 3) /* MUTANT(corner-crowded): the blue bank walks back into the chrome corner */',
+                harm: async () => {
+                    const m = await import(`../src/games/DoubleDragon/art.js?mutant=corner-crowded${Date.now()}`)
+                    const s = await import(`../src/games/DoubleDragon/sim.js?mutant=corner-crowded${Date.now()}`)
+                    const gs = s.makeGame(7, { coop: true })
+                    gs.billy.lives = 4
+                    gs.jimmy.lives = 4
+                    const ink = []
+                    const ctx = { fillStyle: '', fillRect: (x, y, w, h) => { if (ctx.fillStyle !== 'rgba(4,6,14,0.72)') ink.push([x, y, w, h]) } }
+                    m.drawHud(ctx, gs, true)
+                    const hit = ink.filter(([x, y, w, h]) => x + w > 294 && y <= 13)
+                    return hit.length
+                        ? 'HARM NAMED: the 2P life bank stands under the PAUSE button again — on a mid-size window the seat\'s remaining lives are simply gone, hidden by app chrome, and a player can bleed out without ever seeing the cost'
+                        : null
+                },
+            },
         ]
         for (const p of artPlants) {
             const asrc = readFileSync(ART, 'utf8')
@@ -1853,6 +1872,38 @@ if (MUTANT) {
     const leaks = PROPS_YARD.filter((p) => p.leak)
     r.check('#2877: exactly one drum leaks — one beat in the yard, not a chorus',
         leaks.length === 1 && leaks[0].kind === 'drum', `leaks=${leaks.length}`)
+}
+
+// ------------------------------------------------- #2899 chrome-corner law ---
+// The app chrome pins PAUSE at the viewport's top-right corner (#437), and at
+// mid-size windows (1280x800 down to ~900x650) the letterboxed canvas reaches
+// that corner — the button then wears the canvas's rightmost ~26 px of its top
+// 13 rows. The cabinet's half of the deal: no HUD ink inside that box. The
+// banks ride 10px pitch columns capped at four bands (art.js drawHud).
+{
+    const inBox = ([x, y, w, h]) => x + w > 294 && y <= 13
+    const inkOf = (gs) => {
+        const ink = []
+        const ctx = { fillStyle: '', fillRect: (x, y, w, h) => { if (ctx.fillStyle !== 'rgba(4,6,14,0.72)') ink.push([x, y, w, h]) } }
+        drawHud(ctx, gs, true)
+        return ink.filter(inBox)
+    }
+    const gsC = makeGame(7, { coop: true })
+    gsC.billy.lives = 4
+    gsC.jimmy.lives = 4
+    gsC.chain = 4
+    gsC.chainT = 50
+    const full = inkOf(gsC)
+    r.check('#2899 corner law — both banks full: HUD ink stays out of the chrome box (canvas x>=294, rows<=13)',
+        full.length === 0, full.map((a) => a.join(',')).join(' ') || 'clean')
+    gsC.billy.lives = 9
+    const over = inkOf(gsC)
+    r.check('#2899 corner law — a swollen 1P bank caps at four bands and still clears the box',
+        over.length === 0, over.map((a) => a.join(',')).join(' ') || 'clean')
+    gsC.jimmy.out = true
+    const outLeg = inkOf(gsC)
+    r.check('#2899 corner law — the out-seat slot and the READY blink stay clear of the chrome box',
+        outLeg.length === 0, outLeg.map((a) => a.join(',')).join(' ') || 'clean')
 }
 
 // ------------------------------------------------------------- browser leg ---
@@ -2182,6 +2233,40 @@ const defuseConsent = async (page) => {
         np.screen === 'play' && np.intro === -1 && np.x === 40, `screen=${np.screen} intro=${np.intro} x=${np.x}`)
     await page2.close()
     r.check('#2891 browser: skip/cancel legs ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
+}
+
+// ------------------------- #2899 browser leg: the chrome corner geometry ---
+// At the reported 1280x800 the letterboxed canvas reaches the viewport's top
+// edge and the PAUSE button leans into it; the reserve law says what it covers
+// must stay inside the empty corner box (<=26 canvas px deep, <=13 rows). Plus
+// the sheet law: the pause backdrop buries drawn ink (alpha >= 0.9), so the
+// RESUME card never argues with the title underneath it.
+{
+    const page = await openGame(browser, { url: `${BASE}/double-dragon?nointro=1`, viewport: { width: 1280, height: 800 }, hook: '__ddTest', wait: 600 })
+    await defuseConsent(page)
+    const geo = await page.evaluate(() => {
+        const btn = document.querySelector('[data-nav="pause"]')
+        const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+        if (!btn || !cv) return { ok: false }
+        const b = btn.getBoundingClientRect(), c = cv.getBoundingClientRect()
+        const ox = Math.min(b.right, c.right) - Math.max(b.left, c.left)
+        const oy = Math.min(b.bottom, c.bottom) - Math.max(b.top, c.top)
+        if (ox <= 0 || oy <= 0) return { ok: true, depth: 0, rows: 0 }
+        const sc = c.width / 320
+        return { ok: true, depth: ox / sc, rows: (Math.min(b.bottom, c.bottom) - c.top) / sc }
+    })
+    r.check('#2899 browser: at 1280x800 PAUSE covers the canvas only inside the reserve (<=26px deep, <=13 rows)',
+        geo.ok && geo.depth <= 26 && geo.rows <= 13, JSON.stringify(geo))
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: '?', code: 'Slash', shiftKey: true })))
+    await page.waitForTimeout(350)
+    const sheet = await page.evaluate(() => {
+        const el = document.querySelector('[data-help-fit]')
+        return el ? getComputedStyle(el).backgroundColor : null
+    })
+    const alpha = sheet ? Number((sheet.match(/([\d.]+)\)$/) || [, '0'])[1]) : 0
+    r.check('#2899 browser: the pause sheet dims near-opaque (alpha>=0.9) — drawn titles under it cannot collide with the card copy',
+        sheet !== null && alpha >= 0.9, `sheet=${sheet}`)
+    await page.close()
 }
 
 await browser.close()
