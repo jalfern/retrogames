@@ -23,6 +23,9 @@
 // #2857 adds the partner-personality juice read — glint on the guardian sprint,
 // flash + relief on a grip break, a jab voice and wobble that split the schools,
 // a KO strut — all hash-pure; glint-deaf and flair-dead name the two collapses.
+// #2889 polishes that read for the phone: chevron glints, a relief-tag blink,
+// a walking strut, an 8-tick KO squash, a triangle jab in the mix; glint-flat,
+// strut-frozen, squash-missing, tag-deaf and mix-clash name those collapses.
 // #2891 adds the opening movie — the kidnapping of Marian as a fixed script
 // that gates the street, is skip-courteous, and lifts the curtain on a stage
 // bit-identical to a no-movie run (hash parity); movie-frozen/skip-deaf/
@@ -37,7 +40,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain, INTRO, TIP } from '../src/games/DoubleDragon/sim.js'
-import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD, drawHud, drawJoinFx, JOIN_T } from '../src/games/DoubleDragon/art.js'
+import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD, drawHud, drawJoinFx, JOIN_T, glintMarks, flourishDrift, koSquash, reliefBlink } from '../src/games/DoubleDragon/art.js'
 import { p2Merge, p2Seat } from '../src/games/DoubleDragon/p2pad.js'
 import { pressSlot, releaseSlot, slotPad, slotActive, clearAllSlots } from '../src/utils/onePad.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -1080,6 +1083,82 @@ const runFull = (seed, max = 60000) => {
         stateHash(gA) === pureBefore)
 }
 
+// ---------------- #2889 guardian-read polish — the tells survive the phone ---
+// Five render laws, all hash-pure: chevron glints with vertical extent, a
+// back-step under the KO strut, a squash beat under every knockdown, the
+// relief clock tied to the HUD tag, and a jab voice that no longer beats the
+// pickup chime in a phone mix.
+{
+    // item 1 — the trail is chevrons now. Geometry is the law: a 3-px spine
+    // per chevron (the extent a dock-zoomed phone averages into NOTHING was
+    // the old 3×2 dash), a deeper sweep than the old 10..18 (a clipped screen
+    // edge still leaves marks), shimmer still rides the guard clock, and the
+    // shoulder spark keeps its even-tick law.
+    const m8 = glintMarks(8)
+    const spines8 = m8.filter((q) => q.w === 1 && q.h === 3)
+    r.check('#2889 glint is chevrons: both lit marks carry a 3-px vertical spine — the extent a phone cannot average away',
+        spines8.length === 2 && m8.length === 11, `spines=${spines8.length} marks=${m8.length}`)
+    const deep8 = Math.max(...m8.map((q) => q.x + q.w))
+    r.check('#2889 glint reach: the chevron trail sweeps to 25 px behind the seat (the old dashes topped at 21) — a rescue at a screen edge keeps marks on screen',
+        deep8 >= 25, `deepest=${deep8}`)
+    const m7 = glintMarks(7)
+    r.check('#2889 glint shimmer rides the guard clock: an odd tick lights the OTHER chevron and rests the spark (same flicker law, taller marks)',
+        m7.length === 5 && m7.every((q) => !q.core), `marks=${m7.length}`)
+    r.check('#2889 glint silence: a spent guard paints nothing — the promise ends when the sprint does',
+        glintMarks(0).length === 0 && glintMarks(-1).length === 0)
+
+    // item 3 — the strut walks. One step (5 px), zero at both cut ends so
+    // nothing snaps when the pose finishes or a swing takes it mid-beat, and
+    // the shoulder check is delivered from the new spot, not the old one.
+    const dCurve = Array.from({ length: 21 }, (_, f) => flourishDrift(f, 20))
+    r.check('#2889 strut drift: zero at both ends of the clock (no snap at finish or on a cut), exactly one step at the peak',
+        dCurve[20] === 0 && dCurve[0] === 0 && Math.max(...dCurve) === 5 && dCurve.every((v) => v >= 0),
+        dCurve.join(','))
+    r.check('#2889 strut drift holds the step through the pose and eases home only in the last three ticks',
+        dCurve[16] === 5 && dCurve[10] === 5 && dCurve[3] === 5 && dCurve[2] <= 3 && dCurve[1] <= 2,
+        dCurve.join(','))
+
+    // item 4 — weight at impact: an 8-tick easing flatten at the knockdown
+    // beat (the #2897 lesson: an impact flash must survive a slow frame).
+    const sq0 = koSquash('down', 0)
+    const sq7 = koSquash('down', 7)
+    r.check('#2889 KO squash: a knockdown lands FLAT — the impact tick is the widest, lowest frame',
+        !!sq0 && Math.abs(sq0.w - 1.18) < 0.01 && Math.abs(sq0.h - 0.7) < 0.01, JSON.stringify(sq0))
+    r.check('#2889 squash eases out across the 8-tick beat, then lets go — settled down/stagger/getup/dying wear none (the pin law reads unchanged)',
+        !!sq7 && sq7.w > 1 && sq7.w < sq0.w && sq7.h < 1 && sq7.h > sq0.h &&
+        koSquash('down', 8) === null && koSquash('stagger', 0) === null &&
+        koSquash('getup', 0) === null && koSquash('dying', 0) === null && koSquash('walk', 0) === null)
+
+    // item 2 — the relief clock blinks the 2P tag white. The law is the clock
+    // (lit on odd ticks of the 9-count, so it ends exactly with the pose) and
+    // the HUD paint (the tag's own ink, nothing else in the strip).
+    r.check('#2889 relief blink law: lit on the odd ticks of the 9-count and dark with the pose',
+        reliefBlink(9) && reliefBlink(1) && !reliefBlink(8) && !reliefBlink(0) && !reliefBlink(-1))
+    const tagInk = (relief) => {
+        const gsT = makeGame(31, { coop: true })
+        gsT.jimmy.relief = relief
+        const ink = []
+        const ctx = { fillStyle: '', globalAlpha: 1, drawImage: () => {}, fillRect: (x, y, w, h) => ink.push([x, y, w, h, ctx.fillStyle]) }
+        drawHud(ctx, gsT, true)
+        return ink.filter(([x, y, w, h, c]) => c !== '#000' && x >= 202 && x + w <= 214 && y >= 6 && y + h <= 13)
+    }
+    const lit9 = tagInk(9)
+    r.check('#2889 the freed blue seat tags his own HUD — the 2P glyph paints white on the lit beat',
+        lit9.length >= 2 && lit9.every(([, , , , c]) => c === '#ffffff'), `ink=${lit9.length}`)
+    const dark8 = tagInk(8)
+    r.check('#2889 …and back to seat-blue on the dark beat — the blink ends with the pose, the tag does not stay lit',
+        dark8.length >= 2 && dark8.every(([, , , , c]) => c === '#5a8ae8'), dark8.map((q) => q[4]).join(','))
+
+    // item 5 — the phone mix law, straight off the source: the blue seat's
+    // bare jab keeps its F#4 identity (294 Hz) but rides a triangle, so its
+    // 3rd harmonic (882 Hz — a 2 Hz beat on the pickup chime's 880 middle
+    // note) sits ~9.5 dB lower than the old square left it.
+    const idxSrc = readFileSync(join(ROOT, 'src/games/DoubleDragon/index.jsx'), 'utf8')
+    const jline = idxSrc.match(/jab_b: \(\) => \{ audioController\.playTone\((\d+), [\d.]+, '(\w+)', ([\d.]+)\)/)
+    r.check('#2889 phone mix: the jab keeps note 294 but leaves the square — F#4 on a triangle clears the 660/880/1320 chime band where the square beat it',
+        !!jline && jline[1] === '294' && jline[2] === 'triangle', jline ? `${jline[1]} ${jline[2]}` : 'jab_b line not found')
+}
+
 // ------------------------------------------------------- p2 pad seat (#2860) ---
 // Two humans at one keyboard are always cramped — this seat lifts a friend's
 // own pad (or linked phone) onto the blue dragon with no keyboard at all.
@@ -1989,6 +2068,62 @@ if (MUTANT) {
                         : null
                 },
             },
+            {
+                // #2889 item 1: flatten the chevrons back to thin dashes and
+                // the phone eats the guardian's promise again.
+                name: 'glint-flat',
+                anchor: 'm.push({ x: d, y: ay - 1, w: 1, h: 3 })              // apex spine',
+                plant: 'm.push({ x: d, y: ay - 1, w: 3, h: 2 }) /* MUTANT(glint-flat): the trail is thin dashes again */',
+                harm: async () => {
+                    const m = await import(`../src/games/DoubleDragon/art.js?mutant=glint-flat${Date.now()}`)
+                    const spines = m.glintMarks(8).filter((q) => q.w === 1 && q.h >= 3)
+                    return spines.length === 0
+                        ? 'HARM NAMED: the glint lost its vertical extent — 2-px-tall dashes downscale to grey at dock zoom, and the rescue that was already crossing the whole yard arrives invisible: the guardian law stops being readable exactly on the phones that need it'
+                        : null
+                },
+            },
+            {
+                // #2889 item 3: nail the strut to the floor.
+                name: 'strut-frozen',
+                anchor: '    const pr = 1 - f / ticks',
+                plant: '    return 0 /* MUTANT(strut-frozen): the swagger is nailed to the floor */; const pr = 1 - f / ticks',
+                harm: async () => {
+                    const m = await import(`../src/games/DoubleDragon/art.js?mutant=strut-frozen${Date.now()}`)
+                    return m.flourishDrift(10, 20) === 0
+                        ? 'HARM NAMED: the KO pose stands in the shoes — the arcade strut walked its step back while the crowd came home, and a frozen pose over the fall reads as furniture, not swagger; the blue seat\'s personality was the whole point of the read'
+                        : null
+                },
+            },
+            {
+                // #2889 item 4: take the weight out of the landing.
+                name: 'squash-missing',
+                anchor: "    if (state !== 'down' || stateT > 7) return null",
+                plant: "    if (state !== 'down' || stateT > 7) return null\n    return null /* MUTANT(squash-missing): bodies land on the street like paper */",
+                harm: async () => {
+                    const m = await import(`../src/games/DoubleDragon/art.js?mutant=squash-missing${Date.now()}`)
+                    return m.koSquash('down', 0) === null
+                        ? 'HARM NAMED: a knocked-down man takes no impact beat — #2935 moved the bodies by weight but the landing stayed weightless; hits stop feeling like hits and the pin beat loses the thud the stomp is timed against'
+                        : null
+                },
+            },
+            {
+                // #2889 item 2: cut the HUD tie on the relief.
+                name: 'tag-deaf',
+                anchor: "wind(gs.jimmy) || reliefBlink(gs.jimmy.relief) ? '#ffffff' : '#5a8ae8'",
+                plant: "wind(gs.jimmy) ? '#ffffff' /* MUTANT(tag-deaf): the corner stops sharing the seat's relief */ : '#5a8ae8'",
+                harm: async () => {
+                    const m = await import(`../src/games/DoubleDragon/art.js?mutant=tag-deaf${Date.now()}`)
+                    const gsT = makeGame(31, { coop: true })
+                    gsT.jimmy.relief = 9
+                    const ink = []
+                    const ctx = { fillStyle: '', globalAlpha: 1, drawImage: () => {}, fillRect: (x, y, w, h) => ink.push([x, y, w, h, ctx.fillStyle]) }
+                    m.drawHud(ctx, gsT, true)
+                    const white = ink.filter(([x, y, w, h, c]) => c === '#ffffff' && x >= 202 && x + w <= 214 && y >= 6 && y + h <= 13)
+                    return white.length === 0
+                        ? 'HARM NAMED: the freed seat throws his arms up and the cabinet says nothing in the corner — the relief pose and the 2P tag were ONE tell (arms up, tag lit); split them and small-screen players watching the HUD miss the rescue beat entirely'
+                        : null
+                },
+            },
         ]
         for (const p of artPlants) {
             const asrc = readFileSync(ART, 'utf8')
@@ -2002,6 +2137,29 @@ if (MUTANT) {
                 writeFileSync(ART, asrc)
             }
             r.check(`mutant(${p.name}) goes RED: harm named`, bad !== null, bad || 'harm NOT named — mutant survived')
+        }
+        {
+            // #2889 item 5: the mix law lives in the shell's sfx table. Put
+            // the square back under the blue jab and its third harmonic (882 Hz)
+            // beats the pickup chime's 880 middle note again — on a phone
+            // speaker, hit and reward become the same buzz.
+            const IDX = join(ROOT, 'src/games/DoubleDragon/index.jsx')
+            const isrc = readFileSync(IDX, 'utf8')
+            const ianchor = "jab_b: () => { audioController.playTone(294, 0.05, 'triangle', 0.12); audioController.playNoise(0.03, 0.05) },"
+            const iplant = "jab_b: () => { audioController.playTone(294, 0.05, 'square', 0.10); audioController.playNoise(0.03, 0.05) }, /* MUTANT(mix-clash): 882 Hz beats the pickup chime again */"
+            if (!isrc.includes(ianchor)) { console.error('MUTANT anchor (mix-clash) missing — index.jsx moved; the plant must be re-anchored'); process.exit(2) }
+            writeFileSync(IDX, isrc.replace(ianchor, iplant))
+            let bad
+            try {
+                bad = 'read-back'
+                const j = readFileSync(IDX, 'utf8').match(/jab_b: \(\) => \{ audioController\.playTone\((\d+), [\d.]+, '(\w+)', ([\d.]+)\)/)
+                bad = j && j[2] === 'square'
+                    ? 'HARM NAMED: the jab is a square again — its third harmonic lands a 2 Hz beat under the pickup chime\'s middle note, and on a phone\'s thin midrange the blue seat\'s punches and the steel reward smear into one buzz: you cannot hear what you just did'
+                    : null
+            } finally {
+                writeFileSync(IDX, isrc)
+            }
+            r.check('mutant(mix-clash) goes RED: harm named', bad !== null, bad || 'harm NOT named — mutant survived')
         }
     }
     console.log('\nmutant run: expected red on the planted line.')
@@ -2604,6 +2762,100 @@ const defuseConsent = async (page) => {
     r.check('#2897 browser: the talk box jitters 2 frames like the cabinet\'s — the box face steps ±1px while it talks',
         creamCols.length >= 2 && Math.max(...creamCols) - Math.min(...creamCols) === 2, `columns=${creamCols.join(',')}`)
     r.check('#2897 browser: the polish leg ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
+    await page.close()
+}
+
+// --------------- #2889 browser legs: the guardian-read seen on the cabinet ---
+// Leg 1 — a real CPU rescue, watched through patched canvas calls: while the
+// blue seat sprints the holder of his brother, tall seat-tinted chevron spines
+// (1x3 px) must reach the display. Leg 2 — the tells that ride clocks: the
+// relief blink lights the 2P tag white, a fresh knockdown lands with the
+// squash transform, and the strut paints its body a step behind the seat's
+// logical x. Spy installed BEFORE the start press — the game canvas is created
+// at the play transition and the prototype patch must predate the context.
+{
+    const page = await openGame(browser, { url: `${BASE}/double-dragon`, hook: '__ddTest', wait: 600 })
+    const errs = []
+    page.on('pageerror', (e) => errs.push(e.stack || e.message))
+    await page.evaluate(() => {
+        window.__chev = 0
+        const proto = CanvasRenderingContext2D.prototype
+        const orig = proto.fillRect
+        proto.fillRect = function (x, y, w, h) {
+            if (w === 1 && h === 3 && y > 40 && String(this.fillStyle) === '#2f5fd0') window.__chev++
+            return orig.apply(this, arguments)
+        }
+    })
+    await page.keyboard.press('Space')
+    await defuseConsent(page)
+    await page.waitForTimeout(300)
+    // straight to the street — the movie curtain parks the sim, and the
+    // guardian law lives inside the sim (#2891 harness path).
+    await page.evaluate(() => window.__ddTest.start())
+    await page.waitForTimeout(150)
+    await page.evaluate(() => window.__ddTest.setup({ clearEnemies: true, allyGrip: [300, 180], allyX: 140, allyY: 180, allyInv: 999 }))
+    let glintPainted = false
+    try {
+        await page.waitForFunction(() => window.__chev >= 2 && window.__ddTest.probe().jimmyGuard > 0, { timeout: 6000 })
+        glintPainted = true
+    } catch {}
+    const pg = await page.evaluate(() => ({ chev: window.__chev, guard: window.__ddTest.probe().jimmyGuard }))
+    r.check('#2889 browser: the rescue wears chevrons — tall seat-tinted spines paint while the CPU guardian sprints the holder',
+        glintPainted && pg.chev >= 2, `spines=${pg.chev} guard=${pg.guard}`)
+    r.check('#2889 browser: the guardian leg ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
+    await page.close()
+}
+{
+    const page = await openGame(browser, { url: `${BASE}/double-dragon`, hook: '__ddTest', wait: 600 })
+    const errs = []
+    page.on('pageerror', (e) => errs.push(e.stack || e.message))
+    await page.evaluate(() => {
+        window.__tagWhite = 0; window.__squash = 0; window.__headMin = 999; window.__headSx = -1
+        const proto = CanvasRenderingContext2D.prototype
+        const ofill = proto.fillRect
+        proto.fillRect = function (x, y, w, h) {
+            const cs = String(this.fillStyle)
+            if (cs === '#ffffff' && y >= 6 && y + h <= 13 && x >= 202 && x + w <= 214) window.__tagWhite++
+            if (cs === '#e8e8ec' && w === 8 && h === 8 && y > 40 && x >= 28 && x <= 48) window.__headMin = Math.min(window.__headMin, x)
+            return ofill.apply(this, arguments)
+        }
+        const oscale = proto.scale
+        proto.scale = function (a, b) {
+            if (a > 1.01 && a < 1.3 && b > 0.6 && b < 0.995) window.__squash++
+            return oscale.apply(this, arguments)
+        }
+    })
+    await page.keyboard.press('Space')
+    await defuseConsent(page)
+    await page.waitForTimeout(300)
+    await page.evaluate(() => window.__ddTest.start())   // no movie — the tells ride the live sim
+    await page.waitForTimeout(150)
+    // item 2 on the live HUD: nine ticks of relief = five lit frames (~83 ms)
+    // — comfortably inside a poll window, and only the tag lives in that zone.
+    await page.evaluate(() => window.__ddTest.setup({ clearEnemies: true, allyRelief: 9 }))
+    await page.waitForTimeout(200)
+    const pt = await page.evaluate(() => ({ white: window.__tagWhite }))
+    r.check('#2889 browser: the freed blue seat lights his own tag — white ink paints in the 2P zone while relief rides',
+        pt.white >= 2, `white=${pt.white}`)
+    // item 4: a knocked-down man lands with the squash beat — an 8-tick
+    // easing flatten (#2897's frame-survivable width), so a slow CI frame
+    // cannot step over it.
+    await page.evaluate(() => window.__ddTest.setup({ downThug: [140, 170] }))
+    await page.waitForTimeout(200)
+    const ps = await page.evaluate(() => window.__squash)
+    r.check('#2889 browser: a knockdown lands FLAT on the cabinet — the wider-and-lower transform paints at the impact beat',
+        ps >= 1, `squash=${ps}`)
+    // item 3: the strut walks — while flourish rides, the head rect (8x8 of
+    // gi white) must paint at least 2 px behind the seat's logical edge.
+    await page.evaluate(() => { window.__headMin = 999; return window.__ddTest.setup({ billyFlourish: 20 }) })
+    await page.waitForTimeout(450)
+    const pd = await page.evaluate(() => {
+        const p = window.__ddTest.probe()
+        return { headMin: window.__headMin, sx: Math.round(p.x - p.cam), fl: p.flourish }
+    })
+    r.check('#2889 browser: the strut walks — the posed seat paints a step behind its logical x (drift is on the display, x truth intact)',
+        pd.headMin <= pd.sx - 7, `headMin=${pd.headMin} sx=${pd.sx}`)
+    r.check('#2889 browser: the tells leg ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
     await page.close()
 }
 
