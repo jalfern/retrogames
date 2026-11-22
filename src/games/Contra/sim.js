@@ -163,6 +163,23 @@ export function loopK (n) {
     return Math.min(LOOP_CAP, 1 + LOOP_STEP * Math.max(0, Math.floor(n) - 1))
 }
 
+// #1712 S2 — the arcade loop AS REPLAYABLE LAW. The core goes dust, stage 1
+// returns hotter carrying score, the classic loop courtesy (one spare life,
+// banked to five) and the gun the run carried. #2894 lived this in the shell;
+// lifting it into the sim is what lets shell, harness and the Node dataset
+// adapter (#1712) rebuild a loop-up byte-identically — a PLAICRAFT take is the
+// SESSION, so it must span loops the way the cabinet run does.
+export function arcadeLoop (gs) {
+    const carryScore = gs.score
+    const carryLives = Math.min(LOOP_LIVES_MAX, gs.lives + LOOP_LIFE_BONUS)
+    const carryGun = gs.p.weapon
+    const next = makeGame(gs.seed, gs.loop + 1)
+    next.score = carryScore
+    next.lives = carryLives
+    if (carryGun !== 'rifle') next.p.weapon = carryGun
+    return next
+}
+
 // #2917 THE SORTIE CADENCE LAW — the arcade-loop fairness spine applied to the
 // gunship layer. The loop is allowed to raise sortie CADENCE (how often the
 // hangar cycles), never flight paths or round speeds. But the honest autopilot

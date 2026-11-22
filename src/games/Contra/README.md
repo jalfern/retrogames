@@ -357,6 +357,12 @@ three rounds through real keys** · zero page errors.
 
 ## Honest gaps
 
+- **No voice capture (open)**: Contra opens no mic — its takes ship motion-only.
+  Voice tracks + `voiceCmd` live with the voice games (#1711 S5 lineage).
+- **One pad on phones (open, by law)**: the blue seat is desktop-keyboard only
+  (Jon's rule — no second touchpad), so a phone friend's take is hero + CPU
+  wingman; the wingman's CPU hands never produce training rows (#2058).
+
 - **CLOSED by #2837**: seat ceremony shipped — drop-in rappels in at the
   hero's side (never puppeteers the standing wingman) and a seat idle 10 s
   returns to the wingman brain; see the Seat ceremony law above.
@@ -503,3 +509,38 @@ Law that still stands (and is pinned): the loop tempo (`loopK`) is the ONLY
 gameplay escalator. Nothing in the presentation scales round speeds, the
 torrent, or the hop-fairness spine.
 
+
+## PLAICRAFT trainable adapter (#1712, Contra next per #2953)
+
+Contra is the second trainable game in the store — the same contract Gauntlet
+enforces, proved end-to-end by `npm run plaicraft:datasetcheck` (scripted
+human, not just a stub):
+
+- **Consent before simulation**: the recorder only arms once a human enters the
+  attract screen (keyboard or tap), and only records ticks where a real pad
+  pair was pressed — the autopilot demo that runs before the first press never
+  enters the dataset (the Gauntlet rule the store rejects machine takes on).
+- **Pad pairs as labels**: every recorded tick banks `[pad1, pad2]` — the 9
+  boolean buttons VirtualControls dispatches per seat. The adapter maps pad1 →
+  seat 0 and pad2 → seat 1 with `model.js`'s honest 67-feature vector (vision
+  mask: enemies outside the live viewport are zeroed; the raw sim never enters
+  a row).
+- **Drop-in ceremony**: P2 joins mid-level like the arcade — `rules.seat2`
+  records the tick of each successful `dropIn` (first drop, the death-out at
+  `seatIdle` 600, and the loop-boundary re-drop after the score screen). Row
+  law: seat rows exist exactly between claim and release; a seat-1 row between
+  seatIdle and re-drop is refused. The claim latches at the keydown that calls
+  `dropIn` (auto-repeat is blocked, so re-claims are always fresh presses).
+- **Loops carry**: stage 8 win loops to stage 1 in-run (`sim.js` `arcadeLoop`,
+  the score/lives+bonus/gun carry), so one take spans loops; the recorder never
+  ends a take at a loop boundary (#2958: endings are run states, a `clear`
+  screen is a scene).
+- **One file, two paths**: the DEV `__game.buttons` recorder and the production
+  recorder arm through the same spec (`recSpec`) — same law online as in QA.
+
+`scripts/plaicraft-dataset.mjs#contraRows` replays take actions against the
+headless sim (`sim.js` + `sim.run`) and rebuilds with `arcadeLoop` at the
+victory boundary; a take whose claimed drops the sim never performs is refused.
+Named mutants (`--mutant` 10–12): adapter bypass, drop-in-law ignore, and
+loop-carry skip all fail loudly. Known gaps: no voice capture here (the pad
+takes are labeled, not spoken) and one pad on phones — same as Gauntlet.

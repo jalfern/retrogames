@@ -78,6 +78,8 @@ import { createSim as rcMakeSim, tickSim as rcStep, stateHash as rcHash } from '
 import { featurize as rcFeaturize } from '../src/games/RallyCoDriver/model.js'
 import { makeGame as ddMakeGame, step as ddStep, stateHash as ddHash } from '../src/games/DoubleDragon/sim.js'
 import { featurize as ddFeaturize } from '../src/games/DoubleDragon/model.js'
+import { makeGame as contraMakeGame, step as contraStep, stateHash as contraHash, dropIn as contraDropIn, arcadeLoop as contraArcadeLoop } from '../src/games/Contra/sim.js'
+import { featurize as contraFeaturize } from '../src/games/Contra/model.js'
 import { newGame, heroFromPad, p2FromPad, seatedPartner } from './plaicraft-export.mjs'
 
 const argv = process.argv.slice(2)
@@ -408,6 +410,54 @@ export function doubleDragonRows(key, rec) {
     return { ok, mismatch: null, rows }
 }
 
+// CONTRA adapter (#1712, #2953 default — widen the trainable shelf). The bank
+// carries the pad PAIR the shell consumed; two facts ride with it:
+//  - rules.seat2: the bank ticks of every SUCCESSFUL blue-seat drop-in. Pad
+//    LEVEL alone cannot carry the ceremony (auto-repeat is blocked at the
+//    keyboard, so a re-claim after the idle handback is a fresh keydown whose
+//    edge the stream can't show) — the shell latches at the call site.
+//  - the arcade loop: after `end:'win'` the stage returns hotter via the
+//    sim's own arcadeLoop() (#2894 law, lifted into sim.js so this rebuild is
+//    byte-identical). The clear screen banks nothing, so the tick stream passes
+//    through the rebuild without a seam; a take whose win tick IS its last bank
+//    (tab closed mid-clear) must NOT rebuild — the final hash is the win state.
+// Rows: seat 0 always (the thumb, by autoStart's #2058 construction); seat 1
+// only while a HUMAN holds it — the wingman's CPU brain never produces rows.
+export function contraRows(key, rec) {
+    let gs = contraMakeGame(rec.seed)
+    const want = new Map(rec.hashes.map((x) => [x.t, x.h]))
+    const mems = {}
+    const rows = []
+    const finalT = rec.hashes.length ? rec.hashes[rec.hashes.length - 1] : null
+    const claims = new Set(String((rec.rules && rec.rules.seat2) || '').split(',').filter((s) => s !== '').map(Number))
+    for (let t = 0; t < rec.ticks; t++) {
+        const t1 = t + 1
+        if (claims.has(t1)) contraDropIn(gs) // self-guarded: out/end/human already-seated no-op, and live no-op'd too
+        const decoded = rec.slots.map((s) => decodePad(s.pads[t], rec.method))
+        const p1 = decoded[0] || {}
+        const p2 = decoded[1] || {}
+        const p2human = !!gs.p2.human
+        contraStep(gs,
+            { left: !!p1.left, right: !!p1.right, up: !!p1.up, down: !!p1.down, a: !!p1.a, b: !!p1.b },
+            { left: !!p2.left, right: !!p2.right, up: !!p2.up, down: !!p2.down, a: !!p2.a, b: !!p2.b })
+        if (want.has(t1)) {
+            const got = contraHash(gs)
+            if (got !== want.get(t1)) return { ok: false, mismatch: { tick: t1, want: want.get(t1), got }, rows }
+        }
+        const seats = [{ p: p1, idx: 0 }]
+        if (p2human) seats.push({ p: p2, idx: 1 })
+        for (const s of seats) {
+            if (!mems[s.idx]) mems[s.idx] = {}
+            const feat = contraFeaturize(gs, s.idx, mems[s.idx]).map((v) => +v.toFixed(3))
+            mems[s.idx].pa = s.p
+            rows.push({ k: key, g: rec.game, s: rec.seed, t: t1, lvl: gs.phase, seat: s.idx, act: encodePad(s.p, rec.method), feat })
+        }
+        if (gs.end === 'win' && t1 < rec.ticks) gs = contraArcadeLoop(gs)
+    }
+    const ok = !finalT || finalT.h === contraHash(gs)
+    return { ok, mismatch: null, rows }
+}
+
 const ADAPTERS = {
     gauntlet: gauntletRows,
     'floor-boss': floorBossRows,
@@ -415,6 +465,7 @@ const ADAPTERS = {
     'short-order-shout': shortOrderShoutRows,
     'rally-co-driver': rallyCoDriverRows,
     'double-dragon': doubleDragonRows,
+    contra: contraRows,
 }
 
 // --- audio -----------------------------------------------------------------------

@@ -20,8 +20,10 @@
 //     owner, rows carry lg, player set and coverage lines stay native-only.
 //  8. mutants: player-split ignored / floor-boss hash-skip / fold disabled /
 //     bomb-defuse adapter bypassed / trainable-gate reopened / SOS adapter
-//     bypassed / rally adapter bypassed — each must go RED (each line is
-//     load-bearing).
+//     bypassed / rally adapter bypassed / double-dragon adapter bypassed /
+//     floor-boss tap-replay skipped / contra adapter bypassed / contra
+//     rules.seat2 claims ignored / contra arcade-loop rebuild skipped — each
+//     must go RED (each line is load-bearing).
 //
 // FIXTURES ARE PIPELINE TESTS, NOT EVIDENCE: the fixture players are scripted
 // takes stamped consent-only to exercise the split logic. Acceptance lines on
@@ -50,8 +52,10 @@ import { createSim as rcMakeSim, tickSim as rcStep, stateHash as rcHash, cpuDriv
 import { N_FEAT as RC_N_FEAT, featurize as rcFeaturize } from '../src/games/RallyCoDriver/model.js'
 import { makeGame as ddMakeGame, step as ddStep, stateHash as ddHash } from '../src/games/DoubleDragon/sim.js'
 import { N_FEAT as DD_N_FEAT, featurize as ddFeaturize } from '../src/games/DoubleDragon/model.js'
+import { makeGame as contraMakeGame, step as contraStep, stateHash as contraHash, dropIn as contraDropIn, autopilot as contraAutopilot, arcadeLoop as contraArcadeLoop } from '../src/games/Contra/sim.js'
+import { N_FEAT as CONTRA_N_FEAT } from '../src/games/Contra/model.js'
 import { newGame, heroFromPad, p2FromPad } from './plaicraft-export.mjs'
-import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, shortOrderShoutRows, rallyCoDriverRows, doubleDragonRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
+import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, shortOrderShoutRows, rallyCoDriverRows, doubleDragonRows, contraRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 // Local Report (harness.mjs pulls playwright-core at import; this check is
@@ -94,27 +98,31 @@ const craftWebm = (durationMs) => {
 }
 
 function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false, weather = null, seat2At = -1, taps = null }) {
-    const method = game === 'floor-boss' || game === 'bomb-defuse' || game === 'short-order-shout' || game === 'rally-co-driver' || game === 'double-dragon' ? 'dpad' : 'stick'
+    const method = game === 'floor-boss' || game === 'bomb-defuse' || game === 'short-order-shout' || game === 'rally-co-driver' || game === 'double-dragon' || game === 'contra' ? 'dpad' : 'stick'
     const wx = weather || 'clear'
-    const gs = game === 'gauntlet' ? newGame(seed, rules || {}, seats[1] && seats[1].kind !== 'off')
+    const contraClaims = [] // #2953: bank ticks of successful blue-seat drops — rides rules.seat2 (see contra block below)
+    let gs = game === 'gauntlet' ? newGame(seed, rules || {}, seats[1] && seats[1].kind !== 'off')
         : game === 'floor-boss' ? fbMakeGame(seed, { duel: seats.length >= 2 })
             : game === 'bomb-defuse' ? bdMakeGame(seed, seats.length >= 2 ? 2 : 1)
                 : game === 'short-order-shout' ? sosMakeGame(seed, Math.max(1, Math.min(4, seats.length)))
                     : game === 'rally-co-driver' ? rcMakeSim(seed, seats.length >= 2 ? 2 : 1, wx)
                         : game === 'double-dragon' ? ddMakeGame(seed, { coop: seats.length >= 2 })
-                            : null
+                            : game === 'contra' ? contraMakeGame(seed)
+                                : null
     const hashOf = game === 'gauntlet' ? stateHash
         : game === 'floor-boss' ? fbHash
             : game === 'bomb-defuse' ? bdHash
                 : game === 'short-order-shout' ? sosHash
                     : game === 'rally-co-driver' ? rcHash
-                        : game === 'double-dragon' ? ddHash : null
+                        : game === 'double-dragon' ? ddHash
+                            : game === 'contra' ? contraHash : null
     const rec = createRecorder({
         gameId: game, method, seed, players: seats.length, build: 'test',
         sources: seats.map((s) => ({ kind: s.kind === 'relabeled' ? 'human' : s.kind })),
         rules: () => (game === 'rally-co-driver' ? { weather: wx }
             : game === 'double-dragon' ? { seat2At }
-                : rules || {}),
+                : game === 'contra' ? (contraClaims.length ? { seat2: contraClaims.join(',') } : {})
+                    : rules || {}),
     })
     let x = (seed >>> 0) + 1
     const rnd = () => ((x = (x * 1103515245 + 12345) >>> 0) / 4294967296)
@@ -144,11 +152,30 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
             const toSim = (p) => ({ left: !!p.left, right: !!p.right, up: !!p.up, down: !!p.down, a: !!p.a, b: !!p.b, punch: !!p.boost })
             ddStep(gs, toSim(pads[0]), toSim(pads[1] || {}))
         }
+        if (game === 'contra') {
+            // #2953: the honest autopilot seats the hero (the calibration standard
+            // — it clears stage 1, dies fairly, wins the loop). The blue seat is
+            // scripted like a friend at a second keyboard: silent until seat2At,
+            // one press (the drop), silence long past seatIdle (the idle handback
+            // the sim enforces), then a press again — the RE-CLAIM whose edge the
+            // pad LEVEL cannot carry, so successful drops latch on rules.seat2.
+            const ap = contraAutopilot(gs)
+            pads[0] = { left: !!ap.left, right: !!ap.right, up: !!ap.up, down: !!ap.down, a: !!ap.a, b: !!ap.b }
+            const bt = t + 1
+            pads[1] = { left: false, right: false, up: false, down: false, a: false, b: false }
+            if (seat2At >= 0 && (bt === seat2At || bt >= seat2At + 720)) pads[1].b = true
+            if (pads[1].b && !gs.p2.human && !gs.p2.out && !gs.end) { contraDropIn(gs); contraClaims.push(bt) }
+            contraStep(gs, pads[0], pads[1])
+        }
         rec.addTick(pads, null, gs && gs.tick % 30 === 0 ? hashOf(gs) : null)
         if (callAt.has(t + 1)) {
             const c = calls.find((q) => q.t === t + 1)
             rec.addVoiceCmd({ said: c.said, intent: c.intent || null, ok: !!c.ok, ...(Number.isInteger(c.seat) ? { seat: c.seat } : {}) }) // #2805 seat stamp
         }
+        // #1712: one take spans the arcade loop — after a win the stage returns
+        // hotter via the sim's own carry (mirrors contraRows exactly; the clear
+        // screen banks nothing, so the tick stream crosses the rebuild seamless).
+        if (game === 'contra' && gs.end === 'win' && t + 1 < ticks) gs = contraArcadeLoop(gs)
     }
     const final = gs ? hashOf(gs) : 12345
     if (voice) {
@@ -253,13 +280,18 @@ try {
         // friend drops into the blue seat (rules.seat2At) — the shape a real
         // two-friend run ships from /retrogames/join.
         ['sam', scriptedTake({ game: 'double-dragon', seed: 73, ticks: 300, seats: [{ kind: 'human' }, { kind: 'cpu' }], voice: { slots: [0] }, seat2At: 30 })],
+        // #2953 run-and-gun take: the autopilot drives the hero through stage 1,
+        // clears and carries into loop 2; a friend drops into the blue seat at 30,
+        // walks away (idle handback at ~661), and rappels back in at 750 — the
+        // claims ship on rules.seat2 exactly as the phone's shell latches them.
+        ['vera', scriptedTake({ game: 'contra', seed: 74, ticks: 2600, seats: [{ kind: 'human' }, { kind: 'cpu' }], voice: { slots: [0] }, seat2At: 30 })],
     ]
     let up = 0
     for (const [player, rec] of uploads) {
         const res = await uploadSession(rec, { player, consent: { motion: true, voice: !!rec.voice }, base: sim.base })
         if (res.ok) up++
     }
-    r.check('fixture store provisioned (13 consented takes uploaded)', up === 13, `${up}/13`)
+    r.check('fixture store provisioned (14 consented takes uploaded)', up === 14, `${up}/14`)
 
     // determinism: two full builds against the store, twice. In-process
     // (not a blocked spawnSync child: the sim lives on THIS event loop).
@@ -302,8 +334,8 @@ try {
         if (foldDecision(c.cls, c.native, c.relabeled, nativeHumans)) foldedKeys.add(s.key)
         else if (!humanKeys.has(s.key)) flaggedKeys.add(s.key)
     }
-    r.check('fixtures classify as expected: 9 human, 1 legacy-folded, 3 flagged',
-        humanKeys.size === 9 && foldedKeys.size === 1 && flaggedKeys.size === 3,
+    r.check('fixtures classify as expected: 10 human, 1 legacy-folded, 3 flagged',
+        humanKeys.size === 10 && foldedKeys.size === 1 && flaggedKeys.size === 3,
         `human=[${[...humanKeys].map((k) => envByKey.get(k).player)}] folded=[${[...foldedKeys].map((k) => envByKey.get(k).player)}] flagged=[${[...flaggedKeys].map((k) => envByKey.get(k).player)}]`)
 
     const trainRows = rows.filter((x) => x.split === 'train')
@@ -340,7 +372,7 @@ try {
     const audioIdx = fs.existsSync(path.join(outA, 'audio/index.jsonl'))
         ? fs.readFileSync(path.join(outA, 'audio/index.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
         : []
-    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank + carla kitchen + otto stage + sam street carry voice)', audioIdx.length === 11, `${audioIdx.length}/11`)
+    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank + carla kitchen + otto stage + sam street + vera jungle carry voice)', audioIdx.length === 12, `${audioIdx.length}/12`)
     const aliceIdx = audioIdx.find((x) => x.player === 'alice')
     let verbatim = false
     if (aliceIdx && fs.existsSync(path.join(outA, aliceIdx.file))) {
@@ -361,9 +393,9 @@ try {
         .map(({ path: p }) => [p, shaHex(fs.readFileSync(path.join(outA, p)))].join('\0') + '\n')
         .sort().join(''))
     r.check('manifest self-proves: files recompute to card.version', recomputed === card.version && man.version === card.version)
-    r.check('card reports honest coverage (6 human games: gauntlet, bomb-defuse, floor-boss, short-order-shout, rally-co-driver, double-dragon)',
+    r.check('card reports honest coverage (7 human games: gauntlet, bomb-defuse, floor-boss, short-order-shout, rally-co-driver, double-dragon, contra)',
         card.coverage.gamesCovered.pass && card.coverage.gamesCovered.games.includes('floor-boss') && card.coverage.gamesCovered.games.includes('short-order-shout') && card.coverage.gamesCovered.games.includes('rally-co-driver')
-        && card.coverage.gamesCovered.games.includes('double-dragon') && card.coverage.audio.pass && card.splits.player.heldout.length >= 1,
+        && card.coverage.gamesCovered.games.includes('double-dragon') && card.coverage.gamesCovered.games.includes('contra') && card.coverage.audio.pass && card.splits.player.heldout.length >= 1,
         `games=${JSON.stringify(card.coverage.gamesCovered.games)} heldout=${JSON.stringify(card.splits.player.heldout)}`)
 
     // ---- #2805: floor-boss engine, per-seat attribution, container truth, card lines
@@ -475,6 +507,32 @@ try {
     r.check('DD seat-1 rows begin AT the drop-in tick, never before — nobody drives an un-taken seat (#1712)',
         ddRows.filter((x) => x.seat === 1).length === 271 && ddRows.filter((x) => x.seat === 1).every((x) => x.t >= 30)
         && ddRows.some((x) => x.seat === 1 && x.t === 30))
+    const ctraRows = rows.filter((x) => x.g === 'contra')
+    r.check('contra rows carry THE 67 seat features + encoded actions, never flagged (#2953)',
+        ctraRows.length > 0 && ctraRows.every((x) => Array.isArray(x.feat) && x.feat.length === CONTRA_N_FEAT && x.feat.every((v) => Number.isFinite(v)) && typeof x.act === 'object')
+        && ctraRows.every((x) => x.split !== 'flagged') && CONTRA_N_FEAT === 67,
+        `rows=${ctraRows.length}`)
+    { // #2953 seat law end-to-end: claims ride rules.seat2 exactly as the shell latched —
+        // drop at 30; idle handback ~661 (seatIdle 600 + the descent); re-claim at 750;
+        // and after the arcade-loop rebuild (~1782) the friend's held seat re-drops into
+        // stage 2 — the third claim, which a post-step edge check would MISS (that's why
+        // the shell latches at the call site). seat-1 rows exist ONLY while a person
+        // holds the seat (#2058).
+        const veraHit = [...envByKey].find(([, e]) => String(e.player) === 'vera')
+        const veraRec = veraHit ? await fetchSession(veraHit[0], { base: sim.base, key: SIM_READ_KEY }) : { ok: false }
+        const claims = String((veraRec.ok && veraRec.recording.rules && veraRec.recording.rules.seat2) || '').split(',').map(Number)
+        const c1 = ctraRows.filter((x) => x.seat === 1).map((x) => x.t)
+        r.check('contra claims ride rules.seat2 (drop 30, re-claim 750 after the idle handback, loop-up re-drop past 1500) and seat-1 rows exist ONLY while the seat is a person\'s (#2058)',
+            claims.length === 3 && claims[0] === 30 && claims[1] === 750 && claims[2] > 1500
+            && c1.length > 0 && c1[0] === 30 && c1.includes(750) && c1.includes(claims[2])
+            && !c1.some((t) => t > 661 && t < 750),
+            `claims=${JSON.stringify(claims)} seat1first=${c1[0]} seat1=${c1.length}`)
+    }
+    r.check('contra take spans the arcade loop: jungle rows resume AFTER the boss phase (stage 1 returns hotter, sim-side arcadeLoop verified by checkpoints + final hash) and loopFrac proves loop 2 (#2894/#1712)',
+        ctraRows.some((x) => x.lvl === 'boss')
+        && ctraRows.some((x) => x.lvl === 'jungle' && x.t > ctraRows.filter((r2) => r2.lvl === 'boss').reduce((a, r2) => Math.max(a, r2.t), 0))
+        && ctraRows.some((x) => x.feat[6] >= 0.25),
+        `phases=${JSON.stringify([...new Set(ctraRows.map((x) => x.lvl))])}`)
     { // the camera is the crest: a thug beyond the visible window reads ZERO —
         // the honest-zero law pinned directly on the featurizer.
         const g = ddMakeGame(5, { coop: true })
@@ -506,7 +564,8 @@ try {
     r.check('card games block names both new adapters honestly (featureAdapter true, humanTakes 1 each, #1712)',
         card.games['short-order-shout'] && card.games['short-order-shout'].featureAdapter === true && card.games['short-order-shout'].humanTakes === 1
         && card.games['rally-co-driver'] && card.games['rally-co-driver'].featureAdapter === true && card.games['rally-co-driver'].humanTakes === 1
-        && card.games['double-dragon'] && card.games['double-dragon'].featureAdapter === true && card.games['double-dragon'].humanTakes === 1)
+        && card.games['double-dragon'] && card.games['double-dragon'].featureAdapter === true && card.games['double-dragon'].humanTakes === 1
+        && card.games.contra && card.games.contra.featureAdapter === true && card.games.contra.humanTakes === 1)
     { // crest honesty on the source side: a pure-CPU night stage, the driver block
         // may only name corners the fog + crests admit (visibleAhead truth).
         const g = rcMakeSim(11, 2, 'rain')
@@ -545,6 +604,22 @@ try {
             good.ok && good.rows.length === 480 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
             bad.mismatch ? `tick ${bad.mismatch.tick}` : (good.ok ? `${good.rows.length} rows` : 'no mismatch?!'))
     }
+    { // unit: contra adapter (#2953) — clean verifies; tampered refuses; and DROPPING
+        // the rules.seat2 claims loses the re-claim at 750 — the checkpoint past it
+        // refuses. The claim list is load-bearing, not decoration.
+        const clean = scriptedTake({ game: 'contra', seed: 95, ticks: 900, seats: [{ kind: 'human' }, { kind: 'cpu' }], seat2At: 30 })
+        const good = contraRows('unit/contra-clean', clean)
+        const badRec = JSON.parse(JSON.stringify(clean))
+        badRec.hashes[Math.max(0, badRec.hashes.length - 2)].h = 'cafebabe'
+        const bad = contraRows('unit/contra-tamper', badRec)
+        const lostReclaim = JSON.parse(JSON.stringify(clean))
+        lostReclaim.rules = { seat2: '30' } // the drop survives; the 750 re-claim is gone
+        const dropped = contraRows('unit/contra-reclaimlost', lostReclaim)
+        r.check('contra adapter: clean take verifies (900 ticks), tampered refuses at its tick, a lost re-claim refuses at the checkpoint past 750 (#2953 — rules.seat2 load-bearing)',
+            good.ok && good.rows.filter((x) => x.seat === 0).length === 900 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0
+            && !dropped.ok && !!dropped.mismatch && dropped.mismatch.tick >= 750,
+            `clean=${good.ok ? good.rows.length : 'FAIL'} tamper=${bad.mismatch ? bad.mismatch.tick : '-'} noclaim=${dropped.mismatch ? dropped.mismatch.tick : 'ESCAPED'}`)
+    }
     { // integration: ONE tampered take per new engine must fail the WHOLE build
         // (the S1 100%-verifiable line, engines four and five).
         const sim3 = await startRelaySim()
@@ -552,12 +627,14 @@ try {
             const tS = scriptedTake({ game: 'short-order-shout', seed: 81, ticks: 150, seats: [{ kind: 'human' }], tamper: true })
             const tR = scriptedTake({ game: 'rally-co-driver', seed: 82, ticks: 180, seats: [{ kind: 'human' }, { kind: 'cpu' }], tamper: true })
             const tD = scriptedTake({ game: 'double-dragon', seed: 83, ticks: 180, seats: [{ kind: 'human' }, { kind: 'cpu' }], seat2At: 40, tamper: true })
+            const tC = scriptedTake({ game: 'contra', seed: 85, ticks: 400, seats: [{ kind: 'human' }, { kind: 'cpu' }], seat2At: 30, tamper: true })
             const upS = await uploadSession(tS, { player: 'nina', consent: { motion: true, voice: false }, base: sim3.base })
             const upR = await uploadSession(tR, { player: 'omar', consent: { motion: true, voice: false }, base: sim3.base })
             const upD = await uploadSession(tD, { player: 'pat', consent: { motion: true, voice: false }, base: sim3.base })
+            const upC = await uploadSession(tC, { player: 'quin', consent: { motion: true, voice: false }, base: sim3.base })
             const b3 = await buildDataset({ base: sim3.base, out: path.join(tmp, 'tamper-sos-rc'), limit: 50, jonKey: SIM_READ_KEY })
-            r.check('tampered SOS + rally + double-dragon takes fail the whole build, all ticks named (#1712 — unverified rows are never shipped)',
-                upS.ok && upR.ok && upD.ok && !b3.ok && Array.isArray(b3.rejected) && b3.rejected.length === 3 && b3.rejected.every((x) => x.mismatch && x.mismatch.tick > 0),
+            r.check('tampered SOS + rally + double-dragon + contra takes fail the whole build, all ticks named (#1712 — unverified rows are never shipped)',
+                upS.ok && upR.ok && upD.ok && upC.ok && !b3.ok && Array.isArray(b3.rejected) && b3.rejected.length === 4 && b3.rejected.every((x) => x.mismatch && x.mismatch.tick > 0),
                 b3.reason || 'build was GREEN with tampered takes?!')
         } finally { sim3.close() }
     }
@@ -578,9 +655,9 @@ try {
     r.check('legacy take folds into the corpus: rows exist, never flagged, carry lg, mirror the owner split rule (#1712)',
         lgRows.length === 400 && foldedKey && lgRows.every((x) => x.k === foldedKey && x.split !== 'flagged' && x.split === wantFoldSplit && x.g === 'gauntlet'),
         `rows=${lgRows.length} want=${wantFoldSplit}`)
-    r.check('fold never enlarges the player set: humans stay native-8, label "player" is no player, volume separate (#1712)',
-        card.coverage.humanPlayers.length === 8 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 8
-        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 9
+    r.check('fold never enlarges the player set: humans stay native-9, label "player" is no player, volume separate (#1712)',
+        card.coverage.humanPlayers.length === 9 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 9
+        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 10
         && card.splits.player.heldout.length >= 1 && !card.splits.player.heldout.includes('player'),
         `humans=${JSON.stringify(card.coverage.humanPlayers)} legacy=${card.totals.legacyTakes}`)
     r.check('folded volume lands in the owner ledger + card legacy block (anchor declared, rows match)',
@@ -591,7 +668,7 @@ try {
     r.check('folded take audio written under the owner (consented human data, #1712)',
         audioIdx.some((x) => x.key === foldedKey && x.player === LEGACY_OWNER && x.human === true))
     r.check('coverage lines stay native-only and adapter-only: fold cannot add a human game, unadapted games cannot (#1712)',
-        card.coverage.gamesCovered.games.length === 6 && !card.coverage.gamesCovered.games.includes('player')
+        card.coverage.gamesCovered.games.length === 7 && !card.coverage.gamesCovered.games.includes('player')
         && !card.coverage.gamesCovered.games.includes('talk-me-down'),
         JSON.stringify(card.coverage.gamesCovered.games))
 } catch (e) {
@@ -875,6 +952,96 @@ if (MUTATE) {
         } finally {
             pull(DS)
             if (fs.readFileSync(DS, 'utf8') !== src9) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 tap replay)'); r.failed++ }
+        }
+    }
+
+    // mutant 10 (#2953 adapter): contra removed from ADAPTERS — vera's jungle
+    // rows lose THE 65 features and fall back to flagged. The registration is
+    // load-bearing.
+    const src10 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR10 = 'contra: contraRows,'
+    if (!src10.includes(ANCHOR10)) {
+        console.log('FAIL   contra adapter anchor not found — update the mutant (#2953)')
+        r.failed++
+    } else {
+        plant(DS, src10.replace(ANCHOR10, '/* MUTANT: contra adapter bypassed */'))
+        try {
+            const outM10 = path.join(tmp, 'contra-adapter-mut')
+            const cli10 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM10, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout10 = ''
+                p.stdout.on('data', (d) => { stdout10 += d })
+                p.on('exit', (code) => resolve({ status: code, stdout: stdout10 }))
+            })
+            const rowsM10 = cli10.status === 0 && fs.existsSync(path.join(outM10, 'dataset.jsonl'))
+                ? fs.readFileSync(path.join(outM10, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+                : []
+            const featContra = rowsM10.some((x) => x.g === 'contra' && Array.isArray(x.feat) && x.feat.length === CONTRA_N_FEAT)
+            r.check('contra adapter is load-bearing: 67-feature rows exist (RED under the contra adapter-bypass mutant, #2953)',
+                featContra, `featRows=${featContra ? 'yes' : 'no'}${cli10.status !== 0 ? ' build exit ' + cli10.status : ''}`)
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src10) { console.log('FAIL   mutant restore: exact original bytes not back (#2953 contra adapter)'); r.failed++ }
+        }
+    }
+
+    // mutant 11 (#2953 seat law): the rules.seat2 claims ignored — the blue
+    // seat never seats its person, replay diverges at the first drop, the whole
+    // build must refuse. If vera still verifies, the claim line is decoration.
+    const src11 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR11 = 'if (claims.has(t1)) contraDropIn(gs)'
+    if (!src11.includes(ANCHOR11)) {
+        console.log('FAIL   contra claims anchor not found — update the mutant (#2953)')
+        r.failed++
+    } else {
+        plant(DS, src11.replace(ANCHOR11, 'if (false && claims.has(t1)) contraDropIn(gs) /* MUTANT: seat-2 claims ignored */'))
+        try {
+            const outM11 = path.join(tmp, 'contra-claims-mut')
+            const cli11 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM11, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout11 = ''
+                p.stdout.on('data', (d) => { stdout11 += d })
+                p.on('exit', (code) => resolve({ status: code, stdout: stdout11 }))
+            })
+            const rowsM11 = cli11.status === 0 && fs.existsSync(path.join(outM11, 'dataset.jsonl'))
+                ? fs.readFileSync(path.join(outM11, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+                : []
+            const seatRowsM11 = rowsM11.some((x) => x.g === 'contra' && x.seat === 1)
+            r.check('contra claims are load-bearing: verified seat-1 rows exist (RED under the claims-ignored mutant, #2953)',
+                seatRowsM11, `seat1Rows=${seatRowsM11 ? 'yes' : 'no'}${cli11.status !== 0 ? ' build exit ' + cli11.status : ''}`)
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src11) { console.log('FAIL   mutant restore: exact original bytes not back (#2953 contra claims)'); r.failed++ }
+        }
+    }
+
+    // mutant 12 (#2953 arcade loop): the loop-up rebuild skipped in contraRows —
+    // a take that cleared stage 1 can no longer rebuild loop 2, so the hash
+    // stream diverges past the win and the build refuses. The loop carry is
+    // load-bearing for any take that reaches loop 2.
+    const src12 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR12 = "if (gs.end === 'win' && t1 < rec.ticks) gs = contraArcadeLoop(gs)"
+    if (!src12.includes(ANCHOR12)) {
+        console.log('FAIL   contra loop-rebuild anchor not found — update the mutant (#2953)')
+        r.failed++
+    } else {
+        plant(DS, src12.replace(ANCHOR12, "if (false && gs.end === 'win' && t1 < rec.ticks) gs = contraArcadeLoop(gs) /* MUTANT: arcade loop rebuild skipped */"))
+        try {
+            const outM12 = path.join(tmp, 'contra-loop-mut')
+            const cli12 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM12, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout12 = ''
+                p.stdout.on('data', (d) => { stdout12 += d })
+                p.on('exit', (code) => resolve({ status: code, stdout: stdout12 }))
+            })
+            r.check('contra arcade-loop carry is load-bearing: the loop-crossing take verifies (RED under the rebuild-skip mutant, #2953)',
+                cli12.status === 0, cli12.status !== 0 ? 'build refused without the loop rebuild' : 'clean build')
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src12) { console.log('FAIL   mutant restore: exact original bytes not back (#2953 contra loop carry)'); r.failed++ }
         }
     }
 }
