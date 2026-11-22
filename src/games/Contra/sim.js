@@ -67,6 +67,35 @@ export const CFG = {
     carrierFirst: 320,             // first courier of the run (ticks)
     carrierNext: 380,             // + up to 240 more, seed arithmetic (no gs.r)
     podGrav: 0.06, podFallMax: 1.6, podVx: -0.6,
+    // --- #2917 the SECOND air layer: the gate's hangar gunships ---
+    // The cabinet's armed aircraft. A hangar mouth in the fortress parapet
+    // grinds open (the attack is TELEGRAPHED by the door, never born on
+    // screen), one gunship flies out, works the arena with lane-aimed
+    // down-rounds at PINNED speed — the lane-aim law is the fairness spine:
+    // a hop is always the answer — and takes three rounds to bring down.
+    // Schedule and jitter are seed/tick arithmetic, ZERO gs.r draws, so the
+    // tuned autopilot stream and every rng-driven law byte-for-byte stand.
+    gsHp: 3,                 // airframe rounds before the hull goes up
+    gsHW: 17, gsHH: 8,       // the hull's hit box
+    gsVx: -1.35,             // patrol speed across the arena (tempo k, not round speed)
+    gsVyMax: 1.0,            // the strafe law: a hull round never dips steeper
+                             //   than this, so the hop is always the answer
+    gsAlt: [52, 70],         // the sortie band — clear of the deck AND of a hero's
+                             //   hop apex (feet 102 / chest 88 at the top of a jump),
+                             //   so hopping an aimed round never parks you in a hull;
+                             //   still well inside up-aim reach (a round flies off screen)
+    gsHangarX: 262,          // the hangar mouth's centre on the parapet
+    gsHangarY: 24,
+    gsTelegraph: 34,         // the door grinds this long before the hull emerges
+    gsGrind: 74,             // the door stands open this long (the hydraulic language)
+    gsFirst: 150,            // ticks after the gate locks before the first sortie
+    gsNext: 480,             // gap between sorties (+ seed jitter), both divided by k
+    gsFirstShot: 40,         // the hull's first round after leaving the mouth
+    gsRearm: 320,            // between its rounds — a strafe, not a torrent
+                             //   (fairness by construction: the honest autopilot
+                             //    clears every seed on every loop, so the sortie
+                             //    never makes the gate unwinnable)
+    gsScore: 400,            // the arcade's gunship purse
     eBulletSpeed: 2.2,
     respawnFreeze: 50,
     invuln: 100,
@@ -273,6 +302,7 @@ export const CASCADE = [
     { x: 342, y: 76 },
     { x: 214, y: 26 },                            // top tier along the parapet
     { x: 300, y: 22 },
+    { x: CFG.gsHangarX, y: CFG.gsHangarY + 2 },   // #2917 the hangar mouth blows out
     { x: 368, y: 42 },
     { x: 186, y: 110 },                           // the core housing cracks
     { x: 200, y: 96 },                            // and the heart goes last
@@ -630,6 +660,11 @@ export function makeGame (seed, loop = 1) {
         carrierN: 0,            // courier index for this run (letter/alt seed)
         depot: { x: 1700, y: CFG.ground, hp: CFG.depotHp, aim: Math.PI, t: 70, dead: false, spawnT: 240 },
         vc: [],                     // S3.5 volley capsules — the depot's payout {x,y,vx,kind}
+        // #2917 the gate's gunships live only in the arena (see makeBoss); the
+        // fields exist from the drop so art/hash never meet an undefined sky.
+        gunships: [],           // {x,y,ty,vx,hp,t,n,dead,flash} — one sortie at a time
+        sortieT: 0,             // tick the next sortie is due (0 = arena not armed)
+        sortieN: 0,             // sortie index for this run (altitude/jitter seed)
         // #2885 hanging vines live only in the falls; riders ride the seat fields
         // (p.vine / p2.vine), the tips are pure tick math — nothing mutable here.
         vines: [],
@@ -828,6 +863,7 @@ function enterFalls (gs) {
     gs.snipers = []   // the tree line stays in the jungle
     gs.vc.length = 0  // the depot's payout flies in the jungle too
     gs.carriers.length = 0; gs.pods.length = 0   // #2847: the canyon owns the vertical — no sky couriers below the falls
+    gs.gunships.length = 0; gs.sortieT = 0       // #2917: the hangar belongs to the arena, not the gorge
     gs.pb.length = 0; gs.eb.length = 0; gs.capsule = null
     // #2885: the vines live here — the gorge's carriers, both seats unhooked.
     gs.vines = VINES.map((v, i) => ({ ...v, i }))
@@ -859,7 +895,15 @@ function makeBoss (gs) {
         dying: 0,                                   // cascade countdown after the core falls
         guns: GUNS.map((g, i) => ({ x: g.x, y: g.y, t: 90 + i * 55, hp: CFG.gunHp, dead: false })),
         doors: DOORS.map((d, i) => ({ x: d.x, y: d.y, t: 150 + i * 120 })),
+        // #2917 the hangar: `open` is the grind left on the door, `launchAt`
+        // the tick the hull is due to appear in the mouth (0 = nothing armed).
+        hangar: { open: 0, launchAt: 0 },
     }
+    // #2917 the second air layer: one sortie at a time, scheduled on seed/tick
+    // arithmetic (zero gs.r — the courier law #2847 verbatim).
+    gs.gunships = []
+    gs.sortieT = gs.tick + Math.round(CFG.gsFirst / gs.lk)
+    gs.sortieN = 0
     gs.ev.push({ type: 'enter' })
 }
 
@@ -1076,6 +1120,27 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                     gs.ev.push({ type: 'cargo', k: cr.kind })
                 }
                 if (pierce) { hs.push('c' + ci); continue }
+                return false
+            }
+        }
+        // #2917 the hangar gunship: three rounds take the hull — spark per hit,
+        // then a named fireball and the arcade's purse. The pierce law applies
+        // verbatim (one take per hull per beam — the carriers/guns law), and the
+        // band sits above the deck so ground fire aimed at the wall never hits
+        // it for free: taking it is a deliberate up-aim. Mutant anchor line
+        // (`gunship-impervious`).
+        for (const [si, sh] of gs.gunships.entries()) {
+            if (!sh.dead && Math.abs(b.x - sh.x) <= CFG.gsHW && Math.abs(b.y - sh.y) <= CFG.gsHH) {
+                if (pierce && hs.includes('s' + si)) continue
+                sh.hp -= 1
+                sh.flash = 4
+                gs.ev.push({ type: 'spark', x: b.x, y: b.y })
+                if (sh.hp <= 0) {
+                    sh.dead = true
+                    gs.score += CFG.gsScore
+                    gs.ev.push({ type: 'boom', x: sh.x, y: sh.y, kind: 'kill' })
+                }
+                if (pierce) { hs.push('s' + si); continue }
                 return false
             }
         }
@@ -1376,6 +1441,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             }
             if (bo.dying === 0) { gs.end = 'win'; gs.ev.push({ type: 'clear' }) }
             gs.eb.length = 0
+            gs.gunships.length = 0   // #2917: with the heart gone the sky empties too
         } else {
             const open = (bo.coreT % CFG.coreCycle) < CFG.coreOpen
             if (open && !bo.wasOpen) gs.ev.push({ type: 'unlock' })
@@ -1400,6 +1466,82 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                     d.t = Math.round((300 + Math.floor(rnd(gs) * 150)) / gs.lk)   // #2894 loop n: the doors spit faster
                 }
             }
+            // --- #2917 THE SECOND AIR LAYER: the hangar sortie. The door grinds
+            // open FIRST (the telegraph — nothing is ever born from a shut door),
+            // the hull drops out of the mouth into its band, patrols left across
+            // the arena and works the deck with lane-aimed down-rounds at PINNED
+            // speed: the lane-aim law verbatim, the hop is always the answer.
+            // One sortie at a time — the courier law (#2847): the gate sends its
+            // guns one honest flight at a time. Zero gs.r: schedule, altitude and
+            // rearm jitter are seed/tick arithmetic, so the tuned autopilot
+            // stream and every rng-driven law byte-for-byte stand. The hangar
+            // itself is wall armour — the shuttered core stays the ONE weak
+            // point (#2880 law: guns are an answer, not a second door).
+            const hg = bo.hangar
+            if (hg.open > 0) hg.open -= 1
+            if (hg.open === 0 && hg.launchAt === 0 && gs.tick >= gs.sortieT) {
+                hg.open = CFG.gsGrind
+                hg.launchAt = gs.tick + CFG.gsTelegraph
+                gs.sortieN += 1
+                gs.ev.push({ type: 'hangar' })
+            }
+            if (hg.launchAt > 0 && gs.tick >= hg.launchAt && gs.gunships.length === 0) {
+                hg.launchAt = 0
+                gs.gunships.push({
+                    x: CFG.gsHangarX - 6, y: CFG.gsHangarY + 10,
+                    ty: CFG.gsAlt[(gs.seed >> (gs.sortieN % 8)) & 1],
+                    vx: CFG.gsVx * gs.lk,          // loop n: crossings quicken, rounds never do
+                    hp: CFG.gsHp, t: CFG.gsFirstShot, n: gs.sortieN,
+                    dead: false, flash: 0,
+                })
+                gs.ev.push({ type: 'lift' })
+            }
+            let sortieGone = 0
+            for (const sh of gs.gunships) {
+                if (sh.flash > 0) sh.flash -= 1
+                if (sh.y < sh.ty) sh.y = Math.min(sh.ty, sh.y + 0.8)   // out of the mouth, then level
+                sh.x += sh.vx
+                const tgt = aimTarget(gs, sh.x)
+                sh.t -= 1
+                // the spawn-shield law spans both axes: no round leaves a hull
+                // outside the view. And the strafe comes from OVER THE FORTRESS
+                // (x > wallX), never from directly overhead — the beam gets the
+                // long flight so the hop window the game already teaches is
+                // always enough to answer it. The hull also waits for a GROUNDED
+                // target, the snipers' fairness law verbatim: an aimed round is
+                // answered by the hop, so firing at a hero who has already made
+                // the move the game teaches is not a shot, it's a tax.
+                if (sh.t <= 0 && tgt && tgt.onGround && sh.x > CFG.wallX && sh.x < gs.cam + W - 8) {
+                    let a = Math.atan2((tgt.lane - 14) - (sh.y + 7), tgt.x - sh.x)
+                    let vx = Math.cos(a) * CFG.eBulletSpeed, vy = Math.sin(a) * CFG.eBulletSpeed
+                    // THE STRAFE LAW (fairness by construction): a hull's round
+                    // flies SHALLOW — vy capped at CFG.gsVyMax — so it always
+                    // lands in the flat-shot family the game already teaches the
+                    // answer to. The autopilot's hop window is `|vy| < 1.2`; a
+                    // steep drop-shot instead demands a sideways dodge, and the
+                    // gate's firing band is 22 px wide with the wall at one end
+                    // — there is no road there. Speed stays capped at the aimed-
+                    // round speed of the whole game (#2894 loop law: pressure
+                    // compresses flight TIME, never flight paths).
+                    if (vy > CFG.gsVyMax) {
+                        vy = CFG.gsVyMax
+                        vx = -Math.sqrt(Math.max(0.25, CFG.eBulletSpeed * CFG.eBulletSpeed - vy * vy))
+                    }
+                    gs.eb.push({ x: sh.x + Math.cos(a) * 10, y: sh.y + 7 + Math.sin(a) * 10, vx, vy, gs: true })
+                    gs.ev.push({ type: 'gsfire' })
+                    sh.flash = 4
+                    sh.t = Math.round(CFG.gsRearm / gs.lk) + ((gs.seed ^ (sh.n * 40503)) >>> 21) % 60
+                }
+                // the hull is a weapon, not cargo — contact is a hit for either
+                // seat (the runner law verbatim). The box is the hull itself, not
+                // its wake: a hero who hops an aimed round under the sortie stays
+                // alive (the band is set so an apex chest clears it by design).
+                if (p.inv <= 0 && p.dead === 0 && !p.out && Math.abs(p.x - sh.x) < CFG.gsHW - 6 && Math.abs(p.y - 14 - sh.y) < CFG.gsHH) killPlayer(gs)
+                if (q.inv <= 0 && q.dead === 0 && !q.out && Math.abs(q.x - sh.x) < CFG.gsHW - 6 && Math.abs(q.y - 14 - sh.y) < CFG.gsHH) killAlly(gs)
+                if (sh.dead || sh.x < gs.cam - 24) sortieGone = gs.tick
+            }
+            gs.gunships = gs.gunships.filter((sh) => !sh.dead && sh.x >= gs.cam - 24)
+            if (sortieGone) gs.sortieT = sortieGone + Math.round(CFG.gsNext / gs.lk) + (((gs.seed ^ (sortieGone * 2654435761)) >>> 19) % 220)
         }
     }
 
@@ -1609,6 +1751,10 @@ export function stateHash (gs) {
     put(gs.nextCarrier); put(gs.carrierN)
     for (const cr of gs.carriers) { put(cr.x); put(cr.y); put(cr.hp); put(CAP_KINDS.indexOf(cr.kind) + 1) }
     for (const c of gs.pods) { put(c.x); put(c.y); put(c.vy); put(CAP_KINDS.indexOf(c.kind) + 1) }
+    // #2917 the gate's sorties are sim truth — schedule and airframe ride the
+    // hash (a replay that let a gunship overfly the arena must diverge loudly).
+    put(gs.sortieT); put(gs.sortieN)
+    for (const sh of gs.gunships) { put(sh.x); put(sh.y); put(sh.hp); put(sh.t); put(sh.flash) }
     put(gs.depot ? gs.depot.hp : -1); put(gs.depot ? (gs.depot.dead ? 1 : 0) : -1); put(gs.depot ? gs.depot.t : -1); put(gs.depot ? gs.depot.spawnT : -1)
     for (const c of gs.vc) put(c.x)
     if (gs.boss) {
@@ -1617,6 +1763,7 @@ export function stateHash (gs) {
         // diverge loudly, so hp/dead ride the hash alongside the cadence.
         for (const g of gs.boss.guns) { put(g.t); put(g.hp); put(g.dead ? 1 : 0) }
         for (const d of gs.boss.doors) put(d.t)
+        put(gs.boss.hangar.open); put(gs.boss.hangar.launchAt)   // #2917 the door's grind is sim truth
     } else put(-1)
     put(gs.end ? (gs.end === 'win' ? 2 : 1) : 0)
     return (h >>> 0)
