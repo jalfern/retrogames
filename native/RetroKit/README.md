@@ -168,3 +168,26 @@ The host hands the renderer a canvas each frame: `setCanvas(drawable.texture)`, 
 4. Only then add native-only quality (drawable-sized buffers, bigger shadow maps), behind a switch the gate never uses.
 
 Not yet ported (add when a game needs them, with a parity moment): spot lights, point-light shadows, env maps / IBL, normal/roughness/AO maps, skinning and morphs, `MeshPhong`, `CubeTexture`, VSM / PCFSoft, frustum culling (all objects draw), and `ShaderMaterial` on scene meshes (post passes only today).
+
+## TestFlight (#2443)
+
+`native/testflight.sh` archives a port for iOS and tvOS and uploads both builds to
+TestFlight. Run it on studio: `native/testflight.sh joust`, `… all`, or `… --changed`.
+The launchd agent `com.jalfern.native-testflight` (set up by `--install`) runs `--changed`
+every 30 minutes. It ships only the ports whose `native/<port>-claude` or `native/RetroKit`
+changed on origin/main since the last upload (`~/Library/Developer/retrogames-testflight/last-uploaded`).
+Logs: `~/Library/Logs/native-testflight.log`, plus one log per build next to the archives.
+
+- **App records**: "Joust · RetroGames", "Emberwood-retrogames" and "Gauntlet-Retrogames"
+  (`com.jalfern.retrogames.<port>`), each a universal iOS + tvOS app. Each has an internal
+  group "Jon" with access to all builds, so every processed build reaches Jon's devices.
+  Apple's API can't create app records, so a new port needs its record made at
+  appstoreconnect.apple.com first.
+- **Build number**: the commit's UTC time, `YYYYMMDD.HHMM`. App Store Connect shows it
+  without leading zeros (`20261122.17`). The version comes from `MARKETING_VERSION`.
+- **Signing**: archives use the API key (App Manager). Export and upload use the Apple ID
+  signed in to Xcode → Settings → Accounts, because that key may not use cloud distribution
+  signing. "No Accounts" in a build log means Xcode on studio is signed out.
+- `ITSAppUsesNonExemptEncryption = NO` in each Info.plist means no export-compliance prompt.
+- External testers need Beta App Review on the first build of each version. Builds
+  expire after 90 days.
