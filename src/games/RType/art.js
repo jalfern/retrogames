@@ -207,6 +207,33 @@ const SPR = has ? {
         g.fillStyle = '#260848' // capsule seam
         g.fillRect(7, 1, 2, 8)
     })),
+    // #2919 OPTIONS pod: the arcade's O-case — bullion shell, white ring
+    // stamp walking its shimmer (the pair of orbs it summons)
+    ocap: [0, 1, 2].map((f) => makeSpr(16, 10, (g) => {
+        g.fillStyle = '#6e4a10'
+        g.fillRect(1, 1, 14, 8)
+        g.fillStyle = '#c89228'
+        g.fillRect(2, 2, 12, 6)
+        g.fillStyle = '#fff0c8' // hollow O stamp
+        const ox = 4 + (f === 1 ? 1 : 0)
+        g.fillRect(ox, 3, 4, 1); g.fillRect(ox, 6, 4, 1)
+        g.fillRect(ox, 3, 1, 4); g.fillRect(ox + 3, 3, 1, 4)
+        g.fillStyle = '#4a3008' // capsule seam
+        g.fillRect(10, 1, 2, 8)
+    })),
+    // #2919 the option orb: a golden sphere with a rotating specular facet
+    // (the seed's rotation discipline, in the arcade's bullion palette)
+    opt: [0, 1, 2, 3].map((f) => makeSpr(8, 8, (g) => {
+        g.fillStyle = '#8a5a10'
+        g.fillRect(2, 0, 4, 8); g.fillRect(1, 1, 6, 6); g.fillRect(0, 2, 8, 4)
+        g.fillStyle = '#d89a28'
+        g.fillRect(2, 1, 4, 6); g.fillRect(1, 2, 6, 4)
+        g.fillStyle = '#ffd870'
+        const fx = 1 + (f % 3), fy = 1 + ((f + 1) % 3)
+        g.fillRect(fx, fy, 3, 3)
+        g.fillStyle = '#fff2c0'
+        g.fillRect(fx + 1, fy + 1, 1, 1)
+    })),
     // the bit drone (S3): a green crystal chip with a spinning facet
     bit: [0, 1, 2, 3].map((f) => makeSpr(10, 10, (g) => {
         g.fillStyle = '#1e5c14'
@@ -439,7 +466,8 @@ export function drawBullet(ctx, b, camX) {
 
 export function drawCap(ctx, c, camX) {
     const set = c.type === 'force' ? SPR.fcap : c.type === 'bit' ? SPR.bcap
-        : c.type === 'double' ? SPR.dcap : c.type === 'speed' ? SPR.scap : SPR.cap
+        : c.type === 'double' ? SPR.dcap : c.type === 'speed' ? SPR.scap
+            : c.type === 'options' ? SPR.ocap : SPR.cap
     const f = Math.floor(Date.now() / 250) % set.length
     ctx.drawImage(set[f], Math.round(c.x - camX) - 8, Math.round(c.y) - 5)
 }
@@ -450,6 +478,23 @@ export function drawSeedPod(ctx, pod, camX, shipAlive) {
     const f = Math.floor(Date.now() / 90) % 4
     if (shipAlive) { ctx.fillStyle = 'rgba(138,224,255,0.22)'; ctx.fillRect(x - 7, y - 7, 14, 14) } // halo while it plugs fire
     ctx.drawImage(SPR.seed[f], x - 6, y - 6)
+}
+
+// #2919 option orb: home on its mount it keeps a quiet gold halo; on the
+// fly-in it trails exhaust, so the arrival reads across the screen before
+// the mount dings. px/py are sim-written — draw and fire never disagree.
+export function drawOption(ctx, o, camX) {
+    const x = Math.round(o.px - camX), y = Math.round(o.py)
+    if (o.docked) {
+        ctx.fillStyle = 'rgba(255,216,112,0.14)'
+        ctx.fillRect(x - 5, y - 5, 10, 10)
+    } else {
+        ctx.fillStyle = 'rgba(255,216,112,0.35)'
+        ctx.fillRect(x + 4, y - 1, 6, 2)
+        ctx.fillStyle = 'rgba(255,216,112,0.16)'
+        ctx.fillRect(x + 10, y - 1, 4, 2)
+    }
+    ctx.drawImage(SPR.opt[Math.floor(Date.now() / 90) % 4], x - 4, y - 4)
 }
 
 // #2823: the S.E.E.D. force reads as a PAIR — a faint 1-px energy thread
@@ -921,6 +966,15 @@ export function drawHud(ctx, gs) {
     const wl = gs.ship.weapon === 'wave' ? 'WAVE' : gs.ship.weapon === 'laser' ? 'LASER' : gs.ship.weapon === 'double' ? 'DOUBLE' : 'VULCAN'
     const wcol = gs.ship.weapon === 'wave' ? '#37d0ff' : gs.ship.weapon === 'laser' ? '#ff5a7a' : '#9ac93c'
     drawText(ctx, wl, 90, H - 12, wcol)
+    // #2919 option pips: one gold bead per docked orb, riding right behind
+    // the arm word — the shield-guns stay readable in the middle of a fight
+    const optN = (gs.ship.opts || []).filter((o) => o.docked).length
+    for (let i = 0; i < optN; i++) {
+        ctx.fillStyle = ((gs.tick >> 3) % 4) === 0 ? '#fff2c0' : '#ffd870'
+        ctx.fillRect(90 + textWidth(wl) + 8 + i * 7, H - 10, 4, 4)
+    }
+    // #2919 the summon names itself at the score field, ember-style (#2906)
+    if (gs.optAnn > 0) drawText(ctx, 'OPTIONS', 108, 8, ((gs.tick >> 2) % 2) ? '#ffd870' : '#7c5a10')
     if (gs.pod) ctx.drawImage(SPR.seed[Math.floor(Date.now() / 90) % 4], 172, H - 14) // the shell rides with you
     // bit pips (S3): one diamond per chained drone; the full chain spells SHIELD
     for (let i = 0; i < gs.bits.length; i++) {

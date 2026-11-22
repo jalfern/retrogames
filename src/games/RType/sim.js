@@ -121,6 +121,17 @@ export const BIT = {
     spin: 0.09,        // rad/tick of the orbit
 }
 
+// #2919 options (capsule-list Part 2, the arcade's O pod): two golden orbs
+// sweep in from off-screen and lock onto diagonal mounts behind the hull,
+// then mirror the vulcan lineage — the cabinet's shield-guns. They never die
+// alone; the hull's wreck strips them (the house power-armour law).
+export const OPT = {
+    back: 14,        // mount: this far behind the hull centre
+    gap: 11,         // …and this far off the hull line, one orb per side
+    flySpd: 2.4,     // the homing run in from the screen edge
+    snap: 1.5,       // this close and the orb is home on its mount
+}
+
 // stage script: camX triggers -> delayed spawns (queue keeps spacing seeded-free:
 // the schedule is authored, only enemy jitter draws rng).
 export const WAVES = [
@@ -141,7 +152,9 @@ export const WAVES = [
     { at: 340, dcap: { y: 110 } },
     { at: 380, caps: 1 },
     { at: 430, pod: { y: 64, missiles: 3 } },
-    { at: 500, seg: { y0: 118, y1: FIELD_BOT, len: 150, turret: 118 } },
+    // #2919 the O pod rides the slab lip at 92 — the pilot has to skirt the
+    // armour to claim the shield-guns (authored y, zero rng)
+    { at: 500, seg: { y0: 118, y1: FIELD_BOT, len: 150, turret: 118 }, ocap: { y: 92 } },
     { at: 520, fcap: 1 },
     { at: 560, spawn: [
         { kind: 'larva', d: 0, y: 80, dive: 1 }, { kind: 'larva', d: 20, y: 160 },
@@ -208,6 +221,7 @@ function makeShip() {
         inv: CFG.respawnIFrames,
         weapon: 'vulcan',   // vulcan | laser | wave | double (#2915 D pod)
         spd: 0,             // #2915 Speed Up level 0..speedMax; resets with the hull
+        opts: null,         // #2919 options orbs [{id,side,px,py,docked}]; power armour
         charge: 0,
         cd: 0,
         anim: 0,
@@ -251,6 +265,7 @@ export function makeGame(seed = 1) {
         pod: null,                     // S2 force pod: {id,state,x,y} attached|fly|park|return
         bHeld: false,                  // edge-detector for the POD button
         bits: [],                      // S3 bit chain: [{id,px,py}] newest-first; 4 => shield
+        optAnn: 0,                     // #2919 juice: HUD "OPTIONS" voice countdown at summon (never hashed)
         leg: 1,                        // S3: 1 until Phase-1 falls, then 2 (the twin-core leg); #2911: 3 is the bridgehead to the walking gate
         legAt: 0,                      // tick LEG 2 opened (banner timing)
         p2: null,                      // S3 Phase-2 fortress: {x,cores:[{hp,mouth,mouthT,enraged}],dyingT,at}
@@ -307,7 +322,41 @@ function spawnSpecialCap(gs, y, type) {
         bob: ((gs.nextId * 37) % 100) / 25, type })
 }
 
-// #2915 the special-pod laws, per hull (S4 symmetry): Double arms once — the
+// #2919 the O pod summons the options: two orbs sweep in from off-screen
+// right at authored entry heights and home onto diagonal mounts behind the
+// hull. Zero rng — the fly-in is pure tick arithmetic, every seed's tuned
+// stream stays itself.
+function summonOptions(gs, ent) {
+    ent.opts = [-1, 1].map((side, i) => ({
+        id: gs.nextId++, side,
+        px: gs.camX + W + 18 + i * 8,
+        py: clamp(ent.y + side * 40, FIELD_TOP + 4, FIELD_BOT - 4),
+        docked: false,
+    }))
+}
+
+// px/py are written by the sim once per tick (the bits' discipline: draw and
+// fire never disagree). Docked orbs ride the mounts; a wreck never keeps orbs
+// (killShip strips them), so no dead-hull branch is needed beyond frozen.
+function refreshOptsOn(gs, ent, frozen) {
+    if (!ent || !ent.opts) return
+    for (const o of ent.opts) {
+        const mx = ent.x - OPT.back
+        const my = ent.y + o.side * OPT.gap
+        if (o.docked) { o.px = mx; o.py = my; continue }
+        if (frozen) continue
+        const dx = mx - o.px, dy = my - o.py
+        if (Math.abs(dx) <= OPT.snap && Math.abs(dy) <= OPT.snap) {
+            o.docked = true; o.px = mx; o.py = my
+            gs.events.push(ent === gs.ship ? 'optdock' : 'woptdock')
+        } else {
+            o.px += clamp(dx, -OPT.flySpd, OPT.flySpd)
+            o.py += clamp(dy, -OPT.flySpd, OPT.flySpd)
+        }
+    }
+}
+
+// #2919 the special-pod laws, per hull (S4 symmetry): Double arms once — the
 // twin vulcan replaces the stream — and a spare pays points like every other
 // spare in the house; Speed Up stacks to two levels and resets with the pilot
 // (makeShip zeroes it), spares pay points.
@@ -320,6 +369,15 @@ function takeSpecial(gs, ent, c) {
     if (c.type === 'speed') {
         if ((ent.spd || 0) < CFG.speedMax) { ent.spd = (ent.spd || 0) + 1; addScore(gs, 500); gs.events.push('scap') }
         else { addScore(gs, 1000); gs.events.push('capsule') }
+        return true
+    }
+    // #2919 Options: one pair per hull — the orbs arm once; a spare O pays
+    // points like every other spare in the house.
+    if (c.type === 'options') {
+        if (!ent.opts) {
+            summonOptions(gs, ent); ent.charge = 0
+            addScore(gs, 500); gs.events.push('ocap'); gs.optAnn = 60
+        } else { addScore(gs, 1000); gs.events.push('capsule') }
         return true
     }
     return false
@@ -615,6 +673,8 @@ function killShip(gs, s, host, why) {
     if (host.pod && host.pod.state === 'attached') host.pod = null
     // the bit chain is power armour — it comes off with the pilot (S3)
     if (host.bits.length) { host.bits.length = 0; gs.events.push(wing ? 'wbitslost' : 'bitslost') }
+    // #2919 the options are power armour too — they burn with their pilot
+    if (s.opts) { s.opts = null; gs.events.push(wing ? 'woptslost' : 'optslost') }
     return true
 }
 const killWing = (gs, s, why) => killShip(gs, s, s, why)
@@ -743,6 +803,8 @@ function runWorld(gs, pad, frozen, pad2) {
     // the rule (no press, no hand-off); the original passed pods between pilots.
     if (!frozen && bPress && !gs.pod && gs.wing && !gs.wing.dead && !gs.wing.out && gs.wing.pod) gs.wing.pod.hand = true
     refreshBits(gs)
+    refreshOptsOn(gs, gs.ship, gs.ship.dead) // #2919 orbs home onto seat one's mounts
+    if (gs.optAnn > 0) gs.optAnn -= 1       // #2919 HUD voice (juice, never hashed)
 
     // --- camera: right only, ever; LEG 2 ends at the twin-core fortress,
     // LEG 3 (#2911) at the walking gate
@@ -786,6 +848,11 @@ function runWorld(gs, pad, frozen, pad2) {
                     const by = bt.py ?? s.y
                     gs.shots.push({ id: gs.nextId++, x: (bt.px ?? s.x) + 10, y: by - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: clamp((by - s.y) * 0.045, -0.5, 0.5) })
                 }
+                // #2919 the docked options answer every press — one mirrored
+                // round per orb, straight from where it rides
+                for (const o of (s.opts || [])) {
+                    if (o.docked) gs.shots.push({ id: gs.nextId++, x: o.px + 12, y: o.py - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+                }
                 s.cd = CFG.vulcanCd
                 gs.events.push('shot')
             }
@@ -798,6 +865,13 @@ function runWorld(gs, pad, frozen, pad2) {
                 for (const bt of gs.bits) {
                     const by = bt.py ?? s.y
                     gs.shots.push({ id: gs.nextId++, x: (bt.px ?? s.x) + 10, y: by - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: clamp((by - s.y) * 0.045, -0.5, 0.5) })
+                }
+                // #2919 double mirrors double: each docked orb looses its own
+                // twin stack — the arcade's full four-round shield-gun wall
+                for (const o of (s.opts || [])) {
+                    if (!o.docked) continue
+                    gs.shots.push({ id: gs.nextId++, x: o.px + 12, y: o.py - 4, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+                    gs.shots.push({ id: gs.nextId++, x: o.px + 12, y: o.py + 2, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
                 }
                 s.cd = CFG.vulcanCd
                 gs.events.push('shot')
@@ -842,6 +916,7 @@ function runWorld(gs, pad, frozen, pad2) {
             if (wv.bcap) spawnBitCap(gs)
             if (wv.dcap) spawnSpecialCap(gs, wv.dcap.y, 'double')
             if (wv.scap) spawnSpecialCap(gs, wv.scap.y, 'speed')
+            if (wv.ocap) spawnSpecialCap(gs, wv.ocap.y, 'options')
             if (wv.seg) spawnSeg(gs, wv.seg)
             if (wv.pod) spawnPod(gs, wv.pod.y, wv.pod.missiles)
             if (wv.bpod) spawnBitPod(gs, wv.bpod.y, wv.bpod.n)
@@ -1505,6 +1580,7 @@ function runWing(gs, pad2, frozen) {
     }
     if (w.out) return
     refreshBitsOn(w, w.bits, gs.tick)
+    refreshOptsOn(gs, w, frozen) // #2919 orbs home onto seat two's mounts
     if (w.x < gs.camX + 2) w.x = gs.camX + 2
     if (w.x > gs.camX + W - 10) w.x = gs.camX + W - 10
     if (!frozen && w.x - CFG.crushX <= gs.camX && killWing(gs, w, 'crush')) return
@@ -1534,6 +1610,10 @@ function runWing(gs, pad2, frozen) {
                     const by = bt.py ?? w.y
                     gs.shots.push({ id: gs.nextId++, x: (bt.px ?? w.x) + 10, y: by - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: clamp((by - w.y) * 0.045, -0.5, 0.5) })
                 }
+                // #2919 the wing's orbs mirror its press too (S4 symmetry)
+                for (const o of (w.opts || [])) {
+                    if (o.docked) gs.shots.push({ id: gs.nextId++, x: o.px + 12, y: o.py - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+                }
                 w.cd = CFG.vulcanCd
                 gs.events.push('shot')
             }
@@ -1545,6 +1625,12 @@ function runWing(gs, pad2, frozen) {
                 for (const bt of w.bits) {
                     const by = bt.py ?? w.y
                     gs.shots.push({ id: gs.nextId++, x: (bt.px ?? w.x) + 10, y: by - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: clamp((by - w.y) * 0.045, -0.5, 0.5) })
+                }
+                // #2919 per-hull shield-guns: the wing's orbs mirror its twins
+                for (const o of (w.opts || [])) {
+                    if (!o.docked) continue
+                    gs.shots.push({ id: gs.nextId++, x: o.px + 12, y: o.py - 4, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+                    gs.shots.push({ id: gs.nextId++, x: o.px + 12, y: o.py + 2, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
                 }
                 w.cd = CFG.vulcanCd
                 gs.events.push('shot')
@@ -1860,6 +1946,8 @@ export function stateHash(gs) {
     mix(s.x); mix(s.y); mix(gs.lives)
     mix({ vulcan: 0, laser: 1, wave: 2, double: 3 }[s.weapon] ?? 4); mix(s.charge); mix(s.inv); mix(s.dead ? 1 : 0)
     mix(s.spd || 0) // #2915 Speed Up is sim truth — the panic hash covered hot the same way
+    mix(s.opts ? s.opts.length : 0) // #2919 the shield-guns are sim truth too…
+    if (s.opts) for (const o of s.opts) { mix(o.px); mix(o.py); mix(o.docked ? 1 : 0) } // …run and mount included
     const pd = gs.pod
     mix(pd ? 1 : 0)
     if (pd) { mix(pd.x); mix(pd.y); mix(pd.state.length); mix(pd.state.charCodeAt(0)) }
@@ -1892,6 +1980,8 @@ export function stateHash(gs) {
         mix(wg.x); mix(wg.y); mix(wg.lives); mix(wg.dead ? 1 : 0); mix(wg.out ? 1 : 0); mix(wg.human ? 1 : 0)
         mix({ vulcan: 0, laser: 1, wave: 2, double: 3 }[wg.weapon] ?? 4); mix(wg.inv)
         mix(wg.spd || 0) // #2915 per-hull speed rides the hash too
+        mix(wg.opts ? wg.opts.length : 0) // #2919 per-hull options as well
+        if (wg.opts) for (const o of wg.opts) { mix(o.px); mix(o.py); mix(o.docked ? 1 : 0) }
         mix(wg.bits.length)
         for (const bt of wg.bits) { mix(bt.px ?? 0); mix(bt.py ?? 0) }
         mix(wg.pod ? 1 : 0)
