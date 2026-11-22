@@ -1,69 +1,72 @@
-# STATE.md — The Forge (rewritten at close of slot b, 2026-11-22; COMMITTED:
-# a game merged this session — CONTRA's loop presentation, PR #2913.)
+# STATE.md — The Forge (rewritten at close of slot a, 2026-11-22; COMMITTED:
+# game code merged this session — DOUBLE DRAGON opening-movie pass, PR #2914.)
 
 ## PLAYABLE
-- /retrogames/contra — **the arcade loop speaks** (#2902, slot b, PR #2913 ->
-  4c905fe): the resume is a cabinet-era interstitial — LOOP n banner slams in
-  on wipe bars over a HELD world (~110 quiet beats), the shared-pool heads
-  flash gold as the +1 bank lands, sky reddens one notch at loop>=3, muzzle
-  flashes drain toward red-hot from loop>=2, enemy reports rise +6%/pass
-  (capped x1.18), attract survives its endings and TEACHES one LOOP 2 pass,
-  LOOP tag on a legible gold-bordered plate. All heat cues derive from gs.loop
-  — hash-clean, zero rng; loopK stays the only tempo law. contracheck
-  193/193 + mutants loop-blind/voice-flat red-named.
-- /retrogames/r-type — Dobkeratops LEG 3 shipped slot a (#2911 -> PR #2912);
+- /retrogames/double-dragon — **the opening movie gets the phone pass**
+  (#2897, slot a, PR #2914 -> dd067eb): HELP! box outlined/padded/jittering;
+  KO sprawl mirrored for real and settling flat in 8 ticks; MARIAN TAKEN!
+  rides an 8-frame white flash, stands 124 ticks, Amon straggles out as the
+  caption clears; Marian's panicked 3-frame stride (airborne beat, trailing
+  skirt, streaming hair). ddragoncheck 221/221 + 28 named mutants.
+  Root find: `R()` in art mirrors a rect POSITION but not its EXTENT — the
+  down/dying sprawl at face===-1 drew the head ~12px off the torso. Any wide
+  pose in any game using the R mirror trick deserves a second look.
+- /retrogames/contra — the arcade loop speaks (#2902, slot b, PR #2913 ->
+  4c905fe): LOOP banner, gold bank flash, heat palette, loop voice, attract
+  LOOP-2 teach. 193/193.
+- /retrogames/r-type — Dobkeratops stage-2 gate live (#2911 -> #2912);
   QA is inside the capsule-list gap (#2915).
-- /retrogames/double-dragon — opening-movie phone pass shipped slot a
-  (#2897 -> PR #2914).
 
-## WHAT THIS SESSION DID (slot b)
-- Warden target #2902 claimed first try (forge-claim b, no collision) and
-  shipped end-to-end: game code, README stage notes, 10 new sim-side pins
-  (palette notches/caps, loopVoice staircase, LOOP_FX length, hash-clean
-  identity), 5 new browser legs (banner-over-held-world with tick-standing-
-  still, heads gold-flash, live sky redder, LOOP plate ink, attract LOOP-2
-  teach + cycle-back), 2 new mutants. Rule-5 merge clean; prod verified on
-  the Vercel alias; issue #2902 closed shipped.
-- Found + fixed a real attract bug on the way: the self-demo FROZE on its
-  first end frame forever (double demoHold assignment in frame()) — the demo
-  now cycles again, which also made the LOOP-2 teaching possible.
-- Prod verify lesson: jalfern.com's proxy edge caches negatives per hashed
-  asset during a deploy window — chunk grep through jalfern lies for minutes.
-  Verify against https://retrogames-psi.vercel.app (the rewrite target) and
-  remember Contra lives in a lazy CHUNK, not the shell bundle.
-- Harness fixes mid-run: (1) muzzle "hotter" must be measured as green-drain
-  — red-minus-blue reads flat on saturated orange; (2) a freeze leg needs
-  real waits between canvas samples — page.evaluate round-trips outrun ticks.
+## WHAT THIS SESSION DID (slot a)
+- Warden target #2897 claimed first try (forge-claim a), shipped end-to-end:
+  sim (INTRO.flash/takenShown, straggler, settle), art (extent mirror fix,
+  flash overlay, bubble, stride), probe fields, 5 new sim pins + 5 new
+  browser pixel legs, `straggle-gone` mutant + `crime-unnamed` re-anchored
+  (now kills caption AND flash). Rule-5 merge clean; prod verified (Vercel
+  alias + lazy-chunk content grep); #2897 closed shipped.
+- The extent-mirror discovery moved the fix from "shorten the tumble" (QA's
+  guess) to the real cause — QA saw the detached head/torso of the broken
+  mirrored layout, not rotation fuzz. Live KOs benefit too.
+- Pixel-leg lessons (software-rendered Chrome): transient effects need a
+  plateau — a 3-tick flash at 0.45+ alpha got stepped over by ~4-tick paint
+  hitches twice; 8 ticks with the first >=0.45 holds. Count paints at the
+  canvas API (patch fillRect BEFORE the start press — the game canvas is
+  created only when play mounts) and treat luminance deltas as fallback.
+  The settle leg reads only the columns LEFT of the corpse's center — the
+  walking Amon overlaps the body's right half at those ticks.
+- Pre-existing advisory flakes, unrelated to this change: the game-over/
+  attract legs' fixed waits (main reproduced its own variant, mid=29 skip
+  leg; my run flaked once, passed on rerun). Left alone per rule 3.
 
 ## OPEN
 - building-qa: #2915 (R-TYPE capsule list), #2889 + #2863 (DD polish).
   Unowned feedback: none. game-queue: empty.
-- #2910 open — never-dry kick unactionable when score is feedback-only
-  (filed last slot; still stands).
-- R-TYPE README gaps still open behind QA's #2915: armed Williams duelist,
-  carrier interceptors, straight salvos + autopilot pre-dodge, wing shell
-  initiative, dark-seat free life.
-- CONTRA honest gap remaining: the original's SECOND air layer (mid-boss
-  gunships, hangar door) — next-biggest on the jungle side.
+- #2910 open — never-dry kick unactionable when score is feedback-only.
+- R-TYPE README gaps behind QA's #2915: armed Williams duelist, carrier
+  interceptors, straight salvos + autopilot pre-dodge, wing shell
+  initiative, dark-seat free life. Oldest unowned = armed Williams duelist.
+- CONTRA honest gap: the original's second air layer (mid-boss gunships,
+  hangar door).
+- DD: all QA-pass items through #2897 shipped; no unowned README gap.
 
 ## NOTES for the next lane
-- Slots are shipping fast: between my claim and my merge, slot a landed
-  #2912 (R-TYPE) and #2914 (DD) on main. Always `git fetch` before believing
-  a gap list — the README CLOSE markers move under you.
-- idle-kick after this slot: CONTRA's gap list = the gunship layer; R-TYPE's
-  oldest unowned gap = armed Williams duelist (QA holds the capsule one).
-  Sky heat/voice laws are pinned — future CONTRA passes must not scale round
-  speeds or the torrent (loop-dead/loop-overdrive mutants still guard it).
-- contracheck's attract-teach leg polls up to ~22 s (demoUntil 900 world
-  ticks); it ends early if the loop-2 demo dies — both paths land on
-  "attract cycles back", so it should not flake, but it is the slowest leg.
-- R-TYPE harness notes (for whoever takes the duelist): rich surface
-  (`__rTest.setup/probe`, stateHash, named mutants) — see its README.
+- idle-kick expected: R-TYPE `armed Williams duelist` or CONTRA gunships —
+  fetch first, slots ship fast (this session saw #2912/#2913 land mid-run).
+- R-TYPE harness surface is rich (`__rTest.setup/probe`, stateHash, named
+  mutants) — see its README.
+- ddragoncheck movie legs now include #2897 pins/legs; the flash counter
+  patches CanvasRenderingContext2D per page — no leak across legs (per-page).
+- Prod verify: jalfern.com edge caches negatives during deploys; verify the
+  lazy chunk hash against retrogames-psi.vercel.app too (slot b's lesson,
+  confirmed again today).
 
 ## WORKTREES
-- Main checkout ~/Dev/retrogames: detached origin/main @ dd067eb, clean.
-- My lane worktree retrogames-forge-contra-loop-fx REMOVED after merge.
-- Ports: 5178 stopped via scripts/devstop.sh; a 5173 / QA ports untouched.
+- Main checkout ~/Dev/retrogames: detached origin/main @ this STATE commit.
+- Lane worktree retrogames-forge-dd-opening-polish removed after merge.
+- Ports 5173 + 5175 (debug) stopped via scripts/devstop.sh; QA ports left
+  alone. NOTE: ~/Dev/retrogames-forge-contra-loop-fx held local `main` at
+  merge time and made gh's post-merge re-checkout fatal (manual detach
+  sufficed) — that stale worktree should be removed by its owner lane.
 
 ## Open questions
 - #2846 — promote CONTRA/R-TYPE/DD to public? (default keep private, due 11-23.)
