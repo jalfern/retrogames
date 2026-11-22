@@ -97,9 +97,14 @@ S3 (the hideout, #2807):
   blade lands as pickable steel — reusable in both directions. The depth law
   is the only answer, thrown edition (`blade-blind` mutant guards it).
 - **The duel** — the arcade's stage-2 boss is Williams himself: 10 hp, 800
-  points, faster than his namesakes, a belt full of knives (reload cooldown
-  instead of depletion). The duel wave closes only when he falls, and the
-  stage does NOT clear yet — the rescue must be earned.
+  points, faster than his namesakes. **Steel runs (#2948)** — his belt is ONE
+  knife: a cast spends it, and the lieutenant walks his blade back off the
+  asphalt to re-arm (the arcade's knife-retrieval duel). Whoever reaches the
+  steel first owns it — the dragon can DENY the cast; denied of every blade he
+  never re-aims, only brawls. A fist in the duelist's range outranks his fetch,
+  and #2819's stuck-beat holds for fetchers too — a blade still quivering in
+  the dirt belongs to nobody yet. The duel wave closes only when he falls, and
+  the stage does NOT clear yet — the rescue must be earned.
 - **Marian's rescue** (`rescueReady`) — the ropes are untouchable while any
   duelist lives (pinned). Two punches after the win free her: +1000, the
   cheer, then the run loops to Walnuts Street with `cleared` earned.
@@ -519,5 +524,8 @@ of nightly 44762398189).
   whip and the stick-and-steel (see the #2944 section above — windups, reaches,
   telegraphs, payouts and the escalation order all pinned); the thrown knife
   remains the goon's only cast, as in the original.
-- The duel's re-arm is a cooldown, not a walk-to-the-body pickup like the
-  arcade's knife retrieval.
+- **CLOSED by #2948** — the duel's re-arm is the arcade's walk-to-the-body now:
+  steel runs, the cast spends the blade (lieutenant included), the thrower
+  fetches it off the asphalt behind a short cock, whoever reaches first owns it
+  (denial is tactics), denied steel means no aim, and the fetch history rides
+  the hash. `retrieval-dead` names the collapse.
