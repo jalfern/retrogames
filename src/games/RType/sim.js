@@ -164,6 +164,9 @@ export const DUEL = {
     dash: 1.75,      // the pass — larva-dive punch from a much closer start
     grind: 1.1,      // #2938 refuse-and-shove: the plate wins the square, the hunter backs off
     flash: 8,        // #2938 the release flash — the commit announces itself at the nose
+    graze: 16,       // #2952 the defender-era near-miss band: a pass that whistled within this of a hull, and died off-screen untouched, was DODGED
+    grazeScore: 150, // #2952 the dodge pays — less than the kill: you spared the fighter, you just beat the pass
+    cover: 140,      // #2952 how near seat one a committed hunter must be before seat two lays a hot lane at it
 }
 
 // #2937 THE STING — the carrier's answer. The arcade's bit ferry is no sitting
@@ -334,6 +337,7 @@ export function makeGame(seed = 1) {
         lHeld: false,                  // #2925 edge-detector for the throw verb (Options-launch)
         bits: [],                      // S3 bit chain: [{id,px,py}] newest-first; 4 => shield
         optAnn: 0,                     // #2919 juice: HUD "OPTIONS" voice countdown at summon (never hashed)
+        grazeAnn: 0,                   // #2952 juice: the near-miss bonus winks at the hull for ~1 s (never hashed)
         leg: 1,                        // S3: 1 until Phase-1 falls, then 2 (the twin-core leg); #2911: 3 is the bridgehead to the walking gate
         legAt: 0,                      // tick LEG 2 opened (banner timing)
         p2: null,                      // S3 Phase-2 fortress: {x,cores:[{hp,mouth,mouthT,enraged}],dyingT,at}
@@ -925,6 +929,7 @@ function runWorld(gs, pad, frozen, pad2) {
     refreshBits(gs)
     refreshOptsOn(gs, gs.ship, gs.ship.dead) // #2919 orbs home onto seat one's mounts
     if (gs.optAnn > 0) gs.optAnn -= 1       // #2919 HUD voice (juice, never hashed)
+    if (gs.grazeAnn > 0) gs.grazeAnn -= 1   // #2952 the dodge wink (juice, never hashed)
 
     // --- camera: right only, ever; LEG 2 ends at the twin-core fortress,
     // LEG 3 (#2911) at the walking gate
@@ -1411,10 +1416,17 @@ function runWorld(gs, pad, frozen, pad2) {
                     const m = Math.max(1e-6, Math.hypot(dx, dyy))
                     e.vx = (dx / m) * DUEL.dash; e.vy = (dyy / m) * DUEL.dash
                     e.flashT = DUEL.flash // #2938 the release flash — the pass announces itself
-                    e.state = 'dash'; gs.events.push('warn')
+                    e.state = 'dash'; e.near = 1e9; gs.events.push('warn') // #2952 the graze ledger opens with the commitment
                 }
             } else { // dash: one straight commitment — grind, edge or grave
                 e.x += e.vx; e.y += e.vy
+                // #2952 the graze ledger: how close did the pass come to a hull
+                // that was live and naked (not flashing)? Zero rng — arithmetic on
+                // live positions, so a dodged pass pays the same on every replay.
+                for (const p of [gs.ship, gs.wing]) {
+                    if (!p || p.dead || p.out || p.inv > 0) continue
+                    if (Math.abs(e.x - p.x) < 10) e.near = Math.min(e.near, Math.abs(e.y - p.y))
+                }
             }
             if (e.flashT > 0) e.flashT -= 1 // #2938 the flash burns brief
             // #2938 armour reads — the slab refuses the duel too. Prowling phases
@@ -1445,8 +1457,17 @@ function runWorld(gs, pad, frozen, pad2) {
             if (grinding && !e.grindT) gs.events.push('duelgrind') // one cry per grind, not per tick
             e.grindT = grinding ? 1 : 0
             e.y = clamp(e.y, FIELD_TOP + 4, FIELD_BOT - 4) // the duel stays between the rails
-            if (e.x < gs.camX - 24) { gs.enemies.splice(i, 1); continue }
-            if (e.state === 'dash' && e.x > gs.camX + W + 30) { gs.enemies.splice(i, 1); continue }
+            if (e.x < gs.camX - 24 || (e.state === 'dash' && e.x > gs.camX + W + 30)) {
+                // #2952 the dodge pays: a pass that came at a hull and died
+                // off-screen without touching it was DODGED — defender-era
+                // near-miss money, keyed to the closest approach. A pass spent
+                // on steel (#2938) or on a hull stays unpaid: the spend IS the
+                // pass; only the pilot who wasn't there collects.
+                if (e.state === 'dash' && !e.spent && e.near <= DUEL.graze) {
+                    addScore(gs, DUEL.grazeScore); gs.events.push('duelgraze'); gs.grazeAnn = 60
+                }
+                gs.enemies.splice(i, 1); continue
+            }
         }
         // hullseg: anchored to world; scrolls out of life behind the camera
         if (e.kind === 'hullseg' && e.x + e.len < gs.camX - 8) { gs.enemies.splice(i, 1); continue }
@@ -1719,7 +1740,7 @@ function runWorld(gs, pad, frozen, pad2) {
             else if (e.kind === 'duelist') hit = Math.abs(e.x - s.x) < 10 && Math.abs(e.y - s.y) < 8 // #2934 the pass hurts
             else if (e.kind === 'sting') hit = Math.abs(e.x - s.x) < 8 && Math.abs(e.y - s.y) < 6 // #2937 the answer hurts — dart-small
             else if (e.kind === 'hullseg') hit = s.x + 5 > e.x && s.x - 5 < e.x + e.len && s.y + 4 > e.y0 && s.y - 4 < e.y1
-            if (hit) { if (killShip(gs, s, gs, 'body:' + e.kind)) return }
+            if (hit) { if (e.kind === 'duelist') e.spent = 1 /* #2952 a pass that touched the hull was not dodged */; if (killShip(gs, s, gs, 'body:' + e.kind)) return }
         }
         if (p1 && p1.dyingT === 0 && p1.x < gs.camX + W - 4 && s.x + 5 > p1.x + 4) {
             // the bio-ship's flank is a death wall, top to bottom
@@ -1749,7 +1770,7 @@ function runWorld(gs, pad, frozen, pad2) {
             else if (e.kind === 'duelist') hit = Math.abs(e.x - wgBody.x) < 10 && Math.abs(e.y - wgBody.y) < 8 // #2934 the pass hurts seat two too
             else if (e.kind === 'sting') hit = Math.abs(e.x - wgBody.x) < 8 && Math.abs(e.y - wgBody.y) < 6 // #2937 the answer hunts the nearer hull — and hurts it
             else if (e.kind === 'hullseg') hit = wgBody.x + 5 > e.x && wgBody.x - 5 < e.x + e.len && wgBody.y + 4 > e.y0 && wgBody.y - 4 < e.y1
-            if (hit) { killWing(gs, wgBody, 'body:' + e.kind); break }
+            if (hit) { if (e.kind === 'duelist') e.spent = 1 /* #2952 the pass spent on seat two is no dodge for seat one */; killWing(gs, wgBody, 'body:' + e.kind); break }
         }
         if (wgBody.dead) return // the wing hung — its hull reads the same walls
         if (p1 && p1.dyingT === 0 && p1.x < gs.camX + W - 4 && wgBody.x + 5 > p1.x + 4) killWing(gs, wgBody, 'hull')
@@ -2099,6 +2120,23 @@ export function wingBrain(gs) {
         }
     }
 
+    // #2952 cover-fire: a hunter committed at SEAT ONE is a threat bought by
+    // the partner, and seat two does not ignore one — the wing lays a hot lane
+    // at it (the shot is spent on the hunter regardless of its own tempo) and
+    // edges a hand's width toward the threat's line so the stream actually
+    // reaches across. Suppress outranks loot (the vent still outranks both),
+    // and the risk field still rules the lane: covering fire never parks the
+    // wing inside the pass it is answering. Zero rng — positions and states.
+    let cover = null
+    if (!p1down) {
+        for (const e of gs.enemies) {
+            if (e.kind !== 'duelist' || (e.state !== 'windup' && e.state !== 'dash')) continue
+            if (Math.abs(e.x - s.x) > DUEL.cover) continue
+            if (!cover || e.x < cover.x) cover = e // the committed hunter nearest the partner
+        }
+        if (cover && ventY < 0) ty0 = clamp(w.y + Math.sign(cover.y - w.y) * Math.min(12, Math.abs(cover.y - w.y)), FIELD_TOP + 8, FIELD_BOT - 8)
+    }
+
     const cands = [ty0, w.y]
     if (riskAt(ty0) < 14) {
         cands.push(clamp(w.y + (w.y < sy ? -24 : 24), FIELD_TOP + 8, FIELD_BOT - 8))
@@ -2132,6 +2170,7 @@ export function wingBrain(gs) {
 
     // trigger discipline: vulcan streams; charge arms loose when its lane breathes
     pad.a = w.weapon === 'vulcan' ? true : riskAt(w.y) > 18
+    if (cover) pad.a = true // #2952 cover-fire: the wing answers a commitment at its partner, lane or no lane
     return pad
 }
 

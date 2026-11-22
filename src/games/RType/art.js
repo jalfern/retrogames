@@ -1084,6 +1084,12 @@ export function drawHud(ctx, gs) {
     }
     // #2919 the summon names itself at the score field, ember-style (#2906)
     if (gs.optAnn > 0) drawText(ctx, 'OPTIONS', 108, 8, ((gs.tick >> 2) % 2) ? '#ffd870' : '#7c5a10')
+    // #2952 the dodge pays: the near-miss bonus floats over the hull that
+    // wasn't there — defender-era bonus text, brief and where the eyes already are
+    if (gs.grazeAnn > 0) {
+        const gx = Math.max(4, Math.min(W - 32, Math.round(gs.ship.x - gs.camX - 14)))
+        drawText(ctx, `+${DUEL.grazeScore}`, gx, Math.max(FIELD_TOP, Math.round(gs.ship.y) - 16), ((gs.tick >> 2) % 2) ? '#7ad64a' : '#2c5018')
+    }
     if (gs.pod) ctx.drawImage(SPR.seed[Math.floor(Date.now() / 90) % 4], 172, H - 14) // the shell rides with you
     // bit pips (S3): one diamond per chained drone; the full chain spells SHIELD
     for (let i = 0; i < gs.bits.length; i++) {

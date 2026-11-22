@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 242 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel, #2951 volley pre-dodge)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf` + `duel-ghost` + `coast-through` + `dart-plain` + `flash-deaf` + `pre-dodge-deaf` + `cross-blind`
+node scripts/rtypecheck.mjs       # sim + browser: 247 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel, #2951 volley pre-dodge, #2952 dodge pay & cover-fire)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf` + `duel-ghost` + `coast-through` + `dart-plain` + `flash-deaf` + `pre-dodge-deaf` + `cross-blind` + `graze-blind` + `cover-deaf`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -398,7 +398,7 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
    7/12 (floor 4; still above the pre-duel 7). Proven by six sim+browser laws
    and four named mutants (`duel-ghost`, `coast-through`, `dart-plain`,
    `flash-deaf`). The issue's last two wants (near-miss dodge reward, wingman
-   cover-fire) stay follow-up feedback — taste and depth, not this pass.
+   cover-fire) shipped two passes later — see #2952 below.
 - **CLOSED by #2951** — Phase-2 salvos pre-dodge: the fan now carries a
   `volley` mark (sim truth — stateHash mixes positions, so pins and tuned
   streams are untouched), and both brains slip the line. `fanSlip` reads the
@@ -416,6 +416,22 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   both brains (sting and missile branches were already correct). Nine laws +
   two mutants (`pre-dodge-deaf`, `cross-blind`); solo winnable rose 7→8 of
   12 seeds, co-op 12/12, zero p2 deaths across the twelve.
+- **CLOSED by #2952** — the duel pays attention back: the two wants left
+  follow-up by #2938 now ship. *The dodge pays*: the dash keeps a near-miss
+  ledger (`e.near`, opened at the release tick, sampled only while a hull is
+  live, naked and abeam), and a pass that dies off-screen having touched
+  nobody pays `DUEL.grazeScore` (150 — less than the kill) with a chirp and a
+  `+150` wink over the hull it missed. A pass spent on steel (#2938) or on a
+  hull (`e.spent`, stamped at both body-contact sites) stays unpaid — only the
+  pilot who wasn't there collects. Band 8–16 px: inside 8 was already a hit;
+  beyond 16 was never a near miss. *Cover-fire*: when a hunter is in
+  windup/dash within `DUEL.cover` (140 px) of seat one, the wing answers
+  regardless of its own lane tempo (`pad.a`) and edges up to 12 px toward the
+  threat's line — suppress outranks loot, the vent outranks suppress, and the
+  risk field still rules the lane, so the wing never parks inside the pass it
+  answers (proven on seeds 1..4 with both brains). Both rules zero-rng:
+  arithmetic on live positions, pressed streams replay hash-for-hash. Five
+  laws + two mutants (`graze-blind`, `cover-deaf`).
 - The wing brain never deploys its shell on its own initiative (a human seat
   two can, via G).
 - A dark seat gets no free life — seat-two flavour left for a later pass.
@@ -423,14 +439,14 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 242 sim+browser laws, twenty-eight named mutants
+- `scripts/rtypecheck.mjs` — 247 sim+browser laws, thirty named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
   `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`,
   `twin-collapse`, `speed-deaf`, `mirror-deaf`, `opts-leak`,
   `launch-deaf`, `rearm-deaf`, `pursuit-deaf`, `commit-deaf`,
   `duel-ghost`, `coast-through`, `dart-plain`, `flash-deaf`,
-  `pre-dodge-deaf`, `cross-blind`).
+  `pre-dodge-deaf`, `cross-blind`, `graze-blind`, `cover-deaf`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
@@ -456,7 +472,8 @@ The registry entry is `private` until Jon promotes it (#379).
    `spawnDuelist:{y,x,state,t,cd}` (a hunter already on its stand-off), and
    contract `state().duel`. #2951 adds probe `volleys`/`volleyX` (marked fan
    rounds in the air and how far into the yard the nearest one rides) and
-   setup `spawnVolley` (three marked rounds crossing the nose).
+   setup `spawnVolley` (three marked rounds crossing the nose). #2952 adds
+   probe `grazeAnn` (the near-miss bonus wink's countdown).
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
   SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
   GEAR THE WING, TO DOBK, DOBK MAW, GIVE DOUBLE, GIVE SPEED UP, SPAWN O POD, GIVE OPTIONS, THROW OPTIONS,
