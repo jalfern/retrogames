@@ -1445,6 +1445,146 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         stateHash(hA) !== stateHash(hB), `${stateHash(hA)} vs ${stateHash(hB)}`)
 }
 
+// --------- #2925 OPTIONS-LAUNCH: throw the orbs as one-shot drones ---------
+{
+    const pad0 = { left: false, right: false, up: false, down: false, a: false, b: false }
+    const calm = (g) => { g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0; g.ship.inv = 999 }
+    const pair = (g) => (g.ship.opts = [-1, 1].map((side, i) => ({ id: 10 + i, side, px: g.ship.x - OPT.back, py: g.ship.y + side * OPT.gap, docked: true })))
+
+    // the throw: press L and the docked pair leaves the mounts
+    const gs = makeGame(4)
+    pair(gs)
+    step(gs, { ...pad0, l: true })
+    r.check('#2925 L throws the docked pair — both orbs leave the mounts, the launch speaks',
+        gs.ship.opts && gs.ship.opts.length === 2 && gs.ship.opts.every((o) => o.fly && !o.docked) && gs.events.includes('optlaunch'),
+        gs.ship ? gs.ship.opts.map((o) => `${o.fly ? 'fly' : 'hold'}${o.docked ? '+docked' : ''}`).join(' ') : 'gone')
+    // straight fire: forward at launch speed, lane held
+    const px0 = gs.ship.opts[0].px, py0 = gs.ship.opts[0].py
+    calm(gs); step(gs, pad0)
+    r.check('#2925 a drone runs straight out at throw speed — the lane is the aim',
+        Math.abs(gs.ship.opts[0].px - px0 - OPT.launch) < 0.01 && gs.ship.opts[0].py === py0,
+        `dx ${Math.round((gs.ship.opts[0].px - px0) * 100) / 100} dy ${gs.ship.opts[0].py - py0}`)
+    // an inbound orb cannot be thrown — only mounted orbs answer the verb
+    const g2 = makeGame(5); pair(g2)
+    g2.ship.opts.forEach((o) => { o.docked = false; o.px = g2.ship.x + 90 }) // still homing in from the field
+    calm(g2); step(g2, { ...pad0, l: true })
+    r.check('#2925 an inbound orb is not yet gear to throw — the verb answers only the mounts',
+        g2.ship.opts.every((o) => !o.fly) && !g2.events.includes('optlaunch'),
+        g2.ship.opts.map((o) => `fly=${!!o.fly}`).join(' '))
+    // a bare hull shrugs: press with nothing aboard is nothing
+    const g3 = makeGame(6); calm(g3); step(g3, { ...pad0, l: true })
+    r.check('#2925 pressing the throw with no orbs aboard is silence, not a crash',
+        !g3.events.includes('optlaunch') && g3.ship.opts === null, `opts=${g3.ship.opts}`)
+
+    // disposable law, seat: soft Bydo eat one hit AND the orb (one bite only)
+    const g4 = makeGame(7); pair(g4); g4.ship.opts.pop() // one orb, one lane
+    step(g4, { ...pad0, l: true }); g4.events.length = 0
+    const o4 = g4.ship.opts[0]
+    g4.enemies.push({ id: 900, kind: 'larva', x: o4.px + 6, y: o4.py, hp: 3, state: 'cruise', sine: 0, vx: -0.5, baseY: o4.py, inv: 0, anim: 0 })
+    g4.enemies.push({ id: 901, kind: 'larva', x: o4.px + 40, y: o4.py, hp: 3, state: 'cruise', sine: 0, vx: -0.5, baseY: o4.py, inv: 0, anim: 0 })
+    const sc4 = g4.score
+    step(g4, pad0)
+    r.check('#2925 a drone pays for its kill with its life — soft body dies, orb spends, one bite',
+        g4.enemies.length === 1 && g4.enemies[0].id === 901 && g4.ship.opts === null &&
+        g4.events.includes('ram') && g4.events.includes('boom') && g4.events.includes('optspent') && g4.score - sc4 === 100,
+        `enemies ${g4.enemies.map((e) => e.id).join(',')} opts=${g4.ship === null ? 'x' : g4.ship.opts} drew ${g4.score - sc4}`)
+    // the second larva lives because the first kill SPENT the drone
+    let survivor = true
+    for (let t = 0; t < 80 && survivor; t++) { g4.bullets.length = 0; g4.missiles.length = 0; g4.ship.inv = 999; survivor = g4.enemies.some((e) => e.id === 901); step(g4, pad0) }
+    r.check('#2925 the throw is disposable — the lane behind the kill is safe (no pierce)',
+        survivor, `larva 901 ${survivor ? 'lives (spent)' : 'died (pierce!)'}`)
+
+    // armour refuses and burns: the slab eats the drone, stays itself
+    const g5 = makeGame(8); pair(g5); g5.ship.opts.pop()
+    step(g5, { ...pad0, l: true }); g5.events.length = 0
+    const oy = g5.ship.opts[0].py
+    g5.enemies.push({ id: 902, kind: 'hullseg', x: g5.ship.x + 80, y0: oy - 25, y1: oy + 25, len: 120, hp: Infinity, inv: Infinity })
+    let burned = false, slabOk = true
+    for (let t = 0; t < 40; t++) { g5.ship.inv = 999; step(g5, pad0); if (g5.events.includes('strain') && g5.events.includes('optspent')) burned = true }
+    slabOk = !g5.enemies.some((e) => e.id === 902 && e.hp !== Infinity)
+    r.check('#2925 armour shrugs the throw and the orb burns on the face (the pod refuses the same way)',
+        burned && g5.ship.opts === null && slabOk, `burned=${burned} opts=${g5.ship.opts}`)
+    // the dread refuses too — the throw cannot core-punch the maw's flank
+    const g6 = makeGame(9); pair(g6); g6.ship.opts.pop()
+    g6.p1 = { x: g6.ship.x + 90, coreHp: 100, dyingT: 0, mouth: 'closed' }
+    step(g6, { ...pad0, l: true }); g6.events.length = 0
+    let dreadBurn = false
+    for (let t = 0; t < 40; t++) { g6.ship.inv = 999; step(g6, pad0); if (g6.events.includes('strain') && g6.events.includes('optspent')) dreadBurn = true }
+    r.check('#2925 the dreadnought burns the drone on its hull — the throw is not a core-breaker',
+        dreadBurn && g6.p1.coreHp === 100, `burn=${dreadBurn} core=${g6.p1.coreHp}`)
+
+    // the horizon takes what nothing else did
+    const g7 = makeGame(10); pair(g7); g7.ship.opts.pop()
+    step(g7, { ...pad0, l: true }); g7.events.length = 0
+    let edgeT = -1
+    for (let t = 1; t <= 300 && edgeT < 0; t++) { calm(g7); if (g7.events.includes('optspent')) edgeT = t; step(g7, pad0) }
+    r.check('#2925 an orb that reaches nothing flies off the horizon and is spent there too',
+        edgeT > 0 && g7.ship.opts === null, `spend@${edgeT}`)
+
+    // bare armour re-arms: a fresh O pod after a full throw is NOT a spare
+    const sc8 = g7.score
+    g7.caps.push({ id: g7.nextId++, x: g7.ship.x + 6, y: g7.ship.y, baseY: g7.ship.y, bob: 0, type: 'options' })
+    calm(g7); step(g7, pad0)
+    r.check('#2925 spend the pair and a fresh O pod re-arms it — the throw is a trade, not a tax',
+        g7.ship.opts && g7.ship.opts.length === 2 && g7.events.includes('ocap') && g7.score - sc8 === 500,
+        `opts ${g7.ship.opts ? g7.ship.opts.length : 0} drew ${g7.score - sc8} ocap=${g7.events.includes('ocap')}`)
+
+    // while away the wall is down: flying orbs fire no rounds; docked, they do
+    const g9 = makeGame(11); pair(g9)
+    step(g9, { ...pad0, l: true }); g9.events.length = 0
+    for (let t = 0; t < CFG.vulcanCd + 2; t++) { calm(g9); step(g9, pad0); g9.events.length = 0 }
+    g9.shots.length = 0
+    step(g9, { ...pad0, a: true })
+    const away = g9.shots.filter((q) => q.kind === 'v').length
+    r.check('#2925 the wall travels with the orbs — flying drones fire nothing, the hull is naked',
+        away === 1, `volley ${away}`)
+
+    // a wreck strips the throw too — mid-flight drones die with their pilot
+    const g10 = makeGame(12); pair(g10)
+    step(g10, { ...pad0, l: true }); g10.events.length = 0
+    g10.ship.inv = 0; g10.ship.x = g10.camX
+    step(g10, pad0)
+    r.check('#2925 the wreck strips airborne orbs with the arm — power armour owns the throw too',
+        g10.ship.opts === null && g10.events.includes('optslost'),
+        `after=${g10.ship.opts === null ? 'bare' : 'holds'} lost=${g10.events.includes('optslost')}`)
+
+    // S4 symmetry: seat two throws, kills and spends with its own verb
+    const g11 = coopGame(13)
+    g11.wing.human = true
+    g11.wing.opts = [{ id: 950, side: -1, px: g11.wing.x - OPT.back, py: g11.wing.y - OPT.gap, docked: true }]
+    calm(g11); g11.wing.inv = 999
+    step(g11, pad0, { ...pad0, l: true })
+    r.check('#2925 seat two answers its own throw (S4 symmetry) — the wing looses its orb',
+        g11.wing.opts[0].fly === true && g11.events.includes('woptlaunch'), `fly=${!!g11.wing.opts[0].fly}`)
+    const ow = g11.wing.opts[0]
+    g11.enemies.push({ id: 903, kind: 'larva', x: ow.px + 6, y: ow.py, hp: 3, state: 'cruise', sine: 0, vx: -0.5, baseY: ow.py, inv: 0, anim: 0 })
+    g11.bullets.length = 0; g11.missiles.length = 0; g11.ship.inv = 999; g11.wing.inv = 999
+    step(g11, pad0, pad0)
+    r.check('#2925 the wing drone kills and spends too — woptspent, per-hull armour',
+        g11.enemies.length === 0 && g11.wing.opts === null && g11.events.includes('woptspent'),
+        `enemies ${g11.enemies.length} opts=${g11.wing.opts === null ? 'bare' : 'holds'}`)
+
+    // sim truth + determinism: the fly bit moves the hash, and streams that
+    // press l stay byte-identical seed-for-seed
+    const hA = makeGame(14), hB = makeGame(14)
+    hA.ship.opts = [{ id: 1, side: -1, px: hA.ship.x - OPT.back, py: hA.ship.y - OPT.gap, docked: true }]
+    hB.ship.opts = [{ id: 1, side: -1, px: hA.ship.x - OPT.back, py: hA.ship.y - OPT.gap, docked: false, fly: true }]
+    r.check('#2925 the throw is sim truth — the fly state rides the hash',
+        stateHash(hA) !== stateHash(hB), `${stateHash(hA)} vs ${stateHash(hB)}`)
+    const dA = makeGame(21), dB = makeGame(21)
+    pair(dA); pair(dB)
+    let same = true
+    for (let i = 0; i < 1200; i++) {
+        const pad = { right: i % 53 < 30, up: i % 41 < 6, down: i % 41 >= 20 && i % 41 < 26, a: i % 7 < 4, l: i === 400 || i === 900 }
+        dA.ship.inv = 999; dB.ship.inv = 999
+        step(dA, pad); step(dB, pad)
+        dA.events.length = 0; dB.events.length = 0
+        if (stateHash(dA) !== stateHash(dB)) same = false
+    }
+    r.check('#2925 the throw is deterministic — a pressed stream replays hash-for-hash',
+        same && stateHash(dA) === stateHash(dB), `final ${stateHash(dA)} vs ${stateHash(dB)}`)
+}
+
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12
     let wins = 0
@@ -1816,6 +1956,37 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            name: 'launch-deaf',
+            anchor: 'if (!frozen && sAlive && lPress && s.opts) {',
+            plant: 'if (false && !frozen && sAlive && lPress && s.opts) { /* MUTANT(launch-deaf): the throw verb is wired to nothing */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(4)
+                gs.ship.opts = [-1, 1].map((side, i) => ({ id: 10 + i, side, px: gs.ship.x - mod.OPT.back, py: gs.ship.y + side * mod.OPT.gap, docked: true }))
+                mod.step(gs, { l: true })
+                return gs.ship.opts.every((o) => o.docked && !o.fly)
+                    ? 'HARM NAMED: the throw button is dead — a player mashing N at the maw never learns the orb exists as a weapon; the shield is furniture and the arcade\u2019s aggressive option play is gone'
+                    : null
+            },
+        },
+        {
+            name: 'rearm-deaf',
+            anchor: 'if (!os.length) ent.opts = null // the armour is gone; a fresh O pod can arm again',
+            plant: 'if (false && !os.length) ent.opts = null // MUTANT(rearm-deaf): spent armour never lets go',
+            harm: async (mod) => {
+                const gs = mod.makeGame(10)
+                gs.ship.opts = [{ id: 1, side: -1, px: gs.ship.x - mod.OPT.back, py: gs.ship.y - mod.OPT.gap, docked: true }]
+                mod.step(gs, { l: true }); gs.events.length = 0
+                let gone = false
+                for (let t = 0; t < 300 && !gone; t++) { gs.bullets.length = 0; gs.missiles.length = 0; gs.ship.inv = 999; gone = gs.ship.opts && gs.ship.opts.length === 0; mod.step(gs, {}) }
+                gs.caps.push({ id: 999, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'options' })
+                gs.bullets.length = 0; gs.missiles.length = 0; gs.ship.inv = 999
+                mod.step(gs, {})
+                return gs.ship.opts && gs.ship.opts.length === 0
+                    ? 'HARM NAMED: an emptied mount rack never lets go — the hull haunts the stage with an empty armour slot, and every later O pod pays spare-points instead of re-arming; the throw becomes a permanent self-disarm'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
@@ -1882,6 +2053,24 @@ const browser = await launch()
         homed = await page.evaluate(() => window.__rTest.probe())
     }
     r.check('POD again calls the shell home to the nose', homed.pod === 'attached', `pod=${homed.pod}`)
+
+    // #2925 Options-launch through the shell: a real N press throws the orbs,
+    // and the horizon takes them — the rack reports bare
+    await page.evaluate(() => window.__game.reset(3))
+    await page.waitForTimeout(150)
+    await page.evaluate(() => window.__rTest.setup({ giveOptions: true, inv: 999999 }))
+    await page.keyboard.press('KeyN')
+    await page.waitForTimeout(120)
+    const thr = await page.evaluate(() => window.__rTest.probe())
+    r.check('#2925 THROW (N) reaches the sim through the shell — the pair leaves the mounts',
+        thr.optsFly === 2 && thr.optsDocked === 0, `fly=${thr.optsFly} docked=${thr.optsDocked}`)
+    let spentP = thr
+    for (let i = 0; i < 40 && spentP.optsFly > 0; i++) {
+        await page.waitForTimeout(100)
+        spentP = await page.evaluate(() => window.__rTest.probe())
+    }
+    r.check('#2925 the throw spends itself at the horizon — the mounts report bare',
+        spentP.optsFly === 0 && spentP.opts === 0, `fly=${spentP.optsFly} opts=${spentP.opts}`)
 
     const frameA = await page.evaluate(() => window.__game && window.__game.frame())
     r.check('the canvas paints (contract frame is not black-static)', typeof frameA === 'string' && frameA.length > 5000, `frame ${frameA ? frameA.length : 'null'} bytes`)

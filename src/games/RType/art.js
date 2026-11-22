@@ -503,6 +503,13 @@ export function drawOption(ctx, o, camX) {
     if (o.docked) {
         ctx.fillStyle = 'rgba(255,216,112,0.14)'
         ctx.fillRect(x - 5, y - 5, 10, 10)
+    } else if (o.fly) {
+        // #2925 thrown drone: a hot exhaust burns AFT (the inbound trail is
+        // ahead of the orb, home-bound; this one runs out at full throttle)
+        ctx.fillStyle = 'rgba(255,240,170,0.55)'
+        ctx.fillRect(x - 8, y - 1, 5, 2)
+        ctx.fillStyle = 'rgba(255,120,40,0.30)'
+        ctx.fillRect(x - 14, y - 1, 6, 2)
     } else {
         ctx.fillStyle = 'rgba(255,216,112,0.35)'
         ctx.fillRect(x + 4, y - 1, 6, 2)

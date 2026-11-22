@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 174 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak`
+node scripts/rtypecheck.mjs       # sim + browser: 199 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -315,9 +315,23 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   and Speed Up as fixed-spot pods; #2919 landed Options (the mirrored
   shield-gun pair); #2922 landed Half-Capsule (the arm steps down — see the
   H note at the head of this list).
-- Options never fly off on their own — the arcade's Option-launch (throwing
-  the orbs as one-shot drones) is unmodelled; B is already the shell verb in
-  this engine, so the shield-guns stay mounted until the wreck.
+- **CLOSED by #2925** — Option-launch, the arcade's throw: N (seat one) and H
+  (seat two) hurl every DOCKED orb forward as a one-shot drone at 4 px/tick,
+  straight down its lane. Soft Bydo eat the hit and the orb with it (the pod's
+  ram damage, one bite — the kill spends the drone); armour refuses and burns
+  it on the face exactly like the shell is refused; whatever reaches nothing is
+  spent at the horizon. Flying orbs fire nothing — the wall travels with them,
+  so the throw is a real trade: firepower out, safety out. Spend the pair and
+  the armour slot opens again: the next O pod re-arms it (a fresh 500, not a
+  spare's 1000). A wreck strips docked and airborne orbs alike (power-armour
+  law untouched), seats throw their own pairs (S4). Fidelity interpretation
+  (#237, recorded): the cabinet shares one launch button between shell and
+  orbs, but B is already POD in this engine, so the throw got its own verb in
+  each seat's cluster (N/M beside B/C; H beside G); and the issue's word is
+  DISPOSABLE — no mid-flight recall, the spend is the hit.
+- Options-launch is keyboard-only — the phone pad keeps POD as its single B
+  button (Jon's no-second-pad rule), so a thumb can build the shield-gun wall
+  but never throw it.
 - An armed Williams-style duelist for variety.
 - Carriers never answer back — no launched interceptors when a bit pod is
   fired upon.
@@ -331,11 +345,12 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 174 sim+browser laws, eighteen named mutants
+- `scripts/rtypecheck.mjs` — 199 sim+browser laws, twenty named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
   `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`,
-  `twin-collapse`, `speed-deaf`, `mirror-deaf`, `opts-leak`).
+  `twin-collapse`, `speed-deaf`, `mirror-deaf`, `opts-leak`,
+  `launch-deaf`, `rearm-deaf`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
@@ -353,9 +368,11 @@ The registry entry is `private` until Jon promotes it (#379).
   `spawnSCap`. #2919 adds probe `opts`/`optsDocked`/`optAnn`/`wingOpts`
   (orbs aboard, settled, HUD voice, seat two's pair) and setup `spawnOCap`,
   `giveOptions` (pin both orbs to the mounts; `pinOptions: false` for the
-  fly-in), `giveWingOptions`.
+  fly-in), `giveWingOptions`. #2925 adds probe `optsFly`/`wingOptsFly` (drones in the
+   air, both seats), setup `throwOptions`/`throwWingOptions` (send the docked
+   pair away outright) and the contract pad button `l` (the throw verb).
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
   SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
-  GEAR THE WING, TO DOBK, DOBK MAW, GIVE DOUBLE, GIVE SPEED UP, SPAWN O POD, GIVE OPTIONS.
+  GEAR THE WING, TO DOBK, DOBK MAW, GIVE DOUBLE, GIVE SPEED UP, SPAWN O POD, GIVE OPTIONS, THROW OPTIONS.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern
   taps `b` every 97 ticks) and the nightly soak roster (`nightlybot.mjs`).
