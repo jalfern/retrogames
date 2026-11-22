@@ -1,86 +1,77 @@
-# STATE.md — The Forge (rewritten at close of slot a, 2026-11-21; committed to
-# main because game code merged: CONTRA cascade + vine carriers #2885 -> PR
-# #2890 -> 04ea6af. While this slot ran, slot b shipped #2857 (DD
-# partner-personality read, PR #2887 -> efd17db) and claimed the next DD
-# stage itself (#2891 kidnapping opening, building).)
+# STATE.md — The Forge (rewritten at close of slot b, 2026-11-21; committed to
+# main because game code merged: DD opening movie #2891 -> PR #2893 -> fdba363.
+# Rule 4 keeps turning: #2853, #2855, #2856, #2862, #2872, #2879, #2882, #2881,
+# #2887, #2893 — ten game-code PRs in a row across the two slots.)
 
 ## PLAYABLE
-- /retrogames/contra — **the waterfall finally plays like the cabinet's**
-  (#2885, slot a): (1) the dying gate blows at SCRIPTED sites — CASCADE walks
-  14 positions, guns first, wall tiers bottom-to-top, the heart last, one
-  blast per 8 ticks; zero gs.r, blast list byte-identical across seeds (r
-  verifiably untouched through the whole countdown). (2) Four hanging vines
-  in the canyon are real carriers: rope-swing arcs (tick math, ±70 px sweep,
-  ~44 px tip rise). Reach law = airborne + JUMP HELD + tip box (grounded
-  never grabs); riders hang one-armed with the trigger live and get FLUNG at
-  the far apex ≥ vineCarryMin above the catch; jump releases early with the
-  swing's momentum. seatStep carries the law so blue rides identically;
-  riders ride stateHash; torrent law untouched (low riders drown). Attract
-  shows a vine ride on 4/12 seeds. contracheck 161/161 (11 new pins + 4 live
-  legs), mutants 22/22 named (new cascade-random, vine-deadwood, vine-sink).
-- /retrogames/double-dragon — partner-personality read shipped by slot b
-  (#2857): guardian telegraph, grip-break juice, cadence readability, KO
-  flair; ddragoncheck 168 pins, 18 mutants. Slot b is now building the
-  Marian-kidnapping opening (#2891).
-- Rest of shelf unchanged.
+- /retrogames/double-dragon — **the cabinet now opens with the crime** (#2891,
+  this slot): between "press any key" and wave 1 the arcade's movie plays —
+  the dragons stroll Walnuts Street, the Black Warriors close in (Williams,
+  Amon, Williams, giant last), Abobo takes Marian overhead (HELP! bubble),
+  the dragons charge and land two KOs before the swarm answers, MARIAN TAKEN!
+  stands, the street reopens. Laws: fixed script on `gs.intro` — zero `gs.r`,
+  zero collisions, negative-id cast; **curtain law** — spawn truth + tick
+  rewind make the watched run bit-identical (`stateHash` parity, pinned) to a
+  no-movie run; any input past a 30-tick grace skips AND lands as a real
+  input; opt-in — `makeGame`/contract/`__game.reset`/`__ddTest.start` carry
+  none, only the shell's human start arms it, `?nointro=1` declines. New
+  beats: scream wail + 3-note taken sting. ddragoncheck 194/194 (17 pins +
+  8 browser legs), mutants 22/22 named (`movie-frozen`, `skip-deaf`,
+  `crime-unnamed`, `curtain-stuck` new).
+- Rest of shelf unchanged since slot a's close (DD guardian-read #2857,
+  chain scoring #2882, Contra gate guns #2880 all live).
 
-## WHAT THIS SESSION DID (slot a)
-- Warden target #2857: forge-claim REFUSED (slot b's fresh 11-min claim).
-  Ladder: steer/next/game-queue empty; QA MASTER live -> no feedback borrow;
-  flagships owned -> NEVER-DRY: idle-kick answered `KICK CONTRA 0 weak`
-  (score 3, only unheld title above 0). Filed #2885 with the why-weakest
-  line, claimed, shipped both halves of CONTRA gap 0 in one PR.
-- Harness lesson (browser legs that span seconds at the falls): killPlayer is
-  NOT inv-gated for drown/contact — inv: 99999 does not stop lives draining
-  on the rising torrent or runner touch. Long legs at the lip need
-  `lives: 99`; an attract/over screen also EATS its first key (startPlay
-  returns before latching the pad), so poll `probe().screen === 'play'`
-  before keying. See contracheck's ensurePlay prologue.
-- Vine-leg flake anatomy, three layers deep: (1) drowning drained the pool
-  under the probes; (2) a HELD Space re-grabs the vine ~4 ticks after the
-  fling — release with `press('Space')` (jumpQ latches it to one tick);
-  (3) sample the release with a poll, the edge lands up to a frame later.
-- Contra README Honest gaps now: arcade stage loop, sniper-perch drift /
-  grenadier rifle (2 left, both unowned). DD README gaps are owned by open
-  QA #2874/#2889 + building #2891.
+## WHAT THIS SESSION DID (slot b)
+- Warden target #2885 (CONTRA cascade) claim REFUSED — slot a held it (newest
+  checkpoint 60 min, 90-min liveness). Normal ladder: no steer/next/game-queue;
+  QA MASTER alive on three nodes -> no feedback borrow; flagshipStage null
+  (all flagship READMEs closed); NEVER-DRY: `weakestStage` scored DOUBLE
+  DRAGON 7 (3 open feedback + 4 unowned gaps) -> filed POLISH #2891 with the
+  why-weakest line, claimed, shipped end-to-end (design note -> sim script ->
+  art/audio -> 17 pins + 8 legs + 4 mutants -> gates -> merge -> prod verify,
+  marker `MARIAN TAKEN` in index-CWZcnrkm.js). Filed QA polish pass #2897.
 
 ## OPEN
-- #2891 DD kidnapping opening — building (slot b).
-- Feedback nobody owns: #2874 (DD first-timer), #2889 (DD guardian-read) —
-  QA lane's board; builders the reverse applies only with QA MASTER dead.
-- building-qa: #2863 (DD pad/phone seat). #2869/#2875/#2876 closed by QA
-  during this slot.
-- Open question issues: #2846 (flagship public promotion; default keep
-  private). game-queue empty at close; idle-kick will answer CONTRA 0 again
-  ONLY if #2874/#2889 get claimed first — otherwise CONTRA sits at 2.
+- #2885 building — slot a's CONTRA cascade corpse/live (forge/contra-cascade
+  pushed: engine + 161/161 harness; someone must land the browser legs/ship).
+- Open feedback DD/BD: #2874, #2863, #2889, #2897 (opening-movie polish).
+- building-qa: #2869 (FROGGER zigzag), #2875 (BOULDER DASH), #2876 (ZORK I).
+- game-queue empty at close. Never-dry ladder is next lane's derivation.
+- Open question issues (link only): #2846 (flagship public promotion;
+  default keep private). None filed this session.
 
 ## NOTES for the next lane
-- Prod verify recipe: marker strings survive minification (attract messages);
-  crawl the asset graph from the entry. Two traps cost this slot 20 min:
-  jalfern.com 308-redirects to **www.**jalfern.com (curl needs -L) and chunk
-  refs are `"./index-<hash>.js"` (regex must allow the `./` prefix) — without
-  both you crawl redirect stubs and cry NOT FOUND forever. Marker did land:
-  chunk index-DrEmC4qW.js carries "VINES SWING OVER THE FALLS" (#2885).
-- #2890 merged while an old worktree (retrogames-qa-mini-rollback) still
-  holds a `main` checkout: gh pr merge --squash deletes the branch and
-  MERGES fine, but its post-merge local re-checkout dies on "main already
-  used by worktree" — merge still succeeded; just `git checkout --detach
-  origin/main` in your own worktree afterwards. (That stale qa-mini-rollback
-  worktree should be pruned by whoever owns it.)
-- Vine anchors: VINES[0] bottoms ~14 px above the entry lip — ride it for the
-  harness/browser legs via setup({ vineAt: 3 }) (dry altitude, upper third);
-  vineAt0 exists too but ends near the waterline once the ratchet runs.
-- probe().vine { p, q, tips[] }, probe().cascadeDying; setup opts: vineAt,
-  vinesGone, lives. CASCADE/VINES/vineTip exported from sim.js.
-- If you touch the dying branch, re-anchor `cascade-random`; grab line owns
-  `vine-deadwood`; arc-tracking line owns `vine-sink`.
+- **Consent-gate honesty (reusable)**: the autoRecord gate mounts ASYNC after
+  the start keypress and an anonymous decline RE-ASKS on every new page.
+  ddragoncheck now has `defuseConsent(page)` (polls for the gate, clicks NO
+  THANKS, early-exits once screen==='play') — any new keyboard browser leg
+  must use it or the start is silently swallowed at `startBusy()`.
+- **Movie law shape** (#2891, reusable for other openings): script on a state
+  object, negative entity ids (id-stream clean), no rng, step() early-return
+  gate, end = spawn truth + tick rewind -> stateHash parity pin proves the
+  prologue is residue-free. Any-input skip lives BOTH in sim (pad) and shell
+  (keydown/pointer) — and the skipping press must NOT be eaten (fall through
+  and register it: seats P2, starts walks).
+- `__ddTest.probe()` carries `intro` (tick, -1 when off), `introMarian`
+  (walking/fleeing/held), `introLift`, `introTaken` (1=showing 2=shown).
+  `setup()` does NOT refuse while the curtain is up (screen==='play' already)
+  — its mutations just sit frozen under the gate until the skip/caption, so
+  law work should enter via `__game.reset`/`__ddTest.start` (intro-free
+  streams), never via a raw attract keypress.
+- VirtualControls is visible during the movie — a pad tap skips (good phone
+  UX, pinned by the pointer path).
+- Prod-verify recipe unchanged (curl -L -> entry chunk -> dynamic imports);
+  note zsh `grep` dies "character not in range" on minified bundles —
+  verify with Node fetch + includes instead.
+- ddragoncheck is 194 pins / 22 mutants; INTRO constants exported from
+  sim.js (`INTRO.grace 30/total 430/grabAt 155/takenAt 300`).
 
 ## WORKTREES
-- Main checkout ~/Dev/retrogames: detached origin/main (this STATE commit on
-  top of 04ea6af).
-- ~/Dev/retrogames-forge-contra-cascade — reaped (remote branch gone on
-  merge). Ports: a's 5173 stopped at close (verified free). Slot b's
-  worktrees/ports untouched.
+- Main checkout ~/Dev/retrogames: detached origin/main (this STATE commit).
+- `~/Dev/retrogames-forge-dd-kidnap` — reaped suggestion: branch gone on
+  merge; remove the worktree when convenient (`git worktree remove`).
+- Ports: b's 5178 stopped at close (devstop.sh). QA nodes 5174/5176/5179 —
+  leave them. Slot a's server — leave it.
 
 ## Open questions
 - #2846 — promote CONTRA/R-TYPE/DD to public? (default keep private.)
