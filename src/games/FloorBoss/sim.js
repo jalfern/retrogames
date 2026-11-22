@@ -1130,7 +1130,10 @@ export function cycleTool(gs, seat = 0) {
 }
 export function toggleAuto(gs) { gs.auto = !gs.auto; gs.ev.push({ type: 'auto', on: gs.auto }); return gs.auto }
 export function clickOrder(gs, id) {
-    const o = gs.orders.find((x) => x.id === id && !o.shipped && !o.expired)
+    // #2966: the predicate referenced `o` — its own initializer — so EVERY
+    // order-card tap threw ReferenceError (silent dead tap in the old shell,
+    // loop crash in the drain). The finder must ask its candidate `x`.
+    const o = gs.orders.find((x) => x.id === id && !x.shipped && !x.expired)
     if (o) { o.prio = !o.prio; gs.ev.push({ type: 'prio', id }) }
 }
 export function hireRobot(gs, seat = 0) {

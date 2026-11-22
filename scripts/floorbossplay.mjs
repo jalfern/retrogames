@@ -104,6 +104,45 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     await page.keyboard.press('KeyB') // cycle tool off
 }
 
+// ---- #2966 contract-card tap + a two-thumb burst ----
+{
+    // A contract-card tap used to be a silent death: clickOrder referenced its
+    // own initializer (TDZ ReferenceError) — no prio, no event, just console
+    // noise. And two taps inside one frame used to both mutate at click time,
+    // ahead of the rows the bank could promise (refusing every fast-tap take);
+    // a bank-busy tap now rides its own row. Both proven here with real
+    // fingers, not rigs: the card lights its prio bit, a back-to-back pair
+    // lands every tap, and the page keeps its silence.
+    const client = (px, py) => page.evaluate(([px, py]) => {
+        const b = window.__floorbossTest.canvas().getBoundingClientRect()
+        return { x: b.left + px / 800 * b.width, y: b.top + py / 520 * b.height }
+    }, [px, py])
+    await waitFor(async () => (await page.evaluate(() => window.__floorbossTest.sim().orders.length)) > 0, 8000)
+    const card = await client(742, 79) // taps.js orderRect(0) center
+    await page.mouse.click(card.x, card.y)
+    const prioLit = await waitFor(async () => (await page.evaluate(() => window.__floorbossTest.sim().orders.some((o) => o.prio && !o.shipped && !o.expired))), 1500)
+    r.check('#2966 card tap lights the priority bit — the dead tap is dead', prioLit, `errors so far ${errors.length}`)
+    r.check('#2966 card tap threw no page error — the clickOrder TDZ crash is gone', errors.length === 0, errors.slice(0, 1).join(''))
+    await page.evaluate(() => window.__floorbossTest.sim().orders.forEach((o) => { o.prio = false })) // hand the later legs the floor as they expect it
+
+    // AUTO chip + RACK chip, back to back — as fast as two thumbs. Both must
+    // land (auto flips, rack arms), neither swallowed by a busy bank.
+    const autoBefore = await page.evaluate(() => window.__floorbossTest.sim().auto)
+    const cAuto = await client(512 + 27, 6 + 14) // CHIPS.auto center
+    const cRack = await client(572 + 37, 6 + 14) // CHIPS.rack center
+    await page.mouse.click(cAuto.x, cAuto.y)
+    await page.mouse.click(cRack.x, cRack.y)
+    const burst = await waitFor(async () => {
+        const g = await page.evaluate(() => { const s = window.__floorbossTest.sim(); return { auto: s.auto, tool: s.tool } })
+        return g.auto !== autoBefore && g.tool === 'rack'
+    }, 1500)
+    r.check('#2966 two back-to-back taps both land — a bank-busy tap drains on its own row, nothing lost', burst)
+    // put the floor back as the later legs expect it: auto restored, tool off.
+    await page.mouse.click(cAuto.x, cAuto.y)
+    await waitFor(async () => (await page.evaluate(() => window.__floorbossTest.sim().auto)) === autoBefore, 1500)
+    await page.keyboard.press('KeyB')
+}
+
 // ---- drawn sprite follows the sim ----
 {
     // atomic per-attempt read (cell + pixels in one round trip) and pass on

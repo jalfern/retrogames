@@ -239,11 +239,13 @@ just never opens. When the player grants:
 - **Banked stream**: every play tick banks exactly what `step` consumed —
   d-pad cursors + `a`/`b` verbs, and canvas taps on the pad's
   `pointer{x,y,down}` channel (onePad #420 units: 0..1 canvas space).
-  A tap APPLIES at click time (instant feel, fx drain as always) and BANKS
-  on the next tick; the dataset replay re-applies it before that same step
-  (`scripts/plaicraft-dataset.mjs floorBossRows` → `taps.js applyTap`), so
-  the rebuild hits every checkpoint the phone hashed. `npm run
-  plaicraft:datasetcheck` pins clean-tap verify + deleted-tap refusal.
+  A SOLO tap applies at click time (instant feel; applying between steps is
+  invisible until the next step, and replay re-applies it before that same
+  step, so every checkpoint matches). A tap that finds the queue busy waits
+  its row: the drain applies it at the tick it banks on (#2966) — the bank
+  can only promise one pointer per row, so its mutation rides the same row
+  (`scripts/plaicraft-dataset.mjs floorBossRows` → `taps.js applyTap`).
+  `npm run plaicraft:datasetcheck` pins clean-tap verify + deleted-tap refusal.
 - **Seat stamps** (autoRecord resolves sources at finish): seat 0 is
   `human` UNLESS the brain ever took the shift (any WATCH use stamps the
   whole take `model` — model hands never train as a person's); duel seat M
@@ -258,6 +260,7 @@ npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mut
 node scripts/floorbosscheck.mjs --mutate-yield   # servo bay-yield law can fail
 node scripts/floorbosscheck.mjs --mutate-reach   # servo reach law can fail
 node scripts/floorbosscheck.mjs --mutate-cap     # the dock cannot pack past the pad (#1911)
+node scripts/floorbosscheck.mjs --mutate-taps    # the drain banks pointers the floor never applies — live == replay dies (#2966)
 node scripts/floorbosscheck.mjs --mutate-freight # the old pack-line till cannot come back (#1921)
 node scripts/floorbosscheck.mjs --mutate-bonus   # dribbles cannot claim the freight bonus (#1921)
 node scripts/floorbosscheck.mjs --mutate-tiers   # far posts cannot pay the LOCAL rate (#1927)
@@ -364,9 +367,22 @@ Recording honest gaps (#1712):
   LOST take hash nothing and stay invisible — the recorder never banks past an
   end, so a take ending in defeat remains the one shape where appended rows go
   uncaught; a win-ending take catches them.
-- Two taps landing inside one frame bank on consecutive ticks; a replay of
+- ~~Two taps landing inside one frame bank on consecutive ticks; a replay of
   such a take refuses on the hash rather than shipping unverified rows —
-  a human thumb cannot click faster than the tick, a scripted rig can.
+  a human thumb cannot click faster than the tick, a scripted rig can.~~
+  **CLOSED by #2966**: live obeys the bank's drain. A solo tap still lands
+  at click time (between-steps apply == replay-before-step at every hashed
+  checkpoint), but a tap that finds the bank busy only queues — its mutation
+  belongs to the row it banks on, and the drain applies it there. Two thumbs
+  in one frame now drain over consecutive ticks and the take verifies; queue
+  latency is at most one tick. Harvested off the same path: `clickOrder`
+  referenced its own initializer (`o` inside the predicate for `o`) — every
+  contract-card tap was a silent `ReferenceError` (dead tap, no prio, no
+  event); the predicate now asks its candidate, and a real finger on a card
+  lights the priority bit. Harness: seed 7 drives the OLD shape (both taps
+  before step 300) straight into `floorBossRows` and it refuses exactly at
+  checkpoint 300; the NEW shape replays clean; source pins hold the drain
+  law; mutant `--mutate-taps` dies by name.
 - The WATCH stamp is conservative: one glance at the brain labels the whole
   take `model`, so a mostly-human shift with a single Y press stays out of
   train. Better an honest loss than laundered autopilot hands (#2058 law).
