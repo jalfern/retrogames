@@ -2687,8 +2687,11 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     // rule is unchanged — the watching branch's autopilot pad must reach
     // recordTick — so the pin follows the signature: 200-char window, and the
     // tick call must take `pad` as its FIRST argument.
+    // #2954 follow: the tap pointer mirror (`if (tapPad) pad.pointer = tapPad`)
+    // sits between the pad pick and the tick (measured 217 chars) — the window
+    // follows the signature again, the rule stands unchanged.
     rep.check('FLOORBOSS: the watching branch feeds the autopilot pad into the episode tick (no human-shaped lie)',
-        /const pad = watchingRef\.current && !gs\.end \? ap\(gs\) : livePad\(\)[\s\S]{0,200}recordTick\(pad[,)]/.test(fbSrc))
+        /const pad = watchingRef\.current && !gs\.end \? ap\(gs\) : livePad\(\)[\s\S]{0,240}recordTick\(pad[,)]/.test(fbSrc))
     const rlySrc = readFileSync(B4_SRC.RALLY, 'utf8')
     // #1663 updated: net never seats the watcher AND says so (amber chip, not silence).
     rep.check('RALLY: online never seats the watcher (the wire owns the seats)',
