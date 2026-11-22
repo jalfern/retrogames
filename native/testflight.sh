@@ -5,6 +5,7 @@
 #   native/testflight.sh all                          # all three
 #   native/testflight.sh --changed                    # ports whose native/<port> or native/RetroKit
 #                                                     # changed on origin/main since the last upload
+#   native/testflight.sh --install                    # launchd agent: --changed every 30 min
 #   PLATFORMS="iOS" native/testflight.sh joust        # one platform only
 #   DRY=1 ...                                         # archive + export locally, no upload
 #
@@ -34,6 +35,30 @@ ALL=(joust emberwood gauntlet)
 [[ -f $KEY_PATH ]] || { echo "missing API key file $KEY_PATH" >&2; exit 2; }
 mkdir -p $OUT
 
+if [[ ${1:-} == --install ]]; then
+  # launchd agent: run --changed every 30 minutes (zsh-wrapped, like every studio job).
+  label=com.jalfern.native-testflight
+  plist=$HOME/Library/LaunchAgents/$label.plist
+  mkdir -p $HOME/Library/Logs
+  cat > $plist <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/zsh</string><string>-lc</string><string>$NATIVE/testflight.sh --changed</string>
+  </array>
+  <key>StartInterval</key><integer>1800</integer>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/native-testflight.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/native-testflight.log</string>
+</dict></plist>
+EOF
+  launchctl bootout gui/$UID/$label 2>/dev/null || true
+  launchctl bootstrap gui/$UID $plist
+  echo "installed $plist (log: ~/Library/Logs/native-testflight.log)"
+  exit 0
+fi
+
 ports=()
 src=$REPO
 if [[ ${1:-} == --changed ]]; then
@@ -45,6 +70,8 @@ if [[ ${1:-} == --changed ]]; then
   src=$OUT/src
   if [[ ! -d $src ]]; then git -C $REPO worktree add -q --detach $src $head
   else git -C $src checkout -q --detach $head; fi
+  # Always run origin/main's copy of this script, whichever checkout launchd points at.
+  [[ $NATIVE == ${src:A}/native ]] || exec $src/native/testflight.sh --changed
   for p in $ALL; do
     if [[ -z $last ]] || ! git -C $REPO diff --quiet $last $head -- native/$p-claude native/RetroKit; then
       ports+=$p
@@ -56,7 +83,7 @@ elif [[ ${1:-} == all ]]; then
 else
   ports=($@)
 fi
-(( ${#ports} )) || { sed -n '2,11p' $0; exit 2; }
+(( ${#ports} )) || { sed -n '2,12p' $0; exit 2; }
 
 build=$(TZ=UTC git -C $src log -1 --format=%cd --date=format-local:%Y%m%d.%H%M)
 sha=$(git -C $src rev-parse --short HEAD)
