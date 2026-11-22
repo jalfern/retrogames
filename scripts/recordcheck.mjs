@@ -32,7 +32,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { planAdd, planDrain, classifyFailure, OUTBOX_MAX_ITEMS } from '../src/utils/outboxCore.js'
 import { badgeView, BADGE_HOLD_UPLOADED_MS, BADGE_HOLD_SYNCED_MS } from '../src/utils/syncBadgeCore.js'
 import { coachView, COACH_TEXT, COACH_HOLD_MS, coachState, coachArmAfterTake, liveClapWatch, COACH_SHOWN, COACH_LEARNED } from '../src/utils/clapCoachCore.js'
-import { makeOutbox, setOutboxFactory, queueRun, drain as drainOutbox, dropEntry } from '../src/utils/outbox.js'
+import { makeOutbox, setOutboxFactory, queueRun, updateEntry, drain as drainOutbox, dropEntry } from '../src/utils/outbox.js'
 import { plantNew, pull } from './lib/mutateguard.mjs' // #1359: SIGTERM mid-mutant must not leave the dotfile corpse in src/utils
 
 const MUTATE = process.argv.includes('--mutate')
@@ -1025,7 +1025,7 @@ const bucketRowBySeed = (seed) => {
 
 // --- outbox: uploads survive the phone (#1711 S6) ---------------------------
 // Fake IndexedDB matching the adapter's exact contract (open + createObjectStore
-// keyPath 'id' + readwrite tx add/getAll/delete/count, async completion). The
+// keyPath 'id' + readwrite tx add/put/getAll/delete/count, async completion). The
 // same factory object reused across setOutboxFactory calls = storage that
 // survives a "browser restart", which is exactly the kill-test in Node form.
 const fakeIDB = () => {
@@ -1059,6 +1059,12 @@ const fakeIDB = () => {
                                     return { result: k }
                                 },
                                 getAll: () => ({ result: [...st.data.values()].map((v) => JSON.parse(JSON.stringify(v))) }),
+                                put: (v) => {
+                                    const k = st.keyPath ? v[st.keyPath] : null
+                                    if (k == null) { err = new Error('missing key'); return {} }
+                                    st.data.set(k, JSON.parse(JSON.stringify(v))) // put overwrites — the rewrite is the same take, better informed
+                                    return { result: k }
+                                },
                                 count: () => ({ result: st.data.size }),
                                 delete: (k) => { st.data.delete(k); return {} },
                             }),
@@ -1148,6 +1154,44 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
     ok(revOut.dropped.length === 1 && revOut.sent.length === 0 && await makeOutbox(fac).count() === 0,
         'revoked consent purges the pen through drain \u2014 nothing uploads AND nothing lingers')
     ok(await dropEntry('no-such-id') === true, 'dropEntry is silent on missing (already-gone is success)')
+
+    // --- close-mid-career flush stress (#2964 item 4) -----------------------
+    // The pen outlives the tab; career takes ride endRun's 5 s flush race the
+    // longest. endRun's shape, driven over the fake pen: queue NAMED-PENDING
+    // before the race, rewrite on the verdict. After a kill the pen either
+    // holds the whole take or says the missing tail by name — never silence.
+    setOutboxFactory(fac)
+    const tailless = mkRec2('floor-boss', 606, 120)
+    const ePend = await queueRun(tailless, 'jon', { voiceFlushPending: true })
+    ok(!!ePend && ePend.voiceFlushPending === true, 'a take banked while the mic tail is racing wears the pending name')
+    ok((await makeOutbox(fac).all())[0].voiceFlushPending === true, 'the name lands in the pen — what a reopened tab reads')
+    {
+        setOutboxFactory(fac)
+        const [eRead] = await makeOutbox(fac).all() // entry as the pen holds it — updateEntry's real input
+        const withTail = { ...tailless, format: REC_FORMAT_V2, voice: { tracks: [{ slots: [0], b64: 'QUJD', ms: 2100 }], declined: [] } }
+        const eUpd = await updateEntry(eRead, withTail)
+        ok(!!eUpd && eUpd.id === eRead.id && eUpd.savedAt === eRead.savedAt, 'updateEntry rewrites the SAME take — id stable, age clock starts at the first bank')
+        const [afterLanded] = await makeOutbox(fac).all()
+        ok(afterLanded.voiceFlushPending === undefined && !!afterLanded.rec.voice, 'tail landed -> the pen holds the WHOLE take with no name')
+    }
+    {
+        setOutboxFactory(fac)
+        for (const x of await makeOutbox(fac).all()) await dropEntry(x.id) // clean pen — this leg audits exactly one take
+        const eTO = await queueRun(tailless, 'jon', { voiceFlushPending: true })
+        const eNamed = await updateEntry(eTO, tailless, { voiceFlushTimedOut: true })
+        ok(!!eNamed && eNamed.voiceFlushTimedOut === true && eNamed.voiceFlushPending === undefined, 'flush timed out -> the pending name becomes voiceFlushTimedOut')
+        setOutboxFactory(fac) // tab killed, browser reopened: same device storage
+        const [held] = await makeOutbox(fac).all()
+        ok(held.voiceFlushTimedOut === true && held.rec.ticks === 120, 'the named missing tail survives the tab — silence is not an outcome (#2964)')
+        const toOut = await drainOutbox({ motion: true, upload: () => okUp() })
+        ok(toOut.sent.length === 1 && await makeOutbox(fac).count() === 0, 'a named stripped take still ships — the #2093 law: not shipping is worse')
+    }
+    // teeth: names are load-bearing, not decor. A take with no flush race is
+    // never flagged — silence only ever means "whole take".
+    setOutboxFactory(fac)
+    const eSilent = await queueRun(mkRec2('floor-boss', 707, 60), 'jon', null)
+    ok(eSilent && eSilent.voiceFlushPending === undefined && eSilent.voiceFlushTimedOut === undefined, 'no flush, no name — a v1 whole take is never flagged (#2058 honesty)')
+    await dropEntry(eSilent.id)
 
     // --- two humans, one phone (#1711 audit 1 acceptance gate) --------------
     // Consent keys by name, so the outbox drains per NAME: revoking `mia`

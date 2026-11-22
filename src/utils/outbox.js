@@ -2,11 +2,16 @@
 // phone". Rules live in outboxCore.js (pure, pinned by recordcheck); this
 // file is the holding pen and the retry loop:
 //
-//   queueRun(rec, player)   — persist a finished take BEFORE the upload is
-//                             attempted (the crash window is exactly the await
-//                             on fetch); returns the entry, or null when the
-//                             device has no IndexedDB (private mode Firefox:
-//                             today's single-attempt behavior, honest degrade).
+//   queueRun(rec, player, meta?) — persist a finished take BEFORE the upload
+//                             is attempted (the crash window is exactly the await
+//                             on fetch); `meta` names an incomplete voice tail
+//                             (#2964: whole take or says so by name). Returns
+//                             the entry, or null when the device has no
+//                             IndexedDB (private mode Firefox: today's
+//                             single-attempt behavior, honest degrade).
+//   updateEntry(entry, rec, meta?) — rewrite a queued entry in place once the
+//                             mic flush resolves: tail joined (names cleared)
+//                             or timed out (voiceFlushTimedOut takes the name).
 //   drain({ upload, motion }) — retry the queue oldest-first against whatever
 //                             `upload` says. Success removes the entry (the
 //                             store has it); permanent failures remove it by
@@ -24,9 +29,9 @@ export const OUTBOX_DB = 'retrogames-outbox-v1'
 export const OUTBOX_STORE = 'outbox'
 
 // --- IDB adapter ------------------------------------------------------------
-// makeOutbox(factory) -> store handle { all, add, remove, count } or null.
+// makeOutbox(factory) -> store handle { all, add, put, remove, count } or null.
 // The adapter is small and the API surface it touches is exactly: open +
-// createObjectStore(keyPath 'id') + readwrite transactions with add/getAll/
+// createObjectStore(keyPath 'id') + readwrite transactions with add/put/getAll/
 // delete/count — recordcheck's fake implements the same contract.
 
 export function makeOutbox(factory) {
@@ -65,6 +70,7 @@ export function makeOutbox(factory) {
         all: () => tx('readonly', (s) => s.getAll()),
         count: () => tx('readonly', (s) => s.count()),
         add: (entry) => tx('readwrite', (s) => s.add(entry)),
+        put: (entry) => tx('readwrite', (s) => s.put(entry)),
         remove: (id) => tx('readwrite', (s) => s.delete(id)),
     }
 }
@@ -97,7 +103,13 @@ export function newEntryId(rec) {
 // are removed from the pen; the fresh entry is never the victim (planAdd).
 // Returns the entry, or null when there is no pen (then endRun behaves as
 // before the outbox existed).
-export async function queueRun(rec, player = 'player') {
+// #2964 item 4: `meta` names what the persisted rec does NOT yet hold —
+// { voiceFlushPending: true } when the mic's final chunk is still racing.
+// The outbox guarantee is "the whole take or says so by name": an entry that
+// outlives its tab mid-flush must read as a named missing tail, never as
+// silence. meta is entry-level (outbox-local) — rec, envelope and the store
+// validator are untouched by it.
+export async function queueRun(rec, player = 'player', meta = null) {
     const s = theStore()
     if (!s || !rec) return null
     const entry = {
@@ -108,6 +120,7 @@ export async function queueRun(rec, player = 'player') {
         ticks: rec.ticks,
         player: String(player || 'player'),
         rec,
+        ...(meta || {}),
     }
     try {
         const { evicted } = planAdd((await s.all()) || [], entry)
@@ -117,6 +130,29 @@ export async function queueRun(rec, player = 'player') {
     } catch {
         return null // pen unusable (quota/private): behave like a device without an outbox
     }
+}
+
+// updateEntry — rewrite a queued entry in place after its flush resolves.
+// Same id, same savedAt (the age clock started at the first bank — a rewrite
+// is not a fresh take); rec is the live, now-complete take, and `meta`
+// replaces the naming: land the tail with no meta and the pending name is
+// gone (whole take); time out and `voiceFlushTimedOut` takes its place
+// (#2093's NAMED outcome, carried on the entry so it survives the tab).
+// The rewritten fields land together or not at all — one readwrite tx.
+export async function updateEntry(entry, rec, meta = null) {
+    const s = theStore()
+    if (!s || !entry || !rec) return null
+    const e = {
+        id: entry.id,
+        savedAt: entry.savedAt,
+        game: rec.game,
+        seed: rec.seed,
+        ticks: rec.ticks,
+        player: entry.player,
+        rec,
+        ...(meta || {}),
+    }
+    try { await s.put(e); return e } catch { return null }
 }
 
 // dropEntry — remove one entry by id (endRun's success path: the store has
