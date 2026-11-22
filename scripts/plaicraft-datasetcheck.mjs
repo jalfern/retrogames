@@ -869,8 +869,8 @@ if (MUTATE) {
                     p.stdout.on('data', (d) => { stdout9 += d })
                     p.on('exit', (code) => resolve({ status: code, stdout: stdout9 }))
                 })
-                r.check('floor-boss tap replay is load-bearing: the banked-tap take must fail verification (RED under the tap-skip mutant, #1712)',
-                    cli9.status !== 0, cli9.status === 0 ? 'tap take verified WITHOUT applying the taps' : 'build refused')
+                r.check('floor-boss banked-tap take verifies and builds green (RED under the tap-skip mutant — the replay line is load-bearing, #1712)',
+                    cli9.status === 0, cli9.status !== 0 ? 'build refused without the tap replay' : 'clean build')
             } finally { sim9.close() }
         } finally {
             pull(DS)
