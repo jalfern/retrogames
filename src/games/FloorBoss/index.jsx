@@ -431,20 +431,17 @@ const FloorBossGame = () => {
             // pad — cursor + PICK/TOOL — and triages the live floor, so seating
             // or releasing mid-shift resumes from exactly where the floor stands;
             // floorbosscheck grades this same manager to quota).
-            // #1712 S2 + #2966: the pointer bank rides the next tick the loop runs
-            // — and that tick is where the tap APPLIES (apply-before-step, the
-            // exact shape replay runs: identical state at every checkpoint, even
-            // for two taps that landed inside one frame).
+            // #1712 S2 + #2966: the pointer bank rides the next tick the loop runs;
+            // a tap queued behind another waits for its own ride (the drain owns
+            // its mutation then) — live == replay at every checkpoint, burst-safe.
             let tapPad = null
             if (tapQueue.length && !gs.end) {
                 const tap = tapQueue.shift()
-                // #2966: live obeys the bank's own drain — the tap mutates the sim
-                // at the tick that BANKS it (apply-before-step, exactly what the
-                // adapter's floorBossRows replays), not at click time. Two taps in
-                // one frame therefore drain over consecutive ticks and the take
-                // replays tick-for-tick instead of refusing; fx still fire on this
-                // frame (handleEvents below), so the tap feels instant.
-                applyTap(gs, tap.px, tap.py)
+                // #2966: a queued burst tap applies at the tick that BANKS it
+                // (apply-before-step, exactly what the adapter's floorBossRows
+                // replays) — one pointer per row is the bank's law, so the
+                // mutation has to ride the same row.
+                if (!tap.applied) applyTap(gs, tap.px, tap.py)
                 // onePad's pointer channel is 0..1 canvas space (#420) — bank the
                 // normalized point; replay rebuilds pixels from it (deterministic).
                 tapPad = { x: tap.px / W, y: tap.py / H, down: true }
@@ -1593,14 +1590,20 @@ const FloorBossGame = () => {
             if (screenRef.current !== 'play' || pausedRef.current) return
             // #1637 WATCH: a click on the floor is the player managing — hand back first.
             if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
-            // #1712 S2 + #2966: the tap only QUEUES here; it applies at the tick
-            // that banks it (the loop drain — apply-before-step, live == replay).
-            // Applying at click time let two taps inside one frame both mutate
-            // before step(t+1) while the bank promised one pointer per tick —
-            // every such legitimate fast-tap take refused on the hash. Watch
-            // hand-back above stays instant: that is a UI flag, not the sim.
+            // #1712 S2 + #2966: a SOLO tap applies NOW and banks on the next
+            // tick — applying between steps is invisible to the hash stream and
+            // replay re-applies it before that same step, so live == replay.
+            // But a tap that finds the bank BUSY only queues: the bank promises
+            // one pointer per row, and a click-applied burst lands two mutations
+            // ahead of the first row — no replay of the banked stream could
+            // reproduce that checkpoint, so every fast-tap take refused on the
+            // hash. Queued taps apply at their own drain tick, ≤16 ms later.
+            // Watch hand-back above stays instant: that is a UI flag, not the sim.
             const { px, py } = toGrid(ev)
-            tapQueue.push({ px, py })
+            if (tapQueue.length) { tapQueue.push({ px, py }); return }
+            applyTap(gs, px, py)
+            handleEvents(gs.ev, gs.tick)
+            tapQueue.push({ px, py, applied: true })
         }
 
         const onKeyDown = (e) => {

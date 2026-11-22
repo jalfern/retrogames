@@ -208,7 +208,7 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                         : MUT_WHISTLE
                                                                             ? ['if (!won) closeEpisode(false)', 'closeEpisode(won)', 'whistle-stop returns — a cleared night closes its take at the sheet, career takes die in the bank (#2958)']
                                                                             : MUT_TAPS
-                                                                                ? ['applyTap(gs, tap.px, tap.py)', '// MUTANT (#2966): the drain banks a pointer the floor never applies', 'banked taps stop applying live — the shell promises pointers its own drain never honors, and live == replay is dead']
+                                                                                ? ['if (!tap.applied) applyTap(gs, tap.px, tap.py)', 'if (!tap.applied) { /* MUTANT (#2966): the drain banks a pointer the floor never applies */ }', 'queued taps stop applying live — the shell promises pointers its own drain never honors, and live == replay is dead']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
@@ -1049,8 +1049,8 @@ console.log('— shift ladder (#2346) —')
     // Source pins (#2966): a click only queues; the loop drain is the ONLY
     // place a banked tap mutates the floor.
     const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
-    ok(/applyTap\(gs, tap\.px, tap\.py\)/.test(ui), 'the tick that banks a tap is the tick that applies it (live == replay, #2966)')
-    ok(!/applyTap\(gs, px, py\)/.test(ui), 'onCanvasClick queues only — a click no longer mutates the sim ahead of its banked row (#2966)')
+    ok(/if \(!tap\.applied\) applyTap\(gs, tap\.px, tap\.py\)/.test(ui), 'the drain owns the queued tap\u2019s mutation — the tick that banks it is the tick that applies it (#2966)')
+    ok(/if \(tapQueue\.length\) \{ tapQueue\.push\(\{ px, py \}\); return \}/.test(ui), 'a tap that finds the bank busy only queues — no two mutations ahead of the first banked row (#2966)')
 }
 {
     // the ramp is honest both ways: winnable early, it bites eventually
