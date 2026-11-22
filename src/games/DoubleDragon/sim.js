@@ -46,7 +46,7 @@ export const CFG = {
     // what the old uniform shuffle did (5-6 px — law-neutral); the weight is
     // in the heavier strikes: kick, spin, jump kick, and the down-slide.
     knock: {
-        punch: 0.95, kick: 2.1, jumpkick: 2.6, spin: 1.8, whip: 0.85, stomp: 0.8,
+        punch: 0.75, kick: 2.25, jumpkick: 3.0, spin: 1.8, whip: 0.85, stomp: 0, // the foot pinning a downed man holds him — it does not shove him
         stickMul: 1.3,   // steel adds bite to every pushed pound
         downMul: 1.15,   // a knockdown skids further than the man was rocking
         friction: 0.86,  // total travel ≈ v * friction / (1 - friction) ≈ 6.1 v
@@ -612,7 +612,7 @@ function hurtEnemy(gs, e, dmg, knockdown, onDowned, seat, kind) {
     {
         const K = CFG.knock
         const hero = fighters(gs).find((pp) => pp.tag === seat)
-        const base = K[kind] || K.punch
+        const base = K[kind] ?? K.punch
         const steel = hero && hero.weapon === 'stick' && (kind === 'punch' || kind === 'kick')
         const dir = (hero ? Math.sign(e.x - hero.x) : 0) || -e.face
         const mass = K.mass[e.kind] || 1
