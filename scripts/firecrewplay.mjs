@@ -31,8 +31,15 @@ await page.mouse.click(400, 300)
 await new Promise((r) => setTimeout(r, 150))
 ok(await screen() === 'select', 'tap moves attract -> select')
 await press('Space', 150)
-await new Promise((r) => setTimeout(r, 250))
-ok(await screen() === 'play', 'SPACE launches the shift')
+// #1712: the start now runs through the auto-record consent gate: it goes up
+// at first START (nothing cached on this box), NO THANKS declines honestly
+// and the shift launches anyway — the game never waits on the recorder.
+let fcGate = false
+try { await page.waitForSelector('[data-consent-gate]', { timeout: 5000 }); fcGate = true } catch { /* cached consent */ }
+if (fcGate) await page.click('#consent-no')
+ok(fcGate, 'the auto-record consent gate goes up at START (nothing checked by default, #1712)')
+const started = await page.waitForFunction(() => window.__firecrewTest.screen() === 'play', { timeout: 8000 }).then(() => true).catch(() => false)
+ok(started, 'SPACE launches the shift past the gate — declining still plays (honest degrade, #1712)')
 
 // real keys move the hose: hold ArrowRight, watch x increase via the hook
 const before = await page.evaluate(() => window.__firecrewTest.state().tick)
@@ -246,13 +253,31 @@ await page.evaluate(() => {
     b.click()
 })
 await press('Space', 150)
-await new Promise((r) => setTimeout(r, 250))
-ok(await screen() === 'play', '2P-leg: SPACE launches the two-crew shift')
+const started2 = await page.waitForFunction(() => window.__firecrewTest.screen() === 'play', { timeout: 8000 }).then(() => true).catch(() => false)
+ok(started2, '2P-leg: SPACE launches the two-crew shift (past the consent gate)')
 await page.click('[data-watch-toggle]') // a real tap on the pill
 await new Promise((r) => setTimeout(r, 250))
 const twoP = await page.evaluate(() => window.__firecrewTest.probe())
 ok(twoP && JSON.stringify(twoP.sources) === JSON.stringify(['cpu', 'human', 'cpu']),
     'the pill seats only seat 1 — the human partner stays human (#2029)', JSON.stringify(twoP && twoP.sources))
+
+// #1712 S2 capture-wiring legs: honest-degrade (no consent stored on this box
+// ⇒ nothing banks) and the watch span that a take must carry to be replayable.
+const recIdle = await page.evaluate(() => window.__firecrewTest.rec())
+ok(recIdle && recIdle.recording === false,
+    'no consent on this box ⇒ nothing banks (the arm is honest-degrade, #1712)', JSON.stringify(recIdle && { r: recIdle.recording, v: recIdle.autoVoice }))
+const spansBefore = recIdle && Array.isArray(recIdle.watch) ? recIdle.watch.length : 0
+// the pill tap above seated the sheet: one span is OPEN (not closed) — and a
+// second Y releases it (the flip law), closing exactly one span at the flip
+// tick, which the take must carry so the adapter can re-seat the autopilot.
+const recSeat = await page.evaluate(() => window.__firecrewTest.rec())
+ok(recSeat && recSeat.open >= 1 && recSeat.watch.length === spansBefore,
+    'seating keeps exactly one open span, uncounted until release (#1712)', JSON.stringify(recSeat && { open: recSeat.open, watch: recSeat.watch }))
+await press('KeyY') // seated -> Y releases the sheet
+await new Promise((r) => setTimeout(r, 200))
+const recRel = await page.evaluate(() => window.__firecrewTest.rec())
+ok(recRel && recRel.watch.length === spansBefore + 1 && /^\d+-\d+$/.test(recRel.watch[recRel.watch.length - 1]) && recRel.open === -1,
+    'releasing closes the span into the take\'s rules string (t0-t1) (#1712)', JSON.stringify(recRel && recRel.watch))
 
 ok(errors.length === 0, 'zero page errors across the whole drive', errors.slice(0, 3).join(' | '))
 console.log(`\n${fails ? 'FAILED' : 'DRIVE GREEN'} — ${fails ? fails + ' failures' : 'start, play, pause, contract, die, restart'}`)

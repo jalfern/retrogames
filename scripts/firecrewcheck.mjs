@@ -12,6 +12,7 @@ import {
     windVoice, ladderCreak, windWhistle, crewTail, WIND_TELEGRAPH,
 } from '../src/games/FireCrew/sim.js'
 import { parseRadio, radioLabel } from '../src/games/FireCrew/voiceradio.js'
+import { featurize, FEAT_NAMES, N_FEAT } from '../src/games/FireCrew/model.js'
 import {
     drawFire, drawCrew, drawLadderTruck, COLLAPSE_WARN_FUEL, COLLAPSE_CRACK, COLLAPSE_RIM, EMBER_GALE,
     SMOKE_FIRE_DIM, FLAME, LADDER_TRUCK, TRUCK_BEACON_A, TRUCK_BEACON_B, BREATHE,
@@ -704,6 +705,44 @@ console.log('loft-gate pillar fix — #2178 (nightly resume freeze)')
         if (worst > 1600) dead++
     }
     ok(dead === 0, 'no probed seed goes rescue-dead (>1600 ticks without a resolve)', `${dead} silent seeds`)
+}
+
+// --- #1712 S2: the model.js featurizer (dataset seat-senses) -----------------
+{
+    ok(N_FEAT === FEAT_NAMES.length && FEAT_NAMES.length === 65, 'model: 65 named features, N_FEAT agrees', `${FEAT_NAMES.length}`)
+    const g = setSources(makeRun(96), ['human', 'cpu', 'cpu'])
+    const f1 = featurize(g, 0, {})
+    const f2 = featurize(g, 0, {})
+    ok(f1.length === N_FEAT && f1.every((v) => Number.isFinite(v)) && f1.join() === f2.join(),
+        'model: featurize is finite and pure — the same state yields the same vector', '')
+    // honest zero at seed-birth: nothing found, no sweep, no cmd
+    const vIdx = FEAT_NAMES.indexOf('v1')
+    const sIdx = FEAT_NAMES.indexOf('sweepW')
+    ok(g.victims.every((v) => v.state === 'hidden') && f1.slice(vIdx, vIdx + 8).every((x) => x === 0)
+        && f1.slice(sIdx, sIdx + 7).every((x) => x === 0),
+        'model: seed-birth reads honest zeros (no victims in the light, radio silent)', '')
+    // a spot call lights the radio lane AND the shared fire reading survives
+    applyRadio(g, { kind: 'spot', side: 'west' })
+    const f3 = featurize(g, 0, {})
+    ok(f3[sIdx] === 1 && f3[sIdx + 6] > 0, 'model: an applied sweep call lights its one-hot + countdown lane', `${f3.slice(sIdx, sIdx + 7).join('')}`)
+    // the split survives the featurizer: the loft law finds loft victims for
+    // the LADDER seat (the window), while the hose's own view keeps them dark
+    // — a dark found victim named in a v-lane would be the silent-teacher leak.
+    const gl = setSources(makeRun(96), ['human', 'cpu', 'cpu'])
+    gl.ladder = 1
+    for (let t = 0; t < 6; t++) step(gl, {})
+    const fAfter = featurize(gl, 0, {})
+    const darkFound = gl.victims.filter((v) => v.state === 'found' && lightAt(gl, v.x, v.y, 1) <= 0.5)
+    const noLeak = darkFound.every((v) => {
+        for (let i = 0; i < 2; i++) {
+            if (fAfter[vIdx + i * 4] !== 1) continue
+            const vx = Math.round(gl.crew[0].x + fAfter[vIdx + i * 4 + 1] * (W - 1))
+            const vy = Math.round(gl.crew[0].y + fAfter[vIdx + i * 4 + 2] * (H - 1))
+            if (vx === v.x && vy === v.y) return false
+        }
+        return true
+    })
+    ok(darkFound.length > 0 && noLeak, 'model: the loft-found victim stays dark to the hose — no unseen victim is named in the v-lanes (the lightAt law IS the split)', `darkFound=${darkFound.length}`)
 }
 
 console.log(`\n${passes} passed, ${fails} failed`)

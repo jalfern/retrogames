@@ -71,7 +71,7 @@ see a different slice of the smoke. RETRO bar, 480x320, everything synthesized.
 ## Verify
 
 ```bash
-npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring, night art (131)
+npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring, night art, model.js senses (171)
 npm run attractcheck -- --mutate   # attract rules + 6 FIRE CREW mutants die
 npm run lint:firecrew
 npm run dev -- --port 5173 --strictPort   # then /retrogames/fire-crew
@@ -84,6 +84,11 @@ src/games/FireCrew/sim.js` turns firecrewcheck red ("the spread loop actually
 routes through the wind law"); restore afterwards.
 
 ## Honest gaps (first follow-ups)
+
+- **Trainable production line (#1712):** the adapter and wiring are proven on
+  the fixture store; the PRODUCTION card keeps `fire-crew` humanTakes at 0
+  until consented phone takes land at https://jalfern.com/retrogames/fire-crew
+  — the lines are human data, as ever.
 
 - Wind-noise cue for the ladder seat — **CLOSED by #1744** (`windVoice(gust)`
   and `ladderCreak(gust, ladder)` in `sim.js` — pure, rng-free, so replays and
@@ -139,6 +144,34 @@ routes through the wind law"); restore afterwards.
 
 ## Shipped since the first pass
 
+- **#1712 — trainable (PLAICRAFT S2 adapter + auto-capture):** the crew now
+    records itself. The shell wires `autoRecord` like the shelf's eight before
+    it: consent goes up BEFORE the alarm is struck (recorder opens at
+    seed-birth, files replay-verify from tick 1), `recordLiveTick` banks the
+    per-seat pads the loop consumed, and `endRun` ships the take after the
+    radio's final chunk lands (endVoice orders it). Seat kinds resolve live at
+    record-STOP (Rally's law + `humanSeats:false`): a WATCH left on when the
+    clock dies is labelled cpu, not stamped human. The WATCH flips themselves
+    ride `rules.watch` ("t0-t1,…") — the seed cannot know when a watcher let
+    go, so the sheet stamps the ticks; the adapter (`fireCrewRows`,
+    scripts/plaicraft-dataset.mjs) re-seats the autopilot at the spans and
+    DROPS seat-0 rows inside them (nobody's hands were on the wheel), and
+    re-runs banked radio calls through THE sim's `applyRadio` (battery and
+    sweep never touch the hash, so the replay is exact). Voice: the auto mic
+    captures seat 0 from seed-birth when the gate grants voice; the radio's own
+    raw track yields then (`hasAutoVoice()` — validateVoice forbids slot 0
+    twice) while recognition stays live either way. `model.js` adds THE 65
+    seat features: the `lightAt` law IS the featurizer's eyes (a victim the
+    smoke hides is an honest zero; fire is shared because it glows through),
+    radio one-hots with countdown, wind + vane, rig state, autoregressive
+    prev-pad banked after the label. Proof: `plaicraft:datasetcheck` 81/81
+    (+4 legs: verify/tamper, radio re-seat, watch-span drop, split-honesty;
+    mutant 14 adapter-bypass dies by name), `firecrewcheck` 171 (+6 model
+    gates; the `lightAt` leak gate goes red when the view is widened past the
+    law), `firecrewplay` +4 browser gates (the gate goes up at START, declines
+    still play, spans open/close into the rules string). Recording `side` into
+    voiceCmd (recording.js) — an adapter that cannot re-seat a sweep cannot
+    verify a shouted take.
 - **#1766 — polish round 3 (truck silhouette, smoke-dimmed fire, crew breathe):**
   three visual bullets, all provable in plain Node through the #1440 recording-ctx
   pattern (they draw only fillRects). (1) *The ladder truck IS the base column*
