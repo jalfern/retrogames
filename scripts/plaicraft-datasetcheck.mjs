@@ -22,8 +22,9 @@
 //     bomb-defuse adapter bypassed / trainable-gate reopened / SOS adapter
 //     bypassed / rally adapter bypassed / double-dragon adapter bypassed /
 //     floor-boss tap-replay skipped / contra adapter bypassed / contra
-//     rules.seat2 claims ignored / contra arcade-loop rebuild skipped — each
-//     must go RED (each line is load-bearing).
+//     rules.seat2 claims ignored / contra arcade-loop rebuild skipped /
+//     talk-me-down adapter bypassed — each must go RED (each line is
+//     load-bearing).
 //
 // FIXTURES ARE PIPELINE TESTS, NOT EVIDENCE: the fixture players are scripted
 // takes stamped consent-only to exercise the split logic. Acceptance lines on
@@ -54,8 +55,10 @@ import { makeGame as ddMakeGame, step as ddStep, stateHash as ddHash } from '../
 import { N_FEAT as DD_N_FEAT, featurize as ddFeaturize } from '../src/games/DoubleDragon/model.js'
 import { makeGame as contraMakeGame, step as contraStep, stateHash as contraHash, dropIn as contraDropIn, autopilot as contraAutopilot, arcadeLoop as contraArcadeLoop } from '../src/games/Contra/sim.js'
 import { N_FEAT as CONTRA_N_FEAT } from '../src/games/Contra/model.js'
+import { createGame as tmdMakeGame, step as tmdStep, hash as tmdHash } from '../src/games/TalkMeDown/engine.js'
+import { N_FEAT as TMD_N_FEAT, PANEL as TMD_PANEL, MANUAL as TMD_MANUAL, BLOCK_INDEX as TMD_BI, featurize as tmdFeaturize } from '../src/games/TalkMeDown/model.js'
 import { newGame, heroFromPad, p2FromPad } from './plaicraft-export.mjs'
-import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, shortOrderShoutRows, rallyCoDriverRows, doubleDragonRows, contraRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
+import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, shortOrderShoutRows, rallyCoDriverRows, doubleDragonRows, contraRows, talkMeDownRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 // Local Report (harness.mjs pulls playwright-core at import; this check is
@@ -98,7 +101,7 @@ const craftWebm = (durationMs) => {
 }
 
 function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false, weather = null, seat2At = -1, taps = null }) {
-    const method = game === 'floor-boss' || game === 'bomb-defuse' || game === 'short-order-shout' || game === 'rally-co-driver' || game === 'double-dragon' || game === 'contra' ? 'dpad' : 'stick'
+    const method = game === 'floor-boss' || game === 'bomb-defuse' || game === 'short-order-shout' || game === 'rally-co-driver' || game === 'double-dragon' || game === 'contra' || game === 'talk-me-down' ? 'dpad' : 'stick'
     const wx = weather || 'clear'
     const contraClaims = [] // #2953: bank ticks of successful blue-seat drops — rides rules.seat2 (see contra block below)
     let gs = game === 'gauntlet' ? newGame(seed, rules || {}, seats[1] && seats[1].kind !== 'off')
@@ -108,14 +111,16 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
                     : game === 'rally-co-driver' ? rcMakeSim(seed, seats.length >= 2 ? 2 : 1, wx)
                         : game === 'double-dragon' ? ddMakeGame(seed, { coop: seats.length >= 2 })
                             : game === 'contra' ? contraMakeGame(seed)
-                                : null
+                                : game === 'talk-me-down' ? tmdMakeGame(seed, seats.length >= 2 ? 2 : 1)
+                                    : null
     const hashOf = game === 'gauntlet' ? stateHash
         : game === 'floor-boss' ? fbHash
             : game === 'bomb-defuse' ? bdHash
                 : game === 'short-order-shout' ? sosHash
                     : game === 'rally-co-driver' ? rcHash
                         : game === 'double-dragon' ? ddHash
-                            : game === 'contra' ? contraHash : null
+                            : game === 'contra' ? contraHash
+                                : game === 'talk-me-down' ? tmdHash : null
     const rec = createRecorder({
         gameId: game, method, seed, players: seats.length, build: 'test',
         sources: seats.map((s) => ({ kind: s.kind === 'relabeled' ? 'human' : s.kind })),
@@ -166,6 +171,12 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
             if (seat2At >= 0 && (bt === seat2At || bt >= seat2At + 720)) pads[1].b = true
             if (pads[1].b && !gs.p2.human && !gs.p2.out && !gs.end) { contraDropIn(gs); contraClaims.push(bt) }
             contraStep(gs, pads[0], pads[1])
+        }
+        if (game === 'talk-me-down') {
+            // #1712: the engine consumes the pad ARRAY it banks (seat 0 defuser
+            // keys; seat 1 manual keys on a couch take) — padFrom-shape pads are
+            // byte-what-the-sim-heard, so the scripted stream replays exactly.
+            tmdStep(gs, pads.map((p) => ({ left: !!p.left, right: !!p.right, up: !!p.up, down: !!p.down, a: !!p.a, b: !!p.b })))
         }
         rec.addTick(pads, null, gs && gs.tick % 30 === 0 ? hashOf(gs) : null)
         if (callAt.has(t + 1)) {
@@ -269,8 +280,10 @@ try {
         ['player', scriptedTake({ seed: 62, ticks: 200, voice: { slots: [0] } })],
         // #1712 trainable-gate fixture: named human on an ADAPTER-LESS game —
         // consented voice lands, but the take must stay flagged (no-adapter):
-        // no split, no player slot, no coverage credit.
-        ['hank', scriptedTake({ game: 'talk-me-down', seed: 44, ticks: 150, seats: [{ kind: 'human' }], voice: { slots: [0] } })],
+        // no split, no player slot, no coverage credit. (Was talk-me-down —
+        // #1712 gave it an adapter; gravel-yard is the next registry title off
+        // the trainable shelf.)
+        ['hank', scriptedTake({ game: 'gravel-yard', seed: 44, ticks: 150, seats: [{ kind: 'human' }], voice: { slots: [0] } })],
         // #1712 co-op adapters: a named human kitchen (SOS seat 0 + CPU cook
         // stream) and a named human night stage (driver + CPU co-driver calls,
         // rain). These stand for the friends' takes the coverage lines wait on.
@@ -285,13 +298,20 @@ try {
         // walks away (idle handback at ~661), and rappels back in at 750 — the
         // claims ship on rules.seat2 exactly as the phone's shell latches them.
         ['vera', scriptedTake({ game: 'contra', seed: 74, ticks: 2600, seats: [{ kind: 'human' }, { kind: 'cpu' }], voice: { slots: [0] }, seat2At: 30 })],
+        // #1712 split-info takes: a solo defuser (the CPU manual speaks on the
+        // LCD rail — seat-0 order features come alive) and a couch pair (both
+        // seats human from seed-birth; the manual's A flags rules, so the
+        // flag-stamp lane lights). These are the shape an autoRecorded phone
+        // take ships: seats chosen before seed-birth, no drop-in ceremony.
+        ['ivy', scriptedTake({ game: 'talk-me-down', seed: 4242, ticks: 150, seats: [{ kind: 'human' }], voice: { slots: [0] } })],
+        ['kai', scriptedTake({ game: 'talk-me-down', seed: 45, ticks: 180, seats: [{ kind: 'human' }, { kind: 'human' }], voice: { slots: [0] }, calls: [{ t: 80, said: 'cut red', intent: null, ok: true }] })],
     ]
     let up = 0
     for (const [player, rec] of uploads) {
         const res = await uploadSession(rec, { player, consent: { motion: true, voice: !!rec.voice }, base: sim.base })
         if (res.ok) up++
     }
-    r.check('fixture store provisioned (14 consented takes uploaded)', up === 14, `${up}/14`)
+    r.check('fixture store provisioned (16 consented takes uploaded)', up === 16, `${up}/16`)
 
     // determinism: two full builds against the store, twice. In-process
     // (not a blocked spawnSync child: the sim lives on THIS event loop).
@@ -334,8 +354,8 @@ try {
         if (foldDecision(c.cls, c.native, c.relabeled, nativeHumans)) foldedKeys.add(s.key)
         else if (!humanKeys.has(s.key)) flaggedKeys.add(s.key)
     }
-    r.check('fixtures classify as expected: 10 human, 1 legacy-folded, 3 flagged',
-        humanKeys.size === 10 && foldedKeys.size === 1 && flaggedKeys.size === 3,
+    r.check('fixtures classify as expected: 12 human, 1 legacy-folded, 3 flagged',
+        humanKeys.size === 12 && foldedKeys.size === 1 && flaggedKeys.size === 3,
         `human=[${[...humanKeys].map((k) => envByKey.get(k).player)}] folded=[${[...foldedKeys].map((k) => envByKey.get(k).player)}] flagged=[${[...flaggedKeys].map((k) => envByKey.get(k).player)}]`)
 
     const trainRows = rows.filter((x) => x.split === 'train')
@@ -351,10 +371,10 @@ try {
     r.check('every TRAINABLE take (human/folded on an adapted game) lands train/player-heldout/seed-heldout — never flagged',
         rows.filter((x) => humanKeys.has(x.k) && card.games[x.g].featureAdapter === true).every((x) => x.split !== 'flagged'))
     r.check('no-adapter gate (#1712): named human on an unadapted game lands flagged and stays out of players/coverage',
-        rows.some((x) => x.g === 'talk-me-down') && rows.filter((x) => x.g === 'talk-me-down').every((x) => x.split === 'flagged' && x.feat === null)
+        rows.some((x) => x.g === 'gravel-yard') && rows.filter((x) => x.g === 'gravel-yard').every((x) => x.split === 'flagged' && x.feat === null)
         && !card.players.hank && !card.coverage.humanPlayers.includes('hank')
-        && card.totals.unadaptedHumanTakes === 1 && !card.coverage.gamesCovered.games.includes('talk-me-down')
-        && card.games['talk-me-down'].featureAdapter === false && card.games['talk-me-down'].humanTakes === 0)
+        && card.totals.unadaptedHumanTakes === 1 && !card.coverage.gamesCovered.games.includes('gravel-yard')
+        && card.games['gravel-yard'].featureAdapter === false && card.games['gravel-yard'].humanTakes === 0)
     r.check('bomb-defuse rows carry THE 35 seat features + encoded actions (#1712 adapter)',
         rows.filter((x) => x.g === 'bomb-defuse').every((x) => Array.isArray(x.feat) && x.feat.length === BD_N_FEAT && x.feat.every((v) => Number.isFinite(v)) && typeof x.act === 'object')
         && rows.some((x) => x.g === 'bomb-defuse' && x.split !== 'flagged'),
@@ -364,7 +384,7 @@ try {
     r.check('gauntlet rows carry real features (adapter) and encoded actions',
         rows.filter((x) => x.g === 'gauntlet').every((x) => Array.isArray(x.feat) && x.feat.length === 31 && typeof x.act === 'object'))
     r.check('no-adapter game still contributes action rows, feat honest-null (flagged at the gate above)',
-        rows.some((x) => x.g === 'talk-me-down' && x.feat === null))
+        rows.some((x) => x.g === 'gravel-yard' && x.feat === null))
     r.check('tool rows flagged with not-a-game reason in card coverage',
         flagRows.some((x) => x.g === 'claptest'))
 
@@ -372,7 +392,7 @@ try {
     const audioIdx = fs.existsSync(path.join(outA, 'audio/index.jsonl'))
         ? fs.readFileSync(path.join(outA, 'audio/index.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
         : []
-    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank + carla kitchen + otto stage + sam street + vera jungle carry voice)', audioIdx.length === 12, `${audioIdx.length}/12`)
+    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank + carla kitchen + otto stage + sam street + vera jungle + ivy defusal + kai couch carry voice)', audioIdx.length === 14, `${audioIdx.length}/14`)
     const aliceIdx = audioIdx.find((x) => x.player === 'alice')
     let verbatim = false
     if (aliceIdx && fs.existsSync(path.join(outA, aliceIdx.file))) {
@@ -393,9 +413,9 @@ try {
         .map(({ path: p }) => [p, shaHex(fs.readFileSync(path.join(outA, p)))].join('\0') + '\n')
         .sort().join(''))
     r.check('manifest self-proves: files recompute to card.version', recomputed === card.version && man.version === card.version)
-    r.check('card reports honest coverage (7 human games: gauntlet, bomb-defuse, floor-boss, short-order-shout, rally-co-driver, double-dragon, contra)',
+    r.check('card reports honest coverage (8 human games: gauntlet, bomb-defuse, floor-boss, short-order-shout, rally-co-driver, double-dragon, contra, talk-me-down)',
         card.coverage.gamesCovered.pass && card.coverage.gamesCovered.games.includes('floor-boss') && card.coverage.gamesCovered.games.includes('short-order-shout') && card.coverage.gamesCovered.games.includes('rally-co-driver')
-        && card.coverage.gamesCovered.games.includes('double-dragon') && card.coverage.gamesCovered.games.includes('contra') && card.coverage.audio.pass && card.splits.player.heldout.length >= 1,
+        && card.coverage.gamesCovered.games.includes('double-dragon') && card.coverage.gamesCovered.games.includes('contra') && card.coverage.gamesCovered.games.includes('talk-me-down') && card.coverage.audio.pass && card.splits.player.heldout.length >= 1,
         `games=${JSON.stringify(card.coverage.gamesCovered.games)} heldout=${JSON.stringify(card.splits.player.heldout)}`)
 
     // ---- #2805: floor-boss engine, per-seat attribution, container truth, card lines
@@ -565,7 +585,8 @@ try {
         card.games['short-order-shout'] && card.games['short-order-shout'].featureAdapter === true && card.games['short-order-shout'].humanTakes === 1
         && card.games['rally-co-driver'] && card.games['rally-co-driver'].featureAdapter === true && card.games['rally-co-driver'].humanTakes === 1
         && card.games['double-dragon'] && card.games['double-dragon'].featureAdapter === true && card.games['double-dragon'].humanTakes === 1
-        && card.games.contra && card.games.contra.featureAdapter === true && card.games.contra.humanTakes === 1)
+        && card.games.contra && card.games.contra.featureAdapter === true && card.games.contra.humanTakes === 1
+        && card.games['talk-me-down'] && card.games['talk-me-down'].featureAdapter === true && card.games['talk-me-down'].humanTakes === 2)
     { // crest honesty on the source side: a pure-CPU night stage, the driver block
         // may only name corners the fog + crests admit (visibleAhead truth).
         const g = rcMakeSim(11, 2, 'rain')
@@ -620,6 +641,49 @@ try {
             && !dropped.ok && !!dropped.mismatch && dropped.mismatch.tick >= 750,
             `clean=${good.ok ? good.rows.length : 'FAIL'} tamper=${bad.mismatch ? bad.mismatch.tick : '-'} noclaim=${dropped.mismatch ? dropped.mismatch.tick : 'ESCAPED'}`)
     }
+    // ---- #1712 split-info adapter: TALK ME DOWN rows, seat shape, honest zero
+    const tmdRows = rows.filter((x) => x.g === 'talk-me-down')
+    r.check('talk-me-down rows carry THE 151 seat features + encoded actions, never flagged (#1712)',
+        tmdRows.length === 510 && tmdRows.every((x) => Array.isArray(x.feat) && x.feat.length === TMD_N_FEAT && x.feat.every((v) => Number.isFinite(v)) && typeof x.act === 'object')
+        && tmdRows.every((x) => x.split !== 'flagged') && TMD_N_FEAT === 151,
+        `rows=${tmdRows.length}`)
+    r.check('TMD honest zero: defuser rows carry no rulebook block, manual rows no panel block — the game\'s split-info law survives the dataset (#1712 — rally\'s partition, this time for real)',
+        tmdRows.filter((x) => x.seat === 0).every((x) => x.feat.slice(TMD_MANUAL.start, TMD_MANUAL.end).every((v) => v === 0))
+        && tmdRows.filter((x) => x.seat === 1).every((x) => x.feat.slice(TMD_PANEL.start, TMD_PANEL.end).every((v) => v === 0)))
+    r.check('TMD seat shape: couch take rows BOTH seats from tick 1 (seats chosen at seed-birth), solo take one slot; seat-1 rows exist exactly in the couch take (#1712)',
+        tmdRows.filter((x) => x.seat === 1).length === 180
+        && tmdRows.filter((x) => x.seat === 1).every((x) => x.s === 45) // kai's couch seed; ivy's solo take has no seat-1 rows
+        && tmdRows.filter((x) => x.seat === 0).length === 330)
+    r.check('TMD couch manual flags rules on the store rows: flag-stamp one-hot lights on kai seat-1 (#1712)',
+        tmdRows.filter((x) => x.seat === 1).some((x) => x.feat.slice(TMD_BI.flagStamp, TMD_BI.flagStamp + 17).some((v) => v === 1)))
+    { // deterministic lanes the random fixtures cannot guarantee (strike locks eat
+        // the CPU's 90-tick think slot): pin the order rail and the flip gate on
+        // the featurizer directly, over a hand-driven sim.
+        const g = tmdMakeGame(7, 1)
+        const fFace = tmdFeaturize(g, 0, {})
+        for (let t = 0; t < 120; t++) tmdStep(g, [{}]) // idle: no strikes; the CPU thinks 90 ticks and speaks
+        const fLive = tmdFeaturize(g, 0, {})
+        g.flip = 1 // the back plate: batteries/tray/hand become visible
+        const fBack = tmdFeaturize(g, 0, {})
+        r.check('TMD order rail + flip gate on the featurizer: idle solo sim falls silent (honest zero), after the CPU think-delay exactly one orderKind + its color lights, and the back-plate block reads zero face-up / the hand one-hot flipped (#1712)',
+            !fFace.slice(TMD_BI.orderCut, TMD_BI.orderCut + 4).some((v) => v === 1)
+            && fLive.slice(TMD_BI.orderCut, TMD_BI.orderCut + 4).filter((v) => v === 1).length === 1 && fLive.slice(TMD_BI.orderColor, TMD_BI.orderColor + 6).some((v) => v === 1)
+            && fFace.slice(TMD_BI.batteries, TMD_BI.sel + 3).every((v) => v === 0)
+            && fBack.slice(TMD_BI.sel, TMD_BI.sel + 3).filter((v) => v === 1).length === 1,
+            `order=${fLive.slice(TMD_BI.orderCut, TMD_BI.orderCut + 4).join('')} faceZero=${fFace.slice(TMD_BI.batteries, TMD_BI.sel + 3).every((v) => v === 0)}`)
+    }
+    r.check('TMD prev-pad lane banked: some row carries a nonzero prev-pad feature (#1712)',
+        tmdRows.some((x) => x.feat.slice(TMD_N_FEAT - 5).some((v) => v === 1)) && TMD_N_FEAT === 151)
+    { // unit: TMD adapter — couch take verifies clean, tampered refuses at its tick
+        const clean = scriptedTake({ game: 'talk-me-down', seed: 96, ticks: 240, seats: [{ kind: 'human' }, { kind: 'human' }] })
+        const good = talkMeDownRows('unit/tmd-clean', clean)
+        const badRec = JSON.parse(JSON.stringify(clean))
+        badRec.hashes[Math.max(0, badRec.hashes.length - 2)].h = 'cafebabe'
+        const bad = talkMeDownRows('unit/tmd-tamper', badRec)
+        r.check('TMD adapter: clean couch take verifies (480 rows), tampered refuses at its tick (#1712)',
+            good.ok && good.rows.length === 480 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
+            bad.mismatch ? `tick ${bad.mismatch.tick}` : (good.ok ? `${good.rows.length} rows` : 'no mismatch?!'))
+    }
     { // integration: ONE tampered take per new engine must fail the WHOLE build
         // (the S1 100%-verifiable line, engines four and five).
         const sim3 = await startRelaySim()
@@ -628,13 +692,15 @@ try {
             const tR = scriptedTake({ game: 'rally-co-driver', seed: 82, ticks: 180, seats: [{ kind: 'human' }, { kind: 'cpu' }], tamper: true })
             const tD = scriptedTake({ game: 'double-dragon', seed: 83, ticks: 180, seats: [{ kind: 'human' }, { kind: 'cpu' }], seat2At: 40, tamper: true })
             const tC = scriptedTake({ game: 'contra', seed: 85, ticks: 400, seats: [{ kind: 'human' }, { kind: 'cpu' }], seat2At: 30, tamper: true })
+            const tM = scriptedTake({ game: 'talk-me-down', seed: 86, ticks: 180, seats: [{ kind: 'human' }, { kind: 'human' }], tamper: true })
             const upS = await uploadSession(tS, { player: 'nina', consent: { motion: true, voice: false }, base: sim3.base })
             const upR = await uploadSession(tR, { player: 'omar', consent: { motion: true, voice: false }, base: sim3.base })
             const upD = await uploadSession(tD, { player: 'pat', consent: { motion: true, voice: false }, base: sim3.base })
             const upC = await uploadSession(tC, { player: 'quin', consent: { motion: true, voice: false }, base: sim3.base })
+            const upM = await uploadSession(tM, { player: 'rosa', consent: { motion: true, voice: false }, base: sim3.base })
             const b3 = await buildDataset({ base: sim3.base, out: path.join(tmp, 'tamper-sos-rc'), limit: 50, jonKey: SIM_READ_KEY })
-            r.check('tampered SOS + rally + double-dragon + contra takes fail the whole build, all ticks named (#1712 — unverified rows are never shipped)',
-                upS.ok && upR.ok && upD.ok && upC.ok && !b3.ok && Array.isArray(b3.rejected) && b3.rejected.length === 4 && b3.rejected.every((x) => x.mismatch && x.mismatch.tick > 0),
+            r.check('tampered SOS + rally + double-dragon + contra + talk-me-down takes fail the whole build, all ticks named (#1712 — unverified rows are never shipped)',
+                upS.ok && upR.ok && upD.ok && upC.ok && upM.ok && !b3.ok && Array.isArray(b3.rejected) && b3.rejected.length === 5 && b3.rejected.every((x) => x.mismatch && x.mismatch.tick > 0),
                 b3.reason || 'build was GREEN with tampered takes?!')
         } finally { sim3.close() }
     }
@@ -655,9 +721,9 @@ try {
     r.check('legacy take folds into the corpus: rows exist, never flagged, carry lg, mirror the owner split rule (#1712)',
         lgRows.length === 400 && foldedKey && lgRows.every((x) => x.k === foldedKey && x.split !== 'flagged' && x.split === wantFoldSplit && x.g === 'gauntlet'),
         `rows=${lgRows.length} want=${wantFoldSplit}`)
-    r.check('fold never enlarges the player set: humans stay native-9, label "player" is no player, volume separate (#1712)',
-        card.coverage.humanPlayers.length === 9 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 9
-        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 10
+    r.check('fold never enlarges the player set: humans stay native-11, label "player" is no player, volume separate (#1712)',
+        card.coverage.humanPlayers.length === 11 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 11
+        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 12
         && card.splits.player.heldout.length >= 1 && !card.splits.player.heldout.includes('player'),
         `humans=${JSON.stringify(card.coverage.humanPlayers)} legacy=${card.totals.legacyTakes}`)
     r.check('folded volume lands in the owner ledger + card legacy block (anchor declared, rows match)',
@@ -668,8 +734,8 @@ try {
     r.check('folded take audio written under the owner (consented human data, #1712)',
         audioIdx.some((x) => x.key === foldedKey && x.player === LEGACY_OWNER && x.human === true))
     r.check('coverage lines stay native-only and adapter-only: fold cannot add a human game, unadapted games cannot (#1712)',
-        card.coverage.gamesCovered.games.length === 7 && !card.coverage.gamesCovered.games.includes('player')
-        && !card.coverage.gamesCovered.games.includes('talk-me-down'),
+        card.coverage.gamesCovered.games.length === 8 && !card.coverage.gamesCovered.games.includes('player')
+        && !card.coverage.gamesCovered.games.includes('gravel-yard'),
         JSON.stringify(card.coverage.gamesCovered.games))
 } catch (e) {
     r.check('check completed without unexpected failure', false, String(e && e.stack || e))
@@ -821,7 +887,7 @@ if (MUTATE) {
             const rowsM5 = cli5.status === 0 && fs.existsSync(path.join(outM5, 'dataset.jsonl'))
                 ? fs.readFileSync(path.join(outM5, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
                 : []
-            const leaked = rowsM5.some((x) => x.g === 'talk-me-down' && x.split !== 'flagged')
+            const leaked = rowsM5.some((x) => x.g === 'gravel-yard' && x.split !== 'flagged')
             r.check('trainable gate is load-bearing: no-adapter rows never ride a split (RED under the leak-reopen mutant, #1712)',
                 !leaked, leaked ? 'no-adapter take LEAKED into a split' : 'gate held')
         } finally {
@@ -1042,6 +1108,36 @@ if (MUTATE) {
         } finally {
             pull(DS)
             if (fs.readFileSync(DS, 'utf8') !== src12) { console.log('FAIL   mutant restore: exact original bytes not back (#2953 contra loop carry)'); r.failed++ }
+        }
+    }
+    // mutant 13 (#1712 adapter): talk-me-down removed from ADAPTERS — ivy's and
+    // kai's rows lose THE 151 features and fall back to flagged. The
+    // registration is load-bearing.
+    const src13 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR13 = "'talk-me-down': talkMeDownRows,"
+    if (!src13.includes(ANCHOR13)) {
+        console.log('FAIL   talk-me-down adapter anchor not found — update the mutant (#1712)')
+        r.failed++
+    } else {
+        plant(DS, src13.replace(ANCHOR13, '/* MUTANT: talk-me-down adapter bypassed */'))
+        try {
+            const outM13 = path.join(tmp, 'tmd-adapter-mut')
+            const cli13 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM13, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout13 = ''
+                p.stdout.on('data', (d) => { stdout13 += d })
+                p.on('exit', (code) => resolve({ status: code, stdout: stdout13 }))
+            })
+            const rowsM13 = cli13.status === 0 && fs.existsSync(path.join(outM13, 'dataset.jsonl'))
+                ? fs.readFileSync(path.join(outM13, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+                : []
+            const featTmd = rowsM13.some((x) => x.g === 'talk-me-down' && Array.isArray(x.feat) && x.feat.length === TMD_N_FEAT)
+            r.check('talk-me-down adapter is load-bearing: 151-feature rows exist (RED under the talk-me-down adapter-bypass mutant, #1712)',
+                featTmd, `featRows=${featTmd ? 'yes' : 'no'}${cli13.status !== 0 ? ' build exit ' + cli13.status : ''}`)
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src13) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 talk-me-down adapter)'); r.failed++ }
         }
     }
 }

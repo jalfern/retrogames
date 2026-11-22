@@ -80,6 +80,8 @@ import { makeGame as ddMakeGame, step as ddStep, stateHash as ddHash } from '../
 import { featurize as ddFeaturize } from '../src/games/DoubleDragon/model.js'
 import { makeGame as contraMakeGame, step as contraStep, stateHash as contraHash, dropIn as contraDropIn, arcadeLoop as contraArcadeLoop } from '../src/games/Contra/sim.js'
 import { featurize as contraFeaturize } from '../src/games/Contra/model.js'
+import { createGame as tmdMakeGame, step as tmdStep, hash as tmdHash } from '../src/games/TalkMeDown/engine.js'
+import { featurize as tmdFeaturize } from '../src/games/TalkMeDown/model.js'
 import { newGame, heroFromPad, p2FromPad, seatedPartner } from './plaicraft-export.mjs'
 
 const argv = process.argv.slice(2)
@@ -458,6 +460,43 @@ export function contraRows(key, rec) {
     return { ok, mismatch: null, rows }
 }
 
+// TALK ME DOWN adapter (#1712, #2953-default continued — the last autoRecord-
+// wired game without one). engine.js is Node-clean and seed-pure (every die
+// rides mulberry32 — bombcheck replays determinism), so takes replay-verify
+// against their checkpoints and carry THE 151 seat features (src/games/
+// TalkMeDown/model.js). Offline semantics: seats are chosen at seed-birth (the
+// select screen, before seed-birth per #1711) and online lockstep runs are not
+// auto-recorded at S2 — so there is no drop-in ceremony to carry (unlike DD/
+// Contra): solo takes bank ONE slot (the CPU manual lives in the sim as
+// partnerSay, state not pads), couch takes bank TWO human slots. Rows: one per
+// banked seat per tick; the model keeps the game's split-information law
+// (defuser rows carry no rulebook facts, manual rows no panel facts).
+export function talkMeDownRows(key, rec) {
+    const players = Math.max(1, Math.min(2, (rec.players || 1) | 0))
+    const gs = tmdMakeGame(rec.seed, players)
+    const want = new Map(rec.hashes.map((x) => [x.t, x.h]))
+    const mems = {}
+    const rows = []
+    const finalT = rec.hashes.length ? rec.hashes[rec.hashes.length - 1] : null
+    for (let t = 0; t < rec.ticks; t++) {
+        const pads = rec.slots.map((s) => decodePad(s.pads[t], rec.method))
+        tmdStep(gs, pads)
+        const t1 = t + 1
+        if (want.has(t1)) {
+            const got = tmdHash(gs)
+            if (got !== want.get(t1)) return { ok: false, mismatch: { tick: t1, want: want.get(t1), got }, rows }
+        }
+        for (let i = 0; i < rec.slots.length; i++) {
+            if (!mems[i]) mems[i] = {}
+            const feat = tmdFeaturize(gs, i, mems[i]).map((v) => +v.toFixed(3))
+            mems[i].pa = pads[i] // bank the autoregressive lane after the label
+            rows.push({ k: key, g: rec.game, s: rec.seed, t: t1, lvl: gs.round, seat: i, act: encodePad(pads[i]), feat })
+        }
+    }
+    const ok = !finalT || finalT.h === tmdHash(gs)
+    return { ok, mismatch: null, rows }
+}
+
 const ADAPTERS = {
     gauntlet: gauntletRows,
     'floor-boss': floorBossRows,
@@ -466,6 +505,7 @@ const ADAPTERS = {
     'rally-co-driver': rallyCoDriverRows,
     'double-dragon': doubleDragonRows,
     contra: contraRows,
+    'talk-me-down': talkMeDownRows,
 }
 
 // --- audio -----------------------------------------------------------------------
