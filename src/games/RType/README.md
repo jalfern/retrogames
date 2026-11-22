@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 162 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf`
+node scripts/rtypecheck.mjs       # sim + browser: 174 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -255,6 +255,27 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   probes and `giveDouble`/`giveSpeed`/`spawnDCap`/`spawnSCap` fixtures join
   `__rTest`. Options and Half-Capsule stay open on the gap list (#2915).
 
+- **#2919 options pods — the O capsule (QA gap closed by the builder; capsule-list
+  Part 2):** **Fidelity interpretation (#237 rule, recorded):** in the arcade the
+  `O` pod is a fixed spot, not a cycle step, and the options it summons mirror
+  the vulcan lineage — they cannot be shot off alone and die with the hull. So:
+  `ocop` joins leg 1 authored above the slab lip at camX 500 (zero rng — the
+  tuned streams stay themselves), and taking it summons two orbs that sweep in
+  from off-screen (~2 s of ceremony) and latch at `(x−14, y∓11)`. While docked
+  every vulcan press looses one mirrored round per orb, and a `double` hull
+  mirrors the twin stack — the arcade's six-round shield-gun wall. Inbound orbs
+  never fire (the wall forms only at the mounts); a spare O pays 1000; the wreck
+  strips orbs with the arm (power-armour law, seat two per S4 symmetry —
+  `giveWingOptions`, `woptdock`, `woptslost`). Orbs are sim truth: `stateHash`
+  covers the pair, their run and their mount. `px/py` are sim-written once per
+  tick (the bits' discipline: draw and fire never disagree). Orbs are decoration
+  to nothing else in the world — no collision, no orbit; they are guns, like the
+  original's. Art: gold O-case with a ring stamp, rotating-facet orbs with
+  fly-in exhaust; HUD carries gold pips behind the arm word and a one-second
+  `OPTIONS` announce (the #2906 ember-voice shape). Winnability re-measured with
+  the added firepower: solo 8/12, co-op 11/12 — the floors hold. Half-Capsule
+  stays open.
+
 ## Honest gaps (S5+)
 
 - **CLOSED by #2901** — core speed-up past 1000: the desperation phase is
@@ -277,9 +298,13 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   volleys, tick-arithmetic reseal, so every seed's tuned stream stays itself.
   The autopilot and wing fold their bullet predictions through the same bounce
   (`foldY`) — a ricochet lane never reads safe to the brains that must dodge it.
-- The full capsule list beyond three arms (Options, Double, Speed Up,
-  Half-Capsules). — #2915 Part 1 landed: Double (twin vulcan) and Speed Up are
-  live as fixed-spot pods; Options and Half-Capsule remain.
+- **The full capsule list beyond three arms (Options, Double, Speed Up,
+  Half-Capsules).** — #2915 Part 1 landed Double (twin vulcan) and Speed Up
+  as fixed-spot pods; #2919 landed Options (the mirrored shield-gun pair).
+  Half-Capsule remains.
+- Options never fly off on their own — the arcade's Option-launch (throwing
+  the orbs as one-shot drones) is unmodelled; B is already the shell verb in
+  this engine, so the shield-guns stay mounted until the wreck.
 - An armed Williams-style duelist for variety.
 - Carriers never answer back — no launched interceptors when a bit pod is
   fired upon.
@@ -293,11 +318,11 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 162 sim+browser laws, sixteen named mutants
+- `scripts/rtypecheck.mjs` — 174 sim+browser laws, eighteen named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
   `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`,
-  `twin-collapse`, `speed-deaf`).
+  `twin-collapse`, `speed-deaf`, `mirror-deaf`, `opts-leak`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
@@ -312,9 +337,12 @@ The registry entry is `private` until Jon promotes it (#379).
   `p3mouth`/`p3walk`/`p3dying`/`p3fire` (the tank and its live ricochets) and
   setup `toDobk`, `openDobk`, `dobkHp: n`. #2915 adds probe `spd`/`wingSpd`
   (speed levels) and setup `giveDouble`, `giveSpeed: n`, `spawnDCap`,
-  `spawnSCap`.
+  `spawnSCap`. #2919 adds probe `opts`/`optsDocked`/`optAnn`/`wingOpts`
+  (orbs aboard, settled, HUD voice, seat two's pair) and setup `spawnOCap`,
+  `giveOptions` (pin both orbs to the mounts; `pinOptions: false` for the
+  fly-in), `giveWingOptions`.
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
   SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
-  GEAR THE WING, TO DOBK, DOBK MAW, GIVE DOUBLE, GIVE SPEED UP.
+  GEAR THE WING, TO DOBK, DOBK MAW, GIVE DOUBLE, GIVE SPEED UP, SPAWN O POD, GIVE OPTIONS.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern
   taps `b` every 97 ticks) and the nightly soak roster (`nightlybot.mjs`).
