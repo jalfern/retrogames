@@ -11,8 +11,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, STAGE_END, STAGE_END2, HEAT_AT, POD, makeGame, step, autopilot, stateHash, shieldOn, shieldOnAt, enableCoop } from './sim.js'
-import { drawBackground, drawShip, drawShipWing, drawLarva, drawTurret, drawPod, drawBitPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge } from './art.js'
+import { W, H, STAGE_END, STAGE_END2, STAGE_END3, HEAT_AT, POD, makeGame, step, autopilot, stateHash, shieldOn, shieldOnAt, enableCoop } from './sim.js'
+import { drawBackground, drawShip, drawShipWing, drawLarva, drawTurret, drawPod, drawBitPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawDobk, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'r-type:hiscore'
@@ -103,6 +103,18 @@ export default function RType() {
             p2salvo: () => { audioController.playTone(150, 0.05, 'square', 0.1); audioController.playTone(132, 0.05, 'square', 0.1, 0.06); audioController.playTone(114, 0.06, 'square', 0.1, 0.12); audioController.playNoise(0.05, 0.05) },
             bitfree: () => { audioController.playNoise(0.08, 0.07); const n = [700, 880, 1050, 1320]; n.forEach((f, i) => audioController.playTone(f, 0.05, 'triangle', 0.08, i * 0.04)) },
             p2shut: () => { audioController.playSweep(200, 60, 0.2, 'square', 0.1); audioController.playNoise(0.08, 0.08) },
+            // #2911: the walking gate speaks. Arrival is a sub-bass grind you
+            // feel before you place it; every footfall thuds the floor; its
+            // gape horn is the dread's, grown fat; the ricochet fan answers
+            // with three heavier reports; and the death out-stays the fortress.
+            leg3: () => { audioController.playTone(330, 0.12, 'square', 0.1); audioController.playTone(415, 0.12, 'square', 0.1, 0.1); audioController.playTone(523, 0.16, 'square', 0.1, 0.2) },
+            dobkarrive: () => { audioController.playSweep(46, 92, 1.2, 'sawtooth', 0.16); audioController.playTone(58, 1.0, 'triangle', 0.08) },
+            dobkstep: () => { audioController.playTone(52, 0.06, 'square', 0.05); audioController.playNoise(0.04, 0.03); shake = Math.max(shake, 1) },
+            dobkopen: () => audioController.playSweep(60, 130, 0.6, 'sawtooth', 0.12),
+            dobkfire: () => { audioController.playTone(140, 0.06, 'square', 0.12); audioController.playTone(118, 0.06, 'square', 0.12, 0.07); audioController.playTone(96, 0.08, 'square', 0.12, 0.14); audioController.playNoise(0.07, 0.07); shake = Math.max(shake, 2) },
+            dobkhurt: () => audioController.playTone(104, 0.05, 'sawtooth', 0.1),
+            dobkshut: () => { audioController.playSweep(180, 54, 0.24, 'square', 0.1); audioController.playNoise(0.09, 0.08) },
+            dobkdie: () => { audioController.playSweep(120, 24, 1.1, 'sawtooth', 0.18); shake = Math.max(shake, 8) },
             coredown: () => { audioController.playNoise(0.3, 0.18); audioController.playSweep(240, 40, 0.4, 'sawtooth', 0.14); shake = Math.max(shake, 5) },
             enrage: () => { audioController.playTone(880, 0.09, 'square', 0.1); audioController.playTone(660, 0.09, 'square', 0.1, 0.1); audioController.playTone(880, 0.09, 'square', 0.1, 0.2) },
             // S4 seat two: the wing's death is a smaller report than your own;
@@ -150,7 +162,7 @@ export default function RType() {
                 else if (ev === 'coredown') bursts(24, (gs.lastHitX ?? 60) - sx, gs.lastHitY ?? 120, 0)
                 else if (ev === 'bit') bursts(8, gs.ship.x - sx, gs.ship.y, 1)
                 else if (ev === 'shield') bursts(14, gs.ship.x - sx, gs.ship.y, 1)
-                else if (ev === 'bigboom') bursts(40, gs.p1 ? gs.p1.x + 30 - sx : 60, 120, 0)
+                else if (ev === 'bigboom') bursts(40, gs.p1 ? gs.p1.x + 30 - sx : gs.dobk ? gs.dobk.x + 60 - sx : 60, 120, 0) // #2911: the tank falls where it stands
                 else if (ev === 'die') bursts(22, gs.ship.x - sx, gs.ship.y, 2)
                 else if (ev === 'plug') { bursts(6, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 3); bursts(2, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 2) } // #2823: a plugged hunter POPS — cyan ring, white core
                 else if (ev === 'ram') bursts(8, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 0)
@@ -226,6 +238,7 @@ export default function RType() {
             ctx.translate(sxo, syo)
             if (gs.p1) drawP1(ctx, gs.p1, gs.camX, gs.tick)
             if (gs.p2) drawP2(ctx, gs.p2, gs.camX, gs.tick)
+            if (gs.dobk) drawDobk(ctx, gs.dobk, gs.camX, gs.tick) // #2911
             for (const e of gs.enemies) {
                 if (e.kind === 'hullseg') drawSeg(ctx, e, gs.camX)
             }
@@ -403,6 +416,12 @@ export default function RType() {
                     sway: gs.p2 ? Math.round(gs.p2.swayOff * 10) / 10 : 0,
                     p2port: gs.p2 ? gs.p2.port : -1,
                     p2dying: gs.p2 ? gs.p2.dyingT : 0,
+                    // #2911 — the walking gate: hp/x/mouth/leg-clock + the
+                    // count of live ricochets the pilot is sharing the field with
+                    p3: gs.dobk ? 'live' : 0, p3hp: gs.dobk ? gs.dobk.hp : -1,
+                    p3x: gs.dobk ? Math.round(gs.dobk.x - gs.camX) : -1,
+                    p3mouth: gs.dobk ? gs.dobk.mouth : '', p3walk: gs.dobk ? gs.dobk.walkT : -1,
+                    p3dying: gs.dobk ? gs.dobk.dyingT : 0, p3fire: gs.bullets.filter((b) => b.bounce).length,
                     p2last: gs.p2 ? gs.p2.lastCore : -1,
                     wing: gs.wing ? (gs.wing.out ? 'out' : gs.wing.dead ? 'down' : 'live') : 'none',
                     wingX: gs.wing ? Math.round(gs.wing.x) : 0, wingY: gs.wing ? Math.round(gs.wing.y) : 0,
@@ -429,6 +448,10 @@ export default function RType() {
                     if (opts.crushShip) gs.ship.x = gs.camX
                     if (opts.toPhase1) { gs.camX = STAGE_END; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
                     if (opts.toPhase2) { gs.p1 = null; gs.enemies = gs.enemies.filter((e) => e.on !== 'p1'); gs.bullets.length = 0; gs.camLock = false; gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
+                    // #2911: jump the leg-3 gate — clear the stage's dreads, roll to the lock, let the tank walk in
+                    if (opts.toDobk) { gs.p1 = null; gs.p2 = null; gs.enemies = gs.enemies.filter((e) => e.on !== 'p1' && e.on !== 'p2'); gs.bullets.length = 0; gs.missiles.length = 0; gs.camLock = false; gs.leg = 3; gs.camX = STAGE_END3; gs.legAt = gs.tick; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
+                    if (opts.openDobk && gs.dobk) { gs.dobk.mouth = 'open'; gs.dobk.mouthT = 10000 }
+                    if (typeof opts.dobkHp === 'number' && gs.dobk) gs.dobk.hp = opts.dobkHp
                     if (opts.openMouth && gs.p1) { gs.p1.mouth = 'open'; gs.p1.mouthT = 10000 }
                     if (opts.coreHp !== undefined && gs.p1) gs.p1.coreHp = opts.coreHp
                     // #2901 fixture: wind the desperation timer — `heat: n` puts
@@ -474,6 +497,8 @@ export default function RType() {
                     { label: 'POD OUT/IN', run: () => { if (!gs.pod) return 'no pod — GIVE POD first'; gs.pod.state = gs.pod.state === 'attached' ? 'fly' : 'return'; return `pod → ${gs.pod.state}` } },
                     { label: 'GIVE BITS', run: () => { if (shieldOn(gs)) return 'shield already up'; while (gs.bits.length < 4) gs.bits.unshift({ id: gs.nextId++ }); return shieldOn(gs) ? 'shield — four bits orbiting' : 'bits chained' } },
                     { label: 'TO PHASE-2', run: () => { window.__rTest.setup({ toPhase2: true }); return 'the twin-core fortress looms' } },
+                    { label: 'TO DOBK', run: () => { window.__rTest.setup({ toDobk: true }); return 'the bridgehead — something enormous walks in' } },
+                    { label: 'DOBK MAW', run: () => { if (!gs.dobk) return 'no tank on screen — TO DOBK first'; window.__rTest.setup({ openDobk: true }); return 'the maw hangs open' } },
                     { label: 'OPEN VENTS', run: () => { if (!gs.p2) return 'no fortress on screen — TO PHASE-2 first'; window.__rTest.setup({ openVents: true }); return 'both vents gape' } },
                     { label: 'SPAWN BIT POD', run: () => { window.__rTest.setup({ spawnBitPod: { y: Math.round(gs.ship.y) } }); return 'a bit carrier closes in — feed it fire' } },
                     { label: 'TO PHASE-1', run: () => { window.__rTest.setup({ toPhase1: true }); return 'the dreadnought looms' } },
