@@ -89,7 +89,7 @@ function GameRoute({ game }) {
   return (
     <PadContext.Provider value={pad}>
       <GamepadBridge secondAction={padButton(pad)?.code} extraButtons={extraButtons} />
-      <LinkPads secondAction={padButton(pad)?.code} />
+      <LinkPads secondAction={padButton(pad)?.code} pad={pad} />
       <Suspense fallback={<LoadingCard />}>
         <Component />
       </Suspense>

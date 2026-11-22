@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { createPadClient } from '../utils/padlink.js'
+import { createPadClient, decodeLabels } from '../utils/padlink.js'
 import { makePadPeer, makeTransport, RELAY_DEFAULT } from '../utils/linkPeers.js'
 import { quantize, DIR_DEAD } from '../utils/onePad.js'
 import { vpadSize } from '../components/vpadSize.js'
@@ -24,6 +24,9 @@ export default function PadLink() {
     const [rtt, setRtt] = useState(0)
     const [mode, setMode] = useState('relay')
     const [code, setCode] = useState(() => (new URLSearchParams(window.location.search).get('room') || '').toUpperCase())
+    // #2929 — verbs the host composed into the join URL (`&labels=JUMP.KICK`);
+    // display-only, sanitised twice (host + here), never affects input.
+    const [labels] = useState(() => decodeLabels(new URLSearchParams(window.location.search).get('labels')))
     const [sz, setSz] = useState(() => vpadSize(window.innerWidth, window.innerHeight))
     const [portrait, setPortrait] = useState(() => window.innerHeight > window.innerWidth)
     const [heldUI, setHeldUI] = useState({})
@@ -164,16 +167,21 @@ export default function PadLink() {
         )
     }
 
-    const faceBtn = (field, label, tint, pos) => (
-        <div
-            data-btn={label}
-            {...holdKey(field, label)}
-            className={`absolute rounded-full flex items-center justify-center text-white font-bold backdrop-blur-sm ring-1 transition-all ${heldUI[label] ? 'ring-white/90 scale-95 brightness-150 ' : 'ring-white/50 '} ${tint}`}
-            style={{ width: L.btn, height: L.btn, fontSize: sz.font(label.length), ...pos }}
-        >
-            {label}
-        </div>
-    )
+    // label = the generic letter (data-btn + held state stay letters so the
+    // harness hooks don't move); text = the game verb to wear when it has one.
+    const faceBtn = (field, label, tint, pos, text) => {
+        const wear = text || label
+        return (
+            <div
+                data-btn={label}
+                {...holdKey(field, label)}
+                className={`absolute rounded-full flex items-center justify-center text-white font-bold backdrop-blur-sm ring-1 transition-all ${heldUI[label] ? 'ring-white/90 scale-95 brightness-150 ' : 'ring-white/50 '} ${tint}`}
+                style={{ width: L.btn, height: L.btn, fontSize: sz.font(wear.length), ...pos }}
+            >
+                {wear}
+            </div>
+        )
+    }
 
     const shoulder = (field, label, pos) => (
         <div
@@ -265,8 +273,8 @@ export default function PadLink() {
             <div className="absolute" style={{ right: sar, bottom: sab, width: D, height: D }}>
                 {faceBtn('y', 'Y', 'bg-emerald-500/25', { left: L.r, top: 0 })}
                 {faceBtn('x', 'X', 'bg-sky-500/25', { left: 0, top: L.r })}
-                {faceBtn('b', 'B', 'bg-orange-500/25', { left: L.r * 2, top: L.r })}
-                {faceBtn('a', 'A', 'bg-red-500/25', { left: L.r, top: L.r * 2 })}
+                {faceBtn('b', 'B', 'bg-orange-500/25', { left: L.r * 2, top: L.r }, labels.b)}
+                {faceBtn('a', 'A', 'bg-red-500/25', { left: L.r, top: L.r * 2 }, labels.a)}
             </div>
 
             {phase === 'connecting' && (

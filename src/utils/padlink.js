@@ -46,6 +46,37 @@ export const RESEAT_TRIES = 8             // then give up -> 'gone' (one-tap JOI
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
+// #2929 — game-flavored face-button labels travel host -> pad on the JOIN URL
+// the LinkPads card advertises (`&labels=JUMP.KICK`), so a phone joining a
+// DOUBLE DRAGON room says JUMP/KICK like the cabinet instead of A/B. This is
+// display-only metadata: it never enters a pad packet, never rides the relay
+// as a new type, and never changes what a press means. Wire form: dot-separated
+// `A.B`, uppercase A-Z0-9 only, LABEL_MAX chars per token; an empty token keeps
+// the pad's generic letter. Anything else (glyphs, markup, marquees) is
+// stripped at BOTH ends — the pad must never render an untrusted long string.
+export const LABEL_MAX = 6
+
+const cleanLabel = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, LABEL_MAX)
+
+// declaration verbs -> wire string ('' = carry no labels param at all).
+export function padLabels(aLabel, bLabel) {
+    const a = cleanLabel(aLabel), b = cleanLabel(bLabel)
+    if (!a && !b) return ''
+    return `${a}.${b}`
+}
+
+// wire string -> { a?, b? } (only tokens that survive sanitising; absent
+// keys mean the pad keeps its generic letters).
+export function decodeLabels(raw) {
+    const out = {}
+    if (!raw) return out
+    const t = String(raw).split('.')
+    const a = cleanLabel(t[0]), b = cleanLabel(t[1])
+    if (a) out.a = a
+    if (b) out.b = b
+    return out
+}
+
 // digital pad fields -> bit mask, tiny wire form.
 const BIT = { up: 1, down: 2, left: 4, right: 8, a: 16, b: 32, start: 64, boost: 128 }
 const BIT_FIELDS = ['up', 'down', 'left', 'right', 'a', 'b', 'start', 'boost']

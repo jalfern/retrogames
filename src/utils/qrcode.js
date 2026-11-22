@@ -32,10 +32,12 @@ const VERSIONS = [
 ]
 
 // The join target the pill points at; the phone reads ?room= (pages/PadLink.jsx).
-export function joinUrl(code, relayOverride) {
+export function joinUrl(code, relayOverride, labels) {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://jalfern.com'
     let url = `${origin}/retrogames/pad?room=${code}`
     if (relayOverride) url += `&relay=${relayOverride}`
+    // #2929 — the game's face verbs ride along so the pad can wear them.
+    if (labels) url += `&labels=${labels}`
     return url
 }
 

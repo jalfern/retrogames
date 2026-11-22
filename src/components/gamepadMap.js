@@ -14,6 +14,7 @@
 // KeyboardEvents VirtualControls does, so nothing in a game has to change.
 
 import { dirsFrom } from './virtualDir.js'
+import { padLabels } from '../utils/padlink.js'
 
 // Engage threshold: the stick must push past this magnitude before it drives
 // an arrow. Release threshold: once engaged it only clears below this lower
@@ -234,6 +235,14 @@ export function waysOf(pad) {
 export function padButton(pad) {
     if (!validPad(pad) || !pad.buttons.length) return null
     return pad.buttons[0]
+}
+
+// #2929 — the padlink join-URL labels string for a pad declaration: the game's
+// A/B verbs (`JUMP.KICK`) so a linked phone wears the cabinet's words instead
+// of generic letters. Reads the same source VirtualControls does: `aLabel` for
+// A, padButton's label for B. Empty when the game declares no verbs.
+export function linkLabelsOf(pad) {
+    return padLabels(pad && pad.aLabel, padButton(pad) && padButton(pad).label)
 }
 
 // #906: which face buttons a game actually uses, and what they say. `reads`
