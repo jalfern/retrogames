@@ -280,6 +280,8 @@ node scripts/floorbosscheck.mjs --mutate-flowheat # the second route on a cell c
 node scripts/floorbosscheck.mjs --mutate-duck   # carts stop yielding into bays — the avoidable freeze comes back (#2692)
 node scripts/floorbosscheck.mjs --mutate-manners # the first duck never names itself — courtesy stays decoration (#2700)
 node scripts/floorbosscheck.mjs --mutate-attract # the shop window goes cold — the demo seed stops ducking on screen (#2700)
+node scripts/floorbosscheck.mjs --mutate-stamp # the tick-stamp dies — a steered take goes unlabeled and model hands launder as human (#2987)
+node scripts/floorbosscheck.mjs --mutate-peek # the press-time stamp returns — a glance that never drove poisons the take (#2987)
 npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555); yield holds on live traffic — the dashed cyan courtesy ring sampled atomically with the yields eye (#2692)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
@@ -348,7 +350,8 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   grammar, and nothing beyond it is scheduled.
 
 Recording honest gaps (#1712):
-- **Sheet truth (#2964, shipped):** the cleared sheet beats CLEAR — quota struck
+- **CLOSED by #2974** — sheet truth (#2964 items 1,3; seams followed via
+  #2977/#2981): the cleared sheet beats CLEAR — quota struck
   through, `EARNED n ✓` beside it, and the ladder rungs (banked steady, the rung
   just cleared lit, the next cyan) on an opaque plate, so win reads differently
   from loss at phone scale — not just colour + fanfare. And while a consented
@@ -392,6 +395,19 @@ Recording honest gaps (#1712):
   before step 300) straight into `floorBossRows` and it refuses exactly at
   checkpoint 300; the NEW shape replays clean; source pins hold the drain
   law; mutant `--mutate-taps` dies by name.
-- The WATCH stamp is conservative: one glance at the brain labels the whole
+- ~~The WATCH stamp is conservative: one glance at the brain labels the whole
   take `model`, so a mostly-human shift with a single Y press stays out of
-  train. Better an honest loss than laundered autopilot hands (#2058 law).
+  train. Better an honest loss than laundered autopilot hands (#2058 law).~~
+  **CLOSED by #2987**: the stamp got *tick-true* — the take is named `model`
+  when the autopilot pad drove at least one live sim tick (seat the brain and
+  hand back before a tick runs and the take stays yours); conservatism is
+  untouched, every steered tick still poisons the career take across clock-ins
+  (#2958 seam) and only a fresh floor clears. And the sheet now says so: a
+  steered AND banked take gets an amber `BRAIN STEERED — TAKE OUT OF TRAIN`
+  plate under the beat (opaque-plate law, static verdict, amber family — the
+  chip's hot-red discipline stands); a declined floor has no take to confess
+  and stays silent (#2964/#2058 bank truth). Proof: floorbosscheck source pins
+  (tick-stamp, no press-stamp, sources() by tick truth, wink gate = bank
+  truth, advanceShift keeps the stamp) + mutants `stamp` and `peek` dying by
+  name; floorbossplay real-Y laws (a live tick stamps the take, the stamp
+  survives hand-back and the clock-in, the declined sheet winks nothing).

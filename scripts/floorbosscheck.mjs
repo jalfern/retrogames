@@ -60,6 +60,8 @@
 //   node scripts/floorbosscheck.mjs --mutate-tail # loaded carts turn into their counterweight again — the tail clause dies in the router (#2760)
 //   node scripts/floorbosscheck.mjs --mutate-tail-land # racks land on committed backswings — the land scan goes blind to the tail diagonal (#2760)
 //   node scripts/floorbosscheck.mjs --mutate-taps # the drain stops applying its banked tap — live == replay dies (#2966)
+//   node scripts/floorbosscheck.mjs --mutate-stamp # the tick-stamp dies — a steered take goes unlabeled, model hands launder as human (#2987)
+//   node scripts/floorbosscheck.mjs --mutate-peek # the press-time stamp returns — a glance that never drove poisons the take (#2987)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -127,9 +129,11 @@ const MUT_COURTESY = ARGS.includes('--mutate-courtesy') // #2783: courtesy parks
 const MUT_CAREER = ARGS.includes('--mutate-career') // #2958: the adapter seam dies — career takes cannot clock in on replay
 const MUT_WHISTLE = ARGS.includes('--mutate-whistle') // #2958: whistle-stop returns — a cleared night closes the take at the sheet
 const MUT_TAPS = ARGS.includes('--mutate-taps') // #2966: the drain stops applying its banked tap — pointers the floor never honors
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND || MUT_COURTESY || MUT_CAREER || MUT_WHISTLE || MUT_TAPS) {
+const MUT_STAMP = ARGS.includes('--mutate-stamp') // #2987: the tick-stamp dies — steered takes go unlabeled and model hands launder as human
+const MUT_PEEK = ARGS.includes('--mutate-peek') // #2987: the press-time stamp returns — a glance that never drove the wheel poisons the take
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND || MUT_COURTESY || MUT_CAREER || MUT_WHISTLE || MUT_TAPS || MUT_STAMP || MUT_PEEK) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
-    const tgt = MUT_MANNERS || MUT_ATTRACT || MUT_WHISTLE || MUT_TAPS ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) // #2700: presentation laws plant in the painter; #2958: so does the take law; #2966: so does the tap-drain law
+    const tgt = MUT_MANNERS || MUT_ATTRACT || MUT_WHISTLE || MUT_TAPS || MUT_STAMP || MUT_PEEK ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) // #2700: presentation laws plant in the painter; #2958: so does the take law; #2966: so does the tap-drain law; #2987: so do both stamp laws
         : MUT_CAREER ? new URL('./plaicraft-dataset.mjs', import.meta.url) // #2958: the replay seam lives in the adapter
             : sim
     const src = readFileSync(tgt, 'utf8')
@@ -211,6 +215,10 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                             ? ['if (!won) closeEpisode(false)', 'closeEpisode(won)', 'whistle-stop returns — a cleared night closes its take at the sheet, career takes die in the bank (#2958)']
                                                                             : MUT_TAPS
                                                                                 ? ['if (!tap.applied) applyTap(gs, tap.px, tap.py)', 'if (!tap.applied) { /* MUTANT (#2966): the drain banks a pointer the floor never applies */ }', 'queued taps stop applying live — the shell promises pointers its own drain never honors, and live == replay is dead']
+                                                                             : MUT_STAMP
+                                                                                 ? ['if (brainOn) watchSteered = true', 'if (false && brainOn) { /* MUTANT (#2987): the tick-stamp is dead */ }', 'steered ticks leave no mark — the brain drives whole shifts and the take still claims the player\'s hands, laundering model out of the bank (#2987)']
+                                                                             : MUT_PEEK
+                                                                                 ? ['setWatching(true); playWatchStart() }', 'setWatching(true); playWatchStart(); watchSteered = true } // MUTANT (#2987): the press names the take again', 'one glance names the take again — a peek that never drove the wheel loses a mostly-human shift from train (#2987)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
@@ -994,8 +1002,35 @@ console.log('— shift ladder (#2346) —')
         'the cleared sheet strikes the rung\u2019s quota and names what it earned (#2964)')
     ok(/else if \(i === gs\.cleared\) \{ ctx\.fillStyle = '#b5ffcf'/.test(ui),
         'the ladder rung just cleared lights bright on the sheet — the +1 the eye catches at phone scale (#2964)')
-    ok(!/isRecording\(\)/.test(ui.slice(0, ui.indexOf('const paintOver'))),
-        'no disclosure drawn before the sheet exists — mid-play stays HUD-only (#2964)')
+    ok(!/isRecording\(\)/.test(ui.slice(0, ui.indexOf('const paintOver')).replace(/sheetSteered = watchSteered && isRecording\(\)/, '')),
+        'no disclosure drawn before the sheet exists — mid-play stays HUD-only; the only pre-sheet bank read is the finish-time capture (#2964, #2987 carve-in)')
+}
+{
+    // #2987 WATCH-STAMP TRUTH — the take is named model when the autopilot pad
+    // DROVE a live tick, not when Y went down. Seat and hand back before the
+    // loop runs and the floor remembers nothing — the take stays the thumb's.
+    // Conservatism intact: one steered tick poisons the career take (advanceShift
+    // never clears the mark) and only a fresh floor does. The disclosure obeys
+    // the bank — captured at finish as watchSteered && isRecording(), so a
+    // declined floor never sees it (#2964 chip law, #2058 truth).
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/const brainOn = watchingRef\.current && !gs\.end/.test(ui) && /if \(brainOn\) watchSteered = true/.test(ui),
+        'the stamp lands on the tick that seats the autopilot pad — drive truth, not keydown truth (#2987)')
+    ok(!/watchUsed/.test(ui) && !/playWatchStart\(\); watchSteered = true/.test(ui),
+        'the Y keydown only ARMS — a glance that never drove the wheel keeps its take human (#2987/#2058)')
+    ok(/kind: watchSteered \? 'model' : 'human'/.test(ui),
+        "the spec names seat 0 by steered ticks — sources() resolves drive truth at stop (#2987/#1712)")
+    ok(/sheetSteered = watchSteered && isRecording\(\)/.test(ui),
+        'the verdict captures the bank\'s truth at the whistle — steered AND recorded, never less (#2987/#2058)')
+    ok(/if \(sheetSteered\) \{/.test(ui) && (ui.match(/BRAIN STEERED — TAKE OUT OF TRAIN/g) || []).length === 1
+        && ui.indexOf('BRAIN STEERED — TAKE OUT OF TRAIN') > ui.indexOf('const paintOver'),
+        'the sheet winks the amber verdict exactly once, sheet-only — never mid-play (#2987/#2964 law)')
+    const adv = ui.match(/const advanceShift = \(\) => \{[\s\S]*?\n        \}/)
+    ok(!!adv && !/watchSteered = false/.test(adv[0]) && /watchingRef\.current = false/.test(adv[0]),
+        'advanceShift releases the floor but keeps the stamp — the poison rides the career take across the seam (#2987/#2958)')
+    const sp = ui.match(/const startPlay = \(duel = false\) => \{[\s\S]*?\n        \}/)
+    ok(!!sp && /watchSteered = false/.test(sp[0]) && /sheetSteered = false/.test(sp[0]),
+        'a fresh floor starts unbranded — the stamp clears only at run-birth (#2987)')
 }
 {
     // #2964 SEAM MARKERS — the viewer's jump-target inside a career take.
