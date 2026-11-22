@@ -140,6 +140,9 @@ export const OPT = {
     gap: 11,         // …and this far off the hull line, one orb per side
     flySpd: 2.4,     // the homing run in from the screen edge
     snap: 1.5,       // this close and the orb is home on its mount
+    // #2924 Option-launch: the throw. Faster than any round in the convoy
+    // (faster than the pod's 3.6 deploy) — the cabinet hurls them hard.
+    droneSpd: 4.2,
 }
 
 // stage script: camX triggers -> delayed spawns (queue keeps spacing seeded-free:
@@ -349,16 +352,51 @@ function summonOptions(gs, ent) {
     }))
 }
 
+// #2924 Option-launch: the cabinet's button 2 throws the options
+// forward when it isn't busy deploying the force field — a one-shot drone.
+// Fidelity interpretation (#237, recorded in the README): the released orbs
+// plough the lane, pierce soft bodies, plug fire — and they are SPENT for
+// good at the screen edge or against armour. No recall, no re-dock: the
+// shield-gun wall must be re-earned at the next O pod.
+export function launchOptsOn(gs, ent, wing) {
+    if (!ent || !ent.opts) return false
+    const out = ent.opts.filter((o) => o.docked)
+    if (!out.length) return false
+    for (const o of out) { o.docked = false; o.burn = true }
+    gs.events.push(wing ? 'woptlaunch' : 'optlaunch')
+    return true
+}
+
+// #2924 a flying orb is still a SHIELD — the same plug reach the parked shell
+// keeps (8x7 rounds, 9x8 hunters); it just spends nothing to say so.
+function optPlugAt(gs, ent, p, rx, ry) {
+    if (!ent || !ent.opts) return false
+    for (const o of ent.opts) {
+        if (o.burn && Math.abs(p.x - o.px) < rx && Math.abs(p.y - o.py) < ry) return true
+    }
+    return false
+}
+
 // px/py are written by the sim once per tick (the bits' discipline: draw and
 // fire never disagree). Docked orbs ride the mounts; a wreck never keeps orbs
 // (killShip strips them), so no dead-hull branch is needed beyond frozen.
 function refreshOptsOn(gs, ent, frozen) {
     if (!ent || !ent.opts) return
+    const alive = []
     for (const o of ent.opts) {
+        if (o.burn) {
+            // #2924 one-shot drones: forward only — never home, never re-dock;
+            // spent at the right edge (armour bursts them where they fly)
+            if (frozen) { alive.push(o); continue }
+            o.px += OPT.droneSpd
+            if (o.px > gs.camX + W + 16) continue
+            alive.push(o)
+            continue
+        }
         const mx = ent.x - OPT.back
         const my = ent.y + o.side * OPT.gap
-        if (o.docked) { o.px = mx; o.py = my; continue }
-        if (frozen) continue
+        if (o.docked) { o.px = mx; o.py = my; alive.push(o); continue }
+        if (frozen) { alive.push(o); continue }
         const dx = mx - o.px, dy = my - o.py
         if (Math.abs(dx) <= OPT.snap && Math.abs(dy) <= OPT.snap) {
             o.docked = true; o.px = mx; o.py = my
@@ -367,7 +405,9 @@ function refreshOptsOn(gs, ent, frozen) {
             o.px += clamp(dx, -OPT.flySpd, OPT.flySpd)
             o.py += clamp(dy, -OPT.flySpd, OPT.flySpd)
         }
+        alive.push(o)
     }
+    ent.opts = alive.length ? alive : null
 }
 
 // #2919 the special-pod laws, per hull (S4 symmetry): Double arms once — the
@@ -825,10 +865,14 @@ function runWorld(gs, pad, frozen, pad2) {
     const sAlive = !s.dead // S4: seat one may hang while the wing works
     const bPress = !!pad.b && !gs.bHeld   // POD button is edge-triggered
     gs.bHeld = !!pad.b
+    // #2924 the throw outranks the call: the cabinet's button 2 hurls the
+    // options when no shell is in hand — with orbs docked, the press IS the
+    // throw, and the wing's spare pod is not called (the press is spent).
+    const thrown = !frozen && sAlive && bPress && !gs.pod && launchOptsOn(gs, gs.ship, false)
     // #2841 (S4 polish): a bare seat CALLS for the shell — pressing POD with no
     // pod of your own asks the wing to fly its spare over. Per-hull gear is still
     // the rule (no press, no hand-off); the original passed pods between pilots.
-    if (!frozen && bPress && !gs.pod && gs.wing && !gs.wing.dead && !gs.wing.out && gs.wing.pod) gs.wing.pod.hand = true
+    if (!frozen && bPress && !gs.pod && !thrown && gs.wing && !gs.wing.dead && !gs.wing.out && gs.wing.pod) gs.wing.pod.hand = true
     refreshBits(gs)
     refreshOptsOn(gs, gs.ship, gs.ship.dead) // #2919 orbs home onto seat one's mounts
     if (gs.optAnn > 0) gs.optAnn -= 1       // #2919 HUD voice (juice, never hashed)
@@ -1419,6 +1463,8 @@ function runWorld(gs, pad, frozen, pad2) {
         }
         if (b.x < gs.camX - 8 || b.x > gs.camX + W + 8 || b.y < FIELD_TOP - 4 || b.y > FIELD_BOT + 4) { gs.bullets.splice(i, 1); continue }
         if (!frozen && gs.pod && Math.abs(b.x - gs.pod.x) < 8 && Math.abs(b.y - gs.pod.y) < 7) { gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('plug'); continue }
+        // #2924 thrown orbs plug fire on their way out — shields before guns
+        if (!frozen && optPlugAt(gs, gs.ship, b, 8, 7)) { gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('plug'); continue }
         // the completed bit chain is a rotating wall: lead does not get through
         if (!frozen && shieldOn(gs)) {
             let deflected = false
@@ -1432,6 +1478,7 @@ function runWorld(gs, pad, frozen, pad2) {
         }
         // seat two plugs too (S4): the wing's shell and orbit eat their own lead
         if (!frozen && gs.wing && !gs.wing.out && gs.wing.pod && Math.abs(b.x - gs.wing.pod.x) < 8 && Math.abs(b.y - gs.wing.pod.y) < 7) { gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('plug'); continue }
+        if (!frozen && gs.wing && !gs.wing.out && optPlugAt(gs, gs.wing, b, 8, 7)) { gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('plug'); continue }
         if (!frozen && gs.wing && !gs.wing.out && shieldOnAt(gs.wing)) {
             let dfl = false
             for (const bt of gs.wing.bits) {
@@ -1465,6 +1512,7 @@ function runWorld(gs, pad, frozen, pad2) {
         m.y += Math.sin(m.a) * m.spd
         if (m.t <= 0 || m.x < gs.camX - 14 || m.x > gs.camX + W + 14 || m.y < FIELD_TOP - 6 || m.y > FIELD_BOT + 6) { gs.missiles.splice(i, 1); continue }
         if (!frozen && gs.pod && Math.abs(m.x - gs.pod.x) < 9 && Math.abs(m.y - gs.pod.y) < 8) { gs.missiles.splice(i, 1); gs.lastHitX = m.x; gs.lastHitY = m.y; gs.events.push('plug'); continue }
+        if (!frozen && optPlugAt(gs, gs.ship, m, 9, 8)) { gs.missiles.splice(i, 1); gs.lastHitX = m.x; gs.lastHitY = m.y; gs.events.push('plug'); continue }
         if (!frozen && shieldOn(gs)) {
             let deflected = false
             for (const bt of gs.bits) {
@@ -1478,6 +1526,7 @@ function runWorld(gs, pad, frozen, pad2) {
             if (deflected) continue
         }
         if (!frozen && gs.wing && !gs.wing.out && gs.wing.pod && Math.abs(m.x - gs.wing.pod.x) < 9 && Math.abs(m.y - gs.wing.pod.y) < 8) { gs.missiles.splice(i, 1); gs.lastHitX = m.x; gs.lastHitY = m.y; gs.events.push('plug'); continue }
+        if (!frozen && gs.wing && !gs.wing.out && optPlugAt(gs, gs.wing, m, 9, 8)) { gs.missiles.splice(i, 1); gs.lastHitX = m.x; gs.lastHitY = m.y; gs.events.push('plug'); continue }
         if (!frozen && gs.wing && !gs.wing.out && shieldOnAt(gs.wing)) {
             let dfl = false
             for (const bt of gs.wing.bits) {
@@ -1497,6 +1546,12 @@ function runWorld(gs, pad, frozen, pad2) {
     // armour was already refused the pod above and stays untouched
     if (!frozen && gs.pod) podRamInto(gs, gs.pod)
     if (!frozen && gs.wing && !gs.wing.out && !gs.wing.dead && gs.wing.pod) podRamInto(gs, gs.wing.pod)
+
+    // #2924 the drones plough the lane: soft bodies break under them and the
+    // orb keeps flying through the kill (the pierce law); armour is where a
+    // drone ENDS — plate is not flesh, and the throw does not cheat it.
+    if (!frozen) optDronesInto(gs, gs.ship)
+    if (!frozen && gs.wing && !gs.wing.out && !gs.wing.dead) optDronesInto(gs, gs.wing)
 
     // --- the shield also grinds: soft Bydo meet the rotating fist and break
     if (!frozen && shieldOn(gs)) shieldGrind(gs, gs.ship, gs.bits)
@@ -1572,6 +1627,55 @@ function podRamInto(gs, pd) {
     }
 }
 
+// #2924 one-shot drones: soft bodies break under the orb (same ram damage
+// the shell deals, spent once per body — the pierce law), and armour is
+// where the drone ends: clank, gone. It never bites the maw either — the
+// dread's core stays the fire-lane's prize (the maw law stands untouched).
+function optDronesInto(gs, ent) {
+    if (!ent.opts) return
+    let gone = false
+    for (const o of ent.opts) {
+        if (!o.burn) continue
+        if (!o.hits) o.hits = []
+        const p1 = gs.p1; const p2 = gs.p2; const dk = gs.dobk
+        let spent = false
+        for (const e of gs.enemies) {
+            if (e.kind !== 'hullseg') continue
+            if (o.px + 4 > e.x && o.px < e.x + e.len && o.py > e.y0 - 2 && o.py < e.y1 + 2) { spent = true; break }
+        }
+        if (!spent && p1 && p1.dyingT === 0 && o.px + 4 > p1.x && o.py > 34 && o.py < 200) spent = true
+        if (!spent && p2 && p2.dyingT === 0 && o.px + 4 > p2.x && o.py > 34 && o.py < 200) spent = true
+        if (!spent && dk && dk.dyingT === 0 && o.px + 4 > dk.x && o.py > DOBK.bodyTop - 4 && o.py < DOBK.bodyBot + 4) spent = true
+        if (spent) {
+            o.gone = true; gone = true
+            gs.lastHitX = o.px; gs.lastHitY = o.py
+            gs.events.push('clank')
+            continue
+        }
+        for (let i = gs.enemies.length - 1; i >= 0; i--) {
+            const e = gs.enemies[i]
+            if (e.kind === 'hullseg' || o.hits.includes(e.id)) continue
+            const rx = e.kind === 'larva' ? 10 : e.kind === 'pod' ? 12 : e.kind === 'bitpod' ? 13 : 10
+            const ry = e.kind === 'larva' ? 8 : e.kind === 'bitpod' ? 10 : 9
+            if (Math.abs(e.x - o.px) < rx && Math.abs(e.y - o.py) < ry) {
+                o.hits.push(e.id)
+                e.hp -= 3
+                gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
+                if (e.hp <= 0) {
+                    gs.enemies.splice(i, 1)
+                    addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : e.kind === 'bitpod' ? 400 : 300)
+                    gs.events.push('boom')
+                    if (e.kind === 'bitpod') releaseBits(gs, e)
+                }
+            }
+        }
+    }
+    if (gone) {
+        ent.opts = ent.opts.filter((o) => !o.gone)
+        if (!ent.opts.length) ent.opts = null
+    }
+}
+
 function shieldGrind(gs, ship, bits) {
     for (let i = gs.enemies.length - 1; i >= 0; i--) {
         const e = gs.enemies[i]
@@ -1616,6 +1720,10 @@ function runWing(gs, pad2, frozen) {
     const pad = w.human && pad2 ? pad2 : wingBrain(gs)
     const wB = !!pad.b && !w.bHeld // pod is a press-verb here too
     w.bHeld = !!pad.b
+    // #2924 seat two throws too (S4 symmetry) — same precedence: a spare
+    // shell in hand owns the press; otherwise docked orbs fly. The brains
+    // never press b (the throw stays a human verb at seat two as well).
+    if (!frozen && wB && !w.pod) launchOptsOn(gs, w, true)
     if (w.inv > 0) w.inv -= 1
     w.anim += 1
     if (w.cd > 0) w.cd -= 1
@@ -1975,7 +2083,7 @@ export function stateHash(gs) {
     mix({ vulcan: 0, laser: 1, wave: 2, double: 3 }[s.weapon] ?? 4); mix(s.charge); mix(s.inv); mix(s.dead ? 1 : 0)
     mix(s.spd || 0) // #2915 Speed Up is sim truth — the panic hash covered hot the same way
     mix(s.opts ? s.opts.length : 0) // #2919 the shield-guns are sim truth too…
-    if (s.opts) for (const o of s.opts) { mix(o.px); mix(o.py); mix(o.docked ? 1 : 0) } // …run and mount included
+    if (s.opts) for (const o of s.opts) { mix(o.px); mix(o.py); mix(o.docked ? 1 : o.burn ? 2 : 0) } // …run, mount and throw-state included (#2924)
     const pd = gs.pod
     mix(pd ? 1 : 0)
     if (pd) { mix(pd.x); mix(pd.y); mix(pd.state.length); mix(pd.state.charCodeAt(0)) }
@@ -2009,7 +2117,7 @@ export function stateHash(gs) {
         mix({ vulcan: 0, laser: 1, wave: 2, double: 3 }[wg.weapon] ?? 4); mix(wg.inv)
         mix(wg.spd || 0) // #2915 per-hull speed rides the hash too
         mix(wg.opts ? wg.opts.length : 0) // #2919 per-hull options as well
-        if (wg.opts) for (const o of wg.opts) { mix(o.px); mix(o.py); mix(o.docked ? 1 : 0) }
+        if (wg.opts) for (const o of wg.opts) { mix(o.px); mix(o.py); mix(o.docked ? 1 : o.burn ? 2 : 0) } // #2924 throw-state too
         mix(wg.bits.length)
         for (const bt of wg.bits) { mix(bt.px ?? 0); mix(bt.py ?? 0) }
         mix(wg.pod ? 1 : 0)
