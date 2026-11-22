@@ -211,7 +211,7 @@ const SNIPERS = [
 // (zero new gs.r draws, the courier/cascade law reused): same seed, same
 // crossfire. The relocation rides gs.lk (loop tempo, like the walker pace) and
 // fits strictly inside the reload: RELOC 30 ticks vs a cooldown of at least
-// 150/k — at the hottest k = 1.3 it still settles ~85 ticks before the glint,
+// 150/k — at the hottest k = 1.3 it still settles ~50 ticks before the glint,
 // so the aim is always frozen while the telegraph is flashing.
 const PERCH_OFF = [[0, 0], [-34, 6], [30, -7]]
 const PERCH_RELOC = 30

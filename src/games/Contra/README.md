@@ -157,7 +157,7 @@ disagreement is recorded on #2894.*
   zero gs.r draws, the courier/cascade law reused: same seed, same crossfire.
   The shift starts the instant the round leaves (muzzle-flash frame) and walks
   `PERCH_RELOC = 30` ticks advanced by `gs.lk` (loop tempo, like the walker
-  pace) — so it always settles ~85 ticks before the next glint even at
+  pace) — it settles ~80 ticks before the next glint at k = 1 and still ~50 at
   k = 1.3: **the aim is frozen while the telegraph flashes, and no round ever
   leaves a moving nest.** The depot-roof nest is exempt — its `sn.x === dp.x`
   identity IS the roof-blown-off law. The vest grenadier throws only: the
