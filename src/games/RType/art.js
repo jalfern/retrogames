@@ -5,7 +5,7 @@
 // S.E.E.D. force pod: a rotating cyan energy ball with a blue capsule seed.
 // Everything generated in code; nothing borrowed. 320x224, no smoothing.
 
-import { W, H, FIELD_TOP, FIELD_BOT, POD, CORE_Y, DOBK } from './sim.js'
+import { W, H, FIELD_TOP, FIELD_BOT, POD, CORE_Y, DOBK, DUEL } from './sim.js'
 
 // ------------------------------------------------------------ pixel font ---
 // 5x7 arcade-cube glyphs cut for this cabinet (rows: '#' = ink).
@@ -466,8 +466,43 @@ export function drawBitPod(ctx, e, camX) {
     ctx.fillRect(x - 12, y + 1, 2, 2)
 }
 
-export function drawMissile(ctx, m, camX) {
-    const x = Math.round(m.x - camX), y = Math.round(m.y)
+// #2934 the duelist: a crimson dart that faces its prey. The eye is the
+// clock — gold while it reloads, a white-hot blink over the last window
+// before the round (the sim's cd, read honestly); windup shudders the whole
+// hull white; the dash drags a hot streak. Nothing here is state — e.cd and
+// e.state are sim truth, the light is just telling you what they already say.
+export function drawDuelist(ctx, e, camX) {
+    const x = Math.round(e.x - camX), y = Math.round(e.y)
+    if (e.state === 'dash') { // the pass leaves heat behind it
+        ctx.fillStyle = 'rgba(255,120,60,0.45)'
+        ctx.fillRect(x + 8, y - 1, 7, 2)
+        ctx.fillStyle = 'rgba(255,210,120,0.30)'
+        ctx.fillRect(x + 15, y - 1, 5, 2)
+    }
+    const shake = e.state === 'windup' && (e.anim >> 1) % 2 === 0 ? 1 : 0
+    const sx = x + shake // the crouch trembles
+    // swept-back wings (trailing right, nose at the prey's side)
+    ctx.fillStyle = '#7a1430'
+    ctx.fillRect(sx, y - 9, 7, 4)
+    ctx.fillRect(sx, y + 5, 7, 4)
+    // hull
+    ctx.fillStyle = '#a81f42'
+    ctx.fillRect(sx - 3, y - 5, 10, 10)
+    ctx.fillStyle = e.state === 'windup' ? '#e0506e' : '#d43a5c'
+    ctx.fillRect(sx - 1, y - 3, 7, 6)
+    // nose-cannon — the gun is where the eye is
+    ctx.fillStyle = '#5c1024'
+    ctx.fillRect(sx - 8, y - 2, 5, 4)
+    ctx.fillStyle = '#2a0810'
+    ctx.fillRect(sx + 6, y - 4, 3, 8) // engine claw
+    // the eye: gold on the cooldown, a searing blink at the shot's edge
+    const hot = e.cd <= DUEL.warn
+    ctx.fillStyle = hot && (e.anim >> 2) % 2 === 0 ? '#fff2b0' : '#ffd23c'
+    ctx.fillRect(sx - 5, y - 1, 3, 2)
+    if (hot) { ctx.fillStyle = 'rgba(255,242,176,0.35)'; ctx.fillRect(sx - 8, y - 3, 8, 6) }
+}
+
+export function drawMissile(ctx, m, camX) {    const x = Math.round(m.x - camX), y = Math.round(m.y)
     ctx.save()
     ctx.translate(x, y)
     ctx.rotate(m.a)

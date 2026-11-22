@@ -11,8 +11,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, STAGE_END, STAGE_END2, STAGE_END3, HEAT_AT, POD, OPT, makeGame, step, autopilot, stateHash, shieldOn, shieldOnAt, enableCoop } from './sim.js'
-import { drawBackground, drawShip, drawShipWing, drawLarva, drawTurret, drawPod, drawBitPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawDobk, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge, drawOption } from './art.js'
+import { W, H, STAGE_END, STAGE_END2, STAGE_END3, HEAT_AT, POD, OPT, DUEL, makeGame, step, autopilot, stateHash, shieldOn, shieldOnAt, enableCoop } from './sim.js'
+import { drawBackground, drawShip, drawShipWing, drawLarva, drawTurret, drawPod, drawBitPod, drawDuelist, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawDobk, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge, drawOption } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'r-type:hiscore'
@@ -149,6 +149,12 @@ export default function RType() {
             wbitslost: () => audioController.playSweep(440, 110, 0.22, 'triangle', 0.08),
             warn: () => audioController.playTone(500, 0.05, 'square', 0.06),
             tsfire: () => audioController.playTone(340, 0.04, 'square', 0.06),
+            // #2934 the duel speaks: its arrival is a hungry two-tone dive,
+            // its gun is a sharper report than a turret's, and the crouch
+            // before the pass rises like a held breath.
+            duelarrive: () => { audioController.playSweep(720, 280, 0.34, 'sawtooth', 0.09); audioController.playTone(220, 0.12, 'square', 0.07, 0.2) },
+            duelfire: () => { audioController.playTone(430, 0.04, 'square', 0.08); audioController.playNoise(0.02, 0.03) },
+            duelwind: () => { audioController.playSweep(170, 540, 0.38, 'square', 0.07); shake = Math.max(shake, 1) },
             '1up': () => { const n = [523, 659, 784, 1046]; n.forEach((f, i) => audioController.playTone(f, 0.09, 'square', 0.1, i * 0.09)) },
             clear: () => { const n = [392, 523, 659, 784, 659, 784, 1046]; n.forEach((f, i) => audioController.playTone(f, 0.12, 'square', 0.12, i * 0.12)) },
         }
@@ -286,6 +292,7 @@ export default function RType() {
                 else if (e.kind === 'turret') drawTurret(ctx, e, gs.camX)
                 else if (e.kind === 'pod') drawPod(ctx, e, gs.camX)
                 else if (e.kind === 'bitpod') drawBitPod(ctx, e, gs.camX)
+                else if (e.kind === 'duelist') drawDuelist(ctx, e, gs.camX) // #2934
             }
             for (const c of gs.caps) drawCap(ctx, c, gs.camX)
             for (const b of gs.bullets) drawBullet(ctx, b, gs.camX)
@@ -463,6 +470,11 @@ export default function RType() {
                     // #2835 fixtures: carriers on screen, the mass's sway, the
                     // salvo clock and the walking-death walk, all observable
                     bitpods: gs.enemies.filter((e) => e.kind === 'bitpod').length,
+                    // #2934 the duel: how many hunters are on the field, and
+                    // where the first one is in its ritual (state + gun clock)
+                    duel: gs.enemies.filter((e) => e.kind === 'duelist').length,
+                    duelState: (gs.enemies.find((e) => e.kind === 'duelist') || { state: '-' }).state,
+                    duelCd: (gs.enemies.find((e) => e.kind === 'duelist') || { cd: -1 }).cd,
                     sway: gs.p2 ? Math.round(gs.p2.swayOff * 10) / 10 : 0,
                     p2port: gs.p2 ? gs.p2.port : -1,
                     p2dying: gs.p2 ? gs.p2.dyingT : 0,
@@ -554,6 +566,12 @@ export default function RType() {
                         const by = opts.spawnBitPod.y ?? gs.ship.y
                         gs.enemies.push({ id: gs.nextId++, kind: 'bitpod', x: gs.ship.x + (opts.spawnBitPod.x ?? 70), y: by, baseY: by, bob: 0.5, hp: 7, n: opts.spawnBitPod.n ?? 3, vx: 0, inv: 0, anim: 0, holdT: 40, anchorX: gs.camX, state: 'hold' })
                     }
+                    // #2934 duelist fixture: a hunter already on its stand-off,
+                    // aimed at the seat — laws and QA can fight it on demand.
+                    if (opts.spawnDuelist && screen === 'play') {
+                        const dy = opts.spawnDuelist.y ?? gs.ship.y
+                        gs.enemies.push({ id: gs.nextId++, kind: 'duelist', x: gs.ship.x + (opts.spawnDuelist.x ?? DUEL.range), y: dy, baseY: dy, hp: DUEL.hp, t: opts.spawnDuelist.t ?? 0, cd: opts.spawnDuelist.cd ?? DUEL.fireCd, vx: 0, vy: 0, state: opts.spawnDuelist.state || 'hunt', stateT: 0, inv: 0, anim: 0 })
+                    }
                     if (opts.p2Port !== undefined && gs.p2) gs.p2.port = opts.p2Port
                     return true
                 },
@@ -564,7 +582,7 @@ export default function RType() {
                     `x ${Math.round(gs.ship.x)} (screen ${Math.round(gs.ship.x - gs.camX)})  y ${Math.round(gs.ship.y)}  cam ${Math.round(gs.camX)}${gs.camLock ? ' LOCK' : ''}`,
                     `score ${gs.score}  hi ${Math.max(hiscore, gs.score)}  lives ${gs.lives}  arm ${gs.ship.weapon}${gs.ship.charge ? ` charge ${gs.ship.charge}` : ''}  inv ${gs.ship.inv}  mode ${gs.mode}`,
                     `pod ${gs.pod ? `${gs.pod.state} @${Math.round(gs.pod.x - gs.camX)}` : 'none'}  enemies ${gs.enemies.length}  bullets ${gs.bullets.length}  missiles ${gs.missiles.length}  shots ${gs.shots.length}  phase1 ${gs.p1 ? `${gs.p1.mouth} core ${gs.p1.coreHp}/${gs.p1.coreMax}${gs.p1.hot ? ' HOT' : ''} heat ${gs.tick - gs.p1.lockAt}/${HEAT_AT}` : 'field'}`,
-                    `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  opts ${gs.ship.opts ? `${gs.ship.opts.filter((o) => o.docked).length}/2 docked${gs.ship.opts.some((o) => o.fly) ? ` +${gs.ship.opts.filter((o) => o.fly).length} away` : ''}` : 'none'}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}  sway ${Math.round(gs.p2.swayOff)}px salvo-port ${gs.p2.port}${gs.p2.dyingT > 0 ? `  WALK ${gs.p2.dyingT} from port ${gs.p2.lastCore}` : ''}` : (gs.leg === 2 ? 'inbound' : '-')}  carriers ${gs.enemies.filter((e) => e.kind === 'bitpod').length}`,
+                    `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  opts ${gs.ship.opts ? `${gs.ship.opts.filter((o) => o.docked).length}/2 docked${gs.ship.opts.some((o) => o.fly) ? ` +${gs.ship.opts.filter((o) => o.fly).length} away` : ''}` : 'none'}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}  sway ${Math.round(gs.p2.swayOff)}px salvo-port ${gs.p2.port}${gs.p2.dyingT > 0 ? `  WALK ${gs.p2.dyingT} from port ${gs.p2.lastCore}` : ''}` : (gs.leg === 2 ? 'inbound' : '-')}  carriers ${gs.enemies.filter((e) => e.kind === 'bitpod').length}  duels ${gs.enemies.filter((e) => e.kind === 'duelist').length}`,
                     `wing ${gs.wing ? `${gs.wing.out ? 'OUT' : gs.wing.dead ? 'DOWN' : `(${Math.round(gs.wing.x - gs.camX)},${Math.round(gs.wing.y)})`}  lives ${gs.wing.lives}  ${gs.wing.human ? 'HUMAN' : 'CPU'}  arm ${gs.wing.weapon}  pod ${gs.wing.pod ? gs.wing.pod.state : 'none'}  bits ${gs.wing.bits.length}` : 'off'}  p1out ${gs.ship.out ? 'yes' : 'no'}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
@@ -580,6 +598,7 @@ export default function RType() {
                     { label: 'DOBK MAW', run: () => { if (!gs.dobk) return 'no tank on screen — TO DOBK first'; window.__rTest.setup({ openDobk: true }); return 'the maw hangs open' } },
                     { label: 'OPEN VENTS', run: () => { if (!gs.p2) return 'no fortress on screen — TO PHASE-2 first'; window.__rTest.setup({ openVents: true }); return 'both vents gape' } },
                     { label: 'SPAWN BIT POD', run: () => { window.__rTest.setup({ spawnBitPod: { y: Math.round(gs.ship.y) } }); return 'a bit carrier closes in — feed it fire' } },
+                    { label: 'SPAWN DUELIST', run: () => { window.__rTest.setup({ spawnDuelist: { y: Math.round(gs.ship.y) } }); return 'a crimson hunter takes the stand-off — it is hunting YOU' } },
                     { label: 'GIVE DOUBLE', run: () => { window.__rTest.setup({ giveDouble: true }); return 'twin vulcan — one press, two rounds' } },
                     { label: 'GIVE SPEED UP', run: () => { window.__rTest.setup({ giveSpeed: (gs.ship.spd || 0) + 1 }); return `speed ${Math.min(2, (gs.ship.spd || 0))} — the stick answers quicker` } },
                     { label: 'SPAWN O POD', run: () => { window.__rTest.setup({ spawnOCap: true }); return 'the O capsule is at your nose — claim the shield-guns' } },
@@ -628,6 +647,7 @@ export default function RType() {
                     optsFly: gs.ship.opts ? gs.ship.opts.filter((o) => o.fly).length : 0, // #2925
                     p2: gs.p2 ? gs.p2.cores.map((c) => c.hp).join('/') : '-',
                     waveIdx: gs.waveIdx, enemies: gs.enemies.length,
+                    duel: gs.enemies.filter((e) => e.kind === 'duelist').length, // #2934
                     cleared: gs.cleared ? 1 : 0,
                     wing: gs.wing ? (gs.wing.out ? 'out' : gs.wing.dead ? 'down' : 'live') : 'none',
                     wingLives: gs.wing ? gs.wing.lives : 0, wingHuman: gs.wing && gs.wing.human ? 1 : 0,

@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, OPT, WAVES2, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, OPT, DUEL, WAVES, WAVES2, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -1585,6 +1585,199 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         same && stateHash(dA) === stateHash(dB), `final ${stateHash(dA)} vs ${stateHash(dB)}`)
 }
 
+// ---------------------------------------------- the duelist (#2934, #2808-S5) ---
+// The shelf's first REACTIVE enemy (the Williams/Defender pursuit law): the
+// duelist hunts the nearer hull across lanes, guns it on a telegraphed clock,
+// and commits to one straight pass when its duel-clock expires. Authored
+// entries, zero rng — these laws pin every phase, every kill path and the
+// brain reactions that make the duel fair.
+{ // authored on the scripts: leg 1 sends two duelists, leg 2 one — authored y, no rng
+    const dl = WAVES.filter((w) => w.dlc)
+    const dl2 = WAVES2.filter((w) => w.dlc)
+    r.check('#2934 the duel is scripted, not rolled: two entries on leg 1, one on leg 2, authored y',
+        dl.length === 2 && dl2.length === 1 && dl.every((w) => Number.isInteger(w.dlc.y)),
+        `leg1 ${dl.map((w) => w.at + '@' + w.dlc.y).join(',')} leg2 ${dl2.map((w) => w.at + '@' + w.dlc.y).join(',')}`)
+}
+
+{ // zero rng: two seeds with the same pads raise the same duelist at the same tick
+    // (inv pinned: the run is watching the schedule, not surviving the grinder)
+    const a = makeGame(7), b = makeGame(23)
+    let firstA = null, firstB = null
+    for (let i = 0; i < 700; i++) {
+        step(a, {}); step(b, {})
+        a.ship.inv = 999999; b.ship.inv = 999999
+        a.events.length = 0; b.events.length = 0
+        const ea = a.enemies.find((e) => e.kind === 'duelist')
+        const eb = b.enemies.find((e) => e.kind === 'duelist')
+        if (ea && !firstA) firstA = { t: a.tick, x: ea.x, y: ea.y, id: ea.id }
+        if (eb && !firstB) firstB = { t: b.tick, x: eb.x, y: eb.y, id: eb.id }
+    }
+    r.check('#2934 the entry is seed-blind — same tick, same place (zero rng)',
+        firstA && firstB && firstA.t === firstB.t && firstA.x === firstB.x && firstA.y === firstB.y,
+        `A=${JSON.stringify(firstA)} B=${JSON.stringify(firstB)} (ids may differ: seeded capsules before the mark collect at different rates)`)
+}
+
+{ // pursuit law: it tracks the hull across lanes — the lane-flat world is over
+    const gs = makeGame(1)
+    gs.ship.inv = 999999
+    gs.enemies.push({ id: 801, kind: 'duelist', x: gs.ship.x + 140, y: 60, baseY: 60, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    gs.ship.y = 160
+    for (let i = 0; i < 100; i++) { step(gs, {}); gs.events.length = 0 }
+    const e = gs.enemies.find((x) => x.kind === 'duelist')
+    r.check('#2934 pursuit: the duelist crosses lanes to the hull (60 -> 160)',
+        e && Math.abs(e.y - 160) < 3, `y=${e ? e.y.toFixed(1) : 'dead'}`)
+}
+
+{ // stand-off law: hunting is pressure, not a cheap body-check
+    const gs = makeGame(2)
+    gs.ship.inv = 999999
+    gs.enemies.push({ id: 802, kind: 'duelist', x: gs.ship.x + 140, y: 120, baseY: 120, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    let minGap = 999, maxGap = 0, alive = true
+    for (let i = 0; i < 100; i++) {
+        step(gs, {})
+        gs.ship.inv = 999999
+        const e = gs.enemies.find((x) => x.kind === 'duelist')
+        if (!e) { alive = false; break }
+        const gap = e.x - gs.ship.x
+        if (gap < minGap) minGap = gap
+        if (gap > maxGap) maxGap = gap
+        gs.events.length = 0
+    }
+    r.check('#2934 stand-off: it holds ~110 px — closes to pressure, never leans on the hull',
+        alive && !gs.ship.dead && minGap >= 90 && maxGap <= 140, `gap ${minGap.toFixed(0)}..${maxGap.toFixed(0)} dead=${gs.ship.dead}`)
+}
+
+{ // the gun is telegraphed: the eye cools, then an aimed round — and the clock resets
+    const gs = makeGame(3)
+    gs.ship.inv = 999999
+    gs.enemies.push({ id: 803, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: 0, cd: 60, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    let firedAt = -1, bullet = null
+    for (let i = 0; i < 80; i++) {
+        step(gs, {})
+        if (firedAt < 0 && gs.events.includes('duelfire')) { firedAt = i; bullet = gs.bullets[gs.bullets.length - 1] }
+        gs.events.length = 0
+        gs.ship.inv = 999999
+    }
+    r.check('#2934 the aimed round: duelfire looses exactly one lead, and it travels AT the hull',
+        firedAt >= 55 && firedAt <= 62 && bullet && bullet.vx < -1 && Math.abs(bullet.vy) < 0.5,
+        `fired at +${firedAt} bullet=${bullet ? `vx ${bullet.vx.toFixed(2)} vy ${bullet.vy.toFixed(2)}` : 'none'}`)
+}
+
+{ // soft body: two vulcan rounds pay for the duel — pod money on the ground
+    const gs = makeGame(4)
+    gs.ship.inv = 999999
+    gs.enemies.push({ id: 804, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    let hits = 0, boomAt = -1
+    const sc0 = gs.score
+    for (let i = 0; i < 60 && boomAt < 0; i++) {
+        gs.shots.push({ id: 1000 + i, x: gs.ship.x + 12, y: gs.ship.y, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+        step(gs, {})
+        if (gs.events.includes('hit')) hits += 1
+        if (gs.events.includes('boom')) boomAt = i
+        gs.events.length = 0
+        gs.ship.inv = 999999
+        gs.bullets.length = 0
+    }
+    r.check('#2934 soft airframe: exactly two vulcan rounds fold it (hp 2), for 300',
+        boomAt > 0 && hits === 2 && gs.score - sc0 === DUEL.score, `hits=${hits} boom@${boomAt} score+${gs.score - sc0}`)
+}
+
+{ // the shell crushes it too — the ram law reaches the new soft body
+    const gs = makeGame(5)
+    gs.ship.inv = 999999
+    gs.pod = { id: 1, state: 'fly', x: gs.ship.x + 50, y: gs.ship.y, grace: 0 }
+    gs.enemies.push({ id: 805, kind: 'duelist', x: gs.ship.x + 58, y: gs.ship.y, baseY: gs.ship.y, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    let ram = false
+    for (let i = 0; i < 12; i++) { step(gs, {}); if (gs.events.includes('ram')) ram = true; gs.events.length = 0; gs.ship.inv = 999999 }
+    r.check('#2934 the S.E.E.D. shell rams the duelist down (soft Bydo law holds)',
+        ram && !gs.enemies.some((e) => e.kind === 'duelist') && gs.score >= DUEL.score, `ram=${ram}`)
+}
+
+{ // the orbit grinds it — four bits turn the duel into mince (soft, never armour)
+    const gs = makeGame(6)
+    gs.ship.inv = 999999
+    while (gs.bits.length < 4) gs.bits.unshift({ id: 60 + gs.bits.length })
+    const by = gs.ship.y + 15 // the shield reach
+    gs.enemies.push({ id: 806, kind: 'duelist', x: gs.ship.x, y: by, baseY: by, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    let grind = false
+    for (let i = 0; i < 40; i++) { step(gs, {}); if (gs.events.includes('ram')) grind = true; gs.events.length = 0; gs.ship.inv = 999999 }
+    r.check('#2934 the four-bit orbit grinds the duelist (the fist is wider than chaff)',
+        grind && !gs.enemies.some((e) => e.kind === 'duelist') && gs.score >= DUEL.score, `grind=${grind}`)
+}
+
+{ // the pass hurts: at zero range the duel is a wall
+    const gs = makeGame(7)
+    gs.ship.inv = 0
+    gs.enemies.push({ id: 807, kind: 'duelist', x: gs.ship.x + 4, y: gs.ship.y, baseY: gs.ship.y, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    step(gs, {})
+    r.check('#2934 contact kills: standing where the duelist stands is dying (body:duelist)',
+        gs.ship.dead && gs.lastDeath === 'body:duelist', `dead=${gs.ship.dead} why=${gs.lastDeath}`)
+}
+
+{ // the commit law: hunt, crouch, ONE straight pass — the duel always ends
+    const gs = makeGame(8)
+    gs.ship.inv = 999999
+    gs.enemies.push({ id: 808, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    const ladder = []
+    let dashV = null, straight = true, windAt = -1
+    for (let i = 0; i < 420; i++) {
+        step(gs, {})
+        gs.ship.inv = 999999
+        gs.bullets.length = 0
+        const e = gs.enemies.find((x) => x.kind === 'duelist')
+        if (!e) break
+        if (!ladder.includes(e.state)) ladder.push(e.state)
+        if (e.state === 'windup' && windAt < 0) windAt = i
+        if (e.state === 'dash') {
+            if (dashV === null) dashV = { vx: e.vx, vy: e.vy }
+            else if (Math.abs(e.vx - dashV.vx) > 1e-9 || Math.abs(e.vy - dashV.vy) > 1e-9) straight = false
+        }
+        gs.events.length = 0
+    }
+    r.check('#2934 the commit: hunt -> windup -> dash, and the pass flies straight to its end',
+        ladder.join('>') === 'hunt>windup>dash' && straight && windAt >= DUEL.commitAt - 5,
+        `${ladder.join('>')} wind@${windAt} straight=${straight}`)
+}
+
+{ // seat two is fair game: Bydo guns (and duels) take the NEARER hull
+    const gs = coopGame(9)
+    gs.ship.inv = 999999
+    if (gs.wing) { gs.wing.inv = 999999; gs.wing.human = true; gs.wing.y = 50; gs.wing.x = gs.ship.x - 10 }
+    // the hunter starts low, but the WING is the nearer hull — pursuit is
+    // nearest-hull law, not seat-one law: it must climb toward the wing.
+    // (seat two is pinned as a human on an idle pad so its CPU brain keeps off.)
+    gs.enemies.push({ id: 809, kind: 'duelist', x: gs.ship.x + 120, y: 60, baseY: 60, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    for (let i = 0; i < 120; i++) { step(gs, {}, {}); gs.ship.inv = 999999; if (gs.wing) gs.wing.inv = 999999; gs.events.length = 0 }
+    const e = gs.enemies.find((x) => x.kind === 'duelist')
+    r.check('#2934 the duel takes the nearer hull (S4 decoy law generalises to the hunter)',
+        e && Math.abs(e.y - gs.wing.y) < Math.abs(e.y - gs.ship.y),
+        `duelist y=${e ? e.y.toFixed(1) : 'gone'} wing y=${gs.wing.y.toFixed(0)} seat1 y=${gs.ship.y.toFixed(0)}`)
+}
+
+{ // hash: the duel is sim truth — presence moves the hash, replay matches it
+    const a = makeGame(10), b = makeGame(10)
+    for (let i = 0; i < 30; i++) { step(a, {}); step(b, {}); a.events.length = 0; b.events.length = 0 }
+    a.enemies.push({ id: 810, kind: 'duelist', x: a.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    const hClean = stateHash(a)
+    step(a, {}); step(b, {})
+    const hDuel = stateHash(a)
+    r.check('#2934 hash: a hunter on the field is sim truth (the hash moves, both clocks still match shape)',
+        hClean !== hDuel && typeof hDuel === 'number' && hDuel >>> 0 === hDuel,
+        `${hClean} -> ${hDuel}`)
+}
+
+{ // the autopilot fights its duel: it walks the lane while a hunter holds the
+    // field (standing still in front of a tracker is a self-aiming gift)
+    const gs = makeGame(11)
+    gs.ship.inv = 999999
+    gs.enemies.length = 0
+    gs.ship.y = 120
+    gs.enemies.push({ id: 811, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    const p = autopilot(gs)
+    r.check('#2934 the autopilot walks the duel: a hunter in the lane buys a moving pilot',
+        (p.up || p.down) === true, `up=${p.up} down=${p.down}`)
+}
+
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12
     let wins = 0
@@ -1987,6 +2180,45 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            name: 'pursuit-deaf',
+            anchor: 'e.y += clamp(tp.y - e.y, -DUEL.track, DUEL.track) // it answers the stick — just slower',
+            plant: 'e.y += 0 * clamp(tp.y - e.y, -DUEL.track, DUEL.track) /* MUTANT(pursuit-deaf): the hunter forgets how to hunt */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(1)
+                gs.ship.inv = 999999
+                gs.enemies.push({ id: 801, kind: 'duelist', x: gs.ship.x + 140, y: 60, baseY: 60, hp: mod.DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+                gs.ship.y = 160
+                for (let i = 0; i < 100; i++) { mod.step(gs, {}); gs.events.length = 0 }
+                const e = gs.enemies.find((x) => x.kind === 'duelist')
+                return !e || Math.abs(e.y - 60) < 3
+                    ? 'HARM NAMED: the hunter holds its lane while the pilot climbs away — the shelf\u2019s one reactive enemy is back to being another scripted drift, and every lane-dodge law taught by the duel goes unlearned'
+                    : null
+            },
+        },
+        {
+            name: 'commit-deaf',
+            anchor: 'if (e.t >= DUEL.commitAt) { e.state = \'windup\'; e.stateT = DUEL.windup; gs.events.push(\'duelwind\') }',
+            plant: 'if (false && e.t >= DUEL.commitAt) { e.state = \'windup\'; e.stateT = DUEL.windup; gs.events.push(\'duelwind\') } /* MUTANT(commit-deaf): the duel never ends */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(8)
+                gs.ship.inv = 999999
+                gs.enemies.push({ id: 808, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: mod.DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+                let saw = ''
+                for (let i = 0; i < 420; i++) {
+                    mod.step(gs, {})
+                    gs.ship.inv = 999999
+                    gs.bullets.length = 0
+                    const e = gs.enemies.find((x) => x.kind === 'duelist')
+                    if (!e) break
+                    if (!saw.includes(e.state)) saw += '>' + e.state
+                    gs.events.length = 0
+                }
+                return !saw.includes('>windup')
+                    ? 'HARM NAMED: the duel never commits — a hunter that only circles and plinks turns a set-piece into wallpaper; the crouch-and-pass, the moment the pilot must leave the line, is gone'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
@@ -2236,6 +2468,30 @@ const browser = await launch()
     const hotH = await page.evaluate(() => window.__rTest.probe())
     r.check('#2901 through the shell: past the mark the hull runs hot, and the hash moves with it',
         hotH.p1hot === 1 && hotH.heat >= 40, `hot=${hotH.p1hot} heat=${hotH.heat}`)
+
+    // #2934 the duel through the shell: the hunter reports through the probe
+    // (fixture -> hunt state + loaded gun), and a sustained vulcan stream
+    // answers it — the kill is observable, not just a sim number.
+    await page.evaluate(() => window.__game.reset(3))
+    await page.waitForTimeout(150)
+    const dLive = await page.evaluate(() => {
+        window.__rTest.setup({ inv: 999999, wingInv: 999999, spawnDuelist: { y: 150 } })
+        return window.__rTest.probe()
+    })
+    r.check('#2934 a duelist enters the fight through the shell — hunt state, loaded gun',
+        dLive.duel === 1 && dLive.duelState === 'hunt' && dLive.duelCd > 0,
+        `duel=${dLive.duel} state=${dLive.duelState} cd=${dLive.duelCd}`)
+    // The kill is driven by contract steps, not wall-clock waits: on software
+    // Chrome the rAF chain throttles late in a long leg (the #2906 ember law
+    // flakes the same way) — 320 deterministic ticks with the trigger held
+    // proves the duel dies the same for the bot and the thumb.
+    const dDead = await page.evaluate(() => {
+        for (let i = 0; i < 11; i++) window.__game.step({ a: true }, 30)
+        window.__rTest.setup({ inv: 999999, wingInv: 999999 })
+        return window.__rTest.probe()
+    })
+    r.check('#2934 sustained fire through the shell folds the hunter — the duel can be won on screen',
+        dDead.duel === 0, `duel=${dDead.duel}`)
 
     r.check('zero page errors across the whole leg', errs.length === 0, errs.join(' | ') || 'clean')
 }

@@ -144,6 +144,26 @@ export const OPT = {
     orbR: 6,         // #2925 the orb's reach for ram/refuse reads (the pod's shell radius)
 }
 
+// #2934 THE DUELIST — the shelf's first reactive enemy, in the spirit of the
+// pursuers Williams defined in Defender (1981): it ignores lanes, hunts the
+// nearer hull across the field, holds a stand-off and guns you, and when its
+// duel-clock runs out it crouches and throws ONE committed pass. Zero rng —
+// the entry is authored, the tracking is arithmetic on live positions — so
+// every seed's tuned stream stays exactly itself.
+export const DUEL = {
+    close: 0.9,      // px/tick it drives toward its stand-off…
+    back: 0.7,       // …and eases back when the pilot shoves into it
+    range: 110,      // the stand-off it holds: never a body-check while hunting
+    track: 1.15,     // vertical tracking speed — hungrier than a drifting larva, slower than your stick
+    fireCd: 110,     // ticks between aimed rounds
+    warn: 24,        // the eye cools to the shot over this window (art reads it)
+    hp: 2,           // soft, but two vulcan pays — it is a fighter, not chaff
+    score: 300,      // pod money: the duel is worth a pod's worth of lead
+    commitAt: 260,   // ticks of pursuit before it commits — the duel always ends
+    windup: 40,      // the crouch: a full second of "here it comes"
+    dash: 1.75,      // the pass — larva-dive punch from a much closer start
+}
+
 // stage script: camX triggers -> delayed spawns (queue keeps spacing seeded-free:
 // the schedule is authored, only enemy jitter draws rng).
 export const WAVES = [
@@ -158,6 +178,9 @@ export const WAVES = [
         { kind: 'larva', d: 36, y: 104, dive: 1 }, { kind: 'larva', d: 54, y: 186 },
         { kind: 'larva', d: 72, y: 44 }, { kind: 'larva', d: 90, y: 128, dive: 1 } ] },
     { at: 250, bcap: 1 },
+    // #2934 the first duel: authored y, right after the first bit capsule —
+    // the convoy answers your firepower with something that answers back.
+    { at: 270, dlc: { y: 76 } },
     { at: 300, seg: { y0: FIELD_TOP, y1: 96, len: 130, turret: 96 } },
     // #2915 fixed-spot special pods (arcade: D and S hide at authored places,
     // not in the capsule cycle). Authored y — zero rng, streams untouched.
@@ -180,6 +203,9 @@ export const WAVES = [
     { at: 640, pod: { y: 168, missiles: 4 } },
     { at: 660, scap: { y: 152 } },
     { at: 700, seg: { y0: FIELD_TOP, y1: 82, len: 170, turret: 82 } },
+    // #2934 the second duel rides low under the last slab — the pilot has the
+    // high ground, the duelist takes the low lane and hunts anyway.
+    { at: 720, dlc: { y: 158 } },
     { at: 770, spawn: [
         { kind: 'larva', d: 0, y: 140, dive: 1 }, { kind: 'larva', d: 22, y: 74 },
         { kind: 'larva', d: 44, y: 180, dive: 1 }, { kind: 'larva', d: 66, y: 108 } ] },
@@ -198,6 +224,9 @@ export const WAVES2 = [
     { at: 150, bpod: { y: 74, n: 3 } },
     { at: 180, seg: { y0: FIELD_TOP, y1: 92, len: 140, turret: 92 } },
     { at: 260, pod: { y: 152, missiles: 3 } },
+    // #2934 leg 2 gets its own duel — mid-field, dead centre, no terrain to
+    // hide a pass behind (authored y, zero rng).
+    { at: 300, dlc: { y: 122 } },
     { at: 330, spawn: [
         { kind: 'larva', d: 0, y: 84, dive: 1 }, { kind: 'larva', d: 26, y: 160 },
         { kind: 'larva', d: 52, y: 120, dive: 1 } ] },
@@ -439,6 +468,19 @@ function releaseBits(gs, e) {
         gs.caps.push({ id: gs.nextId++, x: e.x - 4 - i * 7, y, baseY: y, bob: ((e.id + i * 13) % 100) / 25, type: 'bit' })
     }
     gs.events.push('bitfree')
+}
+
+// #2934 the duelist: authored entry (zero rng — it rides the schedule's y like
+// the carriers), then pure reactive pursuit. See DUEL for the law numbers.
+function spawnDuelist(gs, y) {
+    gs.enemies.push({
+        id: gs.nextId++, kind: 'duelist',
+        x: gs.camX + W + 18, y, baseY: y,
+        hp: DUEL.hp, t: 0, cd: 60,          // the first crack is early — the arrival is the warning
+        vx: 0, vy: 0, state: 'enter', stateT: 0,
+        inv: 0, anim: 0,
+    })
+    gs.events.push('duelarrive')
 }
 
 // Where bit i rides THIS tick: chained at its slot, or swinging the shield
@@ -956,6 +998,7 @@ function runWorld(gs, pad, frozen, pad2) {
             if (wv.seg) spawnSeg(gs, wv.seg)
             if (wv.pod) spawnPod(gs, wv.pod.y, wv.pod.missiles)
             if (wv.bpod) spawnBitPod(gs, wv.bpod.y, wv.bpod.n)
+            if (wv.dlc) spawnDuelist(gs, wv.dlc.y) // #2934
             if (wv.spawn) {
                 for (const it of wv.spawn) gs.pending.push({ t: gs.tick + it.d, kind: it.kind, y: it.y, dive: it.dive })
             }
@@ -1280,6 +1323,50 @@ function runWorld(gs, pad, frozen, pad2) {
             }
             e.y = e.baseY + Math.sin((e.bob += 0.04)) * 7 * Math.min(1, (e.holdT || 0) / 40)
             if (e.x < gs.camX - 24) { gs.enemies.splice(i, 1); continue }
+        } else if (e.kind === 'duelist') {
+            // #2934 — the duel. Three phases: it closes to a stand-off, hunts
+            // the nearer hull across every lane (this is the reactive enemy —
+            // gun first, then the body), and when its clock expires it crouches
+            // and throws one committed pass. Zero rng: every decision is
+            // arithmetic on live positions, so pressed streams replay
+            // hash-for-hash and the autopilot's duel is the pilot's duel.
+            e.t += 1
+            const tp = nearestPilot(gs, e.x, e.y)
+            // the stand-off rides the pilot, never off the right edge —
+            // a pushed-out duel is still a duel on the screen, not a ghost
+            const wantX = Math.min(tp.x + DUEL.range, gs.camX + W - 20)
+            if (e.state === 'enter') {
+                if (e.x > wantX) e.x -= Math.max(0.35, Math.min(1.2, (e.x - wantX) * 0.05))
+                else e.state = 'hunt'
+                e.y += clamp(tp.y - e.y, -DUEL.track * 0.8, DUEL.track * 0.8)
+            } else if (e.state === 'hunt') {
+                if (e.x > wantX) e.x -= DUEL.close
+                else if (e.x < wantX) e.x += DUEL.back
+                e.y += clamp(tp.y - e.y, -DUEL.track, DUEL.track) // it answers the stick — just slower
+                e.cd -= 1
+                if (e.cd <= 0 && !frozen && e.x > gs.camX && e.x < gs.camX + W + 10) {
+                    const dx = tp.x - e.x, dyy = tp.y - e.y
+                    const m = Math.max(1e-6, Math.hypot(dx, dyy))
+                    gs.bullets.push({ id: gs.nextId++, x: e.x - 6, y: e.y, vx: (dx / m) * 1.3, vy: (dyy / m) * 1.3 })
+                    e.cd = DUEL.fireCd
+                    gs.events.push('duelfire')
+                }
+                if (e.t >= DUEL.commitAt) { e.state = 'windup'; e.stateT = DUEL.windup; gs.events.push('duelwind') }
+            } else if (e.state === 'windup') {
+                e.stateT -= 1
+                if (e.stateT <= 0) {
+                    const t2 = nearestPilot(gs, e.x, e.y) // the crouch aims at the last instant
+                    const dx = t2.x - e.x, dyy = t2.y - e.y
+                    const m = Math.max(1e-6, Math.hypot(dx, dyy))
+                    e.vx = (dx / m) * DUEL.dash; e.vy = (dyy / m) * DUEL.dash
+                    e.state = 'dash'; gs.events.push('warn')
+                }
+            } else { // dash: one straight commitment — grind, edge or grave
+                e.x += e.vx; e.y += e.vy
+            }
+            e.y = clamp(e.y, FIELD_TOP + 4, FIELD_BOT - 4) // the duel stays between the rails
+            if (e.x < gs.camX - 24) { gs.enemies.splice(i, 1); continue }
+            if (e.state === 'dash' && e.x > gs.camX + W + 30) { gs.enemies.splice(i, 1); continue }
         }
         // hullseg: anchored to world; scrolls out of life behind the camera
         if (e.kind === 'hullseg' && e.x + e.len < gs.camX - 8) { gs.enemies.splice(i, 1); continue }
@@ -1326,6 +1413,9 @@ function runWorld(gs, pad, frozen, pad2) {
                 else if (e.kind === 'bitpod') struck = q.kind === 'l'
                     ? e.x > q.x - 9 && e.x < q.x + lance(q) + 9 && Math.abs(e.y - q.y) < 10 + (q.wy ?? 0) * 2
                     : Math.abs(e.x - q.x) < 13 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 5 + (q.hx ?? 0) * 2 : 10)
+                else if (e.kind === 'duelist') struck = q.kind === 'l' // #2934 soft airframe, pod-sized box
+                    ? e.x > q.x - 7 && e.x < q.x + lance(q) + 7 && Math.abs(e.y - q.y) < 8 + (q.wy ?? 0) * 2
+                    : Math.abs(e.x - q.x) < 11 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 + (q.hx ?? 0) * 2 : 8)
                 if (!struck) continue
                 if (e.kind === 'hullseg') { gs.events.push('clank'); dead = true; break } // armour eats it
                 gs.lastHitX = e.x; gs.lastHitY = e.y
@@ -1535,6 +1625,7 @@ function runWorld(gs, pad, frozen, pad2) {
             else if (e.kind === 'turret') hit = Math.abs(e.x - s.x) < 9 && Math.abs(e.y - s.y) < 8
             else if (e.kind === 'pod') hit = Math.abs(e.x - s.x) < 11 && Math.abs(e.y - s.y) < 9
             else if (e.kind === 'bitpod') hit = Math.abs(e.x - s.x) < 12 && Math.abs(e.y - s.y) < 10
+            else if (e.kind === 'duelist') hit = Math.abs(e.x - s.x) < 10 && Math.abs(e.y - s.y) < 8 // #2934 the pass hurts
             else if (e.kind === 'hullseg') hit = s.x + 5 > e.x && s.x - 5 < e.x + e.len && s.y + 4 > e.y0 && s.y - 4 < e.y1
             if (hit) { if (killShip(gs, s, gs, 'body:' + e.kind)) return }
         }
@@ -1563,6 +1654,7 @@ function runWorld(gs, pad, frozen, pad2) {
             else if (e.kind === 'turret') hit = Math.abs(e.x - wgBody.x) < 9 && Math.abs(e.y - wgBody.y) < 8
             else if (e.kind === 'pod') hit = Math.abs(e.x - wgBody.x) < 11 && Math.abs(e.y - wgBody.y) < 9
             else if (e.kind === 'bitpod') hit = Math.abs(e.x - wgBody.x) < 12 && Math.abs(e.y - wgBody.y) < 10
+            else if (e.kind === 'duelist') hit = Math.abs(e.x - wgBody.x) < 10 && Math.abs(e.y - wgBody.y) < 8 // #2934 the pass hurts seat two too
             else if (e.kind === 'hullseg') hit = wgBody.x + 5 > e.x && wgBody.x - 5 < e.x + e.len && wgBody.y + 4 > e.y0 && wgBody.y - 4 < e.y1
             if (hit) { killWing(gs, wgBody, 'body:' + e.kind); break }
         }
@@ -1651,7 +1743,7 @@ function optDrones(gs, ent) {
 function shieldGrind(gs, ship, bits) {
     for (let i = gs.enemies.length - 1; i >= 0; i--) {
         const e = gs.enemies[i]
-        if (e.kind !== 'larva') continue
+        if (e.kind !== 'larva' && e.kind !== 'duelist') continue // #2934: the fist grinds soft bodies, and the duelist is soft
         for (const bt of bits) {
             if (Math.abs(e.x - bt.px) < BIT.crushR && Math.abs(e.y - bt.py) < BIT.crushR) {
                 bt.flash = Math.max(bt.flash ?? 0, 5) // #2831: grinding a body, the bit visibly strains
@@ -1659,7 +1751,7 @@ function shieldGrind(gs, ship, bits) {
                 gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
                 if (e.hp <= 0) {
                     gs.enemies.splice(i, 1)
-                    addScore(gs, 100)
+                    addScore(gs, e.kind === 'duelist' ? DUEL.score : 100)
                     gs.events.push('boom')
                 }
                 break
@@ -1866,6 +1958,18 @@ export function wingBrain(gs) {
             }
             if (e.kind === 'hullseg' && w.x + 6 > e.x - 16 && w.x < e.x + e.len && y > e.y0 - 12 && y < e.y1 + 12) consider(0.5)
             if ((e.kind === 'turret' || e.kind === 'pod' || e.kind === 'bitpod') && Math.abs(e.x - w.x) < 30 && Math.abs(e.y - y) < 22) consider(0.5)
+            // #2934 seat two reads the duel the same way: crouch and pass are
+            // the moments off the line; the hunt is merely unwelcome.
+            if (e.kind === 'duelist') {
+                if (e.state === 'dash' && e.x > w.x - 6) {
+                    const t = (w.x - e.x) / (-e.vx + 0.45)
+                    if (t < 40 && Math.abs(e.y + e.vy * t - y) < 12) consider(t)
+                } else if (e.state === 'windup' && e.x > w.x - 6) {
+                    consider(Math.max(1, e.stateT + (e.x - w.x) / DUEL.dash))
+                } else if (e.x > w.x && e.x - w.x < 170 && Math.abs(e.y - y) < 12) {
+                    consider((e.x - w.x) / (DUEL.close + SCROLL))
+                }
+            }
         }
         for (const m of gs.missiles) {
             const dx = m.x - w.x
@@ -1963,6 +2067,19 @@ export function autopilot(gs) {
             }
             if (e.kind === 'hullseg' && px + 6 > e.x - 16 && px < e.x + e.len && y > e.y0 - 12 && y < e.y1 + 12) consider(0.5)
             if ((e.kind === 'turret' || e.kind === 'pod' || e.kind === 'bitpod') && Math.abs(e.x - px) < 34 && Math.abs(e.y - y) < 24) consider(0.5)
+            // #2934 the duel has three faces: while it hunts, its lane merely
+            // scores distant (it hasn't aimed yet); the crouch and the pass
+            // are the moments a pilot must leave the line.
+            if (e.kind === 'duelist') {
+                if (e.state === 'dash' && e.x > px - 6) {
+                    const t = (px - e.x) / (-e.vx + 0.45)
+                    if (t < 48 && Math.abs(e.y + e.vy * t - y) < 12) consider(t)
+                } else if (e.state === 'windup' && e.x > px - 6) {
+                    consider(Math.max(1, e.stateT + (e.x - px) / DUEL.dash))
+                } else if (e.x > px && e.x - px < 170 && Math.abs(e.y - y) < 12) {
+                    consider((e.x - px) / (DUEL.close + SCROLL))
+                }
+            }
         }
         for (const m of gs.missiles) {
             const dx = m.x - px
@@ -2026,6 +2143,22 @@ export function autopilot(gs) {
     // #2911: the tank's volleys are aimed where you ARE — the same strafe
     // that slips the maw's hunters keeps the ricochet fans honest at the gate.
     if (dk && dk.dyingT === 0 && lane.risk > 20) {
+        let dir = gs.tick % 84 < 42 ? -1 : 1
+        if (py < FIELD_TOP + 14) dir = 1
+        if (py > FIELD_BOT - 12) dir = -1
+        pad.up = dir < 0
+        pad.down = dir > 0
+    }
+    // #2934 the duel is not a lane: a hunter that tracks you turns standing
+    // still into a self-aiming gift. While one holds the field, keep walking
+    // — its gun aims where you ARE, and the pass is dodged before it looses.
+    // BUT commitments outrank the duel: a slab side or a hunter intercept the
+    // lane field already committed to must not be traded away for a jink.
+    const duel = gs.enemies.find((e) => e.kind === 'duelist' && e.x > px - 12 && e.x < px + 170 && e.state !== 'dash')
+    if (duel && lane.risk > 20 && !slab &&
+        !gs.missiles.some((m) => m.x - px > 4 && m.x - px < 170) &&
+        !gs.enemies.some((e) => e.kind === 'pod' && e.state !== 'flee' && e.x > px - 6) &&
+        !(p1 && p1.dyingT === 0) && !(dk && dk.dyingT === 0)) {
         let dir = gs.tick % 84 < 42 ? -1 : 1
         if (py < FIELD_TOP + 14) dir = 1
         if (py > FIELD_BOT - 12) dir = -1

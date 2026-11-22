@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 201 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf`
+node scripts/rtypecheck.mjs       # sim + browser: 216 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -49,7 +49,12 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
  horn (the next salvo port glints), a burned port's turn inherits to the
  enraged survivor; the twin-core wreck WALKS port-to-port from the last
  fallen heart across 380 ticks (~2× Phase-1) with the seam advancing while
- plating sheds in rows, and STAGE CLEAR waits for the whole walk.
+ plating sheds in rows, and STAGE CLEAR waits for the whole walk. The #2934
+ pass adds the shelf's first REACTIVE enemy: authored duelist entries hunt
+ the nearer hull across lanes on a 110-px stand-off, fire aimed rounds on a
+ telegraphed clock, and after 260 ticks crouch 40 and throw ONE straight
+ committed pass; soft to vulcan ×2 / shell ram / thrown orb / the four-bit
+ orbit, and its body kills at contact.
 
 ## The design decisions worth knowing
 - **#2823 polish (QA lane):** capture is a ceremony (merge flash + sparks that
@@ -339,7 +344,26 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   pointer tap on the button throws) — and the tap law goes red when the code
   line is hand-mutated KeyN→KeyZ: the thumb's tap becomes a fire, the wall
   stays docked, the law catches it.
-- An armed Williams-style duelist for variety.
+- **CLOSED by #2934** — An armed Williams-style duelist for variety: the
+  shelf's first enemy that **reacts to you** instead of to the camera. In the
+  spirit of the pursuers Williams defined in *Defender* (1981) — fidelity
+  interpretation (#237, recorded on the issue): Irem's R-Type has no such ship,
+  which is exactly why the gap said "for variety"; the README's own words are
+  the spec. Three authored entries (leg 1 ×2 at y 76/158, leg 2 ×1 at y 122),
+  zero rng — the entry is seed-blind and pressed streams replay hash-for-hash.
+  The law: hunt the NEARER hull (S4 decoy law generalises) across every lane at
+  1.15 px/tick — slower than your stick, so it is dodgeable; hold a 110-px
+  stand-off (pressure, never a cheap body-check); fire aimed rounds every 110
+  with the eye glowing white over the last 24 (the sim's cd, read honestly by
+  the art); and when the duel-clock hits 260, crouch 40 (whole hull shudders)
+  and throw ONE straight pass at 1.75 — the commitment never curves, so a
+  walking pilot slips it and the grind takes the rest. Soft: two vulcan rounds,
+  a shell ram, a thrown orb or the four-bit orbit fold it (300, pod money); the
+  body kills at contact. The autopilot and the wing score the crouch and the
+  pass, and while a hunter holds the lane the pilot keeps walking — but slab
+  commitments and hunter intercepts outrank the duel (the first strafe wiring
+  traded slabs for jinks and solo winnability fell to 2/12; guarding the
+  commitments put it at 8/12, above the pre-duel 7).
 - Carriers never answer back — no launched interceptors when a bit pod is
   fired upon.
 - Phase-2 salvos fly straight once loosed, and the autopilot does not
@@ -352,12 +376,12 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 199 sim+browser laws, twenty named mutants
+- `scripts/rtypecheck.mjs` — 216 sim+browser laws, twenty-two named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
   `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`,
   `twin-collapse`, `speed-deaf`, `mirror-deaf`, `opts-leak`,
-  `launch-deaf`, `rearm-deaf`).
+  `launch-deaf`, `rearm-deaf`, `pursuit-deaf`, `commit-deaf`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
@@ -378,8 +402,13 @@ The registry entry is `private` until Jon promotes it (#379).
   fly-in), `giveWingOptions`. #2925 adds probe `optsFly`/`wingOptsFly` (drones in the
    air, both seats), setup `throwOptions`/`throwWingOptions` (send the docked
    pair away outright) and the contract pad button `l` (the throw verb).
+   #2934 adds probe `duel`/`duelState`/`duelCd` (hunters on the field, their
+   phase in the hunt>crouch>pass ritual, and the gun clock), setup
+   `spawnDuelist:{y,x,state,t,cd}` (a hunter already on its stand-off), and
+   contract `state().duel`.
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
   SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
-  GEAR THE WING, TO DOBK, DOBK MAW, GIVE DOUBLE, GIVE SPEED UP, SPAWN O POD, GIVE OPTIONS, THROW OPTIONS.
+  GEAR THE WING, TO DOBK, DOBK MAW, GIVE DOUBLE, GIVE SPEED UP, SPAWN O POD, GIVE OPTIONS, THROW OPTIONS,
+  SPAWN DUELIST.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern
   taps `b` every 97 ticks) and the nightly soak roster (`nightlybot.mjs`).
