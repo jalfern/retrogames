@@ -1,69 +1,70 @@
-# STATE — forge board snapshot (slot a close, 2026-11-22)
+# STATE — forge board snapshot (slot b, 2026-11-22 — shipped)
 
-## Shipped this session
-- **#2889 DOUBLE DRAGON guardian-read polish → PR #2941 → main `1f52733`, LIVE.**
-  Prod bundle `index-Bj8wAWKD.js` carries the chevron marker (`core:1`). QA's
-  five reads, all render-side — the #2857 juice-law pin still holds:
-  chevron glint (3×5 px marks, trail to 22 px, shimmer + spark laws kept;
-  the old 3×2 dashes downscaled to grey); relief blinks the blue `2P` tag
-  white on its 9-tick pose clock; the KO strut walks a render-only 5 px
-  back-step (eased ends, stride legs, planted shadow, inputs never blocked);
-  knockdowns squash into the asphalt (8-tick easing beat) and `jab_b` left
-  the square for a triangle at F#4 — its 3rd harmonic sat 2 Hz off the
-  pickup chime's 880 Hz middle note; now ~9.5 dB down.
-  ddragoncheck 242 → **260** laws; mutants **225/225** named-red (new:
-  `glint-flat`, `strut-frozen`, `squash-missing`, `tag-deaf`, `mix-clash`).
-  Filed **#2942** — QA on-device pass (fresh-ears mix listen + the four new
-  tells at real phone scale; the mix fix is measured, not heard).
+## This session shipped
+- **DOUBLE DRAGON — the duel walks to its steel** (#2948 → PR #2949 → main
+  `b1aeaa8`, prod-verified via Vercel SUCCESS). Steel runs: the cast spends the
+  blade (lieutenant + yard casters), whoever reaches the asphalt steel first
+  owns it (denial is a tactic), unarmed throwers never re-aims, stuck-beat
+  holds for fetchers, knifeUser hashed. 7 pins + `retrieval-dead` mutant;
+  mutant run 250/250; winnable 12/12 + co-op 6/6; contract 15/15.
+- **NOT shipped on purpose:** my earlier branch `forge/dd-goon-weapons`
+  (whip/stick rotations, PR #2947) was closed UNMERGED — #2946 shipped the same
+  honest gap from the parallel lane mid-session. That's a cross-issue
+  double-shot: per-issue claim locks can't see it. Both issues closed;
+  nothing shipped twice. Salvage notes live on #2947 (wind-ladder 12/14/18
+  scaling + wave-1 whip + stateHash-of-whip ideas were in the closed branch;
+  #2946 chose wind-14 + wave-3/yard-wave-2).
 
-## The merge chain on main today (all verified live)
-- `57f8b7d` R-TYPE duelist (#2934 → #2936, slot a) — armed pursuit.
-- `bc0aa49` DD weight-true knockback (#2935 → #2939, slot b).
-- `36225c6` R-TYPE sting interceptor (#2937 → #2940, slot a).
-- `1f52733` DD guardian-read (#2889 → #2941, slot a) — this session.
+## PLAYABLE on main right now (prod-verified; private until Jon promotes #2846)
+- `/retrogames/double-dragon` — carrier rotations (#2946) + duel steel
+  retrieval (#2948 `b1aeaa8`). 250 mutants green.
+- `/retrogames/r-type` — duelist pursuit + sting interceptors (unchanged;
+  #2938 QA pass still in flight).
 
-## Board at close (idle.mjs, run live)
-- `flagshipStage` = **null**, `weakestStage` = **null** — shelf is honestly dry.
-- **#2938 (R-TYPE duelist pass) is released by QA — open `feedback`,** the
-  oldest unclaimed item. No `steer`/`next`/`game-queue`, no `halt`.
-- Fresh QA follow-up #2942 (DD on-device reads) also open `feedback`.
+## Board at close
+- `building` = none. `building-qa` = #2938 (R-TYPE duelist pass, studio).
+- `game-queue` empty after my #2945→#2948 pivot. DD's README honest gaps are
+  now ALL closed except the DISCLAIMER (open craft by design). Next dry kick
+  will look at R-TYPE once QA releases it, or ask "which new flagship?"
+  (dry-shelf jonq unlocks ~11-27 per #2795 cap).
+- 3 jonq AWAITING, unchanged: #2846 (promote flagships, due 11-23),
+  #2908/#2930 (DD seat laws, due 11-24).
 
 ## Open questions for Jon (links only, #605)
 - #2846 — promote CONTRA / R-TYPE / DOUBLE DRAGON to public? (default keep
   private, due 11-23).
-- #2908, #2930 (QA lane) — DD idle-seat / CPU-handback laws.
-- The dry-shelf jonq (#2795 answered 11-20, 7-day cap) unlocks ~11-27 if the
-  board is still empty by then.
+- #2908, #2930 (QA lane) — DD idle-seat / CPU-handback laws (due 11-24).
 
-## Harness notes (cheap fixes, next touch)
-- **Impact beats need #2897's 8-tick width.** A loaded box paints at ~6
-  sim-tick strides; a 2-tick beat gets stepped over *whole*. The KO squash
-  shipped green under the movie (sim frozen → stateT parked) and went red the
-  moment the leg ran the live sim — the leg caught the game, not the other way
-  around. Size every flash/squash window by paint survival, not feel alone.
-- **Main checkout `node_modules` was empty at session start** — it is a shared
-  symlink target; lanes keep real installs in their worktrees (#1258 convention).
-  Slot a ran a worktree-local `npm ci` (npm 11, ifvms patch applied) and all
-  gates passed with it.
-- `scripts/heistclock.mjs --pad` still latently broken (puppeteer
-  `page.setViewport` on a Playwright page → `setViewportSize`). One-line fix
-  at the next harness visit (carry-over note).
+## Harness notes (carry-overs)
+- **Advisory browser flakes on pre-existing DD legs**: #2891 skip-vs-grace
+  boundary (mid=29), #2942-era settle-bar, #2889 tag-ink/strut flip PASS/FAIL
+  across runs of identical code (load-related). Required gate `static` green
+  all day. Per rule 3: rerun once, move on; do NOT fix lane:platform from a
+  builder slot while main is green.
+- 2-tick white flashes are stepping-over width on loaded boxes (#2942 lesson,
+  confirmed again): the goon-whip tip-burn inside #2946 rides a 2-tick window
+  in `art.js` and its browser-detect margin is thin — if a future leg hunts
+  "tip never paints", widen to the 4-tick whipFlash law (that's what #2946's
+  self-test chose for the same reason).
+- `CFG` in `DoubleDragon/art.js` is the LOCAL `{punchOn,kickOn}` — the sim
+  config is `SIMCFG`. Writing `CFG.whipFlash` there silently NaNs a comparison.
+- Aim trigger requires `b.inv <= 0`: test fixtures that make Billy immortal
+  (`inv=999999`) also silence the casters. Offset the lane (+11) instead.
 - dd browser rigs measure **peak** displacement (`maxx`), not final — carry.
-- Vite may re-optimize deps mid-first-load after a fresh `npm ci` and drop
+- Vite may re-optimize deps mid-first-load after fresh `npm ci` and drop
   `__ddTest` between checks — retry once before believing a hook-missing error.
 
 ## Slots / ops
-- Slot a port **5173** stopped with `scripts/devstop.sh` at close; other
-  lanes' ports untouched all session.
-- Worktree `~/Dev/retrogames-forge-dd-guardian-read` pruned after merge
-  (real node_modules inside — `git worktree remove --force` after confirm clean).
-- Main checkout: detached `origin/main` @ `1f52733`, STATE.md committed on top
-  (game merged this session → allowed) and pushed.
+- Slot b port 5178: dev server STOPPED with `scripts/devstop.sh` at close;
+  other lanes' ports untouched.
+- Worktrees left: `~/Dev/retrogames-forge-dd-goon-weapons` (name kept, now on
+  `forge/dd-duel-retrieve`, merged → re-detached to origin/main; removable).
+- Main checkout: detached `origin/main` @ `b1aeaa8`; STATE.md committed this
+  session (game merged) and parked via `statepark.mjs park b`.
 
 ## Next lane starting here
-- Normal ladder: steer/next/game-queue empty. Oldest unclaimed feedback is
-  **#2938 (R-TYPE duelist pass, QA-released)** — per #841 the builder borrows
-  the QA lane's job only when `pgrep -f "QA MASTER"` finds no live QA session;
-  if QA is active, pick its own claim. If both the flagship/never-dry rungs
-  answer null and QA holds everything, the board is dry and the only question
-  left is "which new flagship title?" at the ~11-27 dry-shelf unlock.
+- Ladder first. Expect dry unless QA ships #2938 (then R-TYPE feedback
+  resurfaces — read its qa/* branch before assuming what's left).
+- If both ladder and live `idle-kick.mjs` are dry: the shelf is verified dry
+  (DD's gaps closed); STOP is legal; the only dry jonq allowed is
+  "which new flagship title?" after the #2795 cap unlocks (~11-27).
