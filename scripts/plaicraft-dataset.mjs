@@ -232,6 +232,11 @@ function gauntletRows(key, rec) {
 export function floorBossRows(key, rec) {
     const gs = fbMakeGame(rec.seed, { duel: rec.players >= 2 })
     const want = new Map(rec.hashes.map((x) => [x.t, x.h]))
+    // #2964: if the take names its career seams, every named night must line
+    // up with where the replay actually clocked in — a stamp the ladder
+    // disagrees with is a lie about the dataset and kills the row build.
+    const seamAt = new Map((rec.seams || []).map((x) => [x.t, x.shift]))
+    const seamSeen = new Set()
     const mems = {}
     const rows = []
     const finalT = rec.hashes.length ? rec.hashes[rec.hashes.length - 1] : null
@@ -243,7 +248,17 @@ export function floorBossRows(key, rec) {
         // ladder (same seeded stream; the shift bits ride stateHash, #2346 law),
         // and every checkpoint past the seam must still match — invented
         // post-whistle rows stay caught.
-        if (gs.end === 'win') fbNextShift(gs)
+        const clockedIn = gs.end === 'win'
+        if (clockedIn) fbNextShift(gs)
+        // #2964: a named night must sit ON its clock-in row — the row the
+        // whistle proved. Off by one is a wrong answer even when the night
+        // number matches, and every name must land (final sweep below).
+        if (seamAt.has(t)) {
+            if (!clockedIn) return { ok: false, mismatch: { tick: t, want: seamAt.get(t), got: 'no clock-in at the named row' }, rows }
+            seamSeen.add(t)
+            const wantShift = seamAt.get(t)
+            if (wantShift !== gs.shift) return { ok: false, mismatch: { tick: t, want: wantShift, got: gs.shift }, rows }
+        }
         const pads = rec.slots.map((s) => decodePad(s.pads[t], rec.method))
         // #1712: canvas taps bank on seat 0's pad as pointer{down} in 0..1
         // canvas space (onePad #420) — re-apply HERE, before the step, so
@@ -268,6 +283,12 @@ export function floorBossRows(key, rec) {
             rows.push({ k: key, g: rec.game, s: rec.seed, t: t1, lvl: gs.shift, seat: i, act: encodePad(pads[i]), feat })
         }
     }
+    // #2964: a stamp naming a night at a row where no clock-in happened is a
+    // lie about the dataset — refuse the build (silence would be the bug the
+    // marker exists to prevent). A name at the very last tick is exempt: that
+    // clock-in banked no night rows (exit straight off the sheet) and is true
+    // about everything it claims to cover.
+    for (const [st, sh] of seamAt) if (!seamSeen.has(st) && st < rec.ticks) return { ok: false, mismatch: { tick: st, want: sh, got: 'no clock-in at the named row' }, rows }
     const ok = !finalT || finalT.h === fbHash(gs)
     return { ok, mismatch: null, rows }
 }

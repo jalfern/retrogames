@@ -20,7 +20,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, recordLiveTick, armLiveCapture, isRecording } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, recordLiveTick, recordLiveSeam, armLiveCapture, isRecording } from '../../utils/gameContract'
 import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { W, H, TILE, GX, GY, CHIPS, orderRect, applyTap } from './taps.js'
 import { createEpisode, saveEpisode, episodeStats } from '../../utils/robot/episode.js'
@@ -1607,6 +1607,7 @@ const FloorBossGame = () => {
         // promise the over screen already made ("NEXT SHIFT") becomes the law.
         const advanceShift = () => {
             if (!nextShift(gs)) return false
+            recordLiveSeam(gs.shift) // #2964: the take names where night N began (no-op when no recorder is bank)
             parts.length = 0
             setEnd(null)
             watchingRef.current = false; setWatching(false)
@@ -1744,6 +1745,7 @@ const FloorBossGame = () => {
                 // the ladder is contract-drivable (QA bots / replays / RL).
                 if (gs.end === 'win' && pad && pad.a) {
                     nextShift(gs)
+                    recordLiveSeam(gs.shift) // #2964: contract clock-ins name their seam too (no-op when nothing records)
                     parts.length = 0
                     setEnd(null)
                     return state(gs)

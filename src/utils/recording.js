@@ -124,6 +124,13 @@ export function decodeRaw(compact) {
     return { x: num(c.x), y: num(c.y), ax: num(c.ax), ay: num(c.ay), px: num(c.px), py: num(c.py) }
 }
 
+// The #2964 seam track is metadata the same way: a career take (#2958) whose
+// player clocked into another night mid-file carries `seams: [{ t, shift }]` —
+// night `shift` began after the row at tick `t` (the clock-in itself banks no
+// row, so the stamp names the row that proved the whistle). Replay ignores it;
+// the floor-boss adapter verifies it against the ladder it re-runs. Additive:
+// files without it stay valid, single-shift takes never carry it.
+//
 // --- recorder ------------------------------------------------------------------
 // addTick runs once per simulated tick: pads/raws are per-slot arrays (a plain
 // pad is one slot), hash is the game's state.hash when one is due (or null).
@@ -149,6 +156,14 @@ export function createRecorder(opts = {}) {
 
     const slots = Array.from({ length: seats }, () => ({ source: null, pads: [], raw: [], ping: [] }))
     const hashes = []
+    // #2964: career takes (#2958) mark where each new night clocks in. The
+    // bank is honest without it (rows contiguous, the hash carries the #2346
+    // shift bits, the adapter derives the seam), but a VIEWER could only
+    // infer "where the next night began" — this is the player/QA-facing
+    // marker: { t, shift } = shift `shift` started at the tick this row
+    // proves. Stamped on the recorder's own clock like voiceCmd (#1249 law:
+    // the entry belongs to the last tick actually banked).
+    const seams = []
     // #1249: recognized spoken calls on the same tick clock — metadata like
     // the ping trace (replay ignores it, v1 files stay valid). One entry per
     // call: { t, said, intent|null, ok, dir?, why? }. "What the seat did" is
@@ -192,6 +207,17 @@ export function createRecorder(opts = {}) {
             if (Number.isInteger(e.seat) && e.seat >= 0) entry.seat = e.seat
             voiceCmd.push(entry)
         },
+        addSeam(shift) {
+            // #2964: a career clock-in names its night. Only night 2+ is ever a
+            // seam (night 1 is the take's birth); a re-stamp of the same or an
+            // earlier night is the sheet double-firing, not a new night — drop.
+            // Stamped on the recorder's own clock (#1249 law): the entry marks
+            // the last tick actually banked — rows past t belong to night shift.
+            if (!Number.isInteger(shift) || shift < 2) throw new Error('recorder: seam shift must be an integer >= 2')
+            const last = seams[seams.length - 1]
+            if (last && last.shift >= shift) return
+            seams.push({ t: Math.max(1, ticks), shift })
+        },
         finish(finalHash = null, voice = null) {
             const srcs = resolveSources()
             if (!srcs.every((s) => SLOT_KINDS.includes(s.kind))) throw new Error('recorder: unknown source kind')
@@ -217,6 +243,8 @@ export function createRecorder(opts = {}) {
             if (player) rec.player = String(player).slice(0, 64)
             const cmds = voiceCmd.filter((c) => c.t <= ticks) // calls before the first bank carry no tick — drop, not corrupt
             if (cmds.length) rec.voiceCmd = cmds
+            const seamOut = seams.filter((s) => s.t <= ticks) // #2964: a seam before any banked row proves nothing — drop, not corrupt
+            if (seamOut.length) rec.seams = seamOut
             if (finalHash !== null && finalHash !== undefined && (hashes.length === 0 || hashes[hashes.length - 1].t !== ticks) && ticks > 0) {
                 hashes.push({ t: ticks, h: finalHash })
             }
@@ -288,6 +316,19 @@ export function validate(rec) {
             if (!(x.intent === null || typeof x.intent === 'string')) return 'voiceCmd intent must be a string or null'
             if (x.seat !== undefined && !(Number.isInteger(x.seat) && x.seat >= 0 && x.seat < rec.players)) return 'voiceCmd seat must be a seat index'
             lastCt = x.t
+        }
+    }
+    if (rec.seams !== undefined) {
+        // #2964 career-seam track: metadata like ping/voiceCmd — v1, optional,
+        // ticks strictly increasing (a clock-in banks no row itself, so two
+        // seams can never share a tick), shift strictly increasing (the ladder
+        // only climbs). Additive: files without it stay valid.
+        if (!Array.isArray(rec.seams)) return 'seams must be an array'
+        let lastS = 0, lastShift = 1
+        for (const x of rec.seams) {
+            if (!x || !Number.isInteger(x.t) || x.t < 1 || x.t > rec.ticks || x.t <= lastS) return 'seam ticks must increase within ticks'
+            if (!Number.isInteger(x.shift) || x.shift < 2 || x.shift <= lastShift) return 'seam shifts must be integers >= 2 and increasing'
+            lastS = x.t; lastShift = x.shift
         }
     }
     if (rec.voice !== undefined) {

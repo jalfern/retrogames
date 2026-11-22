@@ -37,6 +37,7 @@ export function createEpisode(opts = {}) {
     return {
         get ticks() { return rec.ticks },
         noteMethod(m) { if (m && !methodsUsed.includes(m)) methodsUsed.push(m) },
+        addSeam(shift) { rec.addSeam(shift) }, // #2964: career clock-ins ride the base recorder's seams track
         addTick(pads, raws = null, hash = null, posesNow = null, pings = null, labelsNow = null) {
             rec.addTick(pads, raws, hash, pings)
             if (posesNow && rec.ticks % poseEvery === 0) {
