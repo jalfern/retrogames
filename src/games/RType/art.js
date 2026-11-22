@@ -1072,6 +1072,12 @@ export function drawHud(ctx, gs) {
     // learns the rules changed without ever opening the F1 panel.
     if (gs.p1 && gs.p1.hotAnn > 0) drawText(ctx, 'HOT', 120, 8, ((gs.tick >> 2) % 2) ? '#ff7030' : '#7c2810')
     for (let i = 0; i < Math.min(gs.lives - 1, 5); i++) ctx.drawImage(SPR.shipIcon, 8 + i * 15, H - 12)
+    // #2980: seat one's own return spells itself over its lives line — the
+    // wing carried the stage, the pilot came back with it (one free life)
+    if (gs.seatAnn > 0 && gs.seatIn === 1) {
+        const px = 8 + Math.min(Math.max(gs.lives - 1, 0), 5) * 15 + 6
+        drawText(ctx, 'PILOT IN', px, H - 12, ((gs.tick >> 2) % 2) ? '#ffe066' : '#6b5a1a')
+    }
     const wl = gs.ship.weapon === 'wave' ? 'WAVE' : gs.ship.weapon === 'laser' ? 'LASER' : gs.ship.weapon === 'double' ? 'DOUBLE' : 'VULCAN'
     const wcol = gs.ship.weapon === 'wave' ? '#37d0ff' : gs.ship.weapon === 'laser' ? '#ff5a7a' : '#9ac93c'
     drawText(ctx, wl, 90, H - 12, wcol)
@@ -1110,7 +1116,11 @@ export function drawHud(ctx, gs) {
     // dual pools (S4): seat two keeps its tickets in a blue row under 1UP
     if (gs.wing) {
         drawText(ctx, '2P', 8, 16, gs.wing.out ? '#4a5568' : '#2e8ad8')
-        if (gs.wing.out) drawText(ctx, 'SEAT DARK', 30, 16, '#5a6478')
+        if (gs.seatAnn > 0 && gs.seatIn === 2) {
+            // #2980: the seat that came back reclaims its dark-seat row — the
+            // blue blinks warm, the darkness is over for another stage
+            drawText(ctx, 'SEAT IN', 30, 16, ((gs.tick >> 2) % 2) ? '#37d0ff' : '#1a5a70')
+        } else if (gs.wing.out) drawText(ctx, 'SEAT DARK', 30, 16, '#5a6478')
         else if (gs.wing.dead) drawText(ctx, 'DOWN', 30, 16, (gs.tick % 30) < 20 ? '#e03030' : '#701818')
         else for (let i = 0; i < Math.min(gs.wing.lives - 1, 5); i++) ctx.drawImage(SPR.shipIconP2, 30 + i * 15, 15)
         // #2841: the drop-in keys sit by the dual pools all flight — attract

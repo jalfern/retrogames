@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 255 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel, #2951 volley pre-dodge, #2952 dodge pay & cover-fire, #2972 wing shell initiative)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf` + `duel-ghost` + `coast-through` + `dart-plain` + `flash-deaf` + `pre-dodge-deaf` + `cross-blind` + `graze-blind` + `cover-deaf` + `shell-deaf`
+node scripts/rtypecheck.mjs       # sim + browser: 263 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel, #2951 volley pre-dodge, #2952 dodge pay & cover-fire, #2972 wing shell initiative, #2980 dark-seat fare)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf` + `duel-ghost` + `coast-through` + `dart-plain` + `flash-deaf` + `pre-dodge-deaf` + `cross-blind` + `graze-blind` + `cover-deaf` + `shell-deaf` + `dark-deaf` + `fare-blind`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -163,7 +163,8 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   The wing is a FULL pilot: own lives (3), own arm (capsules cycle per hull,
   death reverts it), own S.E.E.D. and bit chain, own mercy flicker; one hit
   hangs one wreck and only both-pools-burned raises the curtain (a dark seat
-  reads `SEAT DARK` on the HUD and is not reborn by a stage clear).
+  reads `SEAT DARK` on the HUD while the partner carries — and #2980 brings it
+  home at the stage-clear loop with one free life).
   `wingBrain` scores candidate lanes — bullets, divers, hunters, slabs, guns
   — the way autopilot does, but on PURE tick arithmetic: zero gs.rng draws,
   so the stream the S1–S3 laws calibrate never shifts. Capsule courtesy:
@@ -308,6 +309,30 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   world-fixed gun before the throw can reach it — the law's proof-target is a
   HELD carrier (pinned lane, hp 12 so the ram lands the kill, not the stream),
   and away-at-kill is asserted, so what died is provably the throw, not the nose.
+
+- **#2980 dark-seat fare (builder):** the courtesy that makes co-op survivable.
+  A pilot whose tickets burned while the partner carried the stage comes home at
+  the stage-clear loop with ONE free life — naked hull (the wreck stripped the
+  arm, the shell, the chain, the speed), fresh mercy, human flag kept: a seat
+  borrowed from a person returns to that person, a CPU seat to its brain. The
+  law is symmetric per seat (S4 symmetry: the pilot who stayed flying pays the
+  other's fare, seat one pays seat two's exactly as seat two pays seat one's),
+  and it is a fare, not a refill — the carrier's own pool never tops up
+  (`lives === 2` through the loop is pinned), and the returned pool is exactly
+  one (`lives === 1`, never three). Both pools burning pays nothing: the curtain
+  still falls — "GAME OVER only when both pools burn" stays the pair's promise,
+  not seat one's private ending. The return speaks: `wingback`/`p1back` rise up
+  the seats' own registers (cool 523→880 for the wing, warm 392→698 for the
+  pilot), sparks at the arriving nose, and the dark-seat row blinks `SEAT IN`
+  (`PILOT IN` over seat one's lives line) for ~1 s. Zero rng by construction —
+  the revival reads pools, never `gs.rng` — and the wink is juice
+  (`seatAnn`/`seatIn` never enter `stateHash`, pinned by a law), so every tuned
+  stream replays byte-identical. **Fidelity interpretation (#237 rule,
+  recorded):** the README's own words were the spec ("gets no free life" names
+  what is missing); the arcade convention this follows is the next-stage rejoin
+  for a spent co-op seat — the courtesy that makes a shared run worth joining.
+  Winnability re-measured with the fare live: solo 8/12 (the branches need a
+  partner — untouched by construction), co-op 12/12.
 
 ## Honest gaps (S5+)
 
@@ -470,19 +495,24 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   human seat keeps its veto. Zero rng, no new persistent state; co-op holds
   12/12 with the throw live (see the #2972 note above for the full law and
   the ceremony proof).
-- A dark seat gets no free life — seat-two flavour left for a later pass.
+- **CLOSED by #2980** — a dark seat gets no free life: the stage-clear loop now
+  returns a burned seat with one ticket on its partner's carry (symmetric per
+  seat, naked hull, mercy, human flag kept; both-dark pays nothing and the
+  curtain still falls). See the #2980 note above for the full law, the voice
+  and the zero-rng/hash-honesty proofs.
 
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 255 sim+browser laws, thirty-one named mutants
+- `scripts/rtypecheck.mjs` — 263 sim+browser laws, thirty-three named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
   `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`,
   `twin-collapse`, `speed-deaf`, `mirror-deaf`, `opts-leak`,
   `launch-deaf`, `rearm-deaf`, `pursuit-deaf`, `commit-deaf`,
   `duel-ghost`, `coast-through`, `dart-plain`, `flash-deaf`,
-  `pre-dodge-deaf`, `cross-blind`, `graze-blind`, `cover-deaf`, `shell-deaf`).
+  `pre-dodge-deaf`, `cross-blind`, `graze-blind`, `cover-deaf`,
+  `shell-deaf`, `dark-deaf`, `fare-blind`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
@@ -509,9 +539,14 @@ The registry entry is `private` until Jon promotes it (#379).
    contract `state().duel`. #2951 adds probe `volleys`/`volleyX` (marked fan
    rounds in the air and how far into the yard the nearest one rides) and
    setup `spawnVolley` (three marked rounds crossing the nose). #2952 adds
-   probe `grazeAnn` (the near-miss bonus wink's countdown).
+   probe `grazeAnn` (the near-miss bonus wink's countdown). #2980 adds
+   probe `seatAnn`/`seatIn`/`wingOut` (the return wink, which seat came home,
+   seat two's dark flag) and setup `p1Out` (burn seat one's tickets — the
+   mirror of `wingOut`); the stage-clear loop laws drive the gate with
+   deterministic `__game.step` batches — late-leg rAF throttling makes
+   wall-clock Space pulses too slow to reach the walk-in.
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
-  SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
+  SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT, P1 OUT,
   GEAR THE WING, TO DOBK, DOBK MAW, GIVE DOUBLE, GIVE SPEED UP, SPAWN O POD, GIVE OPTIONS, THROW OPTIONS,
   SPAWN DUELIST, SPAWN VOLLEY.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern

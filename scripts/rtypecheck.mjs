@@ -2481,6 +2481,79 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         noLaunch && staysOut && recalls, `noLaunch=${noLaunch} staysOut=${staysOut} recalls=${recalls}`)
 }
 
+// ------------------------------------------------- #2980 law set --------
+{ // the carry pays the fare: a dark seat comes home from the stage-clear loop
+  // with ONE free life — naked hull, fresh mercy, human flag kept. Both pools
+  // burned on the gate pays nothing: that run ended honestly. Zero rng; the
+  // wink (seatAnn/seatIn) is juice, never hashed.
+    const quiet = (g) => { g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0 }
+    const toGate = (g) => {
+        g.p1 = null; g.p2 = null
+        g.enemies = g.enemies.filter((e) => e.on !== 'p1' && e.on !== 'p2')
+        g.bullets.length = 0; g.missiles.length = 0
+        g.camLock = false; g.leg = 3; g.camX = STAGE_END3; g.legAt = g.tick
+        quiet(g); step(g, {}); g.events.length = 0 // the camera locks and the tank walks on
+        g.dobk.hp = 1; g.dobk.dyingT = 1
+        quiet(g); step(g, {}); g.events.length = 0 // the gate falls — banner up
+    }
+    const banner = (g) => { const ev = []; for (let t = 0; t < 220 && g.mode === 'clear'; t++) { step(g, {}); ev.push(...g.events.splice(0)) } return ev }
+
+    const a = coopGame(11)
+    a.ship.inv = 999999
+    a.lives = 2 // the carrier keeps its own pool — the fare never tops up the pilot who paid it
+    a.wing.lives = 0; a.wing.out = true
+    a.wing.human = true // a borrowed seat comes back to its pilot
+    toGate(a)
+    const evA = banner(a)
+    r.check("#2980 the wing comes home: dark seat two returns on its partner's carry — one free life, hull re-seated, human flag kept, and the seat names itself",
+        a.mode === 'play' && !a.wing.out && !a.wing.dead && a.wing.lives === 1 && a.wing.human &&
+        a.lives === 2 && evA.includes('wingback') && a.seatIn === 2 && a.seatAnn > 0,
+        `mode=${a.mode} wingOut=${a.wing.out} wingLives=${a.wing.lives} human=${a.wing.human} lives=${a.lives} seatIn=${a.seatIn} ann=${a.seatAnn}`)
+    for (let t = 0; t < 90; t++) { step(a, {}); a.events.length = 0 }
+    r.check('#2980 the wink fades — the return rides a countdown, not the state', a.seatAnn === 0, `seatAnn=${a.seatAnn}`)
+
+    const b = coopGame(11)
+    b.wing.inv = 999999
+    b.lives = 0; b.ship.dead = true; b.ship.out = true
+    b.ship.spd = 2 // speed is power armour — the returned hull steps in naked
+    toGate(b)
+    const evB = banner(b)
+    r.check("#2980 the pilot comes home: seat one returns on the wingman's carry with one free life, a naked hull and fresh mercy — and seat two's tickets are its own",
+        b.mode === 'play' && !b.ship.out && !b.ship.dead && b.lives === 1 && b.ship.spd === 0 &&
+        b.wing.lives === 3 && evB.includes('p1back') && b.seatIn === 1,
+        `mode=${b.mode} p1out=${b.ship.out} lives=${b.lives} spd=${b.ship.spd} wingLives=${b.wing.lives} seatIn=${b.seatIn}`)
+
+    const c = coopGame(11)
+    toGate(c)
+    // both seats burn ON the clear tick — the exact edge the curtain guards:
+    c.lives = 0; c.ship.dead = true; c.ship.inv = 0
+    c.wing.lives = 0; c.wing.dead = true; c.wing.dyingT = 0; c.wing.inv = 0
+    banner(c)
+    let over = false
+    for (let t = 0; t < 200; t++) { step(c, {}); c.events.length = 0; if (c.mode === 'gameover') { over = true; break } }
+    r.check('#2980 nobody carried: both pools burn on the gate — the curtain still falls, no fare is paid',
+        over && c.lives === 0 && c.wing.out && c.seatAnn === 0,
+        `over=${over} lives=${c.lives} wingOut=${c.wing.out} seatAnn=${c.seatAnn}`)
+
+    const d = coopGame(11)
+    d.lives = 2; d.wing.lives = 2
+    d.ship.inv = 999999; d.wing.inv = 999999
+    toGate(d); banner(d)
+    const solo = coopGame(11)
+    solo.wing = null // solo mirror: same gate, one pilot — the S1–S3 path untouched
+    solo.ship.inv = 999999
+    toGate(solo); banner(solo)
+    r.check('#2980 nobody dark, nothing given: live pools carry byte-exact through the loop (co-op and solo) and no wink speaks',
+        d.mode === 'play' && d.lives === 2 && d.wing.lives === 2 && d.seatAnn === 0 &&
+        solo.mode === 'play' && solo.lives === 3 && solo.seatAnn === 0,
+        `duo ${d.lives}/${d.wing.lives} solo ${solo.lives} ann=${d.seatAnn}/${solo.seatAnn}`)
+
+    const h1 = makeGame(7); const h2 = makeGame(7)
+    h2.seatAnn = 80; h2.seatIn = 2
+    r.check('#2980 the wink is juice, not truth — stateHash never mixes seatAnn/seatIn',
+        stateHash(h1) === stateHash(h2), `${stateHash(h1)} vs ${stateHash(h2)}`)
+}
+
 // ----------------------------------------------------------------- mutant ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -3124,6 +3197,52 @@ if (MUTANT) {
                     : 'HARM NAMED: the hunter crouches at seat one and seat two holds its fire — the wingman is deaf to its partner\'s duel, and the co-op read the pair was built on goes quiet at the one moment it matters'
             },
         },
+        {
+            name: 'dark-deaf', // #2980: seat one never gets its fare at the loop
+            anchor: "        gs.lives = 1\n        gs.events.push('p1back')",
+            plant: "        /* MUTANT(dark-deaf): the wing keeps its partner's fare */\n        gs.events.push('p1back')",
+            harm: async (mod) => {
+                const g = mod.makeGame(11)
+                mod.enableCoop(g)
+                g.wing.inv = 999999
+                g.lives = 0; g.ship.dead = true; g.ship.out = true
+                g.p1 = null; g.p2 = null
+                g.enemies = g.enemies.filter((e) => e.on !== 'p1' && e.on !== 'p2')
+                g.camLock = false; g.leg = 3; g.camX = mod.STAGE_END3; g.legAt = g.tick
+                g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0
+                mod.step(g, {}); g.events.length = 0
+                g.dobk.hp = 1; g.dobk.dyingT = 1
+                g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0
+                mod.step(g, {}); g.events.length = 0
+                for (let t = 0; t < 220 && g.mode === 'clear'; t++) { mod.step(g, {}); g.events.length = 0 }
+                return (g.ship.out || g.lives <= 0)
+                    ? 'HARM NAMED: the stage falls with seat one dark and the wingman keeps the ticket to itself — the pilot who lost the run never comes back, and co-op becomes a one-seat game with a corpse parked on screen'
+                    : null
+            },
+        },
+        {
+            name: 'fare-blind', // #2980: the seat returns even when nobody carried the stage
+            anchor: "    if (gs.wing && gs.lives > 0 && (gs.wing.out || gs.wing.lives <= 0)) {",
+            plant: "    if (gs.wing && (gs.wing.out || gs.wing.lives <= 0)) /* MUTANT(fare-blind): returns on nobody's carry */ {",
+            harm: async (mod) => {
+                const g = mod.makeGame(11)
+                mod.enableCoop(g)
+                g.p1 = null; g.p2 = null
+                g.enemies = g.enemies.filter((e) => e.on !== 'p1' && e.on !== 'p2')
+                g.camLock = false; g.leg = 3; g.camX = mod.STAGE_END3; g.legAt = g.tick
+                g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0
+                mod.step(g, {}); g.events.length = 0
+                g.dobk.hp = 1; g.dobk.dyingT = 1
+                g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0
+                mod.step(g, {}); g.events.length = 0
+                g.lives = 0; g.ship.dead = true; g.ship.inv = 0
+                g.wing.lives = 0; g.wing.dead = true; g.wing.dyingT = 0; g.wing.inv = 0
+                for (let t = 0; t < 220 && g.mode === 'clear'; t++) { mod.step(g, {}); g.events.length = 0 }
+                return !g.wing.out
+                    ? "HARM NAMED: both pilots are down and the loop still hands one of them a free life — GAME OVER stops being the pair's promise and becomes seat one's private ending"
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
@@ -3504,6 +3623,38 @@ const browser = await launch()
         vA.volleys === 3 && vA.volleyX > 80 &&
         ((vB.volleys === 3 && vA.volleyX - vB.volleyX >= 25) || vB.volleys === 0),
         `air=${vA.volleys}@${vA.volleyX} later=${vB.volleys}@${vB.volleyX}`)
+
+    // #2980 the carried seats come home through the shell too: burn a seat in
+    // the STAGE CLEAR banner and the loop must return it with one free life —
+    // the arcade courtesy observable on the real page, voice included.
+    const driveGate = async () => {
+        await page.evaluate(() => window.__game.reset(5))
+        await page.waitForTimeout(150)
+        await page.evaluate(() => window.__rTest.setup({ toDobk: true, openDobk: true, dobkHp: 1, inv: 999999, wingInv: 999999 }))
+        let p = await page.evaluate(() => window.__rTest.probe())
+        // deterministic ticks, not wall-clock pulses: rAF throttles late in a long leg
+        for (let i = 0; i < 40 && p.cleared !== 1 && p.mode === 'play'; i++) {
+            await page.evaluate(() => window.__game.step({ a: true }, 60))
+            p = await page.evaluate(() => window.__rTest.probe())
+        }
+        return p
+    }
+    const gA = await driveGate()
+    await page.evaluate(() => window.__rTest.setup({ wingOut: true }))
+    let cA = await page.evaluate(() => window.__rTest.probe())
+    for (let i = 0; i < 40 && cA.mode === 'clear'; i++) { await page.evaluate(() => window.__game.step({}, 20)); cA = await page.evaluate(() => window.__rTest.probe()) }
+    const retW = await page.evaluate(() => window.__rTest.probe())
+    r.check('#2980 through the shell: a dark seat two comes home on the loop with one free life and the SEAT IN wink',
+        gA.cleared === 1 && retW.mode === 'play' && retW.wingOut === 0 && retW.wingLives === 1 && retW.seatIn === 2 && retW.seatAnn > 0,
+        `cleared=${gA.cleared} mode=${retW.mode} wingOut=${retW.wingOut} wingLives=${retW.wingLives} seatIn=${retW.seatIn} ann=${retW.seatAnn}`)
+    const gB = await driveGate()
+    await page.evaluate(() => window.__rTest.setup({ p1Out: true }))
+    let cB = await page.evaluate(() => window.__rTest.probe())
+    for (let i = 0; i < 40 && cB.mode === 'clear'; i++) { await page.evaluate(() => window.__game.step({}, 20)); cB = await page.evaluate(() => window.__rTest.probe()) }
+    const retP = await page.evaluate(() => window.__rTest.probe())
+    r.check("#2980 through the shell: a dark seat one comes home on the loop with one free life — the wingman's fare, on the real HUD",
+        gB.cleared === 1 && retP.mode === 'play' && retP.p1out === 0 && retP.lives === 1 && retP.seatIn === 1 && retP.seatAnn > 0,
+        `cleared=${gB.cleared} mode=${retP.mode} p1out=${retP.p1out} lives=${retP.lives} seatIn=${retP.seatIn} ann=${retP.seatAnn}`)
 
     r.check('zero page errors across the whole leg', errs.length === 0, errs.join(' | ') || 'clean')
 }
