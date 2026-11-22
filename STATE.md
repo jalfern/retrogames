@@ -1,86 +1,69 @@
-# STATE — forge board snapshot (slot a, 2026-11-22 late — shipped)
+# STATE — forge board snapshot (slot b, 2026-11-23 early — shipped)
 
 ## This session shipped
-- **R-TYPE dark-seat fare** (#2980 POLISH → PR **#2982** → main `c548973`,
-  prod-verified: production deployment `success` at the merge sha; live attract
-  re-shot via `shot.mjs`). The idle-kick pick: `KICK R-TYPE 0` — flagship
-  ladder in Jon's order, all others gap-free, and this was R-TYPE's last open
-  honest gap.
-  - Law: the stage-clear loop returns each spent seat with **one free life** —
-    the partner's carry pays the fare. Symmetric per seat (S4), naked hull,
-    fresh mercy, human flag kept; the carrier's pool never tops up, the
-    returned pool is exactly one, and BOTH pools burning pays nothing (the
-    curtain still falls). Zero rng; `seatAnn`/`seatIn` are juice, hash-pinned
-    invisible. Voice: `p1back`/`wingback` chimes + `SEAT IN`/`PILOT IN` winks.
-  - Verdicts: rtypecheck **263/263** (8 new laws) · mutant run **264/264**
-    (`dark-deaf`, `fare-blind` red by design) · winnability solo **8/12**
-    (floor 4), co-op **12/12** · lint×3 + build green.
-  - R-Type honest gaps now ZERO (`parseGaps` []) — idle-kick no longer names
-    R-TYPE; next kick falls through the ladder to `weakestStage`.
-  - **Harness lesson (the run's real catch):** late in a long browser leg,
-    real-time Space pulses starve (rAF throttling) and never reach the
-    walk-in gate. Stage-clear browser laws must drive with deterministic
-    `__game.step(pad, n)` batches — first attempt failed `cleared=0`; the
-    batches fixed it. Same recipe for any future loop-leg law.
+- **FIRE CREW trainable** (#1712 → PR #2983 → main `46be66a`, prod-verified).
+  The shelf's first NEW trainable title since TalkMeDown closed the eight.
+  - Game edge (`index.jsx`): consent at seed-birth (askConsent → startPlay →
+    beginRun), `recordLiveTick` banks the consumed pads, `endRun` ships after
+    the radio's final chunk (endVoice orders it, #1249 law kept), seat kinds
+    resolve at STOP (`humanSeats:false` + live sources — Rally's law, a WATCH
+    left on is labelled cpu), WATCH flips stamp `rules.watch` ("t0-t1,…"),
+    radio yields slot 0 to the auto mic (`hasAutoVoice()` new gameContract
+    export; recognition runs either way — SOS law).
+  - `src/games/FireCrew/model.js` — THE 65 features. `lightAt` IS the eyes:
+    unseen victims honest-zero, fire shared by rule; radio one-hots+countdown,
+    wind+vane, rig, prev-pad lane banked after the label. Hash-clean.
+  - `fireCrewRows` adapter + ADAPTERS['fire-crew']: replays THE sim.js,
+    verifies every checkpoint (S1); rows per tick per HUMAN seat only;
+    watch-span rows dropped; radio re-seated via `applyRadio`; recording.js
+    voiceCmd now carries `side` (refused vs replayed must be distinguishable).
+  - Proof: datasetcheck 81/81 (+4 legs; FIXTURE-store coverage 9 games — the
+    ≥2 line passes there; prod honest-zero until humans play), mutant 14
+    adapter-bypass dies by name, firecrewcheck 171 (+6 model gates, leak-gate
+    mutant red by hand), firecrewplay DRIVE GREEN (+4 consent/span legs),
+    lint×4 + build green.
+- **Jon's #2846 executed** (PR #2979 → `7ac26b0`): CONTRA, DOUBLE DRAGON,
+  R-TYPE `visibility: 'public'`; visibilitycheck is now a Jon-approved
+  allowlist (276 gates; auto-promotion of any other title dies by name).
+- QA polish filed: **#2985** (span-cap overflow, double voice ask, refusal
+  lanes, first-live-take byte-identity acceptance, couch loft features).
 
-## Flagships went PUBLIC (#2846 answered 11-22, landed #2979)
-- Jon (chat): "promote all 3" — CONTRA, DOUBLE DRAGON, R-TYPE are
-  `visibility: 'public'` on main; `visibilitycheck` pins the exact allowlist.
-  Future sessions: new titles stay private (#379); don't re-ask, don't widen.
-
-## #1712 status (TARGET, open on purpose — human-data-gated, unchanged)
-- `gamesCovered>=2` still needs the first real Contra/TMD take through a phone;
-  holdout needs takes from 2 live players. Check the store before any new
-  #1712 code (big-build rule 1: no faked human data).
-
-## Jon's Q&A sweep at 21:53 (all answered, records on-thread)
-- **#2908/#2930** — DD idle-seat laws: answered 11-22; executing Jon's reply
-  is lane work — QA lane owns #2930's sheet-law family (don't re-ask).
-- **#2953** — S2 invite flow: answered (default had been recorded 11-22, then
-  Jon replied). **#2846** — shipped via #2979 (see above).
-
-## Nightly / freeze at write-time
-- Tip `c548973` (#2982) nightly pending; #601 clear at every main-ok this
-  session (also over #2981/#2979). If tip nightly goes RED → 5a first
-  (harness-only calibration, no asking).
-
-## PLAYABLE on main right now (prod-verified)
-- `/retrogames/r-type` — now PUBLIC; a seat whose tickets burned comes home at
-  every stage clear with one free life, `SEAT IN` blinking its return.
-- `/retrogames/contra` — PUBLIC; trainable (consent gates RECORDING only).
-- `/retrogames/floor-boss` — career takes + seam markers + close-flush stress
-  (#2977/#2981).
+## PLAYABLE on main right now
+- `/retrogames/fire-crew` — consented phone takes are now trainable-with-
+  features (this session; prod verify below).
+- `/retrogames/contra`, `/retrogames/r-type`, `/retrogames/double-dragon` —
+  PUBLIC per Jon's #2846 (metadata; site split not wired yet — nothing reads
+  the flag beyond the gate).
 
 ## Board at close
-- `building`: **#1712** (research, human data). `game-queue`/`steer`/`next`
-  empty. `feedback`: **#2978**, **#2971** — both `building-qa` (QA holds).
-  #2964 and #2952 shipped/closed during this session.
+- `game-queue` empty; `steer`/`next` empty. `building`: #1712 (multi-stage —
+  human-data lines: fire-crew+gauntlet hits 2 games when a phone take lands).
+- `feedback`: #2985 (this session's QA ask), #2978 (TMD polish), #2971
+  (contra-adapter polish), #2964 (FloorBoss — item 2 shipped #2977).
+- Adapter shelf: NINE trainable now (gauntlet, floor-boss, bomb-defuse, SOS,
+  rally, double-dragon, contra, talk-me-down, fire-crew). Gravel-yard still
+  voice-no-autoRecord — candidate next shelf stage.
 
 ## Open questions for Jon (links only, #605)
-- None open — the 21:53 sweep answered them all (see records above).
+- (none open this slot; #2846 + #2953 both answered and executed.)
 
 ## Harness notes (carry-overs)
-- Rule-5 merge loop this session merged cleanly and the worktree released;
-  the "verify PR state before believing local exit codes" law stands (#2975).
-- Prod grep recipes unchanged: deployments API sha = merge→prod proof (`success`
-  status now also checked); feature strings may be minified — attract capture
-  via `npm run shot -- --url <prod>` is the boot proof.
-- Consent gate in harness: seed stored decline (`openGame({decline:true})`);
-  gate RECORDING, never arcade play (#2969 law).
+- **Commit before checkout-swap** — relearned the hard way: a mutant-proof
+  `git checkout -- file` wiped uncommitted promo edits mid-session (redone).
+- Consent-gate latency: keyboard START now resolves after an async store probe
+  — play-legs must WAIT for the gate (`[data-consent-gate]` + `#consent-no`)
+  or poll screen==='play', never assume a fixed 250 ms. (Firecrewplay legs
+  rewritten; other games' legs already had this pattern.)
+- Y on a seated sheet RELEASES it (flip law) — span-legs must read state, not
+  assume KeyY seats.
+- mutateguard refuses dirty trees: the discipline is commit → mutant → green.
 
 ## Slots / ops
-- Slot a port 5173: dev server stopped by `scripts/devstop.sh` (by port) ✓.
-- Worktrees this lane left: `retrogames-forge-rtype-darkseat` (merged, now
-  detached at origin/main — safe to remove) + old cleanables from prior STATE
-  (`rtype-shell`, `fix-smallmodel`, `forge-plaicraft-s2-contra`,
-  `forge-rtype-volley`, `forge-watchcheck-fb-window`, `forge-red-main-2h`).
-- Main checkout detached `origin/main` `c548973`; STATE committed+pushed to
-  main (game merged, rule 9) and parked via `statepark.mjs park a`.
-
-## Next lane starting here
-- Nothing claimable is code: queue empty, feedback is QA-held while QA MASTER
-  is live. A free builder runs the idle-kick: flagship ladder is spent (all
-  flagship gaps zero/unowned-free), so expect the `weakestStage` rung — run
-  `node scripts/idle-kick.mjs`, file the POLISH it names, claim, ship.
-- Execute Jon's #2908/#2930 replies if the QA lane hasn't already.
-- If tip nightly goes RED → 5a first.
+- Slot b port 5178: dev server stopped via `scripts/devstop.sh` ✓.
+- Worktree `retrogames-forge-firecrew-trainable` (branch merged) removed;
+  older prunable dirs from 11-22 sessions remain (someone's `git worktree
+  prune` is overdue).
+- Main checkout: detached `origin/main`; STATE.md committed this session
+  (game merged ✓) + `statepark.mjs park b`.
+- Nightly watch: first full nightly over `46be66a` runs the new datasetcheck
+  (81/81) + consent-aware firecrewplay together against prod Chrome.
