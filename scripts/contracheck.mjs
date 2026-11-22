@@ -21,12 +21,13 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX } from '../src/games/Contra/sim.js'
-import { drawCapsule, drawCarrier, seatTagState, TAG_WARN } from '../src/games/Contra/art.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice } from '../src/games/Contra/sim.js'
+import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SIM = join(ROOT, 'src/games/Contra/sim.js')
+const ART = join(ROOT, 'src/games/Contra/art.js')
 const BASE = process.env.CONTRA_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
 const MUTANT = process.argv.includes('--mutant')
 
@@ -1738,6 +1739,27 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #2902: a world that never looks hotter is the gap this pass
+            // closed — pin the sky heat dead and round two arrives unmarked.
+            name: 'loop-blind',
+            file: ART, mod: 'art.js',
+            anchor: 'const skyNotch = (n) => Math.max(0, Math.min(2, Math.floor(n) - LOOP_SKY_HOT + 1))',
+            plant: 'const skyNotch = () => 0 /* MUTANT(loop-blind): the palette stops reading the pass */',
+            harm: async (mod) => JSON.stringify(mod.heatSky(4)) === JSON.stringify(mod.heatSky(1))
+                ? 'HARM NAMED: the sky at loop 4 is the loop-1 sky — stage 1 comes back identically dressed and a player who missed the HUD tag cannot tell round two started'
+                : null,
+        },
+        {
+            // #2902: the rising reports ARE the escalation the cabinet's board
+            // paid; flatten the voice and the loop goes quiet-cold.
+            name: 'voice-flat',
+            anchor: 'return Math.min(1 + 0.06 * 3, 1 + 0.06 * (Math.max(1, Math.floor(n)) - 1))',
+            plant: 'return 1 /* MUTANT(voice-flat): every pass reports at loop 1 pitch */',
+            harm: async (mod) => mod.loopVoice(3) <= 1
+                ? `HARM NAMED: loop 3's guns crack at loop 1 pitch — the sound never escalates; the heat loses the layer the original sold it with`
+                : null,
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -1823,6 +1845,54 @@ r.check('#2894 loops 2 and 3 clear with the honest autopilot on all 12 seeds at 
     fL2.length === 0 && fL3.length === 0, [...fL2, ...fL3].join(' ') || 'all clear')
 r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the loop never becomes unwinnable',
     fL4.length === 0 && fL9.length === 0, [...fL4, ...fL9].join(' ') || 'all clear')
+
+// ------------------------------------------------ #2902 loop presentation ---
+// The resume must be seen AND heard hotter — but as pure palette/voice derived
+// from the pass number, never rng, never a new speed. Loop 1 returns the exact
+// base colors and pitch (the pre-loop look is byte-pinned); the heat rises one
+// notch and HOLDS (capped), mirroring loopK's ceiling so no cue outruns the
+// tempo. These are the sim-can't-lie cues: the art reads gs.loop directly.
+{
+    const toRgb = (h) => { const p = parseInt(h.slice(1), 16); return [(p >> 16) & 255, (p >> 8) & 255, p & 255] }
+    const redBias = (h) => { const [r, , b] = toRgb(h); return r - b }
+    const redderThan = (a, b) => a.every((c, i) => redBias(c) > redBias(b[i]))   // r-b (red-minus-blue) rises on every stop
+    const s1 = heatSky(1), s2 = heatSky(2), s3 = heatSky(3), s4 = heatSky(4), s9 = heatSky(9)
+    r.check('#2902 the jungle sky reads the base palette through loop 2 (loop 1 is byte-pinned)',
+        JSON.stringify(s1) === JSON.stringify(SKY_BASE) && JSON.stringify(s2) === JSON.stringify(SKY_BASE), JSON.stringify(s1))
+    r.check('#2902 loop 3 turns the sky one notch redder (every stop gains red-minus-blue)',
+        redderThan(s3, s1), JSON.stringify(s3))
+    r.check('#2902 the sky heat is capped — loop 4 = loop 9 (mirrors loopK, no runaway)',
+        JSON.stringify(s4) === JSON.stringify(s9), JSON.stringify({ s4, s9 }))
+
+    const m1 = heatMuzzle(1), m2 = heatMuzzle(2), m3 = heatMuzzle(3), m9 = heatMuzzle(9)
+    // "hotter" for a muzzle star = the green drains out of it (yellow-white ->
+    // red-hot); red-minus-blue is the SKY metric but reads flat on saturated
+    // orange, where red and blue fall together.
+    const gDrains = (a, b) => a.every((c, i) => toRgb(c)[1] < toRgb(b[i])[1])
+    r.check('#2902 muzzle flash stays at the base colors on loop 1',
+        JSON.stringify(m1) === JSON.stringify(MUZZLE_BASE), JSON.stringify(m1))
+    r.check('#2902 loop 2 runs the muzzle hotter (green drains from both flash frames — yellow-white toward red)',
+        gDrains(m2, m1), JSON.stringify(m2))
+    r.check('#2902 muzzle heat is capped too', JSON.stringify(m3) === JSON.stringify(m9), JSON.stringify({ m3, m9 }))
+
+    r.check('#2902 the loop voice is unity on loop 1 (no pitch shift on the pre-loop run)',
+        loopVoice(1) === 1, `v1=${loopVoice(1)}`)
+    r.check('#2902 enemy reports rise ~6% a pass — loop 2 = x1.06, loop 3 = x1.12',
+        Math.abs(loopVoice(2) - 1.06) < 1e-9 && Math.abs(loopVoice(3) - 1.12) < 1e-9, `v2=${loopVoice(2)} v3=${loopVoice(3)}`)
+    r.check('#2902 the voice is capped at x1.18 (holds from loop 4, mirroring LOOP_CAP)',
+        loopVoice(4) === loopVoice(9) && Math.abs(loopVoice(9) - 1.18) < 1e-9, `v4=${loopVoice(4)} v9=${loopVoice(9)}`)
+
+    r.check('#2902 LOOP_FX holds the world for ~two beats (an interstitial, not a flicker)',
+        LOOP_FX >= 90 && LOOP_FX <= 140, `LOOP_FX=${LOOP_FX}`)
+
+    r.check('#2902 the heat cues never couple to gameplay — loopK is still the only tempo law',
+        loopK(1) === 1 && Math.abs(loopK(2) - 1.1) < 1e-9 && loopK(4) === LOOP_CAP)
+
+    const h1 = makeGame(11, 3), h2 = makeGame(11, 3)
+    for (let i = 0; i < 400; i++) { step(h1, autopilot(h1)); step(h2, autopilot(h2)); heatSky(h1.loop); heatMuzzle(h1.loop) }
+    r.check('#2902 heat cues are hash-clean — two loop-3 replays stay identical (palette/voice consume zero gs.r)',
+        stateHash(h1) === stateHash(h2), `${stateHash(h1)} vs ${stateHash(h2)}`)
+}
 
 // ------------------------------------------------------------- browser leg ---
 await requireDevServer(`${BASE}/contra`)
@@ -2185,6 +2255,156 @@ const browser = await launch()
     }
     r.check('#2894 the pass reads — LOOP n paints gold on the HUD where loop 1 shows nothing',
         goldMark - goldBase >= 10, `gold loop1=${goldBase} loopN=${goldMark}`)
+
+    // ---------- #2902 browser legs: the loop presentation ----------
+    const goldBand = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(140 * k), Math.round(84 * k), Math.round(104 * k), Math.round(40 * k)).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 120) n++   // banner gold
+        return n
+    })
+    // Leg A — the resume is an interstitial: win, and the handback arrives as a
+    // LOOP banner slam over a HELD world (two quiet beats), heads flashing gold
+    // for the banked courtesy, then the jungle starts moving at loop n+1.
+    await ensurePlay()
+    const preF = await page.evaluate(() => window.__contraTest.probe())
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', inv: 99999, lives: 4 }))
+    await page.keyboard.down('ArrowRight')
+    let fbx = 0
+    for (let g0 = 0; g0 < 40 && fbx < 136; g0++) { await page.waitForTimeout(80); fbx = (await page.evaluate(() => window.__contraTest.probe())).x }
+    await page.keyboard.down('ArrowUp')
+    await page.keyboard.down('KeyX')
+    let winF = null
+    for (let g0 = 0; g0 < 220 && !winF; g0++) {
+        await page.waitForTimeout(100)
+        const p = await page.evaluate(() => window.__contraTest.probe())
+        if (p.end === 'win') winF = p
+    }
+    await page.keyboard.up('KeyX'); await page.keyboard.up('ArrowUp'); await page.keyboard.up('ArrowRight')
+    let fxOn = null
+    for (let g0 = 0; g0 < 300 && !(fxOn && fxOn.screen === 'play' && fxOn.loopFx); g0++) {
+        await page.waitForTimeout(60)
+        fxOn = await page.evaluate(() => window.__contraTest.probe())
+    }
+    // One sampler across the freeze: banner gold, heads flash, and held ticks —
+    // evaluate round-trips are milliseconds, so a per-tick freeze needs real
+    // waits between samples, not a fast exit-on-first-hit loop.
+    let bannerGold = 0, flashHi = 0, flashLo = 999
+    let held1 = null, held2 = null
+    for (let g0 = 0; g0 < 24; g0++) {
+        const s = await page.evaluate(() => {
+            const c = document.querySelector('canvas')
+            const k = c.width / 384
+            const gtest = (d, i) => d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 120
+            const gb = c.getContext('2d').getImageData(Math.round(140 * k), Math.round(84 * k), Math.round(104 * k), Math.round(40 * k)).data
+            let bn = 0; for (let i = 0; i < gb.length; i += 4) if (gtest(gb, i)) bn++
+            const hd = c.getContext('2d').getImageData(Math.round(148 * k), Math.round(10 * k), Math.round(56 * k), Math.round(10 * k)).data
+            let hn = 0; for (let i = 0; i < hd.length; i += 4) if (gtest(hd, i)) hn++
+            const p = window.__contraTest.probe()
+            return { bn, hn, tick: p.tick, fxOn: p.loopFx !== null, at: Date.now() }
+        })
+        bannerGold = Math.max(bannerGold, s.bn)
+        if (s.fxOn) {
+            flashHi = Math.max(flashHi, s.hn); flashLo = Math.min(flashLo, s.hn)
+            if (!held1) held1 = s
+            else if (!held2 && s.at - held1.at > 250) held2 = s
+        }
+        await page.waitForTimeout(70)
+    }
+    let fxOff = null
+    for (let g0 = 0; g0 < 200 && !(fxOff && fxOff.screen === 'play' && !fxOff.loopFx); g0++) {
+        await page.waitForTimeout(80)
+        fxOff = await page.evaluate(() => window.__contraTest.probe())
+    }
+    r.check('#2902 the resume is an interstitial — the LOOP banner slams over a HELD world (tick stands still), then the stage resumes one notch hotter',
+        fxOn !== null && fxOn.loopFx && fxOn.loopFx.n === preF.loop + 1 && bannerGold >= 30 &&
+        held1 !== null && held2 !== null && held2.tick === held1.tick &&
+        fxOff !== null && fxOff.loop === preF.loop + 1 && fxOff.tick > held1.tick,
+        JSON.stringify({ fx: fxOn && fxOn.loopFx, bannerGold, heldTick: [held1 && held1.tick, held2 && held2.tick], after: fxOff && { loop: fxOff.loop, tick: fxOff.tick } }))
+    r.check('#2902 the bank celebrates — the heads row flashes gold while the banner holds',
+        flashHi >= 20 && flashLo <= 4, `gold hi=${flashHi} lo=${flashLo}`)
+
+    // Leg B — the world LOOKS hotter: same live run, pass toggled. Palette only;
+    // red-minus-green bias on the sky band, sampled above the mountain line.
+    const skyBias = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(8 * k), Math.round(8 * k), Math.round(72 * k), Math.round(34 * k)).data
+        let s = 0, n = 0
+        for (let i = 0; i < d.length; i += 4) { n++; s += d[i] - d[i + 1] }
+        return n ? s / n : 0
+    })
+    await page.evaluate(() => window.__contraTest.setup({ loop: 1 }))
+    await page.waitForTimeout(160)
+    const skyCool = await skyBias()
+    await page.evaluate(() => window.__contraTest.setup({ loop: 4 }))
+    await page.waitForTimeout(160)
+    const skyHot = await skyBias()
+    r.check('#2902 the world reads hotter — the loop-4 sky is redder than loop 1 on the live canvas',
+        skyHot - skyCool >= 6, `mean(r-g) loop1=${skyCool.toFixed(1)} loop4=${skyHot.toFixed(1)}`)
+
+    // Leg C — phone-scale legibility: the LOOP tag rides a warm dark plate with
+    // a gold border (8px gold on bright jungle sky was the wash-out complaint).
+    const plateInk = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(226 * k), Math.round(9 * k), Math.round(44 * k), Math.round(14 * k)).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > d[i + 1] + 6) n++   // warm ink: red beats green
+        return n
+    })
+    await page.evaluate(() => window.__contraTest.setup({ loop: 1 }))
+    await page.waitForTimeout(160)
+    const plateOff = await plateInk()
+    await page.evaluate(() => window.__contraTest.setup({ loop: 4 }))
+    await page.waitForTimeout(160)
+    const plateOn = await plateInk()
+    r.check('#2902 the LOOP tag is plated for phone scale — warm backplate + gold border paint at loop 4, nothing at loop 1',
+        plateOff <= 8 && plateOn >= 150, `loop1=${plateOff} loop4=${plateOn}`)
+
+    // #2902 attract teaches the loop: force the demo's death onto the harness
+    // clock, and the attract screen runs one LOOP 2 pass with the banner before
+    // handing the copy back — the mechanic advertises itself pre-clear.
+    await page.evaluate(() => { window.__game && window.__game.reset(99); window.__contraTest.setup({ lives: 0, kill: true, allyOut: true }) })
+    let overT = null
+    for (let g0 = 0; g0 < 40; g0++) {
+        await page.waitForTimeout(200)
+        overT = await page.evaluate(() => window.__contraTest.probe())
+        if (overT && overT.screen === 'over') break
+        await page.evaluate(() => window.__contraTest.setup({ lives: 0, kill: true, allyOut: true }))
+    }
+    await page.waitForTimeout(1100)                 // GAME OVER holds ~0.9 s before its key answers
+    await page.keyboard.press('Space')               // over -> attract
+    let attractLive = null
+    for (let g0 = 0; g0 < 40 && !(attractLive && attractLive.screen === 'attract' && !attractLive.end); g0++) {
+        await page.waitForTimeout(100)
+        attractLive = await page.evaluate(() => window.__contraTest.probe())
+    }
+    const teachArmed = await page.evaluate(() => window.__contraTest.attractLoopNow())
+    await page.waitForTimeout(220)
+    const teachOn = await page.evaluate(() => window.__contraTest.probe())
+    const teachGold = await goldBand()
+    const teachT0 = teachOn && teachOn.tick
+    await page.waitForTimeout(240)
+    const teachT1 = (await page.evaluate(() => window.__contraTest.probe())).tick
+    let teachGo = null
+    for (let g0 = 0; g0 < 120 && !(teachGo && teachGo.screen === 'attract' && !teachGo.loopFx && teachGo.demoLoop === 1 && teachGo.tick > teachT0); g0++) {
+        await page.waitForTimeout(100)
+        teachGo = await page.evaluate(() => window.__contraTest.probe())
+    }
+    r.check('#2902 attract teaches the loop — the demo survives its end, runs LOOP 2, and the banner slams over the attract jungle (held)',
+        attractLive !== null && teachArmed === true && teachOn && teachOn.screen === 'attract' && teachOn.loop === 2 && teachOn.demoLoop === 1 &&
+        teachOn.loopFx && teachOn.loopFx.n === 2 && teachGold >= 30 && teachT1 === teachT0 && teachGo !== null,
+        JSON.stringify({ armed: teachArmed, teach: teachOn && { screen: teachOn.screen, loop: teachOn.loop, fx: teachOn.loopFx }, teachGold, held: [teachT0, teachT1] }))
+    // and the teach is a pass, not a state: attract returns to loop-1 copy
+    let teachBack = null
+    for (let g0 = 0; g0 < 220 && !(teachBack && teachBack.screen === 'attract' && teachBack.demoLoop === 0 && teachBack.loop === 1); g0++) {
+        await page.waitForTimeout(100)
+        teachBack = await page.evaluate(() => window.__contraTest.probe())
+    }
+    r.check('#2902 the taught pass ends — attract cycles back to loop-1 demo and copy', teachBack !== null, JSON.stringify(teachBack && { s: teachBack.screen, d: teachBack.demoLoop, l: teachBack.loop }))
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()

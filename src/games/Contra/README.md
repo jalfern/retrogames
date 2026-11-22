@@ -274,7 +274,7 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   cargo-jettison, carrier-impervious,
                                        #   housings-eat-beams, cascade-random,
                                        #   vine-deadwood, vine-sink, loop-dead,
-                                       #   loop-overdrive
+                                       #   loop-overdrive, loop-blind, voice-flat
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -334,7 +334,15 @@ reach law (airborne + jump held + tip box; grounded never grabs), carrier law
 (the blue seat rides the same seatStep), hazard law intact (the torrent takes
 a low rider), riders ride the hash · live canyon paints vines over a
 bare-canyon pixel baseline · live grab, live release, and the script-length
-finale countdown through real keys** · zero page errors.
+finale countdown through real keys** · **#2902 loop presentation: the resume is
+an interstitial — LOOP banner gold on screen while the world's tick stands
+still, then the stage resumes one notch hotter; the heads row gold-flashes the
+banked +1; the loop-4 sky reads redder than loop 1 live; the LOOP tag paints on
+its warm plate (loop 1 shows nothing) — plus the sim-side law: heatSky/
+heatMuzzle byte-base through loop 2, one notch at loop 3, capped at loop 4;
+loopVoice unity → x1.06 → x1.12 → capped x1.18; hash-clean (palette and voice
+consume zero gs.r); attract teaches one LOOP 2 pass with the banner and cycles
+back to loop-1 copy** · zero page errors.
 
 ## Honest gaps
 
@@ -382,3 +390,41 @@ finale countdown through real keys** · zero page errors.
   (zero rng, frozen aim during the telegraph, roof exempt), and the vest
   grenadier is lob-only like the cabinet's: the rifle branch no longer answers
   for `nade` soldiers.
+- **CLOSED by #2902**: the arcade loop now SPEAKS — see "#2902 What the loop
+  looks and sounds like" below.
+
+## #2902 What the loop looks and sounds like (presentation)
+
+The cabinet-era language for "the stage comes back hotter", all derived from
+`gs.loop` at the shell (the sim can't lie about the heat — and none of it
+consumes `gs.r`, so replay determinism and every pre-loop pin stand):
+
+- **The resume is an interstitial**: STAGE CLEAR hands back PLAY with a banner
+  slam — wipe bars sweep in from both edges, `LOOP n` lands oversized and
+  settles, and `STAGE 1 STRIKES BACK — TEMPO x1.20` reads under it
+  (`drawLoopBanner`). The world is HELD for `LOOP_FX` (110) beats while it
+  reads — the two quiet beats before the jungle starts moving. The sim is not
+  ticked during the hold, so the resumed run's tick stream is identical to a
+  banner-less resume (the autopilot seeds don't even notice).
+- **The bank celebrates**: the shared-pool heads row flashes gold while the
+  banner holds — the +1 loop courtesy landing is something you see.
+- **Heat you can see**: the jungle sky runs one notch redder at loop ≥3
+  (`heatSky`, capped two notches from loop 4, mirroring LOOP_CAP), and the
+  soldiers'/snipers' muzzle flashes drain green toward red-hot from loop ≥2
+  (`heatMuzzle`). Loop 1/2 return the exact base palette byte-for-byte.
+- **Heat you can hear**: enemy reports (rifle/turret/sniper/cannon/depot slit)
+  rise in pitch `loopVoice` = +6% a pass, capped x1.18 with the tempo — tied
+  to `gs.loop`, never rng. The resume itself gets an ascending call with a
+  snare slap under the slam frame.
+- **Attract teaches the loop**: the demo survives its endings (it used to
+  freeze on its last frame forever — found and fixed here), and a demo win
+  rebuilds the SAME seed at loop 2: the banner slams over the attract jungle,
+  the autopilot runs ~15 s of the hot stage, then attract copy returns.
+- **Phone legibility**: the `LOOP n` HUD tag sits on a warm dark plate with a
+  gold border — 8px gold over the bright jungle sky was the wash-out the QA
+  pass flagged at phone scale.
+
+Law that still stands (and is pinned): the loop tempo (`loopK`) is the ONLY
+gameplay escalator. Nothing in the presentation scales round speeds, the
+torrent, or the hop-fairness spine.
+
