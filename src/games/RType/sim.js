@@ -75,6 +75,8 @@ export const CFG = {
     oneUpEvery: 20000,
     crushX: 4,         // this close to the left edge and the world kills you
     missileWarn: 30,   // pre-launch chirp ticks (the shell sounds it)
+    speedStep: 0.65,   // #2915 Speed Up: px/tick added per speed level
+    speedMax: 2,       // arcade: two speeds up, spares after that pay points
 }
 
 // the S.E.E.D. force pod (S2) + the laser arm. The pod is the issue's "bite":
@@ -94,6 +96,10 @@ export const POD = {
     laserTiers: [24, 42, 62],   // lance lengths at charge <25 / <50 / max
 }
 export const CYCLE = ['vulcan', 'laser', 'wave']
+// #2915 fidelity note: the arcade's standard capsules cycle V→L→W only;
+// Double and Speed Up are FIXED-SPOT pods (dcap/scap in the schedule), never
+// cycle steps. Double sits on the full arcade list between Vulcan and Laser —
+// so a standard capsule taken while holding D hands over to the lance.
 
 // the wing (S4): seat two's station relative to seat one. The wing holds
 // BEHIND and on the OPPOSITE lane — two lanes of coverage, never a blocker.
@@ -130,6 +136,9 @@ export const WAVES = [
         { kind: 'larva', d: 72, y: 44 }, { kind: 'larva', d: 90, y: 128, dive: 1 } ] },
     { at: 250, bcap: 1 },
     { at: 300, seg: { y0: FIELD_TOP, y1: 96, len: 130, turret: 96 } },
+    // #2915 fixed-spot special pods (arcade: D and S hide at authored places,
+    // not in the capsule cycle). Authored y — zero rng, streams untouched.
+    { at: 340, dcap: { y: 110 } },
     { at: 380, caps: 1 },
     { at: 430, pod: { y: 64, missiles: 3 } },
     { at: 500, seg: { y0: 118, y1: FIELD_BOT, len: 150, turret: 118 } },
@@ -140,6 +149,7 @@ export const WAVES = [
         { kind: 'larva', d: 80, y: 120, dive: 1 }, { kind: 'larva', d: 100, y: 96 } ] },
     { at: 610, bcap: 1 },
     { at: 640, pod: { y: 168, missiles: 4 } },
+    { at: 660, scap: { y: 152 } },
     { at: 700, seg: { y0: FIELD_TOP, y1: 82, len: 170, turret: 82 } },
     { at: 770, spawn: [
         { kind: 'larva', d: 0, y: 140, dive: 1 }, { kind: 'larva', d: 22, y: 74 },
@@ -196,7 +206,8 @@ function makeShip() {
     return {
         x: 60, y: 120, dead: false, out: false,
         inv: CFG.respawnIFrames,
-        weapon: 'vulcan',   // vulcan | wave
+        weapon: 'vulcan',   // vulcan | laser | wave | double (#2915 D pod)
+        spd: 0,             // #2915 Speed Up level 0..speedMax; resets with the hull
         charge: 0,
         cd: 0,
         anim: 0,
@@ -286,6 +297,32 @@ function spawnForceCap(gs) {
 function spawnBitCap(gs) {
     const y = 60 + Math.floor(rng(gs) * 120)
     gs.caps.push({ id: gs.nextId++, x: gs.camX + W + 14, y, baseY: y, bob: rng(gs) * 6, type: 'bit' })
+}
+
+// #2915 special pods (Double / Speed Up): authored y, and the bob derives from
+// the id like the bit carrier — zero rng, so every seed's tuned stream stays
+// byte-identical. Type 'double' arms the twin vulcan; 'speed' lifts the hull.
+function spawnSpecialCap(gs, y, type) {
+    gs.caps.push({ id: gs.nextId++, x: gs.camX + W + 14, y, baseY: y,
+        bob: ((gs.nextId * 37) % 100) / 25, type })
+}
+
+// #2915 the special-pod laws, per hull (S4 symmetry): Double arms once — the
+// twin vulcan replaces the stream — and a spare pays points like every other
+// spare in the house; Speed Up stacks to two levels and resets with the pilot
+// (makeShip zeroes it), spares pay points.
+function takeSpecial(gs, ent, c) {
+    if (c.type === 'double') {
+        if (ent.weapon !== 'double') { ent.weapon = 'double'; ent.charge = 0; addScore(gs, 500); gs.events.push('dcap') }
+        else { addScore(gs, 1000); gs.events.push('capsule') }
+        return true
+    }
+    if (c.type === 'speed') {
+        if ((ent.spd || 0) < CFG.speedMax) { ent.spd = (ent.spd || 0) + 1; addScore(gs, 500); gs.events.push('scap') }
+        else { addScore(gs, 1000); gs.events.push('capsule') }
+        return true
+    }
+    return false
 }
 
 // The bit carrier (#2835): an armoured hull ferrying n bits. It eases into a
@@ -725,10 +762,11 @@ function runWorld(gs, pad, frozen, pad2) {
 
     // --- ship
     if (!frozen && sAlive) {
-        if (pad.left) s.x -= CFG.shipSpeed
-        if (pad.right) s.x += CFG.shipSpeed
-        if (pad.up) s.y -= CFG.shipSpeed
-        if (pad.down) s.y += CFG.shipSpeed
+        const ms = CFG.shipSpeed + s.spd * CFG.speedStep // #2915 Speed Up: the stick answers quicker
+        if (pad.left) s.x -= ms
+        if (pad.right) s.x += ms
+        if (pad.up) s.y -= ms
+        if (pad.down) s.y += ms
         s.y = clamp(s.y, FIELD_TOP + 6, FIELD_BOT - 4)
         if (s.inv > 0) s.inv -= 1
         s.anim += 1
@@ -744,6 +782,19 @@ function runWorld(gs, pad, frozen, pad2) {
                 // FAN — a bit off the hull line shoots outward in proportion to
                 // its offset, so the chain buys lanes, not just volume (the
                 // original's spread). Orbiting bits sweep their fan as they spin.
+                for (const bt of gs.bits) {
+                    const by = bt.py ?? s.y
+                    gs.shots.push({ id: gs.nextId++, x: (bt.px ?? s.x) + 10, y: by - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: clamp((by - s.y) * 0.045, -0.5, 0.5) })
+                }
+                s.cd = CFG.vulcanCd
+                gs.events.push('shot')
+            }
+        } else if (s.weapon === 'double') {
+            // #2915 the twin vulcan: one press, two rounds stacked 6 px apart
+            // (the arcade's paired stream). Bits still fan from where they ride.
+            if (pad.a && s.cd <= 0) {
+                gs.shots.push({ id: gs.nextId++, x: s.x + 12, y: s.y - 4, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+                gs.shots.push({ id: gs.nextId++, x: s.x + 12, y: s.y + 2, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
                 for (const bt of gs.bits) {
                     const by = bt.py ?? s.y
                     gs.shots.push({ id: gs.nextId++, x: (bt.px ?? s.x) + 10, y: by - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: clamp((by - s.y) * 0.045, -0.5, 0.5) })
@@ -789,6 +840,8 @@ function runWorld(gs, pad, frozen, pad2) {
             if (wv.caps) spawnCaps(gs)
             if (wv.fcap) spawnForceCap(gs)
             if (wv.bcap) spawnBitCap(gs)
+            if (wv.dcap) spawnSpecialCap(gs, wv.dcap.y, 'double')
+            if (wv.scap) spawnSpecialCap(gs, wv.scap.y, 'speed')
             if (wv.seg) spawnSeg(gs, wv.seg)
             if (wv.pod) spawnPod(gs, wv.pod.y, wv.pod.missiles)
             if (wv.bpod) spawnBitPod(gs, wv.bpod.y, wv.bpod.n)
@@ -831,7 +884,11 @@ function runWorld(gs, pad, frozen, pad2) {
                 }
                 continue
             }
-            s.weapon = CYCLE[(CYCLE.indexOf(s.weapon) + 1) % CYCLE.length]
+            // capsule taken: the spare-seed/spare-bit law, the standard cycle…
+            if (takeSpecial(gs, s, c)) continue
+            s.weapon = s.weapon === 'double'
+                ? 'laser' // #2915: D sits between Vulcan and Laser on the arcade list
+                : CYCLE[(CYCLE.indexOf(s.weapon) + 1) % CYCLE.length]
             s.charge = 0
             gs.weaponName = s.weapon
             addScore(gs, 500)
@@ -856,7 +913,10 @@ function runWorld(gs, pad, frozen, pad2) {
                 if (!addBitOn(gs, w, w.bits, true)) { addScore(gs, 1000); gs.events.push('capsule') }
                 continue
             }
-            w.weapon = CYCLE[(CYCLE.indexOf(w.weapon) + 1) % CYCLE.length]
+            if (takeSpecial(gs, w, c)) continue
+            w.weapon = w.weapon === 'double'
+                ? 'laser'
+                : CYCLE[(CYCLE.indexOf(w.weapon) + 1) % CYCLE.length]
             w.charge = 0
             addScore(gs, 500)
             gs.events.push('capsule')
@@ -1457,10 +1517,11 @@ function runWing(gs, pad2, frozen) {
     if (w.cd > 0) w.cd -= 1
 
     if (!frozen) {
-        if (pad.left) w.x -= CFG.shipSpeed
-        if (pad.right) w.x += CFG.shipSpeed
-        if (pad.up) w.y -= CFG.shipSpeed
-        if (pad.down) w.y += CFG.shipSpeed
+        const wm = CFG.shipSpeed + (w.spd || 0) * CFG.speedStep // #2915 per-hull Speed Up
+        if (pad.left) w.x -= wm
+        if (pad.right) w.x += wm
+        if (pad.up) w.y -= wm
+        if (pad.down) w.y += wm
         w.y = clamp(w.y, FIELD_TOP + 6, FIELD_BOT - 4)
         w.x = clamp(w.x, gs.camX + 2, gs.camX + W - 10)
 
@@ -1469,6 +1530,18 @@ function runWing(gs, pad2, frozen) {
                 gs.shots.push({ id: gs.nextId++, x: w.x + 12, y: w.y - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
                 // the #2831 bit×arm matrix generalizes to seat two: the wing's
                 // chain fans and widens its own streams
+                for (const bt of w.bits) {
+                    const by = bt.py ?? w.y
+                    gs.shots.push({ id: gs.nextId++, x: (bt.px ?? w.x) + 10, y: by - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: clamp((by - w.y) * 0.045, -0.5, 0.5) })
+                }
+                w.cd = CFG.vulcanCd
+                gs.events.push('shot')
+            }
+        } else if (w.weapon === 'double') {
+            // #2915 twin vulcan, per hull — seat two fires twins too
+            if (pad.a && w.cd <= 0) {
+                gs.shots.push({ id: gs.nextId++, x: w.x + 12, y: w.y - 4, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+                gs.shots.push({ id: gs.nextId++, x: w.x + 12, y: w.y + 2, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
                 for (const bt of w.bits) {
                     const by = bt.py ?? w.y
                     gs.shots.push({ id: gs.nextId++, x: (bt.px ?? w.x) + 10, y: by - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: clamp((by - w.y) * 0.045, -0.5, 0.5) })
@@ -1785,7 +1858,8 @@ export function stateHash(gs) {
     mix(gs.camX); mix(gs.waveIdx)
     const s = gs.ship
     mix(s.x); mix(s.y); mix(gs.lives)
-    mix({ vulcan: 0, laser: 1, wave: 2 }[s.weapon] ?? 3); mix(s.charge); mix(s.inv); mix(s.dead ? 1 : 0)
+    mix({ vulcan: 0, laser: 1, wave: 2, double: 3 }[s.weapon] ?? 4); mix(s.charge); mix(s.inv); mix(s.dead ? 1 : 0)
+    mix(s.spd || 0) // #2915 Speed Up is sim truth — the panic hash covered hot the same way
     const pd = gs.pod
     mix(pd ? 1 : 0)
     if (pd) { mix(pd.x); mix(pd.y); mix(pd.state.length); mix(pd.state.charCodeAt(0)) }
@@ -1816,7 +1890,8 @@ export function stateHash(gs) {
     mix(wg ? 1 : 0)
     if (wg) {
         mix(wg.x); mix(wg.y); mix(wg.lives); mix(wg.dead ? 1 : 0); mix(wg.out ? 1 : 0); mix(wg.human ? 1 : 0)
-        mix({ vulcan: 0, laser: 1, wave: 2 }[wg.weapon] ?? 3); mix(wg.inv)
+        mix({ vulcan: 0, laser: 1, wave: 2, double: 3 }[wg.weapon] ?? 4); mix(wg.inv)
+        mix(wg.spd || 0) // #2915 per-hull speed rides the hash too
         mix(wg.bits.length)
         for (const bt of wg.bits) { mix(bt.px ?? 0); mix(bt.py ?? 0) }
         mix(wg.pod ? 1 : 0)

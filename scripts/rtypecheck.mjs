@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, WAVES2, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, WAVES2, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -1183,6 +1183,74 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         stateHash(hA) !== stateHash(hB), `${stateHash(hA)} vs ${stateHash(hB)}`)
 }
 
+// ------------- #2915 special pods: DOUBLE and SPEED UP (capsule list) ------
+{
+    const pad0 = { left: false, right: false, up: false, down: false, a: false, b: false }
+    const atNose = (gs, type) => gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type })
+    const gs = makeGame(4)
+    atNose(gs, 'double')
+    step(gs, pad0)
+    r.check('#2915 the D pod arms the twin vulcan (dcap speaks)',
+        gs.ship.weapon === 'double' && gs.events.includes('dcap'), `weapon=${gs.ship.weapon}`)
+    gs.enemies.length = 0
+    gs.shots.length = 0
+    for (let t = 0; t < 6; t++) { step(gs, { ...pad0, a: true }); gs.events.length = 0 } // press, then sit inside the one cooldown window
+    const volley = gs.shots.filter((q) => q.kind === 'v')
+    r.check('#2915 one press, two rounds stacked 6 px — the twin stream never fires single',
+        volley.length === 2 && Math.abs((volley[1].y - volley[0].y) - 6) < 0.01,
+        `volley ${volley.length} dy ${volley.length === 2 ? (volley[1].y - volley[0].y).toFixed(1) : '-'}`)
+    atNose(gs, 'weapon')
+    step(gs, pad0)
+    r.check('#2915 a standard capsule after D hands over to the lance (the arcade list: V, D, L, W)',
+        gs.ship.weapon === 'laser', `weapon=${gs.ship.weapon}`)
+
+    const g2 = makeGame(5)
+    atNose(g2, 'speed'); step(g2, pad0)
+    const lv1 = g2.ship.spd
+    atNose(g2, 'speed'); step(g2, pad0)
+    const lv2 = g2.ship.spd
+    const spare0 = g2.score
+    atNose(g2, 'speed'); step(g2, pad0)
+    r.check('#2915 Speed Up stacks to two levels; spares after the cap pay points (spare law)',
+        lv1 === 1 && lv2 === 2 && g2.ship.spd === 2 && g2.score > spare0 && g2.events.includes('capsule'),
+        `spd ${lv1}/${lv2}/${g2.ship.spd}`)
+    const x0 = g2.ship.x
+    for (let t = 0; t < 10; t++) { step(g2, { ...pad0, right: true }); g2.events.length = 0 }
+    const dx = g2.ship.x - x0
+    r.check('#2915 the lift is on the stick: level 2 covers 34 px in 10 ticks where the cold hull covers 21',
+        Math.abs(dx - (CFG.shipSpeed + 2 * CFG.speedStep) * 10) < 0.51 && dx > CFG.shipSpeed * 10 + 10,
+        `dx ${dx.toFixed(2)}`)
+
+    const g3 = makeGame(6)
+    atNose(g3, 'double'); step(g3, pad0)
+    atNose(g3, 'speed'); step(g3, pad0)
+    const geared = g3.ship.weapon === 'double' && g3.ship.spd === 1
+    g3.ship.inv = 0; g3.ship.x = g3.camX
+    step(g3, pad0) // the grinding left edge takes the hull
+    for (let t = 0; t < CFG.dying + 5 && g3.ship.dead; t++) { step(g3, pad0); g3.events.length = 0 }
+    r.check('#2915 the wreck strips the specials — arm and speed reset with the pilot (power armour law)',
+        geared && g3.ship.weapon === 'vulcan' && g3.ship.spd === 0,
+        `dead=${g3.ship.dead} weapon=${g3.ship.weapon} spd=${g3.ship.spd}`)
+
+    const hA = makeGame(8); const hB = makeGame(8); const hC = makeGame(8)
+    hB.ship.spd = 1
+    hC.ship.weapon = 'double'
+    r.check('#2915 the specials are sim truth — stateHash covers the lift AND the twin arm',
+        stateHash(hA) !== stateHash(hB) && stateHash(hA) !== stateHash(hC),
+        `${stateHash(hA)} vs spd ${stateHash(hB)} vs D ${stateHash(hC)}`)
+
+    const g5 = makeGame(9)
+    g5.ship.inv = 1e9 // the schedule leg is about what the world places, not about dying
+    let sawD = false, sawS = false
+    while (g5.camX < 661 && g5.mode === 'play' && !g5.camLock) {
+        step(g5, pad0); g5.events.length = 0
+        if (g5.caps.some((c) => c.type === 'double')) sawD = true
+        if (g5.caps.some((c) => c.type === 'speed')) sawS = true
+    }
+    r.check('#2915 the authored pods ride leg 1 at fixed spots (schedule, zero rng)', sawD && sawS,
+        `D ${sawD ? 'seen' : 'missing'} S ${sawS ? 'seen' : 'missing'}`)
+}
+
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12
     let wins = 0
@@ -1477,6 +1545,37 @@ if (MUTANT) {
                 for (let t = 0; t < 60; t++) { mod.step(gs, { a: true }); gs.events.length = 0 }
                 return gs.dobk.hp === mod.DOBK.hp
                     ? 'HARM NAMED: sixty ticks of vulcan into the slab and the pool never moves — a gate that cannot be hurt is not a gate, it is a wall the stage dies against'
+                    : null
+            },
+        },
+        {
+            name: 'twin-collapse',
+            anchor: "gs.shots.push({ id: gs.nextId++, x: s.x + 12, y: s.y + 2, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })",
+            plant: "gs.shots.push({ id: gs.nextId++, x: s.x + 12, y: s.y - 4, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 }) /* MUTANT(twin-collapse): the pair folds onto one lane */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(4)
+                gs.caps.push({ id: 999, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'double' })
+                mod.step(gs, {}); gs.events.length = 0
+                gs.enemies.length = 0; gs.shots.length = 0
+                for (let t = 0; t < 6; t++) { mod.step(gs, { a: true }); gs.events.length = 0 }
+                const v = gs.shots.filter((q) => q.kind === 'v')
+                return v.length === 2 && Math.abs(v[1].y - v[0].y) < 1
+                    ? 'HARM NAMED: the D pod arms but the pair collapses onto one lane — the twin stream is a lie, one lane does all the work and Double buys nothing'
+                    : null
+            },
+        },
+        {
+            name: 'speed-deaf',
+            anchor: 'const ms = CFG.shipSpeed + s.spd * CFG.speedStep',
+            plant: 'const ms = CFG.shipSpeed + 0 * CFG.speedStep /* MUTANT(speed-deaf): the lift stops reaching the stick */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(5)
+                gs.caps.push({ id: 999, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'speed' })
+                mod.step(gs, {}); gs.events.length = 0
+                const x0 = gs.ship.x
+                for (let t = 0; t < 10; t++) { mod.step(gs, { right: true }); gs.events.length = 0 }
+                return Math.abs((gs.ship.x - x0) - mod.CFG.shipSpeed * 10) < 0.51
+                    ? 'HARM NAMED: the S pod sets the flag but the hull never speeds up — a speed-up that never moves the ship is HUD theatre'
                     : null
             },
         },
