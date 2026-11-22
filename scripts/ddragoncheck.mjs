@@ -446,7 +446,7 @@ const runFull = (seed, max = 60000) => {
     const gs = makeGame(44)
     enterStage2(gs)
     gs.waveIdx = 2; gs.waveActive = true; gs.camLock = true
-    gs.enemies.push({ id: 920, kind: 'duel', x: gs.camX + W + 44, y: 170, face: -1, hp: CFG.duelHp, state: 'enter', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 60, attackCooldown: 40, inv: 0, spinHit: false })
+    gs.enemies.push({ id: 920, kind: 'duel', x: gs.camX + W + 44, y: 170, face: -1, hp: CFG.duelHp, state: 'enter', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, knifeUser: true, castCooldown: 60, attackCooldown: 40, inv: 0, spinHit: false })
     for (let i = 0; i < 5000 && gs.mode === 'play' && gs.waveIdx < WAVES_S2.length; i++) { step(gs, autopilot(gs)); gs.events.length = 0 }
     r.check('S3: the duel is won the honest way — the wave closes only when he falls', gs.waveIdx >= WAVES_S2.length && gs.mode === 'play', `wave=${gs.waveIdx} mode=${gs.mode} lives=${gs.billy.lives}`)
     r.check('S3: winning the duel does NOT clear the stage — the rescue must be earned', gs.mode === 'play' && !!gs.marian && !gs.marian.freed && rescueReady(gs), `mode=${gs.mode} ready=${rescueReady(gs)}`)
@@ -475,7 +475,7 @@ const runFull = (seed, max = 60000) => {
     const gs = makeGame(64)
     gs.billy.inv = CFG.respawnIFrames
     gs.billy.x = 100
-    gs.enemies.push({ id: 930, kind: 'duel', x: 120, y: gs.billy.y, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 99999, attackCooldown: 99999, inv: 0, spinHit: false })
+    gs.enemies.push({ id: 930, kind: 'duel', x: 120, y: gs.billy.y, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, knifeUser: true, castCooldown: 99999, attackCooldown: 99999, inv: 0, spinHit: false })
     for (let i = 0; i < 30; i++) { step(gs, {}); gs.events.length = 0 }
     const e = gs.enemies[0]
     r.check('S3 #2825: an armed thrower at punching range back-pedals to a fresh angle instead of trading fists', e && e.x > 130 && gs.billy.lives === 3, `x 120->${e ? e.x.toFixed(0) : 'gone'} lives=${gs.billy.lives}`)
@@ -1655,7 +1655,8 @@ console.log('p2 pad seat (#2860)')
 // is the depth law in new clothes — leave the lane during the telegraph and
 // the leather whooses past.
 {
-    // escalation: wave 1 bare, then steel, then leather; the duel keeps his belt
+    // escalation: wave 1 bare, then steel, then leather; the duel carries one
+    // knife and walks it back (#2948)
     r.check('#2944 escalation law: Walnuts wave 1 is bare-knuckled, wave 3 answers with the whip',
         WAVES[0].spawns.every((s) => !s.stick && !s.whip && !s.knife)
         && WAVES[2].spawns.some((s) => s.whip) && !WAVES[2].spawns.some((s) => s.knife))
@@ -1787,6 +1788,27 @@ console.log('p2 pad seat (#2860)')
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
     const plants = [
+        {
+            name: 'retrieval-dead',
+            anchor: 'e.knifeUser && !e.hasKnife && adx > def.reach + 6',
+            plant: 'false && e.knifeUser && !e.hasKnife && adx > def.reach + 6 /* MUTANT(retrieval-dead): throwers forget where they dropped their steel */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(49)
+                gs.billy.inv = 0
+                gs.enemies.push({ id: 945, kind: 'duel', x: gs.billy.x + 70, y: gs.billy.y + 11, face: -1, hp: 10, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, knifeUser: true, castCooldown: 0, attackCooldown: 999999, inv: 0, spinHit: false })
+                const e = gs.enemies[0]
+                let threw = false
+                for (let i = 0; i < 1200; i++) {
+                    mod.step(gs, {}, {})
+                    if (gs.events.includes('goon_throw')) threw = true
+                    gs.events.length = 0
+                    if (e.state === 'dying') break
+                }
+                return threw && !e.hasKnife
+                    ? 'HARM NAMED: the lieutenant threw his knife and never went back for it — with no fetch the duel is one cast deep, then a fist fight at the boss\'s own disadvantage: the arcade\'s fight over the asphalt simply vanishes'
+                    : null
+            },
+        },
         {
             name: 'knock-frozen',
             anchor: 'if (p.knock === 0) {',
@@ -2444,6 +2466,100 @@ if (MUTANT) {
     }
     console.log('\nmutant run: expected red on the planted line.')
     r.exit()
+}
+
+// ---------------- #2948 the duel walks to its steel — retrieval, not cooldown ---
+// Steel RUNS. A cast blade is spent — for the lieutenant too — and the thrower
+// must walk it back off the asphalt before the next aim (the arcade's duel was
+// a fight OVER the ground). Laws: the cast spends the blade; retrieval walks
+// with the honest gait (blocked()/k-slip, #2819's stuck-beat honoured); a fist
+// in range outranks the fetch; whoever reaches the steel first owns it — the
+// dragon can DENY the duel its cast; an unarmed thrower never re-aims; and the
+// fetch history rides the hash.
+{ // the cast spends the blade — even the lieutenant's
+    const gs = makeGame(48)
+    gs.billy.inv = 0
+    gs.enemies.push({ id: 940, kind: 'duel', x: gs.billy.x + 70, y: gs.billy.y + 11, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, knifeUser: true, castCooldown: 0, attackCooldown: 999999, inv: 0, spinHit: false })
+    const e = gs.enemies[0]
+    let threw = false
+    for (let i = 0; i < 80 && !threw; i++) { step(gs, {}, {}); threw = gs.events.includes('goon_throw'); gs.events.length = 0 }
+    r.check("#2948: the duel's cast SPENDS the steel — the belt is one knife, the arcade's duel was fought over the ground",
+        threw && !e.hasKnife, `threw=${threw} knife=${e.hasKnife}`)
+}
+
+{ // the fetch: walk it back, short cock, aim again
+    const gs = makeGame(49)
+    gs.billy.inv = 0
+    gs.enemies.push({ id: 941, kind: 'duel', x: gs.billy.x + 70, y: gs.billy.y + 11, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, knifeUser: true, castCooldown: 0, attackCooldown: 999999, inv: 0, spinHit: false })   // dy 11: the aim is legal, the blade flies past (7)
+    const e = gs.enemies[0]
+    let rearedAt = -1, landed = false
+    for (let i = 0; i < 600; i++) {
+        step(gs, {}, {})
+        if (gs.projectiles.length > 0 || gs.pickups.length > 0) landed = true
+        if (gs.events.includes('goon_rearm')) { rearedAt = i; break }
+        gs.events.length = 0
+    }
+    r.check('#2948: the lieutenant walks his steel back — the landed blade is fetched and the hand re-cocks',
+        landed && rearedAt >= 0 && e.hasKnife, `landed=${landed} rearm@${rearedAt} knife=${e.hasKnife}`)
+}
+
+{ // denial: the dragon reaches first — deny the duel its cast
+    const gs = makeGame(50)
+    gs.billy.inv = 999999
+    gs.enemies.push({ id: 942, kind: 'duel', x: 240, y: 170, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, knifeUser: true, castCooldown: 0, attackCooldown: 999999, inv: 0, spinHit: false })
+    gs.pickups.push({ x: 214, y: 170, kind: 'knife', bob: 0 })
+    gs.billy.x = 205; gs.billy.y = 170
+    const e = gs.enemies[0]
+    for (let i = 0; i < 60; i++) { step(gs, {}, {}); gs.events.length = 0 }
+    r.check('#2948: whoever reaches first owns it — Billy takes the asphalt steel off the lieutenant\'s fetch',
+        gs.billy.weapon === 'knife' && !e.hasKnife && gs.pickups.length === 0, `billy=${gs.billy.weapon} duel=${e.hasKnife} left=${gs.pickups.length}`)
+}
+
+{ // denied steel, no cast: without its blade the duelist never re-aims
+    const gs = makeGame(51)
+    gs.billy.inv = 0
+    gs.enemies.push({ id: 943, kind: 'duel', x: gs.billy.x + 70, y: gs.billy.y + 11, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, knifeUser: true, castCooldown: 0, attackCooldown: 999999, inv: 0, spinHit: false })
+    const e = gs.enemies[0]
+    let threw = false, aimsAfter = 0
+    for (let i = 0; i < 700; i++) {
+        step(gs, {}, {})
+        if (gs.events.includes('goon_throw')) threw = true
+        gs.pickups.length = 0   // the dragon owns the yard's steel — total denial
+        if (threw && e.state === 'aim') aimsAfter += 1
+        gs.events.length = 0
+    }
+    r.check('#2948: steel denied is casting denied — with every blade off the ground the unarmed duel never re-aims',
+        threw && aimsAfter === 0, `threw=${threw} aimsAfter=${aimsAfter}`)
+}
+
+{ // #2819 carries through for fetchers too: a blade still quivering in the
+    // asphalt belongs to nobody — the duelist waits out the stuck beat
+    const gs = makeGame(52)
+    gs.billy.inv = 999999
+    gs.enemies.push({ id: 944, kind: 'duel', x: 212, y: 170, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, knifeUser: true, castCooldown: 0, attackCooldown: 999999, inv: 0, spinHit: false })
+    gs.pickups.push({ x: 205, y: 170, kind: 'knife', bob: 0, stick: 12 })
+    const e = gs.enemies[0]
+    let early = e.hasKnife, waited = 0
+    for (let i = 0; i < 5; i++) { step(gs, {}, {}); gs.events.length = 0 }
+    for (let i = 0; i < 80 && !e.hasKnife; i++) { step(gs, {}, {}); gs.events.length = 0; waited += 1 }
+    r.check('#2948: the stuck-beat law holds for fetchers — a blade in the dirt is not grabbable steel, duelist included',
+        !early && e.hasKnife && waited >= 6, `early=${early} waited=${waited}`)
+}
+
+{ // the fetch history is sim truth: same pixels, different future, different hash
+    const side = (ku) => {
+        const gs = makeGame(9)
+        gs.enemies.push({ id: 978, kind: 'williams', x: 140, y: 170, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, hasWhip: false, knifeUser: ku, castCooldown: 999, attackCooldown: 999, inv: 0, spinHit: false, wob: 0, kb: 0 })
+        return stateHash(gs)
+    }
+    r.check('#2948: knifeUser rides stateHash — an empty hand that remembers steel and an empty hand that never held it must not share a future',
+        side(true) !== side(false), `${side(true)} vs ${side(false)}`)
+}
+
+{ // cue law: the fetch rings its own gripper note in the shell
+    const idx = readFileSync(join(ROOT, 'src/games/DoubleDragon/index.jsx'), 'utf8')
+    r.check('#2948 cue law: the shell owns a voice for the retrieval ring',
+        idx.includes('goon_rearm:'), 'missing goon_rearm cue')
 }
 
 // ------------------------------------------- #2877: the yard art laws ---

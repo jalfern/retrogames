@@ -158,6 +158,13 @@ export default function DoubleDragon() {
                 audioController.playTone(1560, 0.09, 'square', 0.07, 0.02)
                 audioController.playNoise(0.04, 0.06, 0.05)
             },
+            // #2948: the fetch pays a short gripper ring — the duel's steel is
+            // back in hand and the aim can re-cock; deny it and that ring
+            // belongs to the dragon's own pickup chime instead.
+            goon_rearm: () => {
+                audioController.playTone(1250, 0.06, 'triangle', 0.06)
+                audioController.playTone(1860, 0.05, 'square', 0.05, 0.05)
+            },
             // #2944: the carrier rotation is HEARD coming too. The whip's loop
             // creaks up (a low leather sweep — deliberately rougher timbre than
             // the cast's steel blip so the two threats tell apart at a glance
@@ -637,7 +644,7 @@ export default function DoubleDragon() {
                         gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: gs.billy.x + 70, y: gs.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 20, attackCooldown: 999, inv: 0, spinHit: false })
                     }
                     if (opts.duel) {
-                        gs.enemies.push({ id: gs.nextId++, kind: 'duel', x: gs.billy.x + 90, y: gs.billy.y, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 40, attackCooldown: 60, inv: 0, spinHit: false })
+                        gs.enemies.push({ id: gs.nextId++, kind: 'duel', x: gs.billy.x + 90, y: gs.billy.y, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, knifeUser: true, castCooldown: 40, attackCooldown: 60, inv: 0, spinHit: false })
                     }
                     if (opts.marianFree && gs.marian) { gs.marian.freed = true; gs.marian.cuts = CFG.rescueCuts; gs.rescueT = CFG.rescueCheer }
                     // S4 co-op fixtures

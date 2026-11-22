@@ -420,7 +420,7 @@ function spawnEnemy(gs, kind, side, stick) {
         face: side === 'left' ? 1 : -1,
         hp: def.hp, state: 'enter', stateT: 0, anim: Math.floor(rng(gs) * 8),
         hasStick: !!stick, stickDropped: false,
-        hasKnife: false, castCooldown: 0,   // S3: steel in a goon's hand
+        hasKnife: false, castCooldown: 0, knifeUser: false,   // S3: steel in a goon's hand
         // #2944: the carrier rotation — leather in a goon's hand, and the kind
         // of swing its current windup resolved to (whip | stick | punch). Both
         // ride stateHash: the carry and the telegraph ARE the future.
@@ -1077,6 +1077,38 @@ function updateEnemy(gs, e) {
             break
         }
 
+        // #2948 the retrieval beat: steel spent is steel FETCHED. A thrower
+        // with empty hands walks its blade back off the asphalt (the arcade's
+        // knife-fight over the ground — blocked()/k-slip gait like every other
+        // walk, and the #2819 law holds: a blade still quivering in the dirt
+        // belongs to nobody yet). Whoever reaches it first owns it, so the
+        // dragon can DENY the lieutenant his cast. Close enough to punch, the
+        // fist answers first — retrieval never ignores a free kill.
+        if (e.knifeUser && !e.hasKnife && adx > def.reach + 6) {
+            let steel = null, bd = 1e9
+            for (const q of gs.pickups) {
+                if (q.kind !== 'knife' || q.stick > 0) continue
+                const d = Math.abs(q.x - e.x) + Math.abs(q.y - e.y)
+                if (d < bd) { bd = d; steel = q }
+            }
+            if (steel) {
+                if (Math.abs(steel.x - e.x) <= 10 && Math.abs(steel.y - e.y) <= 8) {
+                    gs.pickups.splice(gs.pickups.indexOf(steel), 1)
+                    e.hasKnife = true
+                    e.castCooldown = 20   // a short cock — the hand closes on the grip
+                    gs.events.push('goon_rearm')
+                } else {
+                    const rx = steel.x - e.x, ry = steel.y - e.y
+                    const stepX = Math.abs(rx) > 2 ? clamp(rx, -def.speed, def.speed) : 0
+                    const stepY = Math.abs(ry) > 2 ? clamp(ry, -def.speed * 0.8, def.speed * 0.8) : 0
+                    const px = e.x, py = e.y
+                    moveEntity(gs, e, stepX, stepY, rad)
+                    if ((stepX !== 0 && e.x === px) || (stepY !== 0 && e.y === py)) depthSlip(gs, e, rad)
+                    break
+                }
+            }
+        }
+
         // #2825 item 3: throwers keep thrower's distance. An armed Williams at
         // punching range back-pedals to a fresh angle instead of idling into
         // the fist fight (the arcade's casters dance). A spinner with its
@@ -1184,10 +1216,14 @@ function updateEnemy(gs, e) {
         e.stateT += 1
         if (e.stateT === 3) {
             goonCast(gs, e)
-            // Williams spends the knife he threw; the lieutenant carries a belt
-            // full (the arcade duel never runs dry) — cooldown is his reload
-            if (e.kind !== 'duel') e.hasKnife = false
-            e.castCooldown = e.kind === 'duel' ? 80 + Math.floor(rng(gs) * 50) : 70 + Math.floor(rng(gs) * 50)
+            // #2948 steel RUNS: the cast spends the blade — for the lieutenant
+            // too. The arcade's duel was a fight over the ground: his belt is
+            // one knife, and the rest lives on the asphalt until he walks it
+            // back (see the retrieval beat in 'walk'). The old "belt full,
+            // cooldown is his reload" comfort traded the arcade's most quoted
+            // duel beat for uptime — fidelity wins (AGENTS law).
+            e.hasKnife = false
+            e.castCooldown = e.kind === 'duel' ? 60 + Math.floor(rng(gs) * 30) : 70 + Math.floor(rng(gs) * 50)
         }
         if (e.stateT >= 14) { e.state = 'back'; e.stateT = 0; e.attackCooldown = 40 }
         break
@@ -1372,7 +1408,7 @@ export function step(gs, pad = {}, pad2 = {}) {
         gs.camLock = true
         w.spawns.forEach((s) => {
             const e = spawnEnemy(gs, s.kind, s.side, s.stick)
-            if (s.knife) e.hasKnife = true
+            if (s.knife) { e.hasKnife = true; e.knifeUser = true }   // #2948: steel that was issued can be fetched
             if (s.whip) e.hasWhip = true   // #2944: the rotation walks in armed
             // #2825 item 4: the boss wave announces itself — WILLIAMS rides the
             // banner while he holds his pose at the frame edge, then the duel.
@@ -1692,6 +1728,9 @@ export function stateHash(gs) {
         mix(e.hasStick && !e.stickDropped ? 1 : 0)
         mix(e.hasWhip ? 1 : 0)
         mix(e.hasKnife ? 1 : 0)
+        // #2948: a thrower WITH a fetch history and a bare fist fight differ
+        // in future even on the same pixel with the same empty hand.
+        mix(e.knifeUser ? 1 : 0)
         mix(e.atkKind === 'whip' ? 1 : e.atkKind === 'stick' ? 2 : 0)
     }
     return h >>> 0
