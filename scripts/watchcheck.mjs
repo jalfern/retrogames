@@ -3176,7 +3176,11 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         (fj.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
     rep.check('registry /frogger: controls carry the WATCH line', entryHas25('/frogger', 'WATCH_HELP'))
     rep.check('batch 25: froggercheck stamps the driver sweep (40/40 det, floors pinned)',
-        /40\/40 seeds replay byte-equal/.test(fc) && /zero-death runs on .34 seeds/.test(fc)
+        /40\/40 seeds replay byte-equal/.test(fc)
+        // #2869 (f51925b) re-measured the zero-death floor at ≥38 (its sweep measures
+        // 40/40 since the away-lane generalization) and bumped the froggercheck text
+        // from ≥34 — the pin followed the floor, as pongcheck's 39/40 does for #2530.
+        && /zero-death runs on ≥38 seeds/.test(fc)
         && /every seed banks at least one full level/.test(fc))
 }
 // #1637 batch 26 — ASTEROIDS' hunter is new-built; pin that the seat, the
