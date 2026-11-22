@@ -11,7 +11,7 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 251 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel, #2951 volley pre-dodge)
+node scripts/rtypecheck.mjs       # sim + browser: 242 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel, #2951 volley pre-dodge)
 node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf` + `duel-ghost` + `coast-through` + `dart-plain` + `flash-deaf` + `pre-dodge-deaf` + `cross-blind`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
@@ -423,7 +423,7 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 251 sim+browser laws, twenty-eight named mutants
+- `scripts/rtypecheck.mjs` — 242 sim+browser laws, twenty-eight named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
   `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`,
