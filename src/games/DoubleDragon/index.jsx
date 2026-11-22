@@ -158,6 +158,23 @@ export default function DoubleDragon() {
                 audioController.playTone(1560, 0.09, 'square', 0.07, 0.02)
                 audioController.playNoise(0.04, 0.06, 0.05)
             },
+            // #2944: the carrier rotation is HEARD coming too. The whip's loop
+            // creaks up (a low leather sweep — deliberately rougher timbre than
+            // the cast's steel blip so the two threats tell apart at a glance
+            // shut), its snap is a heavier crack than the dragons' own lash,
+            // and a swung stick whistles wood where the bare fist whips air.
+            goon_lashwind: () => {
+                audioController.playSweep(240, 520, 0.22, 'sawtooth', 0.05)
+                audioController.playFilteredNoise(0.25, 0.04, 500)
+            },
+            goon_lash: () => {
+                audioController.playNoise(0.07, 0.16)
+                audioController.playSweep(1900, 250, 0.07, 'sawtooth', 0.10)
+            },
+            goon_steel: () => {
+                audioController.playSweep(500, 220, 0.08, 'triangle', 0.06)
+                audioController.playTone(148, 0.05, 'square', 0.05, 0.02)
+            },
             blade_wood: () => { audioController.playTone(120, 0.05, 'square', 0.12); shake = Math.max(shake, 2) },
             blade_hit: () => { audioController.playSweep(300, 60, 0.3, 'sawtooth', 0.16); shake = Math.max(shake, 4) },
             rope: () => audioController.playNoise(0.05, 0.08),

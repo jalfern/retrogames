@@ -42,7 +42,7 @@ import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain, INTRO, TIP } from '../src/games/DoubleDragon/sim.js'
+import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES, WAVES_S2, enterStage2, rescueReady, dragonBrain, INTRO, TIP } from '../src/games/DoubleDragon/sim.js'
 import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD, drawHud, drawJoinFx, JOIN_T, glintMarks, flourishDrift, strutDrift, koSquash, reliefBlink } from '../src/games/DoubleDragon/art.js'
 import { p2Merge, p2Seat } from '../src/games/DoubleDragon/p2pad.js'
 import { pressSlot, releaseSlot, slotPad, slotActive, clearAllSlots } from '../src/utils/onePad.js'
@@ -62,6 +62,8 @@ const mk = (kind, x, y, over = {}) => ({
     hp: over.hp ?? ({ williams: 4, amon: 6, abobo: 14 }[kind]),
     state: over.state ?? 'walk', stateT: over.stateT ?? 0, anim: 0,
     hasStick: !!over.hasStick, stickDropped: false,
+    hasWhip: !!over.hasWhip, atkKind: over.atkKind ?? null, lash: 0,   // #2944
+    hasKnife: !!over.hasKnife, castCooldown: over.castCooldown ?? 0,
     attackCooldown: over.attackCooldown ?? 60,
     inv: over.inv ?? 0, spinHit: false, ...over.rest,
 })
@@ -1646,6 +1648,131 @@ console.log('p2 pad seat (#2860)')
         })())
 }
 
+// ------------------------------------------- #2944 the carrier rotation ---
+// The later arcade waves fight back with the weapons the dragons find: steel
+// that reaches past a fist, a whip that owns a long line, carriers that PAY
+// their weapon when they fall, and a bare-knuckled first wave. Every law here
+// is the depth law in new clothes — leave the lane during the telegraph and
+// the leather whooses past.
+{
+    // escalation: wave 1 bare, then steel, then leather; the duel keeps his belt
+    r.check('#2944 escalation law: Walnuts wave 1 is bare-knuckled, wave 3 answers with the whip',
+        WAVES[0].spawns.every((s) => !s.stick && !s.whip && !s.knife)
+        && WAVES[2].spawns.some((s) => s.whip) && !WAVES[2].spawns.some((s) => s.knife))
+    r.check('#2944 the yard runs the fullest rotation — steel, then knife AND whip; the duel keeps ONLY knives',
+        WAVES_S2[0].spawns.some((s) => s.stick)
+        && WAVES_S2[1].spawns.some((s) => s.knife) && WAVES_S2[1].spawns.some((s) => s.whip)
+        && WAVES_S2[2].spawns.every((s) => !s.whip && !s.stick) && WAVES_S2[2].spawns.some((s) => s.knife))
+
+    // whip reach: on the line it takes a life; one lane over it misses; and it
+    // owns a line no bare fist can — the same pixels decide three ways.
+    const snapAt = (seed, adx, dy, kind, carry) => {
+        const gs = makeGame(seed)
+        gs.billy.inv = 0
+        gs.enemies.push(mk('williams', gs.billy.x + adx, gs.billy.y + dy,
+            { hp: 4, state: 'attack', stateT: 2, attackCooldown: 9999, atkKind: kind, hasWhip: carry === 'whip', hasStick: carry === 'stick' }))
+        for (let i = 0; i < 8; i++) { step(gs, {}); gs.events.length = 0 }
+        return gs.billy.lives < 3
+    }
+    r.check('#2944 the whip bites at 30px ON THE LINE — the exact pixel a bare fist sails short of',
+        snapAt(5, 30, 0, 'whip', 'whip') && !snapAt(5, 30, 0, 'punch', null) && !snapAt(5, 30, 0, null, null))
+    r.check('#2944 depth is still the WHOLE dodge, whip edition — one lane over the snap finds asphalt',
+        !snapAt(5, 30, CFG.whip.depth + 5, 'whip', 'whip') && snapAt(5, 30, CFG.whip.depth - 1, 'whip', 'whip'))
+    r.check('#2944 the whip\'s line has an end: two px past reach and the man stands',
+        !snapAt(5, CFG.whip.reach + 2, 0, 'whip', 'whip'))
+    r.check('#2944 carried steel reaches past knuckles (+7) and no further',
+        snapAt(5, ENEMY_DEF.williams.reach + 4 + CFG.enemyStick - 1, 0, 'stick', 'stick')
+        && !snapAt(5, ENEMY_DEF.williams.reach + 4 + CFG.enemyStick + 2, 0, 'stick', 'stick')
+        && !snapAt(5, ENEMY_DEF.williams.reach + 4 + CFG.enemyStick - 1, 0, 'punch', null))
+
+    // telegraph law stretched: the whip\'s loop is a beat LONGER than a jab\'s
+    // windup, and it is spent ON the line: a carrier never raises leather at a
+    // jumped-over lane or a point-blank man (the whip folds into knuckles).
+    const windKind = (seed, adx, z, over) => {
+        const gs = makeGame(seed)
+        gs.billy.inv = 0
+        if (z) gs.billy.z = z
+        const e = mk('williams', gs.billy.x + adx, gs.billy.y, { attackCooldown: 0, ...over })
+        gs.enemies.push(e)
+        let kind = null, dur = 0
+        for (let i = 0; i < 50; i++) {
+            step(gs, {})
+            if (e.state === 'windup') { if (!kind) kind = e.atkKind ?? 'punch'; dur += 1 }
+            gs.events.length = 0
+        }
+        return { kind, dur }
+    }
+    {
+        const w = windKind(7, 28, 0, { hasWhip: true })
+        r.check('#2944 a whip carrier winds up AS a whip, telegraphed a beat longer than the jab\'s 12',
+            w.kind === 'whip' && w.dur >= CFG.goonWhip.windup && CFG.goonWhip.windup > 12, `kind=${w.kind} dur=${w.dur}`)
+    }
+    {
+        const w = windKind(7, 28, 12, { hasWhip: true })
+        r.check('#2944 the whip never rises at an airborne lane — the jump clears the carrier\'s read too',
+            w.kind !== 'whip')
+        const p = windKind(7, CFG.goonWhip.min - 4, 0, { hasWhip: true })
+        r.check('#2944 point-blank, the whip folds: knuckles answer, not leather',
+            p.kind === 'punch')
+    }
+
+    // the carrier pays: kill the whip man and his leather clatters to the street
+    {
+        const gs = makeGame(9)
+        gs.enemies.push(mk('williams', gs.billy.x + 12, gs.billy.y, { hp: 1, attackCooldown: 99999, hasWhip: true }))
+        for (let i = 0; i < 12; i++) { step(gs, { punch: i === 0 }); gs.events.length = 0 }
+        const p = gs.pickups.find((q) => q.kind === 'whip')
+        r.check('#2944 the reward loop: a dead whip carrier drops the leather (clattering, like barrel steel)',
+            !!p && p.clatter > 0)
+    }
+
+    // hash honesty: the carry is sim truth, not paint
+    r.check('#2944 carries and windup-kind are sim truth — the whip man at the same pixel hashes different from the bare man',
+        (() => {
+            const a = makeGame(57); const b = makeGame(57)
+            a.enemies.push(mk('williams', 120, 160, { hasWhip: true }))
+            b.enemies.push(mk('williams', 120, 160))
+            const x = stateHash(a) !== stateHash(b)
+            const c = makeGame(57); const d = makeGame(57)
+            c.enemies.push(mk('williams', 120, 160, { hasStick: true, atkKind: 'stick', state: 'windup' }))
+            d.enemies.push(mk('williams', 120, 160, { state: 'windup' }))
+            return x && stateHash(c) !== stateHash(d)
+        })())
+
+    // the honest brain answers the wider telegraph — and lives
+    {
+        const gs = makeGame(12)
+        gs.billy.inv = 0
+        const e = mk('williams', gs.billy.x + 30, gs.billy.y, { attackCooldown: 0, hasWhip: true })
+        gs.enemies.push(e)
+        let fled = false
+        for (let i = 0; i < 240; i++) {
+            const pad = dragonBrain(gs, gs.billy)
+            step(gs, pad)
+            if (pad.up || pad.down) fled = true
+            gs.events.length = 0
+        }
+        r.check('#2944 the autopilot reads the raised loop at whip range and leaves the lane — three lives, three screens',
+            gs.billy.lives === 3 && fled, `lives=${gs.billy.lives} fled=${fled}`)
+    }
+
+    // sound cues exist so the telegraph is heard as well as seen (#2825 law)
+    {
+        const gs = makeGame(7)
+        gs.billy.inv = 0
+        gs.enemies.push(mk('williams', gs.billy.x + 28, gs.billy.y, { attackCooldown: 0, hasWhip: true }))
+        const seen = []
+        for (let i = 0; i < 60; i++) { step(gs, {}); seen.push(...gs.events); gs.events.length = 0 }
+        const gs2 = makeGame(7)
+        gs2.billy.inv = 0
+        gs2.enemies.push(mk('williams', gs2.billy.x + 18, gs2.billy.y, { attackCooldown: 0, hasStick: true }))
+        const seen2 = []
+        for (let i = 0; i < 40; i++) { step(gs2, {}); seen2.push(...gs2.events); gs2.events.length = 0 }
+        r.check('#2944 the rotation is HEARD coming — the creak, the snap and the wood-whistle all fire',
+            seen.includes('goon_lashwind') && seen.includes('goon_lash') && seen2.includes('goon_steel'))
+    }
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -2037,6 +2164,59 @@ if (MUTANT) {
                 const edge = gs.camX + mod.W - 16
                 return e.hp < 30 && worst > edge + 0.5
                     ? `HARM NAMED: a kicked man slid to x=${worst.toFixed(1)} — past the arena edge (${edge.toFixed(1)}), onto ground outside the screen: the screen IS the belt-scroller's world (the same margin the thrower-retreat law enforces), and a thug pressed through the wall fights from off-camera, unreachable by the very camera that framed the fight`
+                    : null
+            },
+        },
+        {
+            name: 'leather-short',
+            anchor: '? b.z <= 8 && Math.abs(e.x - b.x) <= CFG.whip.reach && Math.abs(e.y - b.y) <= CFG.whip.depth && b.state !== \'grabbed\'',
+            plant: '? false /* MUTANT(leather-short): the whip\'s line goes dark */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(5)
+                gs.billy.inv = 0
+                gs.enemies.push({ id: 971, kind: 'williams', x: gs.billy.x + 30, y: gs.billy.y, face: -1, hp: 4, state: 'attack', stateT: 2, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, hasWhip: true, atkKind: 'whip', attackCooldown: 9999, inv: 0, spinHit: false, lash: 0 })
+                for (let i = 0; i < 8; i++) { mod.step(gs, {}); gs.events.length = 0 }
+                return gs.billy.lives === 3
+                    ? 'HARM NAMED: a whip snapped 30px along the dragon\'s own lane and the man stood there breathing — the arcade\'s long-leather stand-off collapsed to fist range: the carrier becomes furniture and the depth law loses its widest exam'
+                    : null
+            },
+        },
+        {
+            name: 'carrier-thrift',
+            anchor: "gs.pickups.push({ x: e.x, y: e.y, kind: 'whip', bob: 0, clatter: CFG.clatterTicks })",
+            plant: 'void 0 /* MUTANT(carrier-thrift): the leather never pays */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(9)
+                gs.enemies.push({ id: 972, kind: 'williams', x: gs.billy.x + 12, y: gs.billy.y, face: -1, hp: 1, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, hasWhip: true, atkKind: null, attackCooldown: 99999, inv: 0, spinHit: false, lash: 0 })
+                for (let i = 0; i < 12; i++) { mod.step(gs, { punch: i === 0 }); gs.events.length = 0 }
+                return gs.enemies.length === 0 && !gs.pickups.some((q) => q.kind === 'whip')
+                    ? 'HARM NAMED: the whip man fell and took his leather into the grave — the arcade\'s reward loop died: killing the armed man was never the way to get armed, and the weapon wall stops teaching'
+                    : null
+            },
+        },
+        {
+            name: 'escalation-flat',
+            anchor: "{ triggerX: 90, spawns: [{ kind: 'williams', side: 'left' }, { kind: 'williams', side: 'right' }] },\n    { triggerX: 340,",
+            plant: "{ triggerX: 90, spawns: [{ kind: 'williams', side: 'left', whip: true }, { kind: 'williams', side: 'right' }] },\n    { triggerX: 340, /* MUTANT(escalation-flat): wave 1 arrives armed */",
+            harm: async (mod) => {
+                return mod.WAVES[0].spawns.some((s) => s.whip)
+                    ? 'HARM NAMED: the FIRST wave of Walnuts Street walked in holding the whip — escalation is how a belt-scroller teaches: bare fists, then steel, then leather; hand a newcomer the hardest line on minute one and the curve is a cliff'
+                    : null
+            },
+        },
+        {
+            name: 'loop-cheap',
+            anchor: 'const wind = e.atkKind === \'whip\' ? CFG.goonWhip.windup : 12',
+            plant: 'const wind = 12 /* MUTANT(loop-cheap): the raised loop loses its beat */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.billy.inv = 0
+                const e = { id: 973, kind: 'williams', x: gs.billy.x + 28, y: gs.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, hasWhip: true, atkKind: null, attackCooldown: 0, inv: 0, spinHit: false, lash: 0 }
+                gs.enemies.push(e)
+                let dur = 0
+                for (let i = 0; i < 50; i++) { mod.step(gs, {}); if (e.state === 'windup' && e.atkKind === 'whip') dur += 1; gs.events.length = 0 }
+                return dur > 0 && dur < 14
+                    ? `HARM NAMED: the whip telegraphed for only ${dur} ticks — a jab\'s window on a strike that reaches twice as far: the leather\'s extra beat IS the wider threat\'s fair notice, cheap it and deaths stop being read`
                     : null
             },
         },

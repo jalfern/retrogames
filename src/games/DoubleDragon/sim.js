@@ -1114,6 +1114,7 @@ function updateEnemy(gs, e) {
         const inRange = adx <= def.reach + (eStick ? CFG.enemyStick : 0) && Math.abs(dy) <= 6 && b.state !== 'dying'
         if (inRange && e.attackCooldown <= 0 && attackerCount(gs) < attackerCap(gs)) {
             e.state = 'windup'; e.stateT = 0; e.atkKind = eStick ? 'stick' : 'punch'
+            if (eStick) gs.events.push('goon_steel')   // the wood whistle IS the wider reach's telegraph
             break
         }
         // approach: close x and match depth; back-row thugs hang slightly off
@@ -1209,7 +1210,6 @@ function updateEnemy(gs, e) {
             const hit = b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 && Math.abs(e.y - b.y) <= 8 && b.state !== 'grabbed'
             if ((hit || extra) && b.inv <= 0 && b.state !== 'dying' && gs.mode === 'play') {
                 if (!hit && kind === 'whip') e.lash = CFG.whipFlash   // the crack lands WITH the bite
-                if (!hit && kind === 'stick') gs.events.push('goon_steel')
                 playerDies(gs, b)
             }
         }
