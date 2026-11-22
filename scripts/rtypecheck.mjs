@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, WAVES2, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, OPT, WAVES2, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -1251,6 +1251,116 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         `D ${sawD ? 'seen' : 'missing'} S ${sawS ? 'seen' : 'missing'}`)
 }
 
+// --------- #2919 OPTIONS pods: the O capsule's mirrored shield-guns --------
+{
+    const pad0 = { left: false, right: false, up: false, down: false, a: false, b: false }
+    const calm = (g) => { g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0; g.ship.inv = 999 }
+    const atNose = (gs, type) => gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type })
+    const gs = makeGame(4)
+    atNose(gs, 'options')
+    step(gs, pad0)
+    r.check('#2919 the O pod summons its orbs (ocap speaks, the HUD names it)',
+        gs.ship.opts && gs.ship.opts.length === 2 && gs.events.includes('ocap') && gs.optAnn > 0,
+        `opts ${gs.ship.opts ? gs.ship.opts.length : 0} events ${gs.events.includes('ocap')}`)
+    // a press while the orbs are still inbound buys the hull round only
+    calm(gs); gs.shots.length = 0
+    step(gs, { ...pad0, a: true })
+    const pre = gs.shots.filter((q) => q.kind === 'v').length
+    // the fly-in is a ceremony, not a teleport: some ticks of air, then both
+    // orbs latch on diagonal mounts and each answers with a ding
+    let dockTick = -1
+    for (let t = 1; t <= 300; t++) {
+        calm(gs); step(gs, pad0)
+        if (gs.ship.opts && gs.ship.opts.every((o) => o.docked)) { dockTick = t; break }
+    }
+    const dinged = gs.events.includes('optdock')
+    const sy = gs.ship.y
+    const mountsOk = gs.ship.opts.every((o) => Math.abs((o.px - gs.ship.x) + OPT.back) <= 2
+        && Math.abs(Math.abs(o.py - sy) - OPT.gap) <= 2)
+    r.check('#2919 the orbs fly in and dock at the mounts (never a teleport)',
+        dockTick > 8 && dockTick < 220 && dinged && mountsOk,
+        `dock@${dockTick} ding=${dinged} pre=${pre} mounts ${gs.ship.opts.map((o) => `${Math.round(o.px - gs.ship.x)}/${Math.round(o.py - sy)}`).join(' ')}`)
+    r.check('#2919 an inbound orb never fires — the wall forms only at the mounts', pre === 1, `pre-dock volley ${pre}`)
+    // vulcan mirrors: one press = the hull round plus one from each orb, symmetric
+    gs.shots.length = 0
+    for (let t = 0; t < CFG.vulcanCd + 2; t++) { calm(gs); step(gs, pad0); gs.shots.length = 0 }
+    step(gs, { ...pad0, a: true })
+    const v = gs.shots.filter((q) => q.kind === 'v').map((q) => q.y).sort((a, b) => a - b)
+    r.check('#2919 every press answers three — hull + mirrored orbs, symmetric ∓11',
+        v.length === 3 && Math.abs(v[1] - v[0]) === OPT.gap && Math.abs(v[2] - v[1]) === OPT.gap,
+        `volley ${v.length} ys ${v.map((y) => Math.round(y - sy)).join(',')}`)
+    // double mirrors double: the arcade's full shield-gun wall is six rounds
+    gs.ship.weapon = 'double'
+    for (let t = 0; t < CFG.vulcanCd + 2; t++) { calm(gs); step(gs, pad0) }
+    gs.shots.length = 0
+    step(gs, { ...pad0, a: true })
+    const dv = gs.shots.filter((q) => q.kind === 'v')
+    const stack = dv.map((q) => Math.round((q.y - sy) * 10) / 10).sort((a, b) => a - b)
+    r.check('#2919 double mirrors double — six rounds, three twin stacks, never five',
+        dv.length === 6 && Math.abs(stack[1] - stack[0] - 6) < 0.01 && Math.abs(stack[3] - stack[2] - 6) < 0.01,
+        `volley ${dv.length} ys ${stack.join(',')}`)
+    // spare law: one pair per hull — a second O pays points, the orbs stay
+    const sc0 = gs.score
+    calm(gs); atNose(gs, 'options'); calm(gs); step(gs, pad0)
+    r.check('#2919 a spare O pays 1000 and the orbs already aboard stay mounted',
+        gs.score - sc0 === 1000 && gs.events.includes('capsule') && gs.ship.opts.length === 2,
+        `drew ${gs.score - sc0} opts ${gs.ship.opts.length}`)
+    // power armour: the wreck strips orbs with the arm (seat one)
+    gs.ship.weapon = 'double'; gs.ship.spd = 1
+    const geared = gs.ship.opts.length === 2
+    gs.ship.inv = 0; gs.ship.x = gs.camX
+    step(gs, pad0)
+    const lostEv = gs.events.includes('optslost')
+    for (let t = 0; t < CFG.dying + 5 && gs.ship.dead; t++) { calm(gs); step(gs, pad0); gs.events.length = 0 }
+    r.check('#2919 the wreck strips the orbs with the arm — power armour law (seat one)',
+        geared && lostEv && gs.ship.opts === null,
+        `geared=${geared} lost=${lostEv} after=${gs.ship.opts === null ? 'bare' : 'holds'}`)
+
+    // S4 symmetry: seat two gets its own pair, mirrors its own press, and its
+    // wreck strips them too
+    const g4 = makeGame(5); enableCoop(g4)
+    g4.wing.human = true // seat two holds its own stick — no CPU stream noise
+    g4.wing.opts = [-1, 1].map((side, i) => ({ id: 900 + i, side, px: g4.wing.x - OPT.back, py: g4.wing.y + side * OPT.gap, docked: true }))
+    for (let t = 0; t < CFG.vulcanCd + 2; t++) { calm(g4); g4.ship.opts = null; step(g4, pad0, { left: false, right: false, up: false, down: false, a: false, b: false }) }
+    g4.shots.length = 0
+    step(g4, pad0, { left: false, right: false, up: false, down: false, a: true, b: false })
+    const wv = g4.shots.filter((q) => q.kind === 'v').length
+    r.check('#2919 seat two mirrors too (S4 symmetry) — its press answers three', wv === 3, `wing volley ${wv}`)
+    g4.wing.inv = 0; g4.wing.x = g4.camX; calm(g4)
+    step(g4, pad0, { left: false, right: false, up: false, down: false, a: false, b: false })
+    r.check("#2919 the wing's wreck strips its orbs too", g4.wing.opts === null && g4.events.includes('woptslost'),
+        `after=${g4.wing.opts === null ? 'bare' : 'holds'} lost=${g4.events.includes('woptslost')}`)
+
+    // authored placement, zero rng: the O pod rides leg 1 at its fixed spot,
+    // and streams past it stay byte-identical (1400 shared ticks, hash-for-hash)
+    const g5 = makeGame(9)
+    g5.ship.inv = 1e9
+    let sawO = false
+    while (g5.camX < 501 && g5.mode === 'play' && !g5.camLock) {
+        step(g5, pad0); g5.events.length = 0
+        if (g5.caps.some((c) => c.type === 'options')) sawO = true
+    }
+    r.check('#2919 the O pod rides leg 1 at its authored spot (schedule, zero rng)', sawO, `O ${sawO ? 'seen' : 'missing'}`)
+    let same = true
+    const dA = makeGame(11), dB = makeGame(11)
+    for (let i = 0; i < 1400; i++) {
+        const pad = { right: i % 53 < 30, up: i % 41 < 6, down: i % 41 >= 20 && i % 41 < 26, a: i % 7 < 4 }
+        step(dA, pad); step(dB, pad)
+        dA.events.length = 0; dB.events.length = 0
+        if (i % 100 === 0 && stateHash(dA) !== stateHash(dB)) same = false
+    }
+    r.check('#2919 the stream is untouched — 1400 shared ticks past the O pod, hash-for-hash',
+        same && stateHash(dA) === stateHash(dB), `final ${stateHash(dA)} vs ${stateHash(dB)}`)
+
+    // sim truth: orbs aboard, mounted and in the run all move the hash
+    const hA = makeGame(8), hB = makeGame(8), hC = makeGame(8)
+    hB.ship.opts = [{ id: 1, side: -1, px: 46, py: 109, docked: true }, { id: 2, side: 1, px: 46, py: 131, docked: true }]
+    hC.ship.opts = [{ id: 1, side: -1, px: 300, py: 90, docked: false }, { id: 2, side: 1, px: 308, py: 160, docked: false }]
+    r.check('#2919 the shield-guns are sim truth — hash covers the pair AND their run',
+        stateHash(hA) !== stateHash(hB) && stateHash(hA) !== stateHash(hC) && stateHash(hB) !== stateHash(hC),
+        `${stateHash(hA)} vs docked ${stateHash(hB)} vs flying ${stateHash(hC)}`)
+}
+
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12
     let wins = 0
@@ -1576,6 +1686,35 @@ if (MUTANT) {
                 for (let t = 0; t < 10; t++) { mod.step(gs, { right: true }); gs.events.length = 0 }
                 return Math.abs((gs.ship.x - x0) - mod.CFG.shipSpeed * 10) < 0.51
                     ? 'HARM NAMED: the S pod sets the flag but the hull never speeds up — a speed-up that never moves the ship is HUD theatre'
+                    : null
+            },
+        },
+        {
+            name: 'mirror-deaf',
+            anchor: "if (o.docked) gs.shots.push({ id: gs.nextId++, x: o.px + 12, y: o.py - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })",
+            plant: "if (false && o.docked) gs.shots.push({ id: gs.nextId++, x: o.px + 12, y: o.py - 1, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 }) /* MUTANT(mirror-deaf): the orbs watch the fight and never answer */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(4)
+                gs.ship.opts = [-1, 1].map((side, i) => ({ id: 10 + i, side, px: gs.ship.x - mod.OPT.back, py: gs.ship.y + side * mod.OPT.gap, docked: true }))
+                gs.enemies.length = 0; gs.shots.length = 0
+                for (let t = 0; t < 6; t++) { mod.step(gs, { a: true }); gs.events.length = 0 }
+                const v = gs.shots.filter((q) => q.kind === 'v').length
+                return v <= 1
+                    ? 'HARM NAMED: the orbs ride along but never mirror a press — the shield-guns are painted on, and every wall the O pod promised is one round wide'
+                    : null
+            },
+        },
+        {
+            name: 'opts-leak',
+            anchor: "if (s.opts) { s.opts = null; gs.events.push(wing ? 'woptslost' : 'optslost') }",
+            plant: "if (false && s.opts) { s.opts = null; gs.events.push(wing ? 'woptslost' : 'optslost') } /* MUTANT(opts-leak): the shield-guns outlive their pilot */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(6)
+                gs.ship.opts = [-1, 1].map((side, i) => ({ id: 10 + i, side, px: gs.ship.x - mod.OPT.back, py: gs.ship.y + side * mod.OPT.gap, docked: true }))
+                gs.ship.inv = 0; gs.ship.x = gs.camX
+                mod.step(gs, {})
+                return gs.ship.opts !== null
+                    ? 'HARM NAMED: the hull burned and the orbs stayed — gear that death cannot strip is a discount code on dying, and the power-armour law is uniform in this house'
                     : null
             },
         },
