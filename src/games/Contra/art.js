@@ -525,6 +525,86 @@ export function drawCarrier (ctx, cr, tick) {
     ctx.restore()
 }
 
+// #2917 the gate's gunship — the ORIGINAL's second air layer, the armed hull
+// that sorties from the hangar mouth. Konami's attack-plane language at arena
+// scale: an armour-slab fuselage (nose left, it patrols leftward), a low
+// canopy over the nose, a belly gun pod, canted tail fin with a cycling
+// beacon, and twin nacelles spitting exhaust to the wake. Damage is legible
+// at phone scale: scorch at two rounds gone, flame-and-smoke at one.
+// Like the courier, every flicker is tick-phased — zero rng in the art.
+export function drawGunship (ctx, sh, tick) {
+    ctx.save(); ctx.translate(Math.round(sh.x), Math.round(sh.y))
+    // canted wing, swept up-right behind the hull (the attack plane's stance)
+    ctx.fillStyle = '#39424e'
+    ctx.fillRect(-6, -12, 24, 4)
+    ctx.fillStyle = '#2b313c'
+    ctx.fillRect(14, -14, 4, 3)
+    // tail fin + cycling beacon (the arcade's armed-hull tell)
+    ctx.fillStyle = '#454e5c'
+    ctx.fillRect(13, -11, 3, 7)
+    ctx.fillStyle = Math.floor(tick / 8) % 2 ? '#ff3b30' : '#4a201c'
+    ctx.fillRect(13, -13, 3, 2)
+    // armoured fuselage: slab, lit spine, deep keel, dropped nose block
+    ctx.fillStyle = '#454e5c'
+    ctx.fillRect(-15, -6, 30, 12)
+    ctx.fillStyle = '#5d6672'
+    ctx.fillRect(-15, -6, 30, 3)
+    ctx.fillStyle = '#2b313c'
+    ctx.fillRect(-15, 4, 30, 2)
+    ctx.fillStyle = '#39424e'
+    ctx.fillRect(-18, -3, 4, 8)
+    ctx.fillStyle = '#20242c'
+    ctx.fillRect(-18, 1, 4, 4) // nose cap
+    // armour plating seams + rivets (texture, not a flat fill — ART.md bar 3)
+    ctx.fillStyle = '#20242c'
+    ctx.fillRect(-4, -6, 1, 12); ctx.fillRect(7, -6, 1, 10)
+    ctx.fillStyle = '#78838f'
+    for (const [rvx, rvy] of [[-12, -4], [-1, -4], [4, -4], [10, -4], [-8, 6], [2, 6]]) ctx.fillRect(rvx, rvy, 1, 1)
+    // canopy glass at the nose, catching the sky
+    ctx.fillStyle = '#8ad4ff'
+    ctx.fillRect(-12, -5, 5, 4)
+    ctx.fillStyle = '#dcedf5'
+    ctx.fillRect(-12, -5, 2, 2)
+    // belly gun pod — the strafe battery, muzzle just under the nose
+    ctx.fillStyle = '#3c4650'
+    ctx.fillRect(-13, 5, 8, 3)
+    ctx.fillStyle = '#20242c'
+    ctx.fillRect(-15, 6, 2, 2)
+    // twin nacelles at the wake, exhaust flicker (deterministic, tick-phased)
+    ctx.fillStyle = '#39424e'
+    ctx.fillRect(11, -4, 8, 5); ctx.fillRect(11, 2, 8, 5)
+    const ex = Math.floor(tick / 2) % 3
+    ctx.fillStyle = ex === 0 ? '#7fb2ff' : '#4a7fd4'
+    ctx.fillRect(19, -3, 2 + ex, 3); ctx.fillRect(19, 3, 2 + ((ex + 1) % 3), 3)
+    // wounded stages: scorch at two rounds gone, flame + smoke trailing at one
+    if (sh.hp <= 2) {
+        ctx.fillStyle = '#171c26'
+        ctx.fillRect(-10, -2, 4, 3); ctx.fillRect(2, 0, 3, 2)
+        ctx.fillStyle = '#8a5a3a'
+        ctx.fillRect(-10, -3, 3, 1)
+    }
+    if (sh.hp <= 1) {
+        for (let i = 0; i < 4; i++) {
+            const e = (Math.floor(tick / 2) + i * 5) % 16
+            ctx.fillStyle = e % 2 ? '#ff8c1a' : '#7d848c'
+            ctx.fillRect(10 + e, 4 + ((i + Math.floor(tick / 4)) % 3), 2, 2)
+        }
+        for (let i = 0; i < 3; i++) {
+            const s = (Math.floor(tick / 3) + i * 7) % 21
+            ctx.fillStyle = s < 10 ? '#6a707a' : '#454c58'
+            ctx.fillRect(-2 + Math.floor(Math.sin((s + sh.x) / 5) * 2), -14 - s, 2, 2)
+        }
+    }
+    // hit flash — the whole hull whitens for its 4 ticks (the guns' law)
+    if (sh.flash > 0) {
+        ctx.globalAlpha = 0.65
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(-18, -12, 38, 20)
+        ctx.globalAlpha = 1
+    }
+    ctx.restore()
+}
+
 export function drawCapsule (ctx, c, tick) {
     const recoil = c.recoil || 0   // #2852: jettison snap (freshly-cut pod only)
     const puff = c.puff || 0       // #2852: sand kick on touchdown
@@ -592,6 +672,18 @@ export function drawBullet (ctx, b, enemy) {
         ctx.fillRect(x - 3, y - 1, 5, 2)
         ctx.fillStyle = '#fff6c8'
         ctx.fillRect(x + 1, y - 1, 2, 2)
+        return
+    }
+    if (enemy && b.gs) {
+        // #2917 the gunship's strafe round: a fat drop with a short fin-wake
+        // along its incoming line — heavier than the muzzle battery's rounds,
+        // and instantly readable as "something fell off the sky".
+        ctx.fillStyle = '#7d848c'
+        ctx.fillRect(x - Math.round(b.vx), y - Math.round(b.vy), 2, 2)
+        ctx.fillStyle = '#ff5a3c'
+        ctx.fillRect(x - 2, y - 2, 4, 4)
+        ctx.fillStyle = '#ffd0a0'
+        ctx.fillRect(x - 1, y - 1, 2, 2)
         return
     }
     ctx.fillStyle = enemy ? '#ff5a3c' : '#ffe27a'
@@ -1061,6 +1153,48 @@ export function drawGateStructure (ctx, boss, tick) {
     ctx.fillRect(d2.x - 6, d2.y - 32, 26, 3)
     ctx.fillStyle = C.rockHi
     ctx.fillRect(d2.x - 6, d2.y - 32, 8, 2)
+    // #2917 THE HANGAR MOUTH — the sortie's telegraph. The attack is always
+    // announced by the door: the ribbed shutter grinds up into the lintel
+    // (rise/fall eased by the open-count, integer steps keep the pixel grid),
+    // a hazard-chevron lintel over the bay, a red beacon cycling while the
+    // hydraulic runs, and the bay floor glows when the throat is open.
+    {
+        const hg = boss.hangar, hx = CFG.gsHangarX
+        const f = hg.open > 0
+            ? Math.min(CFG.gsTelegraph, Math.min(CFG.gsGrind - hg.open, hg.open)) / CFG.gsTelegraph
+            : 0
+        // bay interior; the lit throat line rides the rising door
+        ctx.fillStyle = '#0c1118'
+        ctx.fillRect(hx - 15, 16, 30, 18)
+        if (f > 0.05) {
+            const rh = Math.round(15 * f)
+            ctx.fillStyle = '#2b1c0c'
+            ctx.fillRect(hx - 13, 16, 26, rh)
+            ctx.fillStyle = '#b3541e'
+            ctx.fillRect(hx - 13, 16 + rh - 2, 26, 2)
+            ctx.fillStyle = '#5a616c'
+            ctx.fillRect(hx - 13, 17, 26, 1) // ceiling rail the door rides on
+        }
+        // the shutter itself — steel ribs, gritty bottom edge
+        const dh = 16 - Math.round(15 * f)
+        if (dh > 0) {
+            ctx.fillStyle = C.steelLo
+            ctx.fillRect(hx - 14, 17, 28, dh)
+            ctx.fillStyle = C.steel
+            for (let sy = 18; sy < 17 + dh; sy += 4) ctx.fillRect(hx - 14, sy, 28, 2)
+            ctx.fillStyle = C.rust
+            ctx.fillRect(hx - 14, 17 + dh - 1, 28, 1)
+        }
+        // hazard chevrons on the steel lintel
+        ctx.fillStyle = C.steelLit
+        ctx.fillRect(hx - 16, 13, 32, 3)
+        ctx.fillStyle = C.gold
+        for (let cx = 0; cx < 8; cx++) if (cx % 2 === 0) ctx.fillRect(hx - 15 + cx * 4, 14, 2, 2)
+        // warning beacon while a sortie is grinding or due
+        const live = hg.open > 0 || hg.launchAt > 0
+        ctx.fillStyle = live && Math.floor(tick / 4) % 2 === 0 ? '#ff3b30' : '#4a201c'
+        ctx.fillRect(hx - 1, 9, 3, 3)
+    }
     // the core housing
     ctx.fillStyle = C.rockLo
     ctx.fillRect(176, 74, 48, 44)

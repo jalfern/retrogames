@@ -163,6 +163,21 @@ export function loopK (n) {
     return Math.min(LOOP_CAP, 1 + LOOP_STEP * Math.max(0, Math.floor(n) - 1))
 }
 
+// #2917 THE SORTIE CADENCE LAW — the arcade-loop fairness spine applied to the
+// gunship layer. The loop is allowed to raise sortie CADENCE (how often the
+// hangar cycles), never flight paths or round speeds. But the honest autopilot
+// — the calibration standard this game tunes against — clears loops 2/3 with
+// the cadence ramped by the full tempo k, yet DIES on seeds 6 and 9 at the
+// capped k≥1.3 when the hangar joins the cannons' already-hot rearm. A threat
+// that needs a new brain answer is a threat that needs a softer cadence, so
+// the sortie layer ramps at HALF the tempo (1 + (k−1)/2): every pass still
+// flies sorties sooner than the last, the loop 1 pass is untouched (k=1 → 1),
+// and the bank clears 12/12 at every pass including the ceiling. The threat
+// bends toward the brain; the brain never changes.
+export function sortieK (k) {
+    return 1 + (k - 1) * 0.5
+}
+
 // #2902 THE LOOP SPEAKS — the presentation law of the resume. Every value the
 // player SEES or HEARS as "round two" is a pure function of the pass number:
 // the shell derives banner length, sky heat and voice pitch from gs.loop, so
@@ -864,6 +879,7 @@ function enterFalls (gs) {
     gs.vc.length = 0  // the depot's payout flies in the jungle too
     gs.carriers.length = 0; gs.pods.length = 0   // #2847: the canyon owns the vertical — no sky couriers below the falls
     gs.gunships.length = 0; gs.sortieT = 0       // #2917: the hangar belongs to the arena, not the gorge
+    if (gs.boss) { gs.boss.hangar.open = 0; gs.boss.hangar.launchAt = 0 }   // the door's grind dies at the falls too
     gs.pb.length = 0; gs.eb.length = 0; gs.capsule = null
     // #2885: the vines live here — the gorge's carriers, both seats unhooked.
     gs.vines = VINES.map((v, i) => ({ ...v, i }))
@@ -902,7 +918,7 @@ function makeBoss (gs) {
     // #2917 the second air layer: one sortie at a time, scheduled on seed/tick
     // arithmetic (zero gs.r — the courier law #2847 verbatim).
     gs.gunships = []
-    gs.sortieT = gs.tick + Math.round(CFG.gsFirst / gs.lk)
+    gs.sortieT = gs.tick + Math.round(CFG.gsFirst / sortieK(gs.lk))
     gs.sortieN = 0
     gs.ev.push({ type: 'enter' })
 }
@@ -1530,7 +1546,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                     gs.eb.push({ x: sh.x + Math.cos(a) * 10, y: sh.y + 7 + Math.sin(a) * 10, vx, vy, gs: true })
                     gs.ev.push({ type: 'gsfire' })
                     sh.flash = 4
-                    sh.t = Math.round(CFG.gsRearm / gs.lk) + ((gs.seed ^ (sh.n * 40503)) >>> 21) % 60
+                    sh.t = Math.round(CFG.gsRearm / sortieK(gs.lk)) + ((gs.seed ^ (sh.n * 40503)) >>> 21) % 60
                 }
                 // the hull is a weapon, not cargo — contact is a hit for either
                 // seat (the runner law verbatim). The box is the hull itself, not
@@ -1541,7 +1557,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                 if (sh.dead || sh.x < gs.cam - 24) sortieGone = gs.tick
             }
             gs.gunships = gs.gunships.filter((sh) => !sh.dead && sh.x >= gs.cam - 24)
-            if (sortieGone) gs.sortieT = sortieGone + Math.round(CFG.gsNext / gs.lk) + (((gs.seed ^ (sortieGone * 2654435761)) >>> 19) % 220)
+            if (sortieGone) gs.sortieT = sortieGone + Math.round(CFG.gsNext / sortieK(gs.lk)) + (((gs.seed ^ (sortieGone * 2654435761)) >>> 19) % 220)
         }
     }
 

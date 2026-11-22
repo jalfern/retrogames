@@ -274,7 +274,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   cargo-jettison, carrier-impervious,
                                        #   housings-eat-beams, cascade-random,
                                        #   vine-deadwood, vine-sink, loop-dead,
-                                       #   loop-overdrive, loop-blind, voice-flat
+                                       #   loop-overdrive, loop-blind, voice-flat,
+                                       #   gunship-impervious
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -342,7 +343,17 @@ its warm plate (loop 1 shows nothing) — plus the sim-side law: heatSky/
 heatMuzzle byte-base through loop 2, one notch at loop 3, capped at loop 4;
 loopVoice unity → x1.06 → x1.12 → capped x1.18; hash-clean (palette and voice
 consume zero gs.r); attract teaches one LOOP 2 pass with the banner and cycles
-back to loop-1 copy** · zero page errors.
+back to loop-1 copy** · **#2917 second air layer: the door grinds before the
+hull (telegraph lands gsTelegraph before lift-off, zero gs.r — soldier wake
+timing byte-identical to a sortie-free run) · one sortie at a time · the hull
+is lane-aimed, pinned-speed and SHALLOW (every gs round satisfies |vy| ≤
+gsVyMax < the autopilot's 1.2 hop window) and fires only over the fortress at
+a grounded hero · three rounds down the airframe (+400, spark per hit, named
+fireball) · pierce one take per hull per beam · contact kills either seat
+while a grounded flat shot passes under the band · falls clears the sky ·
+hangar, schedule and airframe ride the hash · live: the door grinds and the
+gunship paints sky pixels over a sortie-free baseline, and a pinned hull takes
+three rounds through real keys** · zero page errors.
 
 ## Honest gaps
 
@@ -361,8 +372,9 @@ back to loop-1 copy** · zero page errors.
   blurred disc (translucent sweep + two counter-phase blade lines), jettison
   snaps (6-tick cable recoil with hook-open frames), the pod kicks a sand puff
   on touchdown (`dust` event + specks), and the fly-in gains a ~6 Hz rotor
-  beat. The original's SECOND air layer (mid-boss gunships, hangar door) still
-  stands below.
+  beat. The original's SECOND air layer (mid-boss gunships, hangar door) was
+  still standing after this pass — it shipped next in #2917 (see the second
+  air layer note below).
 - **CLOSED by #2880**: the gate's outer guns are answered — each cannon
   housing takes the depot slab law (ten rounds, spark per hit), caving with a
   named blast and +300; the gun falls silent, the muzzle light dies and the
@@ -374,7 +386,8 @@ back to loop-1 copy** · zero page errors.
   four hanging vines: airborne + jump held catches a swinging tip, the arc
   flings the rider at least vineCarryMin above the catch, jump releases
   early. Both seats, hash-clean, torrent law verbatim. The ORIGINAL's full
-  vertical set (mid-boss gunships, hangar door) still stands below.
+  vertical set (mid-boss gunships, hangar door) shipped next in #2917 — see
+  the second air layer note below.
 - **CLOSED by #2894**: the arcade loop shipped — STAGE CLEAR no longer falls back to
   attract: stage 1 rebuilds at LOOP n with the pressure tempo raised (k = 1 + 0.10
   per pass, pinned x1.30 from loop 4): soldier/turret/sniper/depot/cannon rearm,
@@ -392,6 +405,68 @@ back to loop-1 copy** · zero page errors.
   for `nade` soldiers.
 - **CLOSED by #2902**: the arcade loop now SPEAKS — see "#2902 What the loop
   looks and sounds like" below.
+- **CLOSED by #2917**: the SECOND air layer shipped — a hangar mouth in the
+  fortress parapet grinds open (the attack is telegraphed by the door, never
+  born on screen), one armoured gunship sorties at a time, patrols the arena
+  sky and works the deck with lane-aimed down-rounds at pinned, SHALLOW speed
+  (the hop is always the answer), takes three rounds with a spark per hit and
+  a named fireball (+400), and the pierce law applies verbatim. The shuttered
+  core stays the ONE weak point; schedule, altitude and rearm jitter are pure
+  seed/tick arithmetic (zero `gs.r`), and the honest autopilot still clears
+  12/12 loop-1 seeds — the fairness findings are in the engine note below.
+
+## #2917 The second air layer — hangar sorties at the gate
+
+Konami's gate kept its sky armed: while the heart beats behind the shutter, a
+bay in the parapet sends out an attack plane. The stage's sim spine:
+
+- **Telegraph first, always.** The door cycle is `open → launchAt → hull`: the
+  mouth grinds for `gsTelegraph` (34) ticks — beacon blinking, ribbed shutter
+  rising into the lintel, bay floor glowing — and only then does the hull drop
+  out of the mouth. Nothing is ever born from a shut door (the spawn-doors'
+  law, promoted to the sky).
+- **One sortie at a time** — the courier law (#2847) verbatim. The next door
+  cycle is armed `gsNext` (480) plus seed jitter, faster on hotter loops —
+  but by `sortieK` = HALF the tempo ramp (`1 + (k−1)/2`), not by k itself.
+  Schedule, altitude choice and rearm jitter are all seed/tick arithmetic:
+  **zero `gs.r` draws** (pinned — the tuned autopilot stream and every
+  rng-driven law byte-for-byte stand), and door, schedule and airframe all
+  ride `stateHash`.
+- **The strafe law (fairness by construction).** The hull's rounds fly at
+  `eBulletSpeed` — pinned since #2894 — and are lane-aimed at the nearer
+  grounded hero, but `gsVyMax` (1.0) caps how steep a hull round ever dips:
+  it always lands in the flat-shot family the game already teaches the answer
+  to (the autopilot's hop window is `|vy| < 1.2`). The hull only fires while
+  OVER the fortress (`x > wallX`) — never from directly overhead, so every
+  round gets the long flight — and only at a GROUNDED target, the snipers'
+  law verbatim: shooting at a hero who has already made the move the game
+  teaches is a tax, not a shot.
+- **The airframe is shootable armour** — three rounds (`gsHp`), spark per hit,
+  white flash, scorch at two, flame-and-smoke at one, named fireball +
+  `gsScore` (400) at zero. FIRE/LASER pierce one take per hull per beam
+  (#2854 law); contact with the hull kills either seat (the runner law — this
+  is a weapon, not cargo), while the band (`gsAlt` 52..70) sits above a
+  grounded hero's flat aim and below his hop apex, so an aimed hop under a
+  passing sortie survives by design.
+- **The fairness finding (why the threat bends, not the brain).** Three
+  autopilot additions were tried during this stage's tuning and EACH LOST
+  seeds (12/12 → 11, 10, 8): an arrival-hop for hull rounds, a wall-pin hop
+  fallback, and hull-priority fire that pulled the brain out of its patrol
+  band. So the THREAT moved instead — the `gsVyMax` cap, the over-the-fortress
+  firing window, the grounded-target law and `gsRearm` 320 (a strafe, not a
+  torrent) were tuned until the UNCHANGED autopilot cleared 12/12 again. The
+  autopilot is the calibration standard; a threat that needs a new brain
+  answer is a threat that needs a softer schedule. The finding repeated at
+  heat: the sim-core draft ramped sortie cadence by the full tempo k, and the
+  capped-loop bank (loops 4 and 9) died on seeds 6 and 9 — the hull's shallow
+  round arrives at the wall where there is no road, on top of the cannons'
+  already-hot rearm. `sortieK` halved the ramp and the bank cleared 12/12
+  again, loop 1 untouched. Cadence is the dial; the brain and the bullet are
+  not.
+- **Two traps for the next hand** (from the draft PR): `gsFirstShot` (40) must
+  stay under the fortress-crossing time (~65 ticks at k=1) or the hull
+  silently never fires — a pin must catch that; and the autopilot must not
+  change to accommodate new threats.
 
 ## #2902 What the loop looks and sounds like (presentation)
 

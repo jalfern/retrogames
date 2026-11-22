@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice } from '../src/games/Contra/sim.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
@@ -1247,6 +1247,196 @@ const mkBoss = (seed = 7) => {
     }
 }
 
+// ---- #2917 the second air layer: hangar sorties at the gate -----------------
+{
+    // THE TELEGRAPH: the door grinds before the hull is born. Pin the whole
+    // chain on one seed — grind, launch, emergence at the mouth — and demand
+    // the `hangar` event strictly precedes `lift` by gsTelegraph ticks.
+    const cycle = (seed) => {
+        const gs = makeGame(seed)
+        gs.p2.out = true
+        gs.p.inv = 100000
+        warpBoss(gs)
+        let grindAt = 0, liftAt = 0, emerge = null
+        const evs = []
+        for (let i = 0; i < 500; i++) {
+            step(gs, {})
+            for (const e of gs.ev) evs.push(e.type)
+            gs.ev.length = 0
+            if (!grindAt && gs.boss.hangar.open > 0) grindAt = gs.tick
+            if (!liftAt && gs.boss.hangar.launchAt > 0) liftAt = gs.tick
+            if (!emerge && gs.gunships.length) emerge = { tick: gs.tick, x: gs.gunships[0].x, y: gs.gunships[0].y, ty: gs.gunships[0].ty, hp: gs.gunships[0].hp }
+            if (emerge) break
+        }
+        return { grindAt, liftAt, emerge, firstHangar: evs.indexOf('hangar'), firstLift: evs.indexOf('lift') }
+    }
+    const c7 = cycle(7), c7b = cycle(7)
+    r.check('#2917 the door telegraphs the sortie — grind, then lift, gsTelegraph apart, hull emerges at the mouth',
+        c7.grindAt > 0 && c7.liftAt === c7.grindAt && c7.emerge && c7.emerge.tick === c7.grindAt + CFG.gsTelegraph
+        && c7.firstHangar >= 0 && c7.firstLift > c7.firstHangar
+        && Math.abs(c7.emerge.x - (CFG.gsHangarX - 6 + CFG.gsVx)) < 0.01
+        && Math.abs(c7.emerge.y - (CFG.gsHangarY + 10.8)) < 0.01 && c7.emerge.hp === CFG.gsHp,
+        JSON.stringify(c7))
+    r.check('#2917 sortie cycle is deterministic (same seed, same grind tick, emergence and altitude)',
+        JSON.stringify(c7) === JSON.stringify(c7b), JSON.stringify(c7))
+    {
+        const bands = new Set()
+        for (let s = 1; s <= 8; s++) { const e = cycle(s).emerge; if (e) bands.add(e.ty) }
+        r.check('#2917 sorties work both altitude bands across seeds', bands.size === 2 && [...bands].every((b) => CFG.gsAlt.includes(b)), [...bands].sort((a, b) => a - b).join(','))
+    }
+    r.check('#2917 zero rng law: the sortie schedule draws nothing from gs.r', (() => {
+        const g1 = makeGame(21); g1.p.inv = 100000; warpBoss(g1)
+        const g2 = makeGame(21); g2.p.inv = 100000; warpBoss(g2); g2.sortieT = 10 ** 9; g2.p2.out = true; g1.p2.out = true
+        for (let i = 0; i < 900; i++) { step(g1, {}); step(g2, {}) }
+        return g1.r === g2.r
+    })(), 'gs.r identical across a sortie-full and a sortie-free boss run')
+}
+{
+    // THE STRAFE LAW at the sim level: an idle grounded hero, one hull — every
+    // round the hull fires is pinned-speed, SHALLOW (|vy| <= gsVyMax, inside
+    // the autopilot's 1.2 hop window), and it leaves the hull only while the
+    // hull is OVER the fortress.
+    const gs = makeGame(3)
+    gs.p2.out = true; gs.p.inv = 100000
+    warpBoss(gs)
+    let seen = 0, shallow = true, pinnedSpeed = true
+    let firedOverWall = true, firedGrounded = true, sawFire = false
+    for (let i = 0; i < 900; i++) {
+        step(gs, {})
+        if (gs.ev.some((e) => e.type === 'gsfire')) {
+            sawFire = true
+            const sh = gs.gunships[0]
+            if (!sh || sh.x <= CFG.wallX) firedOverWall = false
+            if (!gs.p.onGround) firedGrounded = false
+        }
+        gs.ev.length = 0
+        for (const b of gs.eb) if (b.gs) {
+            seen += 1
+            if (Math.abs(b.vy) > CFG.gsVyMax + 1e-9) shallow = false
+            if (Math.abs(Math.hypot(b.vx, b.vy) - CFG.eBulletSpeed) > 0.01) pinnedSpeed = false
+        }
+    }
+    r.check('#2917 an idle grounded hero draws the strafe — hull fires only over the fortress, at a grounded target',
+        sawFire && firedOverWall && firedGrounded, `fires=${sawFire} overWall=${firedOverWall} grounded=${firedGrounded}`)
+    r.check('#2917 every hull round is pinned-speed and SHALLOW — |vy| <= gsVyMax < the 1.2 hop window, so the hop is always the answer',
+        seen > 0 && shallow && pinnedSpeed, `roundTicks=${seen}`)
+    r.check('#2917 fairness by construction — band, cap and cadence stand inside the taught answers',
+        CFG.gsVyMax < 1.2 && CFG.gsAlt[1] + CFG.gsHH < 136 && CFG.gsAlt[0] - CFG.gsHH > 40 && CFG.gsRearm >= CFG.gsTelegraph,
+        `vyMax=${CFG.gsVyMax} band=${CFG.gsAlt.join('..')} rearm=${CFG.gsRearm}`)
+    r.check('#2917 the sortie cadence law — loop 1 runs the hangar at exact tempo (sortieK(1)=1), later passes raise cadence at HALF the tempo only',
+        sortieK(1) === 1 && Math.abs(sortieK(1.3) - 1.15) < 1e-9 && sortieK(1.3) < 1.3 && sortieK(1.3) > 1,
+        `sortieK(1)=${sortieK(1)} sortieK(cap)=${sortieK(1.3)}`)
+}
+{
+    // THE AIRFRAME: three rounds, spark per hit, named fireball, +400 purse.
+    const gs = makeGame(5)
+    gs.p2.out = true; gs.p.inv = 100000
+    warpBoss(gs); gs.sortieT = 10 ** 9
+    gs.gunships.push({ x: 200, y: 60, ty: 60, vx: 0, hp: CFG.gsHp, t: 10 ** 9, n: 1, dead: false, flash: 0 })
+    const sc = gs.score
+    const sparks = []
+    for (let i = 0; i < 3; i++) {
+        gs.pb.push({ x: 186, y: 62, vx: 5.5, vy: 0, k: 'r' })
+        step(gs, {})
+        sparks.push(gs.ev.filter((e) => e.type === 'spark').length)
+        gs.ev.length = 0
+    }
+    r.check('#2917 three rounds take the hull — spark per hit, white flash, then the named fireball and the arcade purse',
+        gs.gunships.length === 0 && gs.score - sc === CFG.gsScore && sparks.every((n) => n === 1), `dScore=${gs.score - sc} sparks=${sparks.join(',')}`)
+}
+{
+    // THE PIERCE LAW, verbatim on the new hulls: a laser beam sparks through
+    // one hull per beam and keeps flying; each hull eats exactly one take.
+    const gs = makeGame(5)
+    gs.p2.out = true; gs.p.inv = 100000
+    warpBoss(gs); gs.sortieT = 10 ** 9
+    gs.gunships.push({ x: 200, y: 60, ty: 60, vx: 0, hp: CFG.gsHp, t: 10 ** 9, n: 1, dead: false, flash: 0 })
+    gs.gunships.push({ x: 160, y: 60, ty: 60, vx: 0, hp: CFG.gsHp, t: 10 ** 9, n: 2, dead: false, flash: 0 })
+    gs.pb.push({ x: 138, y: 60, vx: 5.5, vy: 0, k: 'l' })
+    let pierces = 0
+    for (let i = 0; i < 24 && gs.pb.length; i++) { step(gs, {}); pierces += gs.pb.filter((b) => b.k === 'l').length; gs.ev.length = 0 }
+    const [h200, h160] = gs.gunships
+    r.check('#2917 FIRE/LASER pierce the airframe one take per hull per beam — the beam answers to the sky law, not a wall',
+        h200.hp === CFG.gsHp - 1 && h160.hp === CFG.gsHp - 1 && pierces >= 10, `200:${h200 && h200.hp} 160:${h160 && h160.hp} beamTicks=${pierces}`)
+}
+{
+    // THE CONTACT LAW: the hull is a weapon, not cargo — touching it takes a
+    // life (either seat), while a grounded flat shot passes UNDER the band.
+    const gs = makeGame(5)
+    gs.p2.out = true; gs.p.inv = 0
+    warpBoss(gs); gs.sortieT = 10 ** 9
+    gs.gunships.push({ x: gs.p.x, y: gs.p.y - 14, ty: gs.p.y - 14, vx: 0, hp: CFG.gsHp, t: 10 ** 9, n: 1, dead: false, flash: 0 })
+    step(gs, {})
+    r.check('#2917 contact with the hull kills the seat — this aircraft is a weapon, not a courier',
+        gs.lives < 3, `lives=${gs.lives}`)
+    // ... and the band sits above the gun line: a flat round aimed at the far
+    // gun flies its whole crossing without ever touching a hull in its band.
+    const g2 = makeGame(5)
+    g2.p2.out = true; g2.p.inv = 100000
+    warpBoss(g2); g2.sortieT = 10 ** 9
+    g2.gunships.push({ x: 300, y: CFG.gsAlt[1], ty: CFG.gsAlt[1], vx: 0, hp: CFG.gsHp, t: 10 ** 9, n: 1, dead: false, flash: 0 })
+    const near = g2.gunships[0]
+    const chest = g2.p.y - 14   // the arena floor sits above the jungle deck — aim at the hero's real chest line
+    for (let i = 0; i < 60; i++) {
+        g2.pb.push({ x: g2.p.x + 8, y: chest, vx: CFG.bulletSpeed || 5.5, vy: 0, k: 'r' })
+        step(g2, {})
+    }
+    r.check('#2917 the band never eats flat ground fire — rounds aimed at the wall fly under the sortie (up-aim is the toll)',
+        near.hp === CFG.gsHp && chest - CFG.gsHH > CFG.gsAlt[1], `hullHp=${near.hp}`)
+}
+{
+    // HASH + PHASE laws: the falls own the vertical alone, and the schedule,
+    // the door and the airframe are all sim truth.
+    const gs = makeGame(7)
+    gs.p.inv = 100000
+    warpBoss(gs)
+    for (let i = 0; i < 400 && !gs.gunships.length; i++) step(gs, {})
+    warpFalls(gs)
+    r.check('#2917 the waterfall clears the sky — no hulls, no armed door below the falls',
+        gs.gunships.length === 0 && gs.sortieT === 0 && (!gs.boss || gs.boss.hangar.open === 0), `hulls=${gs.gunships.length} sortieT=${gs.sortieT}`)
+    const g1 = makeGame(9); warpBoss(g1)
+    const g2 = makeGame(9); warpBoss(g2); g2.sortieT += 1
+    const g3 = makeGame(9); warpBoss(g3); g3.gunships.push({ x: 220, y: 60, ty: 60, vx: 0, hp: CFG.gsHp, t: 10 ** 9, n: 1, dead: false, flash: 0 })
+    r.check('#2917 schedule, door and airframe ride the state hash — a replay that dodged a sortie diverges loudly',
+        stateHash(g1) !== stateHash(g2) && stateHash(g1) !== stateHash(g3))
+    // the heart going quiet empties the sky: with the core dead, no hull flies.
+    const g4 = makeGame(9); warpBoss(g4); g4.p.inv = 100000; g4.p2.out = true
+    g4.sortieT = g4.tick
+    for (let i = 0; i < CFG.gsTelegraph + 6 && !g4.gunships.length; i++) step(g4, {})
+    g4.boss.core = 1; g4.boss.coreT = 0
+    let emptied = false
+    for (let i = 0; i < 40 && !emptied; i++) {
+        g4.pb.push({ x: CFG.coreX - 6, y: CFG.coreY, vx: 5.5, vy: 0, k: 'r' })
+        step(g4, {})
+        if (g4.boss.dying > 0) { emptied = true; break }
+    }
+    r.check('#2917 with the heart gone the sky empties too — no sortie outlives the core',
+        emptied && g4.gunships.length === 0, `dying=${g4.boss && g4.boss.dying} hulls=${g4.gunships.length}`)
+}
+{
+    // THE FAIRNESS SPINE (the session's pin): under the UNCHANGED honest
+    // autopilot, across seeds 1..12 — no seed ever faces two hulls at once,
+    // sorties actually fly (gsFirstShot lands inside the fortress-crossing
+    // window — the trap the draft PR named), and the gate's strafe rounds do
+    // answer to the game's taught hop: every round still satisfies the flat-
+    // shot family the brain already clears.
+    let maxHulls = 0, sorties = 0, rounds = 0, shallow = true
+    for (let s = 1; s <= 12; s++) {
+        const gs = makeGame(s)
+        while (!gs.end && gs.tick < 20000) {
+            step(gs, autopilot(gs))
+            maxHulls = Math.max(maxHulls, gs.gunships.length)
+            sorties += gs.boss && gs.boss.hangar.launchAt > 0 && gs.boss.hangar.open === CFG.gsGrind ? 1 : 0
+            for (const b of gs.eb) if (b.gs) { rounds += 1; if (Math.abs(b.vy) > CFG.gsVyMax + 1e-9) shallow = false }
+            gs.ev.length = 0
+        }
+    }
+    r.check('#2917 one sortie at a time under the honest autopilot, across seeds 1..12',
+        maxHulls === 1, `max ${maxHulls}`)
+    r.check('#2917 the second air layer is LIVE under autopilot — sorties fly and rounds answer to the hop law (gsFirstShot inside the crossing window)',
+        sorties >= 6 && rounds >= 1 && shallow, `sorties=${sorties} rounds=${rounds} shallow=${shallow}`)
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const plants = [
@@ -1759,6 +1949,27 @@ if (MUTANT) {
             harm: async (mod) => mod.loopVoice(3) <= 1
                 ? `HARM NAMED: loop 3's guns crack at loop 1 pitch — the sound never escalates; the heat loses the layer the original sold it with`
                 : null,
+        },
+        {
+            // #2917: the airframe is three rounds of armour — take the decrement
+            // and the sortie becomes an unkillable taxi. Name it.
+            name: 'gunship-impervious',
+            anchor: 'sh.hp -= 1',
+            plant: 'sh.hp -= 0 /* MUTANT(gunship-impervious): the airframe swallows rounds */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(5)
+                gs.p2.out = true; gs.p.inv = 100000
+                mod.warpBoss(gs); gs.sortieT = 10 ** 9
+                gs.gunships.push({ x: 200, y: 60, ty: 60, vx: 0, hp: mod.CFG.gsHp, t: 10 ** 9, n: 1, dead: false, flash: 0 })
+                for (let i = 0; i < 12; i++) {
+                    gs.pb.push({ x: 186, y: 62, vx: 5.5, vy: 0, k: 'r' })
+                    mod.step(gs, {})
+                    if (!gs.gunships.length) break
+                }
+                return gs.gunships.length === 1
+                    ? 'HARM NAMED: the gunship cannot be downed - 12 rounds spark off and the hull owns the arena sky forever; the second air layer becomes an unanswerable tax'
+                    : null
+            },
         },
     ]
     for (const p of plants) {
@@ -2405,6 +2616,77 @@ const browser = await launch()
         teachBack = await page.evaluate(() => window.__contraTest.probe())
     }
     r.check('#2902 the taught pass ends — attract cycles back to loop-1 demo and copy', teachBack !== null, JSON.stringify(teachBack && { s: teachBack.screen, d: teachBack.demoLoop, l: teachBack.loop }))
+
+    // #2917 browser legs: the hangar cycle runs live (grind → lift → hull on
+    // the probe), the strafe that comes down is shallow through the real loop,
+    // and the steel paints sky pixels a sortie-free fortress never shows.
+    await ensurePlay()
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', x: 60, inv: 99999, lives: 99, allyOut: true, sortieOff: true }))
+    await page.waitForTimeout(200)
+    const gsPix = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(108 * k), Math.round(84 * k), Math.round(48 * k), Math.round(32 * k)).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 60 && d[i + 1] > 55 && d[i + 2] > 50) n++ // steel/glass/exhaust beats the slate gorge
+        return n
+    })
+    let hullBase = -1
+    for (let g0 = 0; g0 < 8; g0++) { await page.waitForTimeout(90); hullBase = Math.max(hullBase, await gsPix()) }
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', x: 60, inv: 99999, lives: 99, allyOut: true, sortieNow: true, gsX: 130, gsY: 100 }))
+    let hullLit = 0
+    for (let g0 = 0; g0 < 12; g0++) {
+        await page.waitForTimeout(90)
+        hullLit = Math.max(hullLit, await gsPix())
+        const pin = await page.evaluate(() => window.__contraTest.setup({ x: 60, inv: 99999, allyOut: true, sortieNow: true, gsX: 130, gsY: 100 }))
+        if (!pin) break
+    }
+    r.check('#2917 live fortress paints the gunship — steel/canopy pixels over the sortie-free baseline',
+        hullLit - hullBase >= 12, `hull=${hullLit} baseline=${hullBase}`)
+    // the door leg: the bay's ember throat line vs the shut shutter. The
+    // window is the bay itself (lintel above, HUD above that), and the
+    // criterion is the throat's burnt orange #b3541e — tight enough to
+    // reject the door's rust trim (#8a5a3a), the HUD's gold and the
+    // banner's crimson (#e23b2e sits at g=59, just under the line).
+    const doorGlow = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(247 * k), Math.round(16 * k), Math.round(30 * k), Math.round(18 * k)).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] > 60 && d[i + 1] < 110 && d[i + 2] < 50) n++ // the bay's ember throat line
+        return n
+    })
+    let shutGlow = -1
+    for (let g0 = 0; g0 < 12; g0++) {
+        await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', inv: 99999, lives: 99, allyOut: true, hangarOpen: 0 }))
+        await page.waitForTimeout(90)
+        shutGlow = Math.max(shutGlow, await doorGlow())
+    }
+    let grindGlow = 0
+    for (let g0 = 0; g0 < 12; g0++) {
+        await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', inv: 99999, lives: 99, allyOut: true, hangarOpen: 57 }))
+        await page.waitForTimeout(90)
+        grindGlow = Math.max(grindGlow, await doorGlow())
+    }
+    r.check('#2917 live parapet grinds — the open bay paints its ember throat where the shut shutter shows nothing',
+        grindGlow >= 12 && shutGlow <= 4, `grind=${grindGlow} shut=${shutGlow}`)
+    // the live sortie chain: a fresh warp arms the schedule; poll door → hull →
+    // shallow rounds through the untouched world loop.
+    await ensurePlay()
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', x: 100, inv: 99999, lives: 99, allyOut: true }))
+    let sawDoor = false, sawHull = false, roundsLive = 0, maxVy = 0
+    for (let g0 = 0; g0 < 140; g0++) {
+        await page.waitForTimeout(100)
+        const p = await page.evaluate(() => window.__contraTest.probe())
+        if (!p || p.screen !== 'play' || p.phase !== 'boss') continue
+        if (p.sortie.door > 0 || p.sortie.due > 0) sawDoor = true
+        if (p.sortie.hulls.length) sawHull = true
+        for (const b of p.sortie.aimed) { roundsLive += 1; maxVy = Math.max(maxVy, Math.abs(b.vy)) }
+        if (sawHull && roundsLive >= 2) break
+    }
+    r.check('#2917 the live gate runs its air layer — the beacon grinds, the hull lifts, and every round that comes down is shallow',
+        sawDoor && sawHull && roundsLive >= 2 && maxVy <= 1.01, JSON.stringify({ sawDoor, sawHull, roundsLive, maxVy: +maxVy.toFixed(2) }))
+    await page.evaluate(() => window.__contraTest.setup({ sortieOff: true }))
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()
