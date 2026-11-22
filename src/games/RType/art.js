@@ -537,6 +537,10 @@ export function drawP1(ctx, p1, camX, tick) {
         ctx.translate(-cx + (((tick * 13) % 3) - 1), -cy + (((tick * 7) % 3) - 1))
     } else if (hot) {
         ctx.translate((((tick * 11) % 3) - 1), (((tick * 5) % 3) - 1))
+    } else if (p1.spasm > 0) {
+        // #2906 telegraph: a hull about to panic twitches — a two-px vertical
+        // kick on the marks, the dread testing its chains before it burns.
+        ctx.translate(0, (tick & 1) ? -2 : 2)
     }
     const x = Math.round(p1.x - camX)
     const top = 34, bot = 200
@@ -556,6 +560,13 @@ export function drawP1(ctx, p1, camX, tick) {
         // the flush: a low ember wash that breathes two-shades on a fast beat
         ctx.fillStyle = ((tick >> 2) % 2) ? 'rgba(255,70,30,0.14)' : 'rgba(255,110,40,0.08)'
         ctx.fillRect(x - 4, top, W + 40, bot - top)
+        // #2906 travelling glint: a seam of light runs seam-to-rim and back
+        // on pure tick arithmetic (no rng, like the S3 sway) — heat as
+        // travelling light, so the panic feels alive at 320x224.
+        const tp = (tick * 3) % 96
+        const gx = x + 6 + (tp < 48 ? tp : 95 - tp) * 3
+        ctx.fillStyle = 'rgba(255,224,130,0.32)'
+        ctx.fillRect(gx, top + 8, 2, bot - top - 16)
     }
     // red eyes watching the lane
     for (const [ex, ey] of [[x + 14, top + 26], [x + 10, bot - 34], [x + 40, top + 14]]) {
@@ -751,6 +762,10 @@ export function drawHud(ctx, gs) {
     drawText(ctx, String(gs.score).padStart(7, '0'), 44, 8, '#f0f0f0')
     drawText(ctx, 'HI', 196, 8, '#37d0ff')
     drawText(ctx, String(Math.max(gs.hi, gs.score)).padStart(7, '0'), 220, 8, '#f0f0f0')
+    // #2906 HUD ember voice: at ignition the panic names itself by the score
+    // field for ~1 s (hotAnn is the sim's juice countdown) — a first-timer
+    // learns the rules changed without ever opening the F1 panel.
+    if (gs.p1 && gs.p1.hotAnn > 0) drawText(ctx, 'HOT', 120, 8, ((gs.tick >> 2) % 2) ? '#ff7030' : '#7c2810')
     for (let i = 0; i < Math.min(gs.lives - 1, 5); i++) ctx.drawImage(SPR.shipIcon, 8 + i * 15, H - 12)
     const wl = gs.ship.weapon === 'wave' ? 'WAVE' : gs.ship.weapon === 'laser' ? 'LASER' : 'VULCAN'
     const wcol = gs.ship.weapon === 'wave' ? '#37d0ff' : gs.ship.weapon === 'laser' ? '#ff5a7a' : '#9ac93c'

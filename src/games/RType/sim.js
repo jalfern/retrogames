@@ -345,6 +345,15 @@ function spawnPod(gs, y, missiles) {
     })
 }
 
+// #2906 hot guns: while the Phase-1 core panics, its own onboard guns reload
+// a quarter faster — the WHOLE ship reads urgent, not just the maw. Tempo
+// only (reload gaps, never round speeds — the Contra fairness law); scoped to
+// guns riding p1, so the fortress and rebuilt hulls keep their own clocks.
+// The rng draw per turret shot is unchanged, so the tuned stream is untouched.
+function hotGuns(gs, e) {
+    return !!(gs.p1 && gs.p1.hot && e.on === 'p1')
+}
+
 function startPhase1(gs) {
     gs.camLock = true
     // the dreadnought's arrival clears the field: stray hull-plates and their
@@ -359,6 +368,9 @@ function startPhase1(gs) {
         mouth: 'closed', mouthT: 140,          // first gape after 140 ticks
         dyingT: 0,
         hot: false, lockAt: gs.tick,          // #2901: desperation timer runs from the lock
+        // #2906 juice (never hashed): hotAnn is the HUD ember voice's countdown
+        // at ignition; spasm is the pre-panic hull twitch the telegraph writes.
+        hotAnn: 0, spasm: 0,
     }
     // onboard guns ride the hull (on: 'p1')
     gs.enemies.push({ id: gs.nextId++, kind: 'turret', on: 'p1', ox: 50, oy: 52,
@@ -759,9 +771,23 @@ function runWorld(gs, pad, frozen, pad2) {
         // cycle still spends exactly one draw per reseal, so the tuned
         // winnability stream is untouched; windows land tighter AND closer
         // together (tempo, not bullet speed — the Contra fairness law).
+        if (p1.hotAnn > 0) p1.hotAnn -= 1
+        if (p1.spasm > 0) p1.spasm -= 1
+        // #2906 telegraph: three short hull spasms walk the last 60 ticks of
+        // the cold clock — the arcade's "it's waking up" beat, sold without a
+        // UI line. Pure tick marks (lockAt is fixed, tick steps by 1, so the
+        // marks land exactly); the spasm counter is juice, never hashed.
+        if (!p1.hot) {
+            const heat = gs.tick - p1.lockAt
+            if (heat === HEAT_AT - 60 || heat === HEAT_AT - 40 || heat === HEAT_AT - 20) {
+                p1.spasm = 8
+                gs.events.push('p1spasm')
+            }
+        }
         if (!p1.hot && gs.tick - p1.lockAt >= HEAT_AT) {
             p1.hot = true
             p1.mouthT = Math.ceil(p1.mouthT / 2)
+            p1.hotAnn = 60   // #2906: the HUD names the panic for ~1 s
             gs.events.push('hotspeed')
         }
         // maw cycle: closed -> opening -> open -> closing
@@ -888,6 +914,7 @@ function runWorld(gs, pad, frozen, pad2) {
                 const m = Math.max(1e-6, Math.hypot(dx, dy))
                 gs.bullets.push({ id: gs.nextId++, x: e.x, y: e.y + (e.edgeUp ? -6 : 6), vx: (dx / m) * 1.3, vy: (dy / m) * 1.3 })
                 e.cd = 95 + Math.floor(rng(gs) * 55)
+                if (hotGuns(gs, e)) e.cd = Math.floor(e.cd * 0.75)   // #2906
                 e.anim = 0
                 gs.events.push('tsfire')
             }
@@ -912,6 +939,7 @@ function runWorld(gs, pad, frozen, pad2) {
                     // stream stays byte-identical to the tuned baseline: the
                     // autopilot law stays an honest, stable measure.
                     e.cd = 152 + ((e.id * 17 + e.shots * 41) % 36); gs.events.push('missile')
+                    if (hotGuns(gs, e)) e.cd = Math.floor(e.cd * 0.75)   // #2906
                     if (e.shots <= 0) { e.state = 'flee'; e.vx = -1.4 }
                 }
             } else { e.x += e.vx }

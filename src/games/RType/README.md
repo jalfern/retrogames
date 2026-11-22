@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 138 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks`
+node scripts/rtypecheck.mjs       # sim + browser: 145 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -207,6 +207,22 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   engages, which would make the speed-up permanent, not desperation — so it is
   lock-ticks, the unit this engine measures the dread-fight in everywhere else.
 
+- **#2906 desperation polish (QA lane):** the panic now speaks to the player,
+  not just the state. The HUD says `HOT` in the 5x7 ember beside the score
+  field for ~1 s at ignition (`p1.hotAnn`, a juice countdown — `ember-mute`
+  guards the stamp); onboard guns join the panic — p1's turrets and missile
+  pod reload ×0.75 while hot (`hotGuns`, gaps only, never round speeds: the
+  Contra fairness law; the per-shot rng draw is unchanged), while the fortress
+  and rebuilt hulls keep their own clocks; a travelling glint runs seam-to-rim
+  across the burning hull on pure tick arithmetic (heat as travelling light,
+  the ART.md exemplar shape); and the last 60 cold ticks carry three 8-tick
+  hull spasms at lock+940/960/980 with a low thud — the "it's waking up"
+  telegraph a watching pilot reads before the maw doubles. The ignition sting
+  no longer ends at the slam: it decays down onto the hot maw horn's own
+  fundamentals (420→116 Hz over 2 s ≈ 120 ticks, plus a 92 Hz bed), so the
+  wail *causes* the horn it hands the fight to. `hotAnn`/`spasm` are juice —
+  stateHash proves it — so replays and the 4/12 floor are untouched.
+
 ## Honest gaps (S5+)
 
 - **CLOSED by #2901** — core speed-up past 1000: the desperation phase is
@@ -231,10 +247,10 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 138 sim+browser laws, ten named mutants
+- `scripts/rtypecheck.mjs` — 145 sim+browser laws, thirteen named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
-  `hot-leaks`).
+  `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
@@ -243,8 +259,9 @@ The registry entry is `private` until Jon promotes it (#379).
   `spawnCapWing`, `coopOff`, `spawnBitPod:{y,n,x}`, `p2Port`, …) / `start()`.
   Probe also reports `bitpods`, `sway`, `p2port`, `p2dying`, `p2last` (#2835)
   and `p1hot`/`heat` (#2901 — the desperation latch and the raw lock-tick
-  count); setup takes `heat: n` (wind the desperation timer to n ticks from
-  ignition, 0 = next tick).
+  count) and `p1ann`/`p1spasm` (#2906 — the HUD ember voice and the telegraph
+  twitch counters); setup takes `heat: n` (wind the desperation timer to n
+  ticks from ignition, 0 = next tick).
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
   SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
   GEAR THE WING.

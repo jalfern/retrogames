@@ -73,7 +73,8 @@ export default function RType() {
             mawshut: () => { const hot = gs.p1 && gs.p1.hot; audioController.playSweep(hot ? 380 : 190, 52, hot ? 0.14 : 0.26, 'square', 0.12); audioController.playNoise(0.1, 0.09); shake = Math.max(shake, hot ? 3 : 2) },
             // #2901: the ignition — the dread's panic announces itself: rising
             // double wail + a slam, one octave of fear on top of the maw horns.
-            hotspeed: () => { audioController.playSweep(140, 420, 0.5, 'sawtooth', 0.12); audioController.playTone(660, 0.12, 'square', 0.1); audioController.playTone(880, 0.12, 'square', 0.1, 0.14); audioController.playNoise(0.18, 0.09); shake = Math.max(shake, 4) },
+            hotspeed: () => { audioController.playSweep(140, 420, 0.5, 'sawtooth', 0.12); audioController.playTone(660, 0.12, 'square', 0.1); audioController.playTone(880, 0.12, 'square', 0.1, 0.14); audioController.playNoise(0.18, 0.09); audioController.playSweep(420, 116, 2.0, 'sawtooth', 0.06, null, 0.5); audioController.playTone(92, 2.0, 'triangle', 0.045, 0.55); shake = Math.max(shake, 4) },
+            p1spasm: () => { audioController.playTone(70, 0.07, 'square', 0.07); audioController.playNoise(0.05, 0.04) },
             missile: () => { audioController.playTone(620, 0.06, 'square', 0.08); audioController.playTone(520, 0.06, 'square', 0.08, 0.09) },
             laser: () => audioController.playSweep(1400, 320, 0.18, 'sawtooth', 0.11),
             force: () => { const n = [523, 784, 1046, 1568]; n.forEach((f, i) => audioController.playTone(f, 0.08, 'triangle', 0.11, i * 0.06)) },
@@ -391,6 +392,9 @@ export default function RType() {
                     // ticks held on the lock (raw, so pins can cross the mark)
                     p1hot: gs.p1 ? (gs.p1.hot ? 1 : 0) : -1,
                     heat: gs.p1 ? gs.tick - gs.p1.lockAt : -1,
+                    // #2906: ember voice + telegraph juice, for the HUD leg
+                    p1ann: gs.p1 ? gs.p1.hotAnn : -1,
+                    p1spasm: gs.p1 ? gs.p1.spasm : -1,
                     bits: gs.bits.length, shield: shieldOn(gs) ? 1 : 0, leg: gs.leg,
                     p2: gs.p2 ? `${gs.p2.cores[0].hp}/${gs.p2.cores[1].hp}` : '-',
                     // #2835 fixtures: carriers on screen, the mass's sway, the
