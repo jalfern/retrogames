@@ -81,6 +81,34 @@ The laws the blue seat lives under, all proven in `contracheck`:
   `padClaim`) are immune; a re-touch arrives on the rope again; and a touch
   during the blue tumble skips the respawn wait entirely.
 
+## What S5 is — the arcade loop (#2894)
+
+The cabinet's second wind: **the run doesn't end at STAGE CLEAR — stage 1 comes
+back faster**. The gate dies, the fanfare plays, and the world rebuilds: same
+seed, score carried, the gun the run carried — and every PRESSURE tempo raised
+by one notch (`loopK`, a pure staircase: x1.00 at loop 1, +0.10 a pass, pinned
+at x1.30 from loop 4). What speeds up: soldier/turret/sniper/depot/cannon rearm
+intervals, the gate's door spill, the grenadiers' throw cadence, walker pace,
+the core shutter cycle (`coreT` advances by k — both windows shorten, the duty
+ratio stands) and courier traffic. What never speeds up: hero physics, enemy
+round SPEEDS, and the torrent. That's a law, not a mercy — the lane-aim law
+says a hop is always the answer to an aimed round, and `hopBand` is tuned to
+these exact paths; the loop compresses flight TIME, never flight paths. The
+first cut scaled bullet speeds too and the zero-latency honest autopilot died on
+half the seeds at only x1.12 — that's how the tuning was proven rather than
+guessed. Surviving a pass pays the classic loop courtesy: **+1 shared life,
+banked to five** (seed 6 clears loop 1 at 0 lives left; without the bank the
+same seed cannot carry loop 2). Loop 1 is byte-identical to the pre-loop game
+(pinned through 5 winning autopilot seeds); loops 2, 3 and every capped loop
+sweep 12/12 clears. The HUD marks the pass in gold under the 2UP tag, the clear
+screen promises `STAGE 1 STRIKES BACK — LOOP n`, and one attract line tells the
+player the loop exists before they ever see it.
+
+*Fidelity note (#237 rule): the 1987 arcade cabinet's own memory here is a
+Mission-8 credits ending; this repo's honest-gap spec said "the arcade loops
+stage 1 with faster settings", so the loop is built as the spec says, and the
+disagreement is recorded on #2894.*
+
 ## Engine notes
 
 - **S4 `gs.p2`**: the seat object mirrors `gs.p` field-for-field (lane, cool,
@@ -141,7 +169,12 @@ The laws the blue seat lives under, all proven in `contracheck`:
 - `sim.js` is the whole truth, pure Node: fixed 60 Hz `step(gs, pad)`. Every
   sim random rides `gs.r`; `stateHash` = FNV-1a over the rounded state
   (extended in S3 for weapon/bullet kinds, pierce counts, capsule kind,
-  snipers, lane, nade vest hp). Events stay unhashed, per Joust's law.
+  snipers, lane, nade vest hp; #2894: `gs.loop`/`gs.lk` ride the hash too).
+  Events stay unhashed, per Joust's law.
+- **#2894 harness surface**: `makeGame(seed, loop)` starts at any pass; the DEV
+  `setup({ loop: n })` retargets tempo mid-run (probe carries `loop`, `lk`,
+  `seed`); DebugKit grows a `LOOP +1` cheat. Loop math is exported for checks:
+  `loopK`, `LOOP_STEP`, `LOOP_CAP`, `LOOP_LIFE_BONUS`, `LOOP_LIVES_MAX`.
 - **Phases**: `gs.phase` jungle | falls | boss. Snipers and grenades are
   jungle-only — the canyon and the gate keep their own roster.
 - **Pod carriers (#2847)**: `gs.carriers` — one courier at a time, scheduled
@@ -224,7 +257,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   blue-death-is-free, never-release,
                                        #   cargo-jettison, carrier-impervious,
                                        #   housings-eat-beams, cascade-random,
-                                       #   vine-deadwood, vine-sink
+                                       #   vine-deadwood, vine-sink, loop-dead,
+                                       #   loop-overdrive
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -313,9 +347,16 @@ finale countdown through real keys** · zero page errors.
   flings the rider at least vineCarryMin above the catch, jump releases
   early. Both seats, hash-clean, torrent law verbatim. The ORIGINAL's full
   vertical set (mid-boss gunships, hangar door) still stands below.
-- The arcade loops stage 1 with faster settings after the kill; here the run
-  ends at STAGE CLEAR and returns to attract — a looped second pass is
-  post-S4 territory.
+- **CLOSED by #2894**: the arcade loop shipped — STAGE CLEAR no longer falls back to
+  attract: stage 1 rebuilds at LOOP n with the pressure tempo raised (k = 1 + 0.10
+  per pass, pinned x1.30 from loop 4): soldier/turret/sniper/depot/cannon rearm,
+  the door spill, the nade cadence, walker pace, the shutter cycle and courier
+  traffic all run at k. Round SPEEDS and the torrent stand pinned — the lane-aim
+  law is the fairness spine and the hop window is tuned to those paths; k
+  compresses flight TIME, not flight paths. Score carries, the shared pool carries
+  plus the loop courtesy (+1 life, banked to 5), the gun carries, the seed is kept,
+  and the HUD marks the pass in gold. The honest autopilot clears every seed on
+  every loop — the loop never becomes unwinnable.
 - Sniper nests sit on fixed perches; the original drifted aim between a few
   tree positions. The vest grenadier fires a rifle too while advancing; the
   cabinet's grenadiers were lob-only.

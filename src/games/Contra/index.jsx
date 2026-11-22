@@ -13,7 +13,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip } from './sim.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, LOOP_LIFE_BONUS, LOOP_LIVES_MAX } from './sim.js'
 import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
@@ -29,6 +29,7 @@ const MESSAGES = [
     'BLUE TAKES THE SECOND SEAT — TWO GUNS, ONE JUNGLE',
     '2P DROP-IN: WASD MOVE · F JUMP · G FIRE',
     'STAND UP FROM THE BLUE SEAT — THE WINGMAN STEPS BACK IN',
+    'CLEAR THE BASE AND STAGE 1 RETURNS — FASTER',
     'ONE HIT KILLS. BOTH SIDES.',
     'PRESS ANY KEY',
 ]
@@ -234,6 +235,27 @@ export default function ContraGame () {
             }
         }
 
+        // #2894 THE ARCADE LOOP — STAGE CLEAR is not the end. The gate blows,
+        // the fanfare plays, and stage 1 comes back around at loop n's tempo
+        // (#2884 gap: the cabinet loops stage 1 faster; the loop lives here at
+        // the shell, the tempo lives in sim.js). Score carries; the shared pool
+        // carries and pays the classic loop courtesy — surviving a pass buys ONE
+        // spare life for the next (banked to LOOP_LIVES_MAX); the gun the run
+        // carried carries too. Fresh spawn-grace at the drop.
+        const startLoop = () => {
+            const carryScore = gs.score, carryLives = Math.min(LOOP_LIVES_MAX, gs.lives + LOOP_LIFE_BONUS), carryGun = gs.p.weapon
+            gs = makeGame(gs.seed, gs.loop + 1)
+            gs.score = carryScore
+            gs.lives = carryLives
+            if (carryGun !== 'rifle') gs.p.weapon = carryGun
+            part.length = 0
+            fire.length = 0
+            wasGround = true
+            heli = null; warnArmed = false; lastEnterT = 0
+            setMode('play'); screen = 'play'
+            audioController.playSweep(520, 980, 0.12, 'square', 0.05)   // loop-up, a rising call
+        }
+
         const stepSim = (pad) => {
             step(gs, pad, simPad2())
             drain()
@@ -339,6 +361,10 @@ export default function ContraGame () {
                 ctx.fillStyle = '#cdeea8'
                 ctx.font = 'bold 9px "Courier New", monospace'
                 ctx.fillText('THE CORE IS DUST — THE BASE IS BROKEN', 96, 116)
+                // #2894 the arcade never quits on you — it sends the stage back hotter
+                ctx.fillStyle = '#ffd23c'
+                ctx.font = 'bold 9px "Courier New", monospace'
+                ctx.fillText(`STAGE 1 STRIKES BACK — LOOP ${gs.loop + 1}`, 104, 132)
             } else if (screen === 'over') {
                 ctx.fillStyle = '#e23b2e'
                 ctx.font = 'bold 16px "Courier New", monospace'
@@ -368,7 +394,7 @@ export default function ContraGame () {
                             if (gs.end === 'win' || gs.end === 'dead') demoHold = 120
                         } else if (screen === 'clear') {
                             gs.tick += 1
-                            if (--clearHold <= 0) endTo('attract')
+                            if (--clearHold <= 0) startLoop()   // #2894 the arcade never sends you back to attract on a win — it loops
                         } else if (screen === 'over') {
                             gs.tick += 1
                         }
@@ -446,6 +472,7 @@ export default function ContraGame () {
                 probe: () => ({
                     screen, tick: gs.tick, x: +gs.p.x.toFixed(2), y: +gs.p.y.toFixed(2), onGround: gs.p.onGround,
                     lives: gs.lives, score: gs.score, weapon: gs.p.weapon, end: gs.end, cam: Math.round(gs.cam),
+                    loop: gs.loop, lk: +gs.lk.toFixed(3), seed: gs.seed,   // #2894 the arcade loop is observable
                     phase: gs.phase, camY: +gs.camY.toFixed(2),
                     core: gs.boss ? gs.boss.core : null,
                     coreOpen: gs.boss ? (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen : null,
@@ -478,6 +505,7 @@ export default function ContraGame () {
                     if (opts.inv !== undefined) gs.p.inv = opts.inv
                     if (opts.coreOpen !== undefined && gs.boss) gs.boss.coreT = opts.coreOpen ? 0 : CFG.coreOpen + 20
                     if (opts.clearBoss && gs.boss) { gs.boss.guns.forEach((g) => { g.t = 1e9 }); gs.boss.doors.forEach((d) => { d.t = 1e9 }); gs.soldiers.length = 0 }
+                    if (opts.loop !== undefined) { gs.loop = Math.max(1, opts.loop | 0); gs.lk = loopK(gs.loop) }   // #2894 aim the tempo from the harness
                     // #2880: stand a caved (or dented) near housing for the browser legs
                     if (opts.gunHp0 !== undefined && gs.boss) {
                         gs.boss.guns[0].hp = Math.max(0, opts.gunHp0)
@@ -513,7 +541,7 @@ export default function ContraGame () {
                 title: 'CONTRA',
                 getState: () => [
                     `x ${gs.p.x.toFixed(0)}/${CFG.worldW}  cam ${Math.round(gs.cam)}/${Math.round(gs.camY)}  y ${gs.p.y.toFixed(0)}  ground ${gs.p.onGround ? 1 : 0}  phase ${gs.phase}`,
-                    `score ${gs.score}  lives ${gs.lives}  weapon ${gs.p.weapon}  inv ${gs.p.inv}  end ${gs.end || '-'}` + (gs.boss ? `  core ${gs.boss.core}/${CFG.coreHp} ${gs.boss.dying ? 'DYING' : (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen ? 'OPEN' : 'SHUT'}` : ''),
+                    `score ${gs.score}  lives ${gs.lives}  weapon ${gs.p.weapon}  inv ${gs.p.inv}  end ${gs.end || '-'}  loop ${gs.loop} k=${gs.lk.toFixed(2)}` + (gs.boss ? `  core ${gs.boss.core}/${CFG.coreHp} ${gs.boss.dying ? 'DYING' : (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen ? 'OPEN' : 'SHUT'}` : ''),
                     `ALLY ${gs.p2.out ? 'DOWN' : `x ${gs.p2.x.toFixed(0)}  y ${gs.p2.y.toFixed(0)}  ${gs.p2.human ? 'HUMAN' : 'CPU'}  ${gs.p2.weapon}`}  POOL ${gs.lives}`,
                     `soldiers ${gs.soldiers.filter((s) => !s.dead).length}/${gs.soldiers.length} alive  turrets ${gs.turrets.filter((t) => !t.dead).length}  snipers ${gs.snipers.filter((t) => !t.dead).length}  nades ${gs.eb.filter((b) => b.gr).length}  barrels ${gs.barrels.filter((b) => !b.gone).length}  bullets p/e ${gs.pb.length}/${gs.eb.length}`,
                     `SKY ${gs.carriers.length ? `carrier hp ${gs.carriers[0].hp} ${gs.carriers[0].kind}` : 'clear'}  pods ${gs.pods.length}  next courier t${gs.nextCarrier}`,
@@ -526,6 +554,7 @@ export default function ContraGame () {
                     { label: 'CYCLE WHEEL', run: () => { const w = ['rifle', 'spread', 'machine', 'fire', 'laser']; gs.p.weapon = w[(w.indexOf(gs.p.weapon) + 1) % w.length]; return 'weapon: ' + gs.p.weapon } },
                     { label: 'CAPSULE HERE', run: () => { gs.capsule = { x: gs.p.x + 24, y: gs.p.y - 14, vx: 0 }; return 'capsule inbound' } },
                     { label: 'CARRIER HERE', run: () => { if (gs.carriers.length) return 'a courier is already over the jungle'; gs.carriers.push({ x: gs.p.x + 120, y: 164, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: 'laser', dead: false }); return 'gunship inbound — shoot it down' } },
+                    { label: 'LOOP +1', run: () => { gs.loop += 1; gs.lk = loopK(gs.loop); return `stage 1 at loop ${gs.loop} — pressure x${gs.lk.toFixed(2)}` } },   // #2894
                     { label: 'P2: HUMAN SEAT', run: () => { if (gs.p2.out) return 'seat down — pool spent'; if (gs.p2.human) releaseSeat(gs); else dropIn(gs); return gs.p2.human ? 'human seat: the soldier rappels in (WASD/F/G)' : 'wingman back on the seat' } },
                     { label: 'TO WATERFALL', run: () => { warpFalls(gs); return 'into the canyon' } },
                     { label: 'TO THE GATE', run: () => { warpBoss(gs); return 'before the core' } },
