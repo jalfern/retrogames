@@ -68,8 +68,13 @@ if [[ ${1:-} == --changed ]]; then
   last=$(cat $STAMP 2>/dev/null || true)
   [[ $head == $last ]] && { echo "origin/main $head already uploaded"; exit 0; }
   src=$OUT/src
+  # The forge's worktree purge (#2279) would remove this checkout (detached at origin/main,
+  # so it looks landed). The untracked marker makes it dirty, which the purge keeps; if it
+  # is gone anyway, prune the stale record and re-add it.
+  git -C $REPO worktree prune
   if [[ ! -d $src ]]; then git -C $REPO worktree add -q --detach $src $head
   else git -C $src checkout -q --detach $head; fi
+  echo "build checkout for native/testflight.sh (#2443); keeps worktreepurge off" > $src/.testflight-checkout
   # Always run origin/main's copy of this script, whichever checkout launchd points at.
   [[ $NATIVE == ${src:A}/native ]] || exec $src/native/testflight.sh --changed
   for p in $ALL; do
