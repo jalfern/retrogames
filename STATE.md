@@ -1,74 +1,70 @@
-# STATE — forge board snapshot (slot a, 2026-11-22 — shipped)
+# STATE — forge board snapshot (slot b, 2026-11-22 late — shipped)
 
 ## This session shipped
-- **Contra trainable adapter** (#1712 S2 slice → PR **#2969** → main `9838eab`,
-  prod-verified: `Contra-DsaiCIxB.js` carries the `seat2` drop-in law).
-  - Consent-gated live capture, per-tick pad-pair banking, P2 drop-in ceremony
-    as `rules.seat2` bank ticks, honest 67-feature rows (vision-masked,
-    `model.js`), one take spans arcade loops via `sim.js arcadeLoop` carry (#2958).
-  - Verdicts: contracheck 213/213, plaicraft:datasetcheck 70/70 + mutants 10-12
-    RED by design, contractcheck 771/771, plaicraftcheck green, lint gates + build.
-  - **Consent-vs-arcade lesson (the run's real catch):** Gauntlet-shaped consent
-    parked the privacy modal BEFORE play; Contra's law is *any key takes the seat*
-    and contracheck drives it with real keys → 21 checks starved at attract.
-    Fixed arcade-shaped: `startPlay()` synchronous, consent gates RECORDING only
-    (`beginRun` on stored grant; banking behind `isRecording() &&
-    !contractHoldsLoop()`), sources honest at origin (#2058), `openGame({decline:true})`
-    for robots (watchcheck pattern). Future trainable games: copy THIS, not Gauntlet's key-path.
-- 8b QA polish filed: **#2971** (disclosure chip, phone consent flow, seat-2 copy,
-  first real phone take).
+- **FloorBoss same-frame tap law** (#2966 → PR #2970 → main `d5eac2f`, prod-
+  verified in the live chunk). Never-dry stage: idle-kick `KICK FLOOR BOSS 0
+  weak` (score 3 = 2 unowned README gaps + feedback #2964; R-TYPE equal-scored
+  but QA-held #2952; flagships all owned). The bank promises one pointer per
+  row; the shell mutated at click time — two taps in one frame both landed
+  before step t+1 while rows said tap1@t+1,tap2@t+2, so legitimate fast-tap
+  takes refused on the hash. Fix: solo tap still applies at click (between-
+  steps apply == replay-before-step at every hashed checkpoint); a tap that
+  finds the bank busy only queues, and the drain applies it at the tick it
+  banks on. Latency ≤ one tick; fx unchanged.
+  Harvest: `clickOrder` referenced its own initializer (`o` inside its own
+  predicate) — EVERY contract-card tap was a silent ReferenceError (dead tap).
+  Fixed + open/shipped/expired regression pins.
+  Proof: floorbosscheck green — seed 7 OLD shape refuses exactly at checkpoint
+  300 via floorBossRows, NEW shape replays clean (301 ticks), source pins;
+  mutant `--mutate-taps` dies by name; datasetcheck 66/66; lint×3 + build;
+  floorbossplay: card tap lights prio zero page errors, back-to-back taps
+  land, existing single-tap legs unchanged.
+- **Slot a in parallel:** Contra trainable adapter #2969 (main `9838eab`) +
+  its STATE `eec4d14`. Both lanes green.
 
-## #1712 status (TARGET, stays OPEN on purpose)
-- Done: trainable surface for TWO games (gauntlet + contra), store-ready.
-- Open lines, both human-data-gated: `gamesCovered>=2` needs the first real
-  Contra take through a phone (prod store 18 takes, gauntlet-only at last check —
-  rerun `plaicraft:outbox`/store page before any new code); holdout needs takes
-  from 2 live players. No human data can be faked (big-build rule 1).
-- #2953's answered-default ("widen adapters while store waits") is now CONSUMED
-  by #2969 — next #1712 progress is data, or holdout mechanics when data exists.
-
-## Nightly / freeze at write-time
-- Tip `9838eab` nightly not yet started; last completed run SUCCESS. #601 clear.
-
-## PLAYABLE on main right now (prod-verified)
-- `/retrogames/contra` — trainable: answer Yes once and your thumb's runs bank
-  as consented takes (P2 = keyboard W/A/S/D/F/G drop-in; CPU wingman default).
-- `/retrogames/floor-boss` — career takes (one take spans a whole shift).
-- `/retrogames/r-type` — volley pre-dodge brains (#2951).
+## PLAYABLE on main right now
+- `/retrogames/floor-boss` — fast taps record honestly; contract cards answer
+  (this session; Vercel Production on `d5eac2f`).
+- `/retrogames/contra` — consent-gated capture, seat-2 law (slot a).
+- `/retrogames/r-type` — volley pre-dodge (#2955).
 
 ## Board at close
-- `building`: **#2966** (FloorBoss tap-burst bank, slot-a 2nd-wave session —
-  do not touch). **#1712** open (human data). `game-queue` empty.
-- `feedback`: #2952 closed-shipped? (#2967 merged) + **#2964** (FB) + **#2971** (new).
+- `game-queue` empty, `steer`/`next` empty. `building`: #1712 PLAICRAFT S2
+  (store-data-blocked friend takes; ask #2953). `feedback`: #2964 (FloorBoss
+  polish — QA's), #2952 R-TYPE (`building-qa`, QA holds).
+- FloorBoss README honest gaps now: the conservative WATCH stamp (deliberate
+  #2058 law) — tap-per-frame is CLOSED. Consider a DISCLAIMER marker next
+  time the README is touched, so weakestStage doesn't re-kick a decided law.
 
 ## Open questions for Jon (links only, #605)
-- **#2846 promote flagships? — due 11-23 (tomorrow)**, #2908, #2930 (QA DD seat
-  laws). #2953 consumed this session (default taken, recorded on-thread).
+- #2953 — S2 friend-takes invite flow; default: widen adapters (Contra done).
+- #2846 — promote CONTRA/R-TYPE/DOUBLE DRAGON public? (due 11-23).
+- #2908, #2930 (QA lane) — DD seat laws.
 
 ## Harness notes (carry-overs)
-- **`gh pr merge` needs local `main` free**: `fix-smallmodel` worktree holds the
-  `main` branch → merge *did* land remotely, gh then died on local cleanup
-  (misleading error). Verify merge with `gh pr view --json state,mergedAt` before
-  retrying anything; local branch cleanup is manual (`git checkout --detach` first).
-- **Prod grep recipes** (unchanged, re-proved): deployments API sha = merge→prod
-  proof; game code in lazy chunks referenced `"./Name-hash.js"`; curl needs `-L`
-  (jalfern.com 308→www — a bare grep of redirected 15-byte bodies "proves"
-  nothing); string literals survive minification (`seat2` does, function names don't).
-- **Consent gate in harness**: seed the stored decline (`openGame({decline:true})`)
-  for any game whose entry asks; a robot is not a consenting human. Do NOT gate
-  play behind consent in arcade-entry games.
-- watchcheck FLOORBOSS pin window tight at 300 (~294 used) — see FloorBoss README.
+- **A/B against HEAD~1 via `git checkout <c> -- file` erases UNCOMMITTED
+  work.** Lost a fresh floorbossplay leg this way mid-session (re-added).
+  Commit before any checkout-swap experiment; this repo's discipline (commit
+  per increment) is what saves you.
+- floorbossplay's late rig/quota legs are **machine-load flaky**: under a
+  loaded box (parallel lanes, repeated headless runs) the untouched
+  origin/main baseline failed the same families at 59–61/96 while this branch
+  held 71/99 with its new legs green. Advisory per rule 3 — compare against
+  a same-load baseline before blaming a branch.
+- Scripted rigs tap faster than a frame; after #2966 such bursts serialize
+  one-per-tick by design. Rig legs that need instant multi-place are leaning
+  on the old broken superpower — if one ever fails deterministically at low
+  load, pace its taps (≥ one tick apart), don't relax the bank law.
+- Merge-loop gotcha: local worktree `/Users/jon/Dev/retrogames-fix-smallmodel`
+  holds `main` locally, so post-merge `git checkout` of main prints
+  "already used by worktree" — harmless; the squash merge lands anyway
+  (verify via origin/main log + re-detach).
 
 ## Slots / ops
-- Slot a port 5173: this lane's servers stopped (by port); port free.
-- Worktrees left: `retrogames-forge-plaicraft-s2-contra` (merged; re-detached
-  `9838eab`; safe to remove), plus old cleanables listed in prior STATE
-  (`forge-rtype-volley`, `forge-watchcheck-fb-window`).
-- Main checkout detached `origin/main` `9838eab`; STATE.md committed+pushed to
-  main (game merged, rule 9) and parked via `statepark.mjs park a`.
-
-## Next lane starting here
-- Nothing claimable is code: #1712's two lines are human data — check the store
-  (#2971's phone-take checklist may deliver it) before writing anything.
-- If tip nightly goes RED → 5a first (harness-only calibration goes without asking).
-- #2846 deadline tomorrow; warden sweep takes the default at deadline — fine.
+- Slot b port 5178: dev server stopped via `scripts/devstop.sh` ✓.
+- Worktrees left: `retrogames-forge-floorboss-tap-drain` (branch merged; dir
+  prunable) + older prunable dirs from 11-22 earlier sessions.
+- Nightly watch: next scheduled nightly is the first full-suite run over
+  `d5eac2f` (career takes + volley + Contra adapter + this fix together).
+- Main checkout: detached `origin/main`, STATE.md committed this session
+  (#2970 merged) + `statepark.mjs park b`.
