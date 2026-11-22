@@ -82,6 +82,8 @@ import { makeGame as contraMakeGame, step as contraStep, stateHash as contraHash
 import { featurize as contraFeaturize } from '../src/games/Contra/model.js'
 import { createGame as tmdMakeGame, step as tmdStep, hash as tmdHash } from '../src/games/TalkMeDown/engine.js'
 import { featurize as tmdFeaturize } from '../src/games/TalkMeDown/model.js'
+import { makeRun as fcMakeRun, step as fcStep, stateHash as fcHash, setSources as fcSetSources, applyRadio as fcApplyRadio } from '../src/games/FireCrew/sim.js'
+import { featurize as fcFeaturize } from '../src/games/FireCrew/model.js'
 import { newGame, heroFromPad, p2FromPad, seatedPartner } from './plaicraft-export.mjs'
 
 const argv = process.argv.slice(2)
@@ -518,6 +520,63 @@ export function talkMeDownRows(key, rec) {
     return { ok, mismatch: null, rows }
 }
 
+// FIRE CREW adapter (#1712 — the shelf's first NEW title since TalkMeDown
+// closed the eight): sim.js is Node-clean and seed-pure (firecrewcheck races
+// its autopilot byte-equal), and stateHash already quantizes its floats (the
+// cross-platform law — heat/4, tank/4, ladder*50, coarse smoke). Rows run per
+// tick per HUMAN seat ONLY: the cpu crew and the watch autopilot live inside
+// the sim, and their streams are not a person's (dd's seat2At doctrine).
+// rules.watch ("t0-t1,…" — primitives) seats the autopilot at the recorded
+// flips, so a watched run replays exactly, and seat-0 rows inside the spans
+// drop — the wheel was nobody's there. Radio calls re-enter through THE sim's
+// own applyRadio at the tick they banked on: battery and sweep never touch the
+// hash, and their first hash-visible effect (sweep light finding victims, cpu
+// steering) lands on the NEXT step either way — so the replay is exact without
+// guessing which side of the bank the phrase task won.
+export function fireCrewRows(key, rec) {
+    const gs = fcMakeRun(rec.seed)
+    const kinds = rec.slots.map((s) => (s.source && s.source.kind) || 'cpu')
+    fcSetSources(gs, kinds.map((k) => (k === 'human' ? 'human' : 'cpu')))
+    const spans = String((rec.rules && rec.rules.watch) || '').split(',')
+        .map((p) => { const [a, b] = p.split('-').map(Number); return Number.isInteger(a) && Number.isInteger(b) && b > a ? { a, b } : null })
+        .filter(Boolean)
+    const calls = new Map()
+    for (const c of (rec.voiceCmd || [])) {
+        if (!c || !Number.isInteger(c.t) || !c.ok || typeof c.intent !== 'string') continue
+        const lane = calls.get(c.t) || []
+        lane.push(c)
+        calls.set(c.t, lane)
+    }
+    const want = new Map(rec.hashes.map((x) => [x.t, x.h]))
+    const mems = {}
+    const rows = []
+    const finalT = rec.hashes.length ? rec.hashes[rec.hashes.length - 1] : null
+    for (let t = 0; t < rec.ticks; t++) {
+        const pads = rec.slots.map((s) => decodePad(s.pads[t], rec.method))
+        fcStep(gs, pads[0], pads)
+        const t1 = t + 1
+        for (const sp of spans) { // flips land between ticks, exactly as the sheet's keypress did
+            if (sp.a === t1) gs.sources[0] = 'cpu'
+            if (sp.b === t1) gs.sources[0] = 'human'
+        }
+        for (const c of (calls.get(t1) || [])) fcApplyRadio(gs, { kind: c.intent, side: c.side, dir: c.dir })
+        if (want.has(t1)) {
+            const got = fcHash(gs)
+            if (got !== want.get(t1)) return { ok: false, mismatch: { tick: t1, want: want.get(t1), got }, rows }
+        }
+        for (let i = 0; i < rec.slots.length; i++) {
+            if (kinds[i] !== 'human') continue // the cpu crew's stream is the sim's, not a person's
+            if (i === 0 && spans.some((sp) => t1 > sp.a && t1 <= sp.b)) continue // watched stretch: nobody's hands
+            if (!mems[i]) mems[i] = {}
+            const feat = fcFeaturize(gs, i, mems[i]).map((v) => +v.toFixed(3))
+            mems[i].pa = pads[i] // bank the autoregressive lane after the label
+            rows.push({ k: key, g: rec.game, s: rec.seed, t: t1, lvl: gs.done ? 1 : 0, seat: i, act: encodePad(pads[i]), feat })
+        }
+    }
+    const ok = !finalT || finalT.h === fcHash(gs)
+    return { ok, mismatch: null, rows }
+}
+
 const ADAPTERS = {
     gauntlet: gauntletRows,
     'floor-boss': floorBossRows,
@@ -527,6 +586,7 @@ const ADAPTERS = {
     'double-dragon': doubleDragonRows,
     contra: contraRows,
     'talk-me-down': talkMeDownRows,
+    'fire-crew': fireCrewRows,
 }
 
 // --- audio -----------------------------------------------------------------------

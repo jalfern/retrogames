@@ -199,6 +199,11 @@ export function createRecorder(opts = {}) {
             const t = Math.max(1, ticks)
             const entry = { t, said: e.said, intent: e.intent || null, ok: e.ok }
             if (e.dir) entry.dir = String(e.dir)
+            // #1712 fire-crew: a spot call names a SIDE ("victim on the west")
+            // and the sim answers it through lightAt — an adapter that cannot
+            // re-seat the sweep cannot replay-verify the take. Same codec law
+            // as dir: the word the sim acted on, kept verbatim.
+            if (e.side) entry.side = String(e.side)
             if (e.why) entry.why = String(e.why)
             // #2805: a two-mic rig can say WHICH mic heard the call. The stamp
             // is the recorder's to give (the recognition layer knows its device;
