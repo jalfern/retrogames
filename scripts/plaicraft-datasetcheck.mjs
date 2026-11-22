@@ -843,6 +843,40 @@ if (MUTATE) {
             if (fs.readFileSync(DS, 'utf8') !== src8) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 double-dragon adapter)'); r.failed++ }
         }
     }
+
+    // mutant 9 (#1712 tap replay): the banked-tap re-application skipped — a
+    // floor-boss take whose phone ran taps can no longer rebuild to its hashed
+    // states, so the whole build must go red (unverified rows are never
+    // shipped, S1's law). If the tap take still verifies, the tap line is
+    // decoration.
+    const src9 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR9 = 'if (tp && tp.down) fbTap(gs, tp.x * FB_W, tp.y * FB_H)'
+    if (!src9.includes(ANCHOR9)) {
+        console.log('FAIL   tap-replay anchor not found — update the mutant (#1712)')
+        r.failed++
+    } else {
+        plant(DS, src9.replace(ANCHOR9, 'if (false && tp && tp.down) fbTap(gs, tp.x * FB_W, tp.y * FB_H) /* MUTANT: tap replay skipped */'))
+        try {
+            const sim9 = await startRelaySim()
+            try {
+                const tTap = scriptedTake({ game: 'floor-boss', seed: 31, ticks: 180, seats: [{ kind: 'human' }], taps: [{ t: 40, px: 539, py: 20 }] })
+                await uploadSession(tTap, { player: 'tessa', consent: { motion: true, voice: false }, base: sim9.base })
+                const outM9 = path.join(tmp, 'tap-mut')
+                const cli9 = await new Promise((resolve) => {
+                    const p = spawn(process.execPath, [DS, '--store', sim9.base, '--out', outM9, '--limit', '50'],
+                        { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                    let stdout9 = ''
+                    p.stdout.on('data', (d) => { stdout9 += d })
+                    p.on('exit', (code) => resolve({ status: code, stdout: stdout9 }))
+                })
+                r.check('floor-boss tap replay is load-bearing: the banked-tap take must fail verification (RED under the tap-skip mutant, #1712)',
+                    cli9.status !== 0, cli9.status === 0 ? 'tap take verified WITHOUT applying the taps' : 'build refused')
+            } finally { sim9.close() }
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src9) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 tap replay)'); r.failed++ }
+        }
+    }
 }
 
 sim.close()
