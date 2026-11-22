@@ -1,70 +1,68 @@
 # STATE — forge board snapshot (slot b, 2026-11-22 late — shipped)
 
 ## This session shipped
-- **FloorBoss same-frame tap law** (#2966 → PR #2970 → main `d5eac2f`, prod-
-  verified in the live chunk). Never-dry stage: idle-kick `KICK FLOOR BOSS 0
-  weak` (score 3 = 2 unowned README gaps + feedback #2964; R-TYPE equal-scored
-  but QA-held #2952; flagships all owned). The bank promises one pointer per
-  row; the shell mutated at click time — two taps in one frame both landed
-  before step t+1 while rows said tap1@t+1,tap2@t+2, so legitimate fast-tap
-  takes refused on the hash. Fix: solo tap still applies at click (between-
-  steps apply == replay-before-step at every hashed checkpoint); a tap that
-  finds the bank busy only queues, and the drain applies it at the tick it
-  banks on. Latency ≤ one tick; fx unchanged.
-  Harvest: `clickOrder` referenced its own initializer (`o` inside its own
-  predicate) — EVERY contract-card tap was a silent ReferenceError (dead tap).
-  Fixed + open/shipped/expired regression pins.
-  Proof: floorbosscheck green — seed 7 OLD shape refuses exactly at checkpoint
-  300 via floorBossRows, NEW shape replays clean (301 ticks), source pins;
-  mutant `--mutate-taps` dies by name; datasetcheck 66/66; lint×3 + build;
-  floorbossplay: card tap lights prio zero page errors, back-to-back taps
-  land, existing single-tap legs unchanged.
-- **Slot a in parallel:** Contra trainable adapter #2969 (main `9838eab`) +
-  its STATE `eec4d14`. Both lanes green.
+- **PLAICRAFT S2 trainable adapter: TALK ME DOWN** (#1712 → PR #2976 → main
+  `3a6ed2f`, Vercel deploy verified). The last autoRecord-wired game without a
+  replay adapter now has one: consented phone takes land train/heldout WITH
+  features instead of flagged `feat:null`.
+  - `src/games/TalkMeDown/model.js` — THE 151-feature featurizer. Keeps the
+    game's true split-information law in the dataset (rally partition precedent,
+    this game is the real thing): defuser rows = panel eyes + the CPU manual's
+    LCD order rail (solo), NEVER rulebook facts; manual rows = page/line/flag +
+    live-stamp rail (#1880), NEVER panel facts. Back plate gated by flip (#1797);
+    prev-pad lane banked after the label (model.js contract).
+  - `talkMeDownRows` — replays takes against THE seed-pure engine.js, verifies
+    every checkpoint + final hash (S1's law). Offline semantics: seats chosen at
+    seed-birth, online runs not auto-recorded at S2 — no drop-in stamp needed.
+  - `plaicraft:datasetcheck` 70→**77** (+ mutant 13, 13/13 die by name). The
+    no-adapter gate fixture moved to gravel-yard (gate still proven); solo+couch
+    TMD fixtures ride the trainable splits; order-rail + flip-gate pinned on
+    deterministic sim legs (random fixtures CAN'T pin them: dice hit strike locks).
+  - Prod-store run on the post-merge builder: version `5dcb62ac…` byte-identical
+    to pre-merge — corpus unchanged because the store holds no TMD takes yet.
+    This is ground-work, not proof; gamesCovered is still 1/2 (gauntlet only),
+    holdout blocked need-2-players. **Lines are human-data, as ever.**
+  - QA polish filed: **#2978** (order-string coupling, rail visibility design
+    call, lineFrac depth, first live phone take, N_ACT vs banked `b`).
 
 ## PLAYABLE on main right now
-- `/retrogames/floor-boss` — fast taps record honestly; contract cards answer
-  (this session; Vercel Production on `d5eac2f`).
-- `/retrogames/contra` — consent-gated capture, seat-2 law (slot a).
-- `/retrogames/r-type` — volley pre-dodge (#2955).
+- `/retrogames/talk-me-down` — play unchanged (adapter is script-side); its
+  consented takes are trainable from this build.
+- `/retrogames/floor-boss` (#2966), `/retrogames/contra` (#2969), `/retrogames/r-type` (#2955).
 
 ## Board at close
-- `game-queue` empty, `steer`/`next` empty. `building`: #1712 PLAICRAFT S2
-  (store-data-blocked friend takes; ask #2953). `feedback`: #2964 (FloorBoss
-  polish — QA's), #2952 R-TYPE (`building-qa`, QA holds).
-- FloorBoss README honest gaps now: the conservative WATCH stamp (deliberate
-  #2058 law) — tap-per-frame is CLOSED. Consider a DISCLAIMER marker next
-  time the README is touched, so weakestStage doesn't re-kick a decided law.
+- `game-queue` empty; `steer`/`next` empty. `building`: #1712 (stage open by
+  design — human-data lines; #2953 AWAITING).
+- `feedback`: #2978 (this session's QA ask), #2971 contra-adapter polish,
+  #2964 FloorBoss polish, #2952 R-TYPE (building-qa, QA holds).
+- Adapter shelf: ALL EIGHT autoRecord-wired games are now trainable
+  (gauntlet, floor-boss, bomb-defuse, SOS, rally, double-dragon, contra,
+  talk-me-down). Next shelf work = wiring a new game (fire-crew/gravel-yard
+  have voice but no autoRecord) — that is a game-code stage for a future session.
+- Prod card: 18 takes, 8 audio tracks, human gauntlet-only.
 
 ## Open questions for Jon (links only, #605)
-- #2953 — S2 friend-takes invite flow; default: widen adapters (Contra done).
+- #2953 — S2 friend-takes invite flow (due 11-24; default "keep widening
+  adapters" now carries further: Contra AND TalkMeDown done).
 - #2846 — promote CONTRA/R-TYPE/DOUBLE DRAGON public? (due 11-23).
 - #2908, #2930 (QA lane) — DD seat laws.
 
 ## Harness notes (carry-overs)
-- **A/B against HEAD~1 via `git checkout <c> -- file` erases UNCOMMITTED
-  work.** Lost a fresh floorbossplay leg this way mid-session (re-added).
-  Commit before any checkout-swap experiment; this repo's discipline (commit
-  per increment) is what saves you.
-- floorbossplay's late rig/quota legs are **machine-load flaky**: under a
-  loaded box (parallel lanes, repeated headless runs) the untouched
-  origin/main baseline failed the same families at 59–61/96 while this branch
-  held 71/99 with its new legs green. Advisory per rule 3 — compare against
-  a same-load baseline before blaming a branch.
-- Scripted rigs tap faster than a frame; after #2966 such bursts serialize
-  one-per-tick by design. Rig legs that need instant multi-place are leaning
-  on the old broken superpower — if one ever fails deterministically at low
-  load, pace its taps (≥ one tick apart), don't relax the bank law.
-- Merge-loop gotcha: local worktree `/Users/jon/Dev/retrogames-fix-smallmodel`
-  holds `main` locally, so post-merge `git checkout` of main prints
-  "already used by worktree" — harmless; the squash merge lands anyway
-  (verify via origin/main log + re-detach).
+- Rule-5 merge loop exits 1 AFTER a successful merge when `fix-smallmodel` holds
+  `main` locally ("already used by worktree") — hit again this session. Verify
+  origin/main + PR state before believing the exit code; merge landed (`3a6ed2f`).
+- scriptedTake dice freeze behavior pins: TMD's strike lock is 180 ticks, so
+  anything needing a quiet dwell (the CPU's 90-tick think) must be pinned on a
+  hand-driven sim, not on random fixtures.
+- All lanes off the old `talk-me-down` no-adapter expectations — gate proven via
+  gravel-yard now; don't "fix" it back.
 
 ## Slots / ops
 - Slot b port 5178: dev server stopped via `scripts/devstop.sh` ✓.
-- Worktrees left: `retrogames-forge-floorboss-tap-drain` (branch merged; dir
-  prunable) + older prunable dirs from 11-22 earlier sessions.
-- Nightly watch: next scheduled nightly is the first full-suite run over
-  `d5eac2f` (career takes + volley + Contra adapter + this fix together).
-- Main checkout: detached `origin/main`, STATE.md committed this session
-  (#2970 merged) + `statepark.mjs park b`.
+- Worktrees left: `retrogames-forge-plaicraft-s2-audio-align` (merged; dir
+  prunable) + older prunable dirs from 11-22 sessions.
+- Main checkout: detached `origin/main` @ `3a6ed2f`; STATE.md committed this
+  session (#2976 merged) + `statepark.mjs park b`.
+- Nightly watch: first full nightly over `3a6ed2f` runs the adapter + dataset
+  legs together; prod dataset version must stay `5dcb62ac…` until a real
+  talk-me-down take lands (byte-identity is the honesty check).
