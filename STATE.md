@@ -1,79 +1,72 @@
-# STATE — forge board snapshot (slot b, 2026-11-22 — shipped)
+# STATE — forge board snapshot (slot a, 2026-11-22 2nd wave — shipped + freeze cleared)
 
 ## This session shipped
-- **FloorBoss career takes** (#2958 → PR #2959 → main `ff6f58f`, prod
-  deployed). Never-dry stage: `idle-kick` said `KICK FLOOR BOSS 0 weak`
-  (flagships all owned/held, queue empty, feedback held by QA) — filed,
-  claimed, built. A cleared whistle no longer ends a consented take:
-  clocking into the next shift banks ONE take (contiguous rows — the over
-  screen pauses wall-time, never ticks; same seed/stream; shift bits ride
-  stateHash #2346). The take ends at the real end: lost night at the sheet
-  (`finish`), cleared night walked to attract (`closeTake`: key-exit,
-  tap-exit, contract reset, unmount). Adapter (`plaicraft-dataset`
-  floorBossRows) replays the seam — rows past a win advance `nextShift`,
-  checkpoints keep judging; invented post-whistle rows refuse. Proof:
-  synth career take (seed 4242, 2 nights, 18k ticks) validates; mutants
-  `--mutate-career` / `--mutate-whistle` RED-BY-DESIGN; floorbosscheck
-  green, datasetcheck 66/66, lint×3, build. Consent/watch law untouched
-  (#2058 stamp persists across seams).
-- **Main cleared twice (#601/#2176), harness-only:**
-  1. #2957 (`0565b21`): frogger zero-death pin followed the #2869 floor
-     (≥34→≥38; #2884 bumped the text, the pin missed it) — nightly
-     45033023373's lone red.
-  2. Feed-window pin: #2954's tap-mirror grew the FloorBoss feed line to
-     217 chars vs watchcheck's `{0,200}` (nightly 45045144722's lone red).
-     My #2963 (`{0,240}`) was closed obsolete — slot a's #2962 landed first
-     at `{0,300}`, which survives the career-take lines too. Lesson:
-     cross-lane duplicate main-fixes race; the WIDER window wins.
-- **Also on main from slot a today:** R-TYPE volley pre-dodge (#2951 → #2955
-  `b779123`), deps npm audit fix (#2960). Career-take merge also merged
-  slot-a-side while I was timeboxed — cross-checked all landed clean.
+- **R-TYPE volley pre-dodge is LIVE** (#2951 → PR #2955 → main `b779123`,
+  prod-verified: served `RType-ZZwRkIbo.js` carries `volley:1}` + both brain
+  reads). Re-validation here (rtypecheck 234/234 incl. the on-screen marked-fan
+  leg; mutants 231/231, `pre-dodge-deaf`/`cross-blind` red-by-design; no file
+  overlap with main since base) + merge by the slot-a sibling run at 18:59.
+  #2951 closed, `shipped` label fixed (it was left `building`).
+- **Main-fix #2965 filed & closed as duplicate**: nightly `45045144722` re-red
+  on watchcheck's FLOORBOSS watch pin — #2954's tap bank (`tapPad`/`step`/
+  `recordLiveTick`, ~206 chars) outran the pin's 200-char window. Honesty rule
+  verified intact on main (`ap(gs)` pad is `recordTick`'s FIRST arg, only call
+  site); pin still REDs against the real lie (`recordTick(livePad(), …)`).
+  Sibling #2962 (`d10493a`, same fix) merged first → #2965 closed, branch gone.
 
-## PLAYABLE on main right now
-- `/retrogames/floor-boss` — career takes: a cleared night + clock-in is one
-  recorded, replayable take (this session; Vercel Production on `ff6f58f`+).
-- `/retrogames/r-type` — volley pre-dodge (#2955).
-- `/retrogames/double-dragon` — carrier rotations + duel steel.
+## Playable on main right now
+- `/retrogames/r-type` — volley pre-dodge LIVE (this session, prod-checked).
+- `/retrogames/floor-boss` — career takes #2958 (`ff6f58f`, sibling lane) + S2
+  tap recording (`d7ff731`).
+
+## Main / nightly state (verify before merging anything)
+- `main-ok` passes: latest completed nightly = CANCELLED (not failure).
+- In flight at close: nightly `45057066348` on `d10493a` (does NOT contain
+  volley/career-takes), dispatch CI `45062646884` + nightly `45062897047`
+  dispatched BY THIS LANE on HEAD `9127f4e` — the tip-true evidence. If the
+  HEAD nightly goes red, that's a real regression on b779123/ff6f58f, not the
+  stale-SHA kind.
 
 ## Board at close
-- `game-queue` empty, `steer`/`next` empty. `building`: #1712 PLAICRAFT S2
-  stays open ON PURPOSE (S2 lines are store-data-blocked — friend takes;
-  ask #2953). `feedback`: #2952 held by QA (`building-qa`).
-- FloorBoss README still lists 2 honest gaps (tap-per-frame refusals,
-  conservative WATCH stamp — both deliberate law, not free work) + a
-  documented frozen-hashes gap (appended rows behind a LOST take are
-  hash-invisible).
-- Nightly `45057066348` in progress on `d10493a` (covers both pin fixes);
-  NOTE: it does NOT contain `ff6f58f`/`8318eab`/`b779123` — the next
-  scheduled nightly is the first full-suite proof of career takes, the
-  deps bump, and the volley. Keep an eye on it.
+- `game-queue` empty. `building` = #1712 only (big-build, store-blocked; the
+  two open lines are HUMAN takes — see #2953, check outbox before code).
+- `feedback` = #2952 (R-TYPE dodge-wink + wingman cover-fire) — QA lane.
+- Ladder for the next lane: run `scripts/idle-kick.mjs` fresh — two games' gap
+  lists changed today (R-TYPE gap 0 and FloorBoss gap 0 both shipped).
 
 ## Open questions for Jon (links only, #605)
-- #2953 — S2 friend-takes invite flow; default: widen adapters (Contra next).
-- #2846 — promote CONTRA/R-TYPE/DOUBLE DRAGON public? (due 11-23).
-- #2908, #2930 (QA lane) — DD seat laws.
+- #2846 — promote CONTRA / R-TYPE / DOUBLE DRAGON to public? (due 11-23,
+  default keep private).
+- #2953 — friend-takes invite flow vs Jon collects; default widen adapters.
+- #2908, #2930 (QA lane) — DD seat laws (due 11-24).
 
-## Harness notes (carry-overs)
-- Watchcheck pins that measure a CODE WINDOW (`{0,200}` style) rot when a PR
-  inserts lines between the anchors. Two bites today (frogger text, floor-boss
-  window). Any PR adding lines inside a pinned span: grep watchcheck for the
-  game's pin family FIRST and widen in the same PR.
-- A `gh pr merge --squash --delete-branch` run from a worktree can vanish the
-  worktree dir mid-command when the cleaner races it (twice today:
-  forge-red-main-frogger-pin, forge-mainfix-feed-window). Commit EARLY, push
-  after every increment — the pushed branch survived both times and nothing
-  was lost. `git worktree prune` after.
-- Slot-a/slot-b main-fix race: same diagnosis, two PRs; GitHub closed the
-  loser cleanly. Next time, check `gh pr list` for an open fix on the same
-  pin BEFORE opening one.
-- Mutant runs in this repo refuse a dirty tree (good) and `pull(sim)` only
-  restored sim.js — #2959 ships `pull(tgt)` so painter/adapter mutants
-  restore their own file.
+## Ops anomaly (reported on #1258)
+Two slot-a runners were active ~18:40–19:00: the sibling rebased+merged my
+#2955 and wrote a slot-a STATE close-out (16c8211) while this session waited on
+#2965's static. Work is consistent and no double-merge happened, but the
+double-kick wasted one PR (#2965 vs #2962) and one full watchcheck pass.
+
+## Harness notes (new this session)
+- **200-char source windows rot when games grow.** Both of today's reds were
+  calibration (frogger floor #2957, FB window #2962/#2965), not laws. Prefer
+  anchoring pins on unique call-site tokens over distance windows; if a check
+  reds after an unrelated merge, count the gap before assuming regression.
+- **pull_request CI still misses lane PRs** (#2955, #2965): only Vercel shows.
+  Workaround: `gh workflow run ci.yml --ref <branch>`, gate on the head-SHA
+  check-runs API for `static`.
+- **`npm audit fix` #2960 changed the lockfile on main** — the STATE
+  "cp -cR node_modules" trick now requires lockfile equality against CURRENT
+  main, not yesterday's. A stale clone passes boot but can differ under test.
+- **nohup'd vite servers die silently after ~10–20 min** (twice today, no
+  error in vite's log; suspect macOS reaper/jetsam). Drive suites while the
+  server is fresh; a wall of `DEV hook present` FAILs = dead/reloading server,
+  restart + rerun, not game bugs.
 
 ## Slots / ops
-- Slot b port 5178: no dev server was started this session (all Node-side
-  proof) — nothing to devstop.
-- Worktrees left: forge-floorboss-career-take + forge-red-main-frogger-pin
-  (branches merged/shipped; dirs prunable — remove when convenient).
-- Main checkout: detached `origin/main`, STATE.md committed this session
-  (#2959 merged) + `statepark.mjs park b`.
+- Slot a dev server 5173 stopped with `scripts/devstop.sh`; no lane ports
+  touched. Volley + watchcheck worktrees removed; main checkout detached at
+  `9127f4e`; STATE.md committed this session (#2955 merged ✓).
+
+## Next lane starting here
+- If the HEAD nightly `45062897047` is green: ladder → #1712 store check →
+  idle-kick for the next POLISH issue. If red: red-main rules, fix before all.
