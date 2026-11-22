@@ -588,6 +588,9 @@ export default function DoubleDragon() {
                     introGoons: gs.intro ? gs.intro.goons.map((e) => `${e.state}:${Math.round(e.x - gs.camX)}:${e.y}:${e.stateT}`).join(',') : '',
                     duel: gs.enemies.some((e) => e.kind === 'duel') ? 1 : 0,
                     casts: gs.enemies.filter((e) => e.hasKnife).length,
+                    // #2945: the rotations, per-man, for the laws legs
+                    goonWeapons: gs.enemies.filter((e) => e.hasWhip || e.hasStick || e.hasKnife)
+                        .map((e) => `${e.kind}:${e.hasWhip ? 'whip' : e.hasStick ? 'stick' : 'knife'}:${e.state}`).join(','),
                     coop: gs.coop ? 1 : 0,
                     jimmy: gs.jimmy ? `${gs.jimmy.x.toFixed(0)}:${gs.jimmy.y}:${gs.jimmy.lives}:${gs.jimmy.human ? 'HUMAN' : 'CPU'}${gs.jimmy.out ? ':OUT' : ''}:${gs.jimmy.state}` : 'none',
                     jimmyZ: gs.jimmy ? +gs.jimmy.z.toFixed(2) : 0,
@@ -633,6 +636,16 @@ export default function DoubleDragon() {
                     }
                     if (opts.knifeGoon) {
                         gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: gs.billy.x + 70, y: gs.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 20, attackCooldown: 999, inv: 0, spinHit: false })
+                    }
+                    // #2945 rotations fixtures: a whip-man planted at a chosen
+                    // gap (default just inside crack range), a stick-man likewise.
+                    if (opts.whipGoon) {
+                        const [gx, gy] = Array.isArray(opts.whipGoon) ? opts.whipGoon : [gs.billy.x + 30, gs.billy.y]
+                        gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: gx, y: gy, face: gx > gs.billy.x ? -1 : 1, hp: opts.whipGoonHp ?? 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, hasWhip: true, castCooldown: 999, attackCooldown: opts.whipGoonCd ?? 0, inv: 0, spinHit: false, wob: 0, kb: 0 })
+                    }
+                    if (opts.stickGoon) {
+                        const [gx, gy] = Array.isArray(opts.stickGoon) ? opts.stickGoon : [gs.billy.x + 20, gs.billy.y]
+                        gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: gx, y: gy, face: gx > gs.billy.x ? -1 : 1, hp: opts.stickGoonHp ?? 4, state: 'walk', stateT: 0, anim: 0, hasStick: true, stickDropped: false, hasKnife: false, castCooldown: 999, attackCooldown: opts.stickGoonCd ?? 0, inv: 0, spinHit: false, wob: 0, kb: 0 })
                     }
                     if (opts.duel) {
                         gs.enemies.push({ id: gs.nextId++, kind: 'duel', x: gs.billy.x + 90, y: gs.billy.y, face: -1, hp: CFG.duelHp, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: true, castCooldown: 40, attackCooldown: 60, inv: 0, spinHit: false })

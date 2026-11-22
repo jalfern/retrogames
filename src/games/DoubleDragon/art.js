@@ -1154,7 +1154,10 @@ export function drawEnemy(ctx, e, camX) {
         ctx.fillStyle = '#5a3a20'
         if (pose === 'attack' && e.stateT >= 2 && e.stateT <= 12) {
             const t = (e.stateT - 2) / 10
-            const lit = e.stateT >= 3 && e.stateT <= 4
+            // #2942 lesson (#2897 before it): a 2-tick flash is stepping-over
+            // width on a loaded box — the tip-burn rides the same 4-tick
+            // window the dragon's own whip bite holds (#2819 whipFlash).
+            const lit = e.stateT >= 3 && e.stateT <= 3 + SIMCFG.whipFlash
             ctx.fillStyle = lit ? '#7c4c20' : '#4a2f18'
             let lx = sx, ly = sy - 20 * def
             for (let i = 0; i <= 12; i++) {

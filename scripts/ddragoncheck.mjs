@@ -33,6 +33,10 @@
 // that gates the street, is skip-courteous, and lifts the curtain on a stage
 // bit-identical to a no-movie run (hash parity); movie-frozen/skip-deaf/
 // crime-unnamed/curtain-stuck name its collapses.
+// #2945 arms the later waves — whip-Williams and stick-Williams in the yard,
+// winds that scale with reach (12/14/18), a whip that is a LINE catch, KO'd
+// men paying out their steel, the knife kept as the goon's ONLY cast, and the
+// weapon riding stateHash; whip-blind and rotation-dead name the collapses.
 // --mutant replants them and demands the harm is NAMED (#2142 direction).
 // The browser leg drives real key events through the shell: attract -> seat ->
 // walk/kick -> die -> restart, zero page errors; S4 adds the default blue
@@ -62,6 +66,7 @@ const mk = (kind, x, y, over = {}) => ({
     hp: over.hp ?? ({ williams: 4, amon: 6, abobo: 14 }[kind]),
     state: over.state ?? 'walk', stateT: over.stateT ?? 0, anim: 0,
     hasStick: !!over.hasStick, stickDropped: false,
+    hasWhip: !!over.hasWhip, hasKnife: !!over.hasKnife, castCooldown: over.castCooldown ?? 0,
     attackCooldown: over.attackCooldown ?? 60,
     inv: over.inv ?? 0, spinHit: false, ...over.rest,
 })
@@ -1651,6 +1656,40 @@ if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
     const plants = [
         {
+            name: 'whip-blind',
+            anchor: 'const depth = e.hasWhip ? CFG.goonWhipDepth : 8',
+            plant: 'const depth = 400 /* MUTANT(whip-blind): the lash stops asking the belt */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(2)
+                gs.billy.inv = 0
+                gs.billy.y = 184
+                gs.enemies.push({ id: 905, kind: 'williams', x: gs.billy.x + 30, y: 170, face: -1, hp: 4, state: 'attack', stateT: 1, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, hasWhip: true, castCooldown: 999, attackCooldown: 0, inv: 0, spinHit: false, wob: 0, kb: 0 })
+                for (let i = 0; i < 8; i++) { mod.step(gs, {}); gs.events.length = 0 }
+                return gs.billy.lives < 3
+                    ? 'HARM NAMED: a whip cracked 14px off its lane and took the life anyway (lives 3 -> ' + gs.billy.lives + ') — depth is the whole dodge; leather that forgets the belt makes the hideout undodgeable and the genre is dead (#2807, thrown edition)'
+                    : null
+            },
+        },
+        {
+            name: 'rotation-dead',
+            anchor: "gs.pickups.push({ x: e.x, y: e.y, kind: 'whip', bob: 0 })",
+            plant: '/* MUTANT(rotation-dead): the corpse keeps its leather */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(35)
+                gs.billy.inv = 999999
+                gs.enemies.push({ id: 906, kind: 'williams', x: gs.billy.x + 14, y: gs.billy.y, face: -1, hp: 1, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, hasWhip: true, castCooldown: 999, attackCooldown: 999999, inv: 0, spinHit: false, wob: 0, kb: 0 })
+                let ko = false
+                for (let i = 0; i < 90 && !ko; i++) {
+                    mod.step(gs, { b: i % 3 === 0 }, {})
+                    gs.events.length = 0
+                    ko = gs.enemies[0] ? gs.enemies[0].state === 'dying' : true
+                }
+                return ko && !gs.pickups.some((p) => p.kind === 'whip')
+                    ? 'HARM NAMED: the whip-man fell and kept his leather — bodies pay no steel, the walk-to-the-body stops arming anyone, and the hideout slides back into a bare-fist street: the rotation only lives if the dead pay out'
+                    : null
+            },
+        },
+        {
             name: 'knock-frozen',
             anchor: 'if (p.knock === 0) {',
             plant: 'if (p.knock === -1) { /* MUTANT(knock-frozen): the beat never ends */',
@@ -2253,6 +2292,229 @@ if (MUTANT) {
     }
     console.log('\nmutant run: expected red on the planted line.')
     r.exit()
+}
+
+// ---------------- #2945 goon weapon rotations — the later waves carry steel ---
+// The hideout arms its visitors: a whip-Williams opens the yard, a stick-
+// Williams works the second wave. Laws pinned here: the wind scales with the
+// steel (bare 12 / stick 14 / whip 18 — bigger reach, bigger telegraph); the
+// whip is a LINE catch (depth 9 — leave the lane and the crack whistles past);
+// reach honesty (a stick owns the space past a kick, fists do not); nothing
+// bites before the wind ends; the knife stays the goon's ONLY cast (whip and
+// stick are melee — no shooting gallery); KO pays out the weapon and the walk
+// to the corpse re-arms the dragon; the crowd law counts a whip wind; and the
+// steel is hashed — same board, same future.
+{ // the constants stay equal partners with the fighters' own steel
+    r.check('#2945 wind ladder: bare 12 · stick 14 · whip 18 — reach and telegraph scale together',
+        CFG.goonWindup.bare === 12 && CFG.goonWindup.stick === 14 && CFG.goonWindup.whip === 18,
+        JSON.stringify(CFG.goonWindup))
+    r.check('#2945 the goon whip and stick ARE the fighters\' steel (same reach/depth constants, kept honest)',
+        CFG.goonWhipReach === CFG.whip.reach && CFG.goonWhipDepth === CFG.whip.depth && CFG.goonStickReach === CFG.stickPunchReach,
+        `whip ${CFG.goonWhipReach}/${CFG.goonWhipDepth} vs ${CFG.whip.reach}/${CFG.whip.depth} · stick ${CFG.goonStickReach} vs ${CFG.stickPunchReach}`)
+    r.check('#2945 the yard waves carry the rotation — whip opens, stick answers, the duel keeps only knives',
+        WAVES_S2[0].spawns.some((s) => s.whip)
+        && WAVES_S2[1].spawns.some((s) => s.stick) && WAVES_S2[1].spawns.some((s) => s.knife)
+        && !WAVES_S2.some((w) => w.spawns.some((s) => (s.whip || s.stick) && s.kind === 'duel')),
+        JSON.stringify(WAVES_S2.map((w) => w.spawns.map((s) => [s.kind, s.whip && 'whip', s.stick && 'stick', s.knife && 'knife'].filter(Boolean).join('+')))))
+}
+
+{ // functional: walk the yard and the whip-man really arrives armed
+    const gs = makeGame(5)
+    enterStage2(gs)
+    let armed = false
+    for (let i = 0; i < 400 && gs.enemies.length === 0; i++) { step(gs, autopilot(gs)); gs.events.length = 0 }
+    armed = gs.enemies.some((e) => e.hasWhip)
+    r.check('#2945: the first yard wave really spawns the whip-Williams', armed, gs.enemies.map((e) => e.kind + (e.hasWhip ? ':whip' : '')).join(','))
+}
+
+{ // the wind ladder, measured on live thugs
+    const windTicks = (over) => {
+        const gs = makeGame(30)
+        gs.billy.inv = 999999
+        gs.enemies.push(mk('williams', gs.billy.x + over.adx, gs.billy.y, over.rest))
+        const e = gs.enemies[0]
+        let wound = 0
+        for (let i = 0; i < 220 && e.state !== 'attack'; i++) {
+            step(gs, {}, {})
+            gs.events.length = 0
+            if (e.state === 'windup') wound += 1
+        }
+        return wound
+    }
+    const bare = windTicks({ adx: 14, rest: { attackCooldown: 0 } })
+    const stick = windTicks({ adx: 20, rest: { hasStick: true, attackCooldown: 0, castCooldown: 999 } })
+    const whip = windTicks({ adx: 30, rest: { hasWhip: true, attackCooldown: 0 } })
+    r.check('#2945: bare fists wind 12, the stick 14, the whip 18 — measured from live FSM runs',
+        bare === 12 && stick === 14 && whip === 18, `bare=${bare} stick=${stick} whip=${whip}`)
+}
+
+{ // the whip is a line catch — depth is still the whole answer (leather edition)
+    // The thug is planted mid-wind ON the given gap: windup does not walk, so
+    // the strike meets the lane exactly as the player left it (a walk-state
+    // thug depth-matches first — that IS the fight, not the geometry pin).
+    const crack = (dy) => {
+        const gs = makeGame(31)
+        gs.billy.inv = 0
+        gs.billy.y = 184
+        gs.enemies.push(mk('williams', gs.billy.x + 30, gs.billy.y - dy, {
+            hasWhip: true, state: 'windup', attackCooldown: 0, rest: { castCooldown: 999 },
+        }))
+        const e = gs.enemies[0]
+        let cracked = false
+        for (let i = 0; i < 60 && !(cracked && e.state === 'back'); i++) {
+            step(gs, {}, {})
+            if (gs.events.includes('goon_whip')) cracked = true
+            gs.events.length = 0
+            if (gs.billy.lives < 3) break
+        }
+        return { cracked, hit: gs.billy.lives < 3 }
+    }
+    const onLane = crack(0)
+    const offLane = crack(14)
+    r.check('#2945: the whip bites ON the line — share a lane with the crack and it costs a life',
+        onLane.cracked && onLane.hit, `cracked=${onLane.cracked} hit=${onLane.hit}`)
+    r.check('#2945: the whip is a LINE catch — fourteen deep it cracks air; depth is still the dodge (leather edition)',
+        offLane.cracked && !offLane.hit, `cracked=${offLane.cracked} hit=${offLane.hit}`)
+}
+
+{ // reach honesty at the strike tick: the stick owns the space past a kick;
+    // fists do not (planted mid-wind — the pin is the GEOMETRY, not the chase)
+    const probeReach = (over) => {
+        const gs = makeGame(32)
+        gs.billy.inv = 0
+        gs.enemies.push(mk('williams', gs.billy.x + 22, gs.billy.y, { ...over, state: 'windup' }))
+        const e = gs.enemies[0]
+        for (let i = 0; i < 40 && !(e.state === 'attack' && e.stateT >= 4); i++) { step(gs, {}, {}); gs.events.length = 0 }
+        step(gs, {}, {}); gs.events.length = 0
+        return gs.billy.lives < 3
+    }
+    const bareHits22 = probeReach({ attackCooldown: 0 })
+    const stickHits22 = probeReach({ hasStick: true, attackCooldown: 0, rest: { castCooldown: 999 } })
+    r.check('#2945: at a man-and-a-half the stick bites (23+4) and bare fists whiff (16+4) — rotations extend reach honestly',
+        !bareHits22 && stickHits22, `bare@22=${bareHits22} stick@22=${stickHits22}`)
+}
+
+{ // nothing bites before the wind ends — the crack only lives in 'attack'
+    const gs = makeGame(33)
+    gs.billy.inv = 0
+    gs.enemies.push(mk('williams', gs.billy.x + 30, gs.billy.y, { hasWhip: true, attackCooldown: 0, rest: { castCooldown: 999 } }))
+    const e = gs.enemies[0]
+    let lifeLostIn = null
+    for (let i = 0; i < 120 && lifeLostIn === null; i++) {
+        step(gs, {}, {})
+        gs.events.length = 0
+        if (gs.billy.lives < 3) lifeLostIn = e.state
+    }
+    r.check('#2945: a life only ever costs the ATTACK state — the whip never bites mid-wind',
+        lifeLostIn === 'attack', `lost during ${lifeLostIn}`)
+}
+
+{ // the knife stays the goon's ONLY cast — whip and stick are melee, no gallery
+    const gs = makeGame(34)
+    gs.billy.inv = 999999
+    gs.enemies.push(mk('williams', gs.billy.x + 30, gs.billy.y, { hasWhip: true, attackCooldown: 0 }))
+    gs.enemies.push(mk('williams', gs.billy.x - 24, gs.billy.y, { hasStick: true, attackCooldown: 0, face: 1 }))
+    const evs = []
+    for (let i = 0; i < 600; i++) { step(gs, {}, {}); evs.push(...gs.events); gs.events.length = 0 }
+    const swung = evs.includes('goon_whip') || evs.includes('goon_stick')
+    r.check('#2945: 600 ticks of whip-and-stick fury and NOT ONE blade in the air — the knife remains the goon\'s only cast',
+        swung && gs.projectiles.length === 0 && !evs.includes('goon_throw'),
+        `swung=${swung} projectiles=${gs.projectiles.length}`)
+}
+
+{ // the rotation closes through the corpse: KO pays steel, the walk re-arms
+    const koDrop = (over, want) => {
+        const gs = makeGame(35)
+        gs.billy.inv = 999999
+        gs.enemies.push(mk('williams', gs.billy.x + 14, gs.billy.y, { ...over, hp: 1, rest: { ...(over.rest || {}), attackCooldown: 999999 } }))
+        let koSeen = false
+        const evs = []
+        for (let i = 0; i < 90; i++) {
+            step(gs, { b: i % 3 === 0 }, {})
+            evs.push(...gs.events); gs.events.length = 0
+            if (gs.enemies[0] && gs.enemies[0].state === 'dying') koSeen = true
+            if (gs.enemies.length === 0) break
+        }
+        const drop = gs.pickups.find((p) => p.kind === want)
+        let armed = null
+        if (drop) {
+            gs.billy.x = drop.x - 4; gs.billy.y = drop.y
+            for (let i = 0; i < 12 && !gs.billy.weapon; i++) { step(gs, { right: true }, {}); gs.events.length = 0 }
+            armed = gs.billy.weapon
+        }
+        return { koSeen, drop: !!drop, armed }
+    }
+    const w = koDrop({ hasWhip: true }, 'whip')
+    const s = koDrop({ hasStick: true }, 'stick')
+    r.check('#2945: a dead whip-man pays his leather — KO drops it and the walk to the corpse arms the dragon',
+        w.koSeen && w.drop && w.armed === 'whip', `ko=${w.koSeen} drop=${w.drop} armed=${w.armed}`)
+    r.check('#2945: the stick-man pays his wood the same way (one drop law for the whole rotation)',
+        s.koSeen && s.drop && s.armed === 'stick', `ko=${s.koSeen} drop=${s.drop} armed=${s.armed}`)
+}
+
+{ // crowd law counts a whip wind: two winds max, never three
+    const gs = makeGame(36)
+    gs.billy.inv = 999999
+    gs.enemies.push(mk('williams', gs.billy.x + 30, gs.billy.y, { hasWhip: true, attackCooldown: 0 }))
+    gs.enemies.push(mk('amon', gs.billy.x + 14, gs.billy.y + 4, { attackCooldown: 0 }))
+    gs.enemies.push(mk('williams', gs.billy.x - 18, gs.billy.y, { attackCooldown: 0, face: 1 }))
+    let maxAtk = 0
+    for (let i = 0; i < 300; i++) {
+        step(gs, {}, {})
+        gs.events.length = 0
+        const n = gs.enemies.filter((e) => e.state === 'attack' || e.state === 'windup').length
+        if (n > maxAtk) maxAtk = n
+    }
+    r.check('#2945: leather counts in the crowd — even with three armed mouths the screen never winds more than two',
+        maxAtk <= CFG.attackersMax, `max=${maxAtk}`)
+}
+
+{ // hashed steel: a goon's weapon decides his whole future, so the hash must see it
+    const armedSide = (whip) => {
+        const gs = makeGame(9)
+        gs.enemies.push({ id: 977, kind: 'williams', x: 140, y: 170, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, hasWhip: whip, castCooldown: 999, attackCooldown: 999, inv: 0, spinHit: false, wob: 0, kb: 0 })
+        return stateHash(gs)
+    }
+    r.check('#2945: the steel in hand rides stateHash — identical boards with and without the whip hash apart (#2935 lesson)',
+        armedSide(true) !== armedSide(false), `${armedSide(true)} vs ${armedSide(false)}`)
+}
+
+{ // the autopilot predodges the crack — the harness brain reads the new tell.
+    // Honest proof: at EVERY strike tick the lane was already empty (every
+    // crack found air), and three lives answer 500 ticks of a live whip.
+    const gs = makeGame(37)
+    gs.billy.inv = 0
+    gs.enemies.push(mk('williams', gs.billy.x + 30, gs.billy.y, { hasWhip: true, attackCooldown: 0, rest: { castCooldown: 999 } }))
+    const e = gs.enemies[0]
+    let strikes = 0, closeStrikes = 0
+    for (let i = 0; i < 500; i++) {
+        step(gs, autopilot(gs), {})
+        if (gs.events.includes('goon_whip')) { strikes += 1; if (Math.abs(gs.billy.y - e.y) <= CFG.goonWhipDepth) closeStrikes += 1 }
+        gs.events.length = 0
+    }
+    r.check('#2945: the autopilot reads the whip-wind and vacates the lane — every crack found air, three lives kept',
+        strikes >= 1 && closeStrikes === 0 && gs.billy.lives === 3,
+        `strikes=${strikes} onLane=${closeStrikes} lives=${gs.billy.lives}`)
+}
+
+{ // end-to-end: the whip is really lived inside a won run (events ride the drive)
+    const gs = makeGame(7)
+    const evs = []
+    for (let i = 0; i < 60000; i++) {
+        step(gs, autopilot(gs))
+        evs.push(...gs.events); gs.events.length = 0
+        if (gs.mode === 'gameover' || (gs.cleared && gs.mode === 'play' && gs.stage === 1)) break
+    }
+    r.check('#2945: a won full run LIVES the rotation — the whip cracked in the yard and the dragon still freed Marian',
+        evs.includes('goon_whip') && gs.cleared,
+        `whip=${evs.includes('goon_whip')} cleared=${gs.cleared} mode=${gs.mode}`)
+}
+
+{ // the shell gives each rotation its own voice (source-law pin, mix-clash style)
+    const idx = readFileSync(join(ROOT, 'src/games/DoubleDragon/index.jsx'), 'utf8')
+    const voices = ['goon_windwhip', 'goon_whip', 'goon_windstick', 'goon_stick'].every((k) => idx.includes(`${k}:`))
+    r.check('#2945 cue law: the shell owns a sound for every beat of both rotations (wind + strike, whip + stick)',
+        voices, 'missing a goon_* cue')
 }
 
 // ------------------------------------------- #2877: the yard art laws ---
@@ -2945,6 +3207,53 @@ const defuseConsent = async (page) => {
     r.check('#2889 browser: the strut walks — the posed seat paints a step behind its logical x (drift is on the display, x truth intact)',
         pd.headMin <= pd.sx - 7, `headMin=${pd.headMin} sx=${pd.sx}`)
     r.check('#2889 browser: the tells leg ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
+    await page.close()
+}
+
+// ---------------- #2945 browser leg: the crack seen on the cabinet -------
+// A whip-man planted on Billy's lane: the cracking line (2x1 leather segments
+// in the whip's own browns) and its white tip-burn must PAINT while the strike
+// lives in 'attack' — the tell the whole wind ladder promises must reach the
+// display, not just the sim. Spy installed before start (canvas is created at
+// the play transition; the prototype patch must predate the context).
+{
+    const page = await openGame(browser, { url: `${BASE}/double-dragon`, hook: '__ddTest', wait: 600 })
+    const errs = []
+    page.on('pageerror', (e) => errs.push(e.stack || e.message))
+    await page.evaluate(() => {
+        window.__crack = 0; window.__tip = 0; window.__coil = 0
+        const proto = CanvasRenderingContext2D.prototype
+        const orig = proto.fillRect
+        proto.fillRect = function (x, y, w, h) {
+            const cs = String(this.fillStyle)
+            if (w === 2 && h === 1 && y > 40 && (cs === '#4a2f18' || cs === '#7c4c20')) window.__crack++
+            if (w === 3 && h === 2 && y > 40 && cs === '#ffffff') window.__tip++
+            if (w === 8 && h === 2 && cs === '#5a3a20' && y > 40) window.__coil++
+            return orig.apply(this, arguments)
+        }
+    })
+    await page.keyboard.press('Space')
+    await defuseConsent(page)
+    await page.waitForTimeout(300)
+    await page.evaluate(() => window.__ddTest.start())
+    await page.waitForTimeout(150)
+    await page.evaluate(() => {
+        const p = window.__ddTest.probe()
+        window.__ddTest.setup({ clearEnemies: true, inv: 999999, whipGoon: [Math.round(p.x + 30), p.y], whipGoonCd: 0 })
+    })
+    let cracked = false
+    try {
+        await page.waitForFunction(() => window.__crack >= 8 && window.__tip >= 1, { timeout: 6000 })
+        cracked = true
+    } catch {}
+    // let the cooldown run out: back + walk poses wear the hip coil for dozens
+    // of frames — a single transient frame would be a coin-flip to catch.
+    await page.waitForTimeout(1400)
+    const pc = await page.evaluate(() => ({ crack: window.__crack, tip: window.__tip, coil: window.__coil, weapons: window.__ddTest.probe().goonWeapons }))
+    r.check('#2945 browser: the crack reaches the display — leather segments and the white tip-burn paint while the whip-man strikes',
+        cracked && pc.crack >= 8 && pc.tip >= 1, `crack=${pc.crack} tip=${pc.tip} weapons=${pc.weapons}`)
+    r.check('#2945 browser: the whip-man wears his coil at the hip between strikes', pc.coil >= 10, `coil=${pc.coil}`)
+    r.check('#2945 browser: the rotation leg ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
     await page.close()
 }
 
