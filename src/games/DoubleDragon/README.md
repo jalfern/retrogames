@@ -233,6 +233,25 @@ S4 (the second dragon, #2807):
 - The `seat-swap` mutant names the seat's translator breaking (A goes dead
   air while the hop migrates onto B).
 
+#2863 seat greet, join shout, rumble parity (QA) — the blue seat sells itself:
+
+- **Wake greet** — while slot 2 is alive (`connectedSlots() >= 2`) and the seat
+  is still the CPU's and up, the HUD blinks `READY` under the blue `2P` tag
+  (202,14; blink 24-on/16-off on `gs.tick`). A sleeping slot, a human seat, or
+  a downed seat (which keeps its own READY at 254,14) never greet. Pure art.js
+  law: five pins in `ddragoncheck` cover wake/sleep/dark/held/down.
+- **Join shout** — every path that seats a human (`p2Seat` from pad/phone, the
+  WASD keys, the dbg hook) routes through one `seatJoin`: chime + pad-2 rumble
+  + `JOIN_T` (48) ticks of flare — a white core cross on Jimmy, four `#8fd0ff`
+  brackets springing outward, and a blinking `PLAYER 2` on the banner row.
+  The timer is shell state, never `gs` — outside `stateHash`, replay-safe.
+- **Rumble parity** — `gamepadMap.rumbleSlot(slot, ms, strength)` is the twin
+  of `rumble()`: slot n's nth-connected-pad actuator (same pad order as the
+  GamepadBridge's slot numbering; slot 1 byte-identical to `rumble`). DD pays
+  it: Billy's bites/deaths on pad 1; the blue seat's jabs, knockdowns falls and
+  deaths on pad 2 — and only while a human holds the seat (the CPU's fists
+  never buzz a pocket).
+
 #2857 partner-personality read (forge) — the guardian laws now read like game-feel:
 
 - **Guardian telegraph** — a dragon sprinting the thug who grips his brother

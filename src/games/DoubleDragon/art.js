@@ -1117,7 +1117,7 @@ export function drawPickup(ctx, p, camX) {
 }
 
 // ------------------------------------------------------------------- HUD ---
-export function drawHud(ctx, gs, playing = true) {
+export function drawHud(ctx, gs, playing = true, p2wake = false) {
     ctx.fillStyle = 'rgba(4,6,14,0.72)'
     ctx.fillRect(0, 0, W, 17)
     // the app chrome wears the top-left corner (ARCADE badge + FEEDBACK); the
@@ -1151,6 +1151,12 @@ export function drawHud(ctx, gs, playing = true) {
         // (x=78, y=11) by a street. #2899: one px left, so the tag's drop
         // shadow never touches the 1P column's first band.
         label(ctx, '2P', 202, 6, wind(gs.jimmy) ? '#ffffff' : '#5a8ae8', 1)
+        // #2863 discoverability: the cabinet greets a waking slot 2 the way
+        // the arcade greeted a second player — while a friend's pad or linked
+        // phone is alive and the seat still belongs to the CPU, the tag blinks
+        // READY right under itself (the arcade's seat invitation, for the pad
+        // that just woke). Out seats keep their own READY (below).
+        if (!gs.jimmy.out && !gs.jimmy.human && p2wake && gs.tick % 40 < 24) label(ctx, 'READY', 202, 14, '#5a8ae8', 1)
         if (gs.jimmy.out) {
             // #2899: the empty-seat slot rides column 0; the READY blink
             // drops a row below the strip's band line (y=14), clear of the
@@ -1255,6 +1261,39 @@ export function drawBanner(ctx, gs) {
         } else if (rescueReady(gs) && gs.tick % 40 < 28) {
             label(ctx, 'CUT HER LOOSE!', 96, 84, '#ff9ec0', 1)
         }
+    }
+}
+
+// #2863 join juice — the arcade shouted a new player into the game; so does
+// the cabinet. A blue flare pops ON the taking seat (bright cross, then four
+// bracket corners springing outward) under a blinking PLAYER 2. Pure juice:
+// the timer lives in the shell, never in gs, so stateHash never sees it.
+export const JOIN_T = 48
+export function drawJoinFx(ctx, t, sx, sy) {
+    if (t <= 0) return
+    if (t > JOIN_T - 18) {
+        // core flash on the seat — one bright beat, fast decay
+        ctx.globalAlpha = Math.min(1, (t - (JOIN_T - 18)) / 12)
+        ctx.fillStyle = '#eef6ff'
+        ctx.fillRect(sx - 1, sy - 29, 2, 28)
+        ctx.fillRect(sx - 9, sy - 15, 18, 2)
+        ctx.globalAlpha = 1
+    } else if (t > 8) {
+        // brackets spring off the seat and fade — the flare reads as expanding
+        const p = (JOIN_T - 18 - t) / (JOIN_T - 18 - 8)
+        const rx = 10 + Math.round(p * 12)
+        const ry = 15 + Math.round(p * 12)
+        ctx.globalAlpha = 0.8 * (1 - p) + 0.15
+        ctx.fillStyle = '#8fd0ff'
+        for (const [mx, my] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+            ctx.fillRect(sx + mx * rx - (mx < 0 ? 0 : 1), sy - 15 + my * ry - (my < 0 ? 0 : 1), 4, 1)
+            ctx.fillRect(sx + mx * rx - (mx < 0 ? 0 : 1), sy - 15 + my * ry - (my < 0 ? 0 : 1), 1, 4)
+        }
+        ctx.globalAlpha = 1
+    }
+    if (t > 6 && (t > 24 || t % 6 < 4)) {
+        const s = 'PLAYER 2'
+        label(ctx, s, Math.round((W - textWidth(s, 2)) / 2), 78, '#5a8ae8', 2)
     }
 }
 

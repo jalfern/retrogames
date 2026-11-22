@@ -37,7 +37,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain, INTRO, TIP } from '../src/games/DoubleDragon/sim.js'
-import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD, drawHud } from '../src/games/DoubleDragon/art.js'
+import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD, drawHud, drawJoinFx, JOIN_T } from '../src/games/DoubleDragon/art.js'
 import { p2Merge, p2Seat } from '../src/games/DoubleDragon/p2pad.js'
 import { pressSlot, releaseSlot, slotPad, slotActive, clearAllSlots } from '../src/utils/onePad.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -1939,6 +1939,64 @@ if (MUTANT) {
     const outLeg = inkOf(gsC)
     r.check('#2899 corner law — the out-seat slot and the READY blink stay clear of the chrome box',
         outLeg.length === 0, outLeg.map((a) => a.join(',')).join(' ') || 'clean')
+}
+
+// ------------------------------------------------ #2863 greet + join juice ---
+// The cabinet greets a waking slot 2 (READY blinking under the 2P tag while
+// the seat is still the CPU's) and shouts a human into the game (flare on the
+// seat + PLAYER 2 banner). Both are pure art.js so the law is pinnable here —
+// the greeting zone sits under the tag (rows 14..22; the tag's shadow ends at
+// row 13, the bank columns sit outside x 196..244).
+{
+    const inkIn = (fn, x0, y0, x1, y1) => {
+        const ink = []
+        const ctx = {
+            fillStyle: '', globalAlpha: 1, drawImage: () => {},
+            fillRect: (x, y, w, h) => { if (x >= x0 && x + w <= x1 && y >= y0 && y + h <= y1) ink.push([x, y, w, h]) },
+        }
+        fn(ctx)
+        return ink
+    }
+    const gsG = makeGame(11, { coop: true })
+    gsG.tick = 40 // 40 % 40 = 0 — blink-on phase of the greeting
+    const zone = [196, 14, 244, 22]
+    const wakeInk = inkIn((c) => drawHud(c, gsG, true, true), ...zone)
+    r.check('#2863 greet: a waking slot 2 blinks READY under the 2P tag (CPU seat, blink-on tick)',
+        wakeInk.length > 0, `ink=${wakeInk.length}`)
+    const asleepInk = inkIn((c) => drawHud(c, gsG, true, false), ...zone)
+    r.check('#2863 greet: no READY while slot 2 sleeps — a sleeping pad must not be greeted',
+        asleepInk.length === 0, `ink=${asleepInk.length}`)
+    gsG.tick = 70 // 70 % 40 = 30 — the dark phase of the 40-tick blink
+    const offInk = inkIn((c) => drawHud(c, gsG, true, true), ...zone)
+    r.check('#2863 greet: the READY blink rests — dark phase of the blink cycle',
+        offInk.length === 0, `ink=${offInk.length}`)
+    gsG.tick = 40
+    gsG.jimmy.human = true
+    const humanInk = inkIn((c) => drawHud(c, gsG, true, true), ...zone)
+    r.check('#2863 greet: a human-held seat is never greeted — the friend is already in',
+        humanInk.length === 0, `ink=${humanInk.length}`)
+    gsG.jimmy.human = false
+    gsG.jimmy.out = true
+    const outInk = inkIn((c) => drawHud(c, gsG, true, true), ...zone)
+    r.check('#2863 greet: a downed seat keeps its own invitation — the wake-greet stays silent',
+        outInk.length === 0, `ink=${outInk.length}`)
+    gsG.jimmy.out = false
+    // join juice: flare on the seat, PLAYER 2 banner, nothing once it decays
+    const sx = 120
+    const sy = 170
+    const flareInk = inkIn((c) => drawJoinFx(c, JOIN_T, sx, sy), sx - 30, sy - 36, sx + 30, sy + 12)
+    r.check('#2863 join: the flare core lands on the seat — the bright beat at t=JOIN_T',
+        flareInk.length >= 2, `ink=${flareInk.length}`)
+    const bracketInk = inkIn((c) => drawJoinFx(c, 20, sx, sy), sx - 30, sy - 36, sx + 30, sy + 12)
+    r.check('#2863 join: the brackets spring outward off the seat — the mid-flare phase',
+        bracketInk.length >= 8, `ink=${bracketInk.length}`)
+    const bx = Math.round((W - ('PLAYER 2'.length * 12 - 2)) / 2)
+    const bannerInk = inkIn((c) => drawJoinFx(c, JOIN_T, sx, sy), bx - 4, 76, bx + 98, 96)
+    r.check('#2863 join: PLAYER 2 rides the banner row under the HUD',
+        bannerInk.length >= 20, `ink=${bannerInk.length}`)
+    const deadInk = inkIn((c) => drawJoinFx(c, 0, sx, sy), 0, 0, W, 224)
+    r.check('#2863 join: t=0 is silence — the juice never leaks into a resting frame',
+        deadInk.length === 0, `ink=${deadInk.length}`)
 }
 
 // ------------------------------------------------------------- browser leg ---
