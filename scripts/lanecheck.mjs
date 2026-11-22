@@ -22,7 +22,14 @@
 // red (a checkout-reverted STATE.md is the newest file on disk and would
 // masquerade as the fresh report). For #2121 flip `age > capSec` to `false`
 // in scripts/lib/lanebusy.mjs — E3 goes red (a server that outlived every cap
-// would wedge the lane's kicks forever).
+// would wedge the lane's kicks forever). For #2797 three flips: delete the
+// holder-skip block in kick_slot (warden.sh) — F2 goes red (a live build on
+// the other slot stacks idle comments toward a false stalled); remove the
+// target clear in the skip branch — F3 goes red (the skipped slot would stay
+// exempt from never-dry forever); in idle-kick.mjs revert the catch to
+// `issues = []` — F4 goes red (a GitHub blip fabricates a KICK), and revert
+// the held union to building-qa-only — F5 goes red (one lane per game breaks
+// for builders, the Nov 22 double-kick). All four verified by hand.
 
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, utimesSync } from 'node:fs'
@@ -32,6 +39,7 @@ import { fileURLToPath } from 'node:url'
 import { builderLadder, lanePlan } from './lib/lanes.mjs'
 import { laneVerdict } from './lib/lanebusy.mjs'
 import { parkPath, newestReport, readReport, parkReport } from './lib/statepark.mjs'
+import { flagshipStage, heldGames } from './lib/idle.mjs'
 import { slotsLine, throughputLine } from '../src/pages/floor.js'
 import { trialVerdict, reportText, laneSplit, VERDICT_FILE,
     usageWindow, spark, streamStats, laneOfClaims, boxMisses, parseSpanName, BOX_MIN } from './studiotrial.mjs'
@@ -664,6 +672,39 @@ section('D. statepark — race-proof STATE.md handoff (#1430)')
         'E8 every QA lane spec carries its pinned DEV port (forge-qa.sh map) and the loop consults it')
     ok(warden.includes('lane_driven "$dev"') && (warden.match(/lane_driven/g) || []).length >= 5,
         'E9 guard sits at kick_slot, the QA loop AND both flagship fallbacks (>=5 sites incl. definition)')
+}
+
+// ---- F. TARGET-HELD SKIP (#2797) -------------------------------------------
+// The planner assigns by LABELS; the holder fact lives in the comments, which
+// its stdin never carries. Without a holder check at the kick site, a free
+// slot gets targeted at an issue the OTHER slot is live inside — claim layer
+// refuses (#878), session burns proving it, idle comments stack toward a
+// false `stalled`. Observed in BOTH directions on 2026-11-22 (#2917 slot-a,
+// #2919 slot-b). F1-F3 pin the skip at the kick site, F4 pins the target
+// clear that keeps the skipped slot eligible for never-dry, F5-F6 pin
+// idle-kick: fail-closed on a dead fetch, and the builder flagship rung
+// honoring builder-held titles like the QA rung already does.
+{
+    const kick = read('idle-kick.mjs')
+    ok(/target-held skip/.test(warden)
+        && warden.includes('^(QA|FORGE) \\\\([a-z0-9-]+\\\\): (claimed|checkpoint)')
+        && /"\$HAGE" -lt 90/.test(warden),
+        'F1 kick_slot consults forge-claim\'s holder() namespace — a (QA|FORGE) claim < 90m old on the other slot blocks the kick (#2797)')
+    const skipAt = warden.search(/target held by .*#2797/)
+    const stallAt = warden.search(/add_label "\$n" stalled/)
+    ok(skipAt > -1 && stallAt > -1 && skipAt < stallAt,
+        'F2 the holder-skip returns BEFORE the 3-kick stall rule — a live build elsewhere can never be labeled stalled by its own targeting (#2797)')
+    ok(/if \[\[ "\$s" == a \]\]; then A_TARGET=""; else B_TARGET=""; fi/.test(warden),
+        'F3 a skipped target is cleared — 4b exempts target-owning slots from never-dry; skipped != owned, the slot must stay eligible')
+    ok(/catch\s*{[^}]*console\.log\('NONE'\)[^}]*process\.exit\(0\)/.test(kick),
+        'F4 idle-kick fails CLOSED: a gh api failure answers NONE, not KICK-from-nothing (the header promise, #2797)')
+    ok(/heldGames\(issues\.filter\(\(i\) => i\.labels\.includes\('building-qa'\) \|\| i\.labels\.includes\('building'\)\)/.test(kick),
+        'F5 the builder flagship rung holds building ∪ building-qa — one lane per game, builder included (qaIdleStage already did, #2797)')
+    const RG = { 'R-TYPE': ['capsule list gap'], 'SSX': [], 'Emberwood': [], 'COMET DRIFT HD': [], 'Myst': [], 'DOUBLE DRAGON': [] }
+    ok(heldGames([{ title: 'POLISH — R-TYPE: Options pods' }]).join() === 'R-TYPE'
+        && flagshipStage({ gapsByGame: RG, qaIssues: [], buildingQa: heldGames([{ title: 'POLISH — R-TYPE: Options pods' }]) }) === null
+        && flagshipStage({ gapsByGame: RG, qaIssues: [], buildingQa: [] }).index === 0,
+        'F6 fixture: a live building issue naming R-TYPE holds the title and the stage dies with it; unheld, the same gaps still kick')
 }
 
 console.log(`\x1b[1m\nlanecheck: ${pass} gates, ${fails.length} failures\x1b[0m`)

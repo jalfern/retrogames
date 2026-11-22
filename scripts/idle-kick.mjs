@@ -33,11 +33,25 @@ try {
     ], { encoding: 'utf8' })
     issues = JSON.parse(raw)
 } catch {
-    issues = []
+    // #2797: a failed fetch must not read as "no issues open". issues = []
+    // downstream means nothing is held and no gap is owned — a fabricated
+    // KICK onto whatever the READMEs still say, possibly a game a live lane
+    // is inside. The header promises NONE on failure; answer it here.
+    console.log('NONE')
+    process.exit(0)
 }
 
 const qaIssues = issues.filter((i) => i.labels.includes('feedback') || i.labels.includes('building-qa'))
-const buildingQa = heldGames(issues.filter((i) => i.labels.includes('building-qa')))
+// #2797: the builder rung must respect ONE LANE PER GAME, not just QA's holds.
+// Pre-#1258 an open `building` issue meant OUR dead builder (resume = step 1b,
+// driven by the TARGET ladder, not by this stage); with two slots it can mean
+// the other slot is live inside that title, and kicking a free slot at the same
+// game burns the session on a REFUSED claim — twice on 2026-11-22 alone
+// (R-TYPE #2919, CONTRA #2917, mirrored directions). Same union the QA path
+// (qaIdleStage) and the weak rung (heldDirs) already use; corpse resume is
+// unaffected — it rides the TARGET ladder, and the weak rung skipped builder
+// holds all along.
+const buildingQa = heldGames(issues.filter((i) => i.labels.includes('building-qa') || i.labels.includes('building')))
 const gapsByGame = Object.fromEntries(FLAGSHIPS.map((g) => {
     let md = ''
     try { md = readFileSync(join(ROOT, 'src/games', FLAGSHIP_DIRS[g], 'README.md'), 'utf8') } catch { md = '' }
