@@ -318,6 +318,7 @@ export function buildBomb(gs) {
     gs.cursorFlash = 0
     gs.flip = 0 // #1797: every new bomb lands face-up
     gs.order = null
+    gs.orderKind = null
     gs.orderFor = -1
     gs.orderTicks = 0
 }
@@ -359,6 +360,7 @@ export function createGame(seed, players = 1) {
         cursorFlash: 0,
         manual: { page: 0, line: 0, flag: null, flagTicks: 0 },
         order: null, orderFor: -1, orderTicks: 0,   // CPU partner chat
+        orderKind: null, // the structured form of `order` (#1415 one-source law: the rail is written here, read here)
         events: [],           // transient fx cues consumed by the shell
         clearFlash: 0,
         seqInput: {},         // moduleId -> glyphs pressed so far
@@ -531,12 +533,36 @@ function settle(gs) {
     }
 }
 
+// setOrder — write the rail once: the visible string AND its structured
+// form (#1415 one-source law). The featurizer and any later rail reader
+// consume `orderKind`; no consumer ever parses the string.
+function setOrder(gs, text, kind) {
+    gs.order = text
+    gs.orderKind = kind
+}
+
+// orderKindFromText — the engine owns the text<->structure mapping, so the
+// legacy restore path (snapshots saved before `orderKind` existed) can rebuild
+// the structured field instead of the reader regexing the rail.
+export function orderKindFromText(text) {
+    if (!text) return null
+    let m
+    if (text.startsWith('PULL')) {
+        const d = /DIAL (\d)/.exec(text)
+        return { kind: 'pull', dial: d ? Number(d[1]) : 0 }
+    }
+    if ((m = /^CUT (\w+)$/.exec(text))) return { kind: 'cut', color: m[1] }
+    if ((m = /^DIAL TO (\d)/.exec(text))) return { kind: 'dial', dial: Number(m[1]) }
+    if (text.startsWith('PRESS')) return { kind: 'press' }
+    return null
+}
+
 // partnerSay — the CPU manual seat prints an order into the chat rail whenever
 // the defuser sits at a live module (90-tick delay so the human reads first).
 function partnerSay(gs) {
-    if (gs.players > 1 || gs.done) { gs.order = null; return }
+    if (gs.players > 1 || gs.done) { gs.order = null; gs.orderKind = null; return }
     const m = gs.modules[gs.cursor.mod]
-    if (!m || m.solved) { gs.order = null; return }
+    if (!m || m.solved) { gs.order = null; gs.orderKind = null; return }
     if (gs.orderFor !== gs.cursor.mod) {
         gs.orderFor = gs.cursor.mod
         gs.orderTicks = gs.tick + 90
@@ -546,10 +572,10 @@ function partnerSay(gs) {
     if (!t) return
     // #1909: the CPU manual orders the drain first — words carry the ORDER
     // of the rule exactly as the page prints it (pull, then the LEFT count).
-    if (t.pull) gs.order = `PULL A BATTERY, THEN DIAL ${t.dial}, THEN SET`
-    else if (t.wire !== undefined) gs.order = `CUT ${WIRE_COLORS[m.wires[t.wire].color]}`
-    else if (t.dial !== undefined) gs.order = `DIAL TO ${t.dial}, THEN SET`
-    else gs.order = `PRESS ${t.seq.map(i => GLYPHS[i]).join(', ')}`
+    if (t.pull) setOrder(gs, `PULL A BATTERY, THEN DIAL ${t.dial}, THEN SET`, { kind: 'pull', dial: t.dial })
+    else if (t.wire !== undefined) setOrder(gs, `CUT ${WIRE_COLORS[m.wires[t.wire].color]}`, { kind: 'cut', color: WIRE_COLORS[m.wires[t.wire].color] })
+    else if (t.dial !== undefined) setOrder(gs, `DIAL TO ${t.dial}, THEN SET`, { kind: 'dial', dial: t.dial })
+    else setOrder(gs, `PRESS ${t.seq.map(i => GLYPHS[i]).join(', ')}`, { kind: 'press', glyphs: t.seq.slice() })
 }
 
 // step — advance exactly one tick. pads: pad | [padDefuser, padManual?].

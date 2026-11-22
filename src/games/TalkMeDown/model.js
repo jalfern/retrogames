@@ -17,6 +17,10 @@
 //    (partnerSay, engine.js) — seat 0 on a solo take sees the answer text, so
 //    the order rail rides seat 0's features (kind + color + digit, gated
 //    `solo && gs.order`). A 2P crew's words live in voiceCmd/audio, not pads.
+//    The rail is consumed STRUCTURED (`gs.orderKind`, written beside the
+//    string by the engine — #1415 one-source law): no consumer parses the
+//    rail's words. Legacy snapshots without the field rebuild it through the
+//    engine's own text->structure helper.
 //  - the live-stamp rail rides the PAGE-holder (#1880): seat 1 sees WHICH
 //    stamp is live (one-hot) but never the wires/dials it depends on — a page
 //    cannot compute a target it has no eyes for. Seat 0 sees the stamp
@@ -33,7 +37,7 @@
 //
 // Hash-clean: pure reads of gs only — never rng, never writes.
 
-import { WIRE_COLORS, RULEBOOK } from './engine.js'
+import { WIRE_COLORS, RULEBOOK, orderKindFromText } from './engine.js'
 
 export const STAMPS = [
     ...RULEBOOK.N.map((x) => x.id),
@@ -164,17 +168,18 @@ export function featurize(gs, seat, mem) {
         f[I.held + 1] = gs.pulls > 0 ? 1 : 0
         // the CPU manual's rail (solo): words become visible, that is the law
         if (gs.players === 1 && gs.order) {
-            if (gs.order.startsWith('PULL')) f[I.orderCut + 3] = 1
-            else if (gs.order.startsWith('CUT')) f[I.orderCut] = 1
-            else if (gs.order.startsWith('DIAL')) f[I.orderCut + 1] = 1
-            else f[I.orderCut + 2] = 1 // PRESS <glyphs>
-            const cm = /CUT (\w+)/.exec(gs.order)
-            if (cm) {
-                const ci = WIRE_COLORS.indexOf(cm[1])
-                if (ci >= 0) f[I.orderColor + ci] = 1
+            const ok = gs.orderKind ?? orderKindFromText(gs.order)
+            if (ok) {
+                if (ok.kind === 'pull') f[I.orderCut + 3] = 1
+                else if (ok.kind === 'cut') f[I.orderCut] = 1
+                else if (ok.kind === 'dial') f[I.orderCut + 1] = 1
+                else f[I.orderCut + 2] = 1 // PRESS <glyphs>
+                if (ok.kind === 'cut') {
+                    const ci = WIRE_COLORS.indexOf(ok.color)
+                    if (ci >= 0) f[I.orderColor + ci] = 1
+                }
+                if (ok.kind === 'dial' || ok.kind === 'pull') f[I.orderDigit] = clamp01((ok.dial ?? 0) / 9)
             }
-            const dm = /DIAL (?:TO )?(\d)/.exec(gs.order)
-            if (dm) f[I.orderDigit] = clamp01(Number(dm[1]) / 9)
         }
     }
 

@@ -698,6 +698,22 @@ try {
     }
     r.check('TMD prev-pad lane banked: some row carries a nonzero prev-pad feature (#1712)',
         tmdRows.some((x) => x.feat.slice(TMD_N_FEAT - 5).some((v) => v === 1)) && TMD_N_FEAT === 151)
+    { // source pin (#1415 one-source law): the rail is written structured in the
+        // engine (setOrder beside the string) and consumed structured by the
+        // featurizer — no reader may regex the rail's words. Legacy snapshots
+        // rebuild the field via the engine's own text->structure helper.
+        const modelSrc = fs.readFileSync(path.join(here, '..', 'src', 'games', 'TalkMeDown', 'model.js'), 'utf8')
+        const engineSrc = fs.readFileSync(path.join(here, '..', 'src', 'games', 'TalkMeDown', 'engine.js'), 'utf8')
+        const netSrc = fs.readFileSync(path.join(here, '..', 'src', 'games', 'TalkMeDown', 'net.js'), 'utf8')
+        r.check('TMD rail source pin: partnerSay writes orderKind beside the string, the featurizer reads it (never the rail words) (#1415)',
+            engineSrc.includes('function setOrder(gs, text, kind)')
+            && engineSrc.includes('gs.orderKind = kind')
+            && engineSrc.includes('export function orderKindFromText(text)')
+            && modelSrc.includes('gs.orderKind')
+            && !/\.exec\(gs\.order\)/.test(modelSrc)
+            && !/startsWith\('(?:PULL|CUT|DIAL|PRESS)'\)/.test(modelSrc)
+            && netSrc.includes('gs.orderKind'))
+    }
     { // unit: TMD adapter — couch take verifies clean, tampered refuses at its tick
         const clean = scriptedTake({ game: 'talk-me-down', seed: 96, ticks: 240, seats: [{ kind: 'human' }, { kind: 'human' }] })
         const good = talkMeDownRows('unit/tmd-clean', clean)
