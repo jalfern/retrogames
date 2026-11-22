@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX } from '../src/games/Contra/sim.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
@@ -1582,6 +1582,39 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #2894: a loop that never gets hotter is a placebo — STAGE CLEAR
+            // would hand back the same tempo and call it round two.
+            name: 'loop-dead',
+            anchor: 'return Math.min(LOOP_CAP, 1 + LOOP_STEP * Math.max(0, Math.floor(n) - 1))',
+            plant: 'return 1 /* MUTANT(loop-dead): every pass runs the first pass tempo */',
+            harm: async (mod) => {
+                const run = (loop) => {
+                    const gs = mod.makeGame(7, loop)
+                    mod.warpBoss(gs)
+                    gs.soldiers.length = 0
+                    gs.boss.doors.forEach((d) => { d.t = 1e9 })
+                    gs.p.inv = 99999; gs.p2.out = true
+                    const t = []
+                    while (t.length < 3 && gs.tick < 1500) { mod.step(gs, {}); for (const e of gs.ev) if (e.type === 'cannon') t.push(gs.tick); gs.ev.length = 0 }
+                    return t
+                }
+                const a = run(1); const b = run(2)
+                return b.length === a.length && b[2] >= a[2]
+                    ? `HARM NAMED: loop 2's cannons answer at loop 1's tempo (${a.join(',')} vs ${b.join(',')}) — stage 1 returns but never runs hot; the arcade loop is a placebo`
+                    : null
+            },
+        },
+        {
+            // #2894: the clamp is the winnable-law of the heat — escape it and
+            // the deep loops become rounds the tuned hop simply cannot answer.
+            name: 'loop-overdrive',
+            anchor: 'export const LOOP_CAP = 1.30',
+            plant: 'export const LOOP_CAP = 2',
+            harm: async (mod) => mod.loopK(6) !== 1.3
+                ? `HARM NAMED: the tempo escapes its pin — loop 6 runs x${mod.loopK(6).toFixed(2)}; the ceiling that keeps every loop clearable is gone and the bank can no longer carry it`
+                : null,
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -1600,6 +1633,73 @@ if (MUTANT) {
     console.log('\nmutant run: expected red on the planted lines.')
     r.exit()
 }
+
+// ---------------------------------------------------- #2894 arcade loop ---
+// STAGE CLEAR hands stage 1 back at tempo. loopK is a pure, clamped staircase;
+// loop 1 is byte-identical to the pre-loop shelf; loop/lk are sim truth; the
+// settings draw zero rng; the gate's cannons bark sooner at identical opening
+// conditions; the shutter cycles at k (duty ratio stands, windows shorten);
+// and every loop stays clearable by the honest autopilot on all 12 seeds at
+// the loop bank (3 + 1 per loop, capped) that the shell pays on the resume.
+r.check('#2894 loopK is a pure staircase: x1 at loop 1, +LOOP_STEP a pass, pinned at LOOP_CAP from loop 4',
+    loopK(1) === 1 && Math.abs(loopK(2) - (1 + LOOP_STEP)) < 1e-9 && Math.abs(loopK(3) - (1 + 2 * LOOP_STEP)) < 1e-9 && loopK(4) === LOOP_CAP && loopK(9) === LOOP_CAP && loopK(99) === LOOP_CAP)
+
+const lp1 = makeGame(5)
+const lp2 = makeGame(5, 1)
+let lpSame = lp1.loop === 1 && lp1.lk === 1 && lp2.loop === 1 && lp2.lk === 1 && stateHash(lp1) === stateHash(lp2)
+for (let i = 0; i < 600 && lpSame; i++) {
+    step(lp1, autopilot(lp1)); step(lp2, autopilot(lp2))
+    if (stateHash(lp1) !== stateHash(lp2)) lpSame = false
+}
+r.check('#2894 the default is still loop 1 — makeGame(seed) and makeGame(seed,1) tick identically for 600 beats', lpSame)
+r.check('#2894 the loop rides the hash — same seed, different pass, different sim truth',
+    stateHash(makeGame(5)) !== stateHash(makeGame(5, 2)))
+r.check('#2894 tempo settings consume zero rng — the seeded stream starts where it always did',
+    makeGame(5, 3).r === makeGame(5).r)
+
+const cannonRun = (mod, loop) => {
+    const gs = mod.makeGame(7, loop)
+    mod.warpBoss(gs)
+    gs.soldiers.length = 0
+    gs.boss.doors.forEach((d) => { d.t = 1e9 })
+    gs.p.inv = 99999; gs.p2.out = true
+    const t = []
+    while (t.length < 4 && gs.tick < 1500) {
+        mod.step(gs, {})
+        for (const e of gs.ev) if (e.type === 'cannon') t.push(gs.tick)
+        gs.ev.length = 0
+    }
+    return t
+}
+const cL1 = cannonRun({ makeGame, step, warpBoss }, 1)
+const cL2 = cannonRun({ makeGame, step, warpBoss }, 2)
+r.check('#2894 the gate runs hot — identical opening volley, then loop 2 lands its guns sooner (tempo, not bullet speed)',
+    cL1.length === 4 && cL2.length === 4 && cL1[0] === cL2[0] && cL1[1] === cL2[1] && cL2[2] < cL1[2] && cL2[3] < cL1[3],
+    JSON.stringify({ loop1: cL1, loop2: cL2 }))
+
+const sh = makeGame(7, 2)
+warpBoss(sh)
+sh.soldiers.length = 0; sh.boss.doors.forEach((d) => { d.t = 1e9 }); sh.p.inv = 99999; sh.p2.out = true
+const coreT0 = sh.boss.coreT   // makeBoss opens its cycle armored-in — measure the delta, not the face value
+for (let i = 0; i < 100; i++) step(sh, {})
+r.check('#2894 the shutter cycles at tempo — coreT advances by k, so both windows shorten and the duty ratio stands',
+    Math.abs((sh.boss.coreT - coreT0) - 100 * loopK(2)) < 1e-6, `dcoreT=${sh.boss.coreT - coreT0} want=${100 * loopK(2)}`)
+
+const loopSweep = (L) => {
+    const fails = []
+    for (let s = 1; s <= 12; s++) {
+        const gs = makeGame(s, L)
+        gs.lives = Math.min(LOOP_LIVES_MAX, 3 + (L - 1) * LOOP_LIFE_BONUS)   // the bank startLoop pays on the resume
+        while (!gs.end && gs.tick < 30000) { step(gs, autopilot(gs)); gs.ev.length = 0 }
+        if (gs.end !== 'win') fails.push(`${s}:${gs.end}@${gs.tick}`)
+    }
+    return fails
+}
+const fL2 = loopSweep(2), fL3 = loopSweep(3), fL4 = loopSweep(4), fL9 = loopSweep(9)
+r.check('#2894 loops 2 and 3 clear with the honest autopilot on all 12 seeds at the loop bank',
+    fL2.length === 0 && fL3.length === 0, [...fL2, ...fL3].join(' ') || 'all clear')
+r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the loop never becomes unwinnable',
+    fL4.length === 0 && fL9.length === 0, [...fL4, ...fL9].join(' ') || 'all clear')
 
 // ------------------------------------------------------------- browser leg ---
 await requireDevServer(`${BASE}/contra`)
@@ -1640,8 +1740,13 @@ const browser = await launch()
     await page.keyboard.up('KeyX')
     r.check('real keys: ArrowRight runs and KeyX fires', ran.x - x0 > 40 && ran.pb > 0, `dx=${(ran.x - x0).toFixed(0)} pb=${ran.pb}`)
     await page.keyboard.press('Space')
-    await page.waitForTimeout(120)
-    const jumped = await page.evaluate(() => window.__contraTest.probe())
+    // poll, don't single-shot: a software-rendered stall can eat a 120 ms sample
+    // window (the jump itself lasts ~37 ticks — no honest poll can miss it).
+    let jumped = null
+    for (let g = 0; g < 12 && !(jumped && (!jumped.onGround || jumped.y < 196)); g++) {
+        await page.waitForTimeout(50)
+        jumped = await page.evaluate(() => window.__contraTest.probe())
+    }
     r.check('Space jumps (the A button leaves the ground)', !jumped.onGround || jumped.y < 196, `y=${jumped.y}`)
     await page.keyboard.up('ArrowRight')
 
@@ -1904,6 +2009,59 @@ const browser = await launch()
     r.check('#2885 the scripted finale runs live — a full script-length countdown from the kill to STAGE CLEAR',
         c0 === 0 && dyingSeen > 0 && dyingSeen <= CASCADE.length * CFG.cascadeStep && cleared === 'win',
         `bandX=${bandX} c0=${c0} dying=${dyingSeen} end=${cleared}`)
+
+    // #2894 browser legs: the arcade loop through the real shell. Kill the core,
+    // let STAGE CLEAR hold, and PLAY comes back — stage 1 again, seed kept,
+    // tempo raised, the bank paid +1, the HUD marking the pass in gold over the
+    // loop-1 baseline. (The cascade leg above just took a win, so the loop that
+    // ensurePlay lands on may already be n≥2 — the leg reads it dynamically.)
+    await ensurePlay()
+    const preLoop = await page.evaluate(() => window.__contraTest.probe())
+    const goldRow = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(232 * k), Math.round(13 * k), Math.round(34 * k), Math.round(8 * k)).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 120) n++   // HUD gold
+        return n
+    })
+    await page.evaluate(() => window.__contraTest.setup({ warp: 'boss', inv: 99999, lives: 4 }))
+    await page.keyboard.down('ArrowRight')
+    let lbx = 0
+    for (let g0 = 0; g0 < 40 && lbx < 136; g0++) { await page.waitForTimeout(80); lbx = (await page.evaluate(() => window.__contraTest.probe())).x }
+    await page.keyboard.down('ArrowUp')
+    await page.keyboard.down('KeyX')
+    let wonLeg = null
+    for (let g0 = 0; g0 < 220 && !wonLeg; g0++) {
+        await page.waitForTimeout(100)
+        const p = await page.evaluate(() => window.__contraTest.probe())
+        if (p.end === 'win') wonLeg = p
+    }
+    await page.keyboard.up('KeyX'); await page.keyboard.up('ArrowUp'); await page.keyboard.up('ArrowRight')
+    let resumed = null
+    for (let g0 = 0; g0 < 300 && !(resumed && resumed.screen === 'play' && resumed.loop === preLoop.loop + 1); g0++) {
+        await page.waitForTimeout(80)
+        resumed = await page.evaluate(() => window.__contraTest.probe())
+    }
+    r.check('#2894 the win LOOPS — STAGE CLEAR hands stage 1 back at loop n+1: tempo raised, seed kept, score and bank carried',
+        wonLeg !== null && resumed !== null && resumed.loop === preLoop.loop + 1 && Math.abs(resumed.lk - loopK(preLoop.loop + 1)) < 1e-9 && resumed.seed === preLoop.seed && resumed.phase === 'jungle' && resumed.x < 80 && resumed.score >= wonLeg.score && resumed.lives >= preLoop.lives,
+        JSON.stringify({ pre: preLoop.loop, wonScore: wonLeg && wonLeg.score, resumed: resumed && { loop: resumed.loop, lk: resumed.lk, seedKept: resumed.seed === preLoop.seed, phase: resumed.phase, x: resumed.x, score: resumed.score, lives: resumed.lives } }))
+    const goldPost = resumed && resumed.loop === preLoop.loop + 1 ? resumed.loop : -1
+    // Baseline honestly: the same live run, loop fields toggled to 1 (marker off),
+    // then back — the diff is exactly the LOOP-n ink, whatever pass we landed on.
+    let goldBase = -1; let goldMark = -1
+    if (goldPost > 0) {
+        // the canvas repaints once per rAF — give each toggle a beat, or the
+        // pixel read races the frame and samples the pre-toggle paint
+        await page.evaluate(() => window.__contraTest.setup({ loop: 1 }))
+        await page.waitForTimeout(150)
+        goldBase = await goldRow()
+        await page.evaluate((L) => window.__contraTest.setup({ loop: L }), goldPost)
+        await page.waitForTimeout(150)
+        goldMark = await goldRow()
+    }
+    r.check('#2894 the pass reads — LOOP n paints gold on the HUD where loop 1 shows nothing',
+        goldMark - goldBase >= 10, `gold loop1=${goldBase} loopN=${goldMark}`)
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()

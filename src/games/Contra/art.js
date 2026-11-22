@@ -714,10 +714,11 @@ export function drawHud (ctx, gs, hiscore) {
     ctx.fillStyle = wcols[gs.p.weapon] || C.ink
     ctx.fillText(wnames[gs.p.weapon] || 'RIFLE', 314, 4)
     // #2894 arcade loop: the escalation reads at a glance — loop 1 stays silent
-    // (it IS the stage); from loop 2 the HUD marks the pass in gold.
+    // (it IS the stage); from loop 2 the HUD marks the pass in gold, under the
+    // 2UP tag (the 314/12 slot belongs to seat 2's wheel).
     if (gs.loop > 1) {
         ctx.fillStyle = C.gold
-        ctx.fillText(`LOOP ${gs.loop}`, 314, 12)
+        ctx.fillText(`LOOP ${gs.loop}`, 232, 12)
     }
     // S4 co-op: seat 2 reads blue — his tag and his wheel. #2814: NO bank of
     // his own anymore — the single head-row is the SHARED pool, the cabinet's

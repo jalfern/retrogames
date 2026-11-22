@@ -472,7 +472,7 @@ export default function ContraGame () {
                 probe: () => ({
                     screen, tick: gs.tick, x: +gs.p.x.toFixed(2), y: +gs.p.y.toFixed(2), onGround: gs.p.onGround,
                     lives: gs.lives, score: gs.score, weapon: gs.p.weapon, end: gs.end, cam: Math.round(gs.cam),
-                    loop: gs.loop, lk: +gs.lk.toFixed(3),   // #2894 the arcade loop is observable
+                    loop: gs.loop, lk: +gs.lk.toFixed(3), seed: gs.seed,   // #2894 the arcade loop is observable
                     phase: gs.phase, camY: +gs.camY.toFixed(2),
                     core: gs.boss ? gs.boss.core : null,
                     coreOpen: gs.boss ? (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen : null,
