@@ -118,12 +118,18 @@ const FloorBossGame = () => {
         let edgeA = false, edgeB = false
         // #1712 S2: canvas taps queue and apply at the tick that consumes them,
         // so the banked stream and the sim advance by the same sequence (live ==
-        // replay, drain-one-per-tick). watchUsed: a shift where the brain ever
-        // took the floor is never labeled a human's hands (autoRecord sources
-        // resolve at finish — the conservative stamp keeps model hands out of
-        // train; honest gap in the README).
+        // replay, drain-one-per-tick). watchSteered (#2987 refines #1712): the
+        // take is named model when the autopilot pad DROVE at least one live
+        // tick — stamping at the Y keydown was coarser than the #2058 law, it
+        // named takes the brain never touched. Seating arms, a steered tick
+        // stamps; the stamp survives hand-back and every clock-in (conservatism
+        // intact — any tick the brain could have steered poisons the career
+        // take), and only a fresh floor clears it. sheetSteered: the bank's
+        // truth at the whistle (steered AND recording) — what the sheet winks,
+        // and what a declined floor never sees (#2964 chip law).
         const tapQueue = []
-        let watchUsed = false
+        let watchSteered = false
+        let sheetSteered = false
         let overAt = 0
         let episode = null
 
@@ -377,6 +383,7 @@ const FloorBossGame = () => {
         const finish = () => {
             const won = gs.end === 'win'
             overAt = performance.now()
+            sheetSteered = watchSteered && isRecording() // #2987: capture the bank's truth BEFORE the take closes — steered AND recorded is the only shape the sheet may confess; declined floors have no take to name (#2058/#2964)
             watchingRef.current = false; setWatching(false) // #1637 the shift ends in your hands
             setEnd({ won, kind: gs.end, score: gs.score, shipped: gs.shipped, expired: gs.expired, stows: gs.stows, reason: gs.endReason })
             const board = (() => { try { return JSON.parse(localStorage.getItem('floorboss.board') || '[]') } catch { return [] } })()
@@ -446,7 +453,9 @@ const FloorBossGame = () => {
                 // normalized point; replay rebuilds pixels from it (deterministic).
                 tapPad = { x: tap.px / W, y: tap.py / H, down: true }
             }
-            const pad = watchingRef.current && !gs.end ? ap(gs) : livePad()
+            const brainOn = watchingRef.current && !gs.end
+            if (brainOn) watchSteered = true // #2987: the tick that seats the autopilot pad IS the stamp — press-time never named a take alone
+            const pad = brainOn ? ap(gs) : livePad()
             if (tapPad) pad.pointer = tapPad
             const mpad = duelMode && !gs.end ? apM(gs) : null // #2555: seat M drives its own slot beside you
             step(gs, mpad ? [pad, mpad] : [pad])
@@ -1508,6 +1517,20 @@ const FloorBossGame = () => {
                 }
                 ctx.textAlign = 'center'
             }
+            // #2987: the steered verdict — an amber plate under the beat, static
+            // (a verdict, not a pulse) on the same opaque-plate law as the CLEAR
+            // beat, so it reads whatever floor sits behind it. It prints only on
+            // sheetSteered, the bank's truth captured at finish: a declined floor
+            // has no take to confess (#2964 chip law), and a peek that never
+            // steered a tick keeps its take out of this plate's way (#2058).
+            // Amber family — the chip's hot-red discipline stands untouched.
+            if (sheetSteered) {
+                ctx.fillStyle = 'rgba(26,17,5,0.92)'; ctx.fillRect(W / 2 - 118, 322, 236, 22)
+                ctx.strokeStyle = '#ffb347'; ctx.lineWidth = 1; ctx.strokeRect(W / 2 - 117.5, 322.5, 235, 21)
+                ctx.fillStyle = '#ffd9a0'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'
+                ctx.fillText('BRAIN STEERED — TAKE OUT OF TRAIN', W / 2, 336)
+                ctx.textAlign = 'center'
+            }
             ctx.textAlign = 'left'
         }
 
@@ -1576,7 +1599,8 @@ const FloorBossGame = () => {
             const pin = seedFromQuery()
             duelMode = duel // #2555: D at the attract seats the model manager beside you
             tapQueue.length = 0 // #1712: a fresh floor starts with no pending taps
-            watchUsed = false // ...and gives the brain its clean slate
+            watchSteered = false // ...and gives the brain its clean slate (#2987: a fresh floor starts unbranded)
+            sheetSteered = false // ...and the sheet its silence
             gs = makeGame(pin != null ? pin >>> 0 : (Math.random() * 2 ** 31) | 0, { duel })
             parts.length = 0
             setEnd(null)
@@ -1666,7 +1690,7 @@ const FloorBossGame = () => {
             // click takes the shift back (F/R/H are manager verbs — they drive).
             if (isWatchKey(e)) {
                 if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
-                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart(); watchUsed = true } // #1712: a brain-steered shift is never labeled a human's
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() } // #2987: seating the brain arms it; a steered tick names the take (the #1712 press-time stamp was coarser than the #2058 law)
                 return
             }
             if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
@@ -1713,8 +1737,8 @@ const FloorBossGame = () => {
         // One spec for both arms: armLiveCapture makes the live bank exist in
         // production (consent-gated via autoRecord), exposeGame re-arms the
         // byte-identical wiring in DEV. Seats label themselves honestly: seat 0
-        // is the thumb UNLESS the brain ever took the shift (watchUsed — the
-        // conservative stamp), seat 1 in a duel is the MODEL's own hands.
+        // is the thumb UNLESS the brain steered a tick of the take (watchSteered
+        // — the tick-true stamp, #2987), seat 1 in a duel is the MODEL's own hands.
         const recSpec = {
             id: 'floor-boss',
             method: 'dpad',
@@ -1722,7 +1746,7 @@ const FloorBossGame = () => {
             reads: ['up', 'down', 'left', 'right', 'a', 'b'],
             get players() { return duelMode ? 2 : 1 },
             sources: () => {
-                const out = [{ kind: watchUsed ? 'model' : 'human' }]
+                const out = [{ kind: watchSteered ? 'model' : 'human' }] // #2987: named by steered ticks, not by keydowns
                 if (duelMode) out.push({ kind: 'model' }) // seat M — #2555's model manager
                 return out
             },
@@ -1732,7 +1756,7 @@ const FloorBossGame = () => {
                 duelMode = (players | 0) >= 2 // #1712: a duel take rebuilds with its seats
                 closeTake() // #2958: a rebuild ends any open career take where its floor stood (no-op when idle)
                 tapQueue.length = 0
-                watchUsed = false
+                watchSteered = false
                 gs = makeGame(contractSeed, { duel: duelMode })
                 parts.length = 0
                 setEnd(null)
@@ -1818,6 +1842,8 @@ const FloorBossGame = () => {
                 tillFx: () => ({ grow: tillGrowAt.slice(), flash: spendFlash ? { label: spendFlash.label, col: spendFlash.col || '#ffd23f' } : null }),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
+                watchSteered: () => watchSteered, // #2987 eye: has the brain driven a live tick of this take?
+                sheetSteered: () => sheetSteered, // #2987 eye: bank truth at the whistle (steered AND recorded)
                 probe: () => ({ tick: gs.tick, score: gs.score, escrow: gs.escrow, freight: gs.freight, fees: gs.fees, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end, away: gs.truck.away, far: gs.truck.far, padDest: gs.pad.map((p) => p.d || 0), padWeight: gs.pad.map((p) => p.w || 0), heavy: gs.truck.grid.reduce((s, r) => s + r[2], 0), duel: gs.duel ? { tills: gs.credits.slice(0, 2), house: gs.credits[2], spent: gs.spent, winner: gs.duelWinner, rackOwners: gs.racks.map((r) => r.owner), botOwners: gs.robots.map((b) => b.owner) } : null }), // away/far/padDest #1927, padWeight/heavy #1931, duel eyes #2555
                 watchSfx: watchSfxLog,
                 GX, GY, TILE, W, H,
