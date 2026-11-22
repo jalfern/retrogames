@@ -11,7 +11,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, STAGE_END, STAGE_END2, POD, makeGame, step, autopilot, stateHash, shieldOn, shieldOnAt, enableCoop } from './sim.js'
+import { W, H, STAGE_END, STAGE_END2, HEAT_AT, POD, makeGame, step, autopilot, stateHash, shieldOn, shieldOnAt, enableCoop } from './sim.js'
 import { drawBackground, drawShip, drawShipWing, drawLarva, drawTurret, drawPod, drawBitPod, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge } from './art.js'
 
 const SIM_MS = 1000 / 60
@@ -69,8 +69,11 @@ export default function RType() {
             bigboom: () => { audioController.playNoise(0.5, 0.2); audioController.playSweep(200, 30, 0.6, 'sawtooth', 0.16); shake = Math.max(shake, 7) },
             die: () => { audioController.playSweep(400, 50, 0.5, 'sawtooth', 0.18); shake = Math.max(shake, 6) },
             // the maw speaks: a dread horn warns the gape, a seal-clank ends it (#2818)
-            mawopen: () => { audioController.playSweep(58, 138, 0.55, 'sawtooth', 0.13); audioController.playTone(92, 0.5, 'triangle', 0.08) },
-            mawshut: () => { audioController.playSweep(190, 52, 0.26, 'square', 0.12); audioController.playNoise(0.1, 0.09); shake = Math.max(shake, 2) },
+            mawopen: () => { const hot = gs.p1 && gs.p1.hot; audioController.playSweep(hot ? 116 : 58, hot ? 276 : 138, hot ? 0.3 : 0.55, 'sawtooth', 0.13); audioController.playTone(hot ? 184 : 92, hot ? 0.28 : 0.5, 'triangle', 0.08) },
+            mawshut: () => { const hot = gs.p1 && gs.p1.hot; audioController.playSweep(hot ? 380 : 190, 52, hot ? 0.14 : 0.26, 'square', 0.12); audioController.playNoise(0.1, 0.09); shake = Math.max(shake, hot ? 3 : 2) },
+            // #2901: the ignition — the dread's panic announces itself: rising
+            // double wail + a slam, one octave of fear on top of the maw horns.
+            hotspeed: () => { audioController.playSweep(140, 420, 0.5, 'sawtooth', 0.12); audioController.playTone(660, 0.12, 'square', 0.1); audioController.playTone(880, 0.12, 'square', 0.1, 0.14); audioController.playNoise(0.18, 0.09); shake = Math.max(shake, 4) },
             missile: () => { audioController.playTone(620, 0.06, 'square', 0.08); audioController.playTone(520, 0.06, 'square', 0.08, 0.09) },
             laser: () => audioController.playSweep(1400, 320, 0.18, 'sawtooth', 0.11),
             force: () => { const n = [523, 784, 1046, 1568]; n.forEach((f, i) => audioController.playTone(f, 0.08, 'triangle', 0.11, i * 0.06)) },
@@ -383,6 +386,11 @@ export default function RType() {
                     missiles: gs.missiles.length, shots: gs.shots.length,
                     pod: gs.pod ? gs.pod.state : '-', podX: gs.pod ? Math.round(gs.pod.x) : 0,
                     p1: gs.p1 ? `${gs.p1.mouth}:${gs.p1.coreHp}` : '-',
+                    // #2901 fixtures: the desperation latch and its timer —
+                    // hot: 1 latched, 0 cold-and-live, -1 no hull; heat counts
+                    // ticks held on the lock (raw, so pins can cross the mark)
+                    p1hot: gs.p1 ? (gs.p1.hot ? 1 : 0) : -1,
+                    heat: gs.p1 ? gs.tick - gs.p1.lockAt : -1,
                     bits: gs.bits.length, shield: shieldOn(gs) ? 1 : 0, leg: gs.leg,
                     p2: gs.p2 ? `${gs.p2.cores[0].hp}/${gs.p2.cores[1].hp}` : '-',
                     // #2835 fixtures: carriers on screen, the mass's sway, the
@@ -419,6 +427,9 @@ export default function RType() {
                     if (opts.toPhase2) { gs.p1 = null; gs.enemies = gs.enemies.filter((e) => e.on !== 'p1'); gs.bullets.length = 0; gs.camLock = false; gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
                     if (opts.openMouth && gs.p1) { gs.p1.mouth = 'open'; gs.p1.mouthT = 10000 }
                     if (opts.coreHp !== undefined && gs.p1) gs.p1.coreHp = opts.coreHp
+                    // #2901 fixture: wind the desperation timer — `heat: n` puts
+                    // the mark n ticks ahead (0 ignites on the next tick).
+                    if (opts.heat !== undefined && gs.p1) gs.p1.lockAt = gs.tick - HEAT_AT + Math.max(0, opts.heat)
                     if (opts.openVents && gs.p2) { for (const c of gs.p2.cores) if (c.hp > 0) { c.mouth = 'open'; c.mouthT = 10000 } }
                     if (opts.y !== undefined) gs.ship.y = opts.y
                     if (opts.p2hp && gs.p2) gs.p2.cores.forEach((c, ci) => { if (opts.p2hp[ci] !== undefined) c.hp = opts.p2hp[ci] })
@@ -446,7 +457,7 @@ export default function RType() {
                 getState: () => [
                     `x ${Math.round(gs.ship.x)} (screen ${Math.round(gs.ship.x - gs.camX)})  y ${Math.round(gs.ship.y)}  cam ${Math.round(gs.camX)}${gs.camLock ? ' LOCK' : ''}`,
                     `score ${gs.score}  hi ${Math.max(hiscore, gs.score)}  lives ${gs.lives}  arm ${gs.ship.weapon}${gs.ship.charge ? ` charge ${gs.ship.charge}` : ''}  inv ${gs.ship.inv}  mode ${gs.mode}`,
-                    `pod ${gs.pod ? `${gs.pod.state} @${Math.round(gs.pod.x - gs.camX)}` : 'none'}  enemies ${gs.enemies.length}  bullets ${gs.bullets.length}  missiles ${gs.missiles.length}  shots ${gs.shots.length}  phase1 ${gs.p1 ? `${gs.p1.mouth} core ${gs.p1.coreHp}/${gs.p1.coreMax}` : 'field'}`,
+                    `pod ${gs.pod ? `${gs.pod.state} @${Math.round(gs.pod.x - gs.camX)}` : 'none'}  enemies ${gs.enemies.length}  bullets ${gs.bullets.length}  missiles ${gs.missiles.length}  shots ${gs.shots.length}  phase1 ${gs.p1 ? `${gs.p1.mouth} core ${gs.p1.coreHp}/${gs.p1.coreMax}${gs.p1.hot ? ' HOT' : ''} heat ${gs.tick - gs.p1.lockAt}/${HEAT_AT}` : 'field'}`,
                     `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}  sway ${Math.round(gs.p2.swayOff)}px salvo-port ${gs.p2.port}${gs.p2.dyingT > 0 ? `  WALK ${gs.p2.dyingT} from port ${gs.p2.lastCore}` : ''}` : (gs.leg === 2 ? 'inbound' : '-')}  carriers ${gs.enemies.filter((e) => e.kind === 'bitpod').length}`,
                     `wing ${gs.wing ? `${gs.wing.out ? 'OUT' : gs.wing.dead ? 'DOWN' : `(${Math.round(gs.wing.x - gs.camX)},${Math.round(gs.wing.y)})`}  lives ${gs.wing.lives}  ${gs.wing.human ? 'HUMAN' : 'CPU'}  arm ${gs.wing.weapon}  pod ${gs.wing.pod ? gs.wing.pod.state : 'none'}  bits ${gs.wing.bits.length}` : 'off'}  p1out ${gs.ship.out ? 'yes' : 'no'}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
@@ -463,6 +474,7 @@ export default function RType() {
                     { label: 'SPAWN BIT POD', run: () => { window.__rTest.setup({ spawnBitPod: { y: Math.round(gs.ship.y) } }); return 'a bit carrier closes in — feed it fire' } },
                     { label: 'TO PHASE-1', run: () => { window.__rTest.setup({ toPhase1: true }); return 'the dreadnought looms' } },
                     { label: 'OPEN MAW', run: () => { window.__rTest.setup({ openMouth: true }); return 'the maw gapes' } },
+                    { label: 'HEAT CORE', run: () => { if (!gs.p1) return 'no dreadnought on screen — TO PHASE-1 first'; window.__rTest.setup({ heat: 0 }); return 'desperation timer at the mark — next tick it panics' } },
                     { label: 'CLEAR FIRE', run: () => { gs.bullets.length = 0; gs.missiles.length = 0; return 'lane swept' } },
                     { label: 'P2 SEAT IN/OUT', run: () => { if (!gs.wing) return 'co-op off'; gs.wing.human = !gs.wing.human; return gs.wing.human ? 'a human holds seat two' : 'wingman back on duty' } },
                     { label: '+1 WING LIFE', run: () => { if (!gs.wing) return 'co-op off'; gs.wing.lives += 1; return `wing holds ${gs.wing.lives}` } },

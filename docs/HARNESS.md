@@ -276,7 +276,8 @@ issue → build per conventions + a harness that can fail → the only allowed m
 verify prod → rewrite STATE.md). One game per session, 3-hour cap, stalled-loop exits.
 **Idle has an order (#841):** claim miss → borrow ONE QA `feedback` fix (only with no live
 QA session) → flagship polish stage (`scripts/lib/idle.mjs`: first unowned "Honest gaps"
-item of SSX/Emberwood/COMET DRIFT HD/Myst, skipping games QA holds `building-qa`, filed as
+item of SSX/Emberwood/COMET DRIFT HD/Myst/DOUBLE DRAGON/R-TYPE (the last two
+by Jon's answered #2795), skipping games QA holds `building-qa`, filed as
 its own `game-queue` issue then claimed normally) → only then STOP. The pick logic is
 pure Node; `jonqcheck` pins the order and skips.
 **The warden** (`scripts/warden.sh`, launchd every 10 min) is a plain shell script, not an

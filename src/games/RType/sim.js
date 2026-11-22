@@ -38,6 +38,10 @@ export const FIELD_TOP = 26
 export const FIELD_BOT = 214
 export const SCROLL = 0.45
 export const STAGE_END = 900 // camX where the Phase-1 hull locks the screen
+// #2901 desperation phase: once the camera has held on a living Phase-1 core
+// for this many ticks, the maw panics — its cycle runs at double tick-rate
+// until the heart stops (the S3 enrage shape, `vent()`, applied to the dread).
+export const HEAT_AT = 1000
 export const STAGE_END2 = 520 // camX where the Phase-2 fortress locks (LEG 2)
 export const CORE_Y = [92, 148]  // the twin cores' lanes on the Phase-2 face
 
@@ -354,6 +358,7 @@ function startPhase1(gs) {
         coreHp: 12, coreMax: 12,
         mouth: 'closed', mouthT: 140,          // first gape after 140 ticks
         dyingT: 0,
+        hot: false, lockAt: gs.tick,          // #2901: desperation timer runs from the lock
     }
     // onboard guns ride the hull (on: 'p1')
     gs.enemies.push({ id: gs.nextId++, kind: 'turret', on: 'p1', ox: 50, oy: 52,
@@ -748,8 +753,19 @@ function runWorld(gs, pad, frozen, pad2) {
     const p1 = gs.p1
     if (p1 && p1.dyingT === 0) {
         if (p1.x > p1.targetX) p1.x += p1.vx
+        // #2901 desperation phase: a core that has traded with the R-7C for
+        // HEAT_AT ticks panics — every phase of the gape runs at double
+        // tick-rate until it dies. Pure tick arithmetic: no gs.rng draw, the
+        // cycle still spends exactly one draw per reseal, so the tuned
+        // winnability stream is untouched; windows land tighter AND closer
+        // together (tempo, not bullet speed — the Contra fairness law).
+        if (!p1.hot && gs.tick - p1.lockAt >= HEAT_AT) {
+            p1.hot = true
+            p1.mouthT = Math.ceil(p1.mouthT / 2)
+            gs.events.push('hotspeed')
+        }
         // maw cycle: closed -> opening -> open -> closing
-        p1.mouthT -= 1
+        p1.mouthT -= p1.hot ? 2 : 1
         if (p1.mouthT <= 0) {
             if (p1.mouth === 'closed') { p1.mouth = 'opening'; p1.mouthT = 30; gs.events.push('mawopen') }
             else if (p1.mouth === 'opening') { p1.mouth = 'open'; p1.mouthT = 110 }
@@ -1564,7 +1580,7 @@ export function stateHash(gs) {
     mix(gs.caps.length)
     for (const c of gs.caps) { mix(c.x); mix(c.y) }
     mix(gs.p1 ? 1 : 0)
-    if (gs.p1) { mix(gs.p1.x); mix(gs.p1.coreHp); mix(gs.p1.mouth.length) }
+    if (gs.p1) { mix(gs.p1.x); mix(gs.p1.coreHp); mix(gs.p1.mouth.length); mix(gs.p1.hot ? 1 : 0) }
     mix(gs.p2 ? 1 : 0)
     if (gs.p2) {
         mix(gs.p2.x)

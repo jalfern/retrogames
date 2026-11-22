@@ -83,7 +83,9 @@ AGENTS.md wins.
     **Never idle the builder (#841).** If the QA lane has nothing claimable
     (or a live QA session owns the borrow), do not STOP — run a flagship
     polish stage instead. Pick one of Jon's flagship games in his order —
-    **SSX, Emberwood, COMET DRIFT HD, Myst** — skipping any game the QA lane
+    **SSX, Emberwood, COMET DRIFT HD, Myst, DOUBLE DRAGON, R-TYPE** — the last
+    two join by Jon's answered #2795 ("both flagships starting with double
+    dragon") — skipping any game the QA lane
     holds as `building-qa` (never touch a game QA is inside), and take the
     oldest item in that game's README "Honest gaps" list that no open QA
     issue already owns (an issue owns a gap when its title/body names the

@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 130 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind`
+node scripts/rtypecheck.mjs       # sim + browser: 138 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -187,33 +187,66 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   already shakes harder than the wing's (die 6 vs wingdie 3) — the loss
   asymmetry the playtest asked for was standing.
 
-## Known gaps (S5+)
-Core speed-up after 1000, Stage 2 "Dobkeratops", the full capsule list beyond
-three arms (Options, Double, Speed Up, Half-Capsules), and an armed
-Williams-style duelist for variety. #2835 closed the last three #2831 carry-overs
-(bit pods, Phase-2 port salvos + body sway, the walking port-to-port death);
-what is still thin there: carriers never answer back (no launched interceptors
-when fired upon), salvos fly straight once loosed, and the autopilot does not
-pre-dodge the volley lane — it eats some of what the cabinet's pilot would
-side-step. The wing (S4) got its partner-pass in #2841 (fetch, vent-hunt,
-drift, called hand-off); still open: the wing brain never deploys its shell
-on its own initiative (a human seat two can, via G), and a dark seat gets no
-free life — seat-two flavour left for a later pass.
+- **#2901 desperation phase (builder):** the arcade's pressure trick, in the
+  house's own enrage vocabulary. 1000 ticks of camera-lock on a beating
+  Phase-1 core latches `p1.hot` once (`hotspeed` event); from then on the maw
+  advances `mouthT -= 2` — every phase of the gape halved in tempo, windows
+  tighter *and* closer together, until the heart stops. Pure tick arithmetic:
+  zero new `gs.rng` draws (the cycle still spends exactly one draw per
+  reseal), so the winnability stream is byte-identical and the 4/12 autopilot
+  floor holds unchanged — the 2× is tempo, not bullet speed (the Contra
+  fairness law: scaling round *speeds* breaks the lane-aim spine, scaling
+  cadence doesn't). Hot is sim truth (`stateHash` mixes it), reads on screen
+  (ember flush, ±1 px shudder, pulsing rim glow) and in sound (the horns
+  bite an octave up; ignition is a rising wail + slam). Leg-honest: hot lives
+  on the hull, and `loopStage` rebuilds a cold dread with its own 1000 ticks
+  (`hot-leaks` keeps that load-bearing). Note the timer rides through the
+  pilot's own wrecks — the dread does not pause its panic because you did.
+  **Fidelity interpretation (#237 rule, recorded):** the gap read "after 1000"
+  unitless; score can't be it — measured runs pass 2400 before the lock even
+  engages, which would make the speed-up permanent, not desperation — so it is
+  lock-ticks, the unit this engine measures the dread-fight in everywhere else.
+
+## Honest gaps (S5+)
+
+- **CLOSED by #2901** — core speed-up past 1000: the desperation phase is
+  live — 1000 ticks of camera-lock on a beating Phase-1 core latches `hot`,
+  the maw cycle runs at double tick-rate until the heart stops (the S3
+  enrage shape), the hull flushes ember and shudders, the horns bite an
+  octave up, and the panic is sim truth (`stateHash`); every rebuilt dread
+  gets its own timer.
+- Stage 2 "Dobkeratops" (the walking tank — its own gate).
+- The full capsule list beyond three arms (Options, Double, Speed Up,
+  Half-Capsules).
+- An armed Williams-style duelist for variety.
+- Carriers never answer back — no launched interceptors when a bit pod is
+  fired upon.
+- Phase-2 salvos fly straight once loosed, and the autopilot does not
+  pre-dodge the volley lane — it eats some of what the cabinet's pilot would
+  side-step.
+- The wing brain never deploys its shell on its own initiative (a human seat
+  two can, via G).
+- A dark seat gets no free life — seat-two flavour left for a later pass.
+
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 130 sim+browser laws, seven named mutants
+- `scripts/rtypecheck.mjs` — 138 sim+browser laws, ten named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
-  `cargo-blind`, `salvo-blind`, `vent-blind`).
+  `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
+  `hot-leaks`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
   `openMouth`, `openVents`, `coreHp`, `p2hp`, `y`, `wingLives`, `wingOut`,
   `wingHuman`, `wingInv`, `wingY`, `giveWingPod`, `giveWingBits`,
   `spawnCapWing`, `coopOff`, `spawnBitPod:{y,n,x}`, `p2Port`, …) / `start()`.
-  Probe also reports `bitpods`, `sway`, `p2port`, `p2dying`, `p2last` (#2835).
+  Probe also reports `bitpods`, `sway`, `p2port`, `p2dying`, `p2last` (#2835)
+  and `p1hot`/`heat` (#2901 — the desperation latch and the raw lock-tick
+  count); setup takes `heat: n` (wind the desperation timer to n ticks from
+  ignition, 0 = next tick).
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
-  SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
+  SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
   GEAR THE WING.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern
   taps `b` every 97 ticks) and the nightly soak roster (`nightlybot.mjs`).
