@@ -813,22 +813,32 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
     if (pose === 'dying' && t > 8) pose = 'down'
     ctx.save()
     if (pose === 'down') {
-        // sprawled flat
-        R(-9, -6, 20, 6, pal.body)
-        R(11, -9, 7, 7, pal.head)
-        if (pal.band) R(11, -9, 7, 2, pal.band)
-        R(-11, -4, 4, 4, pal.legs)
+        // #2897: sprawled flat — with EXPLICIT facing spans. R() mirrors a rect's
+        // position but not its extent, and the sprawl is the one pose wide enough
+        // that the difference tears a street-wide gap between head and torso at
+        // face === -1 (QA #2897 item 2: "KO tumble fragments ... limbs slightly
+        // detached against the asphalt").
+        ctx.translate(sx, sy)
+        ctx.scale(face, 1)
+        const F = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(u(x), u(y), u(w), u(h)) }
+        F(-9, -6, 20, 6, pal.body)
+        F(11, -9, 7, 7, pal.head)
+        if (pal.band) F(11, -9, 7, 2, pal.band)
+        F(-11, -4, 4, 4, pal.legs)
         ctx.restore(); return
     }
     if (pose === 'dying') {
         // #2810 item 2 + #2897: tumble out backwards off the hit — the body pivots
         // over the heels, arms and legs flail — a SHORT settle (8 ticks), then the
         // flat sprawl above holds while the body fades. Held rotations fuzz pixels.
+        // scale(face,1) mirrors extents for real: the broken layout read as
+        // fragments at face === -1.
         const p = Math.min(1, t / 8)
         const fl = t < 6 ? (Math.floor(t / 2) % 2 ? -3 : 2) : 0
         ctx.translate(sx, sy)
         ctx.rotate(-face * 1.25 * p)
-        const F = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(u(x) * face, u(y), u(w), u(h)) }
+        ctx.scale(face, 1)
+        const F = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(u(x), u(y), u(w), u(h)) }
         F(-9, -6 + Math.abs(fl), 20, 6, pal.body)
         F(11, -9 + Math.abs(fl), 7, 7, pal.head)
         if (pal.band) F(11, -9 + Math.abs(fl), 7, 2, pal.band)
@@ -1203,10 +1213,14 @@ export function drawHud(ctx, gs, playing = true) {
 // wave / banner one-message-at-a-time overlays (never over the HUD)
 export function drawBanner(ctx, gs) {
     if (gs.intro) {
-        // #2897 item 3: the caption punches in — one white beat over the whole
+        // #2897 item 3: the caption punches in — a white beat over the whole
         // street so the phone ear that missed the sting still feels the crime.
+        // Eight fast-decaying frames, the first three >=0.45 alpha: snappy at
+        // 60fps, and wide enough that a software-rendered CI frame (catch-up
+        // batching, measured ~4-tick paint hitches) cannot step over the bright
+        // half of it.
         if (gs.intro.flashT > 0) {
-            ctx.globalAlpha = gs.intro.flashT >= INTRO.flash ? 0.72 : gs.intro.flashT === 2 ? 0.38 : 0.16
+            ctx.globalAlpha = 0.72 * Math.pow(0.8, INTRO.flash - gs.intro.flashT)
             ctx.fillStyle = '#ffffff'
             ctx.fillRect(0, 0, W, H)
             ctx.globalAlpha = 1

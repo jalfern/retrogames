@@ -97,7 +97,7 @@ export const INTRO = {
     grabAt: 155,       // the giant's prize
     takenAt: 300,      // "MARIAN TAKEN!" — the crime named on screen
     takenShown: 124,   // ticks the caption stands (#2897: a back-row hold)
-    flash: 3,          // #2897: white frames the caption punches in on
+    flash: 8,          // #2897: white frames the caption punches in on (fast decay)
     walkY: (DEEP_TOP + DEEP_BOT) / 2 | 0,   // the line the street reopens on
 }
 

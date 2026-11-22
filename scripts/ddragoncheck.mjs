@@ -1245,6 +1245,28 @@ console.log('p2 pad seat (#2860)')
     r.check('#2891 the caption is brief — MARIAN TAKEN! stands its beat and clears before the curtain lifts',
         ab.intro.takenT === INTRO.takenShown - 2, `takenT=${ab.intro.takenT}`)
 
+    { // #2897 polish: the caption moment — white flash, back-row hold, straggler exit
+        const gs = makeGame(7, { coop: true, intro: true })
+        let flashTop = -1, flashDecay = true, strag = null, goneAt = -1
+        while (gs.intro) {
+            step(gs, {}); gs.events.length = 0
+            if (!gs.intro) break
+            const t = gs.intro.t
+            if (t === INTRO.takenAt) flashTop = gs.intro.flashT
+            if (t > INTRO.takenAt && t <= INTRO.takenAt + INTRO.flash - 1 && gs.intro.flashT !== INTRO.takenAt + INTRO.flash - t) flashDecay = false
+            if (t === INTRO.takenAt + INTRO.takenShown) strag = { x: gs.intro.goons[1].x, st: gs.intro.goons[1].state }
+            if (goneAt < 0 && gs.intro.goons[1].x >= W + 50) goneAt = t
+        }
+        r.check('#2897 the caption punches in — the street lights white for a decaying beat when the crime is named',
+            flashTop === INTRO.flash && flashDecay && INTRO.flash >= 2, `flashTop=${flashTop} decay=${flashDecay}`)
+        r.check('#2897 the caption holds for the back row — two seconds on screen, still clearing well before the curtain',
+            INTRO.takenShown >= 120 && INTRO.takenAt + INTRO.takenShown <= INTRO.total - 18, `hold=${INTRO.takenShown} end=${INTRO.takenAt + INTRO.takenShown}/${INTRO.total}`)
+        r.check('#2897 a straggler walks it out — the last gang member is mid-exit, legs still cycling, as the caption clears',
+            !!strag && strag.st === 'walk' && strag.x > W && strag.x < W + 50, `am=${strag ? `${strag.x.toFixed(0)}/${strag.st}` : 'gone'}`)
+        r.check('#2897 …and off the street before the curtain — no man left mid-frame when the stage takes over',
+            goneAt > 0 && goneAt <= INTRO.total - 6, `goneAt=${goneAt} total=${INTRO.total}`)
+    }
+
     // the curtain law: after the movie the street is EXACTLY the plain stage
     r.check('#2891 curtain law — the run that watched the movie is bit-identical to the run that never played one (stateHash parity)',
         stateHash(a.gs) === stateHash(makeGame(7, { coop: true })), `hash=${stateHash(a.gs)} vs ${stateHash(makeGame(7, { coop: true }))}`)
@@ -1674,8 +1696,8 @@ if (MUTANT) {
         },
         {
             name: 'crime-unnamed',
-            anchor: "if (at(INTRO.takenAt)) { I.takenT = INTRO.takenShown; gs.events.push('taken') }",
-            plant: "if (false && at(INTRO.takenAt)) { I.takenT = INTRO.takenShown; gs.events.push('taken') } /* MUTANT(crime-unnamed): the caption and its sting never fire */",
+            anchor: "if (at(INTRO.takenAt)) { I.takenT = INTRO.takenShown; I.flashT = INTRO.flash; gs.events.push('taken') }",
+            plant: "if (false && at(INTRO.takenAt)) { I.takenT = INTRO.takenShown; I.flashT = INTRO.flash; gs.events.push('taken') } /* MUTANT(crime-unnamed): the caption, its sting and the white beat never fire */",
             harm: async (mod) => {
                 const gs = mod.makeGame(7, { coop: true, intro: true })
                 const ev = []
@@ -1694,6 +1716,19 @@ if (MUTANT) {
                 for (let i = 0; i < 2000; i++) { mod.step(gs, {}, {}); gs.events.length = 0 }
                 return gs.intro !== null
                     ? 'HARM NAMED: 2000 ticks in and the street is still borrowed scenery — a movie that never ends is not an opening, it is a screensaver; the waves, the camera and the win condition were never handed to the player'
+                    : null
+            },
+        },
+        {
+            name: 'straggle-gone',
+            anchor: 'am.x = 195 + 175 * seg(300, INTRO.total - 6)',
+            plant: 'am.x = 195 + 400 * seg(300, INTRO.total - 130) /* MUTANT(straggle-gone): the tail exits early — a dead empty street under the caption */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7, { coop: true, intro: true })
+                while (gs.intro && gs.intro.t < mod.INTRO.takenAt + mod.INTRO.takenShown) { mod.step(gs, {}, {}); gs.events.length = 0 }
+                const am = gs.intro ? gs.intro.goons[1] : null
+                return am && am.x > mod.W + 50
+                    ? 'HARM NAMED: the whole gang was gone a full second before the caption cleared — the street stood empty and frozen under MARIAN TAKEN!, and the arcade\'s shrinking frame (last thug mid-stride at the rim) sold the empting instead'
                     : null
             },
         },
@@ -2233,6 +2268,125 @@ const defuseConsent = async (page) => {
         np.screen === 'play' && np.intro === -1 && np.x === 40, `screen=${np.screen} intro=${np.intro} x=${np.x}`)
     await page2.close()
     r.check('#2891 browser: skip/cancel legs ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
+}
+
+// ---------------- #2897 browser leg: the polish seen on the cabinet -------
+// One human-start run, sampled at rAF pace: the caption's white beat lifts
+// the whole frame's luminance; a dead Williams must show a long FLAT green
+// bar (the settled sprawl — a held rotation cannot cut a 14-px horizontal
+// run through its own body at the pivot row); Marian's panicked run tucks
+// her feet higher off the asphalt than the stroll does; and the HELP! box
+// shows its dark outline ring above the cream face while it jitters 2 px.
+{
+    const page = await openGame(browser, { url: `${BASE}/double-dragon`, hook: '__ddTest', wait: 600 })
+    const errs = []
+    page.on('pageerror', (e) => errs.push(e.stack || e.message))
+    // The white beat is 6 ticks — wide, but a software-rendered CI frame can
+    // still batch over it between paints. Count the overlay at the canvas API
+    // so the pin proves the PAINT wiring, not just the poll's luck.
+    // NOTE: install BEFORE the start press — the game canvas is created at the
+    // play transition; the prototype patch must predate the context.
+    await page.evaluate(() => {
+        window.__flashHits = 0
+        const proto = CanvasRenderingContext2D.prototype
+        const orig = proto.fillRect
+        proto.fillRect = function (x, y, w, h) {
+            if (x === 0 && y === 0 && w === 320 && h === 224 && this.globalAlpha > 0.4 && String(this.fillStyle).toLowerCase() === '#ffffff') window.__flashHits++
+            return orig.apply(this, arguments)
+        }
+    })
+    await page.keyboard.press('Space')
+    await defuseConsent(page)
+    let flashBase = -1, flashLum = -1, trunMax = -1, walkMin = 99, fleeMin = 99
+    let creamMax = 0, ringMax = 0, flashPainted = false
+    const creamCols = []
+    for (let i = 0; i < 480; i++) {
+        const s = await page.evaluate(() => {
+            const p = window.__ddTest.probe()
+            const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+            if (!cv || p.intro < 0) return { intro: -1, flashHits: window.__flashHits || 0 }
+            const g = cv.getContext('2d')
+            const out = { intro: p.intro, flash: p.introFlash, marian: p.introMarian, mx: p.introMarianX, my: p.introMarianY, bubble: p.introBubble, flashHits: window.__flashHits || 0 }
+            const strip = g.getImageData(0, 40, 320, 120).data
+            let ls = 0
+            for (let k = 0; k < strip.length; k += 16) ls += 0.299 * strip[k] + 0.587 * strip[k + 1] + 0.114 * strip[k + 2]   // row-step sampling
+            out.lum = ls / (strip.length / 16)
+            const g0 = (p.introGoons || '').split(',')[0].split(':')
+            out.trun = -1
+            if (g0[0] === 'dying' && Number(g0[3]) >= 16 && Number(g0[3]) <= 22) {
+                // The settle proof: the row through the sprawl shows ONE bright
+                // bar >=12px wide in the left window (head-to-body, spans fixed by
+                // #2897). The broken layout put the head >=8px away from the torso
+                // at face === -1 — the widest bright run stayed short of 12. Only
+                // the left 32 cols are read: the walking Amon overlaps the body's
+                // right half at these ticks.
+                const sx = Number(g0[1]), sy = Number(g0[2])
+                const row = g.getImageData(Math.max(0, sx - 24), sy - 3, 32, 1).data
+                const lum = (k) => 0.299 * row[k * 4] + 0.587 * row[k * 4 + 1] + 0.114 * row[k * 4 + 2]
+                const ref = (lum(0) + lum(1) + lum(2)) / 3
+                let best = 0, cur = 0
+                for (let k = 3; k < 32; k++) {
+                    if (lum(k) >= ref + 14) { cur += 1; if (cur > best) best = cur } else cur = 0
+                }
+                out.trun = best
+            }
+            out.srow = -1
+            if (p.introMarian === 'walking' || p.introMarian === 'fleeing') {
+                const reg = g.getImageData(Math.max(0, p.introMarianX - 9), p.introMarianY - 9, 19, 10).data
+                let minR = 99
+                for (let y = 0; y < 10 && minR > 0; y++) for (let x = 0; x < 19; x++) {
+                    const k = (y * 19 + x) * 4
+                    if (Math.abs(reg[k] - 216) <= 8 && Math.abs(reg[k + 1] - 160) <= 8 && Math.abs(reg[k + 2] - 106) <= 8) { if (y < minR) minR = y; break }
+                }
+                out.srow = minR
+            }
+            out.cream = 0; out.creamMin = -1; out.ring = 0
+            if (p.introBubble > 0 && p.introBubble % 10 < 7 && p.introMarianX >= 150 && p.introMarianX <= 280) {
+                const bx = p.introMarianX, by = p.introMarianY - 47
+                const reg = g.getImageData(bx - 26, Math.max(0, by - 4), 52, 20).data
+                let cream = 0, top = 99, minx = 99
+                for (let y = 0; y < 20; y++) for (let x = 0; x < 52; x++) {
+                    const k = (y * 52 + x) * 4
+                    if (reg[k] > 230 && reg[k + 1] > 225 && reg[k + 2] > 210) { cream += 1; if (y < top) top = y; if (x < minx) minx = x }
+                }
+                out.cream = cream
+                if (top >= 1 && top < 99) {
+                    const rr = g.getImageData(bx - 26, Math.max(0, by - 4 + top - 1), 52, 1).data
+                    let ring = 0
+                    for (let x = 6; x < 46; x++) {
+                        const r = rr[x * 4], gg = rr[x * 4 + 1], b = rr[x * 4 + 2]
+                        if (r >= b + 4 && Math.abs(r - 36) <= 12 && Math.abs(gg - 28) <= 12 && Math.abs(b - 20) <= 12) ring += 1
+                    }
+                    out.ring = ring
+                    out.creamMin = minx
+                }
+            }
+            return out
+        })
+        if (s.intro === -1) break
+        if (s.flash === 0 && s.intro >= 200 && s.intro < INTRO.takenAt) flashBase = s.lum
+        if (s.flash >= 1) flashLum = Math.max(flashLum, s.lum)
+        if (s.flashHits > 0) flashPainted = true
+        if (s.trun >= 0) trunMax = Math.max(trunMax, s.trun)
+        if (s.srow >= 0 && s.srow < 90) { if (s.marian === 'walking') walkMin = Math.min(walkMin, s.srow); if (s.marian === 'fleeing') fleeMin = Math.min(fleeMin, s.srow) }
+        if (s.cream > 150) {
+            creamMax = Math.max(creamMax, s.cream); ringMax = Math.max(ringMax, s.ring)
+            if (s.creamMin >= 0 && !creamCols.includes(s.creamMin)) creamCols.push(s.creamMin)
+        }
+        await page.waitForTimeout(18)
+    }
+    r.check('#2897 browser: the caption punches in for real — the white beat paints the whole street when the crime is named',
+        flashPainted || (flashBase > 0 && flashLum >= flashBase + 45), `painted=${flashPainted} base=${flashBase.toFixed(0)} flash=${flashLum.toFixed(0)}`)
+    r.check('#2897 browser: the KO settles flat — a dead Williams cuts a long horizontal bar, not a fuzzed held rotation',
+        trunMax >= 14, `longest green run=${trunMax}`)
+    r.check('#2897 browser: Marian\'s panicked stride reads panicked — the sprint tucks its feet higher off the asphalt than the stroll',
+        walkMin < 99 && fleeMin < 99 && fleeMin <= walkMin - 2, `walkMin=${walkMin} fleeMin=${fleeMin}`)
+    r.check('#2897 browser: the HELP! box wears its outline — a dark ring sits above the cream face at phone-legible size',
+        creamMax >= 150 && ringMax >= 14, `cream=${creamMax} ring=${ringMax}`)
+    r.check('#2897 browser: the talk box jitters 2 frames like the cabinet\'s — the box face steps ±1px while it talks',
+        creamCols.length >= 2 && Math.max(...creamCols) - Math.min(...creamCols) === 2, `columns=${creamCols.join(',')}`)
+    r.check('#2897 browser: the polish leg ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
+    await page.close()
 }
 
 // ------------------------- #2899 browser leg: the chrome corner geometry ---
