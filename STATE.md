@@ -1,78 +1,87 @@
-# STATE.md — The Forge (rewritten at close of slot a, 2026-11-22; committed to
-# main because game code merged: CONTRA arcade loop #2894 -> PR #2896 ->
-# 8e34b74. While this slot ran, slot b shipped the DD kidnapping opening
-# (#2891 -> PR #2893 -> fdba363) and took R-TYPE #2901 itself.)
+# STATE.md — The Forge (rewritten at close of slot b, 2026-11-22; committed to
+# main because game code merged: R-TYPE desperation phase #2901 -> PR #2903 ->
+# 06ef0ab. While this slot ran, slot a shipped the CONTRA arcade loop #2894 ->
+# PR #2896 and opened #2905. Rule 4 keeps turning: #2887, #2893, #2896, #2903 —
+# four game-code PRs in a row across the two slots.)
 
 ## PLAYABLE
-- /retrogames/contra — **the arcade loop is live** (#2894, slot a): STAGE CLEAR
-  no longer returns to attract. The gate dies, the fanfare plays, stage 1
-  rebuilds at LOOP n: score/gun/seed carry, the bank pays +1 shared life
-  (max 5), tempo rises `loopK` = 1 + 0.10/pass pinned x1.30 (loop 4+). What
-  runs at k: soldier/turret/sniper/depot/cannon REARMS, door spill, nade
-  cadence, walker pace, shutter cycle (coreT += k — duty stands), courier
-  traffic. What NEVER runs at k: round speeds, torrent, hero, vines, cascade
-  — fairness spine: hopBand is tuned to the round PATHS; k compresses flight
-  TIME only. Proof: loop 1 byte-identical to pre-loop (5 win seeds + 600-tick
-  hash pin); loops 2/3/4/9 sweep 12/12 wins at the bank; live legs: clear ->
-  resume loop n+1 (seed/score/bank carried), gold LOOP n HUD vs toggle
-  baseline; new mutants loop-dead + loop-overdrive, 16/16 named.
-  contracheck 171/171. Prod marker index-B-tbJv8u.js.
-- /retrogames/double-dragon — opening movie (#2891, slot b) + first-timer
-  pass (#2874 -> #2900). Contra's loop + DD's opening make the shelf's two
-  flagships read like cabinets in five seconds.
-- Rest of shelf unchanged.
+- /retrogames/r-type — **the dreadnought panics** (#2901, this slot): 1000
+  ticks of camera-lock on a beating Phase-1 core latches `p1.hot` — the maw
+  cycle runs at double tick-rate until the heart dies (the S3 enrage shape,
+  `mouthT -= 2`), announced by a rising wail + slam; ember flush, ±1 px hull
+  shudder, maw horns an octave up. Zero new rng draws (winnability floor
+  re-measured 4/12 unchanged — tempo, not bullet speed, per the Contra
+  fairness law); hot rides `stateHash`; every rebuilt dread is cold with its
+  own 1000 ticks (`hot-leaks` guards it). The autopilot kills the core at
+  ~lock+980, so the panic is exactly what it should be: pressure for the
+  struggling, invisible to the skilled. rtypecheck 138/138 (5 heat pins + 2
+  browser legs), mutants 10/10 named (`panic-deaf`, `tempo-deaf`, `hot-leaks`
+  new).
+- /retrogames/contra — arcade stage loop live (#2894, slot a): stage 1
+  rebuilds as LOOP n with tempo-only escalation; scores and lives carry.
+- /retrogames/double-dragon — opening movie live (#2891, last slot).
 
-## WHAT THIS SESSION DID (slot a)
-- Warden target #2891: forge-claim REFUSED (slot b's fresh 29-min claim, and
-  slot b's process was demonstrably alive). Ladder: steer/next/game-queue
-  empty; QA MASTER live -> no feedback borrow; flagships gap-free ->
-  NEVER-DRY: idle-kick answered `KICK CONTRA 0 weak` (score 2 = 2 unowned
-  README gaps). Filed #2894 with the why-weakest line, claimed, shipped.
-- The tuning story (worth keeping): first cut scaled round SPEEDS too — the
-  zero-latency autopilot died on 6/12 seeds at x1.12, violating the lane-aim
-  law (hop can't answer what arrives before the hop rises). Fixes derived,
-  not guessed: speeds/torrent pinned, tempo-only k, plus the loop bank
-  (+1 life/loop to 5) because seed 6 clears loop 1 at 0 lives left. Seed 6
-  died at identical ticks across k values — the honest tell it was bank
-  starvation, not the new law.
-- Harness lessons: setup() early-returns unless screen==='play'; canvas
-  pixel-toggles need >=1 frame settle between mutate and getImageData or the
-  read races the paint (gold HUD leg flaked exactly once before the fix);
-  Space-jump leg hardened from single-shot to poll after one stalled-frame
-  miss. Prod-verify: join BASE+entry with care — a leading "/" in the entry
-  match makes `BASE/entry` a double-slash 404 stub (12 wasted polls);
-  Contra is a LAZY chunk — crawl the dynamic-import graph, and use node, not
-  shell sed/tr, to walk it.
+## WHAT THIS SESSION DID (slot b)
+- Warden target #2894 claim REFUSED (slot a, 28-min checkpoint). Ladder: no
+  steer/next/game-queue; QA MASTER alive -> no feedback borrow; flagshipStage
+  null; weakestStage null -> **but the dry was fake**: Jon's answered #2795
+  ("both flagships starting with double dragon", 11-20) had never been
+  executed — `idle.mjs FLAGSHIPS` still listed four games. Executed it:
+  FLAGSHIPS = SSX, Emberwood, COMET DRIFT HD, Myst, DOUBLE DRAGON, R-TYPE
+  (FORGE.md idle clause, docs/HARNESS.md, new jonqcheck order-pin all updated;
+  R-TYPE README `Known gaps` -> parseable `Honest gaps` bullets, order kept).
+  DD is QA-held (#2874/#2863), so R-TYPE's oldest unowned gap became the
+  stage: filed POLISH #2901, claimed, shipped end-to-end (design note with
+  fidelity interpretation -> sim -> art/audio -> 5 pins + 2 legs + 3 mutants
+  -> gates -> merge -> prod verify). Filed QA polish pass #2906.
+- At close `idle-kick` answers **KICK R-TYPE 0** — the shelf is not dry.
 
 ## OPEN
-- #2901 R-TYPE speed-up — building (slot b).
-- #2902 filed — QA CONTRA loop-presentation pass (banner, heat palette, sound
-  escalation, attract demo loop, phone legibility of the LOOP tag).
-- building-qa: #2899 (app chrome PAUSE covers top-right canvas ink — the
-  region where CONTRA's LOOP n tag lives; whoever fixes chrome checks it),
-  #2889 (DD guardian-read). Feedback unowned: #2897, #2863.
-- CONTRA README honest gaps now 1: sniper-perch drift / grenadier rifle —
-  idle-kick will answer `CONTRA 0` again (score 1) or rank by competition.
-- Open question issues: #2846 (flagship public promotion; default keep
-  private, AWAITING — not mine to wait on).
+- #2905 building — slot a live (CONTRA sniper-perch drift + grenadier rifle).
+- building-qa: #2899 (app-chrome over HUD), #2889 (DD guardian-read).
+- Unowned feedback (QA lane's board): #2906 (R-TYPE desperation polish),
+  #2902 (CONTRA loop presentation), #2897 (DD opening-movie polish).
+- Next builder at idle-kick: R-TYPE gap 0 = **Stage 2 "Dobkeratops"** (the
+  walking tank — big stage; scope it as its own multi-part issue if needed).
+- Open question issues (link only): #2846 (flagship public promotion;
+  default keep private, due 11-23). None filed this session (a dry-queue
+  title question was already on the record this week — jonq refused, rightfully).
 
 ## NOTES for the next lane
-- #2894 harness surface (reuse, don't re-invent): makeGame(seed, loop),
-  setup({ loop: n }), probe {loop, lk, seed}, DebugKit LOOP +1, exports
-  loopK/LOOP_STEP/LOOP_CAP/LOOP_LIFE_BONUS/LOOP_LIVES_MAX. Cascade stays
-  pinned — mutants cascade-random/vine-* keep their anchors; nothing moved.
-- loopK float law: k = min(1.30, 1 + 0.10*(n-1)); intervals scale
-  Math.round(x / gs.lk); shutter advances coreT += gs.lk (makeBoss starts
-  coreT at 30 — measure deltas, not face values).
-- The vine/pixel legs remain the flake-prone ones (with-bare margin ~12 vs
-  observed swings 9..27): rerun once per the rule before believing them.
+- **Answered jonq questions are work items**: #2795 sat ANSWERED-and-closed for
+  two days while two lanes derived "dry". Before asking anything new,
+  `gh issue list --state all --search <topic>` and check whether a Jon answer
+  is sitting unexecuted — executing one is never a question.
+- Flagship-list changes need FOUR files together: `scripts/lib/idle.mjs`
+  (FLAGSHIPS + FLAGSHIP_DIRS), `scripts/FORGE.md` idle clause (jonqcheck:392
+  pins every name), `docs/HARNESS.md` map line, plus jonqcheck pins. The order
+  itself is now pinned (`FLAGSHIPS.join('|') === 'SSX|...|R-TYPE'`).
+- **Browser legs: `__game.step(pad, n)` is the contract API — not `tick`.**
+  And any leg that calls `__game.reset` RESEEDS the world: put reset legs LAST
+  in the block. A mid-flow reset wiped rtypecheck's deep state once this
+  session (S3/S4 legs then failed: schedule still WAVES(1), fortress jumped).
+- **Prod markers must survive tree-shaking**: DebugKit is DEV-only, so action
+  labels (`HEAT CORE`) never reach prod chunks. Durable markers = sim event
+  strings (`hotspeed`) and attract text. Entry-hash watching is a lie when the
+  edge HTML is cached — crawl the chunk graph for the marker instead.
+- rtypecheck fixtures: `__rTest.setup({ heat: n })` winds the desperation timer
+  (0 = ignite next tick); probe reports `p1hot` (0/1/-1) + raw `heat` ticks.
+  HEAT_AT exported from sim.js.
+- Sim-transition trap: `stageClear` fires on the step AFTER `dyingT` hits 0 —
+  step once before waiting on a `mode === 'clear'` loop.
+- R-TYPE README Honest gaps after this PR (7 open): Dobkeratops, capsule list,
+  Williams duelist, carrier interceptors, straight salvos + autopilot
+  pre-dodge, wing shell initiative, dark-seat free life.
 
 ## WORKTREES
-- Main checkout ~/Dev/retrogames: detached origin/main (this STATE commit on
-  top of 9a80e99).
-- ~/Dev/retrogames-forge-contra-loop — reaped (remote branch gone on merge).
-- Ports: a's 5173 stopped at close (devstop.sh, verified free). Slot b's and
-  QA nodes untouched.
+- Main checkout ~/Dev/retrogames: detached origin/main (this STATE commit).
+- `~/Dev/retrogames-forge-rtype-core-heat` — reaped suggestion: branch gone on
+  merge; `git worktree remove` when convenient.
+- `~/Dev/retrogames-qa-mini-rollback` still holds local `main` — makes gh's
+  post-merge re-checkout die on bookkeeping (merge itself is fine; re-detach
+  manually). Whoever owns it, please purge.
+- Ports: b's 5178 stopped at close (devstop.sh). QA nodes 5174/5176/5179 and
+  slot a's server — leave them.
 
 ## Open questions
 - #2846 — promote CONTRA/R-TYPE/DD to public? (default keep private.)
