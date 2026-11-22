@@ -1029,6 +1029,77 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         `looping=${looping} p1=${!!gl.p1} hot=${gl.p1 ? gl.p1.hot : 'n/a'}`)
 }
 
+// ---------------------------------------------------- #2906 law set -------
+{ // desperation polish — telegraph marks, HUD ember voice, hot guns, juice honesty
+    const quiet = (g) => { g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0; g.ship.inv = 999999 }
+    // telegraph: three hull spasms walk the last 60 ticks of the cold clock,
+    // none at the mark itself and none after the latch.
+    const gs = makeGame(7)
+    gs.camX = STAGE_END
+    quiet(gs)
+    step(gs, {})
+    const lock0 = gs.p1.lockAt
+    const marks = []
+    let spasmLive = true
+    for (let t = 1; t <= HEAT_AT + 3; t++) {
+        quiet(gs)
+        step(gs, {})
+        if (gs.events.includes('p1spasm')) marks.push(gs.tick - lock0)
+        if (gs.p1.spasm > 0 && gs.tick - lock0 > HEAT_AT - 20 + 8) spasmLive = false
+        gs.events.length = 0
+    }
+    r.check('#2906 telegraph: three hull spasms at lock+940/960/980, none after the latch',
+        marks.join(',') === `${HEAT_AT - 60},${HEAT_AT - 40},${HEAT_AT - 20}` && spasmLive,
+        `marks=${marks.join(',')} live=${spasmLive}`)
+    // HUD ember voice: ignition stamps hotAnn at 60, ticks down to silence
+    // while the panic itself stays lit.
+    const gb = makeGame(7)
+    gb.camX = STAGE_END
+    quiet(gb)
+    step(gb, {})
+    gb.p1.lockAt = gb.tick - HEAT_AT
+    step(gb, {})
+    const ann0 = gb.p1.hotAnn
+    for (let t = 0; t < 60; t++) { quiet(gb); step(gb, {}); gb.events.length = 0 }
+    r.check('#2906 HUD ember voice: hotAnn stamps 60 at ignition, falls to silence while the hull stays hot',
+        ann0 === 60 && gb.p1.hotAnn === 0 && gb.p1.hot === true,
+        `ann@latch=${ann0} ann+60=${gb.p1.hotAnn} hot=${gb.p1.hot}`)
+    // hot guns: while the core panics, ITS OWN turrets and pod reload ~25%
+    // faster — tempo (gaps), never round speed. Same seed, cold vs ignited.
+    const gunGaps = (ignite) => {
+        const g = makeGame(7)
+        g.camX = STAGE_END
+        g.ship.inv = 999999
+        step(g, {})                                  // the dread arrives, guns aboard
+        if (ignite) g.p1.lockAt = g.tick - HEAT_AT
+        const ts = [], ms = []
+        for (let t = 0; t < 900; t++) {
+            g.bullets.length = 0; g.missiles.length = 0; g.ship.inv = 999999
+            step(g, {})
+            if (g.events.includes('tsfire')) ts.push(g.tick)
+            if (g.events.includes('missile')) ms.push(g.tick)
+            g.events.length = 0
+        }
+        const gaps = (a) => a.slice(1).map((v, i) => v - a[i])
+        return { ts: gaps(ts), ms: gaps(ms) }
+    }
+    const coldG = gunGaps(false), hotG = gunGaps(true)
+    const avg = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length)
+    const ratio = (c, h) => avg(h) / Math.max(1, avg(c))
+    r.check('#2906 hot guns: the panic tightens turret gaps ~25% (tempo, not speed)',
+        coldG.ts.length >= 4 && hotG.ts.length >= 4 && ratio(coldG.ts, hotG.ts) < 0.88 && ratio(coldG.ts, hotG.ts) > 0.45,
+        `cold ${coldG.ts.slice(0, 4).join(',')} hot ${hotG.ts.slice(0, 4).join(',')} ratio=${ratio(coldG.ts, hotG.ts).toFixed(2)}`)
+    r.check('#2906 hot guns: the missile pod joins the panic (~25% tighter volley)',
+        coldG.ms.length >= 3 && hotG.ms.length >= 3 && ratio(coldG.ms, hotG.ms) < 0.88 && ratio(coldG.ms, hotG.ms) > 0.45,
+        `cold ${coldG.ms.join(',')} hot ${hotG.ms.join(',')} ratio=${ratio(coldG.ms, hotG.ms).toFixed(2)}`)
+    // juice honesty: hotAnn/spasm are presentation, never sim truth
+    const jA = makeGame(7); jA.camX = STAGE_END; quiet(jA); step(jA, {})
+    const jB = makeGame(7); jB.camX = STAGE_END; quiet(jB); step(jB, {})
+    jB.p1.hotAnn = 42; jB.p1.spasm = 7
+    r.check('#2906 juice stays juice: hotAnn/spasm never ride stateHash',
+        stateHash(jA) === stateHash(jB), `${stateHash(jA)} vs ${stateHash(jB)}`)
+}
+
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12
     let wins = 0
@@ -1245,6 +1316,71 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            name: 'cold-guns',
+            anchor: "return !!(gs.p1 && gs.p1.hot && e.on === 'p1')",
+            plant: "return false /* MUTANT(cold-guns): the panic stays in the maw — the ship's own guns never join */",
+            harm: async (mod) => {
+                const gaps = (ignite) => {
+                    const g = mod.makeGame(7)
+                    g.camX = mod.STAGE_END
+                    g.ship.inv = 999999
+                    mod.step(g, {})
+                    if (ignite) g.p1.lockAt = g.tick - mod.HEAT_AT
+                    const ts = []
+                    for (let t = 0; t < 900; t++) {
+                        g.bullets.length = 0; g.missiles.length = 0; g.ship.inv = 999999
+                        mod.step(g, {})
+                        if (g.events.includes('tsfire')) ts.push(g.tick)
+                        g.events.length = 0
+                    }
+                    return ts.slice(1).map((v, i) => v - ts[i])
+                }
+                const avg = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length)
+                const c = gaps(false), h = gaps(true)
+                return avg(h) / Math.max(1, avg(c)) > 0.88
+                    ? `HARM NAMED: the hull panics alone — cold ${avg(c).toFixed(0)} vs hot ${avg(h).toFixed(0)} turret gaps — the cabinet's desperation reads as the WHOLE ship getting urgent, and a panic the guns ignore is a flag, not a fight`
+                    : null
+            },
+        },
+        {
+            name: 'spasm-deaf',
+            anchor: "if (heat === HEAT_AT - 60 || heat === HEAT_AT - 40 || heat === HEAT_AT - 20) {",
+            plant: "if (false && heat === HEAT_AT - 60) { /* MUTANT(spasm-deaf): the dread never tests its chains before it burns */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.camX = mod.STAGE_END
+                gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0; gs.ship.inv = 999999
+                mod.step(gs, {})
+                let spasms = 0, latched = false
+                for (let t = 1; t <= mod.HEAT_AT + 3; t++) {
+                    gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0; gs.ship.inv = 999999
+                    mod.step(gs, {})
+                    if (gs.events.includes('p1spasm')) spasms++
+                    if (gs.events.includes('hotspeed')) latched = true
+                    gs.events.length = 0
+                }
+                return latched && spasms === 0
+                    ? 'HARM NAMED: the panic arrives with no warning — the dread still latches, but the 940/960/980 hull twitches that tell a watching pilot "it is waking up" are gone; the pressure trick becomes a jump-scare the player can neither read nor anticipate'
+                    : null
+            },
+        },
+        {
+            name: 'ember-mute',
+            anchor: "p1.hotAnn = 60   // #2906: the HUD names the panic for ~1 s",
+            plant: "p1.hotAnn = 0   /* MUTANT(ember-mute): the HUD keeps the desperation a dev-panel secret */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.camX = mod.STAGE_END
+                gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0; gs.ship.inv = 999999
+                mod.step(gs, {})
+                gs.p1.lockAt = gs.tick - mod.HEAT_AT
+                mod.step(gs, {})
+                return gs.p1.hot && gs.p1.hotAnn === 0
+                    ? 'HARM NAMED: the core panics in silence — the rules changed mid-fight and nothing on the player-visible HUD says so; first-timers only learn the maw doubled its tempo by dying to it'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
@@ -1397,6 +1533,44 @@ const browser = await launch()
       dead = await page.evaluate(() => window.__rTest.probe())
     }
     r.check('the game-over screen lands when the LAST pool burns (seat two already dark)', dead.screen === 'over' || dead.mode === 'gameover', `screen=${dead.screen} mode=${dead.mode}`)
+
+    // #2906 ember voice through the shell: at ignition the HUD spells HOT by
+    // the score field, and it self-mutes when hotAnn runs out. The leg above
+    // ended on game-over and setup early-returns off 'play' — reset first
+    // (the #2901 leg reseeds for itself too, so ordering stays safe).
+    await page.evaluate(() => window.__game.reset(5))
+    await page.waitForTimeout(200)
+    await page.evaluate(() => { window.__rTest.setup({ toPhase1: true, inv: 999999 }) })
+    await page.evaluate(() => { window.__rTest.setup({ heat: 0 }) })
+    let emberPx = 0
+    try {
+        await page.waitForFunction(() => {
+            if (window.__rTest.probe().p1hot !== 1) return false
+            window.__emberPx = 0
+            const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+            if (!cv) return false
+            const d = cv.getContext('2d').getImageData(120, 8, 18, 7).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 190 && d[i + 1] > 60 && d[i + 1] < 190 && d[i + 2] < 90) n++
+            window.__emberPx = n
+            return n >= 10
+        }, { timeout: 4000 })
+        emberPx = await page.evaluate(() => window.__emberPx)
+    } catch {}
+    r.check('#2906 the ember voice burns on canvas: HOT appears by the score at ignition', emberPx >= 10, `ember px=${emberPx}`)
+    let muted = false
+    try {
+        await page.waitForFunction(() => {
+            if (window.__rTest.probe().p1ann > 0) return false
+            const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+            if (!cv) return false
+            const d = cv.getContext('2d').getImageData(120, 8, 18, 7).data
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 190 && d[i + 1] > 60 && d[i + 1] < 190 && d[i + 2] < 90) return false
+            return true
+        }, { timeout: 8000 })
+        muted = true
+    } catch {}
+    r.check('#2906 the ember voice self-mutes: HOT is gone once hotAnn runs out', muted, `muted=${muted}`)
 
     // #2901 desperation through the shell (last — it reseeds): fresh run, set
     // the hull, watch the timer cold, wind it to the mark, see the panic latch.
