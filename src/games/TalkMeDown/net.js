@@ -35,7 +35,7 @@
 // proves the whole protocol in plain Node over relay/core.js rules, zero
 // sockets.
 
-import { createGame } from './engine.js'
+import { createGame, orderKindFromText } from './engine.js'
 
 export const SEATS = 2
 export const PAD_DELAY = 8      // ~133 ms of input delay: past round-trip, below feel
@@ -82,7 +82,10 @@ export function snapshotNet(gs) {
         ]),
         cur: [gs.cursor.mod, gs.cursor.sub], curFlash: gs.cursorFlash,
         man: [gs.manual.page, gs.manual.line, gs.manual.flag || '', gs.manual.flagTicks],
-        ord: [gs.order || '', gs.orderFor, gs.orderTicks],
+        // the structured form rides the wire too — the rail reader consumes
+        // orderKind, never the string (#1415 one-source law). Pre-structured
+        // snaps carry 3 elements and restore via the engine's text->structure helper.
+        ord: [gs.order || '', gs.orderFor, gs.orderTicks, gs.orderKind ? { ...gs.orderKind } : null],
         clearFlash: gs.clearFlash, flip: gs.flip,
         hp: [gs.held, gs.pulls, gs.tray.join(''), gs.sel, gs.heldSlot], // #1909: THE DRAIN state rides the
         // snapshot (additive — snapshots without the field restore as a fresh, full plate).
@@ -121,6 +124,7 @@ export function restoreNet(snap) {
         flag: snap.man[2] || null, flagTicks: snap.man[3] | 0,
     }
     gs.order = snap.ord[0] || null
+    gs.orderKind = snap.ord[3] ? { ...snap.ord[3] } : (gs.order ? orderKindFromText(gs.order) : null)
     gs.orderFor = snap.ord[1] | 0
     gs.orderTicks = snap.ord[2] | 0
     gs.clearFlash = snap.clearFlash | 0
