@@ -12,8 +12,9 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, LOOP_FX, loopVoice, LOOP_LIFE_BONUS, LOOP_LIVES_MAX } from './sim.js'
+import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, isRecording, armLiveCapture } from '../../utils/gameContract'
+import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice } from './sim.js'
 import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
@@ -159,6 +160,15 @@ export default function ContraGame () {
         const keys2 = { l: false, r: false, u: false, d: false, j: false, f: false }
         let jumpQ2 = false, fireQ2 = false
         let wasGround = true
+        // #1712 S2 seat law for replay: pad LEVEL alone cannot carry the drop-in
+        // ceremony (OS auto-repeat is blocked at the keyboard, so a re-claim is a
+        // fresh keydown whose edge the pad stream can't show). The shell latches
+        // every SUCCESSFUL dropIn at its keydown site and ships the bank ticks on
+        // rules.seat2 (comma list — rules must stay primitives); the Node adapter
+        // re-runs dropIn at each. Latching at the call site (not a post-step edge
+        // check) is what survives the arcade-loop rebuild: a held seat across the
+        // win still re-claims honestly when the friend presses again on stage 2.
+        const seat2 = []
         // #2842 presentation state for the seat ceremony (never sim truth):
         // the ceremony chopper, the drop-out warning edge, the rope tracker.
         let heli = null
@@ -253,7 +263,25 @@ export default function ContraGame () {
             heli = null; warnArmed = false; lastEnterT = 0
             demoHold = 0
             loopFx = null; demoLoop = 0   // #2902: a fresh run starts at loop 1 — no banner owed
+            // #1712: a new take starts quiet — no phantom claims carried on keys
+            // still held from the last run; the banked pad matches the fresh sim.
+            keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false
+            jumpQ2 = fireQ2 = false
+            seat2.length = 0
             setMode('play'); screen = 'play'
+        }
+
+        // #1711 S2 consent, arcade-shaped: Contra's entry law is *any key takes
+        // the seat* (#2837, checked with real keys) — so play never waits on the
+        // paperwork. Consent gates RECORDING, never the game (autoRecord doctrine:
+        // declined → plays exactly the same): the question goes up at the human's
+        // first press, and beginRun() only ever ships bytes the stored grant
+        // covers — a mid-take grant records from that tick, never before it.
+        const humanStart = () => {
+            startPlay()
+            askConsent()
+                .then((c) => { if (c && c.motion) beginRun() })
+                .catch(() => {})
         }
 
         const endTo = (what) => {
@@ -262,6 +290,7 @@ export default function ContraGame () {
             if (what === 'over') {
                 overAt = performance.now()
                 if (gs.score > hiscore) { hiscore = gs.score; localStorage.setItem('contra:hiscore', String(hiscore)) }
+                endRun() // #1711: the take ends with the run (no-op when idle/declined) — and NOT on 'clear': #2958 law, one take spans the arcade loops
             }
         }
 
@@ -273,15 +302,17 @@ export default function ContraGame () {
         // spare life for the next (banked to LOOP_LIVES_MAX); the gun the run
         // carried carries too. Fresh spawn-grace at the drop.
         const startLoop = () => {
-            const carryScore = gs.score, carryLives = Math.min(LOOP_LIVES_MAX, gs.lives + LOOP_LIFE_BONUS), carryGun = gs.p.weapon
-            gs = makeGame(gs.seed, gs.loop + 1)
-            gs.score = carryScore
-            gs.lives = carryLives
-            if (carryGun !== 'rifle') gs.p.weapon = carryGun
+            gs = arcadeLoop(gs) // #1712: the carry is sim law now — shell, harness and the dataset adapter rebuild identically
             part.length = 0
             fire.length = 0
             wasGround = true
             heli = null; warnArmed = false; lastEnterT = 0
+            // #1712: the hotter stage opens with a CPU wingman; a friend who held
+            // the blue seat presses again to rappel back in (the standing re-drop
+            // law) — keys2 goes quiet so the bank never carries the old run's
+            // held keys into the new stage, and a re-claim latches as a new tick.
+            keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false
+            jumpQ2 = fireQ2 = false
             setMode('play'); screen = 'play'
             // #2902 the resume speaks: slam the LOOP banner and hold the world
             // (two quiet beats) while it reads — a player who never saw the tag
@@ -300,12 +331,7 @@ export default function ContraGame () {
             wasGround = true; heli = null
         }
         const attractLoop = () => {
-            const carryScore = gs.score, carryLives = Math.min(LOOP_LIVES_MAX, gs.lives + LOOP_LIFE_BONUS), carryGun = gs.p.weapon
-            const seed = gs.seed
-            gs = makeGame(seed, 2)
-            gs.score = carryScore
-            gs.lives = carryLives
-            if (carryGun !== 'rifle') gs.p.weapon = carryGun
+            gs = arcadeLoop(gs) // #1712: the demo learns the same loop law the takes replay
             part.length = 0; fire.length = 0
             wasGround = true; heli = null; demoHold = 0
             demoLoop = 1; demoUntil = 900            // ~15 s of the hot stage, then attract again
@@ -313,9 +339,20 @@ export default function ContraGame () {
             sfx.loopUp(gs.loop)
         }
 
+        const toBank = (p) => ({
+            left: !!p.left, right: !!p.right, up: !!p.up, down: !!p.down, a: !!p.a, b: !!p.b,
+        })
+
         const stepSim = (pad) => {
-            step(gs, pad, simPad2())
+            const p2 = simPad2()
+            step(gs, pad, p2)
             drain()
+            // #1712 S2: bank exactly what THIS tick consumed (attract demo ticks
+            // never enter a take). The P2 drop-in needs no side channel: the
+            // keyboard press that called dropIn IS the first pad-1 content the
+            // bank carries, so the Node adapter re-applies the flip at the same
+            // tick derivably from the stream (vs DD's rules.seat2At latch).
+            if (screen === 'play' && isRecording() && !contractHoldsLoop()) recordLiveTick([toBank(pad), toBank(p2)])
             if (gs.end === 'win') { if (screen === 'play') { endTo('clear'); clearHold = 220 } }
             else if (gs.end === 'dead') { if (screen === 'play') endTo('over') }
         }
@@ -485,7 +522,7 @@ export default function ContraGame () {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
-            if (screen === 'attract') { startPlay(); return }
+            if (screen === 'attract') { humanStart(); return }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract'); return }
             if (screen === 'clear') return
             if (pausedRef.current || e.repeat) return
@@ -506,7 +543,7 @@ export default function ContraGame () {
             if (e.code === 'KeyS') keys2.d = true
             if (e.code === 'KeyF') { keys2.j = true; jumpQ2 = true }
             if (e.code === 'KeyG') { keys2.f = true; fireQ2 = true }
-            if (isP2 && !gs.p2.human && !gs.p2.out) dropIn(gs)
+            if (isP2 && !gs.p2.human && !gs.p2.out && dropIn(gs)) seat2.push(gs.tick + 1) // #1712: bank tick of the ceremony — the next tick the loop banks after this press
         }
         const onUp = (e) => {
             if (e.code === 'ArrowLeft') keys.l = false
@@ -524,13 +561,76 @@ export default function ContraGame () {
         }
         const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false; keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false }
         const onPointer = () => {
-            if (screen === 'attract') { startPlay(); return }
+            if (screen === 'attract') { humanStart(); return }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract') }
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
         window.addEventListener('pointerdown', onPointer)
+
+        // ---- capture spec (#1711 S2 + #1712) ----
+        // One spec for both arms: armLiveCapture makes the live bank exist in
+        // production (consent-gated via autoRecord), exposeGame re-arms the
+        // byte-identical wiring in DEV. Seat kinds resolve at record-STOP
+        // (recording.js evaluates function sources there): seat 0 is the thumb
+        // by construction (#2058 — and Contra has no watch seat to lie about),
+        // seat 1 carries whoever holds it — the wingman's brain is `cpu`, a
+        // person who rappelled in is `human`.
+        const recSpec = {
+            id: 'contra',
+            method: 'dpad',
+            players: 2,
+            buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+            reads: ['up', 'down', 'left', 'right', 'a', 'b'],
+            sources: () => [{ kind: 'model' }, { kind: gs.p2.human ? 'human' : 'cpu' }],
+            rules: () => (seat2.length ? { seat2: seat2.join(',') } : {}),
+            reset: (seed) => {
+                gs = makeGame(seed >>> 0)
+                part.length = 0
+                fire.length = 0
+                loopFx = null; demoLoop = 0   // #2902: no banner owed on a harness reset
+                keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false
+                keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false
+                jumpQ = fireQ = jumpQ2 = fireQ2 = false
+                wasGround = true; heli = null; warnArmed = false; lastEnterT = 0
+                seat2.length = 0
+                screen = 'play'
+                setMode('play')
+            },
+            tick: (pad, all = [pad]) => {
+                const p2 = all[1] || {}
+                if (gs.end) { gs.tick += 1; drain(); return }
+                step(gs, {
+                    left: !!pad.left, right: !!pad.right, up: !!pad.up, down: !!pad.down,
+                    a: !!pad.a, b: !!pad.b,
+                }, {
+                    left: !!p2.left, right: !!p2.right, up: !!p2.up, down: !!p2.down,
+                    a: !!p2.a, b: !!p2.b,
+                })
+                drain()
+            },
+            state: () => ({
+                tick: gs.tick, score: gs.score, done: gs.end !== null,
+                seed: gs.seed, lives: gs.lives,
+                x: Math.round(gs.p.x), y: Math.round(gs.p.y), weapon: gs.p.weapon,
+                phase: gs.phase, core: gs.boss ? gs.boss.core : null,
+                soldiersAlive: gs.soldiers.filter((s) => !s.dead).length,
+                // #2814: one pool — `lives` above IS both seats' bank; the
+                // seat's own bank no longer exists, only its standing state.
+                allyWeapon: gs.p2.weapon, allyOut: gs.p2.out,
+                carriers: gs.carriers.length, pods: gs.pods.length,
+                hash: stateHash(gs),
+            }),
+            canvas: () => canvas,
+            snapshot: () => JSON.parse(JSON.stringify(gs)),
+            restore: (s) => { gs = s },
+        }
+        // #1711 S2: arm the live capture for every build (DEV re-arms the
+        // identical wiring inside exposeGame); banking only happens while a
+        // consented auto capture runs (autoRecord.js).
+        initAutoRecord()
+        armLiveCapture(recSpec)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -664,49 +764,14 @@ export default function ContraGame () {
                     { label: 'TO THE GATE', run: () => { warpBoss(gs); return 'before the core' } },
                 ],
             })
-            exposeGame({
-                id: 'contra',
-                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
-                reset: (seed) => {
-                    gs = makeGame(seed >>> 0)
-                    part.length = 0
-                    loopFx = null; demoLoop = 0   // #2902: no banner owed on a harness reset
-                    keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false
-                    keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false
-                    jumpQ2 = fireQ2 = false
-                    screen = 'play'
-                    setMode('play')
-                },
-                tick: (pad) => {
-                    if (gs.end) { gs.tick += 1; drain(); return }
-                    step(gs, {
-                        left: !!pad.left, right: !!pad.right, up: !!pad.up, down: !!pad.down,
-                        a: !!pad.a, b: !!pad.b,
-                    })
-                    drain()
-                },
-                state: () => ({
-                    tick: gs.tick, score: gs.score, done: gs.end !== null,
-                    seed: gs.seed, lives: gs.lives,
-                    x: Math.round(gs.p.x), y: Math.round(gs.p.y), weapon: gs.p.weapon,
-                    phase: gs.phase, core: gs.boss ? gs.boss.core : null,
-                    soldiersAlive: gs.soldiers.filter((s) => !s.dead).length,
-                    // #2814: one pool — `lives` above IS both seats' bank; the
-                    // seat's own bank no longer exists, only its standing state.
-                    allyWeapon: gs.p2.weapon, allyOut: gs.p2.out,
-                    carriers: gs.carriers.length, pods: gs.pods.length,
-                    hash: stateHash(gs),
-                }),
-                canvas: () => canvas,
-                snapshot: () => JSON.parse(JSON.stringify(gs)),
-                restore: (s) => { gs = s },
-            })
+            exposeGame(recSpec) // #1712: the harness drives the same spec the phone banks
         }
 
         exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: gs.end != null, lives: gs.lives, seed: gs.seed }))
 
         return () => {
             unexposeFeedbackState()
+            endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
             if (import.meta.env.DEV) { if (window.__contraTest) delete window.__contraTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)

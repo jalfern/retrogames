@@ -85,7 +85,7 @@ export async function openMario(browser, { url = URL_DEFAULT, viewport = { width
     return openGame(browser, { url, viewport, start, wait, hook: '__marioTest' })
 }
 
-export async function openGame(browser, { url, viewport = { width: 900, height: 760 }, start = false, wait = 400, hook = '__marioTest', touch = false } = {}) {
+export async function openGame(browser, { url, viewport = { width: 900, height: 760 }, start = false, wait = 400, hook = '__marioTest', touch = false, decline = false } = {}) {
     // `touch: true` is the phone driver's way in: hasTouch flips the
     // page's touch capabilities and isMobile makes the primary pointer
     // coarse, so a game that withholds its pad from desktops still shows
@@ -94,6 +94,12 @@ export async function openGame(browser, { url, viewport = { width: 900, height: 
     page.setDefaultTimeout(60000)
     page.on('pageerror', e => console.log('[pageerror]', e.message))
     page.on('console', m => { if (m.type() === 'error') console.log('[console.error]', m.text()) })
+    // `decline: true` — the robot is not a consenting human (#1711): seed the
+    // stored anonymous decline (watchcheck/bombdrive pattern) so a consent-gated
+    // entry answers itself and never parks a modal over the tested world.
+    if (decline) await page.addInitScript(() => {
+        try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ anon: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode: the gate stays, as on a real declined-to-store device */ }
+    })
     await page.goto(url, { waitUntil: 'load' })
     try {
         await page.waitForFunction((h) => !!window[h], hook, { timeout: 15000 })
