@@ -364,8 +364,19 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   commitments and hunter intercepts outrank the duel (the first strafe wiring
   traded slabs for jinks and solo winnability fell to 2/12; guarding the
   commitments put it at 8/12, above the pre-duel 7).
-- Carriers never answer back — no launched interceptors when a bit pod is
-  fired upon.
+- **CLOSED by #2937** — carriers answer back: the bay fires. A hit that leaves
+  the ferry ALIVE looses one STING — a light cyan interceptor aimed at the
+  nearer hull at the instant of launch and committed from then on (no tracking,
+  no lanes; not being there is the dodge — the discipline the duel's pass
+  teaches). The bay has a cycle time (80 ticks): a vulcan stream is answered
+  with darts, not a swarm. The kill shot looses nothing but cargo — the wreck
+  law (#2835) stands untouched. Soft airframe: one vulcan, a shell ram, a
+  thrown orb or the orbit fold it (200, turret money); the body kills at
+  contact. Zero rng — the aim is arithmetic on live positions, the cooldown is
+  tick-arithmetic — so the autopilot's own stream answering the leg-2 carriers
+  raises the same darts on every seed. Both brains read the intercept (its lane
+  goes hot the way the duel's dash does: where it's going, not where it is),
+  and the dart rides stateHash like every other body.
 - Phase-2 salvos fly straight once loosed, and the autopilot does not
   pre-dodge the volley lane — it eats some of what the cabinet's pilot would
   side-step.

@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, OPT, DUEL, WAVES, WAVES2, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, OPT, DUEL, STING, WAVES, WAVES2, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -1804,10 +1804,216 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
     r.check('co-op clears strictly more of the seeded field than the solo floor', wins >= 6, `${wins}/12 [${detail.join(' ')}]`)
 }
 
+// ------------------------------------------------------- #2937 carrier bay ---
+// THE STING — carriers answer back. A live hit on the bit ferry looses one
+// committed interceptor at the hull that made it: no swarm (the bay cycles),
+// no tracking (the dodge is movement), no launch from the grave (the wreck
+// only spills cargo), zero rng, and both brains read the line before it arrives.
+{ // the answer law: the hit that leaves it alive spits exactly one dart, aimed
+    const gs = makeGame(1)
+    gs.ship.inv = 999999
+    gs.enemies.push({ id: 901, kind: 'bitpod', x: gs.ship.x + 120, y: 120, baseY: 120, bob: 0,
+        hp: 7, n: 2, vx: 0, inv: 0, anim: 0, holdT: 999, stingCd: 0, anchorX: gs.ship.x + 120, state: 'hold' })
+    let launchAt = -1, st = null, aim = null
+    for (let i = 0; i < 40 && launchAt < 0; i++) {
+        gs.shots.push({ id: 1000 + i, x: gs.ship.x + 12, y: 120, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+        step(gs, {})
+        if (launchAt < 0 && gs.events.includes('sting')) {
+            launchAt = i
+            st = gs.enemies.find((e) => e.kind === 'sting')
+            // the honest aim read: the velocity is parallel to the muzzle→hull
+            // vector THIS tick (the carrier bobs, so the line is rarely flat)
+            const ddx = gs.ship.x - st.x, ddy = gs.ship.y - st.y
+            aim = st.vx * ddy - st.vy * ddx // cross product: 0 = aimed true
+        }
+        gs.events.length = 0
+        gs.ship.inv = 999999
+    }
+    const car = gs.enemies.find((e) => e.kind === 'bitpod')
+    r.check('#2937 answer law: a live hit on the carrier looses exactly one sting, aimed at the pilot, and the bay starts its cycle',
+        launchAt >= 0 && st && gs.enemies.filter((e) => e.kind === 'sting').length === 1 &&
+        Math.abs(Math.hypot(st.vx, st.vy) - STING.speed) < 1e-6 && st.vx < 0 && Math.abs(aim) < 1e-6 &&
+        car && car.stingCd === STING.cd,
+        `launched@+${launchAt} cross=${aim === null ? 'n/a' : aim.toExponential(2)} cd=${car ? car.stingCd : 'gone'}`)
+}
+
+{ // the bay cycles: two hits inside the cooldown still answer once; the cooldown
+    // expiring lets the next hit through. A vulcan stream gets darts, not a swarm.
+    const gs = makeGame(2)
+    gs.ship.inv = 999999
+    gs.enemies.push({ id: 902, kind: 'bitpod', x: gs.ship.x + 100, y: 100, baseY: 100, bob: 0,
+        hp: 7, n: 2, vx: 0, inv: 0, anim: 0, holdT: 999, stingCd: 0, anchorX: gs.ship.x + 100, state: 'hold' })
+    let launched = 0, shots = 0
+    for (let i = 0; i < 130; i++) {
+        if (i === 0 || i === 8 || i === STING.cd + 20) gs.shots.push({ id: 2000 + (shots++), x: gs.ship.x + 12, y: 100, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+        step(gs, {})
+        if (gs.events.includes('sting')) launched++
+        gs.events.length = 0
+        gs.ship.inv = 999999
+    }
+    r.check('#2937 cycle law: hits inside the bay cooldown answer once, and the cooled bay answers again (hp 7 — three hits, two darts)',
+        launched === 2 && gs.enemies.some((e) => e.kind === 'bitpod'),
+        `sting events=${launched} (want 2) carrier alive=${gs.enemies.some((e) => e.kind === 'bitpod')}`)
+}
+
+{ // the kill shot looses nothing but cargo — the wreck law (#2835) stands untouched
+    const gs = makeGame(3)
+    gs.ship.inv = 999999
+    gs.enemies.push({ id: 903, kind: 'bitpod', x: gs.ship.x + 100, y: 140, baseY: 140, bob: 0,
+        hp: 1, n: 2, vx: 0, inv: 0, anim: 0, holdT: 999, stingCd: 0, anchorX: gs.ship.x + 100, state: 'hold' })
+    let launched = 0, free = false
+    for (let i = 0; i < 40 && !(launched === 0 && free); i++) {
+        if (i === 0) gs.shots.push({ id: 3000, x: gs.ship.x + 12, y: 140, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+        step(gs, {})
+        if (gs.events.includes('sting')) launched++
+        if (gs.events.includes('bitfree')) free = true
+        gs.events.length = 0
+        gs.ship.inv = 999999
+    }
+    r.check('#2937 the kill shot spills cargo only: a dying carrier looses no interceptor (wreck law stands)',
+        launched === 0 && free && !gs.enemies.some((e) => e.kind === 'bitpod') && gs.caps.filter((c) => c.type === 'bit').length === 2,
+        `launched=${launched} bitfree=${free} cargo=${gs.caps.filter((c) => c.type === 'bit').length}`)
+}
+
+{ // committed line: aimed at launch, never retargeted — leave the lane and it misses
+    const gs = makeGame(4)
+    gs.ship.inv = 999999
+    gs.enemies.push({ id: 904, kind: 'sting', x: gs.ship.x + 90, y: gs.ship.y, vx: -STING.speed, vy: 0, hp: STING.hp, t: 0, inv: 0, anim: 0 })
+    for (let i = 0; i < 40; i++) { step(gs, { down: true }); gs.events.length = 0; gs.ship.inv = 999999 }
+    const st = gs.enemies.find((e) => e.kind === 'sting')
+    const gap = st ? Math.abs(st.y - gs.ship.y) : 999
+    r.check('#2937 committed line: the dart never turns to follow — step off the aim line and it sails past',
+        st && st.vy === 0 && gap > 30, `vy=${st ? st.vy : 'gone'} lane-gap=${gap.toFixed(0)}`)
+}
+
+{ // soft airframe: one vulcan pays for the answer — turret money
+    const gs = makeGame(5)
+    gs.ship.inv = 999999
+    gs.enemies.push({ id: 905, kind: 'sting', x: gs.ship.x + 110, y: 120, vx: -STING.speed, vy: 0, hp: STING.hp, t: 0, inv: 0, anim: 0 })
+    let boom = false
+    const sc0 = gs.score
+    for (let i = 0; i < 40 && !boom; i++) {
+        gs.shots.push({ id: 4000 + i, x: gs.ship.x + 12, y: 120, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+        step(gs, {})
+        if (gs.events.includes('boom')) boom = true
+        gs.events.length = 0
+        gs.ship.inv = 999999
+    }
+    r.check('#2937 soft airframe: exactly one vulcan round folds the sting, for turret money',
+        boom && gs.score - sc0 === STING.score && !gs.enemies.some((e) => e.kind === 'sting'),
+        `boom=${boom} score+${gs.score - sc0} (want ${STING.score})`)
+}
+
+{ // the answer hurts: a dart riding its line kills the hull that stands in it
+    const gs = makeGame(6)
+    const lives0 = gs.lives
+    gs.ship.inv = 0 // no i-frames: the law is that the body hurts
+    gs.enemies.push({ id: 906, kind: 'sting', x: gs.ship.x + 30, y: gs.ship.y, vx: -STING.speed, vy: 0, hp: STING.hp, t: 0, inv: 0, anim: 0 })
+    let died = false
+    for (let i = 0; i < 30 && !died; i++) { step(gs, {}); died = gs.ship.dead || gs.dyingT > 0; gs.events.length = 0 }
+    r.check('#2937 the answer hurtS: a sting down its line kills the hull that never moved off it',
+        died && gs.lives === lives0 - 1, `died=${died} lives ${lives0}->${gs.lives}`)
+}
+
+{ // the pilot's brain knows the answer: the autopilot steps off the aimed line —
+    // and the same world WITHOUT the dart keeps the stick home, so the dodge is
+    // the sting's doing, not lane bookkeeping.
+    const mk = (withSting) => {
+        const gs = makeGame(7)
+        gs.ship.inv = 999999
+        if (withSting) gs.enemies.push({ id: 907, kind: 'sting', x: gs.ship.x + 40, y: gs.ship.y, vx: -STING.speed, vy: 0, hp: STING.hp, t: 0, inv: 0, anim: 0 })
+        return autopilot(gs)
+    }
+    const a = mk(true), b = mk(false)
+    r.check('#2937 the autopilot reads the committed line and leaves its lane — same world, no dart, stick home (docs/AI.md)',
+        a.up === true && a.down === false && b.up === false && b.down === false,
+        `with sting: up=${a.up} down=${a.down}; without: up=${b.up} down=${b.down}`)
+}
+
+{ // zero rng: the answer is arithmetic — same pads, different seeds, same launch
+    const mk = (seed) => {
+        const gs = makeGame(seed)
+        gs.ship.inv = 999999
+        gs.enemies.push({ id: 908, kind: 'bitpod', x: gs.ship.x + 120, y: 120, baseY: 120, bob: 0,
+            hp: 7, n: 2, vx: 0, inv: 0, anim: 0, holdT: 999, stingCd: 0, anchorX: gs.ship.x + 120, state: 'hold' })
+        let at = null, v = null
+        for (let i = 0; i < 40 && !at; i++) {
+            gs.shots.push({ id: 5000 + i, x: gs.ship.x + 12, y: 120, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+            step(gs, {})
+            if (gs.events.includes('sting')) {
+                at = gs.tick
+                const st = gs.enemies.find((e) => e.kind === 'sting')
+                v = { x: st.x, y: st.y, vx: st.vx, vy: st.vy }
+            }
+            gs.events.length = 0
+            gs.ship.inv = 999999
+        }
+        return { at, v }
+    }
+    const a = mk(7), b = mk(23)
+    r.check('#2937 zero rng: seed 7 and seed 23 are answered at the same tick, same place, same velocity',
+        a.at !== null && a.at === b.at && JSON.stringify(a.v) === JSON.stringify(b.v),
+        `A=${JSON.stringify(a)} B=${JSON.stringify(b)}`)
+}
+
+{ // sim truth: the dart rides the hash — a field with a sting in flight is not
+    // the same state as one without (replays, RL and the autopilot all see it)
+    const gs = makeGame(8)
+    gs.enemies.push({ id: 909, kind: 'sting', x: gs.ship.x + 70, y: gs.ship.y, vx: -STING.speed, vy: 0, hp: STING.hp, t: 0, inv: 0, anim: 0 })
+    const h1 = stateHash(gs)
+    gs.enemies.pop()
+    const h2 = stateHash(gs)
+    r.check('#2937 sim truth: a sting in the field changes stateHash (the answer is world truth, not paint)',
+        h1 !== h2, `${h1} vs ${h2}`)
+}
+
 // ----------------------------------------------------------------- mutant ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
     const plants = [
+        {
+            name: 'answer-deaf', // #2937: the ferry goes back to being a sitting duck
+            anchor: "if (e.kind === 'bitpod' && e.hp > 0 && !frozen && e.stingCd <= 0) {",
+            plant: "if (false /* MUTANT(answer-deaf): the bay stays silent */ && e.hp > 0 && !frozen && e.stingCd <= 0) {",
+            harm: async (mod) => {
+                const gs = mod.makeGame(11)
+                gs.ship.inv = 999999
+                gs.enemies.push({ id: 911, kind: 'bitpod', x: gs.ship.x + 120, y: 120, baseY: 120, bob: 0,
+                    hp: 7, n: 2, vx: 0, inv: 0, anim: 0, holdT: 999, stingCd: 0, anchorX: gs.ship.x + 120, state: 'hold' })
+                let sting = false
+                for (let i = 0; i < 40 && !sting; i++) {
+                    gs.shots.push({ id: 7000 + i, x: gs.ship.x + 12, y: 120, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+                    mod.step(gs, {})
+                    if (gs.events.includes('sting')) sting = true
+                    gs.events.length = 0
+                    gs.ship.inv = 999999
+                }
+                return sting ? null
+                    : 'HARM NAMED: a hit carrier loosed no interceptor — the ferry is a payout box again, and leg 2 lost the arcade beat where the pod fights back'
+            },
+        },
+        {
+            name: 'cycle-deaf', // #2937: the bay forgets its cycle — every round answers
+            anchor: "!frozen && e.stingCd <= 0) {\n                    launchSting(gs, e); e.stingCd = STING.cd",
+            plant: "!frozen) {\n                    launchSting(gs, e); e.stingCd = STING.cd /* MUTANT(cycle-deaf): the bay never cycles */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(13)
+                gs.ship.inv = 999999
+                gs.enemies.push({ id: 913, kind: 'bitpod', x: gs.ship.x + 100, y: 100, baseY: 100, bob: 0,
+                    hp: 7, n: 2, vx: 0, inv: 0, anim: 0, holdT: 999, stingCd: 0, anchorX: gs.ship.x + 100, state: 'hold' })
+                let launched = 0, shots = 0
+                for (let i = 0; i < 60; i++) {
+                    if (i === 0 || i === 8 || i === 16) gs.shots.push({ id: 7100 + (shots++), x: gs.ship.x + 12, y: 100, kind: 'v', size: 0, pierce: false, hit: [], vy: 0 })
+                    mod.step(gs, {})
+                    if (gs.events.includes('sting')) launched++
+                    gs.events.length = 0
+                    gs.ship.inv = 999999
+                }
+                return launched > 1
+                    ? `HARM NAMED: three quick hits loosed ${launched} darts — with no cycle time the ferry is a machine-gun nest, and a vulcan stream is punished with a swarm the cabinet never sent`
+                    : null
+            },
+        },
         {
             name: 'armour-blind',
             anchor: "if (p1.mouth === 'open' && Math.abs(q.y - coreY) < 16) {",

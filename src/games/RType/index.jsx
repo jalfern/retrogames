@@ -12,7 +12,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, STAGE_END, STAGE_END2, STAGE_END3, HEAT_AT, POD, OPT, DUEL, makeGame, step, autopilot, stateHash, shieldOn, shieldOnAt, enableCoop } from './sim.js'
-import { drawBackground, drawShip, drawShipWing, drawLarva, drawTurret, drawPod, drawBitPod, drawDuelist, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawDobk, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge, drawOption } from './art.js'
+import { drawBackground, drawShip, drawShipWing, drawLarva, drawTurret, drawPod, drawBitPod, drawDuelist, drawSting, drawMissile, drawBullet, drawCap, drawWave, drawSeg, drawP1, drawP2, drawDobk, drawBit, drawHud, drawBanner, drawAttract, drawText, textWidth, drawSeedPod, drawLance, drawPodTether, drawForceMerge, drawOption } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'r-type:hiscore'
@@ -155,6 +155,9 @@ export default function RType() {
             duelarrive: () => { audioController.playSweep(720, 280, 0.34, 'sawtooth', 0.09); audioController.playTone(220, 0.12, 'square', 0.07, 0.2) },
             duelfire: () => { audioController.playTone(430, 0.04, 'square', 0.08); audioController.playNoise(0.02, 0.03) },
             duelwind: () => { audioController.playSweep(170, 540, 0.38, 'square', 0.07); shake = Math.max(shake, 1) },
+            // #2937 the carrier's answer: a bright spit from the bay — sharper
+            // and higher than the duel's gun, because it is a dart, not a shot
+            sting: () => { audioController.playSweep(980, 300, 0.16, 'sawtooth', 0.08); audioController.playNoise(0.02, 0.03) },
             '1up': () => { const n = [523, 659, 784, 1046]; n.forEach((f, i) => audioController.playTone(f, 0.09, 'square', 0.1, i * 0.09)) },
             clear: () => { const n = [392, 523, 659, 784, 659, 784, 1046]; n.forEach((f, i) => audioController.playTone(f, 0.12, 'square', 0.12, i * 0.12)) },
         }
@@ -196,6 +199,7 @@ export default function RType() {
                 else if (ev === 'plug') { bursts(6, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 3); bursts(2, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 2) } // #2823: a plugged hunter POPS — cyan ring, white core
                 else if (ev === 'ram') bursts(8, (gs.lastHitX ?? gs.ship.x + 14) - sx, gs.lastHitY ?? gs.ship.y, 0)
                 else if (ev === 'bitfree') bursts(12, (gs.lastHitX ?? gs.ship.x + 40) - sx, gs.lastHitY ?? gs.ship.y, 1) // the cargo scatters green
+                else if (ev === 'sting') bursts(6, (gs.lastHitX ?? gs.ship.x + 40) - sx, (gs.lastHitY ?? gs.ship.y) + 4, 3) // #2937: the bay spits cyan
                 else if (ev === 'force') { // #2823: attach ceremony — flash + converging sparks at the nose
                     bursts(12, gs.ship.x + 14 - sx, gs.ship.y, 3)
                     converge(8, gs.ship.x + 14 - sx, gs.ship.y, 3)
@@ -293,6 +297,7 @@ export default function RType() {
                 else if (e.kind === 'pod') drawPod(ctx, e, gs.camX)
                 else if (e.kind === 'bitpod') drawBitPod(ctx, e, gs.camX)
                 else if (e.kind === 'duelist') drawDuelist(ctx, e, gs.camX) // #2934
+                else if (e.kind === 'sting') drawSting(ctx, e, gs.camX) // #2937
             }
             for (const c of gs.caps) drawCap(ctx, c, gs.camX)
             for (const b of gs.bullets) drawBullet(ctx, b, gs.camX)
@@ -582,7 +587,7 @@ export default function RType() {
                     `x ${Math.round(gs.ship.x)} (screen ${Math.round(gs.ship.x - gs.camX)})  y ${Math.round(gs.ship.y)}  cam ${Math.round(gs.camX)}${gs.camLock ? ' LOCK' : ''}`,
                     `score ${gs.score}  hi ${Math.max(hiscore, gs.score)}  lives ${gs.lives}  arm ${gs.ship.weapon}${gs.ship.charge ? ` charge ${gs.ship.charge}` : ''}  inv ${gs.ship.inv}  mode ${gs.mode}`,
                     `pod ${gs.pod ? `${gs.pod.state} @${Math.round(gs.pod.x - gs.camX)}` : 'none'}  enemies ${gs.enemies.length}  bullets ${gs.bullets.length}  missiles ${gs.missiles.length}  shots ${gs.shots.length}  phase1 ${gs.p1 ? `${gs.p1.mouth} core ${gs.p1.coreHp}/${gs.p1.coreMax}${gs.p1.hot ? ' HOT' : ''} heat ${gs.tick - gs.p1.lockAt}/${HEAT_AT}` : 'field'}`,
-                    `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  opts ${gs.ship.opts ? `${gs.ship.opts.filter((o) => o.docked).length}/2 docked${gs.ship.opts.some((o) => o.fly) ? ` +${gs.ship.opts.filter((o) => o.fly).length} away` : ''}` : 'none'}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}  sway ${Math.round(gs.p2.swayOff)}px salvo-port ${gs.p2.port}${gs.p2.dyingT > 0 ? `  WALK ${gs.p2.dyingT} from port ${gs.p2.lastCore}` : ''}` : (gs.leg === 2 ? 'inbound' : '-')}  carriers ${gs.enemies.filter((e) => e.kind === 'bitpod').length}  duels ${gs.enemies.filter((e) => e.kind === 'duelist').length}`,
+                    `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  opts ${gs.ship.opts ? `${gs.ship.opts.filter((o) => o.docked).length}/2 docked${gs.ship.opts.some((o) => o.fly) ? ` +${gs.ship.opts.filter((o) => o.fly).length} away` : ''}` : 'none'}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}  sway ${Math.round(gs.p2.swayOff)}px salvo-port ${gs.p2.port}${gs.p2.dyingT > 0 ? `  WALK ${gs.p2.dyingT} from port ${gs.p2.lastCore}` : ''}` : (gs.leg === 2 ? 'inbound' : '-')}  carriers ${gs.enemies.filter((e) => e.kind === 'bitpod').length}  stings ${gs.enemies.filter((e) => e.kind === 'sting').length}  duels ${gs.enemies.filter((e) => e.kind === 'duelist').length}`,
                     `wing ${gs.wing ? `${gs.wing.out ? 'OUT' : gs.wing.dead ? 'DOWN' : `(${Math.round(gs.wing.x - gs.camX)},${Math.round(gs.wing.y)})`}  lives ${gs.wing.lives}  ${gs.wing.human ? 'HUMAN' : 'CPU'}  arm ${gs.wing.weapon}  pod ${gs.wing.pod ? gs.wing.pod.state : 'none'}  bits ${gs.wing.bits.length}` : 'off'}  p1out ${gs.ship.out ? 'yes' : 'no'}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
