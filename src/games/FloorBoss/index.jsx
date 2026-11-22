@@ -20,7 +20,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, recordLiveTick, armLiveCapture } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, recordLiveTick, armLiveCapture, isRecording } from '../../utils/gameContract'
 import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { W, H, TILE, GX, GY, CHIPS, orderRect, applyTap } from './taps.js'
 import { createEpisode, saveEpisode, episodeStats } from '../../utils/robot/episode.js'
@@ -1468,6 +1468,45 @@ const FloorBossGame = () => {
                 ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#ffffff'
                 // #2346: a cleared night promises the ladder; a lost one the attract
                 ctx.fillText(won ? `PRESS ANY KEY FOR SHIFT ${gs.shift + 1} — QUOTA ${gs.params.quota + 200}` : 'PRESS ANY KEY', W / 2, 266)
+            }
+            // #2964 item 3: CLEAR must READ differently from FIRED — the sheet
+            // itself changes when you survive, not just the colour. An opaque
+            // plate carries the beat (attract-box plate law) so it reads at
+            // phone scale whatever floor sits behind it: the quota struck
+            // through, what it earned beside it, and the ladder rungs — banked
+            // nights steady, the rung just cleared lit, the next rung cyan.
+            if (won) {
+                const earned = gs.score - gs.shiftBase
+                ctx.fillStyle = 'rgba(8,14,20,0.92)'; ctx.fillRect(W / 2 - 150, 280, 300, 34)
+                ctx.strokeStyle = '#5dff8f'; ctx.lineWidth = 1.5; ctx.strokeRect(W / 2 - 150.5, 280.5, 301, 33)
+                ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#9fc0d8'; ctx.textAlign = 'right'
+                const qs = `QUOTA ${gs.params.quota}`
+                ctx.fillText(qs, W / 2 - 42, 294)
+                const qw = ctx.measureText(qs).width
+                ctx.strokeStyle = '#5dff8f'; ctx.lineWidth = 2
+                ctx.beginPath(); ctx.moveTo(W / 2 - 42 - qw, 291); ctx.lineTo(W / 2 - 42, 291); ctx.stroke()
+                ctx.textAlign = 'left'; ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#5dff8f'
+                ctx.fillText(`EARNED ${earned} ✓`, W / 2 - 30, 294)
+                for (let i = 0; i < Math.max(6, gs.cleared + 2); i++) {
+                    const rx = W / 2 - 140 + i * 14
+                    if (i < gs.cleared) { ctx.fillStyle = 'rgba(93,255,143,0.5)'; ctx.fillRect(rx, 302, 8, 8) }
+                    else if (i === gs.cleared) { ctx.fillStyle = '#b5ffcf'; ctx.fillRect(rx, 302, 8, 8) }
+                    else if (i === gs.cleared + 1) { ctx.strokeStyle = '#57c7ff'; ctx.lineWidth = 1; ctx.strokeRect(rx + 0.5, 302.5, 7, 7) }
+                }
+                // #2964 item 1: honest disclosure (#2058) — #2958 widened the
+                // take's scope (clocking in now banks on), so while the sheet
+                // holds the floor AND the bank is truly open, the sheet says so.
+                // isRecording() is the bank's own truth: declined floors show
+                // nothing. Never during play — the HUD already carries it.
+                if (won && isRecording()) {
+                    ctx.fillStyle = 'rgba(26,8,8,0.92)'; ctx.fillRect(52, 96, 150, 22)
+                    ctx.strokeStyle = '#ff5a4f'; ctx.lineWidth = 1; ctx.strokeRect(52.5, 96.5, 149, 21)
+                    ctx.fillStyle = '#ff5a4f'
+                    ctx.beginPath(); ctx.arc(66, 107, 3.5, 0, Math.PI * 2); ctx.fill()
+                    ctx.fillStyle = '#ffb3ab'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left'
+                    ctx.fillText('REC · TAKE OPEN', 75, 110)
+                }
+                ctx.textAlign = 'center'
             }
             ctx.textAlign = 'left'
         }

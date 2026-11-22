@@ -457,6 +457,28 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     r.check('shift ended through the loop', !!endState.done, `${endState.end}: ${endState.endReason}`)
     r.check('reaches the shift report', await waitMode('over', 4000))
     await new Promise((res) => setTimeout(res, 900))
+    // #2964 item 3: the cleared sheet beats CLEAR — struck quota, EARNED line
+    // and lit rungs on an opaque plate (attract-box plate law ⇒ deterministic
+    // whatever floor sits behind). A DECLINED take (this rig, #2091 law) must
+    // show no REC chip — disclosure only ever tells the truth (#2058).
+    const sheetPix = async (x, y, w, h) => page.evaluate(([x, y, w, h]) => {
+        const d = window.__floorbossTest.canvas().getContext('2d').getImageData(x * 2, y * 2, w * 2, h * 2).data
+        let green = 0, bright = 0, cyan = 0, hot = 0
+        for (let i = 0; i < d.length; i += 4) {
+            const r0 = d[i], g0 = d[i + 1], b0 = d[i + 2]
+            if (g0 > 200 && g0 > r0 + 60 && g0 > b0 + 60) green++
+            if (g0 > 230 && r0 > 140 && r0 < 215 && b0 > 170) bright++
+            if (b0 > 200 && b0 > g0 + 40 && b0 > r0 + 100) cyan++
+            if (r0 >= 250 && g0 < 120) hot++
+        }
+        return { green, bright, cyan, hot }
+    }, [x, y, w, h])
+    const beat = await sheetPix(250, 280, 300, 34)
+    r.check('the cleared sheet beats CLEAR — struck quota, EARNED line, lit rung (#2964)',
+        beat.green > 120 && beat.bright > 150 && beat.cyan > 4, JSON.stringify(beat))
+    const chip = await sheetPix(52, 96, 150, 22)
+    r.check('a declined take shows no REC chip on the sheet — disclosure obeys the bank (#2964/#2058)',
+        chip.hot === 0, JSON.stringify(chip))
     await page.keyboard.press('Enter')
     // #2346: a cleared night does NOT drop to attract — the ladder clocks in
     const advOk = await waitMode('play', 4000)
@@ -467,6 +489,9 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     await page.evaluate(() => { const gs = window.__floorbossTest.sim(); gs.tick = 9000; gs.score = gs.shiftBase })
     r.check('a short night ends the run', await waitMode('over', 4000))
     await new Promise((res) => setTimeout(res, 900))
+    const lostBeat = await sheetPix(250, 280, 300, 34)
+    r.check('the lost sheet keeps the CLEAR beat off — it is win truth, not decor (#2964)',
+        lostBeat.bright === 0 && lostBeat.green < 40, JSON.stringify(lostBeat))
     await page.keyboard.press('Enter')
     r.check('a lost run returns to attract', await waitMode('attract'))
     await page.keyboard.press('Space')
