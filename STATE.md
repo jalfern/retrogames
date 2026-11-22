@@ -1,72 +1,89 @@
-# STATE — forge board snapshot (slot a, 2026-11-22 2nd wave — shipped + freeze cleared)
+# STATE — forge board snapshot (slot a first-wave, 2026-11-22 — shipped)
 
 ## This session shipped
-- **R-TYPE volley pre-dodge is LIVE** (#2951 → PR #2955 → main `b779123`,
-  prod-verified: served `RType-ZZwRkIbo.js` carries `volley:1}` + both brain
-  reads). Re-validation here (rtypecheck 234/234 incl. the on-screen marked-fan
-  leg; mutants 231/231, `pre-dodge-deaf`/`cross-blind` red-by-design; no file
-  overlap with main since base) + merge by the slot-a sibling run at 18:59.
-  #2951 closed, `shipped` label fixed (it was left `building`).
-- **Main-fix #2965 filed & closed as duplicate**: nightly `45045144722` re-red
-  on watchcheck's FLOORBOSS watch pin — #2954's tap bank (`tapPad`/`step`/
-  `recordLiveTick`, ~206 chars) outran the pin's 200-char window. Honesty rule
-  verified intact on main (`ap(gs)` pad is `recordTick`'s FIRST arg, only call
-  site); pin still REDs against the real lie (`recordTick(livePad(), …)`).
-  Sibling #2962 (`d10493a`, same fix) merged first → #2965 closed, branch gone.
+- **R-TYPE volley pre-dodge** (#2951 → PR #2955 → main `b779123`, prod-verified:
+  `volley` property present in prod `assets/RType-CzPmg0ks.js`; Vercel Production
+  on tip `3e59fad`). Landed after this lane rebased the branch onto `d10493a`
+  (conflicts were keep-both-sides additives in `rtypecheck.mjs` + README);
+  post-rebase proof here: rtypecheck **242/242** (233 main + 9 volley laws) and
+  mutant **240/240** — all 28 mutants red-by-design incl. #2938's four duel
+  mutants on the auto-merged `sim.js`.
+- **FloorBoss career takes** (#2958 → PR #2959 → main `ff6f58f`, merged by slot b
+  when it woke; #2958 CLOSED shipped). This lane resumed slot b's lapsed claim,
+  independently verified the branch: engine review (career door at the whistle;
+  `closeTake()` guards key-exit/tap-exit/reset/unmount; `endRun` idempotent via
+  `isRecording()`; consent law #2058 intact), floorbosscheck ALL GREEN,
+  datasetcheck 66/66, plaicraftcheck green, floorbossplay 96/96, named mutants
+  `--mutate-whistle` + `--mutate-career` both KILLED. 8b polish pass filed as
+  **#2964** (recording-disclosure chip on the cleared sheet, seam markers,
+  cleared-sheet visual beat, close-mid-career flush stress).
+- **Main red cleared (#601)**: nightly 45045144722 died on `watchcheck`
+  FLOORBOSS watch-feed pin — #2954's tap bank (`if (tapPad) pad.pointer = tapPad`)
+  grew the feed block to ~234 chars, overshooting the pin's 200-char window
+  (#2626 precedent: honesty rule unchanged, the PIN follows the signature).
+  Fix = window 200→300, PR **#2962** → merged `d10493a`. Mutant-proved honest:
+  recordTick(livePad()) lie → red; watch-deaf → red.
+- **Freeze note**: #2955/#2959 merged at 18:59Z while the last FAILURE nightly was
+  still the newest COMPLETED… a later cancellation of the stale in-flight nightlies
+  made `main-ok.sh` read `cancelled → ok`. Both games were locally suite-green +
+  `static`-green before that merge, so the spirit of #601 held — but if the
+  tip nightly fails, 5a outranks everything.
 
-## Playable on main right now
-- `/retrogames/r-type` — volley pre-dodge LIVE (this session, prod-checked).
-- `/retrogames/floor-boss` — career takes #2958 (`ff6f58f`, sibling lane) + S2
-  tap recording (`d7ff731`).
+## Nightly / freeze at write-time
+- `45057066348` (sha `d10493a`) in progress — clears #601 on green.
+- `45062897047` (tip `9127f4e`) queued.
+- `scripts/main-ok.sh` currently exits 0 (latest completed = cancelled). Do not
+  read that as “nightly green” — it means “no completed verdict yet”.
 
-## Main / nightly state (verify before merging anything)
-- `main-ok` passes: latest completed nightly = CANCELLED (not failure).
-- In flight at close: nightly `45057066348` on `d10493a` (does NOT contain
-  volley/career-takes), dispatch CI `45062646884` + nightly `45062897047`
-  dispatched BY THIS LANE on HEAD `9127f4e` — the tip-true evidence. If the
-  HEAD nightly goes red, that's a real regression on b779123/ff6f58f, not the
-  stale-SHA kind.
+## PLAYABLE on main right now (prod-verified)
+- `/retrogames/floor-boss` — career takes: clear a shift, clock on, the whole
+  back-to-back run is ONE recorded, replayable consented take.
+- `/retrogames/r-type` — brains now slip the marked Phase-2 fan (crossing-sign
+  root fix since S1; solo winnable 7→8/12 seeds, co-op 12/12).
 
 ## Board at close
-- `game-queue` empty. `building` = #1712 only (big-build, store-blocked; the
-  two open lines are HUMAN takes — see #2953, check outbox before code).
-- `feedback` = #2952 (R-TYPE dodge-wink + wingman cover-fire) — QA lane.
-- Ladder for the next lane: run `scripts/idle-kick.mjs` fresh — two games' gap
-  lists changed today (R-TYPE gap 0 and FloorBoss gap 0 both shipped).
+- `building` = **#2966** (FloorBoss tap-burst bank — owned by the slot-a 2nd-wave
+  session, pid 61500; do not touch from here).
+- **#1712** stays open ON PURPOSE (store lines need human friend-takes; ask #2953).
+- `game-queue` empty. `feedback` = #2952 (R-TYPE duel wants, QA) + **#2964** (FB, new).
 
 ## Open questions for Jon (links only, #605)
-- #2846 — promote CONTRA / R-TYPE / DOUBLE DRAGON to public? (due 11-23,
-  default keep private).
-- #2953 — friend-takes invite flow vs Jon collects; default widen adapters.
-- #2908, #2930 (QA lane) — DD seat laws (due 11-24).
+- #2953 (friend takes / invite flow), #2846 (promote flagships? due 11-23),
+  #2908, #2930 (QA lane DD seat laws).
 
-## Ops anomaly (reported on #1258)
-Two slot-a runners were active ~18:40–19:00: the sibling rebased+merged my
-#2955 and wrote a slot-a STATE close-out (16c8211) while this session waited on
-#2965's static. Work is consistent and no double-merge happened, but the
-double-kick wasted one PR (#2965 vs #2962) and one full watchcheck pass.
-
-## Harness notes (new this session)
-- **200-char source windows rot when games grow.** Both of today's reds were
-  calibration (frogger floor #2957, FB window #2962/#2965), not laws. Prefer
-  anchoring pins on unique call-site tokens over distance windows; if a check
-  reds after an unrelated merge, count the gap before assuming regression.
-- **pull_request CI still misses lane PRs** (#2955, #2965): only Vercel shows.
-  Workaround: `gh workflow run ci.yml --ref <branch>`, gate on the head-SHA
-  check-runs API for `static`.
-- **`npm audit fix` #2960 changed the lockfile on main** — the STATE
-  "cp -cR node_modules" trick now requires lockfile equality against CURRENT
-  main, not yesterday's. A stale clone passes boot but can differ under test.
-- **nohup'd vite servers die silently after ~10–20 min** (twice today, no
-  error in vite's log; suspect macOS reaper/jetsam). Drive suites while the
-  server is fresh; a wall of `DEV hook present` FAILs = dead/reloading server,
-  restart + rerun, not game bugs.
+## Harness notes (carry-overs)
+- **Two slot-a sessions ran concurrently** (#1258 hazard): the warden's idle-detect
+  is blind to lanes whose work is long background suites — it kicked a 2nd-wave
+  session at 18:55Z while this lane was mid-verification; that session merged my
+  PR. Consider a heartbeat comment from lanes while browsers run.
+- **Orphan dev servers**: a dead session's `npm run dev` stayed alive (parent pid 1)
+  on slot-a's port and silently served the WRONG tree — my first rtypecheck leg
+  failed exactly one law (the on-screen one) because of it. Lesson: before trusting
+  a browser suite, sanity-check the served tree (`curl …/src/<file>` for a marker).
+  Freed by port only (`scripts/devstop.sh`), never pattern-kill.
+- **Prod grep recipes**: Vercel Production deployment `sha` + `gh api deployments`
+  is the merge→prod proof; game code lives in per-game lazy chunks referenced as
+  `"./Name-hash.js"` (grep `./`, not just `assets/`); esbuild mangles FUNCTION names
+  but preserves PROPERTY names (`volley` survives, `fanSlip`/`nextShift` don't) and
+  string literals survive (`CLOCK IN`, `floorboss.deep`).
+- **watchcheck FLOORBOSS pin window is now 300 and ~tight**: the career-take tree
+  sits at 294 chars between `const pad = …` and `recordTick(pad`. One more line in
+  that block breaks it — FloorBoss README states the law; the next editor must bump
+  the window consciously, not silently.
 
 ## Slots / ops
-- Slot a dev server 5173 stopped with `scripts/devstop.sh`; no lane ports
-  touched. Volley + watchcheck worktrees removed; main checkout detached at
-  `9127f4e`; STATE.md committed this session (#2955 merged ✓).
+- Slot a port 5173: this lane's servers stopped (by port). It is now held by the
+  2nd-wave session's server (pid 64079) — leave it; it is mid-#2966.
+- Worktrees left: `~/Dev/retrogames-forge-rtype-volley` (merged; re-detached to
+  origin/main; removable), `~/Dev/retrogames-forge-watchcheck-fb-window`
+  (abandoned by a dead session; contains only an uncommitted duplicate of merged
+  #2962 — safe to remove), career-take worktree already removed by slot b.
+- Main checkout: detached `origin/main` (`3e59fad`); STATE.md committed+pushed
+  this session (game merged), parked via `statepark.mjs park a`.
 
 ## Next lane starting here
-- If the HEAD nightly `45062897047` is green: ladder → #1712 store check →
-  idle-kick for the next POLISH issue. If red: red-main rules, fix before all.
+- Ladder: #2966 held by slot-a 2nd-wave; nothing else claimable. If a nightly
+  (d10493a or tip) lands RED → 5a first, no exceptions; a harness-only calibration
+  goes without asking. When green, `weakestStage` on a cleared board points at the
+  never-dry shelf again (#1712's lines are human data — check `plaicraft:outbox`
+  before writing any code).
