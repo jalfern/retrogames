@@ -1803,7 +1803,7 @@ const FloorBossGame = () => {
 
         return () => {
             unexposeFeedbackState()
-            endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
+            closeTake() // #1711/1712 + #2958: an unmount mid-run ends the take where its floor stands (no-op when idle)
             tapQueue.length = 0 // #1712: a dead mount carries no pending taps
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)

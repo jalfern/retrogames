@@ -67,7 +67,7 @@ import { decodePad, encodePad } from '../src/utils/recording.js'
 import { voiceReexport, tickToMs, containerDurationMs } from '../src/utils/voice.js'
 import { makeGame, step, stateHash } from '../src/games/Gauntlet/sim.js'
 import { featurize } from '../src/games/Gauntlet/model.js'
-import { makeGame as fbMakeGame, step as fbStep, stateHash as fbHash } from '../src/games/FloorBoss/sim.js'
+import { makeGame as fbMakeGame, step as fbStep, stateHash as fbHash, nextShift as fbNextShift } from '../src/games/FloorBoss/sim.js'
 import { featurize as fbFeaturize, seatChannel } from '../src/games/FloorBoss/model.js'
 import { applyTap as fbTap, W as FB_W, H as FB_H } from '../src/games/FloorBoss/taps.js'
 import { createGame as bdMakeGame, step as bdStep, hash as bdHash } from '../src/games/BombDefuse/engine.js'
@@ -232,6 +232,14 @@ export function floorBossRows(key, rec) {
     const rows = []
     const finalT = rec.hashes.length ? rec.hashes[rec.hashes.length - 1] : null
     for (let t = 0; t < rec.ticks; t++) {
+        // #2958 career take: rows that survive a whistle mean the player clocked
+        // into the next shift — the over-screen key/tap itself banks nothing (the
+        // tick clock freezes while the sheet holds the floor), so the stream's
+        // continuation IS the clock-in. Advance the night with the game's own
+        // ladder (same seeded stream; the shift bits ride stateHash, #2346 law),
+        // and every checkpoint past the seam must still match — invented
+        // post-whistle rows stay caught.
+        if (gs.end === 'win') fbNextShift(gs)
         const pads = rec.slots.map((s) => decodePad(s.pads[t], rec.method))
         // #1712: canvas taps bank on seat 0's pad as pointer{down} in 0..1
         // canvas space (onePad #420) — re-apply HERE, before the step, so
