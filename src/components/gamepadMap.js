@@ -161,10 +161,21 @@ export function slotFieldsFrom(pad, state = { engaged: false, lastCodes: [], aim
 // connected, the actuator is missing, or the browser refuses the effect; it
 // never throws. Importable in Node (vpadcheck): it only touches navigator at
 // call time.
-export function rumble(ms = 200, strength = 1) {
+export function rumble(ms = 200, strength = 1) { return rumbleSlot(1, ms, strength) }
+
+// #2863 rumble parity: the slot-aware twin. Player slots are numbered in the
+// order the GamepadBridge enumerates live pads (pad N -> slot N), so slot n's
+// rumble is the nth connected pad's actuator — a hit on Jimmy shakes the
+// friend's pad, not Billy's. Same never-throws contract as rumble(); slot 1
+// is byte-identical to rumble(ms, strength).
+export function rumbleSlot(slot = 1, ms = 200, strength = 1) {
     try {
         const pads = (typeof navigator !== 'undefined' && navigator.getGamepads) ? navigator.getGamepads() : []
-        const pad = pads && pads.find((p) => p && p.connected)
+        let n = Math.max(1, slot | 0)
+        let pad = null
+        for (const p of (pads || [])) {
+            if (p && p.connected) { n -= 1; if (n === 0) { pad = p; break } }
+        }
         const act = pad && pad.vibrationActuator
         if (!act || typeof act.playEffect !== 'function') return false
         const s = Math.max(0, Math.min(1, strength))
