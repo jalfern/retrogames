@@ -8,8 +8,10 @@
 // hostless-phone rule (a phone is never seat 0). No Chrome, no network.
 
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { newRoom, join, leave, relay, rosterOf, MAX_MSG } from '../relay/core.js'
-import { createPadHost, createPadClient, encodePadPacket, decodePadPacket, packSig, makeSigInbox, STALE_MS, PING_EVERY_MS, LINK_CAP, RESEAT_BASE_MS, RESEAT_TRIES } from '../src/utils/padlink.js'
+import { createPadHost, createPadClient, encodePadPacket, decodePadPacket, packSig, makeSigInbox, STALE_MS, PING_EVERY_MS, LINK_CAP, RESEAT_BASE_MS, RESEAT_TRIES, padLabels, decodeLabels } from '../src/utils/padlink.js'
+import { linkLabelsOf } from '../src/components/gamepadMap.js'
 import { slotPad, clearAllSlots } from '../src/utils/onePad.js'
 import { createRecorder, validate, PING_EVERY_TICKS } from '../src/utils/recording.js'
 import jsQR from 'jsqr'
@@ -504,6 +506,12 @@ async function scenarioQr() {
         assert.ok(res, 'payload must still fit v1..4-L')
         assert.equal(decode(res), url)
     })
+    ok('QR round-trips a labels-bearing join URL (#2929)', () => {
+        const url = joinUrl('ABCD', 'wss://relay.example/room', 'JUMP.KICK')
+        const res = qrEncode(url)
+        assert.ok(res, 'room+relay+labels must still fit the version ladder')
+        assert.equal(decode(res), url)
+    })
 
     ok('QR round-trips a game-lobby relay href (v5, #1416 gap 4)', () => {
         // the exact shape Lobby shows as a QR when the host shares its relay:
@@ -528,12 +536,73 @@ async function scenarioQr() {
     })
 }
 
+// #2929 — game-flavored labels travel host -> pad. The registry's verbs must
+// reach the phone's face buttons (via the join URL the QR carries), and the
+// pad must never render anything the wire sanitiser didn't bless.
+function scenarioLabels() {
+    console.log('\n--- labels: host -> pad (#2929) ---')
+    ok('padLabels: verb pair -> dot wire form', () => assert.equal(padLabels('JUMP', 'KICK'), 'JUMP.KICK'))
+    ok('padLabels: lowercases + strips junk, caps at LABEL_MAX', () => {
+        assert.equal(padLabels('fire', 'kick!'), 'FIRE.KICK')
+        assert.equal(padLabels('HACKERMANIAC', undefined), 'HACKER.')
+    })
+    ok('padLabels: non-ASCII glyphs fall off the wire (pad shows letters)', () => assert.equal(padLabels('✓', '⚒ dig'), '.DIG'))
+    ok('padLabels: nothing declared -> no labels param', () => assert.equal(padLabels(undefined, undefined), ''))
+    ok('padLabels output is URL/QR-safe by construction', () => assert.match(padLabels('soak', 'fl!re'), /^[A-Z0-9.]+$/))
+    ok('decodeLabels round-trips what padLabels wrote', () => assert.deepEqual(decodeLabels(padLabels('JUMP', 'KICK')), { a: 'JUMP', b: 'KICK' }))
+    ok('decodeLabels: absent/garbage -> {} (pad keeps generic letters)', () => {
+        assert.deepEqual(decodeLabels(''), {})
+        assert.deepEqual(decodeLabels(null), {})
+        assert.deepEqual(decodeLabels('...'), {})
+    })
+    ok('decodeLabels sanitises an untrusted param (no markup, capped, extra tokens dropped)', () => {
+        const d = decodeLabels('a<img>alert(1).k.extra')
+        assert.equal(d.a, 'AIMGAL')                       // stripped + capped at 6
+        assert.equal(d.b, 'K')
+        assert.equal(d.c, undefined)
+    })
+    // the registry shapes the LinkPads card actually reads (mirrors of the
+    // DOUBLE DRAGON / Comet Drift / Minesweeper / default entries — games.js
+    // imports JSX, so the literals stand in; LinkPads calls linkLabelsOf with
+    // the declared pad).
+    ok('linkLabelsOf reads the registry shape: DOUBLE DRAGON -> JUMP.KICK', () => {
+        assert.equal(linkLabelsOf({ layout: 'dpad', aLabel: 'JUMP', buttons: [{ label: 'KICK', code: 'KeyX' }, { label: 'PUNCH', code: 'KeyZ', pad: 2 }] }), 'JUMP.KICK')
+    })
+    ok('linkLabelsOf: Minesweeper -> DIG.FLAG, Comet Drift -> DRIFT.DRIFT', () => {
+        assert.equal(linkLabelsOf({ layout: 'dpad', buttons: [{ label: 'FLAG', code: 'KeyB' }], aLabel: 'DIG', analog: false }), 'DIG.FLAG')
+        assert.equal(linkLabelsOf({ layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true }), 'DRIFT.DRIFT')
+    })
+    ok('linkLabelsOf: no verbs declared -> empty (generic A/B on the phone)', () => {
+        assert.equal(linkLabelsOf({ layout: 'stick', buttons: [], analog: false }), '')
+        assert.equal(linkLabelsOf(null), '')
+    })
+    ok('joinUrl carries labels after room (+relay), absent when empty', () => {
+        assert.match(joinUrl('ABCD', '', 'JUMP.KICK'), /\?room=ABCD&labels=JUMP\.KICK$/)
+        assert.match(joinUrl('ABCD', 'wss://relay.example/room', 'JUMP.KICK'), /\?room=ABCD&relay=wss:\/\/relay\.example\/room&labels=JUMP\.KICK$/)
+        assert.ok(!joinUrl('ABCD').includes('labels'))
+        assert.ok(!joinUrl('ABCD', 'wss://relay.example/room').includes('labels'))
+    })
+    // Source pins: the React glue is 3 lines per side and has no unit to hold
+    // it — pin the composition so a refactor can't quietly drop the path.
+    ok('the host card composes registry verbs into the QR join URL (#2929)', () => {
+        const card = readFileSync(new URL('../src/components/LinkPads.jsx', import.meta.url), 'utf8')
+        assert.match(card, /labels:\s*linkLabelsOf\(padRef\.current\)/, 'open() must compose labels from the game pad declaration')
+        assert.match(card, /joinUrl\(ui\.code,\s*ui\.relay,\s*ui\.labels\)/, 'the QR must carry ui.labels')
+        const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
+        assert.match(app, /<LinkPads\b[^>]*pad=\{pad\}/, 'GameRoute must hand LinkPads the game pad declaration')
+        const pad = readFileSync(new URL('../src/pages/PadLink.jsx', import.meta.url), 'utf8')
+        assert.match(pad, /decodeLabels\((?:new URLSearchParams\(window\.location\.search\)|q)\.get\('labels'\)\)/, 'the pad page must read the labels param')
+        assert.match(pad, /faceBtn\('a',\s*'A',[^)]*labels\.a\)/, 'the A button must wear the label')
+    })
+}
+
 async function main() {
     console.log('padlinkcheck — link-pad spine')
     await scenarioTwoPhones()
     await scenarioHostless()
     await scenarioRate()
     await scenarioReseat()
+    scenarioLabels()
     await scenarioQr()
     console.log(`padlinkcheck: ${pass} passed`)
     if (process.exitCode) console.error('padlinkcheck: RED')

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { createPadHost } from '../utils/padlink.js'
+import { linkLabelsOf } from './gamepadMap'
 import { makeHostPeer, makeTransport, RELAY_DEFAULT } from '../utils/linkPeers.js'
 import { encode as qrEncode, joinUrl, toSvgPath } from '../utils/qrcode.js'
 
@@ -15,11 +16,13 @@ import { encode as qrEncode, joinUrl, toSvgPath } from '../utils/qrcode.js'
 // point (same Wi-Fi); when ICE can't pair within RTC_WAIT_MS the pad state
 // just keeps riding the relay, and the pill says RELAY.
 
-const LinkPads = ({ secondAction }) => {
-    const [ui, setUi] = useState({ open: false, phase: 'idle', code: '', pads: [], relay: '' })
+const LinkPads = ({ secondAction, pad }) => {
+    const [ui, setUi] = useState({ open: false, phase: 'idle', code: '', pads: [], relay: '', labels: '' })
     const hostRef = useRef(null)
     const secondRef = useRef(secondAction)
     useEffect(() => { secondRef.current = secondAction }, [secondAction])
+    const padRef = useRef(pad)
+    useEffect(() => { padRef.current = pad }, [pad])
 
     // Runtime QR of the exact join URL the phone needs (#926) — one camera-tap
     // instead of typing the 4-letter code. Kept mask-deterministic so the same
@@ -27,12 +30,12 @@ const LinkPads = ({ secondAction }) => {
     const qr = useMemo(() => {
         if (!ui.code) return null
         try {
-            const res = qrEncode(joinUrl(ui.code, ui.relay))
+            const res = qrEncode(joinUrl(ui.code, ui.relay, ui.labels))
             return res ? toSvgPath(res) : null
         } catch {
             return null
         }
-    }, [ui.code, ui.relay])
+    }, [ui.code, ui.relay, ui.labels])
 
     const syncUi = useCallback((snapshot) => {
         setUi((prev) => ({ ...prev, ...snapshot }))
@@ -58,7 +61,7 @@ const LinkPads = ({ secondAction }) => {
         })
         hostRef.current = host
         const code = host.open()
-        setUi({ open: true, phase: 'connecting', code, pads: [], relay: relayParam })
+        setUi({ open: true, phase: 'connecting', code, pads: [], relay: relayParam, labels: linkLabelsOf(padRef.current) })
         if (import.meta.env.DEV) window.__padlink = host
         let raf = 0
         const loop = () => { raf = requestAnimationFrame(loop); host.pump() }
@@ -72,7 +75,7 @@ const LinkPads = ({ secondAction }) => {
         cancelAnimationFrame(host._raf)
         host.close()
         hostRef.current = null
-        setUi({ open: false, phase: 'idle', code: '', pads: [], relay: '' })
+        setUi({ open: false, phase: 'idle', code: '', pads: [], relay: '', labels: '' })
         window.dispatchEvent(new CustomEvent('retrogames:linkpads', { detail: { count: 0 } }))
     }, [])
 
