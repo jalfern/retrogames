@@ -39,8 +39,13 @@ REPO="$HOME/Dev/retrogames"
 STUDIO_MODEL=$(jq -r '.model' "$REPO/opencode.json" 2>/dev/null)
 EXTRA=""
 case "$NODE" in
-    mini)    MODEL="omlxmini/Qwen3.8-27B-oQ8e-mtp"; PORT=18000; TAG="";         DEV=5174 ;;
-    mini2)   MODEL="omlxmini/Qwen3.8-27B-oQ8e-mtp"; PORT=18000; TAG="mini2-";   DEV=5179
+    # 2026-11-22 (Jon): both mini slots on Inkling 2 Mini oQ4e, on oMLX 0.8.3. Same-load test on the mini
+    # (2 sessions x ~27-60K): 2/2 sessions, peak 48.6 GB, no memory pressure; first token 5-20 s vs 35-42 s
+    # for 27B oQ4e; 27B oQ8e could not hold 2 streams at all. (The 2026-11-21 trial failed on oMLX 0.8.2
+    # from KV memory, fixed in 0.8.3.) Judge on session length vs the 27B history. Roll back: put a 27B
+    # model string back on both lines. Record: ~/Dev/infra/omlx/UPGRADES.md on the studio.
+    mini)    MODEL="omlxmini/Inkling-2-Mini-oQ4e-mtp"; PORT=18000; TAG="";         DEV=5174 ;;
+    mini2)   MODEL="omlxmini/Inkling-2-Mini-oQ4e-mtp"; PORT=18000; TAG="mini2-";   DEV=5179
              # #2280: the mini's second QA slot — same model stream as mini (Jon
              # accepted shared inference for the two; back off to one slot in
              # warden.sh step 5 if it does not pay).
