@@ -159,6 +159,9 @@ export default function RType() {
             // like the shell's strain so a lip-dwell rattles instead of screams
             duelgrind: () => { if (gs.tick - lastGrind >= 8) { lastGrind = gs.tick; audioController.playTone(120 + (gs.tick % 4) * 18, 0.05, 'square', 0.06); audioController.playNoise(0.03, 0.03) } },
             duelwind: () => { audioController.playSweep(170, 540, 0.38, 'square', 0.07); shake = Math.max(shake, 1) },
+            // #2952 the dodge pays: a bright two-note chirp, pitched above the
+            // warning it just survived — the near-miss announcement
+            duelgraze: () => { audioController.playTone(660, 0.05, 'square', 0.08); audioController.playTone(990, 0.07, 'square', 0.08, 0.05) },
             // #2937 the carrier's answer: a bright spit from the bay — sharper
             // and higher than the duel's gun, because it is a dart, not a shot
             sting: () => { audioController.playSweep(980, 300, 0.16, 'sawtooth', 0.08); audioController.playNoise(0.02, 0.03) },
@@ -475,6 +478,7 @@ export default function RType() {
                     optsDocked: gs.ship.opts ? gs.ship.opts.filter((o) => o.docked).length : 0,
                     optsFly: gs.ship.opts ? gs.ship.opts.filter((o) => o.fly).length : 0, // #2925 drones in the air
                     optAnn: gs.optAnn || 0,
+                    grazeAnn: gs.grazeAnn || 0, // #2952 the dodge wink is observable
                     p2: gs.p2 ? `${gs.p2.cores[0].hp}/${gs.p2.cores[1].hp}` : '-',
                     // #2835 fixtures: carriers on screen, the mass's sway, the
                     // salvo clock and the walking-death walk, all observable

@@ -2207,6 +2207,123 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         wRound(true) && !wRound(false), `tagged=${wRound(true)} bare=${wRound(false)}`)
 }
 
+// ------------------------- #2952 the dodge pays & the wingman's cover-fire ---
+// Two wants left over from #2938: a slipped duelist pass pays nothing, and
+// wingBrain ignores a hunter committed at its partner. The dodge pays the
+// near-miss (defender-era: score the pass you beat, keyed to closest
+// approach — paid only when the pass dies off-screen untouched; steel- and
+// hull-spent passes stay unpaid); cover-fire lays a hot lane at the hunter
+// the moment it commits at seat one. Zero rng on both.
+{ // the dodge pays: walk off the line through the graze band and the pass banks the bonus at its death
+    const gs = makeGame(1)
+    gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0; gs.schedule.length = 0
+    gs.ship.inv = 0 // a naked hull — the ledger only counts passes dodged with skin in the game
+    gs.ship.y = 120
+    gs.enemies.push({ id: 951, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: DUEL.commitAt - 1, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    const s0 = gs.score
+    let sawWarn = false, sinceWarn = -1, grazed = false, ann = false, died = false
+    for (let i = 0; i < 500 && !(grazed && !gs.enemies.some((e) => e.kind === 'duelist')); i++) {
+        step(gs, { up: sinceWarn >= 0 && sinceWarn < 6, down: false, left: false, right: gs.ship.x - gs.camX < 52, a: false, b: false }) // hold station; a hand's width off the line, then hold
+        if (gs.events.includes('warn')) { sawWarn = true; sinceWarn = 0 } else if (sinceWarn >= 0) sinceWarn++
+        if (gs.events.includes('duelgraze')) { grazed = true; ann = gs.grazeAnn > 0 }
+        if (gs.ship.dead) { died = true; break }
+        gs.events.length = 0
+    }
+    r.check('#2952 the dodge pays: a pass beaten through the graze band banks its bonus as it dies off-screen (event + wink, no death)',
+        sawWarn && grazed && ann && !died && gs.score - s0 === DUEL.grazeScore,
+        `warn=${sawWarn} grazed=${grazed} ann=${ann} died=${died} d=${gs.score - s0}`)
+}
+{ // the band is honest: a wide escape is not a graze, and a hit is never one
+    const wide = makeGame(2)
+    wide.enemies.length = 0; wide.bullets.length = 0; wide.missiles.length = 0; wide.schedule.length = 0
+    wide.ship.y = 120
+    wide.enemies.push({ id: 952, kind: 'duelist', x: wide.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: DUEL.commitAt - 1, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    const w0 = wide.score
+    let wGrazed = false, wSince = -1
+    for (let i = 0; i < 500; i++) {
+        step(wide, { up: wSince >= 0, down: false, left: false, right: wide.ship.x - wide.camX < 52, a: false, b: false }) // hold station and run for the rail — no near miss in it
+        if (wide.events.includes('warn')) { wSince = 0 } else if (wSince >= 0) wSince++
+        if (wide.events.includes('duelgraze')) wGrazed = true
+        if (wide.ship.dead) break
+        wide.events.length = 0
+        if (!wide.enemies.some((e) => e.kind === 'duelist')) break
+    }
+    const hit = makeGame(3)
+    hit.enemies.length = 0; hit.bullets.length = 0; hit.missiles.length = 0
+    hit.ship.y = 120
+    hit.enemies.push({ id: 953, kind: 'duelist', x: hit.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: DUEL.commitAt - 1, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    const h0 = hit.score
+    let hGrazed = false
+    for (let i = 0; i < 500; i++) {
+        step(hit, {}) // stand in the solution — this one you do not walk away from
+        if (hit.events.includes('duelgraze')) hGrazed = true
+        hit.events.length = 0
+        if (hit.ship.dead && !hit.enemies.some((e) => e.kind === 'duelist')) break
+    }
+    r.check('#2952 the band is honest: a wide escape pays nothing (over the graze), a connected pass pays nothing (the spend is the pass)',
+        !wGrazed && wide.score === w0 && !wide.ship.dead && !hGrazed && hit.ship.dead && hit.score === h0,
+        `wide=${wGrazed}/${wide.score - w0} hit=${hGrazed}/${hit.score - h0} died=${hit.ship.dead}`)
+}
+{ // steel stays unpaid (#2938 law untouched): the burn-off that cries on the plate must not hand out dodge money
+    const gs = makeGame(5)
+    gs.ship.inv = 999999
+    gs.ship.y = 140
+    gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0
+    gs.enemies.push({ id: 903, kind: 'hullseg', x: gs.ship.x + 30, y0: FIELD_TOP, y1: 130, len: 24 })
+    gs.enemies.push({ id: 904, kind: 'duelist', x: gs.ship.x + 140, y: 60, baseY: 60, hp: DUEL.hp, t: DUEL.commitAt, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+    const s0 = gs.score
+    let cried = false, grazed = false
+    for (let i = 0; i < 300; i++) {
+        step(gs, {})
+        if (gs.events.includes('duelgrind')) cried = true
+        if (gs.events.includes('duelgraze')) grazed = true
+        gs.events.length = 0
+        if (!gs.enemies.some((e) => e.kind === 'duelist')) break
+    }
+    r.check('#2952 steel stays unpaid: a pass burned on a plate cries on the steel but banks no dodge bonus',
+        cried && !grazed && gs.score === s0, `cried=${cried} grazed=${grazed} d=${gs.score - s0}`)
+}
+{ // cover-fire: a hunter committed at seat one buys fire from seat two even
+    // when seat two's own lane is too hot to shoot into — and only seat one
+    // buys it (partner down, the wing keeps its discipline)
+    const gs = makeGame(4)
+    enableCoop(gs)
+    gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0; gs.caps.length = 0
+    if (!gs.wing) throw new Error('coop seat missing')
+    gs.wing.weapon = 'wave' // a charged gun only fires when its lane breathes — the gate cover-fire must beat
+    gs.bullets.push({ id: 3, x: gs.wing.x + 25, y: gs.wing.y + 2, vx: -1.35, vy: 0 }) // the wing's lane is hot
+    const bare = wingBrain(gs).a
+    gs.enemies.push({ id: 955, kind: 'duelist', x: gs.ship.x + 110, y: 100, baseY: 100, hp: DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'windup', stateT: 40, inv: 0, anim: 0 })
+    const covering = wingBrain(gs).a
+    const leaning = wingBrain(gs).up !== wingBrain(gs).down // the stream edges toward the threat's line
+    gs.ship.dead = 1 // seat one down: there is no partner left to cover
+    const alone = wingBrain(gs).a
+    gs.ship.dead = 0
+    gs.enemies.length = 0
+    const quiet = wingBrain(gs).a // no commitment: the hot-lane discipline stands again
+    r.check('#2952 cover-fire: a duelist committed within reach of seat one buys the wing its shot on a hot lane — the wing fires, leans toward the hunter, and stays disciplined when no one is threatened',
+        !bare && covering && leaning && !alone && !quiet, `bare=${bare} covering=${covering} lean=${leaning} alone=${alone} quiet=${quiet}`)
+}
+{ // covering fire never parks the wing in the pass it answers: the risk field
+    // keeps its authority through the lean — the pair survives the coverage
+    let allLived = true
+    for (const seed of [1, 2, 3, 4]) {
+        const gs = makeGame(seed)
+        enableCoop(gs)
+        gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0; gs.schedule.length = 0
+        if (gs.wing) gs.wing.out = false
+        gs.enemies.push({ id: 950 + seed, kind: 'duelist', x: gs.ship.x + 110, y: 120, baseY: 120, hp: DUEL.hp, t: DUEL.commitAt - 1, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+        for (let i = 0; i < 700; i++) {
+            step(gs, autopilot(gs)) // both seats on their brains, as the attract shows them
+            gs.events.length = 0
+            if (gs.mode !== 'play') break
+        }
+        if (gs.ship.dead || gs.ship.out || (gs.wing && (gs.wing.dead || gs.wing.out))) allLived = false
+    }
+    r.check('#2952 the lean never trades places with the threat: with cover-fire on, both brains still walk the duel alive on seeds 1..4',
+        allLived, `allLived=${allLived}`)
+}
+
 // ----------------------------------------------------------------- mutant ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -2782,6 +2899,44 @@ if (MUTANT) {
                 const p = mod.autopilot(g)
                 return (p.up || p.down) ? null
                     : 'HARM NAMED: the crossing sign flips back and the lane field goes blind to straight fire — turret rounds, ricochets and horn all read safe, and every dodge the field owns dies with the sign'
+            },
+        },
+        {
+            name: 'graze-blind', // #2952: the near-miss ledger is cut — dodges stop paying
+            anchor: "if (e.state === 'dash' && !e.spent && e.near <= DUEL.graze) {",
+            plant: "if (false && e.state === 'dash' && !e.spent && e.near <= DUEL.graze) { /* MUTANT(graze-blind): the ledger is cut */",
+            harm: async (mod) => {
+                const g = mod.makeGame(1)
+                g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0
+                g.ship.y = 120
+                g.enemies.push({ id: 951, kind: 'duelist', x: g.ship.x + 110, y: 120, baseY: 120, hp: mod.DUEL.hp, t: mod.DUEL.commitAt - 1, cd: 999999, vx: 0, vy: 0, state: 'hunt', stateT: 0, inv: 0, anim: 0 })
+                const s0 = g.score
+                let grazed = false, since = -1
+                for (let i = 0; i < 500; i++) {
+                    mod.step(g, { up: since >= 0 && since < 6, down: false, left: false, right: false, a: false, b: false })
+                    if (g.events.includes('warn')) { since = 0 } else if (since >= 0) since++
+                    if (g.events.includes('duelgraze')) grazed = true
+                    g.events.length = 0
+                    if (!g.enemies.some((e) => e.kind === 'duelist') || g.ship.dead) break
+                }
+                return (!grazed || g.score - s0 !== mod.DUEL.grazeScore)
+                    ? 'HARM NAMED: the beaten pass dies unpaid — the defender-era near-miss disappears, and walking off a committed line pays exactly what standing still paid: nothing'
+                    : null
+            },
+        },
+        {
+            name: 'cover-deaf', // #2952: seat two goes quiet on its partner's duel
+            anchor: "if (cover) pad.a = true // #2952 cover-fire: the wing answers a commitment at its partner, lane or no lane",
+            plant: "/* MUTANT(cover-deaf): the wing ignores the commitment at its partner */",
+            harm: async (mod) => {
+                const g = mod.makeGame(4)
+                mod.enableCoop(g)
+                g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0; g.caps.length = 0
+                g.wing.weapon = 'wave'
+                g.bullets.push({ id: 3, x: g.wing.x + 25, y: g.wing.y + 2, vx: -1.35, vy: 0 })
+                g.enemies.push({ id: 955, kind: 'duelist', x: g.ship.x + 110, y: 100, baseY: 100, hp: mod.DUEL.hp, t: 0, cd: 999999, vx: 0, vy: 0, state: 'windup', stateT: 40, inv: 0, anim: 0 })
+                return mod.wingBrain(g).a ? null
+                    : 'HARM NAMED: the hunter crouches at seat one and seat two holds its fire — the wingman is deaf to its partner\'s duel, and the co-op read the pair was built on goes quiet at the one moment it matters'
             },
         },
     ]
