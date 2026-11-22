@@ -102,7 +102,14 @@ export default function DoubleDragon() {
             knife_hit_b: () => { audioController.playTone(196, 0.12, 'square', 0.16); shake = Math.max(shake, 3) },
             // #2857 cadence readability: the blue seat's bare jab is a SNAP, a
             // step up in pitch from the shared bite — technique vs power at an ear.
-            jab_b: () => { audioController.playTone(294, 0.05, 'square', 0.10); audioController.playNoise(0.02, 0.05) },
+            // #2889 item 5 (phone mix): a square at 294 Hz puts its 3rd harmonic
+            // at 882 Hz — a 2 Hz beat right under the pickup chime's 880 middle
+            // note, and on a phone's thin midrange the bite and the reward smear
+            // into one buzz when a player jabs across fresh steel. The bite keeps
+            // its F#4 seat identity on a triangle (3rd harmonic −19 dB against
+            // the fundamental where the square sat at −9.5), and the noise
+            // transient steps up 0.02 -> 0.03 so the snap survives the softer wave.
+            jab_b: () => { audioController.playTone(294, 0.05, 'triangle', 0.12); audioController.playNoise(0.03, 0.05) },
             // #2857 post-KO flair snaps — the red seat at the shoulder, the
             // blue one a minor third brighter, detuned like the rest of his voice.
             flair: () => audioController.playTone(880, 0.05, 'triangle', 0.07),
@@ -642,6 +649,15 @@ export default function DoubleDragon() {
                         gs.projectiles.push({ id: gs.nextId++, x: gs.jimmy.x + 52, y: gs.jimmy.y, vx: -CFG.goonKnife.speed, spin: 0, side: 'goon' })
                     }
                     if (opts.makeSolo && gs.jimmy) { gs.coop = false; gs.jimmy = null }
+                    // #2889 tells fixtures: relief on the blue seat (HUD tag
+                    // blink), a fresh knockdown for the squash, the strut on the
+                    // red seat for the back-step drift. Paint-watch legs only.
+                    if (opts.allyRelief !== undefined && gs.jimmy) gs.jimmy.relief = opts.allyRelief
+                    if (opts.billyFlourish !== undefined) gs.billy.flourish = opts.billyFlourish
+                    if (opts.downThug) {
+                        const [dx, dy] = opts.downThug
+                        gs.enemies.push({ id: gs.nextId++, kind: 'williams', x: dx, y: dy, face: -1, hp: 3, state: 'down', stateT: 0, anim: 26, hasStick: false, stickDropped: false, hasKnife: false, castCooldown: 999, attackCooldown: 99999, inv: 0, spinHit: false, wob: 0, flash: 0 })
+                    }
                     return true
                 },
             }

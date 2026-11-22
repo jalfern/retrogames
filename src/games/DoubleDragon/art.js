@@ -4,7 +4,7 @@
 // palette at a glance: sodium-lamp blue-black night, Billy's red headband and
 // white gi, Williams' green cap, Amon's brown vest, Abobo's slab of charcoal.
 
-import { W, H, DEEP_TOP, DEEP_BOT, rescueReady, ENEMY_DEF, TIP, INTRO } from './sim.js'
+import { W, H, DEEP_TOP, DEEP_BOT, rescueReady, ENEMY_DEF, TIP, INTRO, CFG as SIMCFG } from './sim.js'
 
 // ------------------------------------------------------------- pixel font ---
 // 5x7, one string per glyph, '#' = ink. Original to this repo (arcade-cabinet
@@ -797,14 +797,15 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
     const u = (v) => Math.round(v * s)
     const R = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(sx + u(x) * face, sy + u(y), u(w), u(h)) }
     // mirrored rects keep the facing flip crisp around x=0
-    const walk = pose === 'walk' ? Math.floor(t / 6) % 4 : 0
+    const stride = pose === 'walk' || pose === 'flourish'   // #2889 item 3: the strut walks too
+    const walk = stride ? Math.floor(t / 6) % 4 : 0
     const breathe = pose === 'idle' ? (Math.floor(t / 24) % 2) : 0
     const legSwing = [[-3, 3], [-1, 1], [3, -3], [1, -1]][walk]
     // #2810 item 1: the cabinet's fighters bounce on the balls of their feet —
     // a small vertical bob on the stride plus a shoulder counter-swing that
     // leans the torso against the leading leg.
-    const bobY = pose === 'walk' ? [0, -1, -1, 0][walk] : 0
-    const sway = pose === 'walk' ? -Math.sign(legSwing[0]) : 0
+    const bobY = stride ? [0, -1, -1, 0][walk] : 0
+    const sway = stride ? -Math.sign(legSwing[0]) : 0
     const hx = sway + (pose === 'charge' ? 3 : 0) + lean // lean: shoulders lead the body-check / the hop
     const bulk = s >= 1.3 ? 1 : 0                  // #2810 item 8: Abobo's slabs wider
     // #2897: the tumble settles — after 8 ticks the dead lie in the axis-aligned
@@ -854,7 +855,7 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
     } else if (pose === 'jump') {
         R(-4, -12, 4, 7, pal.legs); R(1, -12, 4, 7, pal.legs)
         R(-5, -6, 5, 3, pal.shoes); R(1, -6, 5, 3, pal.shoes)
-    } else if (pose === 'walk') {
+    } else if (stride) {
         R(legSwing[0], -10, 4, 10, pal.legs)
         R(legSwing[1], -10, 4, 10, pal.legs)
         R(legSwing[0] - 1, -1, 5, 2, pal.shoes)
@@ -921,6 +922,61 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
     ctx.restore()
 }
 
+// #2889 item 1: the guardian's promise has to survive the phone. A
+// dock-zoomed browser averages a 3×2 dash into grey; a chevron keeps its
+// shape — 3 px wide, 5 px tall, apex toward the seat (direction of travel),
+// arms swept back. The apex spine is the 3-px vertical that reads at any
+// downscale; the deeper trail (10/16/22) keeps marks lit when the outermost
+// clips at a screen edge mid-rescue. Shimmer still rides the guard clock,
+// so the trail flickers like the sprint it fronts. Pure geometry — pinnable.
+export function glintMarks(guard) {
+    const m = []
+    if (guard <= 0) return m
+    for (let i = 0; i < 3; i++) {
+        if ((guard + i) % 2) continue
+        const d = 10 + i * 6
+        const ay = -15 - i * 3
+        m.push({ x: d, y: ay - 1, w: 1, h: 3 })              // apex spine
+        m.push({ x: d + 1, y: ay - 2, w: 1, h: 1 })          // arms, swept back
+        m.push({ x: d + 1, y: ay + 2, w: 1, h: 1 })
+        m.push({ x: d + 2, y: ay - 2, w: 1, h: 1 })
+        m.push({ x: d + 2, y: ay + 2, w: 1, h: 1 })
+    }
+    if (guard % 2 === 0) m.push({ x: 6, y: -22, w: 1, h: 1, core: 1 }) // shoulder spark
+    return m
+}
+
+// #2889 item 3: one step back under the KO strut. Ramps out over the first
+// fifth of the flourish, HOLDS through the flick and the shoulder check (the
+// man delivers the check from the spot he swaggered to), and eases home in the
+// last three ticks — zero snap at either end, whether the pose finishes on its
+// clock or a swing cuts it. Returns px of backward drift (0..5).
+export function flourishDrift(f, ticks = SIMCFG.flourishTicks) {
+    if (f <= 0 || f >= ticks) return 0
+    const pr = 1 - f / ticks
+    const ph = pr < 0.2 ? pr / 0.2 : pr > 0.85 ? (1 - pr) / 0.15 : 1
+    return Math.max(0, Math.min(5, Math.round(5 * ph)))
+}
+
+// #2889 item 4: weight at the moment of impact — a knocked-down man flattens
+// into the asphalt and settles back over an 8-tick beat (the #2897 rule: an
+// impact flash must survive a software-rendered frame, and 8 ticks is the
+// proven width). The flatten is strongest at the landing and eases out —
+// classic squash-and-stretch. Down still pins; the sim never moves (render
+// law: the squash is paint).
+export function koSquash(state, stateT) {
+    if (state !== 'down' || stateT > 7) return null
+    const k = 1 - stateT / 8                    // 1 at impact, 0 at the settle
+    return { w: 1 + 0.18 * k, h: 1 - 0.3 * k }
+}
+
+// #2889 item 2: the freed seat's relief reads in the corner too — the blue
+// 2P tag blinks white on the same clock the pose rides (relief counts 9..1,
+// lit on the odd ticks), so the grip-break is told twice.
+export function reliefBlink(relief) {
+    return relief > 0 && relief % 2 === 1
+}
+
 export function drawBilly(ctx, b, camX, props) { drawFighter(ctx, b, camX, PAL.billy, props) }
 export function drawJimmy(ctx, b, camX, props) { drawFighter(ctx, b, camX, PAL.jimmy, props) }
 
@@ -950,6 +1006,17 @@ function drawFighter(ctx, b, camX, pal, props) {
     // the KO flourish over an idle or a walk. Juice rides the pose, nothing else.
     if (b.relief > 0 && pose === 'idle') pose = 'relief'
     else if (b.flourish > 0 && (pose === 'idle' || pose === 'walk')) pose = 'flourish'
+    // #2889 item 3: the arcade strut WALKED — the pose rode a step-back. The
+    // drift is render-only (x truth untouched, juice law): one step back (5 px)
+    // eased out and home on the flourish clock so nothing snaps when the pose
+    // ends or a swing cuts it. The shadow stays planted — the #2857 wobble law.
+    let drift = 0
+    if (pose === 'flourish') {
+        drift = -b.face * flourishDrift(b.flourish, SIMCFG.flourishTicks)
+        if (sx + drift < -34) drift = -34 - sx
+        else if (sx + drift > W + 34) drift = W + 34 - sx
+    }
+    const bx = sx + drift
     if (hop) drawShadow(ctx, sx + castPx(b.x), sy + 1, 10, 0.22)
     else drawShadow(ctx, sx + castPx(b.x), sy + 1, 14, 0.35 - b.z * 0.02)
     const lift = Math.round(b.z)
@@ -957,45 +1024,46 @@ function drawFighter(ctx, b, camX, pal, props) {
         if (b.stateT > 26) return
         if (b.stateT > 16) ctx.globalAlpha = 1 - (b.stateT - 16) / 10
     }
-    fighter(ctx, sx, sy - lift, b.face, pose,
+    fighter(ctx, bx, sy - lift, b.face, pose,
         pose === 'dying' ? b.stateT : pose === 'flourish' ? b.flourish : b.anim, pal, 1,   // #2897: dying rides the death clock (tumble + settle)
         hop ? 1 : pose === 'flourish' && b.flourish <= 10 ? 1 : 0)
-    // #2857 guardian telegraph: speed lines off the trailing shoulder while
-    // this dragon sprints the holder of his brother — seat-tinted by the
-    // band (red answers red, blue answers blue), shimmering on the guard clock.
+    // #2857 guardian telegraph, #2889 item 1: chevrons off the trailing
+    // shoulder while this dragon sprints the holder of his brother — seat-
+    // tinted by the band (red answers red, blue answers blue), shimmering on
+    // the guard clock. The old 3×2 dashes were exactly the shape a dock-zoomed
+    // phone averages away; the chevron's 3-px vertical spine survives, and the
+    // deeper trail keeps marks lit when the outermost clips at a screen edge.
     if (b.guard > 0 && b.state !== 'grabbed' && b.state !== 'dying') {
         ctx.globalAlpha = b.guard > 5 ? 0.8 : b.guard > 2 ? 0.55 : 0.3
-        for (let i = 0; i < 3; i++) {
-            if ((b.guard + i) % 2) continue
-            ctx.fillStyle = pal.band || pal.trim
-            ctx.fillRect(sx - b.face * (10 + i * 4), sy - lift - 13 - i * 4, 3, 2)
+        for (const q of glintMarks(b.guard)) {
+            ctx.fillStyle = q.core ? '#ffffff' : pal.band || pal.trim
+            ctx.fillRect(bx - b.face * q.x, sy - lift + q.y, q.w, q.h)
         }
-        if (b.guard % 2 === 0) { ctx.fillStyle = '#ffffff'; ctx.fillRect(sx - b.face * 6, sy - lift - 22, 1, 1) }
         ctx.globalAlpha = 1
     }
     if (b.weapon === 'stick') {
         ctx.fillStyle = '#8a6a3c'
         const stickAt = pose === 'punch' || pose === 'attack' ? 16 : pose === 'spin' ? 12 : 7
-        ctx.fillRect(sx + (pose === 'windup' ? -12 : stickAt * b.face), sy - lift - 21, 9 * b.face, 2)
+        ctx.fillRect(bx + (pose === 'windup' ? -12 : stickAt * b.face), sy - lift - 21, 9 * b.face, 2)
     } else if (b.weapon === 'knife') {
         ctx.fillStyle = '#cfd6de'                   // blade kept low at the hip
-        ctx.fillRect(sx + 4 * b.face, sy - lift - 16, 6 * b.face, 2)
+        ctx.fillRect(bx + 4 * b.face, sy - lift - 16, 6 * b.face, 2)
         ctx.fillStyle = '#3a2c1c'
-        ctx.fillRect(sx + 2 * b.face, sy - lift - 16, 2 * b.face, 2)
+        ctx.fillRect(bx + 2 * b.face, sy - lift - 16, 2 * b.face, 2)
     } else if (b.weapon === 'whip') {
         ctx.fillStyle = '#5a3a20'                   // coil at the belt
-        ctx.fillRect(sx - 4, sy - lift - 13, 8, 2)
-        ctx.fillRect(sx - 4, sy - lift - 11, 2, 2)
+        ctx.fillRect(bx - 4, sy - lift - 13, 8, 2)
+        ctx.fillRect(bx - 4, sy - lift - 11, 2, 2)
     }
     if (b.state === 'whip' && b.stateT >= 8 && b.stateT <= 16) {
         // the lash: a cracking line out to full reach, pixel-stepped
         const lit = b.lash > 0   // #2819 item 2: the bite tick burns brighter
         ctx.fillStyle = lit ? '#7c4c20' : '#4a2f18'
         const t = (b.stateT - 8) / 8
-        let lx = sx, ly = sy - lift - 20
+        let lx = bx, ly = sy - lift - 20
         for (let i = 0; i <= 12; i++) {
             const f = i / 12
-            lx = sx + b.face * Math.round(6 + f * 28 * (0.6 + t * 0.4))
+            lx = bx + b.face * Math.round(6 + f * 28 * (0.6 + t * 0.4))
             ly = sy - lift - 20 + Math.round(Math.sin(f * Math.PI * (1.5 - t)) * 6 * f)
             ctx.fillRect(lx, ly, 2, 1)
         }
@@ -1037,7 +1105,13 @@ export function drawEnemy(ctx, e, camX) {
     }
     // #2897: the dying pose runs on the death clock, not the walk anim — the
     // tumble + settle needs a fresh 0 to animate; anim is already past 8.
+    // #2889 item 4: a knockdown lands FLAT — two ticks of squash about the
+    // feet (wider, lower) before the sprawl settles. Paint only; the pin law
+    // and the man's position are untouched.
+    const sq = koSquash(e.state, e.stateT)
+    if (sq) { ctx.save(); ctx.translate(sx, sy); ctx.scale(sq.w, sq.h); ctx.translate(-sx, -sy) }
     fighter(ctx, sx + jx, sy, e.face, pose === 'getup' ? 'jump' : pose, pose === 'dying' ? e.stateT : e.anim, PAL[e.kind], def)
+    if (sq) ctx.restore()
     // #2874: hits SHOW — every landed blow lights the man white for a flash,
     // and a wounded goon wears a thin bank over his head, so a newcomer sees
     // the hits counting long before the KO popup pays.
@@ -1149,8 +1223,10 @@ export function drawHud(ctx, gs, playing = true, p2wake = false) {
         // #2833: the tiny blue 2P tag — 12px of chrome in the gap between
         // the HI score and the band column; it clears the weapon label zone
         // (x=78, y=11) by a street. #2899: one px left, so the tag's drop
-        // shadow never touches the 1P column's first band.
-        label(ctx, '2P', 202, 6, wind(gs.jimmy) ? '#ffffff' : '#5a8ae8', 1)
+        // shadow never touches the 1P column's first band. #2889 item 2: it
+        // also blinks white on the relief clock — the freed grip flashes in
+        // the corner while Jimmy still holds his arms up on the street.
+        label(ctx, '2P', 202, 6, wind(gs.jimmy) || reliefBlink(gs.jimmy.relief) ? '#ffffff' : '#5a8ae8', 1)
         // #2863 discoverability: the cabinet greets a waking slot 2 the way
         // the arcade greeted a second player — while a friend's pad or linked
         // phone is alive and the seat still belongs to the CPU, the tag blinks
