@@ -415,12 +415,43 @@ Technōs opened its arcade by stating the crime; so does this board, between
   run 12/12, co-op seeds 1..6 6/6. `knock-flat` and `bounds-off` mutants
   name the harm if the weight or the wall goes dark.
 
+#2944 carrier rotation (forge, never-dry stage) — the later waves fight back:
+
+- **Carriers swing what they carry.** A stick in a goon's hand reaches +7 px past
+  bare knuckles with a wood-whistle telegraph (`goon_steel`); the whip's snap owns
+  a line at reach 34 / depth 9 and lands its white crack-flash (`e.lash`) WITH the
+  bite. Before this the board's carriers only *held* their steel — knives were the
+  goons' only cast.
+- **Telegraph law, stretched honestly.** The whip's windup is 14 ticks — two beats
+  longer than a jab's — because a threat with twice the reach must earn twice the
+  notice (`loop-cheap` names the cheap version). Point-blank the whip folds away
+  and knuckles answer (`CFG.goonWhip.min`): leather at nose-range is a jab.
+- **Depth is still the whole dodge** — one lane over and the snap finds asphalt
+  (`leather-short` replants a whip whose line goes dark; the bare-knuckle hit law
+  stands verbatim, the depth-blind mutant still plants it).
+- **Escalation is the syllabus.** Walnuts wave 1 is bare-knuckled; wave 2 brings
+  the stick-Amon; wave 3 answers with the arcade's whip man beside the giant. The
+  yard runs the fullest rotation — steel opener, knife AND whip second wave, and
+  the duel keeps ONLY his belt of knives (the pinned duel law is untouched).
+  (`escalation-flat` names wave 1 arriving armed — teaching with a cliff.)
+- **Carriers pay their weapon** — a dead whip man drops the leather clattering
+  (same hop as barrel steel): kill the armed man, get armed (`carrier-thrift`
+  guards the reward loop). The stick/KO and knife payouts stand as before.
+- **Hashed truth** — what a goon carries (stick/whip/knife) and what its windup
+  resolved to (`atkKind`) ride `stateHash`: same hash, same future; the whip man
+  and the bare man at one pixel may not share a future under one hash.
+- **The brain learns the new reads** — the autopilot answers the raised loop at
+  whip range like the aim-cast: leave the lane. Winnability re-measured on the
+  armed shelf: S1 seeds 1..12 12/12, full run 12/12, co-op seeds 1..6 6/6.
+- The `leather-short`, `carrier-thrift`, `escalation-flat` and `loop-cheap`
+  mutants name the four ways the rotation rots.
+
 ## Verify
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 268 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), #2942 phone-scale QA (strut cut-continuity + edge clamp, chevron non-fuse at dock zoom, tag-blink duty, squash beat width, offline-rendered mix dB), winnable, browser legs
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, strut-pop, squash-missing, tag-deaf, mix-clash must go RED (named)
+npm run ddragoncheck                    # 281 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), #2942 phone-scale QA (strut cut-continuity + edge clamp, chevron non-fuse at dock zoom, tag-blink duty, squash beat width, offline-rendered mix dB), #2944 carrier rotation (escalation order, whip/stick reach + depth, airborne + point-blank folds, telegraph beat, KO payout, hash truth, brain reads the loop, heard telegraphs), winnable, browser legs
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, strut-pop, squash-missing, tag-deaf, mix-clash, leather-short, carrier-thrift, escalation-flat, loop-cheap must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -484,8 +515,9 @@ of nightly 44762398189).
   mix is now *heard* through an offline render of the shipped DSP: the 882 Hz
   third sits ≥12 dB under the F#4 fundamental and ≥4 dB under where the old
   square left it at the chime's middle note.
-- Goons carry knives (S3) but not the whip or stick-and-steel rotations of
-  the later arcade waves; the thrown knife is the goon's only cast (and the
-  original's goons never threw whip or barrel either).
+- **CLOSED by #2946** — the carrier rotation: the later waves answer with the
+  whip and the stick-and-steel (see the #2944 section above — windups, reaches,
+  telegraphs, payouts and the escalation order all pinned); the thrown knife
+  remains the goon's only cast, as in the original.
 - The duel's re-arm is a cooldown, not a walk-to-the-body pickup like the
   arcade's knife retrieval.

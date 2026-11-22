@@ -1146,6 +1146,30 @@ export function drawEnemy(ctx, e, camX) {
         ctx.fillStyle = '#8a6a3c'
         ctx.fillRect(sx + (pose === 'attack' ? 16 : pose === 'windup' ? -12 : 8) * e.face, sy - 22 * def, 10 * e.face, 2)
     }
+    // #2944: the whip is leather at the hip, a loop above the head in the
+    // windup (the read), and a flat line at the arcade's reach the instant
+    // it cracks — wood-brown like the pickup's label tint, so the eye learns
+    // "that man owns that line" inside one exchange.
+    if (e.hasWhip) {
+        if (e.atkKind === 'whip' && pose === 'windup') {
+            ctx.fillStyle = '#6b4a2a'
+            ctx.fillRect(sx + 3 * e.face, sy - 34 * def, 2 * e.face, 8)          // raised arm
+            ctx.fillRect(sx + 3 * e.face, sy - 36 * def, 8 * e.face, 2)          // loop top
+            ctx.fillRect(sx + 11 * e.face, sy - 36 * def, 2, 4)                   // loop fall
+        } else if (e.atkKind === 'whip' && pose === 'attack') {
+            ctx.fillStyle = '#5c3f24'
+            ctx.fillRect(sx + 6 * e.face, sy - 22 * def, 22 * e.face, 1)         // the snap, arm out
+            ctx.fillRect(sx + 28 * e.face, sy - 21 * def, 4 * e.face, 1)
+        } else {
+            ctx.fillStyle = '#6b4a2a'
+            ctx.fillRect(sx + 6 * e.face, sy - 16 * def, 6 * e.face, 2)          // coil at the hip
+            ctx.fillRect(sx + 8 * e.face, sy - 18 * def, 4, 2)
+        }
+        if (e.lash > 0) {   // the crack lands white at full reach (bite tell)
+            ctx.fillStyle = '#f2ede4'
+            ctx.fillRect(sx + 6 * e.face, sy - 22 * def, 28 * e.face, 1)
+        }
+    }
     if (e.hasKnife) {
         // S3 steel in a goon's hand: held low at the hip, cocked back in the
         // aim, arm out the instant it flies

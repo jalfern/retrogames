@@ -85,6 +85,12 @@ export const CFG = {
     clatterTicks: 14,
     // --- S3 the hideout (#2807) ---
     goonKnife: { windup: 16, speed: 3.0, keep: 34 },  // aimed cast; lethal on the line; #2825 thrower's distance
+    // --- #2944 the carrier rotation (the later arcade waves fight back) ---
+    // A carried steel extends the thug's swing; the whip's snap owns a long
+    // line. The windup stays the telegraph law — and the whip's is a beat
+    // LONGER than a jab's, because the raised loop is the read.
+    enemyStick: 7,                // goon stick: reach bonus over bare knuckles
+    goonWhip: { windup: 14, min: 12 },   // min: point-blank the whip folds into a punch
     duelHp: 10, duelScore: 800, duelSpeed: 1.05, duelReach: 17,
     rescueRange: 22, rescueCuts: 2, rescueBonus: 1000, rescueCheer: 100,
     // --- #2882 chain scoring ---
@@ -268,14 +274,18 @@ export const ENEMY_DEF = {
 export const WAVES = [
     { triggerX: 90, spawns: [{ kind: 'williams', side: 'left' }, { kind: 'williams', side: 'right' }] },
     { triggerX: 340, spawns: [{ kind: 'amon', side: 'right', stick: true }, { kind: 'amon', side: 'left' }] },
-    { triggerX: 560, spawns: [{ kind: 'abobo', side: 'right' }, { kind: 'williams', side: 'left' }, { kind: 'williams', side: 'right' }] },
+    // #2944: the later waves carry steel that BITES — Walnuts' third wave
+    // answers with the arcade's whip man beside the giant.
+    { triggerX: 560, spawns: [{ kind: 'abobo', side: 'right' }, { kind: 'williams', side: 'left' }, { kind: 'williams', side: 'right', whip: true }] },
 ]
 
 // S3 — the hideout: casters first (the arcade stage-2 trademark), then the
 // duel with Williams himself. No third wheel in the duel: one man, one lie.
+// #2944: the yard is the fullest rotation — steel in one pair of hands,
+// leather in the next, knives at the lieutenant's belt.
 export const WAVES_S2 = [
-    { triggerX: 90, spawns: [{ kind: 'williams', side: 'left' }, { kind: 'williams', side: 'right' }] },
-    { triggerX: 360, spawns: [{ kind: 'williams', side: 'left', knife: true }, { kind: 'williams', side: 'right' }] },
+    { triggerX: 90, spawns: [{ kind: 'williams', side: 'left', stick: true }, { kind: 'williams', side: 'right' }] },
+    { triggerX: 360, spawns: [{ kind: 'williams', side: 'left', knife: true }, { kind: 'williams', side: 'right', whip: true }] },
     { triggerX: 620, spawns: [{ kind: 'duel', side: 'right', knife: true }] },
 ]
 export const wavesFor = (gs) => (gs.stage === 2 ? WAVES_S2 : WAVES)
@@ -411,9 +421,14 @@ function spawnEnemy(gs, kind, side, stick) {
         hp: def.hp, state: 'enter', stateT: 0, anim: Math.floor(rng(gs) * 8),
         hasStick: !!stick, stickDropped: false,
         hasKnife: false, castCooldown: 0,   // S3: steel in a goon's hand
+        // #2944: the carrier rotation — leather in a goon's hand, and the kind
+        // of swing its current windup resolved to (whip | stick | punch). Both
+        // ride stateHash: the carry and the telegraph ARE the future.
+        hasWhip: false, atkKind: null,
         tgt: null,                          // S4: which dragon this thug works
         attackCooldown: 30 + Math.floor(rng(gs) * 60),
         inv: 0, spinHit: false,
+        lash: 0,                            // #2944: crack-flash ticks on a whip bite (juice)
         wob: 0,                             // #2857: stagger wobble juice (never hashed)
         kb: 0,                              // #2935: knockback velocity, px/t (sim truth)
     }
@@ -635,6 +650,12 @@ function hurtEnemy(gs, e, dmg, knockdown, onDowned, seat, kind) {
         if (e.hasKnife) {
             e.hasKnife = false
             gs.pickups.push({ x: e.x, y: e.y, kind: 'knife', bob: 0 })
+        }
+        // #2944: the whip carrier pays the arcade's reward loop too — kill the
+        // man, take his leather. It clatters down like steel spat from wood.
+        if (e.hasWhip) {
+            e.hasWhip = false
+            gs.pickups.push({ x: e.x, y: e.y, kind: 'whip', bob: 0, clatter: CFG.clatterTicks })
         }
         return true
     }
@@ -941,6 +962,10 @@ function updateEnemy(gs, e) {
     e.anim += 1
     if (e.wob > 0) e.wob -= 1   // #2857: the stagger wobble settles as he recovers
     if (e.flash > 0) e.flash -= 1 // #2874: the hit-light fades fast — a flash, not a glow
+    if (e.lash > 0) e.lash -= 1   // #2944: the whip's crack-flash decays (juice)
+    // #2944: the telegraph exists only while a swing is cooking — a staggered
+    // or grounded thug starts its next turn bare again, and the hash says so.
+    if (e.atkKind && e.state !== 'windup' && e.state !== 'attack') e.atkKind = null
 
     // #2825 item 4: the duel intro — the lieutenant holds his pose at the
     // frame edge while the banner says his name. He marches IN (the arcade
@@ -1039,6 +1064,19 @@ function updateEnemy(gs, e) {
             break
         }
 
+        // #2944: a whip carrier holds its ground ON THE LINE — the loop goes up
+        // for a beat longer than a jab's windup (the raised leather is the read,
+        // same law as the cast's cocked blade), then the snap punishes a lazy
+        // lane-share from a body-and-a-half out. Depth is still the whole dodge;
+        // point-blank the whip folds away and knuckles answer instead (min).
+        if (e.hasWhip && b.z === 0 && b.inv <= 0 && b.state !== 'dying' && b.state !== 'grabbed'
+            && adx >= CFG.goonWhip.min && adx <= CFG.whip.reach && Math.abs(dy) <= CFG.whip.depth + 4
+            && e.attackCooldown <= 0 && attackerCount(gs) < attackerCap(gs)) {
+            e.state = 'windup'; e.stateT = 0; e.atkKind = 'whip'
+            gs.events.push('goon_lashwind')
+            break
+        }
+
         // #2825 item 3: throwers keep thrower's distance. An armed Williams at
         // punching range back-pedals to a fresh angle instead of idling into
         // the fist fight (the arcade's casters dance). A spinner with its
@@ -1070,10 +1108,13 @@ function updateEnemy(gs, e) {
             break
         }
 
-        // attack decision
-        const inRange = adx <= def.reach && Math.abs(dy) <= 6 && b.state !== 'dying'
+        // attack decision — #2944: carried steel reaches past bare knuckles,
+        // and the windup remembers which weapon answers (hashed, not painted).
+        const eStick = e.hasStick && !e.stickDropped
+        const inRange = adx <= def.reach + (eStick ? CFG.enemyStick : 0) && Math.abs(dy) <= 6 && b.state !== 'dying'
         if (inRange && e.attackCooldown <= 0 && attackerCount(gs) < attackerCap(gs)) {
-            e.state = 'windup'; e.stateT = 0
+            e.state = 'windup'; e.stateT = 0; e.atkKind = eStick ? 'stick' : 'punch'
+            if (eStick) gs.events.push('goon_steel')   // the wood whistle IS the wider reach's telegraph
             break
         }
         // approach: close x and match depth; back-row thugs hang slightly off
@@ -1090,7 +1131,10 @@ function updateEnemy(gs, e) {
     case 'windup': {
         e.stateT += 1
         e.face = Math.sign(b.x - e.x) || e.face
-        if (e.stateT >= 12) { e.state = 'attack'; e.stateT = 0 }
+        // #2944: the whip's loop needs its own beat above the jab's 12 — the
+        // telegraph law stretched, not skipped; the read stays, the threat grows.
+        const wind = e.atkKind === 'whip' ? CFG.goonWhip.windup : 12
+        if (e.stateT >= wind) { e.state = 'attack'; e.stateT = 0 }
         break
     }
     case 'chargewind': {
@@ -1151,8 +1195,21 @@ function updateEnemy(gs, e) {
     case 'attack': {
         e.stateT += 1
         if (e.stateT === 3) {
+            // #2944: which line the snap punishes. The bare knuckle law stands
+            // verbatim below (the depth-blind mutant plants it); the carrier
+            // adds its own reach ON TOP — steel a few px past the fist, the
+            // whip the arcade's long leather line. Same depth law: leave the
+            // lane during the windup and every one of them whooses past.
+            const kind = e.atkKind || 'punch'
+            if (kind === 'whip') gs.events.push('goon_lash')
+            const extra = (kind === 'stick' && e.hasStick && !e.stickDropped)
+                ? b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 + CFG.enemyStick && Math.abs(e.y - b.y) <= 8 && b.state !== 'grabbed'
+                : kind === 'whip'
+                    ? b.z <= 8 && Math.abs(e.x - b.x) <= CFG.whip.reach && Math.abs(e.y - b.y) <= CFG.whip.depth && b.state !== 'grabbed'
+                    : false
             const hit = b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 && Math.abs(e.y - b.y) <= 8 && b.state !== 'grabbed'
-            if (hit && b.inv <= 0 && b.state !== 'dying' && gs.mode === 'play') {
+            if ((hit || extra) && b.inv <= 0 && b.state !== 'dying' && gs.mode === 'play') {
+                if (!hit && kind === 'whip') e.lash = CFG.whipFlash   // the crack lands WITH the bite
                 playerDies(gs, b)
             }
         }
@@ -1316,6 +1373,7 @@ export function step(gs, pad = {}, pad2 = {}) {
         w.spawns.forEach((s) => {
             const e = spawnEnemy(gs, s.kind, s.side, s.stick)
             if (s.knife) e.hasKnife = true
+            if (s.whip) e.hasWhip = true   // #2944: the rotation walks in armed
             // #2825 item 4: the boss wave announces itself — WILLIAMS rides the
             // banner while he holds his pose at the frame edge, then the duel.
             if (s.kind === 'duel') { gs.duelIntro = 90; gs.events.push('duel') }
@@ -1508,6 +1566,9 @@ export function dragonBrain(gs, b, ally = null) {
     // an armed Williams' aim reads at cast range.
     const threat = gs.enemies.find((e) => (
         ((e.state === 'windup' || e.state === 'attack') && Math.abs(e.x - b.x) < 30 && Math.abs(e.y - b.y) <= 7)
+        // #2944: the whip's windup is a wider read than a fist's — the snap
+        // reaches a body-and-a-half, so the answer starts at its own range.
+        || ((e.state === 'windup' || e.state === 'attack') && e.atkKind === 'whip' && Math.abs(e.x - b.x) <= CFG.whip.reach + 8 && Math.abs(e.y - b.y) <= CFG.whip.depth + 3)
         || ((e.state === 'chargewind' || e.state === 'charge') && Math.abs(e.x - b.x) < 60 && Math.abs(e.y - b.y) <= 14)
         || (e.state === 'aim' && Math.abs(e.x - b.x) < 140 && Math.abs(e.y - b.y) <= 12)))
     if (threat && b.z === 0) {
@@ -1519,8 +1580,9 @@ export function dragonBrain(gs, b, ally = null) {
             pad[dir < 0 ? 'up' : 'down'] = true
             return pad
         }
-        if (threat.state === 'aim') {
-            // the cast is aimed at THIS lane — leave before the blade answers
+        if (threat.state === 'aim' || threat.atkKind === 'whip') {
+            // the cast is aimed at THIS lane, and so is the snap — leave before
+            // the blade or the leather answers (same depth law, thrown edition)
             let dir = b.y > threat.y ? 1 : b.y < threat.y ? -1 : (b.y > (DEEP_TOP + DEEP_BOT) / 2 ? -1 : 1)
             if (b.y + dir * 14 < DEEP_TOP || b.y + dir * 14 > DEEP_BOT) dir = -dir
             pad[dir > 0 ? 'down' : 'up'] = true
@@ -1624,6 +1686,13 @@ export function stateHash(gs) {
         mix(e.id); mix(e.x); mix(e.y); mix(e.hp); mix(e.state.length); mix(e.inv)
         mix(e.kb || 0)   // #2935: the slide's velocity is sim truth — same
                         // hash means the same future, kb held invisible would break that
+        // #2944: what a goon carries and what its windup resolved to are sim
+        // truth too — the whip man and the bare man at the same pixel must not
+        // share a future under one hash.
+        mix(e.hasStick && !e.stickDropped ? 1 : 0)
+        mix(e.hasWhip ? 1 : 0)
+        mix(e.hasKnife ? 1 : 0)
+        mix(e.atkKind === 'whip' ? 1 : e.atkKind === 'stick' ? 2 : 0)
     }
     return h >>> 0
 }
