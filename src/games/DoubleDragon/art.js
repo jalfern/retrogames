@@ -614,6 +614,63 @@ export function drawMarian(ctx, m, camX, tick = 0) {
     }
 }
 
+// #2891: Marian off the post — the opening movie's victim. Walks, runs with
+// arms up when the gang closes, rides Abobo's shoulder-height hold with a
+// HELP! bubble, legs kicking the whole way. Same palette as the yard edition.
+export function drawIntroMarian(ctx, m, camX, tick = 0) {
+    const sx = Math.round(m.x - camX)
+    if (sx < -40 || sx > W + 40) return
+    const held = m.grabbed
+    const y = Math.round(m.y) - (held ? m.lift : 0)
+    const stepF = Math.floor(m.anim / 6) % 2
+    const kick = Math.floor(tick / 5) % 2
+    if (!held) drawShadow(ctx, sx, Math.round(m.y) + 1, 12, 0.3)
+    // legs
+    ctx.fillStyle = '#d8a06a'
+    if (held) {                                       // pedalling at arm's length
+        ctx.fillRect(sx - 3, y - 6 + (kick ? 2 : 0), 2, 6)
+        ctx.fillRect(sx + 1, y - 6 + (kick ? 0 : 2), 2, 6)
+    } else if (m.scared) {                            // running: long stride
+        ctx.fillRect(sx - 5 + (stepF ? 2 : 0), y - 6, 3, 6)
+        ctx.fillRect(sx + 2 - (stepF ? 2 : 0), y - 7, 3, 7)
+    } else {                                          // a stroll
+        ctx.fillRect(sx - 3 + (stepF ? 1 : -1), y - 6, 2, 6)
+        ctx.fillRect(sx + 1 + (stepF ? -1 : 1), y - 6, 2, 6)
+    }
+    // skirt + torso
+    ctx.fillStyle = '#3a5a8c'
+    ctx.fillRect(sx - 4, y - 12, 8, 6)
+    ctx.fillStyle = '#d0507a'
+    ctx.fillRect(sx - 4, y - 22, 8, 10)
+    // arms — up and waving when the night turns, swinging on the stroll
+    ctx.fillStyle = '#d8a06a'
+    if (held || m.scared) {
+        const flap = Math.floor(tick / 7) % 2
+        ctx.fillRect(sx - 7, y - 28 - flap, 2, 8)
+        ctx.fillRect(sx + 5, y - 27 - (1 - flap), 2, 8)
+    } else {
+        ctx.fillRect(sx - 6, y - 20 + (stepF ? 1 : 0), 2, 6)
+        ctx.fillRect(sx + 4, y - 20 - (stepF ? 1 : 0), 2, 6)
+    }
+    // head + hair (tips flick on the run)
+    ctx.fillStyle = '#e8b98a'
+    ctx.fillRect(sx - 3, y - 30, 6, 6)
+    ctx.fillStyle = '#6a4022'
+    ctx.fillRect(sx - 4, y - 31, 8, 3)
+    ctx.fillRect(sx - 4, y - 28, 2, 8)
+    ctx.fillRect(sx + 2, y - 28, 2, 7 + (Math.floor(tick / 16) % 2))
+    // HELP! — the bubble rides the hold, blinks like the cabinet's talk boxes
+    if (m.bubble > 0 && m.bubble % 10 < 7) {
+        const bw = textWidth('HELP!', 1) + 6
+        const bx = sx - Math.round(bw / 2)
+        const by = y - 46
+        ctx.fillStyle = '#f4f1e4'
+        ctx.fillRect(bx, by, bw, 11)
+        ctx.fillRect(sx - 1, by + 11, 3, 2)
+        label(ctx, 'HELP!', bx + 3, by + 3, '#7a1e2e', 1)
+    }
+}
+
 export function drawBarrel(ctx, bar, camX) {
     const sx = Math.round(bar.x - camX)
     if (sx < -30 || sx > W + 30) return
@@ -852,6 +909,7 @@ function drawFighter(ctx, b, camX, pal, props) {
     else if (b.state === 'throw') pose = b.stateT >= 4 ? 'punch' : 'windup'
     else if (b.state === 'whip') pose = b.stateT >= 8 ? 'attack' : 'windup'
     else if (b.state === 'grabbed') pose = 'grabbed'
+    else if (b.state === 'down') pose = 'down'   // #2891: the movie leaves them sprawled
     else if (b.state === 'dying') pose = 'dying'
     // #2857 seat tells over the neutral states — relief after a freed grip,
     // the KO flourish over an idle or a walk. Juice rides the pose, nothing else.
@@ -1077,6 +1135,14 @@ export function drawHud(ctx, gs) {
 
 // wave / banner one-message-at-a-time overlays (never over the HUD)
 export function drawBanner(ctx, gs) {
+    if (gs.intro) {
+        // #2891: the movie names its own crime — one caption, clear of the HUD
+        if (gs.intro.takenT > 0 && (gs.intro.takenT > 18 || gs.intro.takenT % 6 < 4)) {
+            const s = 'MARIAN TAKEN!'
+            label(ctx, s, Math.round((W - textWidth(s, 2)) / 2), 84, '#ff9ec0', 2)
+        }
+        return
+    }
     if (gs.mode === 'clear') {
         if (gs.bannerKind === 'rescue') {
             label(ctx, 'MARIAN SAVED!', 84, 76, '#ff9ec0', 2)

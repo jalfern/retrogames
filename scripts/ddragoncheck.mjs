@@ -23,6 +23,10 @@
 // #2857 adds the partner-personality juice read — glint on the guardian sprint,
 // flash + relief on a grip break, a jab voice and wobble that split the schools,
 // a KO strut — all hash-pure; glint-deaf and flair-dead name the two collapses.
+// #2891 adds the opening movie — the kidnapping of Marian as a fixed script
+// that gates the street, is skip-courteous, and lifts the curtain on a stage
+// bit-identical to a no-movie run (hash parity); movie-frozen/skip-deaf/
+// crime-unnamed/curtain-stuck name its collapses.
 // --mutant replants them and demands the harm is NAMED (#2142 direction).
 // The browser leg drives real key events through the shell: attract -> seat ->
 // walk/kick -> die -> restart, zero page errors; S4 adds the default blue
@@ -32,7 +36,7 @@ import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain } from '../src/games/DoubleDragon/sim.js'
+import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain, INTRO } from '../src/games/DoubleDragon/sim.js'
 import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD } from '../src/games/DoubleDragon/art.js'
 import { p2Merge, p2Seat } from '../src/games/DoubleDragon/p2pad.js'
 import { pressSlot, releaseSlot, slotPad, slotActive, clearAllSlots } from '../src/utils/onePad.js'
@@ -1178,6 +1182,107 @@ console.log('p2 pad seat (#2860)')
         `moved ${viaPad.moved.toFixed(0)}px jump=${viaPad.jumped} kick=${viaPad.kicked} punch=${viaPad.punched}`)
 }
 
+// ----------------------------------------- #2891 the opening: the kidnapping ---
+// The movie gates the street, tells the story, and lifts the curtain on an
+// UNTOUCHED stage. The laws: the cast wears negative ids and consumes no rng;
+// no fight rule bites during the caption; skip lands clean; and the run that
+// watched the whole movie is bit-identical to the run that never played one
+// (hash parity against the plain makeGame) — a prologue, not a parallel game.
+{
+    const mkRun = (seed, { coop = false, skipAt = -1, cap = 5000 } = {}) => {
+        const gs = makeGame(seed, { coop, intro: true })
+        const ev = []
+        const seen = { maxBillyX: -1, maxJimmyX: -1, grabbedAt: -1, dyingBilly: -1, downBilly: -1, dyingJimmy: -1, waveLeak: false, camMoved: false, livesLost: false }
+        while (gs.intro && gs.tick < cap) {
+            const pad = skipAt >= 0 && gs.intro.t === skipAt ? { punch: true } : {}
+            step(gs, pad)
+            ev.push(...gs.events); gs.events.length = 0
+            const I = gs.intro
+            if (I) {
+                const t = I.t
+                seen.maxBillyX = Math.max(seen.maxBillyX, gs.billy.x)
+                if (gs.jimmy) seen.maxJimmyX = Math.max(seen.maxJimmyX, gs.jimmy.x)
+                if (I.marian.grabbed && seen.grabbedAt < 0) seen.grabbedAt = t
+                if (gs.billy.state === 'dying' && seen.dyingBilly < 0) seen.dyingBilly = t
+                if (gs.billy.state === 'down' && seen.downBilly < 0) seen.downBilly = t
+                if (gs.jimmy && gs.jimmy.state === 'dying' && seen.dyingJimmy < 0) seen.dyingJimmy = t
+                if (gs.waveActive || gs.enemies.some((e) => e.id > 0) || gs.camX !== 0) seen.waveLeak = true
+            }
+            if (gs.billy.lives < 3 || (coop && gs.jimmy.lives < 3)) seen.livesLost = true
+        }
+        return { gs, ev, seen }
+    }
+
+    r.check('#2891 default OFF — makeGame drives law-clean runs; the movie is opt-in',
+        makeGame(7).intro === null && makeGame(7, { coop: true }).intro === null, 'plain runs carry no intro')
+    const armed = makeGame(7, { coop: true, intro: true })
+    r.check('#2891 arms on request — the cast waits off-frame in negative ids, the victim on the street, mode untouched',
+        armed.intro && armed.intro.t === 0 && armed.enemies.length === 4 &&
+        armed.enemies.every((e) => e.id < 0 && e.x > W) && armed.intro.marian.x === 300 && armed.mode === 'play',
+        `t=${armed.intro && armed.intro.t} ids=${armed.enemies.map((e) => e.id).join(',')}`)
+
+    const a = mkRun(7, { coop: true })
+    const ORDER = ['wave', 'scream', 'grabbed', 'ko', 'hit_hard', 'taken', 'stage']
+    const idx = ORDER.map((k) => a.ev.indexOf(k))
+    r.check('#2891 the story tells itself in order — gang arrives, Marian cries, the giant takes her, the dragons land two KOs, the swarm answers, the crime is named, the street opens',
+        idx.every((v) => v >= 0) && idx.every((v, i) => i === 0 || v > idx[i - 1]), `order=${idx.join(',')}`)
+    r.check('#2891 the gates hold — the charge crosses wave 1\'s trigger line, yet no fight rule bites: no wave, no camera, no life spent in the movie',
+        a.seen.maxBillyX > 90 && !a.seen.waveLeak && !a.seen.livesLost, `maxX=${a.seen.maxBillyX.toFixed(0)} leak=${a.seen.waveLeak} lives=${a.gs.billy.lives}/${a.gs.jimmy.lives}`)
+    r.check('#2891 the snatch reads — Marian is lifted exactly at grabAt and the HELP bubble goes up with her',
+        a.seen.grabbedAt === INTRO.grabAt, `grabbedAt=${a.seen.grabbedAt} vs ${INTRO.grabAt}`)
+    r.check('#2891 the KOs are the dragons\' own — both windup Williams eat a fighter KO during the movie',
+        a.ev.filter((e) => e === 'ko').length === 2, `kos=${a.ev.filter((e) => e === 'ko').length}`)
+    r.check('#2891 the swarm lands — Billy and Jimmy each eat the dying beat (a scripted beating, never a scored death)',
+        a.seen.dyingBilly > 0 && a.seen.downBilly > a.seen.dyingBilly && a.seen.dyingJimmy > a.seen.dyingBilly,
+        `billy ${a.seen.dyingBilly}->down ${a.seen.downBilly}, jimmy ${a.seen.dyingJimmy}`)
+    const ab = makeGame(7, { coop: true, intro: true })
+    while (ab.intro && ab.intro.t < INTRO.takenAt) { step(ab, {}); ab.events.length = 0 }
+    const abobo = ab.intro.goons[3]
+    r.check('#2891 the gang leaves east with the prize — Abobo is off the frame carrying Marian at the caption',
+        abobo.x > W + 20 && ab.intro.marian.grabbed && Math.abs(ab.intro.marian.x - abobo.x) < 1 && ab.intro.takenT > 0,
+        `abobo=${abobo.x.toFixed(0)} marian=${ab.intro.marian.x.toFixed(0)} takenT=${ab.intro.takenT}`)
+    step(ab, {}); ab.events.length = 0
+    r.check('#2891 the caption is brief — MARIAN TAKEN! stands its beat and clears before the curtain lifts',
+        ab.intro.takenT === INTRO.takenShown - 2, `takenT=${ab.intro.takenT}`)
+
+    // the curtain law: after the movie the street is EXACTLY the plain stage
+    r.check('#2891 curtain law — the run that watched the movie is bit-identical to the run that never played one (stateHash parity)',
+        stateHash(a.gs) === stateHash(makeGame(7, { coop: true })), `hash=${stateHash(a.gs)} vs ${stateHash(makeGame(7, { coop: true }))}`)
+    const fresh = makeGame(7, { coop: true })
+    r.check('#2891 the movie consumes nothing from the seeded stream — rng word and id counter untouched',
+        a.gs.rngState === fresh.rngState && a.gs.nextId === fresh.nextId, `rng=${a.gs.rngState}/${fresh.rngState} nextId=${a.gs.nextId}/${fresh.nextId}`)
+    r.check('#2891 spawn truth after the curtain — seats at 40/24 on the walk line, fresh i-frames, wave 0, stage 1, tick rewound to 0',
+        a.gs.intro === null && a.gs.tick === 0 && a.gs.billy.x === 40 && a.gs.billy.y === INTRO.walkY &&
+        a.gs.billy.state === 'idle' && a.gs.billy.inv === CFG.respawnIFrames && a.gs.jimmy.x === 24 &&
+        a.gs.enemies.length === 0 && a.gs.waveIdx === 0 && a.gs.stage === 1 && a.gs.mode === 'play',
+        `tick=${a.gs.tick} x=${a.gs.billy.x} lives=${a.gs.billy.lives}`)
+    const solo = mkRun(7)
+    r.check('#2891 the movie plays solo too — Billy swings the opening single-handed and the stage still opens clean',
+        solo.gs.intro === null && stateHash(solo.gs) === stateHash(makeGame(7)), `hash=${stateHash(solo.gs)}`)
+
+    // skip law
+    const sk = mkRun(7, { coop: true, skipAt: 40 })
+    r.check('#2891 any input after the grace beat lifts the curtain — and lands clean on spawn truth',
+        sk.gs.intro === null && sk.gs.tick <= 41 && sk.gs.billy.x === 40 && sk.gs.enemies.length === 0 && sk.ev.includes('stage'),
+        `tick=${sk.gs.tick} x=${sk.gs.billy.x}`)
+    r.check('#2891 a skipped movie is equally residue-free — hash parity with the plain stage',
+        stateHash(sk.gs) === stateHash(makeGame(7, { coop: true })), `hash=${stateHash(sk.gs)}`)
+    const early = makeGame(7, { coop: true, intro: true })
+    for (let i = 0; i < 10; i++) step(early, {})
+    step(early, { punch: true })
+    r.check('#2891 grace honored — a frantic press inside the settling beat cannot cut the story short',
+        early.intro !== null && early.intro.t === 11, `t=${early.intro && early.intro.t}`)
+
+    // after the curtain the street is simply the game
+    {
+        const post = mkRun(7, { coop: true })
+        let n = 0
+        while (!post.gs.waveActive && post.gs.mode === 'play' && n < 400) { step(post.gs, { right: true }); post.gs.events.length = 0; n += 1 }
+        r.check('#2891 after the curtain the street is the game — walking right opens wave 1 exactly as before',
+            post.gs.waveActive && post.gs.enemies.length > 0, `waveActive=${post.gs.waveActive} n=${n}`)
+    }
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -1435,6 +1540,56 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            name: 'movie-frozen',
+            anchor: 'if (gs.intro) return stepIntro(gs, pad, pad2)',
+            plant: 'if (false && gs.intro) return stepIntro(gs, pad, pad2) /* MUTANT(movie-frozen): the gate is cut — live rules own the movie\'s stage */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7, { coop: true, intro: true })
+                for (let i = 0; i < 120; i++) { mod.step(gs, {}, {}); gs.events.length = 0 }
+                return gs.intro && gs.intro.t === 0 && gs.intro.marian.x === 300
+                    ? 'HARM NAMED: the curtain hangs on a frozen tableau — the cast never moves, Marian is never taken, and the live fight rules run under a scene that stopped acting; the opening becomes a screenshot the game argues with'
+                    : null
+            },
+        },
+        {
+            name: 'skip-deaf',
+            anchor: 'if (I.t > INTRO.grace && anyInput(pad, pad2)) { endIntro(gs); return gs }',
+            plant: 'if (false && I.t > INTRO.grace && anyInput(pad, pad2)) { endIntro(gs); return gs } /* MUTANT(skip-deaf): the player cannot leave the cinema */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7, { coop: true, intro: true })
+                let n = 0
+                while (gs.intro && n < 2000) { mod.step(gs, n === 40 ? { punch: true } : {}, {}); gs.events.length = 0; n += 1 }
+                return n > 400
+                    ? `HARM NAMED: a fist raised at the first second still sat through ${n} ticks of movie — when no input lifts the curtain, "PRESS ANY KEY" is a lie and the player is hostage to a cartoon before they ever touch the street`
+                    : null
+            },
+        },
+        {
+            name: 'crime-unnamed',
+            anchor: "if (at(INTRO.takenAt)) { I.takenT = INTRO.takenShown; gs.events.push('taken') }",
+            plant: "if (false && at(INTRO.takenAt)) { I.takenT = INTRO.takenShown; gs.events.push('taken') } /* MUTANT(crime-unnamed): the caption and its sting never fire */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(7, { coop: true, intro: true })
+                const ev = []
+                while (gs.intro && gs.tick < 2000) { mod.step(gs, {}, {}); ev.push(...gs.events); gs.events.length = 0 }
+                return !ev.includes('taken')
+                    ? 'HARM NAMED: the gang walked off with the prize and the cabinet said nothing — without MARIAN TAKEN! the prologue never states the crime, and the rescue two stages later plays as a random errand'
+                    : null
+            },
+        },
+        {
+            name: 'curtain-stuck',
+            anchor: 'if (t >= INTRO.total) endIntro(gs)',
+            plant: 'if (false && t >= INTRO.total) endIntro(gs) /* MUTANT(curtain-stuck): the movie never lifts */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7, { coop: true, intro: true })
+                for (let i = 0; i < 2000; i++) { mod.step(gs, {}, {}); gs.events.length = 0 }
+                return gs.intro !== null
+                    ? 'HARM NAMED: 2000 ticks in and the street is still borrowed scenery — a movie that never ends is not an opening, it is a screensaver; the waves, the camera and the win condition were never handed to the player'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
@@ -1596,6 +1751,26 @@ if (MUTANT) {
 // ------------------------------------------------------------- browser leg ---
 await requireDevServer(`${BASE}/double-dragon`)
 const browser = await launch()
+// The S2 consent gate swallows scripted starts until answered, mounts async,
+// and an anonymous decline re-asks on the next page — so every keyboard leg
+// answers it the honest way (a real NO THANKS click), polling for the mount
+// and early-exiting when the cabinet already took the seat.
+const defuseConsent = async (page) => {
+    for (let i = 0; i < 40; i++) {
+        const st = await page.evaluate(() => {
+            const gate = document.querySelector('[data-auto-record-gate]')
+            if (gate) {
+                const btn = [...gate.querySelectorAll('button')].find((el) => /NO THANKS/i.test(el.textContent || ''))
+                if (btn) { btn.click(); return 'clicked' }
+                return 'gate'
+            }
+            return window.__ddTest && window.__ddTest.probe().screen === 'play' ? 'started' : 'waiting'
+        })
+        if (st === 'clicked' || st === 'started') return st
+        await page.waitForTimeout(50)
+    }
+    return 'timeout'
+}
 {
     const page = await openGame(browser, { url: `${BASE}/double-dragon`, hook: '__ddTest', wait: 600 })
     const errs = []
@@ -1605,18 +1780,7 @@ const browser = await launch()
     // gate, fixed inset-0 z-9990 — it swallows scripted starts until clicked).
     // Answer it the way gauntletplay/touchselectcheck do: its own NO THANKS
     // button — a real decline, never a grant (#2091). Where the store is
-    // silent the gate never rises and this is a no-op.
-    const defuseGate = async () => {
-        const declined = await page.evaluate(() => {
-            const gate = document.querySelector('[data-auto-record-gate]')
-            if (!gate) return false
-            const btn = [...gate.querySelectorAll('button')].find((el) => /NO THANKS/i.test(el.textContent || ''))
-            if (btn) btn.click()
-            return true
-        })
-        if (declined) await page.waitForTimeout(400)
-        return declined
-    }
+    // silent the gate never rises and this is a no-op. (defuseConsent above.)
 
     const attract1 = await page.evaluate(() => window.__ddTest.probe())
     await page.waitForTimeout(700)
@@ -1624,7 +1788,7 @@ const browser = await launch()
     r.check('attract: the demo runs itself before any key', attract1.screen === 'attract' && attract2.tick > attract1.tick, `tick ${attract1.tick} -> ${attract2.tick}`)
 
     await page.keyboard.press('Space')
-    await defuseGate()
+    await defuseConsent(page)
     await page.waitForTimeout(300)
     const started = await page.evaluate(() => window.__ddTest.probe())
     r.check('any key takes the seat (attract -> play)', started.screen === 'play', `screen=${started.screen}`)
@@ -1844,6 +2008,75 @@ const browser = await launch()
 
     r.check('zero page errors across the whole leg', errs.length === 0, errs.join(' | ') || 'clean')
 }
+// ------------------------------- #2891 browser legs: the opening movie ---
+// A fresh cabinet plays the crime for real: the curtain rises under a human
+// start, the snatch animates, MARIAN TAKEN! stands, and the street reopens
+// under live arrows. And the courtesy legs: a key past the grace lifts the
+// curtain instantly, and `?nointro=1` declines the movie at the cabinet.
+{
+    const page = await openGame(browser, { url: `${BASE}/double-dragon`, hook: '__ddTest', wait: 600 })
+    const errs = []
+    page.on('pageerror', (e) => errs.push(e.stack || e.message))
+    await page.keyboard.press('Space')
+    await defuseConsent(page)
+    await page.waitForTimeout(500)
+    const p0 = await page.evaluate(() => window.__ddTest.probe())
+    r.check('#2891 browser: the human start gets the movie — the curtain rises over Walnuts Street',
+        p0.screen === 'play' && p0.intro > 0 && p0.introMarian === 'walking', `screen=${p0.screen} intro=${p0.intro} marian=${p0.introMarian}`)
+    let heldSeen = false
+    try { await page.waitForFunction(() => window.__ddTest.probe().introLift >= 15, { timeout: 8000 }); heldSeen = true } catch {}
+    const p1 = await page.evaluate(() => window.__ddTest.probe())
+    r.check('#2891 browser: the giant lifts Marian at the frame — the story animates for real (she rides high)',
+        heldSeen && p1.introMarian === 'held' && p1.introLift >= 15, `held=${heldSeen} marian=${p1.introMarian} lift=${p1.introLift}`)
+    let captionSeen = false
+    try { await page.waitForFunction(() => window.__ddTest.probe().introTaken >= 1, { timeout: 8000 }); captionSeen = true } catch {}
+    let lifted = false
+    try { await page.waitForFunction(() => window.__ddTest.probe().intro === -1, { timeout: 8000 }); lifted = true } catch {}
+    const p2 = await page.evaluate(() => window.__ddTest.probe())
+    r.check('#2891 browser: the crime is named, the curtain lifts on a clean stage — cast gone, seat home, mode play',
+        captionSeen && lifted && p2.enemies === 0 && p2.x === 40 && p2.mode === 'play',
+        `caption=${captionSeen} lifted=${lifted} enemies=${p2.enemies} x=${p2.x}`)
+    await page.keyboard.down('ArrowRight')
+    await page.waitForTimeout(500)
+    await page.keyboard.up('ArrowRight')
+    const p3 = await page.evaluate(() => window.__ddTest.probe())
+    r.check('#2891 browser: after the movie the street is the game — real arrows drive Billy down the asphalt',
+        p3.x > p2.x + 10, `x ${p2.x} -> ${p3.x}`)
+    r.check('#2891 browser: the movie ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
+    await page.close()
+}
+{
+    const page = await openGame(browser, { url: `${BASE}/double-dragon`, hook: '__ddTest', wait: 600 })
+    const errs = []
+    page.on('pageerror', (e) => errs.push(e.stack || e.message))
+    await page.keyboard.press('Space')
+    await defuseConsent(page)
+    await page.waitForTimeout(550)   // past the grace beat, mid-scene
+    const mid = await page.evaluate(() => window.__ddTest.probe())
+    await page.keyboard.press('ArrowRight')
+    const cut = await page.evaluate(() => window.__ddTest.probe())
+    r.check('#2891 browser: any key past the grace lifts the curtain instantly — the movie respects the player',
+        mid.intro > INTRO.grace && mid.introMarian === 'walking' && cut.intro === -1 && cut.enemies === 0,
+        `mid=${mid.intro}/${mid.introMarian} after=${cut.intro}`)
+    await page.keyboard.down('ArrowRight')
+    await page.waitForTimeout(500)
+    await page.keyboard.up('ArrowRight')
+    const walk = await page.evaluate(() => window.__ddTest.probe())
+    r.check('#2891 browser: a skipped movie lands on the live street — arrows drive, nothing left on it',
+        walk.x > 45 && walk.enemies === 0 && walk.mode === 'play', `x=${walk.x} enemies=${walk.enemies}`)
+    await page.close()
+
+    const page2 = await openGame(browser, { url: `${BASE}/double-dragon?nointro=1`, hook: '__ddTest', wait: 600 })
+    await page2.keyboard.press('Space')
+    await defuseConsent(page2)
+    await page2.waitForTimeout(400)
+    const np = await page2.evaluate(() => window.__ddTest.probe())
+    r.check('#2891 browser: ?nointro=1 declines the movie at the cabinet — straight to the street',
+        np.screen === 'play' && np.intro === -1 && np.x === 40, `screen=${np.screen} intro=${np.intro} x=${np.x}`)
+    await page2.close()
+    r.check('#2891 browser: skip/cancel legs ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
+}
+
 await browser.close()
 
 r.exit()

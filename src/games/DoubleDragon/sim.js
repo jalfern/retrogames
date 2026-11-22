@@ -72,6 +72,164 @@ export const CFG = {
     flourishTicks: 20,  // own-hand KO: flick of the wrist, then the shoulder check
 }
 
+// --- #2891 the original's opening: the kidnapping of Marian -------------------
+// Technōs 1987 opened by telling you why the fight happens: the Black Warriors
+// close in on the night street, the giant takes Marian overhead, the two
+// dragons charge and are swarmed — then Walnuts Street opens and you go get
+// her back. This is that movie: a FIXED script riding gs.intro. It consumes
+// nothing the run keeps — no gs.r, no nextId (the cast wears negative ids),
+// no collisions (step() routes the whole game around it) — so the stage that
+// opens after the last caption is bit-identical to a run that never played it
+// (pinned: `hash` equality after the curtain). Default OFF at sim level —
+// makeGame/contract/reset streams drive the law-clean run; the shell's human
+// start opts in. Any input after the grace beat skips it: the movie respects
+// the player, and "PRESS ANY KEY" still means play now.
+export const INTRO = {
+    total: 430,        // ticks of the full movie (~7.2 s)
+    grace: 30,         // ticks before an input may skip — the start tap settles
+    fleeAt: 90,        // Marian spots the gang
+    grabAt: 155,       // the giant's prize
+    takenAt: 300,      // "MARIAN TAKEN!" — the crime named on screen
+    takenShown: 100,   // ticks the caption stands
+    walkY: (DEEP_TOP + DEEP_BOT) / 2 | 0,   // the line the street reopens on
+}
+
+// the cast: negative ids keep the game's id stream byte-clean (#2891).
+const mkIntroGoon = (id, kind, x, y) => ({
+    id, kind, x, y, face: -1,
+    hp: ENEMY_DEF[kind].hp, state: 'walk', stateT: 0, anim: 0,
+    hasStick: false, stickDropped: false, hasKnife: false,
+    attackCooldown: 1e9, inv: 0, spinHit: false, wob: 0,
+})
+
+// seed the movie: cast and victim stand by off-frame, stage 1 fresh.
+function armIntro(gs) {
+    gs.intro = {
+        t: 0, takenT: 0,
+        marian: { x: 300, y: 160, grabbed: false, lift: 0, bubble: 0, scared: false, anim: 0 },
+        goons: null,   // filled below; the script holds direct links
+    }
+    const g = [
+        mkIntroGoon(-1, 'williams', 330, 168),
+        mkIntroGoon(-2, 'amon', 330, 178),
+        mkIntroGoon(-3, 'williams', 330, 158),
+        mkIntroGoon(-4, 'abobo', 330, 172),
+    ]
+    gs.intro.goons = g
+    gs.enemies.push(...g)
+}
+
+// the curtain: reset the street to exact spawn truth — same x/y/face/i-frames
+// makeFighter gives, zero residue (tick is rewound so the run that watched the
+// movie is bit-identical to the run that skipped everything).
+export function endIntro(gs) {
+    gs.intro = null
+    gs.enemies.length = 0
+    for (const p of fighters(gs)) {
+        p.x = p.tag === 'billy' ? 40 : 24
+        p.y = INTRO.walkY
+        p.face = 1; p.z = 0; p.zv = 0
+        p.state = 'idle'; p.stateT = 0; p.anim = 0
+        p.inv = CFG.respawnIFrames
+        p.grabFrom = null; p.guard = 0; p.relief = 0; p.flourish = 0
+    }
+    gs.waveIdx = 0; gs.waveActive = false; gs.camLock = false; gs.camX = 0
+    gs.banner = 0; gs.bannerKind = null
+    gs.tick = 0
+    gs.events.push('stage')
+}
+
+const anyInput = (a, b) =>
+    !!(a && (a.left || a.right || a.up || a.down || a.a || a.b || a.punch)) ||
+    !!(b && (b.left || b.right || b.up || b.down || b.a || b.b || b.punch))
+
+// the movie, beat by beat (pure function of t — no rng, no physics).
+function stepIntro(gs, pad, pad2) {
+    const I = gs.intro
+    if (I.t > INTRO.grace && anyInput(pad, pad2)) { endIntro(gs); return gs }
+    I.t += 1
+    const t = I.t
+    const seg = (t0, t1) => Math.max(0, Math.min(1, (t - t0) / (t1 - t0)))
+    const at = (t0) => t === t0
+    const [w1, am, w2, ab] = I.goons
+    const m = I.marian
+
+    // — the dragons stroll the street (they have nowhere to be yet)
+    const b = gs.billy
+    if (t < 80) { b.x = 8 + 0.5 * t; b.state = 'walk'; b.face = 1; b.anim += 1 }
+    else if (t < 190) { b.x = 48; b.state = 'idle' }
+    else if (t < 236) { b.x = 48 + 2.2 * (t - 190); b.state = 'walk'; b.face = 1; b.anim += 1 }
+    else if (t < 252) { b.x = 150; if (b.state !== 'punch') { b.state = 'punch'; b.stateT = 0 } else b.stateT += 1 }
+    else if (t < 268) { b.x = 150 + 0.8 * (t - 252); b.state = 'walk'; b.anim += 1 }
+    else if (t < 294) { if (b.state !== 'dying') { b.state = 'dying'; b.stateT = 0 } else b.stateT += 1 }
+    else if (t < 360) { b.state = 'down'; b.stateT += 1 }
+    else { b.x = 163 - (163 - 40) * seg(360, INTRO.total); b.state = 'walk'; b.face = -1; b.anim += 1 }
+
+    const j = gs.jimmy
+    if (j) {
+        if (t < 80) { j.x = -6 + 0.5 * t; j.state = 'walk'; j.face = 1; j.anim += 1 }
+        else if (t < 192) { j.x = 34; j.state = 'idle' }
+        else if (t < 254) { j.x = 36 + (130 - 36) * seg(192, 254); j.state = 'walk'; j.face = 1; j.anim += 1 }
+        else if (t < 270) { j.x = 130; if (j.state !== 'punch') { j.state = 'punch'; j.stateT = 0 } else j.stateT += 1 }
+        else if (t < 276) { j.state = 'idle' }
+        else if (t < 302) { if (j.state !== 'dying') { j.state = 'dying'; j.stateT = 0 } else j.stateT += 1 }
+        else if (t < 370) { j.state = 'down'; j.stateT += 1 }
+        else { j.x = 130 - (130 - 24) * seg(370, INTRO.total); j.state = 'walk'; j.face = -1; j.anim += 1 }
+    }
+
+    // — Marian: a walk with nowhere to be, then the running, then the lift
+    if (!m.grabbed) {
+        if (t < INTRO.fleeAt) { m.x = 300 - 0.8 * t; m.scared = false }
+        else { m.x = 236 - 1.1 * (t - INTRO.fleeAt); m.scared = true }
+        m.anim += 1
+    }
+    if (t >= INTRO.grabAt && !m.grabbed) { m.grabbed = true; m.bubble = INTRO.takenShown; gs.events.push('grabbed') }
+    if (m.grabbed) { m.lift = Math.round(22 * seg(INTRO.grabAt, INTRO.grabAt + 10)); if (m.bubble > 0) m.bubble -= 1 }
+
+    // — the Black Warriors close in: Williams, Amon, Williams, then the giant
+    if (t === 80) gs.events.push('wave')
+    if (t === 95 || t === 158 || t === 166) gs.events.push('scream')
+    if (t < 112) { w1.x = 330 - (330 - 250) * seg(80, 112); w1.state = 'walk'; w1.anim += 1 }
+    else if (t < 160) w1.state = 'idle'
+    else if (t < 236) { w1.x = 250 - (250 - 212) * seg(160, 236); w1.state = 'walk'; w1.anim += 1 }
+    else if (t < 240) w1.state = 'windup'
+    else if (t === 240) { w1.state = 'dying'; w1.stateT = 0; gs.events.push('ko') }   // Billy's answer
+    else if (w1.state === 'dying' && w1.stateT <= 30) w1.stateT += 1
+
+    if (t < 120) { am.x = 330 - (330 - 272) * seg(80, 120); am.state = 'walk'; am.anim += 1 }
+    else if (t < 160) am.state = 'idle'
+    else if (t < 240) { am.x = 272 - (272 - 216) * seg(160, 240); am.state = 'walk'; am.anim += 1 }
+    else if (t < 258) { am.state = 'idle' }
+    else if (t < 268) { am.state = 'windup' }
+    else if (t === 268) { am.state = 'attack'; gs.events.push('hit_hard') }             // the swarm lands
+    else if (t < 276) { am.state = 'walk'; am.x = 216 - (216 - 195) * seg(268, 276); am.anim += 1 }
+    else if (t === 276) { am.state = 'attack'; gs.events.push('hit_hard') }             // and again
+    else if (t < 300) am.state = 'idle'
+    else { am.x = 195 + 400 * seg(300, INTRO.total); am.state = 'walk'; am.face = 1; am.anim += 1 }
+
+    if (t < 128) { w2.x = 330 - (330 - 294) * seg(80, 128); w2.state = 'walk'; w2.anim += 1 }
+    else if (t < 160) w2.state = 'idle'
+    else if (t < 254) { w2.x = 294 - (294 - 258) * seg(160, 254); w2.state = 'walk'; w2.anim += 1 }
+    else if (t < 258) w2.state = 'windup'
+    else if (t === 258) { w2.state = 'dying'; w2.stateT = 0; gs.events.push('ko') }    // Jimmy's answer
+    else if (w2.state === 'dying' && w2.stateT <= 30) w2.stateT += 1
+
+    // Abobo: in heavy, take the prize, walk east with the prize — he never
+    // fights; he never has to.
+    if (t < 150) { ab.x = 330 - (330 - 178) * seg(80, 150); ab.state = 'walk'; ab.anim += 1 }
+    else if (t < 170) { ab.state = 'grab'; ab.anim += 1 }
+    else { ab.x = 178 + (330 + 40 - 178) * seg(170, 300); ab.state = 'walk'; ab.face = 1; ab.anim += 1 }
+    // the prize rides the shoulder EXACTLY — Marian samples Abobo AFTER he
+    // moves this tick, so they never drift a pixel apart on the carry east.
+    if (m.grabbed) { m.x = ab.x; m.y = ab.y }
+
+    if (at(INTRO.takenAt)) { I.takenT = INTRO.takenShown; gs.events.push('taken') }
+    if (I.takenT > 0) I.takenT -= 1
+
+    if (t >= INTRO.total) endIntro(gs)
+    return gs
+}
+
 export const ENEMY_DEF = {
     williams: { hp: 4, speed: 0.85, score: 200, reach: 16, tall: 32, color: 'williams' },
     amon: { hp: 6, speed: 0.95, score: 300, reach: 17, tall: 36, color: 'amon' },
@@ -199,7 +357,9 @@ export function makeGame(seed = 1, opts = {}) {
         events: [],   // one-shot cues drained by the shell (sound/juice only)
         chain: 0,     // #2882: consecutive takes; the payout rides min(chain, chainMax)
         chainT: 0,    // ticks left in the chain window — a lapse cools the chain to 0
+        intro: null,  // #2891: the opening movie (null in every law fixture — opt-in)
     }
+    if (opts.intro === true) armIntro(gs)
     return gs
 }
 
@@ -1011,6 +1171,10 @@ export function step(gs, pad = {}, pad2 = {}) {
     if (gs.duelIntro > 0) gs.duelIntro -= 1
     if (gs.scoreFlash && --gs.scoreFlash.t <= 0) gs.scoreFlash = null
     if (gs.chainT > 0 && --gs.chainT <= 0) gs.chain = 0   // #2882: the window lapses, the chain cools
+
+    // #2891: the movie owns the street — waves, physics and the collision laws
+    // stay behind this gate until the curtain lifts (or a hand skips it).
+    if (gs.intro) return stepIntro(gs, pad, pad2)
 
     if (gs.mode === 'clear') {
         gs.banner -= 1

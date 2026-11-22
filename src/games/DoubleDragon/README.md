@@ -2,7 +2,7 @@
 
 Jon's #2795 commission ("both flagships starting with double dragon"), the complete
 Technōs 1987 arcade belt-scroller. Issue: #2807 (S1..S4 — this issue's four stages
-are all shipped).
+are all shipped). A run now opens the way the arcade did: the kidnapping movie (#2891).
 
 ## Layout
 
@@ -268,13 +268,44 @@ Pad: JUMP / KICK / PUNCH (`thirdAction`, #2324).
 2P drop-in (keyboard): WASD walk · F punch · G kick · V jump.
 2P drop-in (pad/phone, #2860): a second gamepad or a linked phone (`?pads=1`
 or the PADS pill) — A jump · B kick · square/triangle/LB punch · d-pad walk.
+`?nointro=1` declines the opening movie (#2891) — any key skips it anyway.
+
+## The opening movie (#2891 — the kidnapping of Marian)
+
+Technōs opened its arcade by stating the crime; so does this board, between
+"PRESS ANY KEY" and the first wave:
+
+- **A fixed script, not a game** — the movie rides `gs.intro`: the dragons
+  stroll, the Black Warriors arrive (negative ids — the run's id stream never
+  notices), Abobo takes Marian overhead (HELP! bubble), the dragons charge and
+  LAND TWO KOS before the swarm answers, MARIAN TAKEN! stands over the emptying
+  street. Determinism: zero `gs.r`, zero collisions — step() routes the whole
+  game around the curtain.
+- **Residue-free (the curtain law)** — at the last tick the street resets to
+  exact spawn truth and `gs.tick` rewinds to 0: the run that watched the whole
+  movie is **bit-identical** to the run that never played one (`stateHash`
+  parity, pinned). Skipped runs land the same way.
+- **Any input lifts the curtain** — after a 30-tick grace (the start tap
+  settles), any key/pad press skips the movie AND lands as a real input: skip
+  into gameplay, never eat the press.
+- **Opt-in at sim level** — `makeGame(seed)` carries no intro: contract,
+  replays' law fixtures and the seeded autopilot streams are untouched. The
+  shell's human start arms it (`startPlay(introOn())`); `?nointro=1` declines
+  at the cabinet. `__ddTest.start()` and `__game.reset` go straight to the
+  street so harness legs never wait on a cartoon.
+- **A new sound per beat** — the gang's arrival rides `wave`, Marian cries
+  (`scream`, a two-part wail), the snatch is the `grabbed` growl, the caption
+  pays a three-note descent (`taken`, with a shake); the curtain itself rings
+  the stage sweep.
+- The `movie-frozen`, `skip-deaf`, `crime-unnamed` and `curtain-stuck` mutants
+  name the four ways an opening can rot.
 
 ## Verify
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 168 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), winnable, browser leg
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead must go RED (named)
+npm run ddragoncheck                    # 194 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace), winnable, browser legs
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -304,8 +335,11 @@ of nightly 44762398189).
 - **CLOSED by #2882** — the board pays flurries now: consecutive takes
   multiply the payout ×2/×3/×4, capped at ×4, and a hit or a ~3 s lapse cools
   the chain back to ×1 (see the chain law above).
-- Marian arrives tied (S3) but the game opens without the original's
-  kidnapping cutscene — the rescue carries the story instead.
+- **CLOSED by #2891** — the arcade's opening: the kidnapping of Marian now
+  plays between "press any key" and wave 1 — scripted cast, the lift, two KOs
+  of the dragons' own, MARIAN TAKEN!, any-key skip, and a curtain law that
+  leaves the run bit-identical to a no-movie start (hash-pinned, 17 pins +
+  4 mutants + 8 browser legs).
 - Enemy knockback is positional, not sprite-true physics; fine at this scale.
 - Goons carry knives (S3) but not the whip or stick-and-steel rotations of
   the later arcade waves; the thrown knife is the goon's only cast (and the
