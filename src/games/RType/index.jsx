@@ -647,6 +647,7 @@ export default function RType() {
                     { label: 'P2 SEAT IN/OUT', run: () => { if (!gs.wing) return 'co-op off'; gs.wing.human = !gs.wing.human; return gs.wing.human ? 'a human holds seat two' : 'wingman back on duty' } },
                     { label: '+1 WING LIFE', run: () => { if (!gs.wing) return 'co-op off'; gs.wing.lives += 1; return `wing holds ${gs.wing.lives}` } },
                     { label: 'WING OUT', run: () => { window.__rTest.setup({ wingOut: true }); return 'seat two dark' } },
+                    { label: 'P1 OUT', run: () => { window.__rTest.setup({ p1Out: true }); return 'seat one dark' } },
                     { label: 'GEAR THE WING', run: () => { window.__rTest.setup({ giveWingPod: true, giveWingBits: true }); return shieldOnAt(gs.wing) ? 'wing shield up' : 'wing geared' } },
                 ],
             })
