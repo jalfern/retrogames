@@ -14,7 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, LOOP_FX, loopVoice, LOOP_LIFE_BONUS, LOOP_LIVES_MAX } from './sim.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -106,6 +106,13 @@ const sfx = {
     // rising whoosh — the carrier announces itself (ART.md bar 4).
     vine: () => { audioController.playSweep(240, 560, 0.09, 'triangle', 0.05); audioController.playNoise(0.03, 0.02) },
     unvine: () => audioController.playSweep(480, 1020, 0.14, 'square', 0.045),
+    // #2917 the hangar sortie speaks: the door is a hydraulic RATCHET (five
+    // delayed low thumps under a rising hiss — the cabinet's grinding bay),
+    // the hull's lift-off is an engine chop, and the strafe is a fat dropping
+    // report, pitched below the wall guns so the sky threat sounds heavier.
+    hangar: () => { audioController.playNoise(0.35, 0.02); for (let i = 0; i < 5; i++) audioController.playTone(58 + i * 3, 0.05, 'square', 0.045, i * 0.07); audioController.playSweep(70, 120, 0.4, 'sawtooth', 0.03) },
+    lift: () => { audioController.playSweep(120, 320, 0.28, 'sawtooth', 0.05); audioController.playSweep(80, 200, 0.3, 'triangle', 0.04) },
+    gsfire: () => { audioController.playSweep(380, 120, 0.13, 'square', 0.055); audioController.playNoise(0.06, 0.035) },
 }
 
 export default function ContraGame () {
@@ -343,6 +350,8 @@ export default function ContraGame () {
             // #2847: the couriers run above the fight, pods under their bellies;
             // released cargo draws on the same deck as the volley capsules.
             for (const cr of gs.carriers) if (!cr.dead) drawCarrier(ctx, cr, gs.tick)
+            // #2917: the gate's gunships patrol the arena sky above the fortress
+            if (gs.boss) for (const sh of gs.gunships) drawGunship(ctx, sh, gs.tick)
             if (gs.capsule) drawCapsule(ctx, gs.capsule, gs.tick)
             for (const c of gs.vc) drawCapsule(ctx, c, gs.tick)
             for (const c of gs.pods) drawCapsule(ctx, c, gs.tick)
@@ -554,6 +563,12 @@ export default function ContraGame () {
                     depot: gs.depot ? { hp: gs.depot.hp, dead: gs.depot.dead } : null,
                     gateGuns: gs.boss ? gs.boss.guns.map((g) => ({ hp: g.hp, dead: g.dead })) : null, // #2880
                     cascadeDying: gs.boss ? gs.boss.dying : null, // #2885 scripted finale countdown
+                    sortie: { // #2917 the second air layer is observable
+                        hulls: gs.gunships.map((s) => ({ x: +s.x.toFixed(1), y: +s.y.toFixed(1), hp: s.hp, flash: s.flash })),
+                        door: gs.boss ? gs.boss.hangar.open : 0, due: gs.boss ? gs.boss.hangar.launchAt : 0,
+                        next: gs.sortieT, n: gs.sortieN,
+                        aimed: gs.eb.filter((b) => b.gs).map((b) => ({ x: +b.x.toFixed(1), y: +b.y.toFixed(1), vy: +b.vy.toFixed(2) })),
+                    },
                     vine: { p: gs.p.vine, q: gs.p2.vine, tips: gs.vines.map((v) => { const tp = vineTip(gs, v.i); return { x: +tp.x.toFixed(1), y: +tp.y.toFixed(1) } }) },
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
@@ -587,6 +602,15 @@ export default function ContraGame () {
                     if (opts.capsuleNear) gs.capsule = { x: gs.p.x + 8, y: opts.capsuleY ?? gs.p.y - 14, vx: 0, kind: opts.capsuleKind || 'spread' }
                     // #2847: stand a courier off the hero's right for the browser legs
                     if (opts.carrierHere) gs.carriers.push({ x: gs.p.x + (opts.carrierDX ?? 120), y: opts.carrierY ?? 164, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: opts.carrierKind || 'laser', dead: false })
+                    // #2917: stand a gunship hull (still, at pin-point) for the
+                    // pixel legs; sortieOff silences the schedule; hangarOpen pins
+                    // the door mid-grind so the bay can be asserted on the canvas.
+                    if (opts.sortieNow && gs.boss) {
+                        gs.gunships.length = 0
+                        gs.gunships.push({ x: opts.gsX ?? 250, y: opts.gsY ?? 60, ty: opts.gsY ?? 60, vx: opts.gsVx ?? 0, hp: CFG.gsHp, t: 1e9, n: 1, dead: false, flash: 0 })
+                    }
+                    if (opts.sortieOff) { gs.sortieT = 1e9; gs.gunships.length = 0 }
+                    if (opts.hangarOpen !== undefined && gs.boss) { gs.boss.hangar.open = opts.hangarOpen; gs.boss.hangar.launchAt = 0; gs.sortieT = 1e9 }
                     if (opts.podHere) gs.pods.push({ x: gs.p.x + (opts.podDX ?? 40), y: CFG.ground - 2, vx: CFG.podVx, vy: 0, kind: opts.podKind || 'laser' })
                     // #2885: hide the canopy (pixel-baseline leg) or stand the hero
                     // airborne right on a swinging tip for the grab legs (vineAt
@@ -618,6 +642,7 @@ export default function ContraGame () {
                     `ALLY ${gs.p2.out ? 'DOWN' : `x ${gs.p2.x.toFixed(0)}  y ${gs.p2.y.toFixed(0)}  ${gs.p2.human ? 'HUMAN' : 'CPU'}  ${gs.p2.weapon}`}  POOL ${gs.lives}`,
                     `soldiers ${gs.soldiers.filter((s) => !s.dead).length}/${gs.soldiers.length} alive  turrets ${gs.turrets.filter((t) => !t.dead).length}  snipers ${gs.snipers.filter((t) => !t.dead).length}  nades ${gs.eb.filter((b) => b.gr).length}  barrels ${gs.barrels.filter((b) => !b.gone).length}  bullets p/e ${gs.pb.length}/${gs.eb.length}`,
                     `SKY ${gs.carriers.length ? `carrier hp ${gs.carriers[0].hp} ${gs.carriers[0].kind}` : 'clear'}  pods ${gs.pods.length}  next courier t${gs.nextCarrier}`,
+                    `SKY2 ${gs.gunships.length ? `GUNSHIP hp ${gs.gunships[0].hp} x${gs.gunships[0].x.toFixed(0)} y${gs.gunships[0].y.toFixed(0)}` : 'no sortie'}  hangar ${gs.boss ? (gs.boss.hangar.open > 0 ? `GRIND t${gs.boss.hangar.open}` : gs.boss.hangar.launchAt > 0 ? 'DUE' : 'shut') : '-'}  next sortie t${gs.sortieT > 1e8 ? 'off' : gs.sortieT}` ,   // #2917
                     `VINES ${gs.p.vine >= 0 ? `HERO RIDING #${gs.p.vine}` : gs.p2.vine >= 0 ? `ALLY RIDING #${gs.p2.vine}` : `${gs.vines.length} swaying`}  ${gs.boss && gs.boss.dying ? `CASCADE t${gs.boss.dying}` : ''}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
@@ -627,6 +652,12 @@ export default function ContraGame () {
                     { label: 'CYCLE WHEEL', run: () => { const w = ['rifle', 'spread', 'machine', 'fire', 'laser']; gs.p.weapon = w[(w.indexOf(gs.p.weapon) + 1) % w.length]; return 'weapon: ' + gs.p.weapon } },
                     { label: 'CAPSULE HERE', run: () => { gs.capsule = { x: gs.p.x + 24, y: gs.p.y - 14, vx: 0 }; return 'capsule inbound' } },
                     { label: 'CARRIER HERE', run: () => { if (gs.carriers.length) return 'a courier is already over the jungle'; gs.carriers.push({ x: gs.p.x + 120, y: 164, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: 'laser', dead: false }); return 'gunship inbound — shoot it down' } },
+                    { label: 'SORTIE NOW', run: () => { // #2917 the hangar, on demand
+                        if (gs.phase !== 'boss') warpBoss(gs)
+                        gs.boss.hangar.open = CFG.gsGrind; gs.boss.hangar.launchAt = gs.tick + CFG.gsTelegraph
+                        gs.sortieN += 1; gs.ev.push({ type: 'hangar' })
+                        return 'bay doors grinding — gunship due at the parapet' } },
+                    { label: 'HULL DOWN', run: () => { if (!gs.gunships.length) return 'the sky is clear'; gs.gunships[0].hp = 1; return 'gunship at one round from the fireball' } },
                     { label: 'LOOP +1', run: () => { gs.loop += 1; gs.lk = loopK(gs.loop); return `stage 1 at loop ${gs.loop} — pressure x${gs.lk.toFixed(2)}` } },   // #2894
                     { label: 'P2: HUMAN SEAT', run: () => { if (gs.p2.out) return 'seat down — pool spent'; if (gs.p2.human) releaseSeat(gs); else dropIn(gs); return gs.p2.human ? 'human seat: the soldier rappels in (WASD/F/G)' : 'wingman back on the seat' } },
                     { label: 'TO WATERFALL', run: () => { warpFalls(gs); return 'into the canyon' } },
