@@ -615,6 +615,80 @@ const mkBoss = (seed = 7) => {
     r.check('the sniper round is the fast one (>= 3 px/tick)', fast)
     r.check('every sniper shot was telegraphed (scope-glint window before the round)', glintOk)
 }
+
+// ---- #2905 perch drift + lob-only grenadier ---------------------------------
+{
+    // the tree line walks its aim: pin one hero under nest 1270 and the SAME
+    // nest must fire from all three perches, home first, on the fixed rotation.
+    const gs = makeGame(7)
+    gs.p2.out = true; gs.p.inv = 999999
+    const originX = []
+    for (let i = 0; i < 1000 && originX.length < 5; i++) {
+        gs.p.x = 1150
+        const before = gs.ev.length
+        step(gs, {})
+        for (let j = before; j < gs.ev.length; j++) { const e = gs.ev[j]; if (e.type === 'sniper' && e.bx === 1270) originX.push(Math.round(e.x)) }
+    }
+    const rel = originX.map((x) => x - 1270)
+    r.check('#2905 one nest fires from three perches — home, then the fixed rotation', JSON.stringify(rel) === '[0,-34,30,0,-34]', `rel origins ${JSON.stringify(rel)}`)
+}
+{
+    // telegraph integrity: across the honest sweep the body never moves while
+    // the scope window is open (t < 40), and no round ever leaves a moving nest.
+    let midGlintMoves = 0, shotFromMoving = 0
+    for (const seed of [7, 13, 21, 31]) {
+        const gs = makeGame(seed)
+        gs.p2.out = true
+        const prev = new Map()
+        for (let i = 0; i < 1400 && !gs.end; i++) {
+            const before = gs.ev.length
+            step(gs, autopilot(gs))
+            for (const sn of gs.snipers) {
+                if (sn.dead || !sn.awake) continue
+                const p = prev.get(sn.bx)
+                if (p && sn.t < 40 && (p.x !== sn.x || p.y !== sn.y)) midGlintMoves++
+                prev.set(sn.bx, { x: sn.x, y: sn.y })
+            }
+            for (let j = before; j < gs.ev.length; j++) if (gs.ev[j].type === 'sniper' && gs.ev[j].reloc > 0) shotFromMoving++
+        }
+    }
+    r.check('#2905 the aim is frozen while the glint flashes — no mid-telegraph shuffle, no shot from a moving nest', midGlintMoves === 0 && shotFromMoving === 0, `moves=${midGlintMoves} shots=${shotFromMoving}`)
+    // the roof gun is exempt: nailed to the slab, its x === dp.x identity carries
+    // the roof law. Five volleys, one origin, pi never turns.
+    const g2 = makeGame(13)
+    g2.p2.out = true; g2.p.inv = 999999
+    const roofX = []
+    let roofPi = 0
+    for (let i = 0; i < 900 && roofX.length < 5 && !g2.end; i++) {
+        g2.p.x = 1600
+        const before = g2.ev.length
+        step(g2, {})
+        for (let j = before; j < g2.ev.length; j++) { const e = g2.ev[j]; if (e.type === 'sniper' && e.bx === 1700) roofX.push(Math.round(e.x)) }
+        const roof = g2.snipers.find((s) => s.bx === 1700)
+        if (roof) roofPi = Math.max(roofPi, roof.pi)
+    }
+    r.check('#2905 the depot-roof nest is exempt — five volleys, one origin, no rotation', roofX.length >= 2 && roofX.every((x) => x === 1700) && roofPi === 0, `origins=${JSON.stringify(roofX)} pi=${roofPi}`)
+}
+{
+    // lob-only law: silence the whole jungle bar one vest grenadier kept in
+    // its throwing band — the throws must come, and NO flat round may ever
+    // leave that soldier's gun hand (the cabinet's bandolier has no rifle).
+    const gs = makeGame(7)
+    gs.p.inv = 999999; gs.p2.out = true
+    const vest = gs.soldiers.find((s) => s.nade)
+    gs.soldiers.forEach((s) => { if (s !== vest) s.dead = true })
+    gs.turrets.forEach((t) => { t.dead = true }); gs.snipers.forEach((s) => { s.dead = true })
+    vest.awake = true
+    let throws = 0, rounds = 0
+    for (let i = 0; i < 600; i++) {
+        vest.x = gs.p.x + 150   // keep him in the approach band, as on the cabinet
+        if (gs.depot) gs.depot.dead = true
+        const before = gs.eb.length
+        step(gs, {})
+        for (let j = before; j < gs.eb.length; j++) (gs.eb[j].gr ? throws++ : rounds++)
+    }
+    r.check('#2905 the vest throws and never rifles — lob-only cabinet law', throws >= 2 && rounds === 0, `throws=${throws} rounds=${rounds}`)
+}
 {
     // a grenade rides a true arc and detonates at the ground it lands on
     const gs = makeGame(13)
@@ -1614,6 +1688,55 @@ if (MUTANT) {
             harm: async (mod) => mod.loopK(6) !== 1.3
                 ? `HARM NAMED: the tempo escapes its pin — loop 6 runs x${mod.loopK(6).toFixed(2)}; the ceiling that keeps every loop clearable is gone and the bank can no longer carry it`
                 : null,
+        },
+        {
+            // #2905: a tree line that never moves is the gap this stage closed —
+            // freeze the relocation and the crossfire is nailed to one perch
+            // again, exactly the pre-#2905 cabinet-of-cardboard behaviour.
+            name: 'perch-frozen',
+            anchor: 'sn.relocT = PERCH_RELOC',
+            plant: 'sn.relocT = 0 /* MUTANT(perch-frozen): the canopy never walks */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.p2.out = true; gs.p.inv = 999999
+                const rel = []
+                for (let i = 0; i < 1000 && rel.length < 5; i++) {
+                    gs.p.x = 1150
+                    const before = gs.ev.length
+                    mod.step(gs, {})
+                    for (let j = before; j < gs.ev.length; j++) { const e = gs.ev[j]; if (e.type === 'sniper' && e.bx === 1270) rel.push(Math.round(e.x) - 1270) }
+                }
+                return rel.length >= 2 && rel.every((x) => x === 0)
+                    ? `HARM NAMED: nest 1270 fires all ${rel.length} rounds from x-home (${JSON.stringify(rel)}) — the perch rotation is dead and the crossfire sits on one fixed spot again`
+                    : null
+            },
+        },
+        {
+            // #2905: put the rifle back in the grenadier's hands — the cabinet's
+            // vest throws only, and a bandolier that sprays flat rounds while it
+            // advances makes the approach band a wall no hop covers.
+            name: 'lob-hall',
+            anchor: 'if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) {',
+            plant: 'if (tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) /* MUTANT(lob-hall): the vest keeps its rifle */ {',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.p.inv = 999999; gs.p2.out = true
+                const vest = gs.soldiers.find((s) => s.nade)
+                gs.soldiers.forEach((s) => { if (s !== vest) s.dead = true })
+                gs.turrets.forEach((t) => { t.dead = true }); gs.snipers.forEach((s) => { s.dead = true })
+                vest.awake = true
+                let rounds = 0
+                for (let i = 0; i < 600; i++) {
+                    vest.x = gs.p.x + 150
+                    if (gs.depot) gs.depot.dead = true
+                    const before = gs.eb.length
+                    mod.step(gs, {})
+                    for (let j = before; j < gs.eb.length; j++) if (!gs.eb[j].gr) rounds++
+                }
+                return rounds > 0
+                    ? `HARM NAMED: the vest grenadier fired ${rounds} flat rifle rounds in 600 ticks — the cabinet's bandolier throws only, and the extra rifle thickens the approach past the lane the hop was tuned for`
+                    : null
+            },
         },
     ]
     for (const p of plants) {

@@ -582,7 +582,13 @@ export function drawGrenade (ctx, b) {
 
 // S3 tree-line sniper: a nest in the canopy, a prone body, a long rifle, and
 // the scope glint that flashes while the shot charges (t < 40 = telegraph).
+// #2905: between volleys the shooter WALKS the branch to the next perch —
+// two-frame shuffle bob, rifle shouldered, scuff specks trailing. A moving
+// nest is never an aiming nest: the glint cannot light while relocT > 0.
 export function drawSniper (ctx, sn, tick) {
+    const shuf = sn.relocT > 0
+    const sdx = shuf ? (sn.dir || 0) : 0
+    const bob = shuf ? Math.floor(tick / 6) % 2 : 0
     ctx.save(); ctx.translate(Math.round(sn.x), Math.round(sn.y))
     // branch + nest
     ctx.fillStyle = C.nest
@@ -593,22 +599,28 @@ export function drawSniper (ctx, sn, tick) {
     ctx.fillRect(-17, -14, 6, 12); ctx.fillRect(11, -12, 6, 10)
     ctx.fillStyle = C.leaf
     ctx.fillRect(-17, -16, 5, 4); ctx.fillRect(12, -14, 5, 3)
-    // crouched body
+    // scuff specks: the tell that the nest is walking, trailing the body
+    if (shuf && Math.floor(tick / 3) % 2 === 0) {
+        ctx.fillStyle = C.nestLit
+        ctx.fillRect(-sdx * 11, 1, 2, 1); ctx.fillRect(-sdx * 15 - 1, 0, 1, 1)
+    }
+    // crouched body (shuffling: shifted into travel, bobbing two frames)
     ctx.fillStyle = C.uniDark
-    ctx.fillRect(-5, -9, 4, 7); ctx.fillRect(1, -8, 4, 6)
+    ctx.fillRect(-5 + sdx, -9 + bob, 4, 7); ctx.fillRect(1 + sdx, -8 + bob, 4, 6)
     ctx.fillStyle = C.uni
-    ctx.fillRect(-5, -17, 10, 8)
+    ctx.fillRect(-5 + sdx, -17 + bob, 10, 8)
     ctx.fillStyle = C.skin
-    ctx.fillRect(-2, -22, 5, 5)
+    ctx.fillRect(-2 + sdx, -22 + bob, 5, 5)
     ctx.fillStyle = C.vest
-    ctx.fillRect(-5, -15, 10, 3)
-    // long rifle along the aim
-    const a = sn.aim
+    ctx.fillRect(-5 + sdx, -15 + bob, 10, 3)
+    // long rifle along the aim — shouldered at a steep carry while walking
+    const a = shuf ? -1.05 * (sdx >= 0 ? 1 : -1) : sn.aim
     ctx.strokeStyle = C.gunMetal
     ctx.lineWidth = 2
-    ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(Math.cos(a) * 16, -14 + Math.sin(a) * 16); ctx.stroke()
-    // scope glint: the telegraph — blinks while the round charges
-    if (sn.t < 40 && Math.floor(tick / 4) % 2 === 0) {
+    ctx.beginPath(); ctx.moveTo(0 + sdx, -14 + bob); ctx.lineTo(Math.cos(a) * 16 + sdx, -14 + Math.sin(a) * 16 + bob); ctx.stroke()
+    // scope glint: the telegraph — blinks while the round charges (a walking
+    // nest never lights it: the crossfire only re-arms once it has settled)
+    if (!shuf && sn.t < 40 && Math.floor(tick / 4) % 2 === 0) {
         ctx.fillStyle = C.scope
         ctx.fillRect(Math.cos(a) * 8 - 1, -16 + Math.sin(a) * 8, 3, 3)
     }

@@ -602,7 +602,7 @@ export function makeGame (seed, loop = 1) {
         pb: [],                     // player bullets {x,y,vx,vy,k[,ph,hits]}
         eb: [],                     // enemy bullets (gr = lobbed grenade)
         soldiers: SOLDIERS.map(mkSoldier),
-        snipers: SNIPERS.map((d) => ({ x: d.x, y: d.y, hp: 1, awake: false, t: 0, aim: Math.PI, flash: 0, dead: false, bx: d.x, by: d.y, roof: !!d.roof, pi: 0, rx: d.x, ry: d.y, relocT: 0 })),
+        snipers: SNIPERS.map((d) => ({ x: d.x, y: d.y, hp: 1, awake: false, t: 0, aim: Math.PI, flash: 0, dead: false, bx: d.x, by: d.y, roof: !!d.roof, pi: 0, rx: d.x, ry: d.y, relocT: 0, dir: 0 })),
         turrets: TURRET_AT.map((x, i) => ({ x, y: CFG.ground, hp: 2, aim: Math.PI, t: 40 + i * 27, dead: false })),
         barrels: BARREL_AT.map((x) => ({ x, y: CFG.ground, gone: false })),
         capsule: null,              // {x,y,vx} — flies in from the right edge
@@ -1202,6 +1202,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                 sn.pi = (sn.pi + 1) % PERCH_OFF.length
                 sn.rx = sn.x; sn.ry = sn.y
                 sn.relocT = PERCH_RELOC
+                sn.dir = Math.sign(sn.bx + PERCH_OFF[sn.pi][0] - sn.rx)
             }
         }
     }
