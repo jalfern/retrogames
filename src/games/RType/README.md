@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 233 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf` + `duel-ghost` + `coast-through` + `dart-plain` + `flash-deaf`
+node scripts/rtypecheck.mjs       # sim + browser: 251 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel, #2951 volley pre-dodge)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf` + `duel-ghost` + `coast-through` + `dart-plain` + `flash-deaf` + `pre-dodge-deaf` + `cross-blind`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -399,9 +399,23 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
    and four named mutants (`duel-ghost`, `coast-through`, `dart-plain`,
    `flash-deaf`). The issue's last two wants (near-miss dodge reward, wingman
    cover-fire) stay follow-up feedback — taste and depth, not this pass.
-- Phase-2 salvos fly straight once loosed, and the autopilot does not
-  pre-dodge the volley lane — it eats some of what the cabinet's pilot would
-  side-step.
+- **CLOSED by #2951** — Phase-2 salvos pre-dodge: the fan now carries a
+  `volley` mark (sim truth — stateHash mixes positions, so pins and tuned
+  streams are untouched), and both brains slip the line. `fanSlip` reads the
+  marked rounds' straight crossings: while any crosses within 12 px of the
+  hull, the hull steps off the line AWAY from the crossing point and rides
+  the gap until the air clears — 12 px is the midpoint between the fan's
+  outer rounds (±24 at the station) and inside the vent's ±16 damage window,
+  so the stream never quits the throat and the kill-race keeps its pace.
+  The instruments found the honest root: the lane field's crossing-time
+  numerator had been inverted since S1 (`(px - b.x)` — negative for every
+  round ahead, so `consider(t>0)` never fired and both brains were blind to
+  straight fire; measured: a round 50 px out bought zero reaction, and the
+  pilot survived on strafe cadence and kill-races, grazing volleys by 0–5 px
+  on several seeds). Signs fixed for bullets, larva dives and duel dashes in
+  both brains (sting and missile branches were already correct). Nine laws +
+  two mutants (`pre-dodge-deaf`, `cross-blind`); solo winnable rose 7→8 of
+  12 seeds, co-op 12/12, zero p2 deaths across the twelve.
 - The wing brain never deploys its shell on its own initiative (a human seat
   two can, via G).
 - A dark seat gets no free life — seat-two flavour left for a later pass.
@@ -409,13 +423,14 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 233 sim+browser laws, twenty-six named mutants
+- `scripts/rtypecheck.mjs` — 251 sim+browser laws, twenty-eight named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
   `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`,
   `twin-collapse`, `speed-deaf`, `mirror-deaf`, `opts-leak`,
   `launch-deaf`, `rearm-deaf`, `pursuit-deaf`, `commit-deaf`,
-  `duel-ghost`, `coast-through`, `dart-plain`, `flash-deaf`).
+  `duel-ghost`, `coast-through`, `dart-plain`, `flash-deaf`,
+  `pre-dodge-deaf`, `cross-blind`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
@@ -439,10 +454,12 @@ The registry entry is `private` until Jon promotes it (#379).
    #2934 adds probe `duel`/`duelState`/`duelCd` (hunters on the field, their
    phase in the hunt>crouch>pass ritual, and the gun clock), setup
    `spawnDuelist:{y,x,state,t,cd}` (a hunter already on its stand-off), and
-   contract `state().duel`.
+   contract `state().duel`. #2951 adds probe `volleys`/`volleyX` (marked fan
+   rounds in the air and how far into the yard the nearest one rides) and
+   setup `spawnVolley` (three marked rounds crossing the nose).
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
   SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
   GEAR THE WING, TO DOBK, DOBK MAW, GIVE DOUBLE, GIVE SPEED UP, SPAWN O POD, GIVE OPTIONS, THROW OPTIONS,
-  SPAWN DUELIST.
+  SPAWN DUELIST, SPAWN VOLLEY.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern
   taps `b` every 97 ticks) and the nightly soak roster (`nightlybot.mjs`).

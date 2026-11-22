@@ -618,6 +618,7 @@ export default function RType() {
                     { label: 'OPEN VENTS', run: () => { if (!gs.p2) return 'no fortress on screen — TO PHASE-2 first'; window.__rTest.setup({ openVents: true }); return 'both vents gape' } },
                     { label: 'SPAWN BIT POD', run: () => { window.__rTest.setup({ spawnBitPod: { y: Math.round(gs.ship.y) } }); return 'a bit carrier closes in — feed it fire' } },
                     { label: 'SPAWN DUELIST', run: () => { window.__rTest.setup({ spawnDuelist: { y: Math.round(gs.ship.y) } }); return 'a crimson hunter takes the stand-off — it is hunting YOU' } },
+                    { label: 'SPAWN VOLLEY', run: () => { window.__rTest.setup({ spawnVolley: true }); return 'three marked rounds cross the yard — leave the line' } },
                     { label: 'GIVE DOUBLE', run: () => { window.__rTest.setup({ giveDouble: true }); return 'twin vulcan — one press, two rounds' } },
                     { label: 'GIVE SPEED UP', run: () => { window.__rTest.setup({ giveSpeed: (gs.ship.spd || 0) + 1 }); return `speed ${Math.min(2, (gs.ship.spd || 0))} — the stick answers quicker` } },
                     { label: 'SPAWN O POD', run: () => { window.__rTest.setup({ spawnOCap: true }); return 'the O capsule is at your nose — claim the shield-guns' } },

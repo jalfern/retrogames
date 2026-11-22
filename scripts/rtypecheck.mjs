@@ -2781,7 +2781,7 @@ if (MUTANT) {
                 g.bullets.push({ id: 1, x: g.ship.x + 30, y: 120, vx: -1.35, vy: 0 })
                 const p = mod.autopilot(g)
                 return (p.up || p.down) ? null
-                    : 'HARM NAMED: the crossing sign flips back and the lane field goes blind to straight fire — tuler rounds, ricochets and horn all read safe, and every dodge the field owns dies with the sign'
+                    : 'HARM NAMED: the crossing sign flips back and the lane field goes blind to straight fire — turret rounds, ricochets and horn all read safe, and every dodge the field owns dies with the sign'
             },
         },
     ]
