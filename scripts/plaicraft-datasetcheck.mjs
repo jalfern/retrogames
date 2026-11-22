@@ -40,6 +40,7 @@ import { createRecorder } from '../src/utils/recording.js'
 import { TICK_MS } from '../src/utils/voice.js'
 import { stateHash, step } from '../src/games/Gauntlet/sim.js'
 import { makeGame as fbMakeGame, step as fbStep, stateHash as fbHash } from '../src/games/FloorBoss/sim.js'
+import { applyTap as fbTap, W as FB_W, H as FB_H } from '../src/games/FloorBoss/taps.js'
 import { N_FEAT as FB_N_FEAT } from '../src/games/FloorBoss/model.js'
 import { createGame as bdMakeGame, step as bdStep, hash as bdHash } from '../src/games/BombDefuse/engine.js'
 import { N_FEAT as BD_N_FEAT } from '../src/games/BombDefuse/model.js'
@@ -92,7 +93,7 @@ const craftWebm = (durationMs) => {
     ]).toString('base64')
 }
 
-function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false, weather = null, seat2At = -1 }) {
+function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false, weather = null, seat2At = -1, taps = null }) {
     const method = game === 'floor-boss' || game === 'bomb-defuse' || game === 'short-order-shout' || game === 'rally-co-driver' || game === 'double-dragon' ? 'dpad' : 'stick'
     const wx = weather || 'clear'
     const gs = game === 'gauntlet' ? newGame(seed, rules || {}, seats[1] && seats[1].kind !== 'off')
@@ -127,7 +128,14 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
             ...(game === 'double-dragon' ? { boost: rnd() < 0.12 } : {}),
         }))
         if (game === 'gauntlet') step(gs, heroFromPad(pads[0]), p2FromPad(pads[1] || {}))
-        if (game === 'floor-boss') fbStep(gs, pads)
+        if (game === 'floor-boss') {
+            // #1712: scripted canvas taps ride the same channel the phone banks
+            // (pointer{down} in 0..1 canvas space) and hit the sim apply→step,
+            // byte for byte the way the live shell runs them.
+            const q = taps && taps.find((z) => z.t === t + 1)
+            if (q) { pads[0].pointer = { x: q.px / FB_W, y: q.py / FB_H, down: true }; fbTap(gs, q.px, q.py) }
+            fbStep(gs, pads)
+        }
         if (game === 'bomb-defuse') bdStep(gs, pads)
         if (game === 'short-order-shout') sosStep(gs, pads)
         if (game === 'rally-co-driver') rcStep(gs, pads)
@@ -387,6 +395,29 @@ try {
         r.check('floor-boss adapter: clean take verifies (180 rows), tampered refuses at its tick (#2805)',
             good.ok && good.rows.length === 180 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
             bad.mismatch ? `tick ${bad.mismatch.tick}` : 'no mismatch?!')
+    }
+    { // unit: floor-boss canvas taps (#1712) — a phone tap banks on the pad
+        // (pointer{down}, 0..1 canvas space) and replay re-applies it at its
+        // tick: a clean tap take verifies; deleting a tap from the stream must
+        // break the rebuild (the take the phone played is the law).
+        const clean = scriptedTake({
+            game: 'floor-boss', seed: 77, ticks: 240, seats: [{ kind: 'human' }],
+            // AUTO is in the state hash: tapping the auto chip at t=40 and t=150
+            // leaves a deterministic, hash-visible signature on the rebuild
+            // (order-card/floor taps fire too but their effect rides world state).
+            taps: [{ t: 40, px: 539, py: 20 }, { t: 90, px: 740, py: 80 }, { t: 150, px: 539, py: 20 }],
+        })
+        const good = floorBossRows('unit/fb-taps', clean)
+        const tampered = JSON.parse(JSON.stringify(clean))
+        tampered.slots[0].pads[39] = {} // tick 40's AUTO tap, unmade
+        const bad = floorBossRows('unit/fb-tapgone', tampered)
+        r.check('floor-boss taps: banked pointer taps replay clean; a deleted tap fails verification (#1712)',
+            good.ok && good.rows.length === 240 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
+            bad.mismatch ? `tick ${bad.mismatch.tick}` : (good.ok ? `${good.rows.length} rows` : 'no mismatch?!'))
+        const tapRows = good.rows.filter((x) => x.act && x.act.pointer && x.act.pointer.down)
+        r.check('floor-boss taps: the tap ticks carry their pointer in the act column (3 rows, #1712)',
+            tapRows.length === 3 && tapRows.every((x) => Number.isFinite(x.act.pointer.x) && Number.isFinite(x.act.pointer.y)),
+            `tap-rows=${tapRows.length}`)
     }
     { // unit: bomb-defuse adapter (#1712) — same contract, and solo takes verify
         const clean = scriptedTake({ game: 'bomb-defuse', seed: 51, ticks: 240, seats: [{ kind: 'human' }] })
@@ -810,6 +841,40 @@ if (MUTATE) {
         } finally {
             pull(DS)
             if (fs.readFileSync(DS, 'utf8') !== src8) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 double-dragon adapter)'); r.failed++ }
+        }
+    }
+
+    // mutant 9 (#1712 tap replay): the banked-tap re-application skipped — a
+    // floor-boss take whose phone ran taps can no longer rebuild to its hashed
+    // states, so the whole build must go red (unverified rows are never
+    // shipped, S1's law). If the tap take still verifies, the tap line is
+    // decoration.
+    const src9 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR9 = 'if (tp && tp.down) fbTap(gs, tp.x * FB_W, tp.y * FB_H)'
+    if (!src9.includes(ANCHOR9)) {
+        console.log('FAIL   tap-replay anchor not found — update the mutant (#1712)')
+        r.failed++
+    } else {
+        plant(DS, src9.replace(ANCHOR9, 'if (false && tp && tp.down) fbTap(gs, tp.x * FB_W, tp.y * FB_H) /* MUTANT: tap replay skipped */'))
+        try {
+            const sim9 = await startRelaySim()
+            try {
+                const tTap = scriptedTake({ game: 'floor-boss', seed: 31, ticks: 180, seats: [{ kind: 'human' }], taps: [{ t: 40, px: 539, py: 20 }] })
+                await uploadSession(tTap, { player: 'tessa', consent: { motion: true, voice: false }, base: sim9.base })
+                const outM9 = path.join(tmp, 'tap-mut')
+                const cli9 = await new Promise((resolve) => {
+                    const p = spawn(process.execPath, [DS, '--store', sim9.base, '--out', outM9, '--limit', '50'],
+                        { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                    let stdout9 = ''
+                    p.stdout.on('data', (d) => { stdout9 += d })
+                    p.on('exit', (code) => resolve({ status: code, stdout: stdout9 }))
+                })
+                r.check('floor-boss banked-tap take verifies and builds green (RED under the tap-skip mutant — the replay line is load-bearing, #1712)',
+                    cli9.status === 0, cli9.status !== 0 ? 'build refused without the tap replay' : 'clean build')
+            } finally { sim9.close() }
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src9) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 tap replay)'); r.failed++ }
         }
     }
 }

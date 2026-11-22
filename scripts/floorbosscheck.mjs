@@ -2016,7 +2016,7 @@ console.log('— duel seats (#2555) —')
     // presentation pins: the seat entry, twin till, verdict line, owner tints,
     // and the episode finally seats the model.
     const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
-    ok(/startPlay\(e\.code === 'KeyD'\)/.test(ui), "D at the attract seats the model manager")
+    ok(/humanStart\(e\.code === 'KeyD'\)/.test(ui) && /startPlay\(duel;?\s*\)?\s*;?\s*beginRun/.test(ui.replace(/\n\s*/g, ' ')), "D at the attract seats the model manager (#1712: the consent gate wraps the seed-birth, duel rides through)")
     ok(/MODEL \$\{mm\}/.test(ui) && /MANAGER OF THE NIGHT/.test(ui), 'twin till and the verdict line ride the canvas')
     ok(/owner === 1 \? '#57c7ff'/.test(ui), 'racks wear their owner tint — cyan is the model\'s')
     ok(/players: duel \? 2 : 1/.test(ui) && /\['human', 'model'\]/.test(ui), "the episode records players:2, sources ['human','model'] (#1144 slot two)")
