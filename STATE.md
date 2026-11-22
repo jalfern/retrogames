@@ -1,72 +1,75 @@
-# STATE.md — The Forge (rewritten at close of slot a, 2026-11-21; COMMITTED to
-# main — a game merged this session.)
+# STATE.md — The Forge (rewritten at slot b close, 2026-11-21; COMMITTED: game
+# code merged this session — R-TYPE Options pods, PR #2920 → 4ddb325.)
 
-## PLAYABLE (new since last hand)
-- /retrogames/contra — THE SECOND AIR LAYER is live (#2917 → PR #2918 →
-  squash `c5f239e`): the parapet hangar grinds open before every sortie, an
-  armoured gunship patrols the arena sky with lane-aimed SHALLOW strafe rounds
-  (the hop is always the answer), three rounds take the hull (+400), pierce
-  one-take, falls/winnable empty the sky. 213 pins, 29 mutants. Private
-  until Jon promotes (#2846).
-- /retrogames/r-type — QA's fixed-spot Double & Speed Up pods shipped
-  mid-session (#2915 part 1 → PR #2916 → `9b68fac`); #2915 stays open for
-  the rest of its plan.
+## PLAYABLE (main)
+- /retrogames/r-type — the OPTIONS pods are live (#2919 → PR #2920 → 4ddb325):
+  authored O capsule on leg 1 (camX 500, riding the slab lip at y 92); two gold
+  orbs fly in (~2 s ceremony, zero rng) and dock at (x−14, y∓11); while docked
+  every vulcan press mirrors one round per orb (symmetric ∓11) and `double`
+  mirrors the twin stack — the arcade's six-round shield-gun wall. Inbound orbs
+  never fire; spares pay 1000; the wreck strips orbs with the arm (power-armour
+  law) — per hull, seat two included (S4). stateHash covers the pair + run.
+  rtypecheck 174 laws + 18 named mutants (new: `mirror-deaf`, `opts-leak`), all
+  green locally incl. the mutant run; winnability re-measured: solo 8/12, co-op
+  11/12 — floors (≥4 / ≥6) hold. Prod verified (optdock in index-BYrC7k1l.js).
+- /retrogames/contra — hangar sorties at the gate (#2918 → c5f239e), + the
+  Double/Speed Up fixed-spot pods (#2915 → 9b68fac).
+- /retrogames/double-dragon — opening movie (#2897 → dd067eb), plus everything
+  before it (SSE: full R-TYPE, DD, Contra loops on the shelf, private until Jon
+  promotes — #379).
 
-## WHAT THIS SESSION DID (slot a) — shipped
-- Resumed the #2917 corpse (draft PR #2918, sim core `c96442d`) per step 1b
-  after the warden targeted it; refreshed the claim, then finished the layer:
-  art (attack-plane gunship with damage stages; hangar mouth with ribbed
-  shutter, chevron lintel, beacon, ember throat; fat fin-wake round), sound
-  (door ratchet / lift-off chop / strafe report), 17 sim pins + 3 browser
-  legs + `gunship-impervious` mutant, README gap closures + engine note.
-- **The merge-blocker found and fixed (the session's real engineering).** The
-  draft ramped sortie cadence by the FULL loop tempo k. The loop bank
-  (autopilot seeds 1..12 at capped loops 4/9) then DIED on seeds 6 and 9 —
-  the hull's shallow round arrives at the wall where there is no road, on top
-  of the cannons' already-hot rearm. The draft PR's "loop bank unchanged"
-  claim had only checked loops 2/3. Fix per the stage's own doctrine — bend
-  the threat, never the brain: `sortieK = 1 + (k−1)/2` halves the ramp; loop
-  1 byte-identical (k=1 → 1); bank clears 12/12 at 2/3/4/9. Law + finding
-  are in the README and pinned (`sortieK` pin).
-- Small sim hygiene found by the pins: the hangar door's grind now dies at
-  the falls with the hull (`enterFalls`).
-- Lessons hardened into pins this session: `gs.ev` must be cleared every tick
-  in harness loops (a stale `gsfire` event made a law check blame a departed
-  hull); arena floor is y=150, not the jungle's 196 (contact-law pin); the
-  emergence pin must account for the hull moving on its spawn tick.
+## WHAT THIS SESSION DID (slot b)
+- NEVER-DRY pick shipped the normal way: board empty, warden tick saw R-TYPE 0 →
+  filed POLISH #2919 (game-queue + lane:games), claimed via forge-claim.sh, built
+  in `forge/rtype-options`, gated (eslint, 3 scoped lint gates, build, rtypecheck
+  sim+browser 174/174, mutants 169/169), merged with the rule-5 command, verified
+  prod, shipped label, closed #2919 on its stated scope (Options = capsule-list
+  Part 2 per #2915's own part plan).
+- Fidelity interpretation recorded on the issue (#237): arcade `O` is a fixed
+  spot (not a cycle step); options mirror the vulcan lineage and die with the
+  hull. Cycle V→L→W pins and every #2915 pin stand byte-identical.
+- #2797 evidence posted (mirrored recurrence): the warden targeted #2919 to slot
+  a while slot b held it live; self-corrected at claim (issue now closed). Fix
+  landed mid-session: 72e6cca (#2921 idle-holds — kick_slot holder-skip,
+  idle-kick fail-closed, flagship rung honors builder-held titles).
+- QA/never-idle lanes verified live throughout (mini :5174, mini2 :5179); port
+  discipline kept: this lane only ever touched :5178.
 
 ## OPEN
-- building-qa: #2889, #2863 (DOUBLE DRAGON polish passes).
-- #2915 (R-TYPE pods) — QA's multi-stage issue, still theirs.
-- game-queue: EMPTY. Unowned feedback: none.
-- #2910 (lane:platform) — parseGaps still blind to gaps inside CLOSED
-  bullets; #2917's filing was the manual workaround, the fix is open.
+- No `building` issue at close; game-queue empty. The shelf is NOT dry:
+  idle-kick will answer R-TYPE again — the README's capsule line now names only
+  Half-Capsule (part 3), and Options-launch (throw the orbs as drones; B is the
+  shell verb here) joined the honest gaps. Both unowned, both real gameplay.
+- building-qa: #2889 + #2863 (DD polish) still with QA.
 
 ## NOTES for the next lane
-- `git fetch` first — QA ships fast (both #2916 lands mid-run).
-- `node scripts/idle-kick.mjs` currently answers `KICK R-TYPE` — R-TYPE is
-  no longer building-qa-held; follow the never-dry ladder from there.
-- Cadence doctrine (now in CONTRA's README, worth re-reading before any
-  loop-aware threat anywhere): a new threat's k-scaling is a dial; the
-  autopilot bank at the CAP loop is the proof. Full-k is not automatically
-  fair — test loops 4/9, not just 2/3.
-- CONTRA's remaining README honest gaps are now only the long-shot cosmetic
-  ones; the vertical set is complete. `gsFirstShot` (<~65 ticks at k=1) and
-  "autopilot must not change" are the two pinned traps.
-- Slot a's dev-port lessons from #2897 still stand (transient pixels need an
-  8-tick plateau; patch the canvas counter before the start press; prod
-  verification: jalfern's build has different hashes than local — enumerate
-  the live entry's lazy chunks and grep for a unique sim marker, e.g.
-  `gsHangarX`; the SPA 308s to www, use curl -L).
+- Half-Capsule spec sketch: shrink pod — hull halves, hit-box AND art together
+  (#2915 part-3 wording); it touches every collision radius, budget for it.
+- Options laws worth keeping when you touch orbs (README #2919 paragraph): orbs
+  are guns only — no collision, no orbit; px/py are sim-written once per tick
+  (the bits' discipline); `optAnn` is juice, never hashed. Mutant anchors
+  `twin-collapse`/`speed-deaf` re-verified after #2920 — the seat-1 hull twin
+  push line is still the first occurrence, don't disturb the order.
+- The 308: jalfern.com redirects `/retrogames/<route>` without trailing content —
+  use `curl -L`. Lazy chunks are named `index-*`/`art-*`, not `RType-*`; grep
+  chunk bodies for event strings (e.g. `optdock`) to prove a deploy carries a
+  feature.
+- Dry-shelf jonq ask unlocks ~11-27 (#2795 answered 11-20; 7-day rule).
+- Winnability moved up with the orbs (4→8 solo, 6→11 co-op runs). The pinned
+  floors stay low on purpose; the extra firepower is the point of the stage.
 
 ## WORKTREES
-- Main checkout ~/Dev/retrogames: detached origin/main, clean; carries this
-  STATE.md as the tip commit.
-- ~/Dev/retrogames-forge-contra-air2: PR merged, branch deleted by the
-  merge; the checkout sits detached at origin/main with deps installed —
-  reusable by any lane or removable at leisure.
-- Port 5173: this lane's dev server stopped via scripts/devstop.sh at close.
+- Main checkout ~/Dev/retrogames: detached origin/main @ 72e6cca, this STATE.md
+  committed on top (game merged → allowed) and pushed.
+- ~/Dev/retrogames-forge-rtype-options: this lane's worktree, branch
+  `forge/rtype-options` squash-merged and deleted on remote; worktree can be
+  pruned (`git worktree remove ~/Dev/retrogames-forge-rtype-options`).
+- Port 5178 stopped with scripts/devstop.sh at close. Other lanes' ports
+  (5173/5174/5179) untouched all session.
 
 ## Open questions
-- #2846 — promote CONTRA/R-TYPE/DD to public? (default keep private, due 11-23.)
+- #2846 — promote CONTRA/R-TYPE/DOUBLE DRAGON to public? (default keep private,
+  due 11-23 — Jon.)
 - #2908 (QA lane) — DD idle-P2 seat law (not ours, linked for the board).
+- No new question filed this session — the board had work; nothing taste-level
+  needed Jon.
