@@ -110,16 +110,26 @@ export const CFG = {
 }
 
 // #2894 THE ARCADE LOOP — STAGE CLEAR is not the end: stage 1 returns FASTER.
-// One pure multiplier drives every PRESSURE tempo on loop n: enemy round speed,
-// soldier/turret/sniper/depot/cannon rearm intervals, the door spill, the
-// walker pace, the falls torrent, the gate's shutter cycle (coreT advances by k)
-// and courier traffic. What it never touches: hero physics, the weapon aid
-// (capsule schedule), the vine laws, and the SCRIPTED finale (#2885 cascade —
-// still byte-identical every seed, every loop). loopK is CLAMPED on purpose:
-// the lane-aim law fixes the hop window (hopBand), so rounds may crowd but
-// must stay dodgeable. k = 1 at loop 1 — every pre-loop pin stands byte-for-byte.
-export const LOOP_STEP = 0.12
-export const LOOP_CAP = 1.42
+// One pure multiplier drives every PRESSURE TEMPO on loop n: soldier/turret/
+// sniper/depot/cannon rearm intervals, the door spill, the nade cadence, the
+// walker pace, the gate's shutter cycle (coreT advances by k) and courier
+// traffic. What it never touches: hero physics, round SPEEDS, the torrent, the
+// weapon aid (capsule schedule), the vine laws, and the SCRIPTED finale (#2885
+// cascade — byte-identical every seed, every loop). Speeds stay pinned because
+// the lane-aim law is the game's fairness spine — "a hop is always the answer
+// to an aimed round" — and the hop window (hopBand) is tuned to these speeds;
+// raising k shrinks the number of rounds' flight TIME, not their flight PATH.
+// The cap is the cabinet's shape: the heat climbs one notch per loop (+10%
+// tempo) and then holds at x1.30 (loop 4+) — every seed is clearable on every
+// loop (the autopilot sweep proves it against the loop bank, 3 + 1/loop, cap 5).
+// k = 1 at loop 1 — every pre-loop pin stands byte-for-byte.
+export const LOOP_STEP = 0.10
+export const LOOP_CAP = 1.30
+// the loop courtesy the classic loop cabinets pay: surviving one pass buys the
+// next a spare life, banked to five. (Contra's arcade credits out; the loop
+// spec this repo wrote needs the courtesy to stay humanly winnable at heat.)
+export const LOOP_LIFE_BONUS = 1
+export const LOOP_LIVES_MAX = 5
 export function loopK (n) {
     return Math.min(LOOP_CAP, 1 + LOOP_STEP * Math.max(0, Math.floor(n) - 1))
 }
@@ -930,7 +940,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
     } else if (gs.phase === 'falls') {
         // ratchet camera: the torrent rises, and climbing pushes it further;
         // it NEVER comes back down — retreating into the water is how you drown.
-        gs.camY -= CFG.rise * gs.lk   // #2894 loop n: the torrent runs faster
+        gs.camY -= CFG.rise
         const anchorY = p.y - CFG.anchor
         if (anchorY < gs.camY) gs.camY = anchorY
         if (gs.camY < 0) gs.camY = 0
@@ -1103,13 +1113,13 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         // S3 grenade lob: on the approach band, not too close, never off-screen
         if (s.nade && s.throwT > 0) s.throwT -= 1
         if (s.nade && s.throwT === 0 && !s.hold && tgt && Math.abs(dx) > 50 && Math.abs(dx) < 320 && inCamX && inCamY) {
-            gs.eb.push({ x: s.x, y: s.y - 18, vx: Math.sign(dx) * 1.9 * gs.lk, vy: -3.4, gr: true })   // #2894 loop n: the lob reaches sooner
+            gs.eb.push({ x: s.x, y: s.y - 18, vx: Math.sign(dx) * 1.9, vy: -3.4, gr: true })
             gs.ev.push({ type: 'throw' })
             s.throwT = Math.round((150 + ((s.x * 37) >>> 3) % 90) / gs.lk)
         }
         if (tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) {
             const a = Math.atan2(dy, dx)
-            const sp = (s.hold ? (gs.phase === 'falls' ? 1.8 : CFG.eBulletSpeed) : CFG.eBulletSpeed) * gs.lk   // #2894 loop n: rounds faster
+            const sp = s.hold ? (gs.phase === 'falls' ? 1.8 : CFG.eBulletSpeed) : CFG.eBulletSpeed
             gs.eb.push({ x: s.x + Math.cos(a) * 8, y: s.y - 12 + Math.sin(a) * 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp })
             gs.ev.push({ type: 'efire' })
             s.flash = 4
@@ -1131,7 +1141,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         t.aim = tgt ? Math.atan2((tgt.lane - 14) - (t.y - 18), dx) : Math.PI
         t.t -= 1
         if (t.t <= 0 && inCam && tgt && Math.abs(dx) < 260) {
-            gs.eb.push({ x: t.x + Math.cos(t.aim) * 12, y: t.y - 18 + Math.sin(t.aim) * 12, vx: Math.cos(t.aim) * CFG.eBulletSpeed * gs.lk, vy: Math.sin(t.aim) * CFG.eBulletSpeed * gs.lk })
+            gs.eb.push({ x: t.x + Math.cos(t.aim) * 12, y: t.y - 18 + Math.sin(t.aim) * 12, vx: Math.cos(t.aim) * CFG.eBulletSpeed, vy: Math.sin(t.aim) * CFG.eBulletSpeed })
             gs.ev.push({ type: 'efire', big: true })
             t.t = Math.round(85 / gs.lk)   // #2894 loop n: the turret cycles faster
         }
@@ -1156,7 +1166,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         // the fastest round in the game undodgeable. (S4: either seat's hop
         // answers — the round chases the nearer hero's lane.)
         if (sn.t <= 0 && inCam && tgt && tgt.onGround && Math.abs(tgt.x - sn.x) < 340) {
-            gs.eb.push({ x: sn.x + Math.cos(sn.aim) * 12, y: sn.y - 14 + Math.sin(sn.aim) * 12, vx: Math.cos(sn.aim) * CFG.sniperSpeed * gs.lk, vy: Math.sin(sn.aim) * CFG.sniperSpeed * gs.lk })   // #2894 loop n: even faster — but the hop law stands (hopBand unchanged, cap 1.42 keeps it dodgeable)
+            gs.eb.push({ x: sn.x + Math.cos(sn.aim) * 12, y: sn.y - 14 + Math.sin(sn.aim) * 12, vx: Math.cos(sn.aim) * CFG.sniperSpeed, vy: Math.sin(sn.aim) * CFG.sniperSpeed })
             gs.ev.push({ type: 'sniper' })
             sn.flash = 8
             sn.t = Math.round((150 + Math.floor(rnd(gs) * 90)) / gs.lk)
@@ -1174,7 +1184,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         dp2.t -= 1
         const onScreen = dp2.x > gs.cam && dp2.x < gs.cam + W + 8
         if (dp2.t <= 0 && onScreen && tgt && Math.abs(tgt.x - dp2.x) < 300 && tgt.x < dp2.x) {
-            gs.eb.push({ x: dp2.x + Math.cos(dp2.aim) * 14, y: dp2.y - 14 + Math.sin(dp2.aim) * 14, vx: Math.cos(dp2.aim) * 2.2 * gs.lk, vy: Math.sin(dp2.aim) * 2.2 * gs.lk })
+            gs.eb.push({ x: dp2.x + Math.cos(dp2.aim) * 14, y: dp2.y - 14 + Math.sin(dp2.aim) * 14, vx: Math.cos(dp2.aim) * 2.2, vy: Math.sin(dp2.aim) * 2.2 })
             gs.ev.push({ type: 'dfire' })
             dp2.t = Math.round(95 / gs.lk)   // #2894 loop n: the slit gun bites faster
         }
@@ -1328,7 +1338,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                 g.t -= 1
                 if (g.t <= 0 && tgt) {
                     const a = Math.atan2((tgt.lane - 14) - g.y, tgt.x - g.x)
-                    gs.eb.push({ x: g.x + Math.cos(a) * 12, y: g.y + Math.sin(a) * 12, vx: Math.cos(a) * 2.0 * gs.lk, vy: Math.sin(a) * 2.0 * gs.lk })
+                    gs.eb.push({ x: g.x + Math.cos(a) * 12, y: g.y + Math.sin(a) * 12, vx: Math.cos(a) * 2.0, vy: Math.sin(a) * 2.0 })
                     gs.ev.push({ type: 'cannon' })
                     g.t = Math.round((170 + Math.floor(rnd(gs) * 110)) / gs.lk)   // #2894 loop n: the cannons answer faster
                 }

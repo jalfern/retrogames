@@ -713,6 +713,12 @@ export function drawHud (ctx, gs, hiscore) {
     const wcols = { rifle: C.ink, spread: C.capsuleLit, machine: '#7fb2ff', fire: '#ff6a2a', laser: '#ff4ad4' }
     ctx.fillStyle = wcols[gs.p.weapon] || C.ink
     ctx.fillText(wnames[gs.p.weapon] || 'RIFLE', 314, 4)
+    // #2894 arcade loop: the escalation reads at a glance — loop 1 stays silent
+    // (it IS the stage); from loop 2 the HUD marks the pass in gold.
+    if (gs.loop > 1) {
+        ctx.fillStyle = C.gold
+        ctx.fillText(`LOOP ${gs.loop}`, 314, 12)
+    }
     // S4 co-op: seat 2 reads blue — his tag and his wheel. #2814: NO bank of
     // his own anymore — the single head-row is the SHARED pool, the cabinet's
     // one-pool law (#2814). A seat that's down leaves the HUD entirely.
