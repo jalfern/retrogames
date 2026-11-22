@@ -13,15 +13,19 @@
 // and unheld — and then the only question Jon ever sees is "which new
 // flagship title?", at most once a week (lib/jonq.mjs caps it).
 //
-// Flagship order is Jon's (#841): SSX, Emberwood, COMET DRIFT HD, Myst.
+// Flagship order is Jon's (#841, extended by his answered dry-shelf question
+// #2795 of 2026-11-20 — "both flagships starting with double dragon"):
+// SSX, Emberwood, COMET DRIFT HD, Myst, DOUBLE DRAGON, R-TYPE.
 
-export const FLAGSHIPS = ['SSX', 'Emberwood', 'COMET DRIFT HD', 'Myst']
+export const FLAGSHIPS = ['SSX', 'Emberwood', 'COMET DRIFT HD', 'Myst', 'DOUBLE DRAGON', 'R-TYPE']
 
 export const FLAGSHIP_DIRS = {
     'SSX': 'SSX',
     'Emberwood': 'Emberwood',
     'COMET DRIFT HD': 'CometDriftHD',
     'Myst': 'Myst',
+    'DOUBLE DRAGON': 'DoubleDragon',
+    'R-TYPE': 'RType',
 }
 
 const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim()

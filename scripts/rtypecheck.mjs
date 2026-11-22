@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, CORE_Y, W, POD, WAVES2, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, CORE_Y, W, POD, WAVES2, HEAT_AT, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -949,6 +949,86 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         `pod=${gs.pod ? gs.pod.state : 'none'} wing=${gs.wing.pod ? gs.wing.pod.state : 'bare'}`)
 }
 
+// ---------------------------------------------------- #2901 law set -------
+{ // desperation phase — the core speeds up past 1000
+    const quiet = (g) => { g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0; g.ship.inv = 999999 }
+    // a fresh hull meets the seat cold, timer zero
+    const gs = makeGame(7)
+    gs.camX = STAGE_END
+    quiet(gs)
+    step(gs, {})
+    r.check('#2901: the dreadnought meets the seat cold, timer zero',
+        !!gs.p1 && gs.p1.hot === false && gs.tick - gs.p1.lockAt === 0,
+        `p1=${!!gs.p1} heat=${gs.p1 ? gs.tick - gs.p1.lockAt : 'n/a'}`)
+    // the mark: exactly lock+1000, exactly once, announcing itself
+    const gs2 = makeGame(7)
+    gs2.camX = STAGE_END
+    quiet(gs2)
+    step(gs2, {})
+    const lock0 = gs2.p1.lockAt
+    let hotAt = -1, speedEvents = 0, early = false
+    for (let t = 1; t <= HEAT_AT + 2; t++) {
+        quiet(gs2)
+        step(gs2, {})
+        if (!gs2.p1) { early = true; break }
+        if (gs2.events.includes('hotspeed')) speedEvents++
+        if (gs2.p1.hot && hotAt < 0) hotAt = gs2.tick - lock0
+        gs2.events.length = 0
+    }
+    r.check('#2901: the panic latches exactly at lock+1000, once, and announces itself',
+        !early && hotAt === HEAT_AT && speedEvents === 1, `hotAt=${hotAt} events=${speedEvents}`)
+    // cadence: same seed, same rng — ONLY the tick multiplier differs
+    const cadence = (ignite) => {
+        const g = makeGame(7)
+        g.camX = STAGE_END
+        quiet(g)
+        step(g, {})
+        if (ignite) g.p1.lockAt = g.tick - HEAT_AT
+        const opens = []
+        for (let t = 0; t < 1400; t++) {
+            quiet(g)
+            step(g, {})
+            if (g.events.includes('mawopen')) opens.push(g.tick)
+            g.events.length = 0
+        }
+        return opens.slice(1).map((v, i) => v - opens[i])
+    }
+    const coldGaps = cadence(false)
+    const hotGaps = cadence(true)
+    const avg = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length)
+    r.check('#2901: the hot maw runs double tick-rate — gape-to-gape gaps halve',
+        coldGaps.length >= 3 && hotGaps.length >= 5 && avg(hotGaps) < avg(coldGaps) * 0.72,
+        `cold ${coldGaps.slice(0, 3).join(',')} hot ${hotGaps.slice(0, 4).join(',')}`)
+    // sim truth: hot rides stateHash (identical runs, flag differs)
+    const hA = makeGame(7); hA.camX = STAGE_END; quiet(hA); step(hA, {})
+    const hB = makeGame(7); hB.camX = STAGE_END; quiet(hB); step(hB, {})
+    hB.p1.hot = true
+    r.check('#2901: the panic is sim truth — stateHash covers hot', stateHash(hA) !== stateHash(hB),
+        `${stateHash(hA)} vs ${stateHash(hB)}`)
+    // leg honesty: burn through a REAL clear — loopStage must hand back a cold hull
+    const gl = makeGame(7)
+    gl.ship.inv = 999999
+    gl.lives = 5
+    gl.camX = STAGE_END
+    step(gl, {})
+    gl.p1.hot = true
+    gl.p1 = null
+    gl.camLock = false
+    gl.leg = 2
+    gl.camX = STAGE_END2
+    gl.legAt = gl.tick
+    step(gl, {})                       // the fortress arrives
+    gl.p2.cores.forEach((c) => { c.hp = 0 })
+    gl.p2.dyingT = 1                 // the walk finishes, STAGE CLEAR fires
+    quiet(gl); step(gl, {})
+    for (let t = 0; t < 220 && gl.mode === 'clear'; t++) { quiet(gl); step(gl, {}); gl.events.length = 0 }
+    const looping = gl.mode === 'play' && gl.p1 === null && gl.leg === 1
+    for (let t = 0; t < 2100 && !gl.p1; t++) { quiet(gl); step(gl, {}); gl.events.length = 0 }
+    r.check('#2901: the loop hands back its own dread — cold, with a fresh 1000 ticks',
+        looping && !!gl.p1 && gl.p1.hot === false && gl.tick - gl.p1.lockAt < HEAT_AT,
+        `looping=${looping} p1=${!!gl.p1} hot=${gl.p1 ? gl.p1.hot : 'n/a'}`)
+}
+
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12
     let wins = 0
@@ -1098,6 +1178,70 @@ if (MUTANT) {
                 for (let i = 0; i < 240; i++) { mod.step(gs, {}); gs.events.length = 0; gs.ship.y = 180 }
                 return gs.p2.cores[0].hp === hp0
                     ? `HARM NAMED: the near core gaped 240 ticks while the wingman sat its lane (core ${hp0} -> ${gs.p2.cores[0].hp}) — vent-hunting is how the second pilot fights the boss; blind, seat two is decoy law decoration and the co-op fortress fight is seat one alone`
+                    : null
+            },
+        },
+        {
+            name: 'panic-deaf',
+            anchor: "if (!p1.hot && gs.tick - p1.lockAt >= HEAT_AT) {",
+            plant: "if (false && !p1.hot && gs.tick - p1.lockAt >= HEAT_AT) { /* MUTANT(panic-deaf): the dread never learns to panic */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.camX = mod.STAGE_END
+                gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0; gs.ship.inv = 999999
+                mod.step(gs, {})
+                let events = 0
+                for (let t = 0; t < mod.HEAT_AT + 10; t++) {
+                    gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0; gs.ship.inv = 999999
+                    mod.step(gs, {})
+                    if (gs.events.includes('hotspeed')) events++
+                    gs.events.length = 0
+                }
+                return gs.p1 && !gs.p1.hot && events === 0
+                    ? 'HARM NAMED: the desperation timer never bites — a stalled duel stays stalled forever, and the arcade pressure that punishes dithering at the maw is gone (no hotspeed at lock+1000)'
+                    : null
+            },
+        },
+        {
+            name: 'tempo-deaf',
+            anchor: "p1.mouthT -= p1.hot ? 2 : 1",
+            plant: "p1.mouthT -= 1 /* MUTANT(tempo-deaf): the panic latch does nothing to the clock */",
+            harm: async (mod) => {
+                const mk = (ignite) => {
+                    const g = mod.makeGame(7)
+                    g.camX = mod.STAGE_END
+                    g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0; g.ship.inv = 999999
+                    mod.step(g, {})
+                    if (ignite) g.p1.lockAt = g.tick - mod.HEAT_AT
+                    const opens = []
+                    for (let t = 0; t < 1400; t++) {
+                        g.enemies.length = 0; g.bullets.length = 0; g.missiles.length = 0; g.ship.inv = 999999
+                        mod.step(g, {})
+                        if (g.events.includes('mawopen')) opens.push(g.tick)
+                        g.events.length = 0
+                    }
+                    return opens.slice(1).map((v, i) => v - opens[i])
+                }
+                const avg = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length)
+                const cold = mk(false)
+                const hot = mk(true)
+                return avg(hot) > avg(cold) * 0.72
+                    ? `HARM NAMED: the hot core cycles at cold tempo (cold ${avg(cold).toFixed(0)} vs hot ${avg(hot).toFixed(0)} gaps) — the panic became a flag the world ignores`
+                    : null
+            },
+        },
+        {
+            name: 'hot-leaks',
+            anchor: "hot: false, lockAt: gs.tick,",
+            plant: "hot: !!gs.cleared, lockAt: gs.tick,",
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.cleared = true // any hull summoned after a clear: the looped dread
+                gs.camX = mod.STAGE_END
+                gs.enemies.length = 0; gs.bullets.length = 0; gs.missiles.length = 0; gs.ship.inv = 999999
+                mod.step(gs, {})
+                return gs.p1 && gs.p1.hot === true
+                    ? 'HARM NAMED: a rebuilt dreadnought arrives already panicking — desperation is per-hull; leak hot across the loop and loop 2 opens in frenzy, which makes the panic meaningless and the difficulty ramp a lie'
                     : null
             },
         },
@@ -1253,6 +1397,20 @@ const browser = await launch()
       dead = await page.evaluate(() => window.__rTest.probe())
     }
     r.check('the game-over screen lands when the LAST pool burns (seat two already dark)', dead.screen === 'over' || dead.mode === 'gameover', `screen=${dead.screen} mode=${dead.mode}`)
+
+    // #2901 desperation through the shell (last — it reseeds): fresh run, set
+    // the hull, watch the timer cold, wind it to the mark, see the panic latch.
+    await page.evaluate(() => window.__game.reset(4))
+    await page.evaluate(() => window.__rTest.setup({ toPhase1: true, inv: 999999 }))
+    const coldH = await page.evaluate(() => window.__rTest.probe())
+    r.check('#2901 through the shell: the second dreadnought meets the seat cold', coldH.p1hot === 0 && coldH.heat >= 0 && coldH.heat < 60, `hot=${coldH.p1hot} heat=${coldH.heat}`)
+    await page.evaluate(() => {
+        window.__rTest.setup({ heat: 40 })
+        window.__game.step({}, 60)
+    })
+    const hotH = await page.evaluate(() => window.__rTest.probe())
+    r.check('#2901 through the shell: past the mark the hull runs hot, and the hash moves with it',
+        hotH.p1hot === 1 && hotH.heat >= 40, `hot=${hotH.p1hot} heat=${hotH.heat}`)
 
     r.check('zero page errors across the whole leg', errs.length === 0, errs.join(' | ') || 'clean')
 }

@@ -526,12 +526,17 @@ export function drawP1(ctx, p1, camX, tick) {
     // death roll (#2818): a stricken hull lurches, shudders and lists over
     const dying = p1.dyingT > 0
     const k = dying ? 170 - p1.dyingT : 0
+    // #2901 desperation phase: a hot hull burns — the whole mass jitters an
+    // impatient pixel, the plating flushes ember, and the maw rim glows hot.
+    const hot = !!p1.hot && !dying
     ctx.save()
     if (dying) {
         const cx = Math.round(p1.x - camX) + 60, cy = 120
         ctx.translate(cx, cy)
         ctx.rotate(k * 0.0011)
         ctx.translate(-cx + (((tick * 13) % 3) - 1), -cy + (((tick * 7) % 3) - 1))
+    } else if (hot) {
+        ctx.translate((((tick * 11) % 3) - 1), (((tick * 5) % 3) - 1))
     }
     const x = Math.round(p1.x - camX)
     const top = 34, bot = 200
@@ -547,6 +552,11 @@ export function drawP1(ctx, p1, camX, tick) {
     for (let px = 8; px + x < W; px += 22) ctx.fillRect(x + px, top + 6, 2, bot - top - 12)
     ctx.fillStyle = '#2a2018'
     for (let py = top + 12; py < bot - 8; py += 18) ctx.fillRect(x + 6, py, W, 2)
+    if (hot) {
+        // the flush: a low ember wash that breathes two-shades on a fast beat
+        ctx.fillStyle = ((tick >> 2) % 2) ? 'rgba(255,70,30,0.14)' : 'rgba(255,110,40,0.08)'
+        ctx.fillRect(x - 4, top, W + 40, bot - top)
+    }
     // red eyes watching the lane
     for (const [ex, ey] of [[x + 14, top + 26], [x + 10, bot - 34], [x + 40, top + 14]]) {
         ctx.fillStyle = '#701414'
@@ -571,18 +581,23 @@ export function drawP1(ctx, p1, camX, tick) {
         ctx.fillStyle = '#9a8c6c'
         ctx.fillRect(mouthX - 2, coreY - openAmt - 4, 34, 4)
         ctx.fillRect(mouthX - 2, coreY + openAmt, 34, 4)
-        ctx.fillStyle = '#d02020'
+        ctx.fillStyle = hot ? (((tick >> 1) % 2) ? '#ff7030' : '#ffb040') : '#d02020'
         ctx.fillRect(mouthX, coreY - openAmt - 1, 30, 1)
         ctx.fillRect(mouthX, coreY + openAmt, 30, 1)
     } else {
         // sealed: seam glow between crossing plates
         ctx.fillStyle = '#701414'
         ctx.fillRect(mouthX, coreY - 14, 30, 28)
-        ctx.fillStyle = '#d02020'
+        ctx.fillStyle = hot ? (((tick >> 1) % 2) ? '#ff7030' : '#ffb040') : '#d02020'
         ctx.fillRect(mouthX + 2, coreY - 1, 26, 2)
         ctx.fillStyle = '#9a8c6c'
         ctx.fillRect(mouthX - 2, coreY - 18, 34, 4)
         ctx.fillRect(mouthX - 2, coreY + 14, 34, 4)
+    }
+    if (hot) {
+        // the maw wears an ember halo while the core panics
+        ctx.fillStyle = ((tick >> 1) % 2) ? 'rgba(255,150,50,0.30)' : 'rgba(255,90,30,0.16)'
+        ctx.fillRect(mouthX - 3, coreY - 21, 36, 42)
     }
     if (dying) {
         // breaking-up cascade: plates strobe hot and the maw spasms wide (#2818)

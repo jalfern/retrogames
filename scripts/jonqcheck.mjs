@@ -136,7 +136,8 @@ ok(claimOrder([]) === null, 'empty board: nothing to claim')
 // --- idle: the flagship polish stage (#841) -----------------------------
 // claimOrder misses -> QA borrow (prose + pgrep, step B) -> flagship stage ->
 // only then STOP. A flagship stage is: first UNOWNED honest-gap of
-// SSX, Emberwood, COMET DRIFT HD, Myst — skipping games QA holds building-qa.
+// SSX, Emberwood, COMET DRIFT HD, Myst, DOUBLE DRAGON, R-TYPE (#2795 extended
+// the list with Jon's two commissions) — skipping games QA holds building-qa.
 const QA = (n, game, rest) => ({ number: n, title: `QA — ${game}: polish pass`, body: rest })
 const README = (g) => read(`../src/games/${FLAGSHIP_DIRS[g]}/README.md`)
 const REAL_GAPS = Object.fromEntries(FLAGSHIPS.map((g) => [g, parseGaps(README(g))]))
@@ -390,6 +391,8 @@ ok(!playbook.includes('nothing to forge'), 'FORGE.md still carries the old idle 
 ok(playbook.includes('Never idle the builder') && playbook.includes('#841'),
     'FORGE.md step 2: the flagship-polish idle clause is missing')
 for (const g of FLAGSHIPS) ok(playbook.includes(g), `FORGE.md idle clause does not name flagship ${g}`)
+ok(FLAGSHIPS.join('|') === 'SSX|Emberwood|COMET DRIFT HD|Myst|DOUBLE DRAGON|R-TYPE',
+    '#2795: flagship order is Jon\'s — the four originals, then "both flagships starting with double dragon"')
 ok(playbook.indexOf('borrow the QA') < playbook.indexOf('Never idle the builder'),
     'FORGE.md: the QA-borrow step must stay ahead of the flagship stage')
 ok(playbook.includes('building-qa') && playbook.includes('then claim it the normal way') && playbook.includes('File that stage as its own'),
