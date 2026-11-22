@@ -2102,6 +2102,37 @@ export function wingBrain(gs) {
         return risk
     }
 
+    // #2972 fire-only breath — the same field riskAt reads, minus the bodies:
+    // rounds, hunters, stings and diving larvae. A turret or a prowling hunter
+    // is not incoming FIRE; it is the reason the shell is thrown.
+    const incomingAt = (y) => {
+        let fire = 999
+        const breathe = (t) => { if (t > 0 && t < fire) fire = t }
+        for (const b of gs.bullets) {
+            if (b.x - w.x < -4 || b.vx >= 0) continue
+            const t = (b.x - w.x) / (-b.vx + 0.45)
+            if (t < 34 && Math.abs(bulletLaneY(b, t) - y) < 10) breathe(t)
+        }
+        for (const e of gs.enemies) {
+            if (e.kind === 'larva' && e.state === 'dive' && e.vx < 0 && e.x > w.x - 6) {
+                const t = (e.x - w.x) / (-e.vx + 0.45)
+                if (t < 40 && Math.abs(e.y + e.vy * t - y) < 12) breathe(t)
+            }
+            if (e.kind === 'sting' && e.vx < 0 && e.x > w.x - 6) {
+                const t = (e.x - w.x) / (-e.vx + SCROLL)
+                if (t < 48 && Math.abs(e.y + e.vy * t - y) < 11) breathe(t)
+            }
+        }
+        for (const m of gs.missiles) {
+            const dx = m.x - w.x
+            if (dx < -6) { breathe(Math.max(1, -dx / (m.spd + 0.6))); continue }
+            if (dx > 150) continue
+            const t = dx / m.spd
+            if (t < 40 && Math.abs(m.y - y) < 12 + t * 0.06) breathe(t * 0.7)
+        }
+        return fire
+    }
+
     // #2841 capsule chase: spillage and stray pods are the nearer pilot's to
     // fetch — seat one keeps the tie (the courtesy law), the wing never dives
     // into an hot lane for loot, and a gaped vent outranks cargo.
@@ -2167,6 +2198,33 @@ export function wingBrain(gs) {
     if (gs.p1 && gs.p1.dyingT === 0 && gs.p1.x - w.x < 84) pad.right = false
     if (gs.p2 && gs.p2.dyingT === 0 && gs.p2.x - w.x < 84) pad.right = false
     if (gs.dobk && gs.dobk.dyingT === 0 && gs.dobk.x - w.x < 84) pad.right = false // #2911
+
+    // #2972 shell initiative: seat two commits its own seed at the soft work
+    // in front of it — the throw the arcade's second pilots made. Zero rng:
+    // every read is arithmetic on live positions, so the tuned streams stay
+    // byte-identical. The launch waits for FIRE to breathe (`incoming >= 12`
+    // ticks — the cargo chase's own survivability number), not for a quiet
+    // world: the source is what the shell is thrown AT. Armour never enters
+    // the target list — armour refuses shells by standing law, so a launch
+    // into a slab face would be pure exposure. The ram law crushes whatever
+    // the launch line meets; a parked shell then plugs fresh rounds at the
+    // right edge while the wing fights what is already inside. Recall — the
+    // same verb, the #2841 rails — restores the attached plug (the resting
+    // state, per the #2818 note) once the source line clears; the keep-window
+    // sits a hand's width wider than the launch-window so a bobbing body
+    // cannot make the shell stutter out and home. Hand-off outranks initiative:
+    // a shell seat one asked for is delivered, never re-deployed.
+    const pdW = w.pod
+    const softAhead = (maxX, dy) => {
+        for (const e of gs.enemies) {
+            if (e.kind !== 'turret' && e.kind !== 'pod' && e.kind !== 'bitpod' && e.kind !== 'duelist') continue
+            const ex = e.x - w.x
+            if (ex > 18 && ex <= maxX && Math.abs(e.y - w.y) <= dy) return true
+        }
+        return false
+    }
+    if (pdW && !pdW.hand && pdW.state === 'attached' && incomingAt(w.y) >= 12 && softAhead(150, 10)) pad.b = true // launch: the line has a target
+    else if (pdW && (pdW.state === 'fly' || pdW.state === 'park') && !softAhead(170, 14)) pad.b = true // recall: the source line has cleared (a hand-off speeds the same rail home)
 
     // trigger discipline: vulcan streams; charge arms loose when its lane breathes
     pad.a = w.weapon === 'vulcan' ? true : riskAt(w.y) > 18
