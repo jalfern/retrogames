@@ -532,6 +532,13 @@ export default function DoubleDragon() {
                     introMarian: gs.intro ? (gs.intro.marian.grabbed ? 'held' : gs.intro.marian.scared ? 'fleeing' : 'walking') : 'none',
                     introLift: gs.intro ? gs.intro.marian.lift : -1,
                     introTaken: gs.intro && gs.intro.takenT > 0 ? 1 : takenSeen ? 2 : 0,
+                    // #2897 tells for the polish legs: the flash beat, the bubble
+                    // clock + Marian's screen spot, and the cast's death clocks.
+                    introFlash: gs.intro ? gs.intro.flashT : -1,
+                    introBubble: gs.intro ? gs.intro.marian.bubble : -1,
+                    introMarianX: gs.intro ? Math.round(gs.intro.marian.x - gs.camX) : -1,
+                    introMarianY: gs.intro ? Math.round(gs.intro.marian.y - (gs.intro.marian.grabbed ? gs.intro.marian.lift : 0)) : -1,
+                    introGoons: gs.intro ? gs.intro.goons.map((e) => `${e.state}:${Math.round(e.x - gs.camX)}:${e.y}:${e.stateT}`).join(',') : '',
                     duel: gs.enemies.some((e) => e.kind === 'duel') ? 1 : 0,
                     casts: gs.enemies.filter((e) => e.hasKnife).length,
                     coop: gs.coop ? 1 : 0,

@@ -4,7 +4,7 @@
 // palette at a glance: sodium-lamp blue-black night, Billy's red headband and
 // white gi, Williams' green cap, Amon's brown vest, Abobo's slab of charcoal.
 
-import { W, H, DEEP_TOP, DEEP_BOT, rescueReady, ENEMY_DEF, TIP } from './sim.js'
+import { W, H, DEEP_TOP, DEEP_BOT, rescueReady, ENEMY_DEF, TIP, INTRO } from './sim.js'
 
 // ------------------------------------------------------------- pixel font ---
 // 5x7, one string per glyph, '#' = ink. Original to this repo (arcade-cabinet
@@ -630,16 +630,25 @@ export function drawIntroMarian(ctx, m, camX, tick = 0) {
     if (held) {                                       // pedalling at arm's length
         ctx.fillRect(sx - 3, y - 6 + (kick ? 2 : 0), 2, 6)
         ctx.fillRect(sx + 1, y - 6 + (kick ? 0 : 2), 2, 6)
-    } else if (m.scared) {                            // running: long stride
-        ctx.fillRect(sx - 5 + (stepF ? 2 : 0), y - 6, 3, 6)
-        ctx.fillRect(sx + 2 - (stepF ? 2 : 0), y - 7, 3, 7)
+    } else if (m.scared) {                            // #2897: panicked sprint — a wide
+        const rf = Math.floor(m.anim / 5) % 3        // 3-frame stride with an airborne beat
+        if (rf === 0) {                                   // stretched: front reaching, back trailing
+            ctx.fillRect(sx - 7, y - 6, 3, 6)
+            ctx.fillRect(sx + 4, y - 7, 3, 7)
+        } else if (rf === 1) {                        // flight: both feet off the street
+            ctx.fillRect(sx - 5, y - 8, 3, 5)
+            ctx.fillRect(sx + 2, y - 8, 3, 5)
+        } else {                                      // gather under the landing
+            ctx.fillRect(sx - 4, y - 6, 3, 6)
+            ctx.fillRect(sx + 1, y - 6, 3, 6)
+        }
     } else {                                          // a stroll
         ctx.fillRect(sx - 3 + (stepF ? 1 : -1), y - 6, 2, 6)
         ctx.fillRect(sx + 1 + (stepF ? -1 : 1), y - 6, 2, 6)
     }
-    // skirt + torso
+    // skirt + torso (the skirt trails a step behind her on the run — #2897)
     ctx.fillStyle = '#3a5a8c'
-    ctx.fillRect(sx - 4, y - 12, 8, 6)
+    ctx.fillRect(sx - 4 + (m.scared && !held ? 1 : 0), y - 12, 8, 6)
     ctx.fillStyle = '#d0507a'
     ctx.fillRect(sx - 4, y - 22, 8, 10)
     // arms — up and waving when the night turns, swinging on the stroll
@@ -652,22 +661,33 @@ export function drawIntroMarian(ctx, m, camX, tick = 0) {
         ctx.fillRect(sx - 6, y - 20 + (stepF ? 1 : 0), 2, 6)
         ctx.fillRect(sx + 4, y - 20 - (stepF ? 1 : 0), 2, 6)
     }
-    // head + hair (tips flick on the run)
+    // head + hair (tips flick on the run; #2897: panicked, it streams behind her —
+    // two frames of trailing strands off the east side as she sprints west)
     ctx.fillStyle = '#e8b98a'
     ctx.fillRect(sx - 3, y - 30, 6, 6)
     ctx.fillStyle = '#6a4022'
     ctx.fillRect(sx - 4, y - 31, 8, 3)
     ctx.fillRect(sx - 4, y - 28, 2, 8)
     ctx.fillRect(sx + 2, y - 28, 2, 7 + (Math.floor(tick / 16) % 2))
-    // HELP! — the bubble rides the hold, blinks like the cabinet's talk boxes
+    if (m.scared && !m.grabbed) {
+        const hs = Math.floor(m.anim / 5) % 2
+        ctx.fillRect(sx + 3, y - 30, 4 + hs, 2)
+        ctx.fillRect(sx + 3, y - 27, 3 + (1 - hs), 2)
+    }
+    // HELP! — #2897 item 1: the cabinet's talk boxes survive a phone because
+    // they are OUTLINED. Dark ring, roomier padding, and a 2-frame jitter —
+    // the coin-op box wobbles as it talks; a static 1px sliver downscales away.
     if (m.bubble > 0 && m.bubble % 10 < 7) {
-        const bw = textWidth('HELP!', 1) + 6
-        const bx = sx - Math.round(bw / 2)
-        const by = y - 46
+        const bw = textWidth('HELP!', 1) + 10
+        const bx = sx - Math.round(bw / 2) + (Math.floor(m.bubble / 4) % 2 ? 1 : -1)
+        const by = y - 47
+        ctx.fillStyle = '#241c14'
+        ctx.fillRect(bx - 1, by - 1, bw + 2, 13)
+        ctx.fillRect(sx - 2, by + 11, 5, 3)
         ctx.fillStyle = '#f4f1e4'
         ctx.fillRect(bx, by, bw, 11)
         ctx.fillRect(sx - 1, by + 11, 3, 2)
-        label(ctx, 'HELP!', bx + 3, by + 3, '#7a1e2e', 1)
+        label(ctx, 'HELP!', bx + 5, by + 2, '#7a1e2e', 1)
     }
 }
 
@@ -787,23 +807,38 @@ function fighter(ctx, sx, sy, face, pose, t, pal, s = 1, lean = 0) {
     const sway = pose === 'walk' ? -Math.sign(legSwing[0]) : 0
     const hx = sway + (pose === 'charge' ? 3 : 0) + lean // lean: shoulders lead the body-check / the hop
     const bulk = s >= 1.3 ? 1 : 0                  // #2810 item 8: Abobo's slabs wider
+    // #2897: the tumble settles — after 8 ticks the dead lie in the axis-aligned
+    // sprawl below, hard pixel edges intact. A held ~71° rotation only fuzzes AA
+    // seams between the limb rects into the asphalt (QA #2897 item 2).
+    if (pose === 'dying' && t > 8) pose = 'down'
     ctx.save()
     if (pose === 'down') {
-        // sprawled flat
-        R(-9, -6, 20, 6, pal.body)
-        R(11, -9, 7, 7, pal.head)
-        if (pal.band) R(11, -9, 7, 2, pal.band)
-        R(-11, -4, 4, 4, pal.legs)
+        // #2897: sprawled flat — with EXPLICIT facing spans. R() mirrors a rect's
+        // position but not its extent, and the sprawl is the one pose wide enough
+        // that the difference tears a street-wide gap between head and torso at
+        // face === -1 (QA #2897 item 2: "KO tumble fragments ... limbs slightly
+        // detached against the asphalt").
+        ctx.translate(sx, sy)
+        ctx.scale(face, 1)
+        const F = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(u(x), u(y), u(w), u(h)) }
+        F(-9, -6, 20, 6, pal.body)
+        F(11, -9, 7, 7, pal.head)
+        if (pal.band) F(11, -9, 7, 2, pal.band)
+        F(-11, -4, 4, 4, pal.legs)
         ctx.restore(); return
     }
     if (pose === 'dying') {
-        // #2810 item 2: tumble out backwards off the hit — the body pivots
-        // over the heels, arms and legs flail, then it settles into the sprawl.
-        const p = Math.min(1, t / 12)
-        const fl = t < 10 ? (Math.floor(t / 2) % 2 ? -3 : 2) : 0
+        // #2810 item 2 + #2897: tumble out backwards off the hit — the body pivots
+        // over the heels, arms and legs flail — a SHORT settle (8 ticks), then the
+        // flat sprawl above holds while the body fades. Held rotations fuzz pixels.
+        // scale(face,1) mirrors extents for real: the broken layout read as
+        // fragments at face === -1.
+        const p = Math.min(1, t / 8)
+        const fl = t < 6 ? (Math.floor(t / 2) % 2 ? -3 : 2) : 0
         ctx.translate(sx, sy)
         ctx.rotate(-face * 1.25 * p)
-        const F = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(u(x) * face, u(y), u(w), u(h)) }
+        ctx.scale(face, 1)
+        const F = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(u(x), u(y), u(w), u(h)) }
         F(-9, -6 + Math.abs(fl), 20, 6, pal.body)
         F(11, -9 + Math.abs(fl), 7, 7, pal.head)
         if (pal.band) F(11, -9 + Math.abs(fl), 7, 2, pal.band)
@@ -922,7 +957,8 @@ function drawFighter(ctx, b, camX, pal, props) {
         if (b.stateT > 26) return
         if (b.stateT > 16) ctx.globalAlpha = 1 - (b.stateT - 16) / 10
     }
-    fighter(ctx, sx, sy - lift, b.face, pose, pose === 'flourish' ? b.flourish : b.anim, pal, 1,
+    fighter(ctx, sx, sy - lift, b.face, pose,
+        pose === 'dying' ? b.stateT : pose === 'flourish' ? b.flourish : b.anim, pal, 1,   // #2897: dying rides the death clock (tumble + settle)
         hop ? 1 : pose === 'flourish' && b.flourish <= 10 ? 1 : 0)
     // #2857 guardian telegraph: speed lines off the trailing shoulder while
     // this dragon sprints the holder of his brother — seat-tinted by the
@@ -999,7 +1035,9 @@ export function drawEnemy(ctx, e, camX) {
         if (e.stateT > 30) return
         ctx.globalAlpha = 1 - e.stateT / 30
     }
-    fighter(ctx, sx + jx, sy, e.face, pose === 'getup' ? 'jump' : pose, e.anim, PAL[e.kind], def)
+    // #2897: the dying pose runs on the death clock, not the walk anim — the
+    // tumble + settle needs a fresh 0 to animate; anim is already past 8.
+    fighter(ctx, sx + jx, sy, e.face, pose === 'getup' ? 'jump' : pose, pose === 'dying' ? e.stateT : e.anim, PAL[e.kind], def)
     // #2874: hits SHOW — every landed blow lights the man white for a flash,
     // and a wounded goon wears a thin bank over his head, so a newcomer sees
     // the hits counting long before the KO popup pays.
@@ -1175,6 +1213,18 @@ export function drawHud(ctx, gs, playing = true) {
 // wave / banner one-message-at-a-time overlays (never over the HUD)
 export function drawBanner(ctx, gs) {
     if (gs.intro) {
+        // #2897 item 3: the caption punches in — a white beat over the whole
+        // street so the phone ear that missed the sting still feels the crime.
+        // Eight fast-decaying frames, the first three >=0.45 alpha: snappy at
+        // 60fps, and wide enough that a software-rendered CI frame (catch-up
+        // batching, measured ~4-tick paint hitches) cannot step over the bright
+        // half of it.
+        if (gs.intro.flashT > 0) {
+            ctx.globalAlpha = 0.72 * Math.pow(0.8, INTRO.flash - gs.intro.flashT)
+            ctx.fillStyle = '#ffffff'
+            ctx.fillRect(0, 0, W, H)
+            ctx.globalAlpha = 1
+        }
         // #2891: the movie names its own crime — one caption, clear of the HUD
         if (gs.intro.takenT > 0 && (gs.intro.takenT > 18 || gs.intro.takenT % 6 < 4)) {
             const s = 'MARIAN TAKEN!'

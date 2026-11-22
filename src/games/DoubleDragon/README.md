@@ -300,12 +300,40 @@ Technōs opened its arcade by stating the crime; so does this board, between
 - The `movie-frozen`, `skip-deaf`, `crime-unnamed` and `curtain-stuck` mutants
   name the four ways an opening can rot.
 
+#2897 polish (forge) on the opening movie:
+
+- **The caption punches in** — MARIAN TAKEN! rides an eight-frame white beat
+  (fast decay, first three frames ≥0.45 alpha so a software-rendered frame
+  cannot step over it) and stands 124 ticks — a back-row hold — still clearing
+  ~34 ticks before the curtain.
+- **The street empties like the arcade's** — Amon is the straggler: still
+  walking east, half out of frame, as the caption clears, gone six ticks
+  before the curtain (`straggle-gone` mutant guards the empty-tail collapse).
+- **KO tumble fragments, fixed at the root** — `R()` mirrors a rect's position
+  but not its extent, and the down/dying sprawl is the one pose wide enough
+  that at `face === -1` the head drew ~12px away from the torso against the
+  asphalt (QA item 2, the same geometry under the "limbs detached" complaint).
+  Down and dying now mirror extents for real (`scale(face,1)`), and the tumble
+  SETTLES: an 8-tick pivot-and-flail, then the flat axis-aligned sprawl holds
+  while the body fades — no held rotation fuzzing pixel edges. Both dragons
+  and every goon benefit, live KOs included.
+- **HELP! survives the phone** — the talk box wears a dark outline ring,
+  roomier padding and a 2-frame ±1px jitter (the coin-op box wobbles as it
+  talks); a 1px cream sliver downscales to nothing, an outlined box doesn't.
+- **A panicked run that reads panicked** — Marian's sprint is now a 3-frame
+  cycle (stretch / airborne / gather) with the skirt trailing and two streams
+  of hair flicking behind her; at 1.1px/t the old 2-frame legs read as a
+  stroll (QA item 4).
+- The `straggle-gone` mutant names the tail collapse; the settle, the flash
+  paint, the box outline/jitter and the stride airborne beat are pinned by
+  five sim pins + five browser pixel legs.
+
 ## Verify
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 194 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace), winnable, browser legs
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck must go RED (named)
+npm run ddragoncheck                    # 221 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), winnable, browser legs
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -340,6 +368,11 @@ of nightly 44762398189).
   of the dragons' own, MARIAN TAKEN!, any-key skip, and a curtain law that
   leaves the run bit-identical to a no-movie start (hash-pinned, 17 pins +
   4 mutants + 8 browser legs).
+- **CLOSED by #2897** — the opening movie's phone pass: the caption rides a
+  white flash and a back-row hold, the street empties with a straggler, the
+  KO sprawl mirrors its extents for real (the face===-1 fragment fix) and
+  settles in 8 ticks, HELP! gets its outline + jitter, and Marian's panicked
+  stride gets an airborne frame with streaming hair.
 - Enemy knockback is positional, not sprite-true physics; fine at this scale.
 - Goons carry knives (S3) but not the whip or stick-and-steel rotations of
   the later arcade waves; the thrown knife is the goon's only cast (and the
