@@ -192,17 +192,29 @@ const SOLDIERS = [
 const TURRET_AT = [470, 1050, 1650]
 const BARREL_AT = [640, 662, 980, 1300, 1840]
 
-// S3 tree-line snipers: fixed, elevated, long range, and the fastest aimed
-// round the jungle throws. The flashing scope glint (t < 40) is the telegraph
-// — the round always announces itself before it flies.
+// S3 tree-line snipers: elevated, long range, and the fastest aimed round the
+// jungle throws. The flashing scope glint (t < 40) is the telegraph — the round
+// always announces itself before it flies. #2905: they are no longer fixed —
+// each nest owns three canopy perches and walks to the next after every shot,
+// the cabinet's crossfire shifting between volleys.
 const SNIPERS = [
     { x: 520, y: 150 },
     { x: 905, y: 136 },
     { x: 1270, y: 132 },
     { x: 1800, y: 126 },
-    // S3.5: one rides the arms depot roof (y = slab top) — blown off when it falls.
-    { x: 1700, y: 152 },
+    // S3.5: one rides the arms depot roof (y = slab top) — blown off when it
+    // falls. Exempt from the drift: its x === dp.x identity IS the roof law.
+    { x: 1700, y: 152, roof: true },
 ]
+
+// #2905 perch drift — perches are offsets around the nest on a FIXED rotation
+// (zero new gs.r draws, the courier/cascade law reused): same seed, same
+// crossfire. The relocation rides gs.lk (loop tempo, like the walker pace) and
+// fits strictly inside the reload: RELOC 30 ticks vs a cooldown of at least
+// 150/k — at the hottest k = 1.3 it still settles ~50 ticks before the glint,
+// so the aim is always frozen while the telegraph is flashing.
+const PERCH_OFF = [[0, 0], [-34, 6], [30, -7]]
+const PERCH_RELOC = 30
 
 // S3 capsule wheel — the letters that fly. Deterministic draw on spawn.
 const CAP_KINDS = ['spread', 'machine', 'fire', 'laser']
@@ -590,7 +602,7 @@ export function makeGame (seed, loop = 1) {
         pb: [],                     // player bullets {x,y,vx,vy,k[,ph,hits]}
         eb: [],                     // enemy bullets (gr = lobbed grenade)
         soldiers: SOLDIERS.map(mkSoldier),
-        snipers: SNIPERS.map((d) => ({ x: d.x, y: d.y, hp: 1, awake: false, t: 0, aim: Math.PI, flash: 0, dead: false })),
+        snipers: SNIPERS.map((d) => ({ x: d.x, y: d.y, hp: 1, awake: false, t: 0, aim: Math.PI, flash: 0, dead: false, bx: d.x, by: d.y, roof: !!d.roof, pi: 0, rx: d.x, ry: d.y, relocT: 0, dir: 0 })),
         turrets: TURRET_AT.map((x, i) => ({ x, y: CFG.ground, hp: 2, aim: Math.PI, t: 40 + i * 27, dead: false })),
         barrels: BARREL_AT.map((x) => ({ x, y: CFG.ground, gone: false })),
         capsule: null,              // {x,y,vx} — flies in from the right edge
@@ -1117,7 +1129,10 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             gs.ev.push({ type: 'throw' })
             s.throwT = Math.round((150 + ((s.x * 37) >>> 3) % 90) / gs.lk)
         }
-        if (tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) {
+        // #2905 lob-only law: the cabinet's vest grenadiers throw and carry no
+        // rifle — the bandolier never answers with a flat round. The vest, the
+        // advance and the lob cadence stand untouched.
+        if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) {
             const a = Math.atan2(dy, dx)
             const sp = s.hold ? (gs.phase === 'falls' ? 1.8 : CFG.eBulletSpeed) : CFG.eBulletSpeed
             gs.eb.push({ x: s.x + Math.cos(a) * 8, y: s.y - 12 + Math.sin(a) * 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp })
@@ -1147,13 +1162,26 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         }
     }
 
-    // --- S3 snipers: fixed in the tree line, long range, the fast aimed
-    // round. The scope glint flashes while t < 40 — telegraph, then shot. ---
+    // --- S3 snipers: perched in the tree line, long range, the fast aimed
+    // round. The scope glint flashes while t < 40 — telegraph, then shot.
+    // #2905: after every shot the nest WALKS to its next perch (three canopy
+    // positions on a fixed rotation) — the crossfire moves between volleys,
+    // and the relocation always finishes before the next glint lights. ---
     for (const sn of gs.snipers) {
         if (sn.dead) continue
         if (!sn.awake) {
             if (sn.x < gs.cam + W - 4 && sn.y < gs.camY + H - 4) { sn.awake = true; sn.t = 40 + Math.floor(rnd(gs) * 50) }
             continue
+        }
+        if (sn.relocT > 0) {   // mid-shift along the branch toward perch pi
+            sn.relocT -= gs.lk  // loop n: the shuffle quickens with the tempo
+            const p = PERCH_OFF[sn.pi]
+            if (sn.relocT <= 0) { sn.relocT = 0; sn.x = sn.bx + p[0]; sn.y = sn.by + p[1] }
+            else {
+                const f = 1 - sn.relocT / PERCH_RELOC
+                sn.x = sn.rx + (sn.bx + p[0] - sn.rx) * f
+                sn.y = sn.ry + (sn.by + p[1] - sn.ry) * f
+            }
         }
         const tgt = aimTarget(gs, sn.x)
         sn.aim = tgt ? Math.atan2((tgt.lane - 14) - (sn.y - 14), tgt.x - sn.x) : Math.PI
@@ -1167,9 +1195,15 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         // answers — the round chases the nearer hero's lane.)
         if (sn.t <= 0 && inCam && tgt && tgt.onGround && Math.abs(tgt.x - sn.x) < 340) {
             gs.eb.push({ x: sn.x + Math.cos(sn.aim) * 12, y: sn.y - 14 + Math.sin(sn.aim) * 12, vx: Math.cos(sn.aim) * CFG.sniperSpeed, vy: Math.sin(sn.aim) * CFG.sniperSpeed })
-            gs.ev.push({ type: 'sniper' })
+            gs.ev.push({ type: 'sniper', bx: sn.bx, x: sn.x, reloc: sn.relocT })
             sn.flash = 8
             sn.t = Math.round((150 + Math.floor(rnd(gs) * 90)) / gs.lk)
+            if (!sn.roof) {   // the roof gun is nailed to the depot slab; the canopy walks
+                sn.pi = (sn.pi + 1) % PERCH_OFF.length
+                sn.rx = sn.x; sn.ry = sn.y
+                sn.relocT = PERCH_RELOC
+                sn.dir = Math.sign(sn.bx + PERCH_OFF[sn.pi][0] - sn.rx)
+            }
         }
     }
 
@@ -1551,7 +1585,7 @@ export function stateHash (gs) {
     for (const b of gs.pb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(KCODE[b.k] || 0); put(b.hits ? b.hits.length : 0); put(b.o || 0) }
     for (const b of gs.eb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(b.gr ? 1 : 0) }
     for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk); put(s.nade ? 1 : 0); put(s.hp) }
-    for (const sn of gs.snipers) { put(sn.awake ? 1 : 0); put(sn.dead ? 1 : 0); put(sn.x); put(sn.y); put(sn.t); put(sn.aim) }
+    for (const sn of gs.snipers) { put(sn.awake ? 1 : 0); put(sn.dead ? 1 : 0); put(sn.x); put(sn.y); put(sn.t); put(sn.aim); put(sn.pi); put(sn.relocT) }   // #2905 which perch, and the shift mid-leg, are sim truth
     for (const t of gs.turrets) { put(t.dead ? 1 : 0); put(t.hp); put(t.aim); put(t.t) }
     for (const br of gs.barrels) put(br.gone ? 1 : 0)
     put(gs.capsule ? gs.capsule.x : -9999); put(gs.nextCapsule)
