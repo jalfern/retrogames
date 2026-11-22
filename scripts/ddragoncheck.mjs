@@ -23,6 +23,9 @@
 // #2857 adds the partner-personality juice read — glint on the guardian sprint,
 // flash + relief on a grip break, a jab voice and wobble that split the schools,
 // a KO strut — all hash-pure; glint-deaf and flair-dead name the two collapses.
+// #2889 polishes that read for the phone: chevron glints, a relief-tag blink,
+// a walking strut, an 8-tick KO squash, a triangle jab in the mix; glint-flat,
+// strut-frozen, squash-missing, tag-deaf and mix-clash name those collapses.
 // #2891 adds the opening movie — the kidnapping of Marian as a fixed script
 // that gates the street, is skip-courteous, and lifts the curtain on a stage
 // bit-identical to a no-movie run (hash parity); movie-frozen/skip-deaf/

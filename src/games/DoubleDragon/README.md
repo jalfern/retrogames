@@ -280,6 +280,42 @@ S4 (the second dragon, #2807):
   `isP2` now guards the seat line; the pad seat (#2860) is unaffected.
 - The `glint-deaf` and `flair-dead` mutants name the two tells going dark.
 
+#2889 guardian-read polish (forge) — the blue seat's tells survive the phone:
+
+- **Chevron glint** — the guardian sprint's speed-lines were 3×2 dashes, exactly
+  the shape a dock-zoomed phone averages into grey. The trail is chevrons now:
+  3 wide, **5 tall**, apex toward the seat, arms swept back, at 10/16/22 px off
+  the trailing shoulder. The 3-px spine is the extent that survives downscale;
+  the deeper trail keeps marks lit when the outermost clips at a screen edge.
+  Shimmer and the shoulder spark keep their guard-clock laws (`glintMarks` is
+  pure geometry, pinned). `glint-flat` names a regression to thin marks.
+- **Relief ties the HUD** — while the freed seat wears the arms-up pose, his
+  blue `2P` tag blinks white on the same clock (lit on the odd ticks of the
+  9-count), so the grip-break is told twice: arms on the street, tag in the
+  corner. `tag-deaf` names the two halves splitting.
+- **The strut walks** — the arcade let the KO pose finish through a step-back.
+  Under the flourish rides a render-only back-step: one step (5 px) out in four
+  ticks, held through the flick and the shoulder check, easing home in the last
+  three — zero snap whether it finishes or a swing cuts it. The shadow stays
+  planted (the #2857 wobble law); x truth is untouched, inputs are never
+  delayed — non-blocking by construction. `strut-frozen` names the pose nailed
+  to the floor.
+- **KO squash** — a knocked-down man lands FLAT: the widest, lowest frame is
+  the impact tick, easing back over an 8-tick beat (the #2897 proven width —
+  a 2-tick beat got stepped over whole on a loaded box's frame rate, caught
+  in the debug session, and the easing reads better: classic squash-and-
+  stretch). About the feet; paint only — down still pins, positions never move.
+  `squash-missing` names the weightless landing.
+- **Phone mix** — `jab_b` kept its F#4 identity (294 Hz) but left the square
+  for a triangle: the square's 3rd harmonic beat the pickup chime's 880 Hz
+  middle note by 2 Hz, and on a phone's thin midrange a punch and the steel
+  reward smeared into one buzz. The triangle drops that harmonic ~9.5 dB; the
+  noise transient steps 0.02 → 0.03 to keep the snap. `mix-clash` replants
+  the square and the source-law pin goes red. (Honest note: measured, not
+  listened on a physical device — the fresh-ears pass stands until a pair of
+  human ears says otherwise.)
+- All five remain juice: none move `stateHash` (the #2857 juice-law pin holds).
+
 ## Controls
 
 Arrows walk (UP/DOWN = depth) · SPACE jump · X kick · Z punch · ? ops card.
@@ -383,8 +419,8 @@ Technōs opened its arcade by stating the crime; so does this board, between
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 242 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), winnable, browser legs
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off must go RED (named)
+npm run ddragoncheck                    # 260 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), winnable, browser legs
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, squash-missing, tag-deaf, mix-clash must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 
@@ -430,6 +466,12 @@ of nightly 44762398189).
   short and sharp on asphalt friction, dying men travel, the struggle shoves
   the grabber off the seat — and the screen keeps its wall (see the weight
   ladder below).
+- **CLOSED by #2889** — the guardian-read QA round: the rescue glint is a
+  chevron trail that survives dock zoom, the freed blue seat's relief blinks
+  his own HUD tag, the KO strut takes its step back, knockdowns land with an
+  easing squash beat, and the jab's phone-mix clash with the pickup chime is
+  gone (triangle timbre, F#4 kept). A physical-device fresh-ears listen
+  remains open craft — the fix is measured, not heard.
 - Goons carry knives (S3) but not the whip or stick-and-steel rotations of
   the later arcade waves; the thrown knife is the goon's only cast (and the
   original's goons never threw whip or barrel either).
