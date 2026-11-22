@@ -5,7 +5,7 @@
 // viridian darks, olive soldier uniforms, the hero's white tank + blue pants
 // + red bandana, hazard-orange capsules.
 
-import { CFG } from './sim.js'
+import { CFG, LOOP_FX, LOOP_SKY_HOT } from './sim.js'
 
 const C = {
     skyTop: '#04140b', skyMid: '#0b3018', skyLow: '#17512a',
@@ -48,11 +48,39 @@ const GLYPH = {
 const LETTER_OF = { machine: 'M', fire: 'F', laser: 'L', spread: 'S' }
 const INK_OF = { machine: 'letterM', fire: 'letterF', laser: 'letterL', spread: 'letterS' }
 
-export function drawBackground (ctx, cam, tick) {
+// #2902 LOOP HEAT — palette-only escalation cues, pure functions of the pass
+// number (zero rng, zero sim state): the cabinet's board tinted the world as
+// the loop ran hot, and the sim can't lie about it because the art reads
+// gs.loop directly. Sky reddens one notch at LOOP_SKY_HOT, holds from +1;
+// muzzle flashes turn red-hot from loop 2. Loop 1 returns the exact base
+// colors (the pre-loop pins stand byte-for-byte).
+export const SKY_BASE = ['#04140b', '#0b3018', '#17512a']
+export const MUZZLE_BASE = ['#fff6c8', '#ffb347']
+const SKY_EMBER = ['#1c0806', '#48140c', '#6e2414']
+const MUZZLE_HOT = ['#ff9a3c', '#e23b2e']
+const mixHex = (a, b, t) => {
+    if (t <= 0) return a
+    const pa = parseInt(a.slice(1), 16); const pb = parseInt(b.slice(1), 16)
+    const ch = (s) => { const va = (pa >> s) & 255; const vb = (pb >> s) & 255; return Math.round(va + (vb - va) * t) }
+    return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0')}`
+}
+const skyNotch = (n) => Math.max(0, Math.min(2, Math.floor(n) - LOOP_SKY_HOT + 1))
+const muzzleNotch = (n) => Math.max(0, Math.min(2, Math.floor(n) - 1))
+export function heatSky (loop) {
+    const t = skyNotch(loop) * 0.30
+    return SKY_BASE.map((c, i) => mixHex(c, SKY_EMBER[i], t))
+}
+export function heatMuzzle (loop) {
+    const t = muzzleNotch(loop) * 0.35
+    return MUZZLE_BASE.map((c, i) => mixHex(c, MUZZLE_HOT[i], t))
+}
+
+export function drawBackground (ctx, cam, tick, loop = 1) {
     // sky + far parallax live in screen space (caller draws before the camera
     // translate); returns nothing, just paints the window.
+    const [skyT, skyM, skyL] = heatSky(loop)   // #2902: the sky reddens with the pass
     const g = ctx.createLinearGradient(0, 0, 0, 196)
-    g.addColorStop(0, C.skyTop); g.addColorStop(0.55, C.skyMid); g.addColorStop(1, C.skyLow)
+    g.addColorStop(0, skyT); g.addColorStop(0.55, skyM); g.addColorStop(1, skyL)
     ctx.fillStyle = g
     ctx.fillRect(0, 0, 384, 196)
     // two mountain bands, slow parallax
@@ -324,7 +352,8 @@ export function drawHeli (ctx, x, y, tick, fade = 1) {
     ctx.restore()
 }
 
-export function drawSoldier (ctx, s, _tick) {
+export function drawSoldier (ctx, s, _tick, loop = 1) {
+    const mz = heatMuzzle(loop)   // #2902: the reports run hotter as the loop heats
     ctx.save(); ctx.translate(Math.round(s.x), Math.round(s.y))
     const dir = Math.sign(s.walkDir || -1)
     const moving = !s.hold
@@ -360,7 +389,7 @@ export function drawSoldier (ctx, s, _tick) {
     ctx.fillRect((dir > 0 ? 2 : -10) + recoil, -16, 8, 2)
     if (s.flash > 0) { // muzzle flash: two-frame star at the barrel tip
         const mx = (dir > 0 ? 11 : -11) + recoil
-        ctx.fillStyle = s.flash > 2 ? '#fff6c8' : '#ffb347'
+        ctx.fillStyle = s.flash > 2 ? mz[0] : mz[1]
         ctx.fillRect(mx - 2, -18, 4, 4)
         ctx.fillRect(mx - (dir > 0 ? 0 : 4), -17, 3, 2)
     }
@@ -585,7 +614,8 @@ export function drawGrenade (ctx, b) {
 // #2905: between volleys the shooter WALKS the branch to the next perch —
 // two-frame shuffle bob, rifle shouldered, scuff specks trailing. A moving
 // nest is never an aiming nest: the glint cannot light while relocT > 0.
-export function drawSniper (ctx, sn, tick) {
+export function drawSniper (ctx, sn, tick, loop = 1) {
+    const mz = heatMuzzle(loop)   // #2902: hot loops, hot rounds
     const shuf = sn.relocT > 0
     const sdx = shuf ? (sn.dir || 0) : 0
     const bob = shuf ? Math.floor(tick / 6) % 2 : 0
@@ -625,7 +655,7 @@ export function drawSniper (ctx, sn, tick) {
         ctx.fillRect(Math.cos(a) * 8 - 1, -16 + Math.sin(a) * 8, 3, 3)
     }
     if (sn.flash > 0) {
-        ctx.fillStyle = sn.flash > 4 ? '#fff6c8' : '#ffb347'
+        ctx.fillStyle = sn.flash > 4 ? mz[0] : mz[1]
         ctx.fillRect(Math.cos(a) * 16 - 2, -14 + Math.sin(a) * 16 - 2, 4, 4)
     }
     ctx.restore()
@@ -686,6 +716,50 @@ export function drawFireball (ctx, f) {
     return true
 }
 
+// #2902 THE LOOP BANNER — the cabinet-era interstitial for "the stage comes
+// back hotter": wipe bars slam in from both edges, LOOP n lands oversized and
+// settles, the tempo line reads under it, then the bars sweep off and the
+// world resumes. Pure paint on the shell's banner clock (t counts sim beats
+// while the world is held) — zero sim state.
+export function drawLoopBanner (ctx, n, t, k) {
+    const IN = 14
+    const OUT0 = LOOP_FX - 16
+    const edge = t < IN
+        ? Math.round((t / IN) * 192)
+        : t < OUT0 ? 192 : Math.max(0, Math.round(((LOOP_FX - t) / 16) * 192))
+    ctx.fillStyle = 'rgba(8,10,6,0.94)'
+    ctx.fillRect(0, 80, edge, 64)
+    ctx.fillRect(384 - edge, 80, edge, 64)
+    ctx.fillStyle = C.gold
+    ctx.fillRect(0, 80, edge, 1); ctx.fillRect(384 - edge, 80, edge, 1)
+    ctx.fillRect(0, 143, edge, 1); ctx.fillRect(384 - edge, 143, edge, 1)
+    ctx.fillStyle = C.band
+    ctx.fillRect(0, 82, edge, 1); ctx.fillRect(384 - edge, 82, edge, 1)
+    ctx.fillRect(0, 141, edge, 1); ctx.fillRect(384 - edge, 141, edge, 1)
+    if (t < 8 || t >= OUT0) return
+    const age = t - 8
+    ctx.textBaseline = 'alphabetic'
+    const label = `LOOP ${n}`
+    // the slam: oversized on arrival, three beats to settle
+    const size = age < 3 ? 38 : age < 6 ? 30 : 24
+    ctx.font = `bold ${size}px "Courier New", monospace`
+    const w = ctx.measureText(label).width
+    const cx = 192 - w / 2
+    const blink = age >= 12 && Math.floor(age / 8) % 4 === 3   // a beat of dark in the hold
+    if (!blink) {
+        ctx.fillStyle = '#7a1c14'
+        ctx.fillText(label, cx + 2, 118)
+        ctx.fillStyle = C.gold
+        ctx.fillText(label, cx, 116)
+    }
+    if (age >= 10) {
+        ctx.font = 'bold 8px "Courier New", monospace'
+        const sub = `STAGE 1 STRIKES BACK — TEMPO x${k.toFixed(2)}`
+        ctx.fillStyle = '#cdeea8'
+        ctx.fillText(sub, 192 - ctx.measureText(sub).width / 2, 132)
+    }
+}
+
 // the base gate at the end of the jungle — S2's door, bolted shut.
 export function drawGate (ctx) {
     ctx.fillStyle = '#5a5f66'
@@ -700,7 +774,7 @@ export function drawGate (ctx) {
     ctx.fillRect(2027, 121, 4, 4)
 }
 
-export function drawHud (ctx, gs, hiscore) {
+export function drawHud (ctx, gs, hiscore, fx = null) {
     ctx.textBaseline = 'top'
     ctx.font = 'bold 8px "Courier New", monospace'
     ctx.fillStyle = C.ink
@@ -715,10 +789,13 @@ export function drawHud (ctx, gs, hiscore) {
     ctx.fillText('CONTRA', 176, 4)
     // #2814 SHARED POOL: the cabinet shows ONE lives counter for the whole
     // team — these heads are every life both seats have left.
+    // #2902: while the loop banner runs the row flashes gold — the +1 bank
+    // courtesy landing is something you SEE, not a number that quietly ticks.
+    const flash = fx ? Math.floor(fx.t / 5) % 2 === 0 : false
     for (let i = 0; i < gs.lives; i++) {
-        ctx.fillStyle = C.band
+        ctx.fillStyle = flash ? C.gold : C.band
         ctx.fillRect(150 + i * 10, 12, 6, 2)
-        ctx.fillStyle = C.skin
+        ctx.fillStyle = flash ? '#fff6c8' : C.skin
         ctx.fillRect(150 + i * 10, 14, 6, 4)
     }
     const wnames = { rifle: 'RIFLE', spread: 'SPREAD', machine: 'MGUN', fire: 'FIRE', laser: 'LASER' }
@@ -727,10 +804,19 @@ export function drawHud (ctx, gs, hiscore) {
     ctx.fillText(wnames[gs.p.weapon] || 'RIFLE', 314, 4)
     // #2894 arcade loop: the escalation reads at a glance — loop 1 stays silent
     // (it IS the stage); from loop 2 the HUD marks the pass in gold, under the
-    // 2UP tag (the 314/12 slot belongs to seat 2's wheel).
+    // 2UP tag (the 314/12 slot belongs to seat 2's wheel). #2902: the tag sits
+    // on a dark plate with a gold border — at phone scale on the native 384x224
+    // grid, 8px gold on the bright jungle sky washed out; the plate carries it.
     if (gs.loop > 1) {
+        const label = `LOOP ${gs.loop}`
+        const w = Math.round(ctx.measureText(label).width) + 8
+        ctx.fillStyle = '#150d05'
+        ctx.fillRect(228, 10, w, 12)
+        ctx.strokeStyle = C.gold
+        ctx.lineWidth = 1
+        ctx.strokeRect(228.5, 10.5, w - 1, 11)
         ctx.fillStyle = C.gold
-        ctx.fillText(`LOOP ${gs.loop}`, 232, 12)
+        ctx.fillText(label, 232, 12)
     }
     // S4 co-op: seat 2 reads blue — his tag and his wheel. #2814: NO bank of
     // his own anymore — the single head-row is the SHARED pool, the cabinet's

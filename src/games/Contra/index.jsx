@@ -13,8 +13,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, LOOP_LIFE_BONUS, LOOP_LIVES_MAX } from './sim.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, seatTagState } from './art.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, LOOP_FX, loopVoice, LOOP_LIFE_BONUS, LOOP_LIVES_MAX } from './sim.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -37,9 +37,9 @@ const MESSAGES = [
 const sfx = {
     shot: () => audioController.playSweep(920, 540, 0.05, 'square', 0.05),
     spread: () => { audioController.playSweep(760, 420, 0.07, 'square', 0.06); audioController.playNoise(0.04, 0.05) },
-    efire: () => audioController.playSweep(500, 300, 0.05, 'square', 0.035),
+    efire: (v = 1) => audioController.playSweep(500 * v, 300 * v, 0.05, 'square', 0.035),
     // the turret's crew-served gun gets its own heavier report (#2782.6)
-    efireBig: () => { audioController.playSweep(360, 150, 0.09, 'sawtooth', 0.045); audioController.playNoise(0.05, 0.03) },
+    efireBig: (v = 1) => { audioController.playSweep(360 * v, 150 * v, 0.09, 'sawtooth', 0.045); audioController.playNoise(0.05, 0.03) },
     jump: () => audioController.playSweep(260, 520, 0.09, 'square', 0.05),
     boom: () => { audioController.playNoise(0.28, 0.12); audioController.playSweep(160, 40, 0.25, 'triangle', 0.09) },
     spark: () => audioController.playNoise(0.05, 0.03),
@@ -68,20 +68,30 @@ const sfx = {
         const bass = [165, 220, 262, 330]
         bass.forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.16, 'triangle', 0.05), 65 + i * 130))
     },
+    // #2902 the loop-up call: the resume announces itself like the cabinet's
+    // board — an ascending run (raised further each pass, via loopVoice), a
+    // snare slap under the slam frame, and a low answer. The world is held
+    // (LOOP_FX beats) while this plays: two quiet beats before the jungle moves.
+    loopUp: (n) => {
+        const v = loopVoice(n)
+        audioController.playSweep(300 * v, 900 * v, 0.12, 'sawtooth', 0.05)
+        ;[523, 659, 784, 1046].forEach((f, i) => setTimeout(() => audioController.playTone(f * v, i === 3 ? 0.22 : 0.1, 'square', 0.07), 140 + i * 100))
+        setTimeout(() => { audioController.playNoise(0.18, 0.08); audioController.playSweep(150, 50, 0.22, 'triangle', 0.08) }, 140)
+    },
     enter: () => audioController.playSweep(140, 340, 0.35, 'triangle', 0.07),
     drown: () => { audioController.playNoise(0.22, 0.09); audioController.playSweep(300, 70, 0.3, 'sine', 0.07) },
-    cannon: () => { audioController.playSweep(220, 90, 0.12, 'square', 0.07); audioController.playNoise(0.06, 0.05) },
+    cannon: (v = 1) => { audioController.playSweep(220 * v, 90 * v, 0.12, 'square', 0.07); audioController.playNoise(0.06, 0.05) },
     // S3: the wheel's voices + the new roster
     mshot: () => audioController.playSweep(840, 500, 0.03, 'square', 0.035),
     fshot: () => { audioController.playSweep(420, 180, 0.12, 'sawtooth', 0.045); audioController.playNoise(0.08, 0.03) },
     lshot: () => audioController.playSweep(1600, 420, 0.1, 'sawtooth', 0.05),
-    sniper: () => audioController.playSweep(1300, 240, 0.09, 'square', 0.055),
+    sniper: (v = 1) => audioController.playSweep(1300 * v, 240 * v, 0.09, 'square', 0.055),
     throw: () => audioController.playSweep(300, 560, 0.09, 'triangle', 0.04),
     coreHit: () => { audioController.playTone(1180, 0.05, 'square', 0.06); audioController.playSweep(700, 1100, 0.06, 'sawtooth', 0.04) },
     unlock: () => audioController.playTone(980, 0.07, 'triangle', 0.05),
     door: () => audioController.playSweep(180, 120, 0.1, 'square', 0.05),
     // S3.5 arms depot: the slit gun's heavier bark and the payout arpeggio
-    dfire: () => { audioController.playSweep(200, 80, 0.11, 'square', 0.06); audioController.playNoise(0.05, 0.04) },
+    dfire: (v = 1) => { audioController.playSweep(200 * v, 80 * v, 0.11, 'square', 0.06); audioController.playNoise(0.05, 0.04) },
     volley: () => { [520, 660, 780, 1040].forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.1, 'triangle', 0.06), i * 70)) },
     // #2847 pod carriers: the courier's low engine wash, and the cargo thunk
     // as the pod leaves the hooks (ART.md bar 4 — a sound on every action).
@@ -146,11 +156,23 @@ export default function ContraGame () {
         // the ceremony chopper, the drop-out warning edge, the rope tracker.
         let heli = null
         let warnArmed = false, warnTick = 0, lastEnterT = 0
+        // #2902 loop-presentation state (shell-only, never sim truth): the
+        // banner clock, and the attract demo's one taught pass at loop 2.
+        let loopFx = null
+        let demoLoop = 0, demoUntil = 0
 
         const drain = () => {
+            // #2902 sound escalation: enemy reports ride loopVoice(gs.loop) —
+            // pitch keyed to the pass number, never rng, so loop 1 is byte-silent
+            // against the pre-loop set (v=1) and every later pass answers higher.
+            const v = loopVoice(gs.loop)
             for (const e of gs.ev) {
-                if (e.type === 'efire' && e.big) sfx.efireBig()
+                if (e.type === 'efire' && e.big) sfx.efireBig(v)
                 else if (e.type === 'shot' && e.k === 'machine') sfx.mshot()
+                else if (e.type === 'efire') sfx.efire(v)
+                else if (e.type === 'cannon') sfx.cannon(v)
+                else if (e.type === 'sniper') sfx.sniper(v)
+                else if (e.type === 'dfire') sfx.dfire(v)
                 else if (sfx[e.type]) sfx[e.type]()
                 if (e.type === 'p2join') heli = { x: gs.p2.x, t: 0 } // #2842 the bird comes with the drop
                 if (e.type === 'boom') {
@@ -223,6 +245,7 @@ export default function ContraGame () {
             wasGround = true
             heli = null; warnArmed = false; lastEnterT = 0
             demoHold = 0
+            loopFx = null; demoLoop = 0   // #2902: a fresh run starts at loop 1 — no banner owed
             setMode('play'); screen = 'play'
         }
 
@@ -253,7 +276,34 @@ export default function ContraGame () {
             wasGround = true
             heli = null; warnArmed = false; lastEnterT = 0
             setMode('play'); screen = 'play'
-            audioController.playSweep(520, 980, 0.12, 'square', 0.05)   // loop-up, a rising call
+            // #2902 the resume speaks: slam the LOOP banner and hold the world
+            // (two quiet beats) while it reads — a player who never saw the tag
+            // cannot miss the interstitial.
+            loopFx = { t: 0, n: gs.loop, k: gs.lk }
+            sfx.loopUp(gs.loop)
+        }
+
+        // #2902: attract lifecycle. Reset = a fresh loop-1 demo seed; the loop
+        // pass = the SAME run the demo just won, rebuilt at loop 2 with the
+        // banner — teaching the mechanic before a player ever clears the gate.
+        const attractReset = () => {
+            demoLoop = 0; demoHold = 0
+            gs = makeGame((gs.seed + 7) >>> 0)
+            part.length = 0; fire.length = 0
+            wasGround = true; heli = null
+        }
+        const attractLoop = () => {
+            const carryScore = gs.score, carryLives = Math.min(LOOP_LIVES_MAX, gs.lives + LOOP_LIFE_BONUS), carryGun = gs.p.weapon
+            const seed = gs.seed
+            gs = makeGame(seed, 2)
+            gs.score = carryScore
+            gs.lives = carryLives
+            if (carryGun !== 'rifle') gs.p.weapon = carryGun
+            part.length = 0; fire.length = 0
+            wasGround = true; heli = null; demoHold = 0
+            demoLoop = 1; demoUntil = 900            // ~15 s of the hot stage, then attract again
+            loopFx = { t: 0, n: gs.loop, k: gs.lk }
+            sfx.loopUp(gs.loop)
         }
 
         const stepSim = (pad) => {
@@ -268,7 +318,7 @@ export default function ContraGame () {
             const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0
             const sy = shake > 0 ? (Math.random() - 0.5) * shake : 0
             const jungle = gs.phase === 'jungle'
-            if (jungle) drawBackground(ctx, gs.cam, gs.tick)
+            if (jungle) drawBackground(ctx, gs.cam, gs.tick, gs.loop)
             else drawCanyon(ctx, gs.camY, gs.tick)
             ctx.save()
             ctx.translate(-Math.round(gs.cam) + Math.round(sx), (jungle ? 0 : -Math.round(gs.camY)) + Math.round(sy))
@@ -288,8 +338,8 @@ export default function ContraGame () {
             }
             for (const br of gs.barrels) if (!br.gone) drawBarrel(ctx, br)
             for (const t of gs.turrets) if (!t.dead) drawTurret(ctx, t)
-            for (const sn of gs.snipers) if (!sn.dead && sn.awake) drawSniper(ctx, sn, gs.tick)
-            for (const s of gs.soldiers) if (!s.dead && s.awake) drawSoldier(ctx, s, gs.tick)
+            for (const sn of gs.snipers) if (!sn.dead && sn.awake) drawSniper(ctx, sn, gs.tick, gs.loop)
+            for (const s of gs.soldiers) if (!s.dead && s.awake) drawSoldier(ctx, s, gs.tick, gs.loop)
             // #2847: the couriers run above the fight, pods under their bellies;
             // released cargo draws on the same deck as the volley capsules.
             for (const cr of gs.carriers) if (!cr.dead) drawCarrier(ctx, cr, gs.tick)
@@ -334,10 +384,12 @@ export default function ContraGame () {
                 drawHeli(ctx, heli.x, (jungle ? 0 : gs.camY) + 26 + Math.sin(gs.tick / 7) * 1.2, gs.tick, heli.t > 56 ? 1 - (heli.t - 56) / 32 : 1)
                 ctx.restore()
             }
-            drawHud(ctx, gs, hiscore)
+            drawHud(ctx, gs, hiscore, loopFx)
+            // #2902 the LOOP banner rides above the world, under nothing.
+            if (loopFx) drawLoopBanner(ctx, loopFx.n, loopFx.t, loopFx.k)
 
             ctx.textBaseline = 'top'
-            if (screen === 'attract') {
+            if (screen === 'attract' && !loopFx && !demoLoop) {
                 ctx.fillStyle = '#e23b2e'
                 ctx.font = 'bold 30px "Courier New", monospace'
                 ctx.fillText('CONTRA', 132, 40)
@@ -386,12 +438,27 @@ export default function ContraGame () {
                     acc += ft
                     while (acc >= SIM_MS) {
                         if (screen === 'play') {
-                            stepSim(simPad())
+                            // #2902: the LOOP banner holds the world still — the
+                            // stage starts on the two beats AFTER the read.
+                            if (loopFx) { loopFx.t += 1; if (loopFx.t >= LOOP_FX) loopFx = null }
+                            else stepSim(simPad())
                         } else if (screen === 'attract') {
-                            if (gs.end && demoHold > 0) { demoHold -= 1; if (demoHold === 0) gs = makeGame((gs.seed + 7) >>> 0) }
-                            else if (!gs.end) { stepSim(autopilot(gs)) }
-                            else demoHold = 120
-                            if (gs.end === 'win' || gs.end === 'dead') demoHold = 120
+                            // #2902: the cabinet teaches its own loop — the demo
+                            // now survives its endings (it used to stick on the
+                            // last frame forever), runs one pass at LOOP 2 with
+                            // the banner slamming over the jungle, then hands the
+                            // attract copy back.
+                            if (loopFx) { loopFx.t += 1; if (loopFx.t >= LOOP_FX) loopFx = null }
+                            else if (!gs.end) {
+                                stepSim(autopilot(gs))
+                                if (demoLoop && gs.tick >= demoUntil) attractReset()
+                            } else if (demoHold > 0) {
+                                demoHold -= 1
+                                if (demoHold === 0) {
+                                    if (gs.end === 'win' && demoLoop === 0) attractLoop()
+                                    else attractReset()
+                                }
+                            } else demoHold = 120
                         } else if (screen === 'clear') {
                             gs.tick += 1
                             if (--clearHold <= 0) startLoop()   // #2894 the arcade never sends you back to attract on a win — it loops
@@ -473,6 +540,8 @@ export default function ContraGame () {
                     screen, tick: gs.tick, x: +gs.p.x.toFixed(2), y: +gs.p.y.toFixed(2), onGround: gs.p.onGround,
                     lives: gs.lives, score: gs.score, weapon: gs.p.weapon, end: gs.end, cam: Math.round(gs.cam),
                     loop: gs.loop, lk: +gs.lk.toFixed(3), seed: gs.seed,   // #2894 the arcade loop is observable
+                    loopFx: loopFx ? { t: loopFx.t, n: loopFx.n, k: +loopFx.k.toFixed(3) } : null,   // #2902 the banner is observable
+                    demoLoop,   // #2902 attract is teaching the loop right now
                     phase: gs.phase, camY: +gs.camY.toFixed(2),
                     core: gs.boss ? gs.boss.core : null,
                     coreOpen: gs.boss ? (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen : null,
@@ -494,6 +563,10 @@ export default function ContraGame () {
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
                 }),
                 start: startPlay,
+                // #2902: reach the attract loop-teach on the harness's clock
+                // (waiting 60 s for the demo to clear stage 1 by itself is not
+                // a leg) — only ever fires from the attract screen.
+                attractLoopNow: () => { if (screen !== 'attract' || gs.end) return false; attractLoop(); return true },
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
                     if (screen !== 'play') return false
@@ -566,6 +639,7 @@ export default function ContraGame () {
                 reset: (seed) => {
                     gs = makeGame(seed >>> 0)
                     part.length = 0
+                    loopFx = null; demoLoop = 0   // #2902: no banner owed on a harness reset
                     keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false
                     keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false
                     jumpQ2 = fireQ2 = false
