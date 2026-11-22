@@ -268,6 +268,8 @@ node scripts/floorbosscheck.mjs --mutate-bands   # the inverted dest band (REGIO
 node scripts/floorbosscheck.mjs --mutate-tail    # loaded carts turn into their own counterweight — the tail clause dies in the router, ghost-clips return (#2760)
 node scripts/floorbosscheck.mjs --mutate-tail-land # the land scan goes blind to the back diagonal — racks drop onto committed backswings (#2760)
 node scripts/floorbosscheck.mjs --mutate-duel    # bot stows cannot bypass the rack-owner credit law (#2555)
+node scripts/floorbosscheck.mjs --mutate-career   # the replay seam dies — career takes cannot clock in on replay, demand RED (#2958)
+node scripts/floorbosscheck.mjs --mutate-whistle  # whistle-stop returns — a cleared night closes the take at the sheet, demand RED (#2958)
 node scripts/floorbosscheck.mjs --mutate-lane    # long tight aisles cannot be sealed into one-way traps (#2614)
 node scripts/floorbosscheck.mjs --mutate-corner   # racks cannot choke a tight elbow at its swing (#2627)
 node scripts/floorbosscheck.mjs --mutate-flow     # dead-end spurs cannot claim two-way arrows (#2622 item 3)
@@ -343,8 +345,25 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   grammar, and nothing beyond it is scheduled.
 
 Recording honest gaps (#1712):
-- The take ends at the whistle — clocking into the NEXT shift from the over
-  screen plays on but is not recorded as part of that take.
+- ~~The take ends at the whistle — clocking into the NEXT shift from the over
+  screen plays on but is not recorded as part of that take.~~ **CLOSED by
+  #2958**: career takes — a cleared night keeps a consented take open; clocking
+  into the next shift banks on as ONE take (same seed, same rng stream, the
+  shift bits ride `stateHash` across the seam, #2346 law). The bank is
+  contiguous because the over screen pauses wall-time, never ticks: rows run
+  straight through the clock-in, and the adapter (`plaicraft-dataset
+  floorBossRows`) replays the seam — rows past a win mean the player clocked in
+  (the over-screen key/tap itself banks nothing), so `nextShift` advances the
+  replay and every checkpoint past the seam must still match. The take ends at
+  the REAL end: a lost night closes at the sheet (`finish`), a cleared night
+  closes when it is walked back to attract (`closeTake` — key exit, tap exit,
+  contract reset, unmount). Harness: synth career take (seed 4242, two nights,
+  one 18k-tick stream) verifies clean, invented post-whistle rows refuse,
+  mutants `career` (seam gone) and `whistle` (whistle-stop returns) die by
+  name. Known frozen-hashes gap (documented, not new): rows invented behind a
+  LOST take hash nothing and stay invisible — the recorder never banks past an
+  end, so a take ending in defeat remains the one shape where appended rows go
+  uncaught; a win-ending take catches them.
 - Two taps landing inside one frame bank on consecutive ticks; a replay of
   such a take refuses on the hash rather than shipping unverified rows —
   a human thumb cannot click faster than the tick, a scripted rig can.

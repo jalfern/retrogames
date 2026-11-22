@@ -385,12 +385,23 @@ const FloorBossGame = () => {
             // run reached, so the board reads "how deep did you get", not just points.
             if (gs.shift > 1) { const deep = +(localStorage.getItem('floorboss.deep') || 0); if (gs.shift > deep) localStorage.setItem('floorboss.deep', String(gs.shift)) }
             if (gs.ducks > 0) { const mb = +(localStorage.getItem('floorboss.bays') || 0); if (gs.ducks > mb) localStorage.setItem('floorboss.bays', String(gs.ducks)) } // #2700: manners are countable — the smoothest floor keeps the board tally
-            closeEpisode(won)
+            // #2958 CAREER TAKES: a CLEARED night is a door, not an ending — the
+            // take stays open so clocking into the next shift banks on as ONE take
+            // (same seed, same rng stream; the ladder's shift bits ride stateHash
+            // across the seam, #2346 law). Only a LOST night ends the take here;
+            // a won one ends at the over-screen's attract exit (closeTake) or at
+            // unmount. Replay: plaicraft-dataset clocks nextShift at the seam
+            // because rows past a win can only mean the player clocked in.
+            if (!won) closeEpisode(false)
             if (won) audioController.playFanfare(); else audioController.playDeath()
             setMode('over')
-            endRun() // #1711/1712: the take ends with the run (no-op when idle/declined)
-            tapQueue.length = 0 // #1712: a finished shift banks no more taps
+            if (!won) endRun() // #1711/1712: a lost run ends its take here (no-op when idle/declined)
+            tapQueue.length = 0 // #1712: no tap banks until the pad is back on a live floor
         }
+        // #2958: the take ends at the REAL end — a lost whistle (finish), a
+        // cleared night left behind for the attract, or unmount. Call while gs
+        // still holds the state the take's last row proved.
+        const closeTake = () => { const won = gs.end === 'win'; closeEpisode(won); endRun() }
 
         const livePad = () => ({ left: keys.left, right: keys.right, up: keys.up, down: keys.down, a: edgeA, b: edgeB })
 
@@ -435,8 +446,10 @@ const FloorBossGame = () => {
             const mpad = duelMode && !gs.end ? apM(gs) : null // #2555: seat M drives its own slot beside you
             step(gs, mpad ? [pad, mpad] : [pad])
             recordTick(pad, mpad)
-            // #1712 S2: bank exactly what THIS tick consumed (attract ticks and
-            // post-over ticks never enter a take — autoRecord law).
+            // #1712 S2: bank exactly what THIS tick consumed (attract ticks never
+            // enter a take; post-over ticks do only when the player clocks into
+            // the next shift — career takes, #2958 — and never while the over
+            // screen holds the floor).
             recordLiveTick(mpad ? [pad, mpad] : [pad])
             edgeA = false; edgeB = false
             handleEvents(gs.ev, gs.tick)
@@ -1593,6 +1606,7 @@ const FloorBossGame = () => {
             if (screenRef.current === 'over') {
                 if (performance.now() - overAt < 600) return
                 if (advanceShift()) return // #2346: a cleared night clocks into the next
+                closeTake() // #2958: walking away from a cleared night ends the career take (no-op once lost)
                 setMode('attract')
                 gs = makeGame(ATTRACT_SEEDS[++demoSeed % ATTRACT_SEEDS.length]); warmAttract() // #2700: the shop window always opens on a hot floor
                 return
@@ -1633,6 +1647,7 @@ const FloorBossGame = () => {
             }
             if (screenRef.current === 'over' && performance.now() - overAt > 600) {
                 if (advanceShift()) return // #2346: tap clocks into the next night
+                closeTake() // #2958: leaving a cleared night for the attract ends the career take
                 setMode('attract'); gs = makeGame(ATTRACT_SEEDS[++demoSeed % ATTRACT_SEEDS.length]); warmAttract(); return // #2700: back to the shop window, back to a hot floor
             }
             onCanvasClick(ev)
@@ -1664,6 +1679,7 @@ const FloorBossGame = () => {
             reset: (seed, players = 1) => {
                 contractSeed = seed >>> 0
                 duelMode = (players | 0) >= 2 // #1712: a duel take rebuilds with its seats
+                closeTake() // #2958: a rebuild ends any open career take where its floor stood (no-op when idle)
                 tapQueue.length = 0
                 watchUsed = false
                 gs = makeGame(contractSeed, { duel: duelMode })
@@ -1787,7 +1803,7 @@ const FloorBossGame = () => {
 
         return () => {
             unexposeFeedbackState()
-            endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
+            closeTake() // #1711/1712 + #2958: an unmount mid-run ends the take where its floor stands (no-op when idle)
             tapQueue.length = 0 // #1712: a dead mount carries no pending taps
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)

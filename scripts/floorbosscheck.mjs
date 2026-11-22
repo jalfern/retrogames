@@ -34,6 +34,8 @@
 //   node scripts/floorbosscheck.mjs --mutate-bands    # the inverted dest band returns, demand RED (#1931)
 //   node scripts/floorbosscheck.mjs --mutate-ladder   # the quota stops climbing (one flat rung), demand RED (#2346)
 //   node scripts/floorbosscheck.mjs --mutate-advance  # a cleared night refuses to clock in (one night ever), demand RED (#2346)
+//   node scripts/floorbosscheck.mjs --mutate-career   # the adapter seam dies — career takes cannot clock in on replay, demand RED (#2958)
+//   node scripts/floorbosscheck.mjs --mutate-whistle  # whistle-stop returns — a cleared night closes the take at the sheet, demand RED (#2958)
 //   node scripts/floorbosscheck.mjs --mutate-bank     # the career score resets each night, demand RED (#2346)
 //   node scripts/floorbosscheck.mjs --mutate-rush     # the measured-pinned rush clock shifts without a re-measure, demand RED (#2352)
 //   node scripts/floorbosscheck.mjs --mutate-price     # the clock-in card claims a free rung, demand RED (#2352)
@@ -73,6 +75,7 @@ import {
     tailTurn, liveTails, swingOf, liveRights, MAP, CELL, COLS, ROWS, BAY_CELL,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
+import { floorBossRows } from './plaicraft-dataset.mjs' // #2958: the replay seam lives in the adapter — prove it here
 import { hashString } from '../src/utils/robot/physics.js'
 
 const ARGS = process.argv.slice(2)
@@ -117,9 +120,13 @@ const MUT_SEED = ARGS.includes('--mutate-seed') // #2738: the knee planner seeds
 const MUT_TAIL = ARGS.includes('--mutate-tail') // #2760: loaded carts turn into their own counterweight again — the tail clause is gone from the router
 const MUT_TAIL_LAND = ARGS.includes('--mutate-tail-land') // #2760: landings stop seeing the back diagonal — racks drop onto committed backswings
 const MUT_COURTESY = ARGS.includes('--mutate-courtesy') // #2783: courtesy parks back into the swing — pullOff forgets the knee/tail cells of the blocking plan
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND || MUT_COURTESY) {
+const MUT_CAREER = ARGS.includes('--mutate-career') // #2958: the adapter seam dies — career takes cannot clock in on replay
+const MUT_WHISTLE = ARGS.includes('--mutate-whistle') // #2958: whistle-stop returns — a cleared night closes the take at the sheet
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND || MUT_COURTESY || MUT_CAREER || MUT_WHISTLE) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
-    const tgt = MUT_MANNERS || MUT_ATTRACT ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) : sim // #2700: presentation laws plant in the painter
+    const tgt = MUT_MANNERS || MUT_ATTRACT || MUT_WHISTLE ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) // #2700: presentation laws plant in the painter; #2958: so does the take law
+        : MUT_CAREER ? new URL('./plaicraft-dataset.mjs', import.meta.url) // #2958: the replay seam lives in the adapter
+            : sim
     const src = readFileSync(tgt, 'utf8')
     const [from, to, name] = MUT_YIELD
         ? ['if (gs.arm.heldT >= ARM_PATIENCE && !bayClaimed(gs)) {', 'if (gs.arm.heldT >= ARM_PATIENCE) {', 'the servo ignores detailed bots and swings anyway']
@@ -193,12 +200,16 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ['px - NB[pd][0] - NB[d][0] === x && py - NB[pd][1] - NB[d][1] === y)) { broken = true; break } // …or the counterweight tail does (#2760)', 'false)) { broken = true; break } // MUTANT: the back diagonal is blind again (#2760)', 'racks may land on committed backswings again — traffic keeps a plan whose counterweight now clips the fresh wall, and the heat lies about it (#2760)']
                                                                     : MUT_COURTESY
                                                                     ? ['if (!inSwing(px, py) && !blocked(gs, px, py, bot.id)) return { x: px, y: py }', 'if (!blocked(gs, px, py, bot.id)) return { x: px, y: py } // MUTANT: courtesy forgets the swing (#2783)', 'yielding carts park back into the rival\u2019s sweep again — duck-in-swing rises off zero and courtesy becomes the jam it ducked for (#2783)']
+                                                                    : MUT_CAREER
+                                                                        ? ["if (gs.end === 'win') fbNextShift(gs)", "if (false && gs.end === 'win') fbNextShift(gs) // MUTANT: the seam is gone (#2958)", 'the clock-in vanishes from replay — a career take mismatches at its first post-whistle checkpoint, so multi-shift runs become unrecordable (#2958)']
+                                                                        : MUT_WHISTLE
+                                                                            ? ['if (!won) closeEpisode(false)', 'closeEpisode(won)', 'whistle-stop returns — a cleared night closes its take at the sheet, career takes die in the bank (#2958)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
     console.log(`  ..    mutated: ${name} — this run MUST report FAILs`)
     const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { encoding: 'utf8' })
-    pull(sim)
+    pull(tgt) // restore what was planted — painter/adapter mutants plant outside sim.js (#2958)
     const red = /FAIL/.test((r.stdout || '') + (r.stderr || ''))
     console.log(red ? '  ok  mutant killed (named laws went red)' : 'FAIL  MUTANT SURVIVED — the named laws cannot fail')
     process.exit(red ? 0 : 1)
@@ -918,6 +929,52 @@ console.log('— shift ladder (#2346) —')
     ok(s.quota === QUOTA && s.shift === 1 && s.cleared === 0 && s.earned === s.score, 'state exposes the rung (params quota, earned vs base)')
     const c = makeGame(7); c.params = shiftParams(3)
     ok(state(c).quota === 1400, 'state.quota rides the params — shift 3 reads 1400')
+}
+{
+    // #2958 CAREER TAKES — the take that survives the whistle. The live law
+    // (index.jsx): a cleared night keeps the take open; clocking in banks the
+    // next shift on the SAME seed/stream; a lost night or an exit to attract
+    // closes it. The bank looks like this: rows run straight through the clock-in
+    // (the over screen pauses wall-time, never ticks). The adapter
+    // (plaicraft-dataset floorBossRows) replays it: rows past a win advance the
+    // ladder, and every checkpoint past the seam must still match.
+    const seed = 4242
+    const gs = makeGame(seed)
+    const ap = createAutopilot()
+    const ep = createEpisode({ gameId: 'floor-boss', method: 'dpad', seed, players: 1, sources: [{ kind: 'human' }], task: 'floor-boss-shift', rules: () => ({ duel: false }) })
+    let nights = 0
+    for (;;) {
+        while (!gs.end && gs.tick < SHIFT + 10) { const pad = ap(gs); step(gs, [pad]); ep.addTick([pad], null, stateHash(gs)) }
+        if (gs.end === 'win' && nights < 1) { nights++; nextShift(gs); continue } // finish() keeps the take; advanceShift() clocks in
+        break // the sheet closes the take at the real end (finish / attract exit)
+    }
+    ok(nights === 1 && gs.end === 'win' && gs.shift === 2, `the synthetic career banks a seam and dies on a WIN sheet — the seam stays openable (shift ${gs.shift}, end ${gs.end})`)
+    const take = ep.finish({ success: gs.end === 'win', score: gs.score, finalHash: stateHash(gs) })
+    ok(validateEpisode(take) === null, 'the career take validates (rec/v1 + episode block)')
+    ok(take.ticks > SHIFT && take.slots[0].pads.length === take.ticks, `one take, two nights, one contiguous stream (${take.ticks} ticks, career ${take.episode.score})`)
+    const rep = floorBossRows('unit/career', take)
+    const lvls = [...new Set(rep.rows.map((x) => x.lvl))].sort().join(',')
+    ok(rep.ok && rep.rows.length === take.ticks && lvls === '1,2',
+        `the adapter replays the career take through the seam — feature rows carry the rungs (${lvls})${rep.mismatch ? ` mismatch@${rep.mismatch.tick}` : ''}`)
+    // Honesty: rows invented PAST a whistle (a take that claims a night nobody
+    // clocked into) are caught — the seam advances the ladder, and the final
+    // checkpoint must still be the state the stream ends on. (Rows invented
+    // behind a LOST take hash-freeze invisibly — a known frozen-hashes gap,
+    // documented and out of this stage's scope.)
+    const bogus = JSON.parse(JSON.stringify(take))
+    for (let i = 0; i < 120; i++) bogus.slots[0].pads.push({})
+    bogus.ticks = take.ticks + 120
+    const caught = floorBossRows('unit/career-bogus', bogus)
+    ok(!caught.ok, 'invented post-whistle rows refuse verification — nobody gets a free night (#2958)')
+    // Static law pins: the shell keeps the take open ONLY on a clear night, and
+    // every real end closes it where its floor stands.
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/if \(!won\) closeEpisode\(false\)/.test(ui) && /if \(!won\) endRun\(\)/.test(ui),
+        'whistle law: only a lost night closes the take at the sheet (#2958)')
+    ok((ui.match(/closeTake\(\)/g) || []).length >= 4,
+        'closeTake guards every real end: key-exit, tap-exit, contract reset, unmount (#2958)', )
+    const ds = readFileSync(new URL('./plaicraft-dataset.mjs', import.meta.url), 'utf8')
+    ok(/if \(gs\.end === 'win'\) fbNextShift\(gs\)/.test(ds), "the adapter seam: rows past a win clock the ladder in for replay (#2958)")
 }
 {
     // the ramp is honest both ways: winnable early, it bites eventually
