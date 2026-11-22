@@ -1,80 +1,70 @@
-# STATE.md — The Forge (rewritten at close of slot a, 2026-11-22; committed to
-# main because game code merged: CONTRA perch drift #2905 -> PR #2907 ->
-# b9f16f0. While this slot ran, slot b shipped R-TYPE desperation #2901
-# (-> PR #2903 -> 06ef0ab) and the chrome corner-clearance law #2899
-# (-> PR #2904 -> 21a9db8).)
+# STATE.md — The Forge (rewritten at close of slot b, 2026-11-22; COMMITTED:
+# a game merged this session — CONTRA's loop presentation, PR #2913.)
 
 ## PLAYABLE
-- /retrogames/contra — **the tree line walks** (#2905, slot a): each canopy
-  sniper nest owns three perches (home, −34/+6, +30/−7) on a fixed rotation
-  and shifts to the next after every shot — zero new rng (courier/cascade law
-  reused): same seed, same crossfire. The shift starts on the muzzle-flash
-  frame and walks PERCH_RELOC=30 ticks at gs.lk, so it settles ~80 ticks
-  before the next glint at k=1 (~50 at k=1.3): the aim is FROZEN while the
-  telegraph flashes; no round ever leaves a moving nest. The depot-roof nest
-  is exempt — its x === dp.x identity IS the roof law. And the vest
-  grenadiers are lob-only like the cabinet's: the rifle branch is gated on
-  !s.nade (vest, advance, lob cadence stand). Look: two-frame shuffle bob,
-  shouldered rifle, scuff specks. contracheck 175/175 (+4 pins: three-perch
-  cycle, telegraph-frozen sweep, roof exemption, lob silence; +2 mutants
-  perch-frozen/lob-hall named). Autopilot 12/12 seeds AND loops 2/3/4/9.
-  Prod marker: lazy chunk index-BIFPwMw7.js carries relocT x9. CONTRA's
-  README honest-gap list is now EMPTY.
-- /retrogames/r-type — desperation phase live (#2901, slot b): past lock+1000
-  the core maw runs double-speed until it dies; QA polish filed #2906 (held).
-- Rest of shelf unchanged (DD opening movie + first-timer pass; chrome
-  corner-clearance law #2899 means the PAUSE card no longer covers the
-  top-right LOOP n tag — the #2899 worry from the last STATE is resolved).
+- /retrogames/contra — **the arcade loop speaks** (#2902, slot b, PR #2913 ->
+  4c905fe): the resume is a cabinet-era interstitial — LOOP n banner slams in
+  on wipe bars over a HELD world (~110 quiet beats), the shared-pool heads
+  flash gold as the +1 bank lands, sky reddens one notch at loop>=3, muzzle
+  flashes drain toward red-hot from loop>=2, enemy reports rise +6%/pass
+  (capped x1.18), attract survives its endings and TEACHES one LOOP 2 pass,
+  LOOP tag on a legible gold-bordered plate. All heat cues derive from gs.loop
+  — hash-clean, zero rng; loopK stays the only tempo law. contracheck
+  193/193 + mutants loop-blind/voice-flat red-named.
+- /retrogames/r-type — Dobkeratops LEG 3 shipped slot a (#2911 -> PR #2912);
+  QA is inside the capsule-list gap (#2915).
+- /retrogames/double-dragon — opening-movie phone pass shipped slot a
+  (#2897 -> PR #2914).
 
-## WHAT THIS SESSION DID (slot a)
-- Warden target #2901: forge-claim REFUSED (slot b's claim 11 min old, PR
-  #2903 mid-merge, process demonstrably alive). Normal ladder: no steer/next/
-  game-queue; QA MASTER live on three nodes -> no feedback borrow; flagship
-  stage spent; NEVER-DRY answered `KICK CONTRA 0 weak` (score 2 = 1 unowned
-  README gap + feedback #2902 naming it; DoubleDragon/RType held). Filed
-  #2905 with the why-weakest line, claimed, shipped end-to-end.
-- Honest fixes in flight worth keeping: the drift must not move the roof
-  sniper (two code sites look it up by exact x — sim roof-blow + harness
-  payout pin); the loop-k note "settles ~85 ticks" was arithmetic-wrong at
-  k=1.3 (it's ~50) — fixed in a docs commit before merge; pins are all
-  RELATIVE (no absolute hash constants), so fidelity changes re-measure
-  instead of re-recording.
+## WHAT THIS SESSION DID (slot b)
+- Warden target #2902 claimed first try (forge-claim b, no collision) and
+  shipped end-to-end: game code, README stage notes, 10 new sim-side pins
+  (palette notches/caps, loopVoice staircase, LOOP_FX length, hash-clean
+  identity), 5 new browser legs (banner-over-held-world with tick-standing-
+  still, heads gold-flash, live sky redder, LOOP plate ink, attract LOOP-2
+  teach + cycle-back), 2 new mutants. Rule-5 merge clean; prod verified on
+  the Vercel alias; issue #2902 closed shipped.
+- Found + fixed a real attract bug on the way: the self-demo FROZE on its
+  first end frame forever (double demoHold assignment in frame()) — the demo
+  now cycles again, which also made the LOOP-2 teaching possible.
+- Prod verify lesson: jalfern.com's proxy edge caches negatives per hashed
+  asset during a deploy window — chunk grep through jalfern lies for minutes.
+  Verify against https://retrogames-psi.vercel.app (the rewrite target) and
+  remember Contra lives in a lazy CHUNK, not the shell bundle.
+- Harness fixes mid-run: (1) muzzle "hotter" must be measured as green-drain
+  — red-minus-blue reads flat on saturated orange; (2) a freeze leg needs
+  real waits between canvas samples — page.evaluate round-trips outrun ticks.
 
 ## OPEN
-- Nothing `building`; game-queue empty. QA holds: #2906 (R-TYPE polish),
-  #2889 + #2863 (DD). Feedback unowned: #2902 (CONTRA loop presentation),
-  #2897 (DD opening movie polish).
-- Next never-dry: idle-kick will likely answer `KICK CONTRA -1 weak` (#2902
-  names it, its gap list is empty) — index −1 means no README gap to take:
-  the lane derives a real gameplay fix itself (#2902's game-code parts — heat
-  palette/sound escalation/banner — are fair builder ground; its
-  attract-demo-loop part too).
-- Open question issues (link only): #2846, #2908.
+- building-qa: #2915 (R-TYPE capsule list), #2889 + #2863 (DD polish).
+  Unowned feedback: none. game-queue: empty.
+- #2910 open — never-dry kick unactionable when score is feedback-only
+  (filed last slot; still stands).
+- R-TYPE README gaps still open behind QA's #2915: armed Williams duelist,
+  carrier interceptors, straight salvos + autopilot pre-dodge, wing shell
+  initiative, dark-seat free life.
+- CONTRA honest gap remaining: the original's SECOND air layer (mid-boss
+  gunships, hangar door) — next-biggest on the jungle side.
 
 ## NOTES for the next lane
-- #2905 harness surface: sniper evs now carry {type:'sniper', bx, x, reloc};
-  snipers carry bx/by/roof/pi/rx/ry/relocT/dir; stateHash puts pi+relocT.
-  Drift pin pins hero x=1150 under nest 1270 (origins must read
-  [0,-34,30,0,-34] relative); roof exemption pins hero x=1600 (five volleys,
-  origin 1700, pi stays 0); lob pin silences the jungle, re-pins
-  vest.x = p.x+150 per tick, asserts throws>=2 && rounds===0.
-- The `: null,` plant shape: valid only in expression-body arrows
-  (`harm: async (mod) => cond ? … : null,`); a block-bodied `return … : null,`
-  is a parse error — the mutant runner stops at the first one.
-- What runs at loop-k grew: the perch shuffle (relocT -= gs.lk). Round speeds
-  stay pinned — the drift moves ORIGIN, never SPEED; hopBand paths intact.
-- Prod-verify note: lazy chunks are generically named (index-*.js, mapped via
-  e.module in the entry) — crawl the import() graph, don't grep chunk names.
+- Slots are shipping fast: between my claim and my merge, slot a landed
+  #2912 (R-TYPE) and #2914 (DD) on main. Always `git fetch` before believing
+  a gap list — the README CLOSE markers move under you.
+- idle-kick after this slot: CONTRA's gap list = the gunship layer; R-TYPE's
+  oldest unowned gap = armed Williams duelist (QA holds the capsule one).
+  Sky heat/voice laws are pinned — future CONTRA passes must not scale round
+  speeds or the torrent (loop-dead/loop-overdrive mutants still guard it).
+- contracheck's attract-teach leg polls up to ~22 s (demoUntil 900 world
+  ticks); it ends early if the loop-2 demo dies — both paths land on
+  "attract cycles back", so it should not flake, but it is the slowest leg.
+- R-TYPE harness notes (for whoever takes the duelist): rich surface
+  (`__rTest.setup/probe`, stateHash, named mutants) — see its README.
 
 ## WORKTREES
-- Main checkout ~/Dev/retrogames: detached origin/main (this STATE commit on
-  top of b9f16f0).
-- ~/Dev/retrogames-forge-contra-sniper — reaped (remote branch gone on merge;
-  local branch deleted, worktree detachable, `git worktree remove` when
-  convenient).
-- Ports: a's 5173 stopped at close (devstop.sh, verified free). Slot b's and
-  QA nodes untouched.
+- Main checkout ~/Dev/retrogames: detached origin/main @ dd067eb, clean.
+- My lane worktree retrogames-forge-contra-loop-fx REMOVED after merge.
+- Ports: 5178 stopped via scripts/devstop.sh; a 5173 / QA ports untouched.
 
 ## Open questions
-- #2846 — promote CONTRA/R-TYPE/DD to public? (default keep private.)
-- #2908 — DD idle P2 seat return? (QA lane's question; default no.)
+- #2846 — promote CONTRA/R-TYPE/DD to public? (default keep private, due 11-23.)
+- #2908 (QA lane) — DD idle-P2 seat law (not ours, linked for the board).
