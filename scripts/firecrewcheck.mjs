@@ -394,6 +394,13 @@ console.log('roster + registry wiring')
     ok(idx.includes('askVoiceConsent') && idx.includes('startSpeechListen'), 'consent is asked before the mic opens')
     ok(idx.includes('createVoiceSession') && idx.includes('voiceExtra'), 'the raw mic track rides the recording')
     ok(idx.includes('recordVoiceCmd'), 'every spoken call banks into the recording')
+    // #2985 polish: the span cap is NAMED, and the radio reuses the gate's
+    // voice grant instead of re-showing the #1247 prompt.
+    ok(/WATCH_SPAN_CAP = 64/.test(idx) && /watchOverflowRef\.current = true/.test(idx),
+        'span banking STOPS at 64 and flags the overflow — no silent slice (#2985)')
+    ok(/watchOverflow: '1'/.test(idx), 'an overflowed take names watchOverflow on its rules (#2985)')
+    ok(idx.includes("hasAutoVoice() ? { consent: true"),
+        'the radio reuses the auto gate\'s voice grant — one ask per person per device (#2985)')
     const sim = readFileSync(path.join(HERE, '../src/games/FireCrew/sim.js'), 'utf8')
     ok(/export function applyRadio/.test(sim), 'the sim owns the radio entry point')
     ok(/export const sweepCovers/.test(sim) && /g\.sweep && g\.sweep\.t > 0/.test(sim), 'the sweep rides the lightAt rule')
