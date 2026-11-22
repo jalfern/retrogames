@@ -502,6 +502,28 @@ export function drawDuelist(ctx, e, camX) {
     if (hot) { ctx.fillStyle = 'rgba(255,242,176,0.35)'; ctx.fillRect(sx - 8, y - 3, 8, 6) }
 }
 
+// #2937 the sting — the carrier's answer: a small hot cyan dart riding its
+// committed line. The nose points down its own velocity; the line was aimed
+// at launch and is never corrected, and the art says so honestly — a straight
+// streak behind it, no rudder, no eye tracking you.
+export function drawSting(ctx, e, camX) {
+    const x = Math.round(e.x - camX), y = Math.round(e.y)
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(Math.atan2(e.vy, e.vx))
+    ctx.fillStyle = 'rgba(120,220,255,0.35)' // engine heat drags behind the flight line
+    ctx.fillRect(-12, -1, 6, 2)
+    ctx.fillStyle = 'rgba(232,251,255,0.30)'
+    ctx.fillRect(-16, -1, 4, 2)
+    ctx.fillStyle = '#12303c'
+    ctx.fillRect(-6, -3, 12, 6)
+    ctx.fillStyle = '#2ec4e6'
+    ctx.fillRect(-4, -2, 9, 4)
+    ctx.fillStyle = '#e8fbff'
+    ctx.fillRect(4, -1, 3, 2) // the point that was aimed where you were
+    ctx.restore()
+}
+
 export function drawMissile(ctx, m, camX) {    const x = Math.round(m.x - camX), y = Math.round(m.y)
     ctx.save()
     ctx.translate(x, y)

@@ -164,6 +164,21 @@ export const DUEL = {
     dash: 1.75,      // the pass — larva-dive punch from a much closer start
 }
 
+// #2937 THE STING — the carrier's answer. The arcade's bit ferry is no sitting
+// duck: lead put into its hull is answered with a launcher, not just a payout.
+// A live hit spits one interceptor, aimed at the nearest hull at the instant of
+// launch and committed from then on — no tracking, no lanes; not being there is
+// the dodge (the same discipline the duel's pass teaches). Zero rng: the aim is
+// arithmetic on live positions and the cooldown is tick-arithmetic, so the
+// autopilot's vulcan answering the leg-2 carriers in the tuned stream raises
+// the same stings on every seed.
+export const STING = {
+    speed: 2.05,     // px/tick down the committed line — pod-shot punch from a standstill
+    cd: 80,          // ticks between answers: fire answers with one, not a swarm
+    hp: 1,           // light airframe — one vulcan pays
+    score: 200,      // turret money: the answer costs less than the ferry
+}
+
 // stage script: camX triggers -> delayed spawns (queue keeps spacing seeded-free:
 // the schedule is authored, only enemy jitter draws rng).
 export const WAVES = [
@@ -456,8 +471,26 @@ function spawnBitPod(gs, y, n) {
         id: gs.nextId++, kind: 'bitpod', x: gs.camX + W + 18, y,
         baseY: y, bob: ((gs.nextId * 37) % 100) / 25, hp: 7, n,
         vx: -0.7, inv: 0, anim: 0, holdT: 0,
+        stingCd: 0, // #2937: the bay that launches interceptors has a cycle time
         anchorX: gs.camX + 238, state: 'enter',
     })
+}
+
+// #2937 the carrier answers fire: a committed dart at the nearest hull, aimed
+// at launch and never retargeted (launchSting's law — the dodge is movement,
+// not luck). Eased out of the bay's mouth, so the muzzle never spawns inside
+// the pilot's box.
+function launchSting(gs, e) {
+    const tp = nearestPilot(gs, e.x, e.y)
+    const dx = tp.x - (e.x - 8), dy = tp.y - e.y
+    const m = Math.max(1e-6, Math.hypot(dx, dy))
+    gs.enemies.push({
+        id: gs.nextId++, kind: 'sting',
+        x: e.x - 8, y: e.y,
+        vx: (dx / m) * STING.speed, vy: (dy / m) * STING.speed,
+        hp: STING.hp, t: 0, inv: 0, anim: 0,
+    })
+    gs.events.push('sting')
 }
 
 // cargo spills as bit capsules — held in a tight, collectable cluster
@@ -1322,7 +1355,15 @@ function runWorld(gs, pad, frozen, pad2) {
                 e.x += e.vx
             }
             e.y = e.baseY + Math.sin((e.bob += 0.04)) * 7 * Math.min(1, (e.holdT || 0) / 40)
+            if (e.stingCd > 0) e.stingCd -= 1 // #2937: the launcher cycles
             if (e.x < gs.camX - 24) { gs.enemies.splice(i, 1); continue }
+        } else if (e.kind === 'sting') {
+            // #2937 the committed line: no lanes, no tracking, no pull-up —
+            // it was aimed where the hull WAS the moment the bay answered
+            e.t += 1
+            e.x += e.vx; e.y += e.vy
+            if (e.x < gs.camX - 24 || e.x > gs.camX + W + 30) { gs.enemies.splice(i, 1); continue }
+            if (e.y < FIELD_TOP - 12 || e.y > FIELD_BOT + 12) { gs.enemies.splice(i, 1); continue }
         } else if (e.kind === 'duelist') {
             // #2934 — the duel. Three phases: it closes to a stand-off, hunts
             // the nearer hull across every lane (this is the reactive enemy —
@@ -1416,15 +1457,26 @@ function runWorld(gs, pad, frozen, pad2) {
                 else if (e.kind === 'duelist') struck = q.kind === 'l' // #2934 soft airframe, pod-sized box
                     ? e.x > q.x - 7 && e.x < q.x + lance(q) + 7 && Math.abs(e.y - q.y) < 8 + (q.wy ?? 0) * 2
                     : Math.abs(e.x - q.x) < 11 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 4 + (q.hx ?? 0) * 2 : 8)
+                else if (e.kind === 'sting') struck = q.kind === 'l' // #2937 dart-small; the lance still catches it
+                    ? e.x > q.x - 5 && e.x < q.x + lance(q) + 5 && Math.abs(e.y - q.y) < 6 + (q.wy ?? 0) * 2
+                    : Math.abs(e.x - q.x) < 8 && Math.abs(e.y - q.y) < (q.kind === 'w' ? CFG.waveTiers[q.size] + 3 + (q.hx ?? 0) * 2 : 6)
                 if (!struck) continue
                 if (e.kind === 'hullseg') { gs.events.push('clank'); dead = true; break } // armour eats it
                 gs.lastHitX = e.x; gs.lastHitY = e.y
                 e.hp -= q.kind === 'w' ? 2 : q.kind === 'l' ? q.size + 1 : 1
                 q.hit.push(e.id)
                 gs.events.push('hit')
+                // #2937 the carrier answers fire while the answer still flies: a
+                // live hit that does NOT kill it spits an interceptor (the kill
+                // shot only spills cargo — the wreck law stands untouched), and
+                // the bay's cycle time means a vulcan stream gets one reply, not
+                // a swarm
+                if (e.kind === 'bitpod' && e.hp > 0 && !frozen && e.stingCd <= 0) {
+                    launchSting(gs, e); e.stingCd = STING.cd
+                }
                 if (e.hp <= 0) {
                     gs.enemies.splice(m, 1)
-                    addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : e.kind === 'bitpod' ? 400 : 300)
+                    addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : e.kind === 'bitpod' ? 400 : e.kind === 'sting' ? STING.score : 300)
                     gs.events.push('boom')
                     if (e.kind === 'bitpod') releaseBits(gs, e) // #2835: the cargo breaks loose
                 }
@@ -1626,6 +1678,7 @@ function runWorld(gs, pad, frozen, pad2) {
             else if (e.kind === 'pod') hit = Math.abs(e.x - s.x) < 11 && Math.abs(e.y - s.y) < 9
             else if (e.kind === 'bitpod') hit = Math.abs(e.x - s.x) < 12 && Math.abs(e.y - s.y) < 10
             else if (e.kind === 'duelist') hit = Math.abs(e.x - s.x) < 10 && Math.abs(e.y - s.y) < 8 // #2934 the pass hurts
+            else if (e.kind === 'sting') hit = Math.abs(e.x - s.x) < 8 && Math.abs(e.y - s.y) < 6 // #2937 the answer hurts — dart-small
             else if (e.kind === 'hullseg') hit = s.x + 5 > e.x && s.x - 5 < e.x + e.len && s.y + 4 > e.y0 && s.y - 4 < e.y1
             if (hit) { if (killShip(gs, s, gs, 'body:' + e.kind)) return }
         }
@@ -1655,6 +1708,7 @@ function runWorld(gs, pad, frozen, pad2) {
             else if (e.kind === 'pod') hit = Math.abs(e.x - wgBody.x) < 11 && Math.abs(e.y - wgBody.y) < 9
             else if (e.kind === 'bitpod') hit = Math.abs(e.x - wgBody.x) < 12 && Math.abs(e.y - wgBody.y) < 10
             else if (e.kind === 'duelist') hit = Math.abs(e.x - wgBody.x) < 10 && Math.abs(e.y - wgBody.y) < 8 // #2934 the pass hurts seat two too
+            else if (e.kind === 'sting') hit = Math.abs(e.x - wgBody.x) < 8 && Math.abs(e.y - wgBody.y) < 6 // #2937 the answer hunts the nearer hull — and hurts it
             else if (e.kind === 'hullseg') hit = wgBody.x + 5 > e.x && wgBody.x - 5 < e.x + e.len && wgBody.y + 4 > e.y0 && wgBody.y - 4 < e.y1
             if (hit) { killWing(gs, wgBody, 'body:' + e.kind); break }
         }
@@ -1681,7 +1735,7 @@ function podRamInto(gs, pd) {
             gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
             if (e.hp <= 0) {
                 gs.enemies.splice(i, 1)
-                addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : e.kind === 'bitpod' ? 400 : 300)
+                addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : e.kind === 'bitpod' ? 400 : e.kind === 'sting' ? STING.score : 300)
                 gs.events.push('boom')
                 if (e.kind === 'bitpod') releaseBits(gs, e) // shell-down carriers spill too
             }
@@ -1714,7 +1768,7 @@ function optDrones(gs, ent) {
                 gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
                 if (e.hp <= 0) {
                     gs.enemies.splice(j, 1)
-                    addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : e.kind === 'bitpod' ? 400 : 300)
+                    addScore(gs, e.kind === 'larva' ? 100 : e.kind === 'turret' ? 200 : e.kind === 'bitpod' ? 400 : e.kind === 'sting' ? STING.score : 300)
                     gs.events.push('boom')
                     if (e.kind === 'bitpod') releaseBits(gs, e) // carriers spill to a drone too
                 }
@@ -1743,7 +1797,7 @@ function optDrones(gs, ent) {
 function shieldGrind(gs, ship, bits) {
     for (let i = gs.enemies.length - 1; i >= 0; i--) {
         const e = gs.enemies[i]
-        if (e.kind !== 'larva' && e.kind !== 'duelist') continue // #2934: the fist grinds soft bodies, and the duelist is soft
+        if (e.kind !== 'larva' && e.kind !== 'duelist' && e.kind !== 'sting') continue // #2934/#2937: the fist grinds soft bodies, and the duel and the answer are soft
         for (const bt of bits) {
             if (Math.abs(e.x - bt.px) < BIT.crushR && Math.abs(e.y - bt.py) < BIT.crushR) {
                 bt.flash = Math.max(bt.flash ?? 0, 5) // #2831: grinding a body, the bit visibly strains
@@ -1751,7 +1805,7 @@ function shieldGrind(gs, ship, bits) {
                 gs.lastHitX = e.x; gs.lastHitY = e.y; gs.events.push('ram')
                 if (e.hp <= 0) {
                     gs.enemies.splice(i, 1)
-                    addScore(gs, e.kind === 'duelist' ? DUEL.score : 100)
+                    addScore(gs, e.kind === 'duelist' ? DUEL.score : e.kind === 'sting' ? STING.score : 100)
                     gs.events.push('boom')
                 }
                 break
@@ -1958,6 +2012,12 @@ export function wingBrain(gs) {
             }
             if (e.kind === 'hullseg' && w.x + 6 > e.x - 16 && w.x < e.x + e.len && y > e.y0 - 12 && y < e.y1 + 12) consider(0.5)
             if ((e.kind === 'turret' || e.kind === 'pod' || e.kind === 'bitpod') && Math.abs(e.x - w.x) < 30 && Math.abs(e.y - y) < 22) consider(0.5)
+            // #2937 seat two reads the carrier's answer the same way (docs/AI.md:
+            // a lane a brain must dodge has to be sensed by that brain)
+            if (e.kind === 'sting' && e.vx < 0 && e.x > w.x - 6) {
+                const t = (e.x - w.x) / (-e.vx + SCROLL)
+                if (t < 48 && Math.abs(e.y + e.vy * t - y) < 11) consider(t)
+            }
             // #2934 seat two reads the duel the same way: crouch and pass are
             // the moments off the line; the hunt is merely unwelcome.
             if (e.kind === 'duelist') {
@@ -2067,6 +2127,12 @@ export function autopilot(gs) {
             }
             if (e.kind === 'hullseg' && px + 6 > e.x - 16 && px < e.x + e.len && y > e.y0 - 12 && y < e.y1 + 12) consider(0.5)
             if ((e.kind === 'turret' || e.kind === 'pod' || e.kind === 'bitpod') && Math.abs(e.x - px) < 34 && Math.abs(e.y - y) < 24) consider(0.5)
+            // #2937 the carrier's answer is a committed line — the same intercept
+            // math the duel's dash uses: where it's going, not where it is.
+            if (e.kind === 'sting' && e.vx < 0 && e.x > px - 6) {
+                const t = (e.x - px) / (-e.vx + SCROLL) // closing speed: its dive + the camera push
+                if (t < 48 && Math.abs(e.y + e.vy * t - y) < 11) consider(t)
+            }
             // #2934 the duel has three faces: while it hunts, its lane merely
             // scores distant (it hasn't aimed yet); the crouch and the pass
             // are the moments a pilot must leave the line.
