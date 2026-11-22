@@ -431,12 +431,20 @@ const FloorBossGame = () => {
             // pad — cursor + PICK/TOOL — and triages the live floor, so seating
             // or releasing mid-shift resumes from exactly where the floor stands;
             // floorbosscheck grades this same manager to quota).
-            // #1712 S2: the pointer bank rides the next tick the loop runs
-            // (taps apply at click time, onCanvasClick — replay mirrors:
-            // apply-before-step, identical state at every checkpoint).
+            // #1712 S2 + #2966: the pointer bank rides the next tick the loop runs
+            // — and that tick is where the tap APPLIES (apply-before-step, the
+            // exact shape replay runs: identical state at every checkpoint, even
+            // for two taps that landed inside one frame).
             let tapPad = null
             if (tapQueue.length && !gs.end) {
                 const tap = tapQueue.shift()
+                // #2966: live obeys the bank's own drain — the tap mutates the sim
+                // at the tick that BANKS it (apply-before-step, exactly what the
+                // adapter's floorBossRows replays), not at click time. Two taps in
+                // one frame therefore drain over consecutive ticks and the take
+                // replays tick-for-tick instead of refusing; fx still fire on this
+                // frame (handleEvents below), so the tap feels instant.
+                applyTap(gs, tap.px, tap.py)
                 // onePad's pointer channel is 0..1 canvas space (#420) — bank the
                 // normalized point; replay rebuilds pixels from it (deterministic).
                 tapPad = { x: tap.px / W, y: tap.py / H, down: true }
@@ -1585,13 +1593,13 @@ const FloorBossGame = () => {
             if (screenRef.current !== 'play' || pausedRef.current) return
             // #1637 WATCH: a click on the floor is the player managing — hand back first.
             if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
-            // #1712 S2: the tap applies NOW (feels instant, its fx drain before
-            // the next step like they always did) and BANKS onto the next tick's
-            // pad as pointer{down} — replay re-applies it before that same step,
-            // so state at every checkpoint matches what this thumb produced.
+            // #1712 S2 + #2966: the tap only QUEUES here; it applies at the tick
+            // that banks it (the loop drain — apply-before-step, live == replay).
+            // Applying at click time let two taps inside one frame both mutate
+            // before step(t+1) while the bank promised one pointer per tick —
+            // every such legitimate fast-tap take refused on the hash. Watch
+            // hand-back above stays instant: that is a UI flag, not the sim.
             const { px, py } = toGrid(ev)
-            applyTap(gs, px, py)
-            handleEvents(gs.ev, gs.tick)
             tapQueue.push({ px, py })
         }
 

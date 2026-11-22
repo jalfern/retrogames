@@ -59,13 +59,14 @@
 //   node scripts/floorbosscheck.mjs --mutate-seed # the knee planner seeds from the movement again — reversed carts plan body-illegal swings (#2738)
 //   node scripts/floorbosscheck.mjs --mutate-tail # loaded carts turn into their counterweight again — the tail clause dies in the router (#2760)
 //   node scripts/floorbosscheck.mjs --mutate-tail-land # racks land on committed backswings — the land scan goes blind to the tail diagonal (#2760)
+//   node scripts/floorbosscheck.mjs --mutate-taps # the drain stops applying its banked tap — live == replay dies (#2966)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { plant, pull } from './lib/mutateguard.mjs'
 import {
-    makeGame, step, state, stateHash, createAutopilot, clickCell, setTool, hireRobot, RACK_SPOTS,
+    makeGame, step, state, stateHash, createAutopilot, clickCell, setTool, hireRobot, clickOrder, RACK_SPOTS,
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE, OUT_CELLS,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
@@ -76,6 +77,7 @@ import {
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { floorBossRows } from './plaicraft-dataset.mjs' // #2958: the replay seam lives in the adapter — prove it here
+import { CHIPS, W as TBW, H as TBH, applyTap } from '../src/games/FloorBoss/taps.js' // #2966: the shared tap semantics — proof drives the same verbs the phone does
 import { hashString } from '../src/utils/robot/physics.js'
 
 const ARGS = process.argv.slice(2)
@@ -122,9 +124,10 @@ const MUT_TAIL_LAND = ARGS.includes('--mutate-tail-land') // #2760: landings sto
 const MUT_COURTESY = ARGS.includes('--mutate-courtesy') // #2783: courtesy parks back into the swing — pullOff forgets the knee/tail cells of the blocking plan
 const MUT_CAREER = ARGS.includes('--mutate-career') // #2958: the adapter seam dies — career takes cannot clock in on replay
 const MUT_WHISTLE = ARGS.includes('--mutate-whistle') // #2958: whistle-stop returns — a cleared night closes the take at the sheet
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND || MUT_COURTESY || MUT_CAREER || MUT_WHISTLE) {
+const MUT_TAPS = ARGS.includes('--mutate-taps') // #2966: the drain stops applying its banked tap — pointers the floor never honors
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND || MUT_COURTESY || MUT_CAREER || MUT_WHISTLE || MUT_TAPS) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
-    const tgt = MUT_MANNERS || MUT_ATTRACT || MUT_WHISTLE ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) // #2700: presentation laws plant in the painter; #2958: so does the take law
+    const tgt = MUT_MANNERS || MUT_ATTRACT || MUT_WHISTLE || MUT_TAPS ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) // #2700: presentation laws plant in the painter; #2958: so does the take law; #2966: so does the tap-drain law
         : MUT_CAREER ? new URL('./plaicraft-dataset.mjs', import.meta.url) // #2958: the replay seam lives in the adapter
             : sim
     const src = readFileSync(tgt, 'utf8')
@@ -204,6 +207,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                         ? ["if (gs.end === 'win') fbNextShift(gs)", "if (false && gs.end === 'win') fbNextShift(gs) // MUTANT: the seam is gone (#2958)", 'the clock-in vanishes from replay — a career take mismatches at its first post-whistle checkpoint, so multi-shift runs become unrecordable (#2958)']
                                                                         : MUT_WHISTLE
                                                                             ? ['if (!won) closeEpisode(false)', 'closeEpisode(won)', 'whistle-stop returns — a cleared night closes its take at the sheet, career takes die in the bank (#2958)']
+                                                                            : MUT_TAPS
+                                                                                ? ['applyTap(gs, tap.px, tap.py)', '// MUTANT (#2966): the drain banks a pointer the floor never applies', 'banked taps stop applying live — the shell promises pointers its own drain never honors, and live == replay is dead']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
@@ -975,6 +980,77 @@ console.log('— shift ladder (#2346) —')
         'closeTake guards every real end: key-exit, tap-exit, contract reset, unmount (#2958)', )
     const ds = readFileSync(new URL('./plaicraft-dataset.mjs', import.meta.url), 'utf8')
     ok(/if \(gs\.end === 'win'\) fbNextShift\(gs\)/.test(ds), "the adapter seam: rows past a win clock the ladder in for replay (#2958)")
+}
+{
+    // #2966 THE ORDER CARD CLICK WORKS — the finder referenced its own
+    // initializer (`o` inside the predicate for `o`), so every contract-card
+    // tap was a silent ReferenceError: a dead tap, no prio, no event. The
+    // predicate must ask its candidate.
+    const gs = makeGame(7)
+    const ap = createAutopilot()
+    for (let t = 1; t < 260; t++) step(gs, [ap(gs)]) // first card is open (measured window 240+)
+    const o = gs.orders[0]
+    ok(!!o, 'there is a contract to tap')
+    clickOrder(gs, o.id); ok(o.prio === true, 'tapping an open contract lights its priority bit')
+    clickOrder(gs, o.id); ok(o.prio === false, 'a second tap clears it again')
+    o.shipped = true
+    clickOrder(gs, o.id); ok(o.prio === false, 'a shipped contract answers no tap')
+    const e = gs.orders.find((x) => !x.shipped && !x.expired && x.id !== o.id)
+    if (e) { e.expired = true; clickOrder(gs, e.id); ok(e.prio !== true, 'an expired contract answers no tap') }
+}
+{
+    // #2966 SAME-FRAME TAP LAW — live obeys the bank's drain. The bank promises
+    // one pointer per tick (onePad #420, drain-one-per-tick); the old shell
+    // applied taps at CLICK time, so two taps inside one frame both mutated
+    // before step j while the rows could only promise tap1@j, tap2@j+1. No
+    // replay of the banked stream could reproduce the live state past j, and
+    // legitimate fast-tap takes refused on the hash. The fix: live applies
+    // each tap at the tick that BANKS it — apply-before-step, the shape the
+    // adapter's floorBossRows replays.
+    // (a) OLD shape provably refuses: both taps before one step, banked on
+    //     consecutive ticks — the adapter must call it a divergence.
+    // (b) NEW shape validates: taps applied at their banked ticks, same seed,
+    //     same taps — the take replays clean and keeps every input.
+    const seed = 7
+    const J = 300 // a hash checkpoint tick (hashEvery 30) with an order card open: the off-behind tap must show up RIGHT where the bank stamps
+    const tapAuto = { px: CHIPS.auto.x + CHIPS.auto.w / 2, py: CHIPS.auto.y + CHIPS.auto.h / 2 } // durable flip: gs.auto rides stateHash
+    const tapOrder = { px: 694 + 96 / 2, py: 46 + 66 / 2 } // order card slot 0 (taps.js orderRect(0)): toggles o.prio — hash-visible (`!` bit), costs nothing
+    const padOf = (tap) => ({ pointer: { x: tap.px / TBW, y: tap.py / TBH, down: true } }) // onePad #420: 0..1 canvas space
+    const driveTake = (bothEarly) => {
+        const gs = makeGame(seed)
+        const ap = createAutopilot()
+        const ep = createEpisode({ gameId: 'floor-boss', method: 'dpad', seed, players: 1, sources: [{ kind: 'human' }], task: 'floor-boss-shift', rules: () => ({ duel: false }) })
+        for (let t = 1; t < J; t++) { const pad = ap(gs); step(gs, [pad]); ep.addTick([pad], null, stateHash(gs)) }
+        const autoPre = gs.auto, oid = gs.orders[0] && gs.orders[0].id, prioPre = oid != null && gs.orders[0].prio
+        const flip = (tap) => { applyTap(gs, tap.px, tap.py) }
+        let autoNow = autoPre, prioNow = prioPre
+        if (bothEarly) { flip(tapAuto); autoNow = gs.auto; flip(tapOrder); prioNow = oid != null && !!gs.orders.find((o) => o.id === oid).prio } // the old click-time lie: both mutate ahead of their rows
+        const padA = { ...ap(gs), ...padOf(tapAuto) }
+        if (!bothEarly) { flip(tapAuto); autoNow = gs.auto } // the fix: the tap applies at the tick that banks it
+        step(gs, [padA]); ep.addTick([padA], null, stateHash(gs))
+        const padB = { ...ap(gs), ...padOf(tapOrder) }
+        if (!bothEarly) { flip(tapOrder); prioNow = oid != null && !!gs.orders.find((o) => o.id === oid).prio }
+        step(gs, [padB]); ep.addTick([padB], null, stateHash(gs))
+        const take = ep.finish({ success: false, score: gs.score, finalHash: stateHash(gs) })
+        return { take, autoFlipped: autoNow !== autoPre, prioFlipped: oid != null && prioNow !== prioPre, oid }
+    }
+    const oldRun = driveTake(true)
+    ok(validateEpisode(oldRun.take) === null, 'the same-frame take is structurally valid (rec/v1 + episode block)')
+    ok(oldRun.autoFlipped && oldRun.prioFlipped,
+        `both taps are REAL on the old floor — auto AND the prio bit were mutated before step ${J} while the bank could only promise them at ${J} and ${J + 1} (the refusal below has teeth)`)
+    const repOld = floorBossRows('unit/taps-old', oldRun.take)
+    ok(!repOld.ok && repOld.mismatch && repOld.mismatch.tick === J,
+        `OLD shape refuses ON THE CHECKPOINT — both taps before step ${J} cannot replay against one-pointer-per-tick rows (diverged at tick ${repOld.mismatch ? repOld.mismatch.tick : 'never'})`)
+    const newRun = driveTake(false)
+    ok(newRun.autoFlipped && newRun.prioFlipped, `the drain shape keeps every tap — auto flipped and order ${newRun.oid} prio'd, nothing lost to the burst`)
+    const repNew = floorBossRows('unit/taps-new', newRun.take)
+    ok(repNew.ok && repNew.rows.length === newRun.take.ticks,
+        `NEW shape replays clean — live applies each tap at its banked tick and fast-tap takes are train-ready again${repNew.mismatch ? ` mismatch@${repNew.mismatch.tick}` : ''} (${newRun.take.ticks} ticks)`)
+    // Source pins (#2966): a click only queues; the loop drain is the ONLY
+    // place a banked tap mutates the floor.
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/applyTap\(gs, tap\.px, tap\.py\)/.test(ui), 'the tick that banks a tap is the tick that applies it (live == replay, #2966)')
+    ok(!/applyTap\(gs, px, py\)/.test(ui), 'onCanvasClick queues only — a click no longer mutates the sim ahead of its banked row (#2966)')
 }
 {
     // the ramp is honest both ways: winnable early, it bites eventually
