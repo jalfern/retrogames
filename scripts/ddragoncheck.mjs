@@ -36,7 +36,7 @@ import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain, INTRO } from '../src/games/DoubleDragon/sim.js'
+import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES_S2, enterStage2, rescueReady, dragonBrain, INTRO, TIP } from '../src/games/DoubleDragon/sim.js'
 import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD } from '../src/games/DoubleDragon/art.js'
 import { p2Merge, p2Seat } from '../src/games/DoubleDragon/p2pad.js'
 import { pressSlot, releaseSlot, slotPad, slotActive, clearAllSlots } from '../src/utils/onePad.js'
@@ -1283,10 +1283,117 @@ console.log('p2 pad seat (#2860)')
     }
 }
 
+// --------------------------------- #2874 first-timer pass: the cost READS ------
+{
+    // Key strip: the cabinet finally names its keys. Words are pinned, not
+    // just "something drew" — a strip without the keys is decoration.
+    const gt = makeGame(3, { coop: true })
+    r.check('#2874 the key strip names every control — walk/punch/kick/jump with their keys',
+        ['ARROWS WALK', 'Z PUNCH', 'X KICK', 'SPACE JUMP'].every((w) => TIP.includes(w)), TIP)
+    r.check('#2874 the strip rides the fresh run and steps down (~5 s of play)',
+        gt.tipT === CFG.tipHold, `tipT=${gt.tipT}`)
+    step(gt, {}, {}); step(gt, {}, {})
+    r.check('#2874 the strip counts down with the street (and freezes through the movie)',
+        gt.tipT === CFG.tipHold - 2, `tipT=${gt.tipT}`)
+    const gm = makeGame(3, { coop: true, intro: true })
+    step(gm, {}, {})
+    r.check('#2874 the movie never spends the strip — it waits for the street',
+        gm.tipT === CFG.tipHold, `tipT=${gm.tipT}`)
+
+    // The knockdown beat: a life costs a VISIBLE fall, then the old remount.
+    const gk = makeGame(7, { coop: true })
+    gk.billy.inv = 0
+    const hitX = gk.billy.x
+    gk.enemies.push({ id: gk.nextId++, kind: 'williams', x: hitX + 8, y: gk.billy.y, face: -1, hp: 4, state: 'attack', stateT: 2, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 60, inv: 0, spinHit: false })
+    step(gk, {}, {})
+    r.check('#2874 a lost life drops the seat flat where it fell — the beat before the remount',
+        gk.billy.lives === 2 && gk.billy.state === 'down' && gk.billy.knock === CFG.respawnKnock && gk.billy.x === hitX,
+        `lives=${gk.billy.lives} state=${gk.billy.state} knock=${gk.billy.knock}`)
+    r.check('#2874 the loss shows in the HUD — a LIVES flash names the seat',
+        gk.livesFx && gk.livesFx.tag === 'billy' && gk.livesFx.t === CFG.livesFlash,
+        `livesFx=${gk.livesFx && gk.livesFx.tag}/${gk.livesFx && gk.livesFx.t}`)
+    for (let i = 0; i < CFG.respawnKnock; i++) step(gk, {}, {})
+    r.check('#2874 the beat ends the old way — remount at the spawn with the mercy flicker',
+        gk.billy.state === 'idle' && gk.billy.knock === 0 && Math.abs(gk.billy.x - (gk.camX + 30)) < 9 && gk.billy.inv > 60,
+        `state=${gk.billy.state} x=${gk.billy.x.toFixed(0)} inv=${gk.billy.inv}`)
+    for (let i = 0; i < CFG.livesFlash; i++) step(gk, {}, {})
+    r.check('#2874 the LIVES flash clears on its own clock (~1.5 s)', gk.livesFx === null, `livesFx=${gk.livesFx && gk.livesFx.t}`)
+    const gk2 = makeGame(7)
+    gk2.billy.lives = 1; gk2.billy.inv = 0
+    gk2.enemies.push({ id: gk2.nextId++, kind: 'williams', x: gk2.billy.x + 8, y: gk2.billy.y, face: -1, hp: 4, state: 'attack', stateT: 2, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 60, inv: 0, spinHit: false })
+    step(gk2, {}, {})
+    r.check('#2874 game over still costs nothing extra — the last life keeps the dying law, and still flashes',
+        gk2.mode === 'gameover' && gk2.billy.state === 'dying' && gk2.livesFx && gk2.livesFx.tag === 'billy',
+        `mode=${gk2.mode} state=${gk2.billy.state} fx=${gk2.livesFx && gk2.livesFx.tag}`)
+    const gs2 = makeGame(9)
+    gs2.billy.knock = 20
+    enterStage2(gs2)
+    r.check('#2874 second wind cancels a pending beat — the new street walks on immediately',
+        gs2.billy.knock === 0 && gs2.billy.state === 'idle', `knock=${gs2.billy.knock} state=${gs2.billy.state}`)
+
+    // Hits SHOW: landed blows flash the man white (progress before the KO).
+    const gf = makeGame(11, { coop: true })
+    const ef = { id: gf.nextId++, kind: 'williams', x: gf.billy.x + 12, y: gf.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, castCooldown: 999, attackCooldown: 999, inv: 0, spinHit: false }
+    gf.enemies.push(ef)
+    let flashed = -1
+    for (let i = 0; i < 10; i++) {
+        step(gf, i === 0 ? { punch: true } : {}, {})
+        if (flashed < 0 && ef.hp < ENEMY_DEF.williams.hp) flashed = ef.flash
+    }
+    r.check('#2874 every landed blow lights the man — the hit flashes where it bit',
+        flashed >= 4 && flashed <= 6, `hp=${ef.hp} flash@land=${flashed}`)
+
+    // Juice purity: none of the new reads may ride the hash (#2810 flash law).
+    const hp1 = stateHash(gf)
+    gf.tipT += 123; gf.livesFx = { tag: 'jimmy', t: 9 }; ef.flash += 7; gf.billy.knock += 5
+    r.check('#2874 all four new tells are hash-pure — juice never enters stateHash',
+        stateHash(gf) === hp1, `${hp1} vs ${stateHash(gf)}`)
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
     const plants = [
+        {
+            name: 'knock-frozen',
+            anchor: 'if (p.knock === 0) {',
+            plant: 'if (p.knock === -1) { /* MUTANT(knock-frozen): the beat never ends */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                gs.billy.inv = 0
+                gs.enemies.push({ id: 903, kind: 'williams', x: gs.billy.x + 8, y: gs.billy.y, face: -1, hp: 4, state: 'attack', stateT: 2, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 60, inv: 0, spinHit: false })
+                for (let i = 0; i < 120; i++) { mod.step(gs, {}); gs.events.length = 0 }
+                return gs.billy.lives === 2 && gs.billy.state === 'down'
+                    ? `HARM NAMED: the seat dropped and never came back up (still flat ${120} ticks after the hit) — a knockdown without a remount is a softlock: one hit ends the fight even while the bank says lives remain`
+                    : null
+            },
+        },
+        {
+            name: 'flash-deaf',
+            anchor: 'e.flash = 6',
+            plant: 'e.flash = 0 /* MUTANT(flash-deaf): landed blows stop lighting up */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(11)
+                const e = { id: gs.nextId++, kind: 'williams', x: gs.billy.x + 12, y: gs.billy.y, face: -1, hp: 4, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, attackCooldown: 999, inv: 0, spinHit: false }
+                gs.enemies.push(e)
+                let hitSeen = false, litSeen = false
+                for (let i = 0; i < 10; i++) { mod.step(gs, i === 0 ? { punch: true } : {}, {}); gs.events.length = 0; if (e.hp < 4) hitSeen = true; if (e.flash > 0) litSeen = true }
+                return hitSeen && !litSeen
+                    ? `HARM NAMED: a blow landed (hp 4 -> ${e.hp}) but the man never lit — hits with no flash and no bar leave a newcomer convinced their fists do nothing, which is exactly the #2874 complaint`
+                    : null
+            },
+        },
+        {
+            name: 'tip-dead',
+            anchor: 'tipT: CFG.tipHold,',
+            plant: 'tipT: 0, /* MUTANT(tip-dead): the cabinet never says which keys */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(3)
+                return gs.tipT === 0
+                    ? 'HARM NAMED: a fresh run shows no key strip at all — PRESS ANY KEY and hope is how a first-timer dies confused (#2874 item 3)'
+                    : null
+            },
+        },
         {
             name: 'depth-blind',
             anchor: 'b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 && Math.abs(e.y - b.y) <= 8',

@@ -41,6 +41,12 @@ export const CFG = {
     downTime: 44,         // ticks flat on the street
     getupTime: 22,        // then this many ticks of enemy i-frames
     respawnIFrames: 100,
+    // #2874 first-timer readability: a life costs a VISIBLE beat — the seat
+    // is knocked flat where it fell, then remounts at the usual spawn with
+    // the old flicker. The HUD answers a loss with a blinking LIVES tag.
+    respawnKnock: 36,
+    livesFlash: 90,
+    tipHold: 300,
     grabRange: 15,
     grabEscape: 3,        // presses to break free
     grabTimeout: 52,      // ticks held before the thug's knee lands (a life)
@@ -290,6 +296,7 @@ function makeFighter(tag) {
         guard: 0,      // #2857: ticks left wearing the guardian glint (sprinting the holder)
         relief: 0,     // #2857: ticks left of the freed-seat arms-up pose
         flourish: 0,   // #2857: ticks left of the post-KO flourish (flick → shoulder check)
+        knock: 0,      // #2874: ticks left flat on the boards after losing a life
     }
 }
 
@@ -326,6 +333,12 @@ function targetOf(gs, e) {
 // states where the thug is committed to its chosen dragon
 const COMMITTED = new Set(['windup', 'chargewind', 'charge', 'aim', 'cast', 'attack', 'grab'])
 
+// #2874: the arcade cabinet marquee told you which keys bit; our screen said
+// nothing. One strip, the cabinet's own wording, shown on the attract screen
+// and for the first seconds of 1-1. Lives in the sim so the check can pin the
+// words themselves, not just that something drew.
+export const TIP = 'ARROWS WALK  Z PUNCH  X KICK  SPACE JUMP'
+
 export function makeGame(seed = 1, opts = {}) {
     // rng rides IN the state so snapshot/restore is byte-exact (#391):
     // a JSON deep-copy of gs carries the generator integer, not a closure.
@@ -352,6 +365,9 @@ export function makeGame(seed = 1, opts = {}) {
         marian: null,           // set when stage 2 opens — tied at the yard's end
         rescueT: 0,             // cheer ticks after the ropes part
         scoreFlash: null, // { v, t } — HUD score delta on a KO/pickup (juice, not scored state)
+        livesFx: null,  // #2874 { tag, t } — a seat just lost a life; the HUD blinks its LIVES
+        tipT: CFG.tipHold, // #2874 ticks left showing the key strip at play's start
+        tipText: TIP,   // #2874 the strip itself (a sim constant so checks can pin its words)
         fx: null,       // { x, y } — where the last barrel splintered (shell shard spawn, juice)
         gripFx: null,   // #2857 { x, y } — where a grip just broke (shell impact flash, juice)
         events: [],   // one-shot cues drained by the shell (sound/juice only)
@@ -540,16 +556,20 @@ function playerDies(gs, p) {
     if (p.lives <= 0) {
         p.out = true
         p.state = 'dying'; p.stateT = 0
+        gs.livesFx = { tag: p.tag, t: CFG.livesFlash } // #2874: show the cost
         if (activeFighters(gs).length === 0) { gs.mode = 'gameover'; return }
         gs.events.push('seat_down')
         return
     }
-    p.state = 'idle'; p.stateT = 0; p.z = 0; p.zv = 0
+    // #2874: the arcade knocked you flat before it put you back — a seat
+    // losing a life drops where it fell for a beat (no input, no hits), then
+    // remounts at the spawn point with the old i-frame flicker. Newcomers
+    // read *why* the screen moved; the lethal law itself is untouched.
+    p.state = 'down'; p.stateT = 0; p.z = 0; p.zv = 0
+    p.knock = CFG.respawnKnock
     p.inv = CFG.respawnIFrames
-    p.x = clamp(gs.camX + (p.tag === 'billy' ? 30 : 44), 8, STAGE_W - 8)
-    let nudge = 0
-    while (blocked(gs, p.x, p.y) && nudge++ < 60) p.x = clamp(p.x + 8, 8, STAGE_W - 8)
     p.grabFrom = null
+    gs.livesFx = { tag: p.tag, t: CFG.livesFlash }
     gs.enemies.forEach((e) => { if (e.state === 'grab' && e.tgt === p.tag) { e.state = 'stagger'; e.stateT = CFG.hitstun } })
 }
 
@@ -590,6 +610,7 @@ function hurtEnemy(gs, e, dmg, knockdown, onDowned, seat, kind) {
         // rock — the blue seat's hits read bigger at a glance than the red's.
         e.wob = seat === 'jimmy' ? 7 : 4
     }
+    e.flash = 6 // #2874: every landed blow lights the man white — hits SHOW
     return false
 }
 
@@ -712,6 +733,18 @@ export function updateFighter(gs, p, pad) {
     if (p.lash > 0) p.lash -= 1
     if (p.out) { if (p.state === 'dying') p.stateT += 1; return }
     if (p.state === 'dying') { p.stateT += 1; return }
+    // #2874 knockdown beat: flat on the boards, off the input stream, until
+    // the beat ends — then the old spawn rule remounts the seat.
+    if (p.knock > 0) {
+        p.knock -= 1
+        if (p.knock === 0) {
+            p.state = 'idle'; p.stateT = 0
+            p.x = clamp(gs.camX + (p.tag === 'billy' ? 30 : 44), 8, STAGE_W - 8)
+            let nudge = 0
+            while (blocked(gs, p.x, p.y) && nudge++ < 60) p.x = clamp(p.x + 8, 8, STAGE_W - 8)
+        }
+        return
+    }
     // #2857 juice beats: the relief pose and the KO flourish fade on their own
     // clocks; the glint fades with the sprint (re-stamped while closing).
     if (p.relief > 0) p.relief -= 1
@@ -870,6 +903,7 @@ function updateEnemy(gs, e) {
     if (e.inv > 0) e.inv -= 1
     e.anim += 1
     if (e.wob > 0) e.wob -= 1   // #2857: the stagger wobble settles as he recovers
+    if (e.flash > 0) e.flash -= 1 // #2874: the hit-light fades fast — a flash, not a glow
 
     // #2825 item 4: the duel intro — the lieutenant holds his pose at the
     // frame edge while the banner says his name. He marches IN (the arcade
@@ -1130,6 +1164,7 @@ function clearField(gs) {
         p.out = false
         p.lives = Math.max(p.lives, 1)
         p.state = 'idle'; p.stateT = 0; p.z = 0; p.zv = 0
+        p.knock = 0 // #2874: the second wind walks on immediately — no stale beat
         p.inv = CFG.respawnIFrames
         p.grabFrom = null
         p.x = p.tag === 'billy' ? 40 : 24
@@ -1170,6 +1205,8 @@ export function step(gs, pad = {}, pad2 = {}) {
     if (gs.mode === 'play' && gs.banner > 0) gs.banner -= 1
     if (gs.duelIntro > 0) gs.duelIntro -= 1
     if (gs.scoreFlash && --gs.scoreFlash.t <= 0) gs.scoreFlash = null
+    if (gs.livesFx && --gs.livesFx.t <= 0) gs.livesFx = null // #2874
+    if (gs.tipT > 0 && !gs.intro && gs.mode === 'play') gs.tipT -= 1 // #2874
     if (gs.chainT > 0 && --gs.chainT <= 0) gs.chain = 0   // #2882: the window lapses, the chain cools
 
     // #2891: the movie owns the street — waves, physics and the collision laws
