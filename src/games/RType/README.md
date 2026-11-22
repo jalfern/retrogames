@@ -278,6 +278,18 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 
 ## Honest gaps (S5+)
 
+- **CLOSED by #2922** — the capsule list is complete: the Half-Capsule (H) is
+  a fixed-spot pod on leg 1's upper lane (authored y 44 at camX 620, zero rng
+  like its siblings). It steps the ARM down one level of the lineage — wave to
+  lance, lance to vulcan, D to vulcan (D sits between Vulcan and the lance, so
+  its half is the floor arm) — and the lance charge dies with the lance. At the
+  vulcan there is nothing to halve: floor and spares pay 1000 like every spare
+  in the house. Fidelity interpretation (#237, recorded): in the cabinet H is a
+  WEAPON pod — the options orbs are shield-guns, not a weapon level, so H never
+  casts them off; only the wreck does (power-armour law untouched). Seat two
+  takes its own falls (S4). Teal case with a white down-chevron, a falling
+  slide for a voice — the sound of an arm cooling.
+
 - **CLOSED by #2901** — core speed-up past 1000: the desperation phase is
   live — 1000 ticks of camera-lock on a beating Phase-1 core latches `hot`,
   the maw cycle runs at double tick-rate until the heart stops (the S3
@@ -298,10 +310,11 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   volleys, tick-arithmetic reseal, so every seed's tuned stream stays itself.
   The autopilot and wing fold their bullet predictions through the same bounce
   (`foldY`) — a ricochet lane never reads safe to the brains that must dodge it.
-- **The full capsule list beyond three arms (Options, Double, Speed Up,
-  Half-Capsules).** — #2915 Part 1 landed Double (twin vulcan) and Speed Up
-  as fixed-spot pods; #2919 landed Options (the mirrored shield-gun pair).
-  Half-Capsule remains.
+- **CLOSED by #2922** — The full capsule list beyond three arms (Options,
+  Double, Speed Up, Half-Capsules): #2915 Part 1 landed Double (twin vulcan)
+  and Speed Up as fixed-spot pods; #2919 landed Options (the mirrored
+  shield-gun pair); #2922 landed Half-Capsule (the arm steps down — see the
+  H note at the head of this list).
 - Options never fly off on their own — the arcade's Option-launch (throwing
   the orbs as one-shot drones) is unmodelled; B is already the shell verb in
   this engine, so the shield-guns stay mounted until the wreck.

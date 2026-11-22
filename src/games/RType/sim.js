@@ -101,6 +101,16 @@ export const CYCLE = ['vulcan', 'laser', 'wave']
 // cycle steps. Double sits on the full arcade list between Vulcan and Laser —
 // so a standard capsule taken while holding D hands over to the lance.
 
+// #2922 Half-Capsule (the arcade's H pod, capsule-list Part 3): a fixed-spot
+// pod that steps the ARM DOWN one level of the lineage — wave falls back to
+// the lance, the lance to the vulcan, and D to the vulcan (it sits between
+// Vulcan and the lance, so its half is the floor arm). At the floor there is
+// nothing to halve: it pays points like every spare in the house. Fidelity
+// note (#237): in the cabinet H is a WEAPON pod — the options orbs are
+// shield-guns, not a weapon level, so H never casts them off; only the wreck
+// does that (the power-armour law stands untouched).
+export const HALF = { wave: 'laser', laser: 'vulcan', double: 'vulcan' }
+
 // the wing (S4): seat two's station relative to seat one. The wing holds
 // BEHIND and on the OPPOSITE lane — two lanes of coverage, never a blocker.
 export const WING = {
@@ -161,6 +171,10 @@ export const WAVES = [
         { kind: 'larva', d: 40, y: 52, dive: 1 }, { kind: 'larva', d: 60, y: 196 },
         { kind: 'larva', d: 80, y: 120, dive: 1 }, { kind: 'larva', d: 100, y: 96 } ] },
     { at: 610, bcap: 1 },
+    // #2922 the H pod rides the upper lane after the bit field — the arcade
+    // hides the downgrade where a climbing pilot drifts (fixed spot, and the
+    // trap is the point). Authored y — zero rng, streams untouched.
+    { at: 620, hcap: { y: 44 } },
     { at: 640, pod: { y: 168, missiles: 4 } },
     { at: 660, scap: { y: 152 } },
     { at: 700, seg: { y0: FIELD_TOP, y1: 82, len: 170, turret: 82 } },
@@ -377,6 +391,19 @@ function takeSpecial(gs, ent, c) {
         if (!ent.opts) {
             summonOptions(gs, ent); ent.charge = 0
             addScore(gs, 500); gs.events.push('ocap'); gs.optAnn = 60
+        } else { addScore(gs, 1000); gs.events.push('capsule') }
+        return true
+    }
+    // #2922 Half-Capsule: the arm falls one step of the lineage (HALF law) and
+    // the lance charge dies with the lance; at the floor there is nothing to
+    // halve, so like every spare in the house it pays points. The orbs ride
+    // through untouched — H is a weapon pod (fidelity note at HALF).
+    if (c.type === 'half') {
+        const down = HALF[ent.weapon]
+        if (down) {
+            ent.weapon = down; ent.charge = 0
+            if (ent === gs.ship) gs.weaponName = down
+            addScore(gs, 500); gs.events.push('hcap')
         } else { addScore(gs, 1000); gs.events.push('capsule') }
         return true
     }
@@ -917,6 +944,7 @@ function runWorld(gs, pad, frozen, pad2) {
             if (wv.dcap) spawnSpecialCap(gs, wv.dcap.y, 'double')
             if (wv.scap) spawnSpecialCap(gs, wv.scap.y, 'speed')
             if (wv.ocap) spawnSpecialCap(gs, wv.ocap.y, 'options')
+            if (wv.hcap) spawnSpecialCap(gs, wv.hcap.y, 'half')
             if (wv.seg) spawnSeg(gs, wv.seg)
             if (wv.pod) spawnPod(gs, wv.pod.y, wv.pod.missiles)
             if (wv.bpod) spawnBitPod(gs, wv.bpod.y, wv.bpod.n)

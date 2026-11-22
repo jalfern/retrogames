@@ -70,6 +70,9 @@ export default function RType() {
             // each arriving orb latches with its own two-tone ding, and the
             // loss is the pair going dark (the bits-lost shape, a fifth lower)
             ocap: () => { const n = [660, 880, 1174, 1568]; n.forEach((f, i) => audioController.playTone(f, 0.07, 'square', 0.09, i * 0.05)); audioController.playNoise(0.05, 0.05) },
+            // #2922 the H pod says the opposite of scap: a falling slide plus
+            // a dull latch — the arm stepping down, heard as a descent
+            hcap: () => { audioController.playSweep(920, 240, 0.22, 'square', 0.1); audioController.playTone(180, 0.09, 'triangle', 0.09, 0.18) },
             optdock: () => { audioController.playTone(440, 0.05, 'square', 0.09); audioController.playTone(660, 0.06, 'square', 0.09, 0.05); audioController.playNoise(0.02, 0.03) },
             woptdock: () => { audioController.playTone(392, 0.05, 'triangle', 0.07); audioController.playTone(588, 0.05, 'triangle', 0.07, 0.05) },
             optslost: () => audioController.playSweep(560, 130, 0.28, 'triangle', 0.09),
@@ -194,6 +197,7 @@ export default function RType() {
                 // #2919: the summon sparks gold at the hull; each mount dings
                 // with a small burst where its orb lands (wing reads at ITS side)
                 else if (ev === 'ocap') { bursts(12, gs.ship.x + 8 - sx, gs.ship.y, 2); converge(8, gs.ship.x - sx, gs.ship.y, 2) }
+                else if (ev === 'hcap') converge(10, gs.ship.x - sx, gs.ship.y, 2) // the firepower folds inward
                 else if (ev === 'optdock') bursts(6, gs.ship.x - 14 - sx, gs.ship.y + (gs.ship.opts && gs.ship.opts.some((o) => o.docked && o.py < gs.ship.y) ? -11 : 11), 2)
                 else if (ev === 'wocap' || ev === 'woptdock') { const w = gs.wing; if (w) bursts(8, w.x - sx, w.y, 2) }
             }
@@ -473,6 +477,8 @@ export default function RType() {
                     if (opts.spawnSCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'speed' })
                     // #2919 options fixtures: spawn the O pod, summon (fly-in), or pin orbs straight onto the mounts
                     if (opts.spawnOCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'options' })
+                    // #2922 the H pod fixture (downgrade at the nose)
+                    if (opts.spawnHCap) gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'half' })
                     if (opts.giveOptions && !gs.ship.opts) gs.ship.opts = [-1, 1].map((side) => ({
                         id: gs.nextId++, side, px: gs.ship.x - (opts.pinOptions === false ? 90 : OPT.back),
                         py: gs.ship.y + side * OPT.gap, docked: opts.pinOptions !== false,
@@ -543,6 +549,7 @@ export default function RType() {
                     { label: 'GIVE DOUBLE', run: () => { window.__rTest.setup({ giveDouble: true }); return 'twin vulcan — one press, two rounds' } },
                     { label: 'GIVE SPEED UP', run: () => { window.__rTest.setup({ giveSpeed: (gs.ship.spd || 0) + 1 }); return `speed ${Math.min(2, (gs.ship.spd || 0))} — the stick answers quicker` } },
                     { label: 'SPAWN O POD', run: () => { window.__rTest.setup({ spawnOCap: true }); return 'the O capsule is at your nose — claim the shield-guns' } },
+                    { label: 'SPAWN H POD', run: () => { window.__rTest.setup({ spawnHCap: true }); return `the H capsule is at your nose — arming ${gs.ship.weapon === 'vulcan' ? 'nothing left to halve' : 'a step down'}` } },
                     { label: 'GIVE OPTIONS', run: () => { if (gs.ship.opts) return gs.ship.opts.filter((o) => o.docked).length === 2 ? 'both orbs already on their mounts' : 'orbs already inbound'; window.__rTest.setup({ giveOptions: true }); return 'options pinned to the mounts — press fire for the mirrored wall' } },
                     { label: 'TO PHASE-1', run: () => { window.__rTest.setup({ toPhase1: true }); return 'the dreadnought looms' } },
                     { label: 'OPEN MAW', run: () => { window.__rTest.setup({ openMouth: true }); return 'the maw gapes' } },
