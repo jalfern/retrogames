@@ -158,6 +158,21 @@ export default function DoubleDragon() {
                 audioController.playTone(1560, 0.09, 'square', 0.07, 0.02)
                 audioController.playNoise(0.04, 0.06, 0.05)
             },
+            // #2945: the rotations are HEARD coming too — the whip's wind is a
+            // rising leather swish (the aim cue's job for the lane-killer), the
+            // crack lands lower than the dragon's own whip so seat and street
+            // sit apart at an ear; the stick winds low and whistles past.
+            goon_windwhip: () => {
+                audioController.playSweep(300, 900, 0.3, 'triangle', 0.05)
+                audioController.playFilteredNoise(0.3, 0.04, 700)
+            },
+            goon_whip: () => {
+                audioController.playNoise(0.06, 0.16)
+                audioController.playSweep(1250, 260, 0.09, 'sawtooth', 0.09)
+                shake = Math.max(shake, 2)
+            },
+            goon_windstick: () => audioController.playSweep(200, 340, 0.2, 'triangle', 0.05),
+            goon_stick: () => { audioController.playNoise(0.05, 0.1); audioController.playSweep(520, 180, 0.08, 'square', 0.06) },
             blade_wood: () => { audioController.playTone(120, 0.05, 'square', 0.12); shake = Math.max(shake, 2) },
             blade_hit: () => { audioController.playSweep(300, 60, 0.3, 'sawtooth', 0.16); shake = Math.max(shake, 4) },
             rope: () => audioController.playNoise(0.05, 0.08),

@@ -85,6 +85,12 @@ export const CFG = {
     clatterTicks: 14,
     // --- S3 the hideout (#2807) ---
     goonKnife: { windup: 16, speed: 3.0, keep: 34 },  // aimed cast; lethal on the line; #2825 thrower's distance
+    // #2945 goon weapon rotations: the later waves carry steel too. The
+    // bigger the reach, the longer the wind — bare fists keep the law's 12.
+    goonWindup: { bare: 12, stick: 14, whip: 18 },
+    goonWhipReach: 34,       // == CFG.whip.reach — the same crack Billy lashes with
+    goonStickReach: 23,      // == CFG.stickPunchReach (the same wood Billy swings)
+    goonWhipDepth: 9,        // == CFG.whip.depth — the lash catches the line
     duelHp: 10, duelScore: 800, duelSpeed: 1.05, duelReach: 17,
     rescueRange: 22, rescueCuts: 2, rescueBonus: 1000, rescueCheer: 100,
     // --- #2882 chain scoring ---
@@ -123,7 +129,7 @@ export const INTRO = {
 const mkIntroGoon = (id, kind, x, y) => ({
     id, kind, x, y, face: -1,
     hp: ENEMY_DEF[kind].hp, state: 'walk', stateT: 0, anim: 0,
-    hasStick: false, stickDropped: false, hasKnife: false,
+    hasStick: false, stickDropped: false, hasKnife: false, hasWhip: false,
     attackCooldown: 1e9, inv: 0, spinHit: false, wob: 0, kb: 0,
 })
 
@@ -273,9 +279,12 @@ export const WAVES = [
 
 // S3 — the hideout: casters first (the arcade stage-2 trademark), then the
 // duel with Williams himself. No third wheel in the duel: one man, one lie.
+// #2945: the yard arms its visitors — wave 1 opens with a whip-Williams (the
+// hideout introduces its own threat), wave 2 pairs the knife-caster with a
+// stick-Williams. The duel keeps only his belt of knives.
 export const WAVES_S2 = [
-    { triggerX: 90, spawns: [{ kind: 'williams', side: 'left' }, { kind: 'williams', side: 'right' }] },
-    { triggerX: 360, spawns: [{ kind: 'williams', side: 'left', knife: true }, { kind: 'williams', side: 'right' }] },
+    { triggerX: 90, spawns: [{ kind: 'williams', side: 'left', whip: true }, { kind: 'williams', side: 'right' }] },
+    { triggerX: 360, spawns: [{ kind: 'williams', side: 'left', knife: true }, { kind: 'williams', side: 'right', stick: true }] },
     { triggerX: 620, spawns: [{ kind: 'duel', side: 'right', knife: true }] },
 ]
 export const wavesFor = (gs) => (gs.stage === 2 ? WAVES_S2 : WAVES)
@@ -410,7 +419,7 @@ function spawnEnemy(gs, kind, side, stick) {
         face: side === 'left' ? 1 : -1,
         hp: def.hp, state: 'enter', stateT: 0, anim: Math.floor(rng(gs) * 8),
         hasStick: !!stick, stickDropped: false,
-        hasKnife: false, castCooldown: 0,   // S3: steel in a goon's hand
+        hasKnife: false, hasWhip: false, castCooldown: 0,   // S3: steel in a goon's hand (#2945: whip too)
         tgt: null,                          // S4: which dragon this thug works
         attackCooldown: 30 + Math.floor(rng(gs) * 60),
         inv: 0, spinHit: false,
@@ -635,6 +644,12 @@ function hurtEnemy(gs, e, dmg, knockdown, onDowned, seat, kind) {
         if (e.hasKnife) {
             e.hasKnife = false
             gs.pickups.push({ x: e.x, y: e.y, kind: 'knife', bob: 0 })
+        }
+        // #2945: the rotation closes through the corpse — a whip-man drops his
+        // leather where he falls, and the walk-to-the-body arms the dragon.
+        if (e.hasWhip) {
+            e.hasWhip = false
+            gs.pickups.push({ x: e.x, y: e.y, kind: 'whip', bob: 0 })
         }
         return true
     }
@@ -916,6 +931,13 @@ function attackerCount(gs) {
     return gs.enemies.filter((e) => e.state === 'attack' || e.state === 'windup').length
 }
 
+// #2945 goon weapon rotations — which piece of steel a thug is swinging
+// (whip outranks stick; a man carries ONE weapon, the dragons' own law).
+// The longer the reach, the longer the wind (CFG.goonWindup): the crowd's
+// bigger weapons telegraph bigger.
+const goonWeapon = (e) => (e.hasWhip ? 'whip' : e.hasStick ? 'stick' : 'bare')
+const goonReach = (e) => (e.hasWhip ? CFG.goonWhipReach : e.hasStick ? CFG.goonStickReach : ENEMY_DEF[e.kind].reach)
+
 function nearestEnemy(gs, self) {
     let best = null, bd = 1e9
     for (const e of gs.enemies) {
@@ -1070,15 +1092,21 @@ function updateEnemy(gs, e) {
             break
         }
 
-        // attack decision
-        const inRange = adx <= def.reach && Math.abs(dy) <= 6 && b.state !== 'dying'
+        // attack decision — #2945: a thug swings from HIS reach. The whip-man
+        // catches the line from well outside punching; the stick-man owns the
+        // space past a kick. The wind scales with the steel (see 'windup').
+        const inRange = adx <= goonReach(e) && Math.abs(dy) <= (e.hasWhip ? 8 : 6) && b.state !== 'dying'
         if (inRange && e.attackCooldown <= 0 && attackerCount(gs) < attackerCap(gs)) {
             e.state = 'windup'; e.stateT = 0
+            // the bigger weapons announce their wind (bare stays silent, as the
+            // street's audio law had it before #2945)
+            if (e.hasWhip) gs.events.push('goon_windwhip')
+            else if (e.hasStick) gs.events.push('goon_windstick')
             break
         }
         // approach: close x and match depth; back-row thugs hang slightly off
         const slot = gs.enemies.filter((o) => o !== e && o.state !== 'dying' && Math.sign(o.x - b.x) === Math.sign(e.x - b.x) && Math.abs(o.x - b.x) < 26).length
-        const wantX = b.x - Math.sign(dx || 1) * (def.reach - 4 + slot * 14)
+        const wantX = b.x - Math.sign(dx || 1) * (goonReach(e) - 4 + slot * 14)
         const stepX = Math.abs(wantX - e.x) > 3 ? clamp(wantX - e.x, -def.speed, def.speed) : 0
         const stepY = Math.abs(dy) > 2 ? clamp(dy, -def.speed * 0.8, def.speed * 0.8) : 0
         const px = e.x, py = e.y
@@ -1090,7 +1118,7 @@ function updateEnemy(gs, e) {
     case 'windup': {
         e.stateT += 1
         e.face = Math.sign(b.x - e.x) || e.face
-        if (e.stateT >= 12) { e.state = 'attack'; e.stateT = 0 }
+        if (e.stateT >= CFG.goonWindup[goonWeapon(e)]) { e.state = 'attack'; e.stateT = 0 }
         break
     }
     case 'chargewind': {
@@ -1151,7 +1179,15 @@ function updateEnemy(gs, e) {
     case 'attack': {
         e.stateT += 1
         if (e.stateT === 3) {
-            const hit = b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 && Math.abs(e.y - b.y) <= 8 && b.state !== 'grabbed'
+            // #2945: the strike lands at the weapon's reach, not the fist's.
+            // The whip catches the LINE (depth 9 — the lash does not hug the
+            // lane, but it does not ignore it either); the stick owns a man's
+            // length past a kick. The crack/whoosh rings whether or not it
+            // bites — the sound tells the pad player what the eye must answer.
+            if (e.hasWhip) gs.events.push('goon_whip')
+            else if (e.hasStick) gs.events.push('goon_stick')
+            const depth = e.hasWhip ? CFG.goonWhipDepth : 8
+            const hit = b.z <= 8 && Math.abs(e.x - b.x) <= goonReach(e) + 4 && Math.abs(e.y - b.y) <= depth && b.state !== 'grabbed'
             if (hit && b.inv <= 0 && b.state !== 'dying' && gs.mode === 'play') {
                 playerDies(gs, b)
             }
@@ -1316,6 +1352,7 @@ export function step(gs, pad = {}, pad2 = {}) {
         w.spawns.forEach((s) => {
             const e = spawnEnemy(gs, s.kind, s.side, s.stick)
             if (s.knife) e.hasKnife = true
+            if (s.whip) e.hasWhip = true   // #2945 the yard arms its visitors
             // #2825 item 4: the boss wave announces itself — WILLIAMS rides the
             // banner while he holds his pose at the frame edge, then the duel.
             if (s.kind === 'duel') { gs.duelIntro = 90; gs.events.push('duel') }
@@ -1505,9 +1542,13 @@ export function dragonBrain(gs, b, ally = null) {
     const adx = Math.abs(dx)
     // bail out of a windup about to land near us — Abobo's charge telegraph
     // reads from further off, so the sidestep window is wider (#2810 item 3);
-    // an armed Williams' aim reads at cast range.
+    // an armed Williams' aim reads at cast range; #2945 a cracking whip reads
+    // past a kick (bounds sit OUTSIDE the strike's own reach+depth, the same
+    // margin the aim branch keeps over its blade).
     const threat = gs.enemies.find((e) => (
-        ((e.state === 'windup' || e.state === 'attack') && Math.abs(e.x - b.x) < 30 && Math.abs(e.y - b.y) <= 7)
+        ((e.state === 'windup' || e.state === 'attack')
+            && Math.abs(e.x - b.x) < (e.hasWhip ? 46 : e.hasStick ? 38 : 30)
+            && Math.abs(e.y - b.y) <= (e.hasWhip ? CFG.goonWhipDepth + 5 : 7))
         || ((e.state === 'chargewind' || e.state === 'charge') && Math.abs(e.x - b.x) < 60 && Math.abs(e.y - b.y) <= 14)
         || (e.state === 'aim' && Math.abs(e.x - b.x) < 140 && Math.abs(e.y - b.y) <= 12)))
     if (threat && b.z === 0) {
@@ -1519,8 +1560,11 @@ export function dragonBrain(gs, b, ally = null) {
             pad[dir < 0 ? 'up' : 'down'] = true
             return pad
         }
-        if (threat.state === 'aim') {
-            // the cast is aimed at THIS lane — leave before the blade answers
+        if (threat.state === 'aim' || threat.hasWhip) {
+            // the cast is aimed at THIS lane — leave before the blade answers.
+            // #2945: so is the whip — running down the street only lengthens
+            // its reach; the depth axis is the whole answer (#2807's core law,
+            // leather edition).
             let dir = b.y > threat.y ? 1 : b.y < threat.y ? -1 : (b.y > (DEEP_TOP + DEEP_BOT) / 2 ? -1 : 1)
             if (b.y + dir * 14 < DEEP_TOP || b.y + dir * 14 > DEEP_BOT) dir = -dir
             pad[dir > 0 ? 'down' : 'up'] = true
@@ -1624,6 +1668,9 @@ export function stateHash(gs) {
         mix(e.id); mix(e.x); mix(e.y); mix(e.hp); mix(e.state.length); mix(e.inv)
         mix(e.kb || 0)   // #2935: the slide's velocity is sim truth — same
                         // hash means the same future, kb held invisible would break that
+        // #2945: the steel in hand decides the goon's whole future (reach,
+        // wind, drop) — an invisible weapon would break same-hash-same-future.
+        mix((e.hasKnife ? 1 : 0) | (e.hasStick ? 2 : 0) | (e.hasWhip ? 4 : 0))
     }
     return h >>> 0
 }

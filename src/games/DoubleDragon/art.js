@@ -1146,6 +1146,34 @@ export function drawEnemy(ctx, e, camX) {
         ctx.fillStyle = '#8a6a3c'
         ctx.fillRect(sx + (pose === 'attack' ? 16 : pose === 'windup' ? -12 : 8) * e.face, sy - 22 * def, 10 * e.face, 2)
     }
+    if (e.hasWhip) {
+        // #2945: the yard's leather. Coil at the hip at rest, cocked back in
+        // the wind, and the lash cracks a pixel-stepped line out to reach on
+        // the strike — the same crack grammar the dragon's own whip draws,
+        // flipped to face the player. The white tip-burn is the bite tick.
+        ctx.fillStyle = '#5a3a20'
+        if (pose === 'attack' && e.stateT >= 2 && e.stateT <= 12) {
+            const t = (e.stateT - 2) / 10
+            const lit = e.stateT >= 3 && e.stateT <= 4
+            ctx.fillStyle = lit ? '#7c4c20' : '#4a2f18'
+            let lx = sx, ly = sy - 20 * def
+            for (let i = 0; i <= 12; i++) {
+                const f = i / 12
+                lx = sx + e.face * Math.round(6 + f * 28 * (0.6 + t * 0.4) * def)
+                ly = sy - 20 * def + Math.round(Math.sin(f * Math.PI * (1.5 - t)) * 6 * f)
+                ctx.fillRect(lx, ly, 2, 1)
+            }
+            if (lit) {
+                ctx.fillStyle = '#ffffff'
+                ctx.fillRect(lx - 1, ly - 1, 3, 2)
+            }
+        } else if (pose === 'windup') {
+            ctx.fillRect(sx - 11 * e.face, sy - 30 * def, 9 * e.face, 2)
+        } else {
+            ctx.fillRect(sx - 4, sy - 13 * def, 8, 2)
+            ctx.fillRect(sx - 4, sy - 11 * def, 2, 2)
+        }
+    }
     if (e.hasKnife) {
         // S3 steel in a goon's hand: held low at the hip, cocked back in the
         // aim, arm out the instant it flies
