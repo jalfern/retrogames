@@ -674,8 +674,12 @@ function fireSalvo(gs, ci) {
     const px = p2.x + 8, py = CORE_Y[ci] + p2.swayOff
     const tp = nearestPilot(gs, px, py)
     const base = Math.atan2(tp.y - py, tp.x - px)
+    // #2951: the fan carries `volley` — sim truth the brains read. The rounds
+    // fly straight once loosed, so the line they were aimed at stays a death
+    // line until it crosses the station; the tag is how a brain knows WHICH
+    // straight rounds to pre-dodge (hash unchanged: stateHash mixes positions).
     for (const off of [-0.18, 0, 0.18]) {
-        gs.bullets.push({ id: gs.nextId++, x: px, y: py, vx: Math.cos(base + off) * 1.35, vy: Math.sin(base + off) * 1.35 })
+        gs.bullets.push({ id: gs.nextId++, x: px, y: py, vx: Math.cos(base + off) * 1.35, vy: Math.sin(base + off) * 1.35, volley: 1 })
     }
     p2.flashT = 7; p2.flashCi = ci
     gs.events.push('p2salvo')
@@ -2032,13 +2036,14 @@ export function wingBrain(gs) {
         const consider = (t) => { if (t > 0 && t < risk) risk = t }
         for (const b of gs.bullets) {
             if (b.x - w.x < -4 || b.vx >= 0) continue
-            const t = (w.x - b.x) / (-b.vx + 0.45)
+            const t = (b.x - w.x) / (-b.vx + 0.45)
+            if (b.volley) continue // #2951: the fan is read by the slip below, not the lane field
             if (t < 34 && Math.abs(bulletLaneY(b, t) - y) < 10) consider(t)
         }
         for (const e of gs.enemies) {
             if (e.kind === 'larva') {
                 if (e.state === 'dive' && e.vx < 0 && e.x > w.x - 6) {
-                    const t = (w.x - e.x) / (-e.vx + 0.45)
+                    const t = (e.x - w.x) / (-e.vx + 0.45)
                     if (t < 40 && Math.abs(e.y + e.vy * t - y) < 12) consider(t)
                 } else if (e.x > w.x) {
                     const t = (e.x - w.x) / 1.6
@@ -2057,7 +2062,7 @@ export function wingBrain(gs) {
             // the moments off the line; the hunt is merely unwelcome.
             if (e.kind === 'duelist') {
                 if (e.state === 'dash' && e.x > w.x - 6) {
-                    const t = (w.x - e.x) / (-e.vx + 0.45)
+                    const t = (e.x - w.x) / (-e.vx + 0.45)
                     if (t < 40 && Math.abs(e.y + e.vy * t - y) < 12) consider(t)
                 } else if (e.state === 'windup' && e.x > w.x - 6) {
                     consider(Math.max(1, e.stateT + (e.x - w.x) / DUEL.dash))
@@ -2108,6 +2113,11 @@ export function wingBrain(gs) {
     pad.up = dy < -1.2
     pad.down = dy > 1.2
 
+    // #2951 seat two slips the fortress fan the same way — docs/AI.md: a lane
+    // a brain must dodge has to be sensed by that brain.
+    const slipW = gs.p2 && gs.p2.dyingT === 0 ? fanSlip(gs, w.x, w.y) : 0
+    if (slipW) { pad.up = slipW < 0; pad.down = slipW > 0 }
+
     // #2841 formation drift: on a quiet lane the wing eases half a body-length
     // toward its partner (the originals flew as a pair, not a spaced pair);
     // it falls back to station the moment the lane heats up.
@@ -2130,6 +2140,26 @@ export function wingBrain(gs) {
 // (leading bullets, locked divers, curving hunters, parked bodies, slabs) and
 // steer to the safest — never into the lane the last dodge forgot.
 
+// #2951 the fan slip. The fortress volley flies straight once loosed and aims
+// at where the hull WAS — leave the aim line a hand's width while the fan is
+// airborne and every round in it misses by more than the hit band. Returns the
+// side to slip (-1 up / +1 down) or 0 when nothing crosses within 12 px of
+// the hull: the rule self-limits at the 12 px clearance (the fan's outer rounds
+// cross ±24 from its centre, so the midpoint clears all three) and self-heals —
+// the moment the air is empty the vent lock re-boards the throat. One lane per
+// round, honest arithmetic on live positions, zero rng.
+function fanSlip(gs, hx, hy) {
+    let dir = 0, best = 12
+    for (const b of gs.bullets) {
+        if (!b.volley || b.vx >= 0 || b.x - hx < -4) continue
+        const t = (b.x - hx) / (-b.vx + SCROLL)
+        if (t >= 70) continue
+        const d = b.y + b.vy * t - hy
+        if (Math.abs(d) < best) { best = Math.abs(d); dir = d > 0 ? -1 : 1 }
+    }
+    return dir
+}
+
 export function autopilot(gs) {
     const pad = { left: false, right: false, up: false, down: false, a: false, b: false }
     const s = gs.ship
@@ -2147,13 +2177,24 @@ export function autopilot(gs) {
         const consider = (t) => { if (t > 0 && t < risk) risk = t }
         for (const b of gs.bullets) {
             if (b.x - px < -4 || b.vx >= 0) continue
-            const t = (px - b.x) / (-b.vx + 0.45)
+            // #2951 ROOT FIX: this numerator was inverted since S1 — t came out
+            // negative for every round ahead of the hull, so consider(t>0) never
+            // fired and the lane field was blind to straight fire. Measured: a
+            // round 50px out bought zero reaction; the pilot survived on strafe
+            // and kill-races and ate what the cabinet pilot side-steps. The
+            // crossing time is (b.x - px) over the closure (its dive + the push).
+            const t = (b.x - px) / (-b.vx + 0.45)
+            // #2951: volley rounds are read by the fan slip below, not by the
+            // lane field — quitting the throat lane to dodge loses the kill race
+            // and invites MORE volleys. The slip leaves the aim line a hand's
+            // width without leaving the vent.
+            if (b.volley) continue
             if (t < 40 && Math.abs(bulletLaneY(b, t) - y) < 10) consider(t) // #2911: folds ricochets
         }
         for (const e of gs.enemies) {
             if (e.kind === 'larva') {
                 if (e.state === 'dive' && e.vx < 0 && e.x > px - 6) {
-                    const t = (px - e.x) / (-e.vx + 0.45) // closure rides the camera push too
+                    const t = (e.x - px) / (-e.vx + 0.45) // closure rides the camera push too
                     if (t < 48 && Math.abs(e.y + e.vy * t - y) < 12) consider(t)
                 } else if (e.x > px) {
                     const t = (e.x - px) / 1.6 // closure = its drift + the camera push; the swing keeps swinging
@@ -2173,7 +2214,7 @@ export function autopilot(gs) {
             // are the moments a pilot must leave the line.
             if (e.kind === 'duelist') {
                 if (e.state === 'dash' && e.x > px - 6) {
-                    const t = (px - e.x) / (-e.vx + 0.45)
+                    const t = (e.x - px) / (-e.vx + 0.45)
                     if (t < 48 && Math.abs(e.y + e.vy * t - y) < 12) consider(t)
                 } else if (e.state === 'windup' && e.x > px - 6) {
                     consider(Math.max(1, e.stateT + (e.x - px) / DUEL.dash))
@@ -2266,6 +2307,14 @@ export function autopilot(gs) {
         pad.up = dir < 0
         pad.down = dir > 0
     }
+
+    // #2951 the fan slip: a volley is straight-line and aimed where you ARE —
+    // a pilot nailed to the aim line through the volley eats what the cabinet
+    // pilot side-steps. Slip off the line while the fan is inbound; the slip
+    // is a hand's width, so the stream stays in reach of the vent and the
+    // kill-race keeps its pace.
+    const slip = p2 && p2.dyingT === 0 ? fanSlip(gs, px, py) : 0
+    if (slip) { pad.up = slip < 0; pad.down = slip > 0 }
 
     // station: hold mid-lead, never drift into the grinder, never board the hull
     const want = gs.camX + ((p1 && p1.dyingT === 0) || (dk && dk.dyingT === 0) ? 52 : 62)

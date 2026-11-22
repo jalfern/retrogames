@@ -491,6 +491,8 @@ export default function RType() {
                     sway: gs.p2 ? Math.round(gs.p2.swayOff * 10) / 10 : 0,
                     p2port: gs.p2 ? gs.p2.port : -1,
                     p2dying: gs.p2 ? gs.p2.dyingT : 0,
+                    volleys: gs.bullets.filter((b) => b.volley).length, // #2951 marked fans in the air
+    volleyX: (() => { const b = gs.bullets.find((x) => x.volley); return b ? Math.round(b.x - gs.camX) : -1 })(), // #2951 how far into the yard the mark rides
                     // #2911 — the walking gate: hp/x/mouth/leg-clock + the
                     // count of live ricochets the pilot is sharing the field with
                     p3: gs.dobk ? 'live' : 0, p3hp: gs.dobk ? gs.dobk.hp : -1,
@@ -552,6 +554,10 @@ export default function RType() {
                     if (opts.crushShip) gs.ship.x = gs.camX
                     if (opts.toPhase1) { gs.camX = STAGE_END; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
                     if (opts.toPhase2) { gs.p1 = null; gs.enemies = gs.enemies.filter((e) => e.on !== 'p1'); gs.bullets.length = 0; gs.camLock = false; gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
+                    if (opts.spawnVolley) { // #2951 — a marked fan crossing the yard, for QA legs
+                        const px = gs.ship.x + 120, py = gs.ship.y + 2
+                        for (const off of [-0.18, 0, 0.18]) gs.bullets.push({ id: gs.nextId++, x: px, y: py, vx: Math.cos(Math.PI + off) * 1.35, vy: Math.sin(Math.PI + off) * 1.35, volley: 1 })
+                    }
                     // #2911: jump the leg-3 gate — clear the stage's dreads, roll to the lock, let the tank walk in
                     if (opts.toDobk) { gs.p1 = null; gs.p2 = null; gs.enemies = gs.enemies.filter((e) => e.on !== 'p1' && e.on !== 'p2'); gs.bullets.length = 0; gs.missiles.length = 0; gs.camLock = false; gs.leg = 3; gs.camX = STAGE_END3; gs.legAt = gs.tick; step(gs, { left: false, right: false, up: false, down: false, a: false, b: false }) }
                     if (opts.openDobk && gs.dobk) { gs.dobk.mouth = 'open'; gs.dobk.mouthT = 10000 }
@@ -612,6 +618,7 @@ export default function RType() {
                     { label: 'OPEN VENTS', run: () => { if (!gs.p2) return 'no fortress on screen — TO PHASE-2 first'; window.__rTest.setup({ openVents: true }); return 'both vents gape' } },
                     { label: 'SPAWN BIT POD', run: () => { window.__rTest.setup({ spawnBitPod: { y: Math.round(gs.ship.y) } }); return 'a bit carrier closes in — feed it fire' } },
                     { label: 'SPAWN DUELIST', run: () => { window.__rTest.setup({ spawnDuelist: { y: Math.round(gs.ship.y) } }); return 'a crimson hunter takes the stand-off — it is hunting YOU' } },
+                    { label: 'SPAWN VOLLEY', run: () => { window.__rTest.setup({ spawnVolley: true }); return 'three marked rounds cross the yard — leave the line' } },
                     { label: 'GIVE DOUBLE', run: () => { window.__rTest.setup({ giveDouble: true }); return 'twin vulcan — one press, two rounds' } },
                     { label: 'GIVE SPEED UP', run: () => { window.__rTest.setup({ giveSpeed: (gs.ship.spd || 0) + 1 }); return `speed ${Math.min(2, (gs.ship.spd || 0))} — the stick answers quicker` } },
                     { label: 'SPAWN O POD', run: () => { window.__rTest.setup({ spawnOCap: true }); return 'the O capsule is at your nose — claim the shield-guns' } },
