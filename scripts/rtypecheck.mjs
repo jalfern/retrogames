@@ -2324,10 +2324,195 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         allLived, `allLived=${allLived}`)
 }
 
+// ------------------------------------- #2972 the wing's shell initiative -------
+// Seat two commits its OWN seed: launch at soft bodies in the lane ahead when
+// FIRE breathes (the cargo-chase's own 12-tick survivability number), the ram
+// law does the killing on the line, recall restores the attached plug once the
+// source line clears. Zero rng — every read is live positions — and the two
+// vetoes stand: a hand-off (#2841) and a human seat outrank the brain.
+{ // the decision: a soft body in the launch window, fire-breathable, buys the press
+    const gs = coopGame(5)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.enemies = []
+    gs.bullets.length = 0
+    gs.missiles.length = 0
+    gs.wing.pod = { id: 77, state: 'attached', x: gs.wing.x + POD.noseX, y: gs.wing.y, grace: 0 }
+    gs.enemies.push({ id: 501, kind: 'turret', x: gs.wing.x + 110, y: gs.wing.y + 3, face: -1, hp: 1, cd: 999, anim: 0, inv: 0, edgeUp: true })
+    const pressT = wingBrain(gs).b === true // turret gun ahead, lane breathes
+    gs.enemies = [{ id: 502, kind: 'duelist', x: gs.wing.x + 120, y: gs.wing.y - 4, state: 'hunt', stateT: 10, cd: 99, hp: 2, vx: 0, vy: 0, anim: 0 }]
+    const pressD = wingBrain(gs).b === true // a hunter working the lane is bait too
+    gs.enemies = []
+    const pressQ = wingBrain(gs).b === true // and a quiet field commits nothing
+    r.check('#2972 initiative: a soft turret or a hunting duelist in the launch lane buys the press; a quiet field stays docked',
+        pressT && pressD && !pressQ, `turret=${pressT} duelist=${pressD} quiet=${pressQ}`)
+}
+
+{ // the breath law: the same launch waits out FIRE — the source may shoot, the
+    // line may not, because a shell out means the nose plug is out
+    const gs = coopGame(5)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.enemies = []
+    gs.missiles.length = 0
+    gs.wing.pod = { id: 77, state: 'attached', x: gs.wing.x + POD.noseX, y: gs.wing.y, grace: 0 }
+    gs.enemies.push({ id: 503, kind: 'turret', x: gs.wing.x + 110, y: gs.wing.y, face: -1, hp: 1, cd: 999, anim: 0, inv: 0, edgeUp: true })
+    const open = wingBrain(gs).b === true
+    gs.bullets.push({ id: 5, x: gs.wing.x + 20, y: gs.wing.y + 2, vx: -2, vy: 0 }) // ~8 ticks out, dead on the line
+    const hot = wingBrain(gs).b === true
+    r.check('#2972 breath law: a round crossing the launch line within 12 ticks keeps the seed docked — fire decides, not fear',
+        open && !hot, `open=${open} hot=${hot}`)
+}
+
+{ // armour is never bait: a slab in the lane is where shells go to be refused
+    const gs = coopGame(5)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.enemies = []
+    gs.bullets.length = 0
+    gs.missiles.length = 0
+    gs.wing.pod = { id: 77, state: 'attached', x: gs.wing.x + POD.noseX, y: gs.wing.y, grace: 0 }
+    gs.enemies.push({ id: 504, kind: 'hullseg', x: gs.wing.x + 40, len: 80, y0: gs.wing.y - 30, y1: gs.wing.y + 30, hp: 9 })
+    const b = wingBrain(gs).b === true
+    r.check('#2972 armour is not a target: a slab face in the lane buys no launch — armour refuses shells by standing law',
+        !b, `press=${b}`)
+}
+
+{ // hand-off outranks initiative: a shell seat one asked for is delivered, never re-deployed
+    const gs = coopGame(5)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.enemies = []
+    gs.bullets.length = 0
+    gs.missiles.length = 0
+    gs.wing.pod = { id: 77, state: 'attached', x: gs.wing.x + POD.noseX, y: gs.wing.y, grace: 0 }
+    gs.enemies.push({ id: 505, kind: 'turret', x: gs.wing.x + 110, y: gs.wing.y, face: -1, hp: 1, cd: 999, anim: 0, inv: 0, edgeUp: true })
+    const before = wingBrain(gs).b === true
+    gs.wing.pod.hand = true
+    const during = wingBrain(gs).b === true
+    r.check('#2972 the hand-off outranks initiative: the same lane presses while the shell is unasked, and goes silent the tick seat one wants it',
+        before && !during, `before=${before} duringHand=${during}`)
+}
+
+{ // the human seat keeps its veto: the brain offers nothing when a hand is on the stick
+    const gs = coopGame(5)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.enemies = []
+    gs.bullets.length = 0
+    gs.missiles.length = 0
+    gs.wing.pod = { id: 77, state: 'attached', x: gs.wing.x + POD.noseX, y: gs.wing.y, grace: 0 }
+    gs.enemies.push({ id: 506, kind: 'turret', x: gs.wing.x + 110, y: gs.wing.y, face: -1, hp: 1, cd: 999, anim: 0, inv: 0, edgeUp: true })
+    gs.wing.human = true
+    const pad = wingBrain(gs)
+    r.check('#2972 the human seat two is never overruled: with a hand on the stick the brain presses nothing at all',
+        !pad.b && !pad.a && !pad.up && !pad.down, `pad=${JSON.stringify(pad)}`)
+}
+
+{ // the throw is seat two's: seat one's autopilot keeps the S2 calibration — attached plugging is pure upside for it
+    const gs = makeGame(5)
+    gs.ship.inv = 999999
+    gs.caps.push({ id: 1, x: gs.ship.x + 4, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'force' })
+    step(gs, {})
+    gs.events.length = 0
+    let threw = false
+    for (let i = 0; i < 200; i++) {
+        const pad = autopilot(gs)
+        if (pad.b) threw = true
+        step(gs, pad)
+        gs.events.length = 0
+    }
+    r.check("#2972 the initiative belongs to the wing: 200 solo live ticks with a shell aboard and the autopilot never throws it (pad.b never)",
+        !threw && !!gs.pod, `threw=${threw} pod=${gs.pod ? gs.pod.state : 'lost'}`)
+}
+
+{ // the ceremony, end to end: launch, ram, recall, re-dock — with honest money.
+    // The target is a held bit carrier: parked in the wing's lane at a stand-off
+    // that stays put (a hunter hunts the other hull and wanders out of the keep
+    // window; a world-fixed gun on the wing's own line eventually meets the
+    // nose — the carrier holds, so the kill belongs to the THROW, not the hull).
+    const gs = coopGame(5)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.enemies = []
+    gs.bullets.length = 0
+    gs.missiles.length = 0
+    gs.wing.pod = { id: 77, state: 'attached', x: gs.wing.x + POD.noseX, y: gs.wing.y, grace: 0 }
+    const planted = { id: 507, kind: 'bitpod', x: gs.wing.x + 145, y: gs.wing.y + 2, baseY: gs.wing.y + 2, bob: 0,
+        hp: 12, n: 2, vx: 0, inv: 0, anim: 0, holdT: 999, stingCd: 999, anchorX: gs.wing.x + 145, state: 'hold' }
+    gs.enemies.push(planted)
+    const s0 = gs.score
+    let launchAt = -1, killAt = -1, dockAt = -1, awayAtKill = false
+    for (let i = 0; i < 400; i++) {
+        step(gs, autopilot(gs))
+        gs.wing.y = planted.y // the lane-wobble variable is pinned (the vent-hunt law pins ship.y the same way)
+        if (launchAt < 0 && gs.wing.pod && gs.wing.pod.state !== 'attached') launchAt = i
+        if (killAt < 0 && !gs.enemies.includes(planted)) { killAt = i; awayAtKill = !!gs.wing.pod && gs.wing.pod.state !== 'attached' && gs.wing.pod.x > gs.wing.x + 40 }
+        if (killAt >= 0 && dockAt < 0 && gs.wing.pod && gs.wing.pod.state === 'attached') dockAt = i
+        gs.enemies = gs.enemies.filter((e) => e === planted) // the law tests the decision, not the schedule
+        gs.bullets.length = 0
+        gs.missiles.length = 0
+        gs.events.length = 0
+        if (dockAt >= 0) break
+    }
+    r.check('#2972 the ceremony: seat two launches at the carrier on its line, the ram kills it far down the lane (carrier money banks), and the shell re-docks once the source line clears',
+        launchAt >= 0 && killAt > launchAt && awayAtKill && dockAt > killAt && gs.score >= s0 + 400,
+        `launch@${launchAt} kill@${killAt} away=${awayAtKill} redock@${dockAt} score +${gs.score - s0}`)
+}
+
+{ // the keep-window: a body just outside the launch line holds the shell OUT —
+    // hysteresis so a bobbing carrier cannot make the shell stutter out and home
+    const gs = coopGame(5)
+    gs.ship.inv = 999999
+    gs.wing.inv = 999999
+    gs.enemies = []
+    gs.bullets.length = 0
+    gs.missiles.length = 0
+    gs.wing.pod = { id: 77, state: 'attached', x: gs.wing.x + POD.noseX, y: gs.wing.y, grace: 0 }
+    gs.enemies.push({ id: 508, kind: 'bitpod', x: gs.wing.x + 120, y: gs.wing.y + 12, baseY: gs.wing.y + 12, bob: 0,
+        hp: 7, n: 2, vx: 0, inv: 0, anim: 0, holdT: 999, stingCd: 999, anchorX: gs.wing.x + 120, state: 'hold' })
+    const noLaunch = wingBrain(gs).b !== true // 12 px off the line: outside the 10-px launch window
+    gs.wing.pod.state = 'park'
+    gs.wing.pod.x = gs.camX + W - POD.parkPad
+    const staysOut = wingBrain(gs).b !== true // same body inside the 14-px keep window: no recall press
+    gs.enemies = []
+    const recalls = wingBrain(gs).b === true // and when it finally clears, the shell comes home
+    r.check('#2972 the keep-window is a hand wider than the launch-window: 12 px off the line neither launches nor recalls, and the clear lane does',
+        noLaunch && staysOut && recalls, `noLaunch=${noLaunch} staysOut=${staysOut} recalls=${recalls}`)
+}
+
 // ----------------------------------------------------------------- mutant ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
     const plants = [
+        {
+            name: 'shell-deaf', // #2972: seat two stops committing its own shell
+            anchor: "if (pdW && !pdW.hand && pdW.state === 'attached' && incomingAt(w.y) >= 12 && softAhead(150, 10)) pad.b = true",
+            plant: "if (false && pdW && !pdW.hand && pdW.state === 'attached' && incomingAt(w.y) >= 12 && softAhead(150, 10)) pad.b = true /* MUTANT(shell-deaf): the wing never launches */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(5)
+                mod.enableCoop(gs)
+                gs.ship.inv = 999999
+                gs.wing.inv = 999999
+                gs.enemies = []
+                gs.bullets.length = 0
+                gs.missiles.length = 0
+                gs.wing.pod = { id: 77, state: 'attached', x: gs.wing.x + mod.POD.noseX, y: gs.wing.y, grace: 0 }
+                const planted = { id: 507, kind: 'turret', x: gs.wing.x + 145, y: gs.wing.y + 2, face: -1, hp: 1, cd: 999, anim: 0, inv: 0, edgeUp: true }
+                gs.enemies.push(planted)
+                let launched = false
+                for (let i = 0; i < 200 && !launched; i++) {
+                    mod.step(gs, mod.autopilot(gs))
+                    if (gs.wing.pod && gs.wing.pod.state !== 'attached') launched = true
+                    gs.enemies = gs.enemies.filter((e) => e === planted)
+                    gs.bullets.length = 0
+                    gs.events.length = 0
+                }
+                return !launched
+                    ? 'HARM NAMED: seat two watched a gun work its lane for 200 ticks and never threw its shell — the partner is a passenger again, the right edge stays unplugged, and the soft bodies the throw solved at the stand-off walk into the fight whole'
+                    : null
+            },
+        },
         {
             name: 'answer-deaf', // #2937: the ferry goes back to being a sitting duck
             anchor: "if (e.kind === 'bitpod' && e.hp > 0 && !frozen && e.stingCd <= 0) {",

@@ -11,8 +11,8 @@ a human seat on the keyboard (Jon's multiplayer rule, no second touchpad).
 ## Verified
 ```bash
 npm run dev -- --port 5178 &      # or any free port + RTYPE_URL / DEV_PORT
-node scripts/rtypecheck.mjs       # sim + browser: 247 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel, #2951 volley pre-dodge, #2952 dodge pay & cover-fire)
-node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf` + `duel-ghost` + `coast-through` + `dart-plain` + `flash-deaf` + `pre-dodge-deaf` + `cross-blind` + `graze-blind` + `cover-deaf`
+node scripts/rtypecheck.mjs       # sim + browser: 255 laws (S1, #2818/#2823 polish, S2, S3, #2831/#2835 polish, S4, #2841 polish, #2901 desperation, #2906 desperation polish, #2911 Dobkeratops, #2915 special pods, #2919 options, #2925 options-launch, #2931 pad THROW, #2934 duelist, #2938 duel-on-steel, #2951 volley pre-dodge, #2952 dodge pay & cover-fire, #2972 wing shell initiative)
+node scripts/rtypecheck.mjs --mutant   # red as `armour-blind p1 core` + `pod-blind` + `shield-blind` + `pool-blind` + `cargo-blind` + `salvo-blind` + `vent-blind` + `panic-deaf` + `tempo-deaf` + `hot-leaks` + `cold-guns` + `spasm-deaf` + `ember-mute` + `dobk-blind` + `twin-collapse` + `speed-deaf` + `mirror-deaf` + `opts-leak` + `launch-deaf` + `rearm-deaf` + `pursuit-deaf` + `commit-deaf` + `duel-ghost` + `coast-through` + `dart-plain` + `flash-deaf` + `pre-dodge-deaf` + `cross-blind` + `graze-blind` + `cover-deaf` + `shell-deaf`
 ```
 `rtypecheck` covers the S1 laws — camera right-only + the grinding left edge,
 one-hit death + mercy + death-reverts-the-arm, capsule cycle, wave charge
@@ -281,6 +281,34 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   the added firepower: solo 8/12, co-op 11/12 — the floors hold. Half-Capsule
   stays open.
 
+- **#2972 wing shell initiative (builder):** seat two commits its own seed. The
+  gap said the wing never deploys on its own initiative — here the throw is a
+  decision law, not an animation: with its S.E.E.D. docked, the lane FIRE-breathable
+  and a soft body working its lane ahead, the wing launches, and the standing
+  laws do the rest (`podRamInto` crushes whatever the line meets; a parked shell
+  plugs fresh rounds at the right edge while the wing fights what is already
+  inside); when the source line clears, the same verb recalls it and the attached
+  plug — the resting state per the #2818 note — is restored. The gates, in the
+  house's own numbers: **breathable** = no round/hunter/sting/diving-larva
+  crossing the launch line within 12 ticks (the cargo-chase's survivability
+  number — fire decides, not fear: the turret in the sights may shoot, the line
+  may not, because a shell out means the nose plug is out); **soft** =
+  turret/gun-pod/carrier/duelist — armour is never bait, armour refuses shells
+  by standing law; **precedence** = a `pd.hand` hand-off (#2841) outranks
+  initiative (a shell seat one asked for is delivered, never re-deployed), and a
+  human seat keeps its veto untouched. Launch window 150px/±10, keep window
+  170px/±14 — the hysteresis the bob±3 on authored bodies needs so a carrier
+  cannot make the shell stutter out and home. Zero rng by construction: every
+  read is live positions; no new persistent state — `stateHash` and every tuned
+  stream are untouched, and the initiative is seat two's alone (the solo
+  autopilot still keeps its shell docked — attached plugging stays pure upside
+  for it, and the 8/12 solo floor holds). Co-op re-measured with the throw
+  live: 12/12 seeds, strictly above the solo floor as pinned. Kinematics lesson
+  from writing the ceremony law: at the hull's own pace the wing overtakes a
+  world-fixed gun before the throw can reach it — the law's proof-target is a
+  HELD carrier (pinned lane, hp 12 so the ram lands the kill, not the stream),
+  and away-at-kill is asserted, so what died is provably the throw, not the nose.
+
 ## Honest gaps (S5+)
 
 - **CLOSED by #2922** — the capsule list is complete: the Half-Capsule (H) is
@@ -432,21 +460,29 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   answers (proven on seeds 1..4 with both brains). Both rules zero-rng:
   arithmetic on live positions, pressed streams replay hash-for-hash. Five
   laws + two mutants (`graze-blind`, `cover-deaf`).
-- The wing brain never deploys its shell on its own initiative (a human seat
-  two can, via G).
+- **CLOSED by #2972** — the wing brain deploys its shell on its own initiative:
+  with the seed docked, the launch lane FIRE-breathable (no round, hunter, sting
+  or diving larva crossing within 12 ticks — the cargo law's own number) and a
+  SOFT body working that lane ahead (turret, gun-pod, carrier, duelist — armour
+  is never bait), seat two throws: the ram line crushes what it meets and the
+  parked shell plugs fresh rounds at the right edge until the source line
+  clears, when the same verb brings it home. Hand-off outranks initiative; a
+  human seat keeps its veto. Zero rng, no new persistent state; co-op holds
+  12/12 with the throw live (see the #2972 note above for the full law and
+  the ceremony proof).
 - A dark seat gets no free life — seat-two flavour left for a later pass.
 
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 247 sim+browser laws, thirty named mutants
+- `scripts/rtypecheck.mjs` — 255 sim+browser laws, thirty-one named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
   `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`,
   `twin-collapse`, `speed-deaf`, `mirror-deaf`, `opts-leak`,
   `launch-deaf`, `rearm-deaf`, `pursuit-deaf`, `commit-deaf`,
   `duel-ghost`, `coast-through`, `dart-plain`, `flash-deaf`,
-  `pre-dodge-deaf`, `cross-blind`, `graze-blind`, `cover-deaf`).
+  `pre-dodge-deaf`, `cross-blind`, `graze-blind`, `cover-deaf`, `shell-deaf`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
