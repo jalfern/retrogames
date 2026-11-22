@@ -223,6 +223,19 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   wail *causes* the horn it hands the fight to. `hotAnn`/`spasm` are juice —
   stateHash proves it — so replays and the 4/12 floor are untouched.
 
+- **#2911 Dobkeratops (QA lane):** the arcade's Stage-2 boss joins as the
+  loop's third gate. **Fidelity interpretation (#237 rule, recorded):** the
+  original ran Stage 1 and Stage 2 as separate levels; this engine is one
+  looping stage, so the walking tank rides at its END (LEG 3 — after the
+  twin-core fortress, before the banner), which is where the cabinet meets it.
+  Zero-rng law for the whole gate: walk, stomp, reseal gaps and aimed volleys
+  are pure tick arithmetic — the pre-existing seeds' streams are untouched,
+  only extended; the winnability floors (4/12 solo, 6/12 co-op) were re-run
+  against the longer stage and hold. Ricochet is honest sim truth: bullets
+  carry `bounce`, fold at the rails, and both brains (`autopilot`,
+  `wingBrain`) fold their predictions identically — the mirrored law lives
+  next to `shieldOn` so nobody re-invents it wrong.
+
 ## Honest gaps (S5+)
 
 - **CLOSED by #2901** — core speed-up past 1000: the desperation phase is
@@ -231,7 +244,20 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
   enrage shape), the hull flushes ember and shudders, the horns bite an
   octave up, and the panic is sim truth (`stateHash`); every rebuilt dread
   gets its own timer.
-- Stage 2 "Dobkeratops" (the walking tank — its own gate).
+- **CLOSED by #2911** — Stage 2 "Dobkeratops": the walking tank is the stage's
+  third gate. The fortress's wreck now opens LEG 3 ("STAGE 2 : THE BRIDGEHEAD"),
+  a short authored run to STAGE_END3 where the camera locks and the tank walks
+  in off the right edge on four animated legs (footfall thuds + screen chatter),
+  plants at its station, and answers on a telegraphed cycle: 30 ticks after the
+  horn the maw looses a three-round fan of RICOCHET fireballs that bounce off
+  the ceiling/floor rails, so the safe lane keeps moving. Flesh-armour: slab and
+  legs all spend one 26-point pool (no vent to hunt); the belly alley under the
+  slab is open sky for pilot and shots alike; the slab face grinds what boards
+  it. Its death staggers: legs buckle front-to-back, then the carapace seams
+  blow — only then does STAGE CLEAR roll. Zero rng the whole gate: aimed
+  volleys, tick-arithmetic reseal, so every seed's tuned stream stays itself.
+  The autopilot and wing fold their bullet predictions through the same bounce
+  (`foldY`) — a ricochet lane never reads safe to the brains that must dodge it.
 - The full capsule list beyond three arms (Options, Double, Speed Up,
   Half-Capsules).
 - An armed Williams-style duelist for variety.
@@ -247,10 +273,10 @@ the bit's position, shell strained) — and S4: the wing joins as a CPU pilot
 The registry entry is `private` until Jon promotes it (#379).
 
 ## Harness
-- `scripts/rtypecheck.mjs` — 145 sim+browser laws, thirteen named mutants
+- `scripts/rtypecheck.mjs` — 154 sim+browser laws, fourteen named mutants
   (`armour-blind p1 core`, `pod-blind`, `shield-blind`, `pool-blind`,
   `cargo-blind`, `salvo-blind`, `vent-blind`, `panic-deaf`, `tempo-deaf`,
-  `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`).
+  `hot-leaks`, `cold-guns`, `spasm-deaf`, `ember-mute`, `dobk-blind`).
 - `__rTest` DEV hook: `probe()` (incl. pod/bits/shield/leg/p2 + wing/wingX/
   wingY/wingLives/wingHuman/wingPod/wingBits/wingShield/p1out) / `setup({…})`
   (`force`, `spawnFCap`, `spawnBCap`, `giveBits`, `toPhase1`, `toPhase2`,
@@ -261,9 +287,11 @@ The registry entry is `private` until Jon promotes it (#379).
   and `p1hot`/`heat` (#2901 — the desperation latch and the raw lock-tick
   count) and `p1ann`/`p1spasm` (#2906 — the HUD ember voice and the telegraph
   twitch counters); setup takes `heat: n` (wind the desperation timer to n
-  ticks from ignition, 0 = next tick).
+  ticks from ignition, 0 = next tick). #2911 adds probe `p3`/`p3hp`/`p3x`/
+  `p3mouth`/`p3walk`/`p3dying`/`p3fire` (the tank and its live ricochets) and
+  setup `toDobk`, `openDobk`, `dobkHp: n`.
 - DebugKit (F1): GIVE POD, POD OUT/IN, GIVE BITS, TO PHASE-2, OPEN VENTS,
   SPAWN BIT POD, GIVE LASER, TO PHASE-1, OPEN MAW, HEAT CORE, P2 SEAT IN/OUT, +1 WING LIFE, WING OUT,
-  GEAR THE WING.
+  GEAR THE WING, TO DOBK, DOBK MAW.
 - Contract id `r-type` in `contractGames.mjs` (GAMES + PATTERNS — the pattern
   taps `b` every 97 ticks) and the nightly soak roster (`nightlybot.mjs`).

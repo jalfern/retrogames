@@ -5,7 +5,7 @@
 // S.E.E.D. force pod: a rotating cyan energy ball with a blue capsule seed.
 // Everything generated in code; nothing borrowed. 320x224, no smoothing.
 
-import { W, H, FIELD_TOP, FIELD_BOT, POD, CORE_Y } from './sim.js'
+import { W, H, FIELD_TOP, FIELD_BOT, POD, CORE_Y, DOBK } from './sim.js'
 
 // ------------------------------------------------------------ pixel font ---
 // 5x7 arcade-cube glyphs cut for this cabinet (rows: '#' = ink).
@@ -756,6 +756,132 @@ export function drawP2(ctx, p2, camX, tick) {
     ctx.restore()
 }
 
+// ------------------------------------------------ DOBKERATOPS (#2911) ----
+// The arcade's Stage-2 gate that walks: a broad olive carapace over four
+// stomping legs, a snouted head whose maw glows hot before every ricochet
+// fan. Blaster scars accumulate as the flesh-armour spends; the wreck
+// buckles front-to-back like the sim's boom train says it should.
+export function drawDobk(ctx, dk, camX, tick) {
+    const dying = dk.dyingT > 0
+    const k = dying ? 240 - dk.dyingT : 0
+    const x = Math.round(dk.x - camX)
+    const top = DOBK.bodyTop, bot = DOBK.bodyBot
+    ctx.save()
+    if (dying) {
+        const cx = x + 60, cy = 120
+        ctx.translate(cx, cy)
+        ctx.rotate(k * 0.0012) // it lists bow-first into the fire
+        ctx.translate(-cx + (((tick * 13) % 3) - 1), -cy + (((tick * 7) % 3) - 1))
+    }
+    // four legs — hip to a clawed foot at the field floor, swinging in pairs.
+    // A foot lifts on its swing and throws dust as it lands (26-tick march).
+    for (let li = 0; li < 4; li++) {
+        const ph = dk.walkT * 0.12 + li * Math.PI
+        const hx = x + 12 + li * 34
+        const lift = dying ? Math.max(0, 14 - k * 0.2) * (li % 2) : Math.max(0, Math.sin(ph)) * 7
+        const swx = Math.cos(ph) * 8
+        const fy = FIELD_BOT - 4 - lift
+        ctx.strokeStyle = li % 2 ? '#3d4a26' : '#313d1e'
+        ctx.lineWidth = 5
+        ctx.beginPath()
+        ctx.moveTo(hx, bot - 4)
+        ctx.lineTo(hx + swx * 0.5, (bot + fy) / 2 + 4)
+        ctx.lineTo(hx + swx, fy)
+        ctx.stroke()
+        ctx.fillStyle = '#202814'
+        ctx.fillRect(hx + swx - 5, fy, 12, 4) // claw plate
+        const land = ((dk.walkT - li * 13) % 26)
+        if (!dying && land < 5 && Math.sin(ph) < 0) {
+            ctx.fillStyle = `rgba(150,140,110,${(0.5 - land * 0.1).toFixed(2)})`
+            ctx.fillRect(hx + swx - 8 - land, fy + 2, 4, 2)
+            ctx.fillRect(hx + swx + 9 + land, fy + 2, 4, 2)
+        }
+    }
+    // carapace: stacked plates doming from the flanks to a ridge
+    ctx.fillStyle = '#243018'
+    ctx.fillRect(x + 2, top, 134, bot - top)
+    ctx.fillStyle = '#39492a'
+    ctx.fillRect(x + 6, top + 6, 128, bot - top - 12)
+    ctx.fillStyle = '#4b5d36'
+    ctx.fillRect(x + 14, top - 8, 110, 14)
+    ctx.fillRect(x + 30, top - 14, 78, 10)
+    ctx.fillStyle = '#5e7242'
+    for (let px = 18; px < 128; px += 16) ctx.fillRect(x + px, top - 4, 8, 6)
+    ctx.fillStyle = '#1a2210'
+    for (let py = top + 12; py < bot - 6; py += 16) ctx.fillRect(x + 8, py, 124, 2) // plate seams
+    ctx.fillStyle = '#71854e'
+    for (let px = 10; px < 130; px += 22) ctx.fillRect(x + px, top + 4, 2, 2) // rivets
+    // head: a snout on the face of it, eye low and mean
+    ctx.fillStyle = '#2c381c'
+    ctx.fillRect(x, 60, 26, bot - 60)
+    ctx.fillStyle = '#43542c'
+    ctx.fillRect(x + 2, 64, 22, bot - 68)
+    ctx.fillStyle = '#701414'
+    ctx.fillRect(x + 6, 70, 7, 6)
+    ctx.fillStyle = ((tick >> 4) % 8 === 0) ? '#ffa0a0' : '#e03030'
+    ctx.fillRect(x + 7, 71, 5, 4)
+    // the maw — the telegraph: rim glints on the open, throats hot before fire
+    const my = DOBK.mouthY
+    if (dk.mouth === 'open' || dk.mouth === 'opening' || dk.mouth === 'closing') {
+        const full = 15
+        const amt = dk.mouth === 'open' ? full : dk.mouth === 'opening'
+            ? Math.round(full * (1 - dk.mouthT / 30)) : Math.round(full * (dk.mouthT / 30))
+        ctx.fillStyle = '#12080c'
+        ctx.fillRect(x, my - amt, 22, amt * 2)
+        const pulse = ((tick >> 3) % 3) * 2
+        ctx.fillStyle = '#ff8a2a'
+        ctx.fillRect(x + 4, my - 8 + pulse / 2, 14, 16 - pulse)
+        ctx.fillStyle = '#ffe080'
+        ctx.fillRect(x + 8, my - 4, 7, 8)
+        ctx.fillStyle = '#5e7242'
+        ctx.fillRect(x - 2, my - amt - 4, 26, 4) // upper lip
+        ctx.fillRect(x - 2, my + amt, 26, 4)     // lower jaw
+        ctx.fillStyle = '#d02020'
+        ctx.fillRect(x, my - amt - 1, 22, 1)
+        ctx.fillRect(x, my + amt, 22, 1)
+    } else {
+        ctx.fillStyle = '#3d2416'
+        ctx.fillRect(x + 2, my - 10, 20, 20)
+        ctx.fillStyle = '#6b8a3c'
+        ctx.fillRect(x + 2, my - 1, 20, 2) // sealed seam
+    }
+    // accumulated fire: every spent notch of the pool leaves a blackened scar
+    const spent = dk.max - dk.hp
+    for (let ki = 0; ki < spent; ki++) {
+        const sxp = x + 30 + ((ki * 53) % 92)
+        const syp = top + 8 + ((ki * 37) % (bot - top - 16))
+        ctx.fillStyle = '#10160b'
+        ctx.fillRect(sxp, syp, 4, 3)
+        ctx.fillStyle = '#5c3a1c'
+        ctx.fillRect(sxp + 1, syp + 1, 2, 1)
+    }
+    if (dk.flashT > 0 && !dying) { // fresh hit: the whole slab blinks
+        ctx.fillStyle = 'rgba(220,255,190,0.18)'
+        ctx.fillRect(x, top - 14, 134, bot - top + 14)
+    }
+    if (dying) {
+        // the buckling wreck: hot seams walk the carapace as the booms do
+        if ((tick >> 1) % 3 !== 0) {
+            ctx.fillStyle = 'rgba(190,220,150,0.10)'
+            ctx.fillRect(x, top - 14, 134, bot - top + 14)
+        }
+        const sxp = x + 12 + Math.floor(k * 0.35)
+        ctx.fillStyle = 'rgba(255,140,60,0.30)'
+        ctx.fillRect(sxp - 4, top + 10 + ((k * 11) % 70), 9, 26)
+        ctx.fillStyle = '#ffd23c'
+        ctx.fillRect(sxp, top + 16 + ((k * 17) % 60), 3, 3)
+        // plates shed off the back as it goes under
+        for (let r = 0; r < 5; r++) {
+            const rp = k - 10 - r * 26
+            if (rp < 0 || rp > 64) continue
+            const a = (1 - rp / 64) * 0.8
+            ctx.fillStyle = `rgba(75,93,54,${a.toFixed(2)})`
+            ctx.fillRect(x + 120 - r * 22, top + 6 + r * 20 + rp, 14, 5)
+        }
+    }
+    ctx.restore()
+}
+
 // ---------------------------------------------------------------- HUD ----
 export function drawHud(ctx, gs) {
     drawText(ctx, '1UP', 8, 8, (gs.tick % 50) < 36 ? '#e03030' : '#601010')
@@ -804,6 +930,10 @@ export function drawBanner(ctx, gs) {
     if (gs.mode === 'clear') {
         center('STAGE CLEAR', 96, '#37d0ff', 2)
         center(String(gs.score).padStart(7, '0'), 124, '#f0f0f0')
+    } else if (gs.dobk && gs.tick - gs.dobk.at < 170) {
+        center('WARNING : DOBKERATOPS', 100, gs.tick % 20 < 12 ? '#ff9a3c' : '#7c4010')
+    } else if (gs.leg === 3 && gs.tick - gs.legAt < 130) {
+        center('STAGE 2 : THE BRIDGEHEAD', 100, '#9ac93c')
     } else if (gs.p2 && gs.tick - gs.p2.at < 150) {
         center('PHASE 2 : TWIN CORES', 100, gs.tick % 20 < 12 ? '#ff5a6a' : '#802030')
     } else if (gs.leg === 2 && gs.tick - gs.legAt < 130) {
@@ -836,6 +966,7 @@ export function drawAttract(ctx, phase, tick) {
         'LASER : CHARGE THE LANCE, PIERCE THE LINE',
         'GREEN BIT CAPSULES : CHAIN FOUR FOR THE SHIELD',
         'PHASE 2 HAS TWO HEARTS : HUNT THE VENTS',
+        'DOBKERATOPS WALKS THE BRIDGEHEAD : HIS FIRE BOUNCES',
         'SHOOT THE MAW WHEN IT GAPES',
         'THE FORCE POD : B DEPLOYS, B RETRIEVES',
         'PILOT TWO FLIES FREE : WASD + F + G',

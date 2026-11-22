@@ -24,7 +24,11 @@
 //  - Bydo dread: sine larvae divers, armour hull-segments with leading
 //    turrets, a missile pod loosing slow turning hunters, and the PHASE-1
 //    bio-ship: camera locks, the maw-core only takes damage while it gapes
-//  - clear both dreads: STAGE CLEAR, score carries, the stage loops
+//  - the gate that walks (#2911): the fortress's wreck opens LEG 3, the
+//    bridgehead — the run ends at the DOBKERATOPS, a four-legged tank that
+//    stomps in, plants, and spits ricochet fireballs; flesh-armour takes
+//    fire anywhere on slab or legs; only its fall ends the stage
+//  - clear all three gates: STAGE CLEAR, score carries, the stage loops
 //  - THE WING (S4): a second R-7 flies by default — CPU pilot out of the box,
 //    a human seat via WASD+F+G (V drops out). Independent lives, arm, pod and
 //    bits: one hit kills one hull, the partner keeps flying, GAME OVER only
@@ -44,6 +48,17 @@ export const STAGE_END = 900 // camX where the Phase-1 hull locks the screen
 export const HEAT_AT = 1000
 export const STAGE_END2 = 520 // camX where the Phase-2 fortress locks (LEG 2)
 export const CORE_Y = [92, 148]  // the twin cores' lanes on the Phase-2 face
+// #2911 LEG 3 — the arcade's Stage 2: the convoy's last stretch ends at the
+// gate that walks. STAGE_END3 is short on purpose: the dread IS the run.
+export const STAGE_END3 = 340 // camX where the Dobkeratops locks the screen
+export const DOBK = {
+    hp: 26,           // whole-hull armour pool — the tank has no vent, only flesh
+    bodyTop: 46,      // slab the guns bite into (below it, the leg alley is flyable)
+    bodyBot: 150,
+    mouthY: 96,       // the maw rides high in the head, like the original
+    firstVolley: 150, // ticks locked at station before the throat first gapes
+    station: 188,     // screen-x of the hull face when it planters itself
+}
 
 export const CFG = {
     shipSpeed: 2.1,
@@ -152,6 +167,21 @@ export const WAVES2 = [
     { at: 450, seg: { y0: 126, y1: FIELD_BOT, len: 130, turret: 126 } },
 ]
 
+// LEG 3 (#2911): the bridgehead run toward the walking gate. Authored y/n —
+// no new stream math; the dread itself spends no rng either (aimed volleys,
+// tick-arithmetic reseal), so every seed's tuned stream stays exactly itself.
+export const WAVES3 = [
+    { at: 50, spawn: [
+        { kind: 'larva', d: 0, y: 88, dive: 1 }, { kind: 'larva', d: 22, y: 150 },
+        { kind: 'larva', d: 44, y: 112, dive: 1 }, { kind: 'larva', d: 66, y: 178 } ] },
+    { at: 130, bcap: 1 },
+    { at: 170, seg: { y0: FIELD_TOP, y1: 88, len: 130, turret: 88 } },
+    { at: 230, spawn: [
+        { kind: 'larva', d: 0, y: 140, dive: 1 }, { kind: 'larva', d: 24, y: 72, dive: 1 },
+        { kind: 'larva', d: 48, y: 118 } ] },
+    { at: 280, pod: { y: 160, missiles: 3 } },
+]
+
 // mulberry32 as a state-carried step (snapshot/restore stays byte-exact).
 export function rng(gs) {
     gs.rngState = (gs.rngState + 0x6D2B79F5) | 0
@@ -210,9 +240,10 @@ export function makeGame(seed = 1) {
         pod: null,                     // S2 force pod: {id,state,x,y} attached|fly|park|return
         bHeld: false,                  // edge-detector for the POD button
         bits: [],                      // S3 bit chain: [{id,px,py}] newest-first; 4 => shield
-        leg: 1,                        // S3: 1 until Phase-1 falls, then 2 (the twin-core leg)
+        leg: 1,                        // S3: 1 until Phase-1 falls, then 2 (the twin-core leg); #2911: 3 is the bridgehead to the walking gate
         legAt: 0,                      // tick LEG 2 opened (banner timing)
         p2: null,                      // S3 Phase-2 fortress: {x,cores:[{hp,mouth,mouthT,enraged}],dyingT,at}
+        dobk: null,                    // #2911 Dobkeratops: {x,hp,mouth,mouthT,walkT,dyingT,at,flashT}
         wing: null,                    // S4 seat two: null until enableCoop — full pilot object when live
         wingAt: 0,                     // tick the wing joined (banner timing)
         shots: [],                   // player: {id,x,y,kind,size,hit[]}
@@ -296,6 +327,17 @@ export function bitPosAt(ship, bits, tick, i) {
 export function bitPos(gs, i) { return bitPosAt(gs.ship, gs.bits, gs.tick, i) }
 export const shieldOn = (gs) => gs.bits.length === 4
 export const shieldOnAt = (host) => host.bits.length === 4
+
+// #2911: the Dobkeratops' fireballs ricochet between the rails — a brain
+// that reads incoming lanes must fold its prediction through the same bounce,
+// or it will call a ricochet lane safe while riding it.
+const foldY = (y) => {
+    const lo = FIELD_TOP + 2, hi = FIELD_BOT - 2, span = hi - lo
+    let r = (y - lo) % (2 * span)
+    if (r < 0) r += 2 * span
+    return r <= span ? lo + r : hi - (r - span)
+}
+const bulletLaneY = (b, t) => (b.bounce ? foldY(b.y + b.vy * t) : b.y + b.vy * t)
 
 // px/py are written once per tick so drawing and collision never disagree.
 // flash (#2831) is a juice countdown the draw layer reads — never hashed, so
@@ -462,6 +504,63 @@ function startLeg2(gs) {
     gs.events.push('leg2')
 }
 
+// #2911: the fortress's wreck does not end the fight — the convoy presses on
+// into the bridgehead (the arcade's Stage 2), where something enormous is
+// waiting to walk. Field, schedule and camera reset like LEG 2 did.
+function startLeg3(gs) {
+    gs.leg = 3
+    gs.camX = 0
+    gs.camLock = false
+    gs.enemies.length = 0
+    gs.bullets.length = 0
+    gs.missiles.length = 0
+    gs.shots.length = 0
+    gs.caps.length = 0
+    gs.pending.length = 0
+    gs.schedule = WAVES3.map((w, i) => ({ ...w, idx: 70 + i, fired: false }))
+    gs.banner = 0
+    if (gs.pod && gs.pod.state === 'park') gs.pod.x = gs.camX + W - POD.parkPad
+    if (gs.wing && gs.wing.pod && gs.wing.pod.state === 'park') gs.wing.pod.x = gs.camX + W - POD.parkPad
+    gs.legAt = gs.tick
+    gs.events.push('leg3')
+}
+
+// THE GATE THAT WALKS (#2911): the Dobkeratops enters from off-screen right,
+// plants itself at its station and the camera grinds to a halt. Zero rng:
+// the walk, the stomp cycle and the reseal gaps are all tick arithmetic, and
+// the volleys aim at live positions — the tuned stream of every seed ends the
+// run exactly where it always did, just past a bigger graveyard.
+function startDobk(gs) {
+    gs.camLock = true
+    gs.enemies = gs.enemies.filter((e) => e.kind !== 'hullseg' && typeof e.on !== 'number')
+    gs.bullets.length = 0
+    gs.missiles.length = 0
+    gs.dobk = {
+        x: gs.camX + W + 150, targetX: gs.camX + DOBK.station, vx: -0.9,
+        hp: DOBK.hp, max: DOBK.hp,
+        mouth: 'closed', mouthT: DOBK.firstVolley + 30, // +30 = the opening window before volley one
+        walkT: 0,          // stomp clock: runs always; footfalls mark it
+        dyingT: 0, at: gs.tick, flashT: 0,
+    }
+    gs.events.push('dobkarrive')
+}
+
+// the maw's answer: a telegraphed fan of three fireballs aimed at the nearer
+// hull, loose at 1.35 — and unlike every other round in the convoy these
+// BOUNCE off the ceiling and floor, so the safe lane keeps moving (marked
+// bounce: the draw layer trails them and the autopilot folds its predictions).
+function fireDobk(gs) {
+    const dk = gs.dobk
+    const px = dk.x + 6, py = DOBK.mouthY
+    const tp = nearestPilot(gs, px, py)
+    const base = Math.atan2(tp.y - py, tp.x - px)
+    for (const off of [-0.2, 0, 0.2]) {
+        gs.bullets.push({ id: gs.nextId++, x: px, y: py, vx: Math.cos(base + off) * 1.35, vy: Math.sin(base + off) * 1.35, bounce: true })
+    }
+    dk.flashT = 7
+    gs.events.push('dobkfire')
+}
+
 // ---- death / clear ---------------------------------------------------------
 
 // One law per hull (S4): a hit kills, the attached shell burns, the chain
@@ -545,6 +644,7 @@ function loopStage(gs) {
     gs.pending.length = 0
     gs.p1 = null
     gs.p2 = null
+    gs.dobk = null
     gs.leg = 1
     gs.schedule = WAVES.map((w, i) => ({ ...w, idx: i, fired: false }))
     gs.waveIdx = 0
@@ -607,13 +707,15 @@ function runWorld(gs, pad, frozen, pad2) {
     if (!frozen && bPress && !gs.pod && gs.wing && !gs.wing.dead && !gs.wing.out && gs.wing.pod) gs.wing.pod.hand = true
     refreshBits(gs)
 
-    // --- camera: right only, ever; LEG 2 ends at the twin-core fortress
+    // --- camera: right only, ever; LEG 2 ends at the twin-core fortress,
+    // LEG 3 (#2911) at the walking gate
     if (!gs.camLock) {
         gs.camX += SCROLL
-        const end = gs.leg === 2 ? STAGE_END2 : STAGE_END
+        const end = gs.leg === 3 ? STAGE_END3 : gs.leg === 2 ? STAGE_END2 : STAGE_END
         if (gs.camX >= end) {
             gs.camX = end
-            if (gs.leg === 2) startPhase2(gs)
+            if (gs.leg === 3) startDobk(gs)
+            else if (gs.leg === 2) startPhase2(gs)
             else startPhase1(gs)
         }
     }
@@ -836,7 +938,43 @@ function runWorld(gs, pad, frozen, pad2) {
             gs.lastHitY = CORE_Y[lane] + ((k * 67) % 13) - 6
             gs.events.push('boom')
         }
-        if (p2.dyingT <= 0) { gs.p2 = null; stageClear(gs) }
+        if (p2.dyingT <= 0) { gs.p2 = null; startLeg3(gs) } // #2911: the stage is not over — the gate still walks
+    }
+
+    // --- the Dobkeratops (#2911): the walking gate. It plants, stomps, and
+    // its maw answers on a telegraphed cycle; the whole hull is armour-flesh —
+    // there is no vent to hunt, only 26 hits of appetite to spend.
+    const dk = gs.dobk
+    if (dk && dk.dyingT === 0) {
+        if (dk.x > dk.targetX) dk.x += dk.vx
+        dk.walkT += 1
+        if (dk.walkT % 26 === 0) gs.events.push('dobkstep') // the ground takes note
+        if (dk.flashT > 0) dk.flashT -= 1
+        dk.mouthT -= 1
+        if (dk.mouthT <= 0) {
+            if (dk.mouth === 'closed') { dk.mouth = 'opening'; dk.mouthT = 30; gs.events.push('dobkopen') }
+            else if (dk.mouth === 'opening') { dk.mouth = 'open'; dk.mouthT = 70; fireDobk(gs) }
+            else if (dk.mouth === 'open') { dk.mouth = 'closing'; dk.mouthT = 30 }
+            else { dk.mouth = 'closed'; dk.mouthT = 150 + ((gs.tick * 7) % 60); gs.events.push('dobkshut') }
+        }
+    } else if (dk && dk.dyingT > 0) {
+        dk.dyingT -= 1
+        dk.x += 0.4
+        // the wreck staggers right under its own weight: a boom train walks
+        // the legs (buckling first, front to back) and then the hull seams.
+        const k = 240 - dk.dyingT
+        if (dk.dyingT > 120) {
+            if (dk.dyingT % 12 === 0) {
+                gs.lastHitX = dk.x + 8 + ((k * 37) % 110)
+                gs.lastHitY = 170 + ((k * 23) % 40)
+                gs.events.push('boom')
+            }
+        } else if (dk.dyingT % 4 === 0) {
+            gs.lastHitX = dk.x + 10 + ((k * 41) % 120)
+            gs.lastHitY = 52 + ((k * 53) % 94)
+            gs.events.push('boom')
+        }
+        if (dk.dyingT <= 0) { gs.dobk = null; stageClear(gs) }
     }
 
     // --- force pod (S2): attached rides the nose; B deploys to the edge; B
@@ -872,6 +1010,8 @@ function runWorld(gs, pad, frozen, pad2) {
                 }
             }
             if (p1 && p1.dyingT === 0 && pd.x + POD.rad > p1.x && pd.y > 34 && pd.y < 200) { gs.events.push('strain'); pd.x = p1.x - POD.rad }
+            // #2911: the tank's slab refuses the shell too — the leg alley does not
+            if (dk && dk.dyingT === 0 && pd.x + POD.rad > dk.x && pd.y > DOBK.bodyTop - 4 && pd.y < DOBK.bodyBot + 4) { gs.events.push('strain'); pd.x = dk.x - POD.rad }
             if (pd.x < gs.camX - 6) { gs.pod = null; gs.events.push('podlost') }
         }
     }
@@ -1074,6 +1214,33 @@ function runWorld(gs, pad, frozen, pad2) {
             }
             dead = true // the blast dies on the plating, gape or not
         }
+        // vs the Dobkeratops (#2911): flesh-armour — every hit bites the shared
+        // pool. The slab takes fire from body-top to body-bottom; below it the
+        // leg alley is open sky, but each strut is still the tank's own leg.
+        if (!dead && dk && dk.dyingT === 0 && q.x + lance(q) >= dk.x) {
+            let struck = q.y >= DOBK.bodyTop && q.y <= DOBK.bodyBot
+            if (!struck && q.y > DOBK.bodyBot) {
+                for (let li = 0; li < 4; li++) {
+                    const lx = dk.x + 12 + li * 34 + Math.sin(dk.walkT * 0.12 + li * Math.PI) * 6
+                    if (Math.abs(q.x + lance(q) - lx) < 6) { struck = true; break }
+                }
+            }
+            if (struck) {
+                dk.hp -= q.kind === 'w' ? 2 : q.kind === 'l' ? q.size + 1 : 1
+                gs.lastHitX = dk.x + 14; gs.lastHitY = q.y
+                dk.flashT = 4
+                gs.events.push('dobkhurt')
+                if (dk.hp <= 0) {
+                    dk.hp = 0
+                    dk.dyingT = 240
+                    addScore(gs, 2500)
+                    gs.events.push('dobkdie', 'bigboom')
+                    gs.bullets.length = 0
+                    gs.missiles.length = 0
+                }
+                dead = true // the blast spends itself on the flank
+            }
+        }
         if (dead) gs.shots.splice(i, 1)
     }
 
@@ -1081,6 +1248,12 @@ function runWorld(gs, pad, frozen, pad2) {
     for (let i = gs.bullets.length - 1; i >= 0; i--) {
         const b = gs.bullets[i]
         b.x += b.vx; b.y += b.vy
+        // #2911: the Dobkeratops' fireballs ricochet off the ceiling and floor
+        // (clamped so they can never slip past the removal band the old way).
+        if (b.bounce) {
+            if (b.vy < 0 && b.y <= FIELD_TOP + 2) { b.y = FIELD_TOP + 2; b.vy = -b.vy }
+            else if (b.vy > 0 && b.y >= FIELD_BOT - 2) { b.y = FIELD_BOT - 2; b.vy = -b.vy }
+        }
         if (b.x < gs.camX - 8 || b.x > gs.camX + W + 8 || b.y < FIELD_TOP - 4 || b.y > FIELD_BOT + 4) { gs.bullets.splice(i, 1); continue }
         if (!frozen && gs.pod && Math.abs(b.x - gs.pod.x) < 8 && Math.abs(b.y - gs.pod.y) < 7) { gs.bullets.splice(i, 1); gs.lastHitX = b.x; gs.lastHitY = b.y; gs.events.push('plug'); continue }
         // the completed bit chain is a rotating wall: lead does not get through
@@ -1185,6 +1358,12 @@ function runWorld(gs, pad, frozen, pad2) {
             // the fortress keeps the same law: its face is a wall
             if (killShip(gs, s, gs, 'fortress')) return
         }
+        if (dk && dk.dyingT === 0 && dk.x < gs.camX + W - 4 && s.x + 5 > dk.x + 4 &&
+            s.y + 4 > DOBK.bodyTop && s.y - 4 < DOBK.bodyBot) {
+            // #2911: the hull slab is a wall — but the leg alley under the belly
+            // is open sky. The tank's face grinds what stands in front of it.
+            if (killShip(gs, s, gs, 'dobk')) return
+        }
     }
     // ...and the same walls hold for seat two (S4) — its death hangs its own
     // wreck, never the run
@@ -1202,6 +1381,8 @@ function runWorld(gs, pad, frozen, pad2) {
         if (wgBody.dead) return // the wing hung — its hull reads the same walls
         if (p1 && p1.dyingT === 0 && p1.x < gs.camX + W - 4 && wgBody.x + 5 > p1.x + 4) killWing(gs, wgBody, 'hull')
         else if (p2 && p2.dyingT === 0 && p2.x < gs.camX + W - 4 && wgBody.x + 5 > p2.x + 4) killWing(gs, wgBody, 'fortress')
+        else if (dk && dk.dyingT === 0 && dk.x < gs.camX + W - 4 && wgBody.x + 5 > dk.x + 4 &&
+            wgBody.y + 4 > DOBK.bodyTop && wgBody.y - 4 < DOBK.bodyBot) killWing(gs, wgBody, 'dobk') // #2911
     }
 }
 
@@ -1363,6 +1544,7 @@ function runWing(gs, pad2, frozen) {
             }
             if (gs.p1 && gs.p1.dyingT === 0 && pd.x + POD.rad > gs.p1.x && pd.y > 34 && pd.y < 200) { gs.events.push('strain'); pd.x = gs.p1.x - POD.rad }
             if (gs.p2 && gs.p2.dyingT === 0 && pd.x + POD.rad > gs.p2.x && pd.y > 34 && pd.y < 200) { gs.events.push('strain'); pd.x = gs.p2.x - POD.rad }
+            if (gs.dobk && gs.dobk.dyingT === 0 && pd.x + POD.rad > gs.dobk.x && pd.y > DOBK.bodyTop - 4 && pd.y < DOBK.bodyBot + 4) { gs.events.push('strain'); pd.x = gs.dobk.x - POD.rad } // #2911
             if (pd.x < gs.camX - 6) { w.pod = null; gs.events.push('podlost') }
         }
     }
@@ -1397,7 +1579,7 @@ export function wingBrain(gs) {
         for (const b of gs.bullets) {
             if (b.x - w.x < -4 || b.vx >= 0) continue
             const t = (w.x - b.x) / (-b.vx + 0.45)
-            if (t < 34 && Math.abs(b.y + b.vy * t - y) < 10) consider(t)
+            if (t < 34 && Math.abs(bulletLaneY(b, t) - y) < 10) consider(t)
         }
         for (const e of gs.enemies) {
             if (e.kind === 'larva') {
@@ -1464,6 +1646,7 @@ export function wingBrain(gs) {
     if (w.x - gs.camX < WING.crushSafe) { pad.right = true; pad.left = false }
     if (gs.p1 && gs.p1.dyingT === 0 && gs.p1.x - w.x < 84) pad.right = false
     if (gs.p2 && gs.p2.dyingT === 0 && gs.p2.x - w.x < 84) pad.right = false
+    if (gs.dobk && gs.dobk.dyingT === 0 && gs.dobk.x - w.x < 84) pad.right = false // #2911
 
     // trigger discipline: vulcan streams; charge arms loose when its lane breathes
     pad.a = w.weapon === 'vulcan' ? true : riskAt(w.y) > 18
@@ -1482,6 +1665,7 @@ export function autopilot(gs) {
     const px = s.x, py = s.y
     const p1 = gs.p1
     const p2 = gs.p2
+    const dk = gs.dobk // #2911: the walking gate
 
     const lanes = []
     for (const off of [-30, 0, 30]) {
@@ -1492,7 +1676,7 @@ export function autopilot(gs) {
         for (const b of gs.bullets) {
             if (b.x - px < -4 || b.vx >= 0) continue
             const t = (px - b.x) / (-b.vx + 0.45)
-            if (t < 40 && Math.abs(b.y + b.vy * t - y) < 10) consider(t)
+            if (t < 40 && Math.abs(bulletLaneY(b, t) - y) < 10) consider(t) // #2911: folds ricochets
         }
         for (const e of gs.enemies) {
             if (e.kind === 'larva') {
@@ -1538,6 +1722,7 @@ export function autopilot(gs) {
             const oi = p2.cores.findIndex((c) => c.hp > 0 && c.mouth === 'open')
             targetY = oi >= 0 ? CORE_Y[oi] + (p2.swayOff || 0) : 120
         }
+        else if (dk && dk.dyingT === 0) targetY = 120 // #2911: the tank has no vent — put the stream into the slab
         else if (launcher) targetY = launcher.y
         else if (incMis) targetY = incMis.y
         else {
@@ -1565,14 +1750,24 @@ export function autopilot(gs) {
         pad.up = dir < 0
         pad.down = dir > 0
     }
+    // #2911: the tank's volleys are aimed where you ARE — the same strafe
+    // that slips the maw's hunters keeps the ricochet fans honest at the gate.
+    if (dk && dk.dyingT === 0 && lane.risk > 20) {
+        let dir = gs.tick % 84 < 42 ? -1 : 1
+        if (py < FIELD_TOP + 14) dir = 1
+        if (py > FIELD_BOT - 12) dir = -1
+        pad.up = dir < 0
+        pad.down = dir > 0
+    }
 
     // station: hold mid-lead, never drift into the grinder, never board the hull
-    const want = gs.camX + (p1 && p1.dyingT === 0 ? 52 : 62)
+    const want = gs.camX + ((p1 && p1.dyingT === 0) || (dk && dk.dyingT === 0) ? 52 : 62)
     pad.right = px - want < -5
     pad.left = px - want > 5
     if (px - gs.camX < 26) { pad.right = true; pad.left = false }
     if (p1 && p1.dyingT === 0 && p1.x - px < 80) pad.right = false
     if (p2 && p2.dyingT === 0 && p2.x - px < 80) pad.right = false
+    if (dk && dk.dyingT === 0 && dk.x - px < 80) pad.right = false // #2911
 
     // trigger discipline: vulcan streams; the charge arms fire when the lane breathes
     if (s.weapon === 'wave' || s.weapon === 'laser') pad.a = lane.risk > 18
@@ -1615,6 +1810,8 @@ export function stateHash(gs) {
         mix(gs.p2.swayOff); mix(gs.p2.port) // #2835: offense is state — the hash covers it
         for (const c of gs.p2.cores) { mix(c.hp); mix(c.mouth.length); mix(c.enraged ? 1 : 0) }
     }
+    mix(gs.dobk ? 1 : 0) // #2911: the gate is sim truth
+    if (gs.dobk) { mix(gs.dobk.x); mix(gs.dobk.hp); mix(gs.dobk.mouth.length); mix(gs.dobk.walkT) }
     const wg = gs.wing // S4 seat two (null => solo: one mix, old-era shape)
     mix(wg ? 1 : 0)
     if (wg) {

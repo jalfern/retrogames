@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, CORE_Y, W, POD, WAVES2, HEAT_AT, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, WAVES2, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -314,9 +314,10 @@ const runBot = (seed, max = 20000) => {
     r.check('break the core and the convoy presses on — LEG 2 opens, the stage is NOT over', gs.leg === 2 && gs.mode === 'play' && !gs.cleared, `leg=${gs.leg} mode=${gs.mode} cleared=${gs.cleared ? 1 : 0}`)
 }
 
-{ // the machine re-runs honestly: BOTH dreads fall, the banner rolls, and the
-//   field restarts with the score carried. Driven through the deterministic
-//   cascades instead of bot luck (the old form passed vacuously on score alone).
+{ // the machine re-runs honestly: BOTH dreads fall, the gate WALKS (#2911),
+//   the banner rolls, and the field restarts with the score carried. Driven
+//   through the deterministic cascades instead of bot luck (the old form passed
+//   vacuously on score alone).
     const gs = makeGame(10)
     gs.camX = STAGE_END
     step(gs, {}); gs.events.length = 0
@@ -333,12 +334,17 @@ const runBot = (seed, max = 20000) => {
     gs.ship.y = CORE_Y[0]
     for (let i = 0; i < 120 && gs.p2.cores[0].hp > 0; i++) { step(gs, { a: true }); gs.events.length = 0 } // first heart, upper vent
     gs.ship.y = CORE_Y[1]
-    for (let i = 0; i < 700 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 } // second heart + the #2835 double walk
-    r.check('both hearts stopped at last: STAGE CLEAR rolls', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
+    for (let i = 0; i < 700 && gs.leg === 2; i++) { step(gs, { a: true }); gs.events.length = 0 } // second heart + the #2835 double walk
+    r.check('both hearts stopped at last — and STILL it is not over: LEG 3 opens (#2911)',
+        gs.leg === 3 && gs.mode === 'play' && !gs.cleared, `leg=${gs.leg} mode=${gs.mode}`)
+    for (let i = 0; i < 1600 && !gs.dobk; i++) { step(gs, autopilot(gs)); gs.events.length = 0 }
+    r.check('LEG 3 ends at the walking gate: the tank plants, the camera holds', !!gs.dobk && gs.camLock, `dobk=${!!gs.dobk} camLock=${gs.camLock}`)
+    for (let i = 0; i < 900 && gs.mode === 'play'; i++) { step(gs, autopilot(gs)); gs.events.length = 0 }
+    r.check('the gate falls: STAGE CLEAR finally rolls', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
     const clearedScore = gs.score
     for (let i = 0; i < 200 && gs.mode === 'clear'; i++) { step(gs, {}); gs.events.length = 0 }
     r.check('the machine rolls onward: banner falls, the field re-runs with the score carried',
-        gs.mode === 'play' && gs.camX < 50 && gs.score >= clearedScore, `mode=${gs.mode} camX=${Math.round(gs.camX)} score=${gs.score}`)
+        gs.mode === 'play' && gs.camX < 50 && gs.score >= clearedScore && gs.dobk === null, `mode=${gs.mode} camX=${Math.round(gs.camX)} score=${gs.score}`)
 }
 
 // ---------------------------------------------------- polish laws (#2818) ---
@@ -625,8 +631,9 @@ const runBot = (seed, max = 20000) => {
     // both hearts stop together
     alive.hp = 1
     gs.ship.y = CORE_Y[gs.p2.cores.indexOf(alive)]
-    for (let i = 0; i < 700 && gs.mode === 'play'; i++) { step(gs, { a: true }); gs.events.length = 0 }
-    r.check('both hearts down: the fortress falls and CLEAR finally rolls', gs.mode === 'clear' && gs.cleared, `mode=${gs.mode}`)
+    for (let i = 0; i < 700 && gs.leg === 2; i++) { step(gs, { a: true }); gs.events.length = 0 }
+    r.check('both hearts down: the fortress falls — and the road to the walking gate opens (#2911)',
+        gs.leg === 3 && gs.mode === 'play' && !gs.cleared, `leg=${gs.leg} mode=${gs.mode}`)
 }
 
 // ---------------------------------------------------- #2835 law set ------
@@ -722,14 +729,14 @@ const runBot = (seed, max = 20000) => {
     for (let t = 0; t < 300 && gs.p2.dyingT === 0; t++) { gs.ship.inv = 999999; gs.ship.y = CORE_Y[1] + gs.p2.swayOff; step(gs, { a: true }); gs.events.length = 0 }
     r.check('the wreck walk starts at the last-fallen port, double-length', gs.p2.lastCore === 1 && gs.p2.dyingT > 300, `last ${gs.p2.lastCore} dyingT ${gs.p2.dyingT}`)
     const booms = []
-    for (let t = 0; t < 640 && gs.mode === 'play'; t++) { gs.ship.inv = 999999; step(gs, {}); if (gs.events.includes('boom') && gs.p2) booms.push({ x: gs.lastHitX, y: gs.lastHitY }); gs.events.length = 0 }
+    for (let t = 0; t < 640 && gs.leg === 2; t++) { gs.ship.inv = 999999; step(gs, {}); if (gs.events.includes('boom') && gs.p2) booms.push({ x: gs.lastHitX, y: gs.lastHitY }); gs.events.length = 0 }
     const third = Math.ceil(booms.length / 3)
     const upper = booms.filter((b) => b.y < 120).length
     const lower = booms.filter((b) => b.y >= 120).length
     const firstL = booms.slice(0, third).filter((b) => b.y >= 120).length
-    r.check('death walks port-to-port and CLEAR waits for the whole walk',
-        gs.mode === 'clear' && upper > 5 && lower > 5 && firstL >= third * 0.9 && booms[booms.length - 1].x > booms[0].x + 40,
-        `mode=${gs.mode} up=${upper} lo=${lower} firstL=${firstL}/${third}`)
+    r.check('death walks port-to-port — and CLEAR waits behind the whole walk AND the gate (#2911)',
+        gs.leg === 3 && gs.mode === 'play' && !gs.cleared && upper > 5 && lower > 5 && firstL >= third * 0.9 && booms[booms.length - 1].x > booms[0].x + 40,
+        `leg=${gs.leg} mode=${gs.mode} up=${upper} lo=${lower} firstL=${firstL}/${third}`)
 }
 
 // --------------------------------------------------------------- S4 laws ---
@@ -1019,7 +1026,12 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
     gl.legAt = gl.tick
     step(gl, {})                       // the fortress arrives
     gl.p2.cores.forEach((c) => { c.hp = 0 })
-    gl.p2.dyingT = 1                 // the walk finishes, STAGE CLEAR fires
+    gl.p2.dyingT = 1                 // the walk finishes — LEG 3 opens (#2911)
+    quiet(gl); step(gl, {})
+    gl.camX = STAGE_END3
+    quiet(gl); step(gl, {})          // the camera locks and the tank walks on
+    gl.dobk.hp = 1
+    gl.dobk.dyingT = 1             // its stagger finishes — STAGE CLEAR fires
     quiet(gl); step(gl, {})
     for (let t = 0; t < 220 && gl.mode === 'clear'; t++) { quiet(gl); step(gl, {}); gl.events.length = 0 }
     const looping = gl.mode === 'play' && gl.p1 === null && gl.leg === 1
@@ -1098,6 +1110,77 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
     jB.p1.hotAnn = 42; jB.p1.spasm = 7
     r.check('#2906 juice stays juice: hotAnn/spasm never ride stateHash',
         stateHash(jA) === stateHash(jB), `${stateHash(jA)} vs ${stateHash(jB)}`)
+}
+
+// ---------------------------------------------------- #2911 law set -------
+{ // DOBKERATOPS — the gate that walks: entrance, stomp, telegraphed
+  // ricochet fan, flesh-armour across slab and legs, the alley under the
+  // belly, the hash. The stage's third gate earns its own laws.
+    const tank = (seed = 5) => {
+        const gs = makeGame(seed)
+        gs.p1 = null; gs.p2 = null
+        gs.leg = 3; gs.camX = STAGE_END3; gs.legAt = gs.tick
+        step(gs, {}); gs.events.length = 0
+        gs.ship.inv = 999999
+        return gs
+    }
+    const gs = tank()
+    r.check('#2911: LEG 3 locks the screen onto a walking gate', !!gs.dobk && !!gs.camLock, `dobk=${!!gs.dobk} camLock=${gs.camLock}`)
+    const x0 = gs.dobk.x - gs.camX
+    let feet = 0, walkTicks = 0
+    while (walkTicks < 400 && gs.dobk.x > gs.dobk.targetX) { step(gs, {}); if (gs.events.includes('dobkstep')) feet++; gs.events.length = 0; walkTicks++ }
+    const heldX = gs.dobk.x
+    for (let i = 0; i < 20; i++) { step(gs, {}); gs.events.length = 0 }
+    r.check('#2911: the tank walks in off the right edge, plants at its station, and holds',
+        x0 > W + 100 && Math.abs(gs.dobk.x - gs.camX - DOBK.station) <= 1 && gs.dobk.x === heldX && feet >= 10,
+        `entry ${Math.round(x0)} ft, ${feet} footfalls, station ${Math.round(gs.dobk.x - gs.camX)}`)
+    // the gape reads before it speaks: horn, then 30 ticks, then the fan
+    let sawOpen = -1, sawFire = -1, fan = null
+    for (let t = 0; t < 400 && sawFire < 0; t++) {
+        step(gs, {})
+        if (gs.events.includes('dobkopen') && sawOpen < 0) sawOpen = gs.tick
+        if (gs.events.includes('dobkfire')) { sawFire = gs.tick; fan = gs.bullets.filter((b) => b.bounce) }
+        gs.events.length = 0
+    }
+    const vys = fan ? fan.map((b) => b.vy) : []
+    const aimedFan = !!fan && fan.length === 3 && fan.every((b) => b.bounce && b.vx < 0 && Math.abs(b.vy) <= 0.55)
+        && fan.some((b) => b.vy > 0) // the tank aims BELOW its own maw — at the pinned pilot
+        && Math.max(...vys) - Math.min(...vys) > 0.4 // a real fan, not three parallel rounds
+    r.check('#2911: the maw is telegraphed — open horn lands exactly 30 ticks before a 3-round fan aimed down the hull',
+        sawOpen >= 0 && sawFire === sawOpen + 30 && aimedFan, `open@${sawOpen} fire@${sawFire} fan=${fan ? fan.length : 'none'}`)
+    // ricochet: a round driven at the ceiling must come back down, still live
+    gs.bullets.push({ id: gs.nextId++, x: gs.ship.x + 40, y: FIELD_TOP + 3, vx: -1.2, vy: -0.9, bounce: true })
+    const rb = gs.bullets[gs.bullets.length - 1]
+    let bounced = false
+    for (let t = 0; t < 60 && !bounced; t++) { step(gs, {}); bounced = rb.vy > 0 && rb.y >= FIELD_TOP; gs.events.length = 0 }
+    r.check('#2911: fireballs ricochet off the ceiling rail and stay in play', bounced, `vy ${rb.vy.toFixed(2)} at y ${Math.round(rb.y)}`)
+    // flesh-armour: the slab spends the pool; a leg in the alley spends it too
+    const g2 = tank()
+    while (g2.dobk.x > g2.dobk.targetX) { step(g2, {}); g2.events.length = 0 }
+    const hp0 = g2.dobk.hp
+    g2.ship.x = g2.camX + 60; g2.ship.y = 100
+    for (let t = 0; t < 40; t++) { step(g2, { a: true }); g2.events.length = 0 }
+    const hpSlab = g2.dobk.hp
+    g2.ship.y = FIELD_BOT - 10 // the belly alley — the leading leg still walks through it
+    for (let t = 0; t < 40; t++) { step(g2, { a: true }); g2.events.length = 0 }
+    r.check('#2911: flesh-armour — the slab AND the legs spend the one pool',
+        hpSlab < hp0 && g2.dobk.hp < hpSlab, `hp ${hp0}->${hpSlab}->${g2.dobk.hp}`)
+    // the wall law: the slab face grinds; the alley under the belly flies free
+    const g3 = tank()
+    while (g3.dobk.x > g3.dobk.targetX) { step(g3, {}); g3.events.length = 0 }
+    g3.ship.inv = 0; g3.ship.y = 120; g3.ship.x = g3.dobk.x + 1
+    step(g3, {}); const slabDeath = g3.ship.dead && g3.lastDeath === 'dobk'
+    const g4 = tank()
+    while (g4.dobk.x > g4.dobk.targetX) { step(g4, {}); g4.events.length = 0 }
+    g4.ship.inv = 0; g4.ship.y = FIELD_BOT - 8; g4.ship.x = g4.dobk.x + 1
+    step(g4, {})
+    r.check('#2911: the slab face grinds the pilot flat — the leg alley under the belly is open sky',
+        slabDeath && !g4.ship.dead, `slab why=${g3.lastDeath} alley dead=${g4.ship.dead ? 1 : 0}`)
+    // sim truth: the pool rides the hash (the walk does too — walkT mixes)
+    const hA = tank(7), hB = tank(7)
+    hB.dobk.hp -= 1
+    r.check('#2911: the gate is sim truth — stateHash covers the tank',
+        stateHash(hA) !== stateHash(hB), `${stateHash(hA)} vs ${stateHash(hB)}`)
 }
 
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
@@ -1378,6 +1461,22 @@ if (MUTANT) {
                 mod.step(gs, {})
                 return gs.p1.hot && gs.p1.hotAnn === 0
                     ? 'HARM NAMED: the core panics in silence — the rules changed mid-fight and nothing on the player-visible HUD says so; first-timers only learn the maw doubled its tempo by dying to it'
+                    : null
+            },
+        },
+        {
+            name: 'dobk-blind',
+            anchor: "if (!dead && dk && dk.dyingT === 0 && q.x + lance(q) >= dk.x) {",
+            plant: "if (false && !dead && dk && dk.dyingT === 0 && q.x + lance(q) >= dk.x) { /* MUTANT(dobk-blind): the tank's hide eats every round */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(5)
+                gs.p1 = null; gs.p2 = null; gs.leg = 3; gs.camX = mod.STAGE_END3; gs.legAt = gs.tick
+                mod.step(gs, {}); gs.events.length = 0
+                while (gs.dobk.x > gs.dobk.targetX) { mod.step(gs, {}); gs.events.length = 0 }
+                gs.ship.inv = 999999; gs.ship.x = gs.camX + 60; gs.ship.y = 100
+                for (let t = 0; t < 60; t++) { mod.step(gs, { a: true }); gs.events.length = 0 }
+                return gs.dobk.hp === mod.DOBK.hp
+                    ? 'HARM NAMED: sixty ticks of vulcan into the slab and the pool never moves — a gate that cannot be hurt is not a gate, it is a wall the stage dies against'
                     : null
             },
         },
