@@ -2685,10 +2685,12 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     // #2626: #2555's duel seats widened the feed line (mpad slot between the
     // pad and the tick, recordTick gains its second pad argument). The honesty
     // rule is unchanged — the watching branch's autopilot pad must reach
-    // recordTick — so the pin follows the signature: 200-char window, and the
-    // tick call must take `pad` as its FIRST argument.
+    // recordTick — so the pin follows the signature: a window wide enough for
+    // the feed block, and the tick call must take `pad` as its FIRST argument.
+    // #2954 widened it again (tap bank: `if (tapPad) pad.pointer = tapPad`
+    // sits between the pad and the tick, block is now ~234 chars) — 300.
     rep.check('FLOORBOSS: the watching branch feeds the autopilot pad into the episode tick (no human-shaped lie)',
-        /const pad = watchingRef\.current && !gs\.end \? ap\(gs\) : livePad\(\)[\s\S]{0,200}recordTick\(pad[,)]/.test(fbSrc))
+        /const pad = watchingRef\.current && !gs\.end \? ap\(gs\) : livePad\(\)[\s\S]{0,300}recordTick\(pad[,)]/.test(fbSrc))
     const rlySrc = readFileSync(B4_SRC.RALLY, 'utf8')
     // #1663 updated: net never seats the watcher AND says so (amber chip, not silence).
     rep.check('RALLY: online never seats the watcher (the wire owns the seats)',
