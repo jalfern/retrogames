@@ -358,6 +358,36 @@ expects the leftmost wire to be the WRONG cut, but seed 7's round-1 N1 now
 targets wire 0 (verified in Node on origin/main) — its two strike gates read
 red on main while `bombcheck` stays green. Filed for the QA lane.
 
+## PLAICRAFT trainable adapter (#1712, #2953-default continued)
+
+- `model.js` is THE featurizer (151 features, `FEAT_NAMES`): what each seat
+  can NOTICE, keeping the game's split-information law for the dataset too —
+  seat 0 (defuser) rows carry panel facts (stamps, wires per slot, dial, glyph
+  progress, serial digit/LEDs/bolt, strikes/lock, back plate gated by flip,
+  the CPU manual's LCD order rail on solo takes) and NEVER rulebook facts;
+  seat 1 (manual) rows carry page/line/flag + the live-stamp rail (#1880 rides
+  the page-holder) and NEVER panel facts. `PANEL`/`MANUAL`/`BLOCK_INDEX` are
+  the block geometry; datasetcheck pins both directions (honest zero).
+- `scripts/plaicraft-dataset.mjs` `talkMeDownRows` replays stored takes against
+  THE engine.js (seed-pure), verifies every banked checkpoint + the final hash
+  (S1's law) and emits one row per tick per banked seat. Offline semantics:
+  seats are chosen at seed-birth (select screen) and online runs are not
+  auto-recorded at S2, so there is no drop-in stamp to carry — solo takes
+  record one slot (partnerSay is sim state, not pads), couch takes two.
+  The autoregressive lane follows the model.js contract (the adapter banks
+  `mem.pa` after the label).
+- Proof: `npm run plaicraft:datasetcheck` — solo + couch fixtures ride the
+  trainable splits, the honest-zero partition and both lanes (order rail,
+  flag stamp) are pinned on real rows, clean couch takes verify (480 rows),
+  tampered refuses at its tick (unit + whole-build), and the
+  `--mutant` run kills the adapter-bypass mutant by name.
+- Honest gaps: the solo manual-rail visibility (B/PAGE) is shell-side (a ref,
+  not sim state) so it is never fed as a feature — seat-0 rows never claim
+  rulebook knowledge; couch 2P shares one physical screen, but rows follow the
+  ROLE views the online law plates (#1880), so a trained seat-agent sees what
+  its seat sees online. The typed mouth and mic words ride `voiceCmd`/audio,
+  not the feature vector (that's the S5 lane).
+
 ## Honest gaps
 
 - **CLOSED by #1373:** tap-to-talk pill, BOMB INBOUND curtain, vignette,
