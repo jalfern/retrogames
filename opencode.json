@@ -1,7 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "omlx/Qwen3.8-Flash-Next-oQ4e-mtp",
-  "small_model": "omlx/Qwen3.8-Flash-Next-oQ4e-mtp",
   "permission": {
     "bash": {
       "*": "allow",
