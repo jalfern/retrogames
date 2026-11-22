@@ -145,6 +145,10 @@ export default function RType() {
             // relief is a chirp; a burned seat gets the long goodbye
             wingdie: () => { audioController.playSweep(330, 60, 0.38, 'sawtooth', 0.13); shake = Math.max(shake, 3) },
             wingin: () => { audioController.playTone(520, 0.05, 'triangle', 0.08); audioController.playTone(780, 0.07, 'triangle', 0.08, 0.05) },
+            // #2980: a dark seat carried home — a rising three-note return,
+            // warm for seat one, cool for seat two (the seats' own registers)
+            p1back: () => { const n = [392, 523, 698]; n.forEach((f, i) => audioController.playTone(f, 0.08, 'triangle', 0.1, i * 0.09)) },
+            wingback: () => { const n = [523, 659, 880]; n.forEach((f, i) => audioController.playTone(f, 0.08, 'triangle', 0.1, i * 0.09)) },
             winglost: () => { audioController.playSweep(300, 40, 0.7, 'triangle', 0.12); audioController.playNoise(0.2, 0.08) },
             wforce: () => { const n = [440, 660, 880, 1320]; n.forEach((f, i) => audioController.playTone(f, 0.07, 'triangle', 0.09, i * 0.05)) },
             wbitslost: () => audioController.playSweep(440, 110, 0.22, 'triangle', 0.08),
@@ -215,6 +219,8 @@ export default function RType() {
                 // seat two (S4): its wrecks and ceremonies read at ITS position
                 else if (ev === 'wingdie') bursts(18, (gs.lastWreckX ?? gs.ship.x) - sx, gs.lastWreckY ?? gs.ship.y, 2)
                 else if (ev === 'wingin') { const w = gs.wing; if (w) bursts(8, w.x - sx, w.y, 3) }
+                else if (ev === 'p1back') bursts(10, gs.ship.x - sx, gs.ship.y, 3) // #2980 sparks at the returned nose
+                else if (ev === 'wingback') { const w = gs.wing; if (w) bursts(10, w.x - sx, w.y, 3) }
                 else if (ev === 'winglost') { const w = gs.wing; if (w) bursts(14, w.x - sx, w.y, 0) }
                 else if (ev === 'wforce') { const w = gs.wing; if (w) { bursts(12, w.x + 14 - sx, w.y, 3); converge(8, w.x + 14 - sx, w.y, 3) } }
                 else if (ev === 'wbit') { const w = gs.wing; if (w) bursts(8, w.x - sx, w.y, 1) }
@@ -510,6 +516,8 @@ export default function RType() {
                     wingPod: gs.wing && gs.wing.pod ? gs.wing.pod.state : '-',
                     wingBits: gs.wing ? gs.wing.bits.length : 0, wingShield: gs.wing && shieldOnAt(gs.wing) ? 1 : 0,
                     wingWeapon: gs.wing ? gs.wing.weapon : '-', wingSpd: gs.wing ? gs.wing.spd || 0 : 0, p1out: gs.ship.out ? 1 : 0,
+                    // #2980 the carry/return pair: the wink voice, its seat, seat two's dark flag
+                    seatAnn: gs.seatAnn || 0, seatIn: gs.seatIn || 0, wingOut: gs.wing && gs.wing.out ? 1 : 0,
                     wingOpts: gs.wing && gs.wing.opts ? gs.wing.opts.filter((o) => o.docked).length : 0, // #2919 per-hull orbs
                     wingOptsFly: gs.wing && gs.wing.opts ? gs.wing.opts.filter((o) => o.fly).length : 0, // #2925
                 }),
@@ -577,6 +585,9 @@ export default function RType() {
                     // S4 seat two fixtures
                     if (opts.wingLives !== undefined && gs.wing) gs.wing.lives = opts.wingLives
                     if (opts.wingOut && gs.wing) { gs.wing.out = true; gs.wing.dead = false; gs.wing.pod = null; gs.wing.bits.length = 0 }
+                    // #2980 burn seat one's tickets too — the mirror fixture for the
+                    // carry-home laws (the wing keeps flying; the seat reads dark)
+                    if (opts.p1Out) { gs.lives = 0; gs.ship.out = true; gs.ship.dead = true; gs.ship.opts = null; gs.pod = null; gs.bits.length = 0 }
                     if (opts.wingHuman !== undefined && gs.wing) gs.wing.human = !!opts.wingHuman
                     if (opts.wingInv !== undefined && gs.wing) gs.wing.inv = opts.wingInv
                     if (opts.wingY !== undefined && gs.wing) gs.wing.y = opts.wingY

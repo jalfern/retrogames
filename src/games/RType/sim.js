@@ -338,6 +338,8 @@ export function makeGame(seed = 1) {
         bits: [],                      // S3 bit chain: [{id,px,py}] newest-first; 4 => shield
         optAnn: 0,                     // #2919 juice: HUD "OPTIONS" voice countdown at summon (never hashed)
         grazeAnn: 0,                   // #2952 juice: the near-miss bonus winks at the hull for ~1 s (never hashed)
+        seatAnn: 0,                    // #2980 juice: the return wink after a dark seat is carried home (never hashed)
+        seatIn: 0,                     // #2980 which seat came back (1 | 2) while seatAnn rides
         leg: 1,                        // S3: 1 until Phase-1 falls, then 2 (the twin-core leg); #2911: 3 is the bridgehead to the walking gate
         legAt: 0,                      // tick LEG 2 opened (banner timing)
         p2: null,                      // S3 Phase-2 fortress: {x,cores:[{hp,mouth,mouthT,enraged}],dyingT,at}
@@ -870,7 +872,23 @@ function loopStage(gs) {
     gs.schedule = WAVES.map((w, i) => ({ ...w, idx: i, fired: false }))
     gs.waveIdx = 0
     gs.banner = 0
-    if (gs.lives > 0) respawn(gs) // (S4) a dark seat is not reborn by a clear
+    // #2980 — a dark seat gets a free life at the loop: the partner's carry
+    // pays its fare. The pilot who stayed flying brings the other one back —
+    // one ticket, naked hull, fresh mercy, human flag as it left. Both pools
+    // burned pays nothing: that run ended honestly. Solo (wing null) never
+    // enters either branch, so the S1–S3 streams are byte-identical.
+    if (gs.wing && gs.lives <= 0 && !gs.wing.out && gs.wing.lives > 0) {
+        gs.lives = 1
+        gs.events.push('p1back')
+        gs.seatAnn = 80; gs.seatIn = 1 // juice: the HUD names the return (never hashed)
+    }
+    if (gs.wing && gs.lives > 0 && (gs.wing.out || gs.wing.lives <= 0)) {
+        gs.wing.lives = 1
+        gs.wing.out = false // the dark flag comes off with the ticket — the hull re-seats below
+        gs.events.push('wingback') // 'winglost' rang it dark; this rings it home
+        gs.seatAnn = 80; gs.seatIn = 2
+    }
+    if (gs.lives > 0) respawn(gs) // (S4) a seat stays dark only when nobody carried it
     else gs.ship.dead = true
     gs.ship.inv = CFG.respawnIFrames
     if (gs.pod) { gs.pod.state = 'attached'; gs.pod.x = gs.ship.x + POD.noseX; gs.pod.y = gs.ship.y }
@@ -930,6 +948,7 @@ function runWorld(gs, pad, frozen, pad2) {
     refreshOptsOn(gs, gs.ship, gs.ship.dead) // #2919 orbs home onto seat one's mounts
     if (gs.optAnn > 0) gs.optAnn -= 1       // #2919 HUD voice (juice, never hashed)
     if (gs.grazeAnn > 0) gs.grazeAnn -= 1   // #2952 the dodge wink (juice, never hashed)
+    if (gs.seatAnn > 0) gs.seatAnn -= 1     // #2980 the return wink (juice, never hashed)
 
     // --- camera: right only, ever; LEG 2 ends at the twin-core fortress,
     // LEG 3 (#2911) at the walking gate
