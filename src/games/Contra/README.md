@@ -27,9 +27,12 @@ old honest gap that the capsule "flew at one height".
 
 The jungle also recruits the cabinet's ambushers: four tree-line **snipers**
 (crouched in canopy nests, long range, the fastest aimed round in the game at
-3.2 px/tick, telegraphed by a flashing scope glint while the shot charges) and
-three **grenade soldiers** (armoured two-hit vests, lob arcing bombs that
-detonate where they hit the ground — being airborne over the landing beats it).
+3.2 px/tick, telegraphed by a flashing scope glint while the shot charges —
+and since #2905 they WALK: after every shot each nest shifts to its next
+perch, so the crossfire moves between volleys) and three **grenade soldiers**
+(armoured two-hit vests that lob arcing bombs and nothing else — the cabinet's
+bandoliers carry no rifle, #2905 — the bombs detonate where they hit the
+ground, and being airborne over the landing beats them).
 
 ## What S4 is
 
@@ -90,7 +93,8 @@ by one notch (`loopK`, a pure staircase: x1.00 at loop 1, +0.10 a pass, pinned
 at x1.30 from loop 4). What speeds up: soldier/turret/sniper/depot/cannon rearm
 intervals, the gate's door spill, the grenadiers' throw cadence, walker pace,
 the core shutter cycle (`coreT` advances by k — both windows shorten, the duty
-ratio stands) and courier traffic. What never speeds up: hero physics, enemy
+ratio stands), courier traffic and the snipers' perch shuffle (#2905). What
+never speeds up: hero physics, enemy
 round SPEEDS, and the torrent. That's a law, not a mercy — the lane-aim law
 says a hop is always the answer to an aimed round, and `hopBand` is tuned to
 these exact paths; the loop compresses flight TIME, never flight paths. The
@@ -148,6 +152,17 @@ disagreement is recorded on #2894.*
   view (door law + spawn-shield), a roof sniper that falls with it; its death
   pays a volley of M/F/L capsules at three altitudes (+1000, same courier
   physics). Pierce included — walls are walls.
+- **Perch-drift law (#2905):** each tree-line nest owns three canopy perches
+  (home, −34/+6, +30/−7 relative to its table position) on a FIXED rotation —
+  zero gs.r draws, the courier/cascade law reused: same seed, same crossfire.
+  The shift starts the instant the round leaves (muzzle-flash frame) and walks
+  `PERCH_RELOC = 30` ticks advanced by `gs.lk` (loop tempo, like the walker
+  pace) — so it always settles ~85 ticks before the next glint even at
+  k = 1.3: **the aim is frozen while the telegraph flashes, and no round ever
+  leaves a moving nest.** The depot-roof nest is exempt — its `sn.x === dp.x`
+  identity IS the roof-blown-off law. The vest grenadier throws only: the
+  rifle branch of the soldier-fire law is gated on `!s.nade` (cabinet fidelity
+  — the advancing bandolier lobs, it never sprays flat rounds).
 - **Lane-aim law (S3, new):** enemies aim at the hero's LAST GROUNDED line
   (`p.lane`), never at the airborne body; snipers additionally fire only at
   grounded targets. Formalizes the S2 autopilot lesson ("flat aimed rounds are
@@ -169,8 +184,9 @@ disagreement is recorded on #2894.*
 - `sim.js` is the whole truth, pure Node: fixed 60 Hz `step(gs, pad)`. Every
   sim random rides `gs.r`; `stateHash` = FNV-1a over the rounded state
   (extended in S3 for weapon/bullet kinds, pierce counts, capsule kind,
-  snipers, lane, nade vest hp; #2894: `gs.loop`/`gs.lk` ride the hash too).
-  Events stay unhashed, per Joust's law.
+  snipers, lane, nade vest hp; #2894: `gs.loop`/`gs.lk` ride the hash too;
+  #2905: every sniper's perch index and mid-shift leg ride it — a replay that
+  skips a nest's walk diverges loudly). Events stay unhashed, per Joust's law.
 - **#2894 harness surface**: `makeGame(seed, loop)` starts at any pass; the DEV
   `setup({ loop: n })` retargets tempo mid-run (probe carries `loop`, `lk`,
   `seed`); DebugKit grows a `LOOP +1` cheat. Loop math is exported for checks:
@@ -273,7 +289,11 @@ ends stage 1 with the bonus · the door caps and the cannons talk · **MG
 streams at least twice the rifle** · **laser is the fastest round** · **fire
 undulates across its line** · **FIRE and LASER pierce; the rifle stops at the
 first body** · **capsules grant every letter and the draw covers the wheel** ·
-**snipers fire, fast and telegraphed** · **grenades arc and detonate on the
+**snipers fire, fast and telegraphed** · #2905 **one nest fires from three
+perches on the fixed rotation · the aim is frozen while the glint flashes (no
+mid-telegraph shuffle, no shot from a moving nest) · the roof nest is exempt,
+one origin forever · the vest throws and never rifles** · **grenades arc and
+detonate on the
 ground; the vest eats two rounds** · **winnable: autopilot clears
 jungle+falls+boss on seeds 1..12 with the new roster**, not cherry-picked ·
 GAME OVER path · attract self-demo · real keys start/run/jump/fire/die/
@@ -357,6 +377,8 @@ finale countdown through real keys** · zero page errors.
   plus the loop courtesy (+1 life, banked to 5), the gun carries, the seed is kept,
   and the HUD marks the pass in gold. The honest autopilot clears every seed on
   every loop — the loop never becomes unwinnable.
-- Sniper nests sit on fixed perches; the original drifted aim between a few
-  tree positions. The vest grenadier fires a rifle too while advancing; the
-  cabinet's grenadiers were lob-only.
+- **CLOSED by #2905**: the tree line walks and the bandolier keeps its fire
+  honest — each canopy nest rotates through three fixed perches after every shot
+  (zero rng, frozen aim during the telegraph, roof exempt), and the vest
+  grenadier is lob-only like the cabinet's: the rifle branch no longer answers
+  for `nade` soldiers.
