@@ -110,8 +110,16 @@ export default function FireCrew() {
     // the ticks the human did — and drops seat-0 rows inside them: that
     // stream is nobody's, and rows must never teach the autopilot's saves
     // as a person's takes (dd's seat2At doctrine, #1712).
+    // #2985: a span cap must be NAMED, not silent. The old slice(-19) dropped
+    // early spans on heavily-watched takes, and the adapter replay then
+    // mismatched without saying why. The first 64 spans bank (a byte budget of
+    // ~900B on rules); past the cap banking STOPS and the take carries
+    // watchOverflow:'1', so the loss is named and the adapter refuses it
+    // instead of shipping a broken verification.
+    const WATCH_SPAN_CAP = 64
     const watchSpansRef = useRef([])
     const watchOpenRef = useRef(-1)
+    const watchOverflowRef = useRef(false)
 
     useEffect(() => { screenRef.current = screen }, [screen])
     useEffect(() => { pausedRef.current = paused }, [paused])
@@ -127,6 +135,7 @@ export default function FireCrew() {
         setWatching(false)
         watchSpansRef.current = []
         watchOpenRef.current = -1
+        watchOverflowRef.current = false
         prevRef.current = null
         windBedAtRef.current = 0
         windCreakAtRef.current = 0
@@ -167,8 +176,10 @@ export default function FireCrew() {
         const g = gsRef.current
         if (g) g.sources[0] = 'human'
         if (watchingRef.current && g && watchOpenRef.current >= 0) {
-            // close the span at the tick the wheel came back
-            watchSpansRef.current = [...watchSpansRef.current.slice(-19), `${watchOpenRef.current}-${g.tick}`]
+            // close the span at the tick the wheel came back (#2985: banking
+            // STOPS at the cap and the overflow is named — never silently cut)
+            if (watchSpansRef.current.length >= WATCH_SPAN_CAP) watchOverflowRef.current = true
+            else watchSpansRef.current = [...watchSpansRef.current, `${watchOpenRef.current}-${g.tick}`]
             watchOpenRef.current = -1
         }
         watchingRef.current = false
@@ -280,7 +291,7 @@ export default function FireCrew() {
             // was handed to the autopilot ("t0-t1,…"; primitive string,
             // resolved at record-stop). The adapter seats the autopilot there
             // and drops seat-0 rows inside the spans (#1712, dd's doctrine).
-            rules: () => ({ watch: watchSpansRef.current.join(',') }),
+            rules: () => ({ watch: watchSpansRef.current.join(','), ...(watchOverflowRef.current ? { watchOverflow: '1' } : {}) }),
         }
     }
 
@@ -407,7 +418,12 @@ export default function FireCrew() {
             if (screenRef.current !== 'play') return
             if (v.on) { endVoice(true); return }
             if (!speechSupported()) { say('NO RADIO ON THIS DEVICE'); sfx.radioNo(); return }
-            const consent = await askVoiceConsent()
+            // #2985: ONE ask per person per device (audit-1 spirit). The
+            // auto-record gate already banked a voice grant covering seat 0
+            // (hasAutoVoice), so the radio reuses it instead of re-showing the
+            // #1247 prompt. The browser permission bubble still fires — it is
+            // getUserMedia's, below, and was never the second ask.
+            const consent = hasAutoVoice() ? { consent: true, headset: false, reused: true } : await askVoiceConsent()
             if (screenRef.current !== 'play') return // moved on while the prompt was up
             if (!consent.consent) { say('NO MIC, NO RADIO'); sfx.radioNo(); return }
             v.session = hasAutoVoice() ? null : createVoiceSession({ slots: [0], ask: () => Promise.resolve(consent) }) // #1712: the auto layer already banks seat 0 from seed-birth — validateVoice forbids the slot twice; recognition still runs either way (SOS law)
@@ -528,7 +544,7 @@ export default function FireCrew() {
                 state: () => (gsRef.current ? state(gsRef.current) : null),
                 // #1712 S2 browser-leg view: the live auto-capture truth and
                 // the watch spans the take will carry.
-                rec: () => ({ auto: typeof window !== 'undefined' ? (window.__autoCapture || null) : null, recording: isRecording(), autoVoice: hasAutoVoice(), watch: watchSpansRef.current.slice(), open: watchOpenRef.current }),
+                rec: () => ({ auto: typeof window !== 'undefined' ? (window.__autoCapture || null) : null, recording: isRecording(), autoVoice: hasAutoVoice(), watch: watchSpansRef.current.slice(), open: watchOpenRef.current, overflow: watchOverflowRef.current }),
                 // WATCH (#1637 b28): pilot-visible seat truth + the fallback the
                 // pilot uses if a synthetic Y ever misses the window (b26 parity).
                 watching: () => watchingRef.current,

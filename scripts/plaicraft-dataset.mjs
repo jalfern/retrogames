@@ -534,6 +534,11 @@ export function talkMeDownRows(key, rec) {
 // steering) lands on the NEXT step either way — so the replay is exact without
 // guessing which side of the bank the phrase task won.
 export function fireCrewRows(key, rec) {
+    // #2985: a NAMED overflow — the shell stopped banking watch spans at
+    // WATCH_SPAN_CAP, so this take's span list is provably incomplete and a
+    // replay would mismatch at an unnameable tick. Refuse honestly instead of
+    // burning a replay (and mislabelling the loss as tamper-shape noise).
+    if (rec.rules && rec.rules.watchOverflow) return { ok: false, overflow: true, mismatch: null, rows: [] }
     const gs = fcMakeRun(rec.seed)
     const kinds = rec.slots.map((s) => (s.source && s.source.kind) || 'cpu')
     fcSetSources(gs, kinds.map((k) => (k === 'human' ? 'human' : 'cpu')))

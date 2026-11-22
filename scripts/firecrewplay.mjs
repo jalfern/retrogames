@@ -279,6 +279,22 @@ const recRel = await page.evaluate(() => window.__firecrewTest.rec())
 ok(recRel && recRel.watch.length === spansBefore + 1 && /^\d+-\d+$/.test(recRel.watch[recRel.watch.length - 1]) && recRel.open === -1,
     'releasing closes the span into the take\'s rules string (t0-t1) (#1712)', JSON.stringify(recRel && recRel.watch))
 
+// #2985: the span cap is NAMED — a heavily-watched take banks exactly
+// WATCH_SPAN_CAP spans, and the 65th release STOPS banking and stamps the
+// overflow instead of silently dropping early spans. One synchronous flip
+// storm: rAF can't tick mid-evaluate, so the run can't die under the loop.
+const capInfo = await page.evaluate(() => {
+    const T = window.__firecrewTest
+    const flip = () => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyY' }))
+    let n = 0
+    while (!T.rec().overflow && n < 200) { flip(); flip(); n++ } // seat + release per loop
+    const r = T.rec()
+    return { overflow: r.overflow, spans: r.watch.length, screen: T.screen() }
+})
+ok(capInfo.overflow === true && capInfo.spans === 64,
+    '#2985 span-cap law: 64 spans bank exactly, the overflow-past-cap is named (never a silent cut)',
+    JSON.stringify(capInfo))
+
 ok(errors.length === 0, 'zero page errors across the whole drive', errors.slice(0, 3).join(' | '))
 console.log(`\n${fails ? 'FAILED' : 'DRIVE GREEN'} — ${fails ? fails + ' failures' : 'start, play, pause, contract, die, restart'}`)
 await browser.close()

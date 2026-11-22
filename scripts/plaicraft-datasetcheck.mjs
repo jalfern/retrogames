@@ -765,6 +765,17 @@ try {
         r.check('fire-crew watch-span law: the replay re-seats the autopilot and still verifies, seat-0 rows vanish inside the span and resume at release, cpu seats never row (#1712)',
             wrows.ok && inSpan.length === 0 && resumed && !seat1,
             `ok=${wrows.ok} span=${inSpan.length} resumed=${resumed} seat1=${seat1}`)
+        { // #2985: a span-cap overflow is NAMED on the take and the adapter
+            // refuses it at the stamp — a provably incomplete span list never
+            // burns a replay, and a clean take still verifies beside it.
+            const overRec = JSON.parse(JSON.stringify(watched))
+            overRec.rules = { watch: String(overRec.rules && overRec.rules.watch || ''), watchOverflow: '1' }
+            const over = fireCrewRows('unit/fc-overflow', overRec)
+            const cleanAgain = fireCrewRows('unit/fc-watch2', watched)
+            r.check('fire-crew span-overflow law: watchOverflow:"1" refuses the take up front (ok:false, overflow:true, zero rows) while the same take without the stamp still verifies (#2985)',
+                !over.ok && over.overflow === true && over.rows.length === 0 && over.mismatch === null && cleanAgain.ok,
+                `ok=${over.ok} overflow=${over.overflow} rows=${over.rows.length} clean=${cleanAgain.ok}`)
+        }
         // honesty of the split: a victim the seat's light cannot reach is a
         // zero lane; fire is shared by rule; featurize writes nothing (hash clean)
         {

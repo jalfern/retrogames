@@ -172,6 +172,18 @@ routes through the wind law"); restore afterwards.
     still play, spans open/close into the rules string). Recording `side` into
     voiceCmd (recording.js) — an adapter that cannot re-seat a sweep cannot
     verify a shouted take.
+- **#2985 — QA polish (named span cap, one voice ask):** the WATCH-span bank
+    is capped at `WATCH_SPAN_CAP = 64` and the cap is HONEST: past it banking
+    STOPS and the take stamps `rules.watchOverflow:'1'` (the old `slice(-19)`
+    silently lost early spans, so the take just failed replay and nobody knew
+    why). `fireCrewRows` refuses an overflow-stamped take up front
+    (`ok:false, overflow:true`) — a provably incomplete span list never burns
+    a replay. And the radio reuses the auto gate's voice grant when it already
+    covers seat 0 (`hasAutoVoice()`): one ask per person per device; the
+    browser's own permission bubble is not the second ask. Proof:
+    `firecrewcheck` +3 source gates, `firecrewplay` +1 cap law (a 65-flip
+    storm banks exactly 64 spans and names the 65th), datasetcheck +1
+    overflow-refuse unit.
 - **#1766 — polish round 3 (truck silhouette, smoke-dimmed fire, crew breathe):**
   three visual bullets, all provable in plain Node through the #1440 recording-ctx
   pattern (they draw only fillRects). (1) *The ladder truck IS the base column*
