@@ -473,11 +473,17 @@ export function drawBitPod(ctx, e, camX) {
 // e.state are sim truth, the light is just telling you what they already say.
 export function drawDuelist(ctx, e, camX) {
     const x = Math.round(e.x - camX), y = Math.round(e.y)
-    if (e.state === 'dash') { // the pass leaves heat behind it
+    if (e.state === 'dash') { // the pass leaves heat behind it — #2938: three rows
+        // thick, not two, because 1.75 px/tick over a 2 px trail reads as a hair
+        // line at phone scale; the streak is the "here it comes" and must be seen
         ctx.fillStyle = 'rgba(255,120,60,0.45)'
-        ctx.fillRect(x + 8, y - 1, 7, 2)
+        ctx.fillRect(x + 8, y - 1, 7, 3)
         ctx.fillStyle = 'rgba(255,210,120,0.30)'
-        ctx.fillRect(x + 15, y - 1, 5, 2)
+        ctx.fillRect(x + 15, y - 1, 5, 3)
+    }
+    if (e.state === 'dash' && e.flashT > 0) { // #2938 the release flash: the crouch
+        ctx.fillStyle = e.flashT > 4 ? 'rgba(255,240,200,0.75)' : 'rgba(255,170,100,0.40)' // ends with a bang, not a whisper
+        ctx.fillRect(x - 12, y - 4, 6, 8)
     }
     const shake = e.state === 'windup' && (e.anim >> 1) % 2 === 0 ? 1 : 0
     const sx = x + shake // the crouch trembles
@@ -499,7 +505,16 @@ export function drawDuelist(ctx, e, camX) {
     const hot = e.cd <= DUEL.warn
     ctx.fillStyle = hot && (e.anim >> 2) % 2 === 0 ? '#fff2b0' : '#ffd23c'
     ctx.fillRect(sx - 5, y - 1, 3, 2)
-    if (hot) { ctx.fillStyle = 'rgba(255,242,176,0.35)'; ctx.fillRect(sx - 8, y - 3, 8, 6) }
+    if (hot) { // #2938 the warn halo widens as the round loads — a 2 px eye is
+        // the whole warning at 320 px, so the light grows ahead of the nose and
+        // the closer the shot, the wider it spills: phone-scale telegraph
+        const grow = 1 - Math.max(0, Math.min(DUEL.warn, e.cd)) / DUEL.warn
+        const hw = 10 + Math.round(4 * grow), hh = 8 + Math.round(2 * grow)
+        ctx.fillStyle = 'rgba(255,242,176,0.15)'
+        ctx.fillRect(sx - 3 - hw, y - hh, (hw + 5) * 2, hh * 2)
+        ctx.fillStyle = 'rgba(255,242,176,0.38)'
+        ctx.fillRect(sx - 8, y - 3, 8, 6)
+    }
 }
 
 // #2937 the sting — the carrier's answer: a small hot cyan dart riding its
@@ -533,6 +548,21 @@ export function drawMissile(ctx, m, camX) {    const x = Math.round(m.x - camX),
 }
 
 export function drawBullet(ctx, b, camX) {
+    if (b.dart) { // #2938 the duelist's own round: a crimson dart that reads as
+        // ITS gun before your eye finds the shooter — hull colours, hot tip,
+        // never the shared grey bullet the turrets and dreads spend.
+        ctx.save()
+        ctx.translate(Math.round(b.x - camX), Math.round(b.y))
+        ctx.rotate(Math.atan2(b.vy, b.vx))
+        ctx.fillStyle = '#7a1430'
+        ctx.fillRect(-4, -1, 3, 2) // fletching, dark as the hunter's wings
+        ctx.fillStyle = '#d43a5c'
+        ctx.fillRect(-1, -1, 5, 2) // body, the hull's own red
+        ctx.fillStyle = '#ff8aa0'
+        ctx.fillRect(4, -1, 2, 2) // the hot point riding at you
+        ctx.restore()
+        return
+    }
     ctx.drawImage(SPR.bullet, Math.round(b.x - camX) - 2, Math.round(b.y) - 2)
 }
 

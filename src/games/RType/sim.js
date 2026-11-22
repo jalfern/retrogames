@@ -162,6 +162,8 @@ export const DUEL = {
     commitAt: 260,   // ticks of pursuit before it commits — the duel always ends
     windup: 40,      // the crouch: a full second of "here it comes"
     dash: 1.75,      // the pass — larva-dive punch from a much closer start
+    grind: 1.1,      // #2938 refuse-and-shove: the plate wins the square, the hunter backs off
+    flash: 8,        // #2938 the release flash — the commit announces itself at the nose
 }
 
 // #2937 THE STING — the carrier's answer. The arcade's bit ferry is no sitting
@@ -259,6 +261,10 @@ export const WAVES3 = [
         { kind: 'larva', d: 44, y: 112, dive: 1 }, { kind: 'larva', d: 66, y: 178 } ] },
     { at: 130, bcap: 1 },
     { at: 170, seg: { y0: FIELD_TOP, y1: 88, len: 130, turret: 88 } },
+    // #2938 the duel bookends the stage: one hunter mid-field under the slab
+    // lip, so the bridgehead is not just the tank — the stage opens with the
+    // duel (#2934 leg 1) and closes with it. Authored y, zero rng.
+    { at: 200, dlc: { y: 100 } },
     { at: 230, spawn: [
         { kind: 'larva', d: 0, y: 140, dive: 1 }, { kind: 'larva', d: 24, y: 72, dive: 1 },
         { kind: 'larva', d: 48, y: 118 } ] },
@@ -1388,7 +1394,7 @@ function runWorld(gs, pad, frozen, pad2) {
                 if (e.cd <= 0 && !frozen && e.x > gs.camX && e.x < gs.camX + W + 10) {
                     const dx = tp.x - e.x, dyy = tp.y - e.y
                     const m = Math.max(1e-6, Math.hypot(dx, dyy))
-                    gs.bullets.push({ id: gs.nextId++, x: e.x - 6, y: e.y, vx: (dx / m) * 1.3, vy: (dyy / m) * 1.3 })
+                    gs.bullets.push({ id: gs.nextId++, x: e.x - 6, y: e.y, vx: (dx / m) * 1.3, vy: (dyy / m) * 1.3, dart: 1 }) // #2938 its own dart-round
                     e.cd = DUEL.fireCd
                     gs.events.push('duelfire')
                 }
@@ -1400,11 +1406,40 @@ function runWorld(gs, pad, frozen, pad2) {
                     const dx = t2.x - e.x, dyy = t2.y - e.y
                     const m = Math.max(1e-6, Math.hypot(dx, dyy))
                     e.vx = (dx / m) * DUEL.dash; e.vy = (dyy / m) * DUEL.dash
+                    e.flashT = DUEL.flash // #2938 the release flash — the pass announces itself
                     e.state = 'dash'; gs.events.push('warn')
                 }
             } else { // dash: one straight commitment — grind, edge or grave
                 e.x += e.vx; e.y += e.vy
             }
+            if (e.flashT > 0) e.flashT -= 1 // #2938 the flash burns brief
+            // #2938 armour reads — the slab refuses the duel too. Prowling phases
+            // are shoved clear of the lip they reach over (refuse-and-shove, the
+            // shell's own law); a committed pass meets steel and BURNS on the
+            // face — grind, edge, or grave, and here it is the edge. Riding a
+            // slab with your wings through it read as a rendering bug; now the
+            // plate is cover and the hunter reads it like the pilot must.
+            let grinding = false
+            let spentOnSteel = false
+            for (const s of gs.enemies) {
+                if (s.kind !== 'hullseg') continue
+                if (!(e.x + 7 > s.x && e.x - 7 < s.x + s.len && e.y > s.y0 - 5 && e.y < s.y1 + 5)) continue
+                grinding = true
+                if (e.state === 'dash') {
+                    gs.events.push('duelgrind')
+                    gs.lastHitX = e.x; gs.lastHitY = e.y
+                    spentOnSteel = true
+                    break
+                }
+                const up = s.y0 - 5, dn = s.y1 + 5 // the two lips of the plate
+                const upOK = up >= FIELD_TOP + 4, dnOK = dn <= FIELD_BOT - 4
+                e.y = !upOK ? dn : !dnOK ? up : (e.y - up <= dn - e.y ? up : dn)
+                e.y = clamp(e.y, FIELD_TOP + 4, FIELD_BOT - 4)
+                e.x += DUEL.grind // the plate wins the square
+            }
+            if (spentOnSteel) { gs.enemies.splice(i, 1); continue } // the pass is spent against steel
+            if (grinding && !e.grindT) gs.events.push('duelgrind') // one cry per grind, not per tick
+            e.grindT = grinding ? 1 : 0
             e.y = clamp(e.y, FIELD_TOP + 4, FIELD_BOT - 4) // the duel stays between the rails
             if (e.x < gs.camX - 24) { gs.enemies.splice(i, 1); continue }
             if (e.state === 'dash' && e.x > gs.camX + W + 30) { gs.enemies.splice(i, 1); continue }
