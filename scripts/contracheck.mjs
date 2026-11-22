@@ -2109,7 +2109,7 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
 await requireDevServer(`${BASE}/contra`)
 const browser = await launch()
 {
-    const page = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 600 })
+    const page = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 600, decline: true })
     const errs = []
     page.on('pageerror', (e) => errs.push(e.stack || e.message))
 

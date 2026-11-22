@@ -12,8 +12,8 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, armLiveCapture } from '../../utils/gameContract'
-import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
+import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, isRecording, armLiveCapture } from '../../utils/gameContract'
+import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
 import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice } from './sim.js'
 import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
@@ -271,16 +271,17 @@ export default function ContraGame () {
             setMode('play'); screen = 'play'
         }
 
-        // #1711 S2 consent gate: the question goes up BEFORE the first take's
-        // seed-birth; decline still plays (autoRecord honest-degrades — the
-        // recorder simply never opens), and beginRun() only ships bytes the
-        // stored grant covers.
+        // #1711 S2 consent, arcade-shaped: Contra's entry law is *any key takes
+        // the seat* (#2837, checked with real keys) — so play never waits on the
+        // paperwork. Consent gates RECORDING, never the game (autoRecord doctrine:
+        // declined → plays exactly the same): the question goes up at the human's
+        // first press, and beginRun() only ever ships bytes the stored grant
+        // covers — a mid-take grant records from that tick, never before it.
         const humanStart = () => {
-            if (startBusy()) return
-            setStartBusy(true)
+            startPlay()
             askConsent()
-                .then(() => { startPlay(); beginRun() })
-                .finally(() => setStartBusy(false))
+                .then((c) => { if (c && c.motion) beginRun() })
+                .catch(() => {})
         }
 
         const endTo = (what) => {
@@ -351,7 +352,7 @@ export default function ContraGame () {
             // keyboard press that called dropIn IS the first pad-1 content the
             // bank carries, so the Node adapter re-applies the flip at the same
             // tick derivably from the stream (vs DD's rules.seat2At latch).
-            if (screen === 'play') recordLiveTick([toBank(pad), toBank(p2)])
+            if (screen === 'play' && isRecording() && !contractHoldsLoop()) recordLiveTick([toBank(pad), toBank(p2)])
             if (gs.end === 'win') { if (screen === 'play') { endTo('clear'); clearHold = 220 } }
             else if (gs.end === 'dead') { if (screen === 'play') endTo('over') }
         }
@@ -582,7 +583,7 @@ export default function ContraGame () {
             players: 2,
             buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
             reads: ['up', 'down', 'left', 'right', 'a', 'b'],
-            sources: () => [{ kind: 'human' }, { kind: gs.p2.human ? 'human' : 'cpu' }],
+            sources: () => [{ kind: 'model' }, { kind: gs.p2.human ? 'human' : 'cpu' }],
             rules: () => (seat2.length ? { seat2: seat2.join(',') } : {}),
             reset: (seed) => {
                 gs = makeGame(seed >>> 0)

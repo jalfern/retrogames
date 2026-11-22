@@ -516,10 +516,13 @@ Contra is the second trainable game in the store — the same contract Gauntlet
 enforces, proved end-to-end by `npm run plaicraft:datasetcheck` (scripted
 human, not just a stub):
 
-- **Consent before simulation**: the recorder only arms once a human enters the
-  attract screen (keyboard or tap), and only records ticks where a real pad
-  pair was pressed — the autopilot demo that runs before the first press never
-  enters the dataset (the Gauntlet rule the store rejects machine takes on).
+- **Consent gates recording, never play**: Contra's arcade law is *any key takes
+  the seat*, so play never waits on paperwork. The question goes up at the
+  human's first press and `beginRun()` only ships bytes the stored grant covers
+  (mid-take grant records from that tick; declined → plays exactly the same).
+  Recorded ticks are pad-pair banks — the autopilot demo that runs before the
+  first press never enters a take (the Gauntlet rule the store rejects machine
+  takes on).
 - **Pad pairs as labels**: every recorded tick banks `[pad1, pad2]` — the 9
   boolean buttons VirtualControls dispatches per seat. The adapter maps pad1 →
   seat 0 and pad2 → seat 1 with `model.js`'s honest 67-feature vector (vision
