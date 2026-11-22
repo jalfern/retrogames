@@ -28,7 +28,7 @@
 import { consentFor, grantConsent, ANON_ID } from './consent.js'
 import { playerId, loadLastPlayer, rememberPlayer, planGate, canGrant } from './player.js'
 import { probeStore, uploadSession, storeFromQuery } from './sessionStore.js'
-import { queueRun, dropEntry, drain as drainOutbox, countQueue } from './outbox.js'
+import { queueRun, updateEntry, dropEntry, drain as drainOutbox, countQueue } from './outbox.js'
 import { classifyFailure } from './outboxCore.js'
 import { badgeView } from './syncBadgeCore.js'
 import { voiceSupported } from './voiceCapture.js'
@@ -210,6 +210,21 @@ export async function endRun(opts = {}) {
     const out = autoStop()
     if (!out) return null
     const { rec, flush } = out
+    // audit 1: identity order — explicit opt, the take's own stamp (seed-
+    // birth truth), the session's gate answer, the device prefill name.
+    const id = (opts.player && playerId(opts.player)) || rec.player || st.id || (loadLastPlayer(ls()) || {}).id || ANON_ID
+    // S6: persist BEFORE the first attempt — the crash window is exactly the
+    // await on fetch (iOS cancels in-flight uploads when the tab backgrounds,
+    // and OVER-to-close is a thumb's width). Removed only when the store has
+    // it or a permanent-failure rule says it never can.
+    // #2964 item 4: the flush race below is a SECOND crash window, and longer
+    // career takes ride it longer. So the bank comes first and the pen says
+    // what it holds: an entry queued while the mic tail is still racing wears
+    // `voiceFlushPending`; when the race resolves the entry is rewritten —
+    // whole take (name gone) or `voiceFlushTimedOut` (#2093's named outcome,
+    // now surviving the tab it was named on). Close-mid-career tab-kills are
+    // then never silence: the pen either holds the whole take or says so.
+    const entry = await queueRun(rec, id, flush ? { voiceFlushPending: true } : null)
     // #2093 item 4: a flush that never lands is a NAMED outcome, not silence.
     // Past the 5 s race the last chunk (or the whole track, worst case) rides
     // off missing — say so on the two surfaces the harnesses read, so a
@@ -222,16 +237,13 @@ export async function endRun(opts = {}) {
         } catch { /* the take ships without the last chunk rather than not at all */ }
         voiceFlushTimedOut = !flushed
         if (voiceFlushTimedOut) window.__autoCapture = { ...(window.__autoCapture || {}), voiceFlushTimedOut: true }
+        // carry the verdict onto the pen entry (the one surface that outlives
+        // the tab): tail joined -> names cleared; timeout -> named.
+        if (entry) await updateEntry(entry, rec, voiceFlushTimedOut ? { voiceFlushTimedOut: true } : null)
     }
-    // audit 1: identity order — explicit opt, the take's own stamp (seed-
-    // birth truth), the session's gate answer, the device prefill name.
-    const id = (opts.player && playerId(opts.player)) || rec.player || st.id || (loadLastPlayer(ls()) || {}).id || ANON_ID
+    // last-moment consent, read fresh after the race (unchanged since S6: what
+    // gates the upload is the answer AT upload time, not at seed-birth).
     const consent = consentFor(ls(), id)
-    // S6: persist BEFORE the first attempt — the crash window is exactly the
-    // await on fetch (iOS cancels in-flight uploads when the tab backgrounds,
-    // and OVER-to-close is a thumb's width). Removed only when the store has
-    // it or a permanent-failure rule says it never can.
-    const entry = await queueRun(rec, id)
     const storeLive = !!(st.probe && st.probe.sessions)
     // S7: saved first, said first — a persisted take IS pending-sync before
     // the network ever answers, and the hang window is exactly where the
