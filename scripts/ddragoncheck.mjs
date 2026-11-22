@@ -2197,9 +2197,10 @@ if (MUTANT) {
             plant: 'void 0 /* MUTANT(carrier-thrift): the leather never pays */',
             harm: async (mod) => {
                 const gs = mod.makeGame(9)
-                gs.enemies.push({ id: 972, kind: 'williams', x: gs.billy.x + 12, y: gs.billy.y, face: -1, hp: 1, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, hasWhip: true, atkKind: null, attackCooldown: 99999, inv: 0, spinHit: false, lash: 0 })
+                const e = { id: 972, kind: 'williams', x: gs.billy.x + 12, y: gs.billy.y, face: -1, hp: 1, state: 'walk', stateT: 0, anim: 0, hasStick: false, stickDropped: false, hasKnife: false, hasWhip: true, atkKind: null, attackCooldown: 99999, inv: 0, spinHit: false, lash: 0 }
+                gs.enemies.push(e)
                 for (let i = 0; i < 12; i++) { mod.step(gs, { punch: i === 0 }); gs.events.length = 0 }
-                return gs.enemies.length === 0 && !gs.pickups.some((q) => q.kind === 'whip')
+                return e.state === 'dying' && !gs.pickups.some((q) => q.kind === 'whip')
                     ? 'HARM NAMED: the whip man fell and took his leather into the grave — the arcade\'s reward loop died: killing the armed man was never the way to get armed, and the weapon wall stops teaching'
                     : null
             },
