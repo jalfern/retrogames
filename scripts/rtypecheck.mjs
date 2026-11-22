@@ -19,7 +19,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, OPT, DUEL, STING, WAVES, WAVES2, WAVES3, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, stateHash, enableCoop } from '../src/games/RType/sim.js'
+import { STAGE_END, STAGE_END2, STAGE_END3, CORE_Y, W, POD, OPT, DUEL, STING, WAVES, WAVES2, WAVES3, HEAT_AT, DOBK, FIELD_TOP, FIELD_BOT, CFG, makeGame, step, autopilot, wingBrain, stateHash, enableCoop } from '../src/games/RType/sim.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -2067,6 +2067,146 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         h1 !== h2, `${h1} vs ${h2}`)
 }
 
+// ------------------------------------------- #2951 volley pre-dodge & the sign ---
+{ // The fortress fan flies straight once loosed. Three laws, one per layer:
+    // the rounds carry the mark; the lane field reads straight fire at all
+    // (it never did — the crossing numerator was inverted since S1, so every
+    // consider(t>0) saw a negative time and the brain was blind to bullets);
+    // and the fan slip steps off the aim line without quitting the vent.
+    const p2Stub = (gs) => ({
+        x: gs.ship.x + 120, dyingT: 0, port: 0, swayOff: 0, flashT: 0,
+        cores: [{ hp: 60, max: 8, mouth: 'closed', mouthT: 999, enraged: false },
+            { hp: 60, max: 8, mouth: 'closed', mouthT: 999, enraged: false }],
+        at: gs.tick,
+    })
+
+    // 1. the tag: a live salvo leaves the face marked, three rounds. (The
+    // cycle starts at spawn, so wait for the dock — an off-screen fan's rounds
+    // die at the screen cull; the marked fan is the one that reaches the yard.)
+    const gs = makeGame(7)
+    gs.ship.inv = 999999
+    gs.leg = 2; gs.camX = STAGE_END2; gs.legAt = gs.tick
+    step(gs, {}); gs.events.length = 0 // the fortress arrives
+    for (let t = 0; t < 400 && gs.p2.x > gs.p2.targetX + 0.5; t++) { step(gs, {}); gs.events.length = 0 } // dock
+    let marked = -1
+    for (let t = 0; t < 900 && marked < 0; t++) {
+        step(gs, {})
+        if (gs.events.includes('p2salvo')) marked = gs.bullets.filter((b) => b.volley).length
+        gs.events.length = 0
+    }
+    r.check('#2951 the fan carries its mark: the volley leaves the face tagged, three rounds',
+        marked === 3, `tagged=${marked}`)
+
+    // 2. ROOT FIX — the lane field reads straight fire: a round dead ahead
+    // buys a lane change; the same world with no round buys none. (Pre-fix
+    // the inverted sign made t negative for every round ahead — the scan
+    // considered nothing and the pilot survived only on strafe luck.)
+    const sens = (withRound) => {
+        const g = makeGame(3)
+        g.enemies.length = 0; g.bullets.length = 0
+        if (withRound) g.bullets.push({ id: 1, x: g.ship.x + 30, y: 120, vx: -1.35, vy: 0 })
+        const p = autopilot(g)
+        return p.up !== p.down
+    }
+    r.check('#2951 the lane field reads straight fire — a round dead ahead buys a lane change, the same world bare buys none',
+        sens(true) && !sens(false), `with=${sens(true)} without=${sens(false)}`)
+
+    // 3. the slip reads the volley beyond the plain window: a volley crossing
+    // the pilot's station at ~67 ticks is invisible to the 40-tick field —
+    // yet the pilot must already be leaving the line. Untagged, same world,
+    // the pilot holds: the tag is what the slip trusts.
+    const slipFix = (tag) => {
+        const g = makeGame(3)
+        g.enemies.length = 0; g.bullets.length = 0
+        g.p2 = p2Stub(g)
+        const b = { id: 2, x: g.ship.x + 120, y: g.ship.y + 2, vx: -1.35, vy: 0 }
+        if (tag) b.volley = 1
+        g.bullets.push(b)
+        return autopilot(g)
+    }
+    const sT = slipFix(true), sU = slipFix(false)
+    r.check('#2951 the slip senses the fan through the plain window — a volley 67 ticks out moves the pilot, an untagged round does not',
+        (sT.up || sT.down) && !(sU.up || sU.down), `tagged up=${sT.up} dn=${sT.down} / bare up=${sU.up} dn=${sU.down}`)
+
+    // 4. the slip is a drift, not a duck: the trigger stays down — the
+    // stream keeps working the face while the hull leaves the aim line.
+    r.check('#2951 the slip keeps the stream — the trigger stays down through the dodge',
+        sT.a === true, `a=${sT.a}`)
+
+    // 5. the slip self-limits: a hand's width off the line is already the
+    // gap between the fan's rounds — 12 px buys clearance from all three.
+    const g5 = makeGame(3)
+    g5.enemies.length = 0; g5.bullets.length = 0
+    g5.p2 = p2Stub(g5)
+    g5.ship.y = 132 // the volley will cross at 120: twelve clear already — the gap
+    g5.bullets.push({ id: 3, x: g5.ship.x + 120, y: 120, vx: -1.35, vy: 0, volley: 1 })
+    const p5 = autopilot(g5)
+    r.check('#2951 the slip self-limits — twelve pixels off the line is the gap, and the pilot holds there',
+        !(p5.up || p5.down), `up=${p5.up} dn=${p5.down}`)
+
+    // 6. direction: slip AWAY from the crossing point, both ways.
+    const dirFix = (below) => {
+        const g = makeGame(3)
+        g.enemies.length = 0; g.bullets.length = 0
+        g.p2 = p2Stub(g)
+        g.ship.y = 120
+        g.bullets.push({ id: 4, x: g.ship.x + 120, y: below ? 126 : 114, vx: -1.35, vy: 0, volley: 1 })
+        const p = autopilot(g)
+        return { up: p.up, down: p.down }
+    }
+    const dBelow = dirFix(true), dAbove = dirFix(false)
+    r.check('#2951 the slip leaves the line the round crosses — below buys up, above buys down',
+        dBelow.up && !dBelow.down && dAbove.down && !dAbove.up,
+        `below ${JSON.stringify(dBelow)} above ${JSON.stringify(dAbove)}`)
+
+    // 7. end to end: a pilot who sits on the throat while the port cycles
+    // survives its fan at bare knuckles — the round crosses an empty line.
+    const g7 = makeGame(7)
+    g7.leg = 2; g7.camX = STAGE_END2; g7.legAt = g7.tick
+    g7.ship.inv = 999999 // grace through the teleport and the walk-in
+    step(g7, {}); g7.events.length = 0
+    g7.p2.cores.forEach((c) => { c.hp = 60 }) // hearts that outlive the test
+    for (let t = 0; t < 800 && (g7.p2.x > g7.p2.targetX + 0.5 || g7.ship.x - g7.camX < 40); t++) { g7.enemies.length = 0; g7.ship.inv = 999999; step(g7, autopilot(g7)); g7.events.length = 0 } // dock, grace on, pilot flies to station
+    g7.enemies.length = 0; g7.bullets.length = 0; g7.missiles.length = 0; g7.ship.inv = 0 // no guns but the heart, bare knuckles from here
+    let fireTick = -1, fireY = -1
+    for (let t = 0; t < 900 && fireTick < 0; t++) {
+        g7.enemies.length = 0; g7.missiles.length = 0
+        step(g7, autopilot(g7))
+        if (g7.events.includes('p2salvo')) { fireTick = g7.tick; fireY = g7.ship.y }
+        g7.events.length = 0
+    }
+    let grazed = false
+    for (let t = 0; t < 110 && fireTick >= 0; t++) {
+        const lv = g7.lives
+        const s = g7.ship
+        g7.enemies.length = 0; g7.missiles.length = 0
+        step(g7, autopilot(g7))
+        if (g7.lives < lv) grazed = true
+        for (const b of g7.bullets) if (b.volley && Math.abs(b.x - s.x) < 5 && Math.abs(b.y - s.y) < 4) grazed = true
+        g7.events.length = 0
+    }
+    r.check('#2951 the fan crosses an empty line — a pilot at bare knuckles sits the throat and lives',
+        fireTick >= 0 && !grazed && g7.lives === 3, `fire@${fireTick} fireY=${Math.round(fireY)} grazed=${grazed} lives=${g7.lives}`)
+
+    // 8. seat two reads it too (docs/AI.md: a lane a brain must dodge has to
+    // be sensed by that brain).
+    const g8 = makeGame(11)
+    enableCoop(g8)
+    g8.enemies.length = 0; g8.bullets.length = 0
+    if (g8.wing) g8.wing.out = false
+    g8.p2 = p2Stub(g8)
+    const wRound = (tag) => {
+        g8.bullets.length = 0
+        const b = { id: 5, x: g8.wing.x + 120, y: g8.wing.y + 2, vx: -1.35, vy: 0 }
+        if (tag) b.volley = 1
+        g8.bullets.push(b)
+        const p = wingBrain(g8)
+        return p.up !== p.down
+    }
+    r.check('#2951 seat two slips the fan too — the wing leaves the volley line, and holds when the round carries no mark',
+        wRound(true) && !wRound(false), `tagged=${wRound(true)} bare=${wRound(false)}`)
+}
+
 // ----------------------------------------------------------------- mutant ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -2615,6 +2755,35 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            name: 'pre-dodge-deaf', // #2951: the fan walks the parked pilot
+            anchor: "const slip = p2 && p2.dyingT === 0 ? fanSlip(gs, px, py) : 0",
+            plant: "const slip = 0 /* MUTANT(pre-dodge-deaf): the slip is gone, the line is an execution line */",
+            harm: async (mod) => {
+                const g = mod.makeGame(3)
+                g.enemies.length = 0; g.bullets.length = 0
+                g.p2 = { x: g.ship.x + 120, dyingT: 0, port: 0, swayOff: 0, flashT: 0,
+                    cores: [{ hp: 8, max: 8, mouth: 'closed', mouthT: 999, enraged: false },
+                        { hp: 8, max: 8, mouth: 'closed', mouthT: 999, enraged: false }], at: g.tick }
+                g.bullets.push({ id: 2, x: g.ship.x + 120, y: g.ship.y + 2, vx: -1.35, vy: 0, volley: 1 })
+                const p = mod.autopilot(g)
+                return (p.up || p.down) ? null
+                    : 'HARM NAMED: the fortress fan walks a parked pilot — with no slip the aim line is the execution line again, and Phase-2 eats what a cabinet pilot side-steps'
+            },
+        },
+        {
+            name: 'cross-blind', // #2951: the S1 sign inversion returns — the field goes blind
+            anchor: "const t = (b.x - px) / (-b.vx + 0.45)",
+            plant: "const t = (px - b.x) / (-b.vx + 0.45) /* MUTANT(cross-blind): the inverted sign returns */",
+            harm: async (mod) => {
+                const g = mod.makeGame(3)
+                g.enemies.length = 0; g.bullets.length = 0
+                g.bullets.push({ id: 1, x: g.ship.x + 30, y: 120, vx: -1.35, vy: 0 })
+                const p = mod.autopilot(g)
+                return (p.up || p.down) ? null
+                    : 'HARM NAMED: the crossing sign flips back and the lane field goes blind to straight fire — tuler rounds, ricochets and horn all read safe, and every dodge the field owns dies with the sign'
+            },
+        },
     ]
     for (const p of plants) {
         if (!src.includes(p.anchor)) { console.error(`MUTANT anchor (${p.name}) missing — sim moved; the plant must be re-anchored`); process.exit(2) }
@@ -2981,6 +3150,20 @@ const browser = await launch()
     } catch {}
     r.check('#2938 the duel\'s round is crimson on canvas — the eye reads the gun without finding the shooter',
         crimsonPx >= 4, `crimson px=${crimsonPx}`)
+    // #2951 the marked fan is visible on screen too: the probe reports volleys
+    // in the air, and the mark rides the rounds as they cross the yard — the
+    // tag is sim truth the shell and QA can both see, not a harness artefact.
+    await page.evaluate(() => window.__game.reset(3))
+    await page.waitForTimeout(150)
+    await page.evaluate(() => window.__rTest.setup({ toPhase2: true, spawnVolley: true, inv: 999999 }))
+    await page.waitForTimeout(120)
+    const vA = await page.evaluate(() => window.__rTest.probe())
+    await page.evaluate(() => window.__game.step({}, 40)) // deterministic: rAF throttles late in a long leg
+    const vB = await page.evaluate(() => window.__rTest.probe())
+    r.check('#2951 the marked fan reports on screen — three rounds in the air, and the mark rides them across the yard',
+        vA.volleys === 3 && vA.volleyX > 80 &&
+        ((vB.volleys === 3 && vA.volleyX - vB.volleyX >= 25) || vB.volleys === 0),
+        `air=${vA.volleys}@${vA.volleyX} later=${vB.volleys}@${vB.volleyX}`)
 
     r.check('zero page errors across the whole leg', errs.length === 0, errs.join(' | ') || 'clean')
 }
