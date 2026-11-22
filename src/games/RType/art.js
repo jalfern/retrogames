@@ -500,7 +500,14 @@ export function drawSeedPod(ctx, pod, camX, shipAlive) {
 // the mount dings. px/py are sim-written — draw and fire never disagree.
 export function drawOption(ctx, o, camX) {
     const x = Math.round(o.px - camX), y = Math.round(o.py)
-    if (o.docked) {
+    if (o.burn) {
+        // #2924 the thrown drone: exhaust STREAMS off its back (left), the
+        // mirror image of the inbound plume — a comet outbound
+        ctx.fillStyle = 'rgba(255,216,112,0.4)'
+        ctx.fillRect(x - 10, y - 1, 6, 2)
+        ctx.fillStyle = 'rgba(255,216,112,0.18)'
+        ctx.fillRect(x - 16, y - 1, 4, 2)
+    } else if (o.docked) {
         ctx.fillStyle = 'rgba(255,216,112,0.14)'
         ctx.fillRect(x - 5, y - 5, 10, 10)
     } else {
@@ -982,12 +989,19 @@ export function drawHud(ctx, gs) {
     const wcol = gs.ship.weapon === 'wave' ? '#37d0ff' : gs.ship.weapon === 'laser' ? '#ff5a7a' : '#9ac93c'
     drawText(ctx, wl, 90, H - 12, wcol)
     // #2919 option pips: one gold bead per docked orb, riding right behind
-    // the arm word — the shield-guns stay readable in the middle of a fight
-    const optN = (gs.ship.opts || []).filter((o) => o.docked).length
-    for (let i = 0; i < optN; i++) {
-        ctx.fillStyle = ((gs.tick >> 3) % 4) === 0 ? '#fff2c0' : '#ffd870'
-        ctx.fillRect(90 + textWidth(wl) + 8 + i * 7, H - 10, 4, 4)
-    }
+    // the arm word — the shield-guns stay readable in the middle of a fight.
+    // #2924: a thrown orb keeps its socket — a dark bead, spending with the
+    // drone (the wall is gone but the pair is still out there, burning).
+    const pipX = 90 + textWidth(wl) + 8
+    ;(gs.ship.opts || []).forEach((o, i) => {
+        if (o.docked) {
+            ctx.fillStyle = ((gs.tick >> 3) % 4) === 0 ? '#fff2c0' : '#ffd870'
+            ctx.fillRect(pipX + i * 7, H - 10, 4, 4)
+        } else {
+            ctx.fillStyle = ((gs.tick >> 4) % 2) ? '#5c4410' : '#3a2b0a'
+            ctx.fillRect(pipX + i * 7, H - 10, 4, 4)
+        }
+    })
     // #2919 the summon names itself at the score field, ember-style (#2906)
     if (gs.optAnn > 0) drawText(ctx, 'OPTIONS', 108, 8, ((gs.tick >> 2) % 2) ? '#ffd870' : '#7c5a10')
     if (gs.pod) ctx.drawImage(SPR.seed[Math.floor(Date.now() / 90) % 4], 172, H - 14) // the shell rides with you

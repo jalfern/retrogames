@@ -77,6 +77,11 @@ export default function RType() {
             woptdock: () => { audioController.playTone(392, 0.05, 'triangle', 0.07); audioController.playTone(588, 0.05, 'triangle', 0.07, 0.05) },
             optslost: () => audioController.playSweep(560, 130, 0.28, 'triangle', 0.09),
             woptslost: () => audioController.playSweep(480, 110, 0.24, 'triangle', 0.07),
+            // #2924 the throw — podlaunch's shape doubled and fattened: two
+            // orbs leave at once, a gold whoosh with crackle at the heels;
+            // seat two's is the same gesture a fifth lower (the S4 voice law)
+            optlaunch: () => { audioController.playSweep(420, 1180, 0.16, 'square', 0.09); audioController.playSweep(360, 1020, 0.2, 'triangle', 0.07, 0.04); audioController.playNoise(0.05, 0.05) },
+            woptlaunch: () => { audioController.playSweep(340, 940, 0.16, 'triangle', 0.07); audioController.playNoise(0.04, 0.04) },
             hit: () => audioController.playTone(300, 0.05, 'square', 0.08),
             boom: () => { audioController.playNoise(0.16, 0.14); audioController.playSweep(160, 50, 0.2, 'sawtooth', 0.1); shake = Math.max(shake, 3) },
             clank: () => audioController.playTone(160, 0.04, 'square', 0.07),
@@ -199,6 +204,8 @@ export default function RType() {
                 else if (ev === 'ocap') { bursts(12, gs.ship.x + 8 - sx, gs.ship.y, 2); converge(8, gs.ship.x - sx, gs.ship.y, 2) }
                 else if (ev === 'hcap') converge(10, gs.ship.x - sx, gs.ship.y, 2) // the firepower folds inward
                 else if (ev === 'optdock') bursts(6, gs.ship.x - 14 - sx, gs.ship.y + (gs.ship.opts && gs.ship.opts.some((o) => o.docked && o.py < gs.ship.y) ? -11 : 11), 2)
+                else if (ev === 'optlaunch') for (const o of (gs.ship.opts || [])) if (o.burn) bursts(7, o.px - sx, o.py, 2) // the pair leaves gold at the heels
+                else if (ev === 'woptlaunch') { const w = gs.wing; if (w) for (const o of (w.opts || [])) if (o.burn) bursts(5, o.px - sx, o.py, 2) }
                 else if (ev === 'wocap' || ev === 'woptdock') { const w = gs.wing; if (w) bursts(8, w.x - sx, w.y, 2) }
             }
             gs.events.length = 0
@@ -436,6 +443,8 @@ export default function RType() {
                     // #2919 options: orbs aboard / settled on their mounts / HUD voice
                     opts: gs.ship.opts ? gs.ship.opts.length : 0,
                     optsDocked: gs.ship.opts ? gs.ship.opts.filter((o) => o.docked).length : 0,
+                    optFly: gs.ship.opts ? gs.ship.opts.filter((o) => o.burn).length : 0, // #2924 drones out
+                    optX: gs.ship.opts && gs.ship.opts.some((o) => o.burn) ? Math.round(Math.max(...gs.ship.opts.filter((o) => o.burn).map((o) => o.px))) : 0, // #2924 run of the pair
                     optAnn: gs.optAnn || 0,
                     p2: gs.p2 ? `${gs.p2.cores[0].hp}/${gs.p2.cores[1].hp}` : '-',
                     // #2835 fixtures: carriers on screen, the mass's sway, the
@@ -458,6 +467,7 @@ export default function RType() {
                     wingBits: gs.wing ? gs.wing.bits.length : 0, wingShield: gs.wing && shieldOnAt(gs.wing) ? 1 : 0,
                     wingWeapon: gs.wing ? gs.wing.weapon : '-', wingSpd: gs.wing ? gs.wing.spd || 0 : 0, p1out: gs.ship.out ? 1 : 0,
                     wingOpts: gs.wing && gs.wing.opts ? gs.wing.opts.filter((o) => o.docked).length : 0, // #2919 per-hull orbs
+                    wingOptFly: gs.wing && gs.wing.opts ? gs.wing.opts.filter((o) => o.burn).length : 0, // #2924 per-hull drones out
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -530,7 +540,7 @@ export default function RType() {
                     `x ${Math.round(gs.ship.x)} (screen ${Math.round(gs.ship.x - gs.camX)})  y ${Math.round(gs.ship.y)}  cam ${Math.round(gs.camX)}${gs.camLock ? ' LOCK' : ''}`,
                     `score ${gs.score}  hi ${Math.max(hiscore, gs.score)}  lives ${gs.lives}  arm ${gs.ship.weapon}${gs.ship.charge ? ` charge ${gs.ship.charge}` : ''}  inv ${gs.ship.inv}  mode ${gs.mode}`,
                     `pod ${gs.pod ? `${gs.pod.state} @${Math.round(gs.pod.x - gs.camX)}` : 'none'}  enemies ${gs.enemies.length}  bullets ${gs.bullets.length}  missiles ${gs.missiles.length}  shots ${gs.shots.length}  phase1 ${gs.p1 ? `${gs.p1.mouth} core ${gs.p1.coreHp}/${gs.p1.coreMax}${gs.p1.hot ? ' HOT' : ''} heat ${gs.tick - gs.p1.lockAt}/${HEAT_AT}` : 'field'}`,
-                    `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  opts ${gs.ship.opts ? `${gs.ship.opts.filter((o) => o.docked).length}/2 docked` : 'none'}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}  sway ${Math.round(gs.p2.swayOff)}px salvo-port ${gs.p2.port}${gs.p2.dyingT > 0 ? `  WALK ${gs.p2.dyingT} from port ${gs.p2.lastCore}` : ''}` : (gs.leg === 2 ? 'inbound' : '-')}  carriers ${gs.enemies.filter((e) => e.kind === 'bitpod').length}`,
+                    `leg ${gs.leg}  bits ${gs.bits.length}${shieldOn(gs) ? ' SHIELD' : ''}  opts ${gs.ship.opts ? `${gs.ship.opts.filter((o) => o.docked).length}/2 docked${gs.ship.opts.some((o) => o.burn) ? ` +${gs.ship.opts.filter((o) => o.burn).length} AWAY` : ''}` : 'none'}  phase2 ${gs.p2 ? `cores ${gs.p2.cores.map((c) => (c.hp <= 0 ? 'DOWN' : `${c.mouth}:${c.hp}`)).join(' ')}${gs.p2.cores.some((c) => c.enraged) ? ' ENRAGED' : ''}  sway ${Math.round(gs.p2.swayOff)}px salvo-port ${gs.p2.port}${gs.p2.dyingT > 0 ? `  WALK ${gs.p2.dyingT} from port ${gs.p2.lastCore}` : ''}` : (gs.leg === 2 ? 'inbound' : '-')}  carriers ${gs.enemies.filter((e) => e.kind === 'bitpod').length}`,
                     `wing ${gs.wing ? `${gs.wing.out ? 'OUT' : gs.wing.dead ? 'DOWN' : `(${Math.round(gs.wing.x - gs.camX)},${Math.round(gs.wing.y)})`}  lives ${gs.wing.lives}  ${gs.wing.human ? 'HUMAN' : 'CPU'}  arm ${gs.wing.weapon}  pod ${gs.wing.pod ? gs.wing.pod.state : 'none'}  bits ${gs.wing.bits.length}` : 'off'}  p1out ${gs.ship.out ? 'yes' : 'no'}`,
                     `screen ${screen}  paused ${pausedRef.current}`,
                 ],
@@ -551,6 +561,7 @@ export default function RType() {
                     { label: 'SPAWN O POD', run: () => { window.__rTest.setup({ spawnOCap: true }); return 'the O capsule is at your nose — claim the shield-guns' } },
                     { label: 'SPAWN H POD', run: () => { window.__rTest.setup({ spawnHCap: true }); return `the H capsule is at your nose — arming ${gs.ship.weapon === 'vulcan' ? 'nothing left to halve' : 'a step down'}` } },
                     { label: 'GIVE OPTIONS', run: () => { if (gs.ship.opts) return gs.ship.opts.filter((o) => o.docked).length === 2 ? 'both orbs already on their mounts' : 'orbs already inbound'; window.__rTest.setup({ giveOptions: true }); return 'options pinned to the mounts — press fire for the mirrored wall' } },
+                    { label: 'THROW OPTIONS', run: () => { if (!gs.ship.opts) return 'no orbs aboard — GIVE OPTIONS first'; const d = gs.ship.opts.filter((o) => o.docked); if (!d.length) return gs.ship.opts.some((o) => o.burn) ? 'the drones are already out — spend them' : 'no docked orbs to throw'; d.forEach((o) => { o.docked = false; o.burn = true }); gs.events.push('optlaunch'); return `hurled ${d.length} one-shot drones — spend them well` } },
                     { label: 'TO PHASE-1', run: () => { window.__rTest.setup({ toPhase1: true }); return 'the dreadnought looms' } },
                     { label: 'OPEN MAW', run: () => { window.__rTest.setup({ openMouth: true }); return 'the maw gapes' } },
                     { label: 'HEAT CORE', run: () => { if (!gs.p1) return 'no dreadnought on screen — TO PHASE-1 first'; window.__rTest.setup({ heat: 0 }); return 'desperation timer at the mark — next tick it panics' } },
