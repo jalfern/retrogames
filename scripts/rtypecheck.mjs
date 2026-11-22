@@ -1361,6 +1361,90 @@ const coopGame = (seed) => { const gs = makeGame(seed); enableCoop(gs); return g
         `${stateHash(hA)} vs docked ${stateHash(hB)} vs flying ${stateHash(hC)}`)
 }
 
+// --------- #2922 HALF-CAPSULE: the H pod steps the arm down (list Part 3) ---
+{
+    const pad0 = { left: false, right: false, up: false, down: false, a: false, b: false }
+    const atNose = (gs, type) => gs.caps.push({ id: gs.nextId++, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type })
+
+    // the lineage law: every arm falls exactly one step, and the lance charge
+    // dies with the lance; first claim pays like any pod in the house
+    const fall = (from, to) => {
+        const g = makeGame(4)
+        g.ship.weapon = from; g.ship.charge = 30
+        const s0 = g.score
+        atNose(g, 'half'); step(g, pad0)
+        return g.ship.weapon === to && g.ship.charge === 0 && g.score - s0 === 500 && g.events.includes('hcap')
+    }
+    r.check('#2922 H steps the arm DOWN one level (W→L, L→V, D→V) and kills the lance charge',
+        fall('wave', 'laser') && fall('laser', 'vulcan') && fall('double', 'vulcan'),
+        `W→L ${fall('wave', 'laser')} L→V ${fall('laser', 'vulcan')} D→V ${fall('double', 'vulcan')}`)
+
+    // the floor law: at the vulcan there is nothing to halve — it pays like
+    // every spare in the house, and the arm stays put
+    const g2 = makeGame(5)
+    const s2 = g2.score
+    atNose(g2, 'half'); step(g2, pad0)
+    r.check('#2922 at the floor H pays points instead of halving (spare law, no hcap)',
+        g2.ship.weapon === 'vulcan' && g2.score - s2 === 1000 && g2.events.includes('capsule') && !g2.events.includes('hcap'),
+        `arm=${g2.ship.weapon} drew ${g2.score - s2}`)
+
+    // spare after a downgrade: H falls to vulcan, and a second H is a spare
+    const g3 = makeGame(6)
+    g3.ship.weapon = 'laser'
+    atNose(g3, 'half'); step(g3, pad0); g3.events.length = 0
+    const s3 = g3.score
+    atNose(g3, 'half'); step(g3, pad0)
+    r.check('#2922 a second H at the vulcan is a spare — points, never a second fall',
+        g3.ship.weapon === 'vulcan' && g3.score - s3 === 1000 && g3.events.includes('capsule'),
+        `arm=${g3.ship.weapon} drew ${g3.score - s3}`)
+
+    // fidelity (#237): H is a WEAPON pod — the shield-guns are not a weapon
+    // level, so the orbs ride through a downgrade untouched (only wrecks strip)
+    const g4 = makeGame(7)
+    g4.ship.weapon = 'laser'
+    g4.ship.opts = [-1, 1].map((side, i) => ({ id: 900 + i, side, px: g4.ship.x - OPT.back, py: g4.ship.y + side * OPT.gap, docked: true }))
+    atNose(g4, 'half'); step(g4, pad0); step(g4, pad0)
+    r.check('#2922 H never casts the orbs off — the shield-guns outlive a downgrade (fidelity law)',
+        g4.ship.weapon === 'vulcan' && g4.ship.opts && g4.ship.opts.length === 2 && g4.ship.opts.every((o) => o.docked),
+        `arm=${g4.ship.weapon} opts=${g4.ship.opts ? g4.ship.opts.filter((o) => o.docked).length : 0}`)
+
+    // S4 symmetry: seat two takes the fall too (tie at the cap goes seat one,
+    // so the pod is placed at the wing's nose, out of the hull's reach)
+    const g5 = coopGame(2)
+    g5.wing.human = true
+    g5.wing.weapon = 'wave'
+    g5.caps.push({ id: g5.nextId++, x: g5.wing.x + 6, y: g5.wing.y, baseY: g5.wing.y, bob: 0, type: 'half' })
+    for (let t = 0; t < 3 && g5.wing.weapon === 'wave'; t++) { step(g5, pad0, { left: false, right: false, up: false, down: false, a: false, b: false }) }
+    r.check('#2922 seat two takes the fall too — H steps the wing arm down (S4 symmetry)',
+        g5.wing.weapon === 'laser', `wing arm=${g5.wing.weapon}`)
+
+    // authored placement, zero rng: the H pod rides leg 1 at its fixed spot
+    // under every seed, at its authored height
+    const ride = (seed) => {
+        const g = makeGame(seed)
+        g.ship.inv = 1e9
+        let baseY = null
+        while (g.camX < 621 && g.mode === 'play' && !g.camLock) {
+            step(g, pad0); g.events.length = 0
+            const hc = g.caps.find((c) => c.type === 'half')
+            if (hc && baseY === null) baseY = hc.baseY
+        }
+        return baseY
+    }
+    const y9 = ride(9), y3 = ride(3)
+    r.check('#2922 the H pod rides leg 1 at its authored fixed spot, same height every seed (zero rng)',
+        y9 === 44 && y3 === 44, `seed9 ${y9} seed3 ${y3}`)
+
+    // the downgrade is sim truth: the arm word and the pod on screen both move
+    // the panic hash (the capsule cycle already mixes the arm — this pins the
+    // post-downgrade state against its pre-downgrade twin)
+    const hA = makeGame(8), hB = makeGame(8)
+    hB.ship.weapon = 'laser'
+    atNose(hB, 'half'); step(hB, pad0)
+    r.check('#2922 the fall is sim truth — stateHash covers the downgraded arm',
+        stateHash(hA) !== stateHash(hB), `${stateHash(hA)} vs ${stateHash(hB)}`)
+}
+
 // ---------------------------------------------------- WINNABILITY (S3 bar) ---
 { // WINNABLE: the attract brain clears at least a third of seeds 1..12
     let wins = 0
@@ -1715,6 +1799,20 @@ if (MUTANT) {
                 mod.step(gs, {})
                 return gs.ship.opts !== null
                     ? 'HARM NAMED: the hull burned and the orbs stayed — gear that death cannot strip is a discount code on dying, and the power-armour law is uniform in this house'
+                    : null
+            },
+        },
+        {
+            name: 'half-blind',
+            anchor: "if (c.type === 'half') {",
+            plant: "if (false && c.type === 'half') { /* MUTANT(half-blind): the H pod forgets how to step down */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(4)
+                gs.ship.weapon = 'laser'
+                gs.caps.push({ id: 999, x: gs.ship.x + 6, y: gs.ship.y, baseY: gs.ship.y, bob: 0, type: 'half' })
+                mod.step(gs, {})
+                return gs.ship.weapon !== 'vulcan'
+                    ? 'HARM NAMED: the H pod arms instead of disarming — the capsule that should cool your guns fires them up, and the arcade\u2019s one downgrade trap has become just another prize'
                     : null
             },
         },

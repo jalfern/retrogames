@@ -221,6 +221,21 @@ const SPR = has ? {
         g.fillStyle = '#4a3008' // capsule seam
         g.fillRect(10, 1, 2, 8)
     })),
+    // #2922 HALF pod: the arcade's H-case — cold teal shell (the pod that
+    // cools your guns), a white down-chevron stamp walking its shimmer
+    hcap: [0, 1, 2].map((f) => makeSpr(16, 10, (g) => {
+        g.fillStyle = '#0f4a44'
+        g.fillRect(1, 1, 14, 8)
+        g.fillStyle = '#1e8c7e'
+        g.fillRect(2, 2, 12, 6)
+        g.fillStyle = '#d8fff4' // ▼ stamp — the arm falls one step
+        const ox = 4 + (f === 1 ? 1 : 0)
+        g.fillRect(ox, 3, 4, 1)
+        g.fillRect(ox + 1, 4, 2, 1)
+        g.fillRect(ox + 1.5 | 0, 5, 1, 1)
+        g.fillStyle = '#083028' // capsule seam
+        g.fillRect(10, 1, 2, 8)
+    })),
     // #2919 the option orb: a golden sphere with a rotating specular facet
     // (the seed's rotation discipline, in the arcade's bullion palette)
     opt: [0, 1, 2, 3].map((f) => makeSpr(8, 8, (g) => {
@@ -467,7 +482,7 @@ export function drawBullet(ctx, b, camX) {
 export function drawCap(ctx, c, camX) {
     const set = c.type === 'force' ? SPR.fcap : c.type === 'bit' ? SPR.bcap
         : c.type === 'double' ? SPR.dcap : c.type === 'speed' ? SPR.scap
-            : c.type === 'options' ? SPR.ocap : SPR.cap
+            : c.type === 'options' ? SPR.ocap : c.type === 'half' ? SPR.hcap : SPR.cap
     const f = Math.floor(Date.now() / 250) % set.length
     ctx.drawImage(set[f], Math.round(c.x - camX) - 8, Math.round(c.y) - 5)
 }
