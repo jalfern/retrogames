@@ -178,7 +178,10 @@ fi
 # commits everything in that item's worktree, pushes the qa/ branch, posts
 # "QA (<node>): checkpoint", and only then kills. The next session resumes the
 # branch (FORGE-QA.md step 2), so a cap costs minutes, not the hour.
-CAP_MIN=${QA_CAP_MIN:-75}
+# 2026-11-22 (Jon): the mini slots run Inkling 2 Mini at ~11-17 tok/s with both streams busy; their
+# first session hit the 75-min cap mid-item. Mini default 120; QA_CAP_MIN still overrides.
+case "$NODE" in mini|mini2) CAP_DEFAULT=120 ;; *) CAP_DEFAULT=75 ;; esac
+CAP_MIN=${QA_CAP_MIN:-$CAP_DEFAULT}
 SLUG=jalfern/retrogames
 save_checkpoint() {
     # WHICH worktree: the one this session's own log says it worked in. The
