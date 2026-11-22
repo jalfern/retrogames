@@ -76,6 +76,8 @@ import {
     tailTurn, liveTails, swingOf, liveRights, MAP, CELL, COLS, ROWS, BAY_CELL,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
+import { createRecorder, validate } from '../src/utils/recording.js' // #2964: the seams track lives on the base recorder — prove it here
+import { recordLiveSeam } from '../src/utils/gameContract.js' // #2964: the game-side stamp is a no-op with no recorder bank
 import { floorBossRows } from './plaicraft-dataset.mjs' // #2958: the replay seam lives in the adapter — prove it here
 import { CHIPS, W as TBW, H as TBH, applyTap } from '../src/games/FloorBoss/taps.js' // #2966: the shared tap semantics — proof drives the same verbs the phone does
 import { hashString } from '../src/utils/robot/physics.js'
@@ -204,7 +206,7 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     : MUT_COURTESY
                                                                     ? ['if (!inSwing(px, py) && !blocked(gs, px, py, bot.id)) return { x: px, y: py }', 'if (!blocked(gs, px, py, bot.id)) return { x: px, y: py } // MUTANT: courtesy forgets the swing (#2783)', 'yielding carts park back into the rival\u2019s sweep again — duck-in-swing rises off zero and courtesy becomes the jam it ducked for (#2783)']
                                                                     : MUT_CAREER
-                                                                        ? ["if (gs.end === 'win') fbNextShift(gs)", "if (false && gs.end === 'win') fbNextShift(gs) // MUTANT: the seam is gone (#2958)", 'the clock-in vanishes from replay — a career take mismatches at its first post-whistle checkpoint, so multi-shift runs become unrecordable (#2958)']
+                                                                        ? ["if (clockedIn) fbNextShift(gs)", "if (false && clockedIn) fbNextShift(gs) // MUTANT: the seam is gone (#2958)", 'the clock-in vanishes from replay — a career take mismatches at its first post-whistle checkpoint, so multi-shift runs become unrecordable (#2958)']
                                                                         : MUT_WHISTLE
                                                                             ? ['if (!won) closeEpisode(false)', 'closeEpisode(won)', 'whistle-stop returns — a cleared night closes its take at the sheet, career takes die in the bank (#2958)']
                                                                             : MUT_TAPS
@@ -979,7 +981,7 @@ console.log('— shift ladder (#2346) —')
     ok((ui.match(/closeTake\(\)/g) || []).length >= 4,
         'closeTake guards every real end: key-exit, tap-exit, contract reset, unmount (#2958)', )
     const ds = readFileSync(new URL('./plaicraft-dataset.mjs', import.meta.url), 'utf8')
-    ok(/if \(gs\.end === 'win'\) fbNextShift\(gs\)/.test(ds), "the adapter seam: rows past a win clock the ladder in for replay (#2958)")
+    ok(/if \(clockedIn\) fbNextShift\(gs\)/.test(ds), "the adapter seam: rows past a win clock the ladder in for replay (#2958)")
     // #2964 sheet truth: the CLEAR beat is win-only, and the take disclosure
     // asks the bank itself — a declined floor must never see the chip.
     ok(/import \{[^}]*\bisRecording\b[^}]*\} from '\.\.\/\.\.\/utils\/gameContract'/.test(ui),
@@ -994,6 +996,65 @@ console.log('— shift ladder (#2346) —')
         'the ladder rung just cleared lights bright on the sheet — the +1 the eye catches at phone scale (#2964)')
     ok(!/isRecording\(\)/.test(ui.slice(0, ui.indexOf('const paintOver'))),
         'no disclosure drawn before the sheet exists — mid-play stays HUD-only (#2964)')
+}
+{
+    // #2964 SEAM MARKERS — the viewer's jump-target inside a career take.
+    // rec.seams = [{ t, shift }]: night `shift` began after row t, stamped on
+    // the recorder's own clock at advanceShift (#1249 law — the entry marks
+    // the last tick actually banked, and the clock-in itself banks no row).
+    // The adapter re-derives the ladder and must agree with every name.
+    recordLiveSeam(2) // no recorder bank: the game-side call must be a silent no-op, never throw
+    ok(true, 'recordLiveSeam with no recorder bank is a no-op (declined runs carry nothing)')
+    const seed = 4242
+    const gs2 = makeGame(seed)
+    const ap2 = createAutopilot()
+    const rec = createRecorder({ gameId: 'floor-boss', method: 'dpad', seed, players: 1, sources: [{ kind: 'human' }], rules: () => ({ duel: false }) })
+    let nights = 0
+    const named = []
+    for (;;) {
+        while (!gs2.end && gs2.tick < SHIFT + 10) { const pad = ap2(gs2); step(gs2, [pad]); rec.addTick([pad], null, stateHash(gs2)) }
+        if (gs2.end === 'win' && nights < 2) { nights++; nextShift(gs2); rec.addSeam(gs2.shift); named.push({ t: rec.ticks, shift: gs2.shift }); continue } // advanceShift order: ladder, then stamp
+        break
+    }
+    const take = rec.finish(stateHash(gs2))
+    ok(nights === 2 && gs2.shift === 3, `two clock-ins banked on one stream (nights ${nights}, shift ${gs2.shift})`)
+    ok(validate(take) === null, 'a career take with the seams track validates', validate(take) || '')
+    ok(JSON.stringify(take.seams) === JSON.stringify(named), `seams ride in order — ${JSON.stringify(take.seams)}`)
+    ok(take.seams.every((s) => s.t > 0), 'no seam names a row that was never banked')
+    const rep2 = floorBossRows('unit/seamed', take)
+    ok(rep2.ok, `the adapter agrees with every named night — ${rep2.mismatch ? `mismatch@${rep2.mismatch.tick} (want ${rep2.mismatch.want}, ladder ${rep2.mismatch.got})` : `${take.seams.length} stamps, ${take.ticks} ticks`}`)
+    // The marker has teeth: a stamp moved off its clock-in must refuse the build.
+    const lied = JSON.parse(JSON.stringify(take))
+    lied.seams[0].t += 1
+    const lieRep = floorBossRows('unit/lied', lied)
+    ok(!lieRep.ok, `a seam naming the wrong row refuses verification (${lieRep.mismatch ? `mismatch@${lieRep.mismatch.tick}` : 'ACCEPTED — the cross-check has no teeth'})`)
+    const wrongNight = JSON.parse(JSON.stringify(take))
+    wrongNight.seams[0].shift = 9
+    ok(!floorBossRows('unit/wrong-night', wrongNight).ok, 'a seam naming the wrong night refuses verification')
+    // Validator law: bad stamps die at the door.
+    const bad = (patch, why) => { const x = JSON.parse(JSON.stringify(take)); patch(x); return validate(x) ? true : (console.log(`  MISS   ${why}`), false) }
+    ok(bad((x) => { x.seams = [{ t: 1, shift: 1 }] }, 'shift 1 accepted'), 'a seam naming night 1 is refused (night 1 is the take birth)')
+    ok(bad((x) => { x.seams = [{ t: 0, shift: 2 }] }, 't=0 accepted'), 'a seam at tick 0 is refused (no row to jump back to)')
+    ok(bad((x) => { x.seams = [{ t: take.ticks + 1, shift: 2 }] }, 't>ticks accepted'), 'a seam past the last row is refused')
+    ok(bad((x) => { x.seams = [{ t: take.seams[1].t, shift: 3 }, { t: take.seams[0].t, shift: 2 }] }, 'unsorted seams accepted'), 'seams must run in tick order')
+    ok(bad((x) => { x.seams = 'yes' }, 'string seams accepted'), 'seams must be an array')
+    ok(bad((x) => { x.seams.push({ t: take.seams[1].t, shift: 4 }) }, 'same-tick double stamp accepted'), 'two seams cannot share one tick')
+    // Same-tick law on the recorder itself: a sheet double-firing is not two nights.
+    const rec3 = createRecorder({ gameId: 'floor-boss', method: 'dpad', seed: 7, players: 1 })
+    rec3.addTick([{}], null, null); rec3.addSeam(2); rec3.addSeam(2)
+    rec3.addTick([{}], null, null); rec3.addSeam(3)
+    const t3 = rec3.finish()
+    ok(t3.seams.length === 2 && t3.seams[1].t === 2, 'addSeam drops a re-stamp of the same night, keeps the climb')
+    let threw = false; try { rec3.addSeam(1) } catch { threw = true }
+    ok(threw, 'addSeam(1) throws — night 1 was never a seam')
+    // Source pins: the stamp rides BOTH clock-in paths (live sheet + contract),
+    // and the adapter is the cross-checking consumer.
+    const ui2 = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/import \{[^}]*\brecordLiveSeam\b[^}]*\} from '\.\.\/\.\.\/utils\/gameContract'/.test(ui2), 'the shell wires recordLiveSeam from gameContract')
+    ok(/if \(!nextShift\(gs\)\) return false\s*\n\s*recordLiveSeam\(gs\.shift\)/.test(ui2), 'advanceShift names its night right after the ladder turns')
+    ok(/nextShift\(gs\)\s*\n\s*recordLiveSeam\(gs\.shift\)/.test(ui2), 'the contract clock-in names its night too (QA bots / replays / RL)')
+    const ds2 = readFileSync(new URL('./plaicraft-dataset.mjs', import.meta.url), 'utf8')
+    ok(/seamAt\.has\(t\)/.test(ds2) && /no clock-in at the named row/.test(ds2), 'the adapter checks every named night against the ladder it re-runs')
 }
 {
     // #2966 THE ORDER CARD CLICK WORKS — the finder referenced its own

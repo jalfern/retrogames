@@ -51,6 +51,10 @@ export const isRecording = () => !!recorder
 // #1249: one recognized spoken call, banked when it happens. Entry shape
 // { t, said, intent|null, ok, dir?, why? } — see recording.js `voiceCmd`.
 export const recordVoiceCmd = (entry) => { if (liveCmdFeed && entry) liveCmdFeed(entry) }
+// #2964: a career clock-in (#2958) names the night it starts, on the file's
+// `seams` track. No-op unless a recorder is bank (declined runs never carry
+// it); the recorder stamps the tick — callers say WHAT, never WHEN.
+export const recordLiveSeam = (shift) => { if (recorder && typeof recorder.addSeam === 'function') recorder.addSeam(shift) }
 
 // `spec.method` is the game's input method ('dpad' | 'stick' | 'pointer', #420)
 // and `spec.reads` the one-pad fields it actually consumes. Both surface on
