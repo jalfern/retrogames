@@ -48,6 +48,11 @@ export const contractHoldsLoop = () => loopLock
 // device view, same hash cadence — so a live capture replays hash-equal.
 export const recordLiveTick = (pads) => { if (liveFeed) liveFeed(pads) }
 export const isRecording = () => !!recorder
+// hasAutoVoice (#1712, FireCrew): is the auto layer's own mic already banking
+// the local seat for THIS recording? A game with its own raw-track rig (a
+// radio) must not cover the same slot twice — validateVoice forbids it — but
+// recognition can still run. Mirrors isRecording; honest false outside a take.
+export const hasAutoVoice = () => !!voice
 // #1249: one recognized spoken call, banked when it happens. Entry shape
 // { t, said, intent|null, ok, dir?, why? } — see recording.js `voiceCmd`.
 export const recordVoiceCmd = (entry) => { if (liveCmdFeed && entry) liveCmdFeed(entry) }

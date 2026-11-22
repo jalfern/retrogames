@@ -56,9 +56,11 @@ import { N_FEAT as DD_N_FEAT, featurize as ddFeaturize } from '../src/games/Doub
 import { makeGame as contraMakeGame, step as contraStep, stateHash as contraHash, dropIn as contraDropIn, autopilot as contraAutopilot, arcadeLoop as contraArcadeLoop } from '../src/games/Contra/sim.js'
 import { N_FEAT as CONTRA_N_FEAT } from '../src/games/Contra/model.js'
 import { createGame as tmdMakeGame, step as tmdStep, hash as tmdHash } from '../src/games/TalkMeDown/engine.js'
+import { makeRun as fcMakeRun, step as fcStep, stateHash as fcHash, setSources as fcSetSources, applyRadio as fcApplyRadio, lightAt as fcLight } from '../src/games/FireCrew/sim.js'
 import { N_FEAT as TMD_N_FEAT, PANEL as TMD_PANEL, MANUAL as TMD_MANUAL, BLOCK_INDEX as TMD_BI, featurize as tmdFeaturize } from '../src/games/TalkMeDown/model.js'
+import { N_FEAT as FC_N_FEAT, FEAT_NAMES as FC_NAMES, featurize as fcFeaturize } from '../src/games/FireCrew/model.js'
 import { newGame, heroFromPad, p2FromPad } from './plaicraft-export.mjs'
-import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, shortOrderShoutRows, rallyCoDriverRows, doubleDragonRows, contraRows, talkMeDownRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
+import { classifyTake, playerSplit, seedHeldout, registryIds, buildDataset, floorBossRows, bombDefuseRows, shortOrderShoutRows, rallyCoDriverRows, doubleDragonRows, contraRows, talkMeDownRows, fireCrewRows, foldDecision, LEGACY_OWNER } from './plaicraft-dataset.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 // Local Report (harness.mjs pulls playwright-core at import; this check is
@@ -100,8 +102,8 @@ const craftWebm = (durationMs) => {
     ]).toString('base64')
 }
 
-function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false, weather = null, seat2At = -1, taps = null }) {
-    const method = game === 'floor-boss' || game === 'bomb-defuse' || game === 'short-order-shout' || game === 'rally-co-driver' || game === 'double-dragon' || game === 'contra' || game === 'talk-me-down' ? 'dpad' : 'stick'
+function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: 'human' }, { kind: 'cpu' }], voice = null, calls = [], rules = null, tamper = false, weather = null, seat2At = -1, taps = null, watch = [] }) {
+    const method = game === 'floor-boss' || game === 'bomb-defuse' || game === 'short-order-shout' || game === 'rally-co-driver' || game === 'double-dragon' || game === 'contra' || game === 'talk-me-down' || game === 'fire-crew' ? 'dpad' : 'stick'
     const wx = weather || 'clear'
     const contraClaims = [] // #2953: bank ticks of successful blue-seat drops — rides rules.seat2 (see contra block below)
     let gs = game === 'gauntlet' ? newGame(seed, rules || {}, seats[1] && seats[1].kind !== 'off')
@@ -112,7 +114,8 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
                         : game === 'double-dragon' ? ddMakeGame(seed, { coop: seats.length >= 2 })
                             : game === 'contra' ? contraMakeGame(seed)
                                 : game === 'talk-me-down' ? tmdMakeGame(seed, seats.length >= 2 ? 2 : 1)
-                                    : null
+                                    : game === 'fire-crew' ? fcSetSources(fcMakeRun(seed), seats.map((s) => (s.kind === 'human' ? 'human' : 'cpu')))
+                                        : null
     const hashOf = game === 'gauntlet' ? stateHash
         : game === 'floor-boss' ? fbHash
             : game === 'bomb-defuse' ? bdHash
@@ -120,14 +123,16 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
                     : game === 'rally-co-driver' ? rcHash
                         : game === 'double-dragon' ? ddHash
                             : game === 'contra' ? contraHash
-                                : game === 'talk-me-down' ? tmdHash : null
+                                : game === 'talk-me-down' ? tmdHash
+                                    : game === 'fire-crew' ? fcHash : null
     const rec = createRecorder({
         gameId: game, method, seed, players: seats.length, build: 'test',
         sources: seats.map((s) => ({ kind: s.kind === 'relabeled' ? 'human' : s.kind })),
         rules: () => (game === 'rally-co-driver' ? { weather: wx }
             : game === 'double-dragon' ? { seat2At }
                 : game === 'contra' ? (contraClaims.length ? { seat2: contraClaims.join(',') } : {})
-                    : rules || {}),
+                    : game === 'fire-crew' ? { watch: watch.map(([a, b]) => `${a}-${b}`).join(',') }
+                        : rules || {}),
     })
     let x = (seed >>> 0) + 1
     const rnd = () => ((x = (x * 1103515245 + 12345) >>> 0) / 4294967296)
@@ -178,10 +183,24 @@ function scriptedTake({ game = 'gauntlet', seed, ticks = 360, seats = [{ kind: '
             // byte-what-the-sim-heard, so the scripted stream replays exactly.
             tmdStep(gs, pads.map((p) => ({ left: !!p.left, right: !!p.right, up: !!p.up, down: !!p.down, a: !!p.a, b: !!p.b })))
         }
+        if (game === 'fire-crew') {
+            // #1712: the sim consumes the pad array it banks (each seat drives
+            // its own crew; cpu seats run on the sim's internal autopilot, so
+            // their banked streams never steer). Watch spans flip seat 0 AFTER
+            // the bank of the tick they opened on — mirroring fireCrewRows so
+            // the autopilot drives exactly the same steps in the replay.
+            const bt = t + 1
+            fcStep(gs, pads[0], pads)
+            for (const [a, b] of watch) {
+                if (a === bt) gs.sources[0] = 'cpu'
+                if (b === bt) gs.sources[0] = 'human'
+            }
+        }
         rec.addTick(pads, null, gs && gs.tick % 30 === 0 ? hashOf(gs) : null)
         if (callAt.has(t + 1)) {
             const c = calls.find((q) => q.t === t + 1)
-            rec.addVoiceCmd({ said: c.said, intent: c.intent || null, ok: !!c.ok, ...(Number.isInteger(c.seat) ? { seat: c.seat } : {}) }) // #2805 seat stamp
+            if (game === 'fire-crew') c.ok = fcApplyRadio(gs, { kind: c.intent, side: c.side, dir: c.dir }).ok // #1712: the banked ok is sim truth; side/dir ride so the adapter can re-seat the sweep/drive
+            rec.addVoiceCmd({ said: c.said, intent: c.intent || null, ok: !!c.ok, ...(Number.isInteger(c.seat) ? { seat: c.seat } : {}), ...(c.side ? { side: c.side } : {}), ...(c.dir ? { dir: c.dir } : {}) }) // #2805 seat stamp
         }
         // #1712: one take spans the arcade loop — after a win the stage returns
         // hotter via the sim's own carry (mirrors contraRows exactly; the clear
@@ -305,13 +324,18 @@ try {
         // take ships: seats chosen before seed-birth, no drop-in ceremony.
         ['ivy', scriptedTake({ game: 'talk-me-down', seed: 4242, ticks: 150, seats: [{ kind: 'human' }], voice: { slots: [0] } })],
         ['kai', scriptedTake({ game: 'talk-me-down', seed: 45, ticks: 180, seats: [{ kind: 'human' }, { kind: 'human' }], voice: { slots: [0] }, calls: [{ t: 80, said: 'cut red', intent: null, ok: true }] })],
+        // #1712: fire-crew joins the trainable shelf — liam's solo alarm banks
+        // two radio calls through THE sim (a spot sweep + a ladder drive), and
+        // nova's take carries a watch span the adapter must re-seat and drop.
+        ['liam', scriptedTake({ game: 'fire-crew', seed: 91, ticks: 300, seats: [{ kind: 'human' }], voice: { slots: [0] }, calls: [{ t: 60, said: 'victim on the left', intent: 'spot', side: 'west' }, { t: 200, said: 'ladder up', intent: 'ladder', dir: 'up' }] })],
+        ['nova', scriptedTake({ game: 'fire-crew', seed: 92, ticks: 260, seats: [{ kind: 'human' }, { kind: 'cpu' }], voice: { slots: [0] }, watch: [[80, 140]] })],
     ]
     let up = 0
     for (const [player, rec] of uploads) {
         const res = await uploadSession(rec, { player, consent: { motion: true, voice: !!rec.voice }, base: sim.base })
         if (res.ok) up++
     }
-    r.check('fixture store provisioned (16 consented takes uploaded)', up === 16, `${up}/16`)
+    r.check('fixture store provisioned (18 consented takes uploaded)', up === 18, `${up}/18`)
 
     // determinism: two full builds against the store, twice. In-process
     // (not a blocked spawnSync child: the sim lives on THIS event loop).
@@ -354,8 +378,8 @@ try {
         if (foldDecision(c.cls, c.native, c.relabeled, nativeHumans)) foldedKeys.add(s.key)
         else if (!humanKeys.has(s.key)) flaggedKeys.add(s.key)
     }
-    r.check('fixtures classify as expected: 12 human, 1 legacy-folded, 3 flagged',
-        humanKeys.size === 12 && foldedKeys.size === 1 && flaggedKeys.size === 3,
+    r.check('fixtures classify as expected: 14 human, 1 legacy-folded, 3 flagged',
+        humanKeys.size === 14 && foldedKeys.size === 1 && flaggedKeys.size === 3,
         `human=[${[...humanKeys].map((k) => envByKey.get(k).player)}] folded=[${[...foldedKeys].map((k) => envByKey.get(k).player)}] flagged=[${[...flaggedKeys].map((k) => envByKey.get(k).player)}]`)
 
     const trainRows = rows.filter((x) => x.split === 'train')
@@ -392,7 +416,7 @@ try {
     const audioIdx = fs.existsSync(path.join(outA, 'audio/index.jsonl'))
         ? fs.readFileSync(path.join(outA, 'audio/index.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
         : []
-    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank + carla kitchen + otto stage + sam street + vera jungle + ivy defusal + kai couch carry voice)', audioIdx.length === 14, `${audioIdx.length}/14`)
+    r.check('audio index written for consented human takes (gina host+guest; jalfern + legacy-folded + no-adapter-consented hank + carla kitchen + otto stage + sam street + vera jungle + ivy defusal + kai couch + liam alarm + nova watch carry voice)', audioIdx.length === 16, `${audioIdx.length}/16`)
     const aliceIdx = audioIdx.find((x) => x.player === 'alice')
     let verbatim = false
     if (aliceIdx && fs.existsSync(path.join(outA, aliceIdx.file))) {
@@ -684,6 +708,62 @@ try {
             good.ok && good.rows.length === 480 && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
             bad.mismatch ? `tick ${bad.mismatch.tick}` : (good.ok ? `${good.rows.length} rows` : 'no mismatch?!'))
     }
+    { // unit: fire-crew adapter — solo verifies, radio calls re-seat the sim in
+        // replay, the watch span drops its rows, tampered refuses (#1712)
+        const FC_BI = { sweepW: FC_NAMES.indexOf('sweepW'), sweepLeft: FC_NAMES.indexOf('sweepLeft'), radioLadder: FC_NAMES.indexOf('radioLadder'), v1: FC_NAMES.indexOf('v1') }
+        const clean = scriptedTake({ game: 'fire-crew', seed: 96, ticks: 300, seats: [{ kind: 'human' }], calls: [{ t: 60, said: 'victim on the left', intent: 'spot', side: 'west' }, { t: 200, said: 'ladder up', intent: 'ladder', dir: 'up' }] })
+        const good = fireCrewRows('unit/fc-clean', clean)
+        const badRec = JSON.parse(JSON.stringify(clean))
+        badRec.hashes[Math.max(0, badRec.hashes.length - 2)].h = 'cafebabe'
+        const bad = fireCrewRows('unit/fc-tamper', badRec)
+        r.check('fire-crew adapter: clean solo take verifies (300 rows of 65 finite features), tampered refuses at its tick (#1712)',
+            good.ok && good.rows.length === 300 && good.rows.every((x) => x.feat.length === FC_N_FEAT && x.feat.every((v) => Number.isFinite(v)))
+            && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
+            bad.ok ? 'tampered verified?!' : `mismatch@${bad.mismatch && bad.mismatch.tick} rows=${good.rows.length}`)
+        { // hand-driven take: quiet pads (no dice, no flares) so both radio
+            // calls are ok BY CONSTRUCTION — the replay must re-seat them: the
+            // spot sweep lights the row lane from the tick after its bank, and
+            // the ladder drive likewise (#1712).
+            const recQ = createRecorder({ gameId: 'fire-crew', method: 'dpad', seed: 96, players: 1, build: 'test', sources: [{ kind: 'human' }] })
+            const gq = fcSetSources(fcMakeRun(96), ['human', 'cpu', 'cpu'])
+            for (let t = 0; t < 300; t++) {
+                const pad = { left: false, right: false, up: false, down: false, a: false, b: false }
+                fcStep(gq, pad, [pad])
+                recQ.addTick([pad], null, gq.tick % 30 === 0 ? fcHash(gq) : null)
+                if (gq.tick === 60) { const res = fcApplyRadio(gq, { kind: 'spot', side: 'west' }); recQ.addVoiceCmd({ said: 'victim on the left', intent: 'spot', ok: res.ok, side: 'west' }) }
+                if (gq.tick === 200) { const res = fcApplyRadio(gq, { kind: 'ladder', dir: 'up' }); recQ.addVoiceCmd({ said: 'ladder up', intent: 'ladder', ok: res.ok, dir: 'up' }) }
+            }
+            const quiet = fireCrewRows('unit/fc-radio', recQ.finish(fcHash(gq)))
+            const sweepOn = quiet.ok && quiet.rows.find((x) => x.t === 61)
+            const ladderOn = quiet.ok && quiet.rows.find((x) => x.t === 201)
+            r.check('fire-crew radio replay: banked calls re-seat THE sim — the spot sweep lights the row lane (one-hot + countdown) from the tick after its bank, the ladder drive likewise (#1712)',
+                quiet.ok && !!sweepOn && sweepOn.feat[FC_BI.sweepW] === 1 && sweepOn.feat[FC_BI.sweepLeft] > 0
+                && !!ladderOn && ladderOn.feat[FC_BI.radioLadder] === 1,
+                `ok=${quiet.ok} sweep=${sweepOn ? sweepOn.feat.slice(FC_BI.sweepW, FC_BI.sweepW + 7).join('') : 'n/a'}`)
+        }
+        const watched = scriptedTake({ game: 'fire-crew', seed: 97, ticks: 260, seats: [{ kind: 'human' }, { kind: 'cpu' }], watch: [[80, 140]] })
+        const wrows = fireCrewRows('unit/fc-watch', watched)
+        const inSpan = wrows.rows.filter((x) => x.seat === 0 && x.t > 80 && x.t <= 140)
+        const resumed = wrows.rows.some((x) => x.seat === 0 && x.t === 141)
+        const seat1 = wrows.rows.some((x) => x.seat === 1)
+        r.check('fire-crew watch-span law: the replay re-seats the autopilot and still verifies, seat-0 rows vanish inside the span and resume at release, cpu seats never row (#1712)',
+            wrows.ok && inSpan.length === 0 && resumed && !seat1,
+            `ok=${wrows.ok} span=${inSpan.length} resumed=${resumed} seat1=${seat1}`)
+        // honesty of the split: a victim the seat's light cannot reach is a
+        // zero lane; fire is shared by rule; featurize writes nothing (hash clean)
+        {
+            const g = fcSetSources(fcMakeRun(96), ['human', 'cpu', 'cpu'])
+            const h0 = fcHash(g)
+            const dark = g.victims.find((v) => fcLight(g, v.x, v.y, 1) <= 0.5 && v.state === 'hidden')
+            const f0 = fcFeaturize(g, 0, {})
+            const hidden = dark && f0[FC_BI.v1] === 0
+            const sawFire = g.cell.some((c) => c && c.burning)
+            const firesRead = f0[FC_NAMES.indexOf('fireGround')] > 0 || f0[FC_NAMES.indexOf('fireLoft')] > 0
+            r.check('fire-crew featurizer keeps the split honest: a victim outside this seat\'s light is a zero lane, fire (which glows through any smoke) is shared, and featurize mutates nothing the hash can see (#1712)',
+                !!hidden && (!sawFire || firesRead) && fcHash(g) === h0,
+                `dark=${!!dark} fireRead=${firesRead} clean=${fcHash(g) === h0}`)
+        }
+    }
     { // integration: ONE tampered take per new engine must fail the WHOLE build
         // (the S1 100%-verifiable line, engines four and five).
         const sim3 = await startRelaySim()
@@ -721,9 +801,9 @@ try {
     r.check('legacy take folds into the corpus: rows exist, never flagged, carry lg, mirror the owner split rule (#1712)',
         lgRows.length === 400 && foldedKey && lgRows.every((x) => x.k === foldedKey && x.split !== 'flagged' && x.split === wantFoldSplit && x.g === 'gauntlet'),
         `rows=${lgRows.length} want=${wantFoldSplit}`)
-    r.check('fold never enlarges the player set: humans stay native-11, label "player" is no player, volume separate (#1712)',
-        card.coverage.humanPlayers.length === 11 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 11
-        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 12
+    r.check('fold never enlarges the player set: humans stay native-13, label "player" is no player, volume separate (#1712)',
+        card.coverage.humanPlayers.length === 13 && !card.coverage.humanPlayers.includes('player') && card.totals.humanTakes === 13
+        && card.totals.legacyTakes === 1 && card.totals.humanTakesIncludingLegacy === 14
         && card.splits.player.heldout.length >= 1 && !card.splits.player.heldout.includes('player'),
         `humans=${JSON.stringify(card.coverage.humanPlayers)} legacy=${card.totals.legacyTakes}`)
     r.check('folded volume lands in the owner ledger + card legacy block (anchor declared, rows match)',
@@ -734,7 +814,7 @@ try {
     r.check('folded take audio written under the owner (consented human data, #1712)',
         audioIdx.some((x) => x.key === foldedKey && x.player === LEGACY_OWNER && x.human === true))
     r.check('coverage lines stay native-only and adapter-only: fold cannot add a human game, unadapted games cannot (#1712)',
-        card.coverage.gamesCovered.games.length === 8 && !card.coverage.gamesCovered.games.includes('player')
+        card.coverage.gamesCovered.games.length === 9 && !card.coverage.gamesCovered.games.includes('player')
         && !card.coverage.gamesCovered.games.includes('gravel-yard'),
         JSON.stringify(card.coverage.gamesCovered.games))
 } catch (e) {
@@ -1138,6 +1218,36 @@ if (MUTATE) {
         } finally {
             pull(DS)
             if (fs.readFileSync(DS, 'utf8') !== src13) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 talk-me-down adapter)'); r.failed++ }
+        }
+    }
+    // mutant 14 (#1712 adapter): fire-crew removed from ADAPTERS — liam's and
+    // nova's rows lose THE 65 features and fall back to flagged. The
+    // registration is load-bearing.
+    const src14 = fs.readFileSync(DS, 'utf8')
+    const ANCHOR14 = "'fire-crew': fireCrewRows,"
+    if (!src14.includes(ANCHOR14)) {
+        console.log('FAIL   fire-crew adapter anchor not found — update the mutant (#1712)')
+        r.failed++
+    } else {
+        plant(DS, src14.replace(ANCHOR14, '/* MUTANT: fire-crew adapter bypassed */'))
+        try {
+            const outM14 = path.join(tmp, 'fc-adapter-mut')
+            const cli14 = await new Promise((resolve) => {
+                const p = spawn(process.execPath, [DS, '--store', sim.base, '--out', outM14, '--limit', '50'],
+                    { env: { ...process.env, JON_KEY: SIM_READ_KEY } })
+                let stdout14 = ''
+                p.stdout.on('data', (d) => { stdout14 += d })
+                p.on('exit', (code) => resolve({ status: code, stdout: stdout14 }))
+            })
+            const rowsM14 = cli14.status === 0 && fs.existsSync(path.join(outM14, 'dataset.jsonl'))
+                ? fs.readFileSync(path.join(outM14, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+                : []
+            const featFc = rowsM14.some((x) => x.g === 'fire-crew' && Array.isArray(x.feat) && x.feat.length === FC_N_FEAT)
+            r.check('fire-crew adapter is load-bearing: 65-feature rows exist (RED under the fire-crew adapter-bypass mutant, #1712)',
+                featFc, `featRows=${featFc ? 'yes' : 'no'}${cli14.status !== 0 ? ' build exit ' + cli14.status : ''}`)
+        } finally {
+            pull(DS)
+            if (fs.readFileSync(DS, 'utf8') !== src14) { console.log('FAIL   mutant restore: exact original bytes not back (#1712 fire-crew adapter)'); r.failed++ }
         }
     }
 }

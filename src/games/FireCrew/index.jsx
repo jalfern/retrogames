@@ -16,7 +16,8 @@ import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { MESSAGES, PRESS } from './attract.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, armLiveCapture, recordLiveTick, isRecording, hasAutoVoice } from '../../utils/gameContract'
+import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { audioController } from '../../utils/AudioController'
 import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio, windVoice, ladderCreak, windWhistle, crewTail } from './sim.js'
 import { parseRadio } from './voiceradio.js'
@@ -103,6 +104,14 @@ export default function FireCrew() {
     // (never auto-asked), one raw track for the whole run, spoken calls feed
     // the sim through applyRadio so the mic can never beat the darkness.
     const voiceRef = useRef({ on: false, listen: null, session: null, track: null, hintsT: 0 })
+    // #1711 S2: the WATCH flips seat 1 human->cpu MID-run, and the seed
+    // cannot know when a watcher let go. Spans ride the take's rules
+    // ("t0-t1,t2-…") so the adapter replay seats the autopilot at exactly
+    // the ticks the human did — and drops seat-0 rows inside them: that
+    // stream is nobody's, and rows must never teach the autopilot's saves
+    // as a person's takes (dd's seat2At doctrine, #1712).
+    const watchSpansRef = useRef([])
+    const watchOpenRef = useRef(-1)
 
     useEffect(() => { screenRef.current = screen }, [screen])
     useEffect(() => { pausedRef.current = paused }, [paused])
@@ -116,6 +125,8 @@ export default function FireCrew() {
         gsRef.current = setSources(makeRun(seed >>> 0 || 1), src)
         watchingRef.current = false // watch never lingers — a new alarm starts in your hands
         setWatching(false)
+        watchSpansRef.current = []
+        watchOpenRef.current = -1
         prevRef.current = null
         windBedAtRef.current = 0
         windCreakAtRef.current = 0
@@ -148,18 +159,24 @@ export default function FireCrew() {
         if (!g || g.done || screenRef.current !== 'play' || watchingRef.current) return
         g.sources[0] = 'cpu'
         watchingRef.current = true
+        watchOpenRef.current = g.tick // #1711 S2: the span opens at the flip tick
         setWatching(true)
         playWatchStart()
     }
     const release = (blip = true) => {
         const g = gsRef.current
         if (g) g.sources[0] = 'human'
+        if (watchingRef.current && g && watchOpenRef.current >= 0) {
+            // close the span at the tick the wheel came back
+            watchSpansRef.current = [...watchSpansRef.current.slice(-19), `${watchOpenRef.current}-${g.tick}`]
+            watchOpenRef.current = -1
+        }
         watchingRef.current = false
         setWatching(false)
         if (blip) playWatchStop()
     }
 
-    const endVoice = useCallback((finalize) => {
+    const endVoice = useCallback((finalize, onReady) => {
         const v = voiceRef.current
         v.on = false
         clearTimeout(v.hintsT)
@@ -167,8 +184,9 @@ export default function FireCrew() {
         if (v.session) {
             const s = v.session
             v.session = null
-            if (finalize) s.finalize().then((track) => { if (track) voiceRef.current.track = track }).catch(() => { /* no honest audio */ })
-        }
+            if (finalize) s.finalize().then((track) => { if (track) voiceRef.current.track = track; if (onReady) onReady() }).catch(() => { if (onReady) onReady() /* no honest audio */ })
+            else if (onReady) onReady()
+        } else if (onReady) onReady()
         setVoiceHints(false)
     }, [])
 
@@ -176,7 +194,11 @@ export default function FireCrew() {
         if (screenRef.current === 'over') return
         if (watchingRef.current) release(false) // watch never lingers into GAME OVER (silent, racer rule)
         // #1249 law: never leave the mic hot on the GAME OVER screen
-        if (voiceRef.current.on || voiceRef.current.session) endVoice(true)
+        // #1711 S2: the take ends with the run — after the radio's final chunk
+        // lands in voiceRef.track (spec.voiceExtra reads it at record-stop), so
+        // a shouted run ships its audio instead of losing the last words.
+        if (voiceRef.current.on || voiceRef.current.session) endVoice(true, () => { endRun() })
+        else endRun()
         const won = g.win && g.rescued > 0
         setEnd({ win: won, rescued: g.rescued, lost: g.lost, doused: g.doused, score: g.score })
         prevRef.current = won ? 'win' : 'lose'
@@ -254,6 +276,11 @@ export default function FireCrew() {
             canvas: () => canvasRef.current,
             voiceExtra: () => (voiceRef.current.track ? { tracks: [voiceRef.current.track] } : null),
             watchSfx: watchSfxLog,
+            // #1711 S3: rule knobs the seed doesn't fix — the ticks the sheet
+            // was handed to the autopilot ("t0-t1,…"; primitive string,
+            // resolved at record-stop). The adapter seats the autopilot there
+            // and drops seat-0 rows inside the spans (#1712, dd's doctrine).
+            rules: () => ({ watch: watchSpansRef.current.join(',') }),
         }
     }
 
@@ -263,6 +290,26 @@ export default function FireCrew() {
         cvs.width = VW; cvs.height = VH
         startAttract()
         if (import.meta.env.DEV) exposeGame(spec.current)
+        // #1711 S2: arm the live capture for every build; banking only runs
+        // while a consented auto capture is open (autoRecord.js).
+        initAutoRecord()
+        armLiveCapture(spec.current)
+        // Consent goes up BEFORE the alarm is struck — the recorder opens at
+        // seed-birth so the stored file replay-verifies from tick 1. Seat
+        // kinds resolve live at record-STOP (Rally's law), so a WATCH left on
+        // when the clock dies is labelled cpu, not stamped human:
+        // humanSeats:false keeps the default stamp off and gs.sources owns
+        // the truth.
+        const humanStart = () => {
+            if (startBusy()) return
+            setStartBusy(true)
+            askConsent()
+                .then(() => {
+                    startPlay(humanSeed(), selectRef.current)
+                    beginRun({ sources: () => (gsRef.current ? gsRef.current.sources.map((kind) => ({ kind })) : null), humanSeats: false })
+                })
+                .finally(() => setStartBusy(false))
+        }
 
         const keys1 = keys1Ref.current
         const keys2 = keys2Ref.current
@@ -295,7 +342,7 @@ export default function FireCrew() {
                 if (e.code === 'Digit3') { selectRef.current = 3; setSeats(3); sfx.move() }
                 if (e.code === 'Space' || e.code === 'Enter') {
                     e.preventDefault()
-                    startPlay(humanSeed(), selectRef.current)
+                    humanStart()
                 }
                 return
             }
@@ -329,7 +376,7 @@ export default function FireCrew() {
         const onPointer = () => {
             if (screenRef.current === 'attract') { clearKeys(); screenRef.current = 'select'; setScreen('select'); sfx.start() }
             else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() }
-            else if (screenRef.current === 'select') startPlay(humanSeed(), selectRef.current)
+            else if (screenRef.current === 'select') humanStart()
             else if (screenRef.current === 'play' && watchingRef.current) release() // a tap on the field steers (#1637)
         }
 
@@ -363,7 +410,7 @@ export default function FireCrew() {
             const consent = await askVoiceConsent()
             if (screenRef.current !== 'play') return // moved on while the prompt was up
             if (!consent.consent) { say('NO MIC, NO RADIO'); sfx.radioNo(); return }
-            v.session = createVoiceSession({ slots: [0], ask: () => Promise.resolve(consent) })
+            v.session = hasAutoVoice() ? null : createVoiceSession({ slots: [0], ask: () => Promise.resolve(consent) }) // #1712: the auto layer already banks seat 0 from seed-birth — validateVoice forbids the slot twice; recognition still runs either way (SOS law)
             v.on = true
             v.listen = startSpeechListen({
                 onPhrase: (p) => radioCall(p),
@@ -402,6 +449,12 @@ export default function FireCrew() {
             if (!g) return
             if (g.done) { finish(g); return }
             step(g, pads[0], pads)
+            // #1712 S2: bank exactly what THIS tick consumed (attract ticks
+            // never enter a take). Seats the sim drives internally (the CPU
+            // crew, the watch autopilot) bank their streams as they stood —
+            // the adapter re-runs those drivers from the seed, and rules.watch
+            // seats the autopilot at the flips.
+            if (isRecording() && !contractHoldsLoop()) recordLiveTick(pads)
             if (voiceRef.current.session) voiceRef.current.session.onTick(g.tick)
             listenEvents(g)
             const h = padFrom(keys1)
@@ -473,6 +526,9 @@ export default function FireCrew() {
                 },
                 screen: () => screenRef.current,
                 state: () => (gsRef.current ? state(gsRef.current) : null),
+                // #1712 S2 browser-leg view: the live auto-capture truth and
+                // the watch spans the take will carry.
+                rec: () => ({ auto: typeof window !== 'undefined' ? (window.__autoCapture || null) : null, recording: isRecording(), autoVoice: hasAutoVoice(), watch: watchSpansRef.current.slice(), open: watchOpenRef.current }),
                 // WATCH (#1637 b28): pilot-visible seat truth + the fallback the
                 // pilot uses if a synthetic Y ever misses the window (b26 parity).
                 watching: () => watchingRef.current,
@@ -579,7 +635,7 @@ export default function FireCrew() {
         return () => {
             unexposeFeedbackState()
             cancelAnimationFrame(raf)
-            endVoice(true) // never leave the mic hot on unmount
+            endVoice(true, () => { endRun() }) // never leave the mic hot on unmount; #1711 S2: a mid-run unmount ships its take too (endRun is a no-op when nothing records)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('pointerdown', onPointer)
