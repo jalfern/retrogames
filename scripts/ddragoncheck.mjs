@@ -1731,8 +1731,8 @@ if (MUTANT) {
         },
         {
             name: 'depth-blind',
-            anchor: 'b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 && Math.abs(e.y - b.y) <= 8',
-            plant: 'b.z <= 8 && Math.abs(e.x - b.x) <= def.reach + 4 && Math.abs(e.y - b.y) <= 400 /* MUTANT(depth-blind): the belt axis stops mattering */',
+            anchor: 'Math.abs(e.y - b.y) <= depth',
+            plant: 'Math.abs(e.y - b.y) <= 400 /* MUTANT(depth-blind): the belt axis stops mattering */',
             harm: async (mod) => {
                 const gs = mod.makeGame(2)
                 gs.billy.inv = 0
