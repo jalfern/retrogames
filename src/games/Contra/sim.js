@@ -134,6 +134,20 @@ export function loopK (n) {
     return Math.min(LOOP_CAP, 1 + LOOP_STEP * Math.max(0, Math.floor(n) - 1))
 }
 
+// #2902 THE LOOP SPEAKS — the presentation law of the resume. Every value the
+// player SEES or HEARS as "round two" is a pure function of the pass number:
+// the shell derives banner length, sky heat and voice pitch from gs.loop, so
+// no cue can desync from the tempo the sim actually runs at (the sim can't
+// lie about the heat — and none of this touches gs, gs.r or the hash).
+export const LOOP_FX = 110           // banner ticks: bar wipe-in, the slam, the read, two quiet beats
+export const LOOP_SKY_HOT = 3       // the jungle sky reddens from this pass (one notch, capped at loop 4)
+export const LOOP_VOICE_HOT = 2     // enemy reports rise in pitch from this pass
+// voice pitch for enemy gun reports on loop n: +6% a pass, capped with the
+// tempo (holds from loop 4, mirroring loopK's ceiling).
+export function loopVoice (n) {
+    return Math.min(1 + 0.06 * 3, 1 + 0.06 * (Math.max(1, Math.floor(n)) - 1))
+}
+
 const PAD0 = { left: false, right: false, up: false, down: false, a: false, b: false }
 
 // mulberry32 as pure state-in/state-out: the rng is just an integer on gs.
