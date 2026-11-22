@@ -9,9 +9,11 @@
 //
 //   A. the registry (bundled with the esbuild Vite ships, game components
 //      stubbed — the builtbycheck trick): every entry's visibility is absent
-//      or exactly 'public'/'private', and NO entry is 'public' — the split is
-//      unwired and every promotion is Jon's call, so a forge session that
-//      auto-promotes a game dies here;
+//      or exactly 'public'/'private', and every 'public' entry sits on the
+//      JON_PROMOTED allowlist below — the split is unwired and every promotion
+//      is Jon's call, so a forge session that auto-promotes a game dies here;
+//      the allowlist carries ONLY decisions Jon actually made (issue-numbered),
+//      so it grows only by quoting one;
 //   B. the field is provably unread: no code outside the registry uses a
 //      `visibility: 'public'|'private'` key or a `.visibility` property
 //      access (the DOM `visibilitychange`/`visibilityState` listeners are not
@@ -30,6 +32,12 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
 
 const VIS = ['public', 'private']
+
+// Jon's promotions, pinned. Every entry here quotes the issue where Jon
+// decided it (#2846, answered 2026-11-22: "promote all 3"). The only way the
+// set grows is another answered question — a forge session that flips another
+// title to 'public' dies on the allowlist gates below.
+const JON_PROMOTED = { '/contra': '#2846', '/double-dragon': '#2846', '/r-type': '#2846' }
 
 let pass = 0
 const fails = []
@@ -66,12 +74,19 @@ for (const g of GAMES) {
   ok(typeof g.path === 'string' && g.path.length > 0, `${g.label || '?'}: has a path`)
   if (g.visibility === undefined) {
     ok(true, `${g.path}: untagged — defaults to 'private' (missing means private)`)
+    ok(!(g.path in JON_PROMOTED), `${g.path}: on Jon's promoted list but untagged — his decision must be carried`)
   } else {
     ok(VIS.includes(g.visibility), `${g.path}: visibility '${g.visibility}' is one of ${VIS.join('/')}`)
-    ok(g.visibility !== 'public', `${g.path}: not 'public' — the split is unwired and every promotion is Jon's call`)
+    if (g.visibility === 'public') {
+      ok(g.path in JON_PROMOTED, `${g.path}: 'public' without Jon's decision (${JON_PROMOTED[g.path] || 'no issue quoted'}) — every promotion is Jon's call`)
+    } else {
+      ok(!(g.path in JON_PROMOTED), `${g.path}: 'private' but Jon promoted it (#${JON_PROMOTED[g.path]}) — carry his decision`)
+    }
   }
 }
-ok(GAMES.every((g) => g.visibility !== 'public'), `zero entries are 'public' before Jon's first promotion`)
+const publicPaths = GAMES.filter((g) => g.visibility === 'public').map((g) => g.path)
+ok(publicPaths.every((p) => p in JON_PROMOTED), `no public entry outside Jon's allowlist (${publicPaths.join(',') || 'none public'})`)
+ok(Object.keys(JON_PROMOTED).every((p) => publicPaths.includes(p)), `every title Jon promoted (${Object.keys(JON_PROMOTED).join(',')}) is public in the registry`)
 
 // --- layer B: the field is unread outside the registry ----------------
 function walk(dir, acc = []) {
@@ -103,6 +118,7 @@ ok(/missing means\s*'private'/i.test(regSrc), "registry header states missing me
 const forgeSrc = readFileSync(FORGE_MD, 'utf8')
 ok(/visibility:\s*'private'/.test(forgeSrc), "FORGE.md tells new games to register visibility: 'private'")
 ok(/only Jon\s*\n?\s*promotes/i.test(forgeSrc) || /only Jon promotes/i.test(forgeSrc), 'FORGE.md reserves public promotion for Jon')
+ok(/#2846/.test(regSrc), "registry header records Jon's #2846 promotion decision")
 
 console.log(`visibilitycheck: ${pass} passed, ${fails.length} failed`)
 for (const f of fails) console.log(`  FAIL  ${f}`)
