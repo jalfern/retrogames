@@ -1708,9 +1708,19 @@ console.log('p2 pad seat (#2860)')
             w.kind === 'whip' && w.dur >= CFG.goonWhip.windup && CFG.goonWhip.windup > 12, `kind=${w.kind} dur=${w.dur}`)
     }
     {
-        const w = windKind(7, 28, 12, { hasWhip: true })
-        r.check('#2944 the whip never rises at an airborne lane — the jump clears the carrier\'s read too',
-            w.kind !== 'whip')
+        const gs = makeGame(7)
+        gs.billy.inv = 0
+        const e = mk('williams', gs.billy.x + 28, gs.billy.y, { attackCooldown: 0, hasWhip: true })
+        gs.enemies.push(e)
+        let rose = false, whipWhileAirborne = false
+        for (let i = 0; i < 30; i++) {
+            step(gs, i === 0 ? { a: true } : {})   // a real jump, not a pin
+            if (gs.billy.z > 8) rose = true
+            if (gs.billy.z > 8 && e.state === 'windup' && e.atkKind === 'whip') whipWhileAirborne = true
+            gs.events.length = 0
+        }
+        r.check('#2944 the whip never rises at an airborne lane — over the leap the carrier\'s read stays shut',
+            rose && !whipWhileAirborne)
         const p = windKind(7, CFG.goonWhip.min - 4, 0, { hasWhip: true })
         r.check('#2944 point-blank, the whip folds: knuckles answer, not leather',
             p.kind === 'punch')
