@@ -91,12 +91,13 @@ export const CFG = {
 // start opts in. Any input after the grace beat skips it: the movie respects
 // the player, and "PRESS ANY KEY" still means play now.
 export const INTRO = {
-    total: 430,        // ticks of the full movie (~7.2 s)
+    total: 458,        // ticks of the full movie (~7.6 s; #2897: the tail walks)
     grace: 30,         // ticks before an input may skip — the start tap settles
     fleeAt: 90,        // Marian spots the gang
     grabAt: 155,       // the giant's prize
     takenAt: 300,      // "MARIAN TAKEN!" — the crime named on screen
-    takenShown: 100,   // ticks the caption stands
+    takenShown: 124,   // ticks the caption stands (#2897: a back-row hold)
+    flash: 3,          // #2897: white frames the caption punches in on
     walkY: (DEEP_TOP + DEEP_BOT) / 2 | 0,   // the line the street reopens on
 }
 
@@ -111,7 +112,7 @@ const mkIntroGoon = (id, kind, x, y) => ({
 // seed the movie: cast and victim stand by off-frame, stage 1 fresh.
 function armIntro(gs) {
     gs.intro = {
-        t: 0, takenT: 0,
+        t: 0, takenT: 0, flashT: 0,
         marian: { x: 300, y: 160, grabbed: false, lift: 0, bubble: 0, scared: false, anim: 0 },
         goons: null,   // filled below; the script holds direct links
     }
@@ -169,7 +170,7 @@ function stepIntro(gs, pad, pad2) {
     else if (t < 268) { b.x = 150 + 0.8 * (t - 252); b.state = 'walk'; b.anim += 1 }
     else if (t < 294) { if (b.state !== 'dying') { b.state = 'dying'; b.stateT = 0 } else b.stateT += 1 }
     else if (t < 360) { b.state = 'down'; b.stateT += 1 }
-    else { b.x = 163 - (163 - 40) * seg(360, INTRO.total); b.state = 'walk'; b.face = -1; b.anim += 1 }
+    else { b.x = 163 - (163 - 40) * seg(360, INTRO.total - 10); b.state = t < INTRO.total - 10 ? 'walk' : 'idle'; b.face = -1; b.anim += 1 }
 
     const j = gs.jimmy
     if (j) {
@@ -180,7 +181,7 @@ function stepIntro(gs, pad, pad2) {
         else if (t < 276) { j.state = 'idle' }
         else if (t < 302) { if (j.state !== 'dying') { j.state = 'dying'; j.stateT = 0 } else j.stateT += 1 }
         else if (t < 370) { j.state = 'down'; j.stateT += 1 }
-        else { j.x = 130 - (130 - 24) * seg(370, INTRO.total); j.state = 'walk'; j.face = -1; j.anim += 1 }
+        else { j.x = 130 - (130 - 24) * seg(370, INTRO.total - 10); j.state = t < INTRO.total - 10 ? 'walk' : 'idle'; j.face = -1; j.anim += 1 }
     }
 
     // — Marian: a walk with nowhere to be, then the running, then the lift
@@ -211,7 +212,7 @@ function stepIntro(gs, pad, pad2) {
     else if (t < 276) { am.state = 'walk'; am.x = 216 - (216 - 195) * seg(268, 276); am.anim += 1 }
     else if (t === 276) { am.state = 'attack'; gs.events.push('hit_hard') }             // and again
     else if (t < 300) am.state = 'idle'
-    else { am.x = 195 + 400 * seg(300, INTRO.total); am.state = 'walk'; am.face = 1; am.anim += 1 }
+    else { am.x = 195 + 175 * seg(300, INTRO.total - 6); am.state = 'walk'; am.face = 1; am.anim += 1 }   // #2897: the straggler — mid-exit as the caption clears, gone six ticks before the curtain
 
     if (t < 128) { w2.x = 330 - (330 - 294) * seg(80, 128); w2.state = 'walk'; w2.anim += 1 }
     else if (t < 160) w2.state = 'idle'
@@ -229,7 +230,8 @@ function stepIntro(gs, pad, pad2) {
     // moves this tick, so they never drift a pixel apart on the carry east.
     if (m.grabbed) { m.x = ab.x; m.y = ab.y }
 
-    if (at(INTRO.takenAt)) { I.takenT = INTRO.takenShown; gs.events.push('taken') }
+    if (I.flashT > 0) I.flashT -= 1   // #2897: the white beat under the caption decays
+    if (at(INTRO.takenAt)) { I.takenT = INTRO.takenShown; I.flashT = INTRO.flash; gs.events.push('taken') }
     if (I.takenT > 0) I.takenT -= 1
 
     if (t >= INTRO.total) endIntro(gs)
