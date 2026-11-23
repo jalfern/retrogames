@@ -4463,7 +4463,7 @@ const browser = await launch()
     // death silences mid-siege: both seats down with the purse full — GAME
     // OVER carries no bed, and the paid continue brings the march back at the
     // loop-1 resting step (the run rebuilt, the band with it).
-    await mp.evaluate(() => window.__contraTest.setup({ allyOut: true, lives: 0, inv: 0, kill: true }))
+    await mp.evaluate(() => window.__contraTest.setup({ allyOut: true, lives: 0, inv: 0, kill: true, score: 4200 }))
     await mp.waitForTimeout(400)
     const m6 = await mProbe()
     r.check('#3048 GAME OVER silences the cabinet mid-siege — the run that died takes its bed with it',
