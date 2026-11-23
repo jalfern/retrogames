@@ -26,10 +26,13 @@ export function p2Merge(kb, pad) {
     }
 }
 
-// Drop-in law (same as the keyboard's): the first input takes the blue seat
-// for the rest of the run. The seat exists (coop run), is the CPU's, and is
-// not down — then a live pad 2 hands it over. Returns true when the seat was
-// taken THIS call, so the caller plays the join chime exactly once.
+// Drop-in law (same as the keyboard's): the first input takes the blue seat.
+// Since #3005 (Jon's #2908/#2930) the seat is HELD while it's driven: the
+// sim's idle clock hands an abandoned seat back to dragonBrain and a fresh
+// press re-seats through this same line. The seat exists (coop run), is the
+// CPU's, and is not down — then a live pad 2 hands it over. Returns true
+// when the seat was taken THIS call, so the caller pays the join shout once
+// per seating (a returning friend gets the same flare as an arriving one).
 export function p2Seat(gs, active) {
     if (!active || !gs || !gs.jimmy || gs.jimmy.human || gs.jimmy.out) return false
     gs.jimmy.human = true

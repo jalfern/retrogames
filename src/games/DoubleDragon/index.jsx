@@ -15,7 +15,7 @@ import { slotPad, slotActive, connectedSlots } from '../../utils/onePad'
 import { rumble, rumbleSlot } from '../../components/gamepadMap'
 import { p2Merge, p2Seat } from './p2pad.js'
 import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH, enterStage2, INTRO, endIntro } from './sim.js'
-import { drawBackground, drawBilly, drawJimmy, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, drawIntroMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract, setLampLight, DRIP_T, drawJoinFx, JOIN_T } from './art.js'
+import { drawBackground, drawBilly, drawJimmy, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, drawIntroMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract, setLampLight, DRIP_T, drawJoinFx, JOIN_T, drawSeatCpu, CPU_T } from './art.js'
 
 const SIM_MS = 1000 / 60
 const HS_KEY = 'double-dragon:hiscore'
@@ -60,6 +60,10 @@ export default function DoubleDragon() {
         // #2863 join juice: ticks left on the seat-drop flare/banner (shell
         // state only — juice never enters gs, so stateHash stays byte-stable).
         let joinFx = 0
+        // #3005: the handback mirror of the join flare, and the seat-owner
+        // edge-watch that notices dragonBrain taking the blue seat back.
+        let cpuFx = 0
+        let prevHuman = false
         const part = []
         let takenSeen = false   // #2891: the movie's caption fired this run (probe/legs)
         const keys = { l: false, r: false, u: false, d: false, j: false, k: false, p: false }
@@ -123,6 +127,10 @@ export default function DoubleDragon() {
             jimmy_die: () => { audioController.playSweep(360, 70, 0.45, 'sawtooth', 0.16); shake = Math.max(shake, 5) },
             seat_down: () => audioController.playSweep(300, 140, 0.22, 'triangle', 0.10),
             p2join: () => { audioController.playSweep(440, 880, 0.12, 'square', 0.05); audioController.playTone(1100, 0.1, 'square', 0.04, 0.1) },
+            // #3005: the seat going quiet — a soft two-note descent, the
+            // join shout inverted; the computer taking over is news, not bad
+            // news, so it sits well under the fight's own levels.
+            seatBack: () => { audioController.playSweep(880, 440, 0.12, 'square', 0.04); audioController.playTone(330, 0.1, 'square', 0.035, 0.1) },
             wave: () => audioController.playSweep(120, 240, 0.3, 'triangle', 0.12),
             chargewind: () => audioController.playFilteredNoise(0.5, 0.06, 240),
             charge: () => { audioController.playSweep(160, 70, 0.24, 'sawtooth', 0.14); shake = Math.max(shake, 2) },
@@ -323,6 +331,8 @@ export default function DoubleDragon() {
             takenSeen = false
             seat2At = -1 // a fresh run hands the blue seat back to the CPU
             joinFx = 0
+            cpuFx = 0
+            prevHuman = false
             setMode('play')
             screen = 'play'
         }
@@ -360,6 +370,11 @@ export default function DoubleDragon() {
                 // take's rules — replay seats Jimmy by it.
                 recordLiveTick([toBank(pad), toBank(p2)])
                 if (gs.jimmy && gs.jimmy.human && seat2At < 0) seat2At = gs.tick
+                // #3005: the sim's idle clock just handed the seat back to
+                // dragonBrain — name the moment (grey brackets + descent +
+                // a short pad-2 rumble, the join shout's inverse).
+                if (gs.jimmy && prevHuman && !gs.jimmy.human) { cpuFx = CPU_T; sfx.seatBack(); rumbleSlot(2, 100, 0.5) }
+                if (gs.jimmy) prevHuman = gs.jimmy.human
                 if (gs.mode === 'gameover' && screen === 'play') endTo('over')
             }
         }
@@ -457,6 +472,7 @@ export default function DoubleDragon() {
             else drawBanner(ctx, gs)
             // #2863: the drop-in shout, over the street and under nothing else
             if (screen === 'play' && gs.jimmy) drawJoinFx(ctx, joinFx, Math.round(gs.jimmy.x - gs.camX), Math.round(gs.jimmy.y))
+            if (screen === 'play' && gs.jimmy) drawSeatCpu(ctx, cpuFx, Math.round(gs.jimmy.x - gs.camX), Math.round(gs.jimmy.y))
         }
 
         const frame = (ts) => {
@@ -470,6 +486,7 @@ export default function DoubleDragon() {
                     acc += ft
                     while (acc >= SIM_MS) {
                         if (joinFx > 0) joinFx -= 1
+                        if (cpuFx > 0) cpuFx -= 1
                         if (screen === 'play') {
                             // #2860 drop-in: any live pad-2 input takes the blue
                             // seat, the same law the WASD keys obey, chime and all.
@@ -506,9 +523,11 @@ export default function DoubleDragon() {
             if (e.code === 'Space') { keys.j = true; jumpQ = true }
             if (e.code === 'KeyX') { keys.k = true; kickQ = true }
             if (e.code === 'KeyZ') { keys.p = true; punchQ = true }
-            // S4 seat 2 — WASD walk · F punch · G kick · V jump. Drop-in law
-            // (Contra S4): the first touch takes Jimmy out of the CPU's hands
-            // for the rest of the run.
+            // S4 seat 2 — WASD walk · F punch · G kick · V jump. Drop-in law:
+            // the first touch takes Jimmy out of the CPU's hands; since
+            // #3005 (Jon's #2908/#2930) the seat is held while it is driven
+            // — silence past CFG.seatIdle hands it back, a fresh press
+            // re-seats (the sim owns the clock; these paths pay the shout).
             const isP2 = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyV'].includes(e.code)
             if (isP2) e.preventDefault()
             // #2857 fix: the seat belongs to P2's keys only — Billy's arrows must
@@ -608,6 +627,8 @@ export default function DoubleDragon() {
                     jimmyGuard: gs.jimmy ? gs.jimmy.guard : -1,
                     jimmyRelief: gs.jimmy ? gs.jimmy.relief : -1,
                     jimmyFlourish: gs.jimmy ? gs.jimmy.flourish : -1,
+                    jimmyIdle: gs.jimmy ? gs.jimmy.idle : -1,
+                    jimmyH: gs.jimmy && gs.jimmy.human ? 1 : 0,
                     gripFx: gs.gripFx ? 1 : 0,
                 }),
                 start: () => startPlay(false),   // harness straight to the street — no movie (#2891)
@@ -697,7 +718,7 @@ export default function DoubleDragon() {
                 ],
                 actions: [
                     { label: '+1 LIFE', run: () => { gs.billy.lives += 1; return 'extra life' } },
-                    { label: 'P2: HUMAN SEAT', run: () => { if (!gs.jimmy) return 'no partner this run (?solo=1)'; if (!gs.jimmy.human) { if (gs.jimmy.out) return 'blue seat is down'; gs.jimmy.human = true; seatJoin(); return 'blue seat: human (WASD FGV) — join fx fired' } gs.jimmy.human = false; return 'blue seat: CPU' } },
+                    { label: 'P2: HUMAN SEAT', run: () => { if (!gs.jimmy) return 'no partner this run (?solo=1)'; if (!gs.jimmy.human) { if (gs.jimmy.out) return 'blue seat is down'; gs.jimmy.human = true; gs.jimmy.idle = 0; seatJoin(); return 'blue seat: human (WASD FGV) — join fx fired' } gs.jimmy.human = false; gs.jimmy.idle = 0; return 'blue seat: CPU' } },
                     { label: 'TAKE A HIT (P2)', run: () => { if (!gs.jimmy) return 'no partner'; gs.jimmy.lives = 1; window.__ddTest.setup({ killAlly: true }); return 'a goon swings at Jimmy' } },
                     { label: 'GIVE STICK', run: () => { gs.billy.weapon = 'stick'; return 'stick in hand' } },
                     { label: 'GIVE KNIFE', run: () => { gs.billy.weapon = 'knife'; return 'steel in hand — PUNCH throws' } },
@@ -723,6 +744,8 @@ export default function DoubleDragon() {
                     keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.k = keys2.p = false
                     jumpQ = kickQ = punchQ = jumpQ2 = kickQ2 = punchQ2 = false
                     joinFx = 0
+                    cpuFx = 0
+                    prevHuman = false
                     screen = 'play'
                     setMode('play')
                 },
@@ -750,6 +773,7 @@ export default function DoubleDragon() {
                     coop: gs.coop ? 1 : 0,
                     jimmyLives: gs.jimmy ? gs.jimmy.lives : 0,
                     jimmyHuman: gs.jimmy && gs.jimmy.human ? 1 : 0,
+                    jimmyIdle: gs.jimmy ? gs.jimmy.idle : -1,
                     jimmyOut: gs.jimmy && gs.jimmy.out ? 1 : 0,
                     jimmyX: gs.jimmy ? Math.round(gs.jimmy.x) : 0,
                     hash: stateHash(gs),
