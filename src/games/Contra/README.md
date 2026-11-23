@@ -431,8 +431,14 @@ is owed · one rung per tick, oversized jumps paid on consecutive ticks ·
 arcadeLoop carries the mark with the score · zero gs.r and hash-clean · every
 honest loop-1 clear lands below the mark so no pre-extend byte moves · live: a
 real kill crosses the mark, the pool grows and EXTRA LIFE paints gold on the
-salute band** · zero page
-errors.
+salute band** · **#3042 CONTINUE: the window is arithmetic (GAME OVER reads, the
+Konami digit falls 9…0 one a second, `out` closes the book — the whole count is
+the accept window) · the carry enters at makeGame (default 0 hash-identical, a
+carried score diverges loudly) · live: the count paints and falls on world time,
+a real key pays — score carried, pool 3, loop 1, purse spent — a real tap pays
+the same, the armed run returns at 30 (NES continue law), an empty purse offers
+no count, and an unanswered count lands on the attract screen unasked** · zero
+page errors.
 
 ## Honest gaps
 
