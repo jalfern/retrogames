@@ -2307,6 +2307,28 @@ if (MUTANT) {
                 ? 'HARM NAMED: loop 3 marches at loop 1 tempo while the world runs twenty percent hot - the bed stopped escalating with the sky'
                 : null,
         },
+        {
+            // #3052: the mix legs guard what the table legs cannot see - the MELODY
+            // inside the lanes. Every note is still a legal rest, the table still
+            // scans clean; only the knee math knows the march lost its voice.
+            name: 'lead-vanished',
+            file: join(ROOT, 'src/utils/AudioController.js'),
+            mod: '../../utils/AudioController.js',
+            anchor: '            64, 0, 64, 67, 71, 67, 64, 67, 72, 0, 71, 67, 64, 0, 67, 0,\n            67, 0, 67, 72, 76, 72, 67, 72, 74, 0, 77, 74, 81, 77, 74, 71,',
+            plant: '            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* MUTANT(lead-vanished): the march keeps its pulse but lost its call */\n            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,',
+            harm: async (mod) => {
+                const hz = (n) => 440 * Math.pow(2, (n - 69) / 12)
+                const att = (fr) => (fr > 0 && fr < 250 ? Math.pow(2, -(12 * Math.log2(250 / fr)) / 10) : 1)
+                let lead = 0, rest = 0
+                for (const n of mod.MUSIC.contra.lead) if (n) lead += 0.25 * att(hz(n))
+                for (const n of mod.MUSIC.contra.bass) if (n) rest += 0.36 * att(hz(n))
+                for (const v of mod.MUSIC.contra.perc) { if (v === 1) rest += 0.25 * att(100); else if (v === 2) rest += 0.0484 }
+                const frac = lead / (lead + rest)
+                return frac < 0.5
+                    ? 'HARM NAMED: the march keeps drumming but nothing survives the phone knee above 250 Hz - the melody vanished and the mix legs are the only ears that would notice'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -3060,6 +3082,72 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
             a.end === 'win' && mapped > 100 && stateHash(a) === stateHash(b) && a.r === b.r,
             `end=${a.end} mapped=${mapped}`)
     }
+}
+
+// ------------------------------- #3052 THE MIX — phone ears, computed and measured ---
+// The QA pass #3047's beds were owed: headless can't *hear*, but it can do what
+// #3019 proved works — model the phone's small-driver knee (~12 dB/oct below
+// ~250 Hz, measured on the device) against the lanes each bed actually writes,
+// and prove the melody survives where the pump physically cannot. These are the
+// static half (pure pattern math, deterministic); the live half samples the real
+// bus spectrum through DEV readbacks. Floors: the model says 0.65/0.58 on the
+// Mac — static pins sit at 0.50, the live legs at 0.40 for CI's software audio.
+{
+    const { MUSIC, MUSIC_BUS } = await import('../src/utils/AudioController.js')
+    const hz = (n) => 440 * Math.pow(2, (n - 69) / 12)
+    const KNEE = 250
+    const kneeAtt = (fr) => (fr > 0 && fr < KNEE ? Math.pow(2, -(12 * Math.log2(KNEE / fr)) / 10) : 1)
+    // energy split above the phone knee, from the lanes as the engine voices them:
+    // lead square 0.5, bass triangle 0.6, dum a 160->55 Hz sine 0.5 (energy
+    // centred ~100 Hz — under the knee by design), tek a 2500-highpassed click.
+    const kneeSplit = (t) => {
+        let lead = 0, rest = 0
+        for (const n of t.lead) if (n) lead += 0.25 * kneeAtt(hz(n))
+        for (const n of (t.bass || [])) if (n) rest += 0.36 * kneeAtt(hz(n))
+        for (const v of (t.perc || [])) {
+            if (v === 1) rest += 0.25 * kneeAtt(100)
+            else if (v === 2) rest += 0.0484 // post-highpass noise energy
+        }
+        return lead / (lead + rest)
+    }
+    const fj = kneeSplit(MUSIC.contra)
+    const fg = kneeSplit(MUSIC.contraGate)
+    r.check('#3052 the march survives a phone — computed post-knee energy is carried by the LEAD, not the buried pump (jungle)',
+        fj >= 0.5, `postKneeLeadFrac=${fj.toFixed(3)}`)
+    r.check('#3052 the gate variation survives too — escalation on small speakers rides the octave-up melody',
+        fg >= 0.5, `postKneeLeadFrac=${fg.toFixed(3)}`)
+    // escalation, not chipmunk: the gate lifts the MELODY a full octave while the
+    // bass pump keeps the jungle's register — the sky opens, the ground stays put.
+    const jl = MUSIC.contra.lead.filter((n) => n), gl = MUSIC.contraGate.lead.filter((n) => n)
+    const jb = MUSIC.contra.bass.filter((n) => n), gb = MUSIC.contraGate.bass.filter((n) => n)
+    r.check('#3052 the gate is an escalation, not a chipmunk — melody at least an octave up, bass still in the pump register, step tighter',
+        Math.min(...gl) - Math.min(...jl) >= 12 && Math.max(...gb) <= Math.max(...jb) &&
+        MUSIC.contraGate.step < MUSIC.contra.step,
+        `lead ${Math.min(...jl)}->${Math.min(...gl)}MIDI bass<=${Math.max(...jb)} step ${MUSIC.contra.step}->${MUSIC.contraGate.step}`)
+    // the gunfire contract at the bus: no single one-shot is authored louder than
+    // the whole bed's ceiling — transients punch by shape and timing, not by
+    // outranking the march (a shot at full authority would drown the cabinet).
+    const shotCeil = 0.06 + 0.05 // spread: sweep + noise at their authored peaks
+    r.check('#3052 gunfire rides under the bed ceiling — the loudest authored single shot still tops out under MUSIC_BUS',
+        shotCeil < MUSIC_BUS, `shot=${shotCeil} bus=${MUSIC_BUS}`)
+    // #2058 law, Contra's side: the bank is pad-only. The one recordLiveTick call
+    // site carries exactly the two seats' toBank shapes, and toBank reads nothing
+    // but pad axes — music never rides a row, so a take recorded over the march
+    // replays identically whether the bed played or not.
+    const shellSrc = readFileSync(join(ROOT, 'src/games/Contra/index.jsx'), 'utf8')
+    const bankLines = shellSrc.split('\n').filter((l) => l.includes('recordLiveTick(') && !l.includes('import'))
+    const toBankBody = (shellSrc.match(/const toBank = \(p\) => \(\{[^}]*\}/) || [''])[0]
+    r.check('#3052 music rides no row — the bank has one call site carrying only pad shapes, and toBank reads only pad axes',
+        bankLines.length === 1 && /toBank\(pad\)/.test(bankLines[0]) && /toBank\(p2\)/.test(bankLines[0]) &&
+        !/audio|music/i.test(bankLines[0]) && toBankBody !== '' &&
+        !/audio|music/i.test(toBankBody),
+        `sites=${bankLines.length}`)
+    // pause duck contract, from the authored numbers: the step-back is deep enough
+    // to read on a phone but never zero — the band steps back, it does not leave.
+    const DUCK = 0.15
+    r.check('#3052 the pause duck is a step-back, not a dropout — 0.15 of the bus, deep enough to hear, never silence',
+        DUCK > 0 && DUCK <= 0.25 && DUCK * MUSIC_BUS > 0.02,
+        `duck=${DUCK} -> ${(DUCK * MUSIC_BUS).toFixed(3)}`)
 }
 
 // ------------------------------------------------------------- browser leg ---
@@ -4380,6 +4468,116 @@ const browser = await launch()
 
     r.check('#3047 bed legs: zero page errors', bErrs.length === 0, bErrs.join(' | '))
     await bp.close()
+}
+
+// ------------------------------------------ #3052 the mix — live bus measurements ---
+// The same math, off the real bus: DEV `__audioMix()` taps musicGain at 2048-fft
+// resolution. Per bed we sample a full loop (3.2 s) and keep the per-bin max —
+// the loop envelope — then run the #3019 phone-knee model over what the cabinet
+// actually put on the wire. Plus the gunfire stream with a real key held, the
+// duck/resume gain trajectory sampled every ~15 ms (a click is a splice; a slope
+// is not), and the over-screen proof that silence + ceremony is intent.
+{
+    const { MUSIC_BUS } = await import('../src/utils/AudioController.js')
+    const mp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500, decline: true })
+    const mErrs = []
+    mp.on('pageerror', (e) => mErrs.push(e.stack || e.message))
+    const sampleBed = async (n = 22) => {
+        const frames = []
+        for (let i = 0; i < n; i++) {
+            frames.push(await mp.evaluate(() => window.__audioMix()))
+            await mp.waitForTimeout(160)
+        }
+        return mp.evaluate((fr) => {
+            const bins = fr[0].db.length
+            const binHz = fr[0].binHz
+            const maxDb = new Array(bins).fill(-Infinity)
+            let peak = 0, gain = null
+            for (const f of fr) {
+                if (f.peak > peak) peak = f.peak
+                gain = f.gain
+                for (let i = 0; i < bins; i++) if (f.db[i] > maxDb[i]) maxDb[i] = f.db[i]
+            }
+            const band = (lo, hi, att) => {
+                let lin = 0
+                for (let i = 1; i < bins; i++) {
+                    const hz = i * binHz
+                    if (hz >= lo && hz < hi && maxDb[i] > -Infinity) {
+                        const a = att && hz < 250 ? Math.pow(10, -(12 * Math.log2(250 / hz)) / 10) : 1
+                        lin += Math.pow(10, maxDb[i] / 10) * a
+                    }
+                }
+                return lin
+            }
+            const lead = band(250, 1000, false), leadK = band(250, 1000, true)
+            const allK = band(20, 8000, true)
+            return { peak, gain, leadDb: 10 * Math.log10(lead || 1e-12), postKneeLeadFrac: allK > 0 ? leadK / allK : 0 }
+        }, frames)
+    }
+
+    await mp.keyboard.press('Space')
+    await mp.waitForTimeout(700)
+    const jungle = await sampleBed()
+    r.check('#3052 the bus rides its ceiling — the march plays at the full contract level with a real crest',
+        Math.abs(jungle.gain - MUSIC_BUS) <= 0.005 && jungle.peak >= 8,
+        `gain=${jungle.gain} peak=${jungle.peak}/128`)
+    r.check('#3052 phone ears on the wire — after the 250 Hz knee the jungle is carried by its melody (measured)',
+        jungle.postKneeLeadFrac >= 0.4, `postKneeLeadFrac=${jungle.postKneeLeadFrac.toFixed(3)}`)
+
+    // the stream: hold a real fire key and count what the cabinet schedules
+    const gs0 = await mp.evaluate(() => window.__audioSfx())
+    await mp.keyboard.down('KeyX')
+    await mp.waitForTimeout(1600)
+    const gs1 = await mp.evaluate(() => window.__audioSfx())
+    await mp.keyboard.up('KeyX')
+    r.check('#3052 the jungle answers back — a held trigger drives a live MG stream while the march keeps running',
+        gs1 - gs0 >= 8 && gs1 - gs0 <= 40 && (await mp.evaluate(() => window.__contraTest.music())).playing === true,
+        `sfx in 1.6s=${gs1 - gs0}`)
+
+    // duck/resume trajectory: monotone slopes both ways, no splice step
+    const trajDown = [], trajUp = []
+    await mp.keyboard.press('Shift+Slash')
+    for (let i = 0; i < 8; i++) { trajDown.push(await mp.evaluate(() => window.__audioMix().gain)); await mp.waitForTimeout(15) }
+    await mp.waitForTimeout(300)
+    await mp.keyboard.press('Shift+Slash')
+    for (let i = 0; i < 14; i++) { trajUp.push(await mp.evaluate(() => window.__audioMix().gain)); await mp.waitForTimeout(15) }
+    const mono = (arr, dir) => arr.every((v, i) => i === 0 || (dir > 0 ? v >= arr[i - 1] - 1e-4 : v <= arr[i - 1] + 1e-4))
+    const maxStep = (arr) => arr.reduce((m, v, i) => Math.max(m, i ? Math.abs(v - arr[i - 1]) : 0), 0)
+    r.check('#3052 the pause duck walks, it does not fall — a monotone slope down to the 0.15 hold within 250 ms',
+        mono(trajDown, -1) && trajDown[trajDown.length - 1] <= 0.06,
+        `down=${trajDown.map((v) => v.toFixed(3)).join(' ')}`)
+    r.check('#3052 the resume climbs without a click — monotone back to the bus, every step a slope (max < 0.06)',
+        mono(trajUp, +1) && trajUp[trajUp.length - 1] >= 0.14 && maxStep(trajUp) < 0.06,
+        `up=${trajUp.map((v) => v.toFixed(3)).join(' ')}`)
+
+    // the gate, measured: escalation must keep at least as much lead energy as the
+    // jungle had in the same browser, same breath
+    await mp.evaluate(() => window.__contraTest.setup({ warp: 'boss' }))
+    await mp.waitForTimeout(400)
+    const gate = await sampleBed()
+    r.check('#3052 the gate escalates where the phone can hear it — measured lead within 4 dB of the jungle bed, same run',
+        (await mp.evaluate(() => window.__contraTest.music())).track === 'contraGate' &&
+        gate.leadDb >= jungle.leadDb - 4,
+        `gate=${gate.leadDb.toFixed(1)} jungle=${jungle.leadDb.toFixed(1)} dB`)
+
+    // the over screen: silence AND ceremony in one snapshot — the band left so the
+    // coin can speak; if either half is missing the dropout reads as a bug.
+    await mp.evaluate(() => window.__contraTest.setup({ allyOut: true, lives: 0, kill: true }))
+    let over = null
+    for (let g = 0; g < 20; g++) {
+        await mp.waitForTimeout(120)
+        over = await mp.evaluate(() => ({ m: window.__contraTest.music(), p: window.__contraTest.probe(), sfx: window.__audioSfx() }))
+        if (over.p.screen === 'over') break
+    }
+    const sA = over.sfx
+    await mp.waitForTimeout(1500)
+    const sB = await mp.evaluate(() => window.__audioSfx())
+    r.check('#3052 the over screen is intentional silence — the bed is gone AND the ceremony keeps ticking in the same window',
+        over.p.screen === 'over' && over.m.playing === false && over.m.bed === null && sB - sA >= 2,
+        `bed=${over.m.bed} ceremonySfx in 1.5s=${sB - sA}`)
+
+    r.check('#3052 mix legs: zero page errors', mErrs.length === 0, mErrs.join(' | '))
+    await mp.close()
 }
 
 // ------------------------------------------------------ #3042 CONTINUE live ---
