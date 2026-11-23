@@ -198,6 +198,26 @@ export function konamiFeed (progress, key) {
 }
 export const konamiArmed = (progress) => progress >= KONAMI.length
 
+// #3042 THE CONTINUE WINDOW — the cabinet's second chance, as pure arithmetic
+// (the konamiFeed precedent: the shell owns the clock, the sim owns the law,
+// and the harness pins the whole window in Node). The over screen's WORLD-tick
+// clock asks one question — where does the player stand? — and gets:
+//   'read'  GAME OVER speaks (CONT_READ ticks) — the sting, the score line;
+//   'count' the coin is accepted — Konami's digit falls 9…0, one a second;
+//   'out'   the book closes — the machine returns to the title.
+// The purse (how many continues a game sells) is shell state, like IronRing's
+// credits (#1103); this function answers only WHEN, never WHETHER it is paid.
+export const CONT_READ = 90                            // GAME OVER reads 1.5 s
+export const CONT_SECS = 9                             // the classic digit: 9…0
+export const CONT_LIFE = (CONT_SECS + 1) * 60          // the whole window
+export function contPhase (overT) {
+    if (overT < CONT_READ) return { phase: 'read', digit: CONT_SECS }
+    if (overT < CONT_READ + CONT_LIFE) {
+        return { phase: 'count', digit: Math.max(0, CONT_SECS - Math.floor((overT - CONT_READ) / 60)) }
+    }
+    return { phase: 'out', digit: 0 }
+}
+
 // #3035 THE SOMERSAULT span: one full body-turn per jump. The arc of a normal
 // jump runs `rollT` 1..37 under the sim's Euler integration — the roll completes
 // exactly as the feet come back to the ground, the cabinet's snap (the arc is

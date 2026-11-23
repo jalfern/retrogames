@@ -16,7 +16,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
 import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed } from './sim.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase } from './sim.js'
 import { parseCall, intentKey, intentLabel } from './voicecalls.js'
 import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
@@ -74,12 +74,10 @@ const MESSAGES = TOUCH ? MESSAGES_TOUCH : MESSAGES_KEYBOARD
 // #3042 THE CONTINUE — the cabinet's second chance. The 1987 machine does not
 // end your game when the pool runs dry: you answer a countdown and rejoin, up
 // to THREE times per game (coin + Start — the Konami law this shelf already
-// carries via IronRing #1103). Clock constants are WORLD ticks: the over
-// screen's own tick stream (harness waits are sim-seconds, never setTimeout).
-const CONTINUES_MAX = 3      // continues per game, fresh at every attract start
-const CONT_READ = 90         // GAME OVER reads 1.5 s — the sting gets its room
-const CONT_SECS = 9          // the classic Konami digit: 9…0, one second a digit
-const CONT_LIFE = (CONT_SECS + 1) * 60   // the whole window; zero closes the book
+// carries via IronRing #1103). The window itself is sim law (contPhase in
+// sim.js — world ticks, harness-pinned); the purse below is shell state — the
+// credits the game sells, fresh at every attract start.
+const CONTINUES_MAX = 3      // continues per game
 
 const sfx = {
     shot: () => audioController.playSweep(920, 540, 0.05, 'square', 0.05),
@@ -852,12 +850,12 @@ export default function ContraGame () {
                 // seconds blink red-hot (IronRing #1103's warning family). With
                 // the purse empty there is no count — only the book closes.
                 if (contLeft > 0) {
-                    if (overT > CONT_READ) {
-                        const digit = Math.max(0, CONT_SECS - Math.floor((overT - CONT_READ) / 60))
-                        const hot = digit <= 2 && Math.floor(overT / 8) % 2 === 0
+                    const cw = contPhase(overT)
+                    if (cw.phase === 'count') {
+                        const hot = cw.digit <= 2 && Math.floor(overT / 8) % 2 === 0
                         ctx.fillStyle = hot ? '#ff6a4d' : '#ffd23c'
                         ctx.font = 'bold 16px "Courier New", monospace'
-                        ctx.fillText(`CONTINUE? ${digit}`, 136, 146)
+                        ctx.fillText(`CONTINUE? ${cw.digit}`, 136, 146)
                     }
                     ctx.fillStyle = '#cdeea8'
                     ctx.font = '9px "Courier New", monospace'
@@ -935,8 +933,10 @@ export default function ContraGame () {
                             // the purse are forfeit, as on the cabinet.
                             if (contLeft > 0) {
                                 overT += 1
-                                if (overT > CONT_READ && overT <= CONT_READ + CONT_SECS * 60 && (overT - CONT_READ) % 60 === 0) sfx.contTick()
-                                if (overT >= CONT_READ + CONT_LIFE) endTo('attract')
+                                const cw = contPhase(overT)
+                                const pw = contPhase(overT - 1)
+                                if (cw.phase === 'count' && (pw.phase !== 'count' || pw.digit !== cw.digit)) sfx.contTick()
+                                if (cw.phase === 'out') endTo('attract')
                             }
                         }
                         acc -= SIM_MS
@@ -966,7 +966,7 @@ export default function ContraGame () {
                 // a press pays a continue and rejoins; after the digits, or with
                 // the purse empty, the press returns to the title as it always did.
                 if (performance.now() - overAt > 900) {
-                    if (contLeft > 0 && overT < CONT_READ + CONT_LIFE) continueRun()
+                    if (contLeft > 0 && contPhase(overT).phase !== 'out') continueRun()
                     else endTo('attract')
                 }
                 return
@@ -1020,7 +1020,7 @@ export default function ContraGame () {
                 // #3042: a tap answers the count exactly like a key (the pad is
                 // stowed on this screen — Jon's one-pad law leaves the tap free).
                 if (performance.now() - overAt > 900) {
-                    if (contLeft > 0 && overT < CONT_READ + CONT_LIFE) continueRun()
+                    if (contLeft > 0 && contPhase(overT).phase !== 'out') continueRun()
                     else endTo('attract')
                 }
             }
@@ -1147,7 +1147,7 @@ export default function ContraGame () {
                     roll: gs.p.rollT, roll2: gs.p2.rollT,   // #3035 the somersault clock is observable
                     posture: gs.p.posture, posture2: gs.p2.posture,   // #3038 the ground profile too
                     konami: { prog: kProg, fx: kFx ? { t: kFx.t } : null },   // #3037 the code typing is observable
-                    cont: { left: contLeft, t: overT, armed: armedRun },   // #3042 the purse and the count are observable
+                    cont: { left: contLeft, t: overT, armed: armedRun, phase: contPhase(overT).phase, digit: contPhase(overT).digit },   // #3042 the purse and the count are observable
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     touch: TOUCH,   // #2971: the touch-aware copy is observable
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
@@ -1215,6 +1215,8 @@ export default function ContraGame () {
                     if (opts.allyWeapon) gs.p2.weapon = opts.allyWeapon
                     if (opts.killAlly) { gs.p2.human = true; gs.p2.inv = 0; gs.eb.push({ x: gs.p2.x + 2, y: gs.p2.y - 14, vx: 0.1, vy: 0 }) }
                     if (opts.allyOut) { gs.p2.out = true }   // #2814: seats don't hold banks — the pin stands the seat down
+                    if (opts.noContinue) contLeft = 0   // #3042: purse empty — the leg drives the title law at zero
+                    if (opts.score !== undefined) gs.score = opts.score   // #3042: stage the bank, watch it carried through a paid continue
                     return true
                 },
             }
