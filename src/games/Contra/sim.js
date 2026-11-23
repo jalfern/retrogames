@@ -67,6 +67,20 @@ export const CFG = {
     carrierFirst: 320,             // first courier of the run (ticks)
     carrierNext: 380,             // + up to 240 more, seed arithmetic (no gs.r)
     podGrav: 0.06, podFallMax: 1.6, podVx: -0.6,
+    // --- #3060 the barrier capsule: the wheel's FIFTH letter (never-dry #1571) ---
+    // The cabinet's B — an energy shield that swallows enemy rounds for a time.
+    // Schedule, drift and duration are seed/tick arithmetic: ZERO gs.r draws,
+    // the #2847 carrier precedent — every existing capsule/carrier stream and
+    // every tuned autopilot byte stands; the shield bends outcomes at capture,
+    // never the seed.
+    barrFirst: 560,             // the first drift of a run (ticks) + seed jitter
+    barrJitter: 240,
+    barrNext: 1400,             // re-arm after a cleared drift + tick jitter
+    barrJitter2: 300,
+    barrTicks: 360,            // shield life — six seconds at the world's 60 Hz, fixed
+    barrWarn: 60,              // the last second blinks (the shelf's warning family)
+    barrVx: -0.9,              // drifts toward the runner, below the gun-line
+    barrScore: 1000,           // a letter pays like a letter (the #3057 table)
     // --- #2917 the SECOND air layer: the gate's hangar gunships ---
     // The cabinet's armed aircraft. A hangar mouth in the fortress parapet
     // grinds open (the attack is TELEGRAPHED by the door, never born on
@@ -477,6 +491,10 @@ const PERCH_RELOC = 30
 
 // S3 capsule wheel — the letters that fly. Deterministic draw on spawn.
 const CAP_KINDS = ['spread', 'machine', 'fire', 'laser']
+// #3060: the cabinet's wheel has a FIFTH letter — B, the barrier. It is not a
+// gun (the shield coexists with whatever barrel you hold), so it rides its own
+// capsule entity gs.bcap on its own zero-rng lane — CAP_KINDS stays the four
+// guns and every letter draw the schedule makes byte-stands.
 const CAP_ALT = [124, 148, 172]  // low (stand), hop, full jump
 const WCODE = { rifle: 0, spread: 1, machine: 2, fire: 3, laser: 4 }
 const KCODE = { r: 0, s: 1, m: 2, f: 3, l: 4 }
@@ -899,6 +917,8 @@ export function makeGame (seed, loop = 1, lives = 3, score = 0) {
             walk: 0,                // animation phase (world ticks)
             rollT: 0,               // #3035 somersault clock — presentation, like walk
             posture: 0,           // #3038 ground profile: 0 stand | 1 kneel | 2 prone
+            barr: 0,              // #3060 barrier ticks left — the shield eats rounds,
+                                  //   so it is sim truth (it rides stateHash)
             out: false,             // pool spent on this seat — the run goes on without it
             prevA: false,           // jump latch (edge-detect for taps)
             prevD: false, prevU: false,  // #3038 duck latches — the profile cycles on EDGES
@@ -918,6 +938,7 @@ export function makeGame (seed, loop = 1, lives = 3, score = 0) {
             inv: 120, dead: 0, coyote: 0, drop: 0, walk: 0, out: false,
             rollT: 0,               // #3035 the somersault is structural — both seats
             posture: 0,           // #3038 the duck is structural too — same seatStep
+            barr: 0,              // #3060 the barrier is structural too — same laws
             human: false, tIdx: -1, zz: 1, prevA: false,
             prevD: false, prevU: false,
             // #2837: padClaim marks a seat a HUMAN claimed at the keyboard (the
@@ -945,6 +966,10 @@ export function makeGame (seed, loop = 1, lives = 3, score = 0) {
         pods: [],               // released cargo {x,y,vx,vy,kind} — falls, settles, collectable
         nextCarrier: CFG.carrierFirst,
         carrierN: 0,            // courier index for this run (letter/alt seed)
+        // #3060 the barrier capsule: the wheel's fifth letter drifts low over
+        // the deck on seed/tick arithmetic (zero gs.r — the carrier precedent).
+        bcap: null,             // {x,y,vx} while a B capsule is on screen
+        nextBarr: CFG.barrFirst + (((seed >>> 0) ^ 0x5bf03a1f) >>> 21) % CFG.barrJitter,
         depot: { x: 1700, y: CFG.ground, hp: CFG.depotHp, aim: Math.PI, t: 70, dead: false, spawnT: 240 },
         vc: [],                     // S3.5 volley capsules — the depot's payout {x,y,vx,kind}
         // #2917 the gate's gunships live only in the arena (see makeBoss); the
@@ -1066,6 +1091,7 @@ function seatsDown (gs) {
 
 function killPlayer (gs) {
     const p = gs.p
+    p.barr = 0   // #3060 death outranks the shield — the guard falls with the guarder
     gs.ev.push({ type: 'boom', x: p.x, y: p.y - 12, kind: 'death' })
     if (gs.lives > 0) gs.lives -= 1
     if (gs.lives <= 0) {
@@ -1086,6 +1112,7 @@ function killPlayer (gs) {
 // cost the team a life, exactly like the cabinet.
 function killAlly (gs) {
     const q = gs.p2
+    q.barr = 0   // #3060 structural law — the blue seat's shield falls with him too
     gs.ev.push({ type: 'boom', x: q.x, y: q.y - 12, kind: 'death', o: 1 })
     if (gs.lives > 0) gs.lives -= 1
     if (gs.lives <= 0) {
@@ -1154,6 +1181,7 @@ export function dropIn (gs) {
     q.idle = 0
     q.prevA = false
     q.posture = 0; q.prevD = false; q.prevU = false   // #3038 the arriving soldier stands; fresh duck latches
+    q.barr = 0                                       // #3060 a fresh soldier arrives unshielded
     q.x = allySideSpot(gs).x
     q.y = (gs.phase === 'jungle' ? 0 : gs.camY) - 6      // above the camera — the sky
     q.vy = 0; q.onGround = false; q.drop = 0; q.coyote = 0
@@ -1203,6 +1231,7 @@ function enterFalls (gs) {
     gs.gunships.length = 0; gs.sortieT = 0       // #2917: the hangar belongs to the arena, not the gorge
     if (gs.boss) { gs.boss.hangar.open = 0; gs.boss.hangar.launchAt = 0 }   // the door's grind dies at the falls too
     gs.pb.length = 0; gs.eb.length = 0; gs.capsule = null
+    gs.bcap = null   // #3060 the drift letter flies in the jungle too (a held shield survives the turn — the falls' gunners still throw rounds at it)
     // #2885: the vines live here — the gorge's carriers, both seats unhooked.
     gs.vines = VINES.map((v, i) => ({ ...v, i }))
     p.vine = -1; p.grabI = -1; p.rideT = 0; p.vx = 0
@@ -1259,6 +1288,11 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         gs.nextExt += EXT_STEP
         if (gs.lives < 99) { gs.lives += 1; gs.ev.push({ type: 'extra' }) }
     }
+    // #3060 the shield's life runs on the world clock, symmetric for both
+    // seats — the hero-death freeze stops it like everything else (a frozen
+    // world cannot burn a six-second fuse).
+    if (p.barr > 0) p.barr -= 1
+    if (q.barr > 0) q.barr -= 1
     if (p.dead > 0) {
         p.dead -= 1
         if (p.dead === 0) {           // respawn at the last safe ground (arcade checkpoints),
@@ -1267,6 +1301,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             p.lane = p.y
             p.weapon = 'rifle'; p.inv = CFG.invuln
             p.posture = 0          // #3038 a seat comes back on its feet
+            p.barr = 0             // #3060 and clean of any shield
             p.vine = -1; p.grabI = -1; p.rideT = 0; p.vx = 0   // #2885 the vine lets go of the dead
             gs.eb.length = 0
             gs.ev.push({ type: 'respawn' })
@@ -1323,6 +1358,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                 q.drop = 0; q.coyote = 0; q.lane = q.y
                 q.weapon = 'rifle'; q.inv = CFG.invuln
                 q.posture = 0      // #3038 the blue seat comes back on his feet too
+                q.barr = 0         // #3060 and clean of any shield
                 q.vine = -1; q.grabI = -1; q.rideT = 0; q.vx = 0   // #2885 same release for the blue seat
                 // never respawn below the torrent — the arcade puts you back on
                 // the climb, not back in the water
@@ -1706,6 +1742,43 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         }
     }
 
+    // --- #3060 THE BARRIER — the wheel's fifth letter (never-dry stage #1571).
+    // The cabinet's B capsule drifts low over the jungle deck and is taken on
+    // contact, per seat (the capsule law verbatim). Schedule, drift and the
+    // shield's duration are seed/tick arithmetic — ZERO gs.r draws (the #2847
+    // carrier precedent): every letter the rnd schedule draws, every courier it
+    // books and every tuned autopilot byte stand. The shield keeps whatever gun
+    // the seat holds (in the cabinet it is not a gun) — capture pays +1000
+    // through the #3057 pop chokepoint; a refresh while it already holds pays
+    // nothing, the duplicate-capture law of the wheel. ---
+    if (gs.phase === 'jungle' && !gs.bcap && gs.tick >= gs.nextBarr) {
+        gs.bcap = { x: gs.cam + W + 10, y: CFG.ground - 12, vx: CFG.barrVx }
+    }
+    if (gs.bcap) {
+        gs.bcap.x += gs.bcap.vx
+        const c = gs.bcap
+        const resched = () => {
+            gs.bcap = null
+            gs.nextBarr = gs.tick + CFG.barrNext + (((gs.seed ^ (gs.tick * 2654435761)) >>> 19) % CFG.barrJitter2)
+        }
+        if (!p.out && p.dead === 0 && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
+            // the shield never lands on a body — a frozen seat is not a catcher
+            if (p.barr <= 0) { gs.score += CFG.barrScore; pop(gs, c.x, c.y - 10, CFG.barrScore) }
+            p.barr = CFG.barrTicks
+            gs.ev.push({ type: 'barr', o: 0 })
+            resched()
+        } else if (!q.out && q.dead === 0 && Math.abs(q.x - c.x) < 12 && Math.abs(q.y - 14 - c.y) < 16) {
+            // co-op: the drift goes to whoever touches it first — per seat, the
+            // wingman's shield is his own (the capsule law, structural)
+            if (q.barr <= 0) { gs.score += CFG.barrScore; pop(gs, c.x, c.y - 10, CFG.barrScore) }
+            q.barr = CFG.barrTicks
+            gs.ev.push({ type: 'barr', o: 1 })
+            resched()
+        } else if (c.x < gs.cam - 16) {
+            resched()   // it drifted out of the jungle unclaimed — the road reschedules
+        }
+    }
+
     // --- #2847 pod carriers: one courier in the sky at a time (the capsule
     // law — the jungle sends its guns one honest flight at a time). Schedule,
     // altitude and letter are seed/tick arithmetic — zero gs.r draws, so the
@@ -1916,6 +1989,15 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         // under it — the cabinet's duck, earned by reacting to the telegraph.
         const pc = CFG.duckCenter[p.posture | 0] || 14
         const qc = CFG.duckCenter[q.posture | 0] || 14
+        // #3060 THE ABSORB LAW — while a seat's shield holds, enemy rounds
+        // (rifle, turret, sniper, cannon, sortie, grenade-in-flight) spark out
+        // at the ring around the body and die before the body. ROUNDS only:
+        // soldier contact, the hull, blast radius and the torrent keep their
+        // laws verbatim — hazards outrank shields (the torrent precedent).
+        // Mercy frames do not save a round either: the ring is physical, the
+        // shield spends itself on rounds mercy would have waved through.
+        if (p.barr > 0 && p.dead === 0 && !p.out && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7 && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13) + 7) { gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 0 }); return false }
+        if (q.barr > 0 && q.dead === 0 && !q.out && Math.abs(b.x - q.x) < (CFG.duckHalfW[q.posture | 0] || 7) + 7 && Math.abs(b.y - (q.y - qc)) < (CFG.duckHalfH[q.posture | 0] || 13) + 7) { gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 1 }); return false }
         if (p.inv <= 0 && p.dead === 0 && !p.out && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13)) { killPlayer(gs); return false }
         if (q.inv <= 0 && q.dead === 0 && !q.out && Math.abs(b.x - q.x) < (CFG.duckHalfW[q.posture | 0] || 7) && Math.abs(b.y - (q.y - qc)) < (CFG.duckHalfH[q.posture | 0] || 13)) { killAlly(gs); return false }
         return true
@@ -2098,6 +2180,9 @@ export function stateHash (gs) {
     put(gs.p.posture); put(gs.p2.posture)   // #3038 the profile is sim truth — it moves
                                            // hit boxes and muzzles, so a replay that
                                            // silently un-ducks a seat diverges loudly
+    put(gs.p.barr); put(gs.p2.barr)     // #3060 the shield is sim truth too — it eats
+                                        //   rounds, so a replay that silently drops it
+                                        //   from either seat diverges loudly
     put(gs.p.vine); put(gs.p2.vine)   // #2885 who rides a vine is sim truth
     for (let vi = 0; vi < VINES.length; vi++) { const tp = vineTip(gs, vi); put(tp.x); put(tp.y) }
     // S4 the blue seat is sim truth — his position and wheel ride the hash;
@@ -2121,6 +2206,8 @@ export function stateHash (gs) {
     // #2847 the sky couriers are sim truth — schedule, airframes and pods ride
     // the hash (a replay that dropped a carrier must diverge loudly).
     put(gs.nextCarrier); put(gs.carrierN)
+    put(gs.bcap ? gs.bcap.x : -9999); put(gs.nextBarr)   // #3060 the drift letter and its
+                                        //   schedule are sim truth (the capsule line above, verbatim)
     for (const cr of gs.carriers) { put(cr.x); put(cr.y); put(cr.hp); put(CAP_KINDS.indexOf(cr.kind) + 1) }
     for (const c of gs.pods) { put(c.x); put(c.y); put(c.vy); put(CAP_KINDS.indexOf(c.kind) + 1) }
     // #2917 the gate's sorties are sim truth — schedule and airframe ride the
