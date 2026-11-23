@@ -44,8 +44,8 @@ reset is on the same line as the loop header.
 
 ## The harness can fail — and one that can't is a lie
 
-`sweepcheck` (Node, in the CI `static` gate) has four anchored mutants, each a
-previously-fixed bug put back. All four die, and **two are now caught by an
+`sweepcheck` (Node, in the CI `static` gate) has five anchored mutants, each a
+previously-fixed bug put back. All five die, and **two are caught by an
 independent oracle, not the solver's own assertion:**
 
 The oracle enumerates every mine assignment the *visible clues* allow for a
@@ -65,6 +65,24 @@ with arrows and pressing Space**. This is the harness that caught the shipped
 guarded `!== 'play'` *before* its own `plantAt` branch, so the browser could
 never plant its first click — a game no human could start, that a pure-model
 battery passed because it calls `plantAt` directly.
+
+## The chord that ate its own flags (#3009)
+
+`chord()` used to open **all** covered neighbours of a satisfied clue — flags
+included — so a *correctly* flagged mine detonated under the click. It claimed
+fidelity ("flags are a claim, not a shield") while contradicting both the
+original and this module's own solver, whose chord rule reads `!s.flag[c]`.
+The original's chord clicks covered **unflagged** cells only: correct flags are
+never fatal; wrong flags kill the original's way — they satisfy the clue while
+the real mine sits unflagged, and the chord opens *that*. `sweepplay` caught it
+at `end=dead opened=71/71` (every flag on a mine, board swept, bot dead — #3008;
+repro 2/10 locally), and the engine now skips flagged cells. sweepcheck anchors
+both original cases (correct flags shield, wrong flags still kill through the
+unflagged mine) plus the post-win lock (#3008's ready-made assertion: a fully
+swept board is WON the instant `opened` hits the safe total, and every verb is
+refused after it). Lesson: when the engine and the referee disagree about a
+rule, the referee was written first for a reason — but the ORIGINAL decides
+which one was wrong.
 
 ## Conventions / gotchas
 
@@ -97,8 +115,9 @@ planting was unreachable in the app, while `plantAt` called directly passed ever
 Node check). Full notes — the stale-scratch bug, the oracle that had to stop
 trusting the solver's ledger to become able to fail, and the two green-tested-nothing
 oracle versions — are in **[`src/games/Minesweeper/README.md`](src/games/Minesweeper/README.md)**.
-Verify with `npm run sweepcheck` (`-- --mutate` = 4/4 mutants die; in the `static`
-gate) and `npm run sweepplay` (Chrome, real keys only; in `verify`).
+Verify with `npm run sweepcheck` (`-- --mutate` = 5/5 mutants die, incl.
+`flag-devour` — the #3009 chord bug put back; in the `static` gate) and
+`npm run sweepplay` (Chrome, real keys only; in `verify`).
 
 ## WATCH (#1637 batch 16) — the referee sweeps its own field
 

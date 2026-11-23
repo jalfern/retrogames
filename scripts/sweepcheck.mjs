@@ -292,29 +292,93 @@ section('RULES — dig/flag/chord behave like the title card and the original')
     ok(flag(g, cx, cy) && g.flag[idx(g, cx, cy)] === 1 && g.flags === 1, 'flag did not plant')
     ok(!dig(g, cx, cy), 'digging a flagged cell must be refused (flags are a claim)')
     ok(flag(g, cx, cy) && g.flags === 0, 'second flag did not lift the first')
-    // a wrong flag chordeS into death (flags are not a shield)
-    const g2 = newGame(0, 999)
-    plantAt(g2, g2.w >> 1, g2.h >> 1)
-    let mis = null
-    for (let i = 0; i < g2.w * g2.h && !mis; i++) if (g2.mines[i] && g2.open[i - 1] && g2.clue[i - 1] > 0) mis = i
-    if (mis) {
-        const mx = mis % g2.w, my = (mis / g2.w) | 0
-        const nx = mx - 1
-        const anc = g2.open[nx + my * g2.w] ? { x: nx, y: my } : null
-        if (anc) {
-            flag(g2, mx, my)
-            let around = 0
-            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-                if (!dx && !dy) continue
-                const fx2 = anc.x + dx, fy2 = anc.y + dy
-                if (fx2 >= 0 && fy2 >= 0 && fx2 < g2.w && fy2 < g2.h && g2.flag[idx(g2, fx2, fy2)]) around++
+    // Chord semantics are the ORIGINAL's two cases (#3009), each anchored:
+    ok(true, '— case 1: correct flags are never fatal on a satisfied chord')
+    {
+        // Find a live clue whose adjacent mines we can all flag correctly,
+        // with at least one covered safe cell to open. Flag them all, chord:
+        // the original opens the safes and leaves every flag standing. The
+        // pre-#3009 engine opened flagged cells too — the correct flag on the
+        // clue's own mine detonated under the click (the sweepplay 71/71
+        // death). Anchored here so it can never come back quietly.
+        let anchored = 0
+        for (const sd of [999, 4242, 7, 88888, 31337]) {
+            const g4 = newGame(0, sd)
+            plantAt(g4, g4.w >> 1, g4.h >> 1)
+            if (g4.end) continue
+            outer1: for (let i = 0; i < g4.w * g4.h; i++) {
+                if (!g4.open[i] || g4.clue[i] === 0) continue
+                const cx = i % g4.w, cy = (i / g4.w) | 0
+                const adjMines = [], adjSafes = []
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    if (!dx && !dy) continue
+                    const nx = cx + dx, ny = cy + dy
+                    if (nx < 0 || ny < 0 || nx >= g4.w || ny >= g4.h) continue
+                    const j = idx(g4, nx, ny)
+                    if (g4.mines[j]) adjMines.push(j)
+                    else if (!g4.open[j]) adjSafes.push(j)
+                }
+                if (!adjSafes.length) continue
+                // open cells never hold mines pre-death, so every adjacent mine
+                // is covered — flag them all and the clue is honestly satisfied
+                for (const j of adjMines) { if (g4.flag[j]) continue; if (!flag(g4, j % g4.w, (j / g4.w) | 0)) break outer1 }
+                const beforeFlags = g4.flags, beforeOpen = g4.opened
+                chord(g4, cx, cy)
+                ok(g4.end !== 'dead', `seed ${sd}: chord on a correctly flagged clue at ${cx},${cy} detonated the flag — flags must shield the chord (original)`)
+                ok(g4.flags === beforeFlags, `seed ${sd}: the chord cleared a flag (${beforeFlags}->${g4.flags}) — a shielded cell must stay flagged`)
+                ok(g4.opened > beforeOpen, `seed ${sd}: a satisfied chord opened nothing (${cx},${cy})`)
+                anchored++
+                break outer1
             }
-            if (around === g2.clue[idx(g2, anc.x, anc.y)]) {
-                chord(g2, anc.x, anc.y)
-                ok(g2.end === 'dead', 'a wrong flag chordeD without death — flags became a shield')
-            } else ok(true, 'no natural wrong-flag chord in this fixture (flag block still asserted above)')
-        } else ok(true, 'no natural adjacent clue for the chord fixture')
-    } else ok(true, 'no natural wrong-flag chord candidate in this fixture')
+            if (anchored) break
+        }
+        ok(anchored > 0, 'no natural correct-flag chord fixture in five seeds — the anchor silently skipped')
+    }
+    ok(true, '— case 2: wrong flags stay fatal (the claim is not a shield)')
+    {
+        // A clue with one covered mine and a covered safe cell: flag the SAFE
+        // cell (wrong), the clue reads satisfied, and the chord opens the
+        // unflagged real mine — death, exactly like the original.
+        let anchored = 0
+        for (const sd of [999, 4242, 7, 88888, 31337]) {
+            const g5 = newGame(0, sd)
+            plantAt(g5, g5.w >> 1, g5.h >> 1)
+            if (g5.end) continue
+            outer2: for (let i = 0; i < g5.w * g5.h; i++) {
+                if (!g5.open[i] || g5.clue[i] !== 1) continue
+                const cx = i % g5.w, cy = (i / g5.w) | 0
+                let mine = -1, safe = -1
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    if (!dx && !dy) continue
+                    const nx = cx + dx, ny = cy + dy
+                    if (nx < 0 || ny < 0 || nx >= g5.w || ny >= g5.h) continue
+                    const j = idx(g5, nx, ny)
+                    if (g5.mines[j] && !g5.open[j]) mine = j
+                    else if (!g5.mines[j] && !g5.open[j]) safe = j
+                }
+                if (mine < 0 || safe < 0) continue
+                flag(g5, safe % g5.w, (safe / g5.w) | 0)
+                chord(g5, cx, cy)
+                ok(g5.end === 'dead', `seed ${sd}: a wrong flag chordeD without death — flags became a shield`)
+                anchored++
+                break outer2
+            }
+            if (anchored) break
+        }
+        ok(anchored > 0, 'no natural wrong-flag chord fixture in five seeds — the anchor silently skipped')
+    }
+    // Post-win lock: the instant the sweep closes, every verb is refused.
+    // #3008 asked for the `71/71 + dead` state itself pinned here.
+    {
+        const g6 = newGame(0, 2026)
+        plantAt(g6, g6.w >> 1, g6.h >> 1)
+        for (let i = 0; i < g6.w * g6.h; i++) if (!g6.mines[i] && !g6.open[i]) dig(g6, i % g6.w, (i / g6.w) | 0)
+        ok(g6.end === 'win' && g6.opened === g6.w * g6.h - g6.totalMines, `full sweep did not close as WIN (end=${g6.end}) — win must fire the instant opened hits the safe total`)
+        const hAfter = stateHash(g6)
+        const mineIdx = Array.prototype.findIndex.call(g6.mines, (v) => v)
+        ok(dig(g6, mineIdx % g6.w, (mineIdx / g6.w) | 0) === false && g6.end === 'win', 'a dig resolved after the win — solved boards must ignore every click')
+        ok(chord(g6, g6.w >> 1, g6.h >> 1) === false && flag(g6, mineIdx % g6.w, (mineIdx / g6.w) | 0) === false && stateHash(g6) === hAfter, 'chord/flag mutated a solved board')
+    }
     // step is the clock
     const g3 = newGame(0, 555)
     plantAt(g3, g3.w >> 1, g3.h >> 1)
@@ -394,6 +458,38 @@ if (MUT) {
                 return `fixture ${i}: referee threw (${e.message.slice(0, 70)})`
             }
         }
+        // 3) chord probe: the flag-devour bug (#3009) is invisible to the
+        //    dig-only seqPlay below — it only bites when a satisfied chord
+        //    meets a correct flag. Plant, flag a live clue's mines correctly,
+        //    chord: the pre-fix engine detonated the flag and cleared it.
+        for (const seed of [999, 4242, 7, 88888]) {
+            const g = Mm.newGame(0, seed)
+            try { Mm.plantAt(g, g.w >> 1, g.h >> 1) } catch { continue }
+            if (g.end) continue
+            let hit = null
+            outerC: for (let i = 0; i < g.w * g.h; i++) {
+                if (!g.open[i] || g.clue[i] === 0) continue
+                const cx = i % g.w, cy = (i / g.w) | 0
+                const adjMines = []
+                let adjSafeCovered = 0
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    if (!dx && !dy) continue
+                    const nx = cx + dx, ny = cy + dy
+                    if (nx < 0 || ny < 0 || nx >= g.w || ny >= g.h) continue
+                    const j = Mm.idx(g, nx, ny)
+                    if (g.mines[j]) adjMines.push(j)
+                    else if (!g.open[j]) adjSafeCovered++
+                }
+                if (!adjSafeCovered) continue
+                for (const j of adjMines) if (!g.flag[j]) Mm.flag(g, j % g.w, (j / g.w) | 0)
+                const bf = g.flags
+                Mm.chord(g, cx, cy)
+                if (g.end === 'dead') { hit = `seed ${seed}: chord detonated a correctly flagged clue at ${cx},${cy} — flags must shield the chord (#3009)`; break outerC }
+                if (g.flags !== bf) { hit = `seed ${seed}: chord cleared ${bf - g.flags} correct flag(s) — the shield was eaten (#3009)`; break outerC }
+                break outerC
+            }
+            if (hit) return hit
+        }
         for (let d = 0; d < 2; d++) {
             for (const seed of seeds(5)) {
                 const g = Mm.newGame(d, seed)
@@ -436,6 +532,12 @@ if (MUT) {
             src: swap(SRC_TEXT,
                 "else if (mLeft === 0) { for (const c of cov) if (!isMine(c)) { safeStamp[c] = token; ruleOf[c] = 'single-safe'; safeSet.push(c) }; acted = true }",
                 "else if (mLeft <= 1) { for (const c of cov) if (!isMine(c)) { safeStamp[c] = token; ruleOf[c] = 'single-safe'; safeSet.push(c) }; acted = true }", 'off-by-one-safe'),
+        },
+        {
+            label: 'chord devours its own flags (satisfied chord opens flagged cells — the #3009 pre-fix engine)',
+            src: swap(SRC_TEXT,
+                'if (!s.open[ni] && !s.flag[ni]) covered.push([nx, ny])',
+                'if (!s.open[ni]) covered.push([nx, ny])', 'flag-devour'),
         },
     ]
     for (const m of muts) {
