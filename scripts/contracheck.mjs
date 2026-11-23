@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS } from '../src/games/Contra/sim.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -2057,6 +2057,44 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #3035: the tuck must actually turn. Freeze the clock and the hero
+            // hangs in the air like a photograph — the photograph is the bug
+            // this stage was filed to erase.
+            name: 'stiff-hop',
+            anchor: 'else if (h.rollT > 0) h.rollT += 1',
+            plant: 'else if (false && h.rollT > 0) h.rollT += 1 /* MUTANT(stiff-hop): the body never turns - the jump hangs a photograph */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(7)
+                for (let i = 0; i < 40; i++) { mod.step(gs, {}); gs.ev.length = 0 }
+                mod.step(gs, { a: true })
+                let maxRoll = gs.p.rollT
+                for (let i = 0; i < 120 && !gs.p.onGround; i++) { mod.step(gs, {}); maxRoll = Math.max(maxRoll, gs.p.rollT) }
+                return maxRoll <= 1
+                    ? `HARM NAMED: the whole arc held rollT=${maxRoll} - the hero hangs in the air for ${maxRoll >= 1 ? 'a full 37-tick jump' : 'the jump'} without turning a degree; the cabinet's signature silhouette is gone and ART bar 2 (falls animate) is broken`
+                    : null
+            },
+        },
+        {
+            // #3035: only the jump tumbles. Arm the clock on ANY air and every
+            // step off a ledge becomes a somersault the cabinet never does —
+            // the tumble stops meaning "I jumped".
+            name: 'roll-on-step',
+            anchor: 'if (h.onGround) h.rollT = 0\n    else if (h.rollT > 0) h.rollT += 1',
+            plant: 'if (h.onGround) h.rollT = 0\n    else { h.rollT = Math.max(1, h.rollT + 1) /* MUTANT(roll-on-step): any airborne frame tumbles - steps and drop-throughs somersault too */ }',
+            harm: async (mod) => {
+                const g = mod.makeGame(7)
+                mod.warpFalls(g)
+                g.p.inv = 999999
+                const led = mod.FALLS_LEDGES[0]
+                g.p.x = led.x + led.w - 4; g.p.y = led.y; g.p.onGround = true; g.p.vy = 0
+                let offRoll = 0
+                for (let i = 0; i < 60; i++) { mod.step(g, { right: true }); if (!g.p.onGround) offRoll = Math.max(offRoll, g.p.rollT) }
+                return offRoll > 0
+                    ? `HARM NAMED: walking off a ledge rolled rollT=${offRoll} - the tumble now lies about whether the player jumped; the cabinet reserves the somersault for the jump`
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -2343,6 +2381,111 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
         for (let t = 0; t < 60; t++) step(gs, autopilot(gs), { left: false, right: true, up: false, down: false, a: false, b: true })
         r.check('#3000 a human in the blue seat keeps his own aim — orders steer the wingman brain, never a person\'s hands',
             Math.abs(gs.p2.ay) < 0.01 && gs.p2.ax > 0.9, `ax=${gs.p2.ax.toFixed(2)} ay=${gs.p2.ay.toFixed(2)}`)
+    }
+}
+
+// ------------------------------------------------ #3035 the somersault ---
+// The cabinet turns the hero a full revolution through a jump (ART bar 2 —
+// falls animate). rollT is presentation: it must arm honestly (only a real
+// jump), complete exactly one turn per arc, clear honestly (ground, vine),
+// and never touch the referee — physics and every stored pin stay byte-
+// identical because the clock rides nowhere the hash can see.
+{
+    // one arc, one turn: arms at 1 with the jump event, the last airborne
+    // frame lands exactly on the pinned span, and the step after the landing
+    // finds the clock cleared. The span pin is tied to the OBSERVED arc — if
+    // jumpV/grav ever drift, this goes red and the constant must re-agree.
+    const gs = makeGame(7)
+    for (let i = 0; i < 40; i++) { step(gs, {}); gs.ev.length = 0 }
+    step(gs, { a: true })
+    const armed = gs.p.rollT === 1 && gs.ev.some((e) => e.type === 'jump')
+    let maxRoll = gs.p.rollT
+    for (let i = 0; i < 120 && !gs.p.onGround; i++) { step(gs, {}); maxRoll = Math.max(maxRoll, gs.p.rollT) }
+    const landed = gs.p.onGround
+    step(gs, {})
+    r.check('#3035 a jump is a somersault — the clock arms with the jump event and exactly one revolution completes as the feet land',
+        armed && landed && maxRoll === SOMERSAULT_TICKS && gs.p.rollT === 0,
+        `armed=${armed} maxRoll=${maxRoll} span=${SOMERSAULT_TICKS}`)
+
+    // stepping off a rock is NOT a jump — the cabinet does not tumble, and
+    // neither do we (the falls ledge: feet leave the stone with no jump edge)
+    {
+        const g = makeGame(7)
+        warpFalls(g)
+        g.p.inv = 999999
+        const led = FALLS_LEDGES[0]
+        g.p.x = led.x + led.w - 4; g.p.y = led.y; g.p.onGround = true; g.p.vy = 0
+        let offRoll = 0, sawAir = false
+        for (let i = 0; i < 60; i++) {
+            step(g, { right: true })
+            if (!g.p.onGround) { sawAir = true; offRoll = Math.max(offRoll, g.p.rollT) }
+            if (g.p.onGround && sawAir) break
+        }
+        r.check('#3035 walking off a ledge rides the arc upright — the roll never arms without a jump',
+            sawAir && offRoll === 0, `air=${sawAir} maxRoll=${offRoll}`)
+    }
+
+    // drop-through: deliberate, but still not a somersault — down is down
+    {
+        const g = makeGame(7)
+        const pl = PLATFORMS[0]
+        g.p.x = pl.x + pl.w / 2; g.p.y = pl.y; g.p.onGround = true; g.p.vy = 0
+        step(g, { a: true, down: true })
+        let dropRoll = g.p.rollT
+        for (let i = 0; i < 40 && !g.p.onGround; i++) { step(g, {}); dropRoll = Math.max(dropRoll, g.p.rollT) }
+        r.check('#3035 dropping through a platform never tumbles — the press-through stays a press-through',
+            dropRoll === 0, `maxRoll=${dropRoll}`)
+    }
+
+    // the vine catch clears the tumble mid-arc — a hanging rider is one-armed
+    // and still, tumbles belong to the free flight only
+    {
+        const g = makeGame(7)
+        warpFalls(g)
+        g.p.inv = 999999
+        let caught = false, rollAtCatch = -1
+        for (let t = 0; t < 400 && !caught; t++) {
+            const tp = vineTip(g, 0)
+            if (g.p.onGround) { g.p.y = tp.y + 26; g.p.vy = -2.2; g.p.onGround = false; g.p.rollT = 12; g.p.x = tp.x }
+            step(g, { a: true })
+            if (g.p.vine >= 0) { caught = true; rollAtCatch = g.p.rollT }
+        }
+        r.check('#3035 the vine catch zeroes the somersault — a rider hangs still, mid-turn or not',
+            caught && rollAtCatch === 0, `caught=${caught} rollAtCatch=${rollAtCatch}`)
+    }
+
+    // structural law, the seatStep promise: the blue seat somersaults too.
+    // Drive the honest autopilot until the wingman's hop fires and find the
+    // clock armed on his jump tick.
+    {
+        let found = null
+        for (let s = 1; s <= 4 && !found; s++) {
+            const g = makeGame(s)
+            while (!g.end && g.tick < 12000) {
+                step(g, autopilot(g))
+                if (g.ev.some((e) => e.type === 'jump' && e.o === 1)) { found = { s, roll: g.p2.rollT }; break }
+                g.ev.length = 0
+            }
+        }
+        r.check('#3035 the somersault is structural — the blue seat clock arms on HIS jumps too',
+            found !== null && found.roll === 1, JSON.stringify(found))
+    }
+
+    // the clock is presentation, not law: two states differing ONLY in rollT
+    // hash identical — the referee never sees the tumble, so every stored
+    // hash pin, replay and twin law in this suite keeps standing untouched.
+    {
+        const a = makeGame(9), b = makeGame(9)
+        b.p.rollT = 21; b.p2.rollT = 21
+        const stream = (seed) => {
+            const g = makeGame(seed)
+            const hs = []
+            for (let i = 0; i < 900; i++) { step(g, autopilot(g)); if (i % 225 === 224) hs.push(stateHash(g)) }
+            return hs.join('|')
+        }
+        r.check('#3035 the roll never enters the referee — rollT-only states hash identical and autopilot streams twin',
+            stateHash(a) === stateHash(b) && stream(3) === stream(3) && stream(5) !== stream(6),
+            `${stateHash(a)}/${stateHash(b)}`)
     }
 }
 
@@ -3237,6 +3380,93 @@ const browser = await launch()
         leg.ack.length === 1 && leg.ack[0] === 620, JSON.stringify(leg.ack))
     r.check('#3019 refuse knock: no page errors on the knock leg', kErrs.length === 0, kErrs.join(' | '))
     await vp.close()
+}
+
+// ---------- #3035 browser leg: the somersault paints ----------
+// One real-key jungle hop, sampled every animation frame from the hero's own
+// pixels. Inversion proof: bandana red on the FEET line mid-arc — impossible
+// for the static tuck this gap shipped with (the head sat at -31 all flight).
+// Arm law by DIFFERENCE: two identical seeded hops (same seed, so the same
+// rollT stream — rotating limbs, flicker cadence and background cancel) that
+// differ only in held aim; dark gun ink above the pivot on the AIM-UP hop but
+// not the flat hop proves the barrel stays at the live aim while the body
+// turns — the sprite keeps matching the logical state.
+{
+    const hp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', start: true, wait: 300 })
+    const hErrs = []
+    hp.on('pageerror', (e) => hErrs.push(e.stack || e.message))
+    const captureScript = async (up) => {
+        const T = window.__contraTest
+        T.start()
+        window.__game.reset(21, 1)
+        return new Promise((resolve) => {
+            const c = document.querySelector('canvas')
+            const k = c.width / 384
+            const RED = (r, g, b) => r > 170 && g < 110 && b < 110
+            // gun steel is a COLD dark grey — the jungle's dark greens must not
+            // answer (skyTop/skyMid/canopy all sit under 70 on r and g; the
+            // blue-leading test separates steel #20242c/#3c4650 from bark- and
+            // leaf-darks, which run green-warm: b < g).
+            const GUN = (r, g, b) => r < 70 && g < 80 && b > r + 6 && b > g + 4 && b < 120
+            const count = (x0, y0, w, h, test) => {
+                const d = c.getContext('2d').getImageData(Math.round(x0 * k), Math.round(y0 * k), Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))).data
+                let n = 0
+                for (let i = 0; i < d.length; i += 4) if (test(d[i], d[i + 1], d[i + 2])) n++
+                return n
+            }
+            const frames = []
+            let air = 0
+            const t0 = performance.now()
+            const grab = () => {
+                const p = T.probe()
+                if (p.screen !== 'play') { if (performance.now() - t0 < 4000) requestAnimationFrame(grab); else resolve(frames); return }
+                if (p.roll > 0 && !p.onGround) {
+                    air++
+                    const cx = p.x - p.cam, cy = p.y
+                    // ArrowUp alone aims straight up (ax=0) — the barrel stub
+                    // stands OVER the body centre, x -2..+6, rows -33..-22.
+                    // Boots (cold dark too) sweep this box identically on both
+                    // arm-states, so the mean difference is the held barrel.
+                    frames.push({ roll: p.roll, redBelow: count(cx - 10, cy - 7, 20, 9, RED), gunAbove: count(cx - 2, cy - 33, 8, 12, GUN) })
+                } else if (air > 0) { resolve(frames); return }
+                if (performance.now() - t0 > 4000) { resolve(frames); return }
+                requestAnimationFrame(grab)
+            }
+            requestAnimationFrame(grab)
+        })
+    }
+    const captureHop = async (up) => {
+        const pending = hp.evaluate(captureScript, up)
+        if (up) await hp.keyboard.down('ArrowUp')
+        await new Promise((res) => setTimeout(res, 60))
+        await hp.keyboard.press('Space')
+        const frames = await pending
+        if (up) await hp.keyboard.up('ArrowUp')
+        return frames
+    }
+    // headless paint here runs well below 60 fps — one arc yields ~8 samples,
+    // too few to promise a hit inside the ~8-tick inversion window. Take four
+    // hops per arm-state: inversion needs any one frame anywhere, and the gun
+    // law is a MEAN per sampled frame, so constant window occupants (the
+    // rotating boots, the same every hop) cancel and only the aim difference
+    // can move the needle.
+    const upFrames = [], flatFrames = []
+    for (let i = 0; i < 4; i++) {
+        upFrames.push(...await captureHop(true))
+        await new Promise((res) => setTimeout(res, 80))
+        flatFrames.push(...await captureHop(false))
+        await new Promise((res) => setTimeout(res, 80))
+    }
+    const invFrames = (f) => f.reduce((a, x) => a + (x.redBelow >= 5 ? 1 : 0), 0)
+    const invMax = (f) => Math.max(0, ...f.map((x) => x.redBelow))
+    const gunMean = (f) => { const s = f.filter((x) => x.roll >= 8); return s.length ? s.reduce((a, x) => a + x.gunAbove, 0) / s.length : 0 }
+    const ok = upFrames.length >= 12 && flatFrames.length >= 12 &&
+        invFrames(upFrames) >= 1 && invFrames(flatFrames) >= 1 &&
+        gunMean(upFrames) >= gunMean(flatFrames) + 1.5
+    r.check('#3035 live somersault: band-in-the-feet-line frames appear on both arm-states (the body turns whatever the arrows do), and the AIM-UP hops carry dark barrel ink above the pivot that the flat hops do not (body turns, aim does not)',
+        ok, `up=${upFrames.length}f inv=${invFrames(upFrames)}(max ${invMax(upFrames)}) gun=${gunMean(upFrames).toFixed(1)} | flat=${flatFrames.length}f inv=${invFrames(flatFrames)}(max ${invMax(flatFrames)}) gun=${gunMean(flatFrames).toFixed(1)}`)
+    r.check('#3035 somersault legs: zero page errors', hErrs.length === 0, hErrs.join(' | '))
+    await hp.close()
 }
 
 r.exit(browser)
