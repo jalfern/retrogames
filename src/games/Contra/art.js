@@ -113,15 +113,19 @@ export function drawScorePop (ctx, x, y, v, t) {
 // scale over the bright demo), ranks in pale green, scores in the same gold
 // the HUD pays with, and the LOOP badge only where a pass was actually rode
 // (loop 1 is the stage, not a badge — the #2894 marking law).
+// #3066: and every rank carries its INITIALS — the GK lineage signs its board.
+// Signed rows shine gold like the score they earned; unsigned rows (a legacy
+// store predating the ceremony) hold `???` in pale green and are never
+// repaired — the board is read, not edited.
 export function drawHall (ctx, hall, x, y) {
     ctx.save()
     const rows = Math.min(3, hall.length)
     const ph = rows ? 14 + rows * 10 : 16
     ctx.fillStyle = 'rgba(6,10,4,0.82)'
-    ctx.fillRect(x, y, 86, ph)
+    ctx.fillRect(x, y, 100, ph)
     ctx.strokeStyle = '#ffd23c'
     ctx.lineWidth = 1
-    ctx.strokeRect(x + 0.5, y + 0.5, 85, ph - 1)
+    ctx.strokeRect(x + 0.5, y + 0.5, 99, ph - 1)
     ctx.textBaseline = 'top'
     ctx.font = 'bold 8px "Courier New", monospace'
     ctx.fillStyle = '#ffd23c'
@@ -136,14 +140,60 @@ export function drawHall (ctx, hall, x, y) {
         const e = hall[i]
         const ry = y + 13 + i * 10
         ctx.fillStyle = '#cdeea8'
-        ctx.fillText(HALL_RANKS[i], x + 5, ry)
+        ctx.fillText(HALL_RANKS[i], x + 4, ry)
+        ctx.fillStyle = e.who ? '#ffd23c' : '#7d8f6a'
+        ctx.fillText(e.who || '???', x + 21, ry)
         ctx.fillStyle = '#ffd23c'
-        ctx.fillText(String(e.score).padStart(6, '0'), x + 27, ry)
+        ctx.fillText(String(e.score).padStart(6, '0'), x + 39, ry)
         if (e.loop > 1) {
             ctx.fillStyle = '#ffffff'
-            ctx.fillText(`L${e.loop}`, x + 63, ry)
+            ctx.fillText(`L${e.loop}`, x + 72, ry)
         }
     }
+    ctx.restore()
+}
+
+// #3066 NAME YOUR RANK — the cabinet's ask, centred on the over screen where
+// the purse just closed. The plate idiom of #3045's CONTINUE call (dark plate,
+// gold copy, heat in the last second), the initials big on the Courier idiom
+// the board itself uses, the standing slot boxed in white (blinking, like the
+// digit it replaces), and the machine's own count beside the title. Nothing
+// here reads back: `who` lives in the store, the count ticks on world ticks.
+export function drawNameAsk (ctx, st, digit, tick) {
+    const hot = digit <= 2
+    const flip = Math.floor(tick / 6) % 2 === 0
+    ctx.save()
+    ctx.textBaseline = 'top'
+    ctx.font = 'bold 12px "Courier New", monospace'
+    const title = 'NAME YOUR RANK!'
+    const tw = ctx.measureText(title).width + 20
+    ctx.fillStyle = 'rgba(6,10,4,0.88)'
+    ctx.fillRect(192 - tw / 2, 132, tw, 58)
+    ctx.strokeStyle = '#ffd23c'
+    ctx.lineWidth = 1
+    ctx.strokeRect(192 - tw / 2 + 0.5, 132.5, tw - 1, 57)
+    ctx.fillStyle = hot && flip ? '#ff6a4d' : '#ffd23c'
+    ctx.fillText(title, 192 - ctx.measureText(title).width / 2, 137)
+    ctx.font = 'bold 10px "Courier New", monospace'
+    ctx.fillStyle = '#ffd23c'
+    ctx.fillText(`${digit}`, 192 + tw / 2 - 14, 137)
+    // the three slots — letters gold, cursor box white, blinks hot late
+    ctx.font = 'bold 14px "Courier New", monospace'
+    const sw = 18
+    const x0 = 192 - (sw * 3) / 2
+    for (let i = 0; i < st.slots.length; i++) {
+        const sx = x0 + i * sw
+        if (i === st.cur) {
+            ctx.strokeStyle = hot && !flip ? '#ff6a4d' : '#ffffff'
+            ctx.strokeRect(sx - 1.5, 152.5, sw - 1, 17)
+        }
+        ctx.fillStyle = '#ffd23c'
+        ctx.fillText(st.slots[i], sx + (sw - ctx.measureText(st.slots[i]).width) / 2 - 0.5, 154)
+    }
+    ctx.font = 'bold 8px "Courier New", monospace'
+    ctx.fillStyle = '#cdeea8'
+    const hint = 'ARROWS SET · B NEXT · A SIGN'
+    ctx.fillText(hint, 192 - ctx.measureText(hint).width / 2, 175)
     ctx.restore()
 }
 

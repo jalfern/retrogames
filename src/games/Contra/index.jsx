@@ -16,9 +16,9 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
 import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, bedFor, liftStep, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat, hallAdd, hallRead } from './sim.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, bedFor, liftStep, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat, hallAdd, hallRead, whoOk, namePhase, nameStep, nameCommit, hallStamp, askSign, WHO_DEFAULT, NAME_LEN, NAME_HOLD, BOARD_HOLD } from './sim.js'
 import { parseCall, intentKey, intentLabel } from './voicecalls.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, drawScorePop, drawHall, drawBarrier, POP_T, seatTagState } from './art.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, drawScorePop, drawHall, drawBarrier, drawNameAsk, POP_T, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -115,6 +115,13 @@ const sfx = {
     // rates from contBeat).
     coin: () => { audioController.playNoise(0.02, 0.09); setTimeout(() => { audioController.playTone(2093, 0.05, 'square', 0.03); audioController.playTone(1568, 0.07, 'triangle', 0.025) }, 60) },
     contHot: () => audioController.playTone(1175, 0.028, 'square', 0.038),
+    // #3066 NAME YOUR RANK: letter flip (one dry click per cycle), slot lock
+    // (a rising tick per confirmed initial), signing done (a short gold triad
+    // — the board keeps its word). The flip climbs with the letter, sits
+    // lower going down; the lock walks up the scale as initials fill in.
+    nameFlip: (up) => audioController.playTone(up ? 880 : 660, 0.02, 'square', 0.03),
+    nameLock: (n) => audioController.playTone(784 + n * 196, 0.04, 'triangle', 0.05),
+    nameDone: () => { [784, 988, 1319].forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.09, 'triangle', 0.055), i * 70)) },
     contIn: () => { audioController.playSweep(220, 660, 0.2, 'square', 0.07); setTimeout(() => audioController.playTone(880, 0.14, 'square', 0.05), 160) },
     // S4 co-op: the blue seat's voices — a warmer join chirp, a deeper fall
     p2join: () => { audioController.playSweep(440, 880, 0.12, 'square', 0.05); setTimeout(() => audioController.playTone(1100, 0.1, 'square', 0.04), 90) },
@@ -219,6 +226,7 @@ export default function ContraGame () {
     const wrapRef = useRef(null)
     const [mode, setMode] = useState('attract')           // attract | play | over | clear
     const [paused, setPaused] = useState(false)
+    const [signUI, setSignUI] = useState(false)           // #3066: the pad answers NAME only while the ask stands
     const modeRef = useRef('attract')
     const pausedRef = useRef(false)
     modeRef.current = mode
@@ -289,6 +297,16 @@ export default function ContraGame () {
         let hall = []
         try { hall = hallRead(JSON.parse(localStorage.getItem('contra:hall') || 'null')) } catch { hall = [] }
         let hallFx = false
+        // #3066 NAME YOUR RANK — the signing ceremony's shell state. `naming`
+        // is the live ask ({slots, cur, t} — t on WORLD ticks), `boardHold`
+        // the beat the signed board reads before the title, and signT carries
+        // the `t` stamps of rows THIS session banked unsigned (a continue
+        // defers the ask to when the book finally closes — one name signs
+        // every row the session earned). All of it is presentation + store:
+        // `who` never enters gs, so every referee pin stands untouched.
+        let naming = null
+        let boardHold = 0
+        const signT = new Set()
         const part = [] // cosmetic particles — Math.random is law here, never in sim
         const fire = [] // expanding fireballs — sized by the boom's kind (#2782)
         const pops = [] // #3057 score popups — {x, y, v, t}, world coords, rides the sim clock
@@ -606,6 +624,8 @@ export default function ContraGame () {
             if (what === 'attract') kFx = null
             hallFx = false   // #3061 a salute never survives the screen it was paid on
             extFx = null   // #3041: a salute never survives the screen it was paid on
+            naming = null  // #3066: neither does the ask — a name is asked per book-closing
+            boardHold = 0
             if (what === 'over') {
                 overAt = performance.now()
                 overT = 0   // #3042: the CONTINUE clock starts with the sting
@@ -617,21 +637,54 @@ export default function ContraGame () {
                 // gs.end==='dead' on the play screen. The attract demo wins
                 // into its loop-teach and never falls; a run's take ends first,
                 // the board is a memory, not a bank row.
-                const hr = hallAdd(hall, { score: gs.score, loop: gs.loop, t: Date.now() })
+                // #3066: a row that actually landed on the board is a rank
+                // owed a name — remember its stamp for the ask at the book's
+                // close. The machine never owes: a harness-driven autopilot
+                // seat is not a person (#3061's honest gate extended: the
+                // board remembers the demo's score if the harness banks it,
+                // but the cabinet never asks the demo to sign for it).
+                const entryT = Date.now()
+                const hr = hallAdd(hall, { score: gs.score, loop: gs.loop, t: entryT })
                 hallFx = hr.record
+                if (hr.hall !== hall) {
+                    hall = hr.hall
+                    if (!harnessAuto && hr.hall.some((e) => e.t === entryT && !e.who)) signT.add(entryT)
+                    try { localStorage.setItem('contra:hall', JSON.stringify(hall)) } catch { /* private mode: the board lives this session */ }
+                }
+                if (hallFx) sfx.newRecord()
                 // a refused fall (zero score, corrupt) leaves the array by
                 // reference — only a board that actually grew hits storage,
                 // so a device that only ever walks in and falls down keeps
                 // its store untouched (the live leg pins null).
-                if (hr.hall !== hall) {
-                    hall = hr.hall
-                    try { localStorage.setItem('contra:hall', JSON.stringify(hall)) } catch { /* private mode: the board lives this session */ }
-                }
-                if (hallFx) sfx.newRecord()
                 endRun() // #1711: the take ends with the run (no-op when idle/declined) — and NOT on 'clear': #2958 law, one take spans the arcade loops
                 disarmVoice() // #3000: the mic never stays hot on GAME OVER (#1249 law, Gauntlet precedent)
                 callFx = null
             }
+        }
+
+        // #3066 THE ASK. startNaming arms the ceremony (default AAA stands,
+        // cursor on the first initial); commitSign stamps every row this
+        // session signed — the store keeps the name from here to forever —
+        // and hands the screen one board-hold so the player sees their rank
+        // signed before the title takes it back. Junk never stamps: the
+        // belt-and-braces default lives in whoOk/hallStamp too.
+        const startNaming = () => {
+            naming = { slots: WHO_DEFAULT.split(''), cur: 0, t: 0 }
+            setSignUI(true)
+            sfx.nameFlip(true)
+        }
+        const commitSign = (name) => {
+            naming = null
+            setSignUI(false)
+            boardHold = BOARD_HOLD
+            const who = whoOk(name) ? name : WHO_DEFAULT
+            const next = hallStamp(hall, signT, who)
+            if (next !== hall) {
+                hall = next
+                try { localStorage.setItem('contra:hall', JSON.stringify(hall)) } catch { /* private mode: the board lives this session */ }
+            }
+            signT.clear()
+            sfx.nameDone()
         }
 
         // #2894 THE ARCADE LOOP — STAGE CLEAR is not the end. The gate blows,
@@ -940,7 +993,7 @@ export default function ContraGame () {
                 // bands alone). Top-right, under the HUD: the attract pad
                 // (#3037's Konami button) owns the bottom corners on phones,
                 // and the board must be readable where the thumbs are not.
-                drawHall(ctx, hall, 290, 24)
+                drawHall(ctx, hall, 276, 24)
                 // #3037: the typing reads — every note landed so far glints gold
                 if (kProg > 0) {
                     ctx.font = 'bold 12px "Courier New", monospace'
@@ -990,7 +1043,13 @@ export default function ContraGame () {
                 // window with the Konami digit 9…0 and the purse. The last two
                 // seconds blink red-hot (IronRing #1103's warning family). With
                 // the purse empty there is no count — only the book closes.
-                if (contLeft > 0) {
+                // #3066: while the ask stands it owns the lower half of the
+                // screen — the count already closed, and the unsigned board
+                // waits one hold to be seen signed. The panel blinks on the
+                // world's gs.tick (the over screen ticks it every tick).
+                if (naming) {
+                    drawNameAsk(ctx, naming, namePhase(naming.t).digit, gs.tick)
+                } else if (contLeft > 0) {
                     const cw = contPhase(overT)
                     if (cw.phase === 'count') {
                         // #3045 the cabinet's full-screen call: CONTINUE? big and
@@ -1018,8 +1077,9 @@ export default function ContraGame () {
                     ctx.font = 'bold 9px "Courier New", monospace'
                     ctx.fillText('NO CONTINUES', 150, 146)
                     // #3061 the purse-empty fall is the cabinet's rank screen:
-                    // the board under the bad news, centred.
-                    drawHall(ctx, hall, 149, 160)
+                    // the board under the bad news, centred. #3066 widened the
+                    // plate for the initials column — the centring follows.
+                    drawHall(ctx, hall, 142, 160)
                 }
             }
         }
@@ -1082,24 +1142,46 @@ export default function ContraGame () {
                             if (--clearHold <= 0) startLoop()   // #2894 the arcade never sends you back to attract on a win — it loops
                         } else if (screen === 'over') {
                             gs.tick += 1
+                            // #3066: the ask runs on the same WORLD clock as
+                            // the count it follows — and when its window closes
+                            // the default commits itself, era law: the ceremony
+                            // never blocks the next attract.
+                            if (naming) {
+                                naming.t += 1
+                                if (namePhase(naming.t).phase === 'out') commitSign(nameCommit(naming.slots))
+                            } else if (boardHold > 0) {
+                                if (--boardHold === 0) endTo('attract')
+                            } else if (contLeft > 0) {
                             // #3042: the CONTINUE countdown runs on WORLD ticks.
                             // GAME OVER reads (CONT_READ), then the digit counts
                             // 9…0, one a second; when the window closes the
                             // machine returns to the title — continues left in
                             // the purse are forfeit, as on the cabinet.
-                            if (contLeft > 0) {
-                                overT += 1
-                                const cw = contPhase(overT)
-                                // #3045: coin-clack, digit tick, heat beeps — one
-                                // pure beat law (contBeat) mapped onto sfx, all on
-                                // world ticks like the window itself.
-                                const beat = contBeat(overT)
-                                if (beat === 'coin') { contBeats.coin += 1; sfx.coin() }
-                                else if (beat === 'tick') { contBeats.tick += 1; sfx.contTick() }
-                                else if (beat === 'hot') { contBeats.hot += 1; sfx.contHot() }
-                                if (cw.phase === 'out') endTo('attract')
+                            overT += 1
+                            const cw = contPhase(overT)
+                            // #3045: coin-clack, digit tick, heat beeps — one
+                            // pure beat law (contBeat) mapped onto sfx, all on
+                            // world ticks like the window itself.
+                            const beat = contBeat(overT)
+                            if (beat === 'coin') { contBeats.coin += 1; sfx.coin() }
+                            else if (beat === 'tick') { contBeats.tick += 1; sfx.contTick() }
+                            else if (beat === 'hot') { contBeats.hot += 1; sfx.contHot() }
+                            // #3066: when the count closes, the board's name is
+                            // asked before the title reclaims the screen — the
+                            // purse forfeits either way, and the machine is
+                            // never asked (askSign refuses an auto seat).
+                            if (cw.phase === 'out') {
+                                if (askSign({ auto: harnessAuto, unsigned: signT.size })) startNaming()
+                                else endTo('attract')
                             }
+                        } else if (askSign({ auto: harnessAuto, unsigned: signT.size }) && performance.now() - overAt > 900) {
+                            // #3066: the empty purse skips the count entirely —
+                            // GAME OVER reads (the same 900 ms grace the key law
+                            // uses), then the unsigned rows on the board get
+                            // their ask.
+                            startNaming()
                         }
+                    }
                         acc -= SIM_MS
                     }
                 }
@@ -1123,12 +1205,33 @@ export default function ContraGame () {
                 return
             }
             if (screen === 'over') {
+                // #3066: while the ask stands it owns the board — arrows set
+                // the initials (L/R move, U/D cycle), B confirms and advances
+                // (committing past the last slot), A signs whatever stands.
+                // Any other key is swallowed: the ceremony is finite, the
+                // count commits the default if no one answers.
+                if (naming) {
+                    if (e.repeat) return
+                    const act = { ArrowLeft: 'L', ArrowRight: 'R', ArrowUp: 'U', ArrowDown: 'D', KeyX: 'B', KeyC: 'B', Space: 'A', KeyZ: 'A' }[e.code]
+                    if (!act) return
+                    const r = nameStep(naming, act)
+                    if (r.done !== undefined) commitSign(r.done)
+                    else {
+                        naming = r.st
+                        if (act === 'U' || act === 'D') sfx.nameFlip(act === 'U')
+                        else if (act === 'B') sfx.nameLock(naming.cur)
+                    }
+                    return
+                }
+                if (boardHold > 0) return   // the signed board reads; a name once given is given
                 // #3042: the any-key law answers the count — during the window
                 // a press pays a continue and rejoins; after the digits, or with
                 // the purse empty, the press returns to the title as it always did.
                 if (performance.now() - overAt > 900) {
                     if (contLeft > 0 && contPhase(overT).phase !== 'out') continueRun()
-                    else endTo('attract')
+                    // #3066: an unsigned board owns this press — the frame loop
+                    // raises the ask on the next tick; a key must not steal it.
+                    else if (!askSign({ auto: harnessAuto, unsigned: signT.size })) endTo('attract')
                 }
                 return
             }
@@ -1180,9 +1283,18 @@ export default function ContraGame () {
             if (screen === 'over') {
                 // #3042: a tap answers the count exactly like a key (the pad is
                 // stowed on this screen — Jon's one-pad law leaves the tap free).
+                // #3066 exception: while the ask stands the pad comes back out
+                // (it is the phone's joystick), and its buttons already spoke
+                // through keydown — a pad tap must not double as the tap-commit.
                 if (performance.now() - overAt > 900) {
+                    if (naming) {
+                        if (e.target && e.target.closest && e.target.closest('[data-vc]')) return
+                        commitSign(nameCommit(naming.slots))
+                        return
+                    }
+                    if (boardHold > 0) return
                     if (contLeft > 0 && contPhase(overT).phase !== 'out') continueRun()
-                    else endTo('attract')
+                    else if (!askSign({ auto: harnessAuto, unsigned: signT.size })) endTo('attract')
                 }
             }
         }
@@ -1224,6 +1336,7 @@ export default function ContraGame () {
                 wasGround = true; heli = null; warnArmed = false; lastEnterT = 0
                 seat2.length = 0
                 callFx = null
+                naming = null; boardHold = 0; signT.clear(); setSignUI(false)   // #3066 the ceremony is per-run; a harness reset starts with nothing owed
                 screen = 'play'
                 setMode('play')
             },
@@ -1322,7 +1435,8 @@ export default function ContraGame () {
                     cont: { left: contLeft, t: overT, armed: armedRun, phase: contPhase(overT).phase, digit: contPhase(overT).digit, beats: { ...contBeats } },   // #3042 the purse and the count are observable; #3045 so is the ceremony
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     touch: TOUCH,   // #2971: the touch-aware copy is observable
-                    hall: { len: hall.length, top: hall.length ? hall[0].score : 0, record: hallFx, rows: hall.map((e) => ({ s: e.score, l: e.loop })) },   // #3061 the board is observable
+                    hall: { len: hall.length, top: hall.length ? hall[0].score : 0, record: hallFx, rows: hall.map((e) => ({ s: e.score, l: e.loop, w: e.who || null })), unsigned: signT.size },   // #3061 the board is observable · #3066 rows show their signatures
+                    name: naming ? { slots: [...naming.slots], cur: naming.cur, t: naming.t } : null,   // #3066 the ask is observable
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
                 }),
                 start: startPlay,
@@ -1466,7 +1580,7 @@ export default function ContraGame () {
     return (
         <div ref={wrapRef} className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none">
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'CONTRA')} onResume={handleResume} />}
-            <VirtualControls visible={(mode === 'play' || mode === 'attract') && !paused} secondAction={mode === 'attract' ? { label: 'B', code: 'KeyB' } : { label: 'FIRE', code: 'KeyX' }} />
+            <VirtualControls visible={(mode === 'play' || mode === 'attract' || (mode === 'over' && signUI)) && !paused} secondAction={mode === 'attract' ? { label: 'B', code: 'KeyB' } : mode === 'over' ? { label: 'NEXT', code: 'KeyX' } : { label: 'FIRE', code: 'KeyX' }} />
         </div>
     )
 }

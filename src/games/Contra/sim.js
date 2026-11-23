@@ -325,9 +325,14 @@ export const HALL_CAP = 5
 export const HALL_ROWS = 3
 export const HALL_RANKS = ['1st', '2nd', '3rd', '4th', '5th']
 
+// #3066: a row may carry a signed name. An entry WITHOUT `who` is legal —
+// that is the legacy board (pre-signing stores keep reading; the shell paints
+// those rows `???`). An entry with a MALFORMED who is corruption: drop it,
+// the same never-repair law the score fields obey.
 function hallOk (e) {
     return !!e && Number.isInteger(e.score) && e.score >= 0 &&
-        Number.isInteger(e.loop) && e.loop >= 1 && Number.isFinite(e.t)
+        Number.isInteger(e.loop) && e.loop >= 1 && Number.isFinite(e.t) &&
+        (e.who === undefined || whoOk(e.who))
 }
 
 // Read whatever the store handed back and trust only what the law allows:
@@ -351,6 +356,73 @@ export function hallAdd (hall, entry) {
     const best = hall.length ? hall[0].score : 0
     return { hall: hallRead([...hall, entry]), record: entry.score > best }
 }
+
+// ---- #3066 NAME YOUR RANK — the GK lineage signs its board ----------------
+// Gradius (Konami, 1985) stops the game the moment you make the board and
+// asks you to NAME your ship: three initials, joystick scheme, a finite count,
+// a default that commits itself. TOP SOLDIERS (#3061) claimed that lineage
+// out loud but left every rank anonymous — this is the ceremony it missed.
+// All of it lives OUTSIDE the referee: `who` never enters gs/stateHash, these
+// helpers consume zero gs.r and take no clock (the shell ticks the count).
+export const NAME_LEN = 3
+export const WHO_DEFAULT = 'AAA'                    // the era default, commit-able as-is
+export const NAME_SECS = 9                          // #3042's single-digit idiom
+export const NAME_HOLD = NAME_SECS * 60             // world ticks the ask stands
+export const BOARD_HOLD = 150                       // the signed board reads before the title
+
+export const whoOk = (who) => typeof who === 'string' && who.length === NAME_LEN && /^[A-Z]+$/.test(who)
+
+// The count the shell paints beside the slots: 9…0, `out` when the window
+// closes — contPhase's shape, the cabinet's own digit.
+export function namePhase (t) {
+    const left = Math.max(0, NAME_SECS - Math.floor(t / 60))
+    return { phase: t >= NAME_HOLD ? 'out' : 'hold', digit: left }
+}
+
+// A–Z wrap in both directions; the cursor law never leaves the three slots.
+export function nameCycle (ch, dir) {
+    return String.fromCharCode(65 + (ch.charCodeAt(0) - 65 + (dir > 0 ? 1 : 25)) % 26)
+}
+
+export const nameCommit = (slots) => slots.join('')
+
+// One act per press: L/R move the cursor (wraps), U/D cycle the standing slot
+// only, B confirms-and-advances (and commits past the last slot), A commits
+// whatever stands. Returns { st } to keep typing, or { done } when named.
+export function nameStep (st, act) {
+    if (!st) return null
+    let { slots, cur } = st
+    if (act === 'L') cur = (cur + NAME_LEN - 1) % NAME_LEN
+    else if (act === 'R') cur = (cur + 1) % NAME_LEN
+    else if (act === 'U' || act === 'D') slots = slots.map((c, i) => (i === cur ? nameCycle(c, act === 'U' ? 1 : -1) : c))
+    else if (act === 'B') {
+        cur += 1
+        if (cur >= NAME_LEN) return { st: null, done: nameCommit(slots) }
+    }
+    else if (act === 'A') return { st: null, done: nameCommit(slots) }
+    else return { st }
+    return { st: { slots, cur, t: st.t } }
+}
+
+// Stamp the rows THIS session earned and left unsigned. Only timestamps the
+// caller presents get a name — rows from earlier sessions, or rows that
+// already wear one, stand untouched; nothing touched, nothing returned new.
+export function hallStamp (hall, ids, who) {
+    if (!whoOk(who) || !(ids instanceof Set) || ids.size === 0) return hall
+    let touched = false
+    const next = hall.map((e) => {
+        if (!ids.has(e.t) || e.who) return e
+        touched = true
+        return { ...e, who }
+    })
+    return touched ? next : hall
+}
+
+// Pure decision the shell obeys when the over screen closes its business:
+// the cabinet asks a PERSON, never the machine, and only when the book holds
+// unsigned rows of its own and the CONTINUE window is shut.
+export const askSign = ({ auto = false, unsigned = 0, counting = false } = {}) =>
+    !auto && unsigned > 0 && !counting
 
 export function arcadeLoop (gs) {
     const carryScore = gs.score
