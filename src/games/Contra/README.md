@@ -906,3 +906,31 @@ in the window now BUYS the run instead of leaving it. Any future assertion that
 dies-and-restarts must say which it wants: pay (press inside the window) or
 leave (empty purse via `setup({ noContinue: true })`, or wait the ~11.5 s
 expiry). The two legs this stage re-forged are the worked examples.
+
+## #3045 CONTINUE polish — the ceremony (QA pass)
+
+- **The coin clacks before the count.** `CONT_COIN = CONT_READ - 30` — a
+  metallic band (noise transient + two high pings) lands a half-second ahead of
+  the 9, inside the read, so the machine acknowledges the pay before it starts
+  its promise. One clack per death, purse-gated in the shell.
+- **The heat is arithmetic.** `contBeat(overT)` (sim, pure, the `contPhase`
+  precedent) answers what each world tick *sounds like*: `coin` / `tick` /
+  `hot` / null. Digit ticks stand byte-for-byte where #3042 pinned them;
+  inside the last three digits the beeps multiply — 2/s on the 3, 3/s on the
+  2, 4/s on the 1 and the 0 — and the word's red blink doubles to match.
+  Still world ticks, never setTimeout; the shell only maps names onto sfx and
+  counts them (`cont.beats` on the probe) so the live leg can prove the
+  ceremony without an audio capture.
+- **The cabinet's full-screen call.** `CONTINUE?` bold 24px flashing (gold↔white,
+  red-hot under the 3), digit gold beside it, and the purse as the machine's own
+  `CREDIT n` row — small white digits, low right (384x224). The tap-hint line
+  keeps the #2971 phone law verbatim.
+- **Phone take (verified, pinned as source law):** the pad is stowed through the
+  over screen (`visible` is play/attract only), so no B button can mis-pay a
+  count and no pad tap double-answers it; live can't prove it DOM-side because
+  #906 hides the pad after any keyboard use, so contracheck pins the shell's
+  gate as text. Carried-score salute stays silent — the cabinet flashes nothing.
+- **Proof:** contracheck gains 5 sim legs (clack placement, ten untouched ticks,
+  per-digit heat rates `1,1,1,1,1,1,2,3,4,4`, heat never stomping a boundary,
+  pad-gate law) + 1 live leg (ceremony counters through a real expiry) and two
+  mutants — `heat-silent`, `coin-dropped` — that die by name.

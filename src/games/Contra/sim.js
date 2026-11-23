@@ -218,6 +218,30 @@ export function contPhase (overT) {
     return { phase: 'out', digit: 0 }
 }
 
+// #3045 THE COUNT'S BEATS — the ceremony, also as pure arithmetic. The 1987
+// machine clacks the coin into the slot BEFORE the count starts and speeds its
+// beep as the seconds run out; ours had one flat tick a second. contBeat answers
+// "what does this world-tick sound like?" — one of:
+//   'coin'  the clack at CONT_COIN, a half-second ahead of the 9 (during read);
+//   'tick'  the digit boundary — nine-plus-one, unchanged since #3042;
+//   'hot'   the heat: inside the last three digits the beeps multiply —
+//           2/s on the 3, 3/s on the 2, 4/s on the 1 and the 0 (rising until
+//           the book slams);
+//   null    silence.
+// Still world ticks, never setTimeout (the #3042 law); the shell only maps
+// names onto sfx.
+export const CONT_COIN = CONT_READ - 30                // the clack lands 0.5 s before the 9
+export function contBeat (overT) {
+    if (overT === CONT_COIN) return 'coin'
+    const cw = contPhase(overT)
+    if (cw.phase !== 'count') return null
+    const pw = contPhase(overT - 1)
+    if (pw.phase !== 'count' || pw.digit !== cw.digit) return 'tick'
+    if (cw.digit > 3) return null
+    const gap = cw.digit === 3 ? 30 : cw.digit === 2 ? 20 : 15
+    return (overT - CONT_READ) % gap === 0 ? 'hot' : null
+}
+
 // #3035 THE SOMERSAULT span: one full body-turn per jump. The arc of a normal
 // jump runs `rollT` 1..37 under the sim's Euler integration — the roll completes
 // exactly as the feet come back to the ground, the cabinet's snap (the arc is
