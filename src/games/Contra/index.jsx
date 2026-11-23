@@ -42,6 +42,7 @@ const MESSAGES_KEYBOARD = [
     'STAND UP FROM THE BLUE SEAT — THE WINGMAN STEPS BACK IN',
     'CLEAR THE BASE AND STAGE 1 RETURNS — FASTER',
     'AIM UP · AIM DOWN · FOLLOW · HOLD · SPREAD — SHOUT IT',
+    'DUCK UNDER THE FIRE — DOWN KNEELS, DOWN AGAIN LIES FLAT',
     'ONE HIT KILLS. BOTH SIDES.',
     'PRESS ANY KEY',
 ]
@@ -58,6 +59,7 @@ const MESSAGES_TOUCH = [
     'THE WINGMAN STEPS BACK IN ON THE KEYBOARD — NOT ON THIS SCREEN',
     'CLEAR THE BASE AND STAGE 1 RETURNS — FASTER',
     'MIC GRANTED? THE WINGMAN TAKES SHOUTED ORDERS',
+    'DOWN KNEELS, DOWN AGAIN LIES FLAT — CRAWL AND FIRE LOW',
     'ONE HIT KILLS. BOTH SIDES.',
     'TAP TO START',
 ]
@@ -98,6 +100,12 @@ const sfx = {
     callNo: () => { audioController.playTone(180, 0.07, 'triangle', 0.08); audioController.playTone(330, 0.05, 'triangle', 0.055) },
     // #2842 the arriving seat's boots on the sand — a dry thud under the dust.
     land: () => audioController.playNoise(0.07, 0.025),
+    // #3038 the duck: going low is a soft fabric dip (down two notes), standing
+    // back up the mirror answer — quiet under the gunfire, but the ear keeps
+    // score of the profile the way the eye does.
+    duck: (post = 1) => post > 0
+        ? audioController.playSweep(340 - 40 * post, 190 - 30 * post, 0.05, 'triangle', 0.035)
+        : audioController.playSweep(220, 400, 0.05, 'triangle', 0.03),
     pdown: () => audioController.playSweep(300, 90, 0.3, 'square', 0.07),
     p2down: () => audioController.playSweep(240, 70, 0.3, 'sawtooth', 0.07),
     // stage clear: a 4-note call answered by a bass line (ART.md bar 4 — the
@@ -259,6 +267,7 @@ export default function ContraGame () {
                 else if (e.type === 'cannon') sfx.cannon(v)
                 else if (e.type === 'sniper') sfx.sniper(v)
                 else if (e.type === 'dfire') sfx.dfire(v)
+                else if (e.type === 'duck') sfx.duck(e.post)   // #3038 the profile the body took
                 else if (sfx[e.type]) sfx[e.type]()
                 if (e.type === 'p2join') heli = { x: gs.p2.x, t: 0 } // #2842 the bird comes with the drop
                 if (e.type === 'boom') {
@@ -911,6 +920,7 @@ export default function ContraGame () {
                     keys: { ...keys },
                     keys2: { ...keys2 },
                     roll: gs.p.rollT, roll2: gs.p2.rollT,   // #3035 the somersault clock is observable
+                    posture: gs.p.posture, posture2: gs.p2.posture,   // #3038 the ground profile too
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     touch: TOUCH,   // #2971: the touch-aware copy is observable
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,

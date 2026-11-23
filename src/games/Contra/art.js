@@ -227,6 +227,65 @@ export function drawPlayer (ctx, p, tick, blue = false, solid = false, rappel = 
     // passes the pose flag and seatStep zeroes the clock on a catch.
     const som = !p.onGround && !rappel && p.rollT > 0
     const somA = som ? Math.min(1, p.rollT / SOMERSAULT_TICKS) * Math.PI * 2 * (p.face < 0 ? -1 : 1) : 0
+    // #3038 THE DUCK — the cabinet's ground profiles, drawn at the same heights
+    // the hit box lives at: kneel tops out at 17px over the deck, prone at 8.
+    // Aim is pinned level by the sim while low, so the arm rides the profile
+    // line and the gun marks sit exactly where fire() spawns the round (11/6).
+    if (p.posture > 0 && p.onGround && !rappel) {
+        ctx.save(); ctx.scale(p.face, 1)
+        const mark = (wx, wy) => {
+            if (p.weapon === 'spread') { ctx.fillStyle = C.gunMetal; ctx.fillRect(wx - 2, wy - 2, 4, 4) }
+            else if (p.weapon === 'machine') { ctx.fillStyle = '#5a6672'; ctx.fillRect(wx - 2, wy - 2, 6, 3) }
+            else if (p.weapon === 'fire') { ctx.fillStyle = C.flame; ctx.fillRect(wx - 2, wy - 2, 4, 4); ctx.fillStyle = C.flameHot; ctx.fillRect(wx - 1, wy - 1, 2, 2) }
+            else if (p.weapon === 'laser') { ctx.fillStyle = C.laser; ctx.fillRect(wx - 1, wy - 1, 3, 3) }
+        }
+        if (p.posture === 1) {
+            // KNEEL — trailing knee and boot on the deck, forward foot planted,
+            // the whole body sunk into a 17px profile.
+            ctx.fillStyle = pants
+            ctx.fillRect(-8, -4, 6, 4); ctx.fillRect(1, -8, 4, 8)
+            ctx.fillStyle = C.boots
+            ctx.fillRect(-11, -3, 3, 3); ctx.fillRect(1, -2, 5, 2)
+            ctx.fillStyle = tank
+            ctx.fillRect(-4, -10, 8, 7)
+            ctx.fillStyle = C.skin
+            ctx.fillRect(-4, -12, 8, 2)   // shoulders, lowered with the body
+            ctx.fillRect(-2, -16, 6, 5)   // head
+            ctx.fillStyle = C.hair
+            ctx.fillRect(0, -17, 4, 2)
+            ctx.fillStyle = band
+            ctx.fillRect(-3, -17, 8, 3)
+            ctx.fillRect(-7, -16 + Math.floor(Math.sin(tick / 5) * 1.5), 4, 2) // tails
+            ctx.strokeStyle = C.skin; ctx.lineWidth = 2.4
+            ctx.beginPath(); ctx.moveTo(0, -11); ctx.lineTo(5, -11); ctx.stroke()
+            ctx.strokeStyle = '#20242c'; ctx.lineWidth = 2
+            ctx.beginPath(); ctx.moveTo(4, -11); ctx.lineTo(10, -11); ctx.stroke()
+            mark(10, -11)
+        } else {
+            // PRONE — flat along the road: boots back, head forward, rifle out
+            // front at deck+6. The eye reads a body that fits under the fire.
+            ctx.fillStyle = pants
+            ctx.fillRect(-13, -5, 8, 5)
+            ctx.fillStyle = C.boots
+            ctx.fillRect(-16, -4, 4, 4)
+            ctx.fillStyle = tank
+            ctx.fillRect(-6, -6, 10, 6)
+            ctx.fillStyle = C.skin
+            ctx.fillRect(2, -7, 3, 3)    // shoulder
+            ctx.fillRect(5, -7, 6, 4)    // head, cheek on the deck
+            ctx.fillStyle = band
+            ctx.fillRect(4, -8, 8, 2)
+            ctx.fillRect(-1, -7 + Math.floor(Math.sin(tick / 5) * 1.5), 4, 2) // tails streaming back
+            ctx.strokeStyle = C.skin; ctx.lineWidth = 2.4
+            ctx.beginPath(); ctx.moveTo(3, -6); ctx.lineTo(10, -6); ctx.stroke()
+            ctx.strokeStyle = '#20242c'; ctx.lineWidth = 2
+            ctx.beginPath(); ctx.moveTo(9, -6); ctx.lineTo(15, -6); ctx.stroke()
+            mark(15, -6)
+        }
+        ctx.restore()
+        ctx.restore()
+        return
+    }
     // legs
     ctx.save()
     if (som) { ctx.translate(0, -15); ctx.rotate(somA); ctx.translate(0, 15) }
