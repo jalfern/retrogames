@@ -452,16 +452,18 @@ main() {
         # the OTHER slot is demonstrably live inside — the claim layer catches
         # it (#878 REFUSED), but the session burns proving what the holder line
         # already says, and the idle comments accumulate toward a false
-        # `stalled`. Same holder() rule as forge-claim.sh: newest claimed in
-        # the (QA|FORGE) namespace, age from newest claimed|checkpoint, 90 min.
+        # `stalled`. Same holder() rule as forge-claim.sh (#1234, widened by
+        # #3072): any (QA|FORGE) namespace comment except the explicit
+        # releases, age from the newest liveness comment, 90 min.
         # A dead holder (>90 min silent) still kicks — that is the step-1b
-        # corpse path, deliberately untouched.
+        # corpse path, deliberately untouched; #3072 only stops the kick when
+        # the "dead" holder is provably alive.
         local KICKS HOLDER HAGE
         read -r KICKS HOLDER HAGE <<<"$(gh api "repos/$GH/issues/$n/comments?per_page=100" --jq '
             [.[] | .body] as $b
             | ($b | (map(startswith("WARDEN") | not) | rindex(true)) as $last
                | $b[(($last // -1) + 1):] | map(select(startswith("WARDEN: builder '"$s"' idle"))) | length) as $kicks
-            | ([.[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): (claimed|checkpoint)"))] | last) as $q
+            | ([.[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): (?!yielding|claim dead|waiting on Jon)"))] | last) as $q
             | ([.[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): claimed"))] | last) as $c
             | if $c == null or $q == null then "\($kicks) - 999"
               else "\($kicks) \($c.body | capture("^(QA|FORGE) \\((?<name>[a-z0-9-]+)\\)").name) \(((now - ($q.created_at | fromdateiso8601)) / 60) | floor)" end' 2>/dev/null)"
@@ -474,6 +476,31 @@ main() {
             # slot must stay eligible for a stage it CAN claim.
             if [[ "$s" == a ]]; then A_TARGET=""; else B_TARGET=""; fi
             return 0
+        fi
+        # #3072: comment age is a proxy, and proxies go stale on live work —
+        # on 2026-11-23 the warden kicked slot a onto #3067 twice (22:40Z,
+        # 23:12Z) while slot b was mid-ship: holder b's newest namespace
+        # comment was a sha-form checkpoint the old word-regex could not see,
+        # and by the second kick b's last comment was 104 min old but its
+        # session was alive and its PR merged minutes earlier. A holder whose
+        # lane is PROVBLY alive (its session process, or its pinned dev port
+        # driven — the same #2121 union kick_slot already uses for the kicked
+        # slot) still holds the target even when the comments have gone quiet.
+        if [[ "$HOLDER" != "-" && "$HOLDER" != "$s" && "$HAGE" -ge 90 ]]; then
+            local HDEV HPAT
+            case "$HOLDER" in
+                a)      HDEV=5173; HPAT="opencode run.*THE FORGE on slot a\\." ;;
+                b)      HDEV=5178; HPAT="opencode run.*THE FORGE on slot b\\." ;;
+                studio) HDEV=5176; HPAT="opencode run.*QA MASTER on node studio\\." ;;
+                mini)   HDEV=5174; HPAT="opencode run.*QA MASTER on node mini\\." ;;
+                *)      HDEV="";    HPAT="" ;;
+            esac
+            if { [[ -n "$HDEV" ]] && lane_driven "$HDEV"; } || { [[ -n "$HPAT" ]] && pgrep -f "$HPAT" >/dev/null 2>&1; }; then
+                log "#$n: slot $s skip-kick — target holder $HOLDER silent ${HAGE}m but its lane is live (#3072)"
+                ACTIONS+=("target-held-live:${s}>${HOLDER}")
+                if [[ "$s" == a ]]; then A_TARGET=""; else B_TARGET=""; fi
+                return 0
+            fi
         fi
         # Three kicks with no FORGE: comment in between = the slot keeps dying
         # before it reports anything. Stop kicking; that is Jon's call. Any

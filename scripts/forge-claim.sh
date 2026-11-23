@@ -7,8 +7,9 @@
 # enforced by reading the issue list at session start, which goes stale at
 # exactly the moment a second stream exists). This mirrors qa-claim.sh: read
 # the issue LIVE at claim time, one liveness namespace for every lane
-# (`FORGE (<slot>):` and `QA (<node>):` claimed/checkpoint), newest claim wins
-# a collision, the loser yields and picks another item.
+# (`FORGE (<slot>):` / `QA (<node>):` — any comment in it except the explicit
+# releases, #3072), newest claim wins a collision, the loser yields and picks
+# another item.
 #
 # exit 0 = the item is yours (claimed now, or already yours: resume it)
 # exit 1 = another lane holds a live claim, or one landed with yours: pick another item
@@ -19,14 +20,19 @@ repo=jalfern/retrogames
 [ -n "$n" ] && [ -n "$slot" ] || { echo "usage: forge-claim.sh <issue> <slot a|b> \"<plan>\""; exit 2; }
 
 # newest live claim on the issue, either namespace, as "<lane-id> <minutes since
-# the newest liveness comment>" — same liveness rule as qa-claim.sh (#1234):
-# claimed|checkpoint only; bookkeeping notes must not extend the lockout.
+# the newest liveness comment>" — same liveness rule as qa-claim.sh (#1234,
+# widened by #3072): ANY comment in the lane namespace extends the lock; only
+# the documented explicit releases ("yielding", "claim dead", "waiting on Jon")
+# free it. Requiring the literal words claimed|checkpoint starved live lanes:
+# on 2026-11-23 a `FORGE (b): <sha> — sim core live` checkpoint refreshed
+# nothing on #3067 and the warden re-kicked that item off a demonstrably live
+# slot twice (#3053).
 holder() {
   ${GH:-gh} api --paginate "repos/$repo/issues/$n/comments?per_page=100" | jq -rs '
     (add // []) as $all
-    | ([$all[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): (claimed|checkpoint)"))] | last) as $q
+    | ([$all[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): (?!yielding|claim dead|waiting on Jon)"))] | last) as $q
     | ([$all[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): claimed"))] | last) as $c
-    | if $c == null then empty else
+    | if $c == null or $q == null then empty else
         "\($c.body | capture("^(QA|FORGE) \\((?<n>[a-z0-9-]+)\\)").n) \(((now - ($q.created_at | fromdateiso8601)) / 60) | floor)"
       end'
 }
@@ -43,7 +49,7 @@ if [ "$who" = "$slot" ] && [ "$age" -lt 90 ]; then
 fi
 
 note=""
-[ -n "$who" ] && note=" (last claim was $who's; no claim/checkpoint for ${age} min)"
+[ -n "$who" ] && note=" (last claim was $who's; no live comment for ${age} min)"
 body="FORGE ($slot): claimed $(date -u +%Y-%m-%dT%H:%MZ)$note — plan: $plan"
 if [ -n "${FORGE_CLAIM_DRY:-}" ]; then echo "DRY: would label building and post: $body"; exit 0; fi
 ${GH:-gh} api -X POST "repos/$repo/issues/$n/labels" -f 'labels[]=building' >/dev/null

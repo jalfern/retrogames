@@ -216,8 +216,9 @@ AGENTS.md wins.
   design note, engine core, levels, harness, menu wiring: each gets its own
   commit pushed to `forge/<slug>` the moment it passes `node`/`eslint`.
   A session that dies then leaves a decodable corpse, not vapor. Update the
-  issue with a `FORGE: <what's done / what's next>` comment at the same time
-  (that comment is the session handoff). Every pushed commit gets one line on
+  issue with `FORGE (<slot>): checkpoint <sha> — <what's done / what's next>`
+  at the same time (that comment is the session handoff; this exact shape is
+  what every liveness reader agrees on — #3072). Every pushed commit gets one line on
   the issue — the board's BUILD FLOOR is built from those comments, so an
   uncommented commit is invisible work: on a multi-hour build, silence reads
   as stalled and invites a watchdog to call you dead.
