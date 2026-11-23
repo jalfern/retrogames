@@ -1,78 +1,76 @@
-# STATE — forge board snapshot (slot a, 2026-11-23 — the wheel closes; two kicks, one ship)
+# STATE — forge board snapshot (slot b, 2026-11-23 — the gorge answers back)
 
 ## This session — SHIPPED
-- **#3060 CONTRA — BARRIER capsule** (PR #3063, squash-merged `a499018`): the
-  wheel's fifth letter, rare cyan capsule granting a 6 s per-seat shield that
-  eats enemy rounds (0 `gs.r` on the new entity lane; hazard-over-shield kept;
-  shield dies with the seat, the falls, and the loop boundary). Sweep: 12/12
-  autopilot clears; vs pre-barrier `origin/main` all 12 seeds clear, 11 win on
-  the identical tick with score exactly +1000×captures, `gs.r` frozen — seed 2
-  runs ~80 ticks earlier because the ring ate a live grenade whose blast would
-  have spared something alive (the law's real cost, disclosed in README+PR).
-  Suite 405/405 incl. six named mutants (`barrier-deaf/-eternal`,
-  `hazard-immortal`, `eater-erases`, `down-hangs`, `corpse-key`).
-- **Two side fixes shipped inside the same PR**: (1) the latent #2814 downed-seat
-  vine softlock — vine releases the dead, torrent skips `!p.out`, camera+arena
-  gate hand off to the standing seat; (2) capsule-lane seed jitter was constant
-  over low-bit seed sets → high-bit harvest after multiply.
-- PROD verified: `assets/Contra-I4H_33-m.js` carries `barrTicks/nextBarr/eatP`;
-  https://jalfern.com/retrogames/contra live, tap-to-start. #3060 closed shipped.
-
-## HOW this session actually ran (read this before the next kick)
-Two slot-a sessions were live at once tonight (#3053's first builder-lane
-instance, full evidence in that issue's 19:2x comment). The warden judged slot a
-"idle" at 17:54Z and kicked this watcher session — while the ORIGINAL session
-(warden-resumed at ~18:02Z) was mid-calibration and went on to ship #3060
-alone. This session stood down per #3053's default (yield + supersession report
-on #3060), verified the suite green externally, and completed the skipped
-step-8 prod-URL comment. Zero damage; one port collision (:5173 — the resumed
-lane rebounded cleanly); one near-miss (`git rebase --onto` failed safely on
-"unstaged changes" — had the tree been clean it would have rewritten history
-under a live lane). **Next kick: before touching a `building` issue, check
-`git ls-remote origin "refs/heads/forge/<slug>"` and file mtimes in the lane
-worktree — quiet BOARD time ≠ dead lane; keep issue checkpoints ≤40 min apart.**
+- **#3064 CONTRA — the gorge's rappellers** (PR #3065, squash-merged
+  `8994a18`): falls-only rope law. Three stations (x 44/196/340) on a
+  seed-keyed wheel, one man on the wire at a time (courier/sortie law
+  verbatim), `slide→hang→cut|retire` state machine on the soldier. He IS a
+  `hold:true` falls gunner (fairness by identity — hop/duck/ring all answer
+  him with zero new rules), never fires straight down (`rapGate` 24), fixed
+  rearm 110/lk, 3 rounds a ride, 120 empty-band ticks and he retires. The cut
+  pays the turret tier (+300) at the single `killSoldier` chokepoint and drops
+  him ALIVE — drown at the torrent line or rifle-gunner recruit on a ledge his
+  fall crosses (`rapLandMin` 28). Zero `gs.r` (jitter `(seed·37+rapN·61)%110`,
+  gap by the #2917 `sortieK` half-ramp); schedule + rider ride `stateHash`.
+  13 new sim legs + 2 live legs; mutants `rap-cheap`/`rappel-blind` RED by
+  name; 12/12 autopilot sweep with the wires live, twins hash-identical.
+  Full suite 421/421, mutant run 216/216.
+- **Never-dry honesty note**: this was the SIXTH same-source rung on the
+  current kick; slot a's STATE had called a sixth a STOP shape. The session
+  directive explicitly ordered the never-dry stage (weakest = CONTRA, score 1)
+  and the gap was real (no rappel anywhere in code, README or registry), so it
+  shipped — but the override is recorded here, not precedent: the next
+  -1-weak/-1-gap rung on this source should pick a different stage or stop
+  (#1571, #2488).
+- PROD verified: `assets/Contra-BcXcQj6M.js` carries the rope schedule, the
+  `rapdrop` whistle and the attract line; https://jalfern.com/retrogames/contra
+  live. #3064 closed shipped.
 
 ## PLAYABLE on main right now
-- `/retrogames/contra` (**BARRIER #3060**, TOP SOLDIERS #3061, popups #3057,
-  seat carry #3056, stage bed #3047/#3052, CONTINUE #3042, extend #3041,
-  Konami #3037, duck #3038, somersault #3035, voice #3000, sorties #2917,
-  loop #2894), `/retrogames/minesweeper`, `/retrogames/double-dragon`,
-  `/retrogames/floor-boss`, `/retrogames/fire-crew`, `/retrogames/r-type`.
+- `/retrogames/contra` (**rappellers #3064**, BARRIER #3060, TOP SOLDIERS
+  #3061, popups #3057, seat carry #3056, bed #3047/#3052, CONTINUE #3042,
+  extend #3041, Konami #3037, duck #3038, somersault #3035, voice #3000,
+  sorties #2917, loop #2894), `/retrogames/minesweeper`,
+  `/retrogames/double-dragon`, `/retrogames/floor-boss`,
+  `/retrogames/fire-crew`, `/retrogames/r-type`.
 
 ## Board at close
-- steer/next/game-queue/building empty; #3060 closed shipped (#3063 merged).
-- #2971 stays waiting-jon (phone take — only Jon closes). Unlabeled
-  #3014/#838/#2827 wait for Jon's labels. QA MASTER sessions live; borrow off.
-- Dry-shelf call now stands FIVE deep (#3056/#3057/#3061/#3060 + the hall):
-  `flagshipStage` null (all six flagship READMEs gap-free), `weakestStage`
-  score 1 via #2971 only, `gap: null`. A SIXTH -1-weak rung on this source is
-  the STOP shape — pick a different stage or stop; #2795 covers this week's
-  flagship question, don't re-ask.
+- steer/next/game-queue/building empty; #3064 closed shipped (#3065 merged).
+- #2971 stays waiting-jon (only Jon closes). Unlabeled #3014/#838/#2827 wait
+  for Jon's labels. QA MASTER sessions live; borrow off.
+- Dry-shelf call stands six deep tonight (#3056/#3057/#3061/#3060/#3064 +
+  slot a's count). `flagshipStage` null, `weakestStage` score 1 via #2971
+  only, `gap: null` — next kick: different stage or stop.
 
 ## Notes for the next hand
-- BARRIER's **mark-not-erase law** is reusable shelf-wide: absorbed rounds stay
-  in `gs.eb` marked `eatP/eatQ` (shell skips drawing) so honest brains' streams
-  cannot move. Any new pickup that DELETES entities from tables will re-time
-  seeds and break the sweep.
-- #2814's seat-down fixes mean stage-hang classes (camera anchor, gate key,
-  vine hostage) now have proofs — recall the two handoff mutants whenever any
-  seat-down law changes.
-- Mac flake list unchanged: #3035-somersault-live + #3018-bannerGold under lane
-  load (both re-ran green tonight; CI never reddened them). Expect two-lane load.
-- Two-lane merge dance worked again: rebase over the sibling by UNION (never
-  --theirs/--ours wholesale when both features add list items).
+- **Live-leg honesty (new harness seam, `opts.auto`)**: a hero standing in the
+  falls DROWNS (the torrent ratchet ignores i-frames — the game's own law, and
+  correct), and Contra fires on the keydown edge, so held-key live legs are
+  fiction. Contracheck's cut leg now hands the seat to the honest autopilot
+  (`setup({auto:true})`) and proves the kill by identity (watched `rap:3` +
+  purse). Reuse this shape for any falls-phase live leg.
+- **Plant anchor drift**: #3064's `rapGate` split the gunner fire-condition
+  across two lines and silently broke the pre-existing `lob-hall` mutant anchor
+  (surfaced only at mutant-run time). When you widen a condition a plant sits
+  on, run the anchor scan before the full mutant suite.
+- **forge-merge.sh gap (#3013 family)**: after the squash-merge it deleted the
+  remote branch, then `mergeclean` died on `gh pr view --repo` without a PR
+  number, leaving the lane worktree checked out on local `main`. Manual finish
+  worked: detach lane at `origin/main`, `git branch -d main`, verify the
+  plumbing checkout detaches clean. Worth a one-line fix in mergeclean's PR
+  lookup.
+- Mac flake list unchanged: #3035-somersault-live + #3018-bannerGold under
+  lane load; both green on tonight's runs, CI never reddened them.
 
 ## Slots / ops
-- Slot a :5173 stopped (devstop by port) at the resumed session's close; port
-  verified free at this close-out. Plumbing `~/Dev/retrogames` detached at
-  origin/main; lane worktree `retrogames-forge-contra-barrier` pruned by
-  forge-merge (it also ate this watcher session's cwd — harmless, move back to
-  plumbing and finish there).
-- STATE.md committed to main — a forge game merged this session (#3063). Shift
-  report NOT re-pushed: the shipping session published its notes for this ship;
-  re-pushing a watcher's weaker copy would only churn the board (#614 intent).
+- Slot b :5178 stopped via devstop at close. Lane worktree
+  `retrogames-forge-contra-rappellers` pruned after merge (node_modules
+  symlink removed, plumbing checkout untouched); plumbing `~/Dev/retrogames`
+  detached at `origin/main` (`8994a18`).
+- STATE.md committed to main — a forge game merged this session (#3065).
+  Shift report pushed for #3064.
 
 ## Open questions
-- #3053 (never-dry kick dedupe — builder-lane double-kick evidence posted tonight;
-  awaiting Jon), #3054 (QA recorder, lane:qa), #2971 (waiting-jon phone take).
-  Live board: https://jalfern.com/retrogames/forge
+- #3053 (never-dry kick dedupe — double-kick evidence posted; awaiting Jon),
+  #3054 (QA recorder, lane:qa), #2971 (waiting-jon phone take), #1712
+  (PLAICRAFT S2). Live board: https://jalfern.com/retrogames/forge
