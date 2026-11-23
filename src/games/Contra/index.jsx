@@ -16,7 +16,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
 import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat } from './sim.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, bedFor, liftStep, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat } from './sim.js'
 import { parseCall, intentKey, intentLabel } from './voicecalls.js'
 import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
@@ -259,8 +259,8 @@ export default function ContraGame () {
             audioController.startMusic(name)
             audioController.setMusicLevel(1)
             // the #2902 loopVoice precedent for the ears: hotter loop, faster
-            // march — the tempo lifts with lk, the melody and grid do not move
-            audioController.setMusicStep(MUSIC[name].step / bedK)
+            // march — the tempo lift is sim law (liftStep), the shell just maps
+            audioController.setMusicStep(liftStep(MUSIC[name].step, bedK))
         }
         const stopBed = () => { bedNow = null; audioController.stopMusic() }
         let shake = 0
@@ -653,7 +653,7 @@ export default function ContraGame () {
             // turn, not a song change), the fortress gets the variation-up, and
             // a heat retarget re-voices even mid-phase (loop k / DEV setup).
             if (screen === 'play') {
-                const want = gs.phase === 'boss' ? 'contraGate' : 'contra'
+                const want = bedFor(gs.phase)
                 if (want !== bedNow || gs.lk !== bedK) setBed(want)
             }
             if (gs.end === 'win') { if (screen === 'play') { endTo('clear'); clearHold = 220 } }

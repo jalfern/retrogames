@@ -324,6 +324,24 @@ export function loopVoice (n) {
     return Math.min(1 + 0.06 * 3, 1 + 0.06 * (Math.max(1, Math.floor(n)) - 1))
 }
 
+// #3047 THE BED LAW (never-dry stage — the cabinet drives its march under the
+// run). Pure derivations the harness can pin, the loopVoice precedent above:
+// the sim owns what the stage SOUNDS like, the shell only maps names onto the
+// music engine. bedFor names the bed a phase drives under — the fortress gets
+// the variation-up, the jungle and the waterfall share the march (the section
+// break is a camera turn, not a song change). liftStep is the tempo a bed is
+// voiced at: the resting step divided by the loop heat, pinned with the tempo
+// (the march never runs faster than LOOP_CAP — the same ceiling loopK holds).
+// Both consume nothing: zero gs.r, no state touched, no hash surface — the
+// presentation-is-outside-the-referee law (#3035 rollT), every pre-bed pin,
+// twin stream, autopilot sweep and PLAICRAFT take byte-stands.
+export function bedFor (phase) {
+    return phase === 'boss' ? 'contraGate' : 'contra'
+}
+export function liftStep (baseStep, k) {
+    return baseStep / Math.max(1, Math.min(LOOP_CAP, k || 1))
+}
+
 const PAD0 = { left: false, right: false, up: false, down: false, a: false, b: false }
 
 // mulberry32 as pure state-in/state-out: the rng is just an integer on gs.
