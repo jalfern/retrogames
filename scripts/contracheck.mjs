@@ -2318,7 +2318,7 @@ if (MUTANT) {
             plant: '            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* MUTANT(lead-vanished): the march keeps its pulse but lost its call */\n            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,',
             harm: async (mod) => {
                 const hz = (n) => 440 * Math.pow(2, (n - 69) / 12)
-                const att = (fr) => (fr > 0 && fr < 250 ? Math.pow(2, -(12 * Math.log2(250 / fr)) / 10) : 1)
+                const att = (fr) => (fr > 0 && fr < 250 ? Math.pow(10, -(12 * Math.log2(250 / fr)) / 10) : 1)
                 let lead = 0, rest = 0
                 for (const n of mod.MUSIC.contra.lead) if (n) lead += 0.25 * att(hz(n))
                 for (const n of mod.MUSIC.contra.bass) if (n) rest += 0.36 * att(hz(n))
@@ -3096,7 +3096,7 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     const { MUSIC, MUSIC_BUS } = await import('../src/utils/AudioController.js')
     const hz = (n) => 440 * Math.pow(2, (n - 69) / 12)
     const KNEE = 250
-    const kneeAtt = (fr) => (fr > 0 && fr < KNEE ? Math.pow(2, -(12 * Math.log2(KNEE / fr)) / 10) : 1)
+    const kneeAtt = (fr) => (fr > 0 && fr < KNEE ? Math.pow(10, -(12 * Math.log2(KNEE / fr)) / 10) : 1)
     // energy split above the phone knee, from the lanes as the engine voices them:
     // lead square 0.5, bass triangle 0.6, dum a 160->55 Hz sine 0.5 (energy
     // centred ~100 Hz — under the knee by design), tek a 2500-highpassed click.
