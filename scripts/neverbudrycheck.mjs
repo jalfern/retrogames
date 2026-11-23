@@ -18,7 +18,8 @@
 //      answer-detection (a JONQ: prefix false-answered questions, #1403).
 //   4. weakestStage behaves: most-unowned-gaps loses (weakest = worst),
 //      held titles skipped, QA-owned gaps discounted, ties to the older
-//      title, an empty shelf answers null (only then is STOP legal).
+//      title, an empty shelf answers null (only then is STOP legal); and
+//      frozen (`waiting-jon`) feedback suppresses but never weakens (#3074).
 //   5. the registry really enumerates (the pick must come from the shelf
 //      as it is, not from memory), and the alias + CORE entry exist so CI
 //      actually runs this file.
@@ -62,6 +63,7 @@ const kickWired = (t) => /flagshipStage\(/.test(t) && /\|\|\s*weakestStage\(/.te
     && /stage\.weak/.test(t)
 const idleExports = (t) => /export function weakestStage/.test(t) && /export function parseRegistry/.test(t)
     && /export function heldDirs/.test(t)
+const idleDeclinesFrozen = (t) => /includes\('waiting-jon'\)/.test(t)
 const wardenNeverAsks = (t) => !/jonq\.mjs"? ask/.test(t)
 const wardenNeverDryRung = (t) => /NEVER-DRY KICK/.test(t) && /#1571/.test(t)
 const jonqRefusesDry = (t) => /DRY_QUEUE_SHAPE\.test\(/.test(t)
@@ -78,6 +80,7 @@ ok(stopOnFlagshipsGone(forgeMd), 'FORGE.md still promises STOP once flagships ar
 ok(rungDemands(forgeMd), 'the rung must demand a why-weakest line and exclude refactor/check-only changes')
 ok(kickWired(kick), 'idle-kick.mjs must answer KICK ... weak via weakestStage after flagshipStage')
 ok(idleExports(idleLib), 'lib/idle.mjs must export weakestStage + parseRegistry + heldDirs')
+ok(idleDeclinesFrozen(idleLib), "weakestStage's named count must decline `waiting-jon` feedback (#3074 — an unactionable item is not weakness)")
 ok(wardenNeverAsks(warden), 'warden.sh files a question — the warden never asks; only sessions ask, via jonq')
 ok(wardenNeverDryRung(warden), 'warden 4b must name the never-dry kick (#1571)')
 ok(jonqRefusesDry(jonqLib), 'validateAsk must refuse dry-queue asks (DRY_QUEUE_SHAPE)')
@@ -106,6 +109,19 @@ ok(weakestStage({ games: [
     { dir: 'Other', label: 'OTHER', gaps: [] },
 ], qaIssues: [{ title: 'QA — OTHER: something', body: 'polish' }], heldDirs: [] }).dir === 'Other',
 'open feedback naming a game makes it weak even with an empty gap list (score from feedback)')
+ok(weakestStage({ games: [
+    { dir: 'Pong', label: 'PONG', gaps: [] },
+    { dir: 'Other', label: 'OTHER', gaps: [] },
+], qaIssues: [{ title: 'QA — OTHER: something', body: 'polish', labels: ['feedback', 'waiting-jon'] }], heldDirs: [] }) === null,
+'#3074: waiting-jon feedback names weakness no lane may act on — naming must not weaken it; an otherwise-dry shelf stays STOP-legal')
+ok(weakestStage({ games: [
+    { dir: 'Other', label: 'OTHER', gaps: ['alpha gap'], },
+], qaIssues: [{ title: 'QA — OTHER: polish pass', body: 'alpha gap remains open', labels: ['feedback', 'waiting-jon'] }], heldDirs: [] }) === null,
+'#3074: ownership stays label-blind — a waiting-jon issue still SUPPRESSES the gaps it owns (the fix must never rekind a suppressed gap into a kick)')
+ok(weakestStage({ games: [
+    { dir: 'Other', label: 'OTHER', gaps: [] },
+], qaIssues: [{ title: 'QA — OTHER: something', body: 'polish', labels: ['feedback'] }], heldDirs: [] }).dir === 'Other',
+'#3074 boundary: actionable feedback (no waiting-jon) still weakens — the filter must not blind the ladder')
 ok(weakestStage({ games: [], qaIssues: [], heldDirs: [] }) === null,
 'an empty shelf answers null — ONLY then is STOP legal')
 ok(heldDirs(GS, [{ labels: ['building'], title: 'POLISH — HELD GAME: q', body: '' }]).join() === 'Held',
@@ -150,6 +166,7 @@ if (process.argv.includes('--mutant')) {
     const spec = {
         forge: [forgeMd, [rungPresent, rungAfterFlagship, stopOnFlagshipsGone, rungDemands]],
         kick: [kick, [kickWired]],
+        idleLib: [idleLib, [idleExports, idleDeclinesFrozen]],
         warden: [warden, [wardenNeverAsks, wardenNeverDryRung]],
         jonqLib: [jonqLib, [jonqRefusesDry, jonqCapsTitle, flagIsRobotShaped]],
         jonqCli: [jonqCli, [cliChecksCap, sweepFlagsUnlabeled]],
@@ -162,8 +179,9 @@ if (process.argv.includes('--mutant')) {
         ['old dry STOP restored', 'forge', (t) => t + "\nOnly when every flagship's every gap is owned may you STOP — say so in STATE.md and exit.\n"],
         ['why-weakest bar removed', 'forge', (t) => t.replace(/why-weakest/g, 'nice')],
         ['idle-kick stops at flagships', 'kick', (t) => t.replace(/\n\s*\|\| weakestStage\([\s\S]*?\)\n/, '\n')],
+        ['waiting-jon filter removed (#3074)', 'idleLib', (t) => t.replace("includes('waiting-jon')", "includes('never-jon')")],
         ['warden files questions again', 'warden', (t) => t.replace('ACTIONS+=("questions:$N")', 'node "$REPO/scripts/jonq.mjs" ask --lane games --title t --question "queue empty, what next?" --option a --option b --default a; ACTIONS+=("questions:$N")')],
-        ['warden forgets the rung', 'warden', (t) => t.replace(/IDLE NEVER-DRY KICK \(#869, shelf-wide #1571\)/, 'IDLE FLAGSHIP KICK (#869)')],
+        ['warden forgets the rung', 'warden', (t) => t.replace(/IDLE NEVER-DRY KICK \(#869[^)]*\)/, 'IDLE FLAGSHIP KICK (#869)')],
         ['jonq accepts dry asks', 'jonqLib', (t) => t.replace("DRY_QUEUE_SHAPE.test(String(question || ''))", 'false')],
         ['title cap widened to forever', 'jonqLib', (t) => t.replace(/TITLE_ASK_DAYS\s*=\s*7/, 'TITLE_ASK_DAYS = 36500')],
         ['flag switched to JONQ: prefix', 'jonqLib', (t) => t.replace('FORGE: unlabeled question?', 'JONQ: unlabeled question?')],
