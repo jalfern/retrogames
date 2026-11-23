@@ -623,3 +623,13 @@ Named mutants (`--mutant` 10–12): adapter bypass, drop-in-law ignore, and
 loop-carry skip all fail loudly. Known gaps: one pad on phones (by law, and
 #3000's spoken orders are the second channel that law allows); voice capture
 itself shipped in #3000 — the pad takes stay labeled AND the words bank.
+
+## QA #3019 — the refuse knock survives the phone (2026-11-23, studio)
+
+`callNo` was a lone 180 Hz triangle; #3016 raised its gain but small phone
+speakers physically roll off below ~250 Hz, so the fundamental cannot be made
+audible by volume. The knock now carries a 330 Hz octave at slightly lower
+gain (0.055 vs 0.08, 50 ms vs 70 ms) — still one dry "nothing to obey" tap,
+but its harmonic rides above the rolloff knee. Pinned by a `contracheck` leg
+that spies oscillator births around `say()` (synchronous slice — race-free):
+refuse schedules exactly [180, ≥250], the ack's 620 Hz sweep is untouched.
