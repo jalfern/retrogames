@@ -1,64 +1,74 @@
 # STATE — forge board snapshot (slot a, 2026-11-23 — shipped)
 
 ## This session shipped
-- **#3035 CONTRA somersault jump → PR #3036 → main `8241aab`, prod-verified.**
-  The cabinet's full-turn jump: `rollT` per seat (arms on jump event, one
-  37-tick revolution completes as the feet land, ground clears, vine-catch
-  zeroes; step-off and drop-through never arm); `drawPlayer` turns the body
-  ~2π at the body-centre pivot, flipped by facing, **gun arm draws outside
-  the rotation at the live 8-way aim** (sprite keeps matching logical state).
-  Referee untouched: rollT never enters `stateHash`, zero `gs.r` — states
-  differing only in rollT hash identically, all stored pins/streams stood.
-  Proven: contracheck 269 legs (+6 sim pins, +live pixel leg: bandana red
-  crosses the feet line mid-arc on both arm-states; AIM-UP hops carry
-  cold-dark barrel ink over the pivot, flat hops don't), mutants **stiff-hop**
-  & **roll-on-step** die by name (mutant run 189/189), 3 scoped lints + build.
-- Never-dry walk (#1571/#1615): kick said CONTRA -1 weak, live idle-kick
-  confirmed (score from feedback #2971 naming Contra; README gaps CLOSED),
-  so the gap was scoped live from the cabinet. #3031 (slot a seed) found
-  ALREADY BUILT by slot b live at claim time — closed as duplicate of #3032
-  before it could invite a third lane; slot b shipped press-feel (#3034).
+- **#3038 CONTRA — the cabinet's duck → PR #3039 → main `ec99753`, prod-verified.**
+  Never-dry stage (kick `CONTRA -1 weak`: flagship spent; score 1 came from
+  feedback #2971 naming Contra, README gaps all CLOSED/DISCLAIMER — gap scoped
+  live from the cabinet: DOWN on the ground did nothing). `posture` per seat
+  (0/1/2) in shared `seatStep`: DOWN edges cycle stand→kneel→prone (latch on
+  hold), UP stands, jump stands (+still rolls), air never ducks, DOWN+jump still
+  drops through. Muzzle 16/11/6 fires LEVEL; hit box tops 27/17/8 px so chest-
+  line rounds pass OVER prone and head rounds sink under kneel; crawl half-speed
+  is the trade; ground stays honest (blast off the lowered belly, contact off
+  the feet, torrent unmoved). posture rides stateHash, zero gs.r, autopilot
+  logs ZERO DOWN presses → every pre-duck seed/twin/pin byte-identical. Bonus:
+  AIM DOWN now kneels the wingman. Proven: contracheck **278/278** (+8 legs),
+  mutants **192/192** — duck-deaf, prone-immortal, no-crawl-price die by name;
+  3 scoped lints + build green.
+- Konami code #3037 (#3040, other lane) merged mid-session — main `3741df8`.
 
 ## PLAYABLE on main right now
-- `/retrogames/contra` (+ somersault #3035, voice #3000, radio teach #3016),
-  `/retrogames/minesweeper` (+ press-feel #3032, hall of fame #3026),
-  `/retrogames/double-dragon`, `/retrogames/floor-boss`, `/retrogames/fire-crew`,
-  `/retrogames/r-type`.
+- `/retrogames/contra` (+ duck #3038, somersault #3035, voice #3000, Konami
+  code #3037, radio teach #3016), `/retrogames/minesweeper` (+ press-feel
+  #3032, hall of fame #3026), `/retrogames/double-dragon`,
+  `/retrogames/floor-boss`, `/retrogames/fire-crew`, `/retrogames/r-type`.
 
 ## Board at close
 - `game-queue`/`steer`/`next`/`building`/`building-qa`: all EMPTY. `feedback`:
   only #2971 (waiting-jon — its last item needs a real phone take). No jonq
   open, no halt.
-- Worth Jon's eye (unlabeled, so no lane may claim): **#3014 STAGE — CONTRA:
-  attract teaches the voice orders** sits open `lane:games` with no ladder
-  label — a label would put a real stage on next week's board.
-- #3030 (forge-merge second shape) bit again this session and the law held:
-  merge printed the gh read-fail but the PR state was MERGED (rule 5 exit
-  criterion from the PR's state, not the wrapper's stdout); cleanup completed
-  by hand — remote branch gone, lane re-detached, no `[main]` squat.
+- `idle-kick` at close STILL answers `CONTRA -1 weak` — the score is #2971
+  (open feedback naming Contra) and my merge can't clear it; #2971's items are
+  trainable-adapter polish, NOT the duck. Next lane: do NOT re-file the duck
+  (#3038 shipped) and do not re-file what slot b shipped (#3032); if Contra
+  kicks again, scope a fresh live gap or note that the score is a waiting-jon
+  artifact (the only question Jon ever sees from a dry shelf is "which new
+  flagship title?" — one per lane per week, not yet used this week by slot a).
+- #3014 STAGE — CONTRA attract-teaches-voice-orders sits unlabeled (`lane:
+  games` only) — a label would honestly put it on the board; unlabeled = no
+  lane may adopt it.
 
-## Harness notes (carry-overs + new)
-- **Headless paint here runs ~12 fps**, so a 37-tick jump yields ~8 canvas
-  samples: single-hop pixel assertions are dicey. Sample 4 hops; inversion =
-  ANY frame; arm law = MEAN per-frame difference between same-seed arm-states
-  (constant occupants cancel). Jungle dark greens answer naive dark predicates
-  — steel must be COLD (b > r+6 && b > g+4). ArrowUp alone aims ax=0
-  (straight up) — the barrel stub sits over centre, not to the right.
-- `#2885` vine browser legs are in the documented advisory load-flake family
-  (#3008 residue, #3027 sibling): one leg flaked per run across five local
-  runs, rotating which one, always upstream of the diff. Rerun-once law,
-  reported in the PR, never papered.
-- Prod-verify needs `curl -L` (308 on moved hashes); this deploy was hot on
-  the first poll.
+## Harness notes (new + carry)
+- **Grade the player's own rounds: filter `pb` by `o === 0`.** The wingman's
+  rifle streams into the same `gs.pb` (pushed after the hero's each tick) —
+  `pb[pb.length-1]` is HIS bullet and a muzzle probe reads 16 while the hero
+  fires at 6. Owner-tagged since #2814; use it in any bullet-origin leg.
+- **A grenade at the feet grades CONTACT, not blast.** Bullet-vs-seat answers
+  a falling `gr` round before the ground does. To prove blast law (or a
+  blast-hiding mutant), drop the round OUTSIDE the ±7..9 px contact band but
+  inside the 30 px radius — first prone-immortal probe survived its own cheat
+  because the contact kill beat it.
+- **Movement keys are held-state, not tap-latched** (only A/B taps queue).
+  `keyboard.press('ArrowDown')` with no dwell evaporates between pads —
+  live-key legs must `down` + ≥100 ms + `up`. (Jump legs survive because
+  SPACE is latched — the asymmetry bites only non-jump keys.)
+- Headless paint ~12 fps → poll for the repaint (bandana-red-in-band legs use
+  any-frame + mean, not sleeps); prod-verify needs `curl -L`; the Contra game
+  code lives in its own lazy chunk — grep `Contra-*.js`, not `index-*.js`.
+- #3030 wrapper shape recurs: forge-merge printed the post-merge gh read-fail;
+  rule-5 exit criterion = PR state (MERGED), cleanup by hand (branch gone,
+  lane re-detached). Second session running; the law keeps holding.
+- #2885 vine browser legs: documented advisory load-flake family — rerun once.
+  #3018 gold-banner leg flaked once this session too, green on rerun, upstream
+  of the diff. Never paper, never more than one PR on harness timing.
 
 ## Slots / ops
-- Slot a port 5173: dev server stopped via `scripts/devstop.sh` at close ✓.
-  Plumbing `~/Dev/retrogames` detached at origin/main ✓. Lane worktree
-  `retrogames-forge-contra-somersault` detached at origin/main (clean);
-  purge cleaner may reap it. node_modules was symlinked from plumbing — the
-  purge must take the symlink before the dir (or leave both).
-- STATE.md committed to main this session (#3036 merged game code).
+- Slot a port 5173: dev server stopped via `scripts/devstop.sh` at close ✓
+  (never pattern-kill). Plumbing `~/Dev/retrogames` detached at origin/main ✓.
+  Lane worktree `retrogames-forge-contra-duck` detached at origin/main (clean);
+  purge cleaner may reap it — node_modules there is a symlink to the plumbing's;
+  the purge must take the symlink before (or with) the dir.
+- STATE.md committed to main this session (#3039 merged game code).
 
 ## Open questions
-- None (dry-shelf flagship question already on the record this week — see
-  https://jalfern.com/retrogames/forge for the live board).
+- None (see https://jalfern.com/retrogames/forge for the live board).
