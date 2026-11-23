@@ -4130,7 +4130,12 @@ const browser = await launch()
     const eT0 = Date.now()
     while (Date.now() - eT0 < 20000 && !paid) {
         const p = await ep.evaluate(() => window.__contraTest.probe())
-        if (p.score >= s0.nextExt) paid = p
+        // The pay lands one tick AFTER the crossing kill (the mark check sits
+        // at the head of step). Freeze only on the PAID state — sampling the
+        // crossing-intermediate frame (score up, mark not yet advanced) is a
+        // 12-fps headless artifact, not a law failure. The assertion below is
+        // untouched; only WHEN the sample is taken got honest.
+        if (p.score >= s0.nextExt && p.nextExt > s0.nextExt) paid = p
         else await ep.waitForTimeout(100)
     }
     await ep.keyboard.up('KeyX')
