@@ -302,7 +302,8 @@ disagreement is recorded on #2894.*
   low profiles fire level and crawl at half speed),
   SPACE/Z or the pad's A jumps — and HELD through a swinging vine tip in the
   canyon, it GRABS the vine (tap again to fly off). X/C or the pad's B fires.
-  `?` pauses.
+  `?` pauses. When the pool runs dry the cabinet asks once more: during the
+  CONTINUE count ANY key or tap pays a continue (see #3042 below).
   Seat 2 (drop-in): WASD + F jump + G fire — the first touch claims the seat.
   `warpFalls`/`warpBoss` construct phases properly (DEV hooks + DebugKit);
   DebugKit gained CYCLE WHEEL and P2: HUMAN SEAT cheat buttons.
@@ -323,7 +324,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   gunship-impervious, stiff-hop,
                                        #   roll-on-step, duck-deaf,
                                        #   prone-immortal, no-crawl-price,
-                                        #   extend-deaf, carry-blind
+                                        #   extend-deaf, carry-blind,
+                                        #   score-wipe, window-short, count-stalls
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -531,6 +533,18 @@ errors.
   as before). Attract teaches it, the typed notes glint gold, a `THIRTY UP!` salute
   rides the hot start, and the pad rides the attract screen with a `B` button so a
   phone can type it. See the #3037 note at the foot of this README.
+- **CLOSED by #3042**: the cabinet's second chance is real here — GAME OVER no
+  longer dumps the run at the first press. The screen reads, then `CONTINUE?`
+  counts **9…0 in world seconds**; any key or tap in the window pays a continue:
+  stage 1 loop 1, shared pool 3 (an armed run returns at 30 — the NES continue
+  law), **the score carried**, purse of 3 per game. Unanswered, the count closes
+  to the title by itself; at zero the purse offers no count at all. The window is
+  pure sim law (`contPhase`), the carry enters at `makeGame(seed, loop, lives,
+  score = 0)` (default 0 = the old world byte-for-byte; score already rides
+  `stateHash`), and the purse is shell state like IronRing's credits (#1103).
+  Never-dry stage (#1571): the rule was missing from the shelf while every README
+  gap read CLOSED — scoped live from the cabinet. See the #3042 note at the foot
+  of this README.
 
 ## #2917 The second air layer — hangar sorties at the gate
 
@@ -830,3 +844,52 @@ the **30,000-point extend**. That rule now stands here:
 before the death-freeze return — a kill that crosses while the body is frozen
 still owes its life on the next live tick, and a check parked after the freeze
 would delay it exactly one death and break twin determinism at the boundary.
+
+## #3042 CONTINUE — the cabinet's second chance (never-dry stage)
+
+Kicked from the #1571 ladder (`KICK CONTRA -1 weak`, via feedback #2971 — itself
+waiting-jon; every README gap CLOSED at kick time), the gap was scoped live: the
+1987 machine does not end your game when the pool runs dry. Per the arcade
+rulebook, after GAME OVER the player *can continue by pressing Start — up to
+three times per game*. Ours was one-way: any press ≥0.9 s dumped to attract and
+the score became history. The Konami continue countdown is already house law on
+this shelf (IronRing #1103), so this stage ports the machine's rule, not a new
+invention.
+
+- **The window is sim law, the clock is the shell's** (the `konamiFeed`
+  precedent): `contPhase(overT)` is pure arithmetic in sim.js — `read`
+  (GAME OVER speaks, 90 world ticks), `count` (the coin is accepted, Konami's
+  digit falls 9…0, one a second), `out` (the book closes). The over screen's
+  own tick stream drives it — never `setTimeout` (harness-waits law). Fairness
+  is pinned as arithmetic: nine digit-changes, monotone, no skips; every tick
+  before `out` answers a coin and none after.
+- **The prize enters at `makeGame(seed, loop, lives, score = 0)`** — a fourth
+  arg whose default IS the old constant, so every pre-continue pin, replay and
+  take byte stands. Score already rides `stateHash`, so a carried run is an
+  honest replay and a replay that silently wipes the carry diverges loudly
+  (`score-wipe` dies by name for exactly that).
+- **The purse is shell state**, like IronRing's credits: 3 continues per game,
+  fresh at every attract start, carried across arcade loops (the game is the
+  game). It is not hashed because it is not sim truth — the run it buys is.
+- **What a paid continue buys**: stage 1, loop 1, shared pool 3, the score the
+  run earned, rifle, wingman back on his post (a friend re-claims the blue seat
+  under the #2837 law; the tap/press that pays belongs to the hero). AN ARMED
+  RUN RETURNS ARMED — 30 lives — the NES law documented verbatim ("the cheat
+  remains in effect when the player runs out of lives and uses a continue");
+  the shell remembers the prize (`armedRun`), never the detector — kProg stays
+  attract-only per the #3037 trap.
+- **Unanswered is honest**: the expiry needs no key. When the count dies the
+  machine returns itself to the attract screen — the next player gets the
+  cabinet back, forfeit purse and all. At zero the purse offers no count at
+  all: GAME OVER is the last word, and the old press-to-attract law answers
+  exactly as it did before this stage existed.
+- **Presentation**: the digit sits gold under the score line and blinks red-hot
+  for the last two seconds (IronRing's warning family); a dry slot-click ticks
+  the seconds and a rising sting answers the re-entry, both via
+  `audioController`; one attract line on each console teaches the count.
+
+**Trap for the next hand:** the restart-on-press law changed meaning — a press
+in the window now BUYS the run instead of leaving it. Any future assertion that
+dies-and-restarts must say which it wants: pay (press inside the window) or
+leave (empty purse via `setup({ noContinue: true })`, or wait the ~11.5 s
+expiry). The two legs this stage re-forged are the worked examples.
