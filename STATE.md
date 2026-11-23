@@ -45,9 +45,15 @@
   MASTER"` and the liveness namespace before re-running mix work.
 
 ## Slots / ops
-- Slot a port 5173: stop via `scripts/devstop.sh` at close (this session's
-  final act). Plumbing `~/Dev/retrogames` detached at origin/main; lane
-  worktree `retrogames-forge-contra-mix` pruned post-merge (branch gone).
+- Slot a port 5173 stopped via `scripts/devstop.sh` at close; plumbing
+  `~/Dev/retrogames` detached at origin/main; lane worktree
+  `retrogames-forge-contra-mix` pruned post-merge (branch gone).
+- Prod: static passed (12m53s), Vercel previews deployed, prod deploys for
+  `4dc29ac` + `b968d65` created, index hash advanced. Content grep from
+  outside couldn't confirm the new chunk (shared AudioController chunk is
+  lazy-loaded and hashes are machine-dependent — the grep probe was the wrong
+  tool, not the deploy). #3052 shipped no player-visible bytes by design —
+  it shipped harness guards.
 - STATE.md committed to main — slot a merged PR #3055 this session.
 
 ## Open questions
