@@ -322,7 +322,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   loop-overdrive, loop-blind, voice-flat,
                                        #   gunship-impervious, stiff-hop,
                                        #   roll-on-step, duck-deaf,
-                                       #   prone-immortal, no-crawl-price
+                                       #   prone-immortal, no-crawl-price,
+                                        #   extend-deaf, carry-blind
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -421,7 +422,14 @@ rides stateHash and the autopilot logs ZERO DOWN presses — every pre-duck seed
 stream twins · the blue seat kneels under HIS pad through the same seatStep, and
 shouted AIM DOWN takes the wingman to a knee · live: two real ArrowDown presses
 land posture 2 and the paint follows — bandana red inside 9 px of the deck with
-the top of the column empty, ArrowUp sends it back to the crown** · zero page
+the top of the column empty, ArrowUp sends it back to the crown** · **#3041 the
+score extend: crossing 30,000 pays +1 to the shared pool and advances the mark
+one rung (first 30k, then +50k) · at the 99 cap the mark advances and no salute
+is owed · one rung per tick, oversized jumps paid on consecutive ticks ·
+arcadeLoop carries the mark with the score · zero gs.r and hash-clean · every
+honest loop-1 clear lands below the mark so no pre-extend byte moves · live: a
+real kill crosses the mark, the pool grows and EXTRA LIFE paints gold on the
+salute band** · zero page
 errors.
 
 ## Honest gaps
@@ -768,3 +776,57 @@ the attract screen, starts the run with **30 lives** in the shared pool.
 reset it. Never feed the detector during play: that would hand out lives mid-run,
 and it doesn't help the #1712 bank either (pad pairs know nothing of cheats and
 must stay that way — the typing happens before `beginRun`, by construction).
+
+## #3041 The score extend — the cabinet pays its 1UP (never-dry stage)
+
+Kicked from the #1571 ladder (`KICK CONTRA -1 weak`, second pass; every README
+gap CLOSED at kick time, the point coming from feedback #2971 — a `waiting-jon`
+trainable-adapter artifact), the gap was scoped live from the cabinet: the run
+could earn points forever but never earned anything for them. The arcade pays
+**extra lives for score** — the Konami instruction card's documented prize is
+the **30,000-point extend**. That rule now stands here:
+
+- **The rule.** Crossing `gs.nextExt` (first mark 30,000) adds **+1 to the
+  shared pool** and advances the mark by `EXT_STEP` (50,000). Fidelity note
+  per the #237 rule: the first mark is the manual's; the repeat rung is the
+  era-typical Konami staircase — the exact repeat interval is not documented
+  in the repo, recorded here rather than guessed silently. The pool caps at
+  99 (the HUD's numeric form, `makeGame`'s clamp): at the cap the mark still
+  advances and no salute is owed — a rule that lies about paying is worse
+  than a cap.
+- **Referee-clean.** The crossing check sits at the head of `step`: pure
+  arithmetic, **zero `gs.r`** (pinned — a paid tick and an unpaid twin advance
+  the seed identically), and `nextExt` rides `stateHash` (a replay that
+  silently skips an extend diverges loudly). One mark per tick; the biggest
+  single award in the game (+5000, the core) cannot outrun a 50,000 rung, and
+  the harness pins that an oversized jump is paid on consecutive ticks, never
+  skipped or doubled.
+- **The mark belongs to the RUN.** `arcadeLoop` carries `nextExt` with the
+  score — a rung spent in loop 2 is never re-sold at the stage boundary
+  (named mutant `carry-blind` dies for trying).
+- **Byte stability.** The honest autopilot's loop-1 clear score tops out at
+  19,900 (pinned across seeds 1..12) — below the first mark — so every
+  pre-extend seed stream, twin law, pin and PLAICRAFT dataset byte stands
+  untouched. Konami 30-lives pools ride the rule too (extends add to any pool
+  under 99; the loop carry law from #3037 — pools >5 carry whole — is
+  untouched).
+- **Presentation.** The sim banks an `extra` event; the shell rides it with a
+  gold `EXTRA LIFE!` plate on the salute band (y 58..76, the Konami salute's
+  band — the code lands at attract, the extend lands in play, and both guard
+  each other), the #2902 heads-row gold flash re-used for the landing, and a
+  three-note rising sting shorter than the code's salute. One attract line in
+  each copy set teaches the mark. DebugKit gained `ARM EXTEND` (stands the
+  score one kill below the mark) so the whole rule is phone-checkable in
+  seconds.
+- **Harness.** `contracheck` grew 8 sim legs (marks, crossing, cap, one-rung-
+  per-tick, loop carry, zero-rng twin, hash divergence, loop-1 score ceiling)
+  and 3 live legs (a real kill crosses the mark through held keys on a fixed
+  seed — pool, mark and salute all bank; the plate paints gold; zero page
+  errors). Named mutants: `extend-deaf` (the mark never pays — the 1UP is
+  folklore) and `carry-blind` (the mark resets at the boundary — the same
+  life is re-sold every loop). Both die by name.
+
+**Trap for the next hand:** the crossing check MUST sit at the head of `step`,
+before the death-freeze return — a kill that crosses while the body is frozen
+still owes its life on the next live tick, and a check parked after the freeze
+would delay it exactly one death and break twin determinism at the boundary.
