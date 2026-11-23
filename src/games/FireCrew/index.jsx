@@ -19,7 +19,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, armLiveCapture, recordLiveTick, isRecording, hasAutoVoice } from '../../utils/gameContract'
 import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { audioController } from '../../utils/AudioController'
-import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio, windVoice, ladderCreak, windWhistle, crewTail } from './sim.js'
+import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio, windVoice, ladderCreak, windWhistle, crewTail, TANK_LOW, tankAlarm } from './sim.js'
 import { parseRadio } from './voiceradio.js'
 import { askVoiceConsent, createVoiceSession } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
@@ -38,6 +38,10 @@ const sfx = {
     up: () => audioController.playTone(300, 0.05, 'square', 0.04),
     pump: () => audioController.playTone(140, 0.06, 'square', 0.05),
     wind: () => audioController.playSweep(90, 220, 0.6, 'triangle', 0.05),
+    // #2989 — the tank's own voices: params come from the sim-side pure
+    // tankAlarm spec, never from the shell's own numbers (src-pinned).
+    tankLow: (v) => { audioController.playTone(v.f0, 0.09, 'square', v.vol); audioController.playTone(v.f1, 0.12, 'square', v.vol, 0.1) },
+    tankDry: (v) => audioController.playSweep(v.f0, v.f1, v.dur, 'triangle', v.vol),
     // #1744 — sustained wind bed and ladder load-creak; params come from the
     // sim-side pure voices (windVoice / ladderCreak), never from the shell.
     windBed: (v) => audioController.playFilteredNoise(v.dur, v.vol, v.freq),
@@ -100,6 +104,8 @@ export default function FireCrew() {
     const lastBedRef = useRef(null)
     const lastCreakRef = useRef(null)
     const lastWhistleRef = useRef(null)
+    // #2989 — what the tank alarm last fired (kind + tick), read by the browser gate.
+    const lastTankRef = useRef(null)
     // voice radio (#1361): the mic is a seat, like any slot — consent first
     // (never auto-asked), one raw track for the whole run, spoken calls feed
     // the sim through applyRadio so the mic can never beat the darkness.
@@ -143,6 +149,7 @@ export default function FireCrew() {
         lastBedRef.current = null
         lastCreakRef.current = null
         lastWhistleRef.current = null
+        lastTankRef.current = null
         seatsRef.current = n
         setSeats(n)
         setEnd(null)
@@ -227,7 +234,7 @@ export default function FireCrew() {
     })
 
     const listenEvents = useCallback((g) => {
-        const p = prevRef.current || { rescued: 0, lost: 0, knocks: g.crew.map((c) => c.knocks), msgT: 0, ladder: g.ladder, gust: g.wind.gust, tick: g.tick }
+        const p = prevRef.current || { rescued: 0, lost: 0, knocks: g.crew.map((c) => c.knocks), msgT: 0, ladder: g.ladder, gust: g.wind.gust, tank: g.crew[0].tank, tick: g.tick }
         if (g.rescued > p.rescued) sfx.rescue()
         if (g.lost > p.lost) sfx.lost()
         g.crew.forEach((c, i) => { if (c.knocks > p.knocks[i]) sfx.knock() })
@@ -260,7 +267,20 @@ export default function FireCrew() {
         }
         if (g.messageT > p.msgT + 100 && /LADDER/.test(g.message)) sfx.slip()
         if (Math.abs(g.ladder - p.ladder) > 0.001 && g.tick % 12 < 2) sfx.pump()
-        prevRef.current = { rescued: g.rescued, lost: g.lost, knocks: g.crew.map((c) => c.knocks), msgT: g.messageT, ladder: g.ladder, gust: g.wind.gust, tick: g.tick }
+        // #2989 — the tank speaks its crossings: LOW (the arc losing reach) and
+        // DRY (the stream dying) sound the sim's own spec, once each fall.
+        // The hand on the pump hears it; a seated WATCH drives nothing and
+        // hears nothing. The held-dry click lives in the spray-mirror block.
+        if (!watchingRef.current && p.tank > TANK_LOW && g.crew[0].tank <= TANK_LOW && g.crew[0].tank > 0) {
+            const tv = tankAlarm(g.crew[0].tank)
+            sfx.tankLow(tv)
+            lastTankRef.current = { kind: 'low', tick: g.tick, tank: Math.round(g.crew[0].tank) }
+        }
+        if (!watchingRef.current && p.tank > 0 && g.crew[0].tank <= 0) {
+            sfx.tankDry(tankAlarm(0))
+            lastTankRef.current = { kind: 'dry', tick: g.tick, tank: 0 }
+        }
+        prevRef.current = { rescued: g.rescued, lost: g.lost, knocks: g.crew.map((c) => c.knocks), msgT: g.messageT, ladder: g.ladder, gust: g.wind.gust, tank: g.crew[0].tank, tick: g.tick }
     }, [])
 
     const spec = useRef(null)
@@ -475,6 +495,7 @@ export default function FireCrew() {
             listenEvents(g)
             const h = padFrom(keys1)
             if (!watchingRef.current && h.a && g.crew[0].tank > 0 && g.tick % 4 === 0) sfx.spray() // the human mirror goes silent seated — held keys never fake the hose
+            else if (!watchingRef.current && h.a && g.crew[0].tank <= 0 && g.tick % 14 === 0) { sfx.tankDry(tankAlarm(0)); lastTankRef.current = { kind: 'dry', held: true, tick: g.tick, tank: 0 } } // dry valve: the hand asks, the line answers with an empty clunk
             if (g.done) finish(g)
         }
 
@@ -621,6 +642,30 @@ export default function FireCrew() {
                     g.wind.next = g.tick + Math.max(0, remaining | 0)
                     lastWhistleRef.current = null
                     return { tick: g.tick, nextIn: g.wind.next - g.tick }
+                },
+                // #2989 — set the hose tank and re-arm the alarm: the sim's
+                // crossing memory and the fired-spies clear, so the gate only
+                // sees what happens after the forcing (same law as windForce).
+                // prevRef's tank reads back full so any forced low/dry level is
+                // a genuine downward crossing for the next ticks.
+                tankForce: (level) => {
+                    const g = gsRef.current
+                    if (!g) return { error: 'no run' }
+                    g.crew[0].tank = Math.max(0, Math.min(100, +level || 0))
+                    g.tankStage = 0
+                    lastTankRef.current = null
+                    if (prevRef.current) prevRef.current = { ...prevRef.current, tank: 100 }
+                    return { tick: g.tick, tank: g.crew[0].tank, human: g.sources[0] === 'human', done: !!g.done }
+                },
+                tankSpy: () => {
+                    const g = gsRef.current
+                    if (!g) return { error: 'no run' }
+                    return {
+                        tank: Math.round(g.crew[0].tank), stage: g.tankStage, human: g.sources[0] === 'human',
+                        msg: g.message, msgT: g.messageT,
+                        alarm: tankAlarm(g.crew[0].tank), lowAt: TANK_LOW,
+                        fired: lastTankRef.current,
+                    }
                 },
             }
             mountDbg({

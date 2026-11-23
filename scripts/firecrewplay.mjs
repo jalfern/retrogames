@@ -295,6 +295,49 @@ ok(capInfo.overflow === true && capInfo.spans === 64,
     '#2985 span-cap law: 64 spans bank exactly, the overflow-past-cap is named (never a silent cut)',
     JSON.stringify(capInfo))
 
+// #2989 — the tank speaks on real ticks. Fresh shift (watch never lingers,
+// startPlay seats the hand): force the arc's crossings and prove the human
+// seat sees and hears each fall, the seated ear stays shut, and a hand asking
+// for water that isn't there gets the dry-valve clunk.
+await page.evaluate(() => window.__firecrewTest.start(77, 1))
+await page.waitForFunction(() => window.__firecrewTest.screen() === 'play', { timeout: 8000 })
+await nap(400) // let the loop's ref stream start before forcing (prevRef fills on tick 1)
+let tspy = await page.evaluate(() => window.__firecrewTest.tankForce(20))
+ok(tspy && tspy.tank === 20 && tspy.human, 'tankForce puts the arc under TANK_LOW on a live shift', JSON.stringify(tspy))
+await nap(500)
+tspy = await page.evaluate(() => window.__firecrewTest.tankSpy())
+ok(tspy.stage === 1 && tspy.fired && tspy.fired.kind === 'low' && /TANK LOW/.test(tspy.msg)
+    && tspy.alarm.kind === 'low' && tspy.lowAt === 30,
+    'the LOW crossing fires the caution chirp and names the cure on the card', JSON.stringify(tspy))
+await page.evaluate(() => window.__firecrewTest.tankForce(0))
+await nap(500)
+tspy = await page.evaluate(() => window.__firecrewTest.tankSpy())
+ok(tspy.stage === 2 && tspy.fired && tspy.fired.kind === 'dry' && /TANK EMPTY/.test(tspy.msg)
+    && tspy.alarm.kind === 'dry',
+    'the DRY crossing clunks the dry valve and says NO REACH', JSON.stringify(tspy))
+await page.keyboard.down('Space')
+await nap(420)
+await page.keyboard.up('Space')
+tspy = await page.evaluate(() => window.__firecrewTest.tankSpy())
+ok(tspy.fired && tspy.fired.held === true && tspy.fired.kind === 'dry',
+    'a hand holding SOAK over an empty line gets the held dry-valve clunk — not silence', JSON.stringify(tspy.fired))
+// seated: the ear shuts. WATCH takes the pump; a forced drain names nothing.
+await press('KeyY')
+await nap(250)
+await page.waitForFunction(() => window.__firecrewTest.tankSpy().msgT === 0, { timeout: 4000 }) // let the pre-seat card expire first
+await page.evaluate(() => window.__firecrewTest.tankForce(25))
+await nap(600)
+tspy = await page.evaluate(() => window.__firecrewTest.tankSpy())
+ok(tspy.human === false && tspy.fired === null && tspy.msgT === 0,
+    'seated WATCH forces silent — an idle hand is never scolded', JSON.stringify(tspy))
+await press('ArrowRight') // driving key takes the seat back
+await nap(250)
+await page.evaluate(() => window.__firecrewTest.tankForce(20))
+await nap(500)
+tspy = await page.evaluate(() => window.__firecrewTest.tankSpy())
+ok(tspy.human && tspy.fired && tspy.fired.kind === 'low',
+    'back in hand, the next fall names itself again — every crossing spoken once', JSON.stringify(tspy.fired))
+
 ok(errors.length === 0, 'zero page errors across the whole drive', errors.slice(0, 3).join(' | '))
 console.log(`\n${fails ? 'FAILED' : 'DRIVE GREEN'} — ${fails ? fails + ' failures' : 'start, play, pause, contract, die, restart'}`)
 await browser.close()
