@@ -89,7 +89,7 @@ const sfx = {
     // the order held); the refuse is one low, dry knock — heard-but-nothing-
     // to-obey, never an error shriek (the mic is doing its best over gunfire).
     callAck: () => { audioController.playSweep(620, 930, 0.06, 'square', 0.05); setTimeout(() => audioController.playTone(930, 0.08, 'square', 0.045), 70) },
-    callNo: () => audioController.playTone(180, 0.07, 'triangle', 0.05),
+    callNo: () => audioController.playTone(180, 0.07, 'triangle', 0.08),
     // #2842 the arriving seat's boots on the sand — a dry thud under the dust.
     land: () => audioController.playNoise(0.07, 0.025),
     pdown: () => audioController.playSweep(300, 90, 0.3, 'square', 0.07),
@@ -217,6 +217,20 @@ export default function ContraGame () {
         let callFx = null
         const CALL_FX = 110
         const voiceCtl = { on: false, listen: null, badge: null }
+        // #3003 the first-run radio teach card: one-time, localStorage-gated,
+        // shown at the first RADIO LIVE grant. The card IS the one message at
+        // that moment (the shout echo yields to it), then the banner takes the
+        // word back for real shouts.
+        let hintFx = null
+        const HINT_FX = 400
+        const HINT_KEY = 'contra:voice-hints'
+        const hintSeen = () => { try { return !!localStorage.getItem(HINT_KEY) } catch { return true } }
+        const armHint = () => {
+            if (hintFx || hintSeen()) return false
+            try { localStorage.setItem(HINT_KEY, '1') } catch { /* private mode: still show */ }
+            hintFx = { t: HINT_FX }
+            return true
+        }
 
         const drain = () => {
             // #2902 sound escalation: enemy reports ride loopVoice(gs.loop) —
@@ -326,7 +340,7 @@ export default function ContraGame () {
                     // #3000: the voice grant arms the shout channel too — the
                     // mic was already consented, so recognition rides from the
                     // first tick. No grant, no listen; the game plays the same.
-                    if (c && c.voice && armVoice()) callFx = { t: CALL_FX, ok: true, text: 'RADIO LIVE — SHOUT ORDERS' }
+                    if (c && c.voice && armVoice() && !hintFx) callFx = { t: CALL_FX, ok: true, text: 'RADIO LIVE — SHOUT ORDERS' }
                 })
                 .catch(() => {})
         }
@@ -374,6 +388,9 @@ export default function ContraGame () {
                 },
             })
             voiceCtl.on = true
+            // #3003: the first grant shows the one-time teach card instead of
+            // the one-line echo — the card carries the message.
+            if (armHint()) callFx = null
             return true
         }
         const voiceToggle = async () => {
@@ -382,10 +399,10 @@ export default function ContraGame () {
             if (!speechSupported()) { callFx = { t: CALL_FX, ok: false, text: 'NO RADIO HERE' }; sfx.callNo(); return }
             // #2985 one ask per person per device: the auto layer's live voice
             // session IS the stored grant — reuse it before the #1247 prompt.
-            const consent = hasAutoVoice() ? { consent: true } : await askVoiceConsent()
+            const consent = hasAutoVoice() ? { consent: true } : await askVoiceConsent({ fresh: true })
             if (screen !== 'play') return // moved on while the prompt was up
             if (!consent.consent) { callFx = { t: CALL_FX, ok: false, text: 'NO MIC, NO RADIO' }; sfx.callNo(); return }
-            if (armVoice()) { callFx = { t: CALL_FX, ok: true, text: 'RADIO ON' }; sfx.callAck() }
+            if (armVoice()) { if (!hintFx) callFx = { t: CALL_FX, ok: true, text: 'RADIO ON' }; sfx.callAck() }
             else { callFx = { t: CALL_FX, ok: false, text: 'NO RADIO HERE' }; sfx.callNo() }
         }
 
@@ -455,6 +472,7 @@ export default function ContraGame () {
             step(gs, pad, p2)
             drain()
             if (callFx && --callFx.t <= 0) callFx = null // #3000 banner decay on WORLD ticks
+            if (hintFx && --hintFx.t <= 0) hintFx = null // #3003 teach-card decay on WORLD ticks
             // #1712 S2: bank exactly what THIS tick consumed (attract demo ticks
             // never enter a take). The P2 drop-in needs no side channel: the
             // keyboard press that called dropIn IS the first pad-1 content the
@@ -479,6 +497,18 @@ export default function ContraGame () {
                 for (const pl of PLATFORMS) drawPlatform(ctx, pl)
                 if (gs.depot && !gs.depot.dead) drawDepot(ctx, gs.depot, gs.tick)
                 drawGate(ctx)
+                // #3003 the HOLD post — a subtle gold tick on the ground marks
+                // the spot the wingman stands at (the post is the order; the
+                // soldier standing on it is the result). Jungle only: the
+                // torrent out-ranks the shout in the falls (sim law).
+                if (gs.orderForm === 'hold' && gs.holdX > 0 && !gs.end) {
+                    const hx = Math.round(gs.holdX)
+                    if (hx > gs.cam - 8 && hx < gs.cam + 392) {
+                        ctx.fillStyle = '#ffd23c'
+                        ctx.fillRect(hx, 188, 1, 6)
+                        ctx.fillRect(hx - 2, 186, 5, 2)
+                    }
+                }
             } else {
                 if (gs.phase === 'boss' && gs.boss) drawGateStructure(ctx, gs.boss, gs.tick)
                 for (const pl of FALLS_LEDGES) drawLedge(ctx, pl)
@@ -551,7 +581,31 @@ export default function ContraGame () {
             // #3000 the radio echo — one line at a time (ART.md bar 6), below
             // the HUD strip, over the fight: what the mic heard, or that the
             // words were nothing the wingman could obey.
-            if (screen === 'play' && callFx) {
+            // #3003 the first-run teach card — the one message at the first
+            // RADIO LIVE. Carried by the card, not the banner (ART bar 6).
+            if (screen === 'play' && hintFx) {
+                const fade = hintFx.t > HINT_FX - 12 ? (HINT_FX - hintFx.t) / 12 : Math.min(1, hintFx.t / 10)
+                ctx.save()
+                ctx.globalAlpha = Math.max(0, Math.min(1, fade))
+                ctx.textBaseline = 'top'
+                const lines = ['RADIO LIVE — SHOUT ORDERS', 'AIM UP · AIM DOWN · AIM LEVEL', 'FOLLOW · HOLD · SPREAD']
+                ctx.font = 'bold 9px "Courier New", monospace'
+                const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18
+                const x = 192 - w / 2
+                ctx.fillStyle = 'rgba(6,10,4,0.88)'
+                ctx.fillRect(x, 146, w, 42)
+                ctx.strokeStyle = '#ffd23c'
+                ctx.lineWidth = 1
+                ctx.strokeRect(x + 0.5, 146.5, w - 1, 41)
+                ctx.fillStyle = '#ffd23c'
+                ctx.fillText(lines[0], 192 - ctx.measureText(lines[0]).width / 2, 151)
+                ctx.font = 'bold 8px "Courier New", monospace'
+                ctx.fillStyle = '#cdeea8'
+                ctx.fillText(lines[1], 192 - ctx.measureText(lines[1]).width / 2, 166)
+                ctx.fillText(lines[2], 192 - ctx.measureText(lines[2]).width / 2, 179)
+                ctx.restore()
+            }
+            if (screen === 'play' && callFx && !hintFx) {
                 const fade = callFx.t > CALL_FX - 12 ? (CALL_FX - callFx.t) / 12 : Math.min(1, callFx.t / 10)
                 ctx.save()
                 ctx.globalAlpha = Math.max(0, Math.min(1, fade))
@@ -812,7 +866,7 @@ export default function ContraGame () {
                     vine: { p: gs.p.vine, q: gs.p2.vine, tips: gs.vines.map((v) => { const tp = vineTip(gs, v.i); return { x: +tp.x.toFixed(1), y: +tp.y.toFixed(1) } }) },
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
-                    call: { form: gs.orderForm, aim: gs.orderAim, holdX: +gs.holdX.toFixed(1), banner: callFx ? { t: callFx.t, text: callFx.text, ok: callFx.ok } : null, armed: voiceCtl.on },   // #3000 the shout channel is observable
+                    call: { form: gs.orderForm, aim: gs.orderAim, holdX: +gs.holdX.toFixed(1), banner: callFx ? { t: callFx.t, text: callFx.text, ok: callFx.ok } : null, armed: voiceCtl.on, hint: hintFx ? { t: hintFx.t } : null },   // #3000 the shout channel is observable
                     keys: { ...keys },
                     keys2: { ...keys2 },
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
@@ -825,6 +879,9 @@ export default function ContraGame () {
                 // applyCall -> voiceCmd bank). `voiceArmed` answers the badge.
                 say: (text) => { phraseHeard(text); return gs.orderAim + '/' + gs.orderForm },
                 voiceArmed: () => voiceCtl.on,
+                // #3003 the first-run teach card, drivable with no mic: same
+                // honest gate as the real path (first grant, localStorage).
+                hintNow: () => armHint(),
                 // #2902: reach the attract loop-teach on the harness's clock
                 // (waiting 60 s for the demo to clear stage 1 by itself is not
                 // a leg) — only ever fires from the attract screen.

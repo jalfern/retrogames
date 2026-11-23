@@ -3079,4 +3079,67 @@ const browser = await launch()
     await vp.close()
 }
 
+// ------------------------------------------------ #3003 voice-polish legs ---
+// First-run teach card (FireCrew #1287 pattern): the first grant shows it,
+// localStorage-gated; the card is the one message at that moment. And the
+// HOLD post: a subtle gold tick on the ground marks the spot the wingman
+// stands at (the shout itself is pinned sim-side above).
+{
+    const vp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500 })
+    const vErrs = []
+    vp.on('pageerror', (e) => vErrs.push(e.stack || e.message))
+    const leg = await vp.evaluate(async () => {
+        const T = window.__contraTest
+        T.start()
+        localStorage.removeItem('contra:voice-hints')
+        const first = T.hintNow()
+        const hint = T.probe().call.hint
+        const seen = localStorage.getItem('contra:voice-hints')
+        const second = T.hintNow()
+        const hintAfter = T.probe().call.hint
+        // poll until the card paints (headless rAF can throttle)
+        const c = document.querySelector('canvas')
+        const goldIn = (x, y, w, h) => {
+            const d = c.getContext('2d').getImageData(x, y, w, h).data
+            let g = 0
+            for (let i = 0; i < d.length; i += 4) { if (d[i] > 200 && d[i + 1] > 180 && d[i + 2] < 100) g++ }
+            return g
+        }
+        let gold = 0
+        for (let i = 0; i < 40 && gold < 20; i++) {
+            await new Promise(r => requestAnimationFrame(r))
+            await new Promise(r => setTimeout(r, 50))
+            gold = goldIn(0, 146, 384, 42)
+        }
+        // the HOLD post tick: pin the wingman mid-screen, say HOLD, let a frame land
+        T.setup({ allyX: 150 })
+        T.say('HOLD')
+        const holdProbe = T.probe().call
+        const cam = T.probe().cam
+        const hx = Math.round(holdProbe.holdX - cam)
+        let tickGold = 0
+        for (let i = 0; i < 40 && tickGold < 4; i++) {
+            await new Promise(r => requestAnimationFrame(r))
+            await new Promise(r => setTimeout(r, 50))
+            tickGold = goldIn(Math.max(0, hx - 8), 184, 17, 8)
+        }
+        // the post disappears when the order changes back to FOLLOW
+        T.say('FOLLOW ME')
+        const followProbe = T.probe().call
+        return { first, hint, seen, second, hintAfter, gold, hold: holdProbe, tickGold, follow: followProbe }
+    })
+    r.check('#3003 the first grant arms the teach card (first-run only)',
+        leg.first === true && leg.hint && leg.hint.t > 0 && leg.seen === '1', JSON.stringify(leg))
+    r.check('#3003 the card is never shown twice (localStorage-gated)',
+        leg.second === false && leg.hintAfter && leg.hintAfter.t > 0, JSON.stringify(leg))
+    r.check('#3003 the teach card paints (gold plate, border and copy)',
+        leg.gold >= 20, `gold pixels=${leg.gold}`)
+    r.check('#3003 the HOLD post ticks on the ground at the post',
+        leg.hold.form === 'hold' && leg.hold.holdX > 0 && leg.tickGold >= 4, JSON.stringify({ hold: leg.hold, tickGold: leg.tickGold }))
+    r.check('#3003 the post clears when the order changes back to FOLLOW',
+        leg.follow.form === 'follow', JSON.stringify(leg.follow))
+    r.check('#3003 browser: no page errors on the teach-card/post legs', vErrs.length === 0, vErrs.join(' | '))
+    await vp.close()
+}
+
 r.exit(browser)
