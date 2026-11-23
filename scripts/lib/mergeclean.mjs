@@ -7,7 +7,10 @@
 //   reap        — `git worktree remove` the CLEAN ones (never --force: a dirty
 //                 squat belongs to a live lane; name it and leave it)
 //   post <br>   — after a merge attempt: trust PR *state* from GitHub, not gh's
-//                 exit code, and complete the cleanup gh skipped.
+//                 exit code, and complete the cleanup gh skipped. The PR is
+//                 resolved explicitly by branch (#3070 — `gh pr view --repo`
+//                 without a positional cannot infer, and gh's half-cleanup
+//                 may already have moved the lane off its branch).
 // CLI: node scripts/lib/mergeclean.mjs warn-squats | reap | post <branch>
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
@@ -79,7 +82,16 @@ export function reapSquats() {
 export function postMerge(branch) {
     let state = '';
     try {
-        const info = JSON.parse(gh(['pr', 'view', '--repo', REPO, '--json', 'state,headRefName']));
+        // #3070 (3rd bite): the branch is the positional argument. `gh pr view`
+        // refuses `--repo` without one ("argument required"), and the old
+        // number-less form died exactly here after gh's half-cleanup moved the
+        // lane off its branch — killing all cleanup below. Branch lookup is
+        // server-side and survives --delete-branch (verified: MERGED #3065).
+        const info = JSON.parse(gh(['pr', 'view', branch, '--repo', REPO, '--json', 'state,headRefName']));
+        if (info.headRefName !== branch) {
+            console.error(`mergeclean: gh resolved PR for ${info.headRefName}, not ${branch} — refusing on ambiguity.`);
+            return 2;
+        }
         state = info.state;
     } catch (e) {
         console.error(`mergeclean: cannot read PR state for ${branch}: ${e.message.split('\n')[0]}`);
@@ -110,7 +122,16 @@ export function postMerge(branch) {
     } else localGone = true;
     // (d) reap any main-squatter that killed gh's cleanup in the first place
     reapSquats();
-    console.log(`mergeclean: done (remote branch ${remoteGone ? 'gone' : 'STILL PRESENT'}, lane detached at origin/main${localGone ? ', local branch deleted' : ''})`);
+    // (e) sweep the stray local `main` both slots woke on (#3070): gh's deep
+    // half-cleanup checks the lane out onto local main before dying. Detached
+    // above, that branch is now free and merged — but guarded: -d only, and a
+    // main still held by a dirty squat or unmerged is named, never destroyed.
+    let mainGone = 'none';
+    if (git(['branch', '--list', 'main'])) {
+        try { git(['branch', '-d', 'main']); mainGone = true; }
+        catch { mainGone = false; console.warn('mergeclean: local `main` still held or unmerged — delete by hand once free: git branch -d main'); }
+    }
+    console.log(`mergeclean: done (remote branch ${remoteGone ? 'gone' : 'STILL PRESENT'}, lane detached at origin/main${localGone ? ', local branch deleted' : ''}${mainGone === true ? ', stray main swept' : mainGone === false ? ', stray main KEPT' : ''})`);
     return 0;
 }
 
