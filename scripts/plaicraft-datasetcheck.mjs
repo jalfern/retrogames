@@ -726,13 +726,13 @@ try {
     }
     { // unit: fire-crew adapter — solo verifies, radio calls re-seat the sim in
         // replay, the watch span drops its rows, tampered refuses (#1712)
-        const FC_BI = { sweepW: FC_NAMES.indexOf('sweepW'), sweepLeft: FC_NAMES.indexOf('sweepLeft'), radioLadder: FC_NAMES.indexOf('radioLadder'), v1: FC_NAMES.indexOf('v1') }
+        const FC_BI = { sweepW: FC_NAMES.indexOf('sweepW'), sweepLeft: FC_NAMES.indexOf('sweepLeft'), radioLadder: FC_NAMES.indexOf('radioLadder'), radioDeny: FC_NAMES.indexOf('radioDeny'), v1: FC_NAMES.indexOf('v1') }
         const clean = scriptedTake({ game: 'fire-crew', seed: 96, ticks: 300, seats: [{ kind: 'human' }], calls: [{ t: 60, said: 'victim on the left', intent: 'spot', side: 'west' }, { t: 200, said: 'ladder up', intent: 'ladder', dir: 'up' }] })
         const good = fireCrewRows('unit/fc-clean', clean)
         const badRec = JSON.parse(JSON.stringify(clean))
         badRec.hashes[Math.max(0, badRec.hashes.length - 2)].h = 'cafebabe'
         const bad = fireCrewRows('unit/fc-tamper', badRec)
-        r.check('fire-crew adapter: clean solo take verifies (300 rows of 65 finite features), tampered refuses at its tick (#1712)',
+        r.check('fire-crew adapter: clean solo take verifies (300 rows of 67 finite features), tampered refuses at its tick (#1712)',
             good.ok && good.rows.length === 300 && good.rows.every((x) => x.feat.length === FC_N_FEAT && x.feat.every((v) => Number.isFinite(v)))
             && !bad.ok && !!bad.mismatch && bad.mismatch.tick > 0,
             bad.ok ? 'tampered verified?!' : `mismatch@${bad.mismatch && bad.mismatch.tick} rows=${good.rows.length}`)
@@ -756,6 +756,30 @@ try {
                 quiet.ok && !!sweepOn && sweepOn.feat[FC_BI.sweepW] === 1 && sweepOn.feat[FC_BI.sweepLeft] > 0
                 && !!ladderOn && ladderOn.feat[FC_BI.radioLadder] === 1,
                 `ok=${quiet.ok} sweep=${sweepOn ? sweepOn.feat.slice(FC_BI.sweepW, FC_BI.sweepW + 7).join('') : 'n/a'}`)
+        }
+        { // #2985: a REFUSED shout rows too. Battery is pad-deterministic
+            // (recovery +0.06/tick, flare −30), so three single-tick flares
+            // starve the light below the sweep cost; the spot call at t=80 is
+            // refused by THE SIM, banks ok:false + why, and the replay must
+            // re-light radioDeny from the banked tick and wear off 120 ticks
+            // later — the hash never sees any of it, so the take still verifies.
+            const recD = createRecorder({ gameId: 'fire-crew', method: 'dpad', seed: 96, players: 1, build: 'test', sources: [{ kind: 'human' }] })
+            const gd = fcSetSources(fcMakeRun(96), ['human', 'cpu', 'cpu'])
+            let refused = null
+            for (let t = 0; t < 300; t++) {
+                const pad = { left: false, right: false, up: false, down: false, a: false, b: t === 10 || t === 40 || t === 70 }
+                fcStep(gd, pad, [pad])
+                recD.addTick([pad], null, gd.tick % 30 === 0 ? fcHash(gd) : null)
+                if (gd.tick === 80) { const res = fcApplyRadio(gd, { kind: 'spot', side: 'west' }); refused = res; recD.addVoiceCmd({ said: 'victim on the left', intent: 'spot', ok: res.ok, why: res.why }) }
+            }
+            const drows = fireCrewRows('unit/fc-deny', recD.finish(fcHash(gd)))
+            const onDeny = drows.ok && drows.rows.find((x) => x.t === 80)
+            const offDeny = drows.ok && drows.rows.find((x) => x.t === 200)
+            r.check('fire-crew refusal law: a banked LIGHT DEAD call re-seats in replay — radioDeny + countdown light the rows from the banked tick and go silent 120 ticks later, the take still verifies (#2985)',
+                !!refused && !refused.ok && refused.why === 'LIGHT DEAD'
+                && drows.ok && !!onDeny && onDeny.feat[FC_BI.radioDeny] === 1 && onDeny.feat[FC_BI.radioDeny + 1] > 0
+                && !!offDeny && offDeny.feat[FC_BI.radioDeny] === 0 && offDeny.feat[FC_BI.radioDeny + 1] === 0,
+                `ok=${drows.ok} refused=${refused && refused.ok} deny@80=${onDeny ? onDeny.feat.slice(FC_BI.radioDeny, FC_BI.radioDeny + 2).join(',') : 'n/a'}`)
         }
         const watched = scriptedTake({ game: 'fire-crew', seed: 97, ticks: 260, seats: [{ kind: 'human' }, { kind: 'cpu' }], watch: [[80, 140]] })
         const wrows = fireCrewRows('unit/fc-watch', watched)
@@ -1270,7 +1294,7 @@ if (MUTATE) {
                 ? fs.readFileSync(path.join(outM14, 'dataset.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
                 : []
             const featFc = rowsM14.some((x) => x.g === 'fire-crew' && Array.isArray(x.feat) && x.feat.length === FC_N_FEAT)
-            r.check('fire-crew adapter is load-bearing: 65-feature rows exist (RED under the fire-crew adapter-bypass mutant, #1712)',
+            r.check('fire-crew adapter is load-bearing: 67-feature rows exist (RED under the fire-crew adapter-bypass mutant, #1712)',
                 featFc, `featRows=${featFc ? 'yes' : 'no'}${cli14.status !== 0 ? ' build exit ' + cli14.status : ''}`)
         } finally {
             pull(DS)

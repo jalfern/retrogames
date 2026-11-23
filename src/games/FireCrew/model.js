@@ -19,7 +19,7 @@
 //
 // Hash-clean: pure reads of gs only — no rng, no writes.
 
-import { W, H, CLOCK, VICTIMS, inLoft, lightAt, SWEEP_TICKS } from './sim.js'
+import { W, H, CLOCK, VICTIMS, inLoft, lightAt, SWEEP_TICKS, DENY_ECHO_TICKS } from './sim.js'
 
 export const FEAT_NAMES = [
     'clockFrac', 'rescuedFrac', 'lostFrac', 'scoreFrac',
@@ -30,11 +30,11 @@ export const FEAT_NAMES = [
     'f1Dx', 'f1Dy', 'f1Heat', 'f2Dx', 'f2Dy', 'f2Heat', 'f3Dx', 'f3Dy', 'f3Heat', 'fireGround', 'fireLoft',
     'v1', 'v1Dx', 'v1Dy', 'v1Loft', 'v2', 'v2Dx', 'v2Dy', 'v2Loft',
     'sweepW', 'sweepE', 'sweepBack', 'sweepFront', 'sweepLoft', 'sweepAll', 'sweepLeft',
-    'radioLadder', 'radioHold',
+    'radioLadder', 'radioHold', 'radioDeny', 'radioDenyLeft',
     'prevLeft', 'prevRight', 'prevUp', 'prevDown', 'prevA', 'prevB',
     'seatId',
 ]
-export const N_FEAT = FEAT_NAMES.length // 65
+export const N_FEAT = FEAT_NAMES.length // 67
 export const N_ACT = 6 // left, right, up, down, A(soak), B(flare)
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v))
@@ -116,9 +116,13 @@ export function featurize(g, seat, mem = {}) {
     }
 
     // --- the radio net (shared by rule: every seat sees/hears the call) -----
+    // radioDeny/radioDenyLeft (#2985): the LIGHT DEAD echo, mirrored from
+    // sweepLeft — a seat learning to shout must see that its shout failed,
+    // or it trains on the command and never on the consequence.
     out.push(...sweepLane(g),
         g.voiceLadder && g.voiceLadder.t > 0 ? (g.voiceLadder.dir === 'up' ? 1 : -1) : Z,
-        g.radioHoldT > 0 ? 1 : Z)
+        g.radioHoldT > 0 ? 1 : Z,
+        g.radioDenyT > 0 ? 1 : Z, clamp01(g.radioDenyT / DENY_ECHO_TICKS))
 
     // --- autoregressive: the seat's own pad last tick --------------------------
     const pa = mem.pa || {}
