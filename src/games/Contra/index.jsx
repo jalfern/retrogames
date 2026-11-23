@@ -89,7 +89,13 @@ const sfx = {
     // the order held); the refuse is one low, dry knock — heard-but-nothing-
     // to-obey, never an error shriek (the mic is doing its best over gunfire).
     callAck: () => { audioController.playSweep(620, 930, 0.06, 'square', 0.05); setTimeout(() => audioController.playTone(930, 0.08, 'square', 0.045), 70) },
-    callNo: () => audioController.playTone(180, 0.07, 'triangle', 0.08),
+    // #3019 the octave above the knee: phone speakers roll off hard below
+    // ~250 Hz (small drivers cannot move the air), so #3016's gain raise on
+    // the 180 Hz fundamental stayed inaudible under machine-gun fire on the
+    // device most people play on. A 330 Hz triangle rides at slightly lower
+    // gain — one dry knock still, semantics untouched, but its harmonic now
+    // survives where the fundamental physically cannot.
+    callNo: () => { audioController.playTone(180, 0.07, 'triangle', 0.08); audioController.playTone(330, 0.05, 'triangle', 0.055) },
     // #2842 the arriving seat's boots on the sand — a dry thud under the dust.
     land: () => audioController.playNoise(0.07, 0.025),
     pdown: () => audioController.playSweep(300, 90, 0.3, 'square', 0.07),

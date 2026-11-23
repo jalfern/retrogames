@@ -3142,4 +3142,49 @@ const browser = await launch()
     await vp.close()
 }
 
+// ------------------------------------------------ #3019 refuse-knock leg ----
+// Phone speakers roll off hard below ~250 Hz — raising the gain on the 180 Hz
+// refuse fundamental (#3016) cannot make it audible on small drivers. The knock
+// must schedule a second tone above the rolloff knee (the 330 Hz octave).
+// The log slice is race-free: phraseHeard -> applyCall -> sfx.callNo runs in
+// one synchronous JS task, so what the spy records around say() is exactly the
+// knock's oscillators — no music or gunfire noise can interleave (and noise
+// never creates oscillators anyway).
+{
+    const vp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', start: true, wait: 250 })
+    const kErrs = []
+    vp.on('pageerror', (e) => kErrs.push(e.stack || e.message))
+    const leg = await vp.evaluate(() => {
+        const T = window.__contraTest
+        T.start()
+        window.__game.reset(21, 2)
+        // spy every frequency the controller binds at oscillator birth
+        window.__oscLog = []
+        const proto = AudioContext.prototype
+        const orig = proto.createOscillator
+        proto.createOscillator = function (...a) {
+            const o = orig.apply(this, a)
+            const sv = o.frequency.setValueAtTime.bind(o.frequency)
+            o.frequency.setValueAtTime = (v, t) => { window.__oscLog.push(v); return sv(v, t) }
+            return o
+        }
+        const sayAt = (text) => {
+            const i0 = window.__oscLog.length
+            T.say(text)
+            return window.__oscLog.slice(i0) // synchronously taken — the knock in full
+        }
+        const knock = sayAt('HELLO THERE') // unobeyable -> callNo
+        const ack = sayAt('AIM UP') // obeyed -> callAck (its 930 tail is async, not in slice)
+        proto.createOscillator = orig
+        return { knock, ack }
+    })
+    r.check('#3019 refuse knock: two tones scheduled, the octave above the phone rolloff knee (250 Hz)',
+        leg.knock.length === 2 && leg.knock[0] === 180 && leg.knock[1] >= 250 && leg.knock[1] <= 400,
+        JSON.stringify(leg.knock))
+    r.check('#3019 refuse knock: the acknowledge sweep keeps its own voice (starts at 620)',
+        leg.ack.length === 1 && leg.ack[0] === 620, JSON.stringify(leg.ack))
+    r.check('#3019 refuse knock: no page errors on the knock leg', kErrs.length === 0, kErrs.join(' | '))
+    await vp.close()
+}
+
 r.exit(browser)
