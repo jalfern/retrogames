@@ -145,7 +145,21 @@ proved; main's full proof is the nightly. Before ANY merge a lane runs
 `scripts/main-ok.sh` (red nightly = freeze; the flaky heist nightly only warns).
 
 ```bash
-scripts/main-ok.sh                        # merge-freeze check (rule 5)
+scripts/main-ok.sh                        # merge-freeze check (rule 5) + #3013 preflight:
+                                          #   WARNs when `main` is checked out in a linked
+                                          #   worktree (that is what kills gh's cleanup below)
+scripts/forge-merge.sh                    # #3013: the whole rule-5 merge — main-ok → wait
+                                          #   `static` → squash-merge → complete the cleanup gh
+                                          #   skips when a squat made its local bookkeeping die
+                                          #   (remote-branch delete, re-detach, safe reap).
+                                          #   Exit = PR *state*, not gh's exit code (#2975).
+                                          #   worktreepurge keeps main-squatters ('pushed,
+                                          #   unmerged'); this is their only exit besides Jon.
+node scripts/mergecheck.mjs               # sandbox replay of the trap: fake gh merges
+                                          #   server-side then dies on `'main' is already used
+                                          #   by worktree'; 3 scenarios × 24 legs (clean reap,
+                                          #   dirty squat preserved, nothing-merged touches
+                                          #   nothing). Mutate `state !== 'MERGED'` -> C reds.
 node scripts/watchcheck.mjs             # the WATCH key, driven in Chrome (#1624; browser suite)
                                         #   --throttle N reproduces nightly tick debt on one pilot (#2036)
 node scripts/watchrespawncheck.mjs      # #2278: respawn recipe survives tmp_cleaner (macOS

@@ -167,11 +167,12 @@ AGENTS.md wins.
        # mutateguard.mjs --check` exits red while it exists. Commit first, then run.
     git push -u origin forge-<slug>
    gh pr create --base main --title "<NAME>" --body-file /tmp/pr.md
-   scripts/main-ok.sh && while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do [ "$s" = SUCCESS ] && break; case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac; sleep 20; done && gh pr merge --squash --delete-branch
-   git checkout --detach origin/main   # gh auto-switches the worktree onto `main` after
-                                       # --delete-branch — re-detach at once (the law keeps
-                                       # `main` checked out nowhere; a held `main` makes the
-                                       # next lane's merge die on local bookkeeping)
+   scripts/forge-merge.sh   # rule-5 chain inside: main-ok → wait `static` → squash-merge.
+                            # #3013: exits on the PR's *state* (not gh's exit code) and then
+                            # completes the cleanup gh skips when a stale worktree squats on
+                            # main — remote-branch delete, re-detach at origin/main, safe
+                            # squat prune (dirty ones named, never destroyed). mergecheck
+                            # proves it against a sandbox replay of the trap.
    ```
 8. **Verify prod:** poll `https://jalfern.com/retrogames/` assets until the
    bundle hash contains the new game; comment the live URL on the issue;

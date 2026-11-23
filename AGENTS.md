@@ -20,9 +20,11 @@ lessons below keep games from shipping broken; they are not the goal.
 5. Never merge a PR whose own description says it is red or WIP. Red main = merge freeze
    (#601): `scripts/main-ok.sh` exits non-zero while the latest nightly on main failed —
    fix main (or wait) before merging anything. From the PR's branch, merge
-   **only** with this command, never any other way (waits on the required check — `static` —
-   and ignores advisory jobs; `smoke` flaking must not wedge the merge):
-   `scripts/main-ok.sh && while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do [ "$s" = SUCCESS ] && break; case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac; sleep 20; done && gh pr merge --squash --delete-branch`
+   **only** with `scripts/forge-merge.sh`, never any other way. It runs the rule-5 chain
+   (main-ok → wait on the required check `static`, advisory jobs ignored → squash-merge)
+   and then completes the cleanup gh skips when a stale worktree squats on `main` (#3013):
+   exit code from the PR's *state*, remote-branch delete, lane re-detach at `origin/main`,
+   safe prune of clean squatters (dirty ones are named, never destroyed).
 5a. **A red main clears within 2 hours (#2176).** Red main outranks everything:
     the first lane to see it fixes it before any other work. A harness-only fix
     (thresholds, calibration, timing; no game-behaviour change) is taken without

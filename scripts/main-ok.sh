@@ -27,4 +27,21 @@ heist=$(latest heist-nightly.yml)
 if [[ -n "$heist" && "$(echo "$heist" | jq -r '.conclusion')" == "failure" ]]; then
     echo "WARN: heist nightly is red (advisory, not blocking): $(echo "$heist" | jq -r '.url')"
 fi
+
+# #3013 preflight: the law keeps `main` checked out nowhere. A stale worktree
+# squatting on main makes gh's post-merge cleanup fatal and costs the remote
+# branch delete. Advisory here (the merge itself can still land);
+# scripts/forge-merge.sh reaps the clean ones automatically.
+squats=$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{p=substr($0,10)} /^branch refs\/heads\/main$/{print p}')
+if [[ -n "$squats" ]]; then
+    echo "WARN: \`main\` is checked out in stale worktree(s) — this kills gh's post-merge cleanup (#3013):"
+    echo "$squats" | while IFS= read -r p; do
+        [[ -z "$p" ]] && continue
+        if [[ -n "$(git -C "$p" status --porcelain 2>/dev/null)" ]]; then
+            echo "  $p (DIRTY — reap by hand once its lane commits/stashes)"
+        else
+            echo "  $p (clean — git worktree remove '$p')"
+        fi
+    done
+fi
 exit 0
