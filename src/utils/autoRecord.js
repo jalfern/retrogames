@@ -143,41 +143,52 @@ export async function askConsent() {
     if (!plan.ask) return consentFor(ls(), plan.id)
     if (st.gate) { await st.gate; return consentFor(ls(), st.id || plan.id) }
     st.gate = new Promise((resolve) => {
+        // #2971: mount the gate on the NEXT task, not inside the tap/keydown that
+        // raised it. A first tap that starts a run raises this question in the
+        // same gesture; if the gate mounts synchronously the browser's click
+        // synthesis lands on the gate's own switches and flips the motion switch
+        // before the player ever sees it. Deferring the mount lets the tap's
+        // click hit the game, which is what "play never waits on the gate" means.
         const host = document.createElement('div')
         host.setAttribute('data-auto-record-gate', '')
         host.style.cssText = 'position:fixed;inset:0;z-index:9990'
-        document.body.appendChild(host)
-        const root = createRoot(host)
-        const finish = (answer) => {
-            st.gate = null
-            root.unmount()
-            host.remove()
-            const a = answer || {}
-            const pid = playerId(a.name)
-            const wantsSave = !!a.motion || !!a.voice
-            let id
-            if (wantsSave && pid && canGrant(pid)) {
-                id = pid
-                rememberPlayer(ls(), a.name)
-                const prev = consentFor(ls(), id)
-                grantConsent(ls(), id, decideMerge(prev, a))
-            } else if (!wantsSave && pid) {
-                // named decline: the name is useful as prefill; the DECLINE
-                // keys to the name so this person's NO silences THIS person's
-                // gate (someone else on the phone gets asked their own).
-                id = pid
-                rememberPlayer(ls(), a.name)
-                grantConsent(ls(), id, decideMerge(consentFor(ls(), id), { motion: false, voice: false }))
-            } else {
-                // unnamed decline (or a save with no name — the gate's UI
-                // refuses that; this is the honest fallback): decline anon.
-                id = ANON_ID
-                grantConsent(ls(), ANON_ID, decideMerge(consentFor(ls(), ANON_ID), { motion: false, voice: false }))
+        let root = null
+        const mount = () => {
+            document.body.appendChild(host)
+            root = createRoot(host)
+            const finish = (answer) => {
+                st.gate = null
+                if (root) root.unmount()
+                host.remove()
+                const a = answer || {}
+                const pid = playerId(a.name)
+                const wantsSave = !!a.motion || !!a.voice
+                let id
+                if (wantsSave && pid && canGrant(pid)) {
+                    id = pid
+                    rememberPlayer(ls(), a.name)
+                    const prev = consentFor(ls(), id)
+                    grantConsent(ls(), id, decideMerge(prev, a))
+                } else if (!wantsSave && pid) {
+                    // named decline: the name is useful as prefill; the DECLINE
+                    // keys to the name so this person's NO silences THIS person's
+                    // gate (someone else on the phone gets asked their own).
+                    id = pid
+                    rememberPlayer(ls(), a.name)
+                    grantConsent(ls(), id, decideMerge(consentFor(ls(), id), { motion: false, voice: false }))
+                } else {
+                    // unnamed decline (or a save with no name — the gate's UI
+                    // refuses that; this is the honest fallback): decline anon.
+                    id = ANON_ID
+                    grantConsent(ls(), ANON_ID, decideMerge(consentFor(ls(), ANON_ID), { motion: false, voice: false }))
+                }
+                st.id = id
+                resolve(consentFor(ls(), id))
             }
-            st.id = id
-            resolve(consentFor(ls(), id))
+            root.render(React.createElement(ConsentGate, { defaultName: last ? last.name : '', hasMic: voiceSupported(), onDecide: finish }))
         }
-        root.render(React.createElement(ConsentGate, { defaultName: last ? last.name : '', hasMic: voiceSupported(), onDecide: finish }))
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => setTimeout(mount, 0))
+        else setTimeout(mount, 0)
     })
     return st.gate
 }
