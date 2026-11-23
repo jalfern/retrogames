@@ -19,7 +19,14 @@ import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawS
 
 const SIM_MS = 1000 / 60
 
-const MESSAGES = [
+// #2971 — the attract copy is touch-aware. A phone has no keys, and seat 2
+// is keyboard-only by design (Jon's rule: no second on-screen pad) — the
+// touch copy must say so, not teach WASD/F/G to a screen that can't press
+// them. ?touch=1 forces the touch layout so the harness can pin it.
+const URL_TOUCH = typeof window !== 'undefined' && /[?&]touch=1/.test(window.location.search)
+const TOUCH = typeof window !== 'undefined' && (URL_TOUCH
+    || (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window))
+const MESSAGES_KEYBOARD = [
     'THE JUNGLE RUNS NORTH TO THE FALLS',
     'CAPSULES CARRY THE WHEEL — S M F L',
     'MACHINE GUN STREAMS · FIRE PIERCES · LASER RUNS HOT',
@@ -34,6 +41,22 @@ const MESSAGES = [
     'ONE HIT KILLS. BOTH SIDES.',
     'PRESS ANY KEY',
 ]
+const MESSAGES_TOUCH = [
+    'THE JUNGLE RUNS NORTH TO THE FALLS',
+    'CAPSULES CARRY THE WHEEL — S M F L',
+    'MACHINE GUN STREAMS · FIRE PIERCES · LASER RUNS HOT',
+    'WATCH THE SCOPE GLINT — THE SNIPER TELLS YOU FIRST',
+    'SHOOT THE CARRIER DOWN — ITS POD CARRIES THE WHEEL',
+    'THE CORE SHINES WHEN IT IS OPEN — HIT IT THEN',
+    'VINES SWING OVER THE FALLS — HOLD JUMP TO GRAB ONE',
+    'THE WINGMAN HOLDS THE BLUE SEAT — TWO GUNS, ONE JUNGLE',
+    'SEAT 2 IS KEYBOARD-ONLY — THE PHONE KEEPS THE CPU ALLY',
+    'THE WINGMAN STEPS BACK IN ON THE KEYBOARD — NOT ON THIS SCREEN',
+    'CLEAR THE BASE AND STAGE 1 RETURNS — FASTER',
+    'ONE HIT KILLS. BOTH SIDES.',
+    'TAP TO START',
+]
+const MESSAGES = TOUCH ? MESSAGES_TOUCH : MESSAGES_KEYBOARD
 
 const sfx = {
     shot: () => audioController.playSweep(920, 540, 0.05, 'square', 0.05),
@@ -430,7 +453,7 @@ export default function ContraGame () {
                 drawHeli(ctx, heli.x, (jungle ? 0 : gs.camY) + 26 + Math.sin(gs.tick / 7) * 1.2, gs.tick, heli.t > 56 ? 1 - (heli.t - 56) / 32 : 1)
                 ctx.restore()
             }
-            drawHud(ctx, gs, hiscore, loopFx)
+            drawHud(ctx, gs, hiscore, loopFx, isRecording())
             // #2902 the LOOP banner rides above the world, under nothing.
             if (loopFx) drawLoopBanner(ctx, loopFx.n, loopFx.t, loopFx.k)
 
@@ -675,6 +698,7 @@ export default function ContraGame () {
                     keys: { ...keys },
                     keys2: { ...keys2 },
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
+                    touch: TOUCH,   // #2971: the touch-aware copy is observable
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
                 }),
                 start: startPlay,

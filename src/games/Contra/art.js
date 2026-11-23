@@ -866,7 +866,7 @@ export function drawGate (ctx) {
     ctx.fillRect(2027, 121, 4, 4)
 }
 
-export function drawHud (ctx, gs, hiscore, fx = null) {
+export function drawHud (ctx, gs, hiscore, fx = null, live = false) {
     ctx.textBaseline = 'top'
     ctx.font = 'bold 8px "Courier New", monospace'
     ctx.fillStyle = C.ink
@@ -879,6 +879,21 @@ export function drawHud (ctx, gs, hiscore, fx = null) {
     ctx.fillText(String(Math.max(hiscore, gs.score)).padStart(6, '0'), 84, 12)
     ctx.fillStyle = C.ink
     ctx.fillText('CONTRA', 176, 4)
+    // #2971 LIVE: while a consented take banks, the HUD says so — a small
+    // hot-red dot + LIVE plate under the title. Gated on isRecording() (the
+    // bank's own truth): declined runs never show it (#2964 law).
+    if (live) {
+        ctx.fillStyle = 'rgba(26,8,8,0.92)'
+        ctx.fillRect(150, 22, 44, 12)
+        ctx.strokeStyle = '#ff5a4f'
+        ctx.lineWidth = 1
+        ctx.strokeRect(150.5, 22.5, 43, 11)
+        ctx.fillStyle = '#ff5a4f'
+        ctx.beginPath(); ctx.arc(157, 28, 2.5, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#ffb3ab'
+        ctx.font = 'bold 8px "Courier New", monospace'
+        ctx.fillText('LIVE', 164, 24)
+    }
     // #2814 SHARED POOL: the cabinet shows ONE lives counter for the whole
     // team — these heads are every life both seats have left.
     // #2902: while the loop banner runs the row flashes gold — the +1 bank
