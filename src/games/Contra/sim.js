@@ -124,6 +124,21 @@ export const CFG = {
     vineRideMax: 100,        // safety: no seat hangs past one full swing + margin
     vineLiftBoost: 0.5,      // the fling's extra pop at the far apex
     cascadeStep: 8,          // #2885 scripted finale: one site every 8 ticks
+    // --- #3038 THE DUCK: the cabinet's three ground profiles ---
+    // DOWN on the ground cycles stand -> kneel -> prone (press DOWN again), UP
+    // stands. A low profile fires from a lower muzzle and shrinks the body out
+    // of the tall rounds: aimed fire flies at the chest line (lane-14) locked
+    // at the shot, so ducking AFTER the telegraph is the answer — the same
+    // reactive dodge the hop is, priced honestly: while low the run is a crawl
+    // (half speed), the ground stays lethal (blast radius is measured from the
+    // belly, soldiers and barrels answer to the feet, the torrent never moved),
+    // and the honest autopilot never ducks — every tuned seed still runs.
+    duckSpeed: 0.5,            // low travel is a crawl — the trade for the profile
+    duckMuzzle: [16, 11, 6],   // barrel height above the feet per profile — the
+                               //   drawn arm lines up at the same line (art.js)
+    duckCenter: [14, 9, 4.5],  // seat hit-box centre above the feet per profile
+    duckHalfH: [13, 8, 4],     // ...and its half-height (top: 27 / 17 / 8.5)
+    duckHalfW: [7, 7, 9],      // a prone body stretches along the road
     // --- S4 co-op: the blue seat (Jon's multiplayer rule: CPU ally by default,
     // human drop-in on the desktop keyboard) ---
     allySpawnDX: -26,     // the ally arrives at your shoulder
@@ -411,10 +426,23 @@ function aimTarget (gs, x) {
 // is structural here, not copy-pasted: whatever law the hero obeys, the blue
 // seat obeys, because it's the same load-bearing code.
 function seatStep (gs, h, pad, ledges, floorY, owner) {
+    const jumpEdge = pad.a && !h.prevA
+    h.prevA = pad.a
+    // #3038 THE DUCK — the cabinet's ground profiles. DOWN on the ground cycles
+    // stand -> kneel -> prone (the second press); UP stands from either. A jump
+    // stands you (you somersault from your feet), and being airborne clears the
+    // profile — mid-air you are never ducked. Latched state, edge-driven, zero
+    // gs.r: the same pads replay the same posture, and it rides stateHash below
+    // because profile is sim truth (it moves the hit box and the muzzle).
+    if (h.onGround && !jumpEdge) {
+        if (pad.down && !h.prevD && h.posture < 2) { h.posture += 1; gs.ev.push({ type: 'duck', o: owner, post: h.posture }) }
+        else if (pad.up && !h.prevU && h.posture > 0) { h.posture = 0; gs.ev.push({ type: 'duck', o: owner, post: 0 }) }
+    } else if (h.posture > 0) h.posture = 0
+    h.prevD = pad.down; h.prevU = pad.up
     const aim = aimFrom(pad, h)
     h.ax = aim.ax; h.ay = aim.ay
     const runDir = (pad.right ? 1 : 0) - (pad.left ? 1 : 0)
-    if (runDir) { h.x += runDir * CFG.run; h.walk += 1 }
+    if (runDir) { h.x += runDir * (h.posture > 0 ? CFG.run * CFG.duckSpeed : CFG.run); h.walk += 1 }
     if (gs.phase === 'jungle') h.x = Math.max(4, Math.min(CFG.worldW - 4, h.x))
     else h.x = Math.max(8, Math.min(gs.phase === 'boss' ? CFG.wallX - 10 : W - 8, h.x))
     h.px = h.x
@@ -429,8 +457,6 @@ function seatStep (gs, h, pad, ledges, floorY, owner) {
     // dropping through a platform rides the arc upright, as the cabinet does.
     if (h.onGround) h.rollT = 0
     else if (h.rollT > 0) h.rollT += 1
-    const jumpEdge = pad.a && !h.prevA
-    h.prevA = pad.a
 
     // #2885 hanging vines (falls): a seat that catches a swinging tip AIRBORNE
     // rides the arc — no steering on the rope (the cabinet's drop law), but the
@@ -709,8 +735,10 @@ export function makeGame (seed, loop = 1) {
             coyote: 0, drop: 0,     // coyote frames; ignore-platform frames
             walk: 0,                // animation phase (world ticks)
             rollT: 0,               // #3035 somersault clock — presentation, like walk
+            posture: 0,           // #3038 ground profile: 0 stand | 1 kneel | 2 prone
             out: false,             // pool spent on this seat — the run goes on without it
             prevA: false,           // jump latch (edge-detect for taps)
+            prevD: false, prevU: false,  // #3038 duck latches — the profile cycles on EDGES
             // #2885 vine law: vine = tip being ridden (-1 free), grabI keeps the
             // index through the release tick; vx is the fling's decayed momentum.
             vine: -1, grabI: -1, rideT: 0, vineAtY: 0, vx: 0,
@@ -726,7 +754,9 @@ export function makeGame (seed, loop = 1) {
             cool: 0, weapon: 'rifle',
             inv: 120, dead: 0, coyote: 0, drop: 0, walk: 0, out: false,
             rollT: 0,               // #3035 the somersault is structural — both seats
+            posture: 0,           // #3038 the duck is structural too — same seatStep
             human: false, tIdx: -1, zz: 1, prevA: false,
+            prevD: false, prevU: false,
             // #2837: padClaim marks a seat a HUMAN claimed at the keyboard (the
             // auto-release law watches it, so harness shortcuts stay pinned);
             // enterT counts the arrival descent; idle the drop-out patience.
@@ -779,6 +809,9 @@ function aimFrom (pad, h) {
     let dy = 0
     if (pad.up) dy = -1
     else if (pad.down && !h.onGround) dy = 1 // aim down only in mid-air, as on the cabinet
+    if (h.posture > 0) dy = 0 // #3038 a ducked profile fires LEVEL off the deck —
+                               // the cabinet's kneel/prone rifle never points down,
+                               // and UP is spent standing back up, not lifting the barrel
     let ax = dx, ay = dy
     if (dx === 0 && dy === 0) { ax = h.face; ay = 0 }
     else if (dx !== 0) { h.face = dx }
@@ -790,7 +823,9 @@ function aimFrom (pad, h) {
 // can name which seat fired; also hashed — the two guns are sim truth).
 function fire (gs, h = gs.p, owner = 0) {
     const p = h
-    const o = { x: p.x + p.ax * 10, y: p.y - 16 + p.ay * 10 }
+    // #3038 the muzzle comes down with the body — a kneel or prone round leaves
+    // low off the deck, exactly where the drawn arm lines up (see duckMuzzle).
+    const o = { x: p.x + p.ax * 10, y: p.y - (CFG.duckMuzzle[p.posture | 0] || 16) + p.ay * 10 }
     if (p.weapon === 'spread') {
         const base = Math.atan2(p.ay, p.ax)
         for (let k = -2; k <= 2; k++) {
@@ -829,9 +864,12 @@ function boom (gs, x, y, hurtTurrets, kind) {
     gs.ev.push({ type: 'boom', x, y, kind: kind || 'tnt' })
     for (const s of gs.soldiers) if (!s.dead && Math.hypot(s.x - x, s.y - y - 12) < CFG.blastR) killSoldier(gs, s)
     if (hurtTurrets) for (const t of gs.turrets) if (!t.dead && Math.hypot(t.x - x, t.y - 18 - y) < CFG.blastR) hitTurret(gs, t)
-    if (gs.p.dead === 0 && gs.p.inv <= 0 && !gs.p.out && Math.hypot(gs.p.x - x, gs.p.y - 12 - y) < CFG.blastPlayerR) killPlayer(gs)
+    // #3038 the blast meets the BELLY, which sits lower with the profile — but
+    // an explosion at the deck still takes a prone hero (distance ~2.5 of the
+    // 30 px radius): you cannot duck a blast that IS the ground.
+    if (gs.p.dead === 0 && gs.p.inv <= 0 && !gs.p.out && Math.hypot(gs.p.x - x, gs.p.y - ((CFG.duckCenter[gs.p.posture | 0] || 14) - 2) - y) < CFG.blastPlayerR) killPlayer(gs)
     // co-op: the blast is symmetric — it takes the blue seat too (#2779 S4)
-    if (gs.p2.dead === 0 && gs.p2.inv <= 0 && !gs.p2.out && Math.hypot(gs.p2.x - x, gs.p2.y - 12 - y) < CFG.blastPlayerR) killAlly(gs)
+    if (gs.p2.dead === 0 && gs.p2.inv <= 0 && !gs.p2.out && Math.hypot(gs.p2.x - x, gs.p2.y - ((CFG.duckCenter[gs.p2.posture | 0] || 14) - 2) - y) < CFG.blastPlayerR) killAlly(gs)
 }
 
 function killSoldier (gs, s) {
@@ -943,6 +981,7 @@ export function dropIn (gs) {
     q.enterT = CFG.dropInT
     q.idle = 0
     q.prevA = false
+    q.posture = 0; q.prevD = false; q.prevU = false   // #3038 the arriving soldier stands; fresh duck latches
     q.x = allySideSpot(gs).x
     q.y = (gs.phase === 'jungle' ? 0 : gs.camY) - 6      // above the camera — the sky
     q.vy = 0; q.onGround = false; q.drop = 0; q.coyote = 0
@@ -1046,6 +1085,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             p.y = gs.safe.y; p.vy = 0; p.onGround = true
             p.lane = p.y
             p.weapon = 'rifle'; p.inv = CFG.invuln
+            p.posture = 0          // #3038 a seat comes back on its feet
             p.vine = -1; p.grabI = -1; p.rideT = 0; p.vx = 0   // #2885 the vine lets go of the dead
             gs.eb.length = 0
             gs.ev.push({ type: 'respawn' })
@@ -1101,6 +1141,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                 q.vy = 0; q.onGround = true
                 q.drop = 0; q.coyote = 0; q.lane = q.y
                 q.weapon = 'rifle'; q.inv = CFG.invuln
+                q.posture = 0      // #3038 the blue seat comes back on his feet too
                 q.vine = -1; q.grabI = -1; q.rideT = 0; q.vx = 0   // #2885 same release for the blue seat
                 // never respawn below the torrent — the arcade puts you back on
                 // the climb, not back in the water
@@ -1663,8 +1704,11 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                 // seat (the runner law verbatim). The box is the hull itself, not
                 // its wake: a hero who hops an aimed round under the sortie stays
                 // alive (the band is set so an apex chest clears it by design).
-                if (p.inv <= 0 && p.dead === 0 && !p.out && Math.abs(p.x - sh.x) < CFG.gsHW - 6 && Math.abs(p.y - 14 - sh.y) < CFG.gsHH) killPlayer(gs)
-                if (q.inv <= 0 && q.dead === 0 && !q.out && Math.abs(q.x - sh.x) < CFG.gsHW - 6 && Math.abs(q.y - 14 - sh.y) < CFG.gsHH) killAlly(gs)
+                // #3038 posture-aware centre: the hull band lives far above even a
+                // standing chest, so this law is byte-identical in play — the duck
+                // simply moves the whole body further from the sky's threat.
+                if (p.inv <= 0 && p.dead === 0 && !p.out && Math.abs(p.x - sh.x) < CFG.gsHW - 6 && Math.abs(p.y - (CFG.duckCenter[p.posture | 0] || 14) - sh.y) < CFG.gsHH) killPlayer(gs)
+                if (q.inv <= 0 && q.dead === 0 && !q.out && Math.abs(q.x - sh.x) < CFG.gsHW - 6 && Math.abs(q.y - (CFG.duckCenter[q.posture | 0] || 14) - sh.y) < CFG.gsHH) killAlly(gs)
                 if (sh.dead || sh.x < gs.cam - 24) sortieGone = gs.tick
             }
             gs.gunships = gs.gunships.filter((sh) => !sh.dead && sh.x >= gs.cam - 24)
@@ -1681,8 +1725,13 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             if (gs.phase === 'jungle' && b.y >= CFG.ground - 2) { boom(gs, b.x, CFG.ground - 4, true, 'tnt'); return false }
         }
         if (b.x < gs.cam - 8 || b.x > gs.cam + W + 8 || b.y < gs.camY - 8 || b.y > gs.camY + H + 8) return false
-        if (p.inv <= 0 && p.dead === 0 && !p.out && Math.abs(b.x - p.x) < 7 && Math.abs(b.y - (p.y - 14)) < 13) { killPlayer(gs); return false }
-        if (q.inv <= 0 && q.dead === 0 && !q.out && Math.abs(b.x - q.x) < 7 && Math.abs(b.y - (q.y - 14)) < 13) { killAlly(gs); return false }
+        // #3038 the hit box shrinks with the profile: an aimed round rides the
+        // chest line (lane-14), so a kneel still eats it and a prone body lies
+        // under it — the cabinet's duck, earned by reacting to the telegraph.
+        const pc = CFG.duckCenter[p.posture | 0] || 14
+        const qc = CFG.duckCenter[q.posture | 0] || 14
+        if (p.inv <= 0 && p.dead === 0 && !p.out && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13)) { killPlayer(gs); return false }
+        if (q.inv <= 0 && q.dead === 0 && !q.out && Math.abs(b.x - q.x) < (CFG.duckHalfW[q.posture | 0] || 7) && Math.abs(b.y - (q.y - qc)) < (CFG.duckHalfH[q.posture | 0] || 13)) { killAlly(gs); return false }
         return true
     })
 }
@@ -1860,6 +1909,9 @@ export function stateHash (gs) {
     put(gs.p.x); put(gs.p.y); put(gs.p.vy); put(gs.p.onGround ? 1 : 0); put(gs.p.face); put(gs.p.lane)
     put(gs.p.ax); put(gs.p.ay); put(gs.p.cool); put(WCODE[gs.p.weapon] || 0)
     put(gs.p.inv); put(gs.p.dead); put(gs.p.prevA ? 1 : 0); put(gs.p.out ? 1 : 0)
+    put(gs.p.posture); put(gs.p2.posture)   // #3038 the profile is sim truth — it moves
+                                           // hit boxes and muzzles, so a replay that
+                                           // silently un-ducks a seat diverges loudly
     put(gs.p.vine); put(gs.p2.vine)   // #2885 who rides a vine is sim truth
     for (let vi = 0; vi < VINES.length; vi++) { const tp = vineTip(gs, vi); put(tp.x); put(tp.y) }
     // S4 the blue seat is sim truth — his position and wheel ride the hash;
