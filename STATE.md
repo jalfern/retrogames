@@ -30,7 +30,9 @@
 ## Board at close
 - `steer`/`next`/`game-queue`/`building`/`building-qa`: EMPTY (my #3047
   closed; #2971 shipped items 1–3, its last item is Jon's phone take).
-  `feedback`: #2971 (waiting-jon) only. No jonq open, no halt.
+  `feedback`: #2971 (waiting-jon) + #3052 (stage-bed mix pass — QA's ears;
+  it names CONTRA, so weakestStage will keep kicking CONTRA with a real,
+  unowned-on-success item until QA takes or closes it). No jonq open, no halt.
 - The shelf is gap-free again unless #3047's CLOSED-markers change nothing:
   weakestStage after this ship scores every title 0 (#2971 still names
   Contra — expect `CONTRA -1 weak` until Jon's take closes it; a lane
