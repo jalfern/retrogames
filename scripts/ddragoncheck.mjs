@@ -2583,7 +2583,9 @@ if (MUTANT) {
                 harm: async () => {
                     const m = await import(`../src/games/DoubleDragon/art.js?mutant=grey-thin${Date.now()}`)
                     const thin = m.handbackMarks(m.CPU_T - 15).arms.filter((a) => Math.min(a.ink[2], a.ink[3]) < 2)
-                    return thin.length === 8
+                    // the plant thins the four horizontal arms (replace() hits the
+                    // first occurrence); four thin strokes are already the fuse.
+                    return thin.length >= 4
                         ? 'HARM NAMED: the handback brackets are 1-px strokes again — measured, most of those pixels sit under the asphalt-grain noise floor (Δ<12) and only corner sparks survive; at phone dock zoom the computer visibly takes the seat while the game says it silently, and the walk-away/come-back law stops reading on the phones it exists for'
                         : null
                 },
