@@ -187,8 +187,8 @@ routes through the wind law"); restore afterwards.
     — the under-the-deck gate goes red.
   - closeness: `sed -i '' 's/(CRY_RANGE - Math.max(0, dist))/(Math.max(0, dist))/' src/games/FireCrew/sim.js`
     — the climb-as-it-nears gate goes red (pitch would fall as the voice nears).
-  - human-only stamp: `sed -i '' "s/if (g.sources\[s - 1\] !== 'human') continue/continue/" src/games/FireCrew/sim.js`
-    — the cpu-silent gates (two) go red.
+  - human-only stamp: `sed -i '' "s/if (g.sources\[s - 1\] !== 'human') continue/if (g.sources[s - 1] === 'human') continue/" src/games/FireCrew/sim.js`
+    — the cpu-silent gates go red (cpu seats would name) and the human naming goes silent.
 - **#2989 — the tank speaks (never-dry polish):** the pressure arc (#1411)
   shrinks the stream 4→3→2→1 as the tank drains and dry kills it — but the
   human hose heard only its own spray stop, while the CPU hose already refills
