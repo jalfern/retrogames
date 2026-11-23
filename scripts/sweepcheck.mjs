@@ -480,6 +480,64 @@ section('DETERMINISM — (seed, firstClick) is the contract the replay leans on'
     ok(stateHash(d) !== stateHash(a), 'stateHash ignored an opened cell — hash-blind referee')
 }
 
+// ---------------------------------------------------- hall of fame ----
+// #3026 — the original kept best times per field size, forever, behind a
+// 3-glyph VFD that stops at 999. The rules are pure (minefield.js, store
+// injected), so the whole round-trip is auditable without a browser.
+section('HALL OF FAME — best times per field size and the panel\'s 999 ceiling')
+{
+    ok(M0.TIME_CAP === 999, `TIME_CAP = ${M0.TIME_CAP} — the panel shows 3 glyphs; the ceiling must be 999`)
+    const gt = newGame(0, 555)
+    plantAt(gt, gt.w >> 1, gt.h >> 1)
+    for (let k = 0; k < 30 * (999 + 60); k++) M0.step(gt)
+    ok(gt.sec === 999, `clock ran ${gt.sec}s — the original's VFD pins at 999 (#3026)`)
+    {
+        const book = new Map()
+        const get = (k) => (book.has(k) ? book.get(k) : null)
+        const set = (k, v) => { book.set(k, String(v)) }
+        ok(M0.readBest(get, 'COLT') === null, 'empty hall read as a record')
+        const r1 = M0.recordWin(get, set, 'COLT', 22)
+        ok(r1.record === true && r1.best === 22 && book.get(M0.bestKey('COLT')) === '22',
+            `first COLT win (22s) not filed: ${JSON.stringify(r1)} book=${book.get(M0.bestKey('COLT'))}`)
+        const r2 = M0.recordWin(get, set, 'COLT', 30)
+        ok(r2.record === false && r2.best === 22 && book.get(M0.bestKey('COLT')) === '22', 'a slower win rewrote the book')
+        const r3 = M0.recordWin(get, set, 'COLT', 22)
+        ok(r3.record === false && r3.best === 22, 'a TIE counted as a record — the hall remembers the first to do it')
+        const r4 = M0.recordWin(get, set, 'COLT', 18)
+        ok(r4.record === true && r4.best === 18 && book.get(M0.bestKey('COLT')) === '18', 'a faster win did not enter the hall')
+        const r5 = M0.recordWin(get, set, 'GENERAL', 15)
+        ok(r5.record === true && book.get(M0.bestKey('COLT')) === '18' && M0.readBest(get, 'GENERAL') === 15,
+            'field sizes shared a shelf — best times are per-difficulty')
+        const r6 = M0.recordWin(get, set, 'SAPPER', 0)
+        ok(r6.record === false && !book.has(M0.bestKey('SAPPER')), 'a 0-second win entered the hall — the clock starts at 1')
+        book.set(M0.bestKey('SAPPER'), 'banana')
+        ok(M0.readBest(get, 'SAPPER') === null, 'corrupt store value read as a best time')
+        const r7 = M0.recordWin(get, set, 'SAPPER', 40)
+        ok(r7.record === true && book.get(M0.bestKey('SAPPER')) === '40', 'a win did not heal the corrupt shelf')
+        book.set(M0.bestKey('SAPPER'), '1000')
+        ok(M0.readBest(get, 'SAPPER') === null, 'a 1000s best exists — the panel has no such glyph')
+        const boom = () => { throw new Error('SecurityError') }
+        ok(M0.readBest(boom, 'COLT') === null, 'a throwing store crashed the read')
+        const r8 = M0.recordWin(boom, boom, 'COLT', 5)
+        ok(r8.record === true && r8.best === 5, 'throwing store hid the honest verdict (the player saw the record)')
+        // purity: the helpers never touch the referee's board
+        const ghp = newGame(0, 555)
+        plantAt(ghp, ghp.w >> 1, ghp.h >> 1)
+        ghp.events.length = 0
+        const hh = stateHash(ghp)
+        M0.readBest(get, 'COLT'); M0.recordWin(get, set, 'COLT', 3)
+        ok(ghp.events.length === 0 && stateHash(ghp) === hh, 'hall helpers moved engine state — the referee must not feel the book')
+    }
+    {
+        // Source pins: the two shell promises Node can't replay but can read.
+        const swp = readFileSync(join(HERE, '../src/games/Minesweeper/index.jsx'), 'utf8')
+        ok(/const wasSeated = watchingRef\.current/.test(swp) && /if \(s\.end === 'win' && !wasSeated\)/.test(swp),
+            'index.jsx lost the #3026 seat-honesty gate — a WATCH sweep must never write the hall')
+        ok((swp.match(/setSc\('over'\)/g) || []).length === 1,
+            'play→over grew a second path outside toOver — the record jingle can be bypassed')
+    }
+}
+
 // ---------------------------------------------------- seed dump mode ----
 if (diffArg !== null || seedArg !== null) {
     const d = diffArg ?? 0
@@ -586,6 +644,17 @@ if (MUT) {
             if (over !== -2) return `mineCounter(10 mines, 12 flags) = ${over} — over-flag must read -2 (#3021)`
             if (Mm.mineCounter({ totalMines: 10, flags: 150 }) !== Mm.COUNTER_FLOOR) return 'mineCounter ignores the display floor (-99)'
         }
+        // 5) #3026 timer probe: the VFD pins at its panel ceiling. A stripped
+        //    cap shows no other sin — boards still win, rules still hold — so
+        //    this leg is the only place the mutant can die.
+        {
+            const g = Mm.newGame(0, 555)
+            try { Mm.plantAt(g, g.w >> 1, g.h >> 1) } catch { return 'timer probe: plant threw' }
+            if (g.end) return 'timer probe: board ended at plant'
+            for (let k = 0; k < 30 * 1010; k++) Mm.step(g)
+            if (g.sec > 999) return `timer ran past the panel (sec=${g.sec}) — a 3-glyph VFD has no thousands digit (#3026)`
+            if (g.sec !== 999) return `timer stopped at ${g.sec} — must pin at 999 (#3026)`
+        }
         for (let d = 0; d < 2; d++) {
             for (const seed of seeds(5)) {
                 const g = Mm.newGame(d, seed)
@@ -646,6 +715,12 @@ if (MUT) {
             src: swap(SRC_TEXT,
                 'export const mineCounter = (s) => Math.max(COUNTER_FLOOR, s.totalMines - s.flags)',
                 'export const mineCounter = (s) => Math.max(0, s.totalMines - s.flags)', 'counter-clamp'),
+        },
+        {
+            label: 'timer rolls past the panel (cap stripped — four digits on a three-glyph VFD, #3026)',
+            src: swap(SRC_TEXT,
+                "if (s.screen === 'play' && s.planted && !s.end && s.tick % 30 === 0 && s.sec < TIME_CAP) s.sec++",
+                "if (s.screen === 'play' && s.planted && !s.end && s.tick % 30 === 0) s.sec++", 'timer-cap'),
         },
     ]
     for (const m of muts) {
