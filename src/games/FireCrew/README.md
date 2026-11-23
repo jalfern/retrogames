@@ -180,15 +180,15 @@ routes through the wind law"); restore afterwards.
   (drive inside → hear the cry; out of reach → silence; seated → ears shut;
   released → hears again). Mutants (one line each):
   - reach: `sed -i '' 's/export const CRY_RANGE = 5/export const CRY_RANGE = 1/' src/games/FireCrew/sim.js`
-    — the carried-band gates (four) go red.
+    — the five-tiles constant and the audible-band geometry gate (two) go red.
   - hidden-only: `sed -i '' "s/if (v.state !== 'hidden') continue/if (false) continue/" src/games/FireCrew/sim.js`
-    — the found-are-silent gate goes red.
+    — the found-are-silent gate goes red (with the near/nearest/once gates, five).
   - decking: `sed -i '' "s/if (inLoft(v.y) !== floor) continue/continue/" src/games/FireCrew/sim.js`
-    — the under-the-deck gate goes red.
+    — the same-deck-carries gate goes red (the silence-expected pair gate passes vacuously — the pair is what pins the line).
   - closeness: `sed -i '' 's/(CRY_RANGE - Math.max(0, dist))/(Math.max(0, dist))/' src/games/FireCrew/sim.js`
     — the climb-as-it-nears gate goes red (pitch would fall as the voice nears).
   - human-only stamp: `sed -i '' "s/if (g.sources\[s - 1\] !== 'human') continue/if (g.sources[s - 1] === 'human') continue/" src/games/FireCrew/sim.js`
-    — the cpu-silent gates go red (cpu seats would name) and the human naming goes silent.
+    — the naming, cpu-silence and src-pin gates (three) go red: a robot house names nothing, and the pin refuses the inverted law.
 - **#2989 — the tank speaks (never-dry polish):** the pressure arc (#1411)
   shrinks the stream 4→3→2→1 as the tank drains and dry kills it — but the
   human hose heard only its own spray stop, while the CPU hose already refills
