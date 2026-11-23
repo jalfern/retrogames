@@ -2852,11 +2852,57 @@ const browser = await launch()
         JSON.stringify({ armed: teachArmed, teach: teachOn && { screen: teachOn.screen, loop: teachOn.loop, fx: teachOn.loopFx }, teachGold, held: [teachT0, teachT1] }))
     // and the teach is a pass, not a state: attract returns to loop-1 copy
     let teachBack = null
+    let autoShout = null
     for (let g0 = 0; g0 < 220 && !(teachBack && teachBack.screen === 'attract' && teachBack.demoLoop === 0 && teachBack.loop === 1); g0++) {
         await page.waitForTimeout(100)
         teachBack = await page.evaluate(() => window.__contraTest.probe())
+        // #3018: catch the demo's taught shout while the LOOP-2 pass runs — it
+        // stages at tick 600 and echoes for ~110 ticks; the 100 ms poll straddles
+        // the window, so this proves the auto-fire on the real attract clock.
+        if (!autoShout && teachBack && teachBack.demoLoop === 1 && teachBack.call &&
+            teachBack.call.banner && teachBack.call.banner.text === 'AIM UP') autoShout = teachBack
     }
     r.check('#2902 the taught pass ends — attract cycles back to loop-1 demo and copy', teachBack !== null, JSON.stringify(teachBack && { s: teachBack.screen, d: teachBack.demoLoop, l: teachBack.loop }))
+
+    // #3018 attract teaches the RADIO: the demo shouts AIM UP ~10 s into every
+    // pass — banner echoes ok, the wingman takes the order (sim truth: orderAim)
+    // — so the voice feature is visible before a player ever finds it (#3003's
+    // YES-judged follow-up; the LOOP teach above is the precedent).
+    r.check('#3018 attract teaches the radio — the LOOP-2 demo pass shouts AIM UP at ~10 s: echo ok, wingman takes the order',
+        autoShout !== null && autoShout.call.banner.ok === true && autoShout.call.aim === 'up' && autoShout.tick >= 600,
+        JSON.stringify(autoShout && { tick: autoShout.tick, banner: autoShout.call.banner, aim: autoShout.call.aim }))
+    r.check('#3018 the teach re-arms — every fresh demo pass stages its shout 600 ticks in',
+        teachBack !== null && teachBack.demoShoutDue === 600, `due=${teachBack && teachBack.demoShoutDue}`)
+    // The shout is SEQUENCED, never stacked: while the LOOP interstitial holds
+    // the screen the radio stays quiet, and it lands once the banner clears
+    // (bands 146..160 vs 80..144).
+    await page.evaluate(() => window.__contraTest.attractLoopNow())
+    const seqRefused = await page.evaluate(() => window.__contraTest.demoShoutNow())
+    const seqQuiet = await page.evaluate(() => window.__contraTest.probe())
+    let seqCleared = null
+    for (let g0 = 0; g0 < 60 && !(seqCleared && seqCleared.screen === 'attract' && !seqCleared.loopFx); g0++) {
+        await page.waitForTimeout(100)
+        seqCleared = await page.evaluate(() => window.__contraTest.probe())
+    }
+    const seqLanded = await page.evaluate(() => window.__contraTest.demoShoutNow())
+    // the echo paints — gold text + border in the call band over the attract
+    // jungle, the same legibility standard as the LOOP banner's gold
+    await page.waitForTimeout(250)
+    const callGold = await page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(110 * k), Math.round(146 * k), Math.round(164 * k), Math.round(14 * k)).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 120) n++   // echo gold
+        return n
+    })
+    const seqAfter = await page.evaluate(() => window.__contraTest.probe())
+    r.check('#3018 sequenced, not stacked — the teach refuses while the LOOP banner holds the screen and lands after it clears',
+        seqRefused === false && seqQuiet.call.banner === null && seqLanded === true &&
+        seqAfter.call.banner && seqAfter.call.banner.text === 'AIM UP' && seqAfter.call.aim === 'up',
+        JSON.stringify({ refused: seqRefused, quiet: seqQuiet.call.banner, landed: seqLanded, after: seqAfter && seqAfter.call.banner }))
+    r.check('#3018 the shout banner paints in attract — gold echo at y146..160 over the demo jungle',
+        callGold >= 25, `gold px ${callGold}`)
 
     // #2917 browser legs: the hangar cycle runs live (grind → lift → hull on
     // the probe), the strafe that comes down is shallow through the real loop,

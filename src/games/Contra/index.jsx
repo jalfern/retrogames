@@ -216,6 +216,17 @@ export default function ContraGame () {
         // banner clock, and the attract demo's one taught pass at loop 2.
         let loopFx = null
         let demoLoop = 0, demoUntil = 0
+        // #3018 the attract teaches the RADIO: one scripted demo shout per demo
+        // pass, ~10 s into the jungle — the echo banner lands and the wingman
+        // obeys, so the voice channel is visible before a player ever finds it
+        // (#3003 judged YES; the LOOP teach #2902 is the precedent). Staged per
+        // pass (re-armed by attractReset/attractLoop; 0 = this pass is spent).
+        // Silent by construction (autoplay doctrine — the attract never speaks
+        // before a gesture) and sequenced: the echo never stacks onto the LOOP
+        // interstitial (banner bands 146..160 vs 80..144 — sequence, don't stack).
+        const DEMO_SHOUT_AT = 600
+        const DEMO_SHOUT_INTENT = { kind: 'aim', dir: 'up' }
+        let demoShoutDue = DEMO_SHOUT_AT   // the load-time pass is already running
         // #3000 voice radio (#1711 S5): the shout channel. voiceCtl holds the
         // recognition handle + the refcounted LISTEN badge; callFx is the
         // banner echo (presentation only — decays on world ticks, never sim
@@ -329,6 +340,7 @@ export default function ContraGame () {
             jumpQ2 = fireQ2 = false
             seat2.length = 0
             callFx = null   // #3000: fresh stage, fresh orders — the echo starts quiet too
+            demoShoutDue = 0   // #3018: no scripted shout on a human run — the mic is the player's
             setMode('play'); screen = 'play'
         }
 
@@ -454,17 +466,31 @@ export default function ContraGame () {
         // #2902: attract lifecycle. Reset = a fresh loop-1 demo seed; the loop
         // pass = the SAME run the demo just won, rebuilt at loop 2 with the
         // banner — teaching the mechanic before a player ever clears the gate.
+        // #3018: every pass re-arms the radio teach with it.
         const attractReset = () => {
             demoLoop = 0; demoHold = 0
+            demoShoutDue = DEMO_SHOUT_AT
             gs = makeGame((gs.seed + 7) >>> 0)
             part.length = 0; fire.length = 0
             wasGround = true; heli = null
+        }
+        // #3018: the demo's one taught shout. The SAME seam the mic drives
+        // (applyCall — the orders are sim truth) and the SAME echo the mic
+        // echoes (intentLabel), minus the sound (autoplay-safe) and minus the
+        // voiceCmd bank (presentation, not a take). If the LOOP interstitial
+        // holds the screen, the shout waits it out (sequence, don't stack).
+        const demoShout = () => {
+            if (loopFx) { demoShoutDue = gs.tick + 60; return }
+            demoShoutDue = 0
+            applyCall(gs, DEMO_SHOUT_INTENT)
+            callFx = { t: CALL_FX, ok: true, text: intentLabel(DEMO_SHOUT_INTENT) }
         }
         const attractLoop = () => {
             gs = arcadeLoop(gs) // #1712: the demo learns the same loop law the takes replay
             part.length = 0; fire.length = 0
             wasGround = true; heli = null; demoHold = 0
             demoLoop = 1; demoUntil = 900            // ~15 s of the hot stage, then attract again
+            demoShoutDue = DEMO_SHOUT_AT
             loopFx = { t: 0, n: gs.loop, k: gs.lk }
             sfx.loopUp(gs.loop)
         }
@@ -611,7 +637,9 @@ export default function ContraGame () {
                 ctx.fillText(lines[2], 192 - ctx.measureText(lines[2]).width / 2, 179)
                 ctx.restore()
             }
-            if (screen === 'play' && callFx && !hintFx) {
+            // #3018: the teach echo paints in attract too — the whole point is
+            // that the radio is VISIBLE before anyone takes the seat.
+            if ((screen === 'play' || screen === 'attract') && callFx && !hintFx) {
                 const fade = callFx.t > CALL_FX - 12 ? (CALL_FX - callFx.t) / 12 : Math.min(1, callFx.t / 10)
                 ctx.save()
                 ctx.globalAlpha = Math.max(0, Math.min(1, fade))
@@ -689,6 +717,7 @@ export default function ContraGame () {
                             // attract copy back.
                             if (loopFx) { loopFx.t += 1; if (loopFx.t >= LOOP_FX) loopFx = null }
                             else if (!gs.end) {
+                                if (demoShoutDue && gs.tick >= demoShoutDue) demoShout() // #3018 radio teach
                                 stepSim(autopilot(gs))
                                 if (demoLoop && gs.tick >= demoUntil) attractReset()
                             } else if (demoHold > 0) {
@@ -794,6 +823,7 @@ export default function ContraGame () {
                 wasGround = true; heli = null; warnArmed = false; lastEnterT = 0
                 seat2.length = 0
                 callFx = null
+                demoShoutDue = 0   // #3018: the harness sits the player down — attract's teach is off
                 screen = 'play'
                 setMode('play')
             },
@@ -851,6 +881,7 @@ export default function ContraGame () {
                     loop: gs.loop, lk: +gs.lk.toFixed(3), seed: gs.seed,   // #2894 the arcade loop is observable
                     loopFx: loopFx ? { t: loopFx.t, n: loopFx.n, k: +loopFx.k.toFixed(3) } : null,   // #2902 the banner is observable
                     demoLoop,   // #2902 attract is teaching the loop right now
+                    demoShoutDue,   // #3018 the radio-teach is staged for this pass (0 = spent)
                     phase: gs.phase, camY: +gs.camY.toFixed(2),
                     core: gs.boss ? gs.boss.core : null,
                     coreOpen: gs.boss ? (gs.boss.coreT % CFG.coreCycle) < CFG.coreOpen : null,
@@ -892,6 +923,10 @@ export default function ContraGame () {
                 // (waiting 60 s for the demo to clear stage 1 by itself is not
                 // a leg) — only ever fires from the attract screen.
                 attractLoopNow: () => { if (screen !== 'attract' || gs.end) return false; attractLoop(); return true },
+                // #3018: land the attract radio-teach on the harness clock (10 s of
+                // attract per leg is not a leg) — attract screen only, and it
+                // refuses while the LOOP interstitial holds the screen.
+                demoShoutNow: () => { if (screen !== 'attract' || loopFx || gs.end) return false; demoShout(); return true },
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
                     if (screen !== 'play') return false
