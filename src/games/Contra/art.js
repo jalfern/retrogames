@@ -528,6 +528,9 @@ export function drawSoldier (ctx, s, _tick, loop = 1) {
     const mz = heatMuzzle(loop)   // #2902: the reports run hotter as the loop heats
     ctx.save(); ctx.translate(Math.round(s.x), Math.round(s.y))
     const dir = Math.sign(s.walkDir || -1)
+    // #3064 the cut man tumbles as he falls — presentation off the walk clock
+    // (the #3035 rollT class), exactly one spin per arc second, direction his.
+    if (s.rap === 3) { ctx.translate(0, -14); ctx.rotate(Math.min(Math.PI * 2, s.walk * 0.11) * (dir >= 0 ? 1 : -1)); ctx.translate(0, 14) }
     const moving = !s.hold
     const f = moving ? Math.floor(s.walk / 5) % 3 : 0
     ctx.fillStyle = C.uniDark
@@ -556,6 +559,9 @@ export function drawSoldier (ctx, s, _tick, loop = 1) {
     ctx.fillRect(-3, -26, 6, 6)
     ctx.fillStyle = C.beret
     ctx.fillRect(-4 + dir, -28, 8, 3)
+    // #3064 on the wire: one arm up to the harness yoke (drawRappel ends at
+    // the same mark); the ride is one-armed, the rifle arm keeps working.
+    if (s.rap && s.rap !== 3) { ctx.fillStyle = C.skin; ctx.fillRect(dir > 0 ? 2 : -5, -28, 3, 10) }
     const recoil = s.flash > 0 ? -dir : 0
     ctx.fillStyle = C.gunMetal
     ctx.fillRect((dir > 0 ? 2 : -10) + recoil, -16, 8, 2)
