@@ -1,63 +1,71 @@
-# STATE — forge board snapshot (slot a, 2026-11-23 — shipped)
+# STATE — forge board snapshot (slot b, 2026-11-23 — shipped the press feel)
 
-## This session shipped
-- **#3026 MINESWEEPER hall of fame → PR #3028 → main `f48cd0c`, prod-verified.**
-  Best times per difficulty (`minesweeper.best.<DIFF>` in localStorage),
-  `NEW RECORD — {DIFF}!` + three-note jingle on the over screen, engine
-  `TIME_CAP=999` (VFD ceiling in `step()`). Honest: WATCH-seat and attract
-  wins never record; ties aren't records; corrupt stores heal; engine state
-  and `stateHash` untouched. Proven: sweepcheck 124/124 (+HALL OF FAME
-  section + source pins), `--mutate` **8/8 die** incl. named `timer-cap`,
-  sweepplay 52/52 real-key (localStorage + verdict + over-screen line),
-  watchcheck minesweeper legs green.
-- **Never-dry ladder walk (#1571):** steer/next/game-queue empty; feedback
-  borrow blocked by a live QA session (#3008, verified by QA mini — left to
-  QA); flagshipStage null (all flagship gap lists CLOSED); weakestStage →
-  MINESWEEPER score 1 (matches the warden kick). Filed+claimed #3026, shipped.
-  Slot b's parallel kick STOPped legally (my claim held the title) — its
-  report was read from the park; no collision, no double-work.
+## This session shipped: MINESWEEPER press feel — #3032, PR #3034 (squash `2cf6b22`, prod-verified)
+- Never-dry rung: ladder dry (feedback QA-held, live QA session owned the borrow), flagship
+  stage spent (`idle-kick` → `KICK MINESWEEPER -1 weak`, score 1 from #3008 naming it).
+  Filed POLISH #3032 with the why-weakest line, claimed for slot b, shipped in one session.
+- Game: mouse press now **sinks** the tile (bevel flip), pressing an opened number
+  **flattens its covered ring** (chord preview), **release on the cell commits**
+  (same engine verdict, one pointer-up later), **drag-off cancels** (and un-flattens
+  while off), face **concentrates** while held. Touch/keyboard semantics untouched;
+  `minefield.js`/`stateHash` never see `press` (sweepcheck 124/124).
+- Harness: 7 new `sweepplay` legs (press-no-dig, exact sink fill, face ink, release
+  commits, ring flatten, un-flatten, cancel-leaves-hash); new DEV hooks `probe().press`
+  + `clueAt`. Mutation proof deterministic: stripping the commit condition reds the
+  cancel leg (`opened=57->58`). Final local: sweepplay 59/59, sweepcheck 124/124,
+  lint:mario/fps/ai + build green.
 
-## PLAYABLE on main right now
-- `/retrogames/minesweeper` (+ hall of fame & 999 cap #3026),
-  `/retrogames/double-dragon` (#3005), `/retrogames/contra` (voice #3000,
-  radio teach #3016), `/retrogames/floor-boss`, `/retrogames/fire-crew`,
-  `/retrogames/r-type`.
+## Session lessons (each already cost minutes)
+- **Never pipe the dev server into `head`** — `npm run dev | head -20` SIGPIPE-kills
+  vite once HMR chatter fills the pipe: the suite then grades against a dead/stale
+  server and the failures LOOK random (state legs green, pixel legs red). Redirect to
+  a file instead.
+- **Never `git checkout --` over uncommitted work** — a mutant-restore wiped the
+  session's whole index.jsx edit (nothing was committed yet). The dropped stash
+  recovered it (`git fsck --unreachable` + `git show <sha>:<path>`) — but the rule
+  is the fix: **commit the increment before the mutation run.**
+- **Pixel legs must poll the repaint, not sleep** — software-rAF hitches beat fixed
+  90 ms waits; `pxWant`/`faceWant` in sweepplay now wait for the expected colour
+  (1.5 s budget) — deterministic after that (same failing cell (8,3) went green).
+- Hardened the `?`-glyph leg the same way it broke: centre-pixel diff was a
+  seed/antialias lottery (the glyph's waist misses centre at some font sizes) — now
+  graded by dim-`?` ink count in the cell. (Red-once-green-once SAME code on main.)
+- Dual-slot never-dry collision: slot a filed the same gap as #3031 ~2 s before my
+  #3032 claim; board resolved it (closed dup, one-lane-per-game held). Harmless,
+  but the POLISH-file→claim window is the collision surface.
 
-## Board at close
-- `game-queue`: **#3031 POLISH — MINESWEEPER press-feel** (tile sinks on
-  press, chord-preview ring flatten, drag-off cancels, mouse+face scope;
-  scoped by slot b's audit, seeded here so the next kick doesn't re-derive).
-  `next`/`steer`/`building` empty. `building-qa`: #3018 (QA inside Contra —
-  don't touch Contra from a builder claim). feedback: #3008 (verified done,
-  QA's to close), #2971 waiting-jon. `halt`: none. No jonq open (dry-shelf
-  flagship question already on the record this week).
-- Filed harness issues: **#3027** watchcheck FLOORBOSS pin stale since #2987's
-  brainOn hoist (smoke's only red, 908/909, pre-existing); **#3030**
-  forge-merge.sh second shape — gh's `--delete-branch` lands the LANE worktree
-  on `main` and breaks the wrapper's branch-based PR-state read (fix: capture
-  PR number pre-merge; detach lane post-merge before any git-state read).
-  Incident from my own merge: cleanup completed by hand, lane re-detached, no
-  squat remains (`worktree list | grep '\[main\]'` → empty).
+## PLAYABLE on main right now (`2cf6b22`)
+- `/retrogames/minesweeper` (press feel #3032 + hall of fame #3028 + chord shield
+  #3009 + teach-the-nope #3011 + signed counter #3021), `/retrogames/double-dragon`,
+  `/retrogames/contra` (voice #3000, radio teach #3016), `/retrogames/floor-boss`,
+  `/retrogames/fire-crew`, `/retrogames/r-type`.
 
-## Harness notes (carry-overs)
-- **Prod-verify probes need `curl -L`**: Vercel answers 308 on moved asset
-  hashes; without -L grep sees a 15-byte redirect body and the bundle looks
-  stale forever. (Two poll rounds lost before the clue was read.)
-- A `--mutate` run needs a committed tree (mutateguard); commit the increment,
-  then run mutants — checkpoint e6583c3 first, then 8/8.
-- STATE.md commits to main ONLY on a game merge (#3021 precedent `08f8f53`);
-  direct commit from the plumbing checkout at origin/main, push `HEAD:main`.
-- macOS /var realpath vs git in sandbox tests; sandbox zsh sources ~/.zshenv;
-  ciscope #1575 (new alias ⇒ scope in checks.mjs same PR). #2910 (kick-prompt
-  staleness) still unclaimed — needs a warden target or Jon.
+## Board at close (live audit)
+- `building`: #3035 (slot a, live, inside Contra — somersault jump). `building-qa`:
+  empty. `steer`/`next`/`game-queue`: empty. `feedback`: #3008 (lane:qa, meat
+  verified done, residue = advisory load-flake family), #2971 `waiting-jon`.
+- `idle-kick` at close: **NONE** — STOP legal per FORGE.md step 2.
+- Next kick: when #3035 merges, Contra opens again; remaining scoped Minesweeper
+  fidelity is thin (press feel was the last big original gap). If the board is dry
+  again, run the ladder honestly — do NOT re-file what slot a just shipped.
+
+## Harness notes (carry-overs, unchanged)
+- macOS /var symlink vs git realpath in sandbox tests; sandbox zsh sources real
+  ~/.zshenv (gh shadowing); `execFileSync` stdio:'inherit' returns null;
+  ciscope #1575: new npm-alias check ⇒ scope in `checks.mjs` same PR.
+- #2910 fix still unclaimed (kick/TARGET staleness gate + pin (c) in code).
+  Its live shape bit again today: warden kick text is regenerated post-assignment
+  and can name a held title — the lane's live `idle-kick` remains the decision.
+- forge-merge.sh note: when the squash lands and the remote branch dies mid-script,
+  `gh pr view` (no number in cwd after branch delete) errors AFTER the merge —
+  verify state (`pr view <n>`, issue labels) and finish cleanup by hand:
+  labels shipped, worktree re-detached, local branches pruned. Done this session.
 
 ## Slots / ops
-- Slot a port 5173: dev server stopped via `scripts/devstop.sh` at close ✓.
-  Plumbing `~/Dev/retrogames` detached at origin/main after the STATE commit ✓.
-  Lane worktree `retrogames-forge-ms-halloffame` detached at f48cd0c (clean);
-  purge cleaner may reap it.
-- STATE.md committed to main this session (#3028 merged game code).
+- Slot b port 5178: dev server stopped via `scripts/devstop.sh` ✓ (never pattern-kill).
+- Plumbing `~/Dev/retrogames` detached at origin/main ✓; lane worktree
+  `~/Dev/retrogames-forge-msw-press` detached at origin/main, branches pruned.
+- STATE.md committed to main (step-9 exception: game merged this session).
 
 ## Open questions
-- None (no taste call needed; dry-shelf flagship question already open this
-  week — see https://jalfern.com/retrogames/forge for the live board).
+- None new (no jonq filed; see https://jalfern.com/retrogames/forge for the live board).
