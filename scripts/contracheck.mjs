@@ -2372,6 +2372,58 @@ const browser = await launch()
     r.check('attract: one cycling message rotates (ART §6, world-tick bound)',
         typeof msgA === 'string' && msgA.length > 0 && msgB !== msgA, `"${msgA}" -> "${msgB}"`)
 
+    // #3018 — the attract teaches the radio: ~10 s into the demo jungle, one
+    // scripted demo shout lands — the wingman obeys (the sim's own order law),
+    // the echo banner lands in the same 146..160 band as the play echo (the
+    // LOOP banner slams at 80..144 on the taught pass, never stacked), and the
+    // teach completes in ~5 s: the banner decays and the demo returns to natural.
+    let shouted = null
+    for (let g0 = 0; g0 < 90 && !(shouted && shouted.call && shouted.call.demoShout); g0++) {
+        await page.waitForTimeout(300)
+        shouted = await page.evaluate(() => window.__contraTest.probe())
+    }
+    const demoBannerPx = await page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(130 * k), Math.round(146 * k), Math.round(124 * k), Math.round(14 * k)).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 120) n++   // banner gold
+        return n
+    })
+    // the gold notch blinks above the ally while AIM UP holds his diagonal —
+    // poll for the blink window (tick % 30 < 20)
+    let notchGold = 0
+    for (let g0 = 0; g0 < 12 && notchGold < 3; g0++) {
+        const notch = await page.evaluate(() => {
+            const pr = window.__contraTest.probe()
+            if (!pr.ally || pr.end) return { n: 0, tick: pr.tick, aim: pr.call.aim }
+            const c = document.querySelector('canvas')
+            const k = c.width / 384
+            const ax = Math.round((pr.ally.x - pr.cam) * k)
+            const ay = Math.round((pr.ally.y - 31) * k)
+            if (ax < 4 || ay < 2) return { n: 0, tick: pr.tick, aim: pr.call.aim }
+            const d = c.getContext('2d').getImageData(ax - 4, ay - 2, Math.round(9 * k), Math.round(5 * k)).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 120) n++
+            return { n, tick: pr.tick, aim: pr.call.aim }
+        })
+        if (notch && notch.n > notchGold) notchGold = notch.n
+        await page.waitForTimeout(120)
+    }
+    r.check('#3018 attract teaches the radio — one demo shout lands, the wingman obeys (gold notch over his head), the banner paints over the jungle (no sound)',
+        shouted && shouted.screen === 'attract' && shouted.call && shouted.call.demoShout && shouted.call.demo && shouted.call.demo.text === 'AIM UP' && shouted.call.aim === 'up' && demoBannerPx >= 20 && notchGold >= 3,
+        JSON.stringify({ shouted: shouted && { tick: shouted.tick, banner: shouted.call.demo, aim: shouted.call.aim }, bannerGold: demoBannerPx, notchGold }))
+    // and the teach is a pass, not a state: ~5 s later the banner decays and
+    // the demo returns to natural (aim level / follow, wingman back on the seat)
+    let taught = null
+    for (let g0 = 0; g0 < 60 && !(taught && taught.call && taught.call.demo === null && taught.call.aim === 'level' && taught.call.form === 'follow'); g0++) {
+        await page.waitForTimeout(300)
+        taught = await page.evaluate(() => window.__contraTest.probe())
+    }
+    r.check('#3018 the teach completes — the banner decays in ~5 s and the demo returns to natural',
+        taught && taught.call && taught.call.demo === null && taught.call.aim === 'level' && taught.call.form === 'follow',
+        JSON.stringify({ taught: taught && { tick: taught.tick, banner: taught.call.demo, aim: taught.call.aim, form: taught.call.form } }))
+
     await page.keyboard.press('Space')
     await page.waitForTimeout(300)
     const started = await page.evaluate(() => window.__contraTest.probe())
