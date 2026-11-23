@@ -376,7 +376,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                         #   score-wipe, window-short, count-stalls,
                                        #   rung-resale, bed-deaf, lift-flat,
                                        #   heat-silent, coin-dropped, lead-vanished,
-                                       #   seat-gun-stripped, popup-loot
+                                       #   seat-gun-stripped, popup-loot,
+                                       #   hall-forget
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
