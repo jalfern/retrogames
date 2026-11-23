@@ -198,6 +198,26 @@ export function konamiFeed (progress, key) {
 }
 export const konamiArmed = (progress) => progress >= KONAMI.length
 
+// #3042 THE CONTINUE WINDOW — the cabinet's second chance, as pure arithmetic
+// (the konamiFeed precedent: the shell owns the clock, the sim owns the law,
+// and the harness pins the whole window in Node). The over screen's WORLD-tick
+// clock asks one question — where does the player stand? — and gets:
+//   'read'  GAME OVER speaks (CONT_READ ticks) — the sting, the score line;
+//   'count' the coin is accepted — Konami's digit falls 9…0, one a second;
+//   'out'   the book closes — the machine returns to the title.
+// The purse (how many continues a game sells) is shell state, like IronRing's
+// credits (#1103); this function answers only WHEN, never WHETHER it is paid.
+export const CONT_READ = 90                            // GAME OVER reads 1.5 s
+export const CONT_SECS = 9                             // the classic digit: 9…0
+export const CONT_LIFE = (CONT_SECS + 1) * 60          // the whole window
+export function contPhase (overT) {
+    if (overT < CONT_READ) return { phase: 'read', digit: CONT_SECS }
+    if (overT < CONT_READ + CONT_LIFE) {
+        return { phase: 'count', digit: Math.max(0, CONT_SECS - Math.floor((overT - CONT_READ) / 60)) }
+    }
+    return { phase: 'out', digit: 0 }
+}
+
 // #3035 THE SOMERSAULT span: one full body-turn per jump. The arc of a normal
 // jump runs `rollT` 1..37 under the sim's Euler integration — the roll completes
 // exactly as the feet come back to the ground, the cabinet's snap (the arc is
@@ -225,6 +245,16 @@ export function loopK (n) {
 // property — arcadeLoop carries it with the score, never resets it.
 export const EXT_FIRST = 30000
 export const EXT_STEP = 50000
+
+// #3042 seam on the #3041 law: the mark belongs to the RUN — so an entry that
+// arrives with a bank already past a rung (a paid CONTINUE carrying score)
+// starts at the first rung that bank has NOT crossed, never re-sells one it
+// bought. Default score 0 => EXT_FIRST: byte-for-byte the pre-#3041 world.
+export function extMark (score) {
+    let ne = EXT_FIRST
+    while (score >= ne) ne += EXT_STEP
+    return ne
+}
 
 export function arcadeLoop (gs) {
     const carryScore = gs.score
@@ -741,12 +771,16 @@ function allyBrainBase (gs) {
     return pad
 }
 
-export function makeGame (seed, loop = 1, lives = 3) {
+export function makeGame (seed, loop = 1, lives = 3, score = 0) {
     const lp = Math.max(1, Math.floor(loop) || 1)   // #2894 arcade loop: pass n>1 to run stage 1 faster
     // #3037: the Konami prize enters HERE and nowhere else — default 3 keeps every
     // pre-Konami run byte-identical (lives already enters stateHash, so armed runs
     // are honestly replayable too). Clamped to the HUD's numeric form (99).
     const lv = Math.max(1, Math.min(99, Math.floor(lives) || 3))
+    // #3042 the CONTINUE carry: a paid continue re-enters the fight with the score
+    // it earned. Default 0 keeps every pre-continue run byte-identical, and score
+    // already rides stateHash — a replay that silently wipes the carry diverges loudly.
+    const sc = Math.max(0, Math.floor(score) || 0)
     const gs = {
         seed: seed >>> 0,
         r: (seed >>> 0) ^ 0x9e3779b9,
@@ -756,9 +790,10 @@ export function makeGame (seed, loop = 1, lives = 3) {
         cam: 0,
         camY: 0,
         phase: 'jungle',            // jungle | falls | boss
-        score: 0,
+        score: sc,                  // #3042 CONTINUE carry — the score a paid continue re-enters with
         lives: lv,
-        nextExt: EXT_FIRST,       // #3041 the score mark the next extend pays at (carries the loop)
+        nextExt: extMark(sc),   // #3041 the score mark the next extend pays at; #3042 — derived from the
+                                //   entry bank so a carried continue starts above the rung it already bought
         end: null,                  // 'dead' | 'win'
         p: {
             x: 40, y: CFG.ground, vy: 0, onGround: true, face: 1,

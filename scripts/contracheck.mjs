@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE } from '../src/games/Contra/sim.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -2198,6 +2198,19 @@ if (MUTANT) {
             },
         },
         {
+            // #3042: the carry must actually carry. Silently zero the entry and
+            // every paid continue robs the run it was bought for.
+            name: 'score-wipe',
+            anchor: 'score: sc,',
+            plant: 'score: 0, /* MUTANT(score-wipe): the carry is a lie - every continue starts broke */',
+            harm: async (mod) => {
+                const g = mod.makeGame(7, 1, 3, 12345)
+                return g.score === 0
+                    ? 'HARM NAMED: a paid continue re-entered the fight at zero - the score the run earned was confiscated at the rebuild'
+                    : null
+            },
+        },
+        {
             // #3041: the mark is a RUN property. Reset it at the stage boundary
             // and every loop re-sells the same 30,000 the run already spent.
             name: 'carry-blind',
@@ -2210,6 +2223,46 @@ if (MUTANT) {
                 const carried = mod.arcadeLoop(g).nextExt
                 return carried === mod.EXT_FIRST
                     ? 'HARM NAMED: the extend mark reset at the loop boundary - the run can buy the same 30,000 life again on every pass'
+                    : null
+            },
+        },
+        {
+            // #3042: the window is a contract. Slam it after one digit and the
+            // ten-second promise the cabinet makes becomes a one-second trap.
+            name: 'window-short',
+            anchor: 'if (overT < CONT_READ + CONT_LIFE) {',
+            plant: 'if (overT < CONT_READ + 60) { /* MUTANT(window-short): the coin window slams after one digit */',
+            harm: async (mod) => {
+                const p = mod.contPhase(mod.CONT_READ + 90)
+                return p.phase === 'out'
+                    ? 'HARM NAMED: the CONTINUE window closed one second into the count - the player is given one digit to find the key, then the title eats the run'
+                    : null
+            },
+        },
+        {
+            // #3042: an unanswered count must CLOSE. Without `out` the machine
+            // holds the over screen forever and never gives the cabinet back.
+            name: 'count-stalls',
+            anchor: "return { phase: 'out', digit: 0 }",
+            plant: "return { phase: 'count', digit: 0 } /* MUTANT(count-stalls): the book never closes - GAME OVER holds the machine forever */",
+            harm: async (mod) => {
+                const p = mod.contPhase(mod.CONT_READ + mod.CONT_LIFE + 600)
+                return p.phase !== 'out'
+                    ? 'HARM NAMED: the count never expired - an unanswered GAME OVER holds the cabinet forever and never returns it to the next player at the attract screen'
+                    : null
+            },
+        },
+        {
+            // #3042 x #3041: a continue that carries the bank must carry the
+            // rung too. Hard-code the mark and every hot continue re-sells a
+            // life the run already paid for at 30,000.
+            name: 'rung-resale',
+            anchor: 'nextExt: extMark(sc),',
+            plant: 'nextExt: EXT_FIRST, /* MUTANT(rung-resale): the mark forgets the carried bank - every continue re-sells the 30k life */',
+            harm: async (mod) => {
+                const g = mod.makeGame(7, 1, 3, 32000)
+                return g.nextExt === mod.EXT_FIRST
+                    ? 'HARM NAMED: a continue carried a 32,000 bank but the extend mark reset to 30,000 - the run re-buys the life it already paid for the moment it respawns'
                     : null
             },
         },
@@ -2808,6 +2861,60 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     }
 }
 
+// ------------------------------------------------ #3042 CONTINUE — the law ---
+// The cabinet's second chance, referee-clean: the score carry enters at
+// makeGame (default 0 = the old three-arg world, byte for byte), and the
+// window is pure arithmetic the shell only keeps the clock for.
+{
+    r.check('#3042 score enters at makeGame: default 0 hash-identical to the old three-arg call, a carried score rides and the hash sees it',
+        makeGame(7).score === 0 && stateHash(makeGame(7)) === stateHash(makeGame(7, 1, 3, 0)) &&
+        makeGame(7, 1, 3, 12345).score === 12345 &&
+        stateHash(makeGame(7, 1, 3, 12345)) !== stateHash(makeGame(7)))
+    r.check('#3042 absurd carries come honest: negatives floor at zero, fractions truncate (the lives-clamp family)',
+        makeGame(7, 1, 3, -50).score === 0 && makeGame(7, 1, 3, 9999.7).score === 9999 &&
+        makeGame(7, 1, 3, NaN).score === 0)
+
+    // The #3041/#3042 seam: the extend mark is a RUN property, so a continue
+    // that carries a bank past a rung must not re-sell it at the entry.
+    r.check('#3042 a carried bank starts above the rung it already bought — the mark is run law at the entry seam (score-extend #3041 x CONTINUE #3042)',
+        makeGame(7).nextExt === EXT_FIRST &&
+        makeGame(7, 1, 3, 32000).nextExt === EXT_FIRST + EXT_STEP &&
+        makeGame(7, 1, 3, 30000).nextExt === EXT_FIRST + EXT_STEP &&
+        makeGame(7, 1, 3, 80000).nextExt === EXT_FIRST + 2 * EXT_STEP &&
+        extMark(0) === EXT_FIRST && extMark(29999) === EXT_FIRST)
+    {
+        const g = makeGame(7, 1, 3, 32000)
+        const l0 = g.lives
+        step(g, {}, {})
+        r.check('#3042 the tick after a hot continue pays no ghost extend — the rung was bought before the seat was paid for',
+            g.lives === l0 && g.nextExt === EXT_FIRST + EXT_STEP, `lives ${l0}->${g.lives} mark ${g.nextExt}`)
+    }
+
+    // the window law, pure: read -> count (9 digits, one a second) -> out.
+    r.check('#3042 the window: GAME OVER reads CONT_READ, then the Konami digit counts 9…0, then the book closes',
+        contPhase(0).phase === 'read' && contPhase(CONT_READ - 1).phase === 'read' &&
+        contPhase(CONT_READ).phase === 'count' && contPhase(CONT_READ).digit === CONT_SECS &&
+        contPhase(CONT_READ + 60).digit === 8 && contPhase(CONT_READ + 8 * 60).digit === 1 &&
+        contPhase(CONT_READ + 9 * 60).digit === 0 && contPhase(CONT_READ + CONT_LIFE - 1).digit === 0 &&
+        contPhase(CONT_READ + CONT_LIFE).phase === 'out' && contPhase(1e9).phase === 'out')
+    {
+        let changes = 0
+        let monotone = true
+        let prev = contPhase(CONT_READ).digit
+        for (let t = CONT_READ + 1; t < CONT_READ + CONT_LIFE; t++) {
+            const d = contPhase(t).digit
+            if (d !== prev) { changes++; monotone = monotone && d === prev - 1; prev = d }
+        }
+        // fairness: the whole count is the accept window — every tick before
+        // `out` answers a coin, none after. A shorter window is a shorter contract.
+        r.check('#3042 the count falls one digit a second — nine changes, no skips, no stalls — and the window stays open until out',
+            changes === 9 && monotone &&
+            contPhase(0).phase !== 'out' && contPhase(CONT_READ + CONT_LIFE - 1).phase !== 'out' &&
+            CONT_LIFE === (CONT_SECS + 1) * 60,
+            `changes=${changes} monotone=${monotone}`)
+    }
+}
+
 // ------------------------------------------------------------- browser leg ---
 // ------------------------------------------------ #3041 the score extend ---
 {
@@ -3076,13 +3183,18 @@ const browser = await launch()
         if (over.screen === 'over') break
     }
     r.check('dying with no lives left reaches GAME OVER', over.screen === 'over' && over.end === 'dead', `screen=${over.screen} end=${over.end}`)
+    // #3042 re-forged: the old restart law (any press >=0.9 s dumps to attract)
+    // is gone — the first press now ANSWERS THE COUNT and pays a continue:
+    // stage 1, loop 1, pool restored, score carried, purse one lighter. The
+    // attract path survives at zero: the empty-purse and expiry legs prove it.
     await page.waitForTimeout(1000)
     await page.keyboard.press('Space')
-    await page.waitForTimeout(250)
-    await page.keyboard.press('Space')
-    await page.waitForTimeout(250)
+    await page.waitForTimeout(300)
     const restarted = await page.evaluate(() => window.__contraTest.probe())
-    r.check('restart loop: GAME OVER -> attract -> play by real keys', restarted.screen === 'play', `screen=${restarted.screen}`)
+    r.check('#3042 restart loop: GAME OVER -> paid CONTINUE -> play by real keys — score carried, purse spends',
+        restarted.screen === 'play' && restarted.score === over.score && restarted.lives === 3 &&
+        restarted.loop === 1 && restarted.cont.left === 2 && restarted.tick < 120,
+        `screen=${restarted.screen} score=${over.score}->${restarted.score} lives=${restarted.lives} left=${restarted.cont.left} tick=${restarted.tick}`)
 
     // the drawn frame follows the sim: a pixel-bearing canvas after a run start
     const png = await page.evaluate(() => {
@@ -3424,16 +3536,20 @@ const browser = await launch()
     // #2902 attract teaches the loop: force the demo's death onto the harness
     // clock, and the attract screen runs one LOOP 2 pass with the banner before
     // handing the copy back — the mechanic advertises itself pre-clear.
-    await page.evaluate(() => { window.__game && window.__game.reset(99); window.__contraTest.setup({ lives: 0, kill: true, allyOut: true }) })
+    await page.evaluate(() => { window.__game && window.__game.reset(99); window.__contraTest.setup({ lives: 0, kill: true, allyOut: true, noContinue: true }) })
     let overT = null
     for (let g0 = 0; g0 < 40; g0++) {
         await page.waitForTimeout(200)
         overT = await page.evaluate(() => window.__contraTest.probe())
         if (overT && overT.screen === 'over') break
-        await page.evaluate(() => window.__contraTest.setup({ lives: 0, kill: true, allyOut: true }))
+        await page.evaluate(() => window.__contraTest.setup({ lives: 0, kill: true, allyOut: true, noContinue: true }))
     }
-    await page.waitForTimeout(1100)                 // GAME OVER holds ~0.9 s before its key answers
-    await page.keyboard.press('Space')               // over -> attract
+    // #3042: with the purse empty there is no count to answer — GAME OVER is
+    // the last word and the next press returns to the title (the old law, now
+    // the zero branch of the cabinet's rule).
+    r.check('#3042 an empty purse offers no count — over at zero carries no window', overT.cont.left === 0, `left=${overT.cont.left}`)
+    await page.waitForTimeout(1100)                 // GAME OVER reads before its key answers
+    await page.keyboard.press('Space')               // purse empty: over -> attract
     let attractLive = null
     for (let g0 = 0; g0 < 40 && !(attractLive && attractLive.screen === 'attract' && !attractLive.end); g0++) {
         await page.waitForTimeout(100)
@@ -4014,7 +4130,12 @@ const browser = await launch()
     const eT0 = Date.now()
     while (Date.now() - eT0 < 20000 && !paid) {
         const p = await ep.evaluate(() => window.__contraTest.probe())
-        if (p.score >= s0.nextExt) paid = p
+        // The pay lands one tick AFTER the crossing kill (the mark check sits
+        // at the head of step). Freeze only on the PAID state — sampling the
+        // crossing-intermediate frame (score up, mark not yet advanced) is a
+        // 12-fps headless artifact, not a law failure. The assertion below is
+        // untouched; only WHEN the sample is taken got honest.
+        if (p.score >= s0.nextExt && p.nextExt > s0.nextExt) paid = p
         else await ep.waitForTimeout(100)
     }
     await ep.keyboard.up('KeyX')
@@ -4039,6 +4160,90 @@ const browser = await launch()
     r.check('#3041 live: EXTRA LIFE paints gold on the salute band', goldMax >= 40, `gold px = ${goldMax}`)
     r.check('#3041 extend browser legs: zero page errors', eErrs.length === 0, eErrs.join(' | '))
     await ep.close()
+}
+
+// ------------------------------------------------------ #3042 CONTINUE live ---
+// The cabinet's second chance driven with real keys and a real tap: the count
+// paints and ticks on world time, a press pays (score carried, pool restored,
+// purse spent), a tap pays the same, and an unanswered window closes to the
+// title on its own. An armed run comes back armed — the NES continue law.
+{
+    const cp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500, decline: true })
+    const cErrs = []
+    cp.on('pageerror', (e) => cErrs.push(e.stack || e.message))
+    const dieToOver = async (extra = {}) => {
+        await cp.evaluate((o) => window.__contraTest.setup({ ...o, lives: 0, kill: true, allyOut: true }), extra)
+        let v = null
+        for (let g = 0; g < 40; g++) {
+            v = await cp.evaluate(() => window.__contraTest.probe())
+            if (v.screen === 'over') return v
+            await cp.evaluate(() => window.__contraTest.setup({ lives: 0, kill: true, allyOut: true }))
+            await cp.waitForTimeout(200)
+        }
+        return v
+    }
+
+    await cp.keyboard.press('Space')
+    await cp.waitForTimeout(300)
+    const dead1 = await dieToOver({ score: 5000 })
+    r.check('#3042 the purse opens full — three continues per game', dead1.cont.left === 3, `left=${dead1.cont.left}`)
+    await cp.waitForTimeout(1700)
+    const counting = await cp.evaluate(() => window.__contraTest.probe())
+    r.check('#3042 GAME OVER reads, then CONTINUE? counts — the window opens on the screen',
+        counting.screen === 'over' && counting.cont.phase === 'count' && counting.cont.digit <= CONT_SECS,
+        `phase=${counting.cont.phase} digit=${counting.cont.digit}`)
+    await cp.waitForTimeout(1300)
+    const lower = await cp.evaluate(() => window.__contraTest.probe())
+    r.check('#3042 the digit falls — the count really runs on world ticks (no dead glass)',
+        lower.cont.t > counting.cont.t + 60 && lower.cont.digit <= counting.cont.digit - 1,
+        `t ${counting.cont.t}->${lower.cont.t}, digit ${counting.cont.digit}->${lower.cont.digit}`)
+    await cp.keyboard.press('Space')
+    await cp.waitForTimeout(300)
+    const back = await cp.evaluate(() => window.__contraTest.probe())
+    r.check('#3042 a press pays — stage 1 loop 1, pool 3, the banked score carried, purse spent',
+        back.screen === 'play' && back.loop === 1 && back.lives === 3 && back.score === dead1.score && back.cont.left === 2,
+        `screen=${back.screen} loop=${back.loop} lives=${back.lives} score=${dead1.score}->${back.score} left=${back.cont.left}`)
+
+    // a tap answers too — the phone pays with the screen it has
+    const dead2 = await dieToOver({ score: 6100 })
+    r.check('#3042 the purse rides across runs — a second death still owes a count', dead2.cont.left === 2, `left=${dead2.cont.left}`)
+    await cp.waitForTimeout(1000)
+    await cp.mouse.click(192, 120)
+    await cp.waitForTimeout(300)
+    const tapped = await cp.evaluate(() => window.__contraTest.probe())
+    r.check('#3042 a tap answers the count too — the phone pays with the thumb it has',
+        tapped.screen === 'play' && tapped.cont.left === 1 && tapped.score === dead2.score,
+        `screen=${tapped.screen} left=${tapped.cont.left} score=${dead2.score}->${tapped.score}`)
+
+    // expiry: nobody answers and the machine closes the book by itself —
+    // no key is ever asked. (A real ~11.5 s count; this leg proves honesty.)
+    await dieToOver({ score: 6500 })
+    let expired = null
+    for (let g = 0; g < 90; g++) {
+        await cp.waitForTimeout(200)
+        expired = await cp.evaluate(() => window.__contraTest.probe())
+        if (expired.screen === 'attract') break
+    }
+    r.check('#3042 when the count dies the machine returns to the title — no key asked, forfeit and all',
+        expired.screen === 'attract', `screen=${expired.screen}`)
+
+    // armed carry: the code arms the game, the game remembers — NES law:
+    // "the cheat remains in effect when the player runs out of lives and
+    // uses a continue to retry a stage."
+    await cp.reload({ waitUntil: 'load' })
+    await cp.waitForTimeout(500)
+    for (const k of ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'Space']) { await cp.keyboard.press(k); await cp.waitForTimeout(60) }
+    const armedDead = await dieToOver({ score: 777 })
+    r.check('#3042 the armed game remembers — over at 30 lives carried a hot run', armedDead.lives === 0 && armedDead.screen === 'over')
+    await cp.waitForTimeout(1000)
+    await cp.keyboard.press('Space')
+    await cp.waitForTimeout(300)
+    const armedBack = await cp.evaluate(() => window.__contraTest.probe())
+    r.check('#3042 an armed run returns armed — the continue carries the Konami prize (30) and the score',
+        armedBack.screen === 'play' && armedBack.lives === 30 && armedBack.score === armedDead.score,
+        `screen=${armedBack.screen} lives=${armedBack.lives} score=${armedDead.score}->${armedBack.score}`)
+    r.check('#3042 CONTINUE legs: zero page errors', cErrs.length === 0, cErrs.join(' | '))
+    await cp.close()
 }
 
 r.exit(browser)
