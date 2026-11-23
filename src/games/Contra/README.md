@@ -1346,3 +1346,51 @@ falls-only law:
   two mutants that name the harm if the law rots: `rap-cheap` (the hanger dies
   at the rifle tier — the gorge forgets who it lost) and `rappel-blind` (the
   schedule silenced — the wires become paint).
+
+## #3066 NAME YOUR RANK — the signed board (never-dry stage)
+
+#3061 claimed its lineage out loud — "era Konami, the GK-lineage of Gradius
+and Life Force" — but left every rank anonymous. That lineage signs its
+boards: Gradius (1985) stops the game the moment you make the table and asks
+you to NAME your ship — three initials, joystick scheme, a finite count, and a
+default that commits itself. The cabinet remembered the run but never learned
+the soldier. This is the ceremony the board missed.
+
+- **The ask.** When a fall banks a row and the book closes (the CONTINUE count
+  expired unanswered, or the purse was empty and GAME OVER has read), the
+  lower screen becomes `NAME YOUR RANK!`: three slots defaulting `AAA`, the
+  cursor boxed white, #3045's plate idiom and the last-two-seconds heat.
+  Left/right walks the slots (wraps), up/down cycles A–Z (wraps), B confirms
+  and advances — and commits past the third — A signs whatever stands.
+  `NAME_SECS` 9 in the #3042 single-digit idiom; when the count dies the
+  default commits itself: the ceremony never blocks the next attract. After a
+  commit the signed board holds `BOARD_HOLD` ticks — the player sees their
+  rank named — and the title takes the screen back.
+- **The signature.** `who` is exactly three letters A–Z (`whoOk`). It rides
+  the `contra:hall` store and every board row: signed initials shine gold like
+  the score they earned. A legacy store (rows from before the ceremony) keeps
+  reading — its anonymous rows hold `???` in pale green — and is never
+  repaired; a row whose `who` is malformed is corruption and drops, the same
+  never-trust law the score fields obey.
+- **One name signs the session.** A row owes its name whenever it banks; if
+  the player answers the count instead, the debt waits for the book's real
+  close, and the one name typed stamps every row THIS session left unsigned
+  (`hallStamp` reaches only the timestamps the session presents — foreign
+  rows and already-signed rows stand untouched, and a name once given is
+  given: the board-hold swallows the any-key law).
+- **The cabinet asks people, never the machine.** `askSign` refuses an
+  auto seat, a mid-count book and an empty debt; the harness-driven autopilot
+  (#3064 seam) banks but is never asked, and its rows stay anonymous — the
+  same honesty gate #3061 gave the bank, extended. Attract never hosts the
+  ask; the pad stows on the over screen except while the ask stands, where
+  it is the phone's joystick (a tap outside the pad commits, era-simple).
+- **Referee-clean (#3035 class).** `who` never enters `gs`, the helpers take
+  arrays and never `gs`, zero `gs.r`, no hash surface — every pre-#3066 pin,
+  twin stream, the 12-seed autopilot sweep and the PLAICRAFT take byte-stand.
+- **Provable.** Eight static legs (the who-table, the dial, the cursor,
+  confirm/commit, the count, the stamp's reach, legacy-vs-corrupt reads, the
+  ask decision), six live legs (a legacy row rides unnamed; an unanswered
+  count closes into the ask; real arrow keys spell BCA; Space signs and the
+  store carries it; the board holds then the title returns; the machine is
+  never asked), and the named mutant `sign-forgets` dies — the ink taken,
+  the board never kept.
