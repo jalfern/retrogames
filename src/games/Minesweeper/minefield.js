@@ -276,7 +276,11 @@ export function chord(s, x, y) {
         // every flag right and the board swept (71/71, #3008).
         if (!s.open[ni] && !s.flag[ni]) covered.push([nx, ny])
     })
-    if (around !== s.clue[i]) { s.events.push({ t: 'nope', x, y }); return false }
+    // #3011: rejection says WHY. `deficit` is how many flags the clue still
+    // wants, so the shell can show the player what the chord was missing
+    // instead of a bare no. (A negative deficit = over-flagged; the paint
+    // clamps it. Presentation reads the field, the rules never change.)
+    if (around !== s.clue[i]) { s.events.push({ t: 'nope', x, y, deficit: s.clue[i] - around }); return false }
     let acted = false
     for (const [cx, cy] of covered) {
         if (openCell(s, cx, cy)) acted = true

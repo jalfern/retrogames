@@ -378,6 +378,49 @@ section('RULES — dig/flag/chord behave like the title card and the original')
         const mineIdx = Array.prototype.findIndex.call(g6.mines, (v) => v)
         ok(dig(g6, mineIdx % g6.w, (mineIdx / g6.w) | 0) === false && g6.end === 'win', 'a dig resolved after the win — solved boards must ignore every click')
         ok(chord(g6, g6.w >> 1, g6.h >> 1) === false && flag(g6, mineIdx % g6.w, (mineIdx / g6.w) | 0) === false && stateHash(g6) === hAfter, 'chord/flag mutated a solved board')
+        // #3011: refused verbs must also be SILENT — no dry-dig/nope events to
+        // stack over the fanfare while the flag march owns the screen.
+        g6.events.length = 0
+        dig(g6, mineIdx % g6.w, (mineIdx / g6.w) | 0)
+        chord(g6, g6.w >> 1, g6.h >> 1)
+        flag(g6, mineIdx % g6.w, (mineIdx / g6.w) | 0)
+        ok(g6.events.length === 0, `post-win verbs pushed ${g6.events.length} event(s) — the shell would play blips over the fanfare`)
+    }
+    // #3011: rejection teaches. A chord one flag short opens nothing and pushes
+    // exactly one nope carrying the deficit (the shell paints it as pips).
+    {
+        let anchored = 0
+        outerNo: for (const sd of seeds(6)) {
+            const g7 = newGame(0, sd)
+            plantAt(g7, g7.w >> 1, g7.h >> 1)
+            if (g7.end) continue
+            for (let i = 0; i < g7.w * g7.h; i++) {
+                if (!g7.open[i] || g7.clue[i] === 0) continue
+                const cx = i % g7.w, cy = (i / g7.w) | 0
+                const adjMines = []
+                let coveredSafe = 0
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    if (!dx && !dy) continue
+                    const nx = cx + dx, ny = cy + dy
+                    if (nx < 0 || ny < 0 || nx >= g7.w || ny >= g7.h) continue
+                    const j = idx(g7, nx, ny)
+                    if (g7.mines[j]) adjMines.push(j)
+                    else if (!g7.open[j]) coveredSafe++
+                }
+                if (adjMines.length < 2 || !coveredSafe) continue
+                flag(g7, adjMines[0] % g7.w, (adjMines[0] / g7.w) | 0) // one short of satisfied
+                g7.events.length = 0
+                const beforeOpen = g7.opened
+                ok(chord(g7, cx, cy) === false && g7.opened === beforeOpen,
+                    `seed ${sd}: unsatisfied chord opened cells at ${cx},${cy} — a short ring must never open`)
+                ok(g7.events.length === 1 && g7.events[0].t === 'nope' && g7.events[0].deficit === g7.clue[i] - 1,
+                    `seed ${sd}: rejected chord at ${cx},${cy} did not say why (needed ${g7.clue[i] - 1}, got ${JSON.stringify(g7.events)})`)
+                g7.events.length = 0
+                anchored++
+                break outerNo
+            }
+        }
+        ok(anchored > 0, 'no natural one-flag-short chord fixture in six seeds — the anchor silently skipped')
     }
     // step is the clock
     const g3 = newGame(0, 555)
@@ -481,6 +524,19 @@ if (MUT) {
                     else if (!g.open[j]) adjSafeCovered++
                 }
                 if (!adjSafeCovered) continue
+                // #3011: flag all-but-one first — the short chord must open
+                // nothing and push exactly one nope whose deficit says what was
+                // missing. The mute-deficit mutant (a bare nope) dies right here.
+                if (adjMines.length >= 2) {
+                    for (const j of adjMines.slice(0, -1)) Mm.flag(g, j % g.w, (j / g.w) | 0)
+                    g.events.length = 0
+                    const bo = g.opened
+                    Mm.chord(g, cx, cy)
+                    if (g.opened !== bo) return `seed ${seed}: short chord opened cells at ${cx},${cy} — a short ring must never open`
+                    const nvs = g.events.filter((ev) => ev.t === 'nope')
+                    if (!(nvs.length === 1 && nvs[0].deficit === 1)) return `seed ${seed}: short chord at ${cx},${cy} went dumb — rejection must carry deficit=1 (got ${JSON.stringify(g.events)})`
+                    g.events.length = 0
+                }
                 for (const j of adjMines) if (!g.flag[j]) Mm.flag(g, j % g.w, (j / g.w) | 0)
                 const bf = g.flags
                 Mm.chord(g, cx, cy)
@@ -538,6 +594,12 @@ if (MUT) {
             src: swap(SRC_TEXT,
                 'if (!s.open[ni] && !s.flag[ni]) covered.push([nx, ny])',
                 'if (!s.open[ni]) covered.push([nx, ny])', 'flag-devour'),
+        },
+        {
+            label: 'chord rejection goes dumb (nope drops its deficit — the player hears "no" but never what was missing, #3011)',
+            src: swap(SRC_TEXT,
+                "s.events.push({ t: 'nope', x, y, deficit: s.clue[i] - around })",
+                "s.events.push({ t: 'nope', x, y })", 'mute-deficit'),
         },
     ]
     for (const m of muts) {

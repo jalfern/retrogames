@@ -180,6 +180,9 @@ const MinesweeperGame = () => {
         // stagger: a chord's fresh ring opens flicker-cell-by-cell instead of
         // one paint (2 ticks per cell); sim truth opened instantly.
         const stagger = new Map()
+        // #3011: rejected chords park their deficit (missing flag count) here —
+        // i -> ticks left to flash the pips under the clue (~0.8 s).
+        const need = new Map()
 
         const buildCanvas = (d) => {
             if (canvas) canvas.remove()
@@ -210,15 +213,24 @@ const MinesweeperGame = () => {
             watchPlan = []; watchWait = 0
             marks = new Uint8Array(d.w * d.h)
             cascade = []; cascTotal = 0; cascWait = 0; cascDone = false
-            stagger.clear()
+            stagger.clear(); need.clear()
         }
 
         // ------------------------------------------------------- audio ----
         const handleEvents = (s) => {
+            let floods = 0, floodDug = 0
             while (s.events.length) {
                 const e = s.events.shift()
                 if (e.t === 'plant') audioController.playSweep(180, 520, 0.22, 'square', 0.06)
-                else if (e.t === 'flood') audioController.playSweep(300 + e.dug * 6, 640, 0.12, 'triangle', 0.045)
+                else if (e.t === 'flood') {
+                    // #3011: one burst per strum. A chord (or a big zero-zone)
+                    // can free several flood regions in the same tick; stacking
+                    // every region's sweep machine-gunned the phone speaker. The
+                    // total dug still rides the pitch, so a bigger burst still
+                    // sounds bigger — it just doesn't stutter.
+                    floods++
+                    floodDug += e.dug
+                }
                 else if (e.t === 'flag') audioController.playTone(560, 0.05, 'square', 0.05)
                 else if (e.t === 'unflag') audioController.playTone(300, 0.05, 'square', 0.04)
                 else if (e.t === 'chord') {
@@ -233,10 +245,19 @@ const MinesweeperGame = () => {
                     })
                 }
                 else if (e.t === 'dry') audioController.playTone(140, 0.04, 'square', 0.025)
-                else if (e.t === 'nope') audioController.playTone(110, 0.06, 'sawtooth', 0.03)
+                else if (e.t === 'nope') {
+                    // #3011: the reject blip was the quietest sound on the board
+                    // (0.03) — under phone volume it read as silence, so a wrong
+                    // shield looked like a dead button. At dig level now, and the
+                    // engine's deficit paints as pips under the clue (see cellPaint)
+                    // so "needs N more flags" lands even with the sound off.
+                    audioController.playTone(110, 0.06, 'sawtooth', 0.045)
+                    if (e.deficit > 0) need.set(idx(s, e.x, e.y), 48)
+                }
                 else if (e.t === 'boom') audioController.playNoise(0.5, 0.16)
                 else if (e.t === 'win') audioController.playSweep(320, 980, 0.6, 'square', 0.08)
             }
+            if (floods) audioController.playSweep(300 + (floods === 1 ? floodDug : Math.min(floodDug, 40)) * 6, 640, 0.12, 'triangle', floods > 1 ? 0.055 : 0.045)
         }
 
         const finish = (s) => {
@@ -271,13 +292,16 @@ const MinesweeperGame = () => {
                 if (marks) marks[i] = 0 // a dig takes the cell out of the cycle
                 const openedNum = gs.open[i] && gs.clue[i] > 0
                 if (openedNum) {
-                    let around = 0
-                    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-                        if (!dx && !dy) continue
-                        const nx = x + dx, ny = y + dy
-                        if (nx >= 0 && ny >= 0 && nx < gs.w && ny < gs.h && gs.flag[idx(gs, nx, ny)]) around++
-                    }
-                    if (around === gs.clue[i] && chord(gs, x, y)) { handleEvents(gs); finish(gs); return }
+                    // #3011: EVERY tap on a live clue goes to the engine's chord,
+                    // satisfied or not. The duplicated satisfaction pre-check here
+                    // sent the unsatisfied case on to dig(), whose generic dry-dig
+                    // blip was all a phone player ever heard — the engine's distinct
+                    // nope (and its deficit) never reached them. The engine owns
+                    // the verdict: chord opens, nope says why.
+                    chord(gs, x, y)
+                    handleEvents(gs)
+                    finish(gs)
+                    return
                 }
                 dig(gs, x, y)
                 handleEvents(gs)
@@ -375,6 +399,19 @@ const MinesweeperGame = () => {
                     // #1883(5): the clue is a 7-segment glyph, not a font (the
                     // digits join the HUD counters as one LED family).
                     drawNum7(ctx, s.clue[i], 1, px + c / 2, py + c / 2 + 1, c * 0.62, NUM_COLORS[s.clue[i]] || '#fff', null)
+                    if (need.has(i)) {
+                        // #3011: deficit pips — the flags this chord still wants,
+                        // amber (the "act on it" hue), one square per missing flag
+                        // (capped at 4; COLT clues top out at 3, and >4 wants the
+                        // count, not the pips). Blinks with the cursor's beat so
+                        // it reads as an invitation, not a penalty.
+                        const n = Math.min(need.get(i), 4)
+                        const d = Math.max(2, Math.round(c * 0.12))
+                        const y0 = py + c - d - 2
+                        const x0 = px + (c - (n * d + (n - 1) * 2)) / 2
+                        ctx.fillStyle = (s.tick >> 3) % 2 ? '#ffb04a' : '#7a5a26'
+                        for (let k = 0; k < n; k++) ctx.fillRect(x0 + k * (d + 2), y0, d, d)
+                    }
                 }
             } else {
                 const lift = s.planted ? 0 : 1
@@ -401,9 +438,12 @@ const MinesweeperGame = () => {
                         ctx.lineWidth = 1
                     }
                 } else if (marks && marks[i] === 2 && !s.flag[i] && !cascPaint) {
-                    // #1883(1): the dim "?" park — lighter than the covered
-                    // tile, darker than a flag; the cell stays covered.
-                    ctx.fillStyle = '#9fb0e8'
+                    // #1883(1) + #3011: the dim "?" park — the original's note
+                    // to self, NOT a claim. It started at #9fb0e8, as bright as
+                    // a flag, and phone players tried to count it into chords
+                    // (the engine has never read it — s.flag decides). Darker
+                    // and grayer than the flag's red reads "memo", not "mine".
+                    ctx.fillStyle = '#77819f'
                     ctx.font = `bold ${Math.round(c * 0.62)}px monospace`
                     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
                     ctx.fillText('?', px + c / 2, py + c / 2 + 1)
@@ -523,6 +563,7 @@ const MinesweeperGame = () => {
                 // #1883 presentation clocks (shell-side; the sim already banked
                 // these states — this only paces what the eye gets).
                 for (const [j, n] of stagger) { if (n <= 1) stagger.delete(j); else stagger.set(j, n - 1) }
+                for (const [j, n] of need) { if (n <= 1) need.delete(j); else need.set(j, n - 1) }
                 if (cascade.length && sc === 'play' && --cascWait <= 0) {
                     cascade.shift()
                     audioController.playTone(560, 0.05, 'square', 0.05) // the shared flag blip
@@ -711,6 +752,18 @@ const MinesweeperGame = () => {
                 staggered: () => stagger.size,
                 cascading: () => cascade.length,
                 marksCount: () => (marks ? marks.reduce((a, v) => a + (v === 2 ? 1 : 0), 0) : 0),
+                // #3011: the deficit nudge is shell truth — a rejected chord
+                // parks its "missing flags" count there. firstNumber finds a
+                // live clue without a 70-dig tour so a gate can tap it short.
+                needPips: () => need.size,
+                firstNumber: () => {
+                    if (!gs || !gs.planted) return null
+                    for (let y = 0; y < gs.h; y++) for (let x = 0; x < gs.w; x++) {
+                        const i = idx(gs, x, y)
+                        if (gs.open[i] && gs.clue[i] > 0) return { x, y, clue: gs.clue[i] }
+                    }
+                    return null
+                },
                 unflagAt: (x, y) => {
                     if (!gs || gs.end || screenRef.current !== 'play' || !gs.planted) return false
                     const i = idx(gs, x, y)

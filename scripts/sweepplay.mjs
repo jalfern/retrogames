@@ -590,6 +590,33 @@ await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
         (await probe()).screen === 'over', `screen=${(await probe()).screen}`)
 }
 
+console.log('\nSHORT CHORD — tapping an unsatisfied clue refuses loudly and shows what it wants (#3011)')
+await page.goto(URL, { waitUntil: 'load' })
+await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
+{
+    await page.evaluate((sd) => window.__sweepTest.start(0, sd), seed)
+    await wait(80)
+    await plantHere() // nothing is flagged yet, so ANY live clue is short by its clue
+    const num = await page.evaluate(() => window.__sweepTest.firstNumber())
+    r.check('a live number sits on the just-planted board to test against', !!num && num.clue >= 1, JSON.stringify(num))
+    if (num) {
+        const before = await probe()
+        const pt = await cellCentre(num.y * before.w + num.x)
+        await page.mouse.click(pt.x, pt.y)
+        await wait(60)
+        const after = await probe()
+        r.check('a tap on an unsatisfied clue opened nothing (the short ring stays shut)',
+            after.opened === before.opened && after.flags === before.flags,
+            `opened=${before.opened}->${after.opened} flags=${after.flags}`)
+        const pips = await page.evaluate(() => window.__sweepTest.needPips())
+        r.check('the rejected clue parked its deficit pips — the player sees "needs N flags"',
+            pips === 1, `pips=${pips}`)
+        const decayed = await page.waitForFunction(() => window.__sweepTest.needPips() === 0, null, { timeout: 4000 })
+            .then(() => true).catch(() => false)
+        r.check('the nudge fades inside a second (an invitation, not a scar)', decayed, `pips=${await page.evaluate(() => window.__sweepTest.needPips())}`)
+    }
+}
+
 if (errors.length) r.check('no page errors during play', false, errors.slice(0, 4).join(' | '))
 else r.check('no page errors during play', true)
 

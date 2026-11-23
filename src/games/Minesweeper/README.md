@@ -84,6 +84,37 @@ refused after it). Lesson: when the engine and the referee disagree about a
 rule, the referee was written first for a reason — but the ORIGINAL decides
 which one was wrong.
 
+## The rejection that teaches (#3011 — QA polish on the chord shield)
+
+The shield shipped (#3009); this pass made players *understand* it.
+
+- **The tap path was deaf to its own no.** `actDig` re-computed chord
+  satisfaction before calling `chord()` — and when the ring was short, it
+  fell through to `dig()`, whose generic dry-dig blip was the only sound a
+  phone player ever got. The engine's distinct nope (with its deficit) was
+  unreachable from real input. Now every tap on a live clue goes to
+  `chord()`; the engine owns the verdict, the shell owns the sound.
+- **Rejection says WHY.** The chord's nope event carries `deficit` (missing
+  flags), and the shell paints it as amber pips under the clue for ~0.8 s,
+  blinking with the cursor's beat. The nope tone moved from 0.03 (the
+  quietest sound on the board — under phone volume it read as silence) to
+  dig level. `sweepcheck` pins the event (exactly one nope, correct deficit,
+  nothing opens); the `mute-deficit` mutant — a bare nope — dies in
+  `probeMutant`'s chord fixture.
+- **One burst per strum.** A chord freeing several zero-regions stacked one
+  flood sweep per region in the same tick — a machine-gun stutter on phone
+  speakers. `handleEvents` now collapses a drain's floods into a single sweep
+  (sum of dug still rides the pitch; single floods keep their exact old voice).
+- **`?` is a note, not a claim.** The three-state park (#1883) painted
+  `#9fb0e8` — as bright as a flag — and phone players counted it into
+  chords, which the engine has never read (`s.flag` decides). Now `#77819f`,
+  darker and grayer than the flag red.
+- **Post-win silence is pinned refused-but-quiet**: refused verbs push *no
+  events*, so no dry-dig blip can stack over the fanfare while the flag
+  march owns the screen (`sweepcheck` g6 block).
+- The first-dig toast wording (`FLAGS PROTECT YOUR CHORDS`) is a taste call —
+  proposed on #3011, not shipped blind.
+
 ## Conventions / gotchas
 
 - The solver is fast but not free: GENERAL can plant in ~0.7 s on a slow box
