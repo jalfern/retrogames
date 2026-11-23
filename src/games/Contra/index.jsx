@@ -216,6 +216,15 @@ export default function ContraGame () {
         // banner clock, and the attract demo's one taught pass at loop 2.
         let loopFx = null
         let demoLoop = 0, demoUntil = 0
+        // #3018 the attract teaches the radio: one scripted demo shout lands
+        // ~10 s into the jungle — the wingman obeys (the sim's own order law),
+        // the echo banner lands in the same band as the play echo (146..160),
+        // five seconds, no sound (attract is silent-safe re autoplay). The
+        // LOOP banner slams at 80..144 on the taught pass; the latch is held
+        // through that pass, so the two never stack.
+        const DEMO_CALL_FX = 300   // ~5 s — the teach arc
+        let demoCallFx = null
+        let demoShout = false
         // #3000 voice radio (#1711 S5): the shout channel. voiceCtl holds the
         // recognition handle + the refcounted LISTEN badge; callFx is the
         // banner echo (presentation only — decays on world ticks, never sim
@@ -459,6 +468,8 @@ export default function ContraGame () {
             gs = makeGame((gs.seed + 7) >>> 0)
             part.length = 0; fire.length = 0
             wasGround = true; heli = null
+            // #3018: a fresh loop-1 demo re-arms the radio teach
+            demoShout = false; demoCallFx = null
         }
         const attractLoop = () => {
             gs = arcadeLoop(gs) // #1712: the demo learns the same loop law the takes replay
@@ -467,6 +478,9 @@ export default function ContraGame () {
             demoLoop = 1; demoUntil = 900            // ~15 s of the hot stage, then attract again
             loopFx = { t: 0, n: gs.loop, k: gs.lk }
             sfx.loopUp(gs.loop)
+            // #3018: the taught pass is the LOOP teach — the radio teach must
+            // not stack on the banner, so the latch holds and the demo echo dies
+            demoShout = true; demoCallFx = null
         }
 
         const toBank = (p) => ({
@@ -611,21 +625,25 @@ export default function ContraGame () {
                 ctx.fillText(lines[2], 192 - ctx.measureText(lines[2]).width / 2, 179)
                 ctx.restore()
             }
-            if (screen === 'play' && callFx && !hintFx) {
-                const fade = callFx.t > CALL_FX - 12 ? (CALL_FX - callFx.t) / 12 : Math.min(1, callFx.t / 10)
+            const paintCallBanner = (fx, fxMax) => {
+                const fade = fx.t > fxMax - 12 ? (fxMax - fx.t) / 12 : Math.min(1, fx.t / 10)
                 ctx.save()
                 ctx.globalAlpha = Math.max(0, Math.min(1, fade))
                 ctx.textBaseline = 'top'
                 ctx.font = 'bold 9px "Courier New", monospace'
-                const bw = ctx.measureText(callFx.text).width + 14
+                const bw = ctx.measureText(fx.text).width + 14
                 ctx.fillStyle = 'rgba(6,10,4,0.80)'
                 ctx.fillRect(192 - bw / 2, 146, bw, 14)
-                ctx.strokeStyle = callFx.ok ? '#ffd23c' : '#7d8f6a'
+                ctx.strokeStyle = fx.ok ? '#ffd23c' : '#7d8f6a'
                 ctx.strokeRect(192 - bw / 2 + 0.5, 146.5, bw - 1, 13)
-                ctx.fillStyle = callFx.ok ? '#ffd23c' : '#9aa88a'
-                ctx.fillText(callFx.text, 192 - bw / 2 + 7, 149)
+                ctx.fillStyle = fx.ok ? '#ffd23c' : '#9aa88a'
+                ctx.fillText(fx.text, 192 - bw / 2 + 7, 149)
                 ctx.restore()
             }
+            if (screen === 'play' && callFx && !hintFx) paintCallBanner(callFx, CALL_FX)
+            // #3018 the demo banner rides the same 146..160 band — the LOOP
+            // banner (80..144) never stacks on it (latched through that pass).
+            if (screen === 'attract' && demoCallFx && !loopFx && !demoLoop) paintCallBanner(demoCallFx, DEMO_CALL_FX)
 
             ctx.textBaseline = 'top'
             if (screen === 'attract' && !loopFx && !demoLoop) {
@@ -690,8 +708,25 @@ export default function ContraGame () {
                             if (loopFx) { loopFx.t += 1; if (loopFx.t >= LOOP_FX) loopFx = null }
                             else if (!gs.end) {
                                 stepSim(autopilot(gs))
+                                // #3018: one scripted demo shout, ~10 s in —
+                                // the wingman obeys, the banner reads, then
+                                // the teach completes and the demo returns to
+                                // natural. No sound: attract is silent-safe.
+                                if (!demoShout && gs.tick >= 600) {
+                                    demoShout = true
+                                    applyCall(gs, { kind: 'aim', dir: 'up' })
+                                    demoCallFx = { t: DEMO_CALL_FX, text: 'AIM UP', ok: true }
+                                }
+                                if (demoCallFx && --demoCallFx.t <= 0) {
+                                    demoCallFx = null
+                                    gs.orderAim = 'level'; gs.orderForm = 'follow'
+                                }
                                 if (demoLoop && gs.tick >= demoUntil) attractReset()
                             } else if (demoHold > 0) {
+                                // #3018: the banner keeps decaying through the
+                                // end-of-demo hold (the world is held, the echo
+                                // is presentation — it must not freeze frozen)
+                                if (demoCallFx && --demoCallFx.t <= 0) demoCallFx = null
                                 demoHold -= 1
                                 if (demoHold === 0) {
                                     if (gs.end === 'win' && demoLoop === 0) attractLoop()
@@ -872,7 +907,7 @@ export default function ContraGame () {
                     vine: { p: gs.p.vine, q: gs.p2.vine, tips: gs.vines.map((v) => { const tp = vineTip(gs, v.i); return { x: +tp.x.toFixed(1), y: +tp.y.toFixed(1) } }) },
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
-                    call: { form: gs.orderForm, aim: gs.orderAim, holdX: +gs.holdX.toFixed(1), banner: callFx ? { t: callFx.t, text: callFx.text, ok: callFx.ok } : null, armed: voiceCtl.on, hint: hintFx ? { t: hintFx.t } : null },   // #3000 the shout channel is observable
+                    call: { form: gs.orderForm, aim: gs.orderAim, holdX: +gs.holdX.toFixed(1), banner: callFx ? { t: callFx.t, text: callFx.text, ok: callFx.ok } : null, armed: voiceCtl.on, hint: hintFx ? { t: hintFx.t } : null, demo: demoCallFx ? { t: demoCallFx.t, text: demoCallFx.text } : null, demoShout },   // #3000 the shout channel is observable; #3018 the demo shout rides the same probe
                     keys: { ...keys },
                     keys2: { ...keys2 },
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
