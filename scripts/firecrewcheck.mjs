@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
     makeRun, step, state, setSources, mulberry32, windBias, CLOCK, T, W, H, LOFT_Y1, LADDER_X,
-    FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS, inLoft,
+    FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS, DENY_ECHO_TICKS, inLoft,
     windVoice, ladderCreak, windWhistle, crewTail, WIND_TELEGRAPH,
 } from '../src/games/FireCrew/sim.js'
 import { parseRadio, radioLabel } from '../src/games/FireCrew/voiceradio.js'
@@ -305,6 +305,19 @@ console.log('rules — the radio carries the split (#1361)')
     g.crew[0].battery = 0
     const dead = applyRadio(g, { kind: 'spot', side: 'west' })
     ok(!dead.ok && dead.why === 'LIGHT DEAD', 'a sweep costs battery — dead light is refused')
+    // #2985: the refusal is a STATE, not just a message — the featurizer's
+    // radioDeny lane mirrors sweepLeft; an ok call leaves it silent.
+    ok(g.radioDenyT === DENY_ECHO_TICKS, 'the refusal stamps its echo in the state', `${g.radioDenyT}`)
+    const g5 = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    g5.crew[0].battery = 0
+    applyRadio(g5, { kind: 'spot', side: 'west' })
+    step(g5, {})
+    ok(g5.radioDenyT === DENY_ECHO_TICKS - 1, 'the refusal echo counts down with the clock', `${g5.radioDenyT}`)
+    for (let n = 0; n < DENY_ECHO_TICKS; n++) step(g5, {})
+    ok(g5.radioDenyT === 0, 'the refusal echo wears off')
+    const g6 = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    applyRadio(g6, { kind: 'spot', side: 'west' })
+    ok(g6.radioDenyT === 0, 'an accepted call is not a refusal — the lane stays silent')
     g.crew[0].battery = 100
     const armed = applyRadio(g, { kind: 'spot', side: 'west' })
     ok(armed.ok && g.sweep && g.sweep.side === 'west', 'a spot call arms the flashlight sweep')
@@ -716,7 +729,7 @@ console.log('loft-gate pillar fix — #2178 (nightly resume freeze)')
 
 // --- #1712 S2: the model.js featurizer (dataset seat-senses) -----------------
 {
-    ok(N_FEAT === FEAT_NAMES.length && FEAT_NAMES.length === 65, 'model: 65 named features, N_FEAT agrees', `${FEAT_NAMES.length}`)
+    ok(N_FEAT === FEAT_NAMES.length && FEAT_NAMES.length === 67, 'model: 67 named features, N_FEAT agrees', `${FEAT_NAMES.length}`)
     const g = setSources(makeRun(96), ['human', 'cpu', 'cpu'])
     const f1 = featurize(g, 0, {})
     const f2 = featurize(g, 0, {})
@@ -725,13 +738,21 @@ console.log('loft-gate pillar fix — #2178 (nightly resume freeze)')
     // honest zero at seed-birth: nothing found, no sweep, no cmd
     const vIdx = FEAT_NAMES.indexOf('v1')
     const sIdx = FEAT_NAMES.indexOf('sweepW')
+    const dIdx = FEAT_NAMES.indexOf('radioDeny')
     ok(g.victims.every((v) => v.state === 'hidden') && f1.slice(vIdx, vIdx + 8).every((x) => x === 0)
-        && f1.slice(sIdx, sIdx + 7).every((x) => x === 0),
-        'model: seed-birth reads honest zeros (no victims in the light, radio silent)', '')
+        && f1.slice(sIdx, sIdx + 7).every((x) => x === 0) && f1[dIdx] === 0 && f1[dIdx + 1] === 0,
+        'model: seed-birth reads honest zeros (no victims in the light, radio silent, no refusal)', '')
     // a spot call lights the radio lane AND the shared fire reading survives
     applyRadio(g, { kind: 'spot', side: 'west' })
     const f3 = featurize(g, 0, {})
     ok(f3[sIdx] === 1 && f3[sIdx + 6] > 0, 'model: an applied sweep call lights its one-hot + countdown lane', `${f3.slice(sIdx, sIdx + 7).join('')}`)
+    // #2985: a FAILED shout lights the refusal lane (+ its countdown) — the
+    // seat must see it shouted and got nothing.
+    g.crew[0].battery = 5
+    const deadRes = applyRadio(g, { kind: 'spot', side: 'east' })
+    const f3d = featurize(g, 0, {})
+    ok(!deadRes.ok && f3d[dIdx] === 1 && f3d[dIdx + 1] > 0,
+        'model: a refused spot call lights radioDeny + its countdown lane', `${f3d.slice(dIdx, dIdx + 2).join(',')}`)
     // the split survives the featurizer: the loft law finds loft victims for
     // the LADDER seat (the window), while the hose's own view keeps them dark
     // — a dark found victim named in a v-lane would be the silent-teacher leak.

@@ -184,6 +184,18 @@ routes through the wind law"); restore afterwards.
     `firecrewcheck` +3 source gates, `firecrewplay` +1 cap law (a 65-flip
     storm banks exactly 64 spans and names the 65th), datasetcheck +1
     overflow-refuse unit.
+  - **#2985 item 4 — the refusal is a sense (`radioDeny`):** a LIGHT DEAD
+    shout lived only in the message, so a seat learning to shout could never
+    see its shout FAIL. `applyRadio` now stamps `g.radioDenyT = DENY_ECHO_TICKS`
+    (120 — the echo's own length) and the featurizer mirrors `sweepLeft`:
+    `radioDeny` + `radioDenyLeft` countdown, shared like every radio lane
+    (N_FEAT 65→67). The refusal never touches `stateHash` (like battery and
+    sweep), and `fireCrewRows` re-seats refused banked calls too — battery is
+    pad-deterministic, so the replay re-lights the same refusal and rows train
+    what live carried. Proof: `firecrewcheck` +5 gates (stamp/decay/silence +
+    honest-zero + lit lane, all in plain Node), datasetcheck +1 refusal-replay
+    unit (flare-starved take: denied at t=80, lane lights the row, silent by
+    t=200, take still verifies).
 - **#1766 — polish round 3 (truck silhouette, smoke-dimmed fire, crew breathe):**
   three visual bullets, all provable in plain Node through the #1440 recording-ctx
   pattern (they draw only fillRects). (1) *The ladder truck IS the base column*

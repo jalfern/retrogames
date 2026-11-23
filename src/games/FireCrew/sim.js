@@ -143,7 +143,7 @@ export function makeRun(seed) {
         // radio (#1361): external calls, like pads — never from the rng.
         // sweep: the flashlight call lights one side (the lightAt rule finds
         // what it reveals); voiceLadder/radioHoldT drive the CPU seats.
-        sweep: null, voiceLadder: null, radioHoldT: 0,
+        sweep: null, voiceLadder: null, radioHoldT: 0, radioDenyT: 0,
         players: 1, sources: ['human', 'cpu', 'cpu'],
     }
     return g
@@ -828,6 +828,7 @@ export function step(g, pad, pads) {
     if (g.sweep && !--g.sweep.t) g.sweep = null
     if (g.voiceLadder && !--g.voiceLadder.t) g.voiceLadder = null
     g.radioHoldT = Math.max(0, g.radioHoldT - 1)
+    g.radioDenyT = Math.max(0, g.radioDenyT - 1)
     g.messageT = Math.max(0, g.messageT - 1)
     g.score = g.rescued * 1000 + g.doused * 10 + (g.done && g.win ? Math.floor((CLOCK - g.tick) / 10) : 0)
     const unresolved = g.victims.filter((v) => v.state !== 'rescued' && v.state !== 'lost').length
@@ -849,12 +850,18 @@ export function step(g, pad, pads) {
 export const SWEEP_TICKS = 120
 export const SWEEP_COST = 15
 export const VOICE_DRIVE_TICKS = 90
+export const DENY_ECHO_TICKS = 120 // the refusal's own echo (the message's length)
 
 export function applyRadio(g, intent) {
     if (!g || g.done || !intent) return { ok: false, why: intent ? 'GAME OVER' : 'NO CALL', msg: '' }
     if (intent.kind === 'spot') {
         if (g.crew[0].battery < SWEEP_COST) {
             g.message = 'RADIO: LIGHT DEAD — NO BATTERY'; g.messageT = 120
+            // #2985: the refusal lives in the state, not just the message — the
+            // featurizer's radioDeny lane mirrors sweepLeft so a seat learning
+            // to shout can see its shout FAILED. Hash-invisible like battery
+            // and sweep (stateHash mixes neither), so the replay stays exact.
+            g.radioDenyT = DENY_ECHO_TICKS
             return { ok: false, why: 'LIGHT DEAD', msg: g.message }
         }
         g.crew[0].battery -= SWEEP_COST

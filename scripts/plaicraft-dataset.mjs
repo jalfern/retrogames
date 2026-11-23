@@ -547,7 +547,12 @@ export function fireCrewRows(key, rec) {
         .filter(Boolean)
     const calls = new Map()
     for (const c of (rec.voiceCmd || [])) {
-        if (!c || !Number.isInteger(c.t) || !c.ok || typeof c.intent !== 'string') continue
+        // #2985: refusals re-enter the sim too, not just ok calls. Battery is
+        // pad-deterministic (recovery + flares + sweeps), so replaying the
+        // refused spot call at its tick re-lights the SAME refusal — the
+        // radioDeny row lanes train on what live rows carried. The refusal
+        // never touches the hash, so verification cannot shift.
+        if (!c || !Number.isInteger(c.t) || typeof c.intent !== 'string') continue
         const lane = calls.get(c.t) || []
         lane.push(c)
         calls.set(c.t, lane)
