@@ -30,7 +30,12 @@ page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.
 
 const probe = () => page.evaluate(() => window.__sweepTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)
-const seed = (Math.floor(Math.random() * 0xffffffff) >>> 0) || 12345
+// A deterministic board: seed it through the hook so this run reproduces.
+// #3023: --seed N pins it (same shape as sweepcheck) — pip-leg timing only
+// shows up on centre-numbered boards, so QA needs to be able to re-roll.
+const seedArg = process.argv.includes('--seed') ? (process.argv[process.argv.indexOf('--seed') + 1] >>> 0) : null
+console.log(`seed ${seedArg ?? 'random'}`)
+const seed = seedArg || (Math.floor(Math.random() * 0xffffffff) >>> 0) || 12345
 
 // A deterministic board: seed it through the hook so this run reproduces.
 await page.goto(URL, { waitUntil: 'load' })
@@ -367,11 +372,21 @@ const rb = await page.evaluate(() => {
 })
 const plantHere = async () => {
     // fresh reload => the virtual pad is mounted and its band can eat the
-    // first click (the #1353 retarget); click twice and wait on state.
+    // first click (the #1353 retarget), so click again ONLY if the dig did
+    // not land. An unconditional double-click was a REAL chord whenever the
+    // centre opened numbered — its phantom rejection pip (~0.8 s) poisoned
+    // pip-reading legs (#3023).
     await page.mouse.click(rb.x, rb.y)
-    await wait(120)
-    await page.mouse.click(rb.x, rb.y)
-    await page.waitForFunction(() => window.__sweepTest.probe().planted, null, { timeout: 8000 })
+    const landed = await page.waitForFunction(() => window.__sweepTest.probe().planted, null, { timeout: 400 })
+        .then(() => true).catch(() => false)
+    if (!landed) {
+        await page.mouse.click(rb.x, rb.y)
+        await page.waitForFunction(() => window.__sweepTest.probe().planted, null, { timeout: 8000 })
+    }
+    // whatever parked pips on the way in, start from a clean slate: the
+    // flash dies within 0.8 s, so waiting it out is cheap insurance for
+    // legs that count pips after planting (#3023).
+    await page.waitForFunction(() => window.__sweepTest.needPips() === 0, null, { timeout: 2000 }).catch(() => {})
 }
 const fp = (fx, fy) => page.evaluate(([x, y]) => {
     const g = document.querySelector('[data-sweep-face="1"]').getContext('2d')
@@ -601,6 +616,10 @@ await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
     r.check('a live number sits on the just-planted board to test against', !!num && num.clue >= 1, JSON.stringify(num))
     if (num) {
         const before = await probe()
+        // #3023: the count is incidental — the leg's own words say ONE MORE
+        // rejection pip. Snapshot before the tap so a straggler pip from the
+        // fixture cannot turn the strict ===1 into a coin-flip on the seed.
+        const prePips = await page.evaluate(() => window.__sweepTest.needPips())
         const pt = await cellCentre(num.y * before.w + num.x)
         await page.mouse.click(pt.x, pt.y)
         await wait(60)
@@ -610,7 +629,7 @@ await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
             `opened=${before.opened}->${after.opened} flags=${after.flags}`)
         const pips = await page.evaluate(() => window.__sweepTest.needPips())
         r.check('the rejected clue parked its deficit pips — the player sees "needs N flags"',
-            pips === 1, `pips=${pips}`)
+            pips === prePips + 1, `pips=${prePips}->${pips}`)
         const decayed = await page.waitForFunction(() => window.__sweepTest.needPips() === 0, null, { timeout: 4000 })
             .then(() => true).catch(() => false)
         r.check('the nudge fades inside a second (an invitation, not a scar)', decayed, `pips=${await page.evaluate(() => window.__sweepTest.needPips())}`)
