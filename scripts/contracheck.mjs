@@ -2329,6 +2329,23 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #3056: the carry is per seat. Strip the wingman's letter at the
+            // boundary and the co-op run loses half its carry - the hero walks
+            // into loop 2 still holding SPREAD while his partner is back on a
+            // rifle. Capsules are per seat; the boundary must be per seat too.
+            name: 'seat-gun-stripped',
+            anchor: '    if (carryGun2 !== \'rifle\') next.p2.weapon = carryGun2',
+            plant: '    /* MUTANT(seat-gun-stripped): the loop rebuilds the blue seat as a rifle - the wingman\'s captured letter dies at STAGE CLEAR */',
+            harm: async (mod) => {
+                const g = mod.makeGame(7, 1)
+                g.p.weapon = 'spread'; g.p2.weapon = 'machine'
+                const n = mod.arcadeLoop(g)
+                return n.p2.weapon === 'rifle'
+                    ? 'HARM NAMED: the loop carried the hero\'s SPREAD but stripped the wingman\'s MACHINE - the co-op run walks into STAGE 1 STRIKES BACK with only half the guns it marched out with'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -3148,6 +3165,58 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     r.check('#3052 the pause duck is a step-back, not a dropout — 0.15 of the bus, deep enough to hear, never silence',
         DUCK > 0 && DUCK <= 0.25 && DUCK * MUSIC_BUS > 0.02,
         `duck=${DUCK} -> ${(DUCK * MUSIC_BUS).toFixed(3)}`)
+}
+
+// -------------------------------------- #3056 seat carry — BOTH guns march again ---
+// The loop boundary is a carry, not a second start. Capsules are per seat (S4
+// law), the structural law says whatever the hero's seat obeys the blue seat
+// obeys, and #2894's spec — "the gun the run carried carries too" — describes
+// a run that marches out of stage 1 with TWO guns. Until #3056 the wingman's
+// captured letter died at STAGE CLEAR while the hero's survived. These pins
+// keep both seats' letters in the bag, keep the boundary honest (a rifle stays
+// a rifle), and prove the carry referee-clean: p2.weapon already rode
+// stateHash since S4, so a replay that drops the seat gun diverges loudly, and
+// the carry itself consumes zero gs.r.
+{
+    const carryGuns = (w1, w2) => {
+        const g = makeGame(7, 1)
+        g.p.weapon = w1; g.p2.weapon = w2
+        const n = arcadeLoop(g)
+        return [n.p.weapon, n.p2.weapon]
+    }
+    const [h1, a1] = carryGuns('spread', 'machine')
+    r.check('#3056 the loop carries BOTH seats\' guns — per seat, letters not swapped',
+        h1 === 'spread' && a1 === 'machine', `hero=${h1} wingman=${a1}`)
+    const [h2, a2] = carryGuns('laser', 'fire')
+    r.check('#3056 every letter carries — a second pair pins it is not a one-gun hack',
+        h2 === 'laser' && a2 === 'fire', `hero=${h2} wingman=${a2}`)
+    const [h3, a3] = carryGuns('rifle', 'rifle')
+    r.check('#3056 no phantom upgrade: a gunless boundary stays twin rifles (the pre-carry world stands)',
+        h3 === 'rifle' && a3 === 'rifle')
+    {
+        // the carry is replay-visible with no new hash surface: p2.weapon has
+        // been sim truth since S4 — two rebuilds differing only in the
+        // wingman's letter must diverge, or the hash is lying about the bag.
+        const g = makeGame(7, 1); g.p2.weapon = 'machine'
+        const n = arcadeLoop(g)
+        const fresh = makeGame(7, 2, n.lives)
+        r.check('#3056 the carried seat gun diverges the hash — a replay that silently un-carrys cannot hide',
+            stateHash(n) !== stateHash(fresh))
+    }
+    {
+        // determinism across the boundary: identical seeds, identical pads,
+        // identical rebuild — the carry draws nothing from gs.r.
+        const drive = () => {
+            let g = makeGame(5, 1)
+            g.p.weapon = 'spread'; g.p2.weapon = 'machine'
+            for (let i = 0; i < 60; i++) { step(g, autopilot(g)); g.ev.length = 0 }
+            g = arcadeLoop(g)
+            for (let i = 0; i < 600; i++) { step(g, autopilot(g)); g.ev.length = 0 }
+            return `${stateHash(g)}:${g.p.weapon}:${g.p2.weapon}:${g.loop}`
+        }
+        r.check('#3056 a carried run replays byte-identical across the boundary (zero gs.r in the carry)',
+            drive() === drive())
+    }
 }
 
 // ------------------------------------------------------------- browser leg ---

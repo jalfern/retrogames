@@ -287,11 +287,23 @@ export function arcadeLoop (gs) {
     // pre-Konami run can hold) the expression is identical value-for-value.
     const carryLives = gs.lives > LOOP_LIVES_MAX ? gs.lives : Math.min(LOOP_LIVES_MAX, gs.lives + LOOP_LIFE_BONUS)
     const carryGun = gs.p.weapon
+    const carryGun2 = gs.p2.weapon   // #3056 the run carries TWO guns in co-op
     const next = makeGame(gs.seed, gs.loop + 1, carryLives)
     next.score = carryScore
     next.lives = carryLives
     next.nextExt = gs.nextExt   // #3041 the extend mark belongs to the run, not the stage
     if (carryGun !== 'rifle') next.p.weapon = carryGun
+    // #3056 THE SEAT CARRY — the loop carried the hero's gun but rebuilt the
+    // blue seat as a rifle, so a wingman's captured SPREAD died at STAGE CLEAR
+    // while the hero's marched on. That broke the game's own laws: capsules
+    // are per seat, the structural law says whatever the hero obeys the blue
+    // seat obeys, and #2894's spec ("the gun the run carried carries too")
+    // describes a run with two guns. The carry is the hero's rule verbatim —
+    // and it can only ever move a legitimately-held gun, because both seats'
+    // death-revert laws (the clean rifle at respawn, #2814) already ran on
+    // any seat that fell short of the boundary. Zero gs.r; p2.weapon already
+    // rides stateHash, so replays pin the carry with no new hash surface.
+    if (carryGun2 !== 'rifle') next.p2.weapon = carryGun2
     return next
 }
 

@@ -106,12 +106,45 @@ same seed cannot carry loop 2). Loop 1 is byte-identical to the pre-loop game
 (pinned through 5 winning autopilot seeds); loops 2, 3 and every capped loop
 sweep 12/12 clears. The HUD marks the pass in gold under the 2UP tag, the clear
 screen promises `STAGE 1 STRIKES BACK — LOOP n`, and one attract line tells the
-player the loop exists before they ever see it.
+player the loop exists before they ever see it. Since #3056 the carry is per
+seat: **both** soldiers march into the next pass wearing the guns the run
+captured.
 
 *Fidelity note (#237 rule): the 1987 arcade cabinet's own memory here is a
 Mission-8 credits ending; this repo's honest-gap spec said "the arcade loops
 stage 1 with faster settings", so the loop is built as the spec says, and the
 disagreement is recorded on #2894.*
+
+## #3056 The seat carry — both guns march into the next pass
+
+The arcade loop (#2894) carries the score, the bank, the shared pool and "the
+gun the run carried" — but the code only carried `gs.p`'s weapon. In co-op that
+run has TWO guns, and the wingman's captured letter (MACHINE, FIRE, LASER, the
+per-seat capsule law from S3) died at STAGE CLEAR while the hero's marched on.
+A player sees it directly: SPREAD on both seats entering the gate, a rifle on
+seat 2 when `STAGE 1 STRIKES BACK` fades. That is the S4 structural law —
+"whatever law the hero obeys, the blue seat obeys" — broken at the boundary.
+
+The fix is the hero's carry rule applied to seat 2 verbatim:
+
+```js
+if (carryGun !== 'rifle')  next.p.weapon  = carryGun
+if (carryGun2 !== 'rifle') next.p2.weapon = carryGun2   // #3056
+```
+
+Three laws survive it untouched, all pinned in `contracheck`:
+
+- **Per seat, not swapped.** `spread/machine` and `laser/fire` both carry on the
+  correct seats — it is not a one-gun copy. A gunless boundary stays twin rifles
+  (no phantom upgrade; the pre-carry world is byte-for-byte the old one).
+- **Referee-clean.** `p2.weapon` has ridden `stateHash` since S4, so the carry
+  adds zero hash surface and a replay that silently un-carries diverges loudly.
+  The carry draws nothing from `gs.r`: a carried run driven twice is hash-
+  identical across the boundary.
+- **Death still outranks the carry.** Both seats revert to rifle on death
+  (`sim.js` respawn lines) *before* any boundary, so the loop only ever moves a
+  gun a seat was legitimately holding when the gate blew. A wingman who fell
+  short of the gate rebuilds with the clean rifle his respawn gave him.
 
 ## Engine notes
 
@@ -329,7 +362,9 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   prone-immortal, no-crawl-price,
                                         #   extend-deaf, carry-blind,
                                         #   score-wipe, window-short, count-stalls,
-                                       #   rung-resale, bed-deaf, lift-flat
+                                       #   rung-resale, bed-deaf, lift-flat,
+                                       #   heat-silent, coin-dropped, lead-vanished,
+                                       #   seat-gun-stripped
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -445,6 +480,15 @@ no count, and an unanswered count lands on the attract screen unasked** · zero
 page errors.
 
 ## Honest gaps
+
+- **CLOSED by #3056**: the arcade loop now carries BOTH seats' guns. The #2894
+  carry rebuilt the blue seat as a rifle, so a wingman's captured MACHINE/FIRE/
+  LASER died at STAGE CLEAR while the hero's SPREAD survived — breaking the S4
+  structural law ("whatever law the hero obeys, the blue seat obeys"). The
+  hero's rule applied verbatim to `gs.p2.weapon`; per-seat, hash-clean, zero
+  `gs.r`, and death-revert still outranks the carry. Never-dry stage (#1571):
+  the rule was missing from the shelf while every README gap read CLOSED — scoped
+  live from the cabinet's per-seat carry. See the #3056 note above.
 
 - **CLOSED by #3000**: Contra opens the mic — the wingman takes shouted orders
   (`AIM UP / AIM DOWN / AIM LEVEL`, `FOLLOW / HOLD / SPREAD`) through a pure
