@@ -163,6 +163,39 @@ while its signature logic game had none. Now:
 `minesweeper.best.COLT`, the verdict object matches the shelf, and the over
 screen really shows the record line.
 
+## The press feel (#3032)
+
+The original answered the press and committed on release; ours dug on
+mousedown. Now — mouse only; touch already committed on release, because the
+long-press flag has to be cancellable:
+
+- **Press** sinks the tile (bevel flips: shadow swaps sides) and opens
+  nothing. The shell's `press` is presentation + input timing; `minefield.js`
+  and `stateHash` never feel it.
+- **Chord preview**: pressing an opened number flattens its whole covered
+  ring — flags included — to the open look, so the player sees exactly what
+  the release will open.
+- **Release on the same cell** commits (`actDig` — same dig/chord verdict the
+  engine always gave, one pointer-up later). Release anywhere else cancels;
+  dragging off also un-flattens the ring, so the cancel is visible before it
+  commits.
+- **The concentrating face** lives while a cell is held (dashed eyes, flat
+  mouth) and returns to its usual mood on release.
+- Housekeeping: any keyboard/DEV/seat dig clears the pending press visual at
+  the top of `actDig`; a new board, pause, `pointercancel` and game-over all
+  clear the press too.
+
+`sweepplay` grades it in pixels and against the referee: the tile shows the
+exact sink fill mid-press, the face carries ink at the mouth bar and light at
+the shades gap while held, the ring flattens to the open background and
+restores on drag-off, and a cancelled release leaves `stateHash` untouched.
+`probe().press` exposes `{x, y, inside, preview}` and the DEV hook gained
+`clueAt` so the browser legs can find preview candidates without re-deriving
+the board. While here the `?` leg hardened too: the mark is graded by counting
+dim-`?` ink pixels in the cell instead of a centre-pixel diff — the exact
+centre of a "?" lands in the curve/stem gap at some font sizes, which made the
+old check a seed/antialias lottery (red once, green once, same code).
+
 ## Conventions / gotchas
 
 - The solver is fast but not free: GENERAL can plant in ~0.7 s on a slow box

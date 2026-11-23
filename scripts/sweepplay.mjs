@@ -426,14 +426,41 @@ await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
 {
     await plantHere()
     const near = (px, rgb, tol = 8) => Math.abs(px[0] - rgb[0]) <= tol && Math.abs(px[1] - rgb[1]) <= tol && Math.abs(px[2] - rgb[2]) <= tol
-    const pxAt = (cell) => page.evaluate((i) => {
-        const cv = document.querySelector('canvas[data-sweep-stage]')
-        const st = window.__sweepTest.probe()
-        const g = cv.getContext('2d')
-        const d = g.getImageData(Math.round(((i % st.w) + 0.5) * (cv.width / st.w)),
-            Math.round((((i / st.w) | 0) + 0.5) * (cv.height / st.h)), 1, 1).data
-        return [d[0], d[1], d[2]]
-    }, cell)
+    // Poll the canvas instead of sleeping: on software-rendered Chrome an
+    // rAF can hitch longer than any short wait, and a one-shot pixel read
+    // then races the painter (the #3032 dev runs red-hopped exactly this
+    // way — state legs green, pixels stale). Each read waits until the
+    // expected colour shows; the budget only bounds how long a MISSING
+    // repaint may stall before it grades red.
+    const pxWant = (i, rgb, want = true, tol = 8, ms = 1500) => page.evaluate(async ([cell, r0, g0, b0, w, t, tmo]) => {
+        const nearIn = (p) => Math.abs(p[0] - r0) <= t && Math.abs(p[1] - g0) <= t && Math.abs(p[2] - b0) <= t
+        const read = () => {
+            const cv = document.querySelector('canvas[data-sweep-stage]')
+            const st = window.__sweepTest.probe()
+            const g = cv.getContext('2d')
+            const d = g.getImageData(Math.round(((cell % st.w) + 0.5) * (cv.width / st.w)),
+                Math.round((((cell / st.w) | 0) + 0.5) * (cv.height / st.h)), 1, 1).data
+            return [d[0], d[1], d[2]]
+        }
+        const t0 = Date.now()
+        let px = read()
+        while (nearIn(px) !== w && Date.now() - t0 < tmo) { await new Promise((rz) => setTimeout(rz, 16)); px = read() }
+        return px
+    }, [i, rgb[0], rgb[1], rgb[2], want, tol, ms])
+    const faceWant = (rgb, want = true, ms = 1500) => page.evaluate(async ([r0, g0, b0, w, tmo]) => {
+        const nearIn = (p) => Math.abs(p[0] - r0) <= 24 && Math.abs(p[1] - g0) <= 24 && Math.abs(p[2] - b0) <= 24
+        const read = () => {
+            const g = document.querySelector('[data-sweep-face="1"]').getContext('2d')
+            const m = g.getImageData(14, 20, 1, 1).data
+            const e = g.getImageData(14, 11, 1, 1).data
+            return { mouth: [m[0], m[1], m[2]], eyeGap: [e[0], e[1], e[2]] }
+        }
+        const ok = (f) => nearIn(f.mouth) === w && !nearIn(f.eyeGap) === w
+        const t0 = Date.now()
+        let f = read()
+        while (!ok(f) && Date.now() - t0 < tmo) { await new Promise((rz) => setTimeout(rz, 16)); f = read() }
+        return f
+    }, [rgb[0], rgb[1], rgb[2], want, ms])
     // --- 1. press without dig, release commits, face concentrates ----
     const nx = await page.evaluate(() => window.__sweepTest.nextSafe())
     const st0 = await probe()
@@ -441,18 +468,16 @@ await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
     const before = await probe()
     await page.mouse.move(p.x, p.y)
     await page.mouse.down()
-    await wait(90)
     const mid = await probe()
-    const pxSunk = await pxAt(nx.y * st0.w + nx.x)
-    const mouth = await fp(14, 20)   // press mouth bar: dark here, bright for smile/cool/dead
-    const eyeGap = await fp(14, 11)  // bright while pressing, dark under cool shades
+    const pxSunk = await pxWant(nx.y * st0.w + nx.x, [0x2a, 0x35, 0x54])
+    const faceMid = await faceWant([0x17, 0x1d, 0x33])
     r.check('holding the left button presses WITHOUT digging (the original waits for release)',
         !!mid.press && mid.press.x === nx.x && mid.press.y === nx.y && mid.press.inside === true && mid.opened === before.opened,
         `press=${JSON.stringify(mid.press)} opened=${before.opened}->${mid.opened}`)
     r.check('the held tile sinks (flat sunken fill, not the raised bevel)',
         near(pxSunk, [0x2a, 0x35, 0x54]) && !near(pxSunk, [0x33, 0x3f, 0x5f]), `px=${pxSunk}`)
     r.check('the face concentrates while a cell is held',
-        near(mouth, [0x17, 0x1d, 0x33], 24) && !near(eyeGap, [0x17, 0x1d, 0x33], 24), `mouth=${mouth} eyeGap=${eyeGap}`)
+        near(faceMid.mouth, [0x17, 0x1d, 0x33], 24) && !near(faceMid.eyeGap, [0x17, 0x1d, 0x33], 24), `mouth=${faceMid.mouth} eyeGap=${faceMid.eyeGap}`)
     await page.mouse.up()
     try { await page.waitForFunction((o) => window.__sweepTest.probe().opened > o, before.opened, { timeout: 4000 }) } catch { /* graded below */ }
     const up = await probe()
@@ -485,18 +510,16 @@ await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
         const opened0 = (await probe()).opened
         await page.mouse.move(numPt.x, numPt.y)
         await page.mouse.down()
-        await wait(90)
         const midP = await probe()
-        const pxRing = await pxAt(cand.covered)
+        const pxRing = await pxWant(cand.covered, [0x10, 0x15, 0x27], true, 6)
         r.check('pressing a number previews the chord (covered ring flattens to the open look)',
             !!midP.press && midP.press.preview >= 1 && near(pxRing, [0x10, 0x15, 0x27], 6) && midP.opened === opened0,
             `preview=${midP.press && midP.press.preview} ringPx=${pxRing} opened=${opened0}->${midP.opened}`)
         // drag off: the ring un-flattens (peek at the cancel), nothing is armed
         const offPt = await cellCentre(cand.covered)
         await page.mouse.move(offPt.x, offPt.y)
-        await wait(90)
+        const pxBack = await pxWant(cand.covered, [0x10, 0x15, 0x27], false, 6)
         const drag = await probe()
-        const pxBack = await pxAt(cand.covered)
         r.check('dragging off un-flattens the preview and holds nothing open',
             !!drag.press && drag.press.inside === false && drag.opened === opened0 && !near(pxBack, [0x10, 0x15, 0x27], 6),
             `inside=${drag.press && drag.press.inside} ringPx=${pxBack}`)
