@@ -10,13 +10,13 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
-import { audioController } from '../../utils/AudioController'
+import { audioController, MUSIC } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, recordVoiceCmd, isRecording, armLiveCapture, hasAutoVoice } from '../../utils/gameContract'
 import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
 import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat } from './sim.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, bedFor, liftStep, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat } from './sim.js'
 import { parseCall, intentKey, intentLabel } from './voicecalls.js'
 import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
@@ -209,7 +209,7 @@ export default function ContraGame () {
     modeRef.current = mode
     pausedRef.current = paused
 
-    const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false }, [])
+    const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false; audioController.setMusicLevel(1) }, [])
 
     useEffect(() => {
         const wrap = wrapRef.current
@@ -243,6 +243,26 @@ export default function ContraGame () {
         // #3045: the ceremony is observable — the shell counts the beats it
         // fires so the live leg can prove the coin clacked and the heat rose.
         const contBeats = { coin: 0, tick: 0, hot: 0 }
+        // #3047 THE STAGE BED — the cabinet drives its march under the run.
+        // bedNow is the bed the speakers are on; null is the game's honest
+        // silence: attract (the #3018 silent-safe law), the over screen (the
+        // coin and the digit beeps own it), the clear fanfare, the pad of the
+        // loop interstitial. bedK is the heat the bed was voiced at, so even a
+        // mid-run tempo retarget (DEV setup) re-voices. Presentation outside
+        // the referee (the #3035 rollT law): zero gs.r, no hash surface —
+        // every seed pin, twin law, autopilot sweep and PLAICRAFT byte stands.
+        let bedNow = null
+        let bedK = 1
+        const setBed = (name) => {
+            bedNow = name
+            bedK = gs.lk
+            audioController.startMusic(name)
+            audioController.setMusicLevel(1)
+            // the #2902 loopVoice precedent for the ears: hotter loop, faster
+            // march — the tempo lift is sim law (liftStep), the shell just maps
+            audioController.setMusicStep(liftStep(MUSIC[name].step, bedK))
+        }
+        const stopBed = () => { bedNow = null; audioController.stopMusic() }
         let shake = 0
         let hiscore = Number(localStorage.getItem('contra:hiscore') || 0)
         const part = [] // cosmetic particles — Math.random is law here, never in sim
@@ -441,6 +461,7 @@ export default function ContraGame () {
             callFx = null   // #3000: fresh stage, fresh orders — the echo starts quiet too
             kProg = 0       // #3037: the typing was consumed by this start
             setMode('play'); screen = 'play'
+            setBed('contra')   // #3047: the seat is taken — the march starts with it (attract stays silent by the #3018 autoplay law; the press that starts the run has already unlocked the audio)
         }
 
         // #1711 S2 consent, arcade-shaped: Contra's entry law is *any key takes
@@ -545,6 +566,7 @@ export default function ContraGame () {
         const endTo = (what) => {
             screen = what
             setMode(what)
+            stopBed()   // #3047: the march belongs to the run, not the screen it ends on — attract is silent-safe (#3018), the over screen is the coin's, the clear fanfare plays alone
             kProg = 0 // #3037: typing does not survive leaving the attract screen
             if (what === 'attract') kFx = null
             extFx = null   // #3041: a salute never survives the screen it was paid on
@@ -584,6 +606,7 @@ export default function ContraGame () {
             // cannot miss the interstitial.
             loopFx = { t: 0, n: gs.loop, k: gs.lk }
             sfx.loopUp(gs.loop)
+            setBed('contra')   // #3047: the hot stage opens with the march lifted a notch by lk (loop-lifted, the loopVoice family)
         }
 
         // #2902: attract lifecycle. Reset = a fresh loop-1 demo seed; the loop
@@ -625,6 +648,14 @@ export default function ContraGame () {
             // bank carries, so the Node adapter re-applies the flip at the same
             // tick derivably from the stream (vs DD's rules.seat2At latch).
             if (screen === 'play' && isRecording() && !contractHoldsLoop()) recordLiveTick([toBank(pad), toBank(p2)])
+            // #3047: the bed follows the stage, not the clock — jungle and the
+            // waterfall share the march (the cabinet's section break is a camera
+            // turn, not a song change), the fortress gets the variation-up, and
+            // a heat retarget re-voices even mid-phase (loop k / DEV setup).
+            if (screen === 'play') {
+                const want = bedFor(gs.phase)
+                if (want !== bedNow || gs.lk !== bedK) setBed(want)
+            }
             if (gs.end === 'win') { if (screen === 'play') { endTo('clear'); clearHold = 220 } }
             else if (gs.end === 'dead') { if (screen === 'play') endTo('over') }
         }
@@ -975,7 +1006,7 @@ export default function ContraGame () {
 
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
-            if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
+            if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); audioController.setMusicLevel(pausedRef.current ? 0.15 : 1); return }   // #3047: the march steps back while the help reads
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             if (e.code === 'KeyV') { e.preventDefault(); voiceToggle(); return } // #3000 the crew radio
             if (screen === 'attract') {
@@ -1140,6 +1171,9 @@ export default function ContraGame () {
 
         if (import.meta.env.DEV) {
             window.__contraTest = {
+                // #3047: the bed is observable — track, live step, held level,
+                // and the shell's own bed memory (null = the honest silence).
+                music: () => ({ ...audioController._musicState(), bed: bedNow, bedK: +bedK.toFixed(3) }),
                 probe: () => ({
                     screen, tick: gs.tick, x: +gs.p.x.toFixed(2), y: +gs.p.y.toFixed(2), onGround: gs.p.onGround,
                     lives: gs.lives, score: gs.score, nextExt: gs.nextExt, weapon: gs.p.weapon, end: gs.end, cam: Math.round(gs.cam),   // #3041 the extend mark is observable
@@ -1286,6 +1320,7 @@ export default function ContraGame () {
 
         return () => {
             unexposeFeedbackState()
+            audioController.stopMusic()   // #3047: the bed belongs to this mount, not the tab (the #2336 law)
             endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
             disarmVoice() // #3000: no hot mic past the component, ever
             if (import.meta.env.DEV) { if (window.__contraTest) delete window.__contraTest; unexposeGame(); unmountDbg() }

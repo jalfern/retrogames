@@ -530,6 +530,49 @@ export const MUSIC = {
             1, 0, 0, 2, 1, 0, 0, 2, 1, 0, 0, 2, 1, 2, 1, 0,
         ],
     },
+    // CONTRA (#3047) — TWO ORIGINAL beds in the 1987 cabinet's idiom: the run-and-gun
+    // march. Driving E-minor gallop (dotted feel, octave-pumping bass, snare-forward
+    // `perc` — the military pulse IS the signature), and the variation-up the fortress
+    // gets: octave higher, tritone stabs, tighter step. The cabinet's own theme is
+    // Konami's copyrighted melody and the header law says no copyrighted game audio,
+    // so these are OURS — same drive, same register, same effect, not a transcription
+    // (the `joust`/`marble` precedent). Cadence is LOCKED to the sim clock like
+    // qbert's hop law: step 0.1s = exactly 6 world ticks, so the 32-step loop is
+    // exactly 192 ticks = 24 rifle cadences (fireCool 8) and 64 MG rounds — the
+    // march and the gunfire cannot drift. Loop heat lifts the tempo via setMusicStep
+    // at gs.lk (the #2902 loopVoice precedent), pinned in contracheck.
+    contra: {
+        step: 0.1,
+        lead: [
+            64, 0, 64, 67, 71, 67, 64, 67, 72, 0, 71, 67, 64, 0, 67, 0,
+            67, 0, 67, 72, 76, 72, 67, 72, 74, 0, 77, 74, 81, 77, 74, 71,
+        ],
+        bass: [
+            40, 52, 0, 52, 40, 52, 0, 52, 48, 60, 0, 60, 48, 60, 0, 60,
+            43, 55, 0, 55, 43, 55, 0, 55, 50, 62, 0, 62, 47, 59, 47, 0,
+        ],
+        perc: [
+            1, 0, 2, 2, 1, 0, 2, 2, 1, 0, 2, 2, 1, 2, 1, 2,
+            1, 0, 2, 2, 1, 0, 2, 2, 1, 2, 1, 2, 1, 2, 2, 0,
+        ],
+    },
+    // THE GATE — the variation-up: Em an octave higher with b5 stabs (78/81 against
+    // 76/79 — the tritone the siege beds already speak), step tightened 0.1 -> 0.09.
+    contraGate: {
+        step: 0.09,
+        lead: [
+            76, 0, 79, 76, 83, 79, 76, 79, 84, 0, 83, 79, 76, 0, 79, 0,
+            78, 0, 81, 78, 85, 81, 78, 81, 86, 0, 85, 81, 78, 0, 76, 0,
+        ],
+        bass: [
+            40, 0, 40, 52, 40, 0, 47, 0, 40, 0, 40, 52, 40, 0, 46, 0,
+            42, 0, 42, 54, 42, 0, 45, 0, 43, 0, 43, 55, 42, 0, 43, 0,
+        ],
+        perc: [
+            1, 2, 2, 1, 2, 2, 1, 2, 1, 2, 2, 1, 2, 1, 2, 2,
+            1, 2, 2, 1, 2, 2, 1, 2, 1, 2, 1, 2, 2, 1, 2, 2,
+        ],
+    },
 }
 
 class AudioController {

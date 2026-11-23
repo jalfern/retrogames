@@ -302,7 +302,10 @@ disagreement is recorded on #2894.*
   low profiles fire level and crawl at half speed),
   SPACE/Z or the pad's A jumps — and HELD through a swinging vine tip in the
   canyon, it GRABS the vine (tap again to fly off). X/C or the pad's B fires.
-  `?` pauses. When the pool runs dry the cabinet asks once more: during the
+  `?` pauses — and #3047 gives the pause something to duck: the run marches
+  under an ORIGINAL cabinet-idiom bed (attract stays silent by the autoplay
+  law; the seat-start brings it up, the gate revoices, loops lift it). See
+  the #3047 note at the foot of this README. When the pool runs dry the cabinet asks once more: during the
   CONTINUE count ANY key or tap pays a continue (see #3042 below).
   Seat 2 (drop-in): WASD + F jump + G fire — the first touch claims the seat.
   `warpFalls`/`warpBoss` construct phases properly (DEV hooks + DebugKit);
@@ -326,7 +329,7 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   prone-immortal, no-crawl-price,
                                         #   extend-deaf, carry-blind,
                                         #   score-wipe, window-short, count-stalls,
-                                       #   rung-resale
+                                       #   rung-resale, bed-deaf, lift-flat
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -552,6 +555,16 @@ page errors.
   Never-dry stage (#1571): the rule was missing from the shelf while every README
   gap read CLOSED — scoped live from the cabinet. See the #3042 note at the foot
   of this README.
+- **CLOSED by #3047**: the silent stage got its march — the cabinet drives the
+  run under a driving E-minor bed, and the fortress gets a tritone variation-up.
+  Two ORIGINAL compositions in AudioController's house idiom (never a transcription
+  — the header law, the `joust`/`marble` precedent), cadence-locked to the world
+  clock (one step = 6 ticks; one loop = 24 rifle cadences, the qbert law), with
+  the tempo lifted by the loop heat (the loopVoice family) and ducked by the help
+  screen. Presentation outside the referee: zero `gs.r`, no hash surface, attract
+  stays silent by the autoplay law — every pre-bed pin, twin stream, autopilot
+  sweep and PLAICRAFT take byte-stands. See the #3047 note at the foot of this
+  README.
 
 ## #2917 The second air layer — hangar sorties at the gate
 
@@ -934,3 +947,46 @@ expiry). The two legs this stage re-forged are the worked examples.
   per-digit heat rates `1,1,1,1,1,1,2,3,4,4`, heat never stomping a boundary,
   pad-gate law) + 1 live leg (ceremony counters through a real expiry) and two
   mutants — `heat-silent`, `coin-dropped` — that die by name.
+
+## #3047 The stage bed — the cabinet's march (never-dry stage)
+
+Kicked from the #1571 ladder (`CONTRA -1 weak`: feedback #2971 names the game,
+every README gap CLOSED at kick time, QA no longer inside after #3045 shipped),
+the gap was scoped live from the cabinet: the 1987 machine never plays silent —
+stage 1 drives under one of the most recognizable marches in arcade history, and
+this port, with ~40 synthesized effects, played the whole run in SFX-only
+silence. This stage closes that, entirely presentation-side:
+
+- **Two ORIGINAL beds, house idiom.** `MUSIC.contra` — a driving E-minor march
+  (gallop lead, octave-pumping bass, snare-forward `perc`), and
+  `MUSIC.contraGate` — the variation-up the fortress gets: an octave higher,
+  tritone stabs (the `siege` family's own colour), step tightened 0.1 -> 0.09.
+  Konami's theme is copyrighted and the AudioController header law forbids
+  transcription, so these are OURS in the same breath and register (the
+  `joust`/`marble` precedent) — and a contracheck leg proves mechanically that
+  neither is a copy of any bed already on the shelf.
+- **Cadence locked to the world clock** (qbert's law): one march step is
+  exactly 6 ticks, so one 32-step loop is exactly 192 ticks = 24 rifle
+  cadences (`fireCool` 8) — gunfire and music cannot drift over a run.
+- **The bed law is sim arithmetic** (the `loopVoice` precedent): `bedFor(phase)`
+  names the bed (jungle and waterfall share the march — the section break is a
+  camera turn, not a song change — the boss takes the variation), `liftStep(k)`
+  voices the tempo, pinned with LOOP_CAP like everything else hot. The shell
+  only maps names onto the engine.
+- **The lifecycle is the cabinet's**: attract keeps its silence (the #3018
+  autoplay law — and the press that takes the seat has already unlocked the
+  audio), the seat-start brings the march up, the gate revoices, `startLoop`
+  re-opens stage 1 with the step lifted by lk (the loopVoice family for the
+  ears), `?` ducks to 0.15 while the help reads, GAME OVER strikes the band so
+  the coin clack and digit beeps own the over screen (#3045), and a paid
+  continue brings the march back at loop-1 tempo.
+- **Referee-clean by construction**: the helpers consume nothing, sit outside
+  `step`, touch no state; a contracheck twin maps the bed law across a full
+  autopilot win and hashes byte-identical to the unmapped twin (`gs.r` equal).
+  Every pre-bed seed pin, replay, demo and dataset take stands untouched.
+- **Harness**: 7 new sim legs (table law, cadence lock, variation-up, originals
+  check, bedFor, liftStep, referee twin) + 6 live legs (attract silence, real
+  seat-start cadence, loop-3 lift through DEV retarget, gate revoice at heat,
+  pause duck and restore, GAME OVER silence). Named mutants: `bed-deaf` (the
+  stage never names a bed) and `lift-flat` (hot loops march at loop-1 tempo) —
+  both die by name.

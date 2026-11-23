@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, bedFor, liftStep, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN } from '../src/games/Contra/sim.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -2287,6 +2287,26 @@ if (MUTANT) {
                 ? 'HARM NAMED: the coin never clacked into the slot - the player pays and the cabinet answers with silence'
                 : null,
         },
+        {
+            // #3047: the march is the cabinet's stage presence. A stage that
+            // never names a bed plays against wallpaper - name the silence.
+            name: 'bed-deaf',
+            anchor: "return phase === 'boss' ? 'contraGate' : 'contra'",
+            plant: 'return null /* MUTANT(bed-deaf): no phase ever asks for a bed */',
+            harm: async (mod) => mod.bedFor('jungle') === null
+                ? 'HARM NAMED: the stage never names a bed - the jungle runs silent and the cabinet\'s march becomes folklore'
+                : null,
+        },
+        {
+            // #3047: the loop lifts what the ears can hear (loopVoice family).
+            // A flat lift and the hot stage stops telling you it is hot.
+            name: 'lift-flat',
+            anchor: 'return baseStep / Math.max(1, Math.min(LOOP_CAP, k || 1))',
+            plant: 'return baseStep /* MUTANT(lift-flat): the march ignores the loop heat */',
+            harm: async (mod) => mod.liftStep(0.1, 1.2) === 0.1
+                ? 'HARM NAMED: loop 3 marches at loop 1 tempo while the world runs twenty percent hot - the bed stopped escalating with the sky'
+                : null,
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -2973,6 +2993,73 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
         shellSrc.includes("<VirtualControls visible={(mode === 'play' || mode === 'attract') && !paused}") &&
         shellSrc.includes("secondAction={mode === 'attract' ? { label: 'B', code: 'KeyB' } : { label: 'FIRE', code: 'KeyX' }}"),
         'pad visible/secondAction gate moved at the over screen')
+}
+
+// ------------------------------------- #3047 THE STAGE BED — the cabinet's march ---
+// Two ORIGINAL beds in AudioController's MUSIC table plus the pure bed law in
+// sim.js (the loopVoice precedent — the sim owns what the stage sounds like).
+// The march itself is ears-on: the live legs prove it plays, starts with the
+// seat, revoices at the gate, lifts with the loop and steps back for pause.
+// Node pins what can be pinned without ears: the table, the cadence lock and
+// the arithmetic the shell maps.
+{
+    const { MUSIC } = await import('../src/utils/AudioController.js')
+    const beds = ['contra', 'contraGate']
+    const tableOk = beds.every((k) => {
+        const t = MUSIC[k]
+        return t && t.step > 0 && t.lead.length === 32 && t.bass.length === 32 && t.perc.length === 32 &&
+            t.lead.every((n) => Number.isInteger(n) && n >= 0 && n <= 108) &&
+            t.bass.every((n) => Number.isInteger(n) && n >= 0 && n <= 108) &&
+            t.perc.every((n) => n === 0 || n === 1 || n === 2)
+    })
+    r.check('#3047 the bed table is sound — two 32-step tracks, MIDI-clean lanes, live steps',
+        tableOk,
+        beds.map((k) => `${k}:${MUSIC[k] ? `${MUSIC[k].lead.length}/${MUSIC[k].bass.length}/${MUSIC[k].perc.length}@${MUSIC[k].step}` : 'MISSING'}`).join(' '))
+    // the qbert cadence law: the march locks to the world clock, so gunfire
+    // and music can never drift against each other across a run.
+    r.check('#3047 the cadence lock — one march step is exactly 6 world ticks and one loop is exactly 24 rifle cadences (fireCool 8)',
+        MUSIC.contra.step * 60 === 6 && 32 * 6 === 24 * CFG.fireCool,
+        `stepTicks=${MUSIC.contra.step * 60} loopTicks=${32 * MUSIC.contra.step * 60} rifle=${CFG.fireCool}`)
+    r.check('#3047 the gate variation is a variation-up — tighter step, melody an octave higher',
+        MUSIC.contraGate.step < MUSIC.contra.step &&
+        Math.min(...MUSIC.contraGate.lead.filter(Boolean)) >= Math.min(...MUSIC.contra.lead.filter(Boolean)) + 8,
+        `steps=${MUSIC.contra.step}->${MUSIC.contraGate.step} low=${Math.min(...MUSIC.contra.lead.filter(Boolean))}->${Math.min(...MUSIC.contraGate.lead.filter(Boolean))}`)
+    // header law: no copyrighted game audio — and the mechanical half of that
+    // promise is that these melodies are NEW work, not the shelf's own tracks
+    // re-labeled. (The ears can check the idiom; this leg proves the copy
+    // didn't happen.)
+    const others = Object.entries(MUSIC).filter(([k]) => !beds.includes(k)).map(([, t]) => JSON.stringify(t))
+    const fresh = beds.every((k) => !others.includes(JSON.stringify(MUSIC[k])))
+    r.check('#3047 the beds are originals — neither melody is a copy of any bed already on the shelf',
+        fresh, `shelfTracks=${others.length}`)
+    // the bed law itself: phase names the bed, heat lifts the tempo, and every
+    // name bedFor returns actually exists in the engine (cross-file contract).
+    r.check('#3047 bedFor — the fortress gets the variation, jungle and waterfall share the march, and every name resolves in the engine',
+        bedFor('boss') === 'contraGate' && bedFor('jungle') === 'contra' && bedFor('falls') === 'contra' &&
+        beds.every((k) => !!MUSIC[k]),
+        `boss=${bedFor('boss')} jungle=${bedFor('jungle')} falls=${bedFor('falls')}`)
+    r.check('#3047 liftStep — unity at loop 1, one notch a pass, pinned with the tempo, garbage k falls back to unity',
+        liftStep(0.1, 1) === 0.1 && Math.abs(liftStep(0.1, loopK(3)) - 0.1 / 1.2) < 1e-9 &&
+        Math.abs(liftStep(0.1, loopK(9)) - 0.1 / LOOP_CAP) < 1e-9 && liftStep(0.1, 0) === 0.1 && liftStep(0.1, -2) === 0.1,
+        `k3=${liftStep(0.1, loopK(3))} k9=${liftStep(0.1, loopK(9))}`)
+    // referee law (the rollT family, pinned from the other side): the bed is
+    // presentation OUTSIDE the sim — the helpers are pure, the sim never calls
+    // them, and a twin run with bed law mapped at every tick hashes identical.
+    {
+        const a = makeGame(7)
+        const b = makeGame(7)
+        const pads = { left: false, right: true, up: false, down: false, a: false, b: true }
+        let mapped = 0
+        while (!a.end && a.tick < 20000) {
+            step(a, autopilot(a)); a.ev.length = 0
+            if (liftStep(MUSIC[bedFor(a.phase)].step, a.lk) > 0) mapped++
+            step(b, autopilot(b)); b.ev.length = 0
+            if (a.end) break
+        }
+        r.check('#3047 the bed never touches the referee — mapping the bed law over a full autopilot run leaves the seed and the hash byte-identical to the unmapped twin',
+            a.end === 'win' && mapped > 100 && stateHash(a) === stateHash(b) && a.r === b.r,
+            `end=${a.end} mapped=${mapped}`)
+    }
 }
 
 // ------------------------------------------------------------- browser leg ---
@@ -4220,6 +4307,79 @@ const browser = await launch()
     r.check('#3041 live: EXTRA LIFE paints gold on the salute band', goldMax >= 40, `gold px = ${goldMax}`)
     r.check('#3041 extend browser legs: zero page errors', eErrs.length === 0, eErrs.join(' | '))
     await ep.close()
+}
+
+// ------------------------------------------ #3047 the stage bed — live ears ---
+// The march through real keys: attract keeps its silence (the #3018 autoplay
+// law), the seat-start brings the bed, the fortress revoices, the loop heat
+// lifts the tempo, the help ducks it, and GAME OVER strikes the band so the
+// coin owns the over screen.
+{
+    const bp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500, decline: true })
+    const bErrs = []
+    bp.on('pageerror', (e) => bErrs.push(e.stack || e.message))
+    const mus = () => bp.evaluate(() => window.__contraTest.music())
+
+    const at0 = await mus()
+    r.check('#3047 attract keeps its silence — the bed starts with the seat, not before it (autoplay law)',
+        at0.playing === false && at0.bed === null && at0.track === null,
+        JSON.stringify(at0))
+
+    await bp.keyboard.press('Space')
+    await bp.waitForTimeout(500)
+    const on0 = await mus()
+    r.check('#3047 a real key takes the seat and the march starts with it — contra plays, full level, resting cadence',
+        on0.playing === true && on0.bed === 'contra' && on0.track === 'contra' &&
+        Math.abs(on0.stepDur - 0.1) < 1e-6 && on0.level === 1,
+        JSON.stringify(on0))
+
+    // loop heat lifts the tempo: retarget loop 3 in the jungle (the probe
+    // carries lk — the march must run the step by the same ceiling).
+    await bp.evaluate(() => window.__contraTest.setup({ loop: 3 }))
+    await bp.waitForTimeout(250)
+    const hot = await bp.evaluate(() => ({ m: window.__contraTest.music(), p: window.__contraTest.probe() }))
+    r.check('#3047 the hot stage marches faster — loop 3 lifts the step by lk (0.1 / 1.2), still the march',
+        hot.p.lk === 1.2 && hot.m.playing === true && hot.m.track === 'contra' &&
+        Math.abs(hot.m.stepDur - 0.1 / 1.2) < 1e-6,
+        JSON.stringify({ lk: hot.p.lk, m: hot.m }))
+
+    // gate: the fortress revoices the variation-up, heat and all
+    await bp.evaluate(() => window.__contraTest.setup({ warp: 'boss' }))
+    await bp.waitForTimeout(250)
+    const gate = await mus()
+    r.check('#3047 the fortress gets the variation-up — warp to the gate and the bed revoices to contraGate at lk',
+        gate.playing === true && gate.bed === 'contraGate' && gate.track === 'contraGate' &&
+        Math.abs(gate.stepDur - 0.09 / 1.2) < 1e-6,
+        JSON.stringify(gate))
+
+    // pause: the march steps back while the help reads. Press Shift+/ — a real
+    // '?' IS Shift+Slash; puppeteer's press('?') sends shiftKey:false, which
+    // no physical US-layout keyboard can produce and the shell's honest gate
+    // (e.shiftKey && code Slash) rightly ignores.
+    await bp.keyboard.press('Shift+Slash')
+    await bp.waitForTimeout(250)
+    const duck = await mus()
+    await bp.keyboard.press('Shift+Slash')
+    await bp.waitForTimeout(250)
+    const unduck = await mus()
+    r.check('#3047 the help ducks the bed (level 0.15) and the resume restores it (1)',
+        duck.playing === true && duck.level === 0.15 && unduck.level === 1,
+        `duck=${duck.level} unduck=${unduck.level}`)
+
+    // GAME OVER strikes the band — the over screen belongs to the coin (#3045)
+    await bp.evaluate(() => window.__contraTest.setup({ allyOut: true, lives: 0 }))
+    await bp.evaluate(() => window.__contraTest.setup({ kill: true }))
+    let dead = null
+    for (let g = 0; g < 20 && !(dead && dead.p.screen === 'over'); g++) {
+        await bp.waitForTimeout(120)
+        dead = await bp.evaluate(() => ({ m: window.__contraTest.music(), p: window.__contraTest.probe() }))
+    }
+    r.check('#3047 GAME OVER strikes the march — the over screen is answered by the coin, not the band',
+        dead.p.screen === 'over' && dead.m.playing === false && dead.m.bed === null,
+        JSON.stringify({ screen: dead.p.screen, m: dead.m }))
+
+    r.check('#3047 bed legs: zero page errors', bErrs.length === 0, bErrs.join(' | '))
+    await bp.close()
 }
 
 // ------------------------------------------------------ #3042 CONTINUE live ---
