@@ -1,61 +1,63 @@
-# STATE — forge board snapshot (slot a, 2026-11-23 — the mix pass: measured what the ear couldn't reach)
+# STATE — forge board snapshot (slot b, 2026-11-23 — never-dry fired honestly; Contra ships the seat carry)
 
-## This session
-- Warden target #3052 (QA bed mix pass) — claimed on first try
-  (`forge-claim.sh 3052 a`), built in `~/Dev/retrogames-forge-contra-mix`.
-  Shipped PR #3055 → main `4dc29ac`; #3052 closed shipped.
-- Verdict, measured through the real bus (DEV `__audioMix()`: lazy 2048-fft
-  spectrum tap + live gain automation, opt-in — no game's sound moves):
-  **no mix fix owed.** Crest ~12/128 ≈ 2× a single MG shot at bus 0.16;
-  post-knee (#3019 model, 250 Hz −12 dB/oct) 65–70% of surviving energy is
-  the melody — the march survives phones while pump/dum die by physics; gate
-  escalation holds lead within ~3 dB of jungle; duck/resume are monotone
-  slopes (max step <0.06, no splice); over screen is bed-null AND
-  ceremony-ticking; bank is pad-only (#2058, one recordLiveTick site).
-- Harness: 6 static + 8 live mix legs in contracheck (**354/354 fully
-  green**, incl. every old leg), mutant `lead-vanished` (dead melody lane —
-  every old table leg scans green, only the knee math notices) dies by name.
-- Caught mid-build: dB→power is 10^(x/10) not 2^(x/10) — the first static
-  mirror pinned the split 0.13 low; fix made model agree with the wire.
-  Run 2 flaked two pixel-timing legs (#3018 bannerGold, #2885 vines
-  margin-2px) under lane load; reruns green — classic Mac contention, not
-  worth a PR unless CI reddens them.
+## This session — SHIPPED
+- **#3056 CONTRA — the seat carry** (PR #3058, merged `0006d1a`): the arcade loop
+  carried the hero's gun but rebuilt the blue seat as a rifle — a wingman's
+  captured SPREAD died at STAGE CLEAR. Never-dry audit vs the game's own laws
+  (capsules per seat, S4 structural law, #2894's "the gun the run carried
+  carries too") found the asymmetry; the hero's carry rule now applies verbatim
+  to seat 2. `contracheck` 359/359 (5 new pins: per-seat carry, gunless twin
+  stands, hash-diverges, byte-identical replay across the boundary);
+  `--mutant` 206/206 with new `seat-gun-stripped` red-named; lint gates +
+  build green; Vercel `static` + deploy pass. Issue shipped+closed.
+- The NEVER-DRY kick was re-scored LIVE before filing (STATE's own standing
+  instruction): origin/main `4dc29ac` already carried #3052's merge, so Contra
+  was FREE — #3053's yield default did not apply (no sibling mid-build).
+  Ladder verified empty live: steer/next/game-queue none; feedback only #2971
+  (waiting-jon — not work); no building corpses; flagshipStage null (all six
+  flagships 0 gaps). weakestStage: CONTRA 1 (the #2971 name), shelf else 0.
+  POLISH filed as #3056 with the why-weakest line, claimed via forge-claim.sh.
 
 ## PLAYABLE on main right now
-- `/retrogames/contra` (+ STAGE BED #3047, now MIX-PASSED #3052: contract
-  crest, phone-knee survival, smooth duck, pad-only bank all harness-pinned),
-  `/retrogames/minesweeper`, `/retrogames/double-dragon`, `/retrogames/floor-boss`,
-  `/retrogames/fire-crew`, `/retrogames/r-type`.
+- `/retrogames/contra` (+ seat carry #3056; stage bed #3047/#3052, CONTINUE
+  #3042/#3045, extend #3041, Konami #3037, duck #3038, somersault #3035,
+  voice #3000/#3016, sorties #2917, loop #2894), `/retrogames/minesweeper`
+  (+ press-feel #3032, hall of fame #3026), `/retrogames/double-dragon`,
+  `/retrogames/floor-boss`, `/retrogames/fire-crew`, `/retrogames/r-type`.
 
 ## Board at close
-- steer/next/game-queue/building empty. Open feedback: #2971 (waiting-jon),
-  plus whatever the three QA lanes (studio/mini/mini2) file tonight.
-- Unlabeled #3014/#838: untouchable until Jon labels.
-- Slot b's README hint (canyon gets its own cue?) still unverified — next dry
-  lane: check original material before filing; don't guess (STATE law).
+- steer/next/game-queue empty; no `building`, no `building-qa`; `feedback`:
+  only #2971 (waiting-jon). Unlabeled lane:games items unchanged: #3014,
+  #838, #2827 — untouchable until Jon labels them.
+- QA MASTER sessions (mini :5174, mini2 :5179) were live all session — QA
+  borrow stayed off, correctly.
 
 ## Notes for the next hand
-- `__audioMix()` is now shelf-wide (AudioController DEV) — any bed in any game
-  can be knee-measured; `lead-vanished`'s shape (legal rests, only knee math
-  catches) is worth copying per title that has a bed.
-- mergeclean (#3051) still trips its post-merge `gh pr view` arg bug: on my
-  clean merge main moved to `4dc29ac`, remote branch died, but the script
-  exited noisy — verify state with `gh pr view <n> --json state` after it.
-- Ports: slot b took the same kick tonight for QA — check `pgrep -f "QA
-  MASTER"` and the liveness namespace before re-running mix work.
+- **jalfern.com/retrogames is serving a STALE proxied bundle**:
+  `index-1l5J6y5X.js` has a pre-loop era chunk layout (games split per-file;
+  current main builds them inline into one index chunk). The retrogames
+  project's own production deploy completed green for `0006d1a` (Vercel check
+  on the PR) — the lag is the jalfern ROOT-site proxy layer (jalfern/vercel.json),
+  outside this repo. Slot a hit the same wall at 14:5xZ and recorded the
+  same verification standard (pipeline green). If the staleness persists past
+  tomorrow, that's a root-site config question worth one jonq ask from whoever
+  sees it next — do not burn forge time polling it.
+- weakestStage will read CONTRA 0 now (the #2971 name still scores 1 until it
+  closes — it's QA's, waiting-jon). A dry shelf + a #2971-only score is the
+  #2488 shape: blocked QA feedback is not buildable weakness.
+- #3053 (never-dry slot dedupe) got its first real test tonight: the kick
+  fired AFTER #3052 merged, so both slots could legitimately touch Contra;
+  slot b shipped a different rule (#3056) than slot a's mix pass (#3052) —
+  no collision. Record noted; issue stays open for Jon.
 
 ## Slots / ops
-- Slot a port 5173 stopped via `scripts/devstop.sh` at close; plumbing
-  `~/Dev/retrogames` detached at origin/main; lane worktree
-  `retrogames-forge-contra-mix` pruned post-merge (branch gone).
-- Prod: static passed (12m53s), Vercel previews deployed, prod deploys for
-  `4dc29ac` + `b968d65` created, index hash advanced. Content grep from
-  outside couldn't confirm the new chunk (shared AudioController chunk is
-  lazy-loaded and hashes are machine-dependent — the grep probe was the wrong
-  tool, not the deploy). #3052 shipped no player-visible bytes by design —
-  it shipped harness guards.
-- STATE.md committed to main — slot a merged PR #3055 this session.
+- Slot b port 5178: started from the lane worktree, stopped via
+  `scripts/devstop.sh` (by port) at close. Worktree
+  `retrogames-forge-contra-gun-carry` removed and pruned (leftover 8KB vite
+  cache cleared). Plumbing `~/Dev/retrogames` detached at origin/main.
+- STATE.md committed to main (this session merged game code — allowed).
 
 ## Open questions
-- #3053 (never-dry kick dedupe across slots — default: yield to main).
-- #2971 (waiting-jon phone take). Live board: https://jalfern.com/retrogames/forge
+- #3053 (never-dry kicks: dedupe across slots — default: yield) — AWAITING.
+- #2971 (waiting-jon phone take) still open; #3054 (QA lane: TestFlight
+  recorder) AWAITING. Live board: https://jalfern.com/retrogames/forge
