@@ -16,7 +16,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
 import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase } from './sim.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat } from './sim.js'
 import { parseCall, intentKey, intentLabel } from './voicecalls.js'
 import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
@@ -97,6 +97,12 @@ const sfx = {
     // second, and the re-entry is a rising sting — the mirror of gameover's
     // fall, so the run reads as "back in", not "another life".
     contTick: () => audioController.playTone(880, 0.03, 'square', 0.03),
+    // #3045 the ceremony: a coin clacks into the slot before the count (metallic
+    // band — noise transient + two high pings, the playSweep-free coin box ring),
+    // and the last seconds heat up past the digit tick (#3042's world-tick law,
+    // rates from contBeat).
+    coin: () => { audioController.playNoise(0.02, 0.09); setTimeout(() => { audioController.playTone(2093, 0.05, 'square', 0.03); audioController.playTone(1568, 0.07, 'triangle', 0.025) }, 60) },
+    contHot: () => audioController.playTone(1175, 0.028, 'square', 0.038),
     contIn: () => { audioController.playSweep(220, 660, 0.2, 'square', 0.07); setTimeout(() => audioController.playTone(880, 0.14, 'square', 0.05), 160) },
     // S4 co-op: the blue seat's voices — a warmer join chirp, a deeper fall
     p2join: () => { audioController.playSweep(440, 880, 0.12, 'square', 0.05); setTimeout(() => audioController.playTone(1100, 0.1, 'square', 0.04), 90) },
@@ -234,6 +240,9 @@ export default function ContraGame () {
         let contLeft = CONTINUES_MAX
         let armedRun = false
         let overT = 0
+        // #3045: the ceremony is observable — the shell counts the beats it
+        // fires so the live leg can prove the coin clacked and the heat rose.
+        const contBeats = { coin: 0, tick: 0, hot: 0 }
         let shake = 0
         let hiscore = Number(localStorage.getItem('contra:hiscore') || 0)
         const part = [] // cosmetic particles — Math.random is law here, never in sim
@@ -542,6 +551,7 @@ export default function ContraGame () {
             if (what === 'over') {
                 overAt = performance.now()
                 overT = 0   // #3042: the CONTINUE clock starts with the sting
+                contBeats.coin = contBeats.tick = contBeats.hot = 0   // #3045 fresh ceremony per death
                 if (gs.score > hiscore) { hiscore = gs.score; localStorage.setItem('contra:hiscore', String(hiscore)) }
                 endRun() // #1711: the take ends with the run (no-op when idle/declined) — and NOT on 'clear': #2958 law, one take spans the arcade loops
                 disarmVoice() // #3000: the mic never stays hot on GAME OVER (#1249 law, Gauntlet precedent)
@@ -852,14 +862,26 @@ export default function ContraGame () {
                 if (contLeft > 0) {
                     const cw = contPhase(overT)
                     if (cw.phase === 'count') {
-                        const hot = cw.digit <= 2 && Math.floor(overT / 8) % 2 === 0
-                        ctx.fillStyle = hot ? '#ff6a4d' : '#ffd23c'
-                        ctx.font = 'bold 16px "Courier New", monospace'
-                        ctx.fillText(`CONTINUE? ${cw.digit}`, 136, 146)
+                        // #3045 the cabinet's full-screen call: CONTINUE? big and
+                        // flashing, the digit gold beside it, the purse as the
+                        // machine's own CREDIT row — small white digits, low,
+                        // right-aligned. Heat: inside the last three digits the
+                        // word snaps red twice as fast, matching contBeat.
+                        const hot = cw.digit <= 2
+                        const flip = Math.floor(overT / (cw.digit <= 3 ? 4 : 8)) % 2 === 0
+                        ctx.font = 'bold 24px "Courier New", monospace'
+                        ctx.fillStyle = hot ? (flip ? '#ff6a4d' : '#8a2318') : (flip ? '#ffd23c' : '#ffffff')
+                        ctx.fillText('CONTINUE?', 106, 148)
+                        ctx.fillStyle = '#ffd23c'
+                        ctx.fillText(`${cw.digit}`, 256, 148)
                     }
                     ctx.fillStyle = '#cdeea8'
                     ctx.font = '9px "Courier New", monospace'
-                    ctx.fillText(`ANY KEY · TAP — ${contLeft} CONTINUE${contLeft > 1 ? 'S' : ''} LEFT`, 102, 162)
+                    ctx.fillText(`ANY KEY · TAP — ${contLeft} CONTINUE${contLeft > 1 ? 'S' : ''} LEFT`, 102, 167)
+                    ctx.fillStyle = '#ffffff'
+                    ctx.font = 'bold 8px "Courier New", monospace'
+                    const cr = `CREDIT ${contLeft}`
+                    ctx.fillText(cr, 384 - ctx.measureText(cr).width - 6, 214)
                 } else {
                     ctx.fillStyle = '#7d8f63'
                     ctx.font = 'bold 9px "Courier New", monospace'
@@ -934,8 +956,13 @@ export default function ContraGame () {
                             if (contLeft > 0) {
                                 overT += 1
                                 const cw = contPhase(overT)
-                                const pw = contPhase(overT - 1)
-                                if (cw.phase === 'count' && (pw.phase !== 'count' || pw.digit !== cw.digit)) sfx.contTick()
+                                // #3045: coin-clack, digit tick, heat beeps — one
+                                // pure beat law (contBeat) mapped onto sfx, all on
+                                // world ticks like the window itself.
+                                const beat = contBeat(overT)
+                                if (beat === 'coin') { contBeats.coin += 1; sfx.coin() }
+                                else if (beat === 'tick') { contBeats.tick += 1; sfx.contTick() }
+                                else if (beat === 'hot') { contBeats.hot += 1; sfx.contHot() }
                                 if (cw.phase === 'out') endTo('attract')
                             }
                         }
@@ -1147,7 +1174,7 @@ export default function ContraGame () {
                     roll: gs.p.rollT, roll2: gs.p2.rollT,   // #3035 the somersault clock is observable
                     posture: gs.p.posture, posture2: gs.p2.posture,   // #3038 the ground profile too
                     konami: { prog: kProg, fx: kFx ? { t: kFx.t } : null },   // #3037 the code typing is observable
-                    cont: { left: contLeft, t: overT, armed: armedRun, phase: contPhase(overT).phase, digit: contPhase(overT).digit },   // #3042 the purse and the count are observable
+                    cont: { left: contLeft, t: overT, armed: armedRun, phase: contPhase(overT).phase, digit: contPhase(overT).digit, beats: { ...contBeats } },   // #3042 the purse and the count are observable; #3045 so is the ceremony
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     touch: TOUCH,   // #2971: the touch-aware copy is observable
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,

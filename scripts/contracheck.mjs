@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN } from '../src/games/Contra/sim.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -2266,6 +2266,27 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #3045: the heat is the countdown's panic. Silence the multiply and
+            // the last seconds beep as flatly as the first - the cabinet's own
+            // urgency is gone and players misjudge the close.
+            name: 'heat-silent',
+            anchor: '    if (cw.digit > 3) return null\n',
+            plant: '    return null /* MUTANT(heat-silent): the beeps never speed up - the last second sounds like the first */\n',
+            harm: async (mod) => mod.contBeat(mod.CONT_READ + 440) !== 'hot'
+                ? 'HARM NAMED: the count stayed flat to the end - no accelerating beep warns that the window is closing under the 3'
+                : null,
+        },
+        {
+            // #3045: the clack is the "coin accepted" fiction. Drop it and the
+            // count starts from silence - the machine never acknowledges the pay.
+            name: 'coin-dropped',
+            anchor: "    if (overT === CONT_COIN) return 'coin'\n",
+            plant: '    /* MUTANT(coin-dropped): the slot never clacks - the count opens without ceremony */\n',
+            harm: async (mod) => mod.contBeat(mod.CONT_COIN) !== 'coin'
+                ? 'HARM NAMED: the coin never clacked into the slot - the player pays and the cabinet answers with silence'
+                : null,
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -2913,6 +2934,45 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
             CONT_LIFE === (CONT_SECS + 1) * 60,
             `changes=${changes} monotone=${monotone}`)
     }
+}
+
+// ------------------------------------------- #3045 CONTINUE — the ceremony ---
+// The coin-clack and the heat are contBeat's arithmetic: one clack half a
+// second before the 9, the digit ticks #3042 pinned unchanged, and beeps that
+// multiply inside the last three digits — all world ticks, all pure.
+{
+    const coins = [], ticks = [], hots = []
+    let bad = 0
+    for (let t = 0; t <= CONT_READ + CONT_LIFE + 5; t++) {
+        const b = contBeat(t)
+        if (b === 'coin') coins.push(t)
+        else if (b === 'tick') ticks.push(t)
+        else if (b === 'hot') hots.push(t)
+        else if (b !== null) bad++
+    }
+    r.check('#3045 the coin clacks exactly once, half a second before the 9, inside the read',
+        coins.length === 1 && coins[0] === CONT_COIN && CONT_COIN < CONT_READ && CONT_COIN > 0 && bad === 0,
+        `coin=${JSON.stringify(coins)} bad=${bad}`)
+    r.check('#3045 the digit ticks stand where #3042 left them — ten boundaries, one beat each',
+        ticks.length === CONT_SECS + 1 && ticks.every((t, i) => t === CONT_READ + i * 60),
+        `ticks=${JSON.stringify(ticks)}`)
+    const perDigit = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map((d) => ticks.concat(hots)
+        .filter((t) => contPhase(t).phase === 'count' && contPhase(t).digit === d).length)
+    r.check('#3045 the heat rises 1,1,1,1,1,1,2,3,4,4 beats per digit — the last seconds race',
+        JSON.stringify(perDigit) === JSON.stringify([1, 1, 1, 1, 1, 1, 2, 3, 4, 4]),
+        JSON.stringify(perDigit))
+    r.check('#3045 heat lives strictly inside its digit — it never stomps a boundary or reaches past the 3',
+        hots.every((t) => (t - CONT_READ) % 60 !== 0 && contPhase(t).digit <= 3),
+        `hots=${hots.length}`)
+    // The phone take, pinned as law (#2971 family): the pad is stowed on the
+    // over screen, so no B button can mis-pay a count and no pad tap double-
+    // answers it. (Live DOM can't prove this — #906 hides the pad after any
+    // keyboard use — so the shell's own gate is the contract.)
+    const shellSrc = readFileSync(join(ROOT, 'src/games/Contra/index.jsx'), 'utf8')
+    r.check('#3045 the pad gate is law — VirtualControls renders only in play/attract, never through the count',
+        shellSrc.includes("<VirtualControls visible={(mode === 'play' || mode === 'attract') && !paused}") &&
+        shellSrc.includes("secondAction={mode === 'attract' ? { label: 'B', code: 'KeyB' } : { label: 'FIRE', code: 'KeyX' }}"),
+        'pad visible/secondAction gate moved at the over screen')
 }
 
 // ------------------------------------------------------------- browser leg ---
@@ -4219,11 +4279,22 @@ const browser = await launch()
     // no key is ever asked. (A real ~11.5 s count; this leg proves honesty.)
     await dieToOver({ score: 6500 })
     let expired = null
+    const seen = { coin: 0, tick: 0, hot: 0 }
     for (let g = 0; g < 90; g++) {
         await cp.waitForTimeout(200)
         expired = await cp.evaluate(() => window.__contraTest.probe())
         if (expired.screen === 'attract') break
+        if (expired.cont && expired.cont.beats) {
+            seen.coin = Math.max(seen.coin, expired.cont.beats.coin)
+            seen.tick = Math.max(seen.tick, expired.cont.beats.tick)
+            seen.hot = Math.max(seen.hot, expired.cont.beats.hot)
+        }
     }
+    // #3045 live ceremony: the clack lands, every digit gets its tick, and the
+    // heat is audible-by-counter before the window closes (1 from the 3, 2 from
+    // the 2, 3 from the 1 — six by the last digit at worst-case 12 fps polling).
+    r.check('#3045 the live ceremony — coin clacked once, ten digit ticks, heat rising before the close',
+        seen.coin === 1 && seen.tick >= 9 && seen.hot >= 6, JSON.stringify(seen))
     r.check('#3042 when the count dies the machine returns to the title — no key asked, forfeit and all',
         expired.screen === 'attract', `screen=${expired.screen}`)
 
