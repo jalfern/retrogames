@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP } from '../src/games/Contra/sim.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -2180,6 +2180,39 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #3041: the extend must actually pay. Kill the crossing check and
+            // the cabinet's 1UP becomes folklore — a long run scores forever and
+            // the pool never grows.
+            name: 'extend-deaf',
+            anchor: 'if (gs.score >= gs.nextExt) {\n        gs.nextExt += EXT_STEP',
+            plant: 'if (false && gs.score >= gs.nextExt) {\n        gs.nextExt += EXT_STEP /* MUTANT(extend-deaf): the mark is painted on, never crossed */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(5)
+                const l0 = gs.lives
+                gs.score = mod.EXT_FIRST
+                mod.step(gs, {}, {})
+                return gs.lives === l0 && gs.nextExt === mod.EXT_FIRST
+                    ? 'HARM NAMED: 30,000 points on the board bought nothing - the score extend is deaf, the cabinet never pays its 1UP'
+                    : null
+            },
+        },
+        {
+            // #3041: the mark is a RUN property. Reset it at the stage boundary
+            // and every loop re-sells the same 30,000 the run already spent.
+            name: 'carry-blind',
+            anchor: 'next.nextExt = gs.nextExt   // #3041 the extend mark belongs to the run, not the stage',
+            plant: '/* MUTANT(carry-blind): the mark resets at the boundary - a paid rung is re-sold every loop */',
+            harm: async (mod) => {
+                const g = mod.makeGame(7, 1, 4)
+                g.score = 32000
+                g.nextExt = mod.EXT_FIRST + mod.EXT_STEP   // the run already spent its 30k
+                const carried = mod.arcadeLoop(g).nextExt
+                return carried === mod.EXT_FIRST
+                    ? 'HARM NAMED: the extend mark reset at the loop boundary - the run can buy the same 30,000 life again on every pass'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -2776,6 +2809,90 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
 }
 
 // ------------------------------------------------------------- browser leg ---
+// ------------------------------------------------ #3041 the score extend ---
+{
+    r.check('#3041 the marks are the cabinet\'s — first extend at 30,000 (the instruction card\'s), then every +50,000',
+        EXT_FIRST === 30000 && EXT_STEP === 50000)
+
+    {
+        // crossing pays once: +1 to the shared pool, the mark advances one rung,
+        // and the bank salutes the player with an `extra` event.
+        const gs = makeGame(5)
+        const l0 = gs.lives
+        gs.score = EXT_FIRST
+        step(gs, {}, {})
+        r.check('#3041 crossing the mark pays +1 to the shared pool, advances it one rung and banks the salute',
+            gs.lives === l0 + 1 && gs.nextExt === EXT_FIRST + EXT_STEP && gs.ev.some((e) => e.type === 'extra'),
+            `lives=${gs.lives} nextExt=${gs.nextExt}`)
+    }
+
+    {
+        // the pool caps at the HUD's numeric form — at the cap the mark still
+        // advances (the rule stands) and no salute is owed (no life landed).
+        const gc = makeGame(5, 1, 99)
+        gc.score = EXT_FIRST
+        step(gc, {}, {})
+        r.check('#3041 the pool caps at 99 — at the cap the mark advances and no salute is owed',
+            gc.lives === 99 && gc.nextExt === EXT_FIRST + EXT_STEP && !gc.ev.some((e) => e.type === 'extra'),
+            `lives=${gc.lives} nextExt=${gc.nextExt}`)
+    }
+
+    {
+        // one rung per tick: an oversized jump (never happens with the +5000
+        // ceiling, but the law must not skip) is paid on consecutive ticks.
+        const gd = makeGame(5)
+        gd.score = EXT_FIRST + 2 * EXT_STEP - 1
+        const paid = []
+        for (let t = 0; t < 3; t++) { step(gd, {}, {}); paid.push(gd.nextExt) }
+        r.check('#3041 one mark per tick — an oversized jump pays on consecutive ticks, never skipped and never doubled',
+            paid[0] === EXT_FIRST + EXT_STEP && paid[1] === EXT_FIRST + 2 * EXT_STEP && paid[2] === paid[1] && gd.lives === 5,
+            `nextExts=${paid.join(',')} lives=${gd.lives}`)
+    }
+
+    {
+        // the mark belongs to the RUN — arcadeLoop carries it with the score,
+        // so a rung spent in loop 2 is never re-sold at the boundary.
+        const gl = makeGame(7, 1, 4)
+        gl.score = 32000
+        gl.nextExt = EXT_FIRST + EXT_STEP
+        const nx = arcadeLoop(gl)
+        r.check('#3041 the arcade loop carries the mark with the score — a paid rung is never re-sold at the stage boundary',
+            nx.score === 32000 && nx.nextExt === EXT_FIRST + EXT_STEP,
+            `score=${nx.score} nextExt=${nx.nextExt}`)
+    }
+
+    {
+        // referee law: the crossing consumes zero gs.r (a shout cannot bend the
+        // seed, an extend cannot either), and the mark is sim truth on the hash.
+        const ra = makeGame(9)
+        const rb = makeGame(9)
+        ra.score = EXT_FIRST
+        step(ra, {}, {})
+        const rPaid = ra.r
+        step(rb, {}, {})
+        const ha = makeGame(7)
+        const hb = makeGame(7)
+        hb.nextExt = 80000
+        r.check('#3041 the extend consumes zero gs.r — a crossing cannot bend the seed',
+            rPaid === rb.r, `paid r=${rPaid} vs unpaid r=${rb.r}`)
+        r.check('#3041 the mark is sim truth — extend-only states diverge the hash, twins agree',
+            stateHash(ha) !== stateHash(hb) && stateHash(makeGame(7)) === stateHash(makeGame(7)))
+    }
+
+    {
+        // byte stability: every honest loop-1 autopilot clear lands below the
+        // first mark — so no pre-extend pin, replay or dataset byte is touched.
+        let best = 0
+        for (let seed = 1; seed <= 12; seed++) {
+            const gs = makeGame(seed)
+            while (!gs.end && gs.tick < 20000) { step(gs, autopilot(gs)); gs.ev.length = 0 }
+            if (gs.end === 'win') best = Math.max(best, gs.score)
+        }
+        r.check('#3041 every honest loop-1 clear lands below 30,000 — the rule cannot touch a pre-extend pin, replay or dataset byte',
+            best > 0 && best < EXT_FIRST, `best loop-1 autopilot score = ${best}`)
+    }
+}
+
 await requireDevServer(`${BASE}/contra`)
 const browser = await launch()
 {
@@ -3874,6 +3991,54 @@ const browser = await launch()
         `screen=${plain.screen} lives=${plain.lives} fx=${JSON.stringify(plain.konami.fx)}`)
     r.check('#3037 Konami legs: zero page errors', kErrs.length === 0, kErrs.join(' | '))
     await kp.close()
+}
+
+// ------------------------- #3041 browser leg: the live extend + salute ----------
+{
+    const ep = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 600, decline: true })
+    const eErrs = []
+    ep.on('pageerror', (e) => eErrs.push(String(e)))
+    await ep.keyboard.press('Space')   // the any-key law takes the seat
+    await ep.waitForTimeout(300)
+    // stand the run just under the mark, then spend real bullets on the jungle:
+    // the first kill crosses 30,000 and the cabinet owes a life.
+    const s0 = await ep.evaluate(() => {
+        window.__game && window.__game.reset(99)
+        const p = window.__contraTest.probe()
+        window.__contraTest.setup({ score: p.nextExt - 50, lives: 2 })
+        return window.__contraTest.probe()
+    })
+    await ep.keyboard.down('ArrowRight')
+    await ep.keyboard.down('KeyX')
+    let paid = null
+    const eT0 = Date.now()
+    while (Date.now() - eT0 < 20000 && !paid) {
+        const p = await ep.evaluate(() => window.__contraTest.probe())
+        if (p.score >= s0.nextExt) paid = p
+        else await ep.waitForTimeout(100)
+    }
+    await ep.keyboard.up('KeyX')
+    await ep.keyboard.up('ArrowRight')
+    r.check('#3041 live: a real kill crosses 30,000 and the cabinet pays — the pool grows, the mark advances, the salute banks',
+        !!paid && paid.lives === 3 && paid.nextExt === s0.nextExt + 50000 && paid.extFx !== null,
+        paid ? `lives=${paid.lives} nextExt=${paid.nextExt} fx=${JSON.stringify(paid.extFx)}` : 'no crossing inside 20 s of held fire')
+    // the salute paints gold on the plate band (y 58..76) — poll frames, headless
+    // paint runs slow, so take the max gold count across samples.
+    let goldMax = 0
+    for (let g0 = 0; g0 < 8 && goldMax < 40; g0++) {
+        goldMax = Math.max(goldMax, await ep.evaluate(() => {
+            const c = document.querySelector('canvas')
+            const k = c.width / 384
+            const d = c.getContext('2d').getImageData(Math.round(140 * k), Math.round(58 * k), Math.round(104 * k), Math.round(18 * k)).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 120) n++
+            return n
+        }))
+        await ep.waitForTimeout(120)
+    }
+    r.check('#3041 live: EXTRA LIFE paints gold on the salute band', goldMax >= 40, `gold px = ${goldMax}`)
+    r.check('#3041 extend browser legs: zero page errors', eErrs.length === 0, eErrs.join(' | '))
+    await ep.close()
 }
 
 r.exit(browser)
