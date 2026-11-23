@@ -116,8 +116,8 @@ Node check). Full notes — the stale-scratch bug, the oracle that had to stop
 trusting the solver's ledger to become able to fail, and the two green-tested-nothing
 oracle versions — are in **[`src/games/Minesweeper/README.md`](src/games/Minesweeper/README.md)**.
 Verify with `npm run sweepcheck` (`-- --mutate` = 5/5 mutants die, incl.
-`flag-devour` — the #3009 chord bug put back; in the `static` gate)
-gate) and `npm run sweepplay` (Chrome, real keys only; in `verify`).
+`flag-devour` — the #3009 chord bug put back; in the `static` gate) and
+`npm run sweepplay` (Chrome, real keys only; in `verify`).
 
 ## WATCH (#1637 batch 16) — the referee sweeps its own field
 
