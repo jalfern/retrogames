@@ -144,8 +144,10 @@ S4 (the second dragon, #2807):
   other (deviation from the 1987 board, recorded on the issue: the original had
   no CPU partner, and a CPU seat that could cost you a life is not a partner;
   Jon's phone-play rule points the other way).
-- **Drop-in law** (Contra S4): the first touch of a P2 key (WASD · F punch ·
-  G kick · V jump) hands Jimmy to a human for the rest of the run. No second
+- **Drop-in law** (Contra S4, amended by #3005): the first touch of a P2 key
+  (WASD · F punch · G kick · V jump) hands Jimmy to a human — and since Jon's
+  #2908/#2930 the seat is held WHILE it's driven: five seconds of silence
+  hands it back to the CPU (see the #3005 section below). No second
   touchpad (Jon).
 - **The crate-corner deadlock** (this stage's hard lesson): a body k-slipping
   around a prop while a lane-chaser pulls the other way froze dragons and a
@@ -231,10 +233,12 @@ S4 (the second dragon, #2807):
   `p2pad.js` alone, pinned by the equivalence law: the same stream through
   the keyboard and through slot 2 lands on identical state hashes.
 - **Drop-in, same clause** — the first live input on slot 2 (`slotActive`
-  counts boost, so punching also seats the friend) takes Jimmy for the run and
-  pays the join chime exactly once. Solo runs have no seat; a fallen dragon is
-  not resurrected by a wiggle; releasing the pad does NOT hand the seat back
-  to the CPU — the keyboard's drop-in law, verbatim.
+  counts boost, so punching also seats the friend) takes Jimmy and pays the
+  join chime. Solo runs have no seat; a fallen dragon is not resurrected by
+  a wiggle. ~~Releasing the pad does NOT hand the seat back to the CPU — the
+  keyboard's drop-in law, verbatim.~~ **Amended by #3005:** the seat is held
+  while it is driven — a released seat that stays silent past `CFG.seatIdle`
+  returns to dragonBrain (see the #3005 section).
 - The `seat-swap` mutant names the seat's translator breaking (A goes dead
   air while the hop migrates onto B).
 
@@ -329,6 +333,8 @@ Pad: JUMP / KICK / PUNCH (`thirdAction`, #2324).
 2P drop-in (pad/phone, #2860): a second gamepad or a linked phone (`?pads=1`
 or the PADS pill) — A jump · B kick · square/triangle/LB punch · d-pad walk.
 `?nointro=1` declines the opening movie (#2891) — any key skips it anyway.
+A seated blue seat that goes quiet for 5 s returns to the CPU (#3005) — any
+P2 input takes it back.
 
 ## The opening movie (#2891 — the kidnapping of Marian)
 
@@ -451,12 +457,48 @@ Technōs opened its arcade by stating the crime; so does this board, between
 - The `leather-short`, `carrier-thrift`, `escalation-flat` and `loop-cheap`
   mutants name the four ways the rotation rots.
 
+#3005 idle seat hand-back (forge) — the walked-away friend gives the seat home:
+
+Jon's answered questions #2908/#2930 ("Yes. Computer takes over.") amend the
+drop-in law: a seat is a driver's while they drive it, not the first hand's
+for the run.
+
+- **The clock lives in `step()`** — `p.idle` counts the silent ticks a
+  human-held blue seat has seen; any live pad2 input (the same seven fields
+  that seat it) resets it, silence past `CFG.seatIdle` (300 ticks = 5 s of
+  world time) hands Jimmy back to `dragonBrain`. The clock rides the play
+  path only: the movie, the stage banners and gameover return above it, so a
+  friend mid-transition is never blamed for a screen they cannot steer.
+- **Resume is a full re-join.** Any later live pad2 press re-seats the
+  friend — live paths (keydown `isP2`, `p2Seat(slotActive(2))`) flip first
+  and pay `seatJoin()` again; the in-sim flip is what makes replays and
+  dataset streams reproduce the same seat timeline. #2863's join shout is
+  re-scoped from once-per-run to once-per-seating: a returning friend gets
+  the same flare an arriving one does.
+- **The read:** the hand-back pays the join shout's inverse — grey brackets
+  CLOSE onto the seat (mirror of the spring-open), a seat flash and a soft
+  two-note descent, plus a short pad-2 rumble; one `CPU` line on the banner
+  row. The READY blink under the blue `2P` tag (#2863) keeps inviting the
+  friend back for as long as the CPU holds the seat — the flare names the
+  moment, the tag names the state.
+- **Edges:** idle keeps counting while the seat is DOWN — a silent friend
+  and a fallen dragon both mean the computer drives at second wind — but a
+  press while down still does NOT seat (the #2833 falling-seat law stands
+  verbatim). A jammed-held button honestly keeps the seat. Solo runs
+  (`?solo=1`) have no seat and never hear the clock.
+- **Hash honesty:** `human`/`idle` never ride `stateHash` — ownership is
+  stream truth (the #1712 convention: takes bank the pad pair, replay
+  reconstructs the seat from it). Autopilot and WINNABLE streams feed empty
+  pad2, so every existing hash pin holds untouched.
+- The `idle-deaf` (hand-back never fires) and `no-resume` (a returning
+  driver can't take the seat back) mutants name the two ways the law rots.
+
 ## Verify
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 281 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), #2942 phone-scale QA (strut cut-continuity + edge clamp, chevron non-fuse at dock zoom, tag-blink duty, squash beat width, offline-rendered mix dB), #2944 carrier rotation (escalation order, whip/stick reach + depth, airborne + point-blank folds, telegraph beat, KO payout, hash truth, brain reads the loop, heard telegraphs), winnable, browser legs
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, strut-pop, squash-missing, tag-deaf, mix-clash, leather-short, carrier-thrift, escalation-flat, loop-cheap must go RED (named)
+npm run ddragoncheck                    # 301 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), #2942 phone-scale QA (strut cut-continuity + edge clamp, chevron non-fuse at dock zoom, tag-blink duty, squash beat width, offline-rendered mix dB), #2944 carrier rotation (escalation order, whip/stick reach + depth, airborne + point-blank folds, telegraph beat, KO payout, hash truth, brain reads the loop, heard telegraphs), #3005 idle seat hand-back (threshold 299→300, nudge-holds-at-4s, stream re-seat + steering after resume, never-held seats, fallen-seat edge, hash purity, + a real-key browser leg seat→silence→CPU→grey ink→re-seat), winnable, browser legs
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, strut-pop, squash-missing, tag-deaf, mix-clash, leather-short, carrier-thrift, escalation-flat, loop-cheap, idle-deaf, no-resume must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 

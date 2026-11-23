@@ -1784,6 +1784,66 @@ console.log('p2 pad seat (#2860)')
     }
 }
 
+// ------------------------------------------ #3005 idle seat hand-back (Jon) ---
+// Jon's #2908/#2930 ("yes cpu takes over"): a human-held blue seat whose P2
+// input falls silent for CFG.seatIdle (5 s of world time) hands Jimmy back to
+// dragonBrain; any live pad2 press takes it back. Ownership stays stream-
+// derived — never hashed — so a replay of the banked pad pair reproduces the
+// same seat timeline (the #1712 seat2At convention, extended).
+{ // the clock
+    const gs = makeGame(71, { coop: true })
+    gs.jimmy.human = true
+    let humanAt299 = null
+    for (let i = 0; i < 299; i++) { step(gs, {}, {}); humanAt299 = gs.jimmy.human }
+    step(gs, {}, {})
+    r.check('#3005 five seconds of silence and the computer takes the blue seat back — held at 299, released at 300',
+        humanAt299 === true && gs.jimmy.human === false, `human=${gs.jimmy.human}`)
+    r.check('#3005 the hand-back resets the clock — idle rides zero the tick the seat comes home',
+        gs.jimmy.idle === 0, `idle=${gs.jimmy.idle}`)
+    const h2 = makeGame(71, { coop: true })
+    h2.jimmy.human = true
+    for (let t = 0; t < 900; t++) step(h2, {}, { left: t % 240 === 120 })
+    r.check('#3005 a friend who nudges every four seconds keeps the seat — the clock is for walking away, not thinking',
+        h2.jimmy.human === true)
+}
+{ // the resume — the stream flips the seat back on a fresh press
+    const gs = makeGame(71, { coop: true })
+    gs.jimmy.human = true
+    for (let i = 0; i < CFG.seatIdle + 10; i++) step(gs, {}, {})
+    const handed = gs.jimmy.human === false
+    step(gs, {}, { b: true })
+    r.check('#3005 a fresh press takes the seat back — the returning friend re-drives the same tick (replay-leg of the law)',
+        handed && gs.jimmy.human === true && gs.jimmy.idle === 0, `handed=${handed} human=${gs.jimmy.human} idle=${gs.jimmy.idle}`)
+    const x0 = gs.jimmy.x
+    for (let i = 0; i < 60; i++) step(gs, {}, { left: true })
+    r.check('#3005 the re-seated driver steers — the seat answers the human, not the brain it just left',
+        gs.jimmy.x < x0, `x ${x0} -> ${gs.jimmy.x}`)
+}
+{ // never-held seats, and the fallen-seat edge
+    const cpu = makeGame(71, { coop: true })
+    for (let i = 0; i < 400; i++) step(cpu, {}, {})
+    r.check('#3005 a seat nobody ever touched stays the CPU\'s — silence only speaks for held seats',
+        cpu.jimmy.human === false && cpu.jimmy.idle === 0)
+    const down = makeGame(71, { coop: true })
+    down.jimmy.human = true; down.jimmy.lives = 0; down.jimmy.out = true
+    for (let i = 0; i < CFG.seatIdle + 2; i++) step(down, {}, {})
+    const handed = down.jimmy.human === false
+    step(down, {}, { a: true })
+    r.check('#3005 a silent friend and a fallen dragon return the seat as CPU — and a wiggle while down still does not seat (the #2833 falling-seat law stands)',
+        handed && down.jimmy.human === false)
+}
+{ // hash purity — ownership is stream truth, not state truth (#1712 convention)
+    const a = makeGame(71, { coop: true })
+    const b = makeGame(71, { coop: true })
+    b.jimmy.human = true; b.jimmy.idle = 42
+    r.check('#3005 ownership and idle never ride stateHash — same street, same hash, whoever drives it',
+        stateHash(a) === stateHash(b))
+    const bot = makeGame(71, { coop: true })
+    for (let i = 0; i < 2000; i++) { step(bot, autopilot(bot), {}); bot.events.length = 0; if (bot.mode !== 'play') break }
+    r.check('#3005 the soak stream never flips a seat — empty pad2 means the law never speaks at autopilot',
+        bot.jimmy === null || bot.jimmy.human === false)
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -2250,6 +2310,34 @@ if (MUTANT) {
                 for (let i = 0; i < 50; i++) { mod.step(gs, {}); if (e.state === 'windup' && e.atkKind === 'whip') dur += 1; gs.events.length = 0 }
                 return dur > 0 && dur < 14
                     ? `HARM NAMED: the whip telegraphed for only ${dur} ticks — a jab\'s window on a strike that reaches twice as far: the leather\'s extra beat IS the wider threat\'s fair notice, cheap it and deaths stop being read`
+                    : null
+            },
+        },
+        {
+            name: 'idle-deaf',
+            anchor: 'if (gs.jimmy.idle >= CFG.seatIdle) { gs.jimmy.human = false; gs.jimmy.idle = 0 }',
+            plant: 'if (false && gs.jimmy.idle >= CFG.seatIdle) { gs.jimmy.human = false; gs.jimmy.idle = 0 } /* MUTANT(idle-deaf): an abandoned seat is never handed back */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(71, { coop: true })
+                gs.jimmy.human = true
+                for (let i = 0; i < mod.CFG.seatIdle + 10; i++) { mod.step(gs, {}, {}); gs.events.length = 0 }
+                return gs.jimmy.human === true
+                    ? 'HARM NAMED: the friend walked away thirty seconds ago and the blue dragon still stands parked mid-street while goons close in — a seat no one drives and no one drives FOR is a co-op partner shape with a hole in it (Jon\'s #2908/#2930: yes cpu takes over)'
+                    : null
+            },
+        },
+        {
+            name: 'no-resume',
+            anchor: '} else if (!gs.jimmy.out && live2) { gs.jimmy.human = true; gs.jimmy.idle = 0 }',
+            plant: '} else if (false && !gs.jimmy.out && live2) { gs.jimmy.human = true; gs.jimmy.idle = 0 } /* MUTANT(no-resume): a returning driver cannot take the seat back from the stream */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(71, { coop: true })
+                gs.jimmy.human = true
+                for (let i = 0; i < mod.CFG.seatIdle + 5; i++) { mod.step(gs, {}, {}); gs.events.length = 0 }
+                const handed = gs.jimmy.human === false
+                mod.step(gs, {}, { b: true })
+                return handed && gs.jimmy.human === false
+                    ? 'HARM NAMED: the seat was handed to the CPU by the idle clock and the friend came back to a dead keyboard — drop-in without drop-back-and-re-take strands the returning player out of the game they were just playing'
                     : null
             },
         },
@@ -2871,7 +2959,7 @@ const defuseConsent = async (page) => {
     await held(1, 2, false)
     await page.waitForTimeout(300)
     const seatKept = await page.evaluate(() => window.__game.state())
-    r.check('#2860 releasing the pad keeps the seat — drop-in is for the run, the same law as the keys',
+    r.check('#3005/#2860 releasing the pad for a moment keeps the seat — the seat is held while driven; only five seconds of silence hand it back',
         seatKept.jimmyHuman === 1, `jimmyHuman=${seatKept.jimmyHuman}`)
 
     // S4: one seat falling is NOT the end — the partner carries on. Game over
@@ -3374,6 +3462,48 @@ const defuseConsent = async (page) => {
     const alpha = sheet ? Number((sheet.match(/([\d.]+)\)$/) || [, '0'])[1]) : 0
     r.check('#2899 browser: the pause sheet dims near-opaque (alpha>=0.9) — drawn titles under it cannot collide with the card copy',
         sheet !== null && alpha >= 0.9, `sheet=${sheet}`)
+    await page.close()
+}
+
+// ---------------- #3005 browser leg: the walked-away friend, for real -------
+// Real keys only: seat the friend with a WASD press, stop touching the
+// keyboard, and the sim's idle clock hands Jimmy to dragonBrain within ~5 s
+// of world time; a fresh press takes the seat back. The grey handback grey
+// (#9aa4ae — the close-bracket and label ink) must paint in between.
+{
+    const page = await openGame(browser, { url: `${BASE}/double-dragon?nointro=1&seed=31`, hook: '__ddTest', wait: 600 })
+    const errs = []
+    page.on('pageerror', (e) => errs.push(e.stack || e.message))
+    await page.evaluate(() => {
+        window.__grey = 0
+        const proto = CanvasRenderingContext2D.prototype
+        const ofill = proto.fillRect
+        proto.fillRect = function (x, y, w, h) {
+            if (String(this.fillStyle) === '#9aa4ae') window.__grey++
+            return ofill.apply(this, arguments)
+        }
+    })
+    await page.keyboard.press('Space')
+    await defuseConsent(page)
+    await page.waitForTimeout(300)
+    await page.evaluate(() => window.__ddTest.start())
+    await page.waitForTimeout(150)
+    await page.keyboard.press('KeyD')
+    let seated = false
+    try { await page.waitForFunction(() => window.__game.state().jimmyHuman === 1, { timeout: 3000 }); seated = true } catch {}
+    let handedBack = false
+    try { await page.waitForFunction(() => window.__game.state().jimmyHuman === 0, { timeout: 9000 }); handedBack = true } catch {}
+    const grey = await page.evaluate(() => window.__grey)
+    r.check('#3005 browser: five silent seconds and the keys let go — the computer takes the blue seat back on a live cabinet',
+        seated && handedBack, `seated=${seated} handedBack=${handedBack}`)
+    r.check('#3005 browser: the handback is seen — grey closing brackets paint when the seat comes home',
+        grey >= 1, `grey=${grey}`)
+    await page.keyboard.press('KeyD')
+    let reseated = false
+    try { await page.waitForFunction(() => window.__game.state().jimmyHuman === 1, { timeout: 3000 }); reseated = true } catch {}
+    r.check('#3005 browser: the friend returns — one fresh key and the seat is the human\'s again',
+        reseated, `reseated=${reseated}`)
+    r.check('#3005 browser: the idle-seat leg ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
     await page.close()
 }
 
