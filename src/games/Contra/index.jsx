@@ -600,8 +600,14 @@ export default function ContraGame () {
                 // the board is a memory, not a bank row.
                 const hr = hallAdd(hall, { score: gs.score, loop: gs.loop, t: Date.now() })
                 hallFx = hr.record
-                hall = hr.hall
-                try { localStorage.setItem('contra:hall', JSON.stringify(hall)) } catch { /* private mode: the board lives this session */ }
+                // a refused fall (zero score, corrupt) leaves the array by
+                // reference — only a board that actually grew hits storage,
+                // so a device that only ever walks in and falls down keeps
+                // its store untouched (the live leg pins null).
+                if (hr.hall !== hall) {
+                    hall = hr.hall
+                    try { localStorage.setItem('contra:hall', JSON.stringify(hall)) } catch { /* private mode: the board lives this session */ }
+                }
                 if (hallFx) sfx.newRecord()
                 endRun() // #1711: the take ends with the run (no-op when idle/declined) — and NOT on 'clear': #2958 law, one take spans the arcade loops
                 disarmVoice() // #3000: the mic never stays hot on GAME OVER (#1249 law, Gauntlet precedent)
@@ -896,8 +902,10 @@ export default function ContraGame () {
                 // #3061 the board pays in the open: ranks on the title, gold on
                 // a plate, riding the same gate as the title itself — never on
                 // a banner pass (the LOOP slam and the radio teach keep their
-                // bands alone).
-                drawHall(ctx, hall, 8, 148)
+                // bands alone). Top-right, under the HUD: the attract pad
+                // (#3037's Konami button) owns the bottom corners on phones,
+                // and the board must be readable where the thumbs are not.
+                drawHall(ctx, hall, 290, 24)
                 // #3037: the typing reads — every note landed so far glints gold
                 if (kProg > 0) {
                     ctx.font = 'bold 12px "Courier New", monospace'

@@ -3393,6 +3393,9 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     const neg = hallAdd([e(500, 1, 10)], { score: -100, loop: 1, t: 20 })
     r.check('#3061 a zero-score fall is not a raid — the board neither grows nor shines (nor does a negative)',
         zero.hall.length === 1 && zero.record === false && neg.hall.length === 1 && neg.record === false)
+    const board0 = [e(500, 1, 10)]
+    r.check('#3061 the refusal is BY REFERENCE — a rejected entry hands the same board back, so the shell writes nothing to storage',
+        hallAdd(board0, e(0, 1, 20)).hall === board0 && hallAdd(board0, 'junk').hall === board0)
 
     // referee-clean by construction: the helpers take arrays, never gs — a
     // bank beside a live game leaves the world hash byte-identical, and the
@@ -4314,7 +4317,7 @@ const browser = await launch()
     const hErrs = []
     hp.on('pageerror', (e) => hErrs.push(e.stack || e.message))
     const fresh = await hp.evaluate(() => { const h = window.__contraTest.probe().hall; return { len: h.len, top: h.top, rec: h.record } })
-    const plateGold = await gold(hp, 8, 148, 86, 16)
+    const plateGold = await gold(hp, 290, 24, 86, 16)
     r.check('#3061 live: a fresh device shows the plate and ranks nothing (NO RAIDS YET)',
         fresh.len === 0 && fresh.top === 0 && plateGold >= 12, `len=${fresh.len} plateGold=${plateGold}`)
 
@@ -4327,7 +4330,7 @@ const browser = await launch()
     await hp.waitForFunction(() => !!window.__contraTest, null, { timeout: 15000 })
     await hp.waitForTimeout(400)
     const stored = await hp.evaluate(() => { const h = window.__contraTest.probe().hall; return { len: h.len, top: h.top, rows: h.rows } })
-    const rowGold = await gold(hp, 35, 161, 30, 10)
+    const rowGold = await gold(hp, 317, 37, 30, 10)
     r.check('#3061 live: the stored board renders — three valid ranks survive, corrupt entries drop, score digits paint gold',
         stored.len === 3 && stored.top === 20600 && stored.rows[0].l === 3 && rowGold > 0,
         JSON.stringify({ ...stored, gold: rowGold }))
