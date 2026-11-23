@@ -19,6 +19,13 @@ if [[ -z "$branch" ]]; then
     echo "forge-merge: detached HEAD — run this from the PR branch's worktree" >&2
     exit 1
 fi
+if [[ "$branch" == main ]]; then
+    # #3070: a half-finished merge can leave a lane parked on local `main`;
+    # merging from there would chase the wrong PR. Re-detach first (post-merge
+    # cleanup now prevents this state itself).
+    echo "forge-merge: lane is on \`main\`, not a PR branch — run: git checkout --detach origin/main" >&2
+    exit 1
+fi
 node scripts/lib/mergeclean.mjs reap   # advisory; a dirty squat is named, not destroyed
 scripts/main-ok.sh || exit 1
 while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do

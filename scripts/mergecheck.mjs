@@ -11,6 +11,12 @@
 //   B dirty squat    — squat is NOT destroyed (named DIRTY), merge cleanup
 //                    still completes.
 //   C nothing merged — exit non-zero and NOTHING is touched (no deletes).
+//   D deep half-cleanup (#3070) — gh merged, deleted the remote branch and
+//                    switched the lane onto local `main` before dying; the fix
+//                    resolves the PR by branch and still completes (the old
+//                    number-less `gh pr view --repo` dies in this scenario).
+//   E lane on main   — forge-merge.sh refuses to merge from a lane parked on
+//                    `main` instead of a PR branch.
 //npm run mergecheck
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -52,6 +58,22 @@ case "$1" in
     case "$2" in
       checks) emit '[{"name":"static","state":"SUCCESS"}]' ;;
       view)
+        # #3070-faithful: gh pr view --repo X REQUIRES a positional
+        # number/url/branch — inference is disabled with --repo, which is
+        # exactly where the real post-merge cleanup died for both slots.
+        pos=""; skip=0
+        for ((i=3; i<=$#args; i++)); do
+          a="\${args[$i]}"
+          if [[ $skip == 1 ]]; then skip=0; continue; fi
+          case "$a" in
+            --repo|--json|-q|--jq|-t|--template) skip=1 ;;
+            -*) ;;
+            *) pos="$a" ;;
+          esac
+        done
+        if [[ -z "$pos" ]]; then
+          echo "argument required when using the --repo flag" >&2; exit 1
+        fi
         head=$(git -C "$FAKE_BARE" rev-parse --verify --quiet refs/heads/main)
         state=OPEN
         [[ -n "$head" && "$head" != "$FAKE_BASE" ]] && state=MERGED
@@ -65,6 +87,15 @@ case "$1" in
         git -C "$FAKE_SERVER" merge -q --squash "origin/$FAKE_BRANCH"
         git -C "$FAKE_SERVER" commit -q -m "Squash commit of $FAKE_BRANCH"
         git -C "$FAKE_SERVER" push -q origin main
+        if [[ "$FAKE_DEEP" == "1" ]]; then
+            # #3070 deep bite: gh got further before dying — remote branch
+            # already deleted, and the lane (gh's cwd) switched onto local
+            # main. That is the state both slots actually woke up in.
+            git -C "$FAKE_SERVER" push -q origin --delete "$FAKE_BRANCH"
+            git checkout -q main 2>/dev/null || true
+            echo "fatal: gh post-merge bookkeeping failed (simulated deep cleanup)" >&2
+            exit 1
+        fi
         echo "fatal: 'main' is already used by worktree at '$FAKE_SQUAT'" >&2
         exit 1 ;;
       *) echo "fake gh: unhandled pr sub $2" >&2; exit 1 ;;
@@ -73,7 +104,7 @@ case "$1" in
 esac
 `;
 
-function buildSandbox(tag, { dirtySquat = false, merge = 'trap' } = {}) {
+function buildSandbox(tag, { dirtySquat = false, merge = 'trap', withSquat = true, deep = false } = {}) {
     // realpath the root: macOS /var -> /private/var, and git prints the resolved
     // worktree paths; HOME is sandboxed so zsh's ~/.zshenv cannot prepend
     // homebrew and shadow the fake gh (real gh answering "fake/repo" = silence).
@@ -100,7 +131,7 @@ function buildSandbox(tag, { dirtySquat = false, merge = 'trap' } = {}) {
     const lane = path.join(root, 'lane');
     const squat = path.join(root, 'squat');
     if (git(['worktree', 'add', '-q', lane, 'forge/testfix'], plumb, env).status !== 0) throw new Error('lane worktree failed');
-    git(['worktree', 'add', '-q', squat, 'main'], plumb, env);
+    if (withSquat) git(['worktree', 'add', '-q', squat, 'main'], plumb, env);
     if (dirtySquat) fs.writeFileSync(path.join(squat, 'wip.txt'), 'another lane\'s live work\n');
     fs.mkdirSync(path.join(root, 'bin'));
     fs.writeFileSync(path.join(root, 'bin', 'gh'), FAKE_GH);
@@ -161,6 +192,35 @@ say('C — nothing merged: fail loudly, touch nothing');
     ok(git(['branch', '--list', 'forge/testfix'], s.plumb, s.env).stdout.includes('forge/testfix'), 'local branch untouched');
     ok(git(['symbolic-ref', '--short', 'HEAD'], s.lane, s.env).stdout.trim() === 'forge/testfix', 'lane still on its branch');
     ok(fs.existsSync(path.join(s.squat, 'wip.txt')), 'dirty squat untouched (no un-merge, no destroy)');
+    fs.rmSync(s.root, { recursive: true, force: true });
+}
+
+say('D — deep half-cleanup (#3070): lane parked on local main, remote branch already gone');
+{
+    // The state both builder slots woke in on 2026-11-23: gh merged, deleted
+    // the remote branch and switched the lane onto local `main`, then died
+    // mid-bookkeeping. The old number-less `gh pr view --repo` could not
+    // resolve anything from that context and abandoned the whole cleanup.
+    const s = buildSandbox('deep', { withSquat: false, deep: true });
+    let r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    ok(r.status === 0, `wrapper exits 0 despite the deep half-cleanup (got ${r.status})`);
+    ok(r.stdout.includes('MERGED (server truth)'), 'PR resolved explicitly by branch, not by the corrupted cwd');
+    ok(!remoteHeads(s).includes('forge/testfix'), 'remote branch gone (gh deleted it; step still verified)');
+    ok(git(['symbolic-ref', '-q', 'HEAD'], s.lane, s.env).status !== 0, 'lane re-detached off local main');
+    ok(git(['rev-parse', 'HEAD'], s.lane, s.env).stdout.trim()
+        === git(['rev-parse', 'origin/main'], s.plumb, s.env).stdout.trim(), 'lane detached AT origin/main');
+    ok(!git(['branch', '--list', 'main'], s.plumb, s.env).stdout.trim(), 'stray local main swept (documented manual finish automated)');
+    ok(!git(['rev-parse', '--verify', '--quiet', 'refs/heads/forge/testfix'], s.plumb, s.env).stdout.trim(), 'local branch deleted');
+    fs.rmSync(s.root, { recursive: true, force: true });
+}
+
+say('E — forge-merge refuses to run from a lane parked on main (#3070 guard)');
+{
+    const s = buildSandbox('onmain', { withSquat: false });
+    git(['checkout', '-q', 'main'], s.lane, s.env);
+    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    ok(r.status !== 0 && (r.stderr + r.stdout).includes('not a PR branch'), 'says why, exits non-zero');
+    ok(remoteHeads(s).includes('forge/testfix'), 'remote untouched');
     fs.rmSync(s.root, { recursive: true, force: true });
 }
 
