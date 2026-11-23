@@ -972,11 +972,22 @@ export function drawHud (ctx, gs, hiscore, fx = null, live = false) {
     // #2902: while the loop banner runs the row flashes gold — the +1 bank
     // courtesy landing is something you SEE, not a number that quietly ticks.
     const flash = fx ? Math.floor(fx.t / 5) % 2 === 0 : false
-    for (let i = 0; i < gs.lives; i++) {
-        ctx.fillStyle = flash ? C.gold : C.band
-        ctx.fillRect(150 + i * 10, 12, 6, 2)
-        ctx.fillStyle = flash ? '#fff6c8' : C.skin
-        ctx.fillRect(150 + i * 10, 14, 6, 4)
+    // #3037: a Konami pool outgrows the row — 30 heads run off the 384px
+    // grid past x=310, so beyond the row's honest capacity the pool reads as
+    // a gold number. 7 heads or fewer (every pool a pre-Konami run can hold)
+    // keeps the icon row byte-for-byte.
+    if (gs.lives <= 7) {
+        for (let i = 0; i < gs.lives; i++) {
+            ctx.fillStyle = flash ? C.gold : C.band
+            ctx.fillRect(150 + i * 10, 12, 6, 2)
+            ctx.fillStyle = flash ? '#fff6c8' : C.skin
+            ctx.fillRect(150 + i * 10, 14, 6, 4)
+        }
+    } else {
+        ctx.fillStyle = flash ? '#fff6c8' : C.gold
+        ctx.font = 'bold 10px "Courier New", monospace'
+        ctx.fillText(`x${gs.lives}`, 150, 11)
+        ctx.font = 'bold 8px "Courier New", monospace'
     }
     const wnames = { rifle: 'RIFLE', spread: 'SPREAD', machine: 'MGUN', fire: 'FIRE', laser: 'LASER' }
     const wcols = { rifle: C.ink, spread: C.capsuleLit, machine: '#7fb2ff', fire: '#ff6a2a', laser: '#ff4ad4' }

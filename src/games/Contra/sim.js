@@ -182,6 +182,22 @@ export const LOOP_CAP = 1.30
 export const LOOP_LIFE_BONUS = 1
 export const LOOP_LIVES_MAX = 5
 
+// #3037 THE KONAMI CODE — arcade history's most famous instruction: typed on
+// the attract screen, the run starts with 30 soldiers instead of 3 (NES Contra,
+// 1987 — the code that made a schoolyard legend). The detector is pure
+// arithmetic: a progress counter 0..10 fed by the shell on every attract press.
+// It never touches gs and never draws gs.r — the attract demo runs byte-for-byte
+// whether or not a finger is typing — and the prize enters the world only at
+// makeGame time, where `lives` already rides stateHash (honest replay covers it).
+export const KONAMI = ['up', 'up', 'down', 'down', 'left', 'right', 'left', 'right', 'b', 'a']
+export const KONAMI_LIVES = 30
+export function konamiFeed (progress, key) {
+    if (progress >= KONAMI.length) return progress   // once typed, it stays armed until the run consumes it
+    if (key === KONAMI[progress]) return progress + 1
+    return key === KONAMI[0] ? 1 : 0                  // a stray UP after a slip restarts at 1 — the classic behaviour
+}
+export const konamiArmed = (progress) => progress >= KONAMI.length
+
 // #3035 THE SOMERSAULT span: one full body-turn per jump. The arc of a normal
 // jump runs `rollT` 1..37 under the sim's Euler integration — the roll completes
 // exactly as the feet come back to the ground, the cabinet's snap (the arc is
@@ -202,9 +218,12 @@ export function loopK (n) {
 // SESSION, so it must span loops the way the cabinet run does.
 export function arcadeLoop (gs) {
     const carryScore = gs.score
-    const carryLives = Math.min(LOOP_LIVES_MAX, gs.lives + LOOP_LIFE_BONUS)
+    // #3037: the bank-to-five clamps the COURTESY, not the pool — a Konami 30
+    // marches through the loop un-clamped. For pools of 5 or less (every pool a
+    // pre-Konami run can hold) the expression is identical value-for-value.
+    const carryLives = gs.lives > LOOP_LIVES_MAX ? gs.lives : Math.min(LOOP_LIVES_MAX, gs.lives + LOOP_LIFE_BONUS)
     const carryGun = gs.p.weapon
-    const next = makeGame(gs.seed, gs.loop + 1)
+    const next = makeGame(gs.seed, gs.loop + 1, carryLives)
     next.score = carryScore
     next.lives = carryLives
     if (carryGun !== 'rifle') next.p.weapon = carryGun
@@ -711,8 +730,12 @@ function allyBrainBase (gs) {
     return pad
 }
 
-export function makeGame (seed, loop = 1) {
+export function makeGame (seed, loop = 1, lives = 3) {
     const lp = Math.max(1, Math.floor(loop) || 1)   // #2894 arcade loop: pass n>1 to run stage 1 faster
+    // #3037: the Konami prize enters HERE and nowhere else — default 3 keeps every
+    // pre-Konami run byte-identical (lives already enters stateHash, so armed runs
+    // are honestly replayable too). Clamped to the HUD's numeric form (99).
+    const lv = Math.max(1, Math.min(99, Math.floor(lives) || 3))
     const gs = {
         seed: seed >>> 0,
         r: (seed >>> 0) ^ 0x9e3779b9,
@@ -723,7 +746,7 @@ export function makeGame (seed, loop = 1) {
         camY: 0,
         phase: 'jungle',            // jungle | falls | boss
         score: 0,
-        lives: 3,
+        lives: lv,
         end: null,                  // 'dead' | 'win'
         p: {
             x: 40, y: CFG.ground, vy: 0, onGround: true, face: 1,
