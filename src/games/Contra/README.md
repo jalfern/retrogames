@@ -990,3 +990,45 @@ silence. This stage closes that, entirely presentation-side:
   pause duck and restore, GAME OVER silence). Named mutants: `bed-deaf` (the
   stage never names a bed) and `lift-flat` (hot loops march at loop-1 tempo) —
   both die by name.
+
+## QA #3052 — the stage-bed mix pass (phone ears, 2026-11-23 lane a)
+
+Follow-up to #3047: the beds proved their LAW; this pass measured their MIX.
+Headless can't hear, so it does what #3019 proved works — model the phone's
+small-driver knee (~12 dB/oct below ~250 Hz) over what the bus actually
+carries, computed from the lanes AND sampled off the live wire via new DEV
+readbacks (`__audioMix()`: a lazy 2048-fft spectrum tap on musicGain plus the
+live gain automation value — opt-in taps, no game's sound moves).
+
+Findings (Mac, headless Chrome, real keys) — **no gain fix owed**:
+- Bus rides the contract: gain 0.16 exact, crest ~12/128 (~2× a single MG
+  shot's authored peak) — gunfire rides under the march's crest, and booms
+  (noise 0.12 + sweep 0.09) still punch transient above it.
+- Phone ears: after the knee, 65-70% of the surviving jungle energy is the
+  MELODY (measured postKneeLeadFrac 0.65-0.70; the computed model says 0.60)
+  — the pump and dum die on small speakers exactly as #3019 taught, and the
+  lead carries the march where they cannot.
+- The gate is escalation, not chipmunk: melody +12 semitones minimum, bass
+  held in the pump register (max gate bass ≤ max jungle bass), step tighter;
+  measured lead stays within ~3 dB of the jungle's.
+- Pause duck 0.15 walks down a monotone slope to ~0.03 and climbs back to
+  0.16 with every step a curve (max single step < 0.06) — a step-back, never
+  a splice; `setTargetAtTime` cannot click.
+- Over screen: bed null AND ceremony ticking (4 SFX in the window) —
+  intentional silence, not a dropout.
+- #2058 law, Contra side: the bank has exactly one `recordLiveTick` site
+  carrying only `toBank(pad)`/`toBank(p2)`, and `toBank` reads only pad axes
+  — music rides no row, so takes recorded over the march replay identically
+  with the bed on or off. (A device take stays on the QA nodes' wish-list;
+  nothing here blocks it.)
+- Harness: 6 static mix legs (knee split ×2 beds, escalation-vs-chipmunk,
+  shot-ceiling contract, pad-only bank, duck depth) + 8 live legs (crest,
+  measured knee survival, MG stream with a held trigger, duck slope, resume
+  slope, gate escalation in-run, over-screen intent, page errors). Named
+  mutant `lead-vanished`: legal rests across the whole lead lane — every old
+  table leg still scans green; only the knee math notices the march lost its
+  voice, and it dies by name.
+
+Static-floor note: dB->power is 10^(x/10) — an early mirror of the live math
+used 2^(x/10), pinning the static split 0.13 low; the unit fix made the model
+agree with the measured bus.
