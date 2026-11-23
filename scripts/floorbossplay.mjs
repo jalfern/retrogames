@@ -463,15 +463,16 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     // show no REC chip — disclosure only ever tells the truth (#2058).
     const sheetPix = async (x, y, w, h) => page.evaluate(([x, y, w, h]) => {
         const d = window.__floorbossTest.canvas().getContext('2d').getImageData(x * 2, y * 2, w * 2, h * 2).data
-        let green = 0, bright = 0, cyan = 0, hot = 0
+        let green = 0, bright = 0, cyan = 0, hot = 0, amber = 0
         for (let i = 0; i < d.length; i += 4) {
             const r0 = d[i], g0 = d[i + 1], b0 = d[i + 2]
             if (g0 > 200 && g0 > r0 + 60 && g0 > b0 + 60) green++
             if (g0 > 230 && r0 > 140 && r0 < 215 && b0 > 170) bright++
             if (b0 > 200 && b0 > g0 + 40 && b0 > r0 + 100) cyan++
             if (r0 >= 250 && g0 < 120) hot++
+            if (r0 > 220 && g0 > 130 && g0 < 225 && b0 < 140) amber++ // #2987: the steered verdict's plate family (#ffb347 border)
         }
-        return { green, bright, cyan, hot }
+        return { green, bright, cyan, hot, amber }
     }, [x, y, w, h])
     const beat = await sheetPix(250, 280, 300, 34)
     r.check('the cleared sheet beats CLEAR — struck quota, EARNED line, lit rung (#2964)',
@@ -479,6 +480,8 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     const chip = await sheetPix(52, 96, 150, 22)
     r.check('a declined take shows no REC chip on the sheet — disclosure obeys the bank (#2964/#2058)',
         chip.hot === 0, JSON.stringify(chip))
+    const winkIdle = await sheetPix(W / 2 - 118, 322, 236, 22)
+    r.check('a floor no brain ever steered shows no verdict plate (#2987)', winkIdle.amber === 0, JSON.stringify(winkIdle))
     await page.keyboard.press('Enter')
     // #2346: a cleared night does NOT drop to attract — the ladder clocks in
     const advOk = await waitMode('play', 4000)
@@ -1187,6 +1190,49 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     }
     r.check('a cart holds a shoulder on the live floor — the yields eye reports holds (#2692)', holds >= 4, `holds ${holds} samples, ducks ${await page.evaluate(() => window.__floorbossTest.ducks())}`)
     r.check('the yielding cart wears the dashed cyan ring on canvas — courtesy visible on a phone (#2692)', cyanHits >= 3, `cyan ring hits ${cyanHits}/${holds}`)
+    // ---- #2987 watch-stamp truth — a self-contained leg on a fresh floor, so
+    // it neither leans on nor contaminates the rigs above. Real Y events; the
+    // brand is read on the game's own eyes; pixels on the settled sheet.
+    await page.goto(URL + '?seed=7')
+    await new Promise((res) => setTimeout(res, 1000)) // stored decline is seeded (openGame init script) — Space starts clean
+    await page.keyboard.press('Space')
+    r.check('watch-stamp rig: a fresh floor starts unbranded (#2987)',
+        (await waitMode('play', 4000)) && await page.evaluate(() => window.__floorbossTest.watchSteered() === false))
+    await page.keyboard.press('KeyY') // seat the prover
+    let steered = false
+    for (let i = 0; i < 80; i++) {
+        if (await page.evaluate(() => window.__floorbossTest.watchSteered())) { steered = true; break }
+        await new Promise((res) => setTimeout(res, 50))
+    }
+    r.check('seating WATCH brands the take once the prover actually drives a tick (#2987)', steered)
+    await page.keyboard.press('KeyY') // hand back — the tick was driven; the brand stays
+    r.check('hand-back releases the floor, not the brand — the prover drove this take (#2987)',
+        await page.evaluate(() => window.__floorbossTest.watchSteered()))
+    // Force the night clear through game law (house rig verbs, as in the
+    // full-shift block). The bank is declined in this rig (#2091) — so the
+    // steered night must show NO verdict plate: no take, no confession
+    // (#2964 chip law, #2058 truth).
+    await page.evaluate(() => { const g = window.__floorbossTest.sim(); g.strikes = 0; g.expired = 0; g.score = g.shiftBase + g.params.quota + 500; g.orders.forEach((o) => { if (o.due < g.tick + 1000) o.due = g.tick + 1000 }) })
+    await page.evaluate(() => { for (let i = 0; i < 9200 && !window.__floorbossTest.sim().end; i++) window.__floorbossTest.step(1) })
+    r.check('the steered night reaches the sheet (#2987)', await waitMode('over', 6000))
+    await new Promise((res) => setTimeout(res, 1200)) // past the over-screen key guard; pixels settle
+    const wink = await page.evaluate(() => {
+        const d = window.__floorbossTest.canvas().getContext('2d').getImageData((800 / 2 - 118) * 2, 322 * 2, 236 * 2, 22 * 2).data
+        let amber = 0, hot = 0
+        for (let i = 0; i < d.length; i += 4) {
+            const r0 = d[i], g0 = d[i + 1], b0 = d[i + 2]
+            if (r0 > 220 && g0 > 130 && g0 < 225 && b0 < 140) amber++
+            if (r0 >= 250 && g0 < 120) hot++
+        }
+        return { amber, hot }
+    })
+    r.check('a declined steered floor shows no out-of-train wink — no take, no confession (#2987/#2058)',
+        wink.amber === 0 && wink.hot === 0, JSON.stringify(wink))
+    r.check('bank truth at the whistle: branded in the eyes, verdict withheld from a declined bank (#2987)',
+        await page.evaluate(() => window.__floorbossTest.watchSteered() === true && window.__floorbossTest.sheetSteered() === false))
+    await page.keyboard.press('Enter') // clock into the next shift — the take rides on
+    r.check('the brand crosses the clock-in seam unbroken (#2987/#2958)',
+        await page.evaluate(() => window.__floorbossTest.watchSteered()))
     r.check('zero page errors', errors.length === 0, [...seenMsg.entries()].map(([m, s]) => `${m} ×${errors.filter((x) => x === m).length} @ ${s}`).join(' | ') || errors.join(' | '))
     r.exit(browser)
 }
