@@ -326,7 +326,7 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   prone-immortal, no-crawl-price,
                                         #   extend-deaf, carry-blind,
                                         #   score-wipe, window-short, count-stalls,
-                                       #   rung-resale
+                                       #   rung-resale, bed-stuck, music-deaf
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -438,7 +438,18 @@ the accept window) · the carry enters at makeGame (default 0 hash-identical, a
 carried score diverges loudly) · live: the count paints and falls on world time,
 a real key pays — score carried, pool 3, loop 1, purse spent — a real tap pays
 the same, the armed run returns at 30 (NES continue law), an empty purse offers
-no count, and an unanswered count lands on the attract screen unasked** · zero
+no count, and an unanswered count lands on the attract screen unasked** · **#3048
+the march: bed law (jungle/falls → contraMarch, boss → contraGate) · two ORIGINAL
+32-step beds with lanes aligned, notes finite and in register, dum/tek-only
+percussion, and no lead duplicating any other shelf track ("composed for this
+build" pinned, #961 law) · heat coupling — step ÷ k, cap-still at LOOP_CAP ·
+presentation by construction: no bed field on gs, twins twin, rng untouched ·
+shell gate pinned as text (bed rides play only; switch on the world tick; pause,
+death and unmount silence; bus step from MUSIC[bed].step ÷ gs.lk) · live: attract
+is silence by law, a real key takes the seat AND the march starts at its resting
+step, loop 4 tightens it to 0.11/1.30, the gate flips the tune already hot, pause
+freezes the band and resume re-arms it on the first tick back, GAME OVER silences
+mid-siege, and a paid continue brings the march back carrying the bank** · zero
 page errors.
 
 ## Honest gaps
@@ -552,6 +563,23 @@ page errors.
   Never-dry stage (#1571): the rule was missing from the shelf while every README
   gap read CLOSED — scoped live from the cabinet. See the #3042 note at the foot
   of this README.
+- **CLOSED by #3048**: the cabinet finally has a band — the stage no longer plays
+  silent. Two ORIGINAL beds composed for this build (house law, the `joust`/
+  `marble` precedent): `contraMarch` under the jungle and the canyon (E-minor
+  military horn calls, Em–C–Am–B, snare off-beats) and `contraGate` at the siege
+  (a faster E–B♭ tritone grind). Selection is pure sim law (`bedTrack`, zero
+  `gs.r`, nothing hashed); the tempo rides the loop's own heat — bus step =
+  pattern step ÷ k, the SSX seam — so loop n marches at exactly the pressure it
+  runs at. Attract, CONTINUE and STAGE CLEAR are silence by design; the beds
+  ride the run. Never-dry stage (#1571): scoped live from the cabinet while
+  every README gap read CLOSED. See the #3048 note at the foot of this README.
+- **DISCLAIMER** — the attract screen carries no bed, on purpose: the title card
+  reads with its own voice (cycling copy, the Konami teach), and the march
+  belongs to the run. This must not re-score on the never-dry ladder (#2488
+  marker law).
+- The canyon shares the jungle march. The cabinet gave its waterfall a cue of its
+  own; ours keeps one bed for both climbs — an arrangement gap, not a missing
+  feature, and the natural next note for the shelf.
 
 ## #2917 The second air layer — hangar sorties at the gate
 
@@ -934,3 +962,44 @@ expiry). The two legs this stage re-forged are the worked examples.
   per-digit heat rates `1,1,1,1,1,1,2,3,4,4`, heat never stomping a boundary,
   pad-gate law) + 1 live leg (ceremony counters through a real expiry) and two
   mutants — `heat-silent`, `coin-dropped` — that die by name.
+
+## #3048 THE MARCH — the cabinet finally has a band (never-dry stage)
+
+Kicked from the #1571 ladder (`KICK CONTRA -1 weak`, via feedback #2971 — itself
+`waiting-jon`; every README gap CLOSED at kick time), the gap was scoped live from
+the cabinet: the 1987 machine's stage 1 is defined by its driving jungle march,
+and this shelf's most-built title was the one cabinet playing silent — every other
+game on it (SSX, Emberwood, COMET DRIFT HD, Joust, QBert, Tetris, Marble, Pop,
+the Out Run radio) ships an original synthesized bed. Two beds now ride Contra:
+
+- **Originals, house-law.** `contraMarch` (jungle/falls): E-minor military horn
+  calls over pumping octaves (Em–C–Am–B), snare on the off-beats; `contraGate`
+  (boss): a faster E–B♭ tritone grind with a Phrygian tail and machine-gun rolls.
+  Composed for this build — same breath and register as the cabinet idiom, not a
+  transcription (`joust`/`marble` precedent) — and pinned: no lead on the shelf
+  duplicates either bed (#961 marker law — what nothing checks, rots).
+- **The bed is law, not a playlist.** `bedTrack(phase)` in sim.js answers which
+  bed the run wears — jungle/falls march, gate sieges — as pure phase arithmetic:
+  zero `gs.r`, no bed field ever lands on gs, so no seed stream, replay, twin or
+  PLAICRAFT byte can hear the feature at all. The SHELF gate lives at the shell:
+  a bed rides `screen === 'play'` with the run alive — attract teaches silently,
+  GAME OVER takes the band with it, the CONTINUE count runs in silence, and STAGE
+  CLEAR belongs to the fanfare. Pause freezes the world and the band together; the
+  resume re-arms on the first world tick. No timers anywhere: the bed switches on
+  the same WORLD-tick path as the sim itself.
+- **Heat rides k.** The bus step is the pattern's OWN step divided by `gs.lk` —
+  the exact multiplier that raises the pressure (#2894), applied through
+  `setMusicStep` (SSX's seam). Loop 4's stage marches at 0.11 ÷ 1.30 seconds a
+  step, and the siege keeps its own faster grid at the same heat. One source of
+  truth per bed: the pattern table in `AudioController.MUSIC`, never a mirrored
+  literal.
+- **Harness.** `contracheck` grew 7 sim legs (bed law, pattern shape ×2,
+  shelf-uniqueness, heat coupling, referee-clean, shell-text law ×2) and 8 live
+  legs on the bus (attract silence; real keys start the march at its resting
+  step; loop heat tightens it to 0.11/1.30; the gate flips the tune already hot;
+  pause freezes the band and resume re-arms it; GAME OVER silences mid-siege; a
+  paid continue returns the march carrying the bank; zero page errors). The probe
+  carries `track` (what the law asked for) and `bus` (what the engine scheduled)
+  separately — a `startMusic` that silently refused a track diverges the two.
+  Named mutants: `bed-stuck` (the siege never changes the tune) and `music-deaf`
+  (the world clock stops asking for a bed); both die by name.
