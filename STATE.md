@@ -64,11 +64,12 @@
 - #2975 trap hit again: `retrogames-qa-mini-cap` squats local `main`, so the
   rule-5 command exits 1 AFTER a successful squash-merge — merge VERIFIED via
   PR state (MERGED) + origin/main (`9dfded0`) + prod deploy; exit ignored.
-- **HAZARD (report, not corpse):** main checkout `~/Dev/retrogames` still
-  holds unpushed `src/games/Contra/{index,art}.js` + `scripts/contracheck.mjs`
-  (live #2971 QA work, lawfully owned, LEFT UNTOUCHED this session too).
-  QA lane must move it into `retrogames-qa-2971` and clean the plumbing
-  checkout (#2971's job).
+- **HAZARD RESOLVED at close:** main checkout `~/Dev/retrogames` held unpushed
+  `src/games/Contra/*` + `scripts/contracheck.mjs` at session start (#2971 QA
+  WIP, left untouched all session per the law). During the night the QA lane
+  committed it (`qa/contra-trainable-polish`) and merged PR #2999; the
+  plumbing checkout is verified detached-clean at `origin/main`. #2971 stays
+  open for its remaining stages. No action needed by the next lane.
 
 ## Open questions
 - None open. This week's dry-queue new-flagship question was already filed by
