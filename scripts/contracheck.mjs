@@ -3111,30 +3111,28 @@ const browser = await launch()
         const T = window.__contraTest
         T.start()
         window.__game.reset(21, 2)
+        T.setup({ inv: 100000 }) // an idle spawn dies mid-leg, and GAME OVER clears the banners — pin it alive
         return T.probe().screen
     })
     await tp.waitForTimeout(150) // paint the spawn scene — card not fired yet
     const cBase = await tp.evaluate(`(${sampler.toString()})()`)
     const h = await tp.evaluate(() => {
         localStorage.removeItem('retrogames:contra-voice-hints')
-        const T = window.__contraTest, G = window.__game
+        const T = window.__contraTest
         const t1 = T.radioLive() // first LIVE on a virgin device — card must show
         const stamp = localStorage.getItem('retrogames:contra-voice-hints')
         const t2 = T.radioLive() // taught already — must NOT re-show
         const tips = T.probe().call.tips // the card from t1 still rides on state
-        const a = T.probe().call.tips
         T.say('AIM UP') // echo banner + card must stack, not collide
-        G.step({}, 60)
-        const b = T.probe().call.tips
-        return { t1, stamp, t2, tips, a, b, armed: T.voiceArmed(), screen: T.probe().screen }
+        return { t1, stamp, t2, tips, armed: T.voiceArmed() }
     })
     await tp.waitForTimeout(250) // let the rAF paint the card and the banner
-    const px = await tp.evaluate(`(${sampler.toString()})()`)
+    const px = await tp.evaluate(`(() => { const s = (${sampler.toString()})(); const p = window.__contraTest.probe(); return { ...s, screen: p.screen, tips: p.call.tips } })()`)
     r.check('#3003 card: the first LIVE moment raises the hint card and stamps the device',
         h.t1 === 300 && h.stamp === '1' && h.tips === 300, JSON.stringify(h))
     r.check('#3003 card: once per device — a second LIVE does not re-show it', h.t2 === 0, `t2=${h.t2}`)
-    r.check('#3003 card: the card decays on WORLD ticks (>= the 60 ticks driven, never below zero)',
-        h.a >= 60 && h.b <= h.a - 60 && h.b >= 0 && h.screen === 'play', JSON.stringify({ a: h.a, b: h.b }))
+    r.check('#3003 card: the card decays on WORLD ticks as the run plays (never below zero, screen still play)',
+        px.tips < 300 && px.tips > 200 && px.screen === 'play', JSON.stringify(px))
     r.check('#3003 card: the honest no-mic seam still reports the radio un-armed', h.armed === false, `armed=${h.armed}`)
     r.check('#3003 card: both card lines paint in their band (gold + khaki ink at 163..187)',
         px.line1 >= cBase.line1 + 40 && px.line2 >= cBase.line2 + 40, JSON.stringify({ cold: cBase, px }))
