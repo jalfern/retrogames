@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, bedFor, liftStep, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN, hallAdd, hallRead, HALL_CAP } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, bedFor, liftStep, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN, hallAdd, hallRead, HALL_CAP, whoOk, namePhase, nameCycle, nameStep, nameCommit, hallStamp, askSign, WHO_DEFAULT, NAME_LEN, NAME_SECS, NAME_HOLD, BOARD_HOLD, HALL_RANKS } from '../src/games/Contra/sim.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -2368,6 +2368,21 @@ if (MUTANT) {
             },
         },
         {
+            // #3066: the cabinet must keep the name. Blind the stamp and every
+            // signed board de-signs at commit — ranks go anonymous in storage
+            // while the ceremony still smiles, and the board loses its owners.
+            name: 'sign-forgets',
+            anchor: 'export function hallStamp (hall, ids, who) {\n    if (!whoOk(who) || !(ids instanceof Set) || ids.size === 0) return hall',
+            plant: 'export function hallStamp (hall, ids, who) {\n    void ids; void who /* MUTANT(sign-forgets): the ink never touches the board */\n    return hall',
+            harm: async (mod) => {
+                const board = [{ score: 900, loop: 1, t: 10 }]
+                const out = mod.hallStamp(board, new Set([10]), 'ACE')
+                return out === board && out[0].who === undefined
+                    ? 'HARM NAMED: the cabinet took the name and forgot the ink - the row stays anonymous forever while the ceremony claims it signed'
+                    : null
+            },
+        },
+        {
             // #3061: the cabinet must remember. Blind the bank and the board
             // never grows, the crown never changes, and NEW RECORD goes dark —
             // the player's best run is silently lost with the session.
@@ -3243,9 +3258,10 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     // answers it. (Live DOM can't prove this — #906 hides the pad after any
     // keyboard use — so the shell's own gate is the contract.)
     const shellSrc = readFileSync(join(ROOT, 'src/games/Contra/index.jsx'), 'utf8')
-    r.check('#3045 the pad gate is law — VirtualControls renders only in play/attract, never through the count',
-        shellSrc.includes("<VirtualControls visible={(mode === 'play' || mode === 'attract') && !paused}") &&
-        shellSrc.includes("secondAction={mode === 'attract' ? { label: 'B', code: 'KeyB' } : { label: 'FIRE', code: 'KeyX' }}"),
+    r.check('#3045 the pad gate is law — VirtualControls renders in play/attract and only for the NAME ask (#3066), never through the count',
+        shellSrc.includes("<VirtualControls visible={(mode === 'play' || mode === 'attract' || (mode === 'over' && signUI)) && !paused}") &&
+        shellSrc.includes("secondAction={mode === 'attract' ? { label: 'B', code: 'KeyB' } : mode === 'over' ? { label: 'NEXT', code: 'KeyX' } : { label: 'FIRE', code: 'KeyX' }}") &&
+        !shellSrc.includes("visible={(mode === 'play' || mode === 'over')"),
         'pad visible/secondAction gate moved at the over screen')
 }
 
@@ -3593,6 +3609,54 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
         r.check('#3061 the store round-trip is loss-free and the law deterministic — what the browser persists reads back identical',
             rt.length === 1 && rt[0].score === banked.hall[0].score && det)
     }
+}
+
+// ------------------------- #3066 NAME YOUR RANK — the signed board ----------
+// The GK lineage (Gradius, 1985) asks the record-holder to sign: three
+// initials, arrows to set them, a finite count, a default that commits. The
+// cabinet asks PEOPLE, never the machine, and stamps only rows its own
+// session left unsigned. Pure laws — no gs, no clock, no rng.
+{
+    const N = () => ({ slots: WHO_DEFAULT.split(''), cur: 0, t: 0 })
+    r.check('#3066 who trusts exactly three A-Z letters',
+        whoOk('AAA') && whoOk('Z9A') === false && whoOk('AB') === false &&
+        whoOk('ABCD') === false && whoOk('ab ') === false && whoOk(undefined) === false &&
+        whoOk(7) === false)
+    r.check('#3066 the letter dial wraps both ways',
+        nameCycle('Z', 1) === 'A' && nameCycle('A', -1) === 'Z' &&
+        nameCycle('M', 1) === 'N' && nameCycle('N', -1) === 'M')
+    r.check('#3066 the cursor walks the three slots and wraps; cycles touch only the standing slot',
+        nameStep(N(), 'R').st.cur === 1 && nameStep(N(), 'L').st.cur === NAME_LEN - 1 &&
+        (() => { const a = nameStep(nameStep(N(), 'R').st, 'U').st; return a.slots.join('') === 'ABA' && a.cur === 1 })() &&
+        (() => { const a = nameStep(nameStep(N(), 'R').st, 'D').st; return a.slots.join('') === 'AZA' })())
+    r.check('#3066 B confirms and advances, commits past the last slot; A commits whatever stands; default commits AAA',
+        nameStep(N(), 'B').st.cur === 1 &&
+        nameCommit(nameStep(nameStep(N(), 'B').st, 'B').st.slots) === 'AAA' &&
+        nameStep(nameStep(nameStep(N(), 'B').st, 'B').st, 'B').done === 'AAA' &&
+        nameStep(N(), 'A').done === WHO_DEFAULT)
+    r.check('#3066 the count is 9..0 over NAME_SECS seconds and closes the ask',
+        namePhase(0).digit === NAME_SECS && namePhase(NAME_SECS * 60 - 1).digit === 1 &&
+        namePhase(NAME_HOLD).phase === 'out' && namePhase(NAME_HOLD).digit === 0 &&
+        namePhase(NAME_HOLD - 1).phase === 'hold' && BOARD_HOLD > 60)
+    r.check('#3066 the stamp reaches only the session rows: matched unsigned rows gain the name, foreign/signed rows and empty or junk requests change nothing by reference',
+        (() => {
+            const board = [{ score: 900, loop: 1, t: 10 }, { score: 500, loop: 2, t: 20, who: 'BBB' }]
+            const s1 = hallStamp(board, new Set([99]), 'ACE')
+            const s2 = hallStamp(board, new Set(), 'ACE')
+            const s3 = hallStamp(board, new Set([10, 20]), 'ab')
+            const s4 = hallStamp(board, new Set([10, 20]), 'ACE')
+            return s1 === board && s2 === board && s3 === board &&
+                s4 !== board && s4[0].who === 'ACE' && s4[1].who === 'BBB' &&
+                board[0].who === undefined && JSON.stringify(s4) === JSON.stringify(s4.map((e) => JSON.parse(JSON.stringify(e))))
+        })())
+    r.check('#3066 the reader keeps legacy anonymous rows and drops malformed signatures (never repair)',
+        hallRead([{ score: 100, loop: 1, t: 1 }, { score: 200, loop: 1, t: 2, who: 'ACE' },
+            { score: 300, loop: 1, t: 3, who: 'ac' }, { score: 400, loop: 1, t: 4, who: 'ACED' },
+            { score: 500, loop: 1, t: 5, who: 9 }]).map((e) => e.score).join(',') === '200,100' &&
+        hallRead([{ score: 100, loop: 1, t: 1 }])[0].who === undefined)
+    r.check('#3066 the cabinet asks people, never the machine, never mid-count, never for an empty debt',
+        askSign({ auto: true, unsigned: 3 }) === false && askSign({ unsigned: 0 }) === false &&
+        askSign({ unsigned: 2, counting: true }) === false && askSign({ unsigned: 2 }) === true)
 }
 
 // --------------------------------- #3060 BARRIER — the wheel's fifth letter ---
@@ -4973,6 +5037,96 @@ const browser = await launch()
     await zp.close()
 }
 
+// ------------------------- #3066 NAME YOUR RANK live — the ceremony ---------
+// A banking fall, an unanswered count, and the cabinet asks: real key events
+// spell the initials, Space signs, the store carries the name, and the signed
+// board holds its moment before the title returns. The legacy rows written
+// before the ceremony still read — never repaired. And the machine never
+// signs: a harness-driven autopilot seat banks but is never asked, its rows
+// staying anonymous in gold and ??? forever.
+{
+    const gold = (p, x, y, w, h) => p.evaluate(([x, y, w, h]) => {
+        const c = document.querySelector('canvas')
+        if (!c) return 0
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(x * k), Math.round(y * k), Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) {
+            if (d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 120) n++
+        }
+        return n
+    }, [x, y, w, h])
+    const np = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500, decline: true })
+    const nErrs = []
+    np.on('pageerror', (e) => nErrs.push(e.stack || e.message))
+    await np.evaluate(() => localStorage.setItem('contra:hall', JSON.stringify([{ score: 4000, loop: 2, t: 10 }])))
+    await np.reload({ waitUntil: 'load' })
+    await np.waitForFunction(() => !!window.__contraTest, null, { timeout: 15000 })
+    await np.waitForTimeout(400)
+    const legacy = await np.evaluate(() => window.__contraTest.probe().hall.rows)
+    r.check('#3066 live: a legacy row rides the signed board — it reads, unnamed, and the store is never repaired',
+        legacy.length === 1 && legacy[0].s === 4000 && legacy[0].w === null &&
+        (await np.evaluate(() => JSON.parse(localStorage.getItem('contra:hall'))[0].who === undefined)),
+        JSON.stringify(legacy))
+
+    // the banking fall: score a rank through the real death law, let the
+    // count close unanswered, and the ask rises on the closed book.
+    await np.evaluate(() => window.__contraTest.start())
+    await np.waitForTimeout(250)
+    await np.evaluate(() => window.__contraTest.setup({ lives: 0, score: 9000, allyOut: true, kill: true }))
+    let nm = null
+    for (let g = 0; g < 110 && !nm; g++) {
+        await np.waitForTimeout(200)
+        const p = await np.evaluate(() => window.__contraTest.probe())
+        if (p.name) nm = { slots: [...p.name.slots], cur: p.name.cur, unsigned: p.hall.unsigned }
+    }
+    const panelGold = nm ? await gold(np, 130, 132, 124, 22) : 0
+    r.check('#3066 live: an unanswered count closes into the ask — slots stand AAA, the debt is visible, the plate paints gold',
+        nm !== null && nm.slots.join('') === WHO_DEFAULT && nm.cur === 0 && nm.unsigned >= 1 && panelGold > 0,
+        JSON.stringify({ nm, panelGold }))
+
+    // answer it with real keys: A..B, move, ..C, commit — BCA signs.
+    for (const k of ['ArrowUp', 'ArrowRight', 'ArrowUp', 'ArrowUp']) { await np.keyboard.press(k); await np.waitForTimeout(90) }
+    const mid = await np.evaluate(() => window.__contraTest.probe().name)
+    await np.keyboard.press('Space')
+    await np.waitForTimeout(300)
+    const signed = await np.evaluate(() => { const p = window.__contraTest.probe(); return { rows: p.hall.rows.map((e) => e.w), unsigned: p.hall.unsigned, screen: p.screen, name: p.name } })
+    const store = await np.evaluate(() => JSON.parse(localStorage.getItem('contra:hall') || '[]'))
+    r.check('#3066 live: the arrows set the initials A-up, B twice up — the read matches the keys',
+        mid !== null && mid.slots.join('') === 'BCA', JSON.stringify(mid))
+    r.check('#3066 live: Space signs — the store keeps BCA against the 9000 rank, the debt clears, the board holds',
+        signed.name === null && signed.unsigned === 0 && signed.rows.includes('BCA') &&
+        store.some((e) => e.who === 'BCA' && e.score === 9000), JSON.stringify({ signed, top: store[0] }))
+    let home = null
+    for (let g = 0; g < 40 && !home; g++) {
+        await np.waitForTimeout(200)
+        const p = await np.evaluate(() => window.__contraTest.probe())
+        if (p.screen === 'attract') home = p
+    }
+    r.check('#3066 live: the signed board reads its rank, then the title takes the screen back',
+        home !== null && home.name === null, JSON.stringify({ screen: home && home.screen }))
+
+    // the machine never signs: harness-auto bank a score, sit out the count,
+    // and the title must take the screen with the row still unnamed.
+    await np.evaluate(() => window.__contraTest.start())
+    await np.waitForTimeout(250)
+    await np.evaluate(() => window.__contraTest.setup({ auto: true, lives: 0, score: 3300, allyOut: true, kill: true }))
+    let askedMachine = false
+    let autoHome = null
+    for (let g = 0; g < 110 && !autoHome; g++) {
+        await np.waitForTimeout(200)
+        const p = await np.evaluate(() => window.__contraTest.probe())
+        if (p.name) askedMachine = true
+        if (p.screen === 'attract') autoHome = p
+    }
+    const autoStore = await np.evaluate(() => JSON.parse(localStorage.getItem('contra:hall') || '[]'))
+    r.check('#3066 live: the machine is never asked — an auto-seat fall banks anonymous rows and the title returns unasked',
+        !askedMachine && autoHome !== null && autoStore.some((e) => e.score === 3300 && !e.who),
+        JSON.stringify({ askedMachine, screen: autoHome && autoHome.screen }))
+    r.check('#3066 live: naming legs zero page errors', nErrs.length === 0, nErrs.join(' | '))
+    await np.close()
+}
+
 // ------------------------------------------------ #3000 voice browser leg ---
 // No speech engine in headless Chrome — which is exactly the honest-degrade
 // case to pin: the radio must report UN-ARMED (never fake a LISTEN), while
@@ -5623,15 +5777,19 @@ const browser = await launch()
         tapped.screen === 'play' && tapped.cont.left === 1 && tapped.score === dead2.score,
         `screen=${tapped.screen} left=${tapped.cont.left} score=${dead2.score}->${tapped.score}`)
 
-    // expiry: nobody answers and the machine closes the book by itself —
-    // no key is ever asked. (A real ~11.5 s count; this leg proves honesty.)
+    // expiry: nobody answers the count and the machine closes the book by
+    // itself — no continue is ever asked. (#3066 amendment: the closed book
+    // then asks the board its NAME — the count itself stays unanswered, and
+    // one Space answers the ask so the title comes back.)
     await dieToOver({ score: 6500 })
     let expired = null
+    let asked = null
     const seen = { coin: 0, tick: 0, hot: 0 }
     for (let g = 0; g < 90; g++) {
         await cp.waitForTimeout(200)
         expired = await cp.evaluate(() => window.__contraTest.probe())
         if (expired.screen === 'attract') break
+        if (!asked && expired.name) { asked = [...expired.name.slots]; await cp.keyboard.press('Space') }
         if (expired.cont && expired.cont.beats) {
             seen.coin = Math.max(seen.coin, expired.cont.beats.coin)
             seen.tick = Math.max(seen.tick, expired.cont.beats.tick)
@@ -5643,8 +5801,10 @@ const browser = await launch()
     // the 2, 3 from the 1 — six by the last digit at worst-case 12 fps polling).
     r.check('#3045 the live ceremony — coin clacked once, ten digit ticks, heat rising before the close',
         seen.coin === 1 && seen.tick >= 9 && seen.hot >= 6, JSON.stringify(seen))
-    r.check('#3042 when the count dies the machine returns to the title — no key asked, forfeit and all',
-        expired.screen === 'attract', `screen=${expired.screen}`)
+    r.check('#3042 when the count dies the machine returns to the title — the board signs (#3066), the continue forfeits',
+        expired.screen === 'attract' && asked !== null && asked.join('') === 'AAA' &&
+        expired.hall.rows.some((e) => e.w === 'AAA'),
+        `screen=${expired.screen} asked=${asked ? asked.join('') : 'never'}`)
 
     // armed carry: the code arms the game, the game remembers — NES law:
     // "the cheat remains in effect when the player runs out of lives and
