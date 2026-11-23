@@ -39,6 +39,10 @@ export const CFG = {
     jumpKickDmg: 3,
     hitstun: 14,          // enemy stagger on a non-knockdown hit
     downTime: 44,         // ticks flat on the street
+    // #3005 idle seat (Jon's #2908/#2930 — "yes cpu takes over"): a human-
+    // held blue seat whose P2 input goes silent for 5 s of world time hands
+    // Jimmy back to dragonBrain; any later live pad2 re-seats the friend.
+    seatIdle: 300,
     // #2935 weight-true knockback: a landed blow imparts velocity scaled by
     // the strike's weight and the man's mass, decaying with friction. x-only
     // (the depth axis stays the dodge answer); props hold (blocked(), no
@@ -303,9 +307,14 @@ export function mulberry32(seed) {
 
 // S4 (#2807, co-op): a seat is a fighter — Billy and Jimmy share the exact
 // physics bank (strikes, lethal law, weapons, pickups). `tag` names the seat
-// for events/hash; `human` is the Contra S4 drop-in flag (a first touch of a
-// P2 key hands the CPU seat to a person for the rest of the run); `out` means
-// the pool is empty — the seat goes dark until a second wind at the next stage.
+// for events/hash; `human` is the drop-in flag — a first touch of a P2 input
+// hands the CPU seat to a person, and since #3005 (Jon's #2908/#2930) the
+// seat comes BACK: `idle` counts the silent ticks a held seat has seen, and
+// at CFG.seatIdle the computer resumes driving (`idle` and `human` are
+// stream-derived, never hashed — same convention as the #1712 seat2At rule,
+// so a replay of the banked pad pair reproduces the same seat timeline).
+// `out` means the pool is empty — the seat goes dark until a second wind at
+// the next stage.
 function makeFighter(tag) {
     return {
         tag,
@@ -321,6 +330,7 @@ function makeFighter(tag) {
         lash: 0,          // #2819: white crack-flash ticks left on the whip
         lives: CFG.lives,
         human: false,
+        idle: 0,      // #3005: silent ticks a human-held seat has counted toward hand-back
         out: false,
         backAt: -9999, // #2833: tick a drained seat returned on second wind (HUD flash window)
         guard: 0,      // #2857: ticks left wearing the guardian glint (sprinting the holder)
@@ -1387,6 +1397,25 @@ export function step(gs, pad = {}, pad2 = {}) {
     }
 
     updateFighter(gs, gs.billy, pad)
+    // #3005 the walked-away friend law (Jon's #2908/#2930): the blue seat
+    // belongs to whoever is driving it, not to the first hand that touched
+    // the keys. A held seat with silence on pad2 counts idle up; at
+    // CFG.seatIdle dragonBrain takes it back. Any live pad2 press re-seats
+    // the stream (the live shell flips first and pays the join shout — this
+    // flip is what makes replays and dataset streams reproduce the same
+    // seat timeline). The clock rides the play path only: the movie, the
+    // stage banners and gameover return above it, so a friend mid-transition
+    // is never blamed for a screen they cannot steer. Idle keeps counting
+    // while the seat is DOWN — a silent friend and a fallen dragon both
+    // mean the computer drives at second wind — but a live press while down
+    // does NOT re-seat: the #2833 falling-seat law stands verbatim.
+    if (gs.jimmy) {
+        const live2 = !!(pad2 && (pad2.left || pad2.right || pad2.up || pad2.down || pad2.a || pad2.b || pad2.punch))
+        if (gs.jimmy.human) {
+            gs.jimmy.idle = live2 ? 0 : gs.jimmy.idle + 1
+            if (gs.jimmy.idle >= CFG.seatIdle) { gs.jimmy.human = false; gs.jimmy.idle = 0 }
+        } else if (!gs.jimmy.out && live2) { gs.jimmy.human = true; gs.jimmy.idle = 0 }
+    }
     // S4: the blue seat runs on its own honest-percept brain until a human
     // takes it drop-in (Contra S4 law) — the shell passes pad2 only then.
     const jpad = gs.jimmy ? (gs.jimmy.human ? pad2 : jimmyBrain(gs)) : null

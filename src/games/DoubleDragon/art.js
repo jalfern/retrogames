@@ -1411,6 +1411,40 @@ export function drawJoinFx(ctx, t, sx, sy) {
     }
 }
 
+// #3005 handback flare (Jon's #2908/#2930) — the walked-away friend's seat
+// going quiet: the same brackets that spring open for an arrival CLOSE onto
+// the seat, grey for "the computer has it now", one message on the banner
+// row. The READY blink under the 2P tag (drawHud) keeps inviting the friend
+// back for as long as the CPU holds the seat — the flare names the moment,
+// the tag names the state. Shell state (mirror of joinFx), never gs.
+export const CPU_T = 60
+export function drawSeatCpu(ctx, t, sx, sy) {
+    if (t <= 0) return
+    if (t > CPU_T - 14) {
+        // grey beat on the seat — the soft inverse of the join flash
+        ctx.globalAlpha = Math.min(1, (t - (CPU_T - 14)) / 10) * 0.8
+        ctx.fillStyle = '#b9c2cc'
+        ctx.fillRect(sx - 1, sy - 26, 2, 24)
+        ctx.globalAlpha = 1
+    } else if (t > 10) {
+        // brackets close in — the computer settling into the seat
+        const p = (CPU_T - 14 - t) / (CPU_T - 14 - 10)
+        const rx = 22 - Math.round(p * 12)
+        const ry = 27 - Math.round(p * 12)
+        ctx.globalAlpha = 0.7 * (1 - p) + 0.15
+        ctx.fillStyle = '#9aa4ae'
+        for (const [mx, my] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+            ctx.fillRect(sx + mx * rx - (mx < 0 ? 0 : 1), sy - 15 + my * ry - (my < 0 ? 0 : 1), 4, 1)
+            ctx.fillRect(sx + mx * rx - (mx < 0 ? 0 : 1), sy - 15 + my * ry - (my < 0 ? 0 : 1), 1, 4)
+        }
+        ctx.globalAlpha = 1
+    }
+    if (t > 12 && (t > 30 || t % 6 < 4)) {
+        const s = 'CPU'
+        label(ctx, s, Math.round((W - textWidth(s, 2)) / 2), 78, '#9aa4ae', 2)
+    }
+}
+
 // attract headline cycle — one message at a time (ART.md law)
 export function drawAttract(ctx, phase, tick) {
     const msgs = [
