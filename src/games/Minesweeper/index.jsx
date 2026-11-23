@@ -128,6 +128,12 @@ const drawFace = (g, v) => {
         g.fillRect(6, 11, 6, 4.5); g.fillRect(16, 11, 6, 4.5)
         g.strokeStyle = FACE_INK; g.lineWidth = 1.6
         g.beginPath(); g.arc(cx, 15, 7, 0.35, Math.PI - 0.35); g.stroke(); g.lineWidth = 1
+    } else if (v === 'press') {
+        // #3032: the concentrating face — the original puts it on while the
+        // mouse button holds a cell down. Eyes narrow to dashes, mouth flattens.
+        g.fillStyle = FACE_INK
+        g.fillRect(7.5, 10.5, 5, 2); g.fillRect(15.5, 10.5, 5, 2)
+        g.fillRect(10, 19, 8, 2)
     } else if (v === 'win') {
         g.fillStyle = FACE_INK
         g.fillRect(7, 10, 4, 2); g.fillRect(17, 10, 4, 2)
@@ -213,6 +219,14 @@ const MinesweeperGame = () => {
         // #3011: rejected chords park their deficit (missing flag count) here —
         // i -> ticks left to flash the pips under the clue (~0.8 s).
         const need = new Map()
+        // #3032 press feel — the original answers the PRESS, previews the
+        // chord, and commits on RELEASE. Mouse-only: touch already commits on
+        // release (the long-press-flag architecture). Presentation + input
+        // timing; the referee (minefield.js, stateHash) never sees `press`.
+        // preview holds the covered ring the chord would open, so cellPaint
+        // can flatten it while the button is down.
+        let press = null // { x, y, cx, cy, inside, preview: Set<number> } | null
+        const clearPress = () => { press = null }
 
         const buildCanvas = (d) => {
             if (canvas) canvas.remove()
@@ -244,6 +258,7 @@ const MinesweeperGame = () => {
             marks = new Uint8Array(d.w * d.h)
             cascade = []; cascTotal = 0; cascWait = 0; cascDone = false
             stagger.clear(); need.clear()
+            press = null // #3032: a new board holds nothing down
             lastRec = null; pendingRecord = false // #3026: a new board is a clean sheet at the hall
         }
 
@@ -346,6 +361,7 @@ const MinesweeperGame = () => {
         }        // The one dig path: keyboard, tap and the DEV hook all land here so
         // the harness and the player never drive different code.
         const actDig = (x, y) => {
+            clearPress() // #3032: any committed dig outranks a held press visual
             if (!gs || gs.end || screenRef.current !== 'play' || plantPending) return
             if (gs.planted) {
                 stagger.clear() // a fresh action outranks the last flicker
@@ -475,12 +491,27 @@ const MinesweeperGame = () => {
                     }
                 }
             } else {
+                // #3032 press feel: while the mouse holds a cell, the held tile
+                // sinks (bevel flips) and, if the press sits on an opened
+                // number, its whole covered ring flattens to the open look —
+                // the original's chord preview. Both live only while the cursor
+                // stays on the pressed cell (press.inside), so dragging off
+                // un-flattens the ring ahead of the cancel.
+                const pressing = press && press.inside && !s.end && screenRef.current === 'play'
+                if (pressing && press.preview.has(i)) {
+                    ctx.fillStyle = '#101527'
+                    ctx.fillRect(px, py, c, c)
+                    ctx.strokeStyle = '#1c2440'
+                    ctx.strokeRect(px + .5, py + .5, c - 1, c - 1)
+                    return
+                }
+                const sunk = !!(pressing && i === idx(s, press.x, press.y))
                 const lift = s.planted ? 0 : 1
-                ctx.fillStyle = lift ? '#3a4668' : '#333f5f'
+                ctx.fillStyle = sunk ? '#2a3554' : lift ? '#3a4668' : '#333f5f'
                 ctx.fillRect(px, py, c, c)
-                ctx.fillStyle = lift ? '#556494' : '#4d5c88'
+                ctx.fillStyle = sunk ? '#232c47' : lift ? '#556494' : '#4d5c88'
                 ctx.fillRect(px, py, c, 2); ctx.fillRect(px, py, 2, c)
-                ctx.fillStyle = '#232c47'
+                ctx.fillStyle = sunk ? '#4d5c88' : '#232c47'
                 ctx.fillRect(px, py + c - 2, c, 2); ctx.fillRect(px + c - 2, py, 2, c)
                 if (s.flag[i] || cascPaint) {
                     const wrongFlag = dead && !s.mines[i]
@@ -600,7 +631,9 @@ const MinesweeperGame = () => {
             if (mcv) { const g = mcv.getContext('2d'); g.clearRect(0, 0, 64, 20); drawNum7(g, left, 3, 32, 10, 14, '#ff6b7a', '#3a1015') }
             if (tcv) { const g = tcv.getContext('2d'); g.clearRect(0, 0, 64, 20); drawNum7(g, s.sec, 3, 32, 10, 14, '#5fd0ff', '#0f2836') }
             if (fcv) drawFace(fcv.getContext('2d'),
-                s.end === 'dead' ? 'dead' : s.end === 'win' ? 'win' : s.opened > 1 ? 'cool' : 'smile')
+                s.end === 'dead' ? 'dead' : s.end === 'win' ? 'win'
+                    : press && press.inside ? 'press' // #3032: concentrating while held
+                        : s.opened > 1 ? 'cool' : 'smile')
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
             // the pad mounts/unmounts on keyboard-vs-touch use without firing a
@@ -659,7 +692,7 @@ const MinesweeperGame = () => {
         // ------------------------------------------------- input ----
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
-            if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
+            if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); clearPress(); return }
             // #1883(3): the flag march is skippable — any key finishes it.
             if (cascade.length) { cascade = []; cascDone = true; stagger.clear(); toOver(); return }
             // #1637 WATCH: Y seats the referee; any driving key hands back and
@@ -723,8 +756,25 @@ const MinesweeperGame = () => {
             const y = Math.floor((e.clientY - r.top) / r.height * gs.h)
             if (x < 0 || y < 0 || x >= gs.w || y >= gs.h) return
             gs.cursor.x = x; gs.cursor.y = y
-            if (e.pointerType === 'mouse' && e.button !== 0) {
-                if (e.button === 2) actFlag(x, y)
+            if (e.pointerType === 'mouse') {
+                if (e.button !== 0) {
+                    if (e.button === 2) actFlag(x, y)
+                    return
+                }
+                if (gs.end) return
+                // #3032: the press. The tile sinks now; the dig lands on
+                // release. Pressing an opened number pre-flattens its covered
+                // ring — the original's chord preview, so the player sees
+                // exactly what the release will open.
+                const i = idx(gs, x, y)
+                const preview = new Set()
+                if (gs.open[i] && gs.clue[i] > 0) {
+                    neighbors(gs, x, y, (nx, ny) => {
+                        const j = idx(gs, nx, ny)
+                        if (!gs.open[j]) preview.add(j)
+                    })
+                }
+                press = { x, y, cx: e.clientX, cy: e.clientY, inside: true, preview }
                 return
             }
             if (e.pointerType === 'touch' && gs.planted && !gs.end) {
@@ -737,6 +787,20 @@ const MinesweeperGame = () => {
             actDig(x, y)
         }
         const onPointerUp = (e) => {
+            if (e.pointerType === 'mouse' && e.button === 0) {
+                // #3032: release commits — but only on the cell that was
+                // pressed. Anywhere else cancels (the original's drag-off),
+                // so a sweep that slid off a number opens nothing.
+                const p = press
+                clearPress()
+                if (!p || screenRef.current !== 'play' || pausedRef.current || !gs || !canvas) return
+                const r = canvas.getBoundingClientRect()
+                if (!r.width) return
+                const x = Math.floor((e.clientX - r.left) / r.width * gs.w)
+                const y = Math.floor((e.clientY - r.top) / r.height * gs.h)
+                if (x === p.x && y === p.y) actDig(p.x, p.y)
+                return
+            }
             if (!lpTimer) return
             clearLongPress()
             if (lpFired || !lpPt || screenRef.current !== 'play' || pausedRef.current) return
@@ -745,13 +809,26 @@ const MinesweeperGame = () => {
         }
         const onPointerMove = (e) => {
             if (lpTimer && lpPt && Math.hypot(e.clientX - lpPt.cx, e.clientY - lpPt.cy) > 14) clearLongPress()
+            // #3032: the sink and the ring flattening live only while the
+            // cursor stays on the pressed cell — dragging off un-flattens
+            // (the original lets you peek at the cancel before you commit).
+            if (press && e.pointerType === 'mouse' && canvas) {
+                press.inside = false
+                const r = canvas.getBoundingClientRect()
+                if (r.width && gs) {
+                    const x = Math.floor((e.clientX - r.left) / r.width * gs.w)
+                    const y = Math.floor((e.clientY - r.top) / r.height * gs.h)
+                    press.inside = x === press.x && y === press.y
+                }
+            }
         }
         // the context-menu suppression lives on each canvas (buildCanvas)
         window.addEventListener('keydown', onDown)
         window.addEventListener('pointerdown', onPointer)
         window.addEventListener('pointerup', onPointerUp)
         window.addEventListener('pointermove', onPointerMove)
-        window.addEventListener('pointercancel', clearLongPress)
+        const onPointerCancel = () => { clearLongPress(); clearPress() } // #3032
+        window.addEventListener('pointercancel', onPointerCancel)
 
         const resize = () => {
             if (!canvas) return
@@ -787,6 +864,10 @@ const MinesweeperGame = () => {
                     counter: mineCounter(gs),
                     end: gs.end, why: gs.why, cursor: { ...gs.cursor }, plantMs,
                     sec: gs.sec, w: gs.w, h: gs.h,
+                    // #3032: the press as the shell holds it — null when the
+                    // mouse is up; preview = how many covered cells the release
+                    // on this cell would open (0 for a plain covered tile).
+                    press: press ? { x: press.x, y: press.y, inside: press.inside, preview: press.preview.size } : null,
                     cascade: cascade.length, marksQ: marks ? marks.reduce((a, v) => a + (v === 2 ? 1 : 0), 0) : 0,
                     toast: hudRef.current.toast ? hudRef.current.toast.textContent : '',
                 }) : { screen: screenRef.current, seed },
@@ -795,6 +876,9 @@ const MinesweeperGame = () => {
                 dig: (x, y) => actDig(x === undefined ? gs.cursor.x : x, y === undefined ? gs.cursor.y : y),
                 flagAt: (x, y) => actFlag(x, y),
                 nextSafe: () => { const p = nextDigs(gs)[0]; return p ? { x: p.x, y: p.y } : null },
+                // #3032: the clue at a cell — lets the browser legs find a
+                // chord-preview candidate without re-deriving the board.
+                clueAt: (i) => (gs && gs.clue ? gs.clue[i] : 0),
                 prognose: () => {
                     if (!gs || !gs.planted || gs.end) return 'no live board'
                     const c = cloneGame(gs)
@@ -891,7 +975,7 @@ const MinesweeperGame = () => {
             window.removeEventListener('pointerdown', onPointer)
             window.removeEventListener('pointerup', onPointerUp)
             window.removeEventListener('pointermove', onPointerMove)
-            window.removeEventListener('pointercancel', clearLongPress)
+            window.removeEventListener('pointercancel', onPointerCancel)
             clearLongPress()
             window.removeEventListener('resize', resize)
             unexposeFeedbackState()
