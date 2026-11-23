@@ -910,6 +910,7 @@ export default function ContraGame () {
                     call: { form: gs.orderForm, aim: gs.orderAim, holdX: +gs.holdX.toFixed(1), banner: callFx ? { t: callFx.t, text: callFx.text, ok: callFx.ok } : null, armed: voiceCtl.on, hint: hintFx ? { t: hintFx.t } : null, demo: demoCallFx ? { t: demoCallFx.t, text: demoCallFx.text } : null, demoShout },   // #3000 the shout channel is observable; #3018 the demo shout rides the same probe
                     keys: { ...keys },
                     keys2: { ...keys2 },
+                    roll: gs.p.rollT, roll2: gs.p2.rollT,   // #3035 the somersault clock is observable
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     touch: TOUCH,   // #2971: the touch-aware copy is observable
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,

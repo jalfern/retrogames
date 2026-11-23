@@ -5,7 +5,7 @@
 // viridian darks, olive soldier uniforms, the hero's white tank + blue pants
 // + red bandana, hazard-orange capsules.
 
-import { CFG, LOOP_FX, LOOP_SKY_HOT } from './sim.js'
+import { CFG, LOOP_FX, LOOP_SKY_HOT, SOMERSAULT_TICKS } from './sim.js'
 
 const C = {
     skyTop: '#04140b', skyMid: '#0b3018', skyLow: '#17512a',
@@ -217,7 +217,19 @@ export function drawPlayer (ctx, p, tick, blue = false, solid = false, rappel = 
     const pants = blue ? '#16265c' : C.pants
     ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y))
     const f = p.onGround ? Math.floor(p.walk / 4) % 4 : 9
+    // #3035 THE SOMERSAULT (ART bar 2 — falls animate): the cabinet turns the
+    // hero a full revolution through a jump. Legs, torso, head and bandana all
+    // ride the turn, pivoting at the body centre, flipped by facing; the tuck
+    // pose IS the somersault shape. The GUN ARM is deliberately outside the
+    // rotation — the drawn sprite must keep matching the live 8-way aim (the
+    // harness reads the arm as the aim state, and mid-jump aimed fire is
+    // Contra's signature). Vine riders and the rappel never tumble: the caller
+    // passes the pose flag and seatStep zeroes the clock on a catch.
+    const som = !p.onGround && !rappel && p.rollT > 0
+    const somA = som ? Math.min(1, p.rollT / SOMERSAULT_TICKS) * Math.PI * 2 * (p.face < 0 ? -1 : 1) : 0
     // legs
+    ctx.save()
+    if (som) { ctx.translate(0, -15); ctx.rotate(somA); ctx.translate(0, 15) }
     ctx.fillStyle = pants
     if (rappel) {
         // #2842 the cling-rappel pose: legs braced long with the toes pointed,
@@ -252,6 +264,8 @@ export function drawPlayer (ctx, p, tick, blue = false, solid = false, rappel = 
     ctx.fillRect(-4, -32, 8, 3)
     // bandana tails stream behind, snapping in the wind
     ctx.fillRect(-p.face * 4 - (p.face > 0 ? 3 : -1), -31 + Math.floor(Math.sin(tick / 5) * 1.5), 4, 2)
+    ctx.restore()   // #3035 end of the somersault frame — everything from here
+                   // (the gun arm) draws unrotated, at the live aim.
     // gun arm along the 8-way aim — #2842: on the rope both hands grip the
     // line instead (it runs at p.x, straight overhead) and the rifle slings.
     if (rappel) {

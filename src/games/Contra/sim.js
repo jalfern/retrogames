@@ -166,6 +166,15 @@ export const LOOP_CAP = 1.30
 // spec this repo wrote needs the courtesy to stay humanly winnable at heat.)
 export const LOOP_LIFE_BONUS = 1
 export const LOOP_LIVES_MAX = 5
+
+// #3035 THE SOMERSAULT span: one full body-turn per jump. The arc of a normal
+// jump runs `rollT` 1..37 under the sim's Euler integration — the roll completes
+// exactly as the feet come back to the ground, the cabinet's snap (the arc is
+// 2·|jumpV|/grav ticks of flight minus the jump tick itself, and the harness
+// pins the constant to the observed arc, so physics drift cannot split them).
+// Presentation arithmetic only: the seat clock (`rollT`) never enters stateHash
+// and never draws gs.r.
+export const SOMERSAULT_TICKS = Math.ceil(2 * Math.abs(CFG.jumpV) / CFG.grav - 1)
 export function loopK (n) {
     return Math.min(LOOP_CAP, 1 + LOOP_STEP * Math.max(0, Math.floor(n) - 1))
 }
@@ -412,6 +421,14 @@ function seatStep (gs, h, pad, ledges, floorY, owner) {
 
     if (h.onGround) h.coyote = CFG.coyote
     else if (h.coyote > 0) h.coyote -= 1
+    // #3035 THE SOMERSAULT (ART bar 2 — falls animate): the cabinet turns the
+    // hero a full revolution through a jump. The clock is presentation, like
+    // `walk` — it never enters stateHash and never draws gs.r, so physics and
+    // every determinism pin are byte-identical. Only a real jump arms it (the
+    // line below); ground and a vine catch clear it. Stepping off a ledge or
+    // dropping through a platform rides the arc upright, as the cabinet does.
+    if (h.onGround) h.rollT = 0
+    else if (h.rollT > 0) h.rollT += 1
     const jumpEdge = pad.a && !h.prevA
     h.prevA = pad.a
 
@@ -446,7 +463,7 @@ function seatStep (gs, h, pad, ledges, floorY, owner) {
     if (jumpEdge && h.onGround) {
         const onPlat = ledges.some((pl) => h.px >= pl.x && h.px <= pl.x + pl.w && Math.abs(h.y - pl.y) < 2)
         if (pad.down && onPlat) { h.drop = 12; h.y += 2; h.onGround = false; h.vy = 0.5 }
-        else { h.vy = CFG.jumpV; h.onGround = false; gs.ev.push({ type: 'jump', o: owner }) }
+        else { h.vy = CFG.jumpV; h.onGround = false; h.rollT = 1; gs.ev.push({ type: 'jump', o: owner }) }
     }
     if (h.drop > 0) h.drop -= 1
 
@@ -477,6 +494,7 @@ function seatStep (gs, h, pad, ledges, floorY, owner) {
             if (Math.abs(h.x - tp.x) <= CFG.vineGrabHW && Math.abs((h.y - 14) - tp.y) <= CFG.vineGrabVH) {
                 h.vine = vi; h.grabI = vi; h.rideT = 0; h.vineAtY = h.y
                 h.vx = 0; h.vy = 0
+                h.rollT = 0   // #3035 a hanging rider does not tumble
                 gs.ev.push({ type: 'vine', o: owner })
                 break
             }
@@ -690,6 +708,7 @@ export function makeGame (seed, loop = 1) {
             dead: 0,                // freeze ticks after a hit
             coyote: 0, drop: 0,     // coyote frames; ignore-platform frames
             walk: 0,                // animation phase (world ticks)
+            rollT: 0,               // #3035 somersault clock — presentation, like walk
             out: false,             // pool spent on this seat — the run goes on without it
             prevA: false,           // jump latch (edge-detect for taps)
             // #2885 vine law: vine = tip being ridden (-1 free), grabI keeps the
@@ -706,6 +725,7 @@ export function makeGame (seed, loop = 1) {
             lane: CFG.ground, ax: 1, ay: 0,
             cool: 0, weapon: 'rifle',
             inv: 120, dead: 0, coyote: 0, drop: 0, walk: 0, out: false,
+            rollT: 0,               // #3035 the somersault is structural — both seats
             human: false, tIdx: -1, zz: 1, prevA: false,
             // #2837: padClaim marks a seat a HUMAN claimed at the keyboard (the
             // auto-release law watches it, so harness shortcuts stay pinned);
