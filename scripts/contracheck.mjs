@@ -2578,19 +2578,32 @@ if (MUTANT) {
             anchor: 'if (!s.hold && !s.jlLand && p.inv <= 0 && !p.out && Math.abs(p.x - s.x) < 9 && Math.abs(p.y - s.y) < 20) killPlayer(gs)',
             plant: 'if (!s.hold && p.inv <= 0 && !p.out && Math.abs(p.x - s.x) < 9 && Math.abs(p.y - s.y) < 20) killPlayer(gs) /* MUTANT(land-tax): the deck stagger gone — touchdown is a guaranteed life tax */',
             harm: (mod) => {
+                // The seat standing on the landing mark, mercy bled off as he
+                // arrives: base law keeps the settled man harmless through the
+                // drawn recover (no life lost within jlLand ticks of his feet
+                // touching — seed 7's next leak is the grenade at land+11);
+                // strip the stagger and the body kills the tick mercy ends,
+                // still inside the recover the eye was shown.
                 const gs = mod.makeGame(7)
-                gs.p.inv = mod.CFG.jlLand + 40
+                gs.p.inv = 1e9
+                gs.p2.out = true
                 gs.jlT = gs.tick
+                const lives0 = gs.lives
                 let landT = null
+                let deathT = null
                 while (!gs.end && gs.tick < 1200) {
-                    mod.step(gs, { right: true, b: true })
                     const f = gs.soldiers.find((s) => s.leap && !s.dead && s.drop === 3)
-                    if (f && landT === null) landT = gs.tick
-                    if (gs.ev.some((e) => e.type === 'pdown')) break
+                    if (f && landT === null) {
+                        landT = gs.tick
+                        gs.p.inv = 6
+                        gs.p.x = f.x
+                    }
+                    if (gs.lives < lives0) { deathT = gs.tick; break }
+                    mod.step(gs, {})
                     gs.ev.length = 0
                 }
-                return landT !== null && gs.tick - landT <= 6
-                    ? 'HARM NAMED: the dropping man killed the seat at touchdown - the column meets the advancing hero a tick before his feet do, and without the stagger the drop is not a threat you read, it is a tax you pay'
+                return landT !== null && deathT !== null && deathT - landT <= 9
+                    ? `HARM NAMED: the settling man took a life ${deathT - landT} ticks after his touchdown, inside the recover window — the stagger is the read; without it the landing is not a threat you answer, it is a tax you pay`
                     : null
             },
         },
