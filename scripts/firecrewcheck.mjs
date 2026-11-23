@@ -9,13 +9,14 @@ import path from 'node:path'
 import {
     makeRun, step, state, setSources, mulberry32, windBias, CLOCK, T, W, H, LOFT_Y1, LADDER_X,
     FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS, DENY_ECHO_TICKS, inLoft,
-    windVoice, ladderCreak, windWhistle, crewTail, WIND_TELEGRAPH,
+    windVoice, ladderCreak, windWhistle, crewTail, WIND_TELEGRAPH, TANK_LOW, tankAlarm,
 } from '../src/games/FireCrew/sim.js'
 import { parseRadio, radioLabel } from '../src/games/FireCrew/voiceradio.js'
 import { featurize, FEAT_NAMES, N_FEAT } from '../src/games/FireCrew/model.js'
 import {
     drawFire, drawCrew, drawLadderTruck, COLLAPSE_WARN_FUEL, COLLAPSE_CRACK, COLLAPSE_RIM, EMBER_GALE,
     SMOKE_FIRE_DIM, FLAME, LADDER_TRUCK, TRUCK_BEACON_A, TRUCK_BEACON_B, BREATHE,
+    drawHud, VH,
 } from '../src/games/FireCrew/art.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -771,6 +772,109 @@ console.log('loft-gate pillar fix — #2178 (nightly resume freeze)')
         return true
     })
     ok(darkFound.length > 0 && noLeak, 'model: the loft-found victim stays dark to the hose — no unseen victim is named in the v-lanes (the lightAt law IS the split)', `darkFound=${darkFound.length}`)
+}
+
+console.log('#2989 — the tank speaks (never-dry polish)')
+{
+    // The pressure arc (#1411) shrinks the stream 4→3→2→1 as the tank drains,
+    // and an empty seat cannot spray — but the human hose only ever heard its
+    // own spray stop. tankAlarm is the arc's voice (pure, rng-free, windVoice
+    // pattern); step() names each downward crossing for the hand on the pump;
+    // art.js blinks the bar. One law, seen and heard before the stream fails.
+
+    // --- the pure voice ---
+    ok(tankAlarm(TANK_LOW + 0.01) === null && tankAlarm(100) === null,
+        'a line with muscle is silence — the alarm never nags a full tank')
+    ok(tankAlarm(TANK_LOW).kind === 'low',
+        'the threshold itself speaks (range already dropped to 3 at TANK_LOW)')
+    ok(tankAlarm(0).kind === 'dry' && tankAlarm(-5).kind === 'dry',
+        'at zero and below the dry valve clunks')
+    let mono = true
+    for (let l = TANK_LOW; l > 1; l--) {
+        const a = tankAlarm(l); const b = tankAlarm(l - 1)
+        if (!(b.f0 >= a.f0 && b.f1 >= a.f1 && b.vol >= a.vol)) mono = false
+    }
+    ok(mono, 'the caution climbs with the drain — pitch and weight rise as the tank empties')
+    ok(tankAlarm(0).f1 < tankAlarm(0).f0 && tankAlarm(1).vol < tankAlarm(0).vol,
+        'the dry clunk falls and weighs more than any low caution')
+    ok(JSON.stringify(tankAlarm(12)) === JSON.stringify(tankAlarm(12))
+        && tankAlarm(NaN) === null && tankAlarm(undefined) === null,
+        'rng-free and honest about nonsense — the same level is always the same voice')
+
+    // --- the sim names crossings for the hand on the pump ---
+    const hg = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    hg.crew[0].tank = 20; hg.tankStage = 0
+    step(hg, {})
+    ok(hg.tankStage === 1 && /TANK LOW/.test(hg.message) && hg.messageT > 100,
+        'a human seat crossing LOW is named once, with the cure in the name (refill at the hydrant)')
+    const dg = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    dg.crew[0].tank = 0; dg.tankStage = 0
+    step(dg, {})
+    ok(dg.tankStage === 2 && /TANK EMPTY/.test(dg.message),
+        'crossing EMPTY is named too — NO REACH says what the arc took')
+    const cg = setSources(makeRun(7), ['cpu', 'cpu', 'cpu'])
+    cg.crew[0].tank = 20; cg.tankStage = 0
+    step(cg, {})
+    ok(cg.tankStage === 1 && !/TANK/.test(cg.message),
+        'a cpu seat tracks its stage silently — the autopilot refills and needs no shout')
+    const rg = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    rg.crew[0].tank = 5; step(rg, {})
+    const msgAfterLow = rg.message
+    rg.crew[0].tank = 100; step(rg, {})
+    ok(rg.tankStage === 0 && rg.message === msgAfterLow,
+        'the refill is silent — the hydrant is never nagged')
+    rg.crew[0].tank = 12; step(rg, {})
+    ok(rg.tankStage === 1 && /TANK LOW/.test(rg.message) && rg.messageT > 100,
+        'falling again names again — every crossing is spoken once, not once per run')
+    ok(/hoseStage > g\.tankStage && g\.sources\[0\] === 'human'/.test(
+        readFileSync(path.join(HERE, '../src/games/FireCrew/sim.js'), 'utf8')),
+        'src pin: crossings stamp only for the human seat 1 — the seat whose hand owns the pump')
+
+    // --- the shell routes through the sim voice, never its own numbers ---
+    const jsx = readFileSync(path.join(HERE, '../src/games/FireCrew/index.jsx'), 'utf8')
+    ok(/const tv = tankAlarm\(g\.crew\[0\]\.tank\)/.test(jsx) && /sfx\.tankLow\(tv\)/.test(jsx),
+        'src pin: the LOW chirp plays the tankAlarm spec, not shell numbers')
+    ok(/p\.tank > TANK_LOW && g\.crew\[0\]\.tank <= TANK_LOW && g\.crew\[0\]\.tank > 0/.test(jsx)
+        && /p\.tank > 0 && g\.crew\[0\]\.tank <= 0/.test(jsx),
+        'src pin: the shell fires on arc thresholds (TANK_LOW / zero), never invented levels')
+    ok(/sfx\.tankDry\(tankAlarm\(0\)\)/.test(jsx),
+        'src pin: the dry clunk (crossing and held-dry) is the sim voice at zero')
+    ok(/!watchingRef\.current && p\.tank > TANK_LOW/.test(jsx),
+        'src pin: a seated WATCH hears nothing — the alarm belongs to the hand on the pump')
+
+    // --- the HUD bar blinks the arc (recording-ctx, #1440 pattern) ---
+    const recHud = () => {
+        const ops = []
+        return {
+            ops,
+            fillStyle: '#000', strokeStyle: '#000', lineWidth: 1, globalAlpha: 1, font: '',
+            fillRect(x, y, w, h) { ops.push({ style: this.fillStyle, x, y, w, h }) },
+            strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+            fillText() {}, measureText() { return { width: 0 } },
+            createLinearGradient() { return { addColorStop() {} } },
+        }
+    }
+    const hudG = (tank, tick) => {
+        const g = makeRun(7)
+        g.crew[0].tank = tank
+        g.tick = tick
+        return g
+    }
+    const bar = (tank, tick) => {
+        const r = recHud(); drawHud(r, hudG(tank, tick), CLOCK)
+        const at = r.ops.filter((o) => o.x === 6 && o.y === VH - 10)
+        return at[at.length - 1] // the tray sits here too — the fill is the last op at the spot
+    }
+    ok(bar(80, 0).style === '#39d7ff' && bar(80, 10).style === '#39d7ff',
+        'a healthy tank keeps the calm cyan — no blink, no drama')
+    ok(bar(80, 0).w === (60 * 80) / 100, 'a full bar still shows how much water rides (old law untouched)')
+    ok(bar(20, 0).style === '#ff8a5a' && bar(20, 10).style === '#ffd24a',
+        'under TANK_LOW the bar blinks amber/ember — the drain is visible in the periphery')
+    ok(bar(20, 0).w === (60 * 20) / 100, 'the blinking bar still measures (teaches amount, does not hide it)')
+    ok(bar(0, 0).style === '#7a1d1d' && bar(0, 10).style === '#ff3b30' && bar(0, 0).w === 2,
+        'dry, the empty bar keeps a red stub — invisible-zero becomes the loudest thing on the gauge')
+    ok(/g\.crew\[0\]\.tank <= TANK_LOW/.test(readFileSync(path.join(HERE, '../src/games/FireCrew/art.js'), 'utf8')),
+        'src pin: art blinks at the arc threshold itself — one number, drawn once')
 }
 
 console.log(`\n${passes} passed, ${fails} failed`)
