@@ -2095,6 +2095,63 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #3038: DOWN must bend the body. A deaf duck erases the three
+            // ground profiles this stage was filed for — the cabinet's own
+            // stance system, gone silent at the seam.
+            name: 'duck-deaf',
+            anchor: 'if (pad.down && !h.prevD && h.posture < 2) { h.posture += 1;',
+            plant: 'if (false && pad.down && !h.prevD && h.posture < 2) { h.posture += 1; /* MUTANT(duck-deaf): DOWN on the ground is inert - the cabinet\'s profiles are gone */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(3)
+                gs.p.inv = 999999
+                for (let i = 0; i < 30; i++) { mod.step(gs, {}); gs.ev.length = 0 }
+                mod.step(gs, { down: true }); mod.step(gs, {})
+                mod.step(gs, { down: true })
+                return gs.p.posture === 0
+                    ? 'HARM NAMED: two presses of DOWN on the ground and the hero never left his feet - kneel and prone do not exist; the signature silhouette this stage shipped is gone'
+                    : null
+            },
+        },
+        {
+            // #3038: the duck dodges AIMED fire, not the ground. A flat body
+            // that shrugs off a deck blast turns the profile into a cheat
+            // code, and the honest grenade — the cabinet's own answer to
+            // low posture — stops being an answer.
+            name: 'prone-immortal',
+            anchor: 'if (gs.p.dead === 0 && gs.p.inv <= 0 && !gs.p.out && Math.hypot(gs.p.x - x, gs.p.y - ((CFG.duckCenter[gs.p.posture | 0] || 14) - 2) - y) < CFG.blastPlayerR) killPlayer(gs)',
+            plant: 'if (gs.p.dead === 0 && gs.p.inv <= 0 && !gs.p.out && gs.p.posture !== 2 && Math.hypot(gs.p.x - x, gs.p.y - 12 - y) < CFG.blastPlayerR) killPlayer(gs) /* MUTANT(prone-immortal): the ground stops answering a flat body - ducking is a cheat */',
+            harm: async (mod) => {
+                const g = mod.makeGame(11)
+                g.p.inv = 0; g.p.posture = 2
+                // outside the contact band, inside the radius: only the blast
+                // can answer this one — which is exactly where the cheat hides.
+                g.eb.push({ x: g.p.x + 18, y: mod.CFG.ground - 60, vx: -0.4, vy: 2.4, gr: true })
+                for (let i = 0; i < 80 && g.p.dead === 0 && !g.p.out; i++) mod.step(g, {})
+                return g.p.dead === 0 && !g.p.out
+                    ? 'HARM NAMED: a grenade landed at a prone hero\'s feet and the blast walked away unhurt - the flat body shrugs off the very ground it lies on; lying down became an invincibility cheat'
+                    : null
+            },
+        },
+        {
+            // #3038: the profile pays its price. Full-speed ducks make the
+            // honest answer to every aimed round "lie down and sprint" - the
+            // crawl is the trade that keeps the duck a decision, not a law.
+            name: 'no-crawl-price',
+            anchor: 'if (runDir) { h.x += runDir * (h.posture > 0 ? CFG.run * CFG.duckSpeed : CFG.run); h.walk += 1 }',
+            plant: 'if (runDir) { h.x += runDir * CFG.run; h.walk += 1 } /* MUTANT(no-crawl-price): low profiles keep full speed - the trade is gone, ducking is free */',
+            harm: async (mod) => {
+                const g = mod.makeGame(5)
+                g.p.inv = 999999
+                const dx = (pad) => { const x0 = g.p.x; mod.step(g, pad); return g.p.x - x0 }
+                const run = dx({ right: true })
+                dx({ down: true }); dx({}); dx({ down: true }); dx({})
+                const proneDx = dx({ right: true })
+                return g.p.posture === 2 && Math.abs(proneDx - run) < 0.01
+                    ? `HARM NAMED: a prone hero covered ${proneDx.toFixed(1)} px/tick - the same as a full sprint; the crawl price is gone and ducking costs nothing to do at speed`
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -2486,6 +2543,153 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
         r.check('#3035 the roll never enters the referee — rollT-only states hash identical and autopilot streams twin',
             stateHash(a) === stateHash(b) && stream(3) === stream(3) && stream(5) !== stream(6),
             `${stateHash(a)}/${stateHash(b)}`)
+    }
+}
+
+// --------------------------------------------------- #3038 the duck ---
+// The cabinet's three ground profiles. DOWN on the ground cycles stand ->
+// kneel -> prone, UP stands; jump / air / respawn stand you back up. A low
+// profile fires LEVEL from a lower muzzle, travels at crawl half-price, and
+// sinks the body under the aimed chest line — while the ground stays honest
+// (deck blasts and soldiers still take a flat body), the profile rides the
+// hash, and the honest autopilot never ducks, so every tuned stream stands.
+{
+    const P = (o) => ({ left: false, right: false, up: false, down: false, a: false, b: false, ...o })
+
+    // edges cycle, holding latches, UP stands
+    {
+        const gs = makeGame(3)
+        gs.p.inv = 999999
+        for (let i = 0; i < 30; i++) { step(gs, {}); gs.ev.length = 0 }
+        step(gs, P({ down: true }))
+        const kneel = gs.p.posture === 1 && gs.ev.some((e) => e.type === 'duck' && e.post === 1)
+        step(gs, P({ down: true }))
+        const latch = gs.p.posture === 1   // held is not a fresh press
+        step(gs, P({})); step(gs, P({ down: true }))
+        const prone = gs.p.posture === 2 && gs.ev.some((e) => e.type === 'duck' && e.post === 2)
+        step(gs, P({})); step(gs, P({ down: true }))
+        const flat = gs.p.posture === 2   // flat is the floor of the cycle
+        step(gs, P({})); step(gs, P({ up: true }))
+        r.check('#3038 DOWN cycles stand->kneel->prone on fresh presses, holds latch, UP stands the body back up',
+            kneel && latch && prone && flat && gs.p.posture === 0,
+            JSON.stringify({ kneel, latch, prone, flat, stand: gs.p.posture === 0 }))
+    }
+
+    // a jump is the cabinet's stand-up; air never ducks; drop-through keeps
+    // its own meaning (down + jump presses through — it never kneels)
+    {
+        const gs = makeGame(3)
+        gs.p.inv = 999999
+        step(gs, P({ down: true })); step(gs, P({}))
+        step(gs, P({ a: true }))
+        const jumped = gs.p.posture === 0 && gs.p.rollT === 1
+        let lowAir = false
+        for (let i = 0; i < 60 && !gs.p.onGround; i++) { step(gs, P({ down: true })); if (gs.p.posture !== 0) lowAir = true }
+        const pl = PLATFORMS[0]
+        gs.p.x = pl.x + pl.w / 2; gs.p.y = pl.y; gs.p.onGround = true; gs.p.vy = 0; gs.p.posture = 0
+        step(gs, P({ down: true })); step(gs, P({}))   // kneel on the walkway
+        step(gs, P({ a: true, down: true }))
+        const dropStill = gs.p.posture === 0 && gs.p.drop > 0
+        r.check('#3038 a jump stands the body (and rolls the somersault), mid-air never ducks, DOWN+jump on a walkway still drops through',
+            jumped && !lowAir && dropStill, JSON.stringify({ jumped, lowAir, dropStill }))
+    }
+
+    // the trade: low travel crawls at half speed; low fire leaves level off
+    // the deck at the profile's muzzle line (kneel 11, prone 6)
+    {
+        const gs = makeGame(5)
+        gs.p.inv = 999999
+        const dx = (pad) => { const x0 = gs.p.x; step(gs, pad); return gs.p.x - x0 }
+        const mine = () => [...gs.pb].reverse().find((b) => b.o === 0)   // the hero's own round — the ally's gun streams too (o:1)
+        const run = dx(P({ right: true }))
+        dx(P({ down: true })); dx(P({}))
+        const kneelDx = dx(P({ right: true }))
+        gs.p.cool = 0; step(gs, P({ right: true, b: true }))
+        const sk = mine()
+        const muzzleK = gs.p.y - sk.y
+        dx(P({ down: true })); dx(P({}))
+        const proneDx = dx(P({ right: true }))
+        gs.p.cool = 0; step(gs, P({ right: true, b: true, down: true }))  // already flat: down cannot aim
+        const sp = mine()
+        const muzzleP = gs.p.y - sp.y
+        const half = CFG.run * CFG.duckSpeed
+        r.check('#3038 the price and the prize — low profiles crawl at half speed, and their rounds leave LEVEL at deck+11 (kneel) / deck+6 (prone)',
+            run === CFG.run && kneelDx === half && proneDx === half && muzzleK === CFG.duckMuzzle[1] && muzzleP === CFG.duckMuzzle[2] && sk.vy === 0 && sp.vy === 0,
+            JSON.stringify({ run, kneelDx, proneDx, half, muzzleK, muzzleP, v: [sk.vy, sp.vy] }))
+    }
+
+    // the profiles decide the hit: every gun leads the chest line (lane-14),
+    // so a chest round eats stand and kneel and passes over a flat body, and
+    // a head-high round eats stand and sinks under the kneel.
+    {
+        const die = (posture, yRel) => {
+            const g = makeGame(11)
+            g.p.inv = 0; g.p.posture = posture
+            g.eb.push({ x: g.p.x + 40, y: g.p.y + yRel, vx: -2.2, vy: 0 })
+            for (let i = 0; i < 40 && g.p.dead === 0 && !g.p.out; i++) step(g, {})
+            return g.p.dead > 0 || g.p.out
+        }
+        const chest = [die(0, -14), die(1, -14), die(2, -14)]
+        const head = [die(0, -24), die(1, -24), die(2, -24)]
+        r.check('#3038 the profile takes the hit — a chest-line round kills stand and kneel and passes OVER a prone hero; a head-high round kills stand and sinks under the kneel',
+            chest[0] && chest[1] && !chest[2] && head[0] && !head[1] && !head[2],
+            JSON.stringify({ chest, head }))
+    }
+
+    // the ground stays honest: a deck blast takes a flat body (the belly is
+    // measured at deck+2.5 of the 30 px radius), and a soldier runs over a
+    // prone hero regardless — contact is the feet law.
+    {
+        const g = makeGame(11)
+        g.p.inv = 0; g.p.posture = 2
+        // lands ~11 px off the body: outside the 9 px contact band, well
+        // inside the 30 px radius — the kill is the BLAST, not a touch.
+        g.eb.push({ x: g.p.x + 18, y: CFG.ground - 60, vx: -0.4, vy: 2.4, gr: true })
+        for (let i = 0; i < 80 && g.p.dead === 0 && !g.p.out; i++) step(g, {})
+        const blast = g.p.dead > 0 || g.p.out
+        const g2 = makeGame(11)
+        g2.p.inv = 0; g2.p.posture = 2
+        const s0 = g2.soldiers.find((s) => !s.dead)
+        s0.hold = false; s0.awake = true; s0.x = g2.p.x + 5; s0.y = g2.p.y
+        for (let i = 0; i < 10 && g2.p.dead === 0 && !g2.p.out; i++) step(g2, {})
+        const contact = g2.p.dead > 0 || g2.p.out
+        r.check('#3038 the ground stays lethal — a deck blast takes the prone hero and a soldier still runs over a flat body (you cannot duck an explosion or a boot)',
+            blast && contact, JSON.stringify({ blast, contact }))
+    }
+
+    // sim truth, not paint: posture-only states diverge the hash; and the
+    // honest autopilot never ducks, so every tuned seed stream runs the
+    // pre-duck game byte-for-byte (zero DOWN presses across the sweep).
+    {
+        const a = makeGame(9), b = makeGame(9), c = makeGame(9)
+        b.p.posture = 1; c.p.posture = 2
+        const stream = (seed) => {
+            const g = makeGame(seed)
+            const hs = []
+            let down = 0
+            for (let i = 0; i < 900; i++) { const pad = autopilot(g); if (pad.down) down += 1; step(g, pad); if (i % 225 === 224) hs.push(stateHash(g)) }
+            return { hs: hs.join('|'), down }
+        }
+        const s3 = stream(3), s3b = stream(3), s5 = stream(5)
+        r.check('#3038 the profile is sim truth — posture-only states diverge the hash — while the autopilot stream twins with ZERO DOWN presses (every pre-duck seed and pin stands)',
+            stateHash(a) !== stateHash(b) && stateHash(b) !== stateHash(c) && s3.hs === s3b.hs && s3.hs !== s5.hs && s3.down === 0 && s5.down === 0,
+            JSON.stringify({ h: [stateHash(a), stateHash(b), stateHash(c)].join('/'), twin: s3.hs === s3b.hs, down: [s3.down, s5.down] }))
+    }
+
+    // structural law: the blue seat ducks under the identical seatStep, and
+    // the #3000 AIM DOWN shout now kneels the wingman — what the words mean.
+    {
+        const g = makeGame(4)
+        g.p2.human = true
+        for (let i = 0; i < 30; i++) { step(g, {}, P({})); g.ev.length = 0 }
+        step(g, {}, P({ down: true }))
+        const seatDucks = g.p2.posture === 1
+        const g2 = makeGame(6)
+        applyCall(g2, { kind: 'aim', dir: 'down' })
+        let kneeSeen = 0
+        for (let i = 0; i < 60 && !g2.end; i++) { step(g2, autopilot(g2)); kneeSeen = Math.max(kneeSeen, g2.p2.posture) }
+        r.check('#3038 the duck is structural — the blue seat kneels under HIS pad through the same seatStep, and the shouted AIM DOWN now takes the wingman to a knee (the words move the whole gunner, low barrel included)',
+            seatDucks && kneeSeen >= 1, JSON.stringify({ seatDucks, kneeSeen }))
     }
 }
 
@@ -3467,6 +3671,63 @@ const browser = await launch()
         ok, `up=${upFrames.length}f inv=${invFrames(upFrames)}(max ${invMax(upFrames)}) gun=${gunMean(upFrames).toFixed(1)} | flat=${flatFrames.length}f inv=${invFrames(flatFrames)}(max ${invMax(flatFrames)}) gun=${gunMean(flatFrames).toFixed(1)}`)
     r.check('#3035 somersault legs: zero page errors', hErrs.length === 0, hErrs.join(' | '))
     await hp.close()
+}
+
+// ---------- #3038 browser leg: the duck paints ----------
+// Real ArrowDown presses take the profile, and the drawn body comes down with
+// it. Bandana red is the stamp: standing its rows sit at the top of the head
+// column (-32..-27 over the feet), kneel moves it to the middle band, prone
+// parks it within 9 px of the deck. Poll for the whole profile in ONE frame
+// (near red AND no top red together) — the headless paint law: grade the
+// repaint, never a sleep.
+{
+    const dp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', start: true, wait: 300 })
+    const dErrs = []
+    dp.on('pageerror', (e) => dErrs.push(e.stack || e.message))
+    await dp.evaluate(() => { window.__contraTest.start(); window.__game.reset(31, 1) })
+    await dp.waitForTimeout(150)
+    const inkScript = () => {
+        const pr = window.__contraTest.probe()
+        const c = document.querySelector('canvas')
+        const k = c.width / 384
+        const RED = (r, g, b) => r > 170 && g < 110 && b < 110
+        const count = (x0, y0, w, h) => {
+            const d = c.getContext('2d').getImageData(Math.round(x0 * k), Math.round(y0 * k), Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (RED(d[i], d[i + 1], d[i + 2])) n++
+            return n
+        }
+        const cx = pr.x - pr.cam, feet = pr.y - pr.camY
+        return { posture: pr.posture, top: count(cx - 9, feet - 33, 18, 7), near: count(cx - 9, feet - 9, 18, 9) }
+    }
+    const pollInk = async (want, budget = 40) => {
+        let last = null
+        for (let i = 0; i < budget; i++) {
+            last = await dp.evaluate(inkScript)
+            if (want(last)) return last
+            await dp.waitForTimeout(80)
+        }
+        return last
+    }
+    const standInk = await pollInk((s) => s.posture === 0 && s.top >= 3)
+    // movement keys are held-key state, not tap-latched like jump — a
+    // press() with no dwell evaporates between pads. Hold for real.
+    await dp.keyboard.down('ArrowDown'); await dp.waitForTimeout(120); await dp.keyboard.up('ArrowDown')
+    await dp.waitForTimeout(80)
+    const kneelProbe = await dp.evaluate(() => window.__contraTest.probe())
+    await dp.keyboard.down('ArrowDown'); await dp.waitForTimeout(120); await dp.keyboard.up('ArrowDown')
+    await dp.waitForTimeout(80)
+    const proneProbe = await dp.evaluate(() => window.__contraTest.probe())
+    const proneInk = await pollInk((s) => s.posture === 2 && s.near >= 3 && s.top === 0)
+    await dp.keyboard.down('ArrowUp'); await dp.waitForTimeout(120); await dp.keyboard.up('ArrowUp')
+    await dp.waitForTimeout(80)
+    const upProbe = await dp.evaluate(() => window.__contraTest.probe())
+    const backInk = await pollInk((s) => s.posture === 0 && s.top >= 3)
+    r.check('#3038 live duck through real keys: two ArrowDown presses land posture 2, and the paint follows the profile — bandana red inside 9 px of the deck with the top of the column empty, and ArrowUp sends it back to the crown',
+        kneelProbe.posture === 1 && proneProbe.posture === 2 && proneInk.near >= 3 && proneInk.top === 0 && upProbe.posture === 0 && backInk.top >= 3 && standInk.top >= 3,
+        JSON.stringify({ kneel: kneelProbe.posture, prone: proneProbe.posture, proneInk, up: upProbe.posture, back: backInk.top }))
+    r.check('#3038 duck browser legs: zero page errors', dErrs.length === 0, dErrs.join(' | '))
+    await dp.close()
 }
 
 r.exit(browser)

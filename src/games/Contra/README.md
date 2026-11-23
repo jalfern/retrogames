@@ -268,10 +268,38 @@ disagreement is recorded on #2894.*
   his own jump event). Referee law: `rollT` is absent from `stateHash` by design
   (states differing only in rollT hash identically — pinned), consumes zero
   `gs.r`, and the whole autopilot sweep clears exactly as before the change.
+- **#3038 the duck — the cabinet's three ground profiles**: `posture` per seat
+  (0 stand | 1 kneel | 2 prone) lives in the shared `seatStep`, so the blue seat
+  ducks under the identical code (structural law). DOWN on the ground cycles the
+  profile one step per fresh press (holding latches; flat is the floor), UP
+  stands; a jump stands you back up (and rolls the somersault), mid-air is
+  never ducked, and DOWN+jump on a walkway keeps its drop-through meaning —
+  the press-through never kneels. What the profile changes: the muzzle comes
+  down with the body (`duckMuzzle` 16/11/6 — the drawn arm lines up at the same
+  mark) and fires LEVEL (a ducked rifle never points up or down; UP is spent
+  standing); travel halves to a crawl (`duckSpeed` — the trade); and the hit
+  box shrinks with the drawn body (`duckCenter/halfH/halfW`: tops at 27/17/8
+  px over the deck, a prone body stretching 9 px wide). Every gun in the game
+  leads the chest line (lane−14) locked at the shot, so the tiers fall out like
+  the cabinet's: a chest round kills stand and kneel and passes OVER prone; a
+  head-high round kills stand and sinks under the kneel. Fairness is the same
+  shape the hop teaches — duck AFTER the telegraph, never before the aim locks —
+  and the ground answers back: the blast radius is measured off the lowered
+  belly (deck+2.5 of 30 px — a grenade at your feet still takes a flat body),
+  soldier contact is the feet law (a boot runs over a crawl), the torrent is
+  untouched. `posture` rides `stateHash` (profile moves hit boxes and muzzles —
+  a replay that silently un-ducks diverges loudly), consumes zero `gs.r`, and
+  the honest autopilot never presses DOWN grounded (pinned across seeds), so
+  every pre-duck seed, replay and twin law stands byte-for-byte. Bonus from the
+  seam: the #3000 `AIM DOWN` shout now takes the wingman to a knee — what the
+  words actually mean. Audio: a soft fabric dip per profile change, the mirror
+  chirp on standing; one attract line on each console teaches the duck.
 - Audio: every new action synthesized via `audioController` — the MG's ripping
   pop, the firebar's breath, the laser's falling zap, the sniper's crack and
   the lob's whistle answer the existing set.
-- Keyboard: Arrows move + aim all 8 ways (down aims only airborne),
+- Keyboard: Arrows move + aim all 8 ways (down aims only airborne — DOWN on
+  the ground is the duck: press once to kneel, again to lie prone, UP stands;
+  low profiles fire level and crawl at half speed),
   SPACE/Z or the pad's A jumps — and HELD through a swinging vine tip in the
   canyon, it GRABS the vine (tap again to fly off). X/C or the pad's B fires.
   `?` pauses.
@@ -293,7 +321,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   vine-deadwood, vine-sink, loop-dead,
                                        #   loop-overdrive, loop-blind, voice-flat,
                                        #   gunship-impervious, stiff-hop,
-                                       #   roll-on-step
+                                       #   roll-on-step, duck-deaf,
+                                       #   prone-immortal, no-crawl-price
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -380,7 +409,20 @@ in rollT hash identically and autopilot streams twin (presentation outside the
 referee) · live: bandana red crosses the feet line mid-arc through real keys
 (the static tuck could never invert), on both arm-states, while the AIM-UP hops
 carry cold-dark barrel ink over the pivot that the flat hops do not — the body
-turns and the aim does not** · zero page errors.
+turns and the aim does not** · **#3038 the
+duck: DOWN cycles stand->kneel->prone on fresh presses and latches, UP stands ·
+a jump stands (the somersault still rolls), air never ducks, DOWN+jump still
+drops through · the profile crawls at half speed and its rounds leave LEVEL at
+deck+11 (kneel) / deck+6 (prone) · the profile takes the hit: a chest-line
+round kills stand and kneel and passes OVER prone; a head-high round kills stand
+and sinks under the kneel · the ground stays lethal: a deck blast (outside the
+contact band) takes the prone hero and a soldier runs over a flat body · posture
+rides stateHash and the autopilot logs ZERO DOWN presses — every pre-duck seed
+stream twins · the blue seat kneels under HIS pad through the same seatStep, and
+shouted AIM DOWN takes the wingman to a knee · live: two real ArrowDown presses
+land posture 2 and the paint follows — bandana red inside 9 px of the deck with
+the top of the column empty, ArrowUp sends it back to the crown** · zero page
+errors.
 
 ## Honest gaps
 
@@ -453,6 +495,15 @@ turns and the aim does not** · zero page errors.
   one 37-tick turn while the gun arm holds the live 8-way aim. Presentation is
   provably outside the referee: rollT never enters `stateHash`, zero `gs.r` —
   every physics pin, replay and twin law stands byte-for-byte.
+- **CLOSED by #3038**: the cabinet's duck shipped — DOWN on the ground cycles
+  stand → kneel → prone, UP stands, and the whole body obeys: the muzzle drops
+  to deck+11 / deck+6 and fires level, travel becomes a half-speed crawl, and
+  the profile takes the hit (a chest-line round eats stand and kneel and passes
+  over a flat body; a head-high round sinks under the kneel). The ground stays
+  honest — deck blasts are measured off the lowered belly, soldier contact is
+  the feet law, the torrent never moved — and the honest autopilot never ducks,
+  so every tuned seed stream runs byte-for-byte (pinned: zero DOWN presses).
+  See #3038 in the engine notes below.
 - **CLOSED by #2917**: the SECOND air layer shipped — a hangar mouth in the
   fortress parapet grinds open (the attack is telegraphed by the door, never
   born on screen), one armoured gunship sorties at a time, patrols the arena
