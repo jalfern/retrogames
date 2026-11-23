@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, bedFor, liftStep, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, bedFor, liftStep, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN, hallAdd, hallRead, HALL_CAP } from '../src/games/Contra/sim.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -2366,6 +2366,21 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #3061: the cabinet must remember. Blind the bank and the board
+            // never grows, the crown never changes, and NEW RECORD goes dark —
+            // the player's best run is silently lost with the session.
+            name: 'hall-forget',
+            anchor: 'export function hallAdd (hall, entry) {\n    if (!hallOk(entry) || entry.score <= 0) return { hall, record: false }',
+            plant: 'export function hallAdd (hall, entry) {\n    void entry /* MUTANT(hall-forget): the board forgets every fall */\n    return { hall, record: false }',
+            harm: async (mod) => {
+                const res = mod.hallAdd([{ score: 500, loop: 1, t: 1 }], { score: 9999, loop: 2, t: 2 })
+                const fresh = mod.hallAdd([], { score: 300, loop: 1, t: 3 })
+                return res.hall.length === 1 && !res.record && fresh.hall.length === 0
+                    ? 'HARM NAMED: the cabinet forgot - a 9999 fall against a 500 crown banks nothing and calls no record; the attract board would sit empty forever'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -3340,6 +3355,66 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     }
 }
 
+// ---------------------------------------- #3061 THE HALL — the board remembers ---
+// The cabinet's top-runs board, referee-clean by construction: the helpers are
+// pure data laws over {score, loop, t} entries that never touch gs. Validation,
+// ordering, the cap, the record law and the zero-score gate all pin in Node;
+// the store round-trip mirrors what the browser only paints.
+{
+    const e = (score, loop, t = 0) => ({ score, loop, t })
+    r.check('#3061 garbage enters, nothing leaves — hallRead trusts only integer score/loop and finite t',
+        hallRead(null).length === 0 && hallRead(42).length === 0 && hallRead('x').length === 0 &&
+        hallRead([null, { score: 'many', loop: 1, t: 1 }, { score: 9.5, loop: 1, t: 1 },
+            { score: -5, loop: 1, t: 1 }, { score: 50, loop: 0, t: 1 }, { score: 50, loop: 1.5, t: 1 },
+            { score: 50, loop: 1, t: NaN }]).length === 0)
+    r.check('#3061 the board ranks score-desc, a tie keeps the older run, and the tail drops past the cap',
+        hallRead([e(500, 1, 30), e(20600, 3, 10), e(4300, 1, 20)])
+            .map((r2) => r2.score).join(',') === '20600,4300,500' &&
+        hallRead([e(900, 2, 50), e(900, 1, 10)]).map((r2) => r2.t).join(',') === '10,50' &&
+        hallRead([e(100, 1), e(200, 1), e(300, 1), e(400, 1), e(500, 1), e(600, 1)]).length === HALL_CAP &&
+        hallRead([e(100, 1), e(200, 1), e(300, 1), e(400, 1), e(500, 1), e(600, 1)])
+            .map((r2) => r2.score).join(',') === '600,500,400,300,200')
+
+    const res = hallAdd([e(500, 1, 10)], e(9999, 2, 20))
+    r.check('#3061 a fall that outscores the crown banks at 1st and the board calls RECORD',
+        res.record === true && res.hall.length === 2 && res.hall[0].score === 9999 && res.hall[0].loop === 2)
+    const tie = hallAdd([e(500, 1, 10)], e(500, 2, 20))
+    r.check('#3061 matching the crown is not beating it — the older run keeps rank and the record stays dark',
+        tie.record === false && tie.hall.length === 2 && tie.hall[0].t === 10)
+    const worse = hallAdd([e(500, 1, 10)], e(120, 1, 20))
+    r.check('#3061 a smaller fall still enters the board — ranks reshuffle, no record',
+        worse.record === false && worse.hall.length === 2 && worse.hall[1].score === 120)
+    const full = hallAdd([e(100, 1, 1), e(200, 1, 2), e(300, 1, 3), e(400, 1, 4), e(500, 1, 5)], e(600, 2, 6))
+    r.check(`#3061 the board is five ranks deep — the sixth fall pays and the tail drops off (HALL_CAP=${HALL_CAP})`,
+        full.hall.length === HALL_CAP && full.hall[0].score === 600 && !full.hall.some((r2) => r2.score === 100))
+
+    // the honest gate: a walk in and fall down is not a raid.
+    const zero = hallAdd([e(500, 1, 10)], e(0, 1, 20))
+    const neg = hallAdd([e(500, 1, 10)], { score: -100, loop: 1, t: 20 })
+    r.check('#3061 a zero-score fall is not a raid — the board neither grows nor shines (nor does a negative)',
+        zero.hall.length === 1 && zero.record === false && neg.hall.length === 1 && neg.record === false)
+    const board0 = [e(500, 1, 10)]
+    r.check('#3061 the refusal is BY REFERENCE — a rejected entry hands the same board back, so the shell writes nothing to storage',
+        hallAdd(board0, e(0, 1, 20)).hall === board0 && hallAdd(board0, 'junk').hall === board0)
+
+    // referee-clean by construction: the helpers take arrays, never gs — a
+    // bank beside a live game leaves the world hash byte-identical, and the
+    // store round-trip (what localStorage does) preserves the validated law.
+    {
+        const gs = makeGame(11)
+        while (!gs.end && gs.tick < 800) { step(gs, autopilot(gs)); gs.ev.length = 0 }
+        if (gs.score === 0) gs.score = 100   // the bank needs a fall WITH a purse; the read still twins gs untouched
+        const h0 = stateHash(gs)
+        const banked = hallAdd([], e(gs.score, gs.loop, 1))
+        r.check('#3061 the hall never touches the referee — banking beside a live run leaves gs and its hash byte-identical',
+            stateHash(gs) === h0 && banked.hall.length === 1 && banked.hall[0].score === gs.score)
+        const rt = hallRead(JSON.parse(JSON.stringify(banked.hall)))
+        const det = JSON.stringify(hallRead(JSON.parse(JSON.stringify(res.hall)))) === JSON.stringify(res.hall)
+        r.check('#3061 the store round-trip is loss-free and the law deterministic — what the browser persists reads back identical',
+            rt.length === 1 && rt[0].score === banked.hall[0].score && det)
+    }
+}
+
 // ------------------------------------------------------------- browser leg ---
 // ------------------------------------------------ #3041 the score extend ---
 {
@@ -4208,6 +4283,100 @@ const browser = await launch()
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()
+}
+
+// -------------------------------- #3061 THE HALL live — the board in the open ---
+// Fresh contexts, honest storage: a new device sees the empty plate; a stored
+// board renders its gold and drops its corrupt ranks; a higher fall banks,
+// rewrites the store and lights NEW RECORD on the salute band; a zero-score
+// fall is refused by the live gate exactly as the Node law refuses it.
+{
+    const gold = (p, x, y, w, h) => p.evaluate(([x, y, w, h]) => {
+        const c = document.querySelector('canvas')
+        if (!c) return 0
+        const k = c.width / 384
+        const d = c.getContext('2d').getImageData(Math.round(x * k), Math.round(y * k), Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) {
+            if (d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 120) n++   // the gold family (#ffd23c)
+        }
+        return n
+    }, [x, y, w, h])
+    const goldWhile = async (p, x, y, w, h, ms) => {
+        let best = 0
+        const t0 = Date.now()
+        while (Date.now() - t0 < ms) {
+            best = Math.max(best, await gold(p, x, y, w, h))
+            if (best > 0) return best
+            await p.waitForTimeout(50)
+        }
+        return best
+    }
+
+    const hp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500, decline: true })
+    const hErrs = []
+    hp.on('pageerror', (e) => hErrs.push(e.stack || e.message))
+    const fresh = await hp.evaluate(() => { const h = window.__contraTest.probe().hall; return { len: h.len, top: h.top, rec: h.record } })
+    const plateGold = await gold(hp, 290, 24, 86, 16)
+    r.check('#3061 live: a fresh device shows the plate and ranks nothing (NO RAIDS YET)',
+        fresh.len === 0 && fresh.top === 0 && plateGold >= 12, `len=${fresh.len} plateGold=${plateGold}`)
+
+    // store a scored board — one entry per corruption class, one honest row
+    await hp.evaluate(() => localStorage.setItem('contra:hall', JSON.stringify([
+        { score: 20600, loop: 3, t: 10 }, { score: 4300, loop: 1, t: 20 }, { score: 1500, loop: 2, t: 30 },
+        { score: 'many', loop: 1, t: 40 }, null, { score: 90, loop: 0, t: 50 },
+    ])))
+    await hp.reload({ waitUntil: 'load' })
+    await hp.waitForFunction(() => !!window.__contraTest, null, { timeout: 15000 })
+    await hp.waitForTimeout(400)
+    const stored = await hp.evaluate(() => { const h = window.__contraTest.probe().hall; return { len: h.len, top: h.top, rows: h.rows } })
+    const rowGold = await gold(hp, 317, 37, 30, 10)
+    r.check('#3061 live: the stored board renders — three valid ranks survive, corrupt entries drop, score digits paint gold',
+        stored.len === 3 && stored.top === 20600 && stored.rows[0].l === 3 && rowGold > 0,
+        JSON.stringify({ ...stored, gold: rowGold }))
+
+    // the record fall: 25000 outscores the crown of 20600 through the real
+    // death law (pool zero, both seats down — the #869-era kill seam).
+    await hp.evaluate(() => window.__contraTest.start())
+    await hp.waitForTimeout(250)
+    let rec = null
+    for (let g = 0; g < 40 && !rec; g++) {
+        await hp.evaluate(() => window.__contraTest.setup({ lives: 0, score: 25000, allyOut: true, kill: true }))
+        const v = await hp.evaluate(() => {
+            const p = window.__contraTest.probe()
+            return p.screen === 'over' ? { screen: p.screen, ...p.hall } : null
+        })
+        if (v) rec = v
+        await hp.waitForTimeout(150)
+    }
+    const bandGold = await goldWhile(hp, 120, 58, 144, 18, 1500)
+    const storeTop = await hp.evaluate(() => { try { return JSON.parse(localStorage.getItem('contra:hall') || '[]')[0].score } catch { return -1 } })
+    r.check('#3061 live: the record fall banks through the real death law — board grows, store carries it, NEW RECORD blinks gold on the salute band',
+        rec !== null && rec.record === true && rec.len === 4 && rec.rows[0].s === 25000 && storeTop === 25000 && bandGold > 0,
+        JSON.stringify({ rec, bandGold, storeTop }))
+
+    // the zero-score gate, live: walk in and fall down, the board stays shut
+    const zp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500, decline: true })
+    zp.on('pageerror', (e) => hErrs.push(e.stack || e.message))
+    await zp.evaluate(() => window.__contraTest.start())
+    await zp.waitForTimeout(250)
+    let zrec = null
+    for (let g = 0; g < 40 && !zrec; g++) {
+        await zp.evaluate(() => window.__contraTest.setup({ lives: 0, kill: true, allyOut: true }))
+        const v = await zp.evaluate(() => {
+            const p = window.__contraTest.probe()
+            return p.screen === 'over' ? { screen: p.screen, ...p.hall } : null
+        })
+        if (v) zrec = v
+        await zp.waitForTimeout(150)
+    }
+    const zStore = await zp.evaluate(() => localStorage.getItem('contra:hall'))
+    r.check('#3061 live: a zero-score fall is refused by the gate — the board neither grows nor writes',
+        zrec !== null && zrec.record === false && zrec.len === 0 && zStore === null,
+        JSON.stringify({ zrec, zStore }))
+    r.check('#3061 live: no page errors on the hall legs', hErrs.length === 0, hErrs.join(' | '))
+    await hp.close()
+    await zp.close()
 }
 
 // ------------------------------------------------ #3000 voice browser leg ---

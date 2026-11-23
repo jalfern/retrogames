@@ -376,7 +376,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                         #   score-wipe, window-short, count-stalls,
                                        #   rung-resale, bed-deaf, lift-flat,
                                        #   heat-silent, coin-dropped, lead-vanished,
-                                       #   seat-gun-stripped, popup-loot
+                                       #   seat-gun-stripped, popup-loot,
+                                       #   hall-forget
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -626,6 +627,14 @@ page errors.
   stays silent by the autoplay law — every pre-bed pin, twin stream, autopilot
   sweep and PLAICRAFT take byte-stands. See the #3047 note at the foot of this
   README.
+- **CLOSED by #3061**: the cabinet never forgets. The title ranks your best
+  runs — `TOP SOLDIERS`, five deep, score plus the LOOP badge the run rode —
+  and a fall that takes the crown blinks `NEW RECORD!` on the salute band.
+  Persisted locally, validated on read, banked at HI's own honest gate (only
+  live play ends; the attract demo neither falls nor writes; a zero-score fall
+  is not a raid). Never-dry stage (#1571): the shelf kept no memory of loop
+  progress while every README gap read CLOSED. See the #3061 note at the foot
+  of this README.
 
 ## #2917 The second air layer — hangar sorties at the gate
 
@@ -1093,3 +1102,52 @@ Findings (Mac, headless Chrome, real keys) — **no gain fix owed**:
 Static-floor note: dB->power is 10^(x/10) — an early mirror of the live math
 used 2^(x/10), pinning the static split 0.13 low; the unit fix made the model
 agree with the measured bus.
+
+## #3061 TOP SOLDIERS — the cabinet never forgets (never-dry stage)
+
+The HUD's HI already rides live (`contra:hiscore` banks at the run's end,
+#3042-era law) — but that one number was ALL this game remembered. The 1987
+cabinet kept a top-score table in attract (era Konami — the GK lineage of
+Gradius and Life Force, ranks in gold), and this game's progress ladder is the
+LOOP (#2894): reaching loop 3 is the achievement, and until now nothing said
+so after GAME OVER closed the count. The shelf's own precedent is Minesweeper
+#3026 — the same never-dry shape: local bests, honest gates, validated store.
+Score 1 on `weakestStage` (the #2971 name; every README gap CLOSED, no lane
+inside) kicked it, both slots tonight having already taken #3056 and #3057.
+
+The laws this stage ships, all referee-clean (#3035 class):
+
+- **The board**: `TOP SOLDIERS`, five deep — rank, six-digit score, `L<n>`
+  loop badge only where a pass was actually rode (loop 1 is the stage, not a
+  badge — the #2894 marking law). Shown on the attract title, and beside
+  `NO CONTINUES` when the purse is empty: the final fall reads its own rank.
+- **Pure data laws in sim.js** (`hallAdd`/`hallRead`/`HALL_CAP`): entries
+  `{score, loop, t}`; validation trusts only integer score/loop and finite `t`
+  (corrupt stores drop, never repair); score-desc, a tie keeps the OLDER run,
+  the sixth fall drops the tail. The helpers take arrays, never `gs` — zero
+  `gs.r`, zero hash surface; banking beside a live run leaves the world hash
+  byte-identical (pinned).
+- **The record moment**: an entry that outscores the board's crown lights
+  `NEW RECORD!` gold-blink on the salute band (#3037/#3041's y-band, free on
+  the over screen) with a rising triad answering the gameover fall — matching
+  the crown is not beating it, and a zero-score fall is no raid at all.
+- **Honest gates** (#3026 law): the bank rides HI's own gate — `endTo('over')`
+  fires only from live play, so the attract autopilot can never fill the board
+  with demo gold (pinned live: a fresh device's store stays `null` through a
+  fall at zero). A continued run (#3042) falls once per GAME OVER — the board
+  reads ranks, not audit; Konami hot starts bank unmarked, as the cabinet's
+  own rankings took them.
+- **Persistence**: `localStorage` key `contra:hall`, JSON, write wrapped
+  (private mode keeps the board session-live). `t` is stamped by the shell —
+  the sim-side helpers never read a clock, so every ordering law re-derives
+  identically in Node.
+
+Fidelity note (#237 rule): Contra's exact attract-table lettering is not
+documented in the repo — the era-typical Konami board (ranks `1st/2nd/3rd`,
+score in gold) is the claim we built to; the house gold/Courier idiom carries
+the wording. Verify: `npm run contracheck` gained 9 static legs (validation,
+order/tie/cap, record/tie/zero laws, referee-clean by construction, store
+round-trip) and 5 live legs (empty plate, corrupt-store render, the record
+fall through the real death law — board, store and NEW RECORD pixels — the
+zero-score refusal, page errors), and the named mutant `hall-forget` dies
+(“the cabinet forgot — a 9999 fall banks nothing and calls no record”).

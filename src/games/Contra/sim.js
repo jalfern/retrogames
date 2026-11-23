@@ -280,6 +280,45 @@ export function extMark (score) {
     return ne
 }
 
+// #3061 THE HALL — the cabinet never forgets. Konami's era kept a top-score
+// table in attract (the GK-lineage of Gradius and Life Force: ranks in gold),
+// and this game's progress ladder is the LOOP (#2894), so an entry stamps how
+// far the run rode. Pure data laws, OUTSIDE the referee: the helpers never
+// touch gs, consume zero gs.r, and add no hash surface — the store round-trip
+// is the shell's (localStorage); Node audits these functions directly.
+// Entries {score, loop, t}: t is RUN data (the shell stamps it), never a
+// clock read here — same input, same board, byte-for-byte.
+export const HALL_CAP = 5
+export const HALL_ROWS = 3
+export const HALL_RANKS = ['1st', '2nd', '3rd', '4th', '5th']
+
+function hallOk (e) {
+    return !!e && Number.isInteger(e.score) && e.score >= 0 &&
+        Number.isInteger(e.loop) && e.loop >= 1 && Number.isFinite(e.t)
+}
+
+// Read whatever the store handed back and trust only what the law allows:
+// score and loop are integers, t finite; corrupt entries drop (never repair
+// silently). Sort is score-desc, and a tie keeps the OLDER run up the board —
+// the first to earn the mark keeps it.
+export function hallRead (raw) {
+    if (!Array.isArray(raw)) return []
+    return raw.filter(hallOk)
+        .sort((a, b) => b.score - a.score || a.t - b.t)
+        .slice(0, HALL_CAP)
+}
+
+// Bank one ended run. A zero-score fall is not a raid — the board is for runs
+// that paid. `record` is true when the entry outscored everything the board
+// held: that is the NEW RECORD moment, and it belongs to the BOARD's best,
+// not the live HI tracker (the two share the same honest end-of-run gate,
+// but the board is what the player reads ranks off).
+export function hallAdd (hall, entry) {
+    if (!hallOk(entry) || entry.score <= 0) return { hall, record: false }
+    const best = hall.length ? hall[0].score : 0
+    return { hall: hallRead([...hall, entry]), record: entry.score > best }
+}
+
 export function arcadeLoop (gs) {
     const carryScore = gs.score
     // #3037: the bank-to-five clamps the COURTESY, not the pool — a Konami 30
