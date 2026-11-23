@@ -117,6 +117,18 @@ export const CFG = {
                              //    clears every seed on every loop, so the sortie
                              //    never makes the gate unwinnable)
     gsScore: 400,            // the arcade's gunship purse
+    // --- #3064: the gorge's rappellers (falls only) ---
+    rapFirst: 30,            // ticks into the falls before the first rope drops
+    rapEvery: 170,           // gap between drops (+ station jitter), by the sortieK half-ramp
+    rapSlide: 0.75,          // descent pace px/tick on the wire
+    rapTele: 30,           // a half-second hang before the first round — telegraph
+    rapShots: 3,             // rounds per ride, then he slides off to reinforce
+    rapRearm: 110,           // fixed cadence — a rappel never draws gs.r
+    rapFallG: 0.22,          // tumble gravity once the rope is cut
+    rapGate: 24,             // never fire straight down: |dx| at least this wide
+    rapPatience: 120,        // a hanger with nobody in his band for 2 s slides off — the wire is never squatting
+    rapDrop: 300,            // the cut purse — the turret tier
+    rapLandMin: 28,          // he never lands at his own station: past hang + this
     eBulletSpeed: 2.2,
     respawnFreeze: 50,
     invuln: 100,
@@ -518,6 +530,18 @@ const FALLS_GUNNERS = [
     { x: 310, y: 398 },
     { x: 315, y: 310 },
     { x: 300, y: 222 },
+]
+
+// #3064 RAPPELLERS — the gorge's missing reinforcement: the cliff drops men
+// down ropes into the climb. Three stations (left wall, centre overhang, right
+// wall) rotate on the drop counter; the hang offset is measured below the
+// view top at spawn, so every rappel descends out of rock into the player's
+// screen the way the cabinet's did. The schedule is seed/tick arithmetic
+// (the courier/sortie law verbatim — ZERO gs.r draws).
+export const RAP_STATIONS = [
+    { x: 44, hang: 54 },
+    { x: 196, hang: 42 },
+    { x: 340, hang: 62 },
 ]
 
 // The gate: two cannon emplacements and two spawn doors (world == screen y
@@ -961,6 +985,8 @@ export function makeGame (seed, loop = 1, lives = 3, score = 0) {
         pb: [],                     // player bullets {x,y,vx,vy,k[,ph,hits]}
         eb: [],                     // enemy bullets (gr = lobbed grenade)
         soldiers: SOLDIERS.map(mkSoldier),
+        rapT: 0,                    // #3064 next rappel drop (falls-only schedule)
+        rapN: 0,                    // #3064 drop counter — which station is next
         snipers: SNIPERS.map((d) => ({ x: d.x, y: d.y, hp: 1, awake: false, t: 0, aim: Math.PI, flash: 0, dead: false, bx: d.x, by: d.y, roof: !!d.roof, pi: 0, rx: d.x, ry: d.y, relocT: 0, dir: 0 })),
         turrets: TURRET_AT.map((x, i) => ({ x, y: CFG.ground, hp: 2, aim: Math.PI, t: 40 + i * 27, dead: false })),
         barrels: BARREL_AT.map((x) => ({ x, y: CFG.ground, gone: false })),
@@ -1076,10 +1102,55 @@ function pop (gs, x, y, v) {
 }
 
 function killSoldier (gs, s) {
+    // #3064 the cut law, at the single kill chokepoint (the pop() law shape):
+    // a round or a blast on a hanger severs the ride rather than dropping a
+    // corpse — the ambush is ended where it hung and pays the turret tier.
+    if (s.rap === 1 || s.rap === 2) { cutRap(gs, s); return }
     s.dead = true
     gs.score += 100
     gs.ev.push({ type: 'boom', x: s.x, y: s.y - 12, kind: 'kill' })
     pop(gs, s.x, s.y - 20, 100)
+}
+
+// #3064 cutRap — the rope parts and he tumbles: the torrent takes him, or
+// rock below hands him back as a rifle gunner who keeps the fight on foot.
+// The purse is paid at the cut (the neutralising hit); what he becomes after
+// lands in the tiers it already is (a drowned man owes nothing more; the
+// shelf gunner his landing recruits is worth the rifle's +100 as ever).
+function cutRap (gs, s) {
+    s.rap = 3
+    s.vy = 0
+    gs.score += CFG.rapDrop
+    gs.ev.push({ type: 'boom', x: s.x, y: s.y - 12, kind: 'kill' })
+    pop(gs, s.x, s.y - 20, CFG.rapDrop)
+}
+
+// #3064 where a rope ride ends below its station: any ledge top the fall
+// CROSSES this tick (y grows down — rock below is bigger y), past hang +
+// rapLandMin (he never lands at his own post). Returns the ledge, the drown
+// line's verdict ("water"), or null to keep riding down.
+function rapSettle (gs, s) {
+    const stepY = s.vy > 0 ? s.vy : CFG.rapSlide
+    const prevY = s.y - stepY
+    if (s.y > s.hangY + CFG.rapLandMin) {
+        const l = FALLS_LEDGES.find((d) => s.x >= d.x - 2 && s.x <= d.x + d.w + 2 && d.y >= prevY - 1 && d.y <= s.y + 2 && d.y > s.hangY + CFG.rapLandMin)
+        if (l) {
+            s.y = l.y
+            s.rap = 0
+            s.vy = 0
+            s.awake = true
+            s.t = CFG.rapTele
+            gs.ev.push({ type: 'dust', x: s.x, y: l.y })
+            return l
+        }
+    }
+    if (s.y >= gs.camY + H - CFG.drownAt) {
+        s.dead = true
+        s.rap = 0
+        gs.ev.push({ type: 'drown', x: s.x, y: gs.camY + H - CFG.drownAt - 6 })
+        return 'water'
+    }
+    return null
 }
 
 function hitTurret (gs, t) {
@@ -1243,6 +1314,7 @@ function enterFalls (gs) {
     gs.gunships.length = 0; gs.sortieT = 0       // #2917: the hangar belongs to the arena, not the gorge
     if (gs.boss) { gs.boss.hangar.open = 0; gs.boss.hangar.launchAt = 0 }   // the door's grind dies at the falls too
     gs.pb.length = 0; gs.eb.length = 0; gs.capsule = null
+    gs.rapT = gs.tick + CFG.rapFirst   // #3064 fresh gorge, fresh first drop (the station wheel keeps turning across passes)
     gs.bcap = null   // #3060 the drift letter flies in the jungle too (a held shield survives the turn — the falls' gunners still throw rounds at it)
     // #2885: the vines live here — the gorge's carriers, both seats unhooked.
     gs.vines = VINES.map((v, i) => ({ ...v, i }))
@@ -1590,6 +1662,23 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         return true
     })
 
+    // --- #3064 rappellers: the gorge's missing reinforcement. One drop on
+    // the wire at a time (the courier/sortie law verbatim), scheduled on
+    // seed/tick arithmetic — zero gs.r, so every tuned stream and every
+    // rng-driven law keeps its exact shape with the ropes running. ---
+    if (gs.phase === 'falls' && gs.tick >= gs.rapT && !gs.soldiers.some((sd) => !sd.dead && sd.rap)) {
+        const st = RAP_STATIONS[gs.rapN % RAP_STATIONS.length]
+        const jit = (gs.seed * 37 + gs.rapN * 61) % 110
+        gs.soldiers.push({
+            x: st.x, y: gs.camY - 12, hold: true, hp: 1, awake: true, t: CFG.rapTele,
+            walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0,
+            rap: 1, vy: 0, shots: 0, hangT: 0, hangY: gs.camY + st.hang,
+        })
+        gs.rapN += 1
+        gs.rapT = gs.tick + Math.round((CFG.rapEvery + jit) / sortieK(gs.lk))
+        gs.ev.push({ type: 'rapdrop' })
+    }
+
     // --- soldiers: wake just inside the view (the spawn-shield law spans both
     // axes: x past cam + W - 4 OR y past camY + H - 4 is beyond bullet reach),
     // open fire within a third of a second, runners close in, gunners hold the
@@ -1605,6 +1694,24 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         const dy = tgt ? (tgt.lane - 14) - (s.y - 12) : 9999   // aim the lane; a jump is the answer (lane-aim law)
         s.walk += 1
         if (s.flash > 0) s.flash -= 1
+        // #3064 the rope ride — a rappeller's own clock: 1 slides down the
+        // wire, 2 hangs and guns, 3 tumbles (cut), 4 retires down the rope to
+        // reinforce (or drowns). Settling is shared: rock recruits, the
+        // torrent buries.
+        if (s.rap === 1) {
+            s.y += CFG.rapSlide
+            if (s.y >= s.hangY) { s.y = s.hangY; s.rap = 2 }
+        } else if (s.rap === 2) {
+            s.hangT += 1
+            if (s.hangT >= CFG.rapPatience) s.rap = 4   // nobody in his band — slide off, free the wire
+        } else if (s.rap === 3) {
+            s.vy += CFG.rapFallG
+            s.y += s.vy
+            rapSettle(gs, s)
+        } else if (s.rap === 4) {
+            s.y += CFG.rapSlide
+            rapSettle(gs, s)
+        }
         if (!s.hold && tgt && Math.abs(dx) > 26) { s.x += Math.sign(dx) * 1.1 * gs.lk; s.walkDir = Math.sign(dx) }
         s.t -= 1
         const range = s.hold ? (gs.phase === 'falls' ? 210 : 280) : 220
@@ -1620,13 +1727,25 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         // #2905 lob-only law: the cabinet's vest grenadiers throw and carry no
         // rifle — the bandolier never answers with a flat round. The vest, the
         // advance and the lob cadence stand untouched.
-        if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) {
+        // #3064 a hanger guns only from the hang, and never straight down:
+        // |dx| ≥ rapGate keeps every round's lateral answer in play (the falls
+        // sidestep is the whole dodge). Its rearm is fixed arithmetic — the
+        // rnd stream never feels a rappel.
+        if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY &&
+            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate))) {
             const a = Math.atan2(dy, dx)
             const sp = s.hold ? (gs.phase === 'falls' ? 1.8 : CFG.eBulletSpeed) : CFG.eBulletSpeed
             gs.eb.push({ x: s.x + Math.cos(a) * 8, y: s.y - 12 + Math.sin(a) * 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp })
             gs.ev.push({ type: 'efire' })
             s.flash = 4
-            s.t = Math.round(((s.hold ? (gs.phase === 'falls' ? 100 : 40) : 45) + Math.floor(rnd(gs) * 60)) / gs.lk)   // #2894 loop n: rearm faster
+            if (s.rap) {
+                s.t = Math.round(CFG.rapRearm / gs.lk)
+                s.shots += 1
+                s.hangT = 0
+                if (s.shots >= CFG.rapShots) s.rap = 4   // ride spent — slide off to reinforce
+            } else {
+                s.t = Math.round(((s.hold ? (gs.phase === 'falls' ? 100 : 40) : 45) + Math.floor(rnd(gs) * 60)) / gs.lk)   // #2894 loop n: rearm faster
+            }
         }
         // touching a live runner is a hit, as on the cabinet — and it takes
         // either seat (S4: the blue soldier can be rushed too)
@@ -2229,7 +2348,7 @@ export function stateHash (gs) {
     put(ORDER_FORM_C[gs.orderForm] ?? 1); put(ORDER_AIM_C[gs.orderAim] ?? 0); put(gs.holdX || 0)
     for (const b of gs.pb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(KCODE[b.k] || 0); put(b.hits ? b.hits.length : 0); put(b.o || 0) }
     for (const b of gs.eb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(b.gr ? 1 : 0) }
-    for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk); put(s.nade ? 1 : 0); put(s.hp) }
+    for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk); put(s.nade ? 1 : 0); put(s.hp); put(s.rap || 0); put(s.shots || 0); put(s.hangT || 0); put(s.rap === 3 ? s.vy : 0) }   // #3064 who's on a rope, how many rounds he's spent, his patience and the speed of a cut fall are sim truth
     for (const sn of gs.snipers) { put(sn.awake ? 1 : 0); put(sn.dead ? 1 : 0); put(sn.x); put(sn.y); put(sn.t); put(sn.aim); put(sn.pi); put(sn.relocT) }   // #2905 which perch, and the shift mid-leg, are sim truth
     for (const t of gs.turrets) { put(t.dead ? 1 : 0); put(t.hp); put(t.aim); put(t.t) }
     for (const br of gs.barrels) put(br.gone ? 1 : 0)
@@ -2245,6 +2364,7 @@ export function stateHash (gs) {
     // #2917 the gate's sorties are sim truth — schedule and airframe ride the
     // hash (a replay that let a gunship overfly the arena must diverge loudly).
     put(gs.sortieT); put(gs.sortieN)
+    put(gs.rapT); put(gs.rapN)   // #3064 the rappel schedule is sim truth too — a replay that skipped a drop diverges loudly
     for (const sh of gs.gunships) { put(sh.x); put(sh.y); put(sh.hp); put(sh.t); put(sh.flash) }
     put(gs.depot ? gs.depot.hp : -1); put(gs.depot ? (gs.depot.dead ? 1 : 0) : -1); put(gs.depot ? gs.depot.t : -1); put(gs.depot ? gs.depot.spawnT : -1)
     for (const c of gs.vc) put(c.x)
