@@ -1,69 +1,72 @@
-# STATE — forge board snapshot (slot b, 2026-11-23 early — shipped)
+# STATE — forge board snapshot (slot a, 2026-11-22 late night — shipped)
 
 ## This session shipped
-- **FIRE CREW trainable** (#1712 → PR #2983 → main `46be66a`, prod-verified).
-  The shelf's first NEW trainable title since TalkMeDown closed the eight.
-  - Game edge (`index.jsx`): consent at seed-birth (askConsent → startPlay →
-    beginRun), `recordLiveTick` banks the consumed pads, `endRun` ships after
-    the radio's final chunk (endVoice orders it, #1249 law kept), seat kinds
-    resolve at STOP (`humanSeats:false` + live sources — Rally's law, a WATCH
-    left on is labelled cpu), WATCH flips stamp `rules.watch` ("t0-t1,…"),
-    radio yields slot 0 to the auto mic (`hasAutoVoice()` new gameContract
-    export; recognition runs either way — SOS law).
-  - `src/games/FireCrew/model.js` — THE 65 features. `lightAt` IS the eyes:
-    unseen victims honest-zero, fire shared by rule; radio one-hots+countdown,
-    wind+vane, rig, prev-pad lane banked after the label. Hash-clean.
-  - `fireCrewRows` adapter + ADAPTERS['fire-crew']: replays THE sim.js,
-    verifies every checkpoint (S1); rows per tick per HUMAN seat only;
-    watch-span rows dropped; radio re-seated via `applyRadio`; recording.js
-    voiceCmd now carries `side` (refused vs replayed must be distinguishable).
-  - Proof: datasetcheck 81/81 (+4 legs; FIXTURE-store coverage 9 games — the
-    ≥2 line passes there; prod honest-zero until humans play), mutant 14
-    adapter-bypass dies by name, firecrewcheck 171 (+6 model gates, leak-gate
-    mutant red by hand), firecrewplay DRIVE GREEN (+4 consent/span legs),
-    lint×4 + build green.
-- **Jon's #2846 executed** (PR #2979 → `7ac26b0`): CONTRA, DOUBLE DRAGON,
-  R-TYPE `visibility: 'public'`; visibilitycheck is now a Jon-approved
-  allowlist (276 gates; auto-promotion of any other title dies by name).
-- QA polish filed: **#2985** (span-cap overflow, double voice ask, refusal
-  lanes, first-live-take byte-identity acceptance, couch loft features).
+- **FLOOR BOSS watch-stamp truth** (#2987 POLISH, never-dry stage → PR **#2993**
+  → main `033031e`, prod-verified: deployment `success` at the merge sha, live
+  attract boot-proved). The take is named `model` only when the autopilot pad
+  DROVE a sim tick (`watchSteered` lands in `doSim`, not at Y keydown) — a
+  glance that never touched the wheel keeps its
+  take human; every steered tick still poisons the career take across clock-ins
+  (#2058 conservatism intact, fresh floors clear). New disclosure: a steered
+  take that reached the bank gets an amber `BRAIN STEERED — TAKE OUT OF TRAIN`
+  plate under the cleared-sheet beat (`sheetSteered = watchSteered &&
+  isRecording()` captured at finish; declined floors stay silent — #2964 chip
+  law). README: the mis-marked "Sheet truth #2964" bullet now reads `CLOSED by
+  #2974` (that mis-mark was half of the `KICK FLOOR BOSS 0 weak` kick score).
+  - Verdicts: floorbosscheck all green +7 pins, mutants `stamp`/`peek` die by
+    name · floorbossplay new tail leg green (brand, bank-silence pixels, seam,
+    run-birth clear) · lint×3 + build + contractcheck 14/14 green.
+  - FloorBoss honest gaps now ZERO; idle-kick answers `NONE` (FireCrew is QA-
+    held since #2985; every remaining weak score is held or human-data).
+  - #2987 closed shipped. The rule-5 loop hit the #2975 trap again
+    (`'main' already used by worktree` — `retrogames-qa-mini-cap` squats on
+    `main` locally): merge VERIFIED via PR state + origin/main, exit ignored.
+
+## TOP OF QUEUE — red main incoming (#2992)
+- **`floorbossplay` knee/corner/lane refusal family fails 24 checks on main tip
+  (filed #2992, full baseline proof).** Reproduced identically on untouched
+  `origin/main` — NOT from #2993 (its own new legs all pass; node checks green).
+  Window: last nightly-green sha `9127f4e` predates #2970/#2974/#2977/#2981;
+  prime suspect #2966/#2970 tap-drain rewrite (moves refuse/charge verdicts a
+  tick), runner-up #2974. Next nightly at tip likely RED → AGENTS.md 5a: the
+  first lane to see it fixes it before anything else; quarantine only after 2 h
+  without a fix. Bisect hint: floorbossplay on `d5eac2f^` vs `d5eac2f`, ~5 min
+  each (slot a's local runs: `/tmp/forge/fbplay-main-baseline.log`).
 
 ## PLAYABLE on main right now
-- `/retrogames/fire-crew` — consented phone takes are now trainable-with-
-  features (this session; prod verify below).
-- `/retrogames/contra`, `/retrogames/r-type`, `/retrogames/double-dragon` —
-  PUBLIC per Jon's #2846 (metadata; site split not wired yet — nothing reads
-  the flag beyond the gate).
+- `/retrogames/floor-boss` — press Y, take the wheel back before a tick: the
+  take stays yours. Let it drive and the sheet now says `BRAIN STEERED — TAKE
+  OUT OF TRAIN` when the take actually went to the bank (#2987, prod sha
+  `033031e`). Plus `/retrogames/r-type`, `/retrogames/contra` as before.
 
 ## Board at close
-- `game-queue` empty; `steer`/`next` empty. `building`: #1712 (multi-stage —
-  human-data lines: fire-crew+gauntlet hits 2 games when a phone take lands).
-- `feedback`: #2985 (this session's QA ask), #2978 (TMD polish), #2971
-  (contra-adapter polish), #2964 (FloorBoss — item 2 shipped #2977).
-- Adapter shelf: NINE trainable now (gauntlet, floor-boss, bomb-defuse, SOS,
-  rally, double-dragon, contra, talk-me-down, fire-crew). Gravel-yard still
-  voice-no-autoRecord — candidate next shelf stage.
+- `game-queue`/`steer`/`next` empty. `feedback`: #2978, #2971, #2985 — QA-held.
+  `building`: #1712 (human-data gated). #2992 (bug, lane:games) is the
+  next builder's first job after the nightly verdict.
 
 ## Open questions for Jon (links only, #605)
-- (none open this slot; #2846 + #2953 both answered and executed.)
+- None open.
 
 ## Harness notes (carry-overs)
-- **Commit before checkout-swap** — relearned the hard way: a mutant-proof
-  `git checkout -- file` wiped uncommitted promo edits mid-session (redone).
-- Consent-gate latency: keyboard START now resolves after an async store probe
-  — play-legs must WAIT for the gate (`[data-consent-gate]` + `#consent-no`)
-  or poll screen==='play', never assume a fixed 250 ms. (Firecrewplay legs
-  rewritten; other games' legs already had this pattern.)
-- Y on a seated sheet RELEASES it (flip law) — span-legs must read state, not
-  assume KeyY seats.
-- mutateguard refuses dirty trees: the discipline is commit → mutant → green.
+- **Tail-leg law (#2987):** browser legs reaching the over-screen must wait past
+  its 600 ms key guard and must not hand mid-career state to later rigs — a
+  mid-sequence stamp leg flaked the knee/lane fx ledgers; a self-contained tail
+  leg (fresh `?seed=`, own eyes) cannot. Over-screen clock-in is drivable: sleep
+  1200 ms after `waitMode('over')`, then Enter → `advanceShift` (probe-proven).
+- mutateguard held the line: mutant runs refuse a dirty tree — commit, then run.
+- #2910 got a data point + fix suggestion (a feedback-only score flip aimed the
+  kick at a human-data gap mid-planning; the builder shipped the warden's
+  actual pick #2987 instead).
 
 ## Slots / ops
-- Slot b port 5178: dev server stopped via `scripts/devstop.sh` ✓.
-- Worktree `retrogames-forge-firecrew-trainable` (branch merged) removed;
-  older prunable dirs from 11-22 sessions remain (someone's `git worktree
-  prune` is overdue).
-- Main checkout: detached `origin/main`; STATE.md committed this session
-  (game merged ✓) + `statepark.mjs park b`.
-- Nightly watch: first full nightly over `46be66a` runs the new datasetcheck
-  (81/81) + consent-aware firecrewplay together against prod Chrome.
+- Slot a port 5173 stopped via `scripts/devstop.sh` (by port) ✓.
+- Worktree `retrogames-forge-floorboss-watchstamp` merged; re-detached at
+  origin/main and removed. `retrogames-qa-mini-cap` still squats on `main`
+  (QA-owned — left alone, but it keeps making the rule-5 exit code lie, #2975).
+- Main checkout: detached at `033031e`; STATE committed to main (game merged,
+  rule 9) and parked via `statepark.mjs park a`.
+
+## Next lane starting here
+1. Nightly verdict → if RED on floorbossplay: fix #2992 (rule 5a) — tap-drain
+   suspect first; harness-only calibration allowed without asking Jon.
+2. Else run idle-kick: expect `NONE` (shelf gap-free, QA holds the feedback).
