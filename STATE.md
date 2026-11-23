@@ -1,71 +1,78 @@
-# STATE — forge board snapshot (slot b, 2026-11-23 — shipped)
+# STATE — forge board snapshot (slot a, 2026-11-23 — shipped)
 
 ## This session shipped
-- **#3037 CONTRA — the Konami code → PR #3040 → main `3741df8`, prod-verified.**
-  Attract-typed `↑↑↓↓←→←→ B A` starts the run at 30 lives in the shared pool.
-  Referee-clean: pure sim-side detector (`konamiFeed`, zero `gs.r`), prize enters
-  only at `makeGame(seed, loop, lives)` (default 3 — every pre-Konami pin/replay/
-  dataset byte stands; lives already rode `stateHash`, armed runs replay identical).
-  `arcadeLoop` now banks the courtesy only at ≤5; bigger pools carry whole.
-  Feel: teach line in both copy sets, gold progress glyphs mid-type, `THIRTY UP!`
-  salute + five-note sting, HUD head row gains numeric `x30` (>7 heads overflow
-  the row), pad rides attract with a `B` button (pad excluded from tap-to-start;
-  background tap still starts; seat-2 law untouched — `KeyA` is the code's last
-  note AT attract only). Proof: contracheck **292/292** (7 sim + 7 live legs),
-  mutants **194/194** — `never-arms` & `quota-robbery` die by name.
-- Never-dry walk (#1571/#1615): kick confirmed live (`KICK CONTRA -1 weak`, via
-  feedback #2971; README gaps CLOSED → gap scoped live from the cabinet). Slot a
-  shipped the duck (#3039) into the same game mid-build — rebase verified whole,
-  one real law-change caught by the suite (below).
+- **#3041 CONTRA — the cabinet's score extend → PR #3043 → main `1e6bc19`,
+  prod-verified.** Never-dry stage (`KICK CONTRA -1 weak`, second pass on the
+  #2971 waiting-jon artifact; flagship spent; README gaps all CLOSED) — gap
+  scoped live from the cabinet: the run could score forever and never earned a
+  life. Crossing `gs.nextExt` pays **+1 to the shared pool**: first mark
+  **30,000** (Konami-manual extend), then every +50,000 (repeat rung recorded
+  as era-typical per the #237 fidelity rule — not documented in the repo).
+  Referee-clean: check sits at the HEAD of `step` (before the death-freeze
+  return — a kill that crosses while frozen still pays its life), zero `gs.r`
+  (paid/unpaid twins advance the seed identically — pinned), `nextExt` rides
+  `stateHash`, arcadeLoop **carries the mark with the score** (a paid rung is
+  never re-sold at the boundary). Cap 99: at the cap the mark advances and no
+  salute is owed. Byte stability pinned: honest loop-1 clears top out at 19,900
+  < 30,000, so every pre-extend seed/twin/pin/dataset byte stands. Feel: gold
+  `EXTRA LIFE!` plate on the salute band (y 58..76, shares the Konami band,
+  guards it), #2902 heads-row gold flash re-used, three-note sting, attract
+  teach line both copy sets, DebugKit `ARM EXTEND`. Proof: contracheck
+  **303/303** (8 sim + 3 live legs), mutants **196/196** — `extend-deaf` &
+  `carry-blind` die by name; 3 scoped lints + build + contract + dataset green.
 
-## LAW CHANGE the next hand must know
-- **The loop bank no longer caps the pool.** `arcadeLoop` carries pools >5 whole
-  (Konami 30 survives the arcade loop). The #2894 win-LOOPS browser leg silently
-  encoded the OLD clamp (compared pools across stages; the harness `setup(lives:99)`
-  sentinel used to normalize to 5 at every boundary). It now asserts
-  `min(LOOP_LIVES_MAX, wonLeg.lives + 1)` from the observed win pool — identical
-  at every pre-Konami value. Any FUTURE assertion that compares pools across a
-  loop boundary must do the same, or account for a 30-sentinel surviving.
-- kProg resets at `startPlay`/`endTo`; the detector is never fed during play.
-  Typing happens before `beginRun` — the #1712 bank never sees cheat keys, keep it.
+## LAW / seam notes the next hand must know
+- **The extend check must stay at the head of `step`** — parking it after the
+  death-freeze return delays a crossed life by one freeze and breaks twin
+  determinism at that boundary.
+- **Extends are unconditional +1 up to 99** (no bank) — unlike the loop
+  courtesy (banks to 5, pools >5 carry whole, #3037). Any future pool
+  assertion must know three ways a life lands: courtesy, Konami-at-attract,
+  extend-mid-run.
+- **`setup({ score })`** is now a DEV seam (#3041) — plus probe fields
+  `nextExt`/`extFx`. Live kill-cross leg runs on `reset(99)` + held
+  ArrowRight+KeyX: the first kill lands well inside 20 s — deterministic.
+- Loop-2 via chained `arcadeLoop` can stall on some seeds while
+  `makeGame(seed, 2)` sweeps 12/12 — pre-existing on main, NOT a gap this
+  stage touched; sweep at `makeGame(seed, n)` like #2894 does.
 
 ## PLAYABLE on main right now
-- `/retrogames/contra` (+ somersault #3035, duck/kneel/prone #3039, Konami 30-lives
-  #3037, voice #3000, radio teach #3016), `/retrogames/minesweeper` (+ press-feel
-  #3032, hall of fame #3026), `/retrogames/double-dragon`, `/retrogames/floor-boss`,
-  `/retrogames/fire-crew`, `/retrogames/r-type`.
+- `/retrogames/contra` (+ score extend #3041, Konami 30-lives #3037, duck
+  #3038, somersault #3035, voice #3000, radio teach #3016),
+  `/retrogames/minesweeper`, `/retrogames/double-dragon`,
+  `/retrogames/floor-boss`, `/retrogames/fire-crew`, `/retrogames/r-type`.
 
 ## Board at close
 - `game-queue`/`steer`/`next`/`building`/`building-qa`: all EMPTY. `feedback`:
-  only #2971 (waiting-jon — the QA polish pass needs a real phone take). No jonq
-  open, no halt.
-- Worth Jon's eye (unlabeled, so no lane may claim): **#3014 STAGE — CONTRA:
-  attract teaches the voice orders** still waits for a ladder label.
+  only #2971 (waiting-jon — needs a real phone take). No jonq open, no halt.
+- `idle-kick` will STILL answer `CONTRA -1 weak`: the score is #2971 naming
+  Contra — a waiting-jon artifact, unchanged by this merge. Do NOT re-file
+  shipped work (extend #3041, Konami #3037, duck #3038, somersault #3035,
+  MG/carrier/gate layers…). The big honest next rung for Contra is content
+  (stage 2 — the cliff/base), which is a new-stage question, not a gap.
+  Unlabeled **#3014** (attract teaches the voice orders) still waits for a
+  ladder label — unlabeled = no lane may adopt it.
 
 ## Harness notes (carry-overs + new)
-- **Two lanes, one game, same cycle** — worked as designed: the live claim check
-  kept both issues separate, and the second ship (mine) absorbed slot a's duck via
-  rebase + full re-verification (292/292 + 194/194 + build). Rebasing a game
-  branch onto a same-game merge is the moment to RE-RUN EVERYTHING, not just lint:
-  that's where the 99-sentinel/#2894 truth surfaced.
-- forge-merge.sh #3030 read-fail shape appeared again (merge succeeded, wrapper
-  could not read PR state); exit criterion stayed = the PR's own state (MERGED),
-  cleanup completed by hand (remote branch already gone, lane re-detached, no
-  `[main]` squat).
-- Headless paint ~12 fps law (slot a) still current; Konami live legs poll
-  rather than single-shot and passed 3/3 runs.
-- Prod-verify: main bundle is code-split — grep the `Contra-<hash>.js` chunk,
-  not `index-*.js` (`curl -L` for the SPA 308s).
+- forge-merge.sh #3030 read-fail shape THIRD session running: merge succeeded,
+  wrapper `gh pr view` lost its arg. Exit criterion stays = PR's own state
+  (MERGED, confirmed via `gh pr view 3043 --json state`); remote branch was
+  already deleted by the script; the wrapper left the lane worktree checked out
+  on `main` — re-detached by hand (`git checkout --detach origin/main`).
+- Prod-verify path that works: index.html → `index-*.js` entry →
+  `grep -o 'Contra-[A-Za-z0-9_-]*\.js'` inside the entry → fetch that chunk →
+  grep `EXTRA LIFE`. The route HTML never names the lazy chunk itself.
+- Headless paint ~12 fps law: poll frames (any-frame + max), never single
+  shots. Live golden path (kill-cross + gold plate pixels) passed 1/1 run.
 
 ## Slots / ops
-- Slot b port 5178: dev server stopped via `scripts/devstop.sh` at close ✓.
-  A temporary diagnostics server was run at 5181 and stopped the same way; the
-  mystery listener at 5179 was NOT touched (not ours).
-- Plumbing `~/Dev/retrogames` detached at origin/main ✓. Lane worktree
-  `retrogames-forge-contra-konami` detached at origin/main (clean); node_modules
-  is a symlink to plumbing's — purge must take the symlink before any dir.
-- STATE.md committed to main this session (#3040 merged game code).
+- Slot a port 5173: dev server stopped via `scripts/devstop.sh` at close ✓
+  (never pattern-kill). Plumbing `~/Dev/retrogames` detached at origin/main ✓.
+  Lane worktree `retrogames-forge-contra-extend` detached at origin/main
+  (clean; node_modules is a symlink to plumbing's — purge takes the symlink
+  before any dir).
+- STATE.md committed to main this session (#3043 merged game code).
 
 ## Open questions
-- None (no jonq filed this session; #2971's phone-take need stays on the QA
-  thread). Live board: https://jalfern.com/retrogames/forge
+- None (no jonq filed this session). Live board:
+  https://jalfern.com/retrogames/forge
