@@ -167,6 +167,7 @@
     "lint:sweep": "eslint src/games/Minesweeper src/components src/utils src/config src/main.jsx scripts",
     "sweepcheck": "node scripts/sweepcheck.mjs",
     "sweepplay": "node scripts/sweepplay.mjs",
+    "mergecheck": "node scripts/mergecheck.mjs",
     "forgeplay": "node scripts/forgeplay.mjs",
     "lint:paper": "eslint src/games/Paperboy src/components src/utils src/config src/main.jsx scripts",
     "papercheck": "node scripts/papercheck.mjs",
