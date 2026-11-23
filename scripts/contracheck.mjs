@@ -1960,8 +1960,8 @@ if (MUTANT) {
             // vest throws only, and a bandolier that sprays flat rounds while it
             // advances makes the approach band a wall no hop covers.
             name: 'lob-hall',
-            anchor: 'if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) {',
-            plant: 'if (tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) /* MUTANT(lob-hall): the vest keeps its rifle */ {',
+            anchor: 'if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY &&\n            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate))) {',
+            plant: 'if (tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY /* MUTANT(lob-hall): the vest keeps its rifle */ &&\n            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate))) {',
             harm: async (mod) => {
                 const gs = mod.makeGame(7)
                 gs.p.inv = 999999; gs.p2.out = true
@@ -2514,6 +2514,50 @@ if (MUTANT) {
                 }
                 return !gs.boss && !gs.end
                     ? 'HARM NAMED: the solo wingman stood on the gate\'s threshold and the door never ground open - the arena still keyed on the fallen hero, and the run hung at the top of the gorge'
+                    : null
+            },
+        },
+        {
+            // #3064: the cut law pays the turret tier and drops him alive.
+            // Cheapen it and the hanger dies like a rifle soldier — no tumble,
+            // no purse where it hung, the gorge silently forgets its own law.
+            name: 'rap-cheap',
+            anchor: 'if (s.rap === 1 || s.rap === 2) { cutRap(gs, s); return }',
+            plant: 'if (false && (s.rap === 1 || s.rap === 2)) { cutRap(gs, s); return } /* MUTANT(rap-cheap): the hanger dies at the rifle tier */',
+            harm: (mod) => {
+                const gs = mod.makeGame(2)
+                gs.p.inv = 1e9
+                mod.warpFalls(gs)
+                gs.rapT = 1e9
+                const s = { x: 15, y: gs.camY + 168, hold: true, hp: 1, awake: true, t: 999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0, rap: 2, vy: 0, shots: 0, hangT: 0, hangY: gs.camY + 168 }
+                gs.soldiers.push(s)
+                const sc = gs.score
+                gs.pb.push({ x: s.x, y: s.y - 12, vx: 6, vy: 0, k: 'r' })
+                mod.step(gs, {})
+                return (s.dead || gs.score - sc !== mod.CFG.rapDrop)
+                    ? 'HARM NAMED: cutting a rappeller paid the rifle tier and left a corpse on the rope - no tumble, no turret purse, the gorge forgot who it lost'
+                    : null
+            },
+        },
+        {
+            // #3064: the schedule is the whole gimmick. Blind it and the ropes
+            // become scenery — the climb reads like the old gorge and nobody
+            // ever looks up.
+            name: 'rappel-blind',
+            anchor: 'if (gs.phase === \'falls\' && gs.tick >= gs.rapT && !gs.soldiers.some((sd) => !sd.dead && sd.rap)) {',
+            plant: 'if (false && gs.phase === \'falls\' && gs.tick >= gs.rapT && !gs.soldiers.some((sd) => !sd.dead && sd.rap)) { /* MUTANT(rappel-blind): the cliff stopped reinforcing */',
+            harm: (mod) => {
+                const gs = mod.makeGame(4)
+                gs.p.inv = 1e9; gs.p2.inv = 1e9
+                mod.warpFalls(gs)
+                let drops = 0
+                let prev = gs.rapN
+                while (!gs.end && gs.tick < 20000) {
+                    mod.step(gs, mod.autopilot(gs))
+                    if (gs.rapN > prev) { drops++; prev = gs.rapN }
+                }
+                return drops === 0
+                    ? 'HARM NAMED: the climb went the whole length of the gorge without one rope dropping - the waterfall lost its reinforcement and the wires were only paint'
                     : null
             },
         },
@@ -3826,6 +3870,143 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
         const src = readFileSync(INDEX, 'utf8')
         r.check('#3060 both consoles teach the fifth letter (S M F L B) and a shield line; the DEV kit can grant the barrier',
             (src.match(/CAPSULES CARRY THE WHEEL — S M F L B/g) || []).length === 2 && /CYAN B/.test(src) && /GRANT BARRIER/.test(src))    }
+}
+
+// ------------------------------------ #3064 rappellers of the gorge (sim) ------
+// The waterfall's reinforcement, proven at the sim table: the schedule is seed
+// arithmetic (identical drops on twins, tempo divided by the sortieK half-ramp,
+// one man on the wire), the hanger guns the lanes but never straight down and
+// never past his patience, the cut pays the turret tier at the single kill
+// chokepoint, and the fall resolves — rock recruits a shelf gunner, the
+// torrent buries. Schedule, wire and cut all ride stateHash; rappeller fire
+// rearms on fixed arithmetic and the rap branches draw no rnd anywhere.
+{
+    const mkRap = (gs, x, hangY) => {
+        const s = { x, y: hangY, hold: true, hp: 1, awake: true, t: CFG.rapTele, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0, rap: 2, vy: 0, shots: 0, hangT: 0, hangY }
+        gs.soldiers.push(s)
+        return s
+    }
+    const dropsOf = (seed, inv = 1e9) => {
+        const gs = makeGame(seed)
+        gs.p.inv = inv; gs.p2.inv = inv
+        warpFalls(gs)
+        const drops = []
+        let maxWire = 0
+        let prev = gs.rapN
+        while (!gs.end && gs.tick < 20000) {
+            step(gs, autopilot(gs))
+            maxWire = Math.max(maxWire, gs.soldiers.filter((s) => !s.dead && s.rap).length)
+            if (gs.rapN > prev) { prev = gs.rapN; drops.push(gs.tick) }
+        }
+        return { drops, maxWire, end: gs.end }
+    }
+    const a = dropsOf(4)
+    const b = dropsOf(4)
+    r.check('#3064 the rope schedule is seed arithmetic — the same seed drops its rappellers at the same ticks every run',
+        JSON.stringify(a.drops) === JSON.stringify(b.drops) && a.drops.length >= 2, `drops=${a.drops.join(',')}`)
+    r.check('#3064 one man on the wire — the cliff reinforces, it never rains',
+        a.maxWire === 1, `maxWire=${a.maxWire}`)
+    // the tempo law at the moment it is set: the gap armed after drop n is
+    // (rapEvery + seed-jit) divided by the sortieK half-ramp — hotter loops
+    // rappel faster, exactly like the hangar.
+    const g3 = makeGame(11, 3)
+    g3.p.inv = 1e9
+    warpFalls(g3)
+    const jit1 = (11 * 37 + 0 * 61) % 110   // the gap armed AT drop 1 is keyed to the counter before its increment
+    const expectGap = Math.round((CFG.rapEvery + jit1) / sortieK(g3.lk))
+    let prev3 = g3.rapN, gapSet = -1
+    while (g3.rapN < 1 && g3.tick < 4000) { step(g3, {}); if (g3.rapN > prev3) { gapSet = g3.rapT - g3.tick; prev3 = g3.rapN } }
+    r.check('#3064 the gap armed after a drop divides by the sortieK half-ramp — loop heat quickens the ropes, not the rounds',
+        gapSet === expectGap, `gap=${gapSet} expect=${expectGap} k=${g3.lk}`)
+
+    // the hang law: a hanger above and to the side guns the lane; one almost
+    // directly overhead is gagged (|dx| < rapGate — no undodgeable straight
+    // drops); and a hanger whose band goes empty retires on patience, freeing
+    // the wire.
+    const gh = makeGame(7)
+    gh.p2.out = true          // no wingman bullets on the wire — attribute every round by its own counter
+    warpFalls(gh)
+    gh.rapT = 1e9
+    const heroX = gh.p.x
+    const side = mkRap(gh, heroX + 60, gh.p.y - 150)
+    const over = mkRap(gh, heroX + 10, gh.p.y - 120)
+    const high = mkRap(gh, heroX + 40, gh.p.y - 300)
+    gh.soldiers.forEach((s) => { if (!s.hold) s.awake = false })   // silence the shelf gunners: attribution by the hangers' counters alone
+    // The torrent is relentless by design — a standing seat drowns. Ride the
+    // camera: park the hero 8 px over the moving water-line so his lane stays
+    // a fixed reference below the hangers for the whole leg.
+    const pin = () => { gh.p.x = heroX; gh.p.y = gh.camY + HVIEW - CFG.drownAt - 8; gh.p.vy = 0; gh.p.onGround = true; gh.p.lane = gh.p.y; gh.p.inv = 1e9 }
+    pin()
+    for (let i = 0; i < CFG.rapTele + 60; i++) { pin(); step(gh, {}) }
+    r.check('#3064 the hanger guns the lane after his telegraph — a round comes down at the hero below',
+        side.shots >= 1 && gh.eb.some((e) => e.vy > 0), `shots=${side.shots}`)
+    r.check('#3064 the hanger never fires straight down — overhead is gagged, the lateral answer stays in play',
+        over.shots === 0, `overhead shots=${over.shots}`)
+    for (let i = 0; i < CFG.rapPatience + 20; i++) { pin(); step(gh, {}) }
+    // Retire, then resolve: the gagged men leave the wire (4 = sliding off;
+    // some reach rock and become gunners = 0). Nobody is still hanging.
+    r.check('#3064 an unhired wire retires on patience — the wire is never squatting, the next rappel can arm',
+        high.rap !== 2 && high.shots === 0 && over.rap !== 2 && over.shots === 0, `high=${high.rap} over=${over.rap}`)
+
+    // the cut law at the kill chokepoint: +300 where it hung, he falls alive,
+    // and both endings resolve — drown in the torrent, or land and fight on.
+    const gc = makeGame(2)
+    warpFalls(gc)
+    gc.p2.out = true
+    gc.rapT = 1e9
+    const pinC = () => { gc.p.y = gc.camY + HVIEW - CFG.drownAt - 8; gc.p.vy = 0; gc.p.onGround = true; gc.p.lane = gc.p.y; gc.p.inv = 1e9 }
+    const h1 = mkRap(gc, 15, gc.camY + HVIEW - CFG.drownAt - 40)     // hangs above the water, no rock below him
+    const sc = gc.score
+    gc.pb.push({ x: h1.x, y: h1.y - 12, vx: 6, vy: 0, k: 'r' })
+    pinC(); step(gc, {})
+    r.check('#3064 a round on the hanger cuts the ride — the turret tier pays where it hung and he falls alive',
+        gc.score - sc === CFG.rapDrop && h1.rap === 3 && !h1.dead, `d=${gc.score - sc} st=${h1.rap} dead=${h1.dead}`)
+    let drowned = false
+    for (let i = 0; i < 80 && !drowned; i++) { pinC(); step(gc, {}); if (h1.dead) drowned = true }
+    r.check('#3064 a man cut over the water goes to the torrent — the hazard law collects the gorge too',
+        drowned && h1.rap === 0, `dead=${h1.dead}`)
+    pinC()
+    const h2 = mkRap(gc, 196, gc.camY + 60)                            // rock lies below him: {170,574}
+    gc.pb.push({ x: h2.x, y: h2.y - 12, vx: 6, vy: 0, k: 'r' })
+    pinC(); step(gc, {})
+    let landed = false
+    for (let i = 0; i < 260 && !landed; i++) { pinC(); step(gc, {}); if (!h2.dead && h2.rap === 0) landed = true }
+    r.check('#3064 a man cut over rock lands the climb and keeps the fight — the cliff recruits its own',
+        landed && Math.abs(h2.y - 574) < 2 && h2.hold, `y=${h2.y}`)
+    // …and as a shelf gunner he pays the rifle tier when the hero clears him.
+    const sc2 = gc.score
+    gc.pb.push({ x: h2.x, y: h2.y - 12, vx: 6, vy: 0, k: 'r' })
+    pinC(); step(gc, {})
+    r.check('#3064 the recruited gunner pays the rifle tier on death — no double purse for one soldier',
+        h2.dead && gc.score - sc2 === 100, `d=${gc.score - sc2}`)
+
+    // HASH law: schedule, wire, spent-rounds, patience, the speed of a cut
+    // fall — all sim truth. A replay that silently skipped a rappel diverges.
+    const base = () => { const g = makeGame(9); warpFalls(g); return g }
+    const gA = base()
+    const gB = base(); gB.rapT += 1
+    const gC = base(); gC.rapN = 1
+    const gD = base(); mkRap(gD, 196, 500)
+    const gE = base(); const eE = mkRap(gE, 196, 500); eE.shots = 1; eE.hangT = 9; eE.rap = 3; eE.vy = 1.4
+    r.check('#3064 the rappel schedule and the wire ride the state hash — a replay that skipped a drop cannot hide',
+        stateHash(gA) !== stateHash(gB) && stateHash(gA) !== stateHash(gC) && stateHash(gA) !== stateHash(gD) && stateHash(gD) !== stateHash(gE))
+
+    // the falls own the ropes: the jungle never rappels, and the arena takes
+    // nobody up the wire with it.
+    const gp = makeGame(5)
+    for (let i = 0; i < 900 && gp.phase !== 'jungle'; i++) step(gp, {})
+    const jungleRaps = gp.soldiers.some((s) => s.rap) && gp.tick >= gp.rapT
+    r.check('#3064 the jungle keeps its sky and its ground — rappellers are the gorge alone',
+        gp.phase === 'jungle' && !gp.soldiers.some((s) => s.rap && !s.dead), `phase=${gp.phase} jungleRap=${jungleRaps}`)
+    const gb2 = makeGame(5)
+    gb2.p.inv = 1e9
+    warpFalls(gb2)
+    gb2.rapT = gb2.tick + 1
+    step(gb2, {})
+    const beforeBoss = gb2.soldiers.some((s) => s.rap)
+    warpBoss(gb2)
+    r.check('#3064 the arena empties the wire — the gate has a hangar, not a cliff',
+        beforeBoss && !gb2.soldiers.some((s) => s.rap), `before=${beforeBoss}`)
 }
 
 // ------------------------------------------------------------- browser leg ---
@@ -5574,6 +5755,60 @@ const browser = await launch()
 
     r.check('#3060 barrier live legs: zero page errors', bErrs.length === 0, bErrs.join(' | '))
     await bp.close()
+}
+
+// ------------------------------ #3064 rappellers — live wire legs ------------
+// Real world, real brain: rapNow puts a man on the rope and the probe watches
+// him slide; then the honest autopilot takes the seat and climbs the gorge —
+// why not real keys? Because a hero that stands under the wire drowns to the
+// rising torrent (the game's own law: killPlayer ignores i-frames), and this
+// game fires on the keydown edge, so a held trigger is a lie. The proof that
+// belongs here is that the climbing game cuts its own rappellers.
+{
+    const rp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500, decline: true })
+    const rErrs = []
+    rp.on('pageerror', (e) => rErrs.push(e.stack || e.message))
+    await rp.keyboard.press('Space')
+    await rp.waitForTimeout(300)
+
+    await rp.evaluate(() => window.__contraTest.setup({ warp: 'falls', inv: 99999, lives: 99, allyOut: true, rapStation: 1, rapNow: true }))
+    let seenWire = false
+    let yFirst = -1
+    let yLate = -1
+    for (let g0 = 0; g0 < 40; g0++) {
+        const pr = await rp.evaluate(() => window.__contraTest.probe())
+        const m = pr.rap && pr.rap.men[0]
+        if (m) { seenWire = true; if (yFirst < 0) yFirst = m.y; yLate = m.y }
+        await rp.waitForTimeout(50)
+    }
+    r.check('#3064 live: rapNow puts a man on the wire and the world watches him slide down the gorge',
+        seenWire && yLate > yFirst + 6, `first=${yFirst} late=${yLate}`)
+
+    // Hand the seat to the honest autopilot — the same brain the 12-seed
+    // sweep runs. It climbs the zigzag firing upward, and the rappeller
+    // descends into that fire. The cut is proven by identity: we watch the
+    // wire man's own state flip to the cut-fall (st 3) and the turret purse
+    // (+300) land on the same tick family. No held-key fiction.
+    const cut0 = await rp.evaluate(() => window.__contraTest.probe().score)
+    await rp.evaluate(() => window.__contraTest.setup({ warp: 'falls', inv: 99999, lives: 99, allyOut: true, rapStation: 1, rapNow: true, auto: true }))
+    let hz = false
+    let cut = false
+    let purse = 0
+    for (let g0 = 0; g0 < 400 && !cut; g0++) {
+        const pr = await rp.evaluate(() => window.__contraTest.probe())
+        purse = pr.score - cut0
+        const men = pr.rap?.men || []
+        if (men.some((m) => m.st === 3)) hz = true // watched the tumble begin with our own eyes — st 3 is only ever a cut
+        if (hz && purse >= 300) cut = true
+        if (pr.end) break
+        await rp.waitForTimeout(50)
+    }
+    await rp.evaluate(() => window.__contraTest.setup({ auto: false }))
+    r.check('#3064 live: the climbing game cuts its own rappellers — drive the gorge, the turret purse lands on the wire',
+        cut, `purse=+${purse} watched-tumble=${hz}`)
+
+    r.check('#3064 rappeller live legs: zero page errors', rErrs.length === 0, rErrs.join(' | '))
+    await rp.close()
 }
 
 r.exit(browser)

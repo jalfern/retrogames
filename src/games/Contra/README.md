@@ -339,6 +339,18 @@ Three laws survive it untouched, all pinned in `contracheck`:
   a duplicate capture pays nothing and owes no digit, the blue seat pays through
   the same `killSoldier` path, and twin runs stamp byte-identical trails — every
   pre-bed pin, twin stream, autopilot sweep and PLAICRAFT take byte-stands.
+- **#3064 rappellers (falls only)**: `gs.rapT`/`gs.rapN` schedule one
+  rope-riding gunner at a time onto `RAP_STATIONS` (x 44 / 196 / 340,
+  staggered hangs), zero `gs.r` — jitter `(seed·37 + rapN·61) % 110`, gap
+  divided by the #2917 `sortieK` half-ramp — and the schedule plus every rider
+  (`rap`: 1 slide / 2 hang / 3 cut-fall / 4 retire, `shots`, `hangT`, `vy`)
+  ride `stateHash`. A rappeller IS a `hold:true` falls gunner — same shot law
+  (sp 1.8, range 210), non-lethal contact — gated `rapGate` 24 (never fires
+  straight down), `rapRearm` 110/lk, `rapShots` 3, `rapPatience` 120
+  empty-band ticks (the wire is never squatting). The cut pays `rapDrop` 300
+  at the single `killSoldier` chokepoint and drops him ALIVE: `drown` at the
+  torrent line, or rifle-gunner recruit (+100 as ever) on a ledge his fall
+  crosses past `rapLandMin` 28. See the #3064 note at the foot of this README.
 - Audio: every new action synthesized via `audioController` — the MG's ripping
   pop, the firebar's breath, the laser's falling zap, the sniper's crack and
   the lob's whistle answer the existing set.
@@ -380,7 +392,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   hall-forget,
                                        #   barrier-deaf, barrier-eternal,
                                        #   hazard-immortal, eater-erases,
-                                       #   down-hangs, corpse-key
+                                       #   down-hangs, corpse-key,
+                                       #   rap-cheap, rappel-blind
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -497,10 +510,34 @@ the payout reads: every autopilot run sums its stamped digits exactly to the pur
 (19/19 score sites pay, six tiers across the run), duplicate captures pay nothing
 and owe no digit, the blue seat pays through the shared path, the digit trail twins
 byte-identically (zero gs.r, one chokepoint), and live a captured letter stamps
-gold `+1000` where the pod sat** · zero
+gold `+1000` where the pod sat** · **#3064 rappellers: one rope-rider at a time
+on the seed-keyed station wheel (zero gs.r — schedules twin byte-for-byte and the
+whole game is a zero-rng draw apart from the pre-existing ones) · the ride runs
+slide→hang→(cut|retire), telegraphs `rapTele` before its first round, and obeys
+the falls gun-law verbatim — non-lethal contact, gated `rapGate` wide so no round
+falls straight down · the cut pays the turret tier (+300) at the single
+`killSoldier` chokepoint and drops him alive: drown at the torrent line, or
+rifle-gunner recruit on a ledge his fall crosses past `rapLandMin` · schedule and
+rider ride `stateHash` · the honest autopilot with the ropes running still clears
+12/12, and live the climbing game cuts its own rappeller — the probe watches the
+man's own state flip to the cut-fall while the purse lands — on a canvas that
+paints rope, hang and tumble** · zero
 page errors.
 
 ## Honest gaps
+
+- **CLOSED by #3064**: the gorge got its rappellers. The waterfall was a
+  one-way street — the hero climbed and only what already stood on the shelves
+  answered; nothing ever came DOWN the cliff. The cabinet's gorge reinforces
+  from above: a gunner zips the rope into the falls at one of three stations,
+  hangs, telegraphs, and fires down (never straight down); the cut pays the
+  turret tier (+300) and drops him alive — the torrent takes him or a shelf
+  hands him back as a rifle gunner. Zero `gs.r`, schedule and rider ride the
+  hash, and the honest autopilot still clears 12/12 with the wires live — and
+  cuts its own rappellers in the live proof. Never-dry stage (#1571): the
+  cliff's reinforcement was missing from the shelf while every README gap read
+  CLOSED — scoped live from the cabinet. See "#3064 The gorge's rappellers" at
+  the foot of this README.
 
 - **CLOSED by #3060**: the wheel got its FIFTH letter. This README's capsule
   spec listed S M F L for months while the 1987 cabinet's wheel carries a fifth
@@ -1239,3 +1276,73 @@ window `#07333d`, warning `#12707e`; a 5×5 B glyph; the ring is three beads
 orbiting the seat with the shelf's last-second blink (`barrWarn`); the HUD
 carries a per-seat shield pip; `barr` and `absorb` sfx; both consoles teach
 "S M F L B" and the shield line; the DEV kit can GRANT BARRIER (phone-checkable).
+
+## #3064 The gorge's rappellers — the cliff answers the climb
+
+The waterfall was a one-way street: the hero climbed, and the gorge threw back
+what already stood on its shelves. Nothing ever came DOWN. The cabinet's gorge
+reinforces from above — gunners zip the rope into the fight, hanging in the air
+exactly where your rifle points when you aim up. That absence is what the
+never-dry review named (#3064, "the gorge's rappellers"); it now ships as
+falls-only law:
+
+- **Three stations, one man on the wire.** `RAP_STATIONS` pins the drop
+  columns at x 44 / 196 / 340 with staggered hangs (54 / 42 / 62), and the
+  wheel `rapN` turns them in order — the courier (#2847) and sortie (#2917)
+  one-at-a-time law verbatim. The gap is seed/tick arithmetic —
+  `round((rapEvery + (seed·37 + rapN·61) % 110) / sortieK(lk))` — **zero
+  `gs.r`** (pinned: with the ropes running, every pre-rappel stream and every
+  rng-driven law keeps its exact shape), and the #2917 half-ramp means hotter
+  loops get more ambushes without outrunning the clearable bank. Schedule
+  (`rapT`/`rapN`) and rider (`rap`, `shots`, `hangT`, `vy`) ride `stateHash`;
+  `enterFalls` re-arms the first drop, so a warp and an honest climb agree.
+- **The ride is a state machine on the soldier** (`s.rap`): **1** slide down
+  at `rapSlide` 0.75 px/tick → **2** hang at the station's mark, a half-second
+  telegraph (`rapTele` 30) before the first round → **3** cut-fall: the rope
+  parts and he tumbles at `rapFallG` → **4** retire-slide back up and off the
+  frame. A rappeller **is** a falls gunner (`hold: true`, sp 1.8, range 210) —
+  fairness by identity: every law that answers a shelf gunner (non-lethal
+  contact #2847 class, hop, duck, the #3060 ring) answers the hanger with zero
+  new rules.
+- **He never fires straight down.** `rapGate` 24 — inside that column the gun
+  stays silent, so every round he throws keeps its lateral answer in play (the
+  lane-aim spine, now in the vertical too). Fixed `rapRearm` 110/lk,
+  `rapShots` 3 rounds per ride, and `rapPatience` 120 ticks with nobody in his
+  band sends him back up the wire: the rope is an ambush, never a squat.
+- **The cut pays the turret tier and drops him alive.** The single
+  `killSoldier` chokepoint routes rope-riders to `cutRap`: +300 at the
+  neutralising hit — the same tier as a turret or gate gun, because a hanging
+  marksman IS an emplacement, one short of the courier's 500 — `boom`, the
+  #3057 `+300` popup, then gravity. Below his post, two endings: the torrent
+  line takes him (`drown`, owed nothing more), or a ledge top his fall
+  **crosses** hands him back as a rifle gunner worth the rifle's +100 on foot
+  (`rapLandMin` 28 keeps him off his own station, so the recruit always lands
+  in the fight, not behind it). The purse is paid at the cut; the landing only
+  changes who keeps fighting — shooting the rope never double-dips.
+- **Fairness findings (the threat bends; the brain doesn't — #2917).** The
+  first schedule (`rapFirst` 70, `rapEvery` 400) read as a rumor: a ~550-tick
+  climb met a single rope and players would finish the gorge never having
+  looked up. `rapFirst` 30 / `rapEvery` 170 puts the wire on screen while the
+  climb is still armed, at three-plus drops a pass. And a discovery about the
+  harness, not the game: a hero who stands under a station *drowns* — the
+  torrent ratchet ignores i-frames (its own law since #2885, and correct: the
+  falls punish standing still). So the live cut-leg hands the seat to the
+  honest autopilot (`opts.auto`, the same brain the 12-seed sweep runs) and
+  proves the cut by **identity**: the probe watches that man's own state flip
+  to the cut-fall while his purse lands. A held-trigger live leg would have
+  been fiction anyway — this game fires on the keydown edge. The sweep with
+  rappellers running clears **12/12**, lives stable, twins hash-identical: the
+  ropes bend the fight, never the win.
+- **The look.** The rope draws from the cliff-top anchor to the harness (the
+  seat-ceremony `drawRappel` idiom, reused not copied), the hanger works the
+  arms-up climb-and-hang pose, and on the cut he tumbles clear of the frayed
+  stub; the landing kicks the shelf's `dust`, the torrent his `drown`, and
+  every drop announces itself with a descending triangle whistle (`rapdrop`,
+  900→320 Hz) so the ambush is heard before it is seen. Both consoles teach
+  `THE CLIFF RAPPELS GUNNERS INTO THE FALLS — SHOOT THE HANGER`.
+- **Provable.** Thirteen sim legs (schedule law, zero-`gs.r` twin pin, state
+  machine, gate, purse, drown/recruit, hash surface, sweep) plus two live legs
+  (the world watches him slide; the climbing game cuts its own rappeller), and
+  two mutants that name the harm if the law rots: `rap-cheap` (the hanger dies
+  at the rifle tier — the gorge forgets who it lost) and `rappel-blind` (the
+  schedule silenced — the wires become paint).

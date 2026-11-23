@@ -37,6 +37,7 @@ const MESSAGES_KEYBOARD = [
     'SHOOT THE CARRIER DOWN — ITS POD CARRIES THE WHEEL',
     'THE CORE SHINES WHEN IT IS OPEN — HIT IT THEN',
     'VINES SWING OVER THE FALLS — HOLD JUMP TO GRAB ONE',
+    'THE CLIFF RAPPELS GUNNERS INTO THE FALLS — SHOOT THE HANGER',
     'BLUE TAKES THE SECOND SEAT — TWO GUNS, ONE JUNGLE',
     '2P DROP-IN: WASD MOVE · F JUMP · G FIRE',
     'STAND UP FROM THE BLUE SEAT — THE WINGMAN STEPS BACK IN',
@@ -58,6 +59,7 @@ const MESSAGES_TOUCH = [
     'SHOOT THE CARRIER DOWN — ITS POD CARRIES THE WHEEL',
     'THE CORE SHINES WHEN IT IS OPEN — HIT IT THEN',
     'VINES SWING OVER THE FALLS — HOLD JUMP TO GRAB ONE',
+    'THE CLIFF RAPPELS GUNNERS INTO THE FALLS — SHOOT THE HANGER',
     'THE WINGMAN HOLDS THE BLUE SEAT — TWO GUNS, ONE JUNGLE',
     'SEAT 2 IS KEYBOARD-ONLY — THE PHONE KEEPS THE CPU ALLY',
     'THE WINGMAN STEPS BACK IN ON THE KEYBOARD — NOT ON THIS SCREEN',
@@ -174,6 +176,9 @@ const sfx = {
         setTimeout(() => { audioController.playNoise(0.18, 0.08); audioController.playSweep(150, 50, 0.22, 'triangle', 0.08) }, 140)
     },
     enter: () => audioController.playSweep(140, 340, 0.35, 'triangle', 0.07),
+    // #3064 the rope's descending whistle (the torrent's drown voice already
+    // existed for the seats — a swallowed rappeller gets the same read).
+    rapdrop: () => audioController.playSweep(900, 320, 0.26, 'triangle', 0.045),
     drown: () => { audioController.playNoise(0.22, 0.09); audioController.playSweep(300, 70, 0.3, 'sine', 0.07) },
     cannon: (v = 1) => { audioController.playSweep(220 * v, 90 * v, 0.12, 'square', 0.07); audioController.playNoise(0.06, 0.05) },
     // S3: the wheel's voices + the new roster
@@ -240,6 +245,7 @@ export default function ContraGame () {
         let acc = 0
         let gs = makeGame(1987)
         let screen = 'attract'
+        let harnessAuto = false   // #3064 harness drive: the honest autopilot takes the seat (live-leg use only)
         let demoHold = 0
         let clearHold = 0
         let overAt = 0
@@ -746,7 +752,12 @@ export default function ContraGame () {
             for (const br of gs.barrels) if (!br.gone) drawBarrel(ctx, br)
             for (const t of gs.turrets) if (!t.dead) drawTurret(ctx, t)
             for (const sn of gs.snipers) if (!sn.dead && sn.awake) drawSniper(ctx, sn, gs.tick, gs.loop)
-            for (const s of gs.soldiers) if (!s.dead && s.awake) drawSoldier(ctx, s, gs.tick, gs.loop)
+        for (const s of gs.soldiers) if (!s.dead && s.awake) {
+            // #3064 the wire: the rope hangs from the cliff top (above the
+            // view edge) to his harness — until the cut, when it parts.
+            if (s.rap && s.rap !== 3) drawRappel(ctx, s.x, (gs.phase === 'jungle' ? 0 : gs.camY) - 4, s.y)
+            drawSoldier(ctx, s, gs.tick, gs.loop)
+        }
             // #2847: the couriers run above the fight, pods under their bellies;
             // released cargo draws on the same deck as the volley capsules.
             for (const cr of gs.carriers) if (!cr.dead) drawCarrier(ctx, cr, gs.tick)
@@ -1027,7 +1038,7 @@ export default function ContraGame () {
                             // #2902: the LOOP banner holds the world still — the
                             // stage starts on the two beats AFTER the read.
                             if (loopFx) { loopFx.t += 1; if (loopFx.t >= LOOP_FX) loopFx = null }
-                            else stepSim(simPad())
+                            else stepSim(harnessAuto ? autopilot(gs) : simPad())   // #3064 the harness can hand the seat to the honest brain
                             // #3037: the armed-run salute fades on world ticks
                             if (kFx) { kFx.t += 1; if (kFx.t >= K_FX) kFx = null }
                             // #3041: the extend salute fades on world ticks too
@@ -1292,6 +1303,10 @@ export default function ContraGame () {
                         next: gs.sortieT, n: gs.sortieN,
                         aimed: gs.eb.filter((b) => b.gs).map((b) => ({ x: +b.x.toFixed(1), y: +b.y.toFixed(1), vy: +b.vy.toFixed(2) })),
                     },
+                    rap: { // #3064 the wire is observable
+                        men: gs.soldiers.filter((s) => !s.dead && s.rap).map((s) => ({ x: +s.x.toFixed(1), y: +s.y.toFixed(1), st: s.rap, shots: s.shots })),
+                        next: gs.rapT, n: gs.rapN,
+                    },
                     vine: { p: gs.p.vine, q: gs.p2.vine, tips: gs.vines.map((v) => { const tp = vineTip(gs, v.i); return { x: +tp.x.toFixed(1), y: +tp.y.toFixed(1) } }) },
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
@@ -1360,6 +1375,13 @@ export default function ContraGame () {
                         gs.gunships.push({ x: opts.gsX ?? 250, y: opts.gsY ?? 60, ty: opts.gsY ?? 60, vx: opts.gsVx ?? 0, hp: CFG.gsHp, t: 1e9, n: 1, dead: false, flash: 0 })
                     }
                     if (opts.sortieOff) { gs.sortieT = 1e9; gs.gunships.length = 0 }
+                    // #3064 rapNow arms the next rappel drop immediately (the
+                    // falls-only schedule answers wherever the run stands);
+                    // rapOff silences it and unwires whoever is on the line.
+                    if (opts.rapNow) gs.rapT = Math.min(gs.rapT, gs.tick + 1)
+                    if (opts.rapStation !== undefined) gs.rapN = opts.rapStation   // aim the wheel at one station (harness only)
+                    if (opts.auto !== undefined) harnessAuto = !!opts.auto   // #3064 hand the seat to the honest brain (harness only)
+                    if (opts.rapOff) { gs.rapT = 1e9; for (let ri = gs.soldiers.length - 1; ri >= 0; ri--) if (gs.soldiers[ri].rap) gs.soldiers.splice(ri, 1) }
                     if (opts.hangarOpen !== undefined && gs.boss) { gs.boss.hangar.open = opts.hangarOpen; gs.boss.hangar.launchAt = 0; gs.sortieT = 1e9 }
                     if (opts.podHere) gs.pods.push({ x: gs.p.x + (opts.podDX ?? 40), y: CFG.ground - 2, vx: CFG.podVx, vy: 0, kind: opts.podKind || 'laser' })
                     // #2885: hide the canopy (pixel-baseline leg) or stand the hero
@@ -1395,6 +1417,7 @@ export default function ContraGame () {
                     `soldiers ${gs.soldiers.filter((s) => !s.dead).length}/${gs.soldiers.length} alive  turrets ${gs.turrets.filter((t) => !t.dead).length}  snipers ${gs.snipers.filter((t) => !t.dead).length}  nades ${gs.eb.filter((b) => b.gr).length}  barrels ${gs.barrels.filter((b) => !b.gone).length}  bullets p/e ${gs.pb.length}/${gs.eb.length}`,
                     `SKY ${gs.carriers.length ? `carrier hp ${gs.carriers[0].hp} ${gs.carriers[0].kind}` : 'clear'}  pods ${gs.pods.length}  next courier t${gs.nextCarrier}`,
                     `SKY2 ${gs.gunships.length ? `GUNSHIP hp ${gs.gunships[0].hp} x${gs.gunships[0].x.toFixed(0)} y${gs.gunships[0].y.toFixed(0)}` : 'no sortie'}  hangar ${gs.boss ? (gs.boss.hangar.open > 0 ? `GRIND t${gs.boss.hangar.open}` : gs.boss.hangar.launchAt > 0 ? 'DUE' : 'shut') : '-'}  next sortie t${gs.sortieT > 1e8 ? 'off' : gs.sortieT}` ,   // #2917
+                    `ROPE ${(() => { const r = gs.soldiers.filter((s) => !s.dead && s.rap)[0]; return r ? `on wire st${r.rap} x${r.x.toFixed(0)} y${r.y.toFixed(0)} shots${r.shots}` : 'no rappel' })()}  next rope t${gs.rapT > 1e8 ? 'off' : gs.rapT}`,   // #3064 the wire is observable
                     `VINES ${gs.p.vine >= 0 ? `HERO RIDING #${gs.p.vine}` : gs.p2.vine >= 0 ? `ALLY RIDING #${gs.p2.vine}` : `${gs.vines.length} swaying`}  ${gs.boss && gs.boss.dying ? `CASCADE t${gs.boss.dying}` : ''}`,
                     `screen ${screen}  paused ${pausedRef.current}  continues ${contLeft}  overT ${overT}`,
                 ],
