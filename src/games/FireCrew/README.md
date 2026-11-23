@@ -67,11 +67,20 @@ see a different slice of the smoke. RETRO bar, 480x320, everything synthesized.
   drive the CPU seats through their pads; against a human seat they are an
   echo only. Every call banks into the recording as `voiceCmd` + the raw
   track (`spec.voiceExtra`).
+- Voices in the smoke (#2994): a still-hidden victim cries. The cry carries
+  across the floor it is on, up to `CRY_RANGE = 5` tiles — light is
+  directional and long, sound is omni-directional and short. Only the still-lost
+  cry (found, carried, rescued and lost are silence). `cryAt(g, seat)` is the
+  per-seat law — the mirror of `lightAt`: on a three-seat device only the seat
+  standing in earshot of a voice hears it — and `step()` names each new voice
+  once for human seats while cpu seats and a seated WATCH stay silent (#2989
+  law: hands off, ears off). The cry names no direction and draws no marker:
+  within-range is all it says; closing in stays the light's job.
 
 ## Verify
 
 ```bash
-npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring, night art, model.js senses (196)
+npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring, night art, model.js senses (228)
 npm run attractcheck -- --mutate   # attract rules + 6 FIRE CREW mutants die
 npm run lint:firecrew
 npm run dev -- --port 5173 --strictPort   # then /retrogames/fire-crew
@@ -85,7 +94,7 @@ routes through the wind law"); restore afterwards.
 
 ## Honest gaps (first follow-ups)
 
-- **DISCLAIMER — trainable production line (#1712):** the adapter and wiring are
+- **DISCLAIMER** — trainable production line (#1712): the adapter and wiring are
   proven on the fixture store; the PRODUCTION card keeps `fire-crew` humanTakes
   at 0 until consented phone takes land at https://jalfern.com/retrogames/fire-crew
   — the lines are human data, as ever. This is a decided state, not lane work
@@ -148,6 +157,38 @@ routes through the wind law"); restore afterwards.
 
 ## Shipped since the first pass
 
+- **#2994 — voices in the smoke (never-dry polish):** the information split had
+  one direction — light finds the lost. `helpCry(dist)` and `cryAt(g, seat)` in
+  `sim.js` open the mirror law (windVoice/tankAlarm pattern, pure and rng-free):
+  a still-hidden victim cries across its own floor up to `CRY_RANGE = 5` tiles —
+  omni-directional where the flashlight cone is directional, short where it is
+  long — and the audible-but-unlit band is real geometry the gates pin (cells
+  within earshot that `lightAt` denies). Only the still-lost cry; found, carried,
+  rescued and lost are silence; no voice crosses the decking (mirror of the
+  water law). `step()` names each new voice once per victim for human seats
+  (`SOMEONE'S IN THERE - LISTEN`) — cpu seats neither hear nor spend the naming,
+  a seated WATCH is silent (#2989), and the repeated locating cry is the shell's
+  cadence on the sim's `CRY_BEATS` = 30, voice from `helpCry`, never shell
+  numbers. `art.js` gains nothing: an audible-but-unlit victim gets no drawn
+  marker — a pin would leak exactly the position the light law denies. Hash and
+  autopilot untouched (`cryAt` is a pure read, `cried` is hash-invisible like
+  battery and sweep; replays byte-equal). The README's #1712 bullet also gets
+  its doctrine shape: `**DISCLAIMER** —` — the marker `parseGaps` declines, which
+  is why this game kept topping never-dry scoring as a decided human-data state
+  (#2488). `firecrewcheck` +27 (voice algebra, geometry, naming law, determinism,
+  src pins, README doctrine); `firecrewplay` +7 browser legs on real rAF ticks
+  (drive inside → hear the cry; out of reach → silence; seated → ears shut;
+  released → hears again). Mutants (one line each):
+  - reach: `sed -i '' 's/export const CRY_RANGE = 5/export const CRY_RANGE = 1/' src/games/FireCrew/sim.js`
+    — the five-tiles constant and the audible-band geometry gate (two) go red.
+  - hidden-only: `sed -i '' "s/if (v.state !== 'hidden') continue/if (false) continue/" src/games/FireCrew/sim.js`
+    — the found-are-silent gate goes red (with the near/nearest/once gates, five).
+  - decking: `sed -i '' "s/if (inLoft(v.y) !== floor) continue/continue/" src/games/FireCrew/sim.js`
+    — the same-deck-carries gate goes red (the silence-expected pair gate passes vacuously — the pair is what pins the line).
+  - closeness: `sed -i '' 's/(CRY_RANGE - Math.max(0, dist))/(Math.max(0, dist))/' src/games/FireCrew/sim.js`
+    — the climb-as-it-nears gate goes red (pitch would fall as the voice nears).
+  - human-only stamp: `sed -i '' "s/if (g.sources\[s - 1\] !== 'human') continue/if (g.sources[s - 1] === 'human') continue/" src/games/FireCrew/sim.js`
+    — the naming, cpu-silence and src-pin gates (three) go red: a robot house names nothing, and the pin refuses the inverted law.
 - **#2989 — the tank speaks (never-dry polish):** the pressure arc (#1411)
   shrinks the stream 4→3→2→1 as the tank drains and dry kills it — but the
   human hose heard only its own spray stop, while the CPU hose already refills

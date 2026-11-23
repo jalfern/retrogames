@@ -157,7 +157,7 @@ export function setSources(g, sources) {
 }
 
 function victim(x, y) {
-    return { x, y, loft: y <= LOFT_Y1, state: 'hidden', wave: 0, panic: 0 }
+    return { x, y, loft: y <= LOFT_Y1, state: 'hidden', wave: 0, panic: 0, cried: false }
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -313,6 +313,53 @@ const tankAlarm = (level) => {
     }
 }
 export { windVoice, ladderCreak, windWhistle, crewTail, tankAlarm }
+
+// #2994 — voices in the smoke (never-dry polish: the lost had voices). FIRE
+// CREW is the information split — every seat sees a different slice through
+// lightAt — but a hidden victim could only ever be found where a light
+// touched it: the flashlight cone reaches 6 in ONE direction, crew lamps 2–3.
+// helpCry/cryAt are the law's mirror: sound is omni-directional and short. A
+// victim still lost behind the smoke cries, and the cry carries across the
+// floor the voice is on (the loft is the ladder seat's problem, #1424) up to
+// CRY_RANGE tiles. Pure and rng-free like windVoice: replays, hashes and the
+// autopilot are untouched — the cry is a sense, not a cheat. helpCry is the
+// voice: null beyond the range, a two-syllable wail whose pitch and weight
+// climb as the voice gets closer (5 is the faint far wall, 1 is right there).
+// step() names a new voice once per victim for the human seats — cpu seats
+// and a seated WATCH stay silent (#2989 law) — and the cry gives NO direction
+// and no drawn marker: within-range is all it says, closing in is still the
+// light's job.
+export const CRY_RANGE = 5 // one carried call, in tiles, across one floor
+export const CRY_BEATS = 30 // one syllable pair per half-second while audible
+const helpCry = (dist) => {
+    if (!Number.isFinite(dist) || dist > CRY_RANGE) return null
+    const u = Math.max(0, (CRY_RANGE - Math.max(0, dist)) / CRY_RANGE) // 0 at the edge → 1 right there
+    return {
+        vol: +(0.022 + u * 0.028).toFixed(4),
+        f0: 300 + Math.round(u * 120),
+        f1: 460 + Math.round(u * 160),
+        dur: 0.18,
+    }
+}
+// The nearest voice still lost to this seat: hidden victims ONLY (found,
+// carried, rescued, lost are silent — this is the locate-the-still-lost
+// channel), on the same floor as the firefighter hearing it, within one
+// carried call. A pure read: the cry never drives a cpu pad and never mixes
+// into stateHash — like battery and sweep, it is a sense, not a state fork.
+const cryAt = (g, seat) => {
+    const f = g.crew[seat - 1]
+    if (!f) return null
+    const floor = inLoft(f.y)
+    let best = null
+    for (const v of g.victims) {
+        if (v.state !== 'hidden') continue // the found no longer need shouting
+        if (inLoft(v.y) !== floor) continue // no voice carries through the decking
+        const d = Math.abs(v.x - f.x) + Math.abs(v.y - f.y)
+        if (d <= CRY_RANGE && (!best || d < best.dist)) best = { dist: d, victim: v }
+    }
+    return best
+}
+export { helpCry, cryAt }
 
 function spreadAndBurn(g) {
     const rng = g.rng
@@ -866,6 +913,21 @@ export function step(g, pad, pads) {
         g.messageT = 120
     }
     g.tankStage = hoseStage
+    // #2994 — a new voice named once per lost: the first time a hidden victim
+    // falls within one carried call of a human seat, the house says someone is
+    // close. One naming per victim (the repeated locating cry is the audio
+    // cadence, not message spam); cpu seats neither hear it nor spend the
+    // naming, so the voice still lands if a human seat arrives later. Hash-
+    // invisible like battery and sweep — the replay stays exact.
+    for (let s = 1; s <= 3; s++) {
+        if (g.sources[s - 1] !== 'human') continue
+        const c = cryAt(g, s)
+        if (c && !c.victim.cried) {
+            c.victim.cried = true
+            g.message = 'SOMEONE\'S IN THERE - LISTEN'; g.messageT = 120
+            break
+        }
+    }
     g.messageT = Math.max(0, g.messageT - 1)
     g.score = g.rescued * 1000 + g.doused * 10 + (g.done && g.win ? Math.floor((CLOCK - g.tick) / 10) : 0)
     const unresolved = g.victims.filter((v) => v.state !== 'rescued' && v.state !== 'lost').length

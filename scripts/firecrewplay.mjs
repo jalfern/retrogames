@@ -338,6 +338,51 @@ tspy = await page.evaluate(() => window.__firecrewTest.tankSpy())
 ok(tspy.human && tspy.fired && tspy.fired.kind === 'low',
     'back in hand, the next fall names itself again — every crossing spoken once', JSON.stringify(tspy.fired))
 
+// #2994 — voices in the smoke on real ticks. The doorway band is lit (lightAt
+// is 1 on the street), so the hose must walk IN first; then a parked hidden
+// voice cries on the cadence and the arrival names it, out of the carry nothing
+// sounds, and a seated WATCH keeps its ears shut until the wheel comes back.
+await page.evaluate(() => window.__firecrewTest.start(77, 1))
+await page.waitForFunction(() => window.__firecrewTest.screen() === 'play', { timeout: 8000 })
+await nap(400)
+await page.keyboard.down('ArrowUp')
+const walkedIn = await page.waitForFunction(() => {
+    const p = window.__firecrewTest.probe()
+    return p && p.cy <= 12
+}, { timeout: 8000 }).then(() => true).catch(() => false)
+await page.keyboard.up('ArrowUp')
+ok(walkedIn, 'cry-leg: the hose walks in from the lit doorway — the audible band lives in the dark')
+await nap(150)
+let cspy = await page.evaluate(() => window.__firecrewTest.cryForce(4))
+ok(cspy && cspy.dist !== null && cspy.dist <= 5 && cspy.human && cspy.voice,
+    'cryForce parks a still-hidden voice inside one carried call on a live shift', JSON.stringify(cspy))
+await nap(800)
+cspy = await page.evaluate(() => window.__firecrewTest.crySpy())
+ok(cspy.fired && cspy.fired.dist >= 1 && cspy.fired.dist <= 5 && cspy.fired.vol > 0,
+    'a hidden voice within reach cries on the cadence — heard though unseen', JSON.stringify(cspy.fired))
+ok(/SOMEONE'S IN THERE - LISTEN/.test(cspy.msg) && cspy.cried >= 1,
+    'the arrival names the new voice once on the card', JSON.stringify({ msg: cspy.msg, cried: cspy.cried }))
+await page.evaluate(() => window.__firecrewTest.cryForce(9))
+await nap(800)
+cspy = await page.evaluate(() => window.__firecrewTest.crySpy())
+ok(cspy.nearest === null && cspy.fired === null,
+    'out of the carry, silence — the cry never telegraphs across the house', JSON.stringify(cspy))
+await press('KeyY') // seat the watcher: hands off, ears off (#2989 law)
+await nap(250)
+await page.waitForFunction(() => window.__firecrewTest.crySpy().msgT === 0, { timeout: 4000 }) // stale card must decay first
+await page.evaluate(() => window.__firecrewTest.cryForce(4))
+await nap(800)
+cspy = await page.evaluate(() => window.__firecrewTest.crySpy())
+ok(cspy.nearest === null && cspy.fired === null && cspy.cried === 0,
+    'seated WATCH hears nothing — a parked voice stays unnamed while the autopilot has the wheel', JSON.stringify(cspy))
+await press('ArrowRight') // driving key takes the seat back
+await nap(250)
+await page.evaluate(() => window.__firecrewTest.cryForce(4))
+await nap(800)
+cspy = await page.evaluate(() => window.__firecrewTest.crySpy())
+ok(cspy.nearest && cspy.fired && cspy.fired.dist <= 5,
+    'back in hand, the ear reopens — the released seat hears the lost again', JSON.stringify({ fired: cspy.fired, nearest: cspy.nearest }))
+
 ok(errors.length === 0, 'zero page errors across the whole drive', errors.slice(0, 3).join(' | '))
 console.log(`\n${fails ? 'FAILED' : 'DRIVE GREEN'} — ${fails ? fails + ' failures' : 'start, play, pause, contract, die, restart'}`)
 await browser.close()

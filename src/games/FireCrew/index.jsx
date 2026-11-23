@@ -19,7 +19,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, armLiveCapture, recordLiveTick, isRecording, hasAutoVoice } from '../../utils/gameContract'
 import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { audioController } from '../../utils/AudioController'
-import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio, windVoice, ladderCreak, windWhistle, crewTail, TANK_LOW, tankAlarm } from './sim.js'
+import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio, lightAt, windVoice, ladderCreak, windWhistle, crewTail, TANK_LOW, tankAlarm, CRY_BEATS, CRY_RANGE, helpCry, cryAt, WALL, OUT } from './sim.js'
 import { parseRadio } from './voiceradio.js'
 import { askVoiceConsent, createVoiceSession } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
@@ -42,6 +42,10 @@ const sfx = {
     // tankAlarm spec, never from the shell's own numbers (src-pinned).
     tankLow: (v) => { audioController.playTone(v.f0, 0.09, 'square', v.vol); audioController.playTone(v.f1, 0.12, 'square', v.vol, 0.1) },
     tankDry: (v) => audioController.playSweep(v.f0, v.f1, v.dur, 'triangle', v.vol),
+    // #2994 — the lost cry: params come from the sim-side helpCry spec, never
+    // from the shell's own numbers (src-pinned). Two rising syllables, like a
+    // shout cutting through the smoke; the sim's CRY_BEATS sets the cadence.
+    cry: (v) => { audioController.playTone(v.f0, 0.1, 'sawtooth', v.vol); audioController.playTone(v.f1, 0.14, 'sawtooth', v.vol, 0.12) },
     // #1744 — sustained wind bed and ladder load-creak; params come from the
     // sim-side pure voices (windVoice / ladderCreak), never from the shell.
     windBed: (v) => audioController.playFilteredNoise(v.dur, v.vol, v.freq),
@@ -106,6 +110,10 @@ export default function FireCrew() {
     const lastWhistleRef = useRef(null)
     // #2989 — what the tank alarm last fired (kind + tick), read by the browser gate.
     const lastTankRef = useRef(null)
+    // #2994 — cry cadence (next allowed syllable pair) and the last fired cry,
+    // read back by the browser gate (windBed/tank pattern).
+    const cryNextAtRef = useRef(0)
+    const lastCryRef = useRef(null)
     // voice radio (#1361): the mic is a seat, like any slot — consent first
     // (never auto-asked), one raw track for the whole run, spoken calls feed
     // the sim through applyRadio so the mic can never beat the darkness.
@@ -150,6 +158,8 @@ export default function FireCrew() {
         lastCreakRef.current = null
         lastWhistleRef.current = null
         lastTankRef.current = null
+        cryNextAtRef.current = 0 // #2994 — fresh alarm, fresh ears
+        lastCryRef.current = null
         seatsRef.current = n
         setSeats(n)
         setEnd(null)
@@ -279,6 +289,22 @@ export default function FireCrew() {
         if (!watchingRef.current && p.tank > 0 && g.crew[0].tank <= 0) {
             sfx.tankDry(tankAlarm(0))
             lastTankRef.current = { kind: 'dry', tick: g.tick, tank: 0 }
+        }
+        // #2994 — voices in the smoke: the nearest hidden victim within one
+        // carried call of a HUMAN seat cries on the sim's cadence, voice from
+        // helpCry, never shell numbers. A seated seat reads 'cpu' in sources,
+        // so the same law keeps WATCH silent (#2989): hands off, ears off.
+        let nearestCry = null
+        for (let s = 1; s <= 3; s++) {
+            if (g.sources[s - 1] !== 'human') continue
+            const c = cryAt(g, s)
+            if (c && (!nearestCry || c.dist < nearestCry.dist)) nearestCry = { dist: c.dist, seat: s }
+        }
+        if (nearestCry && g.tick >= cryNextAtRef.current) {
+            const cv = helpCry(nearestCry.dist)
+            sfx.cry(cv)
+            lastCryRef.current = { tick: g.tick, dist: nearestCry.dist, seat: nearestCry.seat, vol: cv.vol }
+            cryNextAtRef.current = g.tick + CRY_BEATS
         }
         prevRef.current = { rescued: g.rescued, lost: g.lost, knocks: g.crew.map((c) => c.knocks), msgT: g.messageT, ladder: g.ladder, gust: g.wind.gust, tank: g.crew[0].tank, tick: g.tick }
     }, [])
@@ -665,6 +691,61 @@ export default function FireCrew() {
                         msg: g.message, msgT: g.messageT,
                         alarm: tankAlarm(g.crew[0].tank), lowAt: TANK_LOW,
                         fired: lastTankRef.current,
+                    }
+                },
+                // #2994 — park the still-lost at a forced carried distance on
+                // seat 1's floor and clear the cry spies, so the gate sees only
+                // what happens after the forcing (tankForce law). The cell must
+                // be one the LIGHT law still denies — dark under lightAt, not
+                // burning, off the flashlight cone — or the victim is `found`
+                // before it can ever cry, which is exactly the band the sense is
+                // for. dist > CRY_RANGE pushes EVERY hidden same-floor voice out
+                // of earshot — the silence leg.
+                cryForce: (dist) => {
+                    const g = gsRef.current
+                    if (!g) return { error: 'no run' }
+                    const f = g.crew[0]
+                    const d = Math.max(0, dist | 0)
+                    const floor = inLoft(f.y)
+                    const lost = g.victims.filter((vv) => vv.state === 'hidden' && inLoft(vv.y) === floor)
+                    if (!lost.length) return { error: 'no hidden victim on this floor' }
+                    const spots = []
+                    for (let y = 5; y <= 14; y++) {
+                        for (let x = 1; x <= W - 2; x++) {
+                            const c = g.cell[y * W + x]
+                            if (g.tile[y * W + x] === WALL || g.tile[y * W + x] === OUT) continue
+                            if (c && (c.burning || c.heat > 55)) continue
+                            if (lightAt(g, x, y, 0) > 0.5) continue // must stay HIDDEN to cry
+                            if (Math.abs(x - g.crew[1].x) + Math.abs(y - g.crew[1].y) <= 4) continue // keep the cpu lamp off it
+                            const dd = Math.abs(x - f.x) + Math.abs(y - f.y)
+                            if (d > CRY_RANGE ? dd > CRY_RANGE : dd <= CRY_RANGE) spots.push({ x, y, dd })
+                        }
+                    }
+                    if (!spots.length) return { error: 'no free cell at that reach' }
+                    spots.sort((a, b) => Math.abs(a.dd - d) - Math.abs(b.dd - d) || a.dd - b.dd)
+                    const target = spots[0]
+                    const targets = d > CRY_RANGE ? lost : [lost.reduce((m, vv) => (Math.abs(vv.x - f.x) + Math.abs(vv.y - f.y)) < (Math.abs(m.x - f.x) + Math.abs(m.y - f.y)) ? vv : m, lost[0])]
+                    for (const vv of targets) { vv.x = target.x; vv.y = target.y; vv.cried = false }
+                    lastCryRef.current = null
+                    const c = cryAt(g, 1)
+                    return { tick: g.tick, dist: c ? c.dist : null, voice: c ? helpCry(c.dist) : null, human: g.sources[0] === 'human', done: !!g.done }
+                },
+                crySpy: () => {
+                    const g = gsRef.current
+                    if (!g) return { error: 'no run' }
+                    let nearest = null
+                    for (let s = 1; s <= 3; s++) {
+                        if (g.sources[s - 1] !== 'human') continue
+                        const c = cryAt(g, s)
+                        if (c && (!nearest || c.dist < nearest.dist)) nearest = { dist: c.dist, seat: s }
+                    }
+                    return {
+                        nearest,
+                        voice: nearest ? helpCry(nearest.dist) : null,
+                        beats: CRY_BEATS,
+                        fired: lastCryRef.current,
+                        msg: g.message, msgT: g.messageT,
+                        cried: g.victims.filter((vv) => vv.cried).length,
                     }
                 },
             }
