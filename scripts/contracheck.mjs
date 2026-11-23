@@ -2386,8 +2386,8 @@ if (MUTANT) {
             // #3060: the letter must actually shield. Blind the absorb and the
             // cyan ring becomes paint — the seat dies to rounds it displayed eating.
             name: 'barrier-deaf',
-            anchor: 'if (p.barr > 0 && p.dead === 0 && !p.out && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7',
-            plant: 'if (false && p.barr > 0 && p.dead === 0 && !p.out && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7 /* MUTANT(barrier-deaf): the ring swallows nothing */',
+            anchor: 'if (p.barr > 0 && p.dead === 0 && !p.out && !b.eatP && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7',
+            plant: 'if (false && p.barr > 0 && p.dead === 0 && !p.out && !b.eatP && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7 /* MUTANT(barrier-deaf): the ring swallows nothing */',
             harm: async (mod) => {
                 const gs = mod.makeGame(3)
                 gs.p.inv = 0; gs.p.barr = 120
@@ -2428,6 +2428,83 @@ if (MUTANT) {
                 for (let i = 0; i < 60 && dead < 0; i++) { mod.step(gs, {}); if (gs.p.dead > 0) dead = i; gs.ev.length = 0 }
                 return dead < 0
                     ? 'HARM NAMED: a shielded seat strolled out of a blast at his feet - the ring shielded the fireball too, and the cabinet\'s hazard law is gone'                    : null
+            },
+        },
+        {
+            // #3060: a spent round is MARKED, never deleted. Delete it from the
+            // stream and the honest autopilot stops seeing the round it used to
+            // hop — the whole run re-times, and every byte downstream moves.
+            name: 'eater-erases',
+            anchor: `if (p.barr > 0 && p.dead === 0 && !p.out && !b.eatP && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7 && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13) + 7) { b.eatP = 1; gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 0 }) }`,
+            plant: `if (p.barr > 0 && p.dead === 0 && !p.out && !b.eatP && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7 && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13) + 7) { b.eatP = 1; gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 0 }); return false /* MUTANT(eater-erases): spent rounds vanish from the stream */ }`,
+            harm: async (mod) => {
+                const twin = (block) => {
+                    const gs = mod.makeGame(1)
+                    if (block) gs.nextBarr = 1e9
+                    const xs = []
+                    while (gs.tick < 1500 && !gs.end) { mod.step(gs, mod.autopilot(gs)); if (gs.tick % 97 === 0) xs.push(gs.p.x.toFixed(2)); gs.ev.length = 0 }
+                    return xs.join(',')
+                }
+                const a = twin(false), b = twin(true)
+                return a !== b
+                    ? 'HARM NAMED: an eaten round left the bullet table - the autopilot stopped hopping rounds it could no longer see, the whole run re-timed, and every pre-barrier byte downstream moved'
+                    : null
+            },
+        },
+        {
+            // #3060: a DOWNED seat is not the ferryman's. Grow the drown check
+            // back over the !p.out guard and a hero who falls mid-vine pays the
+            // torrent every tick — the stage returns before bullets, enemies and
+            // the gate, and the run never resolves (gs.ev grows without end).
+            name: 'down-hangs',
+            anchor: 'if (p.y >= gs.camY + H - CFG.drownAt && !p.out) {',
+            plant: 'if (p.y >= gs.camY + H - CFG.drownAt) { /* MUTANT(down-hangs): the torrent keeps collecting from a fallen seat */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(6)
+                mod.warpFalls(gs)
+                gs.lives = 1
+                gs.p.y = 420; gs.p.vy = 0; gs.p.onGround = false; gs.p.vine = 2; gs.p.grabI = 2; gs.p.rideT = 1
+                let pdowns = 0
+                const t0 = gs.tick
+                while (!gs.end && gs.tick - t0 < 1500) {
+                    const qq = gs.p2
+                    if (!qq.out && qq.dead === 0) { qq.y = Math.min(gs.camY + 20, 280); qq.vy = 0; qq.onGround = true; qq.inv = Math.max(qq.inv, 60) }
+                    mod.step(gs, mod.autopilot(gs))
+                    for (const e of gs.ev) if (e.type === 'pdown') pdowns++
+                    gs.ev.length = 0
+                    if (pdowns > 1) return 'HARM NAMED: a fallen seat kept drowning - every tick rang pdown, the step returned before the bullets and the gate, and the stage hung on a corpse'
+                }
+                return null
+            },
+        },
+        {
+            // #3060: with the hero seat down, the standing wingman is the
+            // carrier — the camera anchor and the arena gate follow whoever
+            // still stands. Blind the handoff and the gate only ever grinds
+            // open under the hero's feet; a hero dead air parks the run.
+            name: 'corpse-key',
+            anchor: 'const carrier = !p.out ? p : (!q.out && q.dead === 0 ? q : null)',
+            plant: 'const carrier = p /* MUTANT(corpse-key): the gate still serves the fallen seat */',
+            harm: async (mod) => {
+                const gs = mod.makeGame(6)
+                mod.warpFalls(gs)
+                gs.lives = 1
+                gs.p.y = 420; gs.p.vy = 0; gs.p.onGround = false; gs.p.vine = 2; gs.p.grabI = 2; gs.p.rideT = 1
+                const q = gs.p2
+                const t0 = gs.tick
+                while (!gs.p.out && gs.tick - t0 < 1500) {
+                    if (!q.out && q.dead === 0) { q.y = Math.min(gs.camY + 20, 280); q.vy = 0; q.onGround = true; q.inv = Math.max(q.inv, 60) }
+                    mod.step(gs, mod.autopilot(gs)); gs.ev.length = 0
+                }
+                const t1 = gs.tick
+                while (!gs.boss && !gs.end && gs.tick - t1 < 1500) {
+                    if (!q.out && q.dead === 0) { q.y = gs.camY + 20; q.vy = 0; q.onGround = true; q.inv = Math.max(q.inv, 60) }
+                    mod.step(gs, mod.autopilot(gs))
+                    gs.ev.length = 0
+                }
+                return !gs.boss && !gs.end
+                    ? 'HARM NAMED: the solo wingman stood on the gate\'s threshold and the door never ground open - the arena still keyed on the fallen hero, and the run hung at the top of the gorge'
+                    : null
             },
         },
     ]
@@ -3508,6 +3585,23 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
             a[0] === b[0] && a[1] === b[1], `r ${a[0]} vs ${b[0]}`)
     }
 
+    // --- the mark-not-erase law: with the lane live and the drift CAUGHT, the
+    // autopilot still reads every round (spent ones fly on, marked) — so the
+    // hero's line through stage 1 is byte-identical to the barrier-free run
+    // until at least tick 1500. An aid that moves the stream breaks seeds too
+    // (#2917); only the score and the shield clocks differ.
+    {
+        const twin = (block) => {
+            const gs = makeGame(1)
+            if (block) gs.nextBarr = 1e9
+            const xs = []
+            while (gs.tick < 1500 && !gs.end) { step(gs, autopilot(gs)); if (gs.tick % 97 === 0) xs.push(gs.p.x.toFixed(2)); gs.ev.length = 0 }
+            return xs.join(',')
+        }
+        r.check('#3060 spent rounds stay in the stream — the autopilot line past a captured barrier is byte-identical to the barrier-free run',
+            twin(false) === twin(true))
+    }
+
     // --- capture pays like a letter ONCE; a refresh is free; the shield is
     // not a gun (the wheel stands wherever it was).
     {
@@ -3518,6 +3612,7 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
         step(gs, {})
         const pay1 = gs.p.barr === CFG.barrTicks && gs.score - s0 === CFG.barrScore
             && gs.ev.some((e) => e.type === 'barr' && e.o === 0) && gs.ev.some((e) => e.type === 'pop' && e.v === CFG.barrScore)
+        gs.ev.length = 0
         gs.bcap = { x: gs.p.x, y: CFG.ground - 12, vx: CFG.barrVx }
         const s1 = gs.score
         step(gs, {})
@@ -3563,6 +3658,24 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
         r.check('#3060 the absorb law — a chest round sparks out at the ring and the seat lives; the same round kills unshielded; two ticks of fuse left re-arms lethality',
             absorbed > 0 && gs.p.dead === 0 && diedAt > 0 && diedE > 0,
             `absorbed=${absorbed} diedAt=${diedAt} expiredDiedAt=${diedE}`)
+
+        // a grenade the ring swallowed lands dead — the field ate its fuse:
+        // deck spark, no fireball, seat stands (an uneaten bomb still booms —
+        // the hazard leg below).
+        const gf = makeGame(3)
+        gf.p.inv = 0; gf.p.barr = 200
+        const bomb = { x: gf.p.x, y: CFG.ground - 60, vx: 0, vy: 1, gr: true }
+        gf.eb.push(bomb)
+        let boomed = false, deadF = -1, landed = -1
+        for (let i = 0; i < 60 && deadF < 0; i++) {
+            step(gf, {})
+            const boomHere = gf.ev.some((e) => e.type === 'boom' && Math.abs(e.x - bomb.x) < 10 && e.y > CFG.ground - 14)
+            if (landed < 0 && !gf.eb.includes(bomb)) { landed = i; if (boomHere) boomed = true }
+            if (gf.p.dead > 0) deadF = i
+            gf.ev.length = 0
+        }
+        r.check('#3060 a swallowed bomb lands dead — the grenade the ring ate sparks on the deck instead of bursting, it kept flying (marked) until it landed, and the seat stands',
+            !boomed && deadF < 0 && landed > 0 && bomb.eatP === 1, `boomed=${boomed} deadAt=${deadF} landedAt=${landed} eatP=${bomb.eatP}`)
     }
 
     // --- hazards outrank the shield: a TNT bomb landing just outside the ring
@@ -3595,6 +3708,68 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
         warpFalls(gs)
         r.check('#3060 the falls clear the sky — the drift never enters the canyon, a held shield survives the camera turn',
             gs.bcap === null && gs.p.barr === 200, `bcap=${gs.bcap} barr=${gs.p.barr}`)
+    }
+
+    // --- #3060 (found in the shield's sweep): the shield rescues deaths, and a
+    // rescued run can end up paying its LAST life mid-vine in the falls. The
+    // old #2814 code let that hang the stage forever: the downed hero stayed
+    // hooked to the vine, the torrent drown-fired on the corpse every tick
+    // (returning before bullets, enemies and the stage-top call — gs.ev grew
+    // without end), and the boss could never be called because the anchor seat
+    // was dead air. The arcade law (#2814's own words — the run goes on under
+    // whoever still stands) says a stage must never hang.
+    {
+        const gs = makeGame(6)
+        warpFalls(gs)
+        gs.lives = 1
+        gs.p.y = 420; gs.p.vy = 0; gs.p.onGround = false; gs.p.vine = 2; gs.p.grabI = 2; gs.p.rideT = 1
+        let pdowns = 0, respawns = 0, drowns = 0
+        const t0 = gs.tick
+        while (!gs.end && gs.tick - t0 < 1500) {
+            step(gs, autopilot(gs))
+            for (const e of gs.ev) {
+                if (e.type === 'pdown') pdowns++
+                if (e.type === 'respawn') respawns++
+                if (e.type === 'drown' && e.o === undefined) drowns++
+            }
+            gs.ev.length = 0
+        }
+        r.check('#3060 a hero who goes DOWN mid-vine never hangs the stage — the vine releases him, the torrent stops collecting from a corpse, one pdown, no respawn, and the run resolves',
+            gs.end !== null && pdowns === 1 && respawns === 0 && drowns === 1 && gs.p.out && gs.p.vine === -1,
+            `end=${gs.end} took=${gs.tick - t0} pdowns=${pdowns} respawns=${respawns} drowns=${drowns}`)
+    }
+
+    // --- and the stage hands off: the solo wingman standing on solid ground is
+    // the carrier — the camera anchor and the boss call follow who still stands,
+    // and the arena still opens (the out seat stays out; a corpse is not a key).
+    {
+        const gs = makeGame(6)
+        warpFalls(gs)
+        gs.lives = 1
+        gs.p.y = 420; gs.p.vy = 0; gs.p.onGround = false; gs.p.vine = 2; gs.p.grabI = 2; gs.p.rideT = 1
+        const q = gs.p2
+        // hold the wingman high and merced while the torrent takes the hero:
+        // unheld he drowns on the camera's first lurch (the anchor drops when
+        // the pinned hero settles), and a dead partner ends the run before the
+        // handoff has anything to prove
+        while (!gs.p.out && gs.tick < 4000) {
+            if (!q.out && q.dead === 0) { q.y = Math.min(gs.camY + 20, 280); q.vy = 0; q.onGround = true; q.inv = Math.max(q.inv, 60) }
+            step(gs, autopilot(gs)); gs.ev.length = 0
+        }
+        const q2 = gs.p2
+        let called = -1
+        for (let i = 0; i < 60 && called < 0; i++) {
+            // stand him on the arena-floor lip (y=150 ledge) so seatStep's own
+            // landing law keeps him grounded — a harness pin below the ledge
+            // top would fall through it
+            if (!q2.out && q2.dead === 0) { q2.y = CFG.bossFloor; q2.vy = 0; q2.onGround = true; q2.inv = Math.max(q2.inv, 60) }
+            step(gs, autopilot(gs))
+            gs.ev.length = 0
+            if (gs.phase === 'boss') called = i
+        }
+        r.check('#3060 the stage hands off — with the hero seat down, the standing wingman carries the camera and calls the gate; the arena opens without resurrecting the fallen',
+            called >= 0 && gs.phase === 'boss' && !!gs.boss && gs.p.out && gs.end === null,
+            `called=${called} ph=${gs.phase} out=${gs.p.out} end=${gs.end}`)
     }
 
     // --- the arcade boundary rebuilds clean: guns carry (#3056), fuses do not.
@@ -5326,13 +5501,21 @@ const browser = await launch()
     }, { wx, wy, span })
 
     // 1) the drift paints at the deck — quiet world (schedule silenced), then
-    // stand a B capsule 60 px off the hero's right: its pixels appear.
+    // stand a B capsule 60 px off the hero's right: its pixels appear (polled
+    // through a few frames — the pulse alternates the body's two cyans and the
+    // paint must be seen once, not every frame).
     await bp.evaluate(() => window.__contraTest.setup({ barrOff: true, clearEnemies: true }))
     const cyanBase = await cyanNear(100, 184)
     await bp.evaluate(() => window.__contraTest.setup({ bcapHere: true, bcapDX: 60, bcapVx: 0 }))
-    const cyanLetter = await cyanNear(100, 184)
+    let cyanLetter = 0
+    for (let g0 = 0; g0 < 15 && cyanLetter < 8; g0++) {
+        const s = await bp.evaluate(() => window.__contraTest.probe())
+        if (!s.bcap) break
+        cyanLetter = Math.max(cyanLetter, await cyanNear(100, 184))
+        await bp.waitForTimeout(60)
+    }
     r.check('#3060 the fifth letter paints — a cyan B capsule at the deck where the baseline held no cyan',
-        cyanBase >= 0 && cyanBase < 4 && cyanLetter > cyanBase + 8, `base=${cyanBase} letter=${cyanLetter}`)
+        cyanBase >= 0 && cyanBase < 4 && cyanLetter >= 8, `base=${cyanBase} letter=${cyanLetter}`)
 
     // 2) real keys walk the hero onto it — the shield lands, the digit stamps,
     // the ring glows at his body.

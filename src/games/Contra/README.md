@@ -377,7 +377,10 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   rung-resale, bed-deaf, lift-flat,
                                        #   heat-silent, coin-dropped, lead-vanished,
                                        #   seat-gun-stripped, popup-loot,
-                                       #   hall-forget
+                                       #   hall-forget,
+                                       #   barrier-deaf, barrier-eternal,
+                                       #   hazard-immortal, eater-erases,
+                                       #   down-hangs, corpse-key
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -498,6 +501,14 @@ gold `+1000` where the pod sat** · zero
 page errors.
 
 ## Honest gaps
+
+- **CLOSED by #3060**: the wheel got its FIFTH letter. This README's capsule
+  spec listed S M F L for months while the 1987 cabinet's wheel carries a fifth
+  wedge — **B, the barrier**: an energy shield that swallows enemy rounds for a
+  few seconds. The disagreement (#237 rule) was recorded and the gap scoped live
+  from the cabinet: a cyan drift capsule on its own zero-rng lane, per-seat
+  shield truth in the sim, hazard-priority kept, and the twelve-seed sweep
+  byte-stable. See "#3060 The fifth letter" at the foot of this README.
 
 - **CLOSED by #3056**: the arcade loop now carries BOTH seats' guns. The #2894
   carry rebuilt the blue seat as a rifle, so a wingman's captured MACHINE/FIRE/
@@ -1151,3 +1162,71 @@ round-trip) and 5 live legs (empty plate, corrupt-store render, the record
 fall through the real death law — board, store and NEW RECORD pixels — the
 zero-score refusal, page errors), and the named mutant `hall-forget` dies
 (“the cabinet forgot — a 9999 fall banks nothing and calls no record”).
+
+## #3060 The fifth letter — BARRIER (never-dry stage)
+
+The 1987 wheel carries five wedges, and this repo's shelf listed four (S M F L).
+The missing letter is **B — the barrier**: the cyan van that drives in off the
+right of the jungle and hands you an energy shield which swallows enemy rounds
+for six seconds (`CFG.barrTicks: 360`, fixed — it is not a gamble and it never
+refreshes longer than it says). The B is **not a gun**: it coexists with whatever
+barrel you hold, so it rides its own capsule entity `gs.bcap` on its own
+zero-rng lane (`barrFirst/barrJitter/barrNext/barrJitter2` — all seed/tick
+arithmetic per the #2847 carrier precedent). `CAP_KINDS` stays the four guns and
+every pre-#3060 letter draw byte-stands. Capturing pays a letter's wage (+1000
+through the #3057 `pop` chokepoint, digit-sum mirror intact); a refresh while
+the shield is already up pays nothing, the wheel's own duplicate law.
+
+**The laws.** Shield truth is sim truth: `p.barr`/`p2.barr` ride `stateHash`
+alongside the drift and its schedule — a replay that lies about the shield
+diverges loudly. Per-seat and structural: the blue seat gets the same ring, the
+same drain, the same death-clears. **Hazards outrank the shield** — contact,
+hull, blast and the torrent take a shielded seat exactly as they take an
+unshielded one; the ring eats *rounds* (`b.gr` grenades included), nothing else.
+Death clears the fuse (killPlayer/killAlly and the respawn branch), `enterFalls`
+clears the sky (the drift is a jungle gift — a *held* shield survives the camera
+turn, the canyon gunners still throw at it), and the arcade-loop boundary
+rebuilds clean: marks and score carry (#3041/#3042), fuses do not.
+
+**Mark, never erase.** A swallowed round is MARKED (`b.eatP`/`b.eatQ`) and keeps
+flying in the sim; the shell simply stops drawing it, and a swallowed grenade
+fizzles to deck sparks instead of booming. The first cut deleted eaten rounds
+from `gs.eb` — and the honest autopilot, which hops rounds it can see, re-timed
+its runs and broke seeds 5 and 8. The table the brains read is the contract:
+delete nothing from it and the twelve-seed sweep cannot move. This is now a
+named law with a mutant (`eater-erases`).
+
+**Schedule calibration (bend the feature, never the brain — #2917).**
+`barrFirst` opened at 560 and ate seed 6: the jungle's first death cluster sits
+at t≈570–760, and a shield that swallows a death the autopilot was priced to
+take re-times the whole run — seed 6's rescued hero eventually went down
+*mid-vine* with the pool spent, where no calibrated wingman can solo the arena.
+Moved to 800, the van still catches the runner on all twelve sweep seeds and
+swallows real rounds on 3 (2, 10, 11 — grazes, not rescues), but never at a
+priced death. Proven against `origin/main` pre-barrier: identical `p.x` and
+`gs.r` streams tick-for-tick on all twelve seeds, identical win ticks, and
+every score exactly +1000 × captures. Zero gs.r draws, every tuned byte stands.
+(The spawn jitter also got honest high-bit harvest — `(seed^const)>>>21` was
+constant across the harness's low-bit seed set, so the lane wasn't really
+seed-keyed until #3060's own leg caught it.)
+
+**The hang the shield found (game-code fix, not feature).** Seed 6's diagnosis
+exposed a latent softlock predating BARRIER: a hero whose LAST life was spent
+while riding a vine went `out` still hooked to it — the vine never released the
+dead who don't respawn (only the respawn path released), the torrent's drown
+check kept firing on the corpse below the waterline every tick (`return` before
+bullets, enemies and the gate — `gs.ev` grew toward OOM), and the falls'
+boss-call keyed on `p.onGround` of that dead air. #2814's own law — *the run
+goes on under whoever still stands* — was only half-written. Now: a seat that
+goes DOWN releases its vine; the torrent collects only from the living
+(`!p.out`); and the stage's **carrier** is the seat that still stands — the
+camera anchor and the arena gate follow the solo wingman, and the gate grinds
+open for him. Two legs pin it (a downed hero never hangs the stage: one pdown,
+no respawn, resolved) and two mutants name its harm (`down-hangs`,
+`corpse-key`).
+
+**The look.** Cyan family: shell `#2fd8e8`, highlight `#9ff5ff`, ink `#e6ffff`,
+window `#07333d`, warning `#12707e`; a 5×5 B glyph; the ring is three beads
+orbiting the seat with the shelf's last-second blink (`barrWarn`); the HUD
+carries a per-seat shield pip; `barr` and `absorb` sfx; both consoles teach
+"S M F L B" and the shield line; the DEV kit can GRANT BARRIER (phone-checkable).

@@ -757,7 +757,13 @@ export default function ContraGame () {
             for (const c of gs.vc) drawCapsule(ctx, c, gs.tick)
             for (const c of gs.pods) drawCapsule(ctx, c, gs.tick)
             for (const b of gs.pb) drawBullet(ctx, b, false)
-            for (const b of gs.eb) { if (b.gr) drawGrenade(ctx, b); else drawBullet(ctx, b, true) }
+            for (const b of gs.eb) {
+                // #3060 a round the ring swallowed is already gone from the
+                // player's eyes (the absorb spark paints in its place) — the
+                // sim keeps flying it so the honest brains stay byte-stable.
+                if (b.eatP || b.eatQ) continue
+                if (b.gr) drawGrenade(ctx, b); else drawBullet(ctx, b, true)
+            }
             // S4: the blue seat draws at his own body, under the hero. #2837:
             // while the arrival descent runs, his rope paints ahead of him and
             // he doesn't flicker — you see him coming. #2842: the seat itself
@@ -1340,7 +1346,7 @@ export default function ContraGame () {
                     // shield on either seat, silence the schedule for pixel
                     // baselines, or loose a flat round at the chest line.
                     if (opts.bcapHere) gs.bcap = { x: gs.p.x + (opts.bcapDX ?? 40), y: CFG.ground - 12, vx: opts.bcapVx ?? CFG.barrVx }
-                    if (opts.barrOff) gs.nextBarr = 1e9
+                    if (opts.barrOff) { gs.nextBarr = 1e9; gs.bcap = null }   // a barrier-free world has no drift on the road either
                     if (opts.barr !== undefined) gs.p.barr = opts.barr
                     if (opts.barr2 !== undefined) gs.p2.barr = opts.barr2
                     if (opts.roundAtChest) gs.eb.push({ x: gs.p.x + (opts.roundDX ?? 34), y: gs.p.y - 14, vx: -(opts.roundVx ?? 1.6), vy: 0 })

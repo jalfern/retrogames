@@ -72,8 +72,15 @@ export const CFG = {
     // Schedule, drift and duration are seed/tick arithmetic: ZERO gs.r draws,
     // the #2847 carrier precedent — every existing capsule/carrier stream and
     // every tuned autopilot byte stands; the shield bends outcomes at capture,
-    // never the seed.
-    barrFirst: 560,             // the first drift of a run (ticks) + seed jitter
+    // never the seed. barrFirst is tuned to 800 (#3060 sweep calibration): the
+    // first death cluster of the jungle runs at t≈570-760, and a shield that
+    // eats a death the autopilot was priced to take re-times the whole run —
+    // seed 6's rescued death put the hero down mid-gorge, where no calibrated
+    // wingman can solo the arena (#2917: bend the feature, never the brain).
+    // Later than the cluster, the van still catches the runner on all 12
+    // sweep seeds and swallows real rounds on 3 — the letter is live in the
+    // sweep, just never at the moment it would undo a priced death.
+    barrFirst: 800,             // the first drift of a run (ticks) + seed jitter
     barrJitter: 240,
     barrNext: 1400,             // re-arm after a cleared drift + tick jitter
     barrJitter2: 300,
@@ -969,7 +976,7 @@ export function makeGame (seed, loop = 1, lives = 3, score = 0) {
         // #3060 the barrier capsule: the wheel's fifth letter drifts low over
         // the deck on seed/tick arithmetic (zero gs.r — the carrier precedent).
         bcap: null,             // {x,y,vx} while a B capsule is on screen
-        nextBarr: CFG.barrFirst + (((seed >>> 0) ^ 0x5bf03a1f) >>> 21) % CFG.barrJitter,
+        nextBarr: CFG.barrFirst + ((((seed >>> 0) * 2654435761) >>> 19) % CFG.barrJitter),   // #3060 — the naive (seed^const)>>>21 was constant for the harness seed set (seeds differ only in low bits); multiply first, then harvest high bits
         depot: { x: 1700, y: CFG.ground, hp: CFG.depotHp, aim: Math.PI, t: 70, dead: false, spawnT: 240 },
         vc: [],                     // S3.5 volley capsules — the depot's payout {x,y,vx,kind}
         // #2917 the gate's gunships live only in the arena (see makeBoss); the
@@ -1098,6 +1105,11 @@ function killPlayer (gs) {
         // pool empty: this seat goes down for good — no freeze (the run goes on
         // under whoever still stands)
         gs.lives = 0; p.out = true
+        // #3060 a seat that goes DOWN mid-vine must still be released — the
+        // respawn path (#2885) releases the dead who come back, but the dead who
+        // stay hung the vine forever: a corpse frozen in the air, and the falls
+        // check below kept drowning it every tick, holding the stage hostage.
+        p.vine = -1; p.grabI = -1; p.rideT = 0; p.vx = 0; p.vy = 0
         gs.ev.push({ type: 'pdown' })
         if (seatsDown(gs)) { gs.end = 'dead'; gs.ev.push({ type: 'gameover' }) }
         return
@@ -1393,10 +1405,17 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         gs.cam = Math.max(0, Math.min(CFG.worldW - W, p.x - 110))
         if (p.x >= CFG.endX) { enterFalls(gs); return }
     } else if (gs.phase === 'falls') {
+        // #3060 the carrier: the torrent and the stage-top call follow the seat
+        // that still stands. #2814's own law — "the partner who pays the last
+        // life leaves the run alone" — was only half-written: the camera and
+        // the boss anchor kept serving the DOWNED hero, so if he fell mid-air
+        // the view hung on his corpse and the solo ally could never reach the
+        // boss. The arcade hands the stage to the survivor.
+        const carrier = !p.out ? p : (!q.out && q.dead === 0 ? q : null)
         // ratchet camera: the torrent rises, and climbing pushes it further;
         // it NEVER comes back down — retreating into the water is how you drown.
         gs.camY -= CFG.rise
-        const anchorY = p.y - CFG.anchor
+        const anchorY = (carrier ? carrier.y : p.y) - CFG.anchor
         if (anchorY < gs.camY) gs.camY = anchorY
         if (gs.camY < 0) gs.camY = 0
         // co-op: the torrent takes both seats (the hero check keeps its freeze
@@ -1405,12 +1424,12 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             gs.ev.push({ type: 'drown', o: 1 })
             killAlly(gs)
         }
-        if (p.y >= gs.camY + H - CFG.drownAt) {         // the torrent takes you
+        if (p.y >= gs.camY + H - CFG.drownAt && !p.out) {   // the torrent takes you — a seat already down owes the water nothing (#3060: the drowning-corpse loop froze the whole stage)
             gs.ev.push({ type: 'drown' })
             killPlayer(gs)
             return
         }
-        if (p.onGround && p.y <= CFG.bossFloor + 2) { makeBoss(gs); return }
+        if (carrier && carrier.onGround && carrier.y <= CFG.bossFloor + 2) { makeBoss(gs); return }
     }
 
     // --- bullets ---
@@ -1981,7 +2000,12 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         b.x += b.vx; b.y += b.vy
         if (b.gr) {
             b.vy += 0.16
-            if (gs.phase === 'jungle' && b.y >= CFG.ground - 2) { boom(gs, b.x, CFG.ground - 4, true, 'tnt'); return false }
+            if (gs.phase === 'jungle' && b.y >= CFG.ground - 2) {
+                // #3060 a bomb the ring swallowed lands dead: the field ate its
+                // fuse — a spark on the deck where the fireball would have been.
+                if (b.eatP || b.eatQ) { gs.ev.push({ type: 'spark', x: b.x, y: CFG.ground - 4 }); return false }
+                boom(gs, b.x, CFG.ground - 4, true, 'tnt'); return false
+            }
         }
         if (b.x < gs.cam - 8 || b.x > gs.cam + W + 8 || b.y < gs.camY - 8 || b.y > gs.camY + H + 8) return false
         // #3038 the hit box shrinks with the profile: an aimed round rides the
@@ -1991,15 +2015,19 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         const qc = CFG.duckCenter[q.posture | 0] || 14
         // #3060 THE ABSORB LAW — while a seat's shield holds, enemy rounds
         // (rifle, turret, sniper, cannon, sortie, grenade-in-flight) spark out
-        // at the ring around the body and die before the body. ROUNDS only:
-        // soldier contact, the hull, blast radius and the torrent keep their
-        // laws verbatim — hazards outrank shields (the torrent precedent).
-        // Mercy frames do not save a round either: the ring is physical, the
-        // shield spends itself on rounds mercy would have waved through.
-        if (p.barr > 0 && p.dead === 0 && !p.out && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7 && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13) + 7) { gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 0 }); return false }
-        if (q.barr > 0 && q.dead === 0 && !q.out && Math.abs(b.x - q.x) < (CFG.duckHalfW[q.posture | 0] || 7) + 7 && Math.abs(b.y - (q.y - qc)) < (CFG.duckHalfH[q.posture | 0] || 13) + 7) { gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 1 }); return false }
-        if (p.inv <= 0 && p.dead === 0 && !p.out && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13)) { killPlayer(gs); return false }
-        if (q.inv <= 0 && q.dead === 0 && !q.out && Math.abs(b.x - q.x) < (CFG.duckHalfW[q.posture | 0] || 7) && Math.abs(b.y - (q.y - qc)) < (CFG.duckHalfH[q.posture | 0] || 13)) { killAlly(gs); return false }
+        // at the ring around the body and are spent. ROUNDS only: soldier
+        // contact, the hull, blast radius and the torrent keep their laws
+        // verbatim — hazards outrank shields (the torrent precedent). A spent
+        // round is MARKED, not deleted: the stream keeps every round in it, so
+        // the honest autopilot and the ally brain read the same table they
+        // always did and the barrier cannot re-time a single byte of the shelf
+        // (#2917's lesson, run backwards — an aid that moves the stream breaks
+        // seeds too). The shell draws spent rounds out at the spark; a round
+        // already at the ring cannot be stopped by the fuse dying this tick.
+        if (p.barr > 0 && p.dead === 0 && !p.out && !b.eatP && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7 && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13) + 7) { b.eatP = 1; gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 0 }) }
+        if (q.barr > 0 && q.dead === 0 && !q.out && !b.eatQ && Math.abs(b.x - q.x) < (CFG.duckHalfW[q.posture | 0] || 7) + 7 && Math.abs(b.y - (q.y - qc)) < (CFG.duckHalfH[q.posture | 0] || 13) + 7) { b.eatQ = 1; gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 1 }) }
+        if (p.inv <= 0 && p.dead === 0 && !p.out && !b.eatP && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13)) { killPlayer(gs); return false }
+        if (q.inv <= 0 && q.dead === 0 && !q.out && !b.eatQ && Math.abs(b.x - q.x) < (CFG.duckHalfW[q.posture | 0] || 7) && Math.abs(b.y - (q.y - qc)) < (CFG.duckHalfH[q.posture | 0] || 13)) { killAlly(gs); return false }
         return true
     })
 }
