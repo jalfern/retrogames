@@ -216,6 +216,16 @@ export function loopK (n) {
 // lifting it into the sim is what lets shell, harness and the Node dataset
 // adapter (#1712) rebuild a loop-up byte-identically — a PLAICRAFT take is the
 // SESSION, so it must span loops the way the cabinet run does.
+// #3041 SCORE EXTEND — the cabinet pays an extra life for score. The first
+// mark is the Konami instruction card's 30,000-point extend; the repeat rung
+// is the era-typical Konami staircase (+50,000) — the exact repeat interval is
+// not documented in the repo, recorded as a fidelity note per the #237 rule.
+// Pure arithmetic: zero gs.r draws, `nextExt` rides stateHash (a replay that
+// silently skips an extend diverges loudly), and the threshold is a RUN
+// property — arcadeLoop carries it with the score, never resets it.
+export const EXT_FIRST = 30000
+export const EXT_STEP = 50000
+
 export function arcadeLoop (gs) {
     const carryScore = gs.score
     // #3037: the bank-to-five clamps the COURTESY, not the pool — a Konami 30
@@ -226,6 +236,7 @@ export function arcadeLoop (gs) {
     const next = makeGame(gs.seed, gs.loop + 1, carryLives)
     next.score = carryScore
     next.lives = carryLives
+    next.nextExt = gs.nextExt   // #3041 the extend mark belongs to the run, not the stage
     if (carryGun !== 'rifle') next.p.weapon = carryGun
     return next
 }
@@ -747,6 +758,7 @@ export function makeGame (seed, loop = 1, lives = 3) {
         phase: 'jungle',            // jungle | falls | boss
         score: 0,
         lives: lv,
+        nextExt: EXT_FIRST,       // #3041 the score mark the next extend pays at (carries the loop)
         end: null,                  // 'dead' | 'win'
         p: {
             x: 40, y: CFG.ground, vy: 0, onGround: true, face: 1,
@@ -1101,6 +1113,15 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
     const p = gs.p
     const q = gs.p2
     gs.tick += 1
+    // #3041 SCORE EXTEND — crossing the mark buys a life (the cabinet's 1UP).
+    // One mark per tick: score only moves on kills and the biggest single award
+    // (+5000, the core) cannot outrun a 50,000 rung; if it ever did, consecutive
+    // ticks pay it. The pool caps at the HUD's numeric form (99, makeGame's
+    // clamp) — at the cap the mark still advances, and no salute is owed.
+    if (gs.score >= gs.nextExt) {
+        gs.nextExt += EXT_STEP
+        if (gs.lives < 99) { gs.lives += 1; gs.ev.push({ type: 'extra' }) }
+    }
     if (p.dead > 0) {
         p.dead -= 1
         if (p.dead === 0) {           // respawn at the last safe ground (arcade checkpoints),
@@ -1925,7 +1946,7 @@ export function stateHash (gs) {
         for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) }
         h ^= 0x2c; h = Math.imul(h, 0x01000193)
     }
-    put(gs.tick); put(gs.cam); put(gs.camY); put(gs.score); put(gs.lives); put(gs.seed); put(gs.r)
+    put(gs.tick); put(gs.cam); put(gs.camY); put(gs.score); put(gs.lives); put(gs.nextExt); put(gs.seed); put(gs.r)
     put(gs.loop); put(gs.lk)   // #2894 which pass of stage 1, and the tempo it runs at, are sim truth
     put(gs.phase === 'jungle' ? 0 : gs.phase === 'falls' ? 1 : 2)
     put(gs.safe.x); put(gs.safe.y)

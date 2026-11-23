@@ -44,6 +44,7 @@ const MESSAGES_KEYBOARD = [
     'AIM UP · AIM DOWN · FOLLOW · HOLD · SPREAD — SHOUT IT',
     'DUCK UNDER THE FIRE — DOWN KNEELS, DOWN AGAIN LIES FLAT',
     'UP UP DOWN DOWN LEFT RIGHT LEFT RIGHT B A — 30 UP',
+    '30,000 POINTS BUYS ANOTHER LIFE — EVERY RUN',
     'ONE HIT KILLS. BOTH SIDES.',
     'PRESS ANY KEY',
 ]
@@ -62,6 +63,7 @@ const MESSAGES_TOUCH = [
     'MIC GRANTED? THE WINGMAN TAKES SHOUTED ORDERS',
     'DOWN KNEELS, DOWN AGAIN LIES FLAT — CRAWL AND FIRE LOW',
     'UP UP DOWN DOWN LEFT RIGHT LEFT RIGHT B A — 30 UP',
+    '30,000 POINTS BUYS ANOTHER LIFE — EVERY RUN',
     'ONE HIT KILLS. BOTH SIDES.',
     'TAP TO START',
 ]
@@ -113,6 +115,12 @@ const sfx = {
     // context is already unlocked by that first press (autoplay law holds).
     konami: () => {
         [392, 523, 659, 784, 1046].forEach((f, i) => setTimeout(() => audioController.playTone(f, i === 4 ? 0.22 : 0.08, 'square', 0.06), i * 70))
+    },
+    // #3041 the extend landing: three rising notes capped long — the cabinet's
+    // 1UP call. Shorter than the Konami salute (it fires mid-run, under fire)
+    // and unmistakably a reward: it rides the score tick, never rng.
+    extra: () => {
+        [659, 831, 1046].forEach((f, i) => setTimeout(() => audioController.playTone(f, i === 2 ? 0.24 : 0.07, 'square', 0.06), i * 60))
     },
     pdown: () => audioController.playSweep(300, 90, 0.3, 'square', 0.07),
     p2down: () => audioController.playSweep(240, 70, 0.3, 'sawtooth', 0.07),
@@ -255,6 +263,10 @@ export default function ContraGame () {
         let kProg = 0
         let kFx = null
         const K_FX = 150
+        // #3041 the extend salute — rides the `extra` event the sim banks when
+        // score crosses the mark. Presentation only: gold plate + heads-row flash.
+        let extFx = null
+        const EXT_FX = 150
         const K_GLYPH = { up: '↑', down: '↓', left: '←', right: '→', b: 'B', a: 'A' }
         const konamiToken = (code) => (
             code === 'ArrowUp' ? 'up'
@@ -313,6 +325,7 @@ export default function ContraGame () {
                 else if (e.type === 'duck') sfx.duck(e.post)   // #3038 the profile the body took
                 else if (sfx[e.type]) sfx[e.type]()
                 if (e.type === 'p2join') heli = { x: gs.p2.x, t: 0 } // #2842 the bird comes with the drop
+                if (e.type === 'extra') extFx = { t: 0 }   // #3041 the bank owed a life — gold it
                 if (e.type === 'boom') {
                     shake = Math.min(6, shake + 5)
                     fire.push({ x: e.x, y: e.y, t: 0, kind: e.kind || 'tnt' })
@@ -386,6 +399,7 @@ export default function ContraGame () {
             heli = null; warnArmed = false; lastEnterT = 0
             demoHold = 0
             loopFx = null; demoLoop = 0   // #2902: a fresh run starts at loop 1 — no banner owed
+            extFx = null                  // #3041: a fresh run owes no extend salute
             // #1712: a new take starts quiet — no phantom claims carried on keys
             // still held from the last run; the banked pad matches the fresh sim.
             keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false
@@ -481,6 +495,7 @@ export default function ContraGame () {
             setMode(what)
             kProg = 0 // #3037: typing does not survive leaving the attract screen
             if (what === 'attract') kFx = null
+            extFx = null   // #3041: a salute never survives the screen it was paid on
             if (what === 'over') {
                 overAt = performance.now()
                 if (gs.score > hiscore) { hiscore = gs.score; localStorage.setItem('contra:hiscore', String(hiscore)) }
@@ -652,7 +667,7 @@ export default function ContraGame () {
                 drawHeli(ctx, heli.x, (jungle ? 0 : gs.camY) + 26 + Math.sin(gs.tick / 7) * 1.2, gs.tick, heli.t > 56 ? 1 - (heli.t - 56) / 32 : 1)
                 ctx.restore()
             }
-            drawHud(ctx, gs, hiscore, loopFx, isRecording())
+            drawHud(ctx, gs, hiscore, loopFx || extFx, isRecording())   // #3041: the extend flashes the heads row too
             // #2902 the LOOP banner rides above the world, under nothing.
             if (loopFx) drawLoopBanner(ctx, loopFx.n, loopFx.t, loopFx.k)
             // #3000 the radio echo — one line at a time (ART.md bar 6), below
@@ -722,6 +737,27 @@ export default function ContraGame () {
             // banner (80..144) never stacks on it (latched through that pass).
             if (screen === 'attract' && demoCallFx && !loopFx && !demoLoop) paintCallBanner(demoCallFx, DEMO_CALL_FX)
 
+            // #3041 the extend salute: the band the Konami salute rides, given
+            // to the mid-run 1UP (the two can't coexist — the code lands at
+            // attract, the extend lands in play; still guarded for honesty).
+            if (screen === 'play' && extFx && !loopFx && !kFx) {
+                const fade = Math.max(0, Math.min(1, (EXT_FX - extFx.t) / 30))
+                ctx.save()
+                ctx.globalAlpha = fade
+                ctx.font = 'bold 14px "Courier New", monospace'
+                const etxt = 'EXTRA LIFE!'
+                const ew = ctx.measureText(etxt).width + 16
+                ctx.fillStyle = 'rgba(6,10,4,0.85)'
+                ctx.fillRect(192 - ew / 2, 58, ew, 18)
+                ctx.strokeStyle = '#ffd23c'
+                ctx.lineWidth = 1
+                ctx.strokeRect(192 - ew / 2 + 0.5, 58.5, ew - 1, 17)
+                ctx.textBaseline = 'top'
+                ctx.fillStyle = '#ffd23c'
+                ctx.fillText(etxt, 192 - ew / 2 + 8, 61)
+                ctx.restore()
+            }
+
             ctx.textBaseline = 'top'
             if (screen === 'attract' && !loopFx && !demoLoop) {
                 ctx.fillStyle = '#e23b2e'
@@ -785,6 +821,8 @@ export default function ContraGame () {
                             else stepSim(simPad())
                             // #3037: the armed-run salute fades on world ticks
                             if (kFx) { kFx.t += 1; if (kFx.t >= K_FX) kFx = null }
+                            // #3041: the extend salute fades on world ticks too
+                            if (extFx) { extFx.t += 1; if (extFx.t >= EXT_FX) extFx = null }
                         } else if (screen === 'attract') {
                             // #2902: the cabinet teaches its own loop — the demo
                             // now survives its endings (it used to stick on the
@@ -925,6 +963,7 @@ export default function ContraGame () {
                 part.length = 0
                 fire.length = 0
                 loopFx = null; demoLoop = 0   // #2902: no banner owed on a harness reset
+                extFx = null                  // #3041: nor an extend salute
                 keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false
                 keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false
                 jumpQ = fireQ = jumpQ2 = fireQ2 = false
@@ -984,9 +1023,10 @@ export default function ContraGame () {
             window.__contraTest = {
                 probe: () => ({
                     screen, tick: gs.tick, x: +gs.p.x.toFixed(2), y: +gs.p.y.toFixed(2), onGround: gs.p.onGround,
-                    lives: gs.lives, score: gs.score, weapon: gs.p.weapon, end: gs.end, cam: Math.round(gs.cam),
+                    lives: gs.lives, score: gs.score, nextExt: gs.nextExt, weapon: gs.p.weapon, end: gs.end, cam: Math.round(gs.cam),   // #3041 the extend mark is observable
                     loop: gs.loop, lk: +gs.lk.toFixed(3), seed: gs.seed,   // #2894 the arcade loop is observable
                     loopFx: loopFx ? { t: loopFx.t, n: loopFx.n, k: +loopFx.k.toFixed(3) } : null,   // #2902 the banner is observable
+                    extFx: extFx ? { t: extFx.t } : null,   // #3041 the extend salute is observable
                     demoLoop,   // #2902 attract is teaching the loop right now
                     phase: gs.phase, camY: +gs.camY.toFixed(2),
                     core: gs.boss ? gs.boss.core : null,
@@ -1039,6 +1079,7 @@ export default function ContraGame () {
                     if (opts.warp === 'boss') warpBoss(gs)
                     if (opts.x !== undefined) gs.p.x = opts.x
                     if (opts.lives !== undefined) gs.lives = opts.lives
+                    if (opts.score !== undefined) gs.score = opts.score   // #3041 stand the run just under the extend mark
                     if (opts.weapon) gs.p.weapon = opts.weapon
                     if (opts.inv !== undefined) gs.p.inv = opts.inv
                     if (opts.coreOpen !== undefined && gs.boss) gs.boss.coreT = opts.coreOpen ? 0 : CFG.coreOpen + 20
@@ -1098,6 +1139,7 @@ export default function ContraGame () {
                 ],
                 actions: [
                     { label: '+1 LIFE', run: () => { gs.lives += 1; return 'extra life' } },
+                    { label: 'ARM EXTEND', run: () => { gs.score = gs.nextExt - 100; return `next kill at ${gs.nextExt} buys the life` } },   // #3041
                     { label: 'SPREAD NOW', run: () => { gs.p.weapon = 'spread'; return 'spread gun racked' } },
                     { label: 'CYCLE WHEEL', run: () => { const w = ['rifle', 'spread', 'machine', 'fire', 'laser']; gs.p.weapon = w[(w.indexOf(gs.p.weapon) + 1) % w.length]; return 'weapon: ' + gs.p.weapon } },
                     { label: 'CAPSULE HERE', run: () => { gs.capsule = { x: gs.p.x + 24, y: gs.p.y - 14, vx: 0 }; return 'capsule inbound' } },
