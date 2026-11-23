@@ -378,6 +378,7 @@ r.check('a quick tap dug on release',
 r.check('a long-press flagged without digging',
     touchRes.holdFlags === touchRes.tapFlags + 1 && touchRes.holdOpened === touchRes.tapOpened, JSON.stringify(touchRes))
 
+
 // ---------------------------------------------------------------------------
 // #1883 POLISH PASS — the ?-cycle, the face, the LED digits, the chord
 // stagger, and the win flag-march. Presentation-only claims, so the proof is
@@ -418,6 +419,95 @@ const cellCentre = (i) => page.evaluate((cell) => {
     const cy = Math.min(r.bottom - 2, Math.max(r.top + 2, r.top + (y + 0.5) * (r.height / st.h)))
     return { x: cx, y: cy, x2: x, y2: y }
 }, i)
+
+console.log('\nPRESS FEEL (#3032) — the mouse sinks, previews and commits on release; drag-off cancels')
+await page.goto(URL, { waitUntil: 'load' })
+await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
+{
+    await plantHere()
+    const near = (px, rgb, tol = 8) => Math.abs(px[0] - rgb[0]) <= tol && Math.abs(px[1] - rgb[1]) <= tol && Math.abs(px[2] - rgb[2]) <= tol
+    const pxAt = (cell) => page.evaluate((i) => {
+        const cv = document.querySelector('canvas[data-sweep-stage]')
+        const st = window.__sweepTest.probe()
+        const g = cv.getContext('2d')
+        const d = g.getImageData(Math.round(((i % st.w) + 0.5) * (cv.width / st.w)),
+            Math.round((((i / st.w) | 0) + 0.5) * (cv.height / st.h)), 1, 1).data
+        return [d[0], d[1], d[2]]
+    }, cell)
+    // --- 1. press without dig, release commits, face concentrates ----
+    const nx = await page.evaluate(() => window.__sweepTest.nextSafe())
+    const st0 = await probe()
+    const p = await cellCentre(nx.y * st0.w + nx.x)
+    const before = await probe()
+    await page.mouse.move(p.x, p.y)
+    await page.mouse.down()
+    await wait(90)
+    const mid = await probe()
+    const pxSunk = await pxAt(nx.y * st0.w + nx.x)
+    const mouth = await fp(14, 20)   // press mouth bar: dark here, bright for smile/cool/dead
+    const eyeGap = await fp(14, 11)  // bright while pressing, dark under cool shades
+    r.check('holding the left button presses WITHOUT digging (the original waits for release)',
+        !!mid.press && mid.press.x === nx.x && mid.press.y === nx.y && mid.press.inside === true && mid.opened === before.opened,
+        `press=${JSON.stringify(mid.press)} opened=${before.opened}->${mid.opened}`)
+    r.check('the held tile sinks (flat sunken fill, not the raised bevel)',
+        near(pxSunk, [0x2a, 0x35, 0x54]) && !near(pxSunk, [0x33, 0x3f, 0x5f]), `px=${pxSunk}`)
+    r.check('the face concentrates while a cell is held',
+        near(mouth, [0x17, 0x1d, 0x33], 24) && !near(eyeGap, [0x17, 0x1d, 0x33], 24), `mouth=${mouth} eyeGap=${eyeGap}`)
+    await page.mouse.up()
+    try { await page.waitForFunction((o) => window.__sweepTest.probe().opened > o, before.opened, { timeout: 4000 }) } catch { /* graded below */ }
+    const up = await probe()
+    r.check('release on the same cell commits the dig',
+        up.opened > before.opened && up.press === null, `opened=${before.opened}->${up.opened} press=${JSON.stringify(up.press)}`)
+    // --- 2. chord preview flattens the ring; drag-off cancels and restores ----
+    const cand = await page.evaluate(() => {
+        const st = window.__sweepTest.probe()
+        const open = new Set(window.__sweepTest.openCells())
+        for (const i of open) {
+            const x = i % st.w, y = (i / st.w) | 0
+            let covered = -1, n = 0
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                if (!dx && !dy) continue
+                const nx2 = x + dx, ny2 = y + dy
+                if (nx2 < 0 || ny2 < 0 || nx2 >= st.w || ny2 >= st.h) continue
+                if (!open.has(ny2 * st.w + nx2)) { n++; if (covered < 0) covered = ny2 * st.w + nx2 }
+            }
+            if (n >= 1 && window.__sweepTest.clueAt(i) > 0) {
+                return { num: { x, y }, covered, ring: n, w: st.w }
+            }
+        }
+        return null
+    })
+    if (!cand) {
+        r.check('a numbered clue with a covered ring exists to preview', false, 'no candidate on this board')
+    } else {
+        const numPt = await cellCentre(cand.num.y * cand.w + cand.num.x)
+        const h0 = await page.evaluate(() => window.__sweepTest.hash())
+        const opened0 = (await probe()).opened
+        await page.mouse.move(numPt.x, numPt.y)
+        await page.mouse.down()
+        await wait(90)
+        const midP = await probe()
+        const pxRing = await pxAt(cand.covered)
+        r.check('pressing a number previews the chord (covered ring flattens to the open look)',
+            !!midP.press && midP.press.preview >= 1 && near(pxRing, [0x10, 0x15, 0x27], 6) && midP.opened === opened0,
+            `preview=${midP.press && midP.press.preview} ringPx=${pxRing} opened=${opened0}->${midP.opened}`)
+        // drag off: the ring un-flattens (peek at the cancel), nothing is armed
+        const offPt = await cellCentre(cand.covered)
+        await page.mouse.move(offPt.x, offPt.y)
+        await wait(90)
+        const drag = await probe()
+        const pxBack = await pxAt(cand.covered)
+        r.check('dragging off un-flattens the preview and holds nothing open',
+            !!drag.press && drag.press.inside === false && drag.opened === opened0 && !near(pxBack, [0x10, 0x15, 0x27], 6),
+            `inside=${drag.press && drag.press.inside} ringPx=${pxBack}`)
+        await page.mouse.up()
+        await wait(120)
+        const cancelled = await probe()
+        r.check('release off the pressed cell cancels — the board did not move',
+            cancelled.opened === opened0 && cancelled.press === null && (await page.evaluate(() => window.__sweepTest.hash())) === h0,
+            `opened=${opened0}->${cancelled.opened}`)
+    }
+}
 
 console.log('\nCHORD STAGGER — a chord ring flickers open cell-by-cell (sim truth is instant, the paint is not)')
 await page.goto(URL, { waitUntil: 'load' })
@@ -512,19 +602,38 @@ await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
             Math.round((((cell / st.w) | 0) + 0.5) * (cv.height / st.h)), 1, 1).data
         return [d[0], d[1], d[2]]
     }, i)
+    // #3032 (harness hardening): the old proof sampled the exact cell centre
+    // and demanded it differ from the tile colour — but the centre pixel of a
+    // "?" glyph lands in the curve/stem gap at some font sizes, so the leg
+    // was a seed/antialias lottery (red once, green once, same code). Prove
+    // the glyph instead by its INK: count dim-? pixels in the cell before
+    // and after parking the "?"; the mark is painted iff ink appears.
+    const qInk = (i) => page.evaluate((cell) => {
+        const cv = document.querySelector('canvas[data-sweep-stage]')
+        const st = window.__sweepTest.probe()
+        const g = cv.getContext('2d')
+        const c = Math.round(cv.width / st.w)
+        const d = g.getImageData((cell % st.w) * c, ((cell / st.w) | 0) * c, c, c).data
+        let ink = 0
+        for (let k = 0; k < d.length; k += 4) {
+            if (Math.abs(d[k] - 0x77) <= 28 && Math.abs(d[k + 1] - 0x81) <= 28 && Math.abs(d[k + 2] - 0x9f) <= 28) ink++
+        }
+        return ink
+    }, i)
     const h0 = await page.evaluate(() => window.__sweepTest.hash())
     const c0 = await probe()
-    const pxTile0 = await pxAt(pick)
+    const ink0 = await qInk(pick)
     await page.mouse.click(pt.x, pt.y, { button: 'right' })
     await wait(120)
     const c1 = await probe()
     await page.mouse.click(pt.x, pt.y, { button: 'right' })
     await wait(120)
     const c2 = await probe()
-    const pxQ = await pxAt(pick)
+    const inkQ = await qInk(pick)
     await page.mouse.click(pt.x, pt.y, { button: 'right' })
     await wait(120)
     const c3 = await probe()
+    const ink3 = await qInk(pick)
     const h3 = await page.evaluate(() => window.__sweepTest.hash())
     r.check('right-click 1 flags as before (flags +1, nothing opened)',
         c1.flags === c0.flags + 1 && c1.opened === c0.opened && c1.marksQ === 0,
@@ -532,8 +641,8 @@ await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
     r.check('right-click 2 drops the flag and parks "?" (board flag count falls, ? shows)',
         c2.flags === c0.flags && c2.marksQ === 1 && c2.opened === c0.opened,
         `flags=${c2.flags} q=${c2.marksQ}`)
-    const qDiff = Math.abs(pxQ[0] - pxTile0[0]) + Math.abs(pxQ[1] - pxTile0[1]) + Math.abs(pxQ[2] - pxTile0[2]) > 20
-    r.check('the "?" paints pixels a covered tile never is (dim glyph on the tile)', qDiff, `q=${pxQ} tile=${pxTile0}`)
+    r.check('the "?" paints pixels a covered tile never is (dim glyph ink on the tile)',
+        inkQ >= 4 && ink0 === 0 && ink3 === 0, `ink empty/flag/?/after = ${ink0}/${inkQ}`)
     r.check('right-click 3 clears the ? back to empty',
         c3.flags === c0.flags && c3.marksQ === 0, `flags=${c3.flags} q=${c3.marksQ}`)
     r.check('the ?-layer is presentation-only — the referee hash never moved',
