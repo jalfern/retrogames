@@ -2346,6 +2346,26 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #3057: the payout must reach the screen. Blind the single choke-
+            // point and the score keeps paying while the digits go dark — the
+            // sum invariant is the witness the player can't be.
+            name: 'popup-loot',
+            anchor: `function pop (gs, x, y, v) {\n    gs.ev.push({ type: 'pop', x, y, v })\n}`,
+            plant: `function pop (gs, x, y, v) {\n    void 0 /* MUTANT(popup-loot): the payout vanishes from the event stream */\n}`,
+            harm: async (mod) => {
+                const gs = mod.makeGame(1)
+                let popSum = 0
+                while (!gs.end && gs.tick < 20000) {
+                    mod.step(gs, mod.autopilot(gs))
+                    for (const e of gs.ev) if (e.type === 'pop') popSum += e.v
+                    gs.ev.length = 0
+                }
+                return popSum < gs.score
+                    ? `HARM NAMED: the run banks ${gs.score} while digits stamp ${popSum} - every payout went invisible; the popup layer no longer mirrors the purse`
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -3219,6 +3239,107 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     }
 }
 
+// ---------------------------------------------------- #3057 score popups ---
+// The payout digits are presentation outside the referee (#3035 class): values
+// ride the unhashed event stream (Joust law), the helper consumes zero gs.r,
+// and physics never reads a pop. These legs pin that every paying site pays a
+// digit exactly — that a duplicate capture pays nothing and owes no digit —
+// that the ally's kill pays through the same shared path — and that the whole
+// layer cannot bend the seed.
+{
+    const collect = (seed) => {
+        const gs = makeGame(seed)
+        const start = gs.score
+        const pops = []
+        while (!gs.end && gs.tick < 20000) {
+            step(gs, autopilot(gs))
+            for (const e of gs.ev) if (e.type === 'pop') pops.push(e)
+            gs.ev.length = 0
+        }
+        return { gs, pops, earned: gs.score - start }
+    }
+    const run1 = collect(1)
+    const sum1 = run1.pops.reduce((a, e) => a + e.v, 0)
+    r.check('#3057 every point pays a digit — a full autopilot run sums popped values exactly to the score earned',
+        run1.gs.end === 'win' && run1.pops.length > 20 && sum1 === run1.earned,
+        `pops=${run1.pops.length} sum=${sum1} earned=${run1.earned}`)
+    const badShape = run1.pops.filter((e) => !(e.v > 0) || !Number.isFinite(e.x) || !Number.isFinite(e.y))
+    r.check('#3057 every pop is a positive value at a real spot — no zero-value stamps, no off-world digits',
+        badShape.length === 0, `bad=${badShape.length}`)
+    const tiers = [100, 150, 300, 500, 1000, 5000]
+    const tiersOk = tiers.every((v) => run1.pops.some((e) => e.v === v))
+    r.check('#3057 the payout table reads across the run — soldier, sniper, turret/cannon, carrier, letter and the gate core all stamp their own value',
+        tiersOk, `tiers=${[...new Set(run1.pops.map((e) => e.v))].sort((a, b) => a - b).join(',')}`)
+    const sums = [3, 7].map((s) => { const r2 = collect(s); return r2.pops.reduce((a, e) => a + e.v, 0) === r2.earned })
+    r.check('#3057 the law holds across seeds, not just seed 1 — sums twin the score on every sweep seed tested',
+        sums.every(Boolean), sums.join(','))
+
+    // the digit layer is a static construction law too: one chokepoint helper,
+    // no rng inside it, and every score site has its matching digit site.
+    {
+        const src = readFileSync(SIM, 'utf8')
+        const helper = src.match(/function pop \(gs, x, y, v\) \{[^}]*\}/)
+        const scoreSites = (src.match(/gs\.score \+= /g) || []).length
+        const popSites = (src.match(/pop\(gs, /g) || []).length
+        r.check('#3057 referee-clean by construction — one chokepoint whose body draws no gs.r, and score sites and digit sites pair 1:1',
+            helper !== null && !/rnd|Math\.random/.test(helper[0]) && scoreSites === popSites && popSites >= 19,
+            `score=${scoreSites} pops=${popSites}`)
+    }
+
+    {
+        // a duplicate capture pays nothing (the wheel changed hands but not
+        // guns) — the pickup still rings, but no digit is owed.
+        const gs = makeGame(5)
+        gs.p.weapon = 'spread'
+        gs.capsule = { x: gs.p.x, y: gs.p.y - 14, vx: 0, kind: 'spread' }
+        const s0 = gs.score
+        step(gs, {}, {})
+        r.check('#3057 a duplicate capture pays nothing — no digit owed when the hand already holds the letter (the pickup still rings)',
+            gs.capsule === null && gs.score === s0 && !gs.ev.some((e) => e.type === 'pop') && gs.ev.some((e) => e.type === 'pickup'),
+            `score=${gs.score - s0} ev=${gs.ev.map((e) => e.type).join(',')}`)
+    }
+
+    {
+        // structural law: both seats go through killSoldier, so the blue seat
+        // pays digits too — proven with the hero silent.
+        const gs = makeGame(5)
+        gs.p.x = 60
+        for (const s of gs.soldiers) s.dead = true
+        gs.p2.human = true
+        gs.p2.x = 200; gs.p2.y = CFG.ground; gs.p2.onGround = true; gs.p2.lane = CFG.ground; gs.p2.inv = 99999
+        const victim = { x: 270, y: CFG.ground, hold: false, hp: 1, awake: true, t: 99999, walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0 }
+        gs.soldiers.push(victim)
+        let seen = null
+        for (let i = 0; i < 200 && !victim.dead; i++) {
+            step(gs, {}, { b: true })
+            seen = gs.ev.find((e) => e.type === 'pop' && e.v === 100) || seen
+            gs.ev.length = 0
+        }
+        r.check('#3057 the payout is structural — a kill by the blue seat stamps +100 through the shared killSoldier path (hero silent)',
+            victim.dead && seen !== null, `dead=${victim.dead} pop=${seen ? seen.v : 'none'}`)
+    }
+
+    {
+        // the digits cannot bend the seed: two identical runs stamp identical
+        // digit trails, and the world hash twins through a full pop-filled run.
+        const trail = (seed) => {
+            const gs = makeGame(seed)
+            const t = []
+            const hs = []
+            while (!gs.end && gs.tick < 20000) {
+                step(gs, autopilot(gs))
+                for (const e of gs.ev) if (e.type === 'pop') t.push(`${e.v}@${Math.round(e.x)},${Math.round(e.y)}`)
+                hs.push(stateHash(gs))
+                gs.ev.length = 0
+            }
+            return { t: t.join('|'), h: hs.join('|') }
+        }
+        const a = trail(5), b = trail(5), c = trail(6)
+        r.check('#3057 the digit layer is presentation outside the referee — twin runs stamp byte-identical trails and world hashes, another seed differs',
+            a.t === b.t && a.h === b.h && c.h !== a.h && a.t.split('|').length > 20, `pops=${a.t.split('|').length}`)
+    }
+}
+
 // ------------------------------------------------------------- browser leg ---
 // ------------------------------------------------ #3041 the score extend ---
 {
@@ -3551,6 +3672,43 @@ const browser = await launch()
     }
     await page.keyboard.up('ArrowRight')
     r.check('#2847 deck pod delivers its gun through real keys', podWeapon === 'machine', `weapon=${podWeapon}`)
+
+    // #3057 live: the payout digits stamp in the real loop. The gold band sits
+    // ABOVE the pod's own sprite line (the capsule rides the deck; the digits
+    // rise from deck-12), so the capsule can't poison the count — the baseline
+    // is sampled at the same spot while the pod still sits there.
+    {
+        const goldBand = (cx, cy) => page.evaluate(([cx, cy]) => {
+            const c = document.querySelector('canvas')
+            const k = c.width / 384
+            const d = c.getContext('2d').getImageData(Math.round((cx - 30) * k), Math.round((cy - 17) * k), Math.round(60 * k), Math.round(17 * k)).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 230 && d[i + 1] > 190 && d[i + 1] < 235 && d[i + 2] < 110) n++
+            return n
+        }, [cx, cy])
+        await page.evaluate(() => window.__contraTest.setup({ podHere: true, podKind: 'fire', podDX: 40 }))
+        let pre = await page.evaluate(() => window.__contraTest.probe())
+        let pod = pre.pods.length ? pre.pods[0] : null
+        const base = pod ? await goldBand(pod.x - pre.cam, pod.y) : -1
+        let capX = pod ? pod.x : 0
+        await page.keyboard.down('ArrowRight')
+        let captured = false
+        for (let guard = 0; guard < 60 && !captured; guard++) {
+            await page.waitForTimeout(60)
+            const p = await page.evaluate(() => window.__contraTest.probe())
+            if (p.pods.length) capX = p.pods[0].x
+            else if (p.weapon === 'fire') { captured = true; pre = p }
+        }
+        await page.keyboard.up('ArrowRight')
+        let goldPeak = 0
+        for (let guard = 0; guard < 12 && goldPeak < 20; guard++) {
+            const p = await page.evaluate(() => window.__contraTest.probe())
+            goldPeak = Math.max(goldPeak, await goldBand(capX - p.cam, CFG.ground - 2))
+            await page.waitForTimeout(60)
+        }
+        r.check('#3057 live: a letter captured stamps its payout — gold digits rise where the pod sat (count measured against the bare-pod baseline at the same spot)',
+            captured && pod !== null && goldPeak - base >= 30, JSON.stringify({ captured, base, goldPeak }))
+    }
 
     // #2880 browser legs: the probe carries housing truth through the real
     // loop, and a caved mount renders as a blackened wreck — the rust ring
