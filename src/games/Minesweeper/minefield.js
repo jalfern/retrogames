@@ -265,13 +265,20 @@ export function chord(s, x, y) {
     neighbors(s, x, y, (nx, ny) => {
         const ni = idx(s, nx, ny)
         if (s.flag[ni]) around++
-        if (!s.open[ni]) covered.push([nx, ny])
+        // The satisfied chord opens covered UNFLAGGED cells only (#3009): the
+        // original's chord click never touches a flagged cell — the flag is
+        // what the click reads as "mine accounted for". Wrong flags stay fatal
+        // the original's way: they satisfy the clue while the REAL mine stays
+        // unflagged, so the chord opens it and the claim costs the seat. What
+        // the old line did — detonating a CORRECTLY flagged mine — contradicted
+        // both the original and this module's own solver (whose chord rule
+        // reads `!s.flag[c]`), and it is how sweepplay ended `dead` with
+        // every flag right and the board swept (71/71, #3008).
+        if (!s.open[ni] && !s.flag[ni]) covered.push([nx, ny])
     })
     if (around !== s.clue[i]) { s.events.push({ t: 'nope', x, y }); return false }
     let acted = false
     for (const [cx, cy] of covered) {
-        // openCell unflags as it opens: a WRONG flag chorded into a mine is
-        // fatal, exactly like the original — flags are a claim, not a shield.
         if (openCell(s, cx, cy)) acted = true
         if (s.end) break
     }

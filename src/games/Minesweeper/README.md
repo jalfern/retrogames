@@ -66,6 +66,24 @@ guarded `!== 'play'` *before* its own `plantAt` branch, so the browser could
 never plant its first click — a game no human could start, that a pure-model
 battery passed because it calls `plantAt` directly.
 
+## The chord that ate its own flags (#3009)
+
+`chord()` used to open **all** covered neighbours of a satisfied clue — flags
+included — so a *correctly* flagged mine detonated under the click. It claimed
+fidelity ("flags are a claim, not a shield") while contradicting both the
+original and this module's own solver, whose chord rule reads `!s.flag[c]`.
+The original's chord clicks covered **unflagged** cells only: correct flags are
+never fatal; wrong flags kill the original's way — they satisfy the clue while
+the real mine sits unflagged, and the chord opens *that*. `sweepplay` caught it
+at `end=dead opened=71/71` (every flag on a mine, board swept, bot dead — #3008;
+repro 2/10 locally), and the engine now skips flagged cells. sweepcheck anchors
+both original cases (correct flags shield, wrong flags still kill through the
+unflagged mine) plus the post-win lock (#3008's ready-made assertion: a fully
+swept board is WON the instant `opened` hits the safe total, and every verb is
+refused after it). Lesson: when the engine and the referee disagree about a
+rule, the referee was written first for a reason — but the ORIGINAL decides
+which one was wrong.
+
 ## Conventions / gotchas
 
 - The solver is fast but not free: GENERAL can plant in ~0.7 s on a slow box
