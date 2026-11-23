@@ -2020,9 +2020,13 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         // verbatim — hazards outrank shields (the torrent precedent). A spent
         // round is MARKED, not deleted: the stream keeps every round in it, so
         // the honest autopilot and the ally brain read the same table they
-        // always did and the barrier cannot re-time a single byte of the shelf
-        // (#2917's lesson, run backwards — an aid that moves the stream breaks
-        // seeds too). The shell draws spent rounds out at the spark; a round
+        // always did (#2917's lesson, run backwards — an aid that hides rounds
+        // from the brains breaks seeds too; the first cut deleted eaten rounds
+        // and re-timed 5 and 8). The honest cost of the law lives one floor
+        // down: a swallowed GRENADE cannot burst where it lands (it sparks),
+        // and a blast that never happens can spare a turret — fidelity first
+        // (the shield eats the round, blast included), the 12/12 sweep carries
+        // the proof. The shell draws spent rounds out at the spark; a round
         // already at the ring cannot be stopped by the fuse dying this tick.
         if (p.barr > 0 && p.dead === 0 && !p.out && !b.eatP && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7 && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13) + 7) { b.eatP = 1; gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 0 }) }
         if (q.barr > 0 && q.dead === 0 && !q.out && !b.eatQ && Math.abs(b.x - q.x) < (CFG.duckHalfW[q.posture | 0] || 7) + 7 && Math.abs(b.y - (q.y - qc)) < (CFG.duckHalfH[q.posture | 0] || 13) + 7) { b.eatQ = 1; gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 1 }) }

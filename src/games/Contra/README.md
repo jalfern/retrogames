@@ -1188,13 +1188,19 @@ clears the sky (the drift is a jungle gift — a *held* shield survives the came
 turn, the canyon gunners still throw at it), and the arcade-loop boundary
 rebuilds clean: marks and score carry (#3041/#3042), fuses do not.
 
-**Mark, never erase.** A swallowed round is MARKED (`b.eatP`/`b.eatQ`) and keeps
-flying in the sim; the shell simply stops drawing it, and a swallowed grenade
-fizzles to deck sparks instead of booming. The first cut deleted eaten rounds
-from `gs.eb` — and the honest autopilot, which hops rounds it can see, re-timed
-its runs and broke seeds 5 and 8. The table the brains read is the contract:
-delete nothing from it and the twelve-seed sweep cannot move. This is now a
-named law with a mutant (`eater-erases`).
+**Mark, never erase — and the law's honest cost.** A swallowed round is MARKED
+(`b.eatP`/`b.eatQ`) and keeps flying in the sim; the shell simply stops drawing
+it. The first cut deleted eaten rounds from `gs.eb` — and the honest autopilot,
+which hops rounds it can see, re-timed its runs and broke seeds 5 and 8. The
+table the brains read is the contract: never hide a round from it. One place the
+law genuinely spends world currency: a swallowed grenade cannot burst where it
+lands (deck spark, no fireball), and a blast that never happens can spare a
+turret — so on the seeds where the ring eats live grenades the run's timing
+really does move. Fidelity first (the shield eats the round, blast included);
+the twelve-seed sweep carries the proof, and the zero-`gs.r` lane keeps the
+seed itself frozen. The mark law has a positive leg (a spent round is still on
+the table the brains read) and a named mutant (`eater-erases`) that deletes it
+and dies for it.
 
 **Schedule calibration (bend the feature, never the brain — #2917).**
 `barrFirst` opened at 560 and ate seed 6: the jungle's first death cluster sits
@@ -1203,12 +1209,15 @@ take re-times the whole run — seed 6's rescued hero eventually went down
 *mid-vine* with the pool spent, where no calibrated wingman can solo the arena.
 Moved to 800, the van still catches the runner on all twelve sweep seeds and
 swallows real rounds on 3 (2, 10, 11 — grazes, not rescues), but never at a
-priced death. Proven against `origin/main` pre-barrier: identical `p.x` and
-`gs.r` streams tick-for-tick on all twelve seeds, identical win ticks, and
-every score exactly +1000 × captures. Zero gs.r draws, every tuned byte stands.
-(The spawn jitter also got honest high-bit harvest — `(seed^const)>>>21` was
-constant across the harness's low-bit seed set, so the lane wasn't really
-seed-keyed until #3060's own leg caught it.)
+priced death. Measured against `origin/main` pre-barrier: zero `gs.r` draws
+(the seed itself is frozen by construction), all twelve seeds still clear, and
+on eleven of them the win tick is untouched and the score is exactly +1000 ×
+captures. Seed 2 finishes 79 ticks earlier — its ring ate a live grenade, and
+the blast that never happened spared something alive downstream: the honest
+price of eating a round, disclosed here rather than papered over. (The spawn
+jitter also got honest high-bit harvest — `(seed^const)>>>21` was constant
+across the harness's low-bit seed set, so the lane wasn't really seed-keyed
+until #3060's own leg caught it.)
 
 **The hang the shield found (game-code fix, not feature).** Seed 6's diagnosis
 exposed a latent softlock predating BARRIER: a hero whose LAST life was spent

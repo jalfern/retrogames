@@ -2438,16 +2438,26 @@ if (MUTANT) {
             anchor: `if (p.barr > 0 && p.dead === 0 && !p.out && !b.eatP && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7 && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13) + 7) { b.eatP = 1; gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 0 }) }`,
             plant: `if (p.barr > 0 && p.dead === 0 && !p.out && !b.eatP && Math.abs(b.x - p.x) < (CFG.duckHalfW[p.posture | 0] || 7) + 7 && Math.abs(b.y - (p.y - pc)) < (CFG.duckHalfH[p.posture | 0] || 13) + 7) { b.eatP = 1; gs.ev.push({ type: 'absorb', x: b.x, y: b.y, o: 0 }); return false /* MUTANT(eater-erases): spent rounds vanish from the stream */ }`,
             harm: async (mod) => {
-                const twin = (block) => {
-                    const gs = mod.makeGame(1)
-                    if (block) gs.nextBarr = 1e9
-                    const xs = []
-                    while (gs.tick < 1500 && !gs.end) { mod.step(gs, mod.autopilot(gs)); if (gs.tick % 97 === 0) xs.push(gs.p.x.toFixed(2)); gs.ev.length = 0 }
-                    return xs.join(',')
+                // Constructed, deterministic: stand a flat round at a shielded
+                // chest. The honest law MARKS it and lets it fly on — the table
+                // keeps every round it had, so the brains read what they always
+                // read. Delete it here and the autopilot is blind to a round it
+                // used to hop. (Grenade blinks are the law's real cost: an
+                // eaten blast genuinely vanishes — fidelity outranks provable
+                // stability there, and the 12/12 sweep carries the weight.)
+                const gs = mod.makeGame(3)
+                gs.p.barr = 300; gs.p.inv = 5
+                const round = { x: gs.p.x + 40, y: gs.p.y - 14, vx: -1.6, vy: 0 }
+                gs.eb.push(round)
+                let ate = false
+                for (let i = 0; i < 40; i++) {
+                    mod.step(gs, {})
+                    if (round.eatP) ate = true
+                    if (ate && !gs.eb.includes(round)) break
+                    gs.ev.length = 0
                 }
-                const a = twin(false), b = twin(true)
-                return a !== b
-                    ? 'HARM NAMED: an eaten round left the bullet table - the autopilot stopped hopping rounds it could no longer see, the whole run re-timed, and every pre-barrier byte downstream moved'
+                return ate && !gs.eb.includes(round)
+                    ? 'HARM NAMED: a spent round left the bullet table - the ring deleted evidence of its own meal, and every honest brain downstream went blind to a round it used to hop'
                     : null
             },
         },
@@ -3639,7 +3649,8 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     {
         const gs = makeGame(3)
         gs.p.inv = 0; gs.p.barr = 120
-        gs.eb.push({ x: gs.p.x + 30, y: gs.p.y - 14, vx: -2, vy: 0 })
+        const kept = { x: gs.p.x + 30, y: gs.p.y - 14, vx: -2, vy: 0 }
+        gs.eb.push(kept)
         let absorbed = 0
         for (let i = 0; i < 25; i++) { step(gs, {}); absorbed += gs.ev.filter((e) => e.type === 'absorb' && e.o === 0).length; gs.ev.length = 0 }
 
@@ -3655,9 +3666,9 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
         let diedE = -1
         for (let i = 0; i < 25 && diedE < 0; i++) { step(ge, {}); if (ge.p.dead > 0) diedE = i; ge.ev.length = 0 }
 
-        r.check('#3060 the absorb law — a chest round sparks out at the ring and the seat lives; the same round kills unshielded; two ticks of fuse left re-arms lethality',
-            absorbed > 0 && gs.p.dead === 0 && diedAt > 0 && diedE > 0,
-            `absorbed=${absorbed} diedAt=${diedAt} expiredDiedAt=${diedE}`)
+        r.check('#3060 the absorb law — a chest round sparks out at the ring and the seat lives; the same round kills unshielded; two ticks of fuse left re-arms lethality; and the spent round is MARKED not erased — still on the table the brains read',
+            absorbed > 0 && gs.p.dead === 0 && diedAt > 0 && diedE > 0 && gs.eb.includes(kept) && kept.eatP === 1,
+            `absorbed=${absorbed} diedAt=${diedAt} expiredDiedAt=${diedE} kept=${gs.eb.includes(kept)}/${kept.eatP}`)
 
         // a grenade the ring swallowed lands dead — the field ate its fuse:
         // deck spark, no fireball, seat stands (an uneaten bomb still booms —
