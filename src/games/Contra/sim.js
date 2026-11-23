@@ -1860,7 +1860,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                 if (s.jlCd <= 0) { s.drop = 2; gs.ev.push({ type: 'drop', x: s.x, y: s.y }) }
             } else if (s.drop === 2) {
                 s.y += s.vy; s.vy += CFG.grav
-                if (s.y >= CFG.ground) { s.y = CFG.ground; s.vy = 0; s.hold = false; s.drop = 3; s.jlLand = CFG.jlLand; s.t = Math.min(s.t, 60); gs.ev.push({ type: 'bound', x: s.x, y: s.y, land: true }) }
+                if (s.y >= CFG.ground) { s.y = CFG.ground; s.vy = 0; s.hold = false; s.drop = 3; s.jlLand = CFG.jlLand; s.t = Math.min(s.t, 60); gs.ev.push({ type: 'bound', x: s.x, y: s.y, land: true }); gs.ev.push({ type: 'dust' }) }
             }
             if (s.jlLand > 0) s.jlLand -= 1
         }
@@ -1882,9 +1882,13 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         // |dx| ≥ rapGate keeps every round's lateral answer in play (the falls
         // sidestep is the whole dodge). Its rearm is fixed arithmetic — the
         // rnd stream never feels a rappel.
+        // #3067 a frogman guns only off the deck: while above it he holds his
+        // rounds out to |dx| ≥ jlGate, so every round keeps its hop answer
+        // (worst-angle vy ≈ 1.06 < the 1.2 window — the rapGate/#2917 law in
+        // the vertical, pinned).
         if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY &&
             (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate)) &&
-            (!s.leap || s.drop === 3 || Math.abs(dx) >= CFG.jlGate)) {   // #3067 steep-angle gate — while above the deck a frogman holds his rounds out to |dx| ≥ jlGate, so every round keeps its hop answer (worst-angle vy ≈ 1.06 < the 1.2 window)
+            (!s.leap || s.drop === 3 || Math.abs(dx) >= CFG.jlGate)) {
             const a = Math.atan2(dy, dx)
             const sp = s.hold ? (gs.phase === 'falls' ? 1.8 : CFG.eBulletSpeed) : CFG.eBulletSpeed
             gs.eb.push({ x: s.x + Math.cos(a) * 8, y: s.y - 12 + Math.sin(a) * 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp })

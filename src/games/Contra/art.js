@@ -577,6 +577,15 @@ export function drawHeli (ctx, x, y, tick, fade = 1) {
 export function drawSoldier (ctx, s, _tick, loop = 1) {
     const mz = heatMuzzle(loop)   // #2902: the reports run hotter as the loop heats
     ctx.save(); ctx.translate(Math.round(s.x), Math.round(s.y))
+    // #3067 frogman poses ride the same transform-before-draw idiom as the
+    // rap tumble: the bough squat, the coil squash (telegraph), the spread
+    // drop, the deck recover — one shared body, four phases, zero new art kit.
+    if (s.leap) {
+        if (s.drop === 0) { ctx.scale(1, 0.82) }
+        else if (s.drop === 1) { ctx.scale(1, 0.62) }
+        else if (s.drop === 2) { ctx.translate(0, -14); ctx.rotate((s.walkDir >= 0 ? 1 : -1) * 0.42); ctx.translate(0, 14) }
+        else if (s.jlLand > 0) { ctx.scale(1, 0.74) }
+    }
     const dir = Math.sign(s.walkDir || -1)
     // #3064 the cut man tumbles as he falls — presentation off the walk clock
     // (the #3035 rollT class), exactly one spin per arc second, direction his.
@@ -609,6 +618,15 @@ export function drawSoldier (ctx, s, _tick, loop = 1) {
     ctx.fillRect(-3, -26, 6, 6)
     ctx.fillStyle = C.beret
     ctx.fillRect(-4 + dir, -28, 8, 3)
+    // #3067 frogman identity kit: harness X across the chest (the drop rig),
+    // the bough he waits on, and a white coil-glint that blinks the launch
+    // warning — every threat on this shelf announces itself first.
+    if (s.leap) {
+        ctx.fillStyle = '#7a6338'
+        for (let i = 0; i < 4; i++) { ctx.fillRect(-4 + i * 2, -19 + i * 2, 2, 2); ctx.fillRect(2 - i * 2, -19 + i * 2, 2, 2) }
+        if (s.drop === 0) { ctx.fillStyle = '#3a2f18'; ctx.fillRect(-10, -2, 20, 2) }
+        if (s.drop === 1 && s.jlCd % 4 < 2) { ctx.fillStyle = '#ffffff'; ctx.fillRect(-1 + dir, -31, 2, 2) }
+    }
     // #3064 on the wire: one arm up to the harness yoke (drawRappel ends at
     // the same mark); the ride is one-armed, the rifle arm keeps working.
     if (s.rap && s.rap !== 3) { ctx.fillStyle = C.skin; ctx.fillRect(dir > 0 ? 2 : -5, -28, 3, 10) }
