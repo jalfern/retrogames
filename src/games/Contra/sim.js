@@ -324,6 +324,18 @@ export function loopVoice (n) {
     return Math.min(1 + 0.06 * 3, 1 + 0.06 * (Math.max(1, Math.floor(n)) - 1))
 }
 
+// #3048 THE MARCH — which music bed the cabinet plays, as the same kind of
+// presentation law loopVoice is: pure phase arithmetic, zero gs reads, zero
+// gs.r, nothing stored on gs (so it enters neither the hash nor a replay —
+// the bed is derived, never kept). The jungle and the canyon march; the gate
+// sieges. The SHELF law that keeps it honest: attract, GAME OVER, the
+// CONTINUE count and STAGE CLEAR carry no bed at all — the music rides the
+// run, not the cabinet's idle. Tempo is not here: the shell divides each
+// pattern's own step by loopK(gs.loop), so the march lifts with the exact
+// k that raises the pressure (#2894) — SSX's setMusicStep seam.
+export const BED = { march: 'contraMarch', gate: 'contraGate' }
+export const bedTrack = (phase) => (phase === 'boss' ? BED.gate : BED.march)
+
 const PAD0 = { left: false, right: false, up: false, down: false, a: false, b: false }
 
 // mulberry32 as pure state-in/state-out: the rng is just an integer on gs.

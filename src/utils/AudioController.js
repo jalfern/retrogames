@@ -530,6 +530,47 @@ export const MUSIC = {
             1, 0, 0, 2, 1, 0, 0, 2, 1, 0, 0, 2, 1, 2, 1, 0,
         ],
     },
+    // CONTRA (#3048) — two ORIGINAL beds composed for this build in the 1987
+    // run-and-gun idiom (our own melodies, none from the cabinet — the `joust`
+    // / `marble` law: same breath, same register, not a transcription).
+    // "JUNGLE MARCH" — E-minor military drive under the canopy: a syncopated
+    // horn-call lead over pumping octaves (Em–C–Am–B), snare on the off-beats
+    // (1=dum kick, 2=tek hat). The march is what the stage looks like: a
+    // commando run that never stops to aim.
+    contraMarch: {
+        step: 0.11,
+        lead: [
+            64, 0, 64, 67, 0, 64, 0, 71, 69, 0, 67, 0, 64, 0, 62, 0,
+            64, 0, 64, 67, 0, 71, 0, 74, 76, 0, 74, 0, 71, 69, 67, 0,
+        ],
+        bass: [
+            40, 52, 40, 52, 40, 52, 40, 52, 36, 48, 36, 48, 36, 48, 36, 48,
+            33, 45, 33, 45, 33, 45, 33, 45, 35, 47, 35, 47, 40, 52, 40, 52,
+        ],
+        perc: [
+            1, 0, 2, 0, 1, 0, 2, 2, 1, 0, 2, 0, 1, 2, 1, 2,
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 1, 2, 1, 0, 2, 2,
+        ],
+    },
+    // "SIEGE WORK" — the gate: the march drops into a tritone grind. E against
+    // B♭ pumps in the left hand, the lead hammers one note then snaps down a
+    // Phrygian tail, and the snare rolls like the doors keep opening. Faster
+    // than the march — the fortress fight is the fastest nerve in the stage.
+    contraGate: {
+        step: 0.095,
+        lead: [
+            76, 0, 0, 76, 79, 0, 76, 0, 68, 0, 0, 68, 70, 0, 68, 0,
+            67, 0, 0, 67, 70, 0, 67, 0, 66, 0, 67, 0, 68, 0, 67, 0,
+        ],
+        bass: [
+            40, 40, 0, 46, 40, 40, 0, 46, 40, 40, 0, 46, 40, 46, 40, 46,
+            38, 38, 0, 44, 38, 38, 0, 44, 35, 35, 0, 41, 35, 41, 35, 41,
+        ],
+        perc: [
+            1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 1, 2, 2,
+            1, 2, 1, 2, 1, 2, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1,
+        ],
+    },
 }
 
 class AudioController {

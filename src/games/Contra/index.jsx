@@ -10,13 +10,13 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
-import { audioController } from '../../utils/AudioController'
+import { audioController, MUSIC } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, recordVoiceCmd, isRecording, armLiveCapture, hasAutoVoice } from '../../utils/gameContract'
 import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
 import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat } from './sim.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat, bedTrack } from './sim.js'
 import { parseCall, intentKey, intentLabel } from './voicecalls.js'
 import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
@@ -244,6 +244,11 @@ export default function ContraGame () {
         // fires so the live leg can prove the coin clacked and the heat rose.
         const contBeats = { coin: 0, tick: 0, hot: 0 }
         let shake = 0
+        // #3048 THE MARCH — which bed is actually on the bus (null = silence),
+        // and which loop-heat the tempo was last set to. Presentation only: the
+        // law of WHICH bed lives in sim.js (bedTrack); nothing here is hashed,
+        // nothing consumes gs.r, and the tuned autopilot stream never hears it.
+        let bedName = null, bedK = 0
         let hiscore = Number(localStorage.getItem('contra:hiscore') || 0)
         const part = [] // cosmetic particles — Math.random is law here, never in sim
         const fire = [] // expanding fireballs — sized by the boom's kind (#2782)
@@ -613,6 +618,25 @@ export default function ContraGame () {
             left: !!p.left, right: !!p.right, up: !!p.up, down: !!p.down, a: !!p.a, b: !!p.b,
         })
 
+        // #3048: the bed follows the run — play has one (jungle/canyon march,
+        // gate siege), every other screen is silence by law, and the tempo
+        // rides loopK so loop n's stage marches at exactly the heat k the
+        // pressure runs at. Called from the WORLD-tick path (stepSim), never
+        // from a timer: pause freezes it with the world, so does death.
+        const applyBed = () => {
+            const want = (screen === 'play' && !gs.end) ? bedTrack(gs.phase) : null
+            if (want !== bedName) {
+                if (want === null) audioController.stopMusic()
+                else audioController.startMusic(want)
+                bedName = want
+                bedK = 0
+            }
+            if (want && gs.lk !== bedK) {
+                audioController.setMusicStep(MUSIC[want].step / gs.lk)
+                bedK = gs.lk
+            }
+        }
+
         const stepSim = (pad) => {
             const p2 = simPad2()
             step(gs, pad, p2)
@@ -627,6 +651,7 @@ export default function ContraGame () {
             if (screen === 'play' && isRecording() && !contractHoldsLoop()) recordLiveTick([toBank(pad), toBank(p2)])
             if (gs.end === 'win') { if (screen === 'play') { endTo('clear'); clearHold = 220 } }
             else if (gs.end === 'dead') { if (screen === 'play') endTo('over') }
+            applyBed() // #3048 after the end-branch, so the tick that kills the run also silences it
         }
 
         const paint = () => {
@@ -975,7 +1000,14 @@ export default function ContraGame () {
 
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
-            if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
+            if (code === 'Question') {
+                pausedRef.current = !pausedRef.current; setPaused(pausedRef.current)
+                // #3048: pause freezes the world, so it freezes the band — the
+                // bed re-enters on the first tick after the resume (applyBed
+                // sees bedName null and re-arms the run's track).
+                if (pausedRef.current) { audioController.stopMusic(); bedName = null; bedK = 0 }
+                return
+            }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             if (e.code === 'KeyV') { e.preventDefault(); voiceToggle(); return } // #3000 the crew radio
             if (screen === 'attract') {
@@ -1175,6 +1207,7 @@ export default function ContraGame () {
                     posture: gs.p.posture, posture2: gs.p2.posture,   // #3038 the ground profile too
                     konami: { prog: kProg, fx: kFx ? { t: kFx.t } : null },   // #3037 the code typing is observable
                     cont: { left: contLeft, t: overT, armed: armedRun, phase: contPhase(overT).phase, digit: contPhase(overT).digit, beats: { ...contBeats } },   // #3042 the purse and the count are observable; #3045 so is the ceremony
+                    bed: { track: bedName, step: audioController.music ? +audioController.music.stepDur.toFixed(4) : null, bus: audioController.music ? audioController.music.track : null },   // #3048 the march is observable: track = what the law asked for, bus = what is actually scheduled and at what step
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     touch: TOUCH,   // #2971: the touch-aware copy is observable
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
@@ -1286,6 +1319,7 @@ export default function ContraGame () {
 
         return () => {
             unexposeFeedbackState()
+            audioController.stopMusic() // #3048: no bed survives the component, same law as the mic
             endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
             disarmVoice() // #3000: no hot mic past the component, ever
             if (import.meta.env.DEV) { if (window.__contraTest) delete window.__contraTest; unexposeGame(); unmountDbg() }
