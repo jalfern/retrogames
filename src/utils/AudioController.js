@@ -584,6 +584,8 @@ class AudioController {
         this.analyser = null
         this.music = null
         this.pendingStep = null
+        // #3052: lazy fine-resolution spectrum tap (see _spectrum)
+        this.spectrumAnalyser = null
         // held fraction of the bus from setMusicLevel (ducks recover to it)
         this.musicScale = 1
         // #1612 item 4 — the low-pass a title muffles its sustained bed through
@@ -992,6 +994,26 @@ class AudioController {
 
     // ---- verification hooks ----
     _musicState() { return { playing: !!(this.music && this.music.playing), track: this.music && this.music.track, step: this.music && this.music.step, stepDur: this.music && this.music.playing ? this.music.stepDur : null, ctx: this.ctx && this.ctx.state, level: this.musicScale, vib: this.music ? this.music.vibrato : null } }
+    // #3052 MIX measurement: the bus spectrum at finer resolution than the peak
+    // tap's 256-point grid (a second, lazily-built analyser on musicGain — a
+    // tap has no side effect on the signal, so no game's sound moves; built only
+    // when a check asks, like the amb bus is built only when a title muffles).
+    _spectrum() {
+        if (!this.ctx || !this.musicGain) return null
+        if (!this.spectrumAnalyser) {
+            this.spectrumAnalyser = this.ctx.createAnalyser()
+            this.spectrumAnalyser.fftSize = 2048
+            this.spectrumAnalyser.smoothingTimeConstant = 0.8
+            this.musicGain.connect(this.spectrumAnalyser)
+        }
+        const d = new Float32Array(this.spectrumAnalyser.frequencyBinCount)
+        this.spectrumAnalyser.getFloatFrequencyData(d)
+        return { binHz: this.ctx.sampleRate / this.spectrumAnalyser.fftSize, db: Array.from(d) }
+    }
+    // The BUS GAIN's live value — the automation target is `musicScale`, but a
+    // duck/resume rides setTargetAtTime, so a check can watch the trajectory and
+    // prove the step-back is a slope, not a splice (a click is a sample jump).
+    _musicGainLevel() { return this.musicGain ? this.musicGain.gain.value : null }
     _peak() {
         if (!this.analyser) return 0
         const d = new Uint8Array(this.analyser.fftSize)
@@ -1012,4 +1034,7 @@ if (typeof window !== 'undefined' && import.meta.env?.DEV) {
     // #1612 item 4 — the cutoff the ambience bus is being held at (null until a
     // title muffles something), so a browser check can see the veil take the bed.
     window.__audioMuffle = () => audioController.ambTarget
+    // #3052 — the mix readback: bus spectrum (fine bins, dBFS at the destination
+    // since musicGain is post-bus) and the live gain automation value.
+    window.__audioMix = () => ({ ...(audioController._spectrum() || { binHz: null, db: [] }), gain: audioController._musicGainLevel(), peak: audioController._peak() })
 }
