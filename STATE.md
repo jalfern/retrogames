@@ -1,71 +1,64 @@
-# STATE — forge board snapshot (slot b, 2026-11-23 — shipped the press feel)
+# STATE — forge board snapshot (slot a, 2026-11-23 — shipped)
 
-## This session shipped: MINESWEEPER press feel — #3032, PR #3034 (squash `2cf6b22`, prod-verified)
-- Never-dry rung: ladder dry (feedback QA-held, live QA session owned the borrow), flagship
-  stage spent (`idle-kick` → `KICK MINESWEEPER -1 weak`, score 1 from #3008 naming it).
-  Filed POLISH #3032 with the why-weakest line, claimed for slot b, shipped in one session.
-- Game: mouse press now **sinks** the tile (bevel flip), pressing an opened number
-  **flattens its covered ring** (chord preview), **release on the cell commits**
-  (same engine verdict, one pointer-up later), **drag-off cancels** (and un-flattens
-  while off), face **concentrates** while held. Touch/keyboard semantics untouched;
-  `minefield.js`/`stateHash` never see `press` (sweepcheck 124/124).
-- Harness: 7 new `sweepplay` legs (press-no-dig, exact sink fill, face ink, release
-  commits, ring flatten, un-flatten, cancel-leaves-hash); new DEV hooks `probe().press`
-  + `clueAt`. Mutation proof deterministic: stripping the commit condition reds the
-  cancel leg (`opened=57->58`). Final local: sweepplay 59/59, sweepcheck 124/124,
-  lint:mario/fps/ai + build green.
+## This session shipped
+- **#3035 CONTRA somersault jump → PR #3036 → main `8241aab`, prod-verified.**
+  The cabinet's full-turn jump: `rollT` per seat (arms on jump event, one
+  37-tick revolution completes as the feet land, ground clears, vine-catch
+  zeroes; step-off and drop-through never arm); `drawPlayer` turns the body
+  ~2π at the body-centre pivot, flipped by facing, **gun arm draws outside
+  the rotation at the live 8-way aim** (sprite keeps matching logical state).
+  Referee untouched: rollT never enters `stateHash`, zero `gs.r` — states
+  differing only in rollT hash identically, all stored pins/streams stood.
+  Proven: contracheck 269 legs (+6 sim pins, +live pixel leg: bandana red
+  crosses the feet line mid-arc on both arm-states; AIM-UP hops carry
+  cold-dark barrel ink over the pivot, flat hops don't), mutants **stiff-hop**
+  & **roll-on-step** die by name (mutant run 189/189), 3 scoped lints + build.
+- Never-dry walk (#1571/#1615): kick said CONTRA -1 weak, live idle-kick
+  confirmed (score from feedback #2971 naming Contra; README gaps CLOSED),
+  so the gap was scoped live from the cabinet. #3031 (slot a seed) found
+  ALREADY BUILT by slot b live at claim time — closed as duplicate of #3032
+  before it could invite a third lane; slot b shipped press-feel (#3034).
 
-## Session lessons (each already cost minutes)
-- **Never pipe the dev server into `head`** — `npm run dev | head -20` SIGPIPE-kills
-  vite once HMR chatter fills the pipe: the suite then grades against a dead/stale
-  server and the failures LOOK random (state legs green, pixel legs red). Redirect to
-  a file instead.
-- **Never `git checkout --` over uncommitted work** — a mutant-restore wiped the
-  session's whole index.jsx edit (nothing was committed yet). The dropped stash
-  recovered it (`git fsck --unreachable` + `git show <sha>:<path>`) — but the rule
-  is the fix: **commit the increment before the mutation run.**
-- **Pixel legs must poll the repaint, not sleep** — software-rAF hitches beat fixed
-  90 ms waits; `pxWant`/`faceWant` in sweepplay now wait for the expected colour
-  (1.5 s budget) — deterministic after that (same failing cell (8,3) went green).
-- Hardened the `?`-glyph leg the same way it broke: centre-pixel diff was a
-  seed/antialias lottery (the glyph's waist misses centre at some font sizes) — now
-  graded by dim-`?` ink count in the cell. (Red-once-green-once SAME code on main.)
-- Dual-slot never-dry collision: slot a filed the same gap as #3031 ~2 s before my
-  #3032 claim; board resolved it (closed dup, one-lane-per-game held). Harmless,
-  but the POLISH-file→claim window is the collision surface.
+## PLAYABLE on main right now
+- `/retrogames/contra` (+ somersault #3035, voice #3000, radio teach #3016),
+  `/retrogames/minesweeper` (+ press-feel #3032, hall of fame #3026),
+  `/retrogames/double-dragon`, `/retrogames/floor-boss`, `/retrogames/fire-crew`,
+  `/retrogames/r-type`.
 
-## PLAYABLE on main right now (`2cf6b22`)
-- `/retrogames/minesweeper` (press feel #3032 + hall of fame #3028 + chord shield
-  #3009 + teach-the-nope #3011 + signed counter #3021), `/retrogames/double-dragon`,
-  `/retrogames/contra` (voice #3000, radio teach #3016), `/retrogames/floor-boss`,
-  `/retrogames/fire-crew`, `/retrogames/r-type`.
+## Board at close
+- `game-queue`/`steer`/`next`/`building`/`building-qa`: all EMPTY. `feedback`:
+  only #2971 (waiting-jon — its last item needs a real phone take). No jonq
+  open, no halt.
+- Worth Jon's eye (unlabeled, so no lane may claim): **#3014 STAGE — CONTRA:
+  attract teaches the voice orders** sits open `lane:games` with no ladder
+  label — a label would put a real stage on next week's board.
+- #3030 (forge-merge second shape) bit again this session and the law held:
+  merge printed the gh read-fail but the PR state was MERGED (rule 5 exit
+  criterion from the PR's state, not the wrapper's stdout); cleanup completed
+  by hand — remote branch gone, lane re-detached, no `[main]` squat.
 
-## Board at close (live audit)
-- `building`: #3035 (slot a, live, inside Contra — somersault jump). `building-qa`:
-  empty. `steer`/`next`/`game-queue`: empty. `feedback`: #3008 (lane:qa, meat
-  verified done, residue = advisory load-flake family), #2971 `waiting-jon`.
-- `idle-kick` at close: **NONE** — STOP legal per FORGE.md step 2.
-- Next kick: when #3035 merges, Contra opens again; remaining scoped Minesweeper
-  fidelity is thin (press feel was the last big original gap). If the board is dry
-  again, run the ladder honestly — do NOT re-file what slot a just shipped.
-
-## Harness notes (carry-overs, unchanged)
-- macOS /var symlink vs git realpath in sandbox tests; sandbox zsh sources real
-  ~/.zshenv (gh shadowing); `execFileSync` stdio:'inherit' returns null;
-  ciscope #1575: new npm-alias check ⇒ scope in `checks.mjs` same PR.
-- #2910 fix still unclaimed (kick/TARGET staleness gate + pin (c) in code).
-  Its live shape bit again today: warden kick text is regenerated post-assignment
-  and can name a held title — the lane's live `idle-kick` remains the decision.
-- forge-merge.sh note: when the squash lands and the remote branch dies mid-script,
-  `gh pr view` (no number in cwd after branch delete) errors AFTER the merge —
-  verify state (`pr view <n>`, issue labels) and finish cleanup by hand:
-  labels shipped, worktree re-detached, local branches pruned. Done this session.
+## Harness notes (carry-overs + new)
+- **Headless paint here runs ~12 fps**, so a 37-tick jump yields ~8 canvas
+  samples: single-hop pixel assertions are dicey. Sample 4 hops; inversion =
+  ANY frame; arm law = MEAN per-frame difference between same-seed arm-states
+  (constant occupants cancel). Jungle dark greens answer naive dark predicates
+  — steel must be COLD (b > r+6 && b > g+4). ArrowUp alone aims ax=0
+  (straight up) — the barrel stub sits over centre, not to the right.
+- `#2885` vine browser legs are in the documented advisory load-flake family
+  (#3008 residue, #3027 sibling): one leg flaked per run across five local
+  runs, rotating which one, always upstream of the diff. Rerun-once law,
+  reported in the PR, never papered.
+- Prod-verify needs `curl -L` (308 on moved hashes); this deploy was hot on
+  the first poll.
 
 ## Slots / ops
-- Slot b port 5178: dev server stopped via `scripts/devstop.sh` ✓ (never pattern-kill).
-- Plumbing `~/Dev/retrogames` detached at origin/main ✓; lane worktree
-  `~/Dev/retrogames-forge-msw-press` detached at origin/main, branches pruned.
-- STATE.md committed to main (step-9 exception: game merged this session).
+- Slot a port 5173: dev server stopped via `scripts/devstop.sh` at close ✓.
+  Plumbing `~/Dev/retrogames` detached at origin/main ✓. Lane worktree
+  `retrogames-forge-contra-somersault` detached at origin/main (clean);
+  purge cleaner may reap it. node_modules was symlinked from plumbing — the
+  purge must take the symlink before the dir (or leave both).
+- STATE.md committed to main this session (#3036 merged game code).
 
 ## Open questions
-- None new (no jonq filed; see https://jalfern.com/retrogames/forge for the live board).
+- None (dry-shelf flagship question already on the record this week — see
+  https://jalfern.com/retrogames/forge for the live board).
