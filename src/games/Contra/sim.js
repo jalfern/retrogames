@@ -741,12 +741,16 @@ function allyBrainBase (gs) {
     return pad
 }
 
-export function makeGame (seed, loop = 1, lives = 3) {
+export function makeGame (seed, loop = 1, lives = 3, score = 0) {
     const lp = Math.max(1, Math.floor(loop) || 1)   // #2894 arcade loop: pass n>1 to run stage 1 faster
     // #3037: the Konami prize enters HERE and nowhere else — default 3 keeps every
     // pre-Konami run byte-identical (lives already enters stateHash, so armed runs
     // are honestly replayable too). Clamped to the HUD's numeric form (99).
     const lv = Math.max(1, Math.min(99, Math.floor(lives) || 3))
+    // #3042 the CONTINUE carry: a paid continue re-enters the fight with the score
+    // it earned. Default 0 keeps every pre-continue run byte-identical, and score
+    // already rides stateHash — a replay that silently wipes the carry diverges loudly.
+    const sc = Math.max(0, Math.floor(score) || 0)
     const gs = {
         seed: seed >>> 0,
         r: (seed >>> 0) ^ 0x9e3779b9,
@@ -756,7 +760,7 @@ export function makeGame (seed, loop = 1, lives = 3) {
         cam: 0,
         camY: 0,
         phase: 'jungle',            // jungle | falls | boss
-        score: 0,
+        score: sc,                  // #3042 CONTINUE carry — the score a paid continue re-enters with
         lives: lv,
         nextExt: EXT_FIRST,       // #3041 the score mark the next extend pays at (carries the loop)
         end: null,                  // 'dead' | 'win'

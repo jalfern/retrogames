@@ -45,6 +45,7 @@ const MESSAGES_KEYBOARD = [
     'DUCK UNDER THE FIRE — DOWN KNEELS, DOWN AGAIN LIES FLAT',
     'UP UP DOWN DOWN LEFT RIGHT LEFT RIGHT B A — 30 UP',
     '30,000 POINTS BUYS ANOTHER LIFE — EVERY RUN',
+    'THREE CONTINUES KEEP YOUR SCORE — ANSWER THE COUNT',
     'ONE HIT KILLS. BOTH SIDES.',
     'PRESS ANY KEY',
 ]
@@ -64,10 +65,21 @@ const MESSAGES_TOUCH = [
     'DOWN KNEELS, DOWN AGAIN LIES FLAT — CRAWL AND FIRE LOW',
     'UP UP DOWN DOWN LEFT RIGHT LEFT RIGHT B A — 30 UP',
     '30,000 POINTS BUYS ANOTHER LIFE — EVERY RUN',
+    'THREE CONTINUES KEEP YOUR SCORE — ANSWER THE COUNT',
     'ONE HIT KILLS. BOTH SIDES.',
     'TAP TO START',
 ]
 const MESSAGES = TOUCH ? MESSAGES_TOUCH : MESSAGES_KEYBOARD
+
+// #3042 THE CONTINUE — the cabinet's second chance. The 1987 machine does not
+// end your game when the pool runs dry: you answer a countdown and rejoin, up
+// to THREE times per game (coin + Start — the Konami law this shelf already
+// carries via IronRing #1103). Clock constants are WORLD ticks: the over
+// screen's own tick stream (harness waits are sim-seconds, never setTimeout).
+const CONTINUES_MAX = 3      // continues per game, fresh at every attract start
+const CONT_READ = 90         // GAME OVER reads 1.5 s — the sting gets its room
+const CONT_SECS = 9          // the classic Konami digit: 9…0, one second a digit
+const CONT_LIFE = (CONT_SECS + 1) * 60   // the whole window; zero closes the book
 
 const sfx = {
     shot: () => audioController.playSweep(920, 540, 0.05, 'square', 0.05),
@@ -83,6 +95,11 @@ const sfx = {
     splash: () => audioController.playNoise(0.06, 0.025),
     respawn: () => audioController.playSweep(700, 220, 0.16, 'triangle', 0.06),
     gameover: () => audioController.playSweep(320, 60, 0.6, 'sawtooth', 0.08),
+    // #3042 the continue voices: the countdown ticks a dry slot-click once a
+    // second, and the re-entry is a rising sting — the mirror of gameover's
+    // fall, so the run reads as "back in", not "another life".
+    contTick: () => audioController.playTone(880, 0.03, 'square', 0.03),
+    contIn: () => { audioController.playSweep(220, 660, 0.2, 'square', 0.07); setTimeout(() => audioController.playTone(880, 0.14, 'square', 0.05), 160) },
     // S4 co-op: the blue seat's voices — a warmer join chirp, a deeper fall
     p2join: () => { audioController.playSweep(440, 880, 0.12, 'square', 0.05); setTimeout(() => audioController.playTone(1100, 0.1, 'square', 0.04), 90) },
     // #2837 the release chirp: a falling answer to the join's rising one —
@@ -212,6 +229,13 @@ export default function ContraGame () {
         let demoHold = 0
         let clearHold = 0
         let overAt = 0
+        // #3042 CONTINUE state — shell-side like IronRing's credits (#1103):
+        // contLeft is this game's purse, overT is the over screen's WORLD-tick
+        // clock, armedRun carries the #3037 prize into continues (NES law:
+        // "the cheat remains in effect when the player … uses a continue").
+        let contLeft = CONTINUES_MAX
+        let armedRun = false
+        let overT = 0
         let shake = 0
         let hiscore = Number(localStorage.getItem('contra:hiscore') || 0)
         const part = [] // cosmetic particles — Math.random is law here, never in sim
@@ -389,10 +413,12 @@ export default function ContraGame () {
             return pad
         }
 
-        const startPlay = (lives = 3) => {
+        const startPlay = (lives = 3, score = 0) => {
             // #3037: the Konami prize enters the world here and nowhere else —
             // consumed at the rebuild, so attract typing can never leak forward.
-            gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0, 1, lives)
+            // #3042: the CONTINUE carry enters the same way — score rides the
+            // rebuild, default 0 keeps every pre-continue start byte-identical.
+            gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0, 1, lives, score)
             part.length = 0
             fire.length = 0
             wasGround = true
@@ -416,8 +442,14 @@ export default function ContraGame () {
         // declined → plays exactly the same): the question goes up at the human's
         // first press, and beginRun() only ever ships bytes the stored grant
         // covers — a mid-take grant records from that tick, never before it.
-        const humanStart = (lives = 3) => {
-            startPlay(lives)
+        const humanStart = (lives = 3, score = 0, fresh = true) => {
+            // #3042: a seat taken fresh at attract buys the purse whole again
+            // (three continues); a paid continue (fresh = false) spends from it.
+            // The armed flag rides the prize, not the typing — typing stays an
+            // attract-only law (#3037 trap); the carry is a memory of the game.
+            if (fresh) contLeft = CONTINUES_MAX
+            armedRun = lives >= KONAMI_LIVES
+            startPlay(lives, score)
             askConsent()
                 .then((c) => {
                     if (c && c.motion) beginRun()
@@ -427,6 +459,19 @@ export default function ContraGame () {
                     if (c && c.voice && armVoice() && !hintFx) callFx = { t: CALL_FX, ok: true, text: 'RADIO LIVE — SHOUT ORDERS' }
                 })
                 .catch(() => {})
+        }
+
+        // #3042 THE PAID CONTINUE: the hero rejoins at stage 1, loop 1 with the
+        // score he earned, the pool restored (an armed run returns at 30 — the
+        // NES law documented for continues), and one continue spent. The wingman
+        // is back on his post — a friend takes the blue seat again under the
+        // #2837 claim law. Both prizes enter at makeGame; score and lives ride
+        // stateHash, so a replay sees the carry and cannot lie about it.
+        const continueRun = () => {
+            if (contLeft <= 0) return
+            contLeft -= 1
+            sfx.contIn()
+            humanStart(armedRun ? KONAMI_LIVES : 3, gs.score, false)
         }
 
         // ---- VOICE ORDERS (#3000, #1711 S5 voice lineage) ----
@@ -498,6 +543,7 @@ export default function ContraGame () {
             extFx = null   // #3041: a salute never survives the screen it was paid on
             if (what === 'over') {
                 overAt = performance.now()
+                overT = 0   // #3042: the CONTINUE clock starts with the sting
                 if (gs.score > hiscore) { hiscore = gs.score; localStorage.setItem('contra:hiscore', String(hiscore)) }
                 endRun() // #1711: the take ends with the run (no-op when idle/declined) — and NOT on 'clear': #2958 law, one take spans the arcade loops
                 disarmVoice() // #3000: the mic never stays hot on GAME OVER (#1249 law, Gauntlet precedent)
@@ -801,6 +847,26 @@ export default function ContraGame () {
                 ctx.fillStyle = '#cdeea8'
                 ctx.font = '9px "Courier New", monospace'
                 ctx.fillText(`SCORE ${gs.score}  HI ${hiscore}`, 150, 120)
+                // #3042 THE COUNT: GAME OVER reads, then CONTINUE? holds the
+                // window with the Konami digit 9…0 and the purse. The last two
+                // seconds blink red-hot (IronRing #1103's warning family). With
+                // the purse empty there is no count — only the book closes.
+                if (contLeft > 0) {
+                    if (overT > CONT_READ) {
+                        const digit = Math.max(0, CONT_SECS - Math.floor((overT - CONT_READ) / 60))
+                        const hot = digit <= 2 && Math.floor(overT / 8) % 2 === 0
+                        ctx.fillStyle = hot ? '#ff6a4d' : '#ffd23c'
+                        ctx.font = 'bold 16px "Courier New", monospace'
+                        ctx.fillText(`CONTINUE? ${digit}`, 136, 146)
+                    }
+                    ctx.fillStyle = '#cdeea8'
+                    ctx.font = '9px "Courier New", monospace'
+                    ctx.fillText(`ANY KEY · TAP — ${contLeft} CONTINUE${contLeft > 1 ? 'S' : ''} LEFT`, 102, 162)
+                } else {
+                    ctx.fillStyle = '#7d8f63'
+                    ctx.font = 'bold 9px "Courier New", monospace'
+                    ctx.fillText('NO CONTINUES', 150, 146)
+                }
             }
         }
 
@@ -862,6 +928,16 @@ export default function ContraGame () {
                             if (--clearHold <= 0) startLoop()   // #2894 the arcade never sends you back to attract on a win — it loops
                         } else if (screen === 'over') {
                             gs.tick += 1
+                            // #3042: the CONTINUE countdown runs on WORLD ticks.
+                            // GAME OVER reads (CONT_READ), then the digit counts
+                            // 9…0, one a second; when the window closes the
+                            // machine returns to the title — continues left in
+                            // the purse are forfeit, as on the cabinet.
+                            if (contLeft > 0) {
+                                overT += 1
+                                if (overT > CONT_READ && overT <= CONT_READ + CONT_SECS * 60 && (overT - CONT_READ) % 60 === 0) sfx.contTick()
+                                if (overT >= CONT_READ + CONT_LIFE) endTo('attract')
+                            }
                         }
                         acc -= SIM_MS
                     }
@@ -885,7 +961,16 @@ export default function ContraGame () {
                 humanStart(kr === 'armed' ? KONAMI_LIVES : 3)
                 return
             }
-            if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract'); return }
+            if (screen === 'over') {
+                // #3042: the any-key law answers the count — during the window
+                // a press pays a continue and rejoins; after the digits, or with
+                // the purse empty, the press returns to the title as it always did.
+                if (performance.now() - overAt > 900) {
+                    if (contLeft > 0 && overT < CONT_READ + CONT_LIFE) continueRun()
+                    else endTo('attract')
+                }
+                return
+            }
             if (screen === 'clear') return
             if (pausedRef.current || e.repeat) return
             if (e.code === 'ArrowLeft') keys.l = true
@@ -931,7 +1016,14 @@ export default function ContraGame () {
                 if (e.target && e.target.closest && e.target.closest('[data-vc]')) return
                 humanStart(); return
             }
-            if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract') }
+            if (screen === 'over') {
+                // #3042: a tap answers the count exactly like a key (the pad is
+                // stowed on this screen — Jon's one-pad law leaves the tap free).
+                if (performance.now() - overAt > 900) {
+                    if (contLeft > 0 && overT < CONT_READ + CONT_LIFE) continueRun()
+                    else endTo('attract')
+                }
+            }
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
@@ -1055,6 +1147,7 @@ export default function ContraGame () {
                     roll: gs.p.rollT, roll2: gs.p2.rollT,   // #3035 the somersault clock is observable
                     posture: gs.p.posture, posture2: gs.p2.posture,   // #3038 the ground profile too
                     konami: { prog: kProg, fx: kFx ? { t: kFx.t } : null },   // #3037 the code typing is observable
+                    cont: { left: contLeft, t: overT, armed: armedRun },   // #3042 the purse and the count are observable
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     touch: TOUCH,   // #2971: the touch-aware copy is observable
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
@@ -1135,7 +1228,7 @@ export default function ContraGame () {
                     `SKY ${gs.carriers.length ? `carrier hp ${gs.carriers[0].hp} ${gs.carriers[0].kind}` : 'clear'}  pods ${gs.pods.length}  next courier t${gs.nextCarrier}`,
                     `SKY2 ${gs.gunships.length ? `GUNSHIP hp ${gs.gunships[0].hp} x${gs.gunships[0].x.toFixed(0)} y${gs.gunships[0].y.toFixed(0)}` : 'no sortie'}  hangar ${gs.boss ? (gs.boss.hangar.open > 0 ? `GRIND t${gs.boss.hangar.open}` : gs.boss.hangar.launchAt > 0 ? 'DUE' : 'shut') : '-'}  next sortie t${gs.sortieT > 1e8 ? 'off' : gs.sortieT}` ,   // #2917
                     `VINES ${gs.p.vine >= 0 ? `HERO RIDING #${gs.p.vine}` : gs.p2.vine >= 0 ? `ALLY RIDING #${gs.p2.vine}` : `${gs.vines.length} swaying`}  ${gs.boss && gs.boss.dying ? `CASCADE t${gs.boss.dying}` : ''}`,
-                    `screen ${screen}  paused ${pausedRef.current}`,
+                    `screen ${screen}  paused ${pausedRef.current}  continues ${contLeft}  overT ${overT}`,
                 ],
                 actions: [
                     { label: '+1 LIFE', run: () => { gs.lives += 1; return 'extra life' } },
