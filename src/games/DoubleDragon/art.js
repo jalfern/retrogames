@@ -1444,8 +1444,8 @@ export function handbackMarks(t) {
         for (const [mx, my] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
             const X = mx * rx, Y = -15 + my * ry
             arms.push(
-                { out: [X - 1, Y - 1, 7, 4], ink: [mx < 0 ? X : X - 4, my < 0 ? Y : Y - 1, 5, 2] },
-                { out: [X - 1, Y - 1, 4, 7], ink: [mx < 0 ? X : X - 1, my < 0 ? Y : Y - 4, 2, 5] },
+                { out: [mx < 0 ? X - 1 : X - 5, my < 0 ? Y - 1 : Y - 2, 7, 4], ink: [mx < 0 ? X : X - 4, my < 0 ? Y : Y - 1, 5, 2] },
+                { out: [mx < 0 ? X - 1 : X - 2, my < 0 ? Y - 1 : Y - 5, 4, 7], ink: [mx < 0 ? X : X - 1, my < 0 ? Y : Y - 4, 2, 5] },
             )
         }
         return { beat: 0, arms, alpha }

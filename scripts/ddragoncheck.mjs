@@ -3065,12 +3065,15 @@ const defuseConsent = async (page) => {
     // dodges the executioner (the threat branch), and a dodging partner is not
     // a drained bank. The leg is about both pools emptying, not about dodging.
     await page.evaluate(() => window.__ddTest.setup({ killBilly: true, lives: 1, killAlly: true, allyLives: 1, allyHuman: true }))
-    await page.waitForTimeout(700)
+    // #3007 calibration: wait for the event, not the clock — a saturated box
+    // (other lanes' inference at 97 % CPU, seen mid-suite Nov 22) starves rAF
+    // and the death→gameover cascade lands past a fixed 700 ms window.
+    try { await page.waitForFunction(() => { const p = window.__ddTest.probe(); return p.screen === 'over' || p.mode === 'gameover' }, { timeout: 8000 }) } catch {}
     const dead = await page.evaluate(() => window.__ddTest.probe())
     r.check('dying is real: both banks drained ends the run', dead.screen === 'over' || dead.mode === 'gameover', `screen=${dead.screen} mode=${dead.mode}`)
     await page.waitForTimeout(1100)
     await page.keyboard.press('Space')
-    await page.waitForTimeout(300)
+    try { await page.waitForFunction(() => window.__ddTest.probe().screen === 'attract', { timeout: 3000 }) } catch {}
     const backHome = await page.evaluate(() => window.__ddTest.probe())
     r.check('game over returns to attract on any key', backHome.screen === 'attract', `screen=${backHome.screen}`)
 
@@ -3413,7 +3416,12 @@ const defuseConsent = async (page) => {
     // item 2 on the live HUD: nine ticks of relief = five lit frames (~83 ms)
     // — comfortably inside a poll window, and only the tag lives in that zone.
     await page.evaluate(() => window.__ddTest.setup({ clearEnemies: true, allyRelief: 9 }))
-    await page.waitForTimeout(200)
+    // #3007 calibration: ride the relief clock (jimmyRelief counts down in the
+    // probe), not a fixed 200 ms — at starved frame rates nine relief ticks
+    // outlast a fixed window and the blink samples empty (white=0 on a loaded
+    // box, Nov 22). The paint assertion below is untouched.
+    try { await page.waitForFunction(() => window.__ddTest.probe().jimmyRelief === 0, { timeout: 4000 }) } catch {}
+    await page.waitForTimeout(50)
     const pt = await page.evaluate(() => ({ white: window.__tagWhite }))
     r.check('#2889 browser: the freed blue seat lights his own tag — white ink paints in the 2P zone while relief rides',
         pt.white >= 2, `white=${pt.white}`)
