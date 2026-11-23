@@ -18,7 +18,7 @@ import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, bedFor, liftStep, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat, hallAdd, hallRead } from './sim.js'
 import { parseCall, intentKey, intentLabel } from './voicecalls.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, drawScorePop, drawHall, POP_T, seatTagState } from './art.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, drawScorePop, drawHall, drawBarrier, POP_T, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -31,7 +31,7 @@ const TOUCH = typeof window !== 'undefined' && (URL_TOUCH
     || (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window))
 const MESSAGES_KEYBOARD = [
     'THE JUNGLE RUNS NORTH TO THE FALLS',
-    'CAPSULES CARRY THE WHEEL — S M F L',
+    'CAPSULES CARRY THE WHEEL — S M F L B',
     'MACHINE GUN STREAMS · FIRE PIERCES · LASER RUNS HOT',
     'WATCH THE SCOPE GLINT — THE SNIPER TELLS YOU FIRST',
     'SHOOT THE CARRIER DOWN — ITS POD CARRIES THE WHEEL',
@@ -43,6 +43,7 @@ const MESSAGES_KEYBOARD = [
     'CLEAR THE BASE AND STAGE 1 RETURNS — FASTER',
     'AIM UP · AIM DOWN · FOLLOW · HOLD · SPREAD — SHOUT IT',
     'DUCK UNDER THE FIRE — DOWN KNEELS, DOWN AGAIN LIES FLAT',
+    'THE RARE CYAN B DRIFTS LOW — SIX SECONDS ROUNDS DIE',
     'UP UP DOWN DOWN LEFT RIGHT LEFT RIGHT B A — 30 UP',
     '30,000 POINTS BUYS ANOTHER LIFE — EVERY RUN',
     'THREE CONTINUES KEEP YOUR SCORE — ANSWER THE COUNT',
@@ -51,7 +52,7 @@ const MESSAGES_KEYBOARD = [
 ]
 const MESSAGES_TOUCH = [
     'THE JUNGLE RUNS NORTH TO THE FALLS',
-    'CAPSULES CARRY THE WHEEL — S M F L',
+    'CAPSULES CARRY THE WHEEL — S M F L B',
     'MACHINE GUN STREAMS · FIRE PIERCES · LASER RUNS HOT',
     'WATCH THE SCOPE GLINT — THE SNIPER TELLS YOU FIRST',
     'SHOOT THE CARRIER DOWN — ITS POD CARRIES THE WHEEL',
@@ -63,6 +64,7 @@ const MESSAGES_TOUCH = [
     'CLEAR THE BASE AND STAGE 1 RETURNS — FASTER',
     'MIC GRANTED? THE WINGMAN TAKES SHOUTED ORDERS',
     'DOWN KNEELS, DOWN AGAIN LIES FLAT — CRAWL AND FIRE LOW',
+    'A RARE CYAN B DRIFTS IN LOW — ITS SHIELD EATS ROUNDS',
     'UP UP DOWN DOWN LEFT RIGHT LEFT RIGHT B A — 30 UP',
     '30,000 POINTS BUYS ANOTHER LIFE — EVERY RUN',
     'THREE CONTINUES KEEP YOUR SCORE — ANSWER THE COUNT',
@@ -90,6 +92,11 @@ const sfx = {
     spark: () => audioController.playNoise(0.05, 0.03),
     // capsule: the rise plus a bass answer (the original's jingles answer low)
     pickup: () => { audioController.playSweep(320, 980, 0.18, 'triangle', 0.08); setTimeout(() => audioController.playTone(196, 0.16, 'triangle', 0.05), 90) },
+    // #3060 the barrier: a coolant sparkle on capture, a bright tink per round
+    // the ring swallows (short and quiet — absorbs come in volleys, the ring
+    // must not machine-gun the mix)
+    barr: () => { audioController.playSweep(520, 1560, 0.16, 'triangle', 0.06); setTimeout(() => audioController.playTone(2093, 0.12, 'sine', 0.04), 80) },
+    absorb: () => { audioController.playTone(1400, 0.03, 'square', 0.026); audioController.playNoise(0.02, 0.02) },
     splash: () => audioController.playNoise(0.06, 0.025),
     respawn: () => audioController.playSweep(700, 220, 0.16, 'triangle', 0.06),
     gameover: () => audioController.playSweep(320, 60, 0.6, 'sawtooth', 0.08),
@@ -246,6 +253,7 @@ export default function ContraGame () {
         // #3045: the ceremony is observable — the shell counts the beats it
         // fires so the live leg can prove the coin clacked and the heat rose.
         const contBeats = { coin: 0, tick: 0, hot: 0 }
+        const barrFx = { takes: 0, absorbs: 0 }   // #3060 the barrier ceremony, observable
         // #3047 THE STAGE BED — the cabinet drives its march under the run.
         // bedNow is the bed the speakers are on; null is the game's honest
         // silence: attract (the #3018 silent-safe law), the over screen (the
@@ -389,6 +397,11 @@ export default function ContraGame () {
                 if (e.type === 'p2join') heli = { x: gs.p2.x, t: 0 } // #2842 the bird comes with the drop
                 if (e.type === 'extra') extFx = { t: 0 }   // #3041 the bank owed a life — gold it
                 if (e.type === 'pop') pops.push({ x: e.x, y: e.y, v: e.v, t: 0 }) // #3057 the payout reads where it was earned
+                if (e.type === 'barr') barrFx.takes += 1   // #3060 the letter was taken
+                if (e.type === 'absorb') {
+                    barrFx.absorbs += 1
+                    for (let i = 0; i < 4; i++) part.push({ x: e.x, y: e.y, vx: (Math.random() - 0.5) * 1.8, vy: -Math.random() * 1.2, t: 8 + Math.random() * 6, c: 6 })
+                }
                 if (e.type === 'boom') {
                     shake = Math.min(6, shake + 5)
                     fire.push({ x: e.x, y: e.y, t: 0, kind: e.kind || 'tnt' })
@@ -740,10 +753,17 @@ export default function ContraGame () {
             // #2917: the gate's gunships patrol the arena sky above the fortress
             if (gs.boss) for (const sh of gs.gunships) drawGunship(ctx, sh, gs.tick)
             if (gs.capsule) drawCapsule(ctx, gs.capsule, gs.tick)
+            if (gs.bcap) drawCapsule(ctx, { ...gs.bcap, kind: 'barrier' }, gs.tick)   // #3060 the fifth letter, in cyan
             for (const c of gs.vc) drawCapsule(ctx, c, gs.tick)
             for (const c of gs.pods) drawCapsule(ctx, c, gs.tick)
             for (const b of gs.pb) drawBullet(ctx, b, false)
-            for (const b of gs.eb) { if (b.gr) drawGrenade(ctx, b); else drawBullet(ctx, b, true) }
+            for (const b of gs.eb) {
+                // #3060 a round the ring swallowed is already gone from the
+                // player's eyes (the absorb spark paints in its place) — the
+                // sim keeps flying it so the honest brains stay byte-stable.
+                if (b.eatP || b.eatQ) continue
+                if (b.gr) drawGrenade(ctx, b); else drawBullet(ctx, b, true)
+            }
             // S4: the blue seat draws at his own body, under the hero. #2837:
             // while the arrival descent runs, his rope paints ahead of him and
             // he doesn't flicker — you see him coming. #2842: the seat itself
@@ -752,6 +772,9 @@ export default function ContraGame () {
                 const rappelling = gs.p2.enterT > 0
                 if (rappelling) drawRappel(ctx, gs.p2.x, (gs.phase === 'jungle' ? 0 : gs.camY) - 4, gs.p2.y)
                 drawPlayer(ctx, gs.p2, gs.tick, true, rappelling, rappelling || gs.p2.vine >= 0)
+                // #3060 his ring rides his own clock — structural: the same art,
+                // the same law, at the blue seat too.
+                if (gs.p2.barr > 0 && !rappelling && gs.p2.vine < 0) drawBarrier(ctx, gs.p2.x, gs.p2.y, gs.p2.posture, gs.tick, gs.p2.barr <= CFG.barrWarn)
             }
             else if (gs.p2.dead > 0) drawDeathTumble(ctx, gs.p2.x, gs.p2.y, Math.floor((CFG.respawnFreeze - gs.p2.dead) / 12) % 4, true)
             // #3000 the shouted sky shows on the airframe: a gold notch blinks
@@ -762,6 +785,7 @@ export default function ContraGame () {
                 ctx.fillRect(mx - 2, my + 1, 1, 1); ctx.fillRect(mx, my, 1, 1); ctx.fillRect(mx + 2, my + 1, 1, 1)
             }
             if (gs.p.dead === 0 && !(gs.end === 'dead')) drawPlayer(ctx, gs.p, gs.tick, false, false, gs.p.vine >= 0)
+            if (gs.p.barr > 0 && gs.p.dead === 0 && gs.p.vine < 0) drawBarrier(ctx, gs.p.x, gs.p.y, gs.p.posture, gs.tick, gs.p.barr <= CFG.barrWarn)   // #3060 the ring at the hero (a vine rider never gleams)
             else if (gs.p.dead > 0) drawDeathTumble(ctx, gs.p.x, gs.p.y, Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4)
             // expanding fireballs under the sparks (cosmetic, sized by kind)
             for (let i = fire.length - 1; i >= 0; i--) {
@@ -773,7 +797,7 @@ export default function ContraGame () {
                 const q = part[i]
                 q.x += q.vx; q.y += q.vy; q.vy += 0.08; q.t -= 1
                 if (q.t <= 0) { part.splice(i, 1); continue }
-                ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : q.c === 2 ? '#d9dde2' : q.c === 3 ? '#7cc7ff' : q.c === 5 ? '#c9ae7c' : '#e8f6ff'
+                ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : q.c === 2 ? '#d9dde2' : q.c === 3 ? '#7cc7ff' : q.c === 5 ? '#c9ae7c' : q.c === 6 ? '#3fe0f0' : '#e8f6ff'
                 ctx.fillRect(Math.round(q.x), Math.round(q.y), q.c === 2 ? 1 : 2, q.c === 2 ? 1 : 2)
             }
             // #3057 score popups ride above the sparks (the payout digits are
@@ -1276,6 +1300,9 @@ export default function ContraGame () {
                     keys2: { ...keys2 },
                     roll: gs.p.rollT, roll2: gs.p2.rollT,   // #3035 the somersault clock is observable
                     posture: gs.p.posture, posture2: gs.p2.posture,   // #3038 the ground profile too
+                    barr: gs.p.barr, barr2: gs.p2.barr,   // #3060 the shield clocks are observable
+                    bcap: gs.bcap ? { x: +gs.bcap.x.toFixed(1), y: gs.bcap.y } : null,   // #3060 so is the drift
+                    barrFx: { ...barrFx },   // #3060 takes and absorbs, counted off the event stream
                     konami: { prog: kProg, fx: kFx ? { t: kFx.t } : null },   // #3037 the code typing is observable
                     cont: { left: contLeft, t: overT, armed: armedRun, phase: contPhase(overT).phase, digit: contPhase(overT).digit, beats: { ...contBeats } },   // #3042 the purse and the count are observable; #3045 so is the ceremony
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
@@ -1315,6 +1342,14 @@ export default function ContraGame () {
                         if (gs.boss.guns[0].hp === 0) gs.boss.guns[0].dead = true
                     }
                     if (opts.capsuleNear) gs.capsule = { x: gs.p.x + 8, y: opts.capsuleY ?? gs.p.y - 14, vx: 0, kind: opts.capsuleKind || 'spread' }
+                    // #3060: stand the cyan drift off the hero's right, stand a
+                    // shield on either seat, silence the schedule for pixel
+                    // baselines, or loose a flat round at the chest line.
+                    if (opts.bcapHere) gs.bcap = { x: gs.p.x + (opts.bcapDX ?? 40), y: CFG.ground - 12, vx: opts.bcapVx ?? CFG.barrVx }
+                    if (opts.barrOff) { gs.nextBarr = 1e9; gs.bcap = null }   // a barrier-free world has no drift on the road either
+                    if (opts.barr !== undefined) gs.p.barr = opts.barr
+                    if (opts.barr2 !== undefined) gs.p2.barr = opts.barr2
+                    if (opts.roundAtChest) gs.eb.push({ x: gs.p.x + (opts.roundDX ?? 34), y: gs.p.y - 14, vx: -(opts.roundVx ?? 1.6), vy: 0 })
                     // #2847: stand a courier off the hero's right for the browser legs
                     if (opts.carrierHere) gs.carriers.push({ x: gs.p.x + (opts.carrierDX ?? 120), y: opts.carrierY ?? 164, vx: CFG.carrierVx, hp: CFG.carrierHp, kind: opts.carrierKind || 'laser', dead: false })
                     // #2917: stand a gunship hull (still, at pin-point) for the
@@ -1366,6 +1401,7 @@ export default function ContraGame () {
                 actions: [
                     { label: '+1 LIFE', run: () => { gs.lives += 1; return 'extra life' } },
                     { label: 'ARM EXTEND', run: () => { gs.score = gs.nextExt - 100; return `next kill at ${gs.nextExt} buys the life` } },   // #3041
+                    { label: 'GRANT BARRIER', run: () => { gs.p.barr = CFG.barrTicks; return 'shield up for 6 s — rounds die at the ring' } },   // #3060
                     { label: 'SPREAD NOW', run: () => { gs.p.weapon = 'spread'; return 'spread gun racked' } },
                     { label: 'CYCLE WHEEL', run: () => { const w = ['rifle', 'spread', 'machine', 'fire', 'laser']; gs.p.weapon = w[(w.indexOf(gs.p.weapon) + 1) % w.length]; return 'weapon: ' + gs.p.weapon } },
                     { label: 'CAPSULE HERE', run: () => { gs.capsule = { x: gs.p.x + 24, y: gs.p.y - 14, vx: 0 }; return 'capsule inbound' } },

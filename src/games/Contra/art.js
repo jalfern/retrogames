@@ -28,6 +28,10 @@ const C = {
     popGold: '#ffd23c', popShadow: '#241804',
     // S3 — the weapon wheel + the new roster
     letterM: '#2b6fd4', letterF: '#e23b2e', letterL: '#8a3ad4', letterS: '#ff8c1a',
+    // #3060 the barrier reads cyan — a coolant glow no other object in the
+    // jungle wears (the seat blues sit ~40° down the wheel, the gunship grays
+    // are desaturated; the ring must not read as anyone else's colour).
+    letterB: '#e6ffff', shield: '#2fd8e8', shieldLit: '#9ff5ff', shieldDeep: '#12707e',
     laser: '#ff4ad4', laserCore: '#ffd6f6', flame: '#ff6a2a', flameHot: '#ffe27a',
     nest: '#2b1c0c', nestLit: '#41290f', scope: '#8ad4ff', vest: '#2e3122',
     // S2 — the waterfall canyon & the gate
@@ -47,9 +51,12 @@ const GLYPH = {
     M: [0b10001, 0b11011, 0b10101, 0b10001, 0b10001],
     F: [0b11111, 0b10000, 0b11110, 0b10000, 0b10000],
     L: [0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+    // #3060 the wheel's fifth letter — the cabinet stamps B closed-left, two
+    // bowls of the same 5x5 idiom as its neighbours.
+    B: [0b11110, 0b10001, 0b11110, 0b10001, 0b11110],
 }
-const LETTER_OF = { machine: 'M', fire: 'F', laser: 'L', spread: 'S' }
-const INK_OF = { machine: 'letterM', fire: 'letterF', laser: 'letterL', spread: 'letterS' }
+const LETTER_OF = { machine: 'M', fire: 'F', laser: 'L', spread: 'S', barrier: 'B' }
+const INK_OF = { machine: 'letterM', fire: 'letterF', laser: 'letterL', spread: 'letterS', barrier: 'letterB' }
 
 // #3057 SCORE POPUPS — the payout read where it was earned. 5x5 bitmap digits
 // (same stamp idiom as GLYPH above: crisp pixel digits, no text APIs on the
@@ -782,18 +789,20 @@ export function drawCapsule (ctx, c, tick) {
         if (recoil <= 3) { ctx.fillStyle = '#5a6450'; ctx.fillRect(-8, -11, 1, 3); ctx.fillRect(7, -11, 1, 3) }
     }
     const pulse = Math.floor(tick / 8) % 2
-    ctx.fillStyle = pulse ? C.capsuleLit : C.capsule
-    ctx.fillRect(-8, -6, 16, 12)
-    ctx.fillStyle = C.capsuleWin
-    ctx.fillRect(-5, -3, 10, 6)
-    // the letter wheel: every capsule carries its gun (S/M/F/L) — stamped as
-    // a crisp 5x5 bitmap (#2789 salvage), no antialiased font on the pixel grid
     const kind = c.kind || 'spread'
+    const isB = kind === 'barrier'   // #3060 the fifth letter wears coolant cyan, not the wheel's gold-orange
+    ctx.fillStyle = isB ? (pulse ? C.shieldLit : C.shield) : (pulse ? C.capsuleLit : C.capsule)
+    ctx.fillRect(-8, -6, 16, 12)
+    ctx.fillStyle = isB ? '#07333d' : C.capsuleWin
+    ctx.fillRect(-5, -3, 10, 6)
+    // the letter wheel: every capsule carries its letter (S/M/F/L/B) — stamped
+    // as a crisp 5x5 bitmap (#2789 salvage), no antialiased font on the pixel
+    // grid; #3060 added the fifth stamp, the cyan B of the barrier
     ctx.fillStyle = C[INK_OF[kind] || INK_OF.spread]
     const rows = GLYPH[LETTER_OF[kind] || LETTER_OF.spread]
     for (let r = 0; r < 5; r++) { for (let bit = 0; bit < 5; bit++) if (rows[r] & (1 << (4 - bit))) ctx.fillRect(-2 + bit, -2 + r, 1, 1) }
     // sparkle trail
-    ctx.fillStyle = pulse ? '#fff2b0' : '#ffb347'
+    ctx.fillStyle = isB ? (pulse ? '#d8feff' : '#4ee8f4') : (pulse ? '#fff2b0' : '#ffb347')
     ctx.fillRect(10, -1, 3, 2); ctx.fillRect(15, -2 + (tick % 3), 2, 1)
     if (puff > 0) {
         // #2852 touchdown: three sand specks kicked out, deterministic arcing
@@ -804,6 +813,41 @@ export function drawCapsule (ctx, c, tick) {
         ctx.fillRect(-2 - Math.floor(k / 2), 5, 1, 1)
     }
     ctx.restore()
+}
+
+// #3060 THE BARRIER RING — drawn at the shielded seat. Three energy beads orbit
+// the body centre (the duck lowers the centre with the profile, the same line
+// the hit box lives at), riding a full faint ring of pixel dashes whose gaps
+// rotate on the world clock. Presentation outside the referee, the #3035 rollT
+// precedent: the ring paints from gs.tick and reads nothing back — the sim
+// truth it advertises (the barr clock) is hashed where it lives. In the last
+// warning second the ring turns red-hot and blinks (the shelf's warning family).
+export function drawBarrier (ctx, x, y, posture, tick, warn) {
+    const cx = Math.round(x)
+    const cy = Math.round(y - (CFG.duckCenter[posture | 0] || 14))
+    const hot = !!warn
+    const blink = hot && Math.floor(tick / 4) % 2 === 0
+    if (blink) return
+    const base = hot ? '#ff6a4a' : C.shield
+    const lit = hot ? '#ffd0b0' : C.shieldLit
+    // the faint ring: eight dashes on radius 15, the lit pair rotating 1/12 turn
+    // a tick (a 96-tick revolution — the vine period's family, pure clock math)
+    const phase = (tick % 96) * (Math.PI * 2 / 96)
+    ctx.fillStyle = hot ? '#8f2a1c' : C.shieldDeep
+    for (let i = 0; i < 8; i++) {
+        const a = phase + i * (Math.PI / 4)
+        ctx.fillRect(Math.round(cx + Math.cos(a) * 15) - 1, Math.round(cy + Math.sin(a) * 15 * 0.82) - 1, 2, 2)
+    }
+    // the beads: three bright knobs, counter-phase, a hot pixel core
+    for (let i = 0; i < 3; i++) {
+        const a = -phase * 1.5 + i * (Math.PI * 2 / 3)
+        const bx = Math.round(cx + Math.cos(a) * 16)
+        const by = Math.round(cy + Math.sin(a) * 16 * 0.82)
+        ctx.fillStyle = base
+        ctx.fillRect(bx - 1, by - 1, 3, 3)
+        ctx.fillStyle = lit
+        ctx.fillRect(bx, by, 1, 1)
+    }
 }
 
 export function drawBullet (ctx, b, enemy) {
@@ -1085,6 +1129,15 @@ export function drawHud (ctx, gs, hiscore, fx = null, live = false) {
     const wcols = { rifle: C.ink, spread: C.capsuleLit, machine: '#7fb2ff', fire: '#ff6a2a', laser: '#ff4ad4' }
     ctx.fillStyle = wcols[gs.p.weapon] || C.ink
     ctx.fillText(wnames[gs.p.weapon] || 'RIFLE', 314, 4)
+    // #3060 a held barrier reads beside the wheel — a cyan mini-shield per seat,
+    // gold-blinking its last warning second (the heads-row flash family).
+    const SHLD = [0b11111, 0b11111, 0b11111, 0b01110, 0b00100]
+    const shp = (px, py, barr) => {
+        const col = barr <= CFG.barrWarn && Math.floor(gs.tick / 4) % 2 === 0 ? C.gold : C.shieldLit
+        ctx.fillStyle = col
+        for (let r = 0; r < 5; r++) { for (let bit = 0; bit < 5; bit++) if (SHLD[r] & (1 << (4 - bit))) ctx.fillRect(px + bit, py + r, 1, 1) }
+    }
+    if (gs.p.barr > 0) shp(306, 0, gs.p.barr)
     // #2894 arcade loop: the escalation reads at a glance — loop 1 stays silent
     // (it IS the stage); from loop 2 the HUD marks the pass in gold, under the
     // 2UP tag (the 314/12 slot belongs to seat 2's wheel). #2902: the tag sits
@@ -1118,6 +1171,7 @@ export function drawHud (ctx, gs, hiscore, fx = null, live = false) {
         }
         ctx.fillStyle = wcols[gs.p2.weapon] || C.ink
         ctx.fillText(wnames[gs.p2.weapon] || 'RIFLE', 314, 12)
+        if (gs.p2.barr > 0) shp(306, 8, gs.p2.barr)   // #3060 his shield, his pip
     }
 }
 
