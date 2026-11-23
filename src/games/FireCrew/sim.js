@@ -140,6 +140,7 @@ export function makeRun(seed) {
         rescued: 0, lost: 0, doused: 0, score: 0,
         searchSeen: new Set(),
         done: false, win: false, message: '', messageT: 0,
+        tankStage: 0, // #2989 — the tank alarm's edge memory: 0 ok · 1 low · 2 dry
         // radio (#1361): external calls, like pads — never from the rng.
         // sweep: the flashlight call lights one side (the lightAt rule finds
         // what it reveals); voiceLadder/radioHoldT drive the CPU seats.
@@ -287,7 +288,31 @@ const crewTail = (win) => (
     win ? { dur: 1.2, vol: 0.05, freq: 520 }
         : { dur: 1.8, vol: 0.06, freq: 300 }
 )
-export { windVoice, ladderCreak, windWhistle, crewTail }
+// #2989 — the tank speaks (never-dry polish: the human hose heard its tank die
+// only as silence). The pressure arc (#1411) shrinks the stream 4→3→2→1 as the
+// tank drains and an empty seat cannot spray at all, and the CPU already knows
+// (it drives to the hydrant under 25) — but a human hand had no cue: the spray
+// mirror just went quiet mid-hose. tankAlarm is the arc's voice, pure and
+// rng-free like windVoice: null while the line still has muscle, a two-tone
+// caution at or below TANK_LOW whose pitch and weight climb with the drain,
+// and a low dry-valve clunk at zero. The sim names each downward crossing for
+// the hand on the pump; index.jsx fires these specs and art.js blinks the bar,
+// so the tank is seen and heard before the stream fails. Replays, hashes and
+// the autopilot are untouched.
+export const TANK_LOW = 30 // the arc's first lost muscle: range 4 → 3 (#1411)
+const tankAlarm = (level) => {
+    if (!Number.isFinite(level) || level > TANK_LOW) return null
+    if (level <= 0) return { kind: 'dry', vol: 0.06, f0: 170, f1: 85, dur: 0.16 }
+    const drain = (TANK_LOW - level) / TANK_LOW // 0 at the threshold, →1 as it empties
+    return {
+        kind: 'low',
+        vol: +(0.028 + drain * 0.022).toFixed(4),
+        f0: 420 + Math.round(drain * 180),
+        f1: 560 + Math.round(drain * 160),
+        dur: 0.14,
+    }
+}
+export { windVoice, ladderCreak, windWhistle, crewTail, tankAlarm }
 
 function spreadAndBurn(g) {
     const rng = g.rng
@@ -829,6 +854,18 @@ export function step(g, pad, pads) {
     if (g.voiceLadder && !--g.voiceLadder.t) g.voiceLadder = null
     g.radioHoldT = Math.max(0, g.radioHoldT - 1)
     g.radioDenyT = Math.max(0, g.radioDenyT - 1)
+    // #2989 — name the tank's downward crossings for the hand on the pump:
+    // LOW when the arc loses its reach (TANK_LOW), DRY when the stream dies.
+    // CPU seats know their own business (they refill at the hydrant) and a
+    // seated WATCH drives nothing, so the stamp belongs to a human seat 1.
+    // Refills are silent — the hydrant is never nagged — and re-crossing down
+    // names itself again, so every fall is spoken once.
+    const hoseStage = g.crew[0].tank <= 0 ? 2 : g.crew[0].tank <= TANK_LOW ? 1 : 0
+    if (hoseStage > g.tankStage && g.sources[0] === 'human') {
+        g.message = hoseStage === 2 ? 'TANK EMPTY - NO REACH' : 'TANK LOW - REFILL AT THE HYDRANT'
+        g.messageT = 120
+    }
+    g.tankStage = hoseStage
     g.messageT = Math.max(0, g.messageT - 1)
     g.score = g.rescued * 1000 + g.doused * 10 + (g.done && g.win ? Math.floor((CLOCK - g.tick) / 10) : 0)
     const unresolved = g.victims.filter((v) => v.state !== 'rescued' && v.state !== 'lost').length

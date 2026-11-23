@@ -3,7 +3,7 @@
 // darkness pass is the game's signature: the interior is smoke-black and only
 // the crew's lights (hose cone, rescue lamp, flares) and the fire itself punch
 // through — the same lightAt() laws the sim uses to decide who can SEE what.
-import { W, H, T, LOFT_Y1, HYDRANT, AMBULANCE, ENGINE, STREET, WALL, OUT, FUEL, EMPTY, lightAt } from './sim.js'
+import { W, H, T, LOFT_Y1, HYDRANT, AMBULANCE, ENGINE, STREET, WALL, OUT, FUEL, EMPTY, lightAt, TANK_LOW } from './sim.js'
 
 export const VW = W * T
 export const VH = H * T
@@ -412,8 +412,18 @@ export function drawHud(ctx, g, CLOCK) {
     // tank + battery
     ctx.fillStyle = '#20242e'
     ctx.fillRect(6, VH - 10, 60, 6); ctx.fillRect(72, VH - 10, 40, 6)
-    ctx.fillStyle = '#39d7ff'
-    ctx.fillRect(6, VH - 10, (60 * g.crew[0].tank) / 100, 6)
+    // #2989 — the bar warns what the arc is doing: at or under TANK_LOW (the
+    // reach has dropped, #1411) the fill blinks amber↔ember; dry, an empty bar
+    // is invisible — so it keeps a red↔dark red stub the eye catches, and the
+    // sim has already named the crossing. Full tanks keep the calm cyan.
+    const tankDry = g.crew[0].tank <= 0
+    const tankLow = tankDry || g.crew[0].tank <= TANK_LOW
+    ctx.fillStyle = tankDry
+        ? (Math.floor(g.tick / 10) % 2 ? '#ff3b30' : '#7a1d1d')
+        : tankLow
+            ? (Math.floor(g.tick / 10) % 2 ? '#ffd24a' : '#ff8a5a')
+            : '#39d7ff'
+    ctx.fillRect(6, VH - 10, tankDry ? 2 : (60 * g.crew[0].tank) / 100, 6)
     ctx.fillStyle = '#c8ff32'
     ctx.fillRect(72, VH - 10, (40 * g.crew[0].battery) / 100, 6)
     ctx.fillStyle = '#0c1024'
