@@ -623,3 +623,28 @@ Named mutants (`--mutant` 10–12): adapter bypass, drop-in-law ignore, and
 loop-carry skip all fail loudly. Known gaps: one pad on phones (by law, and
 #3000's spoken orders are the second channel that law allows); voice capture
 itself shipped in #3000 — the pad takes stay labeled AND the words bank.
+
+## QA #3003 — voice polish pass (2026-11-23, studio)
+
+- **First-run hint card (#1287 FireCrew precedent)**: when the radio arms —
+  either the post-gate LIVE moment or `V`→RADIO ON — a two-line card shows
+  the exact words once per device: `AIM UP · AIM DOWN · AIM LEVEL` /
+  `FOLLOW · HOLD · SPREAD`. localStorage key `retrogames:contra-voice-hints`
+  gates the CARD, never the radio; the card decays on world ticks
+  (`RADIO_TIPS` = 300) like the echo banner and clears at GAME OVER. Band
+  law: LOOP banner 80..144, echo 146..160, card 163..187 — never collide,
+  and the canvas is scale-invariant so phone scale rides the same bands.
+  `__contraTest.radioLive()` drives the moment with no mic and without
+  touching the badge — `armed` still tells the truth (headless = un-armed).
+  Pinned by 7 `contracheck` legs (show once, never twice, world-tick decay,
+  honest badge, both card lines painted, banner+card stack collision-free).
+- **Refuse knock audible on phones (#3003 sound item)**: `callNo` was 180 Hz
+  only — under machine-gun fire, phone speakers roll off below ~250 Hz and
+  the knock vanished. A 330 Hz octave joins at slightly lower gain; same
+  single dry knock, semantics untouched.
+- **Judged on the issue** (findings in #3003's close comment): phone re-ask
+  path (`V` is keyboard-only — no new on-screen control without Jon), HOLD
+  post tick (no-answer-is-an-answer), attract teach shout (taste call →
+  separate stage), `voiceCmd` seat stamp through export (#2805 stamps ride
+  `plaicraft-dataset`), recognition floor on a real mic (no mic in harness —
+  honest gap).

@@ -89,7 +89,11 @@ const sfx = {
     // the order held); the refuse is one low, dry knock — heard-but-nothing-
     // to-obey, never an error shriek (the mic is doing its best over gunfire).
     callAck: () => { audioController.playSweep(620, 930, 0.06, 'square', 0.05); setTimeout(() => audioController.playTone(930, 0.08, 'square', 0.045), 70) },
-    callNo: () => audioController.playTone(180, 0.07, 'triangle', 0.05),
+    // #3003 sound balance: phone speakers roll off hard below ~250 Hz, so the
+    // 180 Hz-only knock vanished under machine-gun fire on a phone. A 330 Hz
+    // octave rides on top at slightly lower gain — same single dry knock, the
+    // semantics unchanged, just audible where people actually play.
+    callNo: () => { audioController.playTone(180, 0.07, 'triangle', 0.07); audioController.playTone(330, 0.05, 'triangle', 0.045) },
     // #2842 the arriving seat's boots on the sand — a dry thud under the dust.
     land: () => audioController.playNoise(0.07, 0.025),
     pdown: () => audioController.playSweep(300, 90, 0.3, 'square', 0.07),
@@ -216,6 +220,12 @@ export default function ContraGame () {
         // truth). The orders themselves are sim state (gs.orderAim/Form).
         let callFx = null
         const CALL_FX = 110
+        // #3003 first-run hint card (#1287 FireCrew precedent): the exact words
+        // a player can shout, up for ~5 s of world time the first time the radio
+        // goes LIVE on this device. Presentation-only — decays on world ticks
+        // like callFx; localStorage gates the card, never the radio.
+        let radioTips = null
+        const RADIO_TIPS = 300
         const voiceCtl = { on: false, listen: null, badge: null }
 
         const drain = () => {
@@ -309,6 +319,7 @@ export default function ContraGame () {
             jumpQ2 = fireQ2 = false
             seat2.length = 0
             callFx = null   // #3000: fresh stage, fresh orders — the echo starts quiet too
+            radioTips = null // #3003: the card is once-per-device (storage), the ref just goes quiet
             setMode('play'); screen = 'play'
         }
 
@@ -361,8 +372,20 @@ export default function ContraGame () {
             voiceCtl.listen = null; voiceCtl.badge = null
             voiceCtl.on = false
         }
+        // #3003 (#1287 pattern): one-time on-device card with the exact words.
+        // localStorage gates the CARD, never the radio; private-mode failures
+        // just mean the card shows again next run — an honest fallback.
+        const showRadioTips = () => {
+            let seen = ''
+            try { seen = localStorage.getItem('retrogames:contra-voice-hints') || '' } catch { /* private mode */ }
+            if (!seen) {
+                try { localStorage.setItem('retrogames:contra-voice-hints', '1') } catch { /* private mode */ }
+                radioTips = { t: RADIO_TIPS }
+            }
+        }
         const armVoice = () => {
             if (voiceCtl.on || !speechSupported()) return false
+            showRadioTips() // the mic armed on this device — teach the words once
             voiceCtl.badge = acquireListenBadge() // LISTEN ≠ REC (#1427): recognition, not recording
             voiceCtl.listen = startSpeechListen({
                 onPhrase: phraseHeard,
@@ -398,6 +421,7 @@ export default function ContraGame () {
                 endRun() // #1711: the take ends with the run (no-op when idle/declined) — and NOT on 'clear': #2958 law, one take spans the arcade loops
                 disarmVoice() // #3000: the mic never stays hot on GAME OVER (#1249 law, Gauntlet precedent)
                 callFx = null
+                radioTips = null // #3003: no teaching card past GAME OVER either
             }
         }
 
@@ -455,6 +479,7 @@ export default function ContraGame () {
             step(gs, pad, p2)
             drain()
             if (callFx && --callFx.t <= 0) callFx = null // #3000 banner decay on WORLD ticks
+            if (radioTips && --radioTips.t <= 0) radioTips = null // #3003 hint card decay on WORLD ticks
             // #1712 S2: bank exactly what THIS tick consumed (attract demo ticks
             // never enter a take). The P2 drop-in needs no side channel: the
             // keyboard press that called dropIn IS the first pad-1 content the
@@ -564,6 +589,29 @@ export default function ContraGame () {
                 ctx.strokeRect(192 - bw / 2 + 0.5, 146.5, bw - 1, 13)
                 ctx.fillStyle = callFx.ok ? '#ffd23c' : '#9aa88a'
                 ctx.fillText(callFx.text, 192 - bw / 2 + 7, 149)
+                ctx.restore()
+            }
+            // #3003 the first-run radio card (#1287 precedent): the exact words,
+            // stacked two lines under the echo banner. Band check: LOOP banner is
+            // 80..144, the call echo 146..160, this card 163..187 — no band ever
+            // collides, phone scale included (the canvas is a fixed 384x224).
+            if (screen === 'play' && radioTips) {
+                const tfade = radioTips.t > RADIO_TIPS - 12 ? (RADIO_TIPS - radioTips.t) / 12 : Math.min(1, radioTips.t / 15)
+                ctx.save()
+                ctx.globalAlpha = Math.max(0, Math.min(1, tfade))
+                ctx.textBaseline = 'top'
+                ctx.font = 'bold 9px "Courier New", monospace'
+                const l1 = 'AIM UP · AIM DOWN · AIM LEVEL'
+                const l2 = 'FOLLOW · HOLD · SPREAD'
+                const tw = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width) + 14
+                ctx.fillStyle = 'rgba(6,10,4,0.86)'
+                ctx.fillRect(192 - tw / 2, 163, tw, 24)
+                ctx.strokeStyle = '#7d8f6a'
+                ctx.strokeRect(192 - tw / 2 + 0.5, 163.5, tw - 1, 23)
+                ctx.fillStyle = '#ffd23c'
+                ctx.fillText(l1, 192 - ctx.measureText(l1).width / 2, 166)
+                ctx.fillStyle = '#cdeea8'
+                ctx.fillText(l2, 192 - ctx.measureText(l2).width / 2, 176)
                 ctx.restore()
             }
 
@@ -812,7 +860,7 @@ export default function ContraGame () {
                     vine: { p: gs.p.vine, q: gs.p2.vine, tips: gs.vines.map((v) => { const tp = vineTip(gs, v.i); return { x: +tp.x.toFixed(1), y: +tp.y.toFixed(1) } }) },
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
-                    call: { form: gs.orderForm, aim: gs.orderAim, holdX: +gs.holdX.toFixed(1), banner: callFx ? { t: callFx.t, text: callFx.text, ok: callFx.ok } : null, armed: voiceCtl.on },   // #3000 the shout channel is observable
+                    call: { form: gs.orderForm, aim: gs.orderAim, holdX: +gs.holdX.toFixed(1), banner: callFx ? { t: callFx.t, text: callFx.text, ok: callFx.ok } : null, armed: voiceCtl.on, tips: radioTips ? radioTips.t : 0 },   // #3000 the shout channel is observable; #3003 the hint card rides along
                     keys: { ...keys },
                     keys2: { ...keys2 },
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
@@ -825,6 +873,16 @@ export default function ContraGame () {
                 // applyCall -> voiceCmd bank). `voiceArmed` answers the badge.
                 say: (text) => { phraseHeard(text); return gs.orderAim + '/' + gs.orderForm },
                 voiceArmed: () => voiceCtl.on,
+                // #3003 drive the LIVE moment with no mic: the same card gate a
+                // consent grant hits (storage-gated, one per device). Honest by
+                // construction — voiceCtl.on is untouched, so `armed` still tells
+                // the truth about the badge; only the teaching card fires.
+                radioLive: () => {
+                    if (screen !== 'play') return -1
+                    const had = !!radioTips
+                    showRadioTips()
+                    return !had && radioTips ? radioTips.t : 0 // 300 = newly shown, 0 = already taught
+                },
                 // #2902: reach the attract loop-teach on the harness's clock
                 // (waiting 60 s for the demo to clear stage 1 by itself is not
                 // a leg) — only ever fires from the attract screen.

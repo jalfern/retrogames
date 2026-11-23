@@ -3079,4 +3079,69 @@ const browser = await launch()
     await vp.close()
 }
 
+// ------------------------------------------------ #3003 hint-card leg -----
+// The first radio-LIVE moment shows the exact words once per device. Driven
+// through radioLive (the honest no-mic seam: the badge story is untouched —
+// `armed` still reports false here — only the teaching card fires). Canvas is
+// a fixed 384x224 virtual, so the band check is scale-proof: LOOP banner
+// 80..144, echo banner 146..160, this card 163..187.
+{
+    const tp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500 })
+    const hErrs = []
+    tp.on('pageerror', (e) => hErrs.push(e.stack || e.message))
+    const sampler = () => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d')
+        const count = (x, y, w, hh, test) => {
+            const p = d.getImageData(x, y, w, hh).data
+            let n = 0
+            for (let i = 0; i < p.length; i += 4) if (test(p[i], p[i + 1], p[i + 2])) n++
+            return n
+        }
+        const gold = (r, g, b) => r > 230 && g > 185 && g < 235 && b < 95
+        const khaki = (r, g, b) => r > 195 && g > 228 && b > 150 && b < 185
+        return {
+            line1: count(112, 166, 160, 10, gold), // AIM UP · AIM DOWN · AIM LEVEL
+            line2: count(112, 176, 160, 10, khaki), // FOLLOW · HOLD · SPREAD
+            banner: count(132, 148, 120, 10, gold), // the AIM UP echo at 149
+            above: count(112, 146, 160, 17, khaki), // khaki belongs below 163 only
+        }
+    }
+    await tp.evaluate(() => {
+        const T = window.__contraTest
+        T.start()
+        window.__game.reset(21, 2)
+        return T.probe().screen
+    })
+    await tp.waitForTimeout(150) // paint the spawn scene — card not fired yet
+    const cBase = await tp.evaluate(`(${sampler.toString()})()`)
+    const h = await tp.evaluate(() => {
+        localStorage.removeItem('retrogames:contra-voice-hints')
+        const T = window.__contraTest, G = window.__game
+        const t1 = T.radioLive() // first LIVE on a virgin device — card must show
+        const stamp = localStorage.getItem('retrogames:contra-voice-hints')
+        const t2 = T.radioLive() // taught already — must NOT re-show
+        const tips = T.probe().call.tips // the card from t1 still rides on state
+        const a = T.probe().call.tips
+        T.say('AIM UP') // echo banner + card must stack, not collide
+        G.step({}, 60)
+        const b = T.probe().call.tips
+        return { t1, stamp, t2, tips, a, b, armed: T.voiceArmed(), screen: T.probe().screen }
+    })
+    await tp.waitForTimeout(250) // let the rAF paint the card and the banner
+    const px = await tp.evaluate(`(${sampler.toString()})()`)
+    r.check('#3003 card: the first LIVE moment raises the hint card and stamps the device',
+        h.t1 === 300 && h.stamp === '1' && h.tips === 300, JSON.stringify(h))
+    r.check('#3003 card: once per device — a second LIVE does not re-show it', h.t2 === 0, `t2=${h.t2}`)
+    r.check('#3003 card: the card decays on WORLD ticks (>= the 60 ticks driven, never below zero)',
+        h.a >= 60 && h.b <= h.a - 60 && h.b >= 0 && h.screen === 'play', JSON.stringify({ a: h.a, b: h.b }))
+    r.check('#3003 card: the honest no-mic seam still reports the radio un-armed', h.armed === false, `armed=${h.armed}`)
+    r.check('#3003 card: both card lines paint in their band (gold + khaki ink at 163..187)',
+        px.line1 >= cBase.line1 + 40 && px.line2 >= cBase.line2 + 40, JSON.stringify({ cold: cBase, px }))
+    r.check('#3003 card: echo banner and card stack without collision (banner ink at 148..158, no card ink above 163)',
+        px.banner >= cBase.banner + 10 && px.above <= cBase.above, JSON.stringify({ cold: cBase, px }))
+    r.check('#3003 card: no page errors on the hint-card leg', hErrs.length === 0, hErrs.join(' | '))
+    await tp.close()
+}
+
 r.exit(browser)
