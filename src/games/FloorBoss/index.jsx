@@ -190,7 +190,19 @@ const FloorBossGame = () => {
             }
         }
 
+        // #2997 DEV eye on the ring ledger: an event object rung TWICE is an
+        // echo. Between frames gs.ev holds the last completed tick's already-rung
+        // events (only step() clears, at entry); the pre-#2997 solo path handed
+        // handleEvents the whole queue, so every between-frame click re-rang the
+        // last tick's sounds/fx line. rung() counts re-rings; backlogClicks
+        // counts solo applies that landed on a non-empty backlog — the echo
+        // condition, observed for real. Painter-only, DEV-only — the hash never
+        // sees it (#1373).
+        const rungSeen = new WeakSet()
+        let ringEchoes = 0
+        let soloBacklogClicks = 0
         const handleEvents = (evts, tick) => {
+            if (import.meta.env.DEV) for (const e of evts) { if (rungSeen.has(e)) ringEchoes++; else rungSeen.add(e) } // #2997 ring ledger eye
             for (const e of evts) {
                 switch (e.type) {
                     case 'order': audioController.playTone(300, 0.05, 'square', 0.04); break
@@ -1678,8 +1690,14 @@ const FloorBossGame = () => {
             // Watch hand-back above stays instant: that is a UI flag, not the sim.
             const { px, py } = toGrid(ev)
             if (tapQueue.length) { tapQueue.push({ px, py }); return }
+            // #2997: ring only the FRESH events — the backlog of the last completed
+            // tick was rung at that tick's tail already. Handing handleEvents the
+            // whole gs.ev here echoed those sounds/fx lines on every between-frame
+            // tap; the drain got this same slice(from) shape in #2992.
+            const from = gs.ev.length
+            if (import.meta.env.DEV && from > 0) soloBacklogClicks++ // #2997 DEV eye: the echo condition met for real
             applyTap(gs, px, py)
-            handleEvents(gs.ev, gs.tick)
+            handleEvents(gs.ev.slice(from), gs.tick)
             tapQueue.push({ px, py, applied: true })
         }
 
@@ -1812,6 +1830,9 @@ const FloorBossGame = () => {
                 // wait, and a tap still in the queue has neither landed nor been
                 // refused yet. pending() == 0 means every queued tap has ridden its row.
                 pending: () => tapQueue.length,
+                // #2997 eyes on the ring ledger: echoes must stay 0 however hard
+                // the thumb taps; backlogClicks proves the echo condition was met
+                ring: () => ({ echoes: ringEchoes, backlogClicks: soloBacklogClicks }),
                 hash: () => stateHash(gs),
                 canvas: () => canvas,
                 sim: () => gs,

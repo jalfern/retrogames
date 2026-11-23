@@ -1126,6 +1126,32 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     }
 }
 
+// ---- ring ledger (#2997): a between-frame real tap must never re-ring the backlog ----
+{
+    await page.goto(URL + '?seed=606') // self-contained tail: fresh seed, own eyes (#2987 law)
+    await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 })
+    if (!await waitMode('attract', 5000)) r.check('echo leg: fresh page reaches attract', false, 'no attract')
+    await page.keyboard.press('Space')
+    if (!await waitMode('play')) r.check('echo leg: Space clocks in', false, 'no play')
+    // warm the floor hot through the loop (pump rings each tick's ceremony, so
+    // every rung object has rung exactly once and the ledger starts clean); the
+    // busy auto crew guarantees completed ticks stamp events whose already-rung
+    // backlog sits in gs.ev between frames — the exact echo condition the
+    // pre-#2997 solo path re-rang on every between-frame click.
+    await page.evaluate(() => { window.__floorbossTest.step(1500, {}, false, true) })
+    const cellP = await clientXY(15, 7) // plain floor — a tool-less tap that peeks/selects, never builds
+    let observed = 0
+    for (let attempt = 0; attempt < 24 && observed < 3; attempt++) {
+        // real-tap law (#2992): wait the drain — never guess a sleep
+        await waitFor(async () => (await page.evaluate(() => window.__floorbossTest.pending())) === 0, 2500)
+        await page.mouse.click(cellP.x, cellP.y) // a REAL click; if it lands between ticks, pre-#2997 it echoed the backlog
+        observed = await page.evaluate(() => window.__floorbossTest.ring().backlogClicks)
+    }
+    const ring = await page.evaluate(() => window.__floorbossTest.ring())
+    r.check('between-frame solo taps actually landed on a non-empty backlog (the echo condition, observed for real)', observed >= 3, `backlogClicks ${observed}`)
+    r.check('the ring ledger stays silent: no event object ever rang twice — a solo tap names only its own decision (#2997)', ring.echoes === 0, `echoes ${ring.echoes}`)
+}
+
 // ---- duck & pass (#2692): the courtesy ring rides real holds ----
 {
     await page.goto(URL)

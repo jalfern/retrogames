@@ -63,6 +63,7 @@
 //   node scripts/floorbosscheck.mjs --mutate-stamp # the tick-stamp dies — a steered take goes unlabeled, model hands launder as human (#2987)
 //   node scripts/floorbosscheck.mjs --mutate-peek # the press-time stamp returns — a glance that never drove poisons the take (#2987)
 //   node scripts/floorbosscheck.mjs --mutate-ring # the drain rings silent — fast-tapped refusals obey the board but never name themselves (#2992)
+//   node scripts/floorbosscheck.mjs --mutate-echo # the solo tap rings the backlog again — between-frame clicks echo the last tick (#2997)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -133,9 +134,10 @@ const MUT_TAPS = ARGS.includes('--mutate-taps') // #2966: the drain stops applyi
 const MUT_STAMP = ARGS.includes('--mutate-stamp') // #2987: the tick-stamp dies — steered takes go unlabeled and model hands launder as human
 const MUT_PEEK = ARGS.includes('--mutate-peek') // #2987: the press-time stamp returns — a glance that never drove the wheel poisons the take
 const MUT_RING = ARGS.includes('--mutate-ring') // #2992: a drain-applied tap rings silent — the board obeys the refusal laws but the fx ledger never names them
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND || MUT_COURTESY || MUT_CAREER || MUT_WHISTLE || MUT_TAPS || MUT_STAMP || MUT_PEEK || MUT_RING) {
+const MUT_ECHO = ARGS.includes('--mutate-echo') // #2997: the solo tap rings the backlog again — a between-frame click echoes the last tick's sounds/fx line
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE || MUT_KNEE_TEACH || MUT_TURN || MUT_REPATH_LAND || MUT_FACE || MUT_SEED || MUT_TAIL || MUT_TAIL_LAND || MUT_COURTESY || MUT_CAREER || MUT_WHISTLE || MUT_TAPS || MUT_STAMP || MUT_PEEK || MUT_RING || MUT_ECHO) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
-    const tgt = MUT_MANNERS || MUT_ATTRACT || MUT_WHISTLE || MUT_TAPS || MUT_STAMP || MUT_PEEK || MUT_RING ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) // #2700: presentation laws plant in the painter; #2958: so does the take law; #2966: so does the tap-drain law; #2987: so do both stamp laws; #2992: so does the drain-ring law
+    const tgt = MUT_MANNERS || MUT_ATTRACT || MUT_WHISTLE || MUT_TAPS || MUT_STAMP || MUT_PEEK || MUT_RING || MUT_ECHO ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) // #2700: presentation laws plant in the painter; #2958: so does the take law; #2966: so does the tap-drain law; #2987: so do both stamp laws; #2992: so does the drain-ring law; #2997: so does the solo-ring law
         : MUT_CAREER ? new URL('./plaicraft-dataset.mjs', import.meta.url) // #2958: the replay seam lives in the adapter
             : sim
     const src = readFileSync(tgt, 'utf8')
@@ -219,6 +221,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                                 ? ['applyTap(gs, tap.px, tap.py)', '/* MUTANT (#2966): the drain banks a pointer the floor never applies */', 'queued taps stop applying live — the shell promises pointers its own drain never honors, and live == replay is dead']
                                                                              : MUT_RING
                                                                                  ? ['handleEvents(gs.ev.slice(from), gs.tick)', '/* MUTANT (#2992): the drain\u2019s tap rings silent */', 'a fast-tapped refusal obeys the board but names nothing — the lesson banners, seat stamps and sounds of a drain-applied tap vanish, and the fx ledger lies about what the floor decided (#2992)']
+                                                                             : MUT_ECHO
+                                                                                 ? ['applyTap(gs, px, py)\n            handleEvents(gs.ev.slice(from), gs.tick)', 'applyTap(gs, px, py)\n            handleEvents(gs.ev, gs.tick) // MUTANT (#2997): the solo tap rings the backlog again', 'the between-frame click re-rings the last tick\u2019s backlog — every solo tap echoes the previous decision\u2019s sounds and fx lines, and the ring ledger names the echo (#2997)']
                                                                              : MUT_STAMP
                                                                                  ? ['if (brainOn) watchSteered = true', 'if (false && brainOn) { /* MUTANT (#2987): the tick-stamp is dead */ }', 'steered ticks leave no mark — the brain drives whole shifts and the take still claims the player\'s hands, laundering model out of the bank (#2987)']
                                                                              : MUT_PEEK
@@ -1164,7 +1168,8 @@ console.log('— shift ladder (#2346) —')
     // place a banked tap mutates the floor.
     const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
     ok(/if \(!tap\.applied\) \{[\s\S]*?applyTap\(gs, tap\.px, tap\.py\)/.test(ui), 'the drain owns the queued tap\u2019s mutation — the tick that banks it is the tick that applies it (#2966)')
-    ok(/const from = gs\.ev\.length[\s\S]*?handleEvents\(gs\.ev\.slice\(from\), gs\.tick\)/.test(ui), 'the drain rings its tap before step wipes gs.ev — a fast-tapped refusal names itself on the ledger (#2992)')
+    ok(/applyTap\(gs, tap\.px, tap\.py\)\s*\n\s*handleEvents\(gs\.ev\.slice\(from\), gs\.tick\)/.test(ui), 'the drain rings its tap before step wipes gs.ev — a fast-tapped refusal names itself on the ledger (#2992; anchored on the drain\u2019s own applyTap so the solo path\u2019s twin cannot mask it, #2997)')
+    ok(/applyTap\(gs, px, py\)\s*\n\s*handleEvents\(gs\.ev\.slice\(from\), gs\.tick\)/.test(ui), 'the solo path rings only its fresh events — a click between ticks never re-rings the last tick\u2019s already-rung backlog (#2997)')
     ok(/if \(tapQueue\.length\) \{ tapQueue\.push\(\{ px, py \}\); return \}/.test(ui), 'a tap that finds the bank busy only queues — no two mutations ahead of the first banked row (#2966)')
 }
 {
