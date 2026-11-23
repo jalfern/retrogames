@@ -1960,8 +1960,8 @@ if (MUTANT) {
             // vest throws only, and a bandolier that sprays flat rounds while it
             // advances makes the approach band a wall no hop covers.
             name: 'lob-hall',
-            anchor: 'if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) {',
-            plant: 'if (tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY) /* MUTANT(lob-hall): the vest keeps its rifle */ {',
+            anchor: 'if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY &&\n            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate))) {',
+            plant: 'if (tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY /* MUTANT(lob-hall): the vest keeps its rifle */ &&\n            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate))) {',
             harm: async (mod) => {
                 const gs = mod.makeGame(7)
                 gs.p.inv = 999999; gs.p2.out = true
