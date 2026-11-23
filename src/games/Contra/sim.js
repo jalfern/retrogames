@@ -128,6 +128,33 @@ export const CFG = {
     rapGate: 24,             // never fire straight down: |dx| at least this wide
     rapPatience: 120,        // a hanger with nobody in his band for 2 s slides off — the wire is never squatting
     rapDrop: 300,            // the cut purse — the turret tier
+    // --- #3067: the cabinet's leaping infantry (jungle only) ---
+    // The arcade's frogmen never walk the trail at you — they crouch, launch
+    // and turn through the air in short bounds. Own zero-rng lane (#2847/
+    // #3060/#3064 precedent): schedule, arc and rifle cadence are all
+    // seed/tick arithmetic, so the tuned autopilot stream byte-stands.
+    jlFirst: 520,            // ticks into a pass before the first drop
+    jlEvery: 560,            // gap between frogmen (+ seed-keyed jitter, / k)
+    jlJit: 90,               // jitter window — (seed*37 + jlN*61) % jlJit
+    jlY: 138,                // the perch line — the tree-line the snipers own:
+                             //   a chest-height stream (y 182) can never reach a
+                             //   torso centred at 126, so the frogman is alive and
+                             //   VISIBLE until he commits to the drop (the canopy
+                             //   shelter the sniper law already documents)
+    jlDropBand: 170,         // the seat under the perch — the ambush wakes in him
+    jlCoil: 10,              // the crouch on the branch before he launches — telegraph
+    jlGate: 100,             // never fire steep: while above the deck he holds his
+                             //   rounds out to |dx| ≥ this, so every round he throws
+                             //   keeps its hop answer (worst angle vy ≈ 1.08 at perch
+                             //   height — inside the 1.2 window the hop law reads —
+                             //   the rapGate/#2917 law in the vertical, pinned)
+    jlRearm: 150,            // fixed cadence — a frogman never draws gs.r
+    jlLand: 12,              // the deck stagger: geometry says the advancing seat
+                             //   reaches the drop column ~1 tick after touchdown
+                             //   (t_hit − t_land = (lead−110)/2 − ((lead−170)/2+31)
+                             //   = −1 for ANY lead) — so the landing itself must
+                             //   never kill. He staggers jlLand ticks (dust + up
+                             //   pose), then the plain runner contact law answers.
     rapLandMin: 28,          // he never lands at his own station: past hang + this
     eBulletSpeed: 2.2,
     respawnFreeze: 50,
@@ -616,6 +643,17 @@ export const RAP_STATIONS = [
     { x: 340, hang: 62 },
 ]
 
+// #3067 THE FROGMEN stations: three boughs on a wheel, measured as leads ahead
+// of the camera (the courier/sortie/rappel one-at-a-time law verbatim; leads
+// are camera-arithmetic so the wheel is seed-stable in replay). At jlDropBand
+// the seat walks into the man's column; the coil+drop (~31 t) lands him ~54 px
+// short of the arriving hero — visible, readable, and never a free hit.
+export const JL_STATIONS = [
+    { lead: 170 },
+    { lead: 230 },
+    { lead: 290 },
+]
+
 // The gate: two cannon emplacements and two spawn doors (world == screen y
 // once the camera locks at 0). The wall itself is armor — only the core hurts
 // the gate; but each housing is a depot slab: ten rounds cave one (#2880).
@@ -1059,6 +1097,8 @@ export function makeGame (seed, loop = 1, lives = 3, score = 0) {
         soldiers: SOLDIERS.map(mkSoldier),
         rapT: 0,                    // #3064 next rappel drop (falls-only schedule)
         rapN: 0,                    // #3064 drop counter — which station is next
+        jlT: CFG.jlFirst + ((seed * 37) % CFG.jlJit),   // #3067 next frogman onto the trail (seed-keyed, zero gs.r — the #2847 multiplication-first lesson)
+        jlN: 0,                     // #3067 bound counter
         snipers: SNIPERS.map((d) => ({ x: d.x, y: d.y, hp: 1, awake: false, t: 0, aim: Math.PI, flash: 0, dead: false, bx: d.x, by: d.y, roof: !!d.roof, pi: 0, rx: d.x, ry: d.y, relocT: 0, dir: 0 })),
         turrets: TURRET_AT.map((x, i) => ({ x, y: CFG.ground, hp: 2, aim: Math.PI, t: 40 + i * 27, dead: false })),
         barrels: BARREL_AT.map((x) => ({ x, y: CFG.ground, gone: false })),
@@ -1751,6 +1791,25 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         gs.ev.push({ type: 'rapdrop' })
     }
 
+    // --- #3067 frogmen: the cabinet's infantry come AT you out of the canopy,
+    // not around it. ONE leaper on the trail at a time (the courier/sortie/
+    // rappel law verbatim), perched at a fixed station on the tree line, then
+    // coil — launch — drop — and the deck makes him a plain runner. Schedule
+    // is seed/tick arithmetic — zero gs.r, so every tuned stream and every
+    // rng-driven law keeps its exact shape with the perches armed. ---
+    if (gs.phase === 'jungle' && gs.tick >= gs.jlT && !gs.soldiers.some((sd) => !sd.dead && sd.leap)) {
+        const st = JL_STATIONS[gs.jlN % JL_STATIONS.length]
+        const sx = Math.min(CFG.worldW - 8, gs.cam + st.lead)
+        gs.soldiers.push({
+            x: sx, y: CFG.jlY, hold: true, hp: 1, awake: true, t: 10 ** 9,   // silent on the bough: the drop is the whole attack (a perched gunner would add rounds the tuned seed economy can't price — seed 7 proved it; the canopy shooter is a different stage's fantasy)
+            walk: 0, walkDir: -1, dead: false, flash: 0, nade: false, throwT: 0,
+            leap: true, drop: 0, vy: 0, jlCd: 0,
+        })
+        gs.jlN += 1
+        gs.jlT = gs.tick + Math.round((CFG.jlEvery + ((gs.seed * 37 + gs.jlN * 61) % CFG.jlJit)) / gs.lk)
+        gs.ev.push({ type: 'jlin', x: sx, y: CFG.jlY })
+    }
+
     // --- soldiers: wake just inside the view (the spawn-shield law spans both
     // axes: x past cam + W - 4 OR y past camY + H - 4 is beyond bullet reach),
     // open fire within a third of a second, runners close in, gunners hold the
@@ -1784,7 +1843,27 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             s.y += CFG.rapSlide
             rapSettle(gs, s)
         }
-        if (!s.hold && tgt && Math.abs(dx) > 26) { s.x += Math.sign(dx) * 1.1 * gs.lk; s.walkDir = Math.sign(dx) }
+        if (!s.hold && tgt && Math.abs(dx) > 26 && (!s.leap || s.drop === 3)) { s.x += Math.sign(dx) * 1.1 * gs.lk; s.walkDir = Math.sign(dx) }
+        // #3067 THE DROP — the canopy let go of him. Phases on the soldier:
+        // 0 perched (a canopy gunner the flat stream cannot answer — the
+        // sniper's shelter, nothing new), 1 coil (jlCoil ticks of crouch — the
+        // telegraph, as the door grind is for the gunship), 2 falling (pure
+        // gravity at his station x — he never steers toward the seat, the
+        // landing column is readable the moment he commits), 3 the deck — and
+        // the deck makes him a plain rifle runner: identity, purse, contact
+        // law and all. Zero gs.r: every number here is fixed arithmetic.
+        if (s.leap) {
+            if (s.drop === 0) {
+                if (tgt && tgt.onGround && Math.abs(dx) < CFG.jlDropBand && s.y > gs.camY) { s.drop = 1; s.jlCd = CFG.jlCoil; gs.ev.push({ type: 'coil', x: s.x, y: s.y }) }
+            } else if (s.drop === 1) {
+                s.jlCd -= 1
+                if (s.jlCd <= 0) { s.drop = 2; gs.ev.push({ type: 'drop', x: s.x, y: s.y }) }
+            } else if (s.drop === 2) {
+                s.y += s.vy; s.vy += CFG.grav
+                if (s.y >= CFG.ground) { s.y = CFG.ground; s.vy = 0; s.hold = false; s.drop = 3; s.jlLand = CFG.jlLand; s.t = Math.min(s.t, 60); gs.ev.push({ type: 'bound', x: s.x, y: s.y, land: true }) }
+            }
+            if (s.jlLand > 0) s.jlLand -= 1
+        }
         s.t -= 1
         const range = s.hold ? (gs.phase === 'falls' ? 210 : 280) : 220
         const inCamX = gs.cam < s.x && s.x < gs.cam + W + 4
@@ -1804,13 +1883,15 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         // sidestep is the whole dodge). Its rearm is fixed arithmetic — the
         // rnd stream never feels a rappel.
         if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY &&
-            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate))) {
+            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate)) &&
+            (!s.leap || s.drop === 3 || Math.abs(dx) >= CFG.jlGate)) {   // #3067 steep-angle gate — while above the deck a frogman holds his rounds out to |dx| ≥ jlGate, so every round keeps its hop answer (worst-angle vy ≈ 1.06 < the 1.2 window)
             const a = Math.atan2(dy, dx)
             const sp = s.hold ? (gs.phase === 'falls' ? 1.8 : CFG.eBulletSpeed) : CFG.eBulletSpeed
             gs.eb.push({ x: s.x + Math.cos(a) * 8, y: s.y - 12 + Math.sin(a) * 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp })
             gs.ev.push({ type: 'efire' })
             s.flash = 4
-            if (s.rap) {
+            if (s.leap) { s.t = Math.round(CFG.jlRearm / gs.lk) }   // #3067 fixed cadence — the rnd stream never feels a frogman
+            else if (s.rap) {
                 s.t = Math.round(CFG.rapRearm / gs.lk)
                 s.shots += 1
                 s.hangT = 0
@@ -1821,8 +1902,8 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         }
         // touching a live runner is a hit, as on the cabinet — and it takes
         // either seat (S4: the blue soldier can be rushed too)
-        if (!s.hold && p.inv <= 0 && !p.out && Math.abs(p.x - s.x) < 9 && Math.abs(p.y - s.y) < 20) killPlayer(gs)
-        if (!s.hold && q.inv <= 0 && !q.out && q.dead === 0 && Math.abs(q.x - s.x) < 9 && Math.abs(q.y - s.y) < 20) killAlly(gs)
+        if (!s.hold && !s.jlLand && p.inv <= 0 && !p.out && Math.abs(p.x - s.x) < 9 && Math.abs(p.y - s.y) < 20) killPlayer(gs)
+        if (!s.hold && !s.jlLand && q.inv <= 0 && !q.out && q.dead === 0 && Math.abs(q.x - s.x) < 9 && Math.abs(q.y - s.y) < 20) killAlly(gs)
         if (p.dead > 0) break
     }
 
@@ -2420,7 +2501,7 @@ export function stateHash (gs) {
     put(ORDER_FORM_C[gs.orderForm] ?? 1); put(ORDER_AIM_C[gs.orderAim] ?? 0); put(gs.holdX || 0)
     for (const b of gs.pb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(KCODE[b.k] || 0); put(b.hits ? b.hits.length : 0); put(b.o || 0) }
     for (const b of gs.eb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(b.gr ? 1 : 0) }
-    for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk); put(s.nade ? 1 : 0); put(s.hp); put(s.rap || 0); put(s.shots || 0); put(s.hangT || 0); put(s.rap === 3 ? s.vy : 0) }   // #3064 who's on a rope, how many rounds he's spent, his patience and the speed of a cut fall are sim truth
+    for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk); put(s.nade ? 1 : 0); put(s.hp); put(s.rap || 0); put(s.shots || 0); put(s.hangT || 0); put(s.rap === 3 ? s.vy : 0); put(s.leap ? 1 : 0); put(s.leap ? (s.drop || 0) : 0); put(s.leap ? s.vy : 0); put(s.leap ? (s.jlLand || 0) : 0) }   // #3064 who's on a rope, how many rounds he's spent, his patience and the speed of a cut fall are sim truth; #3067 and which canopy man has committed to the drop, and how fast he's falling
     for (const sn of gs.snipers) { put(sn.awake ? 1 : 0); put(sn.dead ? 1 : 0); put(sn.x); put(sn.y); put(sn.t); put(sn.aim); put(sn.pi); put(sn.relocT) }   // #2905 which perch, and the shift mid-leg, are sim truth
     for (const t of gs.turrets) { put(t.dead ? 1 : 0); put(t.hp); put(t.aim); put(t.t) }
     for (const br of gs.barrels) put(br.gone ? 1 : 0)
@@ -2437,6 +2518,7 @@ export function stateHash (gs) {
     // hash (a replay that let a gunship overfly the arena must diverge loudly).
     put(gs.sortieT); put(gs.sortieN)
     put(gs.rapT); put(gs.rapN)   // #3064 the rappel schedule is sim truth too — a replay that skipped a drop diverges loudly
+    put(gs.jlT); put(gs.jlN)     // #3067 the frogman schedule is sim truth — a replay that let a bound off the trail un-counted diverges loudly
     for (const sh of gs.gunships) { put(sh.x); put(sh.y); put(sh.hp); put(sh.t); put(sh.flash) }
     put(gs.depot ? gs.depot.hp : -1); put(gs.depot ? (gs.depot.dead ? 1 : 0) : -1); put(gs.depot ? gs.depot.t : -1); put(gs.depot ? gs.depot.spawnT : -1)
     for (const c of gs.vc) put(c.x)
