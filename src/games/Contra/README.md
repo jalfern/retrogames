@@ -251,6 +251,23 @@ disagreement is recorded on #2894.*
   taps (never holds) so the demo line keeps its feet, and when it DOES catch
   a vine on a launch tick the arc drops it on the climb (4 seeds show a vine
   ride in attract — the mechanic advertises itself).
+- **#3035 the somersault (ART bar 2 — falls animate)**: the arcade jump is a
+  forward roll, and it now rolls here. `seatStep` carries a presentation clock
+  `rollT` on each seat (precedent: `walk`): the jump line arms it at 1, the head
+  of seatStep advances it while airborne, ground clears it, and the vine catch
+  zeroes it — a hanging rider never tumbles. Walking off a ledge or pressing
+  through a platform never arms it: the tumble is reserved for the jump, so it
+  KEEPS meaning. `SOMERSAULT_TICKS` (37) is the observed Euler arc
+  (2·|jumpV|/grav minus the jump tick) — the body completes exactly one turn as
+  the feet land, and the harness pins constant-to-arc so physics drift can't
+  split them. `drawPlayer` rotates legs, torso, head and bandana tails about the
+  body centre (±2π over the span, flipped by facing); the GUN ARM draws OUTSIDE
+  the rotation, at the live `ax/ay` — mid-jump aimed fire is Contra's signature
+  and the drawn sprite must keep matching the logical aim. Structural law: both
+  seats run the same seatStep, so the blue soldier somersaults too (pinned on
+  his own jump event). Referee law: `rollT` is absent from `stateHash` by design
+  (states differing only in rollT hash identically — pinned), consumes zero
+  `gs.r`, and the whole autopilot sweep clears exactly as before the change.
 - Audio: every new action synthesized via `audioController` — the MG's ripping
   pop, the firebar's breath, the laser's falling zap, the sniper's crack and
   the lob's whistle answer the existing set.
@@ -275,7 +292,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   housings-eat-beams, cascade-random,
                                        #   vine-deadwood, vine-sink, loop-dead,
                                        #   loop-overdrive, loop-blind, voice-flat,
-                                       #   gunship-impervious
+                                       #   gunship-impervious, stiff-hop,
+                                       #   roll-on-step
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -353,7 +371,16 @@ fireball) · pierce one take per hull per beam · contact kills either seat
 while a grounded flat shot passes under the band · falls clears the sky ·
 hangar, schedule and airframe ride the hash · live: the door grinds and the
 gunship paints sky pixels over a sortie-free baseline, and a pinned hull takes
-three rounds through real keys** · zero page errors.
+three rounds through real keys** · **#3035 somersault: the clock arms with the
+jump event and exactly one 37-tick revolution completes as the feet land · a
+ledge step-off and a platform drop-through ride the arc upright (the tumble is
+reserved for the jump, so it keeps meaning) · the vine catch zeroes the roll ·
+the blue seat clock arms on HIS jumps too (structural) · states differing only
+in rollT hash identically and autopilot streams twin (presentation outside the
+referee) · live: bandana red crosses the feet line mid-arc through real keys
+(the static tuck could never invert), on both arm-states, while the AIM-UP hops
+carry cold-dark barrel ink over the pivot that the flat hops do not — the body
+turns and the aim does not** · zero page errors.
 
 ## Honest gaps
 
@@ -419,6 +446,13 @@ three rounds through real keys** · zero page errors.
   for `nade` soldiers.
 - **CLOSED by #2902**: the arcade loop now SPEAKS — see "#2902 What the loop
   looks and sounds like" below.
+- **CLOSED by #3035**: the somersault jump shipped — the cabinet turns the hero
+  a full revolution through every jump (ART bar 2: falls animate); ours hung a
+  static tuck. `rollT` per seat arms on the jump event, clears on landing and on
+  a vine catch, and never arms for a step-off or a drop-through; the body paints
+  one 37-tick turn while the gun arm holds the live 8-way aim. Presentation is
+  provably outside the referee: rollT never enters `stateHash`, zero `gs.r` —
+  every physics pin, replay and twin law stands byte-for-byte.
 - **CLOSED by #2917**: the SECOND air layer shipped — a hangar mouth in the
   fortress parapet grinds open (the attack is telegraphed by the door, never
   born on screen), one armoured gunship sorties at a time, patrols the arena
