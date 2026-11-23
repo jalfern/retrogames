@@ -115,6 +115,23 @@ The shield shipped (#3009); this pass made players *understand* it.
 - The first-dig toast wording (`FLAGS PROTECT YOUR CHORDS`) is a taste call —
   proposed on #3011, not shipped blind.
 
+## The counter that counts negative (#3021)
+
+The original's VFD mine counter keeps counting **into the negatives** when the
+player over-flags (−05 = five flags wrong somewhere) — a game-wide warning the
+original never hid. Our HUD painted `Math.max(0, totalMines - flags)`, so the
+warning silently vanished at 000 while the engine (`s.flags`) had counted
+honestly all along. `mineCounter(s)` now lives in `minefield.js` next to the
+counts it derives from — signed, floor −99 (the 3-glyph display's leftmost
+representable value, like the original's hardware readout), pure read: no
+events, `stateHash` untouched. `drawNum7` gained a minus glyph in the same
+7-segment stock (positive renders byte-identical). `sweepcheck` pins the sign,
+the −1 signature, the floor and the purity; the named mutant `counter-clamp`
+(the old clamp back in the rule) dies in `probeMutant`. `sweepplay` over-flags
+through the shell's own flag verb and reads both the value (probe) and the
+pixels (the minus must light the leading glyph slot). Over-flagging stays legal
+— it always was; now the counter says so.
+
 ## Conventions / gotchas
 
 - The solver is fast but not free: GENERAL can plant in ~0.7 s on a slow box
