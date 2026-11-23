@@ -21,7 +21,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN, BED, bedTrack } from '../src/games/Contra/sim.js'
+import { MUSIC } from '../src/utils/AudioController.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -2287,6 +2288,31 @@ if (MUTANT) {
                 ? 'HARM NAMED: the coin never clacked into the slot - the player pays and the cabinet answers with silence'
                 : null,
         },
+        {
+            // #3048: the gate must change the tune. Freeze bedTrack and the
+            // siege keeps the jungle cue — the phase law dies quietly, and only
+            // a player who knows the fortress is supposed to sound different
+            // ever notices. The sim half of the march is load-bearing.
+            name: 'bed-stuck',
+            anchor: "export const bedTrack = (phase) => (phase === 'boss' ? BED.gate : BED.march)",
+            plant: 'export const bedTrack = () => BED.march /* MUTANT(bed-stuck): the siege never changes the tune */',
+            harm: async (mod) => mod.bedTrack('boss') === mod.BED.march
+                ? 'HARM NAMED: bedTrack returns the march for the boss too - the fortress fight plays under the jungle cue, the phase law is dead'
+                : null,
+        },
+        {
+            // #3048: every bed law routes through ONE call on the world clock.
+            // Erase it and the cabinet promises a march and ships silence. The
+            // bus lives browser-side, so this mutant is pinned as text (the
+            // #3045 pad-gate precedent): the call site IS the law.
+            name: 'music-deaf',
+            file: join(ROOT, 'src/games/Contra/index.jsx'),
+            anchor: '            applyBed() // #3048 after the end-branch, so the tick that kills the run also silences it\n',
+            plant: '',
+            harm: async () => readFileSync(join(ROOT, 'src/games/Contra/index.jsx'), 'utf8').includes('applyBed()')
+                ? null
+                : 'HARM NAMED: stepSim no longer asks for a bed - attract law, siege law and heat law all route through a call that was erased',
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -3058,6 +3084,71 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
         r.check('#3041 every honest loop-1 clear lands below 30,000 — the rule cannot touch a pre-extend pin, replay or dataset byte',
             best > 0 && best < EXT_FIRST, `best loop-1 autopilot score = ${best}`)
     }
+}
+
+// ---------------------------------------------- #3048 THE MARCH — beds and law ---
+// The cabinet's answer to silence: two ORIGINAL beds (contraMarch under the
+// jungle/canyon, contraGate at the siege), selected by pure phase law in sim,
+// tempo divided by the loop's own k, and silence everywhere the run isn't
+// running. Node pins the law, the patterns, the coupling and the shell's text;
+// the live legs watch the actual bus.
+{
+    r.check('#3048 bed law: the jungle and the canyon march, the gate sieges',
+        bedTrack('jungle') === BED.march && bedTrack('falls') === BED.march && bedTrack('boss') === BED.gate)
+
+    const shelfLeads = {}
+    for (const t of [BED.march, BED.gate]) {
+        const P = MUSIC[t]
+        if (!P) { r.check(`#3048 ${t} exists on the shelf`, false, 'MUSIC entry missing'); continue }
+        shelfLeads[t] = P.lead.join(',')
+        const lens = new Set([P.lead.length, P.bass.length, P.perc.length])
+        const flat = [...P.lead, ...P.bass, ...P.perc]
+        r.check(`#3048 ${t}: lanes aligned on one 32-step grid, finite notes in register, percussion only dum/tek, tempo > 0`,
+            lens.size === 1 && P.lead.length === 32 && flat.every((v) => Number.isFinite(v)) &&
+            P.lead.every((n) => n === 0 || (n >= 24 && n <= 108)) && P.bass.every((n) => n === 0 || (n >= 21 && n <= 60)) &&
+            P.perc.every((v) => v === 0 || v === 1 || v === 2) && P.step > 0,
+            `lens=${[...lens].join('/')} step=${P.step}`)
+    }
+    // "composed for this build" is a law, not a comment — a bed that silently
+    // aliased another shelf track would quietly end the uniqueness the music
+    // system lives by (#961 marker law: what nothing checks, rots).
+    const allLeads = Object.entries(MUSIC).map(([k, p]) => [k, p.lead.join(',')])
+    const dups = allLeads.filter(([k, v]) => (k === BED.march || k === BED.gate) &&
+        allLeads.some(([k2, v2]) => k2 !== k && v2 === v)).map(([k]) => k)
+    r.check('#3048 the two beds are originals in the house sense — no lead duplicates any other track on the shelf',
+        shelfLeads[BED.march] !== shelfLeads[BED.gate] && dups.length === 0, JSON.stringify(dups))
+
+    // the siege is faster than the march, and heat keeps its sign: dividing by
+    // k shortens the step, so the music lifts WITH the pressure (#2894) and
+    // sits still exactly where the tempo caps.
+    r.check('#3048 the siege runs faster than the march, and loop heat lifts both (step ÷ k, capped at LOOP_CAP)',
+        MUSIC[BED.gate].step < MUSIC[BED.march].step &&
+        MUSIC[BED.march].step / loopK(1) === MUSIC[BED.march].step &&
+        MUSIC[BED.march].step / loopK(4) === MUSIC[BED.march].step / LOOP_CAP &&
+        MUSIC[BED.march].step / LOOP_CAP < MUSIC[BED.march].step &&
+        MUSIC[BED.gate].step / loopK(9) === MUSIC[BED.gate].step / LOOP_CAP)
+
+    // referee-clean by construction: bedTrack reads a phase string, never gs —
+    // no bed key ever lands on the sim, so no seed stream, replay, twin or
+    // dataset byte can hear it.
+    const gm = makeGame(5)
+    step(gm, autopilot(gm))
+    r.check('#3048 the beds are presentation by construction — no bed field on gs, twins twin, the seed stream is untouched',
+        !('bed' in gm) && !('bedName' in gm) && stateHash(makeGame(9)) === stateHash(makeGame(9)) && makeGame(9).r === makeGame(9).r)
+
+    // the shell law, pinned as text (the #3045 pad-gate precedent — the bus
+    // lives in the browser, the call sites are the contract): the bed rides
+    // play and nothing else; the switch runs on the WORLD tick, never a timer;
+    // pause, the death tick and unmount all silence it; the heat seam divides
+    // the pattern's OWN step by gs.lk (one source of truth per bed).
+    const bedSrc = readFileSync(join(ROOT, 'src/games/Contra/index.jsx'), 'utf8')
+    r.check('#3048 shell law — the bed rides play (never attract/over/clear), switches on the world tick, and pause/death/unmount silence it',
+        bedSrc.includes("const want = (screen === 'play' && !gs.end) ? bedTrack(gs.phase) : null") &&
+        bedSrc.includes('applyBed() // #3048 after the end-branch') &&
+        bedSrc.includes('audioController.stopMusic(); bedName = null; bedK = 0') &&
+        bedSrc.includes("audioController.stopMusic() // #3048: no bed survives the component"))
+    r.check('#3048 heat coupling at the bus — setMusicStep(MUSIC[bed].step / gs.lk), the SSX seam, one source per bed',
+        bedSrc.includes('audioController.setMusicStep(MUSIC[want].step / gs.lk)'))
 }
 
 await requireDevServer(`${BASE}/contra`)
@@ -4315,6 +4406,79 @@ const browser = await launch()
         `screen=${armedBack.screen} lives=${armedBack.lives} score=${armedDead.score}->${armedBack.score}`)
     r.check('#3042 CONTINUE legs: zero page errors', cErrs.length === 0, cErrs.join(' | '))
     await cp.close()
+}
+
+// ----------------------------------- #3048 THE MARCH — live legs on the bus ---
+// The node legs prove the law; these prove the cabinet actually plays it: real
+// keys start the march, the gate flips the tune, loop heat tightens the step,
+// pause and death silence, and a paid continue brings the band back. The probe
+// carries BOTH sides — `track` (what the law asked for) and `bus` (what the
+// audio engine actually scheduled) — so a startMusic that silently refused a
+// track is a divergence, not a detail.
+{
+    const mp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 600, decline: true })
+    const mErrs = []
+    mp.on('pageerror', (e) => mErrs.push(e.stack || e.message))
+    const mProbe = () => mp.evaluate(() => window.__contraTest.probe())
+
+    const at = await mProbe()
+    r.check('#3048 attract is silence by law — the demo teaches play, not the band',
+        at.screen === 'attract' && at.bed && at.bed.track === null && at.bed.bus === null,
+        JSON.stringify(at.bed))
+
+    await mp.keyboard.press('Space')
+    await mp.waitForTimeout(400)
+    const m1 = await mProbe()
+    r.check('#3048 a real key takes the seat AND the stage marches — contraMarch on the bus at its resting step',
+        m1.screen === 'play' && m1.bed && m1.bed.track === 'contraMarch' && m1.bed.bus === 'contraMarch' && Math.abs(m1.bed.step - 0.11) < 1e-4,
+        JSON.stringify(m1.bed))
+
+    await mp.evaluate(() => window.__contraTest.setup({ loop: 4 }))
+    await mp.waitForTimeout(300)
+    const m2 = await mProbe()
+    r.check('#3048 loop heat lifts the march — loop 4 (k 1.30) tightens the bus step to 0.11/1.30',
+        m2.bed && m2.bed.track === 'contraMarch' && Math.abs(m2.bed.step - 0.11 / 1.3) < 1e-4,
+        JSON.stringify(m2.bed))
+
+    await mp.evaluate(() => window.__contraTest.setup({ warp: 'boss' }))
+    await mp.waitForTimeout(300)
+    const m3 = await mProbe()
+    r.check('#3048 the gate changes the tune — the bus flips to contraGate, already riding the loop heat',
+        m3.bed && m3.bed.track === 'contraGate' && m3.bed.bus === 'contraGate' && Math.abs(m3.bed.step - 0.095 / 1.3) < 1e-4,
+        JSON.stringify(m3.bed))
+
+    // pause freezes the world, so it freezes the band; the resume re-arms on
+    // the first world tick — no timer anywhere in the law.
+    await mp.keyboard.press('Shift+Slash')
+    await mp.waitForTimeout(250)
+    const m4 = await mProbe()
+    r.check('#3048 pause silences the cabinet — the band freezes with the world it rides',
+        m4.bed && m4.bed.track === null && m4.bed.bus === null, JSON.stringify(m4.bed))
+    await mp.keyboard.press('Shift+Slash')
+    await mp.waitForTimeout(350)
+    const m5 = await mProbe()
+    r.check('#3048 resume re-marches — the siege bed returns on the first tick back',
+        m5.bed && m5.bed.track === 'contraGate' && m5.bed.bus === 'contraGate', JSON.stringify(m5.bed))
+
+    // death silences mid-siege: both seats down with the purse full — GAME
+    // OVER carries no bed, and the paid continue brings the march back at the
+    // loop-1 resting step (the run rebuilt, the band with it).
+    await mp.evaluate(() => window.__contraTest.setup({ allyOut: true, lives: 0, inv: 0, kill: true }))
+    await mp.waitForTimeout(400)
+    const m6 = await mProbe()
+    r.check('#3048 GAME OVER silences the cabinet mid-siege — the run that died takes its bed with it',
+        m6.screen === 'over' && m6.bed && m6.bed.track === null && m6.bed.bus === null,
+        JSON.stringify({ screen: m6.screen, bed: m6.bed }))
+    await mp.waitForTimeout(1300) // let the CONTINUE window open (CONT_READ is 1.5 s)
+    await mp.keyboard.press('Space') // pay the coin
+    await mp.waitForTimeout(400)
+    const m7 = await mProbe()
+    r.check('#3048 a paid continue brings the march back — stage 1 loop 1 at the resting step, score carried',
+        m7.screen === 'play' && m7.bed && m7.bed.track === 'contraMarch' && m7.bed.bus === 'contraMarch' && Math.abs(m7.bed.step - 0.11) < 1e-4 && m7.score > 0,
+        JSON.stringify({ screen: m7.screen, bed: m7.bed, score: m7.score }))
+
+    r.check('#3048 march legs: zero page errors', mErrs.length === 0, mErrs.join(' | '))
+    await mp.close()
 }
 
 r.exit(browser)
