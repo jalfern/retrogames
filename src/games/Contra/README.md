@@ -325,7 +325,8 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                        #   roll-on-step, duck-deaf,
                                        #   prone-immortal, no-crawl-price,
                                         #   extend-deaf, carry-blind,
-                                        #   score-wipe, window-short, count-stalls
+                                        #   score-wipe, window-short, count-stalls,
+                                       #   rung-resale
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -889,6 +890,12 @@ invention.
   cabinet back, forfeit purse and all. At zero the purse offers no count at
   all: GAME OVER is the last word, and the old press-to-attract law answers
   exactly as it did before this stage existed.
+- **The score-extend seam (#3041 landed mid-build)**: the mark is a RUN
+  property — the law `arcadeLoop` carries across loops must also hold at the
+  CONTINUE entry. `makeGame` derives `nextExt` from the entry bank (`extMark`),
+  so a carried bank continues at the next rung it has NOT crossed (a rung
+  already bought is never re-sold; `rung-resale` dies by name). Default bank 0
+  => `EXT_FIRST`: every pre-extend byte stands.
 - **Presentation**: the digit sits gold under the score line and blinks red-hot
   for the last two seconds (IronRing's warning family); a dry slot-click ticks
   the seconds and a rising sting answers the re-entry, both via

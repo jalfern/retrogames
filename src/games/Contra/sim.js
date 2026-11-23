@@ -246,6 +246,16 @@ export function loopK (n) {
 export const EXT_FIRST = 30000
 export const EXT_STEP = 50000
 
+// #3042 seam on the #3041 law: the mark belongs to the RUN — so an entry that
+// arrives with a bank already past a rung (a paid CONTINUE carrying score)
+// starts at the first rung that bank has NOT crossed, never re-sells one it
+// bought. Default score 0 => EXT_FIRST: byte-for-byte the pre-#3041 world.
+export function extMark (score) {
+    let ne = EXT_FIRST
+    while (score >= ne) ne += EXT_STEP
+    return ne
+}
+
 export function arcadeLoop (gs) {
     const carryScore = gs.score
     // #3037: the bank-to-five clamps the COURTESY, not the pool — a Konami 30
@@ -782,7 +792,8 @@ export function makeGame (seed, loop = 1, lives = 3, score = 0) {
         phase: 'jungle',            // jungle | falls | boss
         score: sc,                  // #3042 CONTINUE carry — the score a paid continue re-enters with
         lives: lv,
-        nextExt: EXT_FIRST,       // #3041 the score mark the next extend pays at (carries the loop)
+        nextExt: extMark(sc),   // #3041 the score mark the next extend pays at; #3042 — derived from the
+                                //   entry bank so a carried continue starts above the rung it already bought
         end: null,                  // 'dead' | 'win'
         p: {
             x: 40, y: CFG.ground, vy: 0, onGround: true, face: 1,

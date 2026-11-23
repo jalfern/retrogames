@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, contPhase, CONT_READ, CONT_SECS, CONT_LIFE } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE } from '../src/games/Contra/sim.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -2252,6 +2252,20 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #3042 x #3041: a continue that carries the bank must carry the
+            // rung too. Hard-code the mark and every hot continue re-sells a
+            // life the run already paid for at 30,000.
+            name: 'rung-resale',
+            anchor: 'nextExt: extMark(sc),',
+            plant: 'nextExt: EXT_FIRST, /* MUTANT(rung-resale): the mark forgets the carried bank - every continue re-sells the 30k life */',
+            harm: async (mod) => {
+                const g = mod.makeGame(7, 1, 3, 32000)
+                return g.nextExt === mod.EXT_FIRST
+                    ? 'HARM NAMED: a continue carried a 32,000 bank but the extend mark reset to 30,000 - the run re-buys the life it already paid for the moment it respawns'
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -2859,6 +2873,22 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     r.check('#3042 absurd carries come honest: negatives floor at zero, fractions truncate (the lives-clamp family)',
         makeGame(7, 1, 3, -50).score === 0 && makeGame(7, 1, 3, 9999.7).score === 9999 &&
         makeGame(7, 1, 3, NaN).score === 0)
+
+    // The #3041/#3042 seam: the extend mark is a RUN property, so a continue
+    // that carries a bank past a rung must not re-sell it at the entry.
+    r.check('#3042 a carried bank starts above the rung it already bought — the mark is run law at the entry seam (score-extend #3041 x CONTINUE #3042)',
+        makeGame(7).nextExt === EXT_FIRST &&
+        makeGame(7, 1, 3, 32000).nextExt === EXT_FIRST + EXT_STEP &&
+        makeGame(7, 1, 3, 30000).nextExt === EXT_FIRST + EXT_STEP &&
+        makeGame(7, 1, 3, 80000).nextExt === EXT_FIRST + 2 * EXT_STEP &&
+        extMark(0) === EXT_FIRST && extMark(29999) === EXT_FIRST)
+    {
+        const g = makeGame(7, 1, 3, 32000)
+        const l0 = g.lives
+        step(g, {}, {})
+        r.check('#3042 the tick after a hot continue pays no ghost extend — the rung was bought before the seat was paid for',
+            g.lives === l0 && g.nextExt === EXT_FIRST + EXT_STEP, `lives ${l0}->${g.lives} mark ${g.nextExt}`)
+    }
 
     // the window law, pure: read -> count (9 digits, one a second) -> out.
     r.check('#3042 the window: GAME OVER reads CONT_READ, then the Konami digit counts 9…0, then the book closes',
