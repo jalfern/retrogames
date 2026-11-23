@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed } from '../src/games/Contra/sim.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -2152,6 +2152,34 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #3037: the code must actually arm. Kill the matching note and the
+            // sequence becomes folklore — typed or not, every run starts at 3.
+            name: 'never-arms',
+            anchor: 'if (key === KONAMI[progress]) return progress + 1',
+            plant: 'if (false && key === KONAMI[progress]) return progress + 1 /* MUTANT(never-arms): the code is folklore - no typing arms anything */',
+            harm: async (mod) => {
+                const p = mod.KONAMI.reduce((q, k) => mod.konamiFeed(q, k), 0)
+                return !mod.konamiArmed(p)
+                    ? `HARM NAMED: the full Konami sequence ended at progress=${p} - the code never arms, every run pays the 3-life price and the legend is a placebo`
+                    : null
+            },
+        },
+        {
+            // #3037: the bank-to-five clamps the COURTESY. Re-clamp the pool and
+            // the 30-life run is robbed at the loop boundary — the prize survives
+            // exactly one stage, then vanishes.
+            name: 'quota-robbery',
+            anchor: 'const carryLives = gs.lives > LOOP_LIVES_MAX ? gs.lives : Math.min(LOOP_LIVES_MAX, gs.lives + LOOP_LIFE_BONUS)',
+            plant: 'const carryLives = Math.min(LOOP_LIVES_MAX, gs.lives + LOOP_LIFE_BONUS) /* MUTANT(quota-robbery): the courtesy cap eats the whole pool */',
+            harm: async (mod) => {
+                const g = mod.makeGame(7, 1, 30)
+                const carried = mod.arcadeLoop(g).lives
+                return carried !== 30
+                    ? `HARM NAMED: a 30-life Konami pool carried the loop at ${carried} - the prize was confiscated at the stage boundary`
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -2693,6 +2721,60 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     }
 }
 
+// ------------------------------------------------- #3037 the Konami code ---
+// Arcade history's most famous rule, referee-clean by construction: the
+// detector is pure arithmetic (never gs, never gs.r — the attract demo runs
+// byte-for-byte while a finger types), and the prize enters the world only at
+// makeGame time, where lives already ride stateHash (honest replay covers an
+// armed run exactly like the shell's own).
+{
+    const feedAll = (keys) => keys.reduce((p, k) => konamiFeed(p, k), 0)
+    const armedFor = (keys) => konamiArmed(feedAll(keys))
+    r.check('#3037 the exact sequence arms — and NOTHING else does (wrong order, all-ups, a shuffled near-miss)',
+        armedFor(KONAMI) === true &&
+        !armedFor(['up', 'down', 'up', 'down', 'left', 'right', 'left', 'right', 'b', 'a']) &&
+        !armedFor(['up', 'up', 'up', 'up', 'up', 'up', 'up', 'up', 'up', 'up']) &&
+        !armedFor(['up', 'up', 'down', 'down', 'left', 'right', 'left', 'right', 'a', 'b']) &&
+        !armedFor(['b', 'b', 'b', 'b', 'b', 'b', 'b', 'b', 'b', 'b']))
+    // the slip law: any wrong note clears, but a stray UP restarts at 1 —
+    // the behaviour every kid with a NES learned by heart.
+    r.check('#3037 a slip resets the count; a stray UP after a slip restarts it at 1',
+        konamiFeed(5, 'left') === 0 && konamiFeed(5, 'up') === 1 &&
+        konamiFeed(5, 'b') === 0 && konamiFeed(5, 'down') === 0 && konamiFeed(0, 'left') === 0)
+    // mid-sequence, the repeated correct note still advances one at a time
+    // (the detector only ever walks forward by one — no key arms it twice).
+    r.check('#3037 every landed note advances by exactly one',
+        KONAMI.reduce((p, k) => { const np = konamiFeed(p, k); return np === p + 1 ? np : -99 }, 0) === KONAMI.length)
+    // once typed it holds until consumed — further noise cannot disarm it,
+    // and nothing arms it past the sequence length.
+    r.check('#3037 armed holds through any further keys (until the run consumes it)',
+        konamiFeed(10, 'left') === 10 && konamiFeed(10, 'a') === 10 && konamiFeed(99, 'up') === 99)
+    // the prize enters at makeGame and nowhere else: default 3 is byte-for-byte
+    // the pre-Konami game (every shelf pin stands), the armed game carries 30,
+    // and an absurd pool clamps to the HUD's honest ceiling.
+    r.check('#3037 lives enter at makeGame: default 3 hash-identical to the old two-arg call, 30 armed, absurd pools clamp to 99',
+        makeGame(7).lives === 3 && stateHash(makeGame(7)) === stateHash(makeGame(7, 1, 3)) &&
+        makeGame(7, 1, 30).lives === 30 && KONAMI_LIVES === 30 &&
+        makeGame(7, 1, 150).lives === 99 && makeGame(7, 1, 0).lives === 3)
+    // the arcade-loop law: the bank-to-five clamps the COURTESY, not the pool.
+    // ≤5 (every pool a pre-Konami run can hold) carries identically; 30
+    // marches through un-clamped.
+    {
+        const g30 = makeGame(7, 1, 30)
+        const carryOf = (lives) => { const g = makeGame(7); g.lives = lives; return arcadeLoop(g).lives }
+        r.check('#3037 the loop carries the Konami pool whole — and pools ≤5 carry under the old courtesy law value-for-value',
+            arcadeLoop(g30).lives === 30 && carryOf(1) === 2 && carryOf(2) === 3 && carryOf(3) === 4 && carryOf(4) === 5 && carryOf(5) === 5)
+        // an armed run is honestly replayable: two drives of the same armed
+        // seed tick identical (lives already rides the hash).
+        const drive = () => {
+            const g = makeGame(9, 1, 30)
+            for (let i = 0; i < 900 && !g.end; i++) { step(g, autopilot(g)); g.ev.length = 0 }
+            return stateHash(g)
+        }
+        r.check('#3037 an armed run replays identical — 30 lives ride the hash like any other sim truth', drive() === drive())
+    }
+}
+
 // ------------------------------------------------------------- browser leg ---
 await requireDevServer(`${BASE}/contra`)
 const browser = await launch()
@@ -3087,9 +3169,16 @@ const browser = await launch()
         await page.waitForTimeout(80)
         resumed = await page.evaluate(() => window.__contraTest.probe())
     }
+    // #3037: the bank law pinned from the OBSERVED win pool — carry is
+    // min(LOOP_LIVES_MAX, lives-at-win + 1). (The old form compared the pools
+    // across two stages, which quietly leaned on the courtesy clamp also being
+    // a POOL cap: the harness 99-life sentinel normalized itself at every loop
+    // boundary. The Konami law makes >5 pools real — 30 now carries whole — so
+    // the growth assertion must read against the pool the win actually had.
+    // For every pool ≤5 the two forms are value-identical.)
     r.check('#2894 the win LOOPS — STAGE CLEAR hands stage 1 back at loop n+1: tempo raised, seed kept, score and bank carried',
-        wonLeg !== null && resumed !== null && resumed.loop === preLoop.loop + 1 && Math.abs(resumed.lk - loopK(preLoop.loop + 1)) < 1e-9 && resumed.seed === preLoop.seed && resumed.phase === 'jungle' && resumed.x < 80 && resumed.score >= wonLeg.score && resumed.lives >= preLoop.lives,
-        JSON.stringify({ pre: preLoop.loop, wonScore: wonLeg && wonLeg.score, resumed: resumed && { loop: resumed.loop, lk: resumed.lk, seedKept: resumed.seed === preLoop.seed, phase: resumed.phase, x: resumed.x, score: resumed.score, lives: resumed.lives } }))
+        wonLeg !== null && resumed !== null && resumed.loop === preLoop.loop + 1 && Math.abs(resumed.lk - loopK(preLoop.loop + 1)) < 1e-9 && resumed.seed === preLoop.seed && resumed.phase === 'jungle' && resumed.x < 80 && resumed.score >= wonLeg.score && resumed.lives === Math.min(LOOP_LIVES_MAX, wonLeg.lives + LOOP_LIFE_BONUS),
+        JSON.stringify({ pre: preLoop.loop, preLives: preLoop.lives, wonLives: wonLeg && wonLeg.lives, wonScore: wonLeg && wonLeg.score, resumed: resumed && { loop: resumed.loop, lk: resumed.lk, seedKept: resumed.seed === preLoop.seed, phase: resumed.phase, x: resumed.x, score: resumed.score, lives: resumed.lives } }))
     const goldPost = resumed && resumed.loop === preLoop.loop + 1 ? resumed.loop : -1
     // Baseline honestly: the same live run, loop fields toggled to 1 (marker off),
     // then back — the diff is exactly the LOOP-n ink, whatever pass we landed on.
@@ -3728,6 +3817,63 @@ const browser = await launch()
         JSON.stringify({ kneel: kneelProbe.posture, prone: proneProbe.posture, proneInk, up: upProbe.posture, back: backInk.top }))
     r.check('#3038 duck browser legs: zero page errors', dErrs.length === 0, dErrs.join(' | '))
     await dp.close()
+}
+
+// ------------------------------------------------------- #3037 Konami live ---
+// Real key events typed at the attract screen. The attract screen gains three
+// observable states: mid-code (the game holds), an armed start (30 in the
+// shared pool + the salute up), and the slip path (count resets, the next
+// press starts normally at 3). The pad rides attract with a B button — the
+// phone types the code with the pad it already has. And the plain start is
+// untouched: the any-key law every existing leg leans on still pays 3.
+{
+    const kp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500, decline: true })
+    const kErrs = []
+    kp.on('pageerror', (e) => kErrs.push(e.stack || e.message))
+    const padB = await kp.evaluate(() => !!document.querySelector('[data-vc="b"]'))
+    r.check('#3037 the pad rides the attract screen with a B button (a phone can type the code)', padB)
+
+    // mid-code: the correct PREFIX is swallowed — attract holds while typing
+    for (const k of ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown']) { await kp.keyboard.press(k); await kp.waitForTimeout(70) }
+    const midCode = await kp.evaluate(() => window.__contraTest.probe())
+    r.check('#3037 mid-code presses are swallowed — the attract screen holds while the code is typed',
+        midCode.screen === 'attract' && midCode.konami.prog === 4,
+        `screen=${midCode.screen} prog=${midCode.konami.prog}`)
+    await kp.keyboard.press('KeyB')   // a slip: count resets, attract still holds
+    await kp.waitForTimeout(140)
+    const slipped = await kp.evaluate(() => window.__contraTest.probe())
+    r.check('#3037 a slip resets the count without starting the run',
+        slipped.screen === 'attract' && slipped.konami.prog === 0,
+        `screen=${slipped.screen} prog=${slipped.konami.prog}`)
+    await kp.keyboard.press('KeyB')   // off-sequence press at prog 0: the any-key law takes the seat
+    await kp.waitForTimeout(300)
+    const slipStart = await kp.evaluate(() => window.__contraTest.probe())
+    r.check('#3037 after a slip the next press takes the seat — and pays the normal 3 lives',
+        slipStart.screen === 'play' && slipStart.lives === 3 && slipStart.konami.fx === null,
+        `screen=${slipStart.screen} lives=${slipStart.lives} fx=${JSON.stringify(slipStart.konami.fx)}`)
+
+    // the armed path: the full code, real keys, fresh attract screen
+    await kp.reload({ waitUntil: 'load' })
+    await kp.waitForTimeout(500)
+    const codeKeys = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'Space']
+    for (const k of codeKeys) { await kp.keyboard.press(k); await kp.waitForTimeout(60) }
+    await kp.waitForTimeout(300)
+    const armed = await kp.evaluate(() => window.__contraTest.probe())
+    r.check('#3037 live: the typed code starts the run HOT — 30 in the shared pool and the salute is up',
+        armed.screen === 'play' && armed.lives === 30 && armed.konami.fx !== null && armed.konami.prog === 0,
+        `screen=${armed.screen} lives=${armed.lives} fx=${JSON.stringify(armed.konami.fx)} prog=${armed.konami.prog}`)
+
+    // the plain start is untouched: one Space still takes the seat at 3
+    await kp.reload({ waitUntil: 'load' })
+    await kp.waitForTimeout(500)
+    await kp.keyboard.press('Space')
+    await kp.waitForTimeout(300)
+    const plain = await kp.evaluate(() => window.__contraTest.probe())
+    r.check('#3037 the any-key law is untouched — a plain start still pays 3 and owes no salute',
+        plain.screen === 'play' && plain.lives === 3 && plain.konami.fx === null,
+        `screen=${plain.screen} lives=${plain.lives} fx=${JSON.stringify(plain.konami.fx)}`)
+    r.check('#3037 Konami legs: zero page errors', kErrs.length === 0, kErrs.join(' | '))
+    await kp.close()
 }
 
 r.exit(browser)

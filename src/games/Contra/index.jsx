@@ -16,7 +16,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
 import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall } from './sim.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed } from './sim.js'
 import { parseCall, intentKey, intentLabel } from './voicecalls.js'
 import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
@@ -43,6 +43,7 @@ const MESSAGES_KEYBOARD = [
     'CLEAR THE BASE AND STAGE 1 RETURNS — FASTER',
     'AIM UP · AIM DOWN · FOLLOW · HOLD · SPREAD — SHOUT IT',
     'DUCK UNDER THE FIRE — DOWN KNEELS, DOWN AGAIN LIES FLAT',
+    'UP UP DOWN DOWN LEFT RIGHT LEFT RIGHT B A — 30 UP',
     'ONE HIT KILLS. BOTH SIDES.',
     'PRESS ANY KEY',
 ]
@@ -60,6 +61,7 @@ const MESSAGES_TOUCH = [
     'CLEAR THE BASE AND STAGE 1 RETURNS — FASTER',
     'MIC GRANTED? THE WINGMAN TAKES SHOUTED ORDERS',
     'DOWN KNEELS, DOWN AGAIN LIES FLAT — CRAWL AND FIRE LOW',
+    'UP UP DOWN DOWN LEFT RIGHT LEFT RIGHT B A — 30 UP',
     'ONE HIT KILLS. BOTH SIDES.',
     'TAP TO START',
 ]
@@ -106,6 +108,12 @@ const sfx = {
     duck: (post = 1) => post > 0
         ? audioController.playSweep(340 - 40 * post, 190 - 30 * post, 0.05, 'triangle', 0.035)
         : audioController.playSweep(220, 400, 0.05, 'triangle', 0.03),
+    // #3037 the code landing: a rising five-note salute — short, gold, and
+    // unmistakable. It rides the completing keypress itself, so the audio
+    // context is already unlocked by that first press (autoplay law holds).
+    konami: () => {
+        [392, 523, 659, 784, 1046].forEach((f, i) => setTimeout(() => audioController.playTone(f, i === 4 ? 0.22 : 0.08, 'square', 0.06), i * 70))
+    },
     pdown: () => audioController.playSweep(300, 90, 0.3, 'square', 0.07),
     p2down: () => audioController.playSweep(240, 70, 0.3, 'sawtooth', 0.07),
     // stage clear: a 4-note call answered by a bass line (ART.md bar 4 — the
@@ -239,6 +247,41 @@ export default function ContraGame () {
         // truth). The orders themselves are sim state (gs.orderAim/Form).
         let callFx = null
         const CALL_FX = 110
+        // #3037 THE KONAMI CODE — attract-screen typing, shell-side only:
+        // kProg is fed through the pure sim detector (konamiFeed), the demo
+        // sim never notices, and the prize enters the world at startPlay.
+        // The completion press doubles as the start press — in this arcade the
+        // any-key law IS the start button, so the last `A` takes the seat hot.
+        let kProg = 0
+        let kFx = null
+        const K_FX = 150
+        const K_GLYPH = { up: '↑', down: '↓', left: '←', right: '→', b: 'B', a: 'A' }
+        const konamiToken = (code) => (
+            code === 'ArrowUp' ? 'up'
+                : code === 'ArrowDown' ? 'down'
+                    : code === 'ArrowLeft' ? 'left'
+                        : code === 'ArrowRight' ? 'right'
+                            // NES seats: B is B's letter, A is the jump key. The
+                            // letter keys A/B type the code on a keyboard (KeyA
+                            // is only ever P2's left DURING play — at attract it
+                            // is just the last note of the code), and the pad's
+                            // B button dispatches KeyB while A dispatches Space.
+                            : code === 'KeyB' ? 'b'
+                                : (code === 'Space' || code === 'KeyZ' || code === 'KeyA') ? 'a' : null)
+        // Feed one attract press to the detector:
+        // 'held'  — typing the code: swallow this press, stay at attract
+        // 'armed' — the press COMPLETED the sequence: start hot (30 lives)
+        // 'start' — not typing: the any-key law takes the seat as always
+        const attractPress = (code, repeat) => {
+            const tok = repeat ? null : konamiToken(code)
+            if (tok) {
+                const np = konamiFeed(kProg, tok)
+                if (konamiArmed(np)) { kProg = 0; kFx = { t: 0 }; sfx.konami(); return 'armed' }
+                if (np > 0 || kProg > 0) { kProg = np; return 'held' }
+            }
+            kProg = 0
+            return 'start'
+        }
         const voiceCtl = { on: false, listen: null, badge: null }
         // #3003 the first-run radio teach card: one-time, localStorage-gated,
         // shown at the first RADIO LIVE grant. The card IS the one message at
@@ -333,8 +376,10 @@ export default function ContraGame () {
             return pad
         }
 
-        const startPlay = () => {
-            gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0)
+        const startPlay = (lives = 3) => {
+            // #3037: the Konami prize enters the world here and nowhere else —
+            // consumed at the rebuild, so attract typing can never leak forward.
+            gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0, 1, lives)
             part.length = 0
             fire.length = 0
             wasGround = true
@@ -347,6 +392,7 @@ export default function ContraGame () {
             jumpQ2 = fireQ2 = false
             seat2.length = 0
             callFx = null   // #3000: fresh stage, fresh orders — the echo starts quiet too
+            kProg = 0       // #3037: the typing was consumed by this start
             setMode('play'); screen = 'play'
         }
 
@@ -356,8 +402,8 @@ export default function ContraGame () {
         // declined → plays exactly the same): the question goes up at the human's
         // first press, and beginRun() only ever ships bytes the stored grant
         // covers — a mid-take grant records from that tick, never before it.
-        const humanStart = () => {
-            startPlay()
+        const humanStart = (lives = 3) => {
+            startPlay(lives)
             askConsent()
                 .then((c) => {
                     if (c && c.motion) beginRun()
@@ -433,6 +479,8 @@ export default function ContraGame () {
         const endTo = (what) => {
             screen = what
             setMode(what)
+            kProg = 0 // #3037: typing does not survive leaving the attract screen
+            if (what === 'attract') kFx = null
             if (what === 'over') {
                 overAt = performance.now()
                 if (gs.score > hiscore) { hiscore = gs.score; localStorage.setItem('contra:hiscore', String(hiscore)) }
@@ -650,6 +698,26 @@ export default function ContraGame () {
                 ctx.restore()
             }
             if (screen === 'play' && callFx && !hintFx) paintCallBanner(callFx, CALL_FX)
+            // #3037: the salute for a hot start — gold on a dark plate, riding
+            // a band its own (above the LOOP banner at 80..144 and the radio
+            // echo at 146..160, below the HUD), fading on world ticks.
+            if (screen === 'play' && kFx && !loopFx) {
+                const fade = Math.max(0, Math.min(1, (K_FX - kFx.t) / 30))
+                ctx.save()
+                ctx.globalAlpha = fade
+                ctx.font = 'bold 14px "Courier New", monospace'
+                const ktxt = 'THIRTY UP!'
+                const kw = ctx.measureText(ktxt).width + 16
+                ctx.fillStyle = 'rgba(6,10,4,0.85)'
+                ctx.fillRect(192 - kw / 2, 58, kw, 18)
+                ctx.strokeStyle = '#ffd23c'
+                ctx.lineWidth = 1
+                ctx.strokeRect(192 - kw / 2 + 0.5, 58.5, kw - 1, 17)
+                ctx.textBaseline = 'top'
+                ctx.fillStyle = '#ffd23c'
+                ctx.fillText(ktxt, 192 - kw / 2 + 8, 61)
+                ctx.restore()
+            }
             // #3018 the demo banner rides the same 146..160 band — the LOOP
             // banner (80..144) never stacks on it (latched through that pass).
             if (screen === 'attract' && demoCallFx && !loopFx && !demoLoop) paintCallBanner(demoCallFx, DEMO_CALL_FX)
@@ -672,6 +740,13 @@ export default function ContraGame () {
                 ctx.font = '8px "Courier New", monospace'
                 ctx.fillStyle = '#7d8f6a'
                 ctx.fillText('KONAMI-STYLE RUN & GUN — 1987 HOMAGE', 100, 128)
+                // #3037: the typing reads — every note landed so far glints gold
+                if (kProg > 0) {
+                    ctx.font = 'bold 12px "Courier New", monospace'
+                    ctx.fillStyle = '#ffd23c'
+                    const got = KONAMI.slice(0, kProg).map((k) => K_GLYPH[k]).join(' ')
+                    ctx.fillText(got, 192 - ctx.measureText(got).width / 2, 96)
+                }
             } else if (screen === 'clear') {
                 ctx.fillStyle = '#ffd23c'
                 ctx.font = 'bold 16px "Courier New", monospace'
@@ -708,6 +783,8 @@ export default function ContraGame () {
                             // stage starts on the two beats AFTER the read.
                             if (loopFx) { loopFx.t += 1; if (loopFx.t >= LOOP_FX) loopFx = null }
                             else stepSim(simPad())
+                            // #3037: the armed-run salute fades on world ticks
+                            if (kFx) { kFx.t += 1; if (kFx.t >= K_FX) kFx = null }
                         } else if (screen === 'attract') {
                             // #2902: the cabinet teaches its own loop — the demo
                             // now survives its endings (it used to stick on the
@@ -760,7 +837,16 @@ export default function ContraGame () {
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             if (e.code === 'KeyV') { e.preventDefault(); voiceToggle(); return } // #3000 the crew radio
-            if (screen === 'attract') { humanStart(); return }
+            if (screen === 'attract') {
+                // #3037: the seat law holds — the run starts on this press. If
+                // the press was the code's last note, it starts HOT (30); if it
+                // is mid-code, it is swallowed like the arcade title swallows
+                // arrows; otherwise it starts as it always did.
+                const kr = attractPress(e.code, e.repeat)
+                if (kr === 'held') return
+                humanStart(kr === 'armed' ? KONAMI_LIVES : 3)
+                return
+            }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract'); return }
             if (screen === 'clear') return
             if (pausedRef.current || e.repeat) return
@@ -798,8 +884,15 @@ export default function ContraGame () {
             if (e.code === 'KeyG') keys2.f = false
         }
         const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false; keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false }
-        const onPointer = () => {
-            if (screen === 'attract') { humanStart(); return }
+        const onPointer = (e) => {
+            if (screen === 'attract') {
+                // #3037: a pad tap already spoke through its keydown (the code
+                // is typed with the pad it has — arrows + B + A). Swallow the
+                // pad's pointer so a mid-code tap does not double-start; a tap
+                // anywhere else keeps the any-tap law verbatim.
+                if (e.target && e.target.closest && e.target.closest('[data-vc]')) return
+                humanStart(); return
+            }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract') }
         }
         window.addEventListener('keydown', onDown)
@@ -921,6 +1014,7 @@ export default function ContraGame () {
                     keys2: { ...keys2 },
                     roll: gs.p.rollT, roll2: gs.p2.rollT,   // #3035 the somersault clock is observable
                     posture: gs.p.posture, posture2: gs.p2.posture,   // #3038 the ground profile too
+                    konami: { prog: kProg, fx: kFx ? { t: kFx.t } : null },   // #3037 the code typing is observable
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     touch: TOUCH,   // #2971: the touch-aware copy is observable
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
@@ -1044,7 +1138,7 @@ export default function ContraGame () {
     return (
         <div ref={wrapRef} className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none">
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'CONTRA')} onResume={handleResume} />}
-            <VirtualControls visible={mode === 'play' && !paused} secondAction={{ label: 'FIRE', code: 'KeyX' }} />
+            <VirtualControls visible={(mode === 'play' || mode === 'attract') && !paused} secondAction={mode === 'attract' ? { label: 'B', code: 'KeyB' } : { label: 'FIRE', code: 'KeyX' }} />
         </div>
     )
 }

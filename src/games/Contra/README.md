@@ -514,6 +514,16 @@ errors.
   seed/tick arithmetic (zero `gs.r`), and the honest autopilot still clears
   12/12 loop-1 seeds — the fairness findings are in the engine note below.
 
+- **CLOSED by #3037**: the most famous instruction in arcade history is real here —
+  `↑ ↑ ↓ ↓ ← → ← → B A` typed at the attract screen starts the run with **30** in
+  the shared pool. Referee-clean: a pure sim-side detector (`konamiFeed`, zero
+  `gs.r`), the prize enters only at `makeGame(seed, loop, lives)` (default 3 keeps
+  every shelf pin byte-for-byte; lives already ride `stateHash`, so armed runs are
+  honest replays), and the loop carries a >5 pool un-clamped (≤5 carries exactly
+  as before). Attract teaches it, the typed notes glint gold, a `THIRTY UP!` salute
+  rides the hot start, and the pad rides the attract screen with a `B` button so a
+  phone can type it. See the #3037 note at the foot of this README.
+
 ## #2917 The second air layer — hangar sorties at the gate
 
 Konami's gate kept its sky armed: while the heart beats behind the shutter, a
@@ -718,3 +728,43 @@ gain (0.055 vs 0.08, 50 ms vs 70 ms) — still one dry "nothing to obey" tap,
 but its harmonic rides above the rolloff knee. Pinned by a `contracheck` leg
 that spies oscillator births around `say()` (synchronous slice — race-free):
 refuse schedules exactly [180, ≥250], the ack's 620 Hz sweep is untouched.
+
+## #3037 The Konami code — the legend and the referee (never-dry stage)
+
+Kicked from the #1571 ladder (`KICK CONTRA -1 weak` via feedback #2971; every README
+gap CLOSED at kick time), the gap was scoped live from the cabinet: the one signature
+rule the shelf was still missing was Konami's own — `↑ ↑ ↓ ↓ ← → ← → B A`, typed at
+the attract screen, starts the run with **30 lives** in the shared pool.
+
+- **The shell owns the typing, the sim owns the law.** `konamiFeed(progress, key)`
+  is pure arithmetic in sim.js — the harness pins it in Node — and the shell just
+  forwards attract-screen keydowns into it. `gs` is untouched until
+  `startPlay(lives)`: the attract demo runs byte-identical while a finger types
+  (zero `gs.r`, zero hash perturbation off-sequence).
+- **Where the prize lands.** `makeGame(seed, loop = 1, lives = 3)` — a third arg
+  whose default IS the old constant, so every pre-Konami pin, replay and dataset
+  byte stands; `lives` already rode `stateHash`, so armed runs are honest replays.
+  Absurd pools clamp to 99 (the HUD's numeric form).
+- **The loop carry law.** `arcadeLoop` banks the courtesy only while the pool is
+  at or below `LOOP_LIVES_MAX`; a bigger pool carries whole (30 marches through the
+  arcade loop). Value-identical at ≤5 — but this is a real law change, and one
+  existing browser leg silently encoded the old clamp (it compared pools across two
+  stages, leaning on the harness's 99-sentinel normalizing to 5 at every boundary).
+  It now asserts `min(5, lives-at-win + 1)` from the observed win pool: identical
+  at every value the pre-Konami game could reach, honest at the new ones.
+- **The entry law.** At attract the NEXT correct note is swallowed (an NES title
+  swallowed arrows too); a slip resets the count (a stray `↑` restarts it at 1, the
+  behaviour every kid learned by heart); any other press starts as it always did;
+  and the completing press doubles as the start press — the any-key law IS the
+  start button in this arcade — so the seat is taken hot. Touch: the pad rides the
+  attract screen (arrows + `A`=Space + `B`) and the pad is excluded from
+  tap-to-start so typing can't double-fire it; a background tap still starts.
+- **Seat 2 law untouched.** The code is one hero's typing: `KeyA` at attract is
+  the code's last note — during play it remains P2's left and `dropIn` is
+  play-only. The HUD head row gains the gold numeric form past seven heads (30
+  soldier icons would run off the 384px grid).
+
+**Trap for the next hand:** kProg lives only at attract — `startPlay` and `endTo`
+reset it. Never feed the detector during play: that would hand out lives mid-run,
+and it doesn't help the #1712 bank either (pad pairs know nothing of cheats and
+must stay that way — the typing happens before `beginRun`, by construction).
