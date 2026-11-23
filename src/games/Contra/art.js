@@ -23,6 +23,9 @@ const C = {
     barrel: '#8a5a2b', barrelDark: '#5c3a17', barrelBand: '#d8c07a',
     capsule: '#ff8c1a', capsuleLit: '#ffd23c', capsuleWin: '#fff6e0',
     ink: '#f4f2e6', gold: '#ffd23c',
+    // #3057 score popups: the payout digits — gold on a warm near-black, the
+    // cabinet two-tone read (same gold the HUD scores and the gold FX use).
+    popGold: '#ffd23c', popShadow: '#241804',
     // S3 — the weapon wheel + the new roster
     letterM: '#2b6fd4', letterF: '#e23b2e', letterL: '#8a3ad4', letterS: '#ff8c1a',
     laser: '#ff4ad4', laserCore: '#ffd6f6', flame: '#ff6a2a', flameHot: '#ffe27a',
@@ -47,6 +50,54 @@ const GLYPH = {
 }
 const LETTER_OF = { machine: 'M', fire: 'F', laser: 'L', spread: 'S' }
 const INK_OF = { machine: 'letterM', fire: 'letterF', laser: 'letterL', spread: 'letterS' }
+
+// #3057 SCORE POPUPS — the payout read where it was earned. 5x5 bitmap digits
+// (same stamp idiom as GLYPH above: crisp pixel digits, no text APIs on the
+// world grid). `+n` rises off the spot, blinks out at the tail of its life.
+export const POP_T = 48
+const NUM = {
+    '+': [0b00000, 0b00100, 0b01110, 0b00100, 0b00000],
+    '0': [0b11111, 0b10001, 0b10001, 0b10001, 0b11111],
+    '1': [0b00100, 0b01100, 0b00100, 0b00100, 0b01110],
+    '2': [0b11111, 0b00001, 0b11111, 0b10000, 0b11111],
+    '3': [0b11111, 0b00001, 0b11111, 0b00001, 0b11111],
+    '4': [0b10001, 0b10001, 0b11111, 0b00001, 0b00001],
+    '5': [0b11111, 0b10000, 0b11111, 0b00001, 0b11111],
+    '6': [0b11111, 0b10000, 0b11111, 0b10001, 0b11111],
+    '7': [0b11111, 0b00001, 0b00010, 0b00100, 0b00100],
+    '8': [0b11111, 0b10001, 0b11111, 0b10001, 0b11111],
+    '9': [0b11111, 0b10001, 0b11111, 0b00001, 0b11111],
+}
+// Drawn INSIDE the world transform (the caller's camera translate stands): the
+// digits ride the board where the point fell. One dark shadow pass, one gold
+// pass — the cabinet's two-tone read at 384x224. Returns false when the life
+// is spent (the caller retires it).
+export function drawScorePop (ctx, x, y, v, t) {
+    if (t >= POP_T) return false
+    // blink out: the last eight ticks flicker, the board's own exit idiom
+    if (t >= POP_T - 8 && Math.floor(t / 2) % 2 === 0) return true
+    const s = String(v)
+    const w = (s.length + 1) * 6 - 1
+    const bx = Math.round(x - w / 2)
+    const by = Math.round(y - (t * 12) / POP_T)
+    const passes = [[bx + 1, by + 1, C.popShadow], [bx, by, C.popGold]]
+    for (const [px, py, col] of passes) {
+        ctx.fillStyle = col
+        let cx = px
+        for (const ch of '+' + s) {
+            const rows = NUM[ch]
+            if (rows) {
+                for (let r = 0; r < 5; r++) {
+                    for (let bit = 0; bit < 5; bit++) {
+                        if (rows[r] & (1 << (4 - bit))) ctx.fillRect(cx + bit, py + r, 1, 1)
+                    }
+                }
+            }
+            cx += 6
+        }
+    }
+    return true
+}
 
 // #2902 LOOP HEAT — palette-only escalation cues, pure functions of the pass
 // number (zero rng, zero sim state): the cabinet's board tinted the world as

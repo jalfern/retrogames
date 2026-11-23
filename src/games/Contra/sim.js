@@ -996,16 +996,25 @@ function boom (gs, x, y, hurtTurrets, kind) {
     if (gs.p2.dead === 0 && gs.p2.inv <= 0 && !gs.p2.out && Math.hypot(gs.p2.x - x, gs.p2.y - ((CFG.duckCenter[gs.p2.posture | 0] || 14) - 2) - y) < CFG.blastPlayerR) killAlly(gs)
 }
 
+// #3057 SCORE POPUPS: every point the game pays rides the (unhashed, cosmetic)
+// event stream with its value, so the shell can stamp `+n` where it was earned.
+// Presentation outside the referee (#3035 class): events never enter stateHash
+// (Joust law), pop() draws zero gs.r, and physics never reads a pop.
+function pop (gs, x, y, v) {
+    gs.ev.push({ type: 'pop', x, y, v })
+}
+
 function killSoldier (gs, s) {
     s.dead = true
     gs.score += 100
     gs.ev.push({ type: 'boom', x: s.x, y: s.y - 12, kind: 'kill' })
+    pop(gs, s.x, s.y - 20, 100)
 }
 
 function hitTurret (gs, t) {
     t.hp -= 1
     gs.ev.push({ type: 'spark', x: t.x, y: t.y - 18 })
-    if (t.hp <= 0) { t.dead = true; gs.score += 300; gs.ev.push({ type: 'boom', x: t.x, y: t.y - 18, kind: 'tnt' }) }
+    if (t.hp <= 0) { t.dead = true; gs.score += 300; gs.ev.push({ type: 'boom', x: t.x, y: t.y - 18, kind: 'tnt' }); pop(gs, t.x, t.y - 26, 300) }
 }
 
 // #2814 the cabinet's law: ONE pool serves both seats. A seat is DOWN when it
@@ -1347,7 +1356,8 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                     bo.core -= 1
                     gs.score += 100
                     gs.ev.push({ type: 'coreHit', x: CFG.coreX, y: CFG.coreY })
-                    if (bo.core <= 0) { bo.core = 0; bo.dying = CASCADE.length * CFG.cascadeStep; gs.score += 5000; gs.ev.push({ type: 'roar' }) }
+                    pop(gs, CFG.coreX, CFG.coreY - 14, 100)
+                    if (bo.core <= 0) { bo.core = 0; bo.dying = CASCADE.length * CFG.cascadeStep; gs.score += 5000; gs.ev.push({ type: 'roar' }); pop(gs, CFG.coreX, CFG.coreY - 26, 5000) }
                 } else {
                     gs.ev.push({ type: 'spark', x: b.x, y: b.y })
                 }
@@ -1376,6 +1386,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                         g.hp = 0; g.dead = true
                         gs.score += 300
                         gs.ev.push({ type: 'boom', x: g.x, y: g.y - 6, kind: 'tnt' })
+                        pop(gs, g.x, g.y - 14, 300)
                     }
                     if (pierce) { hs.push('g' + gi); continue }
                     return false
@@ -1391,8 +1402,9 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
             if (dp.hp <= 0) {
                 dp.hp = 0; dp.dead = true; gs.score += 1000
                 gs.ev.push({ type: 'boom', x: dp.x, y: dp.y - 16, kind: 'tnt' })
+                pop(gs, dp.x, dp.y - 24, 1000)
                 const roof = gs.snipers.find((sn) => sn.x === dp.x && !sn.dead)
-                if (roof) { roof.dead = true; gs.score += 150 }
+                if (roof) { roof.dead = true; gs.score += 150; pop(gs, dp.x + 10, dp.y - 44, 150) }
                 gs.vc = [
                     { x: dp.x + 22, y: CAP_ALT[2], vx: -1.2, kind: 'machine' },
                     { x: dp.x + 36, y: CAP_ALT[1], vx: -1.2, kind: 'fire' },
@@ -1416,6 +1428,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                     cr.dead = true
                     gs.score += 500
                     gs.ev.push({ type: 'boom', x: cr.x, y: cr.y, kind: 'kill' })
+                    pop(gs, cr.x, cr.y - 10, 500)
                     gs.pods.push({ x: cr.x, y: cr.y + 12, vx: CFG.podVx, vy: 0, kind: cr.kind, recoil: 6, puff: 0 })
                     if (gs.pods.length > 4) gs.pods.shift()
                     gs.ev.push({ type: 'cargo', k: cr.kind })
@@ -1440,6 +1453,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
                     sh.dead = true
                     gs.score += CFG.gsScore
                     gs.ev.push({ type: 'boom', x: sh.x, y: sh.y, kind: 'kill' })
+                    pop(gs, sh.x, sh.y - 10, CFG.gsScore)
                 }
                 if (pierce) { hs.push('s' + si); continue }
                 return false
@@ -1447,7 +1461,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         }
         for (const [bi, br] of gs.barrels.entries()) {
             if (!br.gone && Math.hypot(b.x - br.x, b.y - (br.y - 10)) < 12) {
-                br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true)
+                br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true); pop(gs, br.x, br.y - 18, 500)
                 if (pierce) { hs.push('b' + bi); continue }
                 return false
             }
@@ -1474,7 +1488,7 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         for (const [ni, sn] of gs.snipers.entries()) {
             if (!sn.dead && sn.awake && Math.abs(b.x - sn.x) < 9 && Math.abs(b.y - (sn.y - 12)) < 13) {
                 if (pierce && hs.includes('n' + ni)) continue
-                sn.dead = true; gs.score += 150; gs.ev.push({ type: 'boom', x: sn.x, y: sn.y - 12, kind: 'kill' })
+                sn.dead = true; gs.score += 150; gs.ev.push({ type: 'boom', x: sn.x, y: sn.y - 12, kind: 'kill' }); pop(gs, sn.x, sn.y - 20, 150)
                 if (pierce) { hs.push('n' + ni); continue }
                 return false
             }
@@ -1616,8 +1630,8 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
     // either soldier's boots light the fuse) ---
     if (gs.phase === 'jungle') {
         for (const br of gs.barrels) {
-            if (!br.gone && Math.abs(p.out ? 9999 : p.x - br.x) < 10 && p.y > br.y - 24) { br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true) }
-            if (!br.gone && !q.out && q.dead === 0 && Math.abs(q.x - br.x) < 10 && q.y > br.y - 24) { br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true) }
+            if (!br.gone && Math.abs(p.out ? 9999 : p.x - br.x) < 10 && p.y > br.y - 24) { br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true); pop(gs, br.x, br.y - 18, 500) }
+            if (!br.gone && !q.out && q.dead === 0 && Math.abs(q.x - br.x) < 10 && q.y > br.y - 24) { br.gone = true; gs.score += 500; boom(gs, br.x, br.y - 10, true); pop(gs, br.x, br.y - 18, 500) }
         }
     }
 
@@ -1638,14 +1652,14 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         if (p.inv >= 0 && !p.out && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
             gs.capsule = null
             gs.nextCapsule = gs.tick + 600 + Math.floor(rnd(gs) * 300)
-            if (p.weapon !== kind) { p.weapon = kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: kind }) }
+            if (p.weapon !== kind) { p.weapon = kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: kind }); pop(gs, c.x, c.y - 10, 1000) }
             else gs.ev.push({ type: 'pickup', k: kind })
         } else if (q.inv >= 0 && !q.out && q.dead === 0 && Math.abs(q.x - c.x) < 12 && Math.abs(q.y - 14 - c.y) < 16) {
             // co-op: the capsule goes to whoever touches it first — capture is
             // per-seat, and the blue seat's wheel is his own
             gs.capsule = null
             gs.nextCapsule = gs.tick + 600 + Math.floor(rnd(gs) * 300)
-            if (q.weapon !== kind) { q.weapon = kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: kind, o: 1 }) }
+            if (q.weapon !== kind) { q.weapon = kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: kind, o: 1 }); pop(gs, c.x, c.y - 10, 1000) }
             else gs.ev.push({ type: 'pickup', k: kind, o: 1 })
         } else if (c.x < gs.cam - 16) {
             gs.capsule = null
@@ -1698,12 +1712,12 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
         }
         if (c.puff > 0) c.puff -= 1
         if (p.inv >= 0 && !p.out && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
-            if (p.weapon !== c.kind) { p.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind }) }
+            if (p.weapon !== c.kind) { p.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind }); pop(gs, c.x, c.y - 10, 1000) }
             else gs.ev.push({ type: 'pickup', k: c.kind })
             return false
         }
         if (q.inv >= 0 && !q.out && q.dead === 0 && Math.abs(q.x - c.x) < 12 && Math.abs(q.y - 14 - c.y) < 16) {
-            if (q.weapon !== c.kind) { q.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind, o: 1 }) }
+            if (q.weapon !== c.kind) { q.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind, o: 1 }); pop(gs, c.x, c.y - 10, 1000) }
             else gs.ev.push({ type: 'pickup', k: c.kind, o: 1 })
             return false
         }
@@ -1715,12 +1729,12 @@ export function step (gs, pad = PAD0, pad2 = PAD0) {
     gs.vc = gs.vc.filter((c) => {
         c.x += c.vx
         if (p.inv >= 0 && !p.out && Math.abs(p.x - c.x) < 12 && Math.abs(p.y - 14 - c.y) < 16) {
-            if (p.weapon !== c.kind) { p.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind }) }
+            if (p.weapon !== c.kind) { p.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind }); pop(gs, c.x, c.y - 10, 1000) }
             else gs.ev.push({ type: 'pickup', k: c.kind })
             return false
         }
         if (q.inv >= 0 && !q.out && q.dead === 0 && Math.abs(q.x - c.x) < 12 && Math.abs(q.y - 14 - c.y) < 16) {
-            if (q.weapon !== c.kind) { q.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind, o: 1 }) }
+            if (q.weapon !== c.kind) { q.weapon = c.kind; gs.score += 1000; gs.ev.push({ type: 'pickup', k: c.kind, o: 1 }); pop(gs, c.x, c.y - 10, 1000) }
             else gs.ev.push({ type: 'pickup', k: c.kind, o: 1 })
             return false
         }
