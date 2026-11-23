@@ -38,6 +38,7 @@ const MESSAGES_KEYBOARD = [
     'THE CORE SHINES WHEN IT IS OPEN — HIT IT THEN',
     'VINES SWING OVER THE FALLS — HOLD JUMP TO GRAB ONE',
     'THE CLIFF RAPPELS GUNNERS INTO THE FALLS — SHOOT THE HANGER',
+    'FROGMEN DROP FROM THE CANOPY — SHOOT THEM ON THE WAY DOWN',
     'BLUE TAKES THE SECOND SEAT — TWO GUNS, ONE JUNGLE',
     '2P DROP-IN: WASD MOVE · F JUMP · G FIRE',
     'STAND UP FROM THE BLUE SEAT — THE WINGMAN STEPS BACK IN',
@@ -60,6 +61,7 @@ const MESSAGES_TOUCH = [
     'THE CORE SHINES WHEN IT IS OPEN — HIT IT THEN',
     'VINES SWING OVER THE FALLS — HOLD JUMP TO GRAB ONE',
     'THE CLIFF RAPPELS GUNNERS INTO THE FALLS — SHOOT THE HANGER',
+    'CANOPY FROGMEN DROP ON THE TRAIL — SHOOT THEM MID-FALL',
     'THE WINGMAN HOLDS THE BLUE SEAT — TWO GUNS, ONE JUNGLE',
     'SEAT 2 IS KEYBOARD-ONLY — THE PHONE KEEPS THE CPU ALLY',
     'THE WINGMAN STEPS BACK IN ON THE KEYBOARD — NOT ON THIS SCREEN',
@@ -186,6 +188,13 @@ const sfx = {
     // #3064 the rope's descending whistle (the torrent's drown voice already
     // existed for the seats — a swallowed rappeller gets the same read).
     rapdrop: () => audioController.playSweep(900, 320, 0.26, 'triangle', 0.045),
+    // #3067 frogmen: leaves chop on arrival, two warning pips on the coil,
+    // the falling whoosh, and a deck thud on the bound (his dust rides the
+    // shelf's own dust particles from the sim).
+    jlin: () => { audioController.playNoise(0.08, 0.04); audioController.playSweep(520, 300, 0.1, 'triangle', 0.03) },
+    coil: () => { audioController.playTone(880, 0.05, 'square', 0.035); setTimeout(() => audioController.playTone(880, 0.05, 'square', 0.035), 90) },
+    drop: () => audioController.playSweep(700, 180, 0.2, 'sawtooth', 0.04),
+    bound: () => { audioController.playSweep(160, 60, 0.12, 'triangle', 0.06); audioController.playNoise(0.08, 0.04) },
     drown: () => { audioController.playNoise(0.22, 0.09); audioController.playSweep(300, 70, 0.3, 'sine', 0.07) },
     cannon: (v = 1) => { audioController.playSweep(220 * v, 90 * v, 0.12, 'square', 0.07); audioController.playNoise(0.06, 0.05) },
     // S3: the wheel's voices + the new roster
@@ -1420,6 +1429,10 @@ export default function ContraGame () {
                         men: gs.soldiers.filter((s) => !s.dead && s.rap).map((s) => ({ x: +s.x.toFixed(1), y: +s.y.toFixed(1), st: s.rap, shots: s.shots })),
                         next: gs.rapT, n: gs.rapN,
                     },
+                    frog: { // #3067 the canopy drop is observable
+                        men: gs.soldiers.filter((s) => !s.dead && s.leap).map((s) => ({ x: +s.x.toFixed(1), y: +s.y.toFixed(1), ph: s.drop || 0, rec: s.jlLand || 0 })),
+                        next: gs.jlT, n: gs.jlN,
+                    },
                     vine: { p: gs.p.vine, q: gs.p2.vine, tips: gs.vines.map((v) => { const tp = vineTip(gs, v.i); return { x: +tp.x.toFixed(1), y: +tp.y.toFixed(1) } }) },
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
@@ -1496,6 +1509,9 @@ export default function ContraGame () {
                     if (opts.rapStation !== undefined) gs.rapN = opts.rapStation   // aim the wheel at one station (harness only)
                     if (opts.auto !== undefined) harnessAuto = !!opts.auto   // #3064 hand the seat to the honest brain (harness only)
                     if (opts.rapOff) { gs.rapT = 1e9; for (let ri = gs.soldiers.length - 1; ri >= 0; ri--) if (gs.soldiers[ri].rap) gs.soldiers.splice(ri, 1) }
+                    if (opts.frogNow) gs.jlT = Math.min(gs.jlT, gs.tick + 1)   // #3067 arm the bough right now (harness only)
+                    if (opts.frogStation !== undefined) gs.jlN = opts.frogStation   // #3067 aim the lead wheel (harness only)
+                    if (opts.frogOff) { gs.jlT = 1e9; for (let fi = gs.soldiers.length - 1; fi >= 0; fi--) if (gs.soldiers[fi].leap) gs.soldiers.splice(fi, 1) }
                     if (opts.hangarOpen !== undefined && gs.boss) { gs.boss.hangar.open = opts.hangarOpen; gs.boss.hangar.launchAt = 0; gs.sortieT = 1e9 }
                     if (opts.podHere) gs.pods.push({ x: gs.p.x + (opts.podDX ?? 40), y: CFG.ground - 2, vx: CFG.podVx, vy: 0, kind: opts.podKind || 'laser' })
                     // #2885: hide the canopy (pixel-baseline leg) or stand the hero
@@ -1539,6 +1555,7 @@ export default function ContraGame () {
                     { label: '+1 LIFE', run: () => { gs.lives += 1; return 'extra life' } },
                     { label: 'ARM EXTEND', run: () => { gs.score = gs.nextExt - 100; return `next kill at ${gs.nextExt} buys the life` } },   // #3041
                     { label: 'GRANT BARRIER', run: () => { gs.p.barr = CFG.barrTicks; return 'shield up for 6 s — rounds die at the ring' } },   // #3060
+                    { label: 'FIELD FROGMAN', run: () => { gs.jlT = gs.tick; return 'canopy station armed — he drops next tick (jungle, one at a time)' } },   // #3067
                     { label: 'SPREAD NOW', run: () => { gs.p.weapon = 'spread'; return 'spread gun racked' } },
                     { label: 'CYCLE WHEEL', run: () => { const w = ['rifle', 'spread', 'machine', 'fire', 'laser']; gs.p.weapon = w[(w.indexOf(gs.p.weapon) + 1) % w.length]; return 'weapon: ' + gs.p.weapon } },
                     { label: 'CAPSULE HERE', run: () => { gs.capsule = { x: gs.p.x + 24, y: gs.p.y - 14, vx: 0 }; return 'capsule inbound' } },

@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, bedFor, liftStep, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN, hallAdd, hallRead, HALL_CAP, whoOk, namePhase, nameCycle, nameStep, nameCommit, hallStamp, askSign, WHO_DEFAULT, NAME_LEN, NAME_SECS, NAME_HOLD, BOARD_HOLD, HALL_RANKS } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, bedFor, liftStep, arcadeLoop, applyCall, SOMERSAULT_TICKS, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, EXT_FIRST, EXT_STEP, extMark, contPhase, CONT_READ, CONT_SECS, CONT_LIFE, contBeat, CONT_COIN, hallAdd, hallRead, HALL_CAP, whoOk, namePhase, nameCycle, nameStep, nameCommit, hallStamp, askSign, WHO_DEFAULT, NAME_LEN, NAME_SECS, NAME_HOLD, BOARD_HOLD, HALL_RANKS, JL_STATIONS } from '../src/games/Contra/sim.js'
 import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -1960,8 +1960,8 @@ if (MUTANT) {
             // vest throws only, and a bandolier that sprays flat rounds while it
             // advances makes the approach band a wall no hop covers.
             name: 'lob-hall',
-            anchor: 'if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY &&\n            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate))) {',
-            plant: 'if (tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY /* MUTANT(lob-hall): the vest keeps its rifle */ &&\n            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate))) {',
+            anchor: 'if (!s.nade && tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY &&\n            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate)) &&\n            (!s.leap || s.drop === 3 || Math.abs(dx) >= CFG.jlGate)) {',
+            plant: 'if (tgt && s.t <= 0 && Math.abs(dx) < range && Math.abs(dy) < range * 0.9 && inCamX && inCamY /* MUTANT(lob-hall): the vest keeps its rifle */ &&\n            (!s.rap || (s.rap === 2 && Math.abs(dx) >= CFG.rapGate)) &&\n            (!s.leap || s.drop === 3 || Math.abs(dx) >= CFG.jlGate)) {',
             harm: async (mod) => {
                 const gs = mod.makeGame(7)
                 gs.p.inv = 999999; gs.p2.out = true
@@ -2551,6 +2551,59 @@ if (MUTANT) {
                 mod.step(gs, {})
                 return (s.dead || gs.score - sc !== mod.CFG.rapDrop)
                     ? 'HARM NAMED: cutting a rappeller paid the rifle tier and left a corpse on the rope - no tumble, no turret purse, the gorge forgot who it lost'
+                    : null
+            },
+        },
+        {
+            // #3067: the schedule is the whole gimmick. Blind it and the canopy
+            // goes back to being scenery — the trail walks like the old jungle
+            // and nobody ever looks up at a harness-man.
+            name: 'frog-blind',
+            anchor: 'if (gs.phase === \'jungle\' && gs.tick >= gs.jlT && !gs.soldiers.some((sd) => !sd.dead && sd.leap)) {',
+            plant: 'if (false && gs.phase === \'jungle\' && gs.tick >= gs.jlT && !gs.soldiers.some((sd) => !sd.dead && sd.leap)) { /* MUTANT(frog-blind): the canopy stopped releasing its men */',
+            harm: (mod) => {
+                const gs = mod.makeGame(7)
+                gs.p.inv = 1e9
+                while (!gs.end && gs.tick < 20000) mod.step(gs, mod.autopilot(gs))
+                return gs.jlN === 0
+                    ? 'HARM NAMED: the whole jungle run passed under every bough without one frogman dropping - the leaping infantry were only paint'
+                    : null
+            },
+        },
+        {
+            // #3067: geometry says the advancing seat meets the drop column at
+            // −1 tick, so the deck stagger is what makes the drop fair. Strip
+            // it and the landing itself is a guaranteed life tax.
+            name: 'land-tax',
+            anchor: 'if (!s.hold && !s.jlLand && p.inv <= 0 && !p.out && Math.abs(p.x - s.x) < 9 && Math.abs(p.y - s.y) < 20) killPlayer(gs)',
+            plant: 'if (!s.hold && p.inv <= 0 && !p.out && Math.abs(p.x - s.x) < 9 && Math.abs(p.y - s.y) < 20) killPlayer(gs) /* MUTANT(land-tax): the deck stagger gone — touchdown is a guaranteed life tax */',
+            harm: (mod) => {
+                // The seat standing on the landing mark, mercy bled off as he
+                // arrives: base law keeps the settled man harmless through the
+                // drawn recover (no life lost within jlLand ticks of his feet
+                // touching — seed 7's next leak is the grenade at land+11);
+                // strip the stagger and the body kills the tick mercy ends,
+                // still inside the recover the eye was shown.
+                const gs = mod.makeGame(7)
+                gs.p.inv = 1e9
+                gs.p2.out = true
+                gs.jlT = gs.tick
+                const lives0 = gs.lives
+                let landT = null
+                let deathT = null
+                while (!gs.end && gs.tick < 1200) {
+                    const f = gs.soldiers.find((s) => s.leap && !s.dead && s.drop === 3)
+                    if (f && landT === null) {
+                        landT = gs.tick
+                        gs.p.inv = 6
+                        gs.p.x = f.x
+                    }
+                    if (gs.lives < lives0) { deathT = gs.tick; break }
+                    mod.step(gs, {})
+                    gs.ev.length = 0
+                }
+                return landT !== null && deathT !== null && deathT - landT <= 9
+                    ? `HARM NAMED: the settling man took a life ${deathT - landT} ticks after his touchdown, inside the recover window — the stagger is the read; without it the landing is not a threat you answer, it is a tax you pay`
                     : null
             },
         },
@@ -4071,6 +4124,172 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     warpBoss(gb2)
     r.check('#3064 the arena empties the wire — the gate has a hangar, not a cliff',
         beforeBoss && !gb2.soldiers.some((s) => s.rap), `before=${beforeBoss}`)
+}
+
+// -------------------------- #3067 frogmen — the canopy drop (sim) ---------
+// The cabinet's leaping infantry, referee-clean: perch → coil (telegraph) →
+// gravity drop → deck-stagger → plain rifle runner. Own zero-rng lane on the
+// #2847/#3060/#3064 pattern; fairness is geometry (the shelter, the silent
+// perch, the stagger) — no new answers for the honest brain.
+{
+    // Schedule law: same seed, same drops; the wheel turns its leads in order.
+    const fly = (seed, ticks = 1500) => {
+        const gs = makeGame(seed)
+        gs.p.inv = 1e9
+        const seen = []
+        let prev = gs.jlN
+        for (let i = 0; i < ticks && !gs.end; i++) {
+            step(gs, {})
+            if (gs.jlN > prev) {
+                const f = gs.soldiers.filter((s) => s.leap).slice(-1)[0]
+                seen.push({ t: gs.tick, lead: Math.round(f.x - gs.cam) })
+                prev = gs.jlN
+            }
+            gs.ev.length = 0
+        }
+        return seen
+    }
+    const f7a = fly(7); const f7b = fly(7)
+    r.check('#3067 same seed, same drops — the frogman schedule is seed/tick arithmetic',
+        f7a.length > 0 && JSON.stringify(f7a) === JSON.stringify(f7b), JSON.stringify(f7a))
+    const leads = new Set()
+    for (let s = 1; s <= 8; s++) fly(s, 2400).forEach((d) => leads.add(d.lead))
+    r.check('#3067 the wheel turns its boughs — every station lead ships',
+        JL_STATIONS.every((st) => leads.has(st.lead)), [...leads].sort((a, b) => a - b).join(','))
+
+    // Zero gs.r: a full lane and an empty lane keep the seed identical.
+    {
+        const g1 = makeGame(21); g1.p.inv = 1e9
+        const g2 = makeGame(21); g2.p.inv = 1e9; g2.jlT = 1e9
+        let drops = 0
+        for (let i = 0; i < 1500; i++) {
+            step(g1, {}); step(g2, {})
+            drops += g1.ev.filter((e) => e.type === 'drop').length
+            g1.ev.length = 0; g2.ev.length = 0
+        }
+        r.check('#3067 zero rng law: the frogman lane draws nothing from gs.r',
+            g1.r === g2.r && drops > 0, `drops=${drops} — gs.r identical across a frog-full and a frog-free drive`)
+    }
+
+    // Perch geometry: the flat round cannot reach his chest on the bough —
+    // the sniper's shelter, reused, nothing new to learn.
+    r.check('#3067 bough shelter — the flat stream is out of reach of the perched man',
+        Math.abs(CFG.ground - 14 - (CFG.jlY - 12)) >= 13, `chest gap = ${CFG.ground - 14 - (CFG.jlY - 12)} vs the round box 13`)
+
+    // Silent perch: the drop is the whole attack — his rifle never answers
+    // before the deck (no canopy rounds in the tuned seed economy — seed 7
+    // proved what an extra shooter in the tree line costs).
+    {
+        const gs = makeGame(7); gs.p.inv = 1e9
+        gs.jlT = gs.tick
+        let noisy = false
+        for (let i = 0; i < 1500 && !gs.end; i++) {
+            step(gs, {})
+            const f = gs.soldiers.find((s) => s.leap && !s.dead)
+            if (f && f.drop < 3 && f.t < 1e6) noisy = true
+            if (!f && gs.jlN >= 2) break
+            gs.ev.length = 0
+        }
+        r.check('#3067 the canopy shooter carries silence — no round before his feet', !noisy)
+    }
+
+    // Deck-stagger law: geometry parks the landing a tick in FRONT of the
+    // advancing seat (t_hit − t_land = −1 for any lead), so touchdown must
+    // never kill — and after the stagger the plain runner contact law answers.
+    {
+        const gs = makeGame(7)
+        gs.p.inv = CFG.jlLand + 40
+        gs.p2.out = true   // pinned solo — the wingman's own stream would take him near the deck (killable mid-fall is already pinned by the purse leg)
+        gs.jlT = gs.tick
+        let landT = null; let deathT = null
+        for (let i = 0; i < 1500 && deathT === null; i++) {
+            step(gs, landT === null ? { right: true } : {})   // walk, don't shoot — a stream would erase him mid-fall
+            const f = gs.soldiers.find((s) => s.leap && !s.dead && s.drop === 3)
+            if (f && landT === null) landT = gs.tick
+            if (gs.ev.some((e) => e.type === 'pdown')) deathT = gs.tick
+            gs.ev.length = 0
+        }
+        r.check('#3067 the drop cannot kill at touchdown — the stagger holds, then the runner law answers',
+            landT !== null && deathT !== null && deathT - landT >= CFG.jlLand, `land=${landT} death=${deathT} stagger=${CFG.jlLand}`)
+    }
+
+    // Purse identity through the single chokepoint: a round on him mid-fall
+    // pays the rifle tier (+100), exactly like the runner he becomes.
+    {
+        const gs = makeGame(7); gs.p.inv = 1e9
+        gs.jlT = gs.tick
+        let delta = null
+        for (let i = 0; i < 1500 && delta === null && !gs.end; i++) {
+            step(gs, {})
+            const f = gs.soldiers.find((s) => s.leap && !s.dead && s.drop === 2)
+            if (f) {
+                const sc = gs.score
+                gs.pb.push({ x: f.x, y: f.y - 12, vx: 0, vy: 0, k: 'r' })
+                const before = gs.score
+                step(gs, {})
+                delta = gs.score - before
+                void sc
+            }
+            gs.ev.length = 0
+        }
+        r.check('#3067 killing a frogman mid-fall pays the rifle tier (+100, killSoldier law)',
+            delta === 100, `delta=${delta}`)
+    }
+
+    // One man on the canopy (courier law) + lane live on every seed + the
+    // whole bank still clears with the perches armed.
+    {
+        let worst = 0; let idle = 0
+        const fails = []
+        for (let seed = 1; seed <= 12; seed++) {
+            const gs = makeGame(seed)
+            let prev = gs.jlN; let met = false
+            while (!gs.end && gs.tick < 20000) {
+                step(gs, autopilot(gs))
+                const live = gs.soldiers.filter((s) => !s.dead && s.leap).length
+                if (live > 1) worst++
+                if (gs.jlN > prev) { met = true; prev = gs.jlN }
+                gs.ev.length = 0
+            }
+            if (gs.end !== 'win') fails.push(seed)
+            if (!met) idle++
+        }
+        r.check('#3067 the sweep survives the canopy — seeds 1..12 clear with the lane armed',
+            fails.length === 0, fails.join(' ') || '12/12')
+        r.check('#3067 one man on the canopy at a time — courier law across the bank', worst === 0)
+        r.check('#3067 the lane is live — no seed finishes the jungle without meeting a frogman', idle === 0)
+    }
+
+    // Hash surface: schedule and rider ride stateHash — identical replays stay
+    // identical, a replay that silenced the canopy diverges loudly.
+    {
+        const drive = (seed, freeze) => {
+            const g = makeGame(seed); g.p.inv = 1e9
+            if (freeze) g.jlT = 1e9
+            while (!g.end && g.tick < 6000) step(g, autopilot(g))
+            return g
+        }
+        r.check('#3067 two identical runs hash identical — the frog lane is deterministic',
+            stateHash(drive(7, false)) === stateHash(drive(7, false)))
+        r.check('#3067 hash divergence — a replay that silenced the canopy diverges',
+            stateHash(drive(7, false)) !== stateHash(drive(7, true)))
+    }
+
+    // Phase discipline: the loop and the phases own him. The jungle alone
+    // keeps the canopy; the gorge and the arena never grow a bough, and the
+    // arcade loop re-arms the wheel on a fresh stage.
+    {
+        const g = makeGame(7); g.p.inv = 1e9
+        warpFalls(g)
+        const before = g.soldiers.some((s) => s.leap)
+        let jungleAgain = false
+        const back = arcadeLoop(makeGame(7))
+        jungleAgain = back.phase === 'jungle' && back.jlT < back.jlT + CFG.jlEvery + CFG.jlJit
+        r.check('#3067 the falls keep their own sky — the canopy is the jungle alone',
+            !before && g.phase === 'falls', `before=${before} phase=${g.phase}`)
+        r.check('#3067 the arcade loop re-arms the boughs — frogmen march into every pass',
+            jungleAgain && back.jlN === 0 && back.jlT >= CFG.jlFirst && back.jlT <= CFG.jlFirst + CFG.jlJit, `jlT=${back.jlT} jlN=${back.jlN}`)
+    }
 }
 
 // ------------------------------------------------------------- browser leg ---
@@ -5968,6 +6187,49 @@ const browser = await launch()
         cut, `purse=+${purse} watched-tumble=${hz}`)
 
     r.check('#3064 rappeller live legs: zero page errors', rErrs.length === 0, rErrs.join(' | '))
+    await rp.close()
+}
+
+// ------------------------------ #3067 frogmen — live canopy legs ----------
+// The browser leg watches the whole ceremony off the probe: the harness-man
+// on his bough, the coil, the fall, the deck recover — real world, real
+// render loop. Proof stays by identity (ph 0→1→2→3 and rec > 0 off the
+// observed man), never by pixels guessing.
+{
+    const rp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500, decline: true })
+    const fErrs = []
+    rp.on('pageerror', (e) => fErrs.push(e.stack || e.message))
+    await rp.keyboard.press('Space')
+    await rp.waitForTimeout(300)
+    await rp.evaluate(() => window.__contraTest.setup({ inv: 99999, lives: 99, allyOut: true, frogStation: 2, frogNow: true }))
+    const seen = new Set()
+    let recSeen = 0
+    await rp.keyboard.down('ArrowRight')
+    for (let g0 = 0; g0 < 60; g0++) {
+        const pr = await rp.evaluate(() => window.__contraTest.probe())
+        const m = pr.frog && pr.frog.men[0]
+        if (m) { seen.add(m.ph); if (m.rec > 0) recSeen = m.rec }
+        if (seen.has(3)) break
+        await rp.waitForTimeout(50)
+    }
+    await rp.keyboard.up('ArrowRight')
+    r.check('#3067 live: the world watches the whole ceremony — bough, coil, fall, deck',
+        seen.has(0) && seen.has(1) && seen.has(2) && seen.has(3), `phases=${[...seen].sort().join(',')} rec=${recSeen}`)
+
+    // Honest brain, honest lane: hand the seat to the autopilot the sweep
+    // runs and the counter moves on its own — the canopy is live for every
+    // player, not just for the harness.
+    await rp.evaluate(() => window.__contraTest.setup({ auto: true }))
+    let n0 = 0
+    for (let g0 = 0; g0 < 80; g0++) {
+        const pr = await rp.evaluate(() => window.__contraTest.probe())
+        n0 = pr.frog ? pr.frog.n : 0
+        if (n0 >= 1) break
+        await rp.waitForTimeout(50)
+    }
+    r.check('#3067 live: driven by the honest autopilot the wheel turns on its own',
+        n0 >= 1, `jlN=${n0}`)
+    r.check('#3067 frogman live legs: zero page errors', fErrs.length === 0, fErrs.join(' | '))
     await rp.close()
 }
 

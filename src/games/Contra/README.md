@@ -1394,3 +1394,63 @@ the soldier. This is the ceremony the board missed.
   store carries it; the board holds then the title returns; the machine is
   never asked), and the named mutant `sign-forgets` dies — the ink taken,
   the board never kept.
+
+## #3067 The canopy's frogmen — the leaping infantry (never-dry stage)
+
+Kicked from the #1571 ladder (`CONTRA -1 weak`: feedback #2971 names the game,
+every README gap CLOSED at kick time, QA not inside after #3052 shipped — and,
+honestly recorded, the seventh same-source rung on the current kick; the warden
+directive explicitly ordered never-dry and the gap was real, so it shipped). The
+gap, scoped live from the cabinet (Contra, Konami 1987): the arcade's infantry
+do not walk the trail at you — they **leap**, turning through the air down the
+lane. Every soldier in this port was grounded. The canopy gives him back:
+
+- **Perch → coil → drop → deck → runner.** Phases live on the soldier (`leap`,
+  `drop`, `jlLand`): he waits at a bough on the tree line, squats into a coil
+  (jlCoil 10, white glint blinking), releases, free-falls his station column
+  under plain gravity, staggers on the deck (jlLand 12 — dust + a recover-pose
+  crouch), then walks and shoots as a plain rifle runner. Fairness by
+  identity: hp1, the +100 purse through the single `killSoldier` chokepoint,
+  the runner contact law after recovery — no new answers for the brain.
+- **Geometry, not mercy.** The bough sits on the sniper's shelter line
+  (chest gap 56 px ≥ the round box 13): the flat stream cannot reach the
+  perched man, so he is alive and visible until he commits. The silent-perch
+  law (his rifle only answers from the deck) is not decoration — the first
+  build armed the perch and seed 7 died its pool on canopy rounds the tuned
+  economy had never priced; the drop is the whole attack, and it is honest
+  about being one.
+- **The deck-stagger is the load-bearing fairness.** For EVERY spawn lead,
+  `t_hit − t_land = (lead−110)/2 − ((lead−jlDropBand)/2 + jlCoil + ~21) = −1`:
+  geometry parks the landing exactly where the advancing seat's nose arrives,
+  so a lethal touchdown is a guaranteed life tax, not a threat you read.
+  jlLand 12 covers the pass (the seat crosses the column inside the stagger);
+  after recovery the plain runner contact law answers — a hero who loiters
+  in the column gets what any runner gives. `land-tax` (stagger stripped) dies
+  by naming the touchdown kill.
+- **Zero gs.r, hashed, one at a time.** Schedule `jlT`/`jlN`, the three-lead
+  wheel `JL_STATIONS` (170/230/290 camera-relative — deterministic in replay),
+  and the cadence are seed/tick arithmetic pinned against a frog-free twin
+  (gs.r identical); schedule, phase and fall speed ride `stateHash` (a replay
+  that silenced a bough diverges loudly); one man per pass (courier/sortie/
+  rappel law verbatim); the arcade loop re-arms the wheel per stage.
+- **Calibration (the threat bends, the brain doesn't — #2917).** Two earlier
+  shapes were rejected by the sweep: ground-spawned bounders (the autopilot's
+  constant flat stream erases any new ground entity inside ~one bullet
+  flight — the lane read as a rumor, bounds≈0) and a ground arrival that
+  leant on timing luck. The canopy shape clears **12/12** with the lane live,
+  one honest life-cost on seed 7 (its economy was already knife-edge; the
+  bank still clears). The honest autopilot meets at least one frogman on
+  every seed (pinned) — the theatre is guaranteed, the death is not.
+- **The look.** The harness-man carries a chest-harness X and drops out of the
+  same canopy line the snipers own; the coil squash, spread fall and recover
+  crouch ride `drawSoldier`'s transform-before-draw idiom (one shared body,
+  four poses, no new kit). Leaves chop on arrival, two warning pips on the
+  coil, a falling whoosh, a deck thud with the shelf's own dust; both
+  consoles teach `FROGMEN DROP FROM THE CANOPY — SHOOT THEM ON THE WAY DOWN`.
+- **Harness.** `contracheck` grew 13 sim legs (schedule determinism + wheel
+  coverage, zero-`gs.r` twin, bough shelter, silent perch, deck-stagger, purse
+  identity, one-at-a-time + lane-live + 12/12 bank, hash determinism +
+  divergence, phase discipline + loop re-arm) and 3 live legs (the ceremony
+  off the probe, the wheel turning under the honest brain, page errors).
+  Named mutants: `frog-blind` (canopy stops releasing its men — the boughs
+  become paint) and `land-tax` (stagger stripped — the drop becomes a tax).
