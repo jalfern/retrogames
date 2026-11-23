@@ -58,6 +58,42 @@ export const idx = (s, x, y) => y * s.w + x
 export const COUNTER_FLOOR = -99
 export const mineCounter = (s) => Math.max(COUNTER_FLOOR, s.totalMines - s.flags)
 
+// #3026 — the VFD timer ceiling. The original's readout is THREE glyphs, so
+// 999 is the largest time the panel can show: the clock stops there. The cap
+// lives in the engine (not in a paint clamp) for the same reason #3021 moved
+// the counter sign here — the value the score math uses and the value the
+// digits paint must be the same value; a clamp at the paint would leave the
+// engine computing a score against a time nobody ever saw.
+export const TIME_CAP = 999
+
+// #3026 — the hall of fame: the original kept a best time per field size,
+// forever. The logic lives HERE behind an injected get/set pair so Node can
+// audit the round-trip without a browser (the same law as the tab audit: the
+// rules sit in the pure module, the tab supplies the hardware — localStorage
+// is the browser's 3-glyph EEPROM). Pure except for `set`; no engine state
+// touched, stateHash never sees any of it.
+export const bestKey = (diff) => `minesweeper.best.${diff}`
+
+export function readBest(get, diff) {
+    let raw = null
+    try { raw = get(bestKey(diff)) } catch { return null } // private mode: no hall, no crash
+    if (typeof raw !== 'string' || !/^\d+$/.test(raw.trim())) return null // corrupt garbage reads as "no record yet" — and the next win heals it
+    const v = parseInt(raw.trim(), 10)
+    return v >= 1 && v <= TIME_CAP ? v : null // the floor is 1s (the clock's first tick), the ceiling is the panel's
+}
+
+// Judge a finished win against the stored best. `sec < 1` is not a time
+// (a forceWin'd zero-second close must not enter the hall). Ties are NOT
+// records — the hall remembers the first to do it, like the original's
+// top-ten board. A failing store still reports the record honestly for this
+// session (the player saw it) — only persistence is lost, never truth.
+export function recordWin(get, set, diff, sec) {
+    const prev = readBest(get, diff)
+    if (!(sec >= 1) || (prev != null && sec >= prev)) return { best: prev, record: false }
+    try { set(bestKey(diff), String(sec)) } catch { /* quota/private mode — the run still counts as seen */ }
+    return { best: sec, record: true }
+}
+
 export function neighbors(s, x, y, cb) {
     for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
@@ -305,7 +341,9 @@ export function chord(s, x, y) {
 
 export function step(s) {
     s.tick++
-    if (s.screen === 'play' && s.planted && !s.end && s.tick % 30 === 0) s.sec++
+    // #3026: the clock pins at the panel's ceiling (TIME_CAP) — the original's
+    // 3-glyph VFD has no thousands digit, so 999 is the end of its number line.
+    if (s.screen === 'play' && s.planted && !s.end && s.tick % 30 === 0 && s.sec < TIME_CAP) s.sec++
 }
 
 // ---------------------------------------------------------------- solver ----

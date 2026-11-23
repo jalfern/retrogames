@@ -20,7 +20,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx, neighbors, mineCounter } from './minefield.js'
+import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx, neighbors, mineCounter, recordWin, readBest } from './minefield.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -146,6 +146,13 @@ const drawFace = (g, v) => {
 
 const nextSeed = (s) => (Math.imul(s, 1664525) + 1013904223) >>> 0
 
+// #3026 — the tab's hall-of-fame hardware. The rules live in minefield.js
+// (recordWin/readBest, Node-audited); this is only the box the times live in.
+const LS = {
+    get: (k) => localStorage.getItem(k),
+    set: (k, v) => localStorage.setItem(k, v),
+}
+
 const MinesweeperGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
@@ -177,6 +184,12 @@ const MinesweeperGame = () => {
         let overDelay = 0
         let lastPadEl = null, lastPadH = 0
         const say = (m) => { toastMsg = m; toast = 100 }
+        // #3026 hall of fame: this board's verdict (the DEV probe reads it),
+        // and the pending-record flag the over-screen reveal rings the jingle
+        // from — the fanfare owns the win tick; the jingle is the name going
+        // into the book, so it waits for the screen the record lands on.
+        let lastRec = null
+        let pendingRecord = false
         // #1637 batch 16 — the seat's plan queue and pacing (6 ticks ≈ 100 ms
         // per dig so the sweep reads as logic, not a flash). The plan is
         // recomputed reactively, never replayed blind.
@@ -231,6 +244,7 @@ const MinesweeperGame = () => {
             marks = new Uint8Array(d.w * d.h)
             cascade = []; cascTotal = 0; cascWait = 0; cascDone = false
             stagger.clear(); need.clear()
+            lastRec = null; pendingRecord = false // #3026: a new board is a clean sheet at the hall
         }
 
         // ------------------------------------------------------- audio ----
@@ -277,16 +291,46 @@ const MinesweeperGame = () => {
             if (floods) audioController.playSweep(300 + (floods === 1 ? floodDug : Math.min(floodDug, 40)) * 6, 640, 0.12, 'triangle', floods > 1 ? 0.055 : 0.045)
         }
 
+        // #3026: the single play→over reveal. A new record rings the hall
+        // jingle here — three rising notes after the fanfare has had its
+        // moment — because the record is what the player came for.
+        const toOver = () => {
+            if (pendingRecord) {
+                pendingRecord = false
+                audioController.playTone(880, 0.07, 'square', 0.05, 0)
+                audioController.playTone(1174, 0.07, 'square', 0.05, 0.09)
+                audioController.playTone(1568, 0.14, 'square', 0.05, 0.18)
+            }
+            setSc('over')
+        }
+
         const finish = (s) => {
             if (s.end !== 'win' && s.end !== 'dead') return
+            // #3026 honesty gate: read the seat flag BEFORE the racer-rule
+            // release. A field the prover swept (WATCH, #1637) is the
+            // referee's sweep, not the player's, and never enters the hall.
+            // The attract demo needs no gate: it drives demoG, which never
+            // reaches this function.
+            const wasSeated = watchingRef.current
             // racer rule: the route's end releases the seat, silently
             if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
             overAtRef.current = performance.now()
             let wrong = 0
             for (let i = 0; i < s.w * s.h; i++) if (s.flag[i] && !s.mines[i]) wrong++
+            // #3026 — the verdict of this win against the stored best times.
+            let best = null, record = false
+            if (s.end === 'win' && !wasSeated) {
+                const rec = recordWin(LS.get, LS.set, s.diff, s.sec)
+                best = rec.best
+                record = rec.record
+                if (record) pendingRecord = true
+            } else if (s.end === 'win') {
+                best = readBest(LS.get, s.diff) // the seat swept it — show the book, don't write it
+            }
+            lastRec = s.end === 'win' ? { diff: s.diff, sec: s.sec, best, record, seated: wasSeated } : null
             setEndInfo({
                 end: s.end, why: s.why, sec: s.sec, score: s.score,
-                mines: s.totalMines, diff: s.diff, wrong,
+                mines: s.totalMines, diff: s.diff, wrong, best, record,
             })
             if (s.end === 'win') {
                 // #1883(3): the original flagged the leftovers one tile at a
@@ -297,7 +341,7 @@ const MinesweeperGame = () => {
                 cascTotal = cascade.length
                 cascWait = CASCADE_TICKS
                 say('FIELD SWEPT')
-                if (!cascade.length) setSc('over')
+                if (!cascade.length) toOver()
             } else overDelay = 40
         }        // The one dig path: keyboard, tap and the DEV hook all land here so
         // the harness and the player never drive different code.
@@ -590,7 +634,7 @@ const MinesweeperGame = () => {
                     if (!cascade.length) { cascDone = true; overDelay = 24 }
                 }
                 if (sc === 'play' && watchingRef.current) watchTick()
-                if (overDelay > 0 && --overDelay === 0 && gs && gs.end && screenRef.current === 'play') setSc('over')
+                if (overDelay > 0 && --overDelay === 0 && gs && gs.end && screenRef.current === 'play') toOver()
             }
             if (sc === 'attract') paintDemo()
             else paint()
@@ -617,7 +661,7 @@ const MinesweeperGame = () => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             // #1883(3): the flag march is skippable — any key finishes it.
-            if (cascade.length) { cascade = []; cascDone = true; stagger.clear(); setSc('over'); return }
+            if (cascade.length) { cascade = []; cascDone = true; stagger.clear(); toOver(); return }
             // #1637 WATCH: Y seats the referee; any driving key hands back and
             // still lands where the player aimed it (the takeover digs/moves).
             if (isWatchKey(e)) {
@@ -669,7 +713,7 @@ const MinesweeperGame = () => {
             // also dig the cell under them — only the canvas digs
             if (e.target !== canvas) return
             // #1883(3): a tap on the field finishes the flag march too.
-            if (cascade.length) { cascade = []; cascDone = true; stagger.clear(); setSc('over'); return }
+            if (cascade.length) { cascade = []; cascDone = true; stagger.clear(); toOver(); return }
             // #1637 WATCH: a tap on the field is the player digging — the
             // prover hands back (blip), and the tap still lands.
             if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
@@ -768,6 +812,11 @@ const MinesweeperGame = () => {
                     return `replanted at ${gs.cursor.x},${gs.cursor.y} in ${plantMs}ms`
                 },
                 hash: () => (gs ? stateHash(gs) : 0),
+                // #3026: the hall of fame as the shell sees it — the stored
+                // best for the live difficulty, and this board's verdict
+                // (null unless a win landed). Seat wins report seated:true
+                // and record:false — the honesty gate is observable.
+                hallOfFame: () => (gs ? ({ stored: readBest(LS.get, gs.diff), last: lastRec }) : null),
                 // #1883 polish probes: the presentation layers the referee must
                 // never see, plus drives for the gates that need a chord or a
                 // win without a 70-dig tour.
@@ -902,6 +951,16 @@ const MinesweeperGame = () => {
                         {endInfo.end === 'win' ? 'FIELD SWEPT' : 'BOOM'}
                     </h2>
                     <p className="text-lg mb-1">{endInfo.why}</p>
+                    {/* #3026 — the hall of fame line. A new record is celebrated
+                        (the original's reward loop: the record IS the reason to
+                        run the field again); otherwise the book still taunts. */}
+                    {endInfo.end === 'win' && endInfo.record ? (
+                        <p className="text-xl font-black mb-1 animate-pulse" style={{ color: '#ffd23e', textShadow: '0 0 14px rgba(255,160,0,0.9)' }}>
+                            NEW RECORD — {endInfo.diff}!
+                        </p>
+                    ) : endInfo.end === 'win' && endInfo.best != null ? (
+                        <p className="text-sm mb-1 text-cyan-200/80">BEST {endInfo.diff} {endInfo.best}s — beat it</p>
+                    ) : null}
                     <p className="text-sm text-amber-200/80 mb-4">
                         {endInfo.diff} &middot; {endInfo.sec}s &middot; score {endInfo.score}
                         {endInfo.end === 'win' ? ` · every one of the ${endInfo.mines} mines found without a single guess` : endInfo.wrong ? ` · ${endInfo.wrong} flag${endInfo.wrong === 1 ? '' : 's'} marked the wrong cells` : ''}
