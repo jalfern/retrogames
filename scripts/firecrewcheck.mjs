@@ -10,9 +10,11 @@ import {
     makeRun, step, state, setSources, mulberry32, windBias, CLOCK, T, W, H, LOFT_Y1, LADDER_X,
     FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS, DENY_ECHO_TICKS, inLoft,
     windVoice, ladderCreak, windWhistle, crewTail, WIND_TELEGRAPH, TANK_LOW, tankAlarm,
+    CRY_RANGE, CRY_BEATS, helpCry, cryAt, stateHash,
 } from '../src/games/FireCrew/sim.js'
 import { parseRadio, radioLabel } from '../src/games/FireCrew/voiceradio.js'
 import { featurize, FEAT_NAMES, N_FEAT } from '../src/games/FireCrew/model.js'
+import { parseGaps } from './lib/idle.mjs'
 import {
     drawFire, drawCrew, drawLadderTruck, COLLAPSE_WARN_FUEL, COLLAPSE_CRACK, COLLAPSE_RIM, EMBER_GALE,
     SMOKE_FIRE_DIM, FLAME, LADDER_TRUCK, TRUCK_BEACON_A, TRUCK_BEACON_B, BREATHE,
@@ -875,6 +877,161 @@ console.log('#2989 — the tank speaks (never-dry polish)')
         'dry, the empty bar keeps a red stub — invisible-zero becomes the loudest thing on the gauge')
     ok(/g\.crew\[0\]\.tank <= TANK_LOW/.test(readFileSync(path.join(HERE, '../src/games/FireCrew/art.js'), 'utf8')),
         'src pin: art blinks at the arc threshold itself — one number, drawn once')
+}
+
+console.log('#2994 — voices in the smoke (never-dry polish)')
+{
+    // FIRE CREW's law is the information split — lightAt decides what each seat
+    // sees — but the lost were silent: a hidden victim was only ever found where
+    // a light touched it. helpCry/cryAt are the mirror law (#1744/#2989 voice
+    // pattern): sound is omni-directional and short. A still-hidden victim cries
+    // across its own floor up to CRY_RANGE tiles; step() names a new voice once
+    // per victim for human seats; cpu seats and a seated WATCH stay silent.
+    // Pure and rng-free — stateHash, replays and the autopilot are untouched.
+
+    // --- the pure voice ---
+    ok(CRY_RANGE === 5 && CRY_BEATS === 30,
+        'one carried call is five tiles, one syllable pair per half-second — omni-directional, short, unlike the 6-tile light cone')
+    ok(helpCry(CRY_RANGE + 1) === null && helpCry(NaN) === null && helpCry(undefined) === null,
+        'beyond the reach and nonsense are silence — the cry never telegraphs across the house')
+    ok(helpCry(CRY_RANGE) !== null && helpCry(0) !== null,
+        'the edge of the carry still hears, and a voice right there reaches the ear')
+    let cMono = true
+    for (let d = CRY_RANGE; d > 0; d--) {
+        const a = helpCry(d); const b = helpCry(d - 1)
+        if (!(b.f0 >= a.f0 && b.f1 >= a.f1 && b.vol >= a.vol)) cMono = false
+    }
+    ok(cMono, 'the wail climbs as it nears — pitch and weight rise tile by tile, so closeness reads by ear')
+    ok(helpCry(0).vol < 0.09 && helpCry(CRY_RANGE).vol > 0,
+        'even the nearest wail yields to the alarm mix — ducked like the tails ride under the jingles')
+    ok(JSON.stringify(helpCry(3)) === JSON.stringify(helpCry(3)),
+        'rng-free — the same distance is always the same cry')
+
+    // --- the geometry law: hidden voices only, across one floor ---
+    const cg = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    let drive = 0
+    while (cg.crew[0].y > 12 && drive++ < 200) step(cg, { up: true })
+    const darkInReach = []
+    for (let y = 5; y <= 14; y++) {
+        for (let x = 1; x <= W - 2; x++) {
+            const c = cg.cell[y * W + x]
+            if (c && (c.burning || c.heat > 55)) continue
+            if (lightAt(cg, x, y, 0) > 0.5) continue
+            const dd = Math.abs(x - cg.crew[0].x) + Math.abs(y - cg.crew[0].y)
+            if (dd <= CRY_RANGE) darkInReach.push({ x, y, dd })
+        }
+    }
+    ok(darkInReach.length > 0,
+        'the audible band is real geometry — cells inside earshot that the light law denies (the sense has a job)')
+    darkInReach.sort((a, b) => b.dd - a.dd)
+    const pick = darkInReach[0]
+    const lostV = cg.victims.find((v) => v.state === 'hidden' && v.y > 4)
+    lostV.x = pick.x; lostV.y = pick.y
+    ok(cryAt(cg, 1) && cryAt(cg, 1).dist === pick.dd,
+        'the nearest hidden voice measures in carried tiles — heard though no light has reached it', `dd=${pick.dd}`)
+    let hiddenOnly = true
+    for (const st of ['found', 'carried', 'rescued', 'lost']) {
+        lostV.state = st
+        if (cryAt(cg, 1) !== null) hiddenOnly = false
+    }
+    lostV.state = 'hidden'
+    ok(hiddenOnly && cryAt(cg, 1) !== null,
+        'only the still-lost cry — found, carried, saved and gone are silent (the channel locates the missing)')
+    // nearest of several voices wins (cryAt is per-seat; other seats' lamps
+    // never leak into a seat's own earshot)
+    const other = cg.victims.find((v) => v !== lostV && v.state === 'hidden' && v.y > 4)
+    other.x = cg.crew[0].x; other.y = cg.crew[0].y - 3
+    ok(cryAt(cg, 1).dist === 3,
+        'two voices carry, the nearer answers — one seat hears the closest, not the sum')
+    // the decking law: no voice crosses the loft line
+    const deckF = cg.crew[0]
+    const keepY = deckF.y; const keepFy = deckF.fy
+    deckF.y = LOFT_Y1 - 1; deckF.fy = deckF.y
+    other.y = LOFT_Y1 + 1 // same column, two tiles below the deck: near, but a floor down
+    ok(cryAt(cg, 1) === null,
+        'a voice under the decking is not the deck\u2019s to hear — sound does not cheat the loft line (mirror of the water law)')
+    other.y = LOFT_Y1 // now on the same deck, one tile away
+    ok(cryAt(cg, 1) && cryAt(cg, 1).dist === 1,
+        'a voice on the same deck carries as plain distance')
+    deckF.y = keepY; deckF.fy = keepFy; other.y = keepY - 3 // restore the stand
+    // pure read: the sense never forks the world
+    const preHash = stateHash(cg)
+    cryAt(cg, 1); cryAt(cg, 2); cryAt(cg, 3)
+    ok(stateHash(cg) === preHash,
+        'listening is free — cryAt touches nothing the hash can see (a sense, like battery and sweep)')
+
+    // --- step() names a new voice once per lost, for the hand on it ---
+    const ng = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    let nd = 0
+    while (ng.crew[0].y > 12 && nd++ < 200) step(ng, { up: true })
+    const nDark = []
+    for (let y = 5; y <= 14; y++) {
+        for (let x = 1; x <= W - 2; x++) {
+            const c = ng.cell[y * W + x]
+            if (c && (c.burning || c.heat > 55)) continue
+            if (lightAt(ng, x, y, 0) > 0.5) continue
+            if (Math.abs(x - ng.crew[1].x) + Math.abs(y - ng.crew[1].y) <= 4) continue
+            const dd = Math.abs(x - ng.crew[0].x) + Math.abs(y - ng.crew[0].y)
+            if (dd <= CRY_RANGE) nDark.push({ x, y, dd })
+        }
+    }
+    const np = nDark.sort((a, b) => b.dd - a.dd)[0]
+    const nv = ng.victims.find((v) => v.state === 'hidden' && v.y > 4)
+    nv.x = np.x; nv.y = np.y
+    step(ng, { up: true })
+    ok(/SOMEONE'S IN THERE - LISTEN/.test(ng.message) && ng.messageT > 100 && nv.cried === true,
+        'a human seat arriving within one carried call names the voice once, with the instruction in the name')
+    ng.message = ''; ng.messageT = 0
+    step(ng, { up: true }); step(ng, { up: true })
+    ok(ng.message === '' && ng.messageT === 0,
+        'one naming per victim — the repeated locating cry is audio cadence, not message spam')
+    const qg = setSources(makeRun(7), ['cpu', 'cpu', 'cpu'])
+    const qv = qg.victims.find((v) => v.state === 'hidden' && v.y > 4)
+    qg.crew[0].x = 12; qg.crew[0].y = 9; qg.crew[0].fx = 12; qg.crew[0].fy = 9
+    qv.x = 16; qv.y = 9
+    step(qg, {})
+    ok(!/SOMEONE/.test(qg.message) && qv.cried === false,
+        'cpu seats mind their own business — voices among machines name nothing and spend nothing')
+    qg.sources[0] = 'human'
+    step(qg, {})
+    ok(/SOMEONE'S IN THERE - LISTEN/.test(qg.message) && qv.cried === true,
+        'the same arrival under a human hand names it — cpu silence never spent the naming')
+
+    // --- the hash and the autopilot never felt it ---
+    const h1 = makeRun(9); const h2 = makeRun(9)
+    for (const v of h1.victims) v.cried = true
+    ok(stateHash(h1) === stateHash(h2),
+        'the cry\u2019s memory is hash-invisible — replay-verify stays byte-exact (like battery and sweep)')
+    const r1 = makeRun(4); const r2 = makeRun(4)
+    for (let i = 0; i < 300; i++) {
+        step(r1, { up: i % 7 === 0, right: i % 5 === 0 })
+        step(r2, { up: i % 7 === 0, right: i % 5 === 0 })
+    }
+    ok(stateHash(r1) === stateHash(r2),
+        'seeded replay byte-equal across 300 ticks with the cry law live — the autopilot drives untouched')
+
+    // --- the shell routes through the sim law, never its own numbers ---
+    const fcJsx = readFileSync(path.join(HERE, '../src/games/FireCrew/index.jsx'), 'utf8')
+    ok(/cryAt\(g, s\)/.test(fcJsx) && /sfx\.cry\(cv\)/.test(fcJsx),
+        'src pin: the shell listens through cryAt and fires through sfx.cry — no invented geometry upstairs')
+    ok(/helpCry\(nearestCry\.dist\)/.test(fcJsx),
+        'src pin: the wail plays the helpCry spec — pitch and weight come from the sim')
+    ok(/g\.sources\[s - 1\] !== 'human'/.test(fcJsx),
+        'src pin: cpu seats and a seated WATCH listen to nothing (#2989 law: hands off, ears off)')
+    ok(/g\.tick \+ CRY_BEATS/.test(fcJsx),
+        'src pin: the cadence rides the sim constant, not a shell timer')
+    const fcSim = readFileSync(path.join(HERE, '../src/games/FireCrew/sim.js'), 'utf8')
+    ok(/if \(v\.state !== 'hidden'\) continue/.test(fcSim) && /if \(inLoft\(v\.y\) !== floor\) continue/.test(fcSim),
+        'src pin: cryAt filters to hidden voices on one floor — the law lives in sim.js, where the splits live')
+    ok(/if \(g\.sources\[s - 1\] !== 'human'\) continue/.test(fcSim.slice(fcSim.indexOf('export function step(g'))),
+        'src pin: step\u2019s naming loop skips non-human seats inside the sim — the stamp belongs to hands-on seats')
+
+    // --- README doctrine: the decided marker, honestly shaped ---
+    const fcReadme = readFileSync(path.join(HERE, '../src/games/FireCrew/README.md'), 'utf8')
+    ok(/- \*\*DISCLAIMER\*\* —/.test(fcReadme),
+        'the #1712 prod-line bullet carries the exact doctrine marker — **DISCLAIMER** is the shape parseGaps declines (#2488)')
+    ok(parseGaps(fcReadme).length === 0,
+        'FireCrew\u2019s honest gaps score nothing on the shelf — decided or closed; the never-dry kick stops landing here')
 }
 
 console.log(`\n${passes} passed, ${fails} failed`)
