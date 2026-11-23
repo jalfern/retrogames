@@ -1,87 +1,71 @@
-# STATE — forge board snapshot (slot b, 2026-11-23 — shipped)
+# STATE — forge board snapshot (slot a, 2026-11-23 — CONTRA marches)
 
-## This session shipped
-- **#3042 CONTRA — the cabinet's CONTINUE → PR #3044 → main `205b98d`,
-  prod-verified.** GAME OVER reads (90 world ticks), `CONTINUE?` counts the
-  Konami digit **9…0 one a second**, gold under the score line, red-hot blink
-  the last two seconds. Any key/tap pays: stage 1 loop 1, pool 3, **score
-  carried**, rifle, wingman law intact. Purse **3 per game**, fresh at attract,
-  rides arcade loops. Armed returns armed — Konami runs continue at **30**
-  (NES law verbatim; `armedRun` remembers the prize, kProg stays attract-only).
-  Unanswered expiry returns itself to attract, no key asked; zero purse offers
-  no count — press-to-attract answers exactly as before. `contPhase` is pure
-  sim arithmetic (the `konamiFeed` precedent); the shell keeps only world
-  ticks. Carry enters at `makeGame(seed, loop, lives, score = 0)` — default 0
-  is the old three-arg world byte-for-byte; purse is shell state (IronRing
-  #1103 family). Proof: contracheck **320/320**, mutants **200/200** —
-  `score-wipe`, `window-short`, `count-stalls`, `rung-resale` die by name;
-  3 scoped lints + build green. Filed **QA #3045** (coin-clack, count
-  typography, heat-beep rate, phone take of the pad gating).
-- **Mid-build seam vs #3041 (fixed, not papered):** the score-extend landed on
-  main mid-build declaring the mark a RUN property — so the CONTINUE entry
-  derives `nextExt` from the carried bank (`extMark`): a rung already bought
-  never re-sells. Default bank 0 ⇒ `EXT_FIRST`, pre-extend bytes stand.
-
-## LAW CHANGE the next hand must know
-- **Press-at-over-screen is now conditional.** In the window a press BUYS the
-  run; to leave (attract) a leg must drive the zero-purse branch
-  (`setup({ noContinue: true })`) or wait the ~11.5 s expiry. Every future
-  die-and-restart assertion must say which branch it wants — the re-forged
-  #2894-loop and attract legs in contracheck are the worked examples.
-- **The extend mark rides the RUN, every entry.** Loop carry AND continue
-  derive `nextExt` from the carried score bank. Any pool/mark assertion must
-  know all four ways a run starts: cold, arcade-loop carry, Konami arm at
-  attract, paid continue (possibly armed). Extend check stays at the HEAD of
-  `step`; extends are unconditional +1 up to 99 (slot a's #3041 laws, folded).
-- Loop-bank law unchanged: pools >5 carry whole (#3037); kProg never fed in
-  play.
+## This session
+- Board was dry when the warden ticked (weakest stage it saw: CONTRA -1 weak).
+  Normal ladder first, live: steer/next/game-queue empty; feedback only #2971
+  (`waiting-jon` — skipped by rule); QA-borrow off (three live QA MASTER
+  sessions: mini :5174, studio :5176, mini2 :5179); `flagshipStage` ⇒ null
+  (all six flagship READMEs CLOSED/DISCLAIMER). NEVER-DRY rung:
+  `weakestStage` ⇒ CONTRA score 1 (feedback #2971 names it; every README gap
+  CLOSED at kick) — exactly the prompt's kick.
+- Filed POLISH #3048 with the why-weakest line, claimed it
+  (`forge-claim.sh 3048 a`), built in `retrogames-forge-contra-march`:
+  **THE MARCH** — the cabinet's silent stage finally has a band.
+  - `contraMarch` (jungle/falls, E-minor military drive) + `contraGate`
+    (boss siege, E–B♭ tritone grind) — ORIGINAL beds composed for this build
+    (`joust`/`marble` house law, not transcriptions; uniqueness pinned).
+  - `bedTrack(phase)` pure sim law: zero gs.r, no bed field on gs — no seed
+    stream, replay, twin or PLAICRAFT byte moves (referee leg pins it).
+  - Bus step = pattern step ÷ gs.lk (SSX seam): loop heat lifts the music at
+    exactly the pressure k.
+  - Silence by law on attract/over/CONTINUE/clear/pause/unmount; the switch
+    rides the WORLD tick, no timers.
+- PR #3050 (squash-merge via `scripts/forge-merge.sh`). Closes #3048.
+- Harness: contracheck +7 sim legs +8 live bus legs; mutants `bed-stuck` and
+  `music-deaf` die by name (mutant run 204/204). Normal run 342/343 — the one
+  red is `#3035 live somersault`, which fails IDENTICALLY at pristine
+  origin/main on this Mac (325/326, same signature): pre-existing advisory,
+  CI is the calibrated referee (#2176). contractcheck(contra) 17/17.
 
 ## PLAYABLE on main right now
-- `/retrogames/contra` (+ CONTINUE #3042, score extend #3041, Konami 30-lives
-  #3037, duck #3038, somersault #3035, voice #3000, radio teach #3016),
-  `/retrogames/minesweeper` (+ press-feel #3032, hall of fame #3026),
-  `/retrogames/double-dragon`, `/retrogames/floor-boss`,
-  `/retrogames/fire-crew`, `/retrogames/r-type`.
+- `/retrogames/contra` (+ music beds #3048 pending merge, CONTINUE ceremony
+  #3045, score extend #3041, Konami 30-lives #3037, duck #3038, somersault
+  #3035, voice #3000, radio teach #3016), `/retrogames/minesweeper`
+  (+ press-feel #3032, hall of fame #3026), `/retrogames/double-dragon`,
+  `/retrogames/floor-boss`, `/retrogames/fire-crew`, `/retrogames/r-type`.
 
 ## Board at close
-- `game-queue`/`steer`/`next`/`building`/`building-qa`: all EMPTY. `feedback`:
-  #2971 (waiting-jon phone takes) + new **#3045** (QA CONTRA CONTINUE polish).
-  No jonq open, no halt. Unlabeled **#3014** (attract teaches voice orders)
-  still waits for a ladder label — unlabeled = no lane may adopt it.
-- `idle-kick` will STILL answer `CONTRA -1 weak` — the score is #2971 naming
-  Contra, a waiting-jon artifact no merge can clear. Do NOT re-file shipped
-  work (continue #3042, extend #3041, Konami #3037, duck #3038, somersault
-  #3035…). The honest next rung for Contra is CONTENT (stage 2 — the cliff/
-  base), a new-stage question, not a gap.
+- After #3050 merges: steer/next/game-queue/building empty again; feedback
+  #2971 (waiting-jon) + the QA polish pass filed for the beds.
+- Contra's README now carries ONE open honest gap (the canyon deserves its own
+  cue — it shares the march): `weakestStage` will score Contra 1 again, so a
+  dry lane has an honest next note. The attract-silence bullet is
+  DISCLAIMER-marked so it never scores (#2488 law).
+- Unlabeled #3014/#838 still carry only `lane:games` — untouchable until Jon
+  labels one.
 
-## Harness notes (new + carry)
-- **A mid-run tree fork is signal, not flake.** My first post-rebase battery
-  died 316/318; while I waited, the branch tip gained the `extMark` seam fix
-  (+2 pins, +1 mutant) and the rerun was 320/320 + 200/200. The two reds were
-  the real mark-seam legs, not timers. Before blaming a flake family, check
-  `git reflog` and remote tip — a reflog entry you didn't author means another
-  hand is in the worktree; finish YOUR verification against the FINAL tip
-  (which this report's numbers are).
-- forge-merge.sh #3030 read-fail shape, FOURTH session running: merge
-  succeeded, wrapper could not read PR state. Exit criterion stays = the PR's
-  own state (`gh pr view 3044 --json state` = MERGED); cleanup by hand —
-  remote branch already deleted, lane re-detached at origin/main.
-- Two lanes, one game, SECOND cycle this week — worked: each issue stayed its
-  own at claim, the later ship absorbed the earlier merge via rebase +
-  re-verify EVERYTHING (the #3040/#3041 lesson held a third time).
-- Headless paint ~12 fps law current (poll, never single-shot); prod-verify:
-  index.html → `index-*.js` → grep `Contra-*.js` chunk → grep the marker
-  (`curl -L` for SPA 308s). Route HTML never names the lazy chunk.
+## Notes for the next hand
+- The bed gate is TEXT-PINNED in contracheck (`bedSrc.includes(...)`) — if you
+  refactor applyBed/onDown/cleanup, update those pins in the same PR, and the
+  `music-deaf` mutant anchor (the applyBed call line) too.
+- `music-deaf` plants index.jsx by TEXT; harm re-reads the file. If prettier
+  reflows the applyBed call site, re-anchor both.
+- The #3035 somersault live leg is calibration-sensitive on Mac software-Chrome
+  (dark-barrel-ink counts). It is advisory; don't spend a PR on it unless CI
+  itself goes red.
+- The paid-continue music leg now stages `score: 4200` before dying — a
+  0-score carry is legal, so don't relax the leg's bank check back to
+  `score > 0` blindly.
 
 ## Slots / ops
-- Slot b port 5178: dev server stopped via `scripts/devstop.sh` at close ✓
-  (never pattern-kill). Plumbing `~/Dev/retrogames` detached at origin/main ✓.
-  Lane worktree `retrogames-forge-contra-continue` detached at origin/main
-  (clean; node_modules is a symlink to plumbing's — purge takes the symlink
-  before any dir).
-- STATE.md committed to main this session (#3044 merged game code).
+- Slot a port 5173: dev server started this session, stopped via
+  `scripts/devstop.sh` (verified). No other lane's port touched.
+- Plumbing `~/Dev/retrogames` detached at origin/main; lane worktree
+  `~/Dev/retrogames-forge-contra-march` (forge/contra-march, merged).
+- STATE.md rides this PR (a game merged this session — step 9 allows it);
+  parked at `/tmp/forge/STATE.a.parked.md` via `statepark park a`.
 
 ## Open questions
-- None filed this session (jonq unused; #2971's phone-take need stays on its
-  QA thread, #3045 adds a second phone-take ask for the CONTINUE pad gating).
-  Live board: https://jalfern.com/retrogames/forge
+- None filed (nothing taste/priority/hard-to-undo came up; the dry-queue
+  title-ask is still weekly-capped by #2795 until ~27 Nov, and was moot —
+  the never-dry rung had work). Live board: https://jalfern.com/retrogames/forge
