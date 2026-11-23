@@ -327,6 +327,18 @@ Three laws survive it untouched, all pinned in `contracheck`:
   seam: the #3000 `AIM DOWN` shout now takes the wingman to a knee — what the
   words actually mean. Audio: a soft fabric dip per profile change, the mirror
   chirp on standing; one attract line on each console teaches the duck.
+- **#3057 the payout reads — score popups (never-dry stage, #1571 rung):** every
+  point the game pays now stamps its value where it was earned: `+100` off a
+  soldier, `+150` off a nest, `+300` off a turret or gate gun, `+500` off a
+  courier or TNT, `+1000` off a letter, `+5000` off the gate core. The value
+  rides the unhashed event stream (one chokepoint helper, `pop()`), the digits
+  are original 5x5 bitmap stamps (the GLYPH idiom — no text APIs on the world
+  grid), gold on a warm shadow, rising 12 px over 48 world ticks and blinking
+  out at the tail. Presentation outside the referee, the #3035 class: the helper
+  draws zero `gs.r`, digit sites pair 1:1 with score sites (19/19 static pin),
+  a duplicate capture pays nothing and owes no digit, the blue seat pays through
+  the same `killSoldier` path, and twin runs stamp byte-identical trails — every
+  pre-bed pin, twin stream, autopilot sweep and PLAICRAFT take byte-stands.
 - Audio: every new action synthesized via `audioController` — the MG's ripping
   pop, the firebar's breath, the laser's falling zap, the sniper's crack and
   the lob's whistle answer the existing set.
@@ -364,7 +376,7 @@ npm run contracheck -- --mutant        # replants spawn-shield, sealed-core,
                                         #   score-wipe, window-short, count-stalls,
                                        #   rung-resale, bed-deaf, lift-flat,
                                        #   heat-silent, coin-dropped, lead-vanished,
-                                       #   seat-gun-stripped
+                                       #   seat-gun-stripped, popup-loot
 CONTRACT_ONLY=contra npm run contractcheck   # the window.__game contract
 ```
 
@@ -476,7 +488,12 @@ the accept window) · the carry enters at makeGame (default 0 hash-identical, a
 carried score diverges loudly) · live: the count paints and falls on world time,
 a real key pays — score carried, pool 3, loop 1, purse spent — a real tap pays
 the same, the armed run returns at 30 (NES continue law), an empty purse offers
-no count, and an unanswered count lands on the attract screen unasked** · zero
+no count, and an unanswered count lands on the attract screen unasked** · **#3057
+the payout reads: every autopilot run sums its stamped digits exactly to the purse
+(19/19 score sites pay, six tiers across the run), duplicate captures pay nothing
+and owe no digit, the blue seat pays through the shared path, the digit trail twins
+byte-identically (zero gs.r, one chokepoint), and live a captured letter stamps
+gold `+1000` where the pod sat** · zero
 page errors.
 
 ## Honest gaps

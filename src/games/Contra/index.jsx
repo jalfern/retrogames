@@ -18,7 +18,7 @@ import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, bedFor, liftStep, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat } from './sim.js'
 import { parseCall, intentKey, intentLabel } from './voicecalls.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, drawScorePop, POP_T, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -267,6 +267,7 @@ export default function ContraGame () {
         let hiscore = Number(localStorage.getItem('contra:hiscore') || 0)
         const part = [] // cosmetic particles — Math.random is law here, never in sim
         const fire = [] // expanding fireballs — sized by the boom's kind (#2782)
+        const pops = [] // #3057 score popups — {x, y, v, t}, world coords, rides the sim clock
         const keys = { l: false, r: false, u: false, d: false, j: false, f: false }
         let jumpQ = false, fireQ = false
         // S4 seat 2 (desktop keyboard, drop-in): WASD move, F jump, G fire.
@@ -377,6 +378,7 @@ export default function ContraGame () {
                 else if (sfx[e.type]) sfx[e.type]()
                 if (e.type === 'p2join') heli = { x: gs.p2.x, t: 0 } // #2842 the bird comes with the drop
                 if (e.type === 'extra') extFx = { t: 0 }   // #3041 the bank owed a life — gold it
+                if (e.type === 'pop') pops.push({ x: e.x, y: e.y, v: e.v, t: 0 }) // #3057 the payout reads where it was earned
                 if (e.type === 'boom') {
                     shake = Math.min(6, shake + 5)
                     fire.push({ x: e.x, y: e.y, t: 0, kind: e.kind || 'tnt' })
@@ -389,6 +391,9 @@ export default function ContraGame () {
                     for (let i = 0; i < 5; i++) part.push({ x: e.x, y: e.y, vx: (Math.random() - 0.5) * 2, vy: -Math.random() * 1.6, t: 10 + Math.random() * 8, c: 2 })
                 }
             }
+            // #3057 popups ride the WORLD clock (a harness tick is a tick),
+            // never setTimeout — the fixed-timestep floor law.
+            for (let i = pops.length - 1; i >= 0; i--) if (++pops[i].t > POP_T) pops.splice(i, 1)
             // shoreline splash: landing on the sand lip kicks droplets off the
             // water line just below (the sea is at the bottom edge, #2782.1);
             // in the canyon the same landing reads as torrent spray
@@ -448,6 +453,7 @@ export default function ContraGame () {
             gs = makeGame((seedFromQuery() ?? ((Date.now() * 2654435761) >>> 8)) >>> 0, 1, lives, score)
             part.length = 0
             fire.length = 0
+            pops.length = 0
             wasGround = true
             heli = null; warnArmed = false; lastEnterT = 0
             demoHold = 0
@@ -592,6 +598,7 @@ export default function ContraGame () {
             gs = arcadeLoop(gs) // #1712: the carry is sim law now — shell, harness and the dataset adapter rebuild identically
             part.length = 0
             fire.length = 0
+            pops.length = 0
             wasGround = true
             heli = null; warnArmed = false; lastEnterT = 0
             // #1712: the hotter stage opens with a CPU wingman; a friend who held
@@ -615,14 +622,14 @@ export default function ContraGame () {
         const attractReset = () => {
             demoLoop = 0; demoHold = 0
             gs = makeGame((gs.seed + 7) >>> 0)
-            part.length = 0; fire.length = 0
+            part.length = 0; fire.length = 0; pops.length = 0
             wasGround = true; heli = null
             // #3018: a fresh loop-1 demo re-arms the radio teach
             demoShout = false; demoCallFx = null
         }
         const attractLoop = () => {
             gs = arcadeLoop(gs) // #1712: the demo learns the same loop law the takes replay
-            part.length = 0; fire.length = 0
+            part.length = 0; fire.length = 0; pops.length = 0
             wasGround = true; heli = null; demoHold = 0
             demoLoop = 1; demoUntil = 900            // ~15 s of the hot stage, then attract again
             loopFx = { t: 0, n: gs.loop, k: gs.lk }
@@ -741,6 +748,9 @@ export default function ContraGame () {
                 ctx.fillStyle = q.c === 0 ? '#ffd23c' : q.c === 1 ? '#ff6a2a' : q.c === 2 ? '#d9dde2' : q.c === 3 ? '#7cc7ff' : q.c === 5 ? '#c9ae7c' : '#e8f6ff'
                 ctx.fillRect(Math.round(q.x), Math.round(q.y), q.c === 2 ? 1 : 2, q.c === 2 ? 1 : 2)
             }
+            // #3057 score popups ride above the sparks (the payout digits are
+            // the loudest layer of the cosmetic stack, still under the HUD).
+            for (const q of pops) drawScorePop(ctx, q.x, q.y, q.v, q.t)
             ctx.restore()
             if (jungle) drawFringe(ctx, gs.cam)
             else drawWater(ctx, gs.tick)
@@ -1112,6 +1122,7 @@ export default function ContraGame () {
                 gs = makeGame(seed >>> 0)
                 part.length = 0
                 fire.length = 0
+                pops.length = 0
                 loopFx = null; demoLoop = 0   // #2902: no banner owed on a harness reset
                 extFx = null                  // #3041: nor an extend salute
                 keys.l = keys.r = keys.u = keys.d = keys.j = keys.f = false
