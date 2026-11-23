@@ -45,6 +45,19 @@ function rng32(state) {
 
 export const idx = (s, x, y) => y * s.w + x
 
+// #3021 — the mine counter, signed. The original's 3-digit VFD counts DOWN
+// as you flag and KEEPS COUNTING into the negatives when you over-flag
+// (−05 = five flags wrong somewhere): a game-wide warning the player earns
+// and reads. The HUD used to paint Math.max(0, …), so ours stuck at 000 and
+// that warning silently vanished — the shell clamping what the engine
+// honestly counted. The value lives HERE, next to the counts it derives
+// from, so the Node audit pins the sign instead of trusting the paint.
+// Floor −99: the display is three glyphs (sign + two digits); the original's
+// hardware-style readout bottoms out at its leftmost representable value too.
+// Pure read: no mutation, no events — the referee never sees it.
+export const COUNTER_FLOOR = -99
+export const mineCounter = (s) => Math.max(COUNTER_FLOOR, s.totalMines - s.flags)
+
 export function neighbors(s, x, y, cb) {
     for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {

@@ -427,6 +427,37 @@ section('RULES — dig/flag/chord behave like the title card and the original')
     plantAt(g3, g3.w >> 1, g3.h >> 1)
     for (let k = 0; k < 30; k++) M0.step(g3)
     ok(g3.sec === 1, `step: 30 ticks must be 1 second, got ${g3.sec}`)
+    // #3021 — the counter runs negative. The original's VFD keeps counting
+    // past zero when the player over-flags (−05 = five flags wrong, a
+    // game-wide warning); our HUD painted Math.max(0, …) and swallowed it.
+    // The value is pinned HERE, in the module the tab and the audit share,
+    // so the paint can never re-hide the rule.
+    {
+        const g8 = newGame(0, 4242)
+        plantAt(g8, g8.w >> 1, g8.h >> 1)
+        ok(M0.mineCounter(g8) === g8.totalMines,
+            `fresh-board counter reads ${M0.mineCounter(g8)} — must equal the full mine count`)
+        // one flag past the total is the signature: exactly −1
+        const g9 = newGame(0, 4242)
+        plantAt(g9, g9.w >> 1, g9.h >> 1)
+        let placed = 0
+        for (let i = 0; i < g9.w * g9.h && placed < g9.totalMines + 1; i++) {
+            if (!g9.open[i]) { flag(g9, i % g9.w, (i / g9.w) | 0); placed++ }
+        }
+        ok(g9.flags === g9.totalMines + 1 && M0.mineCounter(g9) === -1,
+            `one flag past the total read ${M0.mineCounter(g9)} (flags=${g9.flags}) — the original says -1`)
+        // flagging every covered cell drives it deep: the clamp is the display
+        // floor, and above the floor the counter tracks the flag count exactly
+        for (let i = 0; i < g9.w * g9.h; i++) if (!g9.open[i] && !g9.flag[i]) flag(g9, i % g9.w, (i / g9.w) | 0)
+        const raw = g9.totalMines - g9.flags
+        ok(M0.mineCounter(g9) === Math.max(M0.COUNTER_FLOOR, raw) && raw < 0,
+            `counter ignored the flag count deep (${raw} -> ${M0.mineCounter(g9)}, floor ${M0.COUNTER_FLOOR})`)
+        // pure read: no mutation, no events — the referee never sees it
+        g9.events.length = 0
+        const hh = stateHash(g9)
+        M0.mineCounter(g9)
+        ok(g9.events.length === 0 && stateHash(g9) === hh, 'mineCounter mutated the board or pushed events — it is a read')
+    }
 }
 
 // ------------------------------------------------------ determinism ----
@@ -546,6 +577,15 @@ if (MUT) {
             }
             if (hit) return hit
         }
+        // 4) #3021 counter probe: over-flagging must read NEGATIVE — the old
+        //    HUD clamp (Math.max(0, …)) swallowing the original's over-flag
+        //    warning is exactly what this pin guards. Synthetic state is
+        //    enough: mineCounter is a pure read of two counts.
+        {
+            const over = Mm.mineCounter({ totalMines: 10, flags: 12 })
+            if (over !== -2) return `mineCounter(10 mines, 12 flags) = ${over} — over-flag must read -2 (#3021)`
+            if (Mm.mineCounter({ totalMines: 10, flags: 150 }) !== Mm.COUNTER_FLOOR) return 'mineCounter ignores the display floor (-99)'
+        }
         for (let d = 0; d < 2; d++) {
             for (const seed of seeds(5)) {
                 const g = Mm.newGame(d, seed)
@@ -600,6 +640,12 @@ if (MUT) {
             src: swap(SRC_TEXT,
                 "s.events.push({ t: 'nope', x, y, deficit: s.clue[i] - around })",
                 "s.events.push({ t: 'nope', x, y })", 'mute-deficit'),
+        },
+        {
+            label: 'counter clamps at zero (the #3021 HUD lie put back into the rule — over-flag reads 000, not −05)',
+            src: swap(SRC_TEXT,
+                'export const mineCounter = (s) => Math.max(COUNTER_FLOOR, s.totalMines - s.flags)',
+                'export const mineCounter = (s) => Math.max(0, s.totalMines - s.flags)', 'counter-clamp'),
         },
     ]
     for (const m of muts) {

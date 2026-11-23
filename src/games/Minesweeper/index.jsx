@@ -20,7 +20,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx, neighbors } from './minefield.js'
+import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx, neighbors, mineCounter } from './minefield.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -75,12 +75,29 @@ const drawDigit7 = (g, chPx, cyPx, h, color, ghost) => {
 }
 // Paint an integer right-aligned in n digits; `ghost` draws the dim
 // unlit segments of a VFD panel (the HUD counters), cells pass none.
+// #3021: negatives get a real minus glyph in the leading slot and the
+// magnitude zero-pads into the remaining digits ("-05"), like the original's
+// over-flag warning. Positive output is byte-identical to before.
 const drawNum7 = (g, val, n, cxPx, cyPx, digitH, color, ghost) => {
-    const str = String(Math.max(0, Math.min(999, val))).padStart(n, ' ')
+    const v = Math.max(-99, Math.min(999, val))
+    const neg = v < 0
+    const str = neg
+        ? '-' + String(-v).padStart(n - 1, '0')
+        : String(v).padStart(n, ' ')
     const stepX = digitH * 0.74
     const x0 = cxPx - (n - 1) * stepX / 2
     for (let k = 0; k < n; k++) {
         const chr = str[k]
+        if (chr === '-') {
+            // the minus bar, same segment stock: mid-height horizontal,
+            // sized like the middle segment of a digit in this slot
+            const w = digitH * 0.58
+            const t = Math.max(1.6, digitH * 0.16)
+            g.fillStyle = color
+            g.globalAlpha = 1
+            g.fillRect(x0 + k * stepX - w / 2 + t / 2, cyPx - t / 2, w - t, t)
+            continue
+        }
         const d = drawDigit7(g, x0 + k * stepX, cyPx, digitH, color, ghost)
         if (chr === ' ') {
             if (ghost) for (let s = 0; s < 8; s++) d.on(s)
@@ -532,9 +549,11 @@ const MinesweeperGame = () => {
             const h = hudRef.current
             const s = gs
             if (!s) return
-            const left = s.totalMines - s.flags
+            // #3021: the signed counter — over-flagging reads −05 like the
+            // original, not 000. mineCounter clamps at the display floor.
+            const left = mineCounter(s)
             const mcv = hudRef.current.mctx, tcv = hudRef.current.tctx, fcv = h.face
-            if (mcv) { const g = mcv.getContext('2d'); g.clearRect(0, 0, 64, 20); drawNum7(g, Math.max(0, left), 3, 32, 10, 14, '#ff6b7a', '#3a1015') }
+            if (mcv) { const g = mcv.getContext('2d'); g.clearRect(0, 0, 64, 20); drawNum7(g, left, 3, 32, 10, 14, '#ff6b7a', '#3a1015') }
             if (tcv) { const g = tcv.getContext('2d'); g.clearRect(0, 0, 64, 20); drawNum7(g, s.sec, 3, 32, 10, 14, '#5fd0ff', '#0f2836') }
             if (fcv) drawFace(fcv.getContext('2d'),
                 s.end === 'dead' ? 'dead' : s.end === 'win' ? 'win' : s.opened > 1 ? 'cool' : 'smile')
@@ -719,6 +738,9 @@ const MinesweeperGame = () => {
                 probe: () => gs ? ({
                     screen: screenRef.current, diff: gs.diff, diffIdx: gs.diffIdx, planted: gs.planted,
                     seed, opened: gs.opened, flags: gs.flags, totalMines: gs.totalMines,
+                    // #3021: the HUD's signed value, one probe away (the browser
+                    // leg must not re-derive the rule the engine owns).
+                    counter: mineCounter(gs),
                     end: gs.end, why: gs.why, cursor: { ...gs.cursor }, plantMs,
                     sec: gs.sec, w: gs.w, h: gs.h,
                     cascade: cascade.length, marksQ: marks ? marks.reduce((a, v) => a + (v === 2 ? 1 : 0), 0) : 0,

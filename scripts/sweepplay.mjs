@@ -617,6 +617,51 @@ await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
     }
 }
 
+console.log('\nSIGNED MINE COUNTER — over-flagging reads −05, not 000 (#3021)')
+await page.goto(URL, { waitUntil: 'load' })
+await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
+{
+    await page.evaluate((sd) => window.__sweepTest.start(0, sd), seed)
+    await wait(80)
+    await plantHere()
+    const fresh = await probe()
+    r.check('the fresh counter reads the full mine count', fresh.counter === fresh.totalMines, `counter=${fresh.counter}`)
+    // The leading glyph slot of the mine canvas: at 000 it is a dim ghost
+    // (segments at alpha .14 — well under the ink floor). The minus bar is
+    // painted in the counter's full colour, so it must light the slot.
+    const slotInk = () => page.evaluate(() => {
+        const el = document.querySelector('[data-sweep-count="mines"]')
+        const g = el.getContext('2d')
+        let ink = 0
+        const d = g.getImageData(15, 4, 14, 12).data
+        for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 150) ink++
+        return ink
+    })
+    const inkBefore = await slotInk()
+    // flag two cells past the total through the shell's own flag verb
+    const res = await page.evaluate(() => {
+        const t = window.__sweepTest
+        const p = t.probe()
+        const open = new Set(t.openCells())
+        let placed = 0
+        for (let i = 0; i < p.w * p.h && placed < p.totalMines + 2; i++) {
+            if (open.has(i)) continue
+            t.flagAt(i % p.w, (i / p.w) | 0)
+            placed++
+        }
+        return { placed }
+    })
+    await wait(120) // let syncHud repaint the counter
+    const after = await probe()
+    r.check('flagging past the mine count keeps counting (flags recorded)',
+        after.flags === fresh.totalMines + 2, `flags=${after.flags} expected=${fresh.totalMines + 2} (placed=${res.placed})`)
+    r.check("the counter goes NEGATIVE — the original's over-flag warning (#3021)",
+        after.counter === -2, `counter=${after.counter}`)
+    const inkAfter = await slotInk()
+    r.check('a minus glyph lights the leading slot of the LED counter',
+        inkAfter >= inkBefore + 8, `slot ink ${inkBefore} -> ${inkAfter}`)
+}
+
 if (errors.length) r.check('no page errors during play', false, errors.slice(0, 4).join(' | '))
 else r.check('no page errors during play', true)
 
