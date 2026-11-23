@@ -71,7 +71,7 @@ see a different slice of the smoke. RETRO bar, 480x320, everything synthesized.
 ## Verify
 
 ```bash
-npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring, night art, model.js senses (171)
+npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring, night art, model.js senses (196)
 npm run attractcheck -- --mutate   # attract rules + 6 FIRE CREW mutants die
 npm run lint:firecrew
 npm run dev -- --port 5173 --strictPort   # then /retrogames/fire-crew
@@ -85,10 +85,14 @@ routes through the wind law"); restore afterwards.
 
 ## Honest gaps (first follow-ups)
 
-- **Trainable production line (#1712):** the adapter and wiring are proven on
-  the fixture store; the PRODUCTION card keeps `fire-crew` humanTakes at 0
-  until consented phone takes land at https://jalfern.com/retrogames/fire-crew
-  — the lines are human data, as ever.
+- **DISCLAIMER — trainable production line (#1712):** the adapter and wiring are
+  proven on the fixture store; the PRODUCTION card keeps `fire-crew` humanTakes
+  at 0 until consented phone takes land at https://jalfern.com/retrogames/fire-crew
+  — the lines are human data, as ever. This is a decided state, not lane work
+  (#2488 doctrine): a lane must never fake a human take, so the bullet states
+  the wait without scoring as weakness; #1712 (and #2985 item 5, the first-live-
+  take acceptance) own it until the first take lands, and this bullet is deleted
+  in the PR that closes those lines.
 
 - Wind-noise cue for the ladder seat — **CLOSED by #1744** (`windVoice(gust)`
   and `ladderCreak(gust, ladder)` in `sim.js` — pure, rng-free, so replays and
@@ -144,6 +148,32 @@ routes through the wind law"); restore afterwards.
 
 ## Shipped since the first pass
 
+- **#2989 — the tank speaks (never-dry polish):** the pressure arc (#1411)
+  shrinks the stream 4→3→2→1 as the tank drains and dry kills it — but the
+  human hose heard only its own spray stop, while the CPU hose already refills
+  under 25 and the battery names its refusal. `TANK_LOW = 30` (the arc's first
+  lost muscle) and `tankAlarm(level)` in `sim.js` — pure, rng-free voice spec
+  (windVoice pattern): null above the threshold, a two-tone caution whose pitch
+  and weight climb with the drain, a low dry-valve clunk at zero. `step()`
+  names each downward crossing for the human seat 1 (`TANK LOW - REFILL AT THE
+  HYDRANT` / `TANK EMPTY - NO REACH`) — cpu seats and a seated WATCH stay
+  silent, refills are silent (the hydrant is never nagged), re-crossings name
+  again. `index.jsx` fires the specs on the crossings, adds a held dry-valve
+  click in the spray mirror (`tick % 14`, the arc's edge cases included), and
+  routes nothing through shell numbers. `art.js` blinks the bar amber↔ember
+  under TANK_LOW and keeps a red↔dark stub when dry — an invisible zero
+  becomes the loudest thing on the gauge. `firecrewcheck` +22 (voice algebra,
+  crossing stamps, src pins, HUD blink through the recording-ctx pattern);
+  `firecrewplay` +7 legs on real rAF ticks (force→hear LOW, force→clunk DRY,
+  held-dry, seated silence, re-seat names again). Mutants (one line each):
+  - stamp: `sed -i '' 's/hoseStage > g.tankStage/hoseStage > 99/' src/games/FireCrew/sim.js`
+    — the crossing gates (4) go red.
+  - voice: `sed -i '' 's/drain \* 180/-drain * 180/' src/games/FireCrew/sim.js`
+    — "the caution climbs with the drain" goes red.
+  - blink: `sed -i '' "s/Math.floor(g.tick \/ 10) % 2 ? '#ffd24a' : '#ff8a5a'/'#39d7ff'/" src/games/FireCrew/art.js`
+    — the amber blink gate goes red.
+  - routing: `sed -i '' 's/p\.tank > TANK_LOW/p.tank > 40/' src/games/FireCrew/index.jsx`
+    — the two src pins go red (invented levels are refused).
 - **#1712 — trainable (PLAICRAFT S2 adapter + auto-capture):** the crew now
     records itself. The shell wires `autoRecord` like the shelf's eight before
     it: consent goes up BEFORE the alarm is struck (recorder opens at
