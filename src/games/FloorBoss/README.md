@@ -245,6 +245,11 @@ just never opens. When the player grants:
   its row: the drain applies it at the tick it banks on (#2966) — the bank
   can only promise one pointer per row, so its mutation rides the same row
   (`scripts/plaicraft-dataset.mjs floorBossRows` → `taps.js applyTap`).
+  #2992: that drain tick also RINGS the tap — `step()` wipes `gs.ev` at
+  entry, so between apply and step the drain handles the tap's fresh events
+  (`gs.ev.slice(from)`); without that, a fast-tapped refusal obeys the law
+  but names nothing — no banner, no lesson, no sound. Only painter/audio
+  state, so the banked hash row is untouched (#1373 law).
   `npm run plaicraft:datasetcheck` pins clean-tap verify + deleted-tap refusal.
 - **Seat stamps** (autoRecord resolves sources at finish): seat 0 is
   `human` UNLESS the brain ever took the shift (any WATCH use stamps the
@@ -282,6 +287,7 @@ node scripts/floorbosscheck.mjs --mutate-manners # the first duck never names it
 node scripts/floorbosscheck.mjs --mutate-attract # the shop window goes cold — the demo seed stops ducking on screen (#2700)
 node scripts/floorbosscheck.mjs --mutate-stamp # the tick-stamp dies — a steered take goes unlabeled and model hands launder as human (#2987)
 node scripts/floorbosscheck.mjs --mutate-peek # the press-time stamp returns — a glance that never drove poisons the take (#2987)
+node scripts/floorbosscheck.mjs --mutate-ring # the drain rings silent — a fast-tapped refusal obeys the board but never names itself (#2992)
 npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555); yield holds on live traffic — the dashed cyan courtesy ring sampled atomically with the yields eye (#2692)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
@@ -394,7 +400,15 @@ Recording honest gaps (#1712):
   lights the priority bit. Harness: seed 7 drives the OLD shape (both taps
   before step 300) straight into `floorBossRows` and it refuses exactly at
   checkpoint 300; the NEW shape replays clean; source pins hold the drain
-  law; mutant `--mutate-taps` dies by name.
+  law; mutant `--mutate-taps` dies by name. **#2992 follow-through**: the
+  drain applied its tap but never rang it — `step()` wipes `gs.ev` at entry,
+  so a banked refusal's events died unheard and 24 floorbossplay legs went
+  red (lesson banners, seat stamps and refusal names missing; rigs read their
+  own late taps as lost). The drain now rings the fresh events at the row
+  tick (`gs.ev.slice(from)`, mutant `--mutate-ring`), and the harness waits
+  `pending() === 0` — the bank DRAINED, verdict in — instead of a fixed
+  90 ms sleep that was click-time-apply-era calibration racing the drain
+  on software-rendered frames.
 - ~~The WATCH stamp is conservative: one glance at the brain labels the whole
   take `model`, so a mostly-human shift with a single Y press stays out of
   train. Better an honest loss than laundered autopilot hands (#2058 law).~~
@@ -411,3 +425,12 @@ Recording honest gaps (#1712):
   truth, advanceShift keeps the stamp) + mutants `stamp` and `peek` dying by
   name; floorbossplay real-Y laws (a live tick stamps the take, the stamp
   survives hand-back and the clock-in, the declined sheet winks nothing).
+- **A solo tap re-rings the last tick's backlog.** The solo path
+  (`onCanvasClick`) hands `handleEvents` the whole `gs.ev`, not just its fresh
+  events — and the tail of the last completed tick left its already-rung events
+  there (only `step()` clears, at entry). A click between frames can therefore
+  echo the previous tick's sounds, and duplicate one fx ledger line if that tick
+  produced one. Pre-existing since #1712; the drain path got the precise shape
+  in #2992 (`slice(from)` after snapshotting `gs.ev.length`) — the same
+  pattern completes the law here. No player complaint and no leg asserts on
+  the echo, which is precisely why it stays listed instead of silently fixed.

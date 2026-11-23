@@ -448,7 +448,20 @@ const FloorBossGame = () => {
                 // (apply-before-step, exactly what the adapter's floorBossRows
                 // replays) — one pointer per row is the bank's law, so the
                 // mutation has to ride the same row.
-                if (!tap.applied) applyTap(gs, tap.px, tap.py)
+                if (!tap.applied) {
+                    // #2992: step() wipes gs.ev at entry — a drain-applied tap's
+                    // events (refuse names, lesson banners, sounds) must ring HERE,
+                    // between apply and step, exactly like the solo path does at
+                    // click time. Without this, a fast-tapped refusal lands silently:
+                    // the board obeys the law but the fx ledger never names it.
+                    // Ring only the FRESH events (#2992) — the backlog of the last
+                    // completed tick was rung at that tick's tail already.
+                    // Painter-only state (fx/teach/audio) — the banked hash row is
+                    // untouched (#1373 law).
+                    const from = gs.ev.length
+                    applyTap(gs, tap.px, tap.py)
+                    handleEvents(gs.ev.slice(from), gs.tick)
+                }
                 // onePad's pointer channel is 0..1 canvas space (#420) — bank the
                 // normalized point; replay rebuilds pixels from it (deterministic).
                 tapPad = { x: tap.px / W, y: tap.py / H, down: true }
@@ -1794,6 +1807,11 @@ const FloorBossGame = () => {
         if (import.meta.env.DEV) {
             window.__floorbossTest = {
                 state: simState,
+                // #2992: harnesses must wait for the bank to DRAIN, not guess a
+                // sleep — on software-rendered boxes a frame can outlast any fixed
+                // wait, and a tap still in the queue has neither landed nor been
+                // refused yet. pending() == 0 means every queued tap has ridden its row.
+                pending: () => tapQueue.length,
                 hash: () => stateHash(gs),
                 canvas: () => canvas,
                 sim: () => gs,

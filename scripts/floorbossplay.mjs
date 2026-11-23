@@ -70,6 +70,17 @@ const waitFor = async (fn, ms = 800) => {
     while (Date.now() - t0 < ms) { if (await fn()) return true; await new Promise((res) => setTimeout(res, 40)) }
     return false
 }
+// #2992: a real tap finds the bank busy (a chip-tap seconds earlier) and rides the
+// drain — #2966's apply-at-row tick. On software-rendered boxes a rAF frame can
+// outlast any fixed sleep, and then the tap has neither landed nor been refused
+// while the leg asserts: the rig reads short, the refusal reads as a landing, and
+// the lesson fx read as silence. Wait for the bank to drain (the tap is now
+// VERDICTED), then one paint frame. The old fixed 90 ms was click-time-apply-era
+// calibration and predated the drain law it now races.
+const tapsDrained = async () => {
+    await waitFor(async () => (await page.evaluate(() => window.__floorbossTest.pending())) === 0, 2500)
+    await new Promise((res) => setTimeout(res, 40))
+}
 
 // ---- boot + start ----
 r.check('opens on attract', (await st()).mode === 'attract')
@@ -586,7 +597,7 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
         const p = await clientXY(x, y)
         await page.mouse.click(p.x, p.y)
-        await new Promise((res) => setTimeout(res, 90))
+        await tapsDrained()
     }
     const NEED = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6]]
     let built = 0
@@ -662,7 +673,7 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
         const p = await clientXY(x, y)
         await page.mouse.click(p.x, p.y)
-        await new Promise((res) => setTimeout(res, 90))
+        await tapsDrained()
     }
     const LIVE = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [17, 6]] // the bay-notched rig — (19,6) stays open
     let builtS = 0
@@ -740,7 +751,7 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
         const p = await clientXY(x, y)
         await page.mouse.click(p.x, p.y)
-        await new Promise((res) => setTimeout(res, 90))
+        await tapsDrained()
     }
     const LANE_RIG = [[14, 5], [15, 5], [16, 5], [17, 5], [18, 5], [14, 3], [15, 3], [16, 3], [17, 3]]
     let builtL = 0
@@ -815,7 +826,7 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
         const p = await clientXY(x, y)
         await page.mouse.click(p.x, p.y)
-        await new Promise((res) => setTimeout(res, 90))
+        await tapsDrained()
     }
     const NEED = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6]]
     let builtK = 0
@@ -896,7 +907,7 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
         const p = await clientXY(x, y)
         await page.mouse.click(p.x, p.y)
-        await new Promise((res) => setTimeout(res, 90))
+        await tapsDrained()
     }
     const FLOW_RIG = [[9, 6], [10, 6], [11, 6], [9, 8], [10, 8], [11, 8]]
     let builtF = 0
@@ -971,7 +982,7 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
         const p = await clientXY(x, y)
         await page.mouse.click(p.x, p.y)
-        await new Promise((res) => setTimeout(res, 90))
+        await tapsDrained()
     }
     const D_RIG = [[14, 5], [15, 5], [16, 5], [17, 5], [18, 5], [14, 3], [15, 3], [16, 3], [17, 3]]
     let builtD = 0
