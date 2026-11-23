@@ -425,7 +425,7 @@ Recording honest gaps (#1712):
   truth, advanceShift keeps the stamp) + mutants `stamp` and `peek` dying by
   name; floorbossplay real-Y laws (a live tick stamps the take, the stamp
   survives hand-back and the clock-in, the declined sheet winks nothing).
-- **A solo tap re-rings the last tick's backlog.** The solo path
+- ~~**A solo tap re-rings the last tick's backlog.** The solo path
   (`onCanvasClick`) hands `handleEvents` the whole `gs.ev`, not just its fresh
   events — and the tail of the last completed tick left its already-rung events
   there (only `step()` clears, at entry). A click between frames can therefore
@@ -433,4 +433,14 @@ Recording honest gaps (#1712):
   produced one. Pre-existing since #1712; the drain path got the precise shape
   in #2992 (`slice(from)` after snapshotting `gs.ev.length`) — the same
   pattern completes the law here. No player complaint and no leg asserts on
-  the echo, which is precisely why it stays listed instead of silently fixed.
+  the echo, which is precisely why it stays listed instead of silently fixed.~~
+  **CLOSED by #2997**: `onCanvasClick` snapshots `gs.ev.length` before applying
+  its tap and rings only `slice(from)` — each event rings exactly once whichever
+  path rang it. Proof: a DEV ring ledger (a WeakSet over rung event objects
+  counts re-rings as `echoes`; `backlogClicks` counts solo applies that landed
+  on a non-empty backlog, so the echo condition is OBSERVED, not assumed) with
+  a floorbossplay real-click leg (hot floor, taps between ticks: backlogClicks
+  ≥ 3 while echoes stays 0 — mutant `--mutate-echo`, the solo ring widened back
+  to the whole queue, names the echo red); plus two anchored source pins in
+  floorbosscheck (drain and solo each pinned on its own applyTap adjacency, so
+  neither twin can mask the other going silently soft).

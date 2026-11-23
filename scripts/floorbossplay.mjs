@@ -1126,6 +1126,51 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     }
 }
 
+// ---- ring ledger (#2997): a between-frame real tap must never re-ring the backlog ----
+{
+    await page.goto(URL + '?seed=606') // self-contained tail: fresh seed, own eyes (#2987 law)
+    await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 })
+    if (!await waitMode('attract', 5000)) r.check('echo leg: fresh page reaches attract', false, 'no attract')
+    await page.keyboard.press('Space')
+    if (!await waitMode('play')) r.check('echo leg: Space clocks in', false, 'no play')
+    // Seat WATCH and let the prover run the floor with REAL loop ticks — on a
+    // brain-driven floor every tick stamps events (picks, stows, deliveries,
+    // orders) whose tail-rung backlog sits in gs.ev between frames: the exact
+    // echo condition the pre-#2997 solo path re-rang on every between-frame
+    // click. (A pump-warmed floor is quiet — few ticks stamp anything, and
+    // unrung pump residue would be a different bug; backlog must be RUNG.)
+    // After hand-back the managers stop, so bursts re-seat the brain between
+    // tap rounds to keep the crew mid-task, and each click arms only when the
+    // backlog is OBSERVED live (pending drained AND gs.ev non-empty) — the
+    // click then rides inside that tick's window, as a fast thumb really does.
+    const hotAndHandBack = async (ticks) => {
+        await page.keyboard.press('KeyY') // seat the brain
+        if (!await waitFor(async () => (await page.evaluate(() => window.__floorbossTest.watching())) === true, 8000)) return false
+        const t0 = await page.evaluate(() => window.__floorbossTest.sim().tick)
+        if (!await waitFor(async () => (await page.evaluate(() => window.__floorbossTest.sim().tick)) >= t0 + ticks, 45000)) return false
+        await page.keyboard.press('KeyY') // hand back — clicks now take the solo path
+        return true
+    }
+    if (!await hotAndHandBack(500)) r.check('echo leg: WATCH seats, drives and hands back', false, 'brain phase failed')
+    const cellP = await clientXY(15, 7) // plain floor — a tool-less tap that peeks/selects, never builds
+    let observed = 0
+    for (let round = 0; round < 4 && observed < 3; round++) {
+        if (round > 0 && !await hotAndHandBack(150)) break // re-heat the floor between tap rounds
+        for (let attempt = 0; attempt < 8 && observed < 3; attempt++) {
+            // real-tap law (#2992): wait the drain — never guess a sleep
+            if (!await waitFor(async () => {
+                const s = await page.evaluate(() => { const t = window.__floorbossTest; return { p: t.pending(), bl: t.sim().ev.length } })
+                return s.p === 0 && s.bl > 0 // bank idle AND a rung backlog live — the echo condition, armed NOW
+            }, 1500)) continue
+            await page.mouse.click(cellP.x, cellP.y) // a REAL click; if it lands between ticks, pre-#2997 it echoed the backlog
+            observed = await page.evaluate(() => window.__floorbossTest.ring().backlogClicks)
+        }
+    }
+    const ring = await page.evaluate(() => window.__floorbossTest.ring())
+    r.check('between-frame solo taps actually landed on a non-empty backlog (the echo condition, observed for real)', observed >= 3, `backlogClicks ${observed}`)
+    r.check('the ring ledger stays silent: no event object ever rang twice — a solo tap names only its own decision (#2997)', ring.echoes === 0, `echoes ${ring.echoes}`)
+}
+
 // ---- duck & pass (#2692): the courtesy ring rides real holds ----
 {
     await page.goto(URL)
