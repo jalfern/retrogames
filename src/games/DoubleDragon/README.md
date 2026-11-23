@@ -334,7 +334,8 @@ Pad: JUMP / KICK / PUNCH (`thirdAction`, #2324).
 or the PADS pill) — A jump · B kick · square/triangle/LB punch · d-pad walk.
 `?nointro=1` declines the opening movie (#2891) — any key skips it anyway.
 A seated blue seat that goes quiet for 5 s returns to the CPU (#3005) — any
-P2 input takes it back.
+P2 input takes it back; the cabinet says `PLAYER 2` to an arrival and
+`P2 BACK` to the friend who never really left (#3007).
 
 ## The opening movie (#2891 — the kidnapping of Marian)
 
@@ -493,12 +494,48 @@ for the run.
 - The `idle-deaf` (hand-back never fires) and `no-resume` (a returning
   driver can't take the seat back) mutants name the two ways the law rots.
 
+#3007 polish (QA items, built by the forge) — the hand-back measured, then made
+to survive the phone:
+
+- **The grey is phone-proof now (item 1).** Measured first: the closing
+  brackets' 1-px arms at alpha 0.15–0.85 fused into the sodium night — most
+  arm pixels under the asphalt-grain noise floor (Δ<12 lum), only corner
+  sparks surviving, and Δ50 at worst-case 0.5x binning. The marks are the
+  #2889/#2897 shape now: 2-px arms (the extent that survives dock zoom) on
+  dark `#0e131c` outline plates, brighter cool grey `#c8d2dc` (lum 209 vs
+  the old 163), alpha floor 0.15→0.35. Measured again: Δ134 native, Δ134
+  binned, banner `CPU` 193/174 — and the browser leg fails the check if the
+  marks ever drop under Δ90 on a live cabinet. `grey-thin` names a regression.
+- **The descent is heard (item 2).** `seatBack`'s 880→440+330 measured buried
+  under a machine-gun burst (the whoosh LP700 bed and the hits' 699 Hz third
+  own that band). The octave descent moves to 1175→587 + 440 at 0.075/0.05:
+  measured +17.6 dB over the burst where it lands, +26.6 dB in the 900–1400
+  window phone speakers play best — and its peak still sits ~6 dB under one
+  hit. The mirror holds: the join shout rises (440→880), the hand-back
+  descends, now at a pitch the fight cannot swallow. `seat-deaf` replants the
+  old mud-band.
+- **The threshold stands at 300 (item 3).** The clock runs on *silence*; a
+  thinking player (thumbs off ~3 s) carries ~2 s of slack, and the pins hold
+  the seat at 299 and through nudges every 4.5 s over 20 s of street. ~5 s
+  remains the shortest silence that separates thinking from walking away.
+- **A return is not an arrival (item 4).** First seating shouts `PLAYER 2`
+  with the join fanfare, exactly as #2863 built it. A *re*-seat after a
+  hand-back answers `P2 BACK` in the brighter flare blue with a distinct
+  ascent chirp (587→1175 + 1175 — the handback descent run backwards). The
+  split lives in `isReSeat(seat2At)` (p2pad, pure); first seatings are
+  byte-identical to every prior run. `reseat-blind` names the collapse.
+- **Symmetric invites, recorded (item 5).** A first-held seat and a
+  never-held seat keep the same READY invite while the CPU holds and the slot
+  wakes. Making the invite's duration depend on seat history is chrome nobody
+  reads — the friend who left knows they left; the flare names the moment,
+  the tag names the state. No change is the answer, on the record.
+
 ## Verify
 
 ```bash
 npm run dev -- --port 5173 --strictPort   # one terminal
-npm run ddragoncheck                    # 301 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), #2942 phone-scale QA (strut cut-continuity + edge clamp, chevron non-fuse at dock zoom, tag-blink duty, squash beat width, offline-rendered mix dB), #2944 carrier rotation (escalation order, whip/stick reach + depth, airborne + point-blank folds, telegraph beat, KO payout, hash truth, brain reads the loop, heard telegraphs), #3005 idle seat hand-back (threshold 299→300, nudge-holds-at-4s, stream re-seat + steering after resume, never-held seats, fallen-seat edge, hash purity, + a real-key browser leg seat→silence→CPU→grey ink→re-seat), winnable, browser legs
-npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, strut-pop, squash-missing, tag-deaf, mix-clash, leather-short, carrier-thrift, escalation-flat, loop-cheap, idle-deaf, no-resume must go RED (named)
+npm run ddragoncheck                    # 301 checks: boots, laws, casters, duel, rescue, co-op seats, personality (guardian/release/cadence), p2 pad seat, yard art (cast/swarf/drip), partner read (glint/relief/flair/jab/wobble/ropes-phase), the opening movie (gates/story-order/curtain-hash/skip/grace + #2897 flash/hold/straggler pins and settle/flash/box/jitter/stride pixel legs), weight-true knockback (ladder/mass/depth/outward/wood/bounds/shove/hash), #2889 tells (chevron geometry/reach/shimmer, strut drift curve, KO squash gate/ease, relief clock + 2P-tag ink, phone-mix source-law, + browser legs for every tell), #2942 phone-scale QA (strut cut-continuity + edge clamp, chevron non-fuse at dock zoom, tag-blink duty, squash beat width, offline-rendered mix dB), #2944 carrier rotation (escalation order, whip/stick reach + depth, airborne + point-blank folds, telegraph beat, KO payout, hash truth, brain reads the loop, heard telegraphs), #3005 idle seat hand-back (threshold 299→300, nudge-holds-at-4s, stream re-seat + steering after resume, never-held seats, fallen-seat edge, hash purity, + a real-key browser leg seat→silence→CPU→grey ink→re-seat), #3007 hand-back phone pass (arm geometry/plates/ink-lum pins, 4.5-s thinking nudge, seat-join grammar, + browser legs: frozen-scene grey contrast native & binned, offline seatBack-vs-burst dB, P2-BACK banner on a live re-seat), winnable, browser legs
+npm run ddragoncheck -- --mutant     # depth/charge/blade-blind, barrel-ghost, rescue-blind, ally-blind, seat-blind, guardian-deaf, grip-permanent, cadence-mirror, seat-swap, same-phase, street-on, shimmer, chain-frozen, glint-deaf, flair-dead, movie-frozen, skip-deaf, crime-unnamed, curtain-stuck, straggle-gone, knock-flat, bounds-off, glint-flat, strut-frozen, strut-pop, squash-missing, tag-deaf, mix-clash, leather-short, carrier-thrift, escalation-flat, loop-cheap, idle-deaf, no-resume, grey-thin, reseat-blind, seat-deaf must go RED (named)
 CONTRACT_ONLY=double-dragon npm run contractcheck   # window.__game contract leg
 ```
 

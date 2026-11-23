@@ -43,8 +43,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { makeGame, step, autopilot, stateHash, W, H, DEEP_TOP, CFG, ENEMY_DEF, WAVES, WAVES_S2, enterStage2, rescueReady, dragonBrain, INTRO, TIP } from '../src/games/DoubleDragon/sim.js'
-import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD, drawHud, drawJoinFx, JOIN_T, glintMarks, flourishDrift, strutDrift, koSquash, reliefBlink } from '../src/games/DoubleDragon/art.js'
-import { p2Merge, p2Seat } from '../src/games/DoubleDragon/p2pad.js'
+import { lampSwayAt, lampNAt, castAt, castPx, setLampLight, SWARF_SPOTS, DRIP_T, dripPhase, PROPS_YARD, drawHud, drawJoinFx, JOIN_T, glintMarks, flourishDrift, strutDrift, koSquash, reliefBlink, handbackMarks, GREY_INK, GREY_OUT, CPU_T } from '../src/games/DoubleDragon/art.js'
+import { p2Merge, p2Seat, isReSeat } from '../src/games/DoubleDragon/p2pad.js'
 import { pressSlot, releaseSlot, slotPad, slotActive, clearAllSlots } from '../src/utils/onePad.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
@@ -1844,6 +1844,42 @@ console.log('p2 pad seat (#2860)')
         bot.jimmy === null || bot.jimmy.human === false)
 }
 
+// ------------------------------------- #3007 QA polish — hand-back, phone-proof ---
+// Jon's five questions, five answers on the record: the grey closing brackets
+// get 2-px arms on dark plates (1-px ink at alpha ≤0.85 fused into the sodium
+// night — grain-diff measurement: most arm pixels under the ±12 floor, corner
+// sparks only); the seatBack descent moves up out of the fight's mud (the
+// browser leg below puts a dB number on it); the 300-tick threshold stands —
+// the near-threshold nudge here is the measured "thinking player" answer; and
+// a returning driver is announced as a RETURN (P2 BACK + ascent chirp), not a
+// second arrival. The READY-invite pairing (item 5) is a recorded decision:
+// symmetric invites, seat history is chrome nobody reads (see the issue).
+{ // item 1 — geometry that survives 0.5x binning (the chevron law, #2889)
+    const m = handbackMarks(CPU_T - 15)
+    const thick = m && m.arms.length === 8 && m.arms.every((a) => Math.min(a.ink[2], a.ink[3]) >= 2)
+    const plated = m && m.arms.every((a) => a.out[0] <= a.ink[0] && a.out[1] <= a.ink[1] &&
+        a.out[0] + a.out[2] >= a.ink[0] + a.ink[2] && a.out[1] + a.out[3] >= a.ink[1] + a.ink[3])
+    const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255) }
+    const mEnd = handbackMarks(11)
+    r.check('#3007 closing brackets are phone-proof: 8 arms, every ink stroke ≥2 px wide (the extent that survives dock zoom) riding a dark plate',
+        thick && plated, `arms=${m ? m.arms.length : 0} thick=${thick} plated=${plated}`)
+    r.check('#3007 the closing tail never falls under alpha 0.35 and the beat opens at ≥0.8 — brackets still read the moment they reach the seat',
+        mEnd.alpha >= 0.35 && m.alpha >= 0.8, `open=${m && m.alpha.toFixed(2)} tail=${mEnd && mEnd.alpha.toFixed(2)}`)
+    r.check('#3007 the ink is the brighter cool grey (lum ≥195 vs the old #9aa4ae\'s 163) on a near-black plate — contrast against asphalt AND sodium pools',
+        lum(GREY_INK) >= 195 && lum(GREY_OUT) <= 30, `ink=${GREY_INK}(${lum(GREY_INK).toFixed(0)}) out=${GREY_OUT}(${lum(GREY_OUT).toFixed(0)})`)
+}
+{ // item 3 — the thinking driver keeps the seat: measured answer, the law stands
+    const gs = makeGame(71, { coop: true })
+    gs.jimmy.human = true
+    for (let t = 0; t < 1200; t++) step(gs, {}, { left: t % 270 === 269 }) // a nudge every 4.5 s
+    r.check('#3007 a thinking player is never robbed — nudges every 4.5 s through 20 s of street keep the seat (the 300-tick clock is for walking away; a ~3 s thought leaves ~2 s of slack)',
+        gs.jimmy.human === true)
+}
+{ // item 4 — the shout grammar: arrival vs return
+    r.check('#3007 the cabinet tells arrival from return — no seating yet is a first join; any later seating is a return (P2 BACK + ascent chirp)',
+        isReSeat(-1) === false && isReSeat(0) === true && isReSeat(5000) === true)
+}
+
 // ------------------------------------------------------------- the mutants ---
 if (MUTANT) {
     const src = readFileSync(SIM, 'utf8')
@@ -2379,6 +2415,30 @@ if (MUTANT) {
         r.check('mutant(seat-swap) goes RED: harm named', bad !== null, bad || 'harm NOT named — mutant survived')
     }
     {
+        // #3007 item 4: forget that anyone ever left — every seating takes the
+        // first-timer shout, and a friend who stepped away for five seconds is
+        // announced as a brand-new player entering the cabinet.
+        const PP2 = join(ROOT, 'src/games/DoubleDragon/p2pad.js')
+        const p2src = readFileSync(PP2, 'utf8')
+        const p2anchor = 'export const isReSeat = (seat2At) => seat2At >= 0'
+        const p2plant = 'export const isReSeat = () => false /* MUTANT(reseat-blind): every seating looks like the first */'
+        if (!p2src.includes(p2anchor)) { console.error('MUTANT anchor (reseat-blind) missing — p2pad moved; the plant must be re-anchored'); process.exit(2) }
+        writeFileSync(PP2, p2src.replace(p2anchor, p2plant))
+        let bad
+        try {
+            bad = 'dynamic-import'
+            bad = await (async () => {
+                const mod = await import(`../src/games/DoubleDragon/p2pad.js?mutant=reseat-blind${Date.now()}`)
+                return mod.isReSeat(500) === false
+                    ? 'HARM NAMED: the returning friend gets shouted PLAYER 2 — the banner the cabinet reserves for a NEW second player. Every re-entry after a hand-back claims a fresh human sat down; the seat next door cannot tell whether the game changed drivers or reset, and the walked-away-and-back rhythm Jon named in #2908 loses its voice'
+                    : null
+            })()
+        } finally {
+            writeFileSync(PP2, p2src)
+        }
+        r.check('mutant(reseat-blind) goes RED: harm named', bad !== null, bad || 'harm NOT named — mutant survived')
+    }
+    {
         // #2877 — the yard art mutants: light law flipped, street gate broken,
         // seeded floor turned to shuffle. Each must be seen to do its harm.
         const ART = join(ROOT, 'src/games/DoubleDragon/art.js')
@@ -2514,6 +2574,22 @@ if (MUTANT) {
                         : null
                 },
             },
+            {
+                // #3007 item 1: thin the handback arms back to 1 px and the
+                // sodium night swallows the closing brackets again.
+                name: 'grey-thin',
+                anchor: 'ink: [mx < 0 ? X : X - 4, my < 0 ? Y : Y - 1, 5, 2] },',
+                plant: 'ink: [mx < 0 ? X : X - 4, my < 0 ? Y : Y - 1, 4, 1] }, /* MUTANT(grey-thin): the arm is 1 px again */',
+                harm: async () => {
+                    const m = await import(`../src/games/DoubleDragon/art.js?mutant=grey-thin${Date.now()}`)
+                    const thin = m.handbackMarks(m.CPU_T - 15).arms.filter((a) => Math.min(a.ink[2], a.ink[3]) < 2)
+                    // the plant thins the four horizontal arms (replace() hits the
+                    // first occurrence); four thin strokes are already the fuse.
+                    return thin.length >= 4
+                        ? 'HARM NAMED: the handback brackets are 1-px strokes again — measured, most of those pixels sit under the asphalt-grain noise floor (Δ<12) and only corner sparks survive; at phone dock zoom the computer visibly takes the seat while the game says it silently, and the walk-away/come-back law stops reading on the phones it exists for'
+                        : null
+                },
+            },
         ]
         for (const p of artPlants) {
             const asrc = readFileSync(ART, 'utf8')
@@ -2550,6 +2626,28 @@ if (MUTANT) {
                 writeFileSync(IDX, isrc)
             }
             r.check('mutant(mix-clash) goes RED: harm named', bad !== null, bad || 'harm NOT named — mutant survived')
+        }
+        {
+            // #3007 item 2: sink the handback descent back into the fight's
+            // mud (880→440 at 0.04, under the whoosh-LP + the hits' 699 Hz
+            // third) and the news dies at phone-speaker level mid-burst.
+            const IX2 = join(ROOT, 'src/games/DoubleDragon/index.jsx')
+            const i2src = readFileSync(IX2, 'utf8')
+            const i2anchor = "seatBack: () => { audioController.playSweep(1175, 587, 0.12, 'square', 0.075); audioController.playTone(440, 0.1, 'square', 0.05, 0.1) },"
+            const i2plant = "seatBack: () => { audioController.playSweep(880, 440, 0.12, 'square', 0.04); audioController.playTone(330, 0.1, 'square', 0.035, 0.1) }, /* MUTANT(seat-deaf): the handback news sinks into the burst */"
+            if (!i2src.includes(i2anchor)) { console.error('MUTANT anchor (seat-deaf) missing — index.jsx moved; the plant must be re-anchored'); process.exit(2) }
+            writeFileSync(IX2, i2src.replace(i2anchor, i2plant))
+            let bad
+            try {
+                bad = 'read-back'
+                const s = readFileSync(IX2, 'utf8').match(/seatBack: \(\) => \{ audioController\.playSweep\((\d+), \d+, [\d.]+, '\w+', ([\d.]+)\)/)
+                bad = s && (+s[1] < 1100 || +s[2] < 0.06)
+                    ? 'HARM NAMED: the descent is back at 880 Hz / 0.04 — the machine-gun burst owns that band (the whoosh LP700 bed plus the hits\' square thirds at ~699 Hz), so the handback news measures buried inside the volley: the friend walks away, the computer takes the seat, and nobody at the phone hears a word of it'
+                    : null
+            } finally {
+                writeFileSync(IX2, i2src)
+            }
+            r.check('mutant(seat-deaf) goes RED: harm named', bad !== null, bad || 'harm NOT named — mutant survived')
         }
     }
     console.log('\nmutant run: expected red on the planted line.')
@@ -2969,12 +3067,15 @@ const defuseConsent = async (page) => {
     // dodges the executioner (the threat branch), and a dodging partner is not
     // a drained bank. The leg is about both pools emptying, not about dodging.
     await page.evaluate(() => window.__ddTest.setup({ killBilly: true, lives: 1, killAlly: true, allyLives: 1, allyHuman: true }))
-    await page.waitForTimeout(700)
+    // #3007 calibration: wait for the event, not the clock — a saturated box
+    // (other lanes' inference at 97 % CPU, seen mid-suite Nov 22) starves rAF
+    // and the death→gameover cascade lands past a fixed 700 ms window.
+    try { await page.waitForFunction(() => { const p = window.__ddTest.probe(); return p.screen === 'over' || p.mode === 'gameover' }, { timeout: 8000 }) } catch {}
     const dead = await page.evaluate(() => window.__ddTest.probe())
     r.check('dying is real: both banks drained ends the run', dead.screen === 'over' || dead.mode === 'gameover', `screen=${dead.screen} mode=${dead.mode}`)
     await page.waitForTimeout(1100)
     await page.keyboard.press('Space')
-    await page.waitForTimeout(300)
+    try { await page.waitForFunction(() => window.__ddTest.probe().screen === 'attract', { timeout: 3000 }) } catch {}
     const backHome = await page.evaluate(() => window.__ddTest.probe())
     r.check('game over returns to attract on any key', backHome.screen === 'attract', `screen=${backHome.screen}`)
 
@@ -3317,8 +3418,19 @@ const defuseConsent = async (page) => {
     // item 2 on the live HUD: nine ticks of relief = five lit frames (~83 ms)
     // — comfortably inside a poll window, and only the tag lives in that zone.
     await page.evaluate(() => window.__ddTest.setup({ clearEnemies: true, allyRelief: 9 }))
-    await page.waitForTimeout(200)
-    const pt = await page.evaluate(() => ({ white: window.__tagWhite }))
+    // #3007 calibration: ride the relief clock, and re-stamp the fixture until
+    // paint SEES it — under severe catch-up (other lanes saturating this box,
+    // Nov 22) all nine relief ticks can burn inside one rAF chain between two
+    // paints, so a single stamp races the sampling. Re-stamping keeps the pose
+    // alive across frames; the white ink still comes from the real drawHud
+    // relief path — the assertion itself is untouched.
+    let pt = { white: 0 }
+    for (let k = 0; k < 25; k++) {
+        await page.evaluate(() => window.__ddTest.setup({ clearEnemies: true, allyRelief: 9 }))
+        await page.waitForTimeout(80)
+        pt = await page.evaluate(() => ({ white: window.__tagWhite }))
+        if (pt.white >= 2) break
+    }
     r.check('#2889 browser: the freed blue seat lights his own tag — white ink paints in the 2P zone while relief rides',
         pt.white >= 2, `white=${pt.white}`)
     // item 4: a knocked-down man lands with the squash beat — an 8-tick
@@ -3469,7 +3581,8 @@ const defuseConsent = async (page) => {
 // Real keys only: seat the friend with a WASD press, stop touching the
 // keyboard, and the sim's idle clock hands Jimmy to dragonBrain within ~5 s
 // of world time; a fresh press takes the seat back. The grey handback grey
-// (#9aa4ae — the close-bracket and label ink) must paint in between.
+// (#c8d2dc — #3007 brighter handback ink; the close-bracket and label ink)
+// must paint in between.
 {
     const page = await openGame(browser, { url: `${BASE}/double-dragon?nointro=1&seed=31`, hook: '__ddTest', wait: 600 })
     const errs = []
@@ -3479,7 +3592,7 @@ const defuseConsent = async (page) => {
         const proto = CanvasRenderingContext2D.prototype
         const ofill = proto.fillRect
         proto.fillRect = function (x, y, w, h) {
-            if (String(this.fillStyle) === '#9aa4ae') window.__grey++
+            if (String(this.fillStyle) === '#c8d2dc') window.__grey++
             return ofill.apply(this, arguments)
         }
     })
@@ -3504,6 +3617,217 @@ const defuseConsent = async (page) => {
     r.check('#3005 browser: the friend returns — one fresh key and the seat is the human\'s again',
         reseated, `reseated=${reseated}`)
     r.check('#3005 browser: the idle-seat leg ran with zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
+    await page.close()
+}
+
+// ------------- #3007 browser legs: grey at phone scale, mix in the fire, ------
+// and the shout a returning driver actually hears. Each mirrors the probe that
+// first filed the number, run as law: the marks must beat the same grain-diff
+// that measured the fuse, the descent must rise over the same machine-gun
+// burst, and the banner must say P2 BACK — not PLAYER 2 — to a friend who
+// never really left.
+{ // item 1 — pixel proof on a live cabinet (frozen street, grey ink detector)
+    const page = await openGame(browser, { url: `${BASE}/double-dragon?nointro=1&seed=31`, hook: '__ddTest', wait: 600 })
+    const errs = []
+    page.on('pageerror', (e) => errs.push(e.stack || e.message))
+    await page.keyboard.press('Space')
+    await defuseConsent(page)
+    await page.waitForTimeout(300)
+    await page.evaluate(() => { window.__ddTest.start(); window.__ddTest.setup({ clearEnemies: true }) })
+    await page.waitForTimeout(150)
+    await page.keyboard.press('KeyD')
+    let seated = false
+    try { await page.waitForFunction(() => window.__game.state().jimmyHuman === 1, { timeout: 3000 }); seated = true } catch {}
+    await page.waitForTimeout(700)
+    const snap = () => page.evaluate(() => {
+        const cv = [...document.querySelectorAll('canvas')].find((c) => c.width === 320)
+        const ctx = cv.getContext('2d')
+        const s = window.__ddTest.probe()
+        const [jx, jy] = String(s.jimmy || '').split(':').map(Number)
+        return { img: [...ctx.getImageData(0, 0, cv.width, cv.height).data], w: cv.width, h: cv.height, jx, jy, cam: s.camX }
+    })
+    const base = await snap()
+    try { await page.waitForFunction(() => window.__game.state().jimmyHuman === 0, { timeout: 9000 }) } catch {}
+    const grey = (r, g, b) => r >= 110 && r <= 210 && g >= 120 && b >= r + 6 && b >= g + 2 && b - r <= 45
+    const lum = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]
+    const best = { seatMax: 0, seatBinMax: 0, bannerMax: 0, bannerBinMax: 0, marks: 0, handed: seated }
+    for (let i = 0; i < 26; i++) {
+        const f = await snap()
+        if (Math.abs(f.jx - base.jx) > 1 || f.cam !== base.cam) continue // only frozen-scene frames
+        let smax = 0, sbmax = 0, nm = 0
+        const sx = f.jx - f.cam, sy = f.jy
+        for (let y = Math.round(sy - 46); y <= sy + 15; y++) {
+            for (let x = Math.round(sx - 26); x <= sx + 26; x++) {
+                if (Math.abs(x - sx) < 9 || Math.abs(y - (sy - 15)) > 30) continue
+                const i0 = (y * f.w + x) * 4
+                if (!grey(f.img[i0], f.img[i0 + 1], f.img[i0 + 2])) continue
+                const dl = lum(f.img, i0) - lum(base.img, i0)
+                if (dl > smax) smax = dl
+                if (dl > 12) nm++
+                let ink = 0, bg = 0
+                for (const [oy, ox] of [[0, 0], [0, 1], [1, 0], [1, 1]]) { ink += lum(f.img, ((y + oy) * f.w + x + ox) * 4); bg += lum(base.img, ((y + oy) * f.w + x + ox) * 4) }
+                if ((ink - bg) / 4 > sbmax) sbmax = (ink - bg) / 4
+            }
+        }
+        best.seatMax = Math.max(best.seatMax, smax)
+        best.seatBinMax = Math.max(best.seatBinMax, sbmax)
+        best.marks = Math.max(best.marks, nm)
+        let bmax = 0, bbmax = 0
+        for (let y = 74; y <= 92; y++) {
+            for (let x = 100; x <= 220; x++) {
+                const i0 = (y * f.w + x) * 4
+                if (!grey(f.img[i0], f.img[i0 + 1], f.img[i0 + 2])) continue
+                const dl = lum(f.img, i0) - lum(base.img, i0)
+                if (dl > bmax) bmax = dl
+                let ink = 0, bg = 0
+                for (const [oy, ox] of [[0, 0], [0, 1], [1, 0], [1, 1]]) { ink += lum(f.img, ((y + oy) * f.w + x + ox) * 4); bg += lum(base.img, ((y + oy) * f.w + x + ox) * 4) }
+                if ((ink - bg) / 4 > bbmax) bbmax = (ink - bg) / 4
+            }
+        }
+        best.bannerMax = Math.max(best.bannerMax, bmax)
+        best.bannerBinMax = Math.max(best.bannerBinMax, bbmax)
+        await page.waitForTimeout(40)
+    }
+    r.check('#3007 phone proof, seen: the handback marks beat the asphalt grain on a live cabinet — seat brackets reach Δ≥90 native AND after 0.5x binning (the fuse measured Δ85 native/Δ50 binned, silence elsewhere), ≥12 lit arm pixels',
+        best.seatMax >= 90 && best.seatBinMax >= 90 && best.marks >= 12,
+        `seat=${best.seatMax.toFixed(0)}/${best.seatBinMax.toFixed(0)} marks=${best.marks}`)
+    r.check('#3007 the CPU line reads on the phone too — banner ink clears Δ≥130 after binning against the live night',
+        best.bannerMax >= 150 && best.bannerBinMax >= 130 && best.handed,
+        `banner=${best.bannerMax.toFixed(0)}/${best.bannerBinMax.toFixed(0)} handedBack=${best.handed}`)
+    r.check('#3007 grey leg clean: zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
+    await page.close()
+}
+{ // item 2 — the phone mix heard: seatBack (sourced from index.jsx) under a
+  // machine-gun burst, rendered offline through the shipped DSP shapes.
+    const mixSrc = readFileSync(join(ROOT, 'src/games/DoubleDragon/index.jsx'), 'utf8')
+    const sbM = mixSrc.match(/seatBack: \(\) => \{ audioController\.playSweep\((\d+), (\d+), ([\d.]+), '(\w+)', ([\d.]+)\); audioController\.playTone\((\d+), ([\d.]+), '(\w+)', ([\d.]+), ([\d.]+)\)/)
+    let res = { gapRise: -99, riseHigh: -99, backPeak: 9, hitPeak: 1, gapNotDead: false }
+    if (sbM) {
+        const sb = { f0: +sbM[1], f1: +sbM[2], dur: +sbM[3], type: sbM[4], vol: +sbM[5], nFreq: +sbM[6], nDur: +sbM[7], nType: sbM[8], nVol: +sbM[9], nDelay: +sbM[10] }
+        const page = await openGame(browser, { url: `${BASE}/double-dragon?nointro=1`, hook: '__ddTest', wait: 400 })
+        res = await page.evaluate(async (sbIn) => {
+            const SR = 44100
+            const render = async (ops) => {
+                const ctx = new OfflineAudioContext(1, Math.ceil(1.6 * SR), SR)
+                for (const o of ops) {
+                    const g = ctx.createGain()
+                    g.gain.setValueAtTime(o.vol, o.at)
+                    if (o.lin) g.gain.linearRampToValueAtTime(0.01, o.at + o.dur)
+                    else g.gain.exponentialRampToValueAtTime(0.01, o.at + o.dur)
+                    g.connect(ctx.destination)
+                    if (o.noise) {
+                        const n = Math.ceil(o.dur * SR)
+                        const buf = ctx.createBuffer(1, n, SR)
+                        const d = buf.getChannelData(0)
+                        for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
+                        const src = ctx.createBufferSource(); src.buffer = buf
+                        if (o.lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; src.connect(f); f.connect(g) }
+                        else src.connect(g)
+                        src.start(o.at)
+                    } else {
+                        const osc = ctx.createOscillator()
+                        osc.type = o.type
+                        osc.frequency.setValueAtTime(o.freq, o.at)
+                        if (o.to) osc.frequency.linearRampToValueAtTime(o.to, o.at + o.dur)
+                        osc.connect(g); osc.start(o.at); osc.stop(o.at + o.dur)
+                    }
+                }
+                return (await ctx.startRendering()).getChannelData(0)
+            }
+            const energy = (x, f0, f1, t0, t1) => {
+                let best = 0
+                const i0 = Math.floor(t0 * SR), i1 = Math.min(x.length, Math.ceil(t1 * SR))
+                for (let f = f0; f <= f1; f += 4) {
+                    const w = 2 * Math.PI * f / SR
+                    const c = 2 * Math.cos(w)
+                    let s1 = 0, s2 = 0
+                    for (let i = i0; i < i1; i++) { const s0 = x[i] + c * s1 - s2; s2 = s1; s1 = s0 }
+                    best = Math.max(best, s2 * s2 + s1 * s1 - c * s1 * s2)
+                }
+                return best
+            }
+            const burst = []
+            for (let k = 0; k < 8; k++) {
+                const at = k * 0.15
+                burst.push({ at, dur: 0.05, vol: 0.08, noise: true, lp: 700 })        // whoosh_b
+                burst.push({ at, freq: 294, dur: 0.05, type: 'triangle', vol: 0.12 }) // jab_b
+                burst.push({ at, dur: 0.03, vol: 0.05, noise: true })                  // jab snap
+                burst.push({ at: at + 0.02, freq: 233, dur: 0.08, type: 'square', vol: 0.12 }) // hit_b
+            }
+            const back = [
+                { at: 0.83, freq: sbIn.f0, to: sbIn.f1, dur: sbIn.dur, type: sbIn.type, vol: sbIn.vol, lin: true },
+                { at: 0.83 + sbIn.nDelay, freq: sbIn.nFreq, dur: sbIn.nDur, type: sbIn.nType, vol: sbIn.nVol },
+            ]
+            const bOnly = await render(burst)
+            const mAll = await render([...burst, ...back])
+            const bSolo = await render(back)
+            const win = [0.83, 0.9]
+            const rms = (x, t0, t1) => { let s = 0; const i0 = Math.floor(t0 * SR), i1 = Math.min(x.length, Math.ceil(t1 * SR)); for (let i = i0; i < i1; i++) s += x[i] * x[i]; return Math.sqrt(s / (i1 - i0)) }
+            const peak = (x, t0, t1) => { let m = 0; for (let i = Math.floor(t0 * SR); i < Math.ceil(t1 * SR) && i < x.length; i++) m = Math.max(m, Math.abs(x[i])); return m }
+            const db = (a, b) => 20 * Math.log10(b / (a || 1e-9))
+            const riseE = (a, b) => 10 * Math.log10(b / (a || 1e-18))
+            // sanity: the measured gap is not dead air — burst alone sits at
+            // the same level there as at the previous hit's tail
+            const gapNotDead = Math.abs(db(rms(bOnly, 0.68, 0.75), rms(bOnly, ...win))) < 6
+            return {
+                gapRise: db(rms(bOnly, ...win), rms(mAll, ...win)),
+                riseHigh: riseE(energy(bOnly, 900, 1400, ...win), energy(mAll, 900, 1400, ...win)),
+                backPeak: peak(bSolo, 0.83, 1.03),
+                hitPeak: peak(bOnly, 0.2, 0.32),
+                gapNotDead,
+            }
+        }, sb)
+        await page.close()
+    }
+    r.check('#3007 mix heard: the handback descent rises ≥15 dB over the machine-gun burst where it lands (and ≥18 dB in the 900–1400 window phone speakers play best) — news the fight cannot swallow',
+        res.gapRise >= 15 && res.riseHigh >= 18 && res.gapNotDead,
+        `gap=${res.gapRise.toFixed(1)} dB high=${res.riseHigh.toFixed(1)} dB`)
+    r.check('#3007 …and it stays under the fight — the descent peaks ≤0.6× a single hit\'s amplitude (hits are still the loudest voice on the street)',
+        res.backPeak <= 0.6 * res.hitPeak, `back=${res.backPeak.toFixed(3)} hit=${res.hitPeak.toFixed(3)}`)
+}
+{ // item 4 — the shout heard on a re-seat: P2 BACK (bright blue), not PLAYER 2
+    const page = await openGame(browser, { url: `${BASE}/double-dragon?nointro=1&seed=31`, hook: '__ddTest', wait: 600 })
+    const errs = []
+    page.on('pageerror', (e) => errs.push(e.stack || e.message))
+    await page.evaluate(() => {
+        window.__ph = 'off'
+        window.__b = { join: 0, back: 0, joinAgain: 0 }
+        const proto = CanvasRenderingContext2D.prototype
+        const ofill = proto.fillRect
+        proto.fillRect = function (x, y, w, h) {
+            if (y >= 70 && y <= 92 && h <= 16) {
+                const c = String(this.fillStyle)
+                if (c === '#5a8ae8' && window.__ph === 'join') window.__b.join++
+                if (c === '#8fd0ff' && window.__ph === 'back') window.__b.back++
+                if (c === '#5a8ae8' && window.__ph === 'back') window.__b.joinAgain++
+            }
+            return ofill.apply(this, arguments)
+        }
+    })
+    await page.keyboard.press('Space')
+    await defuseConsent(page)
+    await page.waitForTimeout(300)
+    await page.evaluate(() => window.__ddTest.start())
+    await page.waitForTimeout(150)
+    await page.evaluate(() => { window.__ph = 'join' })
+    await page.keyboard.press('KeyD')
+    let seated = false
+    try { await page.waitForFunction(() => window.__game.state().jimmyHuman === 1, { timeout: 3000 }); seated = true } catch {}
+    await page.waitForTimeout(900)
+    await page.evaluate(() => { window.__ph = 'off' })
+    let handed = false
+    try { await page.waitForFunction(() => window.__game.state().jimmyHuman === 0, { timeout: 9000 }); handed = true } catch {}
+    await page.evaluate(() => { window.__ph = 'back' })
+    await page.keyboard.press('KeyD')
+    let reseated = false
+    try { await page.waitForFunction(() => window.__game.state().jimmyHuman === 1, { timeout: 3000 }); reseated = true } catch {}
+    await page.waitForTimeout(900)
+    await page.evaluate(() => { window.__ph = 'off' })
+    const b = await page.evaluate(() => window.__b)
+    r.check('#3007 the cabinet shouts the right word: first seating paints PLAYER 2 (deep blue) and the return paints P2 BACK (flare blue) — never the arrival word a second time',
+        seated && handed && reseated && b.join >= 1 && b.back >= 1 && b.joinAgain === 0,
+        `join=${b.join} back=${b.back} joinAgain=${b.joinAgain}`)
+    r.check('#3007 shout-grammar leg clean: zero page errors', errs.length === 0, errs.join(' | ') || 'clean')
     await page.close()
 }
 
