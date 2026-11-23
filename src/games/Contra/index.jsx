@@ -877,7 +877,7 @@ export default function ContraGame () {
                     }
                     ctx.fillStyle = '#cdeea8'
                     ctx.font = '9px "Courier New", monospace'
-                    ctx.fillText(`ANY KEY · TAP — ${contLeft} CONTINUE${contLeft > 1 ? 'S' : ''} LEFT`, 102, 164)
+                    ctx.fillText(`ANY KEY · TAP — ${contLeft} CONTINUE${contLeft > 1 ? 'S' : ''} LEFT`, 102, 167)
                     ctx.fillStyle = '#ffffff'
                     ctx.font = 'bold 8px "Courier New", monospace'
                     const cr = `CREDIT ${contLeft}`
