@@ -44,9 +44,9 @@ reset is on the same line as the loop header.
 
 ## The harness can fail — and one that can't is a lie
 
-`sweepcheck` (Node, in the CI `static` gate) has five anchored mutants, each a
-previously-fixed bug put back. All five die, and **two are caught by an
-independent oracle, not the solver's own assertion:**
+`sweepcheck` (Node, in the CI `static` gate) has eight anchored mutants, each a
+previously-fixed bug put back or a fresh ceiling stripped. All eight die, and
+**two are caught by an independent oracle, not the solver's own assertion:**
 
 The oracle enumerates every mine assignment the *visible clues* allow for a
 mid-game pocket (player's-eye — only the flags are hard facts) and convicts any
@@ -132,6 +132,37 @@ through the shell's own flag verb and reads both the value (probe) and the
 pixels (the minus must light the leading glyph slot). Over-flagging stays legal
 — it always was; now the counter says so.
 
+## The hall of fame (#3026)
+
+The original remembered: a best time per field size, kept forever, behind a
+3-glyph VFD that stops at 999 because it has no thousands digit. Our title
+printed the win and forgot it — the shelf keeps local bests for a dozen titles
+while its signature logic game had none. Now:
+
+- **`TIME_CAP = 999` lives in `step()`** — the engine owns the ceiling (same
+  law as #3021's signed counter: the value the score math uses and the value
+  the digits paint must be one value). Probe leg 5 in `probeMutant` exists
+  because stripping the cap breaks nothing else — a mutant whose only sin is
+  running to 1000 needs a leg that watches the clock.
+- **`bestKey`/`readBest`/`recordWin`** are pure helpers in `minefield.js`
+  behind an **injected get/set pair** — Node audits the whole round-trip (first
+  record, slower tie *not* a record, floor 1s for degenerate forceWin closes,
+  corrupt values read as absent and heal on the next win, throwing stores
+  neither crash nor lie). The tab injects `localStorage`; engine state and
+  `stateHash` never feel the book.
+- **Honesty gate:** a win the WATCH seat drove (`wasSeated`, read *before* the
+  racer-rule release in `finish`) never writes the hall — the referee's sweep
+  is not the player's record. The attract demo needs no gate (`demoG` never
+  reaches `finish`). Sweepcheck pins both the seat gate and the single
+  play→over reveal (`toOver`, so the record jingle can't be bypassed) as
+  source-pins.
+- The over screen celebrates `NEW RECORD — {DIFF}!` (three rising notes on the
+  reveal) or taunts with `BEST {DIFF} {n}s — beat it`.
+
+`sweepplay` grades what Node can't see: the keyboard-driven win actually writes
+`minesweeper.best.COLT`, the verdict object matches the shelf, and the over
+screen really shows the record line.
+
 ## Conventions / gotchas
 
 - The solver is fast but not free: GENERAL can plant in ~0.7 s on a slow box
@@ -163,8 +194,9 @@ planting was unreachable in the app, while `plantAt` called directly passed ever
 Node check). Full notes — the stale-scratch bug, the oracle that had to stop
 trusting the solver's ledger to become able to fail, and the two green-tested-nothing
 oracle versions — are in **[`src/games/Minesweeper/README.md`](src/games/Minesweeper/README.md)**.
-Verify with `npm run sweepcheck` (`-- --mutate` = 5/5 mutants die, incl.
-`flag-devour` — the #3009 chord bug put back; in the `static` gate) and
+Verify with `npm run sweepcheck` (`-- --mutate` = 8/8 mutants die, incl.
+`flag-devour` — the #3009 chord bug put back — and `timer-cap` — the #3026
+VFD ceiling stripped; in the `static` gate) and
 `npm run sweepplay` (Chrome, real keys only; in `verify`).
 
 ## WATCH (#1637 batch 16) — the referee sweeps its own field

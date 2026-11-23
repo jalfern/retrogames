@@ -238,6 +238,23 @@ r.check('the browser played the board to a WIN', s.end === 'win', `end=${s.end} 
 r.check('it never died on a "guess-free" board', s.end !== 'dead' && deaths === 0, `end=${s.end}`)
 r.check('every non-mine cell ended open', s.opened === s.w * s.h - s.totalMines, `opened=${s.opened} expected=${s.w * s.h - s.totalMines}`)
 
+console.log('\nHALL OF FAME — #3026: the win files a best time and says so on the over screen')
+{
+    await page.waitForFunction(() => window.__sweepTest.probe().screen === 'over', null, { timeout: 15000 })
+    const fame = await page.evaluate(() => window.__sweepTest.hallOfFame())
+    const stored = await page.evaluate(() => localStorage.getItem('minesweeper.best.COLT'))
+    r.check('the COLT win is written to the hall (localStorage)', /^\d+$/.test(stored || '') && +stored >= 1 && +stored <= 999, `stored=${stored}`)
+    r.check('the shell judged this keyboard-driven win against the book',
+        !!fame && !!fame.last && fame.last.diff === 'COLT' && fame.last.sec === s.sec && fame.last.seated === false,
+        JSON.stringify(fame))
+    r.check('verdict and shelf agree (record wrote its time; no-record kept a faster one)',
+        !!fame && !!fame.last && (fame.last.record ? +stored === fame.last.sec : +stored <= fame.last.sec),
+        `stored=${stored} verdict=${JSON.stringify(fame && fame.last)}`)
+    const overTxt = await page.evaluate(() => document.body.innerText)
+    r.check('the over screen celebrates or taunts', /NEW RECORD/.test(overTxt) || /BEST COLT \d+s/.test(overTxt),
+        overTxt.split('\n').filter((l) => /RECORD|BEST/.test(l)).join(' | ') || 'no record line')
+}
+
 console.log('\nDETERMINISM — the same seed reproduces the same board')
 const h1 = await page.evaluate((sd) => { window.__sweepTest.start(0, sd); return window.__sweepTest.hash() }, seed)
 await wait(120)
