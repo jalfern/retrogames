@@ -5,7 +5,7 @@
 // viridian darks, olive soldier uniforms, the hero's white tank + blue pants
 // + red bandana, hazard-orange capsules.
 
-import { CFG, LOOP_FX, LOOP_SKY_HOT, SOMERSAULT_TICKS } from './sim.js'
+import { CFG, LOOP_FX, LOOP_SKY_HOT, SOMERSAULT_TICKS, HALL_RANKS } from './sim.js'
 
 const C = {
     skyTop: '#04140b', skyMid: '#0b3018', skyLow: '#17512a',
@@ -97,6 +97,47 @@ export function drawScorePop (ctx, x, y, v, t) {
         }
     }
     return true
+}
+
+// #3061 TOP SOLDIERS — the cabinet's rank table, era Konami attract lineage
+// (Gradius and Life Force kept gold ranks on the title). Screen chrome, so it
+// uses the HUD's Courier idiom, not the world's 5x5 digits: a dark plate with
+// a gold border (#2902 plate law — gold copy needs the plate to survive phone
+// scale over the bright demo), ranks in pale green, scores in the same gold
+// the HUD pays with, and the LOOP badge only where a pass was actually rode
+// (loop 1 is the stage, not a badge — the #2894 marking law).
+export function drawHall (ctx, hall, x, y) {
+    ctx.save()
+    const rows = Math.min(3, hall.length)
+    const ph = rows ? 14 + rows * 10 : 16
+    ctx.fillStyle = 'rgba(6,10,4,0.82)'
+    ctx.fillRect(x, y, 86, ph)
+    ctx.strokeStyle = '#ffd23c'
+    ctx.lineWidth = 1
+    ctx.strokeRect(x + 0.5, y + 0.5, 85, ph - 1)
+    ctx.textBaseline = 'top'
+    ctx.font = 'bold 8px "Courier New", monospace'
+    ctx.fillStyle = '#ffd23c'
+    ctx.fillText('TOP SOLDIERS', x + 5, y + 3)
+    if (!rows) {
+        ctx.fillStyle = '#7d8f6a'
+        ctx.fillText('NO RAIDS YET', x + 5, y + 12)
+        ctx.restore()
+        return
+    }
+    for (let i = 0; i < rows; i++) {
+        const e = hall[i]
+        const ry = y + 13 + i * 10
+        ctx.fillStyle = '#cdeea8'
+        ctx.fillText(HALL_RANKS[i], x + 5, ry)
+        ctx.fillStyle = '#ffd23c'
+        ctx.fillText(String(e.score).padStart(6, '0'), x + 27, ry)
+        if (e.loop > 1) {
+            ctx.fillStyle = '#ffffff'
+            ctx.fillText(`L${e.loop}`, x + 63, ry)
+        }
+    }
+    ctx.restore()
 }
 
 // #2902 LOOP HEAT — palette-only escalation cues, pure functions of the pass

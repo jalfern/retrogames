@@ -16,9 +16,9 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
 import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, bedFor, liftStep, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat } from './sim.js'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, bedFor, liftStep, applyCall, KONAMI, KONAMI_LIVES, konamiFeed, konamiArmed, contPhase, contBeat, hallAdd, hallRead } from './sim.js'
 import { parseCall, intentKey, intentLabel } from './voicecalls.js'
-import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, drawScorePop, POP_T, seatTagState } from './art.js'
+import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, drawScorePop, drawHall, POP_T, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
 
@@ -93,6 +93,9 @@ const sfx = {
     splash: () => audioController.playNoise(0.06, 0.025),
     respawn: () => audioController.playSweep(700, 220, 0.16, 'triangle', 0.06),
     gameover: () => audioController.playSweep(320, 60, 0.6, 'sawtooth', 0.08),
+    // #3061 the record fanfare: a rising triad over the fall — the mirror of
+    // gameover's descent, and the same rising answer the capsule pickup pays.
+    newRecord: () => { audioController.playSweep(520, 1040, 0.16, 'triangle', 0.07); setTimeout(() => audioController.playSweep(780, 1560, 0.18, 'triangle', 0.06), 110) },
     // #3042 the continue voices: the countdown ticks a dry slot-click once a
     // second, and the re-entry is a rising sting — the mirror of gameover's
     // fall, so the run reads as "back in", not "another life".
@@ -265,6 +268,13 @@ export default function ContraGame () {
         const stopBed = () => { bedNow = null; audioController.stopMusic() }
         let shake = 0
         let hiscore = Number(localStorage.getItem('contra:hiscore') || 0)
+        // #3061 THE HALL: the board remembers across runs, read through the
+        // validator — a corrupt store is dropped, never trusted. hallFx is the
+        // NEW RECORD flag for the over screen: presentation, blinking on the
+        // world's overT, dead the moment another screen is entered.
+        let hall = []
+        try { hall = hallRead(JSON.parse(localStorage.getItem('contra:hall') || 'null')) } catch { hall = [] }
+        let hallFx = false
         const part = [] // cosmetic particles — Math.random is law here, never in sim
         const fire = [] // expanding fireballs — sized by the boom's kind (#2782)
         const pops = [] // #3057 score popups — {x, y, v, t}, world coords, rides the sim clock
@@ -575,12 +585,24 @@ export default function ContraGame () {
             stopBed()   // #3047: the march belongs to the run, not the screen it ends on — attract is silent-safe (#3018), the over screen is the coin's, the clear fanfare plays alone
             kProg = 0 // #3037: typing does not survive leaving the attract screen
             if (what === 'attract') kFx = null
+            hallFx = false   // #3061 a salute never survives the screen it was paid on
             extFx = null   // #3041: a salute never survives the screen it was paid on
             if (what === 'over') {
                 overAt = performance.now()
                 overT = 0   // #3042: the CONTINUE clock starts with the sting
                 contBeats.coin = contBeats.tick = contBeats.hot = 0   // #3045 fresh ceremony per death
                 if (gs.score > hiscore) { hiscore = gs.score; localStorage.setItem('contra:hiscore', String(hiscore)) }
+                // #3061 THE HALL: a fall with a score reaches the board — the
+                // same honest gate HI banks through, and only live play can
+                // reach it: endTo('over') fires solely from stepSim's
+                // gs.end==='dead' on the play screen. The attract demo wins
+                // into its loop-teach and never falls; a run's take ends first,
+                // the board is a memory, not a bank row.
+                const hr = hallAdd(hall, { score: gs.score, loop: gs.loop, t: Date.now() })
+                hallFx = hr.record
+                hall = hr.hall
+                try { localStorage.setItem('contra:hall', JSON.stringify(hall)) } catch { /* private mode: the board lives this session */ }
+                if (hallFx) sfx.newRecord()
                 endRun() // #1711: the take ends with the run (no-op when idle/declined) — and NOT on 'clear': #2958 law, one take spans the arcade loops
                 disarmVoice() // #3000: the mic never stays hot on GAME OVER (#1249 law, Gauntlet precedent)
                 callFx = null
@@ -871,6 +893,11 @@ export default function ContraGame () {
                 ctx.font = '8px "Courier New", monospace'
                 ctx.fillStyle = '#7d8f6a'
                 ctx.fillText('KONAMI-STYLE RUN & GUN — 1987 HOMAGE', 100, 128)
+                // #3061 the board pays in the open: ranks on the title, gold on
+                // a plate, riding the same gate as the title itself — never on
+                // a banner pass (the LOOP slam and the radio teach keep their
+                // bands alone).
+                drawHall(ctx, hall, 8, 148)
                 // #3037: the typing reads — every note landed so far glints gold
                 if (kProg > 0) {
                     ctx.font = 'bold 12px "Courier New", monospace'
@@ -896,6 +923,26 @@ export default function ContraGame () {
                 ctx.fillStyle = '#cdeea8'
                 ctx.font = '9px "Courier New", monospace'
                 ctx.fillText(`SCORE ${gs.score}  HI ${hiscore}`, 150, 120)
+                // #3061 the record moment: a fall that takes the board's crown
+                // blinks a gold salute on the band #3037/#3041 use for salutes
+                // (free space here — kFx/extFx only live in play; guarded for
+                // honesty anyway). Blinks on the world's overT, and dies at the
+                // next screen — endTo clears the flag, not a timer.
+                if (hallFx && !kFx && !extFx && Math.floor(overT / 6) % 2 === 0) {
+                    ctx.save()
+                    ctx.font = 'bold 14px "Courier New", monospace'
+                    const ntxt = 'NEW RECORD!'
+                    const nw = ctx.measureText(ntxt).width + 16
+                    ctx.fillStyle = 'rgba(6,10,4,0.85)'
+                    ctx.fillRect(192 - nw / 2, 58, nw, 18)
+                    ctx.strokeStyle = '#ffd23c'
+                    ctx.lineWidth = 1
+                    ctx.strokeRect(192 - nw / 2 + 0.5, 58.5, nw - 1, 17)
+                    ctx.textBaseline = 'top'
+                    ctx.fillStyle = '#ffd23c'
+                    ctx.fillText(ntxt, 192 - nw / 2 + 8, 61)
+                    ctx.restore()
+                }
                 // #3042 THE COUNT: GAME OVER reads, then CONTINUE? holds the
                 // window with the Konami digit 9…0 and the purse. The last two
                 // seconds blink red-hot (IronRing #1103's warning family). With
@@ -927,6 +974,9 @@ export default function ContraGame () {
                     ctx.fillStyle = '#7d8f63'
                     ctx.font = 'bold 9px "Courier New", monospace'
                     ctx.fillText('NO CONTINUES', 150, 146)
+                    // #3061 the purse-empty fall is the cabinet's rank screen:
+                    // the board under the bad news, centred.
+                    drawHall(ctx, hall, 149, 160)
                 }
             }
         }
@@ -1222,6 +1272,7 @@ export default function ContraGame () {
                     cont: { left: contLeft, t: overT, armed: armedRun, phase: contPhase(overT).phase, digit: contPhase(overT).digit, beats: { ...contBeats } },   // #3042 the purse and the count are observable; #3045 so is the ceremony
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
                     touch: TOUCH,   // #2971: the touch-aware copy is observable
+                    hall: { len: hall.length, top: hall.length ? hall[0].score : 0, record: hallFx, rows: hall.map((e) => ({ s: e.score, l: e.loop })) },   // #3061 the board is observable
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
                 }),
                 start: startPlay,
