@@ -1054,6 +1054,57 @@ const mkBoss = (seed = 7) => {
     r.check('#2789 each letter keeps its wheel ink (M blue, F red, L purple, S orange)', misink.length === 0, misink.join(' ') || 'all inks hold')
 }
 
+// ---- #2971 LIVE chip: the HUD says so while a consented take banks ---------
+// art.js is DOM-free — paint drawHud into a stub and count the plate. The
+// chip must be a hot-red plate + dot + LIVE text, and it must never appear on
+// a declined run (isRecording() is the bank's own truth — declined runs never
+// carry a recorder, so no plate, no dot).
+{
+    const { drawHud } = await import('../src/games/Contra/art.js')
+    const plate = (live) => {
+        const o = { rects: [], text: [], arcs: 0 }
+        const ctx = {
+            textBaseline: '', font: '', fillStyle: '', strokeStyle: '', lineWidth: 0,
+            fillRect (x, y, w, h) { o.rects.push(['fill', x, y, w, h, this.fillStyle]) },
+            strokeRect (x, y, w, h) { o.rects.push(['stroke', x, y, w, h]) },
+            fillText (t) { o.text.push(String(t)) },
+            beginPath () {}, arc () { o.arcs++ }, fill () {},
+        }
+        drawHud(ctx, makeGame(7), 0, null, live)
+        return o
+    }
+    const withLive = plate(true), without = plate(false)
+    r.check('#2971 LIVE chip: a consented take banks — the HUD draws the plate, the dot and LIVE',
+        withLive.text.includes('LIVE') && withLive.arcs >= 1 && withLive.rects.some((x) => x[0] === 'fill' && x[5] === 'rgba(26,8,8,0.92)'),
+        `text=${withLive.text.filter(t => t === 'LIVE')} arcs=${withLive.arcs}`)
+    r.check('#2971 LIVE chip: declined runs show nothing — no plate, no dot, no LIVE text',
+        !without.text.includes('LIVE') && without.arcs === 0, `text=${without.text.join(',')} arcs=${without.arcs}`)
+}
+
+// ---- #2971 touch-aware attract copy ----------------------------------------
+// The phone has no keys, and seat 2 is keyboard-only by design (Jon's rule) —
+// the touch copy must say so, never teach WASD/F/G, and never invite a
+// keyboard-only ceremony. Static source audit (the copy is a source const,
+// the same pattern as the art legs) + the live touch flag on the probe.
+{
+    const src = readFileSync(join(ROOT, 'src/games/Contra/index.jsx'), 'utf8')
+    const lines = (arr) => {
+        const mm = src.match(new RegExp(`const ${arr} = \\[([\\s\\S]*?)\\]`))
+        return mm ? [...mm[1].matchAll(/'([^']+)'/g)].map(x => x[1]) : []
+    }
+    const touchLines = lines('MESSAGES_TOUCH')
+    const kbLines = lines('MESSAGES_KEYBOARD')
+    r.check('#2971 touch copy exists and teaches no keyboard keys',
+        touchLines.length > 0 && !touchLines.some(t => /WASD|F JUMP|G FIRE|PRESS ANY KEY/i.test(t)),
+        touchLines.join(' | '))
+    r.check('#2971 touch copy says seat 2 is keyboard-only and the phone keeps the CPU ally',
+        touchLines.some(t => /SEAT 2 IS KEYBOARD-ONLY/i.test(t) && /CPU ALLY/i.test(t)),
+        touchLines.filter(t => /SEAT 2|CPU ALLY/i.test(t)).join(' | '))
+    r.check('#2971 keyboard copy still teaches the seat-2 drop-in (the desktop path is unchanged)',
+        kbLines.some(t => /2P DROP-IN: WASD MOVE/i.test(t)) && kbLines.some(t => /PRESS ANY KEY/i.test(t)),
+        kbLines.filter(t => /DROP-IN|PRESS ANY/i.test(t)).join(' | '))
+}
+
 // ---- #2847 pod carriers: the capsules that fly in on aircraft --------------
 {
     // the fly-in is seed/tick arithmetic (zero gs.r): same seed, same flight.
@@ -2687,6 +2738,100 @@ const browser = await launch()
     r.check('#2917 the live gate runs its air layer — the beacon grinds, the hull lifts, and every round that comes down is shallow',
         sawDoor && sawHull && roundsLive >= 2 && maxVy <= 1.01, JSON.stringify({ sawDoor, sawHull, roundsLive, maxVy: +maxVy.toFixed(2) }))
     await page.evaluate(() => window.__contraTest.setup({ sortieOff: true }))
+
+    // ---- #2971: the consent gate over live play + the LIVE plate (phone) ----
+    // A fresh profile on a touch phone: the first tap starts the run AND raises
+    // the gate (never a phantom click on the switches — the #2971 regression).
+    // YES keeps banking mid-take (LIVE plate paints); NO plays on silently.
+    const phoneLeg = async (answer) => {
+        const pp = await browser.newPage({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true })
+        const pErrs = []
+        pp.on('pageerror', (e) => pErrs.push(e.stack || e.message))
+        try {
+            await pp.goto(`${BASE}/contra?touch=1`, { waitUntil: 'load' })
+            await pp.waitForFunction(() => !!window.__contraTest, null, { timeout: 15000 })
+            await pp.waitForTimeout(900) // let the attract sim wake so the tap lands as START
+            await pp.tap('canvas')
+            let gateUp = false, gateQuiet = false, playing = false
+            for (let i = 0; i < 80 && !gateUp; i++) {
+                gateUp = await pp.evaluate(() => !!document.querySelector('[data-auto-record-gate]'))
+                if (gateUp) {
+                    // the WIP regression: the tap's click must not have flipped the motion switch
+                    gateQuiet = await pp.evaluate(() => document.querySelector('#consent-motion')?.getAttribute('aria-checked') === 'false')
+                    break
+                }
+                await pp.waitForTimeout(50)
+            }
+            playing = await pp.evaluate(() => window.__contraTest.probe()?.screen === 'play')
+            if (answer === 'yes') {
+                await pp.click('#consent-name')
+                await pp.type('#consent-name', 'qabot')
+                await pp.click('#consent-motion')
+                await pp.click('#consent-yes')
+            } else {
+                await pp.click('#consent-no')
+            }
+            const recorded = await (async () => {
+                const t0 = Date.now()
+                while (Date.now() - t0 < 6000) {
+                    const v = await pp.evaluate(() => !!(window.__autoCapture && window.__autoCapture.recording))
+                    if (v) return true
+                    if (answer === 'no' && v === false) return false
+                    await pp.waitForTimeout(100)
+                }
+                return await pp.evaluate(() => !!(window.__autoCapture && window.__autoCapture.recording))
+            })()
+            const platePx = await (async () => {
+                const t0 = Date.now()
+                let n = 0
+                while (Date.now() - t0 < 3000) {
+                    n = await pp.evaluate(() => {
+                        const c = document.querySelector('canvas')
+                        if (!c) return 0
+                        const d = c.getContext('2d').getImageData(150, 22, 44, 12).data
+                        let k = 0
+                        for (let i = 0; i < d.length; i += 4) {
+                            if (d[i] > 200 && d[i + 1] > 40 && d[i + 1] < 120 && d[i + 2] < 90) k++
+                        }
+                        return k
+                    })
+                    if (n > 0) return n
+                    await pp.waitForTimeout(150)
+                }
+                return n
+            })()
+            const touchCopy = await pp.evaluate(() => window.__contraTest.probe()?.touch === true)
+            const pScreen = await pp.evaluate(() => window.__contraTest.probe()?.screen)
+            return { gateUp, gateQuiet, playing, recorded, platePx, touchCopy, pScreen, pErrs }
+        } finally {
+            await pp.close()
+        }
+    }
+    const granted = await phoneLeg('yes')
+    r.check('#2971 phone: the first tap starts the run AND raises the gate',
+        granted.playing && granted.gateUp, `playing=${granted.playing} gate=${granted.gateUp}`)
+    r.check('#2971 phone: the tap never flips the motion switch before the player sees it',
+        granted.gateQuiet, `motion switch aria-checked=${granted.gateQuiet ? 'false' : 'not-false'}`)
+    r.check('#2971 phone: YES keeps banking mid-take — the recorder is armed',
+        granted.recorded === true, `recorded=${granted.recorded}`)
+    r.check('#2971 phone: the LIVE plate paints while the take banks',
+        granted.platePx > 0, `hot-red plate pixels=${granted.platePx}`)
+    r.check('#2971 phone: the touch-aware copy is live (?touch=1)',
+        granted.touchCopy === true, `touch=${granted.touchCopy}`)
+    r.check('#2971 phone: a granted take still plays (screen=play)',
+        granted.pScreen === 'play', `screen=${granted.pScreen}`)
+    r.check('#2971 phone: no page errors on the granted leg', granted.pErrs.length === 0, granted.pErrs.join(' | '))
+
+    const declined = await phoneLeg('no')
+    r.check('#2971 phone: the first tap starts the run AND raises the gate (declined leg)',
+        declined.playing && declined.gateUp, `playing=${declined.playing} gate=${declined.gateUp}`)
+    r.check('#2971 phone: NO plays on silently — nothing records',
+        declined.recorded === false, `recorded=${declined.recorded}`)
+    r.check('#2971 phone: declined runs never paint the LIVE plate',
+        declined.platePx === 0, `hot-red plate pixels=${declined.platePx}`)
+    r.check('#2971 phone: a declined run still plays (screen=play)',
+        declined.pScreen === 'play', `screen=${declined.pScreen}`)
+    r.check('#2971 phone: no page errors on the declined leg', declined.pErrs.length === 0, declined.pErrs.join(' | '))
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()
