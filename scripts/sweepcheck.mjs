@@ -458,6 +458,38 @@ if (MUT) {
                 return `fixture ${i}: referee threw (${e.message.slice(0, 70)})`
             }
         }
+        // 3) chord probe: the flag-devour bug (#3009) is invisible to the
+        //    dig-only seqPlay below — it only bites when a satisfied chord
+        //    meets a correct flag. Plant, flag a live clue's mines correctly,
+        //    chord: the pre-fix engine detonated the flag and cleared it.
+        for (const seed of [999, 4242, 7, 88888]) {
+            const g = Mm.newGame(0, seed)
+            try { Mm.plantAt(g, g.w >> 1, g.h >> 1) } catch { continue }
+            if (g.end) continue
+            let hit = null
+            outerC: for (let i = 0; i < g.w * g.h; i++) {
+                if (!g.open[i] || g.clue[i] === 0) continue
+                const cx = i % g.w, cy = (i / g.w) | 0
+                const adjMines = []
+                let adjSafeCovered = 0
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    if (!dx && !dy) continue
+                    const nx = cx + dx, ny = cy + dy
+                    if (nx < 0 || ny < 0 || nx >= g.w || ny >= g.h) continue
+                    const j = Mm.idx(g, nx, ny)
+                    if (g.mines[j]) adjMines.push(j)
+                    else if (!g.open[j]) adjSafeCovered++
+                }
+                if (!adjSafeCovered) continue
+                for (const j of adjMines) if (!g.flag[j]) Mm.flag(g, j % g.w, (j / g.w) | 0)
+                const bf = g.flags
+                Mm.chord(g, cx, cy)
+                if (g.end === 'dead') { hit = `seed ${seed}: chord detonated a correctly flagged clue at ${cx},${cy} — flags must shield the chord (#3009)`; break outerC }
+                if (g.flags !== bf) { hit = `seed ${seed}: chord cleared ${bf - g.flags} correct flag(s) — the shield was eaten (#3009)`; break outerC }
+                break outerC
+            }
+            if (hit) return hit
+        }
         for (let d = 0; d < 2; d++) {
             for (const seed of seeds(5)) {
                 const g = Mm.newGame(d, seed)
@@ -500,6 +532,12 @@ if (MUT) {
             src: swap(SRC_TEXT,
                 "else if (mLeft === 0) { for (const c of cov) if (!isMine(c)) { safeStamp[c] = token; ruleOf[c] = 'single-safe'; safeSet.push(c) }; acted = true }",
                 "else if (mLeft <= 1) { for (const c of cov) if (!isMine(c)) { safeStamp[c] = token; ruleOf[c] = 'single-safe'; safeSet.push(c) }; acted = true }", 'off-by-one-safe'),
+        },
+        {
+            label: 'chord devours its own flags (satisfied chord opens flagged cells — the #3009 pre-fix engine)',
+            src: swap(SRC_TEXT,
+                'if (!s.open[ni] && !s.flag[ni]) covered.push([nx, ny])',
+                'if (!s.open[ni]) covered.push([nx, ny])', 'flag-devour'),
         },
     ]
     for (const m of muts) {
