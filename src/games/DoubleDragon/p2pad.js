@@ -32,7 +32,13 @@ export function p2Merge(kb, pad) {
 // press re-seats through this same line. The seat exists (coop run), is the
 // CPU's, and is not down — then a live pad 2 hands it over. Returns true
 // when the seat was taken THIS call, so the caller pays the join shout once
-// per seating (a returning friend gets the same flare as an arriving one).
+// per seating.
+//
+// #3007 item 4 refines that shout: a returning driver is not a new player.
+// The shell tracks the first seating's tick (seat2At, #1712 convention) and
+// asks this to split arrival (seat2At < 0 → 'PLAYER 2') from return
+// (already seated once → 'P2 BACK' + the ascent chirp). Pure, Node-pinnable.
+export const isReSeat = (seat2At) => seat2At >= 0
 export function p2Seat(gs, active) {
     if (!active || !gs || !gs.jimmy || gs.jimmy.human || gs.jimmy.out) return false
     gs.jimmy.human = true

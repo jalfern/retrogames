@@ -1383,7 +1383,7 @@ export function drawBanner(ctx, gs) {
 // bracket corners springing outward) under a blinking PLAYER 2. Pure juice:
 // the timer lives in the shell, never in gs, so stateHash never sees it.
 export const JOIN_T = 48
-export function drawJoinFx(ctx, t, sx, sy) {
+export function drawJoinFx(ctx, t, sx, sy, back = false) {
     if (t <= 0) return
     if (t > JOIN_T - 18) {
         // core flash on the seat — one bright beat, fast decay
@@ -1406,8 +1406,11 @@ export function drawJoinFx(ctx, t, sx, sy) {
         ctx.globalAlpha = 1
     }
     if (t > 6 && (t > 24 || t % 6 < 4)) {
-        const s = 'PLAYER 2'
-        label(ctx, s, Math.round((W - textWidth(s, 2)) / 2), 78, '#5a8ae8', 2)
+        // #3007 item 4: a returning driver is not a new player — the seat was
+        // theirs seconds ago. A first seating shouts PLAYER 2; a re-seat after
+        // the idle hand-back answers P2 BACK, in the brighter flare blue.
+        const s = back ? 'P2 BACK' : 'PLAYER 2'
+        label(ctx, s, Math.round((W - textWidth(s, 2)) / 2), 78, back ? '#8fd0ff' : '#5a8ae8', 2)
     }
 }
 
@@ -1417,31 +1420,63 @@ export function drawJoinFx(ctx, t, sx, sy) {
 // row. The READY blink under the 2P tag (drawHud) keeps inviting the friend
 // back for as long as the CPU holds the seat — the flare names the moment,
 // the tag names the state. Shell state (mirror of joinFx), never gs.
+// #3007 item 1 (phone legibility): the original 1-px arms at alpha 0.15–0.85
+// fused into the sodium-lamp night — measured Δmax 85 native, and most arm
+// pixels under the ±12 asphalt-grain noise floor. The marks are 2-px now
+// (the extent that survives 0.5x binning, #2889's chevron law), the ink is
+// brighter cool grey, every arm rides a dark outline plate (the HELP!-box
+// law, #2897), and the alpha floor rose 0.15 → 0.35 so the closing tail
+// still reads on a phone.
 export const CPU_T = 60
-export function drawSeatCpu(ctx, t, sx, sy) {
-    if (t <= 0) return
-    if (t > CPU_T - 14) {
-        // grey beat on the seat — the soft inverse of the join flash
-        ctx.globalAlpha = Math.min(1, (t - (CPU_T - 14)) / 10) * 0.8
-        ctx.fillStyle = '#b9c2cc'
-        ctx.fillRect(sx - 1, sy - 26, 2, 24)
-        ctx.globalAlpha = 1
-    } else if (t > 10) {
-        // brackets close in — the computer settling into the seat
+export const GREY_INK = '#c8d2dc'
+export const GREY_OUT = '#0e131c'
+// Pure geometry for the node pin (the glintMarks precedent): the beat, the
+// eight closing arms in seat-relative coords, and the alpha they carry.
+export function handbackMarks(t) {
+    if (t <= 0) return null
+    if (t > CPU_T - 14) return { beat: Math.min(1, (t - (CPU_T - 14)) / 10) * 0.85, arms: [], alpha: 0 }
+    if (t > 10) {
         const p = (CPU_T - 14 - t) / (CPU_T - 14 - 10)
         const rx = 22 - Math.round(p * 12)
         const ry = 27 - Math.round(p * 12)
-        ctx.globalAlpha = 0.7 * (1 - p) + 0.15
-        ctx.fillStyle = '#9aa4ae'
+        const alpha = 0.5 * (1 - p) + 0.35
+        const arms = []
         for (const [mx, my] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-            ctx.fillRect(sx + mx * rx - (mx < 0 ? 0 : 1), sy - 15 + my * ry - (my < 0 ? 0 : 1), 4, 1)
-            ctx.fillRect(sx + mx * rx - (mx < 0 ? 0 : 1), sy - 15 + my * ry - (my < 0 ? 0 : 1), 1, 4)
+            const X = mx * rx, Y = -15 + my * ry
+            arms.push(
+                { out: [X - 1, Y - 1, 7, 4], ink: [mx < 0 ? X : X - 4, my < 0 ? Y : Y - 1, 5, 2] },
+                { out: [X - 1, Y - 1, 4, 7], ink: [mx < 0 ? X : X - 1, my < 0 ? Y : Y - 4, 2, 5] },
+            )
         }
+        return { beat: 0, arms, alpha }
+    }
+    return { beat: 0, arms: [], alpha: 0 }
+}
+export function drawSeatCpu(ctx, t, sx, sy) {
+    const m = handbackMarks(t)
+    if (!m) return
+    if (m.beat > 0) {
+        // grey beat on the seat — the soft inverse of the join flash
+        ctx.globalAlpha = m.beat
+        ctx.fillStyle = GREY_OUT
+        ctx.fillRect(sx - 2, sy - 27, 4, 26)
+        ctx.fillStyle = GREY_INK
+        ctx.fillRect(sx - 1, sy - 26, 2, 24)
+        ctx.globalAlpha = 1
+    }
+    if (m.alpha > 0) {
+        // brackets close in — the computer settling into the seat
+        ctx.globalAlpha = m.alpha * 0.9
+        ctx.fillStyle = GREY_OUT
+        for (const a of m.arms) ctx.fillRect(sx + a.out[0], sy + a.out[1], a.out[2], a.out[3])
+        ctx.globalAlpha = m.alpha
+        ctx.fillStyle = GREY_INK
+        for (const a of m.arms) ctx.fillRect(sx + a.ink[0], sy + a.ink[1], a.ink[2], a.ink[3])
         ctx.globalAlpha = 1
     }
     if (t > 12 && (t > 30 || t % 6 < 4)) {
         const s = 'CPU'
-        label(ctx, s, Math.round((W - textWidth(s, 2)) / 2), 78, '#9aa4ae', 2)
+        label(ctx, s, Math.round((W - textWidth(s, 2)) / 2), 78, GREY_INK, 2)
     }
 }
 

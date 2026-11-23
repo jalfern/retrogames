@@ -13,7 +13,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { slotPad, slotActive, connectedSlots } from '../../utils/onePad'
 import { rumble, rumbleSlot } from '../../components/gamepadMap'
-import { p2Merge, p2Seat } from './p2pad.js'
+import { p2Merge, p2Seat, isReSeat } from './p2pad.js'
 import { W, H, makeGame, step, autopilot, stateHash, CFG, PROPS_DEPTH, enterStage2, INTRO, endIntro } from './sim.js'
 import { drawBackground, drawBilly, drawJimmy, drawEnemy, drawPickup, drawProp, drawBarrel, drawProjectile, drawMarian, drawIntroMarian, PROPS, PROPS_YARD, drawHud, drawBanner, drawAttract, setLampLight, DRIP_T, drawJoinFx, JOIN_T, drawSeatCpu, CPU_T } from './art.js'
 
@@ -60,6 +60,9 @@ export default function DoubleDragon() {
         // #2863 join juice: ticks left on the seat-drop flare/banner (shell
         // state only — juice never enters gs, so stateHash stays byte-stable).
         let joinFx = 0
+        // #3007 item 4: whether the flare currently up is a return (P2 BACK)
+        // or a first arrival (PLAYER 2) — banner text + chime ride it.
+        let joinBack = false
         // #3005: the handback mirror of the join flare, and the seat-owner
         // edge-watch that notices dragonBrain taking the blue seat back.
         let cpuFx = 0
@@ -127,10 +130,23 @@ export default function DoubleDragon() {
             jimmy_die: () => { audioController.playSweep(360, 70, 0.45, 'sawtooth', 0.16); shake = Math.max(shake, 5) },
             seat_down: () => audioController.playSweep(300, 140, 0.22, 'triangle', 0.10),
             p2join: () => { audioController.playSweep(440, 880, 0.12, 'square', 0.05); audioController.playTone(1100, 0.1, 'square', 0.04, 0.1) },
+            // #3007 item 4: the returning friend's chirp — the handback
+            // descent run backwards (587→1175 + the top note), a fifth above
+            // the fresh-join fanfare so return and arrival can never be
+            // confused at an ear, at the join shout's own modest level.
+            p2back: () => { audioController.playSweep(587, 1175, 0.12, 'square', 0.055); audioController.playTone(1175, 0.1, 'square', 0.045, 0.1) },
             // #3005: the seat going quiet — a soft two-note descent, the
             // join shout inverted; the computer taking over is news, not bad
             // news, so it sits well under the fight's own levels.
-            seatBack: () => { audioController.playSweep(880, 440, 0.12, 'square', 0.04); audioController.playTone(330, 0.1, 'square', 0.035, 0.1) },
+            // #3007 item 2 (phone mix): the original 880→440/330 sat in the
+            // fight's mud — measured +0.9 dB over a machine-gun burst, i.e.
+            // buried. The descent moves up an octave-and-a-half to 1175→587
+            // + 440: the whoosh's LP700 bed and the hits' 699 Hz third own
+            // everything below ~700, and 900–1175 is the window they leave
+            // open. At 0.075 the news lands ≥8 dB over the burst there and
+            // still sits ~6 dB under a hit's peak — audible without
+            // outranking the fight, which is exactly what QA asked for.
+            seatBack: () => { audioController.playSweep(1175, 587, 0.12, 'square', 0.075); audioController.playTone(440, 0.1, 'square', 0.05, 0.1) },
             wave: () => audioController.playSweep(120, 240, 0.3, 'triangle', 0.12),
             chargewind: () => audioController.playFilteredNoise(0.5, 0.06, 240),
             charge: () => { audioController.playSweep(160, 70, 0.24, 'sawtooth', 0.14); shake = Math.max(shake, 2) },
@@ -218,7 +234,10 @@ export default function DoubleDragon() {
 
         // #2863: one join ritual for every way the seat changes hands — chime,
         // the friend's pad buzzing awake, and the flare/banner on Jimmy.
-        const seatJoin = () => { sfx.p2join(); rumbleSlot(2, 150, 0.6); joinFx = JOIN_T }
+        // #3007: a re-seat after a hand-back says P2 BACK (brighter flare +
+        // ascent chirp) — seat2At remembers the first seating, so the shell
+        // knows a return from an arrival without touching gs.
+        const seatJoin = (back = false) => { if (back) sfx.p2back(); else sfx.p2join(); rumbleSlot(2, 150, 0.6); joinBack = back; joinFx = JOIN_T }
 
         const sparks = (n, nearBilly, col) => {
             for (let i = 0; i < n; i++) {
@@ -331,6 +350,7 @@ export default function DoubleDragon() {
             takenSeen = false
             seat2At = -1 // a fresh run hands the blue seat back to the CPU
             joinFx = 0
+            joinBack = false
             cpuFx = 0
             prevHuman = false
             setMode('play')
@@ -471,7 +491,7 @@ export default function DoubleDragon() {
             if (screen === 'attract') drawAttract(ctx, Math.floor(gs.tick / 150), gs.tick)
             else drawBanner(ctx, gs)
             // #2863: the drop-in shout, over the street and under nothing else
-            if (screen === 'play' && gs.jimmy) drawJoinFx(ctx, joinFx, Math.round(gs.jimmy.x - gs.camX), Math.round(gs.jimmy.y))
+            if (screen === 'play' && gs.jimmy) drawJoinFx(ctx, joinFx, Math.round(gs.jimmy.x - gs.camX), Math.round(gs.jimmy.y), joinBack)
             if (screen === 'play' && gs.jimmy) drawSeatCpu(ctx, cpuFx, Math.round(gs.jimmy.x - gs.camX), Math.round(gs.jimmy.y))
         }
 
@@ -490,7 +510,7 @@ export default function DoubleDragon() {
                         if (screen === 'play') {
                             // #2860 drop-in: any live pad-2 input takes the blue
                             // seat, the same law the WASD keys obey, chime and all.
-                            if (p2Seat(gs, slotActive(2))) seatJoin()
+                            if (p2Seat(gs, slotActive(2))) seatJoin(isReSeat(seat2At))
                             stepSim(simPad())
                         } else if (screen === 'attract') {
                             if (demoHold > 0) { demoHold -= 1; if (demoHold === 0) gs = makeGame((gs.seed + 7) >>> 0, { coop: coopOn() }) }
@@ -533,7 +553,7 @@ export default function DoubleDragon() {
             // #2857 fix: the seat belongs to P2's keys only — Billy's arrows must
             // not steal the blue dragon from his CPU (the drop-in law names the
             // keys; the guard said everything). Exposed by the ropes-phase leg.
-            if (isP2 && gs.jimmy && !gs.jimmy.human && !gs.jimmy.out) { gs.jimmy.human = true; seatJoin() }
+            if (isP2 && gs.jimmy && !gs.jimmy.human && !gs.jimmy.out) { gs.jimmy.human = true; seatJoin(isReSeat(seat2At)) }
             if (e.code === 'KeyA') keys2.l = true
             if (e.code === 'KeyD') keys2.r = true
             if (e.code === 'KeyW') keys2.u = true
@@ -718,7 +738,7 @@ export default function DoubleDragon() {
                 ],
                 actions: [
                     { label: '+1 LIFE', run: () => { gs.billy.lives += 1; return 'extra life' } },
-                    { label: 'P2: HUMAN SEAT', run: () => { if (!gs.jimmy) return 'no partner this run (?solo=1)'; if (!gs.jimmy.human) { if (gs.jimmy.out) return 'blue seat is down'; gs.jimmy.human = true; gs.jimmy.idle = 0; seatJoin(); return 'blue seat: human (WASD FGV) — join fx fired' } gs.jimmy.human = false; gs.jimmy.idle = 0; return 'blue seat: CPU' } },
+                    { label: 'P2: HUMAN SEAT', run: () => { if (!gs.jimmy) return 'no partner this run (?solo=1)'; if (!gs.jimmy.human) { if (gs.jimmy.out) return 'blue seat is down'; gs.jimmy.human = true; gs.jimmy.idle = 0; seatJoin(isReSeat(seat2At)); return 'blue seat: human (WASD FGV) — join fx fired' } gs.jimmy.human = false; gs.jimmy.idle = 0; return 'blue seat: CPU' } },
                     { label: 'TAKE A HIT (P2)', run: () => { if (!gs.jimmy) return 'no partner'; gs.jimmy.lives = 1; window.__ddTest.setup({ killAlly: true }); return 'a goon swings at Jimmy' } },
                     { label: 'GIVE STICK', run: () => { gs.billy.weapon = 'stick'; return 'stick in hand' } },
                     { label: 'GIVE KNIFE', run: () => { gs.billy.weapon = 'knife'; return 'steel in hand — PUNCH throws' } },
@@ -744,6 +764,7 @@ export default function DoubleDragon() {
                     keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.k = keys2.p = false
                     jumpQ = kickQ = punchQ = jumpQ2 = kickQ2 = punchQ2 = false
                     joinFx = 0
+                    joinBack = false
                     cpuFx = 0
                     prevHuman = false
                     screen = 'play'
