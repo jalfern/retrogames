@@ -362,11 +362,14 @@ three rounds through real keys** · zero page errors.
   grammar + honest sim seam; every call banks as `voiceCmd` (seat 1) and the
   consent-gated raw track rides the take, so Contra joined the voice games
   (#1711 S5 lineage). See the #3000 note below.
-- **One pad on phones (open, by law)**: the blue seat is desktop-keyboard only
-  (Jon's rule — no second touchpad), so a phone friend's take is hero + CPU
+- One pad on phones (**DISCLAIMER** — open, by law): the blue seat is desktop-keyboard only
+  (Jon's rule — no second touchpad, #2058), so a phone friend's take is hero + CPU
   wingman; the wingman's CPU hands never produce training rows (#2058).
   Spoken orders (#3000) are the law-abiding second channel the arcade's
-  co-op talk actually was — the pad row still stays hero-only.
+  co-op talk actually was — the pad row still stays hero-only. NOT BUILDABLE:
+  a second on-screen pad is a non-feature by Jon's own rule — the honest fix
+  for it (shouted orders) already shipped, so this must not re-score on the
+  never-dry ladder (#2488 marker law).
 
 - **CLOSED by #2837**: seat ceremony shipped — drop-in rappels in at the
   hero's side (never puppeteers the standing wingman) and a seat idle 10 s
