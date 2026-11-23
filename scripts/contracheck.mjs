@@ -21,7 +21,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice } from '../src/games/Contra/sim.js'
+import { makeGame, step, autopilot, stateHash, CFG, PLATFORMS, FALLS_LEDGES, warpFalls, warpBoss, dropIn, releaseSeat, CARRIER_ALT, vineTip, CASCADE, VINES, loopK, sortieK, LOOP_CAP, LOOP_STEP, LOOP_LIFE_BONUS, LOOP_LIVES_MAX, LOOP_FX, loopVoice, arcadeLoop, applyCall } from '../src/games/Contra/sim.js'
+import { parseCall, intentKey } from '../src/games/Contra/voicecalls.js'
 import { drawCapsule, drawCarrier, seatTagState, TAG_WARN, SKY_BASE, MUZZLE_BASE, heatSky, heatMuzzle } from '../src/games/Contra/art.js'
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
@@ -2022,6 +2023,40 @@ if (MUTANT) {
                     : null
             },
         },
+        {
+            // #3000: the shout must actually reach the barrel. Silence the aim
+            // channel at the seam and the radio echoes while the wingman keeps
+            // staring at the treeline — louder than useless, a liar with a banner.
+            name: 'voice-deaf',
+            anchor: 'gs.orderAim = intent.dir',
+            plant: "gs.orderAim = 'level' /* MUTANT(voice-deaf): every aim shout falls on deaf ears */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(13)
+                for (let t = 0; t < 90; t++) { mod.step(gs, mod.autopilot(gs)); gs.ev.length = 0 }
+                mod.applyCall(gs, { kind: 'aim', dir: 'up' })
+                let up = 0
+                for (let t = 0; t < 120 && !gs.end; t++) {
+                    mod.step(gs, mod.autopilot(gs)); gs.ev.length = 0
+                    for (const bl of gs.pb) if (bl.o === 1 && bl.vy < -0.3) up++
+                }
+                return up < 100
+                    ? `HARM NAMED: AIM UP was shouted, the banner said AIM UP - and the wingman answered with ${up} sky-rounds (hundreds expected). The radio became theater`
+                    : null
+            },
+        },
+        {
+            // #3000: defaults are the contract with every pre-voice pin and
+            // sweep — drift the born-stance and un-spoken runs change shape.
+            name: 'drift-hug',
+            anchor: "orderAim: 'level', orderForm: 'follow', holdX: 0,",
+            plant: "orderAim: 'level', orderForm: 'spread', holdX: 0, /* MUTANT(drift-hug): the wingman is born on a flank nobody ordered */",
+            harm: async (mod) => {
+                const gs = mod.makeGame(3)
+                return gs.orderForm !== 'follow'
+                    ? `HARM NAMED: a fresh game starts already SPREAD (${gs.orderForm}) - the pre-voice stance drifted; every un-spoken run and pin stands on sand`
+                    : null
+            },
+        },
     ]
     for (const p of plants) {
         const f = p.file || SIM
@@ -2154,6 +2189,161 @@ r.check('#2894 the heat holds — capped loops 4 and 9 still clear 12/12 — the
     for (let i = 0; i < 400; i++) { step(h1, autopilot(h1)); step(h2, autopilot(h2)); heatSky(h1.loop); heatMuzzle(h1.loop) }
     r.check('#2902 heat cues are hash-clean — two loop-3 replays stay identical (palette/voice consume zero gs.r)',
         stateHash(h1) === stateHash(h2), `${stateHash(h1)} vs ${stateHash(h2)}`)
+}
+
+// ------------------------------------------------- #3000 spoken orders ---
+// The voice seam, Node side: the pure grammar, the honest sim seam, and the
+// obedience laws. Determinism rules the section: an un-spoken run is the
+// pre-#3000 game byte-for-byte (twins hash-identical), a spoken run diverges
+// (the orders ride the hash), and applyCall consumes ZERO gs.r — a shout can
+// never bend the seed. Formation lives where it can be kept: jungle and arena;
+// the falls climb out-ranks it (a held seat on the torrent is a drowned seat).
+{
+    const CALLS_YES = [
+        ['aim up', 'aim-up'], ['AIM UP!', 'aim-up'], ['shoot high', 'aim-up'], ['watch the sky', 'aim-up'],
+        ['point up there', 'aim-up'], ['guns up', 'aim-up'], ['look above', 'aim-up'], ['bring the gunship down', 'aim-up'],
+        ['bring it down', 'aim-down'], ['aim down', 'aim-down'], ['fire low', 'aim-down'],
+        ['aim straight ahead', 'aim-level'], ['level your gun', 'aim-level'],
+        ['follow me', 'follow'], ['come with me', 'follow'], ['rally', 'follow'], ['let us go', 'follow'],
+        ['hold', 'hold'], ['hold position', 'hold'], ['stay', 'hold'], ['cover me', 'hold'], ['wait', 'hold'],
+        ['spread out', 'spread'], ['fan out', 'spread'], ['take the flank', 'spread'], ['fall back', 'spread'], ['widen up', 'spread'],
+    ]
+    const CALLS_NO = ['', 'up', 'down', 'aim', 'watch out', 'left right', 'grenade', 'hello friend', 'the jungle']
+    const missY = CALLS_YES.filter(([t, want]) => intentKey(parseCall(t)) !== want)
+    const hitN = CALLS_NO.filter((t) => intentKey(parseCall(t)) !== null)
+    r.check(`#3000 grammar: all ${CALLS_YES.length} phrasings land their intent`, missY.length === 0, missY.map((x) => `${x[0]}->${intentKey(parseCall(x[0]))}`).join(' '))
+    r.check(`#3000 grammar: all ${CALLS_NO.length} non-orders refuse (bare directions and commandless verbs are guesses, not orders)`,
+        hitN.length === 0, hitN.join(' '))
+
+    {
+        const gs = makeGame(7)
+        const r0 = gs.r
+        const a = applyCall(gs, { kind: 'aim', dir: 'up' })
+        const f = applyCall(gs, { kind: 'formation', dir: 'spread' })
+        const bad = applyCall(gs, { kind: 'teleport', dir: 'win' })
+        r.check('#3000 honesty: orders consume zero gs.r — a shout cannot bend the seed',
+            gs.r === r0 && a.ok && f.ok && !bad.ok, `why=${bad.why}`)
+    }
+
+    {
+        const gs = makeGame(3)
+        const d0 = gs.orderAim === 'level' && gs.orderForm === 'follow' && gs.holdX === 0
+        applyCall(gs, { kind: 'formation', dir: 'spread' })
+        applyCall(gs, { kind: 'aim', dir: 'up' })
+        const next = arcadeLoop(gs)
+        r.check('#3000 defaults are today\'s stance, and the arcade-loop rebuild resets the orders',
+            d0 && next.orderForm === 'follow' && next.orderAim === 'level' && next.holdX === 0)
+    }
+
+    const twinRun = (seed, n, at, intent) => {
+        const gs = makeGame(seed)
+        const trail = []
+        for (let t = 0; t < n; t++) {
+            if (at === t && intent) applyCall(gs, intent)
+            step(gs, autopilot(gs))
+            trail.push({ x: gs.p2.x, y: gs.p2.y, px: gs.p.x })
+        }
+        return { gs, trail }
+    }
+
+    {
+        const a = makeGame(17); const b = makeGame(17)
+        let same = true
+        for (let t = 0; t < 600 && !a.end && !b.end; t++) {
+            step(a, autopilot(a)); step(b, autopilot(b))
+            if (stateHash(a) !== stateHash(b)) { same = false; break }
+        }
+        r.check('#3000 the invariant law: un-spoken twins stay hash-identical for 600 ticks (nobody shouted, nothing changed)', same)
+        const c = makeGame(19); const d = makeGame(19)
+        let diverged = false
+        for (let t = 0; t < 400 && !c.end && !d.end; t++) {
+            if (t === 50) applyCall(d, { kind: 'aim', dir: 'up' })
+            step(c, autopilot(c)); step(d, autopilot(d))
+            if (stateHash(c) !== stateHash(d)) { diverged = true; break }
+        }
+        r.check('#3000 orders move the hash — a replay cannot silently drop a shout', diverged)
+    }
+
+    {
+        const a = twinRun(5, 240)
+        const b = twinRun(5, 240, 60, { kind: 'formation', dir: 'spread' })
+        const gapA = a.trail[239].px - a.trail[239].x
+        const gapB = b.trail[239].px - b.trail[239].x
+        r.check('#3000 SPREAD widens the flank (the wingman takes the lagging lane)',
+            gapB > gapA + 25, `gap follow=${gapA.toFixed(0)} spread=${gapB.toFixed(0)}`)
+        applyCall(b.gs, { kind: 'formation', dir: 'follow' })
+        let n = 0
+        while (!b.gs.end && n < 140 && b.gs.p.x - b.gs.p2.x > 36) { step(b.gs, {}); n++ }
+        r.check('#3000 FOLLOW re-anchors to the shoulder (shared physics: the walk-in closes while the hero is quiet)',
+            b.gs.p.x - b.gs.p2.x <= 36, `closed to ${(b.gs.p.x - b.gs.p2.x).toFixed(0)} in ${n} quiet ticks`)
+    }
+
+    {
+        // Scripted, seed-honest hold drill: drive the hero straight so the
+        // camera ratchets at a known pace; post the wingman mid-screen; the
+        // scroll must reach the post (release) and the resume must chase.
+        // Seeds 1..12 tried in order — the first survivor names the drill.
+        const holdDrill = (seed) => {
+            const gs = makeGame(seed)
+            let n = 0, drift = 0, stood = 0, holdX = 0, released = false, chased = 0
+            while (n < 400 && !gs.end && gs.p2.x - gs.cam < 150) { step(gs, { right: true }); n++ }
+            if (gs.end || gs.p2.dead > 0) return null
+            const called = applyCall(gs, { kind: 'formation', dir: 'hold' })
+            if (!called.ok) return null
+            holdX = gs.holdX
+            const gap0 = gs.p2.x - gs.cam
+            while (n < 1200 && !gs.end && gs.orderForm === 'hold') {
+                step(gs, { right: true }); n++
+                drift = Math.max(drift, Math.abs(gs.p2.x - holdX))
+                stood++
+                if (gs.p2.dead > 0) return null
+            }
+            released = gs.orderForm === 'follow' && !gs.end && gs.p2.dead === 0
+            const m0 = n
+            while (n < m0 + 300 && !gs.end && gs.p2.dead === 0 && gs.p2.x - holdX < 40) { step(gs, { right: true }); n++ }
+            chased = gs.p2.dead === 0 ? gs.p2.x - holdX : -1
+            return { seed, ok: released && drift <= 6 && stood >= 8 && chased >= 40, stood, drift, gap0, chased }
+        }
+        let drill = null
+        for (let s = 1; s <= 12 && !drill; s++) { const d = holdDrill(s); if (d && d.ok) drill = d }
+        r.check('#3000 HOLD posts mid-screen (clamped to the live edge), stands fast, SELF-RELEASES when the scroll reaches the post, and the resume chases (the board took his position — wingman autonomy)',
+            drill !== null, drill ? `seed ${drill.seed}: stood=${drill.stood} drift=${drill.drift.toFixed(1)} gap-at-post=${drill.gap0.toFixed(0)} chased=${drill.chased.toFixed(0)}px` : 'no seed in 1..12 completed the drill')
+    }
+
+    {
+        const a = makeGame(11); warpFalls(a)
+        const b = makeGame(11); warpFalls(b)
+        applyCall(b, { kind: 'formation', dir: 'hold' })
+        let same = true
+        for (let t = 0; t < 300 && !a.end && !b.end; t++) {
+            step(a, autopilot(a)); step(b, autopilot(b))
+            if (Math.abs(a.p2.x - b.p2.x) > 0.01 || Math.abs(a.p2.y - b.p2.y) > 0.01) { same = false; break }
+        }
+        r.check('#3000 the torrent out-ranks the shout — formation orders leave the falls climb byte-identical (a held seat here is a drowned seat)', same)
+    }
+
+    {
+        const gs = makeGame(13)
+        for (let t = 0; t < 90; t++) step(gs, autopilot(gs))
+        applyCall(gs, { kind: 'aim', dir: 'up' })
+        let up = 0
+        for (let t = 0; t < 120 && !gs.end; t++) {
+            step(gs, autopilot(gs))
+            for (const bl of gs.pb) if (bl.o === 1 && bl.vy < -0.3) up++
+        }
+        r.check('#3000 AIM UP puts diagonals on the board from the ALLY gun (the cabinet\'s anti-air)', up > 0, `${up} up-rounds`)
+        applyCall(gs, { kind: 'aim', dir: 'level' })
+        r.check('#3000 AIM LEVEL hands the barrel back to the brain', gs.orderAim === 'level')
+    }
+
+    {
+        const gs = makeGame(23)
+        gs.p2.human = true
+        applyCall(gs, { kind: 'aim', dir: 'up' })
+        for (let t = 0; t < 60; t++) step(gs, autopilot(gs), { left: false, right: true, up: false, down: false, a: false, b: true })
+        r.check('#3000 a human in the blue seat keeps his own aim — orders steer the wingman brain, never a person\'s hands',
+            Math.abs(gs.p2.ay) < 0.01 && gs.p2.ax > 0.9, `ax=${gs.p2.ax.toFixed(2)} ay=${gs.p2.ay.toFixed(2)}`)
+    }
 }
 
 // ------------------------------------------------------------- browser leg ---
@@ -2835,6 +3025,58 @@ const browser = await launch()
 
     r.check('zero page errors', errs.length === 0, errs.join(' | '))
     await page.close()
+}
+
+// ------------------------------------------------ #3000 voice browser leg ---
+// No speech engine in headless Chrome — which is exactly the honest-degrade
+// case to pin: the radio must report UN-ARMED (never fake a LISTEN), while
+// the shared seam still obeys and banks. Everything runs in ONE evaluate so
+// the rAF loop cannot drift the twins between reads.
+{
+    const vp = await openGame(browser, { url: `${BASE}/contra`, hook: '__contraTest', wait: 500 })
+    const vErrs = []
+    vp.on('pageerror', (e) => vErrs.push(e.stack || e.message))
+    const leg = await vp.evaluate(() => {
+        const T = window.__contraTest, G = window.__game
+        T.start()
+        const cold = T.probe().call.armed
+        G.reset(21, 2)
+        const hSilent = G.step({ b: true }, 60).hash
+        G.reset(21, 2)
+        T.say('AIM UP')
+        const aimProbe = T.probe().call
+        const hShout = G.step({ b: true }, 60).hash
+        T.say('SPREAD OUT')
+        const spreadProbe = T.probe().call
+        const beforeNo = T.probe().call
+        T.say('HELLO THERE')
+        const noProbe = T.probe().call
+        G.recordStart()
+        G.step({}, 5)
+        T.say('AIM UP')
+        T.say('bogus nonsense')
+        const rec = G.recordStop()
+        return { cold, aim: aimProbe, diverged: hShout !== hSilent, spread: spreadProbe, no: noProbe, before: beforeNo, cmds: rec.voiceCmd || [] }
+    })
+    r.check('#3000 browser: no speech engine, no lie — the radio reports un-armed (headless honest-degrade)',
+        leg.cold === false, `armed=${leg.cold}`)
+    r.check('#3000 browser: a shout through the mic seam steers the wingman and echoes on the banner',
+        leg.aim.aim === 'up' && leg.aim.banner && leg.aim.banner.text === 'AIM UP' && leg.aim.banner.ok === true,
+        JSON.stringify(leg.aim))
+    r.check('#3000 browser: the shouted run diverges its twin (orders ride the hash end-to-end)', leg.diverged)
+    r.check('#3000 browser: SPREAD OUT lands the formation channel',
+        leg.spread.form === 'spread' && leg.spread.banner && leg.spread.banner.text === 'SPREAD', JSON.stringify(leg.spread))
+    r.check('#3000 browser: small talk refuses loudly (banner NO CALL) and moves nothing — every channel keeps its last order',
+        leg.no.banner && leg.no.banner.text === 'NO CALL' && leg.no.banner.ok === false
+        && leg.no.form === leg.before.form && leg.no.aim === leg.before.aim && leg.no.holdX === leg.before.holdX,
+        JSON.stringify({ no: leg.no, before: leg.before }))
+    r.check('#3000 browser: the take banks each call as voiceCmd — intents, not fake pads (seat 1, dir, why)',
+        leg.cmds.length === 2 && leg.cmds[0].said === 'AIM UP' && leg.cmds[0].intent === 'aim-up' && leg.cmds[0].dir === 'up'
+        && leg.cmds[0].ok === true && leg.cmds[0].seat === 1
+        && leg.cmds[1].intent === null && leg.cmds[1].ok === false && leg.cmds[1].why === 'NO CALL' && leg.cmds[1].seat === 1,
+        JSON.stringify(leg.cmds))
+    r.check('#3000 browser: no page errors on the voice leg', vErrs.length === 0, vErrs.join(' | '))
+    await vp.close()
 }
 
 r.exit(browser)

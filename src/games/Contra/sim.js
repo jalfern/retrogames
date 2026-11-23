@@ -133,6 +133,13 @@ export const CFG = {
     dropInT: 30,
     dropInV: 8,
     seatIdle: 600,
+    // #3000 spoken wingman orders (#1711 S5): the scroll reaching a held spot
+    // releases the HOLD order (the board took the position he was told to
+    // keep — wingman autonomy, pinned). Spread gaps: the flank lag behind the
+    // shoulder hug (allySpawnDX).
+    callHoldEdge: 28,
+    callSpreadGap: 78,
+    callSpreadGapBoss: 70,
     // #2814: NO allyLives — the cabinet shares ONE pool (gs.lives) between both
     // seats; a blue death costs the team, and GAME OVER lands when both seats
     // are down with the pool empty.
@@ -492,7 +499,23 @@ function seatStep (gs, h, pad, ledges, floorY, owner) {
 // the nearer-hero law mostly on the hero (as if he were solo), while the blue
 // gun still adds firepower, takes capsules that reach him, and hops the same
 // threats. Falls: he climbs the hero's shelf-line. Boss: he shadows the band.
+// #3000 THE AIM SHOUT rides above every phase's own aiming: "AIM UP" pins the
+// diagonal (the cabinet's anti-air), "AIM DOWN" the airborne down-angle
+// (aimFrom keeps down mid-air-only, the cabinet law), "AIM LEVEL" hands the
+// barrel back to the brain's own uses (capsule reach, core diagonals). The
+// feet and the dodges stay the brain's — an order moves the gun, not the hop
+// window; the fairness spine is pad-and-threat only. Dead/out/over: stance
+// waits (no cosmetic hash churn on a frozen seat).
 function allyBrain (gs) {
+    const pad = allyBrainBase(gs)
+    if (gs.end || gs.p2.dead > 0 || gs.p2.out) return pad
+    const aim = gs.orderAim || 'level'
+    if (aim === 'up') { pad.up = true; pad.down = false }
+    else if (aim === 'down') { pad.up = false; pad.down = true }
+    return pad
+}
+
+function allyBrainBase (gs) {
     const q = gs.p2
     const pad = { left: false, right: false, up: false, down: false, a: false, b: true }
     if (q.dead > 0 || q.out || gs.end) { pad.b = false; return pad }
@@ -500,6 +523,10 @@ function allyBrain (gs) {
     const heroLive = !p.out && p.dead === 0
 
     if (gs.phase === 'falls') {
+        // #3000: formation orders do NOT steer the falls climb — the torrent
+        // law outranks the shout (pinned: a HELD seat climbs the identical
+        // line as the un-spoken twin; ignoring an order that means "drown" is
+        // the wingman's standing law, same family as the spawn-door bounds).
         pad.right = false; pad.left = false
         // climb the hero's line — when the torrent has him in the low third,
         // skip straight to the hero's own shelf and jump at every footfall;
@@ -547,8 +574,14 @@ function allyBrain (gs) {
 
     if (gs.phase === 'boss') {
         pad.right = false; pad.left = false
-        // shadow the hero's patrol, clamped off the left spawn-door step
-        const anchor = heroLive ? Math.max(90, p.x - 24) : 100
+        // shadow the hero's patrol, clamped off the left spawn-door step —
+        // #3000 formation orders bend the anchor: SPREAD takes the far flank,
+        // HOLD stands at the post he was given (never into the spawn-door step).
+        const form = gs.orderForm || 'follow'
+        let anchor
+        if (form === 'spread') anchor = heroLive ? Math.max(90, p.x - CFG.callSpreadGapBoss) : 100
+        else if (form === 'hold') anchor = Math.max(gs.holdX || q.x, 90)
+        else anchor = heroLive ? Math.max(90, p.x - 24) : 100
         const d = anchor - q.x
         pad.right = d > 8; pad.left = d < -8
         pad.up = gs.tick % 140 < 78          // diagonals reach the core from the band
@@ -580,8 +613,17 @@ function allyBrain (gs) {
         return pad
     }
 
-    // jungle: ride the hero's shoulder (or press on when the pool is gone)
-    const anchor = heroLive ? p.x - 26 : gs.cam + 60
+    // jungle: ride the hero's shoulder (or press on when the pool is gone) —
+    // #3000 formation orders bend the anchor: SPREAD takes the lagging flank,
+    // HOLD stands at the post he was given, and the post is RELEASED when the
+    // scroll reaches it (the board took the spot; chasing resumes — pinned).
+    const form = gs.orderForm || 'follow'
+    let anchor
+    if (form === 'spread') anchor = heroLive ? p.x - CFG.callSpreadGap : gs.cam + 60
+    else if (form === 'hold') {
+        anchor = Math.max(gs.holdX || q.x, gs.cam + CFG.callHoldEdge)
+        if (q.x < gs.cam + CFG.callHoldEdge + 4) { gs.orderForm = 'follow'; anchor = heroLive ? p.x - 26 : gs.cam + 60 }
+    } else anchor = heroLive ? p.x - 26 : gs.cam + 60
     const d = anchor - q.x
     pad.right = d > 8; pad.left = d < -8
     // #2814 stay-in-line law: a partner never outruns a live hero into the
@@ -697,6 +739,12 @@ export function makeGame (seed, loop = 1) {
         gunships: [],           // {x,y,ty,vx,hp,t,n,dead,flash} — one sortie at a time
         sortieT: 0,             // tick the next sortie is due (0 = arena not armed)
         sortieN: 0,             // sortie index for this run (altitude/jitter seed)
+        // #3000 spoken wingman orders (applyCall) — two channels, defaults are
+        // today's standing behaviour (level barrel, shoulder hug), so an
+        // un-spoken run is the pre-#3000 game byte-for-byte. Rebuilt stages
+        // reset them (arcadeLoop calls makeGame): a new stage starts with no
+        // orders said.
+        orderAim: 'level', orderForm: 'follow', holdX: 0,
         // #2885 hanging vines live only in the falls; riders ride the seat fields
         // (p.vine / p2.vine), the tips are pure tick math — nothing mutable here.
         vines: [],
@@ -840,6 +888,32 @@ function allySideSpot (gs) {
 // hero's side (the cabinet's entry: helicopter drop / respawn are arrivals, the
 // same mercy laws: inv, clean rifle). Arriving also beats the death tumble:
 // the player at the keys never waits out the CPU respawn timer.
+// #3000 THE ORDER SEAT (#1711 S5) — a spoken call becomes wingman state.
+// Determinism by construction: zero gs.r draws (pinned), the two channels
+// replace independently (a height never cancels a formation), and every value
+// rides stateHash so a replay cannot silently drop a shout mid-run. HOLD pins
+// a world spot, clamped to the live screen — an order is always keepable at
+// least to the visible line. Recognition lives in voicecalls.js (the pure
+// grammar); this is the seam the browser mic path and the harness share.
+export const ORDER_AIMS = ['up', 'down', 'level']
+export const ORDER_FORMS = ['follow', 'hold', 'spread']
+export function applyCall (gs, intent) {
+    if (!intent || typeof intent !== 'object') return { ok: false, why: 'NO CALL' }
+    if (gs.end) return { ok: false, why: 'RUN OVER' }
+    if (intent.kind === 'aim') {
+        if (!ORDER_AIMS.includes(intent.dir)) return { ok: false, why: 'NO CALL' }
+        gs.orderAim = intent.dir
+        return { ok: true }
+    }
+    if (intent.kind === 'formation') {
+        if (!ORDER_FORMS.includes(intent.dir)) return { ok: false, why: 'NO CALL' }
+        gs.orderForm = intent.dir
+        if (intent.dir === 'hold') gs.holdX = Math.max(gs.p2.x, gs.cam + CFG.callHoldEdge)
+        return { ok: true }
+    }
+    return { ok: false, why: 'NO CALL' }
+}
+
 export function dropIn (gs) {
     const q = gs.p2
     if (q.out || gs.end || q.human) return false
@@ -1745,6 +1819,11 @@ export function autopilot (gs) {
 }
 
 // --- state hash: FNV-1a over the rounded sim truth (not events, not art). ---
+// #3000 order codes for the hash — what the wingman was TOLD is sim truth
+// (two channels + the held post), so a replay that dropped a shout diverges.
+const ORDER_FORM_C = { follow: 1, hold: 2, spread: 3 }
+const ORDER_AIM_C = { level: 0, up: 1, down: 2 }
+
 export function stateHash (gs) {
     let h = 0x811c9dc5
     const put = (v) => {
@@ -1771,6 +1850,8 @@ export function stateHash (gs) {
     // #2837 ceremony state is sim truth too — descent and drop-out patience
     // must ride the hash or a replay could silently diverge mid-rope.
     put(gs.p2.enterT); put(gs.p2.idle); put(gs.p2.padClaim ? 1 : 0)
+    // #3000 the spoken orders ride the hash — see ORDER_FORM_C above.
+    put(ORDER_FORM_C[gs.orderForm] ?? 1); put(ORDER_AIM_C[gs.orderAim] ?? 0); put(gs.holdX || 0)
     for (const b of gs.pb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(KCODE[b.k] || 0); put(b.hits ? b.hits.length : 0); put(b.o || 0) }
     for (const b of gs.eb) { put(b.x); put(b.y); put(b.vx); put(b.vy); put(b.gr ? 1 : 0) }
     for (const s of gs.soldiers) { put(s.awake ? 1 : 0); put(s.dead ? 1 : 0); put(s.x); put(s.y); put(s.t); put(s.walk); put(s.nade ? 1 : 0); put(s.hp) }

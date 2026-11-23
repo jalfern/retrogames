@@ -357,11 +357,16 @@ three rounds through real keys** · zero page errors.
 
 ## Honest gaps
 
-- **No voice capture (open)**: Contra opens no mic — its takes ship motion-only.
-  Voice tracks + `voiceCmd` live with the voice games (#1711 S5 lineage).
+- **CLOSED by #3000**: Contra opens the mic — the wingman takes shouted orders
+  (`AIM UP / AIM DOWN / AIM LEVEL`, `FOLLOW / HOLD / SPREAD`) through a pure
+  grammar + honest sim seam; every call banks as `voiceCmd` (seat 1) and the
+  consent-gated raw track rides the take, so Contra joined the voice games
+  (#1711 S5 lineage). See the #3000 note below.
 - **One pad on phones (open, by law)**: the blue seat is desktop-keyboard only
   (Jon's rule — no second touchpad), so a phone friend's take is hero + CPU
   wingman; the wingman's CPU hands never produce training rows (#2058).
+  Spoken orders (#3000) are the law-abiding second channel the arcade's
+  co-op talk actually was — the pad row still stays hero-only.
 
 - **CLOSED by #2837**: seat ceremony shipped — drop-in rappels in at the
   hero's side (never puppeteers the standing wingman) and a seat idle 10 s
@@ -540,10 +545,78 @@ human, not just a stub):
   screen is a scene).
 - **One file, two paths**: the DEV `__game.buttons` recorder and the production
   recorder arm through the same spec (`recSpec`) — same law online as in QA.
+ - **#3000 voice**: `voiceCmd` banks spoken wingman orders (intents, `seat: 1`);
+   the raw mic track rides the take through the auto layer, honestly declared
+   `voice: { slots: [0] }` — one device mic covers the thumb seat; the wingman
+   seat is CPU by law and a "voice" claimed for him would be a wallhack.
+
+## #3000 The wingman who answers — shouted orders (#1711 S5 voice lineage)
+
+The cabinet's co-op was two men talking over the gunfire; phones get one
+touchpad (Jon's rule), so the words ARE the second gunner's channel. Words
+steer the CPU wingman — the Gauntlet partner model (#1249), applied to Contra.
+
+- **Pure grammar** (`voicecalls.js`, contracheck-pinned like FireCrew's
+  voiceradio): two channels, each shout replaces only its own —
+  aim (`AIM UP` / `AIM DOWN` / `AIM LEVEL`) and formation
+  (`FOLLOW` / `HOLD` / `SPREAD`). Specificity: aim first ("aim up the ladder"
+  moves the barrel, not the feet); sky threats rank ABOVE the word "down"
+  ("bring the gunship down" points the barrel UP at the plane). Bare
+  directions and commandless verbs REFUSE — the wingman acts on orders, not
+  guesses ("up!" is a jump or a climb, and "aim" without a height is a
+  shrug). An unrecognized shout banks `ok:false, why:'NO CALL'` and keeps
+  every channel's last order.
+- **The order seam** (`sim.js` `applyCall(gs, intent)`): two slots
+  `gs.orderAim`/`gs.orderForm` (+ `gs.holdX`), defaults `level`/`follow` =
+  today's stance — **an un-spoken run is the pre-#3000 game byte-for-byte**
+  (twins hash-identical, pinned), orders ride `stateHash` (a replay cannot
+  silently drop a shout), and `applyCall` consumes **zero `gs.r`** — a shout
+  cannot bend the seed. `arcadeLoop` resets orders: a new stage starts with
+  nothing said.
+- **Obedience stays honest**: `allyBrain` obeys only inside what it already
+  sees (it never reads `gs.r` or off-screen state — same rule as before), an
+  aim order moves the BARREL, never the hop/dodge decisions (pad.a untouched —
+  the fairness spine is pad-and-threat only), and a HUMAN in the blue seat
+  keeps his own hands (orders steer the brain, not a person's pad).
+- **Survival outranks the shout**: HOLD stands at its post (clamped to the
+  live screen — an order is always keepable at least to the visible line) and
+  SELF-RELEASES when the scroll reaches the post (the board took his position;
+  wingman autonomy, pinned: stands ~24 ticks, drift ≤ 2px, then chases). In
+  the falls, formation is IGNORED — the torrent law out-ranks the shout
+  (pinned: a held seat's climb is byte-identical to the un-spoken twin; a
+  held seat there is a drowned seat).
+- **Mic law reuse, no new asks**: the #1711 auto-record gate is the consent
+  surface — a stored voice grant arms recognition at human start (plus
+  `acquireListenBadge` — LISTEN ≠ REC, #1427); desktop `V` toggles the radio,
+  reusing the stored grant before the #1247 prompt (#2985 pattern); permission
+  dying mid-run disarms loudly ('NO MIC, NO RADIO'); GAME OVER / unmount kill
+  the mic — it never stays hot. No speech engine (Safari, headless) = the
+  channel honestly reports UN-ARMED and play is untouched.
+- **The take remembers**: every heard phrase banks through `recordVoiceCmd`
+  (#1249) as `{t, said, intent|null, ok, dir?, why?, seat:1}` — seat 1, the
+  seat the words steer — and the consent-gated raw track rides the take
+  (motion-only takes are over). Words bank as INTENTS, never as fake pads —
+  seat rows stay human-only (#2058).
+- **Presentation**: the banner echoes every call under the HUD strip (ART
+  one-message law) — gold for obeyed (`AIM UP`), grey-green for refused
+  (`NO CALL`); a gold notch blinks above the wingman while `AIM UP` holds the
+  sky; ack chirp / refuse knock via `audioController` (ART bar 4); one attract
+  line teaches the order set (touch copy says the mic, not the keyboard).
+- **Harness**: `npm run contracheck` grew 20 #3000 pins — grammar (27 calls +
+  9 refusals), honesty (zero `gs.r`), defaults + loop reset, the invariant
+  twin law, hash divergence, SPREAD/FOLLOW/HOLD dynamics (scripted drill,
+  seeds 1..12 — seed 9 dies holding, so the drill names a survivor), the
+  falls override, AIM UP diagonals (0 vs 541 up-rounds), the human-seat
+  override, and a browser leg: headless reports un-armed, `__contraTest.say`
+  drives the mic seam, and a contract capture banks `voiceCmd`. Named
+  mutants: `voice-deaf` (the seam ignores aim shouts — "the radio became
+  theater") and `drift-hug` (defaults drift — every pre-voice pin stands on
+  sand); both die by name.
 
 `scripts/plaicraft-dataset.mjs#contraRows` replays take actions against the
 headless sim (`sim.js` + `sim.run`) and rebuilds with `arcadeLoop` at the
 victory boundary; a take whose claimed drops the sim never performs is refused.
 Named mutants (`--mutant` 10–12): adapter bypass, drop-in-law ignore, and
-loop-carry skip all fail loudly. Known gaps: no voice capture here (the pad
-takes are labeled, not spoken) and one pad on phones — same as Gauntlet.
+loop-carry skip all fail loudly. Known gaps: one pad on phones (by law, and
+#3000's spoken orders are the second channel that law allows); voice capture
+itself shipped in #3000 — the pad takes stay labeled AND the words bank.

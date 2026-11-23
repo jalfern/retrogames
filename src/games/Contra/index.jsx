@@ -12,9 +12,12 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, isRecording, armLiveCapture } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, recordVoiceCmd, isRecording, armLiveCapture, hasAutoVoice } from '../../utils/gameContract'
 import { initAutoRecord, askConsent, beginRun, endRun } from '../../utils/autoRecord'
-import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice } from './sim.js'
+import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
+import { startSpeechListen, speechSupported } from '../../utils/speechListen'
+import { W, H, CFG, PLATFORMS, FALLS_LEDGES, makeGame, step, autopilot, stateHash, warpFalls, warpBoss, dropIn, releaseSeat, vineTheta, vineTip, loopK, arcadeLoop, LOOP_FX, loopVoice, applyCall } from './sim.js'
+import { parseCall, intentKey, intentLabel } from './voicecalls.js'
 import { drawBackground, drawFringe, drawGround, drawPlatform, drawPlayer, drawSoldier, drawTurret, drawBarrel, drawCapsule, drawCarrier, drawGunship, drawBullet, drawGrenade, drawSniper, drawGate, drawDepot, drawHud, drawCanyon, drawLedge, drawWater, drawGateStructure, drawDeathTumble, drawFireball, drawRappel, drawHeli, drawVine, drawLoopBanner, seatTagState } from './art.js'
 
 const SIM_MS = 1000 / 60
@@ -38,6 +41,7 @@ const MESSAGES_KEYBOARD = [
     '2P DROP-IN: WASD MOVE · F JUMP · G FIRE',
     'STAND UP FROM THE BLUE SEAT — THE WINGMAN STEPS BACK IN',
     'CLEAR THE BASE AND STAGE 1 RETURNS — FASTER',
+    'AIM UP · AIM DOWN · FOLLOW · HOLD · SPREAD — SHOUT IT',
     'ONE HIT KILLS. BOTH SIDES.',
     'PRESS ANY KEY',
 ]
@@ -53,6 +57,7 @@ const MESSAGES_TOUCH = [
     'SEAT 2 IS KEYBOARD-ONLY — THE PHONE KEEPS THE CPU ALLY',
     'THE WINGMAN STEPS BACK IN ON THE KEYBOARD — NOT ON THIS SCREEN',
     'CLEAR THE BASE AND STAGE 1 RETURNS — FASTER',
+    'MIC GRANTED? THE WINGMAN TAKES SHOUTED ORDERS',
     'ONE HIT KILLS. BOTH SIDES.',
     'TAP TO START',
 ]
@@ -80,6 +85,11 @@ const sfx = {
     p2gone: () => { audioController.playSweep(880, 330, 0.14, 'square', 0.045); setTimeout(() => audioController.playSweep(440, 880, 0.12, 'square', 0.04), 150) },
     // #2842 the two-second drop-out warning: soft, well under the gunfire.
     seatWarn: () => audioController.playTone(760, 0.035, 'square', 0.028),
+    // #3000 the radio answers: the ack is a clipped two-note honor (up, then
+    // the order held); the refuse is one low, dry knock — heard-but-nothing-
+    // to-obey, never an error shriek (the mic is doing its best over gunfire).
+    callAck: () => { audioController.playSweep(620, 930, 0.06, 'square', 0.05); setTimeout(() => audioController.playTone(930, 0.08, 'square', 0.045), 70) },
+    callNo: () => audioController.playTone(180, 0.07, 'triangle', 0.05),
     // #2842 the arriving seat's boots on the sand — a dry thud under the dust.
     land: () => audioController.playNoise(0.07, 0.025),
     pdown: () => audioController.playSweep(300, 90, 0.3, 'square', 0.07),
@@ -200,6 +210,13 @@ export default function ContraGame () {
         // banner clock, and the attract demo's one taught pass at loop 2.
         let loopFx = null
         let demoLoop = 0, demoUntil = 0
+        // #3000 voice radio (#1711 S5): the shout channel. voiceCtl holds the
+        // recognition handle + the refcounted LISTEN badge; callFx is the
+        // banner echo (presentation only — decays on world ticks, never sim
+        // truth). The orders themselves are sim state (gs.orderAim/Form).
+        let callFx = null
+        const CALL_FX = 110
+        const voiceCtl = { on: false, listen: null, badge: null }
 
         const drain = () => {
             // #2902 sound escalation: enemy reports ride loopVoice(gs.loop) —
@@ -291,6 +308,7 @@ export default function ContraGame () {
             keys2.l = keys2.r = keys2.u = keys2.d = keys2.j = keys2.f = false
             jumpQ2 = fireQ2 = false
             seat2.length = 0
+            callFx = null   // #3000: fresh stage, fresh orders — the echo starts quiet too
             setMode('play'); screen = 'play'
         }
 
@@ -303,8 +321,72 @@ export default function ContraGame () {
         const humanStart = () => {
             startPlay()
             askConsent()
-                .then((c) => { if (c && c.motion) beginRun() })
+                .then((c) => {
+                    if (c && c.motion) beginRun()
+                    // #3000: the voice grant arms the shout channel too — the
+                    // mic was already consented, so recognition rides from the
+                    // first tick. No grant, no listen; the game plays the same.
+                    if (c && c.voice && armVoice()) callFx = { t: CALL_FX, ok: true, text: 'RADIO LIVE — SHOUT ORDERS' }
+                })
                 .catch(() => {})
+        }
+
+        // ---- VOICE ORDERS (#3000, #1711 S5 voice lineage) ----
+        // A shout is a call on the seat: the consent-gated mic path feeds the
+        // SAME pure seam the harness drives (voicecalls.parseCall -> sim's
+        // applyCall), so the mouth can only say what the grammar means and the
+        // honest brain can keep. Words bank as intents (voiceCmd #1249, seat 1
+        // — the seat they steer), never as fake pads (#2058: seat rows stay
+        // human-only). The mic never stays hot past GAME OVER.
+        const phraseHeard = (raw) => {
+            const text = String(raw || '').trim()
+            if (!text || screen !== 'play' || gs.end) return
+            const intent = parseCall(text)
+            const res = applyCall(gs, intent)
+            const obeyed = !!(intent && res.ok)
+            if (obeyed) sfx.callAck(); else sfx.callNo()
+            callFx = { t: CALL_FX, ok: obeyed, text: intent ? intentLabel(intent) : 'NO CALL' }
+            recordVoiceCmd({
+                said: text.slice(0, 80),
+                intent: intentKey(intent),
+                ok: obeyed,
+                ...(obeyed && intent.dir ? { dir: intent.dir } : {}),
+                ...(!obeyed ? { why: res.why || 'NO CALL' } : {}),
+                seat: 1, // the wingman's seat — the words steer him, not the thumb
+            })
+        }
+        const disarmVoice = () => {
+            if (voiceCtl.listen) voiceCtl.listen.stop()
+            if (voiceCtl.badge) voiceCtl.badge()
+            voiceCtl.listen = null; voiceCtl.badge = null
+            voiceCtl.on = false
+        }
+        const armVoice = () => {
+            if (voiceCtl.on || !speechSupported()) return false
+            voiceCtl.badge = acquireListenBadge() // LISTEN ≠ REC (#1427): recognition, not recording
+            voiceCtl.listen = startSpeechListen({
+                onPhrase: phraseHeard,
+                onError: (code) => {
+                    if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
+                        disarmVoice() // permission died mid-run — say it, don't go quiet
+                        if (screen === 'play') { callFx = { t: CALL_FX, ok: false, text: 'NO MIC, NO RADIO' }; sfx.callNo() }
+                    }
+                },
+            })
+            voiceCtl.on = true
+            return true
+        }
+        const voiceToggle = async () => {
+            if (screen !== 'play') return
+            if (voiceCtl.on) { disarmVoice(); callFx = { t: CALL_FX, ok: false, text: 'RADIO OFF' }; sfx.callNo(); return }
+            if (!speechSupported()) { callFx = { t: CALL_FX, ok: false, text: 'NO RADIO HERE' }; sfx.callNo(); return }
+            // #2985 one ask per person per device: the auto layer's live voice
+            // session IS the stored grant — reuse it before the #1247 prompt.
+            const consent = hasAutoVoice() ? { consent: true } : await askVoiceConsent()
+            if (screen !== 'play') return // moved on while the prompt was up
+            if (!consent.consent) { callFx = { t: CALL_FX, ok: false, text: 'NO MIC, NO RADIO' }; sfx.callNo(); return }
+            if (armVoice()) { callFx = { t: CALL_FX, ok: true, text: 'RADIO ON' }; sfx.callAck() }
+            else { callFx = { t: CALL_FX, ok: false, text: 'NO RADIO HERE' }; sfx.callNo() }
         }
 
         const endTo = (what) => {
@@ -314,6 +396,8 @@ export default function ContraGame () {
                 overAt = performance.now()
                 if (gs.score > hiscore) { hiscore = gs.score; localStorage.setItem('contra:hiscore', String(hiscore)) }
                 endRun() // #1711: the take ends with the run (no-op when idle/declined) — and NOT on 'clear': #2958 law, one take spans the arcade loops
+                disarmVoice() // #3000: the mic never stays hot on GAME OVER (#1249 law, Gauntlet precedent)
+                callFx = null
             }
         }
 
@@ -370,6 +454,7 @@ export default function ContraGame () {
             const p2 = simPad2()
             step(gs, pad, p2)
             drain()
+            if (callFx && --callFx.t <= 0) callFx = null // #3000 banner decay on WORLD ticks
             // #1712 S2: bank exactly what THIS tick consumed (attract demo ticks
             // never enter a take). The P2 drop-in needs no side channel: the
             // keyboard press that called dropIn IS the first pad-1 content the
@@ -427,6 +512,13 @@ export default function ContraGame () {
                 drawPlayer(ctx, gs.p2, gs.tick, true, rappelling, rappelling || gs.p2.vine >= 0)
             }
             else if (gs.p2.dead > 0) drawDeathTumble(ctx, gs.p2.x, gs.p2.y, Math.floor((CFG.respawnFreeze - gs.p2.dead) / 12) % 4, true)
+            // #3000 the shouted sky shows on the airframe: a gold notch blinks
+            // above the wingman while an AIM UP order holds his barrel high.
+            if (gs.orderAim === 'up' && gs.p2.dead === 0 && !gs.p2.out && gs.tick % 30 < 20) {
+                ctx.fillStyle = '#ffd23c'
+                const mx = Math.round(gs.p2.x), my = Math.round(gs.p2.y) - 31
+                ctx.fillRect(mx - 2, my + 1, 1, 1); ctx.fillRect(mx, my, 1, 1); ctx.fillRect(mx + 2, my + 1, 1, 1)
+            }
             if (gs.p.dead === 0 && !(gs.end === 'dead')) drawPlayer(ctx, gs.p, gs.tick, false, false, gs.p.vine >= 0)
             else if (gs.p.dead > 0) drawDeathTumble(ctx, gs.p.x, gs.p.y, Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4)
             // expanding fireballs under the sparks (cosmetic, sized by kind)
@@ -456,6 +548,24 @@ export default function ContraGame () {
             drawHud(ctx, gs, hiscore, loopFx, isRecording())
             // #2902 the LOOP banner rides above the world, under nothing.
             if (loopFx) drawLoopBanner(ctx, loopFx.n, loopFx.t, loopFx.k)
+            // #3000 the radio echo — one line at a time (ART.md bar 6), below
+            // the HUD strip, over the fight: what the mic heard, or that the
+            // words were nothing the wingman could obey.
+            if (screen === 'play' && callFx) {
+                const fade = callFx.t > CALL_FX - 12 ? (CALL_FX - callFx.t) / 12 : Math.min(1, callFx.t / 10)
+                ctx.save()
+                ctx.globalAlpha = Math.max(0, Math.min(1, fade))
+                ctx.textBaseline = 'top'
+                ctx.font = 'bold 9px "Courier New", monospace'
+                const bw = ctx.measureText(callFx.text).width + 14
+                ctx.fillStyle = 'rgba(6,10,4,0.80)'
+                ctx.fillRect(192 - bw / 2, 146, bw, 14)
+                ctx.strokeStyle = callFx.ok ? '#ffd23c' : '#7d8f6a'
+                ctx.strokeRect(192 - bw / 2 + 0.5, 146.5, bw - 1, 13)
+                ctx.fillStyle = callFx.ok ? '#ffd23c' : '#9aa88a'
+                ctx.fillText(callFx.text, 192 - bw / 2 + 7, 149)
+                ctx.restore()
+            }
 
             ctx.textBaseline = 'top'
             if (screen === 'attract' && !loopFx && !demoLoop) {
@@ -545,6 +655,7 @@ export default function ContraGame () {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
+            if (e.code === 'KeyV') { e.preventDefault(); voiceToggle(); return } // #3000 the crew radio
             if (screen === 'attract') { humanStart(); return }
             if (screen === 'over') { if (performance.now() - overAt > 900) endTo('attract'); return }
             if (screen === 'clear') return
@@ -604,6 +715,10 @@ export default function ContraGame () {
             id: 'contra',
             method: 'dpad',
             players: 2,
+            // #3000: one device mic covers the thumb seat, honest — seat 1 is
+            // the wingman (CPU by law); a "voice" claimed for him would be a
+            // wallhack, so the auto layer banks slot 0 only (Gauntlet's [0]).
+            voice: { slots: [0] },
             buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
             reads: ['up', 'down', 'left', 'right', 'a', 'b'],
             sources: () => [{ kind: 'model' }, { kind: gs.p2.human ? 'human' : 'cpu' }],
@@ -618,6 +733,7 @@ export default function ContraGame () {
                 jumpQ = fireQ = jumpQ2 = fireQ2 = false
                 wasGround = true; heli = null; warnArmed = false; lastEnterT = 0
                 seat2.length = 0
+                callFx = null
                 screen = 'play'
                 setMode('play')
             },
@@ -642,6 +758,7 @@ export default function ContraGame () {
                 // #2814: one pool — `lives` above IS both seats' bank; the
                 // seat's own bank no longer exists, only its standing state.
                 allyWeapon: gs.p2.weapon, allyOut: gs.p2.out,
+                orderForm: gs.orderForm, orderAim: gs.orderAim,   // #3000 the shouted orders are contract-visible
                 carriers: gs.carriers.length, pods: gs.pods.length,
                 hash: stateHash(gs),
             }),
@@ -695,6 +812,7 @@ export default function ContraGame () {
                     vine: { p: gs.p.vine, q: gs.p2.vine, tips: gs.vines.map((v) => { const tp = vineTip(gs, v.i); return { x: +tp.x.toFixed(1), y: +tp.y.toFixed(1) } }) },
                     snipersAlive: gs.snipers.filter((s) => !s.dead).length, nades: gs.eb.filter((b) => b.gr).length,
                     ally: { x: +gs.p2.x.toFixed(2), y: +gs.p2.y.toFixed(2), onGround: gs.p2.onGround, weapon: gs.p2.weapon, out: gs.p2.out, human: gs.p2.human, dead: gs.p2.dead, enter: gs.p2.enterT, idle: gs.p2.idle, padClaim: gs.p2.padClaim },
+                    call: { form: gs.orderForm, aim: gs.orderAim, holdX: +gs.holdX.toFixed(1), banner: callFx ? { t: callFx.t, text: callFx.text, ok: callFx.ok } : null, armed: voiceCtl.on },   // #3000 the shout channel is observable
                     keys: { ...keys },
                     keys2: { ...keys2 },
                     msg: MESSAGES[Math.floor(gs.tick / 150) % MESSAGES.length],
@@ -702,6 +820,11 @@ export default function ContraGame () {
                     tumble: gs.p.dead > 0 ? Math.floor((CFG.respawnFreeze - gs.p.dead) / 12) % 4 : -1,
                 }),
                 start: startPlay,
+                // #3000 the shout path, driveable with no mic: `say` lands a
+                // phrase exactly where recognition would land it (grammar ->
+                // applyCall -> voiceCmd bank). `voiceArmed` answers the badge.
+                say: (text) => { phraseHeard(text); return gs.orderAim + '/' + gs.orderForm },
+                voiceArmed: () => voiceCtl.on,
                 // #2902: reach the attract loop-teach on the harness's clock
                 // (waiting 60 s for the demo to clear stage 1 by itself is not
                 // a leg) — only ever fires from the attract screen.
@@ -784,6 +907,7 @@ export default function ContraGame () {
                     { label: 'HULL DOWN', run: () => { if (!gs.gunships.length) return 'the sky is clear'; gs.gunships[0].hp = 1; return 'gunship at one round from the fireball' } },
                     { label: 'LOOP +1', run: () => { gs.loop += 1; gs.lk = loopK(gs.loop); return `stage 1 at loop ${gs.loop} — pressure x${gs.lk.toFixed(2)}` } },   // #2894
                     { label: 'P2: HUMAN SEAT', run: () => { if (gs.p2.out) return 'seat down — pool spent'; if (gs.p2.human) releaseSeat(gs); else dropIn(gs); return gs.p2.human ? 'human seat: the soldier rappels in (WASD/F/G)' : 'wingman back on the seat' } },
+                    { label: 'SHOUT: AIM UP', run: () => { if (screen !== 'play') return 'no run on screen'; phraseHeard('AIM UP'); return gs.orderAim === 'up' ? 'the wingman holds the sky' : 'order did not land' } },
                     { label: 'TO WATERFALL', run: () => { warpFalls(gs); return 'into the canyon' } },
                     { label: 'TO THE GATE', run: () => { warpBoss(gs); return 'before the core' } },
                 ],
@@ -796,6 +920,7 @@ export default function ContraGame () {
         return () => {
             unexposeFeedbackState()
             endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
+            disarmVoice() // #3000: no hot mic past the component, ever
             if (import.meta.env.DEV) { if (window.__contraTest) delete window.__contraTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
