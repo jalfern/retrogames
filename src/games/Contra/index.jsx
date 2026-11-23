@@ -245,6 +245,7 @@ export default function ContraGame () {
         let acc = 0
         let gs = makeGame(1987)
         let screen = 'attract'
+        let harnessAuto = false   // #3064 harness drive: the honest autopilot takes the seat (live-leg use only)
         let demoHold = 0
         let clearHold = 0
         let overAt = 0
@@ -1037,7 +1038,7 @@ export default function ContraGame () {
                             // #2902: the LOOP banner holds the world still — the
                             // stage starts on the two beats AFTER the read.
                             if (loopFx) { loopFx.t += 1; if (loopFx.t >= LOOP_FX) loopFx = null }
-                            else stepSim(simPad())
+                            else stepSim(harnessAuto ? autopilot(gs) : simPad())   // #3064 the harness can hand the seat to the honest brain
                             // #3037: the armed-run salute fades on world ticks
                             if (kFx) { kFx.t += 1; if (kFx.t >= K_FX) kFx = null }
                             // #3041: the extend salute fades on world ticks too
@@ -1378,6 +1379,8 @@ export default function ContraGame () {
                     // falls-only schedule answers wherever the run stands);
                     // rapOff silences it and unwires whoever is on the line.
                     if (opts.rapNow) gs.rapT = Math.min(gs.rapT, gs.tick + 1)
+                    if (opts.rapStation !== undefined) gs.rapN = opts.rapStation   // aim the wheel at one station (harness only)
+                    if (opts.auto !== undefined) harnessAuto = !!opts.auto   // #3064 hand the seat to the honest brain (harness only)
                     if (opts.rapOff) { gs.rapT = 1e9; for (let ri = gs.soldiers.length - 1; ri >= 0; ri--) if (gs.soldiers[ri].rap) gs.soldiers.splice(ri, 1) }
                     if (opts.hangarOpen !== undefined && gs.boss) { gs.boss.hangar.open = opts.hangarOpen; gs.boss.hangar.launchAt = 0; gs.sortieT = 1e9 }
                     if (opts.podHere) gs.pods.push({ x: gs.p.x + (opts.podDX ?? 40), y: CFG.ground - 2, vx: CFG.podVx, vy: 0, kind: opts.podKind || 'laser' })
