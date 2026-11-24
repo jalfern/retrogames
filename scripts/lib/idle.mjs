@@ -189,7 +189,9 @@ const dirWords = (dir) => norm(String(dir).replace(/([a-z0-9])([A-Z])/g, '$1 $2'
 
 // games: registry order [{dir, label}] with gaps attached by the caller:
 //   { dir, label, gaps: string[] }  (README order = oldest first)
-// qaIssues: open feedback/building-qa issues {title, body}.
+// qaIssues: open feedback/building-qa issues {title, body, labels}.
+//   `waiting-jon` issues still OWN gaps (suppression, safe direction) but do
+//   not NAMED-count toward weakness (#3074 — see the law in the loop).
 // heldDirs: dirs another lane is inside (building / building-qa titles).
 // Returns { game, dir, gap, index, score, weak: true } — gap/index point at
 // the oldest UNOWNED README gap (gap null + index -1 when the game is only
@@ -205,7 +207,20 @@ export function weakestStage({ games = [], qaIssues = [], heldDirs = [] } = {}) 
         const gaps = (g.gaps || []).filter((x) => !ownsGap(qaIssues, name, x))
         const words = norm(name)
         const dwords = dirWords(g.dir)
+        // #3074: a `waiting-jon` feedback names weakness no lane may act on.
+        // The library's own law — BLOCKED gaps ("a gap no lane may build is
+        // not weakness") and #2488's DISCLAIMER rule — declines unactionable
+        // README bullets; the named count must honour the same law or a frozen
+        // QA item keeps its title weakest forever. Evidence: Nov 23, idle-kick
+        // answered `KICK CONTRA -1 weak` on a shelf with zero unowned gaps,
+        // the score produced entirely by #2971 (feedback + waiting-jon) —
+        // both builder slots re-kick at CONTRA every tick until Jon's phone
+        // lands, and three same-source overrides (#3064/#3066/#3067) were all
+        // this phantom rung. NOTE the asymmetry: ownership STAYS label-blind
+        // (above) — a waiting-jon issue still suppresses the gaps it owns, so
+        // this filter can never turn a suppressed gap into a fresh kick.
         const named = qaIssues.filter((q) => {
+            if ((q.labels || []).includes('waiting-jon')) return false
             const n = norm(`${q.title || ''} ${q.body || ''}`)
             return (words.length > 2 && n.includes(words)) || (dwords.length > 3 && n.includes(dwords))
         }).length
