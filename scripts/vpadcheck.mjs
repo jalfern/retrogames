@@ -1313,9 +1313,13 @@ clearAllSlots()
     // guard bites by running it over a mutant copy that restores the dot.
     const vc = readFileSync(new URL('../src/components/VirtualControls.jsx', import.meta.url), 'utf8')
     const sliceOf = (src) => {
-        const a = src.indexOf('ref={dPadRef}')
+        // #3108: the FULL pad draws its own compact d-pad via dPadRef higher in
+        // the file; the LEGACY cross is the last dPadRef before the actzone.
+        // Anchor at the last occurrence so the scan still covers exactly the
+        // legacy branch (full-pad cleanliness gets its own padtypecheck proof).
+        const a = src.lastIndexOf('ref={dPadRef}')
         const b = src.indexOf('data-vc="actzone"')
-        return a === -1 || b === -1 ? null : src.slice(a, b)
+        return a === -1 || b === -1 || b < a ? null : src.slice(a, b)
     }
     const cross = sliceOf(vc)
     ok(cross !== null && !/w-3 h-3 .*rounded-full/.test(cross),

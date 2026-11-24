@@ -10,6 +10,7 @@ import ClapTest from './pages/ClapTest'
 import { PadContext } from './components/padContext'
 import { GameLabelContext } from './components/gameLabelContext'
 import { padButton, extraButtonsOf } from './components/gamepadMap'
+import { configurePadTypes } from './components/padTypes'
 import { methodOf } from './utils/onePad'
 import ArcadeShowcase from './pages/ArcadeShowcase'
 import ForgeBoard from './pages/ForgeBoard'
@@ -81,6 +82,12 @@ function GameRoute({ game }) {
   useEffect(() => {
     setGameInfo(game.label, game.theme, game.footer)
   }, [game.label, game.theme, game.footer, setGameInfo])
+
+  // #3108: the route owns the controller-type store — one id per game, and
+  // VirtualControls / PauseOverlay read + switch through it.
+  useEffect(() => {
+    configurePadTypes(game.path, game.pad || null)
+  }, [game.path, game.pad])
 
   useTapStart(game)
 

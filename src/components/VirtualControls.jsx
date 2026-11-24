@@ -6,6 +6,7 @@ import { setStick, clearStick } from '../utils/padState'
 import { methodOf, press, release, setStickVec, clearHeld } from '../utils/onePad'
 import { actionCodeAt } from './actionHit'
 import { vpadSize } from './vpadSize'
+import { currentPadType, tiltVec, tiltDeadZoned, tiltDirs } from './padTypes'
 
 const DIAG = {
     ul: ['ArrowUp', 'ArrowLeft'],
@@ -72,6 +73,37 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
     // migration is per-title and cannot regress a game that has not opted in.
     const ways = waysOf(pad)
     const mDpadGate = hasMethod && method === 'dpad' && !!ways
+    // #3108 — the active CONTROLLER TYPE. The route store (padTypes) resolves
+    // default → saved choice → ?padtype override; switching in the pause menu
+    // fires 'retrogames:padtype' and the pad re-renders live. The type only
+    // decides WHAT IS DRAWN and which sensor moves the vector — direction,
+    // analog and button codes ride the exact same paths as before, so games,
+    // recordings and model slots see no difference between types.
+    const [ptype, setPtype] = useState(() => currentPadType(pad))
+    useEffect(() => {
+        const on = () => setPtype(currentPadType(pad))
+        window.addEventListener('retrogames:padtype', on)
+        return () => window.removeEventListener('retrogames:padtype', on)
+    }, [pad])
+    const tStick = ptype === 'stick'
+    const tDpad = ptype === 'dpad'
+    const tFull = ptype === 'full'
+    const tPointer = ptype === 'pointer'
+    const tTilt = ptype === 'tilt'
+    // Which shape each type renders for THIS game (defaults reproduce today's
+    // behaviour byte-for-byte: method 'stick' → fixed stick, method 'dpad' +
+    // ways → the #439 gate, legacy stick → the floating half, legacy dpad →
+    // the cross). A switch simply moves the game along these existing rails.
+    const gateMode = mDpadGate && tDpad
+    const crossMode = tDpad && !gateMode
+    const fixedStickMode = tStick && mStick
+    // A dpad-method game switched to STICK gets the floating half too — the
+    // same quantizer as the gate (floatWays), so a 4-way maze keeps its law.
+    const floatWays = hasMethod && method === 'dpad' ? (ways || 4) : 0
+    const floatMode = tStick && !fixedStickMode && !mPointer && (useStick || floatWays > 0)
+    const pointerMode = tPointer
+    const floatWaysRef = useRef(floatWays)
+    useEffect(() => { floatWaysRef.current = floatWays }, [floatWays])
     // #735: the pad scales with the screen (vpadSize law) — re-derived on
     // resize / orientation change, so iPad and iPhone and both orientations
     // each get their own size from the same pure law.
@@ -145,6 +177,21 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
     const swPtr = useRef(null)
     const swStart = useRef(null)
     const swHyst = useRef({})
+
+    // #3108 hooks (declared before the early return — hooks run every render).
+    // Floating stick quantizer memory for dpad games switched to STICK; the
+    // full-pad extras (each with its own pointer) + left stick; tilt state.
+    const floatHyst = useRef({})
+    const floatLast = useRef([])
+    const exPtrs = useRef({})
+    const [exHeld, setExHeld] = useState(() => new Set())
+    const fzZoneRef = useRef(null)
+    const fzKnobRef = useRef(null)
+    const fzPtr = useRef(null)
+    const fzLast = useRef(null)
+    const [tiltOn, setTiltOn] = useState(false)
+    const tiltBase = useRef({ b: 0, g: 0 })
+    const tiltSeen = useRef({ b: 0, g: 0 })
 
     const fire = useCallback((code, type) => {
         window.dispatchEvent(new KeyboardEvent(type, {
@@ -253,6 +300,15 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
         swPtr.current = null
         swStart.current = null
         swLast.current = null // #2057
+        // #3108: full-pad extras + left stick release with everything else.
+        for (const code of Object.keys(exPtrs.current)) {
+            if (exPtrs.current[code] != null) fire(code, 'keyup')
+        }
+        exPtrs.current = {}
+        setExHeld(new Set())
+        fzPtr.current = null
+        fzLast.current = null // #2057
+        if (fzKnobRef.current) fzKnobRef.current.style.transform = 'translate(-50%, -50%)'
         clearStick()
         clearHeld()
         setStickUI({ active: false, ax: 0, ay: 0 })
@@ -289,8 +345,23 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
             if (stickPtr.current !== null && l && stickAnchor.current) {
                 const v = stickVec(l.x - stickAnchor.current.x, l.y - stickAnchor.current.y)
                 if (knobRef.current) knobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
-                setDirCodes(dirsFrom(v.px, v.py))
+                if (floatWaysRef.current) {
+                    const codes = dpadDirs(l.x - stickAnchor.current.x, l.y - stickAnchor.current.y, floatWaysRef.current, floatHyst.current)
+                    floatLast.current = codes
+                    setDirCodes(codes)
+                } else {
+                    setDirCodes(dirsFrom(v.px, v.py))
+                }
                 setStick(v.x, v.y, v.push, v.engaged)
+            }
+            const fz = fzLast.current // #3108 full-pad left stick
+            if (fzPtr.current !== null && fz && fzZoneRef.current) {
+                const r = fzZoneRef.current.getBoundingClientRect()
+                const v = stickVec(fz.x - (r.left + r.width / 2), fz.y - (r.top + r.height / 2))
+                if (fzKnobRef.current) fzKnobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
+                setStickVec(v.x, v.y)
+                setStick(v.x, v.y, v.push, v.engaged)
+                setDirCodes(dirsFrom(v.px, v.py))
             }
             const f = fsLast.current
             if (fsPtr.current !== null && f && fsZoneRef.current) {
@@ -353,6 +424,34 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
         }
     }, [])
 
+    // #3108 TILT listener: while the game runs in TILT and the player has
+    // ENABLED motion, every deviceorientation sample drives the same stick
+    // pipeline — screen-rotated vector → radial dead zone (#431) → setStick /
+    // setStickVec + the dirsFrom quantizer. The baseline re-captures on
+    // rotation, and every output goes to zero on unmount/disable. Hooks live
+    // above the early return.
+    useEffect(() => {
+        if (!tTilt || !tiltOn) return undefined
+        const onOri = (e) => {
+            tiltSeen.current = { b: e.beta || 0, g: e.gamma || 0 }
+            const angle = (window.screen && window.screen.orientation && window.screen.orientation.angle) || window.orientation || 0
+            const v = tiltDeadZoned(tiltVec(e.beta || 0, e.gamma || 0, angle, tiltBase.current.b, tiltBase.current.g))
+            if (toHolder) setStickVec(v.x, v.y)
+            setStick(v.x, v.y, v.mag, v.mag > 0)
+            setDirCodes(dirsFrom(tiltDirs(v.x), tiltDirs(v.y)))
+        }
+        const onRot = () => { tiltBase.current = { ...tiltSeen.current } }
+        window.addEventListener('deviceorientation', onOri)
+        window.addEventListener('orientationchange', onRot)
+        return () => {
+            window.removeEventListener('deviceorientation', onOri)
+            window.removeEventListener('orientationchange', onRot)
+            setStickVec(0, 0)
+            clearStick()
+            setDirCodes([])
+        }
+    }, [tTilt, tiltOn, toHolder, setDirCodes])
+
     if (!visible || hidden) return null
 
     // --- D-pad: single touch zone, 8-way ---
@@ -380,13 +479,23 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
     const dMU = () => { dEnd('m') }
 
     // --- Floating stick: anchor on touch in the left half, knob follows clamped ---
+    // #3108: for a dpad-method game switched to STICK (floatWays > 0) the
+    // digital output runs through the SAME dpadDirs quantizer as the diamond
+    // gate (dominant axis + hysteresis, buffered turn on 4-way) — only the
+    // anchor moves, the law does not.
     const sUpdate = (cx, cy) => {
         const a = stickAnchor.current
         if (!a) return
         stickLast.current = { x: cx, y: cy } // #2057
         const v = stickVec(cx - a.x, cy - a.y)
         if (knobRef.current) knobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
-        setDirCodes(dirsFrom(v.px, v.py))
+        if (floatWays) {
+            const codes = dpadDirs(cx - a.x, cy - a.y, floatWays, floatHyst.current)
+            floatLast.current = codes
+            setDirCodes(codes)
+        } else {
+            setDirCodes(dirsFrom(v.px, v.py))
+        }
         setStick(v.x, v.y, v.push, v.engaged)
     }
     const sStart = (cx, cy, id) => {
@@ -403,7 +512,8 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
         stickAnchor.current = null
         stickLast.current = null // #2057
         setStickUI({ active: false, ax: 0, ay: 0 })
-        setDirCodes([])
+        // A 4-way cabinet keeps the buffered turn (the #439 law, both shapes).
+        setDirCodes(floatWays === 4 ? floatLast.current : [])
         clearStick()
     }
     const sTS = (e) => {
@@ -586,6 +696,83 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
     const cMD = (e) => { e.preventDefault(); cDown('m') }
     const cMU = () => { cUp() }
 
+    // --- #3108 extras: shoulder / diamond buttons, each with its own pointer.
+    // The actzone law (#2324) pins ONE pointer per zone; the full pad's extra
+    // buttons ride separate pointers so shoulder-plus-face combos work, and
+    // they fire the game's DECLARED codes exactly like the third action does.
+    // (Refs/state declared up top, before the early return.)
+    const exDown = (code, id) => {
+        if (!code || exPtrs.current[code] != null) return
+        exPtrs.current[code] = id
+        tick()
+        fire(code, 'keydown')
+        setExHeld((s) => new Set(s).add(code))
+    }
+    const exUp = (code) => {
+        if (exPtrs.current[code] == null) return
+        exPtrs.current[code] = null
+        fire(code, 'keyup')
+        setExHeld((s) => { const n = new Set(s); n.delete(code); return n })
+    }
+    const exBind = (code) => ({
+        onTouchStart: (e) => { e.preventDefault(); for (const t of e.changedTouches) if (exPtrs.current[code] == null) exDown(code, t.identifier) },
+        onTouchEnd: (e) => { for (const t of e.changedTouches) if (t.identifier === exPtrs.current[code]) exUp(code) },
+        onTouchCancel: (e) => { for (const t of e.changedTouches) if (t.identifier === exPtrs.current[code]) exUp(code) },
+        onMouseDown: (e) => { e.preventDefault(); exDown(code, 'm') },
+        onMouseUp: () => exUp(code),
+        onMouseLeave: () => exUp(code),
+    })
+
+    // --- #3108 full-pad left stick: a fixed base, Sony position (inboard of
+    // the d-pad). Same analog pipeline as the fixed stick (#420), but it also
+    // publishes padState so legacy titles (SSX) read the depth, and quantizes
+    // the digital read through dirsFrom — one pad, every type.
+    // (Refs declared up top, before the early return.)
+    const fzCenter = () => {
+        const r = fzZoneRef.current.getBoundingClientRect()
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    }
+    const fzUpdate = (cx, cy) => {
+        const c = fzCenter()
+        fzLast.current = { x: cx, y: cy } // #2057
+        const v = stickVec(cx - c.x, cy - c.y)
+        if (fzKnobRef.current) fzKnobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
+        if (toHolder) setStickVec(v.x, v.y)
+        setStick(v.x, v.y, v.push, v.engaged)
+        setDirCodes(dirsFrom(v.px, v.py))
+    }
+    const fzEnd = () => {
+        fzPtr.current = null
+        fzLast.current = null
+        setStickVec(0, 0)
+        clearStick()
+        setDirCodes([])
+        if (fzKnobRef.current) fzKnobRef.current.style.transform = 'translate(-50%, -50%)'
+    }
+    const fzTS = (e) => { e.preventDefault(); for (const t of e.changedTouches) if (fzPtr.current === null) { fzPtr.current = t.identifier; fzUpdate(t.clientX, t.clientY) } }
+    const fzTM = (e) => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === fzPtr.current) fzUpdate(t.clientX, t.clientY) }
+    const fzTE = (e) => { for (const t of e.changedTouches) if (t.identifier === fzPtr.current) fzEnd() }
+    const fzMD = (e) => { e.preventDefault(); if (fzPtr.current === null) { fzPtr.current = 'm'; fzUpdate(e.clientX, e.clientY) } }
+    const fzMM = (e) => { if (fzPtr.current === 'm') fzUpdate(e.clientX, e.clientY) }
+    const fzMU = () => { if (fzPtr.current === 'm') fzEnd() }
+
+    // --- #3108 TILT: phone motion as the analog vector. One explicit ENABLE
+    // tap first (iOS requires a user gesture for the motion permission, and
+    // the tap makes consent honest on every platform), then deviceorientation
+    // drives the SAME stick pipeline: screen-rotated vector → radial dead zone
+    // → setStick/setStickVec + dirsFrom quantizer. RE-CENTER pins the pose in
+    // the player's hands as neutral. (State/refs + the listener effect live
+    // above the early return — hooks run every render.)
+    const enableTilt = () => {
+        const DOE = window.DeviceOrientationEvent
+        if (DOE && typeof DOE.requestPermission === 'function') {
+            DOE.requestPermission().then((s) => setTiltOn(s === 'granted')).catch(() => setTiltOn(false))
+        } else {
+            setTiltOn(true)
+        }
+    }
+    const recenterTilt = () => { tiltBase.current = { ...tiltSeen.current } }
+
     // --- Second pad (2P, separate buttons) ---
     const p2Code = (k) => secondPad[k.slice(3)]
     const p2Bind = (key) => {
@@ -622,7 +809,125 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
     const armStyle = { width: sz.arm, height: sz.arm }
     const btnStyle = { width: sz.btn, height: sz.btn }
 
-    const stickZone = useStick && (
+    // #3108 FULL PAD geometry — Sony proportions: compact d-pad hard left, its
+    // stick inboard and lower, the face diamond right, shoulders/triggers above
+    // each cluster, and the middle left clear. One glass family (skin) at
+    // reduced scales, so the controller reads as ONE device, not spare parts.
+    const dFull = Math.round(sz.stick * 0.78)
+    const armFull = Math.round(dFull * 0.36)
+    const btnFull = Math.round(sz.btn * 0.74)
+    const byIdx = (i) => ((pad && pad.buttons) || []).find((b) => b.pad === i) || null
+    const fxL = byIdx(2) // □ slot (left of the diamond)
+    const fxT = byIdx(3) // △ slot (top)
+    const shL = byIdx(4) // L1
+    const shR = byIdx(5) // R1
+    const shL2 = byIdx(6) // L2
+    const shR2 = byIdx(7) // R2
+    const diamond = tFull && !!(fxL || fxT)
+    // The POSITION carries the PlayStation glyph, so □/△/○/✕ prefixes in labels
+    // are stripped — what's left is what the button DOES in this game (#906 law).
+    const verbOf = (label) => (label || '').replace(/^[□△○✕×]\s*/, '')
+    const chipCls = (code, tintOn, tintOff) => `rounded-xl px-2 flex items-center justify-center ring-1 ${glass} ${exHeld.has(code) ? `${tintOn} ring-white/90 scale-95 brightness-150` : `${tintOff} ring-white/50`}`
+    const shChip = (b) => (
+        <div
+            key={b.code + b.label}
+            data-vc="sh"
+            data-key={b.code}
+            style={{ minWidth: Math.round(sz.btn * 0.72), height: Math.round(sz.btn * 0.44) }}
+            className={`${chipCls(b.code, 'bg-sky-400/40', 'bg-sky-500/25')} touch-none`}
+            {...exBind(b.code)}
+        >
+            <span className="text-white font-bold leading-none" style={{ fontSize: sz.font(verbOf(b.label).length) }}>{verbOf(b.label)}</span>
+        </div>
+    )
+    const fxBtn = (b, col, row, tintOn, tintOff) => (
+        <div
+            key={b.code + col}
+            data-vc="fx"
+            data-key={b.code}
+            style={{ gridColumn: col, gridRow: row, width: btnFull, height: btnFull }}
+            className={`${chipCls(b.code, tintOn, tintOff).replace('rounded-xl', 'rounded-full')} touch-none`}
+            {...exBind(b.code)}
+        >
+            <span className="text-white font-bold leading-none" style={{ fontSize: sz.font(verbOf(b.label).length) }}>{verbOf(b.label)}</span>
+        </div>
+    )
+
+    // #3108 TILT widget: one honest ENABLE tap (iOS motion permission lives
+    // here), then RE-CENTER pins the pose in the player's hands as neutral.
+    const tiltPill = 'rounded-full px-3 py-2 ring-1 text-white font-bold ring-1 ' + glass
+    const tiltWidget = (
+        <div className="flex flex-col items-center gap-1 select-none pb-1">
+            {tiltOn ? (
+                <button data-vc="tilt-recenter" className={`${tiltPill} bg-emerald-500/30`} onClick={recenterTilt}>RE-CENTER</button>
+            ) : (
+                <button data-vc="tilt-enable" className={`${tiltPill} bg-emerald-500/50`} onClick={enableTilt}>ENABLE TILT</button>
+            )}
+            <span className="text-white/50 leading-none" style={{ fontSize: 10 }}>{tiltOn ? 'TILT ON · RE-CENTER TO RESET' : 'PHONE MOTION STEERS'}</span>
+        </div>
+    )
+
+    // #3108 full-pad left cluster: shoulders above the compact d-pad (same
+    // whole-box 8-way zone law, #1221 cross visuals), the stick inboard and
+    // lower — exactly where a DualShock puts them under two thumbs.
+    const arrowSvg = (d, on) => (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={on ? 'text-white' : 'text-white/60'}>
+            <path d={d} />
+        </svg>
+    )
+    const fullLeft = (
+        <div className="flex items-end select-none" style={{ gap: sz.gap }}>
+            <div className="flex flex-col items-center gap-1">
+                {(shL2 || shL) ? (
+                    <div className="flex items-end" style={{ gap: sz.gap }}>{shL2 && shChip(shL2)}{shL && shChip(shL)}</div>
+                ) : null}
+                <div
+                    data-vc="dpad"
+                    ref={dPadRef}
+                    className="relative touch-none select-none"
+                    style={{ width: dFull, height: dFull }}
+                    onTouchStart={dTS}
+                    onTouchMove={dTM}
+                    onTouchEnd={dTE}
+                    onMouseDown={dMD}
+                    onMouseMove={dMM}
+                    onMouseUp={dMU}
+                    onMouseLeave={dMU}
+                >
+                    <div className={`absolute top-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowUp')}`} style={{ width: armFull, height: dFull / 2 }}>{arrowSvg('M12 19V5M5 12l7-7 7 7', isHeld('ArrowUp'))}</div>
+                    <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowDown')}`} style={{ width: armFull, height: dFull / 2 }}>{arrowSvg('M12 5v14M19 12l-7 7-7-7', isHeld('ArrowDown'))}</div>
+                    <div className={`absolute left-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowLeft')}`} style={{ width: dFull / 2, height: armFull }}>{arrowSvg('M19 12H5M12 19l-7-7 7-7', isHeld('ArrowLeft'))}</div>
+                    <div className={`absolute right-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowRight')}`} style={{ width: dFull / 2, height: armFull }}>{arrowSvg('M5 12h14M12 5l7 7-7 7', isHeld('ArrowRight'))}</div>
+                </div>
+            </div>
+            <div
+                data-vc="fixedstick"
+                ref={fzZoneRef}
+                className="relative touch-none select-none"
+                style={{ width: sz.stick, height: sz.stick }}
+                onTouchStart={fzTS}
+                onTouchMove={fzTM}
+                onTouchEnd={fzTE}
+                onTouchCancel={fzTE}
+                onMouseDown={fzMD}
+                onMouseMove={fzMM}
+                onMouseUp={fzMU}
+                onMouseLeave={fzMU}
+            >
+                <div
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40 bg-white/5 shadow-[inset_0_0_14px_rgba(255,255,255,0.12)]"
+                    style={{ width: STICK_TRAVEL * 2, height: STICK_TRAVEL * 2 }}
+                />
+                <div
+                    ref={fzKnobRef}
+                    className="absolute top-1/2 left-1/2 rounded-full bg-white/25 ring-1 ring-white/70 backdrop-blur-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.4)]"
+                    style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
+                />
+            </div>
+        </div>
+    )
+
+    const stickZone = floatMode && (
         <div
             data-vc="stick"
             className="fixed left-0 top-0 bottom-0 w-1/2 z-40 touch-none"
@@ -658,7 +963,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                 z-50 bar / z-60 corner buttons) but above the canvas. It is NOT
                 [data-vc] and does not preventDefault on start, so a plain tap
                 still reaches the shell's tap-to-start (the synthesized Space). */}
-            {mDpadGate ? (
+            {gateMode ? (
                 <div
                     className="fixed inset-0 z-40 touch-none select-none"
                     style={{ pointerEvents: 'auto' }}
@@ -675,10 +980,18 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                 className="fixed left-0 right-0 flex justify-between items-end z-50 pointer-events-auto select-none"
                 style={{ bottom: 'calc(0.5rem + env(safe-area-inset-bottom))', padding: '0 calc(0.75rem + env(safe-area-inset-right)) 0 calc(0.75rem + env(safe-area-inset-left))' }}
             >
-                {/* Left control: fixed stick (method stick), nothing (pointer —
-                    the canvas is the surface), floating-stick spacer, fixed
-                    d-pad (method dpad) or the legacy d-pad / 2x2 diag pad */}
-                {mStick ? (
+                {/* Left control, by CONTROLLER TYPE (#3108): pointer — nothing
+                    (the canvas is the surface); tilt — enable/re-centre pill;
+                    full — Sony cluster; stick — fixed stick (method) or a
+                    spacer while the floating half does the work; dpad — the
+                    gate (ways), the cross, or Q*BERT's diag pad. */}
+                {pointerMode ? (
+                    <div className="w-2" />
+                ) : tTilt ? (
+                    tiltWidget
+                ) : tFull ? (
+                    fullLeft
+                ) : fixedStickMode ? (
                     <div
                         data-vc="fixedstick"
                         ref={fsZoneRef}
@@ -703,10 +1016,6 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                             style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
                         />
                     </div>
-                ) : mPointer ? (
-                    <div className="w-2" />
-                ) : useStick ? (
-                    <div style={{ width: sz.stick }} />
                 ) : diag ? (
                     <div data-vc="diag" className="grid grid-cols-2 gap-1">
                         {[['ul', '↖'], ['ur', '↗'], ['dl', '↙'], ['dr', '↘']].map(([k, sym]) => (
@@ -720,7 +1029,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                             </button>
                         ))}
                     </div>
-                ) : mDpadGate ? (
+                ) : gateMode ? (
                     <div
                         data-vc="dpadgate"
                         ref={dgZoneRef}
@@ -746,7 +1055,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                             style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
                         />
                     </div>
-                ) : (
+                ) : crossMode ? (
                     <div
                         data-vc="dpad"
                         ref={dPadRef}
@@ -787,6 +1096,10 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                             </svg>
                         </div>
                     </div>
+                ) : floatMode ? (
+                    <div style={{ width: sz.stick }} />
+                ) : (
+                    <div className="w-2" />
                 )}
 
                 {/* Action Buttons: only the actions the game reads, by name.
@@ -796,7 +1109,48 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                     (never inside — the zone's single-pointer hit-test is
                     vpadcheck-pinned). A game that does not pass the prop
                     renders this subtree byte-for-byte as before. */}
-                {thirdAction ? (
+                {/* #3108 FULL PAD right cluster: R shoulders above the face
+                    diamond (△ top, □ left, ○ right, ✕ bottom — the DualShock
+                    order the game's pad: indexes declare), every button its own
+                    pointer so shoulder+face combos work. Only buttons the game
+                    declares are drawn; verbs keep their labels (#906). */}
+                {diamond ? (
+                    <div className="flex flex-col items-end select-none" style={{ gap: sz.gap }}>
+                        {(shR || shR2) ? (
+                            <div className="flex items-end" style={{ gap: sz.gap }}>{shR && shChip(shR)}{shR2 && shChip(shR2)}</div>
+                        ) : null}
+                        <div
+                            data-vc="facediamond"
+                            className="grid items-center justify-items-center"
+                            style={{ gridTemplateColumns: `repeat(3, ${btnFull}px)`, gridTemplateRows: `repeat(3, ${btnFull}px)` }}
+                        >
+                            {fxT && fxBtn(fxT, 2, 1, 'bg-white/30', 'bg-white/10')}
+                            {fxL && fxBtn(fxL, 1, 2, 'bg-white/30', 'bg-white/10')}
+                            {secondAction && (
+                                <div
+                                    data-vc="b"
+                                    data-key={secondAction.code}
+                                    style={{ gridColumn: 3, gridRow: 2, width: btnFull, height: btnFull }}
+                                    className={`${chipCls(secondAction.code, 'bg-orange-400/40', 'bg-orange-500/25').replace('rounded-xl', 'rounded-full')} touch-none`}
+                                    {...exBind(secondAction.code)}
+                                >
+                                    <span className="text-white font-bold leading-none" style={{ fontSize: sz.font(verbOf(secondAction.label || 'B').length) }}>{verbOf(secondAction.label || 'B')}</span>
+                                </div>
+                            )}
+                            {showA && (
+                                <div
+                                    data-vc="a"
+                                    data-key="Space"
+                                    style={{ gridColumn: 2, gridRow: 3, width: btnFull, height: btnFull }}
+                                    className={`${chipCls('Space', 'bg-red-400/40', 'bg-red-500/25').replace('rounded-xl', 'rounded-full')} touch-none`}
+                                    {...exBind('Space')}
+                                >
+                                    <span className="text-white font-bold leading-none" style={{ fontSize: sz.font(aLabel.length) }}>{aLabel}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ) : thirdAction ? (
                     <div className="flex items-end select-none" style={{ gap: sz.gap }}>
                         <div
                             ref={cBtnRef}
