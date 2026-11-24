@@ -200,6 +200,18 @@ void main(){
 function buoyMats(color) {
     return new THREE.MeshStandardMaterial({ color, roughness: 0.42, metalness: 0.05 })
 }
+// Rain dims the gates (#3191): every material on a buoy lerps toward the
+// storm-fog colour by k (0..1) — the same rain the hull feels is the rain you
+// see through. Base colours are captured once on first apply.
+const BUOY_DIM_COL = new THREE.Color(0x1c2731)
+export function buoyDim(g, k) {
+    g.traverse((m) => {
+        if (!m.material) return
+        if (m.userData.base == null) m.userData.base = m.material.color.getHex()
+        m.material.color.setHex(m.userData.base).lerp(BUOY_DIM_COL, k)
+    })
+}
+
 export function makeBuoy(colorHex) {
     const g = new THREE.Group()
     const ball = new THREE.Mesh(new THREE.SphereGeometry(0.85, 12, 10), buoyMats(colorHex))
