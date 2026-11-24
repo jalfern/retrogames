@@ -123,10 +123,84 @@ export function drawBuildings(ctx, gs, jit) {
         if (!b.alive && !b.crumbling) continue
         const crumbling = !!b.crumbling
         const prog = crumbling ? Math.min(1, b.crumbling) : 0
-        const drawH = crumbling ? b.h * (1 - prog) : b.h
-        if (drawH < 2) continue
-        const shakeX = crumbling ? jit(-2, 2) : 0
-        const x = b.x - camX + shakeX, y = GROUND - drawH
+        if (crumbling) {
+            // THE FALL — a sequential top-down crush: the front drops floor by
+            // floor and crushed floors land as thin jagged slabs, then the sim
+            // flushes the body into rubble + 'landed'.
+            const rows = b.rows
+            const front = prog * (rows + 1)
+            const lean = Math.sin(b.x * 0.013) * 14 * prog
+            const shakeX = jit(-1.6, 1.6) * prog
+            const x = b.x - camX + lean + shakeX
+            if (x + b.w < -40 || x > W + 40) continue
+            const hurt = 1 - b.hp / b.maxhp
+            const ch = b.h / rows
+            const cw = b.w / (b.cols + 1)
+            const facade = `rgb(${34 + hurt * 8},${26 + hurt * 6},${44 + hurt * 10})`
+            ctx.fillStyle = 'rgba(5,3,10,0.38)'
+            ctx.beginPath(); ctx.ellipse(x + b.w / 2, GROUND + 9, b.w * 0.66, 11, 0, 0, 6.28); ctx.fill()
+            let baseY = GROUND
+            let capY = GROUND
+            for (let r = rows - 1; r >= 0; r--) {
+                const rp = Math.max(0, Math.min(1, front - r))
+                const floorH = ch * (1 - rp * 0.92)
+                const fy = baseY - floorH
+                const jx = rp > 0 ? jit(-3.5, 3.5) * rp : 0
+                const fx = x + jx
+                capY = Math.min(capY, fy)
+                if (rp >= 0.85) {
+                    // fully crushed slab — flatter, warmer, darker
+                    ctx.fillStyle = `rgb(${46 - rp * 12},${37 - rp * 9},${40 - rp * 9})`
+                    ctx.fillRect(fx, fy, b.w, floorH)
+                    ctx.fillStyle = 'rgba(255,190,120,0.85)'
+                    ctx.fillRect(fx - 1, fy - 2, b.w + 2, 2.5)
+                    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.6
+                    ctx.beginPath()
+                    ctx.moveTo(fx + b.w * 0.22, fy + 1); ctx.lineTo(fx + b.w * 0.4, fy + floorH - 1)
+                    ctx.moveTo(fx + b.w * 0.66, fy + 2); ctx.lineTo(fx + b.w * 0.58, fy + floorH - 2)
+                    ctx.stroke()
+                } else {
+                    ctx.fillStyle = facade
+                    ctx.fillRect(fx, fy, b.w, floorH)
+                    ctx.fillStyle = 'rgba(255,255,255,0.22)'
+                    ctx.fillRect(fx + b.w - 3, fy, 3, floorH)
+                    for (let c = 0; c < b.cols; c++) {
+                        const win = b.wins[r * b.cols + c]
+                        const wx = fx + cw * (c + 1) - cw * 0.28, ww = cw * 0.56
+                        const wy = fy + floorH * 0.24
+                        const wh = Math.min(floorH * 0.5, ch * 0.5)
+                        if (win.shattered) {
+                            ctx.fillStyle = '#04060d'; ctx.fillRect(wx, wy, ww, wh)
+                            ctx.strokeStyle = 'rgba(210,230,255,0.4)'; ctx.lineWidth = 1
+                            ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(wx + ww * 0.42, wy + wh * 0.62); ctx.lineTo(wx + ww * 0.18, wy + wh); ctx.stroke()
+                            continue
+                        }
+                        const flick = Math.sin(gs.tick / 60 * 2.2 + win.ph) > -0.85
+                        if (win.lit && flick) {
+                            ctx.fillStyle = win.warm ? 'rgba(255,209,102,0.92)' : 'rgba(140,200,255,0.9)'
+                            ctx.fillRect(wx, wy, ww, wh)
+                        } else {
+                            ctx.fillStyle = 'rgba(10,12,22,0.85)'; ctx.fillRect(wx, wy, ww, wh)
+                        }
+                    }
+                }
+                // floor separation line
+                ctx.fillStyle = 'rgba(0,0,0,0.42)'
+                ctx.fillRect(fx, fy, b.w, 1.5)
+                // the crush front — the floor currently falling, brightest lip
+                if (rp > 0 && rp < 0.85) {
+                    ctx.fillStyle = 'rgba(255,170,96,0.95)'
+                    ctx.fillRect(fx - 2, fy - 3, b.w + 4, 3)
+                }
+                baseY = fy
+            }
+            // roof edge on the pile top (neon, or red when hurt)
+            ctx.fillStyle = hurt > 0.5 ? '#ff5470' : P.edge
+            ctx.fillRect(x - 2, capY - 4, b.w + 4, 5)
+            continue
+        }
+        const drawH = b.h
+        const x = b.x - camX, y = GROUND - drawH
         if (x + b.w < -40 || x > W + 40) continue
         const hurt = 1 - b.hp / b.maxhp
         const shift = drawH * 0.55
@@ -139,11 +213,11 @@ export function drawBuildings(ctx, gs, jit) {
         g.addColorStop(0, `rgb(${34 + hurt * 8},${26 + hurt * 6},${44 + hurt * 10})`)
         g.addColorStop(1, `rgb(${22 + hurt * 6},${18 + hurt * 4},${30 + hurt * 8})`)
         ctx.fillStyle = g; ctx.fillRect(x, y, b.w, drawH)
-        ctx.fillStyle = hurt > 0.5 || crumbling ? '#ff5470' : P.edge
+        ctx.fillStyle = hurt > 0.5 ? '#ff5470' : P.edge
         ctx.fillRect(x - 2, y - 4, b.w + 4, 5)
         ctx.fillStyle = 'rgba(255,255,255,0.22)'
         ctx.fillRect(x + b.w - 3, y, 3, drawH)
-        if (b.h > 260 && !crumbling) {
+        if (b.h > 260) {
             ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2
             ctx.beginPath(); ctx.moveTo(x + b.w * 0.5, y - 4); ctx.lineTo(x + b.w * 0.5, y - 30); ctx.stroke()
             ctx.fillStyle = '#ff5470'; ctx.beginPath(); ctx.arc(x + b.w * 0.5, y - 32, 3, 0, 6.28); ctx.fill()
@@ -172,16 +246,12 @@ export function drawBuildings(ctx, gs, jit) {
                 }
             }
         }
-        if (hurt > 0.2 || crumbling) {
+        if (hurt > 0.2) {
             ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 2
             ctx.beginPath()
             ctx.moveTo(x + b.w * 0.3, y + 6); ctx.lineTo(x + b.w * 0.45, y + drawH * 0.4); ctx.lineTo(x + b.w * 0.3, y + drawH * 0.72)
             if (hurt > 0.5) { ctx.moveTo(x + b.w * 0.7, y + 4); ctx.lineTo(x + b.w * 0.62, y + drawH * 0.5) }
             ctx.stroke()
-        }
-        if (crumbling) {
-            ctx.fillStyle = 'rgba(255,180,120,0.85)'
-            ctx.fillRect(x - 2, y - 2, b.w + 4, 3)
         }
     }
 }
