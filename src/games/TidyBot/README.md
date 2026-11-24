@@ -31,11 +31,36 @@ didn't say MODERN.
   per draw frame (dust, sparks, shake, flash, reach arc, arrival ring, and the
   attract flourish, whose old item id can alias a fresh stow after a reset).
 - tidycheck's skin gates freeze both looks at load with a downsampled
-  perceptual signature (classic `f947d5dc`, papercraft `33dfb942`) — raw
+  perceptual signature (classic `f947d5dc`, papercraft `17152d53` since the
+  #3086 polish — was `33dfb942`) — raw
   bytes are deliberately NOT compared: Chromium's GPU canvas drifts ±1 on
   curved strokes with surface history, which reds byte goldens without any
   code change. Spatial truth is proven behaviorally: teal-at-bot and
   red-at-tray pixel laws run on BOTH skins, plus state-level toggle checks.
+
+## Papercraft polish pass (#3086)
+Six material beats, all inside the `reimagined` painter or gated by it — the
+classic skin and `sim.js` keep their exact pixels and rules:
+- **Gingham softened**: 6px bands at 0.6 alpha instead of the 8px/0.85 grid —
+  overlapping prints darken into checks like real gingham — and the cloth is a
+  card CUT with wavy edges (scalloped bottom, bowed side; bands clip to it).
+- **Attract sign is a cut card**: rounded corners, dashed inner cut-line, a
+  horizontal fold crease across the middle, folded-back corner flaps with
+  shading, and the PRESS strip is washi with torn zigzag edges.
+- **The bot sells cardboard**: three dark flute dots peek at the chassis
+  bottom edge (where the paper tore — below the 5×5 teal-core sample, so the
+  pixel law is untouched) and a washi patch sits over the antenna joint.
+- **Stove dials**: two tilted brass sticky squares with marker knob notches
+  on the front, same family as the fridge's sticky-note badge.
+- **Confetti, not pixels**: `chrome.confetti` (paper palette) opts this skin's
+  jam/place/break/close bursts into tilted 2×3 cards per particle; classic has
+  no palette key and draws its old squares byte-for-byte.
+- **Paper sounds**: glide arrival whispers two filtered-noise layers; door
+  close lands a low sine + filtered-noise cardboard thud. `playFilteredNoise`
+  only — no assets.
+- The papercraft pinned frame moved (cloth, stove, bot, attract card), so
+  `GOLDEN_PAPER` was re-frozen in the same PR — the issue authorizes approved
+  restyles; the classic golden and every spatial law did not move.
 
 ## Glide routing (#2250) — the BFS is the players' too
 - Tap/click a floor tile during play and the bot routes itself there on the

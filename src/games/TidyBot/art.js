@@ -450,6 +450,10 @@ const makeReimagined = () => {
             fxText: { ok: PAPER.green, jam: PAPER.amber, bad: PAPER.red },
             burst: { grab: '#ffdf6e', place: PAPER.green, jam: PAPER.amber, spill: '#e8c9a0', shard: '#f6f2e8', heavy: '#c99b5e' },
             dust: { plankH: '#c97a58', tileH: '#b8d4c0', plank: PAPER.coralLight, tile: '#eef6ef' },
+            // #3086: on this skin, event bursts fly as tilted paper confetti in
+            // construction-paper colors instead of square pixels. The shell reads
+            // this key to opt in — classic has no `confetti` and stays square.
+            confetti: [PAPER.tomato, PAPER.note, PAPER.mint, PAPER.washi, PAPER.coralLight, PAPER.leaf],
             ringPop: '242,138,122',
             banner: PAPER.tomato, level: PAPER.green,
         },
@@ -505,6 +509,16 @@ const makeReimagined = () => {
                 ctx.strokeStyle = '#c8d2d8'; ctx.lineWidth = 1; ctx.setLineDash([1.5, 1.5]); circle(ctx, STOVE.x + ox, STOVE.y + oy, 3.4); ctx.stroke()
             }
             ctx.setLineDash([])
+            // #3086 sticky brass dials on the stove front — same family as the
+            // fridge's sticky-note badge: tilted card square, marker knob notch.
+            for (const ox of [4.5, 27.5]) {
+                ctx.save(); ctx.translate(STOVE.x + ox, STOVE.y + 19); ctx.rotate(0.08)
+                ctx.fillStyle = 'rgba(70,44,18,0.3)'; ctx.fillRect(-1.3, -0.8, 3.6, 3.6)
+                ctx.fillStyle = PAPER.brass; ctx.fillRect(-1.8, -1.8, 3.6, 3.6)
+                ctx.strokeStyle = '#8a6a1e'; ctx.lineWidth = 0.8
+                ctx.beginPath(); ctx.moveTo(0, 0.2); ctx.lineTo(0, -1.5); ctx.stroke()
+                ctx.restore()
+            }
             // plants: tissue puffs in terracotta card pots
             for (const p of PLANTS) {
                 card(ctx, p.x + 1, p.y + 5, p.w - 2, p.h - 5, 1.5, '#d1755a')
@@ -515,11 +529,31 @@ const makeReimagined = () => {
         paintTable: (ctx) => {
             card(ctx, TABLE.x - 2, TABLE.y - 2, TABLE.w + 4, TABLE.h + 4, 3, PAPER.coralDark, '#a05636')
             ctx.save(); ctx.translate(TABLE.x + TABLE.w / 2, TABLE.y + TABLE.h / 2); ctx.rotate(-0.012); ctx.translate(-(TABLE.x + TABLE.w / 2), -(TABLE.y + TABLE.h / 2))
-            // gingham cloth: white card with cut red checks
-            ctx.fillStyle = PAPER.cream; ctx.fillRect(TABLE.x + 8, TABLE.y + 6, TABLE.w - 16, TABLE.h - 12)
-            ctx.fillStyle = 'rgba(224,72,58,0.85)'
-            for (let gy = TABLE.y + 6; gy < TABLE.y + TABLE.h - 6; gy += 8) ctx.fillRect(TABLE.x + 8, gy, TABLE.w - 16, 3)
-            for (let gx = TABLE.x + 8; gx < TABLE.x + TABLE.w - 8; gx += 8) ctx.fillRect(gx, TABLE.y + 6, 3, TABLE.h - 12)
+            // gingham cloth (#3086): a cream card cut with wavy edges, over-printed
+            // with 6px red bands at 0.6 alpha — where bands cross, the print darkens
+            // into the checks, which is how real gingham reads. The first pass' 8px
+            // grid at 0.85 read as a keyboard, not a picnic cloth.
+            const x0 = TABLE.x + 8, y0 = TABLE.y + 6, cw = TABLE.w - 16, ch = TABLE.h - 12
+            const base = y0 + ch
+            ctx.beginPath()
+            ctx.moveTo(x0, y0)
+            ctx.lineTo(x0 + cw, y0 + 0.6)
+            ctx.quadraticCurveTo(x0 + cw + 0.9, y0 + ch * 0.5, x0 + cw - 0.4, base - 1)
+            const seg = cw / 4 // four gentle scallops along the bottom cut
+            for (let i = 0; i < 4; i++) {
+                const xa = x0 + cw - seg * i, xb = x0 + cw - seg * (i + 1)
+                const ya = base - (i % 2 ? 1 : 0.2)
+                const yb = base - ((i + 1) % 2 ? 1 : 0.2)
+                ctx.quadraticCurveTo((xa + xb) / 2, (ya + yb) / 2 + (i % 2 ? -1.3 : 1.3), xb, yb)
+            }
+            ctx.lineTo(x0, y0)
+            ctx.closePath()
+            ctx.fillStyle = PAPER.cream; ctx.fill()
+            ctx.save(); ctx.clip() // bands trim to the wavy cut
+            ctx.fillStyle = 'rgba(224,72,58,0.6)'
+            for (let gy = y0 - 2; gy < base + 2; gy += 6) ctx.fillRect(x0 - 2, gy, cw + 4, 2)
+            for (let gx = x0 - 2; gx < x0 + cw + 2; gx += 6) ctx.fillRect(gx, y0 - 2, 2, ch + 4)
+            ctx.restore()
             ctx.restore()
         },
         paintContainer: (ctx, c, gs2, tick, skip) => {
@@ -629,6 +663,8 @@ const makeReimagined = () => {
             ctx.fillStyle = PAPER.mint; rr(ctx, -4, cTop + 1, 8, 9, 1.5); ctx.fill()
             ctx.strokeStyle = PAPER.mintEdge; ctx.lineWidth = 1; ctx.setLineDash([2, 1.5]); rr(ctx, -4.5, cTop + 0.5, 9, 10, 2); ctx.stroke(); ctx.setLineDash([])
             ctx.fillStyle = '#8adcc8'; ctx.fillRect(-4, cTop + 1, 8, 2)
+            ctx.fillStyle = '#7c5426' // #3086 corrugation peek — flute dots where the card's bottom edge tore
+            for (const dx of [-2.4, 0, 2.4]) { circle(ctx, dx, cTop + 10.1, 0.9); ctx.fill() }
             // face: white card strip, brass brad eye looks where it walks.
             // The card stays SHORT (bottom ≤ world +0.2 below center) so the
             // mint body remains visible in the 5×5 core sample — the same
@@ -643,6 +679,7 @@ const makeReimagined = () => {
             ctx.beginPath(); ctx.moveTo(x + 2.5, y - 5); ctx.lineTo(x + 3.5 + Math.sin(tick * 0.08) * 1.2, y - 9.5); ctx.stroke()
             ctx.fillStyle = PAPER.pop; circle(ctx, x + 3.5 + Math.sin(tick * 0.08) * 1.2, y - 10, 1.5); ctx.fill()
             ctx.fillStyle = 'rgba(255,255,255,0.5)'; circle(ctx, x + 3 + Math.sin(tick * 0.08) * 1.2, y - 10.5, 0.5); ctx.fill()
+            tape(ctx, x + 2.5, y - 4.8 + wob * 0.3, 6, 3, 0.5) // #3086 washi patch over the antenna joint
             // held cargo: the front cutout floats, the tray is a popsicle plank
             const front = gs2.items.find((it) => it.state === 'held' && it.id === gs2.held)
             const tray = gs2.items.find((it) => it.state === 'held' && it.id === gs2.held2)
@@ -718,9 +755,22 @@ const makeReimagined = () => {
             ctx.textAlign = 'center'
             const bob = Math.sin(tick * 0.05) * 2
             const bx = VIEW_W / 2 - 110, by = 46 + bob
-            ctx.fillStyle = PAPER.cardShadow; ctx.fillRect(bx + 2, by + 2.5, 220, 46)
-            ctx.fillStyle = PAPER.cream; ctx.fillRect(bx, by, 220, 46)
-            ctx.strokeStyle = PAPER.creamEdge; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.strokeRect(bx + 2.5, by + 2.5, 215, 41); ctx.setLineDash([])
+            // #3086: the title sign is a cut card like every other surface —
+            // rounded corners, a horizontal fold crease across the middle, and
+            // folded-back corner flaps with their shadows.
+            ctx.fillStyle = PAPER.cardShadow; rr(ctx, bx + 2, by + 2.5, 220, 46, 5); ctx.fill()
+            ctx.fillStyle = PAPER.cream; rr(ctx, bx, by, 220, 46, 5); ctx.fill()
+            ctx.strokeStyle = PAPER.creamEdge; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); rr(ctx, bx + 2.5, by + 2.5, 215, 41, 4); ctx.stroke(); ctx.setLineDash([])
+            ctx.strokeStyle = 'rgba(120,90,50,0.26)'; ctx.lineWidth = 1 // fold crease
+            ctx.beginPath(); ctx.moveTo(bx + 4, by + 23); ctx.lineTo(bx + 216, by + 23); ctx.stroke()
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+            ctx.beginPath(); ctx.moveTo(bx + 4, by + 24); ctx.lineTo(bx + 216, by + 24); ctx.stroke()
+            ctx.fillStyle = 'rgba(70,44,18,0.22)' // folded-back corner flaps
+            ctx.beginPath(); ctx.moveTo(bx + 220, by + 46); ctx.lineTo(bx + 206, by + 46); ctx.lineTo(bx + 220, by + 32); ctx.closePath(); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(bx, by + 46); ctx.lineTo(bx + 13, by + 46); ctx.lineTo(bx, by + 33); ctx.closePath(); ctx.fill()
+            ctx.strokeStyle = 'rgba(150,110,60,0.5)'
+            ctx.beginPath(); ctx.moveTo(bx + 206, by + 46); ctx.lineTo(bx + 220, by + 32); ctx.stroke()
+            ctx.beginPath(); ctx.moveTo(bx + 13, by + 46); ctx.lineTo(bx, by + 33); ctx.stroke()
             tape(ctx, bx + 6, by + 2, 16, 4, -0.35)
             tape(ctx, bx + 214, by + 3, 16, 4, 0.3)
             ctx.font = 'bold 22px monospace'
@@ -729,8 +779,14 @@ const makeReimagined = () => {
             ctx.font = 'bold 7px monospace'; ctx.fillStyle = PAPER.noteInk
             ctx.fillText('A PAPERCRAFT HOUSE — SAME CHORES', VIEW_W / 2, 88 + bob)
             if (tick % 60 < 40) {
+                // #3086: the call-to-action strip is washi with torn short edges
                 ctx.fillStyle = 'rgba(255,227,110,0.95)'
-                ctx.fillRect(VIEW_W / 2 - 78, 111, 156, 12)
+                const px0 = VIEW_W / 2 - 78, pw = 156, pt = 111, ph = 12
+                ctx.beginPath(); ctx.moveTo(px0, pt); ctx.lineTo(px0 + pw, pt)
+                for (let i = 0; i < 4; i++) ctx.lineTo(px0 + pw - (i % 2 ? 2 : 0), pt + (ph * (i + 1)) / 4)
+                ctx.lineTo(px0, pt + ph)
+                for (let i = 0; i < 4; i++) ctx.lineTo(px0 + (i % 2 ? 1.8 : 0), pt + ph - (ph * i) / 4)
+                ctx.closePath(); ctx.fill()
                 ctx.font = 'bold 9px monospace'; ctx.fillStyle = PAPER.noteInk
                 ctx.fillText('PRESS ANY KEY / TAP TO CLOCK IN', VIEW_W / 2, 119)
             }
