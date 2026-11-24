@@ -6,7 +6,7 @@
 // ./attract.js in the #365 rule-6 sweep (one cycling message, no wall).
 
 export const LAYOUT = {
-    panelReserve: 52,                     // px docked below the canvas while playing
+    panelReserve: 52,                     // px docked ABOVE the canvas while playing (#3132: off the pad zone)
     badge: { climber: '#ffd83d', digger: '#9ad6ff' },
     hud: { pre: 'IN PLAY ', mid: ' · LOST ' },
 }

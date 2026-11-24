@@ -130,39 +130,43 @@ function drawShot(ctx, q) {
     else ctx.fillRect(q.x - 3, q.y - 3, 6, 6)
 }
 
+// #3132: the HUD band moved to the TOP strip of the canvas (like the NES
+// original) — bottom-edge chrome sat in the VirtualControls pad zone on every
+// view where the canvas reaches the screen bottom. drawScene now renders under
+// this band (translate by HUD); coordinates below are band-relative (y 0..64).
 function drawHud(ctx, s) {
-    ctx.fillStyle = '#000'; ctx.fillRect(0, PLAY_H, W, HUD)
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, HUD)
     ctx.fillStyle = '#f8f8f8'
     ctx.font = '8px monospace'
-    ctx.fillText('LIFE', 8, 188)
+    ctx.fillText('LIFE', 8, 12)
     for (let i = 0; i < Math.ceil(s.maxHearts / 2); i++) {
         const v = s.hearts - i * 2
         ctx.fillStyle = v >= 2 ? '#f80000' : v === 1 ? '#a00000' : '#400000'
-        const x = 8 + (i % 8) * 12; const y = 194 + Math.floor(i / 8) * 12
+        const x = 8 + (i % 8) * 12; const y = 18 + Math.floor(i / 8) * 12
         ctx.fillRect(x + 1, y + 1, 8, 5); ctx.fillRect(x + 1, y - 1, 3, 3); ctx.fillRect(x + 6, y - 1, 3, 3)
     }
-    ctx.fillStyle = '#f8f8f8'; ctx.fillText('MAP', 8, 226)
+    ctx.fillStyle = '#f8f8f8'; ctx.fillText('MAP', 8, 50)
     // minimap 3x3 + interiors
     for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
         const cur = s.scr === `${c},${r}`
         ctx.fillStyle = cur ? '#f8d800' : '#585858'
-        ctx.fillRect(34 + c * 8, 218 + r * 6, 6, 4)
+        ctx.fillRect(34 + c * 8, 42 + r * 6, 6, 4)
     }
     const it = s.scr
-    if (it.startsWith('D') || it.startsWith('CAVE') || it === 'SHOP') { ctx.fillStyle = '#f85800'; ctx.fillText('·INT·', 34, 238) }
+    if (it.startsWith('D') || it.startsWith('CAVE') || it === 'SHOP') { ctx.fillStyle = '#f85800'; ctx.fillText('·INT·', 34, 62) }
     ctx.fillStyle = '#f8f8f8'
-    ctx.fillText('RUPEE', 100, 190); ctx.fillStyle = '#00d800'; ctx.fillRect(102, 194, 6, 9)
-    ctx.fillStyle = '#f8f8f8'; ctx.fillText(String(s.rupees), 112, 200)
-    ctx.fillText('BOMB', 100, 214); ctx.fillStyle = '#a0a0a0'; ctx.beginPath(); ctx.arc(105, 222, 4, 0, 7); ctx.fill()
-    ctx.fillStyle = '#f8f8f8'; ctx.fillText(String(s.bombs), 112, 226)
-    ctx.fillText('RING', 160, 190); ctx.fillStyle = '#f858f8'
-    ctx.beginPath(); ctx.arc(166, 222, 5, 0, 7); ctx.fill()
-    ctx.fillStyle = '#585858'; ctx.fillRect(174, 190, 78, 8)
+    ctx.fillText('RUPEE', 100, 14); ctx.fillStyle = '#00d800'; ctx.fillRect(102, 18, 6, 9)
+    ctx.fillStyle = '#f8f8f8'; ctx.fillText(String(s.rupees), 112, 24)
+    ctx.fillText('BOMB', 100, 38); ctx.fillStyle = '#a0a0a0'; ctx.beginPath(); ctx.arc(105, 46, 4, 0, 7); ctx.fill()
+    ctx.fillStyle = '#f8f8f8'; ctx.fillText(String(s.bombs), 112, 50)
+    ctx.fillText('RING', 160, 14); ctx.fillStyle = '#f858f8'
+    ctx.beginPath(); ctx.arc(166, 46, 5, 0, 7); ctx.fill()
+    ctx.fillStyle = '#585858'; ctx.fillRect(174, 14, 78, 8)
     ctx.fillStyle = '#f8f8f8'
     const scr = screenOf(s.scr)
-    ctx.fillText((scr.name || '').slice(0, 12), 174, 206)
-    ctx.fillText(s.flags.sword ? 'BR:MASTER SWORD' : 'BR : - - - - - -', 174, 218)
-    ctx.fillText(s.flags.bombsTaken || s.flags.bought ? 'IT:BOMB' : 'IT : - - - -', 174, 230)
+    ctx.fillText((scr.name || '').slice(0, 12), 174, 30)
+    ctx.fillText(s.flags.sword ? 'BR:MASTER SWORD' : 'BR : - - - - - -', 174, 42)
+    ctx.fillText(s.flags.bombsTaken || s.flags.bought ? 'IT:BOMB' : 'IT : - - - -', 174, 54)
 }
 
 export default function Zelda() {
@@ -265,6 +269,7 @@ export default function Zelda() {
                 return
             }
             const scr = screenOf(g.scr)
+            c.save(); c.translate(0, HUD) // #3132: scene renders under the top HUD band
             for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
                 drawTile(c, scr.rows[r][cc], cc * TILE, r * TILE, scr.kind, t, cc, r)
             }
@@ -286,6 +291,7 @@ export default function Zelda() {
                 c.fillStyle = '#000'
                 for (let i = 0; i < 8; i++) { const bh = (PLAY_H / 8); const h2 = i % 2 ? p * bh : (1 - p) * bh; c.fillRect(i * (W / 8), 0, W / 8, h2) }
             }
+            c.restore() // end of the #3132 scene translate — HUD + attract text stay screen-fixed
             drawHud(c, g)
         }
 

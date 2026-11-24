@@ -307,7 +307,7 @@ export const GAMES = [
     },
     {
         path: '/lemmings',
-        pad: { method: 'pointer', buttons: [], reads: ['pointer'], reason: 'cursor — press and hold a lemming to preview, release to assign; the panel picks the skill' },
+        pad: { method: 'pointer', reads: ['pointer', 'a', 'b'], aLabel: 'ACT', buttons: [{ label: 'BLOCK', code: 'Digit1' }, { label: 'BOMB', code: 'Digit2', pad: 2 }, { label: 'CLIMB', code: 'Digit3', pad: 3 }, { label: 'DIG', code: 'Digit4', pad: 5 }], supports: ['pointer', 'full'], reason: 'pointer default — the pick is a tap on the canvas; full (#3132 chrome audit: skill panel moved to the top edge, clear of the pad zone) = d-pad moves the cursor · ✕ ACT assigns · ○ BLOCK · □ BOMB · △ CLIMB · R DIG', },
         builtBy: 'forge',
         added: '2026-10-10',
         component: LemmingsGame,
@@ -599,7 +599,7 @@ export const GAMES = [
     {
         path: '/zelda',
         tapStart: true,
-        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyX' }], analog: false, supports: ['stick', 'full'], reason: '#3132 chrome audit — HUD band moved to the canvas top strip (NES position), clear of the pad zone; full = d-pad+stick walk, ✕ sword (Space) · ○ B bomb' },
         builtBy: 'forge',
         added: '2026-10-13',
         component: ZeldaGame,
