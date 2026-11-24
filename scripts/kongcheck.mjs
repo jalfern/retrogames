@@ -406,6 +406,72 @@ console.log('shell wiring: seed, terminal, seat chrome')
         'the attract promise is now kept by the engine (mallet exists in world + draw)')
 }
 
+
+// ----------------------------------------------- #3147 deny answer ----
+// The arcade doctrine: a refused climb must still ANSWER — a soft no-tick
+// plus a chevron above the runner — never a silent dead key. The sim stamps
+// the juice-only `noClimb` event (never hashed, never counted — the same
+// law iron-ring's whiff rides); the shell voices it throttled so a held key
+// doesn't machine-gun.
+console.log('deny answer: the refused climb answers loudly (#3147)')
+{
+    ok(/if \(!p\.climbing && wantClimb && !nearLadder\) ev\.noClimb = true/.test(SIM),
+        'the sim stamps the climb deny when no ladder is in reach')
+    ok(/if \(wantClimb\) ev\.noClimb = true/.test(SIM),
+        'the sim stamps the climb deny under the mallet trade')
+    ok(/if \(ev\.noClimb && noClimbCooldown/.test(IDX) && /audioController\.playTone\(140/.test(IDX),
+        'the cabinet voices the deny (soft no-tick)')
+    ok(/denyFx = 10/.test(IDX) && /if \(denyFx > 0\)/.test(IDX),
+        'the deny answer carries the visible chevron')
+
+    // far from every ladder, UP stamps the deny and moves nothing
+    const far = makeRun(7)
+    far.attract = false
+    far.player.x = 24
+    const ev0 = tickDonkeyKong(far, { up: true })
+    ok(ev0.noClimb === true && !far.player.climbing && far.player.y === 216,
+        'deny: UP with no ladder in reach stamps noClimb (and moves nothing)')
+    // the same with DOWN
+    const farD = makeRun(7)
+    farD.attract = false
+    farD.player.x = 24
+    ok(tickDonkeyKong(farD, { down: true }).noClimb === true && !farD.player.climbing,
+        'deny: DOWN with no ladder in reach stamps noClimb')
+    // idle: no climb wanted → no deny (the seated driver is quiet)
+    const idle = makeRun(7)
+    idle.attract = false
+    ok(!tickDonkeyKong(idle, null).noClimb, 'deny: no climb wanted, no deny stamped')
+    // the mount event keeps its own voice — the climb itself is not denied
+    const mount = makeRun(7)
+    mount.attract = false
+    const lm = mount.ladders.find(la => la.x === 180 && !la.broken)
+    mount.player.x = lm.x - mount.player.w / 2
+    mount.player.y = lm.yBot - mount.player.h
+    mount.player.grounded = true
+    const evC = tickDonkeyKong(mount, { up: true })
+    ok(evC.climbed && evC.noClimb === false, 'deny: a real mount answers with climbed, never noClimb')
+    // held-up climbing is real motion, not a refuse
+    const climbing = makeRun(7)
+    climbing.attract = false
+    climbing.player.x = lm.x - climbing.player.w / 2
+    climbing.player.y = lm.yBot - climbing.player.h
+    climbing.player.grounded = true
+    tickDonkeyKong(climbing, { up: true }) // mounts
+    const evR = tickDonkeyKong(climbing, { up: true }) // glides up the rungs
+    ok(!evR.noClimb && climbing.player.climbing && climbing.player.y < 216,
+        'deny: held UP while climbing is real motion, not a refuse')
+    // the mallet trade still refuses climbs and stamps the deny
+    const mal = makeRun(7)
+    mal.attract = false
+    mal.hammer = HAMMER_SWINGS
+    mal.player.x = lm.x - mal.player.w / 2
+    mal.player.y = lm.yBot - mal.player.h
+    mal.player.grounded = true
+    const evM = tickDonkeyKong(mal, { up: true })
+    ok(evM.noClimb === true && !mal.player.climbing,
+        'deny: the mallet trade refuses climbs (ev.noClimb, no mount)')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -491,6 +557,9 @@ if (process.argv.includes('--mutant')) {
         ['#2018 the mallet never shatters (permanently stuck, no jump)', S,
             `if (gs.hammer <= 0) {`,
             `if (false && gs.hammer <= 0) {`],
+        ['#3147 the climb deny goes quiet (silence returns)', S,
+            `    if (!p.climbing && wantClimb && !nearLadder) ev.noClimb = true`,
+            `    if (false && !p.climbing && wantClimb && !nearLadder) ev.noClimb = true`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

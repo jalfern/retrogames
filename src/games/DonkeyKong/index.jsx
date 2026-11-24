@@ -62,6 +62,8 @@ const DonkeyKongGame = () => {
             setAttractUi(false)
             gs.watching = false // watch never lingers — a new run starts in your hands
             setWatching(false)
+            denyFx = 0 // fresh run: no leftover juice chrome
+            noClimbCooldown = 0
         }
 
         // =============================================
@@ -69,6 +71,10 @@ const DonkeyKongGame = () => {
         // =============================================
         let viewWidth = 0, viewHeight = 0
         let attractTick = 0
+        // #3147: the deny answer — a small visible chevron at the runner,
+        // juice-only shell state (never hashed, never counted).
+        let denyFx = 0
+        let noClimbCooldown = 0
         const resize = () => {
             if (containerRef.current && canvas) {
                 const { width, height } = containerRef.current.getBoundingClientRect()
@@ -146,6 +152,13 @@ const DonkeyKongGame = () => {
             // #2018: the event set was missing DK's throw and the rungs.
             if (ev.barrel) audioController.playTone(160, 0.06, 'triangle')
             if (ev.climbed) audioController.playTone(300, 0.05, 'square')
+            // #3147: the climb refused — a soft ``no'' tick + a chevron,
+            // throttled so holding the key doesn't machine-gun.
+            if (ev.noClimb && noClimbCooldown <= 0) {
+                audioController.playTone(140, 0.05, 'triangle', 0.07)
+                denyFx = 10
+                noClimbCooldown = 20
+            }
             // Mallet voices (#2018): grab, swing, smash, shatter.
             if (ev.hammerUp) audioController.playSweep(300, 700, 0.15, 'square')
             if (ev.swing) audioController.playTone(220, 0.05, 'sawtooth')
@@ -519,6 +532,24 @@ const DonkeyKongGame = () => {
             // Player
             drawJumpman()
 
+            // #3147: the deny answer — a chevron above the runner, fading.
+            if (denyFx > 0) {
+                const p = gs.player
+                const cx = p.x + p.w / 2
+                const top = p.y - 5 - (10 - denyFx) * 0.4
+                const alpha = Math.min(1, denyFx / 6)
+                ctx.fillStyle = `rgba(255, 96, 60, ${alpha})`
+                ctx.beginPath()
+                ctx.moveTo(cx, top)
+                ctx.lineTo(cx - 4, top - 4.5)
+                ctx.lineTo(cx + 4, top - 4.5)
+                ctx.closePath()
+                ctx.fill()
+                ctx.fillRect(cx - 1, top - 11, 2, 3)
+            }
+            denyFx = Math.max(0, denyFx - 1)
+            noClimbCooldown = Math.max(0, noClimbCooldown - 1)
+
             // Attract mode overlay
             if (gs.attract) {
                 attractTick++
@@ -625,6 +656,8 @@ const DonkeyKongGame = () => {
                 setAttractUi(false)
                 gs.watching = false // watch never lingers
                 setWatching(false)
+                denyFx = 0 // fresh run: no leftover juice chrome
+                noClimbCooldown = 0
             },
             tick: (pad) => {
                 applyEvents(tickDonkeyKong(gs, {
