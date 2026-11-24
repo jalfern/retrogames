@@ -19,8 +19,15 @@
 // per-lap re-roll (`gs.seaTarget`), lightning is scheduled by the sim's own
 // rng, and gate judgement rides course PROGRESS instead of a lateral corridor,
 // so skirting far outside the line can no longer escape judgement.
+//
+// Rung 3 (“BIG WATER”): the re-roll now TRAVELS. On each player lap crossing a
+// squall front (`gs.front`, see water.js) sweeps the bay along the new swell's
+// direction — behind it the new sea, ahead of it the old — and every hull
+// sample mixes the two evaluated tables by the front weight, the same weight
+// the vertex shader computes (drawn ≡ ridden across the front). A landed trick
+// banks an air-time bonus; rivals take visibly different lines.
 
-import { heightAt, surfaceVy, sunnySea, stormSea, lerpSea, WAVES } from './water.js'
+import { heightAt, surfaceVy, sunnySea, stormSea, mixHeight, mixVy, makeFront, frontW, WAVES, FRONT_SPEED } from './water.js'
 
 export const DT = 1 / 60
 export const LAPS = 3
@@ -38,7 +45,8 @@ const LAUNCH_VY_STORM = -2.35 // storm seas are bigger; a hair higher threshold 
 const G = 9.81
 const TRICK_RATE = 9.5        // rad/s spin while A held airborne
 const BARREL_RATE = 10.0      // rad/s barrel roll while steer is pinned airborne
-const SEA_BLEND = 1.1         // per-second blend rate when the storm re-rolls the swell
+const AIR_BONUS_RATE = 50     // score per second of hang-time under a landed trick
+const AIR_BONUS_CAP = 100     // a 2 s send gets the whole cap
 const BOOST_DRAIN = 0.30      // meter per second while sprinting
 const GATE_R = 9.0            // judgement radius around a buoy
 const SKIP_MARGIN = 14        // past the gate line by this much unjudged = miss
@@ -131,7 +139,7 @@ function makeCraft(id, name, color, startArc, skill) {
         speed: 0, throttle: 0, steer: 0,
         lean: 0, pitch: 0, roll: 0,
         airborne: false, vy: 0, spin: 0, spinArmed: false, trickPts: 0, trickArmed: 0,
-        rollSpin: 0,                  // barrel roll radians accumulated this air
+        rollSpin: 0, airT: 0,        // barrel radians + hang-time accumulated this air
         boost: 0, boosting: false,
         penalty: 0,                   // seconds of choked throttle left
         lap: 1, judged: new Array(N_GATES).fill(0), // 0 pending, 1 clean, -1 missed
@@ -193,8 +201,9 @@ export function makeGame(seed, stage = 'sunny') {
         tick: 0, t: 0, seed: seed >>> 0, rngS: (seed ^ 0x9e3779b9) >>> 0,
         course, crafts,
         stage,                                  // 'sunny' | 'storm'
-        seaCur: sea0,
+        seaCur: sea0,                         // the table the bay rides now (outgoing during a front)
         seaTarget: sea0.map((w) => ({ ...w })), // swell-shift re-rolls land here
+        front: null,                          // live squall front {dx,dz,h,prog,band} | null
         flash: 0, nextFlash: 0,              // storm lightning, sim-owned (seeded)
         score: 0, done: false, rank: 1,
         startT: 0, lightPhase: 0,           // false-start lights: 3 reds then GO
@@ -287,9 +296,13 @@ function stepCraft(gs, c, pad) {
             }
         } else if (c.id === 0) {
             gs.events.push({ t: gs.tick, type: 'lap', lap: c.lap })
-            // STORM BAY: the swell re-rolls lap to lap (WR64's signature).
+            // STORM BAY: the swell re-rolls lap to lap (WR64's signature) —
+            // rung 3: the new sea rides in behind a squall front. A front still
+            // mid-bay completes first (deterministic snap, never two fronts).
             if (gs.stage === 'storm') {
+                if (gs.front) { gs.seaCur = gs.seaTarget.map((w) => ({ ...w })); gs.front = null }
                 gs.seaTarget = stormSea(gs.seed, c.lap)
+                gs.front = makeFront(gs.seaTarget, RX + 26, RZ + 26)
                 gs.events.push({ t: gs.tick, type: 'swell', lap: c.lap })
             }
         }
@@ -320,29 +333,46 @@ function stepCraft(gs, c, pad) {
     c.heading += c.steer * TURN_K * authority * (c.airborne ? 0.35 : 1) * DT
 
     // --- hull on the swell ---------------------------------------------------
-    const sea = gs.seaCur
-    const surfY = heightAt(c.x, c.z, gs.t, sea)
-    const surfVy = surfaceVy(c.x, c.z, gs.t, sea)
+    // Rung 3: every sample is the front-mixed surface — the outgoing table
+    // ahead of the squall, the incoming one behind it. The weights come from
+    // the SAME frontW the vertex shader evaluates (seaGLSLFront/frontWeight).
+    const old = gs.seaCur, next = gs.seaTarget, fr = gs.front
+    const hS = (px, pz) => (fr ? mixHeight(px, pz, gs.t, old, next, frontW(px, pz, fr)) : heightAt(px, pz, gs.t, old))
+    const surfY = hS(c.x, c.z)
+    const surfVy = fr ? mixVy(c.x, c.z, gs.t, old, next, frontW(c.x, c.z, fr)) : surfaceVy(c.x, c.z, gs.t, old)
     if (c.airborne) {
+        c.airT += DT
         c.vy -= G * DT
         c.y += c.vy * DT
         if (pad.a) c.spin += TRICK_RATE * DT
         if (Math.abs(c.steer) > 0.7) c.rollSpin += Math.sign(c.steer) * BARREL_RATE * DT
         if (c.y <= surfY) {
             c.airborne = false; c.y = surfY; c.vy = surfVy
-            if (c.spin >= Math.PI * 2 - 0.6) {
+            const spun = c.spin >= Math.PI * 2 - 0.6
+            const rolled = Math.abs(c.rollSpin) >= Math.PI * 2 - 0.8
+            if (spun) {
                 c.trickPts = 1
                 c.boost = Math.min(1, c.boost + 0.30)
                 if (c.id === 0) { gs.score += 250; gs.events.push({ t: gs.tick, type: 'trick' }) }
-            } else if (Math.abs(c.rollSpin) >= Math.PI * 2 - 0.8) {
+            } else if (rolled) {
                 // barrel roll: carved hard off a crest, landed clean
                 c.boost = Math.min(1, c.boost + 0.22)
                 if (c.id === 0) { gs.score += 200; gs.events.push({ t: gs.tick, type: 'barrel' }) }
             } else if (c.spin > 0.3 && c.id === 0) {
                 gs.events.push({ t: gs.tick, type: 'splashes' })
             }
+            // the hang-time pays: a landed trick banks its air (rung 3)
+            if ((spun || rolled) && c.id === 0) {
+                const airR = Math.round(c.airT * 100) / 100 // what the event reports
+                const bonus = Math.min(AIR_BONUS_CAP, Math.round(airR * AIR_BONUS_RATE))
+                if (bonus > 0) {
+                    gs.score += bonus
+                    gs.events.push({ t: gs.tick, type: 'airbonus', pts: bonus, airT: airR })
+                }
+            }
             c.spin = 0
             c.rollSpin = 0
+            c.airT = 0
             c.speed *= 0.985 // slap the water, lose a whisper
         }
     } else {
@@ -351,6 +381,7 @@ function stepCraft(gs, c, pad) {
         // a fast hull over a falling face leaves the bay behind it
         if (surfVy < (gs.stage === 'storm' ? LAUNCH_VY_STORM : LAUNCH_VY) && c.speed > 7.5 && !c.finished) {
             c.airborne = true
+            c.airT = 0
             c.vy = surfVy * 0.85 + c.speed * 0.18 // carry off the crest: up, not down
             if (c.id === 0) gs.events.push({ t: gs.tick, type: 'air' })
         }
@@ -358,12 +389,12 @@ function stepCraft(gs, c, pad) {
     // attitude: pitch from the slope along the heading, roll from lean+beam slope
     const e = 1.4
     const fx = Math.sin(c.heading), fz = Math.cos(c.heading)
-    const ahead = heightAt(c.x + fx * e, c.z + fz * e, gs.t, sea)
-    const astern = heightAt(c.x - fx * e, c.z - fz * e, gs.t, sea)
+    const ahead = hS(c.x + fx * e, c.z + fz * e)
+    const astern = hS(c.x - fx * e, c.z - fz * e)
     const wantPitch = -Math.atan2(ahead - astern, 2 * e)
     c.pitch += (wantPitch - c.pitch) * Math.min(1, 6 * DT)
     const bx = Math.cos(c.heading), bz = -Math.sin(c.heading)
-    const beam = heightAt(c.x + bx * e, c.z + bz * e, gs.t, sea) - heightAt(c.x - bx * e, c.z - bz * e, gs.t, sea)
+    const beam = hS(c.x + bx * e, c.z + bz * e) - hS(c.x - bx * e, c.z - bz * e)
     const wantRoll = c.lean + Math.atan2(beam, 2 * e)
     c.roll += (wantRoll - c.roll) * Math.min(1, 6 * DT)
 
@@ -386,9 +417,11 @@ function rivalPad(gs, c) {
     let i = c.judged.findIndex((j) => j === 0)
     if (i < 0) i = 0
     const gt = g[i]
-    // aim at the correct side of the buoy: red ⇒ pass left of it, yellow right
+    // aim at the correct side of the buoy: red ⇒ pass left of it, yellow right.
+    // Rung 3: each rival keeps its own lateral line (MAKO tight and inside,
+    // TUNDRA wider) — the pack reads as racing lines, not a conga.
     const lat = { x: gt.tangent.z, z: -gt.tangent.x } // left of travel
-    const off = gt.color === 'red' ? 2.6 : -2.6
+    const off = (gt.color === 'red' ? 1 : -1) * (c.id === 1 ? 2.3 : 3.6)
     const tx = gt.x + lat.x * off, tz = gt.z + lat.z * off
     const want = Math.atan2(tx - c.x, tz - c.z)
     let d = want - c.heading
@@ -472,11 +505,18 @@ export function step(gs, padIn) {
     gs.lightPhase = gs.t < 1.4 ? gs.t / 1.4 : 1
     const gatesOpen = gs.lightPhase >= 1
 
-    // STORM BAY: the live sea blends toward this lap's re-rolled swell; every
-    // consumer (hull sampling, shader uniforms) reads seaCur, so the drawn and
-    // ridden transition are the same numbers. Sunny re-blends onto itself —
-    // value-identical, so the rung-1 bay never moves.
-    gs.seaCur = lerpSea(gs.seaCur, gs.seaTarget, Math.min(1, SEA_BLEND * DT))
+    // Rung 3: no more whole-bay blend. A live squall front advances at
+    // FRONT_SPEED; hull sampling (stepCraft) and the shader (front uniforms)
+    // both read gs.front, so drawn ≡ ridden across the transition. When the
+    // band clears the far side, the incoming table becomes the current one.
+    if (gs.front) {
+        gs.front.prog += FRONT_SPEED * DT
+        if (gs.front.prog >= 2 * gs.front.h + gs.front.band) {
+            gs.seaCur = gs.seaTarget.map((w) => ({ ...w }))
+            gs.front = null
+            gs.events.push({ t: gs.tick, type: 'frontDone' })
+        }
+    }
     if (gs.stage === 'storm') {
         gs.nextFlash -= DT
         if (gs.nextFlash <= 0) {
@@ -516,7 +556,9 @@ export function stateOf(gs) {
         boost: Math.round(p.boost * 100) / 100,
         airborne: p.airborne, penalty: p.penalty > 0,
         stage: gs.stage,
-        swell: Math.round(gs.seaCur[0].amp * 100) / 100,
+        // swell as KAI feels it: front-mixed dominant amplitude at the hull
+        swell: Math.round((gs.seaCur[0].amp + (gs.seaTarget[0].amp - gs.seaCur[0].amp) * frontW(gs.crafts[0].x, gs.crafts[0].z, gs.front)) * 100) / 100,
+        frontPct: gs.front ? Math.round(Math.min(1, gs.front.prog / (2 * gs.front.h + gs.front.band)) * 100) : 0,
         flash: gs.flash > 0,
         hash: stateHash(gs),
     }
@@ -533,6 +575,8 @@ export function stateHash(gs) {
     mix(gs.tick); mix(gs.score >>> 0)
     mix(gs.stage === 'storm' ? 1 : 0)
     for (const w of gs.seaCur) { mix(Math.round(w.amp * 100)); mix(Math.round(w.len * 100)); mix(Math.round(w.phase * 100)) }
+    for (const w of gs.seaTarget) { mix(Math.round(w.amp * 100)); mix(Math.round(w.len * 100)) }
+    mix(gs.front ? Math.round(gs.front.prog * 100) : -1)
     mix(Math.round(gs.flash * 100))
     for (const c of gs.crafts) {
         mix(Math.round(c.x * 100)); mix(Math.round(c.z * 100)); mix(Math.round(c.speed * 50))

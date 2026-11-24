@@ -172,48 +172,152 @@ export function surfaceNormal(x, z, t, sea = SUNNY) {
 // Crest height threshold for whitening foam (sunny bay reads mostly clean).
 export const CREST_FOAM = 0.78
 
+// --- rung 3: the SQUALL FRONT -------------------------------------------------
+// Rung 2 re-rolled the storm swell as an instant whole-bay blend. Rung 3 makes
+// the new swell TRAVEL: a band `FRONT_BAND` metres wide sweeps along the new
+// sea's travel direction at squall speed; behind it lies the new sea, ahead of
+// it the old, and every consumer (hull sampling on CPU, vertex shader on GPU)
+// mixes the two evaluated tables by the SAME weight — drawn ≡ ridden now holds
+// across the front, not just within one table.
+//
+// `front.h` is the ellipse half-span along the travel direction, so the front
+// starts fully off the bay (origin at −h·dir) and finishes fully across it.
+// Squall speed (26 m/s) is deliberately faster than physical group velocity so
+// the shift resolves inside a lap — race pacing beats textbook dispersion, and
+// the README says so.
+export const FRONT_BAND = 34
+export const FRONT_SPEED = 26
+
+export function frontSpan(dx, dz, rx, rz) { return Math.hypot(dx * rx, dz * rz) }
+
+// A front aimed along the dominant swell of `sea`, covering bay radii rx/rz.
+export function makeFront(sea, rx, rz) {
+    const w = sea[0]
+    return { dx: w.dx, dz: w.dz, h: frontSpan(w.dx, w.dz, rx, rz), prog: 0, band: FRONT_BAND }
+}
+
+// Weight of the NEW sea at (x, z) — 1 behind the advancing front (the sea it
+// has already crossed, measured along the travel direction), 0 ahead of it,
+// smoothstep inside the band. `fr` null/undefined ⇒ no front (pure old sea).
+// The GLSL `frontWeight` below is the byte-for-byte twin of this function.
+export function frontW(x, z, fr) {
+    if (!fr) return 0
+    const d = x * fr.dx + z * fr.dz + fr.h
+    let t = ((fr.prog + 0.5 * fr.band) - d) / fr.band
+    t = t < 0 ? 0 : t > 1 ? 1 : t
+    return t * t * (3 - 2 * t)
+}
+
+// Mix two EVALUATED surfaces (not parameter tables) by front weight. GLSL
+// `mix(a, b, w)` is a + (b − a)·w — identical order, identical rounding path.
+export function mixHeight(x, z, t, a, b, w) {
+    if (w <= 0) return heightAt(x, z, t, a)
+    if (w >= 1) return heightAt(x, z, t, b)
+    const ha = heightAt(x, z, t, a), hb = heightAt(x, z, t, b)
+    return ha + (hb - ha) * w
+}
+export function mixVy(x, z, t, a, b, w) {
+    if (w <= 0) return surfaceVy(x, z, t, a)
+    if (w >= 1) return surfaceVy(x, z, t, b)
+    const va = surfaceVy(x, z, t, a), vb = surfaceVy(x, z, t, b)
+    return va + (vb - va) * w
+}
+export function mixWater(x, z, t, a, b, w) {
+    if (w <= 0) return waterHeight(x, z, t, a)
+    if (w >= 1) return waterHeight(x, z, t, b)
+    const wa = waterHeight(x, z, t, a), wb = waterHeight(x, z, t, b)
+    return { y: wa.y + (wb.y - wa.y) * w, dx: wa.dx + (wb.dx - wa.dx) * w, dz: wa.dz + (wb.dz - wa.dz) * w }
+}
+
 // Uniform names the shader declares — one set per slot. tidalcheck parses
 // seaGLSL() for these and asserts the live sea maps into them exactly, so
 // "drawn sea ≡ ridden sea" holds for EVERY table, not just the sunny one.
 export const SEA_UNIFORMS = []
 for (let i = 0; i < N_SLOTS; i++) SEA_UNIFORMS.push(`uDir${i}`, `uK${i}`, `uO${i}`, `uA${i}`, `uQ${i}`, `uPh${i}`)
 
+// The rung-3 sets: `B` carries the second (incoming) table; `uF*` the front.
+export const SEA_UNIFORMS_B = SEA_UNIFORMS.map((n) => n + 'B')
+export const FRONT_UNIFORMS = ['uFN', 'uFP', 'uFH', 'uFW']
+
 // Map a live sea table onto those uniform values. This single function is the
 // whole CPU→GPU bridge; the checks re-derive it and compare field by field.
-export function seaUniforms(sea) {
+// `suffix` picks the A set ('', byte-identical to rung 2) or the B set ('B').
+export function seaUniforms(sea, suffix = '') {
     const u = {}
     for (let i = 0; i < N_SLOTS; i++) {
         const w = sea[i]
-        u[`uDir${i}`] = [w.dx, w.dz]
-        u[`uK${i}`] = w.k
-        u[`uO${i}`] = w.om
-        u[`uA${i}`] = w.amp
-        u[`uQ${i}`] = w.qa
-        u[`uPh${i}`] = w.phase
+        u[`uDir${i}${suffix}`] = [w.dx, w.dz]
+        u[`uK${i}${suffix}`] = w.k
+        u[`uO${i}${suffix}`] = w.om
+        u[`uA${i}${suffix}`] = w.amp
+        u[`uQ${i}${suffix}`] = w.qa
+        u[`uPh${i}${suffix}`] = w.phase
     }
     return u
 }
 
+// Front → uniforms. An inactive front (null) parks the band far off-bay so the
+// weight is 0 everywhere — the bay rides the A table untouched (sunny days,
+// pre-shift storm).
+export function frontUniforms(fr) {
+    if (!fr) return { uFN: [0, 1], uFP: -1e4, uFH: 0, uFW: 1 }
+    return { uFN: [fr.dx, fr.dz], uFP: fr.prog, uFH: fr.h, uFW: fr.band }
+}
+
 // The GLSL chunk: declares the slot uniforms, four fully-unrolled Gerstner
 // terms — same loop ORDER as waterHeight, same arithmetic, values at runtime.
-export function seaGLSL() {
-    const lines = ['// four unrolled slots — values arrive in uniforms from water.js (seaUniforms)']
+// One Gerstner slot term at a time; `hVar`/`dVar` name the accumulators so the
+// A-set, B-set and single-table variants share the exact arithmetic.
+function unroll(prefix, hVar = 'h', dVar = 'disp') {
+    const lines = []
     for (let i = 0; i < N_SLOTS; i++) {
         lines.push(
-            `  f = uK${i} * (uDir${i}.x * pos.x + uDir${i}.y * pos.y) - uO${i} * uT + uPh${i};`,
-            `  h += uA${i} * sin(f);`,
-            `  disp += uQ${i} * uDir${i} * cos(f);`,
+            `  f = uK${i}${prefix} * (uDir${i}${prefix}.x * pos.x + uDir${i}${prefix}.y * pos.y) - uO${i}${prefix} * uT + uPh${i}${prefix};`,
+            `  ${hVar} += uA${i}${prefix} * sin(f);`,
+            `  ${dVar} += uQ${i}${prefix} * uDir${i}${prefix} * cos(f);`,
         )
     }
+    return lines
+}
+function declare(prefix) {
     const decl = []
-    for (let i = 0; i < N_SLOTS; i++) decl.push(`uniform vec2 uDir${i}; uniform float uK${i}, uO${i}, uA${i}, uQ${i}, uPh${i};`)
+    for (let i = 0; i < N_SLOTS; i++) decl.push(`uniform vec2 uDir${i}${prefix}; uniform float uK${i}${prefix}, uO${i}${prefix}, uA${i}${prefix}, uQ${i}${prefix}, uPh${i}${prefix};`)
+    return decl
+}
+
+export function seaGLSL() {
     return `
-${decl.join('\n')}
+${declare('').join('\n')}
 float waveHeight(vec2 pos, float uT, out vec2 disp) {
   float h = 0.0; disp = vec2(0.0); float f;
-${lines.join('\n')}
+${unroll('').join('\n')}
   return h;
 }`
+}
+
+// Rung-3 chunk: two unrolled table sets + the squall front. `frontWeight` is
+// the GLSL twin of frontW() — same clamp, same smoothstep, same order — so
+// heightFront ≡ mixHeight() on the CPU, vertex for vertex, wave for wave.
+export function seaGLSLFront() {
+    return `
+${declare('').join('\n')}
+${declare('B').join('\n')}
+uniform vec2 uFN; uniform float uFP, uFH, uFW;
+float frontWeight(vec2 pos) {
+  float d = dot(pos, uFN) + uFH;
+  float t = clamp(((uFP + 0.5 * uFW) - d) / uFW, 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+float heightFront(vec2 pos, float uT, out vec2 disp) {
+  float hA = 0.0; vec2 dA = vec2(0.0); float f;
+${unroll('', 'hA', 'dA').join('\n')}
+  float hB = 0.0; vec2 dB = vec2(0.0);
+${unroll('B', 'hB', 'dB').join('\n')}
+  float w = frontWeight(pos);
+  disp = mix(dA, dB, w);
+  return mix(hA, hB, w);
+}
+float waveHeight(vec2 pos, float uT, out vec2 disp) { return heightFront(pos, uT, disp); }`
 }
 
 // rung-1 name kept as an alias (checks/README reference it)

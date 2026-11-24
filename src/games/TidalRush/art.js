@@ -11,7 +11,7 @@
 // wake (plus a second small one for rain), pixel-ratio capped by the shell.
 
 import * as THREE from 'three'
-import { seaGLSL, seaUniforms, sunnySea } from './water.js'
+import { seaGLSLFront, seaUniforms, frontUniforms, sunnySea } from './water.js'
 
 export const SEA_COLOR_DEEP = new THREE.Color(0x0a3648)
 export const SEA_COLOR_SHALLOW = new THREE.Color(0x1e93a8)
@@ -44,6 +44,16 @@ export function makeSea() {
     for (const k in su) {
         uniforms[k] = { value: Array.isArray(su[k]) ? new THREE.Vector2(su[k][0], su[k][1]) : su[k] }
     }
+    // rung 3: the incoming table rides in the B slots; the squall front parks
+    // off-bay (weight 0 everywhere) until the sim sends one.
+    const suB = seaUniforms(sunnySea(), 'B')
+    for (const k in suB) {
+        uniforms[k] = { value: Array.isArray(suB[k]) ? new THREE.Vector2(suB[k][0], suB[k][1]) : suB[k] }
+    }
+    uniforms.uFN = { value: new THREE.Vector2(0, 1) }
+    uniforms.uFP = { value: -1e4 }
+    uniforms.uFH = { value: 0 }
+    uniforms.uFW = { value: 1 }
     const mat = new THREE.ShaderMaterial({
         uniforms,
         vertexShader: `
@@ -51,7 +61,7 @@ uniform float uT;
 varying vec3 vWorld;
 varying float vH;
 varying vec3 vNormalW;
-${seaGLSL()}
+${seaGLSLFront()}
 void main() {
   vec3 p = position;
   vec2 d;
@@ -115,6 +125,23 @@ void main() {
     const mesh = new THREE.Mesh(geo, mat)
     mesh.frustumCulled = false
     return { mesh, mat }
+}
+
+// THE BRIDGE (rung 3): this frame's outgoing table → A slots, incoming table →
+// B slots, live squall front → uF* — the exact numbers the CPU hull is mixing,
+// pushed the same frame. Drawn ≡ ridden across the front, not just in one sea.
+export function pushSea(mat, gs) {
+    const push = (su) => {
+        for (const k in su) {
+            const u = mat.uniforms[k]
+            if (!u) continue
+            if (Array.isArray(su[k])) { u.value.x = su[k][0]; u.value.y = su[k][1] }
+            else u.value = su[k]
+        }
+    }
+    push(seaUniforms(gs.seaCur))
+    push(seaUniforms(gs.seaTarget, 'B'))
+    push(frontUniforms(gs.front))
 }
 
 // ---- sky dome + headlands ----------------------------------------------------
@@ -337,7 +364,61 @@ export function sprayStep(sp, dt) {
     sp.geo.attributes.position.needsUpdate = true
 }
 
-// ---- rain: pooled streaks falling around the camera (storm only) --------------
+// ---- ribbon wake: the WR64 signature streak -------------------------------------
+// Not dots — a stitched white ribbon that trails each hull: a ring buffer of
+// stern points turned into a triangle strip that widens and fades as it ages.
+// One small mesh per craft, additive, no depth write — phone-cheap.
+export function makeWake(n = 44) {
+    const pos = new Float32Array(n * 2 * 3)
+    const col = new Float32Array(n * 2 * 4)
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 4))
+    const idx = []
+    for (let i = 0; i < n - 1; i++) {
+        const a = i * 2, b = a + 1, c = a + 2, d = a + 3
+        idx.push(a, c, b, b, c, d)
+    }
+    geo.setIndex(idx)
+    geo.setDrawRange(0, 0)
+    const mat = new THREE.MeshBasicMaterial({
+        vertexColors: true, transparent: true, depthWrite: false,
+        side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.frustumCulled = false
+    return { mesh, geo, mat, pts: [], n, life: 2.4 }
+}
+
+export function wakePush(w, x, y, z, heading, width) {
+    w.pts.push({ x, y: y + 0.05, z, heading, width, age: 0 })
+    if (w.pts.length > w.n) w.pts.shift()
+}
+
+export function wakeStep(w, dt) {
+    const pts = w.pts
+    for (let i = 0; i < pts.length; i++) pts[i].age += dt
+    while (pts.length && pts[0].age > w.life) pts.shift()
+    const pos = w.geo.attributes.position.array
+    const col = w.geo.attributes.color.array
+    const m = pts.length
+    for (let i = 0; i < m; i++) {
+        const p = pts[i]
+        const t = p.age / w.life
+        // widen with age (the trail spreads), keep the fresh end narrow and hot
+        const hw = p.width * (0.22 + 0.78 * t)
+        const px = Math.cos(p.heading), pz = -Math.sin(p.heading)
+        const a = (1 - t) * (1 - t) * 0.62
+        const j = i * 2
+        pos[j * 3] = p.x + px * hw; pos[j * 3 + 1] = p.y; pos[j * 3 + 2] = p.z + pz * hw
+        pos[(j + 1) * 3] = p.x - px * hw; pos[(j + 1) * 3 + 1] = p.y; pos[(j + 1) * 3 + 2] = p.z - pz * hw
+        col[j * 4] = 0.92; col[j * 4 + 1] = 0.98; col[j * 4 + 2] = 1.0; col[j * 4 + 3] = a
+        col[(j + 1) * 4] = 0.92; col[(j + 1) * 4 + 1] = 0.98; col[(j + 1) * 4 + 2] = 1.0; col[(j + 1) * 4 + 3] = a
+    }
+    w.geo.setDrawRange(0, m >= 2 ? (m - 1) * 6 : 0)
+    w.geo.attributes.position.needsUpdate = true
+    w.geo.attributes.color.needsUpdate = true
+}
 export function makeRain(n = 420) {
     const pos = new Float32Array(n * 3)
     const geo = new THREE.BufferGeometry()

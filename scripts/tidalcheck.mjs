@@ -40,15 +40,17 @@ if (MUT) {
         judge: { from: "const want = g.color === 'red' ? -1 : 1", note: 'RED-side judgement muted' },
         // STORM laps stop re-rolling the swell — "changes lap to lap" dies.
         swell: { from: 'gs.seaTarget = stormSea(gs.seed, c.lap)', note: 'per-lap swell re-roll pinned' },
+        // the squall front freezes — the new sea never arrives.
+        front: { from: 'gs.front.prog += FRONT_SPEED * DT', note: 'squall front progress frozen' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
     if (!src.includes(a.from)) { console.error(`mutant anchor missing in sim.js (${MUT})`); process.exit(1) }
-    plant(simPath, src.replace(a.from, MUT === 'judge' ? 'const want = 1' : 'gs.seaTarget = gs.seaTarget'))
+    plant(simPath, src.replace(a.from, MUT === 'judge' ? 'const want = 1' : MUT === 'swell' ? 'gs.seaTarget = gs.seaTarget' : 'gs.front.prog += 0 * DT'))
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
-const { WAVES, heightAt, seaGLSL, seaUniforms, SEA_UNIFORMS, sunnySea, stormSea, omega } = await import('../src/games/TidalRush/water.js')
+const { WAVES, heightAt, seaGLSL, seaGLSLFront, seaUniforms, SEA_UNIFORMS, SEA_UNIFORMS_B, FRONT_UNIFORMS, frontUniforms, frontW, mixHeight, sunnySea, stormSea, omega, FRONT_SPEED } = await import('../src/games/TidalRush/water.js')
 const { makeGame, step, autoPad, stateOf, stateHash, LAPS } = await import('../src/games/TidalRush/sim.js')
 
 const run = (gs, maxS = 240, padFn = null) => {
@@ -282,7 +284,8 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('every storm wave obeys deep-water dispersion ω=√(gk)', omOk)
 
     const artSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/index.jsx'), 'utf8')
-    ok('the shell pushes the LIVE sea into the shader every frame', artSrc.includes('seaUniforms(gs.seaCur)'))
+    const artJs = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/art.js'), 'utf8')
+    ok('the shell pushes the LIVE seas + front into the shader every frame (pushSea)', artSrc.includes('pushSea(sea.mat, gs)') && artJs.includes("seaUniforms(gs.seaCur)") && artJs.includes("seaUniforms(gs.seaTarget, 'B')") && artJs.includes('frontUniforms(gs.front)'))
 }
 
 // 10. restart: a fresh game after a finished one starts clean
@@ -371,6 +374,97 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         prevS = h
     }
     ok('storm surface bounded (<4.2 m) and continuous', maxS < 4.2 && smoothS)
+}
+
+// 15. RUNG 3 — the squall front: it travels, it judges nothing but the sea,
+//     it completes inside a lap, CPU and shader evaluate the SAME mix.
+{
+    const gs = makeGame(7, 'storm')
+    ok('sunny never raises a front', gs.front === null)
+    let sawFront = false, frontT0 = -1, doneT = -1, spatialOk = false, exact = true, seaSnap = false
+    for (let t = 0; t < 60 * 240 && !gs.done; t++) {
+        step(gs, autoPad(gs))
+        if (gs.front && !sawFront) { sawFront = true; frontT0 = gs.t }
+        if (gs.front && gs.front.prog > 40 && !spatialOk) {
+            spatialOk = true
+            const f = gs.front
+            const sB = Math.max(-f.h + 2, Math.min(f.h, f.prog - f.h - 0.6 * f.band))
+            const sA = Math.max(-f.h, Math.min(f.h - 2, f.prog - f.h + 0.6 * f.band))
+            const b = { x: f.dx * sB, z: f.dz * sB }, a2 = { x: f.dx * sA, z: f.dz * sA }
+            if (frontW(b.x, b.z, f) !== 1 || frontW(a2.x, a2.z, f) !== 0) exact = false
+            if (Math.abs(mixHeight(b.x, b.z, gs.t, gs.seaCur, gs.seaTarget, frontW(b.x, b.z, f)) - heightAt(b.x, b.z, gs.t, gs.seaTarget)) > 1e-12) exact = false
+            if (Math.abs(mixHeight(a2.x, a2.z, gs.t, gs.seaCur, gs.seaTarget, frontW(a2.x, a2.z, f)) - heightAt(a2.x, a2.z, gs.t, gs.seaCur)) > 1e-12) exact = false
+        }
+        if (sawFront && doneT < 0 && !gs.front) {
+            doneT = gs.t
+            seaSnap = gs.seaCur.every((w, i) => w.amp === gs.seaTarget[i].amp && w.phase === gs.seaTarget[i].phase)
+        }
+    }
+    ok('the storm raises a squall front on the lap-2 re-roll', sawFront)
+    ok('behind the front rides the NEW sea, ahead the OLD — exact', spatialOk && exact)
+    ok('the front crosses inside ~12 s and the new sea takes over', doneT > 0 && doneT - frontT0 < 12 && seaSnap)
+    ok('front speed is the tuned squall pace', FRONT_SPEED === 26)
+    ok('state carries the rung-3 field (frontPct)', 'frontPct' in stateOf(gs))
+
+    // sunny race: gs.front stays null for every tick
+    const sun = makeGame(7)
+    let sunnyFront = false
+    for (let t = 0; t < 60 * 80 && !sun.done; t++) { step(sun, autoPad(sun)); if (sun.front) sunnyFront = true }
+    ok('SUNNY BAY never raises a front mid-race', !sunnyFront)
+
+    // determinism ACROSS a front: identical replays through lap-2 weather
+    const r1 = makeGame(11, 'storm'), r2 = makeGame(11, 'storm')
+    for (let t = 0; t < 60 * 45; t++) { step(r1, autoPad(r1)); step(r2, autoPad(r2)) }
+    ok('storm replays match through the squall (hash)', stateHash(r1) === stateHash(r2))
+}
+
+// 16. RUNG 3 — GLSL twin + bridge for the two-slot front shader
+{
+    const glsl = seaGLSLFront()
+    let names = true
+    for (const n of [...SEA_UNIFORMS, ...SEA_UNIFORMS_B, ...FRONT_UNIFORMS]) if (!glsl.includes(n)) names = false
+    ok('front GLSL declares both slot sets + the front uniforms (48+4 names)', names && SEA_UNIFORMS_B.length === 24 && FRONT_UNIFORMS.length === 4)
+    ok('front GLSL carries clamp+smoothstep and mix (the CPU twin)', glsl.includes('clamp(') && glsl.includes('3.0 - 2.0 * t') && glsl.includes('mix(hA, hB, w)'))
+    const sinTerms = (glsl.match(/sin\(f\)/g) || []).length
+    ok('front GLSL is fully unrolled for BOTH tables (8 sin terms, SwiftShader-safe)', sinTerms === 8)
+    ok('front GLSL has no array constructors (GLSL ES 1.00)', !/vec[234]\[\d/.test(glsl))
+
+    const gs = makeGame(7, 'storm')
+    for (let t = 0; t < 60 * 40 && !gs.front && !gs.done; t++) step(gs, autoPad(gs)) // catch the live front
+    const fu = frontUniforms(gs.front)
+    const bridgeOk = gs.front
+        ? (fu.uFN[0] === gs.front.dx && fu.uFN[1] === gs.front.dz && fu.uFP === gs.front.prog && fu.uFH === gs.front.h && fu.uFW === gs.front.band)
+        : (fu.uFP === -1e4 && fu.uFW === 1)
+    ok('frontUniforms maps the live front (or its parked state) exactly', bridgeOk)
+    const suB = seaUniforms(gs.seaTarget, 'B')
+    let bOk = true
+    for (let i = 0; i < 4; i++) {
+        const w = gs.seaTarget[i]
+        if (suB[`uDir${i}B`][0] !== w.dx || suB[`uA${i}B`] !== w.amp || suB[`uQ${i}B`] !== w.qa) bOk = false
+    }
+    ok('the incoming table lands in the B slots exactly', bOk)
+}
+
+// 17. RUNG 3 — the air pays: airbonus events are exact, bare air banks nothing
+{
+    const gs = makeGame(7, 'storm')
+    const ev = run(gs, 240)
+    const bonuses = ev.filter((e) => e.type === 'airbonus')
+    ok('landed tricks bank an air-time bonus', bonuses.length > 0)
+    ok('every bonus equals min(100, round(airT×50))', bonuses.every((e) => e.pts === Math.min(100, Math.round(e.airT * 50)) && e.pts > 0))
+    ok('bonus is capped at +100', bonuses.every((e) => e.pts <= 100))
+    const tricks = ev.filter((e) => e.type === 'trick' || e.type === 'barrel').length
+    ok('one bonus per trick (one trick per air)', bonuses.length <= tricks)
+
+    // bare air — no A, no lock — banks nothing
+    const g2 = makeGame(7, 'storm')
+    let sawAir = false, bareBonus = 0
+    for (let t = 0; t < 60 * 240 && !g2.done; t++) {
+        step(g2, { throttle: 1, steer: 0, brake: false, a: false, b: false })
+        if (g2.events.some((e) => e.type === 'air')) sawAir = true
+        if (g2.events.some((e) => e.type === 'airbonus')) bareBonus++
+    }
+    ok('a bare air banks nothing (no spin, no bonus)', sawAir && bareBonus === 0)
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)

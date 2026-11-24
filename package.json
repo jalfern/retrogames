@@ -388,7 +388,8 @@
     "plaicraft:outbox": "node scripts/plaicraft-outbox.mjs",
     "furlongcheck": "node scripts/furlongcheck.mjs",
     "foxcheck": "node scripts/foxcheck.mjs",
-    "grindcheck": "node scripts/grindcheck.mjs"
+    "grindcheck": "node scripts/grindcheck.mjs",
+    "tidaldrive": "node scripts/tidaldrive.mjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
