@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Forge Stack Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column; a layered architecture diagram up top, then a term map table, then what's unusual. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --ink: #17202b;
+  --muted: #5a6676;
+  --line: #d5dbe3;
+  --ember: #d9481f;      /* the forge's fire: accent */
+  --steel: #2f5d8a;      /* agents / workers */
+  --moss: #2e7d5b;       /* gates and evals */
+  --plum: #7a4b8c;       /* humans */
+  --ember-soft: #fbe4dc;
+  --steel-soft: #dde8f3;
+  --moss-soft: #dcefe6;
+  --plum-soft: #ece1f1;
+  --display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  --body: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f141b; --surface: #171e27; --ink: #e8edf3; --muted: #9aa6b5; --line: #2a3441;
+  --ember: #f26b42; --steel: #79a9d8; --moss: #63c194; --plum: #c39ad3;
+  --ember-soft: #3a1f17; --steel-soft: #1b2a3a; --moss-soft: #16302a; --plum-soft: #2c2133;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f141b; --surface: #171e27; --ink: #e8edf3; --muted: #9aa6b5; --line: #2a3441;
+  --ember: #f26b42; --steel: #79a9d8; --moss: #63c194; --plum: #c39ad3;
+  --ember-soft: #3a1f17; --steel-soft: #1b2a3a; --moss-soft: #16302a; --plum-soft: #2c2133;
+  color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 64px; }
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 40px; }
+h1, h2 { font-family: var(--display); margin: 0; text-wrap: balance; line-height: 1.08; }
+h1 { font-size: clamp(32px, 5.5vw, 54px); font-weight: 800; letter-spacing: -0.01em; }
+h1 em { font-style: normal; color: var(--ember); }
+h2 { font-size: 24px; font-weight: 700; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ember); }
+.lede { font-size: 19px; color: var(--muted); margin-top: 14px; }
+header { display: grid; gap: 6px; }
+.stats { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 22px; }
+.stat b { display: block; font-family: var(--display); font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 13px; color: var(--muted); }
+section { display: grid; gap: 16px; }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; overflow-x: auto; }
+.diagram svg { display: block; width: 100%; min-width: 720px; height: auto; }
+.diagram text { font-family: var(--body); fill: var(--ink); }
+.diagram .t-small { font-size: 11px; fill: var(--muted); }
+.diagram .t-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; fill: var(--muted); }
+.diagram .t-title { font-family: var(--display); font-weight: 700; font-size: 14px; }
+.box-h { fill: var(--plum-soft); stroke: var(--plum); }
+.box-a { fill: var(--steel-soft); stroke: var(--steel); }
+.box-b { fill: var(--ember-soft); stroke: var(--ember); }
+.box-g { fill: var(--moss-soft); stroke: var(--moss); }
+.box-n { fill: var(--surface); stroke: var(--line); }
+.arrow { stroke: var(--muted); stroke-width: 1.6; fill: none; marker-end: url(#ah); }
+.arrow.ember { stroke: var(--ember); marker-end: url(#ahE); }
+.band { fill: var(--bg); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1.5px solid; }
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { width: 100%; border-collapse: collapse; min-width: 640px; }
+th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+td:nth-child(2) { color: var(--ember); font-weight: 600; }
+td:nth-child(3) { color: var(--muted); }
+code { font-family: var(--mono); font-size: .9em; }
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 680px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 6px; align-content: start; }
+.card h3 { margin: 0; font-family: var(--display); font-size: 17px; font-weight: 700; }
+.card p { color: var(--muted); font-size: 15px; }
+.sum { border-left: 4px solid var(--ember); padding: 4px 0 4px 18px; font-size: 19px; font-family: var(--display); font-weight: 500; max-width: 60ch; }
+footer { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">retrogames · the forge · November 2026</div>
+    <h1>A multi-agent software factory, <em>coordinated through GitHub</em></h1>
+    <p class="lede">Local AI agents pick up work from issues, build games, prove them, and merge to a live site. A supervisor loop keeps them moving, a human sets taste and priority, and any outside agent can join by following the same protocol.</p>
+    <div class="stats">
+      <div class="stat"><b>84</b><span>games in the arcade</span></div>
+      <div class="stat"><b>72</b><span>PRs merged in one day (Nov 16–17)</span></div>
+      <div class="stat"><b>5</b><span>automatic agent lanes</span></div>
+      <div class="stat"><b>3</b><span>native Apple ports, tick-exact</span></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>The architecture</h2>
+    <div class="diagram">
+      <svg viewBox="0 0 1000 560" role="img" aria-label="Architecture: Jon and Claude steer; GitHub is the shared blackboard; the warden reconciles; agent lanes do the work; gates and evals protect main; the site and TestFlight ship it.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--muted)"/></marker>
+          <marker id="ahE" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--ember)"/></marker>
+        </defs>
+        <!-- layer labels -->
+        <text class="t-label" x="10" y="30">HUMAN IN THE LOOP</text>
+        <text class="t-label" x="10" y="160">SHARED STATE</text>
+        <text class="t-label" x="10" y="300">WORKER AGENTS</text>
+        <text class="t-label" x="10" y="440">GATES &amp; EVALS</text>
+        <text class="t-label" x="760" y="440">SHIPPING</text>
+
+        <!-- humans -->
+        <rect class="box-h" x="10" y="42" width="290" height="70" rx="8" stroke-width="1.5"/>
+        <text class="t-title" x="26" y="68">Jon: product owner</text>
+        <text class="t-small" x="26" y="88">taste &amp; priority · answers questions</text>
+        <text class="t-small" x="26" y="103">that come with a default and a deadline</text>
+        <rect class="box-h" x="330" y="42" width="290" height="70" rx="8" stroke-width="1.5"/>
+        <text class="t-title" x="346" y="68">Claude: planner / steward</text>
+        <text class="t-small" x="346" y="88">turns ideas into issues · reviews</text>
+        <text class="t-small" x="346" y="103">runs the machines · writes no game code</text>
+
+        <!-- blackboard -->
+        <rect class="box-b" x="10" y="172" width="610" height="84" rx="8" stroke-width="2"/>
+        <text class="t-title" x="26" y="198">GitHub: the blackboard</text>
+        <text class="t-small" x="26" y="220">issues = tasks · labels = state &amp; approval (next, steer, building, halt)</text>
+        <text class="t-small" x="26" y="238">PRs = outputs · AGENTS.md = the constitution · STATE.md = shift handover memory</text>
+
+        <!-- warden -->
+        <rect class="box-n" x="650" y="172" width="340" height="84" rx="8" stroke-width="1.5"/>
+        <text class="t-title" x="666" y="198">Warden: orchestrator</text>
+        <text class="t-small" x="666" y="220">a reconciliation loop every 10 min:</text>
+        <text class="t-small" x="666" y="238">observe → compare → start lanes → log</text>
+
+        <!-- workers -->
+        <rect class="box-a" x="10" y="312" width="190" height="84" rx="8" stroke-width="1.5"/>
+        <text class="t-title" x="24" y="338">Builders a + b</text>
+        <text class="t-small" x="24" y="358">local Qwen (oMLX)</text>
+        <text class="t-small" x="24" y="374">features &amp; new games</text>
+        <rect class="box-a" x="215" y="312" width="190" height="84" rx="8" stroke-width="1.5"/>
+        <text class="t-title" x="229" y="338">QA lanes ×3</text>
+        <text class="t-small" x="229" y="358">studio · mini · mini2</text>
+        <text class="t-small" x="229" y="374">polish, fixes, red main</text>
+        <rect class="box-a" x="420" y="312" width="200" height="84" rx="8" stroke-width="1.5" stroke-dasharray="5 4"/>
+        <text class="t-title" x="434" y="338">Guest agents</text>
+        <text class="t-small" x="434" y="358">Claude · Gemini · Inkling</text>
+        <text class="t-small" x="434" y="374">manual lanes, same protocol</text>
+        <rect class="box-a" x="650" y="312" width="340" height="84" rx="8" stroke-width="1.5"/>
+        <text class="t-title" x="666" y="338">Research: retrogames-rl</text>
+        <text class="t-small" x="666" y="358">trains game-playing models on the 3090</text>
+        <text class="t-small" x="666" y="374">eval first: nothing counts until scored</text>
+
+        <!-- gates -->
+        <rect class="box-g" x="10" y="452" width="290" height="92" rx="8" stroke-width="1.5"/>
+        <text class="t-title" x="26" y="478">Merge gate</text>
+        <text class="t-small" x="26" y="498">one required CI check · nightly suite</text>
+        <text class="t-small" x="26" y="514">red main = freeze · fix or quarantine in 2 h</text>
+        <text class="t-small" x="26" y="530">one merge command for everyone</text>
+        <rect class="box-g" x="330" y="452" width="290" height="92" rx="8" stroke-width="1.5"/>
+        <text class="t-title" x="346" y="478">Evals</text>
+        <text class="t-small" x="346" y="498">per-game checks proven by mutants</text>
+        <text class="t-small" x="346" y="514">golden traces · web vs native, tick for tick</text>
+        <text class="t-small" x="346" y="530">model bake-offs on the same brief</text>
+        <rect class="box-n" x="650" y="452" width="340" height="92" rx="8" stroke-width="1.5"/>
+        <text class="t-title" x="666" y="478">Live</text>
+        <text class="t-small" x="666" y="498">jalfern.com/retrogames (Vercel, on every merge)</text>
+        <text class="t-small" x="666" y="514">TestFlight: Apple TV, iPhone, iPad</text>
+        <text class="t-small" x="666" y="530">(auto-upload every 30 min)</text>
+
+        <!-- arrows -->
+        <path class="arrow" d="M155 112 V170"/>
+        <path class="arrow" d="M475 112 V170"/>
+        <path class="arrow ember" d="M650 214 H622"/>
+        <path class="arrow ember" d="M820 256 V280 H105 V310"/>
+        <path class="arrow ember" d="M820 280 H310 V310"/>
+        <path class="arrow" d="M520 312 V258"/>
+        <path class="arrow" d="M105 396 V450"/>
+        <path class="arrow" d="M310 396 V420 H475 V450"/>
+        <path class="arrow" d="M300 498 H328"/>
+        <path class="arrow" d="M620 498 H648"/>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--plum-soft);border-color:var(--plum)"></i>humans &amp; steering</span>
+      <span><i style="background:var(--ember-soft);border-color:var(--ember)"></i>shared state</span>
+      <span><i style="background:var(--steel-soft);border-color:var(--steel)"></i>agents doing the work</span>
+      <span><i style="background:var(--moss-soft);border-color:var(--moss)"></i>gates &amp; evals</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Forge words, AI words</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>In the forge</th><th>In AI terms</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td>Lane</td><td>Coding agent (worker)</td><td>A model in a loop with tools (shell, git, browser) that takes one issue to a merged PR.</td></tr>
+          <tr><td>Warden</td><td>Orchestrator / supervisor</td><td>Reconciles desired vs actual state and starts or parks workers. Never writes code.</td></tr>
+          <tr><td>Issues &amp; labels</td><td>Blackboard architecture</td><td>Agents coordinate only through shared, durable state, so any agent can join.</td></tr>
+          <tr><td>AGENTS.md</td><td>System prompt / constitution</td><td>The standing rules every agent loads first.</td></tr>
+          <tr><td>STATE.md</td><td>Agent memory (handoff)</td><td>Each session starts with no memory; the last one leaves a short, rewritten note.</td></tr>
+          <tr><td>jonq question</td><td>Human-in-the-loop escalation</td><td>Asks with a default and a 48 h deadline, then keeps working. Silence takes the default.</td></tr>
+          <tr><td>Trust gate</td><td>Prompt-injection defense</td><td>Outside text is data, not orders. Only a label from Jon approves work.</td></tr>
+          <tr><td>Checks + mutants</td><td>Evals (with proven failure)</td><td>Every claim has a test, and each test is shown to fail when the code breaks.</td></tr>
+          <tr><td>Golden traces</td><td>Differential testing / spec as data</td><td>The web game's recorded behaviour is the spec a native port must match tick for tick.</td></tr>
+          <tr><td>Same brief to Qwen, Gemini, Claude</td><td>Model bake-off</td><td>Side-by-side runs on identical goals, judged on the result and the help needed.</td></tr>
+          <tr><td>Local Qwen + frontier guests</td><td>Model routing (cascade)</td><td>Cheap local models do the bulk; stronger models take the hard specialist jobs.</td></tr>
+          <tr><td>Manual lane</td><td>Open agent protocol</td><td>A one-page guide lets any outside agent work as a lane: <code>docs/MANUAL-LANE.md</code>.</td></tr>
+          <tr><td>retrogames-rl</td><td>Eval-driven ML</td><td>Scoring command first; any result that looks too good is treated as a leak until proven.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Known pattern, unusual build</h2>
+    <p>The architecture is the same shape as GitHub's Copilot coding agent, OpenAI Codex or Cursor's background agents: assign an issue, get a PR. What's less common here:</p>
+    <div class="cards">
+      <div class="card"><h3>Mostly local models</h3><p>Qwen on oMLX across a Mac Studio and Mac minis does most of the work. Frontier models join as specialists or guests.</p></div>
+      <div class="card"><h3>Self-governing rules</h3><p>A 2-hour red-main clock, owned quarantines, a merge freeze, a trust gate and questions that time out to a default. The factory runs overnight without a person.</p></div>
+      <div class="card"><h3>Proof over vibes</h3><p>Mutation-proven checks, golden traces, and native ports verified against the web game across hundreds of thousands of ticks.</p></div>
+      <div class="card"><h3>Model-agnostic lanes</h3><p>Qwen, Gemini, Claude and Inkling are interchangeable workers on one protocol, which also makes them easy to compare.</p></div>
+    </div>
+    <p class="sum">In one line: a multi-agent software factory with GitHub as its blackboard, run mostly on local models, with a human setting taste.</p>
+  </section>
+
+  <footer>Figures as of November 2026 from the retrogames repo and its warden log.</footer>
+</div>
+</body>
+</html>
