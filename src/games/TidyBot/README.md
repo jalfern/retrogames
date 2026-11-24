@@ -13,6 +13,29 @@ didn't say MODERN.
 - `index.jsx` — painter + shell: fixed-timestep loop, attract, pause, pad,
   contract + DEV hooks. `screen = world` (no camera) is the renderer's only
   spatial contract — tidycheck samples canvas pixels at sim coords.
+- `art.js` — the two SKINS (#3078): `classic` (the shipped dollhouse, moved
+  verbatim) and `reimagined` (PAPERCRAFT DIORAMA — construction-paper tiles,
+  kraft walls, coral dining sheet, sticky-note tags, popsicle-stick bot; cut
+  cards with hard offset shadows, dashed cut-lines, fold creases, marker ink).
+  Selectable via `?style=reimagined`, the STYLE pill or the T key; persisted
+  in `localStorage('tidybot.skin')`; classic is the default. The skins are
+  presentation-only — `sim.js` never sees one — and both keep the signatures
+  the pixel laws read (bot core reads teal, apple reads tomato red).
+
+## Skins (#3078)
+- The shell holds `let skin` + `let PA = PAINTERS[skin]`; every paint call
+  goes through `PA`, and markers/particles/dust read `PA.chrome` colors, so a
+  toggle repaints live with zero reload and zero sim impact.
+- `quiet()` (DEV hook) pins a draw-deterministic frame — resets + sim hold
+  freeze the sim; quiet clears the presentation transients that keep decaying
+  per draw frame (dust, sparks, shake, flash, reach arc, arrival ring, and the
+  attract flourish, whose old item id can alias a fresh stow after a reset).
+- tidycheck's skin gates freeze both looks at load with a downsampled
+  perceptual signature (classic `f947d5dc`, papercraft `33dfb942`) — raw
+  bytes are deliberately NOT compared: Chromium's GPU canvas drifts ±1 on
+  curved strokes with surface history, which reds byte goldens without any
+  code change. Spatial truth is proven behaviorally: teal-at-bot and
+  red-at-tray pixel laws run on BOTH skins, plus state-level toggle checks.
 
 ## Glide routing (#2250) — the BFS is the players' too
 - Tap/click a floor tile during play and the bot routes itself there on the
