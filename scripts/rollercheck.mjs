@@ -269,6 +269,23 @@ if (BROWSER) {
     const s4 = await page.evaluate(() => window.__marbleRushTest.probe())
     ok('retry: Space puts you back on the start pad', s4.screen === 'play' && s4.progress < 0.2)
 
+    // checkpoint flow on UPPER DECK (shelf 6, gate at 61 %): run past the
+    // gate, drop off the edge past it, and Space must return you AT the gate
+    await page.evaluate(() => window.__marbleRushTest.setStage(5))
+    await page.keyboard.press('Space')
+    await page.evaluate(() => window.__marbleRushTest.press('ArrowUp'))
+    await page.waitForFunction(() => window.__marbleRushTest.probe().progress > 0.63, null, { timeout: 25000 }).catch(() => {})
+    await page.waitForFunction(() => window.__marbleRushTest.probe().cpArmed === true, null, { timeout: 15000 }).catch(() => {})
+    await page.evaluate(() => window.__marbleRushTest.press('ArrowRight'))
+    await page.waitForFunction(() => window.__marbleRushTest.probe().screen === 'over', null, { timeout: 12000 }).catch(() => {})
+    await page.evaluate(() => { window.__marbleRushTest.release('ArrowUp'); window.__marbleRushTest.release('ArrowRight') })
+    const s5 = await page.evaluate(() => window.__marbleRushTest.probe())
+    ok('gate flow: fell past the gate, card offers the gate', s5.screen === 'over' && s5.cpArmed && s5.fail)
+    await page.keyboard.press('Space')
+    await page.waitForTimeout(500)
+    const s6 = await page.evaluate(() => window.__marbleRushTest.probe())
+    ok('gate flow: Space returns at the gate (mid-shelf, respawn counted)', s6.screen === 'play' && s6.cpArmed && s6.respawns === 1 && s6.progress > 0.5 && s6.progress < 0.66)
+
     const frame = await page.evaluate(() => window.__game.frame())
     ok('frame: canvas actually draws', typeof frame === 'string' && frame.length > 20000)
     const cState = await page.evaluate(() => {
