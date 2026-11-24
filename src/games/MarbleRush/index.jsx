@@ -244,7 +244,7 @@ const MarbleRushGame = () => {
                     if (hud.pop) { hud.pop.textContent = 'SWIPED!'; hud.pop.style.opacity = 1 }
                     const course = courseFor(gs.stageIdx)
                     const p = course.pointOf(e.s, e.u)
-                    sparkSpawn(sparks, p.x, p.y + 0.5, p.z, 14, 5, 4)
+                    sparkSpawn(sparks, p.x, p.y + 0.5, p.z, 22, 5.8, 4.6)
                 }
                 if (e.type === 'gate') {
                     sfx.gate(); flashPop = 1
@@ -332,6 +332,15 @@ const MarbleRushGame = () => {
                 const p = course.pointOf(course.sweepers[si].s, barU)
                 br.position.set(p.x, p.y, p.z)
                 br.rotation.y = p.heading
+                // spin the saw-drum about its own axis (deco only, no sim)
+                if (br.userData.spin) br.userData.spin.rotation.x = gs.t * 2.7 + si * 1.7
+                // deck-hiss trail while the bar is in the arrival zone —
+                // the machinery bites as the marble closes in
+                const lead = course.sweepers[si].s - gs.s
+                if (lead > -2 && lead < 13 && !pausedRef.current) {
+                    const near = lead < 4.5
+                    sparkSpawn(sparks, p.x, p.y + 0.14, p.z, near ? 2 : 1, 1.2, 0.9)
+                }
             })
             // checkpoint gate: lit green once armed, for the rest of the run
             if (gate) {
