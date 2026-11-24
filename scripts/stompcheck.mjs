@@ -16,9 +16,9 @@
 import {
     makeGame, step, stateHash, buildingsLeft, cityName, damagePlayer, buildCity,
     W, GROUND, DAYS,
-} from '../src/games/StompTown/sim.js'
-import { plan } from '../src/games/StompTown/planner.js'
-import { MESSAGES, PRESS } from '../src/games/StompTown/attract.js'
+} from '../src/games/Stomptown/sim.js'
+import { plan } from '../src/games/Stomptown/planner.js'
+import { MESSAGES, PRESS } from '../src/games/Stomptown/attract.js'
 import { Report } from './lib/harness.mjs'
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -28,7 +28,7 @@ import path from 'node:path'
 
 const SELF = fileURLToPath(import.meta.url)
 const ROOT = path.join(path.dirname(SELF), '..')
-const GAME = path.join(ROOT, 'src/games/StompTown')
+const GAME = path.join(ROOT, 'src/games/Stomptown')
 const SIMF = path.join(GAME, 'sim.js')
 const JX = path.join(GAME, 'index.jsx')
 const MF = path.join(GAME, 'attract.js')
