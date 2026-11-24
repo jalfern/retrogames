@@ -102,6 +102,9 @@ export const SCOPES = {
   // #3103: PINBALL joins the table. pinballcheck is plain Node (zero DOM,
   // literal expectations), so it runs in the browser-free static job too.
   pinball: { dirs: ['src/games/Pinball'], lint: [], checks: ['pinballcheck'], smoke: [] },
+  // #3104: TIDAL RUSH — jet-ski slalom on the forge ocean. tidalcheck is
+  // plain Node (the sim is pure); it pins the CPU↔GLSL shared-sea table too.
+  tidal: { dirs: ['src/games/TidalRush'], lint: [], checks: ['tidalcheck'], smoke: [] },
   // STOMPTOWN (#3094): pure-seeded city-breaker; Node-only rules gate, no browser.
   stomp: { dirs: ['src/games/Stomptown'], lint: [], checks: ['stompcheck', ['stompcheck', true]], smoke: [] },
 };
