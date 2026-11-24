@@ -49,6 +49,13 @@ lessons below keep games from shipping broken; they are not the goal.
 8. Read your result before writing another probe. Before a second probe for the same error, write
    one line: what did the last output rule out? A result that should be impossible is the clue,
    not noise. Third probe on the same error: post the outputs on the issue and stop.
+9. **Spend context on the work, not on re-reading.** Every turn re-sends the whole conversation, so a
+   big read costs again on every turn after it. Defaults, not bans:
+   - Files over ~400 lines: `grep -n` first, then read only the line ranges you need. Read a file whole
+     when you need its overall shape, but not again after each edit: re-read just the edited range.
+   - Command output: pipe long output through `tail`/`head`/`grep`; never dump a whole log or build.
+   - Screenshots for compare loops: 1280×720 at device scale 1. Open a reference image once per stage,
+     not every pass. Use full resolution only when judging fine pixel detail (the art & fidelity rung).
 
 History: `docs/qwen-run-2026-09-postmortem.md` explains why these rules exist.
 
