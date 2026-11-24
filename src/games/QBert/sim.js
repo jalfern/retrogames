@@ -106,7 +106,7 @@ export function makeGame({ seed = 7, level = 1, lives = 3 } = {}) {
         players: [ { score: 0, total: 0, lives }, { score: 0, total: 0, lives } ],
         active: 0,
         colors: new Array(64).fill(0),
-        player: { r: 0, c: 0, hop: null, ride: null, dying: 0, invuln: 0, upChain: 0, lastCube: -1, prevCube: -1, facing: 1, lastLandDown: false },
+        player: { r: 0, c: 0, hop: null, ride: null, dying: 0, invuln: 0, upChain: 0, lastCube: -1, prevCube: -1, facing: 1, lastLandDown: false, lastDir: null },
         snakes: [], balls: [], runners: [], slicks: [],
         discs: [
             { x: -40, y: 34, v: 0.85, off: 0 },
@@ -137,7 +137,7 @@ function resetRound(gs) {
     gs.slickTimer = gs.level >= 3 ? 420 : 1e9
     gs.player.r = 0; gs.player.c = 0
     gs.player.hop = null; gs.player.ride = null; gs.player.dying = 0
-    gs.player.invuln = 40; gs.player.upChain = 0; gs.player.lastCube = -1; gs.player.prevCube = -1; gs.player.facing = 1; gs.player.lastLandDown = false
+    gs.player.invuln = 40; gs.player.upChain = 0; gs.player.lastCube = -1; gs.player.prevCube = -1; gs.player.facing = 1; gs.player.lastLandDown = false; gs.player.lastDir = null
     gs.colors[id(0, 0)] = flipTarget(gs)
     gs.lastLandTick = -1
     gs.pending = null; gs.phase = 'play'; gs.phaseT = 0
@@ -148,11 +148,12 @@ const ap = (gs) => gs.players[gs.active]
 
 function kill(gs, cause) {
     const p = gs.player
-    if (p.invuln > 0 || p.dying || gs.end) return
+    if (p.invuln > 0 || p.dying || gs.end) return false
     p.dying = DEATH_TICKS
     ap(gs).lives--
     gs.balloon = '@!#?@!'
     gs.events.push({ t: 'death', cause, x: px(gs).x, y: px(gs).y, player: gs.active })
+    return true
 }
 
 function hopTo(gs, tr, tc) {
@@ -254,10 +255,29 @@ export function padDiagonals(up, dn, lf, rt) {
     return {}
 }
 
+const wantOf = (input) =>
+    input.ul ? [-1, -1] : input.ur ? [-1, 0] : input.dl ? [1, 0] : input.dr ? [1, 1] : null
+
+const dirKeyOf = (input) => (input.ul ? 'ul' : input.ur ? 'ur' : input.dl ? 'dl' : input.dr ? 'dr' : null)
+
+// The discs a hop from the apex can board pass within this x-distance of the
+// board centre line (qbertcheck pins the boarding outcome, #3145 keeps it honest).
+const DISC_BOARD = 22
+
 export function step(gs, input = {}) {
     if (gs.end) return gs
     gs.tick++
     const p = gs.player
+
+    // #3145 juice — press-edge tracking: the pad naming a NEW diagonal counts
+    // as a press (holding it is one press, not a stream). If the world gives
+    // that press no answer this tick — blocked at the apex, ignored mid-hop —
+    // the sim pushes a juice-only 'nope' so the shell can honk + puff. It is
+    // never hashed and never scored: the rejected press changes no rule.
+    const dk = dirKeyOf(input)
+    const freshPress = dk !== null && dk !== p.lastDir
+    p.lastDir = dk
+    let answered = !freshPress
 
     for (const d of gs.discs) {
         d.x += d.v
@@ -326,13 +346,12 @@ export function step(gs, input = {}) {
 
     if (!p.hop && !p.ride && !p.dying) {
         const r = p.r, c = p.c
-        const want =
-            input.ul ? [-1, -1] : input.ur ? [-1, 0] : input.dl ? [1, 0] : input.dr ? [1, 1] : null
+        const want = wantOf(input)
         if (want) {
             const tr = r + want[0], tc = c + want[1]
-            if (valid(tr, tc)) hopTo(gs, tr, tc)
+            if (valid(tr, tc)) { hopTo(gs, tr, tc); answered = true }
             else if (r === 0 && c === 0 && want[0] === -1) {
-                const d = gs.discs.findIndex((x) => Math.abs(x.x - W / 2) < 22)
+                const d = gs.discs.findIndex((x) => Math.abs(x.x - W / 2) < DISC_BOARD)
                 if (d >= 0) {
                     p.ride = { d, t: 0 }
                     let lured = 0
@@ -346,13 +365,15 @@ export function step(gs, input = {}) {
                     }
                     if (lured) addScore(gs, LURE * lured)
                     gs.events.push({ t: 'discride', d })
+                    answered = true
                 }
             } else {
-                kill(gs, 'fall')
+                answered = kill(gs, 'fall')
                 gs.events.push({ t: 'fall' })
             }
         }
     }
+    if (!answered) gs.events.push({ t: 'nope', x: px(gs).x, y: px(gs).y })
 
     // snakes
     for (const s of gs.snakes) {

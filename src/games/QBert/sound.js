@@ -20,7 +20,7 @@ const sweep = (f0, f1, d, type = 'triangle', v = 0.08) => ({ k: 'sweep', f0, f1,
 export const VOICED = [
     'hop', 'points', 'discride', 'snakespawn', 'snakelure', 'ballspawn',
     'runnerspawn', 'slickspawn', 'slickwipe', 'death', 'clear', 'over',
-    'oneup', 'coilyhop',
+    'oneup', 'coilyhop', 'nope',
 ]
 
 // Contract: events the sim emits that are silent on purpose.
@@ -69,6 +69,10 @@ export function sfxFor(e) {
         case 'coilyhop':
             // Coily's iconic drop tick: one soft descending boing
             return [sweep(392, 110, 0.26, 'triangle', 0.07)]
+        case 'nope':
+            // #3145 — a rejected press answers itself: a muted little "uh-uh",
+            // plainly quieter and shorter than the hop so real moves stay loud.
+            return [sweep(280, 190, 0.06, 'square', 0.045)]
         default:
             return []
     }
