@@ -126,16 +126,9 @@ attribute float aShore;
 varying vec3 vW; varying float vH; varying float vShore; varying vec3 vN;
 void main(){
     vec3 p = position;
-    float h = 0.0; float sx = 0.0; float sz = 0.0;
+    float h; float sx; float sz;
     float damp = 1.0 - aShore * 0.75;
-    for (int i = 0; i < NW; i++){
-        vec4 wv = WAVES[i];
-        float k = wv.z; float a = wv.w * damp;
-        float ph = k * (dot(wv.xy, p.xz) - sqrt(9.8 / k) * uTime);
-        h += a * sin(ph);
-        float ds = a * k * cos(ph);
-        sx += ds * wv.x; sz += ds * wv.y;
-    }
+    waveSum(p.xz, damp, uTime, h, sx, sz);
     p.y += h;
     vN = normalize(vec3(-sx, 1.0, -sz));
     vW = p; vH = h; vShore = aShore;
@@ -232,7 +225,7 @@ void main(){
     scene.add(rain)
 
     // thermal shimmer columns (where the lift lives)
-    const thermCols = world.thermals.map((c, i) => {
+    const thermCols = world.thermals.map((c) => {
         const m = new THREE.Mesh(
             new THREE.CylinderGeometry(c.r * 0.7, c.r * 0.9, 80, 14, 1, true),
             new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.06, side: THREE.DoubleSide, depthWrite: false })
@@ -266,7 +259,7 @@ void main(){
         padBands.push(band)
     }
     const bull = bullseyeTexture()
-    const targetMeshes = world.targets.map((t) => {
+    const _targetMeshes = world.targets.map((t) => {
         const m = new THREE.Mesh(new THREE.CircleGeometry(6.5, 28), new THREE.MeshBasicMaterial({ map: bull, side: THREE.DoubleSide }))
         m.rotation.x = -Math.PI / 2
         m.position.set(t.x, world.terrainHeight(t.x, t.z) + 0.14, t.z)

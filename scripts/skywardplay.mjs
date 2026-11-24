@@ -36,6 +36,9 @@ const browser = await chromium.launchPersistentContext(
 const page = await browser.newPage()
 page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('favicon')) errors.push(m.text()) })
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
+import('node:fs').then(({ appendFileSync }) => {
+  page.on('console', (m) => appendFileSync('/tmp/skyward-console.txt', `[${m.type()}] ${m.text()}\n`))
+})
 const shot = async (name) => { if (SHOTS) await page.screenshot({ path: resolve(SHOT_DIR, name) }) }
 const simSleep = (secs) => page.evaluate((s) => window.__skywardTest.simSleep(s), secs)
 
@@ -111,13 +114,13 @@ try {
 
   const contract = await page.evaluate(() => {
     const g = window.__game
-    if (!g) return { ok: false, why: 'no __game', keys: Object.keys(window).filter((k) => k.startsWith('__')).join(',') }
-    if (g.id !== 'skyward') return { ok: false, why: `id=${g.id}` }
-    g.buttons.a = true
-    return { ok: true, keys: Object.keys(g), hasCanvas: !!g.canvas, canvasTag: g.canvas?.tagName }
+    if (!g) return { ok: false, why: 'no __game' }
+    if (g.meta?.id !== 'skyward') return { ok: false, why: `id=${g.meta?.id}` }
+    g.buttons?.a !== undefined && (g.buttons.a = true)
+    const fns = ['reset', 'step', 'state', 'frame'].filter((k) => typeof g[k] === 'function')
+    return { ok: fns.length === 4, why: `fns=${fns.join(',')}` }
   })
-  ok(contract.ok && (contract.hasCanvas || contract.canvasTag === 'CANVAS'),
-    `exposeGame contract present (buttons/reset/tick/state/canvas) ${contract.why || ''}${contract.keys ? ` [${contract.keys.join(',')}]` : ''}`)
+  ok(contract.ok, `exposeGame contract present (meta.id/reset/step/state/frame) ${contract.why || ''}`)
 } catch (e) {
   fails.push(`exception: ${e.message}`)
   await shot('skyward-failure.png')

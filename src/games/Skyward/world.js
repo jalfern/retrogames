@@ -205,13 +205,19 @@ export function makeWorld(seed) {
     // the SAME table, as GLSL constants — the vertex shader displaces the mesh
     // with these exact numbers (hash-equal intent, the #3104 discipline).
     function waterGLSL() {
-        const rows = waves.map((w) =>
-            `  vec4(${w.dx.toFixed(4)}, ${w.dz.toFixed(4)}, ${w.k.toFixed(5)}, ${w.a.toFixed(4)}), // c=${w.c.toFixed(3)}`
+        // ES 1.00 portable: no array constructors — declare one const per wave
+        // and unroll the Gerstner sum in a helper the mesh shaders call.
+        const decls = waves.map((w, i) =>
+            `const vec4 WAVE${i} = vec4(${w.dx.toFixed(4)}, ${w.dz.toFixed(4)}, ${w.k.toFixed(5)}, ${w.a.toFixed(4)}); // c=${w.c.toFixed(3)}`
         ).join('\n')
-        return `const int NW = ${waves.length};
-const vec4 WAVES[${waves.length}] = vec4[NW](
-${rows}
-);`
+        const body = waves.map((w, i) => `    { vec4 wv = WAVE${i};
+        float k = wv.z; float a = wv.w * damp;
+        float ph = k * (dot(wv.xy, xz) - sqrt(9.8 / k) * t);
+        h += a * sin(ph);
+        float ds = a * k * cos(ph);
+        sx += ds * wv.x; sz += ds * wv.y; }`
+        ).join('\n')
+        return `${decls}\nconst int NW = ${waves.length};\nvoid waveSum(vec2 xz, float damp, float t, out float h, out float sx, out float sz){\n    h = 0.0; sx = 0.0; sz = 0.0;\n${body}\n}`
     }
 
     return {

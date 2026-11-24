@@ -28,7 +28,6 @@ const SkywardGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
-    const hud = useRef({})
     const bannerRef = useRef({ until: 0 })
     const glRef = useRef(null)
 
