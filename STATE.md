@@ -1,49 +1,53 @@
-# STATE — forge board snapshot (slot a, 2026-11-24 — SKYWARD rung 2 shipped, #3105 closed)
+# STATE — forge board snapshot (slot a, 2026-11-24 — MARBLE RUSH shipped, #3107 stage 1)
 
 ## This session — one ship
-- **#3105 rung 2 — SKYWARD THUNDERPASS** SHIPPED: PR #3152 merged
-  12:52Z → main `bc88b48`; prod bundle `index-u-mcG1Mg.js` verified to
-  carry THUNDERPASS: `https://jalfern.com/retrogames/skyward` (private
-  until Jon promotes). The storm cell is now a COURSE: 5 violet gates
-  through the cell (+140/gate sequence law, bonus ≤300 under par 30 s,
-  max 1000), all five = **STORM WINGS** badge on the licence card.
-  Licence math untouched (core three still graduate). The storm now
-  fights the PLANE too (gusts, ~2 m/s core downdraft, buffet, fog
-  closes to gate distance). Thermals drift with the sea-breeze — one
-  `thermalPos(c,t)` answers sim lift, autopilot aim and painted cumulus.
-- **#3105 CLOSED completed** — the issue body's full scope is delivered
-  (3 craft, scored events over the demo worlds, analog-first free
-  flight, storm included); its own “not yet” items (more islands,
-  online) stay unbuilt by design. Polish for QA: #3138 (rung 1),
-  **#3154** (thunderpass, filed this shift).
-- Harness: `skywardcheck` 30→40 pins (downdraft proven vs fair air,
-  sequence law, badge, licence untouched, autopilot clears the pass on
-  all 5 seeds, drift bounded + lift-follows-cloud); mutants 6→8, all
-  die; `skywardplay` + thunderpass leg (stormS 0.95 at the core, zero
-  page errors); lint gates + build green.
+- **#3107 stage 1 — MARBLE RUSH** SHIPPED: PR #3161 merged `dd55a07`;
+  prod deploy of dd55a07 `success`, live bundle carries the game:
+  `https://jalfern.com/retrogames/marble-rush` (private until Jon
+  promotes). Original 3D marble roller (MODERN bar; MARBLE MADNESS
+  untouched): chrome marble with real weight/momentum on an analytic
+  manifold — one friction budget shared between holding curves and
+  steering, banking tilts the budget, the shelf is the gate. Five seeded
+  sky shelves (FIRST ROLL / SWITCHBACK / BUMPER ALLEY / SWING BRIDGE /
+  SKY SHOT), medals + persistent bests, seeded swing-bridge phases keep
+  seed→run honest. Stage = DATA: renderer extrudes from the SAME surface
+  function the sim rides (drawn ≡ ridden, rollercheck-pinned like
+  tidalcheck's sea).
+- Harness: `rollercheck` 29 Node pins (+6 Chrome-drive pins behind
+  `--browser`, lane-run) — pointOf parity drawn vs ridden, gap/mover/
+  budget laws, tick-end floor resolution, autopilot golds all 5 shelves
+  ×10 seeds zero falls, seed-differs + snapshot round-trip hashes;
+  mutants edge+budget both die. CI scope `marbleRush` (Node-only).
+  First CI round went red twice and both were registry-law, not physics:
+  duplicate `marble:` key in checks.mjs silently deleted Marble Madness'
+  scope (JS keeps the last key) → renamed `marbleRush`; vpadcheck needs
+  `pad.buttons: []` declared even for no-B games. `ciscope --selftest`
+  catches the first, `vpadcheck` 735/735 the second — run both before
+  pushing a new game.
 - Rule 4: COUNTER RESET — game code merged.
 
 ## PLAYABLE on main right now
-- **`/retrogames/skyward`** — stick or dpad pad, B = DROP, ? pause; new
-  violet beacon east of the bay = THUNDERPASS.
-- `/retrogames/tidal-rush` (#3104 rung 1), `/retrogames/stomptown`
-  (#3112), `/retrogames/pinball` (#3116), ssx (FULL pad default),
-  marble-madness (STICK/TILT), pacman (DPAD/STICK), mario, forge board,
-  TIDY BOT papercraft (#3085), STARRY NIGHT demo (#3082), TOP SOLDIERS
-  (#3067), DOUBLE DRAGON, R-TYPE, RACCOON HEIST, spy-hunter, iron keep,
-  galaga, missile, pucks, mines, zork, ultima, king's quest, Joust,
-  Q*bert.
+- **`/retrogames/marble-rush`** — stick pad (arrows/dpad work, A/GO
+  starts), ? pause; fall restarts the shelf, clock resets.
+- **`/retrogames/short-order-shout`** (#3143, slot b, PR #3164).
+- `/retrogames/skyward` (incl. THUNDERPASS), `/retrogames/tidal-rush`
+  (#3104 rung 1), `/retrogames/stomptown` (#3112), `/retrogames/pinball`
+  (#3116), ssx (FULL pad default), marble-madness (STICK/TILT), pacman,
+  mario, forge board, TIDY BOT papercraft (#3085), STARRY NIGHT (#3082),
+  TOP SOLDIERS (#3067), DOUBLE DRAGON, R-TYPE, RACCOON HEIST, spy-hunter,
+  iron keep, galaga, missile, pucks, mines, zork, ultima, king's quest,
+  Joust, Q*bert.
 
 ## Board watch (facts, not questions)
-- **Pinball seed pin red in contractcheck (827/828, local :5173, on
-  main 486b2a4 + rebased branch):** `pinball: state.seed is an integer
-  (recordStart) (seed=undefined)` — pre-existing from #3116, not caused
-  here; facts posted on #3103. Nightly was cancelled before CI saw it —
-  expect the next full nightly to fail this pin unless #3103's lane fixes
-  it first (rule 5a applies to whoever sees red first).
-- No `steer`, no `next`, no `halt`, no open `lane:manual` all shift.
-- `forge/tidal-storm` branch + worktree exist un-PR'd (rung 2 of #3104?) —
-  slot b's business; step 1b resume rules apply to its owner.
+- **Pinball seed pin still red**: `contractcheck pinball` fails
+  (`state.seed is an integer (recordStart)`, seed=undefined, 827/828) —
+  pre-existing from #3116, reproduced on clean main this shift; facts on
+  #3103. Expect the next full nightly to fail it unless #3103's owner
+  lands first (rule 5a whoever-sees-red-first).
+- #3107 stays OPEN + `game-queue`: issue asked for ten shelves, five
+  shipped. Feel polish (checkpoints, trick verbs, surface-tone audio,
+  fall cam/tumble) filed as **#3165** (label `feedback`) for the QA lane.
+- No `steer`, no `halt`, no open `lane:manual` this shift.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload; does the big build need one?
@@ -51,15 +55,15 @@
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
 
 ## Next queued
-- Oldest `game-queue` is **#3104 rung 2** (tidal storm bay, lap-varying
-  swell) — but a pushed `forge/tidal-storm` branch suggests someone is
-  mid-rung; check step 1b before claiming.
-- Flagship-polish ladder otherwise: SSX README honest gaps (never picked).
+- Oldest `game-queue` candidates: **#3107 stage 2** (shelves 6–10 + the
+  stage-2 verbs listed on the issue) and #3104 rung 2 (tidal storm bay —
+  an un-PR'd `forge/tidal-storm` branch was seen; step-1b check first).
+  Flagship-polish ladder: SSX README honest gaps (never picked).
 
 ## Slot / board state at handoff
-- Slot a: #3152 merged with full cleanup (remote branch gone, lane
-  detached at origin/main `bc88b48`); STATE.md shipped via its own PR;
-  polish #3154 filed; #3105 shipped+closed; shift report pushed.
-  Dev server :5173 to be stopped via devstop after the STATE PR merges.
-- Worktree `~/Dev/retrogames-forge-skyward-storm` clean at handoff.
+- Slot a: #3161 merged with full cleanup (remote branch gone, lane
+  detached); STATE.md ships via its own PR; #3165 filed; #3107 back in
+  game-queue; shift report pushed; dev :5173 stopped via devstop.
+- Worktree `~/Dev/retrogames-forge-marble-rush` clean at handoff (the
+  five `shots/mr-*.png` frame strips are intentionally untracked).
 - main-ok green at exit.
