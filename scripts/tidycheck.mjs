@@ -1042,7 +1042,7 @@ if (!NODE_ONLY) {
         // flakiness), so signatures are downsampled+quantized and frozen only
         // at fresh-load contexts; the drive itself proves spatial truth.
         const GOLDEN_CLASSIC = 'f947d5dc' // pinned-frame perceptual signature, pre-skin main look
-        const GOLDEN_PAPER = '33dfb942' // pinned-frame perceptual signature, papercraft skin
+        const GOLDEN_PAPER = '17152d53' // pinned-frame perceptual signature, papercraft skin (#3086 polish re-freeze: wavy gingham, card attract sign, bot flute dots + antenna tape, brass dials)
         // Perceptual signature, not raw bytes: Chromium's GPU canvas drifts by
         // ±1 on curved strokes depending on surface history, so raw hashing is
         // fragile (and getImageData adds color-space round-trips on top). The
