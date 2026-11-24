@@ -41,7 +41,9 @@ const SkywardGame = () => {
         canvas.style.touchAction = 'none'
         wrap.appendChild(canvas)
 
-        const gl = createSkywardGL(canvas, { lite: LITE })
+        let gs = makeGame(seedFromQuery() ?? randomSeed())
+        let demo = makeGame((gs.seed ^ 0xbeef) >>> 0)
+        const gl = createSkywardGL(canvas, { lite: LITE, world: gs.world })
         glRef.current = gl
         const hudEl = document.createElement('div')
         hudEl.style.cssText = 'position:absolute;inset:0;pointer-events:none;font:12px/1.5 ui-monospace,Menlo,monospace;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)'
@@ -57,9 +59,7 @@ const SkywardGame = () => {
         const q = (k) => hudEl.querySelector(`[data-h="${k}"]`)
         const E = { speed: q('speed'), alt: q('alt'), score: q('score'), chips: q('chips'), banner: q('banner'), hint: q('hint') }
 
-        let gs = makeGame(seedFromQuery() ?? randomSeed())
         gs.attract = true
-        let demo = makeGame((gs.seed ^ 0xbeef) >>> 0)
 
         const banner = (text, secs = 2.2) => {
             E.banner.textContent = text
