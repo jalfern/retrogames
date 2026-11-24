@@ -1,76 +1,62 @@
-# STATE — forge board snapshot (slot a, 2026-11-24 — MARBLE RUSH COMPLETE + red main cleared)
+# STATE — forge board snapshot (slot b, 2026-11-24 — TIDAL RUSH rain SHIPPED (#3191/#3194) + red main cleared (#3209))
 
-## This session — two ships
-- **RED MAIN CLEARED (#2176):** nightly 45450160001 (17:41Z) failed 6 checks;
-  PR #3193 merged `91ea2a0` fixes all at their roots: soak roster missed SIX
-  games (pinball/marble-rush/stomptown/tidal-rush/grind-city/skyward — #1525
-  law); dvhcheck: GrindCity's shell was `h-screen` not dvh; cometcheck re-wrote
-  *tracked* docs PNGs every run, so mutateguard refused the stomp/skyward/
-  roller mutant runs (#2047 class) — side-by-sides now go to gitignored
-  scripts/.shots/; mergecheck (never CI-verified) crashed runners without
-  /bin/zsh → now skip-green like watchrespawncheck (#2278 pattern — installing
-  zsh on a runner WAKES the Studio-only watch checks, don't); rollercheck
-  --mutate exited 1 despite catching — now the stomp/skyward convention
-  (caught ⇒ exit 0, survivor ⇒ 1). CI proof: full-static GREEN on the branch
-  (45461986631 → 3 more reds found & fixed → 45471040467 GREEN). Merged under
-  the #2957 red-main-fix precedent; refresh dispatched on main:
-  **run 45482317911 — green ≈ 21:20Z lifts the freeze for everyone.**
-- **#3107 stage 2 (shelves 6–10 + two new verbs)** SHIPPED: PR #3183 merged
-  `acc5a48`; prod verified (`MarbleRush-5tqIR4bZ.js` carries the gate flow).
-  Issue closed completed — the brief is done: rung 1 (dd55a07) built shelves
-  1–5, this built 6–10, "ten good ones beat thirty" satisfied.
-
-## What shipped in #3183 (game)
-- Shelves 6–10: UPPER DECK, GHOST LINE, THE MILL, LONG DROP, THE SPIRE.
-- Sweeping bars (moverDeck sine, inverted; ±5.2 knock, 28 % speed bite, 0.5 s
-  immunity, seeded moment) + checkpoint gates (shelves 6–10; respawn at the
-  gate keeps clock + score; refuses on finish). One stick, untouched.
-- rollercheck 36 → 48 Node + 11 Chrome; mutants sweep/gate/edge/budget red on
-  demand; gap-cover invariant caught a mis-anchored bridge mid-authoring;
-  filmstrip 5→10 shelves on the PR. QA polish pass filed: **#3187**.
-- Rule 4: COUNTER RESET — game code merged.
+## This session — one ship LANDED
+- **#3191 DONE: TIDAL RUSH rain-as-gameplay shipped.** PR #3194 merged
+  `7ed3b55`; prod verified — `TidalRush-DLSJ40BM.js` on jalfern.com carries
+  the spatial hull-field read, drag law, band-edge `rain` event + wind cue,
+  local gate-dim. Issue closed, `shipped` label. Play: /retrogames/tidal-rush.
+- **Red main cleared twice over (rule 5a).** Nightly 45482317911 had ONE
+  failing check of 909: a stale FLOORBOSS watch-pin — #2987 renamed the
+  FeedBranch (`brainOn`) and the pin quoted the old text (deterministic,
+  reproduced in Node). Re-pinned binding all three honesty links
+  (`brainOn ≡ watching&&!end` → `pad ≡ brainOn?ap(gs):livePad()` →
+  `recordTick(pad` first); mutant (human-shaped pad) red, restored.
+  **PR #3209 merged `344f443`** under the #2176/#2957 precedent.
+- **Watch out — #3208 landed a redundant quarantine.** Another lane
+  quarantined watchcheck (#3206) + zeldaplay (#3207) in the 2 h window while
+  my fix was in flight. watchcheck's root cause is FIXED (#3209), so the
+  quarantine must come off: when #3206 closes, delete its quarantine.json
+  entry (zeldaplay's may still be needed — check its issue first).
+- Proof trail banked on the PRs: tidalcheck 84 green + 3 mutants red,
+  tidaldrive DRIVE GREEN rank 1 @ 70.1 s, contractcheck tidal 15/15.
 
 ## PLAYABLE on main right now
-- **`/retrogames/marble-rush`** — all TEN shelves (Space/arrows, ? pause,
-  stick pad; green arch = gate armed). THE SPIRE is the exam.
-- `/retrogames/pinball` (rung 2), `/retrogames/grind-city`, `/retrogames/skyward`
-  (THUNDERPASS), `/retrogames/tidal-rush`, `/retrogames/stomptown`,
-  `/retrogames/short-order-shout`, ssx, marble-madness, pacman, mario,
-  forge board, TIDY BOT (#3085), STARRY NIGHT (#3082), TOP SOLDIERS (#3067),
-  DOUBLE DRAGON, R-TYPE, RACCOON HEIST, spy-hunter, iron keep, galaga,
-  missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert.
+- **`/retrogames/tidal-rush` — squalls are terrain now** (drag + crosswind
+  pushes you off line; gates dim through the rain; counter-steer pays).
+- `/retrogames/marble-rush` ten shelves, `/retrogames/pinball` rung 2,
+  grind-city, skyward, stomptown, short-order-shout, ssx, marble-madness,
+  pacman, mario, minesweeper/garden-guard/homebody (POINTER pads), TIDY BOT,
+  STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, R-TYPE, RACCOON HEIST,
+  spy-hunter, iron keep, galaga, missile, pucks, mines, zork, ultima,
+  king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` empty (first time this cycle). Idle-kick derived
-  `KICK TIDAL RUSH 0 weak` — but gap index 0 is "online rooms", listed as
-  not-yet on #3104's own body; sanity-check and prefer the rain-physics /
-  air-verbs gaps when taking it.
-- Slot b shipped PADTYPES tail 2 (#3182) + STATE (#3186) during my shift;
-  their #3192 (same red-main fix, 2 of 4 causes) was closed superseded by #3193.
-- Open `lane:games` unqueued: #3014 (CONTRA attract voice demo), #2827
-  (consent gate), #838 (MYST) — never ladder candidates without a label.
-- No `steer`, no `halt`; no new `waiting-jon` from slot a this shift.
-- Nightly lesson banked: several gates in checks.mjs have never met CI
-  (mergecheck was one). A new nightly check should ride a branch dispatch
-  before it joins CORE — candidate for a small warden rule.
+- Today's merges: #3179 #3181 #3182 #3183 #3184 #3186 #3189 #3193 #3208
+  #3209 **#3194**.
+- Red-main pattern: each clear exposes the next family (roster → dvh →
+  mergecheck → panes → stale pins → now quarantined watchcheck). A green
+  nightly run is IN PROGRESS at `8e0c2af` (run 45511734081) — main-ok may
+  print green NOW on a *cancelled* last-run; require a real SUCCESS before
+  trusting the freeze.
+- game-queue empty; TIDAL RUSH's remaining README gaps (per-wave crossfade,
+  sky-ramp timing, wake caustics, jump/land poses, buoy bells) are free for
+  QA — #3174/#3159 own the polish passes.
+- Next ladder for a builder: flagship/never-dry — derive with idle.mjs
+  (`flagshipStage`/`weakestStage`), don't trust memory.
 
 ## Open questions (links only — #605)
-- #3054 — QA: native TestFlight ports have no recorder/upload; does the big build need one?
+- #3054 — QA: native TestFlight ports have no recorder/upload; does the big build need one? (lane:qa, AWAITING)
 - #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
 
 ## Next queued
-- Wait for refresh run 45482317911 to go GREEN, then: `KICK TIDAL RUSH` via
-  the never-dry route (file `POLISH — TIDAL RUSH: …`, prefer rain-physics
-  over the parked online-rooms gap), claim normal.
-- MARBLE RUSH stage 3 exists only as README honest gaps; #3187 owns the
-  visual/sound ones for QA. Ghost-racer is the one no issue owns.
+- `game-queue` empty → next builder ladder item comes from the flagship/
+  never-dry derivation. Optional quick win: un-quarantine watchcheck when
+  #3206 closes (fix already shipped in #3209).
 
 ## Slot / board state at handoff
-- Slot a: #3183 + #3193 + STATE PR merged (this file via #3189); #3107
-  shipped+closed; #3187 filed; shift report pushed; dev :5173 stopped via
-  devstop.sh.
-- Worktree `~/Dev/retrogames-forge-marble-rush-s2` detached at origin/main at
-  handoff; frames/strips in /tmp/forge + scripts/.strips (untracked by design).
-- If refresh 45482317911 is somehow red when you read this: it is NOT
-  marble-rush — check watch* wake-ups first (CI has no zsh now; skip-green).
+- Slot b: #3194 merged with full cleanup (remote branch gone, worktree
+  removed); main checkout detached at origin/main tip; dev :5178 never
+  started. Nightly 45511734081 pending at `8e0c2af`.
+- Time-box: ~3 h 50 m (over the 3 h slot target — the red-main fix outranked,
+  rule 5a; both the freeze fix and the warden target landed anyway).
