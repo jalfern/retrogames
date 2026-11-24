@@ -75,8 +75,14 @@ export function deriveFloor({ issues = null, prs = [], pulses = [], now = Date.n
             && (labelOf(i, 'game-queue') || /^game\b/i.test(i.title)))
         .sort((a, b) => a.number - b.number)
 
-    const building = list.filter(i => labelOf(i, 'building') && i.state === 'open')
+    // #3093: a manual claim carries `building` too (docs/MANUAL-LANE.md) — it
+    // belongs under MANUAL LANES, not under BUILDING NOW (the forge isn't on it).
+    const building = list.filter(i => labelOf(i, 'building') && i.state === 'open' && !labelOf(i, 'lane:manual'))
     const shipped = list.filter(i => labelOf(i, 'shipped')).sort((a, b) => a.number - b.number)
+    // #3093: hand-run lanes (docs/MANUAL-LANE.md) work issues the automatic
+    // ladder never touches; without this section their work is invisible here.
+    const manual = list.filter(i => labelOf(i, 'lane:manual') && i.state === 'open')
+        .sort((a, b) => a.number - b.number)
 
     const pulse = pulses[0] ? kv(pulses[0].body.split('\n')[0]) : null
     const prev = pulses[1] ? kv(pulses[1].body.split('\n')[0]) : null
@@ -106,7 +112,7 @@ export function deriveFloor({ issues = null, prs = [], pulses = [], now = Date.n
     // pulseAge (#1406): the SAME age the WARDEN lamp derives (Infinity = no
     // pulse yet) rides out to the banner caller — the freshness math lives
     // once, and sleepBanner's live strips answer to it.
-    return { queued, building, shipped, pulse, pulseAge: age, anvil, gate, cart, shelf: shipped }
+    return { queued, building, manual, shipped, pulse, pulseAge: age, anvil, gate, cart, shelf: shipped }
 }
 
 // runwayBadge (#1201) — the runway strip's { text, tone } from board.json's

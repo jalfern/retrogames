@@ -177,6 +177,8 @@ After merging, `gh pr checks --watch` for Vercel, then open `https://jalfern.com
   `npm ci --dry-run` after any dependency bump.
 
 ## Where the rest lives
+- **docs/MANUAL-LANE.md** — how a hand-run lane (Jon or a guest agent) ships here; issues labeled
+  `lane:manual` belong to those lanes and never enter the automatic ladders.
 - **docs/AI.md** — the `src/ai` spine, the no-remote-AI-backend history, the Zork brain.
 - **docs/MODELS.md** — 3D model shelf + free-model library index; look before you model (#1140).
 - **docs/HARNESS.md** — the self-verifying suite script by script, the mutant essays, CI detail,

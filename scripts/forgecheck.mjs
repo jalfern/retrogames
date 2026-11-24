@@ -19,7 +19,7 @@
 
 import { build } from 'esbuild'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -116,6 +116,24 @@ section('QUEUE BIN (N cards for N issues, oldest first)')
     const d = deriveFloor(FULL)
     ok(!d.queued.some(i => i.number === 70 || i.number === 103 || i.number === 80),
         'derive queued the shipped/building/feedback issue into the queue')
+}
+
+// ------------------------------------------------- manual lanes (#3093) ------
+section('MANUAL LANES (hand-run work shows here, never under BUILDING NOW)')
+{
+    const nul = deriveFloor({ issues: [], prs: [], pulses: [], now: NOW })
+    ok(nul.manual.length === 0, 'derive made a manual entry with no issues')
+    const plain = deriveFloor({ issues: [issue(105, 'DEMO — star-garden port', ['lane:manual', 'lane:demos'])], prs: [], pulses: [], now: NOW })
+    ok(plain.manual.length === 1 && plain.manual[0].number === 105,
+        'a lane:manual issue did not reach the manual list')
+    const claimed = deriveFloor({ issues: [issue(106, 'GAME 20 — Guest port', ['lane:manual', 'building'])], prs: [], pulses: [], now: NOW })
+    ok(claimed.manual.length === 1 && claimed.building.length === 0,
+        'a manual claim (lane:manual + building) showed under BUILDING NOW instead of MANUAL LANES')
+    ok(!deriveFloor({ issues: [issue(107, 'GAME 21 — Forge game', ['building', 'game-queue'])], prs: [], pulses: [], now: NOW })
+        .manual.length, 'an automatic building issue leaked into the manual list')
+    const jsx = readFileSync(join(root, 'src', 'pages', 'ForgeBoard.jsx'), 'utf8')
+    ok(/manual\.map\(/.test(jsx) && /MANUAL LANES/.test(jsx),
+        'the board stopped rendering the MANUAL LANES section')
 }
 
 // ------------------------------------------------------------- CI gate --------

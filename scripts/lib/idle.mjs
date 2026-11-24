@@ -131,8 +131,11 @@ export function flagshipStage({ gapsByGame = {}, qaIssues = [], buildingQa = [] 
 // lane can never be sent at the same flagship.
 export function qaIdleStage({ issues = [], gapsByGame = {} } = {}) {
     const lbl = (i, l) => (i.labels || []).includes(l)
+    // #3093: `lane:manual` feedback belongs to a hand-run lane (docs/MANUAL-LANE.md) —
+    // not claimable QA work, and it must not count as feedback that keeps the QA
+    // lanes off flagship stages either.
     const claimableFeedback = issues.some((i) => lbl(i, 'feedback')
-        && !lbl(i, 'building-qa') && !lbl(i, 'waiting-jon') && !lbl(i, 'needs-approval'))
+        && !lbl(i, 'building-qa') && !lbl(i, 'waiting-jon') && !lbl(i, 'needs-approval') && !lbl(i, 'lane:manual'))
     if (claimableFeedback) return null
     const qaIssues = issues.filter((i) => lbl(i, 'feedback') || lbl(i, 'building-qa'))
     const held = heldGames(issues.filter((i) => lbl(i, 'building') || lbl(i, 'building-qa')))
@@ -221,6 +224,9 @@ export function weakestStage({ games = [], qaIssues = [], heldDirs = [] } = {}) 
         // this filter can never turn a suppressed gap into a fresh kick.
         const named = qaIssues.filter((q) => {
             if ((q.labels || []).includes('waiting-jon')) return false
+            // #3093: same law — a fix owned by a hand-run lane (`lane:manual`)
+            // is weakness no automatic lane may act on.
+            if ((q.labels || []).includes('lane:manual')) return false
             const n = norm(`${q.title || ''} ${q.body || ''}`)
             return (words.length > 2 && n.includes(words)) || (dwords.length > 3 && n.includes(dwords))
         }).length
