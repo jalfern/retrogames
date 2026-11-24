@@ -10,7 +10,9 @@
 //     corpses (`building`: half-built or multi-stage) → jalfern `steer` →
 //     `next` → oldest `game-queue` → oldest unclaimed `feedback` (the FORGE.md
 //     "borrow the QA lane" rule, now a ranked position instead of a last
-//     resort). Items a QA lane holds (`building-qa`) never enter the ladder.
+//     resort). Items a QA lane holds (`building-qa`) never enter the ladder,
+//     and neither do hand-run lanes' items (`lane:manual`, #3093 — the label
+//     is the hand lane's claim on the work; see docs/MANUAL-LANE.md).
 //   QA studio — feedback first (FORGE-QA.md keeps its own pick order inside
 //     that); when NO free feedback item exists it may take the queue, but only
 //     when queue items outnumber the free builder slots — a queued game goes to
@@ -50,11 +52,16 @@ const has = (i, name) => (i.labels || []).some((l) => (typeof l === 'string' ? l
 export const isOpenIssue = (i) => i.state === 'open' && !i.pull_request
 const parked = (i) => has(i, 'needs-approval') || has(i, 'waiting-jon') || has(i, 'question') || has(i, 'stalled')
 const qaHeld = (i) => has(i, 'building-qa')
+// #3093: `lane:manual` marks work a hand-run lane owns or will own (docs/MANUAL-LANE.md).
+// It never enters any automatic ladder — not the builder tiers (a manual claim carries
+// `building` too, which would otherwise ride the corpse rung straight to a builder), and
+// not the QA queue counts, so no lane is ever kicked onto it by the warden.
+const manualHeld = (i) => has(i, 'lane:manual')
 const byAge = (a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0)
 
 // builderLadder — every claimable issue for a builder slot, best first.
 export function builderLadder(issues, { owner = OWNER } = {}) {
-    const ok = (issues || []).filter((i) => isOpenIssue(i) && !parked(i) && !qaHeld(i))
+    const ok = (issues || []).filter((i) => isOpenIssue(i) && !parked(i) && !qaHeld(i) && !manualHeld(i))
     const isB = (i) => has(i, 'building')
     const steer = (i) => has(i, 'steer') && i.user && i.user.login === owner
     const tier = [...ok.filter(isB),
@@ -80,7 +87,7 @@ export function lanePlan({ issues = [], owner = OWNER, freeA = false, freeB = fa
     if (freeB && bLoaded && rest.length) targets.b = rest.shift().number
     const kick = { a: targets.a != null, b: targets.b != null }
 
-    const ok = issues.filter((i) => isOpenIssue(i) && !parked(i))
+    const ok = issues.filter((i) => isOpenIssue(i) && !parked(i) && !manualHeld(i))
     const feedbackFree = ok.filter((i) => has(i, 'feedback') && !qaHeld(i) && !has(i, 'building')).length
     const queueFree = ok.filter((i) => (has(i, 'game-queue') || has(i, 'next') || has(i, 'steer'))
         && !has(i, 'building') && !qaHeld(i)).length

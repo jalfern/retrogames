@@ -39,7 +39,7 @@ import { fileURLToPath } from 'node:url'
 import { builderLadder, lanePlan } from './lib/lanes.mjs'
 import { laneVerdict } from './lib/lanebusy.mjs'
 import { parkPath, newestReport, readReport, parkReport } from './lib/statepark.mjs'
-import { flagshipStage, heldGames } from './lib/idle.mjs'
+import { flagshipStage, heldGames, qaIdleStage, weakestStage } from './lib/idle.mjs'
 import { slotsLine, throughputLine } from '../src/pages/floor.js'
 import { trialVerdict, reportText, laneSplit, VERDICT_FILE,
     usageWindow, spark, streamStats, laneOfClaims, boxMisses, parseSpanName, BOX_MIN } from './studiotrial.mjs'
@@ -196,6 +196,66 @@ section('A. pure planner')
         'A10f queue reaches mini2 -> queue wins the tick, not flagship')
     ok(lanePlan({ issues: [] }).qaMini2Flagship === true,
         'A10g fully dry -> both mini lanes flagship-eligible (warden sequences them, claims collide safely)')
+}
+
+// A11 — #3093: `lane:manual` is a hand-run lane's claim (docs/MANUAL-LANE.md).
+// No automatic ladder may reach these issues, the QA fall-through never counts
+// them, and the warden's kick targets skip them. Mutant proof: drop the
+// `manualHeld` filter in builderLadder — A11a/A11b go red (a manual claim
+// would ride the corpse rung straight to an idle builder).
+{
+    const M = ['lane:manual']
+    ok(builderLadder([iss(1, ['game-queue', ...M]), iss(2, ['next', ...M]), iss(3, ['feedback', ...M])]).length === 0,
+        'A11a lane:manual items enter the builder ladder')
+    const mixed = builderLadder([
+        iss(1, ['building', ...M]),      // hand claim: must NOT surface as a corpse
+        iss(2, ['building']),           // builder corpse: must still surface first
+        iss(3, ['game-queue', ...M], { created_at: '2026-10-05T00:00:00Z' }),
+    ]).map((i) => i.number)
+    ok(JSON.stringify(mixed) === JSON.stringify([2]),
+        `A11b manual claim outranks/contaminates the corpse rung: got ${mixed}`)
+    const plan = lanePlan({ issues: [iss(1, ['game-queue', ...M]), iss(2, ['game-queue'])],
+        freeA: true, freeB: true, bLoaded: true })
+    ok(plan.targets.a === 2 && plan.targets.b == null && plan.counts.queueFree === 1,
+        `A11c targets/queueFree count manual work: got ${JSON.stringify(plan)}`)
+    // manual feedback is not claimable QA work AND does not count as feedback
+    // that keeps a QA lane off its flagship tail (same law as waiting-jon #3074).
+    // NOTE idle.mjs's contract: raw string labels (idle-kick.mjs's jq shape).
+    const siss = (n, labels, title, body) => ({ number: n, title, body, state: 'open',
+        user: { login: 'jalfern' }, created_at: '2026-10-01T00:00:00Z', labels, pull_request: undefined })
+    const mfb = siss(1, ['feedback', ...M], 'QA — contra: scroll lock', 'contra level 2 scroll freezes')
+    ok(qaIdleStage({ issues: [mfb], gapsByGame: { SSX: ['gap one'] } }) !== null,
+        'A11d manual feedback blocks the QA flagship tail')
+    ok(qaIdleStage({ issues: [siss(1, ['feedback'], 'QA — ssx: gap one', 'SSX gap one detail')],
+        gapsByGame: { SSX: ['gap one'] } }) === null,
+        'A11d2 claimable feedback must still outrank the flagship tail')
+    const namedFix = siss(1, ['feedback', ...M], 'QA — contra: scroll lock', 'contra level 2 scroll freezes')
+    const games = [{ dir: 'Contra', label: 'CONTRA', gaps: [] }]
+    ok(weakestStage({ games, qaIssues: [namedFix] }) === null,
+        'A11e manual-owned feedback scores its game as weakest (a fix no automatic lane may take is not weakness)')
+    ok(weakestStage({ games, qaIssues: [siss(1, ['feedback'], 'QA — contra: scroll lock', 'contra level 2 scroll freezes')] }) !== null,
+        'A11e2 ordinary feedback must still score weakness (the filter is manual-only)')
+    // the manual item still OWNS the gap it names (suppression direction stays)
+    ok(flagshipStage({ gapsByGame: { SSX: ['gap one'] }, qaIssues: [Object.assign(iss(1, ['feedback', ...M]), { title: 'QA — ssx', body: 'SSX repeats the opening words of gap one, verbatim here' })], buildingQa: [] }) === null,
+        'A11f manual feedback stopped owning the gap it names')
+}
+
+// A12 — #3093 wiring: pulse carries the manual count; the fallback ladder,
+// both playbooks and the protocol doc name lane:manual.
+{
+    const warden = readFileSync(join(here, 'warden.sh'), 'utf8')
+    ok(/MANUAL=\$\(count_label lane:manual\)/.test(warden), 'A12a pulse count for lane:manual missing from warden.sh')
+    ok(/manual=\$MANUAL/.test(warden), 'A12b pulse line does not carry manual=$MANUAL')
+    ok(/lane:manual/.test(warden), 'A12c the warden fallback ladder still offers manual issues')
+    const forgeMd = readFileSync(join(here, 'FORGE.md'), 'utf8')
+    ok(/lane:manual/.test(forgeMd) && /MANUAL-LANE\.md/.test(forgeMd), 'A12d FORGE.md lost the manual-lane skip/pointer')
+    const qaMd = readFileSync(join(here, 'FORGE-QA.md'), 'utf8')
+    ok(/lane:manual/.test(qaMd), 'A12e FORGE-QA.md lost the manual-lane skip')
+    const doc = readFileSync(join(here, '..', 'docs', 'MANUAL-LANE.md'), 'utf8')
+    ok(/forge-merge\.sh/.test(doc) && /lane:manual/.test(doc) && /STATE\.md/.test(doc),
+        'A12f docs/MANUAL-LANE.md missing its merge path, claim label or STATE.md law')
+    ok(/MANUAL-LANE\.md/.test(readFileSync(join(here, '..', 'AGENTS.md'), 'utf8')),
+        'A12g AGENTS.md lost the pointer to the manual-lane protocol')
 }
 
 section('B. board slots + trial verdict')

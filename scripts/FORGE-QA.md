@@ -70,7 +70,8 @@ confuse the two queues.
     which free the item they name and must not restart the lockout):
     then strip `building-qa` (the item returns to `feedback`) and say so in
     one comment line; any node may resume its pushed branch from then on.
-    Then pick from open issues labeled `feedback` (not `building-qa`).
+    Then pick from open issues labeled `feedback` (not `building-qa`, not
+    `lane:manual` — hand-run lanes own those, docs/MANUAL-LANE.md).
    Never pick an issue labeled `needs-approval`. An issue labeled
    `waiting-jon` is parked on Jon: skip it, UNLESS it has a comment newer
    than your `QA: waiting on Jon` note that does not start with `QA`,

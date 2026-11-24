@@ -151,7 +151,7 @@ const ForgeBoard = () => {
     // One derivation for lamps, floor and cards alike — forgecheck.mjs asserts
     // the counts against the fetched labels through THIS function.
     const floor = deriveFloor({ issues, prs, pulses, now })
-    const { queued, shipped, pulse, building } = floor
+    const { queued, shipped, pulse, building, manual } = floor
     // #1354 — when the warden's ticks show the Studio itself was asleep, say
     // it at the TOP of the board: 11 h of "nothing shipped" reads very
     // differently once you see the Mac was down. #1406: the LIVE strips answer
@@ -406,6 +406,18 @@ const ForgeBoard = () => {
                     <section className="mb-10">
                         <h2 className="text-[#ffb347] text-sm tracking-widest mb-3">⚒ BUILDING NOW</h2>
                         <div className="grid gap-4">{building.map(i => card(i, 'border-[#ffb347] animate-pulse'))}</div>
+                    </section>
+                )}
+
+                {manual.length > 0 && (
+                    <section className="mb-10">
+                        <h2 className="text-[#8fd3ff] text-sm tracking-widest mb-2">🤝 MANUAL LANES — by hand, beside the machine ({manual.length})</h2>
+                        <p className="text-[10px] text-gray-500 mb-3 leading-relaxed">
+                            Work owned by Jon or a guest agent, never auto-claimed
+                            (<a className="text-[#8fd3ff] hover:underline" target="_blank" rel="noreferrer"
+                                href={`https://github.com/${REPO}/blob/main/docs/MANUAL-LANE.md`}>the protocol</a>).
+                        </p>
+                        <div className="grid md:grid-cols-2 gap-4">{manual.map(i => card(i, 'border-[#8fd3ff]'))}</div>
                     </section>
                 )}
 
