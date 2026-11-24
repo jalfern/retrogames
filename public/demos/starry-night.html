@@ -11,6 +11,7 @@
   body { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
   canvas#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
   canvas#stage:active { cursor: grabbing; }
+  :root { --credits-bottom: 46px; }
   #hud {
     position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom));
     z-index: 5; color: rgba(255,255,255,.72); font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
@@ -18,15 +19,46 @@
   }
   #hud b { color: #fff; font-weight: 700; letter-spacing: .3em; }
   #hud .hint { color: rgba(255,255,255,.42); }
-  @media (max-width: 640px) { #hud { font-size: 9px; letter-spacing: .12em; max-width: 80vw; } }
+  #style-switcher {
+    position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: 5; background: rgba(5,7,15,.55); border: 1px solid rgba(255,255,255,.22); border-radius: 6px;
+    color: rgba(255,255,255,.78); font: inherit; font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+    padding: 6px 10px; cursor: pointer; text-shadow: 0 1px 6px rgba(0,0,0,.7);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  }
+  #style-switcher:hover { color: #fff; border-color: rgba(255,255,255,.45); }
+  #style-switcher:focus-visible { outline: 2px solid #f5d76e; outline-offset: 2px; }
+  @media (max-width: 640px) {
+    #hud { font-size: 9px; letter-spacing: .12em; max-width: 80vw; }
+    #style-switcher { font-size: 9px; padding: 5px 8px; }
+  }
 </style>
 </head>
 <body>
 <canvas id="stage"></canvas>
 <div id="hud"><b>STARRY NIGHT</b><span class="hint"> · painted style · zero-library WebGL2 · drag to look around</span></div>
+<button id="style-switcher" type="button" aria-label="Cycle render style">Cut-paper</button>
 <script>
 (function () {
   'use strict'
+
+  // ================================================================ styles
+  const STYLES = [{ id: 'cut-paper', label: 'Cut-paper' }]
+  const styleParam = new URLSearchParams(location.search).get('style')
+  const active = STYLES.find(s => s.id === styleParam) || STYLES[0]
+
+  const styleButton = document.getElementById('style-switcher')
+  if (styleButton) {
+    styleButton.textContent = active.label
+    styleButton.addEventListener('click', () => {
+      if (STYLES.length < 2) return
+      const i = STYLES.indexOf(active)
+      const next = STYLES[(i + 1) % STYLES.length]
+      const url = new URL(location.href)
+      url.searchParams.set('style', next.id)
+      location.assign(url)
+    })
+  }
 
   // ================================================================ setup
   const canvas = document.getElementById('stage')
