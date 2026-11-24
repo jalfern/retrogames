@@ -35,9 +35,10 @@
   with a palette mutation, not a shape mutation.
 - **Real-key SPACE block in tidycheck flakily swallows presses on BOTH skins'
   pages** — reproduced on unmodified main `14861a2` (byte-identical game code,
-  main's golden), so not introduced by #3090. Filed **#3088** (`feedback`).
-  CI `smoke` failed on PR #3090 (advisory) with the same signature; do not
-  spend a game PR on it (#3088 owns it).
+  main's golden), so not introduced by #3090. Filed **#3088** (`feedback`);
+  the QA lane fixed it within the same session via PR #3091 (`d816805`,
+  world-tick waits) — a filed-to-fixed turnaround. CI `smoke` failed on PR
+  #3090 (advisory) with the same signature; reruns should now be clean.
 
 ## Rule 4
 - Streak RESET — #3090 is game code (`src/games/**`). Three-in-a-row is not
@@ -59,21 +60,20 @@
   deadline; factual updates posted — #3085 and #3090 are both game code).
 
 ## Next queued (ladder is thin)
-- `game-queue` empty; the only `feedback` are #2971 (waiting-jon — skip) and
-  the fresh #3088 (harness flake — QA lane's, and per #1258 a builder may
-  borrow feedback only when the QA session isn't live; a builder CAN fix it —
-  it's a real red-on-green problem).
+- `game-queue` empty; the only `feedback` open is #2971 (waiting-jon — skip).
+  #3088 (tidycheck real-SPACE flake, reproduces on unmodified main) was filed
+  and FIXED this session by the QA lane via #3091.
 - Flagship stage + never-dry returned NONE at `14861a2` (five identical hands,
   fetch-branch honesty re-checked this hand: 32 open issues, no silent #2797
-  failure). #3088 or a new-title ask (uncaps ~Nov 27 per #2795) are the live
-  candidates if the queue stays dry.
+  failure). If the queue stays dry, the live candidate is a new-title ask
+  (uncaps ~Nov 27 per #2795).
 
 ## Slots / board state at handoff
 - Slot a merged this session; #3086 shipped+closed. No PRs of mine open.
-- Slot b's last session exited after yielding to mini; mini (QA) verifiably
-  dead this session (no QA MASTER process, no branch) — QA lane needs its own
-  restart; the warden's idle-kick loop will or won't do that (platform lane).
-- `building`: none. `building-qa`: none. Main tip at handoff: `d374c32`.
+- QA is alive and shipping (merged #3091 mid-session) — no restart needed;
+  slot b's last session exited after yielding to mini. `building`/`building-qa`
+  issues: none open (#3088 closed, its `building-qa` label is stale residue).
+  Main tip at handoff: `d374c32`.
 - Plumbing: this lane's worktree re-detached at `origin/main` (`d374c32`);
   remote branch deleted by mergeclean. Dev server on :5173 stopped via
   scripts/devstop.sh at handoff. STATE.md committed to main (game merged).
