@@ -1,0 +1,65 @@
+# GRIND CITY — notes
+
+One sun-baked concrete park, one board, one timer. Skate a clean line through
+S-K-A-T-E, gap the trench, grinds and manuals included, before 2:00 drops.
+Original IP (no licensed names, trademarks or levels); the genre is Tony Hawk,
+the park and every trick name are ours.
+
+## Layout of the code
+
+| file | role |
+|---|---|
+| `park.js` | **the surface** — one analytic height field `parkHeight(x,z)` + normals, plus `RAILS`, `LETTERS`, `GAP`, `spawn()`. The renderer builds its meshes from the same math the physics rides, so the board can never sink into or float over visible geometry. |
+| `sim.js` | **pure rules** — `step(state, input)` advances one fixed tick; no DOM, no three.js, no randomness (a seeded run replays identically). Ground-following riding, ollie/grab/kickflip, manuals, rail auto-latch, combo scoring, bails, the S-K-A-T-E goals, run clock. |
+| `planner.js` | **the bot** — rule-based autopilot that follows waypoint bearings, times ollies off ramps and rails, and collects the letters. It drives attract mode *and* proves the park is winnable (`grindcheck` refuses to merge if the bot can't score a win). |
+| `art.js` | three.js scene — park mesh from `park.js`, sky + sun glare, rails, floating gold letters, the skater rig (`buildSkater`/`poseSkater`), particle sparks. |
+| `index.jsx` | cabinet — loop, input, HUD, sounds, camera, contract (`exposeGame`) and the `__grindTest` drive hooks. |
+
+Run: `npm run grindcheck` (Node, no browser). Deep-drive the cabinet with
+`DEV_PORT=5178 node scripts/lib/gcdrive.mjs`.
+
+## Controls
+
+| key / pad | action |
+|---|---|
+| ← → | steer |
+| ↓ | crouch / pump (speed down slopes) |
+| A (`Space`) | ollie · **hold in the air** = grab (MONGOL, MEND, STALEFISH…) · **press on landing** = manual |
+| B (`Shift`) | kickflip on the ground · flat spin in the air |
+| `?` | how-to-play overlay |
+
+Rails auto-latch when airborne nearby (nose or tail, travel-aware). Grinds
+break off the end with a pop. Combo multiplier = distinct tricks + 1 (cap ×10);
+bailing forfeits the unbanked chain — the same rule as the real games.
+
+## The park (all in `park.js`)
+
+Deck → **drop-in ramp** → flat run-up → **trench (the gap)** → **halfpipe**
+(both walls rideable, coping air over the pipe) → **boardslide rail** over the
+pool edge → final flat, with S‑K‑A‑T‑E floating along the line. Speed only
+comes from heights, so the route is laid out downhill from the deck; letter K
+sits on a plate just above the pipe crossing.
+
+## Scoring
+
+Trick values in `sim.js` (`TRICKS`) scaled by hit count, then the chain
+multiplier; grinding and manuals tick per tick. Landing a chain banks it about
+0.6 s later (the blue flash). Letters are +500 each. **Win = all 5 letters +
+the gap clean before the clock dies.** Target for the harness: ≥6000.
+
+## Honest gaps
+
+- **Camera** is a chase cam with smoothing and speed dolly, but no transition
+  cuts, no fisheye, no replays of the run.
+- **One park, one line.** The park is replayable freely, but there are no
+  optional second routes, secret areas or score-mode objects beyond the letters.
+- **Trick variety is board-rot based.** Spins/flip combos read from the real
+  angular velocity, but there are no grabs on grinds, no lip tricks, no stalls;
+  manual chains count but look identical across trick types.
+- **The bot's line is fixed.** `planner.js` is scripted waypoints, not a search;
+  it proves the park is winnable, not that the trick system is deep.
+- **Audio is thin**: synthesized ollie/grind/land/crash tones only; no music,
+  no impact pitch tied to height.
+- `snapshot`/`restore` are intentionally absent from the contract — the sim
+  state holds functions (`park.height/normals`), so JSON can't copy it (#391);
+  drivers use `reset(seed)` + long `tick()` batches instead, like IronKeep.

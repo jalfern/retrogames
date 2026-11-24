@@ -45,6 +45,9 @@ const PinballGame = lazy(() => import('../games/Pinball'))
 const TidalRushGame = lazy(() => import('../games/TidalRush'))
 // Fourth pupil: MARBLE RUSH rides three.js too — its own chunk, Pong stays light.
 const MarbleRushGame = lazy(() => import('../games/MarbleRush'))
+// Grind City: same lesson — its three.js park mesh, rules sim and the
+// autopilot that scripts the attract line ride together in one chunk.
+const GrindCityGame = lazy(() => import('../games/GrindCity'))
 // Sonar Abyss: same lesson — its planner scripts the attract demo and the
 // caves are generated at load, so it keeps its own chunk.
 const SonarGame = lazy(() => import('../games/Sonar'))
@@ -1376,8 +1379,19 @@ export const GAMES = [
         controls: ['Arrows / WASD / d-pad: run the boulevard — UP at a tower side starts the CLIMB, UP/DOWN scale it, a roof is a street two floors up', 'UP / JUMP: hop — from the street beside a tower it grabs the wall instead', '← / → while on a wall: push off and drop to the street', 'SPACE / A / PUNCH: hit everything in front of you — towers, windows, crowds, tanks', 'Hold DOWN with a punch (or punch from a roof): the DOWN-CRUSHER; hold UP: hit the high floors', 'B / EAT: snap up the nearest human within reach — heals 16 and pushes the combo', 'Waving civilians pay 150 extra and lift the combo — mercy is not in the score table', 'Watch the roof edge neon: it turns red when a tower is hurt; one more solid hit flattens it', 'Fall flat and the blimp hauls your human half back — full health, but today\'s score rewinds to dawn', 'Three lives; each new city prints one more (up to six)', 'Twelve cities = the tour; clearing one banks +1000 and a score bonus for every soul and vehicle you leave standing', 'Attract: any key or tap takes the boulevard from the autopilot; ◀ ▶ on the title picks your monster', '?: pause and read the disaster card'],
     },
     {
-        path: '/tidal-rush',
-        pad: {
+        path: '/grind-city',
+        tapStart: true,
+        builtBy: 'forge',
+        added: '2026-11-24',
+        visibility: 'private',
+        component: GrindCityGame,
+        label: 'GRIND CITY',
+        theme: 'dark',
+        description: 'A skate park in the spirit of Tony Hawk\'s Pro Skater (PlayStation, 1999) — our own park, our own skater, no brands (#3106). One park made great: a drop-in ramp that makes your speed, a 2.8 m halfpipe you cross and pump, a deep bowl, a trench to fly (the GAP OF THE DAY), kicker ramps, rails and a long coping to grind — curves everywhere, and one analytic concrete surface that the renderer triangulates and the physics rides, to the tick. The trick economy is the game: ollie (A), grab mid-air (hold A), kickflip (B in the air), manual on landing (press A as you land, hold to balance), and ollie-onto-a-rail grinds with a balance meter you steer. Every UNIQUE trick in one line raises the multiplier — a Grab+Flip+Manual+Gap chain banks x4, x5 — but a bail forfeits everything the line hasn\'t banked clean. RUN 01 is two minutes against a goal list: score 1200, collect the gold letters S-K-A-T-E, and clear the gap; do all three and you rule (+10000). FREE SKATE is an open session. MODERN look: chase-cam with screen shake, grind sparks and carve spray, spinning gold letters, a chunky cap-wearing skater who crouches, grabs, leans grinds and tumbles convincingly. All art and sound synthesized at runtime; sim is pure and seeded — the attract line is the same autopilot grindcheck proves every goal inside 2:00.',
+        controls: ['← / → (or d-pad / stick): steer and carve — the park is one direction of travel, lean into transitions', 'SPACE / A: ollie — on the ground; HOLD in the air to grab (release before landing); PRESS as you land to manual, hold to balance, a quick tap of ← / → mid-manual turns a Manual 180', 'SHIFT / B: pump — crouch the transitions to build speed; in the air it kicks a kickflip (complete it before landing or eat it)', 'Near a rail or coping while airborne: you auto-latch — steer LEFT/RIGHT to keep the balance meter off the red', 'The gap: build speed down the drop-in, ollie off the kicker, fly the trench clean', 'Chains bank ~0.5 s after you land clean — greedy lines multiply, bails forfeit', 'RUN 01: 2:00, score 1200 + S-K-A-T-E + the gap · FREE SKATE: no clock', 'Attract: ◀ ▶ picks RUN 01 or FREE SKATE · any key or tap drops in · ? pause'],
+    },
+    {
+        path: '/tidal-rush',        pad: {
             method: 'stick', analog: true, supports: ['dpad'],
             aLabel: 'SPIN',
             buttons: [{ label: 'BOOST', code: 'ShiftLeft' }],

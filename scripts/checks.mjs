@@ -116,6 +116,11 @@ export const SCOPES = {
   // (key `marbleRush` — the plain `marble` key above is the 2D Marble Madness
   // scope, and a duplicate key in this literal silently deletes it: #3161 CI)
   marbleRush: { dirs: ['src/games/MarbleRush'], lint: [], checks: ['rollercheck', ['rollercheck', true]], smoke: [] },
+  // GRIND CITY (#3106): pure-seeded skate park. grindcheck is plain Node — the
+  // sim is pure and the planner bot is the winnability witness (it must make
+  // every goal inside the clock), so the gate needs no browser; gcdrive.mjs is
+  // the browser leg and runs on the lane.
+  skate: { dirs: ['src/games/GrindCity'], lint: [], checks: ['grindcheck', ['grindcheck', true]], smoke: [] },
 };
 
 // #1575: the explicit manual park. A check script that joins scripts/ with a
