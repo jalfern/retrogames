@@ -254,6 +254,7 @@
     "lint:marble": "eslint src/games/MarbleMadness src/components src/utils src/config src/main.jsx scripts/marblecheck.mjs scripts/marbleplay.mjs scripts/lib",
     "bobcheck": "node scripts/bobcheck.mjs",
     "marblecheck": "node scripts/marblecheck.mjs",
+    "rollercheck": "node scripts/rollercheck.mjs",
     "marbleplay": "node scripts/marbleplay.mjs",
     "lint:gauntlet": "eslint src/games/Gauntlet src/games/FourHalls src/components src/utils src/config src/main.jsx scripts/gauntletcheck.mjs scripts/gauntletplay.mjs scripts/lib",
     "lint:net": "eslint src/games/Gauntlet src/utils/lockstep.js relay/core.js relay/worker.js",

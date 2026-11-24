@@ -110,6 +110,12 @@ export const SCOPES = {
   // SKYWARD (#3105): pure-seeded flight school; the rules gate is Node-only (the
   // three.js shell has its own browser lane-run, skywardplay).
   skyward: { dirs: ['src/games/Skyward'], lint: [], checks: ['skywardcheck', ['skywardcheck', true]], smoke: [] },
+  // MARBLE RUSH (#3107): pure-seeded sky-shelf marble roller; the rules gate is
+  // Node-only (the three.js shell gets its browser drive on the lane:
+  // `npm run rollercheck -- --browser`, harness §8).
+  // (key `marbleRush` — the plain `marble` key above is the 2D Marble Madness
+  // scope, and a duplicate key in this literal silently deletes it: #3161 CI)
+  marbleRush: { dirs: ['src/games/MarbleRush'], lint: [], checks: ['rollercheck', ['rollercheck', true]], smoke: [] },
 };
 
 // #1575: the explicit manual park. A check script that joins scripts/ with a
