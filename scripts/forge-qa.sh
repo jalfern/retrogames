@@ -44,9 +44,7 @@ case "$NODE" in
     # for 27B oQ4e; 27B oQ8e could not hold 2 streams at all. (The 2026-11-21 trial failed on oMLX 0.8.2
     # from KV memory, fixed in 0.8.3.) Judge on session length vs the 27B history. Roll back: put a 27B
     # model string back on both lines. Record: ~/Dev/infra/omlx/UPGRADES.md on the studio.
-    mini)    MODEL="omlxmini/Inkling-2-Mini-oQ4e-mtp"; PORT=18000; TAG="";         DEV=5174
-             # Jon 2026-11-23: the mini lane is also the art & fidelity lane (FORGE-QA.md e″).
-             EXTRA=" You are also the art & fidelity lane: when step 2 leaves you nothing (no feedback, no queue item, idle-kick NONE), do one art & fidelity pass per FORGE-QA.md step 2 e″ instead of stopping (an open `reimagine` issue comes first). Use your eyes: screenshot, critique against docs/ART.md, fix the top gap, re-screenshot. All art stays original; never copy or move closer to an original game's sprites or characters." ;;
+    mini)    MODEL="omlxmini/Inkling-2-Mini-oQ4e-mtp"; PORT=18000; TAG="";         DEV=5174 ;;
     mini2)   MODEL="omlxmini/Inkling-2-Mini-oQ4e-mtp"; PORT=18000; TAG="mini2-";   DEV=5179
              # #2280: the mini's second QA slot — same model stream as mini (Jon
              # accepted shared inference for the two; back off to one slot in
@@ -58,6 +56,16 @@ case "$NODE" in
     studio)  MODEL="$STUDIO_MODEL"; PORT=8000; TAG="studio-";  DEV=5176 ;;
     builder) MODEL="$STUDIO_MODEL"; PORT=8000; TAG="builder-"; DEV=5177
              EXTRA=" You are in the builder's slot because no game is queued: do this one item, then exit." ;;
+esac
+# Jon 2026-11-23: the WORK a QA lane takes follows its MODEL, not its node. Every QA lane
+# (not the builder spill slot, not the browserless mbp) gets the art & fidelity rung when its
+# queue is dry (FORGE-QA.md step 2 e″); `reimagine` issues go to the lane running Inkling.
+case "$NODE" in builder|mbp) ;; *)
+    ART=" When step 2 leaves you nothing (no feedback, no queue item, idle-kick NONE), do one art & fidelity pass per FORGE-QA.md step 2 e″ instead of stopping: screenshot, critique against docs/ART.md, fix the top gap, re-screenshot. All art stays original; never copy or move closer to an original game's sprites or characters."
+    case "$MODEL" in
+        *Inkling*) EXTRA="$EXTRA$ART Your model is the reimagine model: an open \`reimagine\` issue (e″ rule 0) is yours and comes first." ;;
+        *)         EXTRA="$EXTRA$ART Skip e″ rule 0: \`reimagine\` issues belong to the lane whose model is Inkling." ;;
+    esac ;;
 esac
 export DEV_PORT=$DEV
 EXTRA="$EXTRA Your dev server port is $DEV: start yours with \`npm run dev -- --port $DEV --strictPort\` (DEV_PORT=$DEV is set; the browser scripts read it, and shot.mjs takes --url). Never use or stop the server on 5173 or any other lane's port. Stop your dev server ONLY with \`scripts/devstop.sh\` (kills by port); never \`pkill -f\` a pattern — lane prompts contain \"npm run dev\", so a pattern kill ends the lanes themselves."
