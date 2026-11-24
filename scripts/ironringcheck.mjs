@@ -689,6 +689,70 @@ if (MUT) {
     pull(path.join(HERE, '../src/engine/.mutant-fighting2.mjs'))
 }
 
+// ---- #3142 juice: the ring answers every swing ---------------------------------
+// The refreshed juice audit (#1130 bar, 2026-11-24) scored IRON RING 0%: its
+// primary action `a` was silent — move starts gave the shell no callback, and the
+// contract state omitted the match phase, so PREP probed through the round-intro
+// freeze where inputs are ignored by design. The fix (mini's checkpoint, shipped
+// here): startMove pushes a juice-only 'whiff' event for every move start except
+// throws (their reaction rides the 'airgrab' event), the cabinet voices it the
+// same frame (whoosh + spark), and contract state() exposes phase. Pinned here
+// so silence can never return.
+if (!MUT) {
+    const jsrc = await import('node:fs').then((fs) => fs.readFileSync(path.join(HERE, '../src/games/IronRing/index.jsx'), 'utf8'))
+    ok(/e\.kind === 'whiff'/.test(jsrc) && /scene\.spark\(/.test(jsrc), 'juice gate: the cabinet voices the whiff (sfx + spark at the fighter)')
+    ok(/phase: gs\.phase/.test(jsrc), 'juice gate: contract state exposes phase so PREP waits out the round intro')
+    const esrc = await import('node:fs').then((fs) => fs.readFileSync(SRC, 'utf8'))
+    ok(/kind: 'whiff'/.test(esrc) && /key !== 'throw'/.test(esrc), 'juice gate: startMove emits a whiff for every move start except throws')
+
+    // live: the whiff lands on the SAME tick the attack starts, not when it hits
+    m = e.createMatch({ seed: 5, p1: human('kade'), p2: human('vexa') })
+    go(m)
+    m.events.length = 0
+    e.step(m, [P({ lp: true }), P()])
+    ok(m.fighters[0].st === 'attack', 'juice pin: lp press starts an attack')
+    ok(m.events.some((ev) => ev.kind === 'whiff' && ev.by === 0 && ev.mv === 'lp'), 'juice pin: the swing is announced the frame it starts (whiff mv lp)')
+
+    // the jump attack answers too
+    m = e.createMatch({ seed: 5, p1: human('kade'), p2: human('vexa') })
+    go(m)
+    e.step(m, [P({ up: true }), P()])
+    m.events.length = 0
+    let sawAl = false
+    for (let i = 0; i < 4 && !sawAl; i++) {
+        e.step(m, [P({ lp: true }), P()])
+        sawAl = m.events.some((ev) => ev.kind === 'whiff' && ev.mv === 'al')
+    }
+    ok(sawAl, 'juice pin: the jump attack also announces itself (whiff mv al)')
+
+    // throws stay off this path — the airgrab already carries their reaction
+    m = e.createMatch({ seed: 5, p1: human('kade'), p2: human('vexa') })
+    go(m)
+    m.fighters[1].x = m.fighters[0].x + 1.2
+    e.step(m, [P({ right: true, hk: true }), P()])
+    ok(m.fighters[0].move === 'throw', `juice pin: close fwd+hk grabs (move ${m.fighters[0].move})`)
+    ok(!m.events.some((ev) => ev.kind === 'whiff'), 'juice pin: a throw start emits no whiff (the airgrab carries it)')
+}
+
+if (MUT) {
+    // targeted mutant (#3142): neuter the whiff push — the swing is back to
+    // silence, the live pin must bite.
+    const fs3 = await import('node:fs')
+    const src3 = fs3.readFileSync(SRC, 'utf8')
+    const mut3 = src3.replace(`if (key !== 'throw') m.events.push({ t: m.tick, kind: 'whiff'`, `if (false && key !== 'throw') m.events.push({ t: m.tick, kind: 'whiff'`)
+    ok(mut3 !== src3, 'mutate: whiff-push line found to patch')
+    plantNew(path.join(HERE, '../src/engine/.mutant-fighting3.mjs'), mut3)
+    const e3 = await import(`../src/engine/.mutant-fighting3.mjs?c=${Date.now()}m3`)
+    {
+        const mm = e3.createMatch({ seed: 5, p1: { ...BY_ID.kade, cpu: false }, p2: { ...BY_ID.vexa, cpu: false } })
+        { let g = 0; while (mm.phase !== 'fight' && g++ < 400) e3.step(mm, [P(), P()]) }
+        e3.step(mm, [P({ lp: true }), P()])
+        ok(mm.fighters[0].st === 'attack', 'mutant3 baseline: lp still starts an attack (only the whiff dies)')
+        ok(!mm.events.some((ev) => ev.kind === 'whiff'), 'MUTANT check: with the whiff push neutered no swing is announced (harness bites)')
+    }
+    pull(path.join(HERE, '../src/engine/.mutant-fighting3.mjs'))
+}
+
 // ---- README honest-gaps honesty (#2569) ----------------------------------------
 // parseGaps (scripts/lib/idle.mjs) turns this README's "## Honest gaps" section
 // into the never-dry ladder's targets. The stun/air-throw bullet was a phantom:
