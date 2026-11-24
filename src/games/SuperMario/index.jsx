@@ -1984,9 +1984,9 @@ const SuperMarioGame = () => {
             ctx.fillText('x' + lives, 160, 26)
         }
 
-        const centerText = (lines) => {
+        const centerText = (lines, y0 = VIEW_H / 2 - (lines.length - 1) * 8) => {
             ctx.textAlign = 'center'
-            let y = VIEW_H / 2 - (lines.length - 1) * 8
+            let y = y0
             for (const ln of lines) {
                 ctx.fillStyle = ln.color || C.white
                 ctx.font = ln.font || 'bold 10px monospace'
@@ -2190,12 +2190,14 @@ const SuperMarioGame = () => {
             // overlays
             if (state === 'attract') {
                 ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+                // one message at a time: title / sub-line / blinking press-any-key.
+                // The OPTIONS affordance lives in the DOM OPTIONS button (top-right) + shared PAUSE chrome, never in this block.
+                // y0 anchors the block in the upper third so the DOM WATCH cluster (bottom) never stacks on it.
                 centerText([
                     { t: 'SUPER MARIO BROS', color: C.marioRed, font: 'bold 20px monospace', gap: 26 },
                     { t: 'WORLD 1-1 & 1-2', color: C.white, font: 'bold 10px monospace', gap: 22 },
-                    { t: 'PRESS ANY KEY TO START', color: (tick % 60 < 36) ? C.coin : C.white, font: 'bold 9px monospace', gap: 16 },
-                    { t: 'TAP OPTIONS (TOP-RIGHT) · OR PRESS ?', color: 'rgba(255,255,255,0.7)', font: 'bold 8px monospace' },
-                ])
+                    { t: 'PRESS ANY KEY TO START', color: (tick % 60 < 36) ? C.coin : C.white, font: 'bold 9px monospace' },
+                ], 70)
             } else if (state === 'menu') {
                 // backdrop + title only; the interactive rows are DOM buttons (touch-friendly)
                 ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H)
@@ -2441,7 +2443,7 @@ const SuperMarioGame = () => {
                 )}
 
                 {ui.screen === 'attract' && (
-                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-3" style={{ bottom: '24%' }}>
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-3" style={{ bottom: '15%' }}>
                         <span className="font-mono text-[11px] font-bold tracking-widest text-emerald-300" style={{ textShadow: '0 2px 8px #000, 0 0 18px #000' }}>{WATCH_ATTRACT_HINT}</span>
                         <AttractWatchButton />
                     </div>
