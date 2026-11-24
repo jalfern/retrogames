@@ -55,6 +55,7 @@
     "pickrush-export": "node scripts/pickrush-export.mjs",
     "tidycheck": "node scripts/tidycheck.mjs",
     "pinballcheck": "node scripts/pinballcheck.mjs",
+    "pinballplay": "node scripts/pinballplay.mjs",
     "stompcheck": "node scripts/stompcheck.mjs",
     "skywardcheck": "node scripts/skywardcheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",

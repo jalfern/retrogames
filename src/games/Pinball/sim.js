@@ -74,6 +74,10 @@ export const TABLE = {
         // top gate — one-way: collides only from BELOW (a rising lane ball
         // bounces back down the lane); a ball descending from the dome passes.
         { x1: 322, y1: 190, x2: 298, y2: 190, oneWay: true },
+        // ---- rung 3: orbit channel guide (x=40, parallel to the left wall).
+        // The gap x 10..40 is one lane, two directions: downward it stays the
+        // spinner/kicker outlane; upward it is the orbit's climbing rail.
+        { x1: 40, y1: 320, x2: 40, y2: 415 },
     ],
     // Top arc: ellipse centre (180,160), rx 170, ry 150, sampled θ = π → 2π.
     arc: { cx: 180, cy: 160, rx: 170, ry: 150, from: Math.PI, to: 2 * Math.PI, segs: 14 },
@@ -95,10 +99,11 @@ export const TABLE = {
     ],
     targetY: 300,
     // Left outlane: guide wall, spinner zone (ticks per fall-through),
-    // kicker that rockets the ball back into play.
+    // kicker that rockets the ball back into play. Rung 3: the kicker aims
+    // up the orbit channel — outlane rescue feeds the wrap (classic loop).
     outlaneGuide: { x1: 52, y1: 420, x2: 30, y2: 505 },
     spinner: { xMax: 46, yFrom: 440, yTo: 496, pxPerTurn: 22 },
-    kicker: { xMax: 46, yAt: 498, vx: 300, vy: -540 },
+    kicker: { xMax: 46, yAt: 498, vx: 10, vy: -880 },
     // ---- rung 2 primitives (data; the engine only knows the shapes) ----
     // RAMP rollovers: crossed UPWARD inside the launch lane (x 326..346).
     rampRollovers: [{ y: 250 }, { y: 330 }],
@@ -117,6 +122,27 @@ export const TABLE = {
     ],
     // Ball-save: the first drain within this window of MULTIBALL auto-relaunches.
     saveTicks: 300,
+    // ---- rung 3 primitives (data; the engine only knows the shapes) ----
+    // ORBIT: a directional pad pair + a flank curl. Crossing the arm pad
+    // UPWARD inside the left channel arms the loop; the curl (mirrors the
+    // launch-lane guide-curl law) sails the ball over the dome apex; crossing
+    // the done pad DOWNWARD on the right flank completes it and the descent
+    // lands on the firelane top gate — an orbit chains straight into locks.
+    // A short wrap falls back down the channel into the spinner/kicker: retry.
+    orbit: {
+        armPad: { x: 40, y: 120 }, armW: 26,
+        donePad: { x: 290, y: 120 }, doneW: 45,
+        curl: { xMax: 110, yAt: 160, vx: 280 },
+        need: 3,
+    },
+    // MAGNET: a charged post. While charged, a ball inside `field` is pulled
+    // to the post (MAG_PULL px/s²), clamped at its face and held `hold`
+    // ticks; release pays. The charge dies with the hold and re-arms only
+    // when a ball that touched the field drains — magnet play costs risk.
+    // Sitting right-mid between bank and slings, it snares dome-rebounds and
+    // firelane spills, and its 33 px reach is clear of every rung-1/2 probe
+    // lane, the orbit channel and the DMD insert.
+    magnet: { x: 240, y: 350, r: 10, field: 24, hold: 72, pull: 1500 },
     // Flippers: pivots, length, half thickness, rest/up angles (degrees).
     flippers: {
         pivotY: 552, len: 58, halfW: 7,
@@ -135,6 +161,7 @@ export const TABLE = {
         spinner: 10, kicker: 100, bonusPerTarget: 50, multCap: 5,
         ramp: 25, rampSet: 500, lane: 25, laneSweep: 100,
         lock: 500, multiball: 1000, mbDouble: 2,
+        orbit: 100, orbitSet: 500, magnet: 50,
     },
 };
 
@@ -159,6 +186,11 @@ export function makeGame(seed = 1) {
         // ---- rung 2 ----
         locks: 0, multiball: false, extraBall: 0, saveT: 0, saveUsed: false,
         rampHits: 0, rampLit: false,
+        // ---- rung 3 ----
+        orbits: 0, orbitBank: 0, orbitLit: false, orbitFlash: 0, orbitArmFlash: 0,
+        magCharge: 1, magHold: 0, magTouched: false, magFlash: 0, magFreeFlash: 0,
+        // DMD message state lives in the SIM so Node can pin the text (#3199)
+        msg: { text: '', t: 0, T: 0 },
         // rung-2 flash mirrors (0 until lit; the shell reads these for lamps)
         rampFlash: 0, laneFlash: [0, 0, 0], lockFlash: 0, mbFlash: 0,
         events: [],
@@ -186,7 +218,7 @@ function proxyFlag(gs, key) {
 }
 
 function newPuck(x, y, vx, vy) {
-    return { bx: x, by: y, vx, vy, prevY: y, launched: false, laneCurved: false, spin: 0, spinArm: true, laneHits: 0 };
+    return { bx: x, by: y, vx, vy, prevY: y, launched: false, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false };
 }
 
 export function resetBall(gs) {
@@ -198,6 +230,8 @@ export function resetBall(gs) {
     // rung 2: the tower drops its locks with the ball; the pack ends with it
     gs.locks = 0; gs.multiball = false; gs.saveT = 0; gs.saveUsed = false;
     gs.rampHits = 0; gs.rampLit = false;
+    // rung 3: the orbit bank resets with the ball; the magnet re-arms fresh
+    gs.orbitBank = 0; gs.orbitLit = false; gs.magCharge = 1; gs.magHold = 0; gs.magTouched = false;
 }
 
 const deg = Math.PI / 180;
@@ -274,6 +308,11 @@ function flipperHit(gs, b, side) {
 // literal is the rung-1 number again.
 function add(gs, pts) { gs.score += pts * (gs.multiball ? TABLE.rules.mbDouble : 1); }
 
+// DMD message (rung 3): the strip's text is SIM state so pinballcheck can
+// pin what the display says at any tick. Tick-driven decay; a newer message
+// simply replaces the old one.
+function say(gs, text, ticks = 110) { gs.msg = { text, t: ticks, T: ticks }; }
+
 function substep(gs, dt) {
     // flippers animate once per substep (game-wide), then the pack collides.
     const f = TABLE.flippers;
@@ -292,6 +331,13 @@ function substep(gs, dt) {
 }
 
 function substepBall(gs, b, dt) {
+    // held by the magnet: the post owns this puck's motion — pinned at the
+    // clamp anchor, no gravity, no collisions, but the world clock keeps
+    // running (a hold is a hold, not a pause).
+    if (b.magHeld) {
+        b.bx = b.magX; b.by = b.magY; b.vx = 0; b.vy = 0;
+        return;
+    }
     b.vy += GRAV * dt;
     b.bx += b.vx * dt;
     b.by += b.vy * dt;
@@ -351,6 +397,7 @@ function substepBall(gs, b, dt) {
                     gs.bankLit = true; gs.banksThisBall += 1;
                     gs.mult = Math.min(TABLE.rules.multCap, 1 + gs.banksThisBall);
                     add(gs, TABLE.rules.bankClear);
+                    say(gs, `MULT x${gs.mult}`);
                     gs.events.push({ type: 'bank', x: 187, y: TABLE.targetY });
                 }
             }
@@ -378,6 +425,31 @@ function substepBall(gs, b, dt) {
         b.vx = k.vx; b.vy = k.vy; gs.kickCd = 20;
         add(gs, TABLE.rules.kicker);
         gs.events.push({ type: 'kicker', x: b.bx, y: b.by });
+    }
+
+    // ---- rung 3: MAGNET (generic primitive: charged post, pull, clamp/hold) ----
+    // Any ball inside the field marks the table touched (the recharge law);
+    // while held, the pinned puck's motion is owned by the hold (see the top
+    // of this function's magnet block in stepGame's pre-pass too).
+    const MG = TABLE.magnet;
+    const mdx = MG.x - b.bx, mdy = MG.y - b.by;
+    const md = Math.hypot(mdx, mdy);
+    if (md < MG.field + BALL_R) {
+        if (!gs.magTouched) gs.magTouched = true;
+        if (!b.magHeld && gs.magCharge > 0 && gs.magHold === 0) {
+            // pull toward the post along the field
+            if (md > 0.001) { b.vx += (mdx / md) * MG.pull * dt; b.vy += (mdy / md) * MG.pull * dt; }
+            // clamp at the post face → held (velocity dies at the clamp)
+            const holdR = MG.r + BALL_R;
+            if (md < holdR && md > 0.001) {
+                b.bx = MG.x - (mdx / md) * holdR; b.by = MG.y - (mdy / md) * holdR;
+                b.magX = b.bx; b.magY = b.by;
+                b.vx = 0; b.vy = 0; b.magHeld = true;
+                gs.magHold = MG.hold; gs.magCharge = 0; gs.magFlash = 14;
+                say(gs, 'MAGNET!', 90);
+                gs.events.push({ type: 'maggrab', x: MG.x, y: MG.y });
+            }
+        }
     }
 
     // flipper collision (animation is game-wide, see substep; dead while tilted
@@ -412,14 +484,30 @@ export function stepGame(gs, pad = {}) {
         gs.nudgeMeter += 1; gs.nudgeDecay = TABLE.tilt.decayTicks;
         gs.events.push({ type: 'nudge' });
         if (gs.nudgeMeter >= TABLE.tilt.max) {
-            gs.tilt = true; gs.events.push({ type: 'tilt' });
-        } else if (gs.nudgeMeter === TABLE.tilt.max - 1) gs.events.push({ type: 'tiltwarn' });
+            gs.tilt = true; say(gs, 'TILT!', 140); gs.events.push({ type: 'tilt' });
+        } else if (gs.nudgeMeter === TABLE.tilt.max - 1) { say(gs, 'CAREFUL...', 70); gs.events.push({ type: 'tiltwarn' }); }
     }
     gs.lastB = !!pad.b;
     if (gs.nudgeDecay > 0) { gs.nudgeDecay -= 1; if (gs.nudgeDecay === 0 && !gs.tilt) gs.nudgeMeter = 0; }
 
     // ball-save window of the pack
     if (gs.saveT > 0) gs.saveT -= 1;
+
+    // magnet hold clock — decremented on the WORLD clock (a hold bites time
+    // off the magnet, never off the game); at zero the puck drops free.
+    if (gs.magHold > 0) {
+        gs.magHold -= 1;
+        if (gs.magHold === 0) {
+            const hp = gs.pucks.find((p) => p.magHeld);
+            if (hp) {
+                hp.magHeld = false;
+                add(gs, TABLE.rules.magnet);
+                gs.magFreeFlash = 12;
+                say(gs, 'SNAP! +50');
+                gs.events.push({ type: 'magfree', x: hp.bx, y: hp.by });
+            }
+        }
+    }
 
     // remember each ball's height for rollover cross-detection, then run physics
     for (const p of gs.pucks) p.prevY = p.by;
@@ -472,6 +560,7 @@ export function stepGame(gs, pad = {}) {
                 if (gs.rampHits >= 3) {
                     gs.rampHits = 0; gs.rampLit = true;
                     add(gs, TABLE.rules.rampSet);
+                    say(gs, 'RAMP SET! +500');
                     gs.events.push({ type: 'rampset', x: 336, y: 250 });
                 }
             }
@@ -490,6 +579,7 @@ export function stepGame(gs, pad = {}) {
                     if (p.laneHits >= TABLE.laneRollovers.length) {
                         p.laneHits = 0;
                         add(gs, TABLE.rules.laneSweep);
+                        say(gs, 'LANE SWEEP!');
                         gs.events.push({ type: 'lanesweep', x: 310, y: lr.y });
                     }
                 }
@@ -503,6 +593,45 @@ export function stepGame(gs, pad = {}) {
             p.cap = true;
             lockBall(gs);
             return;
+        }
+
+        // ---- rung 3: ORBIT — flank curl assist (mirrors the lane-guide curl
+        // law): a launched ball climbing the left flank gets pushed toward
+        // the apex so the wrap is a learnable line, not a prayer. ----
+        const O = TABLE.orbit;
+        if (p.launched && !p.orbitCurled && p.bx < O.curl.xMax &&
+            p.prevY >= O.curl.yAt && p.by < O.curl.yAt && p.vy < 0) {
+            p.vx += O.curl.vx; p.orbitCurled = true;
+            gs.events.push({ type: 'curl', x: p.bx, y: p.by });
+        }
+        // arm: cross the left-flank pad UPWARD inside the channel
+        const ap = O.armPad;
+        if (!p.orbitArmed && p.prevY > ap.y && p.by <= ap.y && Math.abs(p.bx - ap.x) < O.armW + BALL_R) {
+            p.orbitArmed = true; gs.orbitArmFlash = 8;
+            gs.events.push({ type: 'orbitarm', x: ap.x, y: ap.y });
+        }
+        // complete: cross the right-flank pad DOWNWARD — the descent lands on
+        // the firelane top gate, chaining the orbit into the lock idiom.
+        const dp = O.donePad;
+        if (p.orbitArmed && p.prevY < dp.y && p.by >= dp.y && Math.abs(p.bx - dp.x) < O.doneW + BALL_R) {
+            p.orbitArmed = false; p.orbitCurled = false;
+            gs.orbits += 1; gs.orbitBank += 1; gs.orbitFlash = 14;
+            add(gs, TABLE.rules.orbit);
+            say(gs, 'ORBIT! +100');
+            gs.events.push({ type: 'orbit', n: gs.orbits, x: dp.x, y: dp.y });
+            if (gs.orbitLit) {
+                // the set is lit: a completed orbit banks a lock outright —
+                // the orbit lane is CABINET ONE's second route to MULTIBALL.
+                gs.orbitLit = false;
+                say(gs, 'ORBIT LOCK!');
+                gs.events.push({ type: 'orbitlock' });
+                lockBall(gs);
+            } else if (gs.orbitBank >= O.need) {
+                gs.orbitBank = 0; gs.orbitLit = true;
+                add(gs, TABLE.rules.orbitSet);
+                say(gs, 'ORBIT SET!');
+                gs.events.push({ type: 'orbitset' });
+            }
         }
 
         // drain
@@ -534,6 +663,12 @@ export function stepGame(gs, pad = {}) {
     if (gs.lockFlash > 0) gs.lockFlash -= 1;
     if (gs.mbFlash > 0) gs.mbFlash -= 1;
     if (gs.drainFx > 0) gs.drainFx -= 1;
+    // rung 3 mirrors
+    if (gs.orbitFlash > 0) gs.orbitFlash -= 1;
+    if (gs.orbitArmFlash > 0) gs.orbitArmFlash -= 1;
+    if (gs.magFlash > 0) gs.magFlash -= 1;
+    if (gs.magFreeFlash > 0) gs.magFreeFlash -= 1;
+    if (gs.msg.t > 0) gs.msg.t -= 1;
     return gs;
 }
 
@@ -557,10 +692,12 @@ function lockBall(gs) {
     if (gs.multiball) {
         // a lock DURING multiball banks an extra ball for the end of the pack
         gs.extraBall += 1;
+        say(gs, 'EXTRA BALL');
         gs.events.push({ type: 'extraball', willPay: gs.extraBall });
         return;
     }
     gs.locks += 1;
+    say(gs, `LOCK ${gs.locks}/${TABLE.lock.need}`);
     gs.events.push({ type: 'lock', n: gs.locks });
     if (gs.locks >= TABLE.lock.need) startMultiball(gs);
 }
@@ -570,6 +707,7 @@ function startMultiball(gs) {
     add(gs, TABLE.rules.multiball);   // award at pack-off odds, before the x2 is live
     gs.multiball = true; gs.saveUsed = false; gs.saveT = TABLE.saveTicks;
     gs.mbFlash = 60;
+    say(gs, 'MULTIBALL!', 170);
     for (const k of TABLE.mbKick) {
         const p = newPuck(k.x, k.y, k.vx, k.vy);
         p.launched = true;
@@ -582,8 +720,14 @@ function startMultiball(gs) {
 // the first drain inside the save window relaunches instead.
 function packDrain(gs, idx) {
     gs.pucks.splice(idx, 1);
+    // the magnet re-arms when a ball that touched its field drains (rule 5
+    // of the design: magnet play costs risk, pack drains pay the recharge)
+    if (gs.magTouched && gs.magCharge === 0 && gs.magHold === 0) {
+        gs.magCharge = 1; gs.magTouched = false; gs.events.push({ type: 'magready' });
+    }
     if (!gs.saveUsed && gs.saveT > 0) {
         gs.saveUsed = true;
+        say(gs, 'BALL SAVE!');
         const p = newPuck(TABLE.plunger.x, 500, 0, -950);
         p.launched = true;
         gs.pucks.push(p);
@@ -609,7 +753,7 @@ function drain(gs) {
     // bonus pays the drop-target ladder this ball collected, × mult
     const bonus = gs.bankHits * TABLE.rules.bonusPerTarget * gs.mult;
     gs.lastBonus = bonus; gs.score += bonus; gs.bankHits = 0;
-    if (bonus > 0) gs.events.push({ type: 'bonus', value: bonus });
+    if (bonus > 0) { say(gs, `BONUS +${bonus}`); gs.events.push({ type: 'bonus', value: bonus }); }
     gs.events.push({ type: 'drain' });
     gs.balls -= 1; gs.drainFx = 30;
     if (gs.balls <= 0) {
@@ -618,6 +762,7 @@ function drain(gs) {
         gs.events.push({ type: 'gameover' });
     } else {
         resetBall(gs);
+        say(gs, `BALL ${TABLE.balls - gs.balls + 1}`, 90);
         gs.events.push({ type: 'ballstart', ball: gs.balls });
     }
 }
@@ -638,6 +783,11 @@ export function stateOf(gs) {
         liveBalls: gs.pucks.length, locks: gs.locks,
         multiball: gs.multiball, extraBall: gs.extraBall,
         rampHits: gs.rampHits, saveT: gs.saveT,
+        // ---- rung 3 ----
+        orbits: gs.orbits, orbitBank: gs.orbitBank, orbitLit: gs.orbitLit,
+        magCharge: gs.magCharge, magHold: gs.magHold, magTouched: gs.magTouched,
+        // what the DMD strip reads this tick (deterministic — Node can pin it)
+        dmd: { text: gs.msg.t > 0 ? gs.msg.text : '', t: gs.msg.t, T: gs.msg.T || 0 },
         hash: stateHash(gs),
     };
 }
@@ -650,6 +800,7 @@ export function stateHash(gs) {
         gs.targetDown.map((d) => (d ? 1 : 0)).join(''), gs.mult, gs.tilt ? 1 : 0,
         gs.spinnerTurns, gs.launched ? 1 : 0,
         gs.locks, gs.multiball ? 1 : 0, gs.extraBall, gs.rampHits, gs.saveUsed ? 1 : 0,
+        gs.orbitBank, gs.orbitLit ? 1 : 0, gs.magCharge, gs.magHold, gs.magTouched ? 1 : 0,
         gs.seed >>> 0];
     let h = 0x811c9dc5;
     const s = parts.join(',');
