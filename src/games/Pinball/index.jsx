@@ -9,7 +9,7 @@ import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, W, H, BALL_R,
 } from './sim.js'
@@ -47,7 +47,10 @@ const sfxFor = (ev) => {
 
 const PinballGame = () => {
     const canvasRef = useRef(null)
-    const gsRef = useRef(makeGame(Date.now() >>> 0))
+    // #1473 seed pin: a filed report carries the seed, feedbackreplay opens
+    // `/pinball?seed=N` — honor it at every human start, keep own RNG otherwise.
+    const freshSeed = () => (seedFromQuery() ?? (Date.now() >>> 0))
+    const gsRef = useRef(makeGame(freshSeed()))
     const keysRef = useRef({ left: false, right: false, a: false, down: false, b: false })
     const partsRef = useRef([])
     const flashRef = useRef({ bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0 })
@@ -63,7 +66,7 @@ const PinballGame = () => {
     screenRef.current = screen
 
     const startPlay = useCallback(() => {
-        gsRef.current = makeGame(Date.now() >>> 0)
+        gsRef.current = makeGame(freshSeed())
         partsRef.current = []
         trailRef.current = []
         msgRef.current = { text: '', t: 0 }
@@ -382,6 +385,10 @@ const PinballGame = () => {
         window.addEventListener('keyup', onKeyUp)
         cvs.addEventListener('pointerdown', onPointer)
 
+        // #1200 feedback report (production build too): the in-game report
+        // button files live state so a report can be replayed at ?seed=N.
+        exposeFeedbackState(() => ({ tick: gsRef.current.tick, score: gsRef.current.score, done: gsRef.current.done, seed: gsRef.current.seed }))
+
         if (import.meta.env.DEV) {
             window.__pinballTest = {
                 state: () => stateOf(gsRef.current),
@@ -417,6 +424,7 @@ const PinballGame = () => {
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             cvs.removeEventListener('pointerdown', onPointer)
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__pinballTest) delete window.__pinballTest; unexposeGame() }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
