@@ -70,6 +70,10 @@ const SkywardGame = () => {
         const sfxFor = (g, e) => {
             switch (e.kind) {
                 case 'ring': tone(660 + e.idx * 60, 0.09, 'square', 0.09); break
+                case 'near': // near miss: an airy whip of wind past the ring —
+                    audioController.playFilteredNoise(0.16, 0.07, 1600) // you were close
+                    tone(1560, 0.06, 'sine', 0.035, 0.02)
+                    break
                 case 'gate': tone(392 + e.idx * 74, 0.12, 'triangle', 0.1); break
                 case 'start':
                     if (e.event === 'THUNDERPASS') audioController.playFilteredNoise(1.1, 0.32, 90) // thunderclap entrance
@@ -156,6 +160,7 @@ const SkywardGame = () => {
         let raf = 0
         let last = performance.now()
         let acc = 0
+        let shimT = 0
         const frame = (now) => {
             raf = requestAnimationFrame(frame)
             const ft = Math.min(now - last, 100)
@@ -188,6 +193,19 @@ const SkywardGame = () => {
                     }
                 }
             }
+
+            // thermals are visible but were silent: rising air now sings. A
+            // soft two-note shimmer whose tempo and pitch ride the lift —
+            // teaches the glider's elevator without a tutorial wall. (#3138)
+            if (screenRef.current === 'play' && !pausedNow && gs.lift > 0.8) {
+                shimT -= ft / 1000
+                if (shimT <= 0) {
+                    const k = clamp((gs.lift - 0.8) / 2.6, 0, 1)
+                    tone(880 + k * 520, 0.18, 'sine', 0.026 + k * 0.018)
+                    tone(1318 + k * 660, 0.12, 'sine', 0.014 + k * 0.01, 0.05)
+                    shimT = 0.34 - k * 0.14
+                }
+            } else shimT = 0
 
             if (screenRef.current === 'attract') gl.orbitAttract(demo, ft / 1000)
             else gl.render(gs, ft / 1000)
