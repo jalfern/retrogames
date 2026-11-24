@@ -31,11 +31,12 @@ didn't say MODERN.
   per draw frame (dust, sparks, shake, flash, reach arc, arrival ring, and the
   attract flourish, whose old item id can alias a fresh stow after a reset).
 - tidycheck's skin gates freeze both looks at load with a downsampled
-  perceptual signature (classic `f947d5dc`, papercraft `33dfb942`) — raw
-  bytes are deliberately NOT compared: Chromium's GPU canvas drifts ±1 on
-  curved strokes with surface history, which reds byte goldens without any
-  code change. Spatial truth is proven behaviorally: teal-at-bot and
-  red-at-tray pixel laws run on BOTH skins, plus state-level toggle checks.
+  perceptual signature (classic `f947d5dc`, papercraft `17152d53` since #3086,
+  was `33dfb942`) — raw bytes are deliberately NOT compared: Chromium's GPU
+  canvas drifts ±1 on curved strokes with surface history, which reds byte
+  goldens without any code change. Spatial truth is proven behaviorally:
+  teal-at-bot and red-at-tray pixel laws run on BOTH skins, plus state-level
+  toggle checks.
 
 ## Glide routing (#2250) — the BFS is the players' too
 - Tap/click a floor tile during play and the bot routes itself there on the
@@ -120,8 +121,25 @@ didn't say MODERN.
   mid-order cancels both). Mutant `tapact` (tapAct always misses) turns 4
   named gates red.
 
-## Polish pass (#2343): the demo sells the aim, the pull shows the reach
-- **Attract flourish (overlay, not autopilot).** `flourishPick(gs)` (pure, in
+## Polish pass (#3086): the papercraft sells the MATERIAL
+- Six item brief from QA, `reimagined` painter only (`art.js`), classic untouched
+  (its golden `f947d5dc` proves it): gingham checks 8px/0.85 → 6px/0.6 with a
+  scissors-WAVY cut cloth edge (`wavyRect`, deterministic sin-waves, checks clipped
+  to the card); the attract title sign is now a cut CARD (r4 corners, fold crease,
+  curl-shadow nicks) and its PRESS strip is torn (`torn`, 2px zigzag); the robot
+  gets a corrugation peek (3 flute holes at the chassis cut edge) and washi tape
+  over the antenna joint; the stove front gets two brass dial dots matching the
+  fridge badge. `index.jsx`: papercraft-only confetti (2×3 tilted rects replacing
+  2×2 pixels in `paintParticles`) and material audio — a two-tick paper crinkle at
+  glide arrival, a 92 Hz cardboard thud + noise at close (classic keeps machine
+  clacks). `GOLDEN_PAPER` moved `33dfb942 → 17152d53` in the same PR (approved
+  restyle, #3085 policy).
+- Harness lesson: two fixed-`waitForTimeout(80)` double-press sequences swallow
+  the second press edge while software-rendered rAF catches up — they now
+  `waitForFunction` on `held`/`held2`. Fixed sleeps between presses are a flake
+  generator on cold pages; assert the STATE the press must cause.
+
+## Polish pass (#2343): the demo sells the aim, the pull shows the reach- **Attract flourish (overlay, not autopilot).** `flourishPick(gs)` (pure, in
   `sim.js`) names the lowest-slot stow in an open cavity; the attract loop
   overlays its id on the pad (`p.aim`), so the demo MARKS the stow (teal
   brackets + AIMED) and the autopilot's own B pulls it. The autopilot itself
@@ -182,7 +200,7 @@ didn't say MODERN.
 
 ## Verify
 ```
-npm run tidycheck            # Node 109 + browser gates, 135 green (needs npm run dev)
+npm run tidycheck            # Node 109 + browser gates, 145 green (needs npm run dev)
 npm run tidycheck -- --node  # Node-only
 npm run tidycheck -- --mutate   # door mutant (TIDY_MUT=door|glass|run|tidy|order|aim|tapact)
 CONTRACT_ONLY=tidy-bot npm run contractcheck
