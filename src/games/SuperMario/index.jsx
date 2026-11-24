@@ -2443,7 +2443,7 @@ const SuperMarioGame = () => {
                 )}
 
                 {ui.screen === 'attract' && (
-                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-3" style={{ bottom: '15%' }}>
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-3" style={{ bottom: '24%' }}>
                         <span className="font-mono text-[11px] font-bold tracking-widest text-emerald-300" style={{ textShadow: '0 2px 8px #000, 0 0 18px #000' }}>{WATCH_ATTRACT_HINT}</span>
                         <AttractWatchButton />
                     </div>
