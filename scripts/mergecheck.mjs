@@ -178,6 +178,14 @@ function buildSandbox(tag, { dirtySquat = false, merge = 'trap', withSquat = tru
 
 const remoteHeads = s => git(['ls-remote', '--heads', 'origin'], s.plumb, s.env).stdout;
 
+// /bin/zsh is the sandbox's shell (the scripts under proof carry #!/bin/zsh).
+// GitHub runners have none — same skip-green pattern watchrespawncheck (#2278)
+// documents: this proof is Studio-side law and rides the Studio nightly.
+if (spawnSync('/bin/zsh', ['--version'], { encoding: 'utf8' }).status !== 0) {
+    console.log('SKIP — /bin/zsh missing (GitHub runners): #3013 replay is proven where zsh lives (the Studio nightly), not faked here')
+    process.exit(0)
+}
+
 say('A — clean main-squat, trap merge: cleanup completes');
 {
     const s = buildSandbox('clean');

@@ -302,4 +302,11 @@ if (BROWSER) {
 
 console.log(`\nrollercheck: ${pass}/${pass + fail} pass${MUT ? ` (mutant: ${MUT})` : ''}`)
 restoreAll()
+if (MUT) {
+    // mutant-run convention (stomp/grind/skyward): a planted bug killing at
+    // least one check is the GOOD outcome — exit 0, the nightly gate wants
+    // the survivor red, not the catcher.
+    console.log(fail ? `ALL MUTANTS CAUGHT (${fail} check(s) died under ${MUT})` : `mutant SURVIVED — ${MUT} broke nothing`)
+    process.exit(fail ? 0 : 1)
+}
 if (fail) process.exit(1)
