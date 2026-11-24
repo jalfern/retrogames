@@ -13,9 +13,9 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { makeGame, step, autoPad, stateOf, stateHash, courseFor, STAGE_COUNT, SIM_MS, DT } from './sim.js'
-import { moverDeck, STAGES } from './course.js'
-import { makeSky, makeEnv, makeClouds, buildStage, makeBumper, makeDeck, makeMarble, makeGoal, makeSparks, sparkSpawn, sparkStep, SKY_PALETTES } from './art.js'
+import { makeGame, step, autoPad, respawn, stateOf, stateHash, courseFor, STAGE_COUNT, SIM_MS, DT } from './sim.js'
+import { moverDeck, sweeperBar, STAGES } from './course.js'
+import { makeSky, makeEnv, makeClouds, buildStage, makeBumper, makeDeck, makeBar, makeGate, makeMarble, makeGoal, makeSparks, sparkSpawn, sparkStep, SKY_PALETTES } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
 const MESSAGES = [
@@ -24,7 +24,9 @@ const MESSAGES = [
     'TOO FAST FOR A CURVE = THE SKY CATCHES YOU',
     'SWING BRIDGES BOARD AT THE RIGHT PHASE',
     'HIT THE LIP HOT TO FLY THE GAP',
-    'GOLD SILVER BRONZE · FIVE SKY SHELVES',
+    'TIME THE SWEEPING BARS · THE OPEN SIDE WAITS',
+    'GATES ARM FOR SHELVES 6 TO 10 · FALL LATE, RETURN AT THE GATE',
+    'GOLD SILVER BRONZE · TEN SKY SHELVES',
 ]
 
 const BEST_KEY = 'marble-rush-best-v1'
@@ -85,6 +87,8 @@ const MarbleRushGame = () => {
         let stageArt = null
         let decks = []
         let bumpers = []
+        let bars = []
+        let gate = null
         let goal = null
         let env = null
         let stageIdxBuilt = -1
@@ -113,9 +117,13 @@ const MarbleRushGame = () => {
             }
             for (const b of bumpers) scene.remove(b)
             for (const d of decks) scene.remove(d.group)
+            for (const br of bars) scene.remove(br)
+            if (gate) scene.remove(gate)
             if (goal) scene.remove(goal)
             bumpers = []
             decks = []
+            bars = []
+            gate = null
             const pal = SKY_PALETTES[course.sky] || SKY_PALETTES.day
             if (envStage !== course.sky) {
                 if (env) env.dispose()
@@ -149,6 +157,18 @@ const MarbleRushGame = () => {
                 scene.add(d.group)
                 decks.push(d)
             })
+            bars = course.sweepers.map((sw, si) => {
+                const br = makeBar(course, si)
+                scene.add(br)
+                return br
+            })
+            if (course.cp > 0) {
+                gate = makeGate(course)
+                const gp2 = course.pointOf(course.cp, 0)
+                gate.position.set(gp2.x, gp2.y, gp2.z)
+                gate.rotation.y = gp2.heading
+            }
+            if (gate) scene.add(gate)
             goal = makeGoal()
             const gp = course.pointOf(course.len - 0.6, 0)
             goal.position.set(gp.x, gp.y, gp.z)
@@ -192,6 +212,9 @@ const MarbleRushGame = () => {
             jump: () => audioController.playSweep(240, 620, 0.22, 'sine', 0.09),
             land: () => { audioController.playNoise(0.09, 0.09); audioController.playTone(90, 0.09, 'sine', 0.12) },
             fall: () => audioController.playSweep(320, 60, 0.9, 'sawtooth', 0.12),
+            gate: () => { audioController.playTone(660, 0.1, 'triangle', 0.11); audioController.playTone(990, 0.16, 'triangle', 0.1, 0.09) },
+            sweep: () => { audioController.playNoise(0.12, 0.14); audioController.playTone(140, 0.14, 'square', 0.12) },
+            respawn: () => audioController.playSweep(180, 520, 0.28, 'sine', 0.1),
             finish: (medal) => {
                 const seq = medal === 'gold' ? [523, 659, 784, 1047, 1319] : medal === 'none' ? [392, 440, 523] : [523, 659, 784]
                 seq.forEach((f, i) => audioController.playTone(f, 0.15, 'square', 0.11, i * 0.11))
@@ -216,9 +239,27 @@ const MarbleRushGame = () => {
                 }
                 if (e.type === 'jump') { sfx.jump(); if (hud.pop) { hud.pop.textContent = 'SKY SHOT!'; hud.pop.style.opacity = 1 }; flashPop = 1 }
                 if (e.type === 'land') { sfx.land(); shake = Math.min(0.4, shake + 0.14) }
+                if (e.type === 'sweep') {
+                    sfx.sweep(); shake = Math.min(0.55, shake + 0.3); flashPop = 1
+                    if (hud.pop) { hud.pop.textContent = 'SWIPED!'; hud.pop.style.opacity = 1 }
+                    const course = courseFor(gs.stageIdx)
+                    const p = course.pointOf(e.s, e.u)
+                    sparkSpawn(sparks, p.x, p.y + 0.5, p.z, 14, 5, 4)
+                }
+                if (e.type === 'gate') {
+                    sfx.gate(); flashPop = 1
+                    if (hud.pop) { hud.pop.textContent = 'CHECKPOINT ARMED ⚑'; hud.pop.style.opacity = 1 }
+                    const course = courseFor(gs.stageIdx)
+                    const p = course.pointOf(e.s, 0)
+                    sparkSpawn(sparks, p.x, p.y + 1.4, p.z, 16, 4, 3.5)
+                }
+                if (e.type === 'respawn') {
+                    sfx.respawn(); goFlash = 0.9
+                    if (hud.pop) { hud.pop.textContent = 'AT THE GATE'; hud.pop.style.opacity = 1 }
+                }
                 if (e.type === 'fall') sfx.fall()
                 if (e.type === 'die') {
-                    showResult({ kind: 'fall', t: gs.t, stage: gs.stageIdx + 1, name: courseFor(gs.stageIdx).name, score: gs.score })
+                    showResult({ kind: gs.cpArmed ? 'cp-fall' : 'fall', t: gs.t, stage: gs.stageIdx + 1, name: courseFor(gs.stageIdx).name, score: gs.score })
                     setMode('over')
                 }
                 if (e.type === 'finish') {
@@ -284,6 +325,23 @@ const MarbleRushGame = () => {
                 d.group.position.set(p.x, p.y, p.z)
             })
 
+            // sweeper bars sweep on the analytic sine — same sweeperBar the
+            // sim knocks you with, drawn ≡ ridden
+            bars.forEach((br, si) => {
+                const barU = sweeperBar(course, si, gs.t + gs.swPhase[si])
+                const p = course.pointOf(course.sweepers[si].s, barU)
+                br.position.set(p.x, p.y, p.z)
+                br.rotation.y = p.heading
+            })
+            // checkpoint gate: lit green once armed, for the rest of the run
+            if (gate) {
+                const bm = gate.userData.bannerMat
+                const lit = gs.cpArmed
+                bm.emissiveIntensity = lit ? 1.8 : 0.4
+                bm.color.set(lit ? 0x8dff9e : 0x6f8aa0)
+                bm.emissive.set(lit ? 0x57ff7c : 0x6f8aa0)
+            }
+
             // the marble: lifted along the banked surface normal, rolling spin
             const h = course.headingOf(gs.s)
             const bank = course.bankOf(gs.s)
@@ -340,7 +398,7 @@ const MarbleRushGame = () => {
 
             // HUD (DOM refs — no per-frame React)
             const hud = hudRef.current
-            if (hud.stage) hud.stage.textContent = `SHELF ${gs.stageIdx + 1}/${STAGE_COUNT} · ${course.name}`
+            if (hud.stage) hud.stage.textContent = `SHELF ${gs.stageIdx + 1}/${STAGE_COUNT} · ${course.name}${gs.cpArmed ? ' ⚑' : ''}`
             if (hud.clock) hud.clock.textContent = fmt(gs.t)
             if (hud.speed) hud.speed.firstChild.nodeValue = String(Math.round(gs.v * 3.6))
             if (hud.prog) hud.prog.style.width = `${Math.round((gs.s / course.len) * 100)}%`
@@ -392,6 +450,18 @@ const MarbleRushGame = () => {
             const r = resultRef.current
             if (screenRef.current !== 'over' || !r) return
             if (r.kind === 'clear') startStageRef.current && startStageRef.current(r.next)
+            else if (r.kind === 'cp-fall') {
+                respawn(gs)
+                camInit = false
+                flashPop = 0
+                goFlash = 0.9
+                sfx.respawn()
+                const hud = hudRef.current
+                if (hud.pop) { hud.pop.textContent = 'AT THE GATE'; hud.pop.style.opacity = 1 }
+                setResult(null)
+                resultRef.current = null
+                setMode('play')
+            }
             else if (r.kind === 'fall') startStageRef.current && startStageRef.current(gs.stageIdx)
             else { attractRef.current && attractRef.current(); setMode('attract') }
         }
@@ -529,7 +599,7 @@ const MarbleRushGame = () => {
 
             <div className={`absolute inset-0 pointer-events-none font-mono transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="absolute top-2 left-3 bg-black/45 border border-sky-300/30 rounded px-3 py-1.5 text-sky-50">
-                    <div ref={setHud('stage')} className="text-[11px] tracking-widest font-bold">SHELF 1/5</div>
+                    <div ref={setHud('stage')} className="text-[11px] tracking-widest font-bold">SHELF 1/10</div>
                     <div ref={setHud('best')} className="text-[10px] tracking-widest text-amber-200/90">PAR</div>
                 </div>
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 text-center">
@@ -553,7 +623,7 @@ const MarbleRushGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <h1 className="text-6xl font-black italic mb-2 text-white" style={{ textShadow: '4px 0 0 #2a7fd0, -4px 0 0 #ff9a3c, 0 12px 30px #000' }}>MARBLE RUSH</h1>
-                    <p className="text-[10px] tracking-[0.35em] text-sky-200/60 mb-5">FIVE SHELVES HUNG IN THE SKY · ONE STICK · MEDALS FOR MERCY</p>
+                    <p className="text-[10px] tracking-[0.35em] text-sky-200/60 mb-5">TEN SHELVES HUNG IN THE SKY · ONE STICK · MEDALS FOR MERCY</p>
                     <div className="flex items-center gap-2 mb-6 text-[11px] tracking-[0.2em]">
                         <button type="button" onPointerDown={(e) => { e.stopPropagation(); selRef.current = (selRef.current + STAGE_COUNT - 1) % STAGE_COUNT; setStageSel(selRef.current); if (attractRef.current) attractRef.current() }} className="pointer-events-auto px-2 py-1 border border-sky-300/30 rounded text-sky-200/70">◀</button>
                         <span className="px-3 py-1 border border-amber-300/50 rounded text-amber-200 font-bold bg-amber-300/10">
@@ -573,7 +643,15 @@ const MarbleRushGame = () => {
                             <h2 className="text-4xl font-black mb-1 text-rose-300">DOWN YOU GO</h2>
                             <p className="text-lg mb-3">{result.name} · died at {fmt(result.t)}</p>
                             <p className="text-sm text-sky-200/80 mb-4">Brake before the curve, board bridges when the deck is near center.</p>
-                            <p className="animate-pulse font-bold">TAP / PRESS ANY KEY · RETRY</p>
+                            <p className="animate-pulse font-bold">TAP / PRESS ANY KEY · RETRY FROM THE START</p>
+                        </>
+                    )}
+                    {result.kind === 'cp-fall' && (
+                        <>
+                            <h2 className="text-4xl font-black mb-1 text-emerald-300">THE GATE REMEMBERS</h2>
+                            <p className="text-lg mb-3">{result.name} · down at {fmt(result.t)} — back at the checkpoint</p>
+                            <p className="text-sm text-sky-200/80 mb-4">Clock keeps running. Score survives. The gate is lit green — go get the shelf.</p>
+                            <p className="animate-pulse font-bold">TAP / PRESS ANY KEY · RETURN TO THE GATE</p>
                         </>
                     )}
                     {result.kind === 'clear' && (
@@ -588,9 +666,9 @@ const MarbleRushGame = () => {
                     )}
                     {result.kind === 'final' && (
                         <>
-                            <h2 className="text-4xl font-black mb-1 text-amber-300">ALL FIVE SHELVES</h2>
+                            <h2 className="text-4xl font-black mb-1 text-amber-300">ALL TEN SHELVES</h2>
                             <p className="text-lg mb-1">Final score {result.score}</p>
-                            <p className="text-sm mb-4 flex gap-3">
+                            <p className="text-sm mb-4 flex flex-wrap justify-center gap-x-3 gap-y-1">
                                 {result.best.map((b, i) => (
                                     <span key={i} className="text-sky-100/90">{i + 1}·{b != null ? fmt(b) : '—'}</span>
                                 ))}

@@ -47,6 +47,10 @@ export const FALL_Y = -7         // this far under the floor = gone
 // segs: [len, k, grade, halfW, bank] tuples. flags: bumpers {s,u,r},
 // movers {from,to,A,w,omega,phase} (deck center = A·sin(ωt+φ)), kickers
 // {s, to: gap length beyond the lip}. Gaps: segs entries with w=0.
+// Stage 2 verbs: sweepers {s,A,w,omega,phase} — a neon bar at station s
+// sweeping laterally across the road on the moverDeck sine (a deck you must
+// NOT be on); cp {s} — one checkpoint gate per late shelf: a fall after it
+// respawns at the gate on the same clock, so medals stay honest.
 export const STAGES = [
     {
         name: 'FIRST ROLL',
@@ -65,6 +69,8 @@ export const STAGES = [
         bumpers: [{ s: 118, u: 1.6, r: 0.95 }],
         movers: [],
         kickers: [],
+        sweepers: [],
+        cp: 0,
     },
     {
         name: 'SWITCHBACK',
@@ -85,6 +91,8 @@ export const STAGES = [
         bumpers: [{ s: 96, u: -1.3, r: 0.9 }, { s: 214, u: 1.4, r: 0.9 }],
         movers: [],
         kickers: [],
+        sweepers: [],
+        cp: 0,
     },
     {
         name: 'BUMPER ALLEY',
@@ -109,6 +117,8 @@ export const STAGES = [
         ],
         movers: [],
         kickers: [],
+        sweepers: [],
+        cp: 0,
     },
     {
         name: 'SWING BRIDGE',
@@ -131,6 +141,8 @@ export const STAGES = [
             { from: 186, to: 232, A: 2.1, w: 1.4, omega: 1.05, phase: 1.9 },
         ],
         kickers: [],
+        sweepers: [],
+        cp: 0,
     },
     {
         name: 'SKY SHOT',
@@ -152,6 +164,135 @@ export const STAGES = [
         bumpers: [{ s: 68, u: 1.0, r: 0.85 }],
         movers: [{ from: 175, to: 201, A: 1.5, w: 1.6, omega: 1.4, phase: 0.7 }],
         kickers: [{ s: 102, gapTo: 111 }],
+        sweepers: [],
+        cp: 0,
+    },
+    // ---- stage 2 (rung 2): shelves 6–10 — sweepers + checkpoint gates ------
+    {
+        name: 'UPPER DECK',
+        sky: 'day',
+        hue: 186,
+        par: 19.5, medals: [19.5, 25, 32],
+        segs: [
+            [32, 0, 0, 3.2, 0],
+            [42, 0.022, 0, 3.0, 0.11],
+            [24, 0, -0.08, 3.0, 0],
+            [44, -0.024, 0, 3.0, 0.11],
+            [30, 0, 0.05, 3.0, 0],
+            [40, 0.026, 0, 2.9, 0.12],
+            [34, 0, 0, 3.0, 0],
+        ],
+        bumpers: [{ s: 64, u: 1.4, r: 0.9 }],
+        movers: [],
+        kickers: [],
+        sweepers: [
+            { s: 118, A: 1.0, w: 0.85, omega: 1.15, phase: 0.0 },
+            { s: 182, A: 1.2, w: 0.85, omega: 1.3, phase: 2.1 },
+        ],
+        cp: 150,
+    },
+    {
+        name: 'GHOST LINE',
+        sky: 'dusk',
+        hue: 300,
+        par: 22, medals: [22, 27.5, 34.5],
+        segs: [
+            [30, 0, 0, 2.6, 0],
+            [36, 0.030, 0, 2.3, 0.14],
+            [30, -0.032, 0, 2.3, 0.14],
+            [26, 0.034, 0, 2.2, 0.15],
+            [26, -0.034, 0, 2.2, 0.15],
+            [34, 0, -0.07, 2.4, 0],
+            [38, 0.028, 0.02, 2.3, 0.13],
+            [32, 0, 0, 2.5, 0],
+        ],
+        bumpers: [
+            { s: 58, u: -1.0, r: 0.8 },
+            { s: 110, u: 1.0, r: 0.8 },
+            { s: 168, u: -1.0, r: 0.8 },
+        ],
+        movers: [],
+        kickers: [],
+        sweepers: [{ s: 190, A: 0.85, w: 0.75, omega: 1.25, phase: 0.9 }],
+        cp: 156,
+    },
+    {
+        name: 'THE MILL',
+        sky: 'storm',
+        hue: 214,
+        par: 21.5, medals: [21.5, 27, 34],
+        segs: [
+            [30, 0, 0, 2.8, 0],
+            [40, 0.026, 0, 2.5, 0.12],
+            [36, 0, 0, 0, 0],            // gap one — bridge rides it
+            [32, -0.028, 0, 2.4, 0.12],
+            [30, 0, -0.08, 2.5, 0],
+            [40, 0, 0, 0, 0],            // gap two — bridge rides it
+            [30, 0.030, 0.04, 2.4, 0.13],
+            [36, 0, 0, 2.7, 0],
+        ],
+        bumpers: [{ s: 48, u: 1.2, r: 0.85 }],
+        movers: [
+            { from: 70, to: 106, A: 1.5, w: 1.5, omega: 1.2, phase: 0.3 },
+            { from: 168, to: 208, A: 1.8, w: 1.4, omega: 1.05, phase: 2.0 },
+        ],
+        kickers: [],
+        sweepers: [
+            { s: 214, A: 1.0, w: 0.8, omega: 1.35, phase: 0.8 },
+            { s: 248, A: 1.25, w: 0.85, omega: 1.1, phase: 2.6 },
+        ],
+        cp: 150,
+    },
+    {
+        name: 'LONG DROP',
+        sky: 'dusk',
+        hue: 340,
+        par: 19, medals: [19, 24.5, 31.5],
+        segs: [
+            [30, 0, 0, 2.8, 0],
+            [34, -0.024, -0.06, 2.6, 0.12],
+            [28, 0, -0.15, 2.5, 0],    // the long drop: build the launch
+            [10, 0, 0.06, 2.5, 0],     // kicker lip at s=102
+            [12, 0, 0, 0, 0],          // the long gap — 12 m, earn it
+            [30, 0.026, 0, 2.2, 0.13], // narrow banked landing
+            [26, 0, 0.05, 2.3, 0],
+            [9, 0, 0, 0, 0],           // bridge over the small gap
+            [34, -0.028, 0, 2.3, 0.13],
+            [30, 0, 0, 2.6, 0],
+        ],
+        bumpers: [{ s: 52, u: -1.0, r: 0.85 }],
+        movers: [{ from: 170, to: 179, A: 1.4, w: 1.5, omega: 1.25, phase: 0.5 }],
+        kickers: [{ s: 102, gapTo: 114 }],
+        sweepers: [{ s: 214, A: 1.1, w: 0.8, omega: 1.4, phase: 1.7 }],
+        cp: 152,
+    },
+    {
+        name: 'THE SPIRE',
+        sky: 'storm',
+        hue: 268,
+        par: 30, medals: [30, 36, 43],
+        segs: [
+            [34, 0, 0, 2.9, 0],
+            [46, 0.034, 0, 2.4, 0.17],
+            [26, 0, -0.10, 2.4, 0],
+            [46, -0.036, 0, 2.4, 0.17],
+            [28, 0.038, 0.05, 2.2, 0.18],
+            [24, -0.040, 0, 2.2, 0.18],
+            [38, 0, 0, 0, 0],          // the long bridge
+            [30, 0.028, -0.08, 2.3, 0.13],
+            [10, 0, 0.06, 2.3, 0],    // kicker lip at s=282
+            [12, 0, 0, 0, 0],         // fly it
+            [28, -0.026, 0, 2.3, 0.13],
+            [30, 0, 0, 2.4, 0],
+        ],
+        bumpers: [{ s: 56, u: 1.2, r: 0.85 }, { s: 190, u: -1.1, r: 0.8 }],
+        movers: [{ from: 204, to: 242, A: 1.7, w: 1.5, omega: 1.15, phase: 0.4 }],
+        kickers: [{ s: 282, gapTo: 294 }],
+        sweepers: [
+            { s: 130, A: 1.0, w: 0.8, omega: 1.3, phase: 1.2 },
+            { s: 306, A: 0.85, w: 0.7, omega: 1.45, phase: 0.2 },
+        ],
+        cp: 196,
     },
 ]
 
@@ -258,6 +399,8 @@ export function compileStage(stage) {
         bumpers: stage.bumpers.map((b) => ({ ...b, hit: false })),
         movers: stage.movers,
         kickers: stage.kickers,
+        cp: stage.cp || 0,
+        sweepers: stage.sweepers,
         headingOf: (s) => lut(heading, s),
         elevOf: (s) => lut(Y, s),
         curvOf: (s) => lut(kT, s),
@@ -299,6 +442,13 @@ export function compileStage(stage) {
 export function moverDeck(course, mi, t) {
     const m = course.movers[mi]
     return { u: m.A * Math.sin(m.omega * t + m.phase), w: m.w }
+}
+
+// bar center for a sweeper at time t — the same sine as moverDeck, on the
+// side of the bridge that must NOT be there. Renderer and sim share it.
+export function sweeperBar(course, si, t) {
+    const sw = course.sweepers[si]
+    return sw.A * Math.sin(sw.omega * t + sw.phase)
 }
 
 // decorative cloud drift — cosmetic, never touches sim state (determinism law)

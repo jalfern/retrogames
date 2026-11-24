@@ -6,7 +6,7 @@
 // you were riding has opinions about where it ends.
 
 import {
-    compileStage, moverDeck, seedRng, STAGES,
+    compileStage, moverDeck, sweeperBar, seedRng, STAGES,
     G, GRIP, ACC, BRAKE, ROLL_C, DRAG_C, STEER_ACCEL, LAT_DAMP, SLIDE_K,
     MAX_V, LAUNCH, FALL_Y, MARBLE_R,
 } from './course.js'
@@ -30,10 +30,13 @@ export function makeGame(seed, stageIdx = 0) {
     // the seed moves the bridges' phases — same authored track, different
     // moment: which way each deck is swinging when you arrive is seeded luck
     const mvPhase = STAGES[stageIdx].movers.map(() => rnd() * Math.PI * 2)
+    // same luck for the sweeping bars — the bar's moment is seeded too
+    const swPhase = STAGES[stageIdx].sweepers.map(() => rnd() * Math.PI * 2)
     return {
         seed: seed >>> 0,
         stageIdx,
         mvPhase,
+        swPhase,
         tick: 0,
         t: 0,                    // stage clock (starts at GO)
         phase: 0,              // 0..1 pre-roll
@@ -46,6 +49,11 @@ export function makeGame(seed, stageIdx = 0) {
         medal: null,           // 'gold' | 'silver' | 'bronze' | 'none'
         score: 0,
         bumpCd: 0,
+        swCd: 0,                 // sweeper knock cooldown
+        swHits: 0,
+        cpS: course.cp || 0,     // checkpoint station (0 = none on this shelf)
+        cpArmed: false,          // gate crossed — a fall respawns at the gate
+        respawned: 0,
         events: [],
         len: course.len,
         // bumper hit bookkeeping (sim side)
@@ -65,6 +73,7 @@ export function step(gs, pad) {
     }
     gs.t += DT
     if (gs.bumpCd > 0) gs.bumpCd -= DT
+    if (gs.swCd > 0) gs.swCd -= DT
 
     const course = courseFor(gs.stageIdx)
 
@@ -198,6 +207,31 @@ export function step(gs, pad) {
         }
     }
 
+    // ---- sweeping bars (stage 2 verb) ------------------------------------------
+    // the bar sweeps across its station on the moverDeck sine, seeded phase.
+    // contact = hard lateral knock + speed bite — the knock walks you toward
+    // the edge, and the edge is honest about what it does next.
+    if (!gs.air && gs.swCd <= 0) {
+        for (let si = 0; si < course.sweepers.length; si++) {
+            const sw = course.sweepers[si]
+            const barU = sweeperBar(course, si, gs.t + gs.swPhase[si])
+            if (Math.abs(gs.s - sw.s) < 0.55 + MARBLE_R && Math.abs(gs.u - barU) < sw.w + MARBLE_R) {
+                gs.swHits += 1
+                gs.wlat += Math.sign(gs.u - barU || 1) * 5.2
+                gs.v = clamp(gs.v * 0.72, 0, MAX_V)
+                gs.swCd = 0.5
+                gs.events.push({ type: 'sweep', s: sw.s, u: barU })
+                break
+            }
+        }
+    }
+
+    // ---- checkpoint gate ---------------------------------------------------------
+    if (!gs.cpArmed && gs.cpS > 0 && gs.s >= gs.cpS) {
+        gs.cpArmed = true
+        gs.events.push({ type: 'gate', s: gs.cpS })
+    }
+
     // ---- goal -------------------------------------------------------------------
     if (gs.s >= course.len) {
         gs.s = course.len
@@ -241,6 +275,20 @@ export function autoPad(gs) {
             break
         }
     }
+    // sweeping bars: aim the open side of where the bar WILL be at the
+    // crossing time, and hold that line through the station
+    for (let si = 0; si < course.sweepers.length; si++) {
+        const sw = course.sweepers[si]
+        if (sw.s >= gs.s - (1.2 + MARBLE_R) && sw.s < gs.s + 10 + gs.v * 0.9) {
+            const tc = gs.t + (sw.s - gs.s) / Math.max(4, gs.v) + gs.swPhase[si]
+            const barU = sweeperBar(course, si, tc)
+            const w0 = course.halfWidthOf(sw.s)
+            const side = barU >= 0 ? -1 : 1
+            const need = Math.abs(barU) + sw.w + MARBLE_R + 0.35
+            uT = side * clamp(Math.max(need, 0.9), 0.9, Math.max(0.9, w0 - 0.18))
+            break
+        }
+    }
 
     // speed target: hold the grip budget through the tightest curve ahead,
     // but commit to the throttle before a kicker — a slow marble is a lost one
@@ -262,6 +310,28 @@ export function autoPad(gs) {
     return { throttle, steer, brake: !!brake, a: false, b: false }
 }
 
+// respawn at an armed checkpoint: same seed, same clock (t keeps running, so
+// medals stay honest and seeded bridge/bar phases stay in step with reality).
+// Only the marble goes back to the gate.
+export function respawn(gs) {
+    if (!gs.cpArmed || gs.done && !gs.fail) return false
+    gs.falling = false
+    gs.done = false
+    gs.fail = false
+    gs.air = false
+    gs.s = Math.max(2, gs.cpS - 4)
+    gs.u = 0
+    gs.v = 8
+    gs.wlat = 0
+    gs.y = 0
+    gs.vy = 0
+    gs.bumpCd = 0
+    gs.swCd = 0
+    gs.respawned += 1
+    gs.events.push({ type: 'respawn', s: gs.s })
+    return true
+}
+
 export function stateOf(gs) {
     return {
         tick: gs.tick,
@@ -277,6 +347,8 @@ export function stateOf(gs) {
         speed: Math.round(gs.v * 100) / 100,
         falling: gs.falling,
         air: gs.air,
+        cpArmed: gs.cpArmed,
+        respawns: gs.respawned,
     }
 }
 
@@ -292,5 +364,6 @@ export function stateHash(gs) {
     mix(gs.tick); mix(q(gs.s)); mix(q(gs.u)); mix(q(gs.v)); mix(q(gs.wlat))
     mix(q(gs.y)); mix(q(gs.phase)); mix(gs.score); mix(gs.done ? 1 : 0)
     mix(gs.fail ? 1 : 0); mix(gs.falling ? 1 : 0); mix(gs.bumps.reduce((a, b, i) => a + b * (i + 3), 0))
+    mix(gs.cpArmed ? 1 : 0); mix(gs.respawned); mix(gs.swHits)
     return h >>> 0
 }

@@ -344,6 +344,57 @@ export function makeMarble(env) {
     return { mesh, shadow }
 }
 
+// Sweeper bar — the stage 2 hazard verb. A neon slab that sweeps across its
+// station on the moverDeck sine; index.jsx slides it by the SAME sweeperBar()
+// the sim knocks you with (drawn ≡ ridden). Cap-glows mark the reach.
+export function makeBar(course, si) {
+    const sw = course.sweepers[si]
+    const glow = hsl((course.hue + 320) % 360, 0.95, 0.62)
+    const group = new THREE.Group()
+    const slab = new THREE.Mesh(
+        new THREE.BoxGeometry(2 * sw.w + 0.3, 0.5, 0.9),
+        new THREE.MeshStandardMaterial({ color: glow, emissive: glow, emissiveIntensity: 1.2, metalness: 0.55, roughness: 0.28 }),
+    )
+    slab.position.y = 0.32
+    const capGeo = new THREE.SphereGeometry(0.24, 10, 8)
+    const capMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: glow, emissiveIntensity: 1.8, roughness: 0.3 })
+    const cl = new THREE.Mesh(capGeo, capMat)
+    cl.position.set(-(sw.w + 0.15), 0.32, 0)
+    const cr = new THREE.Mesh(capGeo, capMat)
+    cr.position.set(sw.w + 0.15, 0.32, 0)
+    // a thin pylon so the bar reads as sweeping machinery, not a floating brick
+    const pylon = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09, 0.09, 0.7, 8),
+        new THREE.MeshStandardMaterial({ color: 0x30414f, metalness: 0.6, roughness: 0.5 }),
+    )
+    pylon.position.y = 0.02
+    group.add(slab, cl, cr, pylon)
+    group.userData.sw = sw
+    return group
+}
+
+// Checkpoint gate — arms green as you cross it, and stays lit for the rest
+// of the run: the shelf remembers where you got to.
+export function makeGate(course) {
+    const W = course.halfWidthOf(course.cp)
+    const col = new THREE.Color(0x9fb8cc)
+    const group = new THREE.Group()
+    const mat = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.35, metalness: 0.5, roughness: 0.35 })
+    const postGeo = new THREE.CylinderGeometry(0.14, 0.14, 3.4, 10)
+    const l = new THREE.Mesh(postGeo, mat)
+    l.position.set(-(W + 0.5), 1.7, 0)
+    const r = new THREE.Mesh(postGeo, mat)
+    r.position.set(W + 0.5, 1.7, 0)
+    const bannerMat = new THREE.MeshStandardMaterial({ color: 0x6f8aa0, emissive: 0x6f8aa0, emissiveIntensity: 0.4, metalness: 0.3, roughness: 0.4 })
+    const banner = new THREE.Mesh(new THREE.BoxGeometry(2 * (W + 0.5), 0.7, 0.12), bannerMat)
+    banner.position.y = 3.4
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(2 * W, 0.04, 0.3), bannerMat)
+    strip.position.y = 0.02
+    group.add(l, r, banner, strip)
+    group.userData.bannerMat = bannerMat
+    return group
+}
+
 export function makeGoal() {
     const group = new THREE.Group()
     const col = new THREE.Color(0xffe066)
