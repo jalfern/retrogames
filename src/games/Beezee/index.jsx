@@ -336,6 +336,13 @@ const BeeGame = () => {
                 else if (e.type === 'sting') { audioController.playSweep(300, 80, 0.3, 'sawtooth', 0.13); audioController.playNoise(0.18, 0.1) }
                 else if (e.type === 'web') { audioController.playNoise(0.22, 0.05); audioController.playSweep(240, 150, 0.2, 'triangle', 0.05) }
                 else if (e.type === 'spill') audioController.playSweep(620, 220, 0.15, 'sine', 0.07)
+                // #3150: the steer tick — you hear which way the bee leans. Quiet on
+                // purpose: this fires at every turn, not just at events.
+                else if (e.type === 'steer') {
+                    const lo = e.axis === 'pitch' ? 190 : 150
+                    const hi = e.axis === 'pitch' ? 250 : 200
+                    audioController.playSweep(e.sign > 0 ? lo : hi, e.sign > 0 ? hi : lo, 0.05, 'sine', 0.02)
+                }
             }
         }
 
@@ -374,6 +381,7 @@ const BeeGame = () => {
         }
 
         let lastUv = false
+        let bankV = 0 // #3150 smoothed visual roll toward gs.bank (camera tell for steering)
         let padThrust = 0 // #1637 WATCH: ticks where the pad actually consumed thrust — prover-only signal (an idle watcher never thrusts; wind drift and contact-pollination can happen with no brain at all)
         const doSim = () => {
             contractTick += 1
@@ -417,6 +425,12 @@ const BeeGame = () => {
             camera.rotation.set(0, 0, b.stuck > 0 ? Math.sin(gs.t * 7) * 0.09 : 0)
             camera.rotateY(Math.PI + b.yaw)
             camera.rotateX(-b.pitch + Math.sin(gs.t * 13) * 0.005)
+            // #3150: bank into the turn — rolls the whole frame, so steering reads
+            // as motion even against a busy meadow. gs.bank never touches physics.
+            // Sign: left steer rolls the horizon clockwise-in-frame (right end
+            // down), the way a banked camera sees it; pinned by the shot compare.
+            bankV += (gs.bank - bankV) * 0.22
+            if (Math.abs(bankV) > 0.0004) camera.rotateZ(bankV)
 
             const sa = 0.25 + dayF * 1.1
             sun.position.set(Math.cos(sa) * 130, Math.sin(sa) * 60, -75)
