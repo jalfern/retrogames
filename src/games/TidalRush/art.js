@@ -1,16 +1,17 @@
-// TIDAL RUSH — art.js: SUNNY BAY at the MODERN bar (#3104).
+// TIDAL RUSH — art.js: the bay at the MODERN bar (#3104).
 // GPU sea with real sun glitter and crest foam, graded sky with a visible
 // headland, procedural jetski + leaning rider, additive spray and a stitched
-// foam wake. The vertex shader runs waterGLSL() — the SAME Gerstner table the
-// sim floats the hull on — so the drawn surface and the ridden surface are
-// literally the same function.
+// foam wake. The vertex shader runs the four unrolled Gerstner slots whose
+// values arrive from water.js (seaUniforms) — the SAME numbers the sim
+// floats the hull on — so the drawn surface and the ridden surface are
+// literally the same function, for SUNNY *and* the re-rolled STORM seas.
 //
 // Phone budget (SHORE's weak spot, fixed by construction): one 96×96 grid,
 // unlit custom shaders, no shadow maps, one pooled Points buffer for spray +
-// wake, pixel-ratio capped by the shell.
+// wake (plus a second small one for rain), pixel-ratio capped by the shell.
 
 import * as THREE from 'three'
-import { waterGLSL, WAVES } from './water.js'
+import { seaGLSL, seaUniforms, sunnySea } from './water.js'
 
 export const SEA_COLOR_DEEP = new THREE.Color(0x0a3648)
 export const SEA_COLOR_SHALLOW = new THREE.Color(0x1e93a8)
@@ -18,28 +19,38 @@ export const FOAM_COLOR = new THREE.Color(0xeef9ff)
 export const SKY_TOP = new THREE.Color(0x2e6fd4)
 export const SKY_HORIZON = new THREE.Color(0xcfe6ef)
 export const SUN_DIR = new THREE.Vector3(-0.55, 0.42, 0.72).normalize()
+// STORM BAY palette: bruised sky, leaden horizon, cold flat light
+export const SKY_TOP_STORM = new THREE.Color(0x141a24)
+export const SKY_HORIZON_STORM = new THREE.Color(0x46525e)
 
 // ---- the sea ---------------------------------------------------------------
 export function makeSea() {
     const SIZE = 360, SEG = 96
     const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG)
     geo.rotateX(-Math.PI / 2)
+    const uniforms = {
+        uT: { value: 0 },
+        uDeep: { value: SEA_COLOR_DEEP },
+        uShallow: { value: SEA_COLOR_SHALLOW },
+        uFoam: { value: FOAM_COLOR },
+        uSun: { value: SUN_DIR },
+        uSunCol: { value: new THREE.Color(0xfff2cf) },
+        uCam: { value: new THREE.Vector3() },
+        uFogCol: { value: SKY_HORIZON.clone() },
+        uStorm: { value: 0 },
+        uFlash: { value: 0 },
+    }
+    const su = seaUniforms(sunnySea())
+    for (const k in su) {
+        uniforms[k] = { value: Array.isArray(su[k]) ? new THREE.Vector2(su[k][0], su[k][1]) : su[k] }
+    }
     const mat = new THREE.ShaderMaterial({
-        uniforms: {
-            uT: { value: 0 },
-            uDeep: { value: SEA_COLOR_DEEP },
-            uShallow: { value: SEA_COLOR_SHALLOW },
-            uFoam: { value: FOAM_COLOR },
-            uSun: { value: SUN_DIR },
-            uSunCol: { value: new THREE.Color(0xfff2cf) },
-            uCam: { value: new THREE.Vector3() },
-            uFogCol: { value: SKY_HORIZON.clone() },
-        },
+        uniforms,
         vertexShader: `
 uniform float uT;
 varying vec3 vWorld;
 varying float vH;
-${waterGLSL()}
+${seaGLSL()}
 void main() {
   vec3 p = position;
   vec2 d;
@@ -53,7 +64,7 @@ void main() {
         fragmentShader: `
 precision highp float;
 uniform vec3 uDeep, uShallow, uFoam, uSun, uSunCol, uCam, uFogCol;
-uniform float uT;
+uniform float uT, uStorm, uFlash;
 varying vec3 vWorld;
 varying float vH;
 void main() {
@@ -63,22 +74,26 @@ void main() {
   vec3 v = normalize(uCam - vWorld);
   float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
   vec3 base = mix(uDeep, uShallow, clamp(vH * 0.42 + 0.34, 0.0, 1.0));
+  base = mix(base, vec3(0.13, 0.20, 0.24), uStorm * 0.55); // storm flattens the jewel tones
   vec3 sky = mix(uFogCol, vec3(0.62, 0.78, 0.92), clamp(n.y, 0.0, 1.0));
   vec3 col = mix(base, sky, fres * 0.72);
   // sun glitter: tight highlight + a wide sheen so the bay sparkles at speed
   vec3 hv = normalize(v + uSun);
   float spec = pow(max(dot(n, hv), 0.0), 180.0);
   float sheen = pow(max(dot(n, hv), 0.0), 14.0);
-  col += uSunCol * (spec * 1.6 + sheen * 0.20);
-  // foam rides crest tops (height) and steep forward faces (slope)
-  float crest = smoothstep(1.05, 1.55, vH);
+  col += uSunCol * (spec * 1.6 + sheen * 0.20) * (1.0 - uStorm * 0.8);
+  // foam rides crest tops (height) and steep forward faces (slope); storms
+  // foam harder — crests must read white so the next kicker is visible
+  float crest = smoothstep(1.05 - uStorm * 0.45, 1.55 - uStorm * 0.35, vH);
   float face = smoothstep(0.55, 0.85, n.y * 0.0 + (1.0 - n.y));
-  float foam = clamp(crest + face * 0.35, 0.0, 1.0);
+  float foam = clamp(crest + face * (0.35 + uStorm * 0.25), 0.0, 1.0);
   float tw = 0.85 + 0.15 * sin(vWorld.x * 7.3 + vWorld.z * 5.1 + uT * 9.0);
   col = mix(col, uFoam, foam * tw);
-  // distance fog to the horizon band
+  // lightning paints the whole bay for a beat
+  col += vec3(0.85, 0.9, 1.0) * uFlash * (0.35 + fres * 0.4);
+  // distance fog to the horizon band — thicker weather in the storm
   float dist = length(uCam - vWorld);
-  float fog = 1.0 - exp2(-pow(dist * 0.0052, 2.2));
+  float fog = 1.0 - exp2(-pow(dist * mix(0.0052, 0.0095, uStorm), 2.2));
   col = mix(col, uFogCol, clamp(fog, 0.0, 1.0));
   gl_FragColor = vec4(col, 1.0);
 }`,
@@ -91,26 +106,34 @@ void main() {
 // ---- sky dome + headlands ----------------------------------------------------
 export function makeSky() {
     const group = new THREE.Group()
-    const sky = new THREE.Mesh(
-        new THREE.SphereGeometry(900, 24, 12),
-        new THREE.ShaderMaterial({
-            uniforms: { uTop: { value: SKY_TOP }, uHor: { value: SKY_HORIZON }, uSun: { value: SUN_DIR } },
-            side: THREE.BackSide, depthWrite: false,
-            vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * viewMatrix * vec4(position,1.0); }`,
-            fragmentShader: `
-precision highp float; uniform vec3 uTop,uHor,uSun; varying vec3 vP;
+    const skyMat = new THREE.ShaderMaterial({
+        uniforms: {
+            uTop: { value: SKY_TOP }, uHor: { value: SKY_HORIZON }, uSun: { value: SUN_DIR },
+            uTopStorm: { value: SKY_TOP_STORM }, uHorStorm: { value: SKY_HORIZON_STORM },
+            uStorm: { value: 0 }, uFlash: { value: 0 },
+        },
+        side: THREE.BackSide, depthWrite: false,
+        vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * viewMatrix * vec4(position,1.0); }`,
+        fragmentShader: `
+precision highp float; uniform vec3 uTop,uHor,uSun,uTopStorm,uHorStorm; varying vec3 vP;
+uniform float uStorm, uFlash;
 void main(){
   vec3 d = normalize(vP);
   float t = pow(clamp(d.y,0.0,1.0), 0.55);
-  vec3 c = mix(uHor, uTop, t);
+  vec3 c = mix(mix(uHor, uTop, t), mix(uHorStorm, uTopStorm, t), uStorm);
   float s = max(dot(d, normalize(uSun)), 0.0);
-  c += vec3(1.0,0.92,0.7) * (pow(s, 320.0) * 2.0 + pow(s, 18.0) * 0.35);
+  c += vec3(1.0,0.92,0.7) * (pow(s, 320.0) * 2.0 + pow(s, 18.0) * 0.35) * (1.0 - uStorm);
+  // storm clouds: slow banding near the horizon + lightning underlight
+  float band = 0.5 + 0.5 * sin(d.x * 9.0 + d.z * 6.0);
+  c = mix(c, c * (0.72 + 0.28 * band), uStorm * smoothstep(0.0, 0.35, d.y));
+  c += vec3(0.9, 0.94, 1.0) * uFlash * (0.5 + 0.5 * band);
   gl_FragColor = vec4(c,1.0);
 }`,
-        }),
-    )
+    })
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 24, 12), skyMat)
     sky.renderOrder = -10
     group.add(sky)
+    group.userData.mat = skyMat
 
     // headlands: seeded low domes ringing the far shore, plus a beach arc the
     // start line faces. Flat-shaded, no textures — silhouettes do the work.
@@ -267,6 +290,47 @@ export function sprayStep(sp, dt) {
         sp.pos[i * 3 + 2] += sp.vel[i * 3 + 2] * dt
     }
     sp.geo.attributes.position.needsUpdate = true
+}
+
+// ---- rain: pooled streaks falling around the camera (storm only) --------------
+export function makeRain(n = 420) {
+    const pos = new Float32Array(n * 3)
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    const mat = new THREE.PointsMaterial({
+        color: 0xbfd4e4, size: 0.12, transparent: true, opacity: 0.55, depthWrite: false,
+    })
+    const pts = new THREE.Points(geo, mat)
+    pts.frustumCulled = false
+    for (let i = 0; i < n; i++) pos[i * 3 + 1] = -60 // park dead drops well below
+    const vel = new Float32Array(n * 3)
+    const life = new Float32Array(n)
+    return { pts, geo, mat, pos, vel, life, n, cursor: 0 }
+}
+
+export function rainSpawn(r, cx, cy, cz, count) {
+    for (let k = 0; k < count; k++) {
+        const i = r.cursor; r.cursor = (r.cursor + 1) % r.n
+        r.pos[i * 3] = cx + (Math.random() - 0.5) * 34
+        r.pos[i * 3 + 1] = cy + 6 + Math.random() * 8
+        r.pos[i * 3 + 2] = cz + (Math.random() - 0.5) * 34
+        r.vel[i * 3] = -1.6 + (Math.random() - 0.5) // wind-slanted
+        r.vel[i * 3 + 1] = -13 - Math.random() * 4
+        r.vel[i * 3 + 2] = (Math.random() - 0.5) * 2
+        r.life[i] = 1.1
+    }
+}
+
+export function rainStep(r, dt) {
+    for (let i = 0; i < r.n; i++) {
+        if (r.life[i] <= 0) continue
+        r.life[i] -= dt
+        if (r.life[i] <= 0) { r.pos[i * 3 + 1] = -60; continue }
+        r.pos[i * 3] += r.vel[i * 3] * dt
+        r.pos[i * 3 + 1] += r.vel[i * 3 + 1] * dt
+        r.pos[i * 3 + 2] += r.vel[i * 3 + 2] * dt
+    }
+    r.geo.attributes.position.needsUpdate = true
 }
 
 // ---- lights ---------------------------------------------------------------------
