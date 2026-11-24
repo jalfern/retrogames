@@ -70,6 +70,7 @@
     "evoprobe": "node scripts/evoprobe.mjs",
     "fpscheck": "node scripts/fpscheck.mjs",
     "zorkcheck": "node scripts/zorkcheck.mjs",
+    "skywardcheck": "node scripts/skywardcheck.mjs",
     "robokitcheck": "node scripts/robokitcheck.mjs",
     "floorbosscheck": "node scripts/floorbosscheck.mjs",
     "floorbossplay": "node scripts/floorbossplay.mjs",

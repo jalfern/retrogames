@@ -44,6 +44,7 @@ const GAMES = [
     { id: 'britannia', path: '/britannia' },
     { id: 'pick-rush', path: '/pick-rush' },
     { id: 'stomptown', path: '/stomptown' },
+    { id: 'skyward', path: '/skyward' },
     { id: 'tidy-bot', path: '/tidy-bot' },
     { id: 'robot-lab', path: '/robot-lab' },
     { id: 'floor-boss', path: '/floor-boss' },
@@ -156,6 +157,9 @@ const PATTERNS = {
     // ticks flowing and hashes deterministic, contra-style).
     'r-type': (i) => ({ right: i % 89 < 30, left: i % 89 >= 60 && i % 89 < 72, up: i % 61 < 12, down: i % 61 >= 30 && i % 61 < 42, a: i % 5 < 4, b: i % 97 === 0 }),
     stomptown: (i) => ({ left: i % 53 < 14, right: i % 53 >= 20 && i % 53 < 38, up: i % 67 < 16, down: i % 67 >= 34 && i % 48 < 20, a: i % 7 < 2, b: i % 13 < 2 }),
+    // gentle air: mostly banked circles with periodic GO — free flight never
+    // needs input; crashes are legal and respawn keeps ticks flowing.
+    skyward: (i) => ({ left: i % 97 < 34, right: i % 97 >= 48 && i % 97 < 80, up: i % 71 < 18, down: i % 71 >= 40 && i % 71 < 52, a: i % 211 < 60, b: i % 157 < 6 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 
