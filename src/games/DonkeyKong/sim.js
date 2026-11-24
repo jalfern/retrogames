@@ -351,7 +351,7 @@ function attractPlan(gs) {
 // human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickDonkeyKong(gs, input = null) {
-    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false }
+    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, noClimb: false }
     const p = gs.player
     gs.tickN++
     if (gs.swing > 0) gs.swing--
@@ -403,6 +403,9 @@ export function tickDonkeyKong(gs, input = null) {
         }
     }
     let { moveDir, wantJump, wantClimbUp, wantClimbDown } = plan
+    // #3147: the player asked to climb; the shell voices the deny when the run
+    // cannot climb (no ladder in reach, or the mallet trade forces climbs off).
+    const wantClimb = !!(wantClimbUp || wantClimbDown)
 
     // ---- HAMMER (#2018) ----
     // Walk over a mallet grounded, empty-handed, and you carry it (one at a
@@ -424,6 +427,7 @@ export function tickDonkeyKong(gs, input = null) {
         }
     }
     if (gs.hammer > 0) {
+        if (wantClimb) ev.noClimb = true // the mallet trade: climbs are out
         wantClimbUp = false
         wantClimbDown = false
         if (wantJump && p.grounded) {
@@ -448,6 +452,8 @@ export function tickDonkeyKong(gs, input = null) {
             p.y + p.h > l.yTop &&
             p.y + p.h <= l.yBot + 4
     })
+
+    if (!p.climbing && wantClimb && !nearLadder) ev.noClimb = true
 
     if (p.climbing) {
         if (wantClimbUp) {
