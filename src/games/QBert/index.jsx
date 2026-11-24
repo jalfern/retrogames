@@ -21,11 +21,10 @@ import { makeGame, step, padDiagonals, stateHash, cubeXY, id, ROWS, CUBES, neede
 import { plan } from './planner.js'
 import { sfxFor } from './sound.js'
 import {
-    cubeSprite, cubeTopCol, cubeDarkCol, bertSprite, bertFrame, BERT_LAND_TICKS, ballSprite, discSprite, DISC_FRAMES, DISC_R, DISC_RY,
-    coilySprite, runnerSprite, slickSprite, tunnelSprite, text5, textWidth,
-    paintBg, lifeGlyph, HW, HH,
-    BALL_FRAMES, BALL_W,
+    bertFrame, BERT_LAND_TICKS, DISC_FRAMES, DISC_R, DISC_RY, textWidth,
+    HW, HH, BALL_FRAMES, BALL_W,
 } from './art.js'
+import { PAINTERS, SKIN_IDS, skinFromLocation, rememberSkin } from './reimagined.js'
 
 const SIM_MS = FIXED_DT
 // sim.js hops a red ball one cube per BALL_STEP ticks (b.stepT = 20); the render
@@ -42,11 +41,27 @@ const QBertGame = () => {
     const overAtRef = useRef(0)
     const [watching, setWatching] = useState(false) // #1637 WATCH: the BFS prover climbs
     const watchingRef = useRef(false)
+    const [skinUi, setSkinUi] = useState(() => skinFromLocation()) // #3096 skins
+    const skinToggleRef = useRef(() => {})
 
     useEffect(() => {
         const wrap = stageRef.current
         if (!wrap) return undefined
         const setSc = (s) => { screenRef.current = s; setScreen(s) }
+
+        // #3096 SKINS — the painter is chosen once per skin and swapped live;
+        // the sim never sees it. Classic is the default and byte-frozen; the
+        // URL (?style=) and the STYLE pill switch to Obsidian & Orchid.
+        let skin = skinFromLocation()
+        let PA = PAINTERS[skin]
+        const setSkinStyle = (v) => {
+            if (!SKIN_IDS.includes(v) || v === skin) return
+            skin = v
+            PA = PAINTERS[v]
+            rememberSkin(v)
+            setSkinUi(v)
+        }
+        skinToggleRef.current = () => setSkinStyle(skin === 'reimagined' ? 'classic' : 'reimagined')
 
         const canvas = document.createElement('canvas')
         canvas.dataset.qbertStage = '1'
@@ -72,7 +87,7 @@ const QBertGame = () => {
         let lastActive = 0
         try { topScore = Number(localStorage.getItem('arcade.qbert.top') || 0) || 0 } catch { /* private mode */ }
 
-        const say = (m, c = '#f8d800') => { toastMsg = m; toast = 110; toastCol = c }
+        const say = (m, c) => { toastMsg = m; toast = 110; toastCol = c || PA.chrome.toast }
 
         const burst = (x, y, col, n = 12) => {
             for (let i = 0; i < n; i++) {
@@ -96,9 +111,9 @@ const QBertGame = () => {
             while (s.events.length) {
                 const e = s.events.shift()
                 if (e.t === 'points' && e.pts >= 50) popups.push({ x: e.x, y: e.y - 14, msg: `+${e.pts}`, ttl: 55 })
-                if (e.t === 'death') { burst(e.x, e.y, '#f88000', 14); shake = 12; flash = 6 }
-                if (e.t === 'snakelure') { burst(e.x, e.y, '#00c850', 10); popups.push({ x: e.x, y: e.y - 12, msg: '+500', ttl: 60 }) }
-                if (e.t === 'clear') say(`ROUND ${e.level} CLEAR  +${e.bonus}`, '#58f878')
+                if (e.t === 'death') { burst(e.x, e.y, PA.chrome.death, 14); shake = 12; flash = 6 }
+                if (e.t === 'snakelure') { burst(e.x, e.y, PA.chrome.lure, 10); popups.push({ x: e.x, y: e.y - 12, msg: '+500', ttl: 60 }) }
+                if (e.t === 'clear') say(`ROUND ${e.level} CLEAR  +${e.bonus}`, PA.chrome.clear)
                 if (!audible) continue
                 playSfx(e)
             }
@@ -152,11 +167,11 @@ const QBertGame = () => {
 
         const paintWorld = (s) => {
             const t = s.tick
-            paintBg(ctx, W, H)
-            ctx.drawImage(tunnelSprite(-1), TUNNEL.left.x0, TUNNEL.left.y0)
-            ctx.drawImage(tunnelSprite(1), TUNNEL.right.x0, TUNNEL.right.y0)
+            PA.paintBg(ctx, W, H, t)
+            ctx.drawImage(PA.tunnelSprite(-1), TUNNEL.left.x0, TUNNEL.left.y0)
+            ctx.drawImage(PA.tunnelSprite(1), TUNNEL.right.x0, TUNNEL.right.y0)
             // discs
-            for (const d of s.discs) ctx.drawImage(discSprite(Math.floor(t / 4) % DISC_FRAMES), Math.round(d.x - DISC_R), Math.round(d.y - (DISC_RY + 1)))
+            for (const d of s.discs) ctx.drawImage(PA.discSprite(Math.floor(t / 4) % DISC_FRAMES), Math.round(d.x - DISC_R), Math.round(d.y - (DISC_RY + 1)))
             // cubes back row to front
             const slickCubes = new Set()
             const slickSliders = []
@@ -169,13 +184,11 @@ const QBertGame = () => {
                 for (let c = 0; c < ROWS[r]; c++) {
                     const i = id(r, c)
                     const checker = (r + c) % 2 === 0
-                    const top = cubeTopCol(s.mode, s.colors[i], checker)
-                    const dark = cubeDarkCol(s.mode, s.colors[i], checker)
                     const { x, y } = cubeXY(r, c)
-                    ctx.drawImage(cubeSprite(top, dark), Math.round(x - HW), Math.round(y - HH))
+                    ctx.drawImage(PA.cubeSprite({ mode: s.mode, color: s.colors[i], checker }), Math.round(x - HW), Math.round(y - HH))
                     if (slickCubes.has(i)) {
                         ctx.globalAlpha = 0.8
-                        ctx.drawImage(slickSprite(), Math.round(x - HW), Math.round(y - HH))
+                        ctx.drawImage(PA.slickSprite(), Math.round(x - HW), Math.round(y - HH))
                         ctx.globalAlpha = 1
                     }
                 }
@@ -185,27 +198,27 @@ const QBertGame = () => {
             for (const sl of slickSliders) {
                 const y = cubeXY(sl.r, sl.c).y
                 ctx.globalAlpha = 0.8
-                ctx.drawImage(slickSprite(), Math.round(sl.x - HW), Math.round(y - HH))
+                ctx.drawImage(PA.slickSprite(), Math.round(sl.x - HW), Math.round(y - HH))
                 ctx.globalAlpha = 1
             }
             // snakes
             for (const sn of s.snakes) {
                 const fr = Math.floor(t / 6) % 2
-                const sp = coilySprite(fr)
+                const sp = PA.coilySprite(fr)
                 const yy = sn.enter > 0 ? cubeXY(0, 0).y - HH - sn.enter * 4 : sn.y - HH - 10
                 ctx.drawImage(sp, Math.round(sn.x - 11), Math.round(yy))
             }
             // runners
             for (const u of s.runners) {
                 const { y } = cubeXY(u.row, 0)
-                ctx.drawImage(runnerSprite(u.kind, Math.floor(t / 5) % 2), Math.round(u.x - 11), Math.round(y - 4))
+                ctx.drawImage(PA.runnerSprite(u.kind, Math.floor(t / 5) % 2), Math.round(u.x - 11), Math.round(y - 4))
             }
             // red balls — one boing per cube (ballScale, pinned by qbertcheck). The
             // frame runs off the ball's own tick so the squash lands on each cube
             // impact (sim.js hops a ball one cube per BALL_STEP ticks).
             for (const b of s.balls) {
                 const bf = Math.floor(((b.t % BALL_STEP) / BALL_STEP) * BALL_FRAMES) % BALL_FRAMES
-                ctx.drawImage(ballSprite(bf), Math.round(b.x - BALL_W / 2), Math.round(b.y - 18))
+                ctx.drawImage(PA.ballSprite(bf), Math.round(b.x - BALL_W / 2), Math.round(b.y - 18))
             }
             // Q*BERT — the hop is a real leap (bertFrame, pinned by qbertcheck):
             // the up-hop tucks + smiles at the apex, the down-hop stretches, and
@@ -217,20 +230,20 @@ const QBertGame = () => {
                 else if (p.hop) { ph = p.hop.tr < p.hop.fr ? 'up' : 'down'; k = p.hop.t / HOP_TICKS }
                 else if (!p.ride && p.lastLandDown && s.tick - s.lastLandTick < BERT_LAND_TICKS) { ph = 'land'; k = (s.tick - s.lastLandTick) / BERT_LAND_TICKS }
                 const bp = bertPos(s)
-                ctx.drawImage(bertSprite(bertFrame(ph, k), p.facing), Math.round(bp.x - 9), Math.round(bp.y - 14))
+                ctx.drawImage(PA.bertSprite(bertFrame(ph, k), p.facing), Math.round(bp.x - 9), Math.round(bp.y - 14))
                 if (p.dying > 0 && s.balloon) {
                     const bw = textWidth(s.balloon, 1) + 6
                     const bx = Math.round(bp.x - bw / 2), by = Math.round(bp.y - 30)
-                    ctx.fillStyle = '#f8f8f8'
+                    ctx.fillStyle = PA.chrome.balloon
                     ctx.fillRect(bx, by, bw, 9)
                     pxTri(bx + bw / 2 - 2, by + 9)
-                    text5(ctx, s.balloon, bx + 3, by + 2, '#101010', 1)
+                    PA.text5(ctx, s.balloon, bx + 3, by + 2, PA.chrome.balloonText, 1)
                 }
             }
         }
 
         const pxTri = (x, y) => {
-            ctx.fillStyle = '#f8f8f8'
+            ctx.fillStyle = PA.chrome.balloon
             ctx.beginPath()
             ctx.moveTo(x, y); ctx.lineTo(x + 4, y); ctx.lineTo(x + 2, y + 3)
             ctx.closePath(); ctx.fill()
@@ -238,15 +251,16 @@ const QBertGame = () => {
 
         const paintHud = (s) => {
             const on1 = s.active === 0, on2 = s.active === 1
+            PA.paintPlate(ctx, W, H)
             // both players' scores; the active one is bright (the 2P turn cue)
-            text5(ctx, `1 ${String(s.players[0].score).padStart(6, '0')}`, 4, 3, on1 ? '#f8f8f8' : '#6a6a6a', 1)
-            text5(ctx, `2 ${String(s.players[1].score).padStart(6, '0')}`, 4, 11, on2 ? '#f8f8f8' : '#6a6a6a', 1)
+            PA.text5(ctx, `1 ${String(s.players[0].score).padStart(6, '0')}`, 4, 3, on1 ? PA.chrome.active : PA.chrome.inactive, 1)
+            PA.text5(ctx, `2 ${String(s.players[1].score).padStart(6, '0')}`, 4, 11, on2 ? PA.chrome.active : PA.chrome.inactive, 1)
             const lv = `ROUND ${s.level}`
-            text5(ctx, lv, W / 2 - textWidth(lv, 1) / 2, 3, '#f8d800', 1)
+            PA.text5(ctx, lv, W / 2 - textWidth(lv, 1) / 2, 3, PA.chrome.round, 1)
             const left = 28 - neededCubes(s).length
             const pr = `${left}/28`
-            text5(ctx, pr, W / 2 - textWidth(pr, 1) / 2, 11, '#58d8f8', 1)
-            for (let i = 0; i < s.players[s.active].lives; i++) lifeGlyph(ctx, W - 8 - (i + 1) * 9, 3)
+            PA.text5(ctx, pr, W / 2 - textWidth(pr, 1) / 2, 11, PA.chrome.left, 1)
+            for (let i = 0; i < s.players[s.active].lives; i++) PA.lifeGlyph(ctx, W - 8 - (i + 1) * 9, 3)
         }
 
         const paint = () => {
@@ -270,19 +284,19 @@ const QBertGame = () => {
             popups = popups.filter((p) => p.ttl > 0)
             for (const p of popups) {
                 p.y -= 0.3; p.ttl--
-                text5(ctx, p.msg, p.x - textWidth(p.msg, 1) / 2, p.y, p.ttl > 20 ? '#f8f8f8' : '#787878', 1)
+                PA.text5(ctx, p.msg, p.x - textWidth(p.msg, 1) / 2, p.y, p.ttl > 20 ? PA.chrome.popBright : PA.chrome.popFade, 1)
             }
             if (flash > 0) {
-                ctx.fillStyle = `rgba(248,128,0,${flash / 20})`
+                ctx.fillStyle = `rgba(${PA.chrome.flash},${flash / 20})`
                 ctx.fillRect(0, 0, W, H)
                 flash--
             }
             if (s.pending && screenRef.current !== 'over') {
                 const b = 'ROUND CLEAR!'
-                text5(ctx, b, W / 2 - textWidth(b, 2) / 2, 96, '#58f878', 2)
+                PA.text5(ctx, b, W / 2 - textWidth(b, 2) / 2, 96, PA.chrome.clear, 2)
             }
             if (toast > 0) {
-                text5(ctx, toastMsg, W / 2 - textWidth(toastMsg, 2) / 2, 118, toastCol, 2)
+                PA.text5(ctx, toastMsg, W / 2 - textWidth(toastMsg, 2) / 2, 118, toastCol, 2)
                 toast--
             }
             ctx.restore()
@@ -312,7 +326,7 @@ const QBertGame = () => {
                         finish(gs)
                         if (gs && !gs.end && gs.active !== lastActive) {
                             lastActive = gs.active
-                            say(`PLAYER ${gs.active + 1}`, '#58d8f8')
+                            say(`PLAYER ${gs.active + 1}`, PA.chrome.player)
                         }
                     }
                 }
@@ -325,6 +339,9 @@ const QBertGame = () => {
 
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
+            // #3096 SKINS: S flips the look on any screen — a style choice
+            // should never cost you a run.
+            if (code === 'KeyS') { setSkinStyle(skin === 'reimagined' ? 'classic' : 'reimagined'); return }
             if (code === 'Question') {
                 if (screenRef.current === 'play') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current) }
                 return
@@ -414,6 +431,7 @@ const QBertGame = () => {
                     }
                 },
                 start: () => startPlay(),
+                skin: () => skin,
                 hash: () => (gs ? stateHash(gs) : 0),
                 gameTime: () => (gs ? gs.tick / 60 : 0),
                 simSleep: (secs) => new Promise((res) => {
@@ -560,6 +578,25 @@ const QBertGame = () => {
                 <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
                     <AttractWatchButton />
                 </div>
+            )}
+            {/* #3096 SKINS — the look toggle; classic is the default, Obsidian & Orchid the reimagine */}
+            {!paused && (
+                <button
+                    type="button"
+                    aria-label="toggle art style"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => skinToggleRef.current()}
+                    className="fixed z-50 pointer-events-auto font-mono text-[10px] font-bold tracking-wider px-2 py-1 rounded-full border"
+                    style={{
+                        top: 'calc(5.5rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))',
+                        color: skinUi === 'reimagined' ? '#f2c46b' : '#d9fff0',
+                        background: skinUi === 'reimagined' ? 'rgba(36,21,51,0.78)' : 'rgba(5,20,14,0.72)',
+                        borderColor: skinUi === 'reimagined' ? '#d8a7ff' : '#3dff9e',
+                        textShadow: '0 1px 0 #000',
+                    }}
+                >
+                    STYLE: {skinUi === 'reimagined' ? 'OBSIDIAN' : 'CLASSIC'}
+                </button>
             )}
             {play && !paused && (
                 <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
