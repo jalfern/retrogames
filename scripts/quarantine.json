@@ -1,4 +1,15 @@
 {
   "doc": "#2176 — red-main-2h quarantine list. One nightly check may be quarantined (skipped by scripts/run-checks.mjs in both modes) while a red main is fixed properly. Every entry MUST name an OPEN issue: {\"label\": \"<npm alias, or alias -- --mutate>\", \"issue\": <n>, \"reason\": \"<one line>\"}. Entries without an issue number are ignored (with a warning). Remove the entry in the PR that fixes the check.",
-  "checks": []
+  "checks": [
+    {
+      "label": "watchcheck",
+      "issue": 3206,
+      "reason": "red-main-2h: FLOORBOSS watching-branch pad-feed assertion fails on CI (908/909, run 45482317911); #3206 owns the fix"
+    },
+    {
+      "label": "zeldaplay",
+      "issue": 3207,
+      "reason": "red-main-2h: face-pixel sensor sees 0 px on CI (14/19, run 45482317911); #3207 owns the fix"
+    }
+  ]
 }
