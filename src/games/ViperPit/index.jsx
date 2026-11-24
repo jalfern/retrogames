@@ -622,18 +622,32 @@ const ViperPitGame = () => {
 
         // swing sounds fire at move START (the hit sound plays on impact). A
         // launcher whooshes, a throw grunts; cancels re-trigger so every move
-        // in a chain earns its own swing.
+        // in a chain earns its own swing. #3144: the plain limbs answered with
+        // silence (juice bar #1130 — every press an answer) — jabs snap,
+        // heavies swipe, fireballs push air; whiff or hit, the swing is heard.
         const hearSwings = (m, pre) => {
             m.fighters.forEach((f, i) => {
                 if (f.st === 'attack' && pre[i] !== 'attack:' + f.move) {
                     const mv = f.def.moves[f.move]
                     if (!mv) return
+                    const heavy = (mv.dmg || 0) >= 9
                     if (mv.launch) {
                         audioController.playSweep(160, 640, 0.16, 'sawtooth', 0.055)
                         audioController.playFilteredNoise(0.13, 0.09, 1600)
                     } else if (mv.type === 'throw') {
                         audioController.playSweep(120, 55, 0.15, 'sawtooth', 0.1)
                         audioController.playTone(64, 0.12, 'square', 0.07)
+                    } else if (mv.projectile) {
+                        audioController.playSweep(heavy ? 220 : 320, heavy ? 660 : 880, 0.14, 'sine', 0.05)
+                        audioController.playFilteredNoise(0.1, 0.06, heavy ? 700 : 1000)
+                    } else if (mv.type === 'punch') {
+                        audioController.playFilteredNoise(heavy ? 0.12 : 0.08, heavy ? 0.09 : 0.07, heavy ? 1400 : 2400)
+                        if (heavy) audioController.playSweep(300, 120, 0.1, 'triangle', 0.05)
+                    } else if (mv.type === 'kick') {
+                        audioController.playFilteredNoise(heavy ? 0.14 : 0.1, heavy ? 0.11 : 0.08, heavy ? 900 : 1500)
+                        audioController.playSweep(heavy ? 240 : 340, heavy ? 80 : 140, heavy ? 0.14 : 0.1, 'triangle', 0.05)
+                    } else {
+                        audioController.playFilteredNoise(0.1, 0.07, 1800)
                     }
                 }
             })
@@ -1488,6 +1502,10 @@ const ViperPitGame = () => {
                     if (!gs) return { tick: 0, score: 0, done: false, hash: 0 }
                     return {
                         tick: gs.tick,
+                        // #3144 — phase belongs in the contract: the juice audit's
+                        // PREP walks wait-phases (intro banner!) before probing, and
+                        // with phase hidden it pressed mid-intro and scored a false 0%.
+                        phase: gs.phase,
                         seed: gs.seed,
                         score: gs.fighters[0].wins * 1000 + Math.round(gs.fighters[0].hp),
                         done: gs.phase === 'done',

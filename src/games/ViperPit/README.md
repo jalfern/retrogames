@@ -244,6 +244,11 @@ the #1096 options switched on.
   `finish` event path in `resolveHit`.
 - Determinism unchanged: seed + pads ⇒ identical `matchHash` (checked at
   `viperpitcheck` and via `contractcheck`).
+- Juice (#3144, bar #1130): every swing you start answers audibly the frame
+  it starts — jabs snap, heavies swipe, fireballs push air (launchers
+  whoosh, throws grunt already did); whiff or hit, the limb is heard. The
+  contract `state()` also exposes the match `phase`, so harnesses can see
+  the 150-tick round intro and probe *after* it (the audit's false-0% trap).
 
 ## Controls
 
@@ -274,6 +279,9 @@ the #1096 options switched on.
   rounds each — autonomous combat proven, a full-ladder climb explicitly NOT
   claimed: NYX mirrors rung 1 on itself) + the #1106 audio wiring (source-level
   call-site gates + a stripped-whoosh/sting mutant proving the gate bites) +
+  the #3144 swing-snap gates (punch/kick/projectile call sites + the dmg≥9
+  weight split, muted-punch and phase-stripped mutants bite; live: PREP clears
+  the intro via `state().phase` and a real Space swing lands on `__audioSfx`) +
   the #1106 stage-life wiring (source gates for the molten pulse/cast, rain
   fall, train sweep + a dead-pulse mutant) + headless Chrome drive
   (attract→select→fight, real keys reach the sim, GUARD hold, K.O. flow, the
