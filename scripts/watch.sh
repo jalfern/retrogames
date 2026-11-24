@@ -327,7 +327,7 @@ PANE
 # supervisor will have them back anyway.
 warden_pane() {
     cat <<'PANE'
-n=5; wrow=6
+n=${NLANES:-5}; wrow=6
 while true; do
     clear
     w=$(ls -t /tmp/forge/warden-2*.log 2>/dev/null | head -1)
@@ -406,6 +406,10 @@ LANE_BODY=$WDIR/body-lane.zsh;     lane_pane   > "$LANE_BODY"
 WARDEN_BODY=$WDIR/body-warden.zsh; warden_pane > "$WARDEN_BODY"
 LIVE_BODY=$WDIR/body-live.zsh;     live_pane   > "$LIVE_BODY"
 : > "$WDIR/panes.tsv"
+# QA·MINI·2 only while its launchd job is loaded (Jon parked mini2 2026-11-23:
+# one Inkling lane per mini). The warden evens NLANES rows, so the count follows.
+MINI2=0; launchctl print "gui/$(id -u)/com.jalfern.forge-qa-mini2" >/dev/null 2>&1 && MINI2=1
+NLANES=$(( 4 + MINI2 ))
 
 # First pane: new-session can't use `pane`, so bake it and record it by hand.
 bake builder-a 'BUILDER·A' "$LANE_BODY" L='BUILDER·A' KL='BUILDER-A' PORT=8000 PROV=omlx FIT=$FITPATH \
@@ -423,15 +427,20 @@ ENVK=(L='BUILDER·B' KL='BUILDER-B' PORT=8000 PROV=omlx FIT=$FITPATH P1='opencod
 pane builder-b 'BUILDER·B' "$LANE_BODY" -v -l 80% -t "${PANEID[builder-a]}"
 ENVK=(L='QA·MINI' KL='QA-MINI' PORT=18000 PROV=omlxmini FIT=$FITPATH P1='opencode run.*QA MASTER on node ' P2='mini\.')
 pane qa-mini 'QA·MINI' "$LANE_BODY" -v -l 75% -t "${PANEID[builder-b]}"
-ENVK=(L='QA·MINI·2' KL='QA-MINI-2' PORT=18000 PROV=omlxmini FIT=$FITPATH P1='opencode run.*QA MASTER on node ' P2='mini2\.')
-pane qa-mini2 'QA·MINI·2' "$LANE_BODY" -v -l 66% -t "${PANEID[qa-mini]}"
+if (( MINI2 )); then
+    ENVK=(L='QA·MINI·2' KL='QA-MINI-2' PORT=18000 PROV=omlxmini FIT=$FITPATH P1='opencode run.*QA MASTER on node ' P2='mini2\.')
+    pane qa-mini2 'QA·MINI·2' "$LANE_BODY" -v -l 66% -t "${PANEID[qa-mini]}"
+    STUDIO_ABOVE=qa-mini2
+else
+    STUDIO_ABOVE=qa-mini
+fi
 ENVK=(L='QA·STUDIO' KL='QA-STUDIO' PORT=8000 PROV=omlx FIT=$FITPATH P1='opencode run.*QA MASTER on node ' P2='studio\.')
-pane qa-studio 'QA·STUDIO' "$LANE_BODY" -v -l 50% -t "${PANEID[qa-mini2]}"
-ENVK=(PWLOG=$WDIR/pane.log FIT=$FITPATH)
+pane qa-studio 'QA·STUDIO' "$LANE_BODY" -v -l 50% -t "${PANEID[$STUDIO_ABOVE]}"
+ENVK=(PWLOG=$WDIR/pane.log FIT=$FITPATH NLANES=$NLANES)
 pane warden 'WARDEN' "$WARDEN_BODY" -v -l 6 -t "${PANEID[qa-studio]}"
 set_title "${PANEID[builder-b]}" 'BUILDER·B'
 set_title "${PANEID[qa-mini]}" 'QA·MINI'
-set_title "${PANEID[qa-mini2]}" 'QA·MINI·2'
+(( MINI2 )) && set_title "${PANEID[qa-mini2]}" 'QA·MINI·2'
 set_title "${PANEID[qa-studio]}" 'QA·STUDIO'
 set_title "${PANEID[warden]}" 'WARDEN'
 
@@ -459,14 +468,16 @@ if (( LIVE )); then
     pane live-builderb 'BUILDER·B · output' "$LIVE_BODY" -h -l 50% -t "${PANEID[builder-b]}"
     ENVK=(L='QA·MINI' KL='QA-MINI' LANE=mini TAPPORT=8013 FIT=$FITPATH)
     pane live-mini 'QA·MINI · output' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-mini]}"
-    ENVK=(L='QA·MINI·2' KL='QA-MINI-2' LANE=mini2 TAPPORT=8014 FIT=$FITPATH)
-    pane live-mini2 'QA·MINI·2 · output' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-mini2]}"
+    if (( MINI2 )); then
+        ENVK=(L='QA·MINI·2' KL='QA-MINI-2' LANE=mini2 TAPPORT=8014 FIT=$FITPATH)
+        pane live-mini2 'QA·MINI·2 · output' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-mini2]}"
+    fi
     ENVK=(L='QA·STUDIO' KL='QA-STUDIO' LANE=studio TAPPORT=8011 FIT=$FITPATH)
     pane live-studio 'QA·STUDIO · output' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-studio]}"
     set_title "${PANEID[live-builder]}" 'BUILDER·A · output'
     set_title "${PANEID[live-builderb]}" 'BUILDER·B · output'
     set_title "${PANEID[live-mini]}" 'QA·MINI · output'
-    set_title "${PANEID[live-mini2]}" 'QA·MINI·2 · output'
+    (( MINI2 )) && set_title "${PANEID[live-mini2]}" 'QA·MINI·2 · output'
     set_title "${PANEID[live-studio]}" 'QA·STUDIO · output'
 fi
 

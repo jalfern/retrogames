@@ -509,7 +509,8 @@ ok(warden.includes('builders=$nb/2'), 'pulse line carries slot liveness')
 ok(read('forge-claim.sh').includes('yielding to') && qac.includes('(QA|FORGE)'),
     'claim scripts share one liveness namespace and yield on collision')
 
-ok(watch.includes('BUILDER·B') && watch.includes('n=5'), 'watch.sh shows slot b (pane + resize bits; n=5 lanes since MBP retired #2286, incl. mini2 #2280)')
+ok(watch.includes('BUILDER·B') && watch.includes('n=${NLANES:-5}') && watch.includes('NLANES=$(( 4 + MINI2 ))') && watch.includes('com.jalfern.forge-qa-mini2'),
+    'watch.sh shows slot b (pane + resize bits; warden evens NLANES rows = 4 + mini2 only while its job is loaded, #2286/#2280)')
 ok(!watch.includes('pane qa-mbp') && !watch.includes('QA·MBP  up'),
     'watch.sh retired the QA·MBP pane (#2286, Jon 2026-11-14)')
 ok(watch.includes('allow-set-title off') && watch.includes('pane-border-status top')
