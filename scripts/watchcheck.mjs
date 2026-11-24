@@ -2689,8 +2689,12 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     // the feed block, and the tick call must take `pad` as its FIRST argument.
     // #2954 widened it again (tap bank: `if (tapPad) pad.pointer = tapPad`
     // sits between the pad and the tick, block is now ~234 chars) — 300.
+    // #2987 re-shaped it: the watching condition moved into a named `brainOn`
+    // (the take-stamp needs it two lines up), so the pin now binds BOTH links
+    // of the chain — brainOn ≡ watching&&!end, pad ≡ brainOn ? ap : livePad —
+    // then still requires pad to reach recordTick first (block now ~217).
     rep.check('FLOORBOSS: the watching branch feeds the autopilot pad into the episode tick (no human-shaped lie)',
-        /const pad = watchingRef\.current && !gs\.end \? ap\(gs\) : livePad\(\)[\s\S]{0,300}recordTick\(pad[,)]/.test(fbSrc))
+        /const brainOn = watchingRef\.current && !gs\.end[\s\S]{0,400}?const pad = brainOn \? ap\(gs\) : livePad\(\)[\s\S]{0,300}?recordTick\(pad[,)]/.test(fbSrc))
     const rlySrc = readFileSync(B4_SRC.RALLY, 'utf8')
     // #1663 updated: net never seats the watcher AND says so (amber chip, not silence).
     rep.check('RALLY: online never seats the watcher (the wire owns the seats)',
