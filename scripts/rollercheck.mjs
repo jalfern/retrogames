@@ -31,7 +31,7 @@ if (MUT) {
     const src = readFileSync(simPath, 'utf8')
     const ANCHORS = {
         // the edge stops dropping you — the shelf's whole threat vanishes
-        edge: { from: '} else if (!overGap && Math.abs(gs.u - deck.u) > deck.w + MARBLE_R * 0.25) {', to: '} else if (false) {', note: 'edge fall muted' },
+        edge: { from: '} else if (!overGap && Math.abs(gs.u - deckE.u) > deckE.w + MARBLE_R * 0.25) {', to: '} else if (false) {', note: 'edge fall muted' },
         // grip never runs out — curves stop throwing the marble outward
         budget: { from: 'const excess = need - avail', to: 'const excess = 0', note: 'centripetal budget muted' },
     }
