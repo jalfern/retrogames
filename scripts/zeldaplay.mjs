@@ -8,7 +8,7 @@
 //
 //   npm run zeldaplay     (needs `npm run dev`)
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
-import { screenOf, at, isWall, TILE } from '../src/games/Zelda/world.js'
+import { screenOf, at, isWall, TILE, HUD_H } from '../src/games/Zelda/world.js'
 
 const URL = process.env.OP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/zelda`
 await requireDevServer(URL)
@@ -64,16 +64,18 @@ const OK = (scrId, c, rl) => {
 // legitimate post-hit invincibility flicker (0.3 alpha on blink frames).
 const faceAt = async (tries = 20) => {
     for (let k = 0; k < tries; k++) {
-        const n = await page.evaluate(() => {
+        const n = await page.evaluate((hud) => {
             const c = document.querySelector('canvas')
             const g = window.__zeldaTest.game()
             const x = Math.max(0, Math.round(g.px + 1))
-            const y = Math.max(0, Math.round(g.py - 3))
+            // #3132: the scene renders under the top HUD band — the sim's
+            // band-relative coords read +hud in canvas space.
+            const y = Math.max(0, Math.round(g.py - 3) + hud)
             const d = c.getContext('2d').getImageData(x, y, 16, 22).data
             let n = 0
             for (let i = 0; i < d.length; i += 4) if (d[i] === 0xf8 && d[i + 1] === 0xb8 && d[i + 2] === 0) n++
             return n
-        })
+        }, HUD_H)
         if (n >= 8) return n
         await page.waitForTimeout(50)
     }
