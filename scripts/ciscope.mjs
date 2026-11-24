@@ -9,13 +9,17 @@ import { classify, touchesShared, CORE, SCOPES, PINS, aliasFiles, checkScopes, M
 if (process.argv.includes('--selftest')) {
   const cases = [
     { files: ['docs/ART.md'], docs: true, keys: [], shared: false },
-    { files: ['src/games/Pong/index.jsx'], docs: false, keys: ['pong'], shared: false },
-    { files: ['src/games/SSX/index.jsx', 'public/models/ssx/rogue.glb'], docs: false, keys: ['ssx'], shared: false },
+    { files: ['src/games/Pong/index.jsx'], docs: false, keys: ['pong', 'watchui'], shared: false },
+    { files: ['src/games/SSX/index.jsx', 'public/models/ssx/rogue.glb'], docs: false, keys: ['ssx', 'watchui'], shared: false },
+    // #3102: the exact shape that slipped to main (#3098 moved SuperMario's
+    // attract cluster into the pad zone; only lint:mario ran) — it must now
+    // select the scope that faces watchphonecheck's pad-zone pins.
+    { files: ['src/games/SuperMario/index.jsx'], docs: false, keys: ['mario', 'watchui'], shared: false },
     { files: ['src/utils/AudioController.js'], docs: false, all: true, shared: true },
     { files: ['.github/workflows/ci.yml'], docs: false, all: true, shared: false },
     { files: ['src/games/CivilizationV/index.jsx'], docs: false, all: true, shared: false },
-    { files: ['src/games/Pong/attract.js'], docs: false, keys: ['pong', 'attract'], shared: false },
-    { files: ['src/games/Pong/index.jsx', 'src/games/Pong/attract.js'], docs: false, keys: ['pong', 'attract'], shared: false },
+    { files: ['src/games/Pong/attract.js'], docs: false, keys: ['pong', 'attract', 'watchui'], shared: false },
+    { files: ['src/games/Pong/index.jsx', 'src/games/Pong/attract.js'], docs: false, keys: ['pong', 'attract', 'watchui'], shared: false },
     { files: ['scripts/lib/harness.mjs'], docs: true, keys: [], shared: true },
     { files: ['package-lock.json'], docs: false, all: true, shared: false },
     { files: ['relay/worker.js'], docs: false, all: true, shared: true },

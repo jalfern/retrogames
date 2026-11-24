@@ -87,6 +87,13 @@ export const SCOPES = {
   pong: { dirs: ['src/games/Pong'], lint: ['lint:pong'], checks: [['pongcheck', true]], smoke: [] },
   frogger: { dirs: ['src/games/Frogger'], lint: ['lint:frogger'], checks: [['froggercheck', true]], smoke: [] },
   attract: { dirs: [], anyAttract: true, lint: ['lint:attract'], checks: [['attractcheck', true]], smoke: [] },
+  // #3102: game dirs own the watch/pad-zone contract. watchphonecheck pins the
+  // attract-cluster geometry (`bottom: '24%'`, z-stack, pill anchors) from source,
+  // but only lived under `core` — so #3098 (a SuperMario-only diff moving the
+  // attract cluster into the pad zone) passed `static` and the regression reached
+  // main, surfacing on an unrelated PR. Any src/games/** change now selects this
+  // scope; the check is Node-only ~1 s, so every game PR can afford it.
+  watchui: { dirs: [], anyGames: true, lint: [], checks: ['watchphonecheck'], smoke: [] },
   comet: { dirs: ['src/games/CometDrift'], lint: ['lint:comet'], checks: ['cometcheck'], smoke: [] },
   // #1502: Rogue dodged its gate since the batch-14 port — the dir was
   // unowned (escalate-to-all ran every OTHER suite but never roguecheck).
@@ -356,6 +363,9 @@ export function classify(files) {
       for (const p of CORE.paths) if (f.startsWith(p)) { hit = true; keys.add('core'); break; }
       if (hit) continue;
       if (/^src\/games\/[^/]+\/attract\.js$/.test(f)) keys.add('attract');
+      // #3102: any game-dir change faces the phone-watch contract — the pins read
+      // src/games/<dir>/index.jsx source, so game code owns whether they hold.
+      if (/^src\/games\//.test(f)) keys.add('watchui');
       const ownedDir = (d) => f === d || f.startsWith(d.replace(/\/$/, '') + '/');
       for (const [k, s] of Object.entries(SCOPES)) {
         if (s.dirs.some(ownedDir)) keys.add(k);
