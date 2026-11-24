@@ -1240,10 +1240,16 @@ clearAllSlots()
     // The glass skin (#885): thin bright ring + faint fill + inner highlight, a
     // pressed state that sinks/brightens and fades back, icon-over-verb labels,
     // a visible bright travel ring, the FIRE default, and the per-game skin hook.
+    // #3127: the class strings moved to components/padSkin.js so the phone half
+    // of link pads (pages/PadLink.jsx) wears the SAME parts — the literals are
+    // pinned against the shared module, and the bar+phone pair is pinned to
+    // import it (a revert to per-page copies is caught).
     const vc = readFileSync(new URL('../src/components/VirtualControls.jsx', import.meta.url), 'utf8')
-    ok(/backdrop-blur-md/.test(vc) && /ring-1/.test(vc) && /inset_0_1px_2px_rgba\(255,255,255,0\.35\)/.test(vc),
+    const skin = readFileSync(new URL('../src/components/padSkin.js', import.meta.url), 'utf8')
+    const both = vc + skin
+    ok(/backdrop-blur-md/.test(both) && /ring-1/.test(vc) && /inset_0_1px_2px_rgba\(255,255,255,0\.35\)/.test(both),
         '#885 glass: buttons carry ring + faint fill + inner top highlight')
-    ok(/scale-95 brightness-150/.test(vc) && /transition-all duration-150/.test(vc),
+    ok(/scale-95 brightness-150/.test(vc) && /transition-all duration-150/.test(both),
         '#885 glass: pressed state sinks + brightens, fades back via a 150ms transition')
     ok(/data-skin=\{skinId\}/.test(vc) && /skin = null/.test(vc),
         '#885 skin hook: bar carries data-skin from an optional skin prop (themed skins later)')
@@ -1251,9 +1257,18 @@ clearAllSlots()
         '#885 glass: face buttons stack an inline-SVG icon over the verb label')
     ok(/\|\| 'FIRE'/.test(readFileSync(new URL('../src/components/gamepadMap.js', import.meta.url), 'utf8')) && /faceLayout\(pad\)/.test(vc),
         '#885: A is labelled by what it does — aLabel wins via faceLayout, arcade default FIRE')
-    ok(/border-white\/40/.test(vc), '#885 glass: stick travel ring is a visible bright ring')
+    ok(/border-white\/40/.test(both), '#885 glass: stick travel ring is a visible bright ring')
     ok(/bottom: 'calc\(0\.5rem \+ env\(safe-area-inset-bottom\)\)'/.test(vc),
         '#885: the pad sits low in the band below the play area (0.5rem + safe area)')
+    // #3127 — one visual family: both surfaces import padSkin, and the glass
+    // literal exists exactly once (in the shared module, never re-inlined).
+    ok(/from '\.\/padSkin'/.test(vc) && /GLASS/.test(vc) && /KNOB/.test(vc),
+        '#3127 reuse: VirtualControls draws chips/knobs/rings from padSkin')
+    const padPage = readFileSync(new URL('../src/pages/PadLink.jsx', import.meta.url), 'utf8')
+    ok(/from '\.\.\/components\/padSkin\.js'/.test(padPage) && /chipCls\(/.test(padPage) && /KNOB/.test(padPage),
+        '#3127 reuse: PadLink (phone half) draws chips/knobs from padSkin')
+    ok(!/backdrop-blur-md border/.test(vc) && !/backdrop-blur-md/.test(padPage) && /GLASS =/.test(skin),
+        '#3127 reuse: the glass literal lives in padSkin ONCE, not per page')
 
     // The footer must dodge the pad row on phones (#885): on a coarse-pointer
     // small screen the JALFERN.COM mark moves to the top band.

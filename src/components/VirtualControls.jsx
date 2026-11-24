@@ -7,6 +7,7 @@ import { methodOf, press, release, setStickVec, clearHeld } from '../utils/onePa
 import { actionCodeAt } from './actionHit'
 import { vpadSize } from './vpadSize'
 import { currentPadType, tiltVec, tiltDeadZoned, tiltDirs } from './padTypes'
+import { GLASS, chipCls as skinChip, KNOB, STICK_RING, verbOf } from './padSkin'
 
 const DIAG = {
     ul: ['ArrowUp', 'ArrowLeft'],
@@ -802,7 +803,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
     // then fades back (transition). `skin` is the themed-skin hook (#885): games
     // will pass their own (arcade cabinet etc.) — the default stays glass.
     const skinId = skin || 'glass'
-    const glass = 'select-none backdrop-blur-md border border-white/10 shadow-[inset_0_1px_2px_rgba(255,255,255,0.35),0_4px_12px_rgba(0,0,0,0.45)] transition-all duration-150'
+    const glass = GLASS
     const dBtnBase = `rounded-2xl flex items-center justify-center ring-1 ${glass}`
     const dBtnCls = (c) => `${dBtnBase} ${isHeld(c) ? 'bg-white/30 ring-white/90 scale-95 brightness-150' : 'bg-white/10 ring-white/50'}`
     const actBase = `relative flex flex-col items-center justify-center gap-0.5 rounded-full ring-1 ${glass}`
@@ -826,8 +827,9 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
     const diamond = tFull && !!(fxL || fxT)
     // The POSITION carries the PlayStation glyph, so □/△/○/✕ prefixes in labels
     // are stripped — what's left is what the button DOES in this game (#906 law).
-    const verbOf = (label) => (label || '').replace(/^(?:[□△○✕×]|L1|L2|R1|R2)\s*/, '')
-    const chipCls = (code, tintOn, tintOff) => `rounded-xl px-2 flex items-center justify-center ring-1 ${glass} ${exHeld.has(code) ? `${tintOn} ring-white/90 scale-95 brightness-150` : `${tintOff} ring-white/50`}`
+    // The chip skin itself lives in padSkin.js (#3127) — PadLink imports the
+    // same builder, so the phone page wears the identical parts.
+    const chipCls = (code, tintOn, tintOff) => skinChip(exHeld.has(code), tintOn, tintOff)
     const shChip = (b) => (
         <div
             key={b.code + b.label}
@@ -846,7 +848,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
             data-vc="fx"
             data-key={b.code}
             style={{ gridColumn: col, gridRow: row, width: btnFull, height: btnFull }}
-            className={`${chipCls(b.code, tintOn, tintOff).replace('rounded-xl', 'rounded-full')} touch-none`}
+            className={`${skinChip(exHeld.has(b.code), tintOn, tintOff, 'rounded-full')} touch-none`}
             {...exBind(b.code)}
         >
             <span className="text-white font-bold leading-none" style={{ fontSize: sz.font(verbOf(b.label).length) }}>{verbOf(b.label)}</span>
@@ -915,12 +917,12 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                 onMouseLeave={fzMU}
             >
                 <div
-                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40 bg-white/5 shadow-[inset_0_0_14px_rgba(255,255,255,0.12)]"
+                    className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${STICK_RING}`}
                     style={{ width: STICK_TRAVEL * 2, height: STICK_TRAVEL * 2 }}
                 />
                 <div
                     ref={fzKnobRef}
-                    className="absolute top-1/2 left-1/2 rounded-full bg-white/25 ring-1 ring-white/70 backdrop-blur-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.4)]"
+                    className={`absolute top-1/2 left-1/2 ${KNOB}`}
                     style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
                 />
             </div>
@@ -943,12 +945,12 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
             {stickUI.active && (
                 <div className="absolute" style={{ left: stickUI.ax, top: stickUI.ay, width: 0, height: 0 }}>
                     <div
-                        className="absolute rounded-full border-2 border-white/40 bg-white/5 shadow-[inset_0_0_14px_rgba(255,255,255,0.12)]"
+                        className={`absolute ${STICK_RING}`}
                         style={{ width: STICK_TRAVEL * 2, height: STICK_TRAVEL * 2, transform: 'translate(-50%, -50%)' }}
                     />
                     <div
                         ref={knobRef}
-                        className="absolute rounded-full bg-white/25 ring-1 ring-white/70 backdrop-blur-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.4)]"
+                        className={`absolute ${KNOB}`}
                         style={{ width: 54, height: 54, transform: 'translate(-50%, -50%)' }}
                     />
                 </div>
@@ -1007,12 +1009,12 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                         onMouseLeave={fsMU}
                     >
                         <div
-                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40 bg-white/5 shadow-[inset_0_0_14px_rgba(255,255,255,0.12)]"
+                            className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${STICK_RING}`}
                             style={{ width: STICK_TRAVEL * 2, height: STICK_TRAVEL * 2 }}
                         />
                         <div
                             ref={fsKnobRef}
-                            className="absolute top-1/2 left-1/2 rounded-full bg-white/25 ring-1 ring-white/70 backdrop-blur-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.4)]"
+                            className={`absolute top-1/2 left-1/2 ${KNOB}`}
                             style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
                         />
                     </div>
@@ -1045,13 +1047,13 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                         onMouseLeave={dgMU}
                     >
                         <div
-                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40 bg-white/5 shadow-[inset_0_0_14px_rgba(255,255,255,0.12)]"
+                            className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${STICK_RING}`}
                             style={{ width: STICK_TRAVEL * 2, height: STICK_TRAVEL * 2 }}
                         />
                         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-neutral-600/40 rounded-full" />
                         <div
                             ref={dgKnobRef}
-                            className="absolute top-1/2 left-1/2 rounded-full bg-white/25 ring-1 ring-white/70 backdrop-blur-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.4)]"
+                            className={`absolute top-1/2 left-1/2 ${KNOB}`}
                             style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
                         />
                     </div>
@@ -1131,7 +1133,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                                     data-vc="b"
                                     data-key={secondAction.code}
                                     style={{ gridColumn: 3, gridRow: 2, width: btnFull, height: btnFull }}
-                                    className={`${chipCls(secondAction.code, 'bg-orange-400/40', 'bg-orange-500/25').replace('rounded-xl', 'rounded-full')} touch-none`}
+                                    className={`${skinChip(exHeld.has(secondAction.code), 'bg-orange-400/40', 'bg-orange-500/25', 'rounded-full')} touch-none`}
                                     {...exBind(secondAction.code)}
                                 >
                                     <span className="text-white font-bold leading-none" style={{ fontSize: sz.font(verbOf(secondAction.label || 'B').length) }}>{verbOf(secondAction.label || 'B')}</span>
@@ -1142,7 +1144,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                                     data-vc="a"
                                     data-key="Space"
                                     style={{ gridColumn: 2, gridRow: 3, width: btnFull, height: btnFull }}
-                                    className={`${chipCls('Space', 'bg-red-400/40', 'bg-red-500/25').replace('rounded-xl', 'rounded-full')} touch-none`}
+                                    className={`${skinChip(exHeld.has('Space'), 'bg-red-400/40', 'bg-red-500/25', 'rounded-full')} touch-none`}
                                     {...exBind('Space')}
                                 >
                                     <span className="text-white font-bold leading-none" style={{ fontSize: sz.font(aLabel.length) }}>{aLabel}</span>
