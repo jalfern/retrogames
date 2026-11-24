@@ -43,6 +43,8 @@ const MarbleMadnessGame = lazy(() => import('../games/MarbleMadness'))
 // Pinball: its own chunk — the table engine, table data and look ride together.
 const PinballGame = lazy(() => import('../games/Pinball'))
 const TidalRushGame = lazy(() => import('../games/TidalRush'))
+// Fourth pupil: MARBLE RUSH rides three.js too — its own chunk, Pong stays light.
+const MarbleRushGame = lazy(() => import('../games/MarbleRush'))
 // Sonar Abyss: same lesson — its planner scripts the attract demo and the
 // caves are generated at load, so it keeps its own chunk.
 const SonarGame = lazy(() => import('../games/Sonar'))
@@ -1406,5 +1408,22 @@ export const GAMES = [
         theme: 'dark',
         description: 'A flight school in the spirit of Pilotwings (Nintendo, 1991), wholly our own: three craft, three exams, one seeded island — Gullwing Isle, built from the forge\'s own ocean, SHORE, mountain and thunderstorm demos, so the swell the plane skims over and the thermals the glider climbs are the same analytic fields the GPU draws. The PLANE threads a RING RUN of eight glowing gates over the bay (+100 a ring, time bonus under par 30 s); the HANG GLIDER launches off the saddle and soars the four thermal columns down onto the bullseye — dead centre is 1000, the sand is free; the ROCKET BELT skims the surf line at mast height and drops supply crates on three beach pads, accuracy paying 333 deep to 111 wide. Banked all three once and the instructors VOSS, NIMBUS and PIP stamp your LICENSE — STUDENT, WINGS at 1500, ACE at 2400. Between exams the island is a toy: free flight is the resting state, and the storm cell east of the isle is now a COURSE — the THUNDERPASS drives five violet gates through the cell: in at the rising west edge, down through the core downdraft, out the east exit (+140 a gate, time bonus to 300 under par 30 s; clear all five and the licence card sports STORM WINGS). The thermals drift with the sea-breeze, cloud and lift moving as one field. The school apron recycles craft (B at the dock hands you the next one). Crashes are school-forgiving — the ground crew ferries you back. Seeded and deterministic (seed + pads ⇒ identical hashes): the attract mode flies the same autopilot skywardcheck graduates on, across five seeds and both pad types.',
         controls: ['Left stick / arrows: bank and pitch on all three craft — up = nose up', 'SPACE / A: context — start the exam at a glowing marker; HELD on the rocket belt: thrust', 'B / DROP: drop a supply crate (belt) · at the school apron in free flight: recycle to the next craft', 'RING RUN: thread the eight rings in order — only the pulsing gold gate counts', 'SPOT LANDING: hunt lift under the cumuli, flare onto the bullseye — soft and slow', 'TARGET DROP: hover low and still over a pad before you let a crate go — drift costs', 'THUNDERPASS: at the violet beacon east of the bay, SPACE starts five gates driven through the storm cell — fight the gusts, ride down through the core, climb out east; all five = STORM WINGS', 'Crash and the ground crew ferries you back; the school keeps your best exam score', 'Attract: any key or tap starts training; all three exams banked = LICENSE', '?: pause and read the syllabus'],
+    },
+    {
+        path: '/marble-rush',
+        pad: {
+            layout: 'stick', analog: true, method: 'stick', supports: ['stick', 'dpad'],
+            aLabel: 'GO',
+            reason: 'one analog vector IS the marble — push the stick and the chrome ball leans into it; deliberately the shape a tilt controller will drive next',
+        },
+        builtBy: 'forge',
+        added: '2026-11-24',
+        visibility: 'private',
+        tapStart: true,
+        component: MarbleRushGame,
+        label: 'MARBLE RUSH',
+        theme: 'dark',
+        description: 'A fancier marble roller, original and 3D, hanging in the sky in the spirit of Super Monkey Ball and Marble Blast (#3107 — MARBLE MADNESS stays the faithful 1984 game; this is its modern sibling). THE MARBLE IS THE PRODUCT: it carries weight and momentum on an analytic manifold — one friction budget is shared between holding a curve and steering, banking tilts the budget in your favour, and everything the surface cannot hold slides you outward until the floor simply ends. Five sky shelves build from gentle to nasty: FIRST ROLL eases you onto satin plates, SWITCHBACK banks hard, BUMPER ALLEY kicks you across the road, SWING BRIDGE puts you aboard oscillating decks you board at the right phase, and SKY SHOT drops you down a ramp onto a kicker lip — fly the gap or wear the fall. A stage is DATA: a centerline of segments (curvature, grade, width, banking) plus props pinned in course-space, and the renderer extrudes its mesh from the SAME surface function the marble rides — drawn floor equals ridden floor, pinned by rollercheck like tidalcheck pins the sea. Short stages against a clock with GOLD/SILVER/BRONZE medals and persistent bests; the stick (arrows/dpad too, and tomorrow tilt) is the only instrument. MODERN bar: a chrome marble with real environment reflections and a glass swirl you can see roll, gradient skies with a sun disc and drifting cloud banks, neon edge-rails, sparks on every bumper, wind on every fall. Seeded and deterministic; the attract mode rolls the same autopilot the harness graduates on.',
+        controls: ['Stick / left-right: lean the marble across the shelf — push past what the road can hold and you slide off', 'UP / W: throttle down the shelf · DOWN / S: brake — momentum is real, weight takes time', 'No gates: the SHELF is the gate — stay on it, and where it narrows, slow down', 'Banked curves (the edge-rail glows) hold MORE speed than flat ones — ride the high side in', 'SWING BRIDGES: the deck slides across the gap — wait for it at the mouth, board near its centre', 'SKY SHOT: hit the kicker lip hot off the drop-in ramp to fly the gap', 'Bumpers throw +50 and a sideways kick — that kick can throw you off too', 'Medals: beat GOLD on each shelf; best times persist on this phone; five shelves, then hunt the golds', 'Fall off and the shelf restarts — the clock resets, the lesson stays', 'Attract: pick a shelf, any key or tap rolls off the start pad, ? pauses and reads the rules'],
     },
 ]

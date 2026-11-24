@@ -61,6 +61,7 @@ const GAMES = [
     { id: 'pinball', path: '/pinball' }, // #3103: the shared table engine, rung 1
     { id: 'tidal-rush', path: '/tidal-rush' }, // #3104: jetski slalom, rung 1 (sunny bay)
     { id: 'skyward', path: '/skyward' }, // #3105: flight school, rung 1
+    { id: 'marble-rush', path: '/marble-rush' }, // #3107: sky-shelf marble roller, rung 1
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
@@ -150,6 +151,7 @@ const PATTERNS = {
     // rare DROP taps. Crashes are legal: the ground crew ferries you back and
     // hashes stay deterministic.
     'skyward': (i) => ({ x: Math.sin(i * 0.05) * 0.65, y: Math.sin(i * 0.031) * 0.5 - 0.15, a: i % 97 < 5, b: i % 211 === 0 }),
+    'marble-rush': (i) => ({ up: i % 180 < 130, left: i % 97 < 22, right: i % 97 >= 30 && i % 97 < 55, down: i % 149 >= 90 && i % 149 < 100, x: Math.sin(i * 0.04) * 0.5 }),
     contra: (i) => ({ left: i % 89 < 18, right: i % 89 >= 24 && i % 89 < 70, up: i % 53 < 8, down: i % 53 >= 30 && i % 53 < 38, a: i % 17 < 2, b: i % 5 < 3 }),
     // #2808: the pod-shooter — steady stream, sideways sway to sample the
     // lane war, occasional thrusts (death by edge is legal; respawn keeps
