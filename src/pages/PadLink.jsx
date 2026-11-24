@@ -3,6 +3,7 @@ import { createPadClient, decodeLabels } from '../utils/padlink.js'
 import { makePadPeer, makeTransport, RELAY_DEFAULT } from '../utils/linkPeers.js'
 import { quantize, DIR_DEAD } from '../utils/onePad.js'
 import { vpadSize } from '../components/vpadSize.js'
+import { chipCls, KNOB, STICK_RING } from '../components/padSkin.js'
 import { padLayout } from './padLayout.js'
 
 // /retrogames/pad — the PHONE half of link pads (#893). Full-screen
@@ -14,7 +15,9 @@ import { padLayout } from './padLayout.js'
 // touch events; a lost packet is irrelevant because the next one is 8ms away.
 //
 // Look follows the shared touch controls (#885/#735): the same vpadSize law
-// drives every dimension, the same white/25 knob + ring + blur language.
+// drives every dimension, and the glass, pressed language and knob come from
+// components/padSkin.js (#3127) — the same parts VirtualControls wears, so
+// the phone reads as one controller with the game-side pad bar.
 
 const clamp1 = (v) => (v > 1 ? 1 : v < -1 ? -1 : v)
 
@@ -153,13 +156,13 @@ export default function PadLink() {
             <div
                 ref={ref}
                 data-pad={label}
-                className="relative touch-none select-none rounded-full border-2 border-white/30 bg-white/5 shadow-[inset_0_0_18px_rgba(255,255,255,0.10)]"
+                className={`relative touch-none select-none ${STICK_RING}`}
                 style={{ width: size, height: size }}
                 {...rest}
             >
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-neutral-500/50 rounded-full" />
                 <div
-                    className="absolute top-1/2 left-1/2 rounded-full bg-white/25 ring-1 ring-white/70 backdrop-blur-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.4)]"
+                    className={`absolute top-1/2 left-1/2 ${KNOB}`}
                     style={{ width: knobSize, height: knobSize, transform: 'translate(-50%, -50%)' }}
                 />
                 <span className="absolute top-1.5 left-1/2 -translate-x-1/2 font-mono text-[9px] tracking-[0.3em] text-white/35">{label}</span>
@@ -169,13 +172,15 @@ export default function PadLink() {
 
     // label = the generic letter (data-btn + held state stay letters so the
     // harness hooks don't move); text = the game verb to wear when it has one.
+    // The chip itself is padSkin's (#3127): ring + glass + sinks/brightens —
+    // identical to the game-side bar's face buttons.
     const faceBtn = (field, label, tint, pos, text) => {
         const wear = text || label
         return (
             <div
                 data-btn={label}
                 {...holdKey(field, label)}
-                className={`absolute rounded-full flex items-center justify-center text-white font-bold backdrop-blur-sm ring-1 transition-all ${heldUI[label] ? 'ring-white/90 scale-95 brightness-150 ' : 'ring-white/50 '} ${tint}`}
+                className={`absolute text-white font-bold ${chipCls(heldUI[label], tint, tint, 'rounded-full')}`}
                 style={{ width: L.btn, height: L.btn, fontSize: sz.font(wear.length), ...pos }}
             >
                 {wear}
@@ -187,7 +192,7 @@ export default function PadLink() {
         <div
             data-btn={label}
             {...holdKey(field, label)}
-            className={`absolute flex items-center justify-center font-mono text-xs tracking-widest text-white/90 border backdrop-blur-sm rounded-2xl ${heldUI[label] ? 'bg-white/30 border-white/80' : 'bg-white/10 border-white/25'}`}
+            className={`absolute font-mono text-xs tracking-widest text-white/90 ${chipCls(heldUI[label], 'bg-white/30', 'bg-white/10', 'rounded-2xl')}`}
             style={{ width: L.sw, height: L.sh, ...pos }}
         >
             {label}
