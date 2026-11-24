@@ -14,9 +14,24 @@ const ok = (name, cond, extra = '') => {
     if (!cond) fails++
 }
 
-// --mutate <rule> breaks one load-bearing rule; the check MUST go red.
-const MUT = process.argv.includes('--mutate')
-    ? process.argv[process.argv.indexOf('--mutate') + 1] : null
+// --mutate [rule] breaks one load-bearing rule; the check MUST go red.
+// Bare --mutate (nightly form, #601) runs every rule in fresh children.
+import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
+const SELF = fileURLToPath(import.meta.url)
+const MUTI = process.argv.indexOf('--mutate')
+const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
+if (MUTI > -1 && !MUT) {
+    let died = 0
+    for (const rule of ['letters', 'gap']) {
+        const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
+        // child convention below: exit 0 = the rule broke and the check saw red
+        if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
+        else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
+    }
+    console.log(died === 2 ? `ALL MUTANTS CAUGHT (${died}/2)` : `${died}/2 mutants caught`)
+    process.exit(died === 2 ? 0 : 1)
+}
 
 // ── boot ──────────────────────────────────────────────────────────────────
 const boot = makeGame(1, 'run')
