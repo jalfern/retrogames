@@ -1,6 +1,6 @@
 {
- "generated": "2026-11-24T12:17:43.846Z",
- "commit": "0a92274",
+ "generated": "2026-11-24T12:27:07.355Z",
+ "commit": "486b2a4",
  "windowTicks": 9,
  "trials": 3,
  "thresholds": {
@@ -2423,6 +2423,70 @@
    },
    "errors": 0,
    "score": 0
+  },
+  {
+   "id": "skyward",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "enemies",
+      "p",
+      "spawned"
+     ],
+     "idle": 0.001
+    },
+    "right": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "enemies",
+      "p",
+      "spawned"
+     ],
+     "idle": 0.068
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "bullets",
+      "enemies",
+      "score",
+      "spawned",
+      "superKills"
+     ],
+     "idle": 0.06
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "bullets",
+      "enemies",
+      "score",
+      "spawned",
+      "superKills"
+     ],
+     "idle": 0.001
+    }
+   },
+   "errors": 0,
+   "score": 1
   },
   {
    "id": "smash-tv",
