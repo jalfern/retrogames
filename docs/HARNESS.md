@@ -153,13 +153,20 @@ scripts/forge-merge.sh                    # #3013: the whole rule-5 merge — ma
                                           #   skips when a squat made its local bookkeeping die
                                           #   (remote-branch delete, re-detach, safe reap).
                                           #   Exit = PR *state*, not gh's exit code (#2975).
+                                          #   #3120: unknown check states (gh exits non-zero —
+                                          #   "no checks reported" — or the state is empty) keep
+                                          #   the wait going; only SUCCESS merges, red refuses,
+                                          #   and a check that never reports times out refused.
                                           #   worktreepurge keeps main-squatters ('pushed,
                                           #   unmerged'); this is their only exit besides Jon.
 node scripts/mergecheck.mjs               # sandbox replay of the trap: fake gh merges
                                           #   server-side then dies on `'main' is already used
-                                          #   by worktree'; 3 scenarios × 24 legs (clean reap,
+                                          #   by worktree'; scenarios A-H × legs (clean reap,
                                           #   dirty squat preserved, nothing-merged touches
-                                          #   nothing). Mutate `state !== 'MERGED'` -> C reds.
+                                          #   nothing, late-CI waits then merges only after
+                                          #   SUCCESS, never-reports refuses, red refuses).
+                                          #   Mutate `state !== 'MERGED'` -> C reds; restore
+                                          #   the #3120 fall-through -> F+G red (#3120).
 node scripts/watchcheck.mjs             # the WATCH key, driven in Chrome (#1624; browser suite)
                                         #   --throttle N reproduces nightly tick debt on one pilot (#2036)
 node scripts/watchrespawncheck.mjs      # #2278: respawn recipe survives tmp_cleaner (macOS
