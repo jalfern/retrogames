@@ -1,0 +1,223 @@
+// skywardcheck — SKYWARD / Gullwing Isle (issue #3105 rung 1), audited in
+// plain Node against the SAME sim.js + planner.js the tab runs (zero DOM,
+// zero Math.random). Expectations are literal numbers, not the sim's own
+// constants — a check that imports the number it audits cannot see the
+// number change (the TETRIS lesson).
+//
+//   npm run skywardcheck              geometry, rules, graduation, determinism
+//   npm run skywardcheck -- --mutate  prove the pins can feel pain
+
+import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { makeGame, step, checkout, stateOf } from '../src/games/Skyward/sim.js'
+import { decide } from '../src/games/Skyward/planner.js'
+import { plant, pull } from './lib/mutateguard.mjs'
+import { Report } from './lib/harness.mjs'
+
+const SELF = fileURLToPath(import.meta.url)
+const SIMF = 'src/games/Skyward/sim.js'
+const r = new Report('skywardcheck')
+r.info('boot', 'sim.js + planner.js imported in Node, zero DOM, zero Math.random')
+
+const drive = (g, pad = {}, n = 1) => { for (let i = 0; i < n; i++) step(g, pad); return g }
+const clear = (g) => { const e = [...g.events]; g.events.length = 0; return e }
+const runAuto = (g, cap) => { let n = 0; while (n < cap) { step(g, decide(g)); g.events.length = 0; n++; if (g.done) break }; return n }
+void runAuto
+
+// ---------------------------------------------------------- geometry ----
+{
+    const g = makeGame(7)
+    const w = g.world
+    r.check('free-flight spawn is airborne over the bay', g.p.y > 20 && w.terrainHeight(g.p.x, g.p.z) < 1 && w.waterHeightAt(g.p.x, g.p.z, 0) > -1, `y=${g.p.y}`)
+    r.check('the ring line runs south over open water, 8 rings, z strictly increasing',
+        w.rings.length === 8 && w.rings.every((ring, i) => w.terrainHeight(ring.x, ring.z) < -2 && (i === 0 || ring.z > w.rings[i - 1].z) && ring.y > 6 && ring.y < 20))
+    const padH = w.terrainHeight(w.pad.x, w.pad.z)
+    r.check('the spot-landing pad is dry sand, 2–3 m up', padH > 1.5 && padH < 3.5, `h=${padH.toFixed(1)}`)
+    r.check('every drop target sits on dry ground below 4 m',
+        w.targets.every((t) => { const h = w.terrainHeight(t.x, t.z); return h > 0.4 && h < 4 }),
+        w.targets.map((t) => w.terrainHeight(t.x, t.z).toFixed(1)).join(','))
+    r.check('the belt corridor stays low between the dock and every target', (() => {
+        const pts = [{ x: w.school.x + 30, z: w.school.z + 40 }, ...w.targets]
+        for (let i = 0; i < pts.length - 1; i++) {
+            for (let s = 0; s <= 10; s++) {
+                const x = pts[i].x + (pts[i + 1].x - pts[i].x) * s / 10
+                const z = pts[i].z + (pts[i + 1].z - pts[i].z) * s / 10
+                if (w.terrainHeight(x, z) > 6) return false
+            }
+        }
+        return true
+    })())
+    r.check('the glider launch sits on high ground (saddle), north of the pad',
+        w.terrainHeight(w.launch.x, w.launch.z) > 40 && w.launch.z < w.pad.z - 200)
+    r.check('the storm cell sits offshore, clear of the courses',
+        w.terrainHeight(w.storm.x, w.storm.z) < 0 && Math.hypot(w.storm.x - w.targets[0].x, w.storm.z - w.targets[0].z) > 200)
+    r.check('the Gerstner emit carries the same wave count the sim rides',
+        (w.waterGLSL().match(/vec4\(/g) || []).length === w.waves.length)
+}
+
+// -------------------------------------------------------- core rules ----
+{
+    const g = makeGame(11)
+    checkout(g, 'ring')
+    const r0 = g.world.rings[0]
+    g.p = { x: r0.x, y: r0.y, z: r0.z }
+    step(g, {})
+    const evs = clear(g)
+    r.check('passing the ACTIVE ring scores and advances the gate',
+        g.ringsPassed === 1 && evs.some((e) => e.kind === 'ring' && e.idx === 1))
+    // ring 2 ahead, ring 5 well behind: touching a dead ring must not score
+    g.p = { x: g.world.rings[4].x, y: g.world.rings[4].y, z: g.world.rings[4].z }
+    step(g, {})
+    r.check('a non-active ring never scores (sequence law)', g.ringsPassed === 1)
+    // clean sweep + finish
+    for (let i = 1; i < 8; i++) { const ri = g.world.rings[i]; g.p = { x: ri.x, y: ri.y, z: ri.z }; step(g, {}) }
+    clear(g)
+    r.check('all 8 rings finish the event with 800 + a time bonus (≤1000)',
+        g.grad.ring != null && g.grad.ring >= 800 && g.grad.ring <= 1000 && g.phase === 'free', `ring=${g.grad.ring}`)
+
+    const h2 = makeGame(12)
+    checkout(h2, 'spot')
+    const w = h2.world
+    h2.p = { x: w.pad.x + 1, y: w.terrainHeight(w.pad.x, w.pad.z) + 0.72, z: w.pad.z + 1 }
+    h2.vy = -1
+    h2.speed = 9
+    step(h2, {})
+    clear(h2)
+    r.check('a soft touch on the bullseye scores 1000', h2.grad.spot === 1000, `got ${h2.grad.spot}`)
+
+    const h3 = makeGame(12)
+    checkout(h3, 'spot')
+    const hx = w.pad.x + 20, hz = w.pad.z + 6
+    h3.p = { x: hx, y: Math.max(w.terrainHeight(hx, hz), 0.5) + 0.66, z: hz }
+    h3.vy = -1
+    h3.speed = 9
+    step(h3, {})
+    clear(h3)
+    r.check('the same touch 21 m off the centre scores the 200 band', h3.grad.spot === 200, `got ${h3.grad.spot}`)
+
+    const h4 = makeGame(14)
+    checkout(h4, 'spot')
+    h4.p = { x: 20, y: Math.max(w.terrainHeight(20, 260), w.waterHeightAt(20, 260, h4.t)) - 0.1, z: 260 }
+    h4.vy = -2
+    h4.speed = 9
+    step(h4, {})
+    const h4ev = clear(h4)
+    r.check('touching the sea is a splash, not a landing (back to the saddle)',
+        h4.grad.spot == null && h4ev.some((e) => e.kind === 'splash') && h4.respawnT > 0)
+
+    const h5 = makeGame(15)
+    checkout(h5, 'drop')
+    const t0 = h5.world.targets[0]
+    h5.p = { x: t0.x, y: h5.world.terrainHeight(t0.x, t0.z) + 8, z: t0.z }
+    h5.vel = { x: 0, y: 0, z: 0 }
+    h5.vy = 0
+    h5.speed = 0
+    step(h5, { b: true })
+    let guard = 0
+    while (h5.crates.length && guard++ < 240) step(h5, {})
+    clear(h5)
+    r.check('a still-hover drop over the target scores in the top two bands',
+        h5.dropped.length === 1 && h5.dropped[0].score >= 222, JSON.stringify(h5.dropped))
+
+    const h6 = makeGame(16)
+    drive(h6, { a: true }, 30)
+    r.check('in free flight the throttle button near nothing never invents an event', h6.phase === 'free')
+}
+
+// -------------------------------------------------------- graduation ----
+{
+    const SEEDS = [1, 7, 42, 99, 123]
+    let wings = 0
+    let allOk = true
+    const scores = []
+    for (const s of SEEDS) {
+        const g = makeGame(s)
+        checkout(g, 'ring')
+        let n = 0
+        while (g.grad.ring == null && n++ < 18000) { step(g, decide(g)); g.events.length = 0 }
+        if (g.grad.ring == null) { allOk = false; scores.push(`${s}:ring-fail`); continue }
+        checkout(g, 'spot')
+        n = 0
+        while (g.grad.spot == null && n++ < 18000) { step(g, decide(g)); g.events.length = 0 }
+        if (g.grad.spot == null) { allOk = false; scores.push(`${s}:spot-fail`); continue }
+        checkout(g, 'drop')
+        n = 0
+        while (g.grad.drop == null && n++ < 18000) { step(g, decide(g)); g.events.length = 0 }
+        if (g.grad.drop == null) { allOk = false; scores.push(`${s}:drop-fail`); continue }
+        scores.push(`${s}:${g.score}`)
+        if (g.score >= 1500) wings++
+        r.check(`seed ${s}: done flag + license follow the score`, g.done && g.license &&
+            (g.score >= 2400 ? g.license === 'ACE' : g.score >= 1500 ? g.license === 'WINGS' : g.license === 'STUDENT'),
+            `${g.score} ${g.license}`)
+    }
+    r.check('the school is winnable: the autopilot graduates on all five seeds', allOk, scores.join(' '))
+    r.check('at least three of five graduate WINGS or higher (the syllabus is fair, not automatic)', wings >= 3, `wings+ = ${wings}`)
+}
+
+// ----------------------------------------------------- determinism ----
+{
+    const pair = (s) => {
+        const g = makeGame(s)
+        const hs = []
+        for (let n = 0; n < 1800; n++) { step(g, decide(g)); g.events.length = 0; if (n % 300 === 299) hs.push(g.hash) }
+        return hs.join(',')
+    }
+    r.check('same seed + same pads ⇒ identical hashes (seed 7)', pair(7) === pair(7))
+    r.check('same seed + same pads ⇒ identical hashes (seed 99)', pair(99) === pair(99))
+    r.check('different seeds diverge', pair(7) !== pair(42))
+}
+
+// ------------------------------------------------------ state/contract ----
+{
+    const g = makeGame(5)
+    drive(g, { right: true, a: true }, 600)
+    const st = stateOf(g)
+    r.check('state() is plain JSON with tick/score/done', ['tick', 'score', 'done', 'hash', 'seed'].every((k) => k in st) && JSON.stringify(st).length > 10)
+    r.check('state hash is a uint32', Number.isInteger(st.hash) && st.hash >= 0 && st.hash <= 0xffffffff)
+}
+
+// ------------------------------------------------------- fuzz limits ----
+{
+    let seed = 987654321
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+    let bad = 0, events = 0
+    const g = makeGame(31)
+    for (let i = 0; i < 6000; i++) {
+        step(g, {
+            x: rnd() * 2 - 1, y: rnd() * 2 - 1, a: rnd() < 0.4, b: rnd() < 0.1,
+            left: rnd() < 0.2, right: rnd() < 0.2, up: rnd() < 0.2, down: rnd() < 0.2,
+        })
+        events += g.events.length
+        g.events.length = 0
+        if (!Number.isFinite(g.p.x + g.p.y + g.p.z) || Math.abs(g.p.x) > 1600 || Math.abs(g.p.z) > 1600 || g.p.y > 500 || g.p.y < -40) bad++
+        if (g.done) g.done = false
+    }
+    r.check('6000 fuzz ticks: no NaN, no escapes from the world', bad === 0, `bad=${bad}`)
+    r.check('the fuzz still triggers real events (the toy is alive)', events > 5, `events=${events}`)
+}
+
+// ----------------------------------------------------------- mutants ----
+if (process.argv.includes('--mutate')) {
+    const MUTANTS = [
+        ['the ring pass stops counting', SIMF, 'g.ringsPassed++', 'g.ringsPassed += 0'],
+        ['a dead ring scores as if active', SIMF, 'if (Math.hypot(g.p.x - r.x, g.p.y - r.y, g.p.z - r.z) < CFG.RING_R + 1.5)', 'if (Math.hypot(g.p.x - g.world.rings[7].x, g.p.y - g.world.rings[7].y, g.p.z - g.world.rings[7].z) < CFG.RING_R + 1.5)'],
+        ['the bullseye pays the 200 band', SIMF, 'PAD_BANDS: [[4.5, 1000], [9, 700], [15, 450], [24, 200]]', 'PAD_BANDS: [[4.5, 200], [9, 700], [15, 450], [24, 200]]'],
+        ['sea contact becomes a landing', SIMF, "if (ter < 0.4) { ev(g, 'splash')", "if (false) { ev(g, 'splash')"],
+        ['crates forget to score on landing', SIMF, 'let score = 0\n            for (const [rad, pts] of CFG.DROP_BANDS)', 'let score = 0\n            for (const [rad, pts] of [])'],
+        ['the license thresholds vanish', SIMF, 'ACE: 2400, WINGS: 1500,', 'ACE: 0, WINGS: 0,'],
+    ]
+    let died = 0
+    for (const [name, file, from, to] of MUTANTS) {
+        const orig = readFileSync(file, 'utf8')
+        if (!orig.includes(from)) { r.check(`mutant anchor: ${name}`, false, file); continue }
+        plant(file, orig.replace(from, to))
+        const res = spawnSync(process.execPath, [SELF], { encoding: 'utf8' })
+        if (res.status !== 0) { died++; r.check(`mutant dies: ${name}`, true) }
+        else r.check(`mutant dies: ${name}`, false, 'child passed despite the bug')
+        pull(file)
+    }
+    r.check(`all ${MUTANTS.length} mutants die`, died === MUTANTS.length, `${died}/${MUTANTS.length}`)
+}
+
+r.exit()

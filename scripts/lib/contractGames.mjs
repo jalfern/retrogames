@@ -60,6 +60,7 @@ const GAMES = [
     { id: 'r-type', path: '/r-type' }, // #2808: Jon's #2795 second flagship, S1 Armament
     { id: 'pinball', path: '/pinball' }, // #3103: the shared table engine, rung 1
     { id: 'tidal-rush', path: '/tidal-rush' }, // #3104: jetski slalom, rung 1 (sunny bay)
+    { id: 'skyward', path: '/skyward' }, // #3105: flight school, rung 1
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
@@ -145,12 +146,18 @@ const PATTERNS = {
     // occasional nudge. Death (drain) is legal: balls reset and hashes stay deterministic.
     'pinball': (i) => ({ left: i % 40 < 12, right: i % 40 >= 20 && i % 40 < 32, down: i >= 5 && i < 28, b: i % 199 < 2 }),
     'tidal-rush': (i) => ({ up: i % 200 < 160, left: i % 200 >= 120 && i % 200 < 160, right: i % 200 >= 40 && i % 200 < 80, a: i % 311 < 3, b: i % 155 < 6 }),
+    // #3105: analog sway on both axes, long GO presses (thrust / marker starts),
+    // rare DROP taps. Crashes are legal: the ground crew ferries you back and
+    // hashes stay deterministic.
+    'skyward': (i) => ({ x: Math.sin(i * 0.05) * 0.65, y: Math.sin(i * 0.031) * 0.5 - 0.15, a: i % 97 < 5, b: i % 211 === 0 }),
     contra: (i) => ({ left: i % 89 < 18, right: i % 89 >= 24 && i % 89 < 70, up: i % 53 < 8, down: i % 53 >= 30 && i % 53 < 38, a: i % 17 < 2, b: i % 5 < 3 }),
     // #2808: the pod-shooter — steady stream, sideways sway to sample the
     // lane war, occasional thrusts (death by edge is legal; respawn keeps
     // ticks flowing and hashes deterministic, contra-style).
     'r-type': (i) => ({ right: i % 89 < 30, left: i % 89 >= 60 && i % 89 < 72, up: i % 61 < 12, down: i % 61 >= 30 && i % 61 < 42, a: i % 5 < 4, b: i % 97 === 0 }),
     stomptown: (i) => ({ left: i % 53 < 14, right: i % 53 >= 20 && i % 53 < 38, up: i % 67 < 16, down: i % 67 >= 34 && i % 48 < 20, a: i % 7 < 2, b: i % 13 < 2 }),
+    // gentle air: mostly banked circles with periodic GO — free flight never
+    // needs input; crashes are legal and respawn keeps ticks flowing.
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 

@@ -231,6 +231,8 @@ const DoubleDragonGame = lazy(() => import('../games/DoubleDragon'))
 const RTypeGame = lazy(() => import('../games/RType'))
 // STOMPTOWN (#3094): Jon's city-breaker prototype, promoted to a full title.
 const StomptownGame = lazy(() => import('../games/Stomptown'))
+// SKYWARD: its own chunk — three.js renderer, seeded island and pure sim ride together.
+const SkywardGame = lazy(() => import('../games/Skyward'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1388,5 +1390,21 @@ export const GAMES = [
         theme: 'dark',
         description: 'A jetski slalom in the spirit of Wave Race 64 (Nintendo 64, 1996) — our own riders, our own bay (#3104, rung 1: SUNNY BAY; the storm course follows). THE WATER IS THE GAME: one analytic Gerstner swell table drives everything — the same waves that displace the rendered sea in the vertex shader are the surface the hull floats, leans and launches on, to the tick. Buoy slalom racing: pass RED on your right, YELLOW on your left; a clean pass charges the sprint, a miss chokes the throttle for a beat while the field goes. Analog steering with real body-lean — the rider banks into the turn, spray arcs off the hull, the bow pitches over the chop. Hit a falling crest at speed and you fly: hold SPIN in the air to whip a 360 and bank a fat boost bonus on landing. Three laps around a sunny headland bay against two seeded CPU skis (Mako and Tundra) that run their own racing lines and take their own lines of air. MODERN bar: GPU sea with fresnel sky-reflection, sun glitter and crest foam, graded sky with a low sun, distance haze — and an honest phone budget: capped pixel ratio, no shadow maps, one pooled particle system. All art and sound synthesized at runtime; the physics and the pixels read the same sea.',
         controls: ['UP / W or stick up: throttle · DOWN / S: brake', 'LEFT / RIGHT (or the analog stick): steer — the ski leans, harder the more you push', 'SPACE / A in the air: SPIN — complete a 360 off a crest for +250 and a fat boost', 'SHIFT / B: burn the sprint meter on the straights', 'RED buoy on your RIGHT, YELLOW on your LEFT — misses choke the throttle; clean passes charge sprint', 'Three laps of SUNNY BAY; place decides the finish bonus', 'Attract: any key or tap takes the seat · ?: pause and read the rules'],
+    },
+    {
+        path: '/skyward',
+        pad: {
+            layout: 'stick', analog: true, method: 'stick', supports: ['stick', 'dpad'],
+            aLabel: 'GO', buttons: [{ label: 'DROP', code: 'KeyB' }],
+            reason: 'a flyer lives on the analog: thumb banks and pitches the three craft, GO starts the exercise at a marker and holds the belt lit, DROP lets the crates go',
+        },
+        builtBy: 'forge',
+        added: '2026-11-24',
+        visibility: 'private',
+        component: SkywardGame,
+        label: 'SKYWARD',
+        theme: 'dark',
+        description: 'A flight school in the spirit of Pilotwings (Nintendo, 1991), wholly our own: three craft, three exams, one seeded island — Gullwing Isle, built from the forge\'s own ocean, SHORE, mountain and thunderstorm demos, so the swell the plane skims over and the thermals the glider climbs are the same analytic fields the GPU draws. The PLANE threads a RING RUN of eight glowing gates over the bay (+100 a ring, time bonus under par 30 s); the HANG GLIDER launches off the saddle and soars the four thermal columns down onto the bullseye — dead centre is 1000, the sand is free; the ROCKET BELT skims the surf line at mast height and drops supply crates on three beach pads, accuracy paying 333 deep to 111 wide. Banked all three once and the instructors VOSS, NIMBUS and PIP stamp your LICENSE — STUDENT, WINGS at 1500, ACE at 2400. Between exams the island is a toy: free flight is the resting state, the storm cell east of the isle gusts and lights up, and the school apron recycles craft (B at the dock hands you the next one). Crashes are school-forgiving — the ground crew ferries you back. Seeded and deterministic (seed + pads ⇒ identical hashes): the attract mode flies the same autopilot skywardcheck graduates on, across five seeds and both pad types.',
+        controls: ['Left stick / arrows: bank and pitch on all three craft — up = nose up', 'SPACE / A: context — start the exam at a glowing marker; HELD on the rocket belt: thrust', 'B / DROP: drop a supply crate (belt) · at the school apron in free flight: recycle to the next craft', 'RING RUN: thread the eight rings in order — only the pulsing gold gate counts', 'SPOT LANDING: hunt lift under the cumuli, flare onto the bullseye — soft and slow', 'TARGET DROP: hover low and still over a pad before you let a crate go — drift costs', 'The storm east of the isle gusts, sinks and flashes — soaring through it is your own business', 'Crash and the ground crew ferries you back; the school keeps your best exam score', 'Attract: any key or tap starts training; all three exams banked = LICENSE', '?: pause and read the syllabus'],
     },
 ]

@@ -56,6 +56,7 @@
     "tidycheck": "node scripts/tidycheck.mjs",
     "pinballcheck": "node scripts/pinballcheck.mjs",
     "stompcheck": "node scripts/stompcheck.mjs",
+    "skywardcheck": "node scripts/skywardcheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
     "modelindexcheck": "node scripts/modelindexcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",
