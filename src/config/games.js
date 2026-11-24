@@ -1392,7 +1392,12 @@ export const GAMES = [
         controls: ['UP / W or stick up: throttle · DOWN / S: brake', 'LEFT / RIGHT (or the analog stick): steer — the ski leans, harder the more you push', 'SPACE / A in the air: SPIN — complete a 360 off a crest for +250 and a fat boost', 'SHIFT / B: burn the sprint meter on the straights', 'RED buoy on your RIGHT, YELLOW on your LEFT — misses choke the throttle; clean passes charge sprint', 'Three laps of SUNNY BAY; place decides the finish bonus', 'Attract: any key or tap takes the seat · ?: pause and read the rules'],
     },
     {
-
+        path: '/skyward',
+        pad: {
+            layout: 'stick', analog: true, method: 'stick', supports: ['stick', 'dpad'],
+            aLabel: 'GO', buttons: [{ label: 'DROP', code: 'KeyB' }],
+            reason: 'a flyer lives on the analog: thumb banks and pitches the three craft, GO starts the exercise at a marker and holds the belt lit, DROP lets the crates go',
+        },
         builtBy: 'forge',
         added: '2026-11-24',
         visibility: 'private',
