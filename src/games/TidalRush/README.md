@@ -36,7 +36,16 @@ surface of truth:
   swell MIXED at Kai's point plus `frontPct`. A landed trick banks an
   **air-time bonus** (+50/s, cap +100, computed from the reported rounded
   air-time so event and score are byte-consistent). Lightning stays seeded;
-  rivals split lateral lines (MAKO tight inside, TUNDRA wider).
+  rivals split lateral lines (MAKO tight inside, TUNDRA wider). **RAIN IS
+  GAMEPLAY (#3191):** `rainAt(gs,x,z)` = stage gate × `frontW` (the same
+  weight the sea mix and the shader ride — rain ≡ sea ≡ drawn, spatially);
+  inside the band the hull eats extra quadratic drag (`RAIN_DRAG`, v_term
+  19→~16.9 m/s) and drifts world-space along the new swell at
+  `RAIN_PUSH`·rain·gust (two-sine gusting on `gs.t` — rng untouched, replays
+  byte-exact); crossing the band edge pushes a `rain` event; `stateOf.rain`
+  carries Kai's rain and the hash mixes it. Gates dim toward storm fog by
+  rain at THEIR point (`RAIN_VIS`=0.72 ceiling, art.js `buoyDim`). Sunny and
+  unreached water: exact zero everywhere.
 - `art.js` — MODERN bar within a phone budget (the SHORE demo's weak spot):
   one 96×96 sea mesh, fresnel + sun glitter + crest foam, gradient sky with a
   low sun and headland silhouettes, procedural ski + leaning rider, pooled
@@ -62,12 +71,15 @@ pauses; ◀ ▶ on the menu picks SUNNY or STORM BAY.
 ## Verify
 
 ```
-npm run tidalcheck                     # 70 gates: boot, rules, win (both bays), determinism,
+npm run tidalcheck                     # 84 gates: boot, rules, win (both bays), determinism,
                                        #   sea-bridge parity, lightning, barrel, swell re-roll,
-                                       #   squall-front spatial law + GLSL twin + air-bonus math
+                                       #   squall-front spatial law + GLSL twin + air-bonus math,
+                                       #   rain field/drift/drag/dim laws (#3191)
 node scripts/tidalcheck.mjs --mutate=judge   # red-side judgement muted — must go red
 node scripts/tidalcheck.mjs --mutate=swell   # per-lap re-roll pinned — must go red
 node scripts/tidalcheck.mjs --mutate=front   # squall front frozen — must go red
+node scripts/tidalcheck.mjs --mutate=rainoff # rain wallpaper again — must go red
+node scripts/tidalcheck.mjs --mutate=push    # crosswind drift zeroed — must go red
 npm run dev -- --port 5178 --strictPort   # then:
 CONTRACT_ONLY=tidal-rush npm run contractcheck
 DEV_PORT=5178 npm run tidaldrive         # headless Chrome: real keys/taps start-steer-
@@ -80,7 +92,9 @@ static job; every pushed commit is commented on #3104.
 ## Honest gaps (rung 3)
 
 - No online rooms (the SSX lobby reuse is on the issue's "not yet" list).
-- Rain is visual — it doesn't push the hull or slow visibility of gates.
+- **CLOSED by #3191** — rain is gameplay now: extra drag in the band
+  (v_term −10 %), seeded crosswind drift along the new swell, spatial drops
+  at Kai's hull, gates dimmed toward storm fog, wind cue at the band edges.
 - Three airborne verbs (flat 360, barrel, air-time bonus); flips/handstands
   would ride the same airborne spin budget.
 - The squall front mixes two whole-bay tables linearly across the band — real
