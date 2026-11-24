@@ -1,0 +1,55 @@
+name: Native sync
+
+# native/PORTS.md: when a merge to main touches a ported game's web code, file
+# (or add to) one open `native-sync` issue for that port, so its native version
+# follows. lane:manual keeps forge lanes and the warden away; Claude works these
+# in studio sessions. Nothing here can block a merge.
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/games/**']
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: native-sync
+  cancel-in-progress: false
+
+jobs:
+  file:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: File native-sync issues for changed ports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BEFORE^{commit}" 2>/dev/null || BEFORE="$AFTER~1"
+          SUBJECT=$(git log -1 --format=%s "$AFTER")
+          # Rows of the "## Ported" table: | Game | `src/games/X` ... | native | notes |
+          awk '/^## Ported/{on=1;next} /^## /{on=0} on && /^\| / && !/^\| Game \|/' native/PORTS.md | while IFS='|' read -r _ game web native _rest; do
+            game=$(echo "$game" | xargs)
+            native=$(echo "$native" | tr -d '` ')
+            paths=$(echo "$web" | grep -o 'src/games/[A-Za-z0-9_]*' || true)
+            [ -n "$paths" ] || continue
+            files=$(git diff --name-only "$BEFORE" "$AFTER" -- $paths)
+            [ -n "$files" ] || continue
+            body=$(printf 'Web change to a ported game: %s\n\n%s\n\nFiles:\n%s\n' "$SUBJECT" "$URL" "$(echo "$files" | sed 's/^/- `/; s/$/`/')")
+            n=$(gh issue list --label native-sync --state open --search "in:title \"native-sync: $game\"" --json number,title \
+                  --jq "map(select(.title == \"native-sync: $game\"))[0].number // empty")
+            if [ -n "$n" ]; then
+              gh issue comment "$n" --body "$body"
+            else
+              gh issue create --title "native-sync: $game" --label native-sync --label lane:manual \
+                --body "$(printf '%s\n\nBring %s up to date with these web changes (native/PORTS.md rules: gameplay follows the web exactly; graphics may improve). Later changes are added below as comments.\n' "$body" "$native")"
+            fi
+          done
