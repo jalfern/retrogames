@@ -102,8 +102,9 @@ void runAuto
     h4.vy = -2
     h4.speed = 9
     step(h4, {})
-    clear(h4)
-    r.check('touching the sea is a splash, not a landing (attempt resets)', h4.grad.spot == null && h4.spotState === 'splashed')
+    const h4ev = clear(h4)
+    r.check('touching the sea is a splash, not a landing (back to the saddle)',
+        h4.grad.spot == null && h4ev.some((e) => e.kind === 'splash') && h4.respawnT > 0)
 
     const h5 = makeGame(15)
     checkout(h5, 'drop')
@@ -202,7 +203,7 @@ if (process.argv.includes('--mutate')) {
         ['the ring pass stops counting', SIMF, 'g.ringsPassed++', 'g.ringsPassed += 0'],
         ['a dead ring scores as if active', SIMF, 'if (Math.hypot(g.p.x - r.x, g.p.y - r.y, g.p.z - r.z) < CFG.RING_R + 1.5)', 'if (Math.hypot(g.p.x - g.world.rings[7].x, g.p.y - g.world.rings[7].y, g.p.z - g.world.rings[7].z) < CFG.RING_R + 1.5)'],
         ['the bullseye pays the 200 band', SIMF, 'PAD_BANDS: [[4.5, 1000], [9, 700], [15, 450], [24, 200]]', 'PAD_BANDS: [[4.5, 200], [9, 700], [15, 450], [24, 200]]'],
-        ['sea contact becomes a landing', SIMF, "if (w.terrainHeight(g.p.x, g.p.z) < 0.4) { ev(g, 'splash')", "if (false) { ev(g, 'splash')"],
+        ['sea contact becomes a landing', SIMF, "if (ter < 0.4) { ev(g, 'splash')", "if (false) { ev(g, 'splash')"],
         ['crates forget to score on landing', SIMF, 'let score = 0\n            for (const [rad, pts] of CFG.DROP_BANDS)', 'let score = 0\n            for (const [rad, pts] of [])'],
         ['the license thresholds vanish', SIMF, 'ACE: 2400, WINGS: 1500,', 'ACE: 0, WINGS: 0,'],
     ]
