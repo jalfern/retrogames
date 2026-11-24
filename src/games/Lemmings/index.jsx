@@ -710,11 +710,12 @@ const LemGame = () => {
     const play = screen === 'play'
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
-            {/* #422 item 3: the skill panel is DOCKED, not floated — while
-                playing, the stage reserves its height, so the letterboxed canvas
-                ends above the bar and the bar never covers the walking ground. */}
+            {/* #422 item 3 / #3132: the skill panel is DOCKED, not floated — but
+                at the TOP edge now: the bottom edge is the VirtualControls pad
+                zone (SSX #894 law), so the stage reserves its height up top and
+                the bar never fights the pad for the same pixels. */}
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center"
-                style={{ bottom: play ? LAYOUT.panelReserve : 0 }} />
+                style={{ top: play ? LAYOUT.panelReserve : 0 }} />
 
             {/* #1637 WATCH — Y seats sim.js's solver; any input takes over.
                 The pill docks ABOVE the skill panel + pad band (the panel owns
@@ -775,16 +776,17 @@ const LemGame = () => {
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'LEMMINGS-LITE')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} />
 
-            {/* #432: the original's bottom panel — the skill bar with counts
-                (tap a skill to pick it) plus PAUSE and FAST-FORWARD, along the
-                bottom edge instead of floating over the crowd. Static markup:
-                the effect delegates the taps (the handlers live in the loop's
-                closure) and paints the selection highlight on the button. */}
+            {/* #432 / #3132: the original's skill panel — counts + PAUSE/FF —
+                docks at the TOP edge: the bottom edge is the VirtualControls pad
+                zone, and `full` (#3118 grant) would bury every skill button under
+                the clusters. Static markup: the effect delegates the taps (the
+                handlers live in the loop's closure) and paints the selection
+                highlight on the button. */}
             {play && !paused && (
                 <div
                     data-lem-panel
-                    className="absolute left-0 right-0 z-50 flex items-end justify-center gap-1.5 px-2 pointer-events-auto font-mono"
-                    style={{ bottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}
+                    className="absolute left-0 right-0 z-50 flex items-start justify-center gap-1.5 px-2 pointer-events-auto font-mono"
+                    style={{ top: 'calc(0.5rem + env(safe-area-inset-top))' }}
                 >
                     {SKILLS.map((s) => (
                         <button

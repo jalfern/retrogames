@@ -154,6 +154,26 @@ ok(Object.keys(PAD_TYPE_LABELS).length === PAD_TYPES.length, 'every type has a l
     }
     ok(/label: 'THROW', code: 'KeyN', pad: 3/.test(blockOf('/r-type')), 'R-TYPE throws on △ in the full diamond (#2931 verb survives the switch)')
     ok(/code: 'KeyZ', pad: 2/.test(blockOf('/double-dragon')), 'DOUBLE DRAGON punches on □ — diamond renders, PUNCH never orphaned')
+    // #3132 — chrome audit grants: ZELDA + LEMMINGS join the rollout ONLY with
+    // their bottom-edge chrome moved out of the pad zone (SSX #894 law). The
+    // pins below are the audit: a chrome move back to the bottom edge is red.
+    {
+        ok(/supports: \['stick', 'full'\]/.test(blockOf('/zelda')), 'ZELDA offers the full pad (#3132)')
+        ok(!/\btype: '/.test(blockOf('/zelda')), 'ZELDA grant keeps the derived stick default')
+        const zelda = readFileSync(new URL('../src/games/Zelda/index.jsx', import.meta.url), 'utf8')
+        ok(zelda.includes('ctx.fillRect(0, 0, W, HUD)'), 'ZELDA HUD band is the canvas TOP strip (#3132)')
+        ok(!zelda.includes('fillRect(0, PLAY_H, W, HUD)'), 'ZELDA HUD never returns to the bottom edge (#3132)')
+        ok(zelda.includes('c.translate(0, HUD)'), 'ZELDA scene renders under the top band (#3132)')
+        ok(/supports: \['pointer', 'full'\]/.test(blockOf('/lemmings')), 'LEMMINGS offers the full pad (#3132)')
+        ok(!/\btype: '/.test(blockOf('/lemmings')), 'LEMMINGS grant keeps the derived pointer default')
+        const lem = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+        ok(!/bottom: 'calc\(0\.5rem \+ env\(safe-area-inset-bottom\)\)'/.test(lem), 'LEMMINGS skill panel left the pad zone (#3132)')
+        ok(/top: 'calc\(0\.5rem \+ env\(safe-area-inset-top\)\)'/.test(lem), 'LEMMINGS panel docks at the top edge (#3132)')
+        ok(/top: play \? LAYOUT\.panelReserve : 0/.test(lem), 'LEMMINGS stage reserve moved with the panel (#3132)')
+        const verbs = ["label: 'BLOCK', code: 'Digit1'", "code: 'Digit2', pad: 2", "code: 'Digit3', pad: 3", "code: 'Digit4', pad: 5"]
+        ok(verbs.every((v) => blockOf('/lemmings').includes(v)), 'LEMMINGS full diamond carries BLOCK/BOMB/CLIMB + R DIG (#3132)')
+        ok(/reads: \['pointer', 'a', 'b'\]/.test(blockOf('/lemmings')), 'LEMMINGS pad shows ✕ ACT + ○ BLOCK in full (#3132)')
+    }
     // grants must not disturb the derived defaults
     ok(defaultTypeFor({ layout: 'stick', buttons: [], analog: false, supports: ['stick', 'full'] }) === 'stick', 'galaga-style grant keeps stick default')
     ok(defaultTypeFor({ layout: 'dpad', aLabel: 'JUMP', buttons: [], supports: ['dpad', 'full'] }) === 'dpad', 'dd-style grant keeps dpad default')

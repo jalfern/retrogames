@@ -682,7 +682,7 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     const pilots = {
         '/pacman': { method: 'dpad', reads: ['up', 'down', 'left', 'right'], b: null, file: '../src/games/Pacman/index.jsx' },
         '/mario-kart': { method: 'stick', reads: ['x', 'y', 'a', 'b'], b: 'KeyR', bLabel: 'DRIFT', aLabel: 'ITEM', file: '../src/games/MarioKart/index.jsx' },
-        '/lemmings': { method: 'pointer', reads: ['pointer'], b: null, file: '../src/games/Lemmings/index.jsx' },
+        '/lemmings': { method: 'pointer', reads: ['pointer', 'a', 'b'], b: 'Digit1', bLabel: 'BLOCK', aLabel: 'ACT', file: '../src/games/Lemmings/index.jsx' }, // #3132 full grant — verb set added, pointer default unchanged
     }
     for (const [path, want] of Object.entries(pilots)) {
         const g = GAMES.find((e) => e.path === path)
