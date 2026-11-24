@@ -53,6 +53,16 @@ const TidalRushGame = () => {
         if (previewRef.current) previewRef.current()
     }, [])
 
+    // Pause must silence the loop voice; resume restarts it (the next simTick
+    // re-winds it to the hull's speed) — otherwise the engine hums under the sheet.
+    const setPause = useCallback((on) => {
+        if (pausedRef.current === on) return
+        pausedRef.current = on
+        setPaused(on)
+        if (on) audioController.stopLoopVoice()
+        else audioController.startLoopVoice(52)
+    }, [])
+
     useEffect(() => {
         const wrap = stageRef.current
         if (!wrap) return undefined
@@ -422,7 +432,7 @@ const TidalRushGame = () => {
         startRaceRef.current = startRace
         const onKeyDown = (e) => {
             if (e.code === 'Escape' || e.code === 'Backquote' || e.code === 'Slash') {
-                if (screenRef.current === 'play') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current) }
+                if (screenRef.current === 'play') setPause(!pausedRef.current)
                 return
             }
             if (pausedRef.current) return
@@ -530,7 +540,7 @@ const TidalRushGame = () => {
             rain.mat.dispose()
             canvas.remove()
         }
-    }, [setMode])
+    }, [setMode, setPause])
 
     const play = screen === 'play'
     const entry = GAMES.find((g) => g.label === 'TIDAL RUSH')
@@ -610,7 +620,7 @@ const TidalRushGame = () => {
                 </div>
             )}
 
-            {paused && <PauseOverlay game={entry} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
+            {paused && <PauseOverlay game={entry} onResume={() => setPause(false)} />}
             <VirtualControls secondAction={{ label: 'BOOST', code: 'ShiftLeft' }} visible={play && !paused} />
         </div>
     )

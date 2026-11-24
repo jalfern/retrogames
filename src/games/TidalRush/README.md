@@ -65,6 +65,14 @@ static job; every pushed commit is commented on #3104.
 - Rain is visual — it doesn't push the hull or slow visibility of gates.
 - Two tricks (flat 360, barrel); flips/handstands would ride the same
   airborne spin budget.
-- Engine audio is stepped sawtooth, not a continuous loop voice.
 - Storm is weather, not waves-at-depth: swells re-roll per lap but the
   transition is a blend, not a wave-by-wave front crossing the bay.
+- Wake is pooled spray dots, not a stitched ribbon (the WR64 original's trail
+  is a solid white ribbon).
+- No caustic shimmer near the beach — crests carry subsurface glow only.
+- Rider has no animation variety beyond the two postures (crouch + lean/jolt)
+  with head-lag and arms tracking the bar; no separate jump/land poses.
+- Loop audio ships but has no swell sting at the start line and no whoosh-in
+  on a landed trick (air launches and the barrel carry one).
+- Bay is bare of in-bounds scenery — headlands ring the rim, but there are no
+  moored boats, no buoy bell, no birds.
