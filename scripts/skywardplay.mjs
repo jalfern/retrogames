@@ -101,6 +101,26 @@ try {
   await runEvent('glider', 'spot', 'spot-glider', 12)
   await runEvent('belt', 'drop', 'drop-belt', 8)
 
+  /* rung 2 — THUNDERPASS: drive east into the cell and feel the storm */
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    for (let k = 0; k < 3 && T.state().craft !== 'plane'; k++) T.recycle()
+    T.checkout('pass')
+  })
+  const ps0 = await page.evaluate(() => window.__skywardTest.state())
+  ok(ps0.phase === 'pass' && ps0.craft === 'plane', `thunderpass checkout eastbound (phase=${ps0.phase})`)
+  await simSleep(3)
+  await page.keyboard.down('ArrowLeft'); await simSleep(0.35); await page.keyboard.up('ArrowLeft')
+  const mid = await page.evaluate(() => window.__skywardTest.state())
+  ok(mid.stormS > 0.3, `the hull is IN the cell (stormS=${mid.stormS})`)
+  await shot('skyward-thunderpass.png')
+  await page.keyboard.down('ArrowRight'); await simSleep(0.5); await page.keyboard.up('ArrowRight')
+  await simSleep(6)
+  const ps1 = await page.evaluate(() => window.__skywardTest.state())
+  ok(ps1.passIdx >= 1 || ps1.stormWings || ps1.crashes > 0,
+    `the storm fight is live: gates cleared or weather felt (passIdx=${ps1.passIdx} stormS=${ps1.stormS} crashes=${ps1.crashes})`)
+  ok(Number.isFinite(ps1.x + ps1.y + ps1.z) && ps1.y > 0, `plane survives the cell (y=${ps1.y.toFixed(0)})`)
+
   /* keyboard path + pause + restart through real UI */
   await page.keyboard.press('KeyN')
   await page.keyboard.press('ArrowLeft')

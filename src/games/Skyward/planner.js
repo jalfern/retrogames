@@ -23,6 +23,7 @@ export function decide(g) {
     if (g.phase === 'ring') return flyTo(g, ringTarget(g), 0.9)
     if (g.phase === 'spot') return glideHome(g)
     if (g.phase === 'drop') return beltRun(g)
+    if (g.phase === 'pass') return stormRun(g)
     return cruise(g)
 }
 
@@ -44,18 +45,29 @@ function ringTarget(g) {
     return { x: r.x, y: r.y, z: r.z }
 }
 
+// THUNDERPASS: the same honest seeker, but storm-aware — aim above the gate
+// while the core downdraft is pulling, so the hull arrives at gate height
+// instead of under it.
+function stormRun(g) {
+    const pg = g.world.passRings[Math.min(g.passIdx, g.world.passRings.length - 1)]
+    const lift = g.stormS > 0.5 ? g.stormS * 5 : 0
+    return flyTo(g, { x: pg.x, y: pg.y + lift, z: pg.z }, 1.15)
+}
+
 function glideHome(g) {
     const w = g.world
     const p = g.p
     const padD = Math.hypot(p.x - w.pad.x, p.z - w.pad.z)
     const gh = p.y - w.terrainHeight(p.x, p.z)
 
-    // far out and low: hunt lift before committing
+    // far out and low: hunt lift before committing — chase the CLOUD, which
+    // drifts: thermalPos(c, t) is where the lift actually is right now
     if (gh < 34 && padD > 120) {
         let best = null, bd = 1e9
         for (const c of w.thermals) {
-            const d = Math.hypot(p.x - c.x, p.z - c.z)
-            if (d < bd) { bd = d; best = c }
+            const tp = w.thermalPos(c, g.t)
+            const d = Math.hypot(tp.x - p.x, tp.z - p.z)
+            if (d < bd) { bd = d; best = tp }
         }
         if (best && bd < 160) {
             const e = turnErr(g.heading, bearingTo(p, best.x, best.z))

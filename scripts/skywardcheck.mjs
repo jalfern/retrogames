@@ -125,6 +125,88 @@ void runAuto
     r.check('in free flight the throttle button near nothing never invents an event', h6.phase === 'free')
 }
 
+// ------------------------------------------------- thunderpass (rung 2) ----
+{
+    const g = makeGame(7)
+    const w = g.world
+    r.check('the thunderpass line drives east through the cell, 5 gates, all over open sea',
+        w.passRings.length === 5 && w.passRings.every((p, i) => w.terrainHeight(p.x, p.z) < -2 && (i === 0 || p.x > w.passRings[i - 1].x) && p.y > 8 && p.y < 32)
+        && Math.hypot(w.passStart.x - w.storm.x, w.passStart.z - w.storm.z) > w.storm.r)
+    r.check('the storm is REAL for the plane: held at the core it sinks, in fair air it does not', (() => {
+        const sink = (x, z) => {
+            const h = makeGame(21)
+            h.p = { x, y: 30, z }
+            h.heading = Math.PI / 2; h.pitch = 0; h.roll = 0; h.speed = 38; h.vy = 0
+            const y0 = h.p.y
+            for (let i = 0; i < 60; i++) step(h, {})
+            return y0 - h.p.y
+        }
+        const core = sink(w.storm.x + 15, w.storm.z)
+        const fair = sink(0, -600)
+        return core > 1.0 && Math.abs(fair) < 0.5
+    })())
+
+    checkout(g, 'pass')
+    r.check('checkout puts the plane eastbound at the front of the cell',
+        g.phase === 'pass' && g.craft === 'plane' && Math.abs(g.heading - Math.PI / 2) < 0.01 && g.passIdx === 0)
+    // out-of-order: park on the LAST gate — the sequence law says no score
+    const last = g.world.passRings[4]
+    g.p = { x: last.x, y: last.y, z: last.z }
+    step(g, {})
+    r.check('a non-active pass gate never scores (sequence law)', g.passIdx === 0)
+    // clean sweep
+    for (let i = 0; i < 5; i++) { const pg = g.world.passRings[i]; g.p = { x: pg.x, y: pg.y, z: pg.z }; step(g, {}) }
+    const fin = g.events.filter((e) => e.kind === 'finish')
+    g.events.length = 0
+    r.check('all 5 gates finish with 700 + a time bonus (≤1000) and earn STORM WINGS',
+        g.grad.pass != null && g.grad.pass >= 700 && g.grad.pass <= 1000 && g.stormWings && g.phase === 'free'
+        && fin.some((e) => e.event === 'THUNDERPASS'), `pass=${g.grad.pass}`)
+    r.check('the licence math stays core-three: a pass alone never graduates and never scores',
+        !g.done && g.score === 0, `score=${g.score} done=${g.done}`)
+
+    const SEEDS = [1, 7, 42, 99, 123]
+    let allPass = true
+    const ps = []
+    for (const s of SEEDS) {
+        const h = makeGame(s)
+        checkout(h, 'pass')
+        let n = 0
+        while (h.grad.pass == null && n++ < 12000) { step(h, decide(h)); h.events.length = 0; if (h.done) break }
+        const ok = h.grad.pass != null && h.grad.pass >= 700 && h.grad.pass <= 1000 && h.stormWings
+        if (!ok) allPass = false
+        ps.push(`${s}:${h.grad.pass ?? 'fail'}`)
+    }
+    r.check('the storm is beatable: the autopilot clears THUNDERPASS on all five seeds', allPass, ps.join(' '))
+}
+
+// ------------------------------------------------ thermals drift (rung 2) ----
+{
+    const w = makeGame(7).world
+    let maxD = 0, liftOk = false
+    for (let t = 0; t < 900; t++) {
+        for (const c of w.thermals) {
+            const p = w.thermalPos(c, t)
+            maxD = Math.max(maxD, Math.hypot(p.x - c.x, p.z - c.z))
+        }
+    }
+    r.check('thermals drift with the breeze and stay on station (≤ 26 m)', maxD <= 26, `maxDrift=${maxD.toFixed(1)}`)
+    const c0 = w.thermals[0]
+    for (let t = 0; t < 900 && !liftOk; t++) {
+        const p = w.thermalPos(c0, t)
+        if (Math.hypot(p.x - c0.x, p.z - c0.z) > 12) {
+            liftOk = w.thermalLift(p.x, p.z, t) > w.thermalLift(c0.x, c0.z, t) + 1.0
+        }
+    }
+    r.check('the lift follows the cloud, not the home spot (what you see is what you get)', liftOk)
+    const a = makeGame(7), b = makeGame(7)
+    let same = true
+    for (let t = 0; t < 500; t += 7) {
+        const pa = a.world.thermalPos(a.world.thermals[1], t), pb = b.world.thermalPos(b.world.thermals[1], t)
+        if (pa.x !== pb.x || pa.z !== pb.z) same = false
+    }
+    r.check('the drift is seed-deterministic', same)
+}
+
 // -------------------------------------------------------- graduation ----
 {
     const SEEDS = [1, 7, 42, 99, 123]
@@ -206,6 +288,8 @@ if (process.argv.includes('--mutate')) {
         ['sea contact becomes a landing', SIMF, "if (ter < 0.4) { ev(g, 'splash')", "if (false) { ev(g, 'splash')"],
         ['crates forget to score on landing', SIMF, 'let score = 0\n            for (const [rad, pts] of CFG.DROP_BANDS)', 'let score = 0\n            for (const [rad, pts] of [])'],
         ['the license thresholds vanish', SIMF, 'ACE: 2400, WINGS: 1500,', 'ACE: 0, WINGS: 0,'],
+        ['the storm stops pulling the plane down', SIMF, 'g.p.y += st.vy * 0.6 * dt', 'g.p.y += 0 * st.vy * dt'],
+        ['a dead thunderpass gate scores as if active', SIMF, 'const pg = w.passRings[g.passIdx]', 'const pg = w.passRings[4]'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

@@ -133,17 +133,27 @@ export function makeWorld(seed) {
         return h * (1 - w) + target * w
     }
 
-    // fair-weather thermals — the glider's elevator, under the cumuli
+    // fair-weather thermals — the glider's elevator, under the cumuli.
+    // Rung 2: the columns drift with the sea-breeze (til A) and breathe
+    // side-to-side (til B); thermalPos(c, t) is the ONE answer — sim lift,
+    // the autopilot's target and the painted cumulus all read it, so the
+    // cloud you see is the lift you get.
     const thermals = [
         { x: -70, z: -110, r: 36, phase: 0.0 },
         { x: 55, z: -165, r: 32, phase: 2.1 },
         { x: -130, z: -185, r: 30, phase: 4.2 },
         { x: 120, z: -40, r: 30, phase: 1.1 },
     ]
+    function thermalPos(c, t) {
+        const drift = Math.sin(t * 0.021 + c.phase) * 12 + wind.x * Math.sin(t * 0.05 + c.phase * 0.7) * 1.6
+        const dz = Math.cos(t * 0.017 + c.phase * 1.3) * 10 + wind.z * Math.sin(t * 0.05 + c.phase * 0.7) * 1.6
+        return { x: c.x + drift, z: c.z + dz }
+    }
     function thermalLift(x, z, t) {
         let lift = 0
         for (const c of thermals) {
-            const d = Math.hypot(x - c.x, z - c.z)
+            const p = thermalPos(c, t)
+            const d = Math.hypot(x - p.x, z - p.z)
             if (d > c.r) continue
             const pulse = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 0.32 + c.phase))
             lift += 3.6 * bell(d, c.r * 0.72) * pulse
@@ -162,6 +172,19 @@ export function makeWorld(seed) {
         const gz = (fbm(x * 0.02, z * 0.02 + t * 0.5, 3) - 0.5) * 2
         return { s, gust: { x: gx * 5.2 * s, z: gz * 5.2 * s }, vy: (ring * 1.9 - s * 2.2) }
     }
+    // THUNDERPASS (rung 2): the storm as a course. Five gates drive through
+    // the cell — in at the west edge (rising ring), dip the core downdraft,
+    // out the east exit — placed from the cell itself so the line stays
+    // aligned with the weather on every seed. All gates sit over open sea.
+    const passStart = { x: storm.x - 352, z: storm.z - 30 }   // (208, −70)
+    const passRings = [
+        { x: storm.x - 240, y: 24, z: storm.z + 20 },   // rising west edge
+        { x: storm.x - 115, y: 17, z: storm.z + 95 },    // into the downslant
+        { x: storm.x + 15, y: 12, z: storm.z - 15 },     // the core — the dip
+        { x: storm.x + 140, y: 22, z: storm.z - 100 },   // easing out
+        { x: storm.x + 250, y: 28, z: storm.z - 30 },     // rising east exit
+    ]
+
     function stormFlash(t) {
         const f = (t * 0.61 + (r & 1023) / 97) % 7
         return f < 0.05 ? 1 : f > 0.09 && f < 0.13 ? 0.55 : 0
@@ -221,8 +244,8 @@ export function makeWorld(seed) {
     }
 
     return {
-        seed: seed >>> 0, wind, terrainHeight, thermalLift, stormAt, stormFlash,
+        seed: seed >>> 0, wind, terrainHeight, thermalLift, thermalPos, stormAt, stormFlash,
         waves, waterHeightAt, waterVy, waterGLSL, thermals, storm,
-        rings, targets, pad, school, launch,
+        rings, targets, pad, school, launch, passStart, passRings,
     }
 }
