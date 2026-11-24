@@ -1494,7 +1494,7 @@ const SSXGame = () => {
                 FLIP is one button now — stick tilt picks its direction
                 (forward = FRONT flip), replacing the discrete FLIP/FRNT pair;
                 keyboard Z/C and gamepad L1/R1 keep both flips explicit. */}
-            {play && !paused && TOUCH_PAD && (
+            {play && !paused && TOUCH_PAD && padTypeUI !== 'full' && (
                 <div
                     className="fixed z-50 right-0 flex gap-2 pointer-events-auto select-none"
                     style={{ bottom: 'calc(9.5rem + env(safe-area-inset-bottom))', paddingRight: 'calc(2rem + env(safe-area-inset-right))' }}

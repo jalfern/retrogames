@@ -1122,7 +1122,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
                         <div
                             data-vc="facediamond"
                             className="grid items-center justify-items-center"
-                            style={{ gridTemplateColumns: `repeat(3, ${btnFull}px)`, gridTemplateRows: `repeat(3, ${btnFull}px)` }}
+                            style={{ gridTemplateColumns: `repeat(3, ${btnFull}px)`, gridTemplateRows: `repeat(3, ${Math.round(btnFull * 0.8)}px)` }}
                         >
                             {fxT && fxBtn(fxT, 2, 1, 'bg-white/30', 'bg-white/10')}
                             {fxL && fxBtn(fxL, 1, 2, 'bg-white/30', 'bg-white/10')}
