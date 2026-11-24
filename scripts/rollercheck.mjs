@@ -6,13 +6,14 @@
 // parity bridge: art.js extrudes floors through course.pointOf and index.jsx
 // places the marble and decks through the same pointOf/moverDeck the sim rides
 // — plus a geometry check that the built mesh actually carries those samples.
-// The last section drives it in real headless Chrome: attract, key-start,
-// throttle, drive off the edge, die, retry — zero page errors.
+// The last section drives it in real headless Chrome — opt-in on the lane:
+// the CI scope gate is Node-only (skyward's pattern), so pass --browser:
+// attract, key-start, throttle, drive off the edge, die, retry — zero page errors.
 //
-// Run: npm run rollercheck
+// Run: npm run rollercheck                           (CI half, Node-only)
+//      npm run rollercheck -- --browser              (+ Chrome drive, lane-run)
 //      node scripts/rollercheck.mjs --mutate            (edge fall muted → red)
 //      node scripts/rollercheck.mjs --mutate=budget     (grip budget dead → red)
-//      node scripts/rollercheck.mjs --no-browser        (skip the Chrome drive)
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -21,7 +22,7 @@ import { plant, restoreAll } from './lib/mutateguard.mjs'
 
 const mutArg = process.argv.find((a) => a.startsWith('--mutate'))
 const MUT = mutArg ? (mutArg.split('=')[1] || 'edge') : null
-const NO_BROWSER = process.argv.includes('--no-browser')
+const BROWSER = process.argv.includes('--browser')
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`  ok  ${name}`) } else { fail++; console.log(`  FAIL ${name}`) } }
 
@@ -168,7 +169,7 @@ console.log('\n[7] stateHash survives JSON snapshot/restore')
     ok('snapshot round-trip hash-equal', stateHash(gs) === h1)
 }
 
-if (!NO_BROWSER) {
+if (BROWSER) {
     console.log('\n[8] Chrome drive (real keys)')
     const { launch, openGame, requireDevServer } = await import('./lib/harness.mjs')
     const url = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/marble-rush?lite=1`
