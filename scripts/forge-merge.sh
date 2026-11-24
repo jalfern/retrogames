@@ -28,10 +28,32 @@ if [[ "$branch" == main ]]; then
 fi
 node scripts/lib/mergeclean.mjs reap   # advisory; a dirty squat is named, not destroyed
 scripts/main-ok.sh || exit 1
-while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do
-    [ "$s" = SUCCESS ] && break
-    case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac
-    sleep 20
+# #3120 — an unknown state is NOT the end of the wait. `gh pr checks` exits
+# non-zero while CI has not registered runs for the pushed head yet ("no checks
+# reported on the branch"), and the old `while s=$(...)` read that as loop-over:
+# the next statement merged seconds after a push, unverified. Unknown/empty now
+# polls on; only `static` SUCCESS merges. A live check (PENDING/…) restarts the
+# clock; if nothing ever reports inside MERGE_WAIT_TIMEOUT the merge is refused
+# — silence never merges. (Knobs exist for mergecheck's sandbox; defaults are
+# the old 20 s poll and a generous never-reported window.)
+POLL=${MERGE_POLL:-20}
+WAIT=${MERGE_WAIT_TIMEOUT:-900}
+deadline=$(( $(date +%s) + WAIT ))
+while :; do
+    s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state' 2>/dev/null) || s=""
+    case "$s" in
+        SUCCESS) break ;;
+        FAILURE|ERROR|TIMED_OUT|CANCELLED)
+            echo "forge-merge: required check \`static\` is $s — not merging" >&2
+            exit 1 ;;
+        PENDING|IN_PROGRESS|QUEUED|WAITING|BLOCKED|REQUESTED)
+            deadline=$(( $(date +%s) + WAIT )) ;;   # alive: the never-reported clock restarts
+    esac
+    if (( $(date +%s) >= deadline )); then
+        echo "forge-merge: \`static\` never reported a state (last seen: ${s:-none}) — refusing to merge unverified (#3120)" >&2
+        exit 1
+    fi
+    sleep "$POLL"
 done
 gh pr merge --squash --delete-branch
 node scripts/lib/mergeclean.mjs post "$branch"

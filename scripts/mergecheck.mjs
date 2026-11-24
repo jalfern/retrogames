@@ -17,6 +17,12 @@
 //                    number-less `gh pr view --repo` dies in this scenario).
 //   E lane on main   — forge-merge.sh refuses to merge from a lane parked on
 //                    `main` instead of a PR branch.
+//   F late CI (#3120) — `gh pr checks` first exits "no checks reported" (the
+//                    head was pushed seconds ago), then PENDING, then SUCCESS:
+//                    the wait must poll on and merge only after SUCCESS (the
+//                    fake gh logs its calls; merge before success = fail).
+//   G never reports  — checks never appear: refuse unverified, touch nothing.
+//   H red static     — static FAILURE refuses; gh pr merge never fires.
 //npm run mergecheck
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -52,11 +58,32 @@ args=("$@")
 for ((i=1; i<=$#args; i++)); do [[ "\${args[$i]}" == "--jq" ]] && jqexpr="\${args[$((i+1))]}"
 done
 emit() { if [[ -n "$jqexpr" ]]; then print -r -- "$1" | jq -r "$jqexpr"; else print -r -- "$1"; fi }
+ seqtok() {
+   # consume FAKE_SEQ one line per pr-checks call; the last token sticks.
+   # #3120: replays CI being behind a fresh push ("no checks reported"),
+   # then PENDING, then reporting — calls logged so the test can prove the
+   # merge waited instead of falling through on an unknown state.
+   if [[ -n "$FAKE_SEQ" && -s "$FAKE_SEQ" ]]; then
+     tok=$(head -n1 "$FAKE_SEQ")
+     if [[ $(wc -l < "$FAKE_SEQ") -gt 1 ]]; then tail -n +2 "$FAKE_SEQ" > "$FAKE_SEQ.t"; mv "$FAKE_SEQ.t" "$FAKE_SEQ"; fi
+   else
+     tok=success
+   fi
+ }
 case "$1" in
   run) emit '[]' ;;
   pr)
     case "$2" in
-      checks) emit '[{"name":"static","state":"SUCCESS"}]' ;;
+      checks)
+        seqtok
+        [[ -n "$FAKE_LOG" ]] && print -r -- "checks:$tok" >> "$FAKE_LOG"
+        case "$tok" in
+          error)   echo "no checks reported on the 'forge/testfix' branch" >&2; exit 1 ;;
+          empty)   emit '[]' ;;
+          pending) emit '[{"name":"static","state":"PENDING"}]' ;;
+          failure) emit '[{"name":"static","state":"FAILURE"}]' ;;
+          *)       emit '[{"name":"static","state":"SUCCESS"}]' ;;
+        esac ;;
       view)
         # #3070-faithful: gh pr view --repo X REQUIRES a positional
         # number/url/branch — inference is disabled with --repo, which is
@@ -79,6 +106,7 @@ case "$1" in
         [[ -n "$head" && "$head" != "$FAKE_BASE" ]] && state=MERGED
         emit "{\\"state\\":\\"$state\\",\\"headRefName\\":\\"$FAKE_BRANCH\\"}" ;;
       merge)
+        [[ -n "$FAKE_LOG" ]] && print -r -- merge >> "$FAKE_LOG"
         if [[ "$FAKE_MERGE" == "none" ]]; then
             echo "pull request is not mergeable (simulated)" >&2; exit 1
         fi
@@ -104,7 +132,8 @@ case "$1" in
 esac
 `;
 
-function buildSandbox(tag, { dirtySquat = false, merge = 'trap', withSquat = true, deep = false } = {}) {
+function buildSandbox(tag, { dirtySquat = false, merge = 'trap', withSquat = true, deep = false,
+    checks = null, poll = null, waitTimeout = null } = {}) {
     // realpath the root: macOS /var -> /private/var, and git prints the resolved
     // worktree paths; HOME is sandboxed so zsh's ~/.zshenv cannot prepend
     // homebrew and shadow the fake gh (real gh answering "fake/repo" = silence).
@@ -139,6 +168,10 @@ function buildSandbox(tag, { dirtySquat = false, merge = 'trap', withSquat = tru
     git(['clone', '-q', origin, 'server'], root, env);
     env.FAKE_BARE = origin; env.FAKE_SERVER = path.join(root, 'server');
     env.FAKE_BASE = base; env.FAKE_SQUAT = squat; env.FAKE_MERGE = merge;
+    env.FAKE_LOG = path.join(root, 'ghlog.txt');   // ordered log of gh calls (#3120)
+    if (checks) { env.FAKE_SEQ = path.join(root, 'seq.txt'); fs.writeFileSync(env.FAKE_SEQ, checks.join('\n') + '\n'); }
+    if (poll != null) env.MERGE_POLL = String(poll);
+    if (waitTimeout != null) env.MERGE_WAIT_TIMEOUT = String(waitTimeout);
     env.PATH = `${path.join(root, 'bin')}:${process.env.PATH}`;
     return { root, env, origin, plumb, lane, squat, base };
 }
@@ -221,6 +254,50 @@ say('E — forge-merge refuses to run from a lane parked on main (#3070 guard)')
     const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
     ok(r.status !== 0 && (r.stderr + r.stdout).includes('not a PR branch'), 'says why, exits non-zero');
     ok(remoteHeads(s).includes('forge/testfix'), 'remote untouched');
+    fs.rmSync(s.root, { recursive: true, force: true });
+}
+
+say('F — "no checks reported" is WAIT, not merge (#3120): CI catches up, merge fires only after SUCCESS');
+{
+    // The #3116 bite, replayed: forge-merge fired seconds after a push, gh
+    // exited non-zero ("no checks reported"), the old `while s=$(...)` read
+    // that as loop-over and merged unverified. The call log makes the ordering
+    // proof: a fall-through would log `merge` before any checks:success.
+    const s = buildSandbox('late', { withSquat: false, poll: 1,
+        checks: ['error', 'error', 'empty', 'pending', 'success'] });
+    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const log = fs.readFileSync(s.env.FAKE_LOG, 'utf8').trim().split('\n');
+    ok(r.status === 0, `wrapper exits 0 once static verifies (got ${r.status})`);
+    ok(log[0] === 'checks:error' && log[1] === 'checks:error', 'polled on through "no checks reported" (no early merge)');
+    ok(log.includes('checks:empty') && log.includes('checks:pending'), 'polled on through empty list and PENDING');
+    ok(log.includes('checks:success') && log.indexOf('merge') > log.lastIndexOf('checks'),
+        'merge fired only after static reported SUCCESS');
+    ok(r.stdout.includes('MERGED (server truth)'), 'normal merge path still completes once verified');
+    fs.rmSync(s.root, { recursive: true, force: true });
+}
+
+say('G — checks never report: refuse to merge unverified, touch nothing (#3120)');
+{
+    const s = buildSandbox('never', { checks: ['error'], poll: 1, waitTimeout: 3 });
+    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const log = fs.readFileSync(s.env.FAKE_LOG, 'utf8').trim().split('\n');
+    ok(r.status !== 0, `wrapper exits non-zero when static never reports (got ${r.status})`);
+    ok((r.stderr + r.stdout).includes('unverified'), 'says why: refusing to merge unverified');
+    ok(!log.includes('merge'), 'gh pr merge never fired');
+    ok(remoteHeads(s).includes('forge/testfix'), 'remote branch untouched');
+    ok(git(['rev-parse', 'origin/main'], s.plumb, s.env).stdout.trim() === s.base, 'origin/main untouched');
+    ok(git(['symbolic-ref', '--short', 'HEAD'], s.lane, s.env).stdout.trim() === 'forge/testfix', 'lane still on its branch');
+    fs.rmSync(s.root, { recursive: true, force: true });
+}
+
+say('H — static FAILURE refuses the merge (red never merges, reported or not)');
+{
+    const s = buildSandbox('red', { checks: ['failure'], poll: 1 });
+    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const log = fs.readFileSync(s.env.FAKE_LOG, 'utf8').trim().split('\n');
+    ok(r.status !== 0, `wrapper exits non-zero (got ${r.status})`);
+    ok(!log.includes('merge'), 'gh pr merge never fired');
+    ok(remoteHeads(s).includes('forge/testfix'), 'remote branch untouched');
     fs.rmSync(s.root, { recursive: true, force: true });
 }
 
