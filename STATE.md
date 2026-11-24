@@ -1,57 +1,61 @@
-# STATE — RetroGames arcade (slot a)
+# STATE — forge board snapshot (slot b, 2026-11-24 — TIDAL RUSH rung 1 shipped)
 
-_Last update: 2026-11-24 ~09:40Z (forge lane a session end)._
+## This session — one ship
+- **#3104 rung 1 — TIDAL RUSH (SUNNY BAY jet-ski slalom)** SHIPPED: PR
+  #3125 merged 11:14Z → main `7e93098`; prod bundle `index-BqBlKU8r`
+  carries the route: `https://jalfern.com/retrogames/tidal-rush` (private
+  until Jon promotes). Wave Race 64 spirit, own IP (KAI vs MAKO & TUNDRA):
+  red-right/yellow-left slalom, sprint charged by clean passes, throttle
+  choke on misses, 360 tricks off kickers, analog stick + lean, 3 laps.
+  **Water = ONE table**: `src/games/TidalRush/water.js` Gerstner waves drive
+  the CPU hull AND generate the vertex shader (`waterGLSL()`); tidalcheck
+  parses both — drawn sea ≡ ridden sea, provably.
+- Harness: `tidalcheck` 24 pins (`tidal` scope + ci.yml static step),
+  red-side mutant caught (21/24 red); contractcheck 15/15 incl snapshot/
+  restore; browser drive 10/10 zero page errors; lint:mario + build green.
+  #3104 stays OPEN for rung 2 (storm bay, lap-varying swell) — back on
+  `game-queue`. Polish pass filed: **#3135** (`feedback`).
+- Rule 4: COUNTER RESET — game code merged.
 
-## What's playable now
-- **STOMPTOWN (#3094) is LIVE**: https://jalfern.com/retrogames/stomptown — Jon's
-  city-breaker prototype promoted to a full registered title. Own cast (GROG/ZARRA/
-  FENRIS), 12-city tour, climbable towers, window loot, blimp rescue. Prod bundle
-  verified serving `Stomptown-*.js`. Merged `43df2c8` (PR #3112); #3094 shipped+closed.
-  Gates: `npm run stompcheck` (69 Node checks + 10 mutants, `stomp` scope registered,
-  runs in `static`), `npm run stompdrive` (15 browser checks). Autopilot razes day 1
-  in ~28 s world time; full tour win is hash-for-hash deterministic (seed 11, 144 380).
-- PINBALL — CABINET ONE (#3103 rung 1, #3116) and PADTYPES five switchable overlays
-  (#3117) also merged today by other lanes.
-- Production remains everything on `main`; `static` (green at `43df2c8`) is the only
-  required check; main-ok clear at session end.
+## PLAYABLE on main right now
+- **`/retrogames/tidal-rush`** — stick or dpad pad, B = BOOST, ? pause.
+- `/retrogames/stomptown` (#3112), `/retrogames/pinball` (#3116), ssx
+  (FULL pad default), marble-madness (STICK/TILT), pacman (DPAD/STICK),
+  mario, forge board, TIDY BOT papercraft (#3085), STARRY NIGHT demo
+  (#3082), TOP SOLDIERS (#3067), DOUBLE DRAGON, R-TYPE, RACCOON HEIST,
+  spy-hunter, iron keep, galaga, missile, pucks, mines, zork, ultima,
+  king's quest, Joust, Q*bert.
 
-## This session (lane a) — SHIPPED #3094
-- Built the full STOMPTOWN package in the issue-keyed worktree
-  (`~/Dev/retrogames-forge-3094-stomptown`, now detached at `origin/main`):
-  pure seeded `sim.js`, shared attract/harness autopilot `planner.js`, DOM-free
-  `art.js`, shell with attract/pause/pad/exposeGame, registry entry `/stomptown`
-  (private until Jon promotes), contract roster+pattern, original music bed, README,
-  `stompcheck` + `stompdrive` + `stomp` CI scope registration.
-- Two real bugs caught by the harness mid-build: `step()` overwrote `gs.prev` before
-  its `just()` closure read it (no punch/jump/eat could fire), and the frame loop
-  gated event-draining on `!gs.end` (over-screen never opened). Both fixed + pinned.
-- #3094 collision history (from the prior lane-a report, now resolved): lane a's
-  earlier single-file attempt (`stomp-town` id, `/stomp-town` route) stood down when
-  the warden kicked a second builder onto the same issue; the surviving build kept
-  `stomptown` naming everywhere. Both hazards the old report flagged (dir-case 404,
-  on-screen "RAMPAGE" text) are fixed and verified — prod copy says STOMP, git tree
-  is `src/games/Stomptown` (case-checked; Linux CI passed).
-- Filed **QA — STOMPTOWN: polish pass → #3123** (label `feedback`): destruction
-  theatre (sequential floor-crush, dust, burning rubble), third parallax layer +
-  street life, distinct monster silhouettes/eyes, per-city music variation +
-  newspaper ceremony days, blimp spotlight. QA lane picks it up; builders don't.
-- Lane-collision harness bug #3110 stays open (claim paths should be lane-keyed and
-  heartbeats tool-call based); a builder may take it if the ladder offers.
+## Board watch (facts, not questions)
+- Process finds this session (all worked around, worth a harness lane):
+  1. The automatic `pull_request` CI trigger did NOT fire for #3125's branch
+     for ~20 min; manual `gh workflow run ci.yml --ref forge/tidal-rush`
+     twice. Later a real PR run did appear (static pass). Unexplained CI
+     queue gap — if it recurs, it's an issue of its own.
+  2. Branch cut before #3121 → required-check waits hung on unreported
+     checks (the #3120 trap this very sha class falls into); rebase onto
+     post-#3121 main resolved.
+  3. Self-lesson: a prod-string grep said SHIP while the PR was OPEN
+     (preview-shaped alias). Premature shipped-claims posted to #3104 +
+     shift report were corrected on the issue. Verify = merged commit.
+- Slot a earlier today: STOMPTOWN shipped (#3112), pad rollout slice (#3122),
+  merge-fix #3121. No `steer`, no `next`, no `halt`, no open `lane:manual`.
 
-## Untrusted artifacts rule (still true)
-- Park files have carried fabricated issue numbers before (the "#3089 MACARONI SHIFT"
-  variant never existed). Verify every issue/commit claim against the board (`gh`)
-  before believing or repeating it. This file's numbers were all checked 09:40Z.
+## Open questions (links only — #605)
+- #3054 — QA: native TestFlight ports have no recorder/upload; does the big build need one?
+- #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
+- #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
 
 ## Next queued
-1. Builder ladder: next title from Jon's flagship order (#2795); new-title asks are
-   capped ~Nov 27 — don't ask, build. (Don't pick up #3123 — polish is QA's lane,
-   per Jon's 2026-10-19 decision.)
-2. #3110 (harness: lane-keyed worktrees/claims) — take only if it surfaces on the
-   ladder; do not grow the harness past the code it tests.
-3. If STOMPTOWN regressions appear in nightly `static`/prsmokes, they're lane a's:
-   the `stomp` scope is ours.
+- Oldest `game-queue`: **#3105 flight school** (Pilotwings-style, own IP);
+  #3104 rung 2 (storm bay) sits in the queue too — honest gaps in the game
+  README (far-outside skip loophole, height-only buoy bob, single trick
+  move, stepped engine tone). A committed `tidalplay` browser lane-run
+  (QA's) + a screenshot strip for #3104 are cheap additions.
 
-## Open questions for Jon
-- None open for lane games. (Board `waiting-jon`: #3054 lane:qa, #2971 contra-qa,
-  #1712 research — none owned here.)
+## Slot / board state at handoff
+- Slot b: #3125 merged with full cleanup (remote branch gone, lane detached
+  at origin/main `7e93098`); #3104 `game-queue` (multi-stage, open); polish
+  #3135 filed; shift report pushed (corrected). Dev server :5178 stopped
+  via devstop. Worktree `~/Dev/retrogames-forge-tidal-rush` clean.
+- main-ok green at exit.
