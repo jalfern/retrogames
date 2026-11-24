@@ -14,10 +14,10 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, autoPad, stateOf, stateHash, LAPS, SIM_MS, DT } from './sim.js'
+import { makeGame, step, autoPad, stateOf, stateHash, LAPS, SIM_MS, DT, rainAt, RAIN_VIS } from './sim.js'
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
-import { makeSea, makeSky, makeBuoy, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea } from './art.js'
+import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
 const MESSAGES = [
@@ -119,6 +119,7 @@ const TidalRushGame = () => {
         const rain = makeRain(LITE ? 240 : 420)
         scene.add(rain.pts)
         let stormBlend = bayRef.current === 'storm' ? 1 : 0
+        let rainVis = 0                     // smoothed rain at Kai's hull (#3191)
 
         const camPos = new THREE.Vector3(0, 6, -20)
         const _v3a = new THREE.Vector3()
@@ -163,6 +164,11 @@ const TidalRushGame = () => {
             go: () => audioController.playSweep(440, 880, 0.3, 'square', 0.14),
             barrel: () => { audioController.playSweep(330, 990, 0.22, 'triangle', 0.11); audioController.playTone(1100, 0.1, 'square', 0.1, 0.14) },
             swell: () => audioController.playSweep(90, 210, 0.9, 'sine', 0.16),
+            rain: (on) => {
+                // the band edge: a wind gust in, a lifting sweep out (#3191)
+                if (on) { audioController.playSweep(540, 150, 0.7, 'sine', 0.08); audioController.playNoise(0.55, 0.05) }
+                else audioController.playSweep(150, 480, 0.5, 'sine', 0.05)
+            },
             airLand: () => { audioController.playSweep(1500, 320, 0.24, 'sine', 0.09); audioController.playNoise(0.14, 0.06) },
             thunder: () => { audioController.playNoise(0.5, 0.12); audioController.playSweep(70, 38, 0.8, 'sawtooth', 0.1) },
             finish: (win) => {
@@ -187,6 +193,10 @@ const TidalRushGame = () => {
                 }
                 if (e.type === 'swell') { sfx.swell(); if (hud.pop) { hud.pop.textContent = `SQUALL INBOUND — LAP ${e.lap}`; hud.pop.style.opacity = 1 } }
                 if (e.type === 'flash') sfx.thunder()
+                if (e.type === 'rain') {
+                    sfx.rain(e.on)
+                    if (hud.pop && e.on) { hud.pop.textContent = 'IN THE SQUALL — HOLD YOUR LINE'; hud.pop.style.opacity = 1 }
+                }
                 if (e.type === 'air') sfx.air()
                 if (e.type === 'splashes') sfx.splash()
                 if (e.type === 'bump') sfx.bump()
@@ -277,13 +287,22 @@ const TidalRushGame = () => {
             sunLight.intensity = 2.0 * (1 - stormBlend * 0.62) + gs.flash * 2.2
             hemiLight.intensity = 1.0 * (1 - stormBlend * 0.5) + gs.flash * 1.2
 
-            // storm rain swaddles the camera
-            if (stormBlend > 0.4) rainSpawn(rain, camera.position.x, camera.position.y, camera.position.z, LITE ? 5 : 8)
+            // storm rain swaddles the camera — density follows the rain AT
+            // KAI'S HULL: the band edge is where the weather actually starts
+            // and stops, not the stage flag (#3191). Smoothed so the bay
+            // picker still fades weather in, but the squall crosses in ~1 s.
+            const rainHere = rainAt(gs, gs.crafts[0].x, gs.crafts[0].z)
+            rainVis += (rainHere - rainVis) * (1 - Math.exp(-10 * DT))
+            if (rainVis > 0.3) rainSpawn(rain, camera.position.x, camera.position.y, camera.position.z, Math.max(2, Math.round(rainVis * (LITE ? 5 : 8))))
             rainStep(rain, DT)
-            rain.pts.visible = stormBlend > 0.2
+            rain.pts.visible = rainVis > 0.05
+            rain.mat.opacity = 0.30 + 0.28 * rainVis
 
             buoys.forEach((b, i) => {
                 const g0 = gs.course.gates[i]
+                // gates dim in the rain (#3191): the squall you're riding hides
+                // the markers you must read — colour toward the storm fog
+                buoyDim(b, RAIN_VIS * rainAt(gs, g0.x, g0.z))
                 // bob with the full Gerstner motion — height AND horizontal flow —
                 // on the surface Kai actually rides: the two lap tables mixed by
                 // the SAME front weight the shader applies (rung 3), and roll with

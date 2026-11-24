@@ -38,6 +38,7 @@ const V_MAX = 17.0            // m/s cruise (~61 km/h)
 const V_BOOST = 1.32          // sprint multiplier while BOOST is burning
 const THRUST = 7.5            // throttle authority (m/s^2)
 const DRAG = 0.021            // quadratic drag → v_term = sqrt(T/DRG) ≈ 19
+export { THRUST, DRAG }
 const TURN_K = 1.16           // rad/s at full lock, speed-scaled below
 const LEAN_MAX = 0.62         // body-lean angle at full lock (radians)
 const LAUNCH_VY = -1.90       // sunny: surface falling this fast under a fast hull = kicker
@@ -52,6 +53,10 @@ const GATE_R = 9.0            // judgement radius around a buoy
 const SKIP_MARGIN = 14        // past the gate line by this much unjudged = miss
 const PENALTY_T = 1.5         // throttle choked this long after a miss
 const PENALTY_CAP = 0.35
+// Rain is gameplay (#3191): inside the squall band the hull drags and drifts.
+export const RAIN_DRAG = 0.005 // extra quadratic drag × rain — v_term 19 → ~16.9 m/s
+export const RAIN_PUSH = 1.55 // m/s crosswind drift at full rain, along the new swell
+export const RAIN_VIS = 0.72  // gate dimming ceiling — the shell lerps buoy colours by this
 
 // --- seeded rng as pure state-in/state-out (JSON-safe) ----------------------
 export function rnd(s) {
@@ -137,6 +142,7 @@ function makeCraft(id, name, color, startArc, skill) {
         x: 0, z: 0, y: 0,
         heading: 0,                   // radians; (+x=sin, +z=cos convention)
         speed: 0, throttle: 0, steer: 0,
+        rain: 0,                      // squall intensity at the hull 0..1 (#3191)
         lean: 0, pitch: 0, roll: 0,
         airborne: false, vy: 0, spin: 0, spinArmed: false, trickPts: 0, trickArmed: 0,
         rollSpin: 0, airT: 0,        // barrel radians + hang-time accumulated this air
@@ -205,6 +211,7 @@ export function makeGame(seed, stage = 'sunny') {
         seaTarget: sea0.map((w) => ({ ...w })), // swell-shift re-rolls land here
         front: null,                          // live squall front {dx,dz,h,prog,band} | null
         flash: 0, nextFlash: 0,              // storm lightning, sim-owned (seeded)
+        rainOn: false,                      // Kai inside the band? drives the rain event (#3191)
         score: 0, done: false, rank: 1,
         startT: 0, lightPhase: 0,           // false-start lights: 3 reds then GO
         events: [],
@@ -251,6 +258,27 @@ function judgeGate(gs, c, g, i) {
         c.boost = Math.max(0, c.boost - 0.25)
         if (c.id === 0) gs.events.push({ t: gs.tick, type: 'miss', i })
     }
+}
+
+// --- rain: the squall as a field, not a wallpaper (#3191) ---------------------
+// Intensity at any point = how far the front has passed it (frontW is the same
+// weight the sea mix and the shader ride, so rain ≡ sea ≡ drawn). No front in
+// STORM BAY ⇒ the whole bay is weather; SUNNY is always dry.
+export function rainAt(gs, x, z) {
+    if (gs.stage !== 'storm') return 0
+    return gs.front ? frontW(x, z, gs.front) : 1
+}
+// The squall blows along the dominant swell of the sea it carries in — the
+// same direction the drawn rain is slanted.
+export function windAt(gs) {
+    const w = (gs.front ? gs.seaTarget : gs.seaCur)[0]
+    return { x: w.dx, z: w.dz }
+}
+// Seeded gusting without touching the rng stream: phase algebra on gs.t keeps
+// replays byte-exact (the rng only carries tricks/lightning).
+export function windGust(gs) {
+    const s = (gs.seed >>> 0) % 97
+    return 0.78 + 0.22 * Math.sin(gs.t * 1.7 + s * 0.64) * Math.sin(gs.t * 0.53 + 1.7)
 }
 
 // per-craft physics; pad = {throttle 0..1, steer -1..1, brake, a, b}
@@ -321,8 +349,12 @@ function stepCraft(gs, c, pad) {
     const vCap = V_MAX * (c.boosting ? V_BOOST : 1) * (c.finished ? 0.7 : 1)
     if (c.boosting) c.boost = Math.max(0, c.boost - BOOST_DRAIN * DT)
 
+    // rain is terrain (#3191): heavier air, slower top end
+    const rain = rainAt(gs, c.x, c.z)
+    c.rain = rain
+
     const brake = pad.brake ? 10 : 0
-    c.speed += (THRUST * c.throttle - DRAG * c.speed * c.speed - brake) * DT
+    c.speed += (THRUST * c.throttle - (DRAG + RAIN_DRAG * rain) * c.speed * c.speed - brake) * DT
     if (c.speed > vCap) c.speed = Math.max(vCap, c.speed - 8 * DT) // ease off, don't clip
     if (c.speed < 0) c.speed = 0
 
@@ -398,9 +430,18 @@ function stepCraft(gs, c, pad) {
     const wantRoll = c.lean + Math.atan2(beam, 2 * e)
     c.roll += (wantRoll - c.roll) * Math.min(1, 6 * DT)
 
-    // integrate position on the surface plane
-    c.x += fx * c.speed * DT
-    c.z += fz * c.speed * DT
+    // integrate position on the surface plane — plus the squall's shove: the
+    // hull drifts world-space along the wind, so holding the bar lets the
+    // gust walk you off the racing line; counter-steering pays (#3191)
+    if (rain > 0.02) {
+        const wnd = windAt(gs)
+        const drift = RAIN_PUSH * rain * windGust(gs)
+        c.x += (fx * c.speed + wnd.x * drift) * DT
+        c.z += (fz * c.speed + wnd.z * drift) * DT
+    } else {
+        c.x += fx * c.speed * DT
+        c.z += fz * c.speed * DT
+    }
 
     // bay bounds — an honest wall of the headland; scrape and slow
     const rr = (c.x / (RX + 26)) ** 2 + (c.z / (RZ + 26)) ** 2
@@ -538,6 +579,14 @@ export function step(gs, padIn) {
     })
     bumpPass(gs)
 
+    // crossing the band edge answers with an event (#3191) — the shell turns it
+    // into the wind sweep; hysteresis at 0.5 keeps it from chattering
+    const kaiOn = gs.crafts[0].rain >= 0.5
+    if (kaiOn !== gs.rainOn) {
+        gs.rainOn = kaiOn
+        gs.events.push({ t: gs.tick, type: 'rain', on: kaiOn })
+    }
+
     gs.rank = rankAt(gs, 0)
     gs.score = Math.max(gs.score, 0)
     gs.t += DT
@@ -553,6 +602,7 @@ export function stateOf(gs) {
         t: Math.round(gs.t * 100) / 100,
         lap: Math.min(p.lap, LAPS), rank: gs.rank,
         speed: Math.round(p.speed * 100) / 100,
+        rain: Math.round(p.rain * 100) / 100,  // squall at Kai's hull (#3191)
         boost: Math.round(p.boost * 100) / 100,
         airborne: p.airborne, penalty: p.penalty > 0,
         stage: gs.stage,
@@ -580,6 +630,7 @@ export function stateHash(gs) {
     mix(Math.round(gs.flash * 100))
     for (const c of gs.crafts) {
         mix(Math.round(c.x * 100)); mix(Math.round(c.z * 100)); mix(Math.round(c.speed * 50))
+        mix(Math.round(c.rain * 100))
         mix(c.lap); mix(c.judged.reduce((a, j) => a * 3 + j + 1, 0) >>> 0)
         mix(c.airborne ? 1 : 0); mix(Math.round(c.spin * 100)); mix(Math.round(c.rollSpin * 100))
     }
