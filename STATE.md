@@ -1,43 +1,55 @@
-# STATE — forge board snapshot (slot a, 2026-11-24 — TIDAL RUSH rung 3 closes #3104)
+# STATE — forge board snapshot (slot b, 2026-11-24 — PINBALL rung 2 shipped, #3169)
 
 ## This session — one ship
-- **#3104 rung 3 “BIG WATER” SHIPPED — issue CLOSED** (final rung): PR #3171
-  merged `0465ffe`; Vercel `success` on 0465ffe. `https://jalfern.com/retrogames/tidal-rush`
-  (private until Jon promotes). Storm swell re-rolls now ride in behind a
-  travelling squall front (band 34 m, ~10 s crossing, snap-closed on catch-up);
-  CPU hull mixes the two evaluated tables by `frontW`, shader carries A/B slot
-  sets + byte-twin `frontWeight` — drawn ≡ ridden ACROSS the front (1e-12
-  pins). WR64 solid ribbon wake on every hull; MAKO/TUNDRA split lines.
-  Air-time bonus (+50/s cap +100) on landed tricks + whoosh + GO swell sting.
-- Fixed en route: SCORE HUD never updated (rung-1 carry-over), GO hung at low fps.
-- Harness: tidalcheck 51→70 pins; mutants judge/swell/front all die;
-  contractcheck 15/15; NEW `npm run tidaldrive` (real keys/taps drive: start/
-  steer/pause/restart, front live 97%, win P1 seed 7, DRIVE GREEN, zero errors).
-- Warden target #3106 was already shipped by slot b (PR #3163) before this
-  session's claim — claim refused, ran the ladder instead; oldest game-queue
-  was #3104.
+- **#3169 — PINBALL rung 2 (right ramp · firelane · lock tower · MULTIBALL)**
+  SHIPPED: PR #3175 merged `a765162`; Vercel green, live lazy chunk
+  `Pinball-D9BoQTfS.js` carries the game. Never-dry pick: `weakestStage`
+  score 6 (TidalRush phantom-skipped — #3104 IS its commission, slot a
+  live; GrindCity gaps restated in #3167 → owned).
+- Engine law kept (#3103): rung 2 grew the shared engine with generic
+  primitives (one-way gate, rollover, capture pocket, multi-ball loop with
+  per-ball drain/save, empty-table feed); CABINET ONE only adds TABLE data.
+  `gs.bx/by/vx/vy` are now primary-ball proxies — every rung-1 consumer
+  untouched.
+- Rules: RAMP 25×MULT up-only ×2 + 500 set · Firelane entered only over the
+  dome gate (3×25 + sweep 100) · lock 500, lock 3 → MULTIBALL 1000 (awarded
+  pre-x2) · pack x2, 5 s ball-save (one), lock-in-pack = extra ball paid at
+  pack end · only the last ball home costs a game ball.
+- Harness: `pinballcheck` 41 → **71** — gate laws both directions, up-only
+  rollover math, capture-doesn't-cost-a-ball + feed, save-vs-packdrain,
+  pack-end payout, hash covers tower+pack, per-ball fuzz containment +
+  never-empty, scripted **human line** (3 medium plunges → MULTIBALL, zero
+  teleports). Mutant: flip gate segment order → 4 rung-2 checks die.
+- **Seed pin fixed**: `stateOf` now carries `seed` (integer) — the known
+  `contractcheck pinball` nightly failure from #3116/#3103 should clear with
+  the next nightly (contractcheck 14/14 locally).
 - Rule 4: COUNTER RESET — game code merged.
 
 ## PLAYABLE on main right now
-- **`/retrogames/tidal-rush`** — SUNNY/STORM picker; sunlit bay and squall
-  bay, stick/dpad, B = BOOST, ? pause; rung-3 flip pending at the edge cache
-  (see watch).
-- **`/retrogames/grind-city`** (#3106, slot b), iron-ring (#3142),
-  `/retrogames/marble-rush` (#3107 stage 1), stomptown, skyward
-  (incl. THUNDERPASS), pinball, ssx, marble-madness, pacman, mario, forge
-  board, TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, R-TYPE,
-  RACCOON HEIST, spy-hunter, iron keep, galaga, missile, pucks, mines, zork,
-  ultima, king's quest, Joust, Q*bert.
+- **`/retrogames/pinball`** — rung 2 live (Space/arrows, hold Space =
+  plunger, B nudge; ? pause; pad on phone). Medium plunger notch (meter just
+  off the bottom) feeds the firelane — first lock is reachable on the first
+  ball; three locks ignite MULTIBALL.
+- `/retrogames/grind-city`, `/retrogames/marble-rush`, `/retrogames/skyward`
+  (THUNDERPASS), `/retrogames/tidal-rush`, `/retrogames/stomptown`,
+  `/retrogames/short-order-shout`, ssx, marble-madness, pacman, mario,
+  forge board, TIDY BOT (#3085), STARRY NIGHT (#3082), TOP SOLDIERS (#3067),
+  DOUBLE DRAGON, R-TYPE, RACCOON HEIST, spy-hunter, iron keep, galaga,
+  missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert.
 
 ## Board watch (facts, not questions)
-- **jalfern.com edge lag at ship time:** Vercel success on 0465ffe, but the
-  domain still served bundle `index-BNSiGwxX.js` (grind-city era, no squall
-  strings) ~15 min after merge. Cache/proxy, not build. Next lane: re-grep
-  that bundle for `SQUALL INBOUND` — flip expected; #3104 is shipped regardless.
-- **Pinball seed pin**: `contractcheck pinball` red pre-existing from #3116
-  (#3103 owns it). Expect nightly fallout until #3103 lands.
-- QA polish pass for rung 3 filed as **#3174** (`feedback`).
-- No `steer`, no `halt`, no open `lane:manual` this shift.
+- Slot a holds **#3104** (TIDAL RUSH rung 3, claimed 15:37Z) and its recent
+  comments kept #3107 (MARBLE RUSH stage 2, still `game-queue`) unclaimable
+  from this slot all session.
+- **heldDirs blind spot**: `idle.mjs heldGames/heldDirs` match titles only,
+  so open building **#3104 ("jet-ski racer") does NOT read as holding dir
+  `TidalRush`** — weakestStage ranked TIDAL RUSH first until reasoned away
+  by hand (#3103 closed = its commission; STATE says rung 1 shipped there).
+  A rename or title alias on #3104 would fix the derivation at the source.
+- #3107 stays OPEN + `game-queue` (five shelves shipped of ten).
+- **#3178 filed** (`feedback`) — QA polish pass for PINBALL (attract
+  show-off, multiball loudness on phones, phone HUD density).
+- No `steer`, no `halt`, no new `waiting-jon` from slot b this shift.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload; does the big build need one?
@@ -45,14 +57,16 @@
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
 
 ## Next queued
-- Oldest `game-queue`: **#3107 stage 2** (marble shelves 6–10 + stage-2 verbs
-  on the issue) — next in line for either builder slot.
-- #3104 is CLOSED — do not resume; polish lives on #3174 (QA lane's property,
-  builders don't pick it up).
+- Oldest `game-queue`: **#3107 stage 2** (shelves 6–10 + stage-2 verbs) —
+  held by slot a's recent comments until its lock lapses.
+- Then the flagship/never-dry rungs again: pinball rung 3 (orbit, magnet,
+  DMD, table-select) is honest gaps only — file from the README if the
+  never-dry rung lands back on PINBALL.
 
 ## Slot / board state at handoff
-- Slot a: #3171 merged with full cleanup (remote branch gone, lane detached);
-  #3104 shipped+closed; #3174 filed; STATE ships via own PR; dev :5173
-  stopped via devstop; worktree `~/Dev/retrogames-forge-tidal-rung3`
-  pruned by mergeclean.
+- Slot b: #3175 merged with full cleanup (remote branch gone, lane detached);
+  #3169 shipped+closed; #3178 filed; shift report pushed; STATE.md ships via
+  its own PR; dev :5178 stopped via devstop.sh.
+- Worktree `~/Dev/retrogames-forge-pinball-rung2` detached at origin/main at
+  handoff; frame-strip PNGs live in /tmp/forge (intentionally untracked).
 - main-ok green at exit.
