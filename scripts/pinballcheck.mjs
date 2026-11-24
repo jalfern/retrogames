@@ -203,17 +203,209 @@ const setBall = (gs, x, y, vx, vy) => { gs.bx = x; gs.by = y; gs.vx = vx; gs.vy 
 // -------------------------------------------------- fuzz containment ----
 {
     const rng = mulberry32(4242)
-    let escaped = 0, drains = 0
+    let escaped = 0, drains = 0, empties = 0
     const gs = makeGame(77)
     for (let i = 0; i < 6000; i++) {
         const pad = { left: rng() < 0.3, right: rng() < 0.3, b: rng() < 0.02, down: rng() < 0.05 }
         stepGame(gs, pad)
         for (const e of gs.events) if (e.type === 'drain') drains++
         gs.events.length = 0
-        if (gs.launched && !gs.done && gs.by > 1 && (gs.bx < 1 || gs.bx > W - 1 || gs.by > H + 11)) escaped++
+        for (const p of gs.pucks) {
+            if (p.launched && !gs.done && p.by > 1 && (p.bx < 1 || p.bx > W - 1 || p.by > H + 11)) escaped++
+        }
+        if (!gs.done && gs.pucks.length === 0) empties++   // even for one tick
     }
-    r.check('6000 fuzz ticks: the ball never tunnels out of the cabinet', escaped === 0, `escapes=${escaped}`)
+    r.check('6000 fuzz ticks: no ball ever tunnels out of the cabinet', escaped === 0, `escapes=${escaped}`)
+    r.check('the playfield never sits empty mid-game (lock feeds, pack feeds)', empties === 0, `empties=${empties}`)
     r.check('the fuzz game actually drains balls (it is a playable loop, not a stuck ball)', drains > 0, `drains=${drains}`)
+}
+
+// =============== RUNG 2 (#3169): firelane · lock tower · MULTIBALL ===============
+const rung2Ball = (gs, x, y, vx, vy) => {
+    gs.pucks.length = 1
+    gs.pucks[0] = { bx: x, by: y, vx, vy, prevY: y, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0 }
+}
+
+// ------------------------------------------------ rung-2 geometry ----
+{
+    const guide = TABLE.walls.find((w) => w.x1 === 298 && w.x2 === 298)
+    const gate = TABLE.walls.find((w) => w.y1 === 190 && w.y2 === 190)
+    r.check('the firelane is 24 px wide (x 298..322), wider than the 18 px ball', 322 - 298 === 24 && 24 > 2 * BALL_R)
+    r.check('the firelane top gate is one-way and spans the full lane width',
+        !!gate && gate.oneWay === true && Math.min(gate.x1, gate.x2) === 298 && Math.max(gate.x1, gate.x2) === 322)
+    r.check('the firelane inner guide is solid both ways (the lane is entered only from the top)',
+        !!guide && !guide.oneWay && guide.y1 === 195 && guide.y2 === 470)
+    r.check('the lock mouth sits in the lane above the flipper deck',
+        TABLE.lock.yAt > 240 && TABLE.lock.yAt < guide.y2 - 20 && TABLE.lock.need === 3,
+        `yAt=${TABLE.lock.yAt}`)
+    const kicksLeft = TABLE.mbKick.every((k) => k.x + BALL_R < 298)
+    r.check('the multiball kick ejects onto the OPEN playfield — never back into the firelane', kicksLeft,
+        TABLE.mbKick.map((k) => k.x).join('/'))
+    r.check('the pack is three balls (the tower holds three)', TABLE.mbKick.length === 3)
+}
+
+// ------------------------------------------------ gate physics ----
+{
+    const gs = makeGame(201); rung2Ball(gs, 310, 170, 0, 200); clear(gs)
+    drive(gs, {}, 30)
+    const evs = types(gs)
+    const inLane = gs.pucks.length === 1 && gs.pucks[0].bx > 298 && gs.pucks[0].bx < 322
+    r.check('a descending ball passes the one-way gate and rolls the lane (rollovers fire, ball stays roped)',
+        evs.includes('lane') && inLane, evs.join(','))
+    const gs2 = makeGame(202); rung2Ball(gs2, 310, 300, 0, -500); clear(gs2)
+    let minY = 999
+    for (let i = 0; i < 40; i++) { drive(gs2, {}, 1); minY = Math.min(minY, gs2.pucks[0].by) }
+    const stillIn = gs2.pucks.length === 1 && gs2.pucks[0].bx > 298 && gs2.pucks[0].bx < 322
+    r.check('a rising lane ball BOUNCES off the gate back down (no escaping the lane upward)',
+        minY > 180 && stillIn, `minY=${minY.toFixed(0)}`)
+    const gs3 = makeGame(203); rung2Ball(gs3, 250, 300, 500, 0); clear(gs3)
+    drive(gs3, {}, 8)
+    r.check('the lane guide is solid from the playfield (a rightbound shot bounces off x=298)',
+        gs3.pucks[0].vx < -100, `vx=${gs3.pucks[0].vx.toFixed(0)}`)
+}
+
+// ------------------------------------------------ ramp rollovers ----
+{
+    const gs = makeGame(211); rung2Ball(gs, 336, 380, 0, -700); clear(gs)
+    let hits = 0
+    for (let i = 0; i < 24 && hits < 2; i++) { drive(gs, {}, 1); hits += types(gs).filter((t) => t === 'ramp').length }
+    const after2 = gs.score
+    r.check('crossing the two RAMP rollovers upward scores exactly 2×25', after2 === 50,
+        `score=${after2} hits=${gs.rampHits}`)
+    // third upward crossing completes the set
+    rung2Ball(gs, 336, 380, 0, -700); clear(gs)
+    let setEv = false
+    for (let i = 0; i < 20 && !setEv; i++) { drive(gs, {}, 1); setEv = types(gs).includes('rampset') }
+    r.check('the third ramp hit pays the 500 set bonus and lights the tower',
+        setEv && gs.rampLit && gs.score === after2 + 25 + 500, `score=${gs.score}`)
+    // downward crosses must NOT count
+    const gsd = makeGame(212); rung2Ball(gsd, 336, 200, 0, 500); clear(gsd)
+    drive(gsd, {}, 14)
+    r.check('rollovers only count UPWARD crossings (rain-down the lane is free)',
+        !types(gsd).includes('ramp') && gsd.score === 0, `score=${gsd.score}`)
+}
+
+// ------------------------------------------ lane sweep + lock capture ----
+const rollToLock = (gs) => {
+    rung2Ball(gs, 310, 235, 0, 160); clear(gs)
+    for (let i = 0; i < 60; i++) {
+        drive(gs, {}, 1)
+        if (gs.events.some((e) => e.type === 'lock')) { clear(gs); return true }
+        gs.events.length = 0
+    }
+    return false
+}
+{
+    const gs = makeGame(221)
+    const before = gs.score
+    const locked = rollToLock(gs)
+    r.check('a full firelane run scores 3×25 rollovers + 100 sweep, captured by the tower at 500',
+        locked && gs.score === before + 75 + 100 + 500, `+${gs.score - before}`)
+    r.check('the captured ball costs NOTHING: locks=1, and the lane feeds a fresh ball',
+        gs.locks === 1 && gs.pucks.length === 1 && gs.pucks[0].by === TABLE.plunger.restY,
+        `locks=${gs.locks} by=${gs.pucks[0].by}`)
+    r.check('the third lock of the ball ignites MULTIBALL: pack of 3, tower lamps clear, 1000 paid', (() => {
+        const s = gs.score
+        rollToLock(gs); rollToLock(gs)
+        return gs.multiball === true && gs.pucks.length === 3 && gs.locks === 0 &&
+            gs.score === s + (175 + 500) + (175 + 500 + 1000) && gs.saveT > 0
+    })(), `mb=${gs.multiball} pucks=${gs.pucks.length}`)
+}
+
+// ----------------------------------------------- multiball behaviour ----
+{
+    const gs = makeGame(231)
+    rollToLock(gs); rollToLock(gs); rollToLock(gs)
+    r.check('MULTIBALL is live with the pack down', gs.multiball && gs.pucks.length === 3)
+    // park: hold the pack safely on the open playfield so a unit manoeuvre
+    // with ONE free ball doesn't race the drain.
+    const park = (free = -1) => {
+        gs.pucks.forEach((p, i) => { if (i === free) return; p.bx = 90 + i * 60; p.by = 420; p.vx = 0; p.vy = 0 })
+    }
+    const laneBall = () => ({ bx: 310, by: 235, vx: 0, vy: 160, prevY: 235, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0 })
+
+    park(0)
+    gs.pucks[0].bx = 115; gs.pucks[0].by = 145; gs.pucks[0].vx = 0; gs.pucks[0].vy = 220
+    clear(gs)
+    const s0 = gs.score
+    for (let i = 0; i < 12; i++) { park(0); stepGame(gs, {}); gs.events.length = 0 }
+    r.check('playfield scoring DOUBLES while the pack is down (bumper 100 → 200)',
+        gs.score - s0 === 200, `+${gs.score - s0}`)
+
+    // a lock during the pack banks an extra ball instead of starting a new pack
+    const li = gs.pucks.length
+    gs.pucks.push(laneBall())
+    let extraEv = false
+    for (let i = 0; i < 90 && !extraEv; i++) {
+        park(li); stepGame(gs, {}); extraEv = gs.events.some((e) => e.type === 'extraball'); gs.events.length = 0
+    }
+    r.check('a lock DURING multiball banks an extra ball (the pack stays down)',
+        gs.extraBall === 1 && gs.multiball, `extra=${gs.extraBall} mb=${gs.multiball}`)
+
+    // drains cost balls-on-playfield only — the save is spent, so they thin the pack
+    gs.saveUsed = true
+    const ballsBefore = gs.balls
+    park(0); gs.pucks[0].by = 999; clear(gs); stepGame(gs, {}); gs.events.length = 0
+    r.check('a pack drain costs a ball-on-playfield but NOT a game ball',
+        gs.balls === ballsBefore && gs.pucks.length === 2, `balls=${gs.balls} pucks=${gs.pucks.length}`)
+    // drain the rest: when the pack returns to one ball it ends and pays
+    let guard = 0
+    while (gs.pucks.length > 1 && gs.multiball && guard++ < 1000) {
+        park(0); gs.pucks[0].by = 999; clear(gs); stepGame(gs, {}); gs.events.length = 0
+    }
+    r.check('when the last ball of the pack drains, MULTIBALL ends and the banked extra ball pays',
+        !gs.multiball && gs.balls === ballsBefore + 1 && gs.extraBall === 0,
+        `balls ${ballsBefore}→${gs.balls}`)
+}
+
+// -------------------------------------------------- ball save ----
+{
+    const gs = makeGame(241)
+    rollToLock(gs); rollToLock(gs); rollToLock(gs)
+    r.check('the pack opens with a live ball-save window', gs.saveT > 0 && !gs.saveUsed, `saveT=${gs.saveT}`)
+    const before = { balls: gs.balls, pucks: gs.pucks.length }
+    gs.pucks[0].by = 999; clear(gs); drive(gs, {}, 4)
+    r.check('the first drain inside the window relaunches instead (SAVE, no ball lost)',
+        gs.events.some((e) => e.type === 'save') && gs.pucks.length === before.pucks && gs.balls === before.balls && gs.saveUsed,
+        `pucks=${gs.pucks.length}`)
+    gs.pucks[0].by = 999; clear(gs); drive(gs, {}, 4)
+    r.check('the save is spent — the next drain does thin the pack',
+        gs.pucks.length === before.pucks - 1 && gs.balls === before.balls)
+}
+
+// ------------------------------------------------- state/hash pins ----
+{
+    const gs = makeGame(251)
+    const st = stateOf(drive(gs, {}, 60))
+    r.check('state carries the seed as an integer (report/replay pin #3103) + rung-2 fields',
+        Number.isInteger(st.seed) && st.seed >= 0 && 'liveBalls' in st && 'locks' in st && typeof st.multiball === 'boolean')
+    const h0 = stateHash(gs)
+    gs.locks = 1
+    r.check('the hash covers the lock tower (a banked lock changes the hash)', stateHash(gs) !== h0)
+    gs.locks = 0; gs.multiball = true
+    r.check('the hash covers the pack (multiball changes the hash)', stateHash(gs) !== h0)
+}
+
+// -------------------------------------------- scripted winnable rung 2 ----
+{
+    // A REAL run: plunge at the pw≈8 sweet spot (4 hold ticks) — the probe
+    // shows the ball rounds the dome, rolls the firelane and locks; three
+    // plunges ignite MULTIBALL. No teleports: this proves a human line exists.
+    const gs = makeGame(3169)
+    let mb = false, empties = 0, scoreAtLock = 0
+    for (let i = 0; i < 3000 && !mb; i++) {
+        const p = gs.pucks[0]
+        const atPlunger = gs.pucks.length === 1 && !p.launched && p.by > 540
+        const pad = atPlunger && i % 90 < 4 ? { down: true } : {}
+        stepGame(gs, pad)
+        if (gs.pucks.length === 0 && !gs.done) empties++
+        if (scoreAtLock === 0 && gs.events.some((e) => e.type === 'lock')) scoreAtLock = gs.score
+        if (gs.multiball) mb = true
+        gs.events.length = 0
+    }
+    r.check('HUMAN LINE: three medium plunges lock the tower and ignite MULTIBALL within 3000 ticks', mb, `mb=${mb}`)
+    r.check('that run banked the lock jackpots first (tower pays before the pack)', scoreAtLock >= 500, `first lock score=${scoreAtLock}`)
+    r.check('the human line never leaves the table empty', empties === 0)
 }
 
 r.exit()
