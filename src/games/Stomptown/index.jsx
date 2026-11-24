@@ -13,7 +13,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { fitFill } from '../../utils/fitCanvas'
-import { W, H, GROUND, FIXED_DT, MONSTERS, MONSTER_KEYS, HP_MAX, cityName, buildingsLeft, makeGame, step, stateHash, damagePlayer } from './sim.js'
+import { W, H, GROUND, FIXED_DT, MONSTERS, MONSTER_KEYS, HP_MAX, cityName, buildingsLeft, makeGame, step, stateHash, damagePlayer, windowRect } from './sim.js'
 import { plan } from './planner.js'
 import { MESSAGES, PRESS } from './attract.js'
 import { pal, buildSkyline, makeStars, makeClouds, drawSky, drawSkylineRow, drawGround, drawBuildings, drawRubble, drawCivilian, drawTank, drawCar, drawHeli, drawHuman, drawBlimp, drawMonster, drawBullets, drawHud } from './art.js'
@@ -53,6 +53,7 @@ const StomptownGame = () => {
         const held = { left: false, right: false, up: false, down: false, a: false, b: false }
         let parts = []
         let popups = []
+        let debris = []
         let shake = 0
         let flash = 0
         let banner = ''
@@ -77,6 +78,52 @@ const StomptownGame = () => {
             for (let i = 0; i < 30 * s; i++) {
                 parts.push({ x, y, vx: rand(-260, 260) * s, vy: rand(-260, 160) * s, g: 500, t: 0, life: rand(0.4, 1.1), r: rand(3, 9) * s, col: pick(['#ff5470', '#ffb347', '#ffd166', '#ff3b30']), fire: true })
             }
+        }
+
+        // ---------- destruction theatre: shell-side debris & dust ----------
+        const windowDust = (b) => {
+            if (!b) return
+            const cols = b.cols, rows = b.rows
+            let spawned = 0
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    if (Math.random() < 0.4) continue
+                    const wr = windowRect(b, r, c)
+                    parts.push({ x: wr.x + wr.w / 2 + rand(-wr.w * 0.4, wr.w * 0.4), y: wr.y + wr.h / 2, vx: rand(-70, 70), vy: rand(-95, -25), g: 170, t: 0, life: rand(0.45, 1.0), r: rand(6, 13), col: 'rgba(158,140,124,0.46)', fog: true, grow: 0.4 })
+                    if (++spawned >= 60) return
+                }
+            }
+        }
+        const debrisChunks = (b) => {
+            if (!b) return
+            const n = Math.min(10, 5 + Math.floor(b.w / 30))
+            for (let i = 0; i < n; i++) {
+                debris.push({ x: b.x + rand(b.w * 0.15, b.w * 0.85), y: GROUND - rand(b.h * 0.55, b.h * 0.98), vx: rand(90, 270) * (Math.random() < 0.5 ? -1 : 1), vy: rand(-250, -80), g: 900, r: rand(4, 10), rot: rand(0, 6.28), vr: rand(-6, 6), bounces: 0, life: rand(1.3, 2.3), t: 0, col: pick(['#3c3244', '#54455a', '#4a3d4e', '#5c4a5e']) })
+            }
+        }
+        const dustColumn = (x, w) => {
+            for (let i = 0; i < 10; i++) {
+                parts.push({ x: x + rand(-w * 0.4, w * 0.4), y: GROUND + rand(-4, 4), vx: rand(-45, 45), vy: rand(-70, -25), g: -36, t: 0, life: rand(2.3, 3.5), r: rand(22, 34), col: 'rgba(158,140,124,0.5)', fog: true, grow: 0.22 })
+            }
+        }
+        const rubbleAt = (g, e) => {
+            if (!g) return null
+            let best = null, bd = 80
+            for (const rb of g.rubbles) {
+                const d = Math.abs(rb.x + rb.w / 2 - e.x)
+                if (d < bd) { bd = d; best = rb }
+            }
+            return best
+        }
+        const nearestCrumbling = (g, e) => {
+            if (!g) return null
+            let best = null, bd = 80
+            for (const b of g.buildings) {
+                if (!b.crumbling) continue
+                const d = Math.abs(b.x + b.w / 2 - e.x)
+                if (d < bd) { bd = d; best = b }
+            }
+            return best
         }
 
         // ---------- sound: every cue synthesized via AudioController ----------
@@ -108,8 +155,8 @@ const StomptownGame = () => {
                     case 'popup': popups.push({ x: e.x, y: e.y, msg: e.msg, ttl: 66 }); break
                     case 'punch': if (audible) sfx.punch(); shake = Math.max(shake, 7); dust(e.x, e.y + H * 0, 0); break
                     case 'punchswipe': for (let i = 0; i < 5; i++) parts.push({ x: e.x, y: e.y, vx: rand(40, 150) * (gs ? gs.player.facing : 1), vy: rand(-60, 20), g: -60, t: 0, life: rand(0.2, 0.45), r: rand(3, 7), col: pick(['#ff9a4d', '#ffd166']), fire: true }); break
-                    case 'crumble': if (audible) sfx.crumble(); shake = Math.max(shake, 22); flash = Math.max(flash, 8); break
-                    case 'landed': dust(e.x, GROUND, 14); shake = Math.max(shake, 9); break
+                    case 'crumble': if (audible) sfx.crumble(); shake = Math.max(shake, 22); flash = Math.max(flash, 8); { const nb = nearestCrumbling(g, e); if (nb) { windowDust(nb); debrisChunks(nb) } } break
+                    case 'landed': { const rb = rubbleAt(g, e); dust(e.x, GROUND, 14); shake = Math.max(shake, 9); dustColumn(e.x, rb ? rb.w : 120) } break
                     case 'shatter': if (audible) sfx.shatter(); burst(e.x, e.y, 12, '#cfe4ff', 0.8); break
                     case 'pickup': if (audible) sfx.pickup(); break
                     case 'bomb': if (audible) sfx.bomb(); shake = Math.max(shake, 16); flash = Math.max(flash, 7); fire(e.x, GROUND - 140, 1.4); break
@@ -149,7 +196,7 @@ const StomptownGame = () => {
         const startPlay = () => {
             const pin = seedFromQuery()
             gs = makeGame(pin != null ? { seed: pin >>> 0 || 1, monster: MONSTER_KEYS[selRef.current] } : { seed: (Date.now() & 0xffff) | 1, monster: MONSTER_KEYS[selRef.current] })
-            parts = []; popups = []; shake = 0; flash = 0; banner = ''; bannerT = 0
+            parts = []; popups = []; debris = []; shake = 0; flash = 0; banner = ''; bannerT = 0
             held.left = held.right = held.up = held.down = held.a = held.b = false
             setFinalInfo(null)
             setSc('play')
@@ -192,11 +239,38 @@ const StomptownGame = () => {
             parts = parts.filter((p) => p.t < p.life)
             for (const p of parts) {
                 p.t += 1 / 60; p.x += p.vx / 60; p.y += p.vy / 60; p.vy += p.g / 60
-                if (p.fog) p.r += 0.5
+                if (p.fog) p.r += (p.grow ?? 0.5)
                 const a = 1 - p.t / p.life
-                ctx.globalAlpha = p.fog ? a * 0.42 : a
+                ctx.globalAlpha = p.fog ? a * 0.65 : a
                 ctx.fillStyle = p.col
                 ctx.beginPath(); ctx.arc(p.x - g.camX, p.y, p.r, 0, 6.28); ctx.fill()
+            }
+            ctx.globalAlpha = 1
+            // debris (shell-side chunks bouncing off the ground)
+            debris = debris.filter((p) => p.t < p.life)
+            for (const p of debris) {
+                p.t += 1 / 60
+                p.vy += p.g / 60
+                p.x += p.vx / 60
+                p.y += p.vy / 60
+                p.rot += p.vr / 60
+                if (p.y > GROUND + 3 && p.vy > 0) {
+                    p.y = GROUND + 3
+                    p.vy *= -0.36; p.vx *= 0.58; p.vr *= 0.66
+                    p.bounces++
+                    if (p.bounces >= 2) p.life = Math.min(p.life, p.t + 0.45)
+                }
+                const a = Math.max(0, 1 - p.t / p.life)
+                ctx.globalAlpha = a * 0.42
+                ctx.fillStyle = '#000'
+                ctx.beginPath(); ctx.ellipse(p.x - g.camX, GROUND + 4, p.r * 1.25, p.r * 0.38, 0, 0, 6.28); ctx.fill()
+                ctx.save()
+                ctx.globalAlpha = a * 0.9
+                ctx.translate(p.x - g.camX, p.y)
+                ctx.rotate(p.rot)
+                ctx.fillStyle = p.col
+                ctx.fillRect(-p.r, -p.r * 0.7, p.r * 2, p.r * 1.4)
+                ctx.restore()
             }
             ctx.globalAlpha = 1
             // score popups
@@ -389,7 +463,7 @@ const StomptownGame = () => {
                 buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reset: (seed) => {
                     gs = makeGame({ seed: seed >>> 0 || 1, monster: MONSTER_KEYS[selRef.current] })
-                    parts = []; popups = []; shake = 0; flash = 0; banner = ''
+                    parts = []; popups = []; debris = []; shake = 0; flash = 0; banner = ''
                     held.left = held.right = held.up = held.down = held.a = held.b = false
                     setSc('play')
                 },
