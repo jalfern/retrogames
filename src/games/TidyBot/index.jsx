@@ -23,55 +23,13 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import {
     makeGame, step, autopilot, loadLevel, markChores, stateHash, routeDir, aimAt, rackSlot, flourishPick,
     tapAct, pendingFire, pendingAlive,
-    VIEW_W, VIEW_H, WALL, COUNTER, STOVE, TABLE, PLANTS, DW, FR, LEVELS, RACK_CAP, RACK_ROWS, RACK_COLS,
+    VIEW_W, VIEW_H, TABLE, COUNTER, DW, FR, LEVELS, RACK_CAP,
 } from './sim.js'
+import { PAINTERS, SKIN_IDS, skinFromLocation, rememberSkin } from './art.js'
 
 const SIM_MS = 1000 / 60
 
-const srand = (seed) => {
-    let s = seed >>> 0
-    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
-}
 const circle = (ctx, x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2) }
-const bgCache = {}
-const bgSet = (key, count, fn) => {
-    if (bgCache[key]) return bgCache[key]
-    const out = []
-    const rnd = srand(9931)
-    for (let i = 0; i < count; i++) out.push(fn(rnd, i))
-    return (bgCache[key] = out)
-}
-
-// one household item, centered on (x, y) — cores all mutually distinct so the
-// harness can prove each kind is painted exactly where the sim puts it
-const drawItem = (ctx, kind, x, y, s = 1) => {
-    ctx.save(); ctx.translate(x, y); ctx.scale(s, s)
-    if (kind === 'plate') {
-        ctx.fillStyle = '#8f9aa5'; circle(ctx, 0, 0, 6.5); ctx.fill()
-        ctx.fillStyle = '#f2f0e6'; circle(ctx, 0, 0, 5.5); ctx.fill()
-        ctx.strokeStyle = '#3f6fae'; ctx.lineWidth = 1; circle(ctx, 0, 0, 3.8); ctx.stroke()
-        ctx.fillStyle = 'rgba(255,255,255,0.7)'; circle(ctx, -1.6, -1.6, 1.1); ctx.fill()
-    } else if (kind === 'cup') {
-        ctx.fillStyle = '#a8281e'; circle(ctx, 0, 0, 4.6); ctx.fill()
-        ctx.fillStyle = '#e8442e'; circle(ctx, 0, 0, 3.6); ctx.fill()
-        ctx.fillStyle = '#7c1c14'; circle(ctx, 0, 0, 2.1); ctx.fill()
-        ctx.strokeStyle = '#a8281e'; ctx.lineWidth = 1.6
-        ctx.beginPath(); ctx.arc(4.4, 0, 1.9, -Math.PI / 2, Math.PI / 2); ctx.stroke()
-    } else if (kind === 'apple') {
-        ctx.fillStyle = '#8c1c18'; circle(ctx, 0, 0.5, 4.8); ctx.fill()
-        ctx.fillStyle = '#d8342a'; circle(ctx, 0, 0, 4.3); ctx.fill()
-        ctx.fillStyle = '#5da83a'; ctx.beginPath(); ctx.ellipse(2.4, -3.4, 2.4, 1.3, -0.5, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = '#6c4a20'; ctx.fillRect(-0.6, -5.4, 1.2, 2.4)
-        ctx.fillStyle = 'rgba(255,255,255,0.45)'; circle(ctx, -1.5, -1.4, 1); ctx.fill()
-    } else {
-        ctx.fillStyle = '#2c5f9e'; ctx.fillRect(-3.5, -4.5, 7, 9.5)
-        ctx.fillStyle = '#e8ecf2'; ctx.fillRect(-3.5, -4.5, 7, 3.4)
-        ctx.fillStyle = '#2c5f9e'
-        ctx.beginPath(); ctx.moveTo(-3.5, -4.5); ctx.lineTo(0, -6.6); ctx.lineTo(3.5, -4.5); ctx.closePath(); ctx.fill()
-        ctx.fillStyle = '#d8b23a'; ctx.fillRect(-1.4, 0.4, 2.8, 2.6)
-    }
-    ctx.restore()
-}
 
 const TIDY_ATTRACT = [
     'A HOUSE ROBOT ON THE NIGHT CHORES — NOTHING LEFT UNTIDY',
@@ -91,6 +49,8 @@ const TidyBotGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
+    const [skinUi, setSkinUi] = useState(() => skinFromLocation()) // #3078 skins
+    const skinToggleRef = useRef(() => {})
     const [end, setEnd] = useState(null)
     const [watching, setWatching] = useState(false) // #1637 WATCH: tidycheck's autopilot clocks the shift
     const watchingRef = useRef(false)
@@ -118,6 +78,21 @@ const TidyBotGame = () => {
         let demoAt = 0
         let shake = 0, flash = 0
         let contractSeed = 4242
+        // #3078 SKINS — the painter is chosen once per skin and swapped live;
+        // the sim never sees it. Classic is the default and byte-frozen
+        // (tidycheck's golden hash); the URL (?style=) and the STYLE pill
+        // switch to the papercraft diorama.
+        let skin = skinFromLocation()
+        let PA = PAINTERS[skin]
+        const setSkinStyle = (v) => {
+            if (!SKIN_IDS.includes(v) || v === skin) return
+            skin = v
+            PA = PAINTERS[v]
+            rememberSkin(v)
+            setSkinUi(v)
+            banner(v === 'reimagined' ? 'PAPERCRAFT MODE' : 'DOLLHOUSE MODE')
+        }
+        skinToggleRef.current = () => setSkinStyle(skin === 'reimagined' ? 'classic' : 'reimagined')
         const parts = []
         const keys = { left: false, right: false, up: false, down: false }
         let edgeA = false, edgeB = false
@@ -171,21 +146,21 @@ const TidyBotGame = () => {
             for (const e of evts) evLog.push({ ...e, tick: gs.tick })
             if (evLog.length > 240) evLog.splice(0, evLog.length - 240)
             for (const e of evts) {
-                if (e.type === 'grab') { audioController.playSweep(500, 820, 0.08, 'square', 0.05); burst(e.x, e.y, 3, '#ffe9a8', 1.2) }
+                if (e.type === 'grab') { audioController.playSweep(500, 820, 0.08, 'square', 0.05); burst(e.x, e.y, 3, PA.chrome.burst.grab, 1.2) }
                 else if (e.type === 'place') {
                     audioController.playTone(720, 0.06, 'square', 0.06)
                     audioController.playTone(1080, 0.1, 'square', 0.05, 0.06)
-                    burst(e.x, e.y, 5, '#9fe8b4', 1.6)
+                    burst(e.x, e.y, 5, PA.chrome.burst.place, 1.6)
                 }
-                else if (e.type === 'jam') { audioController.playTone(340, 0.07, 'square', 0.06); audioController.playNoise(0.05, 0.05); burst(e.x, e.y, 3, '#ffd23f', 1.4) }
+                else if (e.type === 'jam') { audioController.playTone(340, 0.07, 'square', 0.06); audioController.playNoise(0.05, 0.05); burst(e.x, e.y, 3, PA.chrome.burst.jam, 1.4) }
                 else if (e.type === 'wrong') { audioController.playTone(180, 0.14, 'sawtooth', 0.07); shake = 5; flash = 6 }
-                else if (e.type === 'spill') { audioController.playNoise(0.1, 0.07); burst(e.x, e.y, 6, '#c8b89a', 2); shake = 3 }
+                else if (e.type === 'spill') { audioController.playNoise(0.1, 0.07); burst(e.x, e.y, 6, PA.chrome.burst.spill, 2); shake = 3 }
                 else if (e.type === 'break') {
                     audioController.playNoise(0.16, 0.09); audioController.playSweep(1500, 320, 0.2, 'triangle', 0.06)
                     shake = 7; flash = 9
                     for (let i = 0; i < 14; i++) {
                         const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, sp = 1 + Math.random() * 3.2
-                        parts.push({ x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, col: '#e8eef4', g: 0.2 })
+                        parts.push({ x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, col: PA.chrome.burst.shard, g: 0.2 })
                     }
                 }
                 else if (e.type === 'open') audioController.playSweep(240, 460, 0.16, 'triangle', 0.05)
@@ -209,20 +184,22 @@ const TidyBotGame = () => {
                     // both arms just filled — a low grunt-thud under the grab
                     audioController.playTone(95, 0.12, 'square', 0.08)
                     audioController.playNoise(0.04, 0.03)
-                    burst(e.x, e.y + 6, 4, '#9a8a6a', 1)
+                    burst(e.x, e.y + 6, 4, PA.chrome.burst.heavy, 1)
                 }
                 else if (e.type === 'level') {
                     audioController.playTone(523, 0.1, 'square', 0.07)
                     audioController.playTone(659, 0.1, 'square', 0.07, 0.11)
                     audioController.playTone(784, 0.2, 'square', 0.07, 0.22)
                 }
-                else if (e.type === 'levelgo') { banner(LEVELS[e.level].name, '#9fe8b4') }
+                else if (e.type === 'levelgo') { banner(LEVELS[e.level].name, PA.chrome.level) }
                 else if (e.type === 'win') { audioController.playFanfare() }
                 else if (e.type === 'over') { audioController.playDeath(); shake = 8; flash = 10 }
             }
         }
 
-        const banner = (msg, col = '#ffd23f') => {
+        const bestScore = () => { try { const b = JSON.parse(localStorage.getItem('tidybot.board') || '[]'); return b.length ? b[0].score : 0 } catch { return 0 } }
+
+        const banner = (msg, col = PA.chrome.banner) => {
             hudRef.current.toast && (hudRef.current.toast.textContent = msg)
             hudRef.current.toast && (hudRef.current.toast.style.color = col)
             hudRef.current.toastT = 110
@@ -256,7 +233,8 @@ const TidyBotGame = () => {
                 if (gs.walk % 6 === 0) {
                     const heavy = gs.held !== null && gs.held2 !== null && gs.held2 !== undefined
                     const plank = gs.rx >= TABLE.x - 20 && gs.ry >= 100
-                    const col = heavy ? (plank ? '#8a6a3e' : '#9aa488') : (plank ? '#b9864e' : '#ccd4bd')
+                    const C = PA.chrome.dust
+                    const col = heavy ? (plank ? C.plankH : C.tileH) : (plank ? C.plank : C.tile)
                     for (let i = 0; i < (heavy ? 2 : 1); i++) {
                         parts.push({ x: gs.rx + (i ? 4 : -4), y: gs.ry + 6.5, vx: (Math.random() - 0.5) * 0.5, vy: -0.2 - Math.random() * (heavy ? 0.5 : 0.25), t: 0, col, g: 0.02 })
                     }
@@ -356,212 +334,6 @@ const TidyBotGame = () => {
             if (gs.end) finish()
         }
 
-        // ---------------- painter ----------------
-        const paintRooms = () => {
-            // kitchen: sage checker tile
-            ctx.fillStyle = '#b9c2a4'; ctx.fillRect(WALL, WALL, VIEW_W - WALL * 2, VIEW_H - WALL * 2)
-            for (let ty = WALL; ty < VIEW_H - WALL; ty += 16) {
-                for (let tx = WALL; tx < VIEW_W - WALL; tx += 16) {
-                    if (((tx + ty) / 16) % 2 === 0) continue
-                    ctx.fillStyle = '#a7b191'; ctx.fillRect(tx, ty, 16, 16)
-                }
-            }
-            // dining: oak planks (right half, below kitchen line)
-            ctx.fillStyle = '#9a6a38'; ctx.fillRect(TABLE.x - 20, 100, VIEW_W - WALL - TABLE.x + 20, VIEW_H - WALL - 100)
-            for (const p of bgSet('plank', 8, (r) => [TABLE.x - 20 + Math.floor(r() * 140), 104 + Math.floor(r() * 120)])) {
-                ctx.fillStyle = 'rgba(120,80,40,0.5)'; ctx.fillRect(p[0], p[1], 24 + (p[1] % 3) * 6, 1)
-                ctx.fillStyle = 'rgba(210,160,100,0.25)'; ctx.fillRect(p[0], p[1] + 2, 18, 1)
-            }
-            ctx.strokeStyle = 'rgba(90,60,30,0.55)'; ctx.lineWidth = 1
-            ctx.beginPath(); ctx.moveTo(TABLE.x - 20, 100); ctx.lineTo(VIEW_W - WALL, 100); ctx.stroke()
-            // grout glints
-            ctx.fillStyle = 'rgba(255,255,255,0.10)'
-            for (const g of bgSet('grout', 26, (r) => [WALL + Math.floor(r() * 28) * 8, WALL + Math.floor(r() * 26) * 8])) ctx.fillRect(g[0], g[1], 1, 1)
-            // walls
-            ctx.fillStyle = '#5a3a22'; ctx.fillRect(0, 0, VIEW_W, WALL); ctx.fillRect(0, VIEW_H - WALL, VIEW_W, WALL)
-            ctx.fillRect(0, 0, WALL, VIEW_H); ctx.fillRect(VIEW_W - WALL, 0, WALL, VIEW_H)
-            ctx.fillStyle = '#71492b'
-            ctx.fillRect(0, 0, VIEW_W, 3); ctx.fillRect(0, VIEW_H - WALL, VIEW_W, 3)
-            ctx.fillRect(0, 0, 3, VIEW_H); ctx.fillRect(VIEW_W - WALL, 0, 3, VIEW_H)
-        }
-
-        const paintCounter = () => {
-            // counter with speckled laminate + steel sink
-            ctx.fillStyle = '#7a6a52'; ctx.fillRect(COUNTER.x, COUNTER.y, COUNTER.w, COUNTER.h)
-            ctx.fillStyle = '#d9d8cc'; ctx.fillRect(COUNTER.x + 1, COUNTER.y + 1, COUNTER.w - 2, COUNTER.h - 2)
-            ctx.fillStyle = 'rgba(120,110,90,0.35)'
-            for (const s of bgSet('lam', 50, (r) => [COUNTER.x + 2 + Math.floor(r() * (COUNTER.w - 4)), COUNTER.y + 2 + Math.floor(r() * (COUNTER.h - 4))])) ctx.fillRect(s[0], s[1], 1, 1)
-            ctx.fillStyle = '#9fb2bd'; ctx.fillRect(122, COUNTER.y + 4, 30, COUNTER.h - 8)
-            ctx.fillStyle = '#8aa0ad'; ctx.fillRect(124, COUNTER.y + 6, 26, COUNTER.h - 12)
-            ctx.fillStyle = '#c9d6de'; ctx.fillRect(126, COUNTER.y + 7, 8, 2)
-            ctx.fillStyle = '#66727c'; ctx.fillRect(136, COUNTER.y + 2, 2, 5)
-            // stove
-            ctx.fillStyle = '#4c565f'; ctx.fillRect(STOVE.x, STOVE.y, STOVE.w, STOVE.h)
-            ctx.fillStyle = '#2e353c'; ctx.fillRect(STOVE.x + 2, STOVE.y + 2, STOVE.w - 4, STOVE.h - 4)
-            for (const [ox, oy] of [[7, 6], [20, 6], [7, 15], [20, 15]]) {
-                ctx.fillStyle = '#141a1f'; circle(ctx, STOVE.x + ox, STOVE.y + oy, 3.4); ctx.fill()
-                ctx.strokeStyle = '#59646e'; ctx.lineWidth = 1; circle(ctx, STOVE.x + ox, STOVE.y + oy, 3.4); ctx.stroke()
-            }
-            // plants
-            for (const p of PLANTS) {
-                ctx.fillStyle = '#8a4a2c'; ctx.fillRect(p.x + 1, p.y + 5, p.w - 2, p.h - 5)
-                ctx.fillStyle = '#3f7d3a'; circle(ctx, p.x + p.w / 2, p.y + 4, 5); ctx.fill()
-                ctx.fillStyle = '#57993f'; circle(ctx, p.x + p.w / 2 - 2, p.y + 2, 2.6); ctx.fill()
-            }
-        }
-
-        const paintContainer = (c, gs2, tick) => {
-            const cc = c.id === 'dw' ? gs2.dw : gs2.fr
-            // cavity + rack when open
-            const openT = Math.min(1, cc.door)
-            ctx.fillStyle = '#3a2c1e'; ctx.fillRect(c.x, c.y, c.w, c.h)
-            ctx.fillStyle = c.id === 'dw' ? '#20303c' : '#dfe6de'
-            ctx.fillRect(c.x + 2, c.y + 2, c.w - 4, c.h - 4)
-            ctx.strokeStyle = c.id === 'dw' ? 'rgba(140,170,190,0.4)' : 'rgba(150,160,150,0.6)'
-            ctx.lineWidth = 1
-            // rack shelves sit under slot rows 1..n-1 (#2338); the bottom row
-            // rides the cavity floor, so its line lands on the lip and is skipped
-            for (let r = 0; r < RACK_ROWS; r++) {
-                const ry = rackSlot(c, r * RACK_COLS).y + 5
-                if (ry > c.y + c.h - 3) continue
-                ctx.beginPath(); ctx.moveTo(c.x + 4, ry); ctx.lineTo(c.x + c.w - 4, ry); ctx.stroke()
-            }
-            // stowed items inside, small — each at ITS slot (#2338): retrieving
-            // a neighbour never shifts the rest of the rack, and all nine DW
-            // lodgers stay visible
-            const inside = gs2.items.filter((it) => it.state === 'in' && it.cont === c.id)
-            inside.forEach((it, i) => {
-                const sl = it.slot === null || it.slot === undefined ? i : it.slot
-                if (pullAnim && pullAnim.c === c.id && pullAnim.slot === sl % RACK_CAP && pullAnim.kind === it.kind) return // #2343 it left the rack — it rides the reach arc now
-                const p = rackSlot(c, sl % RACK_CAP)
-                drawItem(ctx, it.kind, p.x, p.y, 0.78) // #2343 0.62 → 0.78: slots guarantee spacing, small glyphs read far better (GardenGuard #2331 precedent)
-            })
-            // door: slides down over the cavity front
-            const dy = c.y + c.h - 2 - (c.h + c.doorLen - 4) * openT
-            const dH = (c.h + c.doorLen - 4)
-            const body = c.id === 'dw' ? '#b9c4cc' : '#ece6d4'
-            const edge = c.id === 'dw' ? '#7e8c96' : '#b0a888'
-            if (openT > 0.02) {
-                const panelY = c.y + 2 + (c.h + c.doorLen - 4) * openT - (dH - (c.h - 4))
-                const py = Math.max(c.y + 2, panelY)
-                ctx.globalAlpha = 1
-                if (openT >= 0.99) {
-                    ctx.fillStyle = edge; ctx.fillRect(c.x, c.y + c.h, c.w, c.doorLen)
-                    ctx.fillStyle = body; ctx.fillRect(c.x + 2, c.y + c.h + 2, c.w - 4, c.doorLen - 4)
-                    ctx.fillStyle = '#5c6a74'; ctx.fillRect(c.x + c.w / 2 - 7, c.y + c.h + 3, 14, 2.4)
-                } else {
-                    ctx.fillStyle = edge; ctx.fillRect(c.x, py, c.w, Math.max(6, c.y + c.h - py))
-                    ctx.fillStyle = body; ctx.fillRect(c.x + 2, py + 1, c.w - 4, Math.max(4, c.y + c.h - py - 2))
-                }
-                void dy
-            } else {
-                // closed face
-                ctx.fillStyle = edge; ctx.fillRect(c.x, c.y, c.w, c.h)
-                ctx.fillStyle = body; ctx.fillRect(c.x + 2, c.y + 2, c.w - 4, c.h - 4)
-                ctx.fillStyle = '#5c6a74'; ctx.fillRect(c.x + c.w / 2 - 7, c.y + 4, 14, 2.4)
-                if (c.id === 'dw') {
-                    // porthole + program LEDs; the running washer glows and spins
-                    ctx.fillStyle = '#1c2c38'; circle(ctx, c.x + c.w / 2, c.y + c.h / 2 + 2, 8); ctx.fill()
-                    if (gs2.dwRun) {
-                        const spin = tick * 0.25
-                        ctx.strokeStyle = '#7ec8ff'; ctx.lineWidth = 1.4
-                        for (let k = 0; k < 3; k++) {
-                            ctx.beginPath()
-                            ctx.arc(c.x + c.w / 2, c.y + c.h / 2 + 2, 5.4, spin + k * 2.1, spin + k * 2.1 + 1.4)
-                            ctx.stroke()
-                        }
-                        const glow = ctx.createRadialGradient(c.x + c.w / 2, c.y + c.h / 2 + 2, 1, c.x + c.w / 2, c.y + c.h / 2 + 2, 12)
-                        glow.addColorStop(0, 'rgba(126,200,255,0.35)'); glow.addColorStop(1, 'rgba(126,200,255,0)')
-                        ctx.fillStyle = glow; circle(ctx, c.x + c.w / 2, c.y + c.h / 2 + 2, 12); ctx.fill()
-                    }
-                    for (let k = 0; k < 3; k++) {
-                        ctx.fillStyle = gs2.dwRun && tick % 40 < 24 && k === 0 ? '#5dff8f' : gs2.dwRun ? '#2c6a44' : '#2c3a44'
-                        ctx.fillRect(c.x + 4 + k * 4, c.y + c.h - 5, 2.4, 2.4)
-                    }
-                } else {
-                    // fridge: ice cube badge
-                    ctx.strokeStyle = '#9fc4d8'; ctx.lineWidth = 1
-                    ctx.strokeRect(c.x + c.w - 12, c.y + c.h - 12, 7, 7)
-                    ctx.beginPath(); ctx.moveTo(c.x + c.w - 8.5, c.y + c.h - 12); ctx.lineTo(c.x + c.w - 8.5, c.y + c.h - 5); ctx.stroke()
-                }
-            }
-            // label tag, below the appliance so the HUD never eats it
-            const ty = c.y + c.h + c.doorLen + 2
-            ctx.fillStyle = 'rgba(10,8,6,0.55)'; ctx.fillRect(c.x + c.w / 2 - 13, ty, 26, 7)
-            ctx.fillStyle = c.id === 'dw' ? '#7ec8ff' : '#a8e6b0'
-            ctx.font = 'bold 5px monospace'; ctx.textAlign = 'center'
-            ctx.fillText(c.label, c.x + c.w / 2, ty + 5.6)
-            ctx.textAlign = 'left'
-        }
-
-        const paintTable = () => {
-            ctx.fillStyle = '#6e4423'; ctx.fillRect(TABLE.x - 2, TABLE.y - 2, TABLE.w + 4, TABLE.h + 4)
-            ctx.fillStyle = '#8a5a30'; ctx.fillRect(TABLE.x, TABLE.y, TABLE.w, TABLE.h)
-            ctx.fillStyle = 'rgba(220,180,130,0.18)'
-            for (const g of bgSet('tblgrain', 12, (r) => [TABLE.x + 3 + Math.floor(r() * (TABLE.w - 6)), TABLE.y + 3 + Math.floor(r() * (TABLE.h - 6))])) ctx.fillRect(g[0], g[1], 14, 1)
-            // cloth
-            ctx.fillStyle = '#c4453a'; ctx.fillRect(TABLE.x + 10, TABLE.y + 8, TABLE.w - 20, TABLE.h - 16)
-            ctx.strokeStyle = 'rgba(255,240,230,0.35)'; ctx.lineWidth = 1
-            ctx.strokeRect(TABLE.x + 13, TABLE.y + 11, TABLE.w - 26, TABLE.h - 22)
-        }
-
-        const drawRobotEye = (facing) => {
-            const d = { up: [0, -1.4], down: [0, 1.4], left: [-1.4, 0], right: [1.4, 0] }[facing]
-            return d
-        }
-
-        const paintRobot = (gs2, tick) => {
-            const x = gs2.rx, y = gs2.ry
-            const wob = gs2.walk % 16 < 8 ? 0.6 : -0.6
-            // shadow
-            ctx.fillStyle = 'rgba(0,0,0,0.22)'
-            ctx.beginPath(); ctx.ellipse(x, y + 7, 7, 2.6, 0, 0, Math.PI * 2); ctx.fill()
-            // treads
-            ctx.fillStyle = '#12262e'
-            ctx.fillRect(x - 7, y - 6, 3, 12); ctx.fillRect(x + 4, y - 6, 3, 12)
-            ctx.fillStyle = '#274652'
-            const treadOff = (tick * 1.4) % 4
-            for (let t = -6; t < 6; t += 4) {
-                const ty = y + t + (treadOff % 4)
-                ctx.fillRect(x - 7, ty, 3, 1.4); ctx.fillRect(x + 4, ty, 3, 1.4)
-            }
-            // chassis
-            ctx.fillStyle = '#1d3d4a'; ctx.fillRect(x - 5, y - 5.5 + wob * 0.3, 10, 11)
-            ctx.fillStyle = '#5fc8de'; ctx.fillRect(x - 4, y - 4.5 + wob * 0.3, 8, 9)
-            ctx.fillStyle = '#8fe0ee'; ctx.fillRect(x - 4, y - 4.5 + wob * 0.3, 8, 2)
-            // visor + eye (looks where it walks)
-            const d = drawRobotEye(gs2.facing)
-            ctx.fillStyle = '#0e2028'; ctx.fillRect(x - 3, y - 2.5 + wob * 0.3, 6, 3.4)
-            ctx.fillStyle = tick % 90 < 6 ? '#fff2a0' : '#ffc23f'
-            circle(ctx, x + d[0], y - 0.8 + d[1] + wob * 0.3, 1.3); ctx.fill()
-            // antenna bob
-            ctx.strokeStyle = '#2c5f6e'; ctx.lineWidth = 1
-            ctx.beginPath(); ctx.moveTo(x + 2.5, y - 5); ctx.lineTo(x + 3.5 + Math.sin(tick * 0.08) * 1.2, y - 9.5); ctx.stroke()
-            ctx.fillStyle = '#ff6a5c'; circle(ctx, x + 3.5 + Math.sin(tick * 0.08) * 1.2, y - 10, 1.3); ctx.fill()
-            // held cargo (#2266): front arm floats over the head with a bob;
-            // the tray arm holds a steel serving tray out front that tilts
-            // with every step — carrying two reads as HEAVY at a glance
-            const front = gs2.items.find((it) => it.state === 'held' && it.id === gs2.held)
-            const tray = gs2.items.find((it) => it.state === 'held' && it.id === gs2.held2)
-            if (front && !(pullAnim && pullAnim.kind === front.kind)) { // #2343 while its reach arc flies, the arc IS the front cargo
-                ctx.fillStyle = 'rgba(255,255,255,0.10)'
-                circle(ctx, x, y - 16 + Math.sin(tick * 0.1) * 1, 5); ctx.fill()
-                drawItem(ctx, front.kind, x, y - 16 + Math.sin(tick * 0.1) * 1, 0.9)
-            }
-            if (tray) {
-                const fd = { up: [0, -11], down: [0, 11], left: [-11, 0], right: [11, 0] }[gs2.facing]
-                const tilt = Math.sin(gs2.walk * 0.3) * 0.14
-                ctx.save(); ctx.translate(x + fd[0], y + fd[1]); ctx.rotate(tilt)
-                ctx.fillStyle = 'rgba(0,0,0,0.18)'
-                ctx.beginPath(); ctx.ellipse(0, 4.4, 8.4, 2, 0, 0, Math.PI * 2); ctx.fill()
-                ctx.fillStyle = '#5c6a74'; ctx.fillRect(-8.5, 1.6, 17, 2.6)
-                ctx.fillStyle = '#b9c4cc'; ctx.fillRect(-8.5, 0.6, 17, 1.4)
-                ctx.fillStyle = '#7e8c96'; ctx.fillRect(-8.5, 0.6, 1.4, 3.6); ctx.fillRect(7.1, 0.6, 1.4, 3.6)
-                drawItem(ctx, tray.kind, 0, -3.4 + Math.sin(tick * 0.13) * 0.5, 0.82)
-                ctx.restore()
-            }
-        }
-
         const paintParticles = () => {
             for (let i = parts.length - 1; i >= 0; i--) {
                 const p = parts[i]; p.t++; p.x += p.vx; p.y += p.vy; p.vy += p.g
@@ -575,92 +347,9 @@ const TidyBotGame = () => {
                 if (f.k > 46) { gs.fx.splice(i, 1); continue }
                 ctx.globalAlpha = Math.max(0, 1 - f.k / 46)
                 ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'
-                ctx.fillStyle = f.t === 'ok' ? '#5dff8f' : f.t === 'jam' ? '#ffd23f' : '#ff5a4f'
+                ctx.fillStyle = f.t === 'ok' ? PA.chrome.fxText.ok : f.t === 'jam' ? PA.chrome.fxText.jam : PA.chrome.fxText.bad
                 ctx.fillText(f.msg, f.x, f.y - f.k * 0.4)
                 ctx.globalAlpha = 1
-            }
-            ctx.textAlign = 'left'
-        }
-
-        const paintHud = (gs2, tick) => {
-            ctx.fillStyle = 'rgba(16,10,8,0.78)'; ctx.fillRect(0, 0, VIEW_W, 26)
-            ctx.fillStyle = 'rgba(255,220,160,0.12)'; ctx.fillRect(0, 25, VIEW_W, 1)
-            ctx.font = 'bold 8px monospace'
-            ctx.fillStyle = '#c8a06a'; ctx.fillText('SCORE', 6, 8)
-            ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px monospace'
-            ctx.fillText(String(gs2.score).padStart(5, '0'), 6, 19)
-            // level + clock
-            ctx.textAlign = 'center'
-            ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 7px monospace'
-            ctx.fillText(`LEVEL ${gs2.level + 1}`, VIEW_W / 2, 8)
-            const clockLeft = gs2.clock / LEVELS[Math.min(gs2.level, LEVELS.length - 1)]
-            ctx.fillStyle = '#3a2c22'; ctx.fillRect(VIEW_W / 2 - 42, 11, 84, 4)
-            ctx.fillStyle = clockLeft < 0.2 ? (tick % 20 < 10 ? '#ff5a4f' : '#7c2f28') : '#e8b04a'
-            ctx.fillRect(VIEW_W / 2 - 42, 11, 84 * Math.max(0, clockLeft), 4)
-            const m = Math.max(0, Math.ceil(gs2.clock / 60))
-            ctx.fillStyle = '#f0e0c0'; ctx.font = 'bold 6px monospace'
-            ctx.fillText(`${m}s`, VIEW_W / 2, 22)
-            // chores — bottom-right corner, out of the main routes
-            ctx.textAlign = 'left'
-            ctx.font = '6px monospace'
-            let cy = 176
-            ctx.fillStyle = 'rgba(16,10,8,0.66)'
-            ctx.fillRect(VIEW_W - 74, cy - 6, 70, gs2.chores.length * 8 + 4)
-            for (const c of gs2.chores) {
-                ctx.fillStyle = c.done ? '#5dff8f' : '#d8c8a8'
-                ctx.fillText(`${c.done ? '✔' : '·'} ${c.label}`, VIEW_W - 70, cy)
-                cy += 8
-            }
-            // tidy meter, in the HUD strip's right corner
-            const roll = gs2.tidies + gs2.jams + gs2.wrongs + gs2.spills + gs2.breaks
-            const pct = roll ? gs2.tidies / roll : 1
-            ctx.fillStyle = 'rgba(16,10,8,0.66)'; ctx.fillRect(VIEW_W - 50, 4, 46, 10)
-            ctx.fillStyle = '#c8a06a'; ctx.font = 'bold 5px monospace'
-            ctx.fillText('TIDY', VIEW_W - 48, 9)
-            ctx.fillStyle = '#3a2c22'; ctx.fillRect(VIEW_W - 48, 10, 40, 2.5)
-            ctx.fillStyle = pct > 0.75 ? '#5dff8f' : pct > 0.45 ? '#ffd23f' : '#ff5a4f'
-            ctx.fillRect(VIEW_W - 48, 10, 40 * pct, 2.5)
-        }
-
-        const paintAttract = (tick) => {
-            ctx.fillStyle = 'rgba(12,8,5,0.62)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H)
-            ctx.textAlign = 'center'
-            const bob = Math.sin(tick * 0.05) * 2
-            ctx.fillStyle = 'rgba(20,14,9,0.88)'; ctx.fillRect(VIEW_W / 2 - 110, 46 + bob, 220, 46)
-            ctx.strokeStyle = '#c8a06a'; ctx.lineWidth = 2; ctx.strokeRect(VIEW_W / 2 - 110, 46 + bob, 220, 46)
-            ctx.font = 'bold 22px monospace'
-            ctx.fillStyle = '#5fc8de'; ctx.fillText('TIDY', VIEW_W / 2 - 36, 76 + bob)
-            ctx.fillStyle = '#ffd23f'; ctx.fillText('BOT', VIEW_W / 2 + 30, 76 + bob)
-            ctx.font = 'bold 7px monospace'; ctx.fillStyle = '#c8a06a'
-            ctx.fillText('HOUSEHOLD CHORE SERVICE — 24/7', VIEW_W / 2, 88 + bob)
-            if (tick % 60 < 40) {
-                ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#ffffff'
-                ctx.fillText('PRESS ANY KEY / TAP TO CLOCK IN', VIEW_W / 2, 118)
-            }
-            const board = (() => { try { return JSON.parse(localStorage.getItem('tidybot.board') || '[]') } catch { return [] } })()
-            if (board.length) {
-                ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 8px monospace'
-                ctx.fillText(`BEST ROUND: ${board[0].score}`, VIEW_W / 2, 136)
-            }
-            ctx.textAlign = 'left'
-        }
-
-        const paintOver = (tick) => {
-            ctx.fillStyle = 'rgba(12,8,5,0.78)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H)
-            ctx.textAlign = 'center'
-            const won = gs.end === 'win'
-            ctx.font = 'bold 16px monospace'
-            ctx.fillStyle = won ? '#5dff8f' : '#ff5a4f'
-            ctx.fillText(won ? 'HOUSE SPOTLESS!' : 'THE HOUSE WINS', VIEW_W / 2, 84)
-            ctx.font = '8px monospace'; ctx.fillStyle = '#c8a06a'
-            ctx.fillText(gs.endReason, VIEW_W / 2, 100)
-            ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#ffffff'
-            ctx.fillText(`SCORE ${gs.score}`, VIEW_W / 2, 126)
-            ctx.font = '7px monospace'; ctx.fillStyle = '#c8a06a'
-            ctx.fillText(`TIDY ${gs.tidies} · JAMS ${gs.jams} · SPILLS ${gs.spills} · WRONG ${gs.wrongs} · SMASHED ${gs.breaks}`, VIEW_W / 2, 140)
-            if (tick % 60 < 40) {
-                ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#ffffff'
-                ctx.fillText('PRESS ANY KEY TO CLOCK BACK IN', VIEW_W / 2, 168)
             }
             ctx.textAlign = 'left'
         }
@@ -672,25 +361,25 @@ const TidyBotGame = () => {
             if (shake > 0) shake *= 0.84
             if (shake < 0.3) shake = 0
             ctx.save(); ctx.translate(sx, sy)
-            paintRooms()
-            paintTable()
-            paintCounter()
-            paintContainer(DW, gs, tick)
-            paintContainer(FR, gs, tick)
+            PA.paintRooms(ctx)
+            PA.paintTable(ctx)
+            PA.paintCounter(ctx)
+            PA.paintContainer(ctx, DW, gs, tick, pullAnim)
+            PA.paintContainer(ctx, FR, gs, tick, pullAnim)
             // flying cargo draws above furniture
             for (const it of gs.items) {
-                if (it.state === 'loose') drawItem(ctx, it.kind, it.x, it.y)
-                else if (it.state === 'fly') drawItem(ctx, it.kind, it.x, it.y)
+                if (it.state === 'loose') PA.drawItem(ctx, it.kind, it.x, it.y)
+                else if (it.state === 'fly') PA.drawItem(ctx, it.kind, it.x, it.y)
             }
-            // #2250 GLIDE marker: a pulsing teal ring at the tapped spot, in
-            // the bot's own chrome colors so it reads as an order, not furniture.
+            // #2250 GLIDE marker: a pulsing ring at the tapped spot, in
+            // the skin's own chrome colors so it reads as an order, not furniture.
             if (goto && screenRef.current === 'play') {
                 const pulse = 3.4 + Math.sin(tick * 0.22) * 1.6
-                ctx.strokeStyle = 'rgba(95,200,222,0.85)'; ctx.lineWidth = 1.4
+                ctx.strokeStyle = PA.chrome.ring; ctx.lineWidth = 1.4
                 circle(ctx, goto.x, goto.y, pulse); ctx.stroke()
-                ctx.strokeStyle = 'rgba(95,200,222,0.35)'
+                ctx.strokeStyle = PA.chrome.ringSoft
                 circle(ctx, goto.x, goto.y, pulse + 2.6); ctx.stroke()
-                ctx.fillStyle = 'rgba(143,224,238,0.8)'
+                ctx.fillStyle = PA.chrome.dot
                 circle(ctx, goto.x, goto.y, 1.1); ctx.fill()
             }
             // #2338 AIM marker: teal corner brackets pulsing around the marked
@@ -703,7 +392,7 @@ const TidyBotGame = () => {
                     const sl = it.slot === null || it.slot === undefined ? 0 : it.slot
                     const p = rackSlot(cc, sl % RACK_CAP)
                     const q = 5.5 + Math.sin(tick * 0.22) * 1.1
-                    ctx.strokeStyle = 'rgba(95,200,222,0.9)'; ctx.lineWidth = 1.3
+                    ctx.strokeStyle = PA.chrome.bracket; ctx.lineWidth = 1.3
                     for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
                         ctx.beginPath()
                         ctx.moveTo(p.x + sx * q, p.y + sy * q - sy * 2.6)
@@ -724,7 +413,7 @@ const TidyBotGame = () => {
                     const sl = it.slot === null || it.slot === undefined ? 0 : it.slot
                     const p = rackSlot(cc, sl % RACK_CAP)
                     const q = 5.5 + Math.sin(tick * 0.22) * 1.1
-                    ctx.strokeStyle = 'rgba(95,200,222,0.9)'; ctx.lineWidth = 1.3
+                    ctx.strokeStyle = PA.chrome.bracket; ctx.lineWidth = 1.3
                     for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
                         ctx.beginPath()
                         ctx.moveTo(p.x + sx * q, p.y + sy * q - sy * 2.6)
@@ -733,7 +422,7 @@ const TidyBotGame = () => {
                         ctx.stroke()
                     }
                     ctx.font = 'bold 5px monospace'; ctx.textAlign = 'center'
-                    ctx.fillStyle = 'rgba(143,224,238,0.9)'
+                    ctx.fillStyle = PA.chrome.tag
                     ctx.fillText('AIMED', p.x, p.y - q - 2.5)
                 }
             }
@@ -747,7 +436,7 @@ const TidyBotGame = () => {
                 const cc = pullAnim.c === 'dw' ? DW : FR
                 const sp = rackSlot(cc, pullAnim.slot % RACK_CAP)
                 if (pullAnim.t <= 4) {
-                    ctx.fillStyle = `rgba(255,210,63,${0.75 * (1 - pullAnim.t / 4)})`
+                    ctx.fillStyle = `rgba(${PA.chrome.arcFlash},${0.75 * (1 - pullAnim.t / 4)})`
                     circle(ctx, sp.x, sp.y, 3.6 + pullAnim.t * 0.9); ctx.fill()
                 }
                 if (pullAnim.t > 8) pullAnim = null
@@ -760,10 +449,10 @@ const TidyBotGame = () => {
                         const kk = Math.max(0, k - i * 0.09)
                         const tx2 = sp.x + (hx - sp.x) * kk
                         const ty2 = sp.y + (hy - sp.y) * kk - Math.sin(kk * Math.PI) * 9
-                        ctx.fillStyle = `rgba(255,233,168,${0.22 - i * 0.06})`
+                        ctx.fillStyle = `rgba(${PA.chrome.arcTail},${0.22 - i * 0.06})`
                         circle(ctx, tx2, ty2, 2.4 - i * 0.5); ctx.fill()
                     }
-                    drawItem(ctx, pullAnim.kind, ax, ay, 0.72)
+                    PA.drawItem(ctx, pullAnim.kind, ax, ay, 0.72)
                 }
             }
             // #2258 arrival ring scale-out where the glide completed
@@ -771,18 +460,18 @@ const TidyBotGame = () => {
                 ringPop.t++
                 if (ringPop.t > 14) ringPop = null
                 else {
-                    ctx.strokeStyle = `rgba(143,224,238,${0.85 * (1 - ringPop.t / 14)})`
+                    ctx.strokeStyle = `rgba(${PA.chrome.ringPop},${0.85 * (1 - ringPop.t / 14)})`
                     ctx.lineWidth = 1.4
                     circle(ctx, ringPop.x, ringPop.y, 3.4 + ringPop.t * 1.1); ctx.stroke()
                 }
             }
-            paintRobot(gs, tick)
+            PA.paintRobot(ctx, gs, tick, pullAnim ? pullAnim.kind : null)
             paintParticles()
             ctx.restore()
-            paintHud(gs, tick)
+            PA.paintHud(ctx, gs, tick)
             if (flash > 0) { ctx.fillStyle = `rgba(255,60,50,${flash / 40})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); flash-- }
-            if (screenRef.current === 'attract') paintAttract(tick)
-            if (screenRef.current === 'over') paintOver(tick)
+            if (screenRef.current === 'attract') PA.paintAttract(ctx, tick, bestScore())
+            if (screenRef.current === 'over') PA.paintOver(ctx, gs, tick)
             if (hudRef.current.toastT > 0) { hudRef.current.toastT--; if (hudRef.current.toastT === 0 && hudRef.current.toast) hudRef.current.toast.textContent = '' }
             if (hudRef.current.levelTag) hudRef.current.levelTag.textContent = LEVELS[gs.level].name
         }
@@ -824,6 +513,9 @@ const TidyBotGame = () => {
                 if (screenRef.current === 'play') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current) }
                 return
             }
+            // #3078 SKINS: T flips the look on any screen — a style choice
+            // should never cost you a run.
+            if (e.code === 'KeyT') { setSkinStyle(skin === 'reimagined' ? 'classic' : 'reimagined'); return }
             if (pausedRef.current) return
             if (screenRef.current === 'attract') { startPlay(); return }
             if (screenRef.current === 'over') {
@@ -943,7 +635,7 @@ const TidyBotGame = () => {
             pending: pending ? pending.act : '', // #2537 open/place/retrieve ('' = none)
             endReason: gs.endReason,
         })
-        const testState = () => ({ ...simState(), mode: screenRef.current })
+        const testState = () => ({ ...simState(), mode: screenRef.current, skin }) // #3078 skin visible to QA
         exposeGame({
             id: 'tidy-bot',
             method: 'dpad',
@@ -1012,6 +704,8 @@ const TidyBotGame = () => {
                 hash: () => gs.hash,
                 canvas: () => canvas,
                 sim: () => gs,
+                skin: () => skin, // #3078
+                setSkin: (v) => setSkinStyle(v),
                 step: (n = 1, pad = {}) => { for (let i = 0; i < n; i++) step(gs, [pad]) },
                 press: (code) => onKeyDown({ code, preventDefault() {}, repeat: false }),
                 release: (code) => onKeyUp({ code }),
@@ -1084,8 +778,26 @@ const TidyBotGame = () => {
             <div ref={stageRef} className="relative w-full max-w-[720px] aspect-[320/240]" style={{ imageRendering: 'pixelated' }} />
             <div className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none font-mono text-[11px] tracking-widest" ref={setHud('toast')} style={{ color: '#ffd23f', textShadow: '0 1px 0 #000' }} />
             <div className="absolute bottom-1 left-2 font-mono text-[10px] text-amber-200/60 pointer-events-none">
-                <span ref={setHud('levelTag')}>KITCHEN / LIGHT DRIZZLE</span> · A: use · B: toss/pull · tap floor to glide · tap rack item to aim
+                <span ref={setHud('levelTag')}>KITCHEN / LIGHT DRIZZLE</span> · A: use · B: toss/pull · tap floor to glide · tap rack item to aim · T: style
             </div>
+            {/* #3078 SKINS — the look toggle; classic is the default, papercraft the reimagine */}
+            {!paused && (
+                <button
+                    type="button"
+                    aria-label="toggle art style"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => skinToggleRef.current()}
+                    className="absolute z-[60] font-mono text-[10px] font-bold tracking-wider px-2 py-1 rounded-full border transition-colors"
+                    style={{
+                        bottom: '1.75rem', left: '50%', transform: 'translateX(-50%)',
+                        color: skinUi === 'reimagined' ? '#6b4a2a' : '#ffd9a0',
+                        background: skinUi === 'reimagined' ? '#ffe36e' : 'rgba(16,10,8,0.72)',
+                        borderColor: skinUi === 'reimagined' ? '#d8c284' : '#c8a06a',
+                    }}
+                >
+                    STYLE: {skinUi === 'reimagined' ? 'PAPERCRAFT' : 'CLASSIC'}
+                </button>
+            )}
             {screen === 'attract' && (
                 <div className="absolute bottom-8 inset-x-0 flex flex-col items-center gap-2 pointer-events-none">
                     <AttractMessage messages={TIDY_ATTRACT} ms={2600} className="text-amber-200/80" />
