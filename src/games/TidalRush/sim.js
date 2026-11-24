@@ -363,10 +363,11 @@ function stepCraft(gs, c, pad) {
             }
             // the hang-time pays: a landed trick banks its air (rung 3)
             if ((spun || rolled) && c.id === 0) {
-                const bonus = Math.min(AIR_BONUS_CAP, Math.round(c.airT * AIR_BONUS_RATE))
+                const airR = Math.round(c.airT * 100) / 100 // what the event reports
+                const bonus = Math.min(AIR_BONUS_CAP, Math.round(airR * AIR_BONUS_RATE))
                 if (bonus > 0) {
                     gs.score += bonus
-                    gs.events.push({ t: gs.tick, type: 'airbonus', pts: bonus, airT: Math.round(c.airT * 100) / 100 })
+                    gs.events.push({ t: gs.tick, type: 'airbonus', pts: bonus, airT: airR })
                 }
             }
             c.spin = 0

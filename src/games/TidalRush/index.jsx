@@ -15,9 +15,9 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, autoPad, stateOf, stateHash, LAPS, SIM_MS, DT } from './sim.js'
-import { heightAt, waterHeight, seaUniforms, surfaceNormal } from './water.js'
+import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
-import { makeSea, makeSky, makeBuoy, makeSki, makeSpray, spraySpawn, sprayStep, makeRain, rainSpawn, rainStep, makeLights } from './art.js'
+import { makeSea, makeSky, makeBuoy, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
 const MESSAGES = [
@@ -26,6 +26,7 @@ const MESSAGES = [
     'HIT A CREST · HOLD SPIN · BANK THE TRICK',
     'FULL-LOCK STEER OFF A CREST = BARREL ROLL',
     'STORM BAY: THE SWELL RE-ROLLS EVERY LAP',
+    'A SQUALL CARRIES THE NEW SEA ACROSS THE BAY',
     'THREE LAPS · BEAT MAKO',
 ]
 
@@ -110,6 +111,11 @@ const TidalRushGame = () => {
 
         const spray = makeSpray(LITE ? 380 : 700)
         scene.add(spray.pts)
+        const wakes = gs.crafts.map(() => {
+            const w = makeWake(LITE ? 30 : 44)
+            scene.add(w.mesh)
+            return w
+        })
         const rain = makeRain(LITE ? 240 : 420)
         scene.add(rain.pts)
         let stormBlend = bayRef.current === 'storm' ? 1 : 0
@@ -157,6 +163,7 @@ const TidalRushGame = () => {
             go: () => audioController.playSweep(440, 880, 0.3, 'square', 0.14),
             barrel: () => { audioController.playSweep(330, 990, 0.22, 'triangle', 0.11); audioController.playTone(1100, 0.1, 'square', 0.1, 0.14) },
             swell: () => audioController.playSweep(90, 210, 0.9, 'sine', 0.16),
+            airLand: () => { audioController.playSweep(1500, 320, 0.24, 'sine', 0.09); audioController.playNoise(0.14, 0.06) },
             thunder: () => { audioController.playNoise(0.5, 0.12); audioController.playSweep(70, 38, 0.8, 'sawtooth', 0.1) },
             finish: (win) => {
                 const base = win ? [523, 659, 784, 1047] : [392, 330, 262]
@@ -164,14 +171,21 @@ const TidalRushGame = () => {
             },
         }
 
+        let trickPop = ''
         function drainEvents() {
             for (const e of gs.events) {
                 const hud = hudRef.current
                 if (e.type === 'pass') { sfx.pass(); flashPop = 1; if (hud.pop) { hud.pop.textContent = `CLEAN +100`; hud.pop.style.opacity = 1 } }
-                if (e.type === 'miss') { sfx.miss(); flashPop = 1; if (hud.pop) { hud.pop.textContent = 'MISS — THROTTLE DOWN'; hud.pop.style.opacity = 1 } }
-                if (e.type === 'trick') { sfx.trick(); if (hud.pop) { hud.pop.textContent = 'TRICK! +250'; hud.pop.style.opacity = 1 } }
-                if (e.type === 'barrel') { sfx.barrel(); flashPop = 1; if (hud.pop) { hud.pop.textContent = 'BARREL ROLL +200'; hud.pop.style.opacity = 1 } }
-                if (e.type === 'swell') { sfx.swell(); if (hud.pop) { hud.pop.textContent = `SWELL SHIFT — LAP ${e.lap}`; hud.pop.style.opacity = 1 } }
+                if (e.type === 'miss') { sfx.miss(); flashPop = 1; trickPop = ''; if (hud.pop) { hud.pop.textContent = 'MISS — THROTTLE DOWN'; hud.pop.style.opacity = 1 } }
+                if (e.type === 'trick') { sfx.trick(); trickPop = 'TRICK! +250'; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } }
+                if (e.type === 'barrel') { sfx.barrel(); flashPop = 1; trickPop = 'BARREL ROLL +200'; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } }
+                if (e.type === 'airbonus') {
+                    // the hang-time pays — whoosh in, bank the air
+                    sfx.airLand()
+                    if (hud.pop) { hud.pop.textContent = `${trickPop || 'TRICK'} · +${e.pts} AIR`; hud.pop.style.opacity = 1 }
+                    flashPop = 1
+                }
+                if (e.type === 'swell') { sfx.swell(); if (hud.pop) { hud.pop.textContent = `SQUALL INBOUND — LAP ${e.lap}`; hud.pop.style.opacity = 1 } }
                 if (e.type === 'flash') sfx.thunder()
                 if (e.type === 'air') sfx.air()
                 if (e.type === 'splashes') sfx.splash()
@@ -194,6 +208,8 @@ const TidalRushGame = () => {
             step(gs, pad)
             if (!prevGo && gs.lightPhase >= 1 && playing) {
                 sfx.go(); goFlash = 1.1
+                // the start-line swell sting — the bay answering the light (#3135 gap)
+                audioController.playSweep(55, 150, 0.7, 'sine', 0.13)
                 const h = hudRef.current
                 if (h.countText) h.countText.textContent = 'GO'
                 if (h.count) h.count.style.opacity = 1
@@ -228,6 +244,11 @@ const TidalRushGame = () => {
                 }
                 if (c.speed > 3 && gs.tick % 3 === 0) spraySpawn(spray, sternX, c.y + 0.05, sternZ, 1, 0.7, 0.5, true)
                 if (c.boosting && gs.tick % 2 === 0) spraySpawn(spray, sternX, c.y + 0.2, sternZ, 2, 0.5, 1.6, false)
+                // ribbon wake: the solid WR64 streak — stitched stern points,
+                // wider when fast, hottest when boosting
+                if (c.speed > 4 && gs.tick % 2 === 0) {
+                    wakePush(wakes[c.id], sternX, c.y, sternZ, c.heading, 0.55 + c.speed * 0.085 + (c.boosting ? 0.5 : 0))
+                }
             })
         }
 
@@ -237,15 +258,10 @@ const TidalRushGame = () => {
             sea.mat.uniforms.uCam.value.copy(camera.position)
             sky.position.copy(camera.position)
 
-            // THE BRIDGE: this frame's ridden sea table → shader uniforms. Same
-            // numbers, same frame — drawn sea ≡ ridden sea, every swell.
-            const su = seaUniforms(gs.seaCur)
-            for (const k in su) {
-                const u = sea.mat.uniforms[k]
-                if (!u) continue
-                if (Array.isArray(su[k])) { u.value.x = su[k][0]; u.value.y = su[k][1] }
-                else u.value = su[k]
-            }
+            // THE BRIDGE: this frame's ridden seas + live front → shader slots
+            // (pushSea maps A/B/front) — drawn sea ≡ ridden sea, wave for wave
+            // and across the squall.
+            pushSea(sea.mat, gs)
             // weather: keyed to the LIVE sim (gs.stage), never to a separate
             // picker state — the sea, sky, HUD and rain all read the exact same
             // source the hull rides, even through time-stepped DEV hooks
@@ -269,12 +285,17 @@ const TidalRushGame = () => {
             buoys.forEach((b, i) => {
                 const g0 = gs.course.gates[i]
                 // bob with the full Gerstner motion — height AND horizontal flow —
-                // on the CURRENT lap's sea so each buoy stays glued to the drawn
-                // surface it rides (rung 2), and roll with its surface normal
-                // (#3135) instead of a fake sine wobble
-                const w = waterHeight(g0.x, g0.z, t, gs.seaCur)
-                const n = surfaceNormal(g0.x, g0.z, t, gs.seaCur)
-                _v3a.set(n.x, Math.max(0.55, n.y), n.z).normalize()
+                // on the surface Kai actually rides: the two lap tables mixed by
+                // the SAME front weight the shader applies (rung 3), and roll with
+                // its surface normal (#3135) instead of a fake sine wobble
+                const wb = frontW(g0.x, g0.z, gs.front)
+                const w = mixWater(g0.x, g0.z, t, gs.seaCur, gs.seaTarget, wb)
+                const eN = 0.6
+                const hs = (px, pz) => mixHeight(px, pz, t, gs.seaCur, gs.seaTarget, wb)
+                const nx = hs(g0.x - eN, g0.z) - hs(g0.x + eN, g0.z)
+                const nz = hs(g0.x, g0.z - eN) - hs(g0.x, g0.z + eN)
+                const nInv = 1 / Math.hypot(nx, 2 * eN, nz)
+                _v3a.set(nx * nInv, Math.max(0.55, 2 * eN * nInv), nz * nInv).normalize()
                 b.quaternion.setFromUnitVectors(_up, _v3a)
                 b.position.set(g0.x + w.dx, w.y, g0.z + w.dz)
                 b.userData.flag.rotation.y = Math.sin(t * 6 + i) * 0.35
@@ -307,14 +328,16 @@ const TidalRushGame = () => {
             })
 
             sprayStep(spray, DT)
+            wakes.forEach((w) => wakeStep(w, DT))
 
             // chase-cam: sit behind and low over the water, FOV rides speed
             const p = gs.crafts[0]
             const fx = Math.sin(p.heading), fz = Math.cos(p.heading)
             const behind = 9.2 - Math.min(2, p.speed * 0.06)
-            const waveY = heightAt(p.x - fx * behind, p.z - fz * behind, t, gs.seaCur)
-            const tx = p.x - fx * behind
-            const tz = p.z - fz * behind
+            const cx = p.x - fx * behind, cz = p.z - fz * behind
+            const waveY = mixHeight(cx, cz, t, gs.seaCur, gs.seaTarget, frontW(cx, cz, gs.front))
+            const tx = cx
+            const tz = cz
             const ty = Math.max(waveY + 2.6, p.y + 2.4)
             if (!camInit) { camPos.set(tx, ty, tz); camInit = true }
             const k = 1 - Math.exp(-4.2 * DT)
@@ -360,7 +383,9 @@ const TidalRushGame = () => {
                 }
             }
             if (hud.bay) {
-                hud.bay.textContent = stormBlend > 0.5 ? `STORM BAY · SWELL ${Math.min(p.lap, LAPS)}/${LAPS}` : 'SUNNY BAY'
+                hud.bay.textContent = stormBlend > 0.5
+                    ? (gs.front ? `STORM BAY · SQUALL ${Math.round(Math.min(1, gs.front.prog / (2 * gs.front.h + gs.front.band)) * 100)}%` : `STORM BAY · SWELL ${Math.min(p.lap, LAPS)}/${LAPS}`)
+                    : 'SUNNY BAY'
                 hud.bay.style.color = stormBlend > 0.5 ? '#a9c0d2' : '#bfe9ff'
             }
             if (hud.pop) {
@@ -415,6 +440,8 @@ const TidalRushGame = () => {
             goFlash = 0
             waveAmbT = 2.0
             skiJolt = gs.crafts.map(() => 0)
+            wakes.forEach((w) => { w.pts.length = 0 })
+            trickPop = ''
             const h = hudRef.current
             if (h.count) h.count.style.opacity = 0
             if (h.countText) h.countText.textContent = ''
@@ -426,6 +453,7 @@ const TidalRushGame = () => {
         previewRef.current = () => {
             gs = makeGame(freshSeed(), bayRef.current)
             buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
+            wakes.forEach((w) => { w.pts.length = 0 })
             camInit = false
             prevGo = false
         }
@@ -488,6 +516,7 @@ const TidalRushGame = () => {
                     humanSeed = seed >>> 0
                     gs = makeGame(humanSeed, bayRef.current)
                     buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
+                    wakes.forEach((w) => { w.pts.length = 0 })
                     camInit = false
                     prevGo = false
                     setMode('play')
@@ -536,6 +565,7 @@ const TidalRushGame = () => {
             sea.mat.dispose()
             spray.geo.dispose()
             spray.mat.dispose()
+            wakes.forEach((w) => { w.geo.dispose(); w.mat.dispose() })
             rain.geo.dispose()
             rain.mat.dispose()
             canvas.remove()
