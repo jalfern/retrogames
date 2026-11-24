@@ -108,6 +108,12 @@ export const GAMES = [
     { id: 'contra', path: '/contra' }, // #2796 grew contractGames; the soak roster missed it — nightly run 44762398189 reddened main (#1525 law: never grow one list without the other)
     { id: 'double-dragon', path: '/double-dragon' }, // #2807: join BOTH lists at once (#1525)
     { id: 'r-type', path: '/r-type' }, // #2808: join BOTH lists at once (#1525)
+    { id: 'pinball', path: '/pinball' }, // #3103 grew contractGames; the soak roster missed it — nightly run 45450160001 reddened main (#1525 law: never grow one list without the other)
+    { id: 'marble-rush', path: '/marble-rush' }, // #3107 grew contractGames; same miss, same law (#1525)
+    { id: 'stomptown', path: '/stomptown' }, // #3105-era shelf; contractGames grew, soak roster missed it (#1525)
+    { id: 'tidal-rush', path: '/tidal-rush' }, // #3104 — same miss (#1525)
+    { id: 'grind-city', path: '/grind-city' }, // #3106 — same miss (#1525)
+    { id: 'skyward', path: '/skyward' }, // #3105 — same miss (#1525)
 ]
 const CAP = 9000
 

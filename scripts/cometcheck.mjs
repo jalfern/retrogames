@@ -12,8 +12,9 @@
 // `npm run cometcheck` must be GREEN; `npm run cometcheck -- --mutate`
 // must go RED (and restore the file whatever happens).
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { inflateSync } from 'node:zlib'
 import { deflateSync } from 'node:zlib'
@@ -385,7 +386,13 @@ for (const c of COURSES) {
         }
         check(`${c.id}: no route feature is smoothed away (worst local distance <= ${100 * WORST_CAP[c.id]}%)`,
             worst <= WORST_CAP[c.id], `worst ${(worst * 100).toFixed(1)}%`)
-        const png = new URL(`../docs/comet-ref-${c.id}.png`, import.meta.url)
+        // #3188: side-by-sides are OUTPUT, never tracked input — writing them
+        // over the committed docs/ refs dirtied the tree and mutateguard then
+        // refused every later mutant run (stomp/skyward/roller, nightly
+        // 45450160001). Generated art lives in the gitignored scripts/.shots/.
+        const shotsDir = join(dirname(fileURLToPath(import.meta.url)), '.shots')
+        mkdirSync(shotsDir, { recursive: true })
+        const png = join(shotsDir, `comet-ref-${c.id}.png`)
         drawSideBySide(png, ref.pts, gamePts)
 
         // #513: the slow corners are real braking corners — the autopilot must

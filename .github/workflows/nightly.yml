@@ -29,6 +29,7 @@ jobs:
           node-version: 24   # npm >=11, see the note in ci.yml's static job
           cache: npm
       - run: npm ci
+      - run: sudo apt-get update -q && sudo apt-get install -y -q zsh   # mergecheck replays zsh-shebang scripts (#3188: CI had no /bin/zsh, spawn died, mergecheck crashed on first CI run)
       - run: node scripts/ciscope.mjs --selftest
       - run: npm run build
       - run: npm run nightlychecks
