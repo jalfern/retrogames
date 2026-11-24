@@ -99,6 +99,9 @@ export const SCOPES = {
   // unowned (escalate-to-all ran every OTHER suite but never roguecheck).
   rogue: { dirs: ['src/games/Rogue'], lint: ['lint:rogue'], checks: [['roguecheck', true]], smoke: [] },
   rally: { dirs: ['src/games/RallyCoDriver'], lint: [], checks: [['rallycheck', true], ['rallylinkcheck', true]], smoke: [] },
+  // #3103: PINBALL joins the table. pinballcheck is plain Node (zero DOM,
+  // literal expectations), so it runs in the browser-free static job too.
+  pinball: { dirs: ['src/games/Pinball'], lint: [], checks: ['pinballcheck'], smoke: [] },
 };
 
 // #1575: the explicit manual park. A check script that joins scripts/ with a

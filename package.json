@@ -53,6 +53,7 @@
     "pickcheck": "node scripts/pickcheck.mjs",
     "pickrush-export": "node scripts/pickrush-export.mjs",
     "tidycheck": "node scripts/tidycheck.mjs",
+    "pinballcheck": "node scripts/pinballcheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
     "modelindexcheck": "node scripts/modelindexcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",
