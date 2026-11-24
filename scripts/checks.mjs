@@ -102,6 +102,8 @@ export const SCOPES = {
   // #3103: PINBALL joins the table. pinballcheck is plain Node (zero DOM,
   // literal expectations), so it runs in the browser-free static job too.
   pinball: { dirs: ['src/games/Pinball'], lint: [], checks: ['pinballcheck'], smoke: [] },
+  // STOMPTOWN (#3094): pure-seeded city-breaker; Node-only rules gate, no browser.
+  stomp: { dirs: ['src/games/Stomptown'], lint: [], checks: ['stompcheck', ['stompcheck', true]], smoke: [] },
 };
 
 // #1575: the explicit manual park. A check script that joins scripts/ with a

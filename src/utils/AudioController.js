@@ -573,6 +573,28 @@ export const MUSIC = {
             1, 2, 2, 1, 2, 2, 1, 2, 1, 2, 1, 2, 2, 1, 2, 2,
         ],
     },
+    // STOMPTOWN (#3094) — an ORIGINAL big-beat march for the dusk boulevard,
+    // composed for this build (our own melody; none of the 1986 cabinet's audio
+    // rides anywhere in this game). The idiom is the 1986 monster-movie cue in
+    // chiptune: a slow-heavier E-minor stomp (the kick IS the footfall), a
+    // minor-third horn answer, and the tritone lift when the blimp comes in.
+    // Octave-pumping left hand, wide rests in the lead so the towers falling
+    // stay the loudest thing on the mix.
+    stomptown: {
+        step: 0.125,
+        lead: [
+            0, 0, 0, 0, 76, 0, 0, 79, 0, 0, 76, 0, 71, 0, 0, 0,
+            0, 0, 0, 0, 76, 0, 0, 79, 83, 0, 84, 0, 83, 0, 79, 0,
+        ],
+        bass: [
+            40, 52, 40, 52, 40, 52, 40, 52, 38, 50, 38, 50, 43, 55, 43, 55,
+            40, 52, 40, 52, 40, 52, 40, 52, 42, 54, 42, 54, 43, 42, 40, 38,
+        ],
+        perc: [
+            1, 0, 0, 2, 0, 0, 1, 0, 1, 0, 0, 2, 0, 0, 1, 2,
+            1, 0, 0, 2, 0, 0, 1, 0, 1, 2, 0, 2, 1, 2, 1, 2,
+        ],
+    },
 }
 
 class AudioController {
