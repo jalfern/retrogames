@@ -18,6 +18,9 @@ export const PAL = {
     score: '#ffb32e',         // 7-seg amber
     wood: '#3b2416',          // cabinet rail
     woodHi: '#5c3a22',
+    dmd: '#ffb32e',           // dot-matrix insert (rung 3)
+    dmdOff: 'rgba(255,179,46,0.06)',
+    mag: '#9d7bff',           // magnet field violet
 };
 
 export const SCORE_DIGITS = 6;
@@ -100,6 +103,126 @@ export function paintField(ctx, W, H) {
     ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center';
     ctx.fillText('LOCK', 310, 424);
     ctx.restore();
+    // rung 3: orbit channel — amber rails up the left flank with climbing
+    // chevrons ("this lane runs UP around the dome") + a vertical nameplate.
+    ctx.save();
+    ctx.globalAlpha = 0.16; ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(12, 250); ctx.lineTo(12, 412); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(38, 258); ctx.lineTo(38, 412); ctx.stroke();
+    ctx.globalAlpha = 0.24;
+    for (let i = 0; i < 5; i++) {
+        const yy = 396 - i * 34;
+        ctx.beginPath(); ctx.moveTo(16, yy); ctx.lineTo(25, yy - 11); ctx.lineTo(34, yy); ctx.stroke();
+    }
+    ctx.globalAlpha = 0.4; ctx.fillStyle = PAL.lane;
+    ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('O', 25, 262); ctx.fillText('R', 25, 271); ctx.fillText('B', 25, 280); ctx.fillText('I', 25, 289); ctx.fillText('T', 25, 298);
+    ctx.restore();
+    // rung 3: magnet plate — a violet halo ring right-mid; the dynamic field
+    // pulse draws live in index.jsx.
+    ctx.save();
+    ctx.globalAlpha = 0.12; ctx.strokeStyle = PAL.mag; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(240, 350, 22, 0, 7); ctx.stroke();
+    ctx.globalAlpha = 0.2;
+    ctx.beginPath(); ctx.arc(240, 350, 15, 0, 7); ctx.stroke();
+    ctx.restore();
+}
+
+// ---------------------------------------------------------------- DMD ----
+// A 64x8 virtual dot matrix at 2 px dots, mounted flush between the bumper
+// cluster and the drop bank — the classic insert-display position. Own 5x7
+// font, column-major (bit r = row r). The strip's TEXT is sim state
+// (gs.msg); everything here is pure rendering of that state.
+export const DMD = { x: 116, y: 250, cols: 64, rows: 8, dot: 2 };
+
+export const FONT = {
+    ' ': [0, 0, 0, 0, 0],
+    A: [0x7E, 0x09, 0x09, 0x09, 0x7E], B: [0x7F, 0x49, 0x49, 0x49, 0x36],
+    C: [0x3E, 0x41, 0x41, 0x41, 0x22], D: [0x7F, 0x41, 0x41, 0x22, 0x1C],
+    E: [0x7F, 0x49, 0x49, 0x49, 0x41], F: [0x7F, 0x09, 0x09, 0x01, 0x01],
+    G: [0x3E, 0x41, 0x49, 0x49, 0x3A], H: [0x7F, 0x08, 0x08, 0x08, 0x7F],
+    K: [0x7F, 0x08, 0x14, 0x22, 0x40],
+    I: [0x00, 0x41, 0x7F, 0x41, 0x00], L: [0x7F, 0x40, 0x40, 0x40, 0x40],
+    M: [0x7F, 0x38, 0x0C, 0x38, 0x7F], N: [0x7F, 0x06, 0x09, 0x18, 0x7F],
+    O: [0x3E, 0x41, 0x41, 0x41, 0x3E], P: [0x7F, 0x09, 0x09, 0x09, 0x06],
+    R: [0x7F, 0x09, 0x09, 0x09, 0x76], S: [0x26, 0x49, 0x49, 0x49, 0x32],
+    T: [0x01, 0x01, 0x7F, 0x01, 0x01], U: [0x3F, 0x40, 0x40, 0x40, 0x3F],
+    V: [0x1F, 0x20, 0x40, 0x20, 0x1F], W: [0x7F, 0x20, 0x18, 0x20, 0x7F],
+    X: [0x63, 0x14, 0x08, 0x14, 0x63], Y: [0x07, 0x08, 0x70, 0x08, 0x07],
+    0: [0x3E, 0x51, 0x51, 0x51, 0x3E], 1: [0x00, 0x42, 0x7F, 0x40, 0x00],
+    2: [0x42, 0x61, 0x51, 0x49, 0x46], 3: [0x21, 0x41, 0x45, 0x4B, 0x31],
+    4: [0x18, 0x14, 0x12, 0x7F, 0x10], 5: [0x27, 0x45, 0x45, 0x45, 0x39],
+    6: [0x3C, 0x4A, 0x49, 0x49, 0x30], 7: [0x01, 0x71, 0x09, 0x05, 0x03],
+    8: [0x36, 0x49, 0x49, 0x49, 0x36], 9: [0x06, 0x49, 0x49, 0x29, 0x1E],
+    '!': [0x00, 0x00, 0x5F, 0x00, 0x00], '.': [0x00, 0x60, 0x60, 0x00, 0x00],
+    '+': [0x08, 0x08, 0x3E, 0x08, 0x08], '/': [0x20, 0x10, 0x08, 0x04, 0x02],
+};
+
+// The exact message inventory the sim can emit — charset completeness is
+// pinned by pinballcheck from this export.
+export const DMD_MSGS = [
+    'MULT x2', 'CAREFUL...', 'TILT!', 'BONUS +1200', 'BALL 2', 'ORBIT! +100',
+    'ORBIT SET!', 'ORBIT LOCK!', 'RAMP SET! +500', 'LANE SWEEP!', 'LOCK 1/3',
+    'MULTIBALL!', 'BALL SAVE!', 'EXTRA BALL', 'MAGNET!', 'SNAP! +50', 'EXTRA x1',
+];
+
+// idle crawl lines for the strip when nothing is announced
+export function dmdIdle(score, mult, balls, locks, orbitBank, orbitLit, magCharge) {
+    return [
+        `SCORE ${Math.min(999999, score)}`,
+        `MULT X${mult}  BALL ${balls}`,
+        `LOCK ${locks}/3  ORBIT ${orbitBank}/3`,
+        orbitLit ? 'ORBIT SET! SHOOT!' : (magCharge ? 'MAGNET ARMED' : 'MAGNET SPENT'),
+    ];
+}
+
+// Scroll offset in virtual px for the marquee. e = elapsed ticks.
+function dmdScroll(text, t, T) {
+    const span = text.length * 6;
+    const e = T - t;
+    if (e < span / 3) return span - 3 * e;      // scroll in from the right
+    if (t < 14) return -4 * (14 - t);           // scroll out to the left
+    return 0;
+}
+
+export function drawDMD(ctx, view) {
+    const { x, y, cols, rows, dot } = DMD;
+    // bezel + dark glass
+    ctx.save();
+    ctx.fillStyle = 'rgba(4,6,16,0.92)';
+    ctx.fillRect(x - 4, y - 4, cols * dot + 8, rows * dot + 8);
+    ctx.strokeStyle = 'rgba(201,212,232,0.35)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - 4.5, y - 4.5, cols * dot + 9, rows * dot + 9);
+    // unlit dot grid — the glass is never fully dark
+    ctx.fillStyle = PAL.dmdOff;
+    for (let cx = 0; cx < cols; cx++) {
+        for (let ry = 0; ry < rows; ry++) ctx.fillRect(x + cx * dot, y + ry * dot, 1, 1);
+    }
+    // content
+    const hot = /TILT|MULTIBALL|ORBIT LOCK|SAVE/.test(view.text);
+    const color = hot ? PAL.hot : PAL.dmd;
+    let off, text;
+    if (view.text) { text = view.text; off = dmdScroll(text, view.t, view.T); }
+    else { text = view.idle; off = -(view.tick * 2) % (text.length * 6 + cols + 16) + cols; }
+    const up = text.toUpperCase();
+    ctx.shadowColor = color; ctx.shadowBlur = 6;
+    ctx.fillStyle = color;
+    for (let ci = 0; ci < up.length; ci++) {
+        const glyph = FONT[up[ci]] || FONT[' '];
+        const gx0 = Math.round(off) + ci * 6;
+        if (gx0 + 5 < 0 || gx0 >= cols) continue;
+        for (let c = 0; c < 5; c++) {
+            const colv = glyph[c];
+            if (!colv) continue;
+            const px = gx0 + c;
+            if (px < 0 || px >= cols) continue;
+            for (let r = 0; r < rows; r++) {
+                if (colv & (1 << r)) ctx.fillRect(x + px * dot, y + r * dot, dot, dot);
+            }
+        }
+    }
+    ctx.restore();
 }
 
 export const PRESS = 'PRESS ANY KEY · TAP TO PLAY';
@@ -110,5 +233,7 @@ export const MESSAGES = [
     'CLEAR THE DROP BANK TO RAISE THE BONUS MULT',
     'SHOOT THE LANE — RAMP ROLLOVERS PAY',
     'AROUND THE DOME INTO THE FIRELANE — LOCK 3 FOR MULTIBALL',
+    'RIDE THE LEFT RAIL — 3 ORBITS LIGHT THE SET',
+    'THE MAGNET SNARES STRAY BALLS — WHEN ARMED',
     'THE LEFT OUTLANE SPINS AND KICKS — B NUDGES, CAREFULLY',
 ];

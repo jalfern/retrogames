@@ -408,4 +408,186 @@ const rollToLock = (gs) => {
     r.check('the human line never leaves the table empty', empties === 0)
 }
 
+// =============== RUNG 3 (#3199): ORBIT WRAP · MAGNET · DMD ===============
+const rung3Ball = (gs, x, y, vx, vy) => {
+    gs.pucks.length = 1
+    gs.pucks[0] = { bx: x, by: y, vx, vy, prevY: y, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false }
+}
+const wrap = (gs) => {
+    // feed the climbing rail at the kicker's own output vector; run until the
+    // wrap pays (or 220 ticks). Returns the events seen.
+    rung3Ball(gs, 20, 498, TABLE.kicker.vx, TABLE.kicker.vy)
+    const seen = []
+    for (let i = 0; i < 220; i++) {
+        drive(gs, {}, 1)
+        seen.push(...types(gs))
+        if (seen.includes('orbit')) break
+    }
+    return seen
+}
+
+// ------------------------------------------------ rung-3 geometry ----
+{
+    const guide = TABLE.walls.find((w) => w.x1 === 40 && w.x2 === 40)
+    r.check('the orbit rail (x=40) makes a 30 px climbing channel with the left wall, open onto the outlane below',
+        !!guide && guide.y1 === 320 && guide.y2 === 415 && 40 - 10 > 2 * BALL_R && guide.y2 < TABLE.spinner.yFrom)
+    const arc = TABLE.arc
+    const arcY = (x) => arc.cy - arc.ry * Math.sqrt(Math.max(0, 1 - ((x - arc.cx) / arc.rx) ** 2))
+    const MG = TABLE.magnet, O = TABLE.orbit
+    r.check('both flank pads hang under the dome ceiling with ball clearance',
+        arcY(O.armPad.x) + BALL_R < O.armPad.y && arcY(O.donePad.x) + BALL_R < O.donePad.y,
+        `arm=${arcY(O.armPad.x).toFixed(0)} done=${arcY(O.donePad.x).toFixed(0)}`)
+    r.check('the magnet reach clears the climbing rail (a wrap is never ambushed mid-channel)',
+        MG.x - 40 > MG.field + BALL_R, `reach=${MG.field + BALL_R} gap=${MG.x - 40}`)
+    r.check('the magnet sits in its own lawn: clear of slings, bank, DMD bezel and the rail',
+        MG.y >= TABLE.targetY + 50 && MG.x > 50 &&
+        Math.hypot(MG.x - 232, MG.y - 500) > MG.r + 40 && MG.y > 310)
+}
+
+// ---------------------------------------------------- orbit rules ----
+{
+    const gs = makeGame(301)
+    const seen = wrap(gs)
+    // keep the ball flying: the wrap's descent lands on the firelane gate —
+    // the chain pays AFTER the orbit itself.
+    for (let i = 0; i < 150; i++) { drive(gs, {}, 1); seen.push(...types(gs)) }
+    r.check('a scripted wrap ARMS at the left flank and COMPLETES at the right — ORBIT pays 100',
+        seen.includes('orbitarm') && seen.includes('curl') && seen.includes('orbit') && gs.orbits === 1,
+        seen.join(','))
+    r.check('the wrap lands on the firelane and chains to a lock (orbit is a second lock route)',
+        seen.includes('lane') && seen.includes('lock'), seen.join(','))
+    // exact scoring: 100 orbit + 75 lane + 100 sweep + 500 lock, nothing else touched
+    r.check('that chained wrap scores exactly 775 (100+75+100+500, MULT x1)', gs.score === 775, `score=${gs.score}`)
+    // arm is UPWARD-only
+    const gd = makeGame(302); rung3Ball(gd, 40, 100, 0, 400); clear(gd)
+    drive(gd, {}, 20)
+    r.check('falling back down through the arm pad does NOT arm the loop',
+        !types(gd).includes('orbitarm') && gd.orbits === 0)
+    // completion needs the arm: drop straight down the done pad
+    const gu = makeGame(303); rung3Ball(gu, 290, 100, 0, 400); clear(gu)
+    drive(gu, {}, 20)
+    r.check('a ball descending the right flank un-armed completes nothing',
+        !types(gu).includes('orbit') && gu.orbits === 0)
+    // armed ball that falls back down the LEFT flank must not complete
+    const gf = makeGame(304); wrap(gf) // completes once already — reset counters
+    gf.orbits = 0; gf.orbitBank = 0; gf.orbitLit = false
+    rung3Ball(gf, 40, 130, 0, 400); clear(gf)
+    gf.pucks[0].orbitArmed = true
+    drive(gf, {}, 20)
+    r.check('an armed ball that falls back down the left flank scores no orbit',
+        !types(gf).includes('orbit') && gf.orbits === 0)
+}
+
+// -------------------------------------------------- orbit the set ----
+{
+    const gs = makeGame(311)
+    const s0 = gs.score
+    wrap(gs); gs.locks = 0 // bank the tower lock the wrap chains into — keep focus on orbits
+    wrap(gs); gs.locks = 0
+    const seen3 = wrap(gs); gs.locks = 0
+    r.check('three wraps bank the ORBIT SET: +500 paid, lamp lit, bank resets',
+        seen3.includes('orbitset') && gs.orbitLit && gs.orbitBank === 0 && gs.score >= s0 + 3 * 100 + 500,
+        `lit=${gs.orbitLit} bank=${gs.orbitBank}`)
+    const before4 = gs.score
+    const seen4 = wrap(gs)
+    r.check('while the set is lit, the next wrap banks a LOCK outright',
+        seen4.includes('orbitlock') && !gs.orbitLit && gs.locks >= 1 && gs.score >= before4 + 100 + 500,
+        `locks=${gs.locks}`)
+}
+
+// ------------------------------------------------------ the magnet ----
+{
+    const MG = TABLE.magnet
+    const gs = makeGame(321)
+    rung3Ball(gs, MG.x, MG.y - 40, 0, 60)
+    const t0 = gs.tick
+    let grabTick = -1, freeTick = -1, scoreAtGrab = 0, clampX = 0, clampY = 0, drift = 0
+    for (let i = 0; i < 300 && freeTick < 0; i++) {
+        drive(gs, {}, 1)
+        const ev = types(gs)
+        if (grabTick < 0 && ev.includes('maggrab')) { grabTick = gs.tick; scoreAtGrab = gs.score; clampX = gs.pucks[0].bx; clampY = gs.pucks[0].by }
+        if (grabTick >= 0 && freeTick < 0 && gs.magHold > 0) drift = Math.max(drift, Math.hypot(gs.pucks[0].bx - clampX, gs.pucks[0].by - clampY))
+        if (grabTick >= 0 && freeTick < 0 && ev.includes('magfree')) freeTick = gs.tick
+    }
+    r.check('a drifting ball is pulled, clamped at the post face and HELD (velocity dies)',
+        grabTick > 0 && gs.magCharge === 0, `grab@${grabTick}`)
+    r.check('the hold lasts exactly 72 world ticks and the release pays 50 x MULT',
+        freeTick - grabTick === MG.hold && gs.score === scoreAtGrab + TABLE.rules.magnet,
+        `held=${freeTick - grabTick} paid=${gs.score - scoreAtGrab}`)
+    r.check('the held ball is pinned (drift < 0.01 px) while the world clock runs its 72 ticks',
+        drift < 0.01 && freeTick - t0 >= MG.hold, `drift=${drift.toFixed(4)} ticks=${freeTick - t0}`)
+    // spent: a second visit must not grab
+    const gs2 = makeGame(322)
+    rung3Ball(gs2, MG.x, MG.y - 40, 0, 60)
+    for (let i = 0; i < 120; i++) { drive(gs2, {}, 1); clear(gs2) }
+    rung3Ball(gs2, MG.x, MG.y - 40, 0, 60)
+    const g2 = []
+    for (let i = 0; i < 60; i++) { drive(gs2, {}, 1); g2.push(...types(gs2)) }
+    r.check('a spent magnet lets the next ball pass (charge dies with the hold)',
+        !g2.includes('maggrab') && gs2.magCharge === 0)
+    // recharge: drain a ball that touched the field
+    const touch = gs2.pucks[0]
+    touch.bx = MG.x; touch.by = MG.y; touch.vx = 0; touch.vy = 0
+    gs2.magTouched = false
+    drive(gs2, {}, 1)
+    r.check('rolling through the field marks the magnet touched (recharge eligibility)',
+        gs2.magTouched === true)
+    gs2.pucks[0].by = TABLE.drainY + 5
+    const ev2 = []
+    drive(gs2, {}, 2); ev2.push(...types(gs2))
+    r.check('draining a ball that touched the field RE-ARMS the magnet for the next ball',
+        gs2.magCharge === 1 && !gs2.magTouched)
+}
+
+// ----------------------------------------------------- the DMD ----
+{
+    // message state lives in the SIM — Node pins what the strip says.
+    const gs = makeGame(331)
+    r.check('a fresh strip is dark (idle crawl takes over, no lingering text)', stateOf(gs).dmd.text === '')
+    // bank clear announces the mult
+    const O = TABLE.targetY
+    for (let i = 0; i < TABLE.targets.length; i++) {
+        rung3Ball(gs, (TABLE.targets[i].x1 + TABLE.targets[i].x2) / 2, O - 30, 0, 200)
+        for (let t = 0; t < 30; t++) { drive(gs, {}, 1); if (gs.targetDown[i]) break }
+    }
+    r.check('clearing the bank puts MULT x2 on the strip (sim-owned message)',
+        gs.mult === 2 && stateOf(gs).dmd.text === 'MULT x2', stateOf(gs).dmd.text)
+    // a wrap announces itself
+    const gw = makeGame(332); wrap(gw)
+    r.check('the wrap announces ORBIT on the strip as it pays', (() => {
+        const gs3 = makeGame(333); const s = wrap(gs3)
+        return s.includes('orbit') && stateOf(gs3).dmd.text === 'ORBIT! +100'
+    })())
+    // messages decay
+    const gd2 = makeGame(334); wrap(gd2)
+    for (let i = 0; i < 130; i++) drive(gd2, {}, 1)
+    r.check('strip messages decay on the world clock (back to the idle crawl)',
+        stateOf(gd2).dmd.text === '' || stateOf(gd2).dmd.text === 'LOCK 1/3', stateOf(gd2).dmd.text)
+    // tilt announces
+    const gt = makeGame(335)
+    drive(gt, { b: true }, 1); drive(gt, {}, 2); drive(gt, { b: true }, 1); drive(gt, {}, 2); drive(gt, { b: true }, 1)
+    r.check('TILT takes over the strip', gt.tilt && stateOf(gt).dmd.text === 'TILT!', stateOf(gt).dmd.text)
+}
+
+// --------------------------------------------- font + determinism ----
+{
+    const { FONT, DMD_MSGS } = await import('../src/games/Pinball/art.js')
+    const chars = new Set(DMD_MSGS.join('').toUpperCase().split(''))
+    const missing = [...chars].filter((c) => !(c in FONT))
+    r.check(`the dot font covers every character the strip can ever show (${chars.size} glyphs)`,
+        missing.length === 0, `missing=${missing.join(' ')}`)
+    const a = makeGame(341), b = makeGame(341)
+    const hs = []
+    for (let i = 0; i < 900; i++) {
+        stepGame(a, i % 120 < 3 ? { down: true } : {}); a.events.length = 0
+        stepGame(b, i % 120 < 3 ? { down: true } : {}); b.events.length = 0
+        if (i % 150 === 149) hs.push(stateHash(a) === stateHash(b))
+    }
+    r.check('rung-3 state (orbit bank, magnet charge/hold, msg) is deterministic: hash-identical over 900 ticks',
+        hs.every(Boolean) && hs.length === 6)
+    const c = makeGame(342)
+    for (let i = 0; i < 600; i++) { stepGame(c, {}); c.events.length = 0 }
+    r.check('the hash moved on from the rung-3 seeds (new state is mixed in)', stateHash(a) !== stateHash(c))
+}
+
 r.exit()

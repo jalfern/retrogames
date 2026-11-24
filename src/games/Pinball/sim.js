@@ -77,7 +77,7 @@ export const TABLE = {
         // ---- rung 3: orbit channel guide (x=40, parallel to the left wall).
         // The gap x 10..40 is one lane, two directions: downward it stays the
         // spinner/kicker outlane; upward it is the orbit's climbing rail.
-        { x1: 40, y1: 250, x2: 40, y2: 415 },
+        { x1: 40, y1: 320, x2: 40, y2: 415 },
     ],
     // Top arc: ellipse centre (180,160), rx 170, ry 150, sampled θ = π → 2π.
     arc: { cx: 180, cy: 160, rx: 170, ry: 150, from: Math.PI, to: 2 * Math.PI, segs: 14 },
@@ -139,9 +139,10 @@ export const TABLE = {
     // to the post (MAG_PULL px/s²), clamped at its face and held `hold`
     // ticks; release pays. The charge dies with the hold and re-arms only
     // when a ball that touched the field drains — magnet play costs risk.
-    // (x=78 keeps the field clear of the orbit channel: a climbing ball must
-    // never get ambushed on its way to the wrap.)
-    magnet: { x: 78, y: 350, r: 10, field: 32, hold: 72, pull: 1500 },
+    // Sitting right-mid between bank and slings, it snares dome-rebounds and
+    // firelane spills, and its 33 px reach is clear of every rung-1/2 probe
+    // lane, the orbit channel and the DMD insert.
+    magnet: { x: 240, y: 350, r: 10, field: 24, hold: 72, pull: 1500 },
     // Flippers: pivots, length, half thickness, rest/up angles (degrees).
     flippers: {
         pivotY: 552, len: 58, halfW: 7,
@@ -189,7 +190,7 @@ export function makeGame(seed = 1) {
         orbits: 0, orbitBank: 0, orbitLit: false, orbitFlash: 0, orbitArmFlash: 0,
         magCharge: 1, magHold: 0, magTouched: false, magFlash: 0, magFreeFlash: 0,
         // DMD message state lives in the SIM so Node can pin the text (#3199)
-        msg: { text: '', t: 0 },
+        msg: { text: '', t: 0, T: 0 },
         // rung-2 flash mirrors (0 until lit; the shell reads these for lamps)
         rampFlash: 0, laneFlash: [0, 0, 0], lockFlash: 0, mbFlash: 0,
         events: [],
@@ -310,7 +311,7 @@ function add(gs, pts) { gs.score += pts * (gs.multiball ? TABLE.rules.mbDouble :
 // DMD message (rung 3): the strip's text is SIM state so pinballcheck can
 // pin what the display says at any tick. Tick-driven decay; a newer message
 // simply replaces the old one.
-function say(gs, text, ticks = 110) { gs.msg = { text, t: ticks }; }
+function say(gs, text, ticks = 110) { gs.msg = { text, t: ticks, T: ticks }; }
 
 function substep(gs, dt) {
     // flippers animate once per substep (game-wide), then the pack collides.
@@ -786,7 +787,7 @@ export function stateOf(gs) {
         orbits: gs.orbits, orbitBank: gs.orbitBank, orbitLit: gs.orbitLit,
         magCharge: gs.magCharge, magHold: gs.magHold, magTouched: gs.magTouched,
         // what the DMD strip reads this tick (deterministic — Node can pin it)
-        dmd: { text: gs.msg.t > 0 ? gs.msg.text : '', t: gs.msg.t },
+        dmd: { text: gs.msg.t > 0 ? gs.msg.text : '', t: gs.msg.t, T: gs.msg.T || 0 },
         hash: stateHash(gs),
     };
 }

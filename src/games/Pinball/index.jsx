@@ -13,7 +13,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, W, H, BALL_R,
 } from './sim.js'
-import { PAL, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES } from './art.js'
+import { PAL, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, drawDMD, dmdIdle } from './art.js'
 
 const FIXED_DT = 1000 / 60
 
@@ -59,6 +59,18 @@ const sfxFor = (ev) => {
         case 'feed': a.playSweep(140, 420, 0.14, 'triangle', 0.08); break
         case 'gameover':
             [392, 311, 262, 196].forEach((f, i) => a.playTone(f, 0.14, 'square', 0.1, i * 0.13)); break
+        // ---- rung 3 ----
+        case 'curl': a.playSweep(300, 720, 0.16, 'triangle', 0.08); a.playNoise(0.04, 0.05); break
+        case 'orbitarm': a.playTone(1180, 0.03, 'square', 0.07); break
+        case 'orbit':
+            [523, 659, 784].forEach((f, i) => a.playTone(f, 0.06, 'square', 0.1, i * 0.05))
+            a.playNoise(0.05, 0.08); break
+        case 'orbitset':
+            [587, 740, 880, 1175].forEach((f, i) => a.playTone(f, 0.08, 'square', 0.11, i * 0.07)); break
+        case 'orbitlock': a.playTone(196, 0.12, 'square', 0.14); a.playSweep(900, 300, 0.18, 'sawtooth', 0.08); break
+        case 'maggrab': a.playSweep(900, 200, 0.12, 'sawtooth', 0.1); a.playNoise(0.05, 0.1); break
+        case 'magfree': a.playSweep(300, 1046, 0.1, 'square', 0.09); break
+        case 'magready': a.playTone(1568, 0.05, 'square', 0.05); break
         case 'start': a.playTone(392, 0.07, 'square', 0.1); a.playTone(523, 0.07, 'square', 0.1, 0.07); a.playTone(659, 0.1, 'square', 0.1, 0.14); break
         default: break
     }
@@ -72,8 +84,7 @@ const PinballGame = () => {
     const gsRef = useRef(makeGame(freshSeed()))
     const keysRef = useRef({ left: false, right: false, a: false, down: false, b: false })
     const partsRef = useRef([])
-    const flashRef = useRef({ bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0, ramp: 0, lane: TABLE.laneRollovers.map(() => 0), lock: 0, mb: 0 })
-    const msgRef = useRef({ text: '', t: 0 })
+    const flashRef = useRef({ bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0, ramp: 0, lane: TABLE.laneRollovers.map(() => 0), lock: 0, mb: 0, orbit: 0, orbitArm: 0, mag: 0, magFree: 0 })
     const shakeRef = useRef(0)
     const trailRef = useRef([])
     const fieldRef = useRef(null)
@@ -88,7 +99,6 @@ const PinballGame = () => {
         gsRef.current = makeGame(freshSeed())
         partsRef.current = []
         trailRef.current = []
-        msgRef.current = { text: '', t: 0 }
         screenRef.current = 'play'; setScreen('play')
         sfxFor({ type: 'start' })
     }, [])
@@ -126,7 +136,6 @@ const PinballGame = () => {
                 partsRef.current.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, life: 0.5 + Math.random() * 0.3, color })
             }
         }
-        const say = (text, ticks = 110) => { msgRef.current = { text, t: ticks } }
 
         const react = (gs) => {
             const fl = flashRef.current
@@ -135,25 +144,28 @@ const PinballGame = () => {
                 if (ev.type === 'bumper') { fl.bumpers[ev.i] = 9; spawn(ev.x, ev.y, 10, PAL.hot, 190) }
                 else if (ev.type === 'sling') { fl.slings[ev.i] = 7; spawn(ev.x, ev.y, 6, PAL.sling, 150) }
                 else if (ev.type === 'target') { fl.targets[ev.i] = 8; spawn(ev.x, ev.y, 7, PAL.neon) }
-                else if (ev.type === 'bank') { fl.bank = 40; shakeRef.current = Math.max(shakeRef.current, 5); say(`BANK CLEARED! MULT x${gs.mult}`, 130) }
+                else if (ev.type === 'bank') { fl.bank = 40; shakeRef.current = Math.max(shakeRef.current, 5) }
                 else if (ev.type === 'spinner') { fl.spinner = 6; spawn(ev.x, ev.y, 3, PAL.glow, 90) }
                 else if (ev.type === 'kicker') { spawn(ev.x, ev.y, 12, PAL.lane, 220) }
                 else if (ev.type === 'plunge') { spawn(TABLE.plunger.x, TABLE.plunger.restY, 8, PAL.chrome, 120) }
                 else if (ev.type === 'ratchet') { spawn(TABLE.plunger.x, 566 + (ev.power || 0) * 14, 2, PAL.chrome, 60) }
                 else if (ev.type === 'drain') { shakeRef.current = 10; fl.drain = 24 }
-                else if (ev.type === 'bonus') say(`BONUS +${ev.value}`, 120)
-                else if (ev.type === 'tilt') { fl.tilt = 90; shakeRef.current = 14; say('TILT!', 140) }
-                else if (ev.type === 'tiltwarn') say('CAREFUL…', 70)
-                else if (ev.type === 'ballstart') say(`BALL ${TABLE.balls - gs.balls + 1}`, 90)
+                else if (ev.type === 'tilt') { fl.tilt = 90; shakeRef.current = 14 }
                 else if (ev.type === 'ramp') { fl.ramp = 8; spawn(ev.x, ev.y, 4, PAL.lane, 110) }
-                else if (ev.type === 'rampset') { fl.ramp = 20; shakeRef.current = Math.max(shakeRef.current, 3); say('RAMP SET! +500', 110) }
+                else if (ev.type === 'rampset') { fl.ramp = 20; shakeRef.current = Math.max(shakeRef.current, 3) }
                 else if (ev.type === 'lane') { fl.lane[ev.i] = 8; spawn(310, ev.y, 4, PAL.lane, 110) }
-                else if (ev.type === 'lanesweep') { shakeRef.current = Math.max(shakeRef.current, 3); say('LANE SWEEP!', 100) }
-                else if (ev.type === 'lock') { fl.lock = 16; shakeRef.current = Math.max(shakeRef.current, 4); say(`LOCK ${gs.locks} / ${TABLE.lock.need}`, 100) }
-                else if (ev.type === 'multiball') { fl.mb = 90; shakeRef.current = 8; say('M U L T I B A L L !', 170) }
-                else if (ev.type === 'save') say('BALL SAVE!', 100)
-                else if (ev.type === 'extraball') say('EXTRA BALL BANKED', 100)
-                else if (ev.type === 'extraballpaid') say(`EXTRA BALL x${ev.n}`, 110)
+                else if (ev.type === 'lanesweep') { shakeRef.current = Math.max(shakeRef.current, 3) }
+                else if (ev.type === 'lock') { fl.lock = 16; shakeRef.current = Math.max(shakeRef.current, 4) }
+                else if (ev.type === 'multiball') { fl.mb = 90; shakeRef.current = 8 }
+                // ---- rung 3 (messages are SIM state now — drawn by the DMD) ----
+                else if (ev.type === 'curl') spawn(ev.x, ev.y, 4, PAL.glow, 90)
+                else if (ev.type === 'orbitarm') { fl.orbitArm = 8; spawn(ev.x, ev.y, 4, PAL.lane, 90) }
+                else if (ev.type === 'orbit') { fl.orbit = 14; shakeRef.current = Math.max(shakeRef.current, 4); spawn(ev.x, ev.y, 10, PAL.lane, 170) }
+                else if (ev.type === 'orbitset') { fl.orbit = 30; shakeRef.current = Math.max(shakeRef.current, 6) }
+                else if (ev.type === 'orbitlock') { fl.orbit = 24; shakeRef.current = Math.max(shakeRef.current, 5); spawn(ev.x ?? 290, ev.y ?? 120, 8, PAL.hot, 150) }
+                else if (ev.type === 'maggrab') { fl.mag = 14; spawn(ev.x, ev.y, 8, PAL.mag, 120) }
+                else if (ev.type === 'magfree') { fl.magFree = 12; spawn(ev.x, ev.y, 6, PAL.mag, 140) }
+                else if (ev.type === 'magready') { fl.mag = 8 }
             }
             gs.events.length = 0
         }
@@ -248,6 +260,76 @@ const PinballGame = () => {
                 }
                 ctx.restore()
             }
+            // ---- rung 3: orbit pads + bank lamps + magnet post ----
+            {
+                const armed = gs.pucks.some((p) => p.orbitArmed)
+                // climbing-rail glow while a ball is armed for the wrap
+                if (armed) {
+                    ctx.save(); ctx.globalAlpha = 0.3 + 0.2 * Math.sin(gs.tick / 6)
+                    ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2
+                    ctx.beginPath(); ctx.moveTo(25, 415); ctx.lineTo(25, 250); ctx.stroke()
+                    ctx.restore()
+                }
+                // arm pad (left flank) — hot while armed
+                ctx.save()
+                const al = armed || fl.orbitArm > 0
+                ctx.strokeStyle = al ? '#ffffff' : PAL.lane
+                ctx.globalAlpha = al ? 0.95 : 0.45
+                ctx.lineWidth = 2.5
+                ctx.beginPath(); ctx.arc(TABLE.orbit.armPad.x, TABLE.orbit.armPad.y, 7, 0, 7); ctx.stroke()
+                if (al) { ctx.shadowColor = PAL.lane; ctx.shadowBlur = 14; ctx.stroke() }
+                ctx.restore()
+                // done pad (right flank) — hot while the set is lit / just scored
+                ctx.save()
+                const dl = gs.orbitLit || fl.orbit > 0
+                ctx.strokeStyle = dl ? PAL.hot : PAL.lane
+                ctx.globalAlpha = dl ? 0.95 : 0.45
+                ctx.lineWidth = 2.5
+                ctx.beginPath(); ctx.arc(TABLE.orbit.donePad.x, TABLE.orbit.donePad.y, 7, 0, 7); ctx.stroke()
+                if (dl) { ctx.shadowColor = PAL.hot; ctx.shadowBlur = 14; ctx.stroke() }
+                ctx.restore()
+                // orbit bank lamps, seated under the DMD insert
+                for (let i = 0; i < TABLE.orbit.need; i++) {
+                    const on = gs.orbitLit || i < gs.orbitBank
+                    const pulse = on && (gs.tick >> 3) % 2 === 0
+                    ctx.fillStyle = on ? (pulse ? '#ffffff' : PAL.hot) : 'rgba(255,61,94,0.18)'
+                    if (on) { ctx.shadowColor = PAL.hot; ctx.shadowBlur = 8 }
+                    ctx.beginPath(); ctx.arc(150 + i * 12, 276, 3, 0, 7); ctx.fill()
+                    ctx.shadowBlur = 0
+                }
+                // magnet post — violet halo pulses while armed; energy tether
+                // and bloom while it holds a ball; dull when spent.
+                {
+                    const M = TABLE.magnet
+                    const held = gs.magHold > 0
+                    const charge = gs.magCharge > 0
+                    ctx.save()
+                    if (charge) {
+                        ctx.globalAlpha = 0.14 + 0.1 * Math.sin(gs.tick / 5)
+                        ctx.strokeStyle = PAL.mag; ctx.lineWidth = 2
+                        ctx.beginPath(); ctx.arc(M.x, M.y, M.field * (0.7 + 0.3 * Math.sin(gs.tick / 9)), 0, 7); ctx.stroke()
+                    }
+                    if (held) {
+                        const rg = ctx.createRadialGradient(M.x, M.y, 4, M.x, M.y, 30)
+                        rg.addColorStop(0, 'rgba(157,123,255,0.55)'); rg.addColorStop(1, 'rgba(157,123,255,0)')
+                        ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(M.x, M.y, 30, 0, 7); ctx.fill()
+                        const hp = gs.pucks.find((p) => p.magHeld)
+                        if (hp) {
+                            ctx.globalAlpha = 0.7; ctx.strokeStyle = PAL.mag; ctx.lineWidth = 1.5
+                            ctx.beginPath(); ctx.moveTo(M.x, M.y); ctx.lineTo(hp.bx, hp.by); ctx.stroke()
+                        }
+                    }
+                    ctx.globalAlpha = 1
+                    if (fl.mag > 0) { ctx.shadowColor = PAL.mag; ctx.shadowBlur = 16 }
+                    ctx.fillStyle = charge ? PAL.mag : 'rgba(157,123,255,0.25)'
+                    ctx.beginPath(); ctx.arc(M.x, M.y, M.r, 0, 7); ctx.fill()
+                    ctx.shadowBlur = 0
+                    ctx.strokeStyle = PAL.chrome; ctx.lineWidth = 2
+                    ctx.beginPath(); ctx.arc(M.x, M.y, M.r + 2.5, 0, 7); ctx.stroke()
+                    ctx.fillStyle = PAL.chrome; ctx.beginPath(); ctx.arc(M.x, M.y, 2.5, 0, 7); ctx.fill()
+                    ctx.restore()
+                }
+            }
             TABLE.bumpers.forEach((b, i) => {
                 const glow = fl.bumpers[i]
                 ctx.save()
@@ -289,6 +371,13 @@ const PinballGame = () => {
                     ctx.fillRect(tp.x1 + 2, TABLE.targetY - 2, 3, 4)
                 }
                 ctx.restore()
+            })
+
+            // rung 3: the DMD insert — text is SIM state (gs.msg); when idle
+            // it crawls live status. Balls roll over it like glass over LEDs.
+            drawDMD(ctx, {
+                text: gs.msg.t > 0 ? gs.msg.text : '', t: gs.msg.t, T: gs.msg.T || 0, tick: gs.tick,
+                idle: dmdIdle(gs.score, gs.mult, gs.balls, gs.locks, gs.orbitBank, gs.orbitLit, gs.magCharge)[Math.floor(gs.tick / 96) % 4],
             })
 
             // spinner (outlane): tilts while a ball passes through
@@ -390,11 +479,6 @@ const PinballGame = () => {
                 ctx.fillStyle = PAL.hot; ctx.font = 'bold 26px monospace'
                 ctx.fillText('TILT', 180, 360)
             }
-            if (msgRef.current.t > 0) {
-                msgRef.current.t -= 1
-                ctx.fillStyle = '#ffe9b0'; ctx.font = 'bold 14px monospace'
-                ctx.fillText(msgRef.current.text, 180, 388)
-            }
             ctx.restore()
         }
 
@@ -455,7 +539,7 @@ const PinballGame = () => {
         const startable = () => screenRef.current === 'attract' || screenRef.current === 'over'
         const onKeyDown = (e) => {
             if (e.repeat) return
-            if (e.code === 'Escape' || e.code === 'QuestionMark' || e.code === 'Backquote') {
+            if (e.code === 'Escape' || e.code === 'QuestionMark' || e.key === '?' || e.code === 'Backquote') {
                 if (screenRef.current === 'play') setPaused((p) => !p)
                 return
             }
@@ -486,13 +570,24 @@ const PinballGame = () => {
 
         if (import.meta.env.DEV) {
             window.__pinballTest = {
-                state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power }),
+                state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current }),
                 // dev rig: drop a ball straight into the firelane (visual QA of
                 // the lamp set / tower / pack — the rules themselves are pinned
                 // deterministically by pinballcheck in Node)
                 laneDrop: () => {
                     const gs = gsRef.current
                     gs.pucks.push({ bx: 310, by: 235, vx: 0, vy: 160, prevY: 235, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0 })
+                    return stateOf(gs)
+                },
+                // dev rig: feed the orbit channel / drop a ball into the magnet
+                orbitFeed: () => {
+                    const gs = gsRef.current
+                    gs.pucks.push({ bx: 20, by: 498, vx: TABLE.kicker.vx, vy: TABLE.kicker.vy, prevY: 498, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
+                    return stateOf(gs)
+                },
+                magDrop: () => {
+                    const gs = gsRef.current
+                    gs.pucks.push({ bx: TABLE.magnet.x, by: TABLE.magnet.y - 40, vx: 0, vy: 60, prevY: TABLE.magnet.y - 40, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
                     return stateOf(gs)
                 },
                 hash: () => stateHash(gsRef.current),
