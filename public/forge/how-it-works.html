@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>How the Forge Works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+/* Layout: a factory floor read left to right (conveyor diagram), then station cards, then "where else you've seen this". */
+:root {
+  --bg: #eef0ee;
+  --panel: #ffffff;
+  --ink: #1d2320;
+  --muted: #5d6762;
+  --line: #cfd5d1;
+  --safety: #f2b705;      /* safety yellow: the accent */
+  --safety-ink: #4a3800;
+  --stop: #c8341f;        /* andon red */
+  --go: #2f7d4f;
+  --steel: #66737a;
+  --belt: #3b4448;
+  --display: 'Barlow Condensed', 'Arial Narrow', Arial, sans-serif;
+  --body: 'Source Sans 3', 'Helvetica Neue', Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141816; --panel: #1d2320; --ink: #e9ece9; --muted: #a2aca6; --line: #313935;
+  --safety: #f5c531; --safety-ink: #241b00; --stop: #ec5a43; --go: #5cbf83; --steel: #8d9aa1; --belt: #0c0f0e;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #141816; --panel: #1d2320; --ink: #e9ece9; --muted: #a2aca6; --line: #313935;
+  --safety: #f5c531; --safety-ink: #241b00; --stop: #ec5a43; --go: #5cbf83; --steel: #8d9aa1; --belt: #0c0f0e;
+  color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 64px; }
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--display); margin: 0; line-height: 1.02; text-wrap: balance; text-transform: uppercase; letter-spacing: .02em; }
+h1 { font-size: clamp(40px, 7vw, 72px); font-weight: 800; }
+h2 { font-size: 30px; font-weight: 700; }
+h3 { font-size: 22px; font-weight: 700; }
+p { margin: 0; max-width: 66ch; }
+.tape { height: 14px; background: repeating-linear-gradient(-45deg, var(--safety) 0 14px, var(--ink) 14px 28px); border-radius: 2px; }
+.lede { font-size: 20px; color: var(--muted); }
+header { display: grid; gap: 16px; }
+.floor { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; overflow-x: auto; }
+.floor svg { display: block; width: 100%; min-width: 760px; height: auto; }
+.floor text { font-family: var(--body); fill: var(--ink); }
+.floor .lab { font-family: var(--display); font-weight: 700; font-size: 17px; text-transform: uppercase; letter-spacing: .03em; }
+.floor .sub { font-size: 12px; fill: var(--muted); }
+.st { fill: var(--panel); stroke: var(--steel); stroke-width: 2; }
+.belt { fill: var(--belt); }
+.roller { fill: var(--steel); }
+.crate { fill: var(--safety); stroke: var(--ink); stroke-width: 1.5; }
+.cord { stroke: var(--stop); stroke-width: 3; fill: none; }
+.cordknob { fill: var(--stop); }
+.sign { fill: var(--safety); stroke: var(--ink); stroke-width: 1.5; }
+.sign-t { font-family: var(--display); font-weight: 800; font-size: 14px; fill: var(--safety-ink); text-transform: uppercase; letter-spacing: .04em; }
+.flag-go { fill: var(--go); }
+.stations { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 700px) { .stations { grid-template-columns: minmax(0, 1fr); } }
+.station { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 18px 18px; display: grid; gap: 8px; align-content: start; border-top: 6px solid var(--safety); }
+.station.red { border-top-color: var(--stop); }
+.station.green { border-top-color: var(--go); }
+.station .is { font-size: 14px; color: var(--muted); }
+.station .is b { color: var(--ink); font-weight: 700; }
+.station p { font-size: 16px; }
+.elsewhere { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 800px) { .elsewhere { grid-template-columns: minmax(0, 1fr); } }
+.place { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; display: grid; gap: 10px; align-content: start; }
+.place ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 15.5px; }
+.place li span { color: var(--muted); }
+.bottom { background: var(--ink); color: var(--bg); border-radius: 8px; padding: 22px; display: grid; gap: 8px; }
+.bottom h2 { color: var(--safety); }
+.bottom p { color: var(--bg); opacity: .9; }
+section { display: grid; gap: 16px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="tape" aria-hidden="true"></div>
+    <h1>How the forge works</h1>
+    <p class="lede">The forge is a factory that builds games, run by AI workers instead of people. Almost every rule in it is borrowed from places that solved the same problems long ago: car plants, kitchens, hospitals, newsrooms.</p>
+  </header>
+
+  <section>
+    <h2>The factory floor</h2>
+    <div class="floor">
+      <svg viewBox="0 0 1000 330" role="img" aria-label="A conveyor line: the order board feeds work stations, then the inspection bench, then the shipping gate, then the store. A foreman watches the line, an andon cord can stop it, and the owner checks the finished goods.">
+        <!-- foreman booth -->
+        <rect class="st" x="390" y="14" width="220" height="56" rx="6"/>
+        <text class="lab" x="406" y="38">Foreman's booth</text>
+        <text class="sub" x="406" y="58">the warden checks the line every 10 min</text>
+        <!-- andon cord -->
+        <path class="cord" d="M40 92 H960"/>
+        <circle class="cordknob" cx="700" cy="104" r="7"/>
+        <path class="cord" d="M700 92 V97"/>
+        <text class="sub" x="716" y="110">andon cord: "halt" stops the whole line</text>
+        <!-- belt -->
+        <rect class="belt" x="40" y="214" width="920" height="22" rx="11"/>
+        <g class="roller">
+          <circle cx="60" cy="225" r="6"/><circle cx="150" cy="225" r="6"/><circle cx="240" cy="225" r="6"/><circle cx="330" cy="225" r="6"/><circle cx="420" cy="225" r="6"/><circle cx="510" cy="225" r="6"/><circle cx="600" cy="225" r="6"/><circle cx="690" cy="225" r="6"/><circle cx="780" cy="225" r="6"/><circle cx="870" cy="225" r="6"/><circle cx="940" cy="225" r="6"/>
+        </g>
+        <!-- crates on belt -->
+        <rect class="crate" x="180" y="192" width="26" height="22" rx="2"/>
+        <rect class="crate" x="455" y="192" width="26" height="22" rx="2"/>
+        <rect class="crate" x="720" y="192" width="26" height="22" rx="2"/>
+        <!-- stations -->
+        <rect class="st" x="40" y="122" width="130" height="66" rx="6"/>
+        <text class="lab" x="52" y="146">Order board</text>
+        <text class="sub" x="52" y="164">GitHub issues</text>
+        <text class="sub" x="52" y="178">one ticket per job</text>
+        <rect class="st" x="222" y="122" width="190" height="66" rx="6"/>
+        <text class="lab" x="234" y="146">Work stations</text>
+        <text class="sub" x="234" y="164">AI builders, one job each</text>
+        <text class="sub" x="234" y="178">two stations, own bench</text>
+        <rect class="st" x="496" y="122" width="190" height="66" rx="6"/>
+        <text class="lab" x="508" y="146">Inspection bench</text>
+        <text class="sub" x="508" y="164">QA workers + test rigs</text>
+        <text class="sub" x="508" y="178">golden sample to compare</text>
+        <rect class="st" x="764" y="122" width="190" height="66" rx="6"/>
+        <text class="lab" x="776" y="146">Shipping gate</text>
+        <text class="sub" x="776" y="164">one check must pass</text>
+        <text class="sub" x="776" y="178">one door for everyone</text>
+        <!-- store sign -->
+        <rect class="sign" x="764" y="258" width="190" height="56" rx="4"/>
+        <text class="sign-t" x="778" y="282">Store shelf</text>
+        <text class="sub" x="778" y="302" style="fill: var(--safety-ink)">the live website + TestFlight</text>
+        <path d="M859 236 V256" style="stroke: var(--ink); stroke-width: 2"/>
+        <!-- owner -->
+        <rect class="st" x="40" y="258" width="300" height="56" rx="6"/>
+        <text class="lab" x="52" y="282">The owner walks the floor</text>
+        <text class="sub" x="52" y="302">Jon: taste, priorities, the final say on feel</text>
+        <!-- contractor -->
+        <rect class="st" x="380" y="258" width="330" height="56" rx="6" stroke-dasharray="6 4"/>
+        <text class="lab" x="392" y="282">Visiting contractors</text>
+        <text class="sub" x="392" y="302">Gemini, Inkling, Claude: same site rules, own badge</text>
+      </svg>
+    </div>
+  </section>
+
+  <section>
+    <h2>Every rule has a twin on a real factory floor</h2>
+    <div class="stations">
+      <div class="station"><h3>The order board</h3><div class="is">In the forge: <b>GitHub issues</b></div><p>Every job is a ticket on the board. Nobody works on anything that isn't pinned up, and the board is the only place workers coordinate. That's why a new worker can start the day they arrive: read the board.</p></div>
+      <div class="station"><h3>Pull, don't push</h3><div class="is">In the forge: <b>lanes take the next ticket</b></div><p>Toyota's kanban: a station pulls the next job only when it's free, and there's a cap on how much sits half-done. Each lane takes one issue at a time and may ask at most three open questions.</p></div>
+      <div class="station red"><h3>The andon cord</h3><div class="is">In the forge: <b>the <code>halt</code> label, and a red main</b></div><p>Any worker at Toyota can pull a cord and stop the line when something's wrong. Put "halt" on any issue and every lane finishes its step and stops. When the nightly tests fail, nothing ships until it's fixed.</p></div>
+      <div class="station red"><h3>Fix it, or tag it out</h3><div class="is">In the forge: <b>the 2-hour red-main rule</b></div><p>A broken machine gets fixed fast, or tagged out of service so the line restarts, with a named person owning the repair. A failing check gets fixed within two hours, or quarantined against an open issue that owns the fix.</p></div>
+      <div class="station green"><h3>The golden sample</h3><div class="is">In the forge: <b>checks and golden traces</b></div><p>Factories keep a perfect reference part to compare every new one against. The web game's recorded runs are the reference; the Apple TV versions must match them tick for tick. Every test is also proven to fail on a broken part.</p></div>
+      <div class="station green"><h3>One shipping door</h3><div class="is">In the forge: <b>the rule-5 merge command</b></div><p>Goods leave through one gate, after one inspection, for everyone. No side doors. Every change merges the same way, and only once the required check passes.</p></div>
+      <div class="station"><h3>Shift change</h3><div class="is">In the forge: <b>STATE.md</b></div><p>Nurses hand over a patient with a short spoken summary because the next shift wasn't there. AI workers start every session with no memory, so the last one rewrites a one-page note of where things stand.</p></div>
+      <div class="station"><h3>The foreman</h3><div class="is">In the forge: <b>the warden</b></div><p>Walks the line every ten minutes: who's idle, what's stuck, what's next. Restarts a stalled station. Never builds anything himself.</p></div>
+      <div class="station"><h3>The suggestion box with a deadline</h3><div class="is">In the forge: <b>questions for Jon</b></div><p>A worker who needs a decision writes the options and what they'll do by default, then keeps working. If the owner doesn't answer in two days, the default goes ahead. Nobody stands around waiting.</p></div>
+      <div class="station"><h3>The security desk</h3><div class="is">In the forge: <b>the trust gate</b></div><p>A note slipped under the door isn't a work order. Requests from outside wait until the owner signs off; to AI workers, any text they read is information, never instructions.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where else you've seen this</h2>
+    <div class="elsewhere">
+      <div class="place"><h3>A restaurant kitchen</h3><ul>
+        <li>Order tickets on the rail <span>(issues)</span></li>
+        <li>Stations: grill, sauté, pastry <span>(builder and QA lanes)</span></li>
+        <li>The pass, where the chef checks each plate <span>(the merge gate)</span></li>
+        <li>"86 it": stop selling a dish <span>(halt, quarantine)</span></li>
+      </ul></div>
+      <div class="place"><h3>A newsroom</h3><ul>
+        <li>The assignment desk <span>(Claude turning ideas into issues)</span></li>
+        <li>Reporters on beats <span>(lanes)</span></li>
+        <li>Copy desk and fact-checkers <span>(QA, checks, mutants)</span></li>
+        <li>The editor's final call <span>(Jon as the taste gate)</span></li>
+        <li>Stringers who file from anywhere <span>(guest agents, the manual lane)</span></li>
+      </ul></div>
+      <div class="place"><h3>A hospital ward</h3><ul>
+        <li>Shift handover notes <span>(STATE.md)</span></li>
+        <li>Standing orders that apply unless a doctor says otherwise <span>(question defaults)</span></li>
+        <li>Charge nurse doing rounds <span>(the warden)</span></li>
+        <li>Check the chart, not the hallway rumour <span>(the trust gate)</span></li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <h2>The short version</h2>
+    <p>The forge is a game factory where the workers are AI models. It runs on the same habits that keep any good line moving: one board of jobs, one job per station, a cord anyone can pull, a reference to check against, one door out, and notes for the next shift. The owner sets the taste; the line does the rest.</p>
+  </section>
+</div>
+</body>
+</html>
