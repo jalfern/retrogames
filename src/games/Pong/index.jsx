@@ -218,8 +218,8 @@ const PongGame = () => {
                 ctx.fillText(WATCH_ATTRACT_HINT, state.width / 2, state.height * 0.66)
             } else {
                 // Game Score
-                ctx.font = '40px monospace'
-                ctx.fillStyle = '#333333'
+                ctx.font = '44px monospace'
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.42)'
                 ctx.fillText(state.left.score, state.width / 4, 50)
                 ctx.fillText(state.right.score, 3 * state.width / 4, 50)
                 if (state.over && Math.floor(tickN / 30) % 2 === 0) {
@@ -329,7 +329,7 @@ const PongGame = () => {
 
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center p-4">
-            <div ref={containerRef} className="relative w-full max-w-[600px] aspect-[3/4] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
+            <div ref={containerRef} className="relative border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black" style={{ width: 'min(100%, 600px, calc((100dvh - 2rem) * 0.75))', aspectRatio: '3 / 4' }}>
                 <canvas ref={canvasRef} className="block w-full h-full" />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'PONG')} onResume={handleResume} />}
                 {watching && screen !== 'attract' && <WatchToast className="absolute z-50" />}
