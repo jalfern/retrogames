@@ -35,6 +35,10 @@ if (MUT) {
         edge: { from: '} else if (!overGap && Math.abs(gs.u - deckE.u) > deckE.w + MARBLE_R * 0.25) {', to: '} else if (false) {', note: 'edge fall muted' },
         // grip never runs out — curves stop throwing the marble outward
         budget: { from: 'const excess = need - avail', to: 'const excess = 0', note: 'centripetal budget muted' },
+        // the sweeping bar stops knocking — the stage 2 verb is gone
+        sweep: { from: 'gs.swHits += 1', to: 'gs.swHits += 0', note: 'sweeper knock muted' },
+        // the checkpoint never arms — late falls lose the whole shelf
+        gate: { from: 'gs.cpArmed = true', to: 'gs.cpArmed = false', note: 'checkpoint arming muted' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -44,7 +48,7 @@ if (MUT) {
 }
 
 const { STAGES } = await import('../src/games/MarbleRush/course.js')
-const { makeGame, step, autoPad, stateOf, stateHash, courseFor, STAGE_COUNT } = await import('../src/games/MarbleRush/sim.js')
+const { makeGame, step, autoPad, respawn, stateOf, stateHash, courseFor, STAGE_COUNT } = await import('../src/games/MarbleRush/sim.js')
 
 const drive = (gs, maxS, padFn = null) => {
     let g = 0
@@ -58,7 +62,8 @@ console.log('\n[1] boot + shape')
     const s = stateOf(gs)
     ok('boot: tick 0, on the shelf, not done', s.tick === 0 && !s.done && gs.s > 0 && gs.len > 150)
     ok('state is JSON-safe', JSON.stringify(s) === JSON.stringify(JSON.parse(JSON.stringify(s))))
-    ok('five stages, names, ascending medal bounds', STAGE_COUNT === 5 && STAGES.every((st) => st.name && st.medals[0] < st.medals[1] && st.medals[1] < st.medals[2]))
+    ok('ten stages, names, ascending medal bounds', STAGE_COUNT === 10 && STAGES.every((st) => st.name && st.medals[0] < st.medals[1] && st.medals[1] < st.medals[2]))
+    ok('stage 2 grew the shelf: six late stages carry cp/movers props, first five untouched', STAGES.slice(5).every((st) => st.cp > 0) && STAGES.slice(0, 5).every((st) => st.cp === 0 && st.sweepers.length === 0))
 }
 
 console.log('\n[2] course compiles honest')
@@ -69,7 +74,17 @@ for (let i = 0; i < STAGE_COUNT; i++) {
     const propsInside = c.bumpers.every((b) => b.s > 0 && b.s < c.len && Math.abs(b.u) < c.halfWidthOf(b.s))
         && c.movers.every((m) => m.from > 0 && m.to < c.len && m.to > m.from)
         && c.kickers.every((k) => k.s > 0 && k.s < c.len)
-    ok(`stage ${i + 1} ${STAGES[i].name}: len ${Math.round(c.len)}m, gaps ${gapRuns}, props inside`, c.len > 150 && gapRuns === wantGaps && propsInside)
+        && c.sweepers.every((sw) => sw.s > 0 && sw.s < c.len && c.gapAt(sw.s) === 0 && Math.abs(sw.A) + sw.w < c.halfWidthOf(sw.s) + 0.11)
+        && (c.cp === 0 || (c.cp > 0 && c.cp < c.len && c.gapAt(c.cp) === 0))
+    // every metre of hole must have a ride over it: a deck, or a kicker flight
+    let gapCovered = true
+    for (let s = 1; s < c.len - 1; s += 1) {
+        if (!c.gapAt(s)) continue
+        const onDeck = c.movers.some((mv) => s >= mv.from && s < mv.to)
+        const onFlight = c.kickers.some((kk) => kk.s <= s && s < kk.gapTo)
+        if (!onDeck && !onFlight) { gapCovered = false; break }
+    }
+    ok(`stage ${i + 1} ${STAGES[i].name}: len ${Math.round(c.len)}m, gaps ${gapRuns}, props inside`, c.len > 150 && gapRuns === wantGaps && propsInside && gapCovered)
 }
 
 console.log('\n[3] the physics laws')
@@ -111,6 +126,52 @@ console.log('\n[3] the physics laws')
     ok('sky shot: crawl to the lip and the gap swallows you', gs.fail)
 }
 
+console.log('\n[3b] the stage 2 verbs: sweeping bars + checkpoint gates')
+{
+    // sit in THE MILL's bar lane, hands off: the bar must hit you, knock you
+    // sideways and bite your speed
+    const gs = makeGame(7, 7)
+    gs.phase = 1; gs.t = 1.1; gs.s = 214; gs.v = 12
+    let knocked = false
+    let wlatAt = 0
+    const v0 = gs.v
+    for (let i = 0; i < 600 && gs.swHits === 0; i++) {
+        step(gs, { throttle: 0, steer: 0, brake: false })
+        if (gs.swHits > 0) { knocked = true; wlatAt = gs.wlat }
+    }
+    ok('bar lane: the sweeping bar finds you and knocks sideways', knocked && Math.abs(wlatAt) > 3 && gs.v < v0)
+    // cooldown pins one knock per pass: stay on the station for 0.4 s of
+    // bar-crossing and no second bite lands
+    const gs2 = makeGame(7, 7)
+    gs2.phase = 1; gs2.t = 1.1; gs2.s = 214; gs2.v = 12
+    for (let i = 0; i < 600 && gs2.swHits === 0; i++) step(gs2, { throttle: 0, steer: 0, brake: false })
+    const first = gs2.swHits
+    const cd = gs2.swCd
+    for (let i = 0; i < 24; i++) { gs2.s = 214; step(gs2, { throttle: 0, steer: 0, brake: false }) }
+    ok('cooldown: one knock per pass, then immunity', first === 1 && cd > 0.4 && gs2.swHits === 1)
+}
+{
+    // gate arms once crossed, not before
+    const gs = makeGame(7, 5)   // UPPER DECK, cp at 150
+    gs.phase = 1; gs.t = 1.1; gs.s = 140; gs.v = 10
+    for (let i = 0; i < 60 && !gs.cpArmed; i++) step(gs, { throttle: 1, steer: 0, brake: false })
+    ok('gate arms exactly when crossed', gs.cpArmed && gs.s >= 150)
+    ok('a clear lap does not arm the gate at the start', !makeGame(7, 5).cpArmed)
+    // fall after the gate: respawn AT the gate on the same running clock
+    gs.falling = true; gs.y = -8; gs.done = true; gs.fail = true
+    const tBefore = gs.t
+    const scoreBefore = gs.score
+    const moved = respawn(gs)
+    ok('respawn at the gate keeps clock + score (medals stay honest)',
+        moved && gs.cpArmed && Math.abs(gs.s - 146) < 0.01 && gs.t === tBefore && gs.score === scoreBefore && !gs.done && !gs.fail && gs.respawned === 1)
+    // respawn refuses when there is nothing to respawn from
+    gs.done = true; gs.fail = false
+    ok('respawn refuses after finishing the shelf', respawn(gs) === false)
+    // no gate on the first five shelves — a fall costs the whole run there
+    const g5 = makeGame(7, 4)
+    ok('rung 1 shelves stay ungated', g5.cpS === 0 && respawn(g5) === false)
+}
+
 console.log('\n[4] every shelf is winnable, inside bronze')
 for (let i = 0; i < STAGE_COUNT; i++) {
     const res = [1, 7, 42].map((seed) => drive(makeGame(seed, i), 120))
@@ -147,6 +208,7 @@ console.log('\n[6] the parity bridge (drawn ≡ ridden)')
     ok('art.js builds floors through course.pointOf', art.includes('course.pointOf('))
     ok('index.jsx places the marble via pointOf(s,u,y)', idx.includes('course.pointOf(gs.s, gs.u, gs.y)'))
     ok('decks move by the sim function moverDeck(t + seeded phase)', idx.includes('moverDeck(course, mi, gs.t + gs.mvPhase[mi])') && (await import('../src/games/MarbleRush/course.js')).moverDeck.length === 3)
+    ok('bars sweep by the sim function sweeperBar(t + seeded phase)', idx.includes('sweeperBar(course, si, gs.t + gs.swPhase[si])') && (await import('../src/games/MarbleRush/course.js')).sweeperBar.length === 3)
     // structural proof: the first built vertex of stage 1's floor equals the
     // manifold sample the physics rides
     const THREE = await import('three')
