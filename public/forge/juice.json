@@ -1,6 +1,6 @@
 {
- "generated": "2026-10-28T19:28:37.631Z",
- "commit": "f37f958",
+ "generated": "2026-11-24T12:27:07.355Z",
+ "commit": "486b2a4",
  "windowTicks": 9,
  "trials": 3,
  "thresholds": {
@@ -8,7 +8,1609 @@
   "idleExceed": 1.6,
   "pixelTol": 10
  },
+ "note": "per-game browsers (one shared browser died mid-fleet twice; results identical per game)",
  "games": [
+  {
+   "id": "adventure",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.003
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.003
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "y"
+     ],
+     "idle": 0
+    },
+    "down": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "room",
+      "y"
+     ],
+     "idle": 0
+    },
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0
+    }
+   },
+   "errors": 0,
+   "score": 0.8
+  },
+  {
+   "id": "arkanoid",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "paddle"
+     ],
+     "idle": 0.01
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "paddle"
+     ],
+     "idle": 0.012
+    },
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.01
+    }
+   },
+   "errors": 0,
+   "score": 0.6666666666666666
+  },
+  {
+   "id": "asteroids",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.012
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.013
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "shipY"
+     ],
+     "idle": 0.012
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "shipY"
+     ],
+     "idle": 0.012
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "beezee",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.464
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.476
+    },
+    "up": {
+     "sound": false,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.307
+    },
+    "down": {
+     "sound": false,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.511
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.462
+    }
+   },
+   "errors": 0,
+   "score": 0.6
+  },
+  {
+   "id": "blob-battle",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.049
+    },
+    "right": {
+     "sound": true,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.014
+    },
+    "down": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "scores"
+     ],
+     "idle": 0.022
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.058
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "bomb-defuse",
+   "method": "dpad",
+   "actions": {
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "fuse"
+     ],
+     "idle": 0.077
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "boulder-dash",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "player"
+     ],
+     "idle": 0.008
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "have",
+      "player",
+      "score"
+     ],
+     "idle": 0.008
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "player"
+     ],
+     "idle": 0.008
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "player"
+     ],
+     "idle": 0.009
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.008
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "britannia",
+   "method": "stick",
+   "actions": {
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "anim",
+      "face",
+      "frame",
+      "gate",
+      "gateFlavor",
+      "moonRoute",
+      "score",
+      "swell",
+      "toastMsg",
+      "tod",
+      "town",
+      "y"
+     ],
+     "idle": 0.982
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "frame",
+      "gate",
+      "gateFlavor",
+      "knocked",
+      "moonRoute",
+      "score",
+      "swell",
+      "toastMsg",
+      "tod"
+     ],
+     "idle": 0.982
+    },
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "frame",
+      "gate",
+      "gateFlavor",
+      "knocked",
+      "moonRoute",
+      "score",
+      "swell",
+      "toastMsg",
+      "tod"
+     ],
+     "idle": 0.983
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "anim",
+      "face",
+      "frame",
+      "gate",
+      "gateFlavor",
+      "moonRoute",
+      "score",
+      "swell",
+      "toastMsg",
+      "tod",
+      "town",
+      "x"
+     ],
+     "idle": 0.911
+    },
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [
+      "swell",
+      "tod"
+     ],
+     "idle": 0.879
+    }
+   },
+   "errors": 0,
+   "score": 0.8
+  },
+  {
+   "id": "bubble-bobble",
+   "method": "dpad",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.044
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.032
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.03
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.038
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.05
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "comet-drift-hd",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.606
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.606
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0
+    }
+   },
+   "errors": 0,
+   "score": 0.8
+  },
+  {
+   "id": "comet-drift",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.305
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.071
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.08
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.061
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.07
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "contra",
+   "method": "dpad",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.102
+    },
+    "right": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "score",
+      "soldiersAlive",
+      "x"
+     ],
+     "idle": 0.083
+    },
+    "up": {
+     "sound": true,
+     "fx": true,
+     "moved": false,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "score",
+      "soldiersAlive"
+     ],
+     "idle": 0.047
+    },
+    "down": {
+     "sound": true,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.108
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "lives",
+      "score",
+      "soldiersAlive",
+      "y"
+     ],
+     "idle": 0.097
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "dig-dug",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.011
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.011
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "y"
+     ],
+     "idle": 0.008
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "y"
+     ],
+     "idle": 0.011
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "lives"
+     ],
+     "idle": 0.33
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "dogfight",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.814
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.765
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.729
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.774
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "belt",
+      "bullets",
+      "heat"
+     ],
+     "idle": 0.806
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "donkeykong",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.008
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.008
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.009
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.008
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "y"
+     ],
+     "idle": 0.008
+    }
+   },
+   "errors": 0,
+   "score": 0.6
+  },
+  {
+   "id": "double-dragon",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "billyState",
+      "x"
+     ],
+     "idle": 0.01
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "billyState",
+      "enemies",
+      "jimmyX",
+      "x"
+     ],
+     "idle": 0.02
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "billyState",
+      "y"
+     ],
+     "idle": 0.019
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "billyState",
+      "y"
+     ],
+     "idle": 0.01
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "billyState",
+      "z"
+     ],
+     "idle": 0.01
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "emberwood",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.07
+    },
+    "right": {
+     "sound": false,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.071
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.082
+    },
+    "down": {
+     "sound": false,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.037
+    },
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.018
+    }
+   },
+   "errors": 0,
+   "score": 0.6
+  },
+  {
+   "id": "fire-crew",
+   "method": "dpad",
+   "actions": {
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "ladder",
+      "tank"
+     ],
+     "idle": 0.18
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "floor-boss",
+   "method": "dpad",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "conveyor",
+      "cursor"
+     ],
+     "idle": 0.005
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.005
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "conveyor",
+      "cursor"
+     ],
+     "idle": 0.005
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "conveyor",
+      "cursor"
+     ],
+     "idle": 0.005
+    },
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "conveyor"
+     ],
+     "idle": 0.005
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "frogger",
+   "method": "stick",
+   "actions": {
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "row",
+      "score"
+     ],
+     "idle": 0.12
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.121
+    },
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.235
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.121
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "row",
+      "score"
+     ],
+     "idle": 0.122
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "galaga",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "lives",
+      "playerX"
+     ],
+     "idle": 0.03
+    },
+    "right": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "lives",
+      "playerX"
+     ],
+     "idle": 0.026
+    },
+    "up": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "playerY"
+     ],
+     "idle": 0.028
+    },
+    "down": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "playerY"
+     ],
+     "idle": 0.03
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.03
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "garden-guard",
+   "method": "pointer",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.011
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.011
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.011
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.003
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "acorns",
+      "plants"
+     ],
+     "idle": 0.003
+    },
+    "pointer": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "acorns",
+      "plants"
+     ],
+     "idle": 0.003
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "gauntlet",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "hp",
+      "x"
+     ],
+     "idle": 0.03
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "hp",
+      "score",
+      "x"
+     ],
+     "idle": 0.005
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "hp",
+      "y"
+     ],
+     "idle": 0.036
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "hp",
+      "y"
+     ],
+     "idle": 0.005
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "hp"
+     ],
+     "idle": 0.021
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "gravel-yard",
+   "method": "dpad",
+   "actions": {
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "orders"
+     ],
+     "idle": 0.008
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "homebody",
+   "method": "pointer",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "hero",
+      "hour",
+      "items"
+     ],
+     "idle": 0.003
+    },
+    "right": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "hero",
+      "hour",
+      "items"
+     ],
+     "idle": 0.003
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "hero",
+      "hour"
+     ],
+     "idle": 0.008
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "hero",
+      "hour"
+     ],
+     "idle": 0.007
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "hour",
+      "items"
+     ],
+     "idle": 0.003
+    },
+    "pointer": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "hero",
+      "hour",
+      "items"
+     ],
+     "idle": 0.08
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "ice-climber",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "p1x"
+     ],
+     "idle": 0.002
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "p1x"
+     ],
+     "idle": 0.002
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.002
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.004
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "p1y"
+     ],
+     "idle": 0.005
+    }
+   },
+   "errors": 0,
+   "score": 0.6
+  },
+  {
+   "id": "invaders",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "playerX"
+     ],
+     "idle": 0.028
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "playerX"
+     ],
+     "idle": 0.027
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "invadersLeft",
+      "score"
+     ],
+     "idle": 0.027
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "iron-ring",
+   "method": "stick",
+   "actions": {
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.997
+    }
+   },
+   "errors": 0,
+   "score": 0
+  },
+  {
+   "id": "joust",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "p1vy",
+      "p1x",
+      "p1y"
+     ],
+     "idle": 0.004
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "p1vy",
+      "p1x",
+      "p1y"
+     ],
+     "idle": 0.005
+    },
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "p1vy",
+      "p1y"
+     ],
+     "idle": 0.005
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "lemmings",
+   "method": "pointer",
+   "actions": {
+    "pointer": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "spawned"
+     ],
+     "idle": 0.003
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
   {
    "id": "lunar-lander",
    "method": "stick",
@@ -56,7 +1658,7 @@
       "x",
       "y"
      ],
-     "idle": 0.003
+     "idle": 0.002
     },
     "a": {
      "sound": true,
@@ -71,7 +1673,1077 @@
       "x",
       "y"
      ],
+     "idle": 0.004
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "magic-carpet",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.725
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.709
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.951
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.998
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 1
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "metroid",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "vy",
+      "x"
+     ],
+     "idle": 0.003
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "vy",
+      "x"
+     ],
+     "idle": 0.007
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [
+      "vy"
+     ],
+     "idle": 0.003
+    },
+    "a": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "vy",
+      "y"
+     ],
+     "idle": 0.354
+    }
+   },
+   "errors": 0,
+   "score": 0.75
+  },
+  {
+   "id": "missile-battle",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "aim"
+     ],
+     "idle": 0.01
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "aim"
+     ],
+     "idle": 0.01
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "aim"
+     ],
+     "idle": 0.01
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "aim"
+     ],
+     "idle": 0.005
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "ammo"
+     ],
+     "idle": 0.047
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "momentum",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "pos",
+      "s",
+      "vx"
+     ],
+     "idle": 0.008
+    },
+    "right": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "pos",
+      "rings",
+      "s",
+      "score"
+     ],
+     "idle": 0.009
+    },
+    "up": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "pos"
+     ],
+     "idle": 0.009
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "pos"
+     ],
+     "idle": 0.011
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "outpost",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.003
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.003
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.004
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
      "idle": 0.002
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.003
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "paperboy",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.019
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.035
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "pedal"
+     ],
+     "idle": 0.024
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "pedal"
+     ],
+     "idle": 0.019
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "papers"
+     ],
+     "idle": 0.02
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "pick-rush",
+   "method": "dpad",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "ease",
+      "items",
+      "pos",
+      "waveSpawned",
+      "whip"
+     ],
+     "idle": 0.05
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "ease",
+      "items",
+      "pos",
+      "whip"
+     ],
+     "idle": 0.05
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [
+      "items"
+     ],
+     "idle": 0.033
+    },
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "clawY",
+      "items"
+     ],
+     "idle": 0.034
+    }
+   },
+   "errors": 0,
+   "score": 0.75
+  },
+  {
+   "id": "pinball",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.003
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.005
+    },
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.005
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.005
+    }
+   },
+   "errors": 0,
+   "score": 0.5
+  },
+  {
+   "id": "polarity",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.007
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.009
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.008
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.011
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.007
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "qbert",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "flips",
+      "needed",
+      "p1",
+      "qr",
+      "score"
+     ],
+     "idle": 0.005
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.004
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.004
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "flips",
+      "needed",
+      "p1",
+      "qc",
+      "qr",
+      "score"
+     ],
+     "idle": 0.02
+    },
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.004
+    }
+   },
+   "errors": 0,
+   "score": 0.4
+  },
+  {
+   "id": "r-type",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "lives",
+      "x"
+     ],
+     "idle": 0.021
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.019
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "y"
+     ],
+     "idle": 0.02
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "y"
+     ],
+     "idle": 0.016
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.023
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "rally-co-driver",
+   "method": "dpad",
+   "actions": {
+    "up": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "score",
+      "speed"
+     ],
+     "idle": 0.001
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "score"
+     ],
+     "idle": 0.001
+    },
+    "left": {
+     "sound": false,
+     "fx": true,
+     "moved": false,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "score"
+     ],
+     "idle": 0.001
+    },
+    "right": {
+     "sound": false,
+     "fx": true,
+     "moved": false,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "score"
+     ],
+     "idle": 0.178
+    },
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "score"
+     ],
+     "idle": 0.001
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "robot-lab",
+   "method": "stick",
+   "actions": {
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "baseStrainN",
+      "canPos",
+      "cratePos",
+      "drawerZ",
+      "hand",
+      "poses",
+      "torque"
+     ],
+     "idle": 0.112
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "short-order-shout",
+   "method": "dpad",
+   "actions": {
+    "a": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [
+      "tickets"
+     ],
+     "idle": 0.008
+    }
+   },
+   "errors": 0,
+   "score": 0
+  },
+  {
+   "id": "skyward",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "enemies",
+      "p",
+      "spawned"
+     ],
+     "idle": 0.001
+    },
+    "right": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "enemies",
+      "p",
+      "spawned"
+     ],
+     "idle": 0.068
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "bullets",
+      "enemies",
+      "score",
+      "spawned",
+      "superKills"
+     ],
+     "idle": 0.06
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "bullets",
+      "enemies",
+      "score",
+      "spawned",
+      "superKills"
+     ],
+     "idle": 0.001
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "smash-tv",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "enemies",
+      "x"
+     ],
+     "idle": 0.211
+    },
+    "right": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "enemies",
+      "x"
+     ],
+     "idle": 0.227
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "enemies",
+      "y"
+     ],
+     "idle": 0.214
+    },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "enemies",
+      "y"
+     ],
+     "idle": 0.109
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "enemies"
+     ],
+     "idle": 0.087
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "sonar",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cell"
+     ],
+     "idle": 0
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cell"
+     ],
+     "idle": 0
+    },
+    "up": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cell"
+     ],
+     "idle": 0.005
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "cell"
+     ],
+     "idle": 0.005
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.242
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "spy-hunter",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "d",
+      "score"
+     ],
+     "idle": 0.052
+    },
+    "right": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "d",
+      "score"
+     ],
+     "idle": 0.054
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "d",
+      "score"
+     ],
+     "idle": 0.057
+    }
+   },
+   "errors": 0,
+   "score": 1
+  },
+  {
+   "id": "stomptown",
+   "method": "stick",
+   "actions": {
+    "left": {
+     "sound": false,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.006
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.034
+    },
+    "up": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "y"
+     ],
+     "idle": 0.02
+    },
+    "down": {
+     "sound": false,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": false,
+     "keys": [],
+     "idle": 0.005
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "score"
+     ],
+     "idle": 0.005
+    }
+   },
+   "errors": 0,
+   "score": 0.8
+  },
+  {
+   "id": "talk-me-down",
+   "method": "dpad",
+   "actions": {
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "batteries",
+      "bolt",
+      "bombs",
+      "fuse",
+      "modules",
+      "round",
+      "score",
+      "serial",
+      "strikes",
+      "tray"
+     ],
+     "idle": 0.336
     }
    },
    "errors": 0,
@@ -105,23 +2777,23 @@
       "p",
       "spawned"
      ],
+     "idle": 0.06
+    },
+    "up": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "bullets",
+      "enemies",
+      "score",
+      "spawned",
+      "superKills"
+     ],
      "idle": 0.001
     },
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "bullets",
-      "enemies",
-      "score",
-      "spawned",
-      "superKills"
-     ],
-     "idle": 0.059
-    },
     "a": {
      "sound": true,
      "fx": false,
@@ -134,395 +2806,8 @@
       "score",
       "spawned",
       "superKills"
-     ],
-     "idle": 0.019
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "arkanoid",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "paddle"
-     ],
-     "idle": 0
-    },
-    "right": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "paddle"
      ],
      "idle": 0.012
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "score"
-     ],
-     "idle": 0
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "galaga",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "lives",
-      "playerX"
-     ],
-     "idle": 0.041
-    },
-    "right": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "playerX"
-     ],
-     "idle": 0.041
-    },
-    "up": {
-     "sound": false,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "playerY"
-     ],
-     "idle": 0.024
-    },
-    "down": {
-     "sound": false,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "playerY"
-     ],
-     "idle": 0.025
-    },
-    "a": {
-     "sound": true,
-     "fx": true,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.028
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "dig-dug",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "x"
-     ],
-     "idle": 0.011
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "x"
-     ],
-     "idle": 0.02
-    },
-    "up": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "y"
-     ],
-     "idle": 0.011
-    },
-    "down": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "y"
-     ],
-     "idle": 0.01
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.023
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "missile-battle",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "aim"
-     ],
-     "idle": 0.003
-    },
-    "right": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "aim"
-     ],
-     "idle": 0.004
-    },
-    "up": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "aim"
-     ],
-     "idle": 0.005
-    },
-    "down": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "aim"
-     ],
-     "idle": 0.01
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "ammo"
-     ],
-     "idle": 0.009
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "spy-hunter",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "d",
-      "score"
-     ],
-     "idle": 0.062
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "d",
-      "lives",
-      "score"
-     ],
-     "idle": 0.056
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "d",
-      "score"
-     ],
-     "idle": 0.06
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "paperboy",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "x"
-     ],
-     "idle": 0.025
-    },
-    "right": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "x"
-     ],
-     "idle": 0.05
-    },
-    "up": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "pedal"
-     ],
-     "idle": 0.025
-    },
-    "down": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "pedal"
-     ],
-     "idle": 0.02
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "papers"
-     ],
-     "idle": 0.023
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "blob-battle",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "scores"
-     ],
-     "idle": 0.01
-    },
-    "right": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "scores"
-     ],
-     "idle": 0.018
-    },
-    "down": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "scores"
-     ],
-     "idle": 0.022
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "scores"
-     ],
-     "idle": 0.049
     }
    },
    "errors": 0,
@@ -542,7 +2827,7 @@
       "px",
       "py"
      ],
-     "idle": 0.127
+     "idle": 0.125
     },
     "right": {
      "sound": false,
@@ -554,7 +2839,7 @@
       "px",
       "py"
      ],
-     "idle": 0.133
+     "idle": 0.121
     },
     "down": {
      "sound": true,
@@ -566,7 +2851,7 @@
       "locks",
       "py"
      ],
-     "idle": 0.127
+     "idle": 0.142
     },
     "a": {
      "sound": false,
@@ -574,7 +2859,9 @@
      "moved": false,
      "pop": false,
      "juice": false,
-     "keys": [],
+     "keys": [
+      "py"
+     ],
      "idle": 0.129
     }
    },
@@ -582,52 +2869,53 @@
    "score": 0.75
   },
   {
-   "id": "boulder-dash",
+   "id": "tidal-rush",
    "method": "stick",
    "actions": {
-    "left": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "player"
-     ],
-     "idle": 0.021
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "player"
-     ],
-     "idle": 0.028
-    },
     "up": {
      "sound": true,
-     "fx": true,
+     "fx": false,
      "moved": true,
      "pop": false,
      "juice": true,
      "keys": [
-      "player"
+      "speed",
+      "t"
      ],
-     "idle": 0.027
+     "idle": 0.434
     },
     "down": {
      "sound": true,
      "fx": false,
-     "moved": true,
+     "moved": false,
      "pop": false,
      "juice": true,
      "keys": [
-      "player"
+      "t"
      ],
-     "idle": 0.023
+     "idle": 0.849
+    },
+    "left": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "t"
+     ],
+     "idle": 0.829
+    },
+    "right": {
+     "sound": true,
+     "fx": true,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "t"
+     ],
+     "idle": 0.435
     },
     "a": {
      "sound": true,
@@ -635,1152 +2923,81 @@
      "moved": false,
      "pop": false,
      "juice": true,
-     "keys": [],
-     "idle": 0.016
+     "keys": [
+      "t"
+     ],
+     "idle": 0.44
     }
    },
    "errors": 0,
    "score": 1
   },
   {
-   "id": "bubble-bobble",
+   "id": "tidy-bot",
    "method": "dpad",
    "actions": {
     "left": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.032
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.035
-    },
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.04
-    },
-    "down": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.029
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.049
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "ice-climber",
-   "method": "stick",
-   "actions": {
-    "left": {
      "sound": false,
      "fx": false,
      "moved": true,
      "pop": false,
      "juice": true,
      "keys": [
-      "p1x"
+      "clock",
+      "pos"
+     ],
+     "idle": 0.007
+    },
+    "right": {
+     "sound": false,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "clock",
+      "pos"
      ],
      "idle": 0.001
     },
-    "right": {
+    "up": {
      "sound": false,
      "fx": false,
      "moved": true,
      "pop": false,
      "juice": true,
      "keys": [
-      "p1x"
+      "clock",
+      "posY"
      ],
-     "idle": 0.006
-    },
-    "up": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.002
+     "idle": 0.007
     },
     "down": {
      "sound": false,
      "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.004
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
      "moved": true,
      "pop": false,
      "juice": true,
      "keys": [
-      "p1y"
+      "clock",
+      "posY"
      ],
-     "idle": 0.005
-    }
-   },
-   "errors": 0,
-   "score": 0.6
-  },
-  {
-   "id": "joust",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.007
-    },
-    "right": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
      "idle": 0.007
     },
     "a": {
      "sound": false,
      "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "p1vy"
-     ],
-     "idle": 0.023
-    }
-   },
-   "errors": 0,
-   "score": 0.3333333333333333
-  },
-  {
-   "id": "qbert",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.01
-    },
-    "right": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.01
-    },
-    "up": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.01
-    },
-    "down": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.005
-    },
-    "a": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.005
-    }
-   },
-   "errors": 0,
-   "score": 0
-  },
-  {
-   "id": "comet-drift",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.184
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.062
-    },
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.08
-    },
-    "down": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.072
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.072
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "comet-drift-hd",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.61
-    },
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.61
-    },
-    "down": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.61
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.61
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "lemmings",
-   "method": "pointer",
-   "actions": {
-    "pointer": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "spawned"
-     ],
-     "idle": 0.002
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "sonar",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cell"
-     ],
-     "idle": 0.005
-    },
-    "right": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cell"
-     ],
-     "idle": 0.005
-    },
-    "up": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cell"
-     ],
-     "idle": 0.005
-    },
-    "down": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cell"
-     ],
-     "idle": 0.005
-    },
-    "a": {
-     "sound": true,
-     "fx": true,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.005
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "polarity",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.008
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.009
-    },
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.008
-    },
-    "down": {
-     "sound": true,
-     "fx": true,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.008
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.018
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "outpost",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cursor"
-     ],
-     "idle": 0.003
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cursor"
-     ],
-     "idle": 0.003
-    },
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cursor"
-     ],
-     "idle": 0.004
-    },
-    "down": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cursor"
-     ],
-     "idle": 0.003
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.003
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "dogfight",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.811
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.803
-    },
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.812
-    },
-    "down": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.787
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "belt",
-      "bullets"
-     ],
-     "idle": 0.782
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "smash-tv",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "enemies",
-      "lives",
-      "x"
-     ],
-     "idle": 0.014
-    },
-    "right": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "enemies",
-      "x"
-     ],
-     "idle": 0.014
-    },
-    "up": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "enemies",
-      "y"
-     ],
-     "idle": 0.014
-    },
-    "down": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "enemies",
-      "y"
-     ],
-     "idle": 0.024
-    },
-    "a": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "enemies",
-      "score"
-     ],
-     "idle": 0.108
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "beezee",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.449
-    },
-    "right": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.433
-    },
-    "up": {
-     "sound": false,
-     "fx": true,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.463
-    },
-    "down": {
-     "sound": false,
-     "fx": true,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.511
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.471
-    }
-   },
-   "errors": 0,
-   "score": 0.6
-  },
-  {
-   "id": "metroid",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "vy",
-      "x"
-     ],
-     "idle": 0.006
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "vy",
-      "x"
-     ],
-     "idle": 0.005
-    },
-    "down": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.003
-    },
-    "a": {
-     "sound": false,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "vy",
-      "y"
-     ],
-     "idle": 0.003
-    }
-   },
-   "errors": 0,
-   "score": 0.75
-  },
-  {
-   "id": "momentum",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "pos",
-      "s",
-      "vx"
-     ],
-     "idle": 0.446
-    },
-    "right": {
-     "sound": false,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "pos",
-      "s"
-     ],
-     "idle": 0.176
-    },
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "pos"
-     ],
-     "idle": 0.11
-    },
-    "a": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "pos"
-     ],
-     "idle": 0.019
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "magic-carpet",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": true,
-     "fx": true,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.555
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "mana",
-      "score"
-     ],
-     "idle": 0.691
-    },
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "mana",
-      "score"
-     ],
-     "idle": 0.441
-    },
-    "down": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "mana",
-      "score"
-     ],
-     "idle": 0.437
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.328
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "gauntlet",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "hp",
-      "x"
-     ],
-     "idle": 0.005
-    },
-    "right": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "x"
-     ],
-     "idle": 0.004
-    },
-    "up": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "y"
-     ],
-     "idle": 0.003
-    },
-    "down": {
-     "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "hp",
-      "y"
-     ],
-     "idle": 0.004
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "hp"
-     ],
-     "idle": 0.004
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "emberwood",
-   "method": "stick",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": true,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.087
-    },
-    "right": {
-     "sound": false,
-     "fx": true,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.17
-    },
-    "up": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.146
-    },
-    "down": {
-     "sound": false,
-     "fx": true,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.046
-    },
-    "a": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.011
-    }
-   },
-   "errors": 0,
-   "score": 0.6
-  },
-  {
-   "id": "garden-guard",
-   "method": "pointer",
-   "actions": {
-    "left": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cursor"
-     ],
-     "idle": 0.003
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cursor"
-     ],
-     "idle": 0.003
-    },
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cursor"
-     ],
-     "idle": 0.003
-    },
-    "down": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "cursor"
-     ],
-     "idle": 0.013
-    },
-    "a": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "acorns",
-      "plants"
-     ],
-     "idle": 0.003
-    },
-    "pointer": {
-     "sound": true,
-     "fx": true,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "acorns",
-      "plants"
-     ],
-     "idle": 0.026
-    }
-   },
-   "errors": 0,
-   "score": 1
-  },
-  {
-   "id": "homebody",
-   "method": "pointer",
-   "actions": {
-    "left": {
-     "sound": false,
-     "fx": false,
      "moved": false,
      "pop": false,
      "juice": false,
      "keys": [
-      "hero",
-      "hour"
+      "clock"
      ],
-     "idle": 0.003
-    },
-    "right": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [
-      "hero",
-      "hour"
-     ],
-     "idle": 0.01
-    },
-    "up": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [
-      "hero",
-      "hour"
-     ],
-     "idle": 0.014
-    },
-    "down": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [
-      "hero",
-      "hour"
-     ],
-     "idle": 0.014
-    },
-    "a": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [
-      "hour"
-     ],
-     "idle": 0.014
-    },
-    "pointer": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "hero",
-      "hour"
-     ],
-     "idle": 0.011
+     "idle": 0.001
     }
    },
    "errors": 0,
-   "score": 0.16666666666666666
-  },
-  {
-   "id": "iron-ring",
-   "method": "stick",
-   "actions": {
-    "a": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.997
-    }
-   },
-   "errors": 0,
-   "score": 0
+   "score": 0.8
   },
   {
    "id": "viper-pit",
@@ -1793,110 +3010,11 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.995
+     "idle": 0.996
     }
    },
    "errors": 0,
    "score": 0
-  },
-  {
-   "id": "britannia",
-   "method": "stick",
-   "actions": {
-    "up": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "anim",
-      "face",
-      "frame",
-      "gate",
-      "gateFlavor",
-      "score",
-      "swell",
-      "tod",
-      "town",
-      "y"
-     ],
-     "idle": 0.995
-    },
-    "down": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "anim",
-      "frame",
-      "gate",
-      "gateFlavor",
-      "score",
-      "swell",
-      "tod",
-      "town",
-      "y"
-     ],
-     "idle": 0.995
-    },
-    "left": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "anim",
-      "face",
-      "frame",
-      "gate",
-      "gateFlavor",
-      "score",
-      "swell",
-      "tod",
-      "town",
-      "x"
-     ],
-     "idle": 0.919
-    },
-    "right": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": true,
-     "juice": true,
-     "keys": [
-      "anim",
-      "face",
-      "frame",
-      "gate",
-      "gateFlavor",
-      "score",
-      "swell",
-      "tod",
-      "town",
-      "x"
-     ],
-     "idle": 0.918
-    },
-    "a": {
-     "sound": false,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [
-      "swell",
-      "tod"
-     ],
-     "idle": 0.93
-    }
-   },
-   "errors": 0,
-   "score": 0.8
   }
  ]
 }
