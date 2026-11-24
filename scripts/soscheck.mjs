@@ -380,6 +380,34 @@ console.log('— slack (issue spirit: the pair must win with one fewer cook) —
     ok('solo cook still makes quota on >=6/8 seeds', wins >= 6, `${wins}/8`)
 }
 
+// ---- #3143 juice bar (#1130): an idle press is never silent ------------------------------
+// The audit presses Space at spawn: the cook at (2,2) faces (2,1), an empty
+// walkway actA has no verb for. The engine must still answer THAT tick — fx
+// `nada` at the faced cell — so the renderer pops and the audio knocks, while
+// the sim verdict stays byte-identical (fx is never hashed).
+{
+    const gs = createGame(11, 1)
+    tap(gs, 0, { a: true })
+    const nd = gs.fx.filter((f) => f.k === 'nada')
+    ok('an idle A answers with nada fx at the faced cell', nd.length === 1 && nd[0].x === 2 && nd[0].y === 1 && nd[0].dir === 'up', JSON.stringify(nd))
+    ok('the answer moves no cook and takes no item', gs.cooks[0].x === 2 && gs.cooks[0].y === 2 && gs.cooks[0].holding === null)
+    stepGame(gs, [{ a: true }]) // fresh press…
+    gs.fx = []
+    stepGame(gs, [{ a: true }]) // …still held — the latch must swallow the repeat
+    ok('a held A answers once (press stays edge-triggered)', !gs.fx.some((f) => f.k === 'nada'), JSON.stringify(gs.fx))
+    stepGame(gs, [{}])
+    gs.fx = []
+    tap(gs, 0, { b: true }) // empty hand: toss does nothing, the tap answers anyway
+    ok('an empty-handed B answers too', gs.fx.some((f) => f.k === 'nada' && f.held === false), JSON.stringify(gs.fx.filter((f) => f.k === 'nada')))
+    const withP = createGame(12, 1)
+    const noP = createGame(12, 1)
+    for (let t = 0; t < 60; t++) {
+        stepGame(withP, [{ a: t === 10 || t === 30 }])
+        stepGame(noP, [{}])
+    }
+    ok('presses into nothing leave the sim verdict unchanged', hashState(withP) === hashState(noP) && withP.fx.some((f) => f.k === 'nada'))
+}
+
 // ---- browser boot ----
 if (!process.env.SOS_SKIP_BROWSER) {
     console.log('— boots (browser) —')
@@ -410,6 +438,19 @@ if (!process.env.SOS_SKIP_BROWSER) {
     ok('browser contract is deterministic', st.hash === st2.hash, `${st.hash} vs ${st2.hash}`)
     const frame = await page.evaluate(() => window.__game.frame())
     ok('frame() returns PNG data', typeof frame === 'string' && frame.startsWith('data:image/png'), String(frame).slice(0, 40))
+    // #3143 juice (#1130) live tier: a REAL Space press at spawn — facing an empty
+    // walkway — answers the same tick: the prover log catches the nada fx and the
+    // AudioController counts the knock. Real keystrokes, not seam writes: the
+    // keydown is what unlocks the AudioContext (production reality, audit parity).
+    await page.evaluate(() => { window.__game.release(); window.__sosTest.start(7, 1) })
+    await page.waitForTimeout(120)
+    const s0 = await page.evaluate(() => ({ n: window.__sosTest.nadas().length, s: window.__audioSfx() }))
+    await page.keyboard.down('Space')
+    await page.waitForTimeout(180)
+    await page.keyboard.up('Space')
+    await page.waitForTimeout(120)
+    const jr = await page.evaluate((b) => ({ dn: window.__sosTest.nadas().length - b.n, ds: window.__audioSfx() - b.s }), s0)
+    ok('#3143 an idle A press answers with fx + SFX', jr.dn >= 1 && jr.ds >= 1, JSON.stringify({ ...jr, s0 }))
     // desync receipt (#1416 gap 5): the NET warning is no longer a plain toast
     // — it prints off the ticket rail as a paper slip, flips green on resync,
     // then tears off. Drilled through the DEV seam (no live pair needed).

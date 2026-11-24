@@ -231,6 +231,19 @@ The tag of a seat that is AUDIBLE blinks cyan: your own live mic (self-mirror
 of `Pn SPOKE`) and a friend's take while it plays (so echo refusals name a
 face). soslinkcheck pins the countdown contract (+4 => 137).
 
+## Juice: the kitchen answers every press (#3143, QA studio, 2026-11-24)
+
+The refreshed juice audit scored SOS 0%: at spawn the cook faces an empty walkway
+and `actA` had no verb there — the probed action produced no sound, no fx, no pop.
+`stepCook` now pushes fx `nada` (at the faced cell, with facing + held-hand flags)
+on any edge-triggered A/B press the action functions answered with nothing. Audio
+knocks a soft muffled triangle (deader than `deny`: the walkway sighs, the station
+refuses); the draw pops a short grey shrink-ring over a cream dot — the frame's
+fastest pop, an answer not an event. Pure fx tier: `hashState` never reads `fx`,
+two identical shifts hash identically with or without idle presses (soscheck pins
+it, plus the edge latch and the faced-cell coordinates; Node 5 + live 1 gates).
+Mutant: neuter the fallback push => exactly those gates red.
+
 ## Honest gaps
 
 - **CLOSED by #2084 (2026-11-12):** the radio got its BODY. The talker visibly
