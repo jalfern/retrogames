@@ -484,7 +484,15 @@ const PinballGame = () => {
 
         if (import.meta.env.DEV) {
             window.__pinballTest = {
-                state: () => stateOf(gsRef.current),
+                state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power }),
+                // dev rig: drop a ball straight into the firelane (visual QA of
+                // the lamp set / tower / pack — the rules themselves are pinned
+                // deterministically by pinballcheck in Node)
+                laneDrop: () => {
+                    const gs = gsRef.current
+                    gs.pucks.push({ bx: 310, by: 235, vx: 0, vy: 160, prevY: 235, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0 })
+                    return stateOf(gs)
+                },
                 hash: () => stateHash(gsRef.current),
                 reset: (seed) => { gsRef.current = makeGame(seed >>> 0); return stateOf(gsRef.current) },
                 press: (code) => {
