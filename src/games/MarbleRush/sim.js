@@ -6,7 +6,7 @@
 // you were riding has opinions about where it ends.
 
 import {
-    compileStage, moverDeck, STAGES,
+    compileStage, moverDeck, seedRng, STAGES,
     G, GRIP, ACC, BRAKE, ROLL_C, DRAG_C, STEER_ACCEL, LAT_DAMP, SLIDE_K,
     MAX_V, LAUNCH, FALL_Y, MARBLE_R,
 } from './course.js'
@@ -26,9 +26,14 @@ export function courseFor(i) {
 
 export function makeGame(seed, stageIdx = 0) {
     const course = courseFor(stageIdx)
+    const rnd = seedRng(seed)
+    // the seed moves the bridges' phases — same authored track, different
+    // moment: which way each deck is swinging when you arrive is seeded luck
+    const mvPhase = STAGES[stageIdx].movers.map(() => rnd() * Math.PI * 2)
     return {
         seed: seed >>> 0,
         stageIdx,
+        mvPhase,
         tick: 0,
         t: 0,                    // stage clock (starts at GO)
         phase: 0,              // 0..1 pre-roll
@@ -81,8 +86,6 @@ export function step(gs, pad) {
     const grade = course.gradeOf(gs.s)
     const bank = course.bankOf(gs.s)
     const mi = course.moverAt(gs.s)
-    const deck = mi >= 0 ? moverDeck(course, mi, gs.t) : { u: 0, w: course.halfWidthOf(gs.s) }
-    const overGap = course.gapAt(gs.s)
 
     // ---- longitudinal -------------------------------------------------------
     const slopeAcc = -G * grade / Math.sqrt(1 + grade * grade)
@@ -102,8 +105,8 @@ export function step(gs, pad) {
     // what makes riding a swing bridge feel like riding it
     if (!gs.air && mi >= 0) {
         const m = course.movers[mi]
-        const deckVel = m.A * m.omega * Math.cos(m.omega * gs.t + m.phase)
-        gs.wlat += (deckVel - gs.wlat) * Math.min(1, 2.6 * DT)
+        const deckVel = m.A * m.omega * Math.cos(m.omega * (gs.t + gs.mvPhase[mi]) + m.phase)
+        gs.wlat += (deckVel - gs.wlat) * Math.min(1, 3.6 * DT)
     }
 
     // ---- lateral: one budget, spent by the curve first ---------------------
@@ -117,6 +120,13 @@ export function step(gs, pad) {
     gs.u += gs.wlat * DT
     gs.s += gs.v * DT
     gs.rolling += (gs.v / MARBLE_R) * DT
+
+    // Floor resolution happens AFTER advancing s: the ground you actually
+    // reach at the end of the tick decides, not the one you left. Width and
+    // gap are step fields (nearest sample) — a road edge must not smudge.
+    const miE = course.moverAt(gs.s)
+    const overGap = course.gapAt(gs.s)
+    const deckE = miE >= 0 ? moverDeck(course, miE, gs.t + gs.mvPhase[miE]) : { u: 0, w: course.halfWidthOf(gs.s) }
 
     // ---- airborne ballistics --------------------------------------------------
     if (gs.air) {
@@ -155,13 +165,13 @@ export function step(gs, pad) {
             }
         }
         if (!launched) {
-            const onDeck = mi >= 0 && Math.abs(gs.u - deck.u) <= deck.w + MARBLE_R * 0.25
+            const onDeck = miE >= 0 && Math.abs(gs.u - deckE.u) <= deckE.w + MARBLE_R * 0.25
             if (overGap && !onDeck) {
                 gs.falling = true
                 gs.vy = -1
                 gs.v *= 0.4
                 gs.events.push({ type: 'fall' })
-            } else if (!overGap && Math.abs(gs.u - deck.u) > deck.w + MARBLE_R * 0.25) {
+            } else if (!overGap && Math.abs(gs.u - deckE.u) > deckE.w + MARBLE_R * 0.25) {
                 gs.falling = true
                 gs.vy = 0.6
                 gs.v *= 0.5
@@ -175,7 +185,7 @@ export function step(gs, pad) {
         for (let bi = 0; bi < course.bumpers.length; bi++) {
             const b = course.bumpers[bi]
             const ds = Math.abs(gs.s - b.s)
-            const du = gs.u - (mi >= 0 ? b.u + deck.u : b.u)
+            const du = gs.u - (miE >= 0 ? b.u + deckE.u : b.u)
             if (ds < b.r + MARBLE_R && Math.abs(du) < b.r + MARBLE_R) {
                 gs.bumps[bi] += 1
                 gs.score += 50
@@ -216,7 +226,13 @@ export function autoPad(gs) {
         const mi = course.moverAt(Math.min(gs.len, gs.s + d))
         if (mi >= 0) { miFound = mi; dFound = d; break }
     }
-    if (miFound >= 0) uT = moverDeck(course, miFound, gs.t + dFound / Math.max(4, gs.v)).u
+    if (miFound >= 0) {
+        // while riding a deck, aim where it WILL be at the exit — the deck
+        // can swing a metre either way during a long crossing
+        const miNow = course.moverAt(gs.s)
+        const dExit = miFound === miNow && gs.v > 1 ? Math.max(0, (course.movers[miFound].to - gs.s) / gs.v) : dFound / Math.max(4, gs.v)
+        uT = moverDeck(course, miFound, gs.t + gs.mvPhase[miFound] + dExit).u
+    }
     for (const b of course.bumpers) {
         if (b.s > gs.s && b.s < gs.s + 9 + gs.v * 0.5) {
             const side = b.u >= 0 ? -1 : 1
@@ -249,6 +265,8 @@ export function autoPad(gs) {
 export function stateOf(gs) {
     return {
         tick: gs.tick,
+        seed: gs.seed,
+        hash: stateHash(gs),
         score: gs.score,
         done: gs.done,
         fail: gs.fail,

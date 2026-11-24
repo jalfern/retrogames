@@ -272,16 +272,14 @@ const MarbleRushGame = () => {
                 if (humTick % 10 === 0 && gs.v > 12) audioController.playNoise(0.045, 0.016)
             }
         }
-        const startStageRef = { current: null }
 
         function draw() {
             buildStageArt(gs.stageIdx)
             const course = courseFor(gs.stageIdx)
-            const t = gs.t
 
             // movers ride their analytic phase — same moverDeck the sim boards
             decks.forEach((d, mi) => {
-                const dk = moverDeck(course, mi, t)
+                const dk = moverDeck(course, mi, gs.t + gs.mvPhase[mi])
                 const p = course.pointOf(d.group.userData.sMid, dk.u)
                 d.group.position.set(p.x, p.y, p.z)
             })

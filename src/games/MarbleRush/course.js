@@ -15,7 +15,7 @@
 
 // mulberry32 (same stream as gameContract.seedRng — inlined so the pure sim
 // chain stays Node-importable with zero utils deps, the TidalRush pattern)
-function seedRng(seed) {
+export function seedRng(seed) {
     let s = seed | 0
     return () => {
         s = (s + 0x6D2B79F5) | 0
@@ -214,7 +214,7 @@ export function compileStage(stage) {
         const m = stage.movers[mi]
         for (let i = 0; i < n; i++) {
             const s = i * DS
-            if (s >= m.from && s <= m.to) movT[i] = mi
+            if (s >= m.from && s < m.to) movT[i] = mi
         }
     }
 
@@ -263,9 +263,12 @@ export function compileStage(stage) {
         curvOf: (s) => lut(kT, s),
         gradeOf: (s) => lut(grT, s),
         bankOf: (s) => lut(bkT, s),
-        halfWidthOf: (s) => lut(wT, s),
-        gapAt: (s) => (s < 0 || s >= len ? 1 : gapT[Math.round(s / DS)]),
-        moverAt: (s) => (s < 0 || s >= len ? -1 : movT[Math.round(s / DS)]),
+        // step fields: floor-sample so a hole starts exactly where it is —
+        // rounding would give the gap a 0.25 m lip-side lookahead that eats
+        // the kicker before the lip can fire
+        halfWidthOf: (s) => (s < 0 || s >= len ? 0 : wT[Math.floor(s / DS + 1e-9)]),
+        gapAt: (s) => (s < 0 || s >= len ? 1 : gapT[Math.floor(s / DS + 1e-9)]),
+        moverAt: (s) => (s < 0 || s >= len ? -1 : movT[Math.floor(s / DS + 1e-9)]),
         // world point of (s,u) with banking: +u is right of travel; bank > 0
         // raises the +u edge. THIS is the bridge: sim and renderer share it.
         pointOf(s, u, yOff = 0) {
