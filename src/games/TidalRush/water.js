@@ -44,9 +44,11 @@ export const N_SLOTS = 4
 // derived fields, so a table can never be half-baked.
 export function deriveSea(raw) {
     return raw.map((w) => {
+        const dl = Math.hypot(w.dx, w.dz) || 1
+        const dx = w.dx / dl, dz = w.dz / dl
         const k = wavenumber(w.len)
         const om = omega(w.len)
-        return { dx: w.dx, dz: w.dz, amp: w.amp, len: w.len, steep: w.steep, phase: w.phase, k, om, qa: w.steep * w.amp }
+        return { dx, dz, amp: w.amp, len: w.len, steep: w.steep, phase: w.phase, k, om, qa: w.steep * w.amp }
     })
 }
 
@@ -68,10 +70,10 @@ export function stormSea(seed, lap) {
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296
     }
     const BASE = [
-        { dx: -0.87, dz: 0.50, amp: 1.50, len: 44.0, steep: 0.44 },
-        { dx: -0.55, dz: -0.84, amp: 0.92, len: 27.0, steep: 0.30 },
-        { dx: 0.35, dz: 0.94, amp: 0.55, len: 17.0, steep: 0.24 },
-        { dx: 0.98, dz: -0.20, amp: 0.30, len: 10.0, steep: 0.18 },
+        { dx: -0.87, dz: 0.50, amp: 1.75, len: 44.0, steep: 0.44 },
+        { dx: -0.55, dz: -0.84, amp: 1.05, len: 27.0, steep: 0.30 },
+        { dx: 0.35, dz: 0.94, amp: 0.62, len: 17.0, steep: 0.24 },
+        { dx: 0.98, dz: -0.20, amp: 0.34, len: 10.0, steep: 0.18 },
     ]
     const grow = 1 + (lap - 1) * 0.12 // lap 3 rides a third taller than lap 1
     const raw = BASE.map((b) => {

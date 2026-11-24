@@ -138,6 +138,7 @@ function makeCraft(id, name, color, startArc, skill) {
         judgedEpoch: 0,
         progress: 0, progIdx: 0,
         targetArc: -1e6,            // unwrapped arc of the next pending gate (progress-based judging)
+        targetIdx: 0,
         finished: false, finishT: 0,
         hits: 0,                      // rival-to-rival bumps (spark, no damage)
     }
@@ -210,12 +211,16 @@ export function makeGame(seed, stage = 'sunny') {
 }
 
 // Keep the unwrapped arc target of the next pending gate (or lap 2's gate 0
-// once the set is complete) one lap ahead of any target already passed.
+// once the set is complete). While the SAME gate is pending its target is
+// frozen; only when pending advances does the target step forward (unwrapped
+// past any lap already counted), so progress-based skips judge honestly.
 function syncTarget(gs, c) {
     const g = gs.course.gates
     const pi = c.judged.findIndex((j) => j === 0)
-    const arc0 = g[pi >= 0 ? pi : 0].arc
-    let u = arc0
+    const idx = pi >= 0 ? pi : 0
+    if (idx === c.targetIdx) return
+    c.targetIdx = idx
+    let u = g[idx].arc
     while (u <= c.targetArc + 1e-9) u += gs.course.len
     c.targetArc = u
 }
@@ -256,10 +261,11 @@ function stepCraft(gs, c, pad) {
         const dx = c.x - gt.x, dz = c.z - gt.z
         const d2 = dx * dx + dz * dz
         if (d2 < GATE_R * GATE_R) { judgeGate(gs, c, gt, i); continue }
-        // Progress past the gate line, unjudged ⇒ skipped. Riding course
-        // PROGRESS instead of a lateral corridor closes the rung-1 loophole
-        // where skirting far outside the line escaped judgement entirely.
-        if (c.progress > c.targetArc + SKIP_MARGIN) {
+        // Past the gate line, unjudged ⇒ skipped — by geometry OR by course
+        // progress. No lateral corridor: rung 1 let a craft skirt 40 m outside
+        // the line unjudged; progress keeps boundary-crawlers honest too.
+        const along = gt.tangent.x * dx + gt.tangent.z * dz
+        if (along > SKIP_MARGIN || c.progress > c.targetArc + SKIP_MARGIN) {
             c.judged[i] = -1
             c.penalty = PENALTY_T
             if (c.id === 0) gs.events.push({ t: gs.tick, type: 'miss', i })
