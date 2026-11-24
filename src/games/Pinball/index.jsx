@@ -38,6 +38,24 @@ const sfxFor = (ev) => {
         case 'tilt': a.playTone(180, 0.28, 'square', 0.13); break
         case 'nudge': a.playNoise(0.05, 0.07); break
         case 'ballstart': a.playTone(784, 0.06, 'square', 0.1); a.playTone(1046, 0.08, 'square', 0.1, 0.07); break
+        // ---- rung 2 ----
+        case 'ramp': a.playTone(980, 0.04, 'square', 0.09); break
+        case 'rampset':
+            a.playTone(587, 0.07, 'square', 0.1); a.playTone(740, 0.07, 'square', 0.1, 0.06)
+            a.playTone(880, 0.1, 'square', 0.11, 0.12); break
+        case 'lane': a.playTone(1240, 0.035, 'square', 0.08); break
+        case 'lanesweep':
+            a.playTone(740, 0.06, 'square', 0.1); a.playTone(988, 0.1, 'square', 0.11, 0.05); break
+        case 'lock': a.playTone(196, 0.12, 'square', 0.14); a.playNoise(0.06, 0.12, 0.15); break
+        case 'multiball':
+            [523, 659, 784, 1046].forEach((f, i) => a.playTone(f, 0.1, 'square', 0.11, i * 0.09))
+            a.playSweep(180, 720, 0.3, 'sawtooth', 0.12); break
+        case 'save': a.playSweep(330, 880, 0.22, 'triangle', 0.12); break
+        case 'extraball': a.playTone(1318, 0.08, 'square', 0.1); a.playTone(1568, 0.12, 'square', 0.1, 0.08); break
+        case 'extraballpaid':
+            [784, 988, 1175].forEach((f, i) => a.playTone(f, 0.09, 'square', 0.1, i * 0.08)); break
+        case 'packdrain': a.playNoise(0.08, 0.08); break
+        case 'feed': a.playSweep(140, 420, 0.14, 'triangle', 0.08); break
         case 'gameover':
             [392, 311, 262, 196].forEach((f, i) => a.playTone(f, 0.14, 'square', 0.1, i * 0.13)); break
         case 'start': a.playTone(392, 0.07, 'square', 0.1); a.playTone(523, 0.07, 'square', 0.1, 0.07); a.playTone(659, 0.1, 'square', 0.1, 0.14); break
@@ -53,7 +71,7 @@ const PinballGame = () => {
     const gsRef = useRef(makeGame(freshSeed()))
     const keysRef = useRef({ left: false, right: false, a: false, down: false, b: false })
     const partsRef = useRef([])
-    const flashRef = useRef({ bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0 })
+    const flashRef = useRef({ bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0, ramp: 0, lane: TABLE.laneRollovers.map(() => 0), lock: 0, mb: 0 })
     const msgRef = useRef({ text: '', t: 0 })
     const shakeRef = useRef(0)
     const trailRef = useRef([])
@@ -125,6 +143,15 @@ const PinballGame = () => {
                 else if (ev.type === 'tilt') { fl.tilt = 90; shakeRef.current = 14; say('TILT!', 140) }
                 else if (ev.type === 'tiltwarn') say('CAREFUL…', 70)
                 else if (ev.type === 'ballstart') say(`BALL ${TABLE.balls - gs.balls + 1}`, 90)
+                else if (ev.type === 'ramp') { fl.ramp = 8; spawn(ev.x, ev.y, 4, PAL.lane, 110) }
+                else if (ev.type === 'rampset') { fl.ramp = 20; shakeRef.current = Math.max(shakeRef.current, 3); say('RAMP SET! +500', 110) }
+                else if (ev.type === 'lane') { fl.lane[ev.i] = 8; spawn(310, ev.y, 4, PAL.lane, 110) }
+                else if (ev.type === 'lanesweep') { shakeRef.current = Math.max(shakeRef.current, 3); say('LANE SWEEP!', 100) }
+                else if (ev.type === 'lock') { fl.lock = 16; shakeRef.current = Math.max(shakeRef.current, 4); say(`LOCK ${gs.locks} / ${TABLE.lock.need}`, 100) }
+                else if (ev.type === 'multiball') { fl.mb = 90; shakeRef.current = 8; say('M U L T I B A L L !', 170) }
+                else if (ev.type === 'save') say('BALL SAVE!', 100)
+                else if (ev.type === 'extraball') say('EXTRA BALL BANKED', 100)
+                else if (ev.type === 'extraballpaid') say(`EXTRA BALL x${ev.n}`, 110)
             }
             gs.events.length = 0
         }
@@ -167,7 +194,58 @@ const PinballGame = () => {
             const fl = flashRef.current
             Object.keys(fl).forEach((k) => { if (Array.isArray(fl[k])) fl[k] = fl[k].map((v) => Math.max(0, v - 1)); else fl[k] = Math.max(0, fl[k] - 1) })
 
-            // pop bumpers — ring, cap, lamp bloom on hit
+            // ---- rung 2: firelane lamp set + rollover rings + lock tower ----
+            {
+                const lit = gs.lockFlash > 0 || gs.mbFlash > 0
+                // lane rope glow while the lane is armed (pulses when a lock is banked)
+                ctx.save()
+                ctx.globalAlpha = 0.22 + 0.18 * Math.sin(gs.tick / 9) + (lit ? 0.25 : 0)
+                ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2
+                ctx.beginPath(); ctx.moveTo(310, 200); ctx.lineTo(310, 430); ctx.stroke()
+                ctx.restore()
+                // descending LANE rollovers
+                TABLE.laneRollovers.forEach((lr, i) => {
+                    const glow = fl.lane[i]
+                    ctx.save()
+                    ctx.strokeStyle = glow > 0 ? '#ffffff' : PAL.lane
+                    ctx.globalAlpha = glow > 0 ? 0.95 : 0.5
+                    ctx.lineWidth = 2.5
+                    ctx.beginPath(); ctx.arc(310, lr.y, 7, 0, 7); ctx.stroke()
+                    if (glow > 0) { ctx.shadowColor = PAL.lane; ctx.shadowBlur = 14; ctx.stroke() }
+                    ctx.restore()
+                })
+                // RAMP rollovers in the launch lane
+                TABLE.rampRollovers.forEach((rr) => {
+                    ctx.save()
+                    ctx.strokeStyle = fl.ramp > 0 ? '#ffffff' : PAL.lane
+                    ctx.globalAlpha = fl.ramp > 0 ? 0.95 : 0.45
+                    ctx.lineWidth = 2.5
+                    ctx.beginPath(); ctx.arc(336, rr.y, 7, 0, 7); ctx.stroke()
+                    ctx.restore()
+                })
+                // lock tower — a chrome gate housing with three lock lamps
+                ctx.save()
+                const tg = ctx.createLinearGradient(296, 0, 324, 0)
+                tg.addColorStop(0, 'rgba(201,212,232,0.25)'); tg.addColorStop(0.5, 'rgba(201,212,232,0.08)'); tg.addColorStop(1, 'rgba(201,212,232,0.25)')
+                ctx.fillStyle = tg
+                ctx.beginPath(); ctx.moveTo(296, 470); ctx.lineTo(324, 470); ctx.lineTo(318, 434); ctx.lineTo(302, 434); ctx.closePath(); ctx.fill()
+                ctx.strokeStyle = PAL.chrome; ctx.lineWidth = 2
+                ctx.beginPath(); ctx.moveTo(296, 470); ctx.lineTo(302, 434); ctx.lineTo(318, 434); ctx.lineTo(324, 470); ctx.stroke()
+                for (let i = 0; i < TABLE.lock.need; i++) {
+                    const on = i < gs.locks
+                    const pulse = on && (gs.tick >> 3) % 2 === 0
+                    ctx.fillStyle = on ? (pulse ? '#ffffff' : PAL.hot) : 'rgba(255,61,94,0.18)'
+                    if (on) { ctx.shadowColor = PAL.hot; ctx.shadowBlur = 10 }
+                    ctx.beginPath(); ctx.arc(303 + i * 7, 452, 2.6, 0, 7); ctx.fill()
+                    ctx.shadowBlur = 0
+                }
+                if (fl.lock > 0) {
+                    const rg = ctx.createRadialGradient(310, 445, 4, 310, 445, 34)
+                    rg.addColorStop(0, `rgba(255,61,94,${0.5 * (fl.lock / 16)})`); rg.addColorStop(1, 'rgba(255,61,94,0)')
+                    ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(310, 445, 34, 0, 7); ctx.fill()
+                }
+                ctx.restore()
+            }
             TABLE.bumpers.forEach((b, i) => {
                 const glow = fl.bumpers[i]
                 ctx.save()
@@ -211,11 +289,12 @@ const PinballGame = () => {
                 ctx.restore()
             })
 
-            // spinner (outlane): tilts while ball passes through
+            // spinner (outlane): tilts while a ball passes through
+            const p0 = gs.pucks[0] || { spin: 0, spinArm: true }
             const sp = TABLE.spinner
             ctx.save()
             ctx.translate(24, (sp.yFrom + sp.yTo) / 2)
-            ctx.rotate(gs.spinnerArm ? 0.4 : 0.4 + (gs.spinnerSpin / sp.pxPerTurn) * Math.PI * 2 + gs.spinnerTurns * 0.6)
+            ctx.rotate(p0.spinArm ? 0.4 : 0.4 + (p0.spin / sp.pxPerTurn) * Math.PI * 2 + gs.spinnerTurns * 0.6)
             ctx.fillStyle = fl.spinner > 0 ? '#ffffff' : PAL.chrome
             ctx.fillRect(-2, -14, 4, 28)
             ctx.restore()
@@ -246,19 +325,23 @@ const PinballGame = () => {
                 ctx.fillRect(300, 592 - 60 * gs.power, 6, 60 * gs.power)
             }
 
-            // ball trail + ball
-            trailRef.current.push({ x: gs.bx, y: gs.by })
-            if (trailRef.current.length > 7) trailRef.current.shift()
-            trailRef.current.forEach((p, i) => {
-                const a = (i / trailRef.current.length) * 0.28
-                ctx.fillStyle = `rgba(190,210,255,${a.toFixed(3)})`
-                ctx.beginPath(); ctx.arc(p.x, p.y, BALL_R * (0.5 + 0.5 * i / trailRef.current.length), 0, 7); ctx.fill()
-            })
-            const bg = ctx.createRadialGradient(gs.bx - 3, gs.by - 4, 1, gs.bx, gs.by, BALL_R)
-            bg.addColorStop(0, '#ffffff'); bg.addColorStop(0.55, '#aab8cf'); bg.addColorStop(1, '#39435a')
-            ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(gs.bx, gs.by, BALL_R, 0, 7); ctx.fill()
-            ctx.fillStyle = 'rgba(255,255,255,0.85)'
-            ctx.beginPath(); ctx.arc(gs.bx - 3, gs.by - 4, 2.2, 0, 7); ctx.fill()
+            // trails + every live ball (MULTIBALL draws the whole pack)
+            if (gs.pucks.length) {
+                trailRef.current.push({ x: gs.pucks[0].bx, y: gs.pucks[0].by })
+                if (trailRef.current.length > 7) trailRef.current.shift()
+                trailRef.current.forEach((p, i) => {
+                    const a = (i / trailRef.current.length) * 0.28
+                    ctx.fillStyle = `rgba(190,210,255,${a.toFixed(3)})`
+                    ctx.beginPath(); ctx.arc(p.x, p.y, BALL_R * (0.5 + 0.5 * i / trailRef.current.length), 0, 7); ctx.fill()
+                })
+            } else trailRef.current.length = 0
+            for (const p of gs.pucks) {
+                const bg = ctx.createRadialGradient(p.bx - 3, p.by - 4, 1, p.bx, p.by, BALL_R)
+                bg.addColorStop(0, '#ffffff'); bg.addColorStop(0.55, '#aab8cf'); bg.addColorStop(1, '#39435a')
+                ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(p.bx, p.by, BALL_R, 0, 7); ctx.fill()
+                ctx.fillStyle = 'rgba(255,255,255,0.85)'
+                ctx.beginPath(); ctx.arc(p.bx - 3, p.by - 4, 2.2, 0, 7); ctx.fill()
+            }
 
             // glossy sheen — the reflective MODERN bar
             const sheen = ctx.createRadialGradient(110, 120, 20, 110, 120, 260)
@@ -280,9 +363,19 @@ const PinballGame = () => {
             const sc = String(Math.min(999999, gs.score)).padStart(SCORE_DIGITS, '0')
             for (let i = 0; i < SCORE_DIGITS; i++) drawSevenSeg(ctx, SCORE_X + i * 22, SCORE_Y, +sc[i], PAL.score, fl.drain > 0 && fl.drain % 2 === 0)
             // balls + mult lamps
-            for (let i = 0; i < TABLE.balls; i++) {
+            const lampN = Math.max(TABLE.balls, Math.min(9, gs.balls))
+            for (let i = 0; i < lampN; i++) {
                 ctx.fillStyle = i < gs.balls ? PAL.glow : 'rgba(127,216,255,0.15)'
                 ctx.beginPath(); ctx.arc(SCORE_X + SCORE_DIGITS * 22 + 10, SCORE_Y + 6 + i * 12, 4, 0, 7); ctx.fill()
+            }
+            // rung 2: lock bank lamps + MULTIBALL banner
+            for (let i = 0; i < TABLE.lock.need; i++) {
+                ctx.fillStyle = i < gs.locks ? PAL.hot : 'rgba(255,61,94,0.18)'
+                ctx.beginPath(); ctx.arc(SCORE_X + SCORE_DIGITS * 22 + 26, SCORE_Y + 6 + i * 12, 4, 0, 7); ctx.fill()
+            }
+            if (gs.multiball && (gs.tick >> 4) % 2 === 0) {
+                ctx.fillStyle = PAL.hot; ctx.font = 'bold 13px monospace'
+                ctx.fillText('MULTIBALL x2', 180, SCORE_Y + 54)
             }
             ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
             ctx.fillStyle = gs.mult > 1 ? PAL.hot : 'rgba(255,61,94,0.25)'

@@ -85,6 +85,21 @@ export function paintField(ctx, W, H) {
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.stroke(); ctx.restore();
+    // rung 2: firelane bed — a dim amber strip down the dome's right flank,
+    // descending chevrons that read "this lane runs DOWN into the tower".
+    ctx.save();
+    ctx.globalAlpha = 0.10; ctx.fillStyle = PAL.lane;
+    ctx.fillRect(298, 192, 24, 280);
+    ctx.globalAlpha = 0.22; ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+        const y = 220 + i * 44;
+        ctx.beginPath(); ctx.moveTo(302, y); ctx.lineTo(310, y + 12); ctx.lineTo(318, y); ctx.stroke();
+    }
+    // "LOCK TOWER" nameplate glow above the capture mouth
+    ctx.globalAlpha = 0.35; ctx.fillStyle = PAL.hot;
+    ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('LOCK', 310, 424);
+    ctx.restore();
 }
 
 export const PRESS = 'PRESS ANY KEY · TAP TO PLAY';
@@ -93,5 +108,7 @@ export const MESSAGES = [
     'HOLD SPACE OR DOWN TO PULL THE PLUNGER',
     'LEFT / RIGHT ARROWS FLIP — TIMING IS THE GAME',
     'CLEAR THE DROP BANK TO RAISE THE BONUS MULT',
+    'SHOOT THE LANE — RAMP ROLLOVERS PAY',
+    'AROUND THE DOME INTO THE FIRELANE — LOCK 3 FOR MULTIBALL',
     'THE LEFT OUTLANE SPINS AND KICKS — B NUDGES, CAREFULLY',
 ];

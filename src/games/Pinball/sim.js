@@ -107,12 +107,13 @@ export const TABLE = {
     laneX: { x1: 302, x2: 318 },
     // Lock tower mouth: a ball descending through it is captured.
     lock: { x1: 298, x2: 322, yAt: 440, need: 3 },
-    // Multiball release: three balls kicked from the tower top, arcing left
-    // over the dome (deterministic — no rng in the kick).
+    // Multiball release: three balls kicked from the tower onto the OPEN
+    // playfield left of the lane guide (never back into the firelane), arcing
+    // left over the bumper cluster. Deterministic — no rng in the kick.
     mbKick: [
-        { x: 308, y: 165, vx: -60, vy: -140 },
-        { x: 314, y: 175, vx: -30, vy: -100 },
-        { x: 302, y: 155, vx: -90, vy: -170 },
+        { x: 285, y: 170, vx: -80, vy: -160 },
+        { x: 276, y: 152, vx: -110, vy: -130 },
+        { x: 286, y: 185, vx: -50, vy: -190 },
     ],
     // Ball-save: the first drain within this window of MULTIBALL auto-relaunches.
     saveTicks: 300,
@@ -559,9 +560,9 @@ function lockBall(gs) {
 
 function startMultiball(gs) {
     gs.locks = 0;
+    add(gs, TABLE.rules.multiball);   // award at pack-off odds, before the x2 is live
     gs.multiball = true; gs.saveUsed = false; gs.saveT = TABLE.saveTicks;
     gs.mbFlash = 60;
-    add(gs, TABLE.rules.multiball);
     for (const k of TABLE.mbKick) {
         const p = newPuck(k.x, k.y, k.vx, k.vy);
         p.launched = true;
