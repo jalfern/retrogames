@@ -12,6 +12,9 @@
 //                rides the holder, so no arrows on the wire — padtypecheck
 //                pins the 4-way quantizer this path uses).
 //   GALAGA       an untouched game keeps its exact pre-#3108 pad.
+//   MINESWEEPER  #3129 pointer grant live: pause row offers POINTER, the
+//                directional pad drops away, and canvas taps drive the game
+//                (quick tap digs, press-and-hold flags).
 // Needs `npm run dev` (DEV_PORT, default 5173). Screenshots land in qa-art/.
 import { launch } from './lib/harness.mjs'
 import { Report } from './lib/harness.mjs'
@@ -210,6 +213,58 @@ const clickLast = async (page, sel) => page.evaluate((s) => {
     const { page } = await mkPage('/galaga')
     const v = await vcs(page)
     r.check('galaga: untouched floating stick default', v.includes('stick') && !v.includes('facediamond'), v.join(','))
+    await page.close()
+}
+
+// --- #3129 tail: a POINTER grant drives the game — Minesweeper's pause row
+// offers POINTER, the directional pad drops away, and the canvas IS the
+// surface: a quick tap digs (first dig safe, #438), press-and-hold plants a
+// flag (LONGPRESS_MS=450, the original mouse law in touch, #1353). ---
+{
+    const { page, errors } = await mkPage('/minesweeper')
+    const v = await vcs(page)
+    r.check('mines: cross d-pad default', v.includes('dpad'), v.join(','))
+    await page.evaluate(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Question', key: '?', bubbles: true })); window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Question', bubbles: true })) })
+    await page.waitForTimeout(400)
+    const chips = await page.evaluate(() => [...document.querySelectorAll('[data-padtype]')].map((e) => e.getAttribute('data-padtype')))
+    r.check('mines: pause row offers D-PAD + POINTER', [...new Set(chips)].sort().join(',') === 'dpad,pointer', 'chips=' + chips.join(','))
+    await clickLast(page, '[data-padtype="pointer"]')
+    r.check('mines: POINTER choice persisted', await page.evaluate(() => localStorage.getItem('retrogames:padtype:/minesweeper')) === 'pointer')
+    await page.evaluate(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Question', key: '?', bubbles: true })) })
+    await page.waitForTimeout(500)
+    const v2 = await vcs(page)
+    r.check('mines: POINTER drops the pad, keeps the verbs', !v2.includes('dpad') && !v2.includes('stick') && v2.includes('a') && v2.includes('b'), v2.join(','))
+    const dims = await page.evaluate(() => window.__sweepTest.probe())
+    // the board is the LARGEST canvas — the HUD strips are canvases too, and
+    // the shell only lets a dig land on the board (`e.target !== canvas`)
+    const cell = (cx, cy) => page.evaluate(([x, y]) => {
+        const g = window.__sweepTest.probe()
+        const c = [...document.querySelectorAll('canvas')].sort((a, b) => (b.getBoundingClientRect().width * b.getBoundingClientRect().height) - (a.getBoundingClientRect().width * a.getBoundingClientRect().height))[0]
+        const r = c.getBoundingClientRect()
+        return { x: r.left + (x + 0.5) * r.width / g.w, y: r.top + (y + 0.5) * r.height / g.h }
+    }, [cx, cy])
+    const opened0 = await page.evaluate(() => window.__sweepTest.probe().opened)
+    const mid = await cell(Math.floor(dims.w / 2), Math.floor(dims.h / 2))
+    await page.touchscreen.tap(mid.x, mid.y)
+    await page.waitForTimeout(300)
+    r.check('mines: quick canvas tap digs', await page.evaluate(() => window.__sweepTest.probe().opened) > opened0)
+    // hold-to-flag — walk corners until one is still covered (a big centre
+    // cascade can open one)
+    const flags0 = await page.evaluate(() => window.__sweepTest.probe().flags)
+    const cdp2 = await page.context().newCDPSession(page)
+    for (const [cx, cy] of [[0, 0], [dims.w - 1, 0], [0, dims.h - 1], [dims.w - 1, dims.h - 1]]) {
+        const p = await cell(cx, cy)
+        await cdp2.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y }] })
+        await page.waitForTimeout(650)
+        await cdp2.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+        await page.waitForTimeout(200)
+        if (await page.evaluate(() => window.__sweepTest.probe().flags) > flags0) break
+    }
+    await cdp2.detach()
+    r.check('mines: press-and-hold plants a flag on the canvas', await page.evaluate(() => window.__sweepTest.probe().flags) > flags0)
+    r.check('mines: zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
+    await page.screenshot({ path: 'qa-art/padtype-mines-pointer.png' })
+    await page.evaluate(() => localStorage.removeItem('retrogames:padtype:/minesweeper'))
     await page.close()
 }
 

@@ -630,7 +630,7 @@ export const GAMES = [
     },
     {
         path: '/minesweeper',
-        pad: { layout: 'dpad', buttons: [{ label: 'FLAG', code: 'KeyB' }], aLabel: 'DIG', analog: false, reason: 'cell cursor — flag or dig one tile at a time' },
+        pad: { layout: 'dpad', buttons: [{ label: 'FLAG', code: 'KeyB' }], aLabel: 'DIG', analog: false, supports: ['dpad', 'pointer'], reason: 'cell cursor — flag or dig one tile at a time; pointer offered #3129 — the 1990 original is a mouse game and the shell already lives it: tap digs the cell under it, press-and-hold flags (#1353)' },
         builtBy: 'forge',
         added: '2026-10-12',
         component: MinesweeperGame,
@@ -1104,7 +1104,7 @@ export const GAMES = [
     },
     {
         path: '/garden-guard',
-        pad: { layout: 'dpad', buttons: [{ label: '✿', code: 'Space' }, { label: '↻', code: 'KeyB' }], analog: false, reason: 'pick a card then a tile — arrows move the planter, ✿ plants/digs, ↻ cycles the hand; tap the lawn directly on touch' },
+        pad: { layout: 'dpad', buttons: [{ label: '✿', code: 'Space' }, { label: '↻', code: 'KeyB' }], analog: false, supports: ['dpad', 'pointer'], reason: 'pick a card then a tile — arrows move the planter, ✿ plants/digs, ↻ cycles the hand; tap the lawn directly on touch; pointer offered #3129 — the tap verb is complete, so the pad chrome can leave the lawn entirely' },
         builtBy: 'forge',
         added: '2026-10-23',
         visibility: 'private',
@@ -1130,7 +1130,7 @@ export const GAMES = [
 
     {
         path: '/homebody',
-        pad: { layout: 'stick', buttons: [{ label: '✓', code: 'Space' }, { label: '⚒', code: 'KeyB' }], aLabel: '✓', analog: true, reason: 'walk the resident with the stick, ✓ uses whatever is in reach, ⚒ opens the buy catalog; tap-to-order on touch' },
+        pad: { layout: 'stick', buttons: [{ label: '✓', code: 'Space' }, { label: '⚒', code: 'KeyB' }], aLabel: '✓', analog: true, supports: ['stick', 'pointer'], reason: 'walk the resident with the stick, ✓ uses whatever is in reach, ⚒ opens the buy catalog; tap-to-order on touch; pointer offered #3129 — tap-a-thing-to-order-it is the native idiom of this game, pointer hides the stick and hands the lot to the thumb' },
         builtBy: 'forge',
         added: '2026-10-23',
         visibility: 'private',

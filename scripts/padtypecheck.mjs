@@ -174,6 +174,21 @@ ok(Object.keys(PAD_TYPE_LABELS).length === PAD_TYPES.length, 'every type has a l
         ok(verbs.every((v) => blockOf('/lemmings').includes(v)), 'LEMMINGS full diamond carries BLOCK/BOMB/CLIMB + R DIG (#3132)')
         ok(/reads: \['pointer', 'a', 'b'\]/.test(blockOf('/lemmings')), 'LEMMINGS pad shows ✕ ACT + ○ BLOCK in full (#3132)')
     }
+    // #3129 rollout tail 2 — pointer supports (taste calls). A game may offer
+    // POINTER only when its canvas taps already ARE the verbs; these three
+    // shipped touch play long before the pad knew about it. supports-only
+    // grants: no type: — the default stays derived (#3118 law).
+    for (const [p, kinds, file, verb, why] of [
+        ['/minesweeper', 'dpad', '../src/games/Minesweeper/index.jsx', "addEventListener('pointerdown', onPointer)", 'tap digs, press-and-hold flags (#1353)'],
+        ['/garden-guard', 'dpad', '../src/games/GardenGuard/index.jsx', 'pointerPx(', 'tap the lawn directly'],
+        ['/homebody', 'stick', '../src/games/Homebody/index.jsx', 'pointerPx(', 'tap-to-order the lot'],
+    ]) {
+        const block = blockOf(p)
+        ok(new RegExp(`supports: \\['${kinds}', 'pointer'\\]`).test(block), `${p} offers POINTER (#3129)`)
+        ok(!/\btype: '/.test(block), `${p} grant keeps the derived ${kinds} default`)
+        const src = readFileSync(new URL(file, import.meta.url), 'utf8')
+        ok(src.includes(verb), `${p} canvas tap verb exists (${why}) — without it POINTER would be a dead pad`)
+    }
     // grants must not disturb the derived defaults
     ok(defaultTypeFor({ layout: 'stick', buttons: [], analog: false, supports: ['stick', 'full'] }) === 'stick', 'galaga-style grant keeps stick default')
     ok(defaultTypeFor({ layout: 'dpad', aLabel: 'JUMP', buttons: [], supports: ['dpad', 'full'] }) === 'dpad', 'dd-style grant keeps dpad default')
