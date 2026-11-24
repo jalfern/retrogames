@@ -145,7 +145,7 @@ export function makeGame(seed = 1) {
         seed: seed >>> 0, rng: mulberry32((seed >>> 0) ^ 0x9e3779b9),
         tick: 0, score: 0, balls: TABLE.balls, done: false, phase: 'play',
         pucks: [p0],
-        launched: false, plungerHold: false, power: 0, laneIdle: 0, laneCurved: false,
+        launched: false, plungerHold: false, power: 0, plungerNotch: 0, laneIdle: 0, laneCurved: false,
         ang: { L: TABLE.flippers.L.rest, R: TABLE.flippers.R.rest },
         angV: { L: 0, R: 0 },
         bumperCd: TABLE.bumpers.map(() => 0), slingCd: TABLE.slings.map(() => 0),
@@ -191,7 +191,7 @@ function newPuck(x, y, vx, vy) {
 
 export function resetBall(gs) {
     gs.pucks = [newPuck(TABLE.plunger.x, TABLE.plunger.restY, 0, 0)];
-    gs.launched = false; gs.power = 0; gs.laneIdle = 0; gs.plungerHold = false; gs.laneCurved = false;
+    gs.launched = false; gs.power = 0; gs.plungerNotch = 0; gs.laneIdle = 0; gs.plungerHold = false; gs.laneCurved = false;
     gs.targetDown = TABLE.targets.map(() => false); gs.bankLit = false;
     gs.spinnerTurns = 0; gs.tilt = false;
     gs.nudgeMeter = 0; gs.nudgeDecay = 0; gs.mult = 1; gs.banksThisBall = 0;
@@ -433,7 +433,14 @@ export function stepGame(gs, pad = {}) {
         if (inLane) {
             p.launched = false; p.laneCurved = false; gs.laneIdle += 1;
             const hold = !!pad.a || !!pad.down;
-            if (hold) { gs.power = Math.min(1, gs.power + TABLE.plunger.chargeRate / 60); gs.plungerHold = true; }
+            if (hold) {
+                gs.power = Math.min(1, gs.power + TABLE.plunger.chargeRate / 60); gs.plungerHold = true;
+                // #3146 juice: mechanical ratchet clicks as the plunger pulls back
+                // (the notches a real auto-plunger makes). Audio/fx only — physics
+                // of the charge and release are untouched.
+                const notch = Math.floor(gs.power * 16);
+                if (notch > gs.plungerNotch) { gs.plungerNotch = notch; gs.events.push({ type: 'ratchet', power: gs.power }); }
+            }
             else {
                 if (gs.plungerHold && gs.power > 0.06) fire(gs, p);
                 gs.plungerHold = false;
@@ -533,13 +540,13 @@ export function stepGame(gs, pad = {}) {
 function fire(gs, p, pw = gs.power) {
     p.vy = -(TABLE.plunger.minV + (TABLE.plunger.maxV - TABLE.plunger.minV) * pw);
     p.vx = 0; p.launched = true; p.laneCurved = false;
-    gs.power = 0; gs.laneIdle = 0; gs.plungerHold = false;
+    gs.power = 0; gs.plungerNotch = 0; gs.laneIdle = 0; gs.plungerHold = false;
     gs.events.push({ type: 'plunge', power: pw });
 }
 
 function feedBall(gs) {
     gs.pucks.push(newPuck(TABLE.plunger.x, TABLE.plunger.restY, 0, 0));
-    gs.plungerHold = false; gs.power = 0; gs.laneIdle = 0;
+    gs.plungerHold = false; gs.power = 0; gs.plungerNotch = 0; gs.laneIdle = 0;
     gs.events.push({ type: 'feed' });
 }
 
@@ -624,6 +631,9 @@ export function stateOf(gs) {
         mult: gs.mult, tilt: gs.tilt, nudge: gs.nudgeMeter,
         targetsDown: gs.targetDown.filter(Boolean).length,
         spinnerTurns: gs.spinnerTurns, launched: gs.launched,
+        // #3146: the charge itself is part of the observable state — a held
+        // plunger must read as motion to the juice audit, not just look like it.
+        power: gs.power,
         // ---- rung 2 ----
         liveBalls: gs.pucks.length, locks: gs.locks,
         multiball: gs.multiball, extraBall: gs.extraBall,

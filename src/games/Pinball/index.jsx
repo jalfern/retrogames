@@ -30,6 +30,7 @@ const sfxFor = (ev) => {
         case 'spinner': a.playTone(1500, 0.025, 'square', 0.05); break
         case 'kicker': a.playSweep(220, 660, 0.15, 'triangle', 0.12); break
         case 'plunge': a.playSweep(120, 700, 0.22, 'triangle', 0.14); break
+        case 'ratchet': a.playTone(160 + 460 * (ev.power || 0), 0.02, 'square', 0.06); a.playNoise(0.015, 0.05); break
         case 'drain': a.playSweep(420, 70, 0.35, 'sawtooth', 0.12); a.playNoise(0.15, 0.1); break
         case 'bonus':
             a.playTone(523, 0.05, 'square', 0.08); a.playTone(659, 0.05, 'square', 0.08, 0.06)
@@ -138,6 +139,7 @@ const PinballGame = () => {
                 else if (ev.type === 'spinner') { fl.spinner = 6; spawn(ev.x, ev.y, 3, PAL.glow, 90) }
                 else if (ev.type === 'kicker') { spawn(ev.x, ev.y, 12, PAL.lane, 220) }
                 else if (ev.type === 'plunge') { spawn(TABLE.plunger.x, TABLE.plunger.restY, 8, PAL.chrome, 120) }
+                else if (ev.type === 'ratchet') { spawn(TABLE.plunger.x, 566 + (ev.power || 0) * 14, 2, PAL.chrome, 60) }
                 else if (ev.type === 'drain') { shakeRef.current = 10; fl.drain = 24 }
                 else if (ev.type === 'bonus') say(`BONUS +${ev.value}`, 120)
                 else if (ev.type === 'tilt') { fl.tilt = 90; shakeRef.current = 14; say('TILT!', 140) }
