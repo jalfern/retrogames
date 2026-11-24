@@ -506,7 +506,7 @@ export const GAMES = [
     },
     {
         path: '/mario-kart',
-        pad: { method: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'ITEM', reads: ['x', 'y', 'a', 'b'], analog: true, reason: 'analog — steer on stick x / y, pedals on stick y, DRIFT + ITEM on buttons' },
+        pad: { method: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'ITEM', reads: ['x', 'y', 'a', 'b'], analog: true, supports: ['stick', 'full'], reason: 'analog — steer on stick x / y, pedals on stick y, DRIFT + ITEM on buttons; full offered #3118 (diamond B=DRIFT, A=ITEM, R shoulder alias; chrome audit clean — top-right corner chip only)' },
         builtBy: 'forge',
         added: '2026-10-13',
         component: MarioKartGame,
@@ -517,7 +517,7 @@ export const GAMES = [
     },
     {
         path: '/comet-drift',
-        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true, reason: '#906 — the A key IS the drift here, so the pad shows one DRIFT button; R stays the gamepad alias' },
+        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true, supports: ['stick', 'full'], reason: '#906 — the A key IS the drift here, so the pad shows one DRIFT button; R stays the gamepad alias; full offered #3118 (R shoulder = DRIFT; chrome audit clean)' },
         builtBy: 'forge',
         added: '2026-10-17',
         visibility: 'private',
@@ -529,7 +529,7 @@ export const GAMES = [
     },
     {
         path: '/comet-drift-hd',
-        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true, reason: '#906 — the A key IS the drift here, so the pad shows one DRIFT button; R stays the gamepad alias' },
+        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true, supports: ['stick', 'full'], reason: '#906 — the A key IS the drift here, so the pad shows one DRIFT button; R stays the gamepad alias; full offered #3118 (R shoulder = DRIFT; chrome audit clean)' },
         builtBy: 'forge',
         added: '2026-10-18',
         visibility: 'private',
