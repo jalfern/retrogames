@@ -144,9 +144,9 @@ footer { font-size: 13px; color: var(--muted); }
         <text class="t-small" x="24" y="358">local Qwen (oMLX)</text>
         <text class="t-small" x="24" y="374">features &amp; new games</text>
         <rect class="box-a" x="215" y="312" width="190" height="84" rx="8" stroke-width="1.5"/>
-        <text class="t-title" x="229" y="338">QA lanes ×3</text>
-        <text class="t-small" x="229" y="358">studio · mini · mini2</text>
-        <text class="t-small" x="229" y="374">polish, fixes, red main</text>
+        <text class="t-title" x="229" y="338">QA lanes</text>
+        <text class="t-small" x="229" y="358">studio (Qwen) · mini (Inkling)</text>
+        <text class="t-small" x="229" y="374">fixes, red main, art passes</text>
         <rect class="box-a" x="420" y="312" width="200" height="84" rx="8" stroke-width="1.5" stroke-dasharray="5 4"/>
         <text class="t-title" x="434" y="338">Guest agents</text>
         <text class="t-small" x="434" y="358">Claude · Gemini · Inkling</text>
@@ -210,8 +210,10 @@ footer { font-size: 13px; color: var(--muted); }
           <tr><td>Checks + mutants</td><td>Evals (with proven failure)</td><td>Every claim has a test, and each test is shown to fail when the code breaks.</td></tr>
           <tr><td>Golden traces</td><td>Differential testing / spec as data</td><td>The web game's recorded behaviour is the spec a native port must match tick for tick.</td></tr>
           <tr><td>Same brief to Qwen, Gemini, Claude</td><td>Model bake-off</td><td>Side-by-side runs on identical goals, judged on the result and the help needed.</td></tr>
-          <tr><td>Local Qwen + frontier guests</td><td>Model routing (cascade)</td><td>Cheap local models do the bulk; stronger models take the hard specialist jobs.</td></tr>
-          <tr><td>Manual lane</td><td>Open agent protocol</td><td>A one-page guide lets any outside agent work as a lane: <code>docs/MANUAL-LANE.md</code>.</td></tr>
+          <tr><td>Local Qwen + frontier guests</td><td>Model routing (cascade)</td><td>Cheap local models do the bulk; stronger models take the hard specialist jobs. The kind of work follows the model, not the machine: Inkling, the one with an eye, gets the redesign (<code>reimagine</code>) jobs.</td></tr>
+          <tr><td>Art &amp; fidelity rung</td><td>Self-critique with vision</td><td>When a QA lane runs out of fixes, it screenshots a game, looks at it against the game's art direction, and polishes it within spec.</td></tr>
+          <tr><td>Manual lane</td><td>Open agent protocol</td><td>A one-page guide lets any outside agent work as a lane: <code>docs/MANUAL-LANE.md</code>. Starry Night was built this way, by Inkling on a laptop.</td></tr>
+          <tr><td>Forge Live</td><td>Observability / tracing</td><td>A private, real-time view of every lane: its live output, tokens per second, memory, and the screenshots each model is looking at.</td></tr>
           <tr><td>retrogames-rl</td><td>Eval-driven ML</td><td>Scoring command first; any result that looks too good is treated as a leak until proven.</td></tr>
         </tbody>
       </table>
