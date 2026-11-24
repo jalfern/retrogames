@@ -452,7 +452,7 @@ export function stateOf(g) {
         ringsPassed: g.ringsPassed, eventT: +g.eventT.toFixed(2),
         grad: { ...g.grad }, license: g.license, crashes: g.crashes,
         dropped: g.dropped.length, marker: g.marker ?? null,
-        passIdx: g.passIdx, stormWings: !!g.stormWings,
+        passIdx: g.passIdx, stormWings: !!g.stormWings, stormS: +g.stormS.toFixed(2),
         hash: g.hash, seed: g.seed,
     }
 }

@@ -198,9 +198,11 @@ void main(){
         return sp
     }
     const rngp = (n) => ((Math.sin(n * 127.1) * 43758.5453) % 1 + 1) % 1
+    const thermalClouds = []
     world.thermals.forEach((c, i) => {
-        addCloud(c.x, 96 + i * 7, c.z, 110, 0xffffff)
-        addCloud(c.x + 26, 104 + i * 5, c.z - 18, 74, 0xf4f8ff)
+        const a = addCloud(c.x, 96 + i * 7, c.z, 110, 0xffffff)
+        const b = addCloud(c.x + 26, 104 + i * 5, c.z - 18, 74, 0xf4f8ff)
+        thermalClouds.push({ c, sprites: [a, b] })
     })
     for (let i = 0; i < 14; i++) {
         const a = rngp(i * 3 + 1) * Math.PI * 2
@@ -247,6 +249,17 @@ void main(){
         return mesh
     })
     const padBands = []
+    // thunderpass gates — violet torus rings through the cell, facing along
+    // the line (same orientation discipline as the bay rings)
+    const passMeshes = world.passRings.map((p, i) => {
+        const prev = i > 0 ? world.passRings[i - 1] : { x: p.x - 100, z: p.z }
+        const next = i < world.passRings.length - 1 ? world.passRings[i + 1] : { x: p.x + 100, z: p.z }
+        const mesh = new THREE.Mesh(new THREE.TorusGeometry(11, 0.6, 8, 36), new THREE.MeshBasicMaterial({ color: 0xb39cff, transparent: true, opacity: 0.8 }))
+        mesh.position.set(p.x, p.y, p.z)
+        mesh.rotation.y = Math.atan2(next.x - prev.x, next.z - prev.z)
+        scene.add(mesh)
+        return mesh
+    })
     for (let i = 0; i < 4; i++) {
         const rr = [4.5, 9, 15, 24][i]
         const band = new THREE.Mesh(
@@ -286,6 +299,7 @@ void main(){
         ring: markerBeam(r0.x, r0.z - 150, 0xffd23f, 'RING RUN', 0),
         spot: markerBeam(world.launch.x, world.launch.z, 0x59d7ff, 'SPOT LANDING'),
         drop: markerBeam(world.school.x + 30, world.school.z + 40, 0x6ee7a0, 'TARGET DROP'),
+        pass: markerBeam(world.passStart.x, world.passStart.z, 0xb06bff, 'THUNDERPASS'),
     }
 
     // dock
@@ -403,7 +417,11 @@ void main(){
         seaMat.uniforms.uCam.value.copy(camera.position)
         skyMat.uniforms.uFlash.value = g.crashes && world.stormFlash(t) ? world.stormFlash(t) : world.stormFlash(t)
         const flash = world.stormFlash(t)
-        hemi.intensity = 1.1 + flash * 1.4
+        // inside the cell the grey closes in: fog shuts down to gate distance
+        const sS = g.stormS || 0
+        hemi.intensity = 1.1 + flash * 1.4 - sS * 0.5
+        scene.fog.near = lerp(600, 130, sS)
+        scene.fog.far = lerp(2100, 760, sS)
 
         // rain
         const rp = rainGeo.attributes.position
@@ -414,9 +432,18 @@ void main(){
         }
         rp.needsUpdate = true
 
-        // thermals pulse
+        // thermals pulse + drift (rung 2: the cloud IS the lift, same thermalPos)
         for (let i = 0; i < thermCols.length; i++) {
-            const pulse = world.thermalLift(world.thermals[i].x, world.thermals[i].z, t)
+            const th = world.thermals[i]
+            const tp = world.thermalPos(th, t)
+            const tc = thermalClouds[i]
+            if (tc) {
+                tc.sprites[0].position.x = tp.x; tc.sprites[0].position.z = tp.z
+                tc.sprites[1].position.x = tp.x + 26; tc.sprites[1].position.z = tp.z - 18
+            }
+            thermCols[i].position.x = tp.x
+            thermCols[i].position.z = tp.z
+            const pulse = world.thermalLift(tp.x, tp.z, t)
             thermCols[i].material.opacity = 0.035 + pulse * 0.02
             thermCols[i].rotation.y = t * 0.1
         }
@@ -430,12 +457,20 @@ void main(){
             else if (doneI && g.phase === 'ring') { m.color.setHex(0x3ddc84); m.opacity = 0.8; m.transparent = true }
             else { m.color.setHex(0xff7a6a); m.opacity = 0.7; m.transparent = true }
         }
+        // thunderpass gates: same active/passed language as the bay rings
+        for (let i = 0; i < passMeshes.length; i++) {
+            const m = passMeshes[i].material
+            if (g.phase === 'pass' && i === g.passIdx) { m.color.setHex(0xffd23f); m.opacity = 0.85 + 0.15 * Math.sin(t * 7) }
+            else if (g.phase === 'pass' && i < g.passIdx) { m.color.setHex(0x3ddc84); m.opacity = 0.8 }
+            else if (g.stormWings) { m.color.setHex(0x3ddc84); m.opacity = 0.55 }
+            else { m.color.setHex(0xb39cff); m.opacity = 0.7 }
+        }
         // beacons: pulse when relevant marker is active
         const near = g.marker
         Object.entries(beacons).forEach(([k, bE]) => {
             const on = near === k
             bE.children[0].material.opacity = on ? 0.5 + 0.25 * Math.sin(t * 6) : 0.16
-            bE.visible = !(g.phase !== 'free' && !on && k !== (g.phase === 'ring' ? 'ring' : g.phase === 'spot' ? 'spot' : 'drop'))
+            bE.visible = !(g.phase !== 'free' && !on && k !== (g.phase === 'ring' ? 'ring' : g.phase === 'spot' ? 'spot' : g.phase === 'pass' ? 'pass' : 'drop'))
         })
 
         // craft pose

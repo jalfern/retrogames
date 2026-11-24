@@ -50,7 +50,7 @@ const SkywardGame = () => {
 <div data-h="speed" style="position:absolute;left:90px;bottom:14px;letter-spacing:.1em">000 KTS</div>
 <div data-h="alt" style="position:absolute;left:90px;bottom:30px;letter-spacing:.1em">000 M</div>
 <div data-h="score" style="position:absolute;right:34px;bottom:14px;letter-spacing:.1em;text-align:right">SCORE 0</div>
-<div data-h="chips" style="position:absolute;right:34px;bottom:32px;letter-spacing:.14em;text-align:right;font-size:11px;color:#ffe9a8">RING — · SPOT — · DROP —</div>
+<div data-h="chips" style="position:absolute;right:34px;bottom:32px;letter-spacing:.14em;text-align:right;font-size:11px;color:#ffe9a8">RING — · SPOT — · DROP — · ⚡—</div>
 <div data-h="banner" style="position:absolute;left:50%;top:56px;transform:translateX(-50%);font-size:22px;letter-spacing:.22em;opacity:0;transition:opacity .25s;text-align:center"></div>
 <div data-h="hint" style="position:absolute;left:50%;bottom:70px;transform:translateX(-50%);font-size:11px;letter-spacing:.18em;color:#cfe6ff;opacity:.9;text-align:center"></div>`
         wrap.style.position = 'relative'
@@ -70,7 +70,11 @@ const SkywardGame = () => {
         const sfxFor = (g, e) => {
             switch (e.kind) {
                 case 'ring': tone(660 + e.idx * 60, 0.09, 'square', 0.09); break
-                case 'start': sweep(320, 780, 0.28, 'triangle', 0.1); break
+                case 'gate': tone(392 + e.idx * 74, 0.12, 'triangle', 0.1); break
+                case 'start':
+                    if (e.event === 'THUNDERPASS') audioController.playFilteredNoise(1.1, 0.32, 90) // thunderclap entrance
+                    else sweep(320, 780, 0.28, 'triangle', 0.1)
+                    break
                 case 'finish': tone(660, 0.1); tone(880, 0.1, 'square', 0.09, 0.11); tone(1174, 0.16, 'square', 0.09, 0.22); break
                 case 'graduate': audioController.playFanfare(); break
                 case 'crash': audioController.playFilteredNoise(0.4, 0.3, 260); break
@@ -90,6 +94,7 @@ const SkywardGame = () => {
             for (const e of g.events) {
                 sfxFor(g, e)
                 if (e.kind === 'ring') banner(`RING ${e.idx}/8`, 1.1)
+                if (e.kind === 'gate') banner(e.idx === 1 ? 'GATE 1/5 — ENTER THE STORM' : `GATE ${e.idx}/5`, 1.2)
                 if (e.kind === 'start') banner(e.event, 2.2)
                 if (e.kind === 'finish') banner(`${e.event} — ${e.gained}`, 2.6)
                 if (e.kind === 'graduate') banner(`LICENSE: ${e.license} — ${e.score}`, 4)
@@ -174,7 +179,7 @@ const SkywardGame = () => {
                         step(gs, padNow())
                         drain(gs)
                         if (gs.done) {
-                            setOver({ score: gs.score, license: gs.license })
+                            setOver({ score: gs.score, license: gs.license, stormWings: gs.stormWings })
                             setMode('over')
                         }
                     } else {
@@ -194,13 +199,14 @@ const SkywardGame = () => {
             const shown = sc === 'attract' ? null : gs
             E.score.textContent = shown ? `SCORE ${shown.score}` : ''
             E.chips.textContent = shown
-                ? `RING ${shown.grad.ring ?? '—'} · SPOT ${shown.grad.spot ?? '—'} · DROP ${shown.grad.drop ?? '—'}`
+                ? `RING ${shown.grad.ring ?? '—'} · SPOT ${shown.grad.spot ?? '—'} · DROP ${shown.grad.drop ?? '—'} · ⚡ ${shown.stormWings ? shown.grad.pass : '—'}`
                 : ''
-            if (sc === 'play' && shown.phase === 'ring') E.speed.textContent += ` · ${shown.eventT.toFixed(1)}s`
+            if (sc === 'play' && (shown.phase === 'ring' || shown.phase === 'pass')) E.speed.textContent += ` · ${shown.eventT.toFixed(1)}s`
             const hint = sc === 'play'
-                ? (shown.marker ? `${shown.marker === 'ring' ? 'RING RUN' : shown.marker === 'spot' ? 'SPOT LANDING' : 'TARGET DROP'} — PRESS SPACE`
+                ? (shown.marker ? `${shown.marker === 'ring' ? 'RING RUN' : shown.marker === 'spot' ? 'SPOT LANDING' : shown.marker === 'pass' ? 'THUNDERPASS' : 'TARGET DROP'} — PRESS SPACE`
                     : shown.phase === 'drop' ? 'A THRUST · B DROP · land at the pads'
-                        : shown.phase === 'free' ? `CRUISE · markers glow near launches · B at school recycles craft` : '')
+                        : shown.phase === 'pass' ? `GATE ${shown.passIdx}/5 · fight the gusts · the core pulls down`
+                            : shown.phase === 'free' ? `CRUISE · markers glow near launches · B at school recycles craft` : '')
                 : ''
             if (E.hint.textContent !== hint) E.hint.textContent = hint
             if (bannerRef.current.until && performance.now() > bannerRef.current.until) {
@@ -248,13 +254,14 @@ const SkywardGame = () => {
                 getState: () => [
                     `screen=${screenRef.current} phase=${gs.phase} craft=${gs.craft}`,
                     `pos=${gs.p.x.toFixed(0)},${gs.p.y.toFixed(0)},${gs.p.z.toFixed(0)} hdg=${(gs.heading * 57.3).toFixed(0)}° spd=${gs.speed.toFixed(1)} vy=${gs.vy.toFixed(1)}`,
-                    `rings=${gs.ringsPassed} dropIdx=${gs.dropIdx} grad=${JSON.stringify(gs.grad)} score=${gs.score}`,
+                    `rings=${gs.ringsPassed} pass=${gs.passIdx} dropIdx=${gs.dropIdx} grad=${JSON.stringify(gs.grad)} score=${gs.score}`,
                     `marker=${gs.marker ?? '-'} crashes=${gs.crashes} seed=${gs.seed}`,
                 ],
                 actions: [
                     { label: 'ring', run: () => (checkout(gs, 'ring'), 'ring run') },
                     { label: 'spot', run: () => (checkout(gs, 'spot'), 'spot') },
                     { label: 'drop', run: () => (checkout(gs, 'drop'), 'drop') },
+                    { label: 'thunder', run: () => (checkout(gs, 'pass'), 'thunderpass') },
                     { label: 'recycle', run: () => (recycleCraft(gs), gs.craft) },
                     { label: 'graduate', run: () => { gs.grad = { ring: 800, spot: 700, drop: 999 }; gs.score = 2499; gs.done = true; gs.license = 'ACE'; setOver({ score: 2499, license: 'ACE' }); setMode('over') } },
                 ],
@@ -294,6 +301,9 @@ const SkywardGame = () => {
             {over && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60">
                     <div className="text-3xl font-black tracking-[0.25em] text-amber-300">{over.license} LICENSE</div>
+                    {over.stormWings && (
+                        <div className="mt-2 text-sm font-bold tracking-[0.3em] text-violet-300">⚡ STORM WINGS ⚡</div>
+                    )}
                     <div className="mt-3 text-lg tracking-[0.2em] text-white">FINAL SCORE {over.score}</div>
                     <div className="mt-2 text-xs tracking-[0.2em] text-white/70">INSTRUCTORS VOSS · NIMBUS · PIP SALUTE YOU</div>
                     <div className="mt-8 text-[11px] tracking-[0.25em] text-white/70 animate-pulse">ANY KEY · TAP TO FLY AGAIN</div>
