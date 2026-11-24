@@ -107,6 +107,9 @@ export const SCOPES = {
   tidal: { dirs: ['src/games/TidalRush'], lint: [], checks: ['tidalcheck'], smoke: [] },
   // STOMPTOWN (#3094): pure-seeded city-breaker; Node-only rules gate, no browser.
   stomp: { dirs: ['src/games/Stomptown'], lint: [], checks: ['stompcheck', ['stompcheck', true]], smoke: [] },
+  // SKYWARD (#3105): pure-seeded flight school; the rules gate is Node-only (the
+  // three.js shell has its own browser lane-run, skywardplay).
+  skyward: { dirs: ['src/games/Skyward'], lint: [], checks: ['skywardcheck', ['skywardcheck', true]], smoke: [] },
 };
 
 // #1575: the explicit manual park. A check script that joins scripts/ with a
