@@ -182,6 +182,29 @@ const clickLast = async (page, sel) => page.evaluate((s) => {
     await page.close()
 }
 
+// --- #3118 rollout: a granted game renders the Sony cluster when switched ---
+{
+    const { page, errors } = await mkPage('/double-dragon?padtype=full')
+    const v = await vcs(page)
+    r.check('dd: FULL grants dpad+stick+diamond', v.includes('dpad') && v.includes('fixedstick') && v.includes('facediamond'), v.join(','))
+    r.check('dd: diamond carries JUMP/KICK/PUNCH codes', await page.evaluate(() => [...document.querySelectorAll('[data-vc="a"],[data-vc="b"],[data-vc="fx"]')].map((e) => e.getAttribute('data-key')).sort().join(',') === 'KeyX,KeyZ,Space'))
+    await page.screenshot({ path: 'qa-art/padtype-dd-full.png' })
+    r.check('dd: zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
+    await page.close()
+}
+{
+    const { page, errors } = await mkPage('/r-type?padtype=full')
+    const v = await vcs(page)
+    r.check('rtype: FULL renders dpad+stick+diamond', v.includes('dpad') && v.includes('fixedstick') && v.includes('facediamond'), v.join(','))
+    r.check('rtype: diamond keeps FIRE/POD/THROW (no orphaned third verb)', await page.evaluate(() => [...document.querySelectorAll('[data-vc="a"],[data-vc="b"],[data-vc="fx"]')].map((e) => e.getAttribute('data-key')).sort().join(',') === 'KeyB,KeyN,Space'))
+    await page.evaluate(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Question', key: '?', bubbles: true })) })
+    await page.waitForTimeout(400)
+    const chips = await page.evaluate(() => [...document.querySelectorAll('[data-padtype]')].map((e) => e.getAttribute('data-padtype')))
+    r.check('rtype: pause offers D-PAD+FULL (default derived)', [...new Set(chips)].sort().join(',') === 'dpad,full', 'chips=' + chips.join(','))
+    r.check('rtype: zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
+    await page.close()
+}
+
 // --- an untouched game keeps its exact pad ---
 {
     const { page } = await mkPage('/galaga')
