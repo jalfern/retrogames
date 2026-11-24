@@ -168,7 +168,7 @@ jobs:
       - run: npm run watchsoakcheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run watchphonecheck
-        if: contains(fromJSON(env.KEYS), 'core')
+        if: contains(fromJSON(env.KEYS), 'core') || contains(fromJSON(env.KEYS), 'watchui')
       - run: npm run watchpillcheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run feedbackcheck

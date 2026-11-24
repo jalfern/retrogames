@@ -152,5 +152,12 @@ ok(mounted === entries.length - Object.keys(SKIP_ATTRACT).length,
 ok(JSON.parse(read('package.json')).scripts.watchphonecheck === 'node scripts/watchphonecheck.mjs', 'npm alias registered')
 ok(read('.github/workflows/ci.yml').includes('npm run watchphonecheck'), 'ci.yml runs it (static job)')
 ok(read('scripts/checks.mjs').includes("'watchphonecheck'"), 'checks.mjs CORE lists it')
+// #3102: game-scope PRs must face these pins too — #3098 (a SuperMario-only diff
+// moving the attract cluster into the pad zone) passed `static` because only
+// `core` selected this check. Pin the route so deleting it reddens the nightly.
+ok(read('scripts/checks.mjs').includes("keys.add('watchui')") && read('scripts/checks.mjs').includes('watchui: {'),
+    'checks.mjs routes src/games/** diffs to this gate (#3102)')
+ok(read('.github/workflows/ci.yml').includes("contains(fromJSON(env.KEYS), 'watchui')"),
+    'ci.yml fires this gate for game-scope PRs (#3102)')
 
 R.exit()
