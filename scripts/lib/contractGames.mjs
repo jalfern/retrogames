@@ -60,6 +60,7 @@ const GAMES = [
     { id: 'r-type', path: '/r-type' }, // #2808: Jon's #2795 second flagship, S1 Armament
     { id: 'pinball', path: '/pinball' }, // #3103: the shared table engine, rung 1
     { id: 'tidal-rush', path: '/tidal-rush' }, // #3104: jetski slalom, rung 1 (sunny bay)
+    { id: 'grind-city', path: '/grind-city' }, // #3106: skate park, one park long lines
     { id: 'skyward', path: '/skyward' }, // #3105: flight school, rung 1
     { id: 'marble-rush', path: '/marble-rush' }, // #3107: sky-shelf marble roller, rung 1
 ]
@@ -147,6 +148,9 @@ const PATTERNS = {
     // occasional nudge. Death (drain) is legal: balls reset and hashes stay deterministic.
     'pinball': (i) => ({ left: i % 40 < 12, right: i % 40 >= 20 && i % 40 < 32, down: i >= 5 && i < 28, b: i % 199 < 2 }),
     'tidal-rush': (i) => ({ up: i % 200 < 160, left: i % 200 >= 120 && i % 200 < 160, right: i % 200 >= 40 && i % 200 < 80, a: i % 311 < 3, b: i % 155 < 6 }),
+    // #3106: carving S-lines, periodic ollies (a) and pumps (b). Bails are
+    // legal: the tumble respawns and hashes stay deterministic.
+    'grind-city': (i) => ({ left: i % 240 < 50, right: i % 240 >= 120 && i % 240 < 170, a: i % 150 < 4, b: i % 90 < 40 }),
     // #3105: analog sway on both axes, long GO presses (thrust / marker starts),
     // rare DROP taps. Crashes are legal: the ground crew ferries you back and
     // hashes stay deterministic.
