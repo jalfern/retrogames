@@ -88,6 +88,10 @@ let cfg = null // { id, pad }
 
 export function configurePadTypes(id, pad) {
     cfg = { id, pad }
+    // The route effect runs AFTER the pad's first render — re-fire the switch
+    // event so a choice saved from a previous visit applies on a fresh load
+    // (without this, the pad renders the default and only updates on switch).
+    window.dispatchEvent(new CustomEvent('retrogames:padtype', { detail: { type: currentPadType(pad) } }))
 }
 export function padTypeConfig() {
     return cfg
@@ -97,12 +101,12 @@ export function padTypeConfig() {
 // store holds the same declaration, its game id supplies the saved choice).
 export function currentPadType(pad) {
     const p = pad || (cfg && cfg.pad) || null
-    const id = cfg && (!pad || cfg.pad === cfg.pad) ? cfg.id : null
+    const id = cfg && (!pad || pad === cfg.pad) ? cfg.id : null
     return resolveType(p, id ? readSaved(id) : null, urlPadType())
 }
 
 export function setPadType(pad, type) {
-    const id = cfg && (!pad || cfg.pad === cfg.pad) ? cfg.id : null
+    const id = cfg && (!pad || pad === cfg.pad) ? cfg.id : null
     const t = resolveType(pad, type, urlPadType())
     if (id) writeSaved(id, t)
     window.dispatchEvent(new CustomEvent('retrogames:padtype', { detail: { type: t } }))

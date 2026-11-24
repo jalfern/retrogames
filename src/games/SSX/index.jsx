@@ -10,6 +10,7 @@ import * as THREE from 'three'
 import PauseOverlay from '../../components/PauseOverlay'
 import Lobby from '../../components/Lobby'
 import VirtualControls from '../../components/VirtualControls'
+import { currentPadType } from '../../components/padTypes'
 import AttractMessage from '../../components/AttractMessage'
 import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
@@ -1334,6 +1335,15 @@ const SSXGame = () => {
     const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false }, [])
     const play = screen === 'play'
     const seatName = (seat) => (netUi && netUi.slot === seat ? 'YOU' : 'P' + (seat + 1))
+    // #3108: in FULL type the shell pad carries the stick on the same
+    // padState analog line this overlay feeds, so the game-side #894 stick
+    // steps aside and the Sony cluster owns the left hand. STICK keeps it.
+    const [padTypeUI, setPadTypeUI] = useState(() => currentPadType())
+    useEffect(() => {
+        const on = () => setPadTypeUI(currentPadType())
+        window.addEventListener('retrogames:padtype', on)
+        return () => window.removeEventListener('retrogames:padtype', on)
+    }, [])
 
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
@@ -1447,7 +1457,7 @@ const SSXGame = () => {
             {/* #894 (Jon's #873 answer): the physical analogue stick — always
                 visible base + knob. x = carve depth through the sim's press ramp,
                 y = body tilt (forward tucks + commits a FRONT flip, back scrubs). */}
-            {play && !paused && TOUCH_PAD && (
+            {play && !paused && TOUCH_PAD && padTypeUI !== 'full' && (
                 <div
                     data-ssx-stick="1"
                     className="fixed z-[60] rounded-full pointer-events-auto select-none"

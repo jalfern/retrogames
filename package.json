@@ -232,6 +232,8 @@
     "qbertcheck": "node scripts/qbertcheck.mjs",
     "qbertdive": "node scripts/qbertdive.mjs",
     "vpadcheck": "node scripts/vpadcheck.mjs",
+    "padtypecheck": "node scripts/padtypecheck.mjs",
+    "padtypeplay": "node scripts/padtypeplay.mjs",
     "touchselectcheck": "node scripts/touchselectcheck.mjs",
     "steercheck": "node scripts/steercheck.mjs",
     "vpadboot": "node scripts/vpadboot.mjs",

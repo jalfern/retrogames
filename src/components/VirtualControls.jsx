@@ -826,7 +826,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdActio
     const diamond = tFull && !!(fxL || fxT)
     // The POSITION carries the PlayStation glyph, so □/△/○/✕ prefixes in labels
     // are stripped — what's left is what the button DOES in this game (#906 law).
-    const verbOf = (label) => (label || '').replace(/^[□△○✕×]\s*/, '')
+    const verbOf = (label) => (label || '').replace(/^(?:[□△○✕×]|L1|L2|R1|R2)\s*/, '')
     const chipCls = (code, tintOn, tintOff) => `rounded-xl px-2 flex items-center justify-center ring-1 ${glass} ${exHeld.has(code) ? `${tintOn} ring-white/90 scale-95 brightness-150` : `${tintOff} ring-white/50`}`
     const shChip = (b) => (
         <div
