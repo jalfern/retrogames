@@ -796,6 +796,25 @@ if (!NODE_ONLY) {
         st = await page.evaluate(() => window.__tidybotTest.state())
         ok(st.dwDoor > 0.9, 'real A opens the dishwasher rack end-to-end')
 
+        // #3088: real-SPACE gates must wait WORLD ticks, not wall ms. A long task on a
+        // busy dev box holds rAF 100–200 ms: the keypress is never lost (edgeA rides
+        // until the next doSim), but waitForTimeout(80) + one read expired before the
+        // sim consumed the press, so the gates blamed the game for the runner's stall.
+        // Poll until the sim tick has advanced past the press (input dispatches before
+        // rAF, so 2 ticks = consumed + one settle frame) with a generous budget. On a
+        // healthy box the first poll already answers — this can only ever wait longer,
+        // never shorter, than the old fixed 80 ms it replaces.
+        const pressSpace = async (p, adv = 2) => {
+            await p.keyboard.press('Space')
+            const t0 = await p.evaluate(() => window.__tidybotTest.state().tick)
+            const deadline = Date.now() + 2500
+            for (;;) {
+                const st = await p.evaluate(() => window.__tidybotTest.state())
+                if (st.tick - t0 >= adv) return st
+                if (Date.now() > deadline) return st
+                await p.waitForTimeout(16)
+            }
+        }
         // #2266 CARRY with real keys: two SPACE presses load both arms and the
         // tray cargo is PAINTED at the arm; a third press adds nothing.
         await page.evaluate(() => {
@@ -809,13 +828,9 @@ if (!NODE_ONLY) {
             )
         })
         await page.waitForTimeout(80)
-        await page.keyboard.press('Space')
-        await page.waitForTimeout(80)
-        let carry = await page.evaluate(() => window.__tidybotTest.state())
+        let carry = await pressSpace(page)
         ok(carry.held === 'cup' && carry.held2 === '', 'a real SPACE lifts the nearest litter into the front arm')
-        await page.keyboard.press('Space')
-        await page.waitForTimeout(80)
-        carry = await page.evaluate(() => window.__tidybotTest.state())
+        carry = await pressSpace(page)
         ok(carry.held === 'cup' && carry.held2 === 'apple', 'a second real SPACE loads the tray arm too')
         const trayPx = await page.evaluate(() => {
             const cv = window.__tidybotTest.canvas()
@@ -828,9 +843,7 @@ if (!NODE_ONLY) {
             return { red, X, Y }
         })
         ok(trayPx.red >= 4, `the tray apple is painted at the arm (${trayPx.red} red px at ${trayPx.X},${trayPx.Y})`)
-        await page.keyboard.press('Space')
-        await page.waitForTimeout(80)
-        carry = await page.evaluate(() => window.__tidybotTest.state())
+        carry = await pressSpace(page)
         ok(carry.held === 'cup' && carry.held2 === 'apple', 'a third press beside litter adds nothing (ARMS FULL end-to-end)')
 
         // #2250 GLIDE: a real mouse tap issues a real order and the bot walks
@@ -1112,10 +1125,8 @@ if (!NODE_ONLY) {
             )
         })
         await paper.waitForTimeout(80)
-        await paper.keyboard.press('Space')
-        await paper.waitForTimeout(80)
-        await paper.keyboard.press('Space')
-        await paper.waitForTimeout(80)
+        await pressSpace(paper)
+        await pressSpace(paper)
         const pRed = await paper.evaluate(() => {
             const cv = window.__tidybotTest.canvas()
             const gs = window.__tidybotTest.sim()
