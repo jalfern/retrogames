@@ -5,11 +5,6 @@
       "label": "watchcheck",
       "issue": 3206,
       "reason": "red-main-2h: FLOORBOSS watching-branch pad-feed assertion fails on CI (908/909, run 45482317911); #3206 owns the fix"
-    },
-    {
-      "label": "zeldaplay",
-      "issue": 3207,
-      "reason": "red-main-2h: face-pixel sensor sees 0 px on CI (14/19, run 45482317911); #3207 owns the fix"
     }
   ]
 }

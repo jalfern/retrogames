@@ -8,7 +8,7 @@
 //
 //   npm run zeldaplay     (needs `npm run dev`)
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
-import { screenOf, at, isWall, TILE } from '../src/games/Zelda/world.js'
+import { screenOf, at, isWall, TILE, HUD_H } from '../src/games/Zelda/world.js'
 
 const URL = process.env.OP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/zelda`
 await requireDevServer(URL)
@@ -33,13 +33,19 @@ if (!mounted) {
     r.exit(browser)
 }
 
-const lit = await page.evaluate(() => {
-    const c = document.querySelector('canvas')
-    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
-    let n = 0
-    for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 30) n++
-    return n
-})
+// Poll: the hook goes live with the component, one frame BEFORE the loop's
+// first draw() lands — a single read can see a blank canvas (0 lit).
+let lit = 0
+for (let i = 0; i < 40 && lit <= 50; i++) {
+    lit = await page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 30) n++
+        return n
+    })
+    if (lit <= 50) await page.waitForTimeout(50)
+}
 r.check('the attract screen draws (lit pixels on canvas)', lit > 50, `${lit} lit`)
 
 const st = () => page.evaluate(() => ({
@@ -62,18 +68,25 @@ const OK = (scrId, c, rl) => {
 // (An invisible player passed every coordinate-only check in v1 of this
 // script while Jon died to octoroks he could not see.) Polls through the
 // legitimate post-hit invincibility flicker (0.3 alpha on blink frames).
+// #3132 moved the scene render under the top HUD band (`c.translate(0, HUD)`
+// in index.jsx) — the canvas y of everything the sim places at y is now
+// y + HUD_H (64). Reading sim-y directly saw an empty band 64 px above Link
+// and reported 0 face px on every probe (nightly run 45482317911, #3207 —
+// first CI bite because full-smoke sat behind static failures since #3136).
+// The probe maps sim→canvas here; the sim contract (px/py in world px) is
+// untouched, so this calibrates the sensor, not the game.
 const faceAt = async (tries = 20) => {
     for (let k = 0; k < tries; k++) {
-        const n = await page.evaluate(() => {
+        const n = await page.evaluate((hud) => {
             const c = document.querySelector('canvas')
             const g = window.__zeldaTest.game()
             const x = Math.max(0, Math.round(g.px + 1))
-            const y = Math.max(0, Math.round(g.py - 3))
+            const y = Math.max(0, Math.round(g.py - 3 + hud))
             const d = c.getContext('2d').getImageData(x, y, 16, 22).data
             let n = 0
             for (let i = 0; i < d.length; i += 4) if (d[i] === 0xf8 && d[i + 1] === 0xb8 && d[i + 2] === 0) n++
             return n
-        })
+        }, HUD_H)
         if (n >= 8) return n
         await page.waitForTimeout(50)
     }
