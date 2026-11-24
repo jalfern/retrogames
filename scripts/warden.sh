@@ -170,6 +170,10 @@ main() {
     HALT_ISSUES=$(print -r -- "$ISSUES" | jq -r '[.[] | select(any(.labels[]; .name == "halt")) | "#\(.number)"] | join(",")')
     HALTED=no; [[ -n "$HALT_ISSUES" ]] && HALTED=yes
     QWAIT=$(count_label waiting-jon)
+    # #3093: open hand-lane work (docs/MANUAL-LANE.md) rides the pulse so the
+    # board and the shift report can see it; the planner already keeps these
+    # out of every automatic ladder.
+    MANUAL=$(count_label lane:manual)
     SHIPPED=$(gh api "repos/$GH/issues?state=all&labels=shipped&per_page=100" --jq length)
     GATE=$(gh api "repos/$GH/pulls?state=open&per_page=1" --jq '.[0].number // empty')
     GATE=${GATE:+#$GATE}; GATE=${GATE:-none}
@@ -225,7 +229,7 @@ main() {
         pgrep -f "opencode run.*THE FORGE on slot b\\." >/dev/null && nb=$((nb + 1))
         [[ -n "$ASLEEP" ]] && suf=" $ASLEEP"
         [[ -n "$SHOTS" ]] && suf="$suf $SHOTS"
-        echo "$(date +%H:%M) alive=$1 queue=$QUEUE building=$BUILDING shipped=$SHIPPED main=$MAIN qa=$QA_OPEN mini=$MINI gate=$GATE halted=$HALTED questions=$QWAIT builders=$nb/2$suf actions=$2"
+        echo "$(date +%H:%M) alive=$1 queue=$QUEUE building=$BUILDING shipped=$SHIPPED main=$MAIN qa=$QA_OPEN mini=$MINI gate=$GATE halted=$HALTED questions=$QWAIT manual=$MANUAL builders=$nb/2$suf actions=$2"
     }
     comment() {      # $1 = issue number, $2 = text
         act gh api "repos/$GH/issues/$1/comments" -f body="$2" --silent || log "comment on #$1 failed"
@@ -400,7 +404,8 @@ main() {
             # planner missing/broken: keep the factory moving on the pre-#1258
             # inline ladder, slot a only (the fallback cannot name two targets).
             A_TARGET=$(print -r -- "$ISSUES" | jq -r --arg owner "$OWNER" '
-                [.[] | select(any(.labels[]; .name == "stalled") | not)] as $ok
+                [.[] | select(any(.labels[]; .name == "stalled") | not)
+                      | select(any(.labels[]; .name == "lane:manual") | not)] as $ok
                 | ([$ok[] | select(any(.labels[]; .name == "building"))]
                    + [$ok[] | select(any(.labels[]; .name == "steer")
                                       and .user.login == $owner
