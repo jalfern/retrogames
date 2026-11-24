@@ -562,6 +562,14 @@ if (MUT) {
         ['KO crowd surge (filtered swell)', /playFilteredNoise\(1\.1, 0\.16, 480\)/],
         ['stage bed starts with the fight', /audioController\.startMusic\(stage\.bed\)/],
         ['stage bed stops on unmount', /audioController\.stopMusic\(\)/],
+        // #3144 — the juice bar (#1130): the plain limbs answer the press too.
+        ['punch snap at swing start (light/heavy split)', /playFilteredNoise\(heavy \? 0\.12 : 0\.08, heavy \? 0\.09 : 0\.07, heavy \? 1400 : 2400\)/],
+        ['heavy punch body swipe', /playSweep\(300, 120, 0\.1, 'triangle', 0\.05\)/],
+        ['kick swipe at swing start (light/heavy split)', /playFilteredNoise\(heavy \? 0\.14 : 0\.1, heavy \? 0\.11 : 0\.08, heavy \? 900 : 1500\)/],
+        ['kick body sweep (light/heavy split)', /playSweep\(heavy \? 240 : 340, heavy \? 80 : 140, heavy \? 0\.14 : 0\.1, 'triangle', 0\.05\)/],
+        ['fireball push-off at launch', /playSweep\(heavy \? 220 : 320, heavy \? 660 : 880, 0\.14, 'sine', 0\.05\)/],
+        ['swing weight splits at dmg >= 9', /const heavy = \(mv\.dmg \|\| 0\) >= 9/],
+        ['contract state() exposes phase (PREP can see the intro, #3144)', /state\(\) \{\s*\n\s*if \(!gs\)[\s\S]{0,420}phase: gs\.phase/],
     ]
     for (const [label, re] of audioGates) ok(re.test(gsrc), `audio gate: ${label}`)
     for (const fid of ['nyx', 'cinder', 'vess', 'riv']) ok(gsrc.includes(`fid === '${fid}'`), `finisher sting: ${fid} voice`)
@@ -572,6 +580,12 @@ if (MUT) {
         .replace("audioController.playSweep(160, 640, 0.16, 'sawtooth', 0.055)", '')
         .replace("audioController.playTone(82, 0.22, 'square', 0.12)", '')
     ok(!/playSweep\(160, 640, 0\.16, 'sawtooth', 0\.055\)/.test(mutSrc) && !mutSrc.includes("playTone(82, 0.22, 'square', 0.12)"), 'mutant: stripped whoosh/sting fails the gate (harness bites)')
+    // #3144 mutants: mute the punch snap, and hide phase from the contract
+    // state — each must fail the gate above.
+    const mutJuice = gsrc.replace('audioController.playFilteredNoise(heavy ? 0.12 : 0.08, heavy ? 0.09 : 0.07, heavy ? 1400 : 2400)', '')
+    ok(!/playFilteredNoise\(heavy \? 0\.12 : 0\.08/.test(mutJuice), 'mutant: muted punch snap fails the gate (harness bites)')
+    const mutPhase = gsrc.replaceAll('phase: gs.phase,', '')
+    ok(!/state\(\) \{\s*\n\s*if \(!gs\)[\s\S]{0,420}phase: gs\.phase/.test(mutPhase), 'mutant: phase stripped from contract state fails the gate (harness bites)')
 }
 
 // ---- #1106 stage-life wiring gate ---------------------------------------------------
@@ -2048,6 +2062,42 @@ if (!MUT) {
         ok(sawBreak >= 2, `real CPU play smashes the furniture (${sawBreak} props down across ${rounds || 1} bout${rounds === 1 ? '' : 's'})`)
         ok(breaksFed >= sawBreak, `every break fed the presentation pool (${breaksFed} fx for ${sawBreak} breaks)`)
         ok(sawOrbView, 'dropped loot floats in the GL pool (orb views spawn from engine orbs)')
+    }
+
+    // #3144 juice law — the primary action answers inside the window. Seeded
+    // through the contract exactly as the juice audit does: PREP's phase walk
+    // only clears the 150-tick round intro because state() now exposes phase,
+    // and the real Space press (the pad's "a") must start the swing AND
+    // schedule its snap within ~12 frames. This is the audit's own
+    // instrument, gated to pass.
+    {
+        const juice = await page.evaluate(async () => {
+            const g = window.__game
+            const waits = ['banner', 'attract', 'intro', 'ready', 'menu', 'start', 'over', 'gameover', 'game over', 'select', 'choose', 'levelup', 'level up', 'pause', 'paused', 'dying', 'respawn', 'brief', 'story']
+            let phase = ''
+            for (const n of [0, 90, 180, 270, 360]) {
+                g.reset(7)
+                if (n > 0) g.step({}, n)
+                g.release()
+                const s = g.state()
+                phase = String(s.phase || '')
+                if (!s.done && !waits.includes(phase)) break
+            }
+            const s0 = window.__audioSfx()
+            const key = (t, c) => window.dispatchEvent(new KeyboardEvent(t, { code: c, key: c === 'Space' ? ' ' : c, bubbles: true }))
+            key('keydown', 'Space')
+            let sawPunch = false
+            for (let i = 0; i < 12; i++) {
+                await new Promise((r) => requestAnimationFrame(r))
+                const s = g.state()
+                if (s.fighters && s.fighters[0].st === 'attack') sawPunch = true
+            }
+            key('keyup', 'Space')
+            return { phase, sawPunch, sfx: window.__audioSfx() - s0 }
+        })
+        ok(juice.phase === 'fight', `state() exposes phase — the audit's PREP clears the round intro (${juice.phase})`)
+        ok(juice.sawPunch, `Space drives a real attack post-intro (${juice.phase})`)
+        ok(juice.sfx > 0, `juice #3144: 'a' answers with a swing sound (${juice.sfx} sfx in the press window)`)
     }
 
     await page.keyboard.press('Escape')
