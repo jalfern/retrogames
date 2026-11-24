@@ -123,11 +123,13 @@ confuse the two queues.
        per step 6 (keep `building-qa` + the pushed branch) and the next
        session resumes it. A real queued title outranks the flagship polish
        stage in e): Jon's queue beats self-directed work, so try e′ before e).
-     e″) **Art & fidelity pass — node `mini` only (Jon, 2026-11-23).** When e′) and e)
-       give nothing, the mini lane does one art & fidelity pass instead of stopping.
+     e″) **Art & fidelity pass — every QA lane; work follows the model (Jon, 2026-11-23).**
+       When e′) and e) give nothing, do one art & fidelity pass instead of stopping (not in the
+       builder spill slot or on mbp). Your prompt says which rules apply to your model.
        *Primitive first, then fidelity:* a game's simple look is fine while its engine
        and gameplay settle; once it plays end to end, iterate on how it looks.
-       0. **`reimagine` first.** If an open issue carries the `reimagine` label (Jon's call,
+       0. **`reimagine` first — only the lane whose model is Inkling** (its prompt says so; every
+          other lane skips this rule and never claims a `reimagine` issue). If an open issue carries the `reimagine` label (Jon's call,
           only he adds it), that game beats the rotation: claim it and give the game a
           *completely new look* as an **alternate skin** — selectable by a toggle and a
           `?style=reimagined` URL parameter — with the current look left as the default
@@ -161,7 +163,7 @@ confuse the two queues.
           rotation in 1. sees it. Stage only your files (never `git add -A`).
        6. Too big for one session → leave the ranked list on the issue (the rest become
           `feedback` items) and checkpoint per step 6.
-    No candidates, no queue item and no flagship gap (`idle-kick.mjs qa` says NONE) and, on `mini`, no title for e″) → STOP
+    No candidates, no queue item and no flagship gap (`idle-kick.mjs qa` says NONE) and no title for e″) → STOP
     (comment nothing; silence is the correct output).
 
 3. **Claim:** run `scripts/qa-claim.sh <n> <your node> "<one-line plan>"`;
