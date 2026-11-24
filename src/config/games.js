@@ -371,7 +371,7 @@ export const GAMES = [
     },
     {
         path: '/galaga',
-        pad: { layout: 'stick', buttons: [], analog: false },
+        pad: { layout: 'stick', buttons: [], analog: false, supports: ['stick', 'full'], reason: '#3118 rollout — chrome audit clean (top-right chip + pointer-events-none banner); full = d-pad+stick left, ✕ FIRE right for the one-verb shooter' },
         builtBy: 'forge',
         added: '2026-10-10',
         component: GalagaGame,
@@ -484,7 +484,7 @@ export const GAMES = [
     },
     {
         path: '/spy-hunter',
-        pad: { layout: 'stick', buttons: [{ label: 'MSL', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'MSL', code: 'KeyX' }], analog: false, supports: ['stick', 'full'], reason: '#3118 rollout — chrome audit clean (top-right chip + pointer-events-none banner); full = d-pad+stick steer, ✕ machine-gun · ○ MSL' },
         component: SpyHunterGame,
         label: 'SPY HUNTER',
         theme: 'dark',
@@ -553,7 +553,7 @@ export const GAMES = [
     },
     {
         path: '/joust',
-        pad: { layout: 'stick', buttons: [], analog: false },
+        pad: { layout: 'stick', buttons: [], analog: false, supports: ['stick', 'full'], reason: '#3118 rollout — chrome audit clean (top-right chip + pointer-events-none banner); full = d-pad+stick left, ✕ flaps (Space) right' },
         builtBy: 'forge',
         added: '2026-10-14',
         component: JoustGame,
@@ -1307,7 +1307,7 @@ export const GAMES = [
     },
     {
         path: '/contra',
-        pad: { layout: 'dpad', aLabel: 'JUMP', buttons: [{ label: 'FIRE', code: 'KeyX' }], reason: 'the cabinet seam: the thumb jumps and the finger fires — arrows run and aim all eight ways' },
+        pad: { layout: 'dpad', aLabel: 'JUMP', buttons: [{ label: 'FIRE', code: 'KeyX' }], supports: ['dpad', 'full'], reason: 'the cabinet seam: the thumb jumps and the finger fires — arrows run and aim all eight ways; full offered #3118 (chrome audit clean — ✕ JUMP · ○ FIRE, no verb lost)' },
         builtBy: 'forge',
         added: '2026-11-19',
         visibility: 'public',
@@ -1320,7 +1320,7 @@ export const GAMES = [
     },
     {
         path: '/double-dragon',
-        pad: { layout: 'dpad', aLabel: 'JUMP', buttons: [{ label: 'KICK', code: 'KeyX' }, { label: 'PUNCH', code: 'KeyZ', pad: 2 }], reason: 'the cabinet seam: thumb walks the street (depth is the dodge), the two fingers hold the fight — kick knocks down, punch jabs quick' },
+        pad: { layout: 'dpad', aLabel: 'JUMP', buttons: [{ label: 'KICK', code: 'KeyX' }, { label: 'PUNCH', code: 'KeyZ', pad: 2 }], supports: ['dpad', 'full'], reason: 'the cabinet seam: thumb walks the street (depth is the dodge), the two fingers hold the fight — kick knocks down, punch jabs quick; full offered #3118 (□ PUNCH keeps the third verb on the diamond — ✕ JUMP · ○ KICK · □ PUNCH)' },
         builtBy: 'forge',
         added: '2026-11-20',
         visibility: 'public',
@@ -1333,7 +1333,7 @@ export const GAMES = [
     },
     {
         path: '/r-type',
-        pad: { layout: 'dpad', aLabel: 'FIRE', buttons: [{ label: 'FIRE', code: 'KeyX' }, { label: 'POD', code: 'KeyB', pad: 2 }], reason: 'the cabinet seam: the thumb flies the R-7C through the lane war, the fingers own the fight — hold FIRE for the charge arms, tap POD to deploy and recall the S.E.E.D.' },
+        pad: { layout: 'dpad', aLabel: 'FIRE', buttons: [{ label: 'FIRE', code: 'KeyX' }, { label: 'POD', code: 'KeyB' }, { label: 'THROW', code: 'KeyN', pad: 3 }], supports: ['dpad', 'full'], reason: 'the cabinet seam: the thumb flies the R-7C through the lane war, the fingers own the fight — hold FIRE for the charge arms, tap POD to deploy and recall the S.E.E.D.; full offered #3118 (third verb #2931 rides △ THROW in the diamond — ✕ FIRE · ○ POD · △ THROW, no verb lost)' },
         builtBy: 'forge',
         added: '2026-11-20',
         visibility: 'public',

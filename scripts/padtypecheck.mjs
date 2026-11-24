@@ -13,8 +13,9 @@
 //      on −beta, the same physical roll felt as the same steer), magnitude
 //      clamp, re-centre zeroes, the shared radial dead zone.
 //   5. The registry pilots declare their schemes (SSX full, MARBLE MADNESS
-//      stick+tilt, PAC-MAN dpad+stick) and validPad accepts them / rejects
-//      nonsense types.
+//      stick+tilt, PAC-MAN dpad+stick), the #3118 rollout grants (supports
+//      without type — defaults stay derived) are pinned, and validPad accepts
+//      them / rejects nonsense types.
 //   6. VirtualControls source carries the five rails (data-vc markers), the
 //      full cluster keeps the vpadboot-required fixedstick tag, and the TILT
 //      affordances exist; PauseOverlay carries the CONTROLLER row.
@@ -139,6 +140,23 @@ ok(Object.keys(PAD_TYPE_LABELS).length === PAD_TYPES.length, 'every type has a l
     ok(/type: 'full', supports: \['stick', 'full'\]/.test(blockOf('/ssx')), 'SSX pilots the full pad')
     ok(/supports: \['stick', 'tilt'\]/.test(blockOf('/marble-madness')), 'MARBLE MADNESS pilots tilt')
     ok(/supports: \['dpad', 'stick'\]/.test(blockOf('/pacman')), 'PAC-MAN pilots the switch')
+    // #3118 rollout grants — supports WITHOUT type: the default stays derived,
+    // so an untouched game renders its shipped pad byte-for-byte. R-TYPE's
+    // △ THROW entry keeps the #2931 third verb reachable in the diamond.
+    for (const [p, kinds, why] of [
+        ['/mario-kart', 'stick', 'full'], ['/comet-drift', 'stick', 'full'], ['/comet-drift-hd', 'stick', 'full'],
+        ['/galaga', 'stick', 'full'], ['/joust', 'stick', 'full'], ['/spy-hunter', 'stick', 'full'],
+        ['/r-type', 'dpad', 'full'], ['/double-dragon', 'dpad', 'full'], ['/contra', 'dpad', 'full'],
+    ]) {
+        const block = blockOf(p)
+        ok(new RegExp(`supports: \\['${kinds}', 'full'\\]`).test(block), `${p} offers the full pad (#3118 rollout)`)
+        ok(!/\btype: '/.test(block), `${p} grants supports without overriding the derived default (${why} stays default)`)
+    }
+    ok(/label: 'THROW', code: 'KeyN', pad: 3/.test(blockOf('/r-type')), 'R-TYPE throws on △ in the full diamond (#2931 verb survives the switch)')
+    ok(/code: 'KeyZ', pad: 2/.test(blockOf('/double-dragon')), 'DOUBLE DRAGON punches on □ — diamond renders, PUNCH never orphaned')
+    // grants must not disturb the derived defaults
+    ok(defaultTypeFor({ layout: 'stick', buttons: [], analog: false, supports: ['stick', 'full'] }) === 'stick', 'galaga-style grant keeps stick default')
+    ok(defaultTypeFor({ layout: 'dpad', aLabel: 'JUMP', buttons: [], supports: ['dpad', 'full'] }) === 'dpad', 'dd-style grant keeps dpad default')
     ok(validPad({ method: 'dpad', ways: 4, supports: ['dpad', 'stick'], buttons: [], reads: ['up'] }), 'validPad accepts supports')
     ok(validPad({ layout: 'stick', buttons: [], type: 'full', supports: ['stick', 'full'] }), 'validPad accepts type+supports')
     ok(!validPad({ layout: 'stick', buttons: [], type: 'wheel' }), 'validPad rejects a nonsense type')
