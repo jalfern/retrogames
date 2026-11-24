@@ -298,10 +298,13 @@ function stepGlider(g, w, sx, sy, dt) {
 
     if (g.respawnT > 0 || g.spotState !== 'flying') return
 
-    const gh = g.p.y - w.terrainHeight(g.p.x, g.p.z)
+    // the floor is the SEA where there is sea — otherwise the glider sinks
+    // through the surf and splashes eight metres down at the sea floor
+    const ter = w.terrainHeight(g.p.x, g.p.z)
+    const gh = g.p.y - Math.max(ter, w.waterHeightAt(g.p.x, g.p.z, g.t))
     if (gh < 0.7) {
         const padD = Math.hypot(g.p.x - w.pad.x, g.p.z - w.pad.z)
-        if (w.terrainHeight(g.p.x, g.p.z) < 0.4) { ev(g, 'splash'); g.spotState = 'splashed'; crash(g, 'sea') ; return }
+        if (ter < 0.4) { ev(g, 'splash'); g.spotState = 'splashed'; crash(g, 'sea') ; return }
         const soft = g.vy > -4.2 && g.speed < 12.5
         if (!soft) { g.spotState = 'landed'; ev(g, 'tumble'); crash(g, 'glider-tumble'); return }
         g.spotState = 'landed'
