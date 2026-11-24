@@ -135,12 +135,17 @@ const TidyBotGame = () => {
         let flourishT = 0
         let pullAnim = null // {c, slot, kind, t}
 
-        const burst = (x, y, n, col, spd = 3, up = -1) => {
+        const burst = (x, y, n, col, spd = 3, up = -1, cf = false) => {
             for (let i = 0; i < n; i++) {
                 const a = Math.random() * Math.PI * 2, sp = 0.5 + Math.random() * spd
-                parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp + up, t: 0, col, g: 0.14 })
+                parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp + up, t: 0, col, g: 0.14, cf, rot: Math.random() * Math.PI, dr: (Math.random() - 0.5) * 0.55 })
             }
         }
+        // #3086 papercraft confetti: when the skin ships a paper palette, jam /
+        // place / break / close throw tiny tilted cards in construction-paper
+        // colors instead of square pixels; classic has no palette and keeps its
+        // exact old bursts, byte for byte.
+        const pcol = (fallback) => (PA.chrome.confetti ? PA.chrome.confetti[(Math.random() * PA.chrome.confetti.length) | 0] : fallback)
 
         const handleEvents = (evts) => {
             for (const e of evts) evLog.push({ ...e, tick: gs.tick })
@@ -150,21 +155,27 @@ const TidyBotGame = () => {
                 else if (e.type === 'place') {
                     audioController.playTone(720, 0.06, 'square', 0.06)
                     audioController.playTone(1080, 0.1, 'square', 0.05, 0.06)
-                    burst(e.x, e.y, 5, PA.chrome.burst.place, 1.6)
+                    burst(e.x, e.y, 5, pcol(PA.chrome.burst.place), 1.6, -1, true) // #3086 confetti
                 }
-                else if (e.type === 'jam') { audioController.playTone(340, 0.07, 'square', 0.06); audioController.playNoise(0.05, 0.05); burst(e.x, e.y, 3, PA.chrome.burst.jam, 1.4) }
+                else if (e.type === 'jam') { audioController.playTone(340, 0.07, 'square', 0.06); audioController.playNoise(0.05, 0.05); burst(e.x, e.y, 3, pcol(PA.chrome.burst.jam), 1.4, -1, true) } // #3086 confetti
                 else if (e.type === 'wrong') { audioController.playTone(180, 0.14, 'sawtooth', 0.07); shake = 5; flash = 6 }
                 else if (e.type === 'spill') { audioController.playNoise(0.1, 0.07); burst(e.x, e.y, 6, PA.chrome.burst.spill, 2); shake = 3 }
                 else if (e.type === 'break') {
                     audioController.playNoise(0.16, 0.09); audioController.playSweep(1500, 320, 0.2, 'triangle', 0.06)
                     shake = 7; flash = 9
-                    for (let i = 0; i < 14; i++) {
+                    for (let i = 0; i < 14; i++) { // #3086 paper scraps fly on this skin
                         const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, sp = 1 + Math.random() * 3.2
-                        parts.push({ x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, col: PA.chrome.burst.shard, g: 0.2 })
+                        parts.push({ x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, col: pcol(PA.chrome.burst.shard), g: 0.2, cf: true, rot: Math.random() * Math.PI, dr: (Math.random() - 0.5) * 0.55 })
                     }
                 }
                 else if (e.type === 'open') audioController.playSweep(240, 460, 0.16, 'triangle', 0.05)
-                else if (e.type === 'close') { audioController.playTone(150, 0.09, 'sine', 0.09); burst(e.x, e.y, 3, '#b8c2cc', 1.2) }
+                else if (e.type === 'close') {
+                    // #3086 the cardboard sells the material: a low thud under the
+                    // door's last few mm on the papercraft skin; classic unchanged.
+                    if (skin === 'reimagined') { audioController.playTone(110, 0.07, 'sine', 0.1); audioController.playFilteredNoise(0.06, 0.08, 240) }
+                    else audioController.playTone(150, 0.09, 'sine', 0.09)
+                    burst(e.x, e.y, 3, pcol('#b8c2cc'), 1.2, -1, true)
+                }
                 else if (e.type === 'start') {
                     audioController.playSweep(120, 300, 0.3, 'triangle', 0.06)
                     audioController.playTone(660, 0.1, 'square', 0.05, 0.12)
@@ -293,6 +304,9 @@ const TidyBotGame = () => {
                             // sparks, and a rising two-note instead of one blip.
                             audioController.playTone(940, 0.05, 'sine', 0.035)
                             audioController.playTone(1410, 0.07, 'sine', 0.03, 0.06)
+                            // #3086 on papercraft the bot's arrival whispers: two
+                            // short filtered-noise layers read as paper crinkling.
+                            if (skin === 'reimagined') { audioController.playFilteredNoise(0.07, 0.05, 3000); audioController.playFilteredNoise(0.05, 0.04, 2100, 0.05) }
                             burst(r.tx, r.ty, 6, '#8fe0ee', 1.4, -0.4)
                             ringPop = { x: r.tx, y: r.ty, t: 0 }
                         }
@@ -338,8 +352,12 @@ const TidyBotGame = () => {
             for (let i = parts.length - 1; i >= 0; i--) {
                 const p = parts[i]; p.t++; p.x += p.vx; p.y += p.vy; p.vy += p.g
                 if (p.t > 26) { parts.splice(i, 1); continue }
-                ctx.globalAlpha = 1 - p.t / 26; ctx.fillStyle = p.col
-                ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2)
+                ctx.globalAlpha = 1 - p.t / 26
+                if (p.cf && PA.chrome.confetti) { // #3086 a tilted 2×3 paper card
+                    ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y)); ctx.rotate(p.rot + p.t * p.dr)
+                    ctx.fillStyle = p.col; ctx.fillRect(-1, -1.5, 2, 3)
+                    ctx.restore()
+                } else { ctx.fillStyle = p.col; ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2) }
             }
             ctx.globalAlpha = 1
             for (let i = gs.fx.length - 1; i >= 0; i--) {
