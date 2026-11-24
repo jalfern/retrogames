@@ -274,7 +274,7 @@ const SpaceInvadersGame = () => {
             ctx.fillStyle = '#ff3b30'
             ctx.font = '8px monospace'
             ctx.textAlign = 'left'
-            ctx.fillText(`SCORE<1> ${String(world.score).padStart(4, '0')}`, 40, 10)
+            ctx.fillText(`SCORE ${String(world.score).padStart(4, '0')}`, 40, 10)
             ctx.fillText(`HI ${String(Math.max(world.score, 0)).padStart(4, '0')}`, 160, 10)
 
             // invaders, marching 2-frame animation; overlay zone colors
