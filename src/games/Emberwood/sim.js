@@ -272,6 +272,15 @@ export function stepSim(sim, inp) {
     if (Math.abs(ly) < 0.15) ly = 0
     const moving = lx !== 0 || ly !== 0
     sim.moving = moving
+    // #3148 juice bar (#1130): every direction here was pixel-only — the audit
+    // measured up on tall-grass idle and heard nothing back. A fresh press scuffs
+    // a small dust trail behind the boots, same frame; holding never repeats it.
+    // Cosmetics only — the walk itself is untouched.
+    if (moving && !sim._wasMoving) {
+        const len0 = Math.hypot(lx, ly)
+        emit(sim, 'dust', h.x, h.y + HERO.h / 2, { dirx: -lx / len0 * 0.5, diry: -ly / len0 * 0.5, step: 1 })
+    }
+    sim._wasMoving = moving
     if (moving) {
         const len = Math.hypot(lx, ly)
         const vx = (lx / len) * HERO.speed
@@ -287,7 +296,11 @@ export function stepSim(sim, inp) {
     }
 
     // ---- A: tap=sword/interact, hold=draw bow ----
-    if (inp.aPressed) { sim.holdT = 1 } else if (inp.aHeld && sim.holdT > 0) {
+    // #3148: the tap's payoff (sword/interact) fires on RELEASE by design (the
+    // tap-vs-hold split, #1500), which lands outside a 150 ms reaction window —
+    // a held A read as silence until it was already over. The grip ticks the
+    // same frame the press arrives; the release still pays exactly as before.
+    if (inp.aPressed) { sim.holdT = 1; emit(sim, 'ready', h.x, h.y, { dir: h.dir }) } else if (inp.aHeld && sim.holdT > 0) {
         sim.holdT++
         if (sim.holdT === 12) {
             if (sim.items.bow && sim.items.arrows > 0) { sim.drawing = true; emit(sim, 'draw', h.x, h.y) }

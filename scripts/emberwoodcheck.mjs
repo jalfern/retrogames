@@ -1798,5 +1798,27 @@ if (!SKIP_BROWSER) {
     ok(JSON.stringify(sim.flags) !== freshFlags, '#1624 world progress made while watching survives the restore')
 }
 
+// #3148 juice bar (#1130): directions and A must answer the press the same frame.
+// The audit found up silent (pixel-only — it lost to the tall-grass idle baseline)
+// and A silent (the tap's sword pays on RELEASE by design, outside the 150 ms
+// window). Pinned here: a fresh press-onset scuffs dust under the boots, an A-press
+// ticks the grip — and holding never repeats either, the step still walks, and the
+// release still pays its sword (cosmetics only, gameplay invariant).
+{
+    const j = createSim(7)
+    for (let i = 0; i < 30; i++) stepSim(j, inp())
+    const y0 = j.hero.y
+    // the browser loop splices fx every frame; a Node step does not — capture per tick
+    const tickFx = (i) => { j.fx.length = 0; stepSim(j, i); return j.fx }
+    ok(tickFx(inp({ ly: -1, up: true })).some(e => e.k === 'dust' && e.step), '#3148 a fresh up-press scuffs dust the same frame')
+    ok(j.hero.y < y0, '#3148 the scuff does not eat the step (hero still walks up)')
+    ok(!tickFx(inp({ ly: -1 })).some(e => e.k === 'dust' && e.step), '#3148 a held direction does not repeat the scuff')
+    tickFx(inp())
+    ok(tickFx(inp({ ly: -1, up: true })).some(e => e.k === 'dust' && e.step), '#3148 re-pressing after release scuffs again')
+    ok(tickFx(inp({ ap: true })).some(e => e.k === 'ready'), '#3148 an A-press ticks the grip the same frame')
+    ok(!tickFx(inp({ a: true })).some(e => e.k === 'ready'), '#3148 a held A ticks the grip only once')
+    ok(tickFx(inp({ ar: true })).some(e => e.k === 'sword'), '#3148 the tap still pays its sword on release')
+}
+
 console.log(`\nemberwoodcheck: ${pass} pass, ${fail} fail${SKIP_BROWSER ? '' : `  [node ${nodeResult.pass}/${nodeResult.fail ? nodeResult.fail : 0}, chrome ${chromePass}/${chromeFail}]`}`)
 process.exit(fail ? 1 : 0)

@@ -644,6 +644,7 @@ void main(){
         if (!events || !events.length) return
         for (const e of events) {
             switch (e.k) {
+                case 'ready': spawnParts(e.x + (e.dir === 'left' ? -6 : e.dir === 'right' ? 6 : 0), e.y + (e.dir === 'down' ? 6 : e.dir === 'up' ? -6 : 0), ['#cfd6e6', '#ffffff'], 2, 1.1, 0.8); break // #3148 hilt-spark pairing the grip-tick
                 case 'sword': spawnParts(e.x + (e.dir === 'left' ? -8 : e.dir === 'right' ? 8 : 0), e.y + (e.dir === 'down' ? 8 : e.dir === 'up' ? -8 : 0), ['#ffffff', '#ffd87a'], 3, 1.4, 1); break
                 case 'hit': spawnParts(e.x, e.y, JUICE.hit, 7); shake = Math.max(shake, 3); break
                 case 'die': spawnParts(e.x, e.y, JUICE.blood, 12); shake = Math.max(shake, 4); break
