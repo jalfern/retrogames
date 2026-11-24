@@ -37,6 +37,7 @@
     "reefcheck": "node scripts/reefcheck.mjs",
     "blackholecheck": "node scripts/blackholecheck.mjs",
     "neonraincheck": "node scripts/neonraincheck.mjs",
+    "starrynightcheck": "node scripts/starrynightcheck.mjs",
     "volcanocheck": "node scripts/volcanocheck.mjs",
     "creditscheck": "node scripts/creditscheck.mjs",
     "deepglasscheck": "node scripts/deepglasscheck.mjs",
