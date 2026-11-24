@@ -44,7 +44,9 @@ case "$NODE" in
     # for 27B oQ4e; 27B oQ8e could not hold 2 streams at all. (The 2026-11-21 trial failed on oMLX 0.8.2
     # from KV memory, fixed in 0.8.3.) Judge on session length vs the 27B history. Roll back: put a 27B
     # model string back on both lines. Record: ~/Dev/infra/omlx/UPGRADES.md on the studio.
-    mini)    MODEL="omlxmini/Inkling-2-Mini-oQ4e-mtp"; PORT=18000; TAG="";         DEV=5174 ;;
+    mini)    MODEL="omlxmini/Inkling-2-Mini-oQ4e-mtp"; PORT=18000; TAG="";         DEV=5174
+             # Jon 2026-11-23: the mini lane is also the art & fidelity lane (FORGE-QA.md e″).
+             EXTRA=" You are also the art & fidelity lane: when step 2 leaves you nothing (no feedback, no queue item, idle-kick NONE), do one art & fidelity pass per FORGE-QA.md step 2 e″ instead of stopping (an open `reimagine` issue comes first). Use your eyes: screenshot, critique against docs/ART.md, fix the top gap, re-screenshot. All art stays original; never copy or move closer to an original game's sprites or characters." ;;
     mini2)   MODEL="omlxmini/Inkling-2-Mini-oQ4e-mtp"; PORT=18000; TAG="mini2-";   DEV=5179
              # #2280: the mini's second QA slot — same model stream as mini (Jon
              # accepted shared inference for the two; back off to one slot in
