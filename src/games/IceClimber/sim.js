@@ -47,6 +47,7 @@ export const CFG = {
     jumpV: 0.152,              // rise = jumpV²/2g ≈ 2.1 cells — under 3, so L3 needs the stack
     walk: 0.062,
     climb: 0.045,
+    dive: 0.18,                // #3151 DOWN while climbing: let go and drop fast
     punch: 8,                  // ticks of held UP per punched ice cell
     h: 1.5,
     hw: 0.3,
@@ -55,6 +56,7 @@ export const CFG = {
     // Engine switches — play never touches these; `icecheck --mutate` silences
     // exactly one at a time and the matching honest check MUST go red.
     dig: true,                 // punching removes ice (the mutable tilemap)
+    down: true,                // #3151 the DOWN verb: dive, shelf drop-through, crouch
     shoulder: true,            // the partner's head is ground (the co-op)
     revive: true,              // touch revives a downed climber
     moveLeft: true, moveRight: true,
@@ -139,7 +141,8 @@ function solidColsBlock(g, c, nx) {
 
 function newClimber(x, y, id) {
     return { id, x, y, vy: 0, grounded: false, climbing: false, punchT: 0,
-        down: false, invuln: 0, onPartner: false, jumps: 0, digs: 0, prevJ: false }
+        down: false, invuln: 0, onPartner: false, jumps: 0, digs: 0, prevJ: false,
+        prevD: false, pushT: 0 }
 }
 
 function goDown(g, c, cause) {
@@ -178,11 +181,20 @@ function stepClimber(g, c, inp, partner) {
 
     // ---- vertical ----
     if (c.climbing) {
-        if (!inp.u) { c.climbing = false; c.vy = 0 }
+        // #3151 DOWN while climbing cuts the grip and drops fast — a dive, not
+        // a free pole. It still only passes EMPTY cells; the bore law holds.
+        if (CFG.down && inp.d) {
+            c.climbing = false; c.punchT = 0
+            c.vy = Math.min(CFG.maxFall, Math.max(c.vy, 0) + CFG.dive)
+            ev.push({ type: 'dive', who: c.id, x: Math.round(c.x), y: Math.round(c.y) })
+        } else if (!inp.u) { c.climbing = false; c.vy = 0 }
         else {
             const above = aboveHead(g, c)
             if (above === ICE) {
                 c.punchT++
+                // #3151 the bore must ANSWER while it works, not only when the
+                // cell finally pops: a chip of ice every 3 ticks of held UP.
+                if (c.punchT % 3 === 1) ev.push({ type: 'punchTick', x: Math.floor(c.x), y: Math.floor(c.y - CFG.h) - 1 })
                 if (CFG.dig && c.punchT >= CFG.punch) {
                     g.grid[idx(Math.floor(c.x), Math.floor(c.y - CFG.h) - 1)] = EMPTY
                     c.punchT = 0; c.digs++
@@ -226,6 +238,36 @@ function stepClimber(g, c, inp, partner) {
         c.vy = 0; c.punchT = 0
         ev.push({ type: 'grab', x: Math.round(c.x), y: Math.round(c.y) })
     } else {
+        // #3151 DOWN edge while not climbing — three honest outcomes: off the
+        // partner's head, through the PLAT shelf you stand on (the classic
+        // drop-through), or a crouch against solid ground. Solid rock stays
+        // solid: gravity and the landing law below do all the falling.
+        if (CFG.down && inp.d && !c.prevD && c.grounded) {
+            if (c.onPartner) {
+                c.onPartner = false; c.grounded = false
+                ev.push({ type: 'drop', who: c.id, way: 'head', x: Math.round(c.x), y: Math.round(c.y) })
+            } else {
+                const sy = Math.floor(c.y + 0.001)
+                let onShelf = false
+                for (let cx = Math.floor(c.x - CFG.hw + 0.001); cx <= Math.floor(c.x + CFG.hw - 0.001); cx++) {
+                    if (cellAt(g, cx, sy) === PLAT) onShelf = true
+                }
+                if (onShelf) {
+                    c.y += CFG.h * 0.5 + 0.01
+                    c.grounded = false; c.vy = 0
+                    ev.push({ type: 'drop', who: c.id, way: 'shelf', x: Math.round(c.x), y: Math.round(c.y) })
+                } else {
+                    ev.push({ type: 'crouch', who: c.id, x: Math.round(c.x), y: Math.round(c.y) })
+                }
+            }
+        }
+        c.prevD = !!inp.d
+        // #3151 UP into a wall that cannot be grabbed still grunts every few
+        // ticks — shoulders against solid massif are an answered input too.
+        if (inp.u && c.grounded) {
+            c.pushT++
+            if (c.pushT % 4 === 1) ev.push({ type: 'push', who: c.id, x: Math.round(c.x), y: Math.round(c.y - CFG.h) })
+        } else if (!inp.u) c.pushT = 0
         if (inp.j && c.grounded && !c.prevJ) {
             c.vy = -CFG.jumpV
             c.grounded = false; c.onPartner = false; c.jumps++

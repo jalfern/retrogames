@@ -50,13 +50,19 @@ and the audit pins it (`revive=false` must fail the forced-accident pin).
   bail was 60000). Entry-relative so a PROGNOSIS clone aged deep into a
   session still gets its full remaining budget; `icecheck` pins all three
   properties (trimmed value, scaling loop, aged-state resume).
-- `scripts/icecheck.mjs` — the Node audit (47 checks, 5 mutants).
+- `scripts/icecheck.mjs` — the Node audit (59 checks, 6 mutants).
 - `scripts/iceplay.mjs` — the browser proof (17 checks): simultaneous keys,
   tiles deleted by real keystrokes, paint-follows-physics, a stack-jump win
   won with real fingers, condor down, partner revive, pause door.
 
 ## The rules worth remembering
 
+- **DOWN is a verb (#3151).** Off a partner's head it dismounts; on a PLAT
+  shelf it drops through (the classic); on solid ground it answers with a
+  crouch tell; held while climbing it cuts the grip into a dive (`CFG.dive`,
+  mutant `down=false`). Rock stays rock — every fall is the ordinary gravity
+  + landing law, and UP's bore now chips (`punchTick` every 3rd tick) so the
+  drill answers while it works, not only at the pop.
 - **The climb exit is a flank check, not a trigger.** You keep rising only
   while the column means "up" (ice to punch, shelf to pass, ice at the
   shoulder, or a ≥8-cell bore capped by snow). The same check that releases

@@ -188,6 +188,65 @@ section('RULE PINS (each one is the game, not a mood)')
     sim.CFG.shoulder = true
     ok(!solo.grounded || solo.y > 3.4, 'a SOLO climber reached the carrot shelf without the shoulder rule')
 }
+{
+    // #3151 THE DOWN VERB ANSWERS, AND THE BORE LAW HOLDS. From the floor:
+    // a crouch tell, no falling through rock. Off the summit shelf: the
+    // classic drop-through, landing on the floor below. While climbing: a
+    // dive that releases the grip and falls faster than gravity alone.
+    const g = sim.makeGame(buildLevel(0))
+    const a = g.climbers[0]
+    sim.step(g, { a: {}, b: {} })          // let the spawn settle first
+    g.events.length = 0
+    sim.step(g, { a: { d: 1 }, b: {} })
+    ok(g.events.some(e => e.type === 'crouch' && e.who === 0),
+        'DOWN on solid ground was silent — the verb must answer (#3151)')
+    ok(a.y === 32 && a.grounded, `DOWN opened the massif floor (y=${a.y}) — solid rock stays solid`)
+    // shelf drop-through: stand on PLAT row 6, press DOWN once — the body
+    // passes the shelf and lands on the flank below it, not on the shelf.
+    const s = sim.makeGame(buildLevel(0))
+    const p = s.climbers[0]
+    p.x = 9.5; p.y = 6; p.grounded = true; p.vy = 0
+    g.events.length = 0; s.events.length = 0
+    sim.step(s, { a: { d: 1 }, b: {} })
+    ok(s.events.some(e => e.type === 'drop' && e.way === 'shelf'),
+        'DOWN on a snow shelf did not drop through — the classic is dead')
+    const evs = []
+    for (let t = 0; t < 240 && !(p.grounded && p.y > 6.5); t++) { sim.step(s, { a: {}, b: {} }); evs.push(...s.events) }
+    ok(p.grounded && p.y > 6.5, `the shelf drop never left the shelf row (y=${p.y}, grounded=${p.grounded})`)
+    ok(!evs.some(e => e.type === 'land' && Math.round(p.y) === 6), 'the drop re-landed ON the shelf it fell through')
+    // dive: grip the column, then DOWN releases it with a fast-fall kick
+    const d = sim.makeGame(buildLevel(0))
+    const c = d.climbers[0]
+    let t = 0
+    for (; t < 900 && Math.abs(c.x - 8.5) > 0.12; t++) sim.step(d, { a: { r: 1 }, b: {} })
+    for (let i = 0; i < 12; i++) sim.step(d, { a: { u: 1 }, b: {} })
+    ok(c.climbing, 'dive setup: could not grab the column')
+    d.events.length = 0
+    const vy0 = c.vy
+    sim.step(d, { a: { u: 1, d: 1 }, b: {} })
+    ok(!c.climbing && c.vy >= sim.CFG.dive + vy0 - 1e-9,
+        `DOWN while climbing did not dive (climbing=${c.climbing}, vy ${vy0}→${c.vy})`)
+    ok(d.events.some(e => e.type === 'dive'), 'the dive was silent — no event for the verb')
+}
+{
+    // #3151 THE BORE ANSWERS WHILE IT WORKS: chips arrive before the cell pops.
+    const g = sim.makeGame(buildLevel(0))
+    const c = g.climbers[0]
+    let t = 0
+    for (; t < 900 && Math.abs(c.x - 8.5) > 0.12; t++) sim.step(g, { a: { r: 1 }, b: {} })
+    const chipsSeen = []
+    for (let i = 0; i < 9; i++) { sim.step(g, { a: { u: 1 }, b: {} }); chipsSeen.push(...g.events.map(e => e.type)) }
+    const chips = chipsSeen.filter(e => e === 'punchTick').length
+    ok(chips >= 2, `nine ticks of drilling emitted ${chips} chips — the bore is silent until it pops (#3151)`)
+    ok(chipsSeen.includes('dig'), 'the nine-tick bore never punched a cell (setup drift?)')
+    ok(chipsSeen.indexOf('punchTick') < chipsSeen.lastIndexOf('dig'),
+        'a chip never arrived before the dig — the bore still only answers at the pop')
+    // UP against un-grabbable massif grunts too (every 4th tick of the push)
+    const w = sim.makeGame(buildLevel(0))
+    const wEvs = []
+    for (let i = 0; i < 9; i++) { sim.step(w, { a: { u: 1 }, b: {} }); wEvs.push(...w.events.map(e => e.type)) }
+    ok(wEvs.includes('push'), 'UP into a wall that cannot be grabbed is silent (#3151)')
+}
 
 // ------------------------------------------------------- determinism + tamper ----
 section('DETERMINISM (the attract demo IS a replay of this solve)')
@@ -224,6 +283,13 @@ if (MUT) {
     tryMut('climb=0 (no upward hold)', { climb: 0 }, () => plan(sim.makeGame(buildLevel(0))).ok)
     tryMut('jumpV=0 (no jumps at all)', { jumpV: 0 }, () => plan(sim.makeGame(buildLevel(2))).ok)
     tryMut('moveRight=false (P1 key path dead)', { moveRight: false }, () => plan(sim.makeGame(buildLevel(0))).ok)
+    // #3151: the DOWN verb must be load-bearing for its own checks, not the win
+    tryMut('down=false (the DOWN verb goes silent)', { down: false }, () => {
+        const g = sim.makeGame(buildLevel(0))
+        sim.step(g, { a: {}, b: {} })
+        sim.step(g, { a: { d: 1 }, b: {} })
+        return g.events.some(e => e.type === 'crouch')
+    })
 }
 
 
