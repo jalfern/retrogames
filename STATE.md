@@ -1,56 +1,57 @@
-# STATE — forge board snapshot (slot b, 2026-11-24 — PADTYPES shipped)
+# STATE — RetroGames arcade (slot a)
 
-## This session — one ship
-- **#3108 PADTYPES — five switchable controller overlays** shipped: PR #3117,
-  main `dfcf88c`, issue closed `shipped`.
-  `src/components/padTypes.js` = pure decision layer (default DERIVES from the
-  game's existing method/layout — untouched games byte-identical; `supports`,
-  pause-menu switch, `retrogames:padtype:<path>` persistence, `?padtype=` QA
-  override, screen-rotated tilt math). All five types feed the SAME one pad.
-  FULL pad = Sony cluster (d-pad+stick left inboard, △□○✕ diamond by `pad:`
-  indexes, R shoulders, centre clear, 0.8 pitch). TILT = ENABLE tap (iOS
-  permission) + RE-CENTER + rotation re-capture.
-  Pilots per issue: SSX `full` (+stick), MARBLE MADNESS stick+tilt,
-  PAC-MAN dpad+stick. SSX found two live collisions, both fixed (game-side
-  #894 z-60 stick + trick chips now yield to the full pad).
-  Harness: `padtypecheck` in CORE.checks (CI; 56 pins; mutant-proven — muting
-  the configure re-fire turns it red) + `padtypeplay` lane-run (browser, 20
-  checks, zero page errors on 5 games). Fix found by it: saved choice never
-  applied on fresh load (configure re-fires now).
-- Rule 4: COUNTER RESET — game code merged (SSX/index.jsx + registry).
-- Rollout filed: **#3118** (QA feedback: supports per game, PadLink drawing
-  reuse, tilt on #3107, z-60 overlay audit before granting `full`).
+_Last update: 2026-11-24 ~09:40Z (forge lane a session end)._
 
-## PLAYABLE on main right now (tip after #3117 + STATE PR)
-- `/retrogames/ssx` — FULL pad default; pause → CONTROLLER → STICK/FULL,
-  remembered per game. `/retrogames/marble-madness` — STICK/TILT.
-  `/retrogames/pacman` — DPAD/STICK. Every other game: byte-identical pad.
-- `/retrogames/mario`, forge board, TIDY BOT papercraft (#3085), STARRY NIGHT
-  demo (#3082), CONTRA→TOP SOLDIERS (#3067), DOUBLE DRAGON, R-TYPE, RACCOON
-  HEIST, spy-hunter, iron keep, galaga, missile, pucks, mines, zork, ultima,
-  king's quest, Joust, Q*bert.
+## What's playable now
+- **STOMPTOWN (#3094) is LIVE**: https://jalfern.com/retrogames/stomptown — Jon's
+  city-breaker prototype promoted to a full registered title. Own cast (GROG/ZARRA/
+  FENRIS), 12-city tour, climbable towers, window loot, blimp rescue. Prod bundle
+  verified serving `Stomptown-*.js`. Merged `43df2c8` (PR #3112); #3094 shipped+closed.
+  Gates: `npm run stompcheck` (69 Node checks + 10 mutants, `stomp` scope registered,
+  runs in `static`), `npm run stompdrive` (15 browser checks). Autopilot razes day 1
+  in ~28 s world time; full tour win is hash-for-hash deterministic (seed 11, 144 380).
+- PINBALL — CABINET ONE (#3103 rung 1, #3116) and PADTYPES five switchable overlays
+  (#3117) also merged today by other lanes.
+- Production remains everything on `main`; `static` (green at `43df2c8`) is the only
+  required check; main-ok clear at session end.
 
-## Board watch (facts, not questions)
-- Slot a: INSIDE #3094 (STOMPTOWN, `building`) — alive, last checkpoint
-  08:17Z (`8c9c26f`), stompdrive 15/15.
-- QA lanes: #3096/#3102 building-qa as of this morning; #3118 filed `feedback`
-  (rollout — includes game-side z-60 overlay audit before more `full` grants).
-- #3108 closed; `game-queue` now holds #3103–#3107 (NEW GAME ladders — pinball
-  oldest). No `steer`/`next`. No `halt`. No `lane:manual` open.
+## This session (lane a) — SHIPPED #3094
+- Built the full STOMPTOWN package in the issue-keyed worktree
+  (`~/Dev/retrogames-forge-3094-stomptown`, now detached at `origin/main`):
+  pure seeded `sim.js`, shared attract/harness autopilot `planner.js`, DOM-free
+  `art.js`, shell with attract/pause/pad/exposeGame, registry entry `/stomptown`
+  (private until Jon promotes), contract roster+pattern, original music bed, README,
+  `stompcheck` + `stompdrive` + `stomp` CI scope registration.
+- Two real bugs caught by the harness mid-build: `step()` overwrote `gs.prev` before
+  its `just()` closure read it (no punch/jump/eat could fire), and the frame loop
+  gated event-draining on `!gs.end` (over-screen never opened). Both fixed + pinned.
+- #3094 collision history (from the prior lane-a report, now resolved): lane a's
+  earlier single-file attempt (`stomp-town` id, `/stomp-town` route) stood down when
+  the warden kicked a second builder onto the same issue; the surviving build kept
+  `stomptown` naming everywhere. Both hazards the old report flagged (dir-case 404,
+  on-screen "RAMPAGE" text) are fixed and verified — prod copy says STOMP, git tree
+  is `src/games/Stomptown` (case-checked; Linux CI passed).
+- Filed **QA — STOMPTOWN: polish pass → #3123** (label `feedback`): destruction
+  theatre (sequential floor-crush, dust, burning rubble), third parallax layer +
+  street life, distinct monster silhouettes/eyes, per-city music variation +
+  newspaper ceremony days, blimp spotlight. QA lane picks it up; builders don't.
+- Lane-collision harness bug #3110 stays open (claim paths should be lane-keyed and
+  heartbeats tool-call based); a builder may take it if the ladder offers.
 
-## Open questions (links only — #605)
-- #3054 — QA: native TestFlight ports have no recorder/upload; does the big build need one?
-- #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
-- #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
+## Untrusted artifacts rule (still true)
+- Park files have carried fabricated issue numbers before (the "#3089 MACARONI SHIFT"
+  variant never existed). Verify every issue/commit claim against the board (`gh`)
+  before believing or repeating it. This file's numbers were all checked 09:40Z.
 
 ## Next queued
-- Oldest `game-queue`: **#3103 pinball** (shared table engine + cabinet ladder).
-  A real game build; rule-4 buffer healthy.
-- Slot b note: padtypeplay needs `npm run dev -- --port <DEV_PORT>` first;
-  screenshots land in `qa-art/` (gitignored).
+1. Builder ladder: next title from Jon's flagship order (#2795); new-title asks are
+   capped ~Nov 27 — don't ask, build. (Don't pick up #3123 — polish is QA's lane,
+   per Jon's 2026-10-19 decision.)
+2. #3110 (harness: lane-keyed worktrees/claims) — take only if it surfaces on the
+   ladder; do not grow the harness past the code it tests.
+3. If STOMPTOWN regressions appear in nightly `static`/prsmokes, they're lane a's:
+   the `stomp` scope is ours.
 
-## Slot / board state at handoff
-- Slot b: #3108 shipped+closed; #3118 filed; no claims held; no open PR of
-  mine after the STATE pair; lane worktree `~/Dev/retrogames-forge-pad-v2`
-  detached at origin/main; dev server on :5178 stopped via devstop.
-- Main tip at handoff: `dfcf88c` + STATE.md docs PR.
+## Open questions for Jon
+- None open for lane games. (Board `waiting-jon`: #3054 lane:qa, #2971 contra-qa,
+  #1712 research — none owned here.)
