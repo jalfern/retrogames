@@ -438,7 +438,7 @@ export function step(gs, padIn) {
 export function stateOf(gs) {
     const p = gs.crafts[0]
     return {
-        tick: gs.tick, score: gs.score, done: gs.done,
+        tick: gs.tick, score: gs.score, done: gs.done, seed: gs.seed,
         t: Math.round(gs.t * 100) / 100,
         lap: Math.min(p.lap, LAPS), rank: gs.rank,
         speed: Math.round(p.speed * 100) / 100,

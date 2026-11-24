@@ -101,9 +101,9 @@ export function waterGLSL() {
         const k = wavenumber(w.len).toFixed(6)
         const om = omega(w.len).toFixed(6)
         lines.push(
-            `  f = ${k.toFixed(6)} * (${w.dx.toFixed(4)} * pos.x + ${w.nz.toFixed(4)} * pos.z) - ${om} * uT + ${w.phase.toFixed(4)};`,
+            `  f = ${k} * (${w.dx.toFixed(4)} * pos.x + ${w.dz.toFixed(4)} * pos.y) - ${om} * uT + ${w.phase.toFixed(4)};`,
             `  h += ${w.amp.toFixed(4)} * sin(f);`,
-            `  disp += vec2(${(w.steep * w.amp * w.dx).toFixed(6)}, ${(w.steep * w.amp * w.nz).toFixed(6)}) * cos(f);`,
+            `  disp += vec2(${(w.steep * w.amp * w.dx).toFixed(6)}, ${(w.steep * w.amp * w.dz).toFixed(6)}) * cos(f);`,
         )
     }
     return `

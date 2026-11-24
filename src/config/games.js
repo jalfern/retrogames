@@ -42,6 +42,7 @@ const BoulderDashGame = lazy(() => import('../games/BoulderDash'))
 const MarbleMadnessGame = lazy(() => import('../games/MarbleMadness'))
 // Pinball: its own chunk — the table engine, table data and look ride together.
 const PinballGame = lazy(() => import('../games/Pinball'))
+const TidalRushGame = lazy(() => import('../games/TidalRush'))
 // Sonar Abyss: same lesson — its planner scripts the attract demo and the
 // caves are generated at load, so it keeps its own chunk.
 const SonarGame = lazy(() => import('../games/Sonar'))
@@ -1369,5 +1370,23 @@ export const GAMES = [
         theme: 'dark',
         description: 'Jon\'s city-breaker prototype (#3094), promoted to a full arcade title and made our own: STOMPTOWN, a MODERN rebuild of the 1986 giant-monster-destroys-the-city idea with an original cast — GROG the ape, ZARRA the reptile, FENRIS the werewolf — and none of the original\'s names, characters, credits or audio. You are the disaster: walk the dusk boulevard and PUNCH towers until they fall flat into rubble (300 a building, more as your COMBO rides high). Buildings are climbable — grab a side, scale it, stomp the roof, and rain DOWN-PUNCHES on whatever crowds the street. SMASH the windows: four in ten hide FOOD that heals you, three in ten cold CASH, one in eight a BOMB that wipes the block clean of tanks, choppers and crowds — and one in twelve jumps out and STUNS you. The city answers back harder every day: tanks roll close and shell you, gunships strafe from the skyline, patrol cars run red lights and shoot; more arrive each dawn. EAT the fleeing traffic to knit your HP back. Take an empty health bar and you shrink back to HUMAN on the boulevard while the NEWS blimp dives, lifts the little guy, and drops the giant back at full power — but the day\'s score unwinds to dawn. Three lives; zero and the papers print your obituary instead. Twelve cities stand between you and the tour title; clearing one banks 1000, prints a fresh giant and rolls the map to the next dawn. The whole tour is seeded (seed + pads ⇒ identical hashes); the attract mode drives the same autopilot stompcheck proves the city falls under.',
         controls: ['Arrows / WASD / d-pad: run the boulevard — UP at a tower side starts the CLIMB, UP/DOWN scale it, a roof is a street two floors up', 'UP / JUMP: hop — from the street beside a tower it grabs the wall instead', '← / → while on a wall: push off and drop to the street', 'SPACE / A / PUNCH: hit everything in front of you — towers, windows, crowds, tanks', 'Hold DOWN with a punch (or punch from a roof): the DOWN-CRUSHER; hold UP: hit the high floors', 'B / EAT: snap up the nearest human within reach — heals 16 and pushes the combo', 'Waving civilians pay 150 extra and lift the combo — mercy is not in the score table', 'Watch the roof edge neon: it turns red when a tower is hurt; one more solid hit flattens it', 'Fall flat and the blimp hauls your human half back — full health, but today\'s score rewinds to dawn', 'Three lives; each new city prints one more (up to six)', 'Twelve cities = the tour; clearing one banks +1000 and a score bonus for every soul and vehicle you leave standing', 'Attract: any key or tap takes the boulevard from the autopilot; ◀ ▶ on the title picks your monster', '?: pause and read the disaster card'],
+    },
+    {
+        path: '/tidal-rush',
+        pad: {
+            method: 'stick', analog: true, supports: ['dpad'],
+            aLabel: 'SPIN',
+            buttons: [{ label: 'BOOST', code: 'ShiftLeft' }],
+            reason: 'the left thumb IS the handlebar — push soft to rail a gate, push hard to throw the ski sideways; throttle rides the stick up-line, B burns the sprint',
+        },
+        builtBy: 'forge',
+        added: '2026-11-24',
+        visibility: 'private',
+        tapStart: true,
+        component: TidalRushGame,
+        label: 'TIDAL RUSH',
+        theme: 'dark',
+        description: 'A jetski slalom in the spirit of Wave Race 64 (Nintendo 64, 1996) — our own riders, our own bay (#3104, rung 1: SUNNY BAY; the storm course follows). THE WATER IS THE GAME: one analytic Gerstner swell table drives everything — the same waves that displace the rendered sea in the vertex shader are the surface the hull floats, leans and launches on, to the tick. Buoy slalom racing: pass RED on your right, YELLOW on your left; a clean pass charges the sprint, a miss chokes the throttle for a beat while the field goes. Analog steering with real body-lean — the rider banks into the turn, spray arcs off the hull, the bow pitches over the chop. Hit a falling crest at speed and you fly: hold SPIN in the air to whip a 360 and bank a fat boost bonus on landing. Three laps around a sunny headland bay against two seeded CPU skis (Mako and Tundra) that run their own racing lines and take their own lines of air. MODERN bar: GPU sea with fresnel sky-reflection, sun glitter and crest foam, graded sky with a low sun, distance haze — and an honest phone budget: capped pixel ratio, no shadow maps, one pooled particle system. All art and sound synthesized at runtime; the physics and the pixels read the same sea.',
+        controls: ['UP / W or stick up: throttle · DOWN / S: brake', 'LEFT / RIGHT (or the analog stick): steer — the ski leans, harder the more you push', 'SPACE / A in the air: SPIN — complete a 360 off a crest for +250 and a fat boost', 'SHIFT / B: burn the sprint meter on the straights', 'RED buoy on your RIGHT, YELLOW on your LEFT — misses choke the throttle; clean passes charge sprint', 'Three laps of SUNNY BAY; place decides the finish bonus', 'Attract: any key or tap takes the seat · ?: pause and read the rules'],
     },
 ]

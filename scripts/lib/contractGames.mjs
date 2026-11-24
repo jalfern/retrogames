@@ -59,6 +59,7 @@ const GAMES = [
     { id: 'double-dragon', path: '/double-dragon' }, // #2807: Jon's #2795 commission, S1 Walnuts Street
     { id: 'r-type', path: '/r-type' }, // #2808: Jon's #2795 second flagship, S1 Armament
     { id: 'pinball', path: '/pinball' }, // #3103: the shared table engine, rung 1
+    { id: 'tidal-rush', path: '/tidal-rush' }, // #3104: jetski slalom, rung 1 (sunny bay)
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
@@ -143,6 +144,7 @@ const PATTERNS = {
     // #3103: blind pad — plunges early (down 5..28), flips on a 40-step cycle, an
     // occasional nudge. Death (drain) is legal: balls reset and hashes stay deterministic.
     'pinball': (i) => ({ left: i % 40 < 12, right: i % 40 >= 20 && i % 40 < 32, down: i >= 5 && i < 28, b: i % 199 < 2 }),
+    'tidal-rush': (i) => ({ up: i % 200 < 160, left: i % 200 >= 120 && i % 200 < 160, right: i % 200 >= 40 && i % 200 < 80, a: i % 311 < 3, b: i % 155 < 6 }),
     contra: (i) => ({ left: i % 89 < 18, right: i % 89 >= 24 && i % 89 < 70, up: i % 53 < 8, down: i % 53 >= 30 && i % 53 < 38, a: i % 17 < 2, b: i % 5 < 3 }),
     // #2808: the pod-shooter — steady stream, sideways sway to sample the
     // lane war, occasional thrusts (death by edge is legal; respawn keeps

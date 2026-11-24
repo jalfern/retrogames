@@ -113,6 +113,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'lem')
       - run: npm run lemcheck
         if: contains(fromJSON(env.KEYS), 'lem')
+      - run: npm run tidalcheck
+        if: contains(fromJSON(env.KEYS), 'tidal')
       - run: npm run lint:zelda
         if: contains(fromJSON(env.KEYS), 'zelda')
       - run: npm run zeldacheck
