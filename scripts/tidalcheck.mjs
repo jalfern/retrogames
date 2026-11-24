@@ -17,6 +17,8 @@
 // Run: npm run tidalcheck                    (green)
 //      node scripts/tidalcheck.mjs --mutate           (judgement muted → red)
 //      node scripts/tidalcheck.mjs --mutate=swell     (swell re-roll dead → red)
+//      node scripts/tidalcheck.mjs --mutate=rainoff   (rain wallpaper again → red)
+//      node scripts/tidalcheck.mjs --mutate=push      (crosswind zeroed → red)
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -37,21 +39,25 @@ if (MUT) {
     const src = readFileSync(simPath, 'utf8')
     const ANCHORS = {
         // RED passes from ANY side — the slalom's core must notice.
-        judge: { from: "const want = g.color === 'red' ? -1 : 1", note: 'RED-side judgement muted' },
+        judge: { from: "const want = g.color === 'red' ? -1 : 1", to: 'const want = 1', note: 'RED-side judgement muted' },
         // STORM laps stop re-rolling the swell — "changes lap to lap" dies.
-        swell: { from: 'gs.seaTarget = stormSea(gs.seed, c.lap)', note: 'per-lap swell re-roll pinned' },
+        swell: { from: 'gs.seaTarget = stormSea(gs.seed, c.lap)', to: 'gs.seaTarget = gs.seaTarget', note: 'per-lap swell re-roll pinned' },
         // the squall front freezes — the new sea never arrives.
-        front: { from: 'gs.front.prog += FRONT_SPEED * DT', note: 'squall front progress frozen' },
+        front: { from: 'gs.front.prog += FRONT_SPEED * DT', to: 'gs.front.prog += 0 * DT', note: 'squall front progress frozen' },
+        // rain is wallpaper again (#3191) — the field never wets anyone.
+        rainoff: { from: "if (gs.stage !== 'storm') return 0", to: 'return 0', note: 'rain field disabled everywhere' },
+        // the squall stops shoving — crosswind drift zeroed.
+        push: { from: 'const drift = RAIN_PUSH * rain * windGust(gs)', to: 'const drift = 0 * RAIN_PUSH * rain * windGust(gs)', note: 'crosswind drift zeroed' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
     if (!src.includes(a.from)) { console.error(`mutant anchor missing in sim.js (${MUT})`); process.exit(1) }
-    plant(simPath, src.replace(a.from, MUT === 'judge' ? 'const want = 1' : MUT === 'swell' ? 'gs.seaTarget = gs.seaTarget' : 'gs.front.prog += 0 * DT'))
+    plant(simPath, src.replace(a.from, a.to))
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
 const { WAVES, heightAt, seaGLSL, seaGLSLFront, seaUniforms, SEA_UNIFORMS, SEA_UNIFORMS_B, FRONT_UNIFORMS, frontUniforms, frontW, mixHeight, sunnySea, stormSea, omega, FRONT_SPEED } = await import('../src/games/TidalRush/water.js')
-const { makeGame, step, autoPad, stateOf, stateHash, LAPS } = await import('../src/games/TidalRush/sim.js')
+const { makeGame, step, autoPad, stateOf, stateHash, LAPS, rainAt, windAt, windGust, RAIN_VIS, RAIN_DRAG, RAIN_PUSH, THRUST, DRAG } = await import('../src/games/TidalRush/sim.js')
 
 const run = (gs, maxS = 240, padFn = null) => {
     const events = []
@@ -465,6 +471,77 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         if (g2.events.some((e) => e.type === 'airbonus')) bareBonus++
     }
     ok('a bare air banks nothing (no spin, no bonus)', sawAir && bareBonus === 0)
+}
+
+// 18. RAIN (#3191) — the squall is terrain: it gates by stage+front, bites
+// speed, walks the hull downwind, dims the gates, and announces itself. Sunny
+// is and stays dry.
+{
+    const sun = makeGame(7)
+    let sunnyDry = true, sunnyRainEvt = 0
+    for (let t = 0; t < 600; t++) {
+        step(sun, autoPad(sun))
+        if (rainAt(sun, sun.crafts[0].x, sun.crafts[0].z) !== 0) sunnyDry = false
+        if (sun.events.some((e) => e.type === 'rain')) sunnyRainEvt++
+    }
+    ok('SUNNY never rains — field, state and events all agree', sunnyDry && stateOf(sun).rain === 0 && sunnyRainEvt === 0)
+
+    const st = makeGame(7, 'storm')
+    step(st, autoPad(st))
+    ok('deep STORM (no front up) rains everywhere', rainAt(st, 0, 0) === 1 && rainAt(st, 40, -20) === 1)
+    ok('state reports the hull rain (finite, above zero)', Number.isFinite(stateOf(st).rain) && stateOf(st).rain > 0)
+
+    const st2 = makeGame(7, 'storm')
+    for (let t = 0; t < 60 * 30; t++) step(st2, autoPad(st2))
+    ok('mid-race the rain is SPATIAL — full behind the front, dry ahead', (() => {
+        const fr = st2.front
+        if (!fr || fr.prog < fr.band) return false
+        return rainAt(st2, -fr.dx * fr.h, -fr.dz * fr.h) === 1 && rainAt(st2, fr.dx * fr.h, fr.dz * fr.h) < 0.05
+    })())
+
+    // drift isolation: throttle 0, speed 0 — only the wind can move the hull
+    const wet = makeGame(7, 'storm')
+    const c0 = wet.crafts[0]
+    const x0 = c0.x, z0 = c0.z
+    const wnd = windAt(wet)
+    let bumped = false
+    for (let t = 0; t < 90; t++) {
+        step(wet, { throttle: 0, steer: 0, brake: false, a: false, b: false })
+        if (wet.events.some((e) => e.type === 'bump')) bumped = true
+    }
+    const ddx = c0.x - x0, ddz = c0.z - z0
+    const dl = Math.hypot(ddx, ddz)
+    ok('the crosswind WALKS a stationary hull in the squall', !bumped && dl > 0.4 && dl < 4)
+    ok('drift points along the wind, not somewhere random', dl > 0 && (ddx * wnd.x + ddz * wnd.z) / dl > 0.999)
+
+    const dry = makeGame(7)
+    const k0 = dry.crafts[0]
+    const dx0 = k0.x, dz0 = k0.z
+    for (let t = 0; t < 90; t++) step(dry, { throttle: 0, steer: 0, brake: false, a: false, b: false })
+    ok('dry water never shoves (exact zero)', k0.x === dx0 && k0.z === dz0)
+
+    // the bite: wet terminal speed sits 5-15 % under dry; gusts vary, the law does not
+    const vtDry = Math.sqrt(THRUST / DRAG), vtWet = Math.sqrt(THRUST / (DRAG + RAIN_DRAG))
+    ok('rain drag bites top speed 5-15 %', vtWet / vtDry < 0.95 && vtWet / vtDry > 0.85)
+    ok('push is a shove, not a gale (1-2.5 m/s at full rain)', RAIN_PUSH >= 1 && RAIN_PUSH <= 2.5)
+    ok('gate-dim ceiling: aggressive but never invisible', RAIN_VIS > 0.5 && RAIN_VIS < 0.9)
+
+    // band-edge events: a full storm race crosses the band on AND off
+    const race = makeGame(7, 'storm')
+    let onN = 0, offN = 0
+    for (let t = 0; t < 60 * 240 && !race.done; t++) {
+        step(race, autoPad(race))
+        for (const e of race.events) if (e.type === 'rain') { if (e.on) onN++; else offN++ }
+    }
+    ok('the band edge announces itself (in AND out over a race)', onN >= 1 && offN >= 1)
+
+    // DRAWN = RIDDEN: the shell dims gates by the rain at EACH gate and rates
+    // its drops by the rain at Kai's hull (#3191)
+    const jsx = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/index.jsx'), 'utf8')
+    const artJs2 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/art.js'), 'utf8')
+    ok('gates dim toward storm fog by rain at THEIR point', jsx.includes('buoyDim(b, RAIN_VIS * rainAt(gs, g0.x, g0.z))') && artJs2.includes('lerp(BUOY_DIM_COL'))
+    ok('drop density follows the rain at Kai hull', jsx.includes('rainAt(gs, gs.crafts[0].x, gs.crafts[0].z)') && jsx.includes('rainVis > 0.3'))
+    ok('the crossing gets a wind cue', jsx.includes("e.type === 'rain'") && jsx.includes('sfx.rain(e.on)'))
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)

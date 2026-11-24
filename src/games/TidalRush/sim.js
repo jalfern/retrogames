@@ -38,6 +38,7 @@ const V_MAX = 17.0            // m/s cruise (~61 km/h)
 const V_BOOST = 1.32          // sprint multiplier while BOOST is burning
 const THRUST = 7.5            // throttle authority (m/s^2)
 const DRAG = 0.021            // quadratic drag → v_term = sqrt(T/DRG) ≈ 19
+export { THRUST, DRAG }
 const TURN_K = 1.16           // rad/s at full lock, speed-scaled below
 const LEAN_MAX = 0.62         // body-lean angle at full lock (radians)
 const LAUNCH_VY = -1.90       // sunny: surface falling this fast under a fast hull = kicker
@@ -53,8 +54,8 @@ const SKIP_MARGIN = 14        // past the gate line by this much unjudged = miss
 const PENALTY_T = 1.5         // throttle choked this long after a miss
 const PENALTY_CAP = 0.35
 // Rain is gameplay (#3191): inside the squall band the hull drags and drifts.
-const RAIN_DRAG = 0.005       // extra quadratic drag × rain — v_term 19 → ~16.9 m/s
-const RAIN_PUSH = 1.55        // m/s crosswind drift at full rain, along the new swell
+export const RAIN_DRAG = 0.005 // extra quadratic drag × rain — v_term 19 → ~16.9 m/s
+export const RAIN_PUSH = 1.55 // m/s crosswind drift at full rain, along the new swell
 export const RAIN_VIS = 0.72  // gate dimming ceiling — the shell lerps buoy colours by this
 
 // --- seeded rng as pure state-in/state-out (JSON-safe) ----------------------
