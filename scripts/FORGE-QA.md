@@ -123,7 +123,45 @@ confuse the two queues.
        per step 6 (keep `building-qa` + the pushed branch) and the next
        session resumes it. A real queued title outranks the flagship polish
        stage in e): Jon's queue beats self-directed work, so try e′ before e).
-    No candidates, no queue item and no flagship gap (`idle-kick.mjs qa` says NONE) → STOP
+     e″) **Art & fidelity pass — node `mini` only (Jon, 2026-11-23).** When e′) and e)
+       give nothing, the mini lane does one art & fidelity pass instead of stopping.
+       *Primitive first, then fidelity:* a game's simple look is fine while its engine
+       and gameplay settle; once it plays end to end, iterate on how it looks.
+       0. **`reimagine` first.** If an open issue carries the `reimagine` label (Jon's call,
+          only he adds it), that game beats the rotation: claim it and give the game a
+          *completely new look* as an **alternate skin** — selectable by a toggle and a
+          `?style=reimagined` URL parameter — with the current look left as the default
+          and untouched. Bold is the point (palette, rendering approach, shapes, mood);
+          gameplay, controls and difficulty do not change. Everything original and
+          generated in code: invent the new look, never borrow another game's characters,
+          sprites or artwork. Ship it like any pass (before/after per skin, `art(<slug>):`
+          title); Jon decides whether it gets promoted to the default, and rolling back is
+          simply not promoting it. Multi-session is fine (checkpoint per step 6).
+       1. **Pick** the shipped title (plays end to end; no open `building`/`building-qa`
+          issue on it; no game-code PR to it in the last 3 days) whose last art pass is
+          oldest: `git log -1 --format=%cs --grep '^art(<slug>)'` per game, never-passed
+          first. File it like e): `gh issue create` with `feedback` + `lane:qa`, title
+          `QA — <GAME>: art & fidelity pass`, then claim it with `scripts/qa-claim.sh`.
+       2. **Read** `docs/ART.md` and the game's declared bar (RETRO or MODERN), then
+          screenshot it (`shot.mjs` on your DEV port; canvases sized in CSS px × devicePixelRatio).
+       3. **Critique before fixing:** comment a ranked list on the issue against this
+          rubric — readability at a glance, palette coherence, motion (does everything
+          move), one consistent pixel/stroke language across the frame, HUD/text clarity,
+          and detail & fidelity (MODERN: 3D object quality, materials, lighting, detail;
+          RETRO: sprite detail, shading, animation frames within the era's palette and
+          resolution).
+       4. **Fix #1 only**, as a fidelity uplift *within the declared bar*: never change
+          gameplay, controls or difficulty; never take a RETRO game outside its era's
+          limits. All art stays original and generated in code (docs/ART.md): never copy,
+          trace or move closer to the original game's sprites, characters or artwork —
+          improve our own assets. Compare against our exemplars in docs/ART.md, not the
+          original's art.
+       5. **Re-screenshot the same view**, put before/after in the PR, gate and ship as
+          usual (one ship per session). PR/commit title starts `art(<slug>):` so the
+          rotation in 1. sees it. Stage only your files (never `git add -A`).
+       6. Too big for one session → leave the ranked list on the issue (the rest become
+          `feedback` items) and checkpoint per step 6.
+    No candidates, no queue item and no flagship gap (`idle-kick.mjs qa` says NONE) and, on `mini`, no title for e″) → STOP
     (comment nothing; silence is the correct output).
 
 3. **Claim:** run `scripts/qa-claim.sh <n> <your node> "<one-line plan>"`;
