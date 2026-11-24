@@ -62,10 +62,12 @@ confuse the two queues.
     another node claimed is not yours — skip it, and never open, inspect,
     commit in or clean another node's worktree (`~/Dev/retrogames-qa-*`): it
     is live work in progress. A claim is **dead** only when
-    the issue's newest *liveness* comment — `QA (<node>): claimed` or
-    `checkpoint` — is more than 90 minutes old (#1234: bookkeeping notes like
-    `claim dead`/`yielding`/`waiting on Jon` must not restart the lockout on
-    the item they free):
+    the issue's newest *liveness* comment — any `QA (<node>):` /
+    `FORGE (<slot>):` comment (claimed, `checkpoint <sha>`, a handoff note) —
+    is more than 90 minutes old (#1234, widened by #3072: word-only matching
+    starved live lanes — #3053 — so everything in the namespace keeps the lock
+    except the explicit releases `claim dead`/`yielding`/`waiting on Jon`,
+    which free the item they name and must not restart the lockout):
     then strip `building-qa` (the item returns to `feedback`) and say so in
     one comment line; any node may resume its pushed branch from then on.
     Then pick from open issues labeled `feedback` (not `building-qa`).

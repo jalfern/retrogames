@@ -687,9 +687,9 @@ section('D. statepark — race-proof STATE.md handoff (#1430)')
 {
     const kick = read('idle-kick.mjs')
     ok(/target-held skip/.test(warden)
-        && warden.includes('^(QA|FORGE) \\\\([a-z0-9-]+\\\\): (claimed|checkpoint)')
+        && warden.includes('^(QA|FORGE) \\\\([a-z0-9-]+\\\\): (?!yielding|claim dead|waiting on Jon)')
         && /"\$HAGE" -lt 90/.test(warden),
-        'F1 kick_slot consults forge-claim\'s holder() namespace — a (QA|FORGE) claim < 90m old on the other slot blocks the kick (#2797)')
+        'F1 kick_slot consults forge-claim\'s holder() namespace — any live (QA|FORGE) comment < 90m old on the other slot blocks the kick (#2797, widened #3072)')
     const skipAt = warden.search(/target held by .*#2797/)
     const stallAt = warden.search(/add_label "\$n" stalled/)
     ok(skipAt > -1 && stallAt > -1 && skipAt < stallAt,
