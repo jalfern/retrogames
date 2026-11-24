@@ -278,8 +278,11 @@ function pushHistory(f, pad) {
 }
 
 // ---- move start ------------------------------------------------------------------
-function startMove(f, key) {
+function startMove(m, f, key) {
     f.st = 'attack'; f.sf = 0; f.move = key; f.phase = 'startup'; f.hitOnce = {}; f.cancelGate = false; f.btnBuf = null
+    // juice-only event: every attack start gives the shell a same-frame reaction
+    // (SFX + fx). Never hashed, never counted — pure feedback noise.
+    if (key !== 'throw') m.events.push({ t: m.tick, kind: 'whiff', by: f.side, mv: key })
 }
 
 function tryStartSpecial(f, strength) {
@@ -375,11 +378,11 @@ function updateFighter(m, f, opp, pad) {
                 const sp = tryStartSpecial(f, f.def.specials && (btn === 'hp' || btn === 'lp') ? 'p' : strength)
                 const close = Math.abs(opp.x - f.x) < THROW_RANGE && f.y === 0 && opp.st !== 'down' && opp.st !== 'getup'
                 const throwBtn = (btn === 'hp' || btn === 'hk') && fwd && mv.throw
-                if (sp && mv[sp]) startMove(f, sp)
-                else if (throwBtn && close) startMove(f, 'throw')
+                if (sp && mv[sp]) startMove(m, f, sp)
+                else if (throwBtn && close) startMove(m, f, 'throw')
                 else {
                     const key = f.st === 'crouch' && BTN_CROUCH[btn] ? BTN_CROUCH[btn] : BTN_NORMAL[btn]
-                    if (mv[key]) startMove(f, key)
+                    if (mv[key]) startMove(m, f, key)
                 }
             }
             break
@@ -387,7 +390,7 @@ function updateFighter(m, f, opp, pad) {
         case 'jump': {
             if (f.y <= 0 && f.vy <= 0) { f.y = 0; f.vy = 0; f.st = 'idle'; f.sf = 0 }
             const btn = pressKey(f, pad)
-            if (btn && mv.al) startMove(f, 'al')
+            if (btn && mv.al) startMove(m, f, 'al')
             break
         }
         case 'attack': {
@@ -408,7 +411,7 @@ function updateFighter(m, f, opp, pad) {
                 if (btn) {
                     const sp = tryStartSpecial(f, btn === 'hp' || btn === 'lp' ? 'p' : 'k')
                     const next = sp && mv[sp] ? sp : (BTN_NORMAL[btn] && (move.cancel || []).includes(BTN_NORMAL[btn]) ? BTN_NORMAL[btn] : null)
-                    if (next && next !== f.move) startMove(f, next)
+                    if (next && next !== f.move) startMove(m, f, next)
                 }
             }
             break

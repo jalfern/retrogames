@@ -470,7 +470,12 @@ const IronRingGame = () => {
         const hearEvents = (m) => {
             while (m.events.length) {
                 const e = m.events.shift()
-                if (e.kind === 'hit') {
+                if (e.kind === 'whiff') {
+                    // every attack gets its same-frame reaction: a soft whoosh
+                    // + a small spark at the fighter, before the blow lands.
+                    audioController.playNoise(0.05, 0.08)
+                    scene.spark(m.fighters[e.by].x, 1.0, 0xffd88a)
+                } else if (e.kind === 'hit') {
                     audioController.playNoise(0.06, 0.14)
                     audioController.playTone(e.dmg >= 9 ? 92 : 132, 0.09, 'square', 0.12)
                     shake = Math.max(shake, e.dmg >= 9 ? 9 : 5)
@@ -944,6 +949,7 @@ const IronRingGame = () => {
                     return {
                         tick: gs.tick,
                         seed: gs.seed,
+                        phase: gs.phase,
                         score: gs.fighters[0].wins * 1000 + Math.round(gs.fighters[0].hp),
                         done: gs.phase === 'done',
                         hash: matchHash(gs),
