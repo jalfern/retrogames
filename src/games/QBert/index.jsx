@@ -112,6 +112,9 @@ const QBertGame = () => {
                 const e = s.events.shift()
                 if (e.t === 'points' && e.pts >= 50) popups.push({ x: e.x, y: e.y - 14, msg: `+${e.pts}`, ttl: 55 })
                 if (e.t === 'death') { burst(e.x, e.y, PA.chrome.death, 14); shake = 12; flash = 6 }
+                // #3145 — a rejected press gets a small defiant puff at the
+                // feet (the sound comes from the same event via the SFX table).
+                if (e.t === 'nope') burst(e.x, e.y + 4, PA.chrome.popBright, 4)
                 if (e.t === 'snakelure') { burst(e.x, e.y, PA.chrome.lure, 10); popups.push({ x: e.x, y: e.y - 12, msg: '+500', ttl: 60 }) }
                 if (e.t === 'clear') say(`ROUND ${e.level} CLEAR  +${e.bonus}`, PA.chrome.clear)
                 if (!audible) continue
@@ -360,7 +363,17 @@ const QBertGame = () => {
                 if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop() }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
+            const tookOver = watchingRef.current && isTakeoverKey(e)
+            if (tookOver) { watchingRef.current = false; setWatching(false); playWatchStop() }
+            // #3145 — the cabinet's 4-way stick had no A button, so Space never
+            // reaches the sim; the pad still advertises it, so the press gets
+            // the rejected-hop's honk + puff. Feedback only, zero mechanics
+            // (and while WATCH holds, the takeover blip above already answered).
+            if (code === 'Space' && !e.repeat && !tookOver && gs && !gs.end) {
+                playSfx({ t: 'nope' })
+                const bp = bertPos(gs)
+                burst(bp.x, bp.y + 4, PA.chrome.popBright, 4)
+            }
             if (code === 'ArrowUp') held.up = true
             else if (code === 'ArrowDown') held.dn = true
             else if (code === 'ArrowLeft') held.lf = true

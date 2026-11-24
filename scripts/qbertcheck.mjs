@@ -100,6 +100,29 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     play(gs, { ul: true })
     r.check('an up-hop from the apex with no disc nearby is blocked (never a fall off the top)', gs.player.hop === null && gs.players[0].lives === 3)
 }
+{
+    // #3145 juice — a rejected press must answer: 'nope' fires once per press
+    // (edge-tracked, not per-tick machine-gunning), never on accepted presses,
+    // and leaves the round completely untouched.
+    const gs = makeGame({ seed: 5 })
+    play(gs, { ul: true })
+    let ev = clearEv(gs)
+    r.check('a blocked press honks: the apex up-hop with no disc answers with one juice nope', ev.filter((e) => e.t === 'nope').length === 1, ev.map((e) => e.t).join(','))
+    play(gs, { ul: true })
+    ev = clearEv(gs)
+    r.check('holding the rejected diagonal honks once, not every tick', ev.filter((e) => e.t === 'nope').length === 0)
+    play(gs, { ur: true })
+    ev = clearEv(gs)
+    r.check('a new press of another doomed diagonal honks again', ev.filter((e) => e.t === 'nope').length === 1)
+    r.check('nope is juice-only: the honked round is untouched', gs.player.hop === null && gs.player.r === 0 && gs.player.c === 0 && gs.flips === 0 && gs.players[0].score === 0 && gs.players[0].lives === 3)
+    const gs2 = makeGame({ seed: 5 })
+    play(gs2, { dl: true })
+    ev = clearEv(gs2)
+    r.check('an accepted press gets the hop voice, never the honk', ev.some((e) => e.t === 'hop') && ev.filter((e) => e.t === 'nope').length === 0)
+    play(gs2, { ur: true })
+    r.check('the air is not a dead window: a fresh press mid-hop honks too', clearEv(gs2).some((e) => e.t === 'nope') && gs2.player.hop !== null)
+    r.check('nope has a voice', sfxFor({ t: 'nope' }).length > 0)
+}
 
 // ----------------------------------------- single-arrow arcade diagonals (#1196) ----
 // The cabinet stick only registers diagonals, and VirtualControls dispatches ONE
@@ -763,6 +786,7 @@ for (const seed of [1, 7, 42, 101, 777, 0xbeef, 2026, 1982]) {
 
     // hop / land / points(25)
     play(g, { dl: true }); watch(g)
+    play(g, { ur: true }); watch(g) // #3145 fresh press while airborne -> 'nope'
     until(g, () => !g.player.hop); watch(g)
     // points(50) round trip, and 9990 + 50 crosses 10,000 -> oneup
     // (below the 9-life cap, or the ledger stays silent by design)

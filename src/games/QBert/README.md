@@ -38,6 +38,12 @@ the player actually gets, in plain Node.
 4. **The harness walker is not the pilot.** The full-round clear is scripted by
    qbertcheck's own BFS, and the pilot is graded separately across 8 seeds:
    clears round 1, ledger event-by-event, hash-for-hash, with lives-1 slack.
+5. **Every press is answered (#3145).** A press = the pad naming a NEW diagonal
+   (`player.lastDir` edge-tracking — holding is one press, not a stream). If the
+   world gives it no hop/ride/fall this tick — blocked at the apex, ignored
+   mid-hop — the sim pushes a juice-only `nope` event: muted honk + foot puff,
+   never hashed, never scored. The pad's A (Space) never reaches the stick-only
+   sim, so the shell gives it the same `nope`. `juiceaudit --only=qbert` is 100%.
 
 ## Honest deviations / known gaps (the QA lane's starting list)
 
