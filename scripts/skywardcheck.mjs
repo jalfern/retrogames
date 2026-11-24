@@ -179,6 +179,59 @@ void runAuto
     r.check('the storm is beatable: the autopilot clears THUNDERPASS on all five seeds', allPass, ps.join(' '))
 }
 
+// --------------------------------------------------- juice (#3138) ----
+{
+    const fly = (s, xOff, until) => {
+        const g = makeGame(s)
+        checkout(g, 'ring')
+        const r0 = g.world.rings[0]
+        g.p = { x: r0.x + xOff, y: r0.y, z: r0.z - 40 }
+        g.heading = 0; g.pitch = 0; g.roll = 0; g.speed = 38; g.vy = 0
+        g._zPrev = g.p.z
+        const evs = []
+        for (let i = 0; i < 200; i++) { step(g, {}); evs.push(...g.events); g.events.length = 0; if (until && until(g)) break }
+        return { g, evs }
+    }
+    const nm = fly(7, 14, (g) => g.p.z > g.world.rings[0].z + 2)
+    r.check('a ring missed by a few metres sings a near-miss event at the crossing',
+        nm.evs.some((e) => e.kind === 'near' && e.idx === 1) && nm.g.ringsPassed === 0,
+        JSON.stringify(nm.evs))
+    const cl = fly(7, 0, (g) => g.p.z > g.world.rings[0].z + 2)
+    r.check('a clean pass scores and never doubles up with near-miss noise',
+        cl.evs.some((e) => e.kind === 'ring' && e.idx === 1) && !cl.evs.some((e) => e.kind === 'near'),
+        JSON.stringify(cl.evs))
+    const fr = fly(7, 26, (g) => g.p.z > g.world.rings[0].z + 2)
+    r.check('a wide miss stays silent (the near window is real)', !fr.evs.some((e) => e.kind === 'near'),
+        JSON.stringify(fr.evs))
+    {
+        const g = makeGame(7)
+        checkout(g, 'ring')
+        const r0 = g.world.rings[0]
+        g.p = { x: r0.x, y: r0.y, z: r0.z - 20 }
+        g.heading = 0; g.pitch = 0; g.roll = 0; g.speed = 38; g.vy = 0; g._zPrev = g.p.z
+        let n = 0
+        while (g.ringsPassed === 0 && n++ < 200) { step(g, {}); g.events.length = 0 }
+        g.p.z = r0.z - 15; g._zPrev = g.p.z
+        const evs = []
+        for (let i = 0; i < 40; i++) { step(g, {}); evs.push(...g.events); g.events.length = 0 }
+        r.check('re-crossing a passed ring says nothing (sequence law reaches near-miss too)',
+            g.ringsPassed === 1 && !evs.some((e) => e.kind === 'near'), JSON.stringify(evs))
+    }
+    // the lift signal the shimmer audio reads — honest, and outside the hash
+    const gg = makeGame(7)
+    checkout(gg, 'spot')
+    const p0 = gg.world.thermalPos(gg.world.thermals[0], gg.t)
+    gg.p = { x: p0.x, y: 70, z: p0.z }
+    step(gg, {})
+    const inLift = gg.lift
+    gg.p = { x: 300, y: 70, z: 600 }
+    step(gg, {})
+    r.check('the sim answers lift honestly: strong under the cumulus, none in fair air',
+        inLift > 1.0 && gg.lift < 0.05, `in=${inLift.toFixed(2)} out=${gg.lift.toFixed(2)}`)
+    r.check('lift is a juice channel — it never enters state or the score hash',
+        !('lift' in stateOf(gg)))
+}
+
 // ------------------------------------------------ thermals drift (rung 2) ----
 {
     const w = makeGame(7).world
@@ -283,13 +336,15 @@ void runAuto
 if (process.argv.includes('--mutate')) {
     const MUTANTS = [
         ['the ring pass stops counting', SIMF, 'g.ringsPassed++', 'g.ringsPassed += 0'],
-        ['a dead ring scores as if active', SIMF, 'if (Math.hypot(g.p.x - r.x, g.p.y - r.y, g.p.z - r.z) < CFG.RING_R + 1.5)', 'if (Math.hypot(g.p.x - g.world.rings[7].x, g.p.y - g.world.rings[7].y, g.p.z - g.world.rings[7].z) < CFG.RING_R + 1.5)'],
+        ['a dead ring scores as if active', SIMF, 'if (d < CFG.RING_R + 1.5) {', 'if (Math.hypot(g.p.x - g.world.rings[7].x, g.p.y - g.world.rings[7].y, g.p.z - g.world.rings[7].z) < CFG.RING_R + 1.5) {'],
         ['the bullseye pays the 200 band', SIMF, 'PAD_BANDS: [[4.5, 1000], [9, 700], [15, 450], [24, 200]]', 'PAD_BANDS: [[4.5, 200], [9, 700], [15, 450], [24, 200]]'],
         ['sea contact becomes a landing', SIMF, "if (ter < 0.4) { ev(g, 'splash')", "if (false) { ev(g, 'splash')"],
         ['crates forget to score on landing', SIMF, 'let score = 0\n            for (const [rad, pts] of CFG.DROP_BANDS)', 'let score = 0\n            for (const [rad, pts] of [])'],
         ['the license thresholds vanish', SIMF, 'ACE: 2400, WINGS: 1500,', 'ACE: 0, WINGS: 0,'],
         ['the storm stops pulling the plane down', SIMF, 'g.p.y += st.vy * 0.6 * dt', 'g.p.y += 0 * st.vy * dt'],
         ['a dead thunderpass gate scores as if active', SIMF, 'const pg = w.passRings[g.passIdx]', 'const pg = w.passRings[4]'],
+        ['near-miss crossing detection dies', SIMF, 'else if (d < CFG.RING_R + 7.5 && g.p.z >= r.z && g._zPrev < r.z) {', 'else if (false && d < CFG.RING_R + 7.5 && g.p.z >= r.z && g._zPrev < r.z) {'],
+        ['the lift signal reads zero everywhere', SIMF, 'g.lift = w.thermalLift(g.p.x, g.p.z, g.t)', 'g.lift = 0 * w.thermalLift(g.p.x, g.p.z, g.t)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

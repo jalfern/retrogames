@@ -70,6 +70,8 @@ export function makeGame(seed, opts = {}) {
         lastSafe: { x: 0, y: 34, z: 320, heading: Math.PI },
         events: [],
         _prevA: false, _prevB: false,
+        _zPrev: 300, // last tick's z — ring near-miss crossing detector (juice only)
+        lift: 0,     // thermal lift on the craft right now (HUD/audio only)
         windEase: 0,
         stormS: 0, // how deep the craft is in the cell (renderer/HUD only)
         hash: 0,
@@ -98,6 +100,7 @@ function placeRingStart(g) {
     g.heading = 0 // face south DOWN the ring line (rings run +z)
     g.pitch = 0; g.roll = 0; g.speed = 38; g.vy = 0
     g.ringsPassed = 0; g.ringTimes = []; g.eventT = 0
+    g._zPrev = g.p.z
     g.lastSafe = { x: g.p.x, y: Math.max(g.p.y, 24), z: g.p.z, heading: g.heading }
 }
 function placeGliderLaunch(g) {
@@ -198,9 +201,9 @@ export function step(g, pad = {}) {
 
     if (g.respawnT > 0) g.respawnT = Math.max(0, g.respawnT - dt)
 
-    if (g.craft === 'plane') stepPlane(g, w, sx, sy, dt)
+    if (g.craft === 'plane') { g.lift = 0; stepPlane(g, w, sx, sy, dt) }
     else if (g.craft === 'glider') stepGlider(g, w, sx, sy, dt)
-    else stepBelt(g, w, sx, sy, a, dt)
+    else { g.lift = 0; stepBelt(g, w, sx, sy, a, dt) }
 
     // marker activation (edge on A near a launch point, free flight only)
     const m = markerNear(g)
@@ -305,10 +308,13 @@ function stepPlane(g, w, sx, sy, dt) {
     }
     if (g.respawnT > 0) return
 
-    // ring judgement — only the ACTIVE ring counts, clean pass on proximity
+    // ring judgement — only the ACTIVE ring counts, clean pass on proximity;
+    // missing it while crossing the ring plane close is a NEAR MISS: a juice
+    // event only (never scored, never hashed) so the cabinet can whistle. (#3138)
     if (g.phase === 'ring' && g.ringsPassed < g.world.rings.length) {
         const r = g.world.rings[g.ringsPassed]
-        if (Math.hypot(g.p.x - r.x, g.p.y - r.y, g.p.z - r.z) < CFG.RING_R + 1.5) {
+        const d = Math.hypot(g.p.x - r.x, g.p.y - r.y, g.p.z - r.z)
+        if (d < CFG.RING_R + 1.5) {
             g.ringsPassed++
             g.ringTimes.push(g.eventT)
             ev(g, 'ring', { idx: g.ringsPassed })
@@ -317,8 +323,11 @@ function stepPlane(g, w, sx, sy, dt) {
                 const bonus = clamp(Math.round((g.par - g.eventT) * 12), 0, 200)
                 finishEvent(g, 'ring', g.world.rings.length * 100 + bonus)
             }
+        } else if (d < CFG.RING_R + 7.5 && g.p.z >= r.z && g._zPrev < r.z) {
+            ev(g, 'near', { idx: g.ringsPassed + 1, d: +d.toFixed(1) })
         }
     }
+    g._zPrev = g.p.z
 
     // thunderpass — sequence-law gates driven through the cell
     if (g.phase === 'pass' && g.passIdx < w.passRings.length) {
@@ -345,7 +354,8 @@ function stepGlider(g, w, sx, sy, dt) {
     const targetSpeed = 10.5 + (sy < 0 ? -sy * 7 : 0) - sy * 2.2 // nose-down pushes speed
     g.speed = lerp(g.speed, clamp(targetSpeed, 7, 19), 0.06)
     const storm = w.stormAt(g.p.x, g.p.z, g.t)
-    g.vy = -sinkOf(g.speed) + w.thermalLift(g.p.x, g.p.z, g.t) + storm.vy
+    g.lift = w.thermalLift(g.p.x, g.p.z, g.t)
+    g.vy = -sinkOf(g.speed) + g.lift + storm.vy
     const dirX = Math.sin(g.heading), dirZ = Math.cos(g.heading)
     g.p.x += (dirX * g.speed + w.wind.x + storm.gust.x) * dt
     g.p.z += (dirZ * g.speed + w.wind.z + storm.gust.z) * dt

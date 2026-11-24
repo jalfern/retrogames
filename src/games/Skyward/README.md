@@ -51,3 +51,14 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
 - Thermals are analytic columns, not sim'd convection.
 - A straight-and-level keyboard line dunks at the core — that's the course,
   but a first THUNDERPASS attempt crashes more than the ring run does.
+
+## Juice (#3138)
+- **Blob shadow** — one soft ellipse pressed onto the exact surface under the
+  hull (terrain or the live Gerstner swell, edge-sampled so it rides slopes),
+  widening and fading with altitude. No shadow maps; renderer-only.
+- **Ring near-miss** — crossing the active ring's plane 2–6 m wide of the hoop
+  fires a juice-only `near` event (`_zPrev` crossing detector; never scored,
+  never hashed, sequence law applies); the cabinet answers with an airy whip.
+- **Thermal shimmer** — the sim exposes `g.lift` (glider only, zeroed for the
+  other craft, kept out of `stateOf`); the cabinet sings a two-note shimmer
+  whose tempo and pitch ride the lift, teaching the elevator audio-only.

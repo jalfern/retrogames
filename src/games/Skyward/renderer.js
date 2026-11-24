@@ -363,6 +363,18 @@ void main(){
     const craft = { plane: buildPlane(), glider: buildGlider(), belt: buildBelt() }
     Object.values(craft).forEach((c) => scene.add(c))
 
+    // blob shadow — no shadow maps (by design), but a craft without ground
+    // contact reads as floating clipart. One soft ellipse, pressed onto the
+    // exact surface under the hull (terrain or the live Gerstner swell),
+    // widening and fading with altitude like a real penumbra. (#3138)
+    const shadowMesh = new THREE.Mesh(
+        new THREE.CircleGeometry(1, 24),
+        new THREE.MeshBasicMaterial({ map: softSprite('rgba(6,14,20,0.75)'), transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+    )
+    shadowMesh.rotation.x = -Math.PI / 2
+    scene.add(shadowMesh)
+    const SHADOW_SPAN = { plane: 5.8, glider: 5.0, belt: 1.9 }
+
     // crates pool
     const cratePool = []
     for (let i = 0; i < 4; i++) {
@@ -485,6 +497,27 @@ void main(){
             fl.visible = g.thrusting
             fl.scale.y = 0.7 + Math.abs(Math.sin(t * 30)) * 0.5
             fl.scale.x = 2.4; fl.scale.z = 2.4
+        }
+
+        // blob shadow: pressed onto whatever is under the hull (land or the
+        // live swell). Sample the blob's edges too so it rides a slope instead
+        // of clipping through it, and fade the whole thing out high up.
+        {
+            const gy = (x, z) => Math.max(g.world.terrainHeight(x, z), g.world.waterHeightAt(x, z, t))
+            const span = SHADOW_SPAN[g.craft] * (1 + Math.max(0, g.p.y - gy(g.p.x, g.p.z)) * 0.014)
+            const gx = g.p.x, gz = g.p.z
+            const groundY = Math.max(gy(gx, gz),
+                gy(gx + span * 0.5, gz), gy(gx - span * 0.5, gz),
+                gy(gx, gz + span * 0.5), gy(gx, gz - span * 0.5))
+            const agl = g.p.y - groundY
+            if (agl > -0.5 && agl < 110) {
+                shadowMesh.visible = true
+                shadowMesh.position.set(gx, groundY + 0.22, gz)
+                shadowMesh.scale.set(span, span, 1)
+                shadowMesh.material.opacity = 0.4 * Math.pow(1 - agl / 110, 1.6)
+            } else {
+                shadowMesh.visible = false
+            }
         }
 
         // crates
