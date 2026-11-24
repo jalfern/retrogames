@@ -385,8 +385,16 @@ for (const c of COURSES) {
         }
         check(`${c.id}: no route feature is smoothed away (worst local distance <= ${100 * WORST_CAP[c.id]}%)`,
             worst <= WORST_CAP[c.id], `worst ${(worst * 100).toFixed(1)}%`)
-        const png = new URL(`../docs/comet-ref-${c.id}.png`, import.meta.url)
-        drawSideBySide(png, ref.pts, gamePts)
+        // #2176: the side-by-side PNG is a debug artifact, not a gate input —
+        // the check runs in-memory (worst-local-distance cap above) so the
+        // build stays side-effect free. Writing docs/comet-ref-*.png here
+        // dirtied the worktree on every run (zlib bytes vary by platform),
+        // which refused every `-- --mutate` run in the tree (mutateguard).
+        // Opt in with COMET_REF_WRITE=1 when the PNG is wanted by hand.
+        if (process.env.COMET_REF_WRITE === '1') {
+            const png = new URL(`../docs/comet-ref-${c.id}.png`, import.meta.url)
+            drawSideBySide(png, ref.pts, gamePts)
+        }
 
         // #513: the slow corners are real braking corners — the autopilot must
         // shed speed well below flat-out to make them (and still win, below).

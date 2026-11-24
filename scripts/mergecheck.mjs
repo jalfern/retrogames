@@ -24,7 +24,7 @@
 //   G never reports  — checks never appear: refuse unverified, touch nothing.
 //   H red static     — static FAILURE refuses; gh pr merge never fires.
 //npm run mergecheck
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,6 +42,20 @@ function run(cmd, args, cwd, env) {
 }
 const git = (args, cwd, env) => run('git', args, cwd, env);
 
+// forge-merge.sh and main-ok.sh run under /bin/bash everywhere now (the
+// #2804-portability fix); where /bin/zsh exists it stays the default so
+// local runs match the original dev-box behaviour, but CI never requires it.
+function detectShell() {
+    // MERGECHECK_SHELL forces the shell (CI-proofing / local re-runs where zsh
+    // is deliberately absent); otherwise zsh > bash.
+    if (process.env.MERGECHECK_SHELL) return process.env.MERGECHECK_SHELL;
+    try {
+        execFileSync('/bin/zsh', ['-c', 'true'], { stdio: 'ignore' });
+        return '/bin/zsh';
+    } catch { return '/bin/bash'; }
+}
+const SHELL = detectShell();
+
 const GITCFG = {
     GIT_AUTHOR_NAME: 'mc', GIT_AUTHOR_EMAIL: 'mc@localhost',
     GIT_COMMITTER_NAME: 'mc', GIT_COMMITTER_EMAIL: 'mc@localhost',
@@ -49,15 +63,17 @@ const GITCFG = {
     REPO: 'fake/repo', FAKE_BRANCH: 'forge/testfix',
 };
 
-const FAKE_GH = `#!/bin/zsh
+const FAKE_GH = `#!/bin/bash
 # fake gh for the #3013 sandbox: static passes; merge lands server-side then
 # dies like real gh does against a main-squatting worktree (exit 1, no remote
 # delete). FAKE_MERGE=none fails the merge outright.
+# (bash, not zsh: GitHub ubuntu-latest runners don't ship zsh; macOS dev boxes
+# do, and bash works there too.)
 jqexpr=""
 args=("$@")
-for ((i=1; i<=$#args; i++)); do [[ "\${args[$i]}" == "--jq" ]] && jqexpr="\${args[$((i+1))]}"
+for ((i=0; i<\${#args[@]}; i++)); do [[ "\${args[$i]}" == "--jq" ]] && jqexpr="\${args[$((i+1))]}"
 done
-emit() { if [[ -n "$jqexpr" ]]; then print -r -- "$1" | jq -r "$jqexpr"; else print -r -- "$1"; fi }
+emit() { if [[ -n "$jqexpr" ]]; then printf '%s\n' "$1" | jq -r "$jqexpr"; else printf '%s\n' "$1"; fi }
  seqtok() {
    # consume FAKE_SEQ one line per pr-checks call; the last token sticks.
    # #3120: replays CI being behind a fresh push ("no checks reported"),
@@ -76,7 +92,7 @@ case "$1" in
     case "$2" in
       checks)
         seqtok
-        [[ -n "$FAKE_LOG" ]] && print -r -- "checks:$tok" >> "$FAKE_LOG"
+        [[ -n "$FAKE_LOG" ]] && printf '%s\n' "checks:$tok" >> "$FAKE_LOG"
         case "$tok" in
           error)   echo "no checks reported on the 'forge/testfix' branch" >&2; exit 1 ;;
           empty)   emit '[]' ;;
@@ -89,7 +105,7 @@ case "$1" in
         # number/url/branch — inference is disabled with --repo, which is
         # exactly where the real post-merge cleanup died for both slots.
         pos=""; skip=0
-        for ((i=3; i<=$#args; i++)); do
+        for ((i=2; i<\${#args[@]}; i++)); do
           a="\${args[$i]}"
           if [[ $skip == 1 ]]; then skip=0; continue; fi
           case "$a" in
@@ -106,7 +122,7 @@ case "$1" in
         [[ -n "$head" && "$head" != "$FAKE_BASE" ]] && state=MERGED
         emit "{\\"state\\":\\"$state\\",\\"headRefName\\":\\"$FAKE_BRANCH\\"}" ;;
       merge)
-        [[ -n "$FAKE_LOG" ]] && print -r -- merge >> "$FAKE_LOG"
+        [[ -n "$FAKE_LOG" ]] && printf '%s\n' merge >> "$FAKE_LOG"
         if [[ "$FAKE_MERGE" == "none" ]]; then
             echo "pull request is not mergeable (simulated)" >&2; exit 1
         fi
@@ -132,11 +148,12 @@ case "$1" in
 esac
 `;
 
+
 function buildSandbox(tag, { dirtySquat = false, merge = 'trap', withSquat = true, deep = false,
     checks = null, poll = null, waitTimeout = null } = {}) {
     // realpath the root: macOS /var -> /private/var, and git prints the resolved
-    // worktree paths; HOME is sandboxed so zsh's ~/.zshenv cannot prepend
-    // homebrew and shadow the fake gh (real gh answering "fake/repo" = silence).
+    // worktree paths; HOME is sandboxed so the shell's rc (zshenv/.bashrc) cannot
+    // prepend homebrew and shadow the fake gh (real gh answering "fake/repo" = silence).
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `mergecheck-${tag}-`)));
     const env = { ...GITCFG, HOME: root };
     const origin = path.join(root, 'origin.git');
@@ -183,9 +200,9 @@ say('A — clean main-squat, trap merge: cleanup completes');
     const s = buildSandbox('clean');
     let r = run('node', [path.join(s.lane, 'scripts', 'lib', 'mergeclean.mjs'), 'warn-squats'], s.lane, s.env);
     ok(r.status === 0 && r.stdout.includes(s.squat) && r.stdout.includes('clean'), 'lib names the clean squat (exit 0, advisory)');
-    r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'main-ok.sh')], s.lane, s.env);
+    r = run(SHELL, [path.join(s.lane, 'scripts', 'main-ok.sh')], s.lane, s.env);
     ok(r.status === 0 && r.stdout.includes('WARN') && r.stdout.includes(s.squat), 'main-ok.sh preflight warns about the squat');
-    r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    r = run(SHELL, [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
     ok(r.status === 0, `wrapper exits 0 despite gh's trap exit (got ${r.status})`);
     ok(r.stdout.includes('MERGED (server truth)'), 'wrapper trusts PR state, not gh exit');
     ok(!remoteHeads(s).includes('forge/testfix'), 'remote branch deleted (step gh skipped)');
@@ -205,7 +222,7 @@ say('A — clean main-squat, trap merge: cleanup completes');
 say('B — dirty main-squat: never destroyed, merge cleanup still completes');
 {
     const s = buildSandbox('dirty', { dirtySquat: true });
-    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const r = run(SHELL, [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
     ok(r.status === 0, `wrapper exits 0 (got ${r.status})`);
     ok(r.stdout.includes('DIRTY'), 'dirty squat named DIRTY');
     ok(fs.existsSync(path.join(s.squat, 'wip.txt')), "dirty squat's work untouched");
@@ -218,7 +235,7 @@ say('B — dirty main-squat: never destroyed, merge cleanup still completes');
 say('C — nothing merged: fail loudly, touch nothing');
 {
     const s = buildSandbox('nope', { merge: 'none', dirtySquat: true });
-    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const r = run(SHELL, [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
     ok(r.status !== 0, `wrapper exits non-zero (got ${r.status})`);
     ok(r.stderr.includes('nothing merged') || r.stdout.includes('nothing merged'), 'says why: PR state OPEN');
     ok(remoteHeads(s).includes('forge/testfix'), 'remote branch untouched');
@@ -235,7 +252,7 @@ say('D — deep half-cleanup (#3070): lane parked on local main, remote branch a
     // mid-bookkeeping. The old number-less `gh pr view --repo` could not
     // resolve anything from that context and abandoned the whole cleanup.
     const s = buildSandbox('deep', { withSquat: false, deep: true });
-    let r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    let r = run(SHELL, [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
     ok(r.status === 0, `wrapper exits 0 despite the deep half-cleanup (got ${r.status})`);
     ok(r.stdout.includes('MERGED (server truth)'), 'PR resolved explicitly by branch, not by the corrupted cwd');
     ok(!remoteHeads(s).includes('forge/testfix'), 'remote branch gone (gh deleted it; step still verified)');
@@ -251,7 +268,7 @@ say('E — forge-merge refuses to run from a lane parked on main (#3070 guard)')
 {
     const s = buildSandbox('onmain', { withSquat: false });
     git(['checkout', '-q', 'main'], s.lane, s.env);
-    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const r = run(SHELL, [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
     ok(r.status !== 0 && (r.stderr + r.stdout).includes('not a PR branch'), 'says why, exits non-zero');
     ok(remoteHeads(s).includes('forge/testfix'), 'remote untouched');
     fs.rmSync(s.root, { recursive: true, force: true });
@@ -265,7 +282,7 @@ say('F — "no checks reported" is WAIT, not merge (#3120): CI catches up, merge
     // proof: a fall-through would log `merge` before any checks:success.
     const s = buildSandbox('late', { withSquat: false, poll: 1,
         checks: ['error', 'error', 'empty', 'pending', 'success'] });
-    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const r = run(SHELL, [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
     const log = fs.readFileSync(s.env.FAKE_LOG, 'utf8').trim().split('\n');
     ok(r.status === 0, `wrapper exits 0 once static verifies (got ${r.status})`);
     ok(log[0] === 'checks:error' && log[1] === 'checks:error', 'polled on through "no checks reported" (no early merge)');
@@ -279,7 +296,7 @@ say('F — "no checks reported" is WAIT, not merge (#3120): CI catches up, merge
 say('G — checks never report: refuse to merge unverified, touch nothing (#3120)');
 {
     const s = buildSandbox('never', { checks: ['error'], poll: 1, waitTimeout: 3 });
-    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const r = run(SHELL, [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
     const log = fs.readFileSync(s.env.FAKE_LOG, 'utf8').trim().split('\n');
     ok(r.status !== 0, `wrapper exits non-zero when static never reports (got ${r.status})`);
     ok((r.stderr + r.stdout).includes('unverified'), 'says why: refusing to merge unverified');
@@ -293,7 +310,7 @@ say('G — checks never report: refuse to merge unverified, touch nothing (#3120
 say('H — static FAILURE refuses the merge (red never merges, reported or not)');
 {
     const s = buildSandbox('red', { checks: ['failure'], poll: 1 });
-    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const r = run(SHELL, [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
     const log = fs.readFileSync(s.env.FAKE_LOG, 'utf8').trim().split('\n');
     ok(r.status !== 0, `wrapper exits non-zero (got ${r.status})`);
     ok(!log.includes('merge'), 'gh pr merge never fired');

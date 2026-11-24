@@ -94,6 +94,7 @@ export const GAMES = [
     { id: 'viper-pit', path: '/viper-pit' },
     { id: 'britannia', path: '/britannia' },
     { id: 'pick-rush', path: '/pick-rush' },
+    { id: 'stomptown', path: '/stomptown' }, // #3094: join BOTH lists at once (#1525)
     { id: 'tidy-bot', path: '/tidy-bot' },
     { id: 'robot-lab', path: '/robot-lab' },
     { id: 'floor-boss', path: '/floor-boss' },
@@ -108,6 +109,11 @@ export const GAMES = [
     { id: 'contra', path: '/contra' }, // #2796 grew contractGames; the soak roster missed it — nightly run 44762398189 reddened main (#1525 law: never grow one list without the other)
     { id: 'double-dragon', path: '/double-dragon' }, // #2807: join BOTH lists at once (#1525)
     { id: 'r-type', path: '/r-type' }, // #2808: join BOTH lists at once (#1525)
+    { id: 'pinball', path: '/pinball' }, // #3103: rung 1 — join BOTH lists at once (#1525)
+    { id: 'tidal-rush', path: '/tidal-rush' }, // #3104: rung 1 — join BOTH lists at once (#1525)
+    { id: 'grind-city', path: '/grind-city' }, // #3106: rung 1 — join BOTH lists at once (#1525)
+    { id: 'skyward', path: '/skyward' }, // #3105: rung 1 — join BOTH lists at once (#1525)
+    { id: 'marble-rush', path: '/marble-rush' }, // #3107: rung 1 — join BOTH lists at once (#1525)
 ]
 const CAP = 9000
 

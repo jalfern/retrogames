@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 # #601 step 4: red main = merge freeze. Lanes call this before `gh pr merge`.
 # Blocking signal: the latest completed Nightly run on main (the deterministic
 # full suite with mutants). Browser nightlies (heist/play) are advisory — the

@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 # #3013 — the merge path, in one command: AGENTS.md rule 5 verbatim
 # (main-ok → wait on the required check `static` → squash-merge), plus the
 # recovery that rule-5's inline form could not do. `gh pr merge --squash
