@@ -238,8 +238,61 @@
       gl_FragColor = vec4(col.rgb, col.a * uOpacity);
     }`
 
-  const SKYW_FS = BILL_FS
   const SKYW_VS = BILL_VS
+
+  const SKY_FS = `
+    precision highp float;
+    uniform float uTime;
+    uniform vec2 uSwirl;
+    uniform vec2 uStars[12];
+    uniform int uStarCount;
+    varying vec2 vUv;
+
+    float hash21(vec2 p) {
+      p = fract(p * vec2(234.34, 435.345));
+      p += dot(p, p + 34.23);
+      return fract(p.x * p.y);
+    }
+
+    void main() {
+      vec2 local = vec2((vUv.x - 0.5) * 240.0, (0.5 - vUv.y) * 120.0);
+
+      float screenUp = local.y / 60.0;
+      // deep cobalt at the top, slightly brighter toward the horizon
+      vec3 col = mix(vec3(0.075, 0.130, 0.34), vec3(0.035, 0.055, 0.22), smoothstep(-0.3, 0.95, screenUp));
+
+      // thin, sparse flowing strokes
+      float wob = sin(local.x * 0.010 + local.y * 0.06) * 3.0;
+      float band = sin((local.y + wob) * 0.38 + sin(local.x * 0.011 + uTime * 0.05) * 1.2);
+      float stroke = smoothstep(0.45, 0.95, band);
+      col += vec3(0.05, 0.09, 0.24) * stroke * 0.50;
+
+      // swirl current: saturated gold arcs, tight and thick
+      float dSw = distance(local, uSwirl);
+      float ring = sin(dSw * 0.38 - uTime * 0.55);
+      float arcs = smoothstep(0.30, 0.95, abs(ring)) * smoothstep(46.0, 12.0, dSw) * smoothstep(8.0, 14.0, dSw);
+      col += vec3(0.55, 0.40, 0.11) * arcs * 0.58;
+      float core = smoothstep(20.0, 6.0, dSw);
+      col += vec3(0.46, 0.38, 0.20) * core * 0.62;
+
+      // one smooth crescent per star — a loose brush stroke circling it
+      for (int i = 0; i < 12; i++) {
+        if (i >= uStarCount) break;
+        vec2 d = local - uStars[i];
+        float rr = length(d);
+        float a = atan(d.y, d.x);
+        float crescent = sin(a - float(i) * 2.3 + uTime * 0.35);
+        float arcMask = smoothstep(0.0, 0.8, crescent);
+        arcMask *= smoothstep(5.0, 6.2, rr) * smoothstep(9.0, 7.0, rr);
+        col += vec3(0.62, 0.48, 0.22) * arcMask * 0.36;
+      }
+
+      // quiet grain
+      float grain = sin(local.x * 0.55 + sin(local.y * 0.31) * 2.2) * sin(local.y * 0.43);
+      col += vec3(0.010) * grain;
+
+      gl_FragColor = vec4(col, 1.0);
+    }`
 
   const POST_VS = `
     attribute vec2 aPos;
@@ -252,16 +305,10 @@
     precision highp float;
     uniform sampler2D tDiffuse;
     uniform vec2 resolution;
-    uniform float inkStrength;
     uniform float bands;
     uniform float hatchStrength;
     uniform float vignetteStrength;
-    uniform vec3 inkColor;
     varying vec2 vUv;
-    float lumen(vec2 uv) {
-      vec3 c = texture2D(tDiffuse, uv).rgb;
-      return dot(c, vec3(0.2126, 0.7152, 0.0722));
-    }
     float hash(float n) { return fract(sin(n) * 43758.5453123); }
     void main() {
       vec2 uv = vUv;
@@ -271,12 +318,6 @@
       float band = floor(lum * bands + 0.5) * q;
       band = max(band, q * 0.75);
       col *= band / max(lum, 0.02);
-      float px = 1.5 / resolution.x;
-      float py = 1.5 / resolution.y;
-      float lx = abs(lumen(uv + vec2(px, 0.0)) - lumen(uv - vec2(px, 0.0)));
-      float ly = abs(lumen(uv + vec2(0.0, py)) - lumen(uv - vec2(0.0, py)));
-      float ink = smoothstep(0.055, 0.14, lx + ly);
-      col = mix(col, inkColor, ink * inkStrength);
       float lineIdx = floor(gl_FragCoord.y / 13.0);
       float phase = hash(lineIdx) * 6.2831;
       float y = gl_FragCoord.y + sin(uv.x * 18.0 + phase) * 2.4;
@@ -292,7 +333,8 @@
 
   const P_FIXED = program(FIXED_VS, FIXED_FS)
   const P_GROUND = program(FIXED_VS_GROUND, FIXED_FS_GROUND)
-  const P_BILL = program(SKYW_VS, SKYW_FS)
+  const P_BILL = program(BILL_VS, BILL_FS)
+  const P_SKY = program(BILL_VS, SKY_FS)
   const P_POST = program(POST_VS, POST_FS)
 
   // buffers
@@ -314,59 +356,45 @@
   }
 
   // ================================================================ textures
-  // ---- sky (painted): base + wavy blue strokes
-  function skyTexture() {
-    const W2 = 2048, H2 = 1024
-    const [c, ctx] = makeCanvas(W2, H2)
-    ctx.fillStyle = '#13265c'
-    ctx.fillRect(0, 0, W2, H2)
-    for (let i = 0; i < 260; i++) {
-      const blues = ['#1a2f6b', '#1f3a7e', '#274a92', '#2c529f', '#31579f']
-      ctx.strokeStyle = blues[Math.floor(Math.random() * blues.length)]
-      ctx.globalAlpha = 0.28 + Math.random() * 0.42
-      ctx.lineWidth = 5 + Math.random() * 13
-      ctx.lineCap = 'round'
-      const y = Math.random() * H2
-      const x = Math.random() * W2 - 150
-      const len = 120 + Math.random() * 320
-      const dy = (Math.random() - 0.5) * 34
-      ctx.beginPath()
-      ctx.moveTo(x, y)
-      ctx.quadraticCurveTo(x + len * 0.5, y + dy, x + len, y + (Math.random() - 0.5) * 20)
-      ctx.stroke()
-    }
-    ctx.globalAlpha = 1
-    return c
-  }
-
   function spiralTexture() {
     const [c, ctx] = makeCanvas(1024, 1024)
     const cx = 512, cy = 512
     ctx.lineCap = 'round'
-    const blues = ['#1c3a7e', '#2c529f', '#3c63c0', '#4a76cc', '#33579f', '#22406f']
-    const turns = 3.1, rMax = 440, r0 = 34
-    const steps = 340
+    const palette = [
+      { col: '#f5e6b8', a: 0.85, w: [10, 22] },
+      { col: '#f5d76e', a: 0.72, w: [8, 18] },
+      { col: '#7fa0e0', a: 0.55, w: [6, 14] },
+      { col: '#f0c84a', a: 0.68, w: [6, 12] },
+      { col: '#d9c9a0', a: 0.50, w: [5, 10] },
+    ]
+    const turns = 3.4, rMax = 430, r0 = 30
+    const steps = 430
     for (let i = 0; i < steps; i++) {
       const t0 = i / steps, t1 = (i + 1) / steps
       const a0 = t0 * turns * Math.PI * 2, a1 = t1 * turns * Math.PI * 2
       const rA = r0 + t0 * rMax, rB = r0 + t1 * rMax
-      const light = Math.random() < 0.18
-      ctx.strokeStyle = light ? (Math.random() < 0.5 ? '#e9e2c8' : '#f5d76e') : blues[Math.floor(Math.random() * blues.length)]
-      ctx.globalAlpha = 0.38 + Math.random() * 0.5
-      ctx.lineWidth = 5 + Math.random() * 15
+      const pick = palette[Math.floor(Math.random() * palette.length)]
+      ctx.strokeStyle = pick.col
+      ctx.globalAlpha = pick.a * (0.55 + Math.random() * 0.45)
+      ctx.lineWidth = pick.w[0] + Math.random() * (pick.w[1] - pick.w[0])
       ctx.beginPath()
       ctx.moveTo(cx + Math.cos(a0) * rA, cy + Math.sin(a0) * rA)
       ctx.quadraticCurveTo(
-        cx + Math.cos((a0 + a1) / 2) * ((rA + rB) / 2 + 8),
-        cy + Math.sin((a0 + a1) / 2) * ((rA + rB) / 2 + 8),
+        cx + Math.cos((a0 + a1) / 2) * ((rA + rB) / 2 + 10),
+        cy + Math.sin((a0 + a1) / 2) * ((rA + rB) / 2 + 10),
         cx + Math.cos(a1) * rB,
         cy + Math.sin(a1) * rB
       )
       ctx.stroke()
     }
+    // bright thick core
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 100)
+    g.addColorStop(0, '#fffbe8')
+    g.addColorStop(0.4, '#ffe89a')
+    g.addColorStop(1, 'rgba(255,233,154,0)')
     ctx.globalAlpha = 0.92
-    ctx.fillStyle = '#fff6d8'
-    ctx.beginPath(); ctx.arc(cx, cy, 20, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = g
+    ctx.beginPath(); ctx.arc(cx, cy, 100, 0, Math.PI * 2); ctx.fill()
     ctx.globalAlpha = 1
     return c
   }
@@ -375,40 +403,36 @@
     const [c, ctx] = makeCanvas(256, 256)
     const cx = 128, cy = 128
     ctx.lineCap = 'round'
-    ctx.strokeStyle = '#ffe9a0'
-    ctx.globalAlpha = 0.72
-    ctx.lineWidth = 5
-    for (let i = 0; i < 12; i++) {
-      const a0 = (i / 12) * Math.PI * 2 + 0.05
-      ctx.beginPath()
-      ctx.arc(cx, cy, 84, a0, a0 + 0.34)
-      ctx.stroke()
-    }
-    const strokes = [
-      { a: 0, len: 92, w: 12, col: '#fff6d8' },
-      { a: Math.PI / 2, len: 92, w: 12, col: '#fff6d8' },
-      { a: Math.PI / 4, len: 54, w: 8, col: '#ffe9a0' },
-      { a: (Math.PI * 3) / 4, len: 54, w: 8, col: '#ffe9a0' },
-      { a: Math.PI / 8, len: 38, w: 5, col: '#ffe9a0' },
-      { a: (Math.PI * 7) / 8, len: 38, w: 5, col: '#ffe9a0' },
-      { a: (Math.PI * 5) / 8, len: 38, w: 5, col: '#ffe9a0' },
-      { a: (Math.PI * 3) / 8, len: 38, w: 5, col: '#ffe9a0' },
+    // soft warm halo
+    const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, 126)
+    g.addColorStop(0, 'rgba(255,246,208,0.85)')
+    g.addColorStop(0.35, 'rgba(255,233,150,0.32)')
+    g.addColorStop(1, 'rgba(255,233,150,0)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, 256, 256)
+    // concentric ring arcs of longer brush strokes — the glow
+    const rings = [
+      { r: 24, n: 4, w: 14, col: '#fff3c4', a: 0.92 },
+      { r: 52, n: 5, w: 9, col: '#ffe9a0', a: 0.55 },
     ]
-    for (const s of strokes) {
-      const dx = Math.cos(s.a), dy = Math.sin(s.a)
-      ctx.strokeStyle = s.col
-      ctx.globalAlpha = 0.96
-      ctx.lineWidth = s.w
-      ctx.beginPath()
-      ctx.moveTo(cx - dx * s.len * 0.5, cy - dy * s.len * 0.5)
-      ctx.lineTo(cx + dx * s.len * 0.5, cy + dy * s.len * 0.5)
-      ctx.stroke()
+    for (const ring of rings) {
+      for (let i = 0; i < ring.n; i++) {
+        const a0 = (i / ring.n) * Math.PI * 2 + Math.random() * 0.4
+        ctx.strokeStyle = ring.col
+        ctx.globalAlpha = ring.a * (0.78 + Math.random() * 0.22)
+        ctx.lineWidth = ring.w * (0.8 + Math.random() * 0.4)
+        ctx.beginPath()
+        ctx.arc(cx, cy, ring.r + (Math.random() - 0.5) * 14, a0, a0 + 1.1 + Math.random() * 0.9)
+        ctx.stroke()
+      }
     }
     ctx.globalAlpha = 1
-    ctx.fillStyle = '#ffe9a0'
-    ctx.beginPath(); ctx.arc(cx, cy, 13, 0, Math.PI * 2); ctx.fill()
-    ctx.fillStyle = '#fff6d8'
-    ctx.beginPath(); ctx.arc(cx, cy, 6.5, 0, Math.PI * 2); ctx.fill()
+    // bright core
+    const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, 22)
+    core.addColorStop(0, 'rgba(255,252,230,1)')
+    core.addColorStop(1, 'rgba(255,244,205,0)')
+    ctx.fillStyle = core
+    ctx.fillRect(0, 0, 256, 256)
     return c
   }
 
@@ -463,38 +487,42 @@
     }
     ctx.restore()
     ctx.globalAlpha = 1
-    ctx.strokeStyle = spec.ridge
-    ctx.lineCap = 'round'
-    for (let x = 0; x < W2; x += 22 + Math.random() * 40) {
-      const y0 = ridgeY(x)
-      ctx.globalAlpha = 0.55 + Math.random() * 0.35
-      ctx.lineWidth = 5 + Math.random() * 6
-      ctx.beginPath()
-      ctx.moveTo(x, y0)
-      ctx.quadraticCurveTo(x + 30, y0 + (Math.random() - 0.5) * 7, x + 55 + Math.random() * 40, y0 + (Math.random() - 0.5) * 6)
-      ctx.stroke()
-    }
-    ctx.globalAlpha = 1
     return c
   }
 
   function groundTexture() {
     const W2 = 1024, H2 = 1024
     const [c, ctx] = makeCanvas(W2, H2)
-    ctx.fillStyle = '#15251a'
+    ctx.fillStyle = '#16261c'
     ctx.fillRect(0, 0, W2, H2)
-    const greens = ['#1c3524', '#234a2e', '#0e1f14', '#2c5232', '#19301f']
-    for (let i = 0; i < 300; i++) {
-      ctx.strokeStyle = greens[Math.floor(Math.random() * greens.length)]
-      ctx.globalAlpha = 0.2 + Math.random() * 0.4
-      ctx.lineWidth = 3 + Math.random() * 10
+
+    // near ground (bottom of screen) maps to canvas rows ~0.2H2-0.7H2
+    const farGreens = ['#1c3524', '#234a2e', '#0e1f14', '#2c5232', '#19301f', '#1e3a2a']
+    const nearGreens = ['#2e5236', '#3a6a4a', '#1e3a2a', '#234a2e', '#334f2e', '#3f7040']
+    for (let i = 0; i < 110; i++) {
+      ctx.strokeStyle = nearGreens[Math.floor(Math.random() * nearGreens.length)]
+      ctx.globalAlpha = 0.45 + Math.random() * 0.40
+      ctx.lineWidth = 30 + Math.random() * 55
       ctx.lineCap = 'round'
-      const y = Math.random() * H2
-      const x = Math.random() * W2 - 120
-      const len = 90 + Math.random() * 260
+      const y = Math.random() * H2 * 0.57
+      const x = Math.random() * W2 - 140
+      const len = 260 + Math.random() * 520
       ctx.beginPath()
       ctx.moveTo(x, y)
-      ctx.quadraticCurveTo(x + len / 2, y + (Math.random() - 0.5) * 20, x + len, y + (Math.random() - 0.5) * 12)
+      ctx.quadraticCurveTo(x + len / 2, y + (Math.random() - 0.5) * 60, x + len, y + (Math.random() - 0.5) * 40)
+      ctx.stroke()
+    }
+    for (let i = 0; i < 60; i++) {
+      ctx.strokeStyle = farGreens[Math.floor(Math.random() * farGreens.length)]
+      ctx.globalAlpha = 0.22 + Math.random() * 0.28
+      ctx.lineWidth = 14 + Math.random() * 22
+      ctx.lineCap = 'round'
+      const y = Math.random() * H2 * 0.40 + H2 * 0.60
+      const x = Math.random() * W2 - 120
+      const len = 160 + Math.random() * 340
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.quadraticCurveTo(x + len / 2, y + (Math.random() - 0.5) * 50, x + len, y + (Math.random() - 0.5) * 30)
       ctx.stroke()
     }
     ctx.globalAlpha = 1
@@ -508,48 +536,71 @@
     const centerX = 250
     const path = new Path2D()
     path.moveTo(centerX, apexY)
-    for (let y = apexY; y <= H2; y += 10) {
+    for (let y = apexY; y <= H2; y += 8) {
       const t = (y - apexY) / (H2 - apexY)
-      const w = Math.pow(t, 0.7) * 165 * (1 + 0.11 * Math.sin(y * 0.026 + 0.8) + 0.05 * Math.sin(y * 0.085))
+      const w = Math.pow(t, 0.62) * 175 * (1 + 0.26 * Math.sin(y * 0.021 + 0.8) + 0.10 * Math.sin(y * 0.070) + 0.06 * Math.sin(y * 0.13))
       path.lineTo(centerX - w, y)
     }
     path.lineTo(centerX + 2, H2)
-    for (let y = H2; y >= apexY; y -= 10) {
+    for (let y = H2; y >= apexY; y -= 8) {
       const t = (y - apexY) / (H2 - apexY)
-      const w = Math.pow(t, 0.7) * 172 * (1 + 0.13 * Math.sin(y * 0.019 + 2.1) + 0.06 * Math.sin(y * 0.064))
+      const w = Math.pow(t, 0.60) * 185 * (1 + 0.28 * Math.sin(y * 0.017 + 2.1) + 0.11 * Math.sin(y * 0.058) + 0.05 * Math.sin(y * 0.118))
       path.lineTo(centerX + w, y)
     }
     path.closePath()
     const grad = ctx.createLinearGradient(0, apexY, 0, H2)
-    grad.addColorStop(0, '#1e3822')
-    grad.addColorStop(1, '#0c1d11')
+    grad.addColorStop(0, '#0d1c12')
+    grad.addColorStop(0.45, '#122419')
+    grad.addColorStop(1, '#0a1810')
     ctx.fillStyle = grad
     ctx.fill(path)
     ctx.save()
     ctx.clip(path)
-    for (let i = 0; i < 280; i++) {
+    // upward strokes — the flame body
+    const cols = ['#1a2c1e', '#223526', '#101f15', '#16251a', '#2a4430']
+    for (let i = 0; i < 340; i++) {
       const x = 30 + Math.random() * (W2 - 60)
-      const y0 = apexY + Math.random() * (H2 - apexY) * 0.95
-      const len = 50 + Math.random() * 170
-      const sway = (Math.random() - 0.5) * 46
-      ctx.strokeStyle = ['#2a5232', '#16301f', '#3a6a3c', '#0e2014'][Math.floor(Math.random() * 4)]
-      ctx.globalAlpha = 0.18 + Math.random() * 0.35
-      ctx.lineWidth = 2.5 + Math.random() * 7
+      const y0 = apexY + Math.random() * (H2 - apexY) * 0.9
+      const len = 60 + Math.random() * 200
+      const sway = (Math.random() - 0.5) * 40
+      ctx.strokeStyle = cols[Math.floor(Math.random() * cols.length)]
+      ctx.globalAlpha = 0.34 + Math.random() * 0.45
+      ctx.lineWidth = 3.5 + Math.random() * 8
       ctx.lineCap = 'round'
       ctx.beginPath()
       ctx.moveTo(x, y0)
-      ctx.bezierCurveTo(x + sway * 0.3, y0 + len * 0.35, x + sway * 0.65, y0 + len * 0.7, x + sway, y0 + len)
+      ctx.bezierCurveTo(
+        x + sway * 0.25, y0 - len * 0.35,
+        x + sway * 0.60, y0 - len * 0.70,
+        x + sway, y0 - len
+      )
       ctx.stroke()
     }
-    ctx.strokeStyle = '#3a2718'
-    ctx.globalAlpha = 0.85
-    for (let i = 0; i < 22; i++) {
-      const x = centerX + (Math.random() - 0.5) * 90
-      const y0 = H2 - 30 - Math.random() * 110
-      ctx.lineWidth = 3 + Math.random() * 5
+    // bright rim strokes tracing the silhouette edge
+    for (let i = 0; i < 36; i++) {
+      const y = apexY + Math.random() * (H2 - apexY) * 0.85
+      const t = (y - apexY) / (H2 - apexY)
+      const w = Math.pow(t, 0.75) * 165 * (1 + 0.11 * Math.sin(y * 0.026 + 0.8))
+      const side = Math.random() < 0.5 ? -1 : 1
+      const rx = centerX + side * (w * 0.70 + Math.random() * 14)
+      ctx.strokeStyle = '#24402c'
+      ctx.globalAlpha = 0.25 + Math.random() * 0.30
+      ctx.lineWidth = 3 + Math.random() * 4
       ctx.beginPath()
-      ctx.moveTo(x, y0)
-      ctx.lineTo(x + (Math.random() - 0.5) * 22, y0 + 50 + Math.random() * 110)
+      ctx.moveTo(rx, y)
+      ctx.lineTo(rx + (Math.random() - 0.5) * 20, y - 30 - Math.random() * 80)
+      ctx.stroke()
+    }
+    // trunk
+    ctx.strokeStyle = '#1c140c'
+    ctx.globalAlpha = 0.9
+    for (let i = 0; i < 16; i++) {
+      const x = centerX + (Math.random() - 0.5) * 60
+      const y0 = H2 - 25 - Math.random() * 60
+      ctx.lineWidth = 4 + Math.random() * 5
+      ctx.beginPath()
+      ctx.moveTo(x, y0 + 60)
+      ctx.lineTo(x + (Math.random() - 0.5) * 10, y0 - 40)
       ctx.stroke()
     }
     ctx.restore()
@@ -561,8 +612,8 @@
     const W2 = 256, H2 = 128
     const [c, ctx] = makeCanvas(W2, H2)
     const grad = ctx.createLinearGradient(0, 0, 0, H2)
-    grad.addColorStop(0, '#235030')
-    grad.addColorStop(1, '#12231a')
+    grad.addColorStop(0, '#26492e')
+    grad.addColorStop(1, '#111f16')
     ctx.fillStyle = grad
     ctx.beginPath()
     ctx.moveTo(0, H2)
@@ -570,19 +621,37 @@
     ctx.bezierCurveTo(W2 * 0.72, 8, W2, 28, W2, H2)
     ctx.closePath()
     ctx.fill()
-    const greens = ['#2a5232', '#1c3a24', '#2c5232', '#16301f']
-    for (let i = 0; i < 40; i++) {
+    ctx.save()
+    ctx.clip()
+    const greens = ['#2e5236', '#24492e', '#3a623c', '#1c3a24', '#16301f']
+    for (let i = 0; i < 70; i++) {
       ctx.strokeStyle = greens[Math.floor(Math.random() * greens.length)]
-      ctx.globalAlpha = 0.2 + Math.random() * 0.3
-      ctx.lineWidth = 2 + Math.random() * 5
+      ctx.globalAlpha = 0.30 + Math.random() * 0.40
+      ctx.lineWidth = 6 + Math.random() * 14
       ctx.lineCap = 'round'
       const x = Math.random() * W2
-      const y = 30 + Math.random() * (H2 - 50)
+      const y = 14 + Math.random() * (H2 - 30)
       ctx.beginPath()
       ctx.moveTo(x, y)
-      ctx.lineTo(x + (Math.random() - 0.5) * 30, y + 10 + Math.random() * 30)
+      ctx.quadraticCurveTo(x + (Math.random() - 0.5) * 60, y + 8 + Math.random() * 34,
+                           x + (Math.random() - 0.5) * 80, y + 18 + Math.random() * 34)
       ctx.stroke()
     }
+    // bright sky highlight along the top silhouette edge
+    for (let i = 0; i < 26; i++) {
+      ctx.strokeStyle = i < 14 ? '#3d6a40' : '#2a5a34'
+      ctx.globalAlpha = 0.40 + Math.random() * 0.40
+      ctx.lineWidth = 4 + Math.random() * 5
+      ctx.lineCap = 'round'
+      const x = Math.random() * W2
+      const t = x / W2
+      const y = 14 + Math.pow((t - 0.5) * 2.2, 2) * 20 + Math.random() * 8
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x + (Math.random() - 0.5) * 70, y + (Math.random() - 0.5) * 10)
+      ctx.stroke()
+    }
+    ctx.restore()
     ctx.globalAlpha = 1
     return c
   }
@@ -637,21 +706,19 @@
     function litWindow(wx, wy, wU = 0.52, hU = 0.64) {
       const cx = xPx(wx), cy = yPx(wy)
       const w = wU * scale, h = hU * scale
-      const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, w * 1.9)
-      g.addColorStop(0, 'rgba(255, 233, 164, 0.5)')
-      g.addColorStop(0.5, 'rgba(255, 233, 164, 0.18)')
-      g.addColorStop(1, 'rgba(255, 233, 164, 0)')
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 1.55)
+      g.addColorStop(0, 'rgba(255, 214, 106, 0.85)')
+      g.addColorStop(0.55, 'rgba(255, 214, 106, 0.30)')
+      g.addColorStop(1, 'rgba(255, 214, 106, 0)')
       ctx.fillStyle = g
       ctx.beginPath()
-      ctx.arc(cx, cy, w * 1.9, 0, Math.PI * 2)
+      ctx.arc(cx, cy, w * 1.55, 0, Math.PI * 2)
       ctx.fill()
-      ctx.fillStyle = '#ffe9a4'
+      ctx.fillStyle = '#ffd76a'
       ctx.beginPath()
       if (ctx.roundRect) ctx.roundRect(cx - w / 2, cy - h / 2, w, h, 2)
       else ctx.rect(cx - w / 2, cy - h / 2, w, h)
       ctx.fill()
-      ctx.fillStyle = '#fff9e0'
-      ctx.fillRect(cx - w * 0.18, cy - h * 0.2, w * 0.36, h * 0.4)
     }
 
     const drawn = []
@@ -745,7 +812,6 @@
   }
 
   // build textures
-  const TEX_SKY = uploadTexture(skyTexture())
   const TEX_SPIRAL = uploadTexture(spiralTexture())
   const TEX_STAR = uploadTexture(starTexture())
   const TEX_MOON = uploadTexture(moonTexture())
@@ -823,7 +889,7 @@
   const cornerLoc = {}, centerLoc = {}, rightLoc = {}, upLoc = {}, halfLoc = {}, rotLoc = {}, swayLoc = {}, opacityLoc = {}, viewLoc = {}, projLoc = {}, texLoc = {}, repeatLoc = {}, fogLoc = {}, fogNearLoc = {}, fogFarLoc = {}, shatterLoc = {}
 
   function loc(p) {
-    const ids = ['uView', 'uProj', 'uCenter', 'uRightW', 'uUpW', 'uHalf', 'uSway', 'uRot', 'uOpacity', 'uTex', 'uRepeat', 'uFogColor', 'uFogNear', 'uFogFar', 'uRight', 'uUp', 'tDiffuse', 'resolution', 'inkStrength', 'bands', 'hatchStrength', 'vignetteStrength', 'inkColor']
+    const ids = ['uView', 'uProj', 'uCenter', 'uRightW', 'uUpW', 'uHalf', 'uSway', 'uRot', 'uOpacity', 'uTex', 'uRepeat', 'uFogColor', 'uFogNear', 'uFogFar', 'uRight', 'uUp', 'tDiffuse', 'resolution', 'bands', 'hatchStrength', 'vignetteStrength', 'uTime', 'uSwirl', 'uStars', 'uStarCount']
     const out = {}
     for (const n of ids) out[n] = gl.getUniformLocation(p, n)
     return out
@@ -831,6 +897,7 @@
   const L_FIXED_GROUND = loc(P_GROUND)
   const L_FIXED = loc(P_FIXED)
   const L_BILL = loc(P_BILL)
+  const L_SKY = loc(P_SKY)
   const L_POST = loc(P_POST)
 
   function setMat4(loc, arr) { gl.uniformMatrix4fv(loc, false, arr) }
@@ -861,6 +928,54 @@
     gl.drawArrays(gl.TRIANGLES, 0, 6)
   }
 
+  function drawSky(b, skyDist) {
+    const aspect = FBO_W / FBO_H
+    const pos = b.pos
+    const f = b.f
+    const skyCenter = [pos[0] + f[0] * skyDist, pos[1] + f[1] * skyDist, pos[2] + f[2] * skyDist]
+    function planeLocal(w) {
+      const dx = w[0] - pos[0], dy = w[1] - pos[1], dz = w[2] - pos[2]
+      const dl = Math.hypot(dx, dy, dz) || 1
+      const nx = dx / dl, ny = dy / dl, nz = dz / dl
+      const dotDir = nx * f[0] + ny * f[1] + nz * f[2]
+      if (dotDir <= 0.05) return [0, 0]
+      const t = skyDist / dotDir
+      const qx = pos[0] + nx * t - skyCenter[0]
+      const qy = pos[1] + ny * t - skyCenter[1]
+      const qz = pos[2] + nz * t - skyCenter[2]
+      return [
+        qx * b.rx + qy * b.ry + qz * b.rz,
+        qx * b.ux + qy * b.uy + qz * b.uz,
+      ]
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuf)
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+    gl.useProgram(P_SKY)
+    const V = viewMatrix(pos, b.f, [b.rx, b.ry, b.rz], [b.ux, b.uy, b.uz], b.backup)
+    const P = perspective(FOV, aspect)
+    gl.uniformMatrix4fv(L_SKY.uView, false, colMajor(V))
+    gl.uniformMatrix4fv(L_SKY.uProj, false, colMajor(P))
+    gl.uniform3f(L_SKY.uCenter, skyCenter[0], skyCenter[1], skyCenter[2])
+    gl.uniform3f(L_SKY.uRight, b.rx, b.ry, b.rz)
+    gl.uniform3f(L_SKY.uUp, b.ux, b.uy, b.uz)
+    gl.uniform2f(L_SKY.uHalf, 120, 60)
+    gl.uniform1f(L_SKY.uRot, 0)
+    gl.uniform1f(L_SKY.uSway, 0)
+    gl.uniform1f(L_SKY.uTime, time)
+    const swirlLocal = planeLocal([BIG_SPIRAL.x, BIG_SPIRAL.y, BIG_SPIRAL.z])
+    gl.uniform2f(L_SKY.uSwirl, swirlLocal[0], swirlLocal[1])
+    const starArr = new Float32Array(STARS.length * 2)
+    for (let i = 0; i < STARS.length; i++) {
+      const lc = planeLocal(STARS[i].p)
+      starArr[i * 2] = lc[0]
+      starArr[i * 2 + 1] = lc[1]
+    }
+    gl.uniform2fv(L_SKY.uStars, starArr)
+    gl.uniform1i(L_SKY.uStarCount, STARS.length)
+    gl.drawArrays(gl.TRIANGLES, 0, 6)
+  }
+
   function drawBillboard(prog, L, tex, center, half, rot, sway, opacity) {
     const b = basis()
     gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuf)
@@ -888,11 +1003,9 @@
 
   // ================================================================ post pass
   const postUniforms = {
-    inkStrength: { value: 0.7 },
     bands: { value: 6.0 },
-    hatchStrength: { value: 0.55 },
+    hatchStrength: { value: 0.42 },
     vignetteStrength: { value: 0.14 },
-    inkColor: { value: [0x05 / 255, 0x07 / 255, 0x0f / 255] },
   }
   function renderPost(tDiffTex) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
@@ -906,11 +1019,9 @@
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, tDiffTex)
     gl.uniform1i(L_POST.tDiffuse, 0)
-    gl.uniform1f(L_POST.inkStrength, postUniforms.inkStrength.value)
     gl.uniform1f(L_POST.bands, postUniforms.bands.value)
     gl.uniform1f(L_POST.hatchStrength, postUniforms.hatchStrength.value)
     gl.uniform1f(L_POST.vignetteStrength, postUniforms.vignetteStrength.value)
-    gl.uniform3f(L_POST.inkColor, postUniforms.inkColor.value[0], postUniforms.inkColor.value[1], postUniforms.inkColor.value[2])
     gl.drawArrays(gl.TRIANGLES, 0, 6)
     gl.enable(gl.DEPTH_TEST)
   }
@@ -934,17 +1045,16 @@
 
     const b = basis()
     const skyDist = 130
-    const skyCenter = [b.pos[0] + b.f[0] * skyDist, b.pos[1] + b.f[1] * skyDist, b.pos[2] + b.f[2] * skyDist]
 
     // sky (no depth)
-    drawBillboard(P_BILL, L_BILL, TEX_SKY, skyCenter, [120, 60], 0, 0, 1.0)
+    drawSky(b, skyDist)
 
     // ground (opaque, writes depth) — drawn before transparent pass
     gl.enable(gl.DEPTH_TEST)
     gl.depthFunc(gl.LEQUAL)
     gl.depthMask(true)
     drawFixedPlane(P_GROUND, L_FIXED_GROUND, TEX_GROUND,
-      [0, 0, 20], [1, 0, 0], [0, 0, 1], [60, 60], 0, [9, 9], true, 0)
+      [0, 0, -14], [1, 0, 0], [0, 0, 1], [60, 26], 0, [1, 1], true, 0)
     gl.depthMask(false)
 
     gl.enable(gl.DEPTH_TEST)
