@@ -2071,6 +2071,13 @@ export function wingBrain(gs) {
     }
     if (ventY >= 0) ty0 = clamp(ventY, FIELD_TOP + 8, FIELD_BOT - 8)
 
+    // #3149: with seat one down the lone wing is the only pilot standing —
+    // the formation anchor is the maw (the autopilot's S1 law: one fighter,
+    // maw at y=120). Pure positions, zero gs.rng draws — the tuned streams
+    // stay byte-identical.
+    const p1live = gs.p1 && gs.p1.dyingT === 0
+    if (p1live && p1down) ty0 = 120
+
     const riskAt = (y) => {
         let risk = 999
         const consider = (t) => { if (t > 0 && t < risk) risk = t }
@@ -2197,6 +2204,10 @@ export function wingBrain(gs) {
         const v = riskAt(cy) - Math.abs(cy - ty0) * 0.15
         if (v > bestV) { bestV = v; bestY = cy }
     }
+    // #3149: the throat is the fight — when seat one is down, the lone wing
+    // owns the lane, but the risk field still rules: a maw line that is hot
+    // (risk < 14) is dodged like any other lane, never forced.
+    if (p1live && p1down && riskAt(120) >= 14) bestY = 120
     const dy = bestY - w.y
     pad.up = dy < -1.2
     pad.down = dy > 1.2
