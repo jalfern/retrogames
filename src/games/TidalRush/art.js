@@ -50,13 +50,23 @@ export function makeSea() {
 uniform float uT;
 varying vec3 vWorld;
 varying float vH;
+varying vec3 vNormalW;
 ${seaGLSL()}
 void main() {
   vec3 p = position;
   vec2 d;
-  p.y += waveHeight(p.xz, uT, d);
+  float h = waveHeight(p.xz, uT, d);
+  p.y += h;
   p.xz += d;
   vH = p.y;
+  // analytic normal from the same height function, sampled at the nominal
+  // surface point (drift small vs wavelength) — the old screen-space dFdx/dFdy
+  // normal was quantized by the 3.75 m triangles and read faceted at speed.
+  float eps = 1.05;
+  vec2 dTmp = vec2(0.0);
+  float hX = waveHeight(p.xz + vec2(eps, 0.0), uT, dTmp);
+  float hZ = waveHeight(p.xz + vec2(0.0, eps), uT, dTmp);
+  vNormalW = normalize(vec3(-(hX - h) / eps, 1.0, -(hZ - h) / eps));
   vec4 wp = modelMatrix * vec4(p, 1.0);
   vWorld = wp.xyz;
   gl_Position = projectionMatrix * viewMatrix * wp;
@@ -67,10 +77,10 @@ uniform vec3 uDeep, uShallow, uFoam, uSun, uSunCol, uCam, uFogCol;
 uniform float uT, uStorm, uFlash;
 varying vec3 vWorld;
 varying float vH;
+varying vec3 vNormalW;
 void main() {
-  // normal from screen-space derivatives of the displaced surface
-  vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
-  if (n.y < 0.0) n = -n;
+  // smooth analytic normal (varying), not the screen-space derivative
+  vec3 n = normalize(vNormalW);
   vec3 v = normalize(uCam - vWorld);
   float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
   vec3 base = mix(uDeep, uShallow, clamp(vH * 0.42 + 0.34, 0.0, 1.0));
@@ -82,11 +92,15 @@ void main() {
   float spec = pow(max(dot(n, hv), 0.0), 180.0);
   float sheen = pow(max(dot(n, hv), 0.0), 14.0);
   col += uSunCol * (spec * 1.6 + sheen * 0.20) * (1.0 - uStorm * 0.8);
-  // foam rides crest tops (height) and steep forward faces (slope); storms
-  // foam harder — crests must read white so the next kicker is visible
-  float crest = smoothstep(1.05 - uStorm * 0.45, 1.55 - uStorm * 0.35, vH);
-  float face = smoothstep(0.55, 0.85, n.y * 0.0 + (1.0 - n.y));
-  float foam = clamp(crest + face * (0.35 + uStorm * 0.25), 0.0, 1.0);
+  // crest subsurface glow — teal-green at thin crest tops, under the foam;
+  // the bruised storm sea swallows it, glitter and glow both fade with weather
+  float crestGlow = smoothstep(0.62 - uStorm * 0.10, 1.30, vH);
+  col += vec3(0.16, 0.46, 0.42) * crestGlow * 0.38 * (1.0 - uStorm * 0.65);
+  // foam rides crest tops (height) with a softened band + a gentle slope term;
+  // storms foam harder — crests must read white so the next kicker is visible
+  float crest = smoothstep(0.95 - uStorm * 0.45, 1.42 - uStorm * 0.35, vH);
+  float face = smoothstep(0.30, 0.60, 1.0 - n.y);
+  float foam = clamp(crest * 0.85 + face * (0.22 + uStorm * 0.28), 0.0, 1.0);
   float tw = 0.85 + 0.15 * sin(vWorld.x * 7.3 + vWorld.z * 5.1 + uT * 9.0);
   col = mix(col, uFoam, foam * tw);
   // lightning paints the whole bay for a beat
@@ -217,12 +231,16 @@ export function makeSki(colorHex) {
     const vest = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.62, 0.34), new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.5 }))
     vest.position.set(0, 1.12, -0.05)
     lean.add(vest)
+    // head rig: a pivot at the neck so a landing can jolt it (head lag)
+    const headPivot = new THREE.Group()
+    headPivot.position.set(0, 1.62, 0.02)
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), new THREE.MeshStandardMaterial({ color: 0xf7d9b8, roughness: 0.6 }))
-    head.position.set(0, 1.66, 0.02)
-    lean.add(head)
+    head.position.set(0, 0.04, 0)
+    headPivot.add(head)
     const visor = new THREE.Mesh(new THREE.SphereGeometry(0.27, 12, 8, 0, Math.PI, 0.9, 0.9), new THREE.MeshStandardMaterial({ color: 0x18202a, roughness: 0.15, metalness: 0.4 }))
-    visor.position.copy(head.position)
-    lean.add(visor)
+    visor.position.set(0, 0.04, 0)
+    headPivot.add(visor)
+    lean.add(headPivot)
     const mkLimb = (x1, y1, z1, x2, y2, z2, r, mat) => {
         const a = new THREE.Vector3(x1, y1, z1), b = new THREE.Vector3(x2, y2, z2)
         const dir = b.clone().sub(a)
@@ -232,10 +250,24 @@ export function makeSki(colorHex) {
         m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize())
         return m
     }
-    lean.add(mkLimb(-0.26, 1.25, -0.02, -0.42, 1.0, 1.0, 0.08, suitMat))
-    lean.add(mkLimb(0.26, 1.25, -0.02, 0.42, 1.0, 1.0, 0.08, suitMat))
     lean.add(mkLimb(-0.2, 0.85, -0.1, -0.3, 0.45, 0.7, 0.1, suitMat))
     lean.add(mkLimb(0.2, 0.85, -0.1, 0.3, 0.45, 0.7, 0.1, suitMat))
+    // arms: shoulder-pivot groups that reach the bar grip — the shell turns them
+    // per frame so the rider's hands keep tracking the bar through lean.
+    const mkArm = (sx) => {
+        const pivot = new THREE.Group()
+        pivot.position.set(sx, 1.25, -0.02)
+        const len = 0.64
+        const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.075, len, 6), suitMat)
+        sleeve.position.set(0, -len / 2, 0)
+        pivot.add(sleeve)
+        const hand = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), suitMat)
+        hand.position.set(0, -len, 0)
+        pivot.add(hand)
+        lean.add(pivot)
+        return { pivot, shoulder: new THREE.Vector3(sx, 1.25, -0.02) }
+    }
+    const arms = [mkArm(-0.26), mkArm(0.26)]
 
     // boost flame: a stretched emissive cone at the stern
     const flame = new THREE.Mesh(new THREE.ConeGeometry(0.26, 1.1, 8), new THREE.MeshBasicMaterial({ color: 0x7fe8ff, transparent: true, opacity: 0.85 }))
@@ -244,16 +276,29 @@ export function makeSki(colorHex) {
     flame.visible = false
     tilt.add(flame)
 
-    return { root, tilt, lean, flame }
+    return { root, tilt, lean, flame, headPivot, arms }
 }
 
 // ---- spray + wake: one pooled additive Points buffer ---------------------------
+const spraySprite = () => {
+    const c = document.createElement('canvas')
+    c.width = c.height = 64
+    const g = c.getContext('2d')
+    const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32)
+    grad.addColorStop(0.0, 'rgba(255,255,255,1)')
+    grad.addColorStop(0.45, 'rgba(255,255,255,0.42)')
+    grad.addColorStop(1.0, 'rgba(255,255,255,0)')
+    g.fillStyle = grad
+    g.fillRect(0, 0, 64, 64)
+    return new THREE.CanvasTexture(c)
+}
+
 export function makeSpray(n = 700) {
     const pos = new Float32Array(n * 3)
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     const mat = new THREE.PointsMaterial({
-        color: 0xf2fbff, size: 0.34, transparent: true, opacity: 0.85,
+        map: spraySprite(), color: 0xf2fbff, size: 0.42, transparent: true, opacity: 0.9,
         depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
     })
     const pts = new THREE.Points(geo, mat)
@@ -265,7 +310,7 @@ export function makeSpray(n = 700) {
     return { pts, geo, mat, pos, life, vel, wake, n, cursor: 0 }
 }
 
-export function spraySpawn(sp, x, y, z, count, spread, up, isWake) {
+export function spraySpawn(sp, x, y, z, count, spread, up, isWake, life = 0) {
     for (let k = 0; k < count; k++) {
         const i = sp.cursor; sp.cursor = (sp.cursor + 1) % sp.n
         sp.pos[i * 3] = x + (Math.random() - 0.5) * spread
@@ -274,7 +319,7 @@ export function spraySpawn(sp, x, y, z, count, spread, up, isWake) {
         sp.vel[i * 3] = (Math.random() - 0.5) * 3.4
         sp.vel[i * 3 + 1] = up * (0.6 + Math.random() * 0.9)
         sp.vel[i * 3 + 2] = (Math.random() - 0.5) * 3.4
-        sp.life[i] = isWake ? 1.6 : 0.55 + Math.random() * 0.3
+        sp.life[i] = life > 0 ? life * (0.7 + Math.random() * 0.6) : (isWake ? 1.6 : 0.55 + Math.random() * 0.3)
         sp.wake[i] = isWake ? 1 : 0
     }
 }

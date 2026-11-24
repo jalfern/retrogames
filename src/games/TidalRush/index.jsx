@@ -15,7 +15,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, autoPad, stateOf, stateHash, LAPS, SIM_MS, DT } from './sim.js'
-import { heightAt, waterHeight, seaUniforms } from './water.js'
+import { heightAt, waterHeight, seaUniforms, surfaceNormal } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
 import { makeSea, makeSky, makeBuoy, makeSki, makeSpray, spraySpawn, sprayStep, makeRain, rainSpawn, rainStep, makeLights } from './art.js'
 
@@ -105,6 +105,13 @@ const TidalRushGame = () => {
         let stormBlend = bayRef.current === 'storm' ? 1 : 0
 
         const camPos = new THREE.Vector3(0, 6, -20)
+        const _v3a = new THREE.Vector3()
+        const _v3b = new THREE.Vector3()
+        const _euler = new THREE.Euler()
+        const _up = new THREE.Vector3(0, 1, 0)
+        const _down = new THREE.Vector3(0, -1, 0)
+        let skiJolt = gs.crafts.map(() => 0)
+        let waveAmbT = 2.0
         let camInit = false
         let engineTick = 0
         let flashPop = 0
@@ -133,7 +140,7 @@ const TidalRushGame = () => {
             pass: () => { audioController.playTone(880, 0.07, 'square', 0.10); audioController.playTone(1320, 0.09, 'square', 0.09, 0.07) },
             miss: () => audioController.playSweep(240, 110, 0.28, 'sawtooth', 0.12),
             trick: () => { audioController.playTone(660, 0.07, 'square', 0.12); audioController.playTone(880, 0.07, 'square', 0.12, 0.08); audioController.playTone(1320, 0.14, 'square', 0.12, 0.16) },
-            air: () => audioController.playSweep(260, 640, 0.18, 'sine', 0.07),
+            air: () => { audioController.playSweep(300, 980, 0.18, 'sine', 0.08); audioController.playNoise(0.16, 0.05) },
             splash: () => audioController.playNoise(0.22, 0.14),
             bump: () => audioController.playNoise(0.07, 0.12),
             lap: () => audioController.playTone(990, 0.12, 'triangle', 0.12),
@@ -162,6 +169,7 @@ const TidalRushGame = () => {
                 if (e.type === 'lap') sfx.lap()
                 if (e.type === 'finish') {
                     sfx.finish(gs.rank === 1)
+                    audioController.stopLoopVoice()
                     setResult({ place: gs.rank, t: gs.t, score: gs.score, tricks: gs.score >= 2000, stage: gs.stage })
                     setMode('over')
                 }
@@ -174,23 +182,35 @@ const TidalRushGame = () => {
             const pad = playing ? readPad() : autoPad(gs)
             const wasAir = gs.crafts.map((c) => c.airborne)
             step(gs, pad)
-            if (!prevGo && gs.lightPhase >= 1 && playing) { sfx.go(); goFlash = 1.1; if (hudRef.current.count) { hudRef.current.count.textContent = 'GO'; hudRef.current.count.style.opacity = 1 } }
+            if (!prevGo && gs.lightPhase >= 1 && playing) {
+                sfx.go(); goFlash = 1.1
+                const h = hudRef.current
+                if (h.countText) h.countText.textContent = 'GO'
+                if (h.count) h.count.style.opacity = 1
+            }
             prevGo = gs.lightPhase >= 1
             if (playing) {
                 drainEvents()
-                // engine: a sawtooth that winds up with the hull; hiss on the hull
+                // engine: one persistent sawtooth that winds up with the hull
+                // (#3135) — no per-frame one-shots to machine-gun the bus
                 engineTick += 1
                 const p = gs.crafts[0]
-                if (engineTick % 7 === 0 && p.speed > 1) {
-                    audioController.playTone(52 + p.speed * 7.5 + (p.boosting ? 40 : 0), 0.115, 'sawtooth', 0.045 + Math.min(0.05, p.throttle * 0.05))
-                }
+                audioController.setLoopVoice(52 + p.speed * 7.5 + (p.boosting ? 40 : 0), 0.035 + Math.min(0.05, p.speed * 0.004))
                 if (engineTick % 9 === 0 && p.speed > 5) audioController.playNoise(0.05, 0.022)
+                // a quiet, periodic wave swell — the bay breathing under the ride
+                waveAmbT -= DT
+                if (waveAmbT <= 0) { waveAmbT = 2.2 + Math.random() * 1.1; audioController.ambNoise(0.55, 0.045) }
             }
             // spray: carve fans, landing slaps, stitched wake behind every hull
             gs.crafts.forEach((c) => {
                 const sternX = c.x - Math.sin(c.heading) * 2.1
                 const sternZ = c.z - Math.cos(c.heading) * 2.1
-                if (!c.airborne && wasAir[c.id]) spraySpawn(spray, c.x, c.y + 0.2, c.z, 22, 2.4, 4.2, false)
+                if (!c.airborne && wasAir[c.id]) {
+                    // splash: a wide short sheet of spray + long-life droplets
+                    spraySpawn(spray, c.x, c.y + 0.2, c.z, 26, 3.4, 5.0, false)
+                    spraySpawn(spray, c.x, c.y + 0.15, c.z, 10, 0.45, 6.4, false, 0.85)
+                    skiJolt[c.id] = 1
+                }
                 if (!c.airborne && Math.abs(c.steer) > 0.55 && c.speed > 8 && gs.tick % 2 === 0) {
                     const sideX = c.x + Math.cos(c.heading) * (c.steer > 0 ? -0.8 : 0.8)
                     const sideZ = c.z - Math.sin(c.heading) * (c.steer > 0 ? -0.8 : 0.8)
@@ -239,11 +259,14 @@ const TidalRushGame = () => {
             buoys.forEach((b, i) => {
                 const g0 = gs.course.gates[i]
                 // bob with the full Gerstner motion — height AND horizontal flow —
-                // so each buoy stays glued to the drawn surface it rides (rung 2;
-                // rung 1 bobbed in height only and slid off moving crests)
+                // on the CURRENT lap's sea so each buoy stays glued to the drawn
+                // surface it rides (rung 2), and roll with its surface normal
+                // (#3135) instead of a fake sine wobble
                 const w = waterHeight(g0.x, g0.z, t, gs.seaCur)
+                const n = surfaceNormal(g0.x, g0.z, t, gs.seaCur)
+                _v3a.set(n.x, Math.max(0.55, n.y), n.z).normalize()
+                b.quaternion.setFromUnitVectors(_up, _v3a)
                 b.position.set(g0.x + w.dx, w.y, g0.z + w.dz)
-                b.rotation.z = Math.sin(t * 1.7 + i * 2.1) * 0.12
                 b.userData.flag.rotation.y = Math.sin(t * 6 + i) * 0.35
             })
 
@@ -256,6 +279,21 @@ const TidalRushGame = () => {
                 m.lean.rotation.z = -c.lean
                 m.flame.visible = c.boosting
                 if (c.boosting) m.flame.scale.set(1, 1 + Math.sin(t * 40) * 0.25, 1)
+                // head lag on landing: jolt the head pivot, decaying
+                skiJolt[i] = Math.max(0, (skiJolt[i] || 0) - DT * 2.6)
+                if (m.headPivot) {
+                    m.headPivot.position.y = 1.62 - 0.17 * skiJolt[i]
+                    m.headPivot.rotation.x = skiJolt[i] * 0.5
+                }
+                // arms track the bar grip through the local lean
+                if (m.arms) {
+                    for (let a = 0; a < m.arms.length; a++) {
+                        const arm = m.arms[a]
+                        _v3a.set(a === 0 ? -0.30 : 0.30, 0.98, 1.05).applyEuler(_euler.set(0, 0, c.lean))
+                        _v3b.copy(_v3a).sub(arm.shoulder)
+                        arm.pivot.quaternion.setFromUnitVectors(_down, _v3b.normalize())
+                    }
+                }
             })
 
             sprayStep(spray, DT)
@@ -292,7 +330,25 @@ const TidalRushGame = () => {
             if (hud.boost) hud.boost.style.width = `${Math.round(p.boost * 100)}%`
             if (hud.pen) hud.pen.style.opacity = p.penalty > 0 ? 1 : 0
             if (hud.air) hud.air.style.opacity = p.airborne ? 1 : 0
-            if (hud.count) { goFlash -= DT; if (goFlash <= 0 && prevGo) hud.count.style.opacity = 0 }
+            // 3-light countdown, then the GO flash — dots lit by lightPhase
+            const playingNow = screenRef.current === 'play'
+            if (hud.count) {
+                const inCountdown = playingNow && gs.lightPhase < 1
+                for (let i = 0; i < 3; i++) {
+                    const dot = hud['countDot' + i]
+                    if (!dot) continue
+                    const lit = inCountdown && gs.lightPhase * 3 > i + 0.25
+                    dot.style.background = lit ? '#ff5f5f' : 'transparent'
+                    dot.style.boxShadow = lit ? '0 0 14px rgba(255,95,95,0.9), 0 0 3px #fff' : 'none'
+                }
+                if (inCountdown) {
+                    if (hud.countText) hud.countText.textContent = ''
+                    hud.count.style.opacity = 1
+                } else {
+                    goFlash -= DT
+                    if (goFlash <= 0 && prevGo) hud.count.style.opacity = 0
+                }
+            }
             if (hud.bay) {
                 hud.bay.textContent = stormBlend > 0.5 ? `STORM BAY · SWELL ${Math.min(p.lap, LAPS)}/${LAPS}` : 'SUNNY BAY'
                 hud.bay.style.color = stormBlend > 0.5 ? '#a9c0d2' : '#bfe9ff'
@@ -301,11 +357,14 @@ const TidalRushGame = () => {
                 flashPop -= DT
                 if (flashPop <= 0) hud.pop.style.opacity = 0
             }
-            // next-gate hint: colour chip + side arrow, the slalom's heartbeat
+            // next-gate hint: colour chip + side arrow + second-next preview
             const gi = p.judged.findIndex((j) => j === 0)
             if (gi >= 0 && hud.gate) {
                 const g0 = gs.course.gates[gi]
-                hud.gate.textContent = g0.color === 'red' ? '▶ RED RIGHT' : 'LEFT ◀ YELLOW'
+                const g1 = gs.course.gates[gi + 1]
+                const fmtGate = (g) => (g.color === 'red' ? 'RED RIGHT' : 'YELLOW LEFT')
+                if (hud.gateNext) hud.gateNext.textContent = `▶ ${fmtGate(g0)}`
+                if (hud.gateThen) hud.gateThen.textContent = g1 ? `  ·  ${fmtGate(g1)}` : ''
                 hud.gate.style.color = g0.color === 'red' ? '#ff8d80' : '#ffe08a'
             }
         }
@@ -343,6 +402,13 @@ const TidalRushGame = () => {
             buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
             camInit = false
             prevGo = false
+            goFlash = 0
+            waveAmbT = 2.0
+            skiJolt = gs.crafts.map(() => 0)
+            const h = hudRef.current
+            if (h.count) h.count.style.opacity = 0
+            if (h.countText) h.countText.textContent = ''
+            audioController.startLoopVoice(52)
             setResult(null)
             setMode('play')
         }
@@ -453,6 +519,7 @@ const TidalRushGame = () => {
                 unmountDbg()
                 unexposeGame()
             }
+            audioController.stopLoopVoice()
             unexposeFeedbackState()
             renderer.dispose()
             sea.mesh.geometry.dispose()
@@ -488,11 +555,20 @@ const TidalRushGame = () => {
                 </div>
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 text-center">
                     <div ref={setHud('bay')} className="text-[10px] tracking-[0.35em] mb-1" style={{ color: '#bfe9ff' }}>SUNNY BAY</div>
-                    <div ref={setHud('gate')} className="bg-black/45 border border-cyan-300/30 rounded px-3 py-1 text-sm font-bold tracking-widest" />
+                    <div ref={setHud('gate')} className="bg-black/45 border border-cyan-300/30 rounded px-3 py-1 text-sm font-bold tracking-widest">
+                        <span ref={setHud('gateNext')} /><span ref={setHud('gateThen')} style={{ opacity: 0.6, fontWeight: 600 }} />
+                    </div>
                     <div ref={setHud('pop')} className="mt-2 text-xl font-black text-cyan-200 transition-opacity duration-300" style={{ opacity: 0, textShadow: '0 0 14px #08f, 2px 2px 0 #000' }} />
                     <div ref={setHud('air')} className="mt-1 text-xs tracking-[0.35em] text-yellow-200 transition-opacity duration-150" style={{ opacity: 0 }}>A I R</div>
                 </div>
-                <div ref={setHud('count')} className="absolute top-[32%] left-1/2 -translate-x-1/2 text-8xl font-black italic text-yellow-300 transition-opacity duration-150" style={{ opacity: 0, textShadow: '0 0 26px rgba(0,0,0,0.9), 4px 4px 0 #0a6' }} />
+                <div ref={setHud('count')} className="absolute top-[24%] left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 transition-opacity duration-150" style={{ opacity: 0 }}>
+                    <div className="flex gap-3">
+                        <span ref={setHud('countDot0')} style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #ff8d80', background: 'transparent', transition: 'background 120ms, box-shadow 120ms' }} />
+                        <span ref={setHud('countDot1')} style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #ff8d80', background: 'transparent', transition: 'background 120ms, box-shadow 120ms' }} />
+                        <span ref={setHud('countDot2')} style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #ff8d80', background: 'transparent', transition: 'background 120ms, box-shadow 120ms' }} />
+                    </div>
+                    <div ref={setHud('countText')} className="text-8xl font-black italic text-yellow-300" style={{ textShadow: '0 0 26px rgba(0,0,0,0.9), 4px 4px 0 #0a6' }} />
+                </div>
                 <div className="absolute top-2 right-3 text-right">
                     <div className="bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5">
                         <div className="text-[9px] tracking-widest opacity-70">SPEED</div>

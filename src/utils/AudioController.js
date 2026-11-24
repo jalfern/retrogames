@@ -901,6 +901,48 @@ class AudioController {
         noise.start()
     }
 
+    // ---- persistent loop voice (#3135) ----
+    // Opt-in law, same shape as the ambience bus: a title calls startLoopVoice
+    // once and setLoopVoice every frame (or stopLoopVoice), and runs the loop
+    // through the ambience bus so a muffle still dims it. Games that never call
+    // it keep the exact old graph — nothing else changes.
+    startLoopVoice(freq = 55, maxGain = 0.05) {
+        if (!this.ctx) this.init()
+        if (!this.ctx || this._loop) return !!this._loop
+        if (this.ctx.state === 'suspended') this.ctx.resume()
+        const bus = this.ensureAmb()
+        if (!bus) return false
+        const osc = this.ctx.createOscillator()
+        const gain = this.ctx.createGain()
+        osc.type = 'sawtooth'
+        osc.frequency.setValueAtTime(Math.max(20, freq), this.ctx.currentTime)
+        gain.gain.setValueAtTime(0, this.ctx.currentTime)
+        osc.connect(gain)
+        gain.connect(bus)
+        osc.start()
+        this._loop = { osc, gain, maxGain: Math.max(0, maxGain) }
+        return true
+    }
+
+    setLoopVoice(freq, gain) {
+        if (!this._loop || !this.ctx) return
+        const t = this.ctx.currentTime
+        const target = this.muted ? 0 : Math.max(0, Math.min(this._loop.maxGain, isFin(gain) ? gain : 0))
+        this._loop.osc.frequency.setTargetAtTime(Math.max(20, isFin(freq) ? freq : 55), t, 0.06)
+        this._loop.gain.gain.setTargetAtTime(target, t, 0.08)
+    }
+
+    stopLoopVoice() {
+        if (!this._loop || !this.ctx) return
+        const { osc, gain } = this._loop
+        this._loop = null
+        try {
+            gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08)
+            osc.stop(this.ctx.currentTime + 0.5)
+            setTimeout(() => { try { osc.disconnect(); gain.disconnect() } catch { /* already gone */ } }, 700)
+        } catch { /* already stopped */ }
+    }
+
     // ---- music engine (lookahead scheduler) ----
     _note(freq, t, dur, type = 'square', vol = 0.5, vib = null) {
         if (!this.ctx || !this.musicGain) return
@@ -989,6 +1031,7 @@ class AudioController {
     }
 
     stopMusic() {
+        this.stopLoopVoice()
         if (this.music) { if (this.music.timer) clearInterval(this.music.timer); this.music.playing = false; this.music = null }
         // the held level belongs to the bed that just stopped — a later title
         // must never inherit another game's swell
