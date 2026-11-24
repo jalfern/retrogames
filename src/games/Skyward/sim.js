@@ -9,6 +9,10 @@
 //                         on the bullseye: 1000 → 60 by distance band.
 //   TARGET DROP (belt) — skim the east coast low and drop three supply crates
 //                         onto the sand pads; accuracy scores.
+//   THUNDERPASS (plane, rung 2) — five gates driven THROUGH the storm cell:
+//                         gusts, core downdraft and buffet fight the whole line.
+//                         +140/gate, time bonus to 300; clear all five for the
+//                         STORM WINGS badge (the licence math stays core-three).
 // Score all three once and you graduate — WINGS, or ACE at ≥2400 of 2999.
 // The school is forgiving: a crash only puts you back where you started.
 
@@ -22,6 +26,7 @@ export const CFG = {
     PAD_LAND: 30,
     DROP_BANDS: [[4.5, 333], [8, 222], [13, 111]],
     RING_MAX: 1000, DROP_MAX: 999,
+    PASS_R: 11, PASS_PAR: 30, PASS_MAX: 1000,
     ACE: 2400, WINGS: 1500,
 }
 
@@ -54,8 +59,10 @@ export function makeGame(seed, opts = {}) {
         vy: 0, thrusting: false,
         throttle: 1,
         ringsPassed: 0, ringTimes: [], eventT: 0, par: CFG.RING_PAR,
-        grad: { ring: null, spot: null, drop: null },
+        grad: { ring: null, spot: null, drop: null, pass: null },
         license: null,
+        stormWings: false,
+        passIdx: 0,
         attempts: 0, crashes: 0,
         dropIdx: 0, crates: [], dropped: [],
         spotState: 'idle',  // idle | flying | landed | splashed
@@ -64,6 +71,7 @@ export function makeGame(seed, opts = {}) {
         events: [],
         _prevA: false, _prevB: false,
         windEase: 0,
+        stormS: 0, // how deep the craft is in the cell (renderer/HUD only)
         hash: 0,
     }
     if (opts.attract) g.attract = true
@@ -107,16 +115,26 @@ function placeBeltStart(g) {
     g.heading = 0; g.pitch = 0; g.roll = 0; g.speed = 0; g.vy = 0
     g.dropIdx = 0; g.crates = []; g.dropped = []
 }
+function placePassStart(g) {
+    g.craft = 'plane'
+    const s = g.world.passStart
+    g.p = { x: s.x, y: 26, z: s.z }
+    g.heading = Math.PI / 2 // face east, straight at the storm front
+    g.pitch = 0; g.roll = 0; g.speed = 38; g.vy = 0
+    g.passIdx = 0; g.passTimes = []; g.eventT = 0
+    g.lastSafe = { x: s.x, y: 26, z: s.z, heading: Math.PI / 2 }
+}
 
 // ── markers: which launch is the player near ───────────────────────────────
 export function markerNear(g) {
     if (g.phase !== 'free') return null
-    const { rings, launch, school } = g.world
+    const { rings, launch, school, passStart } = g.world
     const ringsGate = { x: rings[0].x, z: rings[0].z - 150 }
     const near = (x, z, r) => Math.hypot(g.p.x - x, g.p.z - z) < r
     if (g.craft === 'plane' && near(ringsGate.x, ringsGate.z, 60)) return 'ring'
     if (g.craft === 'plane' && near(launch.x, launch.z, 55) && g.p.y > g.world.terrainHeight(launch.x, launch.z) + 60) return 'spot'
     if (g.craft === 'plane' && near(school.x + 30, school.z + 40, 55)) return 'drop'
+    if (g.craft === 'plane' && near(passStart.x, passStart.z, 70)) return 'pass'
     return null
 }
 
@@ -133,6 +151,11 @@ function crash(g, where) {
         placeBeltStart(g)
         g.crates = keepCrates // crates already away keep flying; only the rest re-sit
         g.dropIdx = Math.max(g.dropped.length, keepCrates.length ? keepCrates[keepCrates.length - 1].target + 1 : 0)
+        g.respawnT = 1.0
+    } else if (g.phase === 'pass') {
+        const pg = g.world.passRings[Math.max(0, g.passIdx)]
+        g.p = { x: pg.x, y: pg.y + 12, z: pg.z - 60 }
+        g.heading = Math.PI / 2; g.pitch = 0; g.roll = 0; g.speed = 34; g.vy = 0
         g.respawnT = 1.0
     } else if (g.phase === 'spot') {
         placeGliderLaunch(g)
@@ -188,7 +211,7 @@ export function step(g, pad = {}) {
         && Math.hypot(g.p.x - w.school.x, g.p.z - w.school.z) < 74) recycle(g)
     g._prevA = a; g._prevB = b
 
-    if (g.phase === 'ring') g.eventT += dt
+    if (g.phase === 'ring' || g.phase === 'pass') g.eventT += dt
 
     cratesFly(g, w, dt)
     g.hash = stateHash(g)
@@ -209,14 +232,19 @@ function startEvent(g, m) {
         g.phase = 'drop'
         placeBeltStart(g)
         ev(g, 'start', { event: 'TARGET DROP' })
+    } else if (m === 'pass') {
+        g.phase = 'pass'
+        placePassStart(g)
+        ev(g, 'start', { event: 'THUNDERPASS' })
     }
 }
 
-function finishEvent(g, kind, gained) {
+function finishEvent(g, kind, gained, label) {
     g.phase = 'free'
     g.grad[kind] = Math.max(g.grad[kind] ?? 0, gained)
     g.score = (g.grad.ring ?? 0) + (g.grad.spot ?? 0) + (g.grad.drop ?? 0)
-    ev(g, 'finish', { event: kind, gained })
+    if (kind === 'pass') g.stormWings = true
+    ev(g, 'finish', { event: label ?? kind, gained })
     if (g.grad.ring != null && g.grad.spot != null && g.grad.drop != null) {
         g.done = true
         g.license = g.score >= CFG.ACE ? 'ACE' : g.score >= CFG.WINGS ? 'WINGS' : 'STUDENT'
@@ -244,6 +272,19 @@ function stepPlane(g, w, sx, sy, dt) {
     g.p.x += (dirX * g.speed + wind.x) * dt
     g.p.z += (dirZ * g.speed + wind.z) * dt
     g.p.y += g.vy * dt
+
+    // rung 2 — the storm is REAL for the plane: gusts shove the hull, the
+    // core downdraft pulls it down, buffet rattles the wings. (Rung 1: only
+    // the glider and the belt answered the cell.)
+    const st = w.stormAt(g.p.x, g.p.z, g.t)
+    g.stormS = st.s
+    if (st.s > 0.02) {
+        g.p.x += st.gust.x * 0.8 * dt
+        g.p.z += st.gust.z * 0.8 * dt
+        g.p.y += st.vy * 0.6 * dt
+        g.roll += st.gust.x * 0.012 * Math.sin(g.t * 11.3)
+        g.pitch = clamp(g.pitch + st.gust.z * 0.010 * Math.sin(g.t * 9.7), -0.6, 0.6)
+    }
 
     const floor = Math.max(w.terrainHeight(g.p.x, g.p.z), w.waterHeightAt(g.p.x, g.p.z, g.t))
     if (g.p.y < floor + 1.4) {
@@ -275,6 +316,21 @@ function stepPlane(g, w, sx, sy, dt) {
             if (g.ringsPassed === g.world.rings.length) {
                 const bonus = clamp(Math.round((g.par - g.eventT) * 12), 0, 200)
                 finishEvent(g, 'ring', g.world.rings.length * 100 + bonus)
+            }
+        }
+    }
+
+    // thunderpass — sequence-law gates driven through the cell
+    if (g.phase === 'pass' && g.passIdx < w.passRings.length) {
+        const pg = w.passRings[g.passIdx]
+        if (Math.hypot(g.p.x - pg.x, g.p.y - pg.y, g.p.z - pg.z) < CFG.PASS_R + 2.5) {
+            g.passIdx++
+            g.passTimes.push(g.eventT)
+            ev(g, 'gate', { idx: g.passIdx })
+            g.lastSafe = { x: pg.x, y: pg.y + 10, z: pg.z, heading: Math.PI / 2 }
+            if (g.passIdx === w.passRings.length) {
+                const bonus = clamp(Math.round((CFG.PASS_PAR - g.eventT) * 15), 0, 300)
+                finishEvent(g, 'pass', w.passRings.length * 140 + bonus, 'THUNDERPASS')
             }
         }
     }
@@ -396,6 +452,7 @@ export function stateOf(g) {
         ringsPassed: g.ringsPassed, eventT: +g.eventT.toFixed(2),
         grad: { ...g.grad }, license: g.license, crashes: g.crashes,
         dropped: g.dropped.length, marker: g.marker ?? null,
+        passIdx: g.passIdx, stormWings: !!g.stormWings,
         hash: g.hash, seed: g.seed,
     }
 }
@@ -408,6 +465,7 @@ function stateHash(g) {
         q(g.p.x), q(g.p.y), q(g.p.z), q(g.heading), q(g.speed), q(g.vy),
         g.ringsPassed, q(g.eventT), g.crashes, g.dropIdx,
         g.grad.ring ?? -1, g.grad.spot ?? -1, g.grad.drop ?? -1,
+        g.passIdx, g.grad.pass ?? -1,
         g.phase.charCodeAt(0) + g.craft.charCodeAt(0), g.dropped.length,
     ]
     let h = 0x811c9dc5
