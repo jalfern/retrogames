@@ -1,79 +1,56 @@
-# STATE — forge board snapshot (slot a, 2026-11-23 — the papercraft polish lands)
+# STATE — forge board snapshot (slot b, 2026-11-24 — PADTYPES shipped)
 
-## This session — SHIPPED
-- **#3086 TIDY BOT PAPERCRAFT polish pass** (PR #3090, squash-merged `d374c32`):
-  all six issue items, `reimagined` painter only — classic byte-identical
-  (`f947d5dc` unchanged). Softer 6px/0.6-alpha gingham whose crossing bands
-  darken into real checks, cloth card CUT with wavy edges (bands clip to the
-  cut); attract sign became a cut card (rounded corners, fold crease, folded-
-  back corner flaps, torn-edge washi PRESS strip); bot got three kraft flute
-  dots at the chassis bottom edge + washi patch on the antenna joint; stove
-  front got two brass sticky dials (fridge-badge family); jam/place/break/close
-  bursts fly as tilted 2×3 confetti in paper colors (`chrome.confetti` gates
-  it — classic keeps its squares); paper-crinkle on glide arrival + cardboard
-  thud on close (AudioController noise/sweep, no assets). Live:
-  https://jalfern.com/retrogames/tidy-bot?style=reimagined
-- Gates: tidycheck 145/145 twice with the exact shipping content; GOLDEN_PAPER
-  re-frozen `33dfb942 → 17152d53` in the same PR (issue authorizes approved
-  restyles; deterministic across fresh loads). Mutation proof: gingham-band
-  alpha nudge turns the paper golden NAMED-red while classic stays green.
-  ESLint + three scoped lint gates + build green.
+## This session — one ship
+- **#3108 PADTYPES — five switchable controller overlays** shipped: PR #3117,
+  main `dfcf88c`, issue closed `shipped`.
+  `src/components/padTypes.js` = pure decision layer (default DERIVES from the
+  game's existing method/layout — untouched games byte-identical; `supports`,
+  pause-menu switch, `retrogames:padtype:<path>` persistence, `?padtype=` QA
+  override, screen-rotated tilt math). All five types feed the SAME one pad.
+  FULL pad = Sony cluster (d-pad+stick left inboard, △□○✕ diamond by `pad:`
+  indexes, R shoulders, centre clear, 0.8 pitch). TILT = ENABLE tap (iOS
+  permission) + RE-CENTER + rotation re-capture.
+  Pilots per issue: SSX `full` (+stick), MARBLE MADNESS stick+tilt,
+  PAC-MAN dpad+stick. SSX found two live collisions, both fixed (game-side
+  #894 z-60 stick + trick chips now yield to the full pad).
+  Harness: `padtypecheck` in CORE.checks (CI; 56 pins; mutant-proven — muting
+  the configure re-fire turns it red) + `padtypeplay` lane-run (browser, 20
+  checks, zero page errors on 5 games). Fix found by it: saved choice never
+  applied on fresh load (configure re-fires now).
+- Rule 4: COUNTER RESET — game code merged (SSX/index.jsx + registry).
+- Rollout filed: **#3118** (QA feedback: supports per game, PadLink drawing
+  reuse, tilt on #3107, z-60 overlay audit before granting `full`).
 
-## Harness lessons
-- **The 90-min claim window is the dead-claim reaper, and the clock is the
-  work plan.** Mini died at claim time (#3086) with zero checkpoints and zero
-  pushed branches; warden re-kicked slot a five times. Correct play: attempt
-  the TARGET claim (honest REFUSED, 11th contact in the #3053 family), run
-  the ladder, then fill the window building everything that doesn't touch
-  remote state, and claim at expiry — `CLAIMED #3086 for slot a` at
-  05:29:05Z, ~34 s after the window closed. Slot b's earlier 1-s loss and ten
-  refusals were the queue, not the script; the script needed no change.
-- **Perceptual golden sensitivity is color/material, not shape.** Mutation
-  experiment: doubling the cloth scallop depth (±1.3 px world) is invisible at
-  the 40×30 signature — by design (raster-drift tolerance from #3078) — while
-  a band-alpha change flips it by name. When re-freezing a golden, prove teeth
-  with a palette mutation, not a shape mutation.
-- **Real-key SPACE block in tidycheck flakily swallows presses on BOTH skins'
-  pages** — reproduced on unmodified main `14861a2` (byte-identical game code,
-  main's golden), so not introduced by #3090. Filed **#3088** (`feedback`);
-  the QA lane fixed it within the same session via PR #3091 (`d816805`,
-  world-tick waits) — a filed-to-fixed turnaround. CI `smoke` failed on PR
-  #3090 (advisory) with the same signature; reruns should now be clean.
+## PLAYABLE on main right now (tip after #3117 + STATE PR)
+- `/retrogames/ssx` — FULL pad default; pause → CONTROLLER → STICK/FULL,
+  remembered per game. `/retrogames/marble-madness` — STICK/TILT.
+  `/retrogames/pacman` — DPAD/STICK. Every other game: byte-identical pad.
+- `/retrogames/mario`, forge board, TIDY BOT papercraft (#3085), STARRY NIGHT
+  demo (#3082), CONTRA→TOP SOLDIERS (#3067), DOUBLE DRAGON, R-TYPE, RACCOON
+  HEIST, spy-hunter, iron keep, galaga, missile, pucks, mines, zork, ultima,
+  king's quest, Joust, Q*bert.
 
-## Rule 4
-- Streak RESET — #3090 is game code (`src/games/**`). Three-in-a-row is not
-  close.
-
-## PLAYABLE on main right now
-- `/retrogames/tidy-bot?style=reimagined` — papercraft diorama, now polished
-  (prod deploy verified via the game chunk carrying the new code).
-- `/retrogames/demos/starry-night.html` (#3082), PONG (#3081), CONTRA through
-  TOP SOLDIERS, raccoon heist museum, spy-hunter chase, iron keep, mario,
-  galaga, missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert,
-  heist-forge board.
+## Board watch (facts, not questions)
+- Slot a: INSIDE #3094 (STOMPTOWN, `building`) — alive, last checkpoint
+  08:17Z (`8c9c26f`), stompdrive 15/15.
+- QA lanes: #3096/#3102 building-qa as of this morning; #3118 filed `feedback`
+  (rollout — includes game-side z-60 overlay audit before more `full` grants).
+- #3108 closed; `game-queue` now holds #3103–#3107 (NEW GAME ladders — pinball
+  oldest). No `steer`/`next`. No `halt`. No `lane:manual` open.
 
 ## Open questions (links only — #605)
-- #3054 — QA: native TestFlight ports have no recorder/upload (deadline Nov 25).
+- #3054 — QA: native TestFlight ports have no recorder/upload; does the big build need one?
 - #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
-- #3079 — rule-4 same-source kicks: dry-shelf candidates (Jon's Nov 26
-  deadline; factual updates posted — #3085 and #3090 are both game code).
 
-## Next queued (ladder is thin)
-- `game-queue` empty; the only `feedback` open is #2971 (waiting-jon — skip).
-  #3088 (tidycheck real-SPACE flake, reproduces on unmodified main) was filed
-  and FIXED this session by the QA lane via #3091.
-- Flagship stage + never-dry returned NONE at `14861a2` (five identical hands,
-  fetch-branch honesty re-checked this hand: 32 open issues, no silent #2797
-  failure). If the queue stays dry, the live candidate is a new-title ask
-  (uncaps ~Nov 27 per #2795).
+## Next queued
+- Oldest `game-queue`: **#3103 pinball** (shared table engine + cabinet ladder).
+  A real game build; rule-4 buffer healthy.
+- Slot b note: padtypeplay needs `npm run dev -- --port <DEV_PORT>` first;
+  screenshots land in `qa-art/` (gitignored).
 
-## Slots / board state at handoff
-- Slot a merged this session; #3086 shipped+closed. No PRs of mine open.
-- QA is alive and shipping (merged #3091 mid-session) — no restart needed;
-  slot b's last session exited after yielding to mini. `building`/`building-qa`
-  issues: none open (#3088 closed, its `building-qa` label is stale residue).
-  Main tip at handoff: `d374c32`.
-- Plumbing: this lane's worktree re-detached at `origin/main` (`d374c32`);
-  remote branch deleted by mergeclean. Dev server on :5173 stopped via
-  scripts/devstop.sh at handoff. STATE.md committed to main (game merged).
+## Slot / board state at handoff
+- Slot b: #3108 shipped+closed; #3118 filed; no claims held; no open PR of
+  mine after the STATE pair; lane worktree `~/Dev/retrogames-forge-pad-v2`
+  detached at origin/main; dev server on :5178 stopped via devstop.
+- Main tip at handoff: `dfcf88c` + STATE.md docs PR.
