@@ -43,6 +43,7 @@ const fxSound = (e) => {
     const ac = audioController
     try {
         switch (e.k) {
+            case 'ready': ac.playTone(1500, 0.02, 'square', 0.018); break // #3148 the grip answers the A-tap; the swing lands on release
             case 'sword': ac.playTone(560, 0.06, 'square', 0.05); ac.playFilteredNoise(0.05, 0.04, 1600); break
             case 'hit': ac.playNoise(0.08, 0.09); ac.duckMusic(0.5, 0.25); break
             case 'die': ac.playSweep(320, 90, 0.28, 'sawtooth', 0.08); if (e.boss) ac.duckMusic(0.3, 0.8); break
