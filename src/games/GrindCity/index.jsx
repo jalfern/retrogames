@@ -353,7 +353,7 @@ const GrindCityGame = () => {
     const entry = GAMES.find((g) => g.label === 'GRIND CITY')
 
     return (
-        <div className="flex h-screen w-screen items-center justify-center bg-black" ref={stageRef}>
+        <div className="fixed inset-0 flex items-center justify-center overflow-hidden bg-black" ref={stageRef}>
             <canvas ref={canvasRef} className="block h-full w-full" />
             {/* HUD */}
             <div className="pointer-events-none absolute inset-0 select-none font-mono">

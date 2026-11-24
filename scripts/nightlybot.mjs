@@ -108,6 +108,12 @@ export const GAMES = [
     { id: 'contra', path: '/contra' }, // #2796 grew contractGames; the soak roster missed it — nightly run 44762398189 reddened main (#1525 law: never grow one list without the other)
     { id: 'double-dragon', path: '/double-dragon' }, // #2807: join BOTH lists at once (#1525)
     { id: 'r-type', path: '/r-type' }, // #2808: join BOTH lists at once (#1525)
+    { id: 'stomptown', path: '/stomptown' },
+    { id: 'pinball', path: '/pinball' },
+    { id: 'tidal-rush', path: '/tidal-rush' },
+    { id: 'grind-city', path: '/grind-city' },
+    { id: 'skyward', path: '/skyward' },
+    { id: 'marble-rush', path: '/marble-rush' }, // #3104/#3107/#3169 era titles grew contractGames only — nightly run 45450160001 reddened main (#1525 law)
 ]
 const CAP = 9000
 
