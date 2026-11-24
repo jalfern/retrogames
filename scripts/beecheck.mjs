@@ -167,6 +167,29 @@ for (let gi = 0; gi < GARDENS.length; gi++) {
     ok(a === b, `two runs of seed differ: ${a} vs ${b}`)
 }
 
+// ---------------------------------------------------------------- steer tells ----
+{
+    section('STEER TELLS (#3150 — an arrow press must answer, not just nudge)')
+    const g = newGame(0)
+    const ev = (inp, n = 1) => { const out = []; for (let i = 0; i < n; i++) { step(g, inp); out.push(...g.events.filter(e => e.type === 'steer')) } return out }
+    const first = ev({ yaw: -1 })
+    ok(first.length === 1 && first[0].axis === 'yaw' && first[0].sign < 0, 'pressing right produced no single yaw tick on the edge')
+    ok(ev({ yaw: -1 }, 10).length === 0, 'holding the same steer ticks every frame — the tell must be an edge, not a drum')
+    ev({})
+    ok(ev({ yaw: 1 }).length === 1, 'flipping steer is a new edge — it must answer again')
+    ok(Math.abs(g.bank - CFG.bankMax) < 1e-9, `bank ${g.bank} != +bankMax at full left yaw — camera tell and steer disagree`)
+    ok(ev({ pitch: 1 }).length === 1, 'pitch got no tick event')
+    ok(g.bank === 0, 'pitch steering tilts the bank — roll belongs to yaw only')
+    ev({ yaw: -1 }); ok(Math.abs(g.bank + CFG.bankMax) < 1e-9, 'bank sign does not flip with steer direction')
+    g.bee.stuck = 1
+    ok(ev({ yaw: -1 }, 5).filter(e => e.axis === 'yaw').length === 0, 'steer ticks fire while tangled in a web')
+    // the tell is presentation: flattening bank must not move the bee a millimetre
+    const path = (bm) => { const s = CFG.bankMax; CFG.bankMax = bm; const gg = newGame(0)
+        for (let i = 0; i < 60; i++) step(gg, { yaw: 1, thrust: true })
+        CFG.bankMax = s; return `${gg.bee.x.toFixed(6)}|${gg.bee.z.toFixed(6)}` }
+    ok(path(0) === path(CFG.bankMax), 'bee trajectory moved with bankMax — bank leaked into physics')
+}
+
 // ------------------------------------------------------------------ mutations ----
 if (MUT) {
     section('MUTATIONS — each one MUST make a real check go red')
@@ -193,6 +216,11 @@ if (MUT) {
         const g = newGame(0)
         for (let i = 0; i < CFG.day * 60 + 5 && !g.end; i++) step(g, autopilot(g))
         return g.delivered >= 3
+    })
+    tryMut('steer bank flattened', c => { c.bankMax = 0 }, () => {
+        const g = newGame(0)
+        step(g, { yaw: 1 })
+        return g.bank >= 0.06 // honest bankMax is 0.12 — hardcoded so flattening cannot chase the goal shut
     })
     tryMut('UV bonus flattened to daylight', c => { c.uvBonus = 1.01 }, () => {
         // hover the ring GAP (offset between the real radii): UV collects there,

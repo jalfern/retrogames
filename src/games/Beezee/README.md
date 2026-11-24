@@ -54,3 +54,8 @@ meets Bug's Life.
 
 Arrows yaw/pitch, hold Space/Z to thrust (bees do not idle), Shift sprint
 (the only thing that outruns a wasp), hold V for UV. Tap anywhere to start.
+
+Steering answers back (#3150): each steer edge plays a directional wing tick
+and the view banks into the turn (`g.bank`, smoothed roll). Both are decided
+in `sim.js` (presentation state + `steer` events the shell only renders and
+plays) so `beecheck` pins them — physics never reads either.

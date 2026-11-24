@@ -37,6 +37,7 @@ export const CFG = {
     sprintSpeed: 13,
     turnRate: 2.1,       // rad/s
     pitchRate: 1.6,
+    bankMax: 0.12,       // rad of visual roll at full yaw — presentation only (#3150)
     drag: 3.2,           // per second, applied to velocity
     windGain: 1,         // metres/second added to *position* per wind m/s — full
     carry: 4,            // nectar capacity
@@ -158,6 +159,8 @@ export function newGame(gardenIdx = 0, seedShift = 0) {
         delivered: 0,
         bee: { x: 0, y: 1.3, z: 5.5, yaw: Math.PI, pitch: 0, vx: 0, vy: 0, vz: 0, stuck: 0, grace: 0, nectar: 0, pollen: 0 },
         uv: false,
+        bank: 0,                        // visual bank target the shell rolls into (#3150)
+        steerYaw: 0, steerPitch: 0,   // last steer input, for edge-detecting the tick
         health: CFG.health,
         scare: 0,
         goalId: -1,
@@ -209,6 +212,17 @@ export function step(g, input = {}) {
         b.z += Math.cos(g.t * 5) * dt * 0.4 + wz * dt * 0.15
         if (b.stuck === 0) g.events.push({ type: 'freed' })
     } else {
+        // #3150 steer tells: a bank target and a direction-flavored tick event on
+        // each steer EDGE (hold = one tick; release = none). Presentation only —
+        // physics reads neither — but the sim decides them, so beecheck can prove
+        // a key press gets an answer.
+        const yIn = Math.max(-1, Math.min(1, input.yaw || 0))
+        const pIn = Math.max(-1, Math.min(1, input.pitch || 0))
+        g.bank = yIn * CFG.bankMax
+        if (yIn !== 0 && yIn !== g.steerYaw) g.events.push({ type: 'steer', axis: 'yaw', sign: yIn })
+        if (pIn !== 0 && pIn !== g.steerPitch) g.events.push({ type: 'steer', axis: 'pitch', sign: pIn })
+        g.steerYaw = yIn
+        g.steerPitch = pIn
         const yaw = (input.yaw || 0) * CFG.turnRate * dt
         const pit = (input.pitch || 0) * CFG.pitchRate * dt
         b.yaw += yaw
