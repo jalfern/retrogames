@@ -34,8 +34,8 @@ const VIEW_W = W * CELL
 const VIEW_H = H * CELL
 const SIM_MS = 1000 / 60
 
-const P1_KEYS = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', Space: 'j' }
-const P2_KEYS = { KeyA: 'l', KeyD: 'r', KeyW: 'u', KeyF: 'j' }
+const P1_KEYS = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd', Space: 'j' }
+const P2_KEYS = { KeyA: 'l', KeyD: 'r', KeyW: 'u', KeyS: 'd', KeyF: 'j' }
 
 let proven = null
 const provenRun = () => {
@@ -46,7 +46,7 @@ const provenRun = () => {
 // jEdge latches a jump press for one tick: a CDP tap fires keydown+keyup in
 // the same inter-frame gap, and an unheld edge would be eaten between two
 // sim steps (the metroidplay cadence lesson — the engine must admit the key).
-const pad = () => ({ l: false, r: false, u: false, j: false, jEdge: false })
+const pad = () => ({ l: false, r: false, u: false, d: false, j: false, jEdge: false })
 
 const IceGame = () => {
     const stageRef = useRef(null)
@@ -109,6 +109,13 @@ const IceGame = () => {
                 else if (e.type === 'down') { audioController.playSweep(500, 90, 0.4, 'sawtooth', 0.09); audioController.playDeath(); shake = 9; say(e.cause === 'condor' ? 'CLIMBER DOWN!' : 'LOST!') }
                 else if (e.type === 'revive') { audioController.playTone(660, 0.1, 'sine', 0.06); audioController.playTone(990, 0.16, 'sine', 0.05); say('REVIVED — STAY TOGETHER') }
                 else if (e.type === 'carrot') { audioController.playSweep(620, 1560, 0.45, 'square', 0.09); say('CARROT!') }
+                // #3151 the verbs answer: chips while boring, a grunt into the
+                // wall, a crouch/drop/dive under DOWN — all synthesized.
+                else if (e.type === 'punchTick') { audioController.playNoise(0.03, 0.04); burst((e.x + 0.5) * CELL, (e.y + 0.5) * CELL, 3, '#cfeaff') }
+                else if (e.type === 'push') { audioController.playTone(150, 0.05, 'triangle', 0.035); burst((e.x + 0.5) * CELL, (e.y + 0.8) * CELL, 2, '#9fb8d8') }
+                else if (e.type === 'crouch') { audioController.playTone(196, 0.06, 'triangle', 0.045); burst((e.x + 0.5) * CELL, (e.y + 0.85) * CELL, 3, '#c8d8ee') }
+                else if (e.type === 'drop') { audioController.playSweep(420, 150, 0.14, 'square', 0.05); burst((e.x + 0.5) * CELL, (e.y + 0.5) * CELL, 3, '#c8d8ee') }
+                else if (e.type === 'dive') audioController.playSweep(620, 220, 0.16, 'sawtooth', 0.045)
             }
         }
 
@@ -165,7 +172,7 @@ const IceGame = () => {
                 k1.jEdge = false; k2.jEdge = false
                 return
             }
-            doSim({ a: { l: k1.l, r: k1.r, u: k1.u, j: k1.jEdge ? 1 : 0 }, b: { l: k2.l, r: k2.r, u: k2.u, j: k2.jEdge ? 1 : 0 } })
+            doSim({ a: { l: k1.l, r: k1.r, u: k1.u, d: k1.d, j: k1.jEdge ? 1 : 0 }, b: { l: k2.l, r: k2.r, u: k2.u, d: k2.d, j: k2.jEdge ? 1 : 0 } })
             k1.jEdge = false; k2.jEdge = false
         }
 
@@ -292,7 +299,7 @@ const IceGame = () => {
         const startPlay = () => {
             gs = makeGame(buildLevel(0))
             evLog.length = 0; parts.length = 0
-            for (const k of [k1, k2]) { k.l = k.r = k.u = k.j = false; k.jEdge = false }
+            for (const k of [k1, k2]) { k.l = k.r = k.u = k.d = k.j = false; k.jEdge = false }
             watchingRef.current = false; setWatching(false); watchRunRef.current = null // #1637 a new climb starts in your hands
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
@@ -335,7 +342,7 @@ const IceGame = () => {
             if (P1_KEYS[e.code]) k1[P1_KEYS[e.code]] = false
             if (P2_KEYS[e.code]) k2[P2_KEYS[e.code]] = false
         }
-        const onBlur = () => { for (const k of [k1, k2]) { k.l = k.r = k.u = k.j = false } }
+        const onBlur = () => { for (const k of [k1, k2]) { k.l = k.r = k.u = k.d = k.j = false } }
         const onPointer = () => {
             const sc = screenRef.current
             if (sc === 'attract') startPlay()
@@ -446,13 +453,13 @@ const IceGame = () => {
                     contractSeed = seed >>> 0
                     gs = makeGame(buildLevel(contractSeed % LEVELS.length))
                     evLog.length = 0; parts.length = 0; demoAt = 0; shake = 0
-                    for (const k of [k1, k2]) { k.l = k.r = k.u = k.j = false; k.jEdge = false }
+                    for (const k of [k1, k2]) { k.l = k.r = k.u = k.d = k.j = false; k.jEdge = false }
                     setMode('play')
                 },
                 tick: (pad) => {
                     if (gs.end && gs.end !== 'clear') { gs.tick += 1; return }
                     const j = pad.a ? 1 : 0
-                    doSim({ a: { l: !!pad.left, r: !!pad.right, u: !!pad.up, j }, b: { l: false, r: false, u: false, j: 0 } })
+                    doSim({ a: { l: !!pad.left, r: !!pad.right, u: !!pad.up, d: !!pad.down, j }, b: { l: false, r: false, u: false, j: 0 } })
                 },
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: gs.end !== null && gs.end !== 'clear',
