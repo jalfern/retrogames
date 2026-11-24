@@ -85,6 +85,7 @@
     "bdteachpad": "node scripts/bdteachpad.mjs",
     "britannidrive": "node scripts/britanniadrive.mjs",
     "bombdrive": "node scripts/bombdrive.mjs",
+    "stompdrive": "node scripts/stompdrive.mjs",
     "tmdphonecheck": "node scripts/tmdphonecheck.mjs",
     "sosplay": "node scripts/sosplay.mjs",
     "rallycheck": "node scripts/rallycheck.mjs",

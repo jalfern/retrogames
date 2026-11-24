@@ -13,7 +13,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { fitFill } from '../../utils/fitCanvas'
-import { W, H, GROUND, FIXED_DT, MONSTERS, MONSTER_KEYS, HP_MAX, cityName, buildingsLeft, makeGame, step, stateHash } from './sim.js'
+import { W, H, GROUND, FIXED_DT, MONSTERS, MONSTER_KEYS, HP_MAX, cityName, buildingsLeft, makeGame, step, stateHash, damagePlayer } from './sim.js'
 import { plan } from './planner.js'
 import { MESSAGES, PRESS } from './attract.js'
 import { pal, buildSkyline, makeStars, makeClouds, drawSky, drawSkylineRow, drawGround, drawBuildings, drawRubble, drawCivilian, drawTank, drawCar, drawHeli, drawHuman, drawBlimp, drawMonster, drawBullets, drawHud } from './art.js'
@@ -263,9 +263,9 @@ const StomptownGame = () => {
                         step(demo, plan(demo))
                         handleEvents(demo, false)
                         if (demo.end || (demo.state === 'clear' && demo.clearT <= 0)) demo = makeGame({ seed: (demo.seed * 7 + 13) >>> 0 || 1, monster: MONSTER_KEYS[selRef.current] })
-                    } else if (screenRef.current === 'play' && gs && !gs.end) {
-                        step(gs, held)
-                        handleEvents(gs, true)
+                    } else if (screenRef.current === 'play' && gs) {
+                        if (!gs.end) { step(gs, held); handleEvents(gs, true) }
+                        else handleEvents(gs, true)   // end set between frames (harness hooks): let the over story through
                     }
                     if (bannerT > 0 && bannerT !== 9999) bannerT--
                     if (shake > 0) shake = Math.max(0, shake - 0.77)
@@ -363,7 +363,7 @@ const StomptownGame = () => {
                         if (!gs || gs.tick >= target || screenRef.current !== 'play') { clearInterval(iv); res() }
                     }, 16)
                 }),
-                damage: (n) => { if (gs && screenRef.current === 'play') { gs.player.invuln = 0; gs.player.hp -= n; if (gs.player.hp <= 0) { gs.player.hp = 0; gs.lives = 1; gs.player.hp = 1 } } },
+                damage: (n) => { if (gs && screenRef.current === 'play') { gs.player.invuln = 0; damagePlayer(gs, n) } },
                 raze: () => { if (gs && screenRef.current === 'play') { for (const b of gs.buildings) if (b.alive && Math.abs(b.x + b.w / 2 - gs.player.x) < 500) { b.hp = 1 } } },
                 calm: () => { if (gs) { gs.tanks = []; gs.helicopters = []; gs.cars = []; gs.bullets = [] } },
                 winNow: () => { if (gs && screenRef.current === 'play') { for (const b of gs.buildings) { b.alive = false; b.crumbling = 0 } } },
