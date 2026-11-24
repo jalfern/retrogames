@@ -9,11 +9,18 @@
 //    skipping past the gate line) chokes the throttle for a beat;
 //  • the hull rides the analytic swell field (water.js): matched surface vy on
 //    the crests, airborne launches off kickers, landings splash;
-//  • airborne + A spins a 360 — a completed trick dumps a fat boost;
-//  • three laps of SUNNY BAY against two seeded CPU skis; standings by
-//    unwrapped course progress, so nobody games the gates.
+//  • airborne + A spins a 360 (+250); full-lock steer in the air rolls a
+//    BARREL (+200) — one trick per air, whichever completes;
+//  • three laps against two seeded CPU skis; standings by unwrapped course
+//    progress, so nobody games the gates.
+//
+// Rung 2 (#3104): STORM BAY is the same venue with the weather dialled to
+// mutiny — the sea is a live table (`gs.seaCur`) blended toward a seeded
+// per-lap re-roll (`gs.seaTarget`), lightning is scheduled by the sim's own
+// rng, and gate judgement rides course PROGRESS instead of a lateral corridor,
+// so skirting far outside the line can no longer escape judgement.
 
-import { heightAt, surfaceVy, WAVES } from './water.js'
+import { heightAt, surfaceVy, sunnySea, stormSea, lerpSea, WAVES } from './water.js'
 
 export const DT = 1 / 60
 export const LAPS = 3
@@ -26,9 +33,12 @@ const THRUST = 7.5            // throttle authority (m/s^2)
 const DRAG = 0.021            // quadratic drag → v_term = sqrt(T/DRG) ≈ 19
 const TURN_K = 1.16           // rad/s at full lock, speed-scaled below
 const LEAN_MAX = 0.62         // body-lean angle at full lock (radians)
-const LAUNCH_VY = -1.90       // surface falling this fast under a fast hull = kicker
+const LAUNCH_VY = -1.90       // sunny: surface falling this fast under a fast hull = kicker
+const LAUNCH_VY_STORM = -2.35 // storm seas are bigger; a hair higher threshold keeps lines rideable
 const G = 9.81
 const TRICK_RATE = 9.5        // rad/s spin while A held airborne
+const BARREL_RATE = 10.0      // rad/s barrel roll while steer is pinned airborne
+const SEA_BLEND = 1.1         // per-second blend rate when the storm re-rolls the swell
 const BOOST_DRAIN = 0.30      // meter per second while sprinting
 const GATE_R = 9.0            // judgement radius around a buoy
 const SKIP_MARGIN = 14        // past the gate line by this much unjudged = miss
@@ -121,11 +131,14 @@ function makeCraft(id, name, color, startArc, skill) {
         speed: 0, throttle: 0, steer: 0,
         lean: 0, pitch: 0, roll: 0,
         airborne: false, vy: 0, spin: 0, spinArmed: false, trickPts: 0, trickArmed: 0,
+        rollSpin: 0,                  // barrel roll radians accumulated this air
         boost: 0, boosting: false,
         penalty: 0,                   // seconds of choked throttle left
         lap: 1, judged: new Array(N_GATES).fill(0), // 0 pending, 1 clean, -1 missed
         judgedEpoch: 0,
         progress: 0, progIdx: 0,
+        targetArc: -1e6,            // unwrapped arc of the next pending gate (progress-based judging)
+        targetIdx: 0,
         finished: false, finishT: 0,
         hits: 0,                      // rival-to-rival bumps (spark, no damage)
     }
@@ -155,8 +168,9 @@ function pointAtArc(course, arc) {
     }
 }
 
-export function makeGame(seed) {
+export function makeGame(seed, stage = 'sunny') {
     const course = buildCourse(seed)
+    const sea0 = stage === 'storm' ? stormSea(seed >>> 0, 1) : sunnySea()
     // Grid forms BEHIND the start/finish line (gate 0) so every gate is met in
     // order 0..9 — line up, then everything the lap logic sees is ahead.
     const g0 = course.gates[0].arc
@@ -172,15 +186,43 @@ export function makeGame(seed) {
         c.heading = Math.atan2(p.tangent.x, p.tangent.z)
         c.progIdx = p.idx
         c.progress = c.arc
-        c.y = heightAt(c.x, c.z, 0)
+        c.y = heightAt(c.x, c.z, 0, sea0)
+        c.targetArc = g0 > c.progress ? g0 : g0 + course.len
     }
-    return {
+    const gs = {
         tick: 0, t: 0, seed: seed >>> 0, rngS: (seed ^ 0x9e3779b9) >>> 0,
         course, crafts,
+        stage,                                  // 'sunny' | 'storm'
+        seaCur: sea0,
+        seaTarget: sea0.map((w) => ({ ...w })), // swell-shift re-rolls land here
+        flash: 0, nextFlash: 0,              // storm lightning, sim-owned (seeded)
         score: 0, done: false, rank: 1,
-        startT: 0, lightPhase: 0,     // false-start lights: 3 reds then GO
+        startT: 0, lightPhase: 0,           // false-start lights: 3 reds then GO
         events: [],
     }
+    if (stage === 'storm') {
+        let x = ((seed >>> 0) ^ 0xc0ffee) >>> 0
+        x = (x + 0x6d2b79f5) >>> 0
+        x = Math.imul(x ^ (x >>> 15), x | 1)
+        x ^= x + Math.imul(x ^ (x >>> 7), x | 61)
+        gs.nextFlash = 4 + (((x ^ (x >>> 14)) >>> 0) / 4294967296) * 6
+    }
+    return gs
+}
+
+// Keep the unwrapped arc target of the next pending gate (or lap 2's gate 0
+// once the set is complete). While the SAME gate is pending its target is
+// frozen; only when pending advances does the target step forward (unwrapped
+// past any lap already counted), so progress-based skips judge honestly.
+function syncTarget(gs, c) {
+    const g = gs.course.gates
+    const pi = c.judged.findIndex((j) => j === 0)
+    const idx = pi >= 0 ? pi : 0
+    if (idx === c.targetIdx) return
+    c.targetIdx = idx
+    let u = g[idx].arc
+    while (u <= c.targetArc + 1e-9) u += gs.course.len
+    c.targetArc = u
 }
 
 // Gate judgement: side = heading × (craft − buoy); RED must read < 0 (buoy on
@@ -212,21 +254,21 @@ function stepCraft(gs, c, pad) {
     const nextPending = c.judged.findIndex((j) => j === 0)
     for (let i = 0; i < N_GATES; i++) {
         if (c.judged[i] !== 0) continue
+        // Only the NEXT gate in order judges — a shortcut across the middle can
+        // never pre-judge a gate it physically clipped (rung-2 exploit audit).
+        if (i !== nextPending) continue
         const gt = g[i]
         const dx = c.x - gt.x, dz = c.z - gt.z
         const d2 = dx * dx + dz * dz
         if (d2 < GATE_R * GATE_R) { judgeGate(gs, c, gt, i); continue }
-        // crossed the gate line far from the buoy ⇒ skipped it. Only the NEXT
-        // gate in order, and only inside the course corridor — a buoy across
-        // the bay must never judge a craft that is nowhere near its line.
-        if (i === nextPending) {
-            const along = gt.tangent.x * dx + gt.tangent.z * dz
-            const lateral = Math.abs(gt.tangent.x * dz - gt.tangent.z * dx)
-            if (along > SKIP_MARGIN && lateral < 18) {
-                c.judged[i] = -1
-                c.penalty = PENALTY_T
-                if (c.id === 0) gs.events.push({ t: gs.tick, type: 'miss', i })
-            }
+        // Past the gate line, unjudged ⇒ skipped — by geometry OR by course
+        // progress. No lateral corridor: rung 1 let a craft skirt 40 m outside
+        // the line unjudged; progress keeps boundary-crawlers honest too.
+        const along = gt.tangent.x * dx + gt.tangent.z * dz
+        if (along > SKIP_MARGIN || c.progress > c.targetArc + SKIP_MARGIN) {
+            c.judged[i] = -1
+            c.penalty = PENALTY_T
+            if (c.id === 0) gs.events.push({ t: gs.tick, type: 'miss', i })
         }
     }
     if (c.judged.every((j) => j !== 0)) {
@@ -245,9 +287,15 @@ function stepCraft(gs, c, pad) {
             }
         } else if (c.id === 0) {
             gs.events.push({ t: gs.tick, type: 'lap', lap: c.lap })
+            // STORM BAY: the swell re-rolls lap to lap (WR64's signature).
+            if (gs.stage === 'storm') {
+                gs.seaTarget = stormSea(gs.seed, c.lap)
+                gs.events.push({ t: gs.tick, type: 'swell', lap: c.lap })
+            }
         }
         c.judged = new Array(N_GATES).fill(0)
     }
+    syncTarget(gs, c)
 
     // --- drive ---------------------------------------------------------------
     if (c.finished) { c.throttle = 0.25 } // coast across; keep it lively
@@ -272,29 +320,36 @@ function stepCraft(gs, c, pad) {
     c.heading += c.steer * TURN_K * authority * (c.airborne ? 0.35 : 1) * DT
 
     // --- hull on the swell ---------------------------------------------------
-    const surfY = heightAt(c.x, c.z, gs.t)
-    const surfVy = surfaceVy(c.x, c.z, gs.t)
+    const sea = gs.seaCur
+    const surfY = heightAt(c.x, c.z, gs.t, sea)
+    const surfVy = surfaceVy(c.x, c.z, gs.t, sea)
     if (c.airborne) {
         c.vy -= G * DT
         c.y += c.vy * DT
         if (pad.a) c.spin += TRICK_RATE * DT
+        if (Math.abs(c.steer) > 0.7) c.rollSpin += Math.sign(c.steer) * BARREL_RATE * DT
         if (c.y <= surfY) {
             c.airborne = false; c.y = surfY; c.vy = surfVy
             if (c.spin >= Math.PI * 2 - 0.6) {
                 c.trickPts = 1
                 c.boost = Math.min(1, c.boost + 0.30)
                 if (c.id === 0) { gs.score += 250; gs.events.push({ t: gs.tick, type: 'trick' }) }
+            } else if (Math.abs(c.rollSpin) >= Math.PI * 2 - 0.8) {
+                // barrel roll: carved hard off a crest, landed clean
+                c.boost = Math.min(1, c.boost + 0.22)
+                if (c.id === 0) { gs.score += 200; gs.events.push({ t: gs.tick, type: 'barrel' }) }
             } else if (c.spin > 0.3 && c.id === 0) {
                 gs.events.push({ t: gs.tick, type: 'splashes' })
             }
             c.spin = 0
+            c.rollSpin = 0
             c.speed *= 0.985 // slap the water, lose a whisper
         }
     } else {
         c.y = surfY
         c.vy = surfVy
         // a fast hull over a falling face leaves the bay behind it
-        if (surfVy < LAUNCH_VY && c.speed > 7.5 && !c.finished) {
+        if (surfVy < (gs.stage === 'storm' ? LAUNCH_VY_STORM : LAUNCH_VY) && c.speed > 7.5 && !c.finished) {
             c.airborne = true
             c.vy = surfVy * 0.85 + c.speed * 0.18 // carry off the crest: up, not down
             if (c.id === 0) gs.events.push({ t: gs.tick, type: 'air' })
@@ -303,12 +358,12 @@ function stepCraft(gs, c, pad) {
     // attitude: pitch from the slope along the heading, roll from lean+beam slope
     const e = 1.4
     const fx = Math.sin(c.heading), fz = Math.cos(c.heading)
-    const ahead = heightAt(c.x + fx * e, c.z + fz * e, gs.t)
-    const astern = heightAt(c.x - fx * e, c.z - fz * e, gs.t)
+    const ahead = heightAt(c.x + fx * e, c.z + fz * e, gs.t, sea)
+    const astern = heightAt(c.x - fx * e, c.z - fz * e, gs.t, sea)
     const wantPitch = -Math.atan2(ahead - astern, 2 * e)
     c.pitch += (wantPitch - c.pitch) * Math.min(1, 6 * DT)
     const bx = Math.cos(c.heading), bz = -Math.sin(c.heading)
-    const beam = heightAt(c.x + bx * e, c.z + bz * e, gs.t) - heightAt(c.x - bx * e, c.z - bz * e, gs.t)
+    const beam = heightAt(c.x + bx * e, c.z + bz * e, gs.t, sea) - heightAt(c.x - bx * e, c.z - bz * e, gs.t, sea)
     const wantRoll = c.lean + Math.atan2(beam, 2 * e)
     c.roll += (wantRoll - c.roll) * Math.min(1, 6 * DT)
 
@@ -370,7 +425,8 @@ export function autoPad(gs) {
     while (d < -Math.PI) d += Math.PI * 2
     const steer = Math.max(-1, Math.min(1, d / 0.5))
     const throttle = Math.abs(d) > 0.55 && c.speed > 12 ? 0.5 : 1
-    const a = c.airborne // spin the whole air pocket — tricks are the point
+    // tricks are the point: flat-spin in clean air, barrel-roll on carved crests
+    const a = c.airborne && Math.abs(steer) < 0.5
     const b = c.boost > 0.3 && Math.abs(d) < 0.25 && !c.finished
     return { throttle, steer, brake: false, a, b }
 }
@@ -416,6 +472,21 @@ export function step(gs, padIn) {
     gs.lightPhase = gs.t < 1.4 ? gs.t / 1.4 : 1
     const gatesOpen = gs.lightPhase >= 1
 
+    // STORM BAY: the live sea blends toward this lap's re-rolled swell; every
+    // consumer (hull sampling, shader uniforms) reads seaCur, so the drawn and
+    // ridden transition are the same numbers. Sunny re-blends onto itself —
+    // value-identical, so the rung-1 bay never moves.
+    gs.seaCur = lerpSea(gs.seaCur, gs.seaTarget, Math.min(1, SEA_BLEND * DT))
+    if (gs.stage === 'storm') {
+        gs.nextFlash -= DT
+        if (gs.nextFlash <= 0) {
+            gs.flash = 1
+            gs.events.push({ t: gs.tick, type: 'flash' })
+            gs.nextFlash = 5 + rand(gs) * 9
+        }
+        gs.flash = Math.max(0, gs.flash - DT * 3.2)
+    }
+
     gs.crafts.forEach((c, idx) => {
         const pad = c.id === 0
             ? (gatesOpen ? padIn : { throttle: 0, steer: 0, brake: false, a: false, b: false })
@@ -444,6 +515,9 @@ export function stateOf(gs) {
         speed: Math.round(p.speed * 100) / 100,
         boost: Math.round(p.boost * 100) / 100,
         airborne: p.airborne, penalty: p.penalty > 0,
+        stage: gs.stage,
+        swell: Math.round(gs.seaCur[0].amp * 100) / 100,
+        flash: gs.flash > 0,
         hash: stateHash(gs),
     }
 }
@@ -457,10 +531,13 @@ export function stateHash(gs) {
         h ^= (n >>> 24) & 0xff; h = Math.imul(h, 0x01000193) >>> 0
     }
     mix(gs.tick); mix(gs.score >>> 0)
+    mix(gs.stage === 'storm' ? 1 : 0)
+    for (const w of gs.seaCur) { mix(Math.round(w.amp * 100)); mix(Math.round(w.len * 100)); mix(Math.round(w.phase * 100)) }
+    mix(Math.round(gs.flash * 100))
     for (const c of gs.crafts) {
         mix(Math.round(c.x * 100)); mix(Math.round(c.z * 100)); mix(Math.round(c.speed * 50))
         mix(c.lap); mix(c.judged.reduce((a, j) => a * 3 + j + 1, 0) >>> 0)
-        mix(c.airborne ? 1 : 0); mix(Math.round(c.spin * 100))
+        mix(c.airborne ? 1 : 0); mix(Math.round(c.spin * 100)); mix(Math.round(c.rollSpin * 100))
     }
     mix(gs.rngS)
     return h >>> 0

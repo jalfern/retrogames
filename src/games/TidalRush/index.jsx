@@ -15,16 +15,18 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, autoPad, stateOf, stateHash, LAPS, SIM_MS, DT } from './sim.js'
-import { heightAt } from './water.js'
+import { heightAt, waterHeight, seaUniforms } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
-import { makeSea, makeSky, makeBuoy, makeSki, makeSpray, spraySpawn, sprayStep, makeLights } from './art.js'
+import { makeSea, makeSky, makeBuoy, makeSki, makeSpray, spraySpawn, sprayStep, makeRain, rainSpawn, rainStep, makeLights } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
 const MESSAGES = [
     'RED BUOY RIGHT · YELLOW BUOY LEFT',
     'CLEAN PASSES CHARGE THE SPRINT',
     'HIT A CREST · HOLD SPIN · BANK THE TRICK',
-    'THREE LAPS OF SUNNY BAY · BEAT MAKO',
+    'FULL-LOCK STEER OFF A CREST = BARREL ROLL',
+    'STORM BAY: THE SWELL RE-ROLLS EVERY LAP',
+    'THREE LAPS · BEAT MAKO',
 ]
 
 const freshSeed = () => (Date.now() ^ Math.round(performance.now() * 1024)) >>> 0
@@ -36,11 +38,20 @@ const TidalRushGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [result, setResult] = useState(null)
+    const [bay, setBay] = useState('sunny')            // 'sunny' | 'storm' — attract picker
+    const bayRef = useRef('sunny')
+    const previewRef = useRef(null)                     // effect republishes: reroll attract preview sim
+    const startRaceRef = useRef(null)                   // effect republishes: tap-to-start
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
+    const pickBay = useCallback((b) => {
+        if (bayRef.current === b) return
+        bayRef.current = b; setBay(b)
+        if (previewRef.current) previewRef.current()
+    }, [])
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -63,14 +74,17 @@ const TidalRushGame = () => {
         const scene = new THREE.Scene()
         const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 1600)
         scene.add(camera)
-        scene.add(...makeLights())
+        const lights = makeLights()
+        const sunLight = lights[0]
+        const hemiLight = lights[1]
+        scene.add(...lights)
         const sky = makeSky()
         scene.add(sky)
         const sea = makeSea()
         scene.add(sea.mesh)
 
         const buoys = []
-        let gs = makeGame(freshSeed())
+        let gs = makeGame(freshSeed(), bayRef.current)
         for (const g0 of gs.course.gates) {
             const b = makeBuoy(g0.color === 'red' ? 0xe4382b : 0xffc21f)
             b.position.set(g0.x, 0, g0.z)
@@ -86,6 +100,9 @@ const TidalRushGame = () => {
 
         const spray = makeSpray(LITE ? 380 : 700)
         scene.add(spray.pts)
+        const rain = makeRain(LITE ? 240 : 420)
+        scene.add(rain.pts)
+        let stormBlend = bayRef.current === 'storm' ? 1 : 0
 
         const camPos = new THREE.Vector3(0, 6, -20)
         let camInit = false
@@ -121,6 +138,9 @@ const TidalRushGame = () => {
             bump: () => audioController.playNoise(0.07, 0.12),
             lap: () => audioController.playTone(990, 0.12, 'triangle', 0.12),
             go: () => audioController.playSweep(440, 880, 0.3, 'square', 0.14),
+            barrel: () => { audioController.playSweep(330, 990, 0.22, 'triangle', 0.11); audioController.playTone(1100, 0.1, 'square', 0.1, 0.14) },
+            swell: () => audioController.playSweep(90, 210, 0.9, 'sine', 0.16),
+            thunder: () => { audioController.playNoise(0.5, 0.12); audioController.playSweep(70, 38, 0.8, 'sawtooth', 0.1) },
             finish: (win) => {
                 const base = win ? [523, 659, 784, 1047] : [392, 330, 262]
                 base.forEach((f, i) => audioController.playTone(f, 0.16, 'square', 0.12, i * 0.13))
@@ -133,13 +153,16 @@ const TidalRushGame = () => {
                 if (e.type === 'pass') { sfx.pass(); flashPop = 1; if (hud.pop) { hud.pop.textContent = `CLEAN +100`; hud.pop.style.opacity = 1 } }
                 if (e.type === 'miss') { sfx.miss(); flashPop = 1; if (hud.pop) { hud.pop.textContent = 'MISS — THROTTLE DOWN'; hud.pop.style.opacity = 1 } }
                 if (e.type === 'trick') { sfx.trick(); if (hud.pop) { hud.pop.textContent = 'TRICK! +250'; hud.pop.style.opacity = 1 } }
+                if (e.type === 'barrel') { sfx.barrel(); flashPop = 1; if (hud.pop) { hud.pop.textContent = 'BARREL ROLL +200'; hud.pop.style.opacity = 1 } }
+                if (e.type === 'swell') { sfx.swell(); if (hud.pop) { hud.pop.textContent = `SWELL SHIFT — LAP ${e.lap}`; hud.pop.style.opacity = 1 } }
+                if (e.type === 'flash') sfx.thunder()
                 if (e.type === 'air') sfx.air()
                 if (e.type === 'splashes') sfx.splash()
                 if (e.type === 'bump') sfx.bump()
                 if (e.type === 'lap') sfx.lap()
                 if (e.type === 'finish') {
                     sfx.finish(gs.rank === 1)
-                    setResult({ place: gs.rank, t: gs.t, score: gs.score, tricks: gs.score >= 2000 })
+                    setResult({ place: gs.rank, t: gs.t, score: gs.score, tricks: gs.score >= 2000, stage: gs.stage })
                     setMode('over')
                 }
             }
@@ -184,9 +207,42 @@ const TidalRushGame = () => {
             sea.mat.uniforms.uCam.value.copy(camera.position)
             sky.position.copy(camera.position)
 
+            // THE BRIDGE: this frame's ridden sea table → shader uniforms. Same
+            // numbers, same frame — drawn sea ≡ ridden sea, every swell.
+            const su = seaUniforms(gs.seaCur)
+            for (const k in su) {
+                const u = sea.mat.uniforms[k]
+                if (!u) continue
+                if (Array.isArray(su[k])) { u.value.x = su[k][0]; u.value.y = su[k][1] }
+                else u.value = su[k]
+            }
+            // weather: keyed to the LIVE sim (gs.stage), never to a separate
+            // picker state — the sea, sky, HUD and rain all read the exact same
+            // source the hull rides, even through time-stepped DEV hooks
+            const wantStorm = gs.stage === 'storm' ? 1 : 0
+            stormBlend += (wantStorm - stormBlend) * (1 - Math.exp(-25 * DT))
+            sea.mat.uniforms.uStorm.value = stormBlend
+            sea.mat.uniforms.uFlash.value = gs.flash
+            sea.mat.uniforms.uFogCol.value.setRGB(
+                0.81 + (0.27 - 0.81) * stormBlend, 0.90 + (0.32 - 0.90) * stormBlend, 0.94 + (0.37 - 0.94) * stormBlend,
+            )
+            sky.userData.mat.uniforms.uStorm.value = stormBlend
+            sky.userData.mat.uniforms.uFlash.value = gs.flash
+            sunLight.intensity = 2.0 * (1 - stormBlend * 0.62) + gs.flash * 2.2
+            hemiLight.intensity = 1.0 * (1 - stormBlend * 0.5) + gs.flash * 1.2
+
+            // storm rain swaddles the camera
+            if (stormBlend > 0.4) rainSpawn(rain, camera.position.x, camera.position.y, camera.position.z, LITE ? 5 : 8)
+            rainStep(rain, DT)
+            rain.pts.visible = stormBlend > 0.2
+
             buoys.forEach((b, i) => {
                 const g0 = gs.course.gates[i]
-                b.position.y = heightAt(g0.x, g0.z, t)
+                // bob with the full Gerstner motion — height AND horizontal flow —
+                // so each buoy stays glued to the drawn surface it rides (rung 2;
+                // rung 1 bobbed in height only and slid off moving crests)
+                const w = waterHeight(g0.x, g0.z, t, gs.seaCur)
+                b.position.set(g0.x + w.dx, w.y, g0.z + w.dz)
                 b.rotation.z = Math.sin(t * 1.7 + i * 2.1) * 0.12
                 b.userData.flag.rotation.y = Math.sin(t * 6 + i) * 0.35
             })
@@ -208,7 +264,7 @@ const TidalRushGame = () => {
             const p = gs.crafts[0]
             const fx = Math.sin(p.heading), fz = Math.cos(p.heading)
             const behind = 9.2 - Math.min(2, p.speed * 0.06)
-            const waveY = heightAt(p.x - fx * behind, p.z - fz * behind, t)
+            const waveY = heightAt(p.x - fx * behind, p.z - fz * behind, t, gs.seaCur)
             const tx = p.x - fx * behind
             const tz = p.z - fz * behind
             const ty = Math.max(waveY + 2.6, p.y + 2.4)
@@ -237,6 +293,10 @@ const TidalRushGame = () => {
             if (hud.pen) hud.pen.style.opacity = p.penalty > 0 ? 1 : 0
             if (hud.air) hud.air.style.opacity = p.airborne ? 1 : 0
             if (hud.count) { goFlash -= DT; if (goFlash <= 0 && prevGo) hud.count.style.opacity = 0 }
+            if (hud.bay) {
+                hud.bay.textContent = stormBlend > 0.5 ? `STORM BAY · SWELL ${Math.min(p.lap, LAPS)}/${LAPS}` : 'SUNNY BAY'
+                hud.bay.style.color = stormBlend > 0.5 ? '#a9c0d2' : '#bfe9ff'
+            }
             if (hud.pop) {
                 flashPop -= DT
                 if (flashPop <= 0) hud.pop.style.opacity = 0
@@ -279,13 +339,21 @@ const TidalRushGame = () => {
         let humanSeed = seedFromQuery() ?? freshSeed()
         const startRace = () => {
             humanSeed = seedFromQuery() ?? freshSeed()
-            gs = makeGame(humanSeed)
+            gs = makeGame(humanSeed, bayRef.current)
             buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
             camInit = false
             prevGo = false
             setResult(null)
             setMode('play')
         }
+        // attract/over preview reroll when the picker changes bays
+        previewRef.current = () => {
+            gs = makeGame(freshSeed(), bayRef.current)
+            buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
+            camInit = false
+            prevGo = false
+        }
+        startRaceRef.current = startRace
         const onKeyDown = (e) => {
             if (e.code === 'Escape' || e.code === 'Backquote' || e.code === 'Slash') {
                 if (screenRef.current === 'play') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current) }
@@ -294,6 +362,12 @@ const TidalRushGame = () => {
             if (pausedRef.current) return
             keys.add(e.code)
             if (screenRef.current === 'attract' || screenRef.current === 'over') {
+                // ◀ ▶ on the menu picks the bay instead of starting the race
+                if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+                    const next = bayRef.current === 'sunny' ? 'storm' : 'sunny'
+                    bayRef.current = next; setBay(next); previewRef.current()
+                    return
+                }
                 if (e.code !== 'Tab') startRace()
             }
         }
@@ -312,6 +386,7 @@ const TidalRushGame = () => {
                 step: (n = 1) => { for (let i = 0; i < n; i++) simTick(); return stateOf(gs) },
                 setMode: (m) => { if (m === 'play') startRace(); else setMode(m) },
                 probe: () => ({ ...stateOf(gs), seed: gs.seed, screen: screenRef.current }),
+                pickBay: (b) => { bayRef.current = b === 'storm' ? 'storm' : 'sunny'; setBay(bayRef.current); if (screenRef.current !== 'play') previewRef.current() },
                 prognose: () => {
                     // replay the pilot forward from LIVE state to see if Kai can still win
                     const snap = JSON.parse(JSON.stringify(gs))
@@ -335,7 +410,7 @@ const TidalRushGame = () => {
                 buttons: ['up', 'down', 'left', 'right', 'a', 'b', 'x', 'y'],
                 reset: (seed) => {
                     humanSeed = seed >>> 0
-                    gs = makeGame(humanSeed)
+                    gs = makeGame(humanSeed, bayRef.current)
                     buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
                     camInit = false
                     prevGo = false
@@ -371,6 +446,8 @@ const TidalRushGame = () => {
             window.removeEventListener('resize', resize)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
+            previewRef.current = null
+            startRaceRef.current = null
             if (import.meta.env.DEV) {
                 delete window.__tidalTest
                 unmountDbg()
@@ -382,6 +459,8 @@ const TidalRushGame = () => {
             sea.mat.dispose()
             spray.geo.dispose()
             spray.mat.dispose()
+            rain.geo.dispose()
+            rain.mat.dispose()
             canvas.remove()
         }
     }, [setMode])
@@ -390,7 +469,15 @@ const TidalRushGame = () => {
     const entry = GAMES.find((g) => g.label === 'TIDAL RUSH')
 
     return (
-        <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
+        <div
+            className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none"
+            style={{ touchAction: 'none' }}
+            onPointerDown={() => {
+                // tap-to-start on phones (the pad only lives on the play screen)
+                if (pausedRef.current) return
+                if (screenRef.current === 'attract' || screenRef.current === 'over') { if (startRaceRef.current) startRaceRef.current() }
+            }}
+        >
             <div ref={stageRef} className="absolute inset-0" />
 
             <div className={`absolute inset-0 pointer-events-none font-mono transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
@@ -400,6 +487,7 @@ const TidalRushGame = () => {
                     <div ref={setHud('lap')} className="text-[11px] tracking-widest">LAP 1/3</div>
                 </div>
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 text-center">
+                    <div ref={setHud('bay')} className="text-[10px] tracking-[0.35em] mb-1" style={{ color: '#bfe9ff' }}>SUNNY BAY</div>
                     <div ref={setHud('gate')} className="bg-black/45 border border-cyan-300/30 rounded px-3 py-1 text-sm font-bold tracking-widest" />
                     <div ref={setHud('pop')} className="mt-2 text-xl font-black text-cyan-200 transition-opacity duration-300" style={{ opacity: 0, textShadow: '0 0 14px #08f, 2px 2px 0 #000' }} />
                     <div ref={setHud('air')} className="mt-1 text-xs tracking-[0.35em] text-yellow-200 transition-opacity duration-150" style={{ opacity: 0 }}>A I R</div>
@@ -425,7 +513,11 @@ const TidalRushGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-0 bg-black/45 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <h1 className="text-6xl font-black italic mb-2 text-white" style={{ textShadow: '4px 0 0 #0a7fb8, -4px 0 0 #ff5a3c, 0 12px 30px #000' }}>TIDAL RUSH</h1>
-                    <p className="text-[11px] tracking-[0.4em] text-cyan-200/70 mb-6">SUNNY BAY SLALOM · 3 LAPS</p>
+                    <div className="flex items-center gap-4 mb-2">
+                        <button type="button" onClick={() => pickBay('sunny')} onPointerDown={(e) => e.stopPropagation()} className={`pointer-events-auto px-3 py-1 border rounded text-[11px] tracking-[0.3em] font-bold ${bay === 'sunny' ? 'border-yellow-300 text-yellow-200 bg-yellow-300/10' : 'border-cyan-300/25 text-cyan-200/45'}`}>SUNNY BAY</button>
+                        <button type="button" onClick={() => pickBay('storm')} onPointerDown={(e) => e.stopPropagation()} className={`pointer-events-auto px-3 py-1 border rounded text-[11px] tracking-[0.3em] font-bold ${bay === 'storm' ? 'border-slate-100 text-slate-100 bg-slate-400/20' : 'border-cyan-300/25 text-cyan-200/45'}`}>STORM BAY</button>
+                    </div>
+                    <p className="text-[10px] tracking-[0.35em] text-cyan-200/55 mb-6">{bay === 'storm' ? 'THE SWELL RE-ROLLS EVERY LAP' : 'SLALOM UNDER SUN'} · 3 LAPS · ◀ ▶ TO PICK</p>
                     <AttractMessage className="mb-6 text-cyan-50/85" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
                 </div>
@@ -434,11 +526,11 @@ const TidalRushGame = () => {
             {screen === 'over' && result && (
                 <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-cyan-50 font-mono px-6">
                     <h2 className={`text-4xl font-black mb-1 ${result.place === 1 ? 'text-yellow-300' : 'text-cyan-200'}`}>
-                        {result.place === 1 ? 'BAY CHAMPION' : `P${result.place} — THE FIELD TOOK IT`}
+                        {result.place === 1 ? (result.stage === 'storm' ? 'STORM MASTER' : 'BAY CHAMPION') : `P${result.place} — THE FIELD TOOK IT`}
                     </h2>
-                    <p className="text-lg mb-3">time {fmt(result.t)} · score {result.score}</p>
-                    <p className="text-sm text-cyan-200/80 mb-4">{result.place === 1 ? 'Mako never saw your wake.' : 'Cleaner gates charge more sprint — try the crests.'}</p>
-                    <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
+                    <p className="text-lg mb-3">{result.stage === 'storm' ? 'storm bay' : 'sunny bay'} · time {fmt(result.t)} · score {result.score}</p>
+                    <p className="text-sm text-cyan-200/80 mb-4">{result.place === 1 ? (result.stage === 'storm' ? 'You read a sea that re-rolled under you. The bay never saw you coming.' : 'Mako never saw your wake.') : 'Cleaner gates charge more sprint — try the crests.'}</p>
+                    <p className="animate-pulse font-bold">TAP / PRESS ANY KEY · ◀ ▶ PICK BAY</p>
                 </div>
             )}
 
