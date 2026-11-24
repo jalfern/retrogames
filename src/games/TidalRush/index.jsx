@@ -216,9 +216,11 @@ const TidalRushGame = () => {
                 if (Array.isArray(su[k])) { u.value.x = su[k][0]; u.value.y = su[k][1] }
                 else u.value = su[k]
             }
-            // weather blend (attract picker and race stage both ride this)
-            const wantStorm = (screenRef.current === 'play' ? gs.stage : bayRef.current) === 'storm' ? 1 : 0
-            stormBlend += (wantStorm - stormBlend) * (1 - Math.exp(-2.5 * DT))
+            // weather: keyed to the LIVE sim (gs.stage), never to a separate
+            // picker state — the sea, sky, HUD and rain all read the exact same
+            // source the hull rides, even through time-stepped DEV hooks
+            const wantStorm = gs.stage === 'storm' ? 1 : 0
+            stormBlend += (wantStorm - stormBlend) * (1 - Math.exp(-25 * DT))
             sea.mat.uniforms.uStorm.value = stormBlend
             sea.mat.uniforms.uFlash.value = gs.flash
             sea.mat.uniforms.uFogCol.value.setRGB(
