@@ -1412,7 +1412,7 @@ export const GAMES = [
     {
         path: '/marble-rush',
         pad: {
-            layout: 'stick', analog: true, method: 'stick', supports: ['stick', 'dpad'],
+            layout: 'stick', buttons: [], analog: true, method: 'stick', supports: ['stick', 'dpad'],
             aLabel: 'GO',
             reason: 'one analog vector IS the marble — push the stick and the chrome ball leans into it; deliberately the shape a tilt controller will drive next',
         },
