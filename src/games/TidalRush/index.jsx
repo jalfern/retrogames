@@ -356,6 +356,7 @@ const TidalRushGame = () => {
 
             // HUD (DOM refs — no per-frame React)
             const hud = hudRef.current
+            if (hud.score) hud.score.firstChild.nodeValue = String(gs.score)
             if (hud.speed) hud.speed.firstChild.nodeValue = String(Math.round(p.speed * 3.6))
             if (hud.lap) hud.lap.textContent = `LAP ${Math.min(p.lap, LAPS)}/${LAPS}`
             if (hud.rank) hud.rank.textContent = `P${gs.rank}/${gs.crafts.length}`
@@ -379,7 +380,10 @@ const TidalRushGame = () => {
                     hud.count.style.opacity = 1
                 } else {
                     goFlash -= DT
-                    if (goFlash <= 0 && prevGo) hud.count.style.opacity = 0
+                    // hide the GO once its flash is done — driven by the sim's
+                    // lightPhase, not the display chain, so DEV/contract-driven
+                    // races clear it too (it hung on screen through a squall before)
+                    if (goFlash <= 0) hud.count.style.opacity = 0
                 }
             }
             if (hud.bay) {
@@ -490,6 +494,12 @@ const TidalRushGame = () => {
                 step: (n = 1) => { for (let i = 0; i < n; i++) simTick(); return stateOf(gs) },
                 setMode: (m) => { if (m === 'play') startRace(); else setMode(m) },
                 probe: () => ({ ...stateOf(gs), seed: gs.seed, screen: screenRef.current }),
+                autoDrive: (n = 60) => {
+                    // DEV-only: drive Kai with the game's OWN autopilot through the
+                    // live screen (used by tidaldrive to win a browser race fast)
+                    for (let i = 0; i < n && !gs.done; i++) { step(gs, autoPad(gs)); drainEvents() }
+                    return stateOf(gs)
+                },
                 pickBay: (b) => { bayRef.current = b === 'storm' ? 'storm' : 'sunny'; setBay(bayRef.current); if (screenRef.current !== 'play') previewRef.current() },
                 prognose: () => {
                     // replay the pilot forward from LIVE state to see if Kai can still win
