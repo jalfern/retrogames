@@ -654,7 +654,7 @@ export const GAMES = [
     {
         path: '/pacman',
         tapStart: true,
-        pad: { method: 'dpad', ways: 4, buttons: [], reads: ['up', 'down', 'left', 'right'], reason: 'grid maze — 4-way cell movement; diamond-gate stick + swipe, buffered turns (#439)' },
+        pad: { method: 'dpad', ways: 4, supports: ['dpad', 'stick'], buttons: [], reads: ['up', 'down', 'left', 'right'], reason: 'grid maze — 4-way cell movement; diamond-gate stick + swipe, buffered turns (#439)' },
         builtBy: 'claude',
         added: '2026-02-26',
         component: PacmanGame,
@@ -928,7 +928,7 @@ export const GAMES = [
     },
     {
         path: '/marble-madness',
-        pad: { layout: 'stick', buttons: [], analog: true },
+        pad: { layout: 'stick', buttons: [], analog: true, supports: ['stick', 'tilt'] },
         builtBy: 'forge',
         added: '2026-10-14',
         component: MarbleMadnessGame,
@@ -1033,6 +1033,12 @@ export const GAMES = [
         path: '/ssx',
         pad: {
             layout: 'stick', analog: true,
+            // #3108 pilot: the Sony full pad — two thumbs cover everything
+            // (d-pad + stick steer, diamond carries ✕JUMP/○BST/□GRAB/△INVERT,
+            // L1/R1 flips above); STICK stays for players who want the old
+            // floating half. Codes are identical across types.
+            type: 'full', supports: ['stick', 'full'],
+            aLabel: 'JUMP',
             buttons: [
                 { label: 'BST', code: 'ShiftLeft' },
                 { label: '□ GRAB', code: 'KeyX', pad: 2 },

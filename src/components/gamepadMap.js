@@ -218,6 +218,13 @@ export function validPad(pad) {
     if (pad.analog !== undefined && typeof pad.analog !== 'boolean') return false
     if (pad.reads !== undefined && (!Array.isArray(pad.reads) || pad.reads.some((f) => typeof f !== 'string'))) return false
     if (pad.ways !== undefined && pad.ways !== 4 && pad.ways !== 8) return false
+    // #3108: switchable controller types. `type` is the default the game asks
+    // for, `supports` everything the player may switch to (the default is
+    // always implicitly in). Both optional; a game that declares neither keeps
+    // its derived single type and shows no switch row.
+    if (pad.type !== undefined && !['dpad', 'stick', 'full', 'pointer', 'tilt'].includes(pad.type)) return false
+    if (pad.supports !== undefined && (!Array.isArray(pad.supports) || pad.supports.length === 0
+        || pad.supports.some((t) => !['dpad', 'stick', 'full', 'pointer', 'tilt'].includes(t)))) return false
     return true
 }
 

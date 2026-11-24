@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { packPages } from '../utils/textFit'
 import { audioController } from '../utils/AudioController.js'
 import { WATCH_KEY, gameHasWatch } from '../utils/watch'
+import { typesFor, currentPadType, setPadType, PAD_TYPE_LABELS } from './padTypes'
 
 // #1099: the shared help screen must never overflow a phone. Blocks (title,
 // description, each control row) are measured against the live viewport and
@@ -21,6 +22,19 @@ const PauseOverlay = ({ game, badge, ledger, onResume }) => {
     const prevPage = useRef(0)
 
     const controls = game?.controls || []
+    // #3108 — per-game controller choice. Games list the types they support
+    // in the registry (`pad.supports`); touch players switch here and the
+    // choice is remembered per game. The row only exists when there IS a
+    // choice to make (more than one supported type, real touch device).
+    const pad = game?.pad || null
+    const padTypes = typesFor(pad)
+    const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0)
+    const [padType, setPadTypeNow] = useState(() => currentPadType(pad))
+    useEffect(() => {
+        const on = () => setPadTypeNow(currentPadType(pad))
+        window.addEventListener('retrogames:padtype', on)
+        return () => window.removeEventListener('retrogames:padtype', on)
+    }, [pad])
     const blocks = [
         <div key="t" className="text-4xl font-bold text-[#ff0000] drop-shadow-[2px_2px_0_rgba(255,255,255,0.5)] text-center">
             {game.label}
@@ -43,6 +57,27 @@ const PauseOverlay = ({ game, badge, ledger, onResume }) => {
                 <div key="cq" className="flex items-center pt-2 border-t border-gray-800 text-gray-400 w-full max-w-md text-base text-left">
                     <span className="mr-2">?</span>
                     Toggle Help / Pause
+                </div>,
+            ]
+            : []),
+        // #3108 — CONTROLLER row: the player picks the overlay shape for THIS
+        // game; every type feeds the same one pad, so nothing else changes.
+        ...(isTouch && padTypes.length > 1
+            ? [
+                <div key="ph" className="text-xl font-bold text-[#ffff00] border-b border-gray-700 pb-2 w-full max-w-md text-left">CONTROLLER</div>,
+                <div key="pc" data-padtypes className="flex flex-wrap gap-2 w-full max-w-md justify-start">
+                    {padTypes.map((t) => (
+                        <button
+                            key={t}
+                            data-padtype={t}
+                            onClick={() => { audioController.playTone(660, 0.05, 'square', 0.15); setPadType(pad, t) }}
+                            className={`rounded-full px-4 py-2 min-h-11 text-sm font-bold tracking-wider transition-colors ${padType === t
+                                ? 'bg-[#00ff00] text-black'
+                                : 'bg-gray-800 text-gray-200 border border-gray-600'}`}
+                        >
+                            {PAD_TYPE_LABELS[t]}
+                        </button>
+                    ))}
                 </div>,
             ]
             : []),

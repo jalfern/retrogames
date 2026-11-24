@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 export const CORE = {
   lint: ['lint:ai', 'lint:forge', 'lint:pw'],
-  checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'steercheck', 'fitcanvascheck',
+  checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'padtypecheck', 'steercheck', 'fitcanvascheck',
     'ciyamlcheck', 'shimcheck', 'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck',
     'pulsecheck', 'shiftreportcheck', 'scrubcheck', 'feedbackcheck', 'feedbackreplay', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck', 'audiocheck', 'dvhcheck',
     // #1667 moved watchcheck to `smoke` (line below) but left its --mutate entry
