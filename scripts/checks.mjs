@@ -208,6 +208,9 @@ export const MANUAL_CHECKS = [
   "scripts/shelfcheck.mjs",
   "scripts/shorecheck.mjs",
   "scripts/slotcheck.mjs",
+  // #3076: STARRY NIGHT — browser-driven demo gate (Chrome via CDP over file://,
+  // no dev server); advisory from the lane: npm run starrynightcheck.
+  "scripts/starrynightcheck.mjs",
   "scripts/soscheck.mjs",
   "scripts/soslinkcheck.mjs",
   "scripts/ssxmodelcheck.mjs",

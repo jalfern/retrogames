@@ -1,0 +1,1081 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>STARRY NIGHT — jalfern.com</title>
+<meta name="description" content="Painted-style night sky rendered in zero-library WebGL2: wavy brush-stroked sky, spiral wind swirls, twinkling glints, crescent moon, silhouette hills, warm-windowed village and a swaying cypress, with flat bands + cross-hatch + ink edges in the post pass." />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: #05070f; }
+  body { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  canvas#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  canvas#stage:active { cursor: grabbing; }
+  #hud {
+    position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: 5; color: rgba(255,255,255,.72); font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+    line-height: 1.7; pointer-events: none; max-width: 70vw; text-shadow: 0 1px 6px rgba(0,0,0,.7);
+  }
+  #hud b { color: #fff; font-weight: 700; letter-spacing: .3em; }
+  #hud .hint { color: rgba(255,255,255,.42); }
+  @media (max-width: 640px) { #hud { font-size: 9px; letter-spacing: .12em; max-width: 80vw; } }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div id="hud"><b>STARRY NIGHT</b><span class="hint"> · painted style · zero-library WebGL2 · drag to look around</span></div>
+<script>
+(function () {
+  'use strict'
+
+  // ================================================================ setup
+  const canvas = document.getElementById('stage')
+  const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true })
+  if (!gl) { document.getElementById('hud').innerHTML = '<b>STARRY NIGHT</b> — WebGL2 unavailable'; return }
+
+  const dpr = () => Math.min(window.devicePixelRatio || 1, 2)
+  let W = 0, H = 0, FBO_W = 0, FBO_H = 0
+  let sceneTex = null, fbo = null, depthRb = null
+
+  // ---- scene helpers
+  function makeCanvas(w, h) {
+    const c = document.createElement('canvas')
+    c.width = w; c.height = h
+    return [c, c.getContext('2d')]
+  }
+
+  // ================================================================ camera
+  const TARGET = [0, 9, -8]
+  const BASE_POS = [7, 9.5, 34]
+  const FOV = 46 * Math.PI / 180
+  const NEAR = 0.1, FAR = 400
+  const baseOff = [7, 0.5, 42]
+  const R_ORBIT = Math.hypot(baseOff[0], baseOff[1], baseOff[2])
+  const BASE_YAW = Math.atan2(baseOff[0], baseOff[2])
+  const BASE_ELEV = Math.atan2(baseOff[1], Math.hypot(baseOff[0], baseOff[2]))
+
+  let yaw = BASE_YAW, pitch = BASE_ELEV
+  let yawT = BASE_YAW, pitchT = BASE_ELEV
+  const YAW_LIMIT = 0.30, PITCH_LIMIT = 0.26
+
+  const fwd = () => {
+    const d = [TARGET[0] - camPos()[0], TARGET[1] - camPos()[1], TARGET[2] - camPos()[2]]
+    const l = Math.hypot(d[0], d[1], d[2])
+    return [d[0] / l, d[1] / l, d[2] / l]
+  }
+  function camPos() {
+    const c = Math.cos(pitch), s = Math.sin(pitch)
+    const y = yaw
+    return [
+      TARGET[0] + R_ORBIT * Math.cos(pitch) * Math.sin(y),
+      TARGET[1] + R_ORBIT * Math.sin(pitch),
+      TARGET[2] + R_ORBIT * Math.cos(pitch) * Math.cos(y),
+    ]
+  }
+  function basis() {
+    const pos = camPos()
+    const f = fwd()
+    const backup = [-f[0], -f[1], -f[2]]
+    const up = [0, 1, 0]
+    let rx = f[1] * up[2] - f[2] * up[1]
+    let ry = f[2] * up[0] - f[0] * up[2]
+    let rz = f[0] * up[1] - f[1] * up[0]
+    let rl = Math.hypot(rx, ry, rz)
+    rx /= rl; ry /= rl; rz /= rl
+    const ux = backup[1] * rz - backup[2] * ry
+    const uy = backup[2] * rx - backup[0] * rz
+    const uz = backup[0] * ry - backup[1] * rx
+    // normalize up (backup × right gives camera up)
+    let ul = Math.hypot(ux, uy, uz)
+    return { pos, f, rx, ry, rz, ux: ux / ul, uy: uy / ul, uz: uz / ul, backup }
+  }
+  function viewMatrix(pos, f, r, u, backup) {
+    const M = [
+      [r[0], r[1], r[2], -(r[0] * pos[0] + r[1] * pos[1] + r[2] * pos[2])],
+      [u[0], u[1], u[2], -(u[0] * pos[0] + u[1] * pos[1] + u[2] * pos[2])],
+      [backup[0], backup[1], backup[2], -(backup[0] * pos[0] + backup[1] * pos[1] + backup[2] * pos[2])],
+      [0, 0, 0, 1],
+    ]
+    return M
+  }
+  function perspective(fov, aspect) {
+    const f = 1 / Math.tan(fov / 2)
+    return [
+      [f / aspect, 0, 0, 0],
+      [0, f, 0, 0],
+      [0, 0, (FAR + NEAR) / (NEAR - FAR), (2 * FAR * NEAR) / (NEAR - FAR)],
+      [0, 0, -1, 0],
+    ]
+  }
+  function colMajor(M) {
+    const o = new Float32Array(16)
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) o[c * 4 + r] = M[r][c]
+    return o
+  }
+
+  // ================================================================ shaders
+  function compile(type, src) {
+    const sh = gl.createShader(type)
+    gl.shaderSource(sh, src)
+    gl.compileShader(sh)
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(sh)); throw new Error('shader compile')
+    }
+    return sh
+  }
+  function program(vsSrc, fsSrc) {
+    const p = gl.createProgram()
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc))
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc))
+    gl.linkProgram(p)
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); throw new Error('link') }
+    return p
+  }
+  const ATTR_CORNER = 0
+
+  const FIXED_VS = `
+    attribute vec2 aCorner;
+    uniform mat4 uView;
+    uniform mat4 uProj;
+    uniform vec3 uCenter;
+    uniform vec3 uRightW;
+    uniform vec3 uUpW;
+    uniform vec2 uHalf;
+    uniform float uSway;
+    varying vec2 vUv;
+    void main() {
+      float top = aCorner.y * 0.5 + 0.5;
+      vec2 p = vec2(aCorner.x * uHalf.x, aCorner.y * uHalf.y);
+      p.x += uSway * top * top;
+      vec3 worldPos = uCenter + uRightW * p.x + uUpW * p.y;
+      gl_Position = uProj * (uView * vec4(worldPos, 1.0));
+      vUv = vec2(aCorner.x * 0.5 + 0.5, 0.5 - aCorner.y * 0.5);
+    }`
+
+  const FIXED_FS = `
+    precision highp float;
+    uniform sampler2D uTex;
+    uniform vec2 uRepeat;
+    uniform vec3 uFogColor;
+    uniform float uFogFar;
+    uniform float uFogNear;
+    varying vec2 vUv;
+    void main() {
+      vec2 uv = vUv * uRepeat;
+      vec4 col = texture2D(uTex, uv);
+      gl_FragColor = col;
+    }`
+
+  const FIXED_FS_GROUND = `
+    precision highp float;
+    uniform sampler2D uTex;
+    uniform vec2 uRepeat;
+    uniform vec3 uFogColor;
+    uniform float uFogNear;
+    uniform float uFogFar;
+    varying vec2 vUv;
+    varying float vDepth;
+    void main() {
+      vec2 uv = vUv * uRepeat;
+      vec4 col = texture2D(uTex, uv);
+      float fog = clamp((vDepth - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
+      col.rgb = mix(col.rgb, uFogColor, fog);
+      gl_FragColor = col;
+    }`
+
+  const FIXED_VS_GROUND = `
+    attribute vec2 aCorner;
+    uniform mat4 uView;
+    uniform mat4 uProj;
+    uniform vec3 uCenter;
+    uniform vec3 uRightW;
+    uniform vec3 uUpW;
+    uniform vec2 uHalf;
+    varying vec2 vUv;
+    varying float vDepth;
+    void main() {
+      vec2 p = vec2(aCorner.x * uHalf.x, aCorner.y * uHalf.y);
+      vec3 worldPos = uCenter + uRightW * p.x + uUpW * p.y;
+      vec4 view = uView * vec4(worldPos, 1.0);
+      gl_Position = uProj * view;
+      vUv = vec2(aCorner.x * 0.5 + 0.5, 0.5 - aCorner.y * 0.5);
+      vDepth = -view.z;
+    }`
+
+  const BILL_VS = `
+    attribute vec2 aCorner;
+    uniform mat4 uView;
+    uniform mat4 uProj;
+    uniform vec3 uCenter;
+    uniform vec3 uRight;
+    uniform vec3 uUp;
+    uniform vec2 uHalf;
+    uniform float uRot;
+    uniform float uSway;
+    varying vec2 vUv;
+    varying float vOpacity;
+    void main() {
+      vec2 p = vec2(aCorner.x, aCorner.y);
+      float c = cos(uRot), s = sin(uRot);
+      p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+      p.x *= uHalf.x;
+      p.y *= uHalf.y;
+      p.x += uSway * (aCorner.y * 0.5 + 0.5);
+      vec3 worldPos = uCenter + uRight * p.x + uUp * p.y;
+      gl_Position = uProj * (uView * vec4(worldPos, 1.0));
+      vUv = vec2(aCorner.x * 0.5 + 0.5, 0.5 - aCorner.y * 0.5);
+      vOpacity = 1.0;
+    }`
+
+  const BILL_FS = `
+    precision highp float;
+    uniform sampler2D uTex;
+    uniform float uOpacity;
+    varying vec2 vUv;
+    varying float vOpacity;
+    void main() {
+      vec4 col = texture2D(uTex, vUv);
+      gl_FragColor = vec4(col.rgb, col.a * uOpacity);
+    }`
+
+  const SKYW_FS = BILL_FS
+  const SKYW_VS = BILL_VS
+
+  const POST_VS = `
+    attribute vec2 aPos;
+    varying vec2 vUv;
+    void main() {
+      vUv = aPos * 0.5 + 0.5;
+      gl_Position = vec4(aPos, 0.0, 1.0);
+    }`
+  const POST_FS = `
+    precision highp float;
+    uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
+    uniform float inkStrength;
+    uniform float bands;
+    uniform float hatchStrength;
+    uniform float vignetteStrength;
+    uniform vec3 inkColor;
+    varying vec2 vUv;
+    float lumen(vec2 uv) {
+      vec3 c = texture2D(tDiffuse, uv).rgb;
+      return dot(c, vec3(0.2126, 0.7152, 0.0722));
+    }
+    float hash(float n) { return fract(sin(n) * 43758.5453123); }
+    void main() {
+      vec2 uv = vUv;
+      vec3 col = texture2D(tDiffuse, uv).rgb;
+      float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      float q = 1.0 / bands;
+      float band = floor(lum * bands + 0.5) * q;
+      band = max(band, q * 0.75);
+      col *= band / max(lum, 0.02);
+      float px = 1.5 / resolution.x;
+      float py = 1.5 / resolution.y;
+      float lx = abs(lumen(uv + vec2(px, 0.0)) - lumen(uv - vec2(px, 0.0)));
+      float ly = abs(lumen(uv + vec2(0.0, py)) - lumen(uv - vec2(0.0, py)));
+      float ink = smoothstep(0.055, 0.14, lx + ly);
+      col = mix(col, inkColor, ink * inkStrength);
+      float lineIdx = floor(gl_FragCoord.y / 13.0);
+      float phase = hash(lineIdx) * 6.2831;
+      float y = gl_FragCoord.y + sin(uv.x * 18.0 + phase) * 2.4;
+      float stripe = sin(y * 0.483 + phase);
+      float line = smoothstep(0.4, 0.78, abs(stripe));
+      float dark = 1.0 - smoothstep(0.1, 0.55, lum);
+      float hatch = line * hatchStrength * (0.3 + 0.7 * dark);
+      col *= 1.0 - hatch * 0.24;
+      vec2 d = uv - 0.5;
+      col *= 1.0 - vignetteStrength * dot(d, d) * 3.0;
+      gl_FragColor = vec4(col, 1.0);
+    }`
+
+  const P_FIXED = program(FIXED_VS, FIXED_FS)
+  const P_GROUND = program(FIXED_VS_GROUND, FIXED_FS_GROUND)
+  const P_BILL = program(SKYW_VS, SKYW_FS)
+  const P_POST = program(POST_VS, POST_FS)
+
+  // buffers
+  const cornerBuf = gl.createBuffer()
+  {
+    const v = new Float32Array([
+      -1, -1,  1, -1,  1, 1,   -1, -1,  1, 1,  -1, 1,
+    ])
+    gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuf)
+    gl.bufferData(gl.ARRAY_BUFFER, v, gl.STATIC_DRAW)
+  }
+  const postBuf = gl.createBuffer()
+  {
+    const v = new Float32Array([
+      -1, -1,  1, -1,  1, 1,   -1, -1,  1, 1,  -1, 1,
+    ])
+    gl.bindBuffer(gl.ARRAY_BUFFER, postBuf)
+    gl.bufferData(gl.ARRAY_BUFFER, v, gl.STATIC_DRAW)
+  }
+
+  // ================================================================ textures
+  // ---- sky (painted): base + wavy blue strokes
+  function skyTexture() {
+    const W2 = 2048, H2 = 1024
+    const [c, ctx] = makeCanvas(W2, H2)
+    ctx.fillStyle = '#13265c'
+    ctx.fillRect(0, 0, W2, H2)
+    for (let i = 0; i < 260; i++) {
+      const blues = ['#1a2f6b', '#1f3a7e', '#274a92', '#2c529f', '#31579f']
+      ctx.strokeStyle = blues[Math.floor(Math.random() * blues.length)]
+      ctx.globalAlpha = 0.28 + Math.random() * 0.42
+      ctx.lineWidth = 5 + Math.random() * 13
+      ctx.lineCap = 'round'
+      const y = Math.random() * H2
+      const x = Math.random() * W2 - 150
+      const len = 120 + Math.random() * 320
+      const dy = (Math.random() - 0.5) * 34
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.quadraticCurveTo(x + len * 0.5, y + dy, x + len, y + (Math.random() - 0.5) * 20)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+    return c
+  }
+
+  function spiralTexture() {
+    const [c, ctx] = makeCanvas(1024, 1024)
+    const cx = 512, cy = 512
+    ctx.lineCap = 'round'
+    const blues = ['#1c3a7e', '#2c529f', '#3c63c0', '#4a76cc', '#33579f', '#22406f']
+    const turns = 3.1, rMax = 440, r0 = 34
+    const steps = 340
+    for (let i = 0; i < steps; i++) {
+      const t0 = i / steps, t1 = (i + 1) / steps
+      const a0 = t0 * turns * Math.PI * 2, a1 = t1 * turns * Math.PI * 2
+      const rA = r0 + t0 * rMax, rB = r0 + t1 * rMax
+      const light = Math.random() < 0.18
+      ctx.strokeStyle = light ? (Math.random() < 0.5 ? '#e9e2c8' : '#f5d76e') : blues[Math.floor(Math.random() * blues.length)]
+      ctx.globalAlpha = 0.38 + Math.random() * 0.5
+      ctx.lineWidth = 5 + Math.random() * 15
+      ctx.beginPath()
+      ctx.moveTo(cx + Math.cos(a0) * rA, cy + Math.sin(a0) * rA)
+      ctx.quadraticCurveTo(
+        cx + Math.cos((a0 + a1) / 2) * ((rA + rB) / 2 + 8),
+        cy + Math.sin((a0 + a1) / 2) * ((rA + rB) / 2 + 8),
+        cx + Math.cos(a1) * rB,
+        cy + Math.sin(a1) * rB
+      )
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 0.92
+    ctx.fillStyle = '#fff6d8'
+    ctx.beginPath(); ctx.arc(cx, cy, 20, 0, Math.PI * 2); ctx.fill()
+    ctx.globalAlpha = 1
+    return c
+  }
+
+  function starTexture() {
+    const [c, ctx] = makeCanvas(256, 256)
+    const cx = 128, cy = 128
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = '#ffe9a0'
+    ctx.globalAlpha = 0.72
+    ctx.lineWidth = 5
+    for (let i = 0; i < 12; i++) {
+      const a0 = (i / 12) * Math.PI * 2 + 0.05
+      ctx.beginPath()
+      ctx.arc(cx, cy, 84, a0, a0 + 0.34)
+      ctx.stroke()
+    }
+    const strokes = [
+      { a: 0, len: 92, w: 12, col: '#fff6d8' },
+      { a: Math.PI / 2, len: 92, w: 12, col: '#fff6d8' },
+      { a: Math.PI / 4, len: 54, w: 8, col: '#ffe9a0' },
+      { a: (Math.PI * 3) / 4, len: 54, w: 8, col: '#ffe9a0' },
+      { a: Math.PI / 8, len: 38, w: 5, col: '#ffe9a0' },
+      { a: (Math.PI * 7) / 8, len: 38, w: 5, col: '#ffe9a0' },
+      { a: (Math.PI * 5) / 8, len: 38, w: 5, col: '#ffe9a0' },
+      { a: (Math.PI * 3) / 8, len: 38, w: 5, col: '#ffe9a0' },
+    ]
+    for (const s of strokes) {
+      const dx = Math.cos(s.a), dy = Math.sin(s.a)
+      ctx.strokeStyle = s.col
+      ctx.globalAlpha = 0.96
+      ctx.lineWidth = s.w
+      ctx.beginPath()
+      ctx.moveTo(cx - dx * s.len * 0.5, cy - dy * s.len * 0.5)
+      ctx.lineTo(cx + dx * s.len * 0.5, cy + dy * s.len * 0.5)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+    ctx.fillStyle = '#ffe9a0'
+    ctx.beginPath(); ctx.arc(cx, cy, 13, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = '#fff6d8'
+    ctx.beginPath(); ctx.arc(cx, cy, 6.5, 0, Math.PI * 2); ctx.fill()
+    return c
+  }
+
+  function moonTexture() {
+    const [glow, gctx] = makeCanvas(256, 256)
+    const g = gctx.createRadialGradient(128, 128, 20, 128, 128, 126)
+    g.addColorStop(0, 'rgba(255,244,205,0.95)')
+    g.addColorStop(0.35, 'rgba(255,240,190,0.35)')
+    g.addColorStop(1, 'rgba(255,240,190,0)')
+    gctx.fillStyle = g
+    gctx.fillRect(0, 0, 256, 256)
+    const [body, bctx] = makeCanvas(256, 256)
+    bctx.fillStyle = '#fff6d8'
+    bctx.beginPath(); bctx.arc(128, 128, 58, 0, Math.PI * 2); bctx.fill()
+    bctx.globalCompositeOperation = 'destination-out'
+    bctx.beginPath(); bctx.arc(154, 106, 52, 0, Math.PI * 2); bctx.fill()
+    const [c, ctx] = makeCanvas(256, 256)
+    ctx.drawImage(glow, 0, 0)
+    ctx.drawImage(body, 0, 0)
+    return c
+  }
+
+  function hillTexture(spec) {
+    const W2 = 2048, H2 = 640
+    const [c, ctx] = makeCanvas(W2, H2)
+    const ridgeY = (x) => H2 * spec.base + Math.sin(x * 0.0038 + spec.phase) * H2 * spec.amp + Math.sin(x * 0.0105 + spec.phase * 2.3) * H2 * spec.amp * 0.55 + Math.sin(x * 0.031 + spec.phase * 4.0) * H2 * spec.amp * 0.28
+    const grad = ctx.createLinearGradient(0, H2 * spec.base - H2 * spec.amp, 0, H2)
+    grad.addColorStop(0, spec.fillTop)
+    grad.addColorStop(1, spec.fillBottom)
+    ctx.beginPath()
+    ctx.moveTo(0, H2)
+    for (let x = 0; x <= W2; x += 8) ctx.lineTo(x, ridgeY(x))
+    ctx.lineTo(W2, H2)
+    ctx.closePath()
+    ctx.fillStyle = grad
+    ctx.fill()
+    ctx.save()
+    ctx.clip()
+    for (let i = 0; i < 170; i++) {
+      ctx.strokeStyle = spec.strokes[Math.floor(Math.random() * spec.strokes.length)]
+      ctx.globalAlpha = 0.16 + Math.random() * 0.24
+      ctx.lineWidth = 3 + Math.random() * 9
+      ctx.lineCap = 'round'
+      const rx = Math.random() * W2
+      const y = ridgeY(rx) + Math.random() * ridgeY(rx) * 0.9
+      const x = Math.random() * W2 - 60
+      const len = 40 + Math.random() * 180
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.quadraticCurveTo(x + len / 2, y + (Math.random() - 0.5) * 14, x + len, y + (Math.random() - 0.5) * 9)
+      ctx.stroke()
+    }
+    ctx.restore()
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = spec.ridge
+    ctx.lineCap = 'round'
+    for (let x = 0; x < W2; x += 22 + Math.random() * 40) {
+      const y0 = ridgeY(x)
+      ctx.globalAlpha = 0.55 + Math.random() * 0.35
+      ctx.lineWidth = 5 + Math.random() * 6
+      ctx.beginPath()
+      ctx.moveTo(x, y0)
+      ctx.quadraticCurveTo(x + 30, y0 + (Math.random() - 0.5) * 7, x + 55 + Math.random() * 40, y0 + (Math.random() - 0.5) * 6)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+    return c
+  }
+
+  function groundTexture() {
+    const W2 = 1024, H2 = 1024
+    const [c, ctx] = makeCanvas(W2, H2)
+    ctx.fillStyle = '#15251a'
+    ctx.fillRect(0, 0, W2, H2)
+    const greens = ['#1c3524', '#234a2e', '#0e1f14', '#2c5232', '#19301f']
+    for (let i = 0; i < 300; i++) {
+      ctx.strokeStyle = greens[Math.floor(Math.random() * greens.length)]
+      ctx.globalAlpha = 0.2 + Math.random() * 0.4
+      ctx.lineWidth = 3 + Math.random() * 10
+      ctx.lineCap = 'round'
+      const y = Math.random() * H2
+      const x = Math.random() * W2 - 120
+      const len = 90 + Math.random() * 260
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.quadraticCurveTo(x + len / 2, y + (Math.random() - 0.5) * 20, x + len, y + (Math.random() - 0.5) * 12)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+    return c
+  }
+
+  function cypressTexture() {
+    const W2 = 512, H2 = 1024
+    const [c, ctx] = makeCanvas(W2, H2)
+    const apexY = 110
+    const centerX = 250
+    const path = new Path2D()
+    path.moveTo(centerX, apexY)
+    for (let y = apexY; y <= H2; y += 10) {
+      const t = (y - apexY) / (H2 - apexY)
+      const w = Math.pow(t, 0.7) * 165 * (1 + 0.11 * Math.sin(y * 0.026 + 0.8) + 0.05 * Math.sin(y * 0.085))
+      path.lineTo(centerX - w, y)
+    }
+    path.lineTo(centerX + 2, H2)
+    for (let y = H2; y >= apexY; y -= 10) {
+      const t = (y - apexY) / (H2 - apexY)
+      const w = Math.pow(t, 0.7) * 172 * (1 + 0.13 * Math.sin(y * 0.019 + 2.1) + 0.06 * Math.sin(y * 0.064))
+      path.lineTo(centerX + w, y)
+    }
+    path.closePath()
+    const grad = ctx.createLinearGradient(0, apexY, 0, H2)
+    grad.addColorStop(0, '#1e3822')
+    grad.addColorStop(1, '#0c1d11')
+    ctx.fillStyle = grad
+    ctx.fill(path)
+    ctx.save()
+    ctx.clip(path)
+    for (let i = 0; i < 280; i++) {
+      const x = 30 + Math.random() * (W2 - 60)
+      const y0 = apexY + Math.random() * (H2 - apexY) * 0.95
+      const len = 50 + Math.random() * 170
+      const sway = (Math.random() - 0.5) * 46
+      ctx.strokeStyle = ['#2a5232', '#16301f', '#3a6a3c', '#0e2014'][Math.floor(Math.random() * 4)]
+      ctx.globalAlpha = 0.18 + Math.random() * 0.35
+      ctx.lineWidth = 2.5 + Math.random() * 7
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(x, y0)
+      ctx.bezierCurveTo(x + sway * 0.3, y0 + len * 0.35, x + sway * 0.65, y0 + len * 0.7, x + sway, y0 + len)
+      ctx.stroke()
+    }
+    ctx.strokeStyle = '#3a2718'
+    ctx.globalAlpha = 0.85
+    for (let i = 0; i < 22; i++) {
+      const x = centerX + (Math.random() - 0.5) * 90
+      const y0 = H2 - 30 - Math.random() * 110
+      ctx.lineWidth = 3 + Math.random() * 5
+      ctx.beginPath()
+      ctx.moveTo(x, y0)
+      ctx.lineTo(x + (Math.random() - 0.5) * 22, y0 + 50 + Math.random() * 110)
+      ctx.stroke()
+    }
+    ctx.restore()
+    ctx.globalAlpha = 1
+    return c
+  }
+
+  function moundTexture() {
+    const W2 = 256, H2 = 128
+    const [c, ctx] = makeCanvas(W2, H2)
+    const grad = ctx.createLinearGradient(0, 0, 0, H2)
+    grad.addColorStop(0, '#235030')
+    grad.addColorStop(1, '#12231a')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.moveTo(0, H2)
+    ctx.bezierCurveTo(0, 20, W2 * 0.3, 8, W2 * 0.5, 8)
+    ctx.bezierCurveTo(W2 * 0.72, 8, W2, 28, W2, H2)
+    ctx.closePath()
+    ctx.fill()
+    const greens = ['#2a5232', '#1c3a24', '#2c5232', '#16301f']
+    for (let i = 0; i < 40; i++) {
+      ctx.strokeStyle = greens[Math.floor(Math.random() * greens.length)]
+      ctx.globalAlpha = 0.2 + Math.random() * 0.3
+      ctx.lineWidth = 2 + Math.random() * 5
+      ctx.lineCap = 'round'
+      const x = Math.random() * W2
+      const y = 30 + Math.random() * (H2 - 50)
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x + (Math.random() - 0.5) * 30, y + 10 + Math.random() * 30)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+    return c
+  }
+
+  function villageTexture() {
+    const W2 = 2048, H2 = 640
+    const [c, ctx] = makeCanvas(W2, H2)
+    ctx.clearRect(0, 0, W2, H2)
+    const groundY = H2 * 0.9
+    const scale = H2 / 12
+    const xPx = (wx) => (wx + 18) * (W2 / 36)
+    const yPx = (h) => groundY - h * scale
+
+    const houseSpecs = [
+      { x: -12.5, w: 2.6, h: 2.4, z: -7.5 },
+      { x: -9.4, w: 2.2, h: 3.1, z: -8.5 },
+      { x: -6.4, w: 2.9, h: 2.0, z: -6.8 },
+      { x: -3.3, w: 2.3, h: 2.8, z: -8.0 },
+      { x: -0.2, w: 2.7, h: 2.2, z: -7.0 },
+      { x: 6.6, w: 2.4, h: 2.6, z: -8.2 },
+      { x: 9.9, w: 2.8, h: 2.1, z: -7.2 },
+      { x: 12.9, w: 2.2, h: 2.7, z: -8.6 },
+      { x: -14.6, w: 2.0, h: 2.0, z: -9.4 },
+      { x: 14.9, w: 2.0, h: 2.3, z: -9.6 },
+    ]
+
+    const bodies = ['#2c3a5c', '#27334f', '#22304b', '#2e3a5a', '#24304a']
+    const roofs = ['#241a22', '#2c2030', '#1d1520', '#31222e', '#241c26']
+
+    function hatchRect(x, y, w, h, colA, colB) {
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(x, y, w, h)
+      ctx.clip()
+      ctx.fillStyle = colA
+      ctx.fillRect(x, y, w, h)
+      for (let i = 0; i < 26; i++) {
+        ctx.strokeStyle = colB
+        ctx.globalAlpha = 0.14 + Math.random() * 0.2
+        ctx.lineWidth = 2 + Math.random() * 5
+        ctx.lineCap = 'round'
+        const yy = y + Math.random() * h
+        ctx.beginPath()
+        ctx.moveTo(x + Math.random() * w * 0.2, yy)
+        ctx.lineTo(x + w * (0.4 + Math.random() * 0.6), yy + (Math.random() - 0.5) * 8)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+      ctx.restore()
+    }
+
+    function litWindow(wx, wy, wU = 0.52, hU = 0.64) {
+      const cx = xPx(wx), cy = yPx(wy)
+      const w = wU * scale, h = hU * scale
+      const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, w * 1.9)
+      g.addColorStop(0, 'rgba(255, 233, 164, 0.5)')
+      g.addColorStop(0.5, 'rgba(255, 233, 164, 0.18)')
+      g.addColorStop(1, 'rgba(255, 233, 164, 0)')
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.arc(cx, cy, w * 1.9, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#ffe9a4'
+      ctx.beginPath()
+      if (ctx.roundRect) ctx.roundRect(cx - w / 2, cy - h / 2, w, h, 2)
+      else ctx.rect(cx - w / 2, cy - h / 2, w, h)
+      ctx.fill()
+      ctx.fillStyle = '#fff9e0'
+      ctx.fillRect(cx - w * 0.18, cy - h * 0.2, w * 0.36, h * 0.4)
+    }
+
+    const drawn = []
+    for (const hp of houseSpecs) drawn.push({ type: 'house', ...hp })
+    drawn.push({ type: 'church', x: 3.1, z: -5.4 })
+    drawn.sort((a, b) => a.z - b.z)
+
+    for (const hp of drawn) {
+      ctx.lineJoin = 'round'
+      if (hp.type === 'house') {
+        const cx = xPx(hp.x)
+        const bw = hp.w * scale, bh = hp.h * scale
+        const roofH = Math.min(hp.h * 0.8, 1.8) * scale
+        const roofW = bw * 1.12
+        const x0 = cx - bw / 2, y0 = yPx(hp.h)
+
+        ctx.beginPath()
+        ctx.moveTo(x0 - (roofW - bw) / 2, y0)
+        ctx.lineTo(cx, y0 - roofH)
+        ctx.lineTo(x0 + bw + (roofW - bw) / 2, y0)
+        ctx.closePath()
+        ctx.fillStyle = roofs[Math.floor(Math.random() * roofs.length)]
+        ctx.fill()
+
+        hatchRect(x0, y0, bw, groundY - y0, bodies[Math.floor(Math.random() * bodies.length)], '#1c2530')
+
+        if (Math.random() < 0.6) {
+          ctx.fillStyle = '#1c1a24'
+          const chx = cx + (Math.random() - 0.5) * bw * 0.45
+          ctx.fillRect(chx - 4, y0 - roofH * 0.7, 9, roofH * 0.7 + 4)
+        }
+
+        const cols = hp.w > 2.4 ? 2 : 1
+        for (let i = 0; i < cols; i++) {
+          const wx = hp.x + (cols === 1 ? 0 : (i === 0 ? -hp.w * 0.24 : hp.w * 0.24))
+          litWindow(wx, hp.h * 0.45)
+        }
+      } else {
+        const cx = xPx(hp.x)
+        const body = '#2c3855'
+        const roofC = '#251a28'
+        const naveh = 2.6, naveW = 3.4
+        const tw = 1.7, th = 4.6
+        hatchRect(cx - naveW * scale / 2, yPx(naveh), naveW * scale, yPx(0) - yPx(naveh), body, '#1e2636')
+        ctx.beginPath()
+        ctx.moveTo(cx - naveW * scale / 2 - 7, yPx(naveh))
+        ctx.lineTo(cx, yPx(naveh + 1.4))
+        ctx.lineTo(cx + naveW * scale / 2 + 7, yPx(naveh))
+        ctx.closePath()
+        ctx.fillStyle = roofC
+        ctx.fill()
+        hatchRect(cx - tw * scale / 2, yPx(th), tw * scale, yPx(0) - yPx(th), body, '#1e2636')
+        ctx.beginPath()
+        ctx.moveTo(cx - tw * scale / 2 - 5, yPx(th))
+        ctx.lineTo(cx, yPx(th + 4.6))
+        ctx.lineTo(cx + tw * scale / 2 + 5, yPx(th))
+        ctx.closePath()
+        ctx.fillStyle = '#2b1e33'
+        ctx.fill()
+        ctx.strokeStyle = '#e8d9a0'
+        ctx.lineCap = 'round'
+        ctx.lineWidth = 5
+        ctx.globalAlpha = 0.95
+        ctx.beginPath()
+        ctx.moveTo(cx, yPx(th + 4.6))
+        ctx.lineTo(cx, yPx(th + 4.6 + 0.9))
+        ctx.moveTo(cx - 9, yPx(th + 4.6 + 0.55))
+        ctx.lineTo(cx + 9, yPx(th + 4.6 + 0.55))
+        ctx.stroke()
+        ctx.globalAlpha = 1
+        litWindow(hp.x - 0.7, 1.6, 0.55, 0.7)
+        litWindow(hp.x, 3.3, 0.45, 0.6)
+      }
+    }
+    ctx.fillStyle = '#0f1c14'
+    ctx.globalAlpha = 0.35
+    ctx.fillRect(0, groundY, W2, H2 - groundY)
+    ctx.globalAlpha = 1
+    return c
+  }
+
+  function uploadTexture(canvas2d) {
+    const tex = gl.createTexture()
+    gl.bindTexture(gl.TEXTURE_2D, tex)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas2d)
+    return tex
+  }
+
+  // build textures
+  const TEX_SKY = uploadTexture(skyTexture())
+  const TEX_SPIRAL = uploadTexture(spiralTexture())
+  const TEX_STAR = uploadTexture(starTexture())
+  const TEX_MOON = uploadTexture(moonTexture())
+  const TEX_GROUND = uploadTexture(groundTexture())
+  const TEX_CYPRESS = uploadTexture(cypressTexture())
+  const TEX_VILLAGE = uploadTexture(villageTexture())
+  const TEX_MOUND = uploadTexture(moundTexture())
+  const TEX_HILLS = [
+    uploadTexture(hillTexture({ fillTop: '#3a5c9e', fillBottom: '#20355e', base: 0.40, amp: 0.14, phase: 0.7, strokes: ['#3a5c9e', '#27406f', '#40649f'], ridge: '#5478c0' })),
+    uploadTexture(hillTexture({ fillTop: '#2c4580', fillBottom: '#16263f', base: 0.42, amp: 0.17, phase: 2.5, strokes: ['#2e4a80', '#1c2e50', '#34568a'], ridge: '#4a68ae' })),
+    uploadTexture(hillTexture({ fillTop: '#222f52', fillBottom: '#101a2e', base: 0.44, amp: 0.14, phase: 4.4, strokes: ['#22325c', '#101a2e', '#2c4068'], ridge: '#30496f' })),
+  ]
+
+  // ================================================================ scene state
+  const HILL_SPECS = [
+    { tex: 0, w: 175, h: 20, y: 7.0, z: -31 },
+    { tex: 1, w: 165, h: 23, y: 5.6, z: -27 },
+    { tex: 2, w: 155, h: 26, y: 4.6, z: -22 },
+  ]
+  const VILLAGE = { w: 36, h: 12, y: 6, z: -6.4 }
+  const CYPRESS = { w: 10, h: 20, y: 10, z: 6.85, x: -11.5 }
+  const MOUNDS = [
+    { x: -6.5, z: 5.5, r: 1.3, scale: 1.55 },
+    { x: 8.5, z: 6.5, r: 1.6, scale: 1.75 },
+    { x: 14.5, z: 4.5, r: 1.1, scale: 1.35 },
+  ]
+  const BIG_SPIRAL = { x: -2, y: 20, z: -58, s: 25 }
+  const SWIRLS = [
+    { x: 24, y: 18, z: -66, s: 7.5, dir: -1 },
+    { x: -24, y: 15, z: -62, s: 6.0, dir: 1 },
+    { x: -13, y: 12, z: -50, s: 3.6, dir: -1 },
+  ]
+  const MOON = { x: 44, y: 38, z: -75, s: 13 }
+  const STAR_POS = [
+    [-30, 24, -62], [-19, 33, -70], [-8, 27, -68], [3, 30, -66], [14, 26, -70],
+    [23, 33, -62], [33, 25, -70], [-26, 34, -60], [9, 36, -70], [-15, 21, -55], [19, 22, -58],
+  ]
+  const STAR_SCALE = STAR_POS.map((p, i) => 4.4 + Math.random() * 2.6)
+  const STARS = STAR_POS.map((p, i) => ({
+    p, base: STAR_SCALE[i],
+    phase: Math.random() * Math.PI * 2,
+    speed: 0.7 + Math.random() * 1.3,
+  }))
+
+  // ================================================================ FBO
+  function ensureFBO() {
+    const d = dpr()
+    const w = Math.round(window.innerWidth * d)
+    const h = Math.round(window.innerHeight * d)
+    if (fbo && FBO_W === w && FBO_H === h) return
+    if (fbo) { gl.deleteFramebuffer(fbo); gl.deleteTexture(sceneTex); gl.deleteRenderbuffer(depthRb) }
+    fbo = gl.createFramebuffer()
+    sceneTex = gl.createTexture()
+    gl.bindTexture(gl.TEXTURE_2D, sceneTex)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h)
+    depthRb = gl.createRenderbuffer()
+    gl.bindRenderbuffer(gl.RENDERBUFFER, depthRb)
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, sceneTex, 0)
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRb)
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) console.error('FBO incomplete')
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    FBO_W = w; FBO_H = h
+    canvas.width = Math.round(window.innerWidth * d)
+    canvas.height = Math.round(window.innerHeight * d)
+    gl.viewport(0, 0, canvas.width, canvas.height)
+  }
+
+  // ================================================================ draw helpers
+  const cornerLoc = {}, centerLoc = {}, rightLoc = {}, upLoc = {}, halfLoc = {}, rotLoc = {}, swayLoc = {}, opacityLoc = {}, viewLoc = {}, projLoc = {}, texLoc = {}, repeatLoc = {}, fogLoc = {}, fogNearLoc = {}, fogFarLoc = {}, shatterLoc = {}
+
+  function loc(p) {
+    const ids = ['uView', 'uProj', 'uCenter', 'uRightW', 'uUpW', 'uHalf', 'uSway', 'uRot', 'uOpacity', 'uTex', 'uRepeat', 'uFogColor', 'uFogNear', 'uFogFar', 'uRight', 'uUp', 'tDiffuse', 'resolution', 'inkStrength', 'bands', 'hatchStrength', 'vignetteStrength', 'inkColor']
+    const out = {}
+    for (const n of ids) out[n] = gl.getUniformLocation(p, n)
+    return out
+  }
+  const L_FIXED_GROUND = loc(P_GROUND)
+  const L_FIXED = loc(P_FIXED)
+  const L_BILL = loc(P_BILL)
+  const L_POST = loc(P_POST)
+
+  function setMat4(loc, arr) { gl.uniformMatrix4fv(loc, false, arr) }
+
+  function drawFixedPlane(prog, L, tex, center, rightW, upW, half, sway, repeat, fog, vDepth2) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuf)
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, tex)
+    gl.useProgram(prog)
+    const d = dpr()
+    const aspect = FBO_W / FBO_H
+    const b = basis()
+    const pos = b.pos
+    const V = viewMatrix(pos, b.f, [b.rx, b.ry, b.rz], [b.ux, b.uy, b.uz], b.backup)
+    const P = perspective(FOV, aspect)
+    gl.uniformMatrix4fv(L.uView, false, colMajor(V))
+    gl.uniformMatrix4fv(L.uProj, false, colMajor(P))
+    gl.uniform3f(L.uCenter, center[0], center[1], center[2])
+    gl.uniform3f(L.uRightW, rightW[0], rightW[1], rightW[2])
+    gl.uniform3f(L.uUpW, upW[0], upW[1], upW[2])
+    gl.uniform2f(L.uHalf, half[0], half[1])
+    if (L.uSway) gl.uniform1f(L.uSway, sway)
+    if (L.uRepeat) gl.uniform2f(L.uRepeat, repeat[0], repeat[1])
+    if (L.uFogColor) { gl.uniform3f(L.uFogColor, 0x16 / 255, 0x26 / 255, 0x4d / 255); gl.uniform1f(L.uFogNear, 55); gl.uniform1f(L.uFogFar, 130) }
+    gl.uniform1i(L.uTex, 0)
+    gl.drawArrays(gl.TRIANGLES, 0, 6)
+  }
+
+  function drawBillboard(prog, L, tex, center, half, rot, sway, opacity) {
+    const b = basis()
+    gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuf)
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, tex)
+    gl.useProgram(prog)
+    const aspect = FBO_W / FBO_H
+    const pos = b.pos
+    const V = viewMatrix(pos, b.f, [b.rx, b.ry, b.rz], [b.ux, b.uy, b.uz], b.backup)
+    const P = perspective(FOV, aspect)
+    gl.uniformMatrix4fv(L.uView, false, colMajor(V))
+    gl.uniformMatrix4fv(L.uProj, false, colMajor(P))
+    gl.uniform3f(L.uCenter, center[0], center[1], center[2])
+    gl.uniform3f(L.uRight, b.rx, b.ry, b.rz)
+    gl.uniform3f(L.uUp, b.ux, b.uy, b.uz)
+    gl.uniform2f(L.uHalf, half[0], half[1])
+    gl.uniform1f(L.uRot, rot)
+    if (L.uSway) gl.uniform1f(L.uSway, sway)
+    gl.uniform1f(L.uOpacity, opacity)
+    gl.uniform1i(L.uTex, 0)
+    gl.drawArrays(gl.TRIANGLES, 0, 6)
+  }
+
+  // ================================================================ post pass
+  const postUniforms = {
+    inkStrength: { value: 0.7 },
+    bands: { value: 6.0 },
+    hatchStrength: { value: 0.55 },
+    vignetteStrength: { value: 0.14 },
+    inkColor: { value: [0x05 / 255, 0x07 / 255, 0x0f / 255] },
+  }
+  function renderPost(tDiffTex) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.viewport(0, 0, canvas.width, canvas.height)
+    gl.disable(gl.DEPTH_TEST)
+    gl.useProgram(P_POST)
+    gl.bindBuffer(gl.ARRAY_BUFFER, postBuf)
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+    gl.uniform2f(L_POST.resolution, canvas.width, canvas.height)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, tDiffTex)
+    gl.uniform1i(L_POST.tDiffuse, 0)
+    gl.uniform1f(L_POST.inkStrength, postUniforms.inkStrength.value)
+    gl.uniform1f(L_POST.bands, postUniforms.bands.value)
+    gl.uniform1f(L_POST.hatchStrength, postUniforms.hatchStrength.value)
+    gl.uniform1f(L_POST.vignetteStrength, postUniforms.vignetteStrength.value)
+    gl.uniform3f(L_POST.inkColor, postUniforms.inkColor.value[0], postUniforms.inkColor.value[1], postUniforms.inkColor.value[2])
+    gl.drawArrays(gl.TRIANGLES, 0, 6)
+    gl.enable(gl.DEPTH_TEST)
+  }
+
+  // ================================================================ render
+  let frames = 0
+  let time = 0
+
+  const swirlInit = SWIRLS.map(s => ({ dir: s.dir, rot: Math.random() * 6.28 }))
+  let bigSpiralRot = 0
+
+  function render() {
+    ensureFBO()
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
+    gl.viewport(0, 0, FBO_W, FBO_H)
+    gl.clearColor(0.02, 0.03, 0.06, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+    gl.disable(gl.DEPTH_TEST)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+    const b = basis()
+    const skyDist = 130
+    const skyCenter = [b.pos[0] + b.f[0] * skyDist, b.pos[1] + b.f[1] * skyDist, b.pos[2] + b.f[2] * skyDist]
+
+    // sky (no depth)
+    drawBillboard(P_BILL, L_BILL, TEX_SKY, skyCenter, [120, 60], 0, 0, 1.0)
+
+    // ground (opaque, writes depth) — drawn before transparent pass
+    gl.enable(gl.DEPTH_TEST)
+    gl.depthFunc(gl.LEQUAL)
+    gl.depthMask(true)
+    drawFixedPlane(P_GROUND, L_FIXED_GROUND, TEX_GROUND,
+      [0, 0, 20], [1, 0, 0], [0, 0, 1], [60, 60], 0, [9, 9], true, 0)
+    gl.depthMask(false)
+
+    gl.enable(gl.DEPTH_TEST)
+    gl.depthMask(false)
+
+    // moon (far)
+    drawBillboard(P_BILL, L_BILL, TEX_MOON, [MOON.x, MOON.y, MOON.z], [MOON.s / 2, MOON.s / 2], 0, 0, 1.0)
+
+    // swirls (back to front)
+    drawBillboard(P_BILL, L_BILL, TEX_SPIRAL, [SWIRLS[1].x, SWIRLS[1].y, SWIRLS[1].z], [SWIRLS[1].s / 2, SWIRLS[1].s / 2], swirlInit[1].rot, 0, 1.0)
+    drawBillboard(P_BILL, L_BILL, TEX_SPIRAL, [SWIRLS[0].x, SWIRLS[0].y, SWIRLS[0].z], [SWIRLS[0].s / 2, SWIRLS[0].s / 2], swirlInit[0].rot, 0, 1.0)
+    drawBillboard(P_BILL, L_BILL, TEX_SPIRAL, [BIG_SPIRAL.x, BIG_SPIRAL.y, BIG_SPIRAL.z], [BIG_SPIRAL.s / 2, BIG_SPIRAL.s / 2], bigSpiralRot, 0, 1.0)
+    drawBillboard(P_BILL, L_BILL, TEX_SPIRAL, [SWIRLS[2].x, SWIRLS[2].y, SWIRLS[2].z], [SWIRLS[2].s / 2, SWIRLS[2].s / 2], swirlInit[2].rot, 0, 1.0)
+
+    // stars (back to front) — draw after swirls, before hills
+    for (let i = 0; i < STARS.length; i++) {
+      const st = STARS[i]
+      const k = 1 + 0.28 * Math.sin(time * st.speed + st.phase)
+      const op = 0.75 + 0.25 * Math.sin(time * st.speed * 1.3 + st.phase * 2.0)
+      drawBillboard(P_BILL, L_BILL, TEX_STAR, [st.p[0], st.p[1], st.p[2]], [st.base * k / 2, st.base * k / 2], 0, 0, op)
+    }
+
+    // hills back to front (transparent)
+    for (const spec of HILL_SPECS) {
+      gl.depthMask(false)
+      drawFixedPlane(P_FIXED, L_FIXED, TEX_HILLS[spec.tex],
+        [0, spec.y, spec.z], [1, 0, 0], [0, 1, 0], [spec.w / 2, spec.h / 2], 0, [1, 1], false, 0)
+    }
+
+    // village
+    drawFixedPlane(P_FIXED, L_FIXED, TEX_VILLAGE,
+      [0, VILLAGE.y, VILLAGE.z], [1, 0, 0], [0, 1, 0], [VILLAGE.w / 2, VILLAGE.h / 2], 0, [1, 1], false, 0)
+
+    // mounds
+    for (const m of MOUNDS) {
+      const hw = m.r * m.scale * 1.4
+      const hh = m.r * m.scale * 0.55
+      drawFixedPlane(P_FIXED, L_FIXED, TEX_MOUND,
+        [m.x, m.r * 0.45, m.z], [1, 0, 0], [0, 1, 0], [hw, hh], 0, [1, 1], false, 0)
+    }
+
+    // cypress (with top shear sway)
+    const cypressSway = Math.sin(time * 0.55) * 0.45
+    drawFixedPlane(P_FIXED, L_FIXED, TEX_CYPRESS,
+      [CYPRESS.x, CYPRESS.y, CYPRESS.z], [1, 0, 0], [0, 1, 0], [CYPRESS.w / 2, CYPRESS.h / 2], cypressSway, [1, 1], false, 0)
+
+    gl.disable(gl.BLEND)
+    gl.depthMask(true)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.viewport(0, 0, canvas.width, canvas.height)
+    gl.clearColor(0.02, 0.03, 0.06, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+
+    renderPost(sceneTex)
+  }
+
+  // ================================================================ input
+  let dragging = false, lastX = 0, lastY = 0
+  canvas.addEventListener('pointerdown', (e) => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY
+    canvas.setPointerCapture(e.pointerId)
+  })
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return
+    const dx = e.clientX - lastX, dy = e.clientY - lastY
+    lastX = e.clientX; lastY = e.clientY
+    yawT = Math.max(BASE_YAW - YAW_LIMIT, Math.min(BASE_YAW + YAW_LIMIT, yawT + dy * 0 + dx * 0.004))
+    pitchT = Math.max(BASE_ELEV - PITCH_LIMIT, Math.min(BASE_ELEV + PITCH_LIMIT, pitchT + dy * 0.004))
+  })
+  canvas.addEventListener('pointerup', () => { dragging = false })
+  canvas.addEventListener('pointercancel', () => { dragging = false })
+
+  // ================================================================ hook + loop
+  let readyFlag = false
+
+  function loop(t) {
+    frames++
+    time = t * 0.001
+    yaw += (yawT - yaw) * 0.12
+    pitch += (pitchT - pitch) * 0.12
+    bigSpiralRot += 0.0045
+    for (let i = 0; i < SWIRLS.length; i++) swirlInit[i].rot += 0.0042 * swirlInit[i].dir
+    render()
+    readyFlag = true
+    requestAnimationFrame(loop)
+  }
+
+  window.__starryTest = {
+    get ready() { return readyFlag },
+    get frames() { return frames },
+    setPose(opts = {}) {
+      if (opts.yaw !== undefined) { yaw = yawT = BASE_YAW + Math.max(-YAW_LIMIT, Math.min(YAW_LIMIT, opts.yaw)) }
+      if (opts.pitch !== undefined) { pitch = pitchT = BASE_ELEV + Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, opts.pitch)) }
+      render()
+      return { yaw, pitch, frames, ready: readyFlag }
+    },
+    state() { return { yaw, pitch, frames, t: time } },
+    samplePixels(gridX = 24, gridY = 16) {
+      render()
+      const px = new Uint8Array(gridX * gridY * 4)
+      const img = new Uint8Array(gridX * gridY * 4)
+      const tmp = new Uint8Array(4)
+      for (let gy = 0; gy < gridY; gy++) {
+        for (let gx = 0; gx < gridX; gx++) {
+          const x = Math.floor(((gx + 0.5) / gridX) * canvas.width)
+          const y = Math.floor(((gy + 0.5) / gridY) * canvas.height)
+          gl.readPixels(x, canvas.height - 1 - y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, tmp)
+          img[(gy * gridX + gx) * 3] = tmp[0]
+          img[(gy * gridX + gx) * 3 + 1] = tmp[1]
+          img[(gy * gridX + gx) * 3 + 2] = tmp[2]
+        }
+      }
+      return { gridX, gridY, rgb: img }
+    },
+  }
+
+  window.addEventListener('resize', () => { ensureFBO(); gl.viewport(0, 0, canvas.width, canvas.height) })
+
+  ensureFBO()
+  requestAnimationFrame(loop)
+})()
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'STARRY NIGHT', accent: '#f5d76e',
+  builder: { tag: 'INKLING', model: 'Inkling-2-Mini-oQ4e-mtp', where: 'via opencode' },
+  issues: [], span: '~3 h', shipped: '2026-11-23',
+  assist: 'solo', note: 'guest build brief: zero-library painted-style port (no realistic mode)',
+};
+</script>
+<script src="credits.js"></script>
+<script src="feedback.js"></script>
+</body>
+</html>
