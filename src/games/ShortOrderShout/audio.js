@@ -98,6 +98,10 @@ export function playFx(f) {
             break
         }
         case 'deny': AC.playTone(140, 0.16, 'square', 0.08); break
+        // #3143 (juice bar #1130): pressing at nothing. Softer and deader than
+        // `deny` — the station refuses with a flat buzz; an empty walkway just
+        // sighs. One muffled triangle knock, no buzz flavour.
+        case 'nada': AC.playTone(240, 0.05, 'triangle', 0.03); break
         // #2079 radio ties the cook. A refused hand: two low buzzes, distinct
         // from `deny`'s single flat (the radio answers, the station doesn't).
         case 'radioDeny':

@@ -516,8 +516,16 @@ function stepCook(gs, c, pad) {
     // edge-triggered actions (one action per press; A wins ties)
     const a = !!pad.a
     const b = !!pad.b
+    const nFx = gs.fx.length
     if (a && !c.prevA) actA(gs, c)
     else if (b && !c.prevA) actB(gs, c)
+    // #3143 juice bar (#1130): a press the kitchen has no verb for still gets an
+    // answer the same tick — the cook taps the empty cell they face. Pure fx:
+    // fx is never hashed (see hashState), so verdicts and determinism are unchanged.
+    if ((a || b) && !c.prevA && gs.fx.length === nFx) {
+        const d = DIRS[c.face]
+        gs.fx.push({ k: 'nada', x: c.x + d[0], y: c.y + d[1], dir: c.face, held: !!c.holding, tick: gs.tick })
+    }
     c.prevA = a || b
 
     if (c.moveCd > 0) return

@@ -178,9 +178,11 @@ export default function ShortOrderShout() {
             players: seatsRef.current,
         }))
 
+        const nadaLog = [] // #3143 prover log: idle-press answers, drained by soscheck
         pumpHudRef.current = (f) => {
             const hud = hudRef.current
             if (f.k === 'toast') { hud.toast = f.msg; hud.toastT = 110 }
+            if (f.k === 'nada') { hud.pops.push({ k: 'nada', x: f.x, y: f.y, dir: f.dir, held: f.held, t: 0 }); nadaLog.push(f) }
             if (f.k === 'serve') { hud.popT = 24; hud.pops.push({ k: 'serve', x: f.x, y: f.y, t: 0, pts: f.pts || 0 }); hud.bump = 14 }
             if (f.k === 'catch') hud.pops.push({ k: 'catch', x: f.x, y: f.y, t: 0 })
             if (f.k === 'douse') hud.pops.push({ k: 'douse', x: f.x, y: f.y, t: 0 })
@@ -1048,11 +1050,11 @@ export default function ShortOrderShout() {
                 }
             }
             ctx.globalAlpha = 1
-            // impact pops: catch rings, serve plates, douse steam, boil-over splat
+            // impact pops: catch rings, serve plates, douse steam, boil-over splat, idle-tap puffs
             for (let i = hud.pops.length - 1; i >= 0; i--) {
                 const p = hud.pops[i]
                 p.t++
-                const lifeMax = p.k === 'serve' ? 44 : 24
+                const lifeMax = p.k === 'serve' ? 44 : p.k === 'nada' ? 14 : 24
                 if (p.t > lifeMax) { hud.pops.splice(i, 1); continue }
                 const wx = KITCHEN_X + p.x * TILE + TILE / 2, wy = KITCHEN_Y + p.y * TILE + TILE / 2
                 if (p.k === 'catch') {
@@ -1090,6 +1092,16 @@ export default function ShortOrderShout() {
                     ctx.globalAlpha = 1 - p.t / lifeMax
                     ctx.fillStyle = '#7c5820'
                     ctx.fillRect(wx - 10, wy + 10, 5, 2); ctx.fillRect(wx + 4, wy + 12, 6, 2); ctx.fillRect(wx - 2, wy + 14, 4, 2)
+                    ctx.globalAlpha = 1
+                } else if (p.k === 'nada') {
+                    // #3143 nothing there — a soft grey tap-puff at the faced cell:
+                    // a quick shrink-ring over a center dot (shortest pop in the
+                    // frame: an answer, not an event).
+                    ctx.globalAlpha = 1 - p.t / lifeMax
+                    ctx.strokeStyle = '#b8b0a0'
+                    ctx.strokeRect(wx - 6 + p.t, wy - 6 + p.t, 12 - p.t, 12 - p.t)
+                    ctx.fillStyle = '#f0ead8'
+                    ctx.fillRect(wx - 1, wy - 1, 2, 2)
                     ctx.globalAlpha = 1
                 }
             }
@@ -1517,6 +1529,7 @@ export default function ShortOrderShout() {
                 // prover-only view (score/served only move when a crew cooks)
                 watching: () => watchingRef.current,
                 watchSfx: watchSfxLog,
+                nadas: () => nadaLog.slice(), // #3143: answers logged when a press hit nothing
                 probe: () => {
                     const g = gsRef.current || attractRef.current || createGame(1, 2)
                     const c0 = g.cooks[0] || { x: -1, y: -1 }
