@@ -11,7 +11,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, stateOf, hashState, SCORE_GOAL } from './sim.js'
 import { botPad, makeBot } from './planner.js'
 import { buildPark, buildSky, buildLetters, buildSkater, poseSkater, buildParticles, emit, stepParticles } from './art.js'
@@ -290,6 +290,12 @@ const GrindCityGame = () => {
         }
         raf = requestAnimationFrame(frame)
 
+        // #1473: every game files a feedback report — strict expression shape.
+        exposeFeedbackState(() => ({
+            tick: sim ? sim.tick : 0, score: sim ? sim.score : 0, done: sim ? !!sim.done : false,
+            seed: sim ? sim.seed : 0, phase: sim ? sim.phase : 'menu', won: sim ? !!sim.won : false,
+        }))
+
         // ── DEV hooks + contract ────────────────────────────────────────────
         if (import.meta.env.DEV) {
             window.__grindTest = {
@@ -337,6 +343,7 @@ const GrindCityGame = () => {
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             canvas.removeEventListener('pointerdown', onPointer)
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { unmountDbg(); unexposeGame(); delete window.__grindTest }
             renderer.dispose()
         }
