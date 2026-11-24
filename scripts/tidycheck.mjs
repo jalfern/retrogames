@@ -23,6 +23,11 @@
 //           aimed-retrieve gates go red)
 //   tapact — a tap never fires its verb (#2537 tap-act gates go red: the
 //           chore un-collapses back into a walk that arrives and does nothing)
+//
+// #3078 SKINS: the browser section freezes both looks with pinned-frame region
+// hashes (classic byte-frozen at the pre-skin golden; papercraft gets one too),
+// proves ?style=reimagined paints at sim coords under the same teal/red pixel
+// laws, and live-toggles STYLE back and forth without a reload.
 
 import * as s from '../src/games/TidyBot/sim.js'
 import { readFileSync } from 'node:fs'
@@ -1022,6 +1027,115 @@ if (!NODE_ONLY) {
             `a retrieve animates the item from its slot (${JSON.stringify(arc.a1)})`)
         ok(arc.a2 === null && arc.n >= 2, 'the reach arc dies when the front arm takes the item')
         ok(arc.fl >= 0 && arc.flKind === 'cup', `the attract demo marks the stowed cup on its own (${arc.flKind}@${arc.fl})`)
+
+        // #3078 SKINS — four promises:
+        //   1. classic is GOLDEN-FROZEN at load: a fresh page's pinned frame
+        //      hashes (perceptual signature) to the golden captured on pre-skin
+        //      main. Restyling the default look by accident turns this red.
+        //   2. ?style=reimagined actually paints: its own stable golden, and a
+        //      different signature from classic.
+        //   3. the bot/apple pixel laws the drive above uses hold on the new
+        //      palette: mint card reads teal, tomato cutout reads red at sim coords.
+        //   4. the toggle is live: STYLE flips state AND repaints without a reload.
+        // Deliberately NOT raw-pixel comparisons: Chromium's GPU canvas drifts
+        // ±1 on curved strokes with surface history (observed as page-age
+        // flakiness), so signatures are downsampled+quantized and frozen only
+        // at fresh-load contexts; the drive itself proves spatial truth.
+        const GOLDEN_CLASSIC = 'f947d5dc' // pinned-frame perceptual signature, pre-skin main look
+        const GOLDEN_PAPER = '33dfb942' // pinned-frame perceptual signature, papercraft skin
+        // Perceptual signature, not raw bytes: Chromium's GPU canvas drifts by
+        // ±1 on curved strokes depending on surface history, so raw hashing is
+        // fragile (and getImageData adds color-space round-trips on top). The
+        // frame is decoded, downsampled and quantized — AA noise averages out,
+        // real restyles (palette/layout) still flip the hash.
+        const hashPinned = async (p) => {
+            const sig = await p.evaluate(async () => {
+                const cv = window.__tidybotTest.canvas()
+                window.__game.reset(1337); window.__game.step(0) // pin at tick 1
+                window.__tidybotTest.quiet() // kill demo transients the sim freeze can't stop
+                await new Promise((r) => setTimeout(r, 150)) // let the clear land on a draw frame
+                window.__tidybotTest.quiet()
+                const url = cv.toDataURL()
+                window.__game.release()
+                const img = new Image(); img.src = url
+                await new Promise((r) => { img.onload = r })
+                const oc = document.createElement('canvas'); oc.width = 40; oc.height = 30
+                const g = oc.getContext('2d')
+                g.drawImage(img, 0, 0, 640, 480, 0, 0, 40, 30)
+                const d = g.getImageData(0, 0, 40, 30).data
+                let h = 0x811c9dc5
+                for (let i = 0; i < d.length; i++) { h ^= d[i] >> 2; h = Math.imul(h, 0x01000193) >>> 0 }
+                return (h >>> 0).toString(16).padStart(8, '0')
+            })
+            return sig
+        }
+        const hPage = await (async () => {
+            const fresh = await openGame(browser, { url: `${BASE}/tidy-bot`, hook: '__tidybotTest', viewport: { width: 900, height: 760 } })
+            await fresh.waitForTimeout(600)
+            const h1 = await hashPinned(fresh)
+            const h2 = await hashPinned(fresh)
+            await fresh.close()
+            return [h1, h2]
+        })()
+        ok(hPage[0] === hPage[1], `the classic pinned frame is deterministic (${hPage[0]})`)
+        ok(hPage[0] === GOLDEN_CLASSIC, `classic skin is golden-frozen at load (${hPage[0]} vs ${GOLDEN_CLASSIC})`)
+
+        const paper = await openGame(browser, { url: `${BASE}/tidy-bot?style=reimagined`, hook: '__tidybotTest', viewport: { width: 900, height: 760 } })
+        const paperErrs = []
+        paper.on('pageerror', (e) => paperErrs.push(String(e)))
+        await paper.waitForTimeout(600)
+        ok((await paper.evaluate(() => window.__tidybotTest.state())).skin === 'reimagined', '?style=reimagined selects the papercraft skin at load')
+        const hP1 = await hashPinned(paper)
+        const hP2 = await hashPinned(paper)
+        ok(hP1 === hP2 && hP1 === GOLDEN_PAPER, `the papercraft pinned frame is deterministic and golden (${hP1} vs ${GOLDEN_PAPER})`)
+        ok(hP1 !== GOLDEN_CLASSIC, 'the papercraft skin actually paints different pixels (not the classic look wearing a hat)')
+        await paper.keyboard.press('Space')
+        await paper.keyboard.down('ArrowUp')
+        await paper.waitForTimeout(500)
+        await paper.keyboard.up('ArrowUp')
+        const pTeal = await paper.evaluate(() => {
+            const cv = window.__tidybotTest.canvas()
+            const s = window.__tidybotTest.state()
+            const g = cv.getContext('2d')
+            const d = g.getImageData(Math.round(s.pos * 2) - 2, Math.round(s.posY * 2) - 2, 5, 5).data
+            let teal = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 150 && d[i + 2] > 150 && d[i] < 160) teal++
+            return teal
+        })
+        ok(pTeal >= 3, `the papercraft bot is painted at its sim coords (teal pixels: ${pTeal})`)
+        await paper.evaluate(() => {
+            window.__game.reset(3141)
+            const gs = window.__tidybotTest.sim()
+            gs.items.push(
+                { id: 9101, kind: 'cup', x: gs.rx + 5, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+                { id: 9102, kind: 'apple', x: gs.rx + 12, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+            )
+        })
+        await paper.waitForTimeout(80)
+        await paper.keyboard.press('Space')
+        await paper.waitForTimeout(80)
+        await paper.keyboard.press('Space')
+        await paper.waitForTimeout(80)
+        const pRed = await paper.evaluate(() => {
+            const cv = window.__tidybotTest.canvas()
+            const gs = window.__tidybotTest.sim()
+            const g = cv.getContext('2d')
+            const d = g.getImageData(Math.round(gs.rx * 2) - 6, Math.round((gs.ry + 11) * 2) - 9, 13, 14).data
+            let red = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] < 110 && d[i + 2] < 110) red++
+            return { red, held2: gs.held2 !== null && gs.held2 !== undefined }
+        })
+        ok(pRed.red >= 4 && pRed.held2, `the papercraft tray apple is painted at the arm (red px: ${pRed.red})`)
+        await paper.evaluate(() => window.__tidybotTest.setSkin('classic'))
+        const hT1 = await hashPinned(paper)
+        const stT1 = await paper.evaluate(() => window.__tidybotTest.state())
+        ok(stT1.skin === 'classic' && hT1 !== hP1, 'the live STYLE toggle repaints to classic without a reload')
+        await paper.evaluate(() => window.__tidybotTest.setSkin('reimagined'))
+        const hT2 = await hashPinned(paper)
+        const stT2 = await paper.evaluate(() => window.__tidybotTest.state())
+        ok(stT2.skin === 'reimagined' && hT2 !== hT1 && hT2 !== GOLDEN_CLASSIC, 'and toggling back repaints papercraft live')
+        ok(paperErrs.length === 0, `zero page errors driving the skins${paperErrs.length ? ` (${paperErrs[0]})` : ''}`)
+        await paper.close()
 
         ok(errors.length === 0, `zero page errors through the whole drive${errors.length ? ` (${errors[0]})` : ''}`)
     } finally {

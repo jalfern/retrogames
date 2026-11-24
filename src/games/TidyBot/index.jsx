@@ -709,6 +709,12 @@ const TidyBotGame = () => {
                 step: (n = 1, pad = {}) => { for (let i = 0; i < n; i++) step(gs, [pad]) },
                 press: (code) => onKeyDown({ code, preventDefault() {}, repeat: false }),
                 release: (code) => onKeyUp({ code }),
+                // #3078: pin a draw-deterministic frame — clears the presentation
+                // transients (dust/sparks/shake/flash/arc/ring) so a pixel hash
+                // cannot depend on rAF speed while a demo burst decays. The
+                // attract flourish is a transient too: after a makeGame its old
+                // item id can alias a fresh stow and paint brackets over the rack.
+                quiet: () => { parts.length = 0; gs.fx.length = 0; shake = 0; flash = 0; pullAnim = null; ringPop = null; flourish = null; flourishT = 0 },
                 // #2250 GLIDE: harness taps (world coords) + glide introspection.
                 glide: (x, y) => {
                     const r = routeDir(gs, x, y)
