@@ -164,7 +164,14 @@ const TidyBotGame = () => {
                     }
                 }
                 else if (e.type === 'open') audioController.playSweep(240, 460, 0.16, 'triangle', 0.05)
-                else if (e.type === 'close') { audioController.playTone(150, 0.09, 'sine', 0.09); burst(e.x, e.y, 3, '#b8c2cc', 1.2) }
+                if (e.type === 'close') {
+                    if (skin === 'reimagined') {
+                        // #3086: a cardboard thud, not a machine clack
+                        audioController.playTone(92, 0.12, 'sine', 0.11)
+                        audioController.playNoise(0.05, 0.045)
+                    } else audioController.playTone(150, 0.09, 'sine', 0.09)
+                    burst(e.x, e.y, 3, '#b8c2cc', 1.2)
+                }
                 else if (e.type === 'start') {
                     audioController.playSweep(120, 300, 0.3, 'triangle', 0.06)
                     audioController.playTone(660, 0.1, 'square', 0.05, 0.12)
@@ -291,6 +298,12 @@ const TidyBotGame = () => {
                         if (r.ok) {
                             // #2258 the order visibly COMPLETES: ring scale-out,
                             // sparks, and a rising two-note instead of one blip.
+                            if (skin === 'reimagined') {
+                                // #3086: the bot settles onto cardboard with a
+                                // two-tick paper crinkle under the chime
+                                audioController.playNoise(0.045, 0.04)
+                                audioController.playNoise(0.03, 0.025)
+                            }
                             audioController.playTone(940, 0.05, 'sine', 0.035)
                             audioController.playTone(1410, 0.07, 'sine', 0.03, 0.06)
                             burst(r.tx, r.ty, 6, '#8fe0ee', 1.4, -0.4)
@@ -339,7 +352,17 @@ const TidyBotGame = () => {
                 const p = parts[i]; p.t++; p.x += p.vx; p.y += p.vy; p.vy += p.g
                 if (p.t > 26) { parts.splice(i, 1); continue }
                 ctx.globalAlpha = 1 - p.t / 26; ctx.fillStyle = p.col
-                ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2)
+                if (skin === 'reimagined') {
+                    // #3086: papercraft gets tiny confetti — 2×3 paper offcuts
+                    // that tumble as they fall (the classic skin keeps pixels)
+                    ctx.save()
+                    ctx.translate(Math.round(p.x) + 1, Math.round(p.y) + 1.5)
+                    ctx.rotate(p.vx * 3.1 + p.t * 0.22)
+                    ctx.fillRect(-1, -1.5, 2, 3)
+                    ctx.restore()
+                } else {
+                    ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2)
+                }
             }
             ctx.globalAlpha = 1
             for (let i = gs.fx.length - 1; i >= 0; i--) {

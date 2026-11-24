@@ -810,11 +810,13 @@ if (!NODE_ONLY) {
         })
         await page.waitForTimeout(80)
         await page.keyboard.press('Space')
-        await page.waitForTimeout(80)
+        // condition-waits: a fixed 80ms cadence can swallow a press edge
+        // while software-rendered rAF catches up (slot a, #3086)
+        await page.waitForFunction(() => window.__tidybotTest.state().held !== '', { timeout: 3000 })
         let carry = await page.evaluate(() => window.__tidybotTest.state())
         ok(carry.held === 'cup' && carry.held2 === '', 'a real SPACE lifts the nearest litter into the front arm')
         await page.keyboard.press('Space')
-        await page.waitForTimeout(80)
+        await page.waitForFunction(() => window.__tidybotTest.state().held2 !== '', { timeout: 3000 })
         carry = await page.evaluate(() => window.__tidybotTest.state())
         ok(carry.held === 'cup' && carry.held2 === 'apple', 'a second real SPACE loads the tray arm too')
         const trayPx = await page.evaluate(() => {
@@ -1042,7 +1044,7 @@ if (!NODE_ONLY) {
         // flakiness), so signatures are downsampled+quantized and frozen only
         // at fresh-load contexts; the drive itself proves spatial truth.
         const GOLDEN_CLASSIC = 'f947d5dc' // pinned-frame perceptual signature, pre-skin main look
-        const GOLDEN_PAPER = '33dfb942' // pinned-frame perceptual signature, papercraft skin
+        const GOLDEN_PAPER = '17152d53' // pinned-frame perceptual signature, papercraft skin (#3086 polish: fine gingham, cut-card attract, corrugation + tape, dials)
         // Perceptual signature, not raw bytes: Chromium's GPU canvas drifts by
         // ±1 on curved strokes depending on surface history, so raw hashing is
         // fragile (and getImageData adds color-space round-trips on top). The
@@ -1113,8 +1115,11 @@ if (!NODE_ONLY) {
         })
         await paper.waitForTimeout(80)
         await paper.keyboard.press('Space')
-        await paper.waitForTimeout(80)
+        // condition-waits, not fixed sleeps: on software-rendered Chrome an
+        // 80ms cadence can swallow the second press edge (slot a, #3086)
+        await paper.waitForFunction(() => window.__tidybotTest.sim().held !== null, { timeout: 3000 })
         await paper.keyboard.press('Space')
+        await paper.waitForFunction(() => window.__tidybotTest.sim().held2 !== null, { timeout: 3000 })
         await paper.waitForTimeout(80)
         const pRed = await paper.evaluate(() => {
             const cv = window.__tidybotTest.canvas()
