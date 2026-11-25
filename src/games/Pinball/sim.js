@@ -1055,6 +1055,25 @@ export function demoOver(gs, mbSeen, ticksSinceMb) {
     return Boolean(gs.done) || (mbSeen && ticksSinceMb > 420);
 }
 
+// -------------------------------------------------- solo bed law ----
+// #3304 — the SOLO bed: single-ball play is no longer dry (#3178 left the
+// music to MULTIBALL only). Pure law over gs, so the level/swell is replay-
+// deterministic and Node-pinnable; the caller (index.jsx) quantizes to 0.02
+// audible steps so heat never spams the music bus per frame. The pack stays
+// exclusive to pinballMb: multiball answers 0 here, and the #3178 seam is
+// untouched. A tilted cabinet reads thin — the music slumps like the flippers.
+export const SOLO_FLOOR = 0.10; // quiet breath between balls, mid-run
+export const SOLO_BASE = 0.16;  // a ball is live and the run just started
+export const SOLO_CAP = 0.30;   // red-heat ceiling — still well under the mb bed (0.55)
+export const SOLO_HEAT_AT = 25000; // score at which the swell is full
+export function soloBed(gs) {
+    if (gs.done || gs.multiball) return 0;
+    if (gs.tilt) return SOLO_FLOOR / 2;
+    if (gs.pucks.length === 0) return gs.score > 0 ? SOLO_FLOOR : 0;
+    const heat = Math.min(1, gs.score / SOLO_HEAT_AT);
+    return SOLO_BASE + (SOLO_CAP - SOLO_BASE) * heat;
+}
+
 // -------------------------------------------------- state & hash ----
 export function stateOf(gs) {
     return {

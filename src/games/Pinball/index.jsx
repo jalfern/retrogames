@@ -14,7 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R, demoPad, demoOver,
-    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, tiltImpulse,
+    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, tiltImpulse, soloBed,
 } from './sim.js'
 import { tiltVec } from '../../components/padTypes.js'
 import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD } from './art.js'
@@ -217,6 +217,11 @@ const PinballGame = () => {
     const flashRef = useRef(mkFlash(TABLE))
     const shakeRef = useRef(0)
     const mbBedRef = useRef(false)
+    const soloBedRef = useRef(0) // #3304: quantized level of the running solo bed (0 = off)
+    // #3304 DEV rig overlay for the bed seam ONLY: the rules never read it —
+    // sim.js owns gs.multiball. The mb bed trigger ORs this in so the live
+    // hand-off is driveable without faking pack state (drains stay honest).
+    const devMbRef = useRef(false)
     const trailRef = useRef([])
     const ringsRef = useRef([])  // rung 3: expanding event rings (presentation only)
     const fieldsRef = useRef({}) // painted playfield canvas per cabinet id
@@ -1102,9 +1107,23 @@ const PinballGame = () => {
             // #3178: MULTIBALL tension bed — runs while the pack is down. The
             // trigger is SIM state (gs.multiball), so the start/stop seam is
             // deterministic; pause, drain-home and game-over all cut it the same way.
-            const bedOn = screenRef.current === 'play' && !pausedRef.current && gs.multiball
-            if (bedOn && !mbBedRef.current) { audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55); mbBedRef.current = true }
+            // #3304 adds devMbRef — a DEV-rig overlay for the seam alone; the
+            // rules read only gs.multiball, so a rigged pack drains fair.
+            const bedOn = screenRef.current === 'play' && !pausedRef.current && (gs.multiball || devMbRef.current)
+            if (bedOn && !mbBedRef.current) { audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55); mbBedRef.current = true; soloBedRef.current = 0 }
             else if (!bedOn && mbBedRef.current) { audioController.stopMusic(); mbBedRef.current = false }
+            // #3304: SOLO bed — single-ball play is no longer dry. The level is
+            // the sim law (soloBed: heat swells with the run, tilt plays thin);
+            // quantized to 0.02 audible steps so a rising score never spams the
+            // bus. The pack never hears it: bedOn owns MULTIBALL exclusively, and
+            // attract/edit/pause/over cut it exactly like the mb bed does.
+            if (!bedOn) {
+                const lvl = screenRef.current === 'play' && !pausedRef.current ? soloBed(gs) : 0
+                const q = Math.round(lvl / 0.02) * 0.02
+                if (q > 0 && soloBedRef.current <= 0) { audioController.startMusic('pinballSolo'); audioController.setMusicLevel(q); soloBedRef.current = q }
+                else if (q > 0 && Math.abs(q - soloBedRef.current) >= 0.02) { audioController.setMusicLevel(q); soloBedRef.current = q }
+                else if (q <= 0 && soloBedRef.current > 0) { audioController.stopMusic(); soloBedRef.current = 0 }
+            }
             ctx.clearRect(0, 0, W, H)
             if (screenRef.current === 'attract') {
                 if (!pausedRef.current) stepDemo(dt)
@@ -1348,6 +1367,11 @@ const PinballGame = () => {
                 // dev rig (#3297): park balls in the tower so the gate slam can
                 // be screenshotted without farming 3 locks. DEV-only, like tiltInfo.
                 devLock: (n) => { gsRef.current.locks = n },
+                // dev rig (#3304): flip the bed's pack overlay so the hand-off
+                // (solo → mb → solo) is driveable without farming three locks.
+                // Seam-only: it never touches gs.multiball, so drains, locks and
+                // scoring stay the sim's honest rules.
+                devMb: (on = true) => { devMbRef.current = Boolean(on); return { rigMb: devMbRef.current } },
                 state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current, skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
                 // dev rig: pick a cabinet without keys (#3232) — re-deals its
                 // attract demo too, same law as the arrow keys.
@@ -1404,6 +1428,17 @@ const PinballGame = () => {
                     return stateOf(gs)
                 },
                 hash: () => stateHash(gsRef.current),
+                // dev rig (#3304): peek at the music beds — which track owns the
+                // bus, the held bus fraction, the ref-quantized level and the raw
+                // law value — so the solo/mb seam is assertable, not vibes.
+                bed: () => ({
+                    track: audioController.music && audioController.music.playing ? audioController.music.track : null,
+                    level: audioController.musicScale,
+                    law: soloBed(gsRef.current),
+                    mb: mbBedRef.current,
+                    solo: soloBedRef.current,
+                    rig: devMbRef.current,
+                }),
                 // dev rig: peek at the TABLE SMITH bench (#3284) — draft, tool,
                 // verdict — so a driven build leg is assertable, not vibes.
                 smith: () => ({
@@ -1418,7 +1453,7 @@ const PinballGame = () => {
                     sel: cabRef.current,
                     tbId: gsRef.current.table.id,
                 }),
-                reset: (seed) => { gsRef.current = makeGame(seed >>> 0, CABS[cabRef.current].tb); return stateOf(gsRef.current) },
+                reset: (seed) => { gsRef.current = makeGame(seed >>> 0, CABS[cabRef.current].tb); devMbRef.current = false; return stateOf(gsRef.current) },
                 press: (code) => {
                     const k = keysRef.current
                     if (code === 'left') k.left = true; else if (code === 'right') k.right = true
@@ -1436,7 +1471,7 @@ const PinballGame = () => {
             exposeGame({
                 id: 'pinball',
                 buttons: ['left', 'right', 'a', 'b', 'down'],
-                reset: (seed) => { gsRef.current = makeGame(seed >>> 0, CABS[cabRef.current].tb); flashRef.current = mkFlash(CABS[cabRef.current].tb); screenRef.current = 'play'; setScreen('play'); return stateOf(gsRef.current) },
+                reset: (seed) => { gsRef.current = makeGame(seed >>> 0, CABS[cabRef.current].tb); flashRef.current = mkFlash(CABS[cabRef.current].tb); screenRef.current = 'play'; setScreen('play'); devMbRef.current = false; return stateOf(gsRef.current) },
                 tick: (pad) => { stepGame(gsRef.current, pad || {}); react(gsRef.current); return stateOf(gsRef.current) },
                 state: () => ({ ...stateOf(gsRef.current), skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
                 canvas: () => canvasRef.current,

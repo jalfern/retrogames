@@ -85,6 +85,26 @@ try {
     const flying = await page.evaluate(() => window.__pinballTest.state())
     ok('the launched ball is live on the playfield', flying.score > 0 || flying.by < 500, `score=${flying.score}`)
 
+    // #3304 SOLO bed live: single-ball play owns the bus, MULTIBALL takes it,
+    // pack-off hands it back — the same seam pinballcheck pins in Node, proven
+    // on real Chrome timing.
+    const bed1 = await page.evaluate(() => window.__pinballTest.bed())
+    ok('#3304 a solo run rides the SOLO bed (pinballSolo on the bus, law open)',
+        bed1.track === 'pinballSolo' && bed1.solo > 0 && bed1.law > 0 && !bed1.mb,
+        `track=${bed1.track} law=${bed1.law} solo=${bed1.solo}`)
+    await page.evaluate(() => window.__pinballTest.devMb(true))
+    let bed2 = null
+    for (let i = 0; i < 20; i++) { await wait(100); bed2 = await page.evaluate(() => window.__pinballTest.bed()); if (bed2.mb) break }
+    ok('#3304 MULTIBALL hands the bus to pinballMb @0.55 — solo releases it',
+        !!bed2 && bed2.track === 'pinballMb' && bed2.mb === true && bed2.solo === 0 && Math.abs(bed2.level - 0.55) < 1e-9,
+        `track=${bed2 && bed2.track} level=${bed2 && bed2.level} solo=${bed2 && bed2.solo}`)
+    await page.evaluate(() => window.__pinballTest.devMb(false))
+    let bed3 = null
+    for (let i = 0; i < 20; i++) { await wait(100); bed3 = await page.evaluate(() => window.__pinballTest.bed()); if (bed3.track === 'pinballSolo') break }
+    ok('#3304 pack-off: the SOLO bed takes the bus back (never strands on the mb track)',
+        !!bed3 && bed3.track === 'pinballSolo' && bed3.solo > 0 && bed3.law > 0,
+        `track=${bed3 && bed3.track} law=${bed3 && bed3.law} solo=${bed3 && bed3.solo}`)
+
     // rung 3 rig: feed the climbing rail — the wrap pays ORBIT in the browser.
     // Re-feed while nothing lands: on a loaded box the RAF runs slower than
     // 60 fps, so a fixed wall-clock window is fewer world ticks; a second

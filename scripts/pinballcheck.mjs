@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -85,6 +85,15 @@ if (MUT) {
             to: 'if (zone > 99) {',
             note: 'power-zone ticks never emit — the three-step pull is gone',
         },
+        // the solo bed forgets the pack — two beds would fight over one bus the
+        // moment MULTIBALL lands, and the #3178 exclusivity law is the contract
+        // the mb pin checks (#3304).
+        solo: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'if (gs.done || gs.multiball) return 0;',
+            to: 'if (gs.done) return 0;',
+            note: 'solo bed ignores MULTIBALL — the pack and the ostinato fight on one bus',
+        },
         tiltnudge: {
             file: 'src/games/Pinball/sim.js',
             from: 'if (!latched && Math.abs(x) >= law.fire) { fire = true; latched = true; }',
@@ -101,7 +110,7 @@ if (MUT) {
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
-const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32, demoPad, demoOver, compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, tiltImpulse, TILT_NUDGE } = await import('../src/games/Pinball/sim.js')
+const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32, demoPad, demoOver, compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, tiltImpulse, TILT_NUDGE, soloBed, SOLO_FLOOR, SOLO_BASE, SOLO_CAP, SOLO_HEAT_AT } = await import('../src/games/Pinball/sim.js')
 const { SKINS, skinsFor, skinAt, parseStyle, styleIndex, PAL, PAL_EMBER, PAL_TIDE, PAL_TOXIC, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, FONT } = await import('../src/games/Pinball/art.js')
 
 const r = new Report('pinballcheck')
@@ -1372,6 +1381,41 @@ const wrap = (gs) => {
     r.check('a held NUDGE button owns b — the lean never stomps it', sh.includes('!keysRef.current.b'))
     r.check('the tilt pulse rides the sim steps then releases b', sh.includes('if (tiltPulseRef.current > 0 && --tiltPulseRef.current === 0) keysRef.current.b = false'))
     r.check('the lean maps through the shared screen-rotation law', sh.includes("import { tiltVec } from '../../components/padTypes.js'"))
+}
+
+// --------------------------------------------- solo bed (#3304) ----
+{
+    const gs = makeGame(81)
+    r.check('#3304 a fresh game hums at the bed base (ball in the shooter, score 0)',
+        soloBed(gs) === SOLO_BASE, `law=${soloBed(gs)}`)
+    gs.score = SOLO_HEAT_AT / 2
+    r.check('#3304 the bed swells with the run (half heat = half travel)',
+        Math.abs(soloBed(gs) - (SOLO_BASE + (SOLO_CAP - SOLO_BASE) * 0.5)) < 1e-9, `law=${soloBed(gs)}`)
+    gs.score = SOLO_HEAT_AT * 4
+    r.check('#3304 red heat caps at SOLO_CAP — still quieter than the mb bed (0.55)',
+        soloBed(gs) === SOLO_CAP && SOLO_CAP < 0.55, `law=${soloBed(gs)}`)
+    gs.multiball = true
+    r.check('#3304 the pack is exclusive — solo answers 0 while MULTIBALL runs (#3178 untouched)',
+        soloBed(gs) === 0, `law=${soloBed(gs)}`)
+    gs.multiball = false; gs.score = 12000
+    gs.tilt = true
+    r.check('#3304 a tilted cabinet plays thin (half the floor)', soloBed(gs) === SOLO_FLOOR / 2, `law=${soloBed(gs)}`)
+    gs.tilt = false
+    gs.pucks.length = 0
+    r.check('#3304 between balls the bed breathes at the floor, mid-run', soloBed(gs) === SOLO_FLOOR, `law=${soloBed(gs)}`)
+    const gs0 = makeGame(82); gs0.score = 0; gs0.pucks.length = 0
+    r.check('#3304 before the first launch of a fresh game the cabinet is silent', soloBed(gs0) === 0, `law=${soloBed(gs0)}`)
+    gs.done = true
+    r.check('#3304 game over cuts the bed', soloBed(gs) === 0, `law=${soloBed(gs)}`)
+    const sh2 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/index.jsx'), 'utf8')
+    r.check('#3304 the #3178 mb seam keeps its shape (pack gates the bed, track pinballMb, level 0.55)',
+        sh2.includes("const bedOn = screenRef.current === 'play' && !pausedRef.current && (gs.multiball || devMbRef.current)") &&
+        sh2.includes("audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55)"))
+    r.check('#3304 the solo seam rides the law, quantized to 0.02, and the pack never hears it',
+        sh2.includes('soloBed(gs) : 0') && sh2.includes('Math.round(lvl / 0.02) * 0.02') && sh2.includes('if (!bedOn) {'))
+    r.check('#3304 the dev mb-rig is seam-only — it overlays the bed ref, never gs.multiball',
+        sh2.includes('devMb: (on = true) => { devMbRef.current = Boolean(on)') &&
+        !sh2.includes('gsRef.current.multiball ='))
 }
 
 restoreAll()
