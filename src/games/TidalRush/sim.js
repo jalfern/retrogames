@@ -704,6 +704,18 @@ export function step(gs, padIn, seatPads) {
     return gs
 }
 
+// #3281 — the pose the rider reads off the pitch verbs themselves (pure, no
+// sim state of its own): 'hold' deep nose-down (the inverted handstand), 'flip'
+// a real wind-over (a back-flip), 'air' airborne with no pitch verb in force,
+// 'land' on the deck. The shell poses from this; the harness pins it like any
+// other state-out. Rendering never invents a pose the sim didn't pay for.
+export function airPose(c) {
+    if (!c.airborne) return 'land'
+    if (c.flipAng <= -HAND_VERT) return 'hold'
+    if (Math.abs(c.flipAng) > 0.45) return 'flip'
+    return 'air'
+}
+
 // --- state / hash for the contract and checks -----------------------------------
 export function stateOf(gs) {
     const p = gs.crafts[0]

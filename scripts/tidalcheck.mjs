@@ -81,6 +81,9 @@ if (MUT) {
         graboff: { from: "c.grab = pad.brake ? (up ? 'handstand' : 'flip') : 'none'", to: "c.grab = 'none'", note: 'grabs never take the rail' },
         // spin landings forget their kind (#3280) — every landing sprays flat.
         landkind: { from: "spun ? 'spin' : rolled ? 'barrel' : 'plain'", to: "'plain'", note: 'landing kind forgotten — spin/barrel land flat' },
+        // #3281: a wind-over misread as a hold would pose the rider wrong —
+        // the pin is the read itself, so the mutant is the read.
+        airhold: { from: "if (c.flipAng <= -HAND_VERT) return 'hold'", to: "if (c.flipAng <= 0.45) return 'hold'", note: 'hold misread on any wind-over' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -92,7 +95,7 @@ if (MUT) {
 }
 
 const { WAVES, heightAt, seaGLSL, seaGLSLFront, seaUniforms, SEA_UNIFORMS, SEA_UNIFORMS_B, FRONT_UNIFORMS, frontUniforms, frontW, mixHeight, sunnySea, stormSea, omega, FRONT_SPEED } = await import('../src/games/TidalRush/water.js')
-const { makeGame, step, autoPad, stateOf, stateHash, LAPS, rainAt, windAt, windGust, RAIN_VIS, RAIN_DRAG, RAIN_PUSH, THRUST, DRAG } = await import('../src/games/TidalRush/sim.js')
+const { makeGame, step, autoPad, stateOf, stateHash, LAPS, rainAt, windAt, windGust, RAIN_VIS, RAIN_DRAG, RAIN_PUSH, THRUST, DRAG, airPose } = await import('../src/games/TidalRush/sim.js')
 
 const run = (gs, maxS = 240, padFn = null) => {
     const events = []
@@ -412,6 +415,29 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         if (aiGrab) break
     }
     ok('CPU riders grab on their armed flips too (pose hangs off the commit bit)', aiGrab)
+}
+// 6d. #3281: airPose reads the pitch verbs the way the shell does — the pose
+// is a state-out like any other, so the harness pins it and the shell can't
+// drift from the sim it rides.
+{
+    const held = { airborne: true, flipAng: -1.30 }
+    const flipping = { airborne: true, flipAng: 1.30 }
+    const winding = { airborne: true, flipAng: 0.60 }
+    const flat_ = { airborne: true, flipAng: 0.1 }
+    const grounded = { airborne: false, flipAng: -1.50 }
+    ok('airPose: grounded reads land', airPose(grounded) === 'land')
+    ok('airPose: deep nose-down reads hold (handstand)', airPose(held) === 'hold')
+    ok('airPose: a wind-over reads flip', airPose(flipping) === 'flip' && airPose(winding) === 'flip')
+    ok('airPose: pitch-less air reads air', airPose(flat_) === 'air')
+    // one-trick honesty: airPose is pure — the flat spin pays nothing extra
+    // and the pose must not invent a verb the sim has not paid.
+    const g1 = makeGame(7)
+    for (let t = 0; t < 92; t++) step(g1, { throttle: 0, steer: 0, brake: false, a: false, b: false })
+    const p = g1.crafts[0]
+    p.airborne = true; p.vy = 6; p.flipAng = 0.9
+    ok('airPose: an airborne wind-over (flipAng 0.9) reads flip', airPose(p) === 'flip')
+    p.flipAng = -1.30
+    ok('airPose: an inverted hold (flipAng -1.30) reads hold', airPose(p) === 'hold')
 }
 
 // 7. win: autoPad takes P1 on every seed on BOTH bays, sane times, bounded
