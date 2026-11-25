@@ -78,7 +78,7 @@ export function makeWorld(seed) {
     // core + k² shoulders keep it dry and flat on EVERY seed (pinned), and the
     // line stays ≥25 m clear of the pad bands and above the belt's corridor
     // ceiling (3.4), so no other course law ever touches it.
-    const runway = { ax: -30, az: 130, bx: 150, bz: 130, half: 7, deck: 2.6, shoulder: 38 }
+    const runway = { ax: -30, az: 130, bx: 130, bz: 130, half: 7, deck: 2.6, shoulder: 38 }
     const STRIP_LEN = Math.hypot(runway.bx - runway.ax, runway.bz - runway.az)
     const STRIP_HEADING = Math.atan2(runway.bx - runway.ax, runway.bz - runway.az) // π/2, east
 
