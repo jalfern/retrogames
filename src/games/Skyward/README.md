@@ -189,6 +189,36 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   a rising flourish and deck dust on landing, ✈ chip, WHEELS badge on the
   completion card, and free-flight cockpit hints that teach slow-over-hot.
 
+## Strip tail (#3310)
+- **The airfield reads itself** — the zone prices 150/300/450/700 are painted
+  flat on the north lane at each band centre (glyph tops down-strip, like real
+  runway distance paint), and the first SPOT LANDING of a run banners the whole
+  ladder once (`SHORT 150 · MIDDLE 300 · LONG 450 · FULL 700`). A first-timer
+  learns what the strip pays before the banner ever has to.
+- **Dusk-proof paint** — asphalt and markings carry emissive floors
+  (`0x10151c` / `0x7b8187`), so edge lines, piano keys, ticks and numbers keep
+  their contrast when the storm cell dims the sand.
+- **A pad that tells the truth** — the B chip is a live verb: `DROP` on the
+  drop course, `RECYCLE` inside the apron circle (the same 74 m the sim uses),
+  and a bare `B` when the button is inert — the glider's final no longer
+  promises a verb it won't answer.
+- **Every craft gets named** — `gliderRunwayHint` joins the plane's (#3319) and
+  the belt's (#3332) free-flight lessons: over the strip a recycled glider reads
+  `READ THE NUMBERS, RELEASE EARLY · far end pays 700`; the generic CRUISE line
+  is only away from the airfield.
+- **The windsock flies** — pure law `sockPose(wind, gust, t)` in `sim.js`: the
+  cone streams downwind, droops at slack wind (flat by 2.2 m/s) and flutters on
+  the sim clock (no RNG — replays see the same snap); the passing cell's gusts
+  reach it. `skywardcheck` pins direction, droop monotonicity, the flip-under-
+  gust, flutter bounds, decal-centre/zone agreement, the painted literals vs
+  the scoring table, and the dusk emissives (+11 pins, 3 new mutants — 51/51).
+- **Attract honesty kept** — the taste call #3310 item 7 asked the builder to
+  record: NO scripted strip landing in attract. The autopilot still aims the
+  mat (a robot that lands where it says it lands); the strip teaches itself now
+  with the painted ladder, the first-run banner, the named hints and the flying
+  sock instead.
+- All of it presentation-only: hash, `stateOf` and scoring byte-identical.
+
 ## Quiet landing (#3332)
 - **The belt parks on the runway** — Pilotwings' landing test in the belt's
   own keys. The belt already forgave the ground (soft, slow contact settles

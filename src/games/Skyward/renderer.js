@@ -349,11 +349,15 @@ void main(){
         for (const off of [-4.5, -1.5, 1.5, 4.5]) mark(9, 1.1, R.ax + 5.5, cz + off) // piano keys
         for (const f of [0.25, 0.5, 0.75]) mark(0.6, wid - 1.4, R.ax + f * len, cz) // zone ticks
         // #3310 item 2 — the score ladder painted in the north lane (centrelines
-        // keep their dashes): each zone names its price at its own centre.
+        // keep their dashes): each zone names its price at its own centre. The
+        // glyph tops point down-strip (+x): an inbound west→east pilot reads them
+        // upright, exactly like real runway distance paint.
         for (let zi = 0; zi < 4; zi++) {
             const dec = new THREE.Mesh(new THREE.PlaneGeometry(11, 6.4),
                 new THREE.MeshBasicMaterial({ map: runwayNumber([150, 300, 450, 700][zi]), transparent: true, opacity: 0.94, depthWrite: false }))
-            dec.rotation.x = -Math.PI / 2 // flat, glyph tops toward −z: readable on the west→east final
+            dec.rotation.order = 'YXZ'
+            dec.rotation.x = -Math.PI / 2 // flat on the deck
+            dec.rotation.y = -Math.PI / 2 // glyph tops → +x (east, down the strip)
             dec.position.set(R.ax + ((zi + 0.5) / 4) * len, deck + 0.17, cz - 3.6)
             scene.add(dec)
         }
