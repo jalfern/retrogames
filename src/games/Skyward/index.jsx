@@ -178,9 +178,15 @@ const SkywardGame = () => {
                 case 'crew': tone(392, 0.1); tone(311, 0.16, 'triangle', 0.07, 0.1); break
                 case 'goaround':
                     // #3331 — the deck spits her back: a duck then a climb,
-                    // the sound of a bounce teaching the speed law
-                    sweep(320, 170, 0.16, 'sawtooth', 0.06)
-                    sweep(170, 360, 0.24, 'triangle', 0.07, 0.15)
+                    // the sound of a bounce teaching the speed law. #3375 —
+                    // a second bounce in the window lands a heavier preach.
+                    if (e.bounces >= 2) {
+                        sweep(280, 110, 0.22, 'sawtooth', 0.09)
+                        audioController.playSweep(130, 330, 0.28, 'triangle', 0.09, null, 0.18)
+                    } else {
+                        sweep(320, 170, 0.16, 'sawtooth', 0.06)
+                        sweep(170, 360, 0.24, 'triangle', 0.07, 0.15)
+                    }
                     break
                 case 'rollout':
                     if (e.clean) { tone(880, 0.09); tone(1174, 0.14, 'square', 0.08, 0.09) }
@@ -223,7 +229,8 @@ const SkywardGame = () => {
                 // (the sim emits rollout AFTER wheels/crew so this is the
                 // cabinet's final word when it fires)
                 if (e.kind === 'goaround') {
-                    banner('TOO HOT — GO AROUND', 2.2)
+                    // #3375 — a second bounce in the same window gets the preach
+                    banner(e.bounces >= 2 ? 'GO AROUND — FULLY LIFT OFF FIRST' : 'TOO HOT — GO AROUND', 2.2)
                     gl.burst(g.p.x, g.p.y + 0.4, g.p.z, [0.88, 0.8, 0.62], 12, 2.5)
                 }
                 if (e.kind === 'rollout' && e.clean) banner(`CLEAN ROLL — CENTRELINE +${e.credit}`, 2.2)
@@ -597,6 +604,7 @@ const SkywardGame = () => {
                     gs.lastSafe = { x, y: Math.max(y, 20), z, heading }
                     gs._zPrev = z
                     gs._vyHist = [] // #3375 — the flare blend starts the new approach fresh
+                    gs._bounceTail = [] // #3375 — the same fresh-approach semantics for bounces
                     return stateOf(gs)
                 },
                 // #3295 — the live engine bed the cabinet is hearing right now

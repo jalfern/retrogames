@@ -946,6 +946,41 @@ void runAuto
             crabHot.evs.some((e) => e.kind === 'crash') && crabHot.evs.every((e) => e.kind !== 'goaround'),
             crabHot.evs.map((e) => e.kind).join(','))
 
+        // #3375 item 4 — the bounce tail: the first same-hull go-around is a
+        // single tick, a second inside ~2 s escalates the event's bounces.
+        r.check('#3375 first go-around carries bounces: 1 (tail starts fresh)',
+            hot.evs.find((e) => e.kind === 'goaround')?.bounces === 1,
+            `evs=${hot.evs.map((e) => e.kind).join(',')}`)
+
+        // drive one hull through two bounces in quick succession: after the
+        // first, re-seat it on the threshold (the same direct-seating planeStrip
+        // already does) and straight back in with the same hot, shallow chalk
+        const twice = makeGame(34)
+        twice.craft = 'plane'; twice.phase = 'free'
+        twice.p = { x: 100, y: Math.max(w.terrainHeight(100, 130), w.waterHeightAt(100, 130, 0)) + 1.2, z: 130 }
+        twice.heading = Math.PI / 2; twice.speed = 36; twice.vy = -1
+        twice.pitch = Math.asin(Math.max(-1, Math.min(1, -1 / 36)))
+        const tx = []
+        let tw = 0
+        while (tw++ < 240) {
+            step(twice, {})
+            tx.push(...clear(twice))
+            const ga = tx.filter((e) => e.kind === 'goaround')
+            if (ga.length >= 2) break
+            if (ga.length >= 1 && !twice.ground) {
+                // re-seat the same hull on the threshold, same hot chalk
+                twice._depart = 0
+                twice.p = { x: 100, y: Math.max(w.terrainHeight(100, 130), w.waterHeightAt(100, 130, 0)) + 1.2, z: 130 }
+                twice.speed = 36; twice.vy = -1
+                twice.pitch = Math.asin(Math.max(-1, Math.min(1, -1 / 36)))
+            }
+            if (tx.some((e) => e.kind === 'crash')) break
+        }
+        const gaEls = tx.filter((e) => e.kind === 'goaround')
+        r.check('#3375 second same-hull bounce within the window escalates the hint (bounces: 2)',
+            gaEls.length >= 2 && gaEls[0].bounces === 1 && gaEls[1].bounces === 2,
+            `evs=${tx.map((e) => e.kind).join(',')} bounces=${gaEls.map((e) => e.bounces).join(',')}`)
+
         // rollout → coast → ground crew recovers, no crash counted
         const roll = makeGame(33)
         roll.craft = 'plane'; roll.phase = 'free'

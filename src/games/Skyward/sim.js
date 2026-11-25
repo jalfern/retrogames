@@ -114,6 +114,7 @@ export function makeGame(seed, opts = {}) {
         ground: null,       // #3319 — non-null while the plane rolls on the deck
         _depart: 0,         // #3319 — grace to climb clear after a rollout abort
         _vyHist: [],        // #3375 — rolling sink history, the flare blend
+        _bounceTail: [],    // #3375 — recent go-around ticks, juice only (never hashed)
         park: null,         // #3332 — non-null while the belt sits parked on the deck
         beltLand: 0,        // #3332 — best belt landing banked on the strip
         _air: true,         // #3332 — crossing arming: the decision belongs to the deck-crossing tick, once
@@ -143,6 +144,7 @@ function placePlaneAtStart(g) {
     g.pitch = 0; g.roll = 0; g.speed = 34; g.vy = 0
     g.lastSafe = { ...g.p, heading: g.heading }
     g._vyHist = []
+    g._bounceTail = [] // #3375 — same fresh-approach semantics as the flare blend
     void w
 }
 function placeRingStart(g) {
@@ -155,6 +157,7 @@ function placeRingStart(g) {
     g._zPrev = g.p.z
     g.lastSafe = { x: g.p.x, y: Math.max(g.p.y, 24), z: g.p.z, heading: g.heading }
     g._vyHist = []
+    g._bounceTail = [] // #3375 — same fresh-approach semantics as the flare blend
 }
 function placeGliderLaunch(g) {
     g.craft = 'glider'
@@ -182,6 +185,7 @@ function placePassStart(g) {
     g.passIdx = 0; g.passTimes = []; g.eventT = 0
     g.lastSafe = { x: s.x, y: 26, z: s.z, heading: Math.PI / 2 }
     g._vyHist = []
+    g._bounceTail = [] // #3375 — same fresh-approach semantics as the flare blend
 }
 
 // ── markers: which launch is the player near ───────────────────────────────
@@ -240,6 +244,7 @@ function recycle(g) {
         g.p = { x: g.world.school.x - 40, y: 26, z: g.world.school.z - 30 }
         g.heading = Math.PI; g.pitch = 0; g.roll = 0; g.speed = 30; g.vy = 0
         g._vyHist = []
+        g._bounceTail = [] // #3375 — same fresh-approach semantics as the flare blend
     } else if (next === 'belt') {
         placeBeltStart(g)
     } else {
@@ -364,7 +369,8 @@ function stepPlane(g, w, sx, sy, dt) {
             const gd = g.ground
             g.ground = null
             g._depart = 1.5 // grace to climb clear before the crash law re-arms
-            g._vyHist = [] // #3375 — a fresh departure starts the flare blend fresh
+            g._vyHist = []
+            g._bounceTail = [] // #3375 — same fresh-approach semantics as the flare blend
             ev(g, 'wheels')
             bankRoll(gd, 'abort')
         } else if (g.speed < CFG.PLANE_STOP) {
@@ -447,7 +453,12 @@ function stepPlane(g, w, sx, sy, dt) {
                 g.pitch = clamp(g.pitch + 0.22, -0.6, 0.6)
                 g.p.y = Math.max(g.p.y, floor + 1.2)
                 g._depart = 1.5
-                ev(g, 'goaround', { u: hot.u, hot: hot.hot })
+                // #3375 — a second same-hull bounce inside ~2 s escalates the
+                // cabinet's hint. Juice only: never in stateOf/stateHash.
+                g._bounceTail.push(g.tick)
+                const cutoff = g.tick - 120 // 2 s at 60 Hz
+                g._bounceTail = g._bounceTail.filter((tk) => tk >= cutoff)
+                ev(g, 'goaround', { u: hot.u, hot: hot.hot, bounces: g._bounceTail.length })
                 return
             }
         }
