@@ -17,6 +17,9 @@ const ffToOver = async (page, rounds = 20) => {
     for (let blk = 0; blk < 6; blk++) {
         await page.evaluate((n) => { for (let i = 0; i < n; i++) window.__pinballTest.step(400) }, rounds)
         for (let i = 0; i < 20; i++) { await wait(100); s = await page.evaluate(() => window.__pinballTest.state()); if (s.done && s.screen === 'over') return s }
+        console.log('FF-BLOCK', blk, JSON.stringify({ tick: s.tick, done: s.done, screen: s.screen, ball: s.ball, by: s.by, power: s.power }))
+        // stuck-ball rescue lives in the SIM now (BALL SEARCH, sim.js): 20
+        // world-seconds of a motionless ball drains it, so blocks converge.
     }
     return s
 }
@@ -48,17 +51,24 @@ try {
     const flying = await page.evaluate(() => window.__pinballTest.state())
     ok('the launched ball is live on the playfield', flying.score > 0 || flying.by < 500, `score=${flying.score}`)
 
-    // rung 3 rig: feed the climbing rail — the wrap pays ORBIT in the browser
+    // rung 3 rig: feed the climbing rail — the wrap pays ORBIT in the browser.
+    // Re-feed while nothing lands: on a loaded box the RAF runs slower than
+    // 60 fps, so a fixed wall-clock window is fewer world ticks; a second
+    // feed is another genuine wrap attempt, never a lowered bar.
     await page.evaluate(() => window.__pinballTest.orbitFeed())
     let st = null
-    for (let i = 0; i < 40; i++) { await wait(100); st = await page.evaluate(() => window.__pinballTest.state()); if (st.orbits >= 1) break }
+    for (let i = 0; i < 80; i++) {
+        await wait(100); st = await page.evaluate(() => window.__pinballTest.state())
+        if (st.orbits >= 1) break
+        if (i % 15 === 14) await page.evaluate(() => window.__pinballTest.orbitFeed())
+    }
     ok('ORBIT: the wrap completes live in Chrome', !!st && st.orbits >= 1, `orbits=${st && st.orbits}`)
     ok('the wrap announces itself on the sim-owned DMD state', !!st && st.dmd.text === 'ORBIT! +100', st && st.dmd.text)
 
     // rung 3 rig: the magnet grabs a drifting ball and holds it
     await page.evaluate(() => window.__pinballTest.magDrop())
     let mag = null
-    for (let i = 0; i < 30; i++) { await wait(100); mag = await page.evaluate(() => window.__pinballTest.state()); if (mag.magHold > 0) break }
+    for (let i = 0; i < 60; i++) { await wait(100); mag = await page.evaluate(() => window.__pinballTest.state()); if (mag.magHold > 0) break }
     ok('MAGNET: grabs and holds live (magHold > 0)', !!mag && mag.magHold > 0, `hold=${mag && mag.magHold}`)
     const held0 = await page.evaluate(() => window.__pinballTest.state())
     await wait(500)

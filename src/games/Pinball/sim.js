@@ -851,6 +851,17 @@ export function stepGame(gs, pad = {}) {
             }
         }
 
+        // BALL SEARCH (authentic cabinet behaviour): a live ball sitting
+        // basically motionless away from the plunger lane and the magnet is a
+        // dead stall — real machines shudder until it drops. Counted on the
+        // world clock; after 20 world-seconds the search ends the ball, so no
+        // rest position (rare mirrored geometry included) can wedge a game
+        // open forever. Deterministic: no rng, pure state.
+        const stallExempt = gs.magHold > 0 || p.cap || ((p.bx - T.lane.innerX) * T.lane.side > 0 && p.by > T.lane.bottomY)
+        if (!stallExempt && Math.hypot(p.vx, p.vy) < 18) p.stall = (p.stall || 0) + 1
+        else p.stall = 0
+        if (p.stall > 1200) p.drain = true;
+
         // drain
         if (p.by > T.drainY) p.drain = true;
     });
