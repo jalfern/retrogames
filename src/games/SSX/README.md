@@ -486,6 +486,27 @@ and FLIP+tilt mid-air landing a negative ledger where FLIP alone goes
 positive. **Mutant proof (done once, by hand):** swap the two signs in
 `flipDirFromTilt` → 3 node gates go red; restore → 229 green.
 
+## TILT pad (#3129 studio tail) — lean steers, the chrome yields
+
+- `/ssx` offers `supports: ['stick', 'tilt', 'full']` (supports-only; the
+  declared `type: 'full'` default is untouched, #3118 law). Lean writes the
+  SAME pipeline the floating stick feeds — `setStick`→`padState` plus
+  `dirsFrom` Arrow codes — and the steer priority (`tiltActive → dragSteer →
+  padState → keys`) lets the lean through once the game stick yields.
+- **The chrome audit (#3129):** the #894 stick is gated
+  `padTypeUI !== 'full' && !== 'tilt'` — two visible drivers for one vector
+  was the whole blocker. The trick row STAYS in tilt: the tilt pad draws only
+  A/B + the enable/RE-CENTER pill (the Sony diamond is full-only), so
+  GRAB/FLIP/INV would orphan without it. Lean forward/back arrive as
+  ArrowUp/ArrowDown → tuck/scrub unchanged; FLIP without stick-Y commits
+  FRONT, same as keyboard.
+- Proof: `padtypecheck` pins grant + yield-proximity + trick-stays +
+  padState-consumer; `padtypeplay` SSX-tilt leg runs the pill flow, asserts
+  the stick yields while the trick row stays, and in a REAL race ramps the
+  #791 edge `press` (≥0.35) under a held synthetic lean, then zeroes output
+  via RE-CENTER on the leaned pose. Real-iPhone `ENABLE TILT` prompt is the
+  owed check (#3054).
+
 ## The bigger mountain (#889) — six courses, route choices, rotating triple
 
 - `course.js` carries SIX originals. The classic three doubled (~1.5-1.9 km

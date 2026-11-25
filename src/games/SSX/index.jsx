@@ -1456,8 +1456,13 @@ const SSXGame = () => {
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'SSX')} onResume={handleResume} />}
             {/* #894 (Jon's #873 answer): the physical analogue stick — always
                 visible base + knob. x = carve depth through the sim's press ramp,
-                y = body tilt (forward tucks + commits a FRONT flip, back scrubs). */}
-            {play && !paused && TOUCH_PAD && padTypeUI !== 'full' && (
+                y = body tilt (forward tucks + commits a FRONT flip, back scrubs).
+                #3129 chrome audit: yields to TILT as well as FULL — the lean
+                drives the same vector through padState, so a visible stick here
+                would be a second driver for one verb. The trick row below does
+                NOT yield: the tilt pad draws only A/B + the pill (the diamond
+                is full-only), so GRAB/FLIP/INV would orphan without it. */}
+            {play && !paused && TOUCH_PAD && padTypeUI !== 'full' && padTypeUI !== 'tilt' && (
                 <div
                     data-ssx-stick="1"
                     className="fixed z-[60] rounded-full pointer-events-auto select-none"
