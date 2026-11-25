@@ -116,6 +116,8 @@ const SkywardGame = () => {
                     else { tone(523, 0.12); tone(784, 0.16, 'triangle', 0.08, 0.1) }
                     break
                 case 'switch': sweep(240, 520, 0.18, 'square', 0.06); break
+                case 'wheels': sweep(240, 520, 0.16, 'triangle', 0.07); break
+                case 'crew': tone(392, 0.1); tone(311, 0.16, 'triangle', 0.07, 0.1); break
                 default: break
             }
         }
@@ -137,6 +139,13 @@ const SkywardGame = () => {
                     else banner(`${e.event} — ${e.gained}`, 2.6)
                 }
                 if (e.kind === 'graduate') banner(`LICENSE: ${e.license} — ${e.score}`, 4)
+                // #3319 — the plane lands without an exam to finish: the strip
+                // banners it in the moment the wheels kiss the deck
+                if (e.kind === 'land' && e.craft === 'plane') {
+                    banner(`RUNWAY ${e.aligned ? ['', 'SHORT', 'MIDDLE', 'LONG', 'FULL STRIP'][e.zone] : 'CRABBED'} +${e.score}`, 2.6)
+                }
+                if (e.kind === 'wheels') banner('WHEELS UP — TOUCH AND GO', 1.8)
+                if (e.kind === 'crew') banner('GROUND CREW — SHE\'LL FLY AGAIN', 2.4)
                 if (e.kind === 'splash') gl.burst(g.p.x, 1.2, g.p.z, [0.85, 0.97, 1], 22, 5)
                 if (e.kind === 'crash') gl.burst(g.p.x, g.p.y, g.p.z, [1, 0.8, 0.55], 26, 7)
                 if (e.kind === 'hit') gl.burst(g.world.targets[e.target].x, 1.4, g.world.targets[e.target].z, e.score > 200 ? [1, 0.9, 0.4] : [0.9, 0.9, 0.9], 16, 4)
@@ -153,6 +162,16 @@ const SkywardGame = () => {
             const d = Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az)
             if (d < 110) return `RUNWAY ${Math.round(d)} m AHEAD · or the mat beyond pays 1000`
             return 'GLIDE HOME · thermals rise under the cumuli'
+        }
+
+        // #3319 — the plane's own lesson at the strip: cruise is too hot, the
+        // arrival is made by scrubbing speed and flaring, not by holding level
+        const planeRunwayHint = (g) => {
+            const zn = stripZone(g.world, g.p.x, g.p.z)
+            if (zn) return 'RUNWAY — SCRUB SPEED, THEN FLARE SOFT · cruise speed is too hot to land'
+            const d = Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az)
+            if (d < 130) return `RUNWAY ${Math.round(d)} m — PLANES LAND HERE TOO`
+            return null
         }
 
         const held = { left: false, right: false, up: false, down: false, a: false, b: false }
@@ -232,7 +251,7 @@ const SkywardGame = () => {
                         step(gs, padNow())
                         drain(gs)
                         if (gs.done) {
-                            setOver({ score: gs.score, license: gs.license, stormWings: gs.stormWings })
+                            setOver({ score: gs.score, license: gs.license, stormWings: gs.stormWings, land: gs.land })
                             setMode('over')
                         }
                     } else {
@@ -345,7 +364,7 @@ const SkywardGame = () => {
             const shown = sc === 'attract' ? null : gs
             E.score.textContent = shown ? `SCORE ${shown.score}` : ''
             E.chips.textContent = shown
-                ? `RING ${shown.grad.ring ?? '—'} · SPOT ${shown.grad.spot ?? '—'} · DROP ${shown.grad.drop ?? '—'} · ⚡ ${shown.stormWings ? shown.grad.pass : '—'}`
+                ? `RING ${shown.grad.ring ?? '—'} · SPOT ${shown.grad.spot ?? '—'} · DROP ${shown.grad.drop ?? '—'} · ⚡ ${shown.stormWings ? shown.grad.pass : '—'} · ✈ ${shown.land || '—'}`
                 : ''
             if (sc === 'play' && (shown.phase === 'ring' || shown.phase === 'pass')) E.speed.textContent += ` · ${shown.eventT.toFixed(1)}s`
             const hint = sc === 'play'
@@ -354,7 +373,8 @@ const SkywardGame = () => {
                     : shown.phase === 'drop' ? 'A THRUST · B DROP · land at the pads'
                         : shown.phase === 'pass' ? `GATE ${shown.passIdx}/5 · fight the gusts · the core pulls down`
                             : shown.phase === 'spot' ? stripHint(shown)
-                                : shown.phase === 'free' ? `CRUISE · markers glow near launches · B at school recycles craft` : '')
+                        : shown.phase === 'free' ? (shown.craft === 'plane' && planeRunwayHint(shown))
+                            || 'CRUISE · markers glow near launches · B at school recycles craft' : '')
                 : ''
             if (E.hint.textContent !== hint) E.hint.textContent = hint
             if (bannerRef.current.until && performance.now() > bannerRef.current.until) {
@@ -438,6 +458,7 @@ const SkywardGame = () => {
                     { label: 'drop', run: () => (checkout(gs, 'drop'), 'drop') },
                     { label: 'thunder', run: () => (checkout(gs, 'pass'), 'thunderpass') },
                     { label: 'recycle', run: () => (recycleCraft(gs), gs.craft) },
+                    { label: 'final', run: () => { gs.phase = 'free'; gs.craft = 'plane'; gs.ground = null; gs._depart = 0; gs.p = { x: -45, y: 3.8, z: 130 }; gs.heading = Math.PI / 2; gs.pitch = 0; gs.roll = 0; gs.speed = 30; gs.vy = 0; return 'short final — ease off and flare' } },
                     { label: 'graduate', run: () => { gs.grad = { ring: 800, spot: 700, drop: 999 }; gs.score = 2499; gs.done = true; gs.license = 'ACE'; setOver({ score: 2499, license: 'ACE' }); setMode('over') } },
                 ],
             })
@@ -480,6 +501,9 @@ const SkywardGame = () => {
                     <div className="text-3xl font-black tracking-[0.25em] text-amber-300">{over.license} LICENSE</div>
                     {over.stormWings && (
                         <div className="mt-2 text-sm font-bold tracking-[0.3em] text-violet-300">⚡ STORM WINGS ⚡</div>
+                    )}
+                    {over.land > 0 && (
+                        <div className="mt-2 text-sm font-bold tracking-[0.3em] text-emerald-300">✈ WHEELS — BEST RUNWAY {over.land}</div>
                     )}
                     <div className="mt-3 text-lg tracking-[0.2em] text-white">FINAL SCORE {over.score}</div>
                     <div className="mt-2 text-xs tracking-[0.2em] text-white/70">INSTRUCTORS VOSS · NIMBUS · PIP SALUTE YOU</div>

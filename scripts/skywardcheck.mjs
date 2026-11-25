@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, stripZone, stripScore } from '../src/games/Skyward/sim.js'
+import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, stripZone, stripScore, planeTouch } from '../src/games/Skyward/sim.js'
 import { decide } from '../src/games/Skyward/planner.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { Report } from './lib/harness.mjs'
@@ -731,6 +731,103 @@ void runAuto
 }
 
 // ----------------------------------------------------------- mutants ----
+// ── #3319 — the plane answers the runway (Pilotwings' landing test) ────────
+    {
+        const w = makeGame(21).world
+        // pure planeTouch: zones mirror the glider's; bands are the plane's own
+        const full = planeTouch(w, 120, 130, Math.PI / 2, -1, 30)
+        r.check('planeTouch: deep + aligned + slow = FULL STRIP 700',
+            full && full.zone === 4 && full.score === 700 && full.aligned === true, JSON.stringify(full))
+        const short = planeTouch(w, -10, 130, Math.PI / 2, -1, 30)
+        r.check('planeTouch: first quarter pays 150', short && short.zone === 1 && short.score === 150, JSON.stringify(short))
+        const crab = planeTouch(w, 120, 130, Math.PI / 2 + 0.45, -1, 30)
+        r.check('planeTouch: crabbed past ~17° is a scuff (60), not a zone',
+            crab && crab.zone === 0 && crab.score === 60 && crab.aligned === false, JSON.stringify(crab))
+        r.check('planeTouch: cruise speed (36) is too hot — no catch', planeTouch(w, 120, 130, Math.PI / 2, -1, 36) === null)
+        r.check('planeTouch: a steep sink (−3) is not soft — no catch', planeTouch(w, 120, 130, Math.PI / 2, -3, 30) === null)
+        r.check('planeTouch: off-strip — no catch', planeTouch(w, 120, 160, Math.PI / 2, -1, 30) === null)
+
+        // whole-hull rules through step(): touchdown banks the strip as the
+        // plane's OWN best, not an exam score — licence math stays core-three.
+        const planeStrip = (seed, x, z, heading, vy, speed, pad = {}, cap = 400) => {
+            const h = makeGame(seed)
+            h.craft = 'plane'; h.phase = 'free'
+            h.p = { x, y: Math.max(w.terrainHeight(x, z), w.waterHeightAt(x, z, 0)) + 1.2, z }
+            h.heading = heading; h.speed = speed; h.vy = vy
+            h.pitch = Math.asin(Math.max(-1, Math.min(1, vy / speed)))
+            const evs = []
+            let n = 0
+            while (n++ < cap && !h.ground && evs.every((e) => e.kind !== 'crash')) { step(h, pad); evs.push(...clear(h)) }
+            return { h, evs }
+        }
+        const ld = planeStrip(31, 100, 130, Math.PI / 2, -1, 30)
+        r.check('the plane touches down: wheels-down event (plane, strip, FULL STRIP)',
+            ld.evs.some((e) => e.kind === 'land' && e.craft === 'plane' && e.zone === 4 && e.aligned === true),
+            ld.evs.map((e) => e.kind).join(','))
+        r.check('a plane landing banks to the WHEELS badge (land=700), NOT the licence score',
+            ld.h.land === 700 && ld.h.score === 0 && ld.h.grad.spot === null && !ld.h.done,
+            `land=${ld.h.land} score=${ld.h.score} done=${ld.h.done}`)
+
+        // hot / steep arrivals keep today's crash, byte-identical
+        const hot = planeStrip(32, 100, 130, Math.PI / 2, -1, 36)
+        r.check('too fast on the strip (36 m/s) still crashes — the school does not forgive cruise',
+            hot.evs.some((e) => e.kind === 'crash') && hot.h.land === 0, hot.evs.map((e) => e.kind).join(','))
+
+        // rollout → coast → ground crew recovers, no crash counted
+        const roll = makeGame(33)
+        roll.craft = 'plane'; roll.phase = 'free'
+        roll.p = { x: 100, y: 3.6, z: 130 }; roll.heading = Math.PI / 2; roll.speed = 30; roll.vy = -1
+        let rollEvs = []
+        let rn = 0
+        while (rn++ < 1200 && rollEvs.every((e) => e.kind !== 'crew') && rollEvs.every((e) => e.kind !== 'crash')) { step(roll, {}); rollEvs.push(...clear(roll)) }
+        r.check('after touchdown the plane rolls out and the ground crew recovers her (crew, not crash)',
+            rollEvs.some((e) => e.kind === 'crew') && roll.crashes === 0, rollEvs.map((e) => e.kind).join(','))
+
+        // wheels-abort: stick back mid-roll lifts her off for a touch-and-go
+        const ab = makeGame(34)
+        ab.craft = 'plane'; ab.phase = 'free'
+        ab.p = { x: 60, y: 3.6, z: 130 }; ab.heading = Math.PI / 2; ab.speed = 30; ab.vy = -1
+        let abEvs = []
+        let an = 0
+        while (an++ < 40 && !ab.ground) { step(ab, {}); abEvs.push(...clear(ab)) }
+        const groundedAt = ab.ground !== null
+        an = 0
+        while (an++ < 120 && abEvs.every((e) => e.kind !== 'wheels')) { step(ab, { y: 1 }); abEvs.push(...clear(ab)) }
+        let an2 = 0
+        while (an2++ < 60 && abEvs.every((e) => e.kind !== 'crash') && ab.p.y < 60) { step(ab, { y: 1 }); abEvs.push(...clear(ab)) }
+        r.check('wheels-abort: stick back during the rollout is a touch-and-go (wheels, climbs clear, no crash)',
+            groundedAt && abEvs.some((e) => e.kind === 'wheels') && ab.ground === null && ab.crashes === 0 && ab.p.y > 6,
+            `grounded=${groundedAt} y=${ab.p.y.toFixed(1)} crashes=${ab.crashes} evs=${abEvs.map((e) => e.kind).join(',')}`)
+
+        // autopilot honesty: the mat-seeking planner never parks the plane on the strip
+        let planeStripAuto = 0
+        for (const s of [1, 7, 42, 99, 123]) {
+            const h = makeGame(s)
+            let n = 0
+            while (n++ < 20000 && !h.done) {
+                for (const e of h.events) if (e.kind === 'land' && e.craft === 'plane') planeStripAuto++
+                step(h, decide(h))
+            }
+        }
+        r.check('honesty: the autopilot never lands the plane on the strip (5 seeds)', planeStripAuto === 0, `n=${planeStripAuto}`)
+
+        // determinism: a scripted soft arrival replays to an identical hash
+        const replayHash = () => {
+            const h = makeGame(88)
+            h.craft = 'plane'; h.phase = 'free'
+            h.p = { x: 60, y: 3.6, z: 130 }; h.heading = Math.PI / 2; h.speed = 30; h.vy = -1; h.pitch = Math.asin(-1 / 30)
+            let n = 0
+            while (n++ < 200) step(h, {})
+            return `${h.hash}:${h.land}`
+        }
+        r.check('determinism: a plane landing replays identical (hash + banked WHEELS)', replayHash() === replayHash(), replayHash())
+
+        // stateOf exposes the plane's strip work to the harness/contract
+        const stp = stateOf(ld.h)
+        r.check('stateOf: reports the banked plane landing (land 700), plain JSON',
+            stp.land === 700 && JSON.stringify(stp).length > 10, `land=${stp.land}`)
+    }
+
 if (process.argv.includes('--mutate')) {
     const MUTANTS = [
         ['the ring pass stops counting', SIMF, 'g.ringsPassed++', 'g.ringsPassed += 0'],
@@ -763,6 +860,12 @@ if (process.argv.includes('--mutate')) {
         ['the far strip zone collapses onto the short one', SIMF, 'STRIP_ZONES: [[0.25, 150], [0.5, 300], [0.75, 450], [1, 700]]', 'STRIP_ZONES: [[0.25, 150], [0.5, 150], [0.75, 150], [1, 150]]'],
         ['the strip alignment law goes blind', SIMF, 'if (Math.abs(e) > CFG.STRIP_ALIGN) return', 'if (false) return'],
         ['the strip carves below its deck', WORLDF, 'if (d <= runway.half) h = runway.deck', 'if (d <= runway.half) h = runway.deck - 2'],
+        ['#3319 the plane catches cruise speed too (hot arrivals land)', SIMF, 'if (!(vy > -CFG.PLANE_SINK && vy < CFG.PLANE_CLIMB && speed < CFG.PLANE_SPEED)) return null', 'if (!(vy > -CFG.PLANE_SINK && vy < CFG.PLANE_CLIMB)) return null'],
+        ['#3319 the plane sink band is disabled (dives pay zones)', SIMF, 'vy > -CFG.PLANE_SINK && vy < CFG.PLANE_CLIMB', 'vy > -99 && vy < CFG.PLANE_CLIMB'],
+        ['#3319 a plane landing banks nothing (badge stays empty)', SIMF, 'g.land = Math.max(g.land, touch.score)', 'g.land = Math.max(g.land, 0)'],
+        ['#3319 the rollout has no friction (coasts off the end, no crew)', SIMF, 'g.speed *= CFG.PLANE_FRICTION', 'g.speed *= 1'],
+        ['#3319 the wheels-abort is dead (no touch-and-go)', SIMF, 'if (sy > 0 && g.speed >= CFG.PLANE_LIFTOFF) {', 'if (false) {'],
+        ['#3319 the departure grace never arms (the deck splats its own go-around)', SIMF, 'g._depart = 1.5 // grace to climb clear before the crash law re-arms', 'g._depart = 0'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
