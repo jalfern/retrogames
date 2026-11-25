@@ -960,6 +960,40 @@ const wrap = (gs) => {
         gs2.pucks[0] && gs2.pucks[0].stall === 0 && gs2.balls === gs2.table.balls, `stall=${gs2.pucks[0]?.stall} balls=${gs2.balls}`)
 }
 
+// --- 7. the seed is load-bearing ---- stateHash embeds gs.seed, so divergent
+// hashes can prove nothing about the RNG. Compare the RAW physics line under a
+// scripted nudge stream: the seeded jitter (sim.js rng() on nudge) must fork
+// two seeds and repeat one seed exactly.
+{
+    const line = (seed) => {
+        const gs = makeGame(seed); const ps = []; let nudges = 0
+        for (let i = 1; i <= 500; i++) {
+            let pad = {}
+            if (i % 90 < 4) pad = { down: true }
+            else if (gs.launched && nudges < 2 && i % 40 === 20) { nudges++; pad = { b: true } }
+            stepGame(gs, pad)
+            ps.push(gs.pucks.map((p) => `${p.bx.toFixed(6)}:${p.by.toFixed(6)}:${p.vx.toFixed(6)}`).join('|'))
+        }
+        return ps.join(';')
+    }
+    const l1 = line(71), l2 = line(71), l3 = line(72)
+    r.check('same seed + same nudge script ⇒ bit-identical physics line', l1 === l2)
+    r.check('different seeds ⇒ the seeded nudge jitter forks the physics line (seed is load-bearing)', l1 !== l3)
+    const ln = (seed) => {
+        const gs = makeGame(seed, 1); const ps = []; let nudges = 0
+        for (let i = 1; i <= 500; i++) {
+            let pad = {}
+            if (i % 90 < 4) pad = { down: true }
+            else if (gs.launched && nudges < 2 && i % 40 === 20) { nudges++; pad = { b: true } }
+            stepGame(gs, pad)
+            ps.push(gs.pucks.map((p) => `${p.bx.toFixed(6)}:${p.by.toFixed(6)}:${p.vx.toFixed(6)}`).join('|'))
+        }
+        return ps.join(';')
+    }
+    const ln1 = ln(41), ln2 = ln(41), ln3 = ln(42)
+    r.check('the same fork exists on EMBER RIDER', ln1 === ln2 && ln1 !== ln3)
+}
+
 restoreAll()
 if (MUT) {
     const red = r.failed > 0
