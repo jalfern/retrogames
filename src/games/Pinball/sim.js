@@ -290,8 +290,10 @@ function buildView(tb) {
     const S = tb.lane.side
     const O = tb.orbit.ch
     const bank = tb.targets
-    const bankMin = Math.min(bank[0].x1, bank[bank.length - 1].x1)
-    const bankMax = Math.max(bank[0].x2, bank[bank.length - 1].x2)
+    // #3284: a smithed table may skip the bank — its presentation anchors
+    // collapse to the field centre (nothing draws against an empty bank).
+    const bankMin = bank.length ? Math.min(bank[0].x1, bank[bank.length - 1].x1) : 180
+    const bankMax = bank.length ? Math.max(bank[0].x2, bank[bank.length - 1].x2) : 180
     return {
         laneCx: (tb.laneX.x1 + tb.laneX.x2) / 2,
         rampCx: (tb.lane.rampZone.x1 + tb.lane.rampZone.x2) / 2,
@@ -319,7 +321,9 @@ TABLE_TWO.view = buildView(TABLE_TWO)
 
 // ----------------------------------------------------- game state ----
 export function makeGame(seed = 1, cab = 0) {
-    const tb = CABINETS[cab] || TABLE
+    // #3284: `cab` may also BE the table — a player-built cabinet from the
+    // TABLE SMITH editor enters the same game factory as a shelf index.
+    const tb = cab && typeof cab === 'object' ? cab : (CABINETS[cab] || TABLE)
     const p0 = newPuck(tb.plunger.x, tb.plunger.restY, 0, 0);
     const gs = {
         seed: seed >>> 0, rng: mulberry32((seed >>> 0) ^ 0x9e3779b9),
@@ -597,22 +601,24 @@ function substepBall(gs, b, dt) {
     // while held, the pinned puck's motion is owned by the hold (see the top
     // of this function's magnet block in stepGame's pre-pass too).
     const MG = T.magnet;
-    const mdx = MG.x - b.bx, mdy = MG.y - b.by;
-    const md = Math.hypot(mdx, mdy);
-    if (md < MG.field + BALL_R) {
-        if (!gs.magTouched) gs.magTouched = true;
-        if (!b.magHeld && gs.magCharge > 0 && gs.magHold === 0) {
-            // pull toward the post along the field
-            if (md > 0.001) { b.vx += (mdx / md) * MG.pull * dt; b.vy += (mdy / md) * MG.pull * dt; }
-            // clamp at the post face → held (velocity dies at the clamp)
-            const holdR = MG.r + BALL_R;
-            if (md < holdR && md > 0.001) {
-                b.bx = MG.x - (mdx / md) * holdR; b.by = MG.y - (mdy / md) * holdR;
-                b.magX = b.bx; b.magY = b.by;
-                b.vx = 0; b.vy = 0; b.magHeld = true;
-                gs.magHold = MG.hold; gs.magCharge = 0; gs.magFlash = 14;
-                say(gs, 'MAGNET!', 90);
-                gs.events.push({ type: 'maggrab', x: MG.x, y: MG.y });
+    if (MG) {                                        // #3284: a smithed table may skip the magnet
+        const mdx = MG.x - b.bx, mdy = MG.y - b.by;
+        const md = Math.hypot(mdx, mdy);
+        if (md < MG.field + BALL_R) {
+            if (!gs.magTouched) gs.magTouched = true;
+            if (!b.magHeld && gs.magCharge > 0 && gs.magHold === 0) {
+                // pull toward the post along the field
+                if (md > 0.001) { b.vx += (mdx / md) * MG.pull * dt; b.vy += (mdy / md) * MG.pull * dt; }
+                // clamp at the post face → held (velocity dies at the clamp)
+                const holdR = MG.r + BALL_R;
+                if (md < holdR && md > 0.001) {
+                    b.bx = MG.x - (mdx / md) * holdR; b.by = MG.y - (mdy / md) * holdR;
+                    b.magX = b.bx; b.magY = b.by;
+                    b.vx = 0; b.vy = 0; b.magHeld = true;
+                    gs.magHold = MG.hold; gs.magCharge = 0; gs.magFlash = 14;
+                    say(gs, 'MAGNET!', 90);
+                    gs.events.push({ type: 'maggrab', x: MG.x, y: MG.y });
+                }
             }
         }
     }
@@ -1085,3 +1091,159 @@ export function stateHash(gs) {
     for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
     return h >>> 0;
 }
+
+// ═══════════════════════════════════════════════ TABLE SMITH (#3284) ═════
+// The table editor's COMPILER — the #3103 contract made playable: the player
+// composes a cabinet from the primitive set the engine already knows, and this
+// function turns that layout into a full table object. Zero new physics: every
+// part compiles into existing data primitives, so the same 240 Hz sim, the
+// same scoring ladder, the same renderer run a player-built machine as-is.
+//
+// The chassis is fixed (outer shell, dome arc, launch lane + firelane + lock
+// tower + orbit + left outlane, flippers, plunger, drain) — it is the part a
+// cabinet must not get wrong. The player owns the PLAYFIELD FEATURES:
+//   bumpers  ≤3     slingL / slingR   bank (4-target drop bank)   magnet
+//
+// compileTable(def) is pure, deterministic and total: it ALWAYS returns the
+// geometry (the editor paints the draft), plus `error` — a short all-caps
+// reason — when the layout is illegal to play. pinballcheck pins the legality
+// boundary, the determinism and that every reference layout plays: leaves the
+// lane, scores something, and never wedges (BALL SEARCH, engine-level, is the
+// no-stuck guarantee every custom table inherits).
+//
+// Zones are authored so legality is checkable, not vibes:
+//  • bumpers ride inside the dome — the arc's ellipse shrunk by post+ball+2 —
+//    clamped clear of the orbit channel (x>82) and the firelane column (x<268),
+//    pairwise far enough apart for a ball to thread (≥54 between centres).
+//  • slings anchor in their half; the tip is the stock 53×48 run, and the tip
+//    stops short of the flipper gap's centre line (left tip ≤150 / right tip
+//    ≥210) so flippers are always reachable. Right anchors clear the firelane.
+//  • the bank stays between dome and slings (y 210..290), span inside the
+//    rails; magnet keeps clear of lane, tower, guides and its neighbours.
+
+export const SMITH_LIMITS = {
+    bumperMax: 3, bumperR: 15, bumpGap: 54,          // dome ellipse rx/ry 144/124
+    domX: [82, 268], domY: [70, 270],                // clamps vs channel + firelane
+    bankX: [128, 220], bankY: [210, 290], bankSpan: 72,
+    slingX: { L: [73, 97], R: [263, 287] }, slingY: [380, 470],
+    slingRun: 53, slingDrop: 48,
+    magX: [70, 286], magY: [250, 470], magNear: 38,  // vs bumper centre; 26 vs bank/sling/guide
+};
+
+// Coerce untrusted JSON (localStorage) into a clean def; drops junk entries.
+export function sanitizeDef(raw) {
+    const ok = (v) => Array.isArray(v) && v.length === 2 && Number.isFinite(v[0]) && Number.isFinite(v[1]);
+    const def = { name: '', bumpers: [], slingL: null, slingR: null, bank: null, magnet: null };
+    if (!raw || typeof raw !== 'object') return def;
+    if (typeof raw.name === 'string') def.name = raw.name.slice(0, 14).replace(/[^\w '!.+]/g, '').toUpperCase();
+    if (Array.isArray(raw.bumpers)) def.bumpers = raw.bumpers.filter(ok).map((p) => [p[0], p[1]]).slice(0, SMITH_LIMITS.bumperMax);
+    if (ok(raw.slingL)) def.slingL = [raw.slingL[0], raw.slingL[1]];
+    if (ok(raw.slingR)) def.slingR = [raw.slingR[0], raw.slingR[1]];
+    if (ok(raw.bank)) def.bank = [raw.bank[0], raw.bank[1]];
+    if (ok(raw.magnet)) def.magnet = [raw.magnet[0], raw.magnet[1]];
+    return def;
+}
+
+const ptSeg = (px, py, x1, y1, x2, y2) => {
+    const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / l2)) : 0;
+    return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
+};
+
+// Geometry that the editor paints whether or not the layout is legal; the
+// strict pass adds the legality verdict on top of the same shape.
+export function compileTable(defRaw) {
+    const def = sanitizeDef(defRaw);
+    const L = SMITH_LIMITS;
+    const slings = [];
+    if (def.slingL) slings.push({ x1: def.slingL[0], y1: def.slingL[1], x2: def.slingL[0] + L.slingRun, y2: def.slingL[1] + L.slingDrop });
+    if (def.slingR) slings.push({ x1: def.slingR[0], y1: def.slingR[1], x2: def.slingR[0] - L.slingRun, y2: def.slingR[1] + L.slingDrop });
+    const targets = def.bank
+        ? [0, 1, 2, 3].map((i) => ({ x1: def.bank[0] - L.bankSpan + i * 36, x2: def.bank[0] - L.bankSpan + i * 36 + 30 }))
+        : [];
+    const tb = {
+        id: 'my-table',
+        label: def.name || 'MY TABLE',
+        balls: TABLE.balls,
+        walls: TABLE.walls,                       // chassis: shared, read-only
+        arc: TABLE.arc,
+        bumpers: def.bumpers.map((p) => ({ x: p[0], y: p[1], r: L.bumperR })),
+        slings,
+        targets,
+        targetY: def.bank ? def.bank[1] : 999,   // no bank → off-field (loops over [])
+        outlaneGuide: TABLE.outlaneGuide,
+        spinner: TABLE.spinner,
+        kicker: TABLE.kicker,
+        kb: TABLE.kb,
+        rampRollovers: TABLE.rampRollovers,
+        laneRollovers: TABLE.laneRollovers,
+        laneX: TABLE.laneX,
+        lock: TABLE.lock,
+        lane: TABLE.lane,
+        mbKick: TABLE.mbKick,
+        saveTicks: TABLE.saveTicks,
+        orbit: TABLE.orbit,
+        magnet: def.magnet ? { x: def.magnet[0], y: def.magnet[1], r: 10, field: 24, hold: 72, pull: 1500 } : null,
+        flippers: TABLE.flippers,
+        plunger: TABLE.plunger,
+        drainY: TABLE.drainY,
+        tilt: TABLE.tilt,
+        rules: TABLE.rules,
+    };
+    tb.view = buildView(tb);
+    return { tb, error: validateSmith(def) };
+}
+
+function validateSmith(def) {
+    const L = SMITH_LIMITS;
+    if (!def.bumpers.length) return 'PLACE A BUMPER';
+    if (def.bumpers.length > L.bumperMax) return 'MAX 3 BUMPS';
+    for (const [x, y] of def.bumpers) {
+        if (x < L.domX[0] || x > L.domX[1] || y < L.domY[0] || y > L.domY[1]) return 'BUMPER OUT OF ZONE';
+        if (((x - 180) / 144) ** 2 + ((y - 160) / 124) ** 2 > 1) return 'BUMPER OUT OF DOME';
+    }
+    for (let i = 0; i < def.bumpers.length; i++) {
+        for (let j = i + 1; j < def.bumpers.length; j++) {
+            if (Math.hypot(def.bumpers[i][0] - def.bumpers[j][0], def.bumpers[i][1] - def.bumpers[j][1]) < L.bumpGap) return 'BUMPER OVERLAP';
+        }
+    }
+    const slingAnchors = [];
+    for (const [key, limit] of [['slingL', L.slingX.L], ['slingR', L.slingX.R]]) {
+        const s = def[key];
+        if (!s) continue;
+        // The zone clamp IS the flipper-gap law: left anchor ≤97 puts the tip
+        // (anchor + 53) at ≤150, right tip ≥210 — a 60 px centre corridor is
+        // always open and right anchors stay clear of the firelane wall.
+        if (s[0] < limit[0] || s[0] > limit[1] || s[1] < L.slingY[0] || s[1] > L.slingY[1]) return 'SLING OUT OF ZONE';
+        slingAnchors.push({ key, x: s[0], y: s[1], tipX: key === 'slingL' ? s[0] + L.slingRun : s[0] - L.slingRun, tipY: s[1] + L.slingDrop });
+    }
+    if (def.bank) {
+        const [cx, by] = def.bank;
+        if (cx < L.bankX[0] || cx > L.bankX[1] || by < L.bankY[0] || by > L.bankY[1]) return 'BANK OUT OF ZONE';
+    }
+    if (def.magnet && (def.magnet[0] < L.magX[0] || def.magnet[0] > L.magX[1] || def.magnet[1] < L.magY[0] || def.magnet[1] > L.magY[1])) return 'MAGNET OUT OF ZONE';
+    // cross-part clearance — the parts must leave the ball room to travel.
+    // (Zone clamps keep the bumper band above y=270 and slings below y=380,
+    // so bank↔sling and bumper↔sling cannot meet — no dead checks here.)
+    const near = (px, py, other) => Math.hypot(px - other[0], py - other[1]);
+    if (def.bank) {
+        const [cx, by] = def.bank;
+        const inSpan = (px) => Math.abs(px - cx) <= L.bankSpan + 19;
+        for (const [x, y] of def.bumpers) if (inSpan(x) && Math.abs(y - by) < 34) return 'BUMPER ON BANK';
+        if (def.magnet && inSpan(def.magnet[0]) && Math.abs(def.magnet[1] - by) < 26) return 'MAGNET ON BANK';
+    }
+    if (def.magnet) {
+        for (const [x, y] of def.bumpers) if (near(def.magnet[0], def.magnet[1], [x, y]) < L.magNear) return 'MAGNET ON BUMPER';
+        for (const s of slingAnchors) if (ptSeg(def.magnet[0], def.magnet[1], s.x, s.y, s.tipX, s.tipY) < 26) return 'MAGNET ON SLING';
+        if (ptSeg(def.magnet[0], def.magnet[1], TABLE.outlaneGuide.x1, TABLE.outlaneGuide.y1, TABLE.outlaneGuide.x2, TABLE.outlaneGuide.y2) < 26) return 'MAGNET ON GUIDE';
+    }
+    return null;
+}
+
+// Reference layouts — pinballcheck drives each one LIVE through the sim:
+// launch, score, drain, no wedge. They double as the editor's starting table.
+export const SMITH_REFS = {
+    nova: { name: 'NOVA RIDER', bumpers: [[115, 170], [180, 140], [245, 170]], slingL: [75, 452], slingR: [285, 452], bank: [180, 290], magnet: null },
+    lone: { name: 'LONE STAR', bumpers: [[180, 150]], slingL: null, slingR: [285, 440], bank: [150, 250], magnet: [240, 380] },
+    wild: { name: 'WILD TIDE', bumpers: [[100, 200], [180, 130], [262, 195]], slingL: [80, 400], slingR: [268, 460], bank: null, magnet: [180, 330] },
+};
