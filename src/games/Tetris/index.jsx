@@ -459,7 +459,7 @@ const TetrisGame = () => {
                 clear of the attract block's bottom anchor; z-index keeps the look) */}
             {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
             {screen === 'play' && !paused && (
-                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(4.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}
