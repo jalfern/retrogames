@@ -93,6 +93,59 @@ try {
     s = await smith(page)
     ok('the bumper cap answers over-cap placements', s.notice === 'MAX 3 BUMPS', s.notice)
 
+    // ---- #3290 item 6: grab-walk-drop — ONE idiom for every part ----
+    const walkTo = async (tx, ty) => {
+        for (let g = 0; g < 300; g++) {
+            const [cx, cy] = (await smith(page)).cursor
+            if (Math.abs(cx - tx) <= 3 && Math.abs(cy - ty) <= 3) return
+            if (cx > tx) await page.keyboard.press('ArrowLeft'); else if (cx < tx) await page.keyboard.press('ArrowRight')
+            if (cy > ty) await page.keyboard.press('ArrowUp'); else if (cy < ty) await page.keyboard.press('ArrowDown')
+        }
+    }
+    await walkTo(115, 170)
+    await page.keyboard.press('Space')
+    s = await smith(page)
+    ok('#3290 A on a bumper LIFTS it (grab) — off the draft, into the hand',
+        s.carry === 'bumper' && s.draft.bumpers.length === 2 && !s.draft.bumpers.some((p) => p[0] === 115 && p[1] === 170),
+        JSON.stringify({ carry: s.carry, b: s.draft.bumpers }))
+    await walkTo(115, 218)
+    await page.keyboard.press('Space')
+    s = await smith(page)
+    const moved = (s.draft.bumpers || []).find((p) => p[1] > 200) || []
+    ok('#3290 walking and pressing A DROPS the held bumper legal',
+        s.carry === null && s.draft.bumpers.length === 3 && s.valid && moved.length === 2,
+        JSON.stringify({ carry: s.carry, b: s.draft.bumpers }))
+    await walkTo(moved[0], moved[1])
+    await page.keyboard.press('Space')                       // grab it again
+    await keys(page, 'ArrowLeft', 20)                        // x clamps at 40 — out of the dome zone
+    await page.keyboard.press('Space')                       // an illegal drop spot refuses…
+    s = await smith(page)
+    ok('#3290 an illegal drop spot refuses and the part STAYS in hand',
+        s.notice === 'BUMPER OUT OF ZONE' && s.carry === 'bumper' && s.draft.bumpers.length === 2,
+        JSON.stringify({ n: s.notice, carry: s.carry }))
+    await page.keyboard.press('KeyB')                        // …and a tool change walks it home
+    s = await smith(page)
+    ok('#3290 switching tools puts the held part back where it was lifted',
+        s.tool === 'SLING' && s.carry === null && s.draft.bumpers.length === 3 && s.draft.bumpers.some((p) => p[0] === moved[0] && p[1] === moved[1]),
+        JSON.stringify({ tool: s.tool, carry: s.carry, b: s.draft.bumpers }))
+    await walkTo(75, 452)                                   // the SLING tool on the LEFT sling anchor
+    await page.keyboard.press('Space')
+    s = await smith(page)
+    ok('#3290 the SLING tool grabs an existing sling (the old instant-replace tool moves now)',
+        s.carry === 'slingL' && s.draft.slingL === null,
+        JSON.stringify({ carry: s.carry, sl: s.draft.slingL }))
+    await walkTo(180, 300)
+    await page.keyboard.press('Space')                       // mid-field: sling zone refuses
+    s = await smith(page)
+    ok('#3290 a carried sling pays the same zone law as a fresh placement',
+        s.notice === 'SLING OUT OF ZONE' && s.carry === 'slingL', s.notice)
+    await page.keyboard.press('KeyB')                       // tool change → home
+    s = await smith(page)
+    ok('#3290 the sling returns to its anchor on tool change',
+        s.carry === null && Array.isArray(s.draft.slingL) && s.draft.slingL[0] === 75 && s.draft.slingL[1] === 452,
+        JSON.stringify({ carry: s.carry, sl: s.draft.slingL }))
+    await walkTo(180, 300)
+
     // ---- wipe one, move it, rename, save ----
     for (let i = 0; i < 8 && (await smith(page)).tool !== 'WIPE'; i++) await page.keyboard.press('KeyB')
     ok('B cycles the part palette', (await smith(page)).tool === 'WIPE')

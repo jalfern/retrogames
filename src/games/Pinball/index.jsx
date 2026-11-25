@@ -95,6 +95,40 @@ function wipeTarget(d, cx, cy) {
     return best
 }
 
+// #3290 item 6 — ONE part idiom for the whole bench: grab, walk, drop. Every
+// part lives in the same def shape, so GRAB reads the exact reach wipeTarget
+// already uses for WIPE: whatever the eraser can touch, the hand can lift.
+// The tool decides which parts are liftable, the shared reach decides which is
+// under the cursor. (Before this, only bumpers moved — 18 px auto-shift — while
+// slings, the bank and the magnet replaced themselves where they stood, so the
+// same gesture meant two different things depending on the part.)
+const GRAB_KINDS = { BUMPER: ['bumper'], SLING: ['slingL', 'slingR'], BANK: ['bank'], MAGNET: ['magnet'] }
+const KIND_TOOL = { bumper: 'BUMPER', slingL: 'SLING', slingR: 'SLING', bank: 'BANK', magnet: 'MAGNET' }
+function grabTarget(d, cx, cy, tool) {
+    const kinds = GRAB_KINDS[TOOLS[tool]]
+    if (!kinds) return null
+    const w = wipeTarget(d, cx, cy)
+    if (!w) return null
+    const key = w[0] === 'bumper' ? 'bumper' : w[0]
+    if (!kinds.includes(key)) return null
+    return w
+}
+
+// The draft with the carried part back down at (cx,cy). Bumpers live in an
+// array, so the carried one is appended; single-part tools own their key.
+function dropDraft(d, kind, cx, cy) {
+    return kind === 'bumper'
+        ? { ...d, bumpers: [...d.bumpers, [cx, cy]] }
+        : { ...d, [kind]: [cx, cy] }
+}
+// Lifting a part off the draft (the mirror image of dropDraft).
+function liftDraft(d, w) {
+    const next = { ...d }
+    if (w[0] === 'bumper') next.bumpers = d.bumpers.filter((_, i) => i !== w[1])
+    else next[w[0]] = null
+    return next
+}
+
 // ?style=<kit> (#3259) — same URL-override idiom as TidyBot/QBert.
 const qStyle = () => { try { return new URLSearchParams(window.location.search).get('style') } catch { return null } }
 
@@ -242,7 +276,9 @@ const PinballGame = () => {
     // through sim.compileTable), the cursor/tool, and the test-drop redirect.
     const draftRef = useRef(myDef0 ? sanitizeDef(myDef0) : sanitizeDef(SMITH_REFS.nova))
     const draftVerRef = useRef(0)
-    const edRef = useRef({ tool: 0, cx: 180, cy: 190, notice: '', noticeT: 0, nameIdx: 0 })
+    // carry (#3290 item 6): the part lifted off the bench, {kind, from} —
+    // null while every part sits on the field.
+    const edRef = useRef({ tool: 0, cx: 180, cy: 190, notice: '', noticeT: 0, nameIdx: 0, carry: null })
     const testBackRef = useRef(false)
     const screenRef = useRef('attract')
     const [screen, setScreen] = useState('attract')
@@ -316,7 +352,7 @@ const PinballGame = () => {
     const openEditor = useCallback(() => {
         draftRef.current = sanitizeDef(CABS[2].def || SMITH_REFS.nova)
         draftVerRef.current += 1
-        edRef.current = { tool: 0, cx: 180, cy: 190, notice: '', noticeT: 0, nameIdx: 0 }
+        edRef.current = { tool: 0, cx: 180, cy: 190, notice: '', noticeT: 0, nameIdx: 0, carry: null }
         screenRef.current = 'edit'; setScreen('edit')
         sfxFor({ type: 'start' })
     }, [])
@@ -1217,6 +1253,15 @@ const PinballGame = () => {
         // never physics). The draft is validated on every placement, so what
         // the cursor shows green is exactly what TEST/SAVE accept.
         const saveMyFn = (def) => { try { localStorage.setItem(MY_STORE, JSON.stringify({ name: def.name, def })) } catch { /* private mode: memory is best-effort */ } }
+        // Leaving the tool while a part is in the hand puts it back where it
+        // was lifted from — the part is never lost to a tool change.
+        const carryHome = () => {
+            const ed = edRef.current
+            if (!ed.carry) return
+            draftRef.current = dropDraft(draftRef.current, ed.carry.kind, ed.carry.from[0], ed.carry.from[1])
+            draftVerRef.current += 1
+            ed.carry = null
+        }
         const startTest = () => {
             const r = compileTable(draftRef.current)
             if (r.error) { edRef.current.notice = r.error; edRef.current.noticeT = 100; sfxFor({ type: 'tiltwarn' }); return }
@@ -1258,6 +1303,27 @@ const PinballGame = () => {
                 screenRef.current = 'attract'; setScreen('attract')
                 demoRebuild()                              // the row shows the new machine self-playing
                 sfxFor({ type: 'save' }); return
+            }
+            // #3290 item 6: while a part is in the hand, A is the DROP — the
+            // same compile law a fresh placement pays, so green ghosts land.
+            if (ed.carry) {
+                const cand = dropDraft(d, ed.carry.kind, cx, cy)
+                const r = compileTable(cand)
+                if (r.error) { ed.notice = r.error; ed.noticeT = 90; sfxFor({ type: 'tiltwarn' }); return }
+                draftRef.current = cand; draftVerRef.current += 1
+                ed.carry = null
+                sfxFor({ type: 'target' }); return
+            }
+            // …otherwise A first tries to LIFT the part this tool builds that
+            // already sits under the cursor (grab-walk-drop, one idiom).
+            const g = grabTarget(d, cx, cy, ed.tool)
+            if (g) {
+                ed.carry = {
+                    kind: g[0] === 'bumper' ? 'bumper' : g[0],
+                    from: [...(g[0] === 'bumper' ? d.bumpers[g[1]] : d[g[0]])],
+                }
+                draftRef.current = liftDraft(d, g); draftVerRef.current += 1
+                sfxFor({ type: 'spinner' }); return
             }
             const cand = toolCandidate(d, cx, cy, ed.tool)
             if (!cand) return
@@ -1308,16 +1374,20 @@ const PinballGame = () => {
             ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#ffd97a'; ctx.shadowColor = '#ffd97a'; ctx.shadowBlur = 6
             ctx.fillText(`◆ ${d.name || 'MY TABLE'} ◆`, 180, 56)
             ctx.restore()
-            // ghost of the selected part at the cursor — green commits, red refuses
+            // ghost of the selected part at the cursor — green commits, red refuses.
+            // #3290 item 6: while a part is in the hand, the ghost IS the part —
+            // it rides the cursor and its colour is the verdict of the drop spot.
             const cx = Math.round(ed.cx / 2) * 2, cy = Math.round(ed.cy / 2) * 2
-            const cand = toolCandidate(d, cx, cy, ed.tool)
-            const placeable = cand && typeof cand !== 'string'
-            const ghostOk = placeable && compileTable(cand).error === null
+            const carried = ed.carry
+            const grabHint = carried ? null : grabTarget(d, cx, cy, ed.tool)
+            const cand = carried ? dropDraft(d, carried.kind, cx, cy) : toolCandidate(d, cx, cy, ed.tool)
+            const placeable = carried || grabHint || (cand && typeof cand !== 'string')
+            const ghostOk = placeable && (grabHint ? true : compileTable(cand).error === null)
             const gc = TOOLS[ed.tool] === 'WIPE' ? '#ff9f43' : ghostOk ? '#5dff9b' : '#ff3d5e'
-            ctx.save(); ctx.globalAlpha = 0.65; ctx.strokeStyle = gc; ctx.fillStyle = gc; ctx.lineWidth = 2
-            const T = TOOLS[ed.tool]
+            ctx.save(); ctx.globalAlpha = carried ? 0.85 : 0.65; ctx.strokeStyle = gc; ctx.fillStyle = gc; ctx.lineWidth = 2
+            const T = carried ? KIND_TOOL[carried.kind] : TOOLS[ed.tool]
             if (T === 'BUMPER') { ctx.beginPath(); ctx.arc(cx, cy, 15, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill() }
-            else if (T === 'SLING') { const dir = cx < 180 ? 1 : -1; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + 53 * dir, cy + 48); ctx.stroke() }
+            else if (T === 'SLING') { const dir = carried ? (carried.kind === 'slingL' ? 1 : -1) : (cx < 180 ? 1 : -1); ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + 53 * dir, cy + 48); ctx.stroke() }
             else if (T === 'BANK') { for (let i = 0; i < 4; i++) ctx.strokeRect(cx - 72 + i * 36, cy - 4, 30, 8) }
             else if (T === 'MAGNET') { ctx.beginPath(); ctx.arc(cx, cy, 10, 0, 7); ctx.stroke(); ctx.globalAlpha = 0.3; ctx.beginPath(); ctx.arc(cx, cy, 24, 0, 7); ctx.stroke() }
             else if (T === 'WIPE') { ctx.beginPath(); ctx.moveTo(cx - 9, cy - 9); ctx.lineTo(cx + 9, cy + 9); ctx.moveTo(cx + 9, cy - 9); ctx.lineTo(cx - 9, cy + 9); ctx.stroke() }
@@ -1350,6 +1420,9 @@ const PinballGame = () => {
             if (ed.noticeT > 0) {
                 ctx.fillStyle = '#ff3d5e'; ctx.shadowColor = '#ff3d5e'; ctx.shadowBlur = 8
                 ctx.fillText(`! ${ed.notice}`, 180, 482)
+            } else if (ed.carry) {
+                ctx.fillStyle = '#39e1ff'; ctx.shadowColor = '#39e1ff'; ctx.shadowBlur = 8
+                ctx.fillText(`HOLDING ${KIND_TOOL[ed.carry.kind]} · A DROP · B PART BRINGS IT BACK`, 180, 482)
             } else if (r.error) {
                 ctx.fillStyle = '#ff9f43'
                 ctx.fillText(`! ${r.error}`, 180, 482)
@@ -1384,6 +1457,7 @@ const PinballGame = () => {
             if (screenRef.current === 'edit') {
                 const ed = edRef.current
                 if (e.code === 'Escape' || e.code === 'QuestionMark' || e.key === '?' || e.code === 'Backquote') {
+                    carryHome()          // #3290: a part in the hand walks home, not out
                     screenRef.current = 'attract'; setScreen('attract'); e.preventDefault(); return
                 }
                 if (e.code === 'ArrowLeft') { ed.cx = Math.max(40, ed.cx - 6); e.preventDefault(); return }
@@ -1392,7 +1466,7 @@ const PinballGame = () => {
                 if (e.code === 'ArrowDown') { ed.cy = Math.min(468, ed.cy + 6); e.preventDefault(); return }
                 if (e.repeat) return
                 if (e.code === 'Space') { if (tapSpaceGuard) { tapSpaceGuard = false; e.preventDefault(); return } editAct(); e.preventDefault(); return }
-                if (e.code === 'KeyB' || e.code === 'ShiftLeft') { ed.tool = (ed.tool + 1) % TOOLS.length; sfxFor({ type: 'ratchet' }); e.preventDefault(); return }
+                if (e.code === 'KeyB' || e.code === 'ShiftLeft') { carryHome(); ed.tool = (ed.tool + 1) % TOOLS.length; sfxFor({ type: 'ratchet' }); e.preventDefault(); return }
                 return
             }
             if (e.repeat) return
@@ -1456,7 +1530,10 @@ const PinballGame = () => {
                 const pyE = (e.clientY - rectE.top) * (H / rectE.height)
                 if (pyE >= SMITH_BAR.y0 && pyE <= SMITH_BAR.y0 + SMITH_BAR.h && pxE >= SMITH_BAR.x0) {
                     const ti = Math.floor((pxE - SMITH_BAR.x0) / SMITH_BAR.bw)
-                    if (ti >= 0 && ti < TOOLS.length) { edRef.current.tool = ti; sfxFor({ type: 'ratchet' }) }
+                    if (ti >= 0 && ti < TOOLS.length) {
+                        if (ti !== edRef.current.tool) carryHome()   // #3290: a tool change puts the held part back
+                        edRef.current.tool = ti; sfxFor({ type: 'ratchet' })
+                    }
                 }
                 return
             }
@@ -1585,6 +1662,8 @@ const PinballGame = () => {
                     valid: compileTable(draftRef.current).error === null,
                     screen: screenRef.current,
                     saved: CABS[2].saved,
+                    // #3290 item 6: what's in the hand (null = every part on the field)
+                    carry: edRef.current.carry ? edRef.current.carry.kind : null,
                     tag: CABS[2].tag,
                     sel: cabRef.current,
                     tbId: gsRef.current.table.id,
