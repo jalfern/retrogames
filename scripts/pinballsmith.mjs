@@ -223,6 +223,80 @@ try {
     s = await smith(page)
     ok('the cabinet survives a reload', s.saved === true && s.tag === keepName, s.tag)
 
+
+    // ---- #3359: the garage — 3 slots, 1/2/3 keys + persisted choice + legacy migration ----
+    await keys(page, 'ArrowRight', 2)                   // the smith card is where the garage answers
+    let g = await smith(page)
+    ok('the garage boots slot 0 with the saved cabinet',
+        g.slot === 0 && g.slots[0].saved === true && g.saved === true && g.tag === keepName,
+        JSON.stringify({ slot: g.slot, tag: g.tag }))
+
+    // digit keys move the card to another slot (the smith draft is NOT reset)
+    await page.keyboard.press('Digit3')
+    await wait(150)
+    g = await smith(page)
+    ok('Digit3 switches the card to slot 2 (empty)',
+        g.slot === 2 && g.saved === false && g.tag === 'DESIGN YOUR OWN' && g.slots[2].saved === false && g.slots[0].saved === true,
+        JSON.stringify({ slot: g.slot, saved: g.saved, tag: g.tag }))
+
+    // empty slot: START opens the bench on the NOVA default; SAVE lands in slot 2
+    await page.keyboard.press('Space')
+    await wait(120)
+    g = await smith(page)
+    ok('START on the empty slot opens the bench (nova draft)',
+        g.screen === 'edit' && g.valid === true && g.slot === 2,
+        JSON.stringify({ screen: g.screen, valid: g.valid, slot: g.slot }))
+    for (let i = 0; i < 10 && (await smith(page)).tool !== 'SAVE'; i++) await page.keyboard.press('KeyB')
+    await page.keyboard.press('Space')                        // SAVE
+    await wait(200)
+    g = await smith(page)
+    ok('SAVE lands in the current slot (2)',
+        g.screen === 'attract' && g.slot === 2 && g.saved === true && g.tag === 'NOVA RIDER' && g.slots[2].saved === true,
+        JSON.stringify({ screen: g.screen, saved: g.saved, tag: g.tag, slot: g.slot }))
+
+    // back to slot 0 — slot 2 stays saved under its per-slot key
+    await page.keyboard.press('Digit1')
+    await wait(150)
+    g = await smith(page)
+    ok('Digit1 switches back to slot 0 (slot 2 stays saved)',
+        g.slot === 0 && g.tag === keepName && g.saved === true && g.slots[2].saved === true,
+        JSON.stringify({ slot: g.slot, tag: g.tag }))
+
+    // per-slot keys + the persisted slot choice
+    const stored = await page.evaluate(() => ({
+        slot2: JSON.parse(localStorage.getItem('retrogames.pinball.cab.v1:2') ?? 'null'),
+        slot0: JSON.parse(localStorage.getItem('retrogames.pinball.cab.v1:0') ?? 'null'),
+        sel: JSON.parse(localStorage.getItem('retrogames.pinball.slot') ?? 'null'),
+        legacy: localStorage.getItem('retrogames.pinball.mytable.v1'),
+    }))
+    ok('SAVE writes slot 2 under its per-slot key (name from the def)',
+        stored.slot2 && stored.slot2.name === 'NOVA RIDER' && stored.slot2.def && stored.slot2.def.name === 'NOVA RIDER' && stored.slot2.def.bumpers.length === 3,
+        JSON.stringify(stored.slot2 && { name: stored.slot2.name, bumpers: stored.slot2.def && stored.slot2.def.bumpers.length }))
+    ok('the slot choice persists at retrogames.pinball.slot',
+        stored.sel && stored.sel.slot === 0, JSON.stringify(stored.sel))
+    ok('slot 0 is still saved on disk', stored.slot0 && stored.slot0.name === keepName, JSON.stringify(stored.slot0 && { name: stored.slot0.name }))
+    ok('the smith never writes the legacy blob', stored.legacy === null, stored.legacy)
+
+    // one-shot legacy migration: legacy blob → EMPTY slot 0 (raw name ignored, blob kept)
+    await page.evaluate(() => {
+        localStorage.clear()
+        const draft = window.__pinballTest.smith().draft
+        localStorage.setItem('retrogames.pinball.mytable.v1',
+            JSON.stringify({ name: 'RAW NAME', def: { ...draft, name: 'LEGACY SMITH' } }))
+    })
+    await page.reload()
+    await page.waitForFunction('window.__pinballTest', { timeout: 20000 })
+    await wait(150)
+    g = await smith(page)
+    ok('the legacy blob migrates one-shot into empty slot 0 (def.name wins, not the raw name)',
+        g.slot === 0 && g.saved === true && g.tag === 'LEGACY SMITH'
+        && g.slots[0].saved === true && g.slots[1].saved === false && g.slots[2].saved === false,
+        JSON.stringify({ slot: g.slot, tag: g.tag, s0: g.slots[0].saved, s1: g.slots[1].saved, s2: g.slots[2].saved }))
+    const legacyBlob = await page.evaluate(() => localStorage.getItem('retrogames.pinball.mytable.v1'))
+    ok('the legacy blob survives the migration (never deleted)', !!legacyBlob, legacyBlob)
+    const migratedKey = await page.evaluate(() => JSON.parse(localStorage.getItem('retrogames.pinball.cab.v1:0') ?? 'null'))
+    ok('the migration writes the per-slot key', migratedKey && migratedKey.name === 'LEGACY SMITH', JSON.stringify(migratedKey && { name: migratedKey.name }))
+
         // ---- #3290 item 4: nearest-centre seams and the phone tap path ----
     const seam = await page.evaluate(() => {
         const r = document.querySelector('canvas').getBoundingClientRect()

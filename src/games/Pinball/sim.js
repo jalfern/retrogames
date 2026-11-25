@@ -1249,7 +1249,7 @@ export function compileTable(defRaw) {
     return { tb, error: validateSmith(def) };
 }
 
-function validateSmith(def) {
+export function validateSmith(def) {
     const L = SMITH_LIMITS;
     if (!def.bumpers.length) return 'PLACE A BUMPER';
     if (def.bumpers.length > L.bumperMax) return 'MAX 3 BUMPS';
