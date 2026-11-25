@@ -10,12 +10,18 @@ try {
     await page.waitForFunction('window.__game', { timeout: 20000 })
     const out = []
     const ok = (n, c, x = '') => { out.push(`${c ? 'PASS' : 'FAIL'} ${n} ${x}`) }
+    const STEP_MIN = 3   // eighths expected in ~700ms at real speed, halved for slow CI Chrome
 
     ok('boots clean', errors.length === 0, errors.join(';'))
     const attract = await page.evaluate(() => window.__game.state())
     await new Promise(r => setTimeout(r, 1200))
     const attract2 = await page.evaluate(() => window.__game.state())
     ok('attract skates on its own', attract2.tick > attract.tick + 30 && attract.phase === 'play' && attract.attract === true, `${attract.tick}→${attract2.tick} phase=${attract.phase} speed=${attract.speed}`)
+    // #3167: the music bed ticks with the sim clock (its scheduler position)
+    const bedA = await page.evaluate(() => window.__grindTest.state().bed)
+    await new Promise(r => setTimeout(r, 700))
+    const bedB = await page.evaluate(() => window.__grindTest.state().bed)
+    ok('music bed runs in attract', bedB > bedA + STEP_MIN, `bed ${bedA}→${bedB}`)
     const res = await page.evaluate(async () => {
         const g = window.__game
         const zero = g.reset(7)
@@ -56,6 +62,11 @@ try {
     const rp = await page.evaluate(() => window.__grindTest.state())
     ok('run over shows the replay', rp.screen === 'replay' && !!rp.replay && rp.cam === 'replay',
         `cam=${rp.cam} i=${rp.replay ? rp.replay.i : '-'}/${rp.replay ? rp.replay.n : '-'}`)
+    // #3167: the replay runs silent — the bed scheduler stands still
+    const bedR1 = rp.bed
+    await new Promise(r => setTimeout(r, 350))
+    const bedR2 = await page.evaluate(() => window.__grindTest.state())
+    ok('bed stands still through the replay', bedR2.screen === 'replay' && bedR2.bed === bedR1, `bed ${bedR1}→${bedR2.bed}`)
     await page.keyboard.press('Space')   // skip the replay
     await new Promise(r => setTimeout(r, 250))
     let ov = await page.evaluate(() => window.__grindTest.state())
