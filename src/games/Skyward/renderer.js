@@ -442,6 +442,34 @@ void main(){
         const prop = B(g, new THREE.BoxGeometry(3.2, 0.12, 0.16), 0x333a44, 0, 0, 3.3)
         B(g, new THREE.BoxGeometry(0.5, 0.9, 0.5), 0x2c3038, 0, -0.75, -1.2)
         g.userData.prop = prop
+        // #3375 — gear, renderer-only (the sim never hears about it). Two
+        // mains at the wing roots, a nose under the cowl: a strut that
+        // stretches from the attach point with a wheel on the tip. The
+        // render loop springs gearT 0→1 on approach (and on any grounded
+        // hull), so a rollout reads as a machine with ground contact and
+        // liftoff retracts her away.
+        const gearMat = new THREE.MeshLambertMaterial({ color: 0x2c3038 })
+        const gearTire = new THREE.MeshLambertMaterial({ color: 0x191c22 })
+        const gearHub = new THREE.MeshLambertMaterial({ color: 0x9aa0aa })
+        const mkGear = (x, z, strutLen, wheelR) => {
+            const mount = new THREE.Group()
+            mount.position.set(x, -0.3, z)
+            const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 1, 6), gearMat)
+            const wheel = new THREE.Group()
+            const tire = new THREE.Mesh(new THREE.CylinderGeometry(wheelR, wheelR, 0.2, 12), gearTire)
+            tire.rotation.z = Math.PI / 2
+            const hub = new THREE.Mesh(new THREE.CylinderGeometry(wheelR * 0.45, wheelR * 0.45, 0.24, 8), gearHub)
+            hub.rotation.z = Math.PI / 2
+            wheel.add(tire, hub)
+            mount.add(strut, wheel)
+            mount.visible = false
+            g.add(mount)
+            return { mount, strut, wheel, strutLen, wheelR }
+        }
+        g.userData.gear = {
+            mains: [mkGear(-1.15, -0.3, 1.02, 0.27), mkGear(1.15, -0.3, 1.02, 0.27)],
+            nose: mkGear(0, 2.05, 0.85, 0.22),
+        }
         // #3300 item 2 — engine work gets a tell. Twin exhaust streaks off the
         // lower cowl: short dark pipes at the ports, and behind each an
         // additive flame-cone that the render loop stretches, brightens and
@@ -529,6 +557,8 @@ void main(){
     scene.add(pts)
     let pHead = 0
     let dustTick = 0 // #3331 — rollout dust emission rate limiter (view-side only)
+    // #3375 — the gear's spring state (renderer-only, lives in the frame loop)
+    let gearT = 0, gearV = 0, gearLocked = false
     const burst = (x, y, z, color = [0.9, 0.97, 1.0], n = 18, up = 6) => {
         for (let i = 0; i < n; i++) {
             const j = pHead++ % PN
@@ -696,6 +726,35 @@ void main(){
                 ex.mat.opacity = Math.min(0.75, load * (0.3 + 0.45 * load))
                 ex.mat.color.setRGB(1, 0.48 + 0.42 * load, 0.2 + 0.55 * load)
             }
+        }
+        // #3375 — the gear spring. Down-and-lock on approach or any grounded
+        // hull, retracted away after liftoff/abort. Renderer-only, never
+        // hashed. The lock gets a small puff of asphalt when the hull is
+        // down — the spring itself already overshoots into a bounce.
+        const gear = c.userData.gear
+        if (gear) {
+            const floorY = Math.max(g.world.terrainHeight(g.p.x, g.p.z), g.world.waterHeightAt(g.p.x, g.p.z, t))
+            const altAgL = g.p.y - floorY
+            const target = g.craft === 'plane' && g.respawnT <= 0 && g.ditchT <= 0
+                && (g.ground || (g._depart <= 0 && altAgL < 12)) ? 1 : 0
+            const dtC = Math.min(dt, 1 / 30)
+            gearV += (64 * (target - gearT) - 9 * gearV) * dtC
+            gearT += gearV * dtC
+            const vis = gearT > 0.03
+            const spin = t * (6 + g.speed * 0.8)
+            for (const gr of [...gear.mains, gear.nose]) {
+                gr.mount.visible = vis
+                if (!vis) continue
+                const L = gr.strutLen * gearT
+                gr.strut.scale.y = L
+                gr.strut.position.y = -L / 2
+                gr.wheel.position.y = -L - gr.wheelR
+                gr.wheel.rotation.x = spin
+            }
+            if (target === 1 && !gearLocked && gearT > 0.93) {
+                gearLocked = true
+                if (g.ground || altAgL < 1.5) burst(g.p.x, floorY + 0.15, g.p.z, [0.85, 0.8, 0.64], 6, 1.3)
+            } else if (target === 0) gearLocked = false
         }
         if (g.craft === 'belt') {
             const fl = c.userData.flame
