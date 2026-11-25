@@ -12,7 +12,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL } from './sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, REPLAY_MAX, REPLAY_MIN, replayWorthy, betterLine } from './sim.js'
 import { botPad, makeBot } from './planner.js'
 import { STEP, bedVoices, landThud } from './music.js'
 import { buildPark, buildSky, buildLetters, buildGems, buildRoofLine, buildSkater, poseSkater, buildParticles, buildSecretHint, emit, burst, stepParticles } from './art.js'
@@ -37,6 +37,7 @@ const MESSAGES = [
     'EACH UNIQUE TRICK IN THE LINE RAISES THE MULTIPLIER',
     'BAIL AND THE LINE IS FORFEIT — BANK IT CLEAN',
     'GEMS +100 · CARRY SPEED UP THE SOUTH WALL — THE ROOF LINE PAYS',
+    'A SHORT LINE WITH LETTERS STILL GETS ITS REPLAY',
 ]
 
 const GrindCityGame = () => {
@@ -46,6 +47,7 @@ const GrindCityGame = () => {
     const [paused, setPaused] = useState(false)
     const [mode, setMode] = useState('run')
     const [result, setResult] = useState(null)
+    const [best, setBest] = useState(null)   // #3374: {score, letters, won} — attract card memory
     const pausedRef = useRef(false)
     const screenRef = useRef('attract')
     const modeRef = useRef('run')
@@ -58,6 +60,7 @@ const GrindCityGame = () => {
         gem: { current: null }, cut: { current: null }, callout: { current: null },
         manual: { current: null },
         speed: { current: null },
+        near: { current: null },
     }).current
 
     useEffect(() => {
@@ -106,12 +109,14 @@ const GrindCityGame = () => {
         // ends, the sim re-steps from the SAME seed with those words — sim.js
         // is deterministic (rng derives from state), so the replay is
         // byte-identical to the live line (grindcheck proves it).
-        const REPLAY_MAX = 600   // last 10 s of the line
-        const REPLAY_MIN = 120   // shorter than 2 s of skating: skip the replay
+        // REPLAY_MAX/REPLAY_MIN moved to sim.js (#3374) — the trigger law and
+        // the cabinet now read one number, not two that can drift.
         let inputLog = []
         let replaySim = null, replayIdx = 0, replayAcc = 0, replayMode = false
         let pendingResult = null
         let replaySpeed = 1
+        let replayNear = false   // #3374: replayed line was under the 2 s floor (letters saved it)
+        let bestLine = null      // #3374: session memory of the best run, shown on attract
         // #3325: the replay's presentation-only free cam — orbit the replay while it runs.
         // Never touches the sim or the log; arrows rotate, C toggles.
         let orbitOn = false
@@ -139,6 +144,7 @@ const GrindCityGame = () => {
             inputLog = []
             replaySim = null; replayIdx = 0; replayAcc = 0; replayMode = false
             pendingResult = null
+            replayNear = false
             orbitOn = false; orbitA = 0.6
             camMode = 'chase'; camCut = 0
         }
@@ -283,6 +289,7 @@ const GrindCityGame = () => {
             replayIdx = Math.max(0, inputLog.length - REPLAY_MAX)
             replayAcc = 0
             replaySpeed = 1
+            replayNear = inputLog.length < REPLAY_MIN   // #3374 — the banner tells the truth
             orbitOn = false; orbitA = 0.6
             replayMode = true
             screenRef.current = 'replay'
@@ -297,7 +304,12 @@ const GrindCityGame = () => {
             if (attractMode) { toAttract(); return }
             if (screenRef.current === 'over' || replayMode) return
             pendingResult = { score: sim.score, won: sim.won, goals: { ...sim.goalsDone }, best: sim.stats.bestChain, ...((j) => ({ gems: j.gems, gemTotal: j.gemTotal, gemsAll: j.gemsAll, secret: j.secret }))(stateOf(sim)) }
-            if (inputLog.length >= REPLAY_MIN) startReplay()
+            // #3374: every finished player run folds into the session best —
+            // the attract card will remember it.
+            const lettersGot = Object.keys(sim.letters).length
+            bestLine = betterLine(bestLine, { score: sim.score, letters: lettersGot, won: !!sim.won })
+            setBest(bestLine)
+            if (replayWorthy(inputLog.length, lettersGot)) startReplay()
             else finishOver()
         }
 
@@ -531,6 +543,9 @@ const GrindCityGame = () => {
                 hud.gem.current.style.color = st.gems > 0 ? '#7dffb0' : 'rgba(255,255,255,.35)'
             }
             if (hud.speed.current) hud.speed.current.textContent = `SPEED ${replaySpeed}\u00d7${orbitOn ? ' \u27f3 ORBIT' : ''}`
+            // #3374: a sub-2 s near-miss replay wears its own badge — the run was
+            // short because letters, not time, is what earned it the replay.
+            if (hud.near.current) hud.near.current.style.opacity = replayMode && replayNear ? 1 : 0
         }
         raf = requestAnimationFrame(frame)
 
@@ -540,15 +555,15 @@ const GrindCityGame = () => {
             seed: sim ? sim.seed : 0, phase: sim ? sim.phase : 'menu', won: sim ? !!sim.won : false,
         }))
 
-        // replay progress for harnesses: null | {i, n, pct}
+        // replay progress for harnesses: null | {i, n, pct, near}
         const replayProgress = () => replayMode
-            ? { i: replayIdx, n: inputLog.length, pct: inputLog.length ? Math.round(100 * replayIdx / inputLog.length) : 100, speed: replaySpeed }
+            ? { i: replayIdx, n: inputLog.length, pct: inputLog.length ? Math.round(100 * replayIdx / inputLog.length) : 100, speed: replaySpeed, near: replayNear }
             : null
 
         // ── DEV hooks + contract ────────────────────────────────────────────
         if (import.meta.env.DEV) {
             window.__grindTest = {
-                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100 }),
+                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100, best: bestLine && { ...bestLine } }),
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
@@ -583,6 +598,7 @@ const GrindCityGame = () => {
                 buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reset: (seed) => {
                     clearReplay()
+                    bestLine = null; setBest(null)   // #3374: a harness session starts with no memory
                     sim = makeGame(seed >>> 0, modeRef.current)
                     sim.phase = 'play'
                     bot = makeBot()
@@ -592,7 +608,7 @@ const GrindCityGame = () => {
                     return stateOf(sim)
                 },
                 tick: (p) => { simTick(p); return stateOf(sim) },
-                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), orbit: !!orbitOn }),
+                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), orbit: !!orbitOn, best: bestLine && { ...bestLine } }),
                 canvas: () => canvas,
             })
         }
@@ -646,6 +662,7 @@ const GrindCityGame = () => {
                             <span className="h-3.5 w-3.5 animate-pulse rounded-full bg-red-500 shadow-[0_0_12px_rgba(255,60,60,.9)]" />
                             <span className="text-2xl font-black italic tracking-[0.3em] text-white drop-shadow-[0_3px_0_rgba(0,0,0,.9)]">REPLAY</span>
                         </div>
+                        <div ref={hud.near} className="absolute left-1/2 top-[30%] -translate-x-1/2 whitespace-nowrap text-base font-black italic tracking-[0.2em] text-[#7dffb0] drop-shadow-[0_3px_0_rgba(0,0,0,.9)] sm:text-xl" style={{ opacity: 0 }}>NEAR MISS — LETTERS COUNT</div>
                         <div ref={hud.speed} className="absolute right-4 top-4 rounded border border-white/40 bg-black/50 px-3 py-1 text-lg font-black italic tracking-[0.2em] text-[#ffd35e] drop-shadow-[0_2px_0_rgba(0,0,0,.9)]" />
                         <div className="text-center text-sm font-bold tracking-[0.4em] text-white/85 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SPACE / TAP — SKIP · F — SPEED · C — ORBIT</div>
                     </div>
@@ -654,6 +671,11 @@ const GrindCityGame = () => {
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                         <div className="text-6xl font-black italic tracking-tight text-[#ffd35e] drop-shadow-[0_4px_0_rgba(0,0,0,.9)]">GRIND CITY</div>
                         <div className="mt-1 text-sm tracking-[0.5em] text-white/80">ONE PARK · LONG LINES</div>
+                        {best && (
+                            <div className={`mt-3 text-sm font-bold tracking-[0.25em] drop-shadow-[0_2px_0_rgba(0,0,0,.9)] ${best.won ? 'text-[#ffd35e]' : 'text-white/85'}`}>
+                                BEST LINE {best.score} PTS · {best.letters}/5{best.won ? ' ★ GOALS' : ''}
+                            </div>
+                        )}
                         <div className="mt-8 flex gap-3 text-sm font-bold tracking-widest">
                             <span className={`rounded border px-3 py-1 ${mode === 'run' ? 'border-[#ffd35e] text-[#ffd35e]' : 'border-white/30 text-white/40'}`}>◀ RUN 01</span>
                             <span className={`rounded border px-3 py-1 ${mode === 'free' ? 'border-[#ffd35e] text-[#ffd35e]' : 'border-white/30 text-white/40'}`}>FREE SKATE ▶</span>
