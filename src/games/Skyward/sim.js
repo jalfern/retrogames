@@ -896,9 +896,13 @@ export function windBed(craft, speed, stormS) {
     if (v <= 9) return { gain: 0, cut: 0 } // a slow float stays hushed
     const k = clamp((v - 9) / 10, 0, 1) // 19 m/s = full rush (the glider's top)
     const d = Number.isFinite(stormS) ? clamp(stormS, 0, 1) : 0
+    // #3362 item 3 — at the core both beds ducked ×0.5 and stayed bright, so
+    // wind and rain dueled in the same band and summed to mud. Rain owns the
+    // core: wind ducks to a third AND darkens (−90 Hz at depth) so what's
+    // left of the rush sits UNDER the rain's top end instead of beside it.
     return {
-        gain: +((0.003 + 0.024 * k * k) * (1 - 0.5 * d)).toFixed(4),
-        cut: Math.round(260 + 420 * k),
+        gain: +((0.003 + 0.024 * k * k) * (1 - 0.65 * d)).toFixed(4),
+        cut: Math.round(260 + 420 * k - 90 * d),
     }
 }
 

@@ -50,6 +50,29 @@ try {
   ok(!!canvas, 'cabinet renders a canvas')
   await shot('skyward-attract.png')
 
+  /* #3362 item 1 — attract vista at phone portrait: the orbit must widen its
+     fov for the narrow frame, and the painted cell may never be on screen
+     while the camera itself stands in the weather (old orbit passed ~80 m
+     from the cell centre and the shafts engulfed the title card). */
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForTimeout(900)
+  const vista = []
+  for (const tv of [0, 21, 42, 63]) { // SW · east extreme · SW · WNW extreme
+    await page.evaluate((t) => window.__skywardTest.attractT(t), tv)
+    await page.waitForTimeout(1300) // the orbit lerp converges well inside a second
+    vista.push(await page.evaluate(() => window.__skywardTest.attractCam()))
+    await shot(`skyward-vista-${tv}.png`)
+  }
+  ok(vista.every((v) => v && (v.stormS <= 0.05 || v.cell === false)),
+    `attract camera is never inside a painted cell (${vista.map((v) => v && `${v.stormS}/${v.cell ? 'shown' : 'hidden'}`).join(' · ')})`)
+  ok(vista.every((v) => v && v.fov >= 68),
+    `portrait vista opens its fov for the phone frame (${vista.map((v) => v && v.fov).join(', ')})`)
+  ok(vista.every((v) => v && Math.abs(v.y - 112) < 10 &&
+        Math.hypot(v.x, v.z + 40) > 360 && Math.hypot(v.x, v.z + 40) < 500),
+    `vista camera rides its arc (y≈112, R 360–500: ${vista.map((v) => v && `${v.x},${v.y},${v.z}`).join(' · ')})`)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.waitForTimeout(500)
+
   /* the canvas actually paints the world (not a black buffer) */
   const painted = await page.evaluate(() => {
     const c = document.querySelector('canvas')
@@ -594,6 +617,93 @@ try {
   await shot('skyward-dusk-abort-dir.png')
   const abort = await page.evaluate(() => window.__skywardTest.state())
   ok(abort.x < 140 && Math.abs(abort.z - 130) < 25, `east→west roll framed over the strip for the mirrored-set shot (hull ${abort.x.toFixed(0)},${abort.z.toFixed(0)} — see skyward-dusk-abort-dir.png)`)
+  /* #3362 item 5 — iPhone SE 320×568: the 480 tier's fixed sizes clipped here
+     (chips pinned to a max-width wider than the viewport; the banner needed
+     three lines at 17px). Every readout must stay on screen, off the pad and
+     chrome, and the longest callout must hold at two lines. */
+  await page.setViewportSize({ width: 320, height: 568 })
+  await page.waitForTimeout(700)
+  const se = await page.evaluate(() => {
+    const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height, sw: el.scrollWidth, cw: el.clientWidth, fs: parseFloat(getComputedStyle(el).fontSize) } }
+    const ovl = (a, b) => a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    const cvs = r(document.querySelector('canvas'))
+    const bad = []
+    if (!cvs || cvs.w < innerWidth - 4 || cvs.h < innerHeight - 4) bad.push(`canvas ${cvs && cvs.w}x${cvs.h} of ${innerWidth}x${innerHeight}`)
+    const pads = [...document.querySelectorAll('[data-vc]')].map(r).filter(Boolean)
+    const chrome = [...document.querySelectorAll('[aria-label="Arcade"], [aria-label="Feedback"], button[aria-label*="mute" i], button[aria-label*="sound" i], button[aria-label*="audio" i]')].map(r).filter(Boolean)
+    const chipsEl = document.querySelector('[data-h="chips"]')
+    const keepChips = chipsEl.textContent
+    chipsEl.textContent = 'RING 700 · SPOT 1000 · DROP 700 · ⚡ 700 · ✈ 700 · ✺ 700'
+    const readouts = ['speed', 'alt', 'score', 'chips'].map((k) => r(document.querySelector(`[data-h="${k}"]`)))
+    const hud = [...readouts, r(document.querySelector('[data-h="hint"]'))]
+    for (const h of hud) {
+      if (!h) { bad.push('missing readout'); continue }
+      if (h.x < -2 || h.x + h.w > innerWidth + 2) bad.push('readout offscreen')
+      if (h.sw > h.cw + 4) bad.push(`chips clipped (${h.sw}>${h.cw})`)
+      for (const p of [...pads, ...chrome]) if (ovl(h, p)) bad.push('readout under pad/chrome')
+    }
+    for (let i = 0; i < hud.length; i++) for (let j = i + 1; j < hud.length; j++) if (hud[i] && hud[j] && ovl(hud[i], hud[j])) bad.push('HUD collision')
+    chipsEl.textContent = keepChips
+    const bn = document.querySelector('[data-h="banner"]')
+    const keep = bn.textContent
+    bn.textContent = 'NO ENGINE — WIND IS YOUR THROTTLE'
+    const bb = r(bn)
+    const lines = Math.round(bb.h / (bb.fs * 1.5))
+    if (lines > 2) bad.push(`banner needs ${lines} lines at 320px`)
+    bn.textContent = keep
+    return { bad, lines, chipsW: null }
+  })
+  ok(se.bad.length === 0, `320px chrome column: canvas fills, chips uncut, banner ≤2 lines (${se.bad.join('; ') || 'clean'})`)
+  await shot('skyward-se320-hud.png')
+
+  /* #3362 item 6 — landscape phones 844×390: width escapes the 480 rule but
+     the pad reflows into a bottom band; the desktop bottom corners sat inside
+     it. Readouts must live in the top band, off pads/chrome, notices clear. */
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.waitForTimeout(700)
+  const landB = await page.evaluate(() => {
+    const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height, sw: el.scrollWidth, cw: el.clientWidth, fs: parseFloat(getComputedStyle(el).fontSize) } }
+    const ovl = (a, b) => a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    const cvs = r(document.querySelector('canvas'))
+    const bad = []
+    if (!cvs || cvs.w < innerWidth - 4 || cvs.h < innerHeight - 4) bad.push(`canvas ${cvs && cvs.w}x${cvs.h} of ${innerWidth}x${innerHeight}`)
+    const pads = [...document.querySelectorAll('[data-vc]')].map(r).filter(Boolean)
+    const chrome = [...document.querySelectorAll('[aria-label="Arcade"], [aria-label="Feedback"], button[aria-label*="mute" i], button[aria-label*="sound" i], button[aria-label*="audio" i]')].map(r).filter(Boolean)
+    const chipsEl = document.querySelector('[data-h="chips"]')
+    const keepChips = chipsEl.textContent
+    chipsEl.textContent = 'RING 700 · SPOT 1000 · DROP 700 · ⚡ 700 · ✈ 700 · ✺ 700'
+    const readouts = ['speed', 'alt', 'score', 'chips'].map((k) => r(document.querySelector(`[data-h="${k}"]`)))
+    const bn = r(document.querySelector('[data-h="banner"]'))
+    const tl = r(document.querySelector('[data-h="tell"]'))
+    const hint = r(document.querySelector('[data-h="hint"]'))
+    for (const h of [...readouts, hint, tl]) {
+      if (!h) { bad.push('missing readout'); continue }
+      if (h.x < -2 || h.x + h.w > innerWidth + 2) bad.push('readout offscreen')
+      if (h.sw > h.cw + 4) bad.push(`chips clipped (${h.sw}>${h.cw})`)
+      for (const p of [...pads, ...chrome]) if (ovl(h, p)) bad.push('readout under pad/chrome')
+      if (pads.length && h.y + h.h > innerHeight - 150) bad.push('readout in the pad band')
+    }
+    for (const a of [hint]) for (const b2 of readouts) if (a && b2 && ovl(a, b2)) bad.push('hint collides with gauge')
+    // banner/tell ride full-width centred boxes (slot b's #3370 tier) — the
+    // text itself is centred clear of the edge columns; skywardplay's own
+    // #3370 audit pins that longest text fits. Box-vs-column overlap here
+    // would be a false positive.
+    if (bn && tl && ovl(bn, tl)) bad.push('banner/tell collide')
+    if (hint && tl && ovl(hint, tl)) bad.push('hint/tell collide')
+    chipsEl.textContent = keepChips
+    const bnEl = document.querySelector('[data-h="banner"]')
+    const keep = bnEl.textContent
+    bnEl.textContent = 'NO ENGINE — WIND IS YOUR THROTTLE'
+    const bb = r(bnEl)
+    const lines = Math.round(bb.h / (bb.fs * 1.5))
+    if (lines > 1) bad.push(`landscape banner wraps to ${lines} lines`)
+    bnEl.textContent = keep
+    return { bad, lines }
+  })
+  ok(landB.bad.length === 0, `844×390 landscape: HUD in the top band, off pads/chrome, banner one line (${landB.bad.join('; ') || 'clean'})`)
+  await shot('skyward-landscape-hud.png')
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.waitForTimeout(400)
 } catch (e) {
   fails.push(`exception: ${e.message}`)
   console.log(`FAIL  exception: ${e.message}`)
