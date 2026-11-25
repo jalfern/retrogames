@@ -236,6 +236,8 @@ export function makeGame(seed, stage = 'sunny') {
         score: 0, done: false, rank: 1,
         startT: 0, lightPhase: 0,           // false-start lights: 3 reds then GO
         events: [],
+        attractFlipLap: 0,                  // #3281 bullet 5: one scripted attract flip per lap
+        attractFlipArmed: false,           // same — the armed-commit marker, lives across ticks
     }
     if (stage === 'storm') {
         let x = ((seed >>> 0) ^ 0xc0ffee) >>> 0
@@ -435,6 +437,10 @@ function stepCraft(gs, c, pad) {
                     c.score += HAND_PAY
                     if (c.id === 0) gs.score += HAND_PAY
                     if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'handstand', pts: HAND_PAY, n: c.hsPaid, id: c.id })
+                    // #3281: a fully-charged handstand (3/3 pays) banks the send's
+                    // sprint charge too — like the flip, the hardest commit pays
+                    // the meter, not just points (0.34 identical to the flip).
+                    if (c.hsPaid === HAND_CAP) c.boost = Math.min(1, c.boost + 0.34)
                 }
             }
         }
@@ -581,6 +587,34 @@ function rivalPad(gs, c) {
 // --- the attract/check autopilot (drives slot 0 — Kai) ------------------------
 // Same head as the rivals, tuned to Kai at full skill: it proves the course is
 // drivable and the harness can WIN the race headless.
+// --- the attract autopilot: one scripted flip per lap (#3281 bullet 5) ------
+// autoPad stays pure — it wins the pinned headless races (P1 on every seed,
+// both bays) and nothing else. The attract PREVIEW only wraps it: one committed
+// BACK FLIP per lap (brake alone, gas eased — the flip commit), so the menu
+// screen advertises the five air verbs without ever touching the harness stream.
+export function attractPad(gs) {
+    const pad = autoPad(gs)
+    const c = gs.crafts[0]
+    if (!c.airborne) {
+        // landed (or never launched): the committed flip of the lap is done
+        gs.attractFlipArmed = false
+        return pad
+    }
+    if (c.vy > 0 && gs.attractFlipLap !== c.lap) {
+        // fresh launch, new lap: commit the scripted flip — but persist it
+        // through the air, or autoPad re-running every tick would erase the
+        // brake mid-flip and the advertised trick never lands
+        gs.attractFlipLap = c.lap
+        gs.attractFlipArmed = true
+    }
+    if (gs.attractFlipArmed) {
+        pad.brake = true
+        pad.a = false // no flat-spin competing with the flip commit
+        pad.throttle = Math.min(pad.throttle, 0.4) // flip commit = brake alone
+    }
+    return pad
+}
+
 export function autoPad(gs) {
     const c = gs.crafts[0]
     const g = gs.course.gates

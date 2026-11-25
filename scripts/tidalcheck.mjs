@@ -86,6 +86,10 @@ if (MUT) {
         airhold: { from: "if (c.flipAng <= -HAND_VERT) return 'hold'", to: "if (c.flipAng <= 0.45) return 'hold'", note: 'hold misread on any wind-over' },
         // #3281: CPU handstands off — armed 3 gone (the pin above rides this).
         cpuhs: { from: 'armRoll < 0.45 ? 2 : armRoll < 0.70 ? 3 : 1', to: 'armRoll < 0.45 ? 2 : 1', note: 'armed 3 vanished — CPU handstands gone' },
+        // #3281: bullet 4 — the fully-charged handstand banks nothing.
+        handstcharge: { from: 'if (c.hsPaid === HAND_CAP) c.boost = Math.min(1, c.boost + 0.34)', to: 'if (c.hsPaid === HAND_CAP) c.boost = Math.min(1, c.boost + 0.0)', note: 'fully-charged handstand banks nothing' },
+        // #3281: bullet 5 — the attract pad runs the harness autopilot.
+        attractflip: { from: 'pad.brake = true', to: 'pad.brake = false', note: 'attract commits no scripted flip' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -97,7 +101,7 @@ if (MUT) {
 }
 
 const { WAVES, heightAt, seaGLSL, seaGLSLFront, seaUniforms, SEA_UNIFORMS, SEA_UNIFORMS_B, FRONT_UNIFORMS, frontUniforms, frontW, mixHeight, sunnySea, stormSea, omega, FRONT_SPEED } = await import('../src/games/TidalRush/water.js')
-const { makeGame, step, autoPad, stateOf, stateHash, LAPS, rainAt, windAt, windGust, RAIN_VIS, RAIN_DRAG, RAIN_PUSH, THRUST, DRAG, airPose } = await import('../src/games/TidalRush/sim.js')
+const { makeGame, step, autoPad, attractPad, stateOf, stateHash, LAPS, rainAt, windAt, windGust, RAIN_VIS, RAIN_DRAG, RAIN_PUSH, THRUST, DRAG, airPose } = await import('../src/games/TidalRush/sim.js')
 
 const run = (gs, maxS = 240, padFn = null) => {
     const events = []
@@ -452,6 +456,66 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('airPose: an airborne wind-over (flipAng 0.9) reads flip', airPose(p) === 'flip')
     p.flipAng = -1.30
     ok('airPose: an inverted hold (flipAng -1.30) reads hold', airPose(p) === 'hold')
+}
+
+// 6e. #3281 tail (bullets 4 + 5): a fully-charged handstand banks the send —
+// the same 0.34 the flip pays — and the attract preview commits ONE scripted
+// flip per lap (brake alone, gas eased, committed through the air) without
+// ever touching the harness stream (autoPad stays pure).
+{
+    const idleA = { throttle: 0, steer: 0, brake: false, a: false, b: false }
+    const flyA = (g, vy = 9) => {
+        for (let t = 0; t < 92; t++) step(g, idleA)      // wait out the start lights
+        const p = g.crafts[0]
+        p.airborne = true; p.vy = vy; p.y = heightAt(p.x, p.z, g.t, g.seaCur) + 4.5; p.speed = 12
+    }
+
+    // bullet 4: a 3/3 handstand banks the send (+0.34 — the flip's value).
+    const gH = makeGame(7); flyA(gH)
+    gH.crafts[0].boost = 0                              // pin the before-value
+    let evsH = []
+    for (let t = 0; t < 320 && gH.crafts[0].airborne; t++) {
+        step(gH, { ...idleA, brake: true, throttle: 1 })
+        evsH.push(...gH.events.splice(0))
+    }
+    ok('a FULL 3/3 handstand banks the sprint charge (+0.34 — like the flip)',
+        evsH.filter((e) => e.type === 'handstand').length === 3 && gH.crafts[0].boost >= 0.33)
+
+    // bullet 5: the attract pad commits the flip and — critically — the commit
+    // persists through the whole air (autoPad re-runs every tick and would
+    // erase the brake mid-flip), so the advertised flip actually pays.
+    const gA = makeGame(7); flyA(gA)
+    const pA = gA.crafts[0]
+    let commitTicks = 0, airFrames = 0
+    let evsA = []
+    for (let t = 0; t < 170; t++) {
+        const pad = attractPad(gA)
+        if (pA.airborne) {
+            airFrames++
+            if (pad.brake && !pad.a && pad.throttle <= 0.4 && gA.attractFlipArmed) commitTicks++
+        }
+        step(gA, pad)
+        evsA.push(...gA.events.splice(0))
+        if (!pA.airborne) break
+    }
+    ok('attract commits the scripted flip (brake alone, gas ≤0.4, spin released)',
+        airFrames > 0 && commitTicks > airFrames * 0.9)
+    ok('the committed attract flip pays on landing (a real flip, not wallpaper)',
+        evsA.some((e) => e.type === 'flip'))
+
+    // …and only ONE per lap: landed → the commit clears; a second air in the
+    // SAME lap never re-commits; a NEW lap re-arms the same verb. The live
+    // loop calls attractPad every tick, and the clear lives in the first
+    // call after the water — so the pin does the same.
+    attractPad(gA)
+    ok('a landed attract air disarms the commit', !gA.attractFlipArmed)
+    pA.airborne = true; pA.vy = 4; pA.speed = 12
+    const padSame = attractPad(gA)
+    ok('a second air in the SAME lap never re-commits (one flip per lap)',
+        !padSame.brake && !gA.attractFlipArmed)
+    pA.lap = 2
+    const padNew = attractPad(gA)
+    ok('a NEW lap re-arms the scripted flip', padNew.brake && gA.attractFlipArmed)
 }
 
 // 7. win: autoPad takes P1 on every seed on BOTH bays, sane times, bounded
