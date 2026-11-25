@@ -1,81 +1,68 @@
-# STATE — forge board snapshot (slot a, 2026-11-25 — THE PLAZA REMEMBERS)
+# STATE — forge board snapshot (slot b, 2026-11-25 — SKYWARD GO-AROUND)
 
 ## This session — one ship, landed
-- Warden TARGET **#3331** (skyward wheels-down tail) was REFUSED at claim:
-  slot b held it live (newest liveness 53 min, commits 10 min prior — b is
-  mid-build, correct refusal). Normal ladder: no steer, `next` #1712 is
-  waiting-jon, `game-queue` empty, feedback either waiting-jon or lane:qa,
-  and QA MASTER was live (no borrow). Flagship stage spent → NEVER-DRY.
-- Idle-kick answered `KICK TIDAL RUSH 0 weak`, but tidal's only candidate gap
-  ("Score HUD sits under the shared chrome pill at ?lite=1") is #3365 item 2
-  by another wording (both carved from #3348 item 3) — owned per the doubt
-  rule. Full-shelf recompute → **GRIND CITY, score 3** (three unowned README
-  gaps, zero QA issues naming it, unheld). Filed #3374, claimed, shipped
-  **`f699a24` (PR #3377)**; issue `shipped`+closed. #3376 (#3365 item 2)
-  landed from the other lane meanwhile — the doubt call read right.
-- Replay tail, all player-visible: **near-miss replays** — pure law
-  `replayWorthy(ticks, lettersGot)` (sim.js now owns REPLAY_MIN/MAX): ≥120
-  ticks OR ≥1 banked letter earns the replay, so a letters-in, dead-at-1 s
-  run watches its line, badged `NEAR MISS — LETTERS COUNT`; letterless short
-  runs unchanged. **Attract remembers** — `betterLine` (score → letters →
-  newer) folds every run into a session best; a full-window best banks its
-  seed+pad-log and attract re-rides it behind the title, wrapping at the log's
-  own end; `BEST LINE {pts} · {n}/5` chip, gold `★ GOALS`. No history keeps
-  the bot line. Saved/shared runs remains an honest gap (README rewritten).
+- Warden TARGET **#3331 wheels-down polish tail** claimed at the top (claim
+  ok, main green). Shipped **`2b083b6` (PR #3372)**, issue closed `shipped`.
+- Five items landed: **go-around law** (hot+shallow+straight over the strip
+  now BOUNCES — pure `planeGoAround`, 34.5–45 m/s window, banner `TOO HOT —
+  GO AROUND`, nothing banked; steep/crabbed/off-strip/missile keep #3319's
+  crash), **CLEAN ROLL** (rollout ≥12 m within 2 m of the dash pays +100 onto
+  the ✈ best; crabbed arrivals drift and can't fake it), **scuff tell**
+  (pure `scuffTell` → HUD gauge, `CRAB RISING` hint, RUNWAY board glows
+  hot), **grounded look** (low+nose-up posture, pressed shadow, mains dust
+  — renderer-only), **390px audit** of every new string.
+- **Item 6** (touch-and-go farm): do-nothing per the issue — best-only
+  banking already caps it. Filed as decided in the README.
+- Superseded one old pin ON PURPOSE: #3319's "36 m/s still crashes" was the
+  law #3331 asked to replace; rewrote it with steep/crabbed/missile controls
+  so the remaining crash surface stays pinned.
 
 ## Proof
-- grindcheck ALL GREEN (+10 pins: window edge, letters-either-side, garbage,
-  tie/newer cases, a REAL lettered-under-window sim situation, wiring) —
-  **13/13 mutants die** (new `nearmiss`, `bestline`, `bankline`).
-- gcdrive GREEN :5173 — near replay n=88 near=true, badge DOM opacity 1,
-  bot fallback on short-only history, attract re-rides seed 7 + says BEST
-  LINE, loop wraps without stalling, zero page errors. eslint + 3 scoped
-  gates + build green; main-ok green at claim and merge.
-- Prod verified: chunk `GrindCity-B_BLT9gs.js` carries `NEAR MISS`.
+- skywardcheck **158/158** (+13 pins) — **52/52 mutants die** (4 new). The
+  grace mutant caught a bug in MY pin first draft (`ci > gi` accepted
+  bounce-then-crash; shipper demands `ci === -1`) — proof the mutants earn
+  their keep.
+- Slot a merged #3369 mid-flight → conflicts across all five Skyward files;
+  rebased and the two lanes' laws coexist: **169/169** pins (their +11
+  included) and **56/56 mutants** at the merged head.
+- skywardplay green twice at :5178 incl. live bounce banner, gauge reading
+  tell 0.9, ✈800 clean roll, 390×844 string audit; zero console errors.
+  One advisory flake run (banner bleed into later sections when my section
+  shifted timing) → added a 1.5 s settle, rerun green (rule 3: rerun once).
+- eslint + lint:mario/fps/ai + build green. Hash spine untouched — replay
+  determinism pins hold (new `stateOf` keys additive).
 
 ## Harness lessons (worth one line each)
-- **A re-sim loop must wrap on its own terms**: how a run ENDED (bail, clock,
-  a QA-shortened clock) is not in the pad log, so attract rode seed 7 to tick
-  778 before the first live loop exposed it — the wrap keys off log length,
-  re-making from the banked seed.
-- A replay shorter than a few frames finishes before any drive can observe it:
-  near-miss legs need real-time coasting (~90 ticks), not a 2-tick synthetic.
-- `skipTo` a screen must check-before-press — an auto-finishing replay had
-  already left `replay` when the next Space would have overshoot to attract.
-- ownsGap's 40-char opened-word test misses same-defect-different-wording
-  (tidal HUD gap vs #3365 item 2) — the doubt rule is the backstop; recompute
-  the whole shelf before filing, and label the why-weakest line.
-- One full gcdrive run went red once (leg unisolated, cause never reproduced;
-  saved log clean on the immediate re-run). Rule-3: rerun once, move on — but
-  capture full drive output to a file, not just a tail, or the flake is
-  undebuggable after the fact.
+- A pin asserting "nothing bad happens" must pin the WHOLE window — index
+  comparisons like `ci > gi` silently bless late failures; demand absence.
+- Live-driving a banner whose event ordering matters: emit the reward AFTER
+  the named event (rollout after wheels/crew) so the cabinet's last word is
+  the reward — banner() is last-writer-wins on one channel.
+- skywardplay's single banner channel makes long scripts order-sensitive:
+  budget a settle wait when inserting sections between banner-heavy tests.
+- `planeStrip`-style helpers that exit ON touchdown can't test rollout —
+  give ground-phase scenarios their own run-until-crew loop.
+- Two lanes in one game = all-`UU` conflict day (#3310 vs #3331, both in
+  Skyward). Most hunks were both-add (imports, `let` decls): merge BOTH, then
+  let the merged harness settle who's right — 169/169 + 56/56 is the answer,
+  not eyeballs. Their sockPose shipped my QA-tail item 2 while I was filing
+  it: amend the fresh issue immediately.
 
 ## PLAYABLE on main right now
-- `/retrogames/grind-city` — near-miss replays badged, attract loops your best
-  line with the BEST LINE chip; plus roof line + secret bowl, rail grabs and
-  coping stalls, three cams + free orbit cam, the A-minor bed.
-- `/retrogames/skyward` — attract vista, painted zones, windsock, rich motor +
-  exhaust tell, glider wind-rush (bed tail #3353/#3361, strip tail #3369);
-  `/retrogames/tidal-rush` centre HUD flexes at phone widths (#3376), rider
-  jump/land moments, rain gameplay + rooms; `/retrogames/pinball` SOLO bed +
-  TABLE SMITH; galaga bee; mario-kart, ice-climber, marble-rush, comet-drift
-  pair, ssx, marble-madness, pacman, mario, minesweeper/garden-guard/homebody,
-  TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
-  spy-hunter, iron keep, missile, pucks, mines, zork, ultima, king's quest,
-  Joust, Q*bert, forge board.
+- `/retrogames/skyward` — + go-around bounces, ✈800 clean rolls, scuff
+  gauge, dust-and-lean rollout look; plus attract vista, rich motor, glider
+  wind-rush, belt parking, THUNDERPASS; `/retrogames/tidal-rush` FOAM V;
+  pinball SOLO bed; grind-city rail grabs; galaga bee; mario-kart,
+  ice-climber, marble-rush, comet-drift pair, ssx, marble-madness, pacman,
+  mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP
+  SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, missile,
+  pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `building` at close: **#3331 held by slot b (live)**. `building-qa`: #3359
-  (pinball garage). `game-queue` EMPTY. `next` #1712 waiting-jon (not work).
-- QA tails open: #3379 (new: grind-city replay-tail pass — badge widths, chip
-  legibility, wrap feel, loop sound), #3344/#3362/#3370 (skyward rounds),
-  #3336/#3365/#3368 (pinball/tidal), #3329, #3290 items 5–7, #3244/#2971
-  (waiting-jon).
-- Merges today incl. #3349–#3351, #3353/#3355/#3356/#3361/#3363, #3365→#3376,
-  #3367/#3369/#3371/#3373, **#3377 (mine)**. Never saw red main.
-- Next builder claim: ladder starts empty again — idle-kick LIVE and apply the
-  doubt rule before filing; grind-city's next unowned gap is "The bot's line
-  is fixed" (#1571 rung, bigger build) unless the queue refills first.
+- `game-queue` empty at my close; `next` #1712 waiting-jon (not work).
+- Holds: #3310 Skyward strip tail (slot a, building). building-qa: #3325,
+  #3313. QA tails open: #3375 (new, mine), #3362, #3342, #3329, #3290.
+- #3331 closes `shipped` with the merge; its parent tail #3319 already closed.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (AWAITING).
@@ -84,9 +71,11 @@
 - No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot a: dev :5173 stopped via scripts/devstop.sh; worktree
-  `~/Dev/retrogames-forge-grind-replay-tail` detached clean at origin/main by
-  mergeclean — remove when convenient.
-- Game merged this session ⇒ this STATE.md ships via its own docs/state PR;
-  parked at /tmp/forge/STATE.a.parked.md via statepark.
-- Time-box: ~1 h 30 m of 3 h at ship.
+- Slot b: dev :5178 still up (stop via scripts/devstop.sh). Worktrees
+  `…-forge-skyward-wheels-tail` (this lane, merged), plus old clean
+  squatters `…-forge-skyward-hud2` and `…-forge-skyward-bed` — remove when
+  convenient.
+- Game merged this session ⇒ STATE ships via its own docs/state PR; parked
+  at /tmp/forge/STATE.b.parked.md via statepark.
+- Time-box: ~4 h wall at handoff — the 3 h box was met at proof time; the
+  slot-a file collision (rebase + re-proof + slow Vercel) was the overage.
