@@ -299,6 +299,43 @@ void main(){
         padBands.push(band)
     }
     const bull = bullseyeTexture()
+    // #3302 — the second strip: an airfield on the south beach (Pilotwings'
+    // landing test in our keys). Readable from cruise height: dark band, white
+    // edge lines + piano keys at the threshold, centreline dashes, zone ticks
+    // where the score steps, windsock + ground board at the threshold.
+    {
+        const R = world.runway
+        const cx = (R.ax + R.bx) / 2, cz = (R.az + R.bz) / 2
+        const len = world.STRIP_LEN, wid = R.half * 2
+        const deck = world.terrainHeight(cx, cz) // the carve makes this exact
+        const asphalt = new THREE.Mesh(new THREE.BoxGeometry(len, 0.14, wid), new THREE.MeshLambertMaterial({ color: 0x3a3f47 }))
+        asphalt.position.set(cx, deck + 0.07, cz)
+        scene.add(asphalt)
+        const white = new THREE.MeshLambertMaterial({ color: 0xf2f4f5 })
+        const mark = (l, w, x, z) => {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(l, 0.06, w), white)
+            m.position.set(x, deck + 0.16, z)
+            scene.add(m)
+        }
+        mark(len - 1, 0.35, cx, cz - R.half + 0.35)
+        mark(len - 1, 0.35, cx, cz + R.half - 0.35)
+        for (let d = 14; d < len - 8; d += 16) mark(6, 0.5, R.ax + d, cz)
+        for (const off of [-4.5, -1.5, 1.5, 4.5]) mark(9, 1.1, R.ax + 5.5, cz + off) // piano keys
+        for (const f of [0.25, 0.5, 0.75]) mark(0.6, wid - 1.4, R.ax + f * len, cz) // zone ticks
+        { // windsock at the threshold — an airfield is nothing without one
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 5, 8), new THREE.MeshLambertMaterial({ color: 0xd9dde1 }))
+            pole.position.set(R.ax - 2, deck + 2.5, cz + R.half + 3)
+            scene.add(pole)
+            const sock = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.8, 10, 1, true), new THREE.MeshLambertMaterial({ color: 0xff8b3d, side: THREE.DoubleSide }))
+            sock.rotation.z = Math.PI / 2
+            sock.position.set(R.ax - 2 + 1.0, deck + 4.6, cz + R.half + 3)
+            scene.add(sock)
+            const board = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelSprite('RUNWAY', '#ffd23f'), transparent: true, depthWrite: false }))
+            board.scale.set(22, 5, 1)
+            board.position.set(R.ax - 3, deck + 2.4, cz - R.half - 4)
+            scene.add(board)
+        }
+    }
     const _targetMeshes = world.targets.map((t) => {
         const m = new THREE.Mesh(new THREE.CircleGeometry(6.5, 28), new THREE.MeshBasicMaterial({ map: bull, side: THREE.DoubleSide }))
         m.rotation.x = -Math.PI / 2
