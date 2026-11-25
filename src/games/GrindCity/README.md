@@ -13,10 +13,12 @@ the park and every trick name are ours.
 | `sim.js` | **pure rules** — `step(state, input)` advances one fixed tick; no DOM, no three.js, no randomness (a seeded run replays identically). Ground-following riding, ollie/grab/kickflip, manuals, rail auto-latch, combo scoring, bails, the S-K-A-T-E goals, run clock. |
 | `planner.js` | **the bot** — rule-based autopilot that follows waypoint bearings, times ollies off ramps and rails, and collects the letters. It drives attract mode *and* proves the park is winnable (`grindcheck` refuses to merge if the bot can't score a win). |
 | `art.js` | three.js scene — park mesh from `park.js`, sky + sun glare, rails, floating gold letters, the skater rig (`buildSkater`/`poseSkater`), particle sparks. |
-| `index.jsx` | cabinet — loop, input, HUD, sounds, camera, contract (`exposeGame`) and the `__grindTest` drive hooks. |
+| `index.jsx` | cabinet — loop, input, HUD, sounds, cameras (chase · fisheye action · replay), run-replay recorder (`packIn` log) and the `exposeGame` contract + `__grindTest` drive hooks. |
 
-Run: `npm run grindcheck` (Node, no browser). Deep-drive the cabinet with
-`DEV_PORT=5178 node scripts/lib/gcdrive.mjs`.
+Run: `npm run grindcheck` (Node, no browser — includes the input-log replay
+determinism proof and 3 mutants: letters, gap, replay). Deep-drive the cabinet
+with `DEV_PORT=5178 node scripts/lib/gcdrive.mjs` (also proves the REPLAY
+screen, the skip and the action-cam cut-in).
 
 ## Controls
 
@@ -47,10 +49,30 @@ multiplier; grinding and manuals tick per tick. Landing a chain banks it about
 0.6 s later (the blue flash). Letters are +500 each. **Win = all 5 letters +
 the gap clean before the clock dies.** Target for the harness: ≥6000.
 
+## Cameras and the run replay (#3225)
+
+Three cam modes, hard cuts between them (smoothing lives *inside* a mode;
+crossing is a snap + white flash + FOV punch — the Tony Hawk transition
+grammar):
+
+- **chase** — the everyday cam (FOV 72).
+- **action** — low, close, side-offset, FOV 96 while grinding, on a manual, or
+  airborne with a grab: the wide-angle + short-distance fisheye stretch.
+- **replay** — after a run ends, the last 10 s of the line plays back on its
+  own cam (closer, wider, slight side lead), half-speed while airborne.
+
+The replay is *re-simulated*, not recorded pixels: the cabinet logs one packed
+input word per played tick (`packIn`), and playback re-steps `step()` from the
+same seed — `sim.js` is deterministic (`rng` derives from state), so the replay
+is byte-identical to the live run. `grindcheck` proves it (hash-per-tick) and
+kills a mutant that lies in the log. Attract runs get no replay; Space/tap
+skips to the results; `state()` exposes `cam` + `replay: {i,n,pct}`.
+
 ## Honest gaps
 
-- **Camera** is a chase cam with smoothing and speed dolly, but no transition
-  cuts, no fisheye, no replays of the run.
+- **Replay is auto-only.** Last-10 s window, one cam, no speed toggle, free cam
+  or saved/shared runs; no replay of the letters-only near-misses shorter than
+  2 s, and none behind the attract title.
 - **One park, one line.** The park is replayable freely, but there are no
   optional second routes, secret areas or score-mode objects beyond the letters.
 - **Trick variety is board-rot based.** Spins/flip combos read from the real

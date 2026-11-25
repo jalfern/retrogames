@@ -12,7 +12,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { makeGame, step, stateOf, hashState, SCORE_GOAL } from './sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL } from './sim.js'
 import { botPad, makeBot } from './planner.js'
 import { buildPark, buildSky, buildLetters, buildSkater, poseSkater, buildParticles, emit, stepParticles } from './art.js'
 
@@ -47,6 +47,7 @@ const GrindCityGame = () => {
         score: { current: null }, time: { current: null }, combo: { current: null },
         msg: { current: null }, mult: { current: null }, flash: { current: null },
         letters: { current: null }, gap: { current: null }, tgt: { current: null },
+        cut: { current: null },
     }).current
 
     useEffect(() => {
@@ -86,6 +87,22 @@ const GrindCityGame = () => {
         let pumpCd = 0
         let lastSec = 999
 
+        // ── run replay (#3225) ──────────────────────────────────────────────
+        // The cabinet logs one packed input word per played tick. When a run
+        // ends, the sim re-steps from the SAME seed with those words — sim.js
+        // is deterministic (rng derives from state), so the replay is
+        // byte-identical to the live line (grindcheck proves it).
+        const REPLAY_MAX = 600   // last 10 s of the line
+        const REPLAY_MIN = 120   // shorter than 2 s of skating: skip the replay
+        let inputLog = []
+        let replaySim = null, replayIdx = 0, replayAcc = 0, replayMode = false
+        let pendingResult = null
+
+        // camera: chase · fisheye action cam · replay cam — hard cuts between (#3225)
+        let camMode = 'chase'
+        let camCut = 0
+        const CAM_FOV = { chase: 72, action: 96, replay: 92 }
+
         const pad = () => ({
             left: !!(keysRef.current.ArrowLeft || keysRef.current.KeyA),
             right: !!(keysRef.current.ArrowRight || keysRef.current.KeyD),
@@ -95,8 +112,16 @@ const GrindCityGame = () => {
             b: !!(keysRef.current.ShiftLeft || keysRef.current.ShiftRight || keysRef.current.KeyB),
         })
 
+        const clearReplay = () => {
+            inputLog = []
+            replaySim = null; replayIdx = 0; replayAcc = 0; replayMode = false
+            pendingResult = null
+            camMode = 'chase'; camCut = 0
+        }
+
         const startGame = (m) => {
             modeRef.current = m
+            clearReplay()
             sim = makeGame(seedFromQuery() ?? freshSeed(), m)
             sim.phase = 'play'
             bot = makeBot()
@@ -109,6 +134,7 @@ const GrindCityGame = () => {
         }
 
         const toAttract = () => {
+            clearReplay()
             sim = makeGame(freshSeed(), 'run')
             sim.phase = 'play'
             bot = makeBot()
@@ -172,6 +198,9 @@ const GrindCityGame = () => {
             if (screenRef.current === 'attract') {
                 if (c === 'ArrowLeft' || c === 'ArrowRight') { cycleMode(c === 'ArrowRight' ? 1 : -1); return }
                 if (c === 'Space' || c.startsWith('Arrow') || /^Key/.test(c)) { startGame(modeRef.current); return }
+            } else if (screenRef.current === 'replay') {
+                if (c === 'Space') finishOver()
+                return
             } else if (screenRef.current === 'over') {
                 if (c === 'Space') toAttract()
                 return
@@ -182,6 +211,7 @@ const GrindCityGame = () => {
         const onPointer = () => {
             if (pausedRef.current) return
             if (screenRef.current === 'attract') startGame(modeRef.current)
+            else if (screenRef.current === 'replay') finishOver()
             else if (screenRef.current === 'over') toAttract()
         }
         window.addEventListener('keydown', onKeyDown)
@@ -196,17 +226,51 @@ const GrindCityGame = () => {
         const camPos = new THREE.Vector3(6, 4, -38)
         const camLook = new THREE.Vector3()
 
+        const finishOver = () => {
+            const res = pendingResult
+            clearReplay()
+            screenRef.current = 'over'
+            setResult(res)
+            setScreen('over')
+        }
+
+        const startReplay = () => {
+            replaySim = makeGame(sim.seed, sim.mode)
+            replaySim.phase = 'play'
+            replayIdx = Math.max(0, inputLog.length - REPLAY_MAX)
+            replayAcc = 0
+            replayMode = true
+            screenRef.current = 'replay'
+            setScreen('replay')
+            camCut = 1   // hard cut into the replay cam
+            AC.playSweep(900, 300, 0.25, 'triangle', 0.08)
+            AC.playTone(220, 0.1, 'square', 0.05)
+        }
+
         const checkEnd = () => {
             if (sim.phase !== 'over') return
             if (attractMode) { toAttract(); return }
-            if (screenRef.current === 'over') return
-            screenRef.current = 'over'
-            setResult({ score: sim.score, won: sim.won, goals: { ...sim.goalsDone }, best: sim.stats.bestChain })
-            setScreen('over')
+            if (screenRef.current === 'over' || replayMode) return
+            pendingResult = { score: sim.score, won: sim.won, goals: { ...sim.goalsDone }, best: sim.stats.bestChain }
+            if (inputLog.length >= REPLAY_MIN) startReplay()
+            else finishOver()
+        }
+
+        const stepReplay = () => {
+            if (!replaySim) { finishOver(); return }
+            // half-speed while airborne — the classic slo-mo on airs
+            replayAcc += replaySim.air ? 0.5 : 1
+            while (replayAcc >= 1 && replayIdx < inputLog.length) {
+                replayAcc -= 1
+                step(replaySim, unpackIn(inputLog[replayIdx++]))
+                replaySim.events.length = 0
+            }
+            if (replayIdx >= inputLog.length) finishOver()
         }
 
         const simTick = (inputOverride) => {
             const input = inputOverride || (attractMode ? botPad(stateOf(sim), bot) : pad())
+            if (!attractMode && screenRef.current === 'play') inputLog.push(packIn(input))
             step(sim, input)
             tickEvents.push(...sim.events.splice(0, sim.events.length))
             checkEnd()
@@ -217,14 +281,20 @@ const GrindCityGame = () => {
             acc += Math.min(now - last, 250)
             last = now
             while (acc >= FIXED_DT) {
-                if (!pausedRef.current && !contractHoldsLoop()) simTick()
+                if (!pausedRef.current && !contractHoldsLoop()) (replayMode ? stepReplay() : simTick())
                 acc -= FIXED_DT
                 clock += DT
             }
             const st = stateOf(sim)
+            const rst = replayMode && replaySim ? stateOf(replaySim) : null
+            const vst = rst || st                 // what the eye follows this frame
+            const actor = replayMode && replaySim ? replaySim : sim
 
-            // sounds
-            for (const e of tickEvents) sound(e)
+            // sounds (the replay runs silent — classic)
+            for (const e of tickEvents) {
+                sound(e)
+                if (e.startsWith('land:')) camCut = Math.max(camCut, 0.4)   // impact yank
+            }
             tickEvents = []
             if (pad().b && (st.slope > 0.18 || st.grinding) && pumpCd <= 0 && screenRef.current === 'play') {
                 AC.playTone(200 + st.speed * 20, 0.05, 'triangle', 0.05); pumpCd = 6
@@ -235,41 +305,57 @@ const GrindCityGame = () => {
             }
 
             // particles from state
-            if (st.grinding) {
-                const fx0 = Math.cos(st.heading), fz0 = Math.sin(st.heading)
-                emit(fx.sparks, st.x - fx0 * 0.3, st.y + 0.05, st.z - fz0 * 0.3, -fx0, -fz0, 2)
+            if (vst.grinding) {
+                const fx0 = Math.cos(vst.heading), fz0 = Math.sin(vst.heading)
+                emit(fx.sparks, vst.x - fx0 * 0.3, vst.y + 0.05, vst.z - fz0 * 0.3, -fx0, -fz0, 2)
             }
-            if (!st.air && st.speed > 6 && Math.abs(st.slope) > 0.35) {
-                emit(fx.spray, st.x, st.y + 0.1, st.z, -Math.sin(st.heading), Math.cos(st.heading), 1.5)
+            if (!vst.air && vst.speed > 6 && Math.abs(vst.slope) > 0.35) {
+                emit(fx.spray, vst.x, vst.y + 0.1, vst.z, -Math.sin(vst.heading), Math.cos(vst.heading), 1.5)
             }
             stepParticles(fx.sparks, DT); stepParticles(fx.spray, DT)
 
-            // letters: spin + hide collected
+            // letters: spin + hide collected (the replay watches them pop again)
             letterObjs.forEach((l, i) => {
                 l.sp.rotation.y += 0.03
-                const got = st.letters['SKATE'[i]]
+                const got = vst.letters['SKATE'[i]]
                 const target = got ? 0.001 : 1
                 const s0 = l.sp.scale.x + (target - l.sp.scale.x) * 0.2
                 l.sp.scale.setScalar(s0)
                 l.glow.intensity = got ? 0 : 0.6
             })
 
-            poseSkater(rig, sim, clock)
+            poseSkater(rig, actor, clock)
 
-            // chase cam
-            const hd = sim.heading
-            const back = attractMode ? 7.2 : 5.6
-            const tx = sim.x - Math.cos(hd) * back
-            const tz = sim.z - Math.sin(hd) * back
-            const ty = Math.max(sim.y + 2.4, sim.y + 1.4)
-            camPos.lerp(new THREE.Vector3(tx, ty, tz), 0.12)
-            camLook.lerp(new THREE.Vector3(sim.x + Math.cos(hd) * 3, sim.y + 0.7, sim.z + Math.sin(hd) * 3), 0.18)
+            // ── cameras: chase · fisheye action cam · replay cam (#3225) ────
+            // Smoothing lives INSIDE a cam mode; crossing modes is a hard cut
+            // (snap + white flash + FOV punch), the Tony Hawk transition grammar.
+            const grabAir = actor.air && actor.airTrick && actor.airTrick.grab
+            const wantAction = screenRef.current === 'play' && (vst.grinding || vst.manual || grabAir)
+            const wantMode = replayMode ? 'replay' : wantAction ? 'action' : 'chase'
+            if (wantMode !== camMode) { camMode = wantMode; camCut = 1 }
+            camCut = Math.max(0, camCut - DT * 5)
+            const hd = vst.heading
+            const back = camMode === 'action' ? 1.9 : camMode === 'replay' ? 3.4 : attractMode ? 7.2 : 5.6
+            const side = camMode === 'action' ? 2.7 : camMode === 'replay' ? 0.9 : 0
+            const high = camMode === 'action' ? 0.9 : camMode === 'replay' ? 1.15 : 2.4
+            const lead = camMode === 'action' ? 1.1 : camMode === 'replay' ? 2.2 : 3
+            const sx = -Math.sin(hd), sz = Math.cos(hd)   // stage right of the board
+            const tx = vst.x - Math.cos(hd) * back + sx * side
+            const tz = vst.z - Math.sin(hd) * back + sz * side
+            const ty = vst.y + high
+            const lookY = vst.y + (camMode === 'action' ? 0.55 : 0.7)
+            const k = camCut > 0.5 ? 1 : camMode === 'action' ? 0.3 : camMode === 'replay' ? 0.15 : 0.12
+            camPos.lerp(new THREE.Vector3(tx, ty, tz), k)
+            camLook.lerp(new THREE.Vector3(vst.x + Math.cos(hd) * lead + sx * side * 0.45, lookY, vst.z + Math.sin(hd) * lead + sz * side * 0.45), k * 1.5 > 1 ? 1 : k * 1.5)
             camera.position.copy(camPos)
             if (sim.camShake > 0.01) {
                 camera.position.x += (Math.random() - 0.5) * sim.camShake * 0.5
                 camera.position.y += (Math.random() - 0.5) * sim.camShake * 0.5
             }
             camera.lookAt(camLook)
+            const fov = CAM_FOV[camMode] + camCut * 10
+            if (Math.abs(fov - camera.fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix() }
+            if (hud.cut.current) hud.cut.current.style.opacity = camCut > 0.01 ? (camCut * 0.26).toFixed(3) : 0
             renderer.render(scene, camera)
 
             // HUD (imperative — no React state churn at 60 Hz)
@@ -296,10 +382,15 @@ const GrindCityGame = () => {
             seed: sim ? sim.seed : 0, phase: sim ? sim.phase : 'menu', won: sim ? !!sim.won : false,
         }))
 
+        // replay progress for harnesses: null | {i, n, pct}
+        const replayProgress = () => replayMode
+            ? { i: replayIdx, n: inputLog.length, pct: inputLog.length ? Math.round(100 * replayIdx / inputLog.length) : 100 }
+            : null
+
         // ── DEV hooks + contract ────────────────────────────────────────────
         if (import.meta.env.DEV) {
             window.__grindTest = {
-                state: () => stateOf(sim),
+                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current }),
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
@@ -323,6 +414,7 @@ const GrindCityGame = () => {
                 id: 'grind-city',
                 buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reset: (seed) => {
+                    clearReplay()
                     sim = makeGame(seed >>> 0, modeRef.current)
                     sim.phase = 'play'
                     bot = makeBot()
@@ -332,7 +424,7 @@ const GrindCityGame = () => {
                     return stateOf(sim)
                 },
                 tick: (p) => { simTick(p); return stateOf(sim) },
-                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode }),
+                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress() }),
                 canvas: () => canvas,
             })
         }
@@ -357,6 +449,7 @@ const GrindCityGame = () => {
             <canvas ref={canvasRef} className="block h-full w-full" />
             {/* HUD */}
             <div className="pointer-events-none absolute inset-0 select-none font-mono">
+                <div ref={hud.cut} className="absolute inset-0 bg-white" style={{ opacity: 0 }} />
                 {screen === 'play' && (
                     <>
                         <div ref={hud.time} className="absolute left-1/2 top-2 -translate-x-1/2 text-3xl font-bold text-white drop-shadow-[0_2px_0_rgba(0,0,0,.8)]" />
@@ -373,6 +466,15 @@ const GrindCityGame = () => {
                         </div>
                         <div ref={hud.msg} className="absolute left-1/2 top-12 -translate-x-1/2 whitespace-nowrap text-lg font-bold italic tracking-wider text-[#ffe98a] drop-shadow-[0_2px_0_rgba(0,0,0,.85)]" />
                     </>
+                )}
+                {screen === 'replay' && (
+                    <div className="absolute inset-0 flex flex-col justify-between p-4">
+                        <div className="flex items-center gap-2">
+                            <span className="h-3.5 w-3.5 animate-pulse rounded-full bg-red-500 shadow-[0_0_12px_rgba(255,60,60,.9)]" />
+                            <span className="text-2xl font-black italic tracking-[0.3em] text-white drop-shadow-[0_3px_0_rgba(0,0,0,.9)]">REPLAY</span>
+                        </div>
+                        <div className="text-center text-sm font-bold tracking-[0.4em] text-white/85 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SPACE / TAP — SKIP</div>
+                    </div>
                 )}
                 {screen === 'attract' && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center">

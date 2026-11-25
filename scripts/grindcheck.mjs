@@ -3,7 +3,7 @@
 // goal inside the 2:00 run, and seed + pads replay identical hashes.
 // Run: npm run grindcheck [-- --mutate <rule>]  (--mutate proves it can fail)
 
-import { makeGame, step, stateOf, hashState, SCORE_GOAL } from '../src/games/GrindCity/sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
 import { parkHeight, LETTERS, RAILS } from '../src/games/GrindCity/park.js'
 
@@ -23,14 +23,14 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap']) {
+    for (const rule of ['letters', 'gap', 'replay']) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 2 ? `ALL MUTANTS CAUGHT (${died}/2)` : `${died}/2 mutants caught`)
-    process.exit(died === 2 ? 0 : 1)
+    console.log(died === 3 ? `ALL MUTANTS CAUGHT (${died}/3)` : `${died}/3 mutants caught`)
+    process.exit(died === 3 ? 0 : 1)
 }
 
 // ── boot ──────────────────────────────────────────────────────────────────
@@ -114,6 +114,35 @@ function drive(seed) {
     ok('replay is deterministic', JSON.stringify(a) === JSON.stringify(b))
     const c = drive(8)
     ok('seed actually steers the sim', JSON.stringify(a) !== JSON.stringify(c))
+}
+
+// ── run replay (#3225): the cabinet logs packed inputs; a replay re-steps ──
+{
+    const all = { left: true, right: false, up: true, down: false, a: true, b: true }
+    ok('input pack roundtrip', JSON.stringify(unpackIn(packIn(all))) === JSON.stringify(all))
+    ok('empty input packs to zero', packIn({}) === 0)
+
+    const s = makeGame(7, 'run'); s.phase = 'play'
+    const bot = makeBot(); const log = []; const hs = []
+    let t = 0
+    while (!s.done && t++ < 120 * 60) {
+        const p = botPad(stateOf(s), bot)
+        // mutate 'replay': the LOG lies about B while the ridden input stays true
+        log.push(packIn(MUT === 'replay' ? { ...p, b: false } : p))
+        step(s, p)
+        hs.push(hashState(s))
+    }
+    ok('replay base: bot line completes', s.done === true, `${log.length} ticks`)
+
+    const s2 = makeGame(7, 'run'); s2.phase = 'play'
+    let ident = log.length > 0
+    for (let i = 0; i < log.length && ident; i++) {
+        step(s2, unpackIn(log[i]))
+        if (hashState(s2) !== hs[i]) ident = false
+    }
+    ok('input-log replay rides the identical line',
+        ident && s2.tick === s.tick && s2.score === s.score && s2.won,
+        `${log.length} ticks, score=${s2.score}, won=${s2.won}`)
 }
 
 if (MUT) {
