@@ -117,6 +117,7 @@ const SkywardGame = () => {
                     break
                 case 'switch': sweep(240, 520, 0.18, 'square', 0.06); break
                 case 'wheels': sweep(240, 520, 0.16, 'triangle', 0.07); break
+                case 'liftoff': sweep(300, 640, 0.14, 'triangle', 0.07); break
                 case 'crew': tone(392, 0.1); tone(311, 0.16, 'triangle', 0.07, 0.1); break
                 default: break
             }
@@ -144,6 +145,12 @@ const SkywardGame = () => {
                 if (e.kind === 'land' && e.craft === 'plane') {
                     banner(`RUNWAY ${e.aligned ? ['', 'SHORT', 'MIDDLE', 'LONG', 'FULL STRIP'][e.zone] : 'CRABBED'} +${e.score}`, 2.6)
                 }
+                // #3332 — the belt parks on the deck: same zone vocabulary, the
+                // same moment of naming — but it is the throttle that ends it
+                if (e.kind === 'land' && e.craft === 'belt') {
+                    banner(`RUNWAY ${e.aligned ? ['', 'SHORT', 'MIDDLE', 'LONG', 'FULL STRIP'][e.zone] : 'CRABBED'} +${e.score} — PARKED`, 2.6)
+                }
+                if (e.kind === 'liftoff') banner('OFF THE PAD — AIRBORNE', 1.6)
                 if (e.kind === 'wheels') banner('WHEELS UP — TOUCH AND GO', 1.8)
                 if (e.kind === 'crew') banner('GROUND CREW — SHE\'LL FLY AGAIN', 2.4)
                 if (e.kind === 'splash') gl.burst(g.p.x, 1.2, g.p.z, [0.85, 0.97, 1], 22, 5)
@@ -171,6 +178,18 @@ const SkywardGame = () => {
             if (zn) return 'RUNWAY — SCRUB SPEED, THEN FLARE SOFT · cruise speed is too hot to land'
             const d = Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az)
             if (d < 130) return `RUNWAY ${Math.round(d)} m — PLANES LAND HERE TOO`
+            return null
+        }
+
+        // #3332 — the belt's own lesson at the strip: the ground already
+        // forgives it; the strip pays for the QUIET arrival, and what parks
+        // answers the throttle
+        const beltRunwayHint = (g) => {
+            if (g.park) return 'PARKED ON THE RUNWAY ✺ · SPACE LIFTS OFF'
+            const zn = stripZone(g.world, g.p.x, g.p.z)
+            if (zn) return 'RUNWAY — SETTLE QUIET · SOFT, SLOW AND STRAIGHT · far end pays 700'
+            const d = Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az)
+            if (d < 120) return `RUNWAY ${Math.round(d)} m — BELTS PARK HERE`
             return null
         }
 
@@ -251,7 +270,7 @@ const SkywardGame = () => {
                         step(gs, padNow())
                         drain(gs)
                         if (gs.done) {
-                            setOver({ score: gs.score, license: gs.license, stormWings: gs.stormWings, land: gs.land })
+                            setOver({ score: gs.score, license: gs.license, stormWings: gs.stormWings, land: gs.land, belt: gs.beltLand })
                             setMode('over')
                         }
                     } else {
@@ -364,7 +383,7 @@ const SkywardGame = () => {
             const shown = sc === 'attract' ? null : gs
             E.score.textContent = shown ? `SCORE ${shown.score}` : ''
             E.chips.textContent = shown
-                ? `RING ${shown.grad.ring ?? '—'} · SPOT ${shown.grad.spot ?? '—'} · DROP ${shown.grad.drop ?? '—'} · ⚡ ${shown.stormWings ? shown.grad.pass : '—'} · ✈ ${shown.land || '—'}`
+                ? `RING ${shown.grad.ring ?? '—'} · SPOT ${shown.grad.spot ?? '—'} · DROP ${shown.grad.drop ?? '—'} · ⚡ ${shown.stormWings ? shown.grad.pass : '—'} · ✈ ${shown.land || '—'}${shown.beltLand ? ` · ✺ ${shown.beltLand}` : ''}`
                 : ''
             if (sc === 'play' && (shown.phase === 'ring' || shown.phase === 'pass')) E.speed.textContent += ` · ${shown.eventT.toFixed(1)}s`
             const hint = sc === 'play'
@@ -374,6 +393,7 @@ const SkywardGame = () => {
                         : shown.phase === 'pass' ? `GATE ${shown.passIdx}/5 · fight the gusts · the core pulls down`
                             : shown.phase === 'spot' ? stripHint(shown)
                         : shown.phase === 'free' ? (shown.craft === 'plane' && planeRunwayHint(shown))
+                            || (shown.craft === 'belt' && beltRunwayHint(shown))
                             || 'CRUISE · markers glow near launches · B at school recycles craft' : '')
                 : ''
             if (E.hint.textContent !== hint) E.hint.textContent = hint
@@ -415,6 +435,10 @@ const SkywardGame = () => {
                     gs.p = { x, y, z }
                     gs.heading = heading; gs.speed = speed; gs.vy = vy
                     gs.pitch = 0; gs.roll = 0
+                    // #3332 — the belt carries its velocity, not its speed: a
+                    // belt drive-leg must be handed a moving hull, and a fresh
+                    // attempt always starts unhitched from the pad
+                    if (gs.craft === 'belt') { gs.vel.x = Math.sin(heading) * speed; gs.vel.z = Math.cos(heading) * speed; gs.park = null }
                     gs.lastSafe = { x, y: Math.max(y, 20), z, heading }
                     gs._zPrev = z
                     return stateOf(gs)
@@ -459,6 +483,7 @@ const SkywardGame = () => {
                     { label: 'thunder', run: () => (checkout(gs, 'pass'), 'thunderpass') },
                     { label: 'recycle', run: () => (recycleCraft(gs), gs.craft) },
                     { label: 'final', run: () => { gs.phase = 'free'; gs.craft = 'plane'; gs.ground = null; gs._depart = 0; gs.p = { x: -45, y: 3.8, z: 130 }; gs.heading = Math.PI / 2; gs.pitch = 0; gs.roll = 0; gs.speed = 30; gs.vy = 0; return 'short final — ease off and flare' } },
+                    { label: 'padfinal', run: () => { gs.phase = 'free'; gs.craft = 'belt'; gs.park = null; gs.p = { x: 20, y: 5.2, z: 130 }; gs.heading = Math.PI / 2; gs.pitch = 0; gs.roll = 0; gs.speed = 3; gs.vy = -1; gs.vel = { x: 3, z: 0 }; return 'pad final — settle her quiet, then park' } },
                     { label: 'graduate', run: () => { gs.grad = { ring: 800, spot: 700, drop: 999 }; gs.score = 2499; gs.done = true; gs.license = 'ACE'; setOver({ score: 2499, license: 'ACE' }); setMode('over') } },
                 ],
             })
@@ -504,6 +529,9 @@ const SkywardGame = () => {
                     )}
                     {over.land > 0 && (
                         <div className="mt-2 text-sm font-bold tracking-[0.3em] text-emerald-300">✈ WHEELS — BEST RUNWAY {over.land}</div>
+                    )}
+                    {over.belt > 0 && (
+                        <div className="mt-2 text-sm font-bold tracking-[0.3em] text-sky-300">✺ HOVER — BEST RUNWAY {over.belt} (BELT)</div>
                     )}
                     <div className="mt-3 text-lg tracking-[0.2em] text-white">FINAL SCORE {over.score}</div>
                     <div className="mt-2 text-xs tracking-[0.2em] text-white/70">INSTRUCTORS VOSS · NIMBUS · PIP SALUTE YOU</div>

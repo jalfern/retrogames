@@ -229,6 +229,49 @@ try {
   ok(climbed !== null && climbed.land === 300,
     `wheels-abort climbs clear and keeps the banked badge (y=${climbed && climbed.y.toFixed(1)} ✈=${climbed && climbed.land})`)
 
+  /* #3332 — the belt parks on the runway: a quiet arrival (soft, slow,
+     straight) settles into PARKED with the zone banked ✺, banners it, and
+     the throttle lifts her off the pad. */
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    for (let k = 0; k < 3 && T.state().craft !== 'belt'; k++) T.recycle()
+  })
+  await simSleep(0.7) // apron hand-off's respawn window must close before the low visit
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    /* mid-strip, deck+0.7 m — inside the catch window, 2 m/s east, gentle
+       −0.5 sink: quiet the whole way, so the deck takes her at first touch */
+    T.teleport({ x: 60, y: 3.3, z: 130, heading: Math.PI / 2, speed: 2, vy: -0.5 })
+  })
+  let beltHint = false, beltPark = null, beltBanner = ''
+  for (let i = 0; i < 12 && beltPark === null; i++) {
+    const s = await page.evaluate(() => {
+      const bn = document.querySelector('[data-h="banner"]')
+      const hh = document.querySelector('[data-h="hint"]')
+      return { st: window.__skywardTest.state(), banner: bn ? bn.textContent : '', hint: hh ? hh.textContent : '' }
+    })
+    if (s.hint.includes('RUNWAY')) beltHint = true
+    if (s.banner.includes('RUNWAY')) beltBanner = s.banner
+    if (s.st.parked) beltPark = s.st
+    else await simSleep(0.15)
+  }
+  ok(beltHint, 'the HUD names the runway on the belt approach')
+  ok(beltPark !== null && beltPark.beltLand === 450 && beltPark.craft === 'belt',
+    `the belt parks mid-strip with the zone banked (parked=${!!beltPark} ✺=${beltPark && beltPark.beltLand})`)
+  ok(/RUNWAY LONG \+450 — PARKED/.test(beltBanner), `the strip banners the park (${beltBanner || 'no banner'})`)
+  await shot('skyward-belt-parked.png')
+  await page.keyboard.down('Space')
+  await simSleep(0.5)
+  await page.keyboard.up('Space')
+  let offPad = null
+  for (let i = 0; i < 10 && offPad === null; i++) {
+    const s = await page.evaluate(() => window.__skywardTest.state())
+    if (!s.parked && s.y > 4) offPad = s
+    else await simSleep(0.2)
+  }
+  ok(offPad !== null && offPad.beltLand === 450,
+    `throttle lifts her off the pad and the banked ✺ stays (y=${offPad && offPad.y.toFixed(1)} ✺=${offPad && offPad.beltLand})`)
+
   /* keyboard path + pause + restart through real UI */
   await page.keyboard.press('KeyN')
   await page.keyboard.press('ArrowLeft')
