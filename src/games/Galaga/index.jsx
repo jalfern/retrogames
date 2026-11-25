@@ -165,23 +165,57 @@ const GalagaGame = () => {
             ctx.fillStyle = '#2a1508'                         // tail tip
             ctx.fillRect(x - 1, y + 4, 2, 1)
         }
-        const drawBoss = (x, y, f) => {
-            ctx.fillStyle = '#3f7dff'
-            ctx.fillRect(x - 8, y - 3, 16, 6); ctx.fillRect(x - 4, y - 7, 8, 5)
-            ctx.fillStyle = '#9ecbff'
-            ctx.fillRect(x - 4 + (f % 20 < 10 ? -2 : 2), y - 6, 3, 3)
-            ctx.fillStyle = '#ff5d5d'; ctx.fillRect(x - 1, y + 3, 2, 4)
+        // #3384 shared fleet stroke language: the bee's rim→face→sheen plate,
+        // reused by boss/flag so one pixel+stroke grammar runs across the swarm
+        // (docs/ART.md bar #1; renderer-only, integer px, era palette).
+        const plate = (ox, oy, w, h, rim, face, sheen) => {
+            ctx.fillStyle = rim; ctx.fillRect(ox, oy, w, h)
+            ctx.fillStyle = face; ctx.fillRect(ox + 1, oy + 1, w - 2, h - 2)
+            ctx.fillStyle = sheen; ctx.fillRect(ox + 2, oy + 2, Math.max(w - 4, 1), 1)
         }
+        // Armored flagship: the bee's anatomy scaled up — antennae'd head,
+        // sheened thorax, banded abdomen, red danger tail — on the SAME 2-frame
+        // wing-flap cadence as the bee, so the whole swarm moves alike.
+        const drawBoss = (x, y, f) => {
+            const flap = f % 14 < 7 ? 0 : 1
+            const wy = y - 6 + flap
+            const reach = flap ? 7 : 10
+            for (const s of [-1, 1]) {
+                const ox = s < 0 ? x - reach : x + 1
+                plate(ox, wy, reach + 1, 9, '#16297c', '#3f6dff', '#9ecbff')
+            }
+            ctx.fillStyle = '#0e1747'                        // head + antennae tips
+            ctx.fillRect(x - 3, y - 8, 6, 4)
+            ctx.fillRect(x - 4, y - 9, 1, 1); ctx.fillRect(x + 3, y - 9, 1, 1)
+            ctx.fillStyle = '#9ecbff'                        // cold-blue eyes
+            ctx.fillRect(x - 2, y - 7, 1, 1); ctx.fillRect(x + 1, y - 7, 1, 1)
+            ctx.fillStyle = '#0e1747'; ctx.fillRect(x - 3, y - 4, 6, 5)   // thorax rim
+            ctx.fillStyle = '#5f86ff'; ctx.fillRect(x - 2, y - 3, 4, 3)   // armor face
+            ctx.fillStyle = '#c9dbff'; ctx.fillRect(x - 2, y - 3, 2, 1)   // sheen
+            ctx.fillStyle = '#3f6dff'; ctx.fillRect(x - 3, y + 1, 6, 4)   // abdomen
+            ctx.fillStyle = '#0e1747'; ctx.fillRect(x - 3, y + 2, 6, 1)   // stripe
+            ctx.fillStyle = '#ff5d5d'; ctx.fillRect(x - 1, y + 5, 2, 3)   // danger tail
+        }
+        // Flagship = boss + a tractor emitter on the chest, in the beam's own
+        // cyan so sprite and cone read as one idea.
         const drawFlag = (x, y, f) => {
             drawBoss(x, y, f)
-            ctx.fillStyle = f % 24 < 12 ? '#ffd23f' : '#8f4dff'
-            ctx.fillRect(x - 3, y - 2, 6, 5)
-            ctx.fillStyle = '#0a0a14'; ctx.fillRect(x - 1, y - 1, 2, 3)
+            ctx.fillStyle = '#0a0a14'; ctx.fillRect(x - 2, y - 3, 4, 4)   // socket
+            ctx.fillStyle = f % 24 < 12 ? '#59f7ff' : '#2a90a8'            // pulse
+            ctx.fillRect(x - 1, y - 2, 2, 2)
         }
+        // A captured fighter: the player's own silhouette held dim by the hive,
+        // with a tow clamp overhead and a red distress cockpit — never mistakable
+        // for the live player triangle.
         const drawCaptive = (x, y, f) => {
-            ctx.fillStyle = '#f2f2f2'
-            ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x + 5, y + 5); ctx.lineTo(x - 5, y + 5); ctx.closePath(); ctx.fill()
-            if (f % 20 < 10) { ctx.fillStyle = '#59f7ff'; ctx.fillRect(x - 1, y - 3, 2, 2) }
+            ctx.fillStyle = '#26305e'
+            ctx.beginPath(); ctx.moveTo(x, y - 6); ctx.lineTo(x + 5, y + 5); ctx.lineTo(x - 5, y + 5); ctx.closePath(); ctx.fill()
+            ctx.fillStyle = '#9aa7d8'
+            ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x + 3, y + 3); ctx.lineTo(x - 3, y + 3); ctx.closePath(); ctx.fill()
+            ctx.fillStyle = f % 20 < 10 ? '#ff5d5d' : '#7a2230'            // distress blink
+            ctx.fillRect(x - 1, y - 1, 2, 3)
+            ctx.fillStyle = '#59f7ff'                                       // tow clamp
+            ctx.fillRect(x - 2, y - 8, 4, 1); ctx.fillRect(x - 2, y - 8, 1, 2); ctx.fillRect(x + 1, y - 8, 1, 2)
         }
         const drawPlayer = (x, y, f) => {
             ctx.fillStyle = '#f4f4ff'
@@ -224,8 +258,7 @@ const GalagaGame = () => {
                 if (e.state === 'beam') { drawFlag(e.x, e.y, tk); continue }
                 if (e.state === 'carry') {
                     drawFlag(e.x, e.y, tk)
-                    ctx.fillStyle = '#f4f4ff'
-                    ctx.beginPath(); ctx.moveTo(e.x, e.y + 16); ctx.lineTo(e.x + 4, e.y + 24); ctx.lineTo(e.x - 4, e.y + 24); ctx.closePath(); ctx.fill()
+                    drawCaptive(e.x, e.y + 18, tk)
                     continue
                 }
                 if (e.kind === 'bee') drawBee(e.x, e.y, tk)
