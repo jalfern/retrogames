@@ -18,10 +18,11 @@ the park and every trick name are ours.
 
 Run: `npm run grindcheck` (Node, no browser — includes the input-log replay
 determinism proof, the #3246 gem/secret/roof physics legs, the #3233 manual
-identity legs, and 9 mutants: letters, gap, replay, bed, gems, shade, grab,
-stall, tell). Deep-drive the cabinet with
+identity legs, and 13 mutants: letters, gap, replay, bed, gems, shade, grab,
+stall, tell, variety, nearmiss, bestline, bankline). Deep-drive the cabinet with
 `DEV_PORT=5178 node scripts/lib/gcdrive.mjs` (also proves the REPLAY screen,
-the skip and the action-cam cut-in).
+the skip and the action-cam cut-in, the #3374 near-miss replay + badge, and
+the attract best-line loop).
 
 ## Controls
 
@@ -125,6 +126,19 @@ is byte-identical to the live run. `grindcheck` proves it (hash-per-tick) and
 kills a mutant that lies in the log. Attract runs get no replay; Space/tap
 skips to the results; `state()` exposes `cam` + `replay: {i,n,pct}`.
 
+Tail #3374 — the near-miss and the memory. `replayWorthy(ticks, lettersGot)`
+(sim.js's pure law, which also owns REPLAY_MIN/MAX now): a run earns its
+replay if it skated ≥ REPLAY_MIN ticks **or** banked ≥1 letter — a letters-in,
+dead-at-1 s near-miss still watches its line, badged `NEAR MISS — LETTERS
+COUNT`. And the plaza remembers its own: when a full-window line becomes the
+session best (`betterLine`: score → letters → newer), its seed + pad log are
+banked and attract re-rides it behind the title — re-simmed from the banked
+seed, wrapping at the log's own end (how the run ended is not in the pads,
+so the wrap keys off log length, not the sim). No history yet? The bot line
+keeps attract as it always was. Contract gains `best`, `bestLog`,
+`attractLine`, `replay.near`. Memory is per page-load, not per machine:
+saving and sharing runs is still an open gap.
+
 ## Audio bed and landing weight (#3167)
 
 `music.js` holds one original 16-step A-minor loop (bass · pentatonic riff ·
@@ -162,9 +176,11 @@ hash or pin change.
 
 ## Honest gaps
 
-- **Replay is auto-only.** Last-10 s window, one cam, a 1×/2×/0.5× speed
-  toggle (F) but no free cam or saved/shared runs; no replay of the
-  letters-only near-misses shorter than 2 s, and none behind the attract title.
+- **Saved/shared runs.** Replay is no longer auto-only — F toggles 1×/2×/0.5×
+  (#3233 tail), C swings a free cam (#3325), a letters-in near-miss under the
+  2 s floor still earns its replay (#3374), and attract re-rides the session's
+  best line (#3374). What's left: nothing persists — no saving a run to
+  storage, no sharing one.
 - **CLOSED by #3246** — ~~One park, one line.~~ The park has a second line
   now: the roof deck over the south wall, 14 gems, and a secret bowl; see
   "The second line, gems and the secret spot" above.

@@ -11,6 +11,22 @@ try {
     const out = []
     const ok = (n, c, x = '') => { out.push(`${c ? 'PASS' : 'FAIL'} ${n} ${x}`) }
     const STEP_MIN = 3   // eighths expected in ~700ms at real speed, halved for slow CI Chrome
+    // Space with the focus dance the older legs learned — a click also advances
+    // replay/over screens. Checks before it presses: an auto-finishing replay
+    // must not be stepped past its screen.
+    const skipTo = async (want) => {
+        for (let i = 0; i < 4; i++) {
+            const s0 = await page.evaluate(() => window.__grindTest.state())
+            if (s0.screen === want) return s0
+            await page.keyboard.press('Space')
+            await new Promise(r => setTimeout(r, 250))
+            const s1 = await page.evaluate(() => window.__grindTest.state())
+            if (s1.screen === want) return s1
+            await page.mouse.click(300, 300)
+            await new Promise(r => setTimeout(r, 250))
+        }
+        return page.evaluate(() => window.__grindTest.state())
+    }
 
     ok('boots clean', errors.length === 0, errors.join(';'))
     const attract = await page.evaluate(() => window.__game.state())
@@ -186,6 +202,64 @@ try {
         `grind=${rg.grabbing.grinding} grab=${rg.grabbing.railGrab} cam=${rg.grabbing.cam}`)
     ok('#3289 the grab doubles the trickle live', rg.paid.chainPts > rg.latched.chainPts + 30 || rg.paid.score > 0,
         `${rg.latched.chainPts}→${rg.paid.chainPts}`)
+
+    // #3374 near-miss live: a run that banks a letter and dies inside the 2 s
+    // floor still watches its line — badged. Letter + clock-out via DEV hooks;
+    // everything after that is the real screen flow.
+    await page.evaluate(() => { window.__game.reset(5); window.__game.release() })
+    await new Promise(r => setTimeout(r, 1500))   // coast ~90 ticks at real speed — under the 2 s floor
+    await page.evaluate(() => {
+        window.__grindTest.teleport({ letters: { S: true }, timeLeft: 0.01 })
+    })
+    await new Promise(r => setTimeout(r, 300))
+    const nm = await page.evaluate(() => window.__grindTest.state())
+    ok('#3374 a sub-2 s lettered run still earns its replay',
+        nm.screen === 'replay' && !!nm.replay && nm.replay.near === true,
+        `screen=${nm.screen} near=${nm.replay ? nm.replay.near : '-'} n=${nm.replay ? nm.replay.n : '-'}`)
+    const badge = await page.evaluate(() => {
+        const el = document.querySelector('[class~="top-[30%]"]')
+        return el ? { txt: el.textContent, op: Number(el.style.opacity) } : null
+    })
+    ok('#3374 the near replay wears its badge', !!badge && /NEAR MISS/.test(badge.txt) && badge.op > 0.5, JSON.stringify(badge))
+    await skipTo('over')
+    const fbAttract = await skipTo('attract')
+    const fb = await page.evaluate(() => window.__game.state())
+    ok('#3374 short-only history keeps the bot line on attract',
+        fb.attractLine === false && fb.attract === true && fbAttract.screen === 'attract',
+        `attractLine=${fb.attractLine} screen=${fbAttract.screen}`)
+
+    // #3374 attract remembers: a full-window line banks its seed + pads, and
+    // the plaza re-rides it behind the title — and loops. Seed 7 is the proven
+    // 2-minute coast (the boot leg rides it clock-out without a bail).
+    await page.evaluate(() => {
+        const g = window.__game, t = window.__grindTest
+        g.reset(7)
+        g.step({}, 300)                 // five seconds of line
+        t.teleport({ timeLeft: 0 })    // clock it out
+        g.release()
+    })
+    await new Promise(r => setTimeout(r, 450))
+    const fr = await page.evaluate(() => window.__grindTest.state())
+    ok('#3374 the full line replays without the badge',
+        fr.screen === 'replay' && !!fr.replay && fr.replay.near === false,
+        `screen=${fr.screen} n=${fr.replay ? fr.replay.n : '-'}`)
+    await skipTo('over')
+    await skipTo('attract')
+    const ar = await page.evaluate(() => window.__game.state())
+    ok('#3374 attract re-rides the banked line (seed + pads)',
+        ar.attractLine === true && ar.seed === 7 && ar.attract === true && ar.phase === 'play',
+        `seed=${ar.seed} tick=${ar.tick}`)
+    const chipTxt = await page.evaluate(() => (document.body.innerText.match(/BEST LINE [^\n]+/) || [''])[0])
+    ok('#3374 the attract card says it out loud', /BEST LINE \d+ PTS · \d\/5/.test(chipTxt), chipTxt)
+    let prevT = 0, wrapped = false
+    for (let i = 0; i < 50 && !wrapped; i++) {
+        await new Promise(r => setTimeout(r, 250))
+        const s = await page.evaluate(() => window.__game.state())
+        if (s.attract !== true) break
+        if (s.tick < prevT - 50) wrapped = true
+        prevT = Math.max(prevT, s.tick)
+    }
+    ok('#3374 attract loops the remembered line without stalling', wrapped, `max tick ${prevT}`)
 
     // #3233 tail — phone-width HUD collision gate: the goal/trick banner must clear the
     // persistent S-K-A-T-E checklist, stay on-screen at small-phone widths, and the tall

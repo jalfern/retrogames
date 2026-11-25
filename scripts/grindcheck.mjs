@@ -3,7 +3,7 @@
 // goal inside the 2:00 run, and seed + pads replay identical hashes.
 // Run: npm run grindcheck [-- --mutate <rule>]  (--mutate proves it can fail)
 
-import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, GEM_ALL, gemCount } from '../src/games/GrindCity/sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
 import { parkHeight, LETTERS, RAILS, GEMS, GEM_PTS, SECRET, ROOF_Y, shadeAt } from '../src/games/GrindCity/park.js'
 import { BAR, bedVoices, landThud } from '../src/games/GrindCity/music.js'
@@ -25,14 +25,14 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety']) {
+    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety', 'nearmiss', 'bestline', 'bankline']) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 10 ? `ALL MUTANTS CAUGHT (${died}/10)` : `${died}/10 mutants caught`)
-    process.exit(died === 10 ? 0 : 1)
+    console.log(died === 13 ? `ALL MUTANTS CAUGHT (${died}/13)` : `${died}/13 mutants caught`)
+    process.exit(died === 13 ? 0 : 1)
 }
 
 // ── boot ──────────────────────────────────────────────────────────────────
@@ -454,6 +454,76 @@ function drive(seed) {
     const artSrc = MUT === 'tell' ? art.replace(/s\.manual\.spin/g, 's.manual.fictional') : art
     ok('tell wiring: chip reads live identity + upgrade has its own voice + poses differ (#3233)',
         /st\.manualName/.test(cabSrc) && /st\.manualPts/.test(cabSrc) && /'manual180'/.test(cabSrc) && /s\.manual\.spin/.test(artSrc))
+}
+
+// ── replay tail (#3374): near-miss trigger + attract best line ─────────────
+{
+    ok('replay trigger: window law unchanged — 119 cold ticks silent, 120 plays',
+        replayWorthy(REPLAY_MIN - 1, 0) === false && replayWorthy(REPLAY_MIN, 0) === true)
+    ok('replay trigger: banked letters earn the replay however short the run',
+        replayWorthy(0, 1) === true && replayWorthy(REPLAY_MIN - 1, 5) === true)
+    ok('replay trigger: law is total — garbage reads as cold',
+        replayWorthy(undefined, undefined) === false && replayWorthy(-50, -1) === false)
+
+    // The situation is real, not a truth-table decoration: a seeded sim that
+    // banked a letter and died inside the window passes replayWorthy; the
+    // letterless twin in the same spot still stays silent.
+    const mk = (got) => {
+        const s = makeGame(7, 'run'); s.phase = 'play'
+        let t = 0
+        while (t++ < 60) step(s, {})          // one second of coasting…
+        s.letters = got ? { S: true } : {}   // set AFTER the coast: the spawn line
+        s.timeLeft = 0; step(s, {})          // can pick letters up naturally — state first
+        return { t, letters: Object.keys(s.letters).length, over: s.phase === 'over' }
+    }
+    const hot = mk(true), cold = mk(false)
+    ok('replay trigger: near-miss situation exists (letters in, under window, run over)',
+        hot.over && hot.letters === 1 && hot.t < REPLAY_MIN && replayWorthy(hot.t, hot.letters) === true,
+        `t=${hot.t}`)
+    ok('replay trigger: the letterless twin under the window stays silent (old flow unchanged)',
+        cold.over && replayWorthy(cold.t, cold.letters) === false, `t=${cold.t}`)
+
+    const r0 = { score: 500, letters: 2, won: false }
+    const rHi = { score: 900, letters: 1, won: false }
+    const rLet = { score: 500, letters: 3, won: false }
+    ok('bestline: higher score wins either round — null folds cleanly',
+        betterLine(null, r0) === r0 && betterLine(r0, null) === r0 &&
+        betterLine(r0, rHi) === rHi && betterLine(rHi, r0) === rHi)
+    ok('bestline: score tie pays the letters whichever side they sit on',
+        betterLine(r0, rLet) === rLet && betterLine(rLet, r0) === rLet)
+    ok('bestline: full tie gives it to the newer run',
+        betterLine({ ...r0 }, r0) === r0)
+
+    // Wiring: the cabinet gates replay through the law, badges the near replay,
+    // and folds every finished run into the session best the attract card shows.
+    // MUT=nearmiss reverts the gate to the old letterless trigger; MUT=bestline
+    // flips the law to prefer stale. Each must see red.
+    const cabRaw = readFileSync(new URL('../src/games/GrindCity/index.jsx', import.meta.url), 'utf8')
+    const simRaw = readFileSync(new URL('../src/games/GrindCity/sim.js', import.meta.url), 'utf8')
+    const cab = MUT === 'nearmiss' ? cabRaw.replace('replayWorthy(inputLog.length, lettersGot)', 'inputLog.length >= REPLAY_MIN') : cabRaw
+    ok('near-miss wiring: cabinet calls the law with live letters + wears the badge (#3374)',
+        /replayWorthy\(inputLog\.length, lettersGot\)/.test(cab) &&
+        /const lettersGot = Object\.keys\(sim\.letters\)\.length/.test(cab) &&
+        /NEAR MISS — LETTERS COUNT/.test(cab) && /replayNear = inputLog\.length < REPLAY_MIN/.test(cab))
+    const simSrc = MUT === 'bestline' ? simRaw.replace('run.score > prev.score ? run : prev', 'run.score > prev.score ? prev : run') : simRaw
+    ok('bestline wiring: sim law prefers the higher run; cabinet folds runs + shows the chip (#3374)',
+        /run\.score > prev\.score \? run : prev/.test(simSrc) &&
+        /bestLine = betterLine\(prevBest, cand\)/.test(cab) && /BEST LINE/.test(cab))
+
+    // Attract loop: when a line is banked, attract re-rides it (seed + pads),
+    // the bot stays the no-history fallback, and a fresh harness session forgets.
+    // MUT=bankline makes attract ignore the banked log — the pin must see red.
+    const cabDrive = MUT === 'bankline'
+        ? cabRaw.replace('bankedPad || botPad(stateOf(sim), bot)', 'botPad(stateOf(sim), bot)')
+        : cabRaw
+    ok('attract loop wiring: banked line drives attract, bot is the fallback, reset forgets (#3374)',
+        /bestLog = inputLog\.slice\(\)/.test(cabDrive) &&
+        /if \(inputLog\.length >= REPLAY_MIN\) \{\s*bestSeed = sim\.seed/.test(cabDrive) &&
+        /attractIdx >= bestLog\.length/.test(cabDrive) &&
+        /unpackIn\(bestLog\[attractIdx\+\+\]\)/.test(cabDrive) &&
+        /bankedPad \|\| botPad\(stateOf\(sim\), bot\)/.test(cabDrive) &&
+        /makeGame\(bestLog\.length \? bestSeed : freshSeed\(\), 'run'\)/.test(cabDrive) &&
+        /bestSeed = 0; bestLog = \[\]; attractIdx = 0/.test(cabDrive))
 }
 
 if (MUT) {

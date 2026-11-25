@@ -575,6 +575,31 @@ export const unpackIn = p => ({
     left: !!(p & 1), right: !!(p & 2), up: !!(p & 4), down: !!(p & 8), a: !!(p & 16), b: !!(p & 32),
 })
 
+/** Replay window law (#3225): the last 10 s of the line; a run shorter than
+ *  REPLAY_MIN was barely skating. Exported so the trigger law below and the
+ *  cabinet share one number instead of two that can drift. */
+export const REPLAY_MAX = 600
+export const REPLAY_MIN = 120
+
+/** Does this finished run earn a replay? (#3374)
+ *  Long enough to be worth watching, OR it banked at least one letter —
+ *  the near-miss (letters in, dead before 2 s) teaches what got away
+ *  instead of vanishing straight to the results card. Letterless short
+ *  runs keep the old silent card; the 10 s window law is untouched. */
+export const replayWorthy = (ticks, lettersGot) =>
+    ticks >= REPLAY_MIN || lettersGot >= 1
+
+/** Session best-line law (#3374): the attract card remembers the best run of
+ *  this page load (memory only — persisting/exporting runs is its own stage).
+ *  Higher score wins; tie → more letters banked; second tie → newer run. */
+export const betterLine = (prev, run) => {
+    if (!prev) return run
+    if (!run) return prev
+    if (run.score !== prev.score) return run.score > prev.score ? run : prev
+    if ((run.letters || 0) !== (prev.letters || 0)) return (run.letters || 0) > (prev.letters || 0) ? run : prev
+    return run
+}
+
 export function hashState(s) {
     let h = 2166136261
     const str = JSON.stringify(stateOf(s))
