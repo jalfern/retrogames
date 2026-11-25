@@ -30,6 +30,9 @@ const SkywardGame = () => {
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const bannerRef = useRef({ until: 0 })
     const glRef = useRef(null)
+    const passEnterUntilRef = useRef(0)
+    const stormWarnedRef = useRef(false)
+    const prevPhaseRef = useRef('free')
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -79,7 +82,19 @@ const SkywardGame = () => {
                     if (e.event === 'THUNDERPASS') audioController.playFilteredNoise(1.1, 0.32, 90) // thunderclap entrance
                     else sweep(320, 780, 0.28, 'triangle', 0.1)
                     break
-                case 'finish': tone(660, 0.1); tone(880, 0.1, 'square', 0.09, 0.11); tone(1174, 0.16, 'square', 0.09, 0.22); break
+                case 'finish':
+                    if (e.event === 'THUNDERPASS') {
+                        // STORM WINGS ceremony — low rumble, then the rising
+                        // storm flourish (a distinct variant of the graduate's)
+                        tone(98, 0.5, 'sawtooth', 0.11)
+                        tone(220, 0.14, 'square', 0.08, 0.16)
+                        tone(261.6, 0.14, 'square', 0.08, 0.30)
+                        tone(329.6, 0.18, 'square', 0.09, 0.44)
+                        tone(392, 0.34, 'square', 0.09, 0.60)
+                    } else {
+                        tone(660, 0.1); tone(880, 0.1, 'square', 0.09, 0.11); tone(1174, 0.16, 'square', 0.09, 0.22)
+                    }
+                    break
                 case 'graduate': audioController.playFanfare(); break
                 case 'crash': audioController.playFilteredNoise(0.4, 0.3, 260); break
                 case 'splash': audioController.playFilteredNoise(0.3, 0.16, 900); break
@@ -98,9 +113,16 @@ const SkywardGame = () => {
             for (const e of g.events) {
                 sfxFor(g, e)
                 if (e.kind === 'ring') banner(`RING ${e.idx}/8`, 1.1)
-                if (e.kind === 'gate') banner(e.idx === 1 ? 'GATE 1/5 — ENTER THE STORM' : `GATE ${e.idx}/5`, 1.2)
+                if (e.kind === 'gate') {
+                    banner(e.idx === 1 ? 'GATE 1/5 — ENTER THE STORM' : `GATE ${e.idx}/5`, 1.2)
+                    const pg = g.world.passRings[e.idx - 1] // the just-passed ring
+                    if (pg) gl.burst(pg.x, pg.y, pg.z, [0.78, 0.66, 1], 22, 5.5) // violet halo
+                }
                 if (e.kind === 'start') banner(e.event, 2.2)
-                if (e.kind === 'finish') banner(`${e.event} — ${e.gained}`, 2.6)
+                if (e.kind === 'finish') {
+                    if (e.event === 'THUNDERPASS') banner('⚡ STORM WINGS ⚡', 3.0)
+                    else banner(`${e.event} — ${e.gained}`, 2.6)
+                }
                 if (e.kind === 'graduate') banner(`LICENSE: ${e.license} — ${e.score}`, 4)
                 if (e.kind === 'splash') gl.burst(g.p.x, 1.2, g.p.z, [0.85, 0.97, 1], 22, 5)
                 if (e.kind === 'crash') gl.burst(g.p.x, g.p.y, g.p.z, [1, 0.8, 0.55], 26, 7)
@@ -210,8 +232,22 @@ const SkywardGame = () => {
             if (screenRef.current === 'attract') gl.orbitAttract(demo, ft / 1000)
             else gl.render(gs, ft / 1000)
 
-            // HUD
+            // on-entry hint + warning tick for the pass (HUD/audio only)
             const sc = screenRef.current
+            if (sc === 'play' && !pausedRef.current) {
+                if (gs.phase === 'pass' && prevPhaseRef.current !== 'pass') {
+                    passEnterUntilRef.current = performance.now() + 3800
+                    stormWarnedRef.current = false
+                }
+                if (gs.phase === 'pass' && gs.stormS >= 0.7 && !stormWarnedRef.current) {
+                    stormWarnedRef.current = true
+                    tone(196, 0.18, 'sawtooth', 0.07)
+                    tone(147, 0.22, 'sawtooth', 0.06, 0.09)
+                } else if (gs.stormS < 0.55) stormWarnedRef.current = false
+            }
+            prevPhaseRef.current = gs.phase
+
+            // HUD
             E.speed.textContent = `${String(Math.round((sc === 'attract' ? demo : gs).speed * 1.94)).padStart(3, '0')} KTS`
             E.alt.textContent = `${String(Math.max(0, Math.round((sc === 'attract' ? demo : gs).p.y))).padStart(3, '0')} M`
             const shown = sc === 'attract' ? null : gs
@@ -221,7 +257,8 @@ const SkywardGame = () => {
                 : ''
             if (sc === 'play' && (shown.phase === 'ring' || shown.phase === 'pass')) E.speed.textContent += ` · ${shown.eventT.toFixed(1)}s`
             const hint = sc === 'play'
-                ? (shown.marker ? `${shown.marker === 'ring' ? 'RING RUN' : shown.marker === 'spot' ? 'SPOT LANDING' : shown.marker === 'pass' ? 'THUNDERPASS' : 'TARGET DROP'} — PRESS SPACE`
+                ? (performance.now() < passEnterUntilRef.current ? 'EASE OFF — THE CORE PULLS DOWN'
+                    : shown.marker ? `${shown.marker === 'ring' ? 'RING RUN' : shown.marker === 'spot' ? 'SPOT LANDING' : shown.marker === 'pass' ? 'THUNDERPASS' : 'TARGET DROP'} — PRESS SPACE`
                     : shown.phase === 'drop' ? 'A THRUST · B DROP · land at the pads'
                         : shown.phase === 'pass' ? `GATE ${shown.passIdx}/5 · fight the gusts · the core pulls down`
                             : shown.phase === 'free' ? `CRUISE · markers glow near launches · B at school recycles craft` : '')

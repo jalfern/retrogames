@@ -226,6 +226,25 @@ void main(){
     const rain = new THREE.Points(rainGeo, new THREE.PointsMaterial({ color: 0xa8c4e4, size: lite ? 2.4 : 1.8, transparent: true, opacity: 0.55, depthWrite: false }))
     scene.add(rain)
 
+    // lightning bolt — a jagged ribbon from the cell base down to the water
+    // near the core, flashing on the same peaks the sky goes bright. The sky
+    // flash alone is invisible air; something visibly strikes the water.
+    const boltSegs = []
+    const BOLT_N = 9
+    for (let i = 0; i < BOLT_N; i++) {
+        const seg = new THREE.Mesh(
+            new THREE.BoxGeometry(1, 1, 1),
+            new THREE.MeshBasicMaterial({ color: 0xdceaff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false })
+        )
+        boltSegs.push(seg)
+        scene.add(seg)
+    }
+    const boltGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: softSprite('rgba(225,240,255,0.95)'), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }))
+    boltGlow.scale.set(48, 30, 1)
+    scene.add(boltGlow)
+    const boltUp = new THREE.Vector3(0, 1, 0)
+    const boltDir = new THREE.Vector3()
+
     // thermal shimmer columns (where the lift lives)
     const thermCols = world.thermals.map((c) => {
         const m = new THREE.Mesh(
@@ -427,8 +446,39 @@ void main(){
         const t = g.t
         seaMat.uniforms.uTime.value = t
         seaMat.uniforms.uCam.value.copy(camera.position)
-        skyMat.uniforms.uFlash.value = g.crashes && world.stormFlash(t) ? world.stormFlash(t) : world.stormFlash(t)
         const flash = world.stormFlash(t)
+        skyMat.uniforms.uFlash.value = flash
+        // bolt to the water near the core, on flash peaks — re-jittered at
+        // 26 Hz so it flickers rather than shimmers
+        if (flash > 0) {
+            const baseX = world.storm.x + 12, baseZ = world.storm.z - 8
+            const tickQ = Math.floor(t * 26)
+            const topY = 150, botY = 2.5
+            const pts = []
+            for (let i = 0; i <= boltSegs.length; i++) {
+                const y = topY + (botY - topY) * (i / boltSegs.length)
+                const jag = (i === 0 || i === boltSegs.length) ? 0 : (rngp(tickQ * 7 + i * 13) - 0.5) * 46
+                const jagZ = (i === 0 || i === boltSegs.length) ? 0 : (rngp(tickQ * 11 + i * 29) - 0.5) * 34
+                pts.push({ x: baseX + jag, y, z: baseZ + jagZ })
+            }
+            for (let i = 0; i < boltSegs.length; i++) {
+                const a = pts[i], b = pts[i + 1]
+                const seg = boltSegs[i]
+                const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z
+                const len = Math.hypot(dx, dy, dz)
+                seg.visible = true
+                seg.position.set((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2)
+                seg.scale.set(1.4, len, 1.4)
+                seg.quaternion.setFromUnitVectors(boltUp, boltDir.set(dx, dy, dz).normalize())
+                seg.material.opacity = (i === boltSegs.length - 1 ? 1.0 : 0.75) * flash
+            }
+            boltGlow.visible = true
+            boltGlow.position.set(baseX, 3.4, baseZ)
+            boltGlow.material.opacity = flash * 0.9
+        } else {
+            for (const seg of boltSegs) seg.visible = false
+            boltGlow.visible = false
+        }
         // inside the cell the grey closes in: fog shuts down to gate distance
         const sS = g.stormS || 0
         hemi.intensity = 1.1 + flash * 1.4 - sS * 0.5
