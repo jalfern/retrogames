@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -93,6 +93,14 @@ if (MUT) {
             from: 'if (gs.done || gs.multiball) return 0;',
             to: 'if (gs.done) return 0;',
             note: 'solo bed ignores MULTIBALL — the pack and the ostinato fight on one bus',
+        },
+        // the seam glide collapses to the old splice — the dip never happens and
+        // the record-skip #3313 item 1 killed is back (the seam pin is toothed).
+        seam: {
+            file: 'src/games/Pinball/index.jsx',
+            from: 'else if (bedOn && !mbBedRef.current) { audioController.setMusicLevel(0.001); bedSeamRef.current = { left: 150 } }',
+            to: 'else if (bedOn && !mbBedRef.current) { audioController.startMusic(\'pinballMb\'); audioController.setMusicLevel(0.55); mbBedRef.current = true; soloBedRef.current = 0 }',
+            note: 'seam glide removed at pack arrival — track splices without dipping the bus',
         },
         tiltnudge: {
             file: 'src/games/Pinball/sim.js',
