@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -77,6 +77,14 @@ if (MUT) {
         },
         // the tilt impulse forgets its latch — a held lean re-nudges every
         // sample and farms the 3-strike tilt-out (#3237 honesty law).
+        // the three-step zone ticks go silent — the pull again reads as one
+        // smooth blur and the meter steps never light (#3297).
+        powerzone: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'if (zone > gs.powerZone) {',
+            to: 'if (zone > 99) {',
+            note: 'power-zone ticks never emit — the three-step pull is gone',
+        },
         tiltnudge: {
             file: 'src/games/Pinball/sim.js',
             from: 'if (!latched && Math.abs(x) >= law.fire) { fire = true; latched = true; }',
@@ -171,6 +179,28 @@ const types = (gs) => clear(gs).map((e) => e.type)
     r.check('an idle ball auto-plunges after 4 seconds', gs4.launched, `launched=${gs4.launched}`)
 }
 
+// -------------------------------- #3297: plunger 3-step power zones ----
+{
+    const gs = drive(makeGame(25)); gs.launched = false; clear(gs)
+    drive(gs, { down: true }, 70)                      // full pull
+    const ev = clear(gs).filter((e) => e.type === 'powerzone')
+    r.check('a full pull emits LIGHT/FIRM/MAX ticks in order, once each',
+        ev.length === 3 && ev[0].zone === 1 && ev[1].zone === 2 && ev[2].zone === 3,
+        `zones=${ev.map((e) => e.zone).join(',')}`)
+    const step = TABLE.plunger.chargeRate / 60 // one tick of charge
+    const zp = (i) => (ev[i] ? ev[i].power : NaN)
+    r.check('zone boundaries land on 1/3, 2/3 and full power',
+        ev.length === 3 && Math.abs(zp(0) - 1 / 3) <= step * 2 && Math.abs(zp(1) - 2 / 3) <= step * 2 && zp(2) >= 0.999,
+        `p=${ev.map((e) => e.power.toFixed(3)).join(',')}`)
+    drive(gs, {}, 1)                                   // release
+    r.check('the zone counter resets on plunge (physics of the release untouched)',
+        types(gs).includes('plunge') && gs.powerZone === 0, `zone=${gs.powerZone}`)
+    const gs2 = drive(makeGame(27)); gs2.launched = false; clear(gs2)
+    drive(gs2, { down: true }, 10)                    // power 0.225 < 1/3
+    r.check('a soft pull stays silent: below the first third, no zone ticks',
+        !types(gs2).includes('powerzone'), `p=${gs2.power.toFixed(2)}`)
+}
+
 // ------------------------------------------------- bumper / sling / target ----
 const setBall = (gs, x, y, vx, vy) => { gs.bx = x; gs.by = y; gs.vx = vx; gs.vy = vy; gs.launched = true }
 {
@@ -261,9 +291,12 @@ const setBall = (gs, x, y, vx, vy) => { gs.bx = x; gs.by = y; gs.vx = vx; gs.vy 
     const gs = makeGame(71); gs.launched = true
     setBall(gs, 180, 400, 0, 0); clear(gs)
     drive(gs, { b: true }, 3); clear(gs)          // nudge 1
-    drive(gs, {}, 2); drive(gs, { b: true }, 3); clear(gs)   // nudge 2 -> warn
+    drive(gs, {}, 2); drive(gs, { b: true }, 3)
+    const warnEv = clear(gs).filter((e) => e.type === 'tiltwarn')   // nudge 2 -> warn
     drive(gs, {}, 2); drive(gs, { b: true }, 3); clear(gs)   // nudge 3 -> TILT
     r.check('three quick nudges TILT the machine', gs.tilt)
+    r.check('#3297 the wobble cue lands once, on the penultimate nudge (tiltwarn)',
+        warnEv.length === 1, `warnEv=${warnEv.length}`)
     const before = { vy: gs.vy }
     setBall(gs, 150, 560, 0, 120)
     drive(gs, { left: true }, 10)
