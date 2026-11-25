@@ -1,98 +1,50 @@
-# STATE — forge board snapshot (slot b, 2026-11-25 — STRIP POLISH LANDED, AND A RACE INSIDE IT)
+# STATE — Forge status (slot a)
 
-## This session — one ship, landed
-- Warden TARGET **#3370** claimed at slot b (QA polish pass for SKYWARD's strip
-  tail — direct warden assignment ⇒ builder-runs-QA-fix, not a ladder borrow).
-  All seven items shipped in **PR #3408 (merge d129d17)**; issue closed
-  shipped; prod re-verified independently (chunk `Skyward-C8n5XQox.js` carries
-  `SOCK_DELAY`, `▸` and the 480px rule — hashes shift with every later deploy).
-- **Fabric**: pure law `sockChain` — tail in 3 hinged joints, droop accumulates
-  toward the tip (0.45/0.675/0.9 calm; tip = `sockPose` exactly), flutter
-  lagged `SOCK_DELAY` 0.09 s/joint so gust snaps ripple DOWN. `sockPose`
-  untouched; white band carries dusk emissive 0x595d61.
-- **Item 2 builder call: MIRROR** — faint (0.6) echo ladder in the south lane,
-  tops → −x; wheels-abort reads upright, same price at the same place
-  (shots/skyward-dusk-abort-dir.png).
-- **Item 3 dusk measured**: calm deck 53 / sand 160 / mark 225 lum; deepest
-  reachable dim (hull ~215 m under stormCell, s≈0.3–0.4; the cell never
-  reaches the strip — closest ~465 m): deck floor ~52 holds, sand −30,
-  markings +150.
-- Item 4 `ladderBanner`/`ladderMark` ▸ tracks the live zone; item 5 attract
-  look glides (cos³) onto the airfield at the south apex — camera path only;
-  item 6 `dustFlow(speed)` + land events carry `speed` (captured BEFORE the
-  belt park zeroes the hull), parked belts raise no streaks; item 7 new
-  `max-height:480px` HUD rule fixes the 844×390 hint-under-pad.
+## Shift report — 25 Nov 2026, 05:30 (slot a, ~3 h)
+**Goal:** #3362 QA — SKYWARD post-bed-polish pass (6 items). **Shipped:** PR #3410
+(merge `33b728f`) — presentation-only; game hash and scoring untouched.
 
-## The race (new: #3419 filed)
-- The warden called slot b idle at 21:23Z and 22:57Z while the slot's session
-  was mid-`skywardcheck --mutate` (64 mutants × full suite ≈ 30+ min of
-  legitimate silence). The second kick spawned a SECOND slot-b session onto the
-  same issue/worktree/port; for ~8 min two brains drove slot b: the newcomer's
-  `devstop.sh 5178` killed the live session's dev server, its own `--mutate`
-  merged-with-main collided with ours mid-plant (mutateguard's #2049 check
-  correctly aborted the tainted sweep), and the original session then finished
-  everything — pushed 0588a8e (resolving the #3405 banner-ref conflict),
-  merged #3408, verified prod, closed #3370, pruned the worktree, parked this
-  STATE — and exited before its docs/state PR. No game damage; a dirtier race
-  could have shipped conflict markers. **#3419** carries the fix shape
-  (pid/.mutant-running/log-mtime liveness before any kick).
+**Closed:** #3362. **Residue filed:** #3411 (black polygon over far volcano in attract vista).
 
-## Proof
-- skywardcheck **194/194** (+19 pins), **64/64 mutants die** (delay, flat
-  droop, band emissive, mirror, ▸ dead/off-by-one, dust const, event speed,
-  vista glide). skywardplay PASSED (dusk pixel legs, landscape audit, abort
-  shot), zero page errors; eslint + lint:mario/fps/ai + build green pre-merge.
-- Post-merge independent pass by the collided session: eslint 0, build green,
-  194/194 normal check re-run on the branch, prod chunk markers above.
+### What landed
+1. **Attract vista** — the camera orbited a full 360°, framing the volcano's shaded faces
+   half the cycle. It now swings a 76° arc keeping the sunlit flank centred, opens fov to
+   72° in portrait; a root-cause fix (first rAF timestamp predated the loop's `last`, so a
+   negative dt inverted every exponential lerp at startup) stopped the vista overshooting.
+   The storm cell is excluded while the camera is deep inside it and drift-syncs on approach.
+2. **Exhaust streak** legible at phone scale: wider, hotter core, speed-reactive tail (sim
+   untouched); 700 px/s motion audit added to skywardplay.
+3. **Wind bed** ducks harder and darker near the cell core (−90 Hz, ×0.35 at the centre)
+   so rain owns the storm core and the mix separates on small speakers; pins updated.
+4. **Crash** beats now hand off (cut sweep → rumble → respawn spool) instead of stacking,
+   and respawn fires at the rumble tail — each beat audible on a phone speaker.
+5. **Chrome column** fits 320 px: rank strip and mission banner stack as a dedicated tier
+   (a 320×568 leg added to skywardplay).
+6. **Landscape phones** (844×390): hud scales down, banner hides, viewport clip guards —
+   rebased onto slot b's #3370 landscape tier (kept theirs, dropped the duplicate).
 
-## Harness lessons (worth one line each)
-- A long mutant sweep looks dead to idle-detection: silence ≠ stalled
-  (#3419). Trust pid/.mutant-running/log-mtime before any kick — and never
-  `devstop` a port whose owner you have not ruled out.
-- `--mutant` AND a concurrent `git merge` in one worktree is exactly the
-  #2049 shape; mutateguard's abort is the proof the guard earns its keep.
-- A harness timeout can leave a --mutant child alive mid-plant; a fresh run
-  then refuses on the planted file — check `.mutant-running` + pgrep first.
-- Ref-collision after merging origin/main is cheap: `skywardcheck` passed
-  194/194 untouched after the #3405 merge (refs side-by-side, trivial).
-- Canvas-sampling drive legs need a known craft: `__skywardTest.start()`
-  (free flight, plane) before physics-framed legs — a pad-verbs glider left
-  on the hull crashed the 24 m/s final.
-- `s>0` never reaches the strip (cell closest ~465 m): the deepest reachable
-  dusk is the hull parked ~215 m from stormCell() — park there rather than
-  lie about "in the storm".
+### Proof
+- `skywardcheck` 196/196 + all mutants die (`--mutate`: 261/261) on the merged tree.
+- `skywardplay` PASSED incl. new vista, 320×568, 844×390 legs.
+- Lint (eslint + mario/fps/ai) + build green; production `jalfern.com` serves the new
+  bundle (vista/wind signature bytes verified in `Skyward-Cqzrmb4D.js`).
 
-## PLAYABLE on main right now
-- `/retrogames/skyward` — + fabric windsock, two-direction zone paint, live ▸
-  ladder banner, dusk pixels measured, attract vista sells the airfield,
-  parked-belt clean air, landscape-phone HUD; everything prior (flare credit,
-  go-around, clean roll, plane wheels-down, belt park, thunderpass).
-- grind-city thinking bot, tidal-rush notch tail, pinball SOLO bed + smith,
-  ssx, comet-drift pair, marble pair, galaga bee, mario-kart, ice-climber,
-  pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT,
-  TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, missile,
-  pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
+### Known / open
+- **#3411** (filed, feedback): a small pure-black polygon sits at h·0.25 over the far
+  volcano in the attract vista (desktop + portrait). It survives hiding terrain, cell,
+  clouds and rain, and predates this pass, so the 3 h box ended with it shipped-clean
+  but unpinned — suspects are the storm-dim cap at coarse far-sphere tessellation or
+  `pow(dot,220)` precision on SwiftShader. Repro hook: `__skywardTest.attractT/attractCam`.
+- The vista's composition quality is asserted by geometry + sample pixels, not a human
+  eye — worth a glance at https://jalfern.com/retrogames/skyward attract.
+- CI: the `pull_request` event dropped again for this branch (second time today);
+  dispatch + forge-merge's check-runs fallback carried it.
 
-## Board watch (facts, not questions)
-- `game-queue` empty at claim and at close; `next` #1712 waiting-jon.
-- Skyward is crowded: slot a's **#3362** session was live at this close
-  resolving its attract-fov refs against #3408 (expect index.jsx collisions;
-  re-run skywardcheck after merges). #3405 merged mid-run; #3375
-  building-qa (items 3/4/5 open).
-- **#3419 filed** (harness, feedback): idle-detect must see mutant sweeps.
-- `building` at close: #3362 only. `building-qa`: #3375.
+## Board (05:30)
+- `game-queue`: empty — the warden may want a new flagship/polish target.
+- `next`: #1712 (waiting-jon). Open QA tails: #3379, #3368, #3329, #3290 (items 5–7).
+- Slot b shipped #3404 (Sonic 3), #3408 (QA fixes), #3412 (state) this window.
+- Skyward's QA story is now strong: 196 pins + mutants + a view/legibility suite.
 
-## Open questions (links only — #605)
-- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane).
-- #3054 — native TestFlight ports have no recorder/upload (AWAITING).
-- #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
-- #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
-- No new jonq questions filed this session.
-
-## Slot state at handoff
-- Slot b: dev :5178 stopped via scripts/devstop.sh; lane worktree pruned
-  clean by mergeclean after #3408; main checkout detached at origin/main.
-- Game merged this session window ⇒ STATE ships via its own docs/state PR;
-  parked at /tmp/forge/STATE.b.parked.md via statepark.
-- Time-box: the collided-session archaeology + double verification ate ~1 h;
-  shipped well inside.
+## Open questions (none filed this session)
+- Nothing taste-blocking; #3411 carries the only known visual defect with its own repro.
