@@ -7,6 +7,7 @@
 // budget the SHORE demo never held.
 
 import * as THREE from 'three'
+import { sockPose } from './sim.js'
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
 const lerp = (a, b, t) => a + (b - a) * t
@@ -37,6 +38,26 @@ function labelSprite(text, color = '#ffffff') {
     x.shadowBlur = 8
     x.fillStyle = color
     x.fillText(text, 160, 38)
+    const t = new THREE.CanvasTexture(c)
+    t.colorSpace = THREE.SRGBColorSpace
+    return t
+}
+
+// #3310 — the zone numbers, painted flat on the asphalt so a first-timer
+// learns 150/300/450/700 mid-air instead of only from the banner.
+function runwayNumber(text) {
+    const c = document.createElement('canvas')
+    c.width = 256
+    c.height = 160
+    const x = c.getContext('2d')
+    x.font = 'bold 112px ui-monospace, Menlo, monospace'
+    x.textAlign = 'center'
+    x.textBaseline = 'middle'
+    x.lineWidth = 12
+    x.strokeStyle = 'rgba(10,12,16,.85)'
+    x.strokeText(text, 128, 84)
+    x.fillStyle = '#f2f4f5'
+    x.fillText(text, 128, 84)
     const t = new THREE.CanvasTexture(c)
     t.colorSpace = THREE.SRGBColorSpace
     return t
@@ -303,15 +324,20 @@ void main(){
     // landing test in our keys). Readable from cruise height: dark band, white
     // edge lines + piano keys at the threshold, centreline dashes, zone ticks
     // where the score steps, windsock + ground board at the threshold.
+    let sockProps = null // #3310 — the windsock's pivot + tail, ridden in render()
     {
         const R = world.runway
         const cx = (R.ax + R.bx) / 2, cz = (R.az + R.bz) / 2
         const len = world.STRIP_LEN, wid = R.half * 2
         const deck = world.terrainHeight(cx, cz) // the carve makes this exact
-        const asphalt = new THREE.Mesh(new THREE.BoxGeometry(len, 0.14, wid), new THREE.MeshLambertMaterial({ color: 0x3a3f47 }))
+        // #3310 item 4 — dusk contrast: the cell dims the sand toward grey, and
+        // a plain Lambert deck + markings dim with it (dark band on dark sand).
+        // Both get an emissive floor so the airfield keeps its silhouette while
+        // the storm soaks the beach.
+        const asphalt = new THREE.Mesh(new THREE.BoxGeometry(len, 0.14, wid), new THREE.MeshLambertMaterial({ color: 0x3a3f47, emissive: 0x10151c }))
         asphalt.position.set(cx, deck + 0.07, cz)
         scene.add(asphalt)
-        const white = new THREE.MeshLambertMaterial({ color: 0xf2f4f5 })
+        const white = new THREE.MeshLambertMaterial({ color: 0xf2f4f5, emissive: 0x7b8187 })
         const mark = (l, w, x, z) => {
             const m = new THREE.Mesh(new THREE.BoxGeometry(l, 0.06, w), white)
             m.position.set(x, deck + 0.16, z)
@@ -322,14 +348,30 @@ void main(){
         for (let d = 14; d < len - 8; d += 16) mark(6, 0.5, R.ax + d, cz)
         for (const off of [-4.5, -1.5, 1.5, 4.5]) mark(9, 1.1, R.ax + 5.5, cz + off) // piano keys
         for (const f of [0.25, 0.5, 0.75]) mark(0.6, wid - 1.4, R.ax + f * len, cz) // zone ticks
-        { // windsock at the threshold — an airfield is nothing without one
-            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 5, 8), new THREE.MeshLambertMaterial({ color: 0xd9dde1 }))
+        // #3310 item 2 — the score ladder painted in the north lane (centrelines
+        // keep their dashes): each zone names its price at its own centre.
+        for (let zi = 0; zi < 4; zi++) {
+            const dec = new THREE.Mesh(new THREE.PlaneGeometry(11, 6.4),
+                new THREE.MeshBasicMaterial({ map: runwayNumber([150, 300, 450, 700][zi]), transparent: true, opacity: 0.94, depthWrite: false }))
+            dec.rotation.x = -Math.PI / 2 // flat, glyph tops toward −z: readable on the west→east final
+            dec.position.set(R.ax + ((zi + 0.5) / 4) * len, deck + 0.17, cz - 3.6)
+            scene.add(dec)
+        }
+        { // windsock at the threshold — an airfield is nothing without one,
+          // and this one FLIES (#3310 item 6): the cone hangs from a pivot at
+          // the pole top and sockPose streams it downwind, droops it at slack
+          // wind and flutters it on the sim clock.
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 5, 8), new THREE.MeshLambertMaterial({ color: 0xd9dde1, emissive: 0x3c4045 }))
             pole.position.set(R.ax - 2, deck + 2.5, cz + R.half + 3)
             scene.add(pole)
-            const sock = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.8, 10, 1, true), new THREE.MeshLambertMaterial({ color: 0xff8b3d, side: THREE.DoubleSide }))
-            sock.rotation.z = Math.PI / 2
-            sock.position.set(R.ax - 2 + 1.0, deck + 4.6, cz + R.half + 3)
-            scene.add(sock)
+            const sockGroup = new THREE.Group()
+            sockGroup.position.set(R.ax - 2, deck + 4.95, cz + R.half + 3)
+            const sock = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.8, 10, 1, true), new THREE.MeshLambertMaterial({ color: 0xff8b3d, side: THREE.DoubleSide, emissive: 0x5c2b00 }))
+            sock.rotation.z = -Math.PI / 2 // tail along +x; the group yaws it downwind
+            sock.position.set(0.9, -0.04, 0)
+            sockGroup.add(sock)
+            scene.add(sockGroup)
+            sockProps = { group: sockGroup, tail: sock, x: R.ax - 2, z: cz + R.half + 3 }
             const board = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelSprite('RUNWAY', '#ffd23f'), transparent: true, depthWrite: false }))
             board.scale.set(22, 5, 1)
             board.position.set(R.ax - 3, deck + 2.4, cz - R.half - 4)
@@ -516,6 +558,21 @@ void main(){
         // one position both the weather and the sky read this frame.
         const cellP = world.stormPos(t)
         stormCell.position.set(cellP.x - world.storm.x, 0, cellP.z - world.storm.z)
+        // #3310 item 6 — the sock flies: downwind, drooping at slack wind,
+        // fluttering on the sim clock; passing-cell gusts make it snap.
+        if (sockProps) {
+            const gust = world.stormAt(sockProps.x, sockProps.z, t).gust
+            const p = sockPose(world.wind, t, gust)
+            if (p.dir) {
+                const yaw = Math.atan2(-p.dir.z, p.dir.x) // +x-tail → downwind
+                let d = yaw - sockProps.group.rotation.y
+                while (d > Math.PI) d -= Math.PI * 2
+                while (d < -Math.PI) d += Math.PI * 2
+                sockProps.group.rotation.y += d * 0.08
+            }
+            sockProps.tail.rotation.z = -Math.PI / 2 - p.droop
+            sockProps.tail.rotation.y = p.sway
+        }
         // bolt to the water near the core, on flash peaks — re-jittered at
         // 26 Hz so it flickers rather than shimmers
         if (flash > 0) {

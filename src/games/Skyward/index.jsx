@@ -38,6 +38,13 @@ const SkywardGame = () => {
     const engOnRef = useRef(false)
     const prevEngRawRef = useRef(0)
     const windOnRef = useRef(false)
+    // #3310 item 1 — the B pad carries a LIVE verb: DROP only while the drop
+    // course owns the button; RECYCLE at the school apron (what B actually does
+    // there); 'B' when it's inert — no false promise on the glider's approach.
+    const [bLabel, setBLabel] = useState('B')
+    const bLabelRef = useRef('B')
+    const ladderRef = useRef(false) // #3310 item 2 — the zone ladder shows once
+    const ladderAtRef = useRef(0)
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -228,6 +235,16 @@ const SkywardGame = () => {
             return null
         }
 
+        // #3310 item 5 — a recycled glider rolling over the strip deserves its
+        // own lesson too: the painted numbers are the throttle chart out here.
+        const gliderRunwayHint = (g) => {
+            const zn = stripZone(g.world, g.p.x, g.p.z)
+            if (zn) return 'RUNWAY — READ THE NUMBERS, RELEASE EARLY · far end pays 700'
+            const d = Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az)
+            if (d < 120) return `RUNWAY ${Math.round(d)} m — GLIDERS LAND HERE TOO`
+            return null
+        }
+
         // #3332 — the belt's own lesson at the strip: the ground already
         // forgives it; the strip pays for the QUIET arrival, and what parks
         // answers the throttle
@@ -246,6 +263,9 @@ const SkywardGame = () => {
             prevStormRef.current = 0
             prevEngRawRef.current = 0
             stormWarnedRef.current = false
+            ladderRef.current = false // #3310 — every run gets its own ladder lesson
+            ladderAtRef.current = 0
+            bLabelRef.current = 'B'; setBLabel('B')
             setOver(null)
             setMode('play')
             tone(520, 0.08)
@@ -454,6 +474,21 @@ const SkywardGame = () => {
                     passEnterUntilRef.current = performance.now() + 3800
                     stormWarnedRef.current = false
                 }
+                // #3310 item 2 — the first SPOT LANDING teaches the whole ladder
+                // once: title banner first, then the price list it lands on.
+                if (gs.phase === 'spot' && prevPhaseRef.current !== 'spot' && !ladderRef.current) {
+                    ladderRef.current = true
+                    ladderAtRef.current = performance.now() + 2600
+                }
+                if (ladderAtRef.current && performance.now() > ladderAtRef.current) {
+                    ladderAtRef.current = 0
+                    banner('SHORT 150 · MIDDLE 300 · LONG 450 · FULL 700', 3.4)
+                }
+                // #3310 item 1 — the pad shows the verb this button carries now
+                const bl = gs.phase === 'drop' ? 'DROP'
+                    : gs.phase === 'free' && !gs.done && gs.respawnT <= 0
+                        && Math.hypot(gs.p.x - gs.world.school.x, gs.p.z - gs.world.school.z) < 74 ? 'RECYCLE' : 'B'
+                if (bl !== bLabelRef.current) { bLabelRef.current = bl; setBLabel(bl) }
                 if (gs.phase === 'pass' && gs.stormS >= 0.7 && !stormWarnedRef.current) {
                     stormWarnedRef.current = true
                     tone(196, 0.18, 'sawtooth', 0.07)
@@ -479,6 +514,7 @@ const SkywardGame = () => {
                             : shown.phase === 'spot' ? stripHint(shown)
                         : shown.phase === 'free' ? (shown.craft === 'plane' && planeRunwayHint(shown))
                             || (shown.craft === 'belt' && beltRunwayHint(shown))
+                            || (shown.craft === 'glider' && gliderRunwayHint(shown))
                             || 'CRUISE · markers glow near launches · B at school recycles craft' : '')
                 : ''
             if (E.hint.textContent !== hint) E.hint.textContent = hint
@@ -631,7 +667,7 @@ const SkywardGame = () => {
                 </div>
             )}
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'SKYWARD')} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: 'DROP', code: 'KeyB' }} />
+            <VirtualControls visible={play && !paused} secondAction={{ label: bLabel, code: 'KeyB' }} />
         </div>
     )
 }

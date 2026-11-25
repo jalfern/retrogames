@@ -744,6 +744,22 @@ export function windBed(craft, speed, stormS) {
     }
 }
 
+// #3310 — the windsock lives. Pure pose law for the airfield sock: it streams
+// DOWNWIND (dir), its tail droops when the wind is slack, and it flutters on
+// the sim clock (no RNG — deterministic, so a replay sees the same flutter).
+// The renderer hangs the cone on a pivot and rides these numbers; the cabinet
+// and skywardcheck read the same law.
+export function sockPose(wind, t, gust) {
+    const wx = (Number.isFinite(wind?.x) ? wind.x : 0) + (Number.isFinite(gust?.x) ? gust.x : 0)
+    const wz = (Number.isFinite(wind?.z) ? wind.z : 0) + (Number.isFinite(gust?.z) ? gust.z : 0)
+    const sp = Math.hypot(wx, wz)
+    if (sp < 0.05) return { dir: null, droop: 0.9, sway: 0, flutter: 0 }
+    const flutter = clamp(sp / 4.4, 0, 1) // the seed wind's own full strength
+    const droop = clamp(1 - sp / 2.2, 0, 1) * 0.9 // a stiff breeze streams it flat
+    const sway = Math.sin(t * 2.7) * 0.10 * flutter + Math.sin(t * 5.3 + 1.7) * 0.045 * flutter
+    return { dir: { x: +(wx / sp).toFixed(4), z: +(wz / sp).toFixed(4) }, droop: +droop.toFixed(3), sway: +sway.toFixed(4), flutter: +flutter.toFixed(3) }
+}
+
 export function engineCue(raw, prevRaw) {
     const a = Number.isFinite(raw) ? raw : 0
     const b = Number.isFinite(prevRaw) ? prevRaw : 0
