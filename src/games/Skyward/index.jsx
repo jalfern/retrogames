@@ -86,7 +86,6 @@ const SkywardGame = () => {
   [data-h=speed]{left:10px;bottom:auto;top:76px}
   [data-h=alt]{left:10px;bottom:auto;top:94px}
   [data-h=score]{right:auto;left:10px;bottom:auto;top:112px;text-align:left}
-<<<<<<< HEAD
   [data-h=chips]{right:auto;left:10px;bottom:auto;top:130px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:calc(100vw - 20px);white-space:nowrap}
   /* #3344 — phone widths: the longest strip banner (RUNWAY FULL STRIP +700 — PARKED,~381px natural) must clear the 92vw box as one line or it wraps into the tell band below; 16px/.1em fits it (~348px). */
   [data-h=banner]{width:92vw;font-size:16px;letter-spacing:.1em;white-space:nowrap}
@@ -116,7 +115,6 @@ const SkywardGame = () => {
   [data-h=banner]{white-space:normal;font-size:14px;letter-spacing:.06em}
   [data-h=tell]{font-size:10px;letter-spacing:.1em;top:100px}
   [data-h=hint]{font-size:9px;letter-spacing:.06em}
-}
 }
 </style>
 <div data-h="speed">000 KTS</div>
@@ -391,7 +389,11 @@ const SkywardGame = () => {
         let shimT = 0
         const frame = (now) => {
             raf = requestAnimationFrame(frame)
-            const ft = Math.min(now - last, 100)
+            // the first rAF timestamp can predate this effect's `last` — clamp
+            // both ways or dt goes negative and every lerp factor inverts
+            // (the vista camera overshot its ring by hundreds of metres on
+            // load, found in the #3362 attract audit)
+            const ft = Math.max(0, Math.min(now - last, 100))
             last = now
             const live = screenRef.current === 'attract' ? demo : gs
             const pausedNow = pausedRef.current
@@ -677,6 +679,7 @@ const SkywardGame = () => {
                     return {
                         x: Math.round(c.position.x), y: Math.round(c.position.y), z: Math.round(c.position.z),
                         fov: Math.round(c.fov), stormS: +s.s.toFixed(2),
+                        cell: glRef.current.cellVisible ? glRef.current.cellVisible() : true,
                     }
                 },
                 // #3302 — the seed wind, so a drive leg can crab into it and

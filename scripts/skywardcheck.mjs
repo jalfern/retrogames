@@ -832,7 +832,7 @@ void runAuto
     })())
     r.check('the attract vista glides onto the strip once per cycle (camera path only)', (() => {
         const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
-        return src.includes('Math.pow(Math.max(0, (Math.cos(a) + 1) / 2), 3)') && src.includes('tmp.set(50 * south, 30 - 20 * south, -60 + 190 * south)')
+        return src.includes('Math.pow(Math.max(0, (Math.cos(a) + 1) / 2), 3)') && src.includes('tmp.set(50 * south, (portrait ? 20 : 30) - 10 * south, -40 + 190 * south)')
     })())
 
     // item 4 — the ladder banner marks the live zone with a ▸. Literals here:
@@ -1388,7 +1388,7 @@ if (process.argv.includes('--mutate')) {
         ['#3370 dust ignores the hull (a parked belt puffs a full plume)', SIMF, 'return +clamp((v - CFG.DUST_WALK) / (CFG.DUST_PLOW - CFG.DUST_WALK), 0, 1).toFixed(3)', 'return 1'],
         ['#3370 the park forgets its arrival speed (the touchdown puff loses its meter)', SIMF, 'aligned: touch.aligned, speed: vIn })', 'aligned: touch.aligned, speed: 0 })'],
         ['#3370 south-lane echo reads upside-down again (mirror dies)', 'src/games/Skyward/renderer.js', 'echo.rotation.y = Math.PI / 2', 'echo.rotation.y = -Math.PI / 2'],
-        ['#3370 the attract vista never sells the strip (look stays north)', 'src/games/Skyward/renderer.js', 'tmp.set(50 * south, 30 - 20 * south, -60 + 190 * south)', 'tmp.set(0, 30, -60)'],
+        ['#3370 the attract vista never sells the strip (look stays north)', 'src/games/Skyward/renderer.js', 'tmp.set(50 * south, (portrait ? 20 : 30) - 10 * south, -40 + 190 * south)', 'tmp.set(0, 30, -60)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

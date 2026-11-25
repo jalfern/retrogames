@@ -646,6 +646,7 @@ void main(){
         const cellP = world.stormPos(t)
         stormCell.position.set(cellP.x - world.storm.x, 0, cellP.z - world.storm.z)
         showCell(true) // flight paints the cell from any distance — incl. inside
+        rain.visible = true // and rain is the flight's own weather
         // #3310 item 6 — the sock flies: downwind, drooping at slack wind,
         // fluttering on the sim clock; passing-cell gusts make it snap.
         // #3370 item 1 — the snap runs through the joints: absolute per-joint
@@ -931,19 +932,20 @@ void main(){
     }
 
     const orbitAttract = (g, dt) => {
-        // attract camera: a slow vista orbit of the isle. #3370 item 5 — the
-        // orbit always passed the strip small and low in frame, so once per
+        // attract camera: a slow vista sweep of the isle. #3370 item 5 — the
+        // old loop passed the strip small and low in frame, so once per
         // cycle, as the south leg crests, the look glides down the coast onto
         // the airfield: the painted numbers, the flying sock and the RUNWAY
         // board sell themselves on the idle screen. Camera path only — the
         // attract autopilot still flies its mat-bound line (#3310 honesty).
-        // #3362 item 1 — and the framing is no longer desktop-only: at
-        // 390×844 a fixed 62° fov squeezes the horizontal to ~31° and cuts
-        // the isle in half behind the title card, so portrait opens the fov,
-        // pulls in a touch, drops the eye and aims at the island's centre;
-        // the cell is never painted from inside (rain and cluster go dark
-        // while the camera stands in them — flight gets them all back).
-        const a = g.t * 0.045
+        // #3362 item 1 — portrait opens the fov (a fixed 62° squeezes a
+        // 390-wide frame to ~31° horizontal and cuts the isle in half), and
+        // the camera pans a sun-side arc (SW↔WNW, ~84 s) instead of a full
+        // circle: the sun sits WSW, so half of the old loop framed the isle's
+        // shaded faces as a black slab. The south apex still crosses, so the
+        // coast glide keeps its cue; the storm rides behind the isle, and the
+        // cell is never painted from inside (flight gets them all back).
+        const a = -0.55 + 1.35 * Math.sin(g.t * 0.075) // SW-biased pan, ~84 s sweep
         const portrait = camera.aspect < 0.8
         const R = portrait ? 440 : 480
         const H = portrait ? 112 : 130
@@ -953,7 +955,10 @@ void main(){
         const south = Math.pow(Math.max(0, (Math.cos(a) + 1) / 2), 3) // 1 at the south apex
         camLook.lerp(tmp.set(50 * south, (portrait ? 20 : 30) - 10 * south, -40 + 190 * south), 1 - Math.pow(0.01, dt))
         camera.lookAt(camLook)
-        camera.fov = lerp(camera.fov, portrait ? 72 : 62, 0.02)
+        // time-based (not frame-based): software-rendered CI churns frames at
+        // a trickle, and the old fixed 0.02/frame never reached the portrait
+        // target there — same feel at 60 fps, honest convergence below it.
+        camera.fov = lerp(camera.fov, portrait ? 72 : 62, 1 - Math.pow(0.3, dt))
         camera.updateProjectionMatrix()
         // The vista orbit existed only as camera math — nothing ever pointed a
         // draw at it, so the canvas sat empty behind the SKYWARD card on every
@@ -963,6 +968,20 @@ void main(){
         Object.values(craft).forEach((cc) => { cc.visible = false })
         shadowMesh.visible = false
         showCell(world.stormAt(camera.position.x, camera.position.z, g.t).s <= 0.05)
+        // The painted cell follows the weather in attract too (#3267's law
+        // lives in render(); since the vista draws it, it owes the drift).
+        const cellP = world.stormPos(g.t)
+        stormCell.position.set(cellP.x - world.storm.x, 0, cellP.z - world.storm.z)
+        // Attract is a fair-weather postcard: the rain shafts belong to the
+        // flight, not the title card (as a vista prop the shafts read as a
+        // dark slab across the isle, especially on software-rendered phones).
+        rain.visible = false
+        seaMat.uniforms.uTime.value = g.t
+        seaMat.uniforms.uCam.value.copy(camera.position)
+        skyMat.uniforms.uFlash.value = world.stormFlash(g.t)
+        // Fair-weather postcard: no rain shafts across the title card (they
+        // read as a dark slab in a vista; flight re-enables them every frame).
+        rain.visible = false
         seaMat.uniforms.uTime.value = g.t
         seaMat.uniforms.uCam.value.copy(camera.position)
         skyMat.uniforms.uFlash.value = world.stormFlash(g.t)
@@ -984,5 +1003,5 @@ void main(){
     }
 
     resize()
-    return { render, orbitAttract, resize, dispose, burst, camera }
+    return { render, orbitAttract, resize, dispose, burst, camera, cellVisible: () => stormCell.visible }
 }
