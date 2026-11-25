@@ -1312,9 +1312,9 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
 {
     const THREE = await import('three')
     const { makeWake, wakePush, wakeStep } = await import('../src/games/TidalRush/art.js')
-    const crestA = (w, i) => w.geo.attributes.color.array[(i * 3) * 4 + 3]
-    const fillA = (w, i) => w.geo.attributes.color.array[(i * 3 + 1) * 4 + 3]
-    const crestR = (w, i) => w.geo.attributes.color.array[(i * 3) * 4]
+    const crestA = (w, i) => w.geo.attributes.color.array[(i * 5) * 4 + 3]
+    const fillA = (w, i) => w.geo.attributes.color.array[(i * 5 + 2) * 4 + 3]
+    const crestR = (w, i) => w.geo.attributes.color.array[(i * 5) * 4]
 
     // additive-only law: BOTH ribbons add light; depth stays with the sea
     const wk0 = makeWake(8)
@@ -1344,14 +1344,14 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('cooling law: the crest hue drifts toward cyan as the bubbles die (b stays hot)',
         (() => {
             const rF = crestR(fa, 0), rO = crestR(fb, 0)
-            const bb = wkc => wkc.geo.attributes.color.array[(0 * 3) * 4 + 2]
+            const bb = wkc => wkc.geo.attributes.color.array[(0 * 5) * 4 + 2]
             return rF > rO + 0.05 && bb(fb) >= rO
         })())
     ok('spread law: the V arms are wider at ~0.9 s than at birth (the wake opens)',
         (() => {
             const sep = (w) => Math.hypot(
-                w.geo.attributes.position.array[0] - w.geo.attributes.position.array[6],
-                w.geo.attributes.position.array[2] - w.geo.attributes.position.array[8])
+                w.geo.attributes.position.array[0] - w.geo.attributes.position.array[12],
+                w.geo.attributes.position.array[2] - w.geo.attributes.position.array[14])
             return sep(fb) > 1.8 * sep(fa)
         })())
 
@@ -1393,8 +1393,8 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('empty wake draws nothing', rg.geo.drawRange.count === 0 && rg.glowGeo.drawRange.count === 0)
     for (let i = 0; i < 12; i++) wakePush(rg, i, 0.6, 0, 0, 1.6)
     wakeStep(rg, 1 / 60)
-    ok('ring + drawRange law: pts trim to n, bright counts 12 per section, glow 6',
-        rg.pts.length === 8 && rg.geo.drawRange.count === (8 - 1) * 12 && rg.glowGeo.drawRange.count === (8 - 1) * 6)
+    ok('ring + drawRange law: pts trim to n, bright counts 24 per section, glow 6',
+        rg.pts.length === 8 && rg.geo.drawRange.count === (8 - 1) * 24 && rg.glowGeo.drawRange.count === (8 - 1) * 6)
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)

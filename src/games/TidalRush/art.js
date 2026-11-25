@@ -435,22 +435,21 @@ export function ringStep(pool, dt) {
 }
 
 export function makeWake(n = 44) {
-    // #3337 — the FOAM V. Three lanes per section: two bright crests and a
-    // thin inner fill. The V-arms carry the broken foam (what a wake actually
-    // looks like on the bay); the old ribbon painted one flat value edge to
-    // edge. `seq` hands every point its own twinkle phase at emit time —
+    // #3337 — the FOAM V. Five lanes per section: bright crest LINES at the
+    // arms, a shoulder falling off inward, and a calm channel down the middle
+    // (what a wake actually looks like: two foam lines, quiet water between).
+    // `seq` hands every point its own twinkle phase at emit time —
     // deterministic (no Math.random downstream), and never renumbered, so the
     // shimmer rides with the water instead of popping when the tail shifts.
-    const pos = new Float32Array(n * 3 * 3)
-    const col = new Float32Array(n * 3 * 4)
+    const pos = new Float32Array(n * 5 * 3)
+    const col = new Float32Array(n * 5 * 4)
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     geo.setAttribute('color', new THREE.BufferAttribute(col, 4))
     const idx = []
     for (let i = 0; i < n - 1; i++) {
-        const a = i * 3, b = a + 3
-        idx.push(a, b, b + 1, a, b + 1, a + 1) // crest-L ⇄ fill lane
-        idx.push(a + 1, b + 1, b + 2, a + 1, b + 2, a + 2) // fill ⇄ crest-R lane
+        const a = i * 5, b = a + 5
+        for (let l = 0; l < 4; l++) idx.push(a + l, b + l, b + l + 1, a + l, b + l + 1, a + l + 1)
     }
     geo.setIndex(idx)
     geo.setDrawRange(0, 0)
@@ -647,21 +646,22 @@ export function wakeStep(w, dt) {
         // the V arms spread with age; the fresh end stays narrow and hot
         const hw = p.width * (0.22 + 0.78 * t)
         const px = Math.cos(p.heading), pz = -Math.sin(p.heading)
-        const ea = foam * tw * 0.66 // crest alpha (the bright V lines)
-        const j = i * 3
-        pos[j * 3] = p.x + px * hw; pos[j * 3 + 1] = p.y; pos[j * 3 + 2] = p.z + pz * hw
-        pos[(j + 1) * 3] = p.x; pos[(j + 1) * 3 + 1] = p.y; pos[(j + 1) * 3 + 2] = p.z
-        pos[(j + 2) * 3] = p.x - px * hw; pos[(j + 2) * 3 + 1] = p.y; pos[(j + 2) * 3 + 2] = p.z - pz * hw
-        col[j * 4] = r; col[j * 4 + 1] = g; col[j * 4 + 2] = bb; col[j * 4 + 3] = ea
-        // thin fill between the crests: calm water inside the V, a third of
-        // the crest — the eye reconstructs two spreading foam lines.
-        col[(j + 1) * 4] = r * 0.94; col[(j + 1) * 4 + 1] = g * 0.98; col[(j + 1) * 4 + 2] = bb
-        col[(j + 1) * 4 + 3] = ea * 0.32
-        col[(j + 2) * 4] = r; col[(j + 2) * 4 + 1] = g; col[(j + 2) * 4 + 2] = bb; col[(j + 2) * 4 + 3] = ea
-        // additive disturbed-water glow: wider, faint cyan haze under the V.
-        // Strictly light-adding — the darkening-strip artifact is gone (#3337).
-        const dw = p.width * (0.42 + 0.95 * t)
-        const ga = foam * tw * 0.12
+        const ea = foam * tw * 0.70 // crest-line alpha (the bright V arms)
+        const j = i * 5
+        const lanes = [[-hw, ea], [-hw * 0.68, ea * 0.34], [0, ea * 0.10], [hw * 0.68, ea * 0.34], [hw, ea]]
+        for (let l = 0; l < 5; l++) {
+            const o = lanes[l][0]
+            pos[(j + l) * 3] = p.x + px * o; pos[(j + l) * 3 + 1] = p.y; pos[(j + l) * 3 + 2] = p.z + pz * o
+            col[(j + l) * 4] = l === 2 ? r * 0.94 : r
+            col[(j + l) * 4 + 1] = l === 2 ? g * 0.98 : g
+            col[(j + l) * 4 + 2] = bb
+            col[(j + l) * 4 + 3] = lanes[l][1]
+        }
+        // additive disturbed-water glow: a slightly wider, faint cyan haze under
+        // the arms — restrained so the V lines stay the read. Strictly
+        // light-adding: the darkening-strip artifact is gone (#3337).
+        const dw = hw * 1.18
+        const ga = foam * tw * 0.05
         const dy = p.y - 0.02
         const q = i * 2
         dPos[q * 3] = p.x + px * dw; dPos[q * 3 + 1] = dy; dPos[q * 3 + 2] = p.z + pz * dw
@@ -669,7 +669,7 @@ export function wakeStep(w, dt) {
         dCol[q * 4] = 0.40; dCol[q * 4 + 1] = 0.66; dCol[q * 4 + 2] = 0.85; dCol[q * 4 + 3] = ga
         dCol[(q + 1) * 4] = 0.40; dCol[(q + 1) * 4 + 1] = 0.66; dCol[(q + 1) * 4 + 2] = 0.85; dCol[(q + 1) * 4 + 3] = ga
     }
-    w.geo.setDrawRange(0, m >= 2 ? (m - 1) * 12 : 0)
+    w.geo.setDrawRange(0, m >= 2 ? (m - 1) * 24 : 0)
     w.geo.attributes.position.needsUpdate = true
     w.geo.attributes.color.needsUpdate = true
     w.glowGeo.setDrawRange(0, m >= 2 ? (m - 1) * 6 : 0)
