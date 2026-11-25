@@ -144,7 +144,6 @@ ok(Object.keys(PAD_TYPE_LABELS).length === PAD_TYPES.length, 'every type has a l
     // so an untouched game renders its shipped pad byte-for-byte. R-TYPE's
     // △ THROW entry keeps the #2931 third verb reachable in the diamond.
     for (const [p, kinds, why] of [
-        ['/mario-kart', 'stick', 'full'],
         ['/galaga', 'stick', 'full'], ['/joust', 'stick', 'full'], ['/spy-hunter', 'stick', 'full'],
         ['/r-type', 'dpad', 'full'], ['/double-dragon', 'dpad', 'full'], ['/contra', 'dpad', 'full'],
     ]) {
@@ -207,6 +206,32 @@ ok(Object.keys(PAD_TYPE_LABELS).length === PAD_TYPES.length, 'every type has a l
         ok(stickAt > 0 && /padTypeUI !== 'full' && padTypeUI !== 'tilt'/.test(ssxIdx.slice(stickAt - 300, stickAt)), 'SSX game-side stick yields to TILT (the gate sits right above data-ssx-stick)')
         ok((ssxIdx.match(/padTypeUI !== 'tilt'/g) || []).length === 1, 'exactly the stick chrome yields — the trick row stays mounted in tilt')
         ok(ssxIdx.includes('padState.engaged ? padState.x'), 'SSX steer reads the padState holder tilt writes')
+    }
+    // #3131 rollout tail 3 — the ladder's next title: the ladder said #3107's
+    // roller first (done, #3129), then the next title per #3118's candidates —
+    // the RACERS lean, and MARIO KART is the analog racer that was left. Its
+    // pad reads currentPad('stick') through steerPedals, the exact rail the
+    // tilt path writes (holder x/y): roll steers on x, lean forward (−y) is
+    // throttle and lean back (+y) brakes — the same sign law SSX tucks and
+    // COMET DRIFT throttles under. DRIFT + ITEM stay chips: the tilt pad
+    // draws A/B, so nothing is orphaned. Supports-only grant (#3118 law).
+    {
+        ok(/supports: \['stick', 'tilt', 'full'\]/.test(blockOf('/mario-kart')), 'MARIO KART offers TILT (#3131 lean racer, full stays offered)')
+        ok(!/\btype: '/.test(blockOf('/mario-kart')), 'mario-kart grant keeps the derived stick default')
+        ok(/analog: true/.test(blockOf('/mario-kart')), 'mario-kart consumes the analog vector tilt writes')
+        ok(defaultTypeFor({ method: 'stick', buttons: [], analog: true, supports: ['stick', 'tilt', 'full'] }) === 'stick', 'mario-kart tilt grant keeps the derived stick default')
+        // shouldUseStick consistency (#3131): every tilt-capable title must be
+        // a stick game — the gamepad bridge already drives those titles with
+        // the left-stick axes, so pad, stick and tilt all mean one vector. A
+        // tilt grant on a layout: 'dpad' title would fork the semantics.
+        const padBlocks = [...src.matchAll(/path: '([^']+)',\s*pad: \{((?:[^{}]|\{[^{}]*\})*)\}/g)]
+        const tiltPaths = padBlocks.filter((m) => /supports: \[[^\]]*'tilt'[^\]]*\]/.test(m[2])).map((m) => m[1]).sort()
+        ok(tiltPaths.join(',') === '/comet-drift,/comet-drift-hd,/marble-madness,/marble-rush,/mario-kart,/ssx', `exactly the tilt shelf: ${tiltPaths.join(',')}`)
+        for (const m of padBlocks) {
+            if (!/supports: \[[^\]]*'tilt'[^\]]*\]/.test(m[2])) continue
+            ok(!/method: 'dpad'|layout: 'dpad'/.test(m[2]), `${m[1]} is tilt-capable AND stick-based (shouldUseStick true — one stick semantic across pad and tilt)`)
+            ok(/analog: true/.test(m[2]), `${m[1]} consumes the analog vector tilt writes`)
+        }
     }
     // #3129 rollout tail 2 — pointer supports (taste calls). A game may offer
     // POINTER only when its canvas taps already ARE the verbs; these three
