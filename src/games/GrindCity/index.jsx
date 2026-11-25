@@ -750,7 +750,7 @@ const GrindCityGame = () => {
                     return stateOf(sim)
                 },
                 tick: (p) => { simTick(p); return stateOf(sim) },
-                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), orbit: !!orbitOn, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode }),
+                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), sfxDuck: attractMode ? ATTRACT_SFX : 1, orbit: !!orbitOn, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode }),
                 canvas: () => canvas,
             })
         }

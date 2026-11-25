@@ -383,10 +383,11 @@ try {
         // attract chip (ALL-TIME prefix) and the near-miss replay's badge/chip/hint stack.
         // A 25-char badge on nowrap at 0.2em tracking is wider than a 320px screen, and
         // the SHARE chip is pinned into the same corner the skip hint runs through.
-        const rcTxt = () => ({
-            rc: (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom, sw: el.scrollWidth, cw: el.clientWidth } },
-            txt: (s) => [...document.querySelectorAll('div,span')].filter(d => d.textContent.trim().startsWith(s) && d.children.length <= 6).sort((a, b) => a.textContent.length - b.textContent.length)[0],
-        })
+        const RC = `(() => {
+            const rc = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom, sw: el.scrollWidth, cw: el.clientWidth } }
+            const txt = (s) => [...document.querySelectorAll('div,span')].filter(d => d.textContent.trim().startsWith(s) && d.children.length <= 6).sort((a, b) => a.textContent.length - b.textContent.length)[0]
+            return { rc, txt }
+        })()`
         // bank a line (reset wipes, the run rewrites the store), skip to attract,
         // reload so the chip wears its longest variant: ALL-TIME BEST LINE … ★ GOALS
         await pg.evaluate(() => { const g = window.__game; g.reset(7); g.step({}, 300); window.__grindTest.teleport({ timeLeft: 0 }); g.release() })
@@ -400,7 +401,7 @@ try {
         await pg.reload({ waitUntil: 'load' })
         await pg.waitForFunction('window.__grindTest', { timeout: 20000 })
         await new Promise(r => setTimeout(r, 450))
-        const chip = await pg.evaluate(`(() => { const { rc, txt } = (${rcTxt}).()
+        const chip = await pg.evaluate(`(() => { const { rc, txt } = ${RC}
             const c = rc(txt('ALL-TIME BEST LINE'))
             return c ? { x: c.x, r: c.r, b: c.b, vw: window.innerWidth } : null })()`)
         ok(`phone ${vp.width}px: attract bank chip exists and keeps its side margins`, !!chip && chip.x > 6 && chip.r <= chip.vw - 6,
@@ -410,7 +411,7 @@ try {
         await new Promise(r => setTimeout(r, 900))
         await pg.evaluate(() => { window.__grindTest.teleport({ letters: { S: true }, timeLeft: 0.01 }) })
         await new Promise(r => setTimeout(r, 450))
-        const rp = await pg.evaluate(`(() => { const { rc, txt } = (${rcTxt}).()
+        const rp = await pg.evaluate(`(() => { const { rc, txt } = ${RC}
             const badge = rc(txt('NEAR MISS')), speed = rc(txt('SPEED')), share = rc(txt('SHARE — S')), hint = rc(txt('TAP — SKIP') || txt('SPACE / TAP'))
             const vw = window.innerWidth
             const ov = (a, b) => (!a || !b) ? 0 : Math.max(0, Math.min(a.r, b.r) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.y, b.y))
