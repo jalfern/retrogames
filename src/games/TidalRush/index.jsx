@@ -17,7 +17,7 @@ import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, s
 import { makeGame, step, autoPad, stateOf, stateHash, LAPS, SIM_MS, DT, rainAt, RAIN_VIS } from './sim.js'
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
-import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy } from './art.js'
+import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
 const MESSAGES = [
@@ -114,6 +114,16 @@ const TidalRushGame = () => {
         let bellCool = 0
         let moorSeed = gs.course.seed
 
+        // gulls (#3218): a flock wheels over that anchorage — same seed as the
+        // fleet it circles. Decoration only; like the sloops, the sim never
+        // sees the birds.
+        let flock = gullSpots(moorSeed)
+        const gullMeshes = flock.birds.map(() => {
+            const g = makeGull()
+            scene.add(g)
+            return g
+        })
+
         const skiMeshes = gs.crafts.map((c) => {
             const s = makeSki(c.color)
             scene.add(s.root)
@@ -168,7 +178,7 @@ const TidalRushGame = () => {
         const sfx = {
             pass: () => { audioController.playTone(880, 0.07, 'square', 0.10); audioController.playTone(1320, 0.09, 'square', 0.09, 0.07) },
             miss: () => audioController.playSweep(240, 110, 0.28, 'sawtooth', 0.12),
-            trick: () => { audioController.playTone(660, 0.07, 'square', 0.12); audioController.playTone(880, 0.07, 'square', 0.12, 0.08); audioController.playTone(1320, 0.14, 'square', 0.12, 0.16) },
+            trick: () => { audioController.playSweep(1250, 240, 0.2, 'triangle', 0.06); audioController.playNoise(0.1, 0.04); audioController.playTone(660, 0.07, 'square', 0.12); audioController.playTone(880, 0.07, 'square', 0.12, 0.08); audioController.playTone(1320, 0.14, 'square', 0.12, 0.16) },
             air: () => { audioController.playSweep(300, 980, 0.18, 'sine', 0.08); audioController.playNoise(0.16, 0.05) },
             splash: () => audioController.playNoise(0.22, 0.14),
             bump: () => audioController.playNoise(0.07, 0.12),
@@ -342,6 +352,7 @@ const TidalRushGame = () => {
                 scenery.forEach((s, i) => {
                     s.x = spots[i].x; s.z = spots[i].z; s.yaw = spots[i].yaw; s.swing = spots[i].swing
                 })
+                flock = gullSpots(moorSeed)
             }
             scenery.forEach((s) => {
                 const wb = frontW(s.x, s.z, gs.front)
@@ -359,6 +370,13 @@ const TidalRushGame = () => {
                 s.g.position.set(s.x + w.dx * 0.4, w.y, s.z + w.dz * 0.4)
                 if (s.g.userData.swayer) s.g.userData.swayer.rotation.y = Math.sin(t * 0.9 + s.swing) * 0.35
                 buoyDim(s.g, RAIN_VIS * rainAt(gs, s.x, s.z))
+            })
+            // gulls (#3218): wheeling over the anchorage — flap, glide, bank
+            // into the turn, dimmed in a squall like the gates
+            flock.birds.forEach((bird, i) => {
+                const gm = gullMeshes[i]
+                gullFrame(gm, flock, bird, t)
+                buoyDim(gm, RAIN_VIS * rainAt(gs, gm.position.x, gm.position.z))
             })
             bellCool = Math.max(0, bellCool - DT)
             if (bellCool === 0 && screenRef.current === 'play') {
