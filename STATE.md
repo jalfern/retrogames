@@ -1,77 +1,74 @@
-# STATE — forge board snapshot (slot b, 2026-11-25 — PINBALL KICKBACK IS LIVE)
+# STATE — forge board snapshot (slot a, 2026-11-24/25 — PINBALL PLAYS ITSELF)
 
 ## This session — one ship, landed
-- **#3250 PINBALL KICKBACK SHIPPED (PR #3255 → `8355368`).** Free ball-save per
-  ball at the right drain-mouth column (x 190..205, fires only on fast descent,
-  +100; EMBER RIDER mirrors x 155..170 at 75). Pure TABLE data (#3103 contract);
-  latches `kbUsed`, re-arms with `resetBall`; centre deaths and resting balls
-  untouched (minVy keeps the BALL SEARCH law intact). Art: armed-pulse ring +
-  plunger pop; DMD announce `KICKBACK! +N` is sim state.
-- Route to the ship: warden target #3246 was REFUSED (slot a held it — and shipped
-  it as #3251). The #3232 PINBALL corpse I started resuming was merged by slot a
-  mid-verification (my 139/139 + 26/26 ran on the real pre-merge tree; merge
-  cleanup then swept that worktree — the Civ-V tapstart FAIL was the gutted dev
-  server, not a regression). Normal ladder → `KICK PINBALL 0 weak` (score 7),
-  oldest unowned README gap half-owned by closed #3103 (editor) ⇒ filed the
-  kickback half as **#3250**, claimed, built, shipped in one session.
-- Proof: pinballcheck **147/147** (+8 §8 pins: fire literal, DMD, one-per-ball,
-  re-arm, centre-death, minVy rest, ember price, W-x mirror). **Mutants 5/5**
-  (new `kickback` anchor = seized plunger). pinballplay **30/30** live Chrome
-  (+4 legs) + pixel proof of armed device (126 hot px) and fire pop (125 white
-  px). contractcheck 857/857, lints green, build green, rebased onto `87c2b4f`
-  and re-verified before merge. Prod: `Pinball-fYZbS1RJ.js` carries the marker.
+- Warden TARGET **#3237** taken clean (no liveness claim; QA-tail item —
+  builder ships its stage 1 under the warden-kick, #1258). PR **#3275**
+  merged `1045808`; prod `Pinball-C9lazER3.js` marker-verified.
+- **PINBALL ATTRACT SHOW-OFF + KIT TAIL** (issue item 1 + the #3259 addendum):
+  - Attract is a DRIVEN run: `demoPad`/`demoOver` (pure sim exports) run a
+    real `makeGame` through the pinned human line — Node pins MULTIBALL from
+    seed 1337 on BOTH cabinets, lock-jackpots first, never empty;
+    deterministic re-deal (`0xa11ce + runs*7919`), lamp chase ticks 0..84,
+    `ATTRACT_DMD` ad lines per cabinet, demo silent (no audio at the row).
+  - `drawTable(gs, L)` = renderer bundle (ctx/flash/trail/parts/rings/shake);
+    MAIN wraps live refs via getters → play pixels byte-identical. Attract bg
+    + the SELECTED mini-card draw the live demo offscreen canvas.
+  - Kits: localStorage memory (`KIT_STORE`; `?style` outranks; stale ids →
+    house dress via `kitIndex`), own `dressflip` sound, attract-DMD kit
+    announce, results `◆ KIT` line, `NO SUCH KIT` DMD+badge (`styleWarn`),
+    third dresses **NOIR**/**GLACIER** (palette-only, parity-pinned).
+- Proof: pinballcheck **178/178** (+18 pins) + **ALL MUTANTS CAUGHT 7/7**
+  (new `demo`); pinballplay **54/54** (+9 live legs); contractcheck 14/14;
+  eslint + 3 scoped gates + build green.
+- **#3237 stays OPEN** (`Part of #3275`): left items 2 phone-width HUD audit,
+  3 ball-vs-lane-bed contrast, 4 tilt-to-nudge, 5 extras (lock-gate slam,
+  plunger power ticks, tilt wobble). Live URL + remaining list on the issue.
 
 ## Harness lessons (worth one line each)
-- **CI attach can fail twice in a row on a docs-only branch**: no `pull_request`
-  run object at all, and the re-push cure (#3220) dropped again — the working
-  override is `gh workflow run ci.yml --ref <branch>`; forge-merge was right to
-  refuse while `static` had no state (#3120). Do NOT push while a
-  cancel-in-progress run for that ref is live.
-- **A mutant child that dies on a missing anchor exits non-zero, and the parent
-  reads that as SURVIVES** — anchor strings must match the wrapped condition
-  exactly; the "anchor missing" error goes to child stderr, invisible in the
-  parent's stdout hint. (Honest 0/5 → fix → 5/5.)
-- **Prod markers live in per-game chunks** (`./Pinball-HASH.js`), not the entry
-  bundle — scan the chunk list referenced by `index-*.js`, and `curl -L`
-  (jalfern.com answers "Redirecting..." without -L). LC_ALL=C still mandatory.
-- **A dev server backgrounded from a tool call can die with its parent shell** —
-  a pinballplay navigation failure was a dead :5178, not a broken page; re-curl
-  the port before blaming the rig.
+- Mutants on a dirty worktree refuse to plant — every rule then reports
+  SURVIVES. `commit` before `--mutate`; the 0/7 was a guard-lie, 7/7 the truth.
+- The kickback play-leg passed vacuously: kbUsed was already latched upstream,
+  so the poll broke on sample zero. Rigs gate on device state (one save per
+  ball IS the rule), never wall-clock budget. Fixed in #3275.
+- Registry growth ripples through test maths: a third kit changed the B-cycle
+  wrap expectation (n%3 ≠ n%2) — grep the suite for kit-count assumptions
+  whenever the shelf grows.
 
 ## PLAYABLE on main right now
-- `/retrogames/pinball` **KICKBACK** both cabinets (one save/ball) + cabinet row
-  (#3232), ball-ball, orbit/magnet/DMD; `/retrogames/tidal-rush` online rooms +
-  podium/rematch (#3227/#3253) + rung-3 chrome stack (#3254); grind-city second
-  line — roof deck, gems, secret bowl (#3251); marble-rush trick-hop (#3243);
-  skyward thunderpass, r-type, ice-climber, marble-madness, comet-drift pair,
-  stomptown, short-order-shout, ssx, pacman, mario, minesweeper/garden-guard/
-  homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
-  spy-hunter, iron keep, galaga, missile, pucks, mines, zork, ultima, king's
-  quest, Joust, Q*bert, forge board.
+- `/retrogames/pinball` driven attract + kit memory/NOIR/GLACIER (#3275),
+  KICKBACK both cabinets (#3255), ball-ball, orbit/magnet/DMD;
+  `/retrogames/skyward` living storm cell (#3271) + thunderpass,
+  mario-kart TILT (#3260), tidal-rush spectate (#3265) + online rooms/
+  podium/rematch (#3227/#3253) + rung-3 chrome (#3254), grind-city roof
+  line + gems (#3251) + gem sparkle (#3270), marble-rush tilt + trick-hop
+  (#3243), comet-drift pair (tilt), ssx (tilt), marble-madness, pacman,
+  mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT,
+  TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep,
+  galaga, missile, pucks, mines, zork, ultima, king's quest, Joust,
+  Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` expected EMPTY after this ship; #1712 stays `waiting-jon` (skip).
-  Next builder claim = idle-kick derivation live at claim time (don't trust memory).
-- Merged while this report rode the CI throttle: SKYWARD living storm #3271,
-  tidal-rush mid-race spectate #3265, grind-city gem sparkle #3270, PINBALL
-  attract show-off + kit tail #3275 (takes most of #3237's list), and the
-  check-runs fallback fix #3274 (#3269 — filed by this session).
-- QA open: #3244 (tidal online polish; podium/rematch + desync hash + spectate
-  have landed from it), #3233 (grind tail 2), #3131 (padtypes rollout),
-  #3237 (PINBALL tail — attract show-off done, HUD audit / tilt-to-nudge /
-  lock slam left).
-- Nightly green at merge (main-ok ok).
+- `game-queue` empty (my claim cleared it); only `next` item #1712 is
+  `waiting-jon` — skip. Next builder claim = idle-kick derivation LIVE at
+  claim time (don't trust memory or this line).
+- Open `feedback` (QA lane's board): #3237 pinball tail items 2–5 (this
+  lane's next stage if re-kicked), #3244 tidal-rush online polish, #3233
+  grind-city tail 2, #2971 contra (waiting-jon).
+- Merges today incl. #3255 #3262 #3263 #3264 #3265 #3270 #3271 #3273 #3274
+  #3275; nightly main-ok green at my merge.
 
 ## Open questions (links only — #605)
-- #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
+- #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa,
+  AWAITING; also owns the real-iPhone ENABLE TILT tap for the tilt shelf).
 - #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
+- No new jonq questions filed this session.
 
-## Slot / board state at handoff
-- Slot b: worktree `retrogames-forge-pinball-kickback` is detached at origin/main
-  (mergeclean already completed post-merge cleanup; safe to prune). Dev :5178
-  stopped via scripts/devstop.sh at handoff.
-- STATE.md published via docs PR #3268 (needed a rebase onto the check-runs-fix
-  tip after GitHub dropped its pull_request events — see #3269, fixed by #3274);
-  parked slot-scoped with statepark park b.
-- Time-box: ~2 h of 3 h.
+## Slot state at handoff
+- Slot a: dev server stopped via `scripts/devstop.sh` (:5173 free). Worktree
+  `~/Dev/retrogames-forge-pinball-attract` removed clean after merge.
+- Main checkout detached at origin/main; this STATE.md ships via its own
+  docs/state PR (#3277) — game code merged this session, commit path earned.
+  Slot b's fresher facts (kickback/#3270/spectate chrome) are folded in here,
+  nothing evaporated (#1430).
+- Time-box: ~2h30m of 3 h.
