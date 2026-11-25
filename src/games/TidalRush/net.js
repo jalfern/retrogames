@@ -121,7 +121,7 @@ export function createEvidence(limit = EVIDENCE_LIMIT) {
             out.push(pad('tick', 6) + pad('mine', 9) + slots.map((s) => pad(`seat${s}`, 9)).join(''))
             for (const e of ring) {
                 out.push(pad(e.k, 6) + pad(cell(e.mine), 9) + slots.map((s) => pad(cell(e.peers[s]), 9)).join('')
-                    + (e.bad ? `  ← MISMATCH seat${e.badSlot}` : ''))
+                    + (e.bad ? `  ← MISMATCH seat${e.badSlot}: mine ${hex32(e.mine)} theirs ${hex32(e.theirs)}` : ''))
             }
             return out.join('\n')
         },

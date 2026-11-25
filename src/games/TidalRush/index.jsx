@@ -996,8 +996,21 @@ const TidalRushGame = () => {
                     <pre className="text-[9px] leading-[1.6] text-amber-100 font-mono whitespace-pre">{netReport}</pre>
                     <button
                         onClick={() => {
-                            const done = () => { const b = document.getElementById('tidal-copy'); if (b) b.textContent = 'COPIED ✓' }
-                            try { navigator.clipboard.writeText(netReport).then(done, done) } catch { done() }
+                            const btn = document.getElementById('tidal-copy')
+                            const done = (okCopy) => { if (btn) btn.textContent = okCopy ? 'COPIED ✓' : 'SELECT + COPY' }
+                            if (navigator.clipboard) navigator.clipboard.writeText(netReport).then(() => done(true), () => done(false))
+                            else {
+                                // http / older WebKit: park the text in a textarea the
+                                // player can select even if programmatic copy fails.
+                                const ta = document.createElement('textarea')
+                                ta.value = netReport
+                                document.body.appendChild(ta)
+                                ta.select()
+                                let okCopy = false
+                                try { okCopy = document.execCommand('copy') } catch { okCopy = false }
+                                ta.remove()
+                                done(okCopy)
+                            }
                         }}
                         className="mt-1 w-full bg-amber-300/15 border border-amber-300/40 rounded px-2 py-0.5 text-[10px] tracking-[0.25em] text-amber-100 font-mono"
                         id="tidal-copy"
