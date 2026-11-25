@@ -455,7 +455,9 @@ const PacmanGame = () => {
                     const x = c * CELL_SIZE
                     const y = r * CELL_SIZE
                     if (map[r][c] === 2) {
-                        ctx.fillRect(x + CELL_SIZE / 2 - 1, y + CELL_SIZE / 2 - 1, 2, 2)
+                        ctx.beginPath()
+                        ctx.arc(x + CELL_SIZE / 2, y + CELL_SIZE / 2, 1.7, 0, Math.PI * 2)
+                        ctx.fill()
                     } else if (map[r][c] === 3) {
                         if (Date.now() % 400 < 200) {
                             ctx.beginPath()
@@ -529,6 +531,13 @@ const PacmanGame = () => {
                 attractTick++
                 ctx.fillStyle = DIM
                 ctx.fillRect(0, 0, COLS * CELL_SIZE, ROWS * CELL_SIZE)
+                // Arcade-style attract panel behind the glyphs: the message
+                // sits on a dark slab, not mid-corridor over the ghost house.
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.62)'
+                ctx.fillRect((mapWidth - 240) / 2, mapHeight / 2 - 38, 240, 54)
+                ctx.strokeStyle = 'rgba(255, 210, 63, 0.45)'
+                ctx.lineWidth = 1.5
+                ctx.strokeRect((mapWidth - 240) / 2, mapHeight / 2 - 38, 240, 54)
                 ctx.textAlign = 'center'
                 for (const l of attractFrame(attractTick, TOUCH)) {
                     ctx.font = `${l.size}px monospace`
