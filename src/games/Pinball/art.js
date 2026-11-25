@@ -310,12 +310,14 @@ export function paintField(ctx, W, H, pal = PAL, tb = null) {
     for (let i = 0; i < lbl.length; i++) ctx.fillText(lbl[i], v.railCx, 250 + i * 13);
     ctx.restore();
     // magnet plate — a halo ring mid-field; the dynamic field pulse lives in index.jsx.
-    ctx.save();
-    ctx.globalAlpha = 0.12; ctx.strokeStyle = pal.mag; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(tb.magnet.x, tb.magnet.y, 22, 0, 7); ctx.stroke();
-    ctx.globalAlpha = 0.2;
-    ctx.beginPath(); ctx.arc(tb.magnet.x, tb.magnet.y, 15, 0, 7); ctx.stroke();
-    ctx.restore();
+    if (tb.magnet) {                                   // #3284: smithed tables may skip the magnet
+        ctx.save();
+        ctx.globalAlpha = 0.12; ctx.strokeStyle = pal.mag; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(tb.magnet.x, tb.magnet.y, 22, 0, 7); ctx.stroke();
+        ctx.globalAlpha = 0.2;
+        ctx.beginPath(); ctx.arc(tb.magnet.x, tb.magnet.y, 15, 0, 7); ctx.stroke();
+        ctx.restore();
+    }
 }
 
 // ---------------------------------------------------------------- DMD ----

@@ -56,6 +56,7 @@
     "tidycheck": "node scripts/tidycheck.mjs",
     "pinballcheck": "node scripts/pinballcheck.mjs",
     "pinballplay": "node scripts/pinballplay.mjs",
+    "pinballsmith": "node scripts/pinballsmith.mjs",
     "stompcheck": "node scripts/stompcheck.mjs",
     "skywardcheck": "node scripts/skywardcheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",

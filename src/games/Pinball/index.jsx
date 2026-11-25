@@ -14,6 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R, demoPad, demoOver,
+    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk,
 } from './sim.js'
 import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD } from './art.js'
 
@@ -21,13 +22,67 @@ const FIXED_DT = 1000 / 60
 
 // The row of cabinets: presentation metadata per cabinet. The SIM owns the
 // table data; this file owns how each machine looks and talks.
+// #3284 TABLE SMITH: slot 2 is the player-built cabinet. Unsaved it is a
+// ghost ("DESIGN YOUR OWN" — START opens the editor); saved, its compiled
+// table rides the row exactly like a stock machine: same renderer, same
+// physics, its own kit dress (id `my-table` falls back to the house kits).
+// #3284: the player's saved cabinet — one per browser (the construction-set
+// fantasy of "your machine in the arcade"), name + layout, re-editable.
+const MY_STORE = 'retrogames.pinball.mytable.v1'
+let myRev = 0        // smith revisions bust the painted-field cache (#3284)
+const loadMyRaw = () => { try { const j = JSON.parse(localStorage.getItem(MY_STORE)); return j && typeof j === 'object' ? j : null } catch { return null } }
+const my0 = loadMyRaw()
+const myDef0 = my0 ? sanitizeDef(my0) : null
 const CABS = [
     { tb: TABLE, pal: PAL, tag: 'CABINET ONE', msgs: MESSAGES },
     { tb: TABLE_TWO, pal: PAL_EMBER, tag: 'EMBER RIDER', msgs: MESSAGES_EMBER },
+    { tb: myDef0 ? compileTable(myDef0).tb : TABLE, pal: PAL, tag: (myDef0 && myDef0.name) || 'DESIGN YOUR OWN', msgs: MESSAGES, custom: true, saved: !!myDef0 },
 ]
-// Mini-cabinet card geometry on the 360x600 attract field (#3232).
-const CARD_W = 150, CARD_H = 250
-const CARDS = [{ x: 18, y: 210 }, { x: 192, y: 210 }]
+// Mini-cabinet card geometry on the 360x600 attract field (#3232; #3284 grew
+// the row to three — narrower cards keep the original's portrait proportions).
+const CARD_W = 104, CARD_H = 173
+const CARDS = [{ x: 16, y: 224 }, { x: 128, y: 224 }, { x: 240, y: 224 }]
+
+// ---- TABLE SMITH editor (#3284) — the build side of the cabinet row ----
+// Pinball Construction Set (Evolution Systems, 1983) idiom: a cursor, a part
+// palette, instant playtest, and your name on the marquee. Pad-first: the
+// arrows walk the cursor, A acts, B cycles the tool, ? leaves.
+const TOOLS = ['BUMPER', 'SLING', 'BANK', 'MAGNET', 'WIPE', 'NAME', 'TEST', 'SAVE']
+const NAME_A = ['SUPER', 'NOVA', 'HYPER', 'IRON', 'MOON', 'TURBO', 'NEON', 'GOLD']
+const NAME_B = ['RIDER', 'STAR', 'RUSH', 'COMET', 'KNIGHT', 'DRIFT', 'FANG', 'TIDE']
+
+// The one shape every action takes: candidate def for the tool at (cx,cy),
+// or null when the action isn't a placement. act() and the editor's ghost
+// both read this, so what the cursor shows green IS what will be accepted.
+function toolCandidate(d, cx, cy, tool) {
+    const t = TOOLS[tool]
+    if (t === 'BUMPER') {
+        // the cursor's own zone first (same law the compiler will apply), then the cap
+        if (!bumperZoneOk(SMITH_LIMITS, cx, cy)) return 'BUMPER OUT OF ZONE'
+        if (d.bumpers.length >= SMITH_LIMITS.bumperMax && !d.bumpers.some((p) => Math.hypot(p[0] - cx, p[1] - cy) < 18)) return 'MAX 3 BUMPS'
+        return { ...d, bumpers: [...d.bumpers.filter((p) => Math.hypot(p[0] - cx, p[1] - cy) >= 18), [cx, cy]] }
+    }
+    if (t === 'SLING') return cx < 180 ? { ...d, slingL: [cx, cy] } : { ...d, slingR: [cx, cy] }
+    if (t === 'BANK') return { ...d, bank: [cx, cy] }
+    if (t === 'MAGNET') return { ...d, magnet: [cx, cy] }
+    return null
+}
+
+// WIPE: which part sits under the cursor (nearest within reach), or null.
+function wipeTarget(d, cx, cy) {
+    let best = null, bd = 26
+    d.bumpers.forEach((p, i) => { const dd = Math.hypot(p[0] - cx, p[1] - cy); if (dd < bd) { bd = dd; best = ['bumper', i] } })
+    if (d.magnet && Math.hypot(d.magnet[0] - cx, d.magnet[1] - cy) < bd) { bd = Math.hypot(d.magnet[0] - cx, d.magnet[1] - cy); best = ['magnet'] }
+    if (d.bank && Math.abs(d.bank[1] - cy) < 16 && Math.abs(cx - d.bank[0]) <= SMITH_LIMITS.bankSpan) best = ['bank']
+    const sReach = (sx, sy, tx, ty) => {
+        const dx = tx - sx, dy = ty - sy, l2 = dx * dx + dy * dy
+        const tt = l2 ? Math.max(0, Math.min(1, ((cx - sx) * dx + (cy - sy) * dy) / l2)) : 0
+        return Math.hypot(cx - (sx + dx * tt), cy - (sy + dy * tt))
+    }
+    if (d.slingL && sReach(d.slingL[0], d.slingL[1], d.slingL[0] + SMITH_LIMITS.slingRun, d.slingL[1] + SMITH_LIMITS.slingDrop) < bd) best = ['slingL']
+    if (d.slingR && sReach(d.slingR[0], d.slingR[1], d.slingR[0] - SMITH_LIMITS.slingRun, d.slingR[1] + SMITH_LIMITS.slingDrop) < bd) best = ['slingR']
+    return best
+}
 
 // ?style=<kit> (#3259) — same URL-override idiom as TidyBot/QBert.
 const qStyle = () => { try { return new URLSearchParams(window.location.search).get('style') } catch { return null } }
@@ -151,6 +206,12 @@ const PinballGame = () => {
     const fieldsRef = useRef({}) // painted playfield canvas per cabinet id
     // #3237 attract show-off: the self-playing demo sim + its own fx kit.
     const demoRef = useRef(null)
+    // #3284 TABLE SMITH state: the working draft (a def, always re-compiled
+    // through sim.compileTable), the cursor/tool, and the test-drop redirect.
+    const draftRef = useRef(myDef0 ? sanitizeDef(myDef0) : sanitizeDef(SMITH_REFS.nova))
+    const draftVerRef = useRef(0)
+    const edRef = useRef({ tool: 0, cx: 180, cy: 190, notice: '', noticeT: 0, nameIdx: 0 })
+    const testBackRef = useRef(false)
     const screenRef = useRef('attract')
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
@@ -159,7 +220,7 @@ const PinballGame = () => {
     screenRef.current = screen
 
     const setCab = useCallback((i) => {
-        const j = i ? 1 : 0
+        const j = ((Math.trunc(i) % CABS.length) + CABS.length) % CABS.length   // #3284: the row wraps through slot 2
         if (j === cabRef.current) return
         cabRef.current = j; setCabIdx(j)
         sfxFor({ type: 'cabinet' })
@@ -181,10 +242,21 @@ const PinballGame = () => {
         if (dgs) dgs.msg = { text: `KIT ${kit.label}`, t: 110, T: 110 }
     }, [])
 
+    // #3284: the ghost slot's START walks into the TABLE SMITH editor.
+    const openEditor = useCallback(() => {
+        draftRef.current = sanitizeDef(CABS[2].def || SMITH_REFS.nova)
+        draftVerRef.current += 1
+        edRef.current = { tool: 0, cx: 180, cy: 190, notice: '', noticeT: 0, nameIdx: 0 }
+        screenRef.current = 'edit'; setScreen('edit')
+        sfxFor({ type: 'start' })
+    }, [])
+
     const startPlay = useCallback((cab = cabRef.current) => {
-        cabRef.current = cab ? 1 : 0; setCabIdx(cabRef.current)
-        const tb = CABS[cabRef.current].tb
-        gsRef.current = makeGame(freshSeed(), cabRef.current)
+        const j = ((Math.trunc(cab) % CABS.length) + CABS.length) % CABS.length
+        if (j === 2 && !CABS[2].saved) { openEditor(); return }   // #3284
+        cabRef.current = j; setCabIdx(j)
+        const tb = CABS[j].tb
+        gsRef.current = makeGame(freshSeed(), tb)
         flashRef.current = mkFlash(tb)
         // #3259: the dress announces itself on the DMD as the ball loads;
         // #3237 tail: if the URL named a kit this cabinet doesn't ship, the
@@ -197,7 +269,7 @@ const PinballGame = () => {
         trailRef.current = []
         screenRef.current = 'play'; setScreen('play')
         sfxFor({ type: 'start' })
-    }, [])
+    }, [openEditor])
 
     useEffect(() => {
         const cvs = canvasRef.current
@@ -205,9 +277,11 @@ const PinballGame = () => {
         cvs.width = W; cvs.height = H
         const ctx = cvs.getContext('2d')
         ctx.imageSmoothingEnabled = true
-        const fieldFor = (tb) => {
-            const k = skinAt(tb.id, skinRef.current[cabIndexOf(tb.id)])
-            const key = `${tb.id}#${k.id}`
+        // field paint cache, keyed per cabinet id + kit (+ smith rev, since a
+        // re-saved custom table keeps the id `my-table` but not the layout).
+        const fieldFor = (tb, ci) => {
+            const k = skinAt(tb.id, skinRef.current[ci ?? cabIndexOf(tb.id)])
+            const key = `${tb.id}#${k.id}${ci === 2 ? '#' + myRev : ''}`
             if (!fieldsRef.current[key]) {
                 const f = document.createElement('canvas')
                 f.width = W; f.height = H
@@ -245,7 +319,7 @@ const PinballGame = () => {
 
         const react = (gs) => {
             const fl = flashRef.current
-            const tb = gs.table, pal = skinAt(tb.id, skinRef.current[cabIndexOf(tb.id)]).pal, v = tb.view
+            const tb = gs.table, pal = skinAt(tb.id, skinRef.current[cabRef.current]).pal, v = tb.view
             for (const ev of gs.events) {
                 sfxFor(ev)
                 if (ev.type === 'bumper') { fl.bumpers[ev.i] = 9; spawn(ev.x, ev.y, 10, pal.hot, 190) }
@@ -330,7 +404,7 @@ const PinballGame = () => {
         let demoRuns = 0
         const attractLine = (id) => { const l = ATTRACT_DMD[id] || ATTRACT_DMD['cabinet-one']; return l[demoRuns % l.length] }
         const demoRebuild = () => {
-            const gs = makeGame((0xa11ce + demoRuns * 7919) >>> 0, cabRef.current)
+            const gs = makeGame((0xa11ce + demoRuns * 7919) >>> 0, CABS[cabRef.current].tb)
             demoRuns += 1
             const sid = parseStyle(qStyle())
             // every run opens with an ad line on the strip; a ?style naming a
@@ -357,7 +431,7 @@ const PinballGame = () => {
         // minus the audio: an attract mode that talks over the row stays quiet.
         const reactDemo = (gs, d) => {
             const fl = d.fl
-            const pal = skinAt(gs.table.id, skinRef.current[cabIndexOf(gs.table.id)]).pal
+            const pal = skinAt(gs.table.id, skinRef.current[cabRef.current]).pal
             for (const ev of gs.events) {
                 if (ev.type === 'bumper') { fl.bumpers[ev.i] = 9; sparkD(d, ev.x, ev.y, 8, pal.hot, 190) }
                 else if (ev.type === 'sling') { fl.slings[ev.i] = 7; sparkD(d, ev.x, ev.y, 5, pal.sling) }
@@ -422,13 +496,13 @@ const PinballGame = () => {
         const drawTable = (gs, L = MAIN) => {
             const ctx = L.ctx
             const shk = L.getShk()
-            const tb = gs.table, pal = skinAt(tb.id, skinRef.current[cabIndexOf(tb.id)]).pal, v = tb.view
+            const tb = gs.table, pal = skinAt(tb.id, skinRef.current[cabRef.current]).pal, v = tb.view
             ctx.save()
             if (shk.current > 0) {
                 ctx.translate((Math.random() - 0.5) * shk.current, (Math.random() - 0.5) * shk.current)
                 shk.current = Math.max(0, shk.current - 0.7)
             }
-            ctx.drawImage(fieldFor(tb), 0, 0)
+            ctx.drawImage(fieldFor(tb, cabRef.current), 0, 0)
 
             // cabinet rail + arc wall
             ctx.strokeStyle = pal.wood; ctx.lineWidth = 10; ctx.lineCap = 'round'
@@ -560,7 +634,7 @@ const PinballGame = () => {
                 }
                 // magnet post — halo pulses while armed; energy tether
                 // and bloom while it holds a ball; dull when spent.
-                {
+                if (tb.magnet) {                          // #3284: a smithed table may skip the magnet
                     const M = tb.magnet
                     const held = gs.magHold > 0
                     const charge = gs.magCharge > 0
@@ -832,7 +906,26 @@ const PinballGame = () => {
                 if (isSel) { ctx.shadowColor = k.pal.lane; ctx.shadowBlur = 14 }
                 ctx.strokeRect(-CARD_W / 2 - 5, -CARD_H / 2 - 5, CARD_W + 10, CARD_H + 10)
                 ctx.shadowBlur = 0
-                ctx.drawImage(isSel ? dCan : fieldFor(c.tb), -CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H)
+                if (i === 2 && !CABS[2].saved) {
+                    // ghost slot: a blueprint card inviting the editor (#3284)
+                    ctx.fillStyle = 'rgba(57,225,255,0.05)'
+                    ctx.fillRect(-CARD_W / 2, -CARD_H / 2 + 20, CARD_W, CARD_H - 20)
+                    ctx.setLineDash([6, 5])
+                    ctx.strokeStyle = 'rgba(57,225,255,0.45)'; ctx.lineWidth = 1.5
+                    ctx.strokeRect(-CARD_W / 2 + 6, -CARD_H / 2 + 26, CARD_W - 12, CARD_H - 32)
+                    ctx.setLineDash([])
+                    ctx.textAlign = 'center'
+                    ctx.fillStyle = 'rgba(233,251,255,0.8)'
+                    ctx.font = 'bold 13px monospace'
+                    ctx.fillText('BUILD', 0, -16)
+                    ctx.fillText('YOUR OWN', 0, 2)
+                    ctx.font = 'bold 9px monospace'
+                    ctx.fillStyle = 'rgba(255,217,122,0.85)'
+                    ctx.fillText('TABLE SMITH', 0, 26)
+                    ctx.fillText('A CURSOR B PART', 0, 42)
+                } else {
+                    ctx.drawImage(isSel ? dCan : fieldFor(c.tb, i), -CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H)
+                }
                 // marquee name plate on the card's crown — with the live kit
                 ctx.fillStyle = 'rgba(4,6,16,0.85)'
                 ctx.fillRect(-CARD_W / 2, -CARD_H / 2, CARD_W, 20)
@@ -856,7 +949,10 @@ const PinballGame = () => {
                     ctx.font = 'bold 10px monospace'
                     ctx.shadowColor = k.pal.dmd; ctx.shadowBlur = 7
                     ctx.fillStyle = k.pal.dmd
-                    ctx.fillText(d.sid && styleWarn(c.tb.id, d.sid) ? '◆ NO SUCH KIT HERE' : `◆ KIT: ${k.label}`, r.x + CARD_W / 2, r.y + CARD_H + 26 + bob * 0.4)
+                    ctx.fillText(i === 2 && !CABS[2].saved ? '◆ START OPENS THE SMITH'
+                        : i === 2 ? '◆ B TO REDESIGN'
+                        : d.sid && styleWarn(c.tb.id, d.sid) ? '◆ NO SUCH KIT HERE'
+                        : `◆ KIT: ${k.label}`, r.x + CARD_W / 2, r.y + CARD_H + 26 + bob * 0.4)
                     ctx.restore()
                 }
             }
@@ -901,26 +997,189 @@ const PinballGame = () => {
             if (screenRef.current === 'attract') {
                 if (!pausedRef.current) stepDemo(dt)
                 drawAttract(now)
-            } else drawTable(gs)
+            } else if (screenRef.current === 'edit') drawEditor(now)
+            else drawTable(gs)
         }
         raf = requestAnimationFrame(frame)
+
+        // ------------------------------------------------------ smith ----
+        // #3284 TABLE SMITH — build your own cabinet. Every part lands on the
+        // shared engine through sim.compileTable (the #3103 contract: data,
+        // never physics). The draft is validated on every placement, so what
+        // the cursor shows green is exactly what TEST/SAVE accept.
+        const saveMyFn = (def) => { try { localStorage.setItem(MY_STORE, JSON.stringify({ name: def.name, def })) } catch { /* private mode: memory is best-effort */ } }
+        const startTest = () => {
+            const r = compileTable(draftRef.current)
+            if (r.error) { edRef.current.notice = r.error; edRef.current.noticeT = 100; sfxFor({ type: 'tiltwarn' }); return }
+            testBackRef.current = true
+            cabRef.current = 2; setCabIdx(2)
+            gsRef.current = makeGame(freshSeed(), r.tb)
+            gsRef.current.balls = 1
+            gsRef.current.msg = { text: `TEST ${r.tb.label}`, t: 110, T: 110 }
+            flashRef.current = mkFlash(r.tb)
+            partsRef.current = []; trailRef.current = []; ringsRef.current = []
+            screenRef.current = 'play'; setScreen('play')
+            sfxFor({ type: 'start' })
+        }
+        const editAct = () => {
+            const ed = edRef.current, d = draftRef.current
+            const cx = Math.round(ed.cx / 2) * 2, cy = Math.round(ed.cy / 2) * 2
+            const t = TOOLS[ed.tool]
+            if (t === 'WIPE') {
+                const w = wipeTarget(d, cx, cy)
+                if (!w) { ed.notice = 'NOTHING THERE'; ed.noticeT = 80; sfxFor({ type: 'tiltwarn' }); return }
+                const next = { ...d }
+                if (w[0] === 'bumper') next.bumpers = d.bumpers.filter((_, i) => i !== w[1])
+                else next[w[0]] = null
+                draftRef.current = next; draftVerRef.current += 1
+                sfxFor({ type: 'drain' }); return
+            }
+            if (t === 'NAME') {
+                ed.nameIdx = (ed.nameIdx + 1) % (NAME_A.length * NAME_B.length)
+                draftRef.current = { ...d, name: `${NAME_A[Math.floor(ed.nameIdx / NAME_B.length)]} ${NAME_B[ed.nameIdx % NAME_B.length]}` }
+                sfxFor({ type: 'spinner' }); return
+            }
+            if (t === 'TEST') { startTest(); return }
+            if (t === 'SAVE') {
+                const r = compileTable(d)
+                if (r.error) { ed.notice = r.error; ed.noticeT = 100; sfxFor({ type: 'tiltwarn' }); return }
+                saveMyFn(d)
+                CABS[2] = { tb: r.tb, pal: PAL, tag: d.name || 'MY TABLE', msgs: MESSAGES, custom: true, saved: true, def: { ...d, bumpers: d.bumpers.map((b) => [...b]) } }
+                myRev += 1                                  // bust the painted-field cache
+                screenRef.current = 'attract'; setScreen('attract')
+                demoRebuild()                              // the row shows the new machine self-playing
+                sfxFor({ type: 'save' }); return
+            }
+            const cand = toolCandidate(d, cx, cy, ed.tool)
+            if (!cand) return
+            if (typeof cand === 'string') { ed.notice = cand; ed.noticeT = 80; sfxFor({ type: 'tiltwarn' }); return }
+            const r = compileTable(cand)
+            if (r.error) { ed.notice = r.error; ed.noticeT = 90; sfxFor({ type: 'tiltwarn' }); return }
+            draftRef.current = cand; draftVerRef.current += 1
+            sfxFor({ type: 'target' })
+        }
+        const drawEditor = (t) => {
+            const ed = edRef.current, d = draftRef.current
+            const r = compileTable(d)
+            if (ed.noticeT > 0) ed.noticeT -= 1
+            const key = `my-table#smith#${draftVerRef.current}`
+            if (!fieldsRef.current[key]) {
+                const f = document.createElement('canvas')
+                f.width = W; f.height = H
+                paintField(f.getContext('2d'), W, H, PAL, r.tb)
+                fieldsRef.current[key] = f
+                const ks = Object.keys(fieldsRef.current).filter((x) => x.startsWith('my-table#smith#'))
+                if (ks.length > 8) ks.slice(0, ks.length - 4).forEach((x) => delete fieldsRef.current[x])
+            }
+            ctx.fillStyle = '#04060f'; ctx.fillRect(0, 0, W, H)
+            ctx.save(); ctx.globalAlpha = 0.55; ctx.drawImage(fieldsRef.current[key], 0, 0); ctx.restore()
+            // drafting grid over the bench
+            ctx.save(); ctx.globalAlpha = 0.09; ctx.strokeStyle = '#39e1ff'; ctx.lineWidth = 1
+            for (let x = 40; x <= 320; x += 20) { ctx.beginPath(); ctx.moveTo(x, 76); ctx.lineTo(x, 548); ctx.stroke() }
+            for (let y = 76; y <= 548; y += 20) { ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(320, y); ctx.stroke() }
+            ctx.restore()
+            // marquee
+            ctx.save(); ctx.textAlign = 'center'
+            ctx.font = 'bold 22px monospace'; ctx.shadowColor = '#39e1ff'; ctx.shadowBlur = 10 + 4 * Math.sin(t / 400)
+            ctx.fillStyle = '#e9fbff'; ctx.fillText('TABLE SMITH', 180, 36)
+            ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#ffd97a'; ctx.shadowColor = '#ffd97a'; ctx.shadowBlur = 6
+            ctx.fillText(`◆ ${d.name || 'MY TABLE'} ◆`, 180, 56)
+            ctx.restore()
+            // ghost of the selected part at the cursor — green commits, red refuses
+            const cx = Math.round(ed.cx / 2) * 2, cy = Math.round(ed.cy / 2) * 2
+            const cand = toolCandidate(d, cx, cy, ed.tool)
+            const placeable = cand && typeof cand !== 'string'
+            const ghostOk = placeable && compileTable(cand).error === null
+            const gc = TOOLS[ed.tool] === 'WIPE' ? '#ff9f43' : ghostOk ? '#5dff9b' : '#ff3d5e'
+            ctx.save(); ctx.globalAlpha = 0.65; ctx.strokeStyle = gc; ctx.fillStyle = gc; ctx.lineWidth = 2
+            const T = TOOLS[ed.tool]
+            if (T === 'BUMPER') { ctx.beginPath(); ctx.arc(cx, cy, 15, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill() }
+            else if (T === 'SLING') { const dir = cx < 180 ? 1 : -1; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + 53 * dir, cy + 48); ctx.stroke() }
+            else if (T === 'BANK') { for (let i = 0; i < 4; i++) ctx.strokeRect(cx - 72 + i * 36, cy - 4, 30, 8) }
+            else if (T === 'MAGNET') { ctx.beginPath(); ctx.arc(cx, cy, 10, 0, 7); ctx.stroke(); ctx.globalAlpha = 0.3; ctx.beginPath(); ctx.arc(cx, cy, 24, 0, 7); ctx.stroke() }
+            else if (T === 'WIPE') { ctx.beginPath(); ctx.moveTo(cx - 9, cy - 9); ctx.lineTo(cx + 9, cy + 9); ctx.moveTo(cx + 9, cy - 9); ctx.lineTo(cx - 9, cy + 9); ctx.stroke() }
+            ctx.restore()
+            // crosshair
+            ctx.save(); ctx.globalAlpha = 0.85; ctx.strokeStyle = '#e9fbff'; ctx.lineWidth = 1
+            ctx.beginPath(); ctx.arc(cx, cy, 2, 0, 7); ctx.stroke()
+            ctx.beginPath(); ctx.moveTo(cx - 20, cy); ctx.lineTo(cx - 6, cy); ctx.moveTo(cx + 6, cy); ctx.lineTo(cx + 20, cy)
+            ctx.moveTo(cx, cy - 20); ctx.lineTo(cx, cy - 6); ctx.moveTo(cx, cy + 6); ctx.lineTo(cx, cy + 20); ctx.stroke(); ctx.restore()
+            // palette strip: 8 tools, current one boxed and named (construction-set icon row)
+            ctx.save(); ctx.textAlign = 'center'
+            const bw = 38, x0 = 180 - (TOOLS.length * bw) / 2, y0 = 560
+            TOOLS.forEach((name, i) => {
+                const on = i === ed.tool
+                ctx.fillStyle = on ? 'rgba(57,225,255,0.18)' : 'rgba(8,12,26,0.9)'
+                ctx.fillRect(x0 + i * bw + 1, y0, bw - 2, 22)
+                ctx.strokeStyle = on ? '#39e1ff' : 'rgba(201,212,232,0.25)'; ctx.lineWidth = on ? 2 : 1
+                ctx.strokeRect(x0 + i * bw + 1, y0, bw - 2, 22)
+                ctx.fillStyle = on ? '#e9fbff' : 'rgba(233,251,255,0.5)'
+                ctx.font = `bold ${name.length > 6 ? 7 : 8}px monospace`
+                ctx.fillText(name, x0 + i * bw + bw / 2, y0 + 14)
+            })
+            ctx.restore()
+            // status line: the draft's own verdict, or the refusal that just landed
+            ctx.save(); ctx.textAlign = 'center'; ctx.font = 'bold 11px monospace'
+            if (ed.noticeT > 0) {
+                ctx.fillStyle = '#ff3d5e'; ctx.shadowColor = '#ff3d5e'; ctx.shadowBlur = 8
+                ctx.fillText(`! ${ed.notice}`, 180, 552)
+            } else if (r.error) {
+                ctx.fillStyle = '#ff9f43'
+                ctx.fillText(`! ${r.error}`, 180, 552)
+            } else {
+                ctx.fillStyle = 'rgba(93,255,155,0.9)'
+                ctx.fillText('LAYOUT OK · A PLACE · B PART · ? DONE', 180, 552)
+            }
+            ctx.restore()
+            // bumper count + part census under the marquee
+            ctx.save(); ctx.textAlign = 'center'; ctx.font = '9px monospace'; ctx.fillStyle = 'rgba(233,251,255,0.55)'
+            ctx.fillText(`BUMPS ${d.bumpers.length}/3 · SLINGS ${(d.slingL ? 1 : 0) + (d.slingR ? 1 : 0)}/2 · BANK ${d.bank ? 1 : 0}/1 · MAG ${d.magnet ? 1 : 0}/1`, 180, 70)
+            ctx.restore()
+        }
 
         // ------------------------------------------------------------- input ----
         const startable = () => screenRef.current === 'attract' || screenRef.current === 'over'
         const onKeyDown = (e) => {
+            // #3284 TABLE SMITH: the editor answers first — arrows walk the
+            // cursor (held repeat ON, unlike game keys), A acts, B cycles the
+            // part, ? walks back out to the row. A draft never saved stays a
+            // draft: leaving is safe.
+            if (screenRef.current === 'edit') {
+                const ed = edRef.current
+                if (e.code === 'Escape' || e.code === 'QuestionMark' || e.key === '?' || e.code === 'Backquote') {
+                    screenRef.current = 'attract'; setScreen('attract'); e.preventDefault(); return
+                }
+                if (e.code === 'ArrowLeft') { ed.cx = Math.max(40, ed.cx - 6); e.preventDefault(); return }
+                if (e.code === 'ArrowRight') { ed.cx = Math.min(320, ed.cx + 6); e.preventDefault(); return }
+                if (e.code === 'ArrowUp') { ed.cy = Math.max(80, ed.cy - 6); e.preventDefault(); return }
+                if (e.code === 'ArrowDown') { ed.cy = Math.min(540, ed.cy + 6); e.preventDefault(); return }
+                if (e.repeat) return
+                if (e.code === 'Space') { editAct(); e.preventDefault(); return }
+                if (e.code === 'KeyB' || e.code === 'ShiftLeft') { ed.tool = (ed.tool + 1) % TOOLS.length; sfxFor({ type: 'ratchet' }); e.preventDefault(); return }
+                return
+            }
             if (e.repeat) return
             if (e.code === 'Escape' || e.code === 'QuestionMark' || e.key === '?' || e.code === 'Backquote') {
                 if (screenRef.current === 'play') setPaused((p) => !p)
                 return
             }
+            if (screenRef.current === 'over' && testBackRef.current) {   // a TEST drop goes home to the bench
+                testBackRef.current = false
+                screenRef.current = 'edit'; setScreen('edit'); e.preventDefault(); return
+            }
             if (startable()) {
                 // the row of cabinets answers the arrows first (#3232): in
                 // attract they switch picks; at GAME OVER they step back to the
                 // row. SPACE/tap keeps the original quick-retry on the same cab.
-                if (screenRef.current === 'attract' && (e.code === 'ArrowLeft' || e.code === 'KeyA')) { selCab(0); e.preventDefault(); return }
-                if (screenRef.current === 'attract' && (e.code === 'ArrowRight' || e.code === 'KeyD')) { selCab(1); e.preventDefault(); return }
+                if (screenRef.current === 'attract' && (e.code === 'ArrowLeft' || e.code === 'KeyA')) { selCab(cabRef.current - 1); e.preventDefault(); return }
+                if (screenRef.current === 'attract' && (e.code === 'ArrowRight' || e.code === 'KeyD')) { selCab(cabRef.current + 1); e.preventDefault(); return }
                 // #3259: B / ▲▼ dress the selected cabinet in its next art kit
                 if (screenRef.current === 'attract' && (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ArrowUp' || e.code === 'ArrowDown')) {
+                    // #3284: on the SAVED custom cabinet B means "back to the
+                    // bench" — redesigning your own machine outranks dressing it.
+                    if (cabRef.current === 2 && CABS[2].saved && (e.code === 'KeyB' || e.code === 'ShiftLeft')) {
+                        openEditor(); e.preventDefault(); return
+                    }
                     cycleSkin(e.code === 'ArrowUp' ? -1 : 1); e.preventDefault(); return
                 }
                 if (screenRef.current === 'over' && (e.code === 'ArrowLeft' || e.code === 'KeyA' || e.code === 'ArrowRight' || e.code === 'KeyD')) {
@@ -947,7 +1206,10 @@ const PinballGame = () => {
         }
         const onPointer = (e) => {
             if (pausedRef.current || !startable()) return
-            if (screenRef.current === 'over') { screenRef.current = 'attract'; setScreen('attract'); return }
+            if (screenRef.current === 'over') {
+                if (testBackRef.current) { testBackRef.current = false; screenRef.current = 'edit'; setScreen('edit'); return }
+                screenRef.current = 'attract'; setScreen('attract'); return
+            }
             // tap a cabinet card to pick AND start it in one input (#3232)
             const rect = cvs.getBoundingClientRect()
             const px = (e.clientX - rect.left) * (W / rect.width)
@@ -971,7 +1233,7 @@ const PinballGame = () => {
                 state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current, skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
                 // dev rig: pick a cabinet without keys (#3232) — re-deals its
                 // attract demo too, same law as the arrow keys.
-                setCab: (i) => { cabRef.current = i ? 1 : 0; setCabIdx(i); demoRebuild(); return { cab: CABS[cabRef.current].tb.id } },
+                setCab: (i) => { cabRef.current = ((Math.trunc(i) % CABS.length) + CABS.length) % CABS.length; setCabIdx(cabRef.current); demoRebuild(); return { cab: CABS[cabRef.current].tb.id } },
                 // dev rig: set/cycle the art kit (#3259) — absolute index wraps;
                 // #3237 persists it and announces it on the attract DMD.
                 setSkin: (i) => {
@@ -1024,7 +1286,21 @@ const PinballGame = () => {
                     return stateOf(gs)
                 },
                 hash: () => stateHash(gsRef.current),
-                reset: (seed) => { gsRef.current = makeGame(seed >>> 0, cabRef.current); return stateOf(gsRef.current) },
+                // dev rig: peek at the TABLE SMITH bench (#3284) — draft, tool,
+                // verdict — so a driven build leg is assertable, not vibes.
+                smith: () => ({
+                    draft: JSON.parse(JSON.stringify(draftRef.current)),
+                    tool: TOOLS[edRef.current.tool],
+                    notice: edRef.current.noticeT > 0 ? edRef.current.notice : '',
+                    cursor: [edRef.current.cx, edRef.current.cy],
+                    valid: compileTable(draftRef.current).error === null,
+                    screen: screenRef.current,
+                    saved: CABS[2].saved,
+                    tag: CABS[2].tag,
+                    sel: cabRef.current,
+                    tbId: gsRef.current.table.id,
+                }),
+                reset: (seed) => { gsRef.current = makeGame(seed >>> 0, CABS[cabRef.current].tb); return stateOf(gsRef.current) },
                 press: (code) => {
                     const k = keysRef.current
                     if (code === 'left') k.left = true; else if (code === 'right') k.right = true
@@ -1042,7 +1318,7 @@ const PinballGame = () => {
             exposeGame({
                 id: 'pinball',
                 buttons: ['left', 'right', 'a', 'b', 'down'],
-                reset: (seed) => { gsRef.current = makeGame(seed >>> 0, cabRef.current); flashRef.current = mkFlash(CABS[cabRef.current].tb); screenRef.current = 'play'; setScreen('play'); return stateOf(gsRef.current) },
+                reset: (seed) => { gsRef.current = makeGame(seed >>> 0, CABS[cabRef.current].tb); flashRef.current = mkFlash(CABS[cabRef.current].tb); screenRef.current = 'play'; setScreen('play'); return stateOf(gsRef.current) },
                 tick: (pad) => { stepGame(gsRef.current, pad || {}); react(gsRef.current); return stateOf(gsRef.current) },
                 state: () => ({ ...stateOf(gsRef.current), skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
                 canvas: () => canvasRef.current,
@@ -1084,7 +1360,7 @@ const PinballGame = () => {
                 )
             })()}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'PINBALL')} onResume={() => setPaused(false)} />}
-            <VirtualControls visible={(screen === 'play' || screen === 'attract') && !paused} secondAction={{ label: screen === 'attract' ? 'KIT' : 'NUDGE', code: 'KeyB' }} />
+            <VirtualControls visible={(screen === 'play' || screen === 'attract' || screen === 'edit') && !paused} secondAction={{ label: screen === 'attract' ? 'KIT' : screen === 'edit' ? 'TOOL' : 'NUDGE', code: 'KeyB' }} />
         </div>
     )
 }

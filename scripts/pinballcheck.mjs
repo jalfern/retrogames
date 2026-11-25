@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -60,6 +60,21 @@ if (MUT) {
             to: '? {} : {};',
             note: 'demoPad never pulls the plunger — the attract show-off is a screensaver',
         },
+        // smith zone law relaxed — an out-of-dome bumper would ship and jam the dome.
+        smithzone: {
+            file: 'src/games/Pinball/sim.js',
+            from: "if (x < L.domX[0] || x > L.domX[1] || y < L.domY[0] || y > L.domY[1]) return 'BUMPER OUT OF ZONE'",
+            to: "if (x < -900 || x > 9900 || y < -900 || y > 9900) return 'BUMPER OUT OF ZONE'",
+            note: 'smith bumper zone check opens wide — illegal layouts would compile playable',
+        },
+        // makeGame stops accepting table objects — a smithed cabinet silently
+        // plays CABINET ONE while the marquee lies about its name.
+        smithload: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'const tb = cab && typeof cab === \'object\' ? cab : (CABINETS[cab] || TABLE)',
+            to: 'const tb = CABINETS[cab] || TABLE',
+            note: 'makeGame ignores compiled smith tables — the player-built cabinet is a lie',
+        },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -70,7 +85,7 @@ if (MUT) {
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
-const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32, demoPad, demoOver } = await import('../src/games/Pinball/sim.js')
+const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32, demoPad, demoOver, compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS } = await import('../src/games/Pinball/sim.js')
 const { SKINS, skinsFor, skinAt, parseStyle, styleIndex, PAL, PAL_EMBER, PAL_TIDE, PAL_TOXIC, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, FONT } = await import('../src/games/Pinball/art.js')
 
 const r = new Report('pinballcheck')
@@ -1195,6 +1210,83 @@ const wrap = (gs) => {
     r.check('the results screen wears the kit line (#3237)', shell.includes('◆ KIT {k.label}'))
     r.check('attract drives the demo through the game\'s own drawTable (one renderer)',
         shell.includes('stepDemo(dt)') && shell.includes('drawTable(d.gs, DLIVE)') && shell.includes('demoPad(gs, t)'))
+}
+
+// ═══════════════════════════════════ TABLE SMITH (#3284) ═══════════════
+{
+    r.info('smith', 'the editor compiler turns player layouts into engine DATA — the #3103 contract, playable')
+    // zone / overlap / cross-part refusals — the legality boundary, pinned.
+    const rej = [
+        [{ name: '', bumpers: [] }, 'PLACE A BUMPER'],
+        [{ name: '', bumpers: [[1, 1]] }, 'BUMPER OUT OF ZONE'],
+        [{ name: '', bumpers: [[90, 270]] }, 'BUMPER OUT OF DOME'],
+        [{ name: '', bumpers: [[115, 170], [130, 175]] }, 'BUMPER OVERLAP'],
+        [{ name: '', bumpers: [[180, 150]], slingL: [98, 452] }, 'SLING OUT OF ZONE'],
+        [{ name: '', bumpers: [[180, 150]], slingR: [262, 452] }, 'SLING OUT OF ZONE'],
+        [{ name: '', bumpers: [[180, 150]], bank: [300, 250] }, 'BANK OUT OF ZONE'],
+        [{ name: '', bumpers: [[180, 150]], bank: [180, 200] }, 'BANK OUT OF ZONE'],
+        [{ name: '', bumpers: [[180, 150]], magnet: [50, 300] }, 'MAGNET OUT OF ZONE'],
+        [{ name: '', bumpers: [[180, 260]], bank: [180, 230] }, 'BUMPER ON BANK'],
+        [{ name: '', bumpers: [[180, 150], [180, 195]] }, 'BUMPER OVERLAP'],
+        [{ name: '', bumpers: [[180, 240]], magnet: [180, 270] }, 'MAGNET ON BUMPER'],
+    ]
+    for (const [def, why] of rej) {
+        r.check(`smith refuses ${why}`, compileTable(def).error === why, `got ${compileTable(def).error}`)
+    }
+    // the flipper-gap law: the sling zone itself keeps a 60 px centre corridor
+    r.check('sling zone holds the flipper-gap law (tips ≤150 / ≥210)',
+        SMITH_LIMITS.slingX.L[1] + SMITH_LIMITS.slingRun <= 150 &&
+        SMITH_LIMITS.slingX.R[0] - SMITH_LIMITS.slingRun >= W - 150)
+    // sanitize: untrusted localStorage junk drops to a clean def
+    const san = sanitizeDef({ name: 'nope!!1 2 3 4 5 6 7 8 9 0 a', bumpers: [['a', 2], [3, 4, 5], [115, 170]], bank: ['x', 1], magnet: [180, 300], junk: 7 })
+    r.check('sanitize drops junk entries and caps the bumper list',
+        san.bumpers.length === 1 && san.bank === null && san.magnet && !('junk' in san), JSON.stringify(san))
+    r.check('sanitize keeps names to a marquee-safe caps slice', san.name.length <= 14 && san.name === san.name.toUpperCase())
+    // determinism: same def, byte-identical compile; same seed, identical run
+    const ca = compileTable(SMITH_REFS.nova), cb = compileTable(SMITH_REFS.nova)
+    const ga = makeGame(7, ca.tb), gb = makeGame(7, cb.tb)
+    for (let i = 0; i < 600; i++) { stepGame(ga, {}); stepGame(gb, {}) }
+    r.check('compile + sim on a smithed table is deterministic',
+        stateHash(ga) === stateHash(gb), `${stateHash(ga)} vs ${stateHash(gb)}`)
+    // makeGame really loads the passed table (not the shelf fallback)
+    r.check('makeGame drives the SMITHED table, not CABINET ONE in disguise',
+        ga.table.id === 'my-table' && ga.table.label === SMITH_REFS.nova.name && ga.table.bumpers.length === 3,
+        `${ga.table.id}`)
+    // engine tolerance: no magnet, no bank — the table still boots and plays
+    const nomag = compileTable({ name: 'BARE', bumpers: [[180, 150]], bank: null, magnet: null })
+    r.check('a smithed table may skip magnet and bank (data tolerance, not physics)',
+        nomag.error === null && nomag.tb.magnet === null && nomag.tb.targets.length === 0 && Number.isFinite(nomag.tb.view.bankCx))
+    {
+        const g = makeGame(3, nomag.tb)
+        drive(g, {}, 4000)
+        r.check('a bank-less table never lights a phantom bank-clear', !g.bankLit && Number.isFinite(g.score))
+    }
+    // every reference layout PLAYS on the live sim: launch, score, resolve —
+    // BALL SEARCH (engine law) is the no-wedge guarantee custom tables inherit.
+    for (const [k, def] of Object.entries(SMITH_REFS)) {
+        const g = makeGame(11, compileTable(def).tb)
+        let launched = false, scored = false, done = false, nan = false
+        for (let i = 0; i < 4000 && !done; i++) {
+            stepGame(g, { a: i % 40 < 6, b: i % 97 === 0 })
+            if (g.launched && g.by < 500) launched = true
+            if (g.score > 0) scored = true
+            if (!Number.isFinite(g.bx) || !Number.isFinite(g.score)) nan = true
+            if (g.done) done = true
+        }
+        r.check(`smith ref "${k}" plays: launch + score + resolve`, launched && scored && done && !nan,
+            `score=${g.score} done=${done} nan=${nan}`)
+    }
+    // the editor's starting draft must itself be legal (openEditor ships it)
+    r.check('the editor opens on a legal default layout', compileTable(SMITH_REFS.nova).error === null)
+    // shell anchors: the row of three, the ghost entry, the storage slot
+    const sh = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/index.jsx'), 'utf8')
+    r.check('the attract row carries the smith slot as its third cabinet',
+        sh.includes("custom: true") && sh.includes('DESIGN YOUR OWN') && sh.includes('BUILD'))
+    r.check('the smith saves to its pinned storage slot', sh.includes("MY_STORE = 'retrogames.pinball.mytable.v1'"))
+    r.check('unsaved slot answers START with the bench, not an empty table',
+        sh.includes('openEditor()') && sh.includes('!CABS[2].saved'))
+    r.check('TEST drops home to the bench, not the row', sh.includes('testBackRef.current'))
+    r.check('the pad labels B as TOOL on the bench', sh.includes("screen === 'edit' ? 'TOOL'"))
 }
 
 restoreAll()
