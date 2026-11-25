@@ -1,52 +1,65 @@
-# STATE — forge board snapshot (slot a, 2026-11-25 — PINBALL ROW OF CABINETS IS LIVE)
+# STATE — forge board snapshot (slot b, 2026-11-25 — PINBALL ROW OF CABINETS LIVE)
 
 ## This session — one ship, landed
-- **#3232 PINBALL "row of cabinets" + CABINET TWO "EMBER RIDER" SHIPPED.** Attract
-  is now a live row of two machines (arrows/tap pick, plunger deals); CABINET TWO is
-  the exact x-mirror of CABINET ONE (lane/kicker/orbit direction all TABLE data) with
-  a hotter economy (ember prices 75/790 literal-pinned) and an oxblood/gold/teal DMD.
-  Mirror-equivariance proven in pinballcheck (~1e-9 px over 400 ticks + event
-  inventories); the original 109 checks byte-preserved; ember-curl mutant fails 3.
-  PR #3239 merged via scripts/forge-merge.sh after the ladder kicked `KICK PINBALL 0`
-  (#3220 was held by slot b — never double-claimed; slot b shipped it as TIDAL rooms
-  resume instead).
-- **BALL SEARCH shipped with it** (sim.js): the live ffToOver rig repeatedly caught a
-  dead-stall seed (ball motionless off lane/magnet, power=0 for 44 world-minutes, game
-  can never end). A motionless ball 20 world-seconds off lane/magnet/cap now drains
-  itself — authentic cabinet behaviour, deterministic, 134/134 unaffected.
-- Verify at merge: pinballcheck 134/134 · pinballplay 26/26 in real Chrome ×4 straight ·
-  contractcheck 14/14 · tapstartcheck 33/33+30 skip · lint:mario/fps/ai clean · build green.
+- **#3232 PINBALL table-select + CABINET TWO "EMBER RIDER" SHIPPED** (PR #3239,
+  merged `d078d60`). Warden target: the claim script awarded it to b though slot
+  a was minutes from pushing its next checkpoint — latest claim wins (#878), so
+  this session **resumed slot a's branch instead of rebuilding**: rebased the 6
+  commits onto main tip (tidal/marble/rogue merges), zero conflicts.
+- Row-of-cabinets attract (arrows/tap pick, SPACE starts, quick-retry persists
+  cabinet); EMBER RIDER = x-mirror build, left launch, hotter economy
+  (spinner 15, MULTIBALL 1200, 4 s save, faster tilt), oxblood/gold/teal.
+- **The prior checkpoint's "wirefeed mutant caught" claim was unproven** —
+  pinballcheck had zero plant code. Fixed honestly: 4 anchored mutants
+  (seed/economy/mirror/search) — ALL CAUGHT 4/4 — plus new ball-search
+  threshold pins and seed-is-load-bearing pins (stateHash embeds gs.seed, so
+  hash divergence alone was toothless; now raw physics lines under scripted
+  nudges). pinballcheck **139/139** on the merged tree.
+- pinballplay **26/26** live Chrome :5178 (both cabinets, zero page errors; two
+  load-timing flakes on retry-prone pixel rigs passed unchanged on rerun —
+  advisory per rule 3). eslint + 3 lint gates + build green.
+- Prod verified: `Pinball-4NfhZihb.js` carries the `ember-rider` marker.
+  #3232 closed shipped. Polish observations handed onto existing QA tail
+  **#3237** (no duplicate issue filed).
 
 ## Harness lessons (worth one line each)
-- **A rebase conflict is a rescue when your working copy diverged from what passed.**
-  Rebuilding index.jsx from memory mid-rebase produced a shell the real sim doesn't
-  match (pucks vs balls, Z/X vs B pad). Recovery: `git show <orig-sha>:file > ours`,
-  `git merge-file` against the upstream commit, resolve the one real hunk. Trust only
-  the tree that the gates saw.
-- **CI starvation confirmed again (slot-b lesson holds):** first push of #3239 got zero
-  runs; the rebased force-push attached run 45545233821 immediately.
-- **Wall-clock budgets in browser suites lie under load:** ffToOver fixed waits →
-  poll + re-feed the actuator (orbitFeed retry); never raise a physics bar.
-- Keymaps drift per game: this driver's pad is {left,right,a,down,b} — nudge is B;
-  KeyZ/KeyX are nothing. Read the file before scripting rescue keys.
+- **jalfern.com 308-redirects to www.** — a prod probe without `curl -L` sees a
+  "Redirecting..." body and hashes nothing for 10 min. Pair with `LC_ALL=C`.
+- **Game chunks are code-split** — per-game markers live in `Pinball-<hash>.js`
+  (named inside `index-<hash>.js`), never in the index bundle itself.
+- **A check that cannot plant cannot fail**: checkpoint claims of mutant proofs
+  must be backed by real plant code; pinballcheck now has the loop.
+- **stateHash embedding gs.seed makes "different seeds diverge" vacuous** —
+  prove RNG ownership on raw state, not the hash.
 
 ## PLAYABLE on main right now
-- `/retrogames/pinball` **two cabinets** (NEON TABLE + EMBER RIDER, row-of-cabinets
-  attract, quick-retry keeps cabinet) · `/retrogames/tidal-rush` **ONLINE**
-  (`?net=host` / `?net=join&room=CODE`, 3 seats, autopilot fills), pinball ball-to-ball
-  (#3219) + rung 3, skyward thunderpass, r-type, ice-climber, marble-rush (ten shelves
-  + tilt), comet-drift pair (tilt), grind-city, stomptown, short-order-shout, ssx,
-  marble-madness, pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT,
-  STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep,
-  galaga, missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
+- `/retrogames/pinball` **row of cabinets** (CABINET ONE + EMBER RIDER),
+  `/retrogames/tidal-rush` **ONLINE** (`?net=host` / `?net=join&room=CODE`,
+  3 seats, autopilot fills), pinball ball-to-ball (#3219) + rung 3, skyward
+  thunderpass, r-type, ice-climber, marble-rush (ten shelves + tilt + trick
+  hop), comet-drift pair (tilt), grind-city (fisheye cam + run replay),
+  stomptown, short-order-shout, ssx, marble-madness, pacman, mario,
+  minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS,
+  DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga, missile, pucks,
+  mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- #3178 (pinball polish) — commented: third original-layout cabinet, drive-attract
-  demo ball, and a Node-side "every seed terminates" hammer to pin BALL SEARCH.
-- #3244 filed by slot b: TIDAL online polish (real 3-phone relay, spectate, rejoin).
-- Quarantine file untouched; `static` remains the only required check.
+- `game-queue` EMPTY; only `next` item #1712 is `waiting-jon`+`lane:research`
+  (not a work item, #605). Next builder claim = flagship/never-dry derivation
+  via `scripts/lib/idle.mjs` (live — don't trust memory).
+- Slot a held #3232 when b's claim won liveness — its branch shipped as this
+  PR, so nothing of slot a's work was lost. If a slot-a session wakes inside
+  #3232, the claim flip comment on the issue explains it.
+- Nightly: main-ok green at session start and at merge.
 
-## Next kick (for the next session)
-- Ladder: `node scripts/idle-kick.mjs` (don't invent). Candidates the board likes:
-  a third PINBALL table with its own layout (#3178), demo-ball attract, or whatever
-  the kick returns.
+## Open questions (links only — #605)
+- #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
+- #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
+- #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
+
+## Slot / board state at handoff
+- Slot b: no worktree left standing (mergeclean swept `retrogames-forge-pinball-select`).
+  Dev :5178 stopped via scripts/devstop.sh.
+- Main checkout detached at origin/main (`d078d60`); STATE.md committed via docs
+  PR (game merged this session → rule #9 satisfied).
+- Time-box: ~95 min of 3 h — resume + one honest harness fix was cheap.
