@@ -72,6 +72,15 @@ export function makeWorld(seed) {
     const pad = { x: 60, z: 175 }          // spot-landing bullseye on the beach
     const school = { x: 0, z: 150 }       // dock + markers
     const launch = { x: -28, z: -120 }    // glider takeoff, off the saddle
+    // #3302 — the SECOND STRIP: a carved runway on the south beach, west→east.
+    // Landing runs down the axis (heading π/2); u counts from the threshold a.
+    // Deck matches the pad (2.6) so the two flats meet seamless; full-weight
+    // core + k² shoulders keep it dry and flat on EVERY seed (pinned), and the
+    // line stays ≥25 m clear of the pad bands and above the belt's corridor
+    // ceiling (3.4), so no other course law ever touches it.
+    const runway = { ax: -30, az: 130, bx: 130, bz: 130, half: 7, deck: 2.6, shoulder: 38 }
+    const STRIP_LEN = Math.hypot(runway.bx - runway.ax, runway.bz - runway.az)
+    const STRIP_HEADING = Math.atan2(runway.bx - runway.ax, runway.bz - runway.az) // π/2, east
 
     // The island: an explicit coastal shelf (never noise-dependent, so the
     // course spots are always dry) plus a volcano, ridges and fbm grain.
@@ -93,6 +102,19 @@ export function makeWorld(seed) {
         h = flatW(h, x, z, pad.x, pad.z, 110, 3.6, 0.6)
         h = flat(h, x, z, pad.x, pad.z, 55, 2.6)
         for (const t of targets) { h = flatW(h, x, z, t.x, t.z, 46, 2.6, 0.5); h = flat(h, x, z, t.x, t.z, 16, 1.8) }
+        // #3302: the runway corridor — full weight across the strip (deck is
+        // exact everywhere on it), k² falloff over the 38 m shoulders so the
+        // land around it stays natural. Carved AFTER the pad/school flats (same
+        // deck, seamless) and BEFORE the belt corridor (ceiling ≥ 3.4 > deck).
+        {
+            const d = distSeg(x, z, { x: runway.ax, z: runway.az }, { x: runway.bx, z: runway.bz })
+            if (d <= runway.half) h = runway.deck
+            else if (d < runway.half + runway.shoulder) {
+                const k = 1 - (d - runway.half) / runway.shoulder
+                const w = k * k
+                h = h * (1 - w) + runway.deck * w
+            }
+        }
         // the supply route: a low corridor the belt can fly at mast height
         // from the dock to every target — carved as a smooth trench so no
         // hill ever stands between two waypoints
@@ -294,5 +316,6 @@ export function makeWorld(seed) {
         skyDimDir, SKY_DECK_Y,
         waves, waterHeightAt, waterVy, waterGLSL, thermals, storm,
         rings, targets, pad, school, launch, passStart, passRings,
+        runway, STRIP_LEN, STRIP_HEADING,
     }
 }

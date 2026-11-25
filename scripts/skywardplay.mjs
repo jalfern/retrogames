@@ -161,6 +161,33 @@ try {
   ok(cell1.startS < 0.35, `the pass start line stays shallow under the wandering cell (s=${cell1.startS})`)
   await shot('skyward-living-storm.png')
 
+  /* #3302 — the second strip: a short final crabbed into the seed wind so the
+     ground track runs straight down the axis. Touches at frac ≈0.78–0.85 on
+     any wind → FULL STRIP +700. The lesson from the first live leg: a long
+     final lets ±2.2 m/s of seed wind drift the hull off a 14 m strip. */
+  const wd = await page.evaluate(() => window.__skywardTest.wind())
+  await page.evaluate((wd) => {
+    const T = window.__skywardTest
+    for (let k = 0; k < 3 && T.state().craft !== 'glider'; k++) T.recycle()
+    T.checkout('spot')
+    const hdg = Math.acos(Math.max(-1, Math.min(1, -wd.z / 11))) // straight ground track east
+    T.teleport({ x: 72, y: 6.5, z: 130, heading: hdg, speed: 11, vy: -1.2 })
+  }, wd)
+  let hintRunway = false, stripSpot = null
+  for (let i = 0; i < 8 && stripSpot === null; i++) {
+    const s = await page.evaluate(() => {
+      const h = document.querySelector('[data-h="hint"]')
+      return { st: window.__skywardTest.state(), hint: h ? h.textContent : '' }
+    })
+    if (s.hint.includes('RUNWAY')) hintRunway = true
+    if (s.st.phase === 'free') stripSpot = s.st
+    else await simSleep(0.4)
+  }
+  ok(hintRunway, 'the HUD names the runway on approach')
+  ok(stripSpot !== null && stripSpot.grad.spot === 700,
+    `a deep straight landing banks FULL STRIP +700 (spot=${stripSpot && stripSpot.grad.spot})`)
+  await shot('skyward-strip-landed.png')
+
   /* keyboard path + pause + restart through real UI */
   await page.keyboard.press('KeyN')
   await page.keyboard.press('ArrowLeft')

@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue } from '../src/games/Skyward/sim.js'
+import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, stripZone, stripScore } from '../src/games/Skyward/sim.js'
 import { decide } from '../src/games/Skyward/planner.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { Report } from './lib/harness.mjs'
@@ -106,6 +106,97 @@ void runAuto
     const h4ev = clear(h4)
     r.check('touching the sea is a splash, not a landing (back to the saddle)',
         h4.grad.spot == null && h4ev.some((e) => e.kind === 'splash') && h4.respawnT > 0)
+
+    // #3302 — the SECOND STRIP: runway landings, zone-scored Pilotwings-style
+    // (farther down pays more). Literal numbers throughout, per house law.
+    const stripLand = (s, x, z, heading, vy, speed) => {
+        const h = makeGame(s)
+        checkout(h, 'spot')
+        // y off THIS seed's ground — shoulders blend seed-noise, only the
+        // core deck is exact, so the spawn must read the game's own world
+        h.p = { x, y: h.world.terrainHeight(x, z) + 0.6, z }
+        h.heading = heading; h.vy = vy; h.speed = speed; h.roll = 0; h.pitch = 0
+        step(h, {})
+        return { h, evs: clear(h) }
+    }
+    {
+        const deep = stripLand(21, 120, 130, Math.PI / 2, -1, 10)
+        r.check('touching down deep on the strip pays FULL STRIP 700',
+            deep.h.grad.spot === 700 && deep.evs.some((e) => e.kind === 'land' && e.strip === true && e.zone === 4 && e.aligned === true),
+            `got ${deep.h.grad.spot}`)
+        const short = stripLand(22, -10, 130, Math.PI / 2, -1, 10)
+        r.check('a short touchdown (first quarter) pays 150',
+            short.h.grad.spot === 150 && short.evs.some((e) => e.kind === 'land' && e.zone === 1), `got ${short.h.grad.spot}`)
+        const mid = stripLand(23, 40, 130, Math.PI / 2, -1, 10)
+        r.check('the second quarter pays 300', mid.h.grad.spot === 300, `got ${mid.h.grad.spot}`)
+        const lng = stripLand(24, 85, 130, Math.PI / 2, -1, 10)
+        r.check('the third quarter pays 450', lng.h.grad.spot === 450, `got ${lng.h.grad.spot}`)
+        const crab = stripLand(25, 120, 130, Math.PI / 2 + 0.45, -1, 10)
+        r.check('crabbed onto the strip past ~17° is a scuff, not a zone',
+            crab.h.grad.spot === 60 && crab.evs.some((e) => e.kind === 'land' && e.aligned === false), `got ${crab.h.grad.spot}`)
+        const hot = stripLand(26, 120, 130, Math.PI / 2, -1, 14)
+        r.check('a fast arrival on the strip still tumbles like anywhere else',
+            hot.h.grad.spot == null && hot.evs.some((e) => e.kind === 'tumble') && hot.h.respawnT > 0)
+        const beside = stripLand(27, 120, 138.5, Math.PI / 2, -1, 10)
+        r.check('a soft touch beside the strip is sand, not runway (the mat law pays 60)',
+            beside.h.grad.spot === 60 && beside.evs.some((e) => e.kind === 'land' && e.strip === undefined))
+
+        const zn = stripZone(w, 50, 130)
+        r.check('stripZone: the middle of the strip reads u 80 at half distance',
+            zn !== null && zn.u === 80 && Math.abs(zn.frac - 0.5) < 1e-9)
+        r.check('stripZone: half a metre outside the edge line is off',
+            stripZone(w, 120, 136.9) !== null && stripZone(w, 120, 137.1) === null)
+        r.check('stripZone: past either end is off',
+            stripZone(w, 151, 130) === null && stripZone(w, -31, 130) === null)
+        const al = stripScore(w, 120, 130, Math.PI / 2 + 0.29, -1, 10)
+        const notal = stripScore(w, 120, 130, Math.PI / 2 + 0.31, -1, 10)
+        r.check('alignment: ±0.29 rad still pays the zone, ±0.31 crabbs it to 60',
+            al.score === 700 && al.aligned === true && notal.score === 60 && notal.aligned === false)
+        r.check('a hard arrival is not the strip\'s business (null — the tumble law owns it)',
+            stripScore(w, 120, 130, Math.PI / 2, -4.3, 10) === null && stripScore(w, 120, 130, Math.PI / 2, -1, 12.5) === null)
+
+        let bad = 0
+        for (const s of [1, 7, 42, 99, 123, 4242, 99991]) {
+            const ww = makeGame(s).world
+            for (let i = 0; i <= 32; i++) {
+                const x = -30 + 5 * i // −30..130, the straight core
+                for (const zz of [123.5, 130, 136.5]) if (Math.abs(ww.terrainHeight(x, zz) - 2.6) > 0.01) bad++
+            }
+            for (let t = 0; t < 400; t += 0.5) if (ww.stormAt(130, 137, t).s > 0.02) bad++
+        }
+        r.check('the strip deck is exact 2.6 m and storm-free across seeds and sweeps', bad === 0, `bad=${bad}`)
+        r.check('no bullseye point lies on the strip (the mat keeps its court)', (() => {
+            for (let a = 0; a < Math.PI * 2; a += 0.1) {
+                if (stripZone(w, w.pad.x + Math.cos(a) * 24, w.pad.z + Math.sin(a) * 24) !== null) return false
+            }
+            return true
+        })())
+
+        const BANDS = new Set([1000, 700, 450, 200, 60])
+        let autoStrip = 0, outside = 0
+        for (const s of [1, 7, 42, 99, 123]) {
+            const h = makeGame(s)
+            checkout(h, 'spot')
+            let n = 0
+            while (h.grad.spot == null && n++ < 20000) {
+                for (const e of h.events) if (e.kind === 'land' && e.strip) autoStrip++
+                h.events.length = 0
+                step(h, decide(h))
+                if (h.done) break
+            }
+            if (!BANDS.has(h.grad.spot)) outside++
+        }
+        r.check('honesty: the autopilot still flies the mat — it never takes the strip (5 seeds)',
+            autoStrip === 0 && outside === 0, `strip=${autoStrip} bands=${outside}`)
+
+        const hst = makeGame(33)
+        checkout(hst, 'spot')
+        hst.p = { x: 60, y: 10, z: 130 }
+        const st2 = stateOf(hst)
+        r.check('stateOf: the glider reports its strip position (u 90 mid-strip), plain JSON',
+            st2.strip !== null && st2.strip.u === 90 && JSON.stringify(st2).length > 10)
+        r.check('stateOf: a non-glider craft never reports a strip', stateOf(makeGame(33)).strip === null)
+    }
 
     const h5 = makeGame(15)
     checkout(h5, 'drop')
@@ -668,6 +759,10 @@ if (process.argv.includes('--mutate')) {
         ['storm duels the engine instead of ducking it', SIMF, 'return { gain: +(raw * (1 - 0.5 * d)).toFixed(4)', 'return { gain: +(raw * (1 + 0.5 * d)).toFixed(4)'],
         ['the spool cue loses its hysteresis (chirping boarding)', SIMF, "if (b < 0.006 && a >= 0.012) return 'spool'", "if (a >= 0.012) return 'spool'"],
         ['the glider grows an engine (the bed sings on a motorless wing)', SIMF, 'raw = thrusting ? 0.026 : 0.014\n        freq = thrusting ? 128 : 92', 'raw = thrusting ? 0.026 : 0.014\n        freq = thrusting ? 128 : 92\n    } else {\n        raw = 0.020; freq = 110'],
+        ['the strip pays nothing', SIMF, "finishEvent(g, 'spot', strip.score)", "finishEvent(g, 'spot', 0)"],
+        ['the far strip zone collapses onto the short one', SIMF, 'STRIP_ZONES: [[0.25, 150], [0.5, 300], [0.75, 450], [1, 700]]', 'STRIP_ZONES: [[0.25, 150], [0.5, 150], [0.75, 150], [1, 150]]'],
+        ['the strip alignment law goes blind', SIMF, 'if (Math.abs(e) > CFG.STRIP_ALIGN) return', 'if (false) return'],
+        ['the strip carves below its deck', WORLDF, 'if (d <= runway.half) h = runway.deck', 'if (d <= runway.half) h = runway.deck - 2'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

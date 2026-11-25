@@ -13,7 +13,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue, engineBed, engineCue } from './sim.js'
+import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue, engineBed, engineCue, stripZone } from './sim.js'
 import { decide } from './planner.js'
 import { createSkywardGL } from './renderer.js'
 import { PRESS, MESSAGES } from './attract.js'
@@ -108,12 +108,19 @@ const SkywardGame = () => {
                     else if (e.score > 0) tone(784, 0.1)
                     else tone(200, 0.16, 'sawtooth', 0.07)
                     break
-                case 'land': tone(523, 0.12); tone(784, 0.16, 'triangle', 0.08, 0.1); break
+                case 'land':
+                    // #3302 — the strip answers its own depth: deep + aligned
+                    // is a flourish, a crab is a scuff, the mat keeps its chirp
+                    if (e.strip && e.aligned && e.zone >= 3) { tone(659, 0.1); tone(880, 0.1, 'square', 0.08, 0.1); tone(1174, 0.2, 'square', 0.09, 0.2) }
+                    else if (e.strip && !e.aligned) tone(196, 0.18, 'sawtooth', 0.07)
+                    else { tone(523, 0.12); tone(784, 0.16, 'triangle', 0.08, 0.1) }
+                    break
                 case 'switch': sweep(240, 520, 0.18, 'square', 0.06); break
                 default: break
             }
         }
         const drain = (g) => {
+            let zoneName = null // #3302 — the strip names its zone; finish carries it
             for (const e of g.events) {
                 sfxFor(g, e)
                 if (e.kind === 'ring') banner(`RING ${e.idx}/8`, 1.1)
@@ -123,17 +130,29 @@ const SkywardGame = () => {
                     if (pg) gl.burst(pg.x, pg.y, pg.z, [0.78, 0.66, 1], 22, 5.5) // violet halo
                 }
                 if (e.kind === 'start') banner(e.event, 2.2)
+                if (e.kind === 'land' && e.strip) zoneName = e.aligned ? ['', 'SHORT', 'MIDDLE', 'LONG', 'FULL STRIP'][e.zone] : 'CRABBED'
                 if (e.kind === 'finish') {
                     if (e.event === 'THUNDERPASS') banner('⚡ STORM WINGS ⚡', 3.0)
+                    else if (e.event === 'spot' && zoneName) banner(`RUNWAY ${zoneName} +${e.gained}`, 2.8)
                     else banner(`${e.event} — ${e.gained}`, 2.6)
                 }
                 if (e.kind === 'graduate') banner(`LICENSE: ${e.license} — ${e.score}`, 4)
                 if (e.kind === 'splash') gl.burst(g.p.x, 1.2, g.p.z, [0.85, 0.97, 1], 22, 5)
                 if (e.kind === 'crash') gl.burst(g.p.x, g.p.y, g.p.z, [1, 0.8, 0.55], 26, 7)
                 if (e.kind === 'hit') gl.burst(g.world.targets[e.target].x, 1.4, g.world.targets[e.target].z, e.score > 200 ? [1, 0.9, 0.4] : [0.9, 0.9, 0.9], 16, 4)
-                if (e.kind === 'land') gl.burst(g.p.x, g.p.y + 0.5, g.p.z, [0.95, 0.93, 0.8], 14, 3)
+                if (e.kind === 'land') gl.burst(g.p.x, g.p.y + 0.5, g.p.z, e.strip && e.zone >= 4 ? [1, 0.85, 0.35] : [0.95, 0.93, 0.8], e.strip && e.zone >= 4 ? 26 : 14, e.strip && e.zone >= 4 ? 5 : 3)
             }
             g.events.length = 0
+        }
+
+        // #3302 — teach the second strip from the cockpit: range when the
+        // airfield is near, the landing law once it's under the nose
+        const stripHint = (g) => {
+            const zn = stripZone(g.world, g.p.x, g.p.z)
+            if (zn) return 'RUNWAY — TOUCH DEEP, KEEP IT STRAIGHT · far end pays 700'
+            const d = Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az)
+            if (d < 110) return `RUNWAY ${Math.round(d)} m AHEAD · or the mat beyond pays 1000`
+            return 'GLIDE HOME · thermals rise under the cumuli'
         }
 
         const held = { left: false, right: false, up: false, down: false, a: false, b: false }
@@ -334,7 +353,8 @@ const SkywardGame = () => {
                     : shown.marker ? `${shown.marker === 'ring' ? 'RING RUN' : shown.marker === 'spot' ? 'SPOT LANDING' : shown.marker === 'pass' ? 'THUNDERPASS' : 'TARGET DROP'} — PRESS SPACE`
                     : shown.phase === 'drop' ? 'A THRUST · B DROP · land at the pads'
                         : shown.phase === 'pass' ? `GATE ${shown.passIdx}/5 · fight the gusts · the core pulls down`
-                            : shown.phase === 'free' ? `CRUISE · markers glow near launches · B at school recycles craft` : '')
+                            : shown.phase === 'spot' ? stripHint(shown)
+                                : shown.phase === 'free' ? `CRUISE · markers glow near launches · B at school recycles craft` : '')
                 : ''
             if (E.hint.textContent !== hint) E.hint.textContent = hint
             if (bannerRef.current.until && performance.now() > bannerRef.current.until) {
@@ -368,8 +388,22 @@ const SkywardGame = () => {
                 start: () => startPlay(),
                 checkout: (m) => { checkout(gs, m); return stateOf(gs) },
                 recycle: () => { recycleCraft(gs); return stateOf(gs) },
+                // #3302 — place the hull for live drive legs (DEV only): the
+                // strip final is 300 m of thermal-hopping, too long to key;
+                // physics and the landing law stay untouched, only the start.
+                teleport: ({ x, y, z, heading = gs.heading, speed = gs.speed, vy = gs.vy }) => {
+                    gs.p = { x, y, z }
+                    gs.heading = heading; gs.speed = speed; gs.vy = vy
+                    gs.pitch = 0; gs.roll = 0
+                    gs.lastSafe = { x, y: Math.max(y, 20), z, heading }
+                    gs._zPrev = z
+                    return stateOf(gs)
+                },
                 // #3295 — the live engine bed the cabinet is hearing right now
                 engine: () => engineBed(gs.craft, gs.speed, gs.vy, gs.thrusting, gs.stormS),
+                // #3302 — the seed wind, so a drive leg can crab into it and
+                // hold a straight ground track (what a pilot would do)
+                wind: () => ({ x: gs.world.wind.x, z: gs.world.wind.z }),
                 hash: () => gs.hash,
                 gameTime: () => gs.tick / 60,
                 // #3267 — where the cell stands in sim time right now (the ONE

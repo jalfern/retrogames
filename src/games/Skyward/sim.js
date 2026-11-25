@@ -28,6 +28,11 @@ export const CFG = {
     RING_MAX: 1000, DROP_MAX: 999,
     PASS_R: 11, PASS_PAR: 30, PASS_MAX: 1000,
     ACE: 2400, WINGS: 1500,
+    // #3302 — the second strip: farther down = bigger score (Pilotwings'
+    // landing law per zone). Alignment kills the bonus, not the landing.
+    STRIP_ZONES: [[0.25, 150], [0.5, 300], [0.75, 450], [1, 700]],
+    STRIP_ALIGN: 0.30, // rad (~17°) off the axis and it's a scuff
+    STRIP_SCUFF: 60,
 }
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
@@ -348,6 +353,42 @@ function stepPlane(g, w, sx, sy, dt) {
 
 // ── the hang glider ─────────────────────────────────────────────────────────
 function sinkOf(v) { return 1.2 + 0.014 * (v - 10.5) * (v - 10.5) }
+
+// #3302 — the second landing strip. Pure laws, kept next to the glider that
+// uses them so skywardcheck can pin them. stripZone answers WHERE on the strip
+// a point is (null off it): u = metres from the threshold, frac = 0..1 down
+// the axis. stripScore is the whole touchdown decision: off-strip → null (the
+// pad/matt law scores it, exactly as before), on-strip but not soft → null
+// (today's tumble law owns hard landings), soft on the strip → zone score,
+// Pilotwings-style: the farther you carry it, the better. Crabbed in past
+// STRIP_ALIGN and the zone bonus dies — 60, the same floor a long mat miss
+// pays, because the school forgives but remembers.
+export function stripZone(w, x, z) {
+    const r = w.runway
+    const abx = r.bx - r.ax, abz = r.bz - r.az
+    const len2 = abx * abx + abz * abz
+    const t = ((x - r.ax) * abx + (z - r.az) * abz) / len2
+    if (t < 0 || t > 1) return null
+    const v = Math.hypot(x - (r.ax + abx * t), z - (r.az + abz * t))
+    if (v > r.half) return null
+    return { u: +(t * Math.sqrt(len2)).toFixed(1), frac: t, v: +v.toFixed(1) }
+}
+
+export function stripScore(w, x, z, heading, vy, speed) {
+    const zn = stripZone(w, x, z)
+    if (!zn) return null
+    if (!(vy > -4.2 && speed < 12.5)) return null // same softness law as the mat
+    let e = heading - w.STRIP_HEADING
+    while (e > Math.PI) e -= Math.PI * 2
+    while (e < -Math.PI) e += Math.PI * 2
+    if (Math.abs(e) > CFG.STRIP_ALIGN) return { ...zn, zone: 0, score: CFG.STRIP_SCUFF, aligned: false }
+    let zone = CFG.STRIP_ZONES.length, score = CFG.STRIP_ZONES[zone - 1][1]
+    for (let i = 0; i < CFG.STRIP_ZONES.length; i++) {
+        if (zn.frac <= CFG.STRIP_ZONES[i][0]) { zone = i + 1; score = CFG.STRIP_ZONES[i][1]; break }
+    }
+    return { ...zn, zone, score, aligned: true }
+}
+
 function stepGlider(g, w, sx, sy, dt) {
     g.roll = lerp(g.roll, sx * 1.05, 0.12)
     if (g.roll !== 0) g.heading += Math.sin(g.roll) * (6 / Math.max(g.speed, 7)) * dt
@@ -375,6 +416,13 @@ function stepGlider(g, w, sx, sy, dt) {
         const soft = g.vy > -4.2 && g.speed < 12.5
         if (!soft) { g.spotState = 'landed'; ev(g, 'tumble'); crash(g, 'glider-tumble'); return }
         g.spotState = 'landed'
+        // #3302 — soft touchdown: the strip if we're on it, else the mat law
+        const strip = stripScore(w, g.p.x, g.p.z, g.heading, g.vy, g.speed)
+        if (strip) {
+            ev(g, 'land', { strip: true, zone: strip.zone, score: strip.score, u: strip.u, aligned: strip.aligned })
+            finishEvent(g, 'spot', strip.score)
+            return
+        }
         let score = 60
         for (const [rad, pts] of CFG.PAD_BANDS) if (padD <= rad) { score = pts; break }
         ev(g, 'land', { padD: +padD.toFixed(1), score })
@@ -527,6 +575,9 @@ export function stateOf(g) {
         grad: { ...g.grad }, license: g.license, crashes: g.crashes,
         dropped: g.dropped.length, marker: g.marker ?? null,
         passIdx: g.passIdx, stormWings: !!g.stormWings, stormS: +g.stormS.toFixed(2),
+        // #3302 additive: where the glider is on/near the strip (HUD + harness)
+        strip: g.craft === 'glider' ? stripZone(g.world, g.p.x, g.p.z) : null,
+        stripD: +Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az).toFixed(1),
         hash: g.hash, seed: g.seed,
     }
 }
