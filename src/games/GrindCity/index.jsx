@@ -15,8 +15,8 @@ import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, s
 import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL } from './sim.js'
 import { botPad, makeBot } from './planner.js'
 import { STEP, bedVoices, landThud } from './music.js'
-import { buildPark, buildSky, buildLetters, buildGems, buildRoofLine, buildSkater, poseSkater, buildParticles, emit, burst, stepParticles } from './art.js'
-import { GEMS } from './park.js'
+import { buildPark, buildSky, buildLetters, buildGems, buildRoofLine, buildSkater, poseSkater, buildParticles, buildSecretHint, emit, burst, stepParticles } from './art.js'
+import { GEMS, RAILS } from './park.js'
 
 const FIXED_DT = 1000 / 60
 const DT = FIXED_DT / 1000
@@ -50,7 +50,7 @@ const GrindCityGame = () => {
         score: { current: null }, time: { current: null }, combo: { current: null },
         msg: { current: null }, mult: { current: null }, flash: { current: null },
         letters: { current: null }, gap: { current: null }, tgt: { current: null },
-        gem: { current: null }, cut: { current: null },
+        gem: { current: null }, cut: { current: null }, callout: { current: null },
     }).current
 
     useEffect(() => {
@@ -71,6 +71,7 @@ const GrindCityGame = () => {
         const letterObjs = buildLetters(scene)
         const gemObjs = buildGems(scene)
         const roofLine = buildRoofLine(scene)
+        const secretHint = buildSecretHint(scene)
         const rig = buildSkater(scene)
         const fx = buildParticles(scene)
 
@@ -241,6 +242,8 @@ const GrindCityGame = () => {
         let last = performance.now()
         let clock = 0
         let prevGemBits = 0   // gem-sparkle burst edge detector (#3233)
+        let prevRoofGrind = false   // roof-grind callout edge detector (#3233 tail)
+        let roofCalloutT = 0
         const camPos = new THREE.Vector3(6, 4, -38)
         const camLook = new THREE.Vector3()
 
@@ -353,6 +356,38 @@ const GrindCityGame = () => {
 
             // roof line (#3246 pass): UP marker bobs gently over the crest
             if (roofLine?.marker) roofLine.marker.position.y = roofLine.marker.userData.baseY + Math.sin(clock * 2.2) * 0.16
+
+            // ── roof-grind callout (#3233 tail) ─────────────────────────────
+            // The roof coping grind fires the same generic trick HUD text as
+            // every other rail — mark the roof line with its own moment. Live
+            // play only; the replay is silent and is not narrated.
+            if (screenRef.current === 'play') {
+                const g = actor.grind
+                const isRoofGrind = !!(g && RAILS[g.ri] && RAILS[g.ri].id === 'roof')
+                if (isRoofGrind && !prevRoofGrind) roofCalloutT = 1.1
+                prevRoofGrind = isRoofGrind
+                if (hud.callout.current) {
+                    if (roofCalloutT > 0) {
+                        roofCalloutT -= DT
+                        hud.callout.current.textContent = 'ROOF GRIND!'
+                        hud.callout.current.style.opacity = Math.min(1, roofCalloutT * 2.6).toFixed(3)
+                        hud.callout.current.style.transform = `translate(-50%,0) scale(${1 + Math.max(0, roofCalloutT - 0.78) * 0.7})`
+                    } else hud.callout.current.style.opacity = 0
+                }
+            }
+
+            // secret-bowl foreshadowing (#3233 tail): slow, faint shimmer at the
+            // western lip — the spot is hidden on purpose, but the east region
+            // reads interesting. Fades out once the find is banked.
+            if (secretHint) {
+                const found = st.secret
+                const breathe = Math.max(0, Math.sin(clock * 0.7 - 1.4))
+                const targetO = found ? 0 : 0.12 + breathe * 0.36
+                const m = secretHint.sprite.material
+                m.opacity = m.opacity + (targetO - m.opacity) * 0.18
+                secretHint.sprite.scale.setScalar(0.85 + breathe * 0.65)
+                secretHint.sprite.position.y = secretHint.sprite.userData.baseY + Math.sin(clock * 1.3) * 0.07
+            }
 
             // gems (#3246): spin + bob, shrink-pop when taken
             // #3233: idle 4-point-star glint per gem + a radial pickup burst
@@ -472,6 +507,8 @@ const GrindCityGame = () => {
                     { label: 'pipe', run: () => { sim.x = -30; sim.z = 0; sim.y = -1; sim.heading = Math.PI; sim.speed = 8 } },
                     { label: 'roof', run: () => { sim.x = -15; sim.z = 6; sim.y = 0; sim.heading = Math.PI / 2; sim.speed = 10.5 } },
                     { label: 'secret', run: () => { sim.x = 26; sim.z = 6; sim.y = -1; sim.heading = 0; sim.speed = 3 } },
+                    { label: 'roofgrind', run: () => { sim.x = -18; sim.z = 14.0; sim.y = 3.2; sim.heading = 0; sim.speed = 6.5; sim.air = true; sim.vy = 0; } },
+                    { label: 'secretcue', run: () => { sim.x = 17.5; sim.z = 6; sim.y = 0; sim.heading = 0; sim.speed = 1.2 } },
                     { label: 'bail', run: () => { sim.airTrick = { t: 0, flip: 1, flipDir: 1, flipRot: 90, spin: 0, rot: 0 }; sim.vy = -14 } },
                 ],
             })
@@ -531,6 +568,7 @@ const GrindCityGame = () => {
                             <div ref={hud.gem} className="font-bold" />
                         </div>
                         <div ref={hud.msg} className="absolute left-1/2 top-12 -translate-x-1/2 whitespace-nowrap text-lg font-bold italic tracking-wider text-[#ffe98a] drop-shadow-[0_2px_0_rgba(0,0,0,.85)]" />
+                        <div ref={hud.callout} className="absolute left-1/2 top-[32%] whitespace-nowrap text-4xl font-black italic tracking-[0.18em] text-[#ffd35e] drop-shadow-[0_0_16px_rgba(242,169,60,.7)] drop-shadow-[0_3px_0_rgba(0,0,0,.9)]" style={{ opacity: 0 }} />
                     </>
                 )}
                 {screen === 'replay' && (
