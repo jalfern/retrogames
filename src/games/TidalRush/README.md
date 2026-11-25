@@ -11,10 +11,14 @@ surface of truth:
   per lap, dirs wander ±26°, overhang-guarded). Rung 3 replaced the whole-bay
   blend with a TRAVELLING squall front: `makeFront` aims a band (`FRONT_BAND`
   34 m) along the new swell's direction, `frontW(x,z,fr)` weighs NEW-sea-ness
-  at any point (behind the front 1, ahead 0, smoothstep inside), `mixHeight`/
-  `mixVy`/`mixWater` blend the two EVALUATED tables by that weight.
+  at any point (behind the front 1, ahead 0, smoothstep inside), and
+  `frontGains(w)` = {√(1−w), √w} (#3323) scales the two tables' Gerstner slots
+  PER WAVE before one sum — `mixHeight`/`mixVy`/`mixWater` cross-fade equal
+  power at own phases, so the band BEATS like a real crossing sea (stacked
+  crests, glassy counter-phase patches); edges stay byte-exact tables.
   `seaGLSL()` emits four fully-unrolled Gerstner slots fed by uniforms;
-  `seaGLSLFront()` emits TWO slot sets (A = outgoing, B = incoming) plus
+  `seaGLSLFront()` emits TWO gain-scaled slot sets (A ×√(1−w) = outgoing,
+  B ×√w = incoming, in the CPU's term order) plus
   `frontWeight` — the byte-twin of `frontW` — so the GPU mixes exactly what
   the CPU rides, across the front, every frame (unrolled because array
   constructors are not GLSL ES 1.00 — SwiftShader, #3134 lesson).
@@ -86,9 +90,11 @@ pauses; ◀ ▶ on the menu picks SUNNY or STORM BAY.
 ## Verify
 
 ```
-npm run tidalcheck                     # 165 gates: boot, rules, win (both bays), determinism,
+npm run tidalcheck                     # 186 gates: boot, rules, win (both bays), determinism,
                                        #   sea-bridge parity, lightning, barrel, swell re-roll,
                                        #   squall-front spatial law + GLSL twin + air-bonus math,
+                                       #   per-wave band cross-fade — equal power, d/dt twin,
+                                       #   byte-exact edges, live-band BEAT search (#3323),
                                        #   rain field/drift/drag/dim laws (#3191), gulls &
                                        #   beach caustics (#3218), online: wire bits, seat rng
                                        #   law, 2P/3P hash parity, desync referee, dropout
@@ -96,6 +102,7 @@ npm run tidalcheck                     # 165 gates: boot, rules, win (both bays)
 node scripts/tidalcheck.mjs --mutate=judge   # red-side judgement muted — must go red
 node scripts/tidalcheck.mjs --mutate=swell   # per-lap re-roll pinned — must go red
 node scripts/tidalcheck.mjs --mutate=front   # squall front frozen — must go red
+node scripts/tidalcheck.mjs --mutate=beats   # band flattens back to convex mix — must go red (#3323)
 node scripts/tidalcheck.mjs --mutate=gullfreeze  # gulls stop wheeling — must go red (#3218)
 node scripts/tidalcheck.mjs --mutate=causticoff  # beach shimmer disabled — must go red (#3218)
 node scripts/tidalcheck.mjs --mutate=trickdry    # flat-360 lands without a whoosh — must go red (#3218)
@@ -145,14 +152,14 @@ static job; every pushed commit is commented on #3104.
   score/rider rows; every cabinet paints a ROOM PODIUM and the host calls the
   rematch from the line. The rooms other tails closed too: spectate #3265,
   survivable rejoin #3257.
-- **BLOCKED — not builder work (#3280, rule 8):** the wire is digital by
+- **BLOCKED** — not builder work (#3280, rule 8): the wire is digital by
   design (six lockstep bits): local analog stick/lean feel stays local —
   remote riders' skis carry committed leans, not fractional ones.
   Analog-over-wire needs a pad-shape change to the SHARED pipeline, and
   #3244 item 6 is the standing law: "do NOT half-mitigate inside this game
   alone." The pad-shape discussion lives on #3244 (waiting-jon); a game lane
   cannot honestly build this gap, so it declines rather than phantom-kick.
-- **BLOCKED — QA's job, not builder work (#3280):** three-hull rooms are
+- **BLOCKED** — QA's job, not builder work (#3280): three-hull rooms are
   proven in Node over an in-memory pipe (tidalcheck); the open item is a real
   three-human relay run — phones on the QR code, live dropout. That needs
   physical devices (QA lane territory, #3244 item 1).
@@ -193,9 +200,13 @@ static job; every pushed commit is commented on #3104.
 - **CLOSED by #3191** — rain is gameplay now: extra drag in the band
   (v_term −10 %), seeded crosswind drift along the new swell, spatial drops
   at Kai's hull, gates dimmed toward storm fog, wind cue at the band edges.
-- The squall front mixes two whole-bay tables linearly across the band — real
-  seas beat and interfere; a per-wave cross-fade (phase-matched slot swaps) is
-  the next fidelity step.
+- ~~The squall front mixes two whole-bay tables linearly across the band~~
+  **CLOSED by #3323** — the band now cross-fades PER WAVE: `frontGains(w)` =
+  {√(1−w), √w} scales every outgoing/incoming Gerstner slot before the sum
+  (equal power, ga²+gb²≡1), both swell trains ride at their OWN phases and
+  BEAT — stacked crests and glassy patches the convex blend physically could
+  not make; edges stay byte-exact tables, GLSL twin mirrors the term order
+  (mutant `beats` proves the pins bite).
 - The front is swell-only weather: sky darkening and rain ramp at the GO of a
   re-roll, not as the front passes overhead (sea first, sky later).
 - Wake ribbon is flat-shaded additive; the WR64 trail also darkens the water
