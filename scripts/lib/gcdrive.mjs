@@ -52,6 +52,20 @@ try {
     })
     ok('scene renders (not black)', lum > 40, `mean lum=${lum.toFixed(1)}`)
 
+    // #3225: a finished run shows the REPLAY screen on the replay cam
+    const rp = await page.evaluate(() => window.__grindTest.state())
+    ok('run over shows the replay', rp.screen === 'replay' && !!rp.replay && rp.cam === 'replay',
+        `cam=${rp.cam} i=${rp.replay ? rp.replay.i : '-'}/${rp.replay ? rp.replay.n : '-'}`)
+    await page.keyboard.press('Space')   // skip the replay
+    await new Promise(r => setTimeout(r, 250))
+    let ov = await page.evaluate(() => window.__grindTest.state())
+    if (ov.screen === 'replay') {       // focus dance: a tap also skips
+        await page.mouse.click(300, 300)
+        await new Promise(r => setTimeout(r, 250))
+        ov = await page.evaluate(() => window.__grindTest.state())
+    }
+    ok('Space skips the replay to the results', ov.screen === 'over' && !ov.replay, `screen=${ov.screen}`)
+
     // keyboard restart from the over screen
     await page.keyboard.press('Space')
     await new Promise(r => setTimeout(r, 700))
@@ -62,6 +76,18 @@ try {
         back = await page.evaluate(() => window.__game.state())
     }
     ok('over → restart returns to attract', back.phase === 'play' && back.attract === true, `phase=${back.phase} attract=${back.attract}`)
+
+    // #3225: the fisheye action cam cuts in while an air-grab is held
+    const ac = await page.evaluate(async () => {
+        const g = window.__game
+        g.reset(11)
+        g.step({ a: true }, 1); g.step({}, 30); g.step({ a: true }, 2)   // ollie → re-press A = grab
+        await new Promise(r => setTimeout(r, 150))
+        const st = window.__grindTest.state()
+        g.release()
+        return st
+    })
+    ok('fisheye action cam on an air grab', ac.cam === 'action' && ac.screen === 'play', `cam=${ac.cam} air=${ac.air}`)
 
     console.log(out.join('\n'))
     console.log(out.every(l => l.startsWith('PASS')) ? 'DRIVE GREEN' : 'DRIVE RED')

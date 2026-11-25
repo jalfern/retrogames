@@ -420,6 +420,15 @@ export function stateOf(s) {
     }
 }
 
+/** Pack/unpack one tick of pads for the cabinet's run-replay log (#3225).
+ *  Pure + total: the cabinet logs packIn(input) each played tick, and a replay
+ *  re-steps step(s, unpackIn(word)) from the same seed — byte-identical. */
+export const packIn = i =>
+    (i.left ? 1 : 0) | (i.right ? 2 : 0) | (i.up ? 4 : 0) | (i.down ? 8 : 0) | (i.a ? 16 : 0) | (i.b ? 32 : 0)
+export const unpackIn = p => ({
+    left: !!(p & 1), right: !!(p & 2), up: !!(p & 4), down: !!(p & 8), a: !!(p & 16), b: !!(p & 32),
+})
+
 export function hashState(s) {
     let h = 2166136261
     const str = JSON.stringify(stateOf(s))
