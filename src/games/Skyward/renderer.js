@@ -8,6 +8,7 @@
 
 import * as THREE from 'three'
 import { sockPose } from './sim.js'
+import { scuffTell } from './sim.js'
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
 const lerp = (a, b, t) => a + (b - a) * t
@@ -325,6 +326,7 @@ void main(){
     // edge lines + piano keys at the threshold, centreline dashes, zone ticks
     // where the score steps, windsock + ground board at the threshold.
     let sockProps = null // #3310 — the windsock's pivot + tail, ridden in render()
+    let windBoard = null // #3331 — pulses red when a plane arrives crabbed
     {
         const R = world.runway
         const cx = (R.ax + R.bx) / 2, cz = (R.az + R.bz) / 2
@@ -380,6 +382,7 @@ void main(){
             board.scale.set(22, 5, 1)
             board.position.set(R.ax - 3, deck + 2.4, cz - R.half - 4)
             scene.add(board)
+            windBoard = board
         }
     }
     const _targetMeshes = world.targets.map((t) => {
@@ -525,6 +528,7 @@ void main(){
     const pts = new THREE.Points(pGeo, new THREE.PointsMaterial({ size: lite ? 3 : 2.4, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false }))
     scene.add(pts)
     let pHead = 0
+    let dustTick = 0 // #3331 — rollout dust emission rate limiter (view-side only)
     const burst = (x, y, z, color = [0.9, 0.97, 1.0], n = 18, up = 6) => {
         for (let i = 0; i < n; i++) {
             const j = pHead++ % PN
@@ -670,6 +674,10 @@ void main(){
         c.visible = true
         c.position.set(g.p.x, g.p.y + (g.craft === 'plane' ? 0.9 : g.craft === 'glider' ? 1.1 : 1.4), g.p.z)
         c.rotation.set(-g.pitch * 0.75, -g.heading + Math.PI, g.roll * 0.9, 'YXZ')
+        // #3331 item 2 — grounded posture: the wheels-down hull sits low on
+        // its gear with a nose-up trim, so a rollout reads as a machine with
+        // ground contact, not a low hover (renderer-only; the sim is clean).
+        if (g.craft === 'plane' && g.ground) { c.position.y -= 0.14; c.rotation.x -= 0.07 }
         if (g.craft === 'plane') {
             c.userData.prop.rotation.z = t * (8 + g.speed * 0.9)
             // #3300 item 2 — the load tell. Streak length, glow and heat all
@@ -696,12 +704,25 @@ void main(){
             fl.scale.x = 2.4; fl.scale.z = 2.4
         }
 
+        // #3331 item 2 — dust streaks off the mains: asphalt gripping the
+        // hull. View-side tick-rate emission; the sim never sees it.
+        if (g.craft === 'plane' && g.ground) {
+            if (++dustTick % 3 === 0) {
+                const bx = g.p.x - Math.sin(g.heading) * 3.4, bz = g.p.z - Math.cos(g.heading) * 3.4
+                const bd = Math.max(g.world.terrainHeight(bx, bz), g.world.waterHeightAt(bx, bz, t))
+                burst(bx, bd + 0.25, bz, [0.82, 0.76, 0.6], 3, 1.1)
+            }
+        } else dustTick = 0
+
         // blob shadow: pressed onto whatever is under the hull (land or the
         // live swell). Sample the blob's edges too so it rides a slope instead
         // of clipping through it, and fade the whole thing out high up.
         {
             const gy = (x, z) => Math.max(g.world.terrainHeight(x, z), g.world.waterHeightAt(x, z, t))
-            const span = SHADOW_SPAN[g.craft] * (1 + Math.max(0, g.p.y - gy(g.p.x, g.p.z)) * 0.014)
+            // #3331 — a rolling hull presses its shadow: tighter, darker, the
+            // ground contact the chase-cam can finally read.
+            const grounded = g.craft === 'plane' && g.ground
+            const span = SHADOW_SPAN[g.craft] * (1 + Math.max(0, g.p.y - gy(g.p.x, g.p.z)) * 0.014) * (grounded ? 0.88 : 1)
             const gx = g.p.x, gz = g.p.z
             const groundY = Math.max(gy(gx, gz),
                 gy(gx + span * 0.5, gz), gy(gx - span * 0.5, gz),
@@ -711,10 +732,19 @@ void main(){
                 shadowMesh.visible = true
                 shadowMesh.position.set(gx, groundY + 0.22, gz)
                 shadowMesh.scale.set(span, span, 1)
-                shadowMesh.material.opacity = 0.4 * Math.pow(1 - agl / 110, 1.6)
+                shadowMesh.material.opacity = (grounded ? 0.55 : 0.4) * Math.pow(1 - agl / 110, 1.6)
             } else {
                 shadowMesh.visible = false
             }
+        }
+
+        // #3331 item 4 — the ground board shouts what the gauge knows: a hull
+        // on short final drifting toward the crab limit makes RUNWAY glow hot.
+        if (windBoard) {
+            const tell = g.craft === 'plane' && g.phase === 'free' && !g.ground && g.respawnT <= 0
+                ? scuffTell(g.world, g.p.x, g.p.z, g.heading, g.p.y) : null
+            const hot = tell && tell.tell >= 0.55
+            windBoard.material.color.setRGB(1, hot ? 0.45 + 0.12 * Math.sin(t * 9) : 1, hot ? 0.3 : 1)
         }
 
         // crates

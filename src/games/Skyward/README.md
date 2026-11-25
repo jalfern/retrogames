@@ -51,8 +51,9 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   below). What remains of the old bullet: no online (issue: not yet).
   (The engine-audio half closed in #3295, the glider's runway in #3302/#3306.)
 - A strip touchdown is judged at the instant the hull crosses the deck (gh<0.7),
-  same as the mat — there is no flare-quality or ground-roll law; a smooth
-  approach that sinks 0.6 m at the threshold reads the same as a perfect one.
+  same as the mat — there is no flare-quality law; a smooth approach that sinks
+  0.6 m at the threshold reads the same as a perfect one. Ground roll is no
+  longer one of them: #3331 added the centreline rollout credit (see the tail).
 - The cell drifts on a fixed seeded ellipse, not a steered weather sim (no
   cell-to-cell travel, no squall line); a long run learns the sweep the way
   rungs 1's lines were learned.
@@ -169,7 +170,9 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   scuffs it to 60. The speed ceiling sits deliberately below the pump's cruise
   equilibrium (38): a hull that hasn't scrubbed with the stick is too hot, so
   slow is something the pilot makes. Hot, steep, crabbed-too-hard or off-strip
-  arrivals keep today's crash law byte-identical.
+  arrivals keep today's crash law byte-identical. *(#3331 later rewrote one
+  corner of this: hot AND shallow AND straight is now a go-around bounce — see
+  the tail below; steep, crabbed and off-strip arrivals are unchanged.)*
 - **Rollout** — on the deck the hull rides it (deck+0.5), friction
   (`×0.99/tick`) owns the decel, heading is locked to the axis; storm buffet
   doesn't reach a wheeled hull (the bed still hears the rain). Stick back at
@@ -253,3 +256,45 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   Cabinet: hints teach quiet-over-firm, the ✺ chip appears only once earned
   (phone width), deck dust on parks (shared strip flourish), and a `padfinal`
   F1 cheat.
+
+## Wheels-down tail (#3331)
+- **Hot and shallow bounces — the go-around** — Pilotwings' strip says "go
+  around" with a bounce, and now ours does too. Crossing the strip deck in
+  free flight, straight (inside the crab law) and shallow (inside the plane's
+  sink band) but at PLANE_SPEED or above, the hull is kicked back up
+  (`vy ≥ 1.6`, nose lifts, the departure grace re-arms): banner
+  `TOO HOT — GO AROUND`, no crash, nothing banked. The first mistake teaches
+  the speed law instead of splatting. The window is narrow by design: below
+  the ceiling the catch owns it (no overlap — `planeTouch < 34.5`,
+  `planeGoAround ≥ 34.5` tile the axis), above `PLANE_HOT_MAX` (45 m/s) it
+  isn't an approach and crashes, and steep/crabbed/off-strip arrivals keep
+  #3319's crash untouched. Pure law `planeGoAround(w,x,z,heading,vy,speed)`.
+- **The rollout can EARN — CLEAN ROLL** — the hull now watches its own
+  rollout: metres rolled on the deck plus the widest offset from the axis.
+  ≥ 12 m inside 2 m of the centreline dash pays `+100` onto the ✈ badge best
+  (`land`), banner `CLEAN ROLL — CENTRELINE +100`, emitted after wheels/crew
+  so the cabinet's last word is the reward. A crabbed touchdown can't fake
+  it — the locked heading slides the hull off the dash mid-roll. Still
+  badge-only: never `score`/`grad`/`done`, hash inputs unchanged.
+- **The scuff tell** — short final warns before the deck decides. Pure law
+  `scuffTell(w,x,z,heading,y)`: inside 18 m of the strip axis, from 25 m
+  short of the threshold to the far end, below deck+14, tell = crab 0→1
+  across the alignment band (dir signs the nose). Cabinet: a rising
+  `⚠ SCUFF…` gauge under the banner, the approach hint swaps to
+  `CRAB RISING — STRAIGHTEN`, and the ground RUNWAY board glows hot.
+  `stateOf` gained `scuff` (approach) and `roll` (live rollout meter).
+- **Grounded look (renderer-only)** — a rolling hull sits low on its gear
+  with a nose-up trim, its blob shadow presses tight and dark, and dust
+  streaks spit off the mains along the asphalt — chase-cam ground contact
+  where it used to read as a hover.
+- **Harness** — superseded the #3319 hot-crash pin (the law it pinned is
+  gone; steep/crabbed/missile controls stay). +13 pins (bounce bands and
+  tiling, tell corridor/window/sign, rollout credit clean vs drift vs abort,
+  stateOf addenda) — 158/158; 4 new mutants — 52/52 die, and the grace
+  mutant caught an inverted assertion in the first draft pin (a bounce that
+  crashes *after* the go-around must still fail — the pin now demands
+  `ci === -1`). `skywardplay` drives bounce, gauge, and ✈800 clean-roll live
+  at 1280 and audits the new strings at 390×844.
+- **Not done here (item 6)** — repeat FULL STRIP farming: the badge banks
+  best-only, so laps can't inflate it beyond 800; the issue called
+  do-nothing valid, and that's what this stage did.

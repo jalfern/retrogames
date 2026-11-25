@@ -13,7 +13,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue, engineBed, engineCue, windBed, stripZone } from './sim.js'
+import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue, engineBed, engineCue, windBed, stripZone, scuffTell } from './sim.js'
 import { decide } from './planner.js'
 import { createSkywardGL } from './renderer.js'
 import { PRESS, MESSAGES } from './attract.js'
@@ -74,6 +74,7 @@ const SkywardGame = () => {
 [data-h=score]{position:absolute;right:34px;bottom:14px;letter-spacing:.1em;text-align:right}
 [data-h=chips]{position:absolute;right:34px;bottom:32px;letter-spacing:.14em;text-align:right;font-size:11px;color:#ffe9a8}
 [data-h=banner]{position:absolute;left:50%;top:56px;transform:translateX(-50%);font-size:22px;letter-spacing:.22em;opacity:0;transition:opacity .25s;text-align:center}
+[data-h=tell]{position:absolute;left:50%;top:92px;transform:translateX(-50%);font-size:13px;letter-spacing:.26em;color:#ff9d4d;opacity:0;transition:opacity .3s;text-align:center;text-shadow:0 1px 4px rgba(0,0,0,.7)}
 [data-h=hint]{position:absolute;left:50%;bottom:70px;transform:translateX(-50%);font-size:11px;letter-spacing:.18em;color:#cfe6ff;opacity:.9;text-align:center}
 @media (max-width: 480px){
   /* everything the HUD shows lives in the left column BELOW the corner
@@ -84,6 +85,7 @@ const SkywardGame = () => {
   [data-h=score]{right:auto;left:10px;bottom:auto;top:112px;text-align:left}
   [data-h=chips]{right:auto;left:10px;bottom:auto;top:130px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:370px;white-space:nowrap}
   [data-h=banner]{width:92vw;font-size:17px;letter-spacing:.12em}
+  [data-h=tell]{width:92vw;top:92px;font-size:11px;letter-spacing:.14em}
   [data-h=hint]{bottom:auto;top:58%;left:4%;transform:none;width:92%;font-size:10px;letter-spacing:.1em;line-height:1.6;text-align:center}
 }
 </style>
@@ -92,6 +94,7 @@ const SkywardGame = () => {
 <div data-h="score">SCORE 0</div>
 <div data-h="chips">RING — · SPOT — · DROP — · ⚡—</div>
 <div data-h="banner"></div>
+<div data-h="tell"></div>
 <div data-h="hint"></div>`
         // NOTE: wrap is `absolute inset-0` from JSX — never override its
         // position inline: a relative box ignores the insets and the stage
@@ -99,7 +102,7 @@ const SkywardGame = () => {
         // audit — the sky shrank to a 2:1 strip at every width).
         wrap.appendChild(hudEl)
         const q = (k) => hudEl.querySelector(`[data-h="${k}"]`)
-        const E = { speed: q('speed'), alt: q('alt'), score: q('score'), chips: q('chips'), banner: q('banner'), hint: q('hint') }
+        const E = { speed: q('speed'), alt: q('alt'), score: q('score'), chips: q('chips'), banner: q('banner'), tell: q('tell'), hint: q('hint') }
 
         gs.attract = true
 
@@ -173,6 +176,15 @@ const SkywardGame = () => {
                 case 'wheels': sweep(240, 520, 0.16, 'triangle', 0.07); break
                 case 'liftoff': sweep(300, 640, 0.14, 'triangle', 0.07); break
                 case 'crew': tone(392, 0.1); tone(311, 0.16, 'triangle', 0.07, 0.1); break
+                case 'goaround':
+                    // #3331 — the deck spits her back: a duck then a climb,
+                    // the sound of a bounce teaching the speed law
+                    sweep(320, 170, 0.16, 'sawtooth', 0.06)
+                    sweep(170, 360, 0.24, 'triangle', 0.07, 0.15)
+                    break
+                case 'rollout':
+                    if (e.clean) { tone(880, 0.09); tone(1174, 0.14, 'square', 0.08, 0.09) }
+                    break
                 default: break
             }
         }
@@ -207,6 +219,14 @@ const SkywardGame = () => {
                 if (e.kind === 'liftoff') banner('OFF THE PAD — AIRBORNE', 1.6)
                 if (e.kind === 'wheels') banner('WHEELS UP — TOUCH AND GO', 1.8)
                 if (e.kind === 'crew') banner('GROUND CREW — SHE\'LL FLY AGAIN', 2.4)
+                // #3331 — the bounce teaches in words; the clean roll pays last
+                // (the sim emits rollout AFTER wheels/crew so this is the
+                // cabinet's final word when it fires)
+                if (e.kind === 'goaround') {
+                    banner('TOO HOT — GO AROUND', 2.2)
+                    gl.burst(g.p.x, g.p.y + 0.4, g.p.z, [0.88, 0.8, 0.62], 12, 2.5)
+                }
+                if (e.kind === 'rollout' && e.clean) banner(`CLEAN ROLL — CENTRELINE +${e.credit}`, 2.2)
                 if (e.kind === 'splash') gl.burst(g.p.x, 1.2, g.p.z, [0.85, 0.97, 1], 22, 5)
                 if (e.kind === 'crash') gl.burst(g.p.x, g.p.y, g.p.z, [1, 0.8, 0.55], 26, 7)
                 if (e.kind === 'hit') gl.burst(g.world.targets[e.target].x, 1.4, g.world.targets[e.target].z, e.score > 200 ? [1, 0.9, 0.4] : [0.9, 0.9, 0.9], 16, 4)
@@ -228,6 +248,8 @@ const SkywardGame = () => {
         // #3319 — the plane's own lesson at the strip: cruise is too hot, the
         // arrival is made by scrubbing speed and flaring, not by holding level
         const planeRunwayHint = (g) => {
+            const st = scuffTell(g.world, g.p.x, g.p.z, g.heading, g.p.y)
+            if (st && st.tell >= 0.55) return 'CRAB RISING — STRAIGHTEN · past 17° the deck pays just 60'
             const zn = stripZone(g.world, g.p.x, g.p.z)
             if (zn) return 'RUNWAY — SCRUB SPEED, THEN FLARE SOFT · cruise speed is too hot to land'
             const d = Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az)
@@ -518,6 +540,18 @@ const SkywardGame = () => {
                             || 'CRUISE · markers glow near launches · B at school recycles craft' : '')
                 : ''
             if (E.hint.textContent !== hint) E.hint.textContent = hint
+            // #3331 item 4 — the scuff gauge: climbs as the crab opens toward
+            // the alignment limit while the plane is on short final, falls as
+            // the pilot straightens. Nothing to warn about → nothing shown.
+            {
+                const near = sc === 'play' && shown && shown.craft === 'plane' && shown.phase === 'free'
+                    && !shown.ground && shown.respawnT <= 0
+                    ? scuffTell(shown.world, shown.p.x, shown.p.z, shown.heading, shown.p.y) : null
+                const tv = near ? near.tell : 0
+                E.tell.style.opacity = tv > 0.02 ? String((0.35 + tv * 0.65).toFixed(2)) : '0'
+                const txt = tv >= 0.97 ? '⚠ SCUFF LIMIT — STRAIGHTEN' : tv >= 0.45 ? '⚠ SCUFF RISING' : tv > 0.02 ? 'CRAB MINOR — HOLD' : ''
+                if (E.tell.textContent !== txt) E.tell.textContent = txt
+            }
             if (bannerRef.current.until && performance.now() > bannerRef.current.until) {
                 E.banner.style.opacity = '0'
                 bannerRef.current.until = 0
