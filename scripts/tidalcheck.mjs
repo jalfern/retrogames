@@ -53,6 +53,10 @@ if (MUT) {
         moorrand: { file: 'src/games/TidalRush/art.js', from: 'let s = (seed >>> 0) || 1', to: 'let s = (Math.random() * 4294967296) >>> 0', note: 'anchorage stops following the seed' },
         // the gulls freeze mid-air (#3218) — the sky stops moving.
         gullfreeze: { file: 'src/games/TidalRush/index.jsx', from: 'gullFrame(gm, flock, bird, t)', to: 'gullFrame(gm, flock, bird, 0)', note: 'gulls freeze mid-air' },
+        // the wake is flat paint again (#3337) — foam stops dying with age.
+        foamflat: { file: 'src/games/TidalRush/art.js', from: 'const foam = (1 - t) * (1 - t) * hot', to: 'const foam = 0.66 * hot', note: 'wake foam stops fading with age — flat paint' },
+        // the trail stains the bay again (#3337) — glow flips to normal blend.
+        glowdark: { file: 'src/games/TidalRush/art.js', from: 'blending: THREE.AdditiveBlending, // #3337 — additive: the wake only adds light', to: 'blending: THREE.NormalBlending, // #3337', note: 'wake glow darkens the water beside the trail again' },
         // the shallows stop shimmering (#3218) — beach caustics gone.
         causticoff: { file: 'src/games/TidalRush/art.js', from: 'float shoreK = length(vWorld.xz) / 180.0;', to: 'float shoreK = 0.0;', note: 'beach caustics disabled' },
         // the flat 360 lands in silence again (#3218) — no whoosh-in.
@@ -1299,6 +1303,98 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         jsxNet.includes("s < SEATS && !net.watchers.has(s)") && jsxNet.includes("net.room.send('spec', {})") && jsxNet.includes("net.room.send('sv0'"))
     ok('the relay forwards the spectate wire (spec/sv0/sh allowlisted)',
         /'spec', 'sv0', 'sh'/.test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../relay/core.js'), 'utf8')))
+}
+
+// ── 19. WAKE (#3337) — the foam V is art-side law: additive-only (the wake
+// can ADD light to the bay, never stain it), V-arms brighter than the fill,
+// foam fading + cooling with age, hot with speed, twinkle along the trail,
+// spread growing, buffers deterministic (no Math.random downstream). ────────
+{
+    const THREE = await import('three')
+    const { makeWake, wakePush, wakeStep } = await import('../src/games/TidalRush/art.js')
+    const crestA = (w, i) => w.geo.attributes.color.array[(i * 3) * 4 + 3]
+    const fillA = (w, i) => w.geo.attributes.color.array[(i * 3 + 1) * 4 + 3]
+    const crestR = (w, i) => w.geo.attributes.color.array[(i * 3) * 4]
+
+    // additive-only law: BOTH ribbons add light; depth stays with the sea
+    const wk0 = makeWake(8)
+    ok('both wake ribbons are additive and depth-write-free — the trail can never darken the bay (#3337)',
+        wk0.mat.blending === THREE.AdditiveBlending && wk0.glowMat.blending === THREE.AdditiveBlending &&
+        wk0.mat.depthWrite === false && wk0.glowMat.depthWrite === false)
+
+    // V shape: every live section has crests strictly hotter than the fill
+    const wk = makeWake(16)
+    for (let i = 0; i < 6; i++) wakePush(wk, i * 0.7, 0.6, -i * 0.4, 0.3, 1.6)
+    wakeStep(wk, 1 / 60)
+    ok('foam V: every section paints its two crests hotter than the calm fill between them',
+        (() => {
+            const m = wk.pts.length
+            for (let i = 0; i < m; i++) if (!(crestA(wk, i) > fillA(wk, i) * 1.9)) return false
+            return m >= 6
+        })())
+
+    // age fade with twinkle-cancelled sampling: 1 tick vs 55 ticks on the
+    // same point (tw nearly identical at those ages) — real foam dies.
+    const fa = makeWake(8); const fb = makeWake(8)
+    wakePush(fa, 0, 0.6, 0, 0, 1.6); wakePush(fb, 0, 0.6, 0, 0, 1.6)
+    wakeStep(fa, 1 / 60)
+    for (let i = 0; i < 55; i++) wakeStep(fb, 1 / 60)
+    ok('age law: crest alpha at ~0.9 s is under 55 % of its fresh value (foam dies, it doesn\'t sit there)',
+        crestA(fa, 0) > 1.8 * crestA(fb, 0) && crestA(fb, 0) > 0)
+    ok('cooling law: the crest hue drifts toward cyan as the bubbles die (b stays hot)',
+        (() => {
+            const rF = crestR(fa, 0), rO = crestR(fb, 0)
+            const bb = wkc => wkc.geo.attributes.color.array[(0 * 3) * 4 + 2]
+            return rF > rO + 0.05 && bb(fb) >= rO
+        })())
+    ok('spread law: the V arms are wider at ~0.9 s than at birth (the wake opens)',
+        (() => {
+            const sep = (w) => Math.hypot(
+                w.geo.attributes.position.array[0] - w.geo.attributes.position.array[6],
+                w.geo.attributes.position.array[2] - w.geo.attributes.position.array[8])
+            return sep(fb) > 1.8 * sep(fa)
+        })())
+
+    // speed-hot: at one age, the fast hull's crest is brighter than the slow one's
+    const sl = makeWake(8); const fs = makeWake(8)
+    wakePush(sl, 0, 0.6, 0, 0, 0.6); wakePush(fs, 0, 0.6, 0, 0, 2.6)
+    wakeStep(sl, 1 / 60); wakeStep(fs, 1 / 60)
+    ok('speed law: a hot hull drags a hotter trail than a slow one at equal age',
+        crestA(fs, 0) > crestA(sl, 0) * 1.2)
+
+    // twinkle: equal pushes, one age — brightness varies ALONG the trail
+    const tk = makeWake(16)
+    for (let i = 0; i < 8; i++) wakePush(tk, i, 0.6, 0, 0, 1.6)
+    wakeStep(tk, 1 / 60)
+    ok('twinkle law: crest brightness varies along the trail (no flat-shaded band)',
+        (() => {
+            const as = []
+            for (let i = 0; i < 8; i++) as.push(crestA(tk, i))
+            return Math.max(...as) - Math.min(...as) > 0.02
+        })())
+
+    // determinism: same pushes + same steps ⇒ byte-identical buffers
+    const d1 = makeWake(16); const d2 = makeWake(16)
+    for (let i = 0; i < 10; i++) {
+        wakePush(d1, i * 0.5, 0.6, -i * 0.3, i * 0.2, 1.4)
+        wakePush(d2, i * 0.5, 0.6, -i * 0.3, i * 0.2, 1.4)
+        wakeStep(d1, 1 / 60); wakeStep(d2, 1 / 60)
+    }
+    ok('wake geometry is deterministic (identical streams, identical bytes — no Math.random downstream)',
+        (() => {
+            const pick = (w) => [w.geo.attributes.position.array, w.geo.attributes.color.array,
+                w.glowGeo.attributes.position.array, w.glowGeo.attributes.color.array].map((a) => a.join(','))
+            return pick(d1).join('|') === pick(d2).join('|')
+        })())
+
+    // ring law: pts trim to n; drawRange tracks live sections (12 tris per
+    // foam-V section, 6 per glow quad-row)
+    const rg = makeWake(8)
+    ok('empty wake draws nothing', rg.geo.drawRange.count === 0 && rg.glowGeo.drawRange.count === 0)
+    for (let i = 0; i < 12; i++) wakePush(rg, i, 0.6, 0, 0, 1.6)
+    wakeStep(rg, 1 / 60)
+    ok('ring + drawRange law: pts trim to n, bright counts 12 per section, glow 6',
+        rg.pts.length === 8 && rg.geo.drawRange.count === (8 - 1) * 12 && rg.glowGeo.drawRange.count === (8 - 1) * 6)
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)

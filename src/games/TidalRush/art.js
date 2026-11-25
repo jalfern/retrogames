@@ -435,15 +435,22 @@ export function ringStep(pool, dt) {
 }
 
 export function makeWake(n = 44) {
-    const pos = new Float32Array(n * 2 * 3)
-    const col = new Float32Array(n * 2 * 4)
+    // #3337 — the FOAM V. Three lanes per section: two bright crests and a
+    // thin inner fill. The V-arms carry the broken foam (what a wake actually
+    // looks like on the bay); the old ribbon painted one flat value edge to
+    // edge. `seq` hands every point its own twinkle phase at emit time —
+    // deterministic (no Math.random downstream), and never renumbered, so the
+    // shimmer rides with the water instead of popping when the tail shifts.
+    const pos = new Float32Array(n * 3 * 3)
+    const col = new Float32Array(n * 3 * 4)
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     geo.setAttribute('color', new THREE.BufferAttribute(col, 4))
     const idx = []
     for (let i = 0; i < n - 1; i++) {
-        const a = i * 2, b = a + 1, c = a + 2, d = a + 3
-        idx.push(a, c, b, b, c, d)
+        const a = i * 3, b = a + 3
+        idx.push(a, b, b + 1, a, b + 1, a + 1) // crest-L ⇄ fill lane
+        idx.push(a + 1, b + 1, b + 2, a + 1, b + 2, a + 2) // fill ⇄ crest-R lane
     }
     geo.setIndex(idx)
     geo.setDrawRange(0, 0)
@@ -453,9 +460,11 @@ export function makeWake(n = 44) {
     })
     const mesh = new THREE.Mesh(geo, mat)
     mesh.frustumCulled = false
-    // the darkening strip: a wider, low-alpha ribbon that normal-blends under
-    // the additive streak — the water shadow the wake throws beside the bright
-    // line, not on top of it (render order keeps the streak bright).
+    mesh.renderOrder = 2
+    // the disturbed-water GLOW: a wider, faint ribbon under the crests. It
+    // used to be a normal-blended DARK strip that stained the bay beside the
+    // trail (#3218 tail) — it is additive now, so the wake can only ever ADD
+    // light to the water, never take it away.
     const dPos = new Float32Array(n * 2 * 3)
     const dCol = new Float32Array(n * 2 * 4)
     const dGeo = new THREE.BufferGeometry()
@@ -471,16 +480,16 @@ export function makeWake(n = 44) {
     const dMat = new THREE.MeshBasicMaterial({
         vertexColors: true, transparent: true, depthWrite: false,
         side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending, // #3337 — additive: the wake only adds light
     })
     const dMesh = new THREE.Mesh(dGeo, dMat)
     dMesh.frustumCulled = false
     dMesh.renderOrder = 1
-    mesh.renderOrder = 2
-    return { mesh, geo, mat, darkMesh: dMesh, darkGeo: dGeo, darkMat: dMat, pts: [], n, life: 2.4 }
+    return { mesh, geo, mat, glowMesh: dMesh, glowGeo: dGeo, glowMat: dMat, pts: [], n, life: 2.4, seq: 0 }
 }
 
 export function wakePush(w, x, y, z, heading, width) {
-    w.pts.push({ x, y: y + 0.05, z, heading, width, age: 0 })
+    w.pts.push({ x, y: y + 0.05, z, heading, width, age: 0, ph: (w.seq++ * 1.31) % 6.283185 })
     if (w.pts.length > w.n) w.pts.shift()
 }
 
@@ -619,38 +628,53 @@ export function wakeStep(w, dt) {
     while (pts.length && pts[0].age > w.life) pts.shift()
     const pos = w.geo.attributes.position.array
     const col = w.geo.attributes.color.array
-    const dPos = w.darkGeo.attributes.position.array
-    const dCol = w.darkGeo.attributes.color.array
+    const dPos = w.glowGeo.attributes.position.array
+    const dCol = w.glowGeo.attributes.color.array
     const m = pts.length
     for (let i = 0; i < m; i++) {
         const p = pts[i]
         const t = p.age / w.life
-        // widen with age (the trail spreads), keep the fresh end narrow and hot
+        // foam energy: fresh AND fast. `width` at emit time already carries
+        // speed + boost (the cabinet passes 0.55 + speed·0.085 + boost·0.5),
+        // so the trail reads how hard the hull was driven.
+        const hot = Math.min(1, 0.45 + p.width * 0.30)
+        const foam = (1 - t) * (1 - t) * hot
+        const tw = 0.82 + 0.18 * Math.sin(p.ph * 3.1 + p.age * 7.0) // deterministic glint
+        // hue cools as the bubbles die: crests leave the stern white foam and
+        // end cyan against the bay (flat white read as paint; fading reads as
+        // water). b stays hot — cyan is the sink, never a muddy grey.
+        const r = 0.95 - 0.40 * t, g = 0.98 - 0.16 * t, bb = 1.0
+        // the V arms spread with age; the fresh end stays narrow and hot
         const hw = p.width * (0.22 + 0.78 * t)
         const px = Math.cos(p.heading), pz = -Math.sin(p.heading)
-        const a = (1 - t) * (1 - t) * 0.62
-        const j = i * 2
+        const ea = foam * tw * 0.66 // crest alpha (the bright V lines)
+        const j = i * 3
         pos[j * 3] = p.x + px * hw; pos[j * 3 + 1] = p.y; pos[j * 3 + 2] = p.z + pz * hw
-        pos[(j + 1) * 3] = p.x - px * hw; pos[(j + 1) * 3 + 1] = p.y; pos[(j + 1) * 3 + 2] = p.z - pz * hw
-        col[j * 4] = 0.92; col[j * 4 + 1] = 0.98; col[j * 4 + 2] = 1.0; col[j * 4 + 3] = a
-        col[(j + 1) * 4] = 0.92; col[(j + 1) * 4 + 1] = 0.98; col[(j + 1) * 4 + 2] = 1.0; col[(j + 1) * 4 + 3] = a
-        // darkening strip: wider, low-alpha, deep water shadow under the streak —
-        // renders normal-blended so the additive line stays on top, and stays
-        // darker than the sea, not lighter than the line
-        const dw = p.width * (0.40 + 0.90 * t)
-        const da = (1 - t) * 0.36
+        pos[(j + 1) * 3] = p.x; pos[(j + 1) * 3 + 1] = p.y; pos[(j + 1) * 3 + 2] = p.z
+        pos[(j + 2) * 3] = p.x - px * hw; pos[(j + 2) * 3 + 1] = p.y; pos[(j + 2) * 3 + 2] = p.z - pz * hw
+        col[j * 4] = r; col[j * 4 + 1] = g; col[j * 4 + 2] = bb; col[j * 4 + 3] = ea
+        // thin fill between the crests: calm water inside the V, a third of
+        // the crest — the eye reconstructs two spreading foam lines.
+        col[(j + 1) * 4] = r * 0.94; col[(j + 1) * 4 + 1] = g * 0.98; col[(j + 1) * 4 + 2] = bb
+        col[(j + 1) * 4 + 3] = ea * 0.32
+        col[(j + 2) * 4] = r; col[(j + 2) * 4 + 1] = g; col[(j + 2) * 4 + 2] = bb; col[(j + 2) * 4 + 3] = ea
+        // additive disturbed-water glow: wider, faint cyan haze under the V.
+        // Strictly light-adding — the darkening-strip artifact is gone (#3337).
+        const dw = p.width * (0.42 + 0.95 * t)
+        const ga = foam * tw * 0.12
         const dy = p.y - 0.02
-        dPos[j * 3] = p.x + px * dw; dPos[j * 3 + 1] = dy; dPos[j * 3 + 2] = p.z + pz * dw
-        dPos[(j + 1) * 3] = p.x - px * dw; dPos[(j + 1) * 3 + 1] = dy; dPos[(j + 1) * 3 + 2] = p.z - pz * dw
-        dCol[j * 4] = 0.004; dCol[j * 4 + 1] = 0.018; dCol[j * 4 + 2] = 0.028; dCol[j * 4 + 3] = da
-        dCol[(j + 1) * 4] = 0.004; dCol[(j + 1) * 4 + 1] = 0.018; dCol[(j + 1) * 4 + 2] = 0.028; dCol[(j + 1) * 4 + 3] = da
+        const q = i * 2
+        dPos[q * 3] = p.x + px * dw; dPos[q * 3 + 1] = dy; dPos[q * 3 + 2] = p.z + pz * dw
+        dPos[(q + 1) * 3] = p.x - px * dw; dPos[(q + 1) * 3 + 1] = dy; dPos[(q + 1) * 3 + 2] = p.z - pz * dw
+        dCol[q * 4] = 0.40; dCol[q * 4 + 1] = 0.66; dCol[q * 4 + 2] = 0.85; dCol[q * 4 + 3] = ga
+        dCol[(q + 1) * 4] = 0.40; dCol[(q + 1) * 4 + 1] = 0.66; dCol[(q + 1) * 4 + 2] = 0.85; dCol[(q + 1) * 4 + 3] = ga
     }
-    w.geo.setDrawRange(0, m >= 2 ? (m - 1) * 6 : 0)
+    w.geo.setDrawRange(0, m >= 2 ? (m - 1) * 12 : 0)
     w.geo.attributes.position.needsUpdate = true
     w.geo.attributes.color.needsUpdate = true
-    w.darkGeo.setDrawRange(0, m >= 2 ? (m - 1) * 6 : 0)
-    w.darkGeo.attributes.position.needsUpdate = true
-    w.darkGeo.attributes.color.needsUpdate = true
+    w.glowGeo.setDrawRange(0, m >= 2 ? (m - 1) * 6 : 0)
+    w.glowGeo.attributes.position.needsUpdate = true
+    w.glowGeo.attributes.color.needsUpdate = true
 }
 export function makeRain(n = 420) {
     const pos = new Float32Array(n * 3)
