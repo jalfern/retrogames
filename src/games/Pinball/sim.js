@@ -1026,6 +1026,24 @@ function drain(gs) {
     }
 }
 
+// -------------------------------------------------- attract demo bot ----
+// #3237 attract show-off: the attract mode plays the machine with the ONE
+// line the check script already proves human-winnable — a 4-tick medium
+// plunge every 90 ticks rounds the dome, rolls the firelane and locks;
+// three locks ignite MULTIBALL (pinballcheck HUMAN LINE, both cabinets).
+// Pure: a function of gs + tick, no RNG — the demo is deterministic and
+// Node-pinnable exactly as the browser runs it.
+export function demoPad(gs, tick) {
+    const p = gs.pucks[0];
+    const atPlunger = gs.pucks.length === 1 && p && !p.launched && p.by > 540;
+    return atPlunger && tick % 90 < 4 ? { down: true } : {};
+}
+// One demo run ends when the game ends, or a beat after the pack lands —
+// the MULTIBALL money shot is the showpiece; then re-deal fresh.
+export function demoOver(gs, mbSeen, ticksSinceMb) {
+    return Boolean(gs.done) || (mbSeen && ticksSinceMb > 420);
+}
+
 // -------------------------------------------------- state & hash ----
 export function stateOf(gs) {
     return {

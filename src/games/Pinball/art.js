@@ -140,6 +140,70 @@ export const PAL_TOXIC = {
     kickerRgb: '182,255,61',
 };
 
+// CABINET ONE kit "NOIR" (#3237 tail) — the after-hours dress: black-glass
+// field, magenta lane graphics, violet neon, rose alerts, ice-blue magnet.
+export const PAL_NOIR = {
+    fieldTop: '#0a0a14',
+    fieldBot: '#020208',
+    lane: '#ff2ea6',
+    laneDim: 'rgba(255,46,166,0.25)',
+    neon: '#8d7bff',
+    hot: '#ff5c7a',
+    sling: '#ff8ac4',
+    chrome: '#e6e6f2',
+    glow: '#c0a8ff',
+    score: '#ff7ad1',
+    wood: '#1a1024',
+    woodHi: '#2e1c3e',
+    dmd: '#ff9ad6',
+    dmdOff: 'rgba(255,154,214,0.06)',
+    mag: '#57b6ff',
+    hotRgb: '255,92,122',
+    magRgb: '87,182,255',
+    trailRgb: '255,150,220',
+    spark: '230,220,255',
+    capHi: '#ff9ab8',
+    hotOff: 'rgba(255,92,122,0.18)',
+    magOff: 'rgba(87,182,255,0.25)',
+    hotSoft: 'rgba(255,92,122,0.85)',
+    hotGlass: 'rgba(255,92,122,0.20)',
+    glowOff: 'rgba(192,168,255,0.15)',
+    hotDim: 'rgba(255,92,122,0.25)',
+    kickerRgb: '255,46,166',
+};
+
+// EMBER RIDER kit "GLACIER" (#3237 tail) — the cold run on the hot cab: ice
+// blue field, silver lanes, cyan neon, keep-the-fire alerts, violet magnet.
+export const PAL_GLACIER = {
+    fieldTop: '#0b1e33',
+    fieldBot: '#04101c',
+    lane: '#e8f4ff',
+    laneDim: 'rgba(232,244,255,0.25)',
+    neon: '#37c8ff',
+    hot: '#ff6a2e',
+    sling: '#9fdcff',
+    chrome: '#f2f8ff',
+    glow: '#a8e4ff',
+    score: '#cfeeff',
+    wood: '#12222e',
+    woodHi: '#244052',
+    dmd: '#bfe8ff',
+    dmdOff: 'rgba(191,232,255,0.06)',
+    mag: '#9f7bff',
+    hotRgb: '255,106,46',
+    magRgb: '159,123,255',
+    trailRgb: '190,230,255',
+    spark: '210,235,255',
+    capHi: '#ff9a6b',
+    hotOff: 'rgba(255,106,46,0.18)',
+    magOff: 'rgba(159,123,255,0.25)',
+    hotSoft: 'rgba(255,106,46,0.85)',
+    hotGlass: 'rgba(255,106,46,0.20)',
+    glowOff: 'rgba(168,228,255,0.15)',
+    hotDim: 'rgba(255,106,46,0.25)',
+    kickerRgb: '232,244,255',
+};
+
 export const SCORE_DIGITS = 6;
 export const SEG_W = 14, SEG_H = 24;    // 7-segment glyph size
 export const SCORE_X = 96, SCORE_Y = 44; // centred between the reserved corners
@@ -404,10 +468,12 @@ export const SKINS = {
     'cabinet-one': [
         { id: 'midnight', label: 'MIDNIGHT', pal: PAL },
         { id: 'tidal', label: 'TIDAL RUN', pal: PAL_TIDE },
+        { id: 'noir', label: 'NOIR', pal: PAL_NOIR },
     ],
     'ember-rider': [
         { id: 'ember', label: 'EMBER', pal: PAL_EMBER },
         { id: 'toxic', label: 'TOXIC', pal: PAL_TOXIC },
+        { id: 'glacier', label: 'GLACIER', pal: PAL_GLACIER },
     ],
 };
 export const skinsFor = (tableId) => SKINS[tableId] || SKINS['cabinet-one'];
@@ -433,4 +499,25 @@ export const styleIndex = (tableId, styleId, cur = 0) => {
     if (!styleId) return cur;
     const i = skinsFor(tableId).findIndex((k) => k.id === styleId);
     return i < 0 ? cur : i;
+};
+// #3237 tail: resolve a remembered kit id (localStorage) to a cabinet index —
+// a stale id from an older registry silently falls back to the house dress.
+export const kitIndex = (tableId, kitId) => {
+    const i = skinsFor(tableId).findIndex((k) => k.id === kitId);
+    return i < 0 ? 0 : i;
+};
+// A named style the picked cabinet does not ship → the cabinet must SAY so
+// instead of painting silently ("NO SUCH KIT", #3237 addendum).
+export const styleWarn = (tableId, styleId) =>
+    Boolean(styleId) && skinsFor(tableId).every((k) => k.id !== styleId);
+// localStorage key for the per-cabinet kit memory (pinned shape).
+export const KIT_STORE = 'retrogames.pinball.kits';
+
+// Attract-mode DMD ad lines (#3237 show-off) — one per demo run, crawled by
+// the strip while the demo plays. Kept off the HOT word list (drawDMD treats
+// MULTIBALL/TILT/… as shouty holds) so these crawl fully, ≤ 23 chars so the
+// crawl completes inside the 200-tick window they're given.
+export const ATTRACT_DMD = {
+    'cabinet-one': ['LOCK 3 FOR THE TOWER', 'ORBIT ROUND THE DOME', 'KICKBACK FREES BALLS', 'MULT LADDER UP TO X5'],
+    'ember-rider': ['EMBER RIDER RUNS MIRRORED', 'LEFT LANE LOCKS AT 400', 'PACK PAYS DOUBLE HERE', 'NUDGE CAREFULLY HERE'],
 };
