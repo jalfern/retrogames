@@ -69,10 +69,13 @@ const SkywardGame = () => {
 [data-h=banner]{position:absolute;left:50%;top:56px;transform:translateX(-50%);font-size:22px;letter-spacing:.22em;opacity:0;transition:opacity .25s;text-align:center}
 [data-h=hint]{position:absolute;left:50%;bottom:70px;transform:translateX(-50%);font-size:11px;letter-spacing:.18em;color:#cfe6ff;opacity:.9;text-align:center}
 @media (max-width: 480px){
-  [data-h=speed]{left:10px;bottom:auto;top:30px}
-  [data-h=alt]{left:10px;bottom:auto;top:48px}
-  [data-h=score]{right:10px;bottom:auto;top:30px}
-  [data-h=chips]{right:auto;left:10px;bottom:auto;top:66px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:370px;white-space:nowrap}
+  /* everything the HUD shows lives in the left column BELOW the corner
+     chrome (ARCADE + FEEDBACK reach ~y70); the mute icon owns the top-right
+     corner, so nothing sits there on phones */
+  [data-h=speed]{left:10px;bottom:auto;top:76px}
+  [data-h=alt]{left:10px;bottom:auto;top:94px}
+  [data-h=score]{right:auto;left:10px;bottom:auto;top:112px;text-align:left}
+  [data-h=chips]{right:auto;left:10px;bottom:auto;top:130px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:370px;white-space:nowrap}
   [data-h=banner]{width:92vw;font-size:17px;letter-spacing:.12em}
   [data-h=hint]{bottom:auto;top:58%;left:4%;transform:none;width:92%;font-size:10px;letter-spacing:.1em;line-height:1.6;text-align:center}
 }
