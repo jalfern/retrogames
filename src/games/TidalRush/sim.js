@@ -235,6 +235,7 @@ export function makeGame(seed, stage = 'sunny') {
         stage,                                  // 'sunny' | 'storm'
         seaCur: sea0,                         // the table the bay rides now (outgoing during a front)
         seaTarget: sea0.map((w) => ({ ...w })), // swell-shift re-rolls land here
+        seaWas: stage,                        // the stage seaCur was rolled under (#3348 weather law)
         front: null,                          // live squall front {dx,dz,h,prog,band} | null
         flash: 0, nextFlash: 0,              // storm lightning, sim-owned (seeded)
         rainOn: false,                      // Kai inside the band? drives the rain event (#3191)
@@ -290,13 +291,24 @@ function judgeGate(gs, c, g, i) {
     }
 }
 
-// --- rain: the squall as a field, not a wallpaper (#3191) ---------------------
-// Intensity at any point = how far the front has passed it (frontW is the same
-// weight the sea mix and the shader ride, so rain ≡ sea ≡ drawn). No front in
-// STORM BAY ⇒ the whole bay is weather; SUNNY is always dry.
+// --- rain: the squall as a field, not a wallpaper (#3191, weather law #3348) --
+// Rain is the WEATHER OF THE SEA you ride — never of "the stage flag" and never
+// of the incoming table alone. A point carries the outgoing sea's weather and
+// the incoming sea's weather cross-faded by the SAME frontW the sea mix and the
+// shader ride, so rain ≡ sea ≡ drawn holds at every point of the bay:
+//   • deep STORM, no front up ⇒ whole bay is weather (1)
+//   • SUNNY ⇒ always dry (0)
+//   • storm→storm re-roll ⇒ wet on BOTH sides of the front (both tables are
+//     storm) — the squall never snaps off at GO and back at mid-lap;
+//   • a flip (sunny↔storm) rides IN with the front, not at the stage flip:
+//     ahead of it the old weather holds, behind it the new one has arrived.
+// `gs.seaWas` records the stage the outgoing table was rolled under (#3348).
 export function rainAt(gs, x, z) {
-    if (gs.stage !== 'storm') return 0
-    return gs.front ? frontW(x, z, gs.front) : 1
+    const now = gs.stage === 'storm' ? 1 : 0
+    if (!gs.front) return now
+    const was = gs.seaWas === undefined ? now : (gs.seaWas === 'storm' ? 1 : 0)
+    const w = frontW(x, z, gs.front)
+    return was + (now - was) * w
 }
 // The squall blows along the dominant swell of the sea it carries in — the
 // same direction the drawn rain is slanted.
@@ -367,6 +379,8 @@ function stepCraft(gs, c, pad) {
             if (c.id === 0 && gs.stage === 'storm') {
                 if (gs.front) { gs.seaCur = gs.seaTarget.map((w) => ({ ...w })); gs.front = null }
                 gs.seaTarget = stormSea(gs.seed, c.lap)
+                gs.seaWas = gs.stage // the outgoing table's weather (#3348): both storm today,
+                // honest bookkeeping if a future mode ever re-rolls to a different sky
                 gs.front = makeFront(gs.seaTarget, RX + 26, RZ + 26)
                 gs.events.push({ t: gs.tick, type: 'swell', lap: c.lap })
             }
