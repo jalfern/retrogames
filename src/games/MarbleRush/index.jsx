@@ -308,6 +308,11 @@ const MarbleRushGame = () => {
 
         function simTick() {
             const playing = screenRef.current === 'play'
+            // the result card is up: hold the dead run frozen. Replacing gs with
+            // an attract preview one tick after death (the old behaviour) erased
+            // cpArmed/fail under the card and made the gate respawn reference a
+            // game that never raced — it only ever worked by winning a ~16 ms race.
+            if (screenRef.current === 'over') return
             const pad = playing ? readPad() : autoPad(gs)
             step(gs, pad)
             if (!playing && gs.done) { attractLoop(); return }
@@ -493,7 +498,7 @@ const MarbleRushGame = () => {
             if (screenRef.current !== 'over' || !r) return
             if (r.kind === 'clear') startStageRef.current && startStageRef.current(r.next)
             else if (r.kind === 'cp-fall') {
-                respawn(gs)
+                if (!respawn(gs)) { startStageRef.current && startStageRef.current(gs.stageIdx); return }
                 camInit = false
                 flashPop = 0
                 goFlash = 0.9
