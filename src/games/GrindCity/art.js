@@ -3,7 +3,7 @@
 // ridden park. Everything else (letters, skater rig, particles) is code too.
 
 import * as THREE from 'three'
-import { parkHeight, gradAt, RAILS, LETTERS, GEMS, BOUND, railClosest } from './park.js'
+import { parkHeight, gradAt, RAILS, LETTERS, GEMS, BOUND, ROOF_Y, railClosest } from './park.js'
 
 const RANGE = BOUND + 4          // a little beyond the walls
 const STEP = 0.8
@@ -207,6 +207,95 @@ export function buildSky(scene) {
     sun.position.set(-120, 60, 180)
     scene.add(sun)
     return dome
+}
+
+// ── the roof line: painted chevron stripe up the quarterpipe face ────────
+// The second line (#3246) rides the crest of the south wall, but before this
+// pass the wall read like poured plaza concrete — a player could miss that
+// it is rideable. This is visual-only: the ribbon samples the same
+// parkHeight the physics rides (zero gameplay change), hugs the surface
+// with a thin paint lift and faces the plaza, so the read survives the
+// chase cam. Chevrons point up the face toward the crest.
+function makeRoofChevronTexture() {
+    const S = 256
+    const cv = document.createElement('canvas')
+    cv.width = cv.height = S
+    const g = cv.getContext('2d')
+    g.lineJoin = 'round'; g.lineCap = 'round'
+    // one crisp chevron per tile, pointing toward v=1 (the crest)
+    const pts = () => { g.beginPath(); g.moveTo(30, 176); g.lineTo(128, 48); g.lineTo(226, 176) }
+    g.strokeStyle = 'rgba(24,22,19,0.92)'; g.lineWidth = 38; pts(); g.stroke()   // outline
+    g.strokeStyle = '#f2a93c'; g.lineWidth = 20; pts(); g.stroke()   // paint
+    const tex = new THREE.CanvasTexture(cv)
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+    tex.anisotropy = 4
+    tex.colorSpace = THREE.SRGBColorSpace
+    return tex
+}
+
+export function buildRoofLine(scene) {
+    const X0 = -29.5, X1 = -4.7, Z0 = 8.15, Z1 = 14.15
+    const NX = 16, NZ = 18
+    const pos = new Float32Array((NX + 1) * (NZ + 1) * 3)
+    const uv = new Float32Array((NX + 1) * (NZ + 1) * 2)
+    const idx = []
+    let p = 0, q = 0
+    for (let i = 0; i <= NX; i++) {
+        for (let j = 0; j <= NZ; j++) {
+            const x = X0 + (X1 - X0) * (i / NX)
+            const z = Z0 + (Z1 - Z0) * (j / NZ)
+            const y = parkHeight(x, z) + 0.05
+            pos[p++] = x; pos[p++] = y; pos[p++] = z
+            // u tiles every 2.4 m across the face, v marches up the face in
+            // ~4 steps (v=1 toward the crest)
+            uv[q++] = (x - X0) / 2.4
+            uv[q++] = (j / NZ) * 4
+        }
+    }
+    for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
+        const a = i * (NZ + 1) + j, b = (i + 1) * (NZ + 1) + j, d = a + 1, e = b + 1
+        idx.push(a, d, b, b, d, e)
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+    geo.setIndex(idx)
+    const mat = new THREE.MeshBasicMaterial({
+        map: makeRoofChevronTexture(),
+        transparent: true,
+        side: THREE.DoubleSide,
+        fog: false,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.renderOrder = 3
+    scene.add(mesh)
+
+    // UP marker floating over the crest — the readable "the roof deck is a
+    // line too" cue. Original canvas art, like everything else here.
+    const cv = document.createElement('canvas')
+    cv.width = cv.height = 256
+    const g = cv.getContext('2d')
+    g.fillStyle = 'rgba(24,22,19,0.55)'
+    g.fillRect(26, 60, 204, 120)
+    g.strokeStyle = '#f2a93c'; g.lineWidth = 8; g.strokeRect(26, 60, 204, 120)
+    g.font = 'bold 88px sans-serif'
+    g.textAlign = 'center'; g.textBaseline = 'middle'
+    g.fillStyle = '#ffd35e'
+    g.fillText('▲ UP', 128, 122)
+    const tex = new THREE.CanvasTexture(cv)
+    tex.colorSpace = THREE.SRGBColorSpace
+    const marker = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.2, 2.2),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, fog: false, side: THREE.DoubleSide, depthWrite: false })
+    )
+    marker.position.set(-17, ROOF_Y + 0.8, 14.6)
+    marker.rotation.y = Math.PI
+    marker.userData.baseY = ROOF_Y + 0.8
+    scene.add(marker)
+    return { mesh, marker }
 }
 
 // ── letters S-K-A-T-E as gold sprite cards, spinning ─────────────────────
