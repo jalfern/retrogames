@@ -1,59 +1,81 @@
-# STATE — forge board snapshot (slot a, 2026-11-25 — SKYWARD STRIP TAIL)
+# STATE — forge board snapshot (slot a, 2026-11-25 — THE PLAZA REMEMBERS)
 
 ## This session — one ship, landed
-- Warden TARGET **#3310** second-strip polish tail claimed (claim ok, ladder
-  clear). Shipped **`61e9112` (PR #3369)**, issue closed `shipped`.
-- All seven items: **painted zone numbers** 150/300/450/700 flat on the north
-  lane (glyph tops down-strip, real distance-paint convention) + zone-ladder
-  banner once per first SPOT entry; **live pad verb** (DROP on the drop course,
-  RECYCLE inside the sim's 74 m apron circle, bare B when inert — the glider's
-  final no longer lies); **dusk emissives** (deck 0x10151c, markings 0x7b8187);
-  **gliderRunwayHint** so every craft is named over the strip; **flying
-  windsock** — pure law `sockPose(wind, gust, t)` (downwind dir, droop flat by
-  2.2 m/s, sim-clock flutter ±0.1 rad, cell-gust snap — deterministic);
-  item 7 taste call RECORDED: attract stays mat-honest, no scripted landing.
-- Presentation-only: hash/stateOf byte-identical (no sim-state change).
+- Warden TARGET **#3331** (skyward wheels-down tail) was REFUSED at claim:
+  slot b held it live (newest liveness 53 min, commits 10 min prior — b is
+  mid-build, correct refusal). Normal ladder: no steer, `next` #1712 is
+  waiting-jon, `game-queue` empty, feedback either waiting-jon or lane:qa,
+  and QA MASTER was live (no borrow). Flagship stage spent → NEVER-DRY.
+- Idle-kick answered `KICK TIDAL RUSH 0 weak`, but tidal's only candidate gap
+  ("Score HUD sits under the shared chrome pill at ?lite=1") is #3365 item 2
+  by another wording (both carved from #3348 item 3) — owned per the doubt
+  rule. Full-shelf recompute → **GRIND CITY, score 3** (three unowned README
+  gaps, zero QA issues naming it, unheld). Filed #3374, claimed, shipped
+  **`f699a24` (PR #3377)**; issue `shipped`+closed. #3376 (#3365 item 2)
+  landed from the other lane meanwhile — the doubt call read right.
+- Replay tail, all player-visible: **near-miss replays** — pure law
+  `replayWorthy(ticks, lettersGot)` (sim.js now owns REPLAY_MIN/MAX): ≥120
+  ticks OR ≥1 banked letter earns the replay, so a letters-in, dead-at-1 s
+  run watches its line, badged `NEAR MISS — LETTERS COUNT`; letterless short
+  runs unchanged. **Attract remembers** — `betterLine` (score → letters →
+  newer) folds every run into a session best; a full-window best banks its
+  seed+pad-log and attract re-rides it behind the title, wrapping at the log's
+  own end; `BEST LINE {pts} · {n}/5` chip, gold `★ GOALS`. No history keeps
+  the bot line. Saved/shared runs remains an honest gap (README rewritten).
 
 ## Proof
-- skywardcheck **154/154** (+11 pins: sock dir/droop/monotonic/calm-null/gust
-  flip/flutter bounds/garbage, band-centre↔zone agreement, painted literals ==
-  scoring table, dusk emissives) + **3 new mutants — 51/51 die**.
-- skywardplay GREEN :5173 — new legs: live pad verbs driven through REAL touch
-  events (suite context gained `hasTouch` — the pad correctly hides under
-  keyboard use, which silently vacated the old 390px pad-overlap check until
-  now), 390px longest-string overflow audit (banner 359px box, hint wraps 32px,
-  0 violations — the old audit passing with empty solids was the #3237 class).
-  Zero console errors. eslint + 3 scoped gates + build green.
-- Prod verified: chunk `Skyward-CblL4z4q.js` contains `READ THE NUMBERS`.
+- grindcheck ALL GREEN (+10 pins: window edge, letters-either-side, garbage,
+  tie/newer cases, a REAL lettered-under-window sim situation, wiring) —
+  **13/13 mutants die** (new `nearmiss`, `bestline`, `bankline`).
+- gcdrive GREEN :5173 — near replay n=88 near=true, badge DOM opacity 1,
+  bot fallback on short-only history, attract re-rides seed 7 + says BEST
+  LINE, loop wraps without stalling, zero page errors. eslint + 3 scoped
+  gates + build green; main-ok green at claim and merge.
+- Prod verified: chunk `GrindCity-B_BLT9gs.js` carries `NEAR MISS`.
 
 ## Harness lessons (worth one line each)
-- **A pad that hides under keyboard use makes every pad assertion vacuous** —
-  headless suites that start with `keyboard.press` never see VirtualControls;
-  give the context `hasTouch` and tap-wake before asserting pad DOM.
-- jalfern.com serves at **www** after a redirect; bare-host asset polls see
-  "Redirecting..." — poll `www.jalfern.com` with `-L`.
-- Ground text: glyph tops must point DOWN-strip (east here) for the inbound
-  pilot — verify from an approach camera, not just the side view.
+- **A re-sim loop must wrap on its own terms**: how a run ENDED (bail, clock,
+  a QA-shortened clock) is not in the pad log, so attract rode seed 7 to tick
+  778 before the first live loop exposed it — the wrap keys off log length,
+  re-making from the banked seed.
+- A replay shorter than a few frames finishes before any drive can observe it:
+  near-miss legs need real-time coasting (~90 ticks), not a 2-tick synthetic.
+- `skipTo` a screen must check-before-press — an auto-finishing replay had
+  already left `replay` when the next Space would have overshoot to attract.
+- ownsGap's 40-char opened-word test misses same-defect-different-wording
+  (tidal HUD gap vs #3365 item 2) — the doubt rule is the backstop; recompute
+  the whole shelf before filing, and label the why-weakest line.
+- One full gcdrive run went red once (leg unisolated, cause never reproduced;
+  saved log clean on the immediate re-run). Rule-3: rerun once, move on — but
+  capture full drive output to a file, not just a tail, or the flake is
+  undebuggable after the fact.
 
 ## PLAYABLE on main right now
-- `/retrogames/skyward` — now a self-teaching airfield: painted 150/300/450/700,
-  first-run ladder banner, live pad verb, flying windsock, dusk-proof paint;
-  plus belt+plane runway parks, living storm, THUNDERPASS, attract vista;
-  `/retrogames/tidal-rush` FOAM V + rider moments + rain rooms; `/retrogames/
-  pinball` SOLO bed + TABLE SMITH; `/retrogames/grind-city` rail grabs +
-  coping stalls; galaga bee; mario-kart, ice-climber, marble-rush,
-  comet-drift pair, ssx, marble-madness, pacman, mario, minesweeper/garden-
-  guard/homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON,
-  RACCOON HEIST, spy-hunter, iron keep, missile, pucks, mines, zork, ultima,
-  king's quest, Joust, Q*bert, forge board.
+- `/retrogames/grind-city` — near-miss replays badged, attract loops your best
+  line with the BEST LINE chip; plus roof line + secret bowl, rail grabs and
+  coping stalls, three cams + free orbit cam, the A-minor bed.
+- `/retrogames/skyward` — attract vista, painted zones, windsock, rich motor +
+  exhaust tell, glider wind-rush (bed tail #3353/#3361, strip tail #3369);
+  `/retrogames/tidal-rush` centre HUD flexes at phone widths (#3376), rider
+  jump/land moments, rain gameplay + rooms; `/retrogames/pinball` SOLO bed +
+  TABLE SMITH; galaga bee; mario-kart, ice-climber, marble-rush, comet-drift
+  pair, ssx, marble-madness, pacman, mario, minesweeper/garden-guard/homebody,
+  TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
+  spy-hunter, iron keep, missile, pucks, mines, zork, ultima, king's quest,
+  Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` empty at my close; `next` #1712 waiting-jon (not work).
-- #3332 Skyward belt is CLOSED/shipped (corrects slot b's stale watch line).
-- building-qa holds: pinball #3313, grind-city #3325. QA feedback tails open:
-  #3342, #3362, **#3370 (new: post-strip-tail pass — sock fabric, dusk pixel
-  proof, live ladder, landscape hint width)**, #3329, #3290.
-- No red main seen at claim or merge; merges today incl. #3369 (mine).
+- `building` at close: **#3331 held by slot b (live)**. `building-qa`: #3359
+  (pinball garage). `game-queue` EMPTY. `next` #1712 waiting-jon (not work).
+- QA tails open: #3379 (new: grind-city replay-tail pass — badge widths, chip
+  legibility, wrap feel, loop sound), #3344/#3362/#3370 (skyward rounds),
+  #3336/#3365/#3368 (pinball/tidal), #3329, #3290 items 5–7, #3244/#2971
+  (waiting-jon).
+- Merges today incl. #3349–#3351, #3353/#3355/#3356/#3361/#3363, #3365→#3376,
+  #3367/#3369/#3371/#3373, **#3377 (mine)**. Never saw red main.
+- Next builder claim: ladder starts empty again — idle-kick LIVE and apply the
+  doubt rule before filing; grind-city's next unowned gap is "The bot's line
+  is fixed" (#1571 rung, bigger build) unless the queue refills first.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (AWAITING).
@@ -63,8 +85,8 @@
 
 ## Slot state at handoff
 - Slot a: dev :5173 stopped via scripts/devstop.sh; worktree
-  `~/Dev/retrogames-forge-skyward-strip-tail` detached clean at origin/main by
+  `~/Dev/retrogames-forge-grind-replay-tail` detached clean at origin/main by
   mergeclean — remove when convenient.
 - Game merged this session ⇒ this STATE.md ships via its own docs/state PR;
   parked at /tmp/forge/STATE.a.parked.md via statepark.
-- Time-box: ~1 h 20 m of 3 h at ship.
+- Time-box: ~1 h 30 m of 3 h at ship.
