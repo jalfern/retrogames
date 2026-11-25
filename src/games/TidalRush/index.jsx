@@ -17,7 +17,7 @@ import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createLockStep, retryDelay } from '../../utils/lockstep.js'
-import { makeGame, step, autoPad, stateOf, stateHash, rankAt, LAPS, SIM_MS, DT, rainAt, RAIN_VIS } from './sim.js'
+import { makeGame, step, autoPad, stateOf, stateHash, rankAt, LAPS, SIM_MS, DT, rainAt, RAIN_VIS, airPose } from './sim.js'
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
 import { SEATS, PAD_DELAY, HASH_EVERY, HOLD_MS, WATCH_CAP, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence, podiumRows, podWire, podRows, createHist, inflateSh } from './net.js'
@@ -172,6 +172,10 @@ const TidalRushGame = () => {
         let engineTick = 0
         let flashPop = 0
         let goFlash = 0
+        // #3281: first-try coach flash — once per session per trick, the chip
+        // teaches the move while the pop line screams the score
+        let coachFlash = 0
+        const coachShown = { flip: false, handstand: false }
 
         const keys = new Set()
         const padRef = { throttle: 0, steer: 0, brake: false, a: false, b: false }
@@ -308,7 +312,6 @@ const TidalRushGame = () => {
             // a flip slams deep, a handstand drives a tight column.
             grab: () => { audioController.playSweep(760, 430, 0.12, 'triangle', 0.05); audioController.playNoise(0.06, 0.03) },
             landFlip: () => { audioController.playSweep(210, 60, 0.3, 'sawtooth', 0.12); audioController.playNoise(0.3, 0.16) },
-            landHand: () => { audioController.playSweep(520, 140, 0.26, 'sine', 0.1); audioController.playNoise(0.12, 0.09) },
             swell: () => audioController.playSweep(90, 210, 0.9, 'sine', 0.16),
             rain: (on) => {
                 // the band edge: a wind gust in, a lifting sweep out (#3191)
@@ -316,6 +319,8 @@ const TidalRushGame = () => {
                 else audioController.playSweep(150, 480, 0.5, 'sine', 0.05)
             },
             airLand: () => { audioController.playSweep(1500, 320, 0.24, 'sine', 0.09); audioController.playNoise(0.14, 0.06) },
+            // #3281: a deep inverted slam gets its own tail — a low, heavy trough
+            landInverted: () => { audioController.playSweep(330, 88, 0.32, 'sawtooth', 0.11); audioController.playNoise(0.30, 0.15) },
             bell: () => { audioController.playTone(1568, 0.5, 'sine', 0.05); audioController.playTone(2349, 0.3, 'sine', 0.016, 0.02) },
             thunder: () => { audioController.playNoise(0.5, 0.12); audioController.playSweep(70, 38, 0.8, 'sawtooth', 0.1) },
             finish: (win) => {
@@ -325,6 +330,13 @@ const TidalRushGame = () => {
         }
 
         let trickPop = ''
+        const coachSay = (text) => {
+            const hud = hudRef.current
+            if (!hud.coach) return
+            hud.coach.textContent = text
+            hud.coach.style.opacity = 1
+            coachFlash = 2.6
+        }
         function drainEvents() {
             const mine = mySeat()
             for (const e of gs.events) {
@@ -336,8 +348,8 @@ const TidalRushGame = () => {
                 if (e.type === 'miss') { sfx.miss(); flashPop = 1; trickPop = ''; if (hud.pop) { hud.pop.textContent = 'MISS — THROTTLE DOWN'; hud.pop.style.opacity = 1 } }
                 if (e.type === 'trick') { sfx.trick(); trickPop = 'TRICK! +250'; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } }
                 if (e.type === 'barrel') { sfx.barrel(); flashPop = 1; trickPop = 'BARREL ROLL +200'; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } }
-                if (e.type === 'flip') { sfx.flip(); flashPop = 1; trickPop = 'BACK FLIP +300'; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } }
-                if (e.type === 'handstand') { sfx.handstand(); trickPop = `HANDSTAND ×${e.n} +${e.pts}`; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } }
+                if (e.type === 'flip') { sfx.flip(); flashPop = 1; trickPop = 'BACK FLIP +300'; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } if (!coachShown.flip) { coachShown.flip = true; coachSay('FIRST BACK FLIP — BRAKE ALONE IN AIR') } }
+                if (e.type === 'handstand') { sfx.handstand(); trickPop = `HANDSTAND ×${e.n} +${e.pts}`; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } if (!coachShown.handstand) { coachShown.handstand = true; coachSay('FIRST HANDSTAND — BRAKE + GAS TO HOLD') } }
                 if (e.type === 'airbonus') {
                     // the hang-time pays — whoosh in, bank the air
                     sfx.airLand()
@@ -497,6 +509,8 @@ const TidalRushGame = () => {
                     // wide short sheet; a FLIP adds corkscrew bursts offset to
                     // either rail (droplets inherit the wind); a HANDSTAND drives
                     // a narrow column + the ring flash where the nose came down.
+                    // #3281: the inverted slam is also HEAVIER — a taller wider
+                    // sheet, longer-life droplets, a deeper jolt and its own tail.
                     spraySpawn(spray, c.x, c.y + 0.2, c.z, 26, 3.4, 5.0, false)
                     spraySpawn(spray, c.x, c.y + 0.15, c.z, 10, 0.45, 6.4, false, 0.85)
                     if (c.lastLand === 'flip') {
@@ -508,8 +522,10 @@ const TidalRushGame = () => {
                     } else if (c.lastLand === 'handstand') {
                         spraySpawn(spray, c.x, c.y + 0.3, c.z, 16, 0.7, 9.0, false)
                         rings.flash(c.x, c.y + 0.06, c.z)
-                        skiJolt[c.id] = 1.1
-                        if (playing && c.id === mySeat()) sfx.landHand()
+                        spraySpawn(spray, c.x, c.y + 0.2, c.z, 18, 4.6, 7.2, false)
+                        spraySpawn(spray, c.x, c.y + 0.15, c.z, 8, 0.7, 8.0, false, 1.0)
+                        skiJolt[c.id] = 1.35
+                        if (playing && c.id === mySeat()) sfx.landInverted()
                     } else {
                         skiJolt[c.id] = 1
                     }
@@ -641,22 +657,28 @@ const TidalRushGame = () => {
                 if (c.boosting) m.flame.scale.set(1, 1 + Math.sin(t * 40) * 0.25, 1)
                 // head lag on landing: jolt the head pivot, decaying
                 skiJolt[i] = Math.max(0, (skiJolt[i] || 0) - DT * 2.6)
-                // airborne tuck, smoothed — rises fast on takeoff, eases down on
-                // landing; separate from the jolt so the air reads differently
-                const tuckTarget = c.airborne ? 1 : 0
+                // #3281: the pose comes off the sim's own pitch verbs.
+                // A flip winds deep (tuck 1.3); a hold is stretched (tuck 0.18)
+                // — the pose says what the verb paid before the score prints.
+                const pose = airPose(c)
+                const tuckTarget = !c.airborne ? 0 : pose === 'hold' ? 0.18 : pose === 'flip' ? 1.3 : 1.0
                 airT[i] = (airT[i] || 0) + (tuckTarget - (airT[i] || 0)) * (1 - Math.exp(-DT * (tuckTarget > (airT[i] || 0) ? 11 : 6)))
                 const tuck = airT[i]
                 const land = skiJolt[i]
                 if (m.lowerBody) {
                     // knees flex on the slap, tuck lifts the feet mid-air
-                    m.lowerBody.rotation.x = -0.22 * land - 0.32 * tuck
+                    m.lowerBody.rotation.x = -0.22 * land - 0.32 * Math.min(1.3, tuck)
                     m.lowerBody.position.y = 0.85 + 0.15 * tuck - 0.10 * land
                 }
-                // the torso absorbs the slap; the head rides the same jolt
+                // the torso absorbs the slap; the head rides the same jolt.
+                // The wind-over squashes the torso; the hold stretches it.
+                const wind = c.airborne ? Math.max(0, Math.min(1, c.flipAng / 2.2)) : 0
+                const deep = c.airborne ? Math.max(0, Math.min(1, (-c.flipAng - 1.15) / 1.2)) : 0
                 m.lean.position.y = -0.16 * land
+                m.lean.scale.y = 1 + 0.06 * deep - 0.06 * wind
                 if (m.headPivot) {
                     m.headPivot.position.y = 1.62 - 0.17 * skiJolt[i] - 0.10 * tuck
-                    m.headPivot.rotation.x = skiJolt[i] * 0.5 + tuck * 0.55
+                    m.headPivot.rotation.x = skiJolt[i] * 0.5 + tuck * 0.55 + wind * 0.12
                 }
                 // arms track the bar grip through the local lean; #3280 blends
                 // them off the bar into a GRAB while a pitch trick turns — flip
@@ -756,6 +778,10 @@ const TidalRushGame = () => {
                 flashPop -= DT
                 if (flashPop <= 0) hud.pop.style.opacity = 0
             }
+            if (hud.coach) {
+                coachFlash -= DT
+                if (coachFlash <= 0) hud.coach.style.opacity = 0
+            }
             // next-gate hint: colour chip + side arrow + second-next preview
             const gi = p.judged.findIndex((j) => j === 0)
             if (gi >= 0 && hud.gate) {
@@ -826,6 +852,10 @@ const TidalRushGame = () => {
             airT = gs.crafts.map(() => 0)
             wakes.forEach((w) => { w.pts.length = 0 }); grabW.forEach((g) => { g.f = 0; g.h = 0 }); prevGrab = 'none'
             trickPop = ''
+            coachFlash = 0
+            coachShown.flip = false
+            coachShown.handstand = false
+            if (hudRef.current.coach) hudRef.current.coach.style.opacity = 0
             const h = hudRef.current
             if (h.count) h.count.style.opacity = 0
             if (h.countText) h.countText.textContent = ''
@@ -891,6 +921,10 @@ const TidalRushGame = () => {
             setPodium(null)
             if (net.role === 'host' && net.room) net.room.setPhase('waiting')
             audioController.stopLoopVoice()
+            if (hudRef.current.coach) hudRef.current.coach.style.opacity = 0
+            coachFlash = 0
+            coachShown.flip = false
+            coachShown.handstand = false
             setMode('attract')
         }
         // attract/over preview reroll when the picker changes bays
@@ -1201,6 +1235,7 @@ const TidalRushGame = () => {
                     </div>
                     <div ref={setHud('pop')} className="mt-2 text-xl font-black text-cyan-200 transition-opacity duration-300" style={{ opacity: 0, textShadow: '0 0 14px #08f, 2px 2px 0 #000' }} />
                     <div ref={setHud('air')} className="mt-1 text-xs tracking-[0.35em] text-yellow-200 transition-opacity duration-150" style={{ opacity: 0 }}>A I R</div>
+                    <div ref={setHud('coach')} className="mt-2 text-[11px] font-mono tracking-widest text-amber-200 border border-amber-300/40 bg-black/70 rounded px-3 py-1 transition-opacity duration-300" style={{ opacity: 0 }} />
                 </div>
                 <div ref={setHud('count')} className="absolute top-[24%] left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 transition-opacity duration-150" style={{ opacity: 0 }}>
                     <div className="flex gap-3">
