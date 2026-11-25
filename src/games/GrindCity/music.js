@@ -31,3 +31,10 @@ export function landThud(v) {
     const k = Math.max(0, Math.min(9, isFinite(v) ? v : 0))
     return { f: Math.max(58, 172 - k * 13), g: Math.min(0.24, 0.05 + k * 0.022), d: 0.10 + k * 0.012 }
 }
+
+// #3379: attract ducks the bed to 0.6, so the banked line's SFX must duck too —
+// otherwise the replayed win jingle (6× square @ g0.11) and the bail sit at full
+// street volume over a ducked bed and the lobby ends up louder than the game.
+// Pure + total: finite gains scale proportionally; street play is untouched.
+export const ATTRACT_SFX = 0.55
+export const sfxGain = (g, attract) => g * (attract ? ATTRACT_SFX : 1)

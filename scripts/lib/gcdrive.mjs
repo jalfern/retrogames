@@ -38,6 +38,9 @@ try {
     await new Promise(r => setTimeout(r, 700))
     const bedB = await page.evaluate(() => window.__grindTest.state().bed)
     ok('music bed runs in attract', bedB > bedA + STEP_MIN, `bed ${bedA}→${bedB}`)
+    // #3379: attract must duck its SFX with the bed, street play not at all
+    const duckAttract = await page.evaluate(() => window.__grindTest.state().sfxDuck)
+    ok('#3379 attract ducks the sfx bank (lobby sits under the title)', duckAttract > 0 && duckAttract < 1, `duck=${duckAttract}`)
     const res = await page.evaluate(async () => {
         const g = window.__game
         const zero = g.reset(7)
@@ -53,6 +56,7 @@ try {
         return { zero, mid, before, end }
     })
     ok('driving moves the skater', Math.abs(res.mid.x - res.zero.x) + Math.abs(res.mid.z - res.zero.z) > 3)
+    ok('#3379 street play keeps the sfx bank at full gain', res.mid.sfxDuck === 1, `duck=${res.mid.sfxDuck}`)
     ok('tricks score', res.before.score >= 0 && res.before.stats.tricks >= 0, `score=${res.before.score} tricks=${res.before.stats.tricks}`)
     ok('gems visible in the contract (#3246)', typeof res.mid.gems === 'number' && res.mid.gemTotal === 14, `gems=${res.mid.gems}/${res.mid.gemTotal}`)
     ok('run ends at the clock', res.end.done === true && res.end.phase === 'over', `t=${res.end.timeLeft}`)
@@ -375,6 +379,48 @@ try {
         ok(`phone ${vp.width}px: banners stay on-screen`, hud.msgOver === 0 && hud.calloutOver === 0, `msgOverflow=${Math.round(hud.msgOver)} calloutOverflow=${Math.round(hud.calloutOver)}`)
         ok(`phone ${vp.width}px: banner text fits its box`, hud.msgClip <= 1, `clip=${Math.round(hud.msgClip)}px`)
         ok(`phone ${vp.width}px: score clears the combo line`, hud.scoreCombo === 0, `score×combo=${Math.round(hud.scoreCombo)}`)
+        // #3379 — the replay tail earned surfaces the old loop never saw: the widest
+        // attract chip (ALL-TIME prefix) and the near-miss replay's badge/chip/hint stack.
+        // A 25-char badge on nowrap at 0.2em tracking is wider than a 320px screen, and
+        // the SHARE chip is pinned into the same corner the skip hint runs through.
+        const RC = `(() => {
+            const rc = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom, sw: el.scrollWidth, cw: el.clientWidth } }
+            const txt = (s) => [...document.querySelectorAll('div,span')].filter(d => d.textContent.trim().startsWith(s) && d.children.length <= 6).sort((a, b) => a.textContent.length - b.textContent.length)[0]
+            return { rc, txt }
+        })()`
+        // bank a line (reset wipes, the run rewrites the store), skip to attract,
+        // reload so the chip wears its longest variant: ALL-TIME BEST LINE … ★ GOALS
+        await pg.evaluate(() => { const g = window.__game; g.reset(7); g.step({}, 300); window.__grindTest.teleport({ timeLeft: 0 }); g.release() })
+        await new Promise(r => setTimeout(r, 700))
+        for (let i = 0; i < 4; i++) {
+            const sc = await pg.evaluate(() => window.__grindTest.state().screen)
+            if (sc === 'attract') break
+            await pg.keyboard.press('Space')
+            await new Promise(r => setTimeout(r, 300))
+        }
+        await pg.reload({ waitUntil: 'load' })
+        await pg.waitForFunction('window.__grindTest', { timeout: 20000 })
+        await new Promise(r => setTimeout(r, 450))
+        const chip = await pg.evaluate(`(() => { const { rc, txt } = ${RC}
+            const c = rc(txt('ALL-TIME BEST LINE'))
+            return c ? { x: c.x, r: c.r, b: c.b, vw: window.innerWidth } : null })()`)
+        ok(`phone ${vp.width}px: attract bank chip exists and keeps its side margins`, !!chip && chip.x > 6 && chip.r <= chip.vw - 6,
+            chip ? `chip x=${Math.round(chip.x)} r=${Math.round(chip.r)} vw=${chip.vw}` : 'chip missing')
+        // near-miss replay: badge + SPEED chip + SHARE chip + skip hint all on at once
+        await pg.evaluate(() => { const g = window.__game; g.reset(5); g.release() })
+        await new Promise(r => setTimeout(r, 900))
+        await pg.evaluate(() => { window.__grindTest.teleport({ letters: { S: true }, timeLeft: 0.01 }) })
+        await new Promise(r => setTimeout(r, 450))
+        const rp = await pg.evaluate(`(() => { const { rc, txt } = ${RC}
+            const badge = rc(txt('NEAR MISS')), speed = rc(txt('SPEED')), share = rc(txt('SHARE — S')), hint = rc(txt('TAP — SKIP') || txt('SPACE / TAP'))
+            const vw = window.innerWidth
+            const ov = (a, b) => (!a || !b) ? 0 : Math.max(0, Math.min(a.r, b.r) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.y, b.y))
+            const st = window.__grindTest.state()
+            return { vw, screen: st.screen, near: !!(st.replay && st.replay.near), shareHint: ov(share, hint), badgeSpeed: ov(badge, speed),
+                badgeOver: badge ? Math.max(0, -badge.x, badge.r - vw) : 1e3, badgeClip: badge ? badge.sw - badge.cw : 1e3 } })()`)
+        ok(`phone ${vp.width}px: near-miss replay reached with its badge`, rp.screen === 'replay' && rp.near, `screen=${rp.screen} near=${rp.near}`)
+        ok(`phone ${vp.width}px: NEAR MISS badge on-screen and inside its box`, rp.badgeOver === 0 && rp.badgeClip <= 1, `overflow=${Math.round(rp.badgeOver)} clip=${Math.round(rp.badgeClip)}px`)
+        ok(`phone ${vp.width}px: badge clears SPEED, SHARE clears the skip hint`, rp.badgeSpeed === 0 && rp.shareHint === 0, `badge×speed=${Math.round(rp.badgeSpeed)} share×hint=${Math.round(rp.shareHint)}`)
         await pg.close()
     }
 

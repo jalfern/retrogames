@@ -6,7 +6,7 @@
 import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, SHARE_MAX_TICKS } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
 import { parkHeight, LETTERS, RAILS, GEMS, GEM_PTS, SECRET, ROOF_Y, shadeAt } from '../src/games/GrindCity/park.js'
-import { BAR, bedVoices, landThud } from '../src/games/GrindCity/music.js'
+import { BAR, bedVoices, landThud, ATTRACT_SFX, sfxGain } from '../src/games/GrindCity/music.js'
 import { readFileSync } from 'node:fs'
 
 const dt = 1 / 60
@@ -25,14 +25,15 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire']) {
+    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck']
+    for (const rule of RULES) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 17 ? `ALL MUTANTS CAUGHT (${died}/17)` : `${died}/17 mutants caught`)
-    process.exit(died === 13 ? 0 : 1)
+    console.log(died === RULES.length ? `ALL MUTANTS CAUGHT (${died}/${RULES.length})` : `${died}/${RULES.length} mutants caught`)
+    process.exit(died === RULES.length ? 0 : 1)
 }
 
 // ── boot ──────────────────────────────────────────────────────────────────
@@ -388,12 +389,33 @@ function drive(seed) {
     }
     ok('land thud: heavier impact = lower pitch + louder (height-scaled)', mono,
         `v0=${landThud(0).f.toFixed(0)}Hz v9=${landThud(9).f.toFixed(0)}Hz`)
+    // #3379: attract ducks the bed to 0.6 so the banked line sits under the title, but its
+    // own trick/bail/win voices were still playing at street gain — louder than the game.
+    // One attract multiplier must bring the whole voice bank down WITH the music: strict
+    // (below street), proportional in g, never inverted, never muted to silence.
+    ok('attract sfx duck: quieter than street but never silent',
+        ATTRACT_SFX > 0 && ATTRACT_SFX < 1 && sfxGain(0.11, true) < 0.11 && sfxGain(0.11, true) > 0,
+        `ATTRACT_SFX=${ATTRACT_SFX}`)
+    ok('attract sfx duck: street gain untouched', sfxGain(0.11, false) === 0.11 && sfxGain(0.32, false) === 0.32)
+    let duckOk = true
+    for (const g of [0.04, 0.07, 0.11, 0.32]) {
+        if (!(sfxGain(g, true) < sfxGain(g, false))) duckOk = false
+        if (Math.abs(sfxGain(g, true) / sfxGain(g, false) - ATTRACT_SFX) > 1e-12) duckOk = false
+    }
+    ok('attract sfx duck: every voice scaled by the same factor (proportional)', duckOk,
+        `bail 0.32→${sfxGain(0.32, true).toFixed(3)}, win 0.11→${sfxGain(0.11, true).toFixed(3)}`)
     // wiring: the cabinet must actually schedule the bed and voice the thud.
     // MUT=bed strips the scheduler call — the gate must see red.
     const cab = readFileSync(new URL('../src/games/GrindCity/index.jsx', import.meta.url), 'utf8')
-    const src = MUT === 'bed' ? cab.replace(/bedVoices\(/g, 'silence(') : cab
+    const src = MUT === 'bed' ? cab.replace(/bedVoices\(/g, 'silence(')
+        : MUT === 'sfxduck' ? cab.replace('const vs = attractMode ? ATTRACT_SFX : 1', 'const vs = 1')
+        : cab
     ok('bed wired into the cabinet loop (#3167)',
         /from '\.\/music\.js'/.test(src) && /bedVoices\(/.test(src) && /landThud\(/.test(src) && /bed: bedT/.test(src))
+    // #3379: the attract duck must live in sound() (not just music.js), and the
+    // contract must expose it so the browser drive can see attract vs street gain.
+    ok('sfx duck wired into sound() + contract (#3379)',
+        /const vs = attractMode \? ATTRACT_SFX : 1/.test(src) && /sfxDuck:/.test(cab) && /0\.07 \* vs/.test(src) && /0\.11 \* vs/.test(src))
 }
 
 // ── baked curvature shading (#3233 tail) — visual-only math must stay real ──
