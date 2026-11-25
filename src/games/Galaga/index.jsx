@@ -37,6 +37,7 @@ const provenRun = () => {
 
 const GalagaGame = () => {
     const stageRef = useRef(null)
+    const hudBoxRef = useRef(null) // #3358: HUD parks inside the canvas banner band, not the viewport corners
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
@@ -333,6 +334,15 @@ const GalagaGame = () => {
             const sc = Math.min(r.width / W, r.height / H)
             canvas.style.width = `${W * sc}px`
             canvas.style.height = `${H * sc}px`
+            // #3358: the DOM HUD lives over the canvas' reserved banner (70 sim px),
+            // which the letterbox keeps clear of the ARCADE/FEEDBACK/PAUSE chrome at
+            // every viewport shape — viewport-anchored corners collided on phones.
+            const box = hudBoxRef.current
+            if (box) {
+                box.style.left = `${(r.width - W * sc) / 2 + 10}px`
+                box.style.width = `${W * sc - 20}px`
+                box.style.top = `${(r.height - H * sc) / 2 + 6}px`
+            }
         }
         window.addEventListener('resize', resize)
         resize()
@@ -453,23 +463,42 @@ const GalagaGame = () => {
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
-            <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
-                    <span ref={setHud('wave')} className="border border-sky-300/60 text-sky-200 px-2 py-0.5 rounded bg-black/40">1</span>
-                    <span className="text-red-300 text-sm font-bold">★ <span ref={setHud('lives')}>★★</span></span>
-                    <span ref={setHud('dbled')} className="text-cyan-300 font-bold transition-opacity duration-300" style={{ opacity: 0 }}>x2</span>
-                    <span className="ml-auto text-xl font-bold" style={{ textShadow: '0 2px 5px #000' }}><span ref={setHud('score')}>000000</span></span>
-                    <span className="text-yellow-200/70"><span ref={setHud('hiscore')}>000000</span></span>
+            <div ref={hudBoxRef} data-hud="box" className={`absolute pointer-events-none font-mono transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`} style={{ top: 6, left: 10 }}>
+                <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-col gap-0.5">
+                        <div className="flex items-baseline gap-1.5">
+                            <span className="text-[10px] font-bold text-red-400 tracking-[0.2em]">1UP</span>
+                            <span className="text-xl font-bold text-white" style={{ textShadow: '0 2px 5px #000' }}><span ref={setHud('score')}>000000</span></span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                            <span className="text-red-300 font-bold">★ <span ref={setHud('lives')}>★★</span></span>
+                            <span ref={setHud('dbled')} className="text-cyan-300 font-bold transition-opacity duration-300" style={{ opacity: 0 }}>x2</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-center leading-tight">
+                            <span className="text-[10px] font-bold text-red-400 tracking-[0.2em]">HIGH SCORE</span>
+                            <span className="text-sm text-yellow-200/90"><span ref={setHud('hiscore')}>000000</span></span>
+                        </div>
+                        <span ref={setHud('wave')} className="border border-sky-300/60 text-sky-200 px-2 py-0.5 rounded bg-black/40 text-xs">1</span>
+                    </div>
                 </div>
-                <div ref={setHud('toast')} className="absolute inset-x-0 top-1/3 text-center text-cyan-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #0af' }} />
             </div>
+            <div ref={setHud('toast')} className="absolute inset-x-0 top-1/3 text-center text-cyan-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #0af' }} />
 
             {screen === 'attract' && (
-                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
-                    <h1 className="text-4xl font-black text-red-400 mb-6" style={{ textShadow: '0 4px 0 #400, 0 10px 24px #000' }}>GALAGA</h1>
-                    <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
-                    <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
-                    <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
+                // #3358: the proven-run demo already flies behind this card — the old
+                // 55% dim plus centered text buried it. Lighter dim, text pushed to the
+                // frame edges, so attract SHOWS the game (docs/ART.md bar #6).
+                <div className="absolute inset-0 bg-black/35 flex flex-col items-center justify-between text-center px-6 pointer-events-none" style={{ paddingTop: '7vh', paddingBottom: '34vh' }}>
+                    <div>
+                        <h1 className="text-4xl font-black text-red-400 mb-3" style={{ textShadow: '0 4px 0 #400, 0 10px 24px #000' }}>GALAGA</h1>
+                        <AttractMessage className="text-cyan-100/85" messages={MESSAGES} />
+                    </div>
+                    <div>
+                        <p className="text-lg font-mono font-bold animate-pulse text-yellow-300" style={{ textShadow: '0 2px 6px #000' }}>{PRESS}</p>
+                        <span className="block mt-2 text-xs text-white/60 tracking-widest">{WATCH_ATTRACT_HINT}</span>
+                    </div>
                 </div>
             )}
 
