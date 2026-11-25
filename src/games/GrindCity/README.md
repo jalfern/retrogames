@@ -135,6 +135,18 @@ touchdown speed — bigger airs land heavier. `grindcheck` proves the laws
 proves it live (`bed` in `__grindTest.state()` runs in attract and stands
 still through the replay).
 
+## The concrete reads like concrete (#3233 tail)
+
+Fine detail lives in the *texture*, not the vertex colors: the mesh grid is
+0.8 m, so per-vertex noise bakes into flat blocks (the old "fine grain" was
+the bug, not the cure). `makeConcreteTexture` bakes at 512 px / 4 m tiling
+(128 texels/m, aniso 16): exposed-aggregate speckle, soft mottling, faint
+polish/scuff arcs, hairline cracks and thin expansion joints; the same canvas
+drives the bump map so the grit catches the raking sun. Vertex colors keep
+only the broad strokes — depth cool-down, sun-warm decks, curvature AO
+(`shadeAt`) and grind wear near rails — and stay deterministic. Visual only:
+no sim, hash or pin changes.
+
 ## Honest gaps
 
 - **Replay is auto-only.** Last-10 s window, one cam, a 1×/2×/0.5× speed
