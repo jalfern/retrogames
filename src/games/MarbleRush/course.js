@@ -79,11 +79,11 @@ export const STAGES = [
         par: 27.5, medals: [27.5, 32.5, 39.5],
         segs: [
             [30, 0, 0, 2.9, 0],
-            [40, 0.032, 0, 2.6, 0.16],
+            [40, 0.032, 0, 2.6, 0.16, 'gravel'],
             [26, 0, -0.09, 2.6, 0],
-            [40, -0.034, 0, 2.6, 0.16],
+            [40, -0.034, 0, 2.6, 0.16, 'gravel'],
             [30, 0, 0.05, 2.5, 0],
-            [36, 0.036, 0, 2.5, 0.18],
+            [36, 0.036, 0, 2.5, 0.18, 'gravel'],
             [26, 0, -0.05, 2.6, 0],
             [44, -0.030, 0, 2.8, 0.14],
             [30, 0, 0, 2.8, 0],
@@ -142,7 +142,7 @@ export const STAGES = [
         ],
         kickers: [],
         sweepers: [],
-        cp: 0,
+        cp: 150,
     },
     {
         name: 'SKY SHOT',
@@ -165,7 +165,7 @@ export const STAGES = [
         movers: [{ from: 175, to: 201, A: 1.5, w: 1.6, omega: 1.4, phase: 0.7 }],
         kickers: [{ s: 102, gapTo: 111 }],
         sweepers: [],
-        cp: 0,
+        cp: 155,
     },
     // ---- stage 2 (rung 2): shelves 6–10 — sweepers + checkpoint gates ------
     {
@@ -196,6 +196,7 @@ export const STAGES = [
         sky: 'dusk',
         hue: 300,
         par: 22, medals: [22, 27.5, 34.5],
+        plate: 'ice',
         segs: [
             [30, 0, 0, 2.6, 0],
             [36, 0.030, 0, 2.3, 0.14],
@@ -221,6 +222,7 @@ export const STAGES = [
         sky: 'storm',
         hue: 214,
         par: 21.5, medals: [21.5, 27, 34],
+        plate: 'gravel',
         segs: [
             [30, 0, 0, 2.8, 0],
             [40, 0.026, 0, 2.5, 0.12],
@@ -251,7 +253,7 @@ export const STAGES = [
         segs: [
             [30, 0, 0, 2.8, 0],
             [34, -0.024, -0.06, 2.6, 0.12],
-            [28, 0, -0.15, 2.5, 0],    // the long drop: build the launch
+            [28, 0, -0.15, 2.5, 0, 'gravel'],    // the long drop: build the launch
             [10, 0, 0.06, 2.5, 0],     // kicker lip at s=102
             [12, 0, 0, 0, 0],          // the long gap — 12 m, earn it
             [30, 0.026, 0, 2.2, 0.13], // narrow banked landing
@@ -271,6 +273,7 @@ export const STAGES = [
         sky: 'storm',
         hue: 268,
         par: 30, medals: [30, 36, 43],
+        plate: 'ice',
         segs: [
             [34, 0, 0, 2.9, 0],
             [46, 0.034, 0, 2.4, 0.17],
@@ -307,8 +310,8 @@ const smooth = (t) => t * t * (3 - 2 * t)
 export function compileStage(stage) {
     const segs = []
     let s0 = 0
-    for (const [len, k, grade, w, bank] of stage.segs) {
-        segs.push({ s0, s1: s0 + len, k, grade, w, bank, gap: w <= 0 })
+    for (const [len, k, grade, w, bank, plate] of stage.segs) {
+        segs.push({ s0, s1: s0 + len, k, grade, w, bank, gap: w <= 0, plate: plate || stage.plate || 'satin' })
         s0 += len
     }
     const len = s0
@@ -329,6 +332,7 @@ export function compileStage(stage) {
     const bkT = new Float64Array(n)
     const gapT = new Uint8Array(n)
     const movT = new Int8Array(n).fill(-1)
+    const plateT = new Array(n).fill('satin')
     for (let i = 0; i < n; i++) {
         const s = i * DS
         const cur = segAt(s)
@@ -350,6 +354,7 @@ export function compileStage(stage) {
         const gapped = cur.gap
         wT[i] = gapped ? 0 : cur.w
         gapT[i] = gapped ? 1 : 0
+        plateT[i] = cur.plate
     }
     for (let mi = 0; mi < stage.movers.length; mi++) {
         const m = stage.movers[mi]
@@ -412,6 +417,8 @@ export function compileStage(stage) {
         halfWidthOf: (s) => (s < 0 || s >= len ? 0 : wT[Math.floor(s / DS + 1e-9)]),
         gapAt: (s) => (s < 0 || s >= len ? 1 : gapT[Math.floor(s / DS + 1e-9)]),
         moverAt: (s) => (s < 0 || s >= len ? -1 : movT[Math.floor(s / DS + 1e-9)]),
+        // step field like halfWidthOf/gapAt/moverAt: floor-sampled, exact
+        plateAt: (s) => (s < 0 || s >= len ? 'satin' : plateT[Math.floor(s / DS + 1e-9)]),
         // world point of (s,u) with banking: +u is right of travel; bank > 0
         // raises the +u edge. THIS is the bridge: sim and renderer share it.
         pointOf(s, u, yOff = 0) {
