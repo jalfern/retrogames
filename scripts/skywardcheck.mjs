@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, windBed, sockPose, stripZone, stripScore, planeTouch, beltTouch } from '../src/games/Skyward/sim.js'
+import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, windBed, sockPose, stripZone, stripScore, planeTouch, beltTouch, planeGoAround, scuffTell } from '../src/games/Skyward/sim.js'
 import { decide } from '../src/games/Skyward/planner.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { Report } from './lib/harness.mjs'
@@ -850,6 +850,39 @@ void runAuto
         r.check('planeTouch: a steep sink (−3) is not soft — no catch', planeTouch(w, 120, 130, Math.PI / 2, -3, 30) === null)
         r.check('planeTouch: off-strip — no catch', planeTouch(w, 120, 160, Math.PI / 2, -1, 30) === null)
 
+        // #3331 item 1 — the go-around window, pure law beside the catch.
+        r.check('#3331 planeGoAround: hot (≥ ceiling), shallow, straight, on-strip is the bounce window', (() => {
+            const a = planeGoAround(w, 100, 130, Math.PI / 2, -1, 34.5) // exactly at the ceiling
+            const b = planeGoAround(w, 100, 130, Math.PI / 2, -0.1, 44.9)
+            return !!a && !!b && a.hot === 34.5 && a.u === 130
+        })())
+        r.check('#3331 planeGoAround: slow (the catch owns it), steep, crabbed, missile-fast or off-strip → null',
+            planeGoAround(w, 100, 130, Math.PI / 2, -1, 34.4) === null &&
+            planeGoAround(w, 100, 130, Math.PI / 2, -2.5, 36) === null &&
+            planeGoAround(w, 100, 130, Math.PI / 2 + 0.45, -1, 36) === null &&
+            planeGoAround(w, 100, 130, Math.PI / 2, -1, 45) === null &&
+            planeGoAround(w, 100, 148, Math.PI / 2, -1, 36) === null)
+        r.check('#3331 the catch and the bounce tile the speed axis with no gap and no overlap',
+            planeTouch(w, 100, 130, Math.PI / 2, -1, 34.4) !== null && planeGoAround(w, 100, 130, Math.PI / 2, -1, 34.4) === null &&
+            planeTouch(w, 100, 130, Math.PI / 2, -1, 34.5) === null && planeGoAround(w, 100, 130, Math.PI / 2, -1, 34.5) !== null)
+
+        // #3331 item 4 — the scuff tell, pure geometry on short final.
+        r.check('#3331 scuffTell: straight reads 0, the crab limit reads 1, monotonic between', (() => {
+            const a = scuffTell(w, 100, 130, Math.PI / 2, 3)
+            const m = scuffTell(w, 100, 130, Math.PI / 2 + 0.2, 3)
+            const b = scuffTell(w, 100, 130, Math.PI / 2 + 0.3, 3)
+            return !!a && a.tell === 0 && !!b && b.tell === 1 && m.tell > 0 && m.tell < 1 &&
+                scuffTell(w, 100, 130, Math.PI / 2 + 0.25, 3).tell > m.tell
+        })())
+        r.check('#3331 scuffTell: corridor, window and altitude gates hold (off-axis, short, high → null)',
+            scuffTell(w, 100, 150, Math.PI / 2, 3) === null && // 20 m off the axis (> TELL_V)
+            scuffTell(w, -60, 130, Math.PI / 2, 3) === null && // 30 m short of the threshold
+            scuffTell(w, -50, 130, Math.PI / 2, 3) !== null && // inside the 25 m window
+            scuffTell(w, 100, 130, Math.PI / 2, 20) === null) // cruise height is not short final
+        r.check('#3331 scuffTell: dir signs which way the nose is off',
+            scuffTell(w, 100, 130, Math.PI / 2 - 0.25, 3).dir === -1 &&
+            scuffTell(w, 100, 130, Math.PI / 2 + 0.25, 3).dir === 1)
+
         // whole-hull rules through step(): touchdown banks the strip as the
         // plane's OWN best, not an exam score — licence math stays core-three.
         const planeStrip = (seed, x, z, heading, vy, speed, pad = {}, cap = 400) => {
@@ -871,10 +904,30 @@ void runAuto
             ld.h.land === 700 && ld.h.score === 0 && ld.h.grad.spot === null && !ld.h.done,
             `land=${ld.h.land} score=${ld.h.score} done=${ld.h.done}`)
 
-        // hot / steep arrivals keep today's crash, byte-identical
-        const hot = planeStrip(32, 100, 130, Math.PI / 2, -1, 36)
-        r.check('too fast on the strip (36 m/s) still crashes — the school does not forgive cruise',
-            hot.evs.some((e) => e.kind === 'crash') && hot.h.land === 0, hot.evs.map((e) => e.kind).join(','))
+        // #3331 item 1 SUPERSEDES #3319's "hot still crashes": a hot-but-
+        // SHALLOW, straight pass bounces (the first failure teaches). The
+        // shape of the failure that remains — steep, crabbed, missile-fast —
+        // is unchanged, and nothing is banked by a bounce.
+        const hot = planeStrip(32, 100, 130, Math.PI / 2, -1, 36, {}, 90)
+        {
+            const gi = hot.evs.findIndex((e) => e.kind === 'goaround')
+            const ci = hot.evs.findIndex((e) => e.kind === 'crash')
+            r.check('#3331 too hot AND shallow on the strip (36 m/s) bounces — go-around, no crash, nothing banked',
+                gi >= 0 && (ci === -1 || ci > gi) && hot.h.land === 0,
+                `gi=${gi} ci=${ci} land=${hot.h.land} evs=${hot.evs.map((e) => e.kind).join(',')}`)
+        }
+        const steep = planeStrip(32, 100, 130, Math.PI / 2, -3, 36)
+        r.check('#3331 steep AND fast still crashes — the bounce forgives shallow, not dive-in',
+            steep.evs.some((e) => e.kind === 'crash') && steep.evs.every((e) => e.kind !== 'goaround'),
+            steep.evs.map((e) => e.kind).join(','))
+        const missile = planeStrip(32, 100, 130, Math.PI / 2, -1, 46)
+        r.check('#3331 past the bounce window (46 m/s) is not an approach — still crashes',
+            missile.evs.some((e) => e.kind === 'crash') && missile.evs.every((e) => e.kind !== 'goaround'),
+            missile.evs.map((e) => e.kind).join(','))
+        const crabHot = planeStrip(32, 100, 130, Math.PI / 2 + 0.45, -1, 36)
+        r.check('#3331 crabbed AND hot crashes like #3319 — the bounce only speaks to a straight hull',
+            crabHot.evs.some((e) => e.kind === 'crash') && crabHot.evs.every((e) => e.kind !== 'goaround'),
+            crabHot.evs.map((e) => e.kind).join(','))
 
         // rollout → coast → ground crew recovers, no crash counted
         const roll = makeGame(33)
@@ -885,6 +938,44 @@ void runAuto
         while (rn++ < 1200 && rollEvs.every((e) => e.kind !== 'crew') && rollEvs.every((e) => e.kind !== 'crash')) { step(roll, {}); rollEvs.push(...clear(roll)) }
         r.check('after touchdown the plane rolls out and the ground crew recovers her (crew, not crash)',
             rollEvs.some((e) => e.kind === 'crew') && roll.crashes === 0, rollEvs.map((e) => e.kind).join(','))
+
+        // #3331 item 5 — the rollout can EARN: straight and long pays onto the
+        // badge best; a crabbed hull slides off the dash and gets nothing.
+        {
+            const ro = rollEvs.find((e) => e.kind === 'rollout')
+            r.check('#3331 a clean rollout pays +100 onto the ✈ best (crew end, dist ≥ 12, offset ≤ 2)',
+                !!ro && ro.clean === true && ro.via === 'crew' && ro.dist >= 12 && ro.maxV <= 2 && ro.credit === 100 && roll.land === 800,
+                `ro=${JSON.stringify(ro)} land=${roll.land}`)
+            r.check('#3331 the rollout reward never touches the licence spine (score/grad/done clean)',
+                roll.score === 0 && roll.grad.spot === null && !roll.done, `score=${roll.score} done=${roll.done}`)
+        }
+        {
+            const cr = planeStrip(35, 100, 130, Math.PI / 2 + 0.25, -1, 30, {}, 1400)
+            const ro = cr.evs.find((e) => e.kind === 'rollout')
+            const ldEv = cr.evs.find((e) => e.kind === 'land')
+            r.check('#3331 a crabbed rollout drifts off the centreline dash and earns nothing (the law can\'t be faced)',
+                !!ro && ro.clean === false && ro.maxV > 2 && ro.credit === 0 && ldEv && cr.h.land === ldEv.score,
+                `ro=${JSON.stringify(ro)} land=${cr.h.land}`)
+        }
+        // stateOf addenda: the tell on approach, the roll meter on the deck
+        {
+            const hs = makeGame(38)
+            hs.craft = 'plane'; hs.phase = 'free'
+            hs.p = { x: 40, y: Math.max(hs.world.terrainHeight(40, 130), 0) + 4, z: 130 }
+            hs.heading = Math.PI / 2 + 0.25; hs.speed = 30; hs.vy = -0.5
+            const sA = stateOf(hs)
+            r.check('#3331 stateOf.scuff reads hot on a crabbed approach',
+                sA.scuff !== null && sA.scuff.tell >= 0.5 && sA.roll === null, JSON.stringify(sA.scuff))
+            const hs2 = makeGame(37)
+            hs2.craft = 'plane'; hs2.phase = 'free'
+            hs2.p = { x: 100, y: Math.max(hs2.world.terrainHeight(100, 130), 0) + 1.2, z: 130 }
+            hs2.heading = Math.PI / 2; hs2.speed = 30; hs2.vy = -1
+            let nG = 0
+            while (nG++ < 5 && !hs2.ground) step(hs2, {})
+            const sG = stateOf(hs2)
+            r.check('#3331 stateOf.roll meters the rollout while she rides the deck (scuff nulls down)',
+                sG.roll !== null && sG.roll.d >= 0 && sG.ground === true && sG.scuff === null, JSON.stringify(sG.roll))
+        }
 
         // wheels-abort: stick back mid-roll lifts her off for a touch-and-go
         const ab = makeGame(34)
@@ -901,6 +992,17 @@ void runAuto
         r.check('wheels-abort: stick back during the rollout is a touch-and-go (wheels, climbs clear, no crash)',
             groundedAt && abEvs.some((e) => e.kind === 'wheels') && ab.ground === null && ab.crashes === 0 && ab.p.y > 6,
             `grounded=${groundedAt} y=${ab.p.y.toFixed(1)} crashes=${ab.crashes} evs=${abEvs.map((e) => e.kind).join(',')}`)
+        {
+            // #3331 — the reward survives a touch-and-go, and the cabinet's
+            // last word is the credit: rollout fires AFTER the wheels event.
+            const abRo = abEvs.find((e) => e.kind === 'rollout')
+            const abWh = abEvs.find((e) => e.kind === 'wheels')
+            const abLd = abEvs.find((e) => e.kind === 'land')
+            r.check('#3331 touch-and-go banks rollout credit too, emitted after wheels so it banners last',
+                !!abRo && abRo.via === 'abort' && abRo.clean === true && !!abWh && !!abLd &&
+                abEvs.indexOf(abRo) > abEvs.indexOf(abWh) && ab.land === abLd.score + 100,
+                `ro=${JSON.stringify(abRo)} land=${ab.land}`)
+        }
 
         // autopilot honesty: the mat-seeking planner never parks the plane on the strip
         let planeStripAuto = 0
@@ -1070,6 +1172,10 @@ if (process.argv.includes('--mutate')) {
         ['#3319 the rollout has no friction (coasts off the end, no crew)', SIMF, 'g.speed *= CFG.PLANE_FRICTION', 'g.speed *= 1'],
         ['#3319 the wheels-abort is dead (no touch-and-go)', SIMF, 'if (sy > 0 && g.speed >= CFG.PLANE_LIFTOFF) {', 'if (false) {'],
         ['#3319 the departure grace never arms (the deck splats its own go-around)', SIMF, 'g._depart = 1.5 // grace to climb clear before the crash law re-arms', 'g._depart = 0'],
+        ['#3331 the go-around window is dead (hot arrivals splat again)', SIMF, 'if (!(speed >= CFG.PLANE_SPEED && speed < CFG.PLANE_HOT_MAX)) return null', 'if (true) return null'],
+        ['#3331 the bounce forgets its grace (bounces straight into a crash)', SIMF, '                g._depart = 1.5', '                g._depart = 0'],
+        ['#3331 the clean rollout pays no credit (the ✈ best never grows)', SIMF, 'if (clean) g.land = Math.max(g.land, gd.score + CFG.ROLL_CREDIT)', 'if (clean) g.land = Math.max(g.land, gd.score)'],
+        ['#3331 the scuff tell always says straight (no warning before the deck)', SIMF, 'const tell = clamp((Math.abs(e) - CFG.TELL_GRIP) / (CFG.STRIP_ALIGN - CFG.TELL_GRIP), 0, 1)', 'const tell = 0'],
         ['#3332 the strip forgets the belt (settle stays scoreless)', SIMF, "ev(g, 'land', { craft: 'belt', strip: true,", "ev(g, 'settle', { craft: 'belt', strip: false,"],
         ['#3332 the park band ignores the sink (dives park too)', SIMF, 'if (!(vy > -CFG.BELT_SINK && vy < CFG.BELT_RISE && speed < CFG.BELT_SPEED)) return null', 'if (!(vy < CFG.BELT_RISE && speed < CFG.BELT_SPEED)) return null'],
         ['#3332 the park band ignores the drift (fast crossings park)', SIMF, 'if (!(vy > -CFG.BELT_SINK && vy < CFG.BELT_RISE && speed < CFG.BELT_SPEED)) return null', 'if (!(vy > -CFG.BELT_SINK && vy < CFG.BELT_RISE)) return null'],
