@@ -961,6 +961,53 @@ class AudioController {
         } catch { /* already stopped */ }
     }
 
+    // ---- persistent loop-noise bed (#3272) ----
+    // The loop voice's sibling for weather: rain, surf and waterfall beds are
+    // filtered noise, not tones. Same opt-in law — titles that never call it
+    // keep every other title's graph untouched — and it rides the ambience bus
+    // so a muffle dims it with the rest of the world. The buffer is long
+    // (2.4 s) and lowpassed, so the loop seam reads as another gust, not a
+    // click. setLoopNoise(gain, cutoff) per frame: depth opens the bed's
+    // loudness AND brightness at once, which is how real rain announces a core.
+    startLoopNoise(maxGain = 0.06) {
+        if (!this.ctx) this.init()
+        if (!this.ctx || this._noise) return !!this._noise
+        if (this.ctx.state === 'suspended') this.ctx.resume()
+        const bus = this.ensureAmb()
+        if (!bus) return false
+        const sr = this.ctx.sampleRate
+        const buffer = this.ctx.createBuffer(1, Math.floor(sr * 2.4), sr)
+        const data = buffer.getChannelData(0)
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1
+        const src = this.ctx.createBufferSource(); src.buffer = buffer; src.loop = true
+        const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300
+        const gain = this.ctx.createGain()
+        gain.gain.setValueAtTime(0, this.ctx.currentTime)
+        src.connect(lp); lp.connect(gain); gain.connect(bus)
+        src.start()
+        this._noise = { src, lp, gain, maxGain: Math.max(0, maxGain) }
+        return true
+    }
+
+    setLoopNoise(gain, cutoff) {
+        if (!this._noise || !this.ctx) return
+        const t = this.ctx.currentTime
+        const target = this.muted ? 0 : Math.max(0, Math.min(this._noise.maxGain, Number.isFinite(gain) ? gain : 0))
+        this._noise.gain.gain.setTargetAtTime(target, t, 0.12)
+        if (Number.isFinite(cutoff) && cutoff > 0) this._noise.lp.frequency.setTargetAtTime(cutoff, t, 0.12)
+    }
+
+    stopLoopNoise() {
+        if (!this._noise || !this.ctx) return
+        const { src, lp, gain } = this._noise
+        this._noise = null
+        try {
+            gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.12)
+            src.stop(this.ctx.currentTime + 0.8)
+            setTimeout(() => { try { src.disconnect(); lp.disconnect(); gain.disconnect() } catch { /* already gone */ } }, 1000)
+        } catch { /* already stopped */ }
+    }
+
     // ---- music engine (lookahead scheduler) ----
     _note(freq, t, dur, type = 'square', vol = 0.5, vib = null) {
         if (!this.ctx || !this.musicGain) return

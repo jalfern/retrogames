@@ -354,6 +354,7 @@ function stepGlider(g, w, sx, sy, dt) {
     const targetSpeed = 10.5 + (sy < 0 ? -sy * 7 : 0) - sy * 2.2 // nose-down pushes speed
     g.speed = lerp(g.speed, clamp(targetSpeed, 7, 19), 0.06)
     const storm = w.stormAt(g.p.x, g.p.z, g.t)
+    g.stormS = storm.s // #3272: the bed follows EVERY craft, not just the plane
     g.lift = w.thermalLift(g.p.x, g.p.z, g.t)
     g.vy = -sinkOf(g.speed) + g.lift + storm.vy
     const dirX = Math.sin(g.heading), dirZ = Math.cos(g.heading)
@@ -393,6 +394,7 @@ function stepBelt(g, w, sx, sy, a, dt) {
     const tiltA = Math.hypot(sx, sy) * 0.5 // how far the nozzle leans
     const T = g.thrusting ? 15.4 : 0
     const storm = w.stormAt(g.p.x, g.p.z, g.t)
+    g.stormS = storm.s // #3272: the bed follows EVERY craft, not just the plane
     const desX = (fwdX * sy + rgtX * sx) * 17
     const desZ = (fwdZ * sy + rgtZ * sx) * 17
     g.vel.x = lerp(g.vel.x, desX + w.wind.x * 0.35 + storm.gust.x * 0.55, 0.05)
@@ -450,6 +452,29 @@ function cratesFly(g, w, dt) {
         } else keep.push(c)
     }
     g.crates = keep
+}
+
+// ── storm audio law (#3272 items 1+4) ──────────────────────────────────────
+// Pure rules kept OUT of the cabinet so skywardcheck can pin them, exactly
+// like the lift→shimmer pairing (#3138): the sim exposes the hull's depth in
+// the cell, these numbers decide what the ears get. stormBed maps depth to a
+// continuous rain-rumble bed — quiet and dark at the edge, loud and bright at
+// the core (rain is both). stormCue holds the edge laws with hysteresis so a
+// hull buffeting at a threshold can't machine-gun: crossing into the core
+// (≥0.50, armed below 0.38) stings; first rise onto the cell (≥0.06, armed
+// below 0.045) warns — the free-flight telegraph the cell never had.
+export function stormBed(s) {
+    const d = Number.isFinite(s) ? clamp(s, 0, 1) : 0
+    if (d <= 0.02) return { gain: 0, cut: 0 }
+    return { gain: +(0.006 + 0.048 * d * d).toFixed(4), cut: Math.round(240 + 760 * d) }
+}
+
+export function stormCue(s, prevS) {
+    const a = Number.isFinite(s) ? s : 0
+    const b = Number.isFinite(prevS) ? prevS : 0
+    if (a >= 0.5 && b < 0.38) return 'core'
+    if (a >= 0.06 && b < 0.045) return 'warn'
+    return null
 }
 
 // ── state for the contract / harness ───────────────────────────────────────
