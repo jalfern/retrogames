@@ -29,7 +29,11 @@ export const ROOM_CAP_MAX = 4
 // drive (vipernet) could see it. Every room type is forwarded to ALL OTHER
 // members (see relay()), which is what makes the same relay serve a 2P
 // lockstep AND a 4P ghost race.
-export const FORWARD_TYPES = ['pad', 'hs', 'start', 'roster', 'go', 'st', 'fin', 'res', 'pod', 'bye', 'pick']
+// 'spec'/'sv0'/'sh' (#3244 item 2, TidalRush spectate): a watcher announces
+// itself with 'spec'; the host answers mid-race with 'sv0' (seed, bay, tick,
+// rider roster) plus 'sh' chunks — the pad history that lets the watcher
+// fast-forward its own deterministic sim to the live tick.
+export const FORWARD_TYPES = ['pad', 'hs', 'start', 'roster', 'go', 'st', 'fin', 'res', 'pod', 'bye', 'pick', 'spec', 'sv0', 'sh']
 
 export function makeCode(rand) {
     let s = ''

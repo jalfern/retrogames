@@ -167,3 +167,19 @@ static job; every pushed commit is commented on #3104.
   reflection on the water plane (open).
 - Score HUD sits under the shared chrome pill at ?lite=1 widths (chrome overlap,
   not game layout) — flagged for the QA polish pass.
+
+## Spectate (#3244 item 2) — no seat, all sea
+
+`?net=watch&room=CODE` joins a live room as a **watcher**: it takes none of
+the three racing seats (room cap 4 = 3 riders + 1 watch slot), sends no pads
+and referees nothing. It rides the truth instead: on `spec` the host answers
+with `sv0` (seed, bay, tick, rider roster) plus `sh` history chunks — every
+pad byte applied since kickoff, packed 1/seat/tick in the pump window
+(pads k..k+D ride along, so the join tick itself has no hole). The watcher
+fast-forwards its own deterministic sim to the live tick and continues on the
+relay's pad flood — bit-identical to the race, proving tidalcheck's spectate
+gates (149/149, incl. replay-hashes-equal and the pump-window hole gate).
+Honest gaps: one watcher per room; the live-follow step in the cabinet gates
+on pads exactly like a rider (10 s coast on a dead seat) but tidalcheck's
+in-memory mock only proves replay + buffer equality, not a full live race
+against the relay; a watcher that drops just watches no more (no rejoin ring).
