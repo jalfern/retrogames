@@ -238,6 +238,26 @@ await r.check('gold door opens with the key', !!gold2 && gold2.open > 0.5, JSON.
         `gap mean lum=${gapLum.toFixed(1)} (the bug leaves the near floor, ≈14, in view; the recede paints the far room or opaque black, so a healthy gap reads ~0)`)
 }
 
+// 4e. Ceiling is stone, not void (#3305 art pass): the vault bake must read as
+// textured masonry near-field — the old #14151c flat fill gave the whole top of the
+// frame ~19 mean lum with no relief, dissolving the wall-top edge (ART.md bar 3).
+// Sample the near-ceiling band (rows 2–30 are ceiling at any column in the open
+// courtyard; fog is irrelevant — these rows look almost straight up). Bright AND
+// varied (ribs/seams), or a future re-bake back to flat soot goes red.
+{
+    await call('warp', 8.5, 17.5, 0)
+    await call('clearEnemies')
+    const RW = 320
+    const lum = v => 0.2126 * (v & 255) + 0.7152 * ((v >>> 8) & 255) + 0.0722 * ((v >>> 16) & 255)
+    const b = await call('pixels')
+    const lums = []
+    for (let y = 2; y < 30; y++) for (let x = 40; x <= 280; x++) lums.push(lum(b[y * RW + x]))
+    const mean = lums.reduce((a, v) => a + v, 0) / lums.length
+    const sd = Math.sqrt(lums.reduce((a, v) => a + (v - mean) ** 2, 0) / lums.length)
+    await r.check('ceiling reads as stone vault, not void', mean >= 25 && sd >= 4,
+        `near-ceiling mean lum=${mean.toFixed(1)} sd=${sd.toFixed(1)} (flat soot gives ~19 mean; the vault bake is ~50 with rib/seam relief)`)
+}
+
 // 5. Hitscan: three bolts into a legionary at close range must put him down.
 await call('warp', 5.5, 19.0, -Math.PI / 2)
 const gid = await call('spawn', 'grunt', 5.5, 16.0)

@@ -693,11 +693,36 @@ function buildTextures() {
         noise(g, 67, 900, ['rgba(0,0,0,0.35)', 'rgba(180,190,210,0.07)', 'rgba(90,110,80,0.06)'])
     }, 10)
 
+    // Stone cross-vault (#3305 art pass). The old bake was a near-black flat fill —
+    // the whole top of every frame read as void and the wall-top edge dissolved into
+    // it (ART.md bar 3: texture, not flat fills). Groin ribs, lit ridges and dark
+    // seams use the same masonry ink as the walls; the base stays a step darker than
+    // wall stone so the vault reads *overhead*, and ×0.12 fog still sinks the far web
+    // to black, so long halls keep their gloom and the fpscheck mid-door gap pin holds.
     T.ceil = texCanvas((g) => {
-        g.fillStyle = '#14151c'; g.fillRect(0, 0, TEX, TEX)
-        g.fillStyle = '#1c1e28'; g.fillRect(0, 0, TEX, 8); g.fillRect(0, 56, TEX, 8)
-        for (let i = 0; i < 4; i++) { g.fillStyle = '#191b24'; g.fillRect(i * 16 + 2, 10, 12, 44) }
-        noise(g, 71, 700, ['rgba(0,0,0,0.5)', 'rgba(160,170,200,0.04)'])
+        g.fillStyle = '#262a38'; g.fillRect(0, 0, TEX, TEX)
+        const r = rng(71)
+        for (let cy = 0; cy < 2; cy++) for (let cx = 0; cx < 2; cx++) {
+            const x = cx * 32, y = cy * 32
+            const t = 0.78 + r() * 0.3
+            g.fillStyle = `rgb(${Math.round(52 * t)},${Math.round(56 * t)},${Math.round(72 * t)})`
+            g.fillRect(x + 2, y + 2, 28, 28)
+            g.fillStyle = 'rgba(0,0,0,0.45)'
+            g.fillRect(x, y + 30, 32, 2); g.fillRect(x + 30, y, 2, 32)
+            g.fillStyle = 'rgba(210,220,245,0.10)'; g.fillRect(x + 2, y, 28, 1)
+            g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 2
+            g.beginPath(); g.moveTo(x, y); g.lineTo(x + 16, y + 16); g.lineTo(x + 32, y); g.stroke()
+            g.beginPath(); g.moveTo(x, y + 32); g.lineTo(x + 16, y + 16); g.lineTo(x + 32, y + 32); g.stroke()
+            g.strokeStyle = 'rgba(190,200,225,0.16)'; g.lineWidth = 1
+            g.beginPath(); g.moveTo(x, y + 1); g.lineTo(x + 16, y + 17); g.lineTo(x + 32, y + 1); g.stroke()
+            g.fillStyle = 'rgba(225,232,250,0.22)'; g.fillRect(x + 15, y + 15, 3, 3)
+        }
+        for (let i = 0; i < 14; i++) {
+            const x = r() * TEX, y = r() * TEX, rad = 3 + r() * 8
+            g.fillStyle = 'rgba(8,9,14,0.30)'
+            g.beginPath(); g.arc(x, y, rad, 0, 7); g.fill()
+        }
+        noise(g, 73, 300, ['rgba(0,0,0,0.30)', 'rgba(170,180,210,0.05)'])
     }, 11)
 
     const out = {}
