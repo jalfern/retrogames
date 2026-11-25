@@ -344,32 +344,76 @@ export function makeMarble(env) {
     return { mesh, shadow }
 }
 
-// Sweeper bar — the stage 2 hazard verb. A neon slab that sweeps across its
+// Sweeper bar — the stage 2 hazard verb. A spinning saw-drum sweeping across its
 // station on the moverDeck sine; index.jsx slides it by the SAME sweeperBar()
-// the sim knocks you with (drawn ≡ ridden). Cap-glows mark the reach.
+// the sim knocks you with (drawn ≡ ridden). Glowing ridge bands spin with the
+// drum so speed reads as machinery, not a floating brick; cap-glows mark the
+// reach; a deck-shadow quad telegraphs where the drum sits ahead so the
+// approach reads before the marble arrives.
 export function makeBar(course, si) {
     const sw = course.sweepers[si]
     const glow = hsl((course.hue + 320) % 360, 0.95, 0.62)
+    const steel = hsl((course.hue + 320) % 360, 0.45, 0.20)
     const group = new THREE.Group()
-    const slab = new THREE.Mesh(
-        new THREE.BoxGeometry(2 * sw.w + 0.3, 0.5, 0.9),
-        new THREE.MeshStandardMaterial({ color: glow, emissive: glow, emissiveIntensity: 1.2, metalness: 0.55, roughness: 0.28 }),
+
+    // deck-shadow quad under the drum — the telegraph that reads at distance
+    const shadow = new THREE.Mesh(
+        new THREE.PlaneGeometry(2 * sw.w + 1.15, 1.75),
+        new THREE.MeshBasicMaterial({ color: 0x06080d, transparent: true, opacity: 0.42, depthWrite: false }),
     )
-    slab.position.y = 0.32
+    shadow.rotation.x = -Math.PI / 2
+    shadow.position.y = 0.045
+    group.add(shadow)
+
+    // the spinning drum: long cylinder whose axis lies across the deck
+    const spin = new THREE.Group()
+    const drum = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.5, 0.5, 2 * sw.w + 0.4, 24),
+        new THREE.MeshStandardMaterial({ color: steel, metalness: 0.72, roughness: 0.28, emissive: glow, emissiveIntensity: 0.22 }),
+    )
+    drum.rotation.z = Math.PI / 2   // axis along local X (across the deck)
+    drum.position.y = 0.58
+    spin.add(drum)
+    // three glowing ridge bands, equatorial — the static machinery read
+    for (let i = -1; i <= 1; i++) {
+        const band = new THREE.Mesh(
+            new THREE.TorusGeometry(0.52, 0.075, 8, 24),
+            new THREE.MeshStandardMaterial({ color: glow, emissive: glow, emissiveIntensity: 1.7, roughness: 0.35 }),
+        )
+        band.rotation.y = Math.PI / 2   // torus axis along local X
+        band.position.set(i * (sw.w * 0.55), 0.58, 0)
+        spin.add(band)
+    }
+    // off-axis stripes on the drum skin — they carry the spin (a plain
+    // cylinder would read as a frozen brick)
+    const stripeGeo = new THREE.BoxGeometry(2 * sw.w + 0.2, 0.07, 0.2)
+    const stripeMat = new THREE.MeshStandardMaterial({ color: glow, emissive: glow, emissiveIntensity: 1.5, roughness: 0.3 })
+    const stripeTop = new THREE.Mesh(stripeGeo, stripeMat)
+    stripeTop.position.set(0, 1.06, 0)
+    const stripeBottom = new THREE.Mesh(stripeGeo, stripeMat)
+    stripeBottom.position.set(0, 0.10, 0)
+    spin.add(stripeTop, stripeBottom)
+    // reach caps
     const capGeo = new THREE.SphereGeometry(0.24, 10, 8)
     const capMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: glow, emissiveIntensity: 1.8, roughness: 0.3 })
     const cl = new THREE.Mesh(capGeo, capMat)
-    cl.position.set(-(sw.w + 0.15), 0.32, 0)
+    cl.position.set(-(sw.w + 0.15), 0.58, 0)
     const cr = new THREE.Mesh(capGeo, capMat)
-    cr.position.set(sw.w + 0.15, 0.32, 0)
-    // a thin pylon so the bar reads as sweeping machinery, not a floating brick
+    cr.position.set(sw.w + 0.15, 0.58, 0)
+    spin.add(cl, cr)
+    group.add(spin)
+
+    // a thin static pylon holding the drum up — the machinery read
     const pylon = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.09, 0.09, 0.7, 8),
+        new THREE.CylinderGeometry(0.085, 0.105, 0.55, 8),
         new THREE.MeshStandardMaterial({ color: 0x30414f, metalness: 0.6, roughness: 0.5 }),
     )
-    pylon.position.y = 0.02
-    group.add(slab, cl, cr, pylon)
+    pylon.position.y = 0.27
+    group.add(pylon)
+
     group.userData.sw = sw
+    group.userData.spin = spin
+    group.userData.shadow = shadow
     return group
 }
 

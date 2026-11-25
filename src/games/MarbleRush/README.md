@@ -10,7 +10,7 @@ Monkey Ball / Marble Blast, with none of their names, courses or art.
   (`[len, k, grade, halfWidth, bank]`) plus props pinned in course-space
   (`s` along, `u` across): bumpers, moving bridges, kicker lips with gaps,
   gap segments (`w = 0`), sweeping bars (`{s, A, w, omega, phase}` — a neon
-  slab at station s that slides across the road on the moverDeck sine), and
+  saw-drum at station s that slides across the road on the moverDeck sine), and
   one checkpoint station `cp` on shelves 6–10. `compileStage()` samples it
   once into tables (heading/x/z/y + k/grade/width/bank/gap/mover), blending
   joins over `SMOOTH` m so curvature and banking ramp in and out (gap widths
@@ -38,9 +38,10 @@ Monkey Ball / Marble Blast, with none of their names, courses or art.
   (per-sky palette) giving the chrome marble real reflections; a glass swirl
   map so the roll reads; shader sky (gradient + sun disc + bloom), drifting
   cloud sprites, spark pool, contact-shadow blob oriented by the banked
-  surface normal. Stage 2 props: sweeper slabs with cap-glows (hue + 320°,
-  clearly NOT-deck colour), checkpoint arches with a road strip that lights
-  green when armed and stays lit.
+  surface normal. Stage 2 props: a spinning saw-drum bar per sweeping
+  station (long emissive cylinder, spinning ridge bands, deck-shadow
+  telegraph, cap-glows in hue + 320°, clearly NOT-deck colour), checkpoint
+  arches with a road strip that lights green when armed and stays lit.
 - `index.jsx` — the cabinet: fixed-timestep loop with catch-up cap, attract
   (autopilot preview + ◀ ▶ shelf picker), GO countdown, medal cards,
   persistent per-stage bests (`localStorage` key `marble-rush-best-v1`),
@@ -88,7 +89,5 @@ off the bot; humans earn it differently.
    no per-stage ambience; bars clang but the deck under them stays silent.
 5. Falling marble keeps reflecting the sky; no tumble spin or cam-follow on
    the way down.
-6. The bar is a slab — a rotating arm or a sawdrum silhouette would read more
-   like machinery at speed; spark trails on the knock would sell the bite.
-7. Table select shows ten shelves at once; at twelve-plus a paging shelf UI
+6. Table select shows ten shelves at once; at twelve-plus a paging shelf UI
    would beat the ◀ ▶ cycle.
