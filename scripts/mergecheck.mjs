@@ -23,6 +23,12 @@
 //                    fake gh logs its calls; merge before success = fail).
 //   G never reports  — checks never appear: refuse unverified, touch nothing.
 //   H red static     — static FAILURE refuses; gh pr merge never fires.
+//   I dropped event (#3269) — the pull_request event never reached the rollup
+//                    (checks stay silent forever) but the check-runs API at the
+//                    PR's current head sha reports static success: merge, and
+//                    the log names the fallback as the source of the verdict.
+//   J API red        — same silence, failure conclusion at the API: refuse,
+//                    merge never fires (a verdict from the fallback can block).
 //npm run mergecheck
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -88,23 +94,33 @@ case "$1" in
         # #3070-faithful: gh pr view --repo X REQUIRES a positional
         # number/url/branch — inference is disabled with --repo, which is
         # exactly where the real post-merge cleanup died for both slots.
-        pos=""; skip=0
+        # #3269: without --repo, gh infers the PR from the current branch —
+        # that is what forge-merge's head-sha lookup now relies on.
+        pos=""; skip=0; hasrepo=0
         for ((i=3; i<=$#args; i++)); do
           a="\${args[$i]}"
           if [[ $skip == 1 ]]; then skip=0; continue; fi
           case "$a" in
-            --repo|--json|-q|--jq|-t|--template) skip=1 ;;
+            --repo) skip=1; hasrepo=1 ;;
+            --json|-q|--jq|-t|--template) skip=1 ;;
             -*) ;;
             *) pos="$a" ;;
           esac
         done
         if [[ -z "$pos" ]]; then
-          echo "argument required when using the --repo flag" >&2; exit 1
+          if [[ $hasrepo == 1 ]]; then
+            echo "argument required when using the --repo flag" >&2; exit 1
+          fi
+          pos=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+          if [[ -z "$pos" || "$pos" == "HEAD" ]]; then
+            echo "no pull requests found for branch $pos" >&2; exit 1
+          fi
         fi
         head=$(git -C "$FAKE_BARE" rev-parse --verify --quiet refs/heads/main)
+        oid=$(git -C "$FAKE_BARE" rev-parse --verify --quiet "refs/heads/$FAKE_BRANCH")
         state=OPEN
         [[ -n "$head" && "$head" != "$FAKE_BASE" ]] && state=MERGED
-        emit "{\\"state\\":\\"$state\\",\\"headRefName\\":\\"$FAKE_BRANCH\\"}" ;;
+        emit "{\\"state\\":\\"$state\\",\\"headRefName\\":\\"$FAKE_BRANCH\\",\\"headRefOid\\":\\"$oid\\"}" ;;
       merge)
         [[ -n "$FAKE_LOG" ]] && print -r -- merge >> "$FAKE_LOG"
         if [[ "$FAKE_MERGE" == "none" ]]; then
@@ -128,12 +144,27 @@ case "$1" in
         exit 1 ;;
       *) echo "fake gh: unhandled pr sub $2" >&2; exit 1 ;;
     esac ;;
+  api)
+    # #3269 — the check-runs-at-a-commit path forge-merge falls back to when
+    # the pull_request rollup stays silent. FAKE_API drives the verdict, and the
+    # sha taken from the path is logged so a test can prove the wrapper asked
+    # about the PR's CURRENT head (never a cached sha).
+    apipath="$2"
+    sha=\${apipath##*/commits/}; sha=\${sha%%/*}
+    tok=\${FAKE_API:-none}
+    [[ -n "$FAKE_LOG" ]] && print -r -- "api:\${sha}:\${tok}" >> "$FAKE_LOG"
+    case "$tok" in
+      success) emit '{"check_runs":[{"name":"scope","status":"completed","conclusion":"success"},{"name":"static","status":"completed","conclusion":"success"}]}' ;;
+      failure) emit '{"check_runs":[{"name":"static","status":"completed","conclusion":"failure"}]}' ;;
+      pending) emit '{"check_runs":[{"name":"static","status":"in_progress"}]}' ;;
+      *)       emit '{"check_runs":[]}' ;;
+    esac ;;
   *) echo "fake gh: unhandled: $*" >&2; exit 1 ;;
 esac
 `;
 
 function buildSandbox(tag, { dirtySquat = false, merge = 'trap', withSquat = true, deep = false,
-    checks = null, poll = null, waitTimeout = null } = {}) {
+    checks = null, poll = null, waitTimeout = null, api = null } = {}) {
     // realpath the root: macOS /var -> /private/var, and git prints the resolved
     // worktree paths; HOME is sandboxed so zsh's ~/.zshenv cannot prepend
     // homebrew and shadow the fake gh (real gh answering "fake/repo" = silence).
@@ -170,6 +201,7 @@ function buildSandbox(tag, { dirtySquat = false, merge = 'trap', withSquat = tru
     env.FAKE_BASE = base; env.FAKE_SQUAT = squat; env.FAKE_MERGE = merge;
     env.FAKE_LOG = path.join(root, 'ghlog.txt');   // ordered log of gh calls (#3120)
     if (checks) { env.FAKE_SEQ = path.join(root, 'seq.txt'); fs.writeFileSync(env.FAKE_SEQ, checks.join('\n') + '\n'); }
+    if (api) env.FAKE_API = api;   // #3269: what the check-runs API answers at the head sha
     if (poll != null) env.MERGE_POLL = String(poll);
     if (waitTimeout != null) env.MERGE_WAIT_TIMEOUT = String(waitTimeout);
     env.PATH = `${path.join(root, 'bin')}:${process.env.PATH}`;
@@ -291,6 +323,7 @@ say('G — checks never report: refuse to merge unverified, touch nothing (#3120
     const log = fs.readFileSync(s.env.FAKE_LOG, 'utf8').trim().split('\n');
     ok(r.status !== 0, `wrapper exits non-zero when static never reports (got ${r.status})`);
     ok((r.stderr + r.stdout).includes('unverified'), 'says why: refusing to merge unverified');
+    ok(log.some(l => l.startsWith('api:')), '#3269: the check-runs fallback was consulted before refusing');
     ok(!log.includes('merge'), 'gh pr merge never fired');
     ok(remoteHeads(s).includes('forge/testfix'), 'remote branch untouched');
     ok(git(['rev-parse', 'origin/main'], s.plumb, s.env).stdout.trim() === s.base, 'origin/main untouched');
@@ -306,6 +339,40 @@ say('H — static FAILURE refuses the merge (red never merges, reported or not)'
     ok(r.status !== 0, `wrapper exits non-zero (got ${r.status})`);
     ok(!log.includes('merge'), 'gh pr merge never fired');
     ok(remoteHeads(s).includes('forge/testfix'), 'remote branch untouched');
+    fs.rmSync(s.root, { recursive: true, force: true });
+}
+
+say('I — dropped pull_request event (#3269): rollup stays silent, the check-runs API at the head SHA verifies');
+{
+    // Slot b, 2026-11-25: three PRs on two refs got no pull_request run at all
+    // (`gh pr checks` = nothing) while a workflow_dispatch at the same head SHA
+    // passed `static`; dispatch check-runs are invisible to the rollup, so the
+    // #3120 law froze the merge. The fallback reads the verdict off the API.
+    const s = buildSandbox('dropped', { withSquat: false, poll: 1, checks: ['error', 'empty'], api: 'success' });
+    // Resolve the expected head BEFORE merging: post-merge cleanup prunes the
+    // branch's remote-tracking ref out of the shared git dir (#3013).
+    const head = git(['rev-parse', 'origin/forge/testfix'], s.plumb, s.env).stdout.trim();
+    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const log = fs.readFileSync(s.env.FAKE_LOG, 'utf8').trim().split('\n');
+    ok(r.status === 0, `wrapper merges on the API verdict (got ${r.status})`);
+    ok(log.some(l => l === `api:${head}:success`), 'fallback asked check-runs about the CURRENT head sha');
+    ok(log.indexOf('merge') > log.findIndex(l => l === `api:${head}:success`), 'merge fired only after the API said success');
+    ok((r.stdout + r.stderr).includes('#3269 fallback'), 'the log names where the verdict came from');
+    ok(r.stdout.includes('MERGED (server truth)'), 'normal post-merge cleanup still completes');
+    ok(!remoteHeads(s).includes('forge/testfix'), 'remote branch deleted');
+    fs.rmSync(s.root, { recursive: true, force: true });
+}
+
+say('J — the API fallback cannot smuggle a red through (#3269): a failure conclusion refuses');
+{
+    const s = buildSandbox('apired', { withSquat: false, poll: 1, checks: ['error', 'empty'], api: 'failure' });
+    const r = run('/bin/zsh', [path.join(s.lane, 'scripts', 'forge-merge.sh')], s.lane, s.env);
+    const log = fs.readFileSync(s.env.FAKE_LOG, 'utf8').trim().split('\n');
+    ok(r.status !== 0, `wrapper exits non-zero (got ${r.status})`);
+    ok(!log.includes('merge'), 'gh pr merge never fired');
+    ok((r.stdout + r.stderr).includes('#3269 fallback'), 'says the verdict came from the API');
+    ok(remoteHeads(s).includes('forge/testfix'), 'remote branch untouched');
+    ok(git(['rev-parse', 'origin/main'], s.plumb, s.env).stdout.trim() === s.base, 'origin/main untouched');
     fs.rmSync(s.root, { recursive: true, force: true });
 }
 
