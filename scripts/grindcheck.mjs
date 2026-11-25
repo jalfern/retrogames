@@ -25,14 +25,14 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety', 'nearmiss', 'bestline']) {
+    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety', 'nearmiss', 'bestline', 'bankline']) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 12 ? `ALL MUTANTS CAUGHT (${died}/12)` : `${died}/12 mutants caught`)
-    process.exit(died === 12 ? 0 : 1)
+    console.log(died === 13 ? `ALL MUTANTS CAUGHT (${died}/13)` : `${died}/13 mutants caught`)
+    process.exit(died === 13 ? 0 : 1)
 }
 
 // ── boot ──────────────────────────────────────────────────────────────────
@@ -508,7 +508,20 @@ function drive(seed) {
     const simSrc = MUT === 'bestline' ? simRaw.replace('run.score > prev.score ? run : prev', 'run.score > prev.score ? prev : run') : simRaw
     ok('bestline wiring: sim law prefers the higher run; cabinet folds runs + shows the chip (#3374)',
         /run\.score > prev\.score \? run : prev/.test(simSrc) &&
-        /bestLine = betterLine\(bestLine,/.test(cab) && /BEST LINE/.test(cab))
+        /bestLine = betterLine\(prevBest, cand\)/.test(cab) && /BEST LINE/.test(cab))
+
+    // Attract loop: when a line is banked, attract re-rides it (seed + pads),
+    // the bot stays the no-history fallback, and a fresh harness session forgets.
+    // MUT=bankline makes attract ignore the banked log — the pin must see red.
+    const cabDrive = MUT === 'bankline'
+        ? cabRaw.replace('bankedPad || botPad(stateOf(sim), bot)', 'botPad(stateOf(sim), bot)')
+        : cabRaw
+    ok('attract loop wiring: banked line drives attract, bot is the fallback, reset forgets (#3374)',
+        /bestLog = inputLog\.slice\(\)/.test(cabDrive) &&
+        /unpackIn\(bestLog\[attractIdx\+\+\]\)/.test(cabDrive) &&
+        /bankedPad \|\| botPad\(stateOf\(sim\), bot\)/.test(cabDrive) &&
+        /makeGame\(bestLog\.length \? bestSeed : freshSeed\(\), 'run'\)/.test(cabDrive) &&
+        /bestSeed = 0; bestLog = \[\]; attractIdx = 0/.test(cabDrive))
 }
 
 if (MUT) {

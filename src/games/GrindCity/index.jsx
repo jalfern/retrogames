@@ -117,6 +117,9 @@ const GrindCityGame = () => {
         let replaySpeed = 1
         let replayNear = false   // #3374: replayed line was under the 2 s floor (letters saved it)
         let bestLine = null      // #3374: session memory of the best run, shown on attract
+        let bestSeed = 0         // #3374: the seed + pad log of that run — attract re-rides them
+        let bestLog = []
+        let attractIdx = 0
         // #3325: the replay's presentation-only free cam — orbit the replay while it runs.
         // Never touches the sim or the log; arrows rotate, C toggles.
         let orbitOn = false
@@ -165,7 +168,12 @@ const GrindCityGame = () => {
 
         const toAttract = () => {
             clearReplay()
-            sim = makeGame(freshSeed(), 'run')
+            // #3374: once the session has a best line, the plaza doesn't idle —
+            // it re-rides that line (re-sim from the banked seed + pads, byte-
+            // identical to how it was skated). No history yet? The planner's bot
+            // keeps the attract it always had.
+            attractIdx = 0
+            sim = makeGame(bestLog.length ? bestSeed : freshSeed(), 'run')
             sim.phase = 'play'
             attractV = (attractV + 1) % 3   // each idle loop rides a different style
             bot = makeBot(attractV)
@@ -305,10 +313,19 @@ const GrindCityGame = () => {
             if (screenRef.current === 'over' || replayMode) return
             pendingResult = { score: sim.score, won: sim.won, goals: { ...sim.goalsDone }, best: sim.stats.bestChain, ...((j) => ({ gems: j.gems, gemTotal: j.gemTotal, gemsAll: j.gemsAll, secret: j.secret }))(stateOf(sim)) }
             // #3374: every finished player run folds into the session best —
-            // the attract card will remember it.
+            // and when it *is* the best, the cabinet banks its seed + pad log so
+            // the attract loop can re-ride it. (The log is the whole line: pads
+            // are absolute from the run start, so re-sim needs all of it.)
             const lettersGot = Object.keys(sim.letters).length
-            bestLine = betterLine(bestLine, { score: sim.score, letters: lettersGot, won: !!sim.won })
-            setBest(bestLine)
+            const cand = { score: sim.score, letters: lettersGot, won: !!sim.won }
+            const prevBest = bestLine
+            bestLine = betterLine(prevBest, cand)
+            if (bestLine !== prevBest) {
+                bestSeed = sim.seed
+                bestLog = inputLog.slice()
+                attractIdx = 0
+                setBest(bestLine)
+            }
             if (replayWorthy(inputLog.length, lettersGot)) startReplay()
             else finishOver()
         }
@@ -327,7 +344,12 @@ const GrindCityGame = () => {
         }
 
         const simTick = (inputOverride) => {
-            const input = inputOverride || (attractMode ? botPad(stateOf(sim), bot) : pad())
+            // attract input: the banked best line if the session has one (#3374),
+            // else the planner. The banked line plays back exactly as ridden.
+            const bankedPad = bestLog.length && attractIdx < bestLog.length
+                ? unpackIn(bestLog[attractIdx++])
+                : null
+            const input = inputOverride || (attractMode ? (bankedPad || botPad(stateOf(sim), bot)) : pad())
             if (!attractMode && screenRef.current === 'play') inputLog.push(packIn(input))
             step(sim, input)
             tickEvents.push(...sim.events.splice(0, sim.events.length))
@@ -563,7 +585,7 @@ const GrindCityGame = () => {
         // ── DEV hooks + contract ────────────────────────────────────────────
         if (import.meta.env.DEV) {
             window.__grindTest = {
-                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100, best: bestLine && { ...bestLine } }),
+                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0 }),
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
@@ -599,6 +621,7 @@ const GrindCityGame = () => {
                 reset: (seed) => {
                     clearReplay()
                     bestLine = null; setBest(null)   // #3374: a harness session starts with no memory
+                    bestSeed = 0; bestLog = []; attractIdx = 0
                     sim = makeGame(seed >>> 0, modeRef.current)
                     sim.phase = 'play'
                     bot = makeBot()
@@ -608,7 +631,7 @@ const GrindCityGame = () => {
                     return stateOf(sim)
                 },
                 tick: (p) => { simTick(p); return stateOf(sim) },
-                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), orbit: !!orbitOn, best: bestLine && { ...bestLine } }),
+                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), orbit: !!orbitOn, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0 }),
                 canvas: () => canvas,
             })
         }
