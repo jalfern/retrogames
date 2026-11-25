@@ -19,6 +19,19 @@ import { encode as qrEncode, joinUrl, toSvgPath } from '../utils/qrcode.js'
 const LinkPads = ({ secondAction, pad }) => {
     const [ui, setUi] = useState({ open: false, phase: 'idle', code: '', pads: [], relay: '', labels: '' })
     const hostRef = useRef(null)
+    // #3395: at phone width (≤380px) the waiting card cannot clear the game's
+    // top HUD band — it is 418px tall against a ~210px free zone — so the
+    // waiting state collapses to a pill there and the card only opens on an
+    // explicit tap (transient, deliberate, closable). Wide screens unchanged.
+    const [narrow, setNarrow] = useState(() => typeof matchMedia === 'function' && matchMedia('(max-width: 380px)').matches)
+    const [expanded, setExpanded] = useState(false)
+    useEffect(() => {
+        if (typeof matchMedia !== 'function') return
+        const mq = matchMedia('(max-width: 380px)')
+        const on = (e) => setNarrow(e.matches)
+        mq.addEventListener('change', on)
+        return () => mq.removeEventListener('change', on)
+    }, [])
     const secondRef = useRef(secondAction)
     useEffect(() => { secondRef.current = secondAction }, [secondAction])
     const padRef = useRef(pad)
@@ -76,6 +89,7 @@ const LinkPads = ({ secondAction, pad }) => {
         host.close()
         hostRef.current = null
         setUi({ open: false, phase: 'idle', code: '', pads: [], relay: '', labels: '' })
+        setExpanded(false)
         window.dispatchEvent(new CustomEvent('retrogames:linkpads', { detail: { count: 0 } }))
     }, [])
 
@@ -98,7 +112,7 @@ const LinkPads = ({ secondAction, pad }) => {
                 data-nav="linkpads"
                 aria-label="Link phones as controllers"
                 className="fixed z-[60] font-mono text-[10px] tracking-[0.25em] text-white/50 hover:text-white transition-colors px-2 py-1 border border-white/20 rounded"
-                style={{ top: 'calc(0.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}
+                style={{ top: 'calc(2.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}
             >
                 PADS
             </button>
@@ -113,10 +127,33 @@ const LinkPads = ({ secondAction, pad }) => {
                 onClick={close}
                 data-nav="linkpads"
                 className="fixed z-[60] font-mono text-[10px] tracking-[0.25em] transition-colors px-2 py-1 border rounded"
-                style={{ top: 'calc(0.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))', color: '#7dd3fc', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)' }}
+                style={{ top: 'calc(2.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))', color: '#7dd3fc', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)' }}
             >
                 PADS {ui.code} · {ui.pads.map((p) => `P${p.seat}${p.mode === 'direct' ? '' : '~'}`).join(' ')}
             </button>
+        )
+    }
+
+    if (narrow && !expanded) {
+        // Waiting at phone width: pill, not the 418px card — the card sat over
+        // both HUD columns at 320px (#3395). Tap to see the QR; ✕ merely
+        // collapses back to this pill, the room stays open.
+        return (
+            <>
+                <button
+                    onClick={() => setExpanded(true)}
+                    data-nav="linkpads"
+                    data-linkpads="pill"
+                    aria-label="Show room code and QR"
+                    className="fixed z-[60] font-mono text-[10px] tracking-[0.25em] px-2 py-1 border rounded"
+                    style={{ top: 'calc(2.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))', color: '#7dd3fc', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)' }}
+                >
+                    {ui.code}
+                </button>
+                <p data-linkpads="hint" className="fixed z-[60] left-1/2 -translate-x-1/2 font-mono text-[10px] tracking-[0.2em] text-white/50 pointer-events-none" style={{ bottom: 'calc(0.5rem + var(--sab, 0px))' }}>
+                    join jalfern.com/retrogames/pad · code {ui.code}
+                </p>
+            </>
         )
     }
 
@@ -125,6 +162,7 @@ const LinkPads = ({ secondAction, pad }) => {
     return (
         <div
             data-nav="linkpads"
+            data-linkpads="card"
             className="fixed z-[60] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-3 px-8 py-6 rounded-2xl border border-white/25 bg-black/70 backdrop-blur-md font-mono text-white text-center select-none"
         >
             <p className="text-[10px] tracking-[0.4em] text-white/45">LINK PADS · {ui.phase === 'connecting' ? 'CONNECTING…' : 'OPEN'}</p>
@@ -145,7 +183,7 @@ const LinkPads = ({ secondAction, pad }) => {
             )}
             <p className="text-[11px] tracking-[0.15em] text-white/70">open <span className="text-white">jalfern.com/retrogames/pad</span></p>
             <p className="text-[10px] tracking-[0.2em] text-white/40">{qr ? 'scan the code (or type it)' : 'enter this code on your phone'}</p>
-            <button onClick={close} className="mt-1 px-4 py-1 rounded-full border border-white/25 text-[10px] tracking-[0.3em] text-white/70 hover:bg-white/10">CLOSE</button>
+            <button onClick={() => (narrow ? setExpanded(false) : close())} className="mt-1 px-4 py-1 rounded-full border border-white/25 text-[10px] tracking-[0.3em] text-white/70 hover:bg-white/10">{narrow ? 'BACK' : 'CLOSE'}</button>
         </div>
     )
 }
