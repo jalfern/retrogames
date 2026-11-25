@@ -1,69 +1,69 @@
-# STATE — forge board snapshot (slot a, 2026-11-25 — TIDAL RUSH GRABS BACK)
+# STATE — forge board snapshot (slot b, 2026-11-25 — PINBALL GETS A TABLE SMITH)
 
 ## This session — one ship, landed
-- Warden TARGET **#3276** was already CLOSED when I went to claim (slot b
-  shipped flips/handstands via #3278 mid-boot) → normal ladder: no steer,
-  `next` #1712 waiting-jon, game-queue empty, feedback ladder → #3233 BUT
-  live QA sessions (mini+studio) own the board → #841 idle-kick:
-  `idle-kick a` answered `KICK TIDAL RUSH 0 weak`.
-- Rule 8: the kick's gaps 0/1 are NOT honestly buildable — gap 0 needs the
-  shared pad-shape change #3244 item 6 forbids (and #3244 is waiting-jon),
-  gap 1 is a phones-on-QR relay run = QA's job. Both now carry **BLOCKED**
-  markers in the README so the phantom kick stops; built the OLDEST real gap
-  (#3276's own honest tail) as **POLISH #3280** → PR **#3285** merged
-  `aeb15d6`; prod marker `landFlip` verified in `TidalRush-CfUHDw6I.js`.
-- **GRAB POSES** — `r.grab` hangs off the brake commit bit the wire already
-  carries: brake alone takes the rail (flip), brake+gas reaches the bow
-  (handstand), released on the water; CPU grabs ride the same bits. Visual
-  state only — pads/hash/scores byte-untouched (#3244 item 6 law).
-- **LANDINGS READ BY TRICK** — `r.lastLand` records what the air paid: flip =
-  corkscrew bursts off both rails + deep thunk; handstand = narrow column +
-  expanding ring; flat keeps the wide sheet. Cloth-creak on the grab catch.
-- **Two bugs the stage's own legs caught (fixed in #3285):**
-  1. rivalPad held gas ≥0.94 in the air → armed-2 was ALWAYS a handstand
-     commit under the #3276 law (68 pays, zero flips / six seeds). Flip-arm
-     now lifts throttle ≤0.4 — CPU flips are real flips.
-  2. brake 10 > THRUST 7.5 → holding the commit across a landing dead-stopped
-     the hull at 0 km/h. Under throttle the anchor caps just BELOW the thrust
-     line (~11 km/h crawl); coasting brake keeps its full anchor.
-- Proof: tidalcheck **165/165** (+10 pins) + **ALL MUTANTS CAUGHT 19/19**
-  (new graboff/landkind; wirefeed RE-ARMED — see lessons); tidaldrive GREEN
-  end-to-end; contractcheck 857/857; eslint + 3 gates + build green.
+- Warden TARGET **#3284 PINBALL editor** REFUSED at first claim (slot a held
+  tidal #3280 live at 08:10Z) — normal ladder: no steer, no actionable `next`
+  (#1712 waiting-jon), `game-queue` empty, QA MASTER live → no feedback
+  borrow → flagship stage spent → **NEVER-DRY `KICK PINBALL 0 weak`**.
+  Gap index 0 was "No table editor (#3103: not yet)" — honest (only open
+  pinball issue #3237 doesn't mention an editor). Filed + claimed my own
+  POLISH issue **#3284**, shipped it.
+- **TABLE SMITH #3284 DONE** (`ad1809b`, PR #3291): Pinball Construction Set
+  (Evolution Systems, 1983) build mode on the shared engine — the #3103
+  contract playable: `compileTable(def)` compiles a layout onto existing
+  primitives (bumpers/slings/bank/magnet on a fixed chassis); `makeGame`
+  takes a table object; magnet-`null`/empty-bank became legal table DATA.
+  Third attract card: ghost→bench (arrows/A/B pad-first, 8-tool palette, live
+  ghost-validity through the SAME law as the compiler), TEST drops one ball
+  and homes back to the bench, SAVE persists `{name,def}`
+  (`retrogames.pinball.mytable.v1`) and the named cabinet rides the row,
+  self-playing in the driven demo, B = redesign, survives reload.
+  BALL SEARCH = inherited no-wedge guarantee.
+- Proof: pinballcheck **206/206** (+28 smith pins) + mutants **9/9**
+  (`smithzone`, `smithload` new); new `pinballsmith` live drive **22/22**
+  real-key legs on :5178; `pinballplay` **54/54** after re-cutting the card
+  tap coord for the 3-card row; contractcheck 14/14; eslint + 3 scoped gates
+  + build green. Prod verified: `Pinball-D9b00c-m.js` markers. #3284 shipped+closed.
+- **QA tail filed: #3290** — discoverability badges, ghost-demo placeholder
+  lies (demos CABINET ONE until first save), dome-boundary outline, phone
+  widths (8×38px strip, 8px card gaps), kits-on-custom, drag idiom, garage
+  of cabinets (README honest edge too).
 
 ## Harness lessons (worth one line each)
-- A "by design" sentence inside an honest-gap still SCORES for idle-kick
-  unless marked **BLOCKED**/**DISCLAIMER** — same phantom-kick family as the
-  stale CLOSED entries; when a lane declines a kick, mark the README.
-- A mutant anchor that matches several identical call sites silently weakens:
-  `src.replace()` hits the FIRST only — wirefeed had been blind on main since
-  #3257/#3265 copied the wire-law text. tidalcheck gained `all: true`
-  (global-plant); think about call-site drift when planting anchors.
-- Equilibrium algebra: crawl = cap brake slightly BELOW the thrust line
-  (v_eq = √(margin/DRAG)); capping "just past" it still dead-stops. Trust
-  the pin's number, not the comment's intention.
-- Unsteered-hull pins crawl into the boundary clamp and read speed≈0 —
-  physics pins steer with `{...autoPad(gs), overrides}`, never raw idle.
+- **3-card row ripple**: `pinballplay`'s hardcoded EMBER tap coord (267,335)
+  started landing on the new third card → the whole suite cascaded off one
+  coord. Grown UI geometry = grep the suites for pixel constants of the old
+  layout the same PR that grows it.
+- **Refusal ordering is UX law**: candidate-level caps fired before compile
+  zones (MAX 3 masked OUT OF ZONE); zone-check the cursor's own spot FIRST,
+  single-sourced (`bumperZoneOk`) so ghost-green == accepted.
+- **Owner-wording pin**: #3237 owned README gaps semantically but not by the
+  40-char handle match → phantom-scored (kick said score 6, real 3). Fixed by
+  aligning #3237's item wording to the README's opening words; `idle-kick`
+  now `KICK PINBALL 2 weak` = the honest oldest unowned gap (music bed).
+- Warden TARGET claiming a live other-slot issue = REFUSED per liveness; the
+  TARGET note says take-the-ladder then — slot a shipped #3280 mid-session.
 
 ## PLAYABLE on main right now
-- `/retrogames/tidal-rush` grab poses + trick-specific splashes + crawl law
-  + real CPU flips (#3285), flips/handstands (#3278), online rooms/podium/
-  rematch/spectate (#3227/#3253/#3265), squall front + storm re-rolls;
-  `/retrogames/pinball` driven attract + kits (#3275), KICKBACK (#3255);
-  `/retrogames/skyward` living storm cell (#3271), mario-kart TILT (#3260),
-  grind-city roof line + gems (#3251/#3270 + #3279 callouts), marble-rush
-  tilt + trick-hop (#3243), comet-drift pair (tilt), ssx (tilt), r-type,
-  marble-madness, pacman, mario, minesweeper/garden-guard/homebody, TIDY
-  BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter,
-  iron keep, galaga, missile, pucks, mines, zork, ultima, king's quest,
-  Joust, Q*bert, forge board.
+- `/retrogames/pinball` **TABLE SMITH** — build/save/play your own cabinet
+  (#3291) + driven attract + kits + kickback, tidal-rush grabs (#3285) +
+  flips/handstands (#3278) + rooms, skyward drift ring (#3288/#3292),
+  grind-city curvature shading (#3286) + roof callout (#3279), pinball EMBER
+  RIDER, mario-kart (tilt), ice-climber, marble-rush (tilt, trick hop),
+  comet-drift pair (tilt), ssx (tilt), marble-madness, pacman, mario,
+  minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS,
+  DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga, missile,
+  pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` empty (my #3280 claim cleared the derived stage); feedback:
-  #3272 skyward `building-qa` (QA live), #3233 grind-city tail 2 `lane:qa`,
-  #3244/#2971 `waiting-jon`. Next builder claim = idle-kick derivation LIVE
-  at claim time (don't trust memory or this line).
-- Merges today incl. #3270 #3271 #3273 #3274 #3275 #3278 #3279 #3285;
-  nightly main-ok green at my merge.
+- `game-queue` EMPTY; `next` #1712 waiting-jon (not a work item).
+- **Next builder claim: run `idle-kick` LIVE** — expect `KICK PINBALL 2 weak`
+  = "The music bed covers MULTIBALL only; single-ball play stays dry" (real,
+  unowned). Do NOT redo the smith tail (#3290) or #3237 items 2–5.
+- QA holds: #3237 PINBALL tail (feedback+lane:qa — owns phone-HUD/contrast/
+  tilt/extras wording), #3290 smith tail, #3281 tidal tricks tail, #3244
+  tidal rooms, #3233 grind-city tail. #2971 contra waiting-jon.
+- Nightly: main-ok green at session start, at merge, and at handoff.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
@@ -72,8 +72,9 @@
 - No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot a: dev server stopped via `scripts/devstop.sh` (:5173 free). Worktree
-  `~/Dev/retrogames-forge-tidal-grabs` removed clean after merge.
-- Main checkout detached at origin/main; this STATE.md ships via its own
-  docs/state PR — game code merged this session, commit path earned.
-- Time-box: ~2h50m of 3 h.
+- Slot b: dev :5178 stopped via scripts/devstop.sh. Worktree
+  `~/Dev/retrogames-forge-pinball-editor` detached clean at origin/main by
+  mergeclean; remove it when next convenient.
+- Game merged this session ⇒ this STATE.md ships via its own docs/state PR;
+  parked at /tmp/forge/STATE.b.parked.md via statepark.
+- Time-box: ~1 h 05 min of 3 h.
