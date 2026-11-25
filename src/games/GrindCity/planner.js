@@ -15,14 +15,29 @@ const WP = [
     { x: -2, z: 16, r: 7.0 },      // coast
 ]
 
-export function makeBot() {
-    return { i: 0, seq: -1, gseq: 0, rpulse: 0, cool: 0, m: 0, wasAir: false, wasGrind: false }
+// Attract variety (#3233 item 4): the line is fixed, but its STYLE rotates per
+// attract loop so long idles don't loop one choreography. v = 0 is the classic
+// witness line — byte-identical to before (grindcheck grades exactly this bot).
+// v = 1 FLIPS the trench gap: the 57-tick gap air clears the 300° bail floor
+// with ~35 ticks spare; the press waits for a true B rising edge in the air
+// (the pump holds B up the kicker face, so a naive press never edges).
+// v = 2 rides a MANUAL after the gap landing — the classic line never arms one
+// (the gap choreography blocks it); manuals can't bail, and the chip shows it.
+// Showcase only — the graded win line, letters and every bail law are untouched.
+export function makeBot(v = 0) {
+    return { i: 0, seq: -1, gseq: 0, rpulse: 0, cool: 0, m: 0, wasAir: false, wasGrind: false, v, bWas: false, flipF: false }
 }
 
 const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a }
 
 /** pad for one tick given the sim's JSON state */
 export function botPad(st, bot) {
+    const pad = botInner(st, bot)
+    bot.bWas = pad.b   // the flip press needs its own B rising edge, and the
+    return pad         // sim's bPrev isn't in stateOf — remember it on the bot
+}
+
+function botInner(st, bot) {
     const pad = { left: false, right: false, up: false, down: false, a: false, b: false }
     if (st.phase !== 'play') { bot.wasAir = st.air; return pad }
 
@@ -36,8 +51,11 @@ export function botPad(st, bot) {
     }
     if (bot.wasGrind && !st.grinding) { bot.wasGrind = false; if (bot.i === 7) bot.i = 8 }
 
-    // manual timing: arm on landing, press in the grace window, hold, release
-    if (bot.wasAir && !st.air && bot.m === 0 && bot.cool === 0 && bot.gseq === 0 && bot.seq < 0) bot.m = 90
+    // manual timing: arm on landing, press in the grace window, hold, release.
+    // The classic gates (gseq===0 && seq<0) put the gap landing in cooldown, so
+    // the witness line never manuals; v2 opens the gates to show the manual chip.
+    const gate = bot.v === 2 ? bot.cool === 0 : bot.cool === 0 && bot.gseq === 0 && bot.seq < 0
+    if (bot.wasAir && !st.air && bot.m === 0 && gate) bot.m = 90
     bot.wasAir = st.air
     if (bot.m > 0) {
         bot.m--
@@ -54,12 +72,16 @@ export function botPad(st, bot) {
         bot.seq = 0
     }
 
-    // gap line: pop at the lip, grab over the hole, release before landing
+    // gap line: pop at the lip, grab over the hole, release before landing;
+    // v1 adds the FLIP — the pump holds B up the kicker face, so the press
+    // waits for the first airborne tick that arrives with B released, giving a
+    // real rising edge; the 57-tick gap air then clears the 300° bail floor.
     if (bot.gseq > 0) {
         bot.gseq++
         if (bot.gseq === 1) pad.a = true
+        if (bot.v === 1 && st.air && !bot.flipF && !bot.bWas) { pad.b = true; bot.flipF = true }
         if (bot.gseq >= 10 && st.z < 8.2) pad.a = true
-        if (bot.gseq > 70) bot.gseq = 0
+        if (bot.gseq > 70) { bot.gseq = 0; bot.flipF = false }
     } else if (bot.i === 2 && !st.air && st.z > 1.6 && st.z < 3.6 && st.speed > 4 && bot.seq < 0) {
         bot.gseq = 1
     }

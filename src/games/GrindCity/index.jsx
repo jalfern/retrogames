@@ -93,6 +93,7 @@ const GrindCityGame = () => {
         let sim = makeGame(freshSeed(), 'run')
         sim.phase = 'play'          // attract: the autopilot rides behind the title
         let bot = makeBot()
+        let attractV = 0           // style rotation (#3233 item 4): classic → flip → grab
         let attractMode = true
         let tickEvents = []
         let pumpCd = 0
@@ -153,7 +154,8 @@ const GrindCityGame = () => {
             clearReplay()
             sim = makeGame(freshSeed(), 'run')
             sim.phase = 'play'
-            bot = makeBot()
+            attractV = (attractV + 1) % 3   // each idle loop rides a different style
+            bot = makeBot(attractV)
             attractMode = true
             screenRef.current = 'attract'
             setScreen('attract')
