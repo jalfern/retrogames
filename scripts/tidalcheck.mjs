@@ -130,6 +130,13 @@ if (MUT) {
         // Anchored with the side property so each swap hits exactly one column.
         hudlowsat: { file: 'src/games/TidalRush/index.jsx', from: "top: 'calc(5.25rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))'", to: "top: '4.75rem', left: 'calc(0.75rem + var(--sal, 0px))'", note: 'score column ignores safe-area top — ARCADE/FEEDBACK sit on it on notched phones' },
         hudrosat: { file: 'src/games/TidalRush/index.jsx', from: "top: 'calc(5.25rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))'", to: "top: '4.75rem', right: 'calc(0.75rem + var(--sar, 0px))'", note: 'speed column ignores safe-area top — PAUSE/PADS sit on it on notched phones' },
+        // #3395 — notch tail: the centre band and the room chip must compose --sat,
+        // the LINK PADS pill must stack below PAUSE, not share its corner anchor,
+        // and the phone-width waiting collapse must be real.
+        bannerNosat: { file: 'src/games/TidalRush/index.jsx', from: "top: 'calc(0.5rem + var(--sat, 0px))', left: 'var(--sal, 0px)'", to: "top: '0.5rem', left: 'var(--sal, 0px)'", note: 'bay/gate band ignores the notch — sits in the hardware zone while chrome descends' },
+        chipNosat: { file: 'src/games/TidalRush/index.jsx', from: "top: 'calc(4rem + var(--sat, 0px))'", to: "top: '4rem'", note: 'room chip stays put at a notch — lands on the descending bay label' },
+        pillOnPause: { file: 'src/components/LinkPads.jsx', from: "top: 'calc(2.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))'", to: "top: 'calc(0.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))'", note: 'PADS pill back on PAUSE anchor — measured 52x25px overlap, both top-right' },
+        widePill: { file: 'src/components/LinkPads.jsx', from: 'narrow && !expanded', to: 'narrow && expanded', note: 'phone-width collapse dead — the 418px card covers both HUD columns again' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -1074,6 +1081,25 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     // chrome moves its anchor, the pins above must be re-derived, not silently stale.
     const chromeJs = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/components/GameChrome.jsx'), 'utf8')
     ok('chrome anchor truth: ARCADE + FEEDBACK pills inset with --sat', chromeJs.includes("top: 'calc(0.75rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))'") && chromeJs.includes("top: 'calc(2.75rem + var(--sat, 0px))'"))
+}
+
+// --- #3395 notch tail: centre band, room chip, LINK PADS phone pill -------------
+// Measured on the audit: at sat 59 the chrome pills descend to y71 while the raw
+// top-2 banner stayed at y8 (in the notch hardware zone); the room chip (raw
+// top-16) lands on the descending bay label; the PADS pill shared PAUSE's exact
+// anchor (52x25px overlap at 390w); and the waiting card (x19-301, y75-493 at
+// 320w) covered BOTH race HUD columns. All four now law'd here.
+{
+    const jsx = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/index.jsx'), 'utf8')
+    const linkJs = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/components/LinkPads.jsx'), 'utf8')
+    const centre = jsx.match(/<div className="absolute flex flex-col items-center text-center" style=\{\{\s*top: '([^']+)', left: '([^']+)', right: '([^']+)'/)
+    ok('centre bay/gate band composes the insets (top+left+right)', !!centre && centre[1] === 'calc(0.5rem + var(--sat, 0px))' && centre[2] === 'var(--sal, 0px)' && centre[3] === 'var(--sar, 0px)')
+    ok('room chip rides --sat (raw top-16 would land on the descending bay)', jsx.includes("top: 'calc(4rem + var(--sat, 0px))'") && !jsx.includes('top-16'))
+    // PAUSE lives fixed at calc(0.75rem + sat) top-right; all three LINK PADS
+    // variants stack one row below it (2.75rem) — the house ARCADE→FEEDBACK row.
+    ok('PADS never shares PAUSE\'s corner anchor', !/top: 'calc\(0\.75rem \+ var\(--sat, 0px\)\)', right:/.test(linkJs) && (linkJs.match(/top: 'calc\(2\.75rem \+ var\(--sat, 0px\)\)'/g) || []).length === 3)
+    ok('waiting collapses to a pill at ≤380px (card is tap-to-expand)', linkJs.includes("matchMedia('(max-width: 380px)')") && linkJs.includes('data-linkpads="pill"') && linkJs.includes('narrow && !expanded'))
+    ok('expanded card BACK collapses without dropping the room', linkJs.includes('narrow ? setExpanded(false) : close()'))
 }
 
 // --- moorings (#3159): the bay is lived-in --------------------------------------

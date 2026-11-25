@@ -197,7 +197,7 @@ try {
         const meas = async () => p3.evaluate(() => {
             const rc = (el) => el.getBoundingClientRect()
             const pills = [...document.querySelectorAll('button')].filter((d) => /^(ARCADE|FEEDBACK|PAUSE|PADS)$/.test(d.textContent.trim()))
-            const cols = [...document.querySelectorAll('div')].filter((d) => { const st = d.getAttribute('style') || ''; return st.indexOf('var(--sat, 0px)') >= 0 && st.indexOf('calc(') >= 0 && st.indexOf('top:') >= 0 })
+            const cols = [...document.querySelectorAll('div')].filter((d) => { const st = d.getAttribute('style') || ''; return st.indexOf('calc(5.25rem') >= 0 && st.indexOf('var(--sat, 0px)') >= 0 && st.indexOf('top:') >= 0 })
             let gap = 1e9, worst = ''
             const tops = []
             for (const c of cols) {
@@ -223,6 +223,54 @@ try {
         const before = sat0.tops.split('/').map(Number)
         ok('#3389 both columns ride DOWN with the inset (≥55px)', moved.length === 2 && before.length === 2 && moved.every((t, i) => t - before[i] >= 55 && t - before[i] <= 61), `sat0=${sat0.tops} notch=${notch.tops}`)
         await p3.close()
+    }
+
+    // #3395 notch tail: the centre band rides --sat with the chrome...
+    {
+        const p4 = await openGame(browser, { url: `${BASE}/tidal-rush?lite=1`, hook: '__tidalTest', viewport: { width: 640, height: 426 } })
+        await p4.waitForFunction('window.__game', { timeout: 20000 })
+        await p4.keyboard.press('Enter')
+        await wait(4800)
+        const bayTop = () => p4.evaluate(() => { const el = [...document.querySelectorAll('div')].find((d) => /^(SUNNY|STORM) BAY( · .*)?$/.test(d.textContent.trim())); return el ? Math.round(el.getBoundingClientRect().top) : -1 })
+        const t0 = await bayTop()
+        await p4.evaluate(() => { document.documentElement.style.setProperty('--sat', '59px') })
+        await wait(350)
+        const t1 = await bayTop()
+        ok('#3395 centre bay rides DOWN with the inset (≥55px)', t1 - t0 >= 55 && t1 - t0 <= 61, `sat0=${t0} notch=${t1}`)
+        await p4.close()
+    }
+    // ...and at phone width the LINK PADS waiting state is a pill, not the 418px
+    // card: pill exists, card absent, pill clears PAUSE (stacked one row below,
+    // house ARCADE→FEEDBACK pattern) and both HUD columns; tap expands the card,
+    // BACK collapses it while the room survives.
+    {
+        const p5 = await openGame(browser, { url: `${BASE}/tidal-rush?lite=1&pads=1`, hook: '__tidalTest', viewport: { width: 320, height: 568 } })
+        await p5.waitForFunction('window.__game', { timeout: 20000 })
+        await wait(900)
+        const st = await p5.evaluate(() => {
+            const rc = (el) => { const r = el.getBoundingClientRect(); return { t: Math.round(r.top), l: Math.round(r.left), r: Math.round(r.right), b: Math.round(r.bottom) } }
+            const pill = document.querySelector('[data-linkpads="pill"]')
+            const card = document.querySelector('[data-linkpads="card"]')
+            const pause = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'PAUSE')
+            const col = (t) => [...document.querySelectorAll('div')].filter((d) => d.textContent.trim().startsWith(t) && d.getBoundingClientRect().width < 200).pop()
+            const ovl = (a, b) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0
+            const pRect = pill && rc(pill), pauseRect = pause && rc(pause)
+            const score = col('SCORE'), speed = col('SPEED')
+            return {
+                hasPill: !!pill, hasCard: !!card,
+                clearsPause: !!(pRect && pauseRect && pRect.t >= pauseRect.b),
+                clearsCols: !!pRect && !(score && ovl(pRect, rc(score))) && !(speed && ovl(pRect, rc(speed))),
+            }
+        })
+        ok('#3395 phone-width waiting is a pill (card hidden)', st.hasPill && !st.hasCard, JSON.stringify(st))
+        ok('#3395 pill stacks below PAUSE, clears both HUD columns', st.clearsPause && st.clearsCols, JSON.stringify(st))
+        await p5.click('[data-linkpads="pill"]')
+        await wait(300)
+        ok('#3395 tap expands the QR card', !!(await p5.$('[data-linkpads="card"]')))
+        await p5.click('[data-linkpads="card"] >> text=BACK')
+        await wait(300)
+        ok('#3395 BACK collapses to pill, room survives', !!(await p5.$('[data-linkpads="pill"]')))
+        await p5.close()
     }
 
     if (process.env.SHOTS) {

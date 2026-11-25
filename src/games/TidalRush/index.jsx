@@ -1279,7 +1279,10 @@ const TidalRushGame = () => {
                     <div ref={setHud('score')} className="text-xl font-black text-yellow-200 leading-6">0</div>
                     <div ref={setHud('lap')} className="text-[11px] tracking-widest">LAP 1/3</div>
                 </div>
-                <div className="absolute top-2 left-0 right-0 flex flex-col items-center text-center">
+                {/* #3395: the centre band rides the insets like every other pill —
+                    at a notch the chrome cluster descends 59px; a raw top-2 left the
+                    bay/gate sitting in the notch hardware zone itself. */}
+                <div className="absolute flex flex-col items-center text-center" style={{ top: 'calc(0.5rem + var(--sat, 0px))', left: 'var(--sal, 0px)', right: 'var(--sar, 0px)' }}>
                     <div ref={setHud('bay')} className="text-[10px] tracking-[0.35em] mb-1" style={{ color: '#bfe9ff' }}>SUNNY BAY</div>
                     <div ref={setHud('gate')} className="bg-black/45 border border-cyan-300/30 rounded px-3 py-1 text-sm font-bold tracking-widest">
                         <span ref={setHud('gateNext')} /><span ref={setHud('gateThen')} style={{ opacity: 0.6, fontWeight: 600 }} />
@@ -1381,9 +1384,11 @@ const TidalRushGame = () => {
                 />
             )}
 
-            {/* #3220: live-room identity chip — which ski you ride, which bay you're in */}
+            {/* #3220: live-room identity chip — which ski you ride, which bay you're in.
+                #3395: rides --sat too — at a notch the bay label descends and a
+                raw 4rem chip lands on it. */}
             {netUi && (screen === 'play' || screen === 'over') && (
-                <div className="absolute top-16 left-1/2 -translate-x-1/2 pointer-events-none bg-black/45 border border-cyan-300/30 rounded px-2 py-0.5 text-[10px] tracking-[0.3em] text-cyan-100 font-mono">
+                <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none bg-black/45 border border-cyan-300/30 rounded px-2 py-0.5 text-[10px] tracking-[0.3em] text-cyan-100 font-mono" style={{ top: 'calc(4rem + var(--sat, 0px))' }}>
                     {`ROOM ${netUi.code || '····'} · YOU: ${RIDE_NAMES[Math.max(0, netUi.slot)]}`}
                 </div>
             )}
