@@ -43,6 +43,14 @@ export const CFG = {
     PLANE_LIFTOFF: 16, // wheels-abort: stick back at ≥16 and you fly again
     PLANE_STOP: 12,    // below the stall she sits — ground crew recovers her
     PLANE_FRICTION: 0.99,
+    // #3332 — the belt's own arrival band. The belt already forgives the ground
+    // (soft, slow contact anywhere settles); on the strip the school PAYs it.
+    // A belt cruise can sit inside these bands, so the skill is the arrival
+    // itself: hold the descent quiet (< BELT_SINK m/s down, < BELT_SPEED m/s
+    // across) and put it in the deepest zone you can carry straight in.
+    BELT_SINK: 2.0,
+    BELT_RISE: 1.0, // rising faster than this is a departure, not an arrival
+    BELT_SPEED: 4.0,
 }
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
@@ -84,6 +92,8 @@ export function makeGame(seed, opts = {}) {
         land: 0,            // #3319 — best plane landing banked on the strip
         ground: null,       // #3319 — non-null while the plane rolls on the deck
         _depart: 0,         // #3319 — grace to climb clear after a rollout abort
+        park: null,         // #3332 — non-null while the belt sits parked on the deck
+        beltLand: 0,        // #3332 — best belt landing banked on the strip
         respawnT: 0, ditchT: 0,
         lastSafe: { x: 0, y: 34, z: 320, heading: Math.PI },
         events: [],
@@ -134,6 +144,8 @@ function placeBeltStart(g) {
     const s = g.world.school
     g.p = { x: s.x + 30, y: 18, z: s.z + 40 }
     g.heading = 0; g.pitch = 0; g.roll = 0; g.speed = 0; g.vy = 0
+    g.vel.x = 0; g.vel.z = 0 // #3332 — handed over still, not still-drifting
+    g.park = null
     g.dropIdx = 0; g.crates = []; g.dropped = []
 }
 function placePassStart(g) {
@@ -161,6 +173,7 @@ export function markerNear(g) {
 
 function crash(g, where) {
     g.crashes++
+    g.park = null // #3332 — wherever the hull lands next, the pad let her go
     ev(g, 'crash')
     if (g.phase === 'ring') {
         const r = g.world.rings[Math.max(0, g.ringsPassed - 1)]
@@ -194,6 +207,7 @@ function crash(g, where) {
 // saddle; the belt and plane are handed over on the apron itself.
 function recycle(g) {
     const order = ['plane', 'belt', 'glider']
+    g.park = null // #3332 — the ground crew un-parks whatever she was sitting on
     const next = order[(order.indexOf(g.craft) + 1) % 3]
     if (next === 'plane') {
         g.craft = 'plane'
@@ -475,6 +489,25 @@ export function planeTouch(w, x, z, heading, vy, speed) {
     return { ...zn, zone, score: CFG.STRIP_ZONES[zone - 1][1], aligned: true }
 }
 
+// #3332 — the belt's touchdown decision, pure law beside the plane's. The
+// mirror of the plane's test in the belt's own keys: the strip catches a QUIET
+// arrival — sink under BELT_SINK, cross under BELT_SPEED, not climbing away —
+// and the #3302 zone table scores it; the same crab law scuffs it. Off-strip
+// or rough → null, and the hull keeps today's law untouched (silent settle,
+// or crash). A scored arrival PARKS (see stepBelt); the banked best answers
+// the plane's `land` in `beltLand`.
+export function beltTouch(w, x, z, heading, vy, speed) {
+    const zn = stripZone(w, x, z)
+    if (!zn) return null
+    if (!(vy > -CFG.BELT_SINK && vy < CFG.BELT_RISE && speed < CFG.BELT_SPEED)) return null
+    let e = heading - w.STRIP_HEADING
+    while (e > Math.PI) e -= Math.PI * 2
+    while (e < -Math.PI) e += Math.PI * 2
+    if (Math.abs(e) > CFG.STRIP_ALIGN) return { ...zn, zone: 0, score: CFG.STRIP_SCUFF, aligned: false }
+    const zone = zoneOf(zn.frac)
+    return { ...zn, zone, score: CFG.STRIP_ZONES[zone - 1][1], aligned: true }
+}
+
 function stepGlider(g, w, sx, sy, dt) {
     g.roll = lerp(g.roll, sx * 1.05, 0.12)
     if (g.roll !== 0) g.heading += Math.sin(g.roll) * (6 / Math.max(g.speed, 7)) * dt
@@ -519,6 +552,20 @@ function stepGlider(g, w, sx, sy, dt) {
 // ── the rocket belt ─────────────────────────────────────────────────────────
 function stepBelt(g, w, sx, sy, a, dt) {
     g.thrusting = !!a // the belt always answers the throttle, even mid-respawn
+    if (g.park) {
+        // #3332 — parked on the deck: the hull rides the strip, locked; wind
+        // and gusts don't drag a parked belt (the school's crew chocks it),
+        // but the bed still hears the rain. Throttle lifts her off — the
+        // banked score stays banked, and a second quiet arrival pays again.
+        const deck = Math.max(w.terrainHeight(g.p.x, g.p.z), w.waterHeightAt(g.p.x, g.p.z, g.t))
+        g.p.y = deck + 0.8
+        g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0
+        g.roll = lerp(g.roll, 0, 0.2)
+        g.pitch = lerp(g.pitch, 0, 0.2)
+        g.stormS = w.stormAt(g.p.x, g.p.z, g.t).s
+        if (a) { g.park = null; ev(g, 'liftoff') }
+        return
+    }
     // heading-relative stick: x banks/turns, y pitches the thrust vector
     g.heading += sx * 0.85 * dt
     g.roll = lerp(g.roll, sx * 0.5, 0.16)
@@ -543,6 +590,24 @@ function stepBelt(g, w, sx, sy, a, dt) {
     const floor = Math.max(ter, w.waterHeightAt(g.p.x, g.p.z, g.t))
     if (g.p.y < floor + 0.8) {
         if (g.vy < -5.2 || g.speed > 10) { crash(g, 'belt') ; return }
+        // #3332 — the strip REPAYS a quiet arrival before the plain settle:
+        // soft, slow and on-strip in free flight parks with the zone score.
+        // Off-strip and mid-event arrivals keep today's silent settle and hot
+        // ones keep today's crash — the plain-settle branch stays untouched.
+        if (g.phase === 'free' && g.respawnT <= 0) {
+            const zn = stripZone(w, g.p.x, g.p.z)
+            if (zn) {
+                const touch = beltTouch(w, g.p.x, g.p.z, g.heading, g.vy, g.speed)
+                if (touch) {
+                    g.park = { zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned }
+                    g.beltLand = Math.max(g.beltLand, touch.score)
+                    g.p.y = floor + 0.8
+                    g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0
+                    ev(g, 'land', { craft: 'belt', strip: true, zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned })
+                    return
+                }
+            }
+        }
         g.p.y = floor + 0.8
         g.vy = Math.max(g.vy, 0)
         g.vel.x *= 0.6; g.vel.z *= 0.6
@@ -666,6 +731,8 @@ export function stateOf(g) {
         stripD: +Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az).toFixed(1),
         // #3319 additive: best plane landing banked, and whether she's rolling
         land: g.land, ground: !!g.ground,
+        // #3332 additive: best belt landing banked, and whether she's parked
+        beltLand: g.beltLand, parked: !!g.park,
         hash: g.hash, seed: g.seed,
     }
 }
