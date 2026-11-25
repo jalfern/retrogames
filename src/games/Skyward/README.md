@@ -93,7 +93,8 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   motorless — its silence is the rule the bed teaches. The law is pure in
   `sim.js` (like the storm bed) so `skywardcheck` pins it; the cabinet rides
   the existing `startLoopVoice` saw (a deterministic 13 Hz blade-pass flutter
-  timed off `gs.t`) — `AudioController` grows not one line.
+  timed off `gs.t`) — `AudioController` grows not one line. (#3300 later
+  richened this bed — see *Bed polish*.)
 - **Rain owns the core** — deep storm ducks the engine ×(1−0.5·depth) instead
   of duelling thunder; `raw` (pre-duck gain) rides the cue law so flying
   through the cell can never fake an engine death. `engineCue(raw, prevRaw)`
@@ -103,6 +104,37 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
 - **Presentation-only** — the laws read state and never write it: hash,
   `stateOf`, scoring are byte-identical with the bed on (pinned), so replays
   and the QA robot's views are untouched.
+
+## Bed polish (#3300)
+- **Rich motor** — the loop voice was ONE raw saw; the cabinet now drives a
+  `startLoopEngine` sibling in `AudioController`: two saws detuned ±9 cents
+  through a lowpass, so the beating between them thickens the cruise, and the
+  filter OPENES with load (`engineBed` gained a pure `cut` field — plane
+  600→2200 Hz with load, belt fan 780/1400, glider 0). The 13 Hz blade-pass
+  flutter now bends PITCH too (±30 cents on the same deterministic sim clock,
+  both saws shifting together) as well as gain. Nothing else's graph changed.
+- **Load tell** — twin exhaust streaks off the plane's cowl (renderer-only,
+  never hashed): additive flame-cones that stretch, brighten and heat-whiten
+  with `fx.raw` (the pre-duck load — driving through rain still shows the
+  engine WORKING while the bed ducks); flicker rides the sim clock, not a RNG.
+- **Glider wind-rush** — pure law `windBed(craft, speed, stormS)` in
+  `sim.js`: glider-only filtered-noise rising with airspeed (hushed below
+  9 m/s, full rush at the 19 m/s top), storm-ducked ×(1−0.5·depth), capped
+  at 0.03 gain — a whisper, never a fake motor. Rides a sibling `loopWind`
+  voice so the wind and the rain bed can sound together. The glider's
+  checkout banners it: NO ENGINE — WIND IS YOUR THROTTLE.
+- **Crash sequencing** — the crash rumble no longer stacks on the motor
+  dying: on a crash the cabinet cuts the engine bed on the tick (its sweep
+  leads), delays the rumble 0.18 s, and zeroes the arming line so the
+  respawn spools fresh. `__skywardTest.bedLive()` proves the cut live.
+- **Phone widths** — two fixes from a 390×844 audit: the stage's inline
+  `position:relative` overrode its `absolute inset-0` class and collapsed
+  the canvas to its intrinsic ratio (prod looked right only because the
+  first `setSize` baked a matching aspect); and every HUD readout moved
+  into a `<style>` block — a media query can never beat inline styles — so
+  below 480px speed/alt/score/chips live in the top corners and the hint
+  floats mid-screen, clear of the pad band. `skywardplay` now audits the
+  overlap matrix at 390px (pinned).
 
 ## Second strip (#3302)
 - **Runway landings, zone-scored** — Pilotwings' landing test in our keys: the

@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, stripZone, stripScore, planeTouch, beltTouch } from '../src/games/Skyward/sim.js'
+import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, windBed, stripZone, stripScore, planeTouch, beltTouch } from '../src/games/Skyward/sim.js'
 import { decide } from '../src/games/Skyward/planner.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { Report } from './lib/harness.mjs'
@@ -658,6 +658,53 @@ void runAuto
     }
 }
 
+// ────────────────── rich load & wind law (#3300 items 1+3) ──────────────────
+{
+    // The rich voice (#3300 item 1) opens with load: `cut` is the filter
+    // brightness the loudness already implies — a working engine is loud AND
+    // bright (the storm bed's pairing), and the glider has none of either.
+    let monoC = true
+    for (let v = 22; v <= 60; v += 2) {
+        if (engineBed('plane', v, 0, false, 0).cut < engineBed('plane', v - 2, 0, false, 0).cut) monoC = false
+    }
+    r.check('engine brightness rides load (cut opens with pitch and gain)',
+        monoC && engineBed('plane', 10, 0, false, 0).cut <= 700 && engineBed('plane', 60, 12, false, 0).cut >= 2000,
+        JSON.stringify(engineBed('plane', 34, 0, false, 0)))
+    r.check('the belt fan opens its filter with thrust too',
+        engineBed('belt', 0, 0, true, 0).cut > engineBed('belt', 0, 0, false, 0).cut)
+    r.check('the motorless glider is silent in every field — gain, freq AND cut',
+        engineBed('glider', 19, -8, true, 1).cut === 0 && engineBed('glider', 19, -8, true, 1).gain === 0)
+    r.check('the cut field survives garbage (NaN/±∞ in ⇒ finite cut out)',
+        Number.isFinite(engineBed('plane', NaN, 30, false, -2).cut) && Number.isFinite(engineBed('belt', 1, NaN, true, Infinity).cut))
+
+    // #3300 item 3 — windBed: the glider's air-rush. Glider-only (motorless
+    // honesty: planes and belts already own motors), rising with AIRSPEED (the
+    // stick still teaches — a float is hushed, a dive roars), capped far below
+    // the motor so it whispers, and ducked by storm depth like everything else.
+    r.check('wind blows for the glider only — plane and belt stay on their motors',
+        windBed('plane', 19, 0).gain === 0 && windBed('belt', 4, 0).gain === 0 && windBed('glider', 19, 0).gain > 0)
+    let monoW = true
+    for (let v = 10; v <= 22; v += 1) {
+        if (windBed('glider', v, 0).gain < windBed('glider', v - 1, 0).gain - 1e-9) monoW = false
+        if (windBed('glider', v, 0).cut < windBed('glider', v - 1, 0).cut) monoW = false
+    }
+    r.check('the rush grows with airspeed (gain and brightness monotonic; a slow float stays hushed)',
+        monoW && windBed('glider', 9, 0).gain === 0 && windBed('glider', 7, 0).gain === 0)
+    r.check('the rush is a whisper, not a second motor (gain ≤ 0.03, cut ≤ 700)',
+        windBed('glider', 19, 0).gain <= 0.03 && windBed('glider', 19, 0).cut <= 700,
+        JSON.stringify(windBed('glider', 19, 0)))
+    r.check('rain owns the core for the wind too (storm halves the rush, never raises it)', (() => {
+        const g0 = windBed('glider', 16, 0).gain
+        const g1 = windBed('glider', 16, 1).gain
+        let monoD = true
+        for (let s = 0; s <= 1.0001; s += 0.05) if (windBed('glider', 16, s).gain > g0 + 1e-9) monoD = false
+        return Math.abs(g1 - g0 * 0.5) < 1e-3 && g1 < g0 && monoD
+    })(), JSON.stringify(windBed('glider', 16, 1)))
+    r.check('the wind law survives garbage (NaN/±∞ in ⇒ finite, never poisoned)',
+        [windBed('glider', NaN, NaN), windBed('glider', -5, 2), windBed('glider', Infinity, Infinity)].every(
+            (b) => Number.isFinite(b.gain) && Number.isFinite(b.cut) && b.gain >= 0))
+}
+
 // -------------------------------------------------------- graduation ----
 {
     const SEEDS = [1, 7, 42, 99, 123]
@@ -974,6 +1021,11 @@ if (process.argv.includes('--mutate')) {
         ['#3332 the park never releases (throttle-deaf pad)', SIMF, "if (a) { g.park = null; ev(g, 'liftoff') }", "if (false) { g.park = null; ev(g, 'liftoff') }"],
         ['#3332 the crossing fires every tick (a firm settle parks a tick late)', SIMF, 'if (g.phase === \'free\' && g.respawnT <= 0 && g._air) {', 'if (g.phase === \'free\' && g.respawnT <= 0) {'],
         ['#3332 the crew never chocks (a parked belt blows downwind)', SIMF, 'g.p.y = deck + 0.8\n        g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0\n        g.roll = lerp(g.roll, 0, 0.2)', 'g.p.y = deck + 0.8\n        g.p.x += w.wind.x * dt; g.p.z += w.wind.z * dt\n        g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0\n        g.roll = lerp(g.roll, 0, 0.2)'],
+        ['#3300 wind blows on the plane too (motorless honesty broken)', SIMF, "if (craft !== 'glider') return { gain: 0, cut: 0 }", "if (craft !== 'plane') return { gain: 0, cut: 0 }"],
+        ['#3300 the wind ignores the storm (rush duels the rain)', SIMF, 'gain: +((0.003 + 0.024 * k * k) * (1 - 0.5 * d)).toFixed(4)', 'gain: +(0.003 + 0.024 * k * k).toFixed(4)'],
+        ['#3300 the rush ignores airspeed (a constant hiss teaches nothing)', SIMF, 'if (v <= 9) return { gain: 0, cut: 0 } // a slow float stays hushed', 'if (v <= 999) return { gain: 0, cut: 0 } // a slow float stays hushed'],
+        ['#3300 the wind bed shouts (rush drowns the ring tones)', SIMF, 'gain: +((0.003 + 0.024 * k * k) * (1 - 0.5 * d)).toFixed(4)', 'gain: +((0.03 + 0.24 * k * k) * (1 - 0.5 * d)).toFixed(4)'],
+        ['#3300 the engine stays dark at full throttle (cut frozen shut)', SIMF, 'cut = 600 + 1600 * load', 'cut = 600'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

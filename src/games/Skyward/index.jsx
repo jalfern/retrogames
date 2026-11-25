@@ -529,6 +529,9 @@ const SkywardGame = () => {
                 engine: () => engineBed(gs.craft, gs.speed, gs.vy, gs.thrusting, gs.stormS),
                 // #3300 item 3 — the wind rush the glider hears right now
                 windRush: () => windBed(gs.craft, gs.speed, gs.stormS),
+                // #3300 item 4 — are the cabinet's beds actually audible? (crash
+                // sequencing proof: eng must go false the instant a crash lands)
+                bedLive: () => ({ eng: engOnRef.current, wind: windOnRef.current }),
                 // #3302 — the seed wind, so a drive leg can crab into it and
                 // hold a straight ground track (what a pilot would do)
                 wind: () => ({ x: gs.world.wind.x, z: gs.world.wind.z }),
