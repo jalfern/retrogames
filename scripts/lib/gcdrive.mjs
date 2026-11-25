@@ -68,6 +68,32 @@ try {
     await new Promise(r => setTimeout(r, 350))
     const bedR2 = await page.evaluate(() => window.__grindTest.state())
     ok('bed stands still through the replay', bedR2.screen === 'replay' && bedR2.bed === bedR1, `bed ${bedR1}→${bedR2.bed}`)
+    // #3325: the replay free cam — C toggles the orbit, hold an arrow to swing the camera
+    const orbitPre = await page.evaluate(() => window.__grindTest.state())
+    ok('replay starts with the free cam off', orbitPre.orbit === false && orbitPre.screen === 'replay', `orbit=${orbitPre.orbit} screen=${orbitPre.screen}`)
+    await page.keyboard.press('KeyC')
+    await new Promise(r => setTimeout(r, 200))
+    const orbitOn = await page.evaluate(() => window.__grindTest.state())
+    ok('C toggles the free cam on', orbitOn.orbit === true && orbitOn.screen === 'replay', `orbit=${orbitOn.orbit}`)
+    const a0 = orbitOn.orbitA
+    await page.keyboard.down('ArrowRight')
+    await new Promise(r => setTimeout(r, 500))
+    const a1 = await page.evaluate(() => window.__grindTest.state().orbitA)
+    await page.keyboard.up('ArrowRight')
+    await new Promise(r => setTimeout(r, 250))
+    const a2 = await page.evaluate(() => window.__grindTest.state().orbitA)
+    ok('arrows swing the orbit camera', a1 > a0 + 0.2, `orbitA ${a0}→${a1}`)
+    ok('orbit holds still with no input', Math.abs(a2 - a1) < 0.05, `${a1}→${a2}`)
+    const chip = await page.evaluate(() => {
+        const el = document.querySelector('[class~="right-4"]')
+        return el ? el.textContent.trim() : null
+    })
+    ok('HUD chip shows ORBIT', !!chip && /ORBIT/.test(chip), `chip=${chip}`)
+    await page.keyboard.press('KeyC')
+    await new Promise(r => setTimeout(r, 150))
+    const orbitOff = await page.evaluate(() => window.__grindTest.state())
+    ok('C toggles the free cam off', orbitOff.orbit === false, `orbit=${orbitOff.orbit}`)
+
     await page.keyboard.press('Space')   // skip the replay
     await new Promise(r => setTimeout(r, 250))
     let ov = await page.evaluate(() => window.__grindTest.state())
