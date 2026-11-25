@@ -437,10 +437,24 @@ try {
     await p4.reload()
     await p4.waitForFunction('window.__game', { timeout: 20000 })
     let thinksSeen = false, commits = 0, bestScore = 0, tumble = 0, searchMax = 0
+    // #3401 style tell — the corner chip must name the thinker and wear each commit.
+    let chipNamed = false, chipFlash = false, chipOver = 0
+    const chipOf = (pg) => pg.evaluate(() => {
+        const el = document.querySelector('[data-q="attract-style"]')
+        if (!el) return null
+        const b = el.getBoundingClientRect()
+        return { txt: el.textContent, op: Number(el.style.opacity), r: b.right, vw: window.innerWidth }
+    })
     for (let k = 0; k < 24; k++) {
         await new Promise(r => setTimeout(r, 500))
         const st = await p4.evaluate(() => window.__grindTest.state())
         if (st.thinks && st.screen === 'attract') thinksSeen = true
+        const chip = await chipOf(p4)
+        if (chip && chip.op > 0.5) {
+            if (/LOOP 4\/4 · THINKING/.test(chip.txt)) chipNamed = true
+            if (/✓ COMMIT/.test(chip.txt)) chipFlash = true
+            chipOver = Math.max(chipOver, chip.r - (chip.vw - 6))
+        }
         if (st.screen !== 'attract') break   // the human took the plaza (shouldn't happen)
         commits = Math.max(commits, st.nCommit || 0)
         searchMax = Math.max(searchMax, st.nSearch || 0)
@@ -451,7 +465,57 @@ try {
     ok('#3394 the searcher plans and commits on the live cabinet', searchMax > 0 && commits > 0, `searched=${searchMax} committed=${commits}`)
     ok('#3394 the searched attract line scores and never bails', bestScore > 0 && tumble === 0, `score=${bestScore} tumble-samples=${tumble}`)
     ok('#3394 zero page errors on the thinking attract', errsT.length === 0, errsT.join(';'))
+    ok('#3401 the attract corner names the thinking rider', chipNamed, `named=${chipNamed}`)
+    ok('#3401 every searched commit flashes on the chip (0.6 s flash > 0.5 s sampling)', chipFlash && commits > 0, `flash=${chipFlash} commits=${commits}`)
+    ok('#3401 the style chip stays inside the frame', chipOver <= 0, `right overflow=${Math.round(chipOver)}px`)
     await p4.close()
+
+    // #3401 — the corner names EVERY rider, not just the thinker; and at phone
+    // width the chip must fit while the searcher rides and tap must still start
+    // the game mid-search (the long-lived searched line is no hostage).
+    const p5 = await openGame(browser, { url: `${BASE}/grind-city`, hook: '__grindTest' })
+    await p5.waitForFunction('window.__game', { timeout: 20000 })
+    await p5.evaluate(() => { try { localStorage.clear() } catch { /* private mode */ } })
+    await p5.reload()
+    await p5.waitForFunction('window.__game', { timeout: 20000 })
+    await new Promise(r => setTimeout(r, 450))
+    const chip0 = await chipOf(p5)
+    ok('#3401 a fresh plaza names the classic rider', !!chip0 && /LOOP 1\/4 · CLASSIC/.test(chip0.txt) && chip0.op > 0.5, JSON.stringify(chip0))
+    await p5.close()
+
+    const p6 = await openGame(browser, { url: `${BASE}/grind-city?style=3`, viewport: { width: 390, height: 844 }, hook: '__grindTest', touch: true })
+    await p6.waitForFunction('window.__game', { timeout: 20000 })
+    await p6.evaluate(() => { try { localStorage.clear() } catch { /* private mode */ } })
+    await p6.reload()
+    await p6.waitForFunction('window.__game', { timeout: 20000 })
+    let chipPhone = null
+    for (let k = 0; k < 8; k++) {
+        await new Promise(r => setTimeout(r, 400))
+        const c = await chipOf(p6)
+        if (c && c.op > 0.5) { chipPhone = c; break }
+    }
+    ok('#3401 phone 390px: the thinker wears its chip', !!chipPhone && /LOOP 4\/4 · THINKING/.test(chipPhone.txt) && chipPhone.r <= chipPhone.vw - 6,
+        chipPhone ? `txt="${chipPhone.txt}" r=${Math.round(chipPhone.r)}/${chipPhone.vw}` : 'chip missing')
+    // the first cut drew the chip into the ARCADE button — pin that corner peace
+    // forever: the chip's box must not intersect any chrome button it shares with.
+    const coll = await p6.evaluate(() => {
+        const q = document.querySelector('[data-q="attract-style"]')
+        if (!q) return null
+        const qb = q.getBoundingClientRect()
+        const hits = [...document.querySelectorAll('button,div,span,a')].filter(el => el.children.length === 0 && ['ARCADE', 'FEEDBACK', 'PAUSE', 'PADS'].includes(el.textContent.trim()))
+        let bad = 0
+        for (const el of hits) {
+            const b = el.getBoundingClientRect()
+            if (qb.left < b.right && qb.right > b.left && qb.top < b.bottom && qb.bottom > b.top) bad++
+        }
+        return { chrome: hits.length, overlaps: bad }
+    })
+    ok('#3401 the rider chip shares no ink with the chrome buttons', !!coll && coll.chrome >= 2 && coll.overlaps === 0, JSON.stringify(coll))
+    await p6.touchscreen.tap(195, 420)
+    await new Promise(r => setTimeout(r, 400))
+    const tapScreen = await p6.evaluate(() => window.__grindTest.state().screen)
+    ok('#3401 phone tap still preempts the search mid-attract', tapScreen === 'play', `screen=${tapScreen}`)
+    await p6.close()
 
     console.log(out.join('\n'))
     console.log(out.every(l => l.startsWith('PASS')) ? 'DRIVE GREEN' : 'DRIVE RED')

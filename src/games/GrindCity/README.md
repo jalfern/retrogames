@@ -222,6 +222,12 @@ hash or pin change.
   throws, score 20702 vs 18910. The witness line (planner v0) is untouched:
   `grindcheck` still grades exactly that bot, and style v3 is the fourth
   attract loop (`?style=n` shifts the rotation origin for drivers).
+- **CLOSED by #3401** — ~~The thinking loop is invisible.~~ The attract's
+  bottom-left corner now names its rider (`LOOP n/4 · CLASSIC/FLIP/GRAB/
+  THINKING`); the thinker pulses green and flashes `✓ COMMIT` on every
+  searched commit. It only speaks while the BOT rides — a banked best line
+  or a shared line is the player's own, so the chip stays silent for those.
+  `gcdrive` pins the naming, the commit flash, phone fit and chrome peace.
 - `snapshot`/`restore` are intentionally absent from the contract — the sim
   state holds functions (`park.height/normals`), so JSON can't copy it (#391);
   drivers use `reset(seed)` + long `tick()` batches instead, like IronKeep.
