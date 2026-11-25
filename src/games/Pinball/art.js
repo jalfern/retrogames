@@ -21,6 +21,51 @@ export const PAL = {
     dmd: '#ffb32e',           // dot-matrix insert (rung 3)
     dmdOff: 'rgba(255,179,46,0.06)',
     mag: '#9d7bff',           // magnet field violet
+    // rgb triples + alpha-baked variants so every glow follows the cabinet
+    hotRgb: '255,61,94',
+    magRgb: '157,123,255',
+    trailRgb: '190,210,255',
+    spark: '180,205,255',
+    capHi: '#ff8095',
+    hotOff: 'rgba(255,61,94,0.18)',
+    magOff: 'rgba(157,123,255,0.25)',
+    hotSoft: 'rgba(255,61,94,0.85)',
+    hotGlass: 'rgba(255,61,94,0.20)',
+    glowOff: 'rgba(127,216,255,0.15)',
+    hotDim: 'rgba(255,61,94,0.25)',
+    kickerRgb: '255,176,46',
+};
+
+// CABINET TWO "EMBER RIDER" (#3232) — the hot build: oxblood field, gold
+// lanes, ember-red alerts, and a teal magnet as its one cool accent.
+export const PAL_EMBER = {
+    fieldTop: '#2b0f10',
+    fieldBot: '#120405',
+    lane: '#ffd166',
+    laneDim: 'rgba(255,209,102,0.25)',
+    neon: '#ff9d2e',
+    hot: '#ff4d3a',
+    sling: '#ffb05c',
+    chrome: '#e8d9c4',
+    glow: '#ffcf8a',
+    score: '#ffdf9e',
+    wood: '#2e1410',
+    woodHi: '#55291d',
+    dmd: '#ffdf9e',
+    dmdOff: 'rgba(255,223,158,0.06)',
+    mag: '#3ddad7',
+    hotRgb: '255,77,58',
+    magRgb: '61,218,215',
+    trailRgb: '255,190,140',
+    spark: '255,205,170',
+    capHi: '#ff9a80',
+    hotOff: 'rgba(255,77,58,0.18)',
+    magOff: 'rgba(61,218,215,0.25)',
+    hotSoft: 'rgba(255,77,58,0.85)',
+    hotGlass: 'rgba(255,77,58,0.20)',
+    glowOff: 'rgba(255,207,138,0.15)',
+    hotDim: 'rgba(255,77,58,0.25)',
+    kickerRgb: '255,158,74',
 };
 
 export const SCORE_DIGITS = 6;
@@ -54,33 +99,36 @@ export function drawSevenSeg(ctx, x, y, digit, color, dim) {
     seg(x, y + h / 2, x + w, y + h / 2, on(0b0000001)); // g
 }
 
-// playfield base texture — built once into an offscreen canvas by index.jsx.
-// Deterministic (seeded), so the cabinet looks identical every load: indigo
-// gradient, faint starfield sparkle, converging lane chevrons, subtle grain.
-export function paintField(ctx, W, H) {
+// playfield base texture — built once per cabinet into an offscreen canvas by
+// index.jsx. Deterministic (seeded), so a cabinet looks identical every load.
+// #3232: gradient/sparkle follow the cabinet's palette, and every lane-anchored
+// element (firelane bed, orbit channel, lock nameplate, chevrons) is drawn from
+// the table's own view geometry — one renderer, both cabinets.
+export function paintField(ctx, W, H, pal = PAL, tb = null) {
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, PAL.fieldTop); g.addColorStop(1, PAL.fieldBot);
+    g.addColorStop(0, pal.fieldTop); g.addColorStop(1, pal.fieldBot);
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     // procedural sparkle (seeded LCG — deterministic texture)
     let s = 0x51ed270b;
     const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
     for (let i = 0; i < 260; i++) {
         const x = rnd() * W, y = rnd() * H, a = 0.03 + rnd() * 0.08;
-        ctx.fillStyle = `rgba(180,205,255,${a.toFixed(3)})`;
+        ctx.fillStyle = `rgba(${pal.spark},${a.toFixed(3)})`;
         ctx.fillRect(x, y, 1, 1);
     }
-    // big stylised chevrons — original "Cabinet One" art: power lanes
+    // big stylised chevrons — original art: power lanes, centred on the bank
+    const bcx = tb ? tb.view.bankCx : 187;
     ctx.save();
     ctx.globalAlpha = 0.12;
-    ctx.strokeStyle = PAL.lane; ctx.lineWidth = 3;
+    ctx.strokeStyle = pal.lane; ctx.lineWidth = 3;
     for (let i = 0; i < 3; i++) {
         const y = 340 + i * 26;
-        ctx.beginPath(); ctx.moveTo(120, y); ctx.lineTo(187, y - 26); ctx.lineTo(254, y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(bcx - 67, y); ctx.lineTo(bcx, y - 26); ctx.lineTo(bcx + 67, y); ctx.stroke();
     }
     ctx.restore();
     // faint hex-plate ring under the bumper cluster
     ctx.save();
-    ctx.globalAlpha = 0.18; ctx.strokeStyle = PAL.glow; ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.18; ctx.strokeStyle = pal.glow; ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i <= 6; i++) {
         const a = (Math.PI / 3) * i - Math.PI / 6;
@@ -88,51 +136,49 @@ export function paintField(ctx, W, H) {
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.stroke(); ctx.restore();
-    // rung 2: firelane bed — a dim amber strip down the dome's right flank,
+    if (!tb) return;
+    const v = tb.view;
+    // firelane bed — a dim strip down the dome's flank holding the lane,
     // descending chevrons that read "this lane runs DOWN into the tower".
     ctx.save();
-    ctx.globalAlpha = 0.10; ctx.fillStyle = PAL.lane;
-    ctx.fillRect(298, 192, 24, 280);
-    ctx.globalAlpha = 0.22; ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.10; ctx.fillStyle = pal.lane;
+    ctx.fillRect(v.laneBedX, 192, v.laneBedW, 280);
+    ctx.globalAlpha = 0.22; ctx.strokeStyle = pal.lane; ctx.lineWidth = 2;
     for (let i = 0; i < 5; i++) {
         const y = 220 + i * 44;
-        ctx.beginPath(); ctx.moveTo(302, y); ctx.lineTo(310, y + 12); ctx.lineTo(318, y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(v.laneCx - 8, y); ctx.lineTo(v.laneCx, y + 12); ctx.lineTo(v.laneCx + 8, y); ctx.stroke();
     }
     // "LOCK TOWER" nameplate glow above the capture mouth
-    ctx.globalAlpha = 0.35; ctx.fillStyle = PAL.hot;
+    ctx.globalAlpha = 0.35; ctx.fillStyle = pal.hot;
     ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center';
-    ctx.fillText('LOCK', 310, 424);
+    ctx.fillText('LOCK', v.laneCx, 424);
     ctx.restore();
-    // rung 3: orbit channel — amber rails up the left flank with climbing
-    // chevrons ("this lane runs UP around the dome"), an amber bed wash so the
-    // lane reads as a lane, and a vertical nameplate. Kept clear of the magnet
-    // halo (x=240) — the orbit run is unmistakably its own lane.
+    // orbit channel — rails up the flank with climbing chevrons ("this lane
+    // runs UP around the dome"), a bed wash so it reads as a lane, and a
+    // vertical nameplate. Kept clear of the magnet halo — the orbit run is
+    // unmistakably its own lane.
     ctx.save();
-    // faint amber bed under the rails — the lane reads as a track, not a gap
-    ctx.globalAlpha = 0.09; ctx.fillStyle = PAL.lane;
-    ctx.fillRect(13, 128, 24, 282);
-    // the two rails
-    ctx.globalAlpha = 0.34; ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.moveTo(12, 128); ctx.lineTo(12, 412); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(38, 128); ctx.lineTo(38, 412); ctx.stroke();
-    // climbing chevrons — placed clear of the nameplate band (y≈248..302)
+    ctx.globalAlpha = 0.09; ctx.fillStyle = pal.lane;
+    ctx.fillRect(v.railBedX, v.chTop, v.railBedW, v.chBot - v.chTop + 15);
+    ctx.globalAlpha = 0.34; ctx.strokeStyle = pal.lane; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(v.railX1, v.chTop); ctx.lineTo(v.railX1, v.chBot - 3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(v.railX2, v.chTop); ctx.lineTo(v.railX2, v.chBot - 3); ctx.stroke();
     ctx.globalAlpha = 0.30; ctx.lineWidth = 2.5;
     for (const yy of [156, 192, 318, 352, 386]) {
-        ctx.beginPath(); ctx.moveTo(16, yy); ctx.lineTo(25, yy - 11); ctx.lineTo(34, yy); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(v.railCx - 9, yy); ctx.lineTo(v.railCx, yy - 11); ctx.lineTo(v.railCx + 9, yy); ctx.stroke();
     }
     // vertical nameplate — "O R B I T" down the middle of the channel
-    ctx.globalAlpha = 0.6; ctx.fillStyle = PAL.lane;
+    ctx.globalAlpha = 0.6; ctx.fillStyle = pal.lane;
     ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
     const lbl = 'ORBIT';
-    for (let i = 0; i < lbl.length; i++) ctx.fillText(lbl[i], 25, 250 + i * 13);
+    for (let i = 0; i < lbl.length; i++) ctx.fillText(lbl[i], v.railCx, 250 + i * 13);
     ctx.restore();
-    // rung 3: magnet plate — a violet halo ring right-mid; the dynamic field
-    // pulse draws live in index.jsx.
+    // magnet plate — a halo ring mid-field; the dynamic field pulse lives in index.jsx.
     ctx.save();
-    ctx.globalAlpha = 0.12; ctx.strokeStyle = PAL.mag; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(240, 350, 22, 0, 7); ctx.stroke();
+    ctx.globalAlpha = 0.12; ctx.strokeStyle = pal.mag; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(tb.magnet.x, tb.magnet.y, 22, 0, 7); ctx.stroke();
     ctx.globalAlpha = 0.2;
-    ctx.beginPath(); ctx.arc(240, 350, 15, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(tb.magnet.x, tb.magnet.y, 15, 0, 7); ctx.stroke();
     ctx.restore();
 }
 
@@ -173,6 +219,8 @@ export const DMD_MSGS = [
     'MULT x2', 'CAREFUL...', 'TILT!', 'BONUS +1200', 'BALL 2', 'ORBIT! +100',
     'ORBIT SET!', 'ORBIT LOCK!', 'RAMP SET! +500', 'LANE SWEEP!', 'LOCK 1/3',
     'MULTIBALL!', 'BALL SAVE!', 'EXTRA BALL', 'MAGNET!', 'SNAP! +50', 'EXTRA x1',
+    // #3232 EMBER RIDER variants (same charset, new literals — pinned anyway)
+    'RAMP SET! +600', 'ORBIT! +150', 'SNAP! +75', 'MULT x4', 'BALL SAVE!',
 ];
 
 // idle crawl lines for the strip when nothing is announced
@@ -196,23 +244,23 @@ function hotScroll(text, t, T) {
     return 0;
 }
 
-export function drawDMD(ctx, view) {
+export function drawDMD(ctx, view, pal = PAL) {
     const { x, y, cols, rows, dot } = DMD;
     // bezel + dark glass
     const hot = /TILT|MULTIBALL|MULT x[0-9]|ORBIT SET|ORBIT LOCK|RAMP SET|SAVE/.test(view.text);
     const multi = view.text.startsWith('MULTIBALL');
     const bezelGlow = hot ? (multi ? 22 : 12) : 6;
     ctx.save();
-    ctx.shadowColor = hot ? PAL.hot : 'rgba(201,212,232,0.4)';
+    ctx.shadowColor = hot ? pal.hot : 'rgba(201,212,232,0.4)';
     ctx.shadowBlur = bezelGlow;
     ctx.fillStyle = 'rgba(4,6,16,0.94)';
     ctx.fillRect(x - 4, y - 4, cols * dot + 8, rows * dot + 8);
-    ctx.strokeStyle = hot ? 'rgba(255,61,94,0.85)' : 'rgba(201,212,232,0.35)';
+    ctx.strokeStyle = hot ? pal.hotSoft : 'rgba(201,212,232,0.35)';
     ctx.lineWidth = hot ? 2 : 1.5;
     ctx.strokeRect(x - 4.5, y - 4.5, cols * dot + 9, rows * dot + 9);
     ctx.shadowBlur = 0;
     // unlit dot grid — the glass is never fully dark; chunkier lit dots vs hairline unlit
-    ctx.fillStyle = hot ? 'rgba(255,61,94,0.20)' : PAL.dmdOff;
+    ctx.fillStyle = hot ? pal.hotGlass : pal.dmdOff;
     const uDot = dot * 0.34;
     for (let cx = 0; cx < cols; cx++) {
         for (let ry = 0; ry < rows; ry++) {
@@ -220,7 +268,7 @@ export function drawDMD(ctx, view) {
         }
     }
     // content
-    const color = hot ? PAL.hot : PAL.dmd;
+    const color = hot ? pal.hot : pal.dmd;
     let off, text;
     if (view.text) {
         text = view.text;
@@ -262,4 +310,16 @@ export const MESSAGES = [
     'RIDE THE LEFT RAIL — 3 ORBITS LIGHT THE SET',
     'THE MAGNET SNARES STRAY BALLS — WHEN ARMED',
     'THE LEFT OUTLANE SPINS AND KICKS — B NUDGES, CAREFULLY',
+];
+// EMBER RIDER (CABINET TWO, #3232) — same idiom, mirrored side, hotter rules.
+export const MESSAGES_EMBER = [
+    'EMBER RIDER — LEFT LANE · HOTTER ECONOMY',
+    'THE WHOLE TABLE RUNS MIRRORED — LAUNCH UP THE LEFT',
+    'THE RIGHT OUTLANE SPINS AT 15 — FEED IT',
+    'AROUND THE DOME INTO THE LEFT FIRELANE — LOCK 3',
+    'RIDE THE RIGHT RAIL — 3 ORBITS LIGHT THE SET',
+    'MULTIBALL PAYS 1200 ON THE RIDER',
+    'TILT DECAYS FASTER HERE — NUDGE WITH CARE',
+    'BALL SAVE IS ONLY 4 SECONDS — FIRST DRAIN',
+    'BANK CLEAR PAYS 300 — MULT CLIMBS TO x4',
 ];

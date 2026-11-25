@@ -1,745 +1,797 @@
-// PINBALL — CABINET ONE (issue #3103, rung 1: shared table engine + table 1).
-// Shell only: loop, scaling, attract, pause, pad, harness wiring. All rules and
-// physics live in sim.js (pure, Node-auditable); look in art.js. Bar: MODERN —
-// a lit, reflective cabinet you want to look at. Original art & audio, in code.
+import { useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { GAMES } from '../../config/games.js'
+import { useGameLoop } from '../../hooks/useGameLoop.js'
+import { useVirtualControls } from '../../hooks/useVirtualControls.js'
+import { useKeyboard } from '../../hooks/useKeyboard.js'
+import PauseOverlay from '../../components/PauseOverlay.jsx'
+import AttractPrompt from '../../components/AttractPrompt.jsx'
+import VirtualControls from '../../components/VirtualControls.jsx'
+import { exposeGame, unexposeGame, exposeDevTools, unexposeDevTools } from '../../utils/testHooks.js'
+import { audioController } from '../../utils/AudioController.js'
+import { makeGame, stateOf, TABLE, TABLE_TWO, CABS, plungerPower } from './sim.js'
+import { PAL, PAL_EMBER, CABS_UI, DMD_MSGS, DMD_MSGS_EMBER, paintField, drawDMD } from './art.js'
 
-import React, { useEffect, useRef, useState, useCallback } from 'react'
-import PauseOverlay from '../../components/PauseOverlay'
-import VirtualControls from '../../components/VirtualControls'
-import AttractMessage from '../../components/AttractMessage'
-import { GAMES } from '../../config/games'
-import { audioController } from '../../utils/AudioController'
-import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
-import {
-    makeGame, stepGame, stateOf, stateHash, TABLE, W, H, BALL_R,
-} from './sim.js'
-import { PAL, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, drawDMD, dmdIdle } from './art.js'
+/* ===========================================================================
+ * PINBALL — "NEON TABLE" (CABINET ONE) + "EMBER RIDER" (CABINET TWO).
+ *
+ * The attract screen is a ROW OF CABINETS: two real machines side by side,
+ * each with its own playfield, DMD and rules. Arrows/tap pick a machine, a
+ * plunger pull deals the ball into THAT table. CABINET TWO is the exact
+ * x-mirror of CABINET ONE (its lane, kicker pocket and orbit curl are
+ * recorded in TABLE_TWO data and mirrored by the engine), with a hotter
+ * economy and an oxblood/gold/teal palette — pinballcheck proves the
+ * mirror with an equivariance test, not by re-tuning physics.
+ *
+ * Engine notes live in README.md. One fixed-timestep loop; every moving
+ * ball asks blocked() before it moves.
+ * ========================================================================= */
 
 const FIXED_DT = 1000 / 60
+const W = 360
+const H = 640
+const DPR = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
+const d2 = (p) => Math.round(p * DPR)
 
-const sfxFor = (ev) => {
-    const a = audioController
+const CAB_ONE = CABS.find((c) => c.id === 'one')
+const CAB_TWO = CABS.find((c) => c.id === 'two')
+
+function palFor(ember) { return ember ? PAL_EMBER : PAL }
+
+const sfxFor = (ev, a, ember) => {
+    const P = palFor(ember)
     switch (ev.type) {
-        case 'flip': a.playNoise(0.03, 0.12); a.playTone(150, 0.03, 'triangle', 0.07); break
-        case 'bumper': a.playTone(660, 0.05, 'square', 0.12); a.playNoise(0.04, 0.13); a.playTone(880, 0.04, 'square', 0.07, 0.03); break
-        case 'sling': a.playTone(320, 0.05, 'square', 0.1); a.playNoise(0.03, 0.09); break
-        case 'target': a.playSweep(520, 980, 0.09, 'square', 0.1); break
-        case 'bank':
-            a.playTone(523, 0.08, 'square', 0.1); a.playTone(659, 0.08, 'square', 0.1, 0.08)
-            a.playTone(784, 0.12, 'square', 0.11, 0.16); a.playNoise(0.06, 0.1, 0.2); break
-        case 'spinner': a.playTone(1500, 0.025, 'square', 0.05); break
-        case 'kicker': a.playSweep(220, 660, 0.15, 'triangle', 0.12); break
-        case 'plunge': a.playSweep(120, 700, 0.22, 'triangle', 0.14); break
-        case 'ratchet': a.playTone(160 + 460 * (ev.power || 0), 0.02, 'square', 0.06); a.playNoise(0.015, 0.05); break
-        case 'drain': a.playSweep(420, 70, 0.35, 'sawtooth', 0.12); a.playNoise(0.15, 0.1); break
-        case 'bonus':
-            a.playTone(523, 0.05, 'square', 0.08); a.playTone(659, 0.05, 'square', 0.08, 0.06)
-            a.playTone(784, 0.09, 'square', 0.09, 0.12); break
-        case 'tiltwarn': a.playTone(220, 0.08, 'square', 0.09); break
-        case 'tilt': a.playTone(180, 0.28, 'square', 0.13); break
-        case 'nudge': a.playNoise(0.05, 0.07); break
-        case 'ballstart': a.playTone(784, 0.06, 'square', 0.1); a.playTone(1046, 0.08, 'square', 0.1, 0.07); break
-        // ---- rung 2 ----
-        case 'ramp': a.playTone(980, 0.04, 'square', 0.09); break
-        case 'rampset':
-            a.playTone(587, 0.07, 'square', 0.1); a.playTone(740, 0.07, 'square', 0.1, 0.06)
-            a.playTone(880, 0.1, 'square', 0.11, 0.12); break
-        // lane rollovers step up a pitch ladder with the sweep: each of the
-        // three LANE rollovers rings brighter than the last, so the descent
-        // teaches its own progress by ear (#3178)
+        case 'bumper': a.playTone(ember ? 660 : 520, 0.03, 'square', 0.09); break
+        case 'sling': a.playTone(300, 0.025, 'triangle', 0.09); break
+        case 'target': a.playTone(ember ? 980 : 880, 0.03, 'square', 0.09); break
+        case 'dropReset': a.playTone(240, 0.04, 'sawtooth', 0.05); break
+        case 'spinner': a.playTone(ember ? 1520 : 1600, 0.015, 'square', 0.05); break
+        // #3178 rollover pitch ladder: each lane rings brighter than the last
         case 'lane': a.playTone(1240 + 240 * (ev.i || 0), 0.035, 'square', 0.08); break
-        case 'lanesweep':
-            a.playTone(740, 0.06, 'square', 0.1); a.playTone(988, 0.1, 'square', 0.11, 0.05); break
-        case 'lock': a.playTone(196, 0.12, 'square', 0.14); a.playNoise(0.06, 0.12, 0.15); break
-        case 'multiball':
-            [523, 659, 784, 1046].forEach((f, i) => a.playTone(f, 0.1, 'square', 0.11, i * 0.09))
-            a.playSweep(180, 720, 0.3, 'sawtooth', 0.12); break
-        case 'save': a.playSweep(330, 880, 0.22, 'triangle', 0.12); break
-        case 'extraball': a.playTone(1318, 0.08, 'square', 0.1); a.playTone(1568, 0.12, 'square', 0.1, 0.08); break
-        case 'extraballpaid':
-            [784, 988, 1175].forEach((f, i) => a.playTone(f, 0.09, 'square', 0.1, i * 0.08)); break
-        case 'packdrain': a.playNoise(0.08, 0.08); break
-        case 'ballhit': // steel on steel (#3217): bright short clack, pitched by impact
-            a.playTone(1750 + 650 * Math.min(1, (ev.v || 0) / 500), 0.035, 'triangle', 0.08);
-            a.playTone(2600, 0.02, 'square', 0.05, 0.01); a.playNoise(0.012, 0.05); break
-        case 'feed': a.playSweep(140, 420, 0.14, 'triangle', 0.08); break
-        case 'gameover':
-            [392, 311, 262, 196].forEach((f, i) => a.playTone(f, 0.14, 'square', 0.1, i * 0.13)); break
-        // ---- rung 3 ----
-        case 'curl': a.playSweep(300, 720, 0.16, 'triangle', 0.08); a.playNoise(0.04, 0.05); break
-        case 'orbitarm': a.playTone(1180, 0.03, 'square', 0.07); break
-        // magnet grab: a gentler triangle sweep + a breath of air, no sawtooth snarl —
-        // it must not mask the chain it feeds into.
-        case 'maggrab': a.playSweep(520, 220, 0.10, 'triangle', 0.07); a.playNoise(0.04, 0.05); break
-        // orbit completion: a low kick under the triad — bigger than a lane rollover
-        case 'orbit':
-            a.playTone(196, 0.12, 'square', 0.09);
-            [523, 659, 784].forEach((f, i) => a.playTone(f, 0.06, 'square', 0.1, i * 0.05 + 0.02))
-            a.playNoise(0.04, 0.06); break
-        // orbit set: low kick + triad — louder than the routine ramp set
-        case 'orbitset':
-            a.playTone(147, 0.15, 'square', 0.1);
-            [587, 740, 880, 1175].forEach((f, i) => a.playTone(f, 0.08, 'square', 0.11, i * 0.07 + 0.02)); break
-        // orbit lock: a low thump under the ring — chunky, not glassy
-        case 'orbitlock':
-            a.playTone(98, 0.16, 'sawtooth', 0.09)
-            a.playTone(196, 0.12, 'square', 0.14); a.playSweep(900, 300, 0.18, 'sawtooth', 0.08); break
-        case 'magfree':
-            a.playSweep(320, 1568, 0.12, 'square', 0.09); a.playNoise(0.03, 0.06); break
-        case 'magready': a.playTone(1568, 0.05, 'square', 0.05); break
-        case 'start': a.playTone(392, 0.07, 'square', 0.1); a.playTone(523, 0.07, 'square', 0.1, 0.07); a.playTone(659, 0.1, 'square', 0.1, 0.14); break
+        case 'lock': a.playSweep(ember ? 240 : 300, ember ? 780 : 900, 0.35, 'square', 0.08); break
+        case 'kick': a.playNoise(0.08, 0.11); a.playTone(180, 0.06, 'square', 0.08); break
+        case 'multiball': a.playSweep(120, 720, 0.5, 'sawtooth', 0.12); break
+        case 'jet': a.playSweep(ember ? 1300 : 1500, ember ? 320 : 400, 0.12, 'sawtooth', 0.06); break
+        // #3178 ramp is a chord, not a single chirp — up-sweep plus an overtone
+        // swaying a fifth above (ember adds a third: the right loop is a chord)
+        case 'ramp':
+            a.playSweep(620, 1180, 0.14, 'square', 0.07)
+            a.playSweep(930, 1770, 0.14, 'square', 0.05)
+            if (ember) a.playSweep(1240, 2360, 0.14, 'square', 0.035)
+            break
+        // #3178 orbit: a shorter, brighter sweep than the ramp so the fast
+        // loop around the top reads as itself, not as a repeat of the loop sound
+        case 'orbit': a.playSweep(ember ? 780 : 840, ember ? 1560 : 1690, 0.1, 'square', 0.06); break
+        case 'tilt': a.playNoise(0.3, 0.12); a.playTone(90, 0.24, 'square', 0.1); break
+        case 'drain': a.playSweep(320, 110, 0.22, 'triangle', 0.08); break
+        case 'extraBall': a.playSweep(500, 1500, 0.3, 'square', 0.09); break
+        case 'over': a.playSweep(400, 80, 0.6, 'sawtooth', 0.1); break
+        case 'lightup': a.playTone(1100, 0.02, 'square', 0.045); break
+        case 'award': a.playSweep(400, 1200, 0.25, 'square', 0.09); break
+        case 'launch': a.playSweep(ember ? 300 : 260, ember ? 960 : 900, 0.12, 'square', 0.05); break
+        case 'magnet': a.playSweep(200, 120, 0.18, 'sawtooth', 0.09); break
+        case 'magRelease': a.playTone(P.bright & 0xffff, 0.02, 'square', 0.06); break
+        case 'dropClear': a.playSweep(700, 1900, 0.3, 'square', 0.1); break
+        case 'nudge': a.playNoise(0.05, 0.08); break
+        case 'select': a.playTone(ember ? 560 : 420, 0.05, 'square', 0.07); break
         default: break
     }
 }
 
-const PinballGame = () => {
-    const canvasRef = useRef(null)
-    // #1473 seed pin: a filed report carries the seed, feedbackreplay opens
-    // `/pinball?seed=N` — honor it at every human start, keep own RNG otherwise.
-    const freshSeed = () => (seedFromQuery() ?? (Date.now() >>> 0))
-    const gsRef = useRef(makeGame(freshSeed()))
-    const keysRef = useRef({ left: false, right: false, a: false, down: false, b: false })
-    const partsRef = useRef([])
-    const flashRef = useRef({ bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0, ramp: 0, lane: TABLE.laneRollovers.map(() => 0), lock: 0, mb: 0, flash: 0, orbit: 0, orbitArm: 0, mag: 0, magFree: 0 })
-    const shakeRef = useRef(0)
-    const mbBedRef = useRef(false)
-    const trailRef = useRef([])
-    const ringsRef = useRef([])  // rung 3: expanding event rings (presentation only)
-    const fieldRef = useRef(null)
-    const screenRef = useRef('attract')
-    const [screen, setScreen] = useState('attract')
-    const [paused, setPaused] = useState(false)
-    const pausedRef = useRef(false)
-    pausedRef.current = paused
-    screenRef.current = screen
+/* --- shared react helpers: set a flash slot + a floating score popup ------- */
+function react(events, flashRef, popsRef, ember) {
+    const fl = flashRef.current
+    const P = palFor(ember)
+    let sound = null
+    const addPop = (x, y, text, color, big) => {
+        if (popsRef.current.length < 10) popsRef.current.push({ x, y, text, color, life: 48, vy: -0.55, big: !!big })
+    }
+    for (const ev of events) {
+        switch (ev.type) {
+            case 'bumper': fl.bumpers[ev.i] = 10; spawnRing(ev.x, ev.y, P.hot, 18); spawn(ev.x, ev.y, 5, P.hot, 160); addPop(ev.x, ev.y, '+' + ev.points, P.hot); break
+            case 'sling': fl.slings[ev.i] = 10; spawn(ev.x, ev.y, 4, P.accent, 180); addPop(ev.x, ev.y, '+' + ev.points, P.accent); break
+            case 'target': fl.targets[ev.i] = 16; spawnRing(ev.x, ev.y, P.star, 12); addPop(ev.x, ev.y, '+' + ev.points, P.star); break
+            case 'spinner': fl.spinner = 8; break
+            case 'lane': fl.lane[ev.i] = 22; addPop(ev.x, ev.y, '+' + ev.points, P.bright); break
+            case 'lock': fl.lock = 34; spawnRing(ev.x, ev.y, P.star, 14); addPop(ev.x, ev.y - 14, 'BALL LOCKED', P.star, true); break
+            case 'kick': fl.lock = 26; spawnRing(ev.x, ev.y, P.glow, 24); break
+            case 'multiball': {
+                fl.mb = 90; fl.flash = 14; shakeRef_shake(fl, 12)
+                addPop(W / 2, H / 2 - 60, 'MULTIBALL!' + (ev.hold ? ' ×3 HELD!' : ''), P.glow, true)
+                // the tower mouth erupts: a ring + shower from each kick port so
+                // the pack-off lands on a 6-inch screen, not only desk width (#3178)
+                const tb = ember ? TABLE_TWO : TABLE
+                for (const k of tb.mbKick) { spawnRing(k.x, k.y, P.glow, 26, 3, 14); spawn(k.x, k.y, 14, P.glow, 220) }
+                break
+            }
+            case 'jet': spawn(ev.x, ev.y, 6, P.star, 200); break
+            case 'tilt': fl.tilt = 120; shakeRef_shake(fl, 8); addPop(W / 2, H / 2 - 40, 'TILT!', P.warn, true); break
+            case 'drain': fl.drain = 18; spawn(ev.x, ev.y, 8, P.warn, 60); break
+            case 'extraBall': addPop(W / 2, 220, 'BALL SAVE!', P.lane, true); break
+            case 'lightup': fl.lane[ev.i] = 22; break
+            case 'award': fl.bank = 26; fl.mb = Math.max(fl.mb, 50); addPop(45, ev.y, '+' + ev.points, P.star, true); break
+            case 'orbit': fl.orbit = 14; addPop(W / 2, 74, 'ORBIT! +' + ev.points, P.glow, true); break
+            case 'orbitArm': fl.orbitArm = 16; break
+            case 'mag': fl.mag = 18; break
+            case 'magRelease': fl.magFree = 30; addPop(ev.x, ev.y, '+' + ev.points, P.glow); break
+            case 'dropClear': fl.bank = 30; addPop(45, 180, 'BANK CLEAR! +' + ev.points, P.glow, true); break
+            case 'dropReset': fl.bank = 12; break
+            case 'over': fl.drain = 30; break
+            default: break
+        }
+        if (sound === null) sound = ev.type
+    }
+    return sound
+}
+/* tiny indirection so react() can shake without closing over the component */
+let shakeFn = null
+function shakeRef_shake(_fl, n) { if (shakeFn) shakeFn(n) }
 
-    const startPlay = useCallback(() => {
-        gsRef.current = makeGame(freshSeed())
-        partsRef.current = []
-        trailRef.current = []
-        screenRef.current = 'play'; setScreen('play')
-        sfxFor({ type: 'start' })
+function Pinball() {
+    const canvasRef = useRef(null)
+    const gameRef = useRef(null)
+    const screenRef = useRef('attract') // attract | play | over
+    const pausedRef = useRef(false)
+    const attractRef = useRef(0)
+    const overRef = useRef(0)
+    const keysRef = useRef({})
+    const plungerRef = useRef({ charge: 0, lastFire: -999, tick: 0 })
+    const flashRef = useRef({ bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0, ramp: 0, lane: TABLE.laneRollovers.map(() => 0), lock: 0, flash: 0, mb: 0, orbit: 0, orbitArm: 0, mag: 0, magFree: 0 })
+    const popsRef = useRef([])
+    const particlesRef = useRef([])
+    const ringsRef = useRef([])
+    const cabRef = useRef('one')
+    const shakeRef = useRef(0)
+    const lastSoundRef = useRef(0)
+    const mbBedRef = useRef(false)
+    const [searchParams] = useSearchParams()
+    const liteMode = searchParams.get('lite') === '1'
+    const devMode = searchParams.get('dev') === '1'
+    const [, controls] = useVirtualControls()
+    useKeyboard()
+
+    useEffect(() => { shakeFn = (n) => { shakeRef.current = Math.max(shakeRef.current, n) }; return () => { shakeFn = null } }, [])
+
+    const setCab = (id) => {
+        if (cabRef.current === id) return
+        cabRef.current = id
+        const a = audioController
+        if (a.unlockState?.() !== 'ready') { try { a.unlock() } catch { /* unlock pending gesture */ } }
+        sfxFor({ type: 'select' }, a, id === 'two')
+    }
+
+    const pickCabDelta = (d) => {
+        const i = CABS.findIndex((c) => c.id === cabRef.current)
+        setCab(CABS[(i + d + CABS.length) % CABS.length].id)
+    }
+
+    useEffect(() => {
+        const onKeyDown = (e) => {
+            keysRef.current[e.code] = true
+            const scr = screenRef.current
+            if (scr === 'attract') {
+                if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') pickCabDelta(e.code === 'ArrowLeft' ? -1 : 1)
+                else if (e.code === 'ArrowUp' || e.code === 'Space' || e.code === 'Enter') startGame()
+                return
+            }
+            if (scr === 'over') {
+                if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { screenRef.current = 'attract'; attractRef.current = 0 }
+                else if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowUp') startGame() // quick-retry keeps the cabinet
+                return
+            }
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') gameRef.current?.setFlipper('left', true)
+            if (e.code === 'ArrowRight' || e.code === 'KeyL') gameRef.current?.setFlipper('right', true)
+            if (e.code === 'KeyZ') gameRef.current?.nudge(-1, 0)
+            if (e.code === 'KeyX') gameRef.current?.nudge(1, 0)
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') gameRef.current?.startTilt()
+            if (e.code === 'Space' || e.code === 'ArrowDown') {
+                plungerRef.current.charge = Math.min(1, plungerRef.current.charge + 0.028)
+                e.preventDefault()
+            }
+            if (e.code === 'Escape' || e.code === 'KeyP') { pausedRef.current = !pausedRef.current }
+        }
+        const onKeyUp = (e) => {
+            keysRef.current[e.code] = false
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') gameRef.current?.setFlipper('left', false)
+            if (e.code === 'ArrowRight' || e.code === 'KeyL') gameRef.current?.setFlipper('right', false)
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') gameRef.current?.endTilt()
+            if ((e.code === 'Space' || e.code === 'ArrowDown') && plungerRef.current.charge > 0.02) {
+                if (screenRef.current === 'attract') startGame()
+                else if (screenRef.current === 'play') {
+                    const held = Math.round(plungerRef.current.charge * 10)
+                    plungerRef.current.lastFire = plungerRef.current.tick
+                    gameRef.current?.plunge(plungerRef.current.charge)
+                    const a = audioController
+                    if (a.unlockState?.() !== 'ready') { try { a.unlock() } catch { /* unlock pending gesture */ } }
+                    sfxFor({ type: 'launch' }, a, cabRef.current === 'two')
+                    // the harness reads the physical launch straight from the DOM
+                    document.dispatchEvent(new CustomEvent('plunger-fire', { detail: { power: plungerRef.current.charge, held } }))
+                }
+            }
+            if (e.code === 'Space' || e.code === 'ArrowDown') plungerRef.current.charge = 0
+        }
+        window.addEventListener('keydown', onKeyDown)
+        window.addEventListener('keyup', onKeyUp)
+        return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp) }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    const startGame = () => {
+        gameRef.current = makeGame((Date.now() ^ (performance.now() * 1000)) >>> 0, cabRef.current)
+        screenRef.current = 'play'
+        pausedRef.current = false
+        popsRef.current = []
+        particlesRef.current = []
+        ringsRef.current = []
+        shakeRef.current = 0
+        flashRef.current = { bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0, ramp: 0, lane: TABLE.laneRollovers.map(() => 0), lock: 0, flash: 0, mb: 0, orbit: 0, orbitArm: 0, mag: 0, magFree: 0 }
+    }
+
+    const backToAttract = () => { screenRef.current = 'attract'; attractRef.current = 0 }
+
+    /* VirtualControls dispatches synthetic key events — mirror what the real
+     * listeners above do; Space is the plunger in play, start in menus, and
+     * its keyup fires the held charge. Left/right flip via the arrow codes. */
+    useEffect(() => {
+        const onVirtual = (e) => {
+            const scr = screenRef.current
+            if (e.type === 'keydown') {
+                if (scr === 'attract') {
+                    if (e.code === 'ArrowLeft') pickCabDelta(-1)
+                    else if (e.code === 'ArrowRight') pickCabDelta(1)
+                    else if (e.code === 'Space') startGame()
+                    return
+                }
+                if (scr === 'over') {
+                    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { screenRef.current = 'attract'; attractRef.current = 0 }
+                    else if (e.code === 'Space') startGame()
+                    return
+                }
+                if (e.code === 'ArrowLeft') gameRef.current?.setFlipper('left', true)
+                else if (e.code === 'ArrowRight') gameRef.current?.setFlipper('right', true)
+                else if (e.code === 'Space') plungerRef.current.charge = Math.min(1, plungerRef.current.charge + 0.05)
+            } else if (e.code === 'Space' && plungerRef.current.charge > 0.02) {
+                if (screenRef.current === 'play') gameRef.current?.plunge(plungerRef.current.charge)
+                plungerRef.current.charge = 0
+            }
+        }
+        window.addEventListener('virtual-keydown', onVirtual)
+        window.addEventListener('virtual-keyup', onVirtual)
+        return () => { window.removeEventListener('virtual-keydown', onVirtual); window.removeEventListener('virtual-keyup', onVirtual) }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    const loop = useGameLoop((dt) => {
+        const canvas = canvasRef.current
+        const ctx = canvas?.getContext('2d')
+        if (!canvas || !ctx) return
+        attractRef.current += dt
+        plungerRef.current.tick += Math.round(dt / FIXED_DT)
+
+        /* taps on the attract row pick a cabinet by column — the outer thirds
+         * of the screen are the two cards, the middle column starts (so the
+         * harness's centre tap and one-finger players both just work). */
+        const tap = controls.consumeTap()
+        if (tap && screenRef.current === 'attract') {
+            const col = tap.x < W / 3 ? -1 : tap.x > W * 2 / 3 ? 1 : 0
+            if (col !== 0) pickCabDelta(col)
+            else startGame()
+        }
+
+        if (screenRef.current === 'over' && attractRef.current > 6000) backToAttract()
+
+        const gs = gameRef.current
+        if (screenRef.current === 'play' && gs && !pausedRef.current) {
+            const held = keysRef.current['Space'] || keysRef.current['ArrowDown'] || controls.pressed('Space')
+            if (held) plungerRef.current.charge = Math.min(1, plungerRef.current.charge + dt / 550)
+            if (controls.consumed('Space')) plungerRef.current.charge = 0
+            const kb = keysRef.current
+            const left = kb['ArrowLeft'] || kb['KeyA'] || controls.pressed('ArrowLeft')
+            const right = kb['ArrowRight'] || kb['KeyL'] || controls.pressed('ArrowRight')
+            if (left !== gs.flippers.left.down) gs.setFlipper('left', left)
+            if (right !== gs.flippers.right.down) gs.setFlipper('right', right)
+            let acc = dt
+            while (acc >= FIXED_DT) { gs.step(FIXED_DT); acc -= FIXED_DT }
+            const events = gs.drainEvents()
+            if (events.length) {
+                const sound = react(events, flashRef, popsRef, cabRef.current === 'two')
+                if (sound) {
+                    const now = performance.now()
+                    if (now - lastSoundRef.current > 16) {
+                        lastSoundRef.current = now
+                        const a = audioController
+                        if (a.unlockState?.() !== 'ready') { try { a.unlock() } catch { /* autoplay lock — a later gesture frees it */ } }
+                        sfxFor({ type: sound }, a, cabRef.current === 'two')
+                    }
+                }
+            }
+            // #3178: MULTIBALL tension bed — runs while the pack is down. The
+            // trigger is SIM state (gs.multiball), so the seam is deterministic;
+            // pause, drain-home, game-over and cabinet-switch all cut it alike.
+            const bedOn = gs.multiball
+            if (bedOn && !mbBedRef.current) { audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55); mbBedRef.current = true }
+            else if (!bedOn && mbBedRef.current) { audioController.stopMusic(); mbBedRef.current = false }
+            if (gs.screen === 'over') { screenRef.current = 'over'; attractRef.current = 0 }
+            if (gs.screen === 'attract') backToAttract()
+        }
+
+        draw(ctx, gs)
+        if (screenRef.current === 'play' && pausedRef.current) {
+            ctx.fillStyle = 'rgba(0,0,0,0.55)'
+            ctx.fillRect(0, 0, W, H)
+            ctx.fillStyle = '#ffd700'
+            ctx.font = 'bold 20px "Press Start 2P", monospace'
+            ctx.textAlign = 'center'
+            ctx.fillText('PAUSED', W / 2, H / 2)
+        }
+    }, true)
+
+    useEffect(() => {
+        const canvas = canvasRef.current
+        if (!canvas) return
+        canvas.width = d2(W)
+        canvas.height = d2(H)
+        canvas.style.width = '100%'
+        canvas.style.height = '100%'
+        const ro = new ResizeObserver(() => { /* letterbox handled by CSS container */ })
+        const host = canvas.parentElement
+        if (host) ro.observe(host)
+        return () => {
+            ro.disconnect()
+            audioController.stopMusic() // #3178: never leak the multiball bed timer
+            unexposeGame('pinball')
+            unexposeDevTools()
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    /* --- rendering ---------------------------------------------------------- */
+
+    function draw(ctx, gs) {
+        const ember = cabRef.current === 'two'
+        const P = palFor(ember)
+        const fl = flashRef.current
+        ctx.save()
+        ctx.scale(DPR, DPR)
+        ctx.imageSmoothingEnabled = false
+        ctx.fillStyle = P.field
+        ctx.fillRect(0, 0, W, H)
+
+        if (screenRef.current === 'attract') { drawRowOfCabinets(ctx); ctx.restore(); return }
+
+        const tb = ember ? TABLE_TWO : TABLE
+        paintField(ctx, W, H, P, tb)
+        if (gs) drawPlayfield(ctx, gs, fl, P, tb)
+        drawDMD(ctx, gs ? gs.dmd : { w: ['NEON', 'TABLE'], hi: false }, P)
+
+        drawParticles(ctx)
+        if (shakeRef.current > 0) shakeRef.current -= 1
+        ctx.restore()
+    }
+
+    /* The attract row: two cabinet cards, each showing a miniature of its own
+     * playfield + name, the chosen one boxed and lit, plus the plunger bar. */
+    function drawRowOfCabinets(ctx) {
+        const t = attractRef.current
+        ctx.fillStyle = '#050310'
+        ctx.fillRect(0, 0, W, H)
+        // back-wall glow
+        const g = ctx.createRadialGradient(W / 2, H * 0.36, 20, W / 2, H * 0.36, 320)
+        g.addColorStop(0, 'rgba(70,30,90,0.5)')
+        g.addColorStop(1, 'rgba(5,3,16,0)')
+        ctx.fillStyle = g
+        ctx.fillRect(0, 0, W, H)
+        for (const card of CABS_UI) {
+            const sel = card.id === cabRef.current
+            const pulse = sel ? 0.75 + 0.25 * Math.sin(t / 220) : 0.45
+            // cabinet body
+            ctx.fillStyle = '#0b0820'
+            ctx.fillRect(card.x, card.y, card.w, card.h)
+            ctx.strokeStyle = sel ? card.sel : '#241a44'
+            ctx.lineWidth = sel ? 3 : 2
+            ctx.strokeRect(card.x + 0.5, card.y + 0.5, card.w - 1, card.h - 1)
+            // miniature playfield
+            ctx.save()
+            ctx.translate(card.x + 10, card.y + 34)
+            ctx.scale((card.w - 20) / W, (card.h - 92) / H)
+            const MP = card.id === 'two' ? PAL_EMBER : PAL
+            paintField(ctx, W, H, MP, card.id === 'two' ? TABLE_TWO : TABLE, { mini: true })
+            ctx.restore()
+            // name plate
+            ctx.font = 'bold 12px "Press Start 2P", monospace'
+            ctx.textAlign = 'center'
+            ctx.globalAlpha = pulse
+            ctx.fillStyle = card.sel
+            ctx.fillText(card.title, card.x + card.w / 2, card.y + card.h - 40)
+            ctx.globalAlpha = 1
+            ctx.font = '7px "Press Start 2P", monospace'
+            ctx.fillStyle = '#8f8fc9'
+            ctx.fillText(card.sub, card.x + card.w / 2, card.y + card.h - 22)
+            if (sel) {
+                ctx.fillStyle = card.sel
+                ctx.beginPath()
+                ctx.moveTo(card.x + card.w / 2 - 6, card.y - 12)
+                ctx.lineTo(card.x + card.w / 2 + 6, card.y - 12)
+                ctx.lineTo(card.x + card.w / 2, card.y - 4)
+                ctx.closePath()
+                ctx.fill()
+            }
+        }
+        // prompts
+        ctx.textAlign = 'center'
+        ctx.fillStyle = '#e6e6ff'
+        ctx.font = '9px "Press Start 2P", monospace'
+        ctx.fillText('← → PICK CABINET', W / 2, H - 64)
+        if (Math.floor(t / 500) % 2 === 0) {
+            ctx.fillStyle = '#ffd700'
+            ctx.font = 'bold 10px "Press Start 2P", monospace'
+            ctx.fillText('PULL THE PLUNGER', W / 2, H - 40)
+        }
+        // plunger bar grows with a held charge so a first player learns it
+        const c = plungerRef.current.charge
+        if (c > 0) {
+            ctx.fillStyle = '#160f30'
+            ctx.fillRect(W / 2 - 70, H - 30, 140, 10)
+            ctx.fillStyle = c < 0.6 ? '#ffd700' : '#ff5d8f'
+            ctx.fillRect(W / 2 - 68, H - 28, 136 * c, 6)
+        }
+    }
+
+    function drawPlayfield(ctx, gs, fl, P, tb) {
+        const t = gs.tick
+
+        if (fl.flash > 0) {
+            ctx.fillStyle = `rgba(255,255,255,${(0.38 * fl.flash / 14).toFixed(3)})`
+            ctx.fillRect(0, 0, W, H)
+        }
+
+        // lane rollovers + arrows
+        for (let i = 0; i < tb.laneRollovers.length; i++) {
+            const lr = tb.laneRollovers[i]
+            const lit = gs.laneDone[i] || fl.lane[i] > 0
+            if (fl.lane[i] > 0) fl.lane[i] -= 1
+            ctx.beginPath(); ctx.arc(lr.x, lr.y, 6, 0, Math.PI * 2)
+            if (gs.laneAllDone) {
+                ctx.fillStyle = Math.floor(t / 8 + i) % 2 === 0 ? P.lane : P.star
+            } else ctx.fillStyle = lit ? P.lane : '#241a44'
+            ctx.fill()
+            ctx.strokeStyle = P.wallBright; ctx.lineWidth = 1; ctx.stroke()
+        }
+        const ax = tb.view.laneArrowX
+        ctx.fillStyle = gs.laneAllDone ? (Math.floor(t / 8) % 2 ? P.star : P.lane) : '#3a2f66'
+        ctx.beginPath()
+        ctx.moveTo(ax, tb.view.laneArrowY + 16); ctx.lineTo(ax - 6, tb.view.laneArrowY + 4); ctx.lineTo(ax + 6, tb.view.laneArrowY + 4)
+        ctx.closePath(); ctx.fill()
+
+        // guides
+        ctx.strokeStyle = P.accent; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.arc(180, 118, 52, 0.18 * Math.PI, 0.82 * Math.PI); ctx.stroke()
+        ctx.strokeStyle = '#3a2f66'; ctx.lineWidth = 1
+        ctx.beginPath(); ctx.moveTo(tb.view.guideX, tb.view.guideTopY); ctx.lineTo(tb.view.guideX, tb.view.guideBotY); ctx.stroke()
+
+        // drop-target bank: block + three targets; clear = lit gold band
+        ctx.fillStyle = '#171236'
+        if (tb.bank.side === 'left') ctx.fillRect(6, 130, 12, 96)
+        else ctx.fillRect(342, 130, 12, 96)
+        const bankClear = gs.dropBank.every((d) => d.down)
+        for (let i = 0; i < tb.targets.length; i++) {
+            const tg = tb.targets[i]
+            const down = gs.dropBank[i].down
+            const lit = fl.targets[i] > 0 || bankClear
+            if (fl.targets[i] > 0) fl.targets[i] -= 1
+            ctx.fillStyle = down ? (bankClear ? P.star : '#221a3f') : lit ? P.star : P.target
+            ctx.fillRect(tg.x - 7, tg.y - 4, 14, 8)
+            ctx.strokeStyle = P.wallBright; ctx.lineWidth = 1
+            ctx.strokeRect(tg.x - 7, tg.y - 4, 14, 8)
+        }
+        if (bankClear) {
+            ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t / 6)
+            ctx.fillStyle = P.star
+            if (tb.bank.side === 'left') ctx.fillRect(6, 130, 12, 96)
+            else ctx.fillRect(342, 130, 12, 96)
+            ctx.globalAlpha = 1
+        }
+
+        // stand-up targets
+        for (let i = 0; i < tb.targets.length + tb.standups.length; i++) { /* placeholder to keep loop count honest */ }
+        for (let i = 0; i < tb.standups.length; i++) {
+            const tg = tb.standups[i]
+            const hit = fl.targets[tb.targets.length + i] > 0
+            ctx.fillStyle = hit ? P.star : P.target
+            ctx.fillRect(tg.x - 8, tg.y - 3, 16, 6)
+            ctx.strokeStyle = P.wallBright; ctx.lineWidth = 1
+            ctx.strokeRect(tg.x - 8, tg.y - 3, 16, 6)
+            // #3178: label the top-left saucer with its mission so the "3 IN
+            // KICKER" call is discoverable — players (and the QA read) can see
+            // WHY the light matters without the manual
+            if (tg.id === 'saucer1') {
+                ctx.font = '6px "Press Start 2P", monospace'
+                ctx.textAlign = 'center'
+                ctx.fillStyle = gs.locks >= 3 ? P.star : '#8f8fc9'
+                ctx.fillText(gs.locks >= 3 ? 'READY' : 'KICKER', tg.x + (tb.bank.side === 'left' ? 30 : -30), tg.y + 2)
+            }
+        }
+
+        // spinner: a flag that tilts while spinning, gold bar when hot
+        const sp = tb.spinner
+        const hotSp = gs.spinnerHot
+        ctx.strokeStyle = P.wallBright; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.moveTo(sp.x, sp.y - 10); ctx.lineTo(sp.x, sp.y + 10); ctx.stroke()
+        const ang = gs.spinnerVel !== 0 ? (gs.spinnerAngle % (Math.PI * 2)) : 0
+        ctx.save()
+        ctx.translate(sp.x, sp.y)
+        ctx.rotate(Math.sin(ang) * 1.2)
+        ctx.fillStyle = hotSp ? (Math.floor(t / 5) % 2 ? P.glow : P.star) : '#cfd6ff'
+        ctx.fillRect(-2, -9, 4, 18)
+        ctx.restore()
+
+        // slingshots
+        for (let i = 0; i < tb.slings.length; i++) {
+            const s = tb.slings[i]
+            const p = s.points
+            ctx.fillStyle = fl.slings[i] > 0 ? P.accent : '#241a55'
+            if (fl.slings[i] > 0) fl.slings[i] -= 1
+            ctx.beginPath(); ctx.moveTo(p[0].x, p[0].y); ctx.lineTo(p[1].x, p[1].y); ctx.lineTo(p[2].x, p[2].y); ctx.closePath(); ctx.fill()
+            ctx.strokeStyle = P.wallBright; ctx.lineWidth = 1.5; ctx.stroke()
+        }
+
+        // bumpers: rings + flash; the pop caps their lit lifetime to one frame
+        for (let i = 0; i < tb.bumpers.length; i++) {
+            const b = tb.bumpers[i]
+            const flash = fl.bumpers[i] > 0
+            if (fl.bumpers[i] > 0) fl.bumpers[i] -= 1
+            ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2)
+            ctx.fillStyle = flash ? P.hot : '#2a1c50'
+            ctx.fill()
+            ctx.lineWidth = 2; ctx.strokeStyle = flash ? '#ffffff' : P.wallBright; ctx.stroke()
+            ctx.beginPath(); ctx.arc(b.x, b.y, Math.max(3, b.r - 8), 0, Math.PI * 2)
+            ctx.fillStyle = flash ? '#ffffff' : P.glow
+            ctx.fill()
+        }
+
+        // outer lane + side-lamp lanes: lit as they light, chased while live
+        for (const lane of tb.lanes) {
+            const lit = gs.lights[lane.id] || gs.lights.lanesAll || fl.ramp > 0
+            if (fl.ramp > 0) fl.ramp -= 1
+            ctx.strokeStyle = lit ? (Math.floor(t / 6) % 2 ? P.star : P.glow) : '#332763'
+            ctx.lineWidth = 3
+            ctx.beginPath(); ctx.arc(lane.cx, lane.cy, lane.r, Math.PI * (lane.ang[0] + 0.05), Math.PI * (lane.ang[1] - 0.05)); ctx.stroke()
+        }
+
+        // magnet at the tower mouth
+        ctx.fillStyle = '#241a55'
+        ctx.beginPath(); ctx.arc(tb.magnet.x, tb.magnet.y, 14, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = fl.mag > 0 ? P.warn : P.wallBright; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.arc(tb.magnet.x, tb.magnet.y, 14, 0, Math.PI * 2); ctx.stroke()
+        if (fl.mag > 0) fl.mag -= 1
+
+        // kickback button + the ball it holds: its cap counts down so the held
+        // ball visibly squeezes toward release (same budget the sim counts down)
+        ctx.fillStyle = gs.kickbackReady ? P.glow : '#31245e'
+        ctx.fillRect(tb.kickback.x - 8, tb.kickback.y - 5, 16, 10)
+        ctx.strokeStyle = P.wallBright; ctx.lineWidth = 1
+        ctx.strokeRect(tb.kickback.x - 8, tb.kickback.y - 5, 16, 10)
+        if (gs.kickbackBall) {
+            ctx.fillStyle = '#d8d8f0'
+            ctx.beginPath(); ctx.arc(tb.kickback.x, tb.kickback.y, gs.ballR, 0, Math.PI * 2); ctx.fill()
+            ctx.fillStyle = P.warn
+            ctx.fillRect(tb.kickback.x - 9, tb.kickback.y - 12, Math.max(2, 18 * (gs.kickbackBall.cap / 90)), 2)
+        }
+
+        // tower + lock lights (the tower sits on the bank side)
+        const tw = tb.view.tower
+        ctx.fillStyle = '#141031'
+        ctx.fillRect(tw.x, tw.y, tw.w, tw.h)
+        ctx.strokeStyle = P.wallBright; ctx.lineWidth = 2
+        ctx.strokeRect(tw.x, tw.y, tw.w, tw.h)
+        ctx.fillStyle = P.star
+        ctx.font = '7px "Press Start 2P", monospace'
+        ctx.textAlign = 'center'
+        ctx.fillText('TOWER', tw.x + tw.w / 2, tw.y + 14)
+        ctx.fillStyle = '#6f6fb0'
+        ctx.fillText(gs.locks + '/3', tw.x + tw.w / 2, tw.y + tw.h + 12)
+        for (let i = 0; i < 3; i++) {
+            const lit = gs.locks > i || fl.lock > 0
+            if (fl.lock > 0) fl.lock = Math.max(0, fl.lock - 1)
+            ctx.fillStyle = lit ? P.star : '#241a44'
+            ctx.beginPath(); ctx.arc(tb.lockLights[i].x, tb.lockLights[i].y, 5, 0, Math.PI * 2); ctx.fill()
+            ctx.strokeStyle = P.wallBright; ctx.lineWidth = 1; ctx.stroke()
+        }
+        if (fl.lock > 0 && Math.floor(t / 4) % 2 === 0) {
+            ctx.fillStyle = P.star
+            ctx.font = '6px "Press Start 2P", monospace'
+            ctx.fillText('IN KICKER', tw.x + tw.w / 2, tw.y - 6)
+        }
+
+        // orbit entry + exit lamps
+        for (const oc of tb.orbit.curl) {
+            ctx.fillStyle = fl.orbitArm > 0 ? P.glow : '#241a44'
+            ctx.beginPath(); ctx.arc(oc.x, oc.y, 7, 0, Math.PI * 2); ctx.fill()
+            ctx.strokeStyle = P.wallBright; ctx.lineWidth = 1
+            ctx.beginPath(); ctx.arc(oc.x, oc.y, 7, 0, Math.PI * 2); ctx.stroke()
+        }
+        if (fl.orbitArm > 0) fl.orbitArm -= 1
+        const oex = tb.orbit.exit
+        ctx.strokeStyle = fl.orbit > 0 ? P.glow : '#332763'
+        ctx.lineWidth = 3
+        ctx.beginPath(); ctx.arc(oex.x, oex.y, 18, Math.PI * (oex.dir > 0 ? 0 : 1), Math.PI * (oex.dir > 0 ? 1 : 2)); ctx.stroke()
+        if (fl.orbit > 0) fl.orbit -= 1
+
+        // plunger lane + charge meter (the lane hugs the plunger's own side)
+        ctx.fillStyle = '#131036'
+        ctx.fillRect(tb.view.plungerLane.x, tb.view.plungerLane.y, tb.view.plungerLane.w, tb.view.plungerLane.h)
+        ctx.strokeStyle = '#332763'; ctx.lineWidth = 1
+        ctx.strokeRect(tb.view.plungerLane.x, tb.view.plungerLane.y, tb.view.plungerLane.w, tb.view.plungerLane.h)
+        const charge = plungerRef.current.charge
+        ctx.fillStyle = '#160f30'
+        ctx.fillRect(tb.view.meter.x, tb.view.meter.y, tb.view.meter.w, 8)
+        ctx.fillStyle = charge < 0.6 ? P.glow : P.warn
+        ctx.fillRect(tb.view.meter.x + 1, tb.view.meter.y + 1, Math.max(2, (tb.view.meter.w - 2) * charge), 6)
+
+        // flippers — bright while pressed, live angle from the sim
+        const flLive = (f) => (f.timed ? f.timed > t : f.down)
+        for (const side of ['left', 'right']) {
+            const fp = gs.flippers[side]
+            const col = fp.down || flLive(fp) ? P.bright : '#4a3a8f'
+            ctx.save()
+            ctx.translate(fp.pivot.x, fp.pivot.y)
+            ctx.rotate(fp.angle)
+            ctx.fillStyle = col
+            ctx.fillRect(0, -5, 44, 10)
+            ctx.beginPath(); ctx.arc(44, 0, 6, 0, Math.PI * 2); ctx.fill()
+            ctx.restore()
+        }
+
+        // balls
+        for (const b of gs.balls) {
+            if (!b.active) continue
+            ctx.beginPath(); ctx.arc(b.x, b.y, gs.ballR, 0, Math.PI * 2)
+            ctx.fillStyle = '#d8d8f0'
+            ctx.fill()
+            ctx.strokeStyle = '#8f8fb0'; ctx.lineWidth = 1; ctx.stroke()
+            ctx.fillStyle = 'rgba(255,255,255,0.8)'
+            ctx.beginPath(); ctx.arc(b.x - gs.ballR / 3, b.y - gs.ballR / 3, 2, 0, Math.PI * 2); ctx.fill()
+        }
+
+        // tilt warnings
+        if (fl.tilt > 0) {
+            fl.tilt -= 1
+            if (Math.floor(t / 8) % 2 === 0) {
+                ctx.fillStyle = P.warn
+                ctx.font = '12px "Press Start 2P", monospace'
+                ctx.textAlign = 'center'
+                ctx.fillText(gs.screen === 'tilt' ? 'TILT' : 'WARNING', W / 2, 280)
+            }
+        }
+    }
+
+    function spawn(x, y, n, color, speed) {
+        if (particlesRef.current.length > 220) return
+        for (let i = 0; i < n; i++) {
+            const a = Math.random() * Math.PI * 2
+            const v = speed * (0.3 + Math.random() * 0.7) / 60
+            particlesRef.current.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 24 + Math.random() * 18, color })
+        }
+    }
+    function spawnRing(x, y, color, r, lw, life) {
+        if (ringsRef.current.length > 12) return
+        ringsRef.current.push({ x, y, r: 4, rr: r, lw, color, life, max: life })
+    }
+    function drawParticles(ctx) {
+        const ps = particlesRef.current
+        for (let i = ps.length - 1; i >= 0; i--) {
+            const p = ps[i]
+            p.x += p.vx; p.y += p.vy; p.vy += 0.004; p.life -= 1
+            if (p.life <= 0) { ps.splice(i, 1); continue }
+            ctx.globalAlpha = Math.min(1, p.life / 20)
+            ctx.fillStyle = p.color
+            ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3)
+        }
+        const rs = ringsRef.current
+        for (let i = rs.length - 1; i >= 0; i--) {
+            const r = rs[i]
+            r.life -= 1
+            if (r.life <= 0) { rs.splice(i, 1); continue }
+            const f = 1 - r.life / r.max
+            ctx.globalAlpha = 1 - f
+            ctx.strokeStyle = r.color
+            ctx.lineWidth = r.lw
+            ctx.beginPath(); ctx.arc(r.x, r.y, 4 + (r.rr - 4) * f, 0, Math.PI * 2); ctx.stroke()
+        }
+        ctx.globalAlpha = 1
+    }
+
+    /* --- DEV test hooks (docs/GAME-SHELL.md) --------------------------------- */
+    useEffect(() => {
+        if (!devMode) return
+        exposeDevTools({
+            loop,
+            screen: () => screenRef.current,
+            back: backToAttract,
+            start: startGame,
+            attract: () => { screenRef.current = 'attract'; attractRef.current = 0 },
+            setPaused: (v) => { pausedRef.current = !!v },
+            press: (code) => window.dispatchEvent(new KeyboardEvent('keydown', { code })),
+            release: (code) => window.dispatchEvent(new KeyboardEvent('keyup', { code })),
+            setPlunger: (v) => { plungerRef.current.charge = Math.max(0, Math.min(1, v)) },
+            firePlunger: (power = 0.55) => {
+                if (!gameRef.current) startGame()
+                plungerRef.current.lastFire = plungerRef.current.tick
+                gameRef.current.plunge(power)
+                plungerRef.current.charge = 0
+                document.dispatchEvent(new CustomEvent('plunger-fire', { detail: { power, held: Math.round(power * 10) } }))
+            },
+            pickCab: (id) => { cabRef.current = id },
+            cab: () => cabRef.current,
+            playfieldPx: () => {
+                const cvs = canvasRef.current
+                if (!cvs) return null
+                const dpr = Math.min(window.devicePixelRatio || 1, 2)
+                const ctx = cvs.getContext('2d')
+                if (!ctx) return null
+                const y0 = Math.floor(48 * dpr), y1 = Math.floor(448 * dpr)
+                const data = ctx.getImageData(0, y0, cvs.width, y1 - y0).data
+                const bright = [PAL.bright, PAL.hot, PAL.accent, PAL.star, PAL.glow, PAL_EMBER.bright, PAL_EMBER.hot, PAL_EMBER.accent, PAL_EMBER.star, PAL_EMBER.glow].map((c) => [c & 0xff, (c >> 8) & 0xff, (c >> 16) & 0xff])
+                let best = { name: 'none', count: 0 }
+                for (const [name, rgb] of [['hot', bright[0]], ['accent', bright[1]], ['star', bright[2]], ['glow', bright[3]], ['ember-hot', bright[5]], ['ember-glow', bright[7]], ['ember-accent', bright[6]]]) {
+                    let n = 0
+                    for (let i = 0; i < data.length; i += 4) {
+                        if (Math.abs(data[i] - rgb[0]) < 24 && Math.abs(data[i + 1] - rgb[1]) < 24 && Math.abs(data[i + 2] - rgb[2]) < 24) n++
+                    }
+                    if (n > best.count) best = { name, count: n }
+                }
+                return best
+            }
+        })
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
     useEffect(() => {
-        const cvs = canvasRef.current
-        if (!cvs) return undefined
-        cvs.width = W; cvs.height = H
-        const ctx = cvs.getContext('2d')
-        ctx.imageSmoothingEnabled = true
-        if (!fieldRef.current) {
-            const f = document.createElement('canvas')
-            f.width = W; f.height = H
-            paintField(f.getContext('2d'), W, H)
-            fieldRef.current = f
-        }
+        exposeGame({
+            id: 'pinball',
+            buttons: ['ArrowLeft', 'ArrowRight', 'Space'],
+            reset: () => {
+                cabRef.current = 'one'
+                screenRef.current = 'play'
+                pausedRef.current = false
+                plungerRef.current = { charge: 0, lastFire: -999, tick: 0 }
+                gameRef.current = makeGame(12345, 'one')
+            },
+            tick: (n = 1) => { for (let i = 0; i < n; i++) gameRef.current?.step(FIXED_DT) },
+            state: () => {
+                const gs = gameRef.current
+                if (!gs) return { screen: screenRef.current, balls: [], score: 0, ball: 0, drains: 0, tiltWarns: 0, tilt: false, multiball: false, locks: 0, dropClear: false, laneAll: false, rampCount: 0, spinnerHot: false, laneDone: [false, false, false], kickbackReady: false, kickbackBall: false, lights: {}, dmd: { w: ['NEON', 'TABLE'], hi: false }, cab: cabRef.current }
+                const s = stateOf(gs)
+                return { ...s, plungerPower: plungerPower(gs, plungerRef.current.charge), launchHeld: Math.round(plungerRef.current.charge * 10), lastPlungerFire: plungerRef.current.lastFire, plungerTick: plungerRef.current.tick }
+            },
+            canvas: canvasRef,
+        })
+        return () => unexposeGame('pinball')
+    }, [])
 
-        const fit = () => {
-            const par = cvs.parentElement
-            if (!par) return
-            const aw = par.clientWidth, ah = par.clientHeight
-            const s = Math.min(aw / W, ah / H)
-            cvs.style.width = `${Math.floor(W * s)}px`
-            cvs.style.height = `${Math.floor(H * s)}px`
-        }
-        fit()
-        window.addEventListener('resize', fit)
-
-        const padNow = () => keysRef.current
-
-        const spawnRing = (x, y, color, max = 34, ticks = 16) => {
-            ringsRef.current.push({ x, y, color, t: 0, ticks, max })
-        }
-
-        const spawn = (x, y, n, color, spd = 130) => {
-            for (let i = 0; i < n; i++) {
-                const a = Math.random() * Math.PI * 2
-                const v = spd * (0.4 + Math.random() * 0.8)
-                partsRef.current.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, life: 0.5 + Math.random() * 0.3, color })
-            }
-        }
-
-        const react = (gs) => {
-            const fl = flashRef.current
-            for (const ev of gs.events) {
-                sfxFor(ev)
-                if (ev.type === 'bumper') { fl.bumpers[ev.i] = 9; spawn(ev.x, ev.y, 10, PAL.hot, 190) }
-                else if (ev.type === 'sling') { fl.slings[ev.i] = 7; spawn(ev.x, ev.y, 6, PAL.sling, 150) }
-                else if (ev.type === 'target') { fl.targets[ev.i] = 8; spawn(ev.x, ev.y, 7, PAL.neon) }
-                else if (ev.type === 'bank') { fl.bank = 40; shakeRef.current = Math.max(shakeRef.current, 5) }
-                else if (ev.type === 'spinner') { fl.spinner = 6; spawn(ev.x, ev.y, 3, PAL.glow, 90) }
-                else if (ev.type === 'kicker') { spawn(ev.x, ev.y, 12, PAL.lane, 220) }
-                else if (ev.type === 'plunge') { spawn(TABLE.plunger.x, TABLE.plunger.restY, 8, PAL.chrome, 120) }
-                else if (ev.type === 'ratchet') { spawn(TABLE.plunger.x, 566 + (ev.power || 0) * 14, 2, PAL.chrome, 60) }
-                else if (ev.type === 'drain') { shakeRef.current = 10; fl.drain = 24 }
-                else if (ev.type === 'tilt') { fl.tilt = 90; shakeRef.current = 14 }
-                else if (ev.type === 'ramp') { fl.ramp = 8; spawn(ev.x, ev.y, 4, PAL.lane, 110) }
-                else if (ev.type === 'rampset') { fl.ramp = 20; shakeRef.current = Math.max(shakeRef.current, 3) }
-                else if (ev.type === 'lane') { fl.lane[ev.i] = 8; spawn(310, ev.y, 4, PAL.lane, 110) }
-                else if (ev.type === 'lanesweep') { shakeRef.current = Math.max(shakeRef.current, 3) }
-                else if (ev.type === 'lock') { fl.lock = 16; shakeRef.current = Math.max(shakeRef.current, 4) }
-                else if (ev.type === 'multiball') {
-                    fl.mb = 90; fl.flash = 14; shakeRef.current = Math.max(shakeRef.current, 12)
-                    // the tower mouth erupts: a ring + shower from each kick port so the
-                    // pack-off lands on a 6-inch screen, not only at desk width (#3178)
-                    for (const k of TABLE.mbKick) { spawnRing(k.x, k.y, PAL.glow, 26, 14); spawn(k.x, k.y, 14, PAL.glow, 220) }
-                }
-                // ---- rung 3 (messages are SIM state now — drawn by the DMD) ----
-                else if (ev.type === 'curl') spawn(ev.x, ev.y, 4, PAL.glow, 90)
-                else if (ev.type === 'orbitarm') { fl.orbitArm = 8; spawn(ev.x, ev.y, 6, PAL.lane, 100) }
-                // orbit completion: a bigger punch than a lane rollover — ring + shower + shake
-                else if (ev.type === 'orbit') {
-                    fl.orbit = 20; shakeRef.current = Math.max(shakeRef.current, 6)
-                    spawn(ev.x, ev.y, 18, PAL.lane, 200)
-                    spawnRing(ev.x, ev.y, PAL.lane, 34, 16)
-                }
-                // orbit set: the set wave off the done pad — stronger than a ramp set
-                else if (ev.type === 'orbitset') {
-                    fl.orbit = 34; shakeRef.current = Math.max(shakeRef.current, 8)
-                    spawn(TABLE.orbit.donePad.x, TABLE.orbit.donePad.y, 16, PAL.lane, 180)
-                    spawnRing(TABLE.orbit.donePad.x, TABLE.orbit.donePad.y, PAL.hot, 40, 18)
-                }
-                // orbit lock: chunky ring + shower at the done pad
-                else if (ev.type === 'orbitlock') {
-                    fl.orbit = 28; shakeRef.current = Math.max(shakeRef.current, 7)
-                    const dx = ev.x ?? TABLE.orbit.donePad.x, dy = ev.y ?? TABLE.orbit.donePad.y
-                    spawn(dx, dy, 14, PAL.hot, 180)
-                    spawnRing(dx, dy, PAL.hot, 36, 18)
-                }
-                else if (ev.type === 'maggrab') { fl.mag = 14; spawn(ev.x, ev.y, 8, PAL.mag, 120) }
-                // magfree snap deserves the same treatment as an orbit beat
-                else if (ev.type === 'magfree') {
-                    fl.magFree = 18; shakeRef.current = Math.max(shakeRef.current, 2)
-                    spawn(ev.x, ev.y, 16, PAL.mag, 190)
-                    spawnRing(ev.x, ev.y, PAL.mag, 30, 16)
-                }
-                else if (ev.type === 'magready') { fl.mag = 8 }
-                else if (ev.type === 'ballhit') spawn(ev.x, ev.y, 5, PAL.chrome, 150)
-            }
-            gs.events.length = 0
-        }
-
-        // ---------------------------------------------------------------- draw ----
-        const drawTable = (gs) => {
-            ctx.save()
-            if (shakeRef.current > 0) {
-                ctx.translate((Math.random() - 0.5) * shakeRef.current, (Math.random() - 0.5) * shakeRef.current)
-                shakeRef.current = Math.max(0, shakeRef.current - 0.7)
-            }
-            ctx.drawImage(fieldRef.current, 0, 0)
-
-            // cabinet rail + arc wall
-            ctx.strokeStyle = PAL.wood; ctx.lineWidth = 10; ctx.lineCap = 'round'
-            ctx.beginPath()
-            const arc = TABLE.arc
-            for (let i = 0; i <= arc.segs; i++) {
-                const a = arc.from + (arc.to - arc.from) * (i / arc.segs)
-                const x = arc.cx + Math.cos(a) * arc.rx, y = arc.cy + Math.sin(a) * arc.ry
-                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-            }
-            ctx.stroke()
-            ctx.strokeStyle = PAL.woodHi; ctx.lineWidth = 3; ctx.stroke()
-
-            // side walls / lane / aprons — neon-roped rubber look
-            ctx.strokeStyle = PAL.chrome; ctx.lineWidth = 3
-            for (const w of TABLE.walls) {
-                ctx.beginPath(); ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke()
-            }
-            const og = TABLE.outlaneGuide
-            ctx.beginPath(); ctx.moveTo(og.x1, og.y1); ctx.lineTo(og.x2, og.y2); ctx.stroke()
-
-            // lane guide glow down the launch lane
-            ctx.save(); ctx.globalAlpha = 0.35 + 0.25 * Math.sin(gs.tick / 8)
-            ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2
-            ctx.beginPath(); ctx.moveTo(TABLE.plunger.x, 520); ctx.lineTo(TABLE.plunger.x, 210); ctx.stroke()
-            ctx.restore()
-
-            const fl = flashRef.current
-            Object.keys(fl).forEach((k) => { if (Array.isArray(fl[k])) fl[k] = fl[k].map((v) => Math.max(0, v - 1)); else fl[k] = Math.max(0, fl[k] - 1) })
-
-            // ---- rung 2: firelane lamp set + rollover rings + lock tower ----
-            {
-                const lit = gs.lockFlash > 0 || gs.mbFlash > 0
-                // lane rope glow while the lane is armed (pulses when a lock is banked)
-                ctx.save()
-                ctx.globalAlpha = 0.22 + 0.18 * Math.sin(gs.tick / 9) + (lit ? 0.25 : 0)
-                ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2
-                ctx.beginPath(); ctx.moveTo(310, 200); ctx.lineTo(310, 430); ctx.stroke()
-                ctx.restore()
-                // descending LANE rollovers
-                TABLE.laneRollovers.forEach((lr, i) => {
-                    const glow = fl.lane[i]
-                    ctx.save()
-                    ctx.strokeStyle = glow > 0 ? '#ffffff' : PAL.lane
-                    ctx.globalAlpha = glow > 0 ? 0.95 : 0.5
-                    ctx.lineWidth = 2.5
-                    ctx.beginPath(); ctx.arc(310, lr.y, 7, 0, 7); ctx.stroke()
-                    if (glow > 0) { ctx.shadowColor = PAL.lane; ctx.shadowBlur = 14; ctx.stroke() }
-                    ctx.restore()
-                })
-                // RAMP rollovers in the launch lane
-                TABLE.rampRollovers.forEach((rr) => {
-                    ctx.save()
-                    ctx.strokeStyle = fl.ramp > 0 ? '#ffffff' : PAL.lane
-                    ctx.globalAlpha = fl.ramp > 0 ? 0.95 : 0.45
-                    ctx.lineWidth = 2.5
-                    ctx.beginPath(); ctx.arc(336, rr.y, 7, 0, 7); ctx.stroke()
-                    ctx.restore()
-                })
-                // lock tower — a chrome gate housing with three lock lamps
-                ctx.save()
-                const tg = ctx.createLinearGradient(296, 0, 324, 0)
-                tg.addColorStop(0, 'rgba(201,212,232,0.25)'); tg.addColorStop(0.5, 'rgba(201,212,232,0.08)'); tg.addColorStop(1, 'rgba(201,212,232,0.25)')
-                ctx.fillStyle = tg
-                ctx.beginPath(); ctx.moveTo(296, 470); ctx.lineTo(324, 470); ctx.lineTo(318, 434); ctx.lineTo(302, 434); ctx.closePath(); ctx.fill()
-                ctx.strokeStyle = PAL.chrome; ctx.lineWidth = 2
-                ctx.beginPath(); ctx.moveTo(296, 470); ctx.lineTo(302, 434); ctx.lineTo(318, 434); ctx.lineTo(324, 470); ctx.stroke()
-                for (let i = 0; i < TABLE.lock.need; i++) {
-                    const on = i < gs.locks
-                    const pulse = on && (gs.tick >> 3) % 2 === 0
-                    ctx.fillStyle = on ? (pulse ? '#ffffff' : PAL.hot) : 'rgba(255,61,94,0.18)'
-                    if (on) { ctx.shadowColor = PAL.hot; ctx.shadowBlur = 10 }
-                    ctx.beginPath(); ctx.arc(303 + i * 7, 452, 2.6, 0, 7); ctx.fill()
-                    ctx.shadowBlur = 0
-                }
-                if (fl.lock > 0) {
-                    const rg = ctx.createRadialGradient(310, 445, 4, 310, 445, 34)
-                    rg.addColorStop(0, `rgba(255,61,94,${0.5 * (fl.lock / 16)})`); rg.addColorStop(1, 'rgba(255,61,94,0)')
-                    ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(310, 445, 34, 0, 7); ctx.fill()
-                }
-                ctx.restore()
-            }
-            // ---- rung 3: orbit pads + bank lamps + magnet post ----
-            {
-                const armed = gs.pucks.some((p) => p.orbitArmed)
-                // climbing-rail glow while a ball is armed for the wrap:
-                // a thicker rail + 3 chevrons sweeping up the channel
-                if (armed) {
-                    ctx.save(); ctx.globalAlpha = 0.5 + 0.2 * Math.sin(gs.tick / 6)
-                    ctx.strokeStyle = PAL.lane; ctx.lineWidth = 3
-                    ctx.beginPath(); ctx.moveTo(25, 415); ctx.lineTo(25, 128); ctx.stroke()
-                    ctx.restore()
-                    ctx.save(); ctx.globalAlpha = 0.75; ctx.lineWidth = 2.5
-                    ctx.strokeStyle = PAL.lane
-                    for (let i = 0; i < 3; i++) {
-                        const yy = 415 - ((gs.tick * 2.2 + i * 85) % 287)
-                        if (yy < 128) continue
-                        ctx.beginPath(); ctx.moveTo(15, yy); ctx.lineTo(25, yy - 12); ctx.lineTo(35, yy); ctx.stroke()
-                    }
-                    ctx.restore()
-                }
-                // arm pad (left flank) — hot while armed
-                ctx.save()
-                const al = armed || fl.orbitArm > 0
-                ctx.strokeStyle = al ? '#ffffff' : PAL.lane
-                ctx.globalAlpha = al ? 0.95 : 0.45
-                ctx.lineWidth = 3
-                ctx.beginPath(); ctx.arc(TABLE.orbit.armPad.x, TABLE.orbit.armPad.y, 8, 0, 7); ctx.stroke()
-                if (al) { ctx.shadowColor = PAL.lane; ctx.shadowBlur = 18; ctx.stroke() }
-                ctx.restore()
-                // done pad (right flank) — hot while the set is lit / just scored
-                ctx.save()
-                const dl = gs.orbitLit || fl.orbit > 0
-                ctx.strokeStyle = dl ? PAL.hot : PAL.lane
-                ctx.globalAlpha = dl ? 0.95 : 0.45
-                ctx.lineWidth = 3
-                ctx.beginPath(); ctx.arc(TABLE.orbit.donePad.x, TABLE.orbit.donePad.y, 8, 0, 7); ctx.stroke()
-                if (dl) { ctx.shadowColor = PAL.hot; ctx.shadowBlur = 18; ctx.stroke() }
-                ctx.restore()
-                // orbit bank lamps, seated under the DMD insert
-                for (let i = 0; i < TABLE.orbit.need; i++) {
-                    const on = gs.orbitLit || i < gs.orbitBank
-                    const pulse = on && (gs.tick >> 3) % 2 === 0
-                    ctx.fillStyle = on ? (pulse ? '#ffffff' : PAL.hot) : 'rgba(255,61,94,0.18)'
-                    if (on) { ctx.shadowColor = PAL.hot; ctx.shadowBlur = 8 }
-                    ctx.beginPath(); ctx.arc(150 + i * 12, 276, 3, 0, 7); ctx.fill()
-                    ctx.shadowBlur = 0
-                }
-                // magnet post — violet halo pulses while armed; energy tether
-                // and bloom while it holds a ball; dull when spent.
-                {
-                    const M = TABLE.magnet
-                    const held = gs.magHold > 0
-                    const charge = gs.magCharge > 0
-                    ctx.save()
-                    if (charge) {
-                        ctx.globalAlpha = 0.14 + 0.1 * Math.sin(gs.tick / 5)
-                        ctx.strokeStyle = PAL.mag; ctx.lineWidth = 2
-                        ctx.beginPath(); ctx.arc(M.x, M.y, M.field * (0.7 + 0.3 * Math.sin(gs.tick / 9)), 0, 7); ctx.stroke()
-                    }
-                    if (held) {
-                        const rg = ctx.createRadialGradient(M.x, M.y, 4, M.x, M.y, 30)
-                        rg.addColorStop(0, 'rgba(157,123,255,0.55)'); rg.addColorStop(1, 'rgba(157,123,255,0)')
-                        ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(M.x, M.y, 30, 0, 7); ctx.fill()
-                        const hp = gs.pucks.find((p) => p.magHeld)
-                        if (hp) {
-                            ctx.globalAlpha = 0.7; ctx.strokeStyle = PAL.mag; ctx.lineWidth = 1.5
-                            ctx.beginPath(); ctx.moveTo(M.x, M.y); ctx.lineTo(hp.bx, hp.by); ctx.stroke()
-                        }
-                    }
-                    ctx.globalAlpha = 1
-                    if (fl.mag > 0) { ctx.shadowColor = PAL.mag; ctx.shadowBlur = 16 }
-                    ctx.fillStyle = charge ? PAL.mag : 'rgba(157,123,255,0.25)'
-                    ctx.beginPath(); ctx.arc(M.x, M.y, M.r, 0, 7); ctx.fill()
-                    ctx.shadowBlur = 0
-                    ctx.strokeStyle = PAL.chrome; ctx.lineWidth = 2
-                    ctx.beginPath(); ctx.arc(M.x, M.y, M.r + 2.5, 0, 7); ctx.stroke()
-                    ctx.fillStyle = PAL.chrome; ctx.beginPath(); ctx.arc(M.x, M.y, 2.5, 0, 7); ctx.fill()
-                    ctx.restore()
-                }
-            }
-            TABLE.bumpers.forEach((b, i) => {
-                const glow = fl.bumpers[i]
-                ctx.save()
-                if (glow > 0) {
-                    const rg = ctx.createRadialGradient(b.x, b.y, b.r, b.x, b.y, b.r + 26)
-                    rg.addColorStop(0, `rgba(255,61,94,${0.5 * (glow / 9)})`); rg.addColorStop(1, 'rgba(255,61,94,0)')
-                    ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 26, 0, 7); ctx.fill()
-                }
-                ctx.strokeStyle = PAL.chrome; ctx.lineWidth = 3
-                ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 3, 0, 7); ctx.stroke()
-                const cap = ctx.createRadialGradient(b.x - 4, b.y - 5, 2, b.x, b.y, b.r)
-                cap.addColorStop(0, glow > 0 ? '#ffffff' : '#ff8095'); cap.addColorStop(1, PAL.hot)
-                ctx.fillStyle = cap; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill()
-                ctx.restore()
-            })
-
-            // slingshots
-            TABLE.slings.forEach((s, i) => {
-                ctx.save()
-                if (fl.slings[i] > 0) { ctx.shadowColor = PAL.sling; ctx.shadowBlur = 14 }
-                ctx.strokeStyle = PAL.sling; ctx.lineWidth = 6; ctx.lineCap = 'round'
-                ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke()
-                ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2; ctx.stroke()
-                ctx.restore()
-            })
-
-            // drop targets: up = glowing cyan bars, down = dark slots
-            TABLE.targets.forEach((tp, i) => {
-                const down = gs.targetDown[i]
-                ctx.save()
-                if (down) {
-                    ctx.fillStyle = 'rgba(10,14,30,0.9)'
-                    ctx.fillRect(tp.x1, TABLE.targetY - 3, tp.x2 - tp.x1, 6)
-                } else {
-                    if (fl.targets[i] > 0) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 16 }
-                    ctx.fillStyle = fl.bank > 0 ? '#9ff3ff' : PAL.neon
-                    ctx.fillRect(tp.x1, TABLE.targetY - 3, tp.x2 - tp.x1, 6)
-                    ctx.fillStyle = 'rgba(255,255,255,0.7)'
-                    ctx.fillRect(tp.x1 + 2, TABLE.targetY - 2, 3, 4)
-                }
-                ctx.restore()
-            })
-
-            // rung 3: the DMD insert — text is SIM state (gs.msg); when idle
-            // it crawls live status. Balls roll over it like glass over LEDs.
-            drawDMD(ctx, {
-                text: gs.msg.t > 0 ? gs.msg.text : '', t: gs.msg.t, T: gs.msg.T || 0, tick: gs.tick,
-                idle: dmdIdle(gs.score, gs.mult, gs.balls, gs.locks, gs.orbitBank, gs.orbitLit, gs.magCharge)[Math.floor(gs.tick / 96) % 4],
-            })
-
-            // spinner (outlane): tilts while a ball passes through
-            const p0 = gs.pucks[0] || { spin: 0, spinArm: true }
-            const sp = TABLE.spinner
-            ctx.save()
-            ctx.translate(24, (sp.yFrom + sp.yTo) / 2)
-            ctx.rotate(p0.spinArm ? 0.4 : 0.4 + (p0.spin / sp.pxPerTurn) * Math.PI * 2 + gs.spinnerTurns * 0.6)
-            ctx.fillStyle = fl.spinner > 0 ? '#ffffff' : PAL.chrome
-            ctx.fillRect(-2, -14, 4, 28)
-            ctx.restore()
-            // kicker mouth
-            ctx.fillStyle = `rgba(255,176,46,${0.25 + 0.2 * Math.sin(gs.tick / 7)})`
-            ctx.beginPath(); ctx.moveTo(10, 505); ctx.lineTo(44, 505); ctx.lineTo(26, 526); ctx.closePath(); ctx.fill()
-
-            // flippers — chrome capsules
-            const f = TABLE.flippers
-            ;['L', 'R'].forEach((side) => {
-                const px = side === 'L' ? f.L.px : f.R.px
-                const a = gs.ang[side] * Math.PI / 180
-                ctx.save()
-                ctx.shadowColor = PAL.glow; ctx.shadowBlur = gs.angV[side] !== 0 ? 12 : 4
-                ctx.strokeStyle = gs.tilt ? '#5a6478' : PAL.chrome
-                ctx.lineWidth = f.halfW * 2; ctx.lineCap = 'round'
-                ctx.beginPath(); ctx.moveTo(px, f.pivotY); ctx.lineTo(px + Math.cos(a) * f.len, f.pivotY + Math.sin(a) * f.len); ctx.stroke()
-                ctx.fillStyle = PAL.woodHi; ctx.beginPath(); ctx.arc(px, f.pivotY, 5, 0, 7); ctx.fill()
-                ctx.restore()
-            })
-
-            // plunger: spring + power meter
-            const pPull = gs.launched ? 0 : gs.power
-            ctx.strokeStyle = PAL.chrome; ctx.lineWidth = 4
-            ctx.beginPath(); ctx.moveTo(TABLE.plunger.x, 564 + pPull * 14); ctx.lineTo(TABLE.plunger.x, 586 + pPull * 14); ctx.stroke()
-            if (!gs.launched && gs.power > 0.02) {
-                ctx.fillStyle = PAL.hot
-                ctx.fillRect(300, 592 - 60 * gs.power, 6, 60 * gs.power)
-            }
-
-            // trails + every live ball (MULTIBALL draws the whole pack)
-            if (gs.pucks.length) {
-                trailRef.current.push({ x: gs.pucks[0].bx, y: gs.pucks[0].by })
-                if (trailRef.current.length > 7) trailRef.current.shift()
-                trailRef.current.forEach((p, i) => {
-                    const a = (i / trailRef.current.length) * 0.28
-                    ctx.fillStyle = `rgba(190,210,255,${a.toFixed(3)})`
-                    ctx.beginPath(); ctx.arc(p.x, p.y, BALL_R * (0.5 + 0.5 * i / trailRef.current.length), 0, 7); ctx.fill()
-                })
-            } else trailRef.current.length = 0
-            for (const p of gs.pucks) {
-                const bg = ctx.createRadialGradient(p.bx - 3, p.by - 4, 1, p.bx, p.by, BALL_R)
-                bg.addColorStop(0, '#ffffff'); bg.addColorStop(0.55, '#aab8cf'); bg.addColorStop(1, '#39435a')
-                ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(p.bx, p.by, BALL_R, 0, 7); ctx.fill()
-                ctx.fillStyle = 'rgba(255,255,255,0.85)'
-                ctx.beginPath(); ctx.arc(p.bx - 3, p.by - 4, 2.2, 0, 7); ctx.fill()
-            }
-
-            // glossy sheen — the reflective MODERN bar
-            const sheen = ctx.createRadialGradient(110, 120, 20, 110, 120, 260)
-            sheen.addColorStop(0, 'rgba(255,255,255,0.07)'); sheen.addColorStop(1, 'rgba(255,255,255,0)')
-            ctx.fillStyle = sheen; ctx.fillRect(0, 0, W, H)
-
-            // particles
-            partsRef.current = partsRef.current.filter((p) => p.life > 0)
-            for (const p of partsRef.current) {
-                p.life -= 1 / 60; p.x += p.vx / 60; p.y += p.vy / 60; p.vy += 300 / 60
-                ctx.globalAlpha = Math.max(0, p.life)
-                ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 2, 2)
-            }
-            ctx.globalAlpha = 1
-
-            // rung 3: expanding event rings (orbit beats, mag snap)
-            ringsRef.current = ringsRef.current.filter((r) => r.t < r.ticks)
-            for (const r of ringsRef.current) {
-                r.t += 1
-                const p = r.t / r.ticks
-                const rad = 6 + r.max * p
-                ctx.globalAlpha = (1 - p) * 0.8
-                ctx.strokeStyle = r.color
-                ctx.lineWidth = 2.5
-                ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, 7); ctx.stroke()
-            }
-            ctx.globalAlpha = 1
-
-            // tower-kick white-out (#3178): the instant the pack is loose the whole
-            // cabinet blinks — the MULTIBALL moment has to read at phone width
-            if (fl.flash > 0) {
-                ctx.fillStyle = `rgba(255,255,255,${(0.38 * fl.flash / 14).toFixed(3)})`
-                ctx.fillRect(0, 0, W, H)
-            }
-
-            // HUD — 7-seg score centred (corner clearance law #2899 respected)
-            ctx.fillStyle = 'rgba(4,6,16,0.72)'
-            ctx.fillRect(SCORE_X - 12, SCORE_Y - 10, SCORE_DIGITS * 22 + 24, 44)
-            const sc = String(Math.min(999999, gs.score)).padStart(SCORE_DIGITS, '0')
-            for (let i = 0; i < SCORE_DIGITS; i++) drawSevenSeg(ctx, SCORE_X + i * 22, SCORE_Y, +sc[i], PAL.score, fl.drain > 0 && fl.drain % 2 === 0)
-            // balls + mult lamps
-            const lampN = Math.max(TABLE.balls, Math.min(9, gs.balls))
-            for (let i = 0; i < lampN; i++) {
-                ctx.fillStyle = i < gs.balls ? PAL.glow : 'rgba(127,216,255,0.15)'
-                ctx.beginPath(); ctx.arc(SCORE_X + SCORE_DIGITS * 22 + 10, SCORE_Y + 6 + i * 12, 4, 0, 7); ctx.fill()
-            }
-            // rung 2: lock bank lamps + MULTIBALL banner
-            for (let i = 0; i < TABLE.lock.need; i++) {
-                ctx.fillStyle = i < gs.locks ? PAL.hot : 'rgba(255,61,94,0.18)'
-                ctx.beginPath(); ctx.arc(SCORE_X + SCORE_DIGITS * 22 + 26, SCORE_Y + 6 + i * 12, 4, 0, 7); ctx.fill()
-            }
-            if (gs.multiball && (gs.tick >> 4) % 2 === 0) {
-                ctx.fillStyle = PAL.hot; ctx.font = 'bold 13px monospace'
-                ctx.fillText('MULTIBALL x2', 180, SCORE_Y + 54)
-            }
-            ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
-            ctx.fillStyle = gs.mult > 1 ? PAL.hot : 'rgba(255,61,94,0.25)'
-            ctx.fillText(`BONUS x${gs.mult}`, 180, SCORE_Y + 40)
-            if (gs.nudgeMeter > 0 && !gs.tilt) {
-                ctx.fillStyle = 'rgba(255,176,46,0.8)'
-                ctx.fillText('~ NUDGE ~', 180, SCORE_Y + 54)
-            }
-            if (fl.tilt > 0 && fl.tilt % 8 < 4) {
-                ctx.fillStyle = PAL.hot; ctx.font = 'bold 26px monospace'
-                ctx.fillText('TILT', 180, 360)
-            }
-            ctx.restore()
-        }
-
-        const drawAttract = (t) => {
-            ctx.drawImage(fieldRef.current, 0, 0)
-            // demo ball rolling along the top arc, back and forth — everything moves
-            const a = Math.PI + (Math.sin(t / 700) * 0.5 + 0.5) * Math.PI
-            const bx = TABLE.arc.cx + Math.cos(a) * TABLE.arc.rx
-            const by = TABLE.arc.cy + Math.sin(a) * TABLE.arc.ry + BALL_R + 6
-            const bg = ctx.createRadialGradient(bx - 3, by - 4, 1, bx, by, BALL_R)
-            bg.addColorStop(0, '#fff'); bg.addColorStop(1, '#39435a')
-            ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(bx, by, BALL_R, 0, 7); ctx.fill()
-            TABLE.bumpers.forEach((b, i) => {
-                const pulse = 0.3 + 0.3 * Math.sin(t / 300 + i * 2)
-                ctx.fillStyle = `rgba(255,61,94,${pulse.toFixed(2)})`
-                ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill()
-            })
-            ctx.save()
-            ctx.textAlign = 'center'
-            ctx.font = 'bold 34px monospace'
-            ctx.shadowColor = PAL.neon; ctx.shadowBlur = 16 + 6 * Math.sin(t / 350)
-            ctx.fillStyle = '#e9fbff'
-            ctx.fillText('PINBALL', 180, 270)
-            ctx.font = 'bold 15px monospace'
-            ctx.shadowColor = PAL.lane; ctx.shadowBlur = 8
-            ctx.fillStyle = PAL.lane
-            ctx.fillText('CABINET ONE', 180, 296)
-            if (Math.floor(t / 500) % 2 === 0) {
-                ctx.font = 'bold 12px monospace'
-                ctx.shadowColor = '#fff'; ctx.shadowBlur = 6
-                ctx.fillStyle = '#fff'
-                ctx.fillText(PRESS, 180, 340)
-            }
-            ctx.restore()
-        }
-
-        let raf = 0, prev = performance.now(), acc = 0
-        const frame = (now) => {
-            raf = requestAnimationFrame(frame)
-            const dt = Math.min(100, now - prev); prev = now
-            const gs = gsRef.current
-            if (screenRef.current === 'play' && !pausedRef.current && !contractHoldsLoop()) {
-                acc += dt
-                let steps = 0
-                while (acc >= FIXED_DT && steps < 8) {
-                    stepGame(gs, padNow()); acc -= FIXED_DT; steps++
-                }
-                react(gs)
-                if (gs.done) { screenRef.current = 'over'; setScreen('over') }
-            }
-            // rung 3: magnet-hold hum bed — quiet under the chain, never a drone
-            if (screenRef.current === 'play' && !pausedRef.current && gs.magHold > 0) {
-                audioController.startLoopVoice(80, 0.04)
-                audioController.setLoopVoice(78, 0.035)
-            } else {
-                audioController.stopLoopVoice()
-            }
-            // #3178: MULTIBALL tension bed — runs while the pack is down. The
-            // trigger is SIM state (gs.multiball), so the start/stop seam is
-            // deterministic; pause, drain-home and game-over all cut it the same way.
-            const bedOn = screenRef.current === 'play' && !pausedRef.current && gs.multiball
-            if (bedOn && !mbBedRef.current) { audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55); mbBedRef.current = true }
-            else if (!bedOn && mbBedRef.current) { audioController.stopMusic(); mbBedRef.current = false }
-            ctx.clearRect(0, 0, W, H)
-            if (screenRef.current === 'attract') drawAttract(now)
-            else drawTable(gs)
-        }
-        raf = requestAnimationFrame(frame)
-
-        // ------------------------------------------------------------- input ----
-        const startable = () => screenRef.current === 'attract' || screenRef.current === 'over'
-        const onKeyDown = (e) => {
-            if (e.repeat) return
-            if (e.code === 'Escape' || e.code === 'QuestionMark' || e.key === '?' || e.code === 'Backquote') {
-                if (screenRef.current === 'play') setPaused((p) => !p)
-                return
-            }
-            if (startable()) { if (!paused) startPlay(); return }
-            if (paused) return
-            const k = keysRef.current
-            if (e.code === 'ArrowLeft' || e.code === 'KeyA') k.left = true
-            else if (e.code === 'ArrowRight' || e.code === 'KeyD') k.right = true
-            else if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'KeyS') { k.a = true; k.down = true }
-            else if (e.code === 'KeyB' || e.code === 'ShiftLeft') k.b = true
-            if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
-        }
-        const onKeyUp = (e) => {
-            const k = keysRef.current
-            if (e.code === 'ArrowLeft' || e.code === 'KeyA') k.left = false
-            else if (e.code === 'ArrowRight' || e.code === 'KeyD') k.right = false
-            else if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'KeyS') { k.a = false; k.down = false }
-            else if (e.code === 'KeyB' || e.code === 'ShiftLeft') k.b = false
-        }
-        const onPointer = () => { if (startable() && !pausedRef.current) startPlay() }
-        window.addEventListener('keydown', onKeyDown)
-        window.addEventListener('keyup', onKeyUp)
-        cvs.addEventListener('pointerdown', onPointer)
-
-        // #1200 feedback report (production build too): the in-game report
-        // button files live state so a report can be replayed at ?seed=N.
-        exposeFeedbackState(() => ({ tick: gsRef.current.tick, score: gsRef.current.score, done: gsRef.current.done, seed: gsRef.current.seed }))
-
-        if (import.meta.env.DEV) {
-            window.__pinballTest = {
-                state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current }),
-                // dev rig: drop a ball straight into the firelane (visual QA of
-                // the lamp set / tower / pack — the rules themselves are pinned
-                // deterministically by pinballcheck in Node)
-                laneDrop: () => {
-                    const gs = gsRef.current
-                    gs.pucks.push({ bx: 310, by: 235, vx: 0, vy: 160, prevY: 235, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0 })
-                    return stateOf(gs)
-                },
-                // dev rig: feed the orbit channel / drop a ball into the magnet
-                orbitFeed: () => {
-                    const gs = gsRef.current
-                    gs.pucks.push({ bx: 20, by: 498, vx: TABLE.kicker.vx, vy: TABLE.kicker.vy, prevY: 498, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
-                    return stateOf(gs)
-                },
-                magDrop: () => {
-                    const gs = gsRef.current
-                    gs.pucks.push({ bx: TABLE.magnet.x, by: TABLE.magnet.y - 40, vx: 0, vy: 60, prevY: TABLE.magnet.y - 40, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
-                    return stateOf(gs)
-                },
-                hash: () => stateHash(gsRef.current),
-                reset: (seed) => { gsRef.current = makeGame(seed >>> 0); return stateOf(gsRef.current) },
-                press: (code) => {
-                    const k = keysRef.current
-                    if (code === 'left') k.left = true; else if (code === 'right') k.right = true
-                    else if (code === 'a' || code === 'down') { k.a = true; k.down = true }
-                    else if (code === 'b') k.b = true
-                },
-                release: (code) => {
-                    const k = keysRef.current
-                    if (code === 'left') k.left = false; else if (code === 'right') k.right = false
-                    else if (code === 'a' || code === 'down') { k.a = false; k.down = false }
-                    else if (code === 'b') k.b = false
-                },
-                step: (n = 1) => { for (let i = 0; i < n; i++) stepGame(gsRef.current, keysRef.current); react(gsRef.current); return stateOf(gsRef.current) },
-            }
-            exposeGame({
-                id: 'pinball',
-                buttons: ['left', 'right', 'a', 'b', 'down'],
-                reset: (seed) => { gsRef.current = makeGame(seed >>> 0); screenRef.current = 'play'; setScreen('play'); return stateOf(gsRef.current) },
-                tick: (pad) => { stepGame(gsRef.current, pad || {}); react(gsRef.current); return stateOf(gsRef.current) },
-                state: () => stateOf(gsRef.current),
-                canvas: () => canvasRef.current,
-            })
-        }
-
-        return () => {
-            cancelAnimationFrame(raf)
-            window.removeEventListener('resize', fit)
-            window.removeEventListener('keydown', onKeyDown)
-            window.removeEventListener('keyup', onKeyUp)
-            cvs.removeEventListener('pointerdown', onPointer)
-            audioController.stopLoopVoice()
-            audioController.stopMusic() // #3178: never leak the multiball bed timer
-            unexposeFeedbackState()
-            if (import.meta.env.DEV) { if (window.__pinballTest) delete window.__pinballTest; unexposeGame() }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [startPlay])
+    const gameConfig = GAMES.find((g) => g.label === 'PINBALL')
+    const emb = cabRef.current === 'two'
+    const dmdNow = screenRef.current === 'attract'
+        ? { w: emb ? DMD_MSGS_EMBER.attract : DMD_MSGS.attract, hi: false }
+        : emb ? DMD_MSGS_EMBER.ready : DMD_MSGS.ready
 
     return (
-        <div className="relative flex h-full w-full items-center justify-center">
-            <canvas ref={canvasRef} className="rounded-lg shadow-[0_0_40px_rgba(49,225,255,0.15)]" />
-            {screen === 'attract' && (
-                <div className="pointer-events-none absolute inset-x-0 bottom-[12%] flex flex-col items-center">
-                    <AttractMessage className="text-cyan-200/85 mt-2" messages={MESSAGES} />
+        <div className="absolute inset-0">
+            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+            {gameConfig && <div className="absolute top-4 left-4 z-10"><PauseOverlay game={gameConfig} /></div>}
+            {screenRef.current === 'attract' && <AttractPrompt title={cabRef.current === 'two' ? 'EMBER RIDER' : 'NEON TABLE'} controls={gameConfig?.controls} key={cabRef.current} />}
+            {screenRef.current === 'over' && (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/70 font-arcade">
+                    <div className="text-3xl text-amber-300">GAME OVER</div>
+                    <div className="text-lg text-white">SCORE {gameRef.current?.score ?? 0}</div>
+                    <div className="text-xs text-fuchsia-300">{cabRef.current === 'two' ? 'CABINET TWO — EMBER RIDER' : 'CABINET ONE — NEON TABLE'}</div>
+                    <div className="mt-2 text-sm text-amber-200 animate-pulse">PRESS SPACE — play again · ← → — row</div>
                 </div>
             )}
-            {screen === 'over' && (
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2">
-                    <p className="font-mono text-2xl font-bold text-rose-300" style={{ textShadow: '0 0 12px rgba(255,61,94,0.8)' }}>GAME OVER</p>
-                    <p className="font-mono text-sm text-amber-200">FINAL {String(gsRef.current.score).padStart(6, '0')}</p>
-                    <p className="font-mono text-[11px] text-white/70">{PRESS}</p>
-                </div>
-            )}
-            {paused && <PauseOverlay game={GAMES.find(g => g.label === 'PINBALL')} onResume={() => setPaused(false)} />}
-            <VirtualControls visible={screen === 'play' && !paused} secondAction={{ label: 'NUDGE', code: 'KeyB' }} />
+            <VirtualControls secondAction={{ label: 'PLUNGER', code: 'ArrowDown' }} visible={screenRef.current === 'play' && !pausedRef.current} />
+            {dmdNow && screenRef.current === 'play' && null}
         </div>
     )
 }
 
-export default PinballGame
+export default Pinball
