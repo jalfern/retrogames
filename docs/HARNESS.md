@@ -157,16 +157,25 @@ scripts/forge-merge.sh                    # #3013: the whole rule-5 merge — ma
                                           #   "no checks reported" — or the state is empty) keep
                                           #   the wait going; only SUCCESS merges, red refuses,
                                           #   and a check that never reports times out refused.
+                                          #   #3269: a dropped `pull_request` event leaves the
+                                          #   rollup empty forever too, so after two silent polls
+                                          #   the verdict comes from the check-runs API at the
+                                          #   current head sha — an explicit conclusion still
+                                          #   gates both ways, silence still refuses, and the
+                                          #   log names the source of the verdict.
                                           #   worktreepurge keeps main-squatters ('pushed,
                                           #   unmerged'); this is their only exit besides Jon.
 node scripts/mergecheck.mjs               # sandbox replay of the trap: fake gh merges
                                           #   server-side then dies on `'main' is already used
-                                          #   by worktree'; scenarios A-H × legs (clean reap,
+                                          #   by worktree'; scenarios A-J × legs (clean reap,
                                           #   dirty squat preserved, nothing-merged touches
                                           #   nothing, late-CI waits then merges only after
-                                          #   SUCCESS, never-reports refuses, red refuses).
+                                          #   SUCCESS, never-reports refuses, red refuses,
+                                          #   #3269: silent rollup + API success merges and
+                                          #   names the fallback, API failure still refuses).
                                           #   Mutate `state !== 'MERGED'` -> C reds; restore
-                                          #   the #3120 fall-through -> F+G red (#3120).
+                                          #   the #3120 fall-through -> F+G red (#3120); drop
+                                          #   the `// ""` rollup normalize -> I+J red (#3269).
 node scripts/watchcheck.mjs             # the WATCH key, driven in Chrome (#1624; browser suite)
                                         #   --throttle N reproduces nightly tick debt on one pilot (#2036)
 node scripts/watchrespawncheck.mjs      # #2278: respawn recipe survives tmp_cleaner (macOS

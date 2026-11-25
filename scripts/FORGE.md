@@ -174,6 +174,14 @@ AGENTS.md wins.
                             # main — remote-branch delete, re-detach at origin/main, safe
                             # squat prune (dirty ones named, never destroyed). mergecheck
                             # proves it against a sandbox replay of the trap.
+                            # #3269: GitHub sometimes drops the `pull_request` event for a
+                            # lane ref — `gh pr checks` then stays empty forever while CI ran
+                            # at that head anyway. After two silent polls the wait reads
+                            # `static` from the check-runs API at the CURRENT head sha (only
+                            # an explicit conclusion moves the merge; the log names where the
+                            # verdict came from). Re-attach CI to the branch with
+                            # `gh workflow run ci.yml --ref <branch>` — a dispatch run's
+                            # checks don't show in `gh pr checks`, but the API sees them.
    ```
 8. **Verify prod:** poll `https://jalfern.com/retrogames/` assets until the
    bundle hash contains the new game; comment the live URL on the issue;
