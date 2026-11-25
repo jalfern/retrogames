@@ -69,6 +69,8 @@ if (MUT) {
         // wake foam stitches the centreline again (#3342) — the channel fills.
         centrestitch: { file: 'src/games/TidalRush/art.js', from: 'const off = width * 0.24 * sp.arm', to: 'const off = 0 * sp.arm', note: 'wake spray spawns on the centreline — the V channel fills in' },
         stormcalm: { file: 'src/games/TidalRush/art.js', from: 'const ea = foam * tw * 0.70 * (1 - storm * 0.38)', to: 'const ea = foam * tw * 0.70', note: '#3349 storm headroom removed — the wake clips to a white sheet on whitecaps again' },
+        spraycalm: { file: 'src/games/TidalRush/art.js', from: '    return { r: 0.95 - 0.28 * s, g: 0.98 - 0.06 * s, b: 1.0, opacity: 0.9 * (1 - 0.38 * s) }', to: '    return { r: 0.95, g: 0.98, b: 1.0, opacity: 0.9 }', note: '#3368 storm spray headroom removed — the pool saturates over whitecap water again' },
+        budgetflat: { file: 'src/games/TidalRush/art.js', from: 'const ea = foam * tw * 0.70 * (1 - storm * 0.38) * budget', to: 'const ea = foam * tw * 0.70 * (1 - storm * 0.38)', note: '#3368 pile-up budget ignored — converging pack rides full-bright again' },
         // the shallows stop shimmering (#3218) — beach caustics gone.
         causticoff: { file: 'src/games/TidalRush/art.js', from: 'float shoreK = length(vWorld.xz) / 180.0;', to: 'float shoreK = 0.0;', note: 'beach caustics disabled' },
         // the flat 360 lands in silence again (#3218) — no whoosh-in.
@@ -1474,6 +1476,38 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
             }
             return true
         })())
+    // #3368 item 3 — the pile-up budget: a converging pack rides 3 wakes at once
+    // and additive has no cap. Fourth arg scales crest + glow alpha; the default
+    // must be byte-identical to the solo law. Loud near convergence, honest far.
+    ok('#3368 wakeStep budget is optional — default and budget=1 byte-identical',
+        (() => {
+            const a = mk2(); const b = mk2()
+            wakeStep(a, 1 / 60, 1)
+            wakeStep(b, 1 / 60, 1, 1)
+            const ca = a.geo.attributes.color.array, cb = b.geo.attributes.color.array
+            const ga = a.glowGeo.attributes.color.array, gb = b.glowGeo.attributes.color.array
+            for (let i = 0; i < ca.length; i++) if (ca[i] !== cb[i]) return false
+            for (let i = 0; i < ga.length; i++) if (ga[i] !== gb[i]) return false
+            return true
+        })())
+    ok('#3368 full convergence (budget 0.35) steps crest + haze back ~65% harder than alone',
+        (() => {
+            const solo = mk2(); const pack = mk2()
+            wakeStep(solo, 1 / 60, 1)
+            wakeStep(pack, 1 / 60, 1, 0.35)
+            const m = pack.pts.length
+            if (m < 6) return false
+            for (let i = 0; i < m; i++) {
+                if (!(crestA(pack, i) < crestA(solo, i) * 0.4)) return false
+                if (!(glowA(pack, i) < glowA(solo, i) * 0.4)) return false
+                if (!(crestA(pack, i) > fillA(pack, i) * 1.9)) return false // V still reads
+            }
+            return true
+        })())
+    const jsx3368b = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/index.jsx'), 'utf8')
+    ok('#3368 the cabinet steps the pack back per-hull from the live pack distance',
+        /wakeBudgets/.test(jsx3368b) && /wakeStep\(w, DT, stormBlend, wakeBudgets/.test(jsx3368b))
+
     ok('#3349 wakeStep storm arg is optional — dry default matches the old law',
         (() => {
             const a = mk2(); const b = mk2()
@@ -1575,6 +1609,22 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     wakeStep(rg, 1 / 60)
     ok('ring + drawRange law: pts trim to n, bright counts 24 per section, glow 6',
         rg.pts.length === 8 && rg.geo.drawRange.count === (8 - 1) * 24 && rg.glowGeo.drawRange.count === (8 - 1) * 6)
+}
+
+// #3368 — storm spray headroom: the shared pool must cool like the crest lines
+// (#3349). Pure law pinned at both ends; the cabinet must apply it per-frame
+// from the live stormBlend — no per-spawn color math, no new pools.
+{
+    const { sprayTint } = await import('../src/games/TidalRush/art.js')
+    const dry = sprayTint(0)
+    const storm = sprayTint(1)
+    ok('#3368 sprayTint dry is the pool law (r 0.95 / g 0.98 / b 1.0 / opacity 0.9)',
+        dry.r === 0.95 && dry.g === 0.98 && dry.b === 1.0 && Math.abs(dry.opacity - 0.9) < 1e-12)
+    ok('#3368 full storm cools hue + dims alpha (headroom, additive law intact)',
+        storm.r < 0.75 && storm.g < 0.95 && storm.b === 1.0 && storm.opacity < 0.62 && storm.opacity > 0.5)
+    const jsx3368 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/index.jsx'), 'utf8')
+    ok('#3368 the cabinet tints the shared pool from the live stormBlend',
+        /sprayTint\(stormBlend\)/.test(jsx3368) && /spray\.mat\.color\.setRGB\(tint\.r/.test(jsx3368) && /spray\.mat\.opacity = tint\.opacity/.test(jsx3368))
 }
 
 // 6d. the two moments (#3351): launch POP and touchdown ABSORB — cosmetic

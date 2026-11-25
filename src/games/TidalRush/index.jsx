@@ -21,7 +21,7 @@ import { makeGame, step, autoPad, attractPad, stateOf, stateHash, rankAt, LAPS, 
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
 import { SEATS, PAD_DELAY, HASH_EVERY, HOLD_MS, WATCH_CAP, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence, podiumRows, podWire, podRows, createHist, inflateSh } from './net.js'
-import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, wakeSpray, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame, makeSplashRings, ringStep } from './art.js'
+import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, sprayTint, wakeSpray, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame, makeSplashRings, ringStep } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
 const MESSAGES = [
@@ -723,9 +723,27 @@ const TidalRushGame = () => {
                 }
             })
 
+            // #3368: spray rides the same headroom law as the crest lines — cool the hue
+            // and dim the alpha under storm, so the pool never saturates on whitecaps.
+            const tint = sprayTint(stormBlend)
+            spray.mat.color.setRGB(tint.r, tint.g, tint.b)
+            spray.mat.opacity = tint.opacity
             sprayStep(spray, DT)
             ringStep(rings, DT)
-            wakes.forEach((w) => wakeStep(w, DT, stormBlend))
+            // #3368 item 3 — pile-up budget: additive is no cap, so a converging
+            // pack rides 3 wakes at once. Per hull, step the crest + haze back
+            // toward a calm level while any other hull is near (<7 m); the
+            // pack still shows three lines, not one posterized sheet.
+            const wakeBudgets = gs.crafts.map((c) => {
+                let nearest = Infinity
+                for (const o of gs.crafts) {
+                    if (o.id === c.id) continue
+                    const d = Math.hypot(o.x - c.x, o.z - c.z)
+                    if (d < nearest) nearest = d
+                }
+                return nearest >= 7 ? 1 : (0.35 + 0.65 * (nearest / 7))
+            })
+            wakes.forEach((w, i) => wakeStep(w, DT, stormBlend, wakeBudgets[i]))
 
             // chase-cam: sit behind and low over the water, FOV rides speed.
             // #3220: it follows MY hull — guests ride MAKO/TUNDRA, the bay
