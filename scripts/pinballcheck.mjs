@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -42,6 +42,8 @@ if (MUT) {
         mirror: { from: '{ x: 75, y: 170, vx: 80, vy: -160 },', to: '{ x: 93, y: 170, vx: 80, vy: -160 },', note: 'ember mbKick 0 breaks its mirror' },
         // the ball search never ends a stalled ball — a rare rest position wedges the game open.
         search: { from: 'if (p.stall > 1200) p.drain = true;', to: 'if (p.stall > 100000) p.drain = true;', note: 'ball search never drains a stalled ball' },
+        // the kickback solenoid seizes — the free save never fires (#3250).
+        kickback: { from: 'p.vy > KB.minVy &&', to: 'p.vy > KB.minVy * 20 &&', note: 'kickback plunger seizes — the save never fires' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -52,7 +54,7 @@ if (MUT) {
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
-const { makeGame, stepGame, stateOf, stateHash, TABLE, W, H, BALL_R, mulberry32 } = await import('../src/games/Pinball/sim.js')
+const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32 } = await import('../src/games/Pinball/sim.js')
 
 const r = new Report('pinballcheck')
 r.info('boot', 'sim.js imported in Node, zero DOM, zero Math.random')
@@ -992,6 +994,54 @@ const wrap = (gs) => {
     }
     const ln1 = ln(41), ln2 = ln(41), ln3 = ln(42)
     r.check('the same fork exists on EMBER RIDER', ln1 === ln2 && ln1 !== ln3)
+}
+
+// --- 8. kickback (#3250): one free save per ball at the right drain column ----
+{
+    const { TABLE_TWO } = await import('../src/games/Pinball/sim.js')
+    const mx = (x) => W - x
+    const gs = drive(makeGame(120))
+    setBall(gs, 196, 558, 0, 300); clear(gs)
+    drive(gs, {}, 1)
+    r.check('KICKBACK: a fast right-column descent is saved — fired back up, +100 literal',
+        gs.events.some((e) => e.type === 'kickback') && gs.score === 100 && gs.vy < -800,
+        `vy=${gs.vy.toFixed(0)} score=${gs.score}`)
+    r.check('the save announces itself on the sim-owned DMD and reads spent in state',
+        gs.msg.text === 'KICKBACK! +100' && gs.msg.t > 0 && stateOf(gs).kbUsed === true, gs.msg.text)
+    const seen = []
+    setBall(gs, 196, 552, 0, 300); clear(gs)
+    for (let i = 0; i < 40; i++) { drive(gs, {}, 1); seen.push(...types(gs)) }
+    r.check('one save per ball: the spent kickback lets the next right-column ball drain',
+        !seen.includes('kickback') && seen.includes('drain'), seen.join(','))
+    // the device re-arms with the next ball reset
+    resetBall(gs); gs.kbFlash = 0
+    setBall(gs, 196, 558, 0, 300); clear(gs)
+    drive(gs, {}, 1)
+    r.check('the kickback re-arms with every new ball', gs.events.some((e) => e.type === 'kickback'))
+    // gate law: dead-centre deaths stay deaths; slow rests never launch
+    const dc = drive(makeGame(122))
+    setBall(dc, 184, 545, 0, 600); clear(dc)
+    const dcSeen = []
+    for (let i = 0; i < 30; i++) { drive(dc, {}, 1); dcSeen.push(...types(dc)) }
+    r.check('a straight-CENTRE drain is not saved (the device guards its own column)',
+        !dcSeen.includes('kickback') && dcSeen.includes('drain'), dcSeen.join(','))
+    const rs = drive(makeGame(121))
+    setBall(rs, 196, 598, 0, 0); clear(rs)
+    drive(rs, {}, 12)
+    r.check('a ball dying at rest in the pocket is never launched (minVy gate — search law intact)',
+        rs.kbUsed === false && rs.balls < rs.table.balls, `kbUsed=${rs.kbUsed} balls=${rs.balls}`)
+    // EMBER RIDER: mirrored column, its own hotter-priced save
+    const em = drive(makeGame(123, 1))
+    setBall(em, 163, 558, 0, 300); clear(em)
+    drive(em, {}, 1)
+    r.check('EMBER RIDER saves its mirrored column for its own price (+75, fired right)',
+        em.events.some((e) => e.type === 'kickback') && em.score === 75 && em.vx > 0 && em.vy < -800,
+        `vx=${em.vx.toFixed(0)} vy=${em.vy.toFixed(0)} score=${em.score}`)
+    r.check('kickback zone mirrors with direction flipped (#3250)',
+        Math.abs(mx(TABLE.kb.x2) - TABLE_TWO.kb.x1) < 1e-9 && Math.abs(mx(TABLE.kb.x1) - TABLE_TWO.kb.x2) < 1e-9 &&
+        TABLE.kb.yFrom === TABLE_TWO.kb.yFrom && TABLE.kb.yTo === TABLE_TWO.kb.yTo &&
+        TABLE.kb.minVy === TABLE_TWO.kb.minVy && Math.abs(TABLE.kb.vx + TABLE_TWO.kb.vx) < 1e-9 &&
+        TABLE.kb.vy === TABLE_TWO.kb.vy)
 }
 
 restoreAll()

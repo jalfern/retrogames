@@ -110,6 +110,13 @@ export const TABLE = {
     // it as RIGHT of xMax (#3232: CABINET TWO runs the outlane on the right).
     spinner: { xMax: 46, side: 1, yFrom: 440, yTo: 496, pxPerTurn: 22 },
     kicker: { xMax: 46, side: 1, yAt: 498, vx: 10, vy: -880 },
+    // KICKBACK (#3250): the free ball-saver at the RIGHT half of the drain
+    // mouth — past-the-right-tip misses die here on a lane-side table (Eight
+    // Ball Deluxe idiom — Williams 1981). One free save per ball: a ball
+    // descending fast through the gap column is fired back up the field
+    // instead of draining, pays its own price, and the device stays spent
+    // until the next ball (minVy keeps resting balls off the plunger).
+    kb: { x1: 190, x2: 205, yFrom: 552, yTo: 604, minVy: 150, vx: -40, vy: -900 },
     // ---- rung 2 primitives (data; the engine only knows the shapes) ----
     // RAMP rollovers: crossed UPWARD inside the launch lane (x 326..346).
     rampRollovers: [{ y: 250 }, { y: 330 }],
@@ -173,7 +180,7 @@ export const TABLE = {
     tilt: { max: 3, decayTicks: 54 },     // 3 nudges → tilt; ~0.9 s between allowed
     rules: {                            // scoring through the ladder, all literals live in the check
         bumper: 100, sling: 25, target: 50, bankClear: 250,
-        spinner: 10, kicker: 100, bonusPerTarget: 50, multCap: 5,
+        spinner: 10, kicker: 100, kb: 100, bonusPerTarget: 50, multCap: 5,
         ramp: 25, rampSet: 500, lane: 25, laneSweep: 100,
         lock: 500, multiball: 1000, mbDouble: 2,
         orbit: 100, orbitSet: 500, magnet: 50,
@@ -232,6 +239,8 @@ export const TABLE_TWO = {
     outlaneGuide: { x1: 308, y1: 420, x2: 330, y2: 505 },
     spinner: { xMax: 314, side: -1, yFrom: 440, yTo: 496, pxPerTurn: 22 },
     kicker: { xMax: 314, side: -1, yAt: 498, vx: -10, vy: -880 },
+    // kickback, exact W-x mirror of CABINET ONE's pocket (#3250, #3103 contract)
+    kb: { x1: 155, x2: 170, yFrom: 552, yTo: 604, minVy: 150, vx: 40, vy: -900 },
     rampRollovers: [{ y: 250 }, { y: 330 }],
     laneRollovers: [{ y: 250 }, { y: 310 }, { y: 370 }],
     laneX: { x1: 42, x2: 58 },
@@ -262,7 +271,7 @@ export const TABLE_TWO = {
     tilt: { max: 3, decayTicks: 42 },     // hotter table tilts sooner (~0.7 s)
     rules: {
         bumper: 75, sling: 30, target: 50, bankClear: 300,
-        spinner: 15, kicker: 75, bonusPerTarget: 50, multCap: 4,
+        spinner: 15, kicker: 75, kb: 75, bonusPerTarget: 50, multCap: 4,
         ramp: 30, rampSet: 600, lane: 30, laneSweep: 150,
         lock: 400, multiball: 1200, mbDouble: 2,
         orbit: 150, orbitSet: 600, magnet: 75,
@@ -325,6 +334,7 @@ export function makeGame(seed = 1, cab = 0) {
         bankLit: false, bankHits: 0, banksThisBall: 0, mult: 1,
         spinnerTurns: 0,   // per-puck spin/spinArm live on gs.pucks[i]
         kickCd: 0,
+        kbUsed: false, kbFlash: 0,   // #3250: the kickback save — one per ball
         bbCd: 0,           // steel-clack event cooldown in substeps (#3217)
         nudgeMeter: 0, nudgeDecay: 0, tilt: false,
         lastBonus: 0, drainFx: 0,
@@ -374,6 +384,7 @@ export function resetBall(gs) {
     gs.targetDown = T.targets.map(() => false); gs.bankLit = false;
     gs.spinnerTurns = 0; gs.tilt = false;
     gs.nudgeMeter = 0; gs.nudgeDecay = 0; gs.mult = 1; gs.banksThisBall = 0;
+    gs.kbUsed = false;   // the kickback re-arms with every new ball
     gs.bbCd = 0;
     // rung 2: the tower drops its locks with the ball; the pack ends with it
     gs.locks = 0; gs.multiball = false; gs.saveT = 0; gs.saveUsed = false;
@@ -812,6 +823,19 @@ export function stepGame(gs, pad = {}) {
             return;
         }
 
+        // ---- #3250: KICKBACK — one free save per ball at the lane-side
+        // drain-mouth pocket. Fires only on a fast descent (a past-the-tip
+        // miss), never on rests (minVy) — the ball-search law stays intact.
+        const KB = T.kb;
+        if (!gs.kbUsed && p.vy > KB.minVy &&
+            p.bx > KB.x1 && p.bx < KB.x2 && p.by > KB.yFrom && p.by < KB.yTo) {
+            gs.kbUsed = true; gs.kbFlash = 18;
+            p.vx = KB.vx; p.vy = KB.vy; p.stall = 0;
+            add(gs, T.rules.kb);
+            say(gs, `KICKBACK! +${T.rules.kb}`, 90);
+            gs.events.push({ type: 'kickback', x: p.bx, y: p.by });
+        }
+
         // ---- rung 3: ORBIT — flank curl assist (mirrors the lane-guide curl
         // law): a launched ball climbing the left flank gets pushed toward
         // the apex so the wrap is a learnable line, not a prayer. ----
@@ -887,6 +911,7 @@ export function stepGame(gs, pad = {}) {
     if (!gs.done && gs.pucks.length === 0) feedBall(gs);
 
     if (gs.rampFlash > 0) gs.rampFlash -= 1;
+    if (gs.kbFlash > 0) gs.kbFlash -= 1;
     gs.laneFlash = gs.laneFlash.map((v) => Math.max(0, v - 1));
     if (gs.lockFlash > 0) gs.lockFlash -= 1;
     if (gs.mbFlash > 0) gs.mbFlash -= 1;
@@ -1017,7 +1042,7 @@ export function stateOf(gs) {
         // ---- rung 2 ----
         liveBalls: gs.pucks.length, locks: gs.locks,
         multiball: gs.multiball, extraBall: gs.extraBall,
-        rampHits: gs.rampHits, saveT: gs.saveT,
+        rampHits: gs.rampHits, saveT: gs.saveT, kbUsed: gs.kbUsed,
         // ---- rung 3 ----
         orbits: gs.orbits, orbitBank: gs.orbitBank, orbitLit: gs.orbitLit,
         magCharge: gs.magCharge, magHold: gs.magHold, magTouched: gs.magTouched,
@@ -1034,7 +1059,7 @@ export function stateHash(gs) {
         q(gs.ang.L), q(gs.ang.R), gs.tick, gs.score, gs.balls,
         gs.targetDown.map((d) => (d ? 1 : 0)).join(''), gs.mult, gs.tilt ? 1 : 0,
         gs.spinnerTurns, gs.launched ? 1 : 0,
-        gs.locks, gs.multiball ? 1 : 0, gs.extraBall, gs.rampHits, gs.saveUsed ? 1 : 0,
+        gs.locks, gs.multiball ? 1 : 0, gs.extraBall, gs.rampHits, gs.saveUsed ? 1 : 0, gs.kbUsed ? 1 : 0,
         gs.orbitBank, gs.orbitLit ? 1 : 0, gs.magCharge, gs.magHold, gs.magTouched ? 1 : 0,
         gs.seed >>> 0];
     let h = 0x811c9dc5;
