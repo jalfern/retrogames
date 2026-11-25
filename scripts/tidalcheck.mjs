@@ -35,8 +35,6 @@ const ok = (name, cond) => { if (cond) { pass++; console.log(`  ok  ${name}`) } 
 // mutated source.
 if (MUT) {
     const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-    const simPath = join(root, 'src/games/TidalRush/sim.js')
-    const src = readFileSync(simPath, 'utf8')
     const ANCHORS = {
         // RED passes from ANY side — the slalom's core must notice.
         judge: { from: "const want = g.color === 'red' ? -1 : 1", to: 'const want = 1', note: 'RED-side judgement muted' },
@@ -48,11 +46,17 @@ if (MUT) {
         rainoff: { from: "if (gs.stage !== 'storm') return 0", to: 'return 0', note: 'rain field disabled everywhere' },
         // the squall stops shoving — crosswind drift zeroed.
         push: { from: 'const drift = RAIN_PUSH * rain * windGust(gs)', to: 'const drift = 0 * RAIN_PUSH * rain * windGust(gs)', note: 'crosswind drift zeroed' },
+        // the moorings stop riding the drawn sea (#3159) — props glued to flat.
+        moorsea: { file: 'src/games/TidalRush/index.jsx', from: 'const wb = frontW(s.x, s.z, gs.front)', to: 'const wb = 0', note: 'moored props stop riding the sea Kai rides' },
+        // the anchorage stops following the course seed (#3159) — spots jitter.
+        moorrand: { file: 'src/games/TidalRush/art.js', from: 'let s = (seed >>> 0) || 1', to: 'let s = (Math.random() * 4294967296) >>> 0', note: 'anchorage stops following the seed' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
-    if (!src.includes(a.from)) { console.error(`mutant anchor missing in sim.js (${MUT})`); process.exit(1) }
-    plant(simPath, src.replace(a.from, a.to))
+    const target = join(root, a.file || 'src/games/TidalRush/sim.js')
+    const src = readFileSync(target, 'utf8')
+    if (!src.includes(a.from)) { console.error(`mutant anchor missing in ${a.file || 'sim.js'} (${MUT})`); process.exit(1) }
+    plant(target, src.replace(a.from, a.to))
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
@@ -542,6 +546,30 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('gates dim toward storm fog by rain at THEIR point', jsx.includes('buoyDim(b, RAIN_VIS * rainAt(gs, g0.x, g0.z))') && artJs2.includes('lerp(BUOY_DIM_COL'))
     ok('drop density follows the rain at Kai hull', jsx.includes('rainAt(gs, gs.crafts[0].x, gs.crafts[0].z)') && jsx.includes('rainVis > 0.3'))
     ok('the crossing gets a wind cue', jsx.includes("e.type === 'rain'") && jsx.includes('sfx.rain(e.on)'))
+}
+
+// --- moorings (#3159): the bay is lived-in --------------------------------------
+// Seeded sloops + a bell buoy ride the DRAWN sea inside the bounds. Proof the
+// sim stays blind to them: sim.js never mentions the props, and the shell rides
+// them on the SAME mixWater/mixHeight/frontW path the gates use.
+{
+    const { RX, RZ } = await import('../src/games/TidalRush/sim.js')
+    const { boatSpots } = await import('../src/games/TidalRush/art.js')
+    const simJs = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/sim.js'), 'utf8')
+    const artJs = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/art.js'), 'utf8')
+    const spots = boatSpots(7)
+    const jsx2 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/index.jsx'), 'utf8')
+    ok('a fleet anchors the bay: three sloops + a bell buoy', spots.length === 4 && spots.filter((s) => !s.bell).length === 3 && spots.filter((s) => s.bell).length === 1)
+    ok('one course seed, one anchorage (same seed ⇒ same spots)', JSON.stringify(boatSpots(7)) === JSON.stringify(spots) && JSON.stringify(boatSpots(52)) === JSON.stringify(boatSpots(52)))
+    ok('the bay changes with the course (other seed ⇒ other spots)', JSON.stringify(boatSpots(52)) !== JSON.stringify(spots))
+    ok('props sit INSIDE the gate ellipse — never on the race line', spots.every((s) => (s.x / RX) ** 2 + (s.z / RZ) ** 2 <= 0.85))
+    ok('the bell buoy waits where the first gates carry the pack', (() => { const b = spots.find((s) => s.bell); return b && Math.hypot(b.x, b.z) > 20 })())
+    ok('the sim never hears of the moorings (decorations cannot touch rules)', !/boatSpots|makeBoat|makeBellBuoy|mooring|scenery/i.test(simJs))
+    ok('props ride the SAME sea the gates do (frontW + mixWater/mixHeight)', jsx2.includes('frontW(s.x, s.z, gs.front)') && jsx2.includes('mixWater(s.x, s.z, t, gs.seaCur, gs.seaTarget, wb)'))
+    ok('props dim storm-side like the gates (#3191 language)', jsx2.includes('buoyDim(s.g, RAIN_VIS * rainAt(gs, s.x, s.z))'))
+    ok('a new seed re-hitches the fleet in the shell', jsx2.includes('gs.course.seed !== moorSeed'))
+    ok('the bell rings at the buoy, not on a timer (proximity + cooldown)', jsx2.includes('< 16)') && jsx2.includes('bellCool = 5'))
+    ok('masts and bells are original flat-shaded shapes', artJs.includes('export function makeBoat') && artJs.includes('export function makeBellBuoy') && artJs.includes('flatShading: true'))
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)

@@ -105,6 +105,8 @@ static job; every pushed commit is commented on #3104.
 - Wake ribbon is flat-shaded additive, no caustic shimmer under it; the WR64
   trail also darkens the water beside it.
 - Rider has no separate jump/land poses beyond crouch + lean/jolt with head-lag.
-- No buoy bell or in-bounds scenery (moored boats, birds) — headlands only.
+- In-bounds scenery shipped with #3159: seeded moored sloops and a bell buoy
+  ride the drawn sea (no colliders — decorations never touch the rules). Still
+  no birds, and the hulls have no reflection on the water plane.
 - Score HUD sits under the shared chrome pill at ?lite=1 widths (chrome overlap,
   not game layout) — flagged for the QA polish pass.
