@@ -115,21 +115,21 @@ try {
         `heat=${bh.h} track=${bh.t} gain=${bh.g}`)
     await page.evaluate(() => window.__pinballTest.devMb(true))
     const s0 = await busAt()
-    let swapIn = null, prev = s0, rise = 0
-    for (let i = 0; i < 50 && !swapIn; i++) { const s = await busAt(); if (s.t === 'pinballMb') { swapIn = s; break } prev = s; await wait(16) }
+    let swapIn = null, prev = s0, dipMin = 1, rise = 0
+    for (let i = 0; i < 50 && !swapIn; i++) { const s = await busAt(); if (s.t === 'pinballMb') { swapIn = s; break } if (s.t === 'pinballSolo' && s.g != null) dipMin = Math.min(dipMin, s.g); prev = s; await wait(16) }
     ok('#3313 the seam is reportable mid-glide (bed.seam counts down the dip, track still solo at the bottom)',
         (s0.s > 0 || prev.s > 0) && prev.t === 'pinballSolo', `seam@0=${s0.s} seam@last=${prev.s} track=${prev.t}`)
     for (let i = 0; i < 40; i++) { await wait(16); const s = await busAt(); rise = Math.max(rise, s.g || 0); if (rise >= 0.05) break }
-    ok('#3313 pack arrival glides: the bus dips below half its pre-seam gain before the swap, then rises into the mb bed',
-        !!swapIn && swapIn.g <= bh.g * 0.5 && rise >= 0.05,
-        `pre=${bh.g} at-swap=${swapIn && swapIn.g} rise=${rise}`)
+    ok('#3313 pack arrival glides: the bus dips to near-silence BEFORE the swap, then rises into the mb bed',
+        !!swapIn && dipMin <= Math.min(bh.g * 0.5, 0.004) && rise >= 0.05,
+        `pre=${bh.g} dip-min=${dipMin} rise=${rise}`)
     await page.evaluate(() => window.__pinballTest.devMb(false))
-    let swapOut = null, recover = 0
-    for (let i = 0; i < 50 && !swapOut; i++) { await wait(16); const s = await busAt(); if (s.t === 'pinballSolo') swapOut = s }
+    let swapOut = null, dipMin2 = 1, recover = 0
+    for (let i = 0; i < 50 && !swapOut; i++) { const s = await busAt(); if (s.t === 'pinballSolo') { swapOut = s; break } if (s.t === 'pinballMb' && s.g != null) dipMin2 = Math.min(dipMin2, s.g); await wait(16) }
     for (let i = 0; i < 40; i++) { await wait(16); const s = await busAt(); recover = Math.max(recover, s.g || 0); if (recover >= 0.008) break }
-    ok('#3313 pack departure glides too: dip before the hand-back, and the solo bed is audible again after',
-        !!swapOut && swapOut.g <= 0.044 && recover >= 0.008,
-        `at-swap=${swapOut && swapOut.g} recover=${recover}`)
+    ok('#3313 pack departure glides too: the bus dips before the hand-back, and the solo bed is audible again after',
+        !!swapOut && dipMin2 <= 0.02 && recover >= 0.008,
+        `dip-min=${dipMin2} recover=${recover}`)
 
     // rung 3 rig: feed the climbing rail — the wrap pays ORBIT in the browser.
     // Re-feed while nothing lands: on a loaded box the RAF runs slower than
