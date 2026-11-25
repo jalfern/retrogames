@@ -718,10 +718,15 @@ const PinballGame = () => {
                 return
             }
             if (startable()) {
-                // the row of cabinets answers the arrows first (#3232)
+                // the row of cabinets answers the arrows first (#3232): in
+                // attract they switch picks; at GAME OVER they step back to the
+                // row. SPACE/tap keeps the original quick-retry on the same cab.
                 if (screenRef.current === 'attract' && (e.code === 'ArrowLeft' || e.code === 'KeyA')) { setCab(0); e.preventDefault(); return }
                 if (screenRef.current === 'attract' && (e.code === 'ArrowRight' || e.code === 'KeyD')) { setCab(1); e.preventDefault(); return }
-                if (screenRef.current === 'over') { screenRef.current = 'attract'; setScreen('attract'); return }
+                if (screenRef.current === 'over' && (e.code === 'ArrowLeft' || e.code === 'KeyA' || e.code === 'ArrowRight' || e.code === 'KeyD')) {
+                    if (e.code === 'ArrowLeft' || e.code === 'KeyA') setCab(0); else setCab(1)
+                    screenRef.current = 'attract'; setScreen('attract'); e.preventDefault(); return
+                }
                 if (!paused) startPlay()
                 return
             }
