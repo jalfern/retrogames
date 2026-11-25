@@ -12,7 +12,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, REPLAY_MAX, REPLAY_MIN, replayWorthy, betterLine } from './sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, REPLAY_MAX, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank } from './sim.js'
 import { botPad, makeBot } from './planner.js'
 import { STEP, bedVoices, landThud } from './music.js'
 import { buildPark, buildSky, buildLetters, buildGems, buildRoofLine, buildSkater, poseSkater, buildParticles, buildSecretHint, emit, burst, stepParticles } from './art.js'
@@ -48,6 +48,8 @@ const GrindCityGame = () => {
     const [mode, setMode] = useState('run')
     const [result, setResult] = useState(null)
     const [best, setBest] = useState(null)   // #3374: {score, letters, won} — attract card memory
+    const [allTime, setAllTime] = useState(false)   // #3381: the chip's bank came from storage
+    const [sharedPts, setSharedPts] = useState(null) // #3381: a ?line= guest line rides the attract
     const pausedRef = useRef(false)
     const screenRef = useRef('attract')
     const modeRef = useRef('run')
@@ -61,6 +63,9 @@ const GrindCityGame = () => {
         manual: { current: null },
         speed: { current: null },
         near: { current: null },
+        share: { current: null },
+        shareChip: { current: null },
+        shareFn: { current: null },
     }).current
 
     useEffect(() => {
@@ -95,7 +100,22 @@ const GrindCityGame = () => {
         scene.add(sun)
         scene.add(new THREE.HemisphereLight(0xcfe2f5, 0x9a8f7a, 1.35))
 
-        let sim = makeGame(freshSeed(), 'run')
+        // #3381 saved/shared runs — read the store and a ?line= deep link
+        // before the first attract sim exists, so yesterday's record or a
+        // friend's line is what rides behind the title on load. Both readers
+        // are total: junk in the store or the URL falls back to a cold plaza.
+        const STORE_KEY = 'grindcity.best.v1'
+        let storedBank = null
+        try {
+            const raw = window.localStorage.getItem(STORE_KEY)
+            if (raw) { const b = JSON.parse(raw); if (validBank(b)) storedBank = b }
+        } catch { /* private mode or corrupt JSON — the plaza just starts cold */ }
+        const sharedLine = decodeLine(new URLSearchParams(window.location.search).get('line'))
+        let sharedIdx = 0
+        let sharedMode = !!sharedLine
+        if (sharedLine) setSharedPts(sharedLine.score)
+
+        let sim = makeGame(sharedLine ? sharedLine.seed : freshSeed(), 'run')
         sim.phase = 'play'          // attract: the autopilot rides behind the title
         let bot = makeBot()
         let attractV = 0           // style rotation (#3233 item 4): classic → flip → grab
@@ -120,6 +140,21 @@ const GrindCityGame = () => {
         let bestSeed = 0         // #3374: the seed + pad log of that run — attract re-rides them
         let bestLog = []
         let attractIdx = 0
+        // #3381: all-time marker (the chip says so when the bank predates this
+        // visit), the run-beat-the-record flag for the over card, and the
+        // share-flash timer the frame loop decays.
+        let allTimeV = false
+        let shareFlashT = 0
+        let shareText = ''
+        let lastShareCode = null
+        if (storedBank) {
+            bestLine = { score: storedBank.score, letters: storedBank.letters, won: storedBank.won }
+            bestSeed = storedBank.seed
+            bestLog = storedBank.log.slice()
+            allTimeV = true
+            setBest(bestLine)
+            setAllTime(true)
+        }
         // #3325: the replay's presentation-only free cam — orbit the replay while it runs.
         // Never touches the sim or the log; arrows rotate, C toggles.
         let orbitOn = false
@@ -150,6 +185,10 @@ const GrindCityGame = () => {
             replayNear = false
             orbitOn = false; orbitA = 0.6
             camMode = 'chase'; camCut = 0
+            // #3381: any way in or out of skating ends the guest ride — a
+            // shared line is only ever the load-time demo.
+            sharedMode = false
+            setSharedPts(null)
         }
 
         const startGame = (m) => {
@@ -222,6 +261,26 @@ const GrindCityGame = () => {
             else if (e === 'gap') AC.playSweep(600, 1400, 0.25, 'square', 0.09)
         }
 
+        // #3381: copy a link that re-rides the banked line — one press off the
+        // replay or the over card (S, or tapping the chip). The clipboard can
+        // refuse (permissions, focus, insecure origin): say so, don't pretend.
+        const shareLine = () => {
+            const code = bestLog.length && bestLine
+                ? encodeLine({ seed: bestSeed, log: bestLog, score: bestLine.score })
+                : null
+            if (!code) { shareText = bestLog.length ? 'LINE TOO LONG TO SHARE' : 'SKATE A LINE FIRST'; shareFlashT = 1.6; return }
+            lastShareCode = code
+            const url = `${window.location.origin}${window.location.pathname}?line=${code}`
+            const done = (t) => { shareText = t; shareFlashT = 1.6 }
+            AC.playTone(880, 0.08, 'triangle', 0.07)
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(url).then(() => done('LINE COPIED — SEND IT'), () => done('CLIPBOARD BLOCKED'))
+                } else done('CLIPBOARD BLOCKED')
+            } catch { done('CLIPBOARD BLOCKED') }
+        }
+        hud.shareFn.current = shareLine
+
         // ── HUD refs live at component level (`hud`) ──────────────────────
         const resize = () => {
             const w = stage.clientWidth, h = stage.clientHeight
@@ -251,10 +310,12 @@ const GrindCityGame = () => {
                 if (c === 'Space') finishOver()
                 else if (c === 'KeyF') replaySpeed = cycleReplaySpeed(replaySpeed)
                 else if (c === 'KeyC') orbitOn = !orbitOn
+                else if (c === 'KeyS') shareLine()
                 else if (c === 'ArrowLeft' || c === 'ArrowRight' || c === 'KeyA' || c === 'KeyD') keysRef.current[c] = true
                 return
             } else if (screenRef.current === 'over') {
                 if (c === 'Space') toAttract()
+                else if (c === 'KeyS') shareLine()
                 return
             }
             keysRef.current[c] = true
@@ -311,7 +372,7 @@ const GrindCityGame = () => {
             if (sim.phase !== 'over') return
             if (attractMode) { toAttract(); return }
             if (screenRef.current === 'over' || replayMode) return
-            pendingResult = { score: sim.score, won: sim.won, goals: { ...sim.goalsDone }, best: sim.stats.bestChain, ...((j) => ({ gems: j.gems, gemTotal: j.gemTotal, gemsAll: j.gemsAll, secret: j.secret }))(stateOf(sim)) }
+            pendingResult = { score: sim.score, won: sim.won, goals: { ...sim.goalsDone }, best: sim.stats.bestChain, allTime: false, ...((j) => ({ gems: j.gems, gemTotal: j.gemTotal, gemsAll: j.gemsAll, secret: j.secret }))(stateOf(sim)) }
             // #3374: every finished player run folds into the session best —
             // and when it *is* the best, the cabinet banks its seed + pad log so
             // the attract loop can re-ride it. (The log is the whole line: pads
@@ -330,6 +391,18 @@ const GrindCityGame = () => {
                     bestSeed = sim.seed
                     bestLog = inputLog.slice()
                     attractIdx = 0
+                    // #3381: this visit just skated the best line, so the
+                    // ALL-TIME marker waits for a later load. If the line also
+                    // strictly beats the stored record it overwrites the store
+                    // (survives the page) and earns the over-card badge.
+                    allTimeV = false
+                    setAllTime(false)
+                    const storedRec = storedBank && { score: storedBank.score, letters: storedBank.letters, won: storedBank.won }
+                    if (beatsLine(storedRec, cand)) {
+                        storedBank = { v: 1, seed: bestSeed, log: bestLog, score: cand.score, letters: cand.letters, won: cand.won }
+                        try { window.localStorage.setItem(STORE_KEY, JSON.stringify(storedBank)) } catch { /* no storage — the session remembers anyway */ }
+                        if (pendingResult) pendingResult.allTime = true
+                    }
                 }
             }
             if (replayWorthy(inputLog.length, lettersGot)) startReplay()
@@ -356,11 +429,25 @@ const GrindCityGame = () => {
             // shortened clock) isn't in the pads, so the wrap is driven by the
             // log length, not by the sim noticing it is over.
             let bankedPad = null
-            if (attractMode && bestLog.length) {
-                if (attractIdx >= bestLog.length) {
-                    sim = makeGame(bestSeed, 'run'); sim.phase = 'play'; attractIdx = 0
+            if (attractMode) {
+                if (sharedMode && sharedLine) {
+                    // #3381 deep link: ride the guest line once, exactly as it
+                    // was skated. When it ends the plaza keeps its own memory
+                    // (banked best, else the bot) without a reload — a shared
+                    // line is a demo, not a loop; the host's record still rides
+                    // after the guest finishes.
+                    if (sharedIdx >= sharedLine.log.length) {
+                        sharedMode = false
+                        setSharedPts(null)
+                        sim = makeGame(bestLog.length ? bestSeed : freshSeed(), 'run')
+                        sim.phase = 'play'; attractIdx = 0
+                    } else bankedPad = unpackIn(sharedLine.log[sharedIdx++])
+                } else if (bestLog.length) {
+                    if (attractIdx >= bestLog.length) {
+                        sim = makeGame(bestSeed, 'run'); sim.phase = 'play'; attractIdx = 0
+                    }
+                    bankedPad = unpackIn(bestLog[attractIdx++])
                 }
-                bankedPad = unpackIn(bestLog[attractIdx++])
             }
             const input = inputOverride || (attractMode ? (bankedPad || botPad(stateOf(sim), bot)) : pad())
             if (!attractMode && screenRef.current === 'play') inputLog.push(packIn(input))
@@ -581,6 +668,13 @@ const GrindCityGame = () => {
             // #3374: a sub-2 s near-miss replay wears its own badge — the run was
             // short because letters, not time, is what earned it the replay.
             if (hud.near.current) hud.near.current.style.opacity = replayMode && replayNear ? 1 : 0
+            // #3381 share flash — text is rewritten every lit frame so a screen
+            // change mid-flash (replay → over) still lands its words.
+            if (hud.share.current) {
+                hud.share.current.textContent = shareFlashT > 0 ? shareText : ''
+                hud.share.current.style.opacity = shareFlashT > 0 ? String(Math.min(1, shareFlashT)) : '0'
+                if (shareFlashT > 0) shareFlashT -= DT
+            }
         }
         raf = requestAnimationFrame(frame)
 
@@ -598,7 +692,7 @@ const GrindCityGame = () => {
         // ── DEV hooks + contract ────────────────────────────────────────────
         if (import.meta.env.DEV) {
             window.__grindTest = {
-                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0 }),
+                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode }),
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
@@ -635,6 +729,13 @@ const GrindCityGame = () => {
                     clearReplay()
                     bestLine = null; setBest(null)   // #3374: a harness session starts with no memory
                     bestSeed = 0; bestLog = []; attractIdx = 0
+                    // #3381: forgetting is total — the all-time store, the chip
+                    // marker, the guest line and the share code all go cold.
+                    try { window.localStorage.removeItem(STORE_KEY) } catch { /* nothing to forget */ }
+                    storedBank = null
+                    allTimeV = false; setAllTime(false)
+                    sharedMode = false; setSharedPts(null)
+                    lastShareCode = null
                     sim = makeGame(seed >>> 0, modeRef.current)
                     sim.phase = 'play'
                     bot = makeBot()
@@ -644,7 +745,7 @@ const GrindCityGame = () => {
                     return stateOf(sim)
                 },
                 tick: (p) => { simTick(p); return stateOf(sim) },
-                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), orbit: !!orbitOn, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0 }),
+                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), orbit: !!orbitOn, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode }),
                 canvas: () => canvas,
             })
         }
@@ -699,8 +800,10 @@ const GrindCityGame = () => {
                             <span className="text-2xl font-black italic tracking-[0.3em] text-white drop-shadow-[0_3px_0_rgba(0,0,0,.9)]">REPLAY</span>
                         </div>
                         <div ref={hud.near} className="absolute left-1/2 top-[30%] -translate-x-1/2 whitespace-nowrap text-base font-black italic tracking-[0.2em] text-[#7dffb0] drop-shadow-[0_3px_0_rgba(0,0,0,.9)] sm:text-xl" style={{ opacity: 0 }}>NEAR MISS — LETTERS COUNT</div>
+                        <div ref={hud.share} className="absolute left-1/2 top-[38%] -translate-x-1/2 whitespace-nowrap text-base font-black italic tracking-[0.2em] text-[#7dffb0] drop-shadow-[0_3px_0_rgba(0,0,0,.9)] sm:text-xl" style={{ opacity: 0 }} />
                         <div ref={hud.speed} className="absolute right-4 top-4 rounded border border-white/40 bg-black/50 px-3 py-1 text-lg font-black italic tracking-[0.2em] text-[#ffd35e] drop-shadow-[0_2px_0_rgba(0,0,0,.9)]" />
-                        <div className="text-center text-sm font-bold tracking-[0.4em] text-white/85 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SPACE / TAP — SKIP · F — SPEED · C — ORBIT</div>
+                        <span ref={hud.shareChip} onPointerDown={(e) => { e.stopPropagation(); if (hud.shareFn.current) hud.shareFn.current() }} className="pointer-events-auto absolute right-4 bottom-4 rounded border border-[#7dffb0]/50 bg-black/50 px-3 py-1 text-sm font-black italic tracking-[0.2em] text-[#7dffb0] drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SHARE — S</span>
+                        <div className="text-center text-sm font-bold tracking-[0.4em] text-white/85 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SPACE / TAP — SKIP · F — SPEED<span className="hidden sm:inline"> · C — ORBIT · S — SHARE</span></div>
                     </div>
                 )}
                 {screen === 'attract' && (
@@ -709,8 +812,11 @@ const GrindCityGame = () => {
                         <div className="mt-1 text-sm tracking-[0.5em] text-white/80">ONE PARK · LONG LINES</div>
                         {best && (
                             <div className={`mt-3 text-sm font-bold tracking-[0.25em] drop-shadow-[0_2px_0_rgba(0,0,0,.9)] ${best.won ? 'text-[#ffd35e]' : 'text-white/85'}`}>
-                                BEST LINE {best.score} PTS · {best.letters}/5{best.won ? ' ★ GOALS' : ''}
+                                {allTime ? 'ALL-TIME BEST LINE' : 'BEST LINE'} {best.score} PTS · {best.letters}/5{best.won ? ' ★ GOALS' : ''}
                             </div>
+                        )}
+                        {sharedPts != null && (
+                            <div className="mt-2 text-sm font-black italic tracking-[0.25em] text-[#7dffb0] drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SHARED LINE · {sharedPts} PTS</div>
                         )}
                         <div className="mt-8 flex gap-3 text-sm font-bold tracking-widest">
                             <span className={`rounded border px-3 py-1 ${mode === 'run' ? 'border-[#ffd35e] text-[#ffd35e]' : 'border-white/30 text-white/40'}`}>◀ RUN 01</span>
@@ -731,7 +837,9 @@ const GrindCityGame = () => {
                             <div className={result.secret ? 'font-bold text-[#7dffb0]' : 'text-white/50'}>{result.secret ? '★ SECRET SPOT FOUND' : '★ SECRET SPOT · HIDDEN IN THE PARK'}</div>
                         </div>
                         {result.best > 0 && <div className="mt-3 text-xs tracking-widest text-white/60">BEST LINE {result.best}</div>}
-                        <div className="mt-8 animate-pulse text-sm font-bold tracking-[0.4em] text-[#ffd35e]">SPACE — BACK TO THE PLAZA</div>
+                        {result.allTime && <div className="mt-2 text-lg font-black italic tracking-[0.25em] text-[#7dffb0] drop-shadow-[0_2px_0_rgba(0,0,0,.9)] animate-pulse">NEW ALL-TIME LINE</div>}
+                        <div ref={hud.share} className="mt-2 h-5 text-sm font-black italic tracking-[0.2em] text-[#7dffb0] drop-shadow-[0_2px_0_rgba(0,0,0,.9)]" style={{ opacity: 0 }} />
+                        <div className="mt-6 animate-pulse text-sm font-bold tracking-[0.4em] text-[#ffd35e]">SPACE — BACK TO THE PLAZA · S — SHARE</div>
                     </div>
                 )}
             </div>
