@@ -13,9 +13,11 @@
 // multi-ball loop); CABINET ONE only instantiates them from data.
 //
 // Physics: fine fixed timestep. The shell ticks at 60 Hz; each tick runs SUB=4
-// substeps (240 Hz) of circle-vs-segment/capsule collision, gravity, and
+// substeps (240 Hz) of circle-vs-segment/capsule/ball collision, gravity, and
 // moving-surface (flipper) response with proper ω×r surface velocity, so flip
 // timing decides aim — the rung-1 brief's "get the ball feel right here".
+// Ball-vs-ball (#3217): steel never shares space with steel — the pack resolves
+// pairwise contacts inside the same substep loop (see packCollide).
 
 export const W = 360;
 export const H = 600;
@@ -24,6 +26,8 @@ export const GRAV = 900;              // px/s² — arcade-fast but readable in 
 export const SUB = 4;                // physics substeps per 60 Hz tick (240 Hz)
 export const WALL_E = 0.52;          // wall restitution
 export const WALL_FR = 0.06;        // wall tangential friction
+export const BALL_E = 0.8;           // steel-on-steel restitution (#3217) — hard,
+                                     // not perfect: a clack loses a little of itself
 
 // ------------------------------------------------------- rng ----
 export function mulberry32(seed) {
@@ -180,6 +184,7 @@ export function makeGame(seed = 1) {
         bankLit: false, bankHits: 0, banksThisBall: 0, mult: 1,
         spinnerTurns: 0,   // per-puck spin/spinArm live on gs.pucks[i]
         kickCd: 0,
+        bbCd: 0,           // steel-clack event cooldown in substeps (#3217)
         nudgeMeter: 0, nudgeDecay: 0, tilt: false,
         lastBonus: 0, drainFx: 0,
         lastLeft: false, lastRight: false, lastB: false,
@@ -227,6 +232,7 @@ export function resetBall(gs) {
     gs.targetDown = TABLE.targets.map(() => false); gs.bankLit = false;
     gs.spinnerTurns = 0; gs.tilt = false;
     gs.nudgeMeter = 0; gs.nudgeDecay = 0; gs.mult = 1; gs.banksThisBall = 0;
+    gs.bbCd = 0;
     // rung 2: the tower drops its locks with the ball; the pack ends with it
     gs.locks = 0; gs.multiball = false; gs.saveT = 0; gs.saveUsed = false;
     gs.rampHits = 0; gs.rampLit = false;
@@ -328,6 +334,9 @@ function substep(gs, dt) {
     // pop bumpers/slings share one global cooldown per element (element-level
     // debounce, like real switches); per-ball physics runs down the pack.
     for (const b of gs.pucks) substepBall(gs, b, dt);
+    if (gs.bbCd > 0) gs.bbCd -= 1;
+    // every ball has integrated this substep — now make steel refuse steel.
+    packCollide(gs);
 }
 
 function substepBall(gs, b, dt) {
@@ -457,6 +466,66 @@ function substepBall(gs, b, dt) {
     ;['L', 'R'].forEach((side) => {
         if (gs.tilt) flipperDead(gs, b, side); else flipperHit(gs, b, side);
     });
+}
+
+// ---- BALL-BALL COLLISION (#3217) ---------------------------------------------
+// A real table has never let two balls share a spot: steel deflects steel, and
+// a held pack deflects *through* itself — hit the front ball, the one behind
+// flies off. Rung 2 shipped MULTIBALL on an engine that let balls pass through
+// each other (README honest gap #0); this closes it. Pairwise resolution runs
+// inside the 240 Hz substep loop, so even opposing max-speed balls approach at
+// ≤ 13.3 px/substep — far below the 18 px contact distance, no tunnelling.
+// A magnet-pinned ball becomes a post: the free ball bounces off it and the
+// pin does not move (the #3199 hold clause stays intact). Physics + feel only:
+// no scoring rule lives here; the lamp-set pack read is untouched.
+function packCollide(gs) {
+    const P = gs.pucks;
+    const rr = BALL_R * 2;
+    for (let i = 0; i < P.length - 1; i++) {
+        for (let j = i + 1; j < P.length; j++) {
+            const a = P[i], b = P[j];
+            if (a.magHeld && b.magHeld) continue;
+            let nx = b.bx - a.bx, ny = b.by - a.by;      // contact normal, a→b
+            const d2 = nx * nx + ny * ny;
+            if (d2 >= rr * rr) continue;
+            let d = Math.sqrt(d2);
+            if (d < 1e-6) { nx = 0; ny = -1; d = 1e-6; }  // exact stack: deterministic vertical split
+            nx /= d; ny /= d;
+            const pen = rr - d;
+            if (a.magHeld || b.magHeld) {
+                // the pinned ball is the post; n from post → free ball:
+                const free = a.magHeld ? b : a;
+                const s = a.magHeld ? 1 : -1;
+                free.bx += nx * pen * s; free.by += ny * pen * s;
+                const vn = (free.vx * nx + free.vy * ny) * s;
+                if (vn < 0) {
+                    free.vx -= (1 + BALL_E) * vn * nx * s; free.vy -= (1 + BALL_E) * vn * ny * s;
+                    ballHit(gs, -vn, free.bx - nx * BALL_R * s, free.by - ny * BALL_R * s);
+                }
+                continue;
+            }
+            // equal-mass pair: split the correction, exchange the impulse.
+            a.bx -= nx * pen * 0.5; a.by -= ny * pen * 0.5;
+            b.bx += nx * pen * 0.5; b.by += ny * pen * 0.5;
+            const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+            if (vn < 0) {
+                const imp = -(1 + BALL_E) * vn * 0.5;
+                b.vx += imp * nx; b.vy += imp * ny;
+                a.vx -= imp * nx; a.vy -= imp * ny;
+                ballHit(gs, -vn, a.bx + nx * BALL_R, a.by + ny * BALL_R);
+            }
+        }
+    }
+}
+
+// The clack: diegetic feedback, not a switch — the event carries the impact
+// speed so the shell can voice it. Silent below a soft tap (rolling packs
+// whisper, they don't clack); the substep cooldown stops a contact lasting
+// several steps from firing on every one.
+function ballHit(gs, speed, x, y) {
+    if (gs.bbCd > 0 || speed < 60) return;
+    gs.bbCd = 4;
+    gs.events.push({ type: 'ballhit', x, y, v: speed });
 }
 
 function flipperDead(gs, b, side) {   // tilted: flippers limp, still solid

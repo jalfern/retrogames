@@ -569,6 +569,105 @@ const wrap = (gs) => {
     r.check('TILT takes over the strip', gt.tilt && stateOf(gt).dmd.text === 'TILT!', stateOf(gt).dmd.text)
 }
 
+// ------------------------------------- ball-ball collision (#3217) ----
+// Steel refuses steel: the pack resolves pairwise inside the 240 Hz substep
+// loop. Expectations are LITERAL (e=0.8 head-on from ±300 means ∓240) — the
+// TETRIS lesson again: no importing the number being audited.
+{
+    const mkPuck = (x, y, vx, vy, held) => ({
+        bx: x, by: y, vx, vy, prevY: y, launched: true, laneCurved: false, spin: 0,
+        spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false,
+        magHeld: !!held, magX: held ? x : undefined, magY: held ? y : undefined,
+    });
+    const packOf = (seed, defs) => {
+        const gs = makeGame(seed); gs.launched = true; gs.pucks = defs.map((d) => mkPuck(...d)); clear(gs); return gs;
+    };
+
+    // head-on ±300 on open field (y 250 is clear of arc, bank, magnet field)
+    {
+        const gs = packOf(361, [[160, 250, 300, 0], [216, 250, -300, 0]]);
+        let minD = 9999, orderOk = true, clacks = 0
+        for (let i = 0; i < 8; i++) {
+            drive(gs, {}, 1)
+            const d = Math.hypot(gs.pucks[1].bx - gs.pucks[0].bx, gs.pucks[1].by - gs.pucks[0].by)
+            minD = Math.min(minD, d)
+            if (gs.pucks[1].bx <= gs.pucks[0].bx) orderOk = false
+            clacks += types(gs).filter((t) => t === 'ballhit').length
+        }
+        r.check('two balls closing head-on never pass through (order kept, no overlap sampled)',
+            orderOk && minD >= 17.5, `minD=${minD.toFixed(1)}`)
+        r.check('a head-on meeting reverses both balls at steel restitution (±300 → ∓240)',
+            Math.abs(gs.pucks[0].vx + 240) < 30 && Math.abs(gs.pucks[1].vx - 240) < 30,
+            `vx=${gs.pucks[0].vx.toFixed(0)}/${gs.pucks[1].vx.toFixed(0)}`)
+        r.check('one meeting pays exactly one steel clack (cooldown holds through the contact)', clacks === 1, `clacks=${clacks}`)
+    }
+
+    // chase: a fast ball catches a slow one — the pack transfers THROUGH itself
+    {
+        const gs = packOf(362, [[160, 250, 500, 0], [216, 250, 100, 0]])
+        drive(gs, {}, 10)
+        const [a, b] = gs.pucks
+        r.check('hit the front ball, the one ahead flies off: 500/100 chaser pair leaves 140/460',
+            Math.abs(a.vx - 140) < 30 && Math.abs(b.vx - 460) < 30, `vx=${a.vx.toFixed(0)}/${b.vx.toFixed(0)}`)
+        r.check('pack physics never adds tangential energy (v² sum ≤ the 500/100 start)',
+            a.vx * a.vx + b.vx * b.vx <= 500 * 500 + 100 * 100 + 1,
+            `sum=${(a.vx * a.vx + b.vx * b.vx).toFixed(0)}`)
+    }
+
+    // spawn overlap separates silently — pack-off must not clack by itself
+    {
+        const gs = packOf(363, [[170, 250, 0, 0], [184, 250, 0, 0]])
+        drive(gs, {}, 2)
+        const d = Math.hypot(gs.pucks[1].bx - gs.pucks[0].bx, gs.pucks[1].by - gs.pucks[0].by)
+        const ev = types(gs)
+        r.check('two balls spawned 14 px apart push to contact within 2 ticks and stay in order',
+            d >= 17.9 && gs.pucks[1].bx > gs.pucks[0].bx, `d=${d.toFixed(1)}`)
+        r.check('a soft touch is silent — separation with no closing speed fires no clack',
+            !ev.includes('ballhit'), ev.join(','))
+    }
+
+    // magnet pin becomes a post: bounce off the held ball, the pin never shifts
+    {
+        const gs = packOf(364, [[240, 331, 0, 0, true], [280, 331, -300, 0]])
+        let minD = 9999
+        for (let i = 0; i < 6; i++) {
+            drive(gs, {}, 1)
+            minD = Math.min(minD, Math.hypot(gs.pucks[1].bx - gs.pucks[0].bx, gs.pucks[1].by - gs.pucks[0].by))
+        }
+        const [pin, free] = gs.pucks
+        r.check('a ball thrown at the magnet-pinned ball bounces off it (vx reverses, no pass-through)',
+            free.vx > 150 && minD >= 17.5, `vx=${free.vx.toFixed(0)} minD=${minD.toFixed(1)}`)
+        r.check('the pin does not budge — a held ball takes no push from the pack',
+            pin.magHeld && pin.bx === 240 && pin.by === 331, `at=(${pin.bx},${pin.by})`)
+    }
+
+    // single ball stays quiet; a scripted pack is deterministic and does clack
+    {
+        const gs = drive(makeGame(365))
+        clear(gs)
+        drive(gs, { down: true }, 70); gs.by = 555; gs.vy = 0; clear(gs)
+        let oneBall = 0
+        for (let i = 0; i < 400; i++) { drive(gs, {}, 1); oneBall += types(gs).filter((t) => t === 'ballhit').length }
+        r.check('a lone ball never clacks with itself (single-ball games see zero ballhit events)',
+            oneBall === 0, `clacks=${oneBall}`)
+
+        const script = (seed) => {
+            const gs = packOf(seed, [[140, 220, 260, 120], [196, 240, -260, 80], [170, 320, 40, -300]])
+            const hs = []; let clacks = 0
+            for (let i = 0; i < 150; i++) {
+                stepGame(gs, {}); clacks += gs.events.filter((e) => e.type === 'ballhit').length
+                gs.events.length = 0
+                if (i % 25 === 24) hs.push(stateHash(gs))
+            }
+            return { hs, clacks }
+        }
+        const A = script(366), B = script(366)
+        r.check('a three-ball scramble is deterministic: hash-identical twice over',
+            A.hs.every((h, i) => h === B.hs[i]) && A.hs.length === 6)
+        r.check('the scramble really collides (steel clacks land in the pack)', A.clacks > 0, `clacks=${A.clacks}`)
+    }
+}
+
 // --------------------------------------------- font + determinism ----
 {
     const { FONT, DMD_MSGS } = await import('../src/games/Pinball/art.js')

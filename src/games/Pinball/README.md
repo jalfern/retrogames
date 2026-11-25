@@ -1,4 +1,4 @@
-# PINBALL — CABINET ONE (issue #3103 rung 1; #3169 rung 2: ramp · lock · multiball; #3199 rung 3: orbit · magnet · DMD)
+# PINBALL — CABINET ONE (issue #3103 rung 1; #3169 rung 2: ramp · lock · multiball; #3199 rung 3: orbit · magnet · DMD; #3217 ball-ball physics)
 
 The shared table engine plus the first cabinet of the ladder Jon asked for
 ("definitely pinball… start simple, work up"). Rung 2 added the right ramp,
@@ -23,12 +23,23 @@ filed one per shipped rung.
   table as DATA (`TABLE`: walls, arc, bumpers, slings, targets, spinner,
   kicker, flippers, plunger, rules), the fixed-timestep step, state/hash.
   60 Hz shell ticks run `SUB=4` substeps (240 Hz) of circle-vs-segment /
-  circle-vs-capsule collision. Flippers are animated *inside* the substep loop
+  circle-vs-capsule / circle-vs-ball collision. Flippers are animated *inside*
+  the substep loop
   (a 2700°/s sweep must never jump past the ball) and kick via ω×r surface
   velocity plus a lever-scaled impulse — flip TIMING decides aim.
 - **Tables are data on that engine.** `stepGame` knows only element primitives;
   scoring goes through `table.rules`. A new cabinet must add data, never physics
   (the engine contract of #3103).
+- **Ball-ball collision (#3217)** is the next generic engine primitive, in the
+  rung-2/rung-3 tradition: `packCollide` resolves every puck pair once per
+  substep — equal-mass impulse exchange along the contact normal (restitution
+  `BALL_E = 0.8`: a clack keeps most of itself) plus positional separation.
+  A magnet-pinned ball becomes a POST: the free ball bounces off it, the pin
+  never moves (the #3199 hold clause stays intact). Physics + feel only — no
+  scoring rule lives here; the `ballhit` event carries the impact speed so the
+  shell can voice/particle it, silent below a soft tap. Max closing speed
+  1600 px/s = 6.7 px/substep against an 18 px contact distance: no
+  tunnelling, no wall push-through at these energies.
 - `art.js` — palette, seven-segment glyphs, deterministic playfield texture
   (seeded LCG sparkle + chevrons), attract copy.
 - `index.jsx` — shell only: loop, scaling, attract, pause, pad, contract hooks.
@@ -98,10 +109,15 @@ Rung 3 (#3199), the *Black Knight 2000* idiom (loops + DMD; magnet in the
   tick-decayed, reported by `stateOf().dmd`) so Node pins what the display
   says — the shell owns only pixels. The old y=388 plain-text banner retired.
 
+Ball-ball (#3217): steel refuses steel. Balls deflect each other (and a
+magnet-pinned ball becomes a post to bounce off), which makes pack play real
+— pass one ball into another and the far one flies off. No points ride on it;
+this is the physics a table always had.
+
 ## Verify
 
 ```bash
-npm run pinballcheck          # 97 literal physics/rules/determinism checks, plain Node
+npm run pinballcheck          # 109 literal physics/rules/determinism checks, plain Node
 npm run pinballplay           # headless-Chrome drive (start, plunger, wrap, magnet, DMD pixels)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5176 --strictPort      # then /retrogames/pinball
@@ -109,8 +125,11 @@ npm run dev -- --port 5176 --strictPort      # then /retrogames/pinball
 
 ## Honest gaps
 
-- No ball-ball collision (classic EM machines ignored it too; packs read via
-  the lamp set instead).
+- **CLOSED by #3217:** no ball-ball collision. The pack now resolves pairwise
+  every substep (`packCollide`, `BALL_E = 0.8`); a magnet-pinned ball is a
+  post. Steel-clack sound + chrome sparks, no scoring — the lamp-set pack
+  read stays too (multiball machines never needed it to *read* the pack, only
+  to *feel* it).
 - Table-select screen ("row of cabinets") waits for a second cabinet.
 - No table editor (#3103: not yet). No in-lane kick on the right side.
 - Single table means the `?style` / skin machinery is unused here.
