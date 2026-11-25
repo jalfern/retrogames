@@ -43,6 +43,20 @@ export const CFG = {
     PLANE_LIFTOFF: 16, // wheels-abort: stick back at ≥16 and you fly again
     PLANE_STOP: 12,    // below the stall she sits — ground crew recovers her
     PLANE_FRICTION: 0.99,
+    // #3331 — the go-around window. A hot-but-shallow, straight pass over the
+    // strip bounces instead of splatting (the first failure teaches). Above
+    // PLANE_HOT_MAX it isn't an approach at all — that stays a crash.
+    PLANE_HOT_MAX: 45,
+    // #3331 — the rollout can EARN: ROLL_MIN metres rolled with the hull
+    // never further than ROLL_LINE off the centreline dash pays ROLL_CREDIT
+    // onto the ✈ badge best (never the licence).
+    ROLL_LINE: 2.0,
+    ROLL_MIN: 12,
+    ROLL_CREDIT: 100,
+    // #3331 — scuff tell window (see scuffTell)
+    TELL_V: 18,   // metres off the axis the runway still reads you
+    TELL_RUN: 25, // metres short of the threshold the tell switches on
+    TELL_GRIP: 0.10, // inside this crab you're straight; past it the tell climbs
     // #3332 — the belt's own arrival band. The belt already forgives the ground
     // (soft, slow contact anywhere settles); on the strip the school PAYs it.
     // A belt cruise can sit inside these bands, so the skill is the arrival
@@ -311,11 +325,28 @@ function stepPlane(g, w, sx, sy, dt) {
         g.pitch = lerp(g.pitch, sy > 0 ? sy * 0.3 : 0, 0.15)
         g.roll = lerp(g.roll, 0, 0.2)
         g.stormS = w.stormAt(g.p.x, g.p.z, g.t).s
+        // #3331 item 5 — the rollout watches the centreline: distance rolled
+        // and the widest offset from the dash, both while still on the deck.
+        const znR = stripZone(w, g.p.x, g.p.z)
+        if (znR) {
+            g.ground.rollD += g.speed * dt
+            if (znR.v > g.ground.rollV) g.ground.rollV = znR.v
+        }
+        // A rollout that carries ≥ ROLL_MIN metres without leaving the dash
+        // pays onto the badge the instant it ends — whatever ends it.
+        const bankRoll = (via) => {
+            const gd = g.ground
+            const clean = gd.rollD >= CFG.ROLL_MIN && gd.rollV <= CFG.ROLL_LINE
+            if (clean) g.land = Math.max(g.land, gd.score + CFG.ROLL_CREDIT)
+            ev(g, 'rollout', { clean, via, dist: +gd.rollD.toFixed(1), maxV: +gd.rollV.toFixed(1), credit: clean ? CFG.ROLL_CREDIT : 0 })
+        }
         if (sy > 0 && g.speed >= CFG.PLANE_LIFTOFF) {
+            bankRoll('abort')
             g.ground = null
             g._depart = 1.5 // grace to climb clear before the crash law re-arms
             ev(g, 'wheels')
         } else if (g.speed < CFG.PLANE_STOP) {
+            bankRoll('crew')
             g.ground = null
             ev(g, 'crew')
             placePlaneAtStart(g)
@@ -367,11 +398,26 @@ function stepPlane(g, w, sx, sy, dt) {
             const touch = planeTouch(w, g.p.x, g.p.z, g.heading, g.vy, g.speed)
             if (touch) {
                 g.ground = touch
+                g.ground.rollD = 0
+                g.ground.rollV = touch.v // the touchdown offset counts too
                 g.land = Math.max(g.land, touch.score)
                 g.p.y = floor + 0.5
                 g.vy = 0; g.pitch = 0; g.roll = 0
                 g._depart = 0
                 ev(g, 'land', { craft: 'plane', strip: true, zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned })
+                return
+            }
+            // #3331 item 1 — not a catch, but a hot-and-shallow straight pass
+            // BOUNCES: the deck kicks her back up and the departure grace
+            // re-arms, so the first mistake teaches the speed law instead of
+            // splatting. Nothing is banked; a sloppy pilot still crashes.
+            const hot = planeGoAround(w, g.p.x, g.p.z, g.heading, g.vy, g.speed)
+            if (hot) {
+                g.vy = Math.max(g.vy, 1.6)
+                g.pitch = clamp(g.pitch + 0.22, -0.6, 0.6)
+                g.p.y = Math.max(g.p.y, floor + 1.2)
+                g._depart = 1.5
+                ev(g, 'goaround', { u: hot.u, hot: hot.hot })
                 return
             }
         }
@@ -488,6 +534,47 @@ export function planeTouch(w, x, z, heading, vy, speed) {
     if (Math.abs(e) > CFG.STRIP_ALIGN) return { ...zn, zone: 0, score: CFG.STRIP_SCUFF, aligned: false }
     const zone = zoneOf(zn.frac)
     return { ...zn, zone, score: CFG.STRIP_ZONES[zone - 1][1], aligned: true }
+}
+
+// #3331 item 1 — the go-around. Pilotwings' strip says "go around" with a
+// bounce; ours now reads a hot-but-shallow, straight arrival as a forced
+// overshoot instead of a corpse: no catch, no crash, nothing banked. The
+// window is deliberately narrow: straight (inside the crab law), shallow
+// (inside the plane's own sink band), hot (at or above the catch ceiling) and
+// below PLANE_HOT_MAX — steeper, crabbed, off-strip or missile-fast arrivals
+// keep #3319's crash law byte-identical.
+export function planeGoAround(w, x, z, heading, vy, speed) {
+    const zn = stripZone(w, x, z)
+    if (!zn) return null
+    if (!(vy > -CFG.PLANE_SINK && vy < CFG.PLANE_CLIMB)) return null
+    if (!(speed >= CFG.PLANE_SPEED && speed < CFG.PLANE_HOT_MAX)) return null
+    let e = heading - w.STRIP_HEADING
+    while (e > Math.PI) e -= Math.PI * 2
+    while (e < -Math.PI) e += Math.PI * 2
+    if (Math.abs(e) > CFG.STRIP_ALIGN) return null
+    return { ...zn, hot: +speed.toFixed(1) }
+}
+
+// #3331 item 4 — the scuff tell. On short final the cabinet should WARN that
+// this arrival will scuff before the deck decides. Pure geometry: within
+// TELL_V of the strip axis and from TELL_RUN metres short of the threshold to
+// the far end, a hull low enough to be landing reads 0 (straight) to 1 (right
+// at the crab limit). Off-window → null; dir carries which way the nose is off.
+export function scuffTell(w, x, z, heading, y) {
+    const r = w.runway
+    if (y > r.deck + 14) return null
+    const abx = r.bx - r.ax, abz = r.bz - r.az
+    const len2 = abx * abx + abz * abz
+    const len = Math.sqrt(len2)
+    const t = ((x - r.ax) * abx + (z - r.az) * abz) / len2
+    if (t * len < -CFG.TELL_RUN || t > 1) return null
+    const v = Math.hypot(x - (r.ax + abx * t), z - (r.az + abz * t))
+    if (v > CFG.TELL_V) return null
+    let e = heading - w.STRIP_HEADING
+    while (e > Math.PI) e -= Math.PI * 2
+    while (e < -Math.PI) e += Math.PI * 2
+    const tell = clamp((Math.abs(e) - CFG.TELL_GRIP) / (CFG.STRIP_ALIGN - CFG.TELL_GRIP), 0, 1)
+    return { tell: +tell.toFixed(2), dir: e >= 0 ? 1 : -1, u: +(t * len).toFixed(1) }
 }
 
 // #3332 — the belt's touchdown decision, pure law beside the plane's. The
@@ -786,6 +873,12 @@ export function stateOf(g) {
         land: g.land, ground: !!g.ground,
         // #3332 additive: best belt landing banked, and whether she's parked
         beltLand: g.beltLand, parked: !!g.park,
+        // #3331 additive: the scuff tell on plane short final, and the live
+        // rollout verdict-so-far (distance rolled, widest offset, base score)
+        scuff: g.craft === 'plane' && g.phase === 'free' && !g.ground && g.respawnT <= 0
+            ? scuffTell(g.world, g.p.x, g.p.z, g.heading, g.p.y) : null,
+        roll: g.ground
+            ? { d: +g.ground.rollD.toFixed(1), v: +g.ground.rollV.toFixed(1), score: g.ground.score } : null,
         hash: g.hash, seed: g.seed,
     }
 }
