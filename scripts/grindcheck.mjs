@@ -3,9 +3,9 @@
 // goal inside the 2:00 run, and seed + pads replay identical hashes.
 // Run: npm run grindcheck [-- --mutate <rule>]  (--mutate proves it can fail)
 
-import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL } from '../src/games/GrindCity/sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, GEM_ALL, gemCount } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
-import { parkHeight, LETTERS, RAILS } from '../src/games/GrindCity/park.js'
+import { parkHeight, LETTERS, RAILS, GEMS, GEM_PTS, SECRET, ROOF_Y } from '../src/games/GrindCity/park.js'
 import { BAR, bedVoices, landThud } from '../src/games/GrindCity/music.js'
 import { readFileSync } from 'node:fs'
 
@@ -25,14 +25,14 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap', 'replay', 'bed']) {
+    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems']) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 4 ? `ALL MUTANTS CAUGHT (${died}/4)` : `${died}/4 mutants caught`)
-    process.exit(died === 4 ? 0 : 1)
+    console.log(died === 5 ? `ALL MUTANTS CAUGHT (${died}/5)` : `${died}/5 mutants caught`)
+    process.exit(died === 5 ? 0 : 1)
 }
 
 // ── boot ──────────────────────────────────────────────────────────────────
@@ -84,7 +84,78 @@ ok('park surface sane near start', parkHeight(6, -31.5) > 3, `h=${parkHeight(6, 
     ok('grind is on the plaza rail', s.grind && RAILS[s.grind.ri].id === 'plaza')
 }
 
+// ── second line, gems, secret spot (#3246) ────────────────────────────────
+{
+    ok(`gems: ${GEMS.length} score-mode objects laid out`, GEMS.length === 14)
+    let spaced = true
+    for (let i = 0; i < GEMS.length; i++) for (let j = i + 1; j < GEMS.length; j++)
+        if (Math.hypot(GEMS[i].x - GEMS[j].x, GEMS[i].z - GEMS[j].z) < 1.4) spaced = false
+    ok('gems: no stacked pairs (each a distinct pickup)', spaced)
+
+    // skating into one pays GEM_PTS. MUT=gems zeroes the bits as they land —
+    // the pickup rule is the mutant target.
+    const s = makeGame(11, 'run'); s.phase = 'play'
+    const gi = 12   // plaza gem (-16, 9)
+    const before = s.score
+    s.x = GEMS[gi].x; s.z = GEMS[gi].z - 2; s.y = parkHeight(s.x, s.z); s.heading = Math.PI / 2; s.speed = 5
+    let t = 0
+    while (!(s.gemBits & (1 << gi)) && t++ < 120) { step(s, {}); if (MUT === 'gems') s.gemBits = 0 }
+    ok('gem picked while skating', !!(s.gemBits & (1 << gi)))
+    ok(`gem pays ${GEM_PTS}`, s.score - before >= GEM_PTS, `+${s.score - before}`)
+
+    // GEM RUN: standing on all 14 completes the set and pays the bonus ONCE
+    const s2 = makeGame(11, 'run'); s2.phase = 'play'
+    for (let i = 0; i < GEMS.length; i++) {
+        s2.x = GEMS[i].x; s2.z = GEMS[i].z; s2.y = parkHeight(s2.x, s2.z)
+        step(s2, {})
+    }
+    ok('gem run: set completes (bits match count)', s2.gemBits === GEM_ALL && gemCount(s2.gemBits) === GEMS.length)
+    ok('gem run: GEM RUN bonus fires', s2.gemsAll === true)
+    const afterRun = s2.score
+    for (let i = 0; i < 30; i++) step(s2, {})
+    ok('gem run: bonus never re-pays', s2.score === afterRun, `${afterRun}`)
+
+    // secret spot: the hidden bowl pays once, on entry. Gems pre-marked so
+    // the roll down the bowl into the hoard can't blur the two laws.
+    const s3 = makeGame(11, 'run'); s3.phase = 'play'
+    s3.gemBits = GEM_ALL; s3.gemsAll = true
+    s3.x = SECRET.x; s3.z = SECRET.z; s3.y = parkHeight(s3.x, s3.z)
+    step(s3, {})
+    const secScore = s3.score
+    ok('secret spot: entering the bowl flags and pays +250', s3.secretFound === true && secScore === 250, `score=${secScore}`)
+    for (let i = 0; i < 30; i++) step(s3, {})
+    ok('secret spot pays only once', s3.score === secScore)
+    ok('secret bowl reads as a hole in the map', parkHeight(SECRET.x, SECRET.z) <= SECRET.floor + 0.1,
+        `h=${parkHeight(SECRET.x, SECRET.z).toFixed(1)}`)
+}
+{
+    // the roof, honestly: a pumped 10.5 m/s line crests the south wall and
+    // the east-run gems only come to a skater who is up there.
+    const g = makeGame(7, 'run'); g.phase = 'play'
+    g.x = -15; g.z = 5; g.y = parkHeight(-15, 5); g.heading = Math.PI / 2; g.speed = 10.5
+    let t = 0, onRoof = false
+    while (g.phase === 'play' && t++ < 300) {
+        step(g, { b: g.lastSlope > 0.18 && g.speed < 11 })
+        if (g.z > 15 && g.y > ROOF_Y - 0.3) { onRoof = true; break }
+    }
+    ok('roof: a pumped fast line crests onto the deck', onRoof && g.phase === 'play')
+    let paid = 0
+    while (g.phase === 'play' && t++ < 420 && !paid) { step(g, {}); paid = g.gemBits }
+    ok('roof line pays: a roof gem is collected from the deck', !!paid, `bits=${g.gemBits}`)
+
+    // …and the gate is real: a 6 m/s shuffle stalls on the wall
+    const g2 = makeGame(7, 'run'); g2.phase = 'play'
+    g2.x = -15; g2.z = 5; g2.y = parkHeight(-15, 5); g2.heading = Math.PI / 2; g2.speed = 6
+    let t2 = 0, crested = false
+    while (g2.phase === 'play' && t2++ < 300) {
+        step(g2, { b: g2.lastSlope > 0.18 && g2.speed < 11 })
+        if (g2.z > 15 && g2.y > ROOF_Y - 0.3) { crested = true; break }
+    }
+    ok('roof gate: a 6 m/s shuffle never crests — the line must be earned', !crested)
+}
+
 // ── winnability: the autopilot makes every goal inside 2:00 ───────────────
+let lineTookPretty = false
 for (const seed of [7, 3, 42, 101, 999]) {
     const s = makeGame(seed, 'run'); s.phase = 'play'
     const bot = makeBot()
@@ -96,10 +167,12 @@ for (const seed of [7, 3, 42, 101, 999]) {
         if (MUT === 'gap') s.overHole = false
     }
     const st = stateOf(s)
+    if (st.gems > 0 || st.secret) lineTookPretty = true
     ok(`seed ${seed}: all goals + win`, st.won === true,
         `score=${st.score} letters=${Object.keys(st.letters).length}/5 gap=${st.gapDone} t=${120 - st.timeLeft | 0}s`)
     ok(`seed ${seed}: score clears the target`, st.score >= SCORE_GOAL + 10000, `${st.score}`)
 }
+ok('optional-by-design: the driven win line never needs a gem or the secret', !lineTookPretty)
 
 // ── determinism: seed + pads ⇒ identical hashes ───────────────────────────
 function drive(seed) {

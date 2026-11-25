@@ -3,7 +3,7 @@
 // ridden park. Everything else (letters, skater rig, particles) is code too.
 
 import * as THREE from 'three'
-import { parkHeight, gradAt, RAILS, LETTERS, BOUND, railClosest } from './park.js'
+import { parkHeight, gradAt, RAILS, LETTERS, GEMS, BOUND, railClosest } from './park.js'
 
 const RANGE = BOUND + 4          // a little beyond the walls
 const STEP = 0.8
@@ -232,6 +232,20 @@ export function buildLetters(scene) {
         glow.position.copy(sp.position)
         scene.add(glow)
         return { sp, glow, got: false }
+    })
+}
+
+// ── gems (#3246): score-mode objects, spinning octahedra ──────────────────
+// Emissive-only, no per-gem lights — fourteen point lights would flatten the
+// frame budget on software-rendered CI Chrome.
+export function buildGems(scene) {
+    const mat = new THREE.MeshStandardMaterial({ color: 0x8dffc0, emissive: 0x1fa866, roughness: 0.2, metalness: 0.5 })
+    return GEMS.map((g, i) => {
+        const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.26), mat)
+        m.position.set(g.x, g.y, g.z)
+        m.castShadow = true
+        scene.add(m)
+        return { mesh: m, y: g.y, phase: i * 0.9 }
     })
 }
 

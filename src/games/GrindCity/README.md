@@ -17,9 +17,10 @@ the park and every trick name are ours.
 | `index.jsx` | cabinet — loop, input, HUD, sounds, cameras (chase · fisheye action · replay), run-replay recorder (`packIn` log) and the `exposeGame` contract + `__grindTest` drive hooks. |
 
 Run: `npm run grindcheck` (Node, no browser — includes the input-log replay
-determinism proof and 3 mutants: letters, gap, replay). Deep-drive the cabinet
-with `DEV_PORT=5178 node scripts/lib/gcdrive.mjs` (also proves the REPLAY
-screen, the skip and the action-cam cut-in).
+determinism proof, the #3246 gem/secret/roof physics legs, and 5 mutants:
+letters, gap, replay, bed, gems). Deep-drive the cabinet with
+`DEV_PORT=5178 node scripts/lib/gcdrive.mjs` (also proves the REPLAY screen,
+the skip and the action-cam cut-in).
 
 ## Controls
 
@@ -42,6 +43,29 @@ Deck → **drop-in ramp** → flat run-up → **trench (the gap)** → **halfpip
 pool edge → final flat, with S‑K‑A‑T‑E floating along the line. Speed only
 comes from heights, so the route is laid out downhill from the deck; letter K
 sits on a plate just above the pipe crossing.
+
+## The second line, gems and the secret spot (#3246)
+
+The park keeps secrets off the win line:
+
+- **Roof deck (the second line)** — carry the trench landing into the south
+  quarterpipe at speed (~8 m/s honest gate; `grindcheck` proves a pumped
+  10.5 m/s line crests and a 6 m/s shuffle stalls) and ride a 2.5 m deck
+  along the wall crest. The wall fades into the deck with complementary
+  curves, so the crest holds a constant height — physics and mesh share
+  `parkHeight`, no hump. A coping rail runs the edge; the east end is a
+  long ramp back to the plaza.
+- **Gems** — 14 score-mode objects, **+100 each**: four along the roof (the
+  second line's payday), six packed in the secret bowl, four at the far
+  corners. Collecting all 14 pays a one-time **GEM RUN +1500**. The win law
+  never needs one (`grindcheck` pins that the autopilot's win line takes
+  zero).
+- **Secret spot** — a hidden bowl east of the plaza at `SECRET`; entering it
+  the first time says `OFF THE MAP!` and pays **+250**, once.
+
+`stateOf` carries `gems/gemTotal/gemsAll/secret`; the HUD shows a green
+`◆ GEMS n/14` line and the results screen reports the gem run. DebugKit
+(F1) adds `roof` and `secret` teleports for QA.
 
 ## Scoring
 
@@ -86,8 +110,9 @@ still through the replay).
 - **Replay is auto-only.** Last-10 s window, one cam, no speed toggle, free cam
   or saved/shared runs; no replay of the letters-only near-misses shorter than
   2 s, and none behind the attract title.
-- **One park, one line.** The park is replayable freely, but there are no
-  optional second routes, secret areas or score-mode objects beyond the letters.
+- **CLOSED by #3246** — ~~One park, one line.~~ The park has a second line
+  now: the roof deck over the south wall, 14 gems, and a secret bowl; see
+  "The second line, gems and the secret spot" above.
 - **Trick variety is board-rot based.** Spins/flip combos read from the real
   angular velocity, but there are no grabs on grinds, no lip tricks, no stalls;
   manual chains count but look identical across trick types.

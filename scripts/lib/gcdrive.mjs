@@ -38,6 +38,7 @@ try {
     })
     ok('driving moves the skater', Math.abs(res.mid.x - res.zero.x) + Math.abs(res.mid.z - res.zero.z) > 3)
     ok('tricks score', res.before.score >= 0 && res.before.stats.tricks >= 0, `score=${res.before.score} tricks=${res.before.stats.tricks}`)
+    ok('gems visible in the contract (#3246)', typeof res.mid.gems === 'number' && res.mid.gemTotal === 14, `gems=${res.mid.gems}/${res.mid.gemTotal}`)
     ok('run ends at the clock', res.end.done === true && res.end.phase === 'over', `t=${res.end.timeLeft}`)
 
     const png = await page.evaluate(() => window.__game.frame())
