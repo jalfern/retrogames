@@ -213,9 +213,9 @@ try {
     if (s.st.ground) planeGround = s.st
     else await simSleep(0.15)
   }
-  ok(planeGround !== null && planeGround.land === 300 && planeGround.craft === 'plane',
+  ok(planeGround !== null && planeGround.land === 350 && planeGround.craft === 'plane',
     `the plane is caught by the deck mid-strip (ground=${!!planeGround} ✈=${planeGround && planeGround.land})`)
-  ok(/RUNWAY MIDDLE \+300/.test(landBanner), `the strip banners the zone (${landBanner || 'no banner'})`)
+  ok(/RUNWAY MIDDLE \+350/.test(landBanner), `the strip banners the zone (${landBanner || 'no banner'})`)
   await shot('skyward-plane-rollout.png')
   /* wheels-abort: stick back while still above the liftoff speed */
   await page.keyboard.down('ArrowUp')
@@ -227,7 +227,7 @@ try {
     if (!s.ground && s.y > 5) climbed = s
     else await simSleep(0.2)
   }
-  ok(climbed !== null && climbed.land === 300,
+  ok(climbed !== null && climbed.land === 350,
     `wheels-abort climbs clear and keeps the banked badge (y=${climbed && climbed.y.toFixed(1)} ✈=${climbed && climbed.land})`)
 
   /* #3331 item 1 — the go-around: a hot-and-shallow straight pass over the
@@ -276,7 +276,7 @@ try {
      not the law. */
   await simSleep(1.2) // let any touchdown/crew window settle before re-entry
   let rollBanner = '', bestLand = 0
-  for (let a = 0; a < 3 && !(bestLand >= 800 && rollBanner); a++) {
+  for (let a = 0; a < 3 && !(bestLand >= 850 && rollBanner); a++) {
     await page.evaluate(() => {
       const T = window.__skywardTest
       T.teleport({ x: 100, y: 3.6, z: 130, heading: Math.PI / 2, speed: 30, vy: -1 })
@@ -288,12 +288,12 @@ try {
       })
       if (s.banner.includes('CLEAN ROLL')) rollBanner = s.banner
       if (s.st.land > bestLand) bestLand = s.st.land
-      if (bestLand >= 800 && rollBanner) break
+      if (bestLand >= 850 && rollBanner) break
       await simSleep(0.2)
     }
   }
-  ok(/CLEAN ROLL — CENTRELINE \+100/.test(rollBanner) && bestLand === 800,
-    `a clean full-strip rollout banks ✈800 and banners the credit (${rollBanner || 'no banner'} ✈=${bestLand})`)
+  ok(/CLEAN ROLL — CENTRELINE \+100/.test(rollBanner) && bestLand === 850,
+    `a clean full-strip rollout banks ✈850 and banners the credit (${rollBanner || 'no banner'} ✈=${bestLand})`)
   await shot('skyward-clean-roll.png')
   await page.waitForTimeout(1500) // #3331: let crew respawn + the last banner fade before the belt section
 

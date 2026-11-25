@@ -209,7 +209,7 @@ const SkywardGame = () => {
                 // #3319 — the plane lands without an exam to finish: the strip
                 // banners it in the moment the wheels kiss the deck
                 if (e.kind === 'land' && e.craft === 'plane') {
-                    banner(`RUNWAY ${e.aligned ? ['', 'SHORT', 'MIDDLE', 'LONG', 'FULL STRIP'][e.zone] : 'CRABBED'} +${e.score}`, 2.6)
+                    banner(`RUNWAY ${e.aligned ? ['', 'SHORT', 'MIDDLE', 'LONG', 'FULL STRIP'][e.zone] : 'CRABBED'} +${e.score}${e.flare ? ' · SMOOTH' : ''}`, 2.6)
                 }
                 // #3332 — the belt parks on the deck: same zone vocabulary, the
                 // same moment of naming — but it is the throttle that ends it
@@ -596,6 +596,7 @@ const SkywardGame = () => {
                     if (gs.craft === 'belt') { gs.vel.x = Math.sin(heading) * speed; gs.vel.z = Math.cos(heading) * speed; gs.park = null }
                     gs.lastSafe = { x, y: Math.max(y, 20), z, heading }
                     gs._zPrev = z
+                    gs._vyHist = [] // #3375 — the flare blend starts the new approach fresh
                     return stateOf(gs)
                 },
                 // #3295 — the live engine bed the cabinet is hearing right now

@@ -53,6 +53,13 @@ export const CFG = {
     ROLL_LINE: 2.0,
     ROLL_MIN: 12,
     ROLL_CREDIT: 100,
+    // #3375 (item 1) — the flare earns. A well-flared arrival — the hull
+    // eased into the strip, not plunged into the catch-band floor — banks a
+    // flare credit onto the ✈ badge on top of the zone payout. The
+    // catch band, crab law, zone table and rollout credit are unchanged.
+    FLARE_CREDIT: 50,
+    FLARE_WINDOW: 50,     // ticks of sink history the blend averages over
+    FLARE_BAND_MIN: -1.5, // mean sink over the window that counts as flared
     // #3331 — scuff tell window (see scuffTell)
     TELL_V: 18,   // metres off the axis the runway still reads you
     TELL_RUN: 25, // metres short of the threshold the tell switches on
@@ -106,6 +113,7 @@ export function makeGame(seed, opts = {}) {
         land: 0,            // #3319 — best plane landing banked on the strip
         ground: null,       // #3319 — non-null while the plane rolls on the deck
         _depart: 0,         // #3319 — grace to climb clear after a rollout abort
+        _vyHist: [],        // #3375 — rolling sink history, the flare blend
         park: null,         // #3332 — non-null while the belt sits parked on the deck
         beltLand: 0,        // #3332 — best belt landing banked on the strip
         _air: true,         // #3332 — crossing arming: the decision belongs to the deck-crossing tick, once
@@ -134,6 +142,7 @@ function placePlaneAtStart(g) {
     g.heading = Math.PI // fly north, over the isle
     g.pitch = 0; g.roll = 0; g.speed = 34; g.vy = 0
     g.lastSafe = { ...g.p, heading: g.heading }
+    g._vyHist = []
     void w
 }
 function placeRingStart(g) {
@@ -145,6 +154,7 @@ function placeRingStart(g) {
     g.ringsPassed = 0; g.ringTimes = []; g.eventT = 0
     g._zPrev = g.p.z
     g.lastSafe = { x: g.p.x, y: Math.max(g.p.y, 24), z: g.p.z, heading: g.heading }
+    g._vyHist = []
 }
 function placeGliderLaunch(g) {
     g.craft = 'glider'
@@ -171,6 +181,7 @@ function placePassStart(g) {
     g.pitch = 0; g.roll = 0; g.speed = 38; g.vy = 0
     g.passIdx = 0; g.passTimes = []; g.eventT = 0
     g.lastSafe = { x: s.x, y: 26, z: s.z, heading: Math.PI / 2 }
+    g._vyHist = []
 }
 
 // ── markers: which launch is the player near ───────────────────────────────
@@ -228,6 +239,7 @@ function recycle(g) {
         g.craft = 'plane'
         g.p = { x: g.world.school.x - 40, y: 26, z: g.world.school.z - 30 }
         g.heading = Math.PI; g.pitch = 0; g.roll = 0; g.speed = 30; g.vy = 0
+        g._vyHist = []
     } else if (next === 'belt') {
         placeBeltStart(g)
     } else {
@@ -252,6 +264,14 @@ export function step(g, pad = {}) {
     if (g.craft === 'plane') { g.lift = 0; stepPlane(g, w, sx, sy, dt) }
     else if (g.craft === 'glider') stepGlider(g, w, sx, sy, dt)
     else { g.lift = 0; stepBelt(g, w, sx, sy, a, dt) }
+
+    // #3375 — the rolling sink history: the flare blend averages over the
+    // window's worth of ticks; at touchdown the call site reads it. Kept out
+    // of stateHash so replay stays deterministic.
+    if (g.craft === 'plane' && g._vyHist) {
+        g._vyHist.push(g.vy)
+        if (g._vyHist.length > CFG.FLARE_WINDOW) g._vyHist.shift()
+    }
 
     // marker activation (edge on A near a launch point, free flight only)
     const m = markerNear(g)
@@ -344,6 +364,7 @@ function stepPlane(g, w, sx, sy, dt) {
             const gd = g.ground
             g.ground = null
             g._depart = 1.5 // grace to climb clear before the crash law re-arms
+            g._vyHist = [] // #3375 — a fresh departure starts the flare blend fresh
             ev(g, 'wheels')
             bankRoll(gd, 'abort')
         } else if (g.speed < CFG.PLANE_STOP) {
@@ -397,7 +418,14 @@ function stepPlane(g, w, sx, sy, dt) {
             // actively leaving it — bounded by a departure window so a cruise
             // line can't thread the strip, and a settle-back still lands.
             if (g._depart > 0 && g.vy > 0) return
-            const touch = planeTouch(w, g.p.x, g.p.z, g.heading, g.vy, g.speed)
+            // #3375 — the flare blend: mean sink over the last FLARE_WINDOW
+            // ticks, the path-aware flare the Pilotwings-style credit reads. A
+            // single tick of history (or none) falls back to the instant.
+            const hist = g._vyHist
+            const soft = hist && hist.length > 0
+                ? hist.reduce((a, b) => a + b, 0) / hist.length
+                : g.vy
+            const touch = planeTouch(w, g.p.x, g.p.z, g.heading, g.vy, g.speed, soft)
             if (touch) {
                 g.ground = touch
                 g.ground.rollD = 0
@@ -406,7 +434,7 @@ function stepPlane(g, w, sx, sy, dt) {
                 g.p.y = floor + 0.5
                 g.vy = 0; g.pitch = 0; g.roll = 0
                 g._depart = 0
-                ev(g, 'land', { craft: 'plane', strip: true, zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned })
+                ev(g, 'land', { craft: 'plane', strip: true, zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned, flare: !!touch.flare, blend: touch.blend })
                 return
             }
             // #3331 item 1 — not a catch, but a hot-and-shallow straight pass
@@ -526,7 +554,7 @@ function zoneOf(frac) {
 // catches you; the zone table scores it exactly like the glider's, the same
 // crab law scuffs it. Off-strip or hot/steep → null, and today's crash law
 // owns the hull untouched.
-export function planeTouch(w, x, z, heading, vy, speed) {
+export function planeTouch(w, x, z, heading, vy, speed, soft = null) {
     const zn = stripZone(w, x, z)
     if (!zn) return null
     if (!(vy > -CFG.PLANE_SINK && vy < CFG.PLANE_CLIMB && speed < CFG.PLANE_SPEED)) return null
@@ -535,7 +563,14 @@ export function planeTouch(w, x, z, heading, vy, speed) {
     while (e < -Math.PI) e += Math.PI * 2
     if (Math.abs(e) > CFG.STRIP_ALIGN) return { ...zn, zone: 0, score: CFG.STRIP_SCUFF, aligned: false }
     const zone = zoneOf(zn.frac)
-    return { ...zn, zone, score: CFG.STRIP_ZONES[zone - 1][1], aligned: true }
+    const zoneScore = CFG.STRIP_ZONES[zone - 1][1]
+    // #3375 — the flare earns: a blended sink well inside the catch band
+    // (the pilot eased in over the last metres, not just at the instant)
+    // pays FLARE_CREDIT on top of the zone payout. soft is the mean sink of
+    // the last FLARE_WINDOW ticks, threaded by the caller — omitted means
+    // no credit, so pure pins that pass only an instant still score plain.
+    const flare = soft !== null && soft >= CFG.FLARE_BAND_MIN
+    return { ...zn, zone, score: zoneScore + (flare ? CFG.FLARE_CREDIT : 0), aligned: true, flare, blend: soft }
 }
 
 // #3331 item 1 — the go-around. Pilotwings' strip says "go around" with a
