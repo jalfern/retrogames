@@ -15,6 +15,7 @@ import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, autoPad, respawn, stateOf, stateHash, courseFor, STAGE_COUNT, SIM_MS, DT } from './sim.js'
 import { moverDeck, sweeperBar, STAGES } from './course.js'
+import { plateTone, skyAmbience } from './plates.js'
 import { makeSky, makeEnv, makeClouds, buildStage, makeBumper, makeDeck, makeBar, makeGate, makeMarble, makeGoal, makeSparks, sparkSpawn, sparkStep, SKY_PALETTES } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
@@ -310,8 +311,15 @@ const MarbleRushGame = () => {
             if (playing) {
                 drainEvents()
                 humTick += 1
+                const course = courseFor(gs.stageIdx)
                 if (humTick % 6 === 0 && gs.v > 1.5 && !gs.falling) {
-                    audioController.playTone(44 + gs.v * 6.2, 0.1, 'sawtooth', 0.028 + Math.min(0.035, gs.v * 0.0018))
+                    const tone = plateTone(course.plateAt(gs.s), gs.v)
+                    audioController.playTone(tone.freq, 0.1, tone.type, tone.vol)
+                    if (tone.noise > 0) audioController.playNoise(0.05, tone.noise)
+                }
+                if (humTick % 150 === 0) {
+                    const amb = skyAmbience(course.sky)
+                    audioController.playTone(amb.freq, 0.6, amb.type, amb.vol)
                 }
                 if (humTick % 10 === 0 && gs.v > 12) audioController.playNoise(0.045, 0.016)
             }

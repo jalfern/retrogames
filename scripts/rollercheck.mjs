@@ -63,7 +63,7 @@ console.log('\n[1] boot + shape')
     ok('boot: tick 0, on the shelf, not done', s.tick === 0 && !s.done && gs.s > 0 && gs.len > 150)
     ok('state is JSON-safe', JSON.stringify(s) === JSON.stringify(JSON.parse(JSON.stringify(s))))
     ok('ten stages, names, ascending medal bounds', STAGE_COUNT === 10 && STAGES.every((st) => st.name && st.medals[0] < st.medals[1] && st.medals[1] < st.medals[2]))
-    ok('stage 2 grew the shelf: six late stages carry cp/movers props, first five untouched', STAGES.slice(5).every((st) => st.cp > 0) && STAGES.slice(0, 5).every((st) => st.cp === 0 && st.sweepers.length === 0))
+    ok('stage 2 grew the shelf: three early shelves ungated (no cp/sweepers), the rest carry cp', STAGES.slice(3).every((st) => st.cp > 0) && STAGES.slice(0, 3).every((st) => st.cp === 0 && st.sweepers.length === 0))
 }
 
 console.log('\n[2] course compiles honest')
@@ -167,8 +167,8 @@ console.log('\n[3b] the stage 2 verbs: sweeping bars + checkpoint gates')
     // respawn refuses when there is nothing to respawn from
     gs.done = true; gs.fail = false
     ok('respawn refuses after finishing the shelf', respawn(gs) === false)
-    // no gate on the first five shelves — a fall costs the whole run there
-    const g5 = makeGame(7, 4)
+    // no gate on the first three shelves — a fall costs the whole run there
+    const g5 = makeGame(7, 2)   // BUMPER ALLEY, last ungated shelf
     ok('rung 1 shelves stay ungated', g5.cpS === 0 && respawn(g5) === false)
 }
 
@@ -231,8 +231,69 @@ console.log('\n[7] stateHash survives JSON snapshot/restore')
     ok('snapshot round-trip hash-equal', stateHash(gs) === h1)
 }
 
+console.log('\n[8] surface tone (plated plates + sky ambience)')
+{
+    const { plateTone, skyAmbience, PLATES } = await import('../src/games/MarbleRush/plates.js')
+    const allTagsValid = STAGES.every((st) =>
+        (st.plate === undefined || PLATES.includes(st.plate)) &&
+        st.segs.every(([, , , , , tag]) => tag === undefined || PLATES.includes(tag)))
+    ok('every plate tag is a known surface (segs + stage-level)', allTagsValid)
+
+    const firstRoll = courseFor(0)
+    ok('FIRST ROLL stays satin everywhere', firstRoll.plateAt(1) === 'satin' && firstRoll.plateAt(firstRoll.len - 1) === 'satin')
+
+    const ghostLine = courseFor(6)
+    let ghostSolidAllIce = true
+    for (let s = 1; s < ghostLine.len - 1; s += 1) {
+        if (ghostLine.gapAt(s)) continue
+        if (ghostLine.plateAt(s) !== 'ice') { ghostSolidAllIce = false; break }
+    }
+    ok('GHOST LINE carries ice on all solid samples', ghostSolidAllIce)
+
+    const spire = courseFor(9)
+    let spireSolidAllIce = true
+    for (let s = 1; s < spire.len - 1; s += 1) {
+        if (spire.gapAt(s)) continue
+        if (spire.plateAt(s) !== 'ice') { spireSolidAllIce = false; break }
+    }
+    ok('THE SPIRE carries ice on all solid samples', spireSolidAllIce)
+
+    const exceed = courseFor(8)  // LONG DROP
+    ok('LONG DROP: gravel on the ramp, satin elsewhere',
+        exceed.plateAt(78) === 'gravel' && exceed.plateAt(10) === 'satin' && exceed.plateAt(2) === 'satin')
+
+    const switchback = courseFor(1)
+    ok('SWITCHBACK: gravel only on the banked curves',
+        switchback.plateAt(36) === 'gravel' && switchback.plateAt(110) === 'gravel' && switchback.plateAt(20) === 'satin')
+
+    ok('plateAt outside range falls back to satin', courseFor(1).plateAt(-1) === 'satin' && courseFor(1).plateAt(9999) === 'satin')
+
+    const satin = plateTone('satin', 18)
+    ok('satin tone == the shipped hum exactly (44 base / 6.2 per m/s, sawtooth)',
+        satin.freq === 44 + 18 * 6.2 && satin.type === 'sawtooth' && satin.noise === 0 &&
+        Math.abs(satin.vol - (0.028 + Math.min(0.035, 18 * 0.0018))) < 1e-9)
+
+    const gravel = plateTone('gravel', 18)
+    const ice = plateTone('ice', 18)
+    ok('gravel is lower + rougher (seen in noise) than satin at the same speed',
+        gravel.freq < satin.freq && gravel.noise > 0 && gravel.type === 'sawtooth')
+    ok('ice is higher + airy (triangle, light noise) than satin at the same speed',
+        ice.freq > satin.freq && ice.type === 'triangle' && ice.noise > 0 && ice.noise < gravel.noise)
+    ok('unknown plate falls back to satin', JSON.stringify(plateTone('bogus', 18)) === JSON.stringify(satin))
+
+    const skies = ['dawn', 'day', 'dusk', 'storm']
+    const amb = skies.map((sk) => skyAmbience(sk))
+    ok('all four skies map to ambience', amb.every((a) => a && a.freq > 0 && a.vol > 0 && a.vol < 0.03))
+    ok('storm ambience is a low sawtooth (<60 Hz)', skyAmbience('storm').freq < 60 && skyAmbience('storm').type === 'sawtooth')
+    ok('dawn ambience is a warm triangle near 90 Hz', skyAmbience('dawn').freq >= 80 && skyAmbience('dawn').freq <= 100 && skyAmbience('dawn').type === 'triangle')
+
+    // gates now live on SWING BRIDGE + SKY SHOT (stage 2 shelves; rung 1 stays ungated)
+    ok('SWING BRIDGE + SKY SHOT carry a gate', STAGES[3].cp === 150 && STAGES[4].cp === 155 && courseFor(3).cp === 150 && courseFor(4).cp === 155)
+    ok('both new gates sit on solid ground', courseFor(3).gapAt(150) === 0 && courseFor(4).gapAt(155) === 0)
+}
+
 if (BROWSER) {
-    console.log('\n[8] Chrome drive (real keys)')
+    console.log('\n[9] Chrome drive (real keys)')
     const { launch, openGame, requireDevServer } = await import('./lib/harness.mjs')
     const url = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/marble-rush?lite=1`
     await requireDevServer(url)

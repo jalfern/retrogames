@@ -60,8 +60,8 @@ on purpose.
 ## Verify
 
 ```bash
-npm run rollercheck                 # 48 checks: rules, verbs, win-by-bot, parity bridge
-npm run rollercheck -- --browser  #  + 11 Chrome-drive checks incl. the gate-flow UX
+npm run rollercheck                 # 64 checks: rules, verbs, win-by-bot, parity bridge, surface tone
+npm run rollercheck -- --browser  #  + 13 Chrome-drive checks incl. the gate-flow UX
 node scripts/rollercheck.mjs --mutate            # edge fall muted     → red
 node scripts/rollercheck.mjs --mutate=budget    # grip budget muted   → red
 node scripts/rollercheck.mjs --mutate=sweep     # bar knock muted     → red
@@ -85,8 +85,9 @@ off the bot; humans earn it differently.
 2. Ghost of your best run (or a rival marble) racing the shelf.
 3. Tilt controller — deliberately untouched: the pad `method: 'stick'` shape
    is the contract the platform tilt issue will drive.
-4. Sound is speed-hum only — no rolling surface tone variation (gravel/ice),
-   no per-stage ambience; bars clang but the deck under them stays silent.
+4. Surface tone ships (satin/gravel/ice hum per the tagged surface + quiet
+   per-sky ambience) — the tone is a muted-with-the-plated-surface hum, not an
+   art layer; nothing is textured or lit beyond the tags themselves.
 5. Falling marble tumbles and the chase-cam sinks with it, its sky-reflection
    dimming to near-black (#3165); it still pops out of existence at FALL_Y
    rather than passing through any cloud layer on the way.
