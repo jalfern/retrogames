@@ -1,4 +1,4 @@
-# PINBALL — two cabinets on one engine (issue #3103 rung 1; #3169 rung 2: ramp · lock · multiball; #3199 rung 3: orbit · magnet · DMD; #3217 ball-ball physics; #3232 CABINET TWO + row-of-cabinets select)
+# PINBALL — two cabinets on one engine (issue #3103 rung 1; #3169 rung 2: ramp · lock · multiball; #3199 rung 3: orbit · magnet · DMD; #3217 ball-ball physics; #3232 CABINET TWO + row-of-cabinets select; #3250 KICKBACK ball-save)
 
 The shared table engine plus CABINET ONE and CABINET TWO of the ladder Jon
 asked for ("definitely pinball… start simple, work up"). Rung 2 added the
@@ -121,6 +121,16 @@ Rung 3 (#3199), the *Black Knight 2000* idiom (loops + DMD; magnet in the
   hold; it re-arms when a ball that touched the field drains (pack drains emit
   `magready` mid-pack; single-ball drains re-arm fresh with the new ball).
   Position clear of every rung-1/2 probe lane and the orbit rail (pinned).
+- **KICKBACK** (`TABLE.kb`, #3250) — the free ball-save at the right drain-mouth
+  column (x 190..205 on CABINET ONE; EMBER RIDER mirrors it as x 155..170).
+  One save per ball: a ball descending faster than `minVy` (150) through the
+  zone is fired back up the field (`vx ±40, vy -900`) instead of draining and
+  pays 100 (ember 75); the device stays spent until the next ball (re-armed by
+  `resetBall`). The `minVy` gate keeps resting balls untouched, so the BALL
+  SEARCH law and the stall pins are unaffected, and straight-centre deaths
+  (x≈184) stay deaths — the device guards only its own column. Fires, price,
+  re-arm, centring and the ember mirror are all pinned (pinballcheck §8), and
+  the plunger art + `KICKBACK! +N` DMD announce read sim state.
 - **DMD** — a 64x8 virtual dot matrix (2 px dots, own 5x7 font, per-dot
   bloom) mounted flush at (116,250) between the bumper cluster and the bank —
   the classic insert position; balls roll over it like glass over LEDs. Event
@@ -160,8 +170,8 @@ CABINET TWO — "EMBER RIDER" (#3232), the row of cabinets:
 ## Verify
 
 ```bash
-npm run pinballcheck          # 134 literal physics/rules/determinism/mirror checks, plain Node
-npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, DMD, pixels)
+npm run pinballcheck          # 147 literal physics/rules/determinism/mirror checks, plain Node (+5 mutants)
+npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
 ```
@@ -177,7 +187,13 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   CABINET ONE and the mirrored, hotter EMBER RIDER. Both cabinets are the same
   three-rung field (one plain, one mirrored), so a third cabinet with an
   original layout is still open — that wants the editor rung (#3103).
-- No table editor (#3103: not yet). No in-lane kick on the right side.
+- **CLOSED by #3250:** no in-lane kick on the right side — CABINET ONE now has a
+  KICKBACK, a free save per ball at the right drain-mouth column (x 190..205,
+  fires only on a fast descent `vy > minVy`, pays 100; EMBER RIDER mirrors it as
+  x 155..170, pays 75). The device is pure TABLE data (`kb`), the plunger art
+  reads sim state (`kbUsed`, `kbFlash`), and the DMD announces `KICKBACK! +N`
+  deterministically. Straight-centre deaths and resting balls are untouched.
+- No table editor (#3103: not yet).
 - The `?style` URL skin override is still unused here (each cabinet ships its
   own palette; there is no user-selectable skin).
 - The attract demo is a title card with a rolling ball, not a driven run.
