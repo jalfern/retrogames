@@ -645,7 +645,15 @@ export function gullFrame(g, flock, b, t) {
     wr.rotation.z = dihedral - beat * 0.55
 }
 
-export function wakeStep(w, dt) {
+export function wakeStep(w, dt, storm = 0) {
+    // #3349 item 1 — storm headroom. On whitecap water the additive wake
+    // clipped to a posterized white slab: white-on-white can only win by
+    // HUE, never by brightness. Under storm the crest lines cool toward
+    // cyan (the sea is grey), the wide glow ribbon almost steps aside
+    // (it carries no shape, only pile-up), and the crest alpha leaves
+    // headroom so the V shapes the water instead of saturating it.
+    // Additive-only law intact — the wake still never takes light away,
+    // it just adds smarter. Geometry (V/spread/shoulder/channel) untouched.
     const pts = w.pts
     for (let i = 0; i < pts.length; i++) pts[i].age += dt
     while (pts.length && pts[0].age > w.life) pts.shift()
@@ -666,11 +674,11 @@ export function wakeStep(w, dt) {
         // hue cools as the bubbles die: crests leave the stern white foam and
         // end cyan against the bay (flat white read as paint; fading reads as
         // water). b stays hot — cyan is the sink, never a muddy grey.
-        const r = 0.95 - 0.40 * t, g = 0.98 - 0.16 * t, bb = 1.0
+        const r = 0.95 - 0.40 * t - storm * 0.28, g = 0.98 - 0.16 * t - storm * 0.06, bb = 1.0
         // the V arms spread with age; the fresh end stays narrow and hot
         const hw = p.width * (0.22 + 0.78 * t)
         const px = Math.cos(p.heading), pz = -Math.sin(p.heading)
-        const ea = foam * tw * 0.70 // crest-line alpha (the bright V arms)
+        const ea = foam * tw * 0.70 * (1 - storm * 0.38) // crest-line alpha (the bright V arms); storm keeps headroom (#3349)
         const j = i * 5
         // #3342 crest emphasis: the shoulder falls off HARDER (0.34→0.22) and
         // the channel goes quieter (0.10→0.07) — at the shallow chase angle the
@@ -689,7 +697,7 @@ export function wakeStep(w, dt) {
         // the arms — restrained so the V lines stay the read. Strictly
         // light-adding: the darkening-strip artifact is gone (#3337).
         const dw = hw * 1.18
-        const ga = foam * tw * 0.05
+        const ga = foam * tw * 0.05 * (1 - storm * 0.7) // the haze rides out at full storm — on whitecaps it is only pile-up (#3349)
         const dy = p.y - 0.02
         const q = i * 2
         dPos[q * 3] = p.x + px * dw; dPos[q * 3 + 1] = dy; dPos[q * 3 + 2] = p.z + pz * dw
