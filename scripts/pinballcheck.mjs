@@ -2,9 +2,57 @@
 // Node against the SAME sim.js the tab runs (zero DOM, zero Math.random).
 // Expectations are LITERAL numbers, not the sim's own constants — a check that
 // imports the number it audits cannot see the number change (the TETRIS lesson).
+//
+// Run: npm run pinballcheck                  (green)
+//      node scripts/pinballcheck.mjs --mutate          (all rules in fresh children, #601)
+//      node scripts/pinballcheck.mjs --mutate=economy  (one rule; the check MUST go red)
 
-import { makeGame, stepGame, stateOf, stateHash, TABLE, W, H, BALL_R, mulberry32 } from '../src/games/Pinball/sim.js'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { Report } from './lib/harness.mjs'
+import { plant, restoreAll } from './lib/mutateguard.mjs'
+
+// --mutate [rule] plants one load-bearing break in sim.js; the check MUST see
+// red. Bare --mutate (nightly form, #601) runs every rule in fresh children.
+const MUTI = process.argv.indexOf('--mutate')
+const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
+const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
+if (MUTI > -1 && !MUT) {
+    let died = 0
+    const RULES = ['seed', 'economy', 'mirror', 'search']
+    for (const rule of RULES) {
+        const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
+        // child convention at EOF: exit 0 = the rule broke and the check saw red
+        if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
+        else console.log(`mutant SURVIVES: ${rule} — check is toothless\n${res.stdout?.split('\n').slice(-4).join('\n')}`)
+    }
+    console.log(died === RULES.length ? `ALL MUTANTS CAUGHT (${died}/${RULES.length})` : `${died}/${RULES.length} mutants caught`)
+    process.exit(died === RULES.length ? 0 : 1)
+}
+if (MUT) {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+    const ANCHORS = {
+        // every seed deals the SAME table — determinism's "divergent seeds" pins die.
+        seed: { from: 'mulberry32((seed >>> 0) ^ 0x9e3779b9)', to: 'mulberry32(0x9e3779b9)', note: 'seed ignored — every seed deals the same table' },
+        // EMBER RIDER pays CABINET ONE's jackpots — the two cabinets are one table.
+        economy: { from: 'lock: 400, multiball: 1200,', to: 'lock: 500, multiball: 1000,', note: 'EMBER RIDER jackpots copied from CABINET ONE' },
+        // mbKick 0 stops mirroring — cabinet two is no longer an x-mirror build.
+        mirror: { from: '{ x: 75, y: 170, vx: 80, vy: -160 },', to: '{ x: 93, y: 170, vx: 80, vy: -160 },', note: 'ember mbKick 0 breaks its mirror' },
+        // the ball search never ends a stalled ball — a rare rest position wedges the game open.
+        search: { from: 'if (p.stall > 1200) p.drain = true;', to: 'if (p.stall > 100000) p.drain = true;', note: 'ball search never drains a stalled ball' },
+    }
+    const a = ANCHORS[MUT]
+    if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
+    const target = join(root, 'src/games/Pinball/sim.js')
+    const src = readFileSync(target, 'utf8')
+    if (!src.includes(a.from)) { console.error(`mutant anchor missing in sim.js (${MUT})`); process.exit(1) }
+    plant(target, src.replace(a.from, a.to))
+    console.log(`[mutant] ${a.note} — check must go red`)
+}
+
+const { makeGame, stepGame, stateOf, stateHash, TABLE, W, H, BALL_R, mulberry32 } = await import('../src/games/Pinball/sim.js')
 
 const r = new Report('pinballcheck')
 r.info('boot', 'sim.js imported in Node, zero DOM, zero Math.random')
@@ -895,4 +943,27 @@ const wrap = (gs) => {
         run(41)[5] !== (() => { const gs = makeGame(41, 0); const hs = []; for (let i = 1; i <= 600; i++) { stepGame(gs, i % 90 < 4 ? { down: true } : {}); if (i % 100 === 0) hs.push(stateHash(gs)) } return hs })()[5])
 }
 
+// --- 6. ball search (#3232): a motionless ball cannot wedge a game open ----
+{
+    const gs = drive(makeGame(7))
+    gs.bx = 100; gs.by = 250; gs.vx = 0; gs.vy = 0; gs.launched = true; clear(gs)
+    gs.pucks[0].stall = 1200          // 20 world-s already counted motionless
+    const balls = gs.balls
+    drive(gs, {}, 1)
+    r.check('BALL SEARCH: a ball stalled 20 world-s off lane/magnet drains on the next tick',
+        gs.balls < balls || gs.done === true, `balls=${gs.balls}/${balls} done=${gs.done}`)
+    const gs2 = drive(makeGame(8))
+    gs2.bx = 100; gs2.by = 250; gs2.vx = 0; gs2.vy = 0; gs2.launched = true; clear(gs2)
+    gs2.pucks[0].stall = 1199; gs2.magHold = 5
+    drive(gs2, {}, 1)
+    r.check('the search exempts a magnet-held ball (never eats a catch) and resets its counter',
+        gs2.pucks[0] && gs2.pucks[0].stall === 0 && gs2.balls === gs2.table.balls, `stall=${gs2.pucks[0]?.stall} balls=${gs2.balls}`)
+}
+
+restoreAll()
+if (MUT) {
+    const red = r.failed > 0
+    console.log(`\npinballcheck mutant '${MUT}': ${red ? 'RED — caught' : 'GREEN — SURVIVED, check is toothless'}`)
+    process.exit(red ? 0 : 1)
+}
 r.exit()
