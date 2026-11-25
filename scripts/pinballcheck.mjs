@@ -1397,6 +1397,29 @@ const wrap = (gs) => {
     r.check('a held NUDGE button owns b — the lean never stomps it', sh.includes('!keysRef.current.b'))
     r.check('the tilt pulse rides the sim steps then releases b', sh.includes('if (tiltPulseRef.current > 0 && --tiltPulseRef.current === 0) keysRef.current.b = false'))
     r.check('the lean maps through the shared screen-rotation law', sh.includes("import { tiltVec } from '../../components/padTypes.js'"))
+    // #3359 garage: three slots hold smith layouts; the card shows the CURRENT
+    // slot; 1/2/3 + the chooser strip pick it; the legacy blob migrates once.
+    r.check('the garage holds three slots',
+        sh.includes("const GARAGE_SLOTS = 3"))
+    r.check('the per-slot save key is pinned (legacy mytable.v1 read kept for the migration)',
+        sh.includes("const GARAGE_PREFIX = 'retrogames.pinball.cab.v1'") &&
+        sh.includes("const slotKey = (i) => `${GARAGE_PREFIX}:${i}`") &&
+        sh.includes("const SLOT_STORE = 'retrogames.pinball.slot'"))
+    r.check('the slot selection is persisted (load + save under the pinned key)',
+        sh.includes("localStorage.getItem(SLOT_STORE)") && sh.includes("localStorage.setItem(SLOT_STORE"))
+    r.check('Digit1/2/3 pick the garage slot on the smith card (A/B/C stay cabinets/kit)',
+        sh.includes("e.code === 'Digit1'") && sh.includes("e.code === 'Digit2'") && sh.includes("e.code === 'Digit3'"))
+    r.check('the garage chooser strip is drawn on the smith card, not on stock cabinets',
+        sh.includes('if (i === 2)') && sh.includes('stripY') && sh.includes('GARAGE_SLOTS'))
+    r.check('a slot switch clears the painted-field cache and re-deals the demo',
+        sh.includes('delete fieldsRef.current[k]') && sh.includes('demoRebuild()'))
+    r.check('SAVE lands in the slot the card is showing (no more single-slot save)',
+        sh.includes('saveGarageSlot(garage.sel'))
+    r.check('a junk slot reads ghost (validateSmith gate), never a save',
+        sh.includes('const slotDefLegal = (s)') && sh.includes('validateSmith(def) === null'))
+    r.check('one-shot legacy migration: only into an EMPTY slot 0, def must compile, blob kept',
+        sh.includes('const legacyRaw = loadMyRaw()') && sh.includes('if (legacyRaw && !slots[0])') &&
+        sh.includes('validateSmith(legacyDef) === null') && sh.includes('slots[0] = { name: legacyName, def: legacyDef }'))
 }
 
 // ═══ #3290 stage 1: honest ghost, drawn rules, phone fits ═══

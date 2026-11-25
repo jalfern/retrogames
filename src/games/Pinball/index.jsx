@@ -14,7 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R, demoPad, demoOver,
-    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, zoneGuidePath, tiltImpulse, soloBed, SOLO_CAP,
+    compileTable, sanitizeDef, validateSmith, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, zoneGuidePath, tiltImpulse, soloBed, SOLO_CAP,
 } from './sim.js'
 import { tiltVec } from '../../components/padTypes.js'
 import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, textFit, marqueeFit } from './art.js'
@@ -27,17 +27,55 @@ const FIXED_DT = 1000 / 60
 // ghost ("DESIGN YOUR OWN" — START opens the editor); saved, its compiled
 // table rides the row exactly like a stock machine: same renderer, same
 // physics, its own kit dress (id `my-table` falls back to the house kits).
-// #3284: the player's saved cabinet — one per browser (the construction-set
-// fantasy of "your machine in the arcade"), name + layout, re-editable.
+// #3284: the player's saved cabinet — the construction-set fantasy of
+// "your machine in the arcade" — name + layout, re-editable.
+// #3359: a garage of three slots per browser. A chooser strip on the slot 2
+// card (1/2/3; A/B/C keys take cabinet-left/kit, so 1/2/3 are the digits)
+// persists the pick at retrogames.pinball.slot = { slot: i }; each slot writes
+// its own retrogames.pinball.cab.v1:<i> = { name, def }. The legacy blob
+// (#3284, one cabinet per browser) migrates one-shot into slot 0 and is
+// never deleted.
 const MY_STORE = 'retrogames.pinball.mytable.v1'
 let myRev = 0        // smith revisions bust the painted-field cache (#3284)
+const GARAGE_SLOTS = 3
+const GARAGE_PREFIX = 'retrogames.pinball.cab.v1'
+const SLOT_STORE = 'retrogames.pinball.slot'
+const slotKey = (i) => `${GARAGE_PREFIX}:${i}`
 const loadMyRaw = () => { try { const j = JSON.parse(localStorage.getItem(MY_STORE)); return j && typeof j === 'object' ? j : null } catch { return null } }
-const my0 = loadMyRaw()
-const myDef0 = my0 ? sanitizeDef(my0) : null
+const loadGarageSlot = (i) => { try { const j = JSON.parse(localStorage.getItem(slotKey(i))); return j && typeof j === 'object' ? j : null } catch { return null } }
+const loadGarageSlots = () => { const out = []; for (let i = 0; i < GARAGE_SLOTS; i++) out.push(loadGarageSlot(i)); return out }
+const saveGarageSlot = (i, name, def) => { try { localStorage.setItem(slotKey(i), JSON.stringify({ name, def })) } catch { /* private mode: memory is best-effort */ } }
+const loadGarageSlotSel = () => { try { const j = JSON.parse(localStorage.getItem(SLOT_STORE)); const s = j && typeof j.slot === 'number' ? Math.trunc(j.slot) : 0; return s >= 0 && s < GARAGE_SLOTS ? s : 0 } catch { return 0 } }
+const saveGarageSlotSel = (i) => { try { localStorage.setItem(SLOT_STORE, JSON.stringify({ slot: i })) } catch { /* private mode: best-effort */ } }
+// One-shot legacy migration: if slot 0 is empty and the legacy blob's def
+// compiles clean, lift it into slot 0 (a blob that doesn't compile is
+// garbage — it reads as unsaved, never as a save).
+const slots = loadGarageSlots()
+const legacyRaw = loadMyRaw()
+if (legacyRaw && !slots[0]) {
+    const legacyDef = sanitizeDef(legacyRaw.def && typeof legacyRaw.def === 'object' ? legacyRaw.def : legacyRaw)
+    if (validateSmith(legacyDef) === null) {
+        const legacyName = legacyDef.name || legacyRaw.name || 'MY TABLE'
+        slots[0] = { name: legacyName, def: legacyDef }
+        saveGarageSlot(0, legacyName, legacyDef)
+    }
+}
+// Builds the slot-2 card from a slot blob. A junk slot (missing def, or a
+// def that doesn't compile) reads as unsaved — garbage is not a save.
+const slotDefLegal = (s) => {
+    const def = s && s.def && typeof s.def === 'object' ? sanitizeDef(s.def) : null
+    return def && validateSmith(def) === null ? def : null
+}
+const buildCABS2 = (i) => {
+    const def = slotDefLegal(garage.slots[i])
+    if (!def) return { tb: TABLE, pal: PAL, tag: 'DESIGN YOUR OWN', msgs: MESSAGES, custom: true, saved: false, def: null }
+    return { tb: compileTable(def).tb, pal: PAL, tag: def.name || 'MY TABLE', msgs: MESSAGES, custom: true, saved: true, def: { ...def, bumpers: def.bumpers.map((b) => [...b]) } }
+}
+const garage = { slots, sel: loadGarageSlotSel() }
 const CABS = [
     { tb: TABLE, pal: PAL, tag: 'CABINET ONE', msgs: MESSAGES },
     { tb: TABLE_TWO, pal: PAL_EMBER, tag: 'EMBER RIDER', msgs: MESSAGES_EMBER },
-    { tb: myDef0 ? compileTable(myDef0).tb : TABLE, pal: PAL, tag: (myDef0 && myDef0.name) || 'DESIGN YOUR OWN', msgs: MESSAGES, custom: true, saved: !!myDef0 },
+    buildCABS2(garage.sel),
 ]
 // #3290 item 2 — the unsaved ghost stops lying. Until the player saves, the
 // demo and the card face show the bench's OWN default layout (openEditor
@@ -239,6 +277,10 @@ const PinballGame = () => {
     const freshSeed = () => (seedFromQuery() ?? (Date.now() >>> 0))
     const cabRef = useRef(0)                    // selected cabinet (#3232), persists across games
     const [cabIdx, setCabIdx] = useState(0)
+    // #3359: bumps the React pad/AttractMessage so a garage slot switch (which
+    // repaints everything through the canvas) is also reflected by the JSX.
+    // The value is never read — the re-render alone redraws the labels.
+    const [, setGarageRev] = useState(0)
     // #3259 art kit per cabinet — persists across games and quick-retries, and
     // #3237 across page reloads (localStorage, per cabinet). ?style=<kit>
     // outranks memory on every cabinet that ships the kit.
@@ -274,7 +316,7 @@ const PinballGame = () => {
     const demoRef = useRef(null)
     // #3284 TABLE SMITH state: the working draft (a def, always re-compiled
     // through sim.compileTable), the cursor/tool, and the test-drop redirect.
-    const draftRef = useRef(myDef0 ? sanitizeDef(myDef0) : sanitizeDef(SMITH_REFS.nova))
+    const draftRef = useRef(CABS[2].def ? sanitizeDef(CABS[2].def) : sanitizeDef(SMITH_REFS.nova))
     const draftVerRef = useRef(0)
     // carry (#3290 item 6): the part lifted off the bench, {kind, from} —
     // null while every part sits on the field.
@@ -350,7 +392,11 @@ const PinballGame = () => {
 
     // #3284: the ghost slot's START walks into the TABLE SMITH editor.
     const openEditor = useCallback(() => {
-        draftRef.current = sanitizeDef(CABS[2].def || SMITH_REFS.nova)
+        // The bench opens on the current slot's saved layout — the same legal
+        // law buildCABS2 pays: a junk slot (uncompilable def) reads ghost and
+        // opens on the smith's own default, never on junk.
+        const d = slotDefLegal(garage.slots[garage.sel])
+        draftRef.current = d ? { ...d, bumpers: d.bumpers.map((b) => [...b]) } : sanitizeDef(SMITH_REFS.nova)
         draftVerRef.current += 1
         edRef.current = { tool: 0, cx: 180, cy: 190, notice: '', noticeT: 0, nameIdx: 0, carry: null }
         screenRef.current = 'edit'; setScreen('edit')
@@ -605,6 +651,22 @@ const PinballGame = () => {
         // picking a machine re-deals its demo — the card you look at is the
         // machine you're about to play, dressed in the kit you left it in.
         const selCab = (i) => { setCab(i); demoRebuild() }
+
+        // #3359: the garage — move the slot-2 card to another saved slot. The
+        // choice persists; the smith's own draft is NOT reset (the bench owns
+        // the draft) but the painted-field cache must never show the previous
+        // slot's layout, so every `my-table#` cache entry dies here.
+        const selectSlot = (i) => {
+            if (!Number.isInteger(i) || i < 0 || i >= GARAGE_SLOTS || i === garage.sel) return
+            garage.sel = i
+            saveGarageSlotSel(i)
+            CABS[2] = buildCABS2(i)
+            myRev += 1
+            for (const k of Object.keys(fieldsRef.current)) if (k.startsWith('my-table#')) delete fieldsRef.current[k]
+            demoRebuild()
+            setGarageRev((r) => r + 1)
+            sfxFor({ type: 'cabinet' })
+        }
 
         // ---------------------------------------------------------------- draw ----
         const drawTable = (gs, L = MAIN) => {
@@ -1129,6 +1191,25 @@ const PinballGame = () => {
                 const mq = marqueeFit(isSel ? `${c.tag} · ${k.label}` : c.tag, CARD_W)
                 ctx.font = `bold ${mq.size}px monospace`
                 ctx.fillText(mq.text, 0, -CARD_H / 2 + 14)
+                // #3359: the garage chooser strip — the slot this card shows,
+                // lit, sits alongside its siblings (saved = bright, unsaved = dim).
+                if (i === 2) {
+                    const cellW = 30, pitch = 33, stripY = 66, cellH = 18
+                    for (let s = 0; s < GARAGE_SLOTS; s++) {
+                        const x0 = -48 + s * pitch
+                        const current = garage.sel === s
+                        const saved = !!slotDefLegal(garage.slots[s])
+                        ctx.fillStyle = current ? 'rgba(57,225,255,0.25)' : 'rgba(4,6,16,0.55)'
+                        ctx.fillRect(x0, stripY, cellW, cellH)
+                        ctx.strokeStyle = current ? '#39e1ff' : saved ? 'rgba(233,251,255,0.45)' : 'rgba(233,251,255,0.2)'
+                        ctx.lineWidth = current ? 1.5 : 1
+                        ctx.strokeRect(x0 + 0.5, stripY + 0.5, cellW - 1, cellH - 1)
+                        ctx.textAlign = 'center'
+                        ctx.font = 'bold 11px monospace'
+                        ctx.fillStyle = current ? '#e9fbff' : saved ? 'rgba(233,251,255,0.85)' : 'rgba(233,251,255,0.35)'
+                        ctx.fillText(String(s + 1), x0 + cellW / 2, stripY + cellH / 2 + 4)
+                    }
+                }
                 ctx.restore()
                 // picker chevron above the selected card
                 if (isSel) {
@@ -1256,7 +1337,6 @@ const PinballGame = () => {
         // shared engine through sim.compileTable (the #3103 contract: data,
         // never physics). The draft is validated on every placement, so what
         // the cursor shows green is exactly what TEST/SAVE accept.
-        const saveMyFn = (def) => { try { localStorage.setItem(MY_STORE, JSON.stringify({ name: def.name, def })) } catch { /* private mode: memory is best-effort */ } }
         // Leaving the tool while a part is in the hand puts it back where it
         // was lifted from — the part is never lost to a tool change.
         const carryHome = () => {
@@ -1301,8 +1381,12 @@ const PinballGame = () => {
             if (t === 'SAVE') {
                 const r = compileTable(d)
                 if (r.error) { ed.notice = r.error; ed.noticeT = 100; sfxFor({ type: 'tiltwarn' }); return }
-                saveMyFn(d)
-                CABS[2] = { tb: r.tb, pal: PAL, tag: d.name || 'MY TABLE', msgs: MESSAGES, custom: true, saved: true, def: { ...d, bumpers: d.bumpers.map((b) => [...b]) } }
+                // #3359: the save lands in the garage slot the card is showing
+                const savedDef = { ...d, bumpers: d.bumpers.map((b) => [...b]) }
+                const savedName = d.name || 'MY TABLE'
+                saveGarageSlot(garage.sel, savedName, savedDef)
+                garage.slots[garage.sel] = { name: savedName, def: savedDef }
+                CABS[2] = buildCABS2(garage.sel)
                 myRev += 1                                  // bust the painted-field cache
                 screenRef.current = 'attract'; setScreen('attract')
                 demoRebuild()                              // the row shows the new machine self-playing
@@ -1452,12 +1536,13 @@ const PinballGame = () => {
         // [data-vc], App skips those) and a real key press is trusted — both
         // still act normally.
         let tapSpaceGuard = false
+        let garageStripGuard = false
         const onKeyDown = (e) => {
             // #3284 TABLE SMITH: the editor answers first — arrows walk the
             // cursor (held repeat ON, unlike game keys), A acts, B cycles the
             // part, ? walks back out to the row. A draft never saved stays a
             // draft: leaving is safe.
-            if (e.isTrusted) tapSpaceGuard = false    // a real keystroke outranks the guard
+            if (e.isTrusted) { tapSpaceGuard = false; garageStripGuard = false }    // a real keystroke outranks both guards
             if (screenRef.current === 'edit') {
                 const ed = edRef.current
                 if (e.code === 'Escape' || e.code === 'QuestionMark' || e.key === '?' || e.code === 'Backquote') {
@@ -1483,11 +1568,20 @@ const PinballGame = () => {
                 screenRef.current = 'edit'; setScreen('edit'); e.preventDefault(); return
             }
             if (startable()) {
+                // #3359: a garage-strip tap armed a one-shot guard — the App's
+                // tapStart synthetic Space must not start a game the tap never
+                // asked for. (Trusted keys clear it above.)
+                if (garageStripGuard) { garageStripGuard = false; e.preventDefault(); return }
                 // the row of cabinets answers the arrows first (#3232): in
                 // attract they switch picks; at GAME OVER they step back to the
                 // row. SPACE/tap keeps the original quick-retry on the same cab.
                 if (screenRef.current === 'attract' && (e.code === 'ArrowLeft' || e.code === 'KeyA')) { selCab(cabRef.current - 1); e.preventDefault(); return }
                 if (screenRef.current === 'attract' && (e.code === 'ArrowRight' || e.code === 'KeyD')) { selCab(cabRef.current + 1); e.preventDefault(); return }
+                // #3359: 1/2/3 pick the garage slot on the smith card (same
+                // frame the ghost/kit laws read). A/B/C stay cabinets/kit.
+                if (screenRef.current === 'attract' && cabRef.current === 2 && (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3')) {
+                    selectSlot(Number(e.code.slice(-1)) - 1); e.preventDefault(); return
+                }
                 // #3259: B / ▲▼ dress the selected cabinet in its next art kit
                 if (screenRef.current === 'attract' && (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ArrowUp' || e.code === 'ArrowDown')) {
                     // #3284: on the SAVED custom cabinet B means "back to the
@@ -1545,6 +1639,30 @@ const PinballGame = () => {
             if (screenRef.current === 'over') {
                 if (testBackRef.current) { testBackRef.current = false; screenRef.current = 'edit'; setScreen('edit'); return }
                 screenRef.current = 'attract'; setScreen('attract'); return
+            }
+            // #3359: the garage chooser strip on the smith card — a tap anywhere
+            // in the band selects the slot under the finger and is consumed
+            // here: no game start, no card fall-through. The whole band is
+            // consumed (a gap between cells is a no-op), and the App's
+            // tapStart synthetic Space is swallowed by garageStripGuard.
+            if (screenRef.current === 'attract') {
+                const r = CARDS[2]
+                const sel = cabRef.current === 2
+                const scale = sel ? 1 : 0.88
+                const bob = sel ? -6 + Math.sin(performance.now() / 420) * 2 : 8
+                const rectS = cvs.getBoundingClientRect()
+                const pxS = (e.clientX - rectS.left) * (W / rectS.width)
+                const pyS = (e.clientY - rectS.top) * (H / rectS.height)
+                const relX = (pxS - (r.x + CARD_W / 2)) / scale
+                const relY = (pyS - (r.y + CARD_H / 2 + bob)) / scale
+                if (relY >= 64 && relY <= 86) {
+                    garageStripGuard = true
+                    for (let s = 0; s < GARAGE_SLOTS; s++) {
+                        const x0 = -48 + s * 33
+                        if (relX >= x0 && relX <= x0 + 30) { selectSlot(s); return }
+                    }
+                    return
+                }
             }
             // tap a cabinet card to pick AND start it in one input (#3232).
             // #3290 item 4: among the cards a tap touches, the NEAREST centre
@@ -1669,6 +1787,8 @@ const PinballGame = () => {
                     // #3290 item 6: what's in the hand (null = every part on the field)
                     carry: edRef.current.carry ? edRef.current.carry.kind : null,
                     tag: CABS[2].tag,
+                    slot: garage.sel,
+                    slots: garage.slots.map((s, i) => ({ i, saved: !!slotDefLegal(s), name: s ? (s.name || (s.def && s.def.name) || null) : null })),
                     sel: cabRef.current,
                     tbId: gsRef.current.table.id,
                     // #3290: what the ghost demo honestly runs (bench default

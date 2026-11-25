@@ -179,7 +179,7 @@ cycle-wrap law, the `?style` parse, and a bit-identical replay.
 - CABINET ONE: **MIDNIGHT** (house) · **TIDAL RUN** (teal field, coral lanes, mint neon) · **NOIR** (#3237: black glass, magenta lanes, violet neon)
 - EMBER RIDER: **EMBER** (house) · **TOXIC** (moss field, lime lanes, magenta neon) · **GLACIER** (#3237: ice field, silver lanes, cyan neon)
 - Attract row: **B / Shift / ▲▼** cycles the selected cabinet's kit live — except on the
-  **saved custom** (slot 2 once saved), where **B / Shift** opens the bench instead (a
+  **saved custom** (the card once saved in the current slot), where **B / Shift** opens the bench instead (a
   redesign beats a dress) and **▲▼** alone still dresses. The marquee shows `TAG · KIT`
   and a `◆ KIT:` (or `◆ B TO REDESIGN` / `◆ START OPENS THE SMITH`) badge rides under
   the row (unsaved card 2 gets it live).
@@ -253,11 +253,25 @@ demo like a stock cabinet (`B = REDESIGN`).
   wipes / acts, `B` cycles the 8-slot palette BUMPER · SLING · BANK · MAGNET
   · WIPE · NAME · TEST · SAVE. NAME cycles two word-lists (no keyboard on a
   phone). TEST drops ONE ball and comes home to the bench at game over; SAVE
-  writes `{name, def}` to `retrogames.pinball.mytable.v1` (private-mode
-  silent), names the card, and re-deals the attract demo onto your table.
+  writes `{name, def}` to the selected garage slot (`retrogames.pinball.cab.v1:<i>`,
+  private-mode silent), names the card, and re-deals the attract demo onto your table.
   `openEditor` starts from a legal default (`SMITH_REFS.nova`), so the bench
   is never empty-handed. Placements validate the WHOLE candidate — the draft
   on the bench stays globally legal by invariant.
+
+### Garage (#3359)
+
+Three slots hold smith layouts — `1`/`2`/`3` (or the chooser strip on the smith
+card, below the badge) swap the card between slot 0/1/2; the card shows the
+current slot's machine (saved = painted field riding the row, unsaved = the
+ghost blueprint). Per-slot keys (`retrogames.pinball.cab.v1:<i>`, `{name, def}`)
+are the whole store; the selection itself persists at
+`retrogames.pinball.slot` (`{slot: i}`, 0 default). SAVE lands in the slot the
+card is showing. On first boot a valid legacy blob (`retrogames.pinball.mytable.v1`,
+#3284's single save) is one-shot migrated into slot 0 — only when slot 0 is
+empty and the def compiles clean — and the blob is left intact, never deleted.
+Slot 0/1/2 states all answer the same honesty law: anything that doesn't
+compile reads ghost, never as a save.
 
 ### Smith polish stage 1 (#3290 items 1–4)
 
@@ -292,9 +306,9 @@ demo like a stock cabinet (`B = REDESIGN`).
 ## Verify
 
 ```bash
-npm run pinballcheck          # 251 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI pins, plain Node (+12 mutants incl. smithzone/smithload)
+npm run pinballcheck          # 251 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage pins, plain Node (+12 mutants incl. smithzone/smithload)
 npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs)
-npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence (+#3290: badge-while-unselected, nova-demo honesty, drawn-rim delta, seam nearest-centre, touch tap-guard + tool taps)
+npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284 + #3359): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence, garage: slot switch (Digit1/2/3), SAVE into a garage slot, slot-choice persistence, legacy-blob one-shot migration (+#3290: badge-while-unselected, nova-demo honesty, drawn-rim delta, seam nearest-centre, touch tap-guard + tool taps)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
 ```
@@ -322,8 +336,8 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   The shelf's honest edge moved, it did not vanish: the smith places the
   rung-1 feature set (bumpers/slings/bank/magnet) on a FIXED chassis — ramps,
   spinner/kicker side, tower and orbit placement are still chassis data, not
-  player parts — and one cabinet saves per browser (a garage of layouts is
-  still owed).
+  player parts. Layouts now ride a three-slot garage (#3359 — one-shot legacy
+  migration, slot choice persisted).
 - **CLOSED by #3259:** the `?style` skin override. Each cabinet now ships art
   kits (dress-only palettes, parity-pinned), the attract row cycles them with
   B/▲▼, and `?style=<id|label>` preselects one. See "Art kits" above.
