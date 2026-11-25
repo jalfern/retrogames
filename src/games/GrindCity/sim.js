@@ -600,6 +600,72 @@ export const betterLine = (prev, run) => {
     return run
 }
 
+/** Strict all-time law (#3381): the stored record falls to strictly more
+ *  score, or an equal score with strictly more letters — recency alone never
+ *  fakes a record. The badge and the storage write both read this law; it is
+ *  the unambiguous subset of betterLine (#3374), where a full tie goes to
+ *  the newer run. */
+export const beatsLine = (prev, run) => {
+    if (!prev) return true
+    if (run.score !== prev.score) return run.score > prev.score
+    return (run.letters || 0) > (prev.letters || 0)
+}
+
+/** Share codec (#3381) — a line is seed + pads, and one packed pad word is
+ *  exactly six bits, so the wire is one URL-safe char per tick: no bit
+ *  twiddling, no run-length ambiguity, and the round-trip is exact. Code =
+ *  seed · score · ticks · body (numbers in canonical base36, which lets
+ *  decode reject non-canonical junk). Total: garbage, oversized or
+ *  out-of-alphabet input decodes to null — never throws, never half-rides. */
+export const SHARE_MAX_TICKS = 7500     // the full 2:00 clock, plus settle headroom
+export const SHARE_MAX_CODE = 8192
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+const B64V = Object.fromEntries([...B64].map((c, i) => [c, i]))
+export function encodeLine(line) {
+    if (!line || !Array.isArray(line.log) || line.log.length < 1 || line.log.length > SHARE_MAX_TICKS) return null
+    if (!Number.isInteger(line.seed) || line.seed < 0 || line.seed > 0xffffffff) return null
+    if (!Number.isInteger(line.score) || line.score < 0) return null
+    let body = ''
+    for (const w of line.log) {
+        if (!Number.isInteger(w) || w < 0 || w > 63) return null
+        body += B64[w]
+    }
+    const code = `${line.seed.toString(36)}.${line.score.toString(36)}.${line.log.length.toString(36)}.${body}`
+    return code.length <= SHARE_MAX_CODE ? code : null
+}
+export function decodeLine(code) {
+    if (typeof code !== 'string' || code.length < 3 || code.length > SHARE_MAX_CODE) return null
+    const parts = code.split('.')
+    if (parts.length !== 4) return null
+    const [seedS, scoreS, ticksS, body] = parts
+    const seed = Number.parseInt(seedS, 36)
+    const score = Number.parseInt(scoreS, 36)
+    const ticks = Number.parseInt(ticksS, 36)
+    if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff || seed.toString(36) !== seedS) return null
+    if (!Number.isInteger(score) || score < 0 || score.toString(36) !== scoreS) return null
+    if (!Number.isInteger(ticks) || ticks < 1 || ticks > SHARE_MAX_TICKS || ticks.toString(36) !== ticksS) return null
+    if (!body || body.length !== ticks) return null
+    const log = new Array(ticks)
+    for (let i = 0; i < ticks; i++) {
+        const v = B64V[body[i]]
+        if (v === undefined) return null
+        log[i] = v
+    }
+    return { seed, score, log }
+}
+
+/** Stored-bank law (#3381): what may live in localStorage — the same shape
+ *  the attract bank rides (a bankable line with honest numbers), so a corrupt
+ *  or hand-edited store falls back to a plain cold plaza instead of parading
+ *  a fake record behind the title. */
+export const validBank = (b) => !!b && typeof b === 'object' && !Array.isArray(b) && b.v === 1
+    && Number.isInteger(b.seed) && b.seed >= 0 && b.seed <= 0xffffffff
+    && Array.isArray(b.log) && b.log.length >= REPLAY_MIN && b.log.length <= SHARE_MAX_TICKS
+    && b.log.every((w) => Number.isInteger(w) && w >= 0 && w <= 63)
+    && Number.isInteger(b.score) && b.score >= 0
+    && Number.isInteger(b.letters) && b.letters >= 0 && b.letters <= 5
+    && typeof b.won === 'boolean'
+
 export function hashState(s) {
     let h = 2166136261
     const str = JSON.stringify(stateOf(s))

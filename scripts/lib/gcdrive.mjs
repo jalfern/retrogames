@@ -261,6 +261,95 @@ try {
     }
     ok('#3374 attract loops the remembered line without stalling', wrapped, `max tick ${prevT}`)
 
+    // #3381 all-time: the seed-7 line skated above is the best — it must be in
+    // the store, survive a reload, and re-ride the plaza marked ALL-TIME.
+    const st0 = await page.evaluate(() => window.__game.state())
+    ok('#3381 the record line lands in the store', st0.stored !== null && !!st0.best && st0.stored === st0.best.score, `stored=${st0.stored}`)
+    const rawStore = await page.evaluate(() => { try { return JSON.parse(window.localStorage.getItem('grindcity.best.v1') || 'null') } catch { return null } })
+    ok('#3381 the store holds a seed + the whole pad log', !!rawStore && rawStore.v === 1 && rawStore.seed === 7 && Array.isArray(rawStore.log) && rawStore.log.length >= 120, `log=${rawStore && rawStore.log ? rawStore.log.length : '-'} ticks`)
+    await page.reload()
+    await page.waitForFunction('window.__game', { timeout: 20000 })
+    await new Promise(r => setTimeout(r, 400))
+    const st1 = await page.evaluate(() => window.__game.state())
+    ok('#3381 reload remembers: attract re-rides the stored line, marked all-time',
+        st1.attract === true && st1.attractLine === true && st1.seed === 7 && st1.allTime === true && st1.stored === st1.best.score,
+        `seed=${st1.seed} allTime=${st1.allTime} stored=${st1.stored}`)
+    const chipAll = await page.evaluate(() => (document.body.innerText.match(/(ALL-TIME )?BEST LINE [^\n]+/) || [''])[0])
+    ok('#3381 the chip says ALL-TIME after a reload', /ALL-TIME BEST LINE \d+ PTS/.test(chipAll), chipAll)
+
+    // #3381 a tie does NOT rewrite history: start a real game, coast, and bank
+    // a score EQUAL to the record — no badge, and the store keeps its line.
+    await skipTo('attract')
+    await skipTo('play')
+    await new Promise(r => setTimeout(r, 2500))   // ~150 real ticks of line
+    await page.evaluate(({ s, l }) => { window.__grindTest.teleport({ score: s, letters: l ? { S: true } : {}, timeLeft: 0 }) }, { s: st0.stored, l: st0.best.letters >= 1 })
+    await new Promise(r => setTimeout(r, 450))
+    await skipTo('over')
+    const tieBadge = await page.evaluate(() => /NEW ALL-TIME LINE/.test(document.body.innerText))
+    const stTie = await page.evaluate(() => window.__game.state())
+    ok('#3381 an equal line fakes neither the badge nor the store',
+        tieBadge === false && stTie.stored === st0.stored, `stored=${stTie.stored} badge=${tieBadge}`)
+
+    // #3381 beat it for real: +5000 over the record earns the badge, rewrites
+    // the store, and S on the replay flashes a copy of the share link.
+    await skipTo('attract')
+    await skipTo('play')
+    await new Promise(r => setTimeout(r, 2500))
+    await page.evaluate(({ s, l }) => { window.__grindTest.teleport({ score: s, letters: l ? { S: true } : {}, timeLeft: 0 }) }, { s: st0.stored + 5000, l: st0.best.letters >= 1 })
+    await new Promise(r => setTimeout(r, 450))
+    const recRp = await page.evaluate(() => window.__grindTest.state())
+    ok('#3381 the beating line reaches the replay screen', recRp.screen === 'replay' && !!recRp.replay, `screen=${recRp.screen}`)
+    await page.keyboard.press('KeyS')
+    await new Promise(r => setTimeout(r, 250))
+    const flashRp = await page.evaluate(() => {
+        const el = document.querySelector('[class~="top-[38%]"]')
+        return el ? { txt: el.textContent, op: Number(el.style.opacity) } : null
+    })
+    const shareCode = await page.evaluate(() => window.__game.state().shareCode)
+    ok('#3381 S on the replay flashes the copy verdict',
+        !!flashRp && flashRp.op > 0.5 && /^(LINE COPIED — SEND IT|CLIPBOARD BLOCKED|LINE TOO LONG TO SHARE)$/.test(flashRp.txt),
+        JSON.stringify(flashRp))
+    ok('#3381 the share code is a real link back to this line',
+        typeof shareCode === 'string' && shareCode.split('.').length === 4 && shareCode.length > 4,
+        `${shareCode ? shareCode.length : 0} chars`)
+    await skipTo('over')
+    const recBadge = await page.evaluate(() => /NEW ALL-TIME LINE/.test(document.body.innerText))
+    const stRec = await page.evaluate(() => window.__game.state())
+    ok('#3381 the strict beat earns the badge and rewrites the store',
+        recBadge === true && stRec.stored === st0.stored + 5000, `stored=${stRec.stored} badge=${recBadge}`)
+
+    // #3381 the deep link: open the shared code — the plaza re-rides THAT line
+    // (its own seed) behind a SHARED LINE banner until the guest keys in.
+    const sharedUrl = await page.evaluate((c) => `${location.origin}${location.pathname}?line=${c}`, shareCode)
+    const errs2 = []
+    const p2 = await openGame(browser, { url: sharedUrl, hook: '__grindTest' })
+    p2.on('pageerror', (e) => errs2.push(e.message))
+    await p2.waitForFunction('window.__game', { timeout: 20000 })
+    await new Promise(r => setTimeout(r, 600))
+    const sh = await p2.evaluate(() => window.__game.state())
+    ok('#3381 ?line= rides the guest line on its own seed, banner and all',
+        sh.attract === true && sh.shared === st0.stored + 5000 && errs2.length === 0,
+        `shared=${sh.shared} seed=${sh.seed} expectPts=${st0.stored + 5000}`)
+    const shBanner = await p2.evaluate(() => (document.body.innerText.match(/SHARED LINE [^\n]+/) || [''])[0])
+    ok('#3381 the banner says SHARED LINE with the honest score', /SHARED LINE · \d+ PTS/.test(shBanner), shBanner)
+    await p2.keyboard.press('Space')
+    await new Promise(r => setTimeout(r, 300))
+    const shStart = await p2.evaluate(() => window.__game.state())
+    ok('#3381 any key hands the plaza back — guest mode ends at first touch',
+        shStart.attract === false && shStart.shared === null, `attract=${shStart.attract} shared=${shStart.shared}`)
+    await p2.close()
+
+    // #3381 junk in the URL is silence, not a crash: the plaza rides its own.
+    const errs3 = []
+    const p3 = await openGame(browser, { url: `${BASE}/grind-city?line=zz!!nope`, hook: '__grindTest' })
+    p3.on('pageerror', (e) => errs3.push(e.message))
+    await p3.waitForFunction('window.__game', { timeout: 20000 })
+    await new Promise(r => setTimeout(r, 800))
+    const junk = await p3.evaluate(() => window.__game.state())
+    ok('#3381 a garbage line code boots to a clean plaza, no shared mode, no page errors',
+        junk.shared === null && junk.attract === true && errs3.length === 0, `shared=${junk.shared} errs=${errs3.join(';')}`)
+    await p3.close()
+
     // #3233 tail — phone-width HUD collision gate: the goal/trick banner must clear the
     // persistent S-K-A-T-E checklist, stay on-screen at small-phone widths, and the tall
     // score must not brush the combo line. Worst-case strings the sim actually renders.

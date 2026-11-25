@@ -3,7 +3,7 @@
 // goal inside the 2:00 run, and seed + pads replay identical hashes.
 // Run: npm run grindcheck [-- --mutate <rule>]  (--mutate proves it can fail)
 
-import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine } from '../src/games/GrindCity/sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, SHARE_MAX_TICKS } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
 import { parkHeight, LETTERS, RAILS, GEMS, GEM_PTS, SECRET, ROOF_Y, shadeAt } from '../src/games/GrindCity/park.js'
 import { BAR, bedVoices, landThud } from '../src/games/GrindCity/music.js'
@@ -25,13 +25,13 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety', 'nearmiss', 'bestline', 'bankline']) {
+    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire']) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 13 ? `ALL MUTANTS CAUGHT (${died}/13)` : `${died}/13 mutants caught`)
+    console.log(died === 17 ? `ALL MUTANTS CAUGHT (${died}/17)` : `${died}/17 mutants caught`)
     process.exit(died === 13 ? 0 : 1)
 }
 
@@ -524,6 +524,90 @@ function drive(seed) {
         /bankedPad \|\| botPad\(stateOf\(sim\), bot\)/.test(cabDrive) &&
         /makeGame\(bestLog\.length \? bestSeed : freshSeed\(\), 'run'\)/.test(cabDrive) &&
         /bestSeed = 0; bestLog = \[\]; attractIdx = 0/.test(cabDrive))
+
+    // ── saved/shared runs (#3381) ─────────────────────────────────────────
+    // The wire: one URL-safe char per 6-bit pad word, seed/score/ticks in a
+    // canonical base36 header. Behaviour pins prove the codec is exact and
+    // total; the re-sim pin proves the decoded line skates IDENTICALLY.
+    const all64 = []
+    for (let i = 0; i < 400; i++) all64.push((i * 7919) % 64)
+    const codeHi = encodeLine({ seed: 0xffffffff, log: all64, score: 12340 })
+    const backHi = decodeLine(codeHi)
+    ok('share codec: full-alphabet line round-trips exactly both ways, top seed included',
+        !!codeHi && !!backHi && backHi.seed === 0xffffffff && backHi.score === 12340 &&
+        backHi.log.length === all64.length && backHi.log.every((w, i) => w === all64[i]) &&
+        encodeLine({ seed: backHi.seed, log: backHi.log, score: backHi.score }) === codeHi)
+    const zero = decodeLine(encodeLine({ seed: 0, log: [0, 0, 0], score: 0 }))
+    ok('share codec: a coasting seed-zero line survives the wire (zeroes are legal)',
+        !!zero && zero.seed === 0 && zero.score === 0 && zero.log.length === 3 && zero.log.every((w) => w === 0))
+    ok('share codec: decode is total — junk, non-canonical headers and broken counts give null',
+        decodeLine('') === null && decodeLine('zz') === null && decodeLine('1.0.2.A!') === null &&
+        decodeLine('00.0.3.AAA') === null && decodeLine(null) === null && decodeLine('1.0.0.') === null &&
+        decodeLine('1.-1.2.AA') === null && decodeLine('1.0.3.AA') === null && decodeLine(7) === null &&
+        decodeLine(`1.0.${(SHARE_MAX_TICKS + 1).toString(36)}.A`) === null)
+    ok('share codec: encode is total too — junk logs and out-of-range numbers give null',
+        encodeLine(null) === null && encodeLine({ seed: 1, log: [], score: 0 }) === null &&
+        encodeLine({ seed: 1, log: [64], score: 0 }) === null && encodeLine({ seed: 1, log: [1.5], score: 0 }) === null &&
+        encodeLine({ seed: -1, log: [1], score: 0 }) === null && encodeLine({ seed: 1, log: [1], score: -5 }) === null &&
+        encodeLine({ seed: 1, log: new Array(SHARE_MAX_TICKS + 1).fill(1), score: 0 }) === null &&
+        encodeLine({ seed: 1, log: new Array(SHARE_MAX_TICKS).fill(0), score: 0 }) !== null)
+    {
+        const s = makeGame(4242, 'run'); s.phase = 'play'
+        const bot2 = makeBot(); const lg = []
+        let t = 0
+        while (t++ < 200 && s.phase === 'play') { const p = botPad(stateOf(s), bot2); lg.push(packIn(p)); step(s, p) }
+        const code = encodeLine({ seed: 4242, log: lg, score: s.score })
+        const d = decodeLine(code)
+        const r1 = makeGame(4242, 'run'); r1.phase = 'play'
+        const r2 = makeGame(d.seed, 'run'); r2.phase = 'play'
+        for (let i = 0; i < lg.length; i++) { step(r1, unpackIn(lg[i])); step(r2, unpackIn(d.log[i])) }
+        ok('share codec: a decoded bot line re-sims byte-identical to the original',
+            code !== null && hashState(r1) === hashState(r2), `${lg.length} ticks, score ${s.score}`)
+    }
+
+    // The strict all-time law: recency alone must never fake a record — the
+    // badge and the storage write both read it.
+    const rec = { score: 1000, letters: 2, won: false }
+    ok('beatsLine: any line beats no record; an EQUAL line does NOT beat one',
+        beatsLine(null, rec) === true && beatsLine(rec, { ...rec }) === false &&
+        beatsLine(rec, { score: 1001, letters: 0 }) === true && beatsLine(rec, { score: 999, letters: 5 }) === false &&
+        beatsLine(rec, { score: 1000, letters: 3 }) === true && beatsLine(rec, { score: 1000, letters: 1 }) === false)
+
+    // What may live in localStorage — same shape the attract bank rides.
+    const goodBank = { v: 1, seed: 7, log: new Array(REPLAY_MIN).fill(2), score: 500, letters: 2, won: false }
+    ok('validBank: honest bank passes; version drift, short log, junk word, fake numbers all fail',
+        validBank(goodBank) === true && validBank({ ...goodBank, v: 2 }) === false &&
+        validBank({ ...goodBank, log: goodBank.log.slice(0, REPLAY_MIN - 1) }) === false &&
+        validBank({ ...goodBank, log: [...goodBank.log.slice(0, 5), 64, ...goodBank.log.slice(6)] }) === false &&
+        validBank(null) === false && validBank([]) === false && validBank('x') === false &&
+        validBank({ ...goodBank, letters: 6 }) === false && validBank({ ...goodBank, won: 'yes' }) === false &&
+        validBank({ ...goodBank, score: -1 }) === false)
+
+    // Wiring. MUT=codec corrupts the wire one char off; MUT=beats lets a tie
+    // fake a record; MUT=store weakens the validator; MUT=sharewire unbinds
+    // the key. Each must see red.
+    const simMut = MUT === 'codec' ? simRaw.replace('body += B64[w]', 'body += B64[(w + 1) & 63]')
+        : MUT === 'beats' ? simRaw.replace('(run.letters || 0) > (prev.letters || 0)\n}', '(run.letters || 0) >= (prev.letters || 0)\n}')
+            : MUT === 'store' ? simRaw.replace('b.log.length >= REPLAY_MIN', 'b.log.length >= 0')
+                : simRaw
+    ok('save wiring: store read validated + written only through the strict law (#3381)',
+        /const STORE_KEY = 'grindcity\.best\.v1'/.test(cab) &&
+        /validBank\(b\)/.test(cab) &&
+        /window\.localStorage\.setItem\(STORE_KEY, JSON\.stringify\(storedBank\)\)/.test(cab) &&
+        /beatsLine\(storedRec, cand\)/.test(cab) &&
+        /b\.log\.length >= REPLAY_MIN/.test(simMut) &&
+        /run\.score > prev\.score\s+return \(run\.letters \|\| 0\) > \(prev\.letters \|\| 0\)/.test(simMut) &&
+        /body \+= B64\[w\]/.test(simMut))
+    const cabShare = MUT === 'sharewire' ? cabRaw.split('KeyS').join('KeyX') : cabRaw
+    ok('share wiring: S copies on replay + over, deep link rides the attract, badges exist (#3381)',
+        (cabShare.match(/c === 'KeyS'/g) || []).length === 2 &&
+        /decodeLine\(new URLSearchParams\(window\.location\.search\)\.get\('line'\)\)/.test(cabShare) &&
+        /unpackIn\(sharedLine\.log\[sharedIdx\+\+\]\)/.test(cabShare) &&
+        /SHARED LINE · \{sharedPts\} PTS/.test(cabShare) &&
+        /NEW ALL-TIME LINE/.test(cabShare) &&
+        /ALL-TIME BEST LINE/.test(cabShare) &&
+        /LINE COPIED — SEND IT/.test(cabShare) &&
+        /window\.localStorage\.removeItem\(STORE_KEY\)/.test(cabShare))
 }
 
 if (MUT) {

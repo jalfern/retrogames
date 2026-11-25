@@ -18,11 +18,16 @@ the park and every trick name are ours.
 
 Run: `npm run grindcheck` (Node, no browser — includes the input-log replay
 determinism proof, the #3246 gem/secret/roof physics legs, the #3233 manual
-identity legs, and 13 mutants: letters, gap, replay, bed, gems, shade, grab,
-stall, tell, variety, nearmiss, bestline, bankline). Deep-drive the cabinet with
+identity legs, the #3381 saved/shared-run laws (codec round-trip through the
+sim, total-junk decode, `beatsLine`, `validBank`), and 17 mutants: letters, gap,
+replay, bed, gems, shade, grab, stall, tell, variety, nearmiss, bestline,
+bankline, codec, beats, store, sharewire). Deep-drive the cabinet with
 `DEV_PORT=5178 node scripts/lib/gcdrive.mjs` (also proves the REPLAY screen,
-the skip and the action-cam cut-in, the #3374 near-miss replay + badge, and
-the attract best-line loop).
+the skip and the action-cam cut-in, the #3374 near-miss replay + badge, the
+attract best-line loop, and #3381: the store landing, a reload that still
+re-rides the record marked ALL-TIME, a tie leaving history alone, the strict
+beat earning the badge, `S` flashing the copy verdict, `?line=` riding a guest
+line, and a junk code booting clean).
 
 ## Controls
 
@@ -176,11 +181,24 @@ hash or pin change.
 
 ## Honest gaps
 
-- **Saved/shared runs.** Replay is no longer auto-only — F toggles 1×/2×/0.5×
-  (#3233 tail), C swings a free cam (#3325), a letters-in near-miss under the
-  2 s floor still earns its replay (#3374), and attract re-rides the session's
-  best line (#3374). What's left: nothing persists — no saving a run to
-  storage, no sharing one.
+- **CLOSED by #3386** — ~~Saved/shared runs: nothing persists.~~ The record now
+  outlives the page. When a bankable beat (`inputLog.length >= REPLAY_MIN`, the
+  same gate as the attract bank) also **strictly** beats the stored line
+  (`beatsLine`: more score, or equal score with more letters — recency alone
+  never fakes a record) it is written to `localStorage['grindcity.best.v1']`
+  as `{v:1, seed, score, letters, won, log}` and the over card says
+  `NEW ALL-TIME LINE`. On the next load that seed and pad log drive attract
+  before any key arrives and the chip reads `ALL-TIME BEST LINE`. Every read is
+  validated (`validBank`) and wrapped, so private mode, quota or hand-edited
+  junk falls back to a cold plaza rather than parading a fake record; a
+  strict-beat write that the browser refuses leaves the session memory intact.
+  Sharing rides the same bank: `S` (or the chip on the replay / over screens)
+  copies `?line=<code>`, one URL-safe char per 6-bit pad word with a canonical
+  base36 `seed.score.ticks.body` header (`SHARE_MAX_TICKS` 7500 keeps it inside
+  a sane URL). A `?line=` load re-rides that exact line behind `SHARED LINE ·
+  {pts} PTS` until the first key or tap hands the plaza back; garbage codes
+  decode to null and boot quietly. Sharing is replay-only — no upload, no
+  leaderboard, no network: the link *is* the line.
 - **CLOSED by #3246** — ~~One park, one line.~~ The park has a second line
   now: the roof deck over the south wall, 14 gems, and a secret bowl; see
   "The second line, gems and the secret spot" above.
