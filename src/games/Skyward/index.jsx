@@ -54,14 +54,39 @@ const SkywardGame = () => {
         glRef.current = gl
         const hudEl = document.createElement('div')
         hudEl.style.cssText = 'position:absolute;inset:0;pointer-events:none;font:12px/1.5 ui-monospace,Menlo,monospace;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)'
+        // #3300 item 5 — phone widths: the HUD lives in a <style> block, not
+        // inline styles, because a media query can never beat an inline style.
+        // Base rules reproduce the desktop bed era exactly; below 480px the
+        // pad owns the bottom ~200px (84px buttons + 180px stick span, #885),
+        // so every readout moves to the top corners and the hint floats at
+        // mid-screen. Pinned by the skywardplay 390px audit.
         hudEl.innerHTML = `
-<div data-h="speed" style="position:absolute;left:90px;bottom:14px;letter-spacing:.1em">000 KTS</div>
-<div data-h="alt" style="position:absolute;left:90px;bottom:30px;letter-spacing:.1em">000 M</div>
-<div data-h="score" style="position:absolute;right:34px;bottom:14px;letter-spacing:.1em;text-align:right">SCORE 0</div>
-<div data-h="chips" style="position:absolute;right:34px;bottom:32px;letter-spacing:.14em;text-align:right;font-size:11px;color:#ffe9a8">RING — · SPOT — · DROP — · ⚡—</div>
-<div data-h="banner" style="position:absolute;left:50%;top:56px;transform:translateX(-50%);font-size:22px;letter-spacing:.22em;opacity:0;transition:opacity .25s;text-align:center"></div>
-<div data-h="hint" style="position:absolute;left:50%;bottom:70px;transform:translateX(-50%);font-size:11px;letter-spacing:.18em;color:#cfe6ff;opacity:.9;text-align:center"></div>`
-        wrap.style.position = 'relative'
+<style>
+[data-h=speed]{position:absolute;left:90px;bottom:14px;letter-spacing:.1em}
+[data-h=alt]{position:absolute;left:90px;bottom:30px;letter-spacing:.1em}
+[data-h=score]{position:absolute;right:34px;bottom:14px;letter-spacing:.1em;text-align:right}
+[data-h=chips]{position:absolute;right:34px;bottom:32px;letter-spacing:.14em;text-align:right;font-size:11px;color:#ffe9a8}
+[data-h=banner]{position:absolute;left:50%;top:56px;transform:translateX(-50%);font-size:22px;letter-spacing:.22em;opacity:0;transition:opacity .25s;text-align:center}
+[data-h=hint]{position:absolute;left:50%;bottom:70px;transform:translateX(-50%);font-size:11px;letter-spacing:.18em;color:#cfe6ff;opacity:.9;text-align:center}
+@media (max-width: 480px){
+  [data-h=speed]{left:10px;bottom:auto;top:30px}
+  [data-h=alt]{left:10px;bottom:auto;top:48px}
+  [data-h=score]{right:10px;bottom:auto;top:30px}
+  [data-h=chips]{right:auto;left:10px;bottom:auto;top:66px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:370px;white-space:nowrap}
+  [data-h=banner]{width:92vw;font-size:17px;letter-spacing:.12em}
+  [data-h=hint]{bottom:auto;top:58%;left:4%;transform:none;width:92%;font-size:10px;letter-spacing:.1em;line-height:1.6;text-align:center}
+}
+</style>
+<div data-h="speed">000 KTS</div>
+<div data-h="alt">000 M</div>
+<div data-h="score">SCORE 0</div>
+<div data-h="chips">RING — · SPOT — · DROP — · ⚡—</div>
+<div data-h="banner"></div>
+<div data-h="hint"></div>`
+        // NOTE: wrap is `absolute inset-0` from JSX — never override its
+        // position inline: a relative box ignores the insets and the stage
+        // collapses to the canvas' intrinsic ratio (found in the #3300 phone
+        // audit — the sky shrank to a 2:1 strip at every width).
         wrap.appendChild(hudEl)
         const q = (k) => hudEl.querySelector(`[data-h="${k}"]`)
         const E = { speed: q('speed'), alt: q('alt'), score: q('score'), chips: q('chips'), banner: q('banner'), hint: q('hint') }
