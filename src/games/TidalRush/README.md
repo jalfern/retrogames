@@ -220,7 +220,14 @@ static job; every pushed commit is commented on #3104.
   disturbed-water hint is now a slightly wider, very faint **additive** glow, so
   the wake can only ever add light to the bay, never stain it (pinned: both
   ribbons AdditiveBlending + depthWrite false; mutants `foamflat`/`glowdark`
-  prove the pins bite). Honest gap: the V is geometry shading, not per-pixel
+  prove the pins bite). **Emphasised by #3342:** at the shallow chase angle the
+  cross-section compresses to pixels, so the shoulder falls off harder (0.34→0.22
+  of crest) and the channel is quieter (0.10→0.07) — and the long-life wake SPRAY
+  now rides the V arms instead of stitching the centreline (`wakeSpray`, ±arm
+  toggle on the spray pool, heading math — placement deterministic, only the
+  churn jitter random). Two foam lines resolve from the drive seat and at
+  `?lite=1` (mutants `shoulderwash`/`centrestitch`). Honest gap: the V is geometry
+  shading, not per-pixel
   foam texture — crests ride the stern path, they don't sample the swell they
   cut through.
 - Rider has no separate jump/land poses beyond crouch + lean/jolt with

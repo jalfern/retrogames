@@ -57,6 +57,10 @@ if (MUT) {
         foamflat: { file: 'src/games/TidalRush/art.js', from: 'const foam = (1 - t) * (1 - t) * hot', to: 'const foam = 0.66 * hot', note: 'wake foam stops fading with age — flat paint' },
         // the trail stains the bay again (#3337) — glow flips to normal blend.
         glowdark: { file: 'src/games/TidalRush/art.js', from: 'blending: THREE.AdditiveBlending, // #3337 — additive: the wake only adds light', to: 'blending: THREE.NormalBlending, // #3337', note: 'wake glow darkens the water beside the trail again' },
+        // the cross-section washes out again (#3342) — shoulder back to crest level.
+        shoulderwash: { file: 'src/games/TidalRush/art.js', from: '[-hw * 0.68, ea * 0.22], [0, ea * 0.07], [hw * 0.68, ea * 0.22]', to: '[-hw * 0.68, ea * 0.34], [0, ea * 0.10], [hw * 0.68, ea * 0.34]', note: 'crest emphasis gone — shoulders fill the V into one band' },
+        // wake foam stitches the centreline again (#3342) — the channel fills.
+        centrestitch: { file: 'src/games/TidalRush/art.js', from: 'const off = width * 0.24 * sp.arm', to: 'const off = 0 * sp.arm', note: 'wake spray spawns on the centreline — the V channel fills in' },
         // the shallows stop shimmering (#3218) — beach caustics gone.
         causticoff: { file: 'src/games/TidalRush/art.js', from: 'float shoreK = length(vWorld.xz) / 180.0;', to: 'float shoreK = 0.0;', note: 'beach caustics disabled' },
         // the flat 360 lands in silence again (#3218) — no whoosh-in.
@@ -1370,7 +1374,7 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
 // spread growing, buffers deterministic (no Math.random downstream). ────────
 {
     const THREE = await import('three')
-    const { makeWake, wakePush, wakeStep } = await import('../src/games/TidalRush/art.js')
+    const { makeWake, wakePush, wakeStep, wakeSpray } = await import('../src/games/TidalRush/art.js')
     const crestA = (w, i) => w.geo.attributes.color.array[(i * 5) * 4 + 3]
     const fillA = (w, i) => w.geo.attributes.color.array[(i * 5 + 2) * 4 + 3]
     const crestR = (w, i) => w.geo.attributes.color.array[(i * 5) * 4]
@@ -1389,6 +1393,17 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         (() => {
             const m = wk.pts.length
             for (let i = 0; i < m; i++) if (!(crestA(wk, i) > fillA(wk, i) * 1.9)) return false
+            return m >= 6
+        })())
+
+    // #3342 crest emphasis: the chase cam looks down the trail at a shallow
+    // angle, so the cross-section compresses to pixels — the arms only resolve
+    // if the shoulder falls off HARD. 0.34 read as one band; 0.22 must stay.
+    const shA = (w, i) => w.geo.attributes.color.array[(i * 5 + 1) * 4 + 3]
+    ok('crest emphasis: every shoulder sits at or below ¼ of its section crest alpha (#3342)',
+        (() => {
+            const m = wk.pts.length
+            for (let i = 0; i < m; i++) if (!(crestA(wk, i) >= shA(wk, i) * 4)) return false
             return m >= 6
         })())
 
@@ -1444,6 +1459,35 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
             const pick = (w) => [w.geo.attributes.position.array, w.geo.attributes.color.array,
                 w.glowGeo.attributes.position.array, w.glowGeo.attributes.color.array].map((a) => a.join(','))
             return pick(d1).join('|') === pick(d2).join('|')
+        })())
+
+    // #3342 — the quiet channel is law for the SPRAY too: long-life wake foam
+    // spawns off-centre (on the V arms, width·0.24) and alternates sides. The
+    // arm toggle is pool math, so placement is deterministic; only the churn
+    // jitter stays random — |offset| 0.41 m vs jitter ≤0.24 m, sign never flips.
+    ok('wake spray rides the arms, never the centreline, and alternates sides (#3342)',
+        (() => {
+            const sp = { pos: new Float32Array(4 * 3), life: new Float32Array(4), vel: new Float32Array(4 * 3), wake: new Float32Array(4), n: 4, cursor: 0, arm: 1 }
+            let side = 0
+            for (let i = 0; i < 8; i++) {
+                const hd = 0.6 + i * 0.2
+                wakeSpray(sp, 10, 0.05, -4, hd, 1.7)
+                const j = (sp.cursor + sp.n - 1) % sp.n // slot just filled
+                if (sp.wake[j] !== 1 || sp.life[j] <= 0) return false
+                const px = Math.cos(hd), pz = -Math.sin(hd)
+                const lat = (sp.pos[j * 3] - 10) * px + (sp.pos[j * 3 + 2] + 4) * pz
+                if (Math.abs(lat) < 0.15) return false
+                if (side !== 0 && Math.sign(lat) === side) return false
+                side = Math.sign(lat)
+            }
+            return true
+        })())
+
+    // and the cabinet actually uses it: no raw centreline wake stitch may return.
+    ok('the cabinet stitches wake foam through wakeSpray — the centreline call is gone (#3342)',
+        (() => {
+            const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'TidalRush', 'index.jsx'), 'utf8')
+            return /wakeSpray\(spray, sternX/.test(src) && !/spraySpawn\(spray, sternX,[^)]*, true\)/.test(src)
         })())
 
     // ring law: pts trim to n; drawRange tracks live sections (12 tris per
