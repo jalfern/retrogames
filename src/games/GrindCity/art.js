@@ -472,7 +472,7 @@ export function poseSkater(rig, s, t) {
     g.position.set(s.x, s.y + 0.12, s.z)
     g.rotation.y = -s.heading
     g.rotation.z = 0                                     // reset per frame (spin sway)
-    const crouch = s.manual ? 0.08 : 0.12
+    const crouch = s.stall ? 0.16 : s.manual ? 0.08 : 0.12
     let deckTilt = 0, deckRoll = 0, deckFlip = 0, armOut = 0.35, grabArm = 0
     // manuals: normal and 180 read differently — normal stays low and steady,
     // the 180 leans into the steer with wide arms and a wobbly deck.
@@ -498,7 +498,19 @@ export function poseSkater(rig, s, t) {
         }
         armOut = 0.9
     }
-    if (s.grind) { deckRoll = Math.sin(t * 40) * 0.05 + 0.1; armOut = 1.15 }
+    if (s.grind) {
+        deckRoll = Math.sin(t * 40) * 0.05 + 0.1
+        armOut = 1.15
+        if (s.grind.grab) grabArm = 1   // rail grab (#3289): reach down to the deck
+    }
+    if (s.stall) {
+        // tail locked in the coping: nose up, deep crouch, arms tucked, and
+        // the body lean reads the balance meter so risk is visible (#3289)
+        deckTilt = -0.55
+        armOut = 0.5
+        deckRoll = 0.12
+        g.rotation.z = (s.stall.bal || 0) * 0.22
+    }
     if (s.phase === 'tumble') {
         g.rotation.x = t * 9
         g.position.y = s.y + 0.3 + Math.abs(Math.sin(t * 6)) * 0.4

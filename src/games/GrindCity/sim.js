@@ -18,9 +18,18 @@ const RUN_TIME = 120
 const FREE_TIME = 300
 export const SCORE_GOAL = 1200
 
+// Rail vocabulary (#3289): grabs on grinds + coping stalls.
+const GRAB_COMMIT_T = 0.30    // s a rail grab must be held before it pays
+const STALL_COMMIT_T = 0.30   // s a stall must be held before it pays
+const STALL_MAX_T = 4         // s auto-pop cap (like the manual's 5 s)
+const STALL_BAIL = 1.15       // balance meter limit — tighter than a grind's 1
+const LIP_LL = 0.9            // m lateral reach of a coping lip
+const LIP_DY = 0.75           // m vertical reach — coping sits ~0.7 above decks
+
 export const TRICK_PTS = {
     Grab: 60, Spin: 40, Flip: 80, Boardslide: 100, '50-50': 90,
     Manual: 30, Gap: 500, Manual180: 120,
+    Feeble: 70, Crooked: 70, Stall: 40,
 }
 
 // deterministic mulberry32 stored as an integer counter in state
@@ -40,7 +49,8 @@ export function makeGame(seed = 1, mode = 'run') {
         heading: Math.PI / 2,    // +z (down the drop-in)
         speed: 3.0, vy: 0, air: false,
         lastSlope: 0,
-        grind: null,             // {ri,t,vt,bal,drift,name}
+        grind: null,             // {ri,t,vt,bal,drift,name,grab,grabT,trickle}
+        stall: null,             // {ri,rt,t,bal,drift,trickle} — tail-in on a coping lip (#3289)
         manual: null,            // {t,spin}
         airTrick: null,          // {t,grab,flip,flipDir,spin,spinDir,rot,flipRot,spaceWas}
         manualT: 0,
@@ -144,7 +154,7 @@ function collectPretty(s) {
 function bail(s, why) {
     if (s.phase !== 'play') return
     s.phase = 'tumble'; s.bailT = 1.15
-    s.grind = null; s.manual = null; s.airTrick = null; s.air = false
+    s.grind = null; s.stall = null; s.manual = null; s.airTrick = null; s.air = false
     s.chain = []; s.chainPts = 0; s.chainClean = 0
     s.speed = 0; s.vy = 0
     s.camShake = 1
@@ -153,6 +163,33 @@ function bail(s, why) {
 }
 
 const LETTER_R = 1.5
+
+// Coping-lip proximity (#3289): the stall zone. Reuses the same rail maths as
+// the grind latch — no new physics surface. Decks sit ~0.7 m under their
+// coping, pipe lips ~0.06, so the vertical reach is 0.75.
+function lipNear(s) {
+    for (let ri = 0; ri < RAILS.length; ri++) {
+        const r = RAILS[ri]
+        if (r.kind !== 'coping') continue
+        const c = railClosest(r, s.x, s.z)
+        if (c.d > LIP_LL || c.t <= 0.05 || c.t >= 0.95) continue
+        const p = railAt(r, c.t)
+        if (Math.abs(s.y - p.y) > LIP_DY) continue
+        return { ri, rt: c.t }
+    }
+    return null
+}
+
+// A grind grab pays once held long enough — mashing B never commits (#3289).
+function commitGrindGrab(s) {
+    const g = s.grind
+    if (!g || !g.grab) return
+    if (g.grabT >= GRAB_COMMIT_T) {
+        addTrick(s, g.grab, TRICK_PTS[g.grab])
+        say(s, `${g.grab.toUpperCase()} GRAB +${TRICK_PTS[g.grab]}`)
+    }
+    g.grab = null; g.grabT = 0
+}
 
 function land(s) {
     const at = s.airTrick
@@ -256,7 +293,38 @@ export function step(s, input, dt = 1 / 60) {
         if (s.bailT <= 0) {
             s.phase = 'play'
             const h = parkHeight(s.x, s.z)
-            s.y = h; s.speed = 1.6; s.vy = 0; s.grind = null; s.manual = null
+            s.y = h; s.speed = 1.6; s.vy = 0; s.grind = null; s.stall = null; s.manual = null
+        }
+        s.aPrev = a; s.bPrev = b
+        return s
+    }
+
+    // ── stalled on a coping lip (#3289) ───────────────────────────────────
+    // Frozen on the rail line; trickle ticks pay, a tighter meter than a
+    // grind decides the slip-out. A press pops back with a hop, chain alive.
+    if (s.stall) {
+        const st = s.stall
+        const p = railAt(RAILS[st.ri], st.rt)
+        s.x = p.x; s.z = p.z; s.y = p.y
+        s.speed = 0; s.vy = 0; s.air = false
+        st.t += dt
+        st.trickle += dt
+        if (st.trickle > 0.15) { st.trickle -= 0.15; s.chainPts += 8; ev(s, 'spark') }
+        const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0)
+        st.bal += (st.drift + steer * 1.6) * dt
+        if (Math.abs(st.bal) > STALL_BAIL) { bail(s, 'BAILED — slipped out the stall'); s.aPrev = a; s.bPrev = b; return s }
+        if (aEdge || st.t > STALL_MAX_T) {
+            if (st.t >= STALL_COMMIT_T) {
+                const pts = TRICK_PTS.Stall + Math.round(st.t * 80)
+                addTrick(s, 'Stall', pts)
+                say(s, `STALL +${pts}`)
+            }
+            s.stall = null
+            s.grindCd = 0.3
+            s.air = true; s.vy = 2.8; s.speed = 1.2
+            s.airTrick = { t: 0, grab: null, flip: 0, flipRot: 0, rot: 0, spin: 0 }
+            s.chainClean = 0
+            ev(s, 'ollie')
         }
         s.aPrev = a; s.bPrev = b
         return s
@@ -269,10 +337,18 @@ export function step(s, input, dt = 1 / 60) {
         s.grind.vt = Math.max(1.6, s.grind.vt + (-((r.by - r.ay) / L)) * G * 0.55 * dt)
         s.grind.t += (s.grind.vt * dt / L) * s.grind.travel
         s.grind.trickle += dt
-        if (s.grind.trickle > 0.15) { s.grind.trickle -= 0.15; s.chainPts += 6; ev(s, 'spark') }
-        // balance: seeded drift + counter-steer
+        // rail grab (#3289): hold B — reach down, double trickle, steadier meter
+        if (bEdge && !s.grind.grab) {
+            s.grind.grab = s.grind.travel > 0 ? 'Feeble' : 'Crooked'
+            s.grind.grabT = 0
+            ev(s, 'grab')
+        }
+        if (s.grind.grab) s.grind.grabT += dt
+        if (!b && s.grind.grab) commitGrindGrab(s)
+        if (s.grind.trickle > 0.15) { s.grind.trickle -= 0.15; s.chainPts += s.grind.grab ? 12 : 6; ev(s, 'spark') }
+        // balance: seeded drift + counter-steer; the grab damps the drift
         const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0)
-        s.grind.bal += (s.grind.drift + steer * 1.5) * dt
+        s.grind.bal += ((s.grind.grab ? s.grind.drift * 0.55 : s.grind.drift) + steer * 1.5) * dt
         if (Math.abs(s.grind.bal) > 1) { bail(s, 'BAILED — washed out the grind'); s.aPrev = a; s.bPrev = b; return s }
         const p = railAt(r, s.grind.t)
         s.x = p.x; s.z = p.z; s.y = p.y + 0.02
@@ -280,6 +356,7 @@ export function step(s, input, dt = 1 / 60) {
         const rx = (r.bx - r.ax) / L, rz = (r.bz - r.az) / L
         s.heading = Math.atan2(rz * s.grind.travel, rx * s.grind.travel)
         if (aEdge) {   // ollie out of the grind — keeps the chain alive
+            commitGrindGrab(s)
             s.grind = null
             s.grindCd = 0.3
             s.air = true; s.vy = OLLIE_VY * 0.9
@@ -287,6 +364,7 @@ export function step(s, input, dt = 1 / 60) {
             s.chainClean = 0
             ev(s, 'ollie')
         } else if (s.grind.t <= 0 || s.grind.t >= 1) {
+            commitGrindGrab(s)
             s.grind = null
             s.grindCd = 0.4
             s.air = true; s.vy = 1.2
@@ -335,6 +413,21 @@ export function step(s, input, dt = 1 / 60) {
     }
 
     // ── grounded ──────────────────────────────────────────────────────────
+    // coping stall entry (#3289): crouch (↓) + A at a coping lip locks the
+    // board tail-in. Away from a lip ↓+A is just an ollie — no dead combo.
+    if (aEdge && input.down && s.grindCd <= 0) {
+        const lip = lipNear(s)
+        if (lip) {
+            s.stall = { ri: lip.ri, rt: lip.rt, t: 0, bal: 0, drift: (rnd(s) - 0.5) * 0.9, trickle: 0 }
+            s.speed = 0; s.vy = 0
+            s.chainClean = 0
+            say(s, 'STALL')
+            ev(s, 'stall')
+            s.aPrev = a; s.bPrev = b
+            return s
+        }
+    }
+
     // manual management first
     if (s.manual) {
         if (!a || s.manual.t > 5) {
@@ -356,7 +449,7 @@ export function step(s, input, dt = 1 / 60) {
     }
     if (s.manualT > 0) s.manualT -= dt
     let manualStarted = false
-    if (aEdge && s.manualT > 0 && !s.manual) {
+    if (aEdge && s.manualT > 0 && !s.manual && !input.down) {
         s.manual = { t: 0.001 }
         manualStarted = true
         s.chainClean = 0
@@ -450,6 +543,10 @@ export function stateOf(s) {
         vy: Math.round(s.vy * 100) / 100, slope: Math.round(s.lastSlope * 1000) / 1000,
         air: !!s.air, grinding: !!s.grind, manual: !!s.manual,
         grindBal: s.grind ? Math.round(s.grind.bal * 1000) / 1000 : 0,
+        railGrab: s.grind && s.grind.grab ? s.grind.grab : null,
+        stall: !!s.stall,
+        stallT: s.stall ? Math.round(s.stall.t * 100) / 100 : 0,
+        stallBal: s.stall ? Math.round(s.stall.bal * 1000) / 1000 : 0,
         chain: s.chain.length, chainPts: Math.round(s.chainPts), mult: mult(s),
         letters: s.letters, gapDone: s.gapDone, goalsDone: s.goalsDone,
         gems: gemCount(s.gemBits), gemTotal: GEMS.length, gemsAll: s.gemsAll, secret: s.secretFound,
