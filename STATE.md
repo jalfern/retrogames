@@ -1,68 +1,64 @@
-# STATE — forge board snapshot (slot b, 2026-11-25 — THE PLANE ANSWERS THE RUNWAY)
+# STATE — forge board snapshot (slot b, 2026-11-25 — FOAM V)
 
 ## This session — one ship, landed
-- Warden TARGET **#3290** REFUSED at claim (slot a held it live, newest comment
-  9 min old — Pinball smith polish, unmerged branch `forge/pinball-smith`).
-  Normal ladder: no steer, `next` #1712 waiting-jon, `game-queue` empty, QA
-  MASTER live → no feedback borrow → flagship stage spent → NEVER-DRY
-  `KICK SKYWARD 0 weak` (re-run LIVE at claim). Gap 0's actionable half:
-  "the plane/belt still can't be landed" — #3310 item 1 explicitly keeps it
-  for the builder. Belt stays in the gap; the AIRPLANE is the Pilotwings
-  landing-test craft.
-- Filed + claimed **#3319**, shipped **`a854fd3`** (PR #3327): the plane
-  catches the runway. Pure law `planeTouch`: free flight, on-strip,
-  `vy>−2.2 && vy<0.5 && speed<34.5` → wheels-down; zone table + crab-scuff
-  shared with the glider (SHORT 150 → FULL STRIP 700). Ceiling deliberately
-  below pump cruise (38): scrub-with-the-stick IS the skill. Rollout rides
-  deck, friction, heading locked; **wheels-abort** ≥16 m/s with 1.5 s
-  departure grace (found: old crash law splatted its own go-around — any
-  climbing hull in the floor+1.4 window died); coast <12 → ground crew, no
-  crash counted. ✈ WHEELS badge banks best landing — licence math core-three
-  untouched (STORM WINGS precedent), hash inputs unchanged.
-- Proof: skywardcheck **118/118** (+14 pins) + mutants **36/36** (6 new);
-  skywardplay **PASSED** live on :5178 (deck catch ✈300, `RUNWAY MIDDLE +300`
-  banner, touch-and-go climbs clear keeping the badge, zero console errors);
-  contractcheck 857/857; eslint + 3 scoped gates + build green.
-- Prod verified: served `Skyward-DsZq1QKb.js` carries WHEELS UP / GROUND CREW
-  / SCRUB SPEED. #3319 shipped+closed. **QA tail filed: #3331** (go-around
-  law, rollout look, phone widths incl. 5-chip line, crab tell, farm taste).
+- Warden TARGET **#3332 SKYWARD belt landing** REFUSED at claim — slot a
+  claimed it 13:56Z and holds the liveness namespace. Normal ladder: no
+  halt/steer, `next` #1712 waiting-jon (not work), `game-queue` empty, QA
+  MASTER live ×2 (no feedback borrow) → flagship stage spent → **NEVER-DRY
+  `KICK TIDAL RUSH 0 weak`** (score 6).
+- Gap 0 (sky lags sea) **treated as owned** — #3329 item 3 re-derives exactly
+  that bullet ("existing README gap") for the QA lane. Took the oldest truly
+  unowned bullet instead: the flat-shaded wake ribbon + darkening strip.
+- Filed + claimed my own POLISH **#3337**, shipped **`1163d39`** (PR #3340):
+  the wake is a **FOAM V**. Ribbon 2 flat lanes → **5 shaded lanes**: bright
+  crest LINES at the V arms (spread with age), inward shoulders, quiet channel
+  between. Brightness rides emit-time width (speed+boost read in the trail);
+  crests **cool white→cyan** as bubbles die; deterministic seq-assigned
+  **twinkle** (no Math.random downstream — buffers byte-identical replay).
+  Darkening strip **gone**: disturbed-water hint is now a tighter (1.18×hw),
+  fainter (α≤0.05) **additive** glow — the wake can only ever add light to
+  the bay. Sim/pads/wire/hash/tables/rng untouched.
+- Proof: tidalcheck **196/196** (+10 pins: additive-only, V crest>fill,
+  age-fade, cooling hue, spread, speed-hot, twinkle, determinism, ring,
+  drawRange), new mutants `foamflat`+`glowdark` caught (1 red each), `beats`
+  still caught (3). tidaldrive GREEN :5178 (win P1, zero page errors).
+  eslint + 3 scoped gates + build green.
+- Prod verified: chunk `TidalRush-DpEf7M2N.js` contains `glowMesh`. #3337
+  shipped+closed. **QA tail filed: #3342** (V legibility at chase-cam,
+  whitecap washout on STORM, glow on sunny, rain-crowd at phone widths,
+  3-trail overlap near first gate).
 
 ## Harness lessons (worth one line each)
-- **A teleport into a low window during respawnT falls to the old crash law** —
-  the catch guard skips while respawnT>0 but crash doesn't; live legs must
-  wait out the apron hand-off (~0.7 s) after `recycle()` before teleports.
-- Preset `vy` on a hull is a lie past one tick: physics recomputes
-  `vy = speed·sin(pitch)` — probe descents with pitch (`asin(vy/speed)`),
-  not vy assignment (my first steep-crash probe was invalid until fixed).
-- A climb needs a landing-law ceiling too: without `vy < 0.5` the release
-  tick of a touch-and-go re-caught itself → land/wheels/land loop.
-- `replace()` mutant anchors must stay unique when a new law reuses an idiom:
-  the strip-align anchor still hits stripScore first because planeTouch lives
-  below it — order matters for mutant anchors.
+- Additive layers sum: full-width fill + wide glow read as one milky road, not
+  a V. Foam wants THIN crest lines, a quiet channel, and a glow α≤0.05 — the
+  first 3-lane build got shot and re-cut to 5 lanes before shipping.
+- jalfern.com 308s `/retrogames/` → prod asset probes need `curl -L` or every
+  poll silently matches nothing (looked like a stalled deploy).
+- mutateguard freezes the tree for mutant runs: sequence commit → mutants →
+  PR; a green suite with a dirty tree still refuses to prove itself.
 
 ## PLAYABLE on main right now
-- `/retrogames/skyward` **WHEELS** plane runway landings (#3327) + second
-  strip (#3306) + engine bed (#3299) + living storm; `/retrogames/pinball`
-  SOLO bed (#3308) + TABLE SMITH + tilt-nudge; `/retrogames/grind-city`
-  rail grabs + coping stalls + live manual (#3312); `/retrogames/tidal-rush`
-  charged-trick economy (#3318) + tricks + rooms; mario-kart (tilt),
-  ice-climber, marble-rush (tilt), comet-drift pair (tilt), ssx (tilt),
-  marble-madness, pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT,
-  STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter,
-  iron keep, galaga, missile, pucks, mines, zork, ultima, king's quest,
-  Joust, Q*bert, forge board.
+- `/retrogames/tidal-rush` FOAM V wake (#3340) + beating squall band (#3328)
+  + rain gameplay + 5 airborne verbs + rooms/spectate/rejoin; `/retrogames/
+  skyward` plane runway landings (#3327) + living storm; `/retrogames/pinball`
+  SOLO bed (#3313 items 1–2 via #3334) + TABLE SMITH + tilt-nudge;
+  `/retrogames/grind-city` rail grabs + coping stalls + manual chip;
+  mario-kart, ice-climber, marble-rush, comet-drift pair, ssx, marble-madness,
+  pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT,
+  TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga,
+  missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` EMPTY; `next` #1712 waiting-jon (not a work item). Slot a's
-  #3290 (pinball smith items 1–4, branch `forge/pinball-smith`) was live and
-  unmerged at my handoff — resume/check it before kicking Pinball again.
-- Next builder claim: run `idle-kick` LIVE — at my session end it answered
-  `KICK SKYWARD 0 weak`; gap 0's remainder is now **belt landing** (the
-  plane's half shipped; the belt settles on terrain but scores nothing).
-- QA holds at handoff: #3233 grind-city tail 2; new #3331 skyward wheels tail
-  (feedback); #3310, #3300, #3297 tails open; #3281 shipped via #3318.
-- Merges today incl. #3318 (tidal) and my #3327; main-ok green at claim and
-  merge; nightly success at merge time.
+- `game-queue` EMPTY at my close; `next` #1712 waiting-jon (not work).
+- **Next builder claim: run `idle-kick` LIVE.** Expect SKYWARD while #3332
+  (belt settle law, slot a) is building; Tidal Rush's remaining unowned gaps
+  are rider jump/land poses (#3218 tail) — its wake gap is now struck.
+- Holds: #3332 building `lane:games` (slot a, Skyward belt); #3325
+  building-qa (grind-city tail 3); pinball #3313 building-qa may close soon
+  (its items 1–2 merged via #3334). QA tails open: **#3342 (new)**, #3329,
+  #3290 (items 5–7), #3244/#2971 (waiting-jon).
+- Merges today incl. #3334 (pinball seam glide) and my #3340; main-ok green
+  at my claim and merge.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
@@ -72,8 +68,8 @@
 
 ## Slot state at handoff
 - Slot b: dev :5178 stopped via scripts/devstop.sh; worktree
-  `~/Dev/retrogames-forge-skyward-wheels` detached clean at origin/main by
+  `~/Dev/retrogames-forge-tidal-foamwake` detached clean at origin/main by
   mergeclean — remove when convenient.
-- Game merged ⇒ this STATE.md ships via its own docs/state PR; parked at
-  /tmp/forge/STATE.b.parked.md via statepark.
-- Time-box: ~1 h 40 m of 3 h.
+- Game merged this session ⇒ this STATE.md ships via its own docs/state PR;
+  parked at /tmp/forge/STATE.b.parked.md via statepark.
+- Time-box: ~2 h of 3 h at ship.
