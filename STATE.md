@@ -1,57 +1,69 @@
-# STATE — forge board snapshot (slot b, 2026-11-25 — TIDAL RUSH FLIPS FIVE)
+# STATE — forge board snapshot (slot a, 2026-11-25 — TIDAL RUSH GRABS BACK)
 
 ## This session — one ship, landed
-- Warden target **#3237 PINBALL** REFUSED at claim (slot a held it live; slot a
-  shipped it as #3275 during my session — good). Normal ladder: no steer, no
-  actionable `next` (#1712 waiting-jon), `game-queue` empty, unowned feedback
-  existed (#3272, #3233) but **QA MASTER live on studio+mini → no borrow** →
-  never-dry. Live `idle-kick` = `KICK TIDAL RUSH 0 weak`.
-- **NEVER-DRY #3276 DONE: TIDAL RUSH five airborne verbs** (`d0c2c77`, PR #3278).
-  - BACK FLIP +300 (brake ALONE airborne; charge +0.34) / HANDSTAND +150 per
-    0.5 s inverted, cap 3 (gas+brake past vertical). One-trick law stretched
-    whole: a paid handstand lands spin/barrel/flip inert (mutant `handcmit`
-    proves the lockout is load-bearing — it also killed the old air-bonus pin).
-  - Six-bit wire untouched (flip=d, handstand=u+d) — lockstep hashes the new
-    verbs for free (#3244 item 6 law); autopilots never brake ⇒ tricks are
-    committed inputs; rivals seeded to flip (armed 2).
-  - tidalcheck **155/155** (+6 pins incl. determinism-with-tricks) + mutants
-    **3/3 CAUGHT** (fliphalf/handcap/handcmit). tidaldrive **16/16 live** on
-    :5178 (HANDSTAND paid seed 5, FLIP +300 banked, race won rank 1, zero errs).
-  - Prod verified: `TidalRush-Dr5M5Ono.js` carries `flipAng/HANDSTAND`.
-    Play: `/retrogames/tidal-rush`. #3276 shipped+closed.
-- **Rule-8 catch worth repeating:** idle-kick pointed at gap index 0 — that gap
-  (desync receipts) had ALREADY shipped hours earlier (#3247); its README entry
-  was never struck. Struck it (+ the podium one, #3253) in this PR. QA/builder
-  lanes: **strike honest-gap entries in the PR that ships them** or they
-  phantom-kick the next slot.
-- **QA tail filed: #3281** — grab poses, inverted splash, phone discoverability
-  of the two new verbs, charged-trick economy question, attract flip show-off.
+- Warden TARGET **#3276** was already CLOSED when I went to claim (slot b
+  shipped flips/handstands via #3278 mid-boot) → normal ladder: no steer,
+  `next` #1712 waiting-jon, game-queue empty, feedback ladder → #3233 BUT
+  live QA sessions (mini+studio) own the board → #841 idle-kick:
+  `idle-kick a` answered `KICK TIDAL RUSH 0 weak`.
+- Rule 8: the kick's gaps 0/1 are NOT honestly buildable — gap 0 needs the
+  shared pad-shape change #3244 item 6 forbids (and #3244 is waiting-jon),
+  gap 1 is a phones-on-QR relay run = QA's job. Both now carry **BLOCKED**
+  markers in the README so the phantom kick stops; built the OLDEST real gap
+  (#3276's own honest tail) as **POLISH #3280** → PR **#3285** merged
+  `aeb15d6`; prod marker `landFlip` verified in `TidalRush-CfUHDw6I.js`.
+- **GRAB POSES** — `r.grab` hangs off the brake commit bit the wire already
+  carries: brake alone takes the rail (flip), brake+gas reaches the bow
+  (handstand), released on the water; CPU grabs ride the same bits. Visual
+  state only — pads/hash/scores byte-untouched (#3244 item 6 law).
+- **LANDINGS READ BY TRICK** — `r.lastLand` records what the air paid: flip =
+  corkscrew bursts off both rails + deep thunk; handstand = narrow column +
+  expanding ring; flat keeps the wide sheet. Cloth-creak on the grab catch.
+- **Two bugs the stage's own legs caught (fixed in #3285):**
+  1. rivalPad held gas ≥0.94 in the air → armed-2 was ALWAYS a handstand
+     commit under the #3276 law (68 pays, zero flips / six seeds). Flip-arm
+     now lifts throttle ≤0.4 — CPU flips are real flips.
+  2. brake 10 > THRUST 7.5 → holding the commit across a landing dead-stopped
+     the hull at 0 km/h. Under throttle the anchor caps just BELOW the thrust
+     line (~11 km/h crawl); coasting brake keeps its full anchor.
+- Proof: tidalcheck **165/165** (+10 pins) + **ALL MUTANTS CAUGHT 19/19**
+  (new graboff/landkind; wirefeed RE-ARMED — see lessons); tidaldrive GREEN
+  end-to-end; contractcheck 857/857; eslint + 3 gates + build green.
 
 ## Harness lessons (worth one line each)
-- Unstruck README gap entries = phantom kicks: weakestStage trusts the README,
-  so a shipped-but-listed gap scores and claims a whole session's pick.
-- Browser trick drives need LIVE-sim evidence (`flip` sign/`hsPaid` mid-air),
-  never fading banner text — pops linger and lie about which trick just landed.
-- Seed-retry (reset via `__game.reset`, up to 4 seeds) makes real-key natural
-  kickers reliable without rigging the sim; release every key in a finally.
+- A "by design" sentence inside an honest-gap still SCORES for idle-kick
+  unless marked **BLOCKED**/**DISCLAIMER** — same phantom-kick family as the
+  stale CLOSED entries; when a lane declines a kick, mark the README.
+- A mutant anchor that matches several identical call sites silently weakens:
+  `src.replace()` hits the FIRST only — wirefeed had been blind on main since
+  #3257/#3265 copied the wire-law text. tidalcheck gained `all: true`
+  (global-plant); think about call-site drift when planting anchors.
+- Equilibrium algebra: crawl = cap brake slightly BELOW the thrust line
+  (v_eq = √(margin/DRAG)); capping "just past" it still dead-stops. Trust
+  the pin's number, not the comment's intention.
+- Unsteered-hull pins crawl into the boundary clamp and read speed≈0 —
+  physics pins steer with `{...autoPad(gs), overrides}`, never raw idle.
 
 ## PLAYABLE on main right now
-- `/retrogames/tidal-rush` **flips+handstands** (#3278) + rooms/spectate/rejoin,
-  `/retrogames/pinball` attract show-off (#3275) + art kits + kickback,
-  `/retrogames/skyward` living storm (#3271), `/retrogames/grind-city` roof
-  callout (#3279), mario-kart (tilt), ice-climber, marble-rush (tilt, trick
-  hop), comet-drift pair (tilt), ssx (tilt), marble-madness, pacman, mario,
-  minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS,
-  DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga, missile, pucks,
-  mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
+- `/retrogames/tidal-rush` grab poses + trick-specific splashes + crawl law
+  + real CPU flips (#3285), flips/handstands (#3278), online rooms/podium/
+  rematch/spectate (#3227/#3253/#3265), squall front + storm re-rolls;
+  `/retrogames/pinball` driven attract + kits (#3275), KICKBACK (#3255);
+  `/retrogames/skyward` living storm cell (#3271), mario-kart TILT (#3260),
+  grind-city roof line + gems (#3251/#3270 + #3279 callouts), marble-rush
+  tilt + trick-hop (#3243), comet-drift pair (tilt), ssx (tilt), r-type,
+  marble-madness, pacman, mario, minesweeper/garden-guard/homebody, TIDY
+  BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter,
+  iron keep, galaga, missile, pucks, mines, zork, ultima, king's quest,
+  Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` EMPTY; `next` #1712 still waiting-jon (not a work item).
-- QA holds: #3233 GRIND CITY, #3244 TIDAL RUSH relay-run (waiting-jon),
-  #3272 SKYWARD tail, new #3281 TIDAL RUSH tricks tail. #2971 contra waiting-jon.
-- Next builder claim: run `idle-kick` LIVE — never trust this file.
-- Nightly: main-ok green at session start and at merge; today's merges incl.
-  #3275 #3278 #3279.
+- `game-queue` empty (my #3280 claim cleared the derived stage); feedback:
+  #3272 skyward `building-qa` (QA live), #3233 grind-city tail 2 `lane:qa`,
+  #3244/#2971 `waiting-jon`. Next builder claim = idle-kick derivation LIVE
+  at claim time (don't trust memory or this line).
+- Merges today incl. #3270 #3271 #3273 #3274 #3275 #3278 #3279 #3285;
+  nightly main-ok green at my merge.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
@@ -60,9 +72,8 @@
 - No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot b: dev :5178 stopped via scripts/devstop.sh. Worktree
-  `~/Dev/retrogames-forge-tidal-tricks` detached clean at origin/main by
-  mergeclean; remove it when next convenient.
-- Game merged this session ⇒ this STATE.md ships via its own docs/state commit;
-  also parked at /tmp/forge/STATE.b.parked.md via statepark.
-- Time-box: ~2 h 40 min of 3 h.
+- Slot a: dev server stopped via `scripts/devstop.sh` (:5173 free). Worktree
+  `~/Dev/retrogames-forge-tidal-grabs` removed clean after merge.
+- Main checkout detached at origin/main; this STATE.md ships via its own
+  docs/state PR — game code merged this session, commit path earned.
+- Time-box: ~2h50m of 3 h.
