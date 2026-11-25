@@ -188,6 +188,47 @@ try {
     `a deep straight landing banks FULL STRIP +700 (spot=${stripSpot && stripSpot.grad.spot})`)
   await shot('skyward-strip-landed.png')
 
+  /* #3319 — the plane answers the runway: a soft, slow, straight arrival is
+     caught by the deck (not crashed), banks ✈ WHEELS, banners its zone, and a
+     stick-back during the rollout is a touch-and-go that climbs clear. */
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    for (let k = 0; k < 3 && T.state().craft !== 'plane'; k++) T.recycle()
+  })
+  await simSleep(0.7) // let the apron hand-off's respawn window close before the low visit
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    /* mid-strip, deck+1.0 m (inside the catch window), 30 m/s due east, gentle
+       sink — well below the 34.5 hot line, so the pump can't cook it en route */
+    T.teleport({ x: 40, y: 3.6, z: 130, heading: Math.PI / 2, speed: 30, vy: -1 })
+  })
+  let planeGround = null, landBanner = ''
+  for (let i = 0; i < 10 && planeGround === null; i++) {
+    const s = await page.evaluate(() => {
+      const bn = document.querySelector('[data-h="banner"]')
+      return { st: window.__skywardTest.state(), banner: bn ? bn.textContent : '' }
+    })
+    if (s.banner.includes('RUNWAY')) landBanner = s.banner
+    if (s.st.ground) planeGround = s.st
+    else await simSleep(0.15)
+  }
+  ok(planeGround !== null && planeGround.land === 300 && planeGround.craft === 'plane',
+    `the plane is caught by the deck mid-strip (ground=${!!planeGround} ✈=${planeGround && planeGround.land})`)
+  ok(/RUNWAY MIDDLE \+300/.test(landBanner), `the strip banners the zone (${landBanner || 'no banner'})`)
+  await shot('skyward-plane-rollout.png')
+  /* wheels-abort: stick back while still above the liftoff speed */
+  await page.keyboard.down('ArrowUp')
+  await simSleep(0.4)
+  await page.keyboard.up('ArrowUp')
+  let climbed = null
+  for (let i = 0; i < 10 && climbed === null; i++) {
+    const s = await page.evaluate(() => window.__skywardTest.state())
+    if (!s.ground && s.y > 5) climbed = s
+    else await simSleep(0.2)
+  }
+  ok(climbed !== null && climbed.land === 300,
+    `wheels-abort climbs clear and keeps the banked badge (y=${climbed && climbed.y.toFixed(1)} ✈=${climbed && climbed.land})`)
+
   /* keyboard path + pause + restart through real UI */
   await page.keyboard.press('KeyN')
   await page.keyboard.press('ArrowLeft')

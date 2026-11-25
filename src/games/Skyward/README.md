@@ -46,10 +46,11 @@ npm run skywardcheck -- --mutate   # proves the harness can fail
 node scripts/skywardplay.mjs       # headless Chrome: boot → play → events → zero page errors
 ```
 ## Honest gaps
-- **MOVED by #3302:** there is now a second strip — a painted, zone-scored
-  runway on the south beach (see *Second strip* below). What remains of the old
-  bullet: no online (issue: not yet), and the plane/belt still can't be landed
-  (only the glider takes strips). (The engine-audio half closed in #3295.)
+- **MOVED by #3319:** the plane takes the strip now — wheels-down, rollout and
+  touch-and-go (see *Wheels down* below). What remains of the old bullet: no
+  online (issue: not yet), and the belt still can't be landed (it settles on
+  soft terrain without crashing, but scores nothing there). (The engine-audio
+  half closed in #3295, the glider's runway in #3302/#3306.)
 - A strip touchdown is judged at the instant the hull crosses the deck (gh<0.7),
   same as the mat — there is no flare-quality or ground-roll law; a smooth
   approach that sinks 0.6 m at the threshold reads the same as a perfect one.
@@ -127,3 +128,32 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   `acos(−wind.z/speed)` holds a straight ground track against the seed wind —
   banks FULL STRIP +700 with zero console errors. Lesson kept: ±2.2 m/s of
   seed wind drifts a hull off a 14 m strip over a long final; drive legs short.
+
+## Wheels down (#3319)
+- **The plane answers the runway** — Pilotwings' landing test in the plane's
+  own keys. In FREE flight (mid-event the course owns the hull), a plane
+  crossing the strip deck inside the crash window with `vy > −2.2`, `vy < 0.5`
+  and `speed < 34.5` touches down instead of crashing: wheels-down, zone score
+  by the same #3302 table (SHORT 150 → FULL STRIP 700), the same crab law
+  scuffs it to 60. The speed ceiling sits deliberately below the pump's cruise
+  equilibrium (38): a hull that hasn't scrubbed with the stick is too hot, so
+  slow is something the pilot makes. Hot, steep, crabbed-too-hard or off-strip
+  arrivals keep today's crash law byte-identical.
+- **Rollout** — on the deck the hull rides it (deck+0.5), friction
+  (`×0.99/tick`) owns the decel, heading is locked to the axis; storm buffet
+  doesn't reach a wheeled hull (the bed still hears the rain). Stick back at
+  ≥16 m/s is a **wheels-abort** — a touch-and-go, banked and all — with a
+  1.5 s departure grace (climbing out low is not a crash; a cruise line can't
+  thread it). Coast under 12 m/s and the ground crew collects her: forgiving
+  respawn to the start, no crash counted, the banked score kept.
+- **Badge, not licence** — the best plane touchdown banks to `g.land` and the
+  ✈ WHEELS chip / over-card line. Licence math stays core-three (the STORM
+  WINGS precedent): landings never touch `score`, `grad` or `done`; hash
+  inputs unchanged. Autopilot honesty: the planner graduates all seeds without
+  ever landing the plane on the strip (5-seed pin).
+- Pure laws `planeTouch(w,x,z,heading,vy,speed)` live in `sim.js` beside the
+  glider's; `skywardcheck` pins the zones, bands, scuff, precedence, rollout,
+  crew, abort, honesty and replay determinism (+14 pins, 6 new mutants — 36/36).
+  Cabinet: RUNWAY zone banner on touchdown, WHEELS UP / GROUND CREW banners,
+  a rising flourish and deck dust on landing, ✈ chip, WHEELS badge on the
+  completion card, and free-flight cockpit hints that teach slow-over-hot.

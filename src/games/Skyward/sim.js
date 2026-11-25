@@ -33,6 +33,16 @@ export const CFG = {
     STRIP_ZONES: [[0.25, 150], [0.5, 300], [0.75, 450], [1, 700]],
     STRIP_ALIGN: 0.30, // rad (~17°) off the axis and it's a scuff
     STRIP_SCUFF: 60,
+    // #3319 — the plane's own arrival band. The speed ceiling sits BELOW the
+    // pump's cruise equilibrium (38): a hull that hasn't scrubbed is too hot
+    // for the strip, so slow is something the pilot makes, not something the
+    // physics hands out. Sink band: a flare kills the rate inside 0.2 s.
+    PLANE_SINK: 2.2,
+    PLANE_SPEED: 34.5,
+    PLANE_CLIMB: 0.5, // rising faster than this is a departure, not an arrival
+    PLANE_LIFTOFF: 16, // wheels-abort: stick back at ≥16 and you fly again
+    PLANE_STOP: 12,    // below the stall she sits — ground crew recovers her
+    PLANE_FRICTION: 0.99,
 }
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
@@ -71,6 +81,9 @@ export function makeGame(seed, opts = {}) {
         attempts: 0, crashes: 0,
         dropIdx: 0, crates: [], dropped: [],
         spotState: 'idle',  // idle | flying | landed | splashed
+        land: 0,            // #3319 — best plane landing banked on the strip
+        ground: null,       // #3319 — non-null while the plane rolls on the deck
+        _depart: 0,         // #3319 — grace to climb clear after a rollout abort
         respawnT: 0, ditchT: 0,
         lastSafe: { x: 0, y: 34, z: 320, heading: Math.PI },
         events: [],
@@ -205,6 +218,7 @@ export function step(g, pad = {}) {
     const sy = clamp(pad.y ?? ((pad.up ? 1 : 0) - (pad.down ? 1 : 0)), -1, 1)
 
     if (g.respawnT > 0) g.respawnT = Math.max(0, g.respawnT - dt)
+    if (g._depart > 0) g._depart = Math.max(0, g._depart - dt)
 
     if (g.craft === 'plane') { g.lift = 0; stepPlane(g, w, sx, sy, dt) }
     else if (g.craft === 'glider') stepGlider(g, w, sx, sy, dt)
@@ -265,6 +279,35 @@ function getDropScore(g) { return g.dropped.reduce((s, d) => s + d.score, 0) }
 
 // ── the plane ───────────────────────────────────────────────────────────────
 function stepPlane(g, w, sx, sy, dt) {
+    // #3319 — on the deck: rollout. The hull rides the strip, friction owns
+    // the decel, heading is locked to the axis. Stick back at ≥ PLANE_LIFTOFF
+    // is a wheels-abort (a touch-and-go — practice, not failure); coast under
+    // the stall and the ground crew collects her (the school forgives — no
+    // crash counted). Storm buffet doesn't reach a hull on the ground, but
+    // the bed still hears the rain.
+    if (g.ground) {
+        g.speed *= CFG.PLANE_FRICTION
+        const dX = Math.sin(g.heading), dZ = Math.cos(g.heading)
+        g.p.x += dX * g.speed * dt
+        g.p.z += dZ * g.speed * dt
+        const deck = Math.max(w.terrainHeight(g.p.x, g.p.z), w.waterHeightAt(g.p.x, g.p.z, g.t))
+        g.p.y = deck + 0.5
+        g.vy = 0
+        g.pitch = lerp(g.pitch, sy > 0 ? sy * 0.3 : 0, 0.15)
+        g.roll = lerp(g.roll, 0, 0.2)
+        g.stormS = w.stormAt(g.p.x, g.p.z, g.t).s
+        if (sy > 0 && g.speed >= CFG.PLANE_LIFTOFF) {
+            g.ground = null
+            g._depart = 1.5 // grace to climb clear before the crash law re-arms
+            ev(g, 'wheels')
+        } else if (g.speed < CFG.PLANE_STOP) {
+            g.ground = null
+            ev(g, 'crew')
+            placePlaneAtStart(g)
+            g.respawnT = 1.0
+        }
+        return
+    }
     g.speed += (0.0212 * (38 * 38 - g.speed * g.speed) / 38) * dt * 60 * 0.25
     const targetRoll = sx * 0.85
     g.roll = lerp(g.roll, targetRoll, 0.14)
@@ -295,6 +338,29 @@ function stepPlane(g, w, sx, sy, dt) {
     }
 
     const floor = Math.max(w.terrainHeight(g.p.x, g.p.z), w.waterHeightAt(g.p.x, g.p.z, g.t))
+    // #3319 — the runway catches the plane before the crash law does: a soft,
+    // slow, on-strip arrival in free flight becomes wheels-down; hot, steep or
+    // off-strip arrivals fall through to today's crash, byte-identical. Only
+    // free flight lands — mid-event the course owns the hull.
+    if (g.phase === 'free' && g.respawnT <= 0 && g.p.y < floor + 1.4) {
+        const zn = stripZone(w, g.p.x, g.p.z)
+        if (zn) {
+            // climbing out of a rollout: the deck can't crash a hull that's
+            // actively leaving it — bounded by a departure window so a cruise
+            // line can't thread the strip, and a settle-back still lands.
+            if (g._depart > 0 && g.vy > 0) return
+            const touch = planeTouch(w, g.p.x, g.p.z, g.heading, g.vy, g.speed)
+            if (touch) {
+                g.ground = touch
+                g.land = Math.max(g.land, touch.score)
+                g.p.y = floor + 0.5
+                g.vy = 0; g.pitch = 0; g.roll = 0
+                g._depart = 0
+                ev(g, 'land', { craft: 'plane', strip: true, zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned })
+                return
+            }
+        }
+    }
     if (g.p.y < floor + 1.4) {
         const overWater = w.terrainHeight(g.p.x, g.p.z) < 0.5
         if (overWater && g.vy > -5.5 && g.speed < 32) {
@@ -382,11 +448,31 @@ export function stripScore(w, x, z, heading, vy, speed) {
     while (e > Math.PI) e -= Math.PI * 2
     while (e < -Math.PI) e += Math.PI * 2
     if (Math.abs(e) > CFG.STRIP_ALIGN) return { ...zn, zone: 0, score: CFG.STRIP_SCUFF, aligned: false }
-    let zone = CFG.STRIP_ZONES.length, score = CFG.STRIP_ZONES[zone - 1][1]
-    for (let i = 0; i < CFG.STRIP_ZONES.length; i++) {
-        if (zn.frac <= CFG.STRIP_ZONES[i][0]) { zone = i + 1; score = CFG.STRIP_ZONES[i][1]; break }
-    }
-    return { ...zn, zone, score, aligned: true }
+    const zone = zoneOf(zn.frac)
+    return { ...zn, zone, score: CFG.STRIP_ZONES[zone - 1][1], aligned: true }
+}
+
+function zoneOf(frac) {
+    for (let i = 0; i < CFG.STRIP_ZONES.length; i++) if (frac <= CFG.STRIP_ZONES[i][0]) return i + 1
+    return CFG.STRIP_ZONES.length
+}
+
+// #3319 — the plane's touchdown decision, pure law beside the glider's so
+// skywardcheck can pin it. Pilotwings' landing test in our keys: on the strip,
+// slow (below the pump ceiling — scrub first) and soft (flared), and the board
+// catches you; the zone table scores it exactly like the glider's, the same
+// crab law scuffs it. Off-strip or hot/steep → null, and today's crash law
+// owns the hull untouched.
+export function planeTouch(w, x, z, heading, vy, speed) {
+    const zn = stripZone(w, x, z)
+    if (!zn) return null
+    if (!(vy > -CFG.PLANE_SINK && vy < CFG.PLANE_CLIMB && speed < CFG.PLANE_SPEED)) return null
+    let e = heading - w.STRIP_HEADING
+    while (e > Math.PI) e -= Math.PI * 2
+    while (e < -Math.PI) e += Math.PI * 2
+    if (Math.abs(e) > CFG.STRIP_ALIGN) return { ...zn, zone: 0, score: CFG.STRIP_SCUFF, aligned: false }
+    const zone = zoneOf(zn.frac)
+    return { ...zn, zone, score: CFG.STRIP_ZONES[zone - 1][1], aligned: true }
 }
 
 function stepGlider(g, w, sx, sy, dt) {
@@ -578,6 +664,8 @@ export function stateOf(g) {
         // #3302 additive: where the glider is on/near the strip (HUD + harness)
         strip: g.craft === 'glider' ? stripZone(g.world, g.p.x, g.p.z) : null,
         stripD: +Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az).toFixed(1),
+        // #3319 additive: best plane landing banked, and whether she's rolling
+        land: g.land, ground: !!g.ground,
         hash: g.hash, seed: g.seed,
     }
 }
