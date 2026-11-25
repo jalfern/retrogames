@@ -83,7 +83,7 @@ pauses; ◀ ▶ on the menu picks SUNNY or STORM BAY.
 ## Verify
 
 ```
-npm run tidalcheck                     # 155 gates: boot, rules, win (both bays), determinism,
+npm run tidalcheck                     # 163 gates: boot, rules, win (both bays), determinism,
                                        #   sea-bridge parity, lightning, barrel, swell re-roll,
                                        #   squall-front spatial law + GLSL twin + air-bonus math,
                                        #   rain field/drift/drag/dim laws (#3191), gulls &
@@ -142,20 +142,38 @@ static job; every pushed commit is commented on #3104.
   score/rider rows; every cabinet paints a ROOM PODIUM and the host calls the
   rematch from the line. The rooms other tails closed too: spectate #3265,
   survivable rejoin #3257.
-- The wire is digital by design (six lockstep bits): local analog stick/lean
-  feel stays local — remote riders' skis carry committed leans, not fractional
-  ones. Analog-over-wire would need a pad-shape change to the shared pipeline.
-- Three-hull rooms are proven in Node over an in-memory pipe (tidalcheck); a
-  real three-human relay run (phones on the QR code) is the QA pass.
+- **BLOCKED — not builder work (#3280, rule 8):** the wire is digital by
+  design (six lockstep bits): local analog stick/lean feel stays local —
+  remote riders' skis carry committed leans, not fractional ones.
+  Analog-over-wire needs a pad-shape change to the SHARED pipeline, and
+  #3244 item 6 is the standing law: "do NOT half-mitigate inside this game
+  alone." The pad-shape discussion lives on #3244 (waiting-jon); a game lane
+  cannot honestly build this gap, so it declines rather than phantom-kick.
+- **BLOCKED — QA's job, not builder work (#3280):** three-hull rooms are
+  proven in Node over an in-memory pipe (tidalcheck); the open item is a real
+  three-human relay run — phones on the QR code, live dropout. That needs
+  physical devices (QA lane territory, #3244 item 1).
 - FIVE airborne verbs since #3276 (flat 360 +250, barrel +200, BACK FLIP +300 —
   brake ALONE airborne winds the nose over the tail and banks the biggest charge,
   HANDSTAND — gas+brake holds the nose past vertical for +150 per 0.5 s inverted,
   cap 3/air). The pitch verbs ride the SAME six bits the wire already carries
   (flip = d, handstand = u+d) — zero pad-shape change (#3244 item 6 law), so the
   lockstep hash referee covers them for free; autopilots never brake, so a flip
-  is always a committed input. Honest gaps: no grab poses (the hull just pitches),
-  an inverted splash equals a flat one, and CPUs flip (armed 2, ~45 % of their
-  tricks) but never handstand — the autopilot holds gas in the air by design.
+  is always a committed input. ~~Honest gaps: no grab poses (the hull just
+  pitches), an inverted splash equals a flat one, and CPUs flip (armed 2,
+  ~45 % of their tricks) but never handstand — the autopilot holds gas in the
+  air by design.~~ **CLOSED by #3280:** riders GRAB while a pitch verb turns —
+  brake alone takes the rail (flip), brake+gas reaches the bow (handstand),
+  derived from the commit bit the wire already carries (zero pad-shape change,
+  #3244 item 6 law), released on the water; CPU flips grab too. Landings now
+  read BY TRICK: a flip sprays corkscrew bursts off both rails with a deep
+  thunk, a handstand drives a narrow column + expanding ring, flat keeps the
+  wide sheet. That stage also caught a real #3276 bug: rival skills hold gas
+  ≥0.94 in the air, so armed-2 was ALWAYS a handstand commit under the law
+  (68 pays, zero flips across six seeds) — the rival pad now lifts the
+  throttle (≤0.4) under flip-arm, so CPU flips wind over for real.
+  Honest gap left: CPUs still never handstand — armed 2 is flip intent; the
+  human hold verb stays un-AI'd.
 - **CLOSED by #3191** — rain is gameplay now: extra drag in the band
   (v_term −10 %), seeded crosswind drift along the new swell, spatial drops
   at Kai's hull, gates dimmed toward storm fog, wind cue at the band edges.

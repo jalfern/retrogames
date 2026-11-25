@@ -402,6 +402,38 @@ export function sprayStep(sp, dt) {
 // Not dots — a stitched white ribbon that trails each hull: a ring buffer of
 // stern points turned into a triangle strip that widens and fades as it ages.
 // One small mesh per craft, additive, no depth write — phone-cheap.
+// ---- handstand landing ring (#3280) -------------------------------------------
+// A flat additive ring that expands + fades where a handstand slaps the bay —
+// the inverted splash signature. Pooled: makeSplashRings(n), ringFlash picks a
+// free one; ringStep ages them. One shared geometry, cheap per-ring material.
+export function makeSplashRings(n = 3) {
+    const geo = new THREE.RingGeometry(0.62, 0.84, 28)
+    const rings = []
+    for (let i = 0; i < n; i++) {
+        const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+            color: 0xbdf0ff, transparent: true, opacity: 0, side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+        }))
+        mesh.rotation.x = -Math.PI / 2
+        mesh.visible = false
+        rings.push({ mesh, life: 0 })
+    }
+    return { rings, geo, flash: (x, y, z) => {
+        const r = rings.find((q) => q.life <= 0) || rings[0]
+        r.mesh.position.set(x, y, z); r.life = 1; r.mesh.visible = true
+    } }
+}
+export function ringStep(pool, dt) {
+    for (const r of pool.rings) {
+        if (r.life <= 0) continue
+        r.life = Math.max(0, r.life - dt * 2.1)
+        const k = 1 - r.life
+        r.mesh.scale.setScalar(1 + k * 5.5)
+        r.mesh.material.opacity = 0.55 * r.life * r.life
+        if (r.life <= 0) r.mesh.visible = false
+    }
+}
+
 export function makeWake(n = 44) {
     const pos = new Float32Array(n * 2 * 3)
     const col = new Float32Array(n * 2 * 4)

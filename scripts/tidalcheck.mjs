@@ -19,6 +19,7 @@
 //      node scripts/tidalcheck.mjs --mutate=swell     (swell re-roll dead → red)
 //      node scripts/tidalcheck.mjs --mutate=rainoff   (rain wallpaper again → red)
 //      node scripts/tidalcheck.mjs --mutate=push      (crosswind zeroed → red)
+//      node scripts/tidalcheck.mjs --mutate=graboff    (nobody grabs the rail → red)
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -73,6 +74,10 @@ if (MUT) {
         // gas ALONE tips you inverted (#3276) — every autopilot air pays; the
         // commit law is the difference between a trick and wallpaper.
         handcmit: { from: 'else if (pad.brake && up) {', to: 'else if (up) {', note: 'handstand triggers on throttle alone' },
+        // nobody ever grabs (#3280) — the pose stopped hanging off the commit bit.
+        graboff: { from: "c.grab = pad.brake ? (up ? 'handstand' : 'flip') : 'none'", to: "c.grab = 'none'", note: 'grabs never take the rail' },
+        // spin landings forget their kind (#3280) — every landing sprays flat.
+        landkind: { from: "spun ? 'spin' : rolled ? 'barrel' : 'plain'", to: "'plain'", note: 'landing kind forgotten — spin/barrel land flat' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -313,6 +318,82 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     }
     ok('trick pads keep the lockstep deterministic (same seed + pads ⇒ identical hashes)',
         ha.join(',') === hb.join(',') && ha.length > 5)
+}
+
+// 6c. grabs + trick-specific landings (#3280): the style half of a pitch trick
+// hangs off the COMMIT bit the wire already carries — brake alone = FLIP grab
+// at the rail, brake+gas = HANDSTAND reach — and the landing remembers which
+// trick paid so the renderer sprays by kind. Cosmetic state by law: pads,
+// physics, hash and scores are untouched by it (#3244 item 6 law).
+{
+    const idle = { throttle: 0, steer: 0, brake: false, a: false, b: false }
+    const fly = (g, vy = 4.5, lift = 4.5) => {
+        for (let t = 0; t < 92; t++) step(g, idle) // wait out the start lights
+        const p = g.crafts[0]
+        p.airborne = true; p.vy = vy; p.y = heightAt(p.x, p.z, g.t, g.seaCur) + lift; p.speed = 12
+    }
+
+    // FLIP grab: held through the air, released the tick the hull is water.
+    const g1 = makeGame(7); fly(g1)
+    let p = g1.crafts[0]
+    let sawFlipGrab = false, flipLand = ''
+    for (let t = 0; t < 170; t++) {
+        step(g1, { ...idle, brake: true })
+        if (p.airborne && p.grab === 'flip') sawFlipGrab = true
+        if (!p.airborne) { flipLand = p.lastLand; break }
+    }
+    ok('a FLIP is GRABBED mid-air (brake alone = take the rail)', sawFlipGrab)
+    ok('the landing REMEMBERS the paid trick (lastLand=flip) and the grab releases on the water',
+        flipLand === 'flip' && p.grab === 'none')
+
+    // HANDSTAND reach: brake+gas commits the bow reach; landing records it.
+    const g2 = makeGame(7); fly(g2, 9)
+    p = g2.crafts[0]
+    let sawHand = false
+    for (let t = 0; t < 320 && p.airborne; t++) {
+        step(g2, { ...idle, brake: true, throttle: 1 })
+        if (p.grab === 'handstand') sawHand = true
+    }
+    ok('a HANDSTAND reaches the bow (grab=handstand) and its landing is recorded as handstand',
+        sawHand && p.lastLand === 'handstand')
+
+    // The rail is EARNED: pitch verbs grab, flat spins and idle air never do.
+    const g3 = makeGame(7); fly(g3)
+    p = g3.crafts[0]
+    let spinGrabbed = false, spinLand = ''
+    for (let t = 0; t < 170; t++) {
+        step(g3, { ...idle, a: true })
+        if (p.grab !== 'none') spinGrabbed = true
+        if (!p.airborne) { spinLand = p.lastLand; break }
+    }
+    ok('a flat SPIN never grabs — the rail is earned by the pitch verbs', !spinGrabbed)
+    ok('a completed flat 360 records lastLand = spin', spinLand === 'spin')
+
+    const g4 = makeGame(7); fly(g4)
+    p = g4.crafts[0]
+    let plainGrab = false, plainLand = ''
+    for (let t = 0; t < 170; t++) {
+        step(g4, idle)
+        if (p.grab !== 'none') plainGrab = true
+        if (!p.airborne) { plainLand = p.lastLand; break }
+    }
+    ok('an inert air grabs nothing and lands plain (lastLand = plain)', !plainGrab && plainLand === 'plain')
+
+    // the fields reach the contract intact, and CPUs grab on their armed flips
+    // (the pose rides the pad bits, not hero special-casing).
+    const s1 = stateOf(g1)
+    ok('stateOf carries the cosmetic fields (grab/land, JSON-safe)',
+        s1.grab === 'none' && s1.land === 'flip' && JSON.stringify(s1) !== '')
+    let aiGrab = false
+    for (const seed of [7, 31, 42, 99, 1234, 555]) {
+        const g5 = makeGame(seed)
+        for (let t = 0; t < 60 * 90 && !g5.done; t++) {
+            step(g5, autoPad(g5))
+            if (g5.crafts.some((c) => c.grab === 'flip')) { aiGrab = true; break }
+        }
+        if (aiGrab) break
+    }
+    ok('CPU riders grab on their armed flips too (pose hangs off the commit bit)', aiGrab)
 }
 
 // 7. win: autoPad takes P1 on every seed on BOTH bays, sane times, bounded

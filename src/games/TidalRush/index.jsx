@@ -21,7 +21,7 @@ import { makeGame, step, autoPad, stateOf, stateHash, rankAt, LAPS, SIM_MS, DT, 
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
 import { SEATS, PAD_DELAY, HASH_EVERY, HOLD_MS, WATCH_CAP, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence, podiumRows, podWire, podRows, createHist, inflateSh } from './net.js'
-import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame } from './art.js'
+import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame, makeSplashRings, ringStep } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
 const MESSAGES = [
@@ -150,6 +150,9 @@ const TidalRushGame = () => {
         })
         const rain = makeRain(LITE ? 240 : 420)
         scene.add(rain.pts)
+        // #3280: pooled rings for the handstand landing flash
+        const rings = makeSplashRings(LITE ? 2 : 3)
+        rings.rings.forEach((r) => scene.add(r.mesh))
         let stormBlend = bayRef.current === 'storm' ? 1 : 0
         let rainVis = 0                     // smoothed rain at Kai's hull (#3191)
 
@@ -162,6 +165,8 @@ const TidalRushGame = () => {
         const _qy = new THREE.Quaternion()
         let skiJolt = gs.crafts.map(() => 0)
         let airT = gs.crafts.map(() => 0)
+        // #3280: smoothed grab-pose weights per hull (flip rail / handstand bow)
+        const grabW = gs.crafts.map(() => ({ f: 0, h: 0 }))
         let waveAmbT = 2.0
         let camInit = false
         let engineTick = 0
@@ -299,6 +304,11 @@ const TidalRushGame = () => {
             // #3276: a flip whooshes over the head; a handstand is a low, held hum
             flip: () => { audioController.playSweep(480, 1480, 0.26, 'sawtooth', 0.07); audioController.playTone(1560, 0.12, 'square', 0.1, 0.2) },
             handstand: () => { audioController.playTone(233, 0.14, 'triangle', 0.13); audioController.playSweep(233, 311, 0.2, 'triangle', 0.09) },
+            // #3280: the grab is a short cloth creak; landings read by trick —
+            // a flip slams deep, a handstand drives a tight column.
+            grab: () => { audioController.playSweep(760, 430, 0.12, 'triangle', 0.05); audioController.playNoise(0.06, 0.03) },
+            landFlip: () => { audioController.playSweep(210, 60, 0.3, 'sawtooth', 0.12); audioController.playNoise(0.3, 0.16) },
+            landHand: () => { audioController.playSweep(520, 140, 0.26, 'sine', 0.1); audioController.playNoise(0.12, 0.09) },
             swell: () => audioController.playSweep(90, 210, 0.9, 'sine', 0.16),
             rain: (on) => {
                 // the band edge: a wind gust in, a lifting sweep out (#3191)
@@ -354,6 +364,7 @@ const TidalRushGame = () => {
         }
 
         let prevGo = false
+        let prevGrab = 'none'
         function simTick() {
             const playing = screenRef.current === 'play'
             const wasAir = gs.crafts.map((c) => c.airborne)
@@ -470,6 +481,9 @@ const TidalRushGame = () => {
                 const p = gs.crafts[mySeat()]
                 audioController.setLoopVoice(52 + p.speed * 7.5 + (p.boosting ? 40 : 0), 0.035 + Math.min(0.05, p.speed * 0.004))
                 if (engineTick % 9 === 0 && p.speed > 5) audioController.playNoise(0.05, 0.022)
+                // #3280: the catch of the rail as a grab starts (one creak per grab)
+                if (p.grab !== 'none' && prevGrab === 'none') sfx.grab()
+                prevGrab = p.grab
                 // a quiet, periodic wave swell — the bay breathing under the ride
                 waveAmbT -= DT
                 if (waveAmbT <= 0) { waveAmbT = 2.2 + Math.random() * 1.1; audioController.ambNoise(0.55, 0.045) }
@@ -479,10 +493,26 @@ const TidalRushGame = () => {
                 const sternX = c.x - Math.sin(c.heading) * 2.1
                 const sternZ = c.z - Math.cos(c.heading) * 2.1
                 if (!c.airborne && wasAir[c.id]) {
-                    // splash: a wide short sheet of spray + long-life droplets
+                    // landing spray reads BY TRICK (#3280): flat keeps today's
+                    // wide short sheet; a FLIP adds corkscrew bursts offset to
+                    // either rail (droplets inherit the wind); a HANDSTAND drives
+                    // a narrow column + the ring flash where the nose came down.
                     spraySpawn(spray, c.x, c.y + 0.2, c.z, 26, 3.4, 5.0, false)
                     spraySpawn(spray, c.x, c.y + 0.15, c.z, 10, 0.45, 6.4, false, 0.85)
-                    skiJolt[c.id] = 1
+                    if (c.lastLand === 'flip') {
+                        const sx = Math.cos(c.heading), sz = -Math.sin(c.heading)
+                        spraySpawn(spray, c.x + sx * 1.3, c.y + 0.5, c.z + sz * 1.3, 7, 1.2, 7.2, false)
+                        spraySpawn(spray, c.x - sx * 1.3, c.y + 0.7, c.z - sz * 1.3, 7, 1.2, 6.0, false)
+                        skiJolt[c.id] = 1.15
+                        if (playing && c.id === mySeat()) sfx.landFlip()
+                    } else if (c.lastLand === 'handstand') {
+                        spraySpawn(spray, c.x, c.y + 0.3, c.z, 16, 0.7, 9.0, false)
+                        rings.flash(c.x, c.y + 0.06, c.z)
+                        skiJolt[c.id] = 1.1
+                        if (playing && c.id === mySeat()) sfx.landHand()
+                    } else {
+                        skiJolt[c.id] = 1
+                    }
                 }
                 if (!c.airborne && Math.abs(c.steer) > 0.55 && c.speed > 8 && gs.tick % 2 === 0) {
                     const sideX = c.x + Math.cos(c.heading) * (c.steer > 0 ? -0.8 : 0.8)
@@ -628,11 +658,21 @@ const TidalRushGame = () => {
                     m.headPivot.position.y = 1.62 - 0.17 * skiJolt[i] - 0.10 * tuck
                     m.headPivot.rotation.x = skiJolt[i] * 0.5 + tuck * 0.55
                 }
-                // arms track the bar grip through the local lean
+                // arms track the bar grip through the local lean; #3280 blends
+                // them off the bar into a GRAB while a pitch trick turns — flip
+                // takes the rail beside the hip, handstand reaches down the bow.
                 if (m.arms) {
+                    const w = grabW[i]
+                    const kG = 1 - Math.exp(-DT * 14)
+                    w.f += ((c.grab === 'flip' ? 1 : 0) - w.f) * kG
+                    w.h += ((c.grab === 'handstand' ? 1 : 0) - w.h) * kG
                     for (let a = 0; a < m.arms.length; a++) {
                         const arm = m.arms[a]
-                        _v3a.set(a === 0 ? -0.30 : 0.30, 0.98, 1.05).applyEuler(_euler.set(0, 0, c.lean))
+                        const side = a === 0 ? -1 : 1
+                        _v3a.set(side * 0.30, 0.98, 1.05)
+                        if (w.f > 0.01) _v3a.lerp(_v3b.set(side * 0.52, 0.62, 0.12), w.f)
+                        if (w.h > 0.01) _v3a.lerp(_v3b.set(side * 0.3, 0.5, 1.72), w.h)
+                        _v3a.applyEuler(_euler.set(0, 0, c.lean))
                         _v3b.copy(_v3a).sub(arm.shoulder)
                         arm.pivot.quaternion.setFromUnitVectors(_down, _v3b.normalize())
                     }
@@ -640,6 +680,7 @@ const TidalRushGame = () => {
             })
 
             sprayStep(spray, DT)
+            ringStep(rings, DT)
             wakes.forEach((w) => wakeStep(w, DT))
 
             // chase-cam: sit behind and low over the water, FOV rides speed.
@@ -783,7 +824,7 @@ const TidalRushGame = () => {
             waveAmbT = 2.0
             skiJolt = gs.crafts.map(() => 0)
             airT = gs.crafts.map(() => 0)
-            wakes.forEach((w) => { w.pts.length = 0 })
+            wakes.forEach((w) => { w.pts.length = 0 }); grabW.forEach((g) => { g.f = 0; g.h = 0 }); prevGrab = 'none'
             trickPop = ''
             const h = hudRef.current
             if (h.count) h.count.style.opacity = 0
@@ -856,7 +897,7 @@ const TidalRushGame = () => {
         previewRef.current = () => {
             gs = makeGame(freshSeed(), bayRef.current)
             buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
-            wakes.forEach((w) => { w.pts.length = 0 })
+            wakes.forEach((w) => { w.pts.length = 0 }); grabW.forEach((g) => { g.f = 0; g.h = 0 }); prevGrab = 'none'
             camInit = false
             prevGo = false
         }
@@ -1070,7 +1111,7 @@ const TidalRushGame = () => {
                     humanSeed = seed >>> 0
                     gs = makeGame(humanSeed, bayRef.current)
                     buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
-                    wakes.forEach((w) => { w.pts.length = 0 })
+                    wakes.forEach((w) => { w.pts.length = 0 }); grabW.forEach((g) => { g.f = 0; g.h = 0 }); prevGrab = 'none'
                     airT = gs.crafts.map(() => 0)
                     camInit = false
                     prevGo = false
@@ -1122,6 +1163,8 @@ const TidalRushGame = () => {
             spray.geo.dispose()
             spray.mat.dispose()
             wakes.forEach((w) => { w.geo.dispose(); w.mat.dispose(); w.darkGeo.dispose(); w.darkMat.dispose() })
+            rings.geo.dispose()
+            rings.rings.forEach((r) => r.mesh.material.dispose())
             rain.geo.dispose()
             rain.mat.dispose()
             canvas.remove()
