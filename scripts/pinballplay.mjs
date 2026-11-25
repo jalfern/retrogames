@@ -182,10 +182,11 @@ try {
     ok('arrows at GAME OVER step back to the row of cabinets', row.screen === 'attract', `screen=${row.screen}`)
 
     // …a real tap on the second card picks AND starts it (phone path, one input)
+    // (#3284 re-cut the row to three narrower cards — EMBER's centre moved)
     const tap = await page.evaluate(() => {
         const c = document.querySelector('canvas')
         const r = c.getBoundingClientRect()
-        return { x: r.left + (267 / 360) * r.width, y: r.top + (335 / 600) * r.height }
+        return { x: r.left + (180 / 360) * r.width, y: r.top + (310 / 600) * r.height }
     })
     await page.mouse.click(tap.x, tap.y)
     await wait(400)

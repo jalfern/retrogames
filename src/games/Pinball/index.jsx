@@ -14,7 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R, demoPad, demoOver,
-    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS,
+    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk,
 } from './sim.js'
 import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD } from './art.js'
 
@@ -57,6 +57,8 @@ const NAME_B = ['RIDER', 'STAR', 'RUSH', 'COMET', 'KNIGHT', 'DRIFT', 'FANG', 'TI
 function toolCandidate(d, cx, cy, tool) {
     const t = TOOLS[tool]
     if (t === 'BUMPER') {
+        // the cursor's own zone first (same law the compiler will apply), then the cap
+        if (!bumperZoneOk(SMITH_LIMITS, cx, cy)) return 'BUMPER OUT OF ZONE'
         if (d.bumpers.length >= SMITH_LIMITS.bumperMax && !d.bumpers.some((p) => Math.hypot(p[0] - cx, p[1] - cy) < 18)) return 'MAX 3 BUMPS'
         return { ...d, bumpers: [...d.bumpers.filter((p) => Math.hypot(p[0] - cx, p[1] - cy) >= 18), [cx, cy]] }
     }
@@ -632,7 +634,7 @@ const PinballGame = () => {
                 }
                 // magnet post — halo pulses while armed; energy tether
                 // and bloom while it holds a ball; dull when spent.
-                {
+                if (tb.magnet) {                          // #3284: a smithed table may skip the magnet
                     const M = tb.magnet
                     const held = gs.magHold > 0
                     const charge = gs.magCharge > 0
@@ -948,6 +950,7 @@ const PinballGame = () => {
                     ctx.shadowColor = k.pal.dmd; ctx.shadowBlur = 7
                     ctx.fillStyle = k.pal.dmd
                     ctx.fillText(i === 2 && !CABS[2].saved ? '◆ START OPENS THE SMITH'
+                        : i === 2 ? '◆ B TO REDESIGN'
                         : d.sid && styleWarn(c.tb.id, d.sid) ? '◆ NO SUCH KIT HERE'
                         : `◆ KIT: ${k.label}`, r.x + CARD_W / 2, r.y + CARD_H + 26 + bob * 0.4)
                     ctx.restore()
@@ -1172,6 +1175,11 @@ const PinballGame = () => {
                 if (screenRef.current === 'attract' && (e.code === 'ArrowRight' || e.code === 'KeyD')) { selCab(cabRef.current + 1); e.preventDefault(); return }
                 // #3259: B / ▲▼ dress the selected cabinet in its next art kit
                 if (screenRef.current === 'attract' && (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ArrowUp' || e.code === 'ArrowDown')) {
+                    // #3284: on the SAVED custom cabinet B means "back to the
+                    // bench" — redesigning your own machine outranks dressing it.
+                    if (cabRef.current === 2 && CABS[2].saved && (e.code === 'KeyB' || e.code === 'ShiftLeft')) {
+                        openEditor(); e.preventDefault(); return
+                    }
                     cycleSkin(e.code === 'ArrowUp' ? -1 : 1); e.preventDefault(); return
                 }
                 if (screenRef.current === 'over' && (e.code === 'ArrowLeft' || e.code === 'KeyA' || e.code === 'ArrowRight' || e.code === 'KeyD')) {
@@ -1289,6 +1297,8 @@ const PinballGame = () => {
                     screen: screenRef.current,
                     saved: CABS[2].saved,
                     tag: CABS[2].tag,
+                    sel: cabRef.current,
+                    tbId: gsRef.current.table.id,
                 }),
                 reset: (seed) => { gsRef.current = makeGame(seed >>> 0, CABS[cabRef.current].tb); return stateOf(gsRef.current) },
                 press: (code) => {

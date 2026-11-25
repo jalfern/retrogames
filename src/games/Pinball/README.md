@@ -220,11 +220,48 @@ memory), the kit cycle has its own `dressflip` sound, the results screen
 wears a `◆ KIT <LABEL>` line, and each cabinet ships a third dress —
 **NOIR** (CABINET ONE) and **GLACIER** (EMBER RIDER), palette-only.
 
+## TABLE SMITH — the table editor (#3284)
+
+Pinball Construction Set (Evolution Systems, 1983) idiom: build your own
+cabinet, playtest it instantly, put your name on the marquee. The third
+attract card is the bench — unsaved it is a dashed blueprint (`START OPENS
+THE SMITH`), saved it is your machine riding the row, playing itself in the
+demo like a stock cabinet (`B = REDESIGN`).
+
+- **Zero new physics — the #3103 contract, playable.** `compileTable(def)`
+  (sim.js) turns a layout into a full table object built ONLY from the
+  primitives the engine already knows (bumpers, slings, drop bank, magnet on
+  the shared chassis: shell/arc/lane/firelane/tower/orbit/outlane/flippers/
+  plunger/drain). `makeGame(seed, tb)` accepts the compiled table directly.
+  Engine data tolerance grew with it: magnet `null` and an empty bank are now
+  legal table data (guards in sim/art/shell), never new physics.
+- **Legality is zones, not vibes.** `SMITH_LIMITS` + `bumperZoneOk` keep
+  bumpers in the dome (arc's ellipse shrunk by post+ball+2), slings inside
+  anchors whose tips hold a 60 px flipper corridor and clear the firelane,
+  the bank between dome and slings, the magnet clear of lane/tower/guides and
+  neighbours. `sanitizeDef` hardens the localStorage blob. Every refusal is a
+  short all-caps line the bench shows; the cursor's ghost uses the SAME law
+  (`toolCandidate`), so green commits and red refuses.
+- **No-wedge guarantee:** BALL SEARCH is engine law, so no player layout can
+  hold a game open — a motionless ball ends the ball at 20 world-seconds.
+  `SMITH_REFS` (nova/lone/wild) drive live through the sim in the check:
+  launch, score, resolve.
+- **Bench UX (pad-first):** arrows walk a 2 px-snapped cursor, `A` places /
+  wipes / acts, `B` cycles the 8-slot palette BUMPER · SLING · BANK · MAGNET
+  · WIPE · NAME · TEST · SAVE. NAME cycles two word-lists (no keyboard on a
+  phone). TEST drops ONE ball and comes home to the bench at game over; SAVE
+  writes `{name, def}` to `retrogames.pinball.mytable.v1` (private-mode
+  silent), names the card, and re-deals the attract demo onto your table.
+  `openEditor` starts from a legal default (`SMITH_REFS.nova`), so the bench
+  is never empty-handed. Placements validate the WHOLE candidate — the draft
+  on the bench stays globally legal by invariant.
+
 ## Verify
 
 ```bash
-npm run pinballcheck          # 178 literal physics/rules/determinism/mirror/skins/demo pins, plain Node (+7 mutants: seed/economy/mirror/search/kickback/skin/demo)
+npm run pinballcheck          # 206 literal physics/rules/determinism/mirror/skins/demo/smith pins, plain Node (+9 mutants: seed/economy/mirror/search/kickback/skin/demo/smithzone/smithload)
 npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs)
+npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
 ```
@@ -246,7 +283,14 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   x 155..170, pays 75). The device is pure TABLE data (`kb`), the plunger art
   reads sim state (`kbUsed`, `kbFlash`), and the DMD announces `KICKBACK! +N`
   deterministically. Straight-centre deaths and resting balls are untouched.
-- No table editor (#3103: not yet).
+- **CLOSED by #3284:** no table editor — TABLE SMITH is live (see "TABLE
+  Smith" above): a pad-first bench compiling onto the primitive shelf, a
+  playtest drop, a named cabinet saved per browser riding the attract row.
+  The shelf's honest edge moved, it did not vanish: the smith places the
+  rung-1 feature set (bumpers/slings/bank/magnet) on a FIXED chassis — ramps,
+  spinner/kicker side, tower and orbit placement are still chassis data, not
+  player parts — and one cabinet saves per browser (a garage of layouts is
+  still owed).
 - **CLOSED by #3259:** the `?style` skin override. Each cabinet now ships art
   kits (dress-only palettes, parity-pinned), the attract row cycles them with
   B/▲▼, and `?style=<id|label>` preselects one. See "Art kits" above.

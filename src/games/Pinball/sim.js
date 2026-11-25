@@ -1152,6 +1152,12 @@ const ptSeg = (px, py, x1, y1, x2, y2) => {
 
 // Geometry that the editor paints whether or not the layout is legal; the
 // strict pass adds the legality verdict on top of the same shape.
+// One source for the bumper zone law — the compiler's validator and the
+// editor's live ghost both call this, so green cursor == accepted placement.
+export const bumperZoneOk = (L, x, y) =>
+    x >= L.domX[0] && x <= L.domX[1] && y >= L.domY[0] && y <= L.domY[1] &&
+    ((x - 180) / 144) ** 2 + ((y - 160) / 124) ** 2 <= 1
+
 export function compileTable(defRaw) {
     const def = sanitizeDef(defRaw);
     const L = SMITH_LIMITS;
@@ -1200,7 +1206,7 @@ function validateSmith(def) {
     if (def.bumpers.length > L.bumperMax) return 'MAX 3 BUMPS';
     for (const [x, y] of def.bumpers) {
         if (x < L.domX[0] || x > L.domX[1] || y < L.domY[0] || y > L.domY[1]) return 'BUMPER OUT OF ZONE';
-        if (((x - 180) / 144) ** 2 + ((y - 160) / 124) ** 2 > 1) return 'BUMPER OUT OF DOME';
+        if (!bumperZoneOk(L, x, y)) return 'BUMPER OUT OF DOME';
     }
     for (let i = 0; i < def.bumpers.length; i++) {
         for (let j = i + 1; j < def.bumpers.length; j++) {
