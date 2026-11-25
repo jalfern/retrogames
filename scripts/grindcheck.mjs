@@ -549,7 +549,8 @@ function drive(seed) {
         encodeLine(null) === null && encodeLine({ seed: 1, log: [], score: 0 }) === null &&
         encodeLine({ seed: 1, log: [64], score: 0 }) === null && encodeLine({ seed: 1, log: [1.5], score: 0 }) === null &&
         encodeLine({ seed: -1, log: [1], score: 0 }) === null && encodeLine({ seed: 1, log: [1], score: -5 }) === null &&
-        encodeLine({ seed: 1, log: new Array(SHARE_MAX_TICKS + 1).fill(1), score: 0 }) === null)
+        encodeLine({ seed: 1, log: new Array(SHARE_MAX_TICKS + 1).fill(1), score: 0 }) === null &&
+        encodeLine({ seed: 1, log: new Array(SHARE_MAX_TICKS).fill(0), score: 0 }) !== null)
     {
         const s = makeGame(4242, 'run'); s.phase = 'play'
         const bot2 = makeBot(); const lg = []

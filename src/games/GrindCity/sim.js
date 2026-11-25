@@ -617,7 +617,7 @@ export const beatsLine = (prev, run) => {
  *  seed · score · ticks · body (numbers in canonical base36, which lets
  *  decode reject non-canonical junk). Total: garbage, oversized or
  *  out-of-alphabet input decodes to null — never throws, never half-rides. */
-export const SHARE_MAX_TICKS = 7200     // the full 2:00 clock is one shareable line
+export const SHARE_MAX_TICKS = 7500     // the full 2:00 clock, plus settle headroom
 export const SHARE_MAX_CODE = 8192
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 const B64V = Object.fromEntries([...B64].map((c, i) => [c, i]))

@@ -115,7 +115,7 @@ const GrindCityGame = () => {
         let sharedMode = !!sharedLine
         if (sharedLine) setSharedPts(sharedLine.score)
 
-        let sim = makeGame(sharedLine ? sharedLine.seed : freshSeed(), 'run')
+        let sim = makeGame(sharedLine ? sharedLine.seed : (storedBank ? storedBank.seed : freshSeed()), 'run')
         sim.phase = 'play'          // attract: the autopilot rides behind the title
         let bot = makeBot()
         let attractV = 0           // style rotation (#3233 item 4): classic → flip → grab
