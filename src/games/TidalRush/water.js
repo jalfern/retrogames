@@ -177,8 +177,10 @@ export const CREST_FOAM = 0.78
 // the new swell TRAVEL: a band `FRONT_BAND` metres wide sweeps along the new
 // sea's travel direction at squall speed; behind it lies the new sea, ahead of
 // it the old, and every consumer (hull sampling on CPU, vertex shader on GPU)
-// mixes the two evaluated tables by the SAME weight — drawn ≡ ridden now holds
-// across the front, not just within one table.
+// cross-fades the two tables by the SAME weight — drawn ≡ ridden now holds
+// across the front, not just within one table. #3323 made that cross-fade
+// PER WAVE (equal-power √ gains, see frontGains): the band beats like a real
+// crossing sea instead of flattening both swells at once.
 //
 // `front.h` is the ellipse half-span along the travel direction, so the front
 // starts fully off the bay (origin at −h·dir) and finishes fully across it.
@@ -208,25 +210,57 @@ export function frontW(x, z, fr) {
     return t * t * (3 - 2 * t)
 }
 
-// Mix two EVALUATED surfaces (not parameter tables) by front weight. GLSL
-// `mix(a, b, w)` is a + (b − a)·w — identical order, identical rounding path.
+// #3323 PER-WAVE CROSS-FADE — the band BEATS. Mixing two whole-bay tables by
+// weight (a + (b − a)·w) is a convex blend: inside the band both swells shrink
+// at once and the surface can never exceed either table — real crossing seas do
+// exactly the opposite. They superpose at full phase and BEAT (crests stack
+// where they align, patches go glassy where they oppose), and wave energy
+// transfers in POWER (amp²), not linearly. So per slot the outgoing wave decays
+// at ga = √(1−w) and its incoming partner rises at gb = √w — equal power
+// (ga² + gb² ≡ 1), both summed at their OWN phases. Edges unchanged: w ≤ 0 is
+// table A, w ≥ 1 is table B, byte-exact; the GLSL twin below mirrors this
+// scaling, term for term, in the same order.
+export function frontGains(w) {
+    return { ga: Math.sqrt(1 - w), gb: Math.sqrt(w) }
+}
 export function mixHeight(x, z, t, a, b, w) {
     if (w <= 0) return heightAt(x, z, t, a)
     if (w >= 1) return heightAt(x, z, t, b)
-    const ha = heightAt(x, z, t, a), hb = heightAt(x, z, t, b)
-    return ha + (hb - ha) * w
+    const { ga, gb } = frontGains(w)
+    let y = 0
+    for (let i = 0; i < a.length; i++) {
+        const u = a[i], v = b[i]
+        y += u.amp * Math.sin(u.k * (u.dx * x + u.dz * z) - u.om * t + u.phase) * ga
+        y += v.amp * Math.sin(v.k * (v.dx * x + v.dz * z) - v.om * t + v.phase) * gb
+    }
+    return y
 }
 export function mixVy(x, z, t, a, b, w) {
     if (w <= 0) return surfaceVy(x, z, t, a)
     if (w >= 1) return surfaceVy(x, z, t, b)
-    const va = surfaceVy(x, z, t, a), vb = surfaceVy(x, z, t, b)
-    return va + (vb - va) * w
+    const { ga, gb } = frontGains(w)
+    let vy = 0
+    for (let i = 0; i < a.length; i++) {
+        const u = a[i], v = b[i]
+        vy += -u.amp * u.om * Math.cos(u.k * (u.dx * x + u.dz * z) - u.om * t + u.phase) * ga
+        vy += -v.amp * v.om * Math.cos(v.k * (v.dx * x + v.dz * z) - v.om * t + v.phase) * gb
+    }
+    return vy
 }
 export function mixWater(x, z, t, a, b, w) {
     if (w <= 0) return waterHeight(x, z, t, a)
     if (w >= 1) return waterHeight(x, z, t, b)
-    const wa = waterHeight(x, z, t, a), wb = waterHeight(x, z, t, b)
-    return { y: wa.y + (wb.y - wa.y) * w, dx: wa.dx + (wb.dx - wa.dx) * w, dz: wa.dz + (wb.dz - wa.dz) * w }
+    const { ga, gb } = frontGains(w)
+    let y = 0, hx = 0, hz = 0
+    for (let i = 0; i < a.length; i++) {
+        const u = a[i], v = b[i]
+        const fa = u.k * (u.dx * x + u.dz * z) - u.om * t + u.phase
+        const fb = v.k * (v.dx * x + v.dz * z) - v.om * t + v.phase
+        y += u.amp * Math.sin(fa) * ga; y += v.amp * Math.sin(fb) * gb
+        hx += u.qa * u.dx * Math.cos(fa) * ga; hx += v.qa * v.dx * Math.cos(fb) * gb
+        hz += u.qa * u.dz * Math.cos(fa) * ga; hz += v.qa * v.dz * Math.cos(fb) * gb
+    }
+    return { y, dx: hx, dz: hz }
 }
 
 // Uniform names the shader declares — one set per slot. tidalcheck parses
@@ -296,9 +330,24 @@ ${unroll('').join('\n')}
 }
 
 // Rung-3 chunk: two unrolled table sets + the squall front. `frontWeight` is
-// the GLSL twin of frontW() — same clamp, same smoothstep, same order — so
-// heightFront ≡ mixHeight() on the CPU, vertex for vertex, wave for wave.
+// the GLSL twin of frontW() — same clamp, same smoothstep, same order. #3323:
+// `heightFront` is the per-wave equal-power cross-fade — slot i of the outgoing
+// table scaled by wa = sqrt(1−w), slot i of the incoming by wb = sqrt(w), the
+// eight terms summed at their OWN phases in the exact CPU order (A_i then B_i
+// per slot). Same terms, same order, same scaling — heightFront ≡ mixHeight(),
+// vertex for vertex, wave for wave, beating included.
 export function seaGLSLFront() {
+    const terms = []
+    for (let i = 0; i < N_SLOTS; i++) {
+        terms.push(
+            `  f = uK${i} * (uDir${i}.x * pos.x + uDir${i}.y * pos.y) - uO${i} * uT + uPh${i};`,
+            `  h += uA${i} * sin(f) * wa;`,
+            `  d += uQ${i} * uDir${i} * cos(f) * wa;`,
+            `  f = uK${i}B * (uDir${i}B.x * pos.x + uDir${i}B.y * pos.y) - uO${i}B * uT + uPh${i}B;`,
+            `  h += uA${i}B * sin(f) * wb;`,
+            `  d += uQ${i}B * uDir${i}B * cos(f) * wb;`,
+        )
+    }
     return `
 ${declare('').join('\n')}
 ${declare('B').join('\n')}
@@ -309,13 +358,12 @@ float frontWeight(vec2 pos) {
   return t * t * (3.0 - 2.0 * t);
 }
 float heightFront(vec2 pos, float uT, out vec2 disp) {
-  float hA = 0.0; vec2 dA = vec2(0.0); float f;
-${unroll('', 'hA', 'dA').join('\n')}
-  float hB = 0.0; vec2 dB = vec2(0.0);
-${unroll('B', 'hB', 'dB').join('\n')}
+  float h = 0.0; vec2 d = vec2(0.0); float f;
   float w = frontWeight(pos);
-  disp = mix(dA, dB, w);
-  return mix(hA, hB, w);
+  float wa = sqrt(1.0 - w); float wb = sqrt(w);
+${terms.join('\n')}
+  disp = d;
+  return h;
 }
 float waveHeight(vec2 pos, float uT, out vec2 disp) { return heightFront(pos, uT, disp); }`
 }

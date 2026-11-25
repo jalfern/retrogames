@@ -90,6 +90,9 @@ if (MUT) {
         handstcharge: { from: 'if (c.hsPaid === HAND_CAP) c.boost = Math.min(1, c.boost + 0.34)', to: 'if (c.hsPaid === HAND_CAP) c.boost = Math.min(1, c.boost + 0.0)', note: 'fully-charged handstand banks nothing' },
         // #3281: bullet 5 — the attract pad runs the harness autopilot.
         attractflip: { from: 'pad.brake = true', to: 'pad.brake = false', note: 'attract commits no scripted flip' },
+        // #3323: the cross-fade flattens back to a linear table blend — the band
+        // stops conserving energy and stops beating.
+        beats: { file: 'src/games/TidalRush/water.js', from: 'return { ga: Math.sqrt(1 - w), gb: Math.sqrt(w) }', to: 'return { ga: 1 - w, gb: w }', note: 'band mix flattens back to convex — no beats, half energy' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -100,7 +103,7 @@ if (MUT) {
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
-const { WAVES, heightAt, seaGLSL, seaGLSLFront, seaUniforms, SEA_UNIFORMS, SEA_UNIFORMS_B, FRONT_UNIFORMS, frontUniforms, frontW, mixHeight, sunnySea, stormSea, omega, FRONT_SPEED } = await import('../src/games/TidalRush/water.js')
+const { WAVES, heightAt, surfaceVy, waterHeight, seaGLSL, seaGLSLFront, seaUniforms, SEA_UNIFORMS, SEA_UNIFORMS_B, FRONT_UNIFORMS, frontUniforms, frontW, frontGains, mixHeight, mixVy, mixWater, sunnySea, stormSea, omega, FRONT_SPEED } = await import('../src/games/TidalRush/water.js')
 const { makeGame, step, autoPad, attractPad, stateOf, stateHash, LAPS, rainAt, windAt, windGust, RAIN_VIS, RAIN_DRAG, RAIN_PUSH, THRUST, DRAG, airPose } = await import('../src/games/TidalRush/sim.js')
 
 const run = (gs, maxS = 240, padFn = null) => {
@@ -722,13 +725,103 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('storm replays match through the squall (hash)', stateHash(r1) === stateHash(r2))
 }
 
+// 15c. #3323 — the band BEATS: per-wave equal-power cross-fade. Gains conserve
+//      wave energy (ga² + gb² ≡ 1); the mix is the documented per-slot sum
+//      (gains scale TERMS before the sum, never the evaluated tables); mixVy is
+//      its exact time-derivative; band edges stay byte-exact tables on every
+//      path; and the physics that was IMPOSSIBLE under the old convex blend —
+//      inside the band the surface stacks above BOTH swells (beat crests) and
+//      sinks below BOTH (glassy counter-phase patches). Mutant `beats`
+//      (gains flatten to 1−w / w) must turn the energy and both beat pins red.
+{
+    let ep = true, mono = true, prevGa = 2, prevGb = -1
+    for (let w = 0; w <= 1.0001; w += 0.05) {
+        const { ga, gb } = frontGains(w)
+        if (Math.abs(ga * ga + gb * gb - 1) > 1e-9) ep = false
+        if (ga > prevGa + 1e-12 || gb < prevGb - 1e-12) mono = false
+        prevGa = ga; prevGb = gb
+    }
+    ok('cross-fade gains conserve wave energy (ga²+gb²≡1) at every w', ep)
+    ok('cross-fade is monotone — outgoing fades out, incoming grows in', mono)
+
+    const A = sunnySea(), B = stormSea(7, 2)
+    let formula = true
+    for (const w of [0.2, 0.5, 0.8]) {
+        const { ga, gb } = frontGains(w)
+        for (let x = -120; x <= 120; x += 7.3) {
+            for (let z = -70; z <= 70; z += 5.1) {
+                let y = 0
+                for (let i = 0; i < 4; i++) {
+                    const u = A[i], v = B[i]
+                    y += u.amp * Math.sin(u.k * (u.dx * x + u.dz * z) - u.om * 2.5 + u.phase) * ga
+                    y += v.amp * Math.sin(v.k * (v.dx * x + v.dz * z) - v.om * 2.5 + v.phase) * gb
+                }
+                if (Math.abs(mixHeight(x, z, 2.5, A, B, w) - y) > 1e-12) formula = false
+            }
+        }
+    }
+    ok('mixHeight is the per-slot sum — gains scale terms, never evaluated tables', formula)
+
+    let deriv = true
+    for (const w of [0.3, 0.5, 0.7]) {
+        for (const [x, z] of [[-60, 20], [15, -45], [80, 60]]) {
+            const e = 1e-4
+            const dh = (mixHeight(x, z, 2 + e, A, B, w) - mixHeight(x, z, 2 - e, A, B, w)) / (2 * e)
+            if (Math.abs(mixVy(x, z, 2, A, B, w) - dh) > 1e-4 * (1 + Math.abs(dh))) deriv = false
+        }
+    }
+    ok('mixVy is the exact d/dt of the cross-faded surface (drawn ≡ ridden velocity)', deriv)
+
+    const edgeY = Math.abs(mixHeight(12, -30, 3.1, A, B, 0) - heightAt(12, -30, 3.1, A)) +
+        Math.abs(mixHeight(12, -30, 3.1, A, B, 1) - heightAt(12, -30, 3.1, B))
+    const edgeV = Math.abs(mixVy(12, -30, 3.1, A, B, 0) - surfaceVy(12, -30, 3.1, A)) +
+        Math.abs(mixVy(12, -30, 3.1, A, B, 1) - surfaceVy(12, -30, 3.1, B))
+    const wm0 = mixWater(12, -30, 3.1, A, B, 0), wm1 = mixWater(12, -30, 3.1, A, B, 1)
+    const wv0 = waterHeight(12, -30, 3.1, A), wv1 = waterHeight(12, -30, 3.1, B)
+    const edgeW = Math.abs(wm0.y - wv0.y) + Math.abs(wm0.dx - wv0.dx) + Math.abs(wm0.dz - wv0.dz) +
+        Math.abs(wm1.y - wv1.y) + Math.abs(wm1.dx - wv1.dx) + Math.abs(wm1.dz - wv1.dz)
+    ok('band edges byte-exact tables for height, vy and water (both sides)', edgeY === 0 && edgeV === 0 && edgeW === 0)
+
+    // the beat itself, on the LIVE front: sweep the band every half-second
+    // while it crosses; track how far the surface escapes the [min,max] box of
+    // the two tables. A convex blend keeps both margins ≤ 0 forever.
+    const gs = makeGame(7, 'storm')
+    let sawMid = false, stack = -9, glass = 9, nBeat = 0
+    for (let t = 0; t < 60 * 240 && !gs.done; t++) {
+        step(gs, autoPad(gs))
+        const f = gs.front
+        if (!f || f.prog < 20 || f.prog > f.h || t % 15 !== 0) continue
+        sawMid = true
+        const lx = -f.dz, lz = f.dx
+        for (let s = -f.h + 2; s < f.h - 2; s += 1.8) {
+            for (let l = -80; l <= 80; l += 6) {
+                const x = f.dx * s + lx * l, z = f.dz * s + lz * l
+                const w = frontW(x, z, f)
+                if (w < 0.15 || w > 0.85) continue
+                const hA = heightAt(x, z, gs.t, gs.seaCur), hB = heightAt(x, z, gs.t, gs.seaTarget)
+                const h = mixHeight(x, z, gs.t, gs.seaCur, gs.seaTarget, w)
+                nBeat++
+                if (h - Math.max(hA, hB) > stack) stack = h - Math.max(hA, hB)
+                if (h - Math.min(hA, hB) < glass) glass = h - Math.min(hA, hB)
+            }
+        }
+    }
+    ok('the band stacks beat crests ABOVE both swells (convex mix cannot)', sawMid && stack > 0.05)
+    ok('the band carries glassy patches BELOW both swells (counter-phase)', sawMid && glass < -0.05)
+    ok('the beat sweep sampled the live band (thousands of points)', nBeat > 5000)
+}
+
 // 16. RUNG 3 — GLSL twin + bridge for the two-slot front shader
 {
     const glsl = seaGLSLFront()
     let names = true
     for (const n of [...SEA_UNIFORMS, ...SEA_UNIFORMS_B, ...FRONT_UNIFORMS]) if (!glsl.includes(n)) names = false
     ok('front GLSL declares both slot sets + the front uniforms (48+4 names)', names && SEA_UNIFORMS_B.length === 24 && FRONT_UNIFORMS.length === 4)
-    ok('front GLSL carries clamp+smoothstep and mix (the CPU twin)', glsl.includes('clamp(') && glsl.includes('3.0 - 2.0 * t') && glsl.includes('mix(hA, hB, w)'))
+    ok('front GLSL carries clamp+smoothstep and the equal-power slot gains (the CPU twin)', glsl.includes('clamp(') && glsl.includes('3.0 - 2.0 * t')
+        && glsl.includes('sqrt(1.0 - w)') && glsl.includes('sqrt(w)')
+        && (glsl.match(/sin\(f\) \* wa/g) || []).length === 4 && (glsl.match(/sin\(f\) \* wb/g) || []).length === 4
+        && (glsl.match(/cos\(f\) \* wa/g) || []).length === 4 && (glsl.match(/cos\(f\) \* wb/g) || []).length === 4
+        && !glsl.includes('mix(hA'))
     const sinTerms = (glsl.match(/sin\(f\)/g) || []).length
     ok('front GLSL is fully unrolled for BOTH tables (8 sin terms, SwiftShader-safe)', sinTerms === 8)
     ok('front GLSL has no array constructors (GLSL ES 1.00)', !/vec[234]\[\d/.test(glsl))
