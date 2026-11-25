@@ -1,10 +1,11 @@
-# PINBALL — CABINET ONE (issue #3103 rung 1; #3169 rung 2: ramp · lock · multiball; #3199 rung 3: orbit · magnet · DMD; #3217 ball-ball physics)
+# PINBALL — two cabinets on one engine (issue #3103 rung 1; #3169 rung 2: ramp · lock · multiball; #3199 rung 3: orbit · magnet · DMD; #3217 ball-ball physics; #3232 CABINET TWO + row-of-cabinets select)
 
-The shared table engine plus the first cabinet of the ladder Jon asked for
-("definitely pinball… start simple, work up"). Rung 2 added the right ramp,
-firelane, lock tower and MULTIBALL. Rung 3 adds the wraparound orbit, the
-magnet post and the dot-matrix insert. Deeper rungs are separate issues,
-filed one per shipped rung.
+The shared table engine plus CABINET ONE and CABINET TWO of the ladder Jon
+asked for ("definitely pinball… start simple, work up"). Rung 2 added the
+right ramp, firelane, lock tower and MULTIBALL. Rung 3 adds the wraparound
+orbit, the magnet post and the dot-matrix insert. #3232 adds a second cabinet
+and the row-of-cabinets attract. Deeper rungs are separate issues, filed one
+per shipped rung.
 
 ## Design
 
@@ -16,6 +17,11 @@ filed one per shipped rung.
   art and rules; nothing copied.
 - **MODERN bar** (issue): a lit, reflective cabinet — midnight-indigo field,
   neon-roped rubbers, glowing 7-seg score, bloom/particles/shake juice.
+- **CABINET TWO (#3232):** left-hand launch lanes are a real production idiom
+  across manufacturers; our second cabinet mirrors OUR field rather than
+  referencing a new machine — its identity is the flipped launch, hotter
+  economy and ember/gold skin, and its fidelity is pinned as the exact
+  x-mirror (see Verify).
 
 ## Engine layout
 
@@ -30,6 +36,12 @@ filed one per shipped rung.
 - **Tables are data on that engine.** `stepGame` knows only element primitives;
   scoring goes through `table.rules`. A new cabinet must add data, never physics
   (the engine contract of #3103).
+- **Directions are data too (#3232).** The lane-side literals the engine used
+  to carry (in-lane test, guide-curl, RAMP zone, spinner/kicker/curl sides)
+  live on the table (`TABLE.lane`, `side` fields: +1 classic right-lane,
+  -1 mirrored) plus a derived `tb.view` geometry object (lane/tower/rail
+  centres) that the shell and art layer draw from — one renderer, both
+  cabinets, cabinet-one pixel-identical.
 - **Ball-ball collision (#3217)** is the next generic engine primitive, in the
   rung-2/rung-3 tradition: `packCollide` resolves every puck pair once per
   substep — equal-mass impulse exchange along the contact normal (restitution
@@ -122,13 +134,36 @@ magnet-pinned ball becomes a post to bounce off), which makes pack play real
 — pass one ball into another and the far one flies off. No points ride on it;
 this is the physics a table always had.
 
+CABINET TWO — "EMBER RIDER" (#3232), the row of cabinets:
+
+- The attract screen is a ROW OF CABINETS: two lit mini-cabinets drawn from
+  the painted playfields. ←/→ switch the pick; SPACE starts the selected one;
+  tapping a card picks AND starts it in one input (phone path). The pick
+  persists across games; GAME OVER + SPACE quick-retries the same cabinet,
+  GAME OVER + arrow steps back to the row.
+- EMBER RIDER is CABINET ONE's exact x-mirror — same primitives, left launch
+  lane — with its OWN economy and skin, not a reskin-only clone:
+  bumper 75 · sling 30 · bank clear 300 · MULT x2…x4 · spinner 15 · kicker 75
+  · ramp 30 / set 600 · lane 30 / sweep 150 · lock 400 · MULTIBALL 1200
+  · orbit 150 / set 600 · magnet 75 · ball save 4 s · TILT decays in 0.7 s.
+  Oxblood field, gold lanes, ember-red alerts, teal magnet.
+- Proof strategy (why no re-tuning was needed): pinballcheck pins that EVERY
+  coordinate of TABLE_TWO is W-x of TABLE (endpoints swapped where the
+  one-way face or index mapping matters), that the engine is x-mirror
+  equivariant (same seed ⇒ mirrored puck states to ~1e-9 px, identical event
+  inventories), and that the ember human line — three medium LEFT-lane
+  plunges — still ignites MULTIBALL, while the magnet and a right-rail wrap
+  pay literal ember prices (75, 790 chained). Pinball is chaotic: ulp-level
+  mirror deviation forks long runs, so the equivariance assertion is scoped
+  to the fork-free window and the fork point is printed, not hidden.
+
 ## Verify
 
 ```bash
-npm run pinballcheck          # 112 literal physics/rules/determinism checks, plain Node
-npm run pinballplay           # headless-Chrome drive (start, plunger, wrap, magnet, DMD pixels)
+npm run pinballcheck          # 134 literal physics/rules/determinism/mirror checks, plain Node
+npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, DMD, pixels)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
-npm run dev -- --port 5176 --strictPort      # then /retrogames/pinball
+npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
 ```
 
 ## Honest gaps
@@ -138,9 +173,13 @@ npm run dev -- --port 5176 --strictPort      # then /retrogames/pinball
   post. Steel-clack sound + chrome sparks, no scoring — the lamp-set pack
   read stays too (multiball machines never needed it to *read* the pack, only
   to *feel* it).
-- Table-select screen ("row of cabinets") waits for a second cabinet.
+- **CLOSED by #3232:** table-select. The attract screen is a row of cabinets —
+  CABINET ONE and the mirrored, hotter EMBER RIDER. Both cabinets are the same
+  three-rung field (one plain, one mirrored), so a third cabinet with an
+  original layout is still open — that wants the editor rung (#3103).
 - No table editor (#3103: not yet). No in-lane kick on the right side.
-- Single table means the `?style` / skin machinery is unused here.
+- The `?style` URL skin override is still unused here (each cabinet ships its
+  own palette; there is no user-selectable skin).
 - The attract demo is a title card with a rolling ball, not a driven run.
 - The music bed covers MULTIBALL only (#3178); single-ball play stays dry.
 - The magnet holds one ball and the orbit one loop at a time (real tables run
