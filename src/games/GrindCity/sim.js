@@ -3,7 +3,7 @@
 // The renderer and grindcheck import this SAME file — the ridden park IS the
 // drawn park (park.js is the single surface).
 
-import { parkHeight, gradAt, RAILS, LETTERS, GAP, BOUND, railClosest, railAt, railLen } from './park.js'
+import { parkHeight, gradAt, RAILS, LETTERS, GAP, BOUND, GEMS, GEM_PTS, SECRET, railClosest, railAt, railLen } from './park.js'
 
 const G = 9.8 * 1.35            // game gravity (snappier than real)
 const MAXV = 11.5              // m/s ground speed ceiling
@@ -50,6 +50,7 @@ export function makeGame(seed = 1, mode = 'run') {
         chainPts: 0, chainClean: 0,
         bailT: 0,
         letters: {}, gapDone: false, goalsDone: { score: false, letters: false, gap: false },
+        gemBits: 0, gemsAll: false, secretFound: false,   // #3246: optional objects
         timeLeft: mode === 'run' ? RUN_TIME : FREE_TIME,
         msg: null, msgT: 0,
         rng: seed >>> 0,
@@ -105,6 +106,40 @@ function checkGoals(s) {
     }
 }
 const LETTER_SATISFIED = s => s.goalsDone.letters || LETTERS.every(l => s.letters[l.k])
+
+// ── gems + secret spot (#3246) — optional, never part of the win law ──────
+export const GEM_ALL = (1 << GEMS.length) - 1
+export const gemCount = b => { let n = 0; while (b) { n += b & 1; b >>= 1 } return n }
+const GEM_R = 1.2
+const GEM_DY = 2.2
+const GEM_RUN_BONUS = 1500
+const SECRET_BONUS = 250
+
+function collectPretty(s) {
+    for (let i = 0; i < GEMS.length; i++) {
+        if (s.gemBits & (1 << i)) continue
+        const g = GEMS[i]
+        if (Math.hypot(s.x - g.x, s.z - g.z) < GEM_R && Math.abs(s.y - g.y) < GEM_DY) {
+            s.gemBits |= 1 << i
+            s.score += GEM_PTS
+            say(s, `GEM +${GEM_PTS}`)
+            ev(s, 'gem')
+            if (!s.gemsAll && s.gemBits === GEM_ALL) {
+                s.gemsAll = true
+                s.score += GEM_RUN_BONUS
+                say(s, `GEM RUN! ALL ${GEMS.length} +${GEM_RUN_BONUS}`, 3)
+                ev(s, 'gems:all')
+            }
+        }
+    }
+    // the secret bowl: reward for skaters who leave the map they can see
+    if (!s.secretFound && Math.hypot(s.x - SECRET.x, s.z - SECRET.z) < SECRET.r && s.y < SECRET.floor + 1.2) {
+        s.secretFound = true
+        s.score += SECRET_BONUS
+        say(s, 'OFF THE MAP! SECRET SPOT +250', 3)
+        ev(s, 'secret')
+    }
+}
 
 function bail(s, why) {
     if (s.phase !== 'play') return
@@ -292,6 +327,7 @@ export function step(s, input, dt = 1 / 60) {
             s.gapArmed = true
             if (parkHeight(s.x, s.z) < GAP.floor) s.overHole = true
         }
+        collectPretty(s)   // gems and the secret spot read in the air too
         tryLatch(s)
         if (!s.grind && s.y <= parkHeight(s.x, s.z)) { s.airVXZ = s.speed; land(s) }
         s.aPrev = a; s.bPrev = b
@@ -392,6 +428,7 @@ export function step(s, input, dt = 1 / 60) {
             checkGoals(s)
         }
     }
+    collectPretty(s)   // gems + secret spot (#3246) — optional, win law untouched
 
     // combo commit: clean riding after the last trick banks it
     if (s.chain.length > 0) {
@@ -415,6 +452,7 @@ export function stateOf(s) {
         grindBal: s.grind ? Math.round(s.grind.bal * 1000) / 1000 : 0,
         chain: s.chain.length, chainPts: Math.round(s.chainPts), mult: mult(s),
         letters: s.letters, gapDone: s.gapDone, goalsDone: s.goalsDone,
+        gems: gemCount(s.gemBits), gemTotal: GEMS.length, gemsAll: s.gemsAll, secret: s.secretFound,
         timeLeft: Math.round(s.timeLeft * 10) / 10,
         stats: s.stats,
     }

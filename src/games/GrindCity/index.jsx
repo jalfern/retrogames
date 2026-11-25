@@ -15,7 +15,7 @@ import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, s
 import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL } from './sim.js'
 import { botPad, makeBot } from './planner.js'
 import { STEP, bedVoices, landThud } from './music.js'
-import { buildPark, buildSky, buildLetters, buildSkater, poseSkater, buildParticles, emit, stepParticles } from './art.js'
+import { buildPark, buildSky, buildLetters, buildGems, buildSkater, poseSkater, buildParticles, emit, stepParticles } from './art.js'
 
 const FIXED_DT = 1000 / 60
 const DT = FIXED_DT / 1000
@@ -30,6 +30,7 @@ const MESSAGES = [
     'OLLIE ONTO A RAIL TO GRIND · STEER TO BALANCE',
     'EACH UNIQUE TRICK IN THE LINE RAISES THE MULTIPLIER',
     'BAIL AND THE LINE IS FORFEIT — BANK IT CLEAN',
+    'GEMS +100 · CARRY SPEED UP THE SOUTH WALL — THE ROOF LINE PAYS',
 ]
 
 const GrindCityGame = () => {
@@ -48,7 +49,7 @@ const GrindCityGame = () => {
         score: { current: null }, time: { current: null }, combo: { current: null },
         msg: { current: null }, mult: { current: null }, flash: { current: null },
         letters: { current: null }, gap: { current: null }, tgt: { current: null },
-        cut: { current: null },
+        gem: { current: null }, cut: { current: null },
     }).current
 
     useEffect(() => {
@@ -67,6 +68,7 @@ const GrindCityGame = () => {
         buildSky(scene)
         buildPark(scene)
         const letterObjs = buildLetters(scene)
+        const gemObjs = buildGems(scene)
         const rig = buildSkater(scene)
         const fx = buildParticles(scene)
 
@@ -177,6 +179,9 @@ const GrindCityGame = () => {
             else if (e.startsWith('bail')) { AC.playNoise(0.32, 0.3); AC.playSweep(300, 70, 0.3, 'sawtooth', 0.14) }
             else if (e.startsWith('bank')) { AC.playTone(520, 0.07, 'square', 0.08); AC.playTone(660, 0.07, 'square', 0.08, 0.06); AC.playTone(784, 0.12, 'square', 0.08, 0.12) }
             else if (e.startsWith('letter:')) AC.playTone(1046, 0.14, 'sine', 0.13)
+            else if (e === 'gem') { AC.playTone(1318, 0.09, 'triangle', 0.1); AC.playTone(1760, 0.12, 'triangle', 0.08, 0.07) }
+            else if (e === 'gems:all') [1046, 1318, 1568, 2093].forEach((f, i) => AC.playTone(f, 0.12, 'square', 0.1, i * 0.09))
+            else if (e === 'secret') { AC.playSweep(300, 900, 0.35, 'triangle', 0.1); AC.playTone(1245, 0.2, 'sine', 0.09, 0.3) }
             else if (e.startsWith('goal:')) { AC.playTone(523, 0.1, 'square', 0.1); AC.playTone(659, 0.1, 'square', 0.1, 0.09); AC.playTone(784, 0.2, 'square', 0.1, 0.18) }
             else if (e === 'win') { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => AC.playTone(f, 0.14, 'square', 0.11, i * 0.11)) }
             else if (e === 'timeup') AC.playSweep(400, 120, 0.5, 'sawtooth', 0.12)
@@ -261,7 +266,7 @@ const GrindCityGame = () => {
             if (sim.phase !== 'over') return
             if (attractMode) { toAttract(); return }
             if (screenRef.current === 'over' || replayMode) return
-            pendingResult = { score: sim.score, won: sim.won, goals: { ...sim.goalsDone }, best: sim.stats.bestChain }
+            pendingResult = { score: sim.score, won: sim.won, goals: { ...sim.goalsDone }, best: sim.stats.bestChain, ...((j) => ({ gems: j.gems, gemTotal: j.gemTotal, gemsAll: j.gemsAll, secret: j.secret }))(stateOf(sim)) }
             if (inputLog.length >= REPLAY_MIN) startReplay()
             else finishOver()
         }
@@ -343,6 +348,17 @@ const GrindCityGame = () => {
                 l.glow.intensity = got ? 0 : 0.6
             })
 
+            // gems (#3246): spin + bob, shrink-pop when taken
+            gemObjs.forEach((o, i) => {
+                o.mesh.rotation.y += 0.06
+                o.mesh.rotation.x += 0.02
+                o.mesh.position.y = o.y + Math.sin(clock * 2.2 + o.phase) * 0.12
+                const got = (actor.gemBits >> i) & 1
+                const target = got ? 0.001 : 1
+                const s0 = o.mesh.scale.x + (target - o.mesh.scale.x) * 0.25
+                o.mesh.scale.setScalar(s0)
+            })
+
             poseSkater(rig, actor, clock)
 
             // ── cameras: chase · fisheye action cam · replay cam (#3225) ────
@@ -392,6 +408,10 @@ const GrindCityGame = () => {
             }
             if (hud.gap.current) hud.gap.current.style.color = st.gapDone ? '#ffd35e' : 'rgba(255,255,255,.35)'
             if (hud.tgt.current) hud.tgt.current.style.color = st.goalsDone.score ? '#ffd35e' : (st.score >= SCORE_GOAL ? '#ffd35e' : 'rgba(255,255,255,.5)')
+            if (hud.gem.current) {
+                hud.gem.current.textContent = `\u25C6 GEMS ${st.gems}/${st.gemTotal}`
+                hud.gem.current.style.color = st.gems > 0 ? '#7dffb0' : 'rgba(255,255,255,.35)'
+            }
         }
         raf = requestAnimationFrame(frame)
 
@@ -420,12 +440,15 @@ const GrindCityGame = () => {
                     const st = stateOf(sim)
                     return [`phase=${st.phase} mode=${st.mode}`, `pos=${st.x},${st.y},${st.z} v=${st.speed} hd=${st.heading}`,
                         `score=${st.score} chain=${st.chainPts}x${st.mult} letters=${Object.keys(st.letters).length}/5`,
+                        `gems=${st.gems}/${st.gemTotal} all=${st.gemsAll} secret=${st.secret}`,
                         `air=${st.air} grind=${st.grinding} bal=${st.grindBal} manual=${st.manual} t=${st.timeLeft}`]
                 },
                 actions: [
                     { label: 'fly gap', run: () => { sim.x = 4; sim.z = 3; sim.y = 1; sim.heading = Math.PI / 2; sim.speed = 8 } },
                     { label: 'rail', run: () => { sim.x = -11; sim.z = -2; sim.y = 1.4; sim.heading = 0; sim.speed = 7 } },
                     { label: 'pipe', run: () => { sim.x = -30; sim.z = 0; sim.y = -1; sim.heading = Math.PI; sim.speed = 8 } },
+                    { label: 'roof', run: () => { sim.x = -15; sim.z = 6; sim.y = 0; sim.heading = Math.PI / 2; sim.speed = 10.5 } },
+                    { label: 'secret', run: () => { sim.x = 26; sim.z = 6; sim.y = -1; sim.heading = 0; sim.speed = 3 } },
                     { label: 'bail', run: () => { sim.airTrick = { t: 0, flip: 1, flipDir: 1, flipRot: 90, spin: 0, rot: 0 }; sim.vy = -14 } },
                 ],
             })
@@ -482,6 +505,7 @@ const GrindCityGame = () => {
                             </div>
                             <div ref={hud.gap} className="font-bold">◇ GAP OF THE DAY</div>
                             <div ref={hud.tgt} className="font-bold">◇ SCORE {SCORE_GOAL}</div>
+                            <div ref={hud.gem} className="font-bold" />
                         </div>
                         <div ref={hud.msg} className="absolute left-1/2 top-12 -translate-x-1/2 whitespace-nowrap text-lg font-bold italic tracking-wider text-[#ffe98a] drop-shadow-[0_2px_0_rgba(0,0,0,.85)]" />
                     </>
@@ -514,6 +538,8 @@ const GrindCityGame = () => {
                             <div>{result.goals.score ? '✔' : '✗'} SCORE TARGET {SCORE_GOAL}</div>
                             <div>{result.goals.letters ? '✔' : '✗'} COLLECT S-K-A-T-E</div>
                             <div>{result.goals.gap ? '✔' : '✗'} GAP OF THE DAY</div>
+                            <div className={result.gemsAll ? 'font-bold text-[#7dffb0]' : ''}>{result.gemsAll ? '✔ GEM RUN — ALL GEMS' : `◇ GEMS ${result.gems}/${result.gemTotal}`}</div>
+                            <div className={result.secret ? 'font-bold text-[#7dffb0]' : 'text-white/50'}>{result.secret ? '★ SECRET SPOT FOUND' : '★ SECRET SPOT · HIDDEN IN THE PARK'}</div>
                         </div>
                         {result.best > 0 && <div className="mt-3 text-xs tracking-widest text-white/60">BEST LINE {result.best}</div>}
                         <div className="mt-8 animate-pulse text-sm font-bold tracking-[0.4em] text-[#ffd35e]">SPACE — BACK TO THE PLAZA</div>

@@ -23,6 +23,15 @@ const band = (x, a, b, c, d) => ss(a, b, x) * (1 - ss(c, d, x))
 
 export const DECK_Y = 3.2
 
+// The SECOND LINE (#3246): carry speed into the south quarterpipe, crest it
+// and ride a deck along the wall top. Optional by design — the win line
+// never needs it; it is where the roof gems live.
+export const ROOF_Y = 2.5
+
+// The SECRET SPOT (#3246): a hidden bowl east of the plaza, off every line —
+// reward for players who skate past the edge of the map they can see.
+export const SECRET = { x: 26, z: 6, r: 4.5, floor: -2.4 }
+
 /** Park surface height at (x, z). Every feature blends to its neighbours. */
 export function parkHeight(x, z) {
     let h = 0
@@ -38,12 +47,21 @@ export function parkHeight(x, z) {
     if (r2 < 1) h += -5 * Math.pow(1 - r2, 0.7)
     // Trench (the gap of the day, crossed along +z)
     h += -2.2 * band(x, -3, -1.5, 11.5, 13) * band(z, 4, 5, 9, 10)
-    // South quarterpipe wall (west section)
-    h += 2.5 * Math.pow(ss(8, 14, z), 2.2) * band(x, -32, -30, -6, -4)
+    // South quarterpipe wall (west section). Fades out exactly where the
+    // roof deck rises (#3246) — same curve, complementary — so the crest
+    // holds a constant ROOF_Y instead of stacking into a hump.
+    h += 2.5 * Math.pow(ss(8, 14, z), 2.2) * (1 - ss(14, 14.6, z)) * band(x, -32, -30, -6, -4)
+    // Roof deck (#3246) — the SECOND LINE along the wall crest. Reach it by
+    // carrying the trench landing into the quarterpipe at speed; it runs west
+    // with a grindable coping, and its east end is a long ramp back to plaza.
+    h += ROOF_Y * ss(14, 14.6, z) * (1 - ss(22, 23.5, z)) * band(x, -32, -30, -6, 2)
     // Kicker K1 — launches you over the trench (faces +z)
     if (z > 1 && z < 4.5) h += 1.0 * Math.pow(ss(1, 4, z), 2) * band(x, -1, 0.5, 8.5, 10)
     // Kicker K2 (plaza toy, faces -z)
     if (z < -3.5 && z > -6.5) h += 0.8 * Math.pow(ss(0, 1, (-z - 3.5) / 3), 2) * band(x, -20, -19, -15, -14)
+    // Secret bowl (#3246) — hidden east of the plaza, off every driven line
+    const r3 = ((x - SECRET.x) / SECRET.r) ** 2 + ((z - SECRET.z) / SECRET.r) ** 2
+    if (r3 < 1) h += SECRET.floor * Math.pow(1 - r3, 0.7)
     return h
 }
 
@@ -63,6 +81,7 @@ export const RAILS = [
     { id: 'plaza', ax: -14, ay: 0.72, az: -6, bx: -4, by: 0.72, bz: 2, kind: 'rail' },
     { id: 'pipe-near', ax: -25, ay: 0.06, az: -20, bx: -25, by: 0.06, bz: 8, kind: 'coping' },
     { id: 'pipe-far', ax: -45, ay: 0.06, az: -20, bx: -45, by: 0.06, bz: 8, kind: 'coping' },
+    { id: 'roof', ax: -26, ay: ROOF_Y + 0.7, az: 14.3, bx: -10, by: ROOF_Y + 0.7, bz: 14.3, kind: 'coping' },
 ]
 
 export function railAt(rail, t) {
@@ -97,3 +116,18 @@ export const LETTERS = [
 
 // The gap of the day: fly the trench along +z without touching it.
 export const GAP = { x0: -3.5, x1: 13.5, z0: 4, z1: 10.5, floor: -1.0 }
+
+// ── GEMS (#3246) — score-mode objects, +100 each ──────────────────────────
+// Optional points off the win line, laid in three clusters: four along the
+// roof (the second line's prize), six packed inside the secret bowl, four
+// tucked at the far corners of the plaza. The win law never needs one.
+export const GEM_PTS = 100
+const gem = (x, z) => ({ x, z, y: parkHeight(x, z) + 1.0 })
+export const GEMS = [
+    // the roof line
+    gem(-26, 18), gem(-21, 18), gem(-16, 18), gem(-11, 18),
+    // the secret hoard
+    gem(26, 6), gem(28, 6), gem(24, 6), gem(26, 8), gem(26, 4), gem(27.4, 7.4),
+    // far corners of the plaza
+    gem(-40, -16), gem(18, -14), gem(-16, 9), gem(30, 14),
+]
