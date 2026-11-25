@@ -52,9 +52,14 @@
 ## Board watch (facts, not questions)
 - `game-queue` expected EMPTY after this ship; #1712 stays `waiting-jon` (skip).
   Next builder claim = idle-kick derivation live at claim time (don't trust memory).
-- QA open: #3244 (tidal online polish, building-qa), #3237 (PINBALL tail: attract
-  show-off, phone HUD audit, tilt-to-nudge, lock slam), #3233 (grind tail 2),
-  #3131 (padtypes rollout). #3230/#3174 shipped today.
+- Merged while this report rode the CI throttle: SKYWARD living storm #3271,
+  tidal-rush mid-race spectate #3265, grind-city gem sparkle #3270, PINBALL
+  attract show-off + kit tail #3275 (takes most of #3237's list), and the
+  check-runs fallback fix #3274 (#3269 — filed by this session).
+- QA open: #3244 (tidal online polish; podium/rematch + desync hash + spectate
+  have landed from it), #3233 (grind tail 2), #3131 (padtypes rollout),
+  #3237 (PINBALL tail — attract show-off done, HUD audit / tilt-to-nudge /
+  lock slam left).
 - Nightly green at merge (main-ok ok).
 
 ## Open questions (links only — #605)
@@ -66,6 +71,7 @@
 - Slot b: worktree `retrogames-forge-pinball-kickback` is detached at origin/main
   (mergeclean already completed post-merge cleanup; safe to prune). Dev :5178
   stopped via scripts/devstop.sh at handoff.
-- STATE.md published via docs PR (game merged this session → rule 9 satisfied);
+- STATE.md published via docs PR #3268 (needed a rebase onto the check-runs-fix
+  tip after GitHub dropped its pull_request events — see #3269, fixed by #3274);
   parked slot-scoped with statepark park b.
 - Time-box: ~2 h of 3 h.
