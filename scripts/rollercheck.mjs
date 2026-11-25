@@ -39,6 +39,8 @@ if (MUT) {
         sweep: { from: 'gs.swHits += 1', to: 'gs.swHits += 0', note: 'sweeper knock muted' },
         // the checkpoint never arms — late falls lose the whole shelf
         gate: { from: 'gs.cpArmed = true', to: 'gs.cpArmed = false', note: 'checkpoint arming muted' },
+        // the trick hop loses its pop — speed paid, no arc bought (#3224)
+        hop: { from: 'gs.vy = HOP_V', to: 'gs.vy = 0', note: 'trick hop muted' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -48,7 +50,7 @@ if (MUT) {
 }
 
 const { STAGES } = await import('../src/games/MarbleRush/course.js')
-const { makeGame, step, autoPad, respawn, stateOf, stateHash, courseFor, STAGE_COUNT } = await import('../src/games/MarbleRush/sim.js')
+const { makeGame, step, autoPad, respawn, stateOf, stateHash, courseFor, STAGE_COUNT, HOP_V, HOP_COST } = await import('../src/games/MarbleRush/sim.js')
 
 const drive = (gs, maxS, padFn = null) => {
     let g = 0
@@ -170,6 +172,37 @@ console.log('\n[3b] the stage 2 verbs: sweeping bars + checkpoint gates')
     // no gate on the first three shelves — a fall costs the whole run there
     const g5 = makeGame(7, 2)   // BUMPER ALLEY, last ungated shelf
     ok('rung 1 shelves stay ungated', g5.cpS === 0 && respawn(g5) === false)
+}
+
+console.log('\n[3c] the trick hop (#3224): speed now, arc later')
+{
+    const Z = { throttle: 0, steer: 0, brake: false }
+    const mk = () => { const g = makeGame(7, 5); g.phase = 1; g.t = 1.1; g.s = 113; g.v = 16; return g }
+    const g1 = mk()
+    const v0 = g1.v
+    step(g1, { ...Z, a: true })
+    ok('hop pops off the deck: air, hop event, speed cost paid',
+        g1.air && g1.vy === HOP_V && g1.y === 0.01 &&
+        g1.v <= v0 * HOP_COST + 1e-9 && g1.v >= v0 * HOP_COST * 0.99 &&
+        g1.hops === 1 && g1.events.some((e) => e.type === 'hop'))
+    const y1 = g1.y
+    step(g1, { ...Z, a: true })
+    ok('no double-hop in the air', g1.air && g1.hops === 1 && g1.y > y1)
+    let airT = 1, landed = false
+    while (!landed && airT < 60) { step(g1, Z); if (g1.air) airT++; landed = g1.events.some((e) => e.type === 'land') }
+    ok('the arc lands within a breath (~0.5 s), honest and on deck', landed && !g1.air && !g1.falling && airT >= 20 && airT <= 38)
+    // the verb MEANS something: UPPER DECK's bar at s=118 reaches |u| ≤ A=1.0
+    // < w + R = 1.27, so a marble riding u=0 through the station ALWAYS eats
+    // the knock grounded — but one well-timed hop carries the whole zone.
+    const g2 = mk()
+    for (let i = 0; i < 60 && g2.s < 121 && !g2.falling; i++) step(g2, Z)
+    ok('baseline: riding flat through the bar station takes the knock', g2.swHits === 1 && !g2.falling)
+    const g3 = mk()
+    for (let i = 0; i < 60 && g3.s < 121 && !g3.falling; i++) step(g3, { ...Z, a: g3.s >= 113 && g3.s < 116 })
+    ok('the hop skips the knock: same line, one arc, speed paid', g3.swHits === 0 && g3.hops === 1 && !g3.falling && g3.v < v0 - 1)
+    // and autoPad's a:false keeps it untouched: bot lines + hashes unchanged
+    const bot = drive(makeGame(7, 5), 60)
+    ok('the autopilot never hops — pinned bot lines and baselines survive', bot.done && !bot.fail && bot.hops === 0)
 }
 
 console.log('\n[4] every shelf is winnable, inside bronze')

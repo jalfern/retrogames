@@ -16,6 +16,14 @@ export const DT = 1 / 60
 export const GO_DELAY = 1.0
 export const STAGE_COUNT = STAGES.length
 
+// The trick hop (#3224): a player-launched pop off the deck. It costs speed
+// up front (HOP_COST) and buys a ~0.47 s arc — air skips the sweeping bars
+// (which only bite grounded marble) and lands you past a lip if you are quick.
+// The autopilot never presses A, so every bot line and hash baseline the
+// checks pin is untouched by this verb.
+export const HOP_V = 2.3
+export const HOP_COST = 0.88
+
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 
 const CACHE = []
@@ -54,6 +62,7 @@ export function makeGame(seed, stageIdx = 0) {
         cpS: course.cp || 0,     // checkpoint station (0 = none on this shelf)
         cpArmed: false,          // gate crossed — a fall respawns at the gate
         respawned: 0,
+        hops: 0,                 // trick hops taken this stage (never by autoPad)
         events: [],
         len: course.len,
         // bumper hit bookkeeping (sim side)
@@ -172,6 +181,19 @@ export function step(gs, pad) {
                 gs.events.push({ type: 'jump' })
                 launched = true
             }
+        }
+        // ---- trick hop: the player's own verb (#3224) ------------------------
+        // Space/A pops the marble off whatever deck it is riding. Costs speed
+        // now, buys arc later; the launch tick must not also drop you through
+        // the lip edge you jumped from, so it counts as launched.
+        if (!gs.air && pad.a) {
+            gs.air = true
+            gs.vy = HOP_V
+            gs.y = 0.01
+            gs.v = clamp(gs.v * HOP_COST, 0, MAX_V)
+            gs.hops += 1
+            gs.events.push({ type: 'hop', s: gs.s })
+            launched = true
         }
         if (!launched) {
             const onDeck = miE >= 0 && Math.abs(gs.u - deckE.u) <= deckE.w + MARBLE_R * 0.25
@@ -349,6 +371,7 @@ export function stateOf(gs) {
         air: gs.air,
         cpArmed: gs.cpArmed,
         respawns: gs.respawned,
+        hops: gs.hops,
     }
 }
 
