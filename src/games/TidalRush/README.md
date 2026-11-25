@@ -262,8 +262,18 @@ static job; every pushed commit is commented on #3104.
   anchorage (flap, glide, bank, dim in the squall), and the outer bay carries
   beach caustics + a warm sand push toward the headlands. Hulls still have no
   reflection on the water plane (open).
-- Score HUD sits under the shared chrome pill at ?lite=1 widths (chrome overlap,
-  not game layout) — flagged for the QA polish pass.
+- ~~Score HUD sits under the shared chrome pill at ?lite=1 widths (chrome overlap,
+  not game layout) — flagged for the QA polish pass.~~ **CLOSED by #3389:** the bug was
+  the safe-area case, not the CI width — every shared pill positions with
+  `calc(x + var(--sat/sal/sar))` while the two HUD columns used raw offsets, so a
+  notched phone (standalone PWA, sat > 0) pushed ARCADE/FEEDBACK onto the score panel
+  (24–29 px measured) and PAUSE/PADS onto speed/rank/clock. Both columns now compose
+  the same vars (`calc(4.75rem + var(--sat,0px))` + `--sal`/`--sar` — the house
+  pattern, 9 other games): at inset 0 the layout is byte-identical to the old pixels
+  (desktop/CI unchanged); on notched devices the HUD rides down WITH the chrome.
+  Pinned by 4 tidalcheck pins (both columns, no-raw-offset law, chrome-anchor truth) +
+  mutants `hudlowsat`/`hudrosat`, and measured live in tidaldrive (rects vs the real
+  pills at sat 0 and sat 59).
 
 ## Spectate (#3244 item 2) — no seat, all sea
 
