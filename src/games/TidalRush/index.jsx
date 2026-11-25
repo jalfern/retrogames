@@ -678,9 +678,12 @@ const TidalRushGame = () => {
                 const pop = c.pop, absorb = c.absorb
                 if (m.lowerBody) {
                     // knees flex on the slap, tuck lifts the feet mid-air,
-                    // pop kicks the legs out straight off the deck
-                    m.lowerBody.rotation.x = -0.22 * land - 0.32 * Math.min(1.3, tuck) + 0.24 * pop - 0.34 * absorb
-                    m.lowerBody.position.y = 0.85 + 0.15 * tuck - 0.10 * land + 0.12 * pop - 0.18 * absorb
+                    // pop kicks the legs out straight off the deck. #3357 item 1:
+                    // the pop vanished at the chase cam (~9 m) on phone widths, so
+                    // the knee extension and rise are pushed up (larger, not faster
+                    // — the sim's decay window is untouched, gameplay unchanged).
+                    m.lowerBody.rotation.x = -0.22 * land - 0.32 * Math.min(1.3, tuck) + 0.30 * pop - 0.34 * absorb
+                    m.lowerBody.position.y = 0.85 + 0.15 * tuck - 0.10 * land + 0.15 * pop - 0.18 * absorb
                 }
                 // the torso absorbs the slap; the head rides the same jolt.
                 // The wind-over squashes the torso; the hold stretches it.
@@ -689,8 +692,15 @@ const TidalRushGame = () => {
                 m.lean.position.y = -0.16 * land + 0.06 * pop - 0.12 * absorb
                 m.lean.scale.y = 1 + 0.06 * deep - 0.06 * wind - 0.07 * absorb
                 if (m.headPivot) {
-                    m.headPivot.position.y = 1.62 - 0.17 * skiJolt[i] - 0.10 * tuck - 0.05 * pop - 0.12 * absorb
-                    m.headPivot.rotation.x = skiJolt[i] * 0.5 + tuck * 0.55 + wind * 0.12 - 0.28 * pop + 0.30 * absorb
+                    // #3357 item 2: the head used to ride BOTH the legacy skiJolt
+                    // sink (0.17) and the new absorb sink (0.12) on top of the torso
+                    // (lean) that already sank by both — a hard slam punched the
+                    // helmet ~0.68 into the frame, a double-dip. Now the BODY is the
+                    // sink (knees + torso ride land+absorb above) and the head only
+                    // lags a little on the same body signal; absorb reads as the
+                    // helmet NOD (rotation.x), never a second downward punch.
+                    m.headPivot.position.y = 1.62 - 0.06 * skiJolt[i] - 0.10 * tuck - 0.05 * pop
+                    m.headPivot.rotation.x = skiJolt[i] * 0.5 + tuck * 0.55 + wind * 0.12 - 0.28 * pop + 0.34 * absorb
                 }
                 // arms track the bar grip through the local lean; #3280 blends
                 // them off the bar into a GRAB while a pitch trick turns — flip

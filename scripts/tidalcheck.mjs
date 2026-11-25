@@ -118,6 +118,12 @@ if (MUT) {
         absorbblind: { from: 'c.absorb = Math.min(1, Math.max(0, -c.vy / 6))', to: 'c.absorb = 0.3', note: 'absorb ignores the sink — landings all kneel the same' },
         // #3351: the moments never die — pop sticks at launch strength forever.
         popfrozen: { from: 'c.pop = Math.max(0, c.pop - DT * 2.4)', to: 'c.pop = c.pop', note: 'pop window never fades — pose becomes wallpaper' },
+        // #3357 item 2: the helmet punches twice again — absorb re-translates
+        // the head and the lag inflates past a body-sink. The pin must go red.
+        headdip: { file: 'src/games/TidalRush/index.jsx', from: '1.62 - 0.06 * skiJolt[i] - 0.10 * tuck - 0.05 * pop', to: '1.62 - 0.17 * skiJolt[i] - 0.10 * tuck - 0.05 * pop - 0.12 * absorb', note: 'head rides skiJolt+absorb again — the double-dip returns' },
+        // #3357 item 1: the pop collapses back to the chase-cam-invisible
+        // extension. The legibility pin must go red.
+        popweak: { file: 'src/games/TidalRush/index.jsx', from: 'Math.min(1.3, tuck) + 0.30 * pop - 0.34 * absorb', to: 'Math.min(1.3, tuck) + 0.24 * pop - 0.34 * absorb', note: 'pop knee extension shrinks — invisible at the chase cam' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -1667,6 +1673,45 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         typeof gs0.pop === 'number' && typeof gs0.absorb === 'number'
         && gs0.pop >= 0 && gs0.pop <= 1 && gs0.absorb >= 0 && gs0.absorb <= 1,
         JSON.stringify({ pop: gs0.pop, absorb: gs0.absorb }))
+
+    // #3357 item 2 — the head must not punch twice. The torso (lean) already
+    // sinks by land+absorb; the head may only lag a little on the body signal
+    // and must NOT translate on absorb (that lands as the helmet NOD instead).
+    // Before this fix the head rode skiJolt 0.17 AND absorb 0.12 → ~0.68 sink
+    // on a handstand slam. These pins freeze the split: body=sink, helmet=nod.
+    {
+        const jsxPose = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'TidalRush', 'index.jsx'), 'utf8')
+        const hp = jsxPose.match(/headPivot\.position\.y\s*=\s*1\.62([^;\n]+)/)
+        ok('#3357 the head sinks once — absorb never translates the helmet (#3357 item 2)',
+            !!hp && !/absorb/.test(hp[1]),
+            hp ? hp[1].trim() : 'headPivot.position.y line not found')
+        const lag = hp && hp[1].match(/-\s*([\d.]+)\s*\*\s*skiJolt/)
+        ok('#3357 the head lag is a lag, not a second body-sink (skiJolt coeff ≤ 0.10)',
+            !!lag && parseFloat(lag[1]) <= 0.10,
+            lag ? `skiJolt=${lag[1]}` : 'no skiJolt lag term on the head')
+        // absorb still READS on the helmet — as a nod (rotation.x), the one
+        // landing moment the head owns on its own.
+        const hr = jsxPose.match(/headPivot\.rotation\.x\s*=\s*([^;\n]+)/)
+        ok('#3357 absorb still reads as the helmet nod (rotation.x keeps its absorb term)',
+            !!hr && /\+\s*([\d.]+)\s*\*\s*absorb/.test(hr[1]),
+            hr ? hr[1].trim() : 'headPivot.rotation.x line not found')
+    }
+
+    // #3357 item 1 — the takeoff pop must survive the chase cam (~9 m, phone
+    // widths). The knee-extension kick and the rise are pinned above the
+    // levels that read as nothing at distance; the sim's decay window is NOT
+    // touched here (that would be gameplay), only the extension is larger.
+    {
+        const jsxPose2 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'TidalRush', 'index.jsx'), 'utf8')
+        const lbR = jsxPose2.match(/lowerBody\.rotation\.x\s*=\s*[^;\n]*\+\s*([\d.]+)\s*\*\s*pop/)
+        ok('#3357 the pop knee extension reads at the chase cam (≥ 0.30)',
+            !!lbR && parseFloat(lbR[1]) >= 0.30,
+            lbR ? `knee kick=${lbR[1]}` : 'no pop term on lowerBody.rotation.x')
+        const lbY = jsxPose2.match(/lowerBody\.position\.y\s*=\s*[^;\n]*\+\s*([\d.]+)\s*\*\s*pop/)
+        ok('#3357 the pop rise reads at the chase cam (≥ 0.15)',
+            !!lbY && parseFloat(lbY[1]) >= 0.15,
+            lbY ? `rise=${lbY[1]}` : 'no pop term on lowerBody.position.y')
+    }
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)
