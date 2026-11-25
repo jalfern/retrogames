@@ -114,6 +114,15 @@ void main() {
   float foam = clamp(crest * 0.85 + face * (0.22 + uStorm * 0.28), 0.0, 1.0);
   float tw = 0.85 + 0.15 * sin(vWorld.x * 7.3 + vWorld.z * 5.1 + uT * 9.0);
   col = mix(col, uFoam, foam * tw);
+  // beach caustics (#3218): water toward the headlands reads shallow — a slow
+  // twinned shimmer over a warm sand push. The literal 180.0 is half the mesh
+  // span; tidalcheck pins it against SIZE and the storm gate against uStorm.
+  float shoreK = length(vWorld.xz) / 180.0;
+  float shallow = smoothstep(0.60, 0.95, shoreK);
+  float csA = 0.5 + 0.5 * sin(vWorld.x * 1.9 + vWorld.z * 1.2 + uT * 1.35);
+  float csB = 0.5 + 0.5 * sin(vWorld.x * 1.1 - vWorld.z * 2.1 - uT * 1.05 + 2.1);
+  col += vec3(0.34, 0.58, 0.46) * pow(csA * csB, 2.5) * shallow * (1.0 - uStorm * 0.85);
+  col = mix(col, vec3(0.64, 0.55, 0.36), shallow * 0.22 * (1.0 - uStorm * 0.7));
   // lightning paints the whole bay for a beat
   col += vec3(0.85, 0.9, 1.0) * uFlash * (0.35 + fres * 0.4);
   // distance fog to the horizon band — thicker weather in the storm
@@ -477,6 +486,64 @@ export function makeBellBuoy() {
     g.add(bell)
     g.userData.bell = bell
     return g
+}
+
+// ---- gulls: the anchorage has birds (#3218) -----------------------------------
+// A small flock wheels over the moored fleet — flat-shaded near-white shapes
+// in the headlands' silhouette language, original geometry. Like the sloops
+// they are pure decoration: seeded from the course seed (same bay, same gulls
+// for the whole race), never seen by the sim.
+export function gullSpots(seed) {
+    let s = ((seed >>> 0) || 1) ^ 0x9e3779b9
+    const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
+    const birds = []
+    for (let i = 0; i < 3; i++) {
+        birds.push({
+            r: 8 + rnd() * 7, y: 5.5 + rnd() * 3.5,
+            w: 0.28 + rnd() * 0.14, ph: rnd() * Math.PI * 2,
+            flap: 6.0 + rnd() * 2.5, dir: rnd() < 0.5 ? -1 : 1,
+        })
+    }
+    return { cx: RX * 0.12 * (rnd() * 2 - 1), cz: RZ * 0.18 * (rnd() * 2 - 1), birds }
+}
+
+export function makeGull() {
+    const g = new THREE.Group()
+    const mat = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: 0.6, flatShading: true, side: THREE.DoubleSide })
+    const tip = new THREE.MeshStandardMaterial({ color: 0x43484f, roughness: 0.6, flatShading: true, side: THREE.DoubleSide })
+    const body = new THREE.Mesh(new THREE.ConeGeometry(0.17, 1.0, 5), mat)
+    body.rotation.x = Math.PI / 2 // axis along +Z = the way it flies
+    g.add(body)
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 6, 5), mat)
+    head.position.z = 0.55
+    g.add(head)
+    const wingPivot = (side) => {
+        const p = new THREE.Group()
+        const w = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.32), mat)
+        w.rotation.x = -Math.PI / 2 // lay the span flat (XZ)
+        w.position.x = side * 0.55
+        const t = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.26), tip)
+        t.rotation.x = -Math.PI / 2
+        t.position.x = side * 1.1
+        p.add(w); p.add(t)
+        g.add(p)
+        return p
+    }
+    g.userData.wings = [wingPivot(-1), wingPivot(1)]
+    return g
+}
+
+// one bird frame: wheel an ellipse, bank into the turn, flap with a glide beat
+export function gullFrame(g, flock, b, t) {
+    const a = b.dir * t * b.w + b.ph
+    g.position.set(flock.cx + Math.cos(a) * b.r, b.y + Math.sin(t * 0.8 + b.ph) * 0.7, flock.cz + Math.sin(a) * b.r * 0.72)
+    g.rotation.y = Math.atan2(-Math.sin(a) * b.dir, Math.cos(a) * 0.72)
+    g.rotation.z = -b.dir * 0.16
+    const beat = Math.sin(t * b.flap + b.ph)
+    const dihedral = 0.18 + Math.max(0, beat) * 0.22
+    const [wl, wr] = g.userData.wings
+    wl.rotation.z = -(dihedral - beat * 0.55)
+    wr.rotation.z = dihedral - beat * 0.55
 }
 
 export function wakeStep(w, dt) {

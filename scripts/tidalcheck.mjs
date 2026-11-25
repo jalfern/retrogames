@@ -50,6 +50,12 @@ if (MUT) {
         moorsea: { file: 'src/games/TidalRush/index.jsx', from: 'const wb = frontW(s.x, s.z, gs.front)', to: 'const wb = 0', note: 'moored props stop riding the sea Kai rides' },
         // the anchorage stops following the course seed (#3159) — spots jitter.
         moorrand: { file: 'src/games/TidalRush/art.js', from: 'let s = (seed >>> 0) || 1', to: 'let s = (Math.random() * 4294967296) >>> 0', note: 'anchorage stops following the seed' },
+        // the gulls freeze mid-air (#3218) — the sky stops moving.
+        gullfreeze: { file: 'src/games/TidalRush/index.jsx', from: 'gullFrame(gm, flock, bird, t)', to: 'gullFrame(gm, flock, bird, 0)', note: 'gulls freeze mid-air' },
+        // the shallows stop shimmering (#3218) — beach caustics gone.
+        causticoff: { file: 'src/games/TidalRush/art.js', from: 'float shoreK = length(vWorld.xz) / 180.0;', to: 'float shoreK = 0.0;', note: 'beach caustics disabled' },
+        // the flat 360 lands in silence again (#3218) — no whoosh-in.
+        trickdry: { file: 'src/games/TidalRush/index.jsx', from: "trick: () => { audioController.playSweep(1250, 240, 0.2, 'triangle', 0.06);", to: 'trick: () => {', note: 'flat-360 landing loses its whoosh-in' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -570,6 +576,38 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('a new seed re-hitches the fleet in the shell', jsx2.includes('gs.course.seed !== moorSeed'))
     ok('the bell rings at the buoy, not on a timer (proximity + cooldown)', jsx2.includes('< 16)') && jsx2.includes('bellCool = 5'))
     ok('masts and bells are original flat-shaded shapes', artJs.includes('export function makeBoat') && artJs.includes('export function makeBellBuoy') && artJs.includes('flatShading: true'))
+}
+
+// --- gulls & shallows (#3218): the rung-1 tail moves -------------------------
+// A seeded flock wheels over the anchorage and the outer bay carries beach
+// caustics. Both are decoration — the sim stays blind — so the proof is the
+// same shape as the moorings block: seed determinism, shell wiring, and a
+// source pin on the shader terms.
+{
+    const { RX } = await import('../src/games/TidalRush/sim.js')
+    const { gullSpots, makeGull, gullFrame } = await import('../src/games/TidalRush/art.js')
+    const artJs = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/art.js'), 'utf8')
+    const jsx2 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/index.jsx'), 'utf8')
+    const simJs = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/sim.js'), 'utf8')
+    const f7 = gullSpots(7)
+    ok('three gulls wheel over the anchorage, seeded by the course', f7.birds.length === 3 && JSON.stringify(gullSpots(7)) === JSON.stringify(f7) && JSON.stringify(gullSpots(52)) !== JSON.stringify(f7))
+    ok('the flock keeps its infield — orbit stays clear of the gate ring', [f7, gullSpots(52)].every((f) => Math.hypot(f.cx, f.cz) + Math.max(...f.birds.map((b) => b.r)) < RX * 0.62))
+    const gA = makeGull(); const gB = makeGull()
+    gullFrame(gA, f7, f7.birds[0], 3.7)
+    gullFrame(gB, f7, f7.birds[0], 3.7)
+    ok('a bird at clock t sits where the flock says (frame is pure, airborne)', gA.position.equals(gB.position) && gA.position.y > 4)
+    ok('the shell flies the flock on the LIVE clock (everything moves)', jsx2.includes('gullFrame(gm, flock, bird, t)'))
+    ok('a new course seed re-hitches the flock with the fleet', jsx2.includes('flock = gullSpots(moorSeed)'))
+    ok('the sim never sees the birds (decoration cannot touch rules)', !/gull|gullSpots|gullFrame/i.test(simJs))
+    ok('gulls are original flat-shaded shapes', artJs.includes('export function makeGull') && artJs.includes('const tip = new THREE.MeshStandardMaterial') && artJs.includes('flatShading: true'))
+    // beach caustics: shimmer keyed to the outer bay, storm-swallowed, and the
+    // shader divisor must track the mesh span so a resize trips the gate.
+    const sizeM = artJs.match(/const SIZE = (\d+)/)
+    ok('the shallows shimmer: caustics keyed to distance from the bay mouth', artJs.includes('float shoreK = length(vWorld.xz) /') && artJs.includes('pow(csA * csB, 2.5) * shallow'))
+    ok('the caustic ring tracks the mesh span (divisor = SIZE/2)', sizeM !== null && artJs.includes(`/ ${Number(sizeM[1]) / 2}.0`))
+    ok('storm water swallows the shimmer', artJs.includes('shallow * (1.0 - uStorm * 0.85)'))
+    // the flat 360 lands with air in it: sfx.trick carries a whoosh sweep.
+    ok('the flat-360 landing carries a whoosh-in', /trick: \(\) => \{ audioController\.playSweep\(/.test(jsx2))
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)

@@ -71,13 +71,17 @@ pauses; ◀ ▶ on the menu picks SUNNY or STORM BAY.
 ## Verify
 
 ```
-npm run tidalcheck                     # 84 gates: boot, rules, win (both bays), determinism,
+npm run tidalcheck                     # 106 gates: boot, rules, win (both bays), determinism,
                                        #   sea-bridge parity, lightning, barrel, swell re-roll,
                                        #   squall-front spatial law + GLSL twin + air-bonus math,
-                                       #   rain field/drift/drag/dim laws (#3191)
+                                       #   rain field/drift/drag/dim laws (#3191), gulls &
+                                       #   beach caustics (#3218)
 node scripts/tidalcheck.mjs --mutate=judge   # red-side judgement muted — must go red
 node scripts/tidalcheck.mjs --mutate=swell   # per-lap re-roll pinned — must go red
 node scripts/tidalcheck.mjs --mutate=front   # squall front frozen — must go red
+node scripts/tidalcheck.mjs --mutate=gullfreeze  # gulls stop wheeling — must go red (#3218)
+node scripts/tidalcheck.mjs --mutate=causticoff  # beach shimmer disabled — must go red (#3218)
+node scripts/tidalcheck.mjs --mutate=trickdry    # flat-360 lands without a whoosh — must go red (#3218)
 node scripts/tidalcheck.mjs --mutate=rainoff # rain wallpaper again — must go red
 node scripts/tidalcheck.mjs --mutate=push    # crosswind drift zeroed — must go red
 npm run dev -- --port 5178 --strictPort   # then:
@@ -102,11 +106,16 @@ static job; every pushed commit is commented on #3104.
   the next fidelity step.
 - The front is swell-only weather: sky darkening and rain ramp at the GO of a
   re-roll, not as the front passes overhead (sea first, sky later).
-- Wake ribbon is flat-shaded additive, no caustic shimmer under it; the WR64
-  trail also darkens the water beside it.
-- Rider has no separate jump/land poses beyond crouch + lean/jolt with head-lag.
+- Wake ribbon is flat-shaded additive; the WR64 trail also darkens the water
+  beside it (open — #3218 tail).
+- Rider has no separate jump/land poses beyond crouch + lean/jolt with
+  head-lag (open — #3218 tail). The flat 360 landing does carry a whoosh-in
+  now (#3218).
 - In-bounds scenery shipped with #3159: seeded moored sloops and a bell buoy
-  ride the drawn sea (no colliders — decorations never touch the rules). Still
-  no birds, and the hulls have no reflection on the water plane.
+  ride the drawn sea (no colliders — decorations never touch the rules).
+  **CLOSED by #3218** — a seeded flock of three gulls now wheels over the
+  anchorage (flap, glide, bank, dim in the squall), and the outer bay carries
+  beach caustics + a warm sand push toward the headlands. Hulls still have no
+  reflection on the water plane (open).
 - Score HUD sits under the shared chrome pill at ?lite=1 widths (chrome overlap,
   not game layout) — flagged for the QA polish pass.
