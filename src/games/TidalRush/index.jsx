@@ -16,11 +16,11 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
-import { createLockStep } from '../../utils/lockstep.js'
+import { createLockStep, retryDelay } from '../../utils/lockstep.js'
 import { makeGame, step, autoPad, stateOf, stateHash, rankAt, LAPS, SIM_MS, DT, rainAt, RAIN_VIS } from './sim.js'
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
-import { SEATS, PAD_DELAY, HASH_EVERY, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence, podiumRows, podWire, podRows } from './net.js'
+import { SEATS, PAD_DELAY, HASH_EVERY, HOLD_MS, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence, podiumRows, podWire, podRows } from './net.js'
 import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
@@ -199,7 +199,7 @@ const TidalRushGame = () => {
         const net = {
             active: !!netRole, role: netRole, phase: netRole ? 'idle' : 'off',
             slot: netRole === 'host' ? 0 : -1, code: '', joinHref: '',
-            humans: [], racing: false, solo: false, podium: null,
+            humans: [], racing: false, solo: false, podium: null, hold: null,
         }
         // mySeat doubles as my hull: seat i rides hull i, canonical on every box.
         const mySeat = () => (net.active && net.slot >= 0 ? net.slot : 0)
@@ -239,10 +239,26 @@ const TidalRushGame = () => {
         const netSay = (m) => { netMsgRef.current = m; setNetMsg(m) }
 
         // a seat dropped mid-race (#863 law — say so, never stall silently).
-        // With peers left, their hull coasts on empty wire pads and the pad
-        // streams stay absolute, so the remaining boxes keep hashing equal.
-        // Alone, the bay hands open seats back to the autopilot to finish.
+        // #3244 item 3 — survivable rejoin: the field HOLDS first. Lockstep
+        // stalls every box at the same tick (the dropped seat's first missing
+        // pad), so all seas are frozen at one identical state; if the flapper's
+        // pads return within HOLD_MS the race simply continues with their hull
+        // back — the roster never changed, so there is no state to catch up.
+        // Pad replays (replayOwnPads) cover the in-flight pads the room lost
+        // while a socket was down: pads are absolute per tick, so late arrival
+        // is harmless — the gate just opens when they are all in.
+        // Past the window the old takeover fires: the open seat goes back to
+        // the seeded autopilot and the pad streams stay absolute, so the
+        // remaining boxes keep hashing equal. Alone, the bay hands open seats
+        // to the autopilot to finish.
         const seatGone = (seat) => {
+            if (!net.racing) return
+            if (!net.hold) net.hold = { seats: new Set(), at: Date.now() }
+            net.hold.seats.add(seat)
+            netSay('RIDER DOWN — HOLDING FOR THEM')
+            pushNetUi()
+        }
+        const seatLost = (seat) => {
             if (!net.racing) return
             net.humans = net.humans.filter((s) => s !== seat)
             ls.setPeers(net.humans.filter((s) => s !== mySeat()))
@@ -250,6 +266,17 @@ const TidalRushGame = () => {
             net.solo = net.humans.length <= 1
             netSay(net.solo ? 'RIDER DROPPED — FINISHING SOLO' : 'RIDER DROPPED — THEIR SKI COASTS')
             pushNetUi()
+        }
+        // replayOwnPads re-sends my pads for the ticks around the stall the
+        // room may have lost while a socket was down (the pump kept stamping
+        // while stalled — those bytes left into the void). The window extends
+        // PAD_DELAY+1 ticks BEHIND my tick too: a peer that kept running on
+        // buffered pads is that far behind me at the wire-reopen, and its gate
+        // waits on the ticks I already spent. Late pads are harmless — a tick
+        // only ever runs once, on identical absolute bytes. Bounded: ~2D pads.
+        const replayOwnPads = () => {
+            if (!net.room) return
+            for (const [k, p] of mirrors[mySeat()]) if (k >= gs.tick - PAD_DELAY - 1 && k <= gs.tick + PAD_DELAY) net.room.send('pad', { k, p })
         }
 
         const sfx = {
@@ -325,9 +352,25 @@ const TidalRushGame = () => {
                 const k = gs.tick
                 ls.pumpTo(k + PAD_DELAY, () => toWire(readPad()))
                 const alone = net.solo || net.humans.length <= 1
+                // #3244 item 3: hold bookkeeping — a held seat whose pads are
+                // flowing again at the stalled tick is back (pads are its proof
+                // of life and of identity); the window expiring hands the ski
+                // to the autopilot for good (the old takeover, unchanged).
+                if (net.hold) {
+                    for (const s of [...net.hold.seats]) { const m = mirrors[s]; if (m && m.has(gs.tick)) net.hold.seats.delete(s) }
+                    if (net.hold.seats.size === 0) {
+                        net.hold = null
+                        replayOwnPads()
+                        netSay('RIDER BACK — GO')
+                    } else if (Date.now() - net.hold.at > HOLD_MS) {
+                        const lostSeats = [...net.hold.seats]
+                        net.hold = null
+                        for (const s of lostSeats) seatLost(s)
+                    }
+                }
                 if (!alone && !ls.ready(k)) {
                     stalledTicks++
-                    if (stalledTicks === 120) netSay('HOLD ON — SYNCING THE FIELD…')
+                    if (stalledTicks === 120 && !net.hold) netSay('HOLD ON — SYNCING THE FIELD…')
                     return
                 }
                 if (stalledTicks > 0 && netMsgRef.current.startsWith('HOLD ON')) netSay('')
@@ -665,6 +708,7 @@ const TidalRushGame = () => {
         const startRaceWith = (seed, bayName, online) => {
             gs = makeGame(seed >>> 0, bayName)
             net.humans = online && net.room ? net.room.slots.slice() : []
+            net.hold = null
             net.racing = !!online
             net.solo = online && net.humans.length <= 1
             // seats freeze at kickoff (the #1705 roster law): who rides which
@@ -691,6 +735,7 @@ const TidalRushGame = () => {
             audioController.startLoopVoice(52)
             setResult(null)
             net.podium = null
+            net.hold = null
             setPodium(null)
             setMode('play')
         }
@@ -711,6 +756,7 @@ const TidalRushGame = () => {
             net.racing = false
             net.solo = false
             net.podium = null
+            net.hold = null
             setPodium(null)
             if (net.role === 'host' && net.room) net.room.setPhase('waiting')
             audioController.stopLoopVoice()
@@ -744,6 +790,18 @@ const TidalRushGame = () => {
                 makeTransport,
                 shareRelay: !!nq.get('relay'),
                 onState: (s) => {
+                    // #3244 item 3: a welcome that lands mid-race, same code and
+                    // same seat, IS the rejoin — my seat was held for me. Ride
+                    // straight back in (the waiting-room overlay never swallows a
+                    // live bay) and replay the pads the field lost in transit.
+                    if (net.racing && s.phase === 'waiting' && net.room && s.code === net.code && net.room.yourSlot === net.slot) {
+                        net.room.setPhase('racing')
+                        net.phase = 'racing'
+                        replayOwnPads()
+                        netSay('RE-SYNCED — BACK IN THE RACE')
+                        pushNetUi()
+                        return
+                    }
                     net.phase = s.phase
                     net.code = s.code
                     if (s.slot >= 0) net.slot = s.slot
@@ -753,6 +811,21 @@ const TidalRushGame = () => {
                 onRoster: () => { pushNetUi() },
                 onJoin: () => pushNetUi(),
                 onLeave: ({ slot }) => { seatGone(slot | 0); pushNetUi() },
+                onDrop: () => {
+                    // my own socket died mid-race: the field holds for me while
+                    // I climb the backoff ladder (#546 law) and reclaim the same
+                    // code — the welcome above rides me back into the race.
+                    if (!net.racing || !net.code) return
+                    netSay('SIGNAL LOST — RECONNECTING…')
+                    let attempt = 0
+                    const climb = () => {
+                        if (!net.racing || net.phase === 'racing' || attempt >= 8) return
+                        attempt++
+                        net.room.connect(net.code, SEATS)
+                        setTimeout(climb, retryDelay(attempt))
+                    }
+                    climb()
+                },
                 onStart: (m) => startOnline(m),
                 on: {
                     pad: (m) => {

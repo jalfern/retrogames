@@ -18,6 +18,15 @@ export const PAD_DELAY = 8       // ~133 ms: past round-trip, below feel (the Bl
 export const HASH_EVERY = 30
 export const RIDE_NAMES = ['KAI', 'MAKO', 'TUNDRA']
 
+// #3244 item 3 — survivable rejoin: when a rider's pads stop mid-race the bay
+// HOLDS instead of coasting. Lockstep stalls every box at the same tick (the
+// dropped seat's first missing pad), so the whole field is frozen at an
+// identical state — if the flapper's pads resume within HOLD_MS the race just
+// continues with their hull back, no state catch-up needed (that is the whole
+// point of freezing: the roster never changed, so the sim never diverged).
+// Past the window the old takeover fires: seat to autopilot, race re-frozen.
+export const HOLD_MS = 8000
+
 // seatHull maps a room seat to a sim hull index — canonical on every box:
 // seat 0 always rides hull 0 (KAI), seat 1 hull 1 (MAKO), seat 2 hull 2.
 export function seatHull(seat) { return seat }

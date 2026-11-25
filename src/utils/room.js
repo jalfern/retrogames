@@ -114,8 +114,15 @@ export function createRoom(opts = {}) {
 
         // onClosed decides (with backoff) whether a dropped socket is worth
         // retrying; the caller drives retryDelay so roomcheck can pin the ladder.
+        // #3244 item 3: a drop DURING A RACE is its own event — the caller may
+        // hold the field and reconnect (TidalRush's survivable rejoin) rather
+        // than fall to the waiting-room ladder. Opt-in: games without onDrop
+        // behave exactly as before.
         onClosed() {
-            if (room.phase === 'racing' || room.phase === 'gone' || room.phase === 'offline') return
+            if (room.phase === 'racing' || room.phase === 'gone' || room.phase === 'offline') {
+                if (room.phase === 'racing' && room.code && opts.onDrop) opts.onDrop({ slot: room.yourSlot })
+                return
+            }
             if (opts.onClose) opts.onClose(room.attempt)
         },
 
