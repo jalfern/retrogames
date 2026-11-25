@@ -22,7 +22,10 @@ surface of truth:
   integer on `gs.rngS`, snapshot/restore byte-exact; the sea table is plain
   JSON too). Hull matched to surface vy; falling faces at speed launch
   (kickers); A spins a 360 (+250), **full-lock steer airborne rolls a BARREL
-  (+200)** — one trick per air. Buoy gates alternate RED (pass right) /
+  (+200)**, **brake ALONE airborne winds a BACK FLIP (+300)**, and **gas+brake
+  holds the nose down inverted — HANDSTAND, +150 per 0.5 s, cap 3/air (#3276)**
+  — one trick per air: whichever completes first claims it (a paid handstand
+  lands the other verbs inert). Buoy gates alternate RED (pass right) /
   YELLOW (pass left) judged by heading at the buoy. Miss-policing is
   progress-based (rung 2): past the gate line unjudged — geometrically *or*
   by course arc, at ANY lateral distance — is a miss; the rung-1 18 m corridor
@@ -80,7 +83,7 @@ pauses; ◀ ▶ on the menu picks SUNNY or STORM BAY.
 ## Verify
 
 ```
-npm run tidalcheck                     # 122 gates: boot, rules, win (both bays), determinism,
+npm run tidalcheck                     # 155 gates: boot, rules, win (both bays), determinism,
                                        #   sea-bridge parity, lightning, barrel, swell re-roll,
                                        #   squall-front spatial law + GLSL twin + air-bonus math,
                                        #   rain field/drift/drag/dim laws (#3191), gulls &
@@ -127,25 +130,32 @@ static job; every pushed commit is commented on #3104.
    deployed relay mints a fresh id per connection, so reclaiming the same seat
    needs it still free — a rejoin onto another seat is not you: the hold
    expires and the ski coasts as before.
-- **Desync carries receipts (#3244 item 5)** — every 30-tick boundary records
-  tick + my hash + every peer hash into an 8-row ring (`createEvidence`,
-  `net.js`); when the referee bites, the diverged row is marked
-  `← MISMATCH seatN` and the block + COPY REPORT button appear under the
+ - ~~**Desync carries receipts (#3244 item 5)**~~ **CLOSED by #3247** — every
+  30-tick boundary records tick + my hash + every peer hash into an 8-row ring
+  (`createEvidence`, `net.js`); when the referee bites, the diverged row is
+  marked and the block + COPY REPORT button appear under the
   banner, so a reported freeze ships with numbers. Ring wipes at kickoff.
-- **Room finish + rematch (#3244 item 4)** — when every hull crosses, the host
-  broadcasts `pod` (SSX's precedent): seat/time/score/rider rows. Every cabinet
-  paints a ROOM PODIUM in place of the lone sheet; the host calls the rematch
-  from the line (any key → fresh seed, seated guests ride the `go`, nobody
-  re-enters a code). A guest reads the host's sheet instead of trusting its own
-  sort. What the room still owes: mid-race spectate and a survivable rejoin
-  (#3244 items 2–3).
+  (Shipped the day #3276 began; the entry was left unstruck and phantom-kicked
+  an idle session — rule 8 caught it.)
+ - ~~**Room finish + rematch (#3244 item 4)**~~ **CLOSED by #3253** — when
+  every hull crosses, the host broadcasts `pod` (SSX precedent): seat/time/
+  score/rider rows; every cabinet paints a ROOM PODIUM and the host calls the
+  rematch from the line. The rooms other tails closed too: spectate #3265,
+  survivable rejoin #3257.
 - The wire is digital by design (six lockstep bits): local analog stick/lean
   feel stays local — remote riders' skis carry committed leans, not fractional
   ones. Analog-over-wire would need a pad-shape change to the shared pipeline.
 - Three-hull rooms are proven in Node over an in-memory pipe (tidalcheck); a
   real three-human relay run (phones on the QR code) is the QA pass.
-- Three airborne verbs (flat 360, barrel, air-time bonus); flips/handstands
-  would ride the same airborne spin budget.
+- FIVE airborne verbs since #3276 (flat 360 +250, barrel +200, BACK FLIP +300 —
+  brake ALONE airborne winds the nose over the tail and banks the biggest charge,
+  HANDSTAND — gas+brake holds the nose past vertical for +150 per 0.5 s inverted,
+  cap 3/air). The pitch verbs ride the SAME six bits the wire already carries
+  (flip = d, handstand = u+d) — zero pad-shape change (#3244 item 6 law), so the
+  lockstep hash referee covers them for free; autopilots never brake, so a flip
+  is always a committed input. Honest gaps: no grab poses (the hull just pitches),
+  an inverted splash equals a flat one, and CPUs flip (armed 2, ~45 % of their
+  tricks) but never handstand — the autopilot holds gas in the air by design.
 - **CLOSED by #3191** — rain is gameplay now: extra drag in the band
   (v_term −10 %), seeded crosswind drift along the new swell, spatial drops
   at Kai's hull, gates dimmed toward storm fog, wind cue at the band edges.

@@ -47,6 +47,53 @@ try {
     })
     ok('HUD speed matches sim state', Math.abs(parseInt(hud, 10) - Math.round(fast.speed * 3.6)) <= 2, `hud="${hud.trim()}" state=${Math.round(fast.speed * 3.6)}`)
 
+    // #3276 real keys: the two pitch verbs, driven by evidence the sim itself
+    // reports — HANDSTAND first (gas stays on the whole time: press brake
+    // airborne, watch hsPaid tick to ≥1 mid-air), FLIP second (brake ALONE
+    // airborne: watch positive pitch wind ≥5 rad, then bank ≥300 on landing).
+    // Natural kickers vary by seed, so the leg retries up to 4 seeds; keys are
+    // always released in the finally, never stuck into the racing lines.
+    {
+        const popNow = () => page.evaluate(() => {
+            const el = [...document.querySelectorAll('div')].find((d) => d.className.includes('text-xl') && d.className.includes('font-black') && d.className.includes('text-cyan-200'))
+            return el && parseFloat(getComputedStyle(el).opacity) > 0.5 ? el.textContent : ''
+        })
+        const flipOk = { done: false, det: '' }
+        const handOk = { done: false, det: '' }
+        try {
+            for (let seed = 5; seed < 9 && !(flipOk.done && handOk.done); seed++) {
+                await page.evaluate((sd) => window.__game.reset(sd), seed >>> 0)
+                await wait(4200) // countdown out
+                const base = (await page.evaluate(() => window.__tidalTest.probe())).score
+                let last = base, hsSeen = 0, arm = false
+                const dl = Date.now() + 50000
+                await page.keyboard.down('ArrowUp')
+                while (Date.now() < dl && !(flipOk.done && handOk.done)) {
+                    const s = await page.evaluate(() => window.__tidalTest.probe())
+                    if (s.airborne) {
+                        // handstand phase rides the gas; flip phase lifts it (brake ALONE)
+                        if (handOk.done) await page.keyboard.up('ArrowUp')
+                        else await page.keyboard.down('ArrowUp')
+                        await page.keyboard.down('ArrowDown')
+                        if (!handOk.done) { if (s.hsPaid >= 1) { hsSeen = s.hsPaid; handOk.det = `seed=${seed} hs=${hsSeen} pop="${await popNow()}"` } }
+                        else if (s.flip >= 5.0) arm = true
+                        continue
+                    }
+                    await page.keyboard.down('ArrowUp'); await page.keyboard.up('ArrowDown')
+                    if (!handOk.done && hsSeen >= 1) handOk.done = true
+                    else if (handOk.done && !flipOk.done && arm && s.score - last >= 300) flipOk.done = true
+                    arm = false
+                    last = s.score
+                }
+            }
+        } finally {
+            await page.keyboard.up('ArrowDown').catch(() => {})
+            await page.keyboard.up('ArrowUp').catch(() => {})
+        }
+        ok('HANDSTAND pays on real keys (gas+brake airborne ≥0.5 s inverted)', handOk.done, handOk.det)
+        ok('BACK FLIP completes on real keys (brake alone, +300 banked)', flipOk.done, flipOk.det)
+    }
+
     // real key: pause freezes sim, resume unfreezes
     await page.keyboard.press('Slash')
     await wait(250)
