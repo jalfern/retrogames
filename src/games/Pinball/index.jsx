@@ -111,6 +111,7 @@ const sfxFor = (ev) => {
             a.playNoise(0.05, 0.16); a.playSweep(140, 920, 0.14, 'square', 0.13); a.playTone(880, 0.05, 'square', 0.07, 0.1); break
         case 'plunge': a.playSweep(120, 700, 0.22, 'triangle', 0.14); break
         case 'ratchet': a.playTone(160 + 460 * (ev.power || 0), 0.02, 'square', 0.06); a.playNoise(0.015, 0.05); break
+        case 'powerzone': a.playTone(110 + ev.zone * 45, 0.05, 'square', 0.12); a.playNoise(0.03, 0.08); break
         case 'drain': a.playSweep(420, 70, 0.35, 'sawtooth', 0.12); a.playNoise(0.15, 0.1); break
         case 'bonus':
             a.playTone(523, 0.05, 'square', 0.08); a.playTone(659, 0.05, 'square', 0.08, 0.06)
@@ -183,6 +184,8 @@ const mkFlash = (tb) => ({
     flash: 0, // #3178 tower-kick white-out
     orbit: 0, orbitArm: 0, mag: 0, magFree: 0,
     kb: 0, // #3250 kickback pop
+    wobble: 0, // #3297 tilt-warning cabinet wobble (22 → 0, a damped lean)
+    pzone: 0, // #3297 fresh power-zone tick (lights the meter steps briefly)
 })
 
 const PinballGame = () => {
@@ -390,6 +393,10 @@ const PinballGame = () => {
                 else if (ev.type === 'ratchet') { spawn(tb.plunger.x, 566 + (ev.power || 0) * 14, 2, pal.chrome, 60) }
                 else if (ev.type === 'drain') { shakeRef.current = 10; fl.drain = 24 }
                 else if (ev.type === 'tilt') { fl.tilt = 90; shakeRef.current = 14 }
+                // #3297: the CAREFUL warning visibly rocks the cabinet — a player
+                // who has never heard the tone still feels the machine say no.
+                else if (ev.type === 'tiltwarn') { fl.wobble = 22 }
+                else if (ev.type === 'powerzone') { fl.pzone = 10; spawn(v.meterX + 3, 592 - 60 * (ev.power || 0), 3, pal.hot, 90) }
                 else if (ev.type === 'ramp') { fl.ramp = 8; spawn(ev.x, ev.y, 4, pal.lane, 110) }
                 else if (ev.type === 'rampset') { fl.ramp = 20; shakeRef.current = Math.max(shakeRef.current, 3) }
                 else if (ev.type === 'lane') { fl.lane[ev.i] = 8; spawn(v.laneCx, ev.y, 4, pal.lane, 110) }
@@ -494,6 +501,7 @@ const PinballGame = () => {
                 else if (ev.type === 'ramp') { fl.ramp = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
                 else if (ev.type === 'rampset') { fl.ramp = 20 }
                 else if (ev.type === 'lane') { fl.lane[ev.i] = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
+                else if (ev.type === 'powerzone') { fl.pzone = 10 }
                 else if (ev.type === 'lock') {
                     fl.lock = 16; d.shk.current = Math.max(d.shk.current, 4)
                     ringD(d, gs.table.view.lockCx, gs.table.view.lockGlowY, pal.hot)
@@ -552,6 +560,15 @@ const PinballGame = () => {
             if (shk.current > 0) {
                 ctx.translate((Math.random() - 0.5) * shk.current, (Math.random() - 0.5) * shk.current)
                 shk.current = Math.max(0, shk.current - 0.7)
+            }
+            // #3297 tilt-warning wobble: a quick damped rock of the whole cabinet
+            // (deterministic — driven by gs.tick, not Math.random — so replays
+            // and the attract demo show it the same way every time).
+            const wob = L.getFl().wobble
+            if (wob > 0) {
+                ctx.translate(W / 2, H / 2)
+                ctx.rotate(Math.sin(gs.tick * 0.9) * 0.018 * (wob / 22))
+                ctx.translate(-W / 2, -H / 2)
             }
             ctx.drawImage(fieldFor(tb, cabRef.current), 0, 0)
 
@@ -628,6 +645,32 @@ const PinballGame = () => {
                     if (on) { ctx.shadowColor = pal.hot; ctx.shadowBlur = 10 }
                     ctx.beginPath(); ctx.arc(v.lampX0 + i * v.lockLampStep, v.lampY, v.lockLampR, 0, 7); ctx.fill()
                     ctx.shadowBlur = 0
+                }
+                // #3297 gate slam: a chrome gate slams shut across the tower mouth
+                // while balls are banked, and lifts on the pack-off. Same gs.locks
+                // truth the lamps read — this is the mouth lip-syncing the capture.
+                let gateAmt = 0
+                if (gs.locks > 0) gateAmt = Math.min(1, (16 - fl.lock) / 6)
+                else if (gs.multiball && fl.mb > 60) gateAmt = (fl.mb - 60) / 30
+                if (gateAmt > 0) {
+                    const gw = v.towerIn2 - v.towerIn1
+                    const gy = v.lockTop - 14 * (1 - gateAmt)
+                    ctx.fillStyle = 'rgba(4,6,15,0.5)'
+                    ctx.fillRect(v.towerIn1, v.lockTop, gw, 13)
+                    const gg = ctx.createLinearGradient(0, gy, 0, gy + 12)
+                    gg.addColorStop(0, pal.chrome); gg.addColorStop(1, 'rgba(96,108,132,0.92)')
+                    ctx.fillStyle = gg
+                    ctx.fillRect(v.towerIn1 + 1, gy, gw - 2, 12)
+                    ctx.fillStyle = 'rgba(4,6,15,0.35)'
+                    ctx.fillRect(v.towerIn1 + 1, gy + 4, gw - 2, 1.5)
+                    ctx.fillRect(v.towerIn1 + 1, gy + 8, gw - 2, 1.5)
+                    const impact = gs.locks > 0 && fl.lock > 0 && fl.lock <= 10 ? fl.lock / 10 : 0
+                    if (impact > 0) {
+                        ctx.globalAlpha = impact
+                        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2
+                        ctx.strokeRect(v.towerIn1, gy - 1, gw, 14)
+                        ctx.globalAlpha = 1
+                    }
                 }
                 if (fl.lock > 0) {
                     const rg = ctx.createRadialGradient(v.lockCx, v.lockGlowY, 4, v.lockCx, v.lockGlowY, 34)
@@ -820,9 +863,23 @@ const PinballGame = () => {
             const pPull = gs.launched ? 0 : gs.power
             ctx.strokeStyle = pal.chrome; ctx.lineWidth = 4
             ctx.beginPath(); ctx.moveTo(tb.plunger.x, 564 + pPull * 14); ctx.lineTo(tb.plunger.x, 586 + pPull * 14); ctx.stroke()
-            if (!gs.launched && gs.power > 0.02) {
-                ctx.fillStyle = pal.hot
-                ctx.fillRect(v.meterX, 592 - 60 * gs.power, 6, 60 * gs.power)
+            if (!gs.launched) {
+                if (gs.power > 0.02) {
+                    ctx.fillStyle = pal.hot
+                    ctx.fillRect(v.meterX, 592 - 60 * gs.power, 6, 60 * gs.power)
+                }
+                // #3297: three power zones (LIGHT / FIRM / MAX) — fixed steps on
+                // the bar so the pull reads in three mechanical stages even muted.
+                for (let z = 1; z <= 2; z++) {
+                    const zy = 592 - 20 * z
+                    const passed = gs.power >= z / 3
+                    ctx.fillStyle = passed ? (fl.pzone > 0 ? '#ffffff' : pal.hot) : 'rgba(201,212,232,0.45)'
+                    ctx.fillRect(v.meterX - 2, zy, 10, passed ? 2 : 1)
+                }
+                if (gs.powerZone === 3) {
+                    ctx.fillStyle = fl.pzone > 0 ? '#ffffff' : pal.hot
+                    ctx.fillRect(v.meterX - 2, 530, 10, 3)
+                }
             }
 
             // trails + every live ball (MULTIBALL draws the whole pack)
@@ -1288,6 +1345,9 @@ const PinballGame = () => {
                 // #3237 dev rig: peek the tilt-nudge channel (grant + latch),
                 // ref-backed so the harness never reads a stale closure.
                 tiltInfo: () => ({ on: tiltOnRef.current, latched: tiltLatchRef.current, held: keysRef.current.b }),
+                // dev rig (#3297): park balls in the tower so the gate slam can
+                // be screenshotted without farming 3 locks. DEV-only, like tiltInfo.
+                devLock: (n) => { gsRef.current.locks = n },
                 state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current, skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
                 // dev rig: pick a cabinet without keys (#3232) — re-deals its
                 // attract demo too, same law as the arrow keys.

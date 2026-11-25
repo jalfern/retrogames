@@ -330,7 +330,7 @@ export function makeGame(seed = 1, cab = 0) {
         table: tb,
         tick: 0, score: 0, balls: tb.balls, done: false, phase: 'play',
         pucks: [p0],
-        launched: false, plungerHold: false, power: 0, plungerNotch: 0, laneIdle: 0, laneCurved: false,
+        launched: false, plungerHold: false, power: 0, plungerNotch: 0, powerZone: 0, laneIdle: 0, laneCurved: false,
         ang: { L: tb.flippers.L.rest, R: tb.flippers.R.rest },
         angV: { L: 0, R: 0 },
         bumperCd: tb.bumpers.map(() => 0), slingCd: tb.slings.map(() => 0),
@@ -384,7 +384,7 @@ function newPuck(x, y, vx, vy) {
 export function resetBall(gs) {
     const T = gs.table;
     gs.pucks = [newPuck(T.plunger.x, T.plunger.restY, 0, 0)];
-    gs.launched = false; gs.power = 0; gs.plungerNotch = 0; gs.laneIdle = 0; gs.plungerHold = false; gs.laneCurved = false;
+    gs.launched = false; gs.power = 0; gs.plungerNotch = 0; gs.powerZone = 0; gs.laneIdle = 0; gs.plungerHold = false; gs.laneCurved = false;
     gs.targetDown = T.targets.map(() => false); gs.bankLit = false;
     gs.spinnerTurns = 0; gs.tilt = false;
     gs.nudgeMeter = 0; gs.nudgeDecay = 0; gs.mult = 1; gs.banksThisBall = 0;
@@ -761,6 +761,11 @@ export function stepGame(gs, pad = {}) {
                 // of the charge and release are untouched.
                 const notch = Math.floor(gs.power * 16);
                 if (notch > gs.plungerNotch) { gs.plungerNotch = notch; gs.events.push({ type: 'ratchet', power: gs.power }); }
+                // #3297: three coarse power zones (LIGHT / FIRM / MAX) — a deeper
+                // mechanical tick at each boundary so the pull reads in three steps
+                // without sound. Feedback only: charge/release physics untouched.
+                const zone = gs.power >= 0.999 ? 3 : gs.power >= 2 / 3 ? 2 : gs.power >= 1 / 3 ? 1 : 0;
+                if (zone > gs.powerZone) { gs.powerZone = zone; gs.events.push({ type: 'powerzone', zone, power: gs.power }); }
             }
             else {
                 if (gs.plungerHold && gs.power > 0.06) fire(gs, p);
@@ -935,14 +940,14 @@ function fire(gs, p, pw = gs.power) {
     const T = gs.table;
     p.vy = -(T.plunger.minV + (T.plunger.maxV - T.plunger.minV) * pw);
     p.vx = 0; p.launched = true; p.laneCurved = false;
-    gs.power = 0; gs.plungerNotch = 0; gs.laneIdle = 0; gs.plungerHold = false;
+    gs.power = 0; gs.plungerNotch = 0; gs.powerZone = 0; gs.laneIdle = 0; gs.plungerHold = false;
     gs.events.push({ type: 'plunge', power: pw });
 }
 
 function feedBall(gs) {
     const T = gs.table;
     gs.pucks.push(newPuck(T.plunger.x, T.plunger.restY, 0, 0));
-    gs.plungerHold = false; gs.power = 0; gs.plungerNotch = 0; gs.laneIdle = 0;
+    gs.plungerHold = false; gs.power = 0; gs.plungerNotch = 0; gs.powerZone = 0; gs.laneIdle = 0;
     gs.events.push({ type: 'feed' });
 }
 

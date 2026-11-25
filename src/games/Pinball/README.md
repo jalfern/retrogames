@@ -308,8 +308,11 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   need a calibration pass, not a code guess).
 - Tilt-to-nudge SHIPPED (#3237): a lean-and-return pays one nudge via a
   tap-granted deviceorientation channel (law pinned in sim.js `tiltImpulse`).
-  Extras still owed: a lock-gate slam animation, plunger 3-step power ticks,
-  tilt-warning cabinet wobble.
+  Extras SHIPPED by #3297: the tower gate slams shut while balls are banked
+  (chrome bar across the mouth, lifts on the pack-off — drawn from `gs.locks`,
+  no new truth); the plunger reads three power zones (LIGHT/FIRM/MAX — deeper
+  tick per boundary, `powerzone` events, meter steps); the CAREFUL warning now
+  rocks the whole cabinet (deterministic sine lean driven by `gs.tick`).
 - The music bed covers MULTIBALL only (#3178); single-ball play stays dry.
 - The magnet holds one ball and the orbit one loop at a time (real tables run
   both per-ball); the wrap's curl assist is a fixed push, not a shaped rail.
