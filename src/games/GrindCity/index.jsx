@@ -14,7 +14,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, REPLAY_MAX, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank } from './sim.js'
 import { botPad, makeBot } from './planner.js'
-import { STEP, bedVoices, landThud } from './music.js'
+import { STEP, bedVoices, landThud, ATTRACT_SFX } from './music.js'
 import { buildPark, buildSky, buildLetters, buildGems, buildRoofLine, buildSkater, poseSkater, buildParticles, buildSecretHint, emit, burst, stepParticles } from './art.js'
 import { GEMS, RAILS } from './park.js'
 
@@ -231,34 +231,39 @@ const GrindCityGame = () => {
         // ── sound per sim event ─────────────────────────────────────────────
         const AC = audioController
         const sound = (e) => {
-            if (e.startsWith('ollie')) AC.playTone(300 + Math.random() * 40, 0.07, 'square', 0.07)
-            else if (e.startsWith('launch')) AC.playSweep(180, 420, 0.18, 'triangle', 0.09)
-            else if (e.startsWith('grab')) AC.playSweep(500, 900, 0.1, 'triangle', 0.08)
-            else if (e.startsWith('flip')) { AC.playNoise(0.12, 0.12); AC.playSweep(700, 300, 0.14, 'square', 0.06) }
-            else if (e.startsWith('grind:start')) { AC.playTone(1500, 0.06, 'square', 0.06); AC.playNoise(0.08, 0.12) }
-            else if (e === 'stall') AC.playTone(240, 0.05, 'square', 0.06)   // tail locks into coping (#3289)
-            else if (e === 'spark') AC.playNoise(0.05, 0.07)
-            else if (e.startsWith('grind:end')) AC.playTone(900, 0.07, 'square', 0.05)
-            else if (e.startsWith('manual:start')) AC.playTone(420, 0.04, 'triangle', 0.06)
-            else if (e === 'manual180') AC.playSweep(560, 940, 0.12, 'triangle', 0.09)   // the 180 upgrade has its own voice (#3233 tail)
-            else if (e.startsWith('trick:Manual')) AC.playTone(620, 0.07, 'triangle', 0.08)
-            else if (e.startsWith('trick:')) { AC.playTone(760, 0.06, 'square', 0.07); AC.playTone(980, 0.08, 'square', 0.06, 0.05) }
+            // #3379: attract ducks its bed to 0.6 so the banked line sits under the title.
+            // The trick/land/bail/win voices used to play at street gain over that ducked
+            // bed, which made the best line's jingle louder in the lobby than in the game.
+            // Read per call — attractMode flips between screens.
+            const vs = attractMode ? ATTRACT_SFX : 1
+            if (e.startsWith('ollie')) AC.playTone(300 + Math.random() * 40, 0.07, 'square', 0.07 * vs)
+            else if (e.startsWith('launch')) AC.playSweep(180, 420, 0.18, 'triangle', 0.09 * vs)
+            else if (e.startsWith('grab')) AC.playSweep(500, 900, 0.1, 'triangle', 0.08 * vs)
+            else if (e.startsWith('flip')) { AC.playNoise(0.12, 0.12 * vs); AC.playSweep(700, 300, 0.14, 'square', 0.06 * vs) }
+            else if (e.startsWith('grind:start')) { AC.playTone(1500, 0.06, 'square', 0.06 * vs); AC.playNoise(0.08, 0.12 * vs) }
+            else if (e === 'stall') AC.playTone(240, 0.05, 'square', 0.06 * vs)   // tail locks into coping (#3289)
+            else if (e === 'spark') AC.playNoise(0.05, 0.07 * vs)
+            else if (e.startsWith('grind:end')) AC.playTone(900, 0.07, 'square', 0.05 * vs)
+            else if (e.startsWith('manual:start')) AC.playTone(420, 0.04, 'triangle', 0.06 * vs)
+            else if (e === 'manual180') AC.playSweep(560, 940, 0.12, 'triangle', 0.09 * vs)   // the 180 upgrade has its own voice (#3233 tail)
+            else if (e.startsWith('trick:Manual')) AC.playTone(620, 0.07, 'triangle', 0.08 * vs)
+            else if (e.startsWith('trick:')) { AC.playTone(760, 0.06, 'square', 0.07 * vs); AC.playTone(980, 0.08, 'square', 0.06 * vs, 0.05) }
             else if (e.startsWith('land:')) {
                 const v = parseFloat(e.split(':')[1]) || 3
-                AC.playNoise(0.09, Math.min(0.28, 0.05 + v * 0.03))
+                AC.playNoise(0.09, Math.min(0.28, 0.05 + v * 0.03) * vs)
                 const th = landThud(v)   // more air in = heavier sound out (#3167)
-                AC.playTone(th.f, th.d, 'sine', th.g)
+                AC.playTone(th.f, th.d, 'sine', th.g * vs)
             }
-            else if (e.startsWith('bail')) { AC.playNoise(0.32, 0.3); AC.playSweep(300, 70, 0.3, 'sawtooth', 0.14) }
-            else if (e.startsWith('bank')) { AC.playTone(520, 0.07, 'square', 0.08); AC.playTone(660, 0.07, 'square', 0.08, 0.06); AC.playTone(784, 0.12, 'square', 0.08, 0.12) }
-            else if (e.startsWith('letter:')) AC.playTone(1046, 0.14, 'sine', 0.13)
-            else if (e === 'gem') { AC.playTone(1318, 0.09, 'triangle', 0.1); AC.playTone(1760, 0.12, 'triangle', 0.08, 0.07) }
-            else if (e === 'gems:all') [1046, 1318, 1568, 2093].forEach((f, i) => AC.playTone(f, 0.12, 'square', 0.1, i * 0.09))
-            else if (e === 'secret') { AC.playSweep(300, 900, 0.35, 'triangle', 0.1); AC.playTone(1245, 0.2, 'sine', 0.09, 0.3) }
-            else if (e.startsWith('goal:')) { AC.playTone(523, 0.1, 'square', 0.1); AC.playTone(659, 0.1, 'square', 0.1, 0.09); AC.playTone(784, 0.2, 'square', 0.1, 0.18) }
-            else if (e === 'win') { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => AC.playTone(f, 0.14, 'square', 0.11, i * 0.11)) }
-            else if (e === 'timeup') AC.playSweep(400, 120, 0.5, 'sawtooth', 0.12)
-            else if (e === 'gap') AC.playSweep(600, 1400, 0.25, 'square', 0.09)
+            else if (e.startsWith('bail')) { AC.playNoise(0.32, 0.3 * vs); AC.playSweep(300, 70, 0.3, 'sawtooth', 0.14 * vs) }
+            else if (e.startsWith('bank')) { AC.playTone(520, 0.07, 'square', 0.08 * vs); AC.playTone(660, 0.07, 'square', 0.08 * vs, 0.06); AC.playTone(784, 0.12, 'square', 0.08 * vs, 0.12) }
+            else if (e.startsWith('letter:')) AC.playTone(1046, 0.14, 'sine', 0.13 * vs)
+            else if (e === 'gem') { AC.playTone(1318, 0.09, 'triangle', 0.1 * vs); AC.playTone(1760, 0.12, 'triangle', 0.08 * vs, 0.07) }
+            else if (e === 'gems:all') [1046, 1318, 1568, 2093].forEach((f, i) => AC.playTone(f, 0.12, 'square', 0.1 * vs, i * 0.09))
+            else if (e === 'secret') { AC.playSweep(300, 900, 0.35, 'triangle', 0.1 * vs); AC.playTone(1245, 0.2, 'sine', 0.09 * vs, 0.3) }
+            else if (e.startsWith('goal:')) { AC.playTone(523, 0.1, 'square', 0.1 * vs); AC.playTone(659, 0.1, 'square', 0.1 * vs, 0.09); AC.playTone(784, 0.2, 'square', 0.1 * vs, 0.18) }
+            else if (e === 'win') { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => AC.playTone(f, 0.14, 'square', 0.11 * vs, i * 0.11)) }
+            else if (e === 'timeup') AC.playSweep(400, 120, 0.5, 'sawtooth', 0.12 * vs)
+            else if (e === 'gap') AC.playSweep(600, 1400, 0.25, 'square', 0.09 * vs)
         }
 
         // #3381: copy a link that re-rides the banked line — one press off the
@@ -692,7 +697,7 @@ const GrindCityGame = () => {
         // ── DEV hooks + contract ────────────────────────────────────────────
         if (import.meta.env.DEV) {
             window.__grindTest = {
-                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode }),
+                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, sfxDuck: attractMode ? ATTRACT_SFX : 1, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode }),
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
@@ -799,11 +804,13 @@ const GrindCityGame = () => {
                             <span className="h-3.5 w-3.5 animate-pulse rounded-full bg-red-500 shadow-[0_0_12px_rgba(255,60,60,.9)]" />
                             <span className="text-2xl font-black italic tracking-[0.3em] text-white drop-shadow-[0_3px_0_rgba(0,0,0,.9)]">REPLAY</span>
                         </div>
-                        <div ref={hud.near} className="absolute left-1/2 top-[30%] -translate-x-1/2 whitespace-nowrap text-base font-black italic tracking-[0.2em] text-[#7dffb0] drop-shadow-[0_3px_0_rgba(0,0,0,.9)] sm:text-xl" style={{ opacity: 0 }}>NEAR MISS — LETTERS COUNT</div>
+                        <div ref={hud.near} className="absolute left-1/2 top-[30%] -translate-x-1/2 whitespace-nowrap text-[13px] font-black italic tracking-[0.12em] text-[#7dffb0] drop-shadow-[0_3px_0_rgba(0,0,0,.9)] sm:text-xl sm:tracking-[0.2em]" style={{ opacity: 0 }}>NEAR MISS — LETTERS COUNT</div>
                         <div ref={hud.share} className="absolute left-1/2 top-[38%] -translate-x-1/2 whitespace-nowrap text-base font-black italic tracking-[0.2em] text-[#7dffb0] drop-shadow-[0_3px_0_rgba(0,0,0,.9)] sm:text-xl" style={{ opacity: 0 }} />
                         <div ref={hud.speed} className="absolute right-4 top-4 rounded border border-white/40 bg-black/50 px-3 py-1 text-lg font-black italic tracking-[0.2em] text-[#ffd35e] drop-shadow-[0_2px_0_rgba(0,0,0,.9)]" />
                         <span ref={hud.shareChip} onPointerDown={(e) => { e.stopPropagation(); if (hud.shareFn.current) hud.shareFn.current() }} className="pointer-events-auto absolute right-4 bottom-4 rounded border border-[#7dffb0]/50 bg-black/50 px-3 py-1 text-sm font-black italic tracking-[0.2em] text-[#7dffb0] drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SHARE — S</span>
-                        <div className="text-center text-sm font-bold tracking-[0.4em] text-white/85 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SPACE / TAP — SKIP · F — SPEED<span className="hidden sm:inline"> · C — ORBIT · S — SHARE</span></div>
+                        {/* #3379: phones show TAP only (SPACE/F/C are physical keys) and the
+                            row reserves room for the SHARE chip bottom-right — no ink collision. */}
+                        <div className="pr-36 text-center text-sm font-bold tracking-[0.4em] text-white/85 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,.9)] sm:pr-0"><span className="sm:hidden">TAP — SKIP</span><span className="hidden sm:inline">SPACE / TAP — SKIP · F — SPEED · C — ORBIT · S — SHARE</span></div>
                     </div>
                 )}
                 {screen === 'attract' && (
@@ -811,7 +818,7 @@ const GrindCityGame = () => {
                         <div className="text-6xl font-black italic tracking-tight text-[#ffd35e] drop-shadow-[0_4px_0_rgba(0,0,0,.9)]">GRIND CITY</div>
                         <div className="mt-1 text-sm tracking-[0.5em] text-white/80">ONE PARK · LONG LINES</div>
                         {best && (
-                            <div className={`mt-3 text-sm font-bold tracking-[0.25em] drop-shadow-[0_2px_0_rgba(0,0,0,.9)] ${best.won ? 'text-[#ffd35e]' : 'text-white/85'}`}>
+                            <div className={`mt-3 max-w-[88vw] text-center text-sm font-bold tracking-[0.25em] drop-shadow-[0_2px_0_rgba(0,0,0,.9)] ${best.won ? 'text-[#ffd35e]' : 'text-white/85'}`}>
                                 {allTime ? 'ALL-TIME BEST LINE' : 'BEST LINE'} {best.score} PTS · {best.letters}/5{best.won ? ' ★ GOALS' : ''}
                             </div>
                         )}
