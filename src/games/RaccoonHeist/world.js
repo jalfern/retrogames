@@ -94,17 +94,22 @@ function instance(proto, transforms, parent) {
 function scatterWindows(level, theme, out) {
     const R = rng(101 + level.w)
     const warm = theme === 'museum' ? PAL.amberHot : PAL.amber
-    for (let y = 1; y < level.h - 1; y++) {
-        for (let x = 1; x < level.w - 1; x++) {
+    for (let y = 0; y < level.h; y++) {
+        for (let x = 0; x < level.w; x++) {
             if (at(level, x, y) !== T.WALL) continue
             const h = Math.max(2.4, level.height[y * level.w + x])
             for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
                 const n = at(level, x + dx, y + dz)
-                if (n === T.WALL || n === T.VOID) continue
-                if (R() > 0.34) continue
+                if (n === T.WALL) continue
+                // Faces looking onto the off-map void were skipped entirely, which left
+                // half the skyline flat black wherever the camera looked outward: a city
+                // does not stop at the map edge. Far faces get rare, dim, COOL windows —
+                // warm amber stays reserved for rooms the player can actually reach.
+                const far = n === T.VOID
+                if (R() > (far ? 0.16 : 0.34)) continue
                 const rows = Math.max(1, Math.floor((h - 1.6) / 2.2))
                 for (let r = 0; r < rows; r++) {
-                    if (R() > 0.72) continue
+                    if (R() > (far ? 0.4 : 0.72)) continue
                     const wy = 2.1 + r * 2.2
                     if (wy > h - 0.6) continue
                     const wx = (x + level.ox) * CELL + dx * (CELL / 2 + 0.02)
@@ -186,7 +191,7 @@ export function buildWorld(level) {
 
     // ---- windows ----------------------------------------------------------------
     const wins = scatterWindows(level, theme, [])
-    const paneGeos = [], frameGeos = []
+    const warmGeos = [], coolGeos = [], darkGeos = [], frameGeos = []
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler()
     for (const w of wins) {
         e.set(0, w.ry, 0); q.setFromEuler(e)
@@ -194,20 +199,42 @@ export function buildWorld(level) {
         m4.compose(out.clone().multiplyScalar(0.055).add(new THREE.Vector3(w.x, w.y, w.z)), q, new THREE.Vector3(1, 1, 1))
         const pg = new THREE.PlaneGeometry(w.w, w.h)
         pg.applyMatrix4(m4)
-        paneGeos.push(pg)
+        // Honour `lit`: a real block at night is mostly dark glass with a few warm
+        // rooms. Before this the flag was rolled and thrown away — every pane glowed
+        // the same amber at the same intensity, which read as a sticker sheet.
+        ;(w.lit ? (w.far ? coolGeos : warmGeos) : darkGeos).push(pg)
         const fm = new THREE.Matrix4().compose(out.clone().multiplyScalar(-0.03).add(new THREE.Vector3(w.x, w.y, w.z)), q, new THREE.Vector3(1, 1, 1))
         const fg = tileBox(new THREE.BoxGeometry(w.w + 0.16, w.h + 0.16, 0.06), [w.w, w.h, 0.06], [1, 1])
         fg.applyMatrix4(fm)
         frameGeos.push(fg)
     }
-    if (paneGeos.length) {
-        const panes = new THREE.Mesh(batch(paneGeos.map((geo) => ({ geo, matrix: new THREE.Matrix4() }))), new THREE.MeshStandardMaterial({
-            name: 'windowPanes',
-            color: 0x2a2416, emissive: PAL.amber, emissiveIntensity: 1.9, roughness: 0.5, metalness: 0.1,
-            envMapIntensity: 1.2, flatShading: true,
-        }))
-        group.add(panes)
-        flicker.push(panes)
+    if (warmGeos.length || coolGeos.length || darkGeos.length) {
+        if (warmGeos.length) {
+            const panes = new THREE.Mesh(batch(warmGeos.map((geo) => ({ geo, matrix: new THREE.Matrix4() }))), new THREE.MeshStandardMaterial({
+                name: 'windowPanes',
+                color: 0x2a2416, emissive: PAL.amber, emissiveIntensity: 1.9, roughness: 0.5, metalness: 0.1,
+                envMapIntensity: 1.2, flatShading: true,
+            }))
+            group.add(panes)
+            flicker.push({ material: panes.material })
+        }
+        if (coolGeos.length) {
+            const cool = new THREE.Mesh(batch(coolGeos.map((geo) => ({ geo, matrix: new THREE.Matrix4() }))), new THREE.MeshStandardMaterial({
+                name: 'farPanes',
+                color: 0x182635, emissive: PAL.cityCool, emissiveIntensity: 0.8, roughness: 0.55, metalness: 0.1,
+                envMapIntensity: 1.0, flatShading: true,
+            }))
+            group.add(cool)
+            flicker.push({ material: cool.material, k: 0.8 })
+        }
+        if (darkGeos.length) {
+            const dark = new THREE.Mesh(batch(darkGeos.map((geo) => ({ geo, matrix: new THREE.Matrix4() }))), new THREE.MeshStandardMaterial({
+                name: 'darkPanes',
+                color: 0x0e151d, emissive: PAL.cityCool, emissiveIntensity: 0.1, roughness: 0.35, metalness: 0.2,
+                envMapIntensity: 1.3, flatShading: true,
+            }))
+            group.add(dark)
+        }
         const frames = new THREE.Mesh(batch(frameGeos.map((geo) => ({ geo, matrix: new THREE.Matrix4() }))), mat('winFrame', { color: 0x161d24, roughness: 0.9 }))
         frames.castShadow = false
         group.add(frames)
@@ -452,8 +479,65 @@ export function buildWorld(level) {
     }
 
     // ---- atmosphere -------------------------------------------------------------
-    const sky = makeSky(level.w, Math.max(level.w, level.h) * CELL * 1.15)
+    const skyR = Math.max(level.w, level.h) * CELL * 1.15
+    const sky = makeSky(level.w, skyR)
     group.add(sky)
+    // ---- far skyline ------------------------------------------------------------
+    // A night level used to end at its own map edge: past the last roof the frame went
+    // flat black, which reads as "the game ran out", not "it is night". A city carries
+    // on past the block: a deterministic ring of fog-wrapped towers with cool pinprick
+    // windows, plus an outer ground plane so the space between the last wall and the
+    // horizon is fog, not void. Visual only — every tower sits far outside the sim's
+    // world (≥ 0.5 × dome radius), so nothing can walk into or through them.
+    const outerGround = new THREE.Mesh(
+        new THREE.CircleGeometry(skyR * 0.99, 48),
+        new THREE.MeshStandardMaterial({ name: 'outerGround', color: 0x0b1520, roughness: 1, metalness: 0.02 })
+    )
+    outerGround.rotation.x = -Math.PI / 2
+    outerGround.position.y = -0.08
+    group.add(outerGround)
+    const towerGeos = [], pinGeos = []
+    const N_TOWERS = 34
+    for (let i = 0; i < N_TOWERS; i++) {
+        const a = (i / N_TOWERS) * Math.PI * 2 + R() * 0.15
+        const d = skyR * (0.5 + R() * 0.28)
+        const th = 7 + R() * 20
+        const tw = 4 + R() * 5, td = 4 + R() * 5
+        const bx = Math.cos(a) * d, bz = Math.sin(a) * d
+        const tg = new THREE.BoxGeometry(tw, th, td)
+        tg.applyMatrix4(new THREE.Matrix4().makeTranslation(bx, th / 2 - 0.1, bz))
+        towerGeos.push(tg)
+        // Cool pinprick windows on the map-facing side: distance-lit rooms, no glow
+        // budget spent on them beyond one shared emissive batch.
+        const yaw = Math.atan2(-bx, -bz)
+        const nx = Math.sin(yaw), nz = Math.cos(yaw)
+        const nw = 1 + Math.floor(R() * 3)
+        for (let k = 0; k < nw; k++) {
+            const pg = new THREE.PlaneGeometry(0.55, 0.75)
+            const tx = -nz, tz = nx // tangent along the facing wall
+            const off = (R() - 0.5) * tw * 0.5
+            const hy = th * (0.3 + R() * 0.55)
+            const pm = new THREE.Matrix4().compose(
+                new THREE.Vector3(bx + nx * (td * 0.5 + 0.06) + tx * off, hy, bz + nz * (td * 0.5 + 0.06) + tz * off),
+                new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)),
+                new THREE.Vector3(1, 1, 1)
+            )
+            pg.applyMatrix4(pm)
+            pinGeos.push(pg)
+        }
+    }
+    if (towerGeos.length) {
+        const towers = new THREE.Mesh(batch(towerGeos.map((geo) => ({ geo, matrix: new THREE.Matrix4() }))), mat('farTower', { color: 0x101c28, roughness: 1, metalness: 0, envMapIntensity: 0.5 }))
+        towers.castShadow = false
+        towers.receiveShadow = false
+        group.add(towers)
+        const pins = new THREE.Mesh(batch(pinGeos.map((geo) => ({ geo, matrix: new THREE.Matrix4() }))), new THREE.MeshStandardMaterial({
+            name: 'farPinPanes', color: 0x182635, emissive: PAL.cityCool, emissiveIntensity: 0.7, roughness: 0.55, metalness: 0.1, flatShading: true,
+        }))
+        group.add(pins)
+        for (const g of towerGeos) g.dispose()
+        for (const g of pinGeos) g.dispose()
+    }
     const moon = makeMoon()
     // Inside the dome (radius 80), not outside it: the first moon was at 89 m, which is
     // how a night scene ends up with moonlight and no moon.
@@ -496,7 +580,7 @@ export function buildWorld(level) {
         rain.mesh.material.opacity = 0.16 + storm * 0.3
         if (puddles) puddles.material.opacity = (0.13 + Math.sin(state.t * 2.1) * 0.04) * (0.8 + storm * 0.6)
         const fl = 0.93 + Math.sin(state.t * 11.7) * 0.05 + Math.sin(state.t * 2.7) * 0.05
-        for (const f of flicker) f.material.emissiveIntensity = 1.35 * fl
+        for (const f of flicker) f.material.emissiveIntensity = (f.k || 1.35) * fl
         for (const l of lamps) l.bulb.material.emissiveIntensity = 6 * fl
         for (const s of spin) s.rotation.z = state.t * 7
         for (const lz of lasers) {

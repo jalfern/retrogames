@@ -46,6 +46,7 @@ export const PAL = {
     amberHot: 0xffd9a0,
     sodium: 0xffa53d,
     cyan: 0x7fd8ff,
+    cityCool: 0xa8c8e8,
     lime: 0x9dffb0,
     red: 0xff4d4d,
     gold: 0xffd257,
