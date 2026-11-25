@@ -703,16 +703,45 @@ export function engineBed(craft, speed, vy, thrusting, stormS) {
     const d = Number.isFinite(stormS) ? clamp(stormS, 0, 1) : 0
     const v = Number.isFinite(speed) ? speed : 0
     const climb = Number.isFinite(vy) && vy > 0 ? vy : 0
-    let raw = 0, freq = 0
+    let raw = 0, freq = 0, cut = 0
     if (craft === 'plane') {
         const load = clamp((v - 22) / 26 + climb * 0.025, 0, 1)
         raw = 0.004 + 0.030 * load
         freq = 64 + 86 * load
+        cut = 600 + 1600 * load // #3300 — loudness AND brightness ride the load
     } else if (craft === 'belt') {
         raw = thrusting ? 0.026 : 0.014
         freq = thrusting ? 128 : 92
-    } // glider: no motor, no bed — {gain 0, freq 0}
-    return { gain: +(raw * (1 - 0.5 * d)).toFixed(4), freq: Math.round(freq), raw: +raw.toFixed(4) }
+        cut = thrusting ? 1400 : 780
+    } // glider: no motor, no bed — {gain 0, freq 0, cut 0}
+    return {
+        gain: +(raw * (1 - 0.5 * d)).toFixed(4),
+        freq: Math.round(freq),
+        raw: +raw.toFixed(4),
+        cut: Math.round(cut),
+    }
+}
+
+// ── glider wind law (#3300 item 3) ─────────────────────────────────────────
+// The glider's bed was silence (#3295), and that law still holds: engineBed
+// answers ZERO for a hull without a motor, forever. But absolute silence in a
+// moving hull reads as a dead mixer, not as honesty — the real glider cockpit
+// roars with airspeed. windBed is the answer: a soft filtered-noise rush that
+// rises with the hull's own speed (fast dive = rush, quiet float =
+// near-silence, so the stick still teaches), glider-only, and ducked by storm
+// depth like the motor so rain keeps owning the core. It rides the loop-wind
+// voice (noise, never a tone) — motorless honesty intact: what you hear is
+// wind, not a motor.
+export function windBed(craft, speed, stormS) {
+    if (craft !== 'glider') return { gain: 0, cut: 0 }
+    const v = Number.isFinite(speed) ? speed : 0
+    if (v <= 9) return { gain: 0, cut: 0 } // a slow float stays hushed
+    const k = clamp((v - 9) / 10, 0, 1) // 19 m/s = full rush (the glider's top)
+    const d = Number.isFinite(stormS) ? clamp(stormS, 0, 1) : 0
+    return {
+        gain: +((0.003 + 0.024 * k * k) * (1 - 0.5 * d)).toFixed(4),
+        cut: Math.round(260 + 420 * k),
+    }
 }
 
 export function engineCue(raw, prevRaw) {

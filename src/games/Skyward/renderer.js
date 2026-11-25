@@ -393,6 +393,25 @@ void main(){
         const prop = B(g, new THREE.BoxGeometry(3.2, 0.12, 0.16), 0x333a44, 0, 0, 3.3)
         B(g, new THREE.BoxGeometry(0.5, 0.9, 0.5), 0x2c3038, 0, -0.75, -1.2)
         g.userData.prop = prop
+        // #3300 item 2 — engine work gets a tell. Twin exhaust streaks off the
+        // lower cowl: short dark pipes at the ports, and behind each an
+        // additive flame-cone that the render loop stretches, brightens and
+        // whiten-heats with the live engine-bed load. Presentation only — the
+        // sim never hears about them, nothing here is hashed.
+        const heatMat = new THREE.MeshBasicMaterial({ color: 0xff7a33, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })
+        const streak = (x) => {
+            const grp = new THREE.Group()
+            B(grp, new THREE.CylinderGeometry(0.09, 0.11, 0.55, 6), 0x24282f, 0, 0, -0.15, Math.PI / 2)
+            const geo = new THREE.ConeGeometry(0.12, 1, 8)
+            geo.translate(0, 0.5, 0) // base at the port, tip aft
+            const s = new THREE.Mesh(geo, heatMat)
+            s.rotation.x = -Math.PI / 2
+            grp.add(s)
+            grp.position.set(x, -0.45, -1.6)
+            g.add(grp)
+            return s
+        }
+        g.userData.exhaust = { L: streak(-0.36), R: streak(0.36), mat: heatMat }
         return g
     }
     const buildGlider = () => {
@@ -487,7 +506,7 @@ void main(){
         camera.updateProjectionMatrix()
     }
 
-    const render = (g, dt) => {
+    const render = (g, dt, fx = null) => {
         const t = g.t
         seaMat.uniforms.uTime.value = t
         seaMat.uniforms.uCam.value.copy(camera.position)
@@ -590,7 +609,25 @@ void main(){
         c.visible = true
         c.position.set(g.p.x, g.p.y + (g.craft === 'plane' ? 0.9 : g.craft === 'glider' ? 1.1 : 1.4), g.p.z)
         c.rotation.set(-g.pitch * 0.75, -g.heading + Math.PI, g.roll * 0.9, 'YXZ')
-        if (g.craft === 'plane') c.userData.prop.rotation.z = t * (8 + g.speed * 0.9)
+        if (g.craft === 'plane') {
+            c.userData.prop.rotation.z = t * (8 + g.speed * 0.9)
+            // #3300 item 2 — the load tell. Streak length, glow and heat all
+            // ride fx.raw (the pre-duck load, so driving through rain still
+            // shows the engine WORKING even while the bed ducks); the two
+            // flames flicker off the deterministic sim clock, not a RNG.
+            const ex = c.userData.exhaust
+            const load = fx && Number.isFinite(fx.raw) ? clamp(fx.raw / 0.034, 0, 1) : 0
+            const show = load > 0.04 && g.respawnT <= 0
+            ex.L.visible = ex.R.visible = show
+            if (show) {
+                const len = 0.45 + load * 2.2
+                const sx = 1 + load * 0.7
+                ex.L.scale.set(sx, len * (0.8 + 0.2 * Math.sin(t * 41)), sx)
+                ex.R.scale.set(sx, len * (0.8 + 0.2 * Math.sin(t * 41 + 2.1)), sx)
+                ex.mat.opacity = Math.min(0.75, load * (0.3 + 0.45 * load))
+                ex.mat.color.setRGB(1, 0.48 + 0.42 * load, 0.2 + 0.55 * load)
+            }
+        }
         if (g.craft === 'belt') {
             const fl = c.userData.flame
             fl.visible = g.thrusting
@@ -674,6 +711,20 @@ void main(){
         camera.lookAt(camLook)
         camera.fov = lerp(camera.fov, 62, 0.02)
         camera.updateProjectionMatrix()
+        // The vista orbit existed only as camera math — nothing ever pointed a
+        // draw at it, so the canvas sat empty behind the SKYWARD card on every
+        // load (found in the #3300 audit). Drive the clock uniforms and draw;
+        // and since no hull is flying in attract, park the craft and the blob
+        // shadow out of the shot (render() turns them back on with play).
+        Object.values(craft).forEach((cc) => { cc.visible = false })
+        shadowMesh.visible = false
+        seaMat.uniforms.uTime.value = g.t
+        seaMat.uniforms.uCam.value.copy(camera.position)
+        skyMat.uniforms.uFlash.value = world.stormFlash(g.t)
+        const sd = world.skyDimDir(g.t, camera.position.x, camera.position.y, camera.position.z)
+        skyMat.uniforms.uStormDir.value.set(sd.x, sd.y, sd.z)
+        skyMat.uniforms.uCam.value.copy(camera.position)
+        renderer.render(scene, camera)
     }
 
     const dispose = () => {

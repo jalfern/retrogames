@@ -292,6 +292,68 @@ try {
     return { ok: fns.length === 4, why: `fns=${fns.join(',')}` }
   })
   ok(contract.ok, `exposeGame contract present (meta.id/reset/step/state/frame) ${contract.why || ''}`)
+
+  /* #3300 item 4 — crash sequencing, proven live: the engine bed cruises, dies
+     ON the crash tick (the rumble owns that moment alone), and re-spools once
+     the respawn freeze releases. */
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    for (let k = 0; k < 3 && T.state().craft !== 'plane'; k++) T.recycle()
+  })
+  await simSleep(1.4)
+  const bedCruise = await page.evaluate(() => window.__skywardTest.bedLive())
+  ok(bedCruise.eng, `the engine bed cruises with the plane (eng=${bedCruise.eng})`)
+  const crashesBefore = await page.evaluate(() => window.__skywardTest.state().crashes)
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    const s = T.state()
+    T.teleport({ x: s.x, y: -4, z: s.z, speed: 20, vy: -6 }) // below every floor
+  })
+  let killSeen = false
+  for (let i = 0; i < 12 && !killSeen; i++) {
+    const r = await page.evaluate(() => ({ c: window.__skywardTest.state().crashes, bed: window.__skywardTest.bedLive() }))
+    if (r.c > crashesBefore) killSeen = !r.bed.eng
+    else await simSleep(0.15)
+  }
+  ok(killSeen, 'the motor bed dies on the crash tick (cut leads, rumble owns the moment)')
+  await simSleep(1.6) // respawn freeze releases; the restart spools
+  const bedBack = await page.evaluate(() => window.__skywardTest.bedLive())
+  ok(bedBack.eng, 'the bed re-spools after the ground crew hands the plane back')
+
+  /* #3300 item 6 — the glider checkout teaches its one rule by banner */
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    for (let k = 0; k < 3 && T.state().craft !== 'glider'; k++) T.recycle()
+  })
+  const banner6 = await page.evaluate(() => document.querySelector('[data-h="banner"]').textContent)
+  ok(banner6.includes('NO ENGINE'), `the glider banners the wind law ("${banner6}")`)
+  await shot('skyward-glider-banner.png')
+
+  /* #3300 item 5 — phone widths: at 390×844 the canvas must fill the stage,
+     and no HUD readout may sit under the virtual pad or collide with another. */
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForTimeout(700)
+  const audit = await page.evaluate(() => {
+    const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height } }
+    const ovl = (a, b) => a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    const cvs = r(document.querySelector('canvas'))
+    const readouts = ['speed', 'alt', 'score', 'chips'].map((k) => r(document.querySelector(`[data-h="${k}"]`)))
+    const hud = [...readouts, r(document.querySelector('[data-h="hint"]'))] // hint floats mid-screen by design — pad rules still bind
+    const pads = [...document.querySelectorAll('[data-vc]')].map(r).filter(Boolean)
+    let bad = 0
+    for (const h of hud) {
+      if (!h) bad++
+      if (h && (h.x < -2 || h.x + h.w > innerWidth + 2)) bad++
+      for (const p of pads) if (h && ovl(h, p)) bad++
+    }
+    for (const h of readouts) if (h && h.y > 300) bad++ // the readouts live in the top corners; the pad owns everything below
+    for (let i = 0; i < hud.length; i++) for (let j = i + 1; j < hud.length; j++) if (ovl(hud[i], hud[j])) bad++
+    return { canvas: cvs && `${Math.round(cvs.w)}x${Math.round(cvs.h)}`, vh: innerHeight, vw: innerWidth, bad }
+  })
+  ok(Number(audit.canvas?.split('x')[1]) >= audit.vh - 4 && Number(audit.canvas?.split('x')[0]) >= audit.vw - 4,
+    `phone stage fills the viewport (canvas ${audit.canvas} of ${audit.vw}x${audit.vh})`)
+  ok(audit.bad === 0, `390px HUD: no pad overlap, no text collision, nothing offscreen (${audit.bad} violations)`)
+  await shot('skyward-phone-hud.png')
 } catch (e) {
   fails.push(`exception: ${e.message}`)
   console.log(`FAIL  exception: ${e.message}`)

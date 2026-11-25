@@ -984,6 +984,71 @@ class AudioController {
         } catch { /* already stopped */ }
     }
 
+    // ---- rich engine voice (#3300 item 1) ----
+    // The loop voice (#3135) is ONE raw saw — clean, but a motor at cruise is
+    // never one oscillator. This sibling stacks two saws detuned ±9 cents (the
+    // beating between them is the "two magnetos" thickening) behind a lowpass
+    // whose openness the caller drives (setLoopEngine's `cut`), so loudness
+    // AND brightness ride engine load the way the storm bed pairs both (#3272).
+    // Still opt-in, still on the ambience bus: titles that never call it keep
+    // the exact old graph — loopVoice is untouched, Skyward opts up.
+    // setLoopEngine(freq, gain, cut, cents): `cents` shifts BOTH saws together
+    // (keeping their ±9 gap), which is how a blade-pass wobble moves the whole
+    // motor's pitch, not just its volume.
+    startLoopEngine(freq = 55, maxGain = 0.05) {
+        if (!this.ctx) this.init()
+        if (!this.ctx || this._engine) return !!this._engine
+        if (this.ctx.state === 'suspended') this.ctx.resume()
+        const bus = this.ensureAmb()
+        if (!bus) return false
+        const t = this.ctx.currentTime
+        const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(900, t)
+        lp.Q.value = 0.7
+        const gain = this.ctx.createGain()
+        gain.gain.setValueAtTime(0, t)
+        const mk = (cents) => {
+            const o = this.ctx.createOscillator()
+            o.type = 'sawtooth'
+            o.frequency.setValueAtTime(Math.max(20, freq), t)
+            o.detune.setValueAtTime(cents, t)
+            o.connect(lp)
+            o.start()
+            return o
+        }
+        const oscA = mk(-9), oscB = mk(9)
+        lp.connect(gain); gain.connect(bus)
+        this._engine = { oscA, oscB, lp, gain, maxGain: Math.max(0, maxGain) }
+        return true
+    }
+
+    setLoopEngine(freq, gain, cut, cents) {
+        if (!this._engine || !this.ctx) return
+        const t = this.ctx.currentTime
+        const target = this.muted ? 0 : Math.max(0, Math.min(this._engine.maxGain, isFin(gain) ? gain : 0))
+        const f = Math.max(20, isFin(freq) ? freq : 55)
+        this._engine.oscA.frequency.setTargetAtTime(f, t, 0.06)
+        this._engine.oscB.frequency.setTargetAtTime(f, t, 0.06)
+        if (isFin(cut) && cut > 0) this._engine.lp.frequency.setTargetAtTime(cut, t, 0.06)
+        if (isFin(cents)) {
+            const c = Math.max(-1200, Math.min(1200, cents))
+            this._engine.oscA.detune.setTargetAtTime(c - 9, t, 0.03)
+            this._engine.oscB.detune.setTargetAtTime(c + 9, t, 0.03)
+        }
+        this._engine.gain.gain.setTargetAtTime(target, t, 0.08)
+    }
+
+    stopLoopEngine() {
+        if (!this._engine || !this.ctx) return
+        const { oscA, oscB, lp, gain } = this._engine
+        this._engine = null
+        try {
+            gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08)
+            oscA.stop(this.ctx.currentTime + 0.5)
+            oscB.stop(this.ctx.currentTime + 0.5)
+            setTimeout(() => { try { oscA.disconnect(); oscB.disconnect(); lp.disconnect(); gain.disconnect() } catch { /* already gone */ } }, 700)
+        } catch { /* already stopped */ }
+    }
+
     // ---- persistent loop-noise bed (#3272) ----
     // The loop voice's sibling for weather: rain, surf and waterfall beds are
     // filtered noise, not tones. Same opt-in law — titles that never call it
@@ -1024,6 +1089,53 @@ class AudioController {
         if (!this._noise || !this.ctx) return
         const { src, lp, gain } = this._noise
         this._noise = null
+        try {
+            gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.12)
+            src.stop(this.ctx.currentTime + 0.8)
+            setTimeout(() => { try { src.disconnect(); lp.disconnect(); gain.disconnect() } catch { /* already gone */ } }, 1000)
+        } catch { /* already stopped */ }
+    }
+
+    // ---- persistent wind-rush bed (#3300 item 3) ----
+    // The loop-noise bed's sibling for AIR rather than rain: a glider is
+    // motorless, but absolute silence reads as a dead mixer, not as honesty.
+    // This is the same filtered-noise graph on its own slot, so a hull can
+    // hear the wind AND the storm core at once — the storm bed never yields
+    // its voice. Same opt-in law; nothing else's graph changes. The buffer is
+    // the same long 2.4 s seam (a re-seam reads as a gust), and setLoopWind
+    // opens loudness + brightness together: faster air rushes louder AND hissier.
+    startLoopWind(maxGain = 0.03) {
+        if (!this.ctx) this.init()
+        if (!this.ctx || this._wind) return !!this._wind
+        if (this.ctx.state === 'suspended') this.ctx.resume()
+        const bus = this.ensureAmb()
+        if (!bus) return false
+        const sr = this.ctx.sampleRate
+        const buffer = this.ctx.createBuffer(1, Math.floor(sr * 2.4), sr)
+        const data = buffer.getChannelData(0)
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1
+        const src = this.ctx.createBufferSource(); src.buffer = buffer; src.loop = true
+        const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320
+        const gain = this.ctx.createGain()
+        gain.gain.setValueAtTime(0, this.ctx.currentTime)
+        src.connect(lp); lp.connect(gain); gain.connect(bus)
+        src.start()
+        this._wind = { src, lp, gain, maxGain: Math.max(0, maxGain) }
+        return true
+    }
+
+    setLoopWind(gain, cutoff) {
+        if (!this._wind || !this.ctx) return
+        const t = this.ctx.currentTime
+        const target = this.muted ? 0 : Math.max(0, Math.min(this._wind.maxGain, Number.isFinite(gain) ? gain : 0))
+        this._wind.gain.gain.setTargetAtTime(target, t, 0.12)
+        if (Number.isFinite(cutoff) && cutoff > 0) this._wind.lp.frequency.setTargetAtTime(cutoff, t, 0.12)
+    }
+
+    stopLoopWind() {
+        if (!this._wind || !this.ctx) return
+        const { src, lp, gain } = this._wind
+        this._wind = null
         try {
             gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.12)
             src.stop(this.ctx.currentTime + 0.8)
@@ -1120,6 +1232,8 @@ class AudioController {
 
     stopMusic() {
         this.stopLoopVoice()
+        this.stopLoopEngine() // #3300 — a fanfare outranks the motor too
+        this.stopLoopWind()
         if (this.music) { if (this.music.timer) clearInterval(this.music.timer); this.music.playing = false; this.music = null }
         // the held level belongs to the bed that just stopped — a later title
         // must never inherit another game's swell
