@@ -315,24 +315,55 @@ const CentipedeGame = () => {
             }
         }
 
+        // art(#3413): original Centipede mushrooms — a toadstool silhouette (cap +
+        // stem) with a coherent per-health palette (teal→amber→pink, the arcade's
+        // "mushroom changes colour as you chew it"), a stepped dome, a lighter cap
+        // highlight, a dark underside and cream stem shading. All generated in code;
+        // nothing traced. Render-only: the field, hitboxes and health→shrink law are
+        // untouched, and the sprite stays inside the same 16px cell the collision
+        // code tests (m.x+8 ±8).
+        const MUSHROOM_SKIN = {
+            3: { cap: '#2fd6c3', dark: '#17988a', lite: '#a6f5ec' },
+            2: { cap: '#f0a02e', dark: '#b56d10', lite: '#ffd98f' },
+            1: { cap: '#ff5c8a', dark: '#c22f5b', lite: '#ffb6c8' },
+        }
+        const drawMushroom = (m) => {
+            const c = MUSHROOM_SKIN[m.health] || MUSHROOM_SKIN[1]
+            const capW = m.health === 3 ? 12 : m.health === 2 ? 10 : 8
+            const capX = m.x + Math.round((16 - capW) / 2)
+            const capY = m.y + 2
+            const capH = 6
+            const stemX = m.x + 6
+            const stemY = capY + capH - 1
+            // stem (cream, shaded on the right)
+            ctx.fillStyle = '#ecdcac'
+            ctx.fillRect(stemX, stemY, 4, 4)
+            ctx.fillStyle = '#c8b17f'
+            ctx.fillRect(stemX + 3, stemY, 1, 4)
+            // cap underside shade + body + stepped dome
+            ctx.fillStyle = c.dark
+            ctx.fillRect(capX, capY + capH - 2, capW, 2)
+            ctx.fillStyle = c.cap
+            ctx.fillRect(capX, capY + 1, capW, capH - 2)
+            ctx.fillRect(capX + 2, capY, capW - 4, 2)
+            // top-left highlight
+            ctx.fillStyle = c.lite
+            ctx.fillRect(capX + 2, capY + 1, 2, 2)
+            // toadstool spots on a full mushroom
+            if (m.health === 3) {
+                ctx.fillStyle = '#ffffff'
+                ctx.fillRect(capX + capW - 5, capY + 2, 2, 2)
+                ctx.fillRect(capX + 4, capY + 3, 2, 1)
+            }
+        }
+
         const draw = () => {
             // Bg
             ctx.fillStyle = 'black'
             ctx.fillRect(0, 0, state.width, state.height)
 
-            // Mushrooms
-            ctx.fillStyle = 'white'
-            state.mushrooms.forEach(m => {
-                // Determine look based on health
-                if (m.health === 3) {
-                    ctx.fillRect(m.x + 2, m.y + 2, 12, 12)
-                    ctx.fillStyle = 'black'; ctx.fillRect(m.x + 6, m.y + 6, 4, 4); ctx.fillStyle = 'white'
-                } else if (m.health === 2) {
-                    ctx.fillRect(m.x + 4, m.y + 4, 8, 8)
-                } else {
-                    ctx.fillRect(m.x + 6, m.y + 6, 4, 4)
-                }
-            })
+            // Mushrooms — colourful toadstools (was flat white squares)
+            state.mushrooms.forEach(drawMushroom)
 
             // Centipede
             state.centipedes.forEach(c => {
