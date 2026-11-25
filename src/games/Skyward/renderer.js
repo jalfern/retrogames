@@ -354,6 +354,11 @@ void main(){
         // keep their dashes): each zone names its price at its own centre. The
         // glyph tops point down-strip (+x): an inbound west→east pilot reads them
         // upright, exactly like real runway distance paint.
+        // #3370 item 2 — and a wheels-abort rolls the other way, so the south
+        // lane carries a faint mirrored set (tops toward −x): the builder call
+        // is the real-airfield convention — each direction reads its own set,
+        // the same price standing at the same place (zones pay by position,
+        // not by heading). The faint opacity keeps the primary ladder loud.
         for (let zi = 0; zi < 4; zi++) {
             const dec = new THREE.Mesh(new THREE.PlaneGeometry(11, 6.4),
                 new THREE.MeshBasicMaterial({ map: runwayNumber([150, 300, 450, 700][zi]), transparent: true, opacity: 0.94, depthWrite: false }))
@@ -362,6 +367,13 @@ void main(){
             dec.rotation.y = -Math.PI / 2 // glyph tops → +x (east, down the strip)
             dec.position.set(R.ax + ((zi + 0.5) / 4) * len, deck + 0.17, cz - 3.6)
             scene.add(dec)
+            const echo = new THREE.Mesh(new THREE.PlaneGeometry(11, 6.4),
+                new THREE.MeshBasicMaterial({ map: runwayNumber([150, 300, 450, 700][zi]), transparent: true, opacity: 0.6, depthWrite: false }))
+            echo.rotation.order = 'YXZ'
+            echo.rotation.x = -Math.PI / 2
+            echo.rotation.y = Math.PI / 2 // mirrored: tops → −x, read by east→west traffic
+            echo.position.set(R.ax + ((zi + 0.5) / 4) * len, deck + 0.17, cz + 3.6)
+            scene.add(echo)
         }
         { // windsock at the threshold — an airfield is nothing without one,
           // and this one FLIES (#3310 item 6). #3370 item 1 gave it fabric:
@@ -885,12 +897,18 @@ void main(){
     }
 
     const orbitAttract = (g, dt) => {
-        // attract camera: a slow vista orbit of the isle
+        // attract camera: a slow vista orbit of the isle. #3370 item 5 — the
+        // orbit always passed the strip small and low in frame, so once per
+        // cycle, as the south leg crests, the look glides down the coast onto
+        // the airfield: the painted numbers, the flying sock and the RUNWAY
+        // board sell themselves on the idle screen. Camera path only — the
+        // attract autopilot still flies its mat-bound line (#3310 honesty).
         const a = g.t * 0.045
         tmp.set(Math.sin(a) * 480, 130, -60 + Math.cos(a) * 480)
         camPos.lerp(tmp, 1 - Math.pow(0.02, dt))
         camera.position.copy(camPos)
-        camLook.lerp(tmp.set(0, 30, -60), 1 - Math.pow(0.01, dt))
+        const south = Math.pow(Math.max(0, (Math.cos(a) + 1) / 2), 3) // 1 at the south apex
+        camLook.lerp(tmp.set(50 * south, 30 - 20 * south, -60 + 190 * south), 1 - Math.pow(0.01, dt))
         camera.lookAt(camLook)
         camera.fov = lerp(camera.fov, 62, 0.02)
         camera.updateProjectionMatrix()
