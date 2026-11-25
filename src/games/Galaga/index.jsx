@@ -134,12 +134,35 @@ const GalagaGame = () => {
         }
 
         // ---------------------------------------------------------------- paint ----
+        // Original insect enemy (invented, era palette, integer pixels): a striped
+        // body with an antennae'd head flanked by a pair of shaded wings that FLAP
+        // between two frames. Replaces the old flat two-block "brick" so a diving
+        // bee reads as a bee at a glance (docs/ART.md bars #1 and #2).
         const drawBee = (x, y, f) => {
-            ctx.fillStyle = '#ffd23f'
-            ctx.fillRect(x - 7, y - 4, 5, 7); ctx.fillRect(x + 2, y - 4, 5, 7)
-            ctx.fillStyle = '#221'
-            ctx.fillRect(x - 2, y - 5, 4, 8)
-            if (f % 16 < 8) { ctx.fillStyle = '#fff7c9'; ctx.fillRect(x - 9, y - 2, 2, 4); ctx.fillRect(x + 7, y - 2, 2, 4) }
+            const flap = f % 14 < 7 ? 0 : 1
+            const wy = y - 4 + flap            // wings lift 1px on the tucked frame
+            const reach = flap ? 5 : 8        // wing span: wide, then tucked
+            for (const s of [-1, 1]) {
+                const ox = s < 0 ? x - reach : x + 1
+                ctx.fillStyle = '#c98a12'                       // deep-gold rim
+                ctx.fillRect(ox, wy, reach + 1, 7)
+                ctx.fillStyle = '#ffd23f'                       // gold wing face
+                ctx.fillRect(ox + (s < 0 ? 1 : 0), wy + 1, reach - 1, 5)
+                ctx.fillStyle = '#fff7c9'                       // sheen along the top
+                ctx.fillRect(ox + (s < 0 ? 2 : 1), wy + 2, Math.max(reach - 3, 1), 1)
+            }
+            ctx.fillStyle = '#2a1508'                         // head
+            ctx.fillRect(x - 2, y - 6, 4, 3)
+            ctx.fillStyle = '#1a0e05'                         // antennae tips
+            ctx.fillRect(x - 3, y - 7, 1, 1); ctx.fillRect(x + 2, y - 7, 1, 1)
+            ctx.fillStyle = '#ff8f1f'                         // thorax (distinct from wing gold)
+            ctx.fillRect(x - 2, y - 3, 4, 4)
+            ctx.fillStyle = '#2a1508'                         // abdomen band
+            ctx.fillRect(x - 2, y + 1, 4, 1)
+            ctx.fillStyle = '#ffb347'                         // abdomen
+            ctx.fillRect(x - 2, y + 2, 4, 2)
+            ctx.fillStyle = '#2a1508'                         // tail tip
+            ctx.fillRect(x - 1, y + 4, 2, 1)
         }
         const drawBoss = (x, y, f) => {
             ctx.fillStyle = '#3f7dff'
