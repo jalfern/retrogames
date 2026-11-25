@@ -1,69 +1,69 @@
-# STATE — forge board snapshot (slot b, 2026-11-25 — PINBALL GETS A TABLE SMITH)
+# STATE — forge board snapshot (slot a, 2026-11-25 — GRIND CITY GETS ITS LIPS)
 
 ## This session — one ship, landed
-- Warden TARGET **#3284 PINBALL editor** REFUSED at first claim (slot a held
-  tidal #3280 live at 08:10Z) — normal ladder: no steer, no actionable `next`
-  (#1712 waiting-jon), `game-queue` empty, QA MASTER live → no feedback
-  borrow → flagship stage spent → **NEVER-DRY `KICK PINBALL 0 weak`**.
-  Gap index 0 was "No table editor (#3103: not yet)" — honest (only open
-  pinball issue #3237 doesn't mention an editor). Filed + claimed my own
-  POLISH issue **#3284**, shipped it.
-- **TABLE SMITH #3284 DONE** (`ad1809b`, PR #3291): Pinball Construction Set
-  (Evolution Systems, 1983) build mode on the shared engine — the #3103
-  contract playable: `compileTable(def)` compiles a layout onto existing
-  primitives (bumpers/slings/bank/magnet on a fixed chassis); `makeGame`
-  takes a table object; magnet-`null`/empty-bank became legal table DATA.
-  Third attract card: ghost→bench (arrows/A/B pad-first, 8-tool palette, live
-  ghost-validity through the SAME law as the compiler), TEST drops one ball
-  and homes back to the bench, SAVE persists `{name,def}`
-  (`retrogames.pinball.mytable.v1`) and the named cabinet rides the row,
-  self-playing in the driven demo, B = redesign, survives reload.
-  BALL SEARCH = inherited no-wedge guarantee.
-- Proof: pinballcheck **206/206** (+28 smith pins) + mutants **9/9**
-  (`smithzone`, `smithload` new); new `pinballsmith` live drive **22/22**
-  real-key legs on :5178; `pinballplay` **54/54** after re-cutting the card
-  tap coord for the 3-card row; contractcheck 14/14; eslint + 3 scoped gates
-  + build green. Prod verified: `Pinball-D9b00c-m.js` markers. #3284 shipped+closed.
-- **QA tail filed: #3290** — discoverability badges, ghost-demo placeholder
-  lies (demos CABINET ONE until first save), dome-boundary outline, phone
-  widths (8×38px strip, 8px card gaps), kits-on-custom, drag idiom, garage
-  of cabinets (README honest edge too).
+- Warden TARGET **#3284** REFUSED at claim (slot b held it live, checkpoint 9 min
+  old — b shipped it as PINBALL TABLE SMITH #3291 mid-my-session, good). Normal
+  ladder: no steer, `next` #1712 waiting-jon, `game-queue` empty, only actionable
+  feedback #3272 but two QA MASTER sessions live (mini+studio) → no borrow →
+  **never-dry**. Live `idle-kick` = `KICK GRIND CITY 0 weak` (score 6).
+- Gap 0 (replay free-cam) **declined as owned**: #3233 lists "replay options" in
+  its title and repeats the gap in its body — only ":" vs "." broke the mechanical
+  ownsGap match. Built gap 1's real core instead — the three things NO open issue
+  names: grabs on grinds, lip tricks, stalls → filed **#3289** (why-weakest +
+  decline note), claimed, shipped via PR **#3293** merged `399e62c`.
+- **RAIL GRABS** — hold B latched: FEEBLE (forward) / CROOKED (fakie). Double
+  trickle (+12 vs +6/0.15 s), balance drift damped ×0.55, 0.30 s hold before
+  release commits (+70, unique → mult grows). Mashing never pays; bail commits nothing.
+- **COPING STALLS** — ↓+A at a coping lip (kinds 'coping', ≤0.9 m lateral,
+  ≤0.75 m vertical — coping sits ~0.7 above deck/roof surfaces, pool lips ~0.06):
+  tail locks on the rail line, speed 0, +8/0.15 s trickle, tighter meter
+  (|bal|>1.15) shown as body lean; A pops chain-alive, commits +40+80×s, 4 s
+  auto-pop. ↓+A away from a lip = plain ollie — no dead combo.
+- **Honesty**: zero new physics surfaces (`railClosest/railAt` reused), `packIn`
+  6-bit wire untouched, autopilot never B-mid-grind/never ↓ (win line provably
+  identical, honesty-counter pin), `stateOf` additive (`railGrab/stall/stallT/stallBal`).
+- Proof: grindcheck **ALL GREEN 65 pins (+16)** + **ALL MUTANTS CAUGHT 8/8**
+  (new `grab`/`stall`); gcdrive **DRIVE GREEN** with 6 live legs (stall locks at
+  speed 0, cam cuts action, meter leans 0.23, pop pays 201 chainPts; Feeble
+  engages, trickle 100→224); contractcheck 857/857; eslint + 3 gates + build green.
+- Prod verified: `GrindCity-DZKKTBY4.js` carries Crooked/STALL/railGrab/stallBal;
+  play at `/retrogames/grind-city`. #3289 shipped+closed; #3233 got a comment
+  with 4 phone-discoverability items for the new verbs (QA tail).
 
 ## Harness lessons (worth one line each)
-- **3-card row ripple**: `pinballplay`'s hardcoded EMBER tap coord (267,335)
-  started landing on the new third card → the whole suite cascaded off one
-  coord. Grown UI geometry = grep the suites for pixel constants of the old
-  layout the same PR that grows it.
-- **Refusal ordering is UX law**: candidate-level caps fired before compile
-  zones (MAX 3 masked OUT OF ZONE); zone-check the cursor's own spot FIRST,
-  single-sourced (`bumperZoneOk`) so ghost-green == accepted.
-- **Owner-wording pin**: #3237 owned README gaps semantically but not by the
-  40-char handle match → phantom-scored (kick said score 6, real 3). Fixed by
-  aligning #3237's item wording to the README's opening words; `idle-kick`
-  now `KICK PINBALL 2 weak` = the honest oldest unowned gap (music bed).
-- Warden TARGET claiming a live other-slot issue = REFUSED per liveness; the
-  TARGET note says take-the-ladder then — slot a shipped #3280 mid-session.
+- ownsGap matches the gap's OPENING 40 chars — a QA paraphrase ("only:" vs "only.")
+  silently kills ownership and phantom-kicks the next lane. "When unsure, treat as
+  owned" outranks a mechanical KICK; decline + say why on the POLISH issue.
+- Coping rails float ~0.7 m above their deck surfaces: any lip-zone tolerance must
+  cover coping height (0.75) or the verb only works on pool lips. Pin every rail
+  kind you promise.
+- A diagonal rail cannot be latched cross-line (the crossing happens while rising,
+  outside vertical tolerance) — fakie pins/drive legs ride axis-aligned coping.
+- jalfern.com apex 308s to **www.jalfern.com** — prod-marker probes must follow
+  (`-L`/www) and must wait for the Production deployment record, not just sleep.
+- Announce nothing before the job is verifiably running — one "drive is green"
+  sentence named a probe that had never been launched. Start it, read it, then speak.
 
 ## PLAYABLE on main right now
-- `/retrogames/pinball` **TABLE SMITH** — build/save/play your own cabinet
-  (#3291) + driven attract + kits + kickback, tidal-rush grabs (#3285) +
-  flips/handstands (#3278) + rooms, skyward drift ring (#3288/#3292),
-  grind-city curvature shading (#3286) + roof callout (#3279), pinball EMBER
-  RIDER, mario-kart (tilt), ice-climber, marble-rush (tilt, trick hop),
-  comet-drift pair (tilt), ssx (tilt), marble-madness, pacman, mario,
-  minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS,
-  DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga, missile,
-  pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
+- `/retrogames/grind-city` rail grabs + coping stalls (#3293) atop the roof line,
+  gems, replays, bed; `/retrogames/pinball` TABLE SMITH editor (#3291) +
+  tilt-to-nudge (#3296) + kickback + attract show-off; `/retrogames/tidal-rush`
+  grabs/flips/handstands (#3285/#3278) + rooms/spectate (#3227/#3253/#3265);
+  `/retrogames/skyward` storm-cell drift line (#3272 items 2–3), mario-kart TILT,
+  marble-rush tilt+trick-hop, comet-drift pair, ssx, marble-madness, pacman,
+  mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS,
+  DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga, missile, pucks,
+  mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` EMPTY; `next` #1712 waiting-jon (not a work item).
-- **Next builder claim: run `idle-kick` LIVE** — expect `KICK PINBALL 2 weak`
-  = "The music bed covers MULTIBALL only; single-ball play stays dry" (real,
-  unowned). Do NOT redo the smith tail (#3290) or #3237 items 2–5.
-- QA holds: #3237 PINBALL tail (feedback+lane:qa — owns phone-HUD/contrast/
-  tilt/extras wording), #3290 smith tail, #3281 tidal tricks tail, #3244
-  tidal rooms, #3233 grind-city tail. #2971 contra waiting-jon.
-- Nightly: main-ok green at session start, at merge, and at handoff.
+- `game-queue` empty; `next` #1712 waiting-jon (not a work item).
+- Feedback: #3272 skyward tail (items 2–3 shipped, tail open), #3281 tidal tricks
+  tail, #3233 grind-city tail 2 (now + the #3289 discoverability list), #3237
+  pinball tail (items shipping fast — #3291/#3296), #3244/#2971 waiting-jon.
+- QA MASTER sessions live on mini+studio today; builder claims must re-derive
+  idle-kick LIVE (don't trust memory or this file).
+- Merges today incl. #3270/#3271/#3273/#3274/#3275/#3278/#3279/#3285/#3286/#3288/
+  #3291/#3292/#3293/#3294/#3296. main-ok green at my merge.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
@@ -72,9 +72,7 @@
 - No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot b: dev :5178 stopped via scripts/devstop.sh. Worktree
-  `~/Dev/retrogames-forge-pinball-editor` detached clean at origin/main by
-  mergeclean; remove it when next convenient.
-- Game merged this session ⇒ this STATE.md ships via its own docs/state PR;
-  parked at /tmp/forge/STATE.b.parked.md via statepark.
-- Time-box: ~1 h 05 min of 3 h.
+- Slot a: dev :5173 stopped via `scripts/devstop.sh`. Worktree
+  `~/Dev/retrogames-forge-grind-lip` removed clean by the merge cleanup.
+- Main checkout detached at origin/main; this STATE.md ships via its own docs/state PR.
+- Time-box: ~1 h 30 m of 3 h used; game merged, commit path earned.
