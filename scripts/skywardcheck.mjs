@@ -913,7 +913,7 @@ void runAuto
             const gi = hot.evs.findIndex((e) => e.kind === 'goaround')
             const ci = hot.evs.findIndex((e) => e.kind === 'crash')
             r.check('#3331 too hot AND shallow on the strip (36 m/s) bounces — go-around, no crash, nothing banked',
-                gi >= 0 && (ci === -1 || ci > gi) && hot.h.land === 0,
+                gi >= 0 && ci === -1 && hot.h.land === 0,
                 `gi=${gi} ci=${ci} land=${hot.h.land} evs=${hot.evs.map((e) => e.kind).join(',')}`)
         }
         const steep = planeStrip(32, 100, 130, Math.PI / 2, -3, 36)
