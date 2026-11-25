@@ -3,7 +3,7 @@
 // ridden park. Everything else (letters, skater rig, particles) is code too.
 
 import * as THREE from 'three'
-import { parkHeight, gradAt, RAILS, LETTERS, BOUND } from './park.js'
+import { parkHeight, gradAt, RAILS, LETTERS, BOUND, railClosest } from './park.js'
 
 const RANGE = BOUND + 4          // a little beyond the walls
 const STEP = 0.8
@@ -11,6 +11,13 @@ const STEP = 0.8
 // hash noise for tint variation (visual only)
 function n2(x, z) {
     let h = Math.imul((x * 374761393 + z * 668265263) | 0, 1274126177)
+    h = (h ^ (h >>> 13)) >>> 0
+    return (h % 1000) / 1000
+}
+
+// deterministic hash for baked-in speckle (no Math.random — art is stable frame to frame)
+function rnd01(i) {
+    let h = Math.imul(i ^ 0x9e3779b9, 1274126177)
     h = (h ^ (h >>> 13)) >>> 0
     return (h % 1000) / 1000
 }
@@ -25,12 +32,72 @@ function concreteColor(x, z, y, out) {
     // mod-park accents: kicker faces get a warm tint
     if (x > 10 && x < 15.2 && z > -8 && z < 4.6 && y > 0.15) { r = 0.86; gr = 0.42; b = 0.20 }
     if (x > -3.5 && x < 13.5 && y > 0.15 && y < 1.1 && z > 1 && z < 4.6) { r = 0.86; gr = 0.42; b = 0.20 }
-    // expansion joints every 4 m
-    const jx = Math.abs(((x / 4) % 1) - 0.5) > 0.47
-    const jz = Math.abs(((z / 4) % 1) - 0.5) > 0.47
-    if (jx || jz) { r *= 0.72; gr *= 0.70; b *= 0.68 }
-    const v = 0.94 + n2(Math.round(x * 5), Math.round(z * 5)) * 0.12   // grain
-    return out.setRGB(r * v, gr * v, b * v)
+    // low-frequency mottling (~2.5 m cells, ±6%)
+    const low = n2(Math.round(x * 0.4), Math.round(z * 0.4))
+    const m = 0.94 + low * 0.12
+    r *= m; gr *= m; b *= m
+    // fine grain (~0.2 m cells, ±6%)
+    const v = 0.94 + n2(Math.round(x * 5), Math.round(z * 5)) * 0.12
+    // wear near rails: packed darker where skaters grind (visual only)
+    let wear = 1
+    for (const rail of RAILS) {
+        const d = railClosest(rail, x, z).d
+        if (d < 0.85) wear = Math.min(wear, 1 - (1 - d / 0.85) * 0.28)
+    }
+    return out.setRGB(r * v * wear, gr * v * wear, b * v * wear)
+}
+
+/** Baked-in concrete texture: speckle, mottled patches, hairline cracks, and
+ *  thin expansion joints at the tile border (4 m tile). Neutral-bright on
+ *  purpose — it multiplies the vertex colors, so it must not darken the park. */
+function makeConcreteTexture() {
+    const S = 256
+    const cv = document.createElement('canvas')
+    cv.width = cv.height = S
+    const g = cv.getContext('2d')
+    g.fillStyle = '#f4f2ec'
+    g.fillRect(0, 0, S, S)
+    // large soft mottled patches
+    for (let i = 0; i < 30; i++) {
+        const bx = rnd01(i * 3 + 1) * S, by = rnd01(i * 3 + 2) * S
+        const br = 18 + rnd01(i * 3 + 3) * 52
+        const dark = rnd01(i * 7) < 0.5
+        const alpha = 0.05 + rnd01(i * 11) * 0.05
+        const grad = g.createRadialGradient(bx, by, 0, bx, by, br)
+        grad.addColorStop(0, dark ? `rgba(118,110,96,${alpha})` : `rgba(255,255,255,${alpha})`)
+        grad.addColorStop(1, 'rgba(0,0,0,0)')
+        g.fillStyle = grad
+        g.beginPath(); g.arc(bx, by, br, 0, Math.PI * 2); g.fill()
+    }
+    // speckle grain
+    for (let i = 0; i < 3400; i++) {
+        const x = rnd01(i * 3 + 1) * S, y = rnd01(i * 3 + 2) * S
+        const dark = rnd01(i * 3 + 3) < 0.55
+        g.fillStyle = dark ? `rgba(96,89,78,${0.08 + rnd01(i) * 0.16})` : `rgba(255,255,255,${0.10 + rnd01(i) * 0.20})`
+        g.fillRect(x, y, rnd01(i * 5) < 0.9 ? 1 : 2, 1)
+    }
+    // hairline cracks
+    g.strokeStyle = 'rgba(82,77,70,0.30)'
+    g.lineWidth = 1
+    for (let i = 0; i < 3; i++) {
+        let cx = rnd01(i * 13 + 1) * S, cy = rnd01(i * 13 + 2) * S * 0.4
+        g.beginPath(); g.moveTo(cx, cy)
+        for (let j = 0; j < 6; j++) {
+            cx += (rnd01(i * 17 + j) - 0.5) * 30
+            cy += 14 + rnd01(i * 19 + j) * 18
+            g.lineTo(cx, cy)
+        }
+        g.stroke()
+    }
+    // expansion joints at the tile border (thin — no wireframe look)
+    g.fillStyle = 'rgba(72,68,62,0.5)'
+    g.fillRect(0, 0, S, 1.5); g.fillRect(0, S - 1.5, S, 1.5)
+    g.fillRect(0, 0, 1.5, S); g.fillRect(S - 1.5, 0, 1.5, S)
+    const tex = new THREE.CanvasTexture(cv)
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+    tex.anisotropy = 4
+    tex.colorSpace = THREE.SRGBColorSpace
+    return tex
 }
 
 export function buildPark(scene) {
@@ -59,6 +126,14 @@ export function buildPark(scene) {
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    // 4 m-tiling UVs for the concrete texture
+    const uv = new Float32Array((N + 1) * (N + 1) * 2)
+    let u = 0
+    for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+        uv[u++] = (-RANGE + i * STEP) / 4
+        uv[u++] = (-RANGE + j * STEP) / 4
+    }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
     geo.setIndex(idx)
     // analytic up-facing normals: n = normalize(-dh/dx, 1, -dh/dz)
     const nrm = new Float32Array(pos.length)
@@ -79,7 +154,7 @@ export function buildPark(scene) {
     geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3))
     // DoubleSide: the grid winding covers slopes either way; normals are set
     // explicitly up, so both faces shade identically.
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.02, side: THREE.DoubleSide })
+    const mat = new THREE.MeshStandardMaterial({ map: makeConcreteTexture(), vertexColors: true, roughness: 0.92, metalness: 0.02, side: THREE.DoubleSide })
     const mesh = new THREE.Mesh(geo, mat)
     mesh.receiveShadow = true
     scene.add(mesh)
@@ -231,9 +306,24 @@ export function poseSkater(rig, s, t) {
     const { g, deck, legs, arms } = rig
     g.position.set(s.x, s.y + 0.12, s.z)
     g.rotation.y = -s.heading
+    g.rotation.z = 0                                     // reset per frame (spin sway)
     const crouch = s.manual ? 0.08 : 0.12
     let deckTilt = 0, deckRoll = 0, deckFlip = 0, armOut = 0.35, grabArm = 0
-    if (s.manual) deckTilt = -0.5
+    // manuals: normal and 180 read differently — normal stays low and steady,
+    // the 180 leans into the steer with wide arms and a wobbly deck.
+    if (s.manual) {
+        if (s.manual.spin) {
+            deckTilt = -0.5
+            armOut = 1.45
+            deckRoll = Math.sin(t * 16) * 0.22
+            g.rotation.z = Math.sin(t * 9) * 0.07
+            g.rotation.y = -s.heading + (s.manual.steer || 1) * 0.14
+        } else {
+            deckTilt = -0.42
+            armOut = 1.05
+            deckRoll = Math.sin(t * 7) * 0.05
+        }
+    }
     if (s.air) {
         deckTilt = s.vy > 0 ? -0.22 : 0.15
         const at = s.airTrick
