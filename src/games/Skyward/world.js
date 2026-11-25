@@ -161,10 +161,31 @@ export function makeWorld(seed) {
         return lift
     }
 
-    // the storm cell, east of the isle — gusts, a core downdraft, a rising edge
+    // the storm cell, east of the isle — gusts, a core downdraft, a rising
+    // edge. #3267: the cell LIVES. stormPos(t) is the ONE answer for where
+    // the thunderhead stands — sim weather, the HUD's depth read and the
+    // painted cloud deck all follow it (the thermalPos law, lifted to the
+    // storm). It sweeps a slow ellipse — east/west ~140 s, north/south
+    // ~190 s, phase from the seed — carrying the downdraft, the rising
+    // ring and the rain with it, so the line you memorised at the start of
+    // a THUNDERPASS is not the line you fly at the end. Gates stay fixed:
+    // the school forgives, and only the weather moves. Amplitude is tuned
+    // by law, not taste: the drifting cell still never grounds (its centre
+    // stays offshore), never reaches the bay rings, pad, school or launch
+    // at all, never greets the pass start at more than s≈0.25 — and the
+    // pass gates keep feeling the cell through the whole sweep.
+    // scripts/skywardcheck.mjs sweeps the clock and pins every one of it.
     const storm = { x: 560, z: -40, r: 300 }
+    const stormPh = ((r >>> 13) % 6283) / 1000   // per-seed phase, 0..2π
+    function stormPos(t) {
+        return {
+            x: storm.x + Math.sin(t * 0.045 + stormPh) * 64 + wind.x * Math.sin(t * 0.012 + stormPh) * 1.8,
+            z: storm.z + Math.cos(t * 0.033 + stormPh * 1.37) * 34 + wind.z * Math.sin(t * 0.014 + stormPh) * 1.8,
+        }
+    }
     function stormAt(x, z, t) {
-        const d = Math.hypot(x - storm.x, z - storm.z)
+        const p = stormPos(t)
+        const d = Math.hypot(x - p.x, z - p.z)
         if (d > storm.r * 1.25) return { s: 0, gust: { x: 0, z: 0 }, vy: 0 }
         const s = bell(d, storm.r)
         const ring = Math.abs(d - storm.r * 0.86) < 55 ? 1.4 : 0
@@ -244,7 +265,7 @@ export function makeWorld(seed) {
     }
 
     return {
-        seed: seed >>> 0, wind, terrainHeight, thermalLift, thermalPos, stormAt, stormFlash,
+        seed: seed >>> 0, wind, terrainHeight, thermalLift, thermalPos, stormAt, stormPos, stormFlash,
         waves, waterHeightAt, waterVy, waterGLSL, thermals, storm,
         rings, targets, pad, school, launch, passStart, passRings,
     }

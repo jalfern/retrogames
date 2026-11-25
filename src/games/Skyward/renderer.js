@@ -208,11 +208,16 @@ void main(){
         const a = rngp(i * 3 + 1) * Math.PI * 2
         addCloud(Math.cos(a) * (420 + rngp(i) * 700), 130 + rngp(i * 7) * 90, Math.sin(a) * (420 + rngp(i * 5) * 700) - 60, 90 + rngp(i * 11) * 120, 0xf6faff)
     }
-    // storm cell: dark cluster + rain shaft
+    // storm cell: dark cluster + rain shaft — #3267: the whole deck rides in
+    // one group so the painted cell follows stormPos(t); the sim answers for
+    // the weather at the same place (thermalPos law → the cloud you see is
+    // the weather you get).
+    const stormCell = new THREE.Group()
+    scene.add(stormCell)
     for (let i = 0; i < 16; i++) {
         const a = rngp(i * 13 + 5) * Math.PI * 2
         const r = rngp(i * 17) * world.storm.r * 0.8
-        addCloud(world.storm.x + Math.cos(a) * r, 150 + rngp(i * 19) * 70, world.storm.z + Math.sin(a) * r, 150 + rngp(i * 23) * 140, 0x57616f)
+        stormCell.add(addCloud(world.storm.x + Math.cos(a) * r, 150 + rngp(i * 19) * 70, world.storm.z + Math.sin(a) * r, 150 + rngp(i * 23) * 140, 0x57616f))
     }
     const rainN = lite ? 240 : 520
     const rainPos = new Float32Array(rainN * 3)
@@ -224,7 +229,7 @@ void main(){
     const rainGeo = new THREE.BufferGeometry()
     rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3))
     const rain = new THREE.Points(rainGeo, new THREE.PointsMaterial({ color: 0xa8c4e4, size: lite ? 2.4 : 1.8, transparent: true, opacity: 0.55, depthWrite: false }))
-    scene.add(rain)
+    stormCell.add(rain)
 
     // lightning bolt — a jagged ribbon from the cell base down to the water
     // near the core, flashing on the same peaks the sky goes bright. The sky
@@ -448,10 +453,14 @@ void main(){
         seaMat.uniforms.uCam.value.copy(camera.position)
         const flash = world.stormFlash(t)
         skyMat.uniforms.uFlash.value = flash
+        // #3267 — the painted cell tracks the sim's cell: stormPos(t) is the
+        // one position both the weather and the sky read this frame.
+        const cellP = world.stormPos(t)
+        stormCell.position.set(cellP.x - world.storm.x, 0, cellP.z - world.storm.z)
         // bolt to the water near the core, on flash peaks — re-jittered at
         // 26 Hz so it flickers rather than shimmers
         if (flash > 0) {
-            const baseX = world.storm.x + 12, baseZ = world.storm.z - 8
+            const baseX = cellP.x + 12, baseZ = cellP.z - 8
             const tickQ = Math.floor(t * 26)
             const topY = 150, botY = 2.5
             const pts = []

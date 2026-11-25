@@ -17,6 +17,7 @@ import { Report } from './lib/harness.mjs'
 
 const SELF = fileURLToPath(import.meta.url)
 const SIMF = 'src/games/Skyward/sim.js'
+const WORLDF = 'src/games/Skyward/world.js'
 const r = new Report('skywardcheck')
 r.info('boot', 'sim.js + planner.js imported in Node, zero DOM, zero Math.random')
 
@@ -133,17 +134,20 @@ void runAuto
         w.passRings.length === 5 && w.passRings.every((p, i) => w.terrainHeight(p.x, p.z) < -2 && (i === 0 || p.x > w.passRings[i - 1].x) && p.y > 8 && p.y < 32)
         && Math.hypot(w.passStart.x - w.storm.x, w.passStart.z - w.storm.z) > w.storm.r)
     r.check('the storm is REAL for the plane: held at the core it sinks, in fair air it does not', (() => {
+        // 3 s window: the core pull is ~1.3 m/s net under the buffet bob,
+        // a 1 s read is inside the noise (gusts lift the hull between hits)
         const sink = (x, z) => {
             const h = makeGame(21)
             h.p = { x, y: 30, z }
             h.heading = Math.PI / 2; h.pitch = 0; h.roll = 0; h.speed = 38; h.vy = 0
             const y0 = h.p.y
-            for (let i = 0; i < 60; i++) step(h, {})
+            for (let i = 0; i < 180; i++) step(h, {})
             return y0 - h.p.y
         }
-        const core = sink(w.storm.x + 15, w.storm.z)
+        const cp = w.stormPos(0) // #3267: the core is wherever the cell STANDS, not the old anchor
+        const core = sink(cp.x, cp.z)
         const fair = sink(0, -600)
-        return core > 1.0 && Math.abs(fair) < 0.5
+        return core > 2.0 && Math.abs(fair) < 0.5
     })())
 
     checkout(g, 'pass')
@@ -177,6 +181,44 @@ void runAuto
         ps.push(`${s}:${h.grad.pass ?? 'fail'}`)
     }
     r.check('the storm is beatable: the autopilot clears THUNDERPASS on all five seeds', allPass, ps.join(' '))
+
+    // ---------------------------------------------- living storm (#3267) ----
+    // Sweep the clock a full hour: the cell must actually wander (bounded),
+    // stay offshore and clear of every course, never greet the pass start
+    // deep — and the weather answer must ride WITH the painted cell, so the
+    // clouds are never a lie over still physics.
+    {
+        let maxDx = 0, maxDz = 0, offshore = true, coursesClear = true, startShallow = true
+        for (let t = 0; t <= 3600; t += 0.25) {
+            const p = w.stormPos(t)
+            maxDx = Math.max(maxDx, Math.abs(p.x - w.storm.x))
+            maxDz = Math.max(maxDz, Math.abs(p.z - w.storm.z))
+            if (w.terrainHeight(p.x, p.z) >= 0) offshore = false
+            if (w.targets.some((tt) => Math.hypot(p.x - tt.x, p.z - tt.z) < 200)
+                || Math.hypot(p.x - w.pad.x, p.z - w.pad.z) < 300
+                || Math.hypot(p.x - w.school.x, p.z - w.school.z) < 300
+                || Math.hypot(p.x - w.launch.x, p.z - w.launch.z) < 300
+                || w.rings.some((rg) => Math.hypot(p.x - rg.x, p.z - rg.z) < 300)) coursesClear = false
+            if (w.stormAt(w.passStart.x, w.passStart.z, t).s >= 0.35) startShallow = false
+        }
+        r.check('the cell wanders — a memorised storm is a stale storm (#3267)', maxDx > 40 && maxDz > 20, `dx=${maxDx.toFixed(0)} dz=${maxDz.toFixed(0)}`)
+        r.check('the wander is bounded — a slow sweep, never a teleport storm', maxDx <= 75 && maxDz <= 45, `dx=${maxDx.toFixed(0)} dz=${maxDz.toFixed(0)}`)
+        r.check('the drifting centre stays offshore all hour', offshore)
+        r.check('the drift never brings the cell onto a course (targets < 200 m, pads/rings < 300 m)', coursesClear)
+        r.check('the pass start line never deepens past s 0.35', startShallow)
+        r.check('the weather rides with the painted cell (physics follows stormPos)', (() => {
+            // points the STATIC cell can never reach (380 m > r·1.25 = 375)
+            // catch weather only when the drifting cell has carried its edge
+            // over them — east and west extremes both, same frame.
+            let seenE = false, seenW = false
+            for (let t = 0; t <= 3600; t += 0.25) {
+                const p = w.stormPos(t)
+                if (p.x - w.storm.x > 50 && w.stormAt(w.storm.x + 380, w.storm.z, t).s > 0.05) seenE = true
+                if (w.storm.x - p.x > 50 && w.stormAt(w.storm.x - 380, w.storm.z, t).s > 0.05) seenW = true
+            }
+            return seenE && seenW
+        })())
+    }
 }
 
 // --------------------------------------------------- juice (#3138) ----
@@ -345,6 +387,9 @@ if (process.argv.includes('--mutate')) {
         ['a dead thunderpass gate scores as if active', SIMF, 'const pg = w.passRings[g.passIdx]', 'const pg = w.passRings[4]'],
         ['near-miss crossing detection dies', SIMF, 'else if (d < CFG.RING_R + 7.5 && g.p.z >= r.z && g._zPrev < r.z) {', 'else if (false && d < CFG.RING_R + 7.5 && g.p.z >= r.z && g._zPrev < r.z) {'],
         ['the lift signal reads zero everywhere', SIMF, 'g.lift = w.thermalLift(g.p.x, g.p.z, g.t)', 'g.lift = 0 * w.thermalLift(g.p.x, g.p.z, g.t)'],
+        ['the storm stops drifting', WORLDF, 'Math.sin(t * 0.045 + stormPh) * 64', '0 * Math.sin(t * 0.045 + stormPh) * 64'],
+        ['physics ignores the painted drift (the clouds lie)', WORLDF, 'const p = stormPos(t)', 'const p = storm'],
+        ['the cell wanders inland', WORLDF, '+ stormPh) * 64 +', '+ stormPh) * 192 +'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
