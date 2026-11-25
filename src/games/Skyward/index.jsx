@@ -401,6 +401,9 @@ const SkywardGame = () => {
                 },
                 // #3295 — the live engine bed the cabinet is hearing right now
                 engine: () => engineBed(gs.craft, gs.speed, gs.vy, gs.thrusting, gs.stormS),
+                // #3302 — the seed wind, so a drive leg can crab into it and
+                // hold a straight ground track (what a pilot would do)
+                wind: () => ({ x: gs.world.wind.x, z: gs.world.wind.z }),
                 hash: () => gs.hash,
                 gameTime: () => gs.tick / 60,
                 // #3267 — where the cell stands in sim time right now (the ONE
