@@ -628,7 +628,7 @@ export function scuffTell(w, x, z, heading, y) {
     let e = heading - w.STRIP_HEADING
     while (e > Math.PI) e -= Math.PI * 2
     while (e < -Math.PI) e += Math.PI * 2
-    const tell = clamp((Math.abs(e) - CFG.TELL_GRIP) / (CFG.STRIP_ALIGN - CFG.STRIP_GRIP), 0, 1)
+    const tell = clamp((Math.abs(e) - CFG.TELL_GRIP) / (CFG.STRIP_ALIGN - CFG.TELL_GRIP), 0, 1)
     return { tell: +tell.toFixed(2), dir: e >= 0 ? 1 : -1, u: +(t * len).toFixed(1) }
 }
 
