@@ -49,9 +49,8 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
 - **MOVED by #3267:** the storm cell no longer stands still — `stormPos(t)`
   drifts the whole cell (weather AND paint) while the gates stay fixed, so a
   memorised THUNDERPASS line is a stale line. What remains of the old bullet:
-  no online (issue: not yet), no second landing strip, engine audio is
-  per-action rather than a continuous loop (the rain bed #3272 is the first
-  sustained channel; the engine can follow its shape).
+  no online (issue: not yet), no second landing strip. (The engine-audio half
+  of this bullet closed in #3295 — see the Engine bed section.)
 - The cell drifts on a fixed seeded ellipse, not a steered weather sim (no
   cell-to-cell travel, no squall line); a long run learns the sweep the way
   rungs 1's lines were learned.
@@ -81,3 +80,24 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   loop-noise voice in `AudioController` (`startLoopNoise`/`setLoopNoise`/
   `stopLoopNoise`, loopVoice's sibling on the ambience bus). THUNDERPASS
   keeps its own audio script untouched.
+
+## Engine bed (#3295)
+- **Sustained motor** — the pilot has no throttle lever, so the engine reads
+  what the hull is DOING: `engineBed(craft, speed, vy, thrusting, stormS)`
+  maps the plane's airspeed + climb load to a continuous hum (a fast or
+  climbing hull is a working engine — louder AND brighter; a deep-stall hull
+  drops to a near-cutout floor and re-spools on recovery), the belt answers
+  its fan directly (thrusting bites 36 Hz higher), and the glider is
+  motorless — its silence is the rule the bed teaches. The law is pure in
+  `sim.js` (like the storm bed) so `skywardcheck` pins it; the cabinet rides
+  the existing `startLoopVoice` saw (a deterministic 13 Hz blade-pass flutter
+  timed off `gs.t`) — `AudioController` grows not one line.
+- **Rain owns the core** — deep storm ducks the engine ×(1−0.5·depth) instead
+  of duelling thunder; `raw` (pre-duck gain) rides the cue law so flying
+  through the cell can never fake an engine death. `engineCue(raw, prevRaw)`
+  holds the #3272 hysteresis idiom: one spool when boarding (armed below
+  0.006, fires ≥0.012), one cut only into true zero (glider on); belt fan
+  toggles sit above the arming lines and stay chirp-free.
+- **Presentation-only** — the laws read state and never write it: hash,
+  `stateOf`, scoring are byte-identical with the bed on (pinned), so replays
+  and the QA robot's views are untouched.

@@ -477,6 +477,45 @@ export function stormCue(s, prevS) {
     return null
 }
 
+// ── engine audio law (#3295) ───────────────────────────────────────────────
+// The other half of the old honest-gap bullet: the motor was per-action, the
+// rain bed (#3272) was the first sustained channel — now the engine follows
+// the same shape, as a pure law the cabinet rides every frame. engineBed maps
+// what the hull is DOING to a continuous hum: for the plane the throttle the
+// pilot never had is airspeed + climb load (a fast or climbing hull is a
+// working engine — louder and brighter; a deep-stall hull nearly cuts out and
+// re-spools on recovery); the belt answers its fan directly (thrusting bites
+// a whole tone higher); and the glider is motorless — its silence is the rule
+// the bed teaches, wind and rain keep the sky alone. Deep rain DUCKS the motor
+// (×(1−0.5·depth)) instead of duelling it: at the core the rain owns the mix.
+// `raw` is the pre-duck gain so the edge cues can't be fooled by the storm.
+// Cue law holds the #3272 hysteresis idiom: spool rises from near-silence
+// (armed below 0.006, fires at ≥0.012 — boarding after gliding, the game's
+// first tick, a stall recovered); cut is a true death to zero (glider on).
+export function engineBed(craft, speed, vy, thrusting, stormS) {
+    const d = Number.isFinite(stormS) ? clamp(stormS, 0, 1) : 0
+    const v = Number.isFinite(speed) ? speed : 0
+    const climb = Number.isFinite(vy) && vy > 0 ? vy : 0
+    let raw = 0, freq = 0
+    if (craft === 'plane') {
+        const load = clamp((v - 22) / 26 + climb * 0.025, 0, 1)
+        raw = 0.004 + 0.030 * load
+        freq = 64 + 86 * load
+    } else if (craft === 'belt') {
+        raw = thrusting ? 0.026 : 0.014
+        freq = thrusting ? 128 : 92
+    } // glider: no motor, no bed — {gain 0, freq 0}
+    return { gain: +(raw * (1 - 0.5 * d)).toFixed(4), freq: Math.round(freq), raw: +raw.toFixed(4) }
+}
+
+export function engineCue(raw, prevRaw) {
+    const a = Number.isFinite(raw) ? raw : 0
+    const b = Number.isFinite(prevRaw) ? prevRaw : 0
+    if (b < 0.006 && a >= 0.012) return 'spool'
+    if (b > 0 && a <= 0) return 'cut'
+    return null
+}
+
 // ── state for the contract / harness ───────────────────────────────────────
 export function stateOf(g) {
     return {

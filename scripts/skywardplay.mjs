@@ -16,7 +16,7 @@ const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Conte
 
 const ROOT = resolve(import.meta.dirname, '..')
 const SHOTS = process.argv.includes('--shots')
-const URL = process.env.SKYWARD_URL || 'http://localhost:5173/retrogames/skyward?lite=1'
+const URL = process.env.SKYWARD_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/skyward?lite=1`
 const SHOT_DIR = resolve(ROOT, 'shots')
 if (SHOTS) mkdirSync(SHOT_DIR, { recursive: true })
 
@@ -76,6 +76,28 @@ try {
   ok(b.y > 20 && b.y < 90, `holds sane altitude (y=${b.y.toFixed(0)})`)
   await shot('skyward-freeflight.png')
 
+  /* #3295 — the engine bed is live: a cruising plane hums, the glider is
+     motorless silence, and boarding back to the plane brings the bed up */
+  const eng1 = await page.evaluate(() => window.__skywardTest.engine())
+  ok(eng1.raw >= 0.012 && eng1.freq >= 60 && eng1.gain > 0,
+    `cruising plane carries an engine bed (raw=${eng1.raw}, ${eng1.freq} Hz)`)
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    for (let k = 0; k < 3 && T.state().craft !== 'glider'; k++) T.recycle()
+  })
+  await simSleep(1)
+  const eng2 = await page.evaluate(() => window.__skywardTest.engine())
+  ok(eng2.raw === 0 && eng2.gain === 0 && eng2.freq === 0,
+    `glider is motorless — the bed is silent on the wing (raw=${eng2.raw})`)
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    for (let k = 0; k < 3 && T.state().craft !== 'plane'; k++) T.recycle()
+  })
+  await simSleep(1)
+  const eng3 = await page.evaluate(() => window.__skywardTest.engine())
+  ok(eng3.gain > 0 && eng3.raw >= 0.012,
+    `boarding back spins the bed up again (raw=${eng3.raw}, ${eng3.freq} Hz)`)
+
   /* frame health under software GL */
   const fps = await page.evaluate(() => new Promise((res) => {
     let n = 0; const t0 = performance.now()
@@ -111,7 +133,13 @@ try {
   ok(ps0.phase === 'pass' && ps0.craft === 'plane', `thunderpass checkout eastbound (phase=${ps0.phase})`)
   await simSleep(3)
   await page.keyboard.down('ArrowLeft'); await simSleep(0.35); await page.keyboard.up('ArrowLeft')
-  const mid = await page.evaluate(() => window.__skywardTest.state())
+  // #3267 moved the cell: a fixed instant at the fixed gate line is seed luck.
+  // Poll a short window — the hull is IN the cell if any sample finds rain.
+  let mid = await page.evaluate(() => window.__skywardTest.state())
+  for (let i = 0; i < 8 && !(mid.stormS > 0.3); i++) {
+    await simSleep(0.8)
+    mid = await page.evaluate(() => window.__skywardTest.state())
+  }
   ok(mid.stormS > 0.3, `the hull is IN the cell (stormS=${mid.stormS})`)
   await shot('skyward-thunderpass.png')
   await page.keyboard.down('ArrowRight'); await simSleep(0.5); await page.keyboard.up('ArrowRight')
@@ -155,6 +183,7 @@ try {
   ok(contract.ok, `exposeGame contract present (meta.id/reset/step/state/frame) ${contract.why || ''}`)
 } catch (e) {
   fails.push(`exception: ${e.message}`)
+  console.log(`FAIL  exception: ${e.message}`)
   await shot('skyward-failure.png')
 } finally {
   await browser.close()

@@ -13,7 +13,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue } from './sim.js'
+import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue, engineBed, engineCue } from './sim.js'
 import { decide } from './planner.js'
 import { createSkywardGL } from './renderer.js'
 import { PRESS, MESSAGES } from './attract.js'
@@ -35,6 +35,8 @@ const SkywardGame = () => {
     const prevPhaseRef = useRef('free')
     const bedOnRef = useRef(false)
     const prevStormRef = useRef(0)
+    const engOnRef = useRef(false)
+    const prevEngRawRef = useRef(0)
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -138,6 +140,7 @@ const SkywardGame = () => {
         const startPlay = () => {
             gs = makeGame(seedFromQuery() ?? randomSeed())
             prevStormRef.current = 0
+            prevEngRawRef.current = 0
             stormWarnedRef.current = false
             setOver(null)
             setMode('play')
@@ -267,6 +270,38 @@ const SkywardGame = () => {
                 bedOnRef.current = false
             }
 
+            // the motor was per-action only (#3295): a sustained engine bed now
+            // rides the loop voice the same way the rain rides the loop noise.
+            // engineBed decides loudness/pitch from airspeed + climb load (plane)
+            // or fan thrust (belt); the glider is motorless — its bed is silence.
+            // A 13 Hz blade-pass flutter is presentation, timed off the sim
+            // clock so it is deterministic; engineCue's edges spin the prop up
+            // when boarding and let it die into the wind when switching to the
+            // glider. The laws are pure in sim.js so skywardcheck pins them.
+            if (screenRef.current === 'play' && !pausedNow) {
+                const eng = engineBed(gs.craft, gs.speed, gs.vy, gs.thrusting, gs.stormS)
+                if (eng.gain > 0) {
+                    audioController.startLoopVoice(eng.freq, 0.045)
+                    const flutter = 1 + 0.16 * Math.sin(gs.t * 2 * Math.PI * 13)
+                    audioController.setLoopVoice(eng.freq, eng.gain * flutter)
+                    engOnRef.current = true
+                } else if (engOnRef.current) {
+                    audioController.stopLoopVoice()
+                    engOnRef.current = false
+                }
+                const ecue = engineCue(eng.raw, prevEngRawRef.current)
+                if (ecue === 'spool') { // props bite — boarding, or a stall recovered
+                    sweep(58, 165, 0.5, 'sawtooth', 0.055)
+                    tone(82, 0.24, 'square', 0.03, 0.08)
+                } else if (ecue === 'cut') { // the motor dies — the wind takes it
+                    sweep(140, 46, 0.6, 'sawtooth', 0.05)
+                }
+                prevEngRawRef.current = eng.raw
+            } else if (engOnRef.current) {
+                audioController.stopLoopVoice() // pause, over, attract: engine off too
+                engOnRef.current = false
+            }
+
             if (screenRef.current === 'attract') gl.orbitAttract(demo, ft / 1000)
             else gl.render(gs, ft / 1000)
 
@@ -333,6 +368,8 @@ const SkywardGame = () => {
                 start: () => startPlay(),
                 checkout: (m) => { checkout(gs, m); return stateOf(gs) },
                 recycle: () => { recycleCraft(gs); return stateOf(gs) },
+                // #3295 — the live engine bed the cabinet is hearing right now
+                engine: () => engineBed(gs.craft, gs.speed, gs.vy, gs.thrusting, gs.stormS),
                 hash: () => gs.hash,
                 gameTime: () => gs.tick / 60,
                 // #3267 — where the cell stands in sim time right now (the ONE
@@ -375,6 +412,7 @@ const SkywardGame = () => {
         return () => {
             cancelAnimationFrame(raf)
             if (bedOnRef.current) { audioController.stopLoopNoise(); bedOnRef.current = false }
+            if (engOnRef.current) { audioController.stopLoopVoice(); engOnRef.current = false }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('pointerdown', onPointer)

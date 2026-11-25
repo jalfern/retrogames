@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { makeGame, step, checkout, stateOf, stormBed, stormCue } from '../src/games/Skyward/sim.js'
+import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue } from '../src/games/Skyward/sim.js'
 import { decide } from '../src/games/Skyward/planner.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { Report } from './lib/harness.mjs'
@@ -472,6 +472,101 @@ void runAuto
     })(), `plane=${makeGame(9).stormS.toFixed(2)}`)
 }
 
+// ------------------------------------------------- engine audio law (#3295) ----
+{
+    // The motor bed: plane loudness/pitch rise with airspeed and climb load,
+    // the belt answers its fan, the glider is motorless — and deep rain ducks
+    // the engine instead of duelling it. It stays a bed: quieter than the rain
+    // cap, so it never drowns the ring tones.
+    let monoS = true, monoF = true
+    for (let v = 6; v <= 60; v += 2) {
+        const b = engineBed('plane', v, 0, false, 0)
+        if (monoS && b.raw < (engineBed('plane', v - 2, 0, false, 0)).raw - 1e-9) monoS = false
+        if (monoF && b.freq < (engineBed('plane', v - 2, 0, false, 0)).freq) monoF = false
+    }
+    r.check('the plane bed rises with airspeed (gain and pitch)', monoS && monoF,
+        JSON.stringify(engineBed('plane', 34, 0, false, 0)))
+    r.check('a climbing hull loads the engine (louder AND brighter than level)', (() => {
+        const lvl = engineBed('plane', 34, 0, false, 0)
+        const up = engineBed('plane', 34, 8, false, 0)
+        return up.raw > lvl.raw && up.freq > lvl.freq
+    })())
+    r.check('a deep-stall hull nearly cuts out (bed floor, not silence, not blast)', (() => {
+        const stall = engineBed('plane', 10, 0, false, 0)
+        const max = engineBed('plane', 60, 12, false, 0)
+        return stall.raw > 0 && stall.raw < 0.006 && max.raw <= 0.034 && max.freq <= 150
+    })())
+    r.check('the belt answers its fan — thrusting bites a whole tone higher', (() => {
+        const idle = engineBed('belt', 0, 0, false, 0)
+        const gas = engineBed('belt', 4, 2, true, 0)
+        return gas.raw > idle.raw && gas.freq > idle.freq && idle.raw > 0.006
+    })())
+    r.check('the glider is motorless — silence under every input', (() => {
+        const probes = [[34, 0, false, 0], [12, -6, true, 1], [7, 3, false, 0.4]]
+        return probes.every(([v, vy, th, s]) => {
+            const b = engineBed('glider', v, vy, th, s)
+            return b.gain === 0 && b.raw === 0 && b.freq === 0
+        })
+    })())
+    r.check('deep rain ducks the engine (halves it at the core) and never duels', (() => {
+        const fair = engineBed('plane', 34, 0, false, 0)
+        const core = engineBed('plane', 34, 0, false, 1)
+        let duckMono = true
+        for (let s = 0; s <= 1.0001; s += 0.05) {
+            const g = engineBed('plane', 34, 0, false, s).gain
+            if (g > fair.raw + 1e-9 || g > fair.gain + 1e-9) duckMono = false
+        }
+        return core.gain === +(fair.raw * 0.5).toFixed(4) && duckMono && core.raw === fair.raw
+    })(), JSON.stringify(engineBed('plane', 34, 0, false, 1)))
+    r.check('the law survives garbage (NaN/±∞ in ⇒ finite bed out, never poison the graph)', (() => {
+        const b = engineBed('plane', NaN, Infinity, false, -2)
+        const c = engineBed('belt', -5, NaN, true, Infinity)
+        return [b.gain, b.freq, b.raw, c.gain, c.freq, c.raw].every(Number.isFinite) && b.gain >= 0
+    })())
+
+    // Edge cues with hysteresis: spool from near-silence, cut only at a true
+    // death; jitter between the arming lines must not chirp.
+    const eseq = (arr) => arr.map((r0, i) => engineCue(r0, i ? arr[i - 1] : 0))
+    r.check('boarding spins the prop (from silence to cruise: one spool)',
+        eseq([0, 0.013, 0.018]).filter((c) => c === 'spool').length === 1)
+    r.check('the motor dies only into true zero (glider on: one cut; belt fan toggles keep it alive)',
+        eseq([0.014, 0.010, 0]).filter((c) => c === 'cut').length === 1 &&
+        eseq([0.014, 0.026, 0.014, 0.026]).every((c) => c === 'spool' || c === null) &&
+        eseq([0.014, 0.026, 0.014, 0.026]).filter((c) => c === 'spool').length === 1)
+    r.check('jitter between the arming lines cannot re-spool (hysteresis)',
+        eseq([0.004, 0.005, 0.0055, 0.0125, 0.008, 0.013, 0.005]).filter((c) => c === 'spool').length === 1)
+    r.check('engineCue survives garbage (NaN in ⇒ nothing; zero into a live raw cuts)', engineCue(NaN, NaN) === null && engineCue(undefined, 5) === 'cut')
+
+    // Honesty: the cues ride the UNDUCKED raw so flying through the core
+    // can't fake an engine death; and a driven plane run spools on boarding.
+    const deep = engineBed('plane', 34, 0, false, 1)
+    r.check('storm never fakes a cue — cue rides raw, only gain ducks',
+        engineCue(deep.raw, deep.raw) === null && deep.gain < deep.raw)
+    r.check('a driven plane spools once on boarding and keeps hums honest for four seconds', (() => {
+        const g = makeGame(11)
+        let prev = 0, spools = 0, off = 0
+        for (let i = 0; i < 240; i++) {
+            step(g, {})
+            const b = engineBed(g.craft, g.speed, g.vy, g.thrusting, g.stormS)
+            if (engineCue(b.raw, prev) === 'spool') spools++
+            if (b.raw === 0) off++
+            prev = b.raw
+        }
+        return spools === 1 && off === 0 && prev >= 0.012
+    })())
+
+    // The bed touches NOTHING on the score spine: same seed, same hash, and
+    // stateOf grows no new key — presentation-only, replay-honest.
+    {
+        const a = makeGame(5)
+        for (let i = 0; i < 600; i++) step(a, decide(a))
+        const b = makeGame(5)
+        for (let i = 0; i < 600; i++) step(b, decide(b))
+        r.check('driving the law changes nothing on the score spine (hash + keys identical)',
+            a.hash === b.hash && !('engine' in stateOf(a)) && !('gain' in stateOf(a)))
+    }
+}
+
 // -------------------------------------------------------- graduation ----
 {
     const SEEDS = [1, 7, 42, 99, 123]
@@ -569,6 +664,10 @@ if (process.argv.includes('--mutate')) {
         ['the sky shader ignores the bearing uniform (fixed east returns in GLSL)', 'src/games/Skyward/renderer.js', 'dot(normalize(uStormDir), normalize(vW - uCam))', 'dot(normalize(vec3(0.86,0.34,-0.06)), normalize(vP))'],
         ['the dim bearing aims at the cell home, not its place (#3272-3)', WORLDF, 'const q = stormPos(t)', 'const q = storm'],
         ['the sky deck sinks to the waterline (#3272-3)', WORLDF, 'const SKY_DECK_Y = 185', 'const SKY_DECK_Y = 2'],
+        ['the plane engine goes silent (no bed, back to per-action beeps)', SIMF, 'raw = 0.004 + 0.030 * load', 'raw = 0 * load'],
+        ['storm duels the engine instead of ducking it', SIMF, 'return { gain: +(raw * (1 - 0.5 * d)).toFixed(4)', 'return { gain: +(raw * (1 + 0.5 * d)).toFixed(4)'],
+        ['the spool cue loses its hysteresis (chirping boarding)', SIMF, "if (b < 0.006 && a >= 0.012) return 'spool'", "if (a >= 0.012) return 'spool'"],
+        ['the glider grows an engine (the bed sings on a motorless wing)', SIMF, 'raw = thrusting ? 0.026 : 0.014\n        freq = thrusting ? 128 : 92', 'raw = thrusting ? 0.026 : 0.014\n        freq = thrusting ? 128 : 92\n    } else {\n        raw = 0.020; freq = 110'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
