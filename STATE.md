@@ -1,64 +1,71 @@
-# STATE — forge board snapshot (slot b, 2026-11-25 — FOAM V)
+# STATE — forge board snapshot (slot a, 2026-11-25 — THE BELT PARKS)
 
 ## This session — one ship, landed
-- Warden TARGET **#3332 SKYWARD belt landing** REFUSED at claim — slot a
-  claimed it 13:56Z and holds the liveness namespace. Normal ladder: no
-  halt/steer, `next` #1712 waiting-jon (not work), `game-queue` empty, QA
-  MASTER live ×2 (no feedback borrow) → flagship stage spent → **NEVER-DRY
-  `KICK TIDAL RUSH 0 weak`** (score 6).
-- Gap 0 (sky lags sea) **treated as owned** — #3329 item 3 re-derives exactly
-  that bullet ("existing README gap") for the QA lane. Took the oldest truly
-  unowned bullet instead: the flat-shaded wake ribbon + darkening strip.
-- Filed + claimed my own POLISH **#3337**, shipped **`1163d39`** (PR #3340):
-  the wake is a **FOAM V**. Ribbon 2 flat lanes → **5 shaded lanes**: bright
-  crest LINES at the V arms (spread with age), inward shoulders, quiet channel
-  between. Brightness rides emit-time width (speed+boost read in the trail);
-  crests **cool white→cyan** as bubbles die; deterministic seq-assigned
-  **twinkle** (no Math.random downstream — buffers byte-identical replay).
-  Darkening strip **gone**: disturbed-water hint is now a tighter (1.18×hw),
-  fainter (α≤0.05) **additive** glow — the wake can only ever add light to
-  the bay. Sim/pads/wire/hash/tables/rng untouched.
-- Proof: tidalcheck **196/196** (+10 pins: additive-only, V crest>fill,
-  age-fade, cooling hue, spread, speed-hot, twinkle, determinism, ring,
-  drawRange), new mutants `foamflat`+`glowdark` caught (1 red each), `beats`
-  still caught (3). tidaldrive GREEN :5178 (win P1, zero page errors).
-  eslint + 3 scoped gates + build green.
-- Prod verified: chunk `TidalRush-DpEf7M2N.js` contains `glowMesh`. #3337
-  shipped+closed. **QA tail filed: #3342** (V legibility at chase-cam,
-  whitecap washout on STORM, glow on sunny, rain-crowd at phone widths,
-  3-trail overlap near first gate).
+- Warden TARGET **#3319** (SKYWARD plane landing) REFUSED at my first claim —
+  slot b held it live and shipped it mid-my-session (PR #3327, 13:51). Normal
+  ladder: no halt, no steer, `next` #1712 waiting-jon, `game-queue` empty,
+  QA MASTER live ×2 (no feedback borrow), flagship stage spent → **NEVER-DRY
+  `KICK SKYWARD 0 weak`** (score 9: open tails #3300/#3310 + unowned gap).
+  Gap 0's actionable half after #3319: **the belt couldn't land.**
+- Filed + claimed **#3332**, shipped **`a2fd5f3`** (PR #3341): the **PARK
+  LAW**. `beltTouch` (pure, sim.js): on-strip, sink < 2 m/s, cross < 4 m/s,
+  not climbing → zone score by the #3302 table (150→700), crab law scuffs 60.
+  A scored arrival PARKS — locked on the deck against wind/gusts, rain still
+  heard, throttle alone lets go (`liftoff`); a second arrival pays again,
+  best kept. Banked best = ✺ **HOVER** chip + completion-card line (answers
+  the plane's ✈ WHEELS); licence math core-three, hash inputs unchanged.
+  Crash (`vy<−5.2`/`speed>10`) and silent settle (firm/off-strip/mid-event)
+  byte-identical. Hints teach quiet-over-firm; `padfinal` F1 cheat.
+- Proof: skywardcheck **178/178** (+16 pins: zones/bands/scuff, park lock,
+  liftoff-and-re-land, firm-vs-crash precedence, once-per-crossing arming,
+  5-seed autopilot honesty, determinism, stateOf) + mutants **43/43** (+7);
+  skywardplay **PASSED** live (`RUNWAY LONG +450 — PARKED`, OFF THE PAD, ✺
+  kept, zero console errors); contractcheck 857/857; eslint + 3 scoped gates
+  + build green. Prod verified: served `Skyward-7fjj9nHI.js` carries the law.
+- QA tail filed: **#3344** (banner width at 390, touch phrasing A/SPACE,
+  parked mesh read, hop-spam banner noise, ✺ glyph, attract taste).
 
 ## Harness lessons (worth one line each)
-- Additive layers sum: full-width fill + wide glow read as one milky road, not
-  a V. Foam wants THIN crest lines, a quiet channel, and a glow α≤0.05 — the
-  first 3-lane build got shot and re-cut to 5 lanes before shipping.
-- jalfern.com 308s `/retrogames/` → prod asset probes need `curl -L` or every
-  poll silently matches nothing (looked like a stalled deploy).
-- mutateguard freezes the tree for mutant runs: sequence commit → mutants →
-  PR; a green suite with a dirty tree still refuses to prove itself.
+- **Judge arrival laws at the crossing tick**: the belt's plain settle zeroes
+  `vy`, which sneaked a park one tick after every firm arrival — `g._air`
+  arms the catch once per deck crossing and re-arms on *leaving* (airborne
+  or climbing > 0.05 m/s; gravity-only deck jitter never re-arms).
+- **A mutant must move what a pin can see**: zeroing a parked hull's `vel`
+  is decoration (the lock is structural) — the chock mutant only died once
+  it advected the hull downwind.
+- **Live-teleport heights are band arithmetic**: deck+1.0 m free-falls to
+  −2.04 m/s at the crossing line (deck+0.8) — one hair outside a 2.0 band.
+  Place drive legs INSIDE the catch window, like the plane leg does.
+- `crashes` is the session counter — a live leg must not assert `crashes==0`
+  after earlier legs; fresh-game Node pins own the crash-free claim.
+- jalfern.com 308s `/retrogames/` — prod asset probes need `curl -L` (slot b
+  learned it this afternoon; I re-learned it tonight).
 
 ## PLAYABLE on main right now
-- `/retrogames/tidal-rush` FOAM V wake (#3340) + beating squall band (#3328)
-  + rain gameplay + 5 airborne verbs + rooms/spectate/rejoin; `/retrogames/
-  skyward` plane runway landings (#3327) + living storm; `/retrogames/pinball`
-  SOLO bed (#3313 items 1–2 via #3334) + TABLE SMITH + tilt-nudge;
-  `/retrogames/grind-city` rail grabs + coping stalls + manual chip;
-  mario-kart, ice-climber, marble-rush, comet-drift pair, ssx, marble-madness,
-  pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT,
-  TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga,
-  missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
+- `/retrogames/skyward` belt PARK law (#3341) + plane wheels-down (#3327) +
+  second strip + engine bed + living storm; `/retrogames/tidal-rush` FOAM V
+  wake (#3340) + beating squall (#3328) + rooms; `/retrogames/pinball` SOLO
+  bed (+ tail items 1–2 #3334) + TABLE SMITH + tilt-nudge + tidal rooms;
+  `/retrogames/grind-city` rail grabs + coping stalls + manuals chip;
+  mario-kart (tilt), ice-climber, marble-rush (tilt, trick hop), comet-drift
+  pair (tilt), ssx (tilt), marble-madness, pacman, mario,
+  minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS,
+  DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga, missile,
+  pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` EMPTY at my close; `next` #1712 waiting-jon (not work).
-- **Next builder claim: run `idle-kick` LIVE.** Expect SKYWARD while #3332
-  (belt settle law, slot a) is building; Tidal Rush's remaining unowned gaps
-  are rider jump/land poses (#3218 tail) — its wake gap is now struck.
-- Holds: #3332 building `lane:games` (slot a, Skyward belt); #3325
-  building-qa (grind-city tail 3); pinball #3313 building-qa may close soon
-  (its items 1–2 merged via #3334). QA tails open: **#3342 (new)**, #3329,
-  #3290 (items 5–7), #3244/#2971 (waiting-jon).
-- Merges today incl. #3334 (pinball seam glide) and my #3340; main-ok green
-  at my claim and merge.
+- `game-queue` EMPTY; `next` #1712 waiting-jon (not a work item).
+- **Next builder claim: run idle-kick LIVE.** It currently answers `KICK
+  SKYWARD 0 weak`, but SKYWARD gap 0 is now the bullet's ONLINE half ("no
+  online") — a big build (TidalRush #3220 shows one rooms PR CAN fit); the
+  next lane should decide honestly between a first hosted-rooms stage and the
+  next scoring title. Skyward is UNheld (its QA tails #3300/#3310/#3344 are
+  `feedback`, not building-qa).
+- Holds: building-qa #3329 (TidalRush, item 1 shipped via #3346), #3325
+  (GrindCity). Open QA tails: pinball #3290 (items 5–7) + #3313 (3–4 left
+  after #3334), tidal #3342 (FOAM V), #3344 (belt park), skyward #3300/#3310.
+- Merges today incl. #3306–#3350 pair-lanes; main-ok green at claim and at
+  merge; Production contains the belt (chunk Skyward-7fjj9nHI.js).
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
@@ -67,9 +74,10 @@
 - No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot b: dev :5178 stopped via scripts/devstop.sh; worktree
-  `~/Dev/retrogames-forge-tidal-foamwake` detached clean at origin/main by
+- Slot a: dev :5173 stopped via scripts/devstop.sh at session end; worktree
+  `~/Dev/retrogames-forge-skyward-belt` detached clean at origin/main by
   mergeclean — remove when convenient.
 - Game merged this session ⇒ this STATE.md ships via its own docs/state PR;
-  parked at /tmp/forge/STATE.b.parked.md via statepark.
-- Time-box: ~2 h of 3 h at ship.
+  parked at /tmp/forge/STATE.a.parked.md via statepark (slot b's 13:28 park
+  and its 15:0x handoff #3343 were consumed — facts folded above).
+- Time-box: ~1 h 55 m of 3 h.
