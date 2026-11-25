@@ -811,7 +811,7 @@ const TidalRushGame = () => {
                 const g1 = gs.course.gates[gi + 1]
                 const fmtGate = (g) => (g.color === 'red' ? 'RED RIGHT' : 'YELLOW LEFT')
                 if (hud.gateNext) hud.gateNext.textContent = `▶ ${fmtGate(g0)}`
-                if (hud.gateThen) hud.gateThen.textContent = g1 ? `  ·  ${fmtGate(g1)}` : ''
+                if (hud.gateThen) hud.gateThen.textContent = g1 && !narrowUI ? `  ·  ${fmtGate(g1)}` : ''
                 hud.gate.style.color = g0.color === 'red' ? '#ff8d80' : '#ffe08a'
             }
         }
@@ -832,8 +832,14 @@ const TidalRushGame = () => {
             renderer.render(scene, camera)
         }
 
+        // #3365: phone widths (<480px CSS) — the shared chrome pills (ARCADE/
+        // FEEDBACK stack left, speaker+PAUSE right) claim ~100px per side, so
+        // the centre column keeps its next-gate banner to one line there: the
+        // second-next preview yields (the buoys themselves show it in-world).
+        let narrowUI = false
         function resize() {
             const w = wrap.clientWidth, h = wrap.clientHeight
+            narrowUI = w < 480
             renderer.setSize(w, h, false)
             camera.aspect = w / Math.max(1, h)
             camera.updateProjectionMatrix()
@@ -1250,7 +1256,7 @@ const TidalRushGame = () => {
                     <div ref={setHud('score')} className="text-xl font-black text-yellow-200 leading-6">0</div>
                     <div ref={setHud('lap')} className="text-[11px] tracking-widest">LAP 1/3</div>
                 </div>
-                <div className="absolute top-2 left-1/2 -translate-x-1/2 text-center">
+                <div className="absolute top-2 left-0 right-0 flex flex-col items-center text-center">
                     <div ref={setHud('bay')} className="text-[10px] tracking-[0.35em] mb-1" style={{ color: '#bfe9ff' }}>SUNNY BAY</div>
                     <div ref={setHud('gate')} className="bg-black/45 border border-cyan-300/30 rounded px-3 py-1 text-sm font-bold tracking-widest">
                         <span ref={setHud('gateNext')} /><span ref={setHud('gateThen')} style={{ opacity: 0.6, fontWeight: 600 }} />
