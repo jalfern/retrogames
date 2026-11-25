@@ -1,80 +1,86 @@
-# STATE — forge board snapshot (slot a, 2026-11-25 — THE NOTCH FIX)
+# STATE — forge board snapshot (slot b, 2026-11-25 — THE BED THE PHONE COULD HEAR)
 
-## This session — one ship, landed
-- Warden TARGET **#3336 REFUSED** at claim (slot b live, checkpoint 3 min old —
-  correct yield). Normal ladder: no steer, `next` #1712 waiting-jon, `game-queue`
-  empty, two QA MASTERs live → no feedback borrow; flagship stage spent (null);
-  idle-kick flipped GRIND CITY→**TIDAL RUSH 0 weak** when #3379 took grind-city
-  `building-qa` mid-decision. Oldest unowned gap: "Score HUD sits under the
-  shared chrome pill" → filed **#3389**, claimed, shipped **`a19233b` (PR #3392)**;
-  closed shipped.
-- **Root cause was the safe area, not the CI width.** Every shared pill positions
-  with `calc(x + var(--sat/sal/sar))`; TidalRush's HUD columns used raw offsets.
-  Measured at sat 59 (notched PWA): ARCADE/FEEDBACK covered the score panel
-  24–29 px, PAUSE/PADS the speed column 20–24 px. Both columns now compose
-  `calc(5.25rem + var(--sat,0px))` (+`--sal`/`--sar`) — the house pattern (9
-  other games). Gap constant at any inset.
-- **The drive leg caught a second bug mid-fix**: at inset 0 the score sat only
-  3px under FEEDBACK (pill real height 29px, my design estimate was 18) — the
-  game's own #3365 8px law was missed even on desktop. 5.25rem = 84px fixes both
-  stories with one number: 11px constant clearance everywhere.
+## This session — one ship landed + red main cleared
+- Warden TARGET **#3336** claimed at the top (claim ok). Shipped **`a4dbafb`
+  (PR #3391)**, issue closed `shipped`. Pinball SOLO-bed tail 2, item 1:
+  **phone-speaker mix calibration**. Measured diagnosis (not vibes): the
+  bed's bass (MIDI 28–33 = 41–55 Hz) sits 14–22 dB under the ~150 Hz phone
+  knee, the lead idles ~85 % of the 4 s bar, bus destination gain is only
+  0.016–0.048 — that's why it drowned under bumper volley (#3313 item 3).
+  Fixed by VOICING, not gain (swell law is contract): new opt-in `mid` voice
+  in AudioController `_schedule` (other tracks schedule byte-identically),
+  `pinballSolo` walks a root–5th ostinato A3/E4·G3/D4·F3/C4·E3/B3,
+  eighth-note pulse, square vol 0.3, band 164–330 Hz; cap peak ~18 dB under
+  one bumper hit (#3304 discipline holds). `__audioMix()` gains `t`/`st`.
+- **Item 2 NOT implemented** — tilt filter-muffle awaits Jon's #3335
+  (AWAITING, default keep level-only). No building against an open decision.
+- **Red main found and cleared (#5a)**: #3382 shipped `bg-black/35` in
+  GALAGA's attract; attractcheck's ≥40 legibility law had failed `static` on
+  every main push since (slot a's later merges rode the red unnoticed —
+  main-ok only consults the nightly). One-token restore `/35→/40`, shipped
+  **`8cf2bce` (PR #3397)**. attractcheck 694/694 local.
 
 ## Proof
-- tidalcheck **236/236** (+4 pins: both columns, no-raw-offset law, chrome-anchor
-  truth incl. the 44+29px arithmetic) — **41/41 mutants die** (new `hudlowsat`,
-  `hudrosat`; each anchored with its side property so one swap hits one column).
-- tidaldrive GREEN :5173 — vacuity guard (4 pills, 2 cols), gap 11px at inset 0,
-  gap 11px at notch (sat 59), both tops move 84→143 WITH the inset (composition
-  proven by motion). Zero page errors. Full run in-session.
-- eslint + 3 scoped gates + build green; main-ok green at claim and merge.
-- Prod verified: served chunk `TidalRush-BfdGWYrv.js` contains `5.25rem`.
+- pinballcheck **279/279** (+12 §mix pins: swell literals 0.16/0.30/0.10/
+  25000 + MUSIC_BUS + 0.02 quantize, opt-in exclusivity, chordal walk, duty,
+  knee math, bed-under-volley ≥12 dB) — **14/14 mutants** (new `mix` mutes
+  the mid in `_schedule`: data intact, wiring pin dies).
+- pinballplay **64/64** live incl. 3 new mix legs: audio clock runs a full
+  loop, phone-band OCCUPIED ≥60 % frames (measured 0.92–1.00 — the sparse
+  lead idled there), post-knee mid/bass ≥3× (measured 4.4–10.6×).
+  Thresholds are ratios: Chrome's analyser puts these notes at −71…−85 dBFS
+  (measured) — absolute floors are engine normalization, not mix truth.
+- eslint + lint:mario/fps/ai + build + contractcheck(pinball) 14/14 green;
+  static passed on both PRs; prod bundle `index-DtDY9C2l.js` carries
+  `mid:[57,0,64,…]` live on www.jalfern.com/retrogames/pinball.
 
 ## Harness lessons (worth one line each)
-- **Flag drift**: tidalcheck's mutant flag is `--mutate=`, not `--mutant=` — an
-  unknown flag name silently plain-runs green (looks like 41 survivors, is 0
-  mutant runs). Detect kills by the `mutant caught` summary line, not exit code:
-  tidalcheck exits 0 on the mutant-run success path too.
-- Measured pill height (29px) ≠ text-height estimate (18px); spacing laws should
-  be pinned as arithmetic (84−73≥8) so the constant moves if chrome grows.
-- A QA lane taking `building-qa` mid-decision flips idle-kick between two probes —
-  re-run the kick at claim time, not design time (grind-city→tidal rush in ~4 min).
+- **Rigs are sequenced by ball traffic**: a passive 5 s observation window
+  between physics rigs gave a free-running ball time to spend the magnet's
+  one-per-ball charge before magDrop — 2 reds. Moved the block after the
+  restart leg (idle ball in the lane): 64/64. Observation is never neutral.
+- Chrome AnalyserNode dB normalization at these bus levels (−71…−85) makes
+  absolute spectrum floors engine-flavored; pin ratios of the same run, plus
+  an audio-clock heartbeat (`t`) so a stalled thread can't fake silence.
+- Red main hides from `main-ok` when the nightly predates the break: PR
+  static is the earliest truth — the first lane to run a PR sees the red and
+  owes the fix (#3397 pattern: branch off origin/main, ship first, rebase).
+- Prod-hash verification needs a marker that survives minification — prose
+  comments vanish; pin a data literal (`57,0,64,0,57`) instead.
 
 ## PLAYABLE on main right now
-- `/retrogames/tidal-rush` — score & speed columns now clear of chrome on every
-  phone, notched or not; plus squall fronts that BEAT, FOAM V wake, five airborne
-  verbs with grabs, rain-that-drags, moored sloops + gulls, rooms/spectate/rejoin.
-- `/retrogames/grind-city` — replays, all-time bank, `?line=` share links, plus
-  this afternoon's phone-width tail (#3393); `/retrogames/skyward` go-arounds +
-  blended-sink flare credit (#3390); `/retrogames/pinball` SOLO bed + TABLE SMITH;
-  galaga bee-fleet, mario-kart, ice-climber, marble-rush, comet-drift pair, ssx,
+- `/retrogames/pinball` — SOLO bed now SUSTAINS on phone speakers (mid
+  ostinato in the 164–330 Hz band), plus seam glide, heat tell, TABLE SMITH,
+  garage, kits, orbit/magnet/kickback, two cabinets; `/retrogames/grind-city`
+  thinking-bot trick lines (#3400); `/retrogames/skyward` wheels + bounce-tail
+  2 (#3398); `/retrogames/tidal-rush` notch-safe HUD (#3392); galaga
+  bee-fleet, mario-kart, ice-climber, marble-rush, comet-drift pair, ssx,
   marble-madness, pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT,
-  STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep,
-  missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
+  STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter,
+  iron keep, missile, pucks, mines, zork, ultima, king's quest, Joust,
+  Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `building`: #3394 (GRIND CITY searchable bot line — filed+claimed by the other
-  lane; my old never-dry pick — its README gap is theirs now), #3336 (PINBALL bed
-  tail 2, slot b). `building-qa`: #3375 (skyward wheels-down tail 2).
-  `game-queue` EMPTY; `next` #1712 waiting-jon.
-- New open feedback: **#3395** (my notch-tail: non-race screens at insets, LINK
-  PADS panel over HUD at ≤360px, one-band banner at notch, carry-over wake/
-  reflection/knee gaps).
-- Merges today incl. #3386/#3372/#3390/#3393, **#3392 (mine)**. Never saw red main.
-- Next builder claim: ladder starts empty; doubt rule before filing — tidal-rush's
-  next unowned README lines are the BLOCKED pair (wire pad shape, device QA), so
-  never-dry would land on whatever the other lanes don't hold.
+- At my close: `game-queue` EMPTY; `next` #1712 waiting-jon (not work);
+  `building` clear; `building-qa`: #3395, #3344.
+- If next claim is dry: builders-the-reverse → one `feedback` item if no QA
+  MASTER is live, else never-dry weakestStage; flagship stages largely held.
 
 ## Open questions (links only — #605)
-- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane).
-- #3054 — QA: native TestFlight ports have no recorder/upload (AWAITING).
+- #3335 — QA: music-bus low-pass in AudioController (AWAITING; if approved,
+  #3336 item 2 follows the ensureAmb idiom — lazy node, driven from soloBed's
+  tilt branch).
+- #3054 — QA: native TestFlight ports have no recorder/upload (AWAITING; the
+  device side of this calibration lives here).
 - #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
 - No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot a: dev :5173 still up (stop via scripts/devstop.sh only). Worktree
-  `~/Dev/retrogames-forge-tidalrush-hud-clear` detached clean at origin/main by
-  mergeclean — remove when convenient; old clean squatters from prior sessions too.
-- Game merged this session ⇒ this STATE.md ships via its own docs/state PR;
-  parked at /tmp/forge/STATE.a.parked.md via statepark.
-- Time-box: ~1 h 45 m of 3 h at ship.
+- Slot b: dev :5178 stopped via scripts/devstop.sh at handoff. Worktree
+  `~/Dev/retrogames-forge-pinball-bed-tail2` detached clean at origin/main
+  by mergeclean — remove when convenient (plus old clean squatters:
+  …-forge-skyward-wheels-tail, …-forge-skyward-hud2, …-forge-skyward-bed).
+- Game merged this session ⇒ this STATE ships via its own docs/state PR;
+  parked at /tmp/forge/STATE.b.parked.md via statepark.
+- Time-box: ~1 h 20 m of 3 h used at ship.
