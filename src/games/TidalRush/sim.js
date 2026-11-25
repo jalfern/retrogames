@@ -383,7 +383,13 @@ function stepCraft(gs, c, pad) {
     const rain = rainAt(gs, c.x, c.z)
     c.rain = rain
 
-    const brake = pad.brake ? 10 : 0
+    // #3280 feel law: brake is a 10 m/s² anchor — but the handstand verb is
+    // gas+brake (#3276), and THRUST is only 7.5, so holding the commit across
+    // the landing dead-stopped the hull at 0 km/h (the drive leg caught it).
+    // Under throttle the anchor caps just BELOW the thrust line (0.2 m/s² of
+    // net bite): a dual-commit settles at a ~11 km/h crawl, it never anchors a
+    // running engine to nothing. Coasting brake (no gas) keeps the full anchor.
+    const brake = pad.brake ? (pad.throttle > 0.5 ? Math.min(10, THRUST * pad.throttle - 0.2) : 10) : 0
     c.speed += (THRUST * c.throttle - (DRAG + RAIN_DRAG * rain) * c.speed * c.speed - brake) * DT
     if (c.speed > vCap) c.speed = Math.max(vCap, c.speed - 8 * DT) // ease off, don't clip
     if (c.speed < 0) c.speed = 0

@@ -83,7 +83,7 @@ pauses; ◀ ▶ on the menu picks SUNNY or STORM BAY.
 ## Verify
 
 ```
-npm run tidalcheck                     # 163 gates: boot, rules, win (both bays), determinism,
+npm run tidalcheck                     # 165 gates: boot, rules, win (both bays), determinism,
                                        #   sea-bridge parity, lightning, barrel, swell re-roll,
                                        #   squall-front spatial law + GLSL twin + air-bonus math,
                                        #   rain field/drift/drag/dim laws (#3191), gulls &
@@ -171,7 +171,11 @@ static job; every pushed commit is commented on #3104.
   wide sheet. That stage also caught a real #3276 bug: rival skills hold gas
   ≥0.94 in the air, so armed-2 was ALWAYS a handstand commit under the law
   (68 pays, zero flips across six seeds) — the rival pad now lifts the
-  throttle (≤0.4) under flip-arm, so CPU flips wind over for real.
+  throttle (≤0.4) under flip-arm, so CPU flips wind over for real. And the
+  drive leg caught the anchor trap: brake (10 m/s²) outruns THRUST (7.5), so
+  holding the handstand commit across a landing dead-stopped the hull — under
+  throttle the anchor now caps just below the thrust line and the dual-commit
+  settles at a ~11 km/h crawl (coasting brake keeps its full anchor).
   Honest gap left: CPUs still never handstand — armed 2 is flip intent; the
   human hold verb stays un-AI'd.
 - **CLOSED by #3191** — rain is gameplay now: extra drag in the band

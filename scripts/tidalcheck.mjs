@@ -382,6 +382,21 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     }
     ok('an inert air grabs nothing and lands plain (lastLand = plain)', !plainGrab && plainLand === 'plain')
 
+    // The dual-commit crawls, it never anchors (#3280 drive-leg): gas+brake is
+    // the handstand verb, so holding it across a landing must not stall the
+    // hull at zero. Coasting brake alone keeps its full teeth. Steer with the
+    // game's own autopilot head — an unsteered hull just meets the boundary.
+    const g6 = makeGame(7)
+    for (let t = 0; t < 60 * 30; t++) step(g6, { ...autoPad(g6), throttle: 1, b: false })
+    const vCruise = g6.crafts[0].speed
+    for (let t = 0; t < 60 * 15; t++) step(g6, { ...autoPad(g6), throttle: 1, brake: true, b: false })
+    const vCrawl = g6.crafts[0].speed
+    for (let t = 0; t < 60 * 6; t++) step(g6, { ...autoPad(g6), throttle: 0, brake: true })
+    const vAnchor = g6.crafts[0].speed
+    ok('gas+brake settles at a crawl (>2 m/s) — a held handstand landing never dead-stops the hull',
+        vCruise > 12 && vCrawl > 2 && vCrawl < 6)
+    ok('coasting brake alone still anchors hard (<1 m/s) — the water brake keeps its teeth', vAnchor < 1)
+
     // the fields reach the contract intact, and CPUs grab on their armed flips
     // (the pose rides the pad bits, not hero special-casing).
     const s1 = stateOf(g1)
