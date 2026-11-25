@@ -326,15 +326,49 @@ export function buildLetters(scene) {
 
 // ── gems (#3246): score-mode objects, spinning octahedra ──────────────────
 // Emissive-only, no per-gem lights — fourteen point lights would flatten the
-// frame budget on software-rendered CI Chrome.
+// frame budget on software-rendered CI Chrome. #3233 adds a 4-point-star
+// idle glint per gem: one shared canvas texture, one SpriteMaterial per gem
+// so each can fade independently. Additive so it reads as light, not paint.
+function makeStarTexture() {
+    const c = document.createElement('canvas')
+    c.width = c.height = 64
+    const ctx = c.getContext('2d')
+    ctx.translate(32, 32)
+    // 4-point star — a tapered, gently bulging diamond pair
+    ctx.beginPath()
+    ctx.moveTo(0, -30)
+    ctx.quadraticCurveTo(5, -5, 30, 0)
+    ctx.quadraticCurveTo(5, 5, 0, 30)
+    ctx.quadraticCurveTo(-5, 5, -30, 0)
+    ctx.quadraticCurveTo(-5, -5, 0, -30)
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 31)
+    grad.addColorStop(0, 'rgba(255,255,255,1)')
+    grad.addColorStop(0.35, 'rgba(215,255,235,0.85)')
+    grad.addColorStop(1, 'rgba(120,255,190,0)')
+    ctx.fillStyle = grad
+    ctx.fill()
+    const tex = new THREE.CanvasTexture(c)
+    tex.colorSpace = THREE.SRGBColorSpace
+    return tex
+}
+
 export function buildGems(scene) {
     const mat = new THREE.MeshStandardMaterial({ color: 0x8dffc0, emissive: 0x1fa866, roughness: 0.2, metalness: 0.5 })
+    const starTex = makeStarTexture()
     return GEMS.map((g, i) => {
         const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.26), mat)
         m.position.set(g.x, g.y, g.z)
         m.castShadow = true
         scene.add(m)
-        return { mesh: m, y: g.y, phase: i * 0.9 }
+        const glint = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: starTex, transparent: true, opacity: 0,
+            blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+        }))
+        glint.position.set(g.x, g.y, g.z)
+        glint.scale.setScalar(0.5)
+        glint.renderOrder = 10
+        scene.add(glint)
+        return { mesh: m, glint, y: g.y, phase: i * 0.9 }
     })
 }
 
@@ -467,7 +501,24 @@ export function buildParticles(scene) {
         scene.add(pts)
         return { pts, pool: Array.from({ length: n }, () => ({ life: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 })), head: 0, geo }
     }
-    return { sparks: mk(220, 0xffc850, 0.14), spray: mk(160, 0xe8ecf0, 0.16) }
+    return { sparks: mk(220, 0xffc850, 0.14), spray: mk(160, 0xe8ecf0, 0.16), burst: mk(120, 0x8dffc0, 0.16) }
+}
+
+// Radial pickup burst (#3233) — gems vanish, sparks fly outward in every
+// direction instead of one direction. n particles, each with its own random
+// horizontal heading; the pool wraps, so bursts never run dry.
+export function burst(p, x, y, z, n = 16) {
+    for (let k = 0; k < n; k++) {
+        const it = p.pool[p.head]
+        p.head = (p.head + 1) % p.pool.length
+        const a = Math.random() * Math.PI * 2
+        const sp = 1.7 + Math.random() * 2.4
+        it.life = 0.4 + Math.random() * 0.35
+        it.x = x; it.y = y; it.z = z
+        it.vx = Math.cos(a) * sp
+        it.vy = 2.2 + Math.random() * 2.4
+        it.vz = Math.sin(a) * sp
+    }
 }
 
 export function emit(p, x, y, z, dirX, dirZ, power) {

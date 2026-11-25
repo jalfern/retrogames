@@ -15,7 +15,8 @@ import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, s
 import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL } from './sim.js'
 import { botPad, makeBot } from './planner.js'
 import { STEP, bedVoices, landThud } from './music.js'
-import { buildPark, buildSky, buildLetters, buildGems, buildRoofLine, buildSkater, poseSkater, buildParticles, emit, stepParticles } from './art.js'
+import { buildPark, buildSky, buildLetters, buildGems, buildRoofLine, buildSkater, poseSkater, buildParticles, emit, burst, stepParticles } from './art.js'
+import { GEMS } from './park.js'
 
 const FIXED_DT = 1000 / 60
 const DT = FIXED_DT / 1000
@@ -239,6 +240,7 @@ const GrindCityGame = () => {
         let acc = 0
         let last = performance.now()
         let clock = 0
+        let prevGemBits = 0   // gem-sparkle burst edge detector (#3233)
         const camPos = new THREE.Vector3(6, 4, -38)
         const camLook = new THREE.Vector3()
 
@@ -337,7 +339,7 @@ const GrindCityGame = () => {
             if (!vst.air && vst.speed > 6 && Math.abs(vst.slope) > 0.35) {
                 emit(fx.spray, vst.x, vst.y + 0.1, vst.z, -Math.sin(vst.heading), Math.cos(vst.heading), 1.5)
             }
-            stepParticles(fx.sparks, DT); stepParticles(fx.spray, DT)
+            stepParticles(fx.sparks, DT); stepParticles(fx.spray, DT); stepParticles(fx.burst, DT)
 
             // letters: spin + hide collected (the replay watches them pop again)
             letterObjs.forEach((l, i) => {
@@ -353,14 +355,31 @@ const GrindCityGame = () => {
             if (roofLine?.marker) roofLine.marker.position.y = roofLine.marker.userData.baseY + Math.sin(clock * 2.2) * 0.16
 
             // gems (#3246): spin + bob, shrink-pop when taken
+            // #3233: idle 4-point-star glint per gem + a radial pickup burst
+            const newBits = actor.gemBits
+            for (let i = 0; i < GEMS.length; i++) {
+                if ((newBits & (1 << i)) && !(prevGemBits & (1 << i))) {
+                    const g = GEMS[i]
+                    burst(fx.burst, g.x, g.y, g.z, 16)
+                }
+            }
+            prevGemBits = newBits
             gemObjs.forEach((o, i) => {
                 o.mesh.rotation.y += 0.06
                 o.mesh.rotation.x += 0.02
                 o.mesh.position.y = o.y + Math.sin(clock * 2.2 + o.phase) * 0.12
+                o.glint.position.copy(o.mesh.position)
                 const got = (actor.gemBits >> i) & 1
                 const target = got ? 0.001 : 1
                 const s0 = o.mesh.scale.x + (target - o.mesh.scale.x) * 0.25
                 o.mesh.scale.setScalar(s0)
+                // the glint: a 4-point star that breathes on its own cycle —
+                // bright for a moment, fades back. No light, no per-gem cost.
+                const breathe = Math.max(0, Math.sin(clock * 2.6 + o.phase * 1.7))
+                const targetO = got ? 0 : 0.18 + breathe * 0.72
+                const curO = o.glint.material.opacity
+                o.glint.material.opacity = curO + (targetO - curO) * 0.22
+                o.glint.scale.setScalar(0.55 + breathe * 0.75)
             })
 
             poseSkater(rig, actor, clock)
