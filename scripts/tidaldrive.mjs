@@ -182,6 +182,49 @@ try {
         await p2.close()
     }
 
+    // #3389 score-column chrome clearance — the two side HUD columns compose the
+    // safe-area vars exactly like the shared pills do. Measured at inset 0 (must be
+    // unchanged from the old pixels) and with a simulated notch (--sat 59px, the
+    // standalone-PWA case where ARCADE/FEEDBACK/PAUSE used to land ON the score):
+    // the columns must ride down WITH the pills — no overlap, ≥8px gap preserved,
+    // and both columns' top must actually MOVE with the inset (composition proven,
+    // not luck of distance).
+    {
+        const p3 = await openGame(browser, { url: `${BASE}/tidal-rush?lite=1`, hook: '__tidalTest', viewport: { width: 640, height: 426 } })
+        await p3.waitForFunction('window.__game', { timeout: 20000 })
+        await p3.keyboard.press('Enter')
+        await wait(4800)
+        const meas = async () => p3.evaluate(() => {
+            const rc = (el) => el.getBoundingClientRect()
+            const pills = [...document.querySelectorAll('button')].filter((d) => /^(ARCADE|FEEDBACK|PAUSE|PADS)$/.test(d.textContent.trim()))
+            const cols = [...document.querySelectorAll('div')].filter((d) => { const st = d.getAttribute('style') || ''; return st.indexOf('var(--sat, 0px)') >= 0 && st.indexOf('calc(') >= 0 && st.indexOf('top:') >= 0 })
+            let gap = 1e9, worst = ''
+            const tops = []
+            for (const c of cols) {
+                const r = rc(c); tops.push(Math.round(r.top))
+                for (const q of pills) {
+                    const qr = rc(q)
+                    const gx = Math.min(r.right, qr.right) - Math.max(r.left, qr.left)
+                    const gy = Math.min(r.bottom, qr.bottom) - Math.max(r.top, qr.top)
+                    const g = Math.hypot(Math.max(0, -gx), Math.max(0, -gy))
+                    if (g < gap) { gap = g; worst = `"${c.textContent.trim().slice(0, 16)}"↔"${q.textContent.trim()}"` }
+                }
+            }
+            return { gap: Math.round(gap), worst, tops: tops.join('/'), nPills: pills.length, nCols: cols.length }
+        })
+        const sat0 = await meas()
+        ok('#3389 page shows chrome pills + both HUD columns (vacuity)', sat0.nPills >= 3 && sat0.nCols === 2, `pills=${sat0.nPills} cols=${sat0.nCols}`)
+        ok('#3389 columns clear of pills at inset 0', sat0.gap >= 8, `gap=${sat0.gap}px ${sat0.worst}`)
+        await p3.evaluate(() => { const s = document.documentElement.style; s.setProperty('--sat', '59px'); s.setProperty('--sal', '47px'); s.setProperty('--sar', '47px') })
+        await wait(350)
+        const notch = await meas()
+        ok('#3389 columns still clear at notch inset (sat 59)', notch.gap >= 8, `gap=${notch.gap}px ${notch.worst}`)
+        const moved = notch.tops.split('/').map(Number)
+        const before = sat0.tops.split('/').map(Number)
+        ok('#3389 both columns ride DOWN with the inset (≥55px)', moved.length === 2 && before.length === 2 && moved.every((t, i) => t - before[i] >= 55 && t - before[i] <= 61), `sat0=${sat0.tops} notch=${notch.tops}`)
+        await p3.close()
+    }
+
     if (process.env.SHOTS) {
         await page.evaluate(() => window.__tidalTest.setMode('attract'))
         await wait(700)

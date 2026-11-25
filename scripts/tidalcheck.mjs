@@ -126,6 +126,10 @@ if (MUT) {
         // #3357 item 1: the pop collapses back to the chase-cam-invisible
         // extension. The legibility pin must go red.
         popweak: { file: 'src/games/TidalRush/index.jsx', from: 'Math.min(1.3, tuck) + 0.30 * pop - 0.34 * absorb', to: 'Math.min(1.3, tuck) + 0.24 * pop - 0.34 * absorb', note: 'pop knee extension shrinks — invisible at the chase cam' },
+        // #3389 — HUD chrome clearance: each column loses its safe-area composition.
+        // Anchored with the side property so each swap hits exactly one column.
+        hudlowsat: { file: 'src/games/TidalRush/index.jsx', from: "top: 'calc(5.25rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))'", to: "top: '4.75rem', left: 'calc(0.75rem + var(--sal, 0px))'", note: 'score column ignores safe-area top — ARCADE/FEEDBACK sit on it on notched phones' },
+        hudrosat: { file: 'src/games/TidalRush/index.jsx', from: "top: 'calc(5.25rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))'", to: "top: '4.75rem', right: 'calc(0.75rem + var(--sar, 0px))'", note: 'speed column ignores safe-area top — PAUSE/PADS sit on it on notched phones' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -1049,6 +1053,27 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('drop density follows the rain at MY hull (Kai offline, my ski online #3220)', jsx.includes('rainAt(gs, gs.crafts[mySeat()].x, gs.crafts[mySeat()].z)') && jsx.includes('rainVis > 0.3'))
     ok('the crossing gets a wind cue', jsx.includes("e.type === 'rain'") && jsx.includes('sfx.rain(e.on)'))
     ok('the sky rides the same front-pass weather as the hull (#3348 uSky gate)', jsx.includes('const wantStorm = rainAt(gs, gs.crafts[mySeat()].x, gs.crafts[mySeat()].z)') && !jsx.includes('const wantStorm = gs.stage'))
+}
+
+// --- HUD chrome clearance (#3389): the score column must never sit under chrome ----
+// Every shared pill positions with calc(x + var(--sat/sal/sar)); the two HUD columns
+// compose the SAME vars, so a notched phone pushes pills and HUD down together.
+// At inset 0 (desktop, CI ?lite=1) the calc collapses to the old pixel values —
+// the layout is unchanged exactly where the old one was already clear.
+{
+    const jsx = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/index.jsx'), 'utf8')
+    const scoreCol = jsx.match(/<div className="absolute bg-black\/45[^>]*style=\{\{\s*top: '([^']+)', left: '([^']+)'/)
+    const speedCol = jsx.match(/<div className="absolute text-right[^>]*style=\{\{\s*top: '([^']+)', right: '([^']+)'/)
+    ok('score column rides the safe-area insets (top+left)', !!scoreCol && scoreCol[1] === 'calc(5.25rem + var(--sat, 0px))' && scoreCol[2] === 'calc(0.75rem + var(--sal, 0px))')
+    ok('speed/rank/clock column rides the safe-area insets (top+right)', !!speedCol && speedCol[1] === 'calc(5.25rem + var(--sat, 0px))' && speedCol[2] === 'calc(0.75rem + var(--sar, 0px))')
+    ok('no raw top-[4.75rem] offset survives (the #3389 bug shape)', !jsx.includes('top-[4.75rem]'))
+    // The 8px law (#3365) at inset 0: FEEDBACK bottoms at 2.75rem + 29px = 73px;
+    // 5.25rem = 84px → 11px constant clearance, at every inset (chrome and HUD share --sat).
+    ok('inset-0 clearance beats the #3365 8px law (84 − 73 = 11)', 84 - (44 + 29) >= 8)
+    // The chrome side of the law: these are the pills the columns must clear. If
+    // chrome moves its anchor, the pins above must be re-derived, not silently stale.
+    const chromeJs = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/components/GameChrome.jsx'), 'utf8')
+    ok('chrome anchor truth: ARCADE + FEEDBACK pills inset with --sat', chromeJs.includes("top: 'calc(0.75rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))'") && chromeJs.includes("top: 'calc(2.75rem + var(--sat, 0px))'"))
 }
 
 // --- moorings (#3159): the bay is lived-in --------------------------------------

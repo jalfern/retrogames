@@ -1269,7 +1269,12 @@ const TidalRushGame = () => {
             <div className={`absolute inset-0 pointer-events-none font-mono transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
                 {/* #3276 invert dim — the world goes quiet while Kai is upside down */}
                 <div ref={setHud('invert')} className="absolute inset-0 bg-indigo-950" style={{ opacity: 0, transition: 'opacity 80ms' }} />
-                <div className="absolute top-[4.75rem] left-3 bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5 text-cyan-50">
+                {/* #3389: HUD rides the shared chrome down with the safe-area insets —
+                    every pill positions with calc(x + var(--sat/sal/sar)); raw offsets let
+                    ARCADE/FEEDBACK/PAUSE sit on the score column on notched phones. And at
+                    inset 0 the column clears the FEEDBACK pill (bottom 2.75rem+29px) by
+                    the #3365 8px law, not 3px. */}
+                <div className="absolute bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5 text-cyan-50" style={{ top: 'calc(5.25rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
                     <div className="text-[9px] tracking-widest opacity-70">SCORE</div>
                     <div ref={setHud('score')} className="text-xl font-black text-yellow-200 leading-6">0</div>
                     <div ref={setHud('lap')} className="text-[11px] tracking-widest">LAP 1/3</div>
@@ -1291,7 +1296,7 @@ const TidalRushGame = () => {
                     </div>
                     <div ref={setHud('countText')} className="text-8xl font-black italic text-yellow-300" style={{ textShadow: '0 0 26px rgba(0,0,0,0.9), 4px 4px 0 #0a6' }} />
                 </div>
-                <div className="absolute top-[4.75rem] right-3 text-right text-cyan-50">
+                <div className="absolute text-right text-cyan-50" style={{ top: 'calc(5.25rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <div className="bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5">
                         <div className="text-[9px] tracking-widest opacity-70">SPEED</div>
                         <div ref={setHud('speed')} className="text-2xl font-black leading-6">0<span className="text-[10px]"> km/h</span></div>
