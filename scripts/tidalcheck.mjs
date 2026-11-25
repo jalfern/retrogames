@@ -66,6 +66,13 @@ if (MUT) {
         podmute: { file: 'src/games/TidalRush/index.jsx', from: "net.room.send('pod', { rows: podWire(net.podium) })", to: 'void net.podium', note: 'host stops broadcasting the room podium' },
         // the podium ranks last-first (#3244 item 4) — the sheet lies about who won.
         podrank: { file: 'src/games/TidalRush/net.js', from: '.sort((a, b) => (a.finishT - b.finishT) || (a.id - b.id))', to: '.sort((a, b) => (b.finishT - a.finishT) || (a.id - b.id))', note: 'podium inverted — slowest first' },
+        // the FLIP pays for a quarter turn (#3276) — clean-or-nothing dies.
+        fliphalf: { from: 'const flipped = Math.abs(c.flipAng) >= Math.PI * 2 - 0.6', to: 'const flipped = Math.abs(c.flipAng) >= Math.PI * 0.5', note: 'flip pays on a partial rotation' },
+        // the HANDSTAND stops counting its pays (#3276) — one long air is a slot machine.
+        handcap: { from: 'const HAND_CAP = 3', to: 'const HAND_CAP = 99', note: 'handstand pays uncapped' },
+        // gas ALONE tips you inverted (#3276) — every autopilot air pays; the
+        // commit law is the difference between a trick and wallpaper.
+        handcmit: { from: 'else if (pad.brake && up) {', to: 'else if (up) {', note: 'handstand triggers on throttle alone' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -238,6 +245,74 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         sawBarrel = g3.events.some((e) => e.type === 'barrel')
     }
     ok('full-lock steer airborne completes a BARREL ROLL (+200)', sawBarrel)
+}
+
+// 6b. flips + handstands (#3276): the pitch verbs ride the SAME six bits the
+// wire already carries — brake alone tips a back-flip, brake+gas holds a
+// handstand, and an air belongs to whichever trick completes first.
+{
+    const idle = { throttle: 0, steer: 0, brake: false, a: false, b: false }
+    const fly = (g, vy = 4.5, lift = 4.5) => {
+        for (let t = 0; t < 92; t++) step(g, idle) // wait out the start lights
+        const p = g.crafts[0]
+        p.airborne = true; p.vy = vy; p.y = heightAt(p.x, p.z, g.t, g.seaCur) + lift; p.speed = 12
+    }
+
+    // FLIP: brake alone through a full air.
+    const g1 = makeGame(7); fly(g1)
+    let s0 = g1.score, evs = []
+    for (let t = 0; t < 170; t++) { step(g1, { ...idle, brake: true }); evs.push(...g1.events.splice(0)) }
+    ok('BACK FLIP completes on landing (+300 — harder than the flat spin)',
+        evs.some((e) => e.type === 'flip') && g1.score - s0 >= 300)
+
+    // released early = nothing (clean-or-nothing, same law as the flat 360).
+    const g2 = makeGame(7); fly(g2)
+    s0 = g2.score; evs = []
+    for (let t = 0; t < 170; t++) { step(g2, t < 12 ? { ...idle, brake: true } : idle); evs.push(...g2.events.splice(0)) }
+    ok('a back-flip released early scores NOTHING — clean or nothing',
+        !evs.some((e) => ['flip', 'trick', 'barrel', 'handstand'].includes(e.type)) && g2.score === s0)
+
+    // HANDSTAND: brake+gas, long air — pays every half-second inverted, cap 3.
+    const g3 = makeGame(7); fly(g3, 9)
+    s0 = g3.score; evs = []
+    for (let t = 0; t < 320 && g3.crafts[0].airborne; t++) { step(g3, { ...idle, brake: true, throttle: 1 }); evs.push(...g3.events.splice(0)) }
+    const hs = evs.filter((e) => e.type === 'handstand')
+    ok('HANDSTAND pays +150 per half-second inverted, capped at 3/air',
+        hs.length === 3 && hs.every((e, i) => e.pts === 150 && e.n === i + 1))
+
+    // gas alone never inverts — the commit is brake AND gas. (Autopilots hold
+    // gas through the air constantly; if gas alone inverted, every AI air would
+    // pay — this pin is why the trigger demands the brake bit too.)
+    const g4 = makeGame(7); fly(g4, 9)
+    s0 = g4.score; evs = []
+    for (let t = 0; t < 320 && g4.crafts[0].airborne; t++) { step(g4, { ...idle, throttle: 1 }); evs.push(...g4.events.splice(0)) }
+    ok('gas alone never inverts — a handstand needs the brake commit',
+        !evs.some((e) => e.type === 'handstand') && g4.score === s0)
+
+    // one-trick law stretched whole: an air a handstand paid lands inert.
+    const g5 = makeGame(7); fly(g5, 9)
+    evs = []
+    for (let t = 0; t < 320 && g5.crafts[0].airborne; t++) { step(g5, { ...idle, brake: true, throttle: 1, a: true }); evs.push(...g5.events.splice(0)) }
+    ok('a claimed air (handstand paid) lands spins/barrels/flips INERT',
+        evs.some((e) => e.type === 'handstand') && !evs.some((e) => ['trick', 'barrel', 'flip'].includes(e.type)))
+
+    // the six-bit wire already carries every trick input — flip is d, handstand
+    // is u+d. Shape pinned above (649); here: trick pads stay deterministic,
+    // so the hash referee locks out divergence in flips for free.
+    const feed = (g) => {
+        const p = g.crafts[0]
+        const base = autoPad(g)
+        if (!p.airborne) return base
+        return { ...base, throttle: 1, brake: (g.tick % 40) < 20 }
+    }
+    const ha = [], hb = []
+    const ga = makeGame(31), gb = makeGame(31)
+    for (let t = 0; t < 3000 && !ga.done && !gb.done; t++) {
+        step(ga, feed(ga)); step(gb, feed(gb))
+        if (t % 100 === 0) { ha.push(stateHash(ga)); hb.push(stateHash(gb)) }
+    }
+    ok('trick pads keep the lockstep deterministic (same seed + pads ⇒ identical hashes)',
+        ha.join(',') === hb.join(',') && ha.length > 5)
 }
 
 // 7. win: autoPad takes P1 on every seed on BOTH bays, sane times, bounded
