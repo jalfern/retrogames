@@ -340,11 +340,15 @@ try {
     const readouts = ['speed', 'alt', 'score', 'chips'].map((k) => r(document.querySelector(`[data-h="${k}"]`)))
     const hud = [...readouts, r(document.querySelector('[data-h="hint"]'))] // hint floats mid-screen by design — pad rules still bind
     const pads = [...document.querySelectorAll('[data-vc]')].map(r).filter(Boolean)
+    // corner chrome (ARCADE/FEEDBACK/mute) are not pad buttons but they squat
+    // the top corners — the #3300 audit initially missed the mute/SCORE pile
+    const chrome = [...document.querySelectorAll('[aria-label="Arcade"], [aria-label="Feedback"], button[aria-label*="mute" i], button[aria-label*="sound" i], button[aria-label*="audio" i]')].map(r).filter(Boolean)
+    const solids = [...pads, ...chrome]
     let bad = 0
     for (const h of hud) {
       if (!h) bad++
       if (h && (h.x < -2 || h.x + h.w > innerWidth + 2)) bad++
-      for (const p of pads) if (h && ovl(h, p)) bad++
+      for (const p of solids) if (h && ovl(h, p)) bad++
     }
     for (const h of readouts) if (h && h.y > 300) bad++ // the readouts live in the top corners; the pad owns everything below
     for (let i = 0; i < hud.length; i++) for (let j = i + 1; j < hud.length; j++) if (ovl(hud[i], hud[j])) bad++
