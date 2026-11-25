@@ -11,7 +11,10 @@ the thunderstorm a course (THUNDERPASS) and set the thermals drifting.
   + carved course flats + a low supply corridor (the belt's route), the shared
   Gerstner field, thermals (drifting with the sea-breeze via `thermalPos(c,t)`
   — the ONE answer for sim lift, autopilot target and painted cumulus), the
-  storm cell and the THUNDERPASS gate line (`passStart`, `passRings`).
+  storm cell — which LIVES (#3267): `stormPos(t)` sweeps it on a slow seeded
+  ellipse (E/W ±64 m ~140 s, N/S ±34 m ~190 s) and gusts, core downdraft,
+  rain, clouds and the bolt anchor all read it — and the fixed THUNDERPASS
+  gate line (`passStart`, `passRings`) the weather moves over.
 - `sim.js` — 60 Hz pure sim (zero DOM, zero Math.random): plane / glider /
   belt physics, RING RUN / SPOT LANDING / TARGET DROP / THUNDERPASS scoring,
   graduation. The storm fights the PLANE too (rung 2): gusts, ~2 m/s core
@@ -43,9 +46,14 @@ npm run skywardcheck -- --mutate   # proves the harness can fail
 node scripts/skywardplay.mjs       # headless Chrome: boot → play → events → zero page errors
 ```
 ## Honest gaps
-- Rung 2: the storm cell itself stands still (the gates are fixed; thermals
-  drift, the thunderhead does not). No online (issue: not yet), no second
-  landing strip, engine audio is per-action rather than a continuous loop.
+- **MOVED by #3267:** the storm cell no longer stands still — `stormPos(t)`
+  drifts the whole cell (weather AND paint) while the gates stay fixed, so a
+  memorised THUNDERPASS line is a stale line. What remains of the old bullet:
+  no online (issue: not yet), no second landing strip, engine audio is
+  per-action rather than a continuous loop.
+- The cell drifts on a fixed seeded ellipse, not a steered weather sim (no
+  cell-to-cell travel, no squall line); a long run learns the sweep the way
+  rungs 1's lines were learned.
 - Lightning is scenery — no strike hazard anywhere (by design, the school
   forgives; the downdraft is the punishment).
 - Thermals are analytic columns, not sim'd convection.

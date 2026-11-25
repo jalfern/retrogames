@@ -121,6 +121,18 @@ try {
     `the storm fight is live: gates cleared or weather felt (passIdx=${ps1.passIdx} stormS=${ps1.stormS} crashes=${ps1.crashes})`)
   ok(Number.isFinite(ps1.x + ps1.y + ps1.z) && ps1.y > 0, `plane survives the cell (y=${ps1.y.toFixed(0)})`)
 
+  /* #3267 — the living storm: the cell itself wanders on the sim clock,
+     bounded, and the pass start line stays honest (never deep under it) */
+  const cell0 = await page.evaluate(() => window.__skywardTest.stormCell())
+  await simSleep(18)
+  const cell1 = await page.evaluate(() => window.__skywardTest.stormCell())
+  const cellMoved = Math.hypot(cell1.x - cell0.x, cell1.z - cell0.z)
+  ok(cellMoved > 10, `the storm cell drifts live (${cellMoved.toFixed(0)} m over ~18 s of sim time)`)
+  ok(Math.abs(cell1.dx) <= 75 && Math.abs(cell1.dz) <= 45,
+    `drift stays bounded (dx=${cell1.dx.toFixed(0)}, dz=${cell1.dz.toFixed(0)})`)
+  ok(cell1.startS < 0.35, `the pass start line stays shallow under the wandering cell (s=${cell1.startS})`)
+  await shot('skyward-living-storm.png')
+
   /* keyboard path + pause + restart through real UI */
   await page.keyboard.press('KeyN')
   await page.keyboard.press('ArrowLeft')

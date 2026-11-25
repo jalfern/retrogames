@@ -297,6 +297,17 @@ const SkywardGame = () => {
                 recycle: () => { recycleCraft(gs); return stateOf(gs) },
                 hash: () => gs.hash,
                 gameTime: () => gs.tick / 60,
+                // #3267 — where the cell stands in sim time right now (the ONE
+                // position sim weather and painted clouds share), plus how deep
+                // the pass start line currently sits under it
+                stormCell: () => {
+                    const p = gs.world.stormPos(gs.t)
+                    return {
+                        x: p.x, z: p.z,
+                        dx: p.x - gs.world.storm.x, dz: p.z - gs.world.storm.z,
+                        startS: +gs.world.stormAt(gs.world.passStart.x, gs.world.passStart.z, gs.t).s.toFixed(3),
+                    }
+                },
                 simSleep: (secs) => new Promise((res) => {
                     const target = gs.tick + Math.round(secs * 60)
                     const iv = setInterval(() => {
