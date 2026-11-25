@@ -523,7 +523,7 @@ const GalagaGame = () => {
                 // #3358: the proven-run demo already flies behind this card — the old
                 // 55% dim plus centered text buried it. Lighter dim, text pushed to the
                 // frame edges, so attract SHOWS the game (docs/ART.md bar #6).
-                <div className="absolute inset-0 bg-black/35 flex flex-col items-center justify-between text-center px-6 pointer-events-none" style={{ paddingTop: '7vh', paddingBottom: '34vh' }}>
+                <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-between text-center px-6 pointer-events-none" style={{ paddingTop: '7vh', paddingBottom: '34vh' }}>
                     <div>
                         <h1 className="text-4xl font-black text-red-400 mb-3" style={{ textShadow: '0 4px 0 #400, 0 10px 24px #000' }}>GALAGA</h1>
                         <AttractMessage className="text-cyan-100/85" messages={MESSAGES} />
