@@ -25,13 +25,13 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall']) {
+    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell']) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 8 ? `ALL MUTANTS CAUGHT (${died}/8)` : `${died}/8 mutants caught`)
+    console.log(died === 9 ? `ALL MUTANTS CAUGHT (${died}/9)` : `${died}/9 mutants caught`)
     process.exit(died === 8 ? 0 : 1)
 }
 
@@ -355,6 +355,48 @@ function drive(seed) {
     const artSrc = MUT === 'shade' ? art.replace(/shadeAt\(/g, 'noShade(').replace(/bumpMap:/g, 'noBump:') : art
     ok('shade wiring: mesh AO multiply + bump relief (#3233)',
         /shadeAt\(x, z\)/.test(artSrc) && /bumpMap:/.test(artSrc))
+}
+
+// ── manual identity (#3233 tail) — live name + honest growing value ────────
+{
+    const idle = stateOf(makeGame(9, 'run'))
+    ok('manual tell: nothing shown while no manual is held', idle.manualName === null && idle.manualPts === 0)
+
+    // ollie → land → press A again inside the grace window = manual. Plaza east
+    // of the plaza rail, straight +x: no rails, lips or letters on this line.
+    const s = makeGame(9, 'run'); s.phase = 'play'
+    s.x = 10; s.z = -14; s.y = parkHeight(10, -14); s.heading = 0; s.speed = 6
+    step(s, { a: true })
+    let t = 0
+    while (t++ < 40 && !s.air) step(s, { a: true })
+    while (t++ < 200 && s.air) step(s, { a: true })          // stay aboard through the landing
+    step(s, { a: false })                                     // edge-reset inside the 0.22 s grace
+    step(s, { a: true })                                      // press again = manual
+    const s1 = stateOf(s)
+    ok('manual tell: lands into MANUAL at its base value',
+        s1.manual && s1.manualName === 'MANUAL' && s1.manualPts === 30, `${s1.manualName} +${s1.manualPts}`)
+    let h = 0
+    while (h++ < 30 && s.manual && !s.manual.spin) step(s, { a: true, right: true })
+    const s2 = stateOf(s)
+    ok('manual tell: steer past 0.35 s renames it MANUAL 180', s2.manualName === 'MANUAL 180', `after ${h} ticks`)
+    ok('manual tell: the upgrade re-bases the value upward', s2.manualPts > s1.manualPts + 60, `+${s1.manualPts} → +${s2.manualPts}`)
+    let g = 0
+    while (g++ < 24 && s.manual) step(s, { a: true })
+    const live = stateOf(s).manualPts
+    ok('manual tell: the value ticks up while held', live > s2.manualPts, `+${s2.manualPts} → +${live}`)
+    const cp = s.chainPts
+    step(s, { a: false })                                     // release: commit NOW
+    ok('manual tell: the chip never lies — live value equals the payout',
+        s.chainPts - cp === live && s.chain.includes('Manual180'), `chip +${live}, paid +${s.chainPts - cp}`)
+
+    // wiring: the cabinet reads the identity and voices the upgrade; the rig
+    // still poses the two manuals differently. MUT=tell strips all three.
+    const cab = readFileSync(new URL('../src/games/GrindCity/index.jsx', import.meta.url), 'utf8')
+    const art = readFileSync(new URL('../src/games/GrindCity/art.js', import.meta.url), 'utf8')
+    const cabSrc = MUT === 'tell' ? cab.replace(/st\.manualName/g, 'null').replace(/st\.manualPts/g, '0').replace(/'manual180'/g, "'nope'") : cab
+    const artSrc = MUT === 'tell' ? art.replace(/s\.manual\.spin/g, 's.manual.fictional') : art
+    ok('tell wiring: chip reads live identity + upgrade has its own voice + poses differ (#3233)',
+        /st\.manualName/.test(cabSrc) && /st\.manualPts/.test(cabSrc) && /'manual180'/.test(cabSrc) && /s\.manual\.spin/.test(artSrc))
 }
 
 if (MUT) {

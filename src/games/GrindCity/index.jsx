@@ -54,6 +54,7 @@ const GrindCityGame = () => {
         msg: { current: null }, mult: { current: null }, flash: { current: null },
         letters: { current: null }, gap: { current: null }, tgt: { current: null },
         gem: { current: null }, cut: { current: null }, callout: { current: null },
+        manual: { current: null },
         speed: { current: null },
     }).current
 
@@ -177,6 +178,7 @@ const GrindCityGame = () => {
             else if (e === 'spark') AC.playNoise(0.05, 0.07)
             else if (e.startsWith('grind:end')) AC.playTone(900, 0.07, 'square', 0.05)
             else if (e.startsWith('manual:start')) AC.playTone(420, 0.04, 'triangle', 0.06)
+            else if (e === 'manual180') AC.playSweep(560, 940, 0.12, 'triangle', 0.09)   // the 180 upgrade has its own voice (#3233 tail)
             else if (e.startsWith('trick:Manual')) AC.playTone(620, 0.07, 'triangle', 0.08)
             else if (e.startsWith('trick:')) { AC.playTone(760, 0.06, 'square', 0.07); AC.playTone(980, 0.08, 'square', 0.06, 0.05) }
             else if (e.startsWith('land:')) {
@@ -251,6 +253,8 @@ const GrindCityGame = () => {
         let prevGemBits = 0   // gem-sparkle burst edge detector (#3233)
         let prevRoofGrind = false   // roof-grind callout edge detector (#3233 tail)
         let roofCalloutT = 0
+        let prevManualName = null   // manual-chip upgrade edge → punch (#3233 tail)
+        let manualPunch = 0
         const camPos = new THREE.Vector3(6, 4, -38)
         const camLook = new THREE.Vector3()
 
@@ -470,6 +474,24 @@ const GrindCityGame = () => {
                 hud.flash.current.textContent = sim.bankFlashT > 0 ? `+${sim.bankFlashPts}` : ''
                 hud.flash.current.style.opacity = sim.bankFlashT > 0 ? Math.min(1, sim.bankFlashT * 2) : 0
             }
+            // manual live tell (#3233 tail): name + honest growing value.
+            // manualPts is the exact commit formula, so what ticks up is what pays.
+            if (hud.manual.current) {
+                const nm = st.manualName
+                if (nm) {
+                    if (prevManualName && prevManualName !== nm) manualPunch = 0.5
+                    prevManualName = nm
+                    hud.manual.current.textContent = `${nm} +${st.manualPts}`
+                    hud.manual.current.style.color = nm === 'MANUAL 180' ? '#ffd35e' : '#ffffff'
+                    hud.manual.current.style.opacity = 1
+                } else {
+                    prevManualName = null
+                    hud.manual.current.style.opacity = 0
+                }
+                if (manualPunch > 0) manualPunch -= DT
+                hud.manual.current.style.transform =
+                    `translate(-50%,0) scale(${(1 + Math.max(0, manualPunch) * 0.7).toFixed(3)})`
+            }
             if (hud.letters.current) {
                 hud.letters.current.querySelectorAll('b').forEach(b => { b.style.color = st.letters[b.textContent] ? '#ffd35e' : 'rgba(255,255,255,.22)' })
             }
@@ -574,6 +596,7 @@ const GrindCityGame = () => {
                         <div ref={hud.mult} className="absolute bottom-16 left-3 text-xl font-black italic text-white drop-shadow-[0_2px_0_rgba(0,0,0,.85)]" />
                         <div ref={hud.combo} className="absolute bottom-11 left-3 text-sm font-bold tracking-widest text-white/90" />
                         <div ref={hud.flash} className="absolute bottom-24 left-1/2 -translate-x-1/2 text-5xl font-black italic text-[#7dffb0] drop-shadow-[0_3px_0_rgba(0,0,0,.85)] transition-opacity duration-150" style={{ opacity: 0 }} />
+                        <div ref={hud.manual} className="absolute bottom-36 left-1/2 whitespace-nowrap text-2xl font-black italic tracking-wider text-white drop-shadow-[0_2px_0_rgba(0,0,0,.85)]" style={{ opacity: 0, transform: 'translate(-50%,0)' }} />
                         <div className="absolute left-3 top-16 space-y-1 text-xs tracking-widest text-white drop-shadow-[0_2px_2px_rgba(0,0,0,.9)]">
                             <div ref={hud.letters} className="font-bold tracking-[0.2em]">
                                 <b className="text-lg">S</b>{' '}<b className="text-lg">K</b>{' '}<b className="text-lg">A</b>{' '}<b className="text-lg">T</b>{' '}<b className="text-lg">E</b>

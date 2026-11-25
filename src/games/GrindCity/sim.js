@@ -544,6 +544,13 @@ export function stateOf(s) {
         heading: Math.round(s.heading * 1000) / 1000, speed: Math.round(s.speed * 100) / 100,
         vy: Math.round(s.vy * 100) / 100, slope: Math.round(s.lastSlope * 1000) / 1000,
         air: !!s.air, grinding: !!s.grind, manual: !!s.manual,
+        // manual identity (#3233 tail): the live name + the value it WOULD pay
+        // if released this tick — the same law the commit uses, so the chip can
+        // never over-promise. Additive; packIn and the replay wire untouched.
+        manualName: s.manual ? (s.manual.spin ? 'MANUAL 180' : 'MANUAL') : null,
+        manualPts: s.manual
+            ? TRICK_PTS[s.manual.spin ? 'Manual180' : 'Manual'] + Math.round(s.manual.t * 70)
+            : 0,
         grindBal: s.grind ? Math.round(s.grind.bal * 1000) / 1000 : 0,
         railGrab: s.grind && s.grind.grab ? s.grind.grab : null,
         stall: !!s.stall,
