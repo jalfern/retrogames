@@ -20,7 +20,7 @@ import { createLockStep } from '../../utils/lockstep.js'
 import { makeGame, step, autoPad, stateOf, stateHash, rankAt, LAPS, SIM_MS, DT, rainAt, RAIN_VIS } from './sim.js'
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
-import { SEATS, PAD_DELAY, HASH_EVERY, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed } from './net.js'
+import { SEATS, PAD_DELAY, HASH_EVERY, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence } from './net.js'
 import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
@@ -47,6 +47,7 @@ const TidalRushGame = () => {
     const [netUi, setNetUi] = useState(null)           // #3220 shared Lobby overlay state
     const [netMsg, setNetMsg] = useState('')           // desync / dropout banner (never silent)
     const netMsgRef = useRef('')
+    const [netReport, setNetReport] = useState('')      // #3244: copyable desync evidence under the banner
     const bayRef = useRef('sunny')
     const previewRef = useRef(null)                     // effect republishes: reroll attract preview sim
     const startRaceRef = useRef(null)                   // effect republishes: tap-to-start
@@ -214,6 +215,10 @@ const TidalRushGame = () => {
         // claim (the sim consumes wire bits, never local analog).
         const mirrors = [new Map(), new Map(), new Map()]
         let stalledTicks = 0
+        // #3244 item 5: per-boundary hash ring — when the referee bites, the
+        // last rows (tick + my hash + every peer hash) show under the banner,
+        // copyable, so a reported freeze carries evidence instead of vibes.
+        const evidence = createEvidence()
         const ls = createLockStep({
             delay: PAD_DELAY,
             hashEvery: HASH_EVERY,
@@ -329,11 +334,15 @@ const TidalRushGame = () => {
                 const padIn = fromWire(mirrors[0].get(k) || toWire({}))
                 step(gs, padIn, assembleSeatPads(mirrors, k, net.humans))
                 if (!alone && k % HASH_EVERY === 0) {
-                    const r = ls.hash(k, stateHash(gs))
+                    const h = stateHash(gs)
+                    evidence.mine(k, h)
+                    const r = ls.hash(k, h)
                     if (r && r.desync !== undefined) {
+                        evidence.markBad(k, evidence.mismatchSlot(k), r.mine, r.theirs)
                         net.racing = false
                         pausedRef.current = true
                         netSay('SIMS DIVERGED — THE HOST RESTARTS THE BAY')
+                        setNetReport(evidence.text(net.code, mySeat()))
                     }
                 }
                 // the world ends when every hull has crossed — stream pads until
@@ -638,6 +647,8 @@ const TidalRushGame = () => {
             ls.reset()
             if (online) ls.setPeers(net.humans.filter((s) => s !== mySeat()))
             mirrors.forEach((m) => m.clear())
+            evidence.reset()
+            setNetReport('')
             stalledTicks = 0
             buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
             camInit = false
@@ -717,10 +728,13 @@ const TidalRushGame = () => {
                     },
                     hs: (m) => {
                         const r = ls.gotHash(m.k | 0, m.h >>> 0, m.s | 0)
+                        if (net.racing) evidence.peer(m.k | 0, m.h >>> 0, m.s | 0)
                         if (r && r.desync !== undefined && net.racing) {
+                            evidence.markBad(m.k | 0, m.s | 0, r.mine, r.theirs)
                             net.racing = false
                             pausedRef.current = true
                             netSay('SIMS DIVERGED — THE HOST RESTARTS THE BAY')
+                            setNetReport(evidence.text(net.code, mySeat()))
                         }
                     },
                     gone: () => { if (net.role === 'guest') { net.racing = false; netSay('THE HOST SAILED HOME') } },
@@ -775,6 +789,7 @@ const TidalRushGame = () => {
                 step: (n = 1) => { for (let i = 0; i < n; i++) simTick(); return stateOf(gs) },
                 setMode: (m) => { if (m === 'play') startRace(); else setMode(m) },
                 probe: () => ({ ...stateOf(gs), seed: gs.seed, screen: screenRef.current }),
+                evidence: () => ({ rows: evidence.rows.length, text: evidence.text(net.code, mySeat()) }),
                 autoDrive: (n = 60) => {
                     // DEV-only: drive Kai with the game's OWN autopilot through the
                     // live screen (used by tidaldrive to win a browser race fast)
@@ -970,6 +985,38 @@ const TidalRushGame = () => {
             {netMsg && (
                 <div className="absolute top-[38%] left-1/2 -translate-x-1/2 pointer-events-none bg-black/70 border border-red-300/50 rounded px-4 py-2 text-sm font-black tracking-[0.25em] text-red-200 font-mono">
                     {netMsg}
+                </div>
+            )}
+
+            {/* #3244 item 5: the freeze carries its own receipts — the last
+                hash boundaries (tick, my hash, each peer's) with the diverged
+                row marked, copyable so a bug report has numbers, not vibes. */}
+            {netReport && (
+                <div className="absolute top-[45%] left-1/2 -translate-x-1/2 max-w-[92%] bg-black/85 border border-amber-300/40 rounded p-2 select-all">
+                    <pre className="text-[9px] leading-[1.6] text-amber-100 font-mono whitespace-pre">{netReport}</pre>
+                    <button
+                        onClick={() => {
+                            const btn = document.getElementById('tidal-copy')
+                            const done = (okCopy) => { if (btn) btn.textContent = okCopy ? 'COPIED ✓' : 'SELECT + COPY' }
+                            if (navigator.clipboard) navigator.clipboard.writeText(netReport).then(() => done(true), () => done(false))
+                            else {
+                                // http / older WebKit: park the text in a textarea the
+                                // player can select even if programmatic copy fails.
+                                const ta = document.createElement('textarea')
+                                ta.value = netReport
+                                document.body.appendChild(ta)
+                                ta.select()
+                                let okCopy = false
+                                try { okCopy = document.execCommand('copy') } catch { okCopy = false }
+                                ta.remove()
+                                done(okCopy)
+                            }
+                        }}
+                        className="mt-1 w-full bg-amber-300/15 border border-amber-300/40 rounded px-2 py-0.5 text-[10px] tracking-[0.25em] text-amber-100 font-mono"
+                        id="tidal-copy"
+                    >
+                        COPY REPORT
+                    </button>
                 </div>
             )}
 

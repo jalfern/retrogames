@@ -96,6 +96,7 @@ node scripts/tidalcheck.mjs --mutate=trickdry    # flat-360 lands without a whoo
 node scripts/tidalcheck.mjs --mutate=rainoff # rain wallpaper again — must go red
 node scripts/tidalcheck.mjs --mutate=push    # crosswind drift zeroed — must go red
 node scripts/tidalcheck.mjs --mutate=wirefeed # hull 0 fed local analog — must go red (#3220)
+node scripts/tidalcheck.mjs --mutate=evidoff # desync keeps no receipts — must go red (#3244)
 npm run dev -- --port 5178 --strictPort   # then:
 CONTRACT_ONLY=tidal-rush npm run contractcheck
 DEV_PORT=5178 npm run tidaldrive         # headless Chrome: real keys/taps start-steer-
@@ -114,6 +115,11 @@ static job; every pushed commit is commented on #3104.
   #531 sampling law with #1705 N-peer roster; hash referee every 30 ticks
   freezes on desync (never silent); a dropped rider's ski coasts while peers
   remain and returns to the autopilot when you're alone. See `net.js`.
+- **Desync carries receipts (#3244 item 5)** — every 30-tick boundary records
+  tick + my hash + every peer hash into an 8-row ring (`createEvidence`,
+  `net.js`); when the referee bites, the diverged row is marked
+  `← MISMATCH seatN` and the block + COPY REPORT button appear under the
+  banner, so a reported freeze ships with numbers. Ring wipes at kickoff.
 - The wire is digital by design (six lockstep bits): local analog stick/lean
   feel stays local — remote riders' skis carry committed leans, not fractional
   ones. Analog-over-wire would need a pad-shape change to the shared pipeline.

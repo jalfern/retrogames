@@ -59,6 +59,8 @@ if (MUT) {
         // hull 0 is fed the local analog pad instead of its wire bytes (#3220) —
         // the exact divergence trap: host runs analog, guest runs the bits.
         wirefeed: { file: 'src/games/TidalRush/index.jsx', from: 'fromWire(mirrors[0].get(k) || toWire({}))', to: 'readPad()', note: 'hull 0 fed local analog — boxes diverge' },
+        // the freeze keeps no receipts (#3244 item 5) — the hash-path stamp gone.
+        evidoff: { file: 'src/games/TidalRush/index.jsx', from: 'evidence.markBad(k, evidence.mismatchSlot(k), r.mine, r.theirs)', to: '', note: 'desync stamps no evidence' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -617,8 +619,23 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
 {
     const HERE = join(dirname(fileURLToPath(import.meta.url)), '..')
     const jsxNet = readFileSync(join(HERE, 'src/games/TidalRush/index.jsx'), 'utf8')
-    const { SEATS, PAD_DELAY, HASH_EVERY, toWire, fromWire, assembleSeatPads } = await import('../src/games/TidalRush/net.js')
+    const { SEATS, PAD_DELAY, HASH_EVERY, toWire, fromWire, assembleSeatPads, createEvidence, EVIDENCE_LIMIT, hex32 } = await import('../src/games/TidalRush/net.js')
     const { createLockStep } = await import('../src/utils/lockstep.js')
+
+    // --- desync evidence (#3244 item 5): the ring + the copyable block ------
+    {
+        const ev = createEvidence(8)
+        for (let i = 1; i <= 12; i++) { ev.mine(i * 30, 0x1000 + i); ev.peer(i * 30, 0x1000 + i, 1) }
+        ok('evidence ring keeps the LAST 8 boundaries, oldest first',
+            EVIDENCE_LIMIT === 8 && ev.rows.length === 8 && ev.rows[0].k === 150 && ev.rows[7].k === 360)
+        const clean = ev.text('R1CK', 0)
+        ok('an honest block reports room, seat, tick columns — and no mismatch',
+            clean.includes('room R1CK') && clean.includes('tick') && clean.includes('seat1') && !clean.includes('MISMATCH'))
+        ev.markBad(360, 1, 0x1008, 0xdeadbeef)
+        const bad = ev.text('R1CK', 0)
+        ok('the diverged row names the tick, the culprit seat and BOTH hashes in hex',
+            /MISMATCH seat1/.test(bad) && bad.includes(hex32(0x1008)) && bad.includes('DEADBEEF'))
+    }
 
     ok('the room seats three — KAI MAKO TUNDRA', SEATS === 3)
     ok('the wire carries six bits, and full-lock survives it exactly (the BARREL input)',
@@ -630,6 +647,12 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         jsxNet.includes('fromWire(mirrors[0].get(k) || toWire({}))') && !/step\(gs, readPad\(\)/.test(jsxNet))
     ok('received pads are stamped by seat and fed to the referee',
         jsxNet.includes('if (mirrors[s]) mirrors[s].set(m.k | 0, m.p)') && jsxNet.includes('ls.gotPad(m.k | 0, m.p, s)'))
+    ok('both referee paths stamp the evidence BEFORE the banner (hash + gotHash, #3244)',
+        jsxNet.includes('evidence.markBad(k, evidence.mismatchSlot(k), r.mine, r.theirs)')
+        && jsxNet.includes('evidence.markBad(m.k | 0, m.s | 0, r.mine, r.theirs)'))
+    ok('the freeze screen paints the copyable report; a new race wipes it (#3244 item 5)',
+        jsxNet.includes('COPY REPORT') && jsxNet.includes('setNetReport(evidence.text(net.code, mySeat()))')
+        && jsxNet.includes('evidence.reset()'))
     ok('the bay pauses offline only — a live room never starves the pad stream',
         jsxNet.includes("screenRef.current === 'play' && !net.racing"))
 
@@ -661,7 +684,7 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         const gs = makeGame(SEED, 'storm')
         gs.crafts.forEach((c, i) => { c.human = humans.includes(i) })
         const mirrors = [new Map(), new Map(), new Map()]
-        const box = { seat, gs, mirrors, hashes: [], desync: false, alone: false, dead: false, sibs: [] }
+        const box = { seat, gs, mirrors, hashes: [], desync: false, alone: false, dead: false, sibs: [], ev: createEvidence() }
         box.ls = createLockStep({
             delay: PAD_DELAY, hashEvery: HASH_EVERY,
             // mirrors the room layer: every frame gets the sender's seat stamp.
@@ -671,7 +694,11 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         box.onMsg = (m) => {
             if (box.dead) return
             if (m.t === 'pad') { box.mirrors[m.s].set(m.k, m.p); if (m.s !== seat) box.ls.gotPad(m.k, m.p, m.s) }
-            else if (m.t === 'hs') { const r = box.ls.gotHash(m.k, m.h, m.s); if (r && r.desync !== undefined) box.desync = true }
+            else if (m.t === 'hs') {
+                const r = box.ls.gotHash(m.k, m.h, m.s)
+                if (!box.desync) box.ev.peer(m.k, m.h, m.s)
+                if (r && r.desync !== undefined) { if (!box.desync) box.ev.markBad(m.k, m.s, r.mine, r.theirs); box.desync = true }
+            }
         }
         box.stepOnce = () => {
             if (box.dead) return false
@@ -683,8 +710,9 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
             if (!box.alone && k % HASH_EVERY === 0) {
                 const h = stateHash(gs)
                 box.hashes.push(h)
+                box.ev.mine(k, h)
                 const r = box.ls.hash(k, h)
-                if (r && r.desync !== undefined) box.desync = true
+                if (r && r.desync !== undefined) { if (!box.desync) box.ev.markBad(k, box.ev.mismatchSlot(k), r.mine, r.theirs); box.desync = true }
             }
             return true
         }
@@ -717,6 +745,17 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     runTo(b2, 330, (arr) => { if (arr[0].gs.tick === 210) arr[1].gs.crafts[1].x += 1 })
     ok('a perturbed box IS caught — the hash referee reports desync, both sides',
         b2[0].desync && b2[1].desync)
+
+    // #3244 item 5: the freeze must carry receipts, on every box.
+    const ev2 = [b2[0].ev.text('TST', 0), b2[1].ev.text('TST', 1)]
+    ok('#3244: the frozen boundary is on the report on BOTH boxes, each blaming the other',
+        /MISMATCH seat1/.test(ev2[0]) && /MISMATCH seat0/.test(ev2[1]))
+    const bad0 = b2[0].ev.rows.find((e) => e.bad)
+    ok('#3244: the report carries the tick and both sides\' 8-hex hashes (copyable proof)',
+        !!bad0 && bad0.mine !== bad0.theirs
+        && ev2[0].includes(String(bad0.k)) && ev2[0].includes(hex32(bad0.mine)) && ev2[0].includes(hex32(bad0.theirs)))
+    ok('#3244: an honest room fills the ring but shows no MISMATCH line',
+        b1[0].ev.rows.length > 0 && !/MISMATCH/.test(b1[0].ev.text('TST', 0)))
 
     // three-hull room: host + two wire riders, autopilot fills nothing.
     const b3 = [makeBox(0, [0, 1, 2], wig(0, 0.9)), makeBox(1, [0, 1, 2], wig(2.1, 0.8)), makeBox(2, [0, 1, 2], wig(4.2, 0.75))]
