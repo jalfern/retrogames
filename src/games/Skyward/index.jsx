@@ -46,6 +46,8 @@ const SkywardGame = () => {
     const ladderRef = useRef(false) // #3310 item 2 — the zone ladder shows once
     const ladderAtRef = useRef(0)
     const ladderLiveRef = useRef(0) // #3370 item 4 — while up, ▸ tracks the live zone
+    // #3344 item 4 — one belt banner per descent, not one per land event
+    const beltBanneredRef = useRef(0)
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -85,7 +87,8 @@ const SkywardGame = () => {
   [data-h=alt]{left:10px;bottom:auto;top:94px}
   [data-h=score]{right:auto;left:10px;bottom:auto;top:112px;text-align:left}
   [data-h=chips]{right:auto;left:10px;bottom:auto;top:130px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:370px;white-space:nowrap}
-  [data-h=banner]{width:92vw;font-size:17px;letter-spacing:.12em}
+  /* #3344 — phone widths: the longest strip banner (RUNWAY FULL STRIP +700 — PARKED,~381px natural) must clear the 92vw box as one line or it wraps into the tell band below; 16px/.1em fits it (~348px). */
+  [data-h=banner]{width:92vw;font-size:16px;letter-spacing:.1em;white-space:nowrap}
   [data-h=tell]{width:92vw;top:92px;font-size:11px;letter-spacing:.14em}
   [data-h=hint]{bottom:auto;top:58%;left:4%;transform:none;width:92%;font-size:10px;letter-spacing:.1em;line-height:1.6;text-align:center}
 }
@@ -233,7 +236,8 @@ const SkywardGame = () => {
                 }
                 // #3332 — the belt parks on the deck: same zone vocabulary, the
                 // same moment of naming — but it is the throttle that ends it
-                if (e.kind === 'land' && e.craft === 'belt') {
+                if (e.kind === 'land' && e.craft === 'belt' && e.score > beltBanneredRef.current) {
+                    beltBanneredRef.current = e.score
                     banner(`RUNWAY ${e.aligned ? ['', 'SHORT', 'MIDDLE', 'LONG', 'FULL STRIP'][e.zone] : 'CRABBED'} +${e.score} — PARKED`, 2.6)
                 }
                 if (e.kind === 'liftoff') banner('OFF THE PAD — AIRBORNE', 1.6)
@@ -300,7 +304,7 @@ const SkywardGame = () => {
         // forgives it; the strip pays for the QUIET arrival, and what parks
         // answers the throttle
         const beltRunwayHint = (g) => {
-            if (g.park) return 'PARKED ON THE RUNWAY ✺ · SPACE LIFTS OFF'
+            if (g.park) return 'PARKED ON THE RUNWAY ✺ · A / SPACE LIFTS OFF'
             const zn = stripZone(g.world, g.p.x, g.p.z)
             if (zn) return 'RUNWAY — SETTLE QUIET · SOFT, SLOW AND STRAIGHT · far end pays 700'
             const d = Math.hypot(g.p.x - g.world.runway.ax, g.p.z - g.world.runway.az)
@@ -317,6 +321,7 @@ const SkywardGame = () => {
             ladderRef.current = false // #3310 — every run gets its own ladder lesson
             ladderAtRef.current = 0
             ladderLiveRef.current = 0
+            beltBanneredRef.current = 0
             bLabelRef.current = 'B'; setBLabel('B')
             setOver(null)
             setMode('play')
@@ -681,7 +686,7 @@ const SkywardGame = () => {
                     { label: 'thunder', run: () => (checkout(gs, 'pass'), 'thunderpass') },
                     { label: 'recycle', run: () => (recycleCraft(gs), gs.craft) },
                     { label: 'final', run: () => { gs.phase = 'free'; gs.craft = 'plane'; gs.ground = null; gs._depart = 0; gs.p = { x: -45, y: 3.8, z: 130 }; gs.heading = Math.PI / 2; gs.pitch = 0; gs.roll = 0; gs.speed = 30; gs.vy = 0; return 'short final — ease off and flare' } },
-                    { label: 'padfinal', run: () => { gs.phase = 'free'; gs.craft = 'belt'; gs.park = null; gs.p = { x: 20, y: 5.2, z: 130 }; gs.heading = Math.PI / 2; gs.pitch = 0; gs.roll = 0; gs.speed = 3; gs.vy = -1; gs.vel = { x: 3, z: 0 }; return 'pad final — settle her quiet, then park' } },
+                    { label: 'padfinal', run: () => { beltBanneredRef.current = 0; gs.phase = 'free'; gs.craft = 'belt'; gs.park = null; gs.p = { x: 20, y: 5.2, z: 130 }; gs.heading = Math.PI / 2; gs.pitch = 0; gs.roll = 0; gs.speed = 3; gs.vy = -1; gs.vel = { x: 3, z: 0 }; return 'pad final — settle her quiet, then park' } },
                     { label: 'graduate', run: () => { gs.grad = { ring: 800, spot: 700, drop: 999 }; gs.score = 2499; gs.done = true; gs.license = 'ACE'; setOver({ score: 2499, license: 'ACE' }); setMode('over') } },
                 ],
             })
