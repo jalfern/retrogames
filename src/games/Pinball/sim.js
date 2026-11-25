@@ -234,7 +234,7 @@ export const TABLE_TWO = {
     kicker: { xMax: 314, side: -1, yAt: 498, vx: -10, vy: -880 },
     rampRollovers: [{ y: 250 }, { y: 330 }],
     laneRollovers: [{ y: 250 }, { y: 310 }, { y: 370 }],
-    laneX: { x1: 38, x2: 62 },
+    laneX: { x1: 42, x2: 58 },
     lane: { innerX: 38, side: -1, bottomY: 515, mouthY: 170, curlVx: 150, rampZone: { x1: 14, x2: 34 } },
     lock: { x1: 38, x2: 62, yAt: 440, need: 3 },
     mbKick: [

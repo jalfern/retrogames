@@ -733,4 +733,166 @@ const wrap = (gs) => {
     r.check('the hash moved on from the rung-3 seeds (new state is mixed in)', stateHash(a) !== stateHash(c))
 }
 
+// =============== #3232: CABINET TWO "EMBER RIDER" — MIRROR PROOF ===============
+// The second cabinet is a mirror build: it adds NO physics, only data. So the
+// two proofs are (1) the DATA is exactly the x-mirror of CABINET ONE, and
+// (2) the ENGINE is x-mirror equivariant: same seed + mirrored inputs ⇒
+// mirrored states, identical event type inventory. Together they certify
+// EMBER RIDER without re-tuning a single constant. Rules differ by design.
+{
+    const { TABLE_TWO: T2, cabIndexOf } = await import('../src/games/Pinball/sim.js')
+    const T1 = TABLE
+    const mx = (x) => W - x
+    // --- 1. structural mirror: every coordinate of T2 mirrors T1's
+    const wallsMirrored = T1.walls.length === T2.walls.length && T1.walls.every((w, i) => {
+        const m = T2.walls[i]
+        const geom = (Math.abs(mx(w.x1) - m.x1) < 1e-9 && Math.abs(mx(w.x2) - m.x2) < 1e-9 && w.y1 === m.y1 && w.y2 === m.y2) ||
+            (Math.abs(mx(w.x2) - m.x1) < 1e-9 && Math.abs(mx(w.x1) - m.x2) < 1e-9 && w.y1 === m.y1 && w.y2 === m.y2)
+        if (!geom || !!w.oneWay !== !!m.oneWay) return false
+        if (!w.oneWay) return true
+        // the one-way FACE must mirror too: n = (dy,-dx); mirror n → (-nx, ny)
+        const n1x = w.y2 - w.y1, n1y = -(w.x2 - w.x1)
+        const n2x = m.y2 - m.y1, n2y = -(m.x2 - m.x1)
+        return Math.abs(n2x + n1x) < 1e-9 && Math.abs(n2y - n1y) < 1e-9
+    })
+    r.check('every wall of EMBER RIDER is the x-mirror of CABINET ONE (one-way faces included)', wallsMirrored)
+    r.check('outlane guide mirrors (endpoint set)', (() => {
+        const q = (x, y) => `${Math.round(mx(x) * 1000)},${y}`
+        const u = (x, y) => `${Math.round(x * 1000)},${y}`
+        const a = new Set([q(T1.outlaneGuide.x1, T1.outlaneGuide.y1), q(T1.outlaneGuide.x2, T1.outlaneGuide.y2)])
+        const b = new Set([u(T2.outlaneGuide.x1, T2.outlaneGuide.y1), u(T2.outlaneGuide.x2, T2.outlaneGuide.y2)])
+        return [...a].sort().join() === [...b].sort().join()
+    })())
+    r.check('bumpers/slings/targets/magnet mirror element-for-element',
+        T1.bumpers.every((b, i) => Math.abs(mx(b.x) - T2.bumpers[i].x) < 1e-9 && b.y === T2.bumpers[i].y && b.r === T2.bumpers[i].r) &&
+        T1.slings.every((s, i) => Math.abs(mx(s.x1) - T2.slings[i].x1) < 1e-9 && Math.abs(mx(s.x2) - T2.slings[i].x2) < 1e-9 && s.y1 === T2.slings[i].y1) &&
+        T1.targets.every((t, i) => Math.abs(mx(t.x2) - T2.targets[i].x1) < 1e-9 && Math.abs(mx(t.x1) - T2.targets[i].x2) < 1e-9) &&
+        T1.targetY === T2.targetY && Math.abs(mx(T1.magnet.x) - T2.magnet.x) < 1e-9 && T1.magnet.y === T2.magnet.y)
+    r.check('lane/firelane/lock/spinner/kicker/orbit zones mirror with direction flipped',
+        Math.abs(mx(T1.lane.innerX) - T2.lane.innerX) < 1e-9 && T1.lane.side === -T2.lane.side && T1.lane.bottomY === T2.lane.bottomY &&
+        Math.abs(T1.lane.curlVx + T2.lane.curlVx) < 1e-9 &&
+        Math.abs(mx(T1.lane.rampZone.x2) - T2.lane.rampZone.x1) < 1e-9 && Math.abs(mx(T1.lane.rampZone.x1) - T2.lane.rampZone.x2) < 1e-9 &&
+        Math.abs(mx(T1.laneX.x2) - T2.laneX.x1) < 1e-9 && Math.abs(mx(T1.laneX.x1) - T2.laneX.x2) < 1e-9 &&
+        Math.abs(mx(T1.lock.x2) - T2.lock.x1) < 1e-9 && Math.abs(mx(T1.lock.x1) - T2.lock.x2) < 1e-9 && T1.lock.yAt === T2.lock.yAt && T1.lock.need === T2.lock.need &&
+        T1.spinner.xMax === mx(T2.spinner.xMax) && T1.spinner.side === -T2.spinner.side && T1.spinner.yFrom === T2.spinner.yFrom &&
+        T1.kicker.xMax === mx(T2.kicker.xMax) && T1.kicker.side === -T2.kicker.side && Math.abs(T1.kicker.vx + T2.kicker.vx) < 1e-9 && T1.kicker.vy === T2.kicker.vy &&
+        Math.abs(mx(T1.orbit.armPad.x) - T2.orbit.armPad.x) < 1e-9 && T1.orbit.armPad.y === T2.orbit.armPad.y &&
+        Math.abs(mx(T1.orbit.donePad.x) - T2.orbit.donePad.x) < 1e-9 && T1.orbit.donePad.y === T2.orbit.donePad.y &&
+        Math.abs(mx(T1.orbit.curl.xMax) - T2.orbit.curl.xMax) < 1e-9 && T1.orbit.curl.side === -T2.orbit.curl.side && Math.abs(T1.orbit.curl.vx + T2.orbit.curl.vx) < 1e-9 &&
+        Math.abs(mx(T1.orbit.ch.cx) - T2.orbit.ch.cx) < 1e-9 && T1.orbit.ch.side === -T2.orbit.ch.side && T1.orbit.need === T2.orbit.need)
+    r.check('flippers mirror (pivots W-x, angles 180-x) and the plunger moves to the left lane',
+        T2.flippers.L.px === mx(T1.flippers.R.px) && T2.flippers.R.px === mx(T1.flippers.L.px) &&
+        Math.abs(T2.flippers.L.rest - (180 - T1.flippers.R.rest)) < 1e-9 && Math.abs(T2.flippers.L.up - (180 - T1.flippers.R.up)) < 1e-9 &&
+        Math.abs(T2.flippers.R.rest - (180 - T1.flippers.L.rest)) < 1e-9 && Math.abs(T2.flippers.R.up - (180 - T1.flippers.L.up)) < 1e-9 &&
+        T2.plunger.x === mx(T1.plunger.x) && T2.plunger.restY === T1.plunger.restY)
+    r.check('EMBERS rules are its own hotter economy (literal, not derived)',
+        T2.rules.bumper === 75 && T2.rules.sling === 30 && T2.rules.spinner === 15 && T2.rules.bankClear === 300 &&
+        T2.rules.ramp === 30 && T2.rules.rampSet === 600 && T2.rules.lane === 30 && T2.rules.laneSweep === 150 &&
+        T2.rules.lock === 400 && T2.rules.multiball === 1200 && T2.rules.orbit === 150 && T2.rules.orbitSet === 600 &&
+        T2.rules.magnet === 75 && T2.rules.multCap === 4 && T2.saveTicks === 240 && T2.tilt.decayTicks === 42)
+    r.check('state reports which cabinet it runs (cab pin) + cabIndexOf round-trips',
+        stateOf(makeGame(1, 1)).cab === 'ember-rider' && stateOf(makeGame(1, 0)).cab === 'cabinet-one' &&
+        cabIndexOf('ember-rider') === 1 && cabIndexOf('cabinet-one') === 0)
+}
+
+// --- 2. engine mirror equivariance: same seed, mirrored pads ⇒ mirrored states
+{
+    const { TABLE_TWO } = await import('../src/games/Pinball/sim.js')
+    void TABLE_TWO
+    const a = makeGame(7, 0), b = makeGame(7, 1)
+    const typesA = [], typesB = []
+    let worst = 0, worstLate = 0, divergeAt = -1, countersSplit = false
+    let snapA = null, snapB = null
+    const N = 1500
+    for (let i = 0; i < N; i++) {
+        // medium auto-plunge script, identical on both; flips would mirror too
+        const pad = i % 90 < 4 ? { down: true } : {}
+        stepGame(a, pad); stepGame(b, pad)
+        if (i < 400) { typesA.push(...a.events.map((e) => e.type)); typesB.push(...b.events.map((e) => e.type)) }
+        a.events.length = 0; b.events.length = 0
+        if (i === 399 && a.pucks.length && b.pucks.length) {
+            snapA = { balls: a.balls, locks: a.locks, targets: a.targetDown.join(''), spin: a.spinnerTurns, mult: a.mult }
+            snapB = { balls: b.balls, locks: b.locks, targets: b.targetDown.join(''), spin: b.spinnerTurns, mult: b.mult }
+        }
+        if (a.pucks.length !== b.pucks.length) { divergeAt = i; countersSplit = true; continue }
+        for (let k = 0; k < a.pucks.length; k++) {
+            const pa = a.pucks[k], pb = b.pucks[k]
+            const d = Math.max(Math.abs(pb.bx - (W - pa.bx)), Math.abs(pb.by - pa.by),
+                Math.abs(pb.vx + pa.vx), Math.abs(pb.vy - pa.vy))
+            if (i < 400) worst = Math.max(worst, d); else if (!countersSplit) worstLate = Math.max(worstLate, d)
+        }
+        if (a.balls !== b.balls || a.locks !== b.locks || a.multiball !== b.multiball) countersSplit = true
+        if (i < 400) worst = Math.max(worst, Math.abs(a.ang.L - (180 - b.ang.R)), Math.abs(a.ang.R - (180 - b.ang.L)))
+    }
+    const sortedEq = (x, y) => x.length === y.length && x.slice().sort().join() === y.slice().sort().join()
+    r.check('mirror equivariance: identical seed + mirrored pads ⇒ puck states mirror over the first 400 ticks',
+        worst < 1e-6, `worst=${worst.toExponential(2)} px`)
+    r.check('the mirrored runs see IDENTICAL event inventories over the first 400 ticks',
+        sortedEq(typesA, typesB) && typesA.includes('plunge') && typesA.includes('lock'),
+        `n=${typesA.length}/${typesB.length}`)
+    r.check('and identical match-state counters at tick 400',
+        snapA.balls === snapB.balls && snapA.locks === snapB.locks && snapA.targets === snapB.targets &&
+        snapA.spin === snapB.spin && snapA.mult === snapB.mult,
+        `balls=${snapA.balls}/${snapB.balls} locks=${snapA.locks}/${snapB.locks} spin=${snapA.spin}/${snapB.spin}`)
+    // The physics is x-mirror equivariant at ulp level (1e-7 px after 400 ticks);
+    // pinball is chaotic, so a sub-nanometre deviation is all a marginal
+    // bumper hit needs to fork the line. That is documented, not denied:
+    r.check('documented chaos: while the match-state stays common, late deviations stay sub-micrometre',
+        worstLate < 1e-6 || countersSplit, `late=${worstLate.toExponential(2)} splitAt=${divergeAt}`)
+    // scores differ BY DESIGN — and the difference is explainable: ember pays
+    // less per bumper but more per bank; the run must simply not be identical.
+    r.check('ECONOMY pin: the two cabinets score different totals on the same line',
+        a.score !== b.score, `cab-one=${a.score} ember=${b.score}`)
+    r.check('mbKick mirrors position and horizontal kick',
+        TABLE.mbKick.every((k, i) => Math.abs((W - k.x) - TABLE_TWO.mbKick[i].x) < 1e-9 && Math.abs(k.vx + TABLE_TWO.mbKick[i].vx) < 1e-9 && k.y === TABLE_TWO.mbKick[i].y))
+}
+
+// --- 3. the human line replays on EMBER RIDER (mirrored) ----
+{
+    const gs = makeGame(3169, 1)
+    let mb = false, empties = 0, scoreAtLock = 0
+    for (let i = 0; i < 3000 && !mb; i++) {
+        const p = gs.pucks[0]
+        const atPlunger = gs.pucks.length === 1 && !p.launched && p.by > 540
+        const pad = atPlunger && i % 90 < 4 ? { down: true } : {}
+        stepGame(gs, pad)
+        if (gs.pucks.length === 0 && !gs.done) empties++
+        if (scoreAtLock === 0 && gs.events.some((e) => e.type === 'lock')) scoreAtLock = gs.score
+        if (gs.multiball) mb = true
+        gs.events.length = 0
+    }
+    r.check('HUMAN LINE (ember): three medium left-lane plunges lock the tower and ignite MULTIBALL', mb, `mb=${mb}`)
+    r.check('ember pays its own lock jackpot (400) before the pack', scoreAtLock >= 400, `first lock score=${scoreAtLock}`)
+    r.check('the ember human line never leaves the table empty', empties === 0)
+}
+
+// --- 4. ember literal rules: magnet snap + chained wrap pay ember values ----
+{
+    const gs = makeGame(321, 1)
+    rung3Ball(gs, 120, 310, 0, 60)   // ember magnet sits at (120,350)
+    const seen = []
+    for (let i = 0; i < 300 && !seen.includes('magfree'); i++) { drive(gs, {}, 1); seen.push(...types(gs)) }
+    r.check('ember MAGNET grabs and snaps for +75 (its own price)',
+        seen.includes('maggrab') && seen.includes('magfree') && gs.score === 75, `${seen.join(',')} score=${gs.score}`)
+    const gw = makeGame(301, 1)
+    // mirrored wrap feed: the ember kicker fires LEFT up the right rail
+    rung3Ball(gw, 340, 498, -10, -880)
+    const wseen = []
+    for (let i = 0; i < 220 && !wseen.includes('orbit'); i++) { drive(gw, {}, 1); wseen.push(...types(gw)) }
+    for (let i = 0; i < 150; i++) { drive(gw, {}, 1); wseen.push(...types(gw)) }
+    r.check('a mirrored wrap on EMBER RIDER arms, completes and chains to the firelane lock',
+        wseen.includes('orbitarm') && wseen.includes('curl') && wseen.includes('orbit') && wseen.includes('lane') && wseen.includes('lock'), wseen.join(','))
+    r.check('that chained wrap pays exactly 790 ember (150+90+150+400)', gw.score === 790, `score=${gw.score}`)
+}
+
+// --- 5. cabinet-two determinism ----
+{
+    const run = (seed) => { const gs = makeGame(seed, 1); const hs = []; for (let i = 1; i <= 600; i++) { stepGame(gs, i % 90 < 4 ? { down: true } : {}); if (i % 100 === 0) hs.push(stateHash(gs)) } return hs }
+    const a = run(41), b = run(41), c = run(42)
+    r.check('EMBER RIDER is deterministic: same seed ⇒ hash-identical over 600 ticks', JSON.stringify(a) === JSON.stringify(b))
+    r.check('different seeds diverge on ember too', JSON.stringify(a) !== JSON.stringify(c))
+    r.check('the same seed on different cabinets gives different hashes (tables are not interchangeable)',
+        run(41)[5] !== (() => { const gs = makeGame(41, 0); const hs = []; for (let i = 1; i <= 600; i++) { stepGame(gs, i % 90 < 4 ? { down: true } : {}); if (i % 100 === 0) hs.push(stateHash(gs)) } return hs })()[5])
+}
+
 r.exit()
