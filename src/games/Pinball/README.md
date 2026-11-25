@@ -75,6 +75,14 @@ Rung 2 (#3169), the Firepower idiom:
   during the pack banks an EXTRA BALL (paid when the pack returns to one
   ball); pack drains cost balls-on-playfield only — the last ball home is the
   only one that costs a game ball. Locks reset when the pack ends.
+- **MULTIBALL lands (feel, #3178)** — the pack-off fires a white-out blink,
+  a hard shake and a ring + spark shower from every kick port (the moment
+  reads at phone width), and a sustained A-minor tension bed (MUSIC
+  `pinballMb`) runs while the pack is down — keyed off SIM state
+  (`gs.multiball`), so its start/stop seam is deterministic (pinned).
+  LANE rollovers voice an ascending pitch ladder by rollover index
+  (1240 → 1480 → 1720 Hz): the firelane descent teaches its own progress
+  by ear.
 - Engine note: gate/rollover/capture/multi-ball are generic engine PRIMITIVES;
   CABINET ONE only instantiates them from `TABLE` data (`oneWay` walls,
   `rampRollovers`, `laneRollovers`, `lock`, `mbKick`, `saveTicks`).
@@ -117,7 +125,7 @@ this is the physics a table always had.
 ## Verify
 
 ```bash
-npm run pinballcheck          # 109 literal physics/rules/determinism checks, plain Node
+npm run pinballcheck          # 112 literal physics/rules/determinism checks, plain Node
 npm run pinballplay           # headless-Chrome drive (start, plunger, wrap, magnet, DMD pixels)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5176 --strictPort      # then /retrogames/pinball
@@ -134,6 +142,7 @@ npm run dev -- --port 5176 --strictPort      # then /retrogames/pinball
 - No table editor (#3103: not yet). No in-lane kick on the right side.
 - Single table means the `?style` / skin machinery is unused here.
 - The attract demo is a title card with a rolling ball, not a driven run.
+- The music bed covers MULTIBALL only (#3178); single-ball play stays dry.
 - The magnet holds one ball and the orbit one loop at a time (real tables run
   both per-ball); the wrap's curl assist is a fixed push, not a shaped rail.
 - No left ramp / kickback, and the spinner is still outlane-only.

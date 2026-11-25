@@ -44,7 +44,10 @@ const sfxFor = (ev) => {
         case 'rampset':
             a.playTone(587, 0.07, 'square', 0.1); a.playTone(740, 0.07, 'square', 0.1, 0.06)
             a.playTone(880, 0.1, 'square', 0.11, 0.12); break
-        case 'lane': a.playTone(1240, 0.035, 'square', 0.08); break
+        // lane rollovers step up a pitch ladder with the sweep: each of the
+        // three LANE rollovers rings brighter than the last, so the descent
+        // teaches its own progress by ear (#3178)
+        case 'lane': a.playTone(1240 + 240 * (ev.i || 0), 0.035, 'square', 0.08); break
         case 'lanesweep':
             a.playTone(740, 0.06, 'square', 0.1); a.playTone(988, 0.1, 'square', 0.11, 0.05); break
         case 'lock': a.playTone(196, 0.12, 'square', 0.14); a.playNoise(0.06, 0.12, 0.15); break
@@ -97,8 +100,9 @@ const PinballGame = () => {
     const gsRef = useRef(makeGame(freshSeed()))
     const keysRef = useRef({ left: false, right: false, a: false, down: false, b: false })
     const partsRef = useRef([])
-    const flashRef = useRef({ bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0, ramp: 0, lane: TABLE.laneRollovers.map(() => 0), lock: 0, mb: 0, orbit: 0, orbitArm: 0, mag: 0, magFree: 0 })
+    const flashRef = useRef({ bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0, ramp: 0, lane: TABLE.laneRollovers.map(() => 0), lock: 0, mb: 0, flash: 0, orbit: 0, orbitArm: 0, mag: 0, magFree: 0 })
     const shakeRef = useRef(0)
+    const mbBedRef = useRef(false)
     const trailRef = useRef([])
     const ringsRef = useRef([])  // rung 3: expanding event rings (presentation only)
     const fieldRef = useRef(null)
@@ -174,7 +178,12 @@ const PinballGame = () => {
                 else if (ev.type === 'lane') { fl.lane[ev.i] = 8; spawn(310, ev.y, 4, PAL.lane, 110) }
                 else if (ev.type === 'lanesweep') { shakeRef.current = Math.max(shakeRef.current, 3) }
                 else if (ev.type === 'lock') { fl.lock = 16; shakeRef.current = Math.max(shakeRef.current, 4) }
-                else if (ev.type === 'multiball') { fl.mb = 90; shakeRef.current = 8 }
+                else if (ev.type === 'multiball') {
+                    fl.mb = 90; fl.flash = 14; shakeRef.current = Math.max(shakeRef.current, 12)
+                    // the tower mouth erupts: a ring + shower from each kick port so the
+                    // pack-off lands on a 6-inch screen, not only at desk width (#3178)
+                    for (const k of TABLE.mbKick) { spawnRing(k.x, k.y, PAL.glow, 26, 14); spawn(k.x, k.y, 14, PAL.glow, 220) }
+                }
                 // ---- rung 3 (messages are SIM state now — drawn by the DMD) ----
                 else if (ev.type === 'curl') spawn(ev.x, ev.y, 4, PAL.glow, 90)
                 else if (ev.type === 'orbitarm') { fl.orbitArm = 8; spawn(ev.x, ev.y, 6, PAL.lane, 100) }
@@ -510,6 +519,13 @@ const PinballGame = () => {
             }
             ctx.globalAlpha = 1
 
+            // tower-kick white-out (#3178): the instant the pack is loose the whole
+            // cabinet blinks — the MULTIBALL moment has to read at phone width
+            if (fl.flash > 0) {
+                ctx.fillStyle = `rgba(255,255,255,${(0.38 * fl.flash / 14).toFixed(3)})`
+                ctx.fillRect(0, 0, W, H)
+            }
+
             // HUD — 7-seg score centred (corner clearance law #2899 respected)
             ctx.fillStyle = 'rgba(4,6,16,0.72)'
             ctx.fillRect(SCORE_X - 12, SCORE_Y - 10, SCORE_DIGITS * 22 + 24, 44)
@@ -598,6 +614,12 @@ const PinballGame = () => {
             } else {
                 audioController.stopLoopVoice()
             }
+            // #3178: MULTIBALL tension bed — runs while the pack is down. The
+            // trigger is SIM state (gs.multiball), so the start/stop seam is
+            // deterministic; pause, drain-home and game-over all cut it the same way.
+            const bedOn = screenRef.current === 'play' && !pausedRef.current && gs.multiball
+            if (bedOn && !mbBedRef.current) { audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55); mbBedRef.current = true }
+            else if (!bedOn && mbBedRef.current) { audioController.stopMusic(); mbBedRef.current = false }
             ctx.clearRect(0, 0, W, H)
             if (screenRef.current === 'attract') drawAttract(now)
             else drawTable(gs)
@@ -692,6 +714,7 @@ const PinballGame = () => {
             window.removeEventListener('keyup', onKeyUp)
             cvs.removeEventListener('pointerdown', onPointer)
             audioController.stopLoopVoice()
+            audioController.stopMusic() // #3178: never leak the multiball bed timer
             unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__pinballTest) delete window.__pinballTest; unexposeGame() }
         }
