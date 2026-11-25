@@ -1001,7 +1001,7 @@ if (process.argv.includes('--mutate')) {
         ['the dim bearing aims at the cell home, not its place (#3272-3)', WORLDF, 'const q = stormPos(t)', 'const q = storm'],
         ['the sky deck sinks to the waterline (#3272-3)', WORLDF, 'const SKY_DECK_Y = 185', 'const SKY_DECK_Y = 2'],
         ['the plane engine goes silent (no bed, back to per-action beeps)', SIMF, 'raw = 0.004 + 0.030 * load', 'raw = 0 * load'],
-        ['storm duels the engine instead of ducking it', SIMF, 'return { gain: +(raw * (1 - 0.5 * d)).toFixed(4)', 'return { gain: +(raw * (1 + 0.5 * d)).toFixed(4)'],
+        ['storm duels the engine instead of ducking it', SIMF, 'gain: +(raw * (1 - 0.5 * d)).toFixed(4),', 'gain: +(raw * (1 + 0.5 * d)).toFixed(4),'],
         ['the spool cue loses its hysteresis (chirping boarding)', SIMF, "if (b < 0.006 && a >= 0.012) return 'spool'", "if (a >= 0.012) return 'spool'"],
         ['the glider grows an engine (the bed sings on a motorless wing)', SIMF, 'raw = thrusting ? 0.026 : 0.014\n        freq = thrusting ? 128 : 92', 'raw = thrusting ? 0.026 : 0.014\n        freq = thrusting ? 128 : 92\n    } else {\n        raw = 0.020; freq = 110'],
         ['the strip pays nothing', SIMF, "finishEvent(g, 'spot', strip.score)", "finishEvent(g, 'spot', 0)"],
