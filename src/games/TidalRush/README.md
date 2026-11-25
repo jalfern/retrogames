@@ -209,8 +209,20 @@ static job; every pushed commit is commented on #3104.
   (mutant `beats` proves the pins bite).
 - The front is swell-only weather: sky darkening and rain ramp at the GO of a
   re-roll, not as the front passes overhead (sea first, sky later).
-- Wake ribbon is flat-shaded additive; the WR64 trail also darkens the water
-  beside it (open — #3218 tail).
+- ~~Wake ribbon is flat-shaded additive; the WR64 trail also darkens the water
+  beside it (open — #3218 tail).~~ **CLOSED by #3337:** the ribbon is a shaded
+  **FOAM V** — five lanes per section: bright crest LINES at the arms (spreading
+  with age), shoulders falling inward, a quiet channel between; brightness rides
+  the emit-time width (speed + boost read in the trail), crests cool white→cyan
+  as the bubbles die, and a deterministic per-point twinkle breaks the
+  along-trail banding (seq-assigned phase, no Math.random downstream — buffers
+  byte-identical across replay). The darkening strip is **gone**: the
+  disturbed-water hint is now a slightly wider, very faint **additive** glow, so
+  the wake can only ever add light to the bay, never stain it (pinned: both
+  ribbons AdditiveBlending + depthWrite false; mutants `foamflat`/`glowdark`
+  prove the pins bite). Honest gap: the V is geometry shading, not per-pixel
+  foam texture — crests ride the stern path, they don't sample the swell they
+  cut through.
 - Rider has no separate jump/land poses beyond crouch + lean/jolt with
   head-lag (open — #3218 tail). The flat 360 landing does carry a whoosh-in
   now (#3218).

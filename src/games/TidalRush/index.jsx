@@ -144,7 +144,7 @@ const TidalRushGame = () => {
         scene.add(spray.pts)
         const wakes = gs.crafts.map(() => {
             const w = makeWake(LITE ? 30 : 44)
-            scene.add(w.darkMesh)
+            scene.add(w.glowMesh)
             scene.add(w.mesh)
             return w
         })
@@ -1196,7 +1196,7 @@ const TidalRushGame = () => {
             sea.mat.dispose()
             spray.geo.dispose()
             spray.mat.dispose()
-            wakes.forEach((w) => { w.geo.dispose(); w.mat.dispose(); w.darkGeo.dispose(); w.darkMat.dispose() })
+            wakes.forEach((w) => { w.geo.dispose(); w.mat.dispose(); w.glowGeo.dispose(); w.glowMat.dispose() })
             rings.geo.dispose()
             rings.rings.forEach((r) => r.mesh.material.dispose())
             rain.geo.dispose()
