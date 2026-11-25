@@ -29,6 +29,7 @@ const MESSAGES = [
     'CLEAN PASSES CHARGE THE SPRINT',
     'HIT A CREST · HOLD SPIN · BANK THE TRICK',
     'FULL-LOCK STEER OFF A CREST = BARREL ROLL',
+    'BRAKE IN AIR = BACK FLIP · BRAKE + GAS = HANDSTAND',
     'STORM BAY: THE SWELL RE-ROLLS EVERY LAP',
     'A SQUALL CARRIES THE NEW SEA ACROSS THE BAY',
     'THREE LAPS · BEAT MAKO',
@@ -295,6 +296,9 @@ const TidalRushGame = () => {
             lap: () => audioController.playTone(990, 0.12, 'triangle', 0.12),
             go: () => audioController.playSweep(440, 880, 0.3, 'square', 0.14),
             barrel: () => { audioController.playSweep(330, 990, 0.22, 'triangle', 0.11); audioController.playTone(1100, 0.1, 'square', 0.1, 0.14) },
+            // #3276: a flip whooshes over the head; a handstand is a low, held hum
+            flip: () => { audioController.playSweep(480, 1480, 0.26, 'sawtooth', 0.07); audioController.playTone(1560, 0.12, 'square', 0.1, 0.2) },
+            handstand: () => { audioController.playTone(233, 0.14, 'triangle', 0.13); audioController.playSweep(233, 311, 0.2, 'triangle', 0.09) },
             swell: () => audioController.playSweep(90, 210, 0.9, 'sine', 0.16),
             rain: (on) => {
                 // the band edge: a wind gust in, a lifting sweep out (#3191)
@@ -322,6 +326,8 @@ const TidalRushGame = () => {
                 if (e.type === 'miss') { sfx.miss(); flashPop = 1; trickPop = ''; if (hud.pop) { hud.pop.textContent = 'MISS — THROTTLE DOWN'; hud.pop.style.opacity = 1 } }
                 if (e.type === 'trick') { sfx.trick(); trickPop = 'TRICK! +250'; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } }
                 if (e.type === 'barrel') { sfx.barrel(); flashPop = 1; trickPop = 'BARREL ROLL +200'; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } }
+                if (e.type === 'flip') { sfx.flip(); flashPop = 1; trickPop = 'BACK FLIP +300'; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } }
+                if (e.type === 'handstand') { sfx.handstand(); trickPop = `HANDSTAND ×${e.n} +${e.pts}`; if (hud.pop) { hud.pop.textContent = trickPop; hud.pop.style.opacity = 1 } }
                 if (e.type === 'airbonus') {
                     // the hang-time pays — whoosh in, bank the air
                     sfx.airLand()
@@ -596,7 +602,9 @@ const TidalRushGame = () => {
                 const m = skiMeshes[i]
                 m.root.position.set(c.x, c.y, c.z)
                 m.root.rotation.y = c.heading + (c.airborne ? c.spin : 0)
-                m.tilt.rotation.x = c.pitch
+                // #3276: the pitch verbs ride the tilt group — flip over the bow
+                // or nose-down inverted; the sky-dim below reads how deep upside-down Kai is.
+                m.tilt.rotation.x = c.pitch + (c.airborne ? c.flipAng : 0)
                 m.tilt.rotation.z = c.roll * 0.6
                 m.lean.rotation.z = -c.lean
                 m.flame.visible = c.boosting
@@ -662,6 +670,11 @@ const TidalRushGame = () => {
 
             // HUD (DOM refs — no per-frame React)
             const hud = hudRef.current
+            // #3276: deep upside-down dims the world — the sky goes away mid-handstand
+            if (hud.invert) {
+                const inv = p.airborne ? Math.max(0, Math.min(1, (-p.flipAng - 1.15) / 1.2)) : 0
+                hud.invert.style.opacity = String(0.34 * inv)
+            }
             if (hud.score) hud.score.firstChild.nodeValue = String(gs.crafts[mySeat()].score)
             if (hud.speed) hud.speed.firstChild.nodeValue = String(Math.round(p.speed * 3.6))
             if (hud.lap) hud.lap.textContent = `LAP ${Math.min(p.lap, LAPS)}/${LAPS}`
@@ -1131,6 +1144,8 @@ const TidalRushGame = () => {
             <div ref={stageRef} className="absolute inset-0" />
 
             <div className={`absolute inset-0 pointer-events-none font-mono transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
+                {/* #3276 invert dim — the world goes quiet while Kai is upside down */}
+                <div ref={setHud('invert')} className="absolute inset-0 bg-indigo-950" style={{ opacity: 0, transition: 'opacity 80ms' }} />
                 <div className="absolute top-[4.75rem] left-3 bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5 text-cyan-50">
                     <div className="text-[9px] tracking-widest opacity-70">SCORE</div>
                     <div ref={setHud('score')} className="text-xl font-black text-yellow-200 leading-6">0</div>
@@ -1164,7 +1179,7 @@ const TidalRushGame = () => {
                     <div className="h-3 rounded bg-black/50 border border-cyan-300/30 overflow-hidden">
                         <div ref={setHud('boost')} className="h-full bg-gradient-to-r from-cyan-300 to-sky-500" style={{ width: '0%' }} />
                     </div>
-                    <div className="text-center text-[9px] tracking-widest text-cyan-200/70 mt-1">SPRINT — hold BOOST</div>
+                    <div className="text-center text-[9px] tracking-widest text-cyan-200/70 mt-1">SPRINT — hold BOOST · AIR: BRAKE FLIP / BRAKE+GAS HANDSTAND</div>
                     <div ref={setHud('pen')} className="text-center text-xs font-black tracking-widest text-red-300 mt-1 transition-opacity duration-200" style={{ opacity: 0 }}>WRONG SIDE — CHOKED</div>
                 </div>
             </div>
