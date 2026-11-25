@@ -113,8 +113,20 @@ static job; every pushed commit is commented on #3104.
   TUNDRA), open seats fly the autopilot, the host's bay pick rides the start
   payload. Wire pads are six bits (throttle/lean×2/brake/spin/boost) on the
   #531 sampling law with #1705 N-peer roster; hash referee every 30 ticks
-  freezes on desync (never silent); a dropped rider's ski coasts while peers
-  remain and returns to the autopilot when you're alone. See `net.js`.
+  freezes on desync (never silent). See `net.js`.
+ - **Survivable rejoin (#3244 item 3)** — a drop starts an 8 s HOLD, not a
+   coast: lockstep stalls every sea at the dropped seat's first missing pad,
+   the field frozen at one identical state, roster unchanged. Pads are a
+   rider's proof of life AND identity — when they resume at the stalled tick
+   the race continues with the hull back (`RIDER BACK — GO`). The droppee
+   climbs the #546 backoff ladder under the same code; its welcome (same room,
+   same seat) rides straight back in. Both sides replay the pads the dead wire
+   swallowed — a window of PAD_DELAY+1 ticks each way around the stall,
+   absolute per tick so late bytes are harmless. Past the window the old
+   takeover fires (ski coasts / solo finish, unchanged). Honest gap: the
+   deployed relay mints a fresh id per connection, so reclaiming the same seat
+   needs it still free — a rejoin onto another seat is not you: the hold
+   expires and the ski coasts as before.
 - **Desync carries receipts (#3244 item 5)** — every 30-tick boundary records
   tick + my hash + every peer hash into an 8-row ring (`createEvidence`,
   `net.js`); when the referee bites, the diverged row is marked

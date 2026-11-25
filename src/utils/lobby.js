@@ -124,6 +124,7 @@ export function createLobby(opts = {}) {
         onRoster: (r) => { if (opts.onRoster) opts.onRoster(r); push() },
         onJoin: (e) => { if (opts.onJoin) opts.onJoin(e); push() },
         onLeave: (e) => { if (opts.onLeave) opts.onLeave(e); push() },
+        onDrop: (e) => { if (opts.onDrop) opts.onDrop(e) },
         onClose: (attempt) => {
             if (opts.onClose) opts.onClose(attempt)
             if (room.phase === 'idle') return

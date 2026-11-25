@@ -624,7 +624,9 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
 {
     const HERE = join(dirname(fileURLToPath(import.meta.url)), '..')
     const jsxNet = readFileSync(join(HERE, 'src/games/TidalRush/index.jsx'), 'utf8')
-    const { SEATS, PAD_DELAY, HASH_EVERY, toWire, fromWire, assembleSeatPads, createEvidence, EVIDENCE_LIMIT, hex32, podiumRows, podWire, podRows } = await import('../src/games/TidalRush/net.js')
+    const jsxSrc = readFileSync(join(HERE, 'src/utils/lobby.js'), 'utf8')
+    const roomSrc = readFileSync(join(HERE, 'src/utils/room.js'), 'utf8')
+    const { SEATS, PAD_DELAY, HASH_EVERY, HOLD_MS, toWire, fromWire, assembleSeatPads, createEvidence, EVIDENCE_LIMIT, hex32, podiumRows, podWire, podRows } = await import('../src/games/TidalRush/net.js')
     const { createLockStep } = await import('../src/utils/lockstep.js')
 
     // --- desync evidence (#3244 item 5): the ring + the copyable block ------
@@ -787,6 +789,49 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         bd[0].gs.tick >= tickAtDrop + 150)
     ok('takeover: the abandoned ski flies the autopilot again',
         bd[0].gs.crafts[1].speed > 5)
+
+    // #3244 item 3 — survivable rejoin: rider 1's socket dies mid-race; the
+    // field HOLDS (lockstep stalls both seas at the same tick). The flapper's
+    // pads replayed past the stall tick reopen the gate — the race continues
+    // with their hull back, hashes never break. The component's hold/replay
+    // bookkeeping is mirrored here (net.js exports the window so both sides
+    // read the same constant).
+    const br = [makeBox(0, [0, 1], wig(0, 0.9)), makeBox(1, [0, 1], wig(2.1, 0.8))]
+    pairUp(br)
+    for (let guard = 0; guard < 4000 && br[0].gs.tick < 240; guard++) for (const b of br) b.stepOnce()
+    const stallAt = br[0].gs.tick
+    br[0].sibs = []; br[1].sibs = []            // the socket dies: nothing rides either way
+    const hold = { seats: new Set([1]) }       // host enters hold (the component's seatGone)
+    for (let g2 = 0; g2 < 120; g2++) for (const b of br) b.stepOnce()
+    const stallH = br[0].gs.tick, stallG = br[1].gs.tick
+    ok('hold: the stalled window ticks nowhere — the field waits, it never coasts silently',
+        br[0].gs.tick === stallH && br[1].gs.tick === stallG)
+    // rejoin: the wire re-opens; each box replays its pads from the stalled
+    // tick up — the stalled tick's own pad never crossed the dead wire, and
+    // late pads are harmless under the absolute-stream law (a tick only runs
+    // when every byte for it is in). Host's hold sees the flapper's pad at the
+    // stalled tick and lets go; replays chain the field back to life.
+    br[0].sibs = [br[1]]; br[1].sibs = [br[0]]
+    // replay window: ±(PAD_DELAY+1) around each box's tick — a peer that ran on
+    // buffered pads lags that far, and its gate waits on the ticks I spent.
+    for (const [k, p] of br[1].mirrors[1]) if (k >= stallG - PAD_DELAY - 1 && k <= stallG + PAD_DELAY) br[0].onMsg({ t: 'pad', s: 1, k, p })
+    for (let g2 = 0; g2 < 4000 && br[0].gs.tick < stallAt + 240; g2++) {
+        if (hold.seats.size && br[0].mirrors[1].has(br[0].gs.tick)) {
+            hold.seats.clear()
+            for (const [k, p] of br[0].mirrors[0]) if (k >= br[0].gs.tick - PAD_DELAY - 1 && k <= br[0].gs.tick + PAD_DELAY) br[1].onMsg({ t: 'pad', s: 0, k, p })
+        }
+        for (const b of br) b.stepOnce()
+    }
+    ok('rejoin: the race resumes past the stall for BOTH boxes — no takeover, no coasting',
+        br[0].gs.tick >= stallAt + 200 && br[1].gs.tick >= stallAt + 200 && !hold.seats.size)
+    ok('rejoin: the room hashes still agree at every boundary — the sea never split',
+        sameHashes(br) && !br[0].desync && !br[1].desync)
+    ok('the component holds before it coasts (net.js window, the takeover body, the rejoin)',
+        HOLD_MS === 8000 && jsxNet.includes("netSay('RIDER DOWN — HOLDING FOR THEM')")
+        && jsxNet.includes("netSay('RIDER BACK — GO')") && jsxNet.includes('const seatLost = (seat) =>')
+        && jsxNet.includes("netSay('SIGNAL LOST — RECONNECTING…')") && jsxNet.includes("netSay('RE-SYNCED — BACK IN THE RACE')")
+        && jsxNet.includes("net.room.send('pad', { k, p })")
+        && jsxSrc.includes('opts.onDrop') && roomSrc.includes('opts.onDrop({ slot: room.yourSlot })'))
 
     // --- #3244 item 4: the room finish — podium sheet + rematch wire ---------
     {
