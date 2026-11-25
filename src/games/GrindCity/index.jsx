@@ -173,6 +173,7 @@ const GrindCityGame = () => {
             else if (e.startsWith('grab')) AC.playSweep(500, 900, 0.1, 'triangle', 0.08)
             else if (e.startsWith('flip')) { AC.playNoise(0.12, 0.12); AC.playSweep(700, 300, 0.14, 'square', 0.06) }
             else if (e.startsWith('grind:start')) { AC.playTone(1500, 0.06, 'square', 0.06); AC.playNoise(0.08, 0.12) }
+            else if (e === 'stall') AC.playTone(240, 0.05, 'square', 0.06)   // tail locks into coping (#3289)
             else if (e === 'spark') AC.playNoise(0.05, 0.07)
             else if (e.startsWith('grind:end')) AC.playTone(900, 0.07, 'square', 0.05)
             else if (e.startsWith('manual:start')) AC.playTone(420, 0.04, 'triangle', 0.06)
@@ -431,7 +432,7 @@ const GrindCityGame = () => {
             // Smoothing lives INSIDE a cam mode; crossing modes is a hard cut
             // (snap + white flash + FOV punch), the Tony Hawk transition grammar.
             const grabAir = actor.air && actor.airTrick && actor.airTrick.grab
-            const wantAction = screenRef.current === 'play' && (vst.grinding || vst.manual || grabAir)
+            const wantAction = screenRef.current === 'play' && (vst.grinding || vst.manual || grabAir || vst.stall || !!vst.railGrab)
             const wantMode = replayMode ? 'replay' : wantAction ? 'action' : 'chase'
             if (wantMode !== camMode) { camMode = wantMode; camCut = 1 }
             camCut = Math.max(0, camCut - DT * 5)
@@ -500,6 +501,9 @@ const GrindCityGame = () => {
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
+                // DEV-only QA teleport (#3289 drive legs reach the coping/rail without
+                // burning 10 s of real skating; the verbs still fire through real keys)
+                teleport: (p) => { Object.assign(sim, p); sim.air = false },
             }
             mountDbg({
                 title: 'GRIND CITY',
@@ -508,12 +512,14 @@ const GrindCityGame = () => {
                     return [`phase=${st.phase} mode=${st.mode}`, `pos=${st.x},${st.y},${st.z} v=${st.speed} hd=${st.heading}`,
                         `score=${st.score} chain=${st.chainPts}x${st.mult} letters=${Object.keys(st.letters).length}/5`,
                         `gems=${st.gems}/${st.gemTotal} all=${st.gemsAll} secret=${st.secret}`,
-                        `air=${st.air} grind=${st.grinding} bal=${st.grindBal} manual=${st.manual} t=${st.timeLeft}`]
+                        `air=${st.air} grind=${st.grinding} bal=${st.grindBal} manual=${st.manual} t=${st.timeLeft}`,
+                        `railGrab=${st.railGrab || '-'} stall=${st.stall} stallT=${st.stallT} stallBal=${st.stallBal}`]
                 },
                 actions: [
                     { label: 'fly gap', run: () => { sim.x = 4; sim.z = 3; sim.y = 1; sim.heading = Math.PI / 2; sim.speed = 8 } },
                     { label: 'rail', run: () => { sim.x = -11; sim.z = -2; sim.y = 1.4; sim.heading = 0; sim.speed = 7 } },
                     { label: 'pipe', run: () => { sim.x = -30; sim.z = 0; sim.y = -1; sim.heading = Math.PI; sim.speed = 8 } },
+                    { label: 'lip', run: () => { sim.x = -24.6; sim.z = 0; sim.y = 0; sim.heading = Math.PI; sim.speed = 2 } },
                     { label: 'roof', run: () => { sim.x = -15; sim.z = 6; sim.y = 0; sim.heading = Math.PI / 2; sim.speed = 10.5 } },
                     { label: 'secret', run: () => { sim.x = 26; sim.z = 6; sim.y = -1; sim.heading = 0; sim.speed = 3 } },
                     { label: 'roofgrind', run: () => { sim.x = -18; sim.z = 14.0; sim.y = 3.2; sim.heading = 0; sim.speed = 6.5; sim.air = true; sim.vy = 0; } },

@@ -25,14 +25,14 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade']) {
+    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall']) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 6 ? `ALL MUTANTS CAUGHT (${died}/6)` : `${died}/6 mutants caught`)
-    process.exit(died === 6 ? 0 : 1)
+    console.log(died === 8 ? `ALL MUTANTS CAUGHT (${died}/8)` : `${died}/8 mutants caught`)
+    process.exit(died === 8 ? 0 : 1)
 }
 
 // ── boot ──────────────────────────────────────────────────────────────────
@@ -82,6 +82,93 @@ ok('park surface sane near start', parkHeight(6, -31.5) > 3, `h=${parkHeight(6, 
     while (!s.grind && t++ < 120) step(s, {})
     ok('rail latch starts a grind', !!s.grind, s.grind ? s.grind.name : 'never latched')
     ok('grind is on the plaza rail', s.grind && RAILS[s.grind.ri].id === 'plaza')
+}
+
+// ── rail vocabulary (#3289): grabs on grinds + coping stalls ──────────────
+{
+    // coping stall: crouch+A at the pipe lip locks the tail in on the rail line
+    const s = makeGame(5, 'run'); s.phase = 'play'
+    s.x = -24.6; s.z = 0; s.y = parkHeight(-24.6, 0); s.heading = Math.PI; s.speed = 2
+    step(s, { a: true, down: true })
+    const se = stateOf(s)
+    ok('stall entry locks the board and zeroes speed', se.stall === true && se.speed === 0)
+    ok('stall pins the skater onto the coping line', Math.abs(se.x + 25) < 0.02, `x=${se.x}`)
+    // deterministic lean; counter-steer holds it 1.5 s while the trickle pays
+    const ptsBefore = s.chainPts
+    s.stall.drift = 0.5
+    let held = 0
+    while (s.stall && held++ < 90) { step(s, { left: s.stall.bal > 0, right: s.stall.bal < 0 }); if (MUT === 'stall') s.stall = null }
+    ok('stall survives counter-steer and trickles points', !!s.stall && s.chainPts - ptsBefore >= 72,
+        `${held} ticks, +${s.chainPts - ptsBefore}`)
+    step(s, { a: false })                          // release A: pop keeps the chain
+    step(s, { a: true })
+    const popped = stateOf(s)
+    ok('stall pops back airborne with the chain alive', popped.air && s.chain.includes('Stall'),
+        s.chain.join('+'))
+    ok('stall pays trickle + time bonus on commit', s.chainPts - ptsBefore >= 80 + 120,
+        `+${s.chainPts - ptsBefore}`)
+
+    // the meter is real: an unattended stall slips out
+    const b = makeGame(5, 'run'); b.phase = 'play'
+    b.x = -24.6; b.z = 0; b.y = parkHeight(-24.6, 0); b.heading = Math.PI; b.speed = 2
+    step(b, { a: true, down: true })
+    b.stall.drift = 0.5
+    let tb = 0
+    while (b.phase === 'play' && b.stall && tb++ < 240) { step(b, {}); if (MUT === 'stall') b.stall = null }
+    ok('an unattended stall bails on the tighter meter', b.phase === 'tumble' && !b.stall, `${tb} ticks`)
+
+    // crouch+A away from a lip is just an ollie — no dead combo
+    const f = makeGame(5, 'run'); f.phase = 'play'
+    f.x = 0; f.z = 0; f.y = 0; f.heading = 0; f.speed = 4
+    step(f, { a: true, down: true })
+    ok('crouch+A away from a lip ollies instead', f.air && !f.stall)
+}
+{
+    // rail grab: hold B on the plaza rail — named by travel, committed after 0.30 s
+    const mkGrind = (x, z, hd) => {
+        const q = makeGame(5, 'run'); q.phase = 'play'
+        q.x = x; q.z = z; q.y = parkHeight(x, z); q.heading = hd; q.speed = 6
+        step(q, { a: true })
+        let n = 0
+        while (!q.grind && n++ < 120) step(q, {})
+        if (q.grind) q.grind.drift = 0
+        return q
+    }
+    const q = mkGrind(-12, -2, 0)
+    ok('plaza re-latch for grab legs', !!q.grind)
+    step(q, { b: true })
+    ok('B on the rail engages the grab', stateOf(q).railGrab === 'Feeble', `${stateOf(q).railGrab}`)
+    let t = 0
+    while (t++ < 12 && q.grind) { step(q, { b: true }); if (MUT === 'grab') q.grind.grabT = 0 }
+    step(q, {})                                   // release B before 0.30 s
+    ok('a mash tap never commits a grab', !q.chain.includes('Feeble') && !q.chain.includes('Crooked'))
+
+    const q2 = mkGrind(-12, -2, 0)
+    step(q2, { b: true })
+    let t2 = 0
+    while (t2++ < 30 && q2.grind && q2.grind.grab) { step(q2, { b: true }); if (MUT === 'grab') q2.grind.grabT = 0 }
+    step(q2, {})
+    ok('a held rail grab commits FEEBLE forward', q2.chain.includes('Feeble'), q2.chain.join('+'))
+
+    // fakie leg on the pipe coping: the plaza rail runs diagonally, so a
+    // cross-line approach can't latch (the crossing happens while rising) —
+    // ride the axis-aligned coping backwards instead.
+    const q3 = mkGrind(-24.6, 5, -Math.PI / 2)
+    ok('fakie latch on the pipe coping', !!q3.grind && q3.grind.travel < 0 && RAILS[q3.grind.ri].id === 'pipe-near',
+        `travel=${q3.grind && q3.grind.travel} rail=${q3.grind && RAILS[q3.grind.ri].id}`)
+    step(q3, { b: true })
+    let t3 = 0
+    while (t3++ < 30 && q3.grind && q3.grind.grab) { step(q3, { b: true }); if (MUT === 'grab') q3.grind.grabT = 0 }
+    step(q3, {})
+    ok('a held fakie grab commits CROOKED', q3.chain.includes('Crooked'), q3.chain.join('+'))
+
+    // double trickle: identical ladders of ticks, grab pays twice the plain rate
+    const p1 = mkGrind(-12, -2, 0); const p2 = mkGrind(-12, -2, 0)
+    const base1 = p1.chainPts; const base2 = p2.chainPts
+    step(p2, { b: true })
+    for (let i = 0; i < 30; i++) { step(p1, {}); step(p2, { b: true }) }
+    const d1 = p1.chainPts - base1, d2 = p2.chainPts - base2
+    ok('grab doubles the grind trickle', d2 === 2 * d1, `plain +${d1} vs grab +${d2}`)
 }
 
 // ── second line, gems, secret spot (#3246) ────────────────────────────────
@@ -156,6 +243,7 @@ ok('park surface sane near start', parkHeight(6, -31.5) > 3, `h=${parkHeight(6, 
 
 // ── winnability: the autopilot makes every goal inside 2:00 ───────────────
 let lineTookPretty = false
+let botTouchedLip = 0   // #3289 honesty: the driven line never stalls nor rail-grabs
 for (const seed of [7, 3, 42, 101, 999]) {
     const s = makeGame(seed, 'run'); s.phase = 'play'
     const bot = makeBot()
@@ -164,6 +252,7 @@ for (const seed of [7, 3, 42, 101, 999]) {
         // optional mutation: sabotage the letter pickups
         if (MUT === 'letters') LETTERS.forEach(l => { s.letters[l.k] = false })
         step(s, botPad(stateOf(s), bot))
+        if (s.stall || (s.grind && s.grind.grab)) botTouchedLip++
         if (MUT === 'gap') s.overHole = false
     }
     const st = stateOf(s)
@@ -173,6 +262,8 @@ for (const seed of [7, 3, 42, 101, 999]) {
     ok(`seed ${seed}: score clears the target`, st.score >= SCORE_GOAL + 10000, `${st.score}`)
 }
 ok('optional-by-design: the driven win line never needs a gem or the secret', !lineTookPretty)
+ok('#3289 honesty: the autopilot never stalls and never rail-grabs — attract untouched', botTouchedLip === 0,
+    `${botTouchedLip} ticks`)
 
 // ── determinism: seed + pads ⇒ identical hashes ───────────────────────────
 function drive(seed) {

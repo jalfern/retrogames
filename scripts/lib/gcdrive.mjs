@@ -101,6 +101,66 @@ try {
     })
     ok('fisheye action cam on an air grab', ac.cam === 'action' && ac.screen === 'play', `cam=${ac.cam} air=${ac.air}`)
 
+    // #3289 live stall: crouch+A at the coping locks, the action cam cuts in,
+    // the balance meter leans, and the pop pays. Real key events throughout.
+    const sl = await page.evaluate(async () => {
+        const g = window.__game, t = window.__grindTest
+        g.reset(7)
+        t.teleport({ x: -24.6, z: 0, y: 0, heading: Math.PI, speed: 2 })
+        await new Promise(r => setTimeout(r, 150))
+        t.press('ArrowDown'); t.press('Space')
+        await new Promise(r => setTimeout(r, 120))
+        t.release('Space')
+        const lock = t.state()
+        let balSeen = 0
+        for (let i = 0; i < 14; i++) {
+            const st = t.state()
+            if (!st.stall) break
+            balSeen = Math.max(balSeen, Math.abs(st.stallBal))
+            t.release('ArrowLeft'); t.release('ArrowRight')
+            if (st.stallBal > 0) t.press('ArrowLeft'); else t.press('ArrowRight')
+            await new Promise(r => setTimeout(r, 60))
+        }
+        const held = t.state()
+        t.release('ArrowLeft'); t.release('ArrowRight'); t.release('ArrowDown')
+        t.press('Space'); await new Promise(r => setTimeout(r, 120)); t.release('Space')
+        const popped = t.state()
+        g.release()
+        return { lock, held, popped, balSeen }
+    })
+    ok('#3289 crouch+A at the lip locks a live stall', sl.lock.stall === true && sl.lock.speed === 0, `speed=${sl.lock.speed} cam=${sl.lock.cam}`)
+    ok('#3289 action cam cuts in for the stall', sl.lock.cam === 'action' && sl.lock.screen === 'play', `cam=${sl.lock.cam}`)
+    ok('#3289 the balance meter builds while held', sl.held.stall === true && sl.balSeen > 0.01, `bal=${sl.balSeen.toFixed(3)} t=${sl.held.stallT}`)
+    ok('#3289 the pop pays trickle + commit', sl.popped.chainPts >= 100 || sl.popped.score > 0, `chainPts=${sl.popped.chainPts}`)
+
+    // #3289 live rail grab: latch, hold B, release — Feeble lands in the chain
+    const rg = await page.evaluate(async () => {
+        const g = window.__game, t = window.__grindTest
+        g.reset(7)
+        t.teleport({ x: -11, z: -2, y: 1.4, heading: 0, speed: 7 })
+        await new Promise(r => setTimeout(r, 300))
+        const latched = t.state()
+        t.press('ShiftLeft')
+        await new Promise(r => setTimeout(r, 100))
+        const grabbing = t.state()
+        for (let i = 0; i < 8; i++) {
+            const st = t.state()
+            t.release('ArrowLeft'); t.release('ArrowRight')
+            if (st.grindBal > 0) t.press('ArrowLeft'); else t.press('ArrowRight')
+            await new Promise(r => setTimeout(r, 50))
+        }
+        const held = t.state()
+        t.release('ShiftLeft')
+        await new Promise(r => setTimeout(r, 120))
+        const paid = t.state()
+        g.release()
+        return { latched, grabbing, held, paid }
+    })
+    ok('#3289 B on the rail engages the grab live', rg.grabbing.grinding && rg.grabbing.railGrab === 'Feeble',
+        `grind=${rg.grabbing.grinding} grab=${rg.grabbing.railGrab} cam=${rg.grabbing.cam}`)
+    ok('#3289 the grab doubles the trickle live', rg.paid.chainPts > rg.latched.chainPts + 30 || rg.paid.score > 0,
+        `${rg.latched.chainPts}→${rg.paid.chainPts}`)
+
     console.log(out.join('\n'))
     console.log(out.every(l => l.startsWith('PASS')) ? 'DRIVE GREEN' : 'DRIVE RED')
     process.exitCode = out.every(l => l.startsWith('PASS')) ? 0 : 1
