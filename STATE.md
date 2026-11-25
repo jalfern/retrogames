@@ -1,71 +1,66 @@
-# STATE — forge board snapshot (slot b, 2026-11-24 — SKYWARD'S STORM MOVES)
+# STATE — forge board snapshot (slot b, 2026-11-25 — PINBALL KICKBACK IS LIVE)
 
 ## This session — one ship, landed
-- Ladder at claim: no halt, no building corpse, no steer; `next` = waiting-jon
-  #1712 (skip); `game-queue` empty; every open feedback held by QA
-  (`building-qa`) or waiting-jon, QA MASTER live → no borrow. Live
-  `idle-kick` = `KICK SKYWARD 0 weak` (score 4). Warden's prompt snapshot said
-  PINBALL — QA claimed #3237 mid-handoff, `heldDirs` law moved the pick.
-  NEVER-DRY #3267 filed (why-weakest line in body), claimed, shipped.
-- **#3267 DONE: SKYWARD living storm cell** (`bc9fd42`, PR #3271).
-  - `stormPos(t)` in world.js — the ONE answer (thermalPos law lifted to the
-    storm): seeded ellipse E/W ±64 m ~140 s × N/S ±34 m ~190 s + breeze.
-    `stormAt()` (gusts/core downdraft/rising ring, all three craft), cloud
-    deck + rain (one THREE.Group offset per frame) and the bolt anchor all
-    follow it. Gates stay FIXED — school forgives, weather moves.
-  - Amplitude bounded by invariant, not taste: centre always offshore, never
-    within 200 m of a drop target / 300 m of pad·school·launch·rings, pass
-    start never deeper than s 0.35 — pinned by an hour-long clock sweep.
-  - skywardcheck **52/52** (+6 sweep pins; +3 mutants, ALL 13/13 CAUGHT:
-    frozen drift / clouds-lie / inland wander). Core-sink pin re-anchored on
-    stormPos, window widened 1 s → 3 s (old read was inside the gust bob).
-  - skywardplay PASSED live :5178 (+3 legs: 38 m drift in 18 s sim, bounded,
-    start line shallow). contractcheck 857/857. eslint + 3 gates + build green.
-  - Prod verified: `Skyward-DcPtK4mK.js` carries `stormPos`; entry
-    `index-DkET9RoW.js`. Play: `/retrogames/skyward`. #3267 closed shipped
-    (PR `Closes` auto-closed it — label flip done by hand).
-- **QA tail filed: #3272** — storm audio channel (rumble follows stormS),
-  keyboard-line fairness now drift-phase dependent, sky-dim vector still
-  points at the old home anchor, free-flight storm cue.
+- **#3250 PINBALL KICKBACK SHIPPED (PR #3255 → `8355368`).** Free ball-save per
+  ball at the right drain-mouth column (x 190..205, fires only on fast descent,
+  +100; EMBER RIDER mirrors x 155..170 at 75). Pure TABLE data (#3103 contract);
+  latches `kbUsed`, re-arms with `resetBall`; centre deaths and resting balls
+  untouched (minVy keeps the BALL SEARCH law intact). Art: armed-pulse ring +
+  plunger pop; DMD announce `KICKBACK! +N` is sim state.
+- Route to the ship: warden target #3246 was REFUSED (slot a held it — and shipped
+  it as #3251). The #3232 PINBALL corpse I started resuming was merged by slot a
+  mid-verification (my 139/139 + 26/26 ran on the real pre-merge tree; merge
+  cleanup then swept that worktree — the Civ-V tapstart FAIL was the gutted dev
+  server, not a regression). Normal ladder → `KICK PINBALL 0 weak` (score 7),
+  oldest unowned README gap half-owned by closed #3103 (editor) ⇒ filed the
+  kickback half as **#3250**, claimed, built, shipped in one session.
+- Proof: pinballcheck **147/147** (+8 §8 pins: fire literal, DMD, one-per-ball,
+  re-arm, centre-death, minVy rest, ember price, W-x mirror). **Mutants 5/5**
+  (new `kickback` anchor = seized plunger). pinballplay **30/30** live Chrome
+  (+4 legs) + pixel proof of armed device (126 hot px) and fire pop (125 white
+  px). contractcheck 857/857, lints green, build green, rebased onto `87c2b4f`
+  and re-verified before merge. Prod: `Pinball-fYZbS1RJ.js` carries the marker.
 
 ## Harness lessons (worth one line each)
-- **A 1 s noise read is not a physics pin**: net downdraft ~1.3 m/s under ±1 m
-  gust bob — the pre-drift anchor passed by luck of noise phase. Widen windows
-  until the measured effect dominates the jitter.
-- Never-dry picks go stale within minutes: re-run `idle-kick` live at claim
-  time, and read labels mid-session too (#3237 flipped to `building` between
-  two of my own calls).
+- **A mutant child that dies on a missing anchor exits non-zero, and the parent
+  reads that as SURVIVES** — anchor strings must match the wrapped condition
+  exactly; the "anchor missing" error goes to child stderr, invisible in the
+  parent's stdout hint. (Honest 0/5 → fix → 5/5.)
+- **Prod markers live in per-game chunks** (`./Pinball-HASH.js`), not the entry
+  bundle — scan the chunk list referenced by `index-*.js`, and `curl -L`
+  (jalfern.com answers "Redirecting..." without -L). LC_ALL=C still mandatory.
+- **A dev server backgrounded from a tool call can die with its parent shell** —
+  a pinballplay navigation failure was a dead :5178, not a broken page; re-curl
+  the port before blaming the rig.
 
 ## PLAYABLE on main right now
-- `/retrogames/skyward` **living storm** (#3271) + rings/spot/drop/thunderpass,
-  `/retrogames/pinball` art kits (#3262) + kickback + ball-to-ball (QA inside),
-  `/retrogames/grind-city` gem sparkle (#3270), `/retrogames/tidal-rush` online
-  rooms + spectate (#3265) + podium/rematch, mario-kart (tilt), ice-climber,
-  marble-rush (tilt, trick hop), comet-drift pair (tilt), ssx (tilt),
-  marble-madness, pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT,
-  STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter,
-  iron keep, galaga, missile, pucks, mines, zork, ultima, king's quest,
-  Joust, Q*bert, forge board.
+- `/retrogames/pinball` **KICKBACK** both cabinets (one save/ball) + cabinet row
+  (#3232), ball-ball, orbit/magnet/DMD; `/retrogames/tidal-rush` online rooms +
+  podium/rematch (#3227/#3253) + rung-3 chrome stack (#3254); grind-city second
+  line — roof deck, gems, secret bowl (#3251); marble-rush trick-hop (#3243);
+  skyward thunderpass, r-type, ice-climber, marble-madness, comet-drift pair,
+  stomptown, short-order-shout, ssx, pacman, mario, minesweeper/garden-guard/
+  homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
+  spy-hunter, iron keep, galaga, missile, pucks, mines, zork, ultima, king's
+  quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` EMPTY; `next` #1712 still waiting-jon (not a work item).
-- QA holds: #3237 PINBALL (claimed mid-my-session), #3233 GRIND CITY,
-  #3244 TIDAL RUSH. New feedback: #3272 SKYWARD tail. #2971 contra waiting-jon.
-- Next builder claim: run `idle-kick` live — don't trust this file; SKYWARD
-  still scores (honest gaps remain: steered weather sim, engine loop, strip).
-- Nightly: main-ok green at session start and at merge; today's merges incl.
-  #3265 #3270 #3271.
+- `game-queue` expected EMPTY after this ship; #1712 stays `waiting-jon` (skip).
+  Next builder claim = idle-kick derivation live at claim time (don't trust memory).
+- QA open: #3244 (tidal online polish, building-qa), #3237 (PINBALL tail: attract
+  show-off, phone HUD audit, tilt-to-nudge, lock slam), #3233 (grind tail 2),
+  #3131 (padtypes rollout). #3230/#3174 shipped today.
+- Nightly green at merge (main-ok ok).
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
 - #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
-- No new jonq questions filed this session.
 
-## Slot state at handoff
-- Slot b: dev :5178 stopped via scripts/devstop.sh. Worktree
-  `~/Dev/retrogames-forge-skyward-storm` detached clean at origin/main
-  (`bc9fd42`) by mergeclean; remove it when next convenient.
-- Game merged this session ⇒ STATE.md ships via its own docs/state PR;
-  also parked at /tmp/forge/STATE.b.parked.md via statepark.
-- Time-box: ~1 h 45 min of 3 h.
+## Slot / board state at handoff
+- Slot b: worktree `retrogames-forge-pinball-kickback` is detached at origin/main
+  (mergeclean already completed post-merge cleanup; safe to prune). Dev :5178
+  stopped via scripts/devstop.sh at handoff.
+- STATE.md published via docs PR (game merged this session → rule 9 satisfied);
+  parked slot-scoped with statepark park b.
+- Time-box: ~2 h of 3 h.
