@@ -24,6 +24,9 @@ const freshSeed = () => (Date.now() ^ Math.round(performance.now() * 1024)) >>> 
 const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
 
 const PRESS = 'PRESS ANY KEY OR TAP'
+// #3233 tail: the replay's presentation-only speed toggle — 1× → 2× → 0.5× (F).
+// Never touches the sim or the log; airborne slo-mo still stacks on top.
+const cycleReplaySpeed = (s) => (s === 1 ? 2 : s === 2 ? 0.5 : 1)
 const MESSAGES = [
     'RUN 01 · SCORE TARGET · S-K-A-T-E · THE GAP',
     'A = OLLIE · A IN THE AIR = GRAB · A ON LANDING = MANUAL',
@@ -51,6 +54,7 @@ const GrindCityGame = () => {
         msg: { current: null }, mult: { current: null }, flash: { current: null },
         letters: { current: null }, gap: { current: null }, tgt: { current: null },
         gem: { current: null }, cut: { current: null }, callout: { current: null },
+        speed: { current: null },
     }).current
 
     useEffect(() => {
@@ -103,6 +107,7 @@ const GrindCityGame = () => {
         let inputLog = []
         let replaySim = null, replayIdx = 0, replayAcc = 0, replayMode = false
         let pendingResult = null
+        let replaySpeed = 1
 
         // camera: chase · fisheye action cam · replay cam — hard cuts between (#3225)
         let camMode = 'chase'
@@ -218,6 +223,7 @@ const GrindCityGame = () => {
                 if (c === 'Space' || c.startsWith('Arrow') || /^Key/.test(c)) { startGame(modeRef.current); return }
             } else if (screenRef.current === 'replay') {
                 if (c === 'Space') finishOver()
+                else if (c === 'KeyF') replaySpeed = cycleReplaySpeed(replaySpeed)
                 return
             } else if (screenRef.current === 'over') {
                 if (c === 'Space') toAttract()
@@ -260,6 +266,7 @@ const GrindCityGame = () => {
             replaySim.phase = 'play'
             replayIdx = Math.max(0, inputLog.length - REPLAY_MAX)
             replayAcc = 0
+            replaySpeed = 1
             replayMode = true
             screenRef.current = 'replay'
             setScreen('replay')
@@ -280,7 +287,8 @@ const GrindCityGame = () => {
         const stepReplay = () => {
             if (!replaySim) { finishOver(); return }
             // half-speed while airborne — the classic slo-mo on airs
-            replayAcc += replaySim.air ? 0.5 : 1
+            // #3233 tail: F toggles 1×/2×/0.5× — presentation only, same words, same order
+            replayAcc += (replaySim.air ? 0.5 : 1) * replaySpeed
             while (replayAcc >= 1 && replayIdx < inputLog.length) {
                 replayAcc -= 1
                 step(replaySim, unpackIn(inputLog[replayIdx++]))
@@ -470,6 +478,7 @@ const GrindCityGame = () => {
                 hud.gem.current.textContent = `\u25C6 GEMS ${st.gems}/${st.gemTotal}`
                 hud.gem.current.style.color = st.gems > 0 ? '#7dffb0' : 'rgba(255,255,255,.35)'
             }
+            if (hud.speed.current) hud.speed.current.textContent = `SPEED ${replaySpeed}\u00d7`
         }
         raf = requestAnimationFrame(frame)
 
@@ -481,7 +490,7 @@ const GrindCityGame = () => {
 
         // replay progress for harnesses: null | {i, n, pct}
         const replayProgress = () => replayMode
-            ? { i: replayIdx, n: inputLog.length, pct: inputLog.length ? Math.round(100 * replayIdx / inputLog.length) : 100 }
+            ? { i: replayIdx, n: inputLog.length, pct: inputLog.length ? Math.round(100 * replayIdx / inputLog.length) : 100, speed: replaySpeed }
             : null
 
         // ── DEV hooks + contract ────────────────────────────────────────────
@@ -577,7 +586,8 @@ const GrindCityGame = () => {
                             <span className="h-3.5 w-3.5 animate-pulse rounded-full bg-red-500 shadow-[0_0_12px_rgba(255,60,60,.9)]" />
                             <span className="text-2xl font-black italic tracking-[0.3em] text-white drop-shadow-[0_3px_0_rgba(0,0,0,.9)]">REPLAY</span>
                         </div>
-                        <div className="text-center text-sm font-bold tracking-[0.4em] text-white/85 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SPACE / TAP — SKIP</div>
+                        <div ref={hud.speed} className="absolute right-4 top-4 rounded border border-white/40 bg-black/50 px-3 py-1 text-lg font-black italic tracking-[0.2em] text-[#ffd35e] drop-shadow-[0_2px_0_rgba(0,0,0,.9)]" />
+                        <div className="text-center text-sm font-bold tracking-[0.4em] text-white/85 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SPACE / TAP — SKIP · F — SPEED</div>
                     </div>
                 )}
                 {screen === 'attract' && (

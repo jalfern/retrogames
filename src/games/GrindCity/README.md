@@ -107,9 +107,9 @@ still through the replay).
 
 ## Honest gaps
 
-- **Replay is auto-only.** Last-10 s window, one cam, no speed toggle, free cam
-  or saved/shared runs; no replay of the letters-only near-misses shorter than
-  2 s, and none behind the attract title.
+- **Replay is auto-only.** Last-10 s window, one cam, a 1×/2×/0.5× speed
+  toggle (F) but no free cam or saved/shared runs; no replay of the
+  letters-only near-misses shorter than 2 s, and none behind the attract title.
 - **CLOSED by #3246** — ~~One park, one line.~~ The park has a second line
   now: the roof deck over the south wall, 14 gems, and a secret bowl; see
   "The second line, gems and the secret spot" above.
