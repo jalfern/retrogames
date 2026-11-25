@@ -146,6 +146,42 @@ try {
     ok('over → any key restarts', over === 'over' && restarted.screen === 'play', `over=${over} now=${restarted.screen}`)
     ok('zero page errors end-to-end', errors.length === 0, errors.join(';'))
 
+    // #3365 phone chrome clearance — the centre bay/gate banner must stay on
+    // one line and keep an 8px gap from every shared chrome pill (ARCADE /
+    // FEEDBACK stack, PAUSE) at 390px. The old left-1/2 column was capped at
+    // half-viewport wide: it wrapped and touched the FEEDBACK pill at 0px.
+    {
+        const p2 = await openGame(browser, { url: `${BASE}/tidal-rush?lite=1`, hook: '__tidalTest', viewport: { width: 390, height: 844 } })
+        await p2.waitForFunction('window.__game', { timeout: 20000 })
+        await p2.keyboard.press('Enter')
+        await wait(4800)
+        const clear = await p2.evaluate(() => {
+            const rc = (el) => el.getBoundingClientRect()
+            const pills = [...document.querySelectorAll('button,div')]
+                .filter((d) => /^(ARCADE|FEEDBACK|PAUSE)$/.test(d.textContent.trim()))
+                .map((d) => ({ r: rc(d), t: d.textContent.trim() }))
+            const hud = [...document.querySelectorAll('div')]
+            const find = (re) => hud.filter((d) => re.test(d.textContent) && d.children.length <= 3 && d.textContent.trim().length < 60)
+                .sort((a, b) => { const A = rc(a), B = rc(b); return A.width * A.height - B.width * B.height })[0]
+            const boxes = [find(/RED RIGHT|YELLOW LEFT/), find(/^SUNNY BAY$|^STORM BAY ·/)].filter(Boolean)
+            let gap = 1e9, worst = ''
+            for (const b of boxes) for (const q of pills) {
+                const r = rc(b)
+                const gx = Math.min(r.right, q.r.right) - Math.max(r.left, q.r.left)
+                const gy = Math.min(r.bottom, q.r.bottom) - Math.max(r.top, q.r.top)
+                const g = Math.hypot(Math.max(0, -gx), Math.max(0, -gy))
+                if (g < gap) { gap = g; worst = `"${b.textContent.trim().slice(0, 20)}"↔"${q.t}"` }
+            }
+            const banner = find(/RED RIGHT|YELLOW LEFT/)
+            return { gap: Math.round(gap), worst, bannerH: banner ? Math.round(rc(banner).height) : 0, nPills: pills.length, nBoxes: boxes.length }
+        })
+        // vacuity guards first: an audit that saw no pills or no HUD proves nothing
+        ok('390px page shows chrome + HUD (#3365)', clear.nPills >= 3 && clear.nBoxes >= 2, `pills=${clear.nPills} boxes=${clear.nBoxes}`)
+        ok('phone HUD keeps 8px clear of chrome pills (#3365)', clear.gap >= 8, `gap=${clear.gap}px ${clear.worst}`)
+        ok('gate hint stays one line at 390px (#3365)', clear.bannerH > 0 && clear.bannerH < 36, `h=${clear.bannerH}`)
+        await p2.close()
+    }
+
     if (process.env.SHOTS) {
         await page.evaluate(() => window.__tidalTest.setMode('attract'))
         await wait(700)
