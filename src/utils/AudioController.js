@@ -613,6 +613,29 @@ export const MUSIC = {
             0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 2, 0, 2,
         ],
     },
+    // PINBALL SOLO bed (#3304): the single-ball kin of pinballMb — same A-minor
+    // house, half the density, one register lower, and NO kick: the plunger pop
+    // and the bumper volley are the rhythm section, so the bed must be a patient
+    // ostinato UNDER flipper timing, never a second drummer. Root pulse walks
+    // i–VII–VI–v (Am G F Em), lead colours only, hats on the 4th step so the
+    // seam with the mb bed (hats on the 3rd) reads as the pack arriving.
+    // Composed for this build — original melody, none of the 1983 cabinet's
+    // audio rides anywhere in this game.
+    pinballSolo: {
+        step: 0.125,
+        lead: [
+            0, 0, 76, 0, 0, 72, 0, 0, 0, 69, 0, 0, 72, 0, 0, 0,
+            0, 0, 71, 0, 0, 67, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        bass: [
+            33, 0, 0, 0, 33, 0, 0, 0, 31, 0, 0, 0, 31, 0, 0, 0,
+            29, 0, 0, 0, 29, 0, 0, 0, 28, 0, 0, 0, 28, 0, 0, 33,
+        ],
+        perc: [
+            0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2,
+            0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 2, 0, 2,
+        ],
+    },
 }
 
 class AudioController {

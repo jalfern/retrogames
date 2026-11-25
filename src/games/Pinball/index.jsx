@@ -14,7 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R, demoPad, demoOver,
-    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, tiltImpulse,
+    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, tiltImpulse, soloBed,
 } from './sim.js'
 import { tiltVec } from '../../components/padTypes.js'
 import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD } from './art.js'
@@ -217,6 +217,7 @@ const PinballGame = () => {
     const flashRef = useRef(mkFlash(TABLE))
     const shakeRef = useRef(0)
     const mbBedRef = useRef(false)
+    const soloBedRef = useRef(0) // #3304: quantized level of the running solo bed (0 = off)
     const trailRef = useRef([])
     const ringsRef = useRef([])  // rung 3: expanding event rings (presentation only)
     const fieldsRef = useRef({}) // painted playfield canvas per cabinet id
@@ -1103,8 +1104,20 @@ const PinballGame = () => {
             // trigger is SIM state (gs.multiball), so the start/stop seam is
             // deterministic; pause, drain-home and game-over all cut it the same way.
             const bedOn = screenRef.current === 'play' && !pausedRef.current && gs.multiball
-            if (bedOn && !mbBedRef.current) { audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55); mbBedRef.current = true }
+            if (bedOn && !mbBedRef.current) { audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55); mbBedRef.current = true; soloBedRef.current = 0 }
             else if (!bedOn && mbBedRef.current) { audioController.stopMusic(); mbBedRef.current = false }
+            // #3304: SOLO bed — single-ball play is no longer dry. The level is
+            // the sim law (soloBed: heat swells with the run, tilt plays thin);
+            // quantized to 0.02 audible steps so a rising score never spams the
+            // bus. The pack never hears it: bedOn owns MULTIBALL exclusively, and
+            // attract/edit/pause/over cut it exactly like the mb bed does.
+            if (!bedOn) {
+                const lvl = screenRef.current === 'play' && !pausedRef.current ? soloBed(gs) : 0
+                const q = Math.round(lvl / 0.02) * 0.02
+                if (q > 0 && soloBedRef.current <= 0) { audioController.startMusic('pinballSolo'); audioController.setMusicLevel(q); soloBedRef.current = q }
+                else if (q > 0 && Math.abs(q - soloBedRef.current) >= 0.02) { audioController.setMusicLevel(q); soloBedRef.current = q }
+                else if (q <= 0 && soloBedRef.current > 0) { audioController.stopMusic(); soloBedRef.current = 0 }
+            }
             ctx.clearRect(0, 0, W, H)
             if (screenRef.current === 'attract') {
                 if (!pausedRef.current) stepDemo(dt)
@@ -1404,6 +1417,16 @@ const PinballGame = () => {
                     return stateOf(gs)
                 },
                 hash: () => stateHash(gsRef.current),
+                // dev rig (#3304): peek at the music beds — which track owns the
+                // bus, the held bus fraction, the ref-quantized level and the raw
+                // law value — so the solo/mb seam is assertable, not vibes.
+                bed: () => ({
+                    track: audioController.music && audioController.music.playing ? audioController.music.track : null,
+                    level: audioController.musicScale,
+                    law: soloBed(gsRef.current),
+                    mb: mbBedRef.current,
+                    solo: soloBedRef.current,
+                }),
                 // dev rig: peek at the TABLE SMITH bench (#3284) — draft, tool,
                 // verdict — so a driven build leg is assertable, not vibes.
                 smith: () => ({

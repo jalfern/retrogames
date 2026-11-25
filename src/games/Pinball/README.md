@@ -303,17 +303,24 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   ball; it is now a driven run — the selected machine plays itself
   (`demoPad`, the pinned human line) with a lamp chase, rotate-through
   attract ad lines, and a `demoOver` re-deal. See "Attract show-off".
-- Phone-width HUD density and ball-vs-amber-lane-bed contrast have not been
-  audited at 375pt/#?lite=1 (the #3237 tail's audit items — pixel thresholds
-  need a calibration pass, not a code guess).
-- Tilt-to-nudge SHIPPED (#3237): a lean-and-return pays one nudge via a
-  tap-granted deviceorientation channel (law pinned in sim.js `tiltImpulse`).
-  Extras SHIPPED by #3297: the tower gate slams shut while balls are banked
-  (chrome bar across the mouth, lifts on the pack-off — drawn from `gs.locks`,
-  no new truth); the plunger reads three power zones (LIGHT/FIRM/MAX — deeper
-  tick per boundary, `powerzone` events, meter steps); the CAREFUL warning now
-  rocks the whole cabinet (deterministic sine lean driven by `gs.tick`).
-- The music bed covers MULTIBALL only (#3178); single-ball play stays dry.
+- **CLOSED by #3297:** phone-width density was audited once here — ball-vs-
+  amber-lane-bed contrast reads fine at 375 pt and lite 640×426; the visible
+  clips were attract side-card labels + mini-card DMD truncation, filed on
+  #3290 (item 4 owns the remaining calibration pass).
+- **CLOSED by #3237/#3297:** Tilt-to-nudge SHIPPED (#3237): a lean-and-return
+  pays one nudge via a tap-granted deviceorientation channel (law pinned in
+  sim.js `tiltImpulse`). Extras SHIPPED by #3297: the tower gate slams shut
+  while balls are banked (chrome bar across the mouth, lifts on the pack-off —
+  drawn from `gs.locks`, no new truth); the plunger reads three power zones
+  (LIGHT/FIRM/MAX — deeper tick per boundary, `powerzone` events, meter steps);
+  the CAREFUL warning now rocks the whole cabinet (deterministic sine lean
+  driven by `gs.tick`).
+- **CLOSED by #3304:** the music bed covered MULTIBALL only (#3178) — single-ball
+  play now rides the SOLO bed: an A-minor ostinato `pinballSolo` under flipper
+  timing, level from the pure sim law `soloBed(gs)` (heat swells 0.16→0.30 with
+  the run, a tilted cabinet plays thin, the pack and the drain-out stay silent
+  for `pinballMb`/silence). Quantized 0.02 steps; hash and the #3178 mb seam
+  byte-identical.
 - The magnet holds one ball and the orbit one loop at a time (real tables run
   both per-ball); the wrap's curl assist is a fixed push, not a shaped rail.
 - No left ramp / kickback, and the spinner is still outlane-only.
