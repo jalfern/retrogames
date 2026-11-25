@@ -387,7 +387,11 @@ export function drawDMD(ctx, view, pal = PAL) {
     // bezel + dark glass
     const hot = /TILT|MULTIBALL|MULT x[0-9]|ORBIT SET|ORBIT LOCK|RAMP SET|SAVE/.test(view.text);
     const multi = view.text.startsWith('MULTIBALL');
-    const bezelGlow = hot ? (multi ? 22 : 12) : 6;
+    // #3313 item 2 heat tell: a sustained warmth (0..1) riding the solo-bed
+    // swell. The glow rises with the run but never flashes — a hot message
+    // still out-shines it, and at heat 0 the glass is exactly as before.
+    const heat = Math.max(0, Math.min(1, view.heat || 0));
+    const bezelGlow = (hot ? (multi ? 22 : 12) : 6) + heat * 7;
     ctx.save();
     ctx.shadowColor = hot ? pal.hot : 'rgba(201,212,232,0.4)';
     ctx.shadowBlur = bezelGlow;
@@ -418,7 +422,7 @@ export function drawDMD(ctx, view, pal = PAL) {
     const up = text.toUpperCase();
     // hot messages pulse while they hold — alive, not a static banner
     if (hot) ctx.globalAlpha = 0.72 + 0.28 * Math.sin(view.t / 3);
-    ctx.shadowColor = color; ctx.shadowBlur = hot ? 10 : 6;
+    ctx.shadowColor = color; ctx.shadowBlur = (hot ? 10 : 6) + heat * 8;
     ctx.fillStyle = color;
     for (let ci = 0; ci < up.length; ci++) {
         const glyph = FONT[up[ci]] || FONT[' '];

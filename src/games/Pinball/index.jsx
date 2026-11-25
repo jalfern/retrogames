@@ -14,7 +14,7 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R, demoPad, demoOver,
-    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, zoneGuidePath, tiltImpulse, soloBed,
+    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, zoneGuidePath, tiltImpulse, soloBed, SOLO_CAP,
 } from './sim.js'
 import { tiltVec } from '../../components/padTypes.js'
 import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, textFit, marqueeFit } from './art.js'
@@ -228,6 +228,7 @@ const PinballGame = () => {
     const shakeRef = useRef(0)
     const mbBedRef = useRef(false)
     const soloBedRef = useRef(0) // #3304: quantized level of the running solo bed (0 = off)
+    const bedSeamRef = useRef(null) // #3313: {left: ms} while a glide is dipping the bus toward a track swap
     // #3304 DEV rig overlay for the bed seam ONLY: the rules never read it —
     // sim.js owns gs.multiball. The mb bed trigger ORs this in so the live
     // hand-off is driveable without faking pack state (drains stay honest).
@@ -825,6 +826,10 @@ const PinballGame = () => {
             drawDMD(ctx, {
                 text: gs.msg.t > 0 ? gs.msg.text : '', t: gs.msg.t, T: gs.msg.T || 0, tick: gs.tick,
                 idle: dmdIdle(gs.score, gs.mult, gs.balls, gs.locks, gs.orbitBank, gs.orbitLit, gs.magCharge)[Math.floor(gs.tick / 96) % 4],
+                // #3313 item 2 heat tell: the bed swells 0.16→0.30 with the run
+                // and nothing on the table said so — the DMD now warms with the
+                // SAME law value the bus rides, so the swell is taught, not felt.
+                heat: Math.max(0, Math.min(1, soloBed(gs) / SOLO_CAP)),
             }, pal)
 
             // spinner (outlane): tilts while a ball passes through
@@ -1161,14 +1166,36 @@ const PinballGame = () => {
             // #3304 adds devMbRef — a DEV-rig overlay for the seam alone; the
             // rules read only gs.multiball, so a rigged pack drains fair.
             const bedOn = screenRef.current === 'play' && !pausedRef.current && (gs.multiball || devMbRef.current)
-            if (bedOn && !mbBedRef.current) { audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55); mbBedRef.current = true; soloBedRef.current = 0 }
-            else if (!bedOn && mbBedRef.current) { audioController.stopMusic(); mbBedRef.current = false }
+            // #3313 seam glide: the pack ARRIVES instead of splicing the record.
+            // The running bed dips to near-silence, the track swaps at the bottom
+            // of the dip, and the new bed rises on the bus's own τ. Both swaps
+            // replace-and-relight in the SAME turn — stopMusic's recover-to-full
+            // and the new held level are scheduled together, so the bus never
+            // bursts up between them (that burst was half the record-skip tell).
+            const seam = bedSeamRef.current
+            if (seam) {
+                seam.left -= dt
+                if (seam.left <= 0) {
+                    bedSeamRef.current = null
+                    if (bedOn) {
+                        audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55)
+                        mbBedRef.current = true; soloBedRef.current = 0
+                    } else {
+                        const lvl = screenRef.current === 'play' && !pausedRef.current ? soloBed(gs) : 0
+                        const q = Math.round(lvl / 0.02) * 0.02
+                        if (q > 0) { audioController.startMusic('pinballSolo'); audioController.setMusicLevel(q); soloBedRef.current = q; mbBedRef.current = false }
+                        else { audioController.stopMusic(); mbBedRef.current = false; soloBedRef.current = 0 }
+                    }
+                }
+            }
+            else if (bedOn && !mbBedRef.current) { audioController.setMusicLevel(0.001); bedSeamRef.current = { left: 150 } }
+            else if (!bedOn && mbBedRef.current) { audioController.setMusicLevel(0.001); bedSeamRef.current = { left: 150 } }
             // #3304: SOLO bed — single-ball play is no longer dry. The level is
             // the sim law (soloBed: heat swells with the run, tilt plays thin);
             // quantized to 0.02 audible steps so a rising score never spams the
             // bus. The pack never hears it: bedOn owns MULTIBALL exclusively, and
             // attract/edit/pause/over cut it exactly like the mb bed does.
-            if (!bedOn) {
+            if (!bedOn && !bedSeamRef.current) {
                 const lvl = screenRef.current === 'play' && !pausedRef.current ? soloBed(gs) : 0
                 const q = Math.round(lvl / 0.02) * 0.02
                 if (q > 0 && soloBedRef.current <= 0) { audioController.startMusic('pinballSolo'); audioController.setMusicLevel(q); soloBedRef.current = q }
@@ -1543,6 +1570,10 @@ const PinballGame = () => {
                     mb: mbBedRef.current,
                     solo: soloBedRef.current,
                     rig: devMbRef.current,
+                    // #3313: seam = ms left in the glide (0 = no glide), heat =
+                    // the swell fraction the DMD glow rides (law / cap).
+                    seam: bedSeamRef.current ? bedSeamRef.current.left : 0,
+                    heat: soloBed(gsRef.current) / SOLO_CAP,
                 }),
                 // dev rig: peek at the TABLE SMITH bench (#3284) — draft, tool,
                 // verdict — so a driven build leg is assertable, not vibes.
