@@ -69,7 +69,10 @@ surface of truth:
   bank; hull 0 also fills the hero bank `gs.score`), hull-tagged events — all
   inert when nobody joins, which is what keeps offline bytes untouched.
 - `index.jsx` — the shell: fixed-timestep loop (one driver), attract driven
-  by the SAME autopilot the harness wins with (`autoPad`), **bay picker**
+  by the SAME autopilot the harness wins with (`autoPad`, wrapped by
+  `attractPad` — one scripted BACK FLIP per lap so the preview advertises the
+  five verbs; the harness stream, win-pins and DEV hooks stay `autoPad`
+  byte-identical), **bay picker**
   (◀ ▶ keys or tap the chips; the attract preview re-rolls live), tap-to-
   start on the root pointer (phones), pause card, VirtualControls (method
   `stick`, analog; B = BOOST), DOM HUD, contract hooks. Buoys bob with the
@@ -156,7 +159,8 @@ static job; every pushed commit is commented on #3104.
 - FIVE airborne verbs since #3276 (flat 360 +250, barrel +200, BACK FLIP +300 —
   brake ALONE airborne winds the nose over the tail and banks the biggest charge,
   HANDSTAND — gas+brake holds the nose past vertical for +150 per 0.5 s inverted,
-  cap 3/air). The pitch verbs ride the SAME six bits the wire already carries
+  cap 3/air). A fully-charged handstand (3/3 pays) banks the same 0.34 sprint
+  charge the flip pays — the hardest commit pays the meter, not just points. The pitch verbs ride the SAME six bits the wire already carries
   (flip = d, handstand = u+d) — zero pad-shape change (#3244 item 6 law), so the
   lockstep hash referee covers them for free; autopilots never brake, so a flip
   is always a committed input. ~~Honest gaps: no grab poses (the hull just
@@ -180,6 +184,12 @@ static job; every pushed commit is commented on #3104.
   by #3281:** armed 3 is handstand intent — brake+gas, the gas stays on
   (never eased like a flip), so the commit IS the handstand verb (~25 % of
   CPU tricks). The old flip share (~45 %) and the spin head (~30 %) stay.
+  **CLOSED by #3281 again (bullets 4 + 5):** bullet 4 — a fully-charged
+  handstand banks the send's sprint charge, same 0.34 the flip pays (pinned
+  by tidalcheck, mutant handstcharge); bullet 5 — the attract preview
+  commits one scripted back-flip per lap (brake alone, gas ≤0.4) through
+  `attractPad`, one lap per flip, persistence handled by a lap marker + armed
+  flag, with the harness stream untouched (mutant attractflip).
 - **CLOSED by #3191** — rain is gameplay now: extra drag in the band
   (v_term −10 %), seeded crosswind drift along the new swell, spatial drops
   at Kai's hull, gates dimmed toward storm fog, wind cue at the band edges.
