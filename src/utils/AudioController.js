@@ -1319,5 +1319,7 @@ if (typeof window !== 'undefined' && import.meta.env?.DEV) {
     window.__audioMuffle = () => audioController.ambTarget
     // #3052 — the mix readback: bus spectrum (fine bins, dBFS at the destination
     // since musicGain is post-bus) and the live gain automation value.
-    window.__audioMix = () => ({ ...(audioController._spectrum() || { binHz: null, db: [] }), gain: audioController._musicGainLevel(), peak: audioController._peak() })
+    // #3336: + t — the audio clock, so a check can tell a stalled audio thread
+    // from a silent bed (a stalled thread fakes silence in the spectrum).
+    window.__audioMix = () => ({ ...(audioController._spectrum() || { binHz: null, db: [] }), gain: audioController._musicGainLevel(), peak: audioController._peak(), t: audioController.ctx && audioController.ctx.currentTime, st: audioController.ctx && audioController.ctx.state })
 }
