@@ -12,6 +12,7 @@ the park and every trick name are ours.
 | `park.js` | **the surface** — one analytic height field `parkHeight(x,z)` + normals, plus `RAILS`, `LETTERS`, `GAP`, `spawn()`. The renderer builds its meshes from the same math the physics rides, so the board can never sink into or float over visible geometry. |
 | `sim.js` | **pure rules** — `step(state, input)` advances one fixed tick; no DOM, no three.js, no randomness (a seeded run replays identically). Ground-following riding, ollie/grab/kickflip, manuals, rail auto-latch, rail grabs, coping stalls, combo scoring, bails, the S-K-A-T-E goals, run clock. |
 | `planner.js` | **the bot** — rule-based autopilot that follows waypoint bearings, times ollies off ramps and rails, and collects the letters. It drives attract mode *and* proves the park is winnable (`grindcheck` refuses to merge if the bot can't score a win). |
+| `search.js` | **the thinking bot (#3394)** — attract style v3. Route knowledge stays scripted (its `drive()` mirrors the planner's steering/pump/balance), but at every trick decision it rolls candidate press-schedules through the *real* `sim.step` and commits the best: PROVEN AIR means a gap pop only commits when the rollout actually clears the trench and a rail pop only when it latches. Rollouts run on a full clone (`cloneSim`) so the live board is never touched; planning is pure, so attract stays deterministic. |
 | `music.js` | **the bed (#3167)** — the original A-minor groove + the landing-pitch law, as pure data. The cabinet schedules it from its sim ticks, so pause stops it and the replay runs silent. |
 | `art.js` | three.js scene — park mesh from `park.js`, sky + sun glare, rails, floating gold letters, the skater rig (`buildSkater`/`poseSkater`), particle sparks. |
 | `index.jsx` | cabinet — loop, input, HUD, sounds, cameras (chase · fisheye action · replay), run-replay recorder (`packIn` log) and the `exposeGame` contract + `__grindTest` drive hooks. |
@@ -19,15 +20,18 @@ the park and every trick name are ours.
 Run: `npm run grindcheck` (Node, no browser — includes the input-log replay
 determinism proof, the #3246 gem/secret/roof physics legs, the #3233 manual
 identity legs, the #3381 saved/shared-run laws (codec round-trip through the
-sim, total-junk decode, `beatsLine`, `validBank`), and 17 mutants: letters, gap,
-replay, bed, gems, shade, grab, stall, tell, variety, nearmiss, bestline,
-bankline, codec, beats, store, sharewire). Deep-drive the cabinet with
+sim, total-junk decode, `beatsLine`, `validBank`), the #3394 thinking-bot
+laws (clone purity, search determinism, proven air, searched-line wins five
+seeds) and 22 mutants: letters, gap, replay, bed, gems, shade, grab, stall,
+tell, variety, nearmiss, bestline, bankline, codec, beats, store, sharewire,
+sfxduck, clone, need, sched, searchwire). Deep-drive the cabinet with
 `DEV_PORT=5178 node scripts/lib/gcdrive.mjs` (also proves the REPLAY screen,
 the skip and the action-cam cut-in, the #3374 near-miss replay + badge, the
 attract best-line loop, and #3381: the store landing, a reload that still
 re-rides the record marked ALL-TIME, a tie leaving history alone, the strict
 beat earning the badge, `S` flashing the copy verdict, `?line=` riding a guest
-line, and a junk code booting clean).
+line, a junk code booting clean, and #3394: attract riding the thinking bot
+(`?style=3`, planning + committing live, scoring, never tumbling).
 
 ## Controls
 
@@ -209,8 +213,15 @@ hash or pin change.
   commits) and the value it is accumulating; `stateOf` carries `manualName`/
   `manualPts` (the exact commit formula, so the chip can't over-promise) and
   the 180 upgrade has its own audio sweep.
-- **The bot's line is fixed.** `planner.js` is scripted waypoints, not a search;
-  it proves the park is winnable, not that the trick system is deep.
+- **CLOSED by #3394** — ~~The bot's line is fixed.~~ The attract gained a
+  fourth style that *searches*: `search.js` rolls candidate press-schedules
+  through the real sim at the kicker, the far coping, the rail and every
+  landing, and commits only what the rollout proves (PROVEN AIR). The searched
+  line wins every tested seed with zero bails and banks deeper than the
+  witness — a Flip off the lip and a searched Manual180 the script never
+  throws, score 20702 vs 18910. The witness line (planner v0) is untouched:
+  `grindcheck` still grades exactly that bot, and style v3 is the fourth
+  attract loop (`?style=n` shifts the rotation origin for drivers).
 - `snapshot`/`restore` are intentionally absent from the contract — the sim
   state holds functions (`park.height/normals`), so JSON can't copy it (#391);
   drivers use `reset(seed)` + long `tick()` batches instead, like IronKeep.

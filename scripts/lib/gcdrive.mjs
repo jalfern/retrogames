@@ -424,6 +424,35 @@ try {
         await pg.close()
     }
 
+    // ── #3394 the thinking bot rides attract ─────────────────────────────
+    // ?style=3 puts the searcher on the FIRST attract loop; a cleared store
+    // keeps attract bot-driven (no banked best to re-ride). Sample the live
+    // cabinet: the searcher must plan (nSearch), commit (nCommit), score, and
+    // never come home on a tumble.
+    const errsT = []
+    const p4 = await openGame(browser, { url: `${BASE}/grind-city?style=3`, hook: '__grindTest' })
+    p4.on('pageerror', (e) => errsT.push(e.message))
+    await p4.waitForFunction('window.__game', { timeout: 20000 })
+    await p4.evaluate(() => { try { localStorage.clear() } catch { /* private mode */ } })
+    await p4.reload()
+    await p4.waitForFunction('window.__game', { timeout: 20000 })
+    let thinksSeen = false, commits = 0, bestScore = 0, tumble = 0, searchMax = 0
+    for (let k = 0; k < 24; k++) {
+        await new Promise(r => setTimeout(r, 500))
+        const st = await p4.evaluate(() => window.__grindTest.state())
+        if (st.thinks && st.screen === 'attract') thinksSeen = true
+        if (st.screen !== 'attract') break   // the human took the plaza (shouldn't happen)
+        commits = Math.max(commits, st.nCommit || 0)
+        searchMax = Math.max(searchMax, st.nSearch || 0)
+        bestScore = Math.max(bestScore, st.score)
+        if (st.phase === 'tumble') tumble++
+    }
+    ok('#3394 attract rides the thinking bot (?style=3, clears the bank)', thinksSeen, `thinks=${thinksSeen}`)
+    ok('#3394 the searcher plans and commits on the live cabinet', searchMax > 0 && commits > 0, `searched=${searchMax} committed=${commits}`)
+    ok('#3394 the searched attract line scores and never bails', bestScore > 0 && tumble === 0, `score=${bestScore} tumble-samples=${tumble}`)
+    ok('#3394 zero page errors on the thinking attract', errsT.length === 0, errsT.join(';'))
+    await p4.close()
+
     console.log(out.join('\n'))
     console.log(out.every(l => l.startsWith('PASS')) ? 'DRIVE GREEN' : 'DRIVE RED')
     process.exitCode = out.every(l => l.startsWith('PASS')) ? 0 : 1
