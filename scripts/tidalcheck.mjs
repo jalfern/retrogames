@@ -29,7 +29,7 @@ import { plant, restoreAll } from './lib/mutateguard.mjs'
 const mutArg = process.argv.find((a) => a.startsWith('--mutate'))
 const MUT = mutArg ? (mutArg.split('=')[1] || 'judge') : null
 let pass = 0, fail = 0
-const ok = (name, cond) => { if (cond) { pass++; console.log(`  ok  ${name}`) } else { fail++; console.log(`  FAIL ${name}`) } }
+const ok = (name, cond, note) => { if (cond) { pass++; console.log(`  ok  ${name}`) } else { fail++; console.log(`  FAIL ${name}${note ? ` — ${note}` : ''}`) } }
 
 // Plant the chosen mutant the honest way (guarded, remembered, rewound by
 // mutateguard even if we die mid-run), THEN import the sim so ESM caches the
@@ -103,6 +103,13 @@ if (MUT) {
         beats: { file: 'src/games/TidalRush/water.js', from: 'return { ga: Math.sqrt(1 - w), gb: Math.sqrt(w) }', to: 'return { ga: 1 - w, gb: w }', note: 'band mix flattens back to convex — no beats, half energy' },
         // #3329: the crest-emphasis cue goes blind — stacked crests stop marking foam.
         beatfoam: { file: 'src/games/TidalRush/water.js', from: 'return Math.max(0, h - Math.max(hA, hB))', to: 'return 0', note: 'beat cue blind — stacked crests no longer whiten' },
+        // #3351: the rider springs from nothing — a launch carries no pop.
+        popdead: { from: 'c.pop = Math.min(1, Math.max(0, (c.vy - surfVy) / 2.5))', to: 'c.pop = 0', note: 'launches stop popping — takeoff pose dead' },
+        // #3351: every touchdown wears the same fake kneel, or none: the sink
+        // is ignored, so a 6 m/s slap and a kiss read alike.
+        absorbblind: { from: 'c.absorb = Math.min(1, Math.max(0, -c.vy / 6))', to: 'c.absorb = 0.3', note: 'absorb ignores the sink — landings all kneel the same' },
+        // #3351: the moments never die — pop sticks at launch strength forever.
+        popfrozen: { from: 'c.pop = Math.max(0, c.pop - DT * 2.4)', to: 'c.pop = c.pop', note: 'pop window never fades — pose becomes wallpaper' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -1498,6 +1505,104 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     wakeStep(rg, 1 / 60)
     ok('ring + drawRange law: pts trim to n, bright counts 24 per section, glow 6',
         rg.pts.length === 8 && rg.geo.drawRange.count === (8 - 1) * 24 && rg.glowGeo.drawRange.count === (8 - 1) * 6)
+}
+
+// 6d. the two moments (#3351): launch POP and touchdown ABSORB — cosmetic
+// windows set from sim signals at the event itself. The rider's jump/land pose
+// rides them; pads, wire, hash, scores untouched (#3280 cosmetic kind).
+{
+    const idle = { throttle: 0, steer: 0, brake: false, a: false, b: false }
+    const clamp01 = (n) => Math.min(1, Math.max(0, n))
+
+    // Hash purity: the moments live OFF the wire — set them by hand, re-hash,
+    // identical. A hash that drifts with a pose would split boxes on art.
+    const gh = makeGame(11)
+    for (let t = 0; t < 120; t++) step(gh, idle)
+    const h0 = stateHash(gh)
+    gh.crafts[0].pop = 1; gh.crafts[0].absorb = 1
+    ok('#3351 pop/absorb are cosmetic: hand-set them, the hash does not move',
+        stateHash(gh) === h0)
+
+    // Absorb scales with the sink and saturates: a kissing wave barely bends,
+    // a 6 m/s drop takes it all. Depth is read BEFORE vy is wiped (the
+    // #3280 lastLand reason), approx-checked one tick early at the crossing.
+    const sinkLand = (vy, lift) => {
+        const g = makeGame(7)
+        for (let t = 0; t < 92; t++) step(g, idle)
+        const p = g.crafts[0]
+        p.airborne = true; p.vy = vy; p.y = heightAt(p.x, p.z, g.t, g.seaCur) + lift
+        let vyPrev = vy
+        for (let t = 0; t < 260; t++) {
+            step(g, idle)
+            if (!p.airborne) return { absorb: p.absorb, vyPrev }
+            vyPrev = p.vy
+        }
+        return { absorb: -1, vyPrev: 0 }
+    }
+    const soft = sinkLand(1.0, 0.5)
+    const hard = sinkLand(-5.5, 3.0)
+    ok('#3351 touchdown sets absorb from the sink — hard lands saturate at 1',
+        hard.absorb === 1,
+        `absorb=${hard.absorb}`)
+    ok('#3351 a gentle splash absorbs gently (soft < hard, soft < 1)',
+        soft.absorb >= 0 && soft.absorb < hard.absorb && soft.absorb < 1,
+        `soft=${soft.absorb} hard=${hard.absorb}`)
+    ok('#3351 absorb matches the sink law (clamp(-vy/6)) at the crossing',
+        Math.abs(hard.absorb - clamp01(-hard.vyPrev / 6)) <= 0.05
+        && Math.abs(soft.absorb - clamp01(-soft.vyPrev / 6)) <= 0.05,
+        `hard=${hard.absorb} vyPrev=${hard.vyPrev.toFixed(2)} soft=${soft.absorb}`)
+    // window decay, both moments, on dedicated grounded hulls (a re-launch
+    // must not reset the meter mid-probe): strictly monotone WHILE ALIVE and
+    // dead inside the window. (Strict decrease into the zero steady-state is
+    // the trap — `0 < 0` is false; and the FP remainder of repeated −0.04 is
+    // what ~2 decimal rounding has always smoothed on this path.)
+    const windowDies = (g, c, field, ticks) => {
+        c[field] = 1
+        let mono = true, prev = 1, zeroAt = -1
+        for (let t = 0; t < ticks; t++) {
+            step(g, idle)
+            if (prev > 0 && !(c[field] < prev)) mono = false
+            prev = c[field]
+            if (zeroAt < 0 && c[field] === 0) zeroAt = t
+        }
+        return { mono, zeroAt }
+    }
+    const gd = makeGame(7)
+    const aw = windowDies(gd, gd.crafts[0], 'absorb', 24)
+    ok('#3351 the absorb window fades on schedule (monotone while alive, zero by ~0.36 s)',
+        aw.mono && aw.zeroAt >= 0 && aw.zeroAt <= 23, JSON.stringify(aw))
+    const gpw = makeGame(9)
+    const pw = gpw.crafts[0]
+    const pwres = windowDies(gpw, pw, 'pop', 27)
+    ok('#3351 the pop window fades on schedule (monotone while alive, zero by ~0.45 s)',
+        pwres.mono && pwres.zeroAt >= 0 && pwres.zeroAt <= 26, JSON.stringify(pwres))
+
+    // bounds across a seeded autopilot run — every moment honest, 0..1, and
+    // both moments actually happen in one lap of the bay.
+    const gb = makeGame(5)
+    let launches = 0, sawPop = 0, sawAbsorb = 0, outOfBounds = 0, maxPop = 0
+    const prevAirB = gb.crafts.map(() => false)
+    for (let t = 0; t < 4200; t++) {
+        step(gb, idle)
+        gb.crafts.forEach((c, i) => {
+            if (c.pop < 0 || c.pop > 1 || c.absorb < 0 || c.absorb > 1) outOfBounds++
+            if (c.airborne && !prevAirB[i]) { launches++; if (c.pop > 0) sawPop++; if (c.pop > maxPop) maxPop = c.pop }
+            if (!c.airborne && prevAirB[i] && c.absorb > 0) sawAbsorb++
+            prevAirB[i] = c.airborne
+        })
+    }
+    ok('#3351 autopilot bay: every launch pops — no honest air is missed',
+        outOfBounds === 0 && launches === sawPop && launches > 4 && maxPop >= 0.5,
+        `launches=${launches} pop=${sawPop} max=${maxPop.toFixed(2)} oob=${outOfBounds}`)
+    ok('#3351 autopilot bay: sink-driven landings absorb for real',
+        sawAbsorb > 2, `absorb=${sawAbsorb}`)
+
+    // stateOf carries both for the harness/HUD, rounded like its neighbours.
+    const gs0 = stateOf(gb)
+    ok('#3351 stateOf reports pop/absorb (rounded, 0..1)',
+        typeof gs0.pop === 'number' && typeof gs0.absorb === 'number'
+        && gs0.pop >= 0 && gs0.pop <= 1 && gs0.absorb >= 0 && gs0.absorb <= 1,
+        JSON.stringify({ pop: gs0.pop, absorb: gs0.absorb }))
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)

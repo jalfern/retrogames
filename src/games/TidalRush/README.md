@@ -230,9 +230,23 @@ static job; every pushed commit is commented on #3104.
   shading, not per-pixel
   foam texture — crests ride the stern path, they don't sample the swell they
   cut through.
-- Rider has no separate jump/land poses beyond crouch + lean/jolt with
+- ~~Rider has no separate jump/land poses beyond crouch + lean/jolt with
   head-lag (open — #3218 tail). The flat 360 landing does carry a whoosh-in
-  now (#3218).
+  now (#3218).~~ **CLOSED by #3351:** the two MOMENTS have poses. At launch
+  the sim records the **crest kick** — `(vy − surfVy)/2.5`, how much faster
+  than the falling face the hull springs (vy alone is often NEGATIVE at
+  launch; the face drops faster still — the early vy-based read zeroed most
+  honest crests and the every-launch-pops pin caught it). The rider answers
+  with a TAKEOFF pop: legs extend off the hip hinge, the body springs up the
+  heels, the head lags behind the rise; the window decays ~0.4 s. At
+  touchdown the sim captures the **sink** in the tick where `vy` is wiped
+  (the #3280 lastLand reason): `clamp(−vy/6)` — knees take the slap, torso
+  and scale compress, the head dips and recovers; hard 6 m/s drops absorb
+  fully, a kiss barely bends, and trick poses/grabs/jolt/spray all still read
+  on top. Both windows are cosmetic sim state (#3280 kind): pads, wire, hash,
+  tables, rng untouched — pinned by hand-set-and-rehash. **Honest gap:** the
+  limbs are two-bone hinges with fixed angles — a fast pop and a big drop
+  share the same knee geometry, only its depth varies.
 - In-bounds scenery shipped with #3159: seeded moored sloops and a bell buoy
   ride the drawn sea (no colliders — decorations never touch the rules).
   **CLOSED by #3218** — a seeded flock of three gulls now wheels over the
