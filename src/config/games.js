@@ -525,7 +525,7 @@ export const GAMES = [
     },
     {
         path: '/comet-drift',
-        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true, supports: ['stick', 'full'], reason: '#906 — the A key IS the drift here, so the pad shows one DRIFT button; R stays the gamepad alias; full offered #3118 (R shoulder = DRIFT; chrome audit clean)' },
+        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true, supports: ['stick', 'tilt', 'full'], reason: '#906 — the A key IS the drift here, so the pad shows one DRIFT button; R stays the gamepad alias; full offered #3118 (R shoulder = DRIFT; chrome audit clean); tilt offered #3129 — lean steers and leans throttle through the same analog vector, DRIFT stays a chip' },
         builtBy: 'forge',
         added: '2026-10-17',
         visibility: 'private',
@@ -537,7 +537,7 @@ export const GAMES = [
     },
     {
         path: '/comet-drift-hd',
-        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true, supports: ['stick', 'full'], reason: '#906 — the A key IS the drift here, so the pad shows one DRIFT button; R stays the gamepad alias; full offered #3118 (R shoulder = DRIFT; chrome audit clean)' },
+        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true, supports: ['stick', 'tilt', 'full'], reason: '#906 — the A key IS the drift here, so the pad shows one DRIFT button; R stays the gamepad alias; full offered #3118 (R shoulder = DRIFT; chrome audit clean); tilt offered #3129 — lean steers and leans throttle through the same analog vector, DRIFT stays a chip' },
         builtBy: 'forge',
         added: '2026-10-18',
         visibility: 'private',
@@ -1426,9 +1426,9 @@ export const GAMES = [
     {
         path: '/marble-rush',
         pad: {
-            layout: 'stick', buttons: [], analog: true, method: 'stick', supports: ['stick', 'dpad'],
+            layout: 'stick', buttons: [], analog: true, method: 'stick', supports: ['stick', 'tilt', 'dpad'],
             aLabel: 'GO',
-            reason: 'one analog vector IS the marble — push the stick and the chrome ball leans into it; deliberately the shape a tilt controller will drive next',
+            reason: 'one analog vector IS the marble — push the stick and the chrome ball leans into it; deliberately the shape a tilt controller will drive next, and tilt granted #3129 (a 2-axis lean steers AND throttles through the same padState the stick writes)',
         },
         builtBy: 'forge',
         added: '2026-11-24',

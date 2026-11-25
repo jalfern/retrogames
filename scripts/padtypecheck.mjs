@@ -144,7 +144,7 @@ ok(Object.keys(PAD_TYPE_LABELS).length === PAD_TYPES.length, 'every type has a l
     // so an untouched game renders its shipped pad byte-for-byte. R-TYPE's
     // △ THROW entry keeps the #2931 third verb reachable in the diamond.
     for (const [p, kinds, why] of [
-        ['/mario-kart', 'stick', 'full'], ['/comet-drift', 'stick', 'full'], ['/comet-drift-hd', 'stick', 'full'],
+        ['/mario-kart', 'stick', 'full'],
         ['/galaga', 'stick', 'full'], ['/joust', 'stick', 'full'], ['/spy-hunter', 'stick', 'full'],
         ['/r-type', 'dpad', 'full'], ['/double-dragon', 'dpad', 'full'], ['/contra', 'dpad', 'full'],
     ]) {
@@ -173,6 +173,25 @@ ok(Object.keys(PAD_TYPE_LABELS).length === PAD_TYPES.length, 'every type has a l
         const verbs = ["label: 'BLOCK', code: 'Digit1'", "code: 'Digit2', pad: 2", "code: 'Digit3', pad: 3", "code: 'Digit4', pad: 5"]
         ok(verbs.every((v) => blockOf('/lemmings').includes(v)), 'LEMMINGS full diamond carries BLOCK/BOMB/CLIMB + R DIG (#3132)')
         ok(/reads: \['pointer', 'a', 'b'\]/.test(blockOf('/lemmings')), 'LEMMINGS pad shows ✕ ACT + ○ BLOCK in full (#3132)')
+    }
+    // #3129 rollout tail 2 — tilt beyond MARBLE MADNESS. The blocker (the
+    // #3107 roller) has landed, and its own pad reason promised this shape:
+    // tilt drives the SAME stick pipeline the floating stick writes (holder
+    // x/y + dirsFrom), so a tilt grant is honest only where the game
+    // consumes the analog vector — MARBLE RUSH (lean steers AND throttles) and
+    // the COMET DRIFT pair (lean racer; DRIFT stays an actzone chip) do.
+    // Supports-only grants: no type: — the default stays derived (#3118 law).
+    {
+        ok(/supports: \['stick', 'tilt', 'dpad'\]/.test(blockOf('/marble-rush')), 'MARBLE RUSH offers TILT (#3129 — the shelf was shaped for it)')
+        ok(/supports: \['stick', 'tilt', 'full'\]/.test(blockOf('/comet-drift')), 'COMET DRIFT offers TILT (#3129 lean racer, full stays offered)')
+        ok(/supports: \['stick', 'tilt', 'full'\]/.test(blockOf('/comet-drift-hd')), 'COMET DRIFT HD offers TILT (#3129 lean racer, full stays offered)')
+        for (const p of ['/marble-rush', '/comet-drift', '/comet-drift-hd']) {
+            ok(!/\btype: '/.test(blockOf(p)), `${p} grant keeps the derived default (no type:)`)
+            ok(/analog: true/.test(blockOf(p)), `${p} consumes the analog vector tilt writes`)
+        }
+        ok(defaultTypeFor({ layout: 'stick', buttons: [], analog: true, method: 'stick', supports: ['stick', 'tilt', 'dpad'] }) === 'stick', 'tilt grant keeps the derived stick default')
+        const vcTilt = readFileSync(new URL('../src/components/VirtualControls.jsx', import.meta.url), 'utf8')
+        ok(vcTilt.includes('setStickVec(v.x, v.y)') && vcTilt.includes('setStick(v.x, v.y, v.mag'), 'tilt feeds the holder path method-stick games read (not just arrow codes)')
     }
     // #3129 rollout tail 2 — pointer supports (taste calls). A game may offer
     // POINTER only when its canvas taps already ARE the verbs; these three
