@@ -158,6 +158,10 @@ function makeCraft(id, name, color, startArc, skill) {
         airborne: false, vy: 0, spin: 0, spinArmed: false, trickPts: 0, trickArmed: 0,
         rollSpin: 0, airT: 0,        // barrel radians + hang-time accumulated this air
         flipAng: 0, hsT: 0, hsPaid: 0, trickClaimed: false, // #3276: flip radians + inverted hold
+        // #3280: grab pose (none|flip|handstand) + what the last landing paid.
+        // Both are derived from inputs/pads the wire already carries — purely
+        // cosmetic state: pads, hash and scores are untouched by them.
+        grab: 'none', lastLand: 'plain',
         boost: 0, boosting: false,
         penalty: 0,                   // seconds of choked throttle left
         score: 0,                     // #3220: this hull's own bank — humans ride
@@ -379,7 +383,13 @@ function stepCraft(gs, c, pad) {
     const rain = rainAt(gs, c.x, c.z)
     c.rain = rain
 
-    const brake = pad.brake ? 10 : 0
+    // #3280 feel law: brake is a 10 m/s² anchor — but the handstand verb is
+    // gas+brake (#3276), and THRUST is only 7.5, so holding the commit across
+    // the landing dead-stopped the hull at 0 km/h (the drive leg caught it).
+    // Under throttle the anchor caps just BELOW the thrust line (0.2 m/s² of
+    // net bite): a dual-commit settles at a ~11 km/h crawl, it never anchors a
+    // running engine to nothing. Coasting brake (no gas) keeps the full anchor.
+    const brake = pad.brake ? (pad.throttle > 0.5 ? Math.min(10, THRUST * pad.throttle - 0.2) : 10) : 0
     c.speed += (THRUST * c.throttle - (DRAG + RAIN_DRAG * rain) * c.speed * c.speed - brake) * DT
     if (c.speed > vCap) c.speed = Math.max(vCap, c.speed - 8 * DT) // ease off, don't clip
     if (c.speed < 0) c.speed = 0
@@ -409,6 +419,11 @@ function stepCraft(gs, c, pad) {
         // handstand pays by the half-second. The air belongs to whichever trick
         // lands (or pays) first: spin/barrel/flip score only on an unclaimed air.
         const up = pad.throttle > 0.5
+        // #3280: GRAB — the style half of a pitch trick. The brake bit IS the
+        // commit, so the pose hangs off it: brake alone = FLIP grab at the rail,
+        // brake+gas = HANDSTAND reach to the bow. Visual state only — scoring,
+        // physics and the six-bit wire are untouched (#3244 item 6 law).
+        c.grab = pad.brake ? (up ? 'handstand' : 'flip') : 'none'
         if (pad.brake && !up) c.flipAng += FLIP_RATE * DT
         else if (pad.brake && up) {
             c.flipAng -= HAND_RATE * DT
@@ -460,6 +475,12 @@ function stepCraft(gs, c, pad) {
                     gs.events.push({ t: gs.tick, type: 'airbonus', pts: bonus, airT: airR, id: c.id })
                 }
             }
+            // #3280: the landing remembers WHICH trick paid — the renderer
+            // paints the splash from it (a flip sprays corkscrew, a handstand
+            // drives a column); mirror the pay order above exactly.
+            c.lastLand = c.hsPaid > 0 ? 'handstand'
+                : flipped ? 'flip' : spun ? 'spin' : rolled ? 'barrel' : 'plain'
+            c.grab = 'none'
             c.spin = 0
             c.rollSpin = 0
             c.airT = 0
@@ -531,7 +552,7 @@ function rivalPad(gs, c) {
     const steer = Math.max(-1, Math.min(1, d / 0.55))
     // skill decides throttle discipline in the turns and when to send it
     const corner = Math.abs(d) > 0.5 && c.speed > 11 ? 0.55 : 1
-    const throttle = corner * c.skill + (gs.t > 3 ? 0.02 * (rand(gs) - 0.5) : 0)
+    let throttle = corner * c.skill + (gs.t > 3 ? 0.02 * (rand(gs) - 0.5) : 0)
     // tricks on big air: a seeded maybe, held for the whole air pocket —
     // armed 1 spins flat, armed 2 tips a back-flip on the brake (#3276).
     // One extra seeded draw at arm time only; both sides of the wire roll the
@@ -539,6 +560,12 @@ function rivalPad(gs, c) {
     let a = false
     let brake = false
     if (c.airborne) { a = c.trickArmed === 1; brake = c.trickArmed === 2 }
+    // #3280: armed 2 is FLIP intent — but skills hold gas ≥0.94 in the air,
+    // and the commit law reads brake+gas as a HANDSTAND. Without easing the
+    // throttle, every "flip" armed here actually inverted (68 handstand pays
+    // across six seeds, zero flips — the pin caught it). A flipping CPU lifts
+    // off the gas so the nose can wind over the tail, like the human verb.
+    if (brake) throttle = Math.min(throttle, 0.4)
     if (!c.airborne && c.vy < -1.2 && rand(gs) < 0.004) c.trickArmed = rand(gs) < 0.45 ? 2 : 1
     if (!c.airborne && c.vy > 0) c.trickArmed = 0
     const b = c.boost > 0.5 && Math.abs(d) < 0.25 && !c.finished
@@ -690,6 +717,8 @@ export function stateOf(gs) {
         airborne: p.airborne, penalty: p.penalty > 0,
         // #3276 trick state for harness/HUD: pitch radians this air + handstand pays
         flip: Math.round(p.flipAng * 100) / 100, hsPaid: p.hsPaid,
+        // #3280: grab pose + what the last landing paid (cosmetic, wire-free)
+        grab: p.grab, land: p.lastLand,
         stage: gs.stage,
         // swell as KAI feels it: front-mixed dominant amplitude at the hull
         swell: Math.round((gs.seaCur[0].amp + (gs.seaTarget[0].amp - gs.seaCur[0].amp) * frontW(gs.crafts[0].x, gs.crafts[0].z, gs.front)) * 100) / 100,
