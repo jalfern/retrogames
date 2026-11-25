@@ -15,7 +15,7 @@ import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, s
 import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL } from './sim.js'
 import { botPad, makeBot } from './planner.js'
 import { STEP, bedVoices, landThud } from './music.js'
-import { buildPark, buildSky, buildLetters, buildGems, buildSkater, poseSkater, buildParticles, emit, stepParticles } from './art.js'
+import { buildPark, buildSky, buildLetters, buildGems, buildRoofLine, buildSkater, poseSkater, buildParticles, emit, stepParticles } from './art.js'
 
 const FIXED_DT = 1000 / 60
 const DT = FIXED_DT / 1000
@@ -69,6 +69,7 @@ const GrindCityGame = () => {
         buildPark(scene)
         const letterObjs = buildLetters(scene)
         const gemObjs = buildGems(scene)
+        const roofLine = buildRoofLine(scene)
         const rig = buildSkater(scene)
         const fx = buildParticles(scene)
 
@@ -347,6 +348,9 @@ const GrindCityGame = () => {
                 l.sp.scale.setScalar(s0)
                 l.glow.intensity = got ? 0 : 0.6
             })
+
+            // roof line (#3246 pass): UP marker bobs gently over the crest
+            if (roofLine?.marker) roofLine.marker.position.y = roofLine.marker.userData.baseY + Math.sin(clock * 2.2) * 0.16
 
             // gems (#3246): spin + bob, shrink-pop when taken
             gemObjs.forEach((o, i) => {
