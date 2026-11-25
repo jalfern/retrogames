@@ -286,6 +286,19 @@ if (BROWSER) {
     const s6 = await page.evaluate(() => window.__marbleRushTest.probe())
     ok('gate flow: Space returns at the gate (mid-shelf, respawn counted)', s6.screen === 'play' && s6.cpArmed && s6.respawns === 1 && s6.progress > 0.5 && s6.progress < 0.66)
 
+    // fall drama (last so it can't disturb the flows above): over the edge
+    // the marble must TUMBLE, the view must tilt down with it, and its
+    // sky-reflection must dim (render-only, sim untouched; the fall is forced
+    // via hook — the Node gate test drives gs the same way; windows are wide
+    // for the software-rendered frame floor)
+    await page.evaluate(() => window.__marbleRushTest.forceFall())
+    await page.waitForFunction(() => window.__marbleRushTest.view().y < -0.5, null, { timeout: 8000 })
+    const d1 = await page.evaluate(() => window.__marbleRushTest.view())
+    await page.waitForTimeout(800)
+    const d2 = await page.evaluate(() => window.__marbleRushTest.view())
+    ok('fall: the free marble tumbles as it drops', d2.falling && Math.abs(d2.spinZ - d1.spinZ) > 0.5)
+    ok('fall: camera sinks with it and the sky-reflection dims', d1.camY - d2.camY > 0.3 && d1.envI - d2.envI > 0.05)
+
     const frame = await page.evaluate(() => window.__game.frame())
     ok('frame: canvas actually draws', typeof frame === 'string' && frame.length > 20000)
     const cState = await page.evaluate(() => {

@@ -87,7 +87,8 @@ off the bot; humans earn it differently.
    is the contract the platform tilt issue will drive.
 4. Sound is speed-hum only — no rolling surface tone variation (gravel/ice),
    no per-stage ambience; bars clang but the deck under them stays silent.
-5. Falling marble keeps reflecting the sky; no tumble spin or cam-follow on
-   the way down.
+5. Falling marble tumbles and the chase-cam sinks with it, its sky-reflection
+   dimming to near-black (#3165); it still pops out of existence at FALL_Y
+   rather than passing through any cloud layer on the way.
 6. Table select shows ten shelves at once; at twelve-plus a paging shelf UI
    would beat the ◀ ▶ cycle.

@@ -181,11 +181,14 @@ const MarbleRushGame = () => {
         }
 
         const camPos = new THREE.Vector3(0, 5, -12)
+        const lookSmooth = new THREE.Vector3(0, 0, 0)
+        const lookGoal = new THREE.Vector3(0, 0, 0)
         let camInit = false
         let flashPop = 0
         let goFlash = 0
         let humTick = 0
         let shake = 0
+        let tumble = 0                      // render-only free-fall spin (sim stays pure)
         let skyName = ''
 
         const keys = new Set()
@@ -257,7 +260,7 @@ const MarbleRushGame = () => {
                     sfx.respawn(); goFlash = 0.9
                     if (hud.pop) { hud.pop.textContent = 'AT THE GATE'; hud.pop.style.opacity = 1 }
                 }
-                if (e.type === 'fall') sfx.fall()
+                if (e.type === 'fall') { sfx.fall(); shake = Math.min(0.5, shake + 0.32) }
                 if (e.type === 'die') {
                     showResult({ kind: gs.cpArmed ? 'cp-fall' : 'fall', t: gs.t, stage: gs.stageIdx + 1, name: courseFor(gs.stageIdx).name, score: gs.score })
                     setMode('over')
@@ -360,8 +363,19 @@ const MarbleRushGame = () => {
             const nz = Math.sin(h) * Math.sin(bank)
             const mr = 0.42
             marble.mesh.position.set(p.x + nx * mr, p.y + ny * mr, p.z + nz * mr)
-            marble.mesh.rotation.y = gs.rolling * 0.9
-            marble.mesh.rotation.x = h
+            if (gs.falling) {
+                // drama on the way down: the marble tumbles and its sky-reflection
+                // dims to near-black as it leaves the light of the shelves
+                tumble += DT
+                const tw = tumble * (2.6 + Math.min(7, -gs.vy) * 0.5)
+                marble.mesh.rotation.set(h + tw * 1.35, gs.rolling * 0.9 + tw * 2.1, tw * 0.95)
+            } else {
+                tumble = 0
+                marble.mesh.rotation.y = gs.rolling * 0.9
+                marble.mesh.rotation.x = h
+            }
+            const wantEnv = gs.falling ? Math.max(0.2, 1.3 + gs.y * 0.16) : 1.3
+            marble.mesh.material.envMapIntensity += (wantEnv - marble.mesh.material.envMapIntensity) * 0.15
             const fallFade = gs.falling ? Math.max(0, 1 + gs.y / 7) : 1
             marble.shadow.visible = !gs.falling && gs.y < 2.5
             marble.shadow.position.set(p.x, p.y + 0.03, p.z)
@@ -377,13 +391,20 @@ const MarbleRushGame = () => {
                 if (s0 > 1.001) bm.userData.ring.scale.setScalar(s0 + (1 - s0) * 0.18)
             }
 
-            // chase-cam along the ribbon
+            // chase-cam along the ribbon. On a fall it lags behind and tilts
+            // DOWN onto the tumbling marble, so the miss reads as drama:
+            // chrome spinning against the open sky with the shelf receding.
+            const dk = gs.falling ? Math.min(1, -gs.y / 3) : 0
             const look = course.pointOf(Math.min(course.len, gs.s + 6), gs.u * 0.55, gs.y + 1)
             const back = course.pointOf(Math.max(0, gs.s - 7.2), gs.u * 0.7, gs.y + 3.6)
             const tx = back.x + nx * 1.2
-            const ty = back.y + 1.2 + gs.y * 0.55
+            // sink so the camera hangs just above the falling marble — its line
+            // of sight clears the deck and the chrome reads against open sky
+            const ty = gs.falling ? Math.min(back.y + 1.2 + gs.y * 0.55, p.y + 2.4) : back.y + 1.2 + gs.y * 0.55
             const tz = back.z + nz * 1.2
-            if (!camInit) { camPos.set(tx, ty, tz); camInit = true }
+            if (gs.falling) lookGoal.set(p.x, p.y + mr, p.z)
+            else lookGoal.set(look.x, look.y, look.z)
+            if (!camInit) { camPos.set(tx, ty, tz); lookSmooth.copy(lookGoal); camInit = true }
             const k = 1 - Math.exp(-5.5 * DT)
             camPos.x += (tx - camPos.x) * k
             camPos.y += (ty - camPos.y) * k
@@ -394,8 +415,9 @@ const MarbleRushGame = () => {
                 camPos.y += (Math.random() - 0.5) * shake * 0.25
             }
             camera.position.copy(camPos)
-            camera.lookAt(look.x, look.y, look.z)
-            const wantFov = 56 + Math.min(14, gs.v * 0.8)
+            lookSmooth.lerp(lookGoal, gs.falling ? 1 - Math.exp(-9 * DT) : k)
+            camera.lookAt(lookSmooth.x, lookSmooth.y, lookSmooth.z)
+            const wantFov = 56 + Math.min(14, gs.v * 0.8) + (gs.falling ? 6 * dk : 0)
             camera.fov += (wantFov - camera.fov) * 0.08
             camera.updateProjectionMatrix()
             if (sky) sky.mesh.position.copy(camera.position)
@@ -515,6 +537,8 @@ const MarbleRushGame = () => {
                 setMode: (m) => { if (m === 'play') startStage(selRef.current); else { attractLoop(); setMode('attract') } },
                 setStage: (i) => { selRef.current = Math.max(0, Math.min(STAGE_COUNT - 1, i)); setStageSel(selRef.current); attractLoop() },
                 probe: () => ({ ...stateOf(gs), seed: gs.seed, screen: screenRef.current }),
+                view: () => ({ spinZ: marble.mesh.rotation.z, camY: camera.position.y, envI: marble.mesh.material.envMapIntensity, y: gs.y, falling: gs.falling }),
+                forceFall: () => { gs.falling = true; gs.vy = -1 },
                 prognose: () => {
                     const snap = JSON.parse(JSON.stringify(gs))
                     let g = 0
