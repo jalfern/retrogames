@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, windBed, sockPose, stripZone, stripScore, planeTouch, beltTouch, planeGoAround, scuffTell } from '../src/games/Skyward/sim.js'
+import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, windBed, sockPose, sockChain, ladderMark, ladderBanner, dustFlow, stripZone, stripScore, planeTouch, beltTouch, planeGoAround, scuffTell } from '../src/games/Skyward/sim.js'
 import { decide } from '../src/games/Skyward/planner.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { Report } from './lib/harness.mjs'
@@ -761,6 +761,117 @@ void runAuto
     })())
 }
 
+// ───────────────── the tail has fabric and the board reads itself (#3370) ───
+{
+    // item 1 — sockChain: the tail hangs in hinged joints, droop accumulates
+    // toward the tip, and the flutter is the SAME sockPose clock lagged per
+    // joint so a gust snap travels down the fabric.
+    const hard = sockChain({ x: 0.8, z: 0 }, 4.0)
+    r.check('the tail hangs in three joints, not one rigid cone', hard.segs.length === 3, JSON.stringify(hard.segs))
+    r.check('droop accumulates toward the tip (throat stiffer than tail)',
+        hard.segs[0].droop < hard.segs[1].droop && hard.segs[1].droop < hard.segs[2].droop,
+        hard.segs.map((s) => s.droop).join('/'))
+    r.check("the tip droops exactly where #3310's law says the whole sock did",
+        hard.segs[2].droop === sockPose({ x: 0.8, z: 0 }, 4.0).droop && hard.droop === hard.segs[2].droop,
+        `${hard.segs[2].droop} vs ${sockPose({ x: 0.8, z: 0 }, 4.0).droop}`)
+    r.check('dead calm: the chain hangs limp, 0.45/0.675/0.9, no sway anywhere', (() => {
+        const c = sockChain({ x: 0, z: 0 }, 3)
+        return c.dir === null && c.segs.length === 3
+            && c.segs[0].droop === 0.45 && c.segs[1].droop === 0.675 && c.segs[2].droop === 0.9
+            && c.segs.every((s) => s.sway === 0)
+    })(), JSON.stringify(sockChain({ x: 0, z: 0 }, 3).segs))
+    // the delay, pinned as a PROPERTY of the clock: the tip at t repeats the
+    // throat's move two joints ago (×2 amplitude, ±1.5e-4 rounding budget from
+    // the toFixed legs). A zero-delay mutant reads both joints at the SAME
+    // time and breaks against this sweep at any fluttering moment.
+    let rippleOk = true
+    for (let t = 0; t <= 60; t += 0.07) {
+        const a = sockChain({ x: 4.4, z: 0 }, t).segs[0].sway
+        const b = sockChain({ x: 4.4, z: 0 }, t + 2 * 0.09).segs[2].sway
+        if (Math.abs(b - 2 * a) > 2e-4) { rippleOk = false; break }
+    }
+    r.check('the ripple travels: the tip repeats the throat two joint-delays later', rippleOk)
+    {
+        let m0 = 0, m1 = 0, m2 = 0
+        for (let t = 0; t <= 120; t += 0.05) {
+            const s = sockChain({ x: 4.4, z: 0 }, t).segs
+            m0 = Math.max(m0, Math.abs(s[0].sway))
+            m1 = Math.max(m1, Math.abs(s[1].sway))
+            m2 = Math.max(m2, Math.abs(s[2].sway))
+        }
+        r.check('the tip swings widest (fabric amplifies toward the tail)', m0 < m1 && m1 < m2, `${m0.toFixed(3)}/${m1.toFixed(3)}/${m2.toFixed(3)}`)
+    }
+    r.check('the chain survives garbage (NaN/±∞ wind ⇒ finite joints or a resting null dir)', (() => {
+        const c = sockChain({ x: NaN, z: Infinity }, 1)
+        return (c.dir === null || Number.isFinite(c.dir.x)) && c.segs.every((s) => Number.isFinite(s.droop) && Number.isFinite(s.sway))
+    })())
+    r.check('the renderer hangs the tail in those three joints (fabric is wired, and the white band keeps its dusk floor)', (() => {
+        const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
+        return src.includes('sockSegs.push(joint)') && src.includes('sockChain(world.wind, t, gust)') && src.includes('emissive: 0x595d61')
+    })())
+    // item 2 (view side) — the builder call recorded in the README: each
+    // direction reads its own set, so the south lane carries a FAINT mirrored
+    // echo of the ladder. Item 5 (view side) — once per cycle the attract look
+    // glides onto the airfield so the paint sells itself on the idle screen.
+    r.check('the south lane carries a faint mirrored echo set (abort traffic reads upright too)', (() => {
+        const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
+        return src.includes('echo.rotation.y = Math.PI / 2') && src.includes('opacity: 0.6') && src.includes('cz + 3.6')
+    })())
+    r.check('the attract vista glides onto the strip once per cycle (camera path only)', (() => {
+        const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
+        return src.includes('Math.pow(Math.max(0, (Math.cos(a) + 1) / 2), 3)') && src.includes('tmp.set(50 * south, 30 - 20 * south, -60 + 190 * south)')
+    })())
+
+    // item 4 — the ladder banner marks the live zone with a ▸. Literals here:
+    // the string a first-timer reads must be exactly the table, one ▸ deep.
+    r.check('off the strip the ladder is the untouched #3310 line',
+        ladderMark(null) === 'SHORT 150 · MIDDLE 300 · LONG 450 · FULL 700'
+        && ladderMark(0) === 'SHORT 150 · MIDDLE 300 · LONG 450 · FULL 700', ladderMark(0))
+    r.check('each zone carries its own ▸ and only one ▸ is ever lit', (() => {
+        const marks = ['▸SHORT 150', '▸MIDDLE 300', '▸LONG 450', '▸FULL 700']
+        return marks.every((m, i) => {
+            const s = ladderMark(i + 1)
+            return s.includes(m) && s.split('▸').length === 2
+        })
+    })(), ladderMark(3))
+    r.check('nonsense zones fall back to the plain ladder', ladderMark(5) === ladderMark(null) && ladderMark(-1) === ladderMark(null))
+    {
+        const gL = makeGame(9)
+        const R = gL.world.runway
+        const marked = [0, 1, 2, 3].map((i) => ladderBanner(gL.world, R.ax + ((i + 0.5) / 4) * gL.world.STRIP_LEN, R.az))
+        r.check('under the painted decals the banner marks exactly the zone the decal names', (() => {
+            const names = ['▸SHORT', '▸MIDDLE', '▸LONG', '▸FULL']
+            return marked.every((s, i) => s.includes(names[i]) && s.split('▸').length === 2)
+        })(), marked.join(' | '))
+        r.check('off-strip the live banner is the plain line again',
+            ladderBanner(gL.world, 0, 300) === 'SHORT 150 · MIDDLE 300 · LONG 450 · FULL 700')
+    }
+
+    // item 6 — dust earns its speed.
+    r.check('a parked hull (0 m/s) raises no dust, and walking speed is still floor',
+        dustFlow(0) === 0 && dustFlow(1) === 0 && dustFlow(2) === 0)
+    r.check('the plough speed is a full plume, and it clamps both ways',
+        dustFlow(30) === 1 && dustFlow(80) === 1 && dustFlow(-5) === 0)
+    r.check('mid-rollout flows mid-plume, and garbage flows nothing',
+        dustFlow(16) === 0.5 && dustFlow(NaN) === 0, `${dustFlow(16)} ${dustFlow(NaN)}`)
+    {
+        const gb = makeGame(11)
+        gb.phase = 'free'; gb.craft = 'belt'
+        gb.p = { x: 60, y: 3.45, z: 130 }; gb.vel = { x: 3, z: 0 }; gb.speed = 3; gb.vy = -0.3
+        gb.heading = Math.PI / 2; gb._air = true
+        gb.events.length = 0
+        let parkEv = null
+        for (let i = 0; i < 240 && !parkEv; i++) {
+            step(gb, { x: 0, y: 0, a: false, b: false })
+            parkEv = gb.events.find((e) => e.kind === 'land') || null
+            gb.events.length = 0
+        }
+        r.check('a parked belt still names its arrival speed for the puff (the park itself zeroes the hull)',
+            !!parkEv && Number.isFinite(parkEv.speed) && parkEv.speed > 0 && parkEv.speed < 4 && gb.speed === 0,
+            parkEv ? `speed=${parkEv.speed} hull=${gb.speed}` : 'never parked')
+    }
+}
+
 // -------------------------------------------------------- graduation ----
 {
     const SEEDS = [1, 7, 42, 99, 123]
@@ -1256,6 +1367,15 @@ if (process.argv.includes('--mutate')) {
         ['#3310 a slack sock streams as if in a gale (the droop law dies)', SIMF, 'const droop = clamp(1 - sp / 2.2, 0, 1) * 0.9', 'const droop = 0'],
         ['#3310 the sock flies in dead calm (dir never rests)', SIMF, 'if (!Number.isFinite(sp) || sp < 0.05) return { dir: null, droop: 0.9, sway: 0, flutter: 0 }', 'if (false) return { dir: null, droop: 0.9, sway: 0, flutter: 0 }'],
         ['#3310 the painted zone whites sink into dusk again (no emissive floor)', 'src/games/Skyward/renderer.js', 'const white = new THREE.MeshLambertMaterial({ color: 0xf2f4f5, emissive: 0x7b8187 })', 'const white = new THREE.MeshLambertMaterial({ color: 0xf2f4f5 })'],
+        ['#3370 the sock flies rigid again (joint delay dies — the arrow returns)', SIMF, 'const lag = sockPose(wind, t - i * CFG.SOCK_DELAY, gust)', 'const lag = sockPose(wind, t, gust)'],
+        ['#3370 the fabric droops flat (the throat carries the whole tail at once)', SIMF, 'droop: +(base.droop * (0.5 + 0.25 * i)).toFixed(3),', 'droop: +base.droop.toFixed(3),'],
+        ['#3370 the sock band sinks into dusk (white joint loses its emissive floor)', 'src/games/Skyward/renderer.js', 'emissive: 0x595d61', 'emissive: 0x000000'],
+        ['#3370 the ladder banner stays a fixed string (the live ▸ dies)', SIMF, 'return names.map((n, i) => (zone === i + 1 ? `▸${n}` : n)).join(\' · \')', 'return names.join(\' · \')'],
+        ['#3370 the marker lights the wrong zone (off-by-one)', SIMF, 'zone === i + 1 ? `▸${n}`', 'zone === i ? `▸${n}`'],
+        ['#3370 dust ignores the hull (a parked belt puffs a full plume)', SIMF, 'return +clamp((v - CFG.DUST_WALK) / (CFG.DUST_PLOW - CFG.DUST_WALK), 0, 1).toFixed(3)', 'return 1'],
+        ['#3370 the park forgets its arrival speed (the touchdown puff loses its meter)', SIMF, 'aligned: touch.aligned, speed: vIn })', 'aligned: touch.aligned, speed: 0 })'],
+        ['#3370 south-lane echo reads upside-down again (mirror dies)', 'src/games/Skyward/renderer.js', 'echo.rotation.y = Math.PI / 2', 'echo.rotation.y = -Math.PI / 2'],
+        ['#3370 the attract vista never sells the strip (look stays north)', 'src/games/Skyward/renderer.js', 'tmp.set(50 * south, 30 - 20 * south, -60 + 190 * south)', 'tmp.set(0, 30, -60)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

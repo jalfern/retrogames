@@ -7,7 +7,7 @@
 // budget the SHORE demo never held.
 
 import * as THREE from 'three'
-import { sockPose } from './sim.js'
+import { sockChain, dustFlow } from './sim.js'
 import { scuffTell } from './sim.js'
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
@@ -354,6 +354,11 @@ void main(){
         // keep their dashes): each zone names its price at its own centre. The
         // glyph tops point down-strip (+x): an inbound west→east pilot reads them
         // upright, exactly like real runway distance paint.
+        // #3370 item 2 — and a wheels-abort rolls the other way, so the south
+        // lane carries a faint mirrored set (tops toward −x): the builder call
+        // is the real-airfield convention — each direction reads its own set,
+        // the same price standing at the same place (zones pay by position,
+        // not by heading). The faint opacity keeps the primary ladder loud.
         for (let zi = 0; zi < 4; zi++) {
             const dec = new THREE.Mesh(new THREE.PlaneGeometry(11, 6.4),
                 new THREE.MeshBasicMaterial({ map: runwayNumber([150, 300, 450, 700][zi]), transparent: true, opacity: 0.94, depthWrite: false }))
@@ -362,22 +367,44 @@ void main(){
             dec.rotation.y = -Math.PI / 2 // glyph tops → +x (east, down the strip)
             dec.position.set(R.ax + ((zi + 0.5) / 4) * len, deck + 0.17, cz - 3.6)
             scene.add(dec)
+            const echo = new THREE.Mesh(new THREE.PlaneGeometry(11, 6.4),
+                new THREE.MeshBasicMaterial({ map: runwayNumber([150, 300, 450, 700][zi]), transparent: true, opacity: 0.6, depthWrite: false }))
+            echo.rotation.order = 'YXZ'
+            echo.rotation.x = -Math.PI / 2
+            echo.rotation.y = Math.PI / 2 // mirrored: tops → −x, read by east→west traffic
+            echo.position.set(R.ax + ((zi + 0.5) / 4) * len, deck + 0.17, cz + 3.6)
+            scene.add(echo)
         }
         { // windsock at the threshold — an airfield is nothing without one,
-          // and this one FLIES (#3310 item 6): the cone hangs from a pivot at
-          // the pole top and sockPose streams it downwind, droops it at slack
-          // wind and flutters it on the sim clock.
+          // and this one FLIES (#3310 item 6). #3370 item 1 gave it fabric:
+          // three tapered joints hinged at the pole top, each drooping a
+          // heavier share and flutters on the sim clock lagged one joint
+          // behind the last (sockChain) — a gust snap now travels DOWN the
+          // tail instead of snapping one rigid cone around.
             const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 5, 8), new THREE.MeshLambertMaterial({ color: 0xd9dde1, emissive: 0x3c4045 }))
             pole.position.set(R.ax - 2, deck + 2.5, cz + R.half + 3)
             scene.add(pole)
             const sockGroup = new THREE.Group()
             sockGroup.position.set(R.ax - 2, deck + 4.95, cz + R.half + 3)
-            const sock = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.8, 10, 1, true), new THREE.MeshLambertMaterial({ color: 0xff8b3d, side: THREE.DoubleSide, emissive: 0x5c2b00 }))
-            sock.rotation.z = -Math.PI / 2 // tail along +x; the group yaws it downwind
-            sock.position.set(0.9, -0.04, 0)
-            sockGroup.add(sock)
             scene.add(sockGroup)
-            sockProps = { group: sockGroup, tail: sock, x: R.ax - 2, z: cz + R.half + 3 }
+            const sockSegs = []
+            const RADS = [0.55, 0.4, 0.26, 0.1] // throat → tip, same 1.8 m tail
+            const segMat = [
+                new THREE.MeshLambertMaterial({ color: 0xff8b3d, side: THREE.DoubleSide, emissive: 0x5c2b00 }),
+                new THREE.MeshLambertMaterial({ color: 0xf2f4f5, side: THREE.DoubleSide, emissive: 0x595d61 }), // white band reads at dusk too
+                new THREE.MeshLambertMaterial({ color: 0xff8b3d, side: THREE.DoubleSide, emissive: 0x5c2b00 }),
+            ]
+            for (let i = 0; i < segMat.length; i++) {
+                const joint = new THREE.Group()
+                joint.position.set(i * 0.6, 0, 0) // hinge at the previous junction
+                const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(RADS[i + 1], RADS[i], 0.6, 10, 1, true), segMat[i])
+                sleeve.rotation.z = -Math.PI / 2 // cylinder axis (y) → +x, tail
+                sleeve.position.set(0.3, 0, 0)
+                joint.add(sleeve)
+                sockGroup.add(joint)
+                sockSegs.push(joint)
+            }
+            sockProps = { group: sockGroup, segs: sockSegs, x: R.ax - 2, z: cz + R.half + 3 }
             const board = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelSprite('RUNWAY', '#ffd23f'), transparent: true, depthWrite: false }))
             board.scale.set(22, 5, 1)
             board.position.set(R.ax - 3, deck + 2.4, cz - R.half - 4)
@@ -615,9 +642,12 @@ void main(){
         stormCell.position.set(cellP.x - world.storm.x, 0, cellP.z - world.storm.z)
         // #3310 item 6 — the sock flies: downwind, drooping at slack wind,
         // fluttering on the sim clock; passing-cell gusts make it snap.
+        // #3370 item 1 — the snap runs through the joints: absolute per-joint
+        // pose becomes local hinge deltas, so droop accumulates toward the
+        // tip and each joint's sway lags the one before it.
         if (sockProps) {
             const gust = world.stormAt(sockProps.x, sockProps.z, t).gust
-            const p = sockPose(world.wind, t, gust)
+            const p = sockChain(world.wind, t, gust)
             if (p.dir) {
                 const yaw = Math.atan2(-p.dir.z, p.dir.x) // +x-tail → downwind
                 let d = yaw - sockProps.group.rotation.y
@@ -625,8 +655,15 @@ void main(){
                 while (d < -Math.PI) d += Math.PI * 2
                 sockProps.group.rotation.y += d * 0.08
             }
-            sockProps.tail.rotation.z = -Math.PI / 2 - p.droop
-            sockProps.tail.rotation.y = p.sway
+            let prevDroop = 0
+            let prevSway = 0
+            for (let i = 0; i < sockProps.segs.length; i++) {
+                const s = p.segs[i]
+                sockProps.segs[i].rotation.z = -(s.droop - prevDroop)
+                sockProps.segs[i].rotation.y = s.sway - prevSway
+                prevDroop = s.droop
+                prevSway = s.sway
+            }
         }
         // bolt to the water near the core, on flash peaks — re-jittered at
         // 26 Hz so it flickers rather than shimmers
@@ -787,13 +824,21 @@ void main(){
 
         // #3331 item 2 — dust streaks off the mains: asphalt gripping the
         // hull. View-side tick-rate emission; the sim never sees it.
-        if (g.craft === 'plane' && g.ground) {
-            if (++dustTick % 3 === 0) {
-                const bx = g.p.x - Math.sin(g.heading) * 3.4, bz = g.p.z - Math.cos(g.heading) * 3.4
-                const bd = Math.max(g.world.terrainHeight(bx, bz), g.world.waterHeightAt(bx, bz, t))
-                burst(bx, bd + 0.25, bz, [0.82, 0.76, 0.6], 3, 1.1)
-            }
-        } else dustTick = 0
+        // #3370 item 6 — plumes are earned: emission scales with deck speed,
+        // so a parked belt (locked, 0 m/s) never puffs and a hot rollout
+        // spits hard. dustFlow is the same pure law the cabinet's touchdown
+        // puff uses.
+        {
+            const deckRoll = (g.craft === 'plane' && g.ground) || (g.craft === 'belt' && g.park)
+            const flow = deckRoll ? dustFlow(g.speed) : 0
+            if (flow > 0.02) {
+                if (++dustTick % 3 === 0) {
+                    const bx = g.p.x - Math.sin(g.heading) * 3.4, bz = g.p.z - Math.cos(g.heading) * 3.4
+                    const bd = Math.max(g.world.terrainHeight(bx, bz), g.world.waterHeightAt(bx, bz, t))
+                    burst(bx, bd + 0.25, bz, [0.82, 0.76, 0.6], 2 + Math.round(flow * 3), 0.8 + flow * 1.2)
+                }
+            } else dustTick = 0
+        }
 
         // blob shadow: pressed onto whatever is under the hull (land or the
         // live swell). Sample the blob's edges too so it rides a slope instead
@@ -874,12 +919,18 @@ void main(){
     }
 
     const orbitAttract = (g, dt) => {
-        // attract camera: a slow vista orbit of the isle
+        // attract camera: a slow vista orbit of the isle. #3370 item 5 — the
+        // orbit always passed the strip small and low in frame, so once per
+        // cycle, as the south leg crests, the look glides down the coast onto
+        // the airfield: the painted numbers, the flying sock and the RUNWAY
+        // board sell themselves on the idle screen. Camera path only — the
+        // attract autopilot still flies its mat-bound line (#3310 honesty).
         const a = g.t * 0.045
         tmp.set(Math.sin(a) * 480, 130, -60 + Math.cos(a) * 480)
         camPos.lerp(tmp, 1 - Math.pow(0.02, dt))
         camera.position.copy(camPos)
-        camLook.lerp(tmp.set(0, 30, -60), 1 - Math.pow(0.01, dt))
+        const south = Math.pow(Math.max(0, (Math.cos(a) + 1) / 2), 3) // 1 at the south apex
+        camLook.lerp(tmp.set(50 * south, 30 - 20 * south, -60 + 190 * south), 1 - Math.pow(0.01, dt))
         camera.lookAt(camLook)
         camera.fov = lerp(camera.fov, 62, 0.02)
         camera.updateProjectionMatrix()

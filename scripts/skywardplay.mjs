@@ -504,6 +504,96 @@ try {
   })
   ok(fit.bad.length === 0, `390px longest strings fit: banner ${fit.bbw}px, hint ${fit.hbLines}px tall (${fit.bad.join('; ') || 'clean'})`)
   await shot('skyward-phone-banner.png')
+
+  /* #3370 item 7 — landscape phone (844×390): a turn is a wide, short screen,
+     and the skywardplay audit only ever stood the phone up. The 57+ char strip
+     hints, the chips row, the banner and the pad must all coexist in one shot. */
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.waitForTimeout(700)
+  const land = await page.evaluate(() => {
+    const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height, sw: el.scrollWidth, cw: el.clientWidth } }
+    const ovl = (a, c) => a && c && a.x < c.x + c.w && c.x < a.x + a.w && a.y < c.y + c.h && c.y < a.y + a.h
+    const b = document.querySelector('[data-h="banner"]')
+    const h = document.querySelector('[data-h="hint"]')
+    b.textContent = 'RUNWAY FULL STRIP +700 · SMOOTH'
+    b.style.opacity = '1'
+    h.textContent = 'RUNWAY — SCRUB SPEED, THEN FLARE SOFT · cruise speed is too hot to land'
+    const bb = r(b), hb = r(h)
+    const chips = r(document.querySelector('[data-h="chips"]'))
+    const pads = [...document.querySelectorAll('[data-vc]')].map(r).filter(Boolean)
+    const bad = []
+    if (bb && bb.sw > bb.cw + 4) bad.push(`banner overflows (${bb.sw}>${bb.cw})`)
+    if (bb && (bb.x < -2 || bb.x + bb.w > innerWidth + 2)) bad.push('banner offscreen')
+    if (ovl(bb, chips)) bad.push('banner covers the chips')
+    if (hb && hb.sw > hb.cw + 4) bad.push(`hint overflows (${hb.sw}>${hb.cw})`)
+    if (hb && (hb.x + hb.w > innerWidth + 2 || hb.x < -2)) bad.push('hint offscreen')
+    for (const p of pads) if (ovl(hb, p)) bad.push('hint sits under the pad')
+    if (ovl(hb, bb) || ovl(hb, chips)) bad.push('hint collides with banner/chips')
+    return { bad, bbw: bb ? bb.sw : 0, hbLines: hb ? Math.round(hb.h) : 0, hbTop: hb ? Math.round(hb.y) : 0, padTop: pads.length ? Math.round(Math.min(...pads.map((p) => p.y))) : 0 }
+  })
+  ok(land.bad.length === 0, `844×390 landscape: chips column + longest hint + pad coexist (${land.bad.join('; ') || `clean — hint ${land.hbLines}px tall ending at y=${land.hbTop}, pad starts y=${land.padTop}`})`)
+  await shot('skyward-landscape-hud.png')
+
+  /* #3370 item 3 — dusk pixels, finally measured (the #3310 emissive floors
+     were pinned in source but never seen through a lens). Two moods: calm
+     final over the deck, and the deepest dim the school lets you point the
+     strip from — the hull parked ~215 m under the cell (stormAt ⇒ s ≈ 0.44),
+     looking back along the cell→strip line. Luminance medians: asphalt must
+     hold its floor while the sand dims — marking-vs-deck and deck-vs-sand
+     deltas against the #3310 rule. */
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.waitForTimeout(500)
+  // the earlier legs may have left another craft mid-course — the dusk
+  // framings fly the plane's numbers (26 m/s would drown a glider), so
+  // start from a clean free-flight slate.
+  await page.evaluate(() => window.__skywardTest.start())
+  await page.waitForTimeout(400)
+  const stripSample = () => page.evaluate(() => {
+    const c = document.querySelector('canvas')
+    const g = c.getContext('webgl2') || c.getContext('webgl')
+    const W = c.width, H = c.height
+    const x0 = Math.round(W * 0.30), y0 = Math.round(H * 0.04), w = Math.round(W * 0.40), h = Math.round(H * 0.30)
+    const px = new Uint8Array(4 * w * h)
+    g.readPixels(x0, y0, w, h, g.RGBA, g.UNSIGNED_BYTE, px)
+    const deck = [], sand = [], mark = []
+    for (let i = 0; i < px.length; i += 4) {
+      const rr = px[i], gg = px[i + 1], bb2 = px[i + 2]
+      const L = rr * 0.299 + gg * 0.587 + bb2 * 0.114
+      const rb = rr - bb2
+      if (L < 85 && rb <= 16) deck.push(L)
+      else if (rb >= 26 && L > 105 && L < 215) sand.push(L)
+      else if (L >= 145 && Math.abs(rb) <= 20) mark.push(L)
+    }
+    const med = (arr) => (arr.length ? arr.sort((m, n) => m - n)[arr.length >> 1] : null)
+    return { deck: med(deck), sand: med(sand), mark: med(mark), nD: deck.length, nS: sand.length, nM: mark.length, stormS: window.__skywardTest.state().stormS }
+  })
+  const tele = async (p) => { await page.evaluate((q) => window.__skywardTest.teleport(q), p); await page.waitForTimeout(1200) }
+  await tele({ x: -20, y: 6, z: 130, heading: Math.PI / 2, speed: 24, vy: -0.05 })
+  const calm = await stripSample()
+  await shot('skyward-dusk-calm.png')
+  ok(calm.deck !== null && calm.sand !== null && calm.mark !== null && calm.stormS === 0
+    && calm.mark - calm.deck >= 60 && calm.sand - calm.deck >= 60,
+    `dusk rule, calm: marking +${calm.mark === null || calm.deck === null ? '?' : Math.round(calm.mark - calm.deck)} over deck, sand +${calm.sand === null || calm.deck === null ? '?' : Math.round(calm.sand - calm.deck)} (deck ${calm.deck?.toFixed(0)} sand ${calm.sand?.toFixed(0)} mark ${calm.mark?.toFixed(0)})`)
+  const dim = await page.evaluate(async () => {
+    const q = window.__skywardTest.stormCell()
+    const dx = 50 - q.x, dz = 130 - q.z
+    const n = Math.hypot(dx, dz)
+    window.__skywardTest.teleport({ x: q.x + dx * (215 / n), z: q.z + dz * (215 / n), y: 70, heading: Math.atan2(dx, dz), speed: 26, vy: 0 })
+    return n
+  })
+  await page.waitForTimeout(1200)
+  const deep = await stripSample()
+  await shot('skyward-dusk-dim.png')
+  ok(deep.stormS >= 0.3 && deep.deck !== null && deep.mark !== null && deep.sand !== null
+    && deep.mark - deep.deck >= 60 && deep.sand - deep.deck >= 40 && deep.sand < calm.sand,
+    `dusk rule, dim (s=${deep.stormS}, cell ${Math.round(dim)} m out): deck holds its floor ${deep.deck?.toFixed(0)}, sand dims to ${deep.sand?.toFixed(0)}, markings still +${deep.mark !== null && deep.deck !== null ? Math.round(deep.mark - deep.deck) : '?'} over asphalt`)
+  // the builder call of item 2, photographed: from the wheels-abort direction
+  // the south-lane mirrored set faces the camera (glyph legibility is judged
+  // by the pair of shots, the laws by skywardcheck's source pins).
+  await tele({ x: 140, y: 26, z: 130, heading: -Math.PI / 2, speed: 16, vy: -0.1 })
+  await shot('skyward-dusk-abort-dir.png')
+  const abort = await page.evaluate(() => window.__skywardTest.state())
+  ok(abort.x < 140 && Math.abs(abort.z - 130) < 25, `east→west roll framed over the strip for the mirrored-set shot (hull ${abort.x.toFixed(0)},${abort.z.toFixed(0)} — see skyward-dusk-abort-dir.png)`)
 } catch (e) {
   fails.push(`exception: ${e.message}`)
   console.log(`FAIL  exception: ${e.message}`)

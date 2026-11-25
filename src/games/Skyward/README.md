@@ -325,3 +325,54 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   `skywardplay` expects ✈350 (plane catch), ✈850 (clean roll), banner
   `RUNWAY MIDDLE +350`. Items 3 (gear anim), 4 (bounce escalation) and 5
   (phone eyeball) remain open on #3375 — this PR only closes item 1.
+
+## Strip polish (#3370)
+QA follow-up on the strip tail — all seven items closed, presentation-only
+throughout (hash, `stateOf` and scoring byte-identical, autopilot honesty
+pins untouched).
+- **The sock has fabric (item 1)** — one rigid cone read as a swinging arrow.
+  Pure law `sockChain(wind, t, gust)` hangs the tail in three hinged joints:
+  droop accumulates toward the tip (0.45/0.675/0.9 at calm — the tip droops
+  exactly where #3310's law put the whole sock), and each joint flutters on
+  the SAME sim clock lagged `SOCK_DELAY` 0.09 s, so a gust snap travels DOWN
+  the fabric instead of snapping the cone at once. The renderer nests three
+  tapered sleeves on those joints (orange/white/orange — the white band keeps
+  its own dusk emissive `0x595d61`). `sockPose` itself is untouched.
+- **Both directions read their own numbers (item 2 — builder call: MIRROR)** —
+  real strips paint each direction its own set, so the south lane now carries
+  a FAINT (opacity 0.6) mirrored echo of the 150/300/450/700 ladder: tops
+  toward −x, the same price standing at the same place (zones pay by
+  position, not heading). A wheels-abort rolling east→west reads upright;
+  the primary north-lane ladder keeps the loud 0.94.
+- **Dusk, pixel-measured at last (item 3)** — the QA leg samples the canvas
+  in two moods. Calm final: deck ≈ 53, sand ≈ 160, markings ≈ 225 (mark
+  +172 / sand +107 over the asphalt). Deepest reachable dim — the hull
+  parked under the cell (s≈0.3–0.4; the cell's closest approach to the strip
+  itself is ~465 m, so the strip never sits IN the rain, only in its
+  bearing): deck holds its emissive floor ~52 while the sand dims ~30 lum,
+  markings still +150 over the deck. The #3310 floors are verified, not
+  assumed.
+- **The ladder banner marks the live zone (item 4)** — while the once-per-run
+  ladder shows, pure law `ladderBanner`/`ladderMark` prefixes the zone the
+  hull is crossing with a ▸ (off-strip or zone 0 → the untouched #3310 line).
+  Painted decal, marker and scoring all read the same `stripZone`.
+- **The attract vista sells the strip once per cycle (item 5)** — the orbit
+  always passed the strip small and low; at the south apex the look now
+  glides onto the airfield (look-target shift eased `cos³`), piano keys,
+  RUNWAY board, flying sock and painted numbers fill the idle screen for a
+  few seconds each loop. Camera path only — the attract autopilot still flies
+  its mat-bound line (#3310 item 7 honesty).
+- **Plumes are earned (item 6)** — pure law `dustFlow(speed)`: touchdown puffs
+  scale with the arrival speed the land event now carries (`speed`, captured
+  BEFORE the belt park zeroes the hull), and the renderer's rollout streaks
+  only run above walking speed — a parked belt sits in clean air.
+- **Landscape phones fit (item 7)** — a 844×390 audit found the hint under
+  the pad (the #3300 width query never fires on a short screen). New
+  `max-height: 480px` HUD rule: readouts to the top-left column, hint
+  floating at y 154 — clear of the pad band (starts ~y 202), the banner and
+  the chips.
+- **Harness** — +19 pins (fabric joints/droop ladder/calm literals/ripple-by-
+  clock/amplitude, ladder ▸ literals + decal agreement, dust bands + the
+  park's speed-on-event, renderer source pins for joints/mirror/vista-glide),
+  +9 mutants — skywardcheck 194/194, 60/60 die. skywardplay gained the dusk
+  pixel legs, the landscape audit and the abort-direction shot.
