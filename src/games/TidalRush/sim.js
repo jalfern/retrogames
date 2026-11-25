@@ -148,6 +148,11 @@ function makeCraft(id, name, color, startArc, skill) {
         rollSpin: 0, airT: 0,        // barrel radians + hang-time accumulated this air
         boost: 0, boosting: false,
         penalty: 0,                   // seconds of choked throttle left
+        score: 0,                     // #3220: this hull's own bank — humans ride
+        // MAKO/TUNDRA now, so the scoreboard must follow the seat, not the bay's
+        // hero. hull 0 additionally banks into gs.score (the legacy hero bank).
+        human: false,                 // #3220: seat is a live wire pad, not autopilot
+        rainOn: false,               // per-hull squall-edge memory (human hulls)
         lap: 1, judged: new Array(N_GATES).fill(0), // 0 pending, 1 clean, -1 missed
         judgedEpoch: 0,
         progress: 0, progIdx: 0,
@@ -252,11 +257,13 @@ function judgeGate(gs, c, g, i) {
     c.judged[i] = clean ? 1 : -1
     if (clean) {
         c.boost = Math.min(1, c.boost + 0.10)
-        if (c.id === 0) { gs.score += 100; gs.events.push({ t: gs.tick, type: 'pass', i }) }
+        c.score += 100 // #3220: every hull banks its own run
+        if (c.id === 0) gs.score += 100
+        if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'pass', i, id: c.id })
     } else {
         c.penalty = PENALTY_T
         c.boost = Math.max(0, c.boost - 0.25)
-        if (c.id === 0) gs.events.push({ t: gs.tick, type: 'miss', i })
+        if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'miss', i, id: c.id })
     }
 }
 
@@ -305,7 +312,7 @@ function stepCraft(gs, c, pad) {
         if (along > SKIP_MARGIN || c.progress > c.targetArc + SKIP_MARGIN) {
             c.judged[i] = -1
             c.penalty = PENALTY_T
-            if (c.id === 0) gs.events.push({ t: gs.tick, type: 'miss', i })
+            if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'miss', i, id: c.id })
         }
     }
     if (c.judged.every((j) => j !== 0)) {
@@ -314,20 +321,27 @@ function stepCraft(gs, c, pad) {
         if (c.lap > LAPS && !c.finished) {
             c.finished = true
             c.finishT = gs.t
+            // #3220: the podium pays every hull — place bonus + swift-course bonus
+            // bank into the hull's own score; hull 0 keeps filling the hero bank.
+            const rank = rankAt(gs, c.id)
+            c.score += (rank === 1 ? 1500 : rank === 2 ? 900 : 500)
+                + Math.max(0, Math.round((240 - c.finishT) * 10)) // swift courses pay
             if (c.id === 0) {
                 gs.done = true
-                const rank = rankAt(gs, 0)
                 gs.rank = rank
-                gs.score += rank === 1 ? 1500 : rank === 2 ? 900 : 500
-                gs.score += Math.max(0, Math.round((240 - c.finishT) * 10)) // swift courses pay
-                gs.events.push({ t: gs.tick, type: 'finish', rank })
+                gs.score += (rank === 1 ? 1500 : rank === 2 ? 900 : 500)
+                gs.score += Math.max(0, Math.round((240 - c.finishT) * 10))
+                gs.events.push({ t: gs.tick, type: 'finish', rank, id: 0 })
+            } else if (c.human) {
+                gs.events.push({ t: gs.tick, type: 'finish', rank, id: c.id })
             }
-        } else if (c.id === 0) {
-            gs.events.push({ t: gs.tick, type: 'lap', lap: c.lap })
+        } else if (c.id === 0 || c.human) {
+            gs.events.push({ t: gs.tick, type: 'lap', lap: c.lap, id: c.id })
             // STORM BAY: the swell re-rolls lap to lap (WR64's signature) —
             // rung 3: the new sea rides in behind a squall front. A front still
             // mid-bay completes first (deterministic snap, never two fronts).
-            if (gs.stage === 'storm') {
+            // The weather stays Kai's clock (the world's hero lap) on every box.
+            if (c.id === 0 && gs.stage === 'storm') {
                 if (gs.front) { gs.seaCur = gs.seaTarget.map((w) => ({ ...w })); gs.front = null }
                 gs.seaTarget = stormSea(gs.seed, c.lap)
                 gs.front = makeFront(gs.seaTarget, RX + 26, RZ + 26)
@@ -385,21 +399,26 @@ function stepCraft(gs, c, pad) {
             if (spun) {
                 c.trickPts = 1
                 c.boost = Math.min(1, c.boost + 0.30)
-                if (c.id === 0) { gs.score += 250; gs.events.push({ t: gs.tick, type: 'trick' }) }
+                c.score += 250
+                if (c.id === 0) gs.score += 250
+                if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'trick', id: c.id })
             } else if (rolled) {
                 // barrel roll: carved hard off a crest, landed clean
                 c.boost = Math.min(1, c.boost + 0.22)
-                if (c.id === 0) { gs.score += 200; gs.events.push({ t: gs.tick, type: 'barrel' }) }
-            } else if (c.spin > 0.3 && c.id === 0) {
-                gs.events.push({ t: gs.tick, type: 'splashes' })
+                c.score += 200
+                if (c.id === 0) gs.score += 200
+                if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'barrel', id: c.id })
+            } else if (c.spin > 0.3 && (c.id === 0 || c.human)) {
+                gs.events.push({ t: gs.tick, type: 'splashes', id: c.id })
             }
             // the hang-time pays: a landed trick banks its air (rung 3)
-            if ((spun || rolled) && c.id === 0) {
+            if ((spun || rolled) && (c.id === 0 || c.human)) {
                 const airR = Math.round(c.airT * 100) / 100 // what the event reports
                 const bonus = Math.min(AIR_BONUS_CAP, Math.round(airR * AIR_BONUS_RATE))
                 if (bonus > 0) {
-                    gs.score += bonus
-                    gs.events.push({ t: gs.tick, type: 'airbonus', pts: bonus, airT: airR })
+                    c.score += bonus
+                    if (c.id === 0) gs.score += bonus
+                    gs.events.push({ t: gs.tick, type: 'airbonus', pts: bonus, airT: airR, id: c.id })
                 }
             }
             c.spin = 0
@@ -415,7 +434,7 @@ function stepCraft(gs, c, pad) {
             c.airborne = true
             c.airT = 0
             c.vy = surfVy * 0.85 + c.speed * 0.18 // carry off the crest: up, not down
-            if (c.id === 0) gs.events.push({ t: gs.tick, type: 'air' })
+            if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'air', id: c.id })
         }
     }
     // attitude: pitch from the slope along the heading, roll from lean+beam slope
@@ -530,8 +549,10 @@ function bumpPass(gs) {
                 b.x += nx * push; b.z += nz * push
                 a.speed *= 0.985; b.speed *= 0.985
                 a.hits += 1; b.hits += 1
-                if ((a.id === 0 || b.id === 0) && gs.tick % 12 === 0) {
-                    gs.events.push({ t: gs.tick, type: 'bump' })
+                if (gs.tick % 12 === 0) {
+                    if (a.id === 0 || b.id === 0) gs.events.push({ t: gs.tick, type: 'bump', id: 0 })
+                    const h = a.human && a.id !== 0 ? a : (b.human && b.id !== 0 ? b : null)
+                    if (h) gs.events.push({ t: gs.tick, type: 'bump', id: h.id })
                 }
             }
         }
@@ -539,8 +560,13 @@ function bumpPass(gs) {
 }
 
 // --- one world tick -------------------------------------------------------------
-export function step(gs, padIn) {
+// seatPads (#3220): { hullId: pad } for HUMAN seats beyond Kai. A human hull
+// consumes exactly the pad every box received on the wire — and its autopilot
+// is SKIPPED entirely (no rivalPad rng draw here on any box, so the shared
+// stream stays byte-identical room-wide). Absent/undefined = the seat is CPU.
+export function step(gs, padIn, seatPads) {
     gs.events = []
+    const NO = { throttle: 0, steer: 0, brake: false, a: false, b: false }
     // false-start lights: 1.4 s of reds, then GO. Throttle early costs nothing
     // here (WR64 hauled you back; we just hold the boats).
     gs.lightPhase = gs.t < 1.4 ? gs.t / 1.4 : 1
@@ -570,8 +596,10 @@ export function step(gs, padIn) {
 
     gs.crafts.forEach((c, idx) => {
         const pad = c.id === 0
-            ? (gatesOpen ? padIn : { throttle: 0, steer: 0, brake: false, a: false, b: false })
-            : (gatesOpen ? rivalPad(gs, c) : { throttle: 0, steer: 0, brake: false, a: false, b: false })
+            ? (gatesOpen ? padIn : NO)
+            : (c.human
+                ? (gatesOpen && seatPads && seatPads[c.id] ? seatPads[c.id] : NO)
+                : (gatesOpen ? rivalPad(gs, c) : NO))
         pad.throttle = Math.max(0, Math.min(1, pad.throttle))
         pad.steer = Math.max(-1, Math.min(1, pad.steer))
         stepCraft(gs, c, pad)
@@ -584,7 +612,17 @@ export function step(gs, padIn) {
     const kaiOn = gs.crafts[0].rain >= 0.5
     if (kaiOn !== gs.rainOn) {
         gs.rainOn = kaiOn
-        gs.events.push({ t: gs.tick, type: 'rain', on: kaiOn })
+        gs.events.push({ t: gs.tick, type: 'rain', on: kaiOn, id: 0 })
+    }
+    // #3220: a wire rider sits in their own weather — the squall edge fires for
+    // the hull a human is actually riding, not just the bay's hero.
+    for (const c of gs.crafts) {
+        if (c.id === 0 || !c.human) continue
+        const on = c.rain >= 0.5
+        if (on !== c.rainOn) {
+            c.rainOn = on
+            gs.events.push({ t: gs.tick, type: 'rain', on, id: c.id })
+        }
     }
 
     gs.rank = rankAt(gs, 0)
