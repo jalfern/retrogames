@@ -56,6 +56,9 @@ const sfxFor = (ev) => {
         case 'extraballpaid':
             [784, 988, 1175].forEach((f, i) => a.playTone(f, 0.09, 'square', 0.1, i * 0.08)); break
         case 'packdrain': a.playNoise(0.08, 0.08); break
+        case 'ballhit': // steel on steel (#3217): bright short clack, pitched by impact
+            a.playTone(1750 + 650 * Math.min(1, (ev.v || 0) / 500), 0.035, 'triangle', 0.08);
+            a.playTone(2600, 0.02, 'square', 0.05, 0.01); a.playNoise(0.012, 0.05); break
         case 'feed': a.playSweep(140, 420, 0.14, 'triangle', 0.08); break
         case 'gameover':
             [392, 311, 262, 196].forEach((f, i) => a.playTone(f, 0.14, 'square', 0.1, i * 0.13)); break
@@ -166,6 +169,7 @@ const PinballGame = () => {
                 else if (ev.type === 'maggrab') { fl.mag = 14; spawn(ev.x, ev.y, 8, PAL.mag, 120) }
                 else if (ev.type === 'magfree') { fl.magFree = 12; spawn(ev.x, ev.y, 6, PAL.mag, 140) }
                 else if (ev.type === 'magready') { fl.mag = 8 }
+                else if (ev.type === 'ballhit') spawn(ev.x, ev.y, 5, PAL.chrome, 150)
             }
             gs.events.length = 0
         }
