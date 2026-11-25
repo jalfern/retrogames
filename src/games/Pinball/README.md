@@ -256,12 +256,42 @@ demo like a stock cabinet (`B = REDESIGN`).
   is never empty-handed. Placements validate the WHOLE candidate — the draft
   on the bench stays globally legal by invariant.
 
+### Smith polish stage 1 (#3290 items 1–4)
+
+- **The bench sells itself**: while slot 2 is unsaved its `◆ START OPENS THE
+  SMITH` badge rides the row EVERY frame (pulsing, dimmed when unselected),
+  the blueprint dashes shimmer unselected, and `BUILD YOUR OWN TABLE` joined
+  ATTRACT_DMD on both stock cabinets plus a `ghost` line set the unsaved slot
+  crawls while it demos.
+- **The ghost demo tells the truth**: unsaved, the demo plays
+  `SMITH_REFS.nova` — the layout `openEditor` actually opens with — via
+  `previewTb(ci)`; saved cabinets keep their own table. The selected mini-card
+  carries its own message strip (`textFit(mt, CARD_W-10)`), because the
+  full-frame crawl shrinks to illegibility at card scale.
+- **The zone rule is drawn**: `zoneGuidePath(SMITH_LIMITS)` (sim.js) traces
+  the bumper law — ellipse rx144/ry124 clamped to the zone rect — as a faint
+  cyan rim while the BUMPER tool is selected. Every vertex obeys
+  `bumperZoneOk` EXACTLY (float noise renormalised inward), so guide and law
+  can never disagree (pinned).
+- **Phone-width laws**: `textFit`/`marqueeFit` (art.js, pure, Node-pinned)
+  keep marquees inside their cards — shrink 11→7 px, then drop the ` · KIT`
+  tail (the badge below names the kit); badges cap at 126 px so side cards
+  never run off the 360 field. Card-tap seams resolve to the NEAREST centre.
+- **Pad-zone law for the bench**: `SMITH_BAR { bw:38, x0:28, y0:488 }` — the
+  palette lives above the VirtualControls pad (measured nub top ≈y515 at
+  375×812; the old y560 hid SAVE/TEST under the thumb). Bench taps pick tool
+  cells directly, and `tapSpaceGuard` fixes the hidden trap App's `tapStart`
+  left behind: its synthetic Space made EVERY canvas tap secretly press A —
+  on the bench that dropped a part at the cursor. A canvas tap arms a
+  one-shot guard; the pad's A (a `[data-vc]`, no canvas pointerdown) and real
+  keys act normally.
+
 ## Verify
 
 ```bash
-npm run pinballcheck          # 206 literal physics/rules/determinism/mirror/skins/demo/smith pins, plain Node (+9 mutants: seed/economy/mirror/search/kickback/skin/demo/smithzone/smithload)
+npm run pinballcheck          # 251 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI pins, plain Node (+12 mutants incl. smithzone/smithload)
 npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs)
-npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence
+npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence (+#3290: badge-while-unselected, nova-demo honesty, drawn-rim delta, seam nearest-centre, touch tap-guard + tool taps)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
 ```
@@ -306,7 +336,10 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
 - **CLOSED by #3297:** phone-width density was audited once here — ball-vs-
   amber-lane-bed contrast reads fine at 375 pt and lite 640×426; the visible
   clips were attract side-card labels + mini-card DMD truncation, filed on
-  #3290 (item 4 owns the remaining calibration pass).
+  #3290 — **stage 1 of #3290 shipped**: marquee/badge fit laws, a legible
+  mini-card message strip, nearest-centre seams, bench palette lifted above
+  the pad zone (SMITH_BAR) + tool-cell taps. A live-device sweep (beyond
+  emulation) is the only part item 4 not yet proven on real glass.
 - **CLOSED by #3237/#3297:** Tilt-to-nudge SHIPPED (#3237): a lean-and-return
   pays one nudge via a tap-granted deviceorientation channel (law pinned in
   sim.js `tiltImpulse`). Extras SHIPPED by #3297: the tower gate slams shut
