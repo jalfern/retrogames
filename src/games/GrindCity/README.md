@@ -17,8 +17,9 @@ the park and every trick name are ours.
 | `index.jsx` | cabinet — loop, input, HUD, sounds, cameras (chase · fisheye action · replay), run-replay recorder (`packIn` log) and the `exposeGame` contract + `__grindTest` drive hooks. |
 
 Run: `npm run grindcheck` (Node, no browser — includes the input-log replay
-determinism proof, the #3246 gem/secret/roof physics legs, and 5 mutants:
-letters, gap, replay, bed, gems). Deep-drive the cabinet with
+determinism proof, the #3246 gem/secret/roof physics legs, the #3233 manual
+identity legs, and 9 mutants: letters, gap, replay, bed, gems, shade, grab,
+stall, tell). Deep-drive the cabinet with
 `DEV_PORT=5178 node scripts/lib/gcdrive.mjs` (also proves the REPLAY screen,
 the skip and the action-cam cut-in).
 
@@ -144,8 +145,11 @@ still through the replay).
   "The second line, gems and the secret spot" above.
 - **CLOSED by #3289** — ~~no grabs on grinds, no lip tricks, no stalls.~~ The
   rail/lip vocabulary shipped: FEEBLE/CROOKED rail grabs and coping stalls; see
-  "The lip vocabulary" above. **Still open:** manual chains count but look
-  identical across trick types (owned by #3233).
+  "The lip vocabulary" above. **Closed by #3233:** a manual now announces itself
+  — a HUD chip shows the live type (`MANUAL` → `MANUAL 180` when the steer
+  commits) and the value it is accumulating; `stateOf` carries `manualName`/
+  `manualPts` (the exact commit formula, so the chip can't over-promise) and
+  the 180 upgrade has its own audio sweep.
 - **The bot's line is fixed.** `planner.js` is scripted waypoints, not a search;
   it proves the park is winnable, not that the trick system is deep.
 - `snapshot`/`restore` are intentionally absent from the contract — the sim
