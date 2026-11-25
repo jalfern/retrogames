@@ -21,7 +21,7 @@ import { makeGame, step, autoPad, attractPad, stateOf, stateHash, rankAt, LAPS, 
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
 import { SEATS, PAD_DELAY, HASH_EVERY, HOLD_MS, WATCH_CAP, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence, podiumRows, podWire, podRows, createHist, inflateSh } from './net.js'
-import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame, makeSplashRings, ringStep } from './art.js'
+import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, wakeSpray, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame, makeSplashRings, ringStep } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
 const MESSAGES = [
@@ -535,12 +535,14 @@ const TidalRushGame = () => {
                     const sideZ = c.z - Math.sin(c.heading) * (c.steer > 0 ? -0.8 : 0.8)
                     spraySpawn(spray, sideX, c.y + 0.25, sideZ, 3, 0.9, 3.6, false)
                 }
-                if (c.speed > 3 && gs.tick % 3 === 0) spraySpawn(spray, sternX, c.y + 0.05, sternZ, 1, 0.7, 0.5, true)
+                // emit-time wake width — the spray arms (#3342) and the ribbon share it
+                const wakeW = 0.55 + c.speed * 0.085 + (c.boosting ? 0.5 : 0)
+                if (c.speed > 3 && gs.tick % 3 === 0) wakeSpray(spray, sternX, c.y + 0.05, sternZ, c.heading, wakeW)
                 if (c.boosting && gs.tick % 2 === 0) spraySpawn(spray, sternX, c.y + 0.2, sternZ, 2, 0.5, 1.6, false)
                 // ribbon wake: the solid WR64 streak — stitched stern points,
                 // wider when fast, hottest when boosting
                 if (c.speed > 4 && gs.tick % 2 === 0) {
-                    wakePush(wakes[c.id], sternX, c.y, sternZ, c.heading, 0.55 + c.speed * 0.085 + (c.boosting ? 0.5 : 0))
+                    wakePush(wakes[c.id], sternX, c.y, sternZ, c.heading, wakeW)
                 }
             })
         }

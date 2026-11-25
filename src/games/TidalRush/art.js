@@ -378,7 +378,21 @@ export function makeSpray(n = 700) {
     const life = new Float32Array(n)
     const vel = new Float32Array(n * 3)
     const wake = new Float32Array(n) // >0 = long-life wake foam (slower fade)
-    return { pts, geo, mat, pos, life, vel, wake, n, cursor: 0 }
+    // arm: the ±1 toggle wakeSpray flips per emit (#3342) — seeded so every
+    // hull starts on the same arm and replays place identically.
+    return { pts, geo, mat, pos, life, vel, wake, n, cursor: 0, arm: 1 }
+}
+
+// #3342 — long-life wake foam rides the ARMS of the V, not the centreline.
+// A stitched centre line filled the quiet channel the ribbon carves, so from
+// the chase seat the five lanes collapsed into one bright band. Placement is
+// heading math off the pool's arm toggle (deterministic — only the churn
+// jitter stays random, as it was before).
+export function wakeSpray(sp, x, y, z, heading, width) {
+    sp.arm = -(sp.arm || 1)
+    const off = width * 0.24 * sp.arm // fresh crest sits at width·0.22 (wakeStep t=0)
+    const px = Math.cos(heading), pz = -Math.sin(heading)
+    spraySpawn(sp, x + px * off, y, z + pz * off, 1, 0.34, 0.5, true)
 }
 
 export function spraySpawn(sp, x, y, z, count, spread, up, isWake, life = 0) {
@@ -658,7 +672,11 @@ export function wakeStep(w, dt) {
         const px = Math.cos(p.heading), pz = -Math.sin(p.heading)
         const ea = foam * tw * 0.70 // crest-line alpha (the bright V arms)
         const j = i * 5
-        const lanes = [[-hw, ea], [-hw * 0.68, ea * 0.34], [0, ea * 0.10], [hw * 0.68, ea * 0.34], [hw, ea]]
+        // #3342 crest emphasis: the shoulder falls off HARDER (0.34→0.22) and
+        // the channel goes quieter (0.10→0.07) — at the shallow chase angle the
+        // cross-section compresses to pixels, and a 0.34 shoulder filled the gap
+        // between the arms into one band. Thin hot arms + dark centre resolve.
+        const lanes = [[-hw, ea], [-hw * 0.68, ea * 0.22], [0, ea * 0.07], [hw * 0.68, ea * 0.22], [hw, ea]]
         for (let l = 0; l < 5; l++) {
             const o = lanes[l][0]
             pos[(j + l) * 3] = p.x + px * o; pos[(j + l) * 3 + 1] = p.y; pos[(j + l) * 3 + 2] = p.z + pz * o
