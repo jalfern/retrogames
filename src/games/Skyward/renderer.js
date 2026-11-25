@@ -711,6 +711,20 @@ void main(){
         camera.lookAt(camLook)
         camera.fov = lerp(camera.fov, 62, 0.02)
         camera.updateProjectionMatrix()
+        // The vista orbit existed only as camera math — nothing ever pointed a
+        // draw at it, so the canvas sat empty behind the SKYWARD card on every
+        // load (found in the #3300 audit). Drive the clock uniforms and draw;
+        // and since no hull is flying in attract, park the craft and the blob
+        // shadow out of the shot (render() turns them back on with play).
+        Object.values(craft).forEach((cc) => { cc.visible = false })
+        shadowMesh.visible = false
+        seaMat.uniforms.uTime.value = g.t
+        seaMat.uniforms.uCam.value.copy(camera.position)
+        skyMat.uniforms.uFlash.value = world.stormFlash(g.t)
+        const sd = world.skyDimDir(g.t, camera.position.x, camera.position.y, camera.position.z)
+        skyMat.uniforms.uStormDir.value.set(sd.x, sd.y, sd.z)
+        skyMat.uniforms.uCam.value.copy(camera.position)
+        renderer.render(scene, camera)
     }
 
     const dispose = () => {
