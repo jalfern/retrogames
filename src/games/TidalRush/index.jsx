@@ -17,7 +17,7 @@ import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createLockStep, retryDelay } from '../../utils/lockstep.js'
-import { makeGame, step, autoPad, stateOf, stateHash, rankAt, LAPS, SIM_MS, DT, rainAt, RAIN_VIS, airPose } from './sim.js'
+import { makeGame, step, autoPad, attractPad, stateOf, stateHash, rankAt, LAPS, SIM_MS, DT, rainAt, RAIN_VIS, airPose } from './sim.js'
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
 import { SEATS, PAD_DELAY, HASH_EVERY, HOLD_MS, WATCH_CAP, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence, podiumRows, podWire, podRows, createHist, inflateSh } from './net.js'
@@ -474,7 +474,7 @@ const TidalRushGame = () => {
                 }
                 if (playing) drainEvents()
             } else {
-                step(gs, playing ? readPad() : autoPad(gs))
+                step(gs, playing ? readPad() : attractPad(gs))
                 if (playing) drainEvents()
             }
             if (!prevGo && gs.lightPhase >= 1 && playing) {
