@@ -75,6 +75,17 @@ try {
     const held1 = await page.evaluate(() => window.__pinballTest.state())
     ok('the world clock keeps running during the hold', held1.tick > held0.tick, `${held0.tick}→${held1.tick}`)
 
+    // #3250 rig: a fast drop down the right drain column gets SAVED — latched
+    // kbUsed, +100 on the run, KICKBACK announce (sim-owned state)
+    const kbBefore = await page.evaluate(() => window.__pinballTest.state())
+    await page.evaluate(() => window.__pinballTest.kbDrop())
+    let kb = null
+    for (let i = 0; i < 20; i++) { await wait(100); kb = await page.evaluate(() => window.__pinballTest.state()); if (kb.kbUsed) break }
+    ok('KICKBACK: a fast right-column drain is saved live (kbUsed latches)', !!kb && kb.kbUsed === true, `kbUsed=${kb && kb.kbUsed}`)
+    ok('the save pays +100 and announces KICKBACK on the DMD',
+        !!kb && kb.score >= kbBefore.score + 100 && kb.dmd.text === 'KICKBACK! +100',
+        `${kbBefore.score}→${kb && kb.score} "${kb && kb.dmd.text}"`)
+
     // pixels: the playfield draws, and the DMD strip region lights up after an event
     // (announce fresh first — the idle crawl has blank scroll windows between words,
     // sampling blind was a standing flake)
@@ -164,6 +175,16 @@ try {
     }
     ok('ember: the mirrored wrap completes live in Chrome', !!eorb && eorb.orbits >= 1, `orbits=${eorb && eorb.orbits}`)
     ok('ember prices show on the strip live ("ORBIT! +150")', !!eorb && eorb.dmd.text === 'ORBIT! +150', eorb && eorb.dmd.text)
+
+    // #3250 rig: ember's mirrored kickback saves its LEFT column for its own price
+    const ekbBefore = await page.evaluate(() => window.__pinballTest.state())
+    await page.evaluate(() => window.__pinballTest.kbDrop())
+    let ekb = null
+    for (let i = 0; i < 20; i++) { await wait(100); ekb = await page.evaluate(() => window.__pinballTest.state()); if (ekb.kbUsed) break }
+    ok('ember: the mirrored kickback saves its LEFT column live', !!ekb && ekb.kbUsed === true, `kbUsed=${ekb && ekb.kbUsed}`)
+    ok('ember kickback pays its own 75 and announces KICKBACK! +75',
+        !!ekb && ekb.score >= ekbBefore.score + 75 && ekb.dmd.text === 'KICKBACK! +75',
+        `${ekbBefore.score}→${ekb && ekb.score} "${ekb && ekb.dmd.text}"`)
 
     // pixels: the ember palette rules this field — warm dominates (cab one is blue-dominant)
     const epx = await page.evaluate(() => {

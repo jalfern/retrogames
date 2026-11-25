@@ -41,6 +41,8 @@ const sfxFor = (ev) => {
             a.playTone(784, 0.12, 'square', 0.11, 0.16); a.playNoise(0.06, 0.1, 0.2); break
         case 'spinner': a.playTone(1500, 0.025, 'square', 0.05); break
         case 'kicker': a.playSweep(220, 660, 0.15, 'triangle', 0.12); break
+        case 'kickback': // #3250: solenoid snap + a harder, higher launch than the kicker
+            a.playNoise(0.05, 0.16); a.playSweep(140, 920, 0.14, 'square', 0.13); a.playTone(880, 0.05, 'square', 0.07, 0.1); break
         case 'plunge': a.playSweep(120, 700, 0.22, 'triangle', 0.14); break
         case 'ratchet': a.playTone(160 + 460 * (ev.power || 0), 0.02, 'square', 0.06); a.playNoise(0.015, 0.05); break
         case 'drain': a.playSweep(420, 70, 0.35, 'sawtooth', 0.12); a.playNoise(0.15, 0.1); break
@@ -111,6 +113,7 @@ const mkFlash = (tb) => ({
     bank: 0, spinner: 0, drain: 0, tilt: 0, ramp: 0, lane: tb.laneRollovers.map(() => 0), lock: 0, mb: 0,
     flash: 0, // #3178 tower-kick white-out
     orbit: 0, orbitArm: 0, mag: 0, magFree: 0,
+    kb: 0, // #3250 kickback pop
 })
 
 const PinballGame = () => {
@@ -207,6 +210,13 @@ const PinballGame = () => {
                 else if (ev.type === 'bank') { fl.bank = 40; shakeRef.current = Math.max(shakeRef.current, 5) }
                 else if (ev.type === 'spinner') { fl.spinner = 6; spawn(ev.x, ev.y, 3, pal.glow, 90) }
                 else if (ev.type === 'kicker') { spawn(ev.x, ev.y, 12, pal.lane, 220) }
+                // #3250 kickback: the loudest rescue on the table — plunger pop,
+                // ring, upward shower and a shake (it saves the ball from death)
+                else if (ev.type === 'kickback') {
+                    fl.kb = 18; shakeRef.current = Math.max(shakeRef.current, 8)
+                    spawn(ev.x, ev.y, 16, pal.hot, 260)
+                    spawnRing(ev.x, ev.y, pal.hot, 30, 16)
+                }
                 else if (ev.type === 'plunge') { spawn(tb.plunger.x, tb.plunger.restY, 8, pal.chrome, 120) }
                 else if (ev.type === 'ratchet') { spawn(tb.plunger.x, 566 + (ev.power || 0) * 14, 2, pal.chrome, 60) }
                 else if (ev.type === 'drain') { shakeRef.current = 10; fl.drain = 24 }
@@ -490,6 +500,29 @@ const PinballGame = () => {
             // kicker mouth
             ctx.fillStyle = `rgba(${pal.kickerRgb},${0.25 + 0.2 * Math.sin(gs.tick / 7)})`
             ctx.beginPath(); ctx.moveTo(v.outMouthX1, 505); ctx.lineTo(v.outMouthX2, 505); ctx.lineTo(v.outMouthTip, 526); ctx.closePath(); ctx.fill()
+
+            // #3250 KICKBACK — chrome button in a rubber ring at the drain mouth,
+            // armed-pulse while its one save per ball is live, plunger pop on fire.
+            const KB = tb.kb
+            const kbCx = (KB.x1 + KB.x2) / 2, kbCy = KB.yFrom - 3
+            const kbArmed = !gs.kbUsed && gs.launched && !gs.done
+            const kbLit = fl.kb > 0
+            ctx.save()
+            if (kbLit) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 16 }
+            else if (kbArmed) { ctx.shadowColor = pal.hot; ctx.shadowBlur = 8 + 5 * Math.sin(gs.tick / 6) }
+            // plunger shaft pops up through the ring on fire
+            if (kbLit) {
+                ctx.fillStyle = pal.chrome
+                ctx.fillRect(kbCx - 4, kbCy - (fl.kb / 18) * 10, 8, (fl.kb / 18) * 10 + 4)
+            }
+            // rubber ring
+            ctx.strokeStyle = kbLit ? '#ffffff' : (kbArmed ? pal.hot : 'rgba(148,163,184,0.5)')
+            ctx.lineWidth = 3
+            ctx.beginPath(); ctx.arc(kbCx, kbCy, 7.5, 0, 7); ctx.stroke()
+            // chrome face
+            ctx.fillStyle = kbLit ? '#ffffff' : (kbArmed ? `rgba(${pal.hotRgb},${0.55 + 0.3 * Math.sin(gs.tick / 6)})` : 'rgba(148,163,184,0.35)')
+            ctx.beginPath(); ctx.arc(kbCx, kbCy, 4.5, 0, 7); ctx.fill()
+            ctx.restore()
 
             // flippers — chrome capsules
             const f = tb.flippers
@@ -784,6 +817,14 @@ const PinballGame = () => {
                     const gs = gsRef.current
                     const bx = gs.table.view.railCx - 5 * gs.table.orbit.ch.side
                     gs.pucks.push({ bx, by: 498, vx: gs.table.kicker.vx, vy: gs.table.kicker.vy, prevY: 498, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
+                    return stateOf(gs)
+                },
+                // dev rig: drop a ball fast down the kickback column (#3250,
+                // visual QA of the pop; rules are pinned in Node by pinballcheck)
+                kbDrop: () => {
+                    const gs = gsRef.current
+                    const KB = gs.table.kb
+                    gs.pucks.push({ bx: (KB.x1 + KB.x2) / 2, by: KB.yFrom + 2, vx: 0, vy: 300, prevY: KB.yFrom + 2, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
                     return stateOf(gs)
                 },
                 magDrop: () => {
