@@ -68,6 +68,7 @@ if (MUT) {
         shoulderwash: { file: 'src/games/TidalRush/art.js', from: '[-hw * 0.68, ea * 0.22], [0, ea * 0.07], [hw * 0.68, ea * 0.22]', to: '[-hw * 0.68, ea * 0.34], [0, ea * 0.10], [hw * 0.68, ea * 0.34]', note: 'crest emphasis gone — shoulders fill the V into one band' },
         // wake foam stitches the centreline again (#3342) — the channel fills.
         centrestitch: { file: 'src/games/TidalRush/art.js', from: 'const off = width * 0.24 * sp.arm', to: 'const off = 0 * sp.arm', note: 'wake spray spawns on the centreline — the V channel fills in' },
+        stormcalm: { file: 'src/games/TidalRush/art.js', from: 'const ea = foam * tw * 0.70 * (1 - storm * 0.38)', to: 'const ea = foam * tw * 0.70', note: '#3349 storm headroom removed — the wake clips to a white sheet on whitecaps again' },
         // the shallows stop shimmering (#3218) — beach caustics gone.
         causticoff: { file: 'src/games/TidalRush/art.js', from: 'float shoreK = length(vWorld.xz) / 180.0;', to: 'float shoreK = 0.0;', note: 'beach caustics disabled' },
         // the flat 360 lands in silence again (#3218) — no whoosh-in.
@@ -1445,6 +1446,36 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
             const m = wk.pts.length
             for (let i = 0; i < m; i++) if (!(crestA(wk, i) >= shA(wk, i) * 4)) return false
             return m >= 6
+        })())
+
+    // #3349 storm headroom: on whitecap water a white wake clips to a sheet —
+    // under storm the wake must cool toward cyan and leave brightness headroom
+    // (crest alpha down, glow ribbon down), while the V law still holds.
+    const glowA = (w, i) => w.glowGeo.attributes.color.array[(i * 2) * 4 + 3]
+    const mk2 = () => { const x = makeWake(16); for (let i = 0; i < 6; i++) wakePush(x, i * 0.7, 0.6, -i * 0.4, 0.3, 1.6); return x }
+    const wkDry = mk2(); const wkStorm = mk2()
+    wakeStep(wkDry, 1 / 60, 0)
+    wakeStep(wkStorm, 1 / 60, 1)
+    ok('#3349 storm headroom: full storm cools the crests (r lower), dims crest + glow alpha, V still hot over fill',
+        (() => {
+            const m = wkStorm.pts.length
+            if (m < 6) return false
+            for (let i = 0; i < m; i++) {
+                if (!(crestR(wkStorm, i) < crestR(wkDry, i) - 0.1)) return false
+                if (!(crestA(wkStorm, i) < crestA(wkDry, i))) return false
+                if (!(glowA(wkStorm, i) < glowA(wkDry, i))) return false
+                if (!(crestA(wkStorm, i) > fillA(wkStorm, i) * 1.9)) return false
+            }
+            return true
+        })())
+    ok('#3349 wakeStep storm arg is optional — dry default matches the old law',
+        (() => {
+            const a = mk2(); const b = mk2()
+            wakeStep(a, 1 / 60)
+            wakeStep(b, 1 / 60, 0)
+            const ca = a.geo.attributes.color.array, cb = b.geo.attributes.color.array
+            for (let i = 0; i < a.pts.length * 5 * 4; i++) if (ca[i] !== cb[i]) return false
+            return true
         })())
 
     // age fade with twinkle-cancelled sampling: 1 tick vs 55 ticks on the

@@ -715,7 +715,7 @@ const TidalRushGame = () => {
 
             sprayStep(spray, DT)
             ringStep(rings, DT)
-            wakes.forEach((w) => wakeStep(w, DT))
+            wakes.forEach((w) => wakeStep(w, DT, stormBlend))
 
             // chase-cam: sit behind and low over the water, FOV rides speed.
             // #3220: it follows MY hull — guests ride MAKO/TUNDRA, the bay
