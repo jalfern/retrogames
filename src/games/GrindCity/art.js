@@ -3,7 +3,7 @@
 // ridden park. Everything else (letters, skater rig, particles) is code too.
 
 import * as THREE from 'three'
-import { parkHeight, gradAt, RAILS, LETTERS, GEMS, BOUND, ROOF_Y, railClosest } from './park.js'
+import { parkHeight, gradAt, RAILS, LETTERS, GEMS, BOUND, ROOF_Y, railClosest, SECRET } from './park.js'
 
 const RANGE = BOUND + 4          // a little beyond the walls
 const STEP = 0.8
@@ -329,7 +329,7 @@ export function buildLetters(scene) {
 // frame budget on software-rendered CI Chrome. #3233 adds a 4-point-star
 // idle glint per gem: one shared canvas texture, one SpriteMaterial per gem
 // so each can fade independently. Additive so it reads as light, not paint.
-function makeStarTexture() {
+export function makeStarTexture() {
     const c = document.createElement('canvas')
     c.width = c.height = 64
     const ctx = c.getContext('2d')
@@ -370,6 +370,25 @@ export function buildGems(scene) {
         scene.add(glint)
         return { mesh: m, glint, y: g.y, phase: i * 0.9 }
     })
+}
+
+// ── secret-bowl foreshadowing (#3233 tail) ─────────────────────────────────
+// The secret bowl is hidden by design — its find is the reward. This is only
+// a faint, slow shimmer at the western lip of the bowl: something is out
+// there east, but not exactly where. No sign, no arrow — a hint the player
+// notices when she skates that way, then tries to find out.
+export function buildSecretHint(scene) {
+    const tex = makeStarTexture()
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    }))
+    sprite.position.set(SECRET.x - SECRET.r - 0.3, 1.1, SECRET.z)
+    sprite.userData.baseY = 1.1
+    sprite.scale.setScalar(0.85)
+    sprite.renderOrder = 9
+    scene.add(sprite)
+    return { sprite }
 }
 
 // ── the skater rig ────────────────────────────────────────────────────────
