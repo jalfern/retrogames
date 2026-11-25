@@ -264,6 +264,20 @@ const rung2Ball = (gs, x, y, vx, vy) => {
         gs3.pucks[0].vx < -100, `vx=${gs3.pucks[0].vx.toFixed(0)}`)
 }
 
+// -------------------------------------- rollover pitch-ladder source (#3178) ----
+{
+    // The shell voices each LANE rollover at 1240 + 240*i Hz so the firelane
+    // descent teaches its own progress by ear. The ladder rides on the event's
+    // rollover index — pin that one descent delivers all three indices in order.
+    const gs = makeGame(204); rung2Ball(gs, 310, 170, 0, 200); clear(gs)
+    const idx = []
+    for (let i = 0; i < 40 && idx.length < 3; i++) {
+        stepGame(gs, {}); clear(gs).forEach((e) => { if (e.type === 'lane') idx.push(e.i) })
+    }
+    r.check('one descent rolls all three LANE rollovers as ascending indices 0,1,2 (the pitch-ladder source)',
+        idx.join(',') === '0,1,2', idx.join(','))
+}
+
 // ------------------------------------------------ ramp rollovers ----
 {
     const gs = makeGame(211); rung2Ball(gs, 336, 380, 0, -700); clear(gs)
@@ -356,6 +370,36 @@ const rollToLock = (gs) => {
     r.check('when the last ball of the pack drains, MULTIBALL ends and the banked extra ball pays',
         !gs.multiball && gs.balls === ballsBefore + 1 && gs.extraBall === 0,
         `balls ${ballsBefore}→${gs.balls}`)
+}
+
+// ----------------------------------------- MULTIBALL bed seam (#3178) ----
+{
+    // The shell keys the MULTIBALL tension bed (MUSIC.pinballMb) off gs.multiball
+    // and cuts it when the pack goes home — pause and game-over included. The
+    // AudioController cannot run in Node, but its trigger can: pin that the
+    // `multiball` event rides the same step as the flag RISES and `packend`
+    // the same step as it FALLS, or the bed strands a loop (or never starts).
+    const gs = makeGame(232)
+    let rise = -1, fall = -1
+    rollToLock(gs); rollToLock(gs)
+    // third lock under watch — the pack-off edge must be visible with the flag
+    rung2Ball(gs, 310, 235, 0, 160); clear(gs)
+    for (let i = 0; i < 90 && rise < 0; i++) {
+        drive(gs, {}, 1)
+        if (types(gs).includes('multiball') && gs.multiball) rise = gs.tick
+    }
+    r.check('the multiball event rides the same step the pack goes live (bed-start seam)',
+        rise > 0 && gs.locks === 0 && gs.pucks.length === 3, `rise=${rise} pucks=${gs.pucks.length}`)
+    // send the pack home and catch the stop edge
+    gs.saveUsed = true
+    let guard = 0
+    while (gs.multiball && gs.pucks.length > 1 && guard++ < 1000) {
+        gs.pucks.forEach((p, i) => { if (i === 0) { p.by = 999 } else { p.bx = 90 + i * 60; p.by = 420; p.vx = 0; p.vy = 0 } })
+        stepGame(gs, {})
+        if (types(gs).includes('packend') && !gs.multiball) fall = gs.tick
+    }
+    r.check('the packend event rides the same step the pack ends (bed-stop seam)',
+        fall > rise && !gs.multiball, `fall=${fall} rise=${rise}`)
 }
 
 // -------------------------------------------------- ball save ----

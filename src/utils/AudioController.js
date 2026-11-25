@@ -595,6 +595,24 @@ export const MUSIC = {
             1, 0, 0, 2, 0, 0, 1, 0, 1, 2, 0, 2, 1, 2, 1, 2,
         ],
     },
+    // PINBALL MULTIBALL bed (#3178): a sparse A-minor ostinato — i–VI–v–i in the
+    // bass, high minor colour only on the off-beats, hats thin. It must sit UNDER
+    // the bumper/sling volley of a three-ball pack, so most steps are silence.
+    pinballMb: {
+        step: 0.1,
+        lead: [
+            84, 0, 0, 81, 0, 76, 0, 0, 84, 0, 0, 79, 0, 76, 0, 0,
+            88, 0, 84, 0, 81, 0, 79, 0, 77, 0, 76, 0, 0, 0, 76, 0,
+        ],
+        bass: [
+            33, 0, 33, 33, 0, 33, 0, 33, 33, 0, 33, 33, 0, 33, 0, 33,
+            29, 0, 29, 29, 0, 29, 0, 29, 28, 0, 28, 28, 28, 0, 33, 0,
+        ],
+        perc: [
+            0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0,
+            0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 2, 0, 2,
+        ],
+    },
 }
 
 class AudioController {
