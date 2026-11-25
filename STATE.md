@@ -1,74 +1,68 @@
-# STATE — forge board snapshot (slot a, 2026-11-24/25 — PINBALL PLAYS ITSELF)
+# STATE — forge board snapshot (slot b, 2026-11-25 — TIDAL RUSH FLIPS FIVE)
 
 ## This session — one ship, landed
-- Warden TARGET **#3237** taken clean (no liveness claim; QA-tail item —
-  builder ships its stage 1 under the warden-kick, #1258). PR **#3275**
-  merged `1045808`; prod `Pinball-C9lazER3.js` marker-verified.
-- **PINBALL ATTRACT SHOW-OFF + KIT TAIL** (issue item 1 + the #3259 addendum):
-  - Attract is a DRIVEN run: `demoPad`/`demoOver` (pure sim exports) run a
-    real `makeGame` through the pinned human line — Node pins MULTIBALL from
-    seed 1337 on BOTH cabinets, lock-jackpots first, never empty;
-    deterministic re-deal (`0xa11ce + runs*7919`), lamp chase ticks 0..84,
-    `ATTRACT_DMD` ad lines per cabinet, demo silent (no audio at the row).
-  - `drawTable(gs, L)` = renderer bundle (ctx/flash/trail/parts/rings/shake);
-    MAIN wraps live refs via getters → play pixels byte-identical. Attract bg
-    + the SELECTED mini-card draw the live demo offscreen canvas.
-  - Kits: localStorage memory (`KIT_STORE`; `?style` outranks; stale ids →
-    house dress via `kitIndex`), own `dressflip` sound, attract-DMD kit
-    announce, results `◆ KIT` line, `NO SUCH KIT` DMD+badge (`styleWarn`),
-    third dresses **NOIR**/**GLACIER** (palette-only, parity-pinned).
-- Proof: pinballcheck **178/178** (+18 pins) + **ALL MUTANTS CAUGHT 7/7**
-  (new `demo`); pinballplay **54/54** (+9 live legs); contractcheck 14/14;
-  eslint + 3 scoped gates + build green.
-- **#3237 stays OPEN** (`Part of #3275`): left items 2 phone-width HUD audit,
-  3 ball-vs-lane-bed contrast, 4 tilt-to-nudge, 5 extras (lock-gate slam,
-  plunger power ticks, tilt wobble). Live URL + remaining list on the issue.
+- Warden target **#3237 PINBALL** REFUSED at claim (slot a held it live; slot a
+  shipped it as #3275 during my session — good). Normal ladder: no steer, no
+  actionable `next` (#1712 waiting-jon), `game-queue` empty, unowned feedback
+  existed (#3272, #3233) but **QA MASTER live on studio+mini → no borrow** →
+  never-dry. Live `idle-kick` = `KICK TIDAL RUSH 0 weak`.
+- **NEVER-DRY #3276 DONE: TIDAL RUSH five airborne verbs** (`d0c2c77`, PR #3278).
+  - BACK FLIP +300 (brake ALONE airborne; charge +0.34) / HANDSTAND +150 per
+    0.5 s inverted, cap 3 (gas+brake past vertical). One-trick law stretched
+    whole: a paid handstand lands spin/barrel/flip inert (mutant `handcmit`
+    proves the lockout is load-bearing — it also killed the old air-bonus pin).
+  - Six-bit wire untouched (flip=d, handstand=u+d) — lockstep hashes the new
+    verbs for free (#3244 item 6 law); autopilots never brake ⇒ tricks are
+    committed inputs; rivals seeded to flip (armed 2).
+  - tidalcheck **155/155** (+6 pins incl. determinism-with-tricks) + mutants
+    **3/3 CAUGHT** (fliphalf/handcap/handcmit). tidaldrive **16/16 live** on
+    :5178 (HANDSTAND paid seed 5, FLIP +300 banked, race won rank 1, zero errs).
+  - Prod verified: `TidalRush-Dr5M5Ono.js` carries `flipAng/HANDSTAND`.
+    Play: `/retrogames/tidal-rush`. #3276 shipped+closed.
+- **Rule-8 catch worth repeating:** idle-kick pointed at gap index 0 — that gap
+  (desync receipts) had ALREADY shipped hours earlier (#3247); its README entry
+  was never struck. Struck it (+ the podium one, #3253) in this PR. QA/builder
+  lanes: **strike honest-gap entries in the PR that ships them** or they
+  phantom-kick the next slot.
+- **QA tail filed: #3281** — grab poses, inverted splash, phone discoverability
+  of the two new verbs, charged-trick economy question, attract flip show-off.
 
 ## Harness lessons (worth one line each)
-- Mutants on a dirty worktree refuse to plant — every rule then reports
-  SURVIVES. `commit` before `--mutate`; the 0/7 was a guard-lie, 7/7 the truth.
-- The kickback play-leg passed vacuously: kbUsed was already latched upstream,
-  so the poll broke on sample zero. Rigs gate on device state (one save per
-  ball IS the rule), never wall-clock budget. Fixed in #3275.
-- Registry growth ripples through test maths: a third kit changed the B-cycle
-  wrap expectation (n%3 ≠ n%2) — grep the suite for kit-count assumptions
-  whenever the shelf grows.
+- Unstruck README gap entries = phantom kicks: weakestStage trusts the README,
+  so a shipped-but-listed gap scores and claims a whole session's pick.
+- Browser trick drives need LIVE-sim evidence (`flip` sign/`hsPaid` mid-air),
+  never fading banner text — pops linger and lie about which trick just landed.
+- Seed-retry (reset via `__game.reset`, up to 4 seeds) makes real-key natural
+  kickers reliable without rigging the sim; release every key in a finally.
 
 ## PLAYABLE on main right now
-- `/retrogames/pinball` driven attract + kit memory/NOIR/GLACIER (#3275),
-  KICKBACK both cabinets (#3255), ball-ball, orbit/magnet/DMD;
-  `/retrogames/skyward` living storm cell (#3271) + thunderpass,
-  mario-kart TILT (#3260), tidal-rush spectate (#3265) + online rooms/
-  podium/rematch (#3227/#3253) + rung-3 chrome (#3254), grind-city roof
-  line + gems (#3251) + gem sparkle (#3270), marble-rush tilt + trick-hop
-  (#3243), comet-drift pair (tilt), ssx (tilt), marble-madness, pacman,
-  mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT,
-  TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep,
-  galaga, missile, pucks, mines, zork, ultima, king's quest, Joust,
-  Q*bert, forge board.
+- `/retrogames/tidal-rush` **flips+handstands** (#3278) + rooms/spectate/rejoin,
+  `/retrogames/pinball` attract show-off (#3275) + art kits + kickback,
+  `/retrogames/skyward` living storm (#3271), `/retrogames/grind-city` roof
+  callout (#3279), mario-kart (tilt), ice-climber, marble-rush (tilt, trick
+  hop), comet-drift pair (tilt), ssx (tilt), marble-madness, pacman, mario,
+  minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS,
+  DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga, missile, pucks,
+  mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` empty (my claim cleared it); only `next` item #1712 is
-  `waiting-jon` — skip. Next builder claim = idle-kick derivation LIVE at
-  claim time (don't trust memory or this line).
-- Open `feedback` (QA lane's board): #3237 pinball tail items 2–5 (this
-  lane's next stage if re-kicked), #3244 tidal-rush online polish, #3233
-  grind-city tail 2, #2971 contra (waiting-jon).
-- Merges today incl. #3255 #3262 #3263 #3264 #3265 #3270 #3271 #3273 #3274
-  #3275; nightly main-ok green at my merge.
+- `game-queue` EMPTY; `next` #1712 still waiting-jon (not a work item).
+- QA holds: #3233 GRIND CITY, #3244 TIDAL RUSH relay-run (waiting-jon),
+  #3272 SKYWARD tail, new #3281 TIDAL RUSH tricks tail. #2971 contra waiting-jon.
+- Next builder claim: run `idle-kick` LIVE — never trust this file.
+- Nightly: main-ok green at session start and at merge; today's merges incl.
+  #3275 #3278 #3279.
 
 ## Open questions (links only — #605)
-- #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa,
-  AWAITING; also owns the real-iPhone ENABLE TILT tap for the tilt shelf).
+- #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
 - #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
 - No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot a: dev server stopped via `scripts/devstop.sh` (:5173 free). Worktree
-  `~/Dev/retrogames-forge-pinball-attract` removed clean after merge.
-- Main checkout detached at origin/main; this STATE.md ships via its own
-  docs/state PR (#3277) — game code merged this session, commit path earned.
-  Slot b's fresher facts (kickback/#3270/spectate chrome) are folded in here,
-  nothing evaporated (#1430).
-- Time-box: ~2h30m of 3 h.
+- Slot b: dev :5178 stopped via scripts/devstop.sh. Worktree
+  `~/Dev/retrogames-forge-tidal-tricks` detached clean at origin/main by
+  mergeclean; remove it when next convenient.
+- Game merged this session ⇒ this STATE.md ships via its own docs/state commit;
+  also parked at /tmp/forge/STATE.b.parked.md via statepark.
+- Time-box: ~2 h 40 min of 3 h.
