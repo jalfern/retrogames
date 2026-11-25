@@ -299,8 +299,20 @@ export function makeSki(colorHex) {
         m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize())
         return m
     }
-    lean.add(mkLimb(-0.2, 0.85, -0.1, -0.3, 0.45, 0.7, 0.1, suitMat))
-    lean.add(mkLimb(0.2, 0.85, -0.1, 0.3, 0.45, 0.7, 0.1, suitMat))
+    // legs on a hip hinge: a landing flexes them back, an airborne tuck lifts
+    // them — the torso never rides the deck. Original pedestrian pose, flat
+    // primitive language only.
+    const lowerBody = new THREE.Group()
+    lowerBody.position.set(0, 0.85, -0.1)
+    const mkLeg = (sx, ex) => {
+        lowerBody.add(mkLimb(sx, 0, 0, ex, -0.4, 0.8, 0.1, suitMat))
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.09, 0.34), darkMat)
+        foot.position.set(ex, -0.42, 0.78)
+        lowerBody.add(foot)
+    }
+    mkLeg(-0.2, -0.3)
+    mkLeg(0.2, 0.3)
+    lean.add(lowerBody)
     // arms: shoulder-pivot groups that reach the bar grip — the shell turns them
     // per frame so the rider's hands keep tracking the bar through lean.
     const mkArm = (sx) => {
@@ -325,7 +337,7 @@ export function makeSki(colorHex) {
     flame.visible = false
     tilt.add(flame)
 
-    return { root, tilt, lean, flame, headPivot, arms }
+    return { root, tilt, lean, flame, headPivot, arms, lowerBody }
 }
 
 // ---- spray + wake: one pooled additive Points buffer ---------------------------
@@ -409,7 +421,30 @@ export function makeWake(n = 44) {
     })
     const mesh = new THREE.Mesh(geo, mat)
     mesh.frustumCulled = false
-    return { mesh, geo, mat, pts: [], n, life: 2.4 }
+    // the darkening strip: a wider, low-alpha ribbon that normal-blends under
+    // the additive streak — the water shadow the wake throws beside the bright
+    // line, not on top of it (render order keeps the streak bright).
+    const dPos = new Float32Array(n * 2 * 3)
+    const dCol = new Float32Array(n * 2 * 4)
+    const dGeo = new THREE.BufferGeometry()
+    dGeo.setAttribute('position', new THREE.BufferAttribute(dPos, 3))
+    dGeo.setAttribute('color', new THREE.BufferAttribute(dCol, 4))
+    const dIdx = []
+    for (let k = 0; k < n - 1; k++) {
+        const a = k * 2, b = a + 1, c = a + 2, d = a + 3
+        dIdx.push(a, c, b, b, c, d)
+    }
+    dGeo.setIndex(dIdx)
+    dGeo.setDrawRange(0, 0)
+    const dMat = new THREE.MeshBasicMaterial({
+        vertexColors: true, transparent: true, depthWrite: false,
+        side: THREE.DoubleSide,
+    })
+    const dMesh = new THREE.Mesh(dGeo, dMat)
+    dMesh.frustumCulled = false
+    dMesh.renderOrder = 1
+    mesh.renderOrder = 2
+    return { mesh, geo, mat, darkMesh: dMesh, darkGeo: dGeo, darkMat: dMat, pts: [], n, life: 2.4 }
 }
 
 export function wakePush(w, x, y, z, heading, width) {
@@ -552,6 +587,8 @@ export function wakeStep(w, dt) {
     while (pts.length && pts[0].age > w.life) pts.shift()
     const pos = w.geo.attributes.position.array
     const col = w.geo.attributes.color.array
+    const dPos = w.darkGeo.attributes.position.array
+    const dCol = w.darkGeo.attributes.color.array
     const m = pts.length
     for (let i = 0; i < m; i++) {
         const p = pts[i]
@@ -565,10 +602,23 @@ export function wakeStep(w, dt) {
         pos[(j + 1) * 3] = p.x - px * hw; pos[(j + 1) * 3 + 1] = p.y; pos[(j + 1) * 3 + 2] = p.z - pz * hw
         col[j * 4] = 0.92; col[j * 4 + 1] = 0.98; col[j * 4 + 2] = 1.0; col[j * 4 + 3] = a
         col[(j + 1) * 4] = 0.92; col[(j + 1) * 4 + 1] = 0.98; col[(j + 1) * 4 + 2] = 1.0; col[(j + 1) * 4 + 3] = a
+        // darkening strip: wider, low-alpha, deep water shadow under the streak —
+        // renders normal-blended so the additive line stays on top, and stays
+        // darker than the sea, not lighter than the line
+        const dw = p.width * (0.40 + 0.90 * t)
+        const da = (1 - t) * 0.36
+        const dy = p.y - 0.02
+        dPos[j * 3] = p.x + px * dw; dPos[j * 3 + 1] = dy; dPos[j * 3 + 2] = p.z + pz * dw
+        dPos[(j + 1) * 3] = p.x - px * dw; dPos[(j + 1) * 3 + 1] = dy; dPos[(j + 1) * 3 + 2] = p.z - pz * dw
+        dCol[j * 4] = 0.004; dCol[j * 4 + 1] = 0.018; dCol[j * 4 + 2] = 0.028; dCol[j * 4 + 3] = da
+        dCol[(j + 1) * 4] = 0.004; dCol[(j + 1) * 4 + 1] = 0.018; dCol[(j + 1) * 4 + 2] = 0.028; dCol[(j + 1) * 4 + 3] = da
     }
     w.geo.setDrawRange(0, m >= 2 ? (m - 1) * 6 : 0)
     w.geo.attributes.position.needsUpdate = true
     w.geo.attributes.color.needsUpdate = true
+    w.darkGeo.setDrawRange(0, m >= 2 ? (m - 1) * 6 : 0)
+    w.darkGeo.attributes.position.needsUpdate = true
+    w.darkGeo.attributes.color.needsUpdate = true
 }
 export function makeRain(n = 420) {
     const pos = new Float32Array(n * 3)
