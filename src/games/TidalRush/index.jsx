@@ -559,8 +559,11 @@ const TidalRushGame = () => {
             pushSea(sea.mat, gs)
             // weather: keyed to the LIVE sim (gs.stage), never to a separate
             // picker state — the sea, sky, HUD and rain all read the exact same
-            // source the hull rides, even through time-stepped DEV hooks
-            const wantStorm = gs.stage === 'storm' ? 1 : 0
+            // source the hull rides, even through time-stepped DEV hooks.
+            // #3348: the same front-pass weather mix rainAt answers — when a
+            // re-roll's squall crosses the hull the sky darkens AT THAT MOMENT
+            // (sea first, sky with it), not at the GO of the re-roll.
+            const wantStorm = rainAt(gs, gs.crafts[mySeat()].x, gs.crafts[mySeat()].z)
             stormBlend += (wantStorm - stormBlend) * (1 - Math.exp(-25 * DT))
             sea.mat.uniforms.uStorm.value = stormBlend
             sea.mat.uniforms.uFlash.value = gs.flash

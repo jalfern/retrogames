@@ -18,6 +18,8 @@
 //      node scripts/tidalcheck.mjs --mutate           (judgement muted → red)
 //      node scripts/tidalcheck.mjs --mutate=swell     (swell re-roll dead → red)
 //      node scripts/tidalcheck.mjs --mutate=rainoff   (rain wallpaper again → red)
+//      node scripts/tidalcheck.mjs --mutate=rainfront (GO snap at re-roll again → red, #3348)
+//      node scripts/tidalcheck.mjs --mutate=skyflag   (sky off the front-pass mix → red, #3348)
 //      node scripts/tidalcheck.mjs --mutate=push      (crosswind zeroed → red)
 //      node scripts/tidalcheck.mjs --mutate=graboff    (nobody grabs the rail → red)
 
@@ -44,7 +46,12 @@ if (MUT) {
         // the squall front freezes — the new sea never arrives.
         front: { from: 'gs.front.prog += FRONT_SPEED * DT', to: 'gs.front.prog += 0 * DT', note: 'squall front progress frozen' },
         // rain is wallpaper again (#3191) — the field never wets anyone.
-        rainoff: { from: "if (gs.stage !== 'storm') return 0", to: 'return 0', note: 'rain field disabled everywhere' },
+        rainoff: { from: "const now = gs.stage === 'storm' ? 1 : 0", to: 'const now = 0', note: 'rain field disabled everywhere' },
+        // weather belongs to the incoming table again (#3348) — rain snaps off
+        // at the GO of a re-roll and rides back in on the front.
+        rainfront: { from: 'return was + (now - was) * w', to: 'return w', note: 'rain stops at the GO of a storm→storm re-roll (the #3348 whiplash returns)' },
+        // the sky keys off the stage flag again (#3348) — it stops riding the front.
+        skyflag: { file: 'src/games/TidalRush/index.jsx', from: 'const wantStorm = rainAt(gs, gs.crafts[mySeat()].x, gs.crafts[mySeat()].z)', to: 'const wantStorm = gs.stage === "storm" ? 1 : 0', note: 'uSky gate drops back to the stage flag' },
         // the squall stops shoving — crosswind drift zeroed.
         push: { from: 'const drift = RAIN_PUSH * rain * windGust(gs)', to: 'const drift = 0 * RAIN_PUSH * rain * windGust(gs)', note: 'crosswind drift zeroed' },
         // the moorings stop riding the drawn sea (#3159) — props glued to flat.
@@ -938,7 +945,9 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('a bare air banks nothing (no spin, no bonus)', sawAir && bareBonus === 0)
 }
 
-// 18. RAIN (#3191) — the squall is terrain: it gates by stage+front, bites
+// 18. RAIN (#3191, weather law #3348) — the squall is the weather OF THE SEA
+// you ride: outgoing and incoming storm-ness cross-faded by the same frontW the
+// sea mix rides, so a storm→storm re-roll never snaps the bay dry. It bites
 // speed, walks the hull downwind, dims the gates, and announces itself. Sunny
 // is and stays dry.
 {
@@ -958,11 +967,33 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
 
     const st2 = makeGame(7, 'storm')
     for (let t = 0; t < 60 * 30; t++) step(st2, autoPad(st2))
-    ok('mid-race the rain is SPATIAL — full behind the front, dry ahead', (() => {
+    ok('mid-race rain is the weather of the SEA — storm→storm stays wet BOTH sides of the front (#3348)', (() => {
         const fr = st2.front
         if (!fr || fr.prog < fr.band) return false
-        return rainAt(st2, -fr.dx * fr.h, -fr.dz * fr.h) === 1 && rainAt(st2, fr.dx * fr.h, fr.dz * fr.h) < 0.05
+        return rainAt(st2, -fr.dx * fr.h, -fr.dz * fr.h) === 1 && rainAt(st2, fr.dx * fr.h, fr.dz * fr.h) === 1
     })())
+    ok('the GO snap is dead: hull rain never leaves the storm across a re-roll (#3348)', (() => {
+        const g = makeGame(7, 'storm')
+        let wet = true, sawFront = false, minRain = 1
+        for (let t = 0; t < 60 * 120 && !g.done; t++) {
+            step(g, autoPad(g))
+            if (g.front) { sawFront = true; minRain = Math.min(minRain, rainAt(g, g.crafts[0].x, g.crafts[0].z)) }
+            if (rainAt(g, g.crafts[0].x, g.crafts[0].z) < 0.99) wet = false
+        }
+        return sawFront && wet && minRain === 1
+    })())
+    ok('a weather flip rides the FRONT, not the stage flag (#3348 mechanism)', (() => {
+        const g = makeGame(7, 'storm')
+        g.front = { dx: 1, dz: 0, h: 100, prog: 100, band: 34 } // deterministic mid-sweep
+        g.seaWas = 'sunny' // front carries the storm IN
+        const ahead = rainAt(g, 100, 0) // d=200, ahead of the band: old (sunny) weather holds
+        const behind = rainAt(g, -100, 0) // d=0, fully behind: new storm has arrived
+        g.seaWas = 'storm'; g.stage = 'sunny' // front carries the storm OUT
+        const clearBehind = rainAt(g, -100, 0) // clearing has passed here → dry
+        const stillRaining = rainAt(g, 100, 0) // ahead: old storm holds
+        return ahead === 0 && behind === 1 && clearBehind === 0 && stillRaining === 1
+    })())
+    ok('seaWas books the outgoing table (makeGame seeds it)', makeGame(7, 'storm').seaWas === 'storm' && makeGame(7).seaWas === 'sunny')
 
     // drift isolation: throttle 0, speed 0 — only the wind can move the hull
     const wet = makeGame(7, 'storm')
@@ -991,14 +1022,15 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('push is a shove, not a gale (1-2.5 m/s at full rain)', RAIN_PUSH >= 1 && RAIN_PUSH <= 2.5)
     ok('gate-dim ceiling: aggressive but never invisible', RAIN_VIS > 0.5 && RAIN_VIS < 0.9)
 
-    // band-edge events: a full storm race crosses the band on AND off
+    // band-edge events (#3348 rewrite): the squall takes Kai once at the start
+    // and HOLDS — a lap re-roll must never announce OFF on the hull.
     const race = makeGame(7, 'storm')
     let onN = 0, offN = 0
     for (let t = 0; t < 60 * 240 && !race.done; t++) {
         step(race, autoPad(race))
         for (const e of race.events) if (e.type === 'rain') { if (e.on) onN++; else offN++ }
     }
-    ok('the band edge announces itself (in AND out over a race)', onN >= 1 && offN >= 1)
+    ok('the squall announces itself once and never lets Kai go mid-storm (#3348)', onN >= 1 && offN === 0)
 
     // DRAWN = RIDDEN: the shell dims gates by the rain at EACH gate and rates
     // its drops by the rain at Kai's hull (#3191)
@@ -1007,6 +1039,7 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('gates dim toward storm fog by rain at THEIR point', jsx.includes('buoyDim(b, RAIN_VIS * rainAt(gs, g0.x, g0.z))') && artJs2.includes('lerp(BUOY_DIM_COL'))
     ok('drop density follows the rain at MY hull (Kai offline, my ski online #3220)', jsx.includes('rainAt(gs, gs.crafts[mySeat()].x, gs.crafts[mySeat()].z)') && jsx.includes('rainVis > 0.3'))
     ok('the crossing gets a wind cue', jsx.includes("e.type === 'rain'") && jsx.includes('sfx.rain(e.on)'))
+    ok('the sky rides the same front-pass weather as the hull (#3348 uSky gate)', jsx.includes('const wantStorm = rainAt(gs, gs.crafts[mySeat()].x, gs.crafts[mySeat()].z)') && !jsx.includes('const wantStorm = gs.stage'))
 }
 
 // --- moorings (#3159): the bay is lived-in --------------------------------------

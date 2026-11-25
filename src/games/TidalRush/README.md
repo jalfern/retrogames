@@ -207,8 +207,17 @@ static job; every pushed commit is commented on #3104.
   BEAT — stacked crests and glassy patches the convex blend physically could
   not make; edges stay byte-exact tables, GLSL twin mirrors the term order
   (mutant `beats` proves the pins bite).
-- The front is swell-only weather: sky darkening and rain ramp at the GO of a
-  re-roll, not as the front passes overhead (sea first, sky later).
+- ~~The front is swell-only weather: sky darkening and rain ramp at the GO of a
+  re-roll, not as the front passes overhead (sea first, sky later).~~
+  **CLOSED by #3348:** weather is the sea you ride. `rainAt` now answers the
+  outgoing table's storm-ness cross-faded into the incoming one by the SAME
+  `frontW` the sea mix and shader ride (`gs.seaWas` books which stage the
+  outgoing table was rolled under): storm→storm re-rolls keep the bay wet on
+  both sides of the front — no rain snap at GO, no mid-lap drag release — and
+  a future sunny↔storm flip rides in WITH the front instead of at the stage
+  flag. The sky/fog/light dimming (`wantStorm`) keys to that same hull-side
+  weather mix, so sea and sky cross together. Pinned by 4 new tidalcheck
+  pins + `rainfront`/`skyflag` mutants.
 - ~~Wake ribbon is flat-shaded additive; the WR64 trail also darkens the water
   beside it (open — #3218 tail).~~ **CLOSED by #3337:** the ribbon is a shaded
   **FOAM V** — five lanes per section: bright crest LINES at the arms (spreading
