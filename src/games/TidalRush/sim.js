@@ -162,6 +162,11 @@ function makeCraft(id, name, color, startArc, skill) {
         // Both are derived from inputs/pads the wire already carries — purely
         // cosmetic state: pads, hash and scores are untouched by them.
         grab: 'none', lastLand: 'plain',
+        // #3351 takeoff-pop / touchdown-absorb strength, 0..1: the two MOMENTS
+        // the hull leaves the crest and slaps back. Same cosmetic kind as grab/
+        // lastLand — set from sim signals at the event, decayed per tick, never
+        // on the wire, never in the hash. The rider's jump/land pose rides them.
+        pop: 0, absorb: 0,
         boost: 0, boosting: false,
         penalty: 0,                   // seconds of choked throttle left
         score: 0,                     // #3220: this hull's own bank — humans ride
@@ -402,6 +407,12 @@ function stepCraft(gs, c, pad) {
     const authority = c.speed / (c.speed + 3.2)
     c.heading += c.steer * TURN_K * authority * (c.airborne ? 0.35 : 1) * DT
 
+    // #3351: the pose windows decay every tick, air or not — pop lives ~0.4 s
+    // after a launch, absorb ~0.36 s after a touchdown; a pose that never dies
+    // is wallpaper, not a moment.
+    c.pop = Math.max(0, c.pop - DT * 2.4)
+    c.absorb = Math.max(0, c.absorb - DT * 2.8)
+
     // --- hull on the swell ---------------------------------------------------
     // Rung 3: every sample is the front-mixed surface — the outgoing table
     // ahead of the squall, the incoming one behind it. The weights come from
@@ -445,6 +456,10 @@ function stepCraft(gs, c, pad) {
             }
         }
         if (c.y <= surfY) {
+            // #3351: the sink speed lives only on this line — vy is reset just
+            // below (the #3280 lastLand reason). Capture before the wipe: this
+            // is how hard the hull actually hit, which is how deep it absorbs.
+            c.absorb = Math.min(1, Math.max(0, -c.vy / 6))
             c.airborne = false; c.y = surfY; c.vy = surfVy
             const spun = c.spin >= Math.PI * 2 - 0.6
             const rolled = Math.abs(c.rollSpin) >= Math.PI * 2 - 0.8
@@ -502,6 +517,10 @@ function stepCraft(gs, c, pad) {
             c.airT = 0
             c.flipAng = 0; c.hsT = 0; c.hsPaid = 0; c.trickClaimed = false // every air starts clean
             c.vy = surfVy * 0.85 + c.speed * 0.18 // carry off the crest: up, not down
+            // #3351: the push the rider springs from is the CREST KICK — how
+            // much faster than the falling face the hull leaves it (vy alone is
+            // often negative: launch means the water dropped out faster still).
+            c.pop = Math.min(1, Math.max(0, (c.vy - surfVy) / 2.5))
             if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'air', id: c.id })
         }
     }
@@ -771,6 +790,8 @@ export function stateOf(gs) {
         flip: Math.round(p.flipAng * 100) / 100, hsPaid: p.hsPaid,
         // #3280: grab pose + what the last landing paid (cosmetic, wire-free)
         grab: p.grab, land: p.lastLand,
+        // #3351: takeoff-pop / touchdown-absorb window strengths (cosmetic)
+        pop: Math.round(p.pop * 100) / 100, absorb: Math.round(p.absorb * 100) / 100,
         stage: gs.stage,
         // swell as KAI feels it: front-mixed dominant amplitude at the hull
         swell: Math.round((gs.seaCur[0].amp + (gs.seaTarget[0].amp - gs.seaCur[0].amp) * frontW(gs.crafts[0].x, gs.crafts[0].z, gs.front)) * 100) / 100,

@@ -667,20 +667,27 @@ const TidalRushGame = () => {
                 airT[i] = (airT[i] || 0) + (tuckTarget - (airT[i] || 0)) * (1 - Math.exp(-DT * (tuckTarget > (airT[i] || 0) ? 11 : 6)))
                 const tuck = airT[i]
                 const land = skiJolt[i]
+                // #3351: the two moments. pop = the push off the crest (legs
+                // extend, body springs up, head lags behind the rise); absorb =
+                // the sink at touchdown (knees take the slap deep, torso and
+                // head compress). Both are sim windows (#3280 cosmetic kind) —
+                // hard landing absorbs hard, a kiss barely bends.
+                const pop = c.pop, absorb = c.absorb
                 if (m.lowerBody) {
-                    // knees flex on the slap, tuck lifts the feet mid-air
-                    m.lowerBody.rotation.x = -0.22 * land - 0.32 * Math.min(1.3, tuck)
-                    m.lowerBody.position.y = 0.85 + 0.15 * tuck - 0.10 * land
+                    // knees flex on the slap, tuck lifts the feet mid-air,
+                    // pop kicks the legs out straight off the deck
+                    m.lowerBody.rotation.x = -0.22 * land - 0.32 * Math.min(1.3, tuck) + 0.24 * pop - 0.34 * absorb
+                    m.lowerBody.position.y = 0.85 + 0.15 * tuck - 0.10 * land + 0.12 * pop - 0.18 * absorb
                 }
                 // the torso absorbs the slap; the head rides the same jolt.
                 // The wind-over squashes the torso; the hold stretches it.
                 const wind = c.airborne ? Math.max(0, Math.min(1, c.flipAng / 2.2)) : 0
                 const deep = c.airborne ? Math.max(0, Math.min(1, (-c.flipAng - 1.15) / 1.2)) : 0
-                m.lean.position.y = -0.16 * land
-                m.lean.scale.y = 1 + 0.06 * deep - 0.06 * wind
+                m.lean.position.y = -0.16 * land + 0.06 * pop - 0.12 * absorb
+                m.lean.scale.y = 1 + 0.06 * deep - 0.06 * wind - 0.07 * absorb
                 if (m.headPivot) {
-                    m.headPivot.position.y = 1.62 - 0.17 * skiJolt[i] - 0.10 * tuck
-                    m.headPivot.rotation.x = skiJolt[i] * 0.5 + tuck * 0.55 + wind * 0.12
+                    m.headPivot.position.y = 1.62 - 0.17 * skiJolt[i] - 0.10 * tuck - 0.05 * pop - 0.12 * absorb
+                    m.headPivot.rotation.x = skiJolt[i] * 0.5 + tuck * 0.55 + wind * 0.12 - 0.28 * pop + 0.30 * absorb
                 }
                 // arms track the bar grip through the local lean; #3280 blends
                 // them off the bar into a GRAB while a pitch trick turns — flip
