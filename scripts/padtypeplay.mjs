@@ -14,6 +14,11 @@
 //   COMET DRIFT HD  #3129 tilt grant live: pause row offers the three types,
 //                tilt pill flow works, and the DRIFT chip stays (actzone
 //                keeps its declared verb — tilt orphans nothing).
+//   MARIO KART   #3131 tilt grant live: pause row offers STICK/TILT/FULL PAD,
+//                the pill flow works, ITEM + DRIFT chips stay, and held leans
+//                drive the sim for real — same-seed hash divergence plus the
+//                sign proofs (lean forward throttles, roll right steers right)
+//                through the onePad holder steerPedals consumes.
 //   SSX TILT     #3129 chrome audit live: pause row offers TILT, the game-side
 //                #894 stick yields to the lean (its trick row stays — the tilt
 //                pad draws no diamond), and a held lean ramps the #791 edge
@@ -277,6 +282,61 @@ const clickLast = async (page, sel) => page.evaluate((s) => {
     r.check('comet-hd: zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
     await page.screenshot({ path: 'qa-art/padtype-comet-hd-tilt.png' })
     await page.evaluate(() => localStorage.removeItem('retrogames:padtype:/comet-drift-hd'))
+    await page.close()
+}
+
+// --- MARIO KART: tilt (#3131 — the ladder's racer takes the lean) ---
+{
+    const { page, errors } = await mkPage('/mario-kart?padtype=tilt')
+    // the pad mounts with the race; the generic ladder taps may need a beat
+    let v = await vcs(page)
+    for (let i = 0; i < 10 && !v.includes('tilt-enable'); i++) { await page.touchscreen.tap(215, 320); await page.waitForTimeout(400); v = await vcs(page) }
+    r.check('kart: tilt pill renders (no stick zone)', v.includes('tilt-enable') && !v.includes('stick'), v.join(','))
+    await tapEl(page, '[data-vc="tilt-enable"]')
+    await page.waitForTimeout(300)
+    const v2 = await vcs(page)
+    r.check('kart: enable -> RE-CENTER pill', v2.includes('tilt-recenter'), v2.join(','))
+    r.check('kart: ITEM + DRIFT chips stay in tilt (verbs not orphaned)', v2.includes('a') && v2.includes('b'), v2.join(','))
+    // Honest reach proof, wall-clock-free (the marble-rush convention): one
+    // synchronous block resets the deterministic sim and steps 360 ticks
+    // (190 countdown + 170 race) with the pad as it holds. N = neutral coast;
+    // F = lean forward (portrait beta −10 → −y → steerPedals throttle);
+    // R/L = the same lean rolled right/left on gamma. Diverging hashes mean
+    // the lean reached the sim through the onePad holder steerPedals reads;
+    // the v and steer signs pin the LAW, not just a difference.
+    const pose = (beta, gamma) => `window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: ${beta}, gamma: ${gamma} }))`
+    const run = async (beta, gamma) => page.evaluate(`(() => {
+        ${pose(beta, gamma)}
+        const T = window.__kartTest
+        T.resetSim()
+        const out = T.stepTicks(360)
+        ${pose(0, 0)}
+        return out
+    })()`)
+    const N = await run(0, 0)
+    const F = await run(-10, 0)
+    const R = await run(-8, 8)
+    const L = await run(-8, -8)
+    r.check('kart: forward lean throttles (v grows where neutral coasts)', F.v > N.v + 2, `neutral v=${N.v}, forward v=${F.v}`)
+    r.check('kart: forward lean diverges the sim hash (same replay, same ticks)', F.hash !== N.hash, `N=${N.hash} F=${F.hash}`)
+    // G = STEER_GAIN 0.6 with the soft curve: steerResponse(8/14) ≈ 0.18, so
+    // the honest band is ±0.15 — full stick lock is 0.6 by design (#431).
+    r.check('kart: roll right steers right, roll left steers left (sign law)', R.steer > 0.15 && L.steer < -0.15 && R.hash !== L.hash, `R=${R.steer} L=${L.steer}`)
+    // RE-CENTER zeroes the held pose: after re-centring on the leaned pose,
+    // the same pose must replay the neutral trajectory hash byte-for-byte.
+    await page.evaluate(pose(-8, 8))
+    await tapEl(page, '[data-vc="tilt-recenter"]')
+    await page.waitForTimeout(150)
+    const Z = await run(-8, 8)
+    r.check('kart: RE-CENTER makes the held pose neutral', Z.hash === N.hash, `Z=${Z.hash} N=${N.hash}`)
+    // pause -> CONTROLLER row offers the three granted types, derived default leads
+    await page.evaluate(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Question', key: '?', bubbles: true })) })
+    await page.waitForTimeout(400)
+    const chips = await page.evaluate(() => [...document.querySelectorAll('[data-padtype]')].map((e) => e.getAttribute('data-padtype')))
+    r.check('kart: pause CONTROLLER row (STICK/TILT/FULL PAD)', [...new Set(chips)].join(',') === 'stick,tilt,full', 'chips=' + chips.join(','))
+    r.check('kart: zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
+    await page.screenshot({ path: 'qa-art/padtype-mario-kart-tilt.png' })
+    await page.evaluate(() => localStorage.removeItem('retrogames:padtype:/mario-kart'))
     await page.close()
 }
 
