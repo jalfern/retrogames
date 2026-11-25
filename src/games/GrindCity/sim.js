@@ -544,6 +544,8 @@ export function stateOf(s) {
         heading: Math.round(s.heading * 1000) / 1000, speed: Math.round(s.speed * 100) / 100,
         vy: Math.round(s.vy * 100) / 100, slope: Math.round(s.lastSlope * 1000) / 1000,
         air: !!s.air, grinding: !!s.grind, manual: !!s.manual,
+    // flip tell (#3233 item 4): read-only — hashState hashes the sim, not this
+    airFlip: !!(s.air && s.airTrick && s.airTrick.flip),
         // manual identity (#3233 tail): the live name + the value it WOULD pay
         // if released this tick — the same law the commit uses, so the chip can
         // never over-promise. Additive; packIn and the replay wire untouched.

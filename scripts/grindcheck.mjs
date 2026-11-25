@@ -25,14 +25,14 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell']) {
+    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety']) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 9 ? `ALL MUTANTS CAUGHT (${died}/9)` : `${died}/9 mutants caught`)
-    process.exit(died === 8 ? 0 : 1)
+    console.log(died === 10 ? `ALL MUTANTS CAUGHT (${died}/10)` : `${died}/10 mutants caught`)
+    process.exit(died === 10 ? 0 : 1)
 }
 
 // ── boot ──────────────────────────────────────────────────────────────────
@@ -280,6 +280,63 @@ function drive(seed) {
     ok('replay is deterministic', JSON.stringify(a) === JSON.stringify(b))
     const c = drive(8)
     ok('seed actually steers the sim', JSON.stringify(a) !== JSON.stringify(c))
+}
+
+// ── attract variety (#3233 item 4): style rotates per idle loop ───────────
+// v0 is the witness line (graded above, byte-identical). v1 flips the trench
+// gap, v2 rides a manual off the gap landing. These run ONLY in attract — the
+// graded line stays v0 — but they must still be deterministic, bailable-free,
+// and visibly different, or the variety is a lie.
+{
+    const driveV = (seed, v) => {
+        const s = makeGame(seed, 'run'); s.phase = 'play'
+        const bot = makeBot(v); const hashes = []
+        for (let t = 1; t <= 1800; t++) {
+            step(s, botPad(stateOf(s), bot))
+            if (t % 30 === 0) hashes.push(hashState(s))
+        }
+        return JSON.stringify(hashes)
+    }
+    ok('variety v1/v2 ride different lines than v0',
+        driveV(7, 1) !== driveV(7, 0) && driveV(7, 2) !== driveV(7, 0))
+    ok('variety variants are deterministic', driveV(7, 1) === driveV(7, 1) && driveV(7, 2) === driveV(7, 2))
+
+    // wiring: the cabinet must actually rotate the style per attract loop.
+    // MUT=variety freezes the rotation to v0 — the pin must see red.
+    const cab = readFileSync(new URL('../src/games/GrindCity/index.jsx', import.meta.url), 'utf8')
+    const cabSrc = MUT === 'variety' ? cab.replace('attractV = (attractV + 1) % 3', 'attractV = attractV % 3') : cab
+    ok('variety wiring: toAttract rotates the style and builds the bot with it (#3233)',
+        /attractV = \(attractV \+ 1\) % 3/.test(cabSrc) && /bot = makeBot\(attractV\)/.test(cabSrc))
+
+    const runV = (seed, v) => {
+        const s = makeGame(seed, 'run'); s.phase = 'play'
+        const bot = makeBot(v)
+        let t = 0, bails = 0
+        const tricks = []
+        while (!s.done && t++ < 120 * 60) {
+            const p = botPad(stateOf(s), bot)
+            // MUT=variety makes the flip/manual presses no-ops — all variants
+            // collapse to v0 and the difference + trick pins must see red.
+            if (MUT === 'variety') { if (p.b && bot.v === 1 && bot.flipF) p.b = false; if (p.a && bot.v === 2 && bot.m > 0) { p.a = false; bot.m = 0 } }
+            step(s, p)
+            for (const e of s.events) {
+                if (e === 'bail') bails++
+                else if (e.startsWith('trick:')) tricks.push(e)
+            }
+            s.events.length = 0
+        }
+        return { won: stateOf(s).won, bails, tricks }
+    }
+    for (const seed of [7, 3, 42, 101, 999]) {
+        const f = runV(seed, 1)
+        ok(`seed ${seed}: flip line lands the Flip, never bails, still wins`,
+            f.bails === 0 && f.tricks.some(e => e.startsWith('trick:Flip:')) && f.won,
+            `bails=${f.bails} tricks=${JSON.stringify(f.tricks)}`)
+        const m = runV(seed, 2)
+        ok(`seed ${seed}: manual line lands a Manual, never bails, still wins`,
+            m.bails === 0 && m.tricks.some(e => e.startsWith('trick:Manual')) && m.won,
+            `bails=${m.bails} tricks=${JSON.stringify(m.tricks)}`)
+    }
 }
 
 // ── run replay (#3225): the cabinet logs packed inputs; a replay re-steps ──
