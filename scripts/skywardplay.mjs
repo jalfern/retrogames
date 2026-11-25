@@ -230,6 +230,73 @@ try {
   ok(climbed !== null && climbed.land === 300,
     `wheels-abort climbs clear and keeps the banked badge (y=${climbed && climbed.y.toFixed(1)} ✈=${climbed && climbed.land})`)
 
+  /* #3331 item 1 — the go-around: a hot-and-shallow straight pass over the
+     strip bounces (banner teaches, no crash, nothing banked). */
+  const goBefore = await page.evaluate(() => window.__skywardTest.state().crashes)
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    for (let k = 0; k < 3 && T.state().craft !== 'plane'; k++) T.recycle()
+    T.teleport({ x: 40, y: 3.6, z: 130, heading: Math.PI / 2, speed: 36, vy: -1 })
+  })
+  let hotBanner = '', hotBad = false
+  for (let i = 0; i < 12; i++) {
+    const s = await page.evaluate(() => {
+      const bn = document.querySelector('[data-h="banner"]')
+      return { st: window.__skywardTest.state(), banner: bn ? bn.textContent : '' }
+    })
+    if (s.banner.includes('TOO HOT')) hotBanner = s.banner
+    if (s.st.ground || s.st.crashes > goBefore) { hotBad = true; break }
+    await simSleep(0.15)
+  }
+  ok(/TOO HOT — GO AROUND/.test(hotBanner) && !hotBad,
+    `a hot shallow pass bounces with the go-around banner, never catching the deck (${hotBanner || 'no banner'})`)
+
+  /* #3331 item 4 — the scuff gauge: a crabbed short final warns before the deck. */
+  await page.evaluate(() => {
+    const T = window.__skywardTest
+    T.teleport({ x: 40, y: 6.6, z: 130, heading: Math.PI / 2 + 0.28, speed: 25, vy: -0.5 })
+  })
+  let tellTxt = '', scuffT = 0
+  for (let i = 0; i < 6; i++) {
+    const s = await page.evaluate(() => {
+      const el = document.querySelector('[data-h="tell"]')
+      return { scuff: window.__skywardTest.state().scuff, tell: el ? el.textContent : '' }
+    })
+    if (s.scuff && s.scuff.tell > scuffT) scuffT = s.scuff.tell
+    if (s.scuff && s.scuff.tell >= 0.8 && /SCUFF/.test(s.tell)) tellTxt = s.tell
+    await simSleep(0.1)
+  }
+  ok(scuffT >= 0.8 && /SCUFF/.test(tellTxt),
+    `the HUD gauge reads the crab before touchdown (tell=${scuffT} "${tellTxt}")`)
+
+  /* #3331 item 5 — the clean roll: straight in deep, no stick, the rollout
+     rides the dash and the cabinet's last word pays onto the badge. The
+     attempts loop re-enters because the bouncing hull from the go-around
+     test may still splat mid-drift; a respawn grace suppresses one catch,
+     not the law. */
+  await simSleep(1.2) // let any touchdown/crew window settle before re-entry
+  let rollBanner = '', bestLand = 0
+  for (let a = 0; a < 3 && !(bestLand >= 800 && rollBanner); a++) {
+    await page.evaluate(() => {
+      const T = window.__skywardTest
+      T.teleport({ x: 100, y: 3.6, z: 130, heading: Math.PI / 2, speed: 30, vy: -1 })
+    })
+    for (let i = 0; i < 16; i++) {
+      const s = await page.evaluate(() => {
+        const bn = document.querySelector('[data-h="banner"]')
+        return { st: window.__skywardTest.state(), banner: bn ? bn.textContent : '' }
+      })
+      if (s.banner.includes('CLEAN ROLL')) rollBanner = s.banner
+      if (s.st.land > bestLand) bestLand = s.st.land
+      if (bestLand >= 800 && rollBanner) break
+      await simSleep(0.2)
+    }
+  }
+  ok(/CLEAN ROLL — CENTRELINE \+100/.test(rollBanner) && bestLand === 800,
+    `a clean full-strip rollout banks ✈800 and banners the credit (${rollBanner || 'no banner'} ✈=${bestLand})`)
+  await shot('skyward-clean-roll.png')
+  await page.waitForTimeout(1500) // #3331: let crew respawn + the last banner fade before the belt section
+
   /* #3332 — the belt parks on the runway: a quiet arrival (soft, slow,
      straight) settles into PARKED with the zone banked ✺, banners it, and
      the throttle lifts her off the pad. */
@@ -379,11 +446,28 @@ try {
     }
     for (const h of readouts) if (h && h.y > 300) bad++ // the readouts live in the top corners; the pad owns everything below
     for (let i = 0; i < hud.length; i++) for (let j = i + 1; j < hud.length; j++) if (ovl(hud[i], hud[j])) bad++
-    return { canvas: cvs && `${Math.round(cvs.w)}x${Math.round(cvs.h)}`, vh: innerHeight, vw: innerWidth, bad }
+    // #3331 item 3 — the NEW strings must fit their boxes at phone width,
+    // and the scuff gauge must sit clear of the corner chrome (y ≥ 78).
+    const bnEl = document.querySelector('[data-h="banner"]')
+    const tlEl = document.querySelector('[data-h="tell"]')
+    const fits = (el) => !!el && el.scrollWidth <= el.clientWidth + 2
+    const keepBn = bnEl ? bnEl.textContent : '', keepTl = tlEl ? tlEl.textContent : ''
+    if (bnEl) bnEl.textContent = 'CLEAN ROLL — CENTRELINE +100'
+    if (tlEl) tlEl.textContent = '⚠ SCUFF LIMIT — STRAIGHTEN'
+    const strs = {
+      bannerFits: fits(bnEl), tellFits: fits(tlEl),
+      tellTop: tlEl ? Math.round(tlEl.getBoundingClientRect().y) : 0,
+      bannerTop: bnEl ? Math.round(bnEl.getBoundingClientRect().y) : 0,
+    }
+    if (bnEl) bnEl.textContent = keepBn
+    if (tlEl) tlEl.textContent = keepTl
+    return { canvas: cvs && `${Math.round(cvs.w)}x${Math.round(cvs.h)}`, vh: innerHeight, vw: innerWidth, bad, strs }
   })
   ok(Number(audit.canvas?.split('x')[1]) >= audit.vh - 4 && Number(audit.canvas?.split('x')[0]) >= audit.vw - 4,
     `phone stage fills the viewport (canvas ${audit.canvas} of ${audit.vw}x${audit.vh})`)
   ok(audit.bad === 0, `390px HUD: no pad overlap, no text collision, nothing offscreen (${audit.bad} violations)`)
+  ok(audit.strs && audit.strs.bannerFits && audit.strs.tellFits && audit.strs.tellTop >= 78 && audit.strs.bannerTop < audit.strs.tellTop,
+    `#3331 new strings fit at 390px and the gauge sits below the corner chrome (${JSON.stringify(audit.strs)})`)
   await shot('skyward-phone-hud.png')
 
   /* #3310 item 3 — the longest words the strip ever says, at phone width:
