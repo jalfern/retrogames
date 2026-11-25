@@ -419,6 +419,8 @@ export function step(s, input, dt = 1 / 60) {
         const lip = lipNear(s)
         if (lip) {
             s.stall = { ri: lip.ri, rt: lip.rt, t: 0, bal: 0, drift: (rnd(s) - 0.5) * 0.9, trickle: 0 }
+            const lp = railAt(RAILS[lip.ri], lip.rt)
+            s.x = lp.x; s.z = lp.z; s.y = lp.y   // lock onto the coping immediately
             s.speed = 0; s.vy = 0
             s.chainClean = 0
             say(s, 'STALL')
