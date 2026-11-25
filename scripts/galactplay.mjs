@@ -227,5 +227,32 @@ await wait(300)
     r.check('a real ? closes it again', (await page.locator('text=RESUME GAME').count()) === 0)
 }
 
+// ---- #3358 HUD-in-banner: no chrome button overlaps the score/lives read ----
+// On a phone shape the canvas fills the width, so the fixed ARCADE/FEEDBACK
+// (top-left) and PAUSE/mute (top-right) chrome sit directly over the banner.
+// Anchoring the DOM HUD inside the canvas banner band must keep every read
+// clear of every chrome button — the old viewport-anchored row collided.
+await page.setViewportSize({ width: 390, height: 844 })
+await wait(400)
+{
+    const hits = await page.evaluate(() => {
+        const hud = document.querySelector('[data-hud="box"]')
+        if (!hud) return ['no [data-hud=box]']
+        const hb = hud.getBoundingClientRect()
+        const out = []
+        for (const sel of ['[data-nav="arcade"]', '[data-nav="pause"]', '[data-feedback="open"]', '[aria-label="Mute"]']) {
+            const el = document.querySelector(sel)
+            if (!el) continue
+            const c = el.getBoundingClientRect()
+            if (c.width === 0 || c.height === 0) continue
+            if (hb.left < c.right && hb.right > c.left && hb.top < c.bottom && hb.bottom > c.top) out.push(sel)
+        }
+        return out
+    })
+    r.check('HUD banner clears all fixed chrome at phone width', hits.length === 0, hits.join(', ') || 'clear')
+}
+await page.setViewportSize({ width: 620, height: 900 })
+await wait(300)
+
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)
