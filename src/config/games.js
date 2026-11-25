@@ -1382,6 +1382,7 @@ export const GAMES = [
     {
         path: '/grind-city',
         tapStart: true,
+        pad: { layout: 'stick', buttons: [{ label: 'PUMP', code: 'ShiftLeft' }], aLabel: 'OLLIE', analog: false },
         builtBy: 'forge',
         added: '2026-11-24',
         visibility: 'private',

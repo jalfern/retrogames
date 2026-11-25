@@ -33,6 +33,8 @@ the skip and the action-cam cut-in).
 | B (`Shift`) | kickflip on the ground · flat spin in the air · **hold on a rail** = rail grab (FEEBLE/CROOKED, #3289) |
 | `?` | how-to-play overlay |
 
+Touch pad (phones): **A = OLLIE** (Space), **B = PUMP** (Shift) — verb labels from the registry `pad:` block (`src/config/games.js`), not letters.
+
 Rails auto-latch when airborne nearby (nose or tail, travel-aware). Grinds
 break off the end with a pop. Combo multiplier = distinct tricks + 1 (cap ×10);
 bailing forfeits the unbanked chain — the same rule as the real games.

@@ -29,8 +29,10 @@ const PRESS = 'PRESS ANY KEY OR TAP'
 const cycleReplaySpeed = (s) => (s === 1 ? 2 : s === 2 ? 0.5 : 1)
 const MESSAGES = [
     'RUN 01 · SCORE TARGET · S-K-A-T-E · THE GAP',
-    'A = OLLIE · A IN THE AIR = GRAB · A ON LANDING = MANUAL',
-    'B = PUMP THE TRANSITIONS — SPEED IS LIFE',
+    'A = OLLIE · HOLD IN AIR = GRAB · PRESS ON LANDING = MANUAL',
+    'B = PUMP SLOPES · FLIP IN THE AIR · HOLD ON A RAIL = GRAB',
+    'HOLD B ON A RAIL = FEEBLE / CROOKED · ARROW-KEY TO BALANCE',
+    '↓+A AT A LIP = STALL · LEAN THE METER · PRESS A TO POP',
     'OLLIE ONTO A RAIL TO GRIND · STEER TO BALANCE',
     'EACH UNIQUE TRICK IN THE LINE RAISES THE MULTIPLIER',
     'BAIL AND THE LINE IS FORFEIT — BANK IT CLEAN',
@@ -110,6 +112,10 @@ const GrindCityGame = () => {
         let replaySim = null, replayIdx = 0, replayAcc = 0, replayMode = false
         let pendingResult = null
         let replaySpeed = 1
+        // #3325: the replay's presentation-only free cam — orbit the replay while it runs.
+        // Never touches the sim or the log; arrows rotate, C toggles.
+        let orbitOn = false
+        let orbitA = 0.6
 
         // camera: chase · fisheye action cam · replay cam — hard cuts between (#3225)
         let camMode = 'chase'
@@ -133,6 +139,7 @@ const GrindCityGame = () => {
             inputLog = []
             replaySim = null; replayIdx = 0; replayAcc = 0; replayMode = false
             pendingResult = null
+            orbitOn = false; orbitA = 0.6
             camMode = 'chase'; camCut = 0
         }
 
@@ -229,6 +236,8 @@ const GrindCityGame = () => {
             } else if (screenRef.current === 'replay') {
                 if (c === 'Space') finishOver()
                 else if (c === 'KeyF') replaySpeed = cycleReplaySpeed(replaySpeed)
+                else if (c === 'KeyC') orbitOn = !orbitOn
+                else if (c === 'ArrowLeft' || c === 'ArrowRight' || c === 'KeyA' || c === 'KeyD') keysRef.current[c] = true
                 return
             } else if (screenRef.current === 'over') {
                 if (c === 'Space') toAttract()
@@ -274,6 +283,7 @@ const GrindCityGame = () => {
             replayIdx = Math.max(0, inputLog.length - REPLAY_MAX)
             replayAcc = 0
             replaySpeed = 1
+            orbitOn = false; orbitA = 0.6
             replayMode = true
             screenRef.current = 'replay'
             setScreen('replay')
@@ -434,6 +444,17 @@ const GrindCityGame = () => {
 
             poseSkater(rig, actor, clock)
 
+            // #3325: the replay free cam — hold arrows to swing the orbit,
+            // C toggles. Presentation only: the sim is untouched either way.
+            const orbit = replayMode && orbitOn
+            if (orbit) {
+                const l = keysRef.current.ArrowLeft || keysRef.current.KeyA
+                const r = keysRef.current.ArrowRight || keysRef.current.KeyD
+                if (l && !r) orbitA -= 2.4 * DT
+                else if (r && !l) orbitA += 2.4 * DT
+                camCut = 0
+            }
+
             // ── cameras: chase · fisheye action cam · replay cam (#3225) ────
             // Smoothing lives INSIDE a cam mode; crossing modes is a hard cut
             // (snap + white flash + FOV punch), the Tony Hawk transition grammar.
@@ -453,17 +474,23 @@ const GrindCityGame = () => {
             const ty = vst.y + high
             const lookY = vst.y + (camMode === 'action' ? 0.55 : 0.7)
             const k = camCut > 0.5 ? 1 : camMode === 'action' ? 0.3 : camMode === 'replay' ? 0.15 : 0.12
-            camPos.lerp(new THREE.Vector3(tx, ty, tz), k)
-            camLook.lerp(new THREE.Vector3(vst.x + Math.cos(hd) * lead + sx * side * 0.45, lookY, vst.z + Math.sin(hd) * lead + sz * side * 0.45), k * 1.5 > 1 ? 1 : k * 1.5)
+            if (orbit) {
+                // #3325 free cam: full orbit around the skater, no cut, no flash
+                camPos.lerp(new THREE.Vector3(vst.x + Math.sin(orbitA) * 4.8, vst.y + 2.0, vst.z + Math.cos(orbitA) * 4.8), 0.3)
+                camLook.lerp(new THREE.Vector3(vst.x, vst.y + 0.9, vst.z), 0.45)
+            } else {
+                camPos.lerp(new THREE.Vector3(tx, ty, tz), k)
+                camLook.lerp(new THREE.Vector3(vst.x + Math.cos(hd) * lead + sx * side * 0.45, lookY, vst.z + Math.sin(hd) * lead + sz * side * 0.45), k * 1.5 > 1 ? 1 : k * 1.5)
+            }
             camera.position.copy(camPos)
-            if (sim.camShake > 0.01) {
+            if (!orbit && sim.camShake > 0.01) {
                 camera.position.x += (Math.random() - 0.5) * sim.camShake * 0.5
                 camera.position.y += (Math.random() - 0.5) * sim.camShake * 0.5
             }
             camera.lookAt(camLook)
-            const fov = CAM_FOV[camMode] + camCut * 10
+            const fov = CAM_FOV[camMode] + (orbit ? 0 : camCut * 10)
             if (Math.abs(fov - camera.fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix() }
-            if (hud.cut.current) hud.cut.current.style.opacity = camCut > 0.01 ? (camCut * 0.26).toFixed(3) : 0
+            if (hud.cut.current) hud.cut.current.style.opacity = orbit ? 0 : (camCut > 0.01 ? (camCut * 0.26).toFixed(3) : 0)
             renderer.render(scene, camera)
 
             // HUD (imperative — no React state churn at 60 Hz)
@@ -503,7 +530,7 @@ const GrindCityGame = () => {
                 hud.gem.current.textContent = `\u25C6 GEMS ${st.gems}/${st.gemTotal}`
                 hud.gem.current.style.color = st.gems > 0 ? '#7dffb0' : 'rgba(255,255,255,.35)'
             }
-            if (hud.speed.current) hud.speed.current.textContent = `SPEED ${replaySpeed}\u00d7`
+            if (hud.speed.current) hud.speed.current.textContent = `SPEED ${replaySpeed}\u00d7${orbitOn ? ' \u27f3 ORBIT' : ''}`
         }
         raf = requestAnimationFrame(frame)
 
@@ -521,7 +548,7 @@ const GrindCityGame = () => {
         // ── DEV hooks + contract ────────────────────────────────────────────
         if (import.meta.env.DEV) {
             window.__grindTest = {
-                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT }),
+                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100 }),
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
@@ -565,7 +592,7 @@ const GrindCityGame = () => {
                     return stateOf(sim)
                 },
                 tick: (p) => { simTick(p); return stateOf(sim) },
-                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress() }),
+                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), orbit: !!orbitOn }),
                 canvas: () => canvas,
             })
         }
@@ -620,7 +647,7 @@ const GrindCityGame = () => {
                             <span className="text-2xl font-black italic tracking-[0.3em] text-white drop-shadow-[0_3px_0_rgba(0,0,0,.9)]">REPLAY</span>
                         </div>
                         <div ref={hud.speed} className="absolute right-4 top-4 rounded border border-white/40 bg-black/50 px-3 py-1 text-lg font-black italic tracking-[0.2em] text-[#ffd35e] drop-shadow-[0_2px_0_rgba(0,0,0,.9)]" />
-                        <div className="text-center text-sm font-bold tracking-[0.4em] text-white/85 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SPACE / TAP — SKIP · F — SPEED</div>
+                        <div className="text-center text-sm font-bold tracking-[0.4em] text-white/85 animate-pulse drop-shadow-[0_2px_0_rgba(0,0,0,.9)]">SPACE / TAP — SKIP · F — SPEED · C — ORBIT</div>
                     </div>
                 )}
                 {screen === 'attract' && (
@@ -650,7 +677,7 @@ const GrindCityGame = () => {
                     </div>
                 )}
             </div>
-            <VirtualControls secondAction={{ label: 'PUMP', code: 'ShiftLeft' }} visible={screen === 'play' && !paused} />
+            <VirtualControls visible={screen === 'play' && !paused} />
             {paused && <PauseOverlay game={entry} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
         </div>
     )
