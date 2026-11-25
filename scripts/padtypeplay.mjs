@@ -464,6 +464,34 @@ const clickLast = async (page, sel) => page.evaluate((s) => {
     await page.close()
 }
 
+// --- PINBALL #3237 tilt-to-nudge: honest grant, one nudge per lean-and-return ---
+{
+    const { page, errors } = await mkPage('/pinball')
+    const v0 = await vcs(page)
+    const P = () => page.evaluate(() => (window.__game && window.__game.state()) || null)
+    const running = (await P()) !== null
+    r.check('pinball: tap takes the seat (sim state live) + pad renders', running && v0.includes('dpad'), `run=${running} ${v0.join(',')}`)
+    r.check('pinball: the tilt grant chip sits in play', await page.locator('[data-tilt="nudge-enable"]').count() > 0)
+    const tapped = await tapEl(page, '[data-tilt="nudge-enable"]')
+    await page.waitForTimeout(400)
+    r.check('pinball-tilt: grant tap flips the chip to the LEAN readout', tapped && await page.locator('[data-tilt="recenter"]').count() > 0)
+    const tiltTo = (gamma) => page.evaluate((g) => window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: g })), gamma)
+    const st0 = await P()
+    await tiltTo(12); await page.waitForTimeout(150)
+    const st1 = await P()
+    r.check('pinball-tilt: a right lean pays one nudge', st1.nudge >= st0.nudge + 1, `nudge ${st0.nudge}→${st1.nudge}`)
+    for (let i = 0; i < 5; i++) { await tiltTo(12); await page.waitForTimeout(60) }
+    const st2 = await P()
+    r.check('pinball-tilt: held lean never re-nudges (no tilt-out farming)', st2.nudge === st1.nudge, `nudge ${st1.nudge}→${st2.nudge}`)
+    await tiltTo(0); await page.waitForTimeout(80)
+    await tiltTo(-12); await page.waitForTimeout(150)
+    const st3 = await P()
+    r.check('pinball-tilt: return + lean the other way pays again', st3.nudge === st1.nudge + 1, `nudge ${st2.nudge}→${st3.nudge}`)
+    r.check('pinball-tilt: zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
+    await page.screenshot({ path: 'qa-art/padtype-pinball-tilt.png' })
+    await page.close()
+}
+
 const ok = r.finish ? r.finish() : null
 await browser.close()
 if (r.failed) process.exitCode = 1
