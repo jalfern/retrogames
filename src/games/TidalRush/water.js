@@ -235,6 +235,27 @@ export function mixHeight(x, z, t, a, b, w) {
     }
     return y
 }
+// #3329 — the BEAT CUE: how far the mixed surface stacks ABOVE both tables.
+// Where the two swells align, the crossing sea breaks white there; this is the
+// constructive excess (0 at the band edges — w ≤ 0 / w ≥ 1 return exact zero —
+// and 0 wherever the mix sits at or below either swell). The vertex shader
+// emits the same quantity per point so crest foam can emphasise the stacked
+// crests; the sim never rides it (pure render cue, rules untouched).
+export function mixBeat(x, z, t, a, b, w) {
+    if (w <= 0 || w >= 1) return 0
+    const { ga, gb } = frontGains(w)
+    let h = 0, hA = 0, hB = 0
+    for (let i = 0; i < a.length; i++) {
+        const u = a[i], v = b[i]
+        const s1 = Math.sin(u.k * (u.dx * x + u.dz * z) - u.om * t + u.phase)
+        const s2 = Math.sin(v.k * (v.dx * x + v.dz * z) - v.om * t + v.phase)
+        h += u.amp * s1 * ga + v.amp * s2 * gb
+        hA += u.amp * s1
+        hB += v.amp * s2
+    }
+    return Math.max(0, h - Math.max(hA, hB))
+}
+
 export function mixVy(x, z, t, a, b, w) {
     if (w <= 0) return surfaceVy(x, z, t, a)
     if (w >= 1) return surfaceVy(x, z, t, b)
@@ -341,10 +362,10 @@ export function seaGLSLFront() {
     for (let i = 0; i < N_SLOTS; i++) {
         terms.push(
             `  f = uK${i} * (uDir${i}.x * pos.x + uDir${i}.y * pos.y) - uO${i} * uT + uPh${i};`,
-            `  h += uA${i} * sin(f) * wa;`,
+            `  s = sin(f); h += uA${i} * s * wa; hA += uA${i} * s;`,
             `  d += uQ${i} * uDir${i} * cos(f) * wa;`,
             `  f = uK${i}B * (uDir${i}B.x * pos.x + uDir${i}B.y * pos.y) - uO${i}B * uT + uPh${i}B;`,
-            `  h += uA${i}B * sin(f) * wb;`,
+            `  s = sin(f); h += uA${i}B * s * wb; hB += uA${i}B * s;`,
             `  d += uQ${i}B * uDir${i}B * cos(f) * wb;`,
         )
     }
@@ -357,15 +378,18 @@ float frontWeight(vec2 pos) {
   float t = clamp(((uFP + 0.5 * uFW) - d) / uFW, 0.0, 1.0);
   return t * t * (3.0 - 2.0 * t);
 }
-float heightFront(vec2 pos, float uT, out vec2 disp) {
-  float h = 0.0; vec2 d = vec2(0.0); float f;
+float heightFront(vec2 pos, float uT, out vec2 disp, out float beat) {
+  float h = 0.0, hA = 0.0, hB = 0.0; vec2 d = vec2(0.0); float f, s;
   float w = frontWeight(pos);
   float wa = sqrt(1.0 - w); float wb = sqrt(w);
 ${terms.join('\n')}
   disp = d;
+  // #3329 beat cue — constructive excess above BOTH swells (CPU twin mixBeat).
+  // Exact 0 at the edges: w=0 leaves h == hA, w=1 leaves h == hB.
+  beat = clamp(h - max(hA, hB), 0.0, 10.0);
   return h;
 }
-float waveHeight(vec2 pos, float uT, out vec2 disp) { return heightFront(pos, uT, disp); }`
+float waveHeight(vec2 pos, float uT, out vec2 disp, out float beat) { return heightFront(pos, uT, disp, beat); }`
 }
 
 // rung-1 name kept as an alias (checks/README reference it)

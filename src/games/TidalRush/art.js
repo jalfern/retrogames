@@ -61,22 +61,26 @@ export function makeSea() {
 uniform float uT;
 varying vec3 vWorld;
 varying float vH;
+varying float vBeat;
 varying vec3 vNormalW;
 ${seaGLSLFront()}
 void main() {
   vec3 p = position;
   vec2 d;
-  float h = waveHeight(p.xz, uT, d);
+  float beat;
+  float h = waveHeight(p.xz, uT, d, beat);
   p.y += h;
   p.xz += d;
   vH = p.y;
+  vBeat = beat;
   // analytic normal from the same height function, sampled at the nominal
   // surface point (drift small vs wavelength) — the old screen-space dFdx/dFdy
   // normal was quantized by the 3.75 m triangles and read faceted at speed.
   float eps = 1.05;
   vec2 dTmp = vec2(0.0);
-  float hX = waveHeight(p.xz + vec2(eps, 0.0), uT, dTmp);
-  float hZ = waveHeight(p.xz + vec2(0.0, eps), uT, dTmp);
+  float bTmp = 0.0;
+  float hX = waveHeight(p.xz + vec2(eps, 0.0), uT, dTmp, bTmp);
+  float hZ = waveHeight(p.xz + vec2(0.0, eps), uT, dTmp, bTmp);
   vNormalW = normalize(vec3(-(hX - h) / eps, 1.0, -(hZ - h) / eps));
   vec4 wp = modelMatrix * vec4(p, 1.0);
   vWorld = wp.xyz;
@@ -88,6 +92,7 @@ uniform vec3 uDeep, uShallow, uFoam, uSun, uSunCol, uCam, uFogCol;
 uniform float uT, uStorm, uFlash;
 varying vec3 vWorld;
 varying float vH;
+varying float vBeat;
 varying vec3 vNormalW;
 void main() {
   // smooth analytic normal (varying), not the screen-space derivative
@@ -113,7 +118,12 @@ void main() {
   float face = smoothstep(0.30, 0.60, 1.0 - n.y);
   float foam = clamp(crest * 0.85 + face * (0.22 + uStorm * 0.28), 0.0, 1.0);
   float tw = 0.85 + 0.15 * sin(vWorld.x * 7.3 + vWorld.z * 5.1 + uT * 9.0);
-  col = mix(col, uFoam, foam * tw);
+  // #3329 — BEAT cue: where the two crossing seas stack ABOVE both swells a
+  // real sea breaks white there. Mark exactly those constructive crests extra
+  // hard so the beat reads as moving foam lines at phone resolution. vBeat is
+  // 0 outside the band and always 0 on sunny water — nothing else changes.
+  float beatFoam = smoothstep(0.10, 0.70, vBeat) * (0.55 + uStorm * 0.25);
+  col = mix(col, uFoam, clamp(foam + beatFoam, 0.0, 1.0) * tw);
   // beach caustics (#3218): water toward the headlands reads shallow — a slow
   // twinned shimmer over a warm sand push. The literal 180.0 is half the mesh
   // span; tidalcheck pins it against SIZE and the storm gate against uStorm.

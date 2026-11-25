@@ -97,6 +97,8 @@ if (MUT) {
         // #3323: the cross-fade flattens back to a linear table blend — the band
         // stops conserving energy and stops beating.
         beats: { file: 'src/games/TidalRush/water.js', from: 'return { ga: Math.sqrt(1 - w), gb: Math.sqrt(w) }', to: 'return { ga: 1 - w, gb: w }', note: 'band mix flattens back to convex — no beats, half energy' },
+        // #3329: the crest-emphasis cue goes blind — stacked crests stop marking foam.
+        beatfoam: { file: 'src/games/TidalRush/water.js', from: 'return Math.max(0, h - Math.max(hA, hB))', to: 'return 0', note: 'beat cue blind — stacked crests no longer whiten' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -107,7 +109,7 @@ if (MUT) {
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
-const { WAVES, heightAt, surfaceVy, waterHeight, seaGLSL, seaGLSLFront, seaUniforms, SEA_UNIFORMS, SEA_UNIFORMS_B, FRONT_UNIFORMS, frontUniforms, frontW, frontGains, mixHeight, mixVy, mixWater, sunnySea, stormSea, omega, FRONT_SPEED } = await import('../src/games/TidalRush/water.js')
+const { WAVES, heightAt, surfaceVy, waterHeight, seaGLSL, seaGLSLFront, seaUniforms, SEA_UNIFORMS, SEA_UNIFORMS_B, FRONT_UNIFORMS, frontUniforms, frontW, frontGains, mixHeight, mixBeat, mixVy, mixWater, sunnySea, stormSea, omega, FRONT_SPEED } = await import('../src/games/TidalRush/water.js')
 const { makeGame, step, autoPad, attractPad, stateOf, stateHash, LAPS, rainAt, windAt, windGust, RAIN_VIS, RAIN_DRAG, RAIN_PUSH, THRUST, DRAG, airPose } = await import('../src/games/TidalRush/sim.js')
 
 const run = (gs, maxS = 240, padFn = null) => {
@@ -813,6 +815,56 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('the band stacks beat crests ABOVE both swells (convex mix cannot)', sawMid && stack > 0.05)
     ok('the band carries glassy patches BELOW both swells (counter-phase)', sawMid && glass < -0.05)
     ok('the beat sweep sampled the live band (thousands of points)', nBeat > 5000)
+
+    // #3329 — the crest-emphasis cue the shader rides (mixBeat): the CPU twin
+    // of the GLSL `beat` out-param. Rules: exact zero outside the band (and so
+    // on every sunny frame — fronts only live in STORM BAY), never negative,
+    // identical to the stacked excess the sweep above measures, and LIVE crest
+    // coverage: the cue must actually light meaningful crest lines, not noise.
+    let cueZero = true, cueNeg = false
+    for (const w of [-1, 0, 1, 2]) {
+        for (const [x, z] of [[-60, 20], [15, -45], [80, 60]]) {
+            if (mixBeat(x, z, 2.5, A, B, w) !== 0) cueZero = false
+        }
+    }
+    ok('the beat cue is exact 0 outside the band (edges + sunny untouched)', cueZero)
+    let cueId = true
+    for (const w of [0.2, 0.45, 0.7, 0.9]) {
+        for (let x = -120; x <= 120; x += 9.7) {
+            for (let z = -70; z <= 70; z += 6.3) {
+                const bt = mixBeat(x, z, 1.7, A, B, w)
+                if (bt < 0) cueNeg = true
+                const want = Math.max(0, mixHeight(x, z, 1.7, A, B, w) - Math.max(heightAt(x, z, 1.7, A), heightAt(x, z, 1.7, B)))
+                if (Math.abs(bt - want) > 1e-12) cueId = false
+            }
+        }
+    }
+    ok('the beat cue never dips negative', !cueNeg)
+    ok('mixBeat ≡ mixHeight − max(hA,hB) clamped (the stacked excess, exactly)', cueId)
+    {
+        const g3 = makeGame(7, 'storm')
+        let cueMax = 0, cueN = 0, cueLit = 0, cueSaw = false
+        for (let t = 0; t < 60 * 240 && !g3.done; t++) {
+            step(g3, autoPad(g3))
+            const f = g3.front
+            if (!f || f.prog < 20 || f.prog > f.h || t % 30 !== 0) continue
+            cueSaw = true
+            const lx = -f.dz, lz = f.dx
+            for (let s = -f.h + 2; s < f.h - 2; s += 1.8) {
+                for (let l = -80; l <= 80; l += 6) {
+                    const x = f.dx * s + lx * l, z = f.dz * s + lz * l
+                    const w = frontW(x, z, f)
+                    if (w < 0.15 || w > 0.85) continue
+                    cueN++
+                    const bt = mixBeat(x, z, g3.t, g3.seaCur, g3.seaTarget, w)
+                    if (bt > cueMax) cueMax = bt
+                    if (bt > 0.15) cueLit++
+                }
+            }
+        }
+        ok('the cue lights real crest lines on the live band (max > 0.5 m)', cueSaw && cueMax > 0.5)
+        ok('constructive crest coverage stays line-like (1–15% of the band)', cueSaw && cueLit / cueN > 0.01 && cueLit / cueN < 0.15)
+    }
 }
 
 // 16. RUNG 3 — GLSL twin + bridge for the two-slot front shader
@@ -823,12 +875,19 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('front GLSL declares both slot sets + the front uniforms (48+4 names)', names && SEA_UNIFORMS_B.length === 24 && FRONT_UNIFORMS.length === 4)
     ok('front GLSL carries clamp+smoothstep and the equal-power slot gains (the CPU twin)', glsl.includes('clamp(') && glsl.includes('3.0 - 2.0 * t')
         && glsl.includes('sqrt(1.0 - w)') && glsl.includes('sqrt(w)')
-        && (glsl.match(/sin\(f\) \* wa/g) || []).length === 4 && (glsl.match(/sin\(f\) \* wb/g) || []).length === 4
+        && (glsl.match(/h \+= uA\d+ \* s \* wa/g) || []).length === 4 && (glsl.match(/h \+= uA\d+B \* s \* wb/g) || []).length === 4
         && (glsl.match(/cos\(f\) \* wa/g) || []).length === 4 && (glsl.match(/cos\(f\) \* wb/g) || []).length === 4
         && !glsl.includes('mix(hA'))
     const sinTerms = (glsl.match(/sin\(f\)/g) || []).length
     ok('front GLSL is fully unrolled for BOTH tables (8 sin terms, SwiftShader-safe)', sinTerms === 8)
     ok('front GLSL has no array constructors (GLSL ES 1.00)', !/vec[234]\[\d/.test(glsl))
+    // #3329 — the beat out-param is wired: per-table accumulators summing the
+    // SAME sin values, and the emitted quantity is the clamped stacked excess
+    // (CPU twin mixBeat). Edges fall out exact: w=0 ⇒ h == hA, w=1 ⇒ h == hB.
+    ok('front GLSL emits the beat cue (per-table sums + clamped stacked excess)', (glsl.match(/hA \+= uA\d+ \* s/g) || []).length === 4
+        && (glsl.match(/hB \+= uA\d+B \* s/g) || []).length === 4
+        && glsl.includes('beat = clamp(h - max(hA, hB), 0.0, 10.0)')
+        && glsl.includes('out vec2 disp, out float beat'))
 
     const gs = makeGame(7, 'storm')
     for (let t = 0; t < 60 * 40 && !gs.front && !gs.done; t++) step(gs, autoPad(gs)) // catch the live front
