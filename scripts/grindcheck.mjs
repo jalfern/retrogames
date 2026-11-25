@@ -5,7 +5,7 @@
 
 import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, GEM_ALL, gemCount } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
-import { parkHeight, LETTERS, RAILS, GEMS, GEM_PTS, SECRET, ROOF_Y } from '../src/games/GrindCity/park.js'
+import { parkHeight, LETTERS, RAILS, GEMS, GEM_PTS, SECRET, ROOF_Y, shadeAt } from '../src/games/GrindCity/park.js'
 import { BAR, bedVoices, landThud } from '../src/games/GrindCity/music.js'
 import { readFileSync } from 'node:fs'
 
@@ -25,14 +25,14 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems']) {
+    for (const rule of ['letters', 'gap', 'replay', 'bed', 'gems', 'shade']) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 5 ? `ALL MUTANTS CAUGHT (${died}/5)` : `${died}/5 mutants caught`)
-    process.exit(died === 5 ? 0 : 1)
+    console.log(died === 6 ? `ALL MUTANTS CAUGHT (${died}/6)` : `${died}/6 mutants caught`)
+    process.exit(died === 6 ? 0 : 1)
 }
 
 // ── boot ──────────────────────────────────────────────────────────────────
@@ -246,6 +246,24 @@ function drive(seed) {
     const src = MUT === 'bed' ? cab.replace(/bedVoices\(/g, 'silence(') : cab
     ok('bed wired into the cabinet loop (#3167)',
         /from '\.\/music\.js'/.test(src) && /bedVoices\(/.test(src) && /landThud\(/.test(src) && /bed: bedT/.test(src))
+}
+
+// ── baked curvature shading (#3233 tail) — visual-only math must stay real ──
+{
+    const plaza = shadeAt(0, -12)
+    const bowl = shadeAt(38, -7)
+    const secret = shadeAt(26, 6)
+    const crest = shadeAt(-20, 14)
+    ok('shade: flat plaza stays neutral', Math.abs(plaza - 1) < 0.02, `plaza=${plaza.toFixed(3)}`)
+    ok('shade: bowl/secret basins sit darker', bowl < 0.97 && secret < 0.97 && bowl > 0.6 && secret > 0.6,
+        `bowl=${bowl.toFixed(3)} secret=${secret.toFixed(3)}`)
+    ok('shade: quarterpipe crest catches sun', crest > 1.02 && crest < 1.15, `crest=${crest.toFixed(3)}`)
+    // wiring: the park mesh must multiply the curvature shade into vertex colors and give
+    // the concrete bump relief. MUT=shade strips both — the gate must see red.
+    const art = readFileSync(new URL('../src/games/GrindCity/art.js', import.meta.url), 'utf8')
+    const artSrc = MUT === 'shade' ? art.replace(/shadeAt\(/g, 'noShade(').replace(/bumpMap:/g, 'noBump:') : art
+    ok('shade wiring: mesh AO multiply + bump relief (#3233)',
+        /shadeAt\(x, z\)/.test(artSrc) && /bumpMap:/.test(artSrc))
 }
 
 if (MUT) {

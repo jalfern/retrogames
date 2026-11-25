@@ -65,6 +65,22 @@ export function parkHeight(x, z) {
     return h
 }
 
+/** Baked shading factor for the renderer (#3233 tail) — VISUAL ONLY, the sim
+ *  never sees it. Shape-curvature AO from the same height field: concave
+ *  transitions (pipe throats, bowl floors, trench lips, wall bases) sit darker,
+ *  convex crowns (copings, kicker tips, roof-deck edges) catch a touch of sun.
+ *  1 = flat plaza. Samples an 8-point ring; the sim physics never call this. */
+export function shadeAt(x, z) {
+    const R = 1.7
+    let s = 0
+    for (let k = 0; k < 8; k++) {
+        const a = k * Math.PI / 4
+        s += parkHeight(x + Math.cos(a) * R, z + Math.sin(a) * R)
+    }
+    const conc = (s - 8 * parkHeight(x, z)) / 8
+    return 1 - Math.min(0.26, Math.max(0, conc * 0.7)) + Math.min(0.08, Math.max(0, -conc * 0.7))
+}
+
 /** Central-difference surface gradient {gx,gz}. */
 export function gradAt(x, z) {
     const e = 0.22

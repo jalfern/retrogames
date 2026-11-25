@@ -3,7 +3,7 @@
 // ridden park. Everything else (letters, skater rig, particles) is code too.
 
 import * as THREE from 'three'
-import { parkHeight, gradAt, RAILS, LETTERS, GEMS, BOUND, ROOF_Y, railClosest, SECRET } from './park.js'
+import { parkHeight, gradAt, RAILS, LETTERS, GEMS, BOUND, ROOF_Y, railClosest, SECRET, shadeAt } from './park.js'
 
 const RANGE = BOUND + 4          // a little beyond the walls
 const STEP = 0.8
@@ -113,7 +113,13 @@ export function buildPark(scene) {
             const y = parkHeight(x, z)
             pos[p] = x; pos[p + 1] = y; pos[p + 2] = z
             concreteColor(x, z, y, c)
-            col[p] = c.r; col[p + 1] = c.g; col[p + 2] = c.b
+            // baked curvature AO (#3233): transitions darken cool (the same law
+            // as the bowl depth tint), crowns warm slightly into the sun.
+            const ao = shadeAt(x, z)
+            const dk = Math.min(1, ao), lt = Math.max(1, ao)
+            col[p] = c.r * dk * lt
+            col[p + 1] = c.g * dk * (1 + (lt - 1) * 0.75)
+            col[p + 2] = c.b * (dk + (1 - dk) * 0.45) * (1 + (lt - 1) * 0.35)
             p += 3
         }
     }
@@ -154,7 +160,10 @@ export function buildPark(scene) {
     geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3))
     // DoubleSide: the grid winding covers slopes either way; normals are set
     // explicitly up, so both faces shade identically.
-    const mat = new THREE.MeshStandardMaterial({ map: makeConcreteTexture(), vertexColors: true, roughness: 0.92, metalness: 0.02, side: THREE.DoubleSide })
+    // The same canvas doubles as the bump map: speckle + joints get micro-relief
+    // where the sun rakes the surface, so the texture sits IN the concrete.
+    const concreteTex = makeConcreteTexture()
+    const mat = new THREE.MeshStandardMaterial({ map: concreteTex, bumpMap: concreteTex, bumpScale: 0.5, vertexColors: true, roughness: 0.92, metalness: 0.02, side: THREE.DoubleSide })
     const mesh = new THREE.Mesh(geo, mat)
     mesh.receiveShadow = true
     scene.add(mesh)
