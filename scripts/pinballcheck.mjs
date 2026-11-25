@@ -43,7 +43,7 @@ if (MUT) {
         // the ball search never ends a stalled ball — a rare rest position wedges the game open.
         search: { from: 'if (p.stall > 1200) p.drain = true;', to: 'if (p.stall > 100000) p.drain = true;', note: 'ball search never drains a stalled ball' },
         // the kickback solenoid seizes — the free save never fires (#3250).
-        kickback: { from: 'if (p.vy > KB.minVy) {', to: 'if (p.vy > KB.minVy * 20) {', note: 'kickback plunger seizes — the save never fires' },
+        kickback: { from: 'p.vy > KB.minVy &&', to: 'p.vy > KB.minVy * 20 &&', note: 'kickback plunger seizes — the save never fires' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
