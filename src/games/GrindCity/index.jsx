@@ -501,6 +501,9 @@ const GrindCityGame = () => {
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
+                // DEV-only QA teleport (#3289 drive legs reach the coping/rail without
+                // burning 10 s of real skating; the verbs still fire through real keys)
+                teleport: (p) => { Object.assign(sim, p); sim.air = false },
             }
             mountDbg({
                 title: 'GRIND CITY',

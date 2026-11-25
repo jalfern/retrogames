@@ -10,7 +10,7 @@ the park and every trick name are ours.
 | file | role |
 |---|---|
 | `park.js` | **the surface** — one analytic height field `parkHeight(x,z)` + normals, plus `RAILS`, `LETTERS`, `GAP`, `spawn()`. The renderer builds its meshes from the same math the physics rides, so the board can never sink into or float over visible geometry. |
-| `sim.js` | **pure rules** — `step(state, input)` advances one fixed tick; no DOM, no three.js, no randomness (a seeded run replays identically). Ground-following riding, ollie/grab/kickflip, manuals, rail auto-latch, combo scoring, bails, the S-K-A-T-E goals, run clock. |
+| `sim.js` | **pure rules** — `step(state, input)` advances one fixed tick; no DOM, no three.js, no randomness (a seeded run replays identically). Ground-following riding, ollie/grab/kickflip, manuals, rail auto-latch, rail grabs, coping stalls, combo scoring, bails, the S-K-A-T-E goals, run clock. |
 | `planner.js` | **the bot** — rule-based autopilot that follows waypoint bearings, times ollies off ramps and rails, and collects the letters. It drives attract mode *and* proves the park is winnable (`grindcheck` refuses to merge if the bot can't score a win). |
 | `music.js` | **the bed (#3167)** — the original A-minor groove + the landing-pitch law, as pure data. The cabinet schedules it from its sim ticks, so pause stops it and the replay runs silent. |
 | `art.js` | three.js scene — park mesh from `park.js`, sky + sun glare, rails, floating gold letters, the skater rig (`buildSkater`/`poseSkater`), particle sparks. |
@@ -28,8 +28,8 @@ the skip and the action-cam cut-in).
 |---|---|
 | ← → | steer |
 | ↓ | crouch / pump (speed down slopes) |
-| A (`Space`) | ollie · **hold in the air** = grab (MONGOL, MEND, STALEFISH…) · **press on landing** = manual |
-| B (`Shift`) | kickflip on the ground · flat spin in the air |
+| A (`Space`) | ollie · **hold in the air** = grab (MONGOL, MEND, STALEFISH…) · **press on landing** = manual · **↓+A at a coping lip** = STALL (#3289) |
+| B (`Shift`) | kickflip on the ground · flat spin in the air · **hold on a rail** = rail grab (FEEBLE/CROOKED, #3289) |
 | `?` | how-to-play overlay |
 
 Rails auto-latch when airborne nearby (nose or tail, travel-aware). Grinds
@@ -74,6 +74,35 @@ multiplier; grinding and manuals tick per tick. Landing a chain banks it about
 0.6 s later (the blue flash). Letters are +500 each. **Win = all 5 letters +
 the gap clean before the clock dies.** Target for the harness: ≥6000.
 
+## The lip vocabulary (#3289): rail grabs and coping stalls
+
+Grabs existed in the air; this is the vocabulary on the rails and lips — built
+on the existing rail maths, no new physics surfaces:
+
+- **Rail grabs** — hold B while latched: the rider reaches down and holds the
+  board mid-slide. Named by travel: **FEEBLE** forward, **CROOKED** fakie (the
+  genre's coping names, like the existing Boardslide/50-50). While held the
+  grind trickle **doubles** (+12 vs +6 per 0.15 s) and the balance meter's
+  drift is damped ×0.55 — grabbing is the honest reward for risk management.
+  A **0.30 s hold** is required before release commits the trick (+70, unique
+  in the chain so it grows the multiplier); mashing never pays, and a wash-out
+  bail while holding commits nothing.
+- **Coping stalls** — hold ↓ (crouch) and press A at a coping lip: the board
+  locks tail-in on the rail line (`kind: 'coping'` rails, ≤0.9 m lateral,
+  ≤0.75 m vertical — coping sits ~0.7 m above the decks, so the reach covers
+  the pool lips, the deck edge and the roof). Speed goes to zero; the STALL
+  trickles +8/0.15 s and balances on a **tighter meter** than a grind
+  (|bal| > 1.15 slips out — and the lean is visible on the rig). A press pops
+  back with a small hop, chain alive: held ≥0.30 s it commits
+  `STALL +40 +80×seconds`; 4 s auto-pops. Away from a lip ↓+A is just an
+  ollie — no dead combo.
+- **Honesty** — `packIn` is still the same six bits, so the #3225 replay wire
+  is untouched. The autopilot never presses B mid-grind and never ↓, so the
+  attract line and the graded win line are provably unchanged
+  (`grindcheck`'s honesty counter). `stateOf` grows additively
+  (`railGrab/stall/stallT/stallBal`); `__grindTest.teleport` (DEV) lets the
+  live drive reach a lip without burning ten seconds of skating.
+
 ## Cameras and the run replay (#3225)
 
 Three cam modes, hard cuts between them (smoothing lives *inside* a mode;
@@ -113,9 +142,10 @@ still through the replay).
 - **CLOSED by #3246** — ~~One park, one line.~~ The park has a second line
   now: the roof deck over the south wall, 14 gems, and a secret bowl; see
   "The second line, gems and the secret spot" above.
-- **Trick variety is board-rot based.** Spins/flip combos read from the real
-  angular velocity, but there are no grabs on grinds, no lip tricks, no stalls;
-  manual chains count but look identical across trick types.
+- **CLOSED by #3289** — ~~no grabs on grinds, no lip tricks, no stalls.~~ The
+  rail/lip vocabulary shipped: FEEBLE/CROOKED rail grabs and coping stalls; see
+  "The lip vocabulary" above. **Still open:** manual chains count but look
+  identical across trick types (owned by #3233).
 - **The bot's line is fixed.** `planner.js` is scripted waypoints, not a search;
   it proves the park is winnable, not that the trick system is deep.
 - `snapshot`/`restore` are intentionally absent from the contract — the sim
