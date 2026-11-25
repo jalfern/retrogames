@@ -7,6 +7,11 @@ import { parkHeight, gradAt, RAILS, LETTERS, GAP, BOUND, GEMS, GEM_PTS, SECRET, 
 
 const G = 9.8 * 1.35            // game gravity (snappier than real)
 const MAXV = 11.5              // m/s ground speed ceiling
+// an inherent cruise floor: gentle ground never hard-sticks. A rider that
+// decays toward a standstill on flat keeps a little roll — a flat plaza
+// should never read as a permanently stuck bike (#3406). Only tops up slow
+// riders; a fast line is untouched and the slope dead-stop law is untouched.
+export const CRUISE_MIN = 2.2
 const TURN = 2.35             // base steer rad/s at low speed
 const PUMP_GAIN = 1.15        // m/s added per pump frame-ish (rate-limited)
 const OLLIE_VY = 4.6
@@ -475,8 +480,14 @@ export function step(s, input, dt = 1 / 60) {
     s.speed -= s.speed * 0.045 * dt
     s.speed = Math.max(0, Math.min(MAXV, s.speed))
 
-    // a dead stop on a slope: roll downhill instead of sticking
+    // an inherent cruise floor: gentle ground never hard-sticks — a slow
+    // rider decaying on flat keeps a little roll instead of stopping dead.
+    // Fast lines are untouched (floor only raises speed below CRUISE_MIN)
+    // and the slope dead-stop law below is exactly as before.
     const gm = Math.hypot(g.gx, g.gz)
+    if (!s.manual && gm < 0.18 && s.speed < CRUISE_MIN) s.speed = Math.max(s.speed, CRUISE_MIN)
+
+    // a dead stop on a slope: roll downhill instead of sticking
     if (s.speed < 0.5 && !s.manual && gm > 0.18) {
         const dh = Math.atan2(-g.gz, -g.gx)
         let e = dh - s.heading
