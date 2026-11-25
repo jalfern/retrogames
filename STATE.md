@@ -1,68 +1,78 @@
-# STATE — forge board snapshot (slot b, 2026-11-25 — THE BED HUMS)
+# STATE — forge board snapshot (slot b, 2026-11-25 — THE BED HUMS, PART 2)
 
-## This session — one ship, landed
-- Warden TARGET **#3351** (TidalRush rider poses) REFUSED at claim — slot a
-  held it live. Normal ladder hit step 1b instead of the flagship ladder:
-  **#3300 was my slot's own corpse** — builder-b died mid-#3300 (last FORGE(b)
-  checkpoint 15:27), branch `forge/skyward-bed` pushed with all six items +
-  harness actually landed. Resumed, verified, shipped.
-- Shipped **#3300** via **`1c117da`** (PR #3353): SKYWARD's full audio/HUD
-  tail. **Rich motor** — opt-in two-saw AudioController voice, ±9-cent detune
-  through a load-opened lowpass, ±30-cent blade wobble on the same 13 Hz
-  flutter as gain. **Visible engine** — twin exhaust streaks riding
-  `engineBed` load (renderer-only, never hashed). **Glider wind-rush** — pure
-  `windBed(craft, speed, stormS)`: soft noise bed rises with airspeed,
-  motorless craft only, ducked under the storm. **Crash cut-first** — the bed
-  dies on the crash tick before the rumble, boarding re-spool fires post
-  respawn. **390px HUD** — stage fills the viewport (an inline position
-  override had collapsed the canvas), chips to top corners <480px. **Glider
-  law banner** — `NO ENGINE — WIND IS YOUR THROTTLE` at checkout (item 6,
-  landed pre-death; the corpse was fully built, it just never shipped).
-- Proof: skywardcheck **143/143** (+windBed/cut pins), mutants **48/48 die**
-  (wind-on-plane breaks motorless honesty, constant hiss, rush-drowns-rings,
-  frozen cut…), skywardplay **PASSED** live :5178 (bed cruises/dies/re-spools,
-  banner fires, 390px HUD zero violations, #3341 park law intact, zero console
-  errors). eslint + 3 scoped gates + build green. Sim hash inputs unchanged.
-- Prod verified: served `Skyward-B0HZ2VS8.js` contains the wind-law banner.
-  **#3300 shipped+closed** (PR `Closes` auto-closed at merge).
+## This session — the corpse that wasn't (two PRs + a first-ever vista)
+- Warden TARGET **#3300 SKYWARD bed polish** claimed. Main body shipped
+  **`1c117da` (PR #3353)**, chrome-column tail **`efd6a2d` (PR #3361)**;
+  issue `shipped`+closed. A parallel slot-b runner (warden re-kick during the
+  GitHub write outage) resumed the same branch and pushed the first STATE
+  (#3363) — same session's work, this file completes the record.
+- Six items: **rich engine voice** (two saws ±9c through a load-opened
+  lowpass — `engineBed` gained pure `cut`; blade flutter bends pitch ±30c);
+  **exhaust-streak load tell** (renderer-only, rides pre-duck `fx.raw`);
+  **glider wind-rush** (`windBed` pure law: glider-only, airspeed-risen,
+  storm-ducked, whisper cap 0.03 + sibling `loopWind` voice); **crash
+  sequencing** (bed cut leads, rumble +0.18 s, respawn re-spools); **390px
+  HUD** into a `<style>` block (media queries can't beat inline styles);
+  **glider banner** teaches the motorless rule.
+- **Three bugs the audit surfaced**, all prod-live before this session: the
+  stage's inline `position:relative` overrode `absolute inset-0` (canvas
+  collapsed to its intrinsic ratio at every size — prod looked right only
+  because the first `setSize` baked a matching aspect); **attract had NEVER
+  drawn** — `orbitAttract` moved a camera nothing rendered with, so every load
+  ever showed an empty canvas behind the title card (now the vista orbits
+  live, screenshot-verified); and the SCORE text sat under the mute icon at
+  phone width (mobile HUD now runs one column below the corner chrome).
+
+## Proof
+- skywardcheck **143/143** + mutants **48/48 die** (5 new #3300: wind-on-
+  plane, no-duck, constant-hiss, shout-rush, frozen-cut; one old mutant
+  re-anchored after the engineBed reformat).
+- skywardplay GREEN :5178 — crash-cuts-bed/re-spool, glider banner, and the
+  **390×844 overlap audit that counts corner chrome** (0 violations); zero
+  console errors. eslint + 3 scoped gates + build green. Hash/stateOf
+  byte-identical (existing determinism pins).
+- Prod verified: `Skyward-B0HZ2VS8.js` (banner law) — post-#3361 chunk
+  contains the chrome-column rule (`top:76px`).
 
 ## Harness lessons (worth one line each)
-- GitHub GraphQL was flaking all afternoon (`gh pr create`/`issue comment`
-  GraphQL errors + nginx 502). Raw REST POSTs (`/pulls`, `/issues/N/comments`
-  via curl with the gh token) went through first time — after 3 GraphQL
-  failures, switch transport, don't just retry.
-- `Merge already in progress` + mergeclean "MERGED (server truth)" = it
-  landed; trust mergeclean and check the new origin/main, not gh's exit code.
-- **Vercel chunk hashes ≠ local `dist/` hashes** — verify prod by grepping a
-  new-marker string in the prod-named chunk discovered from prod's entry
-  bundle (index-*.js → Skyward-*.js), not by a locally built hash (local
-  `Ct33r5L6` never matched prod `B0HZ2VS8` though both carry the law).
-- A resumed corpse that already contains item 6: verify all claims yourself
-  (rebase + full suite + live drive) before shipping — the dead session's
-  checkpoint comment UNDER-reported what its commits had landed.
+- GitHub's **write path degraded ~20 min** (git receive 500, pr-create GraphQL
+  502/empty) while reads and issue-comments worked — and one "failed" create
+  HAD created #3353: after any create error, `gh pr list --head <branch>`
+  before retrying, or you marry a ghost.
+- The outage's silence invited a **warden re-kick onto my own live branch** —
+  two slot-b runners shipped/annotated the same work. Checkpoints kept both
+  honest (nothing duplicated into the code); next time post liveness comments
+  DURING backoff, not only after.
+- A lane helper rebased my pushed branch onto fresh main mid-outage (reflog:
+  `rebase (pick)` ×N) — that's plumbing, not corruption; force-with-lease
+  back, re-green, done.
+- WebGL `readPixels` returns empty outside a draw call (the
+  `preserveDrawingBuffer` law, bitten again): judge canvas content with
+  screenshots, not probes.
 
 ## PLAYABLE on main right now
-- `/retrogames/skyward` engine-bed audio tail (#3353: rich motor, wind-rush
-  glider, cut-first crash, exhaust tell, phone HUD) + belt PARK law (#3341)
-  + plane wheels-down (#3327); `/retrogames/tidal-rush` FOAM V wake + crest
-  emphasis (#3350) + beating squall + rooms; `/retrogames/pinball` SOLO bed
-  + TABLE SMITH + tilt-nudge; `/retrogames/grind-city` rail grabs + coping
-  stalls + manual chip + replay free-cam; mario-kart, ice-climber,
-  marble-rush, comet-drift pair, ssx, marble-madness, pacman, mario,
-  minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS,
-  DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga, missile,
+- `/retrogames/skyward` — the first-ever attract vista, rich motor + exhaust
+  tell, glider wind-rush, crash re-spool, phone-filling portrait (#3353 +
+  #3361); plus belt+plane runway landings, living storm, THUNDERPASS;
+  `/retrogames/tidal-rush` FOAM V + rider jump/land moments (#3356) + rain
+  gameplay + rooms; `/retrogames/pinball` SOLO bed + TABLE SMITH;
+  `/retrogames/grind-city` rail grabs + coping stalls; galaga bee; mario-kart,
+  ice-climber, marble-rush, comet-drift pair, ssx, marble-madness, pacman,
+  mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP
+  SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, missile,
   pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` EMPTY at my close; `building` EMPTY (slot a's #3351 rider poses
-  finished mid-my-session); `next` #1712 waiting-jon (not work).
-- **Next builder claim: run idle-kick LIVE** — with the queue empty and QA
-  live it will land on the flagship/NEVER-DRY ladder; pick honestly from
-  README gaps, not from memory.
-- QA tails open: #3344 + #3331 + #3310 (skyward polish rounds — this ship
-  resolved #3300's six items, NOT those tails), #3342 items 2–5 (tidal V
-  legibility), #3329, #3290 items 5–7, #3244/#2971 (waiting-jon).
-- main-ok green at merge; latest Production contains 1c117da.
+- `game-queue` EMPTY at close; `building` EMPTY (slot a finished #3351 rider
+  poses mid-session); `next` #1712 waiting-jon (not work).
+- **Next builder claim: run idle-kick LIVE** — queue empty + QA live lands the
+  flagship/NEVER-DRY ladder; pick honestly from README gaps, not memory.
+- QA tails open: #3344/#3331/#3310 (skyward polish rounds predating the bed
+  work), **#3362 (new: post-bed-polish — vista portrait, streak legibility,
+  wind mix on device, 320px + landscape)**, #3342 items 2–5, #3329, #3290
+  items 5–7, #3244/#2971 (waiting-jon).
+- Merges today incl. #3350, #3353 + #3361 (mine), #3355, #3356, #3363.
+  main-ok green at claim and merge.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
@@ -71,9 +81,9 @@
 - No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot b: dev :5178 stopped via scripts/devstop.sh; worktree
-  `~/Dev/retrogames-forge-skyward-bed` detached clean at origin/main by
-  mergeclean — remove when convenient.
+- Slot b: dev :5178 stopped via scripts/devstop.sh; worktrees
+  `~/Dev/retrogames-forge-skyward-bed` and `…-forge-skyward-hud2` detached
+  clean at origin/main by mergeclean — remove when convenient.
 - Game merged this session ⇒ this STATE.md ships via its own docs/state PR;
   parked at /tmp/forge/STATE.b.parked.md via statepark.
-- Time-box: ~1 h 10 m of 3 h at ship.
+- Time-box: ~2 h 15 m of 3 h at ship.
