@@ -161,6 +161,34 @@ try {
     ok('#3289 the grab doubles the trickle live', rg.paid.chainPts > rg.latched.chainPts + 30 || rg.paid.score > 0,
         `${rg.latched.chainPts}→${rg.paid.chainPts}`)
 
+    // #3233 tail — phone-width HUD collision gate: the goal/trick banner must clear the
+    // persistent S-K-A-T-E checklist, stay on-screen at small-phone widths, and the tall
+    // score must not brush the combo line. Worst-case strings the sim actually renders.
+    for (const vp of [{ width: 390, height: 844 }, { width: 320, height: 568 }]) {
+        const pg = await openGame(browser, { url: `${BASE}/grind-city`, viewport: vp, hook: '__grindTest', touch: true })
+        await pg.waitForFunction('window.__game', { timeout: 20000 })
+        await pg.evaluate(() => window.__grindTest.start())
+        await new Promise(r => setTimeout(r, 200))
+        const hud = await pg.evaluate(() => {
+            const msg = document.querySelector('[class~="top-40"]')
+            if (msg) msg.textContent = 'OFF THE MAP! SECRET SPOT +2500'   // longest goal banner
+            const co = document.querySelector('[class~="top-[46%]"]')
+            if (co) { co.textContent = 'ROOF GRIND!'; co.style.opacity = 1; co.style.transform = 'translate(-50%,0)' }
+            const rc = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom, sw: el.scrollWidth, cw: el.clientWidth } }
+            const M = rc(msg), C = rc(co), L = rc(document.querySelector('[class~="top-16"]'))
+            const S = rc(document.querySelector('[class~="bottom-3"]')), CO = rc(document.querySelector('[class~="bottom-[3.75rem]"]'))
+            const vw = window.innerWidth
+            const ov = (a, b) => (!a || !b) ? 0 : Math.max(0, Math.min(a.r, b.r) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.y, b.y))
+            return { vw, msgLetters: ov(M, L), msgCallout: ov(M, C), scoreCombo: ov(S, CO),
+                msgOver: M ? Math.max(0, -M.x, M.r - vw) : 1e3, calloutOver: C ? Math.max(0, -C.x, C.r - vw) : 1e3, msgClip: M ? M.sw - M.cw : 1e3 }
+        })
+        ok(`phone ${vp.width}px: goal banner clears the S-K-A-T-E checklist`, hud.msgLetters === 0 && hud.msgCallout === 0, `msg×letters=${Math.round(hud.msgLetters)} msg×callout=${Math.round(hud.msgCallout)}`)
+        ok(`phone ${vp.width}px: banners stay on-screen`, hud.msgOver === 0 && hud.calloutOver === 0, `msgOverflow=${Math.round(hud.msgOver)} calloutOverflow=${Math.round(hud.calloutOver)}`)
+        ok(`phone ${vp.width}px: banner text fits its box`, hud.msgClip <= 1, `clip=${Math.round(hud.msgClip)}px`)
+        ok(`phone ${vp.width}px: score clears the combo line`, hud.scoreCombo === 0, `score×combo=${Math.round(hud.scoreCombo)}`)
+        await pg.close()
+    }
+
     console.log(out.join('\n'))
     console.log(out.every(l => l.startsWith('PASS')) ? 'DRIVE GREEN' : 'DRIVE RED')
     process.exitCode = out.every(l => l.startsWith('PASS')) ? 0 : 1

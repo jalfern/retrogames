@@ -594,7 +594,7 @@ const GrindCityGame = () => {
                         <div ref={hud.time} className="absolute left-1/2 top-2 -translate-x-1/2 text-3xl font-bold text-white drop-shadow-[0_2px_0_rgba(0,0,0,.8)]" />
                         <div ref={hud.score} className="absolute bottom-3 left-3 text-4xl font-black italic text-[#ffd35e] drop-shadow-[0_3px_0_rgba(0,0,0,.85)]" />
                         <div ref={hud.mult} className="absolute bottom-16 left-3 text-xl font-black italic text-white drop-shadow-[0_2px_0_rgba(0,0,0,.85)]" />
-                        <div ref={hud.combo} className="absolute bottom-11 left-3 text-sm font-bold tracking-widest text-white/90" />
+                        <div ref={hud.combo} className="absolute bottom-[3.75rem] left-3 text-sm font-bold tracking-widest text-white/90" />
                         <div ref={hud.flash} className="absolute bottom-24 left-1/2 -translate-x-1/2 text-5xl font-black italic text-[#7dffb0] drop-shadow-[0_3px_0_rgba(0,0,0,.85)] transition-opacity duration-150" style={{ opacity: 0 }} />
                         <div ref={hud.manual} className="absolute bottom-36 left-1/2 whitespace-nowrap text-2xl font-black italic tracking-wider text-white drop-shadow-[0_2px_0_rgba(0,0,0,.85)]" style={{ opacity: 0, transform: 'translate(-50%,0)' }} />
                         <div className="absolute left-3 top-16 space-y-1 text-xs tracking-widest text-white drop-shadow-[0_2px_2px_rgba(0,0,0,.9)]">
@@ -605,8 +605,10 @@ const GrindCityGame = () => {
                             <div ref={hud.tgt} className="font-bold">◇ SCORE {SCORE_GOAL}</div>
                             <div ref={hud.gem} className="font-bold" />
                         </div>
-                        <div ref={hud.msg} className="absolute left-1/2 top-12 -translate-x-1/2 whitespace-nowrap text-lg font-bold italic tracking-wider text-[#ffe98a] drop-shadow-[0_2px_0_rgba(0,0,0,.85)]" />
-                        <div ref={hud.callout} className="absolute left-1/2 top-[32%] whitespace-nowrap text-4xl font-black italic tracking-[0.18em] text-[#ffd35e] drop-shadow-[0_0_16px_rgba(242,169,60,.7)] drop-shadow-[0_3px_0_rgba(0,0,0,.9)]" style={{ opacity: 0 }} />
+                        {/* Goal/trick banner: below the checklist + inset on phones so it
+                            never runs through S-K-A-T-E or off a narrow edge (#3233 tail). */}
+                        <div ref={hud.msg} className="absolute inset-x-2 top-40 text-center whitespace-normal text-sm font-bold italic tracking-wider text-[#ffe98a] drop-shadow-[0_2px_0_rgba(0,0,0,.85)] sm:left-1/2 sm:right-auto sm:top-12 sm:-translate-x-1/2 sm:whitespace-nowrap sm:text-lg" />
+                        <div ref={hud.callout} className="absolute left-1/2 top-[46%] whitespace-nowrap text-2xl font-black italic tracking-[0.18em] text-[#ffd35e] drop-shadow-[0_0_16px_rgba(242,169,60,.7)] drop-shadow-[0_3px_0_rgba(0,0,0,.9)] sm:top-[32%] sm:text-4xl" style={{ opacity: 0 }} />
                     </>
                 )}
                 {screen === 'replay' && (
