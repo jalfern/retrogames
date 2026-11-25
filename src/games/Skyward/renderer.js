@@ -516,6 +516,23 @@ void main(){
         flame.scale.set(2.4, 1, 1)
         g.add(flame)
         g.userData.flame = flame
+        // #3344 — the chocks. Two wedges tucked under the nozzle feet,
+        // hidden while she flies: the park reads through the hull, the
+        // chocks and the silenced flame — a settled machine, not a hover.
+        const chocks = new THREE.Group()
+        const chockMat = new THREE.MeshLambertMaterial({ color: 0x2a2e36 })
+        const chockGeo = new THREE.BoxGeometry(0.46, 0.26, 0.52)
+        // tucked at deck level under the nozzle feet (local −1.12: the parked
+        // hull puts the nozzle tips ~0.05 above the deck)
+        for (const sx of [-0.5, 0.5]) {
+            const ck = new THREE.Mesh(chockGeo, chockMat)
+            ck.position.set(sx, -1.12, 0.15)
+            ck.rotation.y = sx < 0 ? 0.32 : -0.32
+            chocks.add(ck)
+        }
+        chocks.visible = false
+        g.add(chocks)
+        g.userData.chocks = chocks
         B(g, new THREE.SphereGeometry(0.34, 8, 8), 0xe8c9a0, 0, 0.9, 0.1)
         B(g, new THREE.BoxGeometry(0.65, 0.75, 0.4), 0xd64545, 0, 0.35, 0.1)
         return g
@@ -708,6 +725,9 @@ void main(){
         // its gear with a nose-up trim, so a rollout reads as a machine with
         // ground contact, not a low hover (renderer-only; the sim is clean).
         if (g.craft === 'plane' && g.ground) { c.position.y -= 0.14; c.rotation.x -= 0.07 }
+        // #3344 — parked read: the hull sits LOW on the deck (the chocks take
+        // the weight) and the flame dies — a settled machine, not a hover.
+        if (g.craft === 'belt' && g.park) c.position.y = g.p.y + 0.45
         if (g.craft === 'plane') {
             c.userData.prop.rotation.z = t * (8 + g.speed * 0.9)
             // #3300 item 2 — the load tell. Streak length, glow and heat all
@@ -758,9 +778,11 @@ void main(){
         }
         if (g.craft === 'belt') {
             const fl = c.userData.flame
-            fl.visible = g.thrusting
+            const parked = !!g.park
+            fl.visible = !parked && g.thrusting
             fl.scale.y = 0.7 + Math.abs(Math.sin(t * 30)) * 0.5
             fl.scale.x = 2.4; fl.scale.z = 2.4
+            c.userData.chocks.visible = parked
         }
 
         // #3331 item 2 — dust streaks off the mains: asphalt gripping the

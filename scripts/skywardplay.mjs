@@ -475,24 +475,32 @@ try {
      must stay inside the viewport, off the pad band, and off each other. */
   const fit = await page.evaluate(() => {
     const b = document.querySelector('[data-h="banner"]')
-    b.textContent = 'RUNWAY FULL STRIP +700'
     b.style.opacity = '1'
     const h = document.querySelector('[data-h="hint"]')
-    h.textContent = 'RUNWAY — TOUCH DEEP, KEEP IT STRAIGHT · far end pays 700'
     const r = (el) => { const q = el.getBoundingClientRect(); return { x: q.x, y: q.y, w: q.width, h: q.height, sw: el.scrollWidth, cw: el.clientWidth } }
     const ovl = (a, c) => a.x < c.x + c.w && c.x < a.x + a.w && a.y < c.y + c.h && c.y < a.y + a.h
-    const bb = r(b), hb = r(h)
     const chips = r(document.querySelector('[data-h="chips"]'))
     const pads = [...document.querySelectorAll('[data-vc]')].map(r)
-    const bad = []
-    if (bb.sw > bb.cw + 4) bad.push(`banner text overflows (${bb.sw}>${bb.cw})`)
-    if (bb.x < -2 || bb.x + bb.w > innerWidth + 2) bad.push('banner offscreen')
-    if (ovl(bb, chips)) bad.push('banner covers the chips')
-    if (hb.sw > hb.cw + 4) bad.push(`hint overflows (${hb.sw}>${hb.cw})`)
-    if (hb.x + hb.w > innerWidth + 2 || hb.x < -2) bad.push('hint offscreen')
-    for (const p of pads) if (ovl(hb, p)) bad.push('hint sits under the pad')
-    if (ovl(hb, bb) || ovl(hb, chips)) bad.push('hint collides with banner/chips')
-    return { bad, bbw: bb.sw, hbLines: Math.round(hb.h) }
+    // #3344 item 3 — the parked banner and hint are the longest strings the
+    // belt can ever show; they must fit the same boxes at phone width.
+    const check = (bannerText, hintText) => {
+      b.textContent = bannerText
+      h.textContent = hintText
+      const bb = r(b), hb = r(h)
+      const bad = []
+      if (bb.sw > bb.cw + 4) bad.push(`banner text overflows (${bb.sw}>${bb.cw})`)
+      if (bb.x < -2 || bb.x + bb.w > innerWidth + 2) bad.push('banner offscreen')
+      if (ovl(bb, chips)) bad.push('banner covers the chips')
+      if (hb.sw > hb.cw + 4) bad.push(`hint overflows (${hb.sw}>${hb.cw})`)
+      if (hb.x + hb.w > innerWidth + 2 || hb.x < -2) bad.push('hint offscreen')
+      for (const p of pads) if (ovl(hb, p)) bad.push('hint sits under the pad')
+      if (ovl(hb, bb) || ovl(hb, chips)) bad.push('hint collides with banner/chips')
+      return { bad, bbw: bb.sw, hbLines: Math.round(hb.h) }
+    }
+    const zone = check('RUNWAY FULL STRIP +700', 'RUNWAY — TOUCH DEEP, KEEP IT STRAIGHT · far end pays 700')
+    const belt = check('RUNWAY FULL STRIP +700 — PARKED', 'PARKED ON THE RUNWAY ✺ · A / SPACE LIFTS OFF')
+    b.style.opacity = '0'
+    return { bad: [...zone.bad, ...belt.bad], bbw: Math.max(zone.bbw, belt.bbw), hbLines: Math.max(zone.hbLines, belt.hbLines) }
   })
   ok(fit.bad.length === 0, `390px longest strings fit: banner ${fit.bbw}px, hint ${fit.hbLines}px tall (${fit.bad.join('; ') || 'clean'})`)
   await shot('skyward-phone-banner.png')
