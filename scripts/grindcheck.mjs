@@ -518,6 +518,8 @@ function drive(seed) {
         : cabRaw
     ok('attract loop wiring: banked line drives attract, bot is the fallback, reset forgets (#3374)',
         /bestLog = inputLog\.slice\(\)/.test(cabDrive) &&
+        /if \(inputLog\.length >= REPLAY_MIN\) \{\s*bestSeed = sim\.seed/.test(cabDrive) &&
+        /attractIdx >= bestLog\.length/.test(cabDrive) &&
         /unpackIn\(bestLog\[attractIdx\+\+\]\)/.test(cabDrive) &&
         /bankedPad \|\| botPad\(stateOf\(sim\), bot\)/.test(cabDrive) &&
         /makeGame\(bestLog\.length \? bestSeed : freshSeed\(\), 'run'\)/.test(cabDrive) &&

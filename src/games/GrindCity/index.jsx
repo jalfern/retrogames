@@ -321,10 +321,16 @@ const GrindCityGame = () => {
             const prevBest = bestLine
             bestLine = betterLine(prevBest, cand)
             if (bestLine !== prevBest) {
-                bestSeed = sim.seed
-                bestLog = inputLog.slice()
-                attractIdx = 0
                 setBest(bestLine)
+                // Only a full-window line earns the attract loop — a 1 s bail
+                // replayed back-to-back behind the title would flicker, not
+                // demo. The near-miss already taught its lesson on the replay
+                // screen that followed the run itself.
+                if (inputLog.length >= REPLAY_MIN) {
+                    bestSeed = sim.seed
+                    bestLog = inputLog.slice()
+                    attractIdx = 0
+                }
             }
             if (replayWorthy(inputLog.length, lettersGot)) startReplay()
             else finishOver()
@@ -345,10 +351,17 @@ const GrindCityGame = () => {
 
         const simTick = (inputOverride) => {
             // attract input: the banked best line if the session has one (#3374),
-            // else the planner. The banked line plays back exactly as ridden.
-            const bankedPad = bestLog.length && attractIdx < bestLog.length
-                ? unpackIn(bestLog[attractIdx++])
-                : null
+            // else the planner. The banked line plays back exactly as ridden and
+            // WRAPS at its own end — how the run ended (bail, clock, or a QA
+            // shortened clock) isn't in the pads, so the wrap is driven by the
+            // log length, not by the sim noticing it is over.
+            let bankedPad = null
+            if (attractMode && bestLog.length) {
+                if (attractIdx >= bestLog.length) {
+                    sim = makeGame(bestSeed, 'run'); sim.phase = 'play'; attractIdx = 0
+                }
+                bankedPad = unpackIn(bestLog[attractIdx++])
+            }
             const input = inputOverride || (attractMode ? (bankedPad || botPad(stateOf(sim), bot)) : pad())
             if (!attractMode && screenRef.current === 'play') inputLog.push(packIn(input))
             step(sim, input)
