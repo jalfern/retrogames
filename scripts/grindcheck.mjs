@@ -3,7 +3,7 @@
 // goal inside the 2:00 run, and seed + pads replay identical hashes.
 // Run: npm run grindcheck [-- --mutate <rule>]  (--mutate proves it can fail)
 
-import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, SHARE_MAX_TICKS } from '../src/games/GrindCity/sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, CRUISE_MIN, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, SHARE_MAX_TICKS } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
 import { parkHeight, LETTERS, RAILS, GEMS, GEM_PTS, SECRET, ROOF_Y, shadeAt } from '../src/games/GrindCity/park.js'
 import { BAR, bedVoices, landThud, ATTRACT_SFX, sfxGain } from '../src/games/GrindCity/music.js'
@@ -25,7 +25,7 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck', 'clone', 'need', 'sched', 'searchwire']
+    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'momentum', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck', 'clone', 'need', 'sched', 'searchwire']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
@@ -170,6 +170,35 @@ ok('park surface sane near start', parkHeight(6, -31.5) > 3, `h=${parkHeight(6, 
     for (let i = 0; i < 30; i++) { step(p1, {}); step(p2, { b: true }) }
     const d1 = p1.chainPts - base1, d2 = p2.chainPts - base2
     ok('grab doubles the grind trickle', d2 === 2 * d1, `plain +${d1} vs grab +${d2}`)
+}
+
+// ── inherent momentum (#3406) — gentle ground never hard-sticks ───────────────
+{
+    // Flat plaza, slow rider, no input: decay must roll on, not stop dead.
+    const s = makeGame(9, 'run'); s.phase = 'play'
+    s.x = 6; s.z = 10.4; s.y = parkHeight(6, 10.4); s.heading = 0; s.speed = 0.4
+    for (let i = 0; i < 30; i++) step(s, {})
+    ok('momentum: a stalled flat rider keeps rolling (never a hard stop)',
+        s.speed >= CRUISE_MIN, `speed=${s.speed.toFixed(2)}`)
+    ok('momentum: the cruise floor is target-visible, not a noop', s.speed > 0.5,
+        `speed=${s.speed.toFixed(2)}`)
+
+    // A fast line is untouched — the floor only tops up slow riders.
+    const f = makeGame(9, 'run'); f.phase = 'play'
+    f.x = 6; f.z = 10.4; f.y = parkHeight(6, 10.4); f.heading = 0; f.speed = 6
+    for (let i = 0; i < 30; i++) step(f, {})
+    ok('momentum: a fast line is not held at the floor', f.speed > 5, `speed=${f.speed.toFixed(2)}`)
+
+    // The honest roof gate is untouched: the 6 m/s shuffle stall law still
+    // fails to crest — the floor must never turn a stuck rider into a climber.
+    const g = makeGame(9, 'run'); g.phase = 'play'
+    g.x = -15; g.z = 5; g.y = parkHeight(-15, 5); g.heading = Math.PI / 2; g.speed = 6
+    let crested = false
+    for (let i = 0; i < 300 && g.phase === 'play'; i++) {
+        step(g, { b: g.lastSlope > 0.18 && g.speed < 11 })
+        if (g.z > 15 && g.y > ROOF_Y - 0.3) { crested = true; break }
+    }
+    ok('momentum: a 6 m/s shuffle still never crests the wall', !crested)
 }
 
 // ── second line, gems, secret spot (#3246) ────────────────────────────────
@@ -687,7 +716,8 @@ import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
     const simMut = MUT === 'codec' ? simRaw.replace('body += B64[w]', 'body += B64[(w + 1) & 63]')
         : MUT === 'beats' ? simRaw.replace('(run.letters || 0) > (prev.letters || 0)\n}', '(run.letters || 0) >= (prev.letters || 0)\n}')
             : MUT === 'store' ? simRaw.replace('b.log.length >= REPLAY_MIN', 'b.log.length >= 0')
-                : simRaw
+                : MUT === 'momentum' ? simRaw.replace('s.speed = Math.max(s.speed, CRUISE_MIN)', 's.speed = Math.max(s.speed, 0)')
+                    : simRaw
     ok('save wiring: store read validated + written only through the strict law (#3381)',
         /const STORE_KEY = 'grindcity\.best\.v1'/.test(cab) &&
         /validBank\(b\)/.test(cab) &&
@@ -696,6 +726,9 @@ import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
         /b\.log\.length >= REPLAY_MIN/.test(simMut) &&
         /run\.score > prev\.score\s+return \(run\.letters \|\| 0\) > \(prev\.letters \|\| 0\)/.test(simMut) &&
         /body \+= B64\[w\]/.test(simMut))
+    // MUT=momentum strips the cruise floor — the pin must see red.
+    ok('momentum wiring: the inherent floor is real and load-bearing in the sim',
+        /s\.speed = Math\.max\(s\.speed, CRUISE_MIN\)/.test(simMut))
     const cabShare = MUT === 'sharewire' ? cabRaw.split('KeyS').join('KeyX') : cabRaw
     ok('share wiring: S copies on replay + over, deep link rides the attract, badges exist (#3381)',
         (cabShare.match(/c === 'KeyS'/g) || []).length === 2 &&
