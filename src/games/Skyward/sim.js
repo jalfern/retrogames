@@ -72,6 +72,13 @@ export const CFG = {
     BELT_SINK: 2.0,
     BELT_RISE: 1.0, // rising faster than this is a departure, not an arrival
     BELT_SPEED: 4.0,
+    // #3370 (items 1, 4, 6) — fabric, banner, dust: the sock hangs in
+    // SOCK_SEGS joints, the ripple travels down the tail one SOCK_DELAY per
+    // joint, and ground dust scales from a parked puff to a rollout plume.
+    SOCK_SEGS: 3,
+    SOCK_DELAY: 0.09, // s of sim clock between joints — fabric remembers
+    DUST_WALK: 2,     // m/s under this the deck barely breathes
+    DUST_PLOW: 30,    // m/s at/over this is a full plume
 }
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
@@ -440,7 +447,7 @@ function stepPlane(g, w, sx, sy, dt) {
                 g.p.y = floor + 0.5
                 g.vy = 0; g.pitch = 0; g.roll = 0
                 g._depart = 0
-                ev(g, 'land', { craft: 'plane', strip: true, zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned, flare: !!touch.flare, blend: touch.blend })
+                ev(g, 'land', { craft: 'plane', strip: true, zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned, flare: !!touch.flare, blend: touch.blend, speed: +g.speed.toFixed(1) })
                 return
             }
             // #3331 item 1 — not a catch, but a hot-and-shallow straight pass
@@ -621,8 +628,23 @@ export function scuffTell(w, x, z, heading, y) {
     let e = heading - w.STRIP_HEADING
     while (e > Math.PI) e -= Math.PI * 2
     while (e < -Math.PI) e += Math.PI * 2
-    const tell = clamp((Math.abs(e) - CFG.TELL_GRIP) / (CFG.STRIP_ALIGN - CFG.TELL_GRIP), 0, 1)
+    const tell = clamp((Math.abs(e) - CFG.TELL_GRIP) / (CFG.STRIP_ALIGN - CFG.STRIP_GRIP), 0, 1)
     return { tell: +tell.toFixed(2), dir: e >= 0 ? 1 : -1, u: +(t * len).toFixed(1) }
+}
+
+// #3370 item 4 — the ladder teaches LIVE. #3310 shows the price ladder as a
+// fixed string once per run; while it's up, ladderBanner puts a ▸ on the
+// zone the hull is crossing. stripZone answers on x/z alone, so the marker
+// tracks a hull over the deck mid-final — painted numbers and marker can
+// never disagree, they read the same law. Off the strip the plain #3310
+// string comes back untouched.
+export function ladderMark(zone) {
+    const names = ['SHORT 150', 'MIDDLE 300', 'LONG 450', 'FULL 700']
+    return names.map((n, i) => (zone === i + 1 ? `▸${n}` : n)).join(' · ')
+}
+export function ladderBanner(w, x, z) {
+    const zn = stripZone(w, x, z)
+    return ladderMark(zn ? zoneOf(zn.frac) : null)
 }
 
 // #3332 — the belt's touchdown decision, pure law beside the plane's. The
@@ -674,7 +696,7 @@ function stepGlider(g, w, sx, sy, dt) {
         // #3302 — soft touchdown: the strip if we're on it, else the mat law
         const strip = stripScore(w, g.p.x, g.p.z, g.heading, g.vy, g.speed)
         if (strip) {
-            ev(g, 'land', { strip: true, zone: strip.zone, score: strip.score, u: strip.u, aligned: strip.aligned })
+            ev(g, 'land', { strip: true, zone: strip.zone, score: strip.score, u: strip.u, aligned: strip.aligned, speed: +g.speed.toFixed(1) })
             finishEvent(g, 'spot', strip.score)
             return
         }
@@ -742,11 +764,12 @@ function stepBelt(g, w, sx, sy, a, dt) {
             if (zn) {
                 const touch = beltTouch(w, g.p.x, g.p.z, g.heading, g.vy, g.speed)
                 if (touch) {
+                    const vIn = +g.speed.toFixed(1) // #3370 item 6 — remember how fast she arrived; the park zeroes the hull
                     g.park = { zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned }
                     g.beltLand = Math.max(g.beltLand, touch.score)
                     g.p.y = floor + 0.8
                     g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0
-                    ev(g, 'land', { craft: 'belt', strip: true, zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned })
+                    ev(g, 'land', { craft: 'belt', strip: true, zone: touch.zone, score: touch.score, u: touch.u, aligned: touch.aligned, speed: vIn })
                     return
                 }
             }
@@ -893,6 +916,35 @@ export function sockPose(wind, t, gust) {
     const droop = clamp(1 - sp / 2.2, 0, 1) * 0.9 // a stiff breeze streams it flat
     const sway = Math.sin(t * 2.7) * 0.10 * flutter + Math.sin(t * 5.3 + 1.7) * 0.045 * flutter
     return { dir: { x: +(wx / sp).toFixed(4), z: +(wz / sp).toFixed(4) }, droop: +droop.toFixed(3), sway: +sway.toFixed(4), flutter: +flutter.toFixed(3) }
+}
+
+// #3370 item 1 — fabric. ONE rigid cone reads as a swinging arrow; cloth
+// remembers. sockChain hangs the tail in CFG.SOCK_SEGS joints: each joint
+// carries a heavier share of the droop (the tip sags more than the throat)
+// and flutters on the SAME sim clock lagged CFG.SOCK_DELAY per joint — so a
+// gust snap travels DOWN the tail instead of snapping the whole cone at once.
+// dir stays on the root pivot (the pole yaws), every number is pure: a
+// replay sees the same ripple.
+export function sockChain(wind, t, gust) {
+    const base = sockPose(wind, t, gust)
+    const segs = []
+    for (let i = 0; i < CFG.SOCK_SEGS; i++) {
+        const lag = sockPose(wind, t - i * CFG.SOCK_DELAY, gust)
+        segs.push({
+            droop: +(base.droop * (0.5 + 0.25 * i)).toFixed(3),
+            sway: +(lag.sway * (0.6 + 0.3 * i)).toFixed(4),
+        })
+    }
+    return { dir: base.dir, flutter: base.flutter, droop: base.droop, segs }
+}
+
+// #3370 item 6 — dust earns its speed. The belt reuses the plane's strip
+// flourish, but a PARKED hull shouldn't puff a rollout-sized cloud: ground
+// dust scales with the hull's deck speed — DUST_WALK ≈ a puff,
+// DUST_PLOW ≈ a plume.
+export function dustFlow(speed) {
+    const v = Number.isFinite(speed) ? speed : 0
+    return +clamp((v - CFG.DUST_WALK) / (CFG.DUST_PLOW - CFG.DUST_WALK), 0, 1).toFixed(3)
 }
 
 export function engineCue(raw, prevRaw) {

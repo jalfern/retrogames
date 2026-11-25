@@ -13,7 +13,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue, engineBed, engineCue, windBed, stripZone, scuffTell } from './sim.js'
+import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue, engineBed, engineCue, windBed, stripZone, scuffTell, ladderBanner, dustFlow } from './sim.js'
 import { decide } from './planner.js'
 import { createSkywardGL } from './renderer.js'
 import { PRESS, MESSAGES } from './attract.js'
@@ -45,6 +45,7 @@ const SkywardGame = () => {
     const bLabelRef = useRef('B')
     const ladderRef = useRef(false) // #3310 item 2 — the zone ladder shows once
     const ladderAtRef = useRef(0)
+    const ladderLiveRef = useRef(0) // #3370 item 4 — while up, ▸ tracks the live zone
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -237,7 +238,15 @@ const SkywardGame = () => {
                 if (e.kind === 'splash') gl.burst(g.p.x, 1.2, g.p.z, [0.85, 0.97, 1], 22, 5)
                 if (e.kind === 'crash') gl.burst(g.p.x, g.p.y, g.p.z, [1, 0.8, 0.55], 26, 7)
                 if (e.kind === 'hit') gl.burst(g.world.targets[e.target].x, 1.4, g.world.targets[e.target].z, e.score > 200 ? [1, 0.9, 0.4] : [0.9, 0.9, 0.9], 16, 4)
-                if (e.kind === 'land') gl.burst(g.p.x, g.p.y + 0.5, g.p.z, e.strip && e.zone >= 4 ? [1, 0.85, 0.35] : [0.95, 0.93, 0.8], e.strip && e.zone >= 4 ? 26 : 14, e.strip && e.zone >= 4 ? 5 : 3)
+                if (e.kind === 'land') {
+                    // #3370 item 6 — the ground-contact puff matches how fast
+                    // the hull arrived (a parked belt barely puffs, a hot
+                    // rollout plumes); the deep-zone gold is a reward, not
+                    // dust, and keeps its full celebration.
+                    const df = dustFlow(Number.isFinite(e.speed) ? e.speed : g.speed)
+                    if (e.strip && e.zone >= 4) gl.burst(g.p.x, g.p.y + 0.5, g.p.z, [1, 0.85, 0.35], 26, 5)
+                    gl.burst(g.p.x, g.p.y + 0.4, g.p.z, [0.95, 0.93, 0.8], 3 + Math.round(df * 17), 1 + df * 2)
+                }
             }
             g.events.length = 0
         }
@@ -294,6 +303,7 @@ const SkywardGame = () => {
             stormWarnedRef.current = false
             ladderRef.current = false // #3310 — every run gets its own ladder lesson
             ladderAtRef.current = 0
+            ladderLiveRef.current = 0
             bLabelRef.current = 'B'; setBLabel('B')
             setOver(null)
             setMode('play')
@@ -505,13 +515,19 @@ const SkywardGame = () => {
                 }
                 // #3310 item 2 — the first SPOT LANDING teaches the whole ladder
                 // once: title banner first, then the price list it lands on.
+                // #3370 item 4 — while that list is up a ▸ marks the zone the
+                // hull is crossing, so the banner agrees with the painted numbers.
                 if (gs.phase === 'spot' && prevPhaseRef.current !== 'spot' && !ladderRef.current) {
                     ladderRef.current = true
                     ladderAtRef.current = performance.now() + 2600
                 }
                 if (ladderAtRef.current && performance.now() > ladderAtRef.current) {
                     ladderAtRef.current = 0
-                    banner('SHORT 150 · MIDDLE 300 · LONG 450 · FULL 700', 3.4)
+                    ladderLiveRef.current = performance.now() + 3400
+                }
+                if (ladderLiveRef.current) {
+                    if (performance.now() >= ladderLiveRef.current) ladderLiveRef.current = 0
+                    else banner(ladderBanner(gs.world, gs.p.x, gs.p.z), 0.3)
                 }
                 // #3310 item 1 — the pad shows the verb this button carries now
                 const bl = gs.phase === 'drop' ? 'DROP'
