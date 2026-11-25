@@ -22,6 +22,11 @@
   and re-verified before merge. Prod: `Pinball-fYZbS1RJ.js` carries the marker.
 
 ## Harness lessons (worth one line each)
+- **CI attach can fail twice in a row on a docs-only branch**: no `pull_request`
+  run object at all, and the re-push cure (#3220) dropped again — the working
+  override is `gh workflow run ci.yml --ref <branch>`; forge-merge was right to
+  refuse while `static` had no state (#3120). Do NOT push while a
+  cancel-in-progress run for that ref is live.
 - **A mutant child that dies on a missing anchor exits non-zero, and the parent
   reads that as SURVIVES** — anchor strings must match the wrapped condition
   exactly; the "anchor missing" error goes to child stderr, invisible in the
