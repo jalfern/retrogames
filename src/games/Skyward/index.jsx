@@ -13,7 +13,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue, engineBed, engineCue, stripZone } from './sim.js'
+import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue, engineBed, engineCue, windBed, stripZone } from './sim.js'
 import { decide } from './planner.js'
 import { createSkywardGL } from './renderer.js'
 import { PRESS, MESSAGES } from './attract.js'
@@ -37,6 +37,7 @@ const SkywardGame = () => {
     const prevStormRef = useRef(0)
     const engOnRef = useRef(false)
     const prevEngRawRef = useRef(0)
+    const windOnRef = useRef(false)
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -100,7 +101,19 @@ const SkywardGame = () => {
                     }
                     break
                 case 'graduate': audioController.playFanfare(); break
-                case 'crash': audioController.playFilteredNoise(0.4, 0.3, 260); break
+                case 'crash': {
+                    // #3300 item 4 — sequence, don't stack: the motor's cut
+                    // sweep leads, the crash rumble lands a breath later, so
+                    // both read instead of masking each other at the same
+                    // instant. The beds die with the hull; the respawn freeze
+                    // (see the engine block) re-arms the spool for the restart.
+                    const hadEngine = engOnRef.current
+                    if (engOnRef.current) { audioController.stopLoopEngine(); engOnRef.current = false }
+                    if (windOnRef.current) { audioController.stopLoopWind(); windOnRef.current = false }
+                    if (hadEngine) sweep(140, 46, 0.5, 'sawtooth', 0.05)
+                    audioController.playFilteredNoise(0.4, 0.3, 260, 0.18)
+                    break
+                }
                 case 'splash': audioController.playFilteredNoise(0.3, 0.16, 900); break
                 case 'drop': sweep(500, 180, 0.22, 'triangle', 0.08); break
                 case 'hit':
@@ -115,7 +128,13 @@ const SkywardGame = () => {
                     else if (e.strip && !e.aligned) tone(196, 0.18, 'sawtooth', 0.07)
                     else { tone(523, 0.12); tone(784, 0.16, 'triangle', 0.08, 0.1) }
                     break
-                case 'switch': sweep(240, 520, 0.18, 'square', 0.06); break
+                case 'switch':
+                    sweep(240, 520, 0.18, 'square', 0.06)
+                    // #3300 item 6 — the glider's one rule, taught at the
+                    // moment the ground crew hands it over: silence is the
+                    // design, and airspeed is the only throttle it has.
+                    if (e.craft === 'glider') banner('NO ENGINE — WIND IS YOUR THROTTLE', 3.4)
+                    break
                 case 'wheels': sweep(240, 520, 0.16, 'triangle', 0.07); break
                 case 'liftoff': sweep(300, 640, 0.14, 'triangle', 0.07); break
                 case 'crew': tone(392, 0.1); tone(311, 0.16, 'triangle', 0.07, 0.1); break
@@ -330,37 +349,75 @@ const SkywardGame = () => {
             // the motor was per-action only (#3295): a sustained engine bed now
             // rides the loop voice the same way the rain rides the loop noise.
             // engineBed decides loudness/pitch from airspeed + climb load (plane)
-            // or fan thrust (belt); the glider is motorless — its bed is silence.
-            // A 13 Hz blade-pass flutter is presentation, timed off the sim
-            // clock so it is deterministic; engineCue's edges spin the prop up
-            // when boarding and let it die into the wind when switching to the
-            // glider. The laws are pure in sim.js so skywardcheck pins them.
+            // or fan thrust (belt); the glider is motorless — its bed is silence
+            // (its air-noise bed is the wind law below). A 13 Hz blade-pass
+            // flutter is presentation, timed off the sim clock so it is
+            // deterministic; engineCue's edges spin the prop up when boarding and
+            // let it die into the wind when switching to the glider. The laws
+            // are pure in sim.js so skywardcheck pins them. #3300: the bed now
+            // rides the RICH engine voice (two detuned saws through a load-opened
+            // lowpass) and the flutter bends pitch as well as gain.
+            let engNow = null // the live bed the renderer's exhaust streak reads
             if (screenRef.current === 'play' && !pausedNow) {
-                const eng = engineBed(gs.craft, gs.speed, gs.vy, gs.thrusting, gs.stormS)
-                if (eng.gain > 0) {
-                    audioController.startLoopVoice(eng.freq, 0.045)
-                    const flutter = 1 + 0.16 * Math.sin(gs.t * 2 * Math.PI * 13)
-                    audioController.setLoopVoice(eng.freq, eng.gain * flutter)
-                    engOnRef.current = true
-                } else if (engOnRef.current) {
-                    audioController.stopLoopVoice()
-                    engOnRef.current = false
+                // #3300 items 1+4 — a respawn freeze is an engine that died
+                // with the hull: bed off, arming line zeroed, so the frame the
+                // ground crew hands the plane back answers with the spool cue.
+                if (gs.respawnT > 0) {
+                    if (engOnRef.current) { audioController.stopLoopEngine(); engOnRef.current = false }
+                    prevEngRawRef.current = 0
+                } else {
+                    const eng = engineBed(gs.craft, gs.speed, gs.vy, gs.thrusting, gs.stormS)
+                    engNow = eng
+                    if (eng.gain > 0) {
+                        audioController.startLoopEngine(eng.freq, 0.045)
+                        // #3300 item 1 — the 13 Hz blade pass now bends pitch
+                        // as well as gain: the whole motor wobbles ±30 cents on
+                        // the same deterministic sim clock (the two saws keep
+                        // their ±9-cent gap), and the filter opens with load.
+                        const fl = Math.sin(gs.t * 2 * Math.PI * 13)
+                        const flutter = 1 + 0.16 * fl
+                        audioController.setLoopEngine(eng.freq, eng.gain * flutter, eng.cut, 30 * fl)
+                        engOnRef.current = true
+                    } else if (engOnRef.current) {
+                        audioController.stopLoopEngine()
+                        engOnRef.current = false
+                    }
+                    const ecue = engineCue(eng.raw, prevEngRawRef.current)
+                    if (ecue === 'spool') { // props bite — boarding, or a stall recovered
+                        sweep(58, 165, 0.5, 'sawtooth', 0.055)
+                        tone(82, 0.24, 'square', 0.03, 0.08)
+                    } else if (ecue === 'cut') { // the motor dies — the wind takes it
+                        sweep(140, 46, 0.6, 'sawtooth', 0.05)
+                    }
+                    prevEngRawRef.current = eng.raw
                 }
-                const ecue = engineCue(eng.raw, prevEngRawRef.current)
-                if (ecue === 'spool') { // props bite — boarding, or a stall recovered
-                    sweep(58, 165, 0.5, 'sawtooth', 0.055)
-                    tone(82, 0.24, 'square', 0.03, 0.08)
-                } else if (ecue === 'cut') { // the motor dies — the wind takes it
-                    sweep(140, 46, 0.6, 'sawtooth', 0.05)
-                }
-                prevEngRawRef.current = eng.raw
             } else if (engOnRef.current) {
-                audioController.stopLoopVoice() // pause, over, attract: engine off too
+                audioController.stopLoopEngine() // pause, over, attract: engine off too
                 engOnRef.current = false
             }
 
+            // #3300 item 3 — the glider is motorless, but not windless: a soft
+            // rush rises with its own airspeed (windBed, pure + pinned), rides
+            // its own noise slot so the storm bed can sing at the same time,
+            // and stays far quieter than the motor ever was. Silence keeps its
+            // meaning — what you hear is air, never a fake engine.
+            if (screenRef.current === 'play' && !pausedNow) {
+                const wind = windBed(gs.craft, gs.speed, gs.stormS)
+                if (wind.gain > 0) {
+                    audioController.startLoopWind(0.03)
+                    audioController.setLoopWind(wind.gain, wind.cut)
+                    windOnRef.current = true
+                } else if (windOnRef.current) {
+                    audioController.stopLoopWind()
+                    windOnRef.current = false
+                }
+            } else if (windOnRef.current) {
+                audioController.stopLoopWind() // pause, over, attract: the air goes still
+                windOnRef.current = false
+            }
+
             if (screenRef.current === 'attract') gl.orbitAttract(demo, ft / 1000)
-            else gl.render(gs, ft / 1000)
+            else gl.render(gs, ft / 1000, engNow)
 
             // on-entry hint + warning tick for the pass (HUD/audio only)
             const sc = screenRef.current
@@ -445,6 +502,8 @@ const SkywardGame = () => {
                 },
                 // #3295 — the live engine bed the cabinet is hearing right now
                 engine: () => engineBed(gs.craft, gs.speed, gs.vy, gs.thrusting, gs.stormS),
+                // #3300 item 3 — the wind rush the glider hears right now
+                windRush: () => windBed(gs.craft, gs.speed, gs.stormS),
                 // #3302 — the seed wind, so a drive leg can crab into it and
                 // hold a straight ground track (what a pilot would do)
                 wind: () => ({ x: gs.world.wind.x, z: gs.world.wind.z }),
@@ -492,7 +551,9 @@ const SkywardGame = () => {
         return () => {
             cancelAnimationFrame(raf)
             if (bedOnRef.current) { audioController.stopLoopNoise(); bedOnRef.current = false }
-            if (engOnRef.current) { audioController.stopLoopVoice(); engOnRef.current = false }
+            if (engOnRef.current) { audioController.stopLoopEngine(); engOnRef.current = false }
+            if (windOnRef.current) { audioController.stopLoopWind(); windOnRef.current = false }
+            audioController.stopLoopVoice() // #3300 — the cabinet moved to the rich voice; sweep either clean
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('pointerdown', onPointer)
