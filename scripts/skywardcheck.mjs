@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { makeGame, step, checkout, stateOf } from '../src/games/Skyward/sim.js'
+import { makeGame, step, checkout, stateOf, stormBed, stormCue } from '../src/games/Skyward/sim.js'
 import { decide } from '../src/games/Skyward/planner.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { Report } from './lib/harness.mjs'
@@ -302,6 +302,60 @@ void runAuto
     r.check('the drift is seed-deterministic', same)
 }
 
+// ------------------------------------------------ storm audio law (#3272) ----
+{
+    // The bed follows depth honestly, and it stays a bed: monotonic in gain
+    // and cutoff, silent in fair air, capped low enough that weather never
+    // drowns the ring tones.
+    let mono = true
+    let prevB = null
+    for (let s = 0; s <= 1.0001; s += 0.02) {
+        const b = stormBed(s)
+        if (prevB && (b.gain < prevB.gain - 1e-9 || b.cut < prevB.cut)) mono = false
+        prevB = b
+    }
+    r.check('the rain bed rises monotonically with cell depth, silent in fair air',
+        mono && stormBed(0).gain === 0 && stormBed(0.01).gain === 0 && stormBed(0.5).gain > 0,
+        JSON.stringify(stormBed(0.5)))
+    r.check('the bed is a bed, not a blast (gain ≤ 0.06, cutoff ≤ 1200)',
+        stormBed(1).gain <= 0.06 && stormBed(1).cut <= 1200,
+        JSON.stringify(stormBed(1)))
+    r.check('the bed law survives garbage (NaN/±∞ in ⇒ silence out, never poison the graph)',
+        stormBed(NaN).gain === 0 && stormBed(-2).gain === 0 && stormBed(Infinity).gain === 0)
+
+    // Edge laws with hysteresis: one sting per dive, re-armed by a climb out;
+    // hovering at a threshold must not machine-gun.
+    const seq = (arr) => arr.map((s, i) => stormCue(s, i ? arr[i - 1] : 0))
+    r.check('first contact warns, core stings, a climb-out re-arms the sting',
+        JSON.stringify(seq([0, 0.04, 0.2, 0.55, 0.7, 0.9, 0.3, 0.6])) ===
+        JSON.stringify([null, null, 'warn', 'core', null, null, null, 'core']))
+    r.check('buffeting at the core edge cannot re-sting (hysteresis)',
+        seq([0, 0.5, 0.52, 0.54, 0.49, 0.51, 0.53]).filter((c) => c === 'core').length === 1)
+    r.check('hovering at the warn edge cannot re-warn (hysteresis)',
+        seq([0, 0.07, 0.05, 0.07, 0.04, 0.07]).filter((c) => c === 'warn').length === 2)
+    r.check('stormCue survives garbage (NaN in ⇒ nothing)', stormCue(NaN, NaN) === null)
+
+    // Honesty: EVERY craft reads its depth — the bed the cabinet drives is the
+    // cell the world put the hull in, on glider and belt as much as the plane.
+    const gl = makeGame(9); checkout(gl, 'spot')
+    const cp = gl.world.stormPos(gl.t)
+    gl.p = { x: cp.x, y: 60, z: cp.z }
+    step(gl, {})
+    r.check('the glider reads storm depth (bed follows every craft)', gl.stormS > 0.5, `s=${gl.stormS.toFixed(2)}`)
+    const bl = makeGame(9); checkout(bl, 'drop')
+    const cp2 = bl.world.stormPos(bl.t)
+    bl.p = { x: cp2.x, y: 50, z: cp2.z }
+    bl.vel = { x: 0, y: 0, z: 0 }
+    step(bl, {})
+    r.check('the belt reads storm depth too', bl.stormS > 0.5, `s=${bl.stormS.toFixed(2)}`)
+    r.check('fair air over the bay says nothing to any craft', (() => {
+        const a = makeGame(9); step(a, {}); const sa = a.stormS
+        const b = makeGame(9); checkout(b, 'spot'); b.p = { x: a.p.x, y: 60, z: a.p.z }; step(b, {})
+        const c = makeGame(9); checkout(c, 'drop'); c.p = { x: a.p.x, y: 50, z: a.p.z }; c.vel = { x: 0, y: 0, z: 0 }; step(c, {})
+        return sa < 0.001 && b.stormS < 0.001 && c.stormS < 0.001
+    })(), `plane=${makeGame(9).stormS.toFixed(2)}`)
+}
+
 // -------------------------------------------------------- graduation ----
 {
     const SEEDS = [1, 7, 42, 99, 123]
@@ -390,6 +444,9 @@ if (process.argv.includes('--mutate')) {
         ['the storm stops drifting', WORLDF, 'Math.sin(t * 0.045 + stormPh) * 64', '0 * Math.sin(t * 0.045 + stormPh) * 64'],
         ['physics ignores the painted drift (the clouds lie)', WORLDF, 'const p = stormPos(t)', 'const p = storm'],
         ['the cell wanders inland', WORLDF, '+ stormPh) * 64 +', '+ stormPh) * 192 +'],
+        ['the rain bed ignores cell depth', SIMF, 'return { gain: +(0.006 + 0.048 * d * d).toFixed(4), cut: Math.round(240 + 760 * d) }', 'return { gain: 0, cut: 0 }'],
+        ['the core sting loses its hysteresis (machine-gun thunder)', SIMF, "if (a >= 0.5 && b < 0.38) return 'core'", "if (a >= 0.5) return 'core'"],
+        ['the glider stops reading storm depth (silent bed on the saddle craft)', SIMF, 'g.stormS = storm.s // #3272: the bed follows EVERY craft, not just the plane\n    g.lift = w.thermalLift(g.p.x, g.p.z, g.t)', 'g.lift = w.thermalLift(g.p.x, g.p.z, g.t)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

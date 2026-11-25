@@ -13,7 +13,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT } from './sim.js'
+import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, stormBed, stormCue } from './sim.js'
 import { decide } from './planner.js'
 import { createSkywardGL } from './renderer.js'
 import { PRESS, MESSAGES } from './attract.js'
@@ -33,6 +33,8 @@ const SkywardGame = () => {
     const passEnterUntilRef = useRef(0)
     const stormWarnedRef = useRef(false)
     const prevPhaseRef = useRef('free')
+    const bedOnRef = useRef(false)
+    const prevStormRef = useRef(0)
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -135,6 +137,8 @@ const SkywardGame = () => {
         const held = { left: false, right: false, up: false, down: false, a: false, b: false }
         const startPlay = () => {
             gs = makeGame(seedFromQuery() ?? randomSeed())
+            prevStormRef.current = 0
+            stormWarnedRef.current = false
             setOver(null)
             setMode('play')
             tone(520, 0.08)
@@ -228,6 +232,40 @@ const SkywardGame = () => {
                     shimT = 0.34 - k * 0.14
                 }
             } else shimT = 0
+
+            // the cell was silent (#3272 item 1): a rain-rumble bed follows the
+            // hull's depth through stormBed, and stormCue's edge laws put a deep
+            // thunder sting on core entry and a distant rumble on first contact —
+            // the free-flight telegraph the drifting cell never had (item 4).
+            // The law is pure in sim.js so skywardcheck pins it; the cabinet
+            // just drives the loop-noise voice. THUNDERPASS keeps its own audio
+            // script (clap entrance, gate tones, 0.7 core warn) untouched.
+            if (screenRef.current === 'play' && !pausedNow) {
+                const sDepth = gs.stormS
+                const bed = stormBed(sDepth)
+                if (bed.gain > 0) {
+                    audioController.startLoopNoise(0.055)
+                    audioController.setLoopNoise(bed.gain, bed.cut)
+                    bedOnRef.current = true
+                } else if (bedOnRef.current) {
+                    audioController.stopLoopNoise()
+                    bedOnRef.current = false
+                }
+                if (gs.phase !== 'pass') {
+                    const cue = stormCue(sDepth, prevStormRef.current)
+                    if (cue === 'core') { // punching into the core: a deep thunder knock
+                        audioController.playFilteredNoise(0.9, 0.28, 140)
+                        tone(87, 0.5, 'sawtooth', 0.1)
+                    } else if (cue === 'warn') { // the cell is reaching for you — far, low, once
+                        audioController.playFilteredNoise(1.4, 0.08, 110)
+                        tone(131, 0.3, 'triangle', 0.045, 0.05)
+                    }
+                }
+                prevStormRef.current = sDepth
+            } else if (bedOnRef.current) {
+                audioController.stopLoopNoise() // pause, over, attract: the sky goes quiet
+                bedOnRef.current = false
+            }
 
             if (screenRef.current === 'attract') gl.orbitAttract(demo, ft / 1000)
             else gl.render(gs, ft / 1000)
@@ -336,6 +374,7 @@ const SkywardGame = () => {
 
         return () => {
             cancelAnimationFrame(raf)
+            if (bedOnRef.current) { audioController.stopLoopNoise(); bedOnRef.current = false }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('pointerdown', onPointer)

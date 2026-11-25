@@ -50,7 +50,8 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   drifts the whole cell (weather AND paint) while the gates stay fixed, so a
   memorised THUNDERPASS line is a stale line. What remains of the old bullet:
   no online (issue: not yet), no second landing strip, engine audio is
-  per-action rather than a continuous loop.
+  per-action rather than a continuous loop (the rain bed #3272 is the first
+  sustained channel; the engine can follow its shape).
 - The cell drifts on a fixed seeded ellipse, not a steered weather sim (no
   cell-to-cell travel, no squall line); a long run learns the sweep the way
   rungs 1's lines were learned.
@@ -70,3 +71,13 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
 - **Thermal shimmer** — the sim exposes `g.lift` (glider only, zeroed for the
   other craft, kept out of `stateOf`); the cabinet sings a two-note shimmer
   whose tempo and pitch ride the lift, teaching the elevator audio-only.
+- **Storm bed (#3272)** — the cell is no longer silent. `stormBed(s)` maps
+  hull depth to a continuous filtered-noise rumble (gain and cutoff rise with
+  depth — deep rain is loud AND bright); `stormCue(s, prev)` holds the edge
+  laws with hysteresis: first contact warns with a distant low rumble (the
+  free-flight telegraph), crossing into the core lands a deep thunder sting.
+  Both laws are pure in `sim.js` so `skywardcheck` pins them; `g.stormS` now
+  reports depth for ALL three craft (was plane-only). The bed rides a new
+  loop-noise voice in `AudioController` (`startLoopNoise`/`setLoopNoise`/
+  `stopLoopNoise`, loopVoice's sibling on the ambience bus). THUNDERPASS
+  keeps its own audio script untouched.
