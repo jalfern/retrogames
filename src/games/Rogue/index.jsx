@@ -54,6 +54,26 @@ const fxSound = (e) => {
 // harness can fingerprint the drawn grid against the logical state)
 // ============================================================
 
+// ── CRT phosphor dressing (visual only — no sim changes) ─────────────────────
+// A CRT phosphor tube: scanline veil, radial vignette, subtle flicker, and a
+// soft text-shadow glow with the glyph's own color. Class-scoped to .rogue-crt.
+const CRT_CSS = `
+.rogue-crt { position: relative; }
+.rogue-crt div, .rogue-crt span, .rogue-crt pre { text-shadow: 0 0 5px currentColor; }
+.rogue-crt-overlay {
+  position: absolute; inset: 0; pointer-events: none; z-index: 40;
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.30) 0px, rgba(0,0,0,0.30) 1px, transparent 1px, transparent 3px),
+    radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(0,0,0,0.55) 100%);
+  animation: rogueCrtFlicker 3.6s ease-in-out infinite;
+}
+@keyframes rogueCrtFlicker {
+  0%,100% { opacity: 1 } 31% { opacity: 0.96 } 32% { opacity: 1 } 63% { opacity: 0.97 } 64% { opacity: 1 } 88% { opacity: 0.94 } 89% { opacity: 1 }
+}
+@media (pointer: coarse) { .rogue-crt div, .rogue-crt span, .rogue-crt pre { text-shadow: 0 0 3px currentColor } }
+@media (prefers-reduced-motion: reduce) { .rogue-crt-overlay { animation: none } }
+`
+
 // ── Mobile d-pad ──────────────────────────────────────────────────────────────
 function DPad({ onAction }) {
   const btn = (label, action, style = {}) => {
@@ -381,7 +401,7 @@ export default function RogueGame() {
   // ── GAME OVER ──────────────────────────────────────────────
   if (phase === 'gameover') {
     return (
-      <div ref={containerRef} style={base} tabIndex={0}
+      <div ref={containerRef} style={base} tabIndex={0} className="rogue-crt"
            onPointerDown={() => dispatch({ type: 'NEW_GAME', seed: freshSeed() })}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
           <div style={{ color: '#ff4444', fontSize: '30px', letterSpacing: '4px' }}>✝  GAME OVER  ✝</div>
@@ -399,6 +419,8 @@ export default function RogueGame() {
           </div>
           <div style={{ color: '#555', marginTop: '20px', fontSize: '13px' }}>Press ENTER or SPACE — or tap — to try again</div>
         </div>
+      <div className="rogue-crt-overlay" aria-hidden="true" />
+      <style>{CRT_CSS}</style>
       </div>
     )
   }
@@ -426,7 +448,7 @@ export default function RogueGame() {
       : player.inventory.map((item, i) => ({ item, i }))
 
     return (
-      <div ref={containerRef} style={base} tabIndex={0}>
+      <div ref={containerRef} style={base} tabIndex={0} className="rogue-crt">
         <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
           <div style={{ color: '#ffff55', fontSize: '16px', marginBottom: '12px', borderBottom: '1px solid #333', paddingBottom: '6px' }}>
             {menuPhaseTitle[phase]}
@@ -457,6 +479,8 @@ export default function RogueGame() {
             <div style={{ marginTop: '12px', color: '#444', fontSize: '12px' }}>Press letter to select, ESC to cancel</div>
           )}
         </div>
+      <div className="rogue-crt-overlay" aria-hidden="true" />
+      <style>{CRT_CSS}</style>
       </div>
     )
   }
@@ -500,7 +524,7 @@ export default function RogueGame() {
       ['A-Z', '#ff4444', 'Monsters'],
     ]
     return (
-      <div ref={containerRef} style={base} tabIndex={0}>
+      <div ref={containerRef} style={base} tabIndex={0} className="rogue-crt">
         <div style={{ padding: '16px', overflowY: 'auto', flex: 1, display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
           <div>
             <div style={{ color: '#ffff55', fontSize: '16px', marginBottom: '12px' }}>Commands</div>
@@ -522,6 +546,8 @@ export default function RogueGame() {
             <div style={{ marginTop: '16px', color: '#444', fontSize: '12px' }}>Press ?, SPACE, or ESC to close</div>
           </div>
         </div>
+      <div className="rogue-crt-overlay" aria-hidden="true" />
+      <style>{CRT_CSS}</style>
       </div>
     )
   }
@@ -537,7 +563,7 @@ export default function RogueGame() {
   const fontSize = isMobile ? 15 * mapScale : 15
 
   return (
-    <div ref={containerRef} style={base} tabIndex={0}
+    <div ref={containerRef} style={base} tabIndex={0} className="rogue-crt"
          onClick={() => containerRef.current?.focus()}
          onTouchStart={handleTouchStart}
          onTouchEnd={handleTouchEnd}>
@@ -591,6 +617,8 @@ export default function RogueGame() {
 
       {/* Mobile controls */}
       {isMobile && <DPad onAction={handleMobileAction} />}
+      <div className="rogue-crt-overlay" aria-hidden="true" />
+      <style>{CRT_CSS}</style>
     </div>
   )
 }
