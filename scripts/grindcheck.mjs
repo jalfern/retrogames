@@ -6,6 +6,8 @@
 import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
 import { parkHeight, LETTERS, RAILS } from '../src/games/GrindCity/park.js'
+import { BAR, bedVoices, landThud } from '../src/games/GrindCity/music.js'
+import { readFileSync } from 'node:fs'
 
 const dt = 1 / 60
 let fails = 0
@@ -23,14 +25,14 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    for (const rule of ['letters', 'gap', 'replay']) {
+    for (const rule of ['letters', 'gap', 'replay', 'bed']) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
         if (res.status === 0) { died++; console.log(`mutant dies: ${rule}`) }
         else console.log(`mutant SURVIVES: ${rule} — check is toothless`)
     }
-    console.log(died === 3 ? `ALL MUTANTS CAUGHT (${died}/3)` : `${died}/3 mutants caught`)
-    process.exit(died === 3 ? 0 : 1)
+    console.log(died === 4 ? `ALL MUTANTS CAUGHT (${died}/4)` : `${died}/4 mutants caught`)
+    process.exit(died === 4 ? 0 : 1)
 }
 
 // ── boot ──────────────────────────────────────────────────────────────────
@@ -143,6 +145,34 @@ function drive(seed) {
     ok('input-log replay rides the identical line',
         ident && s2.tick === s.tick && s2.score === s.score && s2.won,
         `${log.length} ticks, score=${s2.score}, won=${s2.won}`)
+}
+
+// ── the music bed (#3167) ─────────────────────────────────────────────────
+{
+    const bar = Array.from({ length: BAR }, (_, i) => bedVoices(i))
+    ok('bed: every bar carries a full groove', bar.reduce((n, v) => n + v.length, 0) >= 12,
+        `${bar.reduce((n, v) => n + v.length, 0)} voices/${BAR} steps`)
+    const shapesOk = bar.every(vs => vs.length <= 3 && vs.every(n =>
+        n.d > 0 && n.g > 0 && n.g < 0.3 && (n.hat || (isFinite(n.f) && n.f > 40 && n.f < 1200))))
+    ok('bed: voices well-formed (finite pitch, sane levels)', shapesOk)
+    ok('bed: scheduler wraps cleanly (negative indices)',
+        JSON.stringify(bedVoices(-3)) === JSON.stringify(bedVoices(13)) && bedVoices(BAR).length === bar[0].length)
+    let mono = true
+    let prev = null
+    for (let k = 0; k <= 9; k += 0.5) {
+        const t = landThud(k)
+        if (!(t.f > 40 && t.g > 0 && t.g <= 0.25 && t.d > 0)) mono = false
+        if (prev && !(t.f <= prev.f && t.g >= prev.g)) mono = false
+        prev = t
+    }
+    ok('land thud: heavier impact = lower pitch + louder (height-scaled)', mono,
+        `v0=${landThud(0).f.toFixed(0)}Hz v9=${landThud(9).f.toFixed(0)}Hz`)
+    // wiring: the cabinet must actually schedule the bed and voice the thud.
+    // MUT=bed strips the scheduler call — the gate must see red.
+    const cab = readFileSync(new URL('../src/games/GrindCity/index.jsx', import.meta.url), 'utf8')
+    const src = MUT === 'bed' ? cab.replace(/bedVoices\(/g, 'silence(') : cab
+    ok('bed wired into the cabinet loop (#3167)',
+        /from '\.\/music\.js'/.test(src) && /bedVoices\(/.test(src) && /landThud\(/.test(src) && /bed: bedT/.test(src))
 }
 
 if (MUT) {

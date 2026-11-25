@@ -14,6 +14,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL } from './sim.js'
 import { botPad, makeBot } from './planner.js'
+import { STEP, bedVoices, landThud } from './music.js'
 import { buildPark, buildSky, buildLetters, buildSkater, poseSkater, buildParticles, emit, stepParticles } from './art.js'
 
 const FIXED_DT = 1000 / 60
@@ -101,6 +102,10 @@ const GrindCityGame = () => {
         // camera: chase · fisheye action cam · replay cam — hard cuts between (#3225)
         let camMode = 'chase'
         let camCut = 0
+
+        // music bed (#3167): ticks with the sim clock, so pause stops it and
+        // the replay (which never runs simTick) stays silent. Attract is softer.
+        let bedT = 0
         const CAM_FOV = { chase: 72, action: 96, replay: 92 }
 
         const pad = () => ({
@@ -163,7 +168,12 @@ const GrindCityGame = () => {
             else if (e.startsWith('manual:start')) AC.playTone(420, 0.04, 'triangle', 0.06)
             else if (e.startsWith('trick:Manual')) AC.playTone(620, 0.07, 'triangle', 0.08)
             else if (e.startsWith('trick:')) { AC.playTone(760, 0.06, 'square', 0.07); AC.playTone(980, 0.08, 'square', 0.06, 0.05) }
-            else if (e.startsWith('land:')) { const v = parseFloat(e.split(':')[1]) || 3; AC.playNoise(0.09, Math.min(0.28, 0.05 + v * 0.03)) }
+            else if (e.startsWith('land:')) {
+                const v = parseFloat(e.split(':')[1]) || 3
+                AC.playNoise(0.09, Math.min(0.28, 0.05 + v * 0.03))
+                const th = landThud(v)   // more air in = heavier sound out (#3167)
+                AC.playTone(th.f, th.d, 'sine', th.g)
+            }
             else if (e.startsWith('bail')) { AC.playNoise(0.32, 0.3); AC.playSweep(300, 70, 0.3, 'sawtooth', 0.14) }
             else if (e.startsWith('bank')) { AC.playTone(520, 0.07, 'square', 0.08); AC.playTone(660, 0.07, 'square', 0.08, 0.06); AC.playTone(784, 0.12, 'square', 0.08, 0.12) }
             else if (e.startsWith('letter:')) AC.playTone(1046, 0.14, 'sine', 0.13)
@@ -274,6 +284,15 @@ const GrindCityGame = () => {
             step(sim, input)
             tickEvents.push(...sim.events.splice(0, sim.events.length))
             checkEnd()
+            // bed scheduling rides the same fixed step — paused screens and the
+            // over screen never reach simTick with a live board, so it stops itself
+            if (++bedT % STEP === 0 && (screenRef.current === 'play' || screenRef.current === 'attract')) {
+                const vs = attractMode ? 0.6 : 1
+                for (const n of bedVoices(bedT / STEP)) {
+                    if (n.hat) AC.playNoise(n.d, n.g * vs)
+                    else AC.playTone(n.f, n.d, n.type, n.g * vs)
+                }
+            }
         }
 
         const frame = (now) => {
@@ -390,7 +409,7 @@ const GrindCityGame = () => {
         // ── DEV hooks + contract ────────────────────────────────────────────
         if (import.meta.env.DEV) {
             window.__grindTest = {
-                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current }),
+                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT }),
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
