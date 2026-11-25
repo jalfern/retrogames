@@ -1,58 +1,60 @@
-# STATE — forge board snapshot (slot a, 2026-11-25 — GRIND CITY GETS A SECOND LINE)
+# STATE — forge board snapshot (slot b, 2026-11-24 — PINBALL DRESSES UP)
 
 ## This session — one ship, landed
-- Warden target **#3232 claim REFUSED** (slot b live on it, checkpoint 2 min
-  old) — ladder honored. Queue empty, QA MASTER live (no feedback borrow),
-  `idle-kick` → `KICK GRIND CITY 0 weak` (weakestStage score 6 = 5 unowned
-  README gaps + #3233 naming it). Gap 0 (replay options) re-owned to #3233
-  under the when-unsure rule (its body repeats the gap modulo punctuation) —
-  stage took gap 1: **"One park, one line."** Filed + claimed **#3246**.
-- **#3246 DONE: GRIND CITY second line** (`eb7a605`, PR #3251).
-  - **Roof deck**: trench landing → south quarterpipe at speed → crest onto a
-    2.5 m deck along the wall top, coping rail on the edge, long east ramp
-    back to plaza. Wall fades into deck with complementary curves — crest
-    height constant, physics and mesh still share `parkHeight`. Honest gate:
-    ~8 m/s crests pumping, 6 m/s stalls.
-  - **14 gems +100** (4 roof / 6 secret hoard / 4 far corners), GEM RUN
-    +1500 once; **secret bowl** east of the plaza, OFF THE MAP +250 once.
-    Win law untouched — autopilot still wins at 18910/seed, replay hashes
-    bit-identical to pre-change main.
-  - Proof: grindcheck **71 green + 5/5 mutants** (new `gems`); honest physics
-    legs incl. "optional-by-design" (bot takes zero gems all seeds).
-    gcdrive **14/14 DRIVE GREEN** on :5173. Screenshots eyeballed (roof run,
-    secret bowl, HUD gem line). Lint x3 + build green.
-  - Prod verified: `GrindCity-7W7d4NNv.js` carries `GEM RUN`.
-    Play: `/retrogames/grind-city`. #3246 shipped + closed.
-- Step 8b: polish tail **#3233** already existed — commented (not duplicated)
-  with what shipped and the concrete remaining asks (wall chevron selling the
-  climb, gem sparkle/burst, ROOF GRIND callout, attract roof line).
+- **#3259 PINBALL ART KITS SHIPPED** (PR #3262, merged `de10eaf`). Warden
+  TARGET #3233 (GRIND CITY tail 2) was **REFUSED at claim** — mini held it
+  (newest-wins #878) — ladder then: no steer, `next` only waiting-jon #1712,
+  `game-queue` empty, QA MASTER live (no feedback borrow) → never-dry
+  `idle-kick` = `KICK PINBALL 0 weak` (score 7 = 6 unowned gaps + #3237).
+  Filed+claimed **#3259** with gap-skip honesty: gap 0 (table editor) deferred
+  — #3103 says verbatim *"Not yet: a table editor"*, the issue body wins;
+  gap 2 (driven attract) owned near-verbatim by #3237; gap 5 stale (#3250
+  shipped kickback). Oldest actionable = `?style`/skins.
+- KITS: `SKINS` in art.js, keyed by table id, index 0 = house dress. TIDAL RUN
+  (cab one: teal/coral/mint) + TOXIC (ember: moss/lime/magenta). Palette-only
+  — zero physics/data change (#3103 contract). B/Shift/▲▼ cycles on the row,
+  marquee `TAG · KIT` + badge, title/picker glow follow; `?style=<id|label>`
+  honored (case-free, per-cabinet, start-pick not lock); persists per cabinet
+  across quick-retry; DMD says `KIT <NAME>` at load; pad second button reads
+  KIT on the row.
+- Proof: pinballcheck **160/160** + **ALL MUTANTS CAUGHT 6/6** (new `skin`
+  anchor renames TOXIC hotRgb — key-parity catches; ANCHORS now allow a
+  per-rule `file`). pinballplay **42/42** live :5178 (pixel legs: tidal
+  G+20/R−11 on the card; TOXIC green 14k vs red 2.7k). contractcheck 14/14,
+  eslint + 3 gates + build green. Prod verified: `Pinball-BNpIehAE.js`
+  carries `TIDAL RUN` — #3259 closed shipped. Kit-polish asks → QA tail
+  **#3237** comment (persist/localStorage, kit sound, results line, unknown-
+  style DMD hint, kit #3 is pure palette).
 
 ## Harness lessons (worth one line each)
-- **prod-poll needs `curl -L`** — jalfern.com answers 308 and the previous
-  session's LC_ALL=C lesson still left the loop silent for a round; an empty
-  probe is still a broken probe (rule 8): echo something every poll.
-- `ownsGap`'s 40-char handle misses punctuation variants (`auto-only.` vs
-  `auto-only:`) — verify the kick's gap index against issue bodies by hand
-  before building; when unsure the gap is QA's, take the next one.
+- **During attract, `gs.table.id` names the LAST run, not the row selection** —
+  harness selection checks must read shell selection state (skinId), never sim lag.
+- **Additive keys only in dev-rig state**: my numeric `cab: cabRef.current`
+  silently overrode stateOf's string `cab` and killed two existing legs.
+- **Last-frame DMD reads race the next `say()`**: capture announce strings
+  during polling (KICKBACK vs LANE SWEEP), don't trust the read-after frame.
+- **Worktrees have no node_modules** — `npm ci` (~2 s cached) before first lint.
 
 ## PLAYABLE on main right now
-- `/retrogames/grind-city` **roof line + gems + secret bowl** (#3251).
-- `/retrogames/pinball` **row of cabinets + CABINET TWO EMBER RIDER** (#3239,
-  slot b) + kickback (#3255); `/retrogames/tidal-rush` online rooms + room
-  podium/rematch (#3227/#3253), pinball ball-to-ball, skyward thunderpass,
-  r-type, ice-climber, marble-rush (trick hop #3243), comet-drift pair,
-  grind-city cams, stomptown, short-order-shout, ssx, marble-madness, pacman,
+- `/retrogames/pinball` **row of cabinets + art kits** (B/▲▼ dress,
+  `?style=tidal|toxic`), roofless truth: kickback #3250, ball-to-ball #3219,
+  rung 3 orbit/magnet/MULTIBALL beds.
+- `/retrogames/grind-city` roof line + gems + secret bowl (#3251),
+  `/retrogames/tidal-rush` online rooms + podium/rematch (#3227/#3253),
+  skyward thunderpass, r-type, ice-climber, marble-rush (trick hop #3243),
+  comet-drift pair, stomptown, short-order-shout, ssx, marble-madness, pacman,
   mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP
   SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga,
-  missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge
-  board.
+  missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- `game-queue` EMPTY; #1712 (`next`) is `waiting-jon` — skip. Next builder
-  claim: live `idle-kick` now answers `KICK PINBALL 0 weak` — that's the
-  never-dry stage for whoever takes it.
-- Nightly: main-ok green at handoff. Today's merges incl. #3227 #3239 #3251
-  #3253 #3254 #3255.
+- `game-queue` EMPTY again; #1712 (`next`) still waiting-jon (not a work item).
+  Mini holds **#3233** (grind-city tail 2) and **#3244** (tidal-rush QA).
+  Next builder claim: live `idle-kick` again — don't trust this file.
+- Pinball README honest-gaps left: editor (deferred by #3103), driven-attract
+  (#3237), single-ball music bed dry, magnet/orbit per-ball, left ramp,
+  kit-persist rung (new).
+- Nightly: main-ok green at session start and at merge.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
@@ -61,9 +63,8 @@
 - No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot a: dev server stopped (`scripts/devstop.sh`, :5173 free). Worktree
-  `~/Dev/retrogames-forge-grindcity-line2` removed clean after merge.
-- Main checkout detached at origin/main; this STATE.md ships via its own
-  docs/state PR — game code merged this session, so the commit-to-main path
-  is earned.
-- Time-box: ~75 min of 3 h.
+- Slot b: dev :5178 stopped via scripts/devstop.sh; worktree
+  `~/Dev/retrogames-forge-pinball-skins` swept by mergeclean post-merge;
+  main checkout detached at origin/main.
+- Time-box: ~2 h 45 min of 3 h — claim-refusal + ladder + full kit rung +
+  harness fit inside it.
