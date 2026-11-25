@@ -86,7 +86,8 @@ const SkywardGame = () => {
   [data-h=speed]{left:10px;bottom:auto;top:76px}
   [data-h=alt]{left:10px;bottom:auto;top:94px}
   [data-h=score]{right:auto;left:10px;bottom:auto;top:112px;text-align:left}
-  [data-h=chips]{right:auto;left:10px;bottom:auto;top:130px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:370px;white-space:nowrap}
+<<<<<<< HEAD
+  [data-h=chips]{right:auto;left:10px;bottom:auto;top:130px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:calc(100vw - 20px);white-space:nowrap}
   /* #3344 — phone widths: the longest strip banner (RUNWAY FULL STRIP +700 — PARKED,~381px natural) must clear the 92vw box as one line or it wraps into the tell band below; 16px/.1em fits it (~348px). */
   [data-h=banner]{width:92vw;font-size:16px;letter-spacing:.1em;white-space:nowrap}
   [data-h=tell]{width:92vw;top:92px;font-size:11px;letter-spacing:.14em}
@@ -100,10 +101,22 @@ const SkywardGame = () => {
   [data-h=speed]{left:10px;bottom:auto;top:76px}
   [data-h=alt]{left:10px;bottom:auto;top:94px}
   [data-h=score]{right:auto;left:10px;bottom:auto;top:112px;text-align:left}
-  [data-h=chips]{right:auto;left:10px;bottom:auto;top:130px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:520px;white-space:nowrap}
+  [data-h=chips]{right:auto;left:10px;bottom:auto;top:130px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:calc(100vw - 20px);white-space:nowrap}
   [data-h=banner]{width:92vw;font-size:17px;letter-spacing:.12em}
   [data-h=tell]{width:92vw;font-size:11px;letter-spacing:.14em}
   [data-h=hint]{bottom:auto;top:154px;left:4%;transform:none;width:92%;font-size:10px;letter-spacing:.1em;text-align:center}
+}
+@media (max-width: 360px){
+  /* iPhone SE 320px (#3362 item 5): the 480 column sizes clip here — chips
+     nowrap ran past the viewport edge and the banner needs three lines at
+     17px. One size down (and wrapping the banner back up) keeps the longest
+     callouts at two lines and every chip on screen. Pinned by the skywardplay
+     320×568 audit. */
+  [data-h=chips]{font-size:8px;letter-spacing:.02em}
+  [data-h=banner]{white-space:normal;font-size:14px;letter-spacing:.06em}
+  [data-h=tell]{font-size:10px;letter-spacing:.1em;top:100px}
+  [data-h=hint]{font-size:9px;letter-spacing:.06em}
+}
 }
 </style>
 <div data-h="speed">000 KTS</div>
@@ -162,11 +175,16 @@ const SkywardGame = () => {
                     // both read instead of masking each other at the same
                     // instant. The beds die with the hull; the respawn freeze
                     // (see the engine block) re-arms the spool for the restart.
+                    // #3362 item 4 — on device the old timings blurred: the cut
+                    // ran to +0.50 while the rumble spanned [0.18,0.58] and the
+                    // respawn spool fires at respawnT=0.5 — three voices down for
+                    // two-thirds of the event. The beats now hand off: cut
+                    // [0,0.34] → rumble [0.20,0.50] → spool from 0.50.
                     const hadEngine = engOnRef.current
                     if (engOnRef.current) { audioController.stopLoopEngine(); engOnRef.current = false }
                     if (windOnRef.current) { audioController.stopLoopWind(); windOnRef.current = false }
-                    if (hadEngine) sweep(140, 46, 0.5, 'sawtooth', 0.05)
-                    audioController.playFilteredNoise(0.4, 0.3, 260, 0.18)
+                    if (hadEngine) sweep(140, 46, 0.34, 'sawtooth', 0.05)
+                    audioController.playFilteredNoise(0.30, 0.3, 260, 0.20)
                     break
                 }
                 case 'splash': audioController.playFilteredNoise(0.3, 0.16, 900); break
@@ -648,6 +666,19 @@ const SkywardGame = () => {
                 // #3300 item 4 — are the cabinet's beds actually audible? (crash
                 // sequencing proof: eng must go false the instant a crash lands)
                 bedLive: () => ({ eng: engOnRef.current, wind: windOnRef.current }),
+                // #3362 item 1 — vista probes: park the attract orbit clock and
+                // report where the orbit camera actually stands and how deep it
+                // sits in the painted cell (the audit pins it never rides in rain).
+                attractT: (secs) => { demo.t = Math.max(0, secs) },
+                attractCam: () => {
+                    const c = glRef.current && glRef.current.camera
+                    if (!c) return null
+                    const s = gs.world.stormAt(c.position.x, c.position.z, demo.t)
+                    return {
+                        x: Math.round(c.position.x), y: Math.round(c.position.y), z: Math.round(c.position.z),
+                        fov: Math.round(c.fov), stormS: +s.s.toFixed(2),
+                    }
+                },
                 // #3302 — the seed wind, so a drive leg can crab into it and
                 // hold a straight ground track (what a pilot would do)
                 wind: () => ({ x: gs.world.wind.x, z: gs.world.wind.z }),

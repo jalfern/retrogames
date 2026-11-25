@@ -693,13 +693,26 @@ void runAuto
     r.check('the rush is a whisper, not a second motor (gain ≤ 0.03, cut ≤ 700)',
         windBed('glider', 19, 0).gain <= 0.03 && windBed('glider', 19, 0).cut <= 700,
         JSON.stringify(windBed('glider', 19, 0)))
-    r.check('rain owns the core for the wind too (storm halves the rush, never raises it)', (() => {
+    r.check('rain owns the core for the wind too (#3362: storm ducks the rush to a third, never raises it)', (() => {
         const g0 = windBed('glider', 16, 0).gain
         const g1 = windBed('glider', 16, 1).gain
         let monoD = true
         for (let s = 0; s <= 1.0001; s += 0.05) if (windBed('glider', 16, s).gain > g0 + 1e-9) monoD = false
-        return Math.abs(g1 - g0 * 0.5) < 1e-3 && g1 < g0 && monoD
+        return g1 <= g0 * 0.4 && g1 < g0 && monoD
     })(), JSON.stringify(windBed('glider', 16, 1)))
+    // #3362 item 3 — the mix laws the phone audit could only listen for are
+    // arithmetic here: at the core the wind adds at most a fifth of the rain's
+    // gain (rain owns the mix), the wind also darkens so what survives sits
+    // under the rain's bright top, and out in clean air the full rush stays
+    // audible over silence without reaching the shout the ring tones own.
+    r.check('#3362 mix: at the core wind adds ≤20% of the rain and darkens under it', (() => {
+        const rain = stormBed(1).gain
+        const wind = windBed('glider', 19, 1)
+        return wind.gain <= 0.2 * rain && wind.cut < windBed('glider', 19, 0).cut
+    })(), JSON.stringify({ rain: stormBed(1).gain, wind: windBed('glider', 19, 1) }))
+    r.check('#3362 mix: the clean-air rush is audible (≥0.02 at full speed) but never shouts (<0.03)',
+        windBed('glider', 19, 0).gain >= 0.02 && windBed('glider', 19, 0).gain < 0.03,
+        JSON.stringify(windBed('glider', 19, 0)))
     r.check('the wind law survives garbage (NaN/±∞ in ⇒ finite, never poisoned)',
         [windBed('glider', NaN, NaN), windBed('glider', -5, 2), windBed('glider', Infinity, Infinity)].every(
             (b) => Number.isFinite(b.gain) && Number.isFinite(b.cut) && b.gain >= 0))
@@ -1360,9 +1373,9 @@ if (process.argv.includes('--mutate')) {
         ['#3332 the crossing fires every tick (a firm settle parks a tick late)', SIMF, 'if (g.phase === \'free\' && g.respawnT <= 0 && g._air) {', 'if (g.phase === \'free\' && g.respawnT <= 0) {'],
         ['#3332 the crew never chocks (a parked belt blows downwind)', SIMF, 'g.p.y = deck + 0.8\n        g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0\n        g.roll = lerp(g.roll, 0, 0.2)', 'g.p.y = deck + 0.8\n        g.p.x += w.wind.x * dt; g.p.z += w.wind.z * dt\n        g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0\n        g.roll = lerp(g.roll, 0, 0.2)'],
         ['#3300 wind blows on the plane too (motorless honesty broken)', SIMF, "if (craft !== 'glider') return { gain: 0, cut: 0 }", "if (craft !== 'plane') return { gain: 0, cut: 0 }"],
-        ['#3300 the wind ignores the storm (rush duels the rain)', SIMF, 'gain: +((0.003 + 0.024 * k * k) * (1 - 0.5 * d)).toFixed(4)', 'gain: +(0.003 + 0.024 * k * k).toFixed(4)'],
+        ['#3300 the wind ignores the storm (rush duels the rain)', SIMF, 'gain: +((0.003 + 0.024 * k * k) * (1 - 0.65 * d)).toFixed(4)', 'gain: +(0.003 + 0.024 * k * k).toFixed(4)'],
         ['#3300 the rush ignores airspeed (a constant hiss teaches nothing)', SIMF, 'if (v <= 9) return { gain: 0, cut: 0 } // a slow float stays hushed', 'if (v <= 999) return { gain: 0, cut: 0 } // a slow float stays hushed'],
-        ['#3300 the wind bed shouts (rush drowns the ring tones)', SIMF, 'gain: +((0.003 + 0.024 * k * k) * (1 - 0.5 * d)).toFixed(4)', 'gain: +((0.03 + 0.24 * k * k) * (1 - 0.5 * d)).toFixed(4)'],
+        ['#3300 the wind bed shouts (rush drowns the ring tones)', SIMF, 'gain: +((0.003 + 0.024 * k * k) * (1 - 0.65 * d)).toFixed(4)', 'gain: +((0.03 + 0.24 * k * k) * (1 - 0.65 * d)).toFixed(4)'],
         ['#3300 the engine stays dark at full throttle (cut frozen shut)', SIMF, 'cut = 600 + 1600 * load', 'cut = 600'],
         ['#3310 a slack sock streams as if in a gale (the droop law dies)', SIMF, 'const droop = clamp(1 - sp / 2.2, 0, 1) * 0.9', 'const droop = 0'],
         ['#3310 the sock flies in dead calm (dir never rests)', SIMF, 'if (!Number.isFinite(sp) || sp < 0.05) return { dir: null, droop: 0.9, sway: 0, flutter: 0 }', 'if (false) return { dir: null, droop: 0.9, sway: 0, flutter: 0 }'],
