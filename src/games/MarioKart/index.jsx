@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
-import { makeGame, step, fmtTime, CFG } from './sim'
+import { makeGame, step, fmtTime, CFG, stateHash } from './sim'
 import { decide } from './planner'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -612,6 +612,21 @@ export default function MarioKart() {
                     frame: P.v > 0.4 ? ((P.anim >> 2) & 1) : 0, driftT: P.driftT, spinT: P.spinT, v: P.v }
             },
             forceSpin: () => { g.karts[0].spinT = 90; return g.karts[0].spinT },
+            // #3131 tilt drive — wall-clock-free sim proof (the marble-rush
+            // convention): reset the live sim and step it n ticks through the
+            // very tickWorld the loop uses, with the pad as it is right now.
+            // Same seed + same ticks: a diverging hash means the lean reached
+            // the sim through the pad rail (the onePad holder steerPedals
+            // consumes), not just the arrow codes on the wire.
+            resetSim: () => { Object.assign(g, makeGame()); return g.tick },
+            stepTicks: (n) => {
+                const planBak = st.plan
+                st.plan = false
+                for (let i = 0; i < n; i++) tickWorld(true)
+                st.plan = planBak
+                const P = g.karts[0]
+                return { hash: stateHash(g), tick: g.tick, v: +P.v.toFixed(4), steer: +(P.steerVis || 0).toFixed(4) }
+            },
         }
 
         return () => {

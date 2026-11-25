@@ -514,14 +514,14 @@ export const GAMES = [
     },
     {
         path: '/mario-kart',
-        pad: { method: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'ITEM', reads: ['x', 'y', 'a', 'b'], analog: true, supports: ['stick', 'full'], reason: 'analog — steer on stick x / y, pedals on stick y, DRIFT + ITEM on buttons; full offered #3118 (diamond B=DRIFT, A=ITEM, R shoulder alias; chrome audit clean — top-right corner chip only)' },
+        pad: { method: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'ITEM', reads: ['x', 'y', 'a', 'b'], analog: true, supports: ['stick', 'tilt', 'full'], reason: 'analog — steer on stick x / y, pedals on stick y, DRIFT + ITEM on buttons; full offered #3118 (diamond B=DRIFT, A=ITEM, R shoulder alias; chrome audit clean — top-right corner chip only); tilt offered #3131 — the lean rides the same onePad vector steerPedals already consumes (roll steers, lean forward = throttle, lean back = brake, the SSX/conet-drift sign law), DRIFT + ITEM stay chips' },
         builtBy: 'forge',
         added: '2026-10-13',
         component: MarioKartGame,
         label: 'SUPER MARIO KART',
         theme: 'light',
         description: 'The SNES classic rebuilt on its own trick: the whole circuit is ONE textured plane rotated and scaled under your kart scanline by scanline — real Mode 7, in canvas, no assets. Five laps of MARIO CIRCUIT from last on the grid against four CPU karts: clip the apex, hold the drift through the hairpin, catch the dash panels on the straight, and take what the ? boxes hand you — a Shell to spin the leader, a Banana for the corner behind you, a Mushroom when the road goes straight. Standing last buys the best items, and the whole GP is proven winnable by the autopilot that scripts the attract demo, tick for tick (it even wins with every item box deleted).',
-        controls: ['X: GAS · S: BRAKE · ← → : steer (you cannot turn standing still — the karts work on speed)', 'R / B button: DRIFT — hold through a corner for a tighter arc, and expect the slide', 'Z / A button: use your ITEM — Shell fires forward, Banana drops behind, Mushroom launches', 'HOLD X during the 3-2-1 countdown for a ROCKET START', 'Hit a ? box for an item: last place gets the good ones, and Lap 5 is chaos', 'Hold the dashed DASH PANELS on the straights — they throw you forward', WATCH_HELP, '?: pause and read the rules of the circuit'],
+        controls: ['X: GAS · S: BRAKE · ← → : steer (you cannot turn standing still — the karts work on speed)', 'R / B button: DRIFT — hold through a corner for a tighter arc, and expect the slide', 'Z / A button: use your ITEM — Shell fires forward, Banana drops behind, Mushroom launches', 'HOLD X during the 3-2-1 countdown for a ROCKET START', 'Hit a ? box for an item: last place gets the good ones, and Lap 5 is chaos', 'Hold the dashed DASH PANELS on the straights — they throw you forward', 'Pad (TILT): roll left/right to steer — lean forward is GAS, lean back the BRAKE; DRIFT + ITEM keep their buttons', WATCH_HELP, '?: pause and read the rules of the circuit'],
     },
     {
         path: '/comet-drift',
