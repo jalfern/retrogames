@@ -25,7 +25,7 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck']
+    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck', 'clone', 'need', 'sched', 'searchwire']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
@@ -305,9 +305,9 @@ function drive(seed) {
     // wiring: the cabinet must actually rotate the style per attract loop.
     // MUT=variety freezes the rotation to v0 — the pin must see red.
     const cab = readFileSync(new URL('../src/games/GrindCity/index.jsx', import.meta.url), 'utf8')
-    const cabSrc = MUT === 'variety' ? cab.replace('attractV = (attractV + 1) % 3', 'attractV = attractV % 3') : cab
-    ok('variety wiring: toAttract rotates the style and builds the bot with it (#3233)',
-        /attractV = \(attractV \+ 1\) % 3/.test(cabSrc) && /bot = makeBot\(attractV\)/.test(cabSrc))
+    const cabSrc = MUT === 'variety' ? cab.replace('attractV = (attractV + 1) % STYLE_N', 'attractV = attractV % STYLE_N') : cab
+    ok('variety wiring: toAttract rotates the style and builds the bot with it (#3233, four styles #3394)',
+        /attractV = \(attractV \+ 1\) % STYLE_N/.test(cabSrc) && /bot = makeAttractBot\(attractV\)/.test(cabSrc))
 
     const runV = (seed, v) => {
         const s = makeGame(seed, 'run'); s.phase = 'play'
@@ -338,6 +338,81 @@ function drive(seed) {
             m.bails === 0 && m.tricks.some(e => e.startsWith('trick:Manual')) && m.won,
             `bails=${m.bails} tricks=${JSON.stringify(m.tricks)}`)
     }
+}
+
+// ── the thinking bot (#3394): searchable autopilot ────────────────────────
+// planner recites; search.js thinks. Every trick decision rolls candidate
+// press-schedules through the REAL sim and commits the best. Pin laws: the
+// rollouts never touch the live board, the line is deterministic, air is only
+// committed when the search PROVES it, and the searched line wins — banked
+// deeper than the witness (a Flip the script never throws).
+import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
+{
+    // Purity: searchPad may not touch the live state — a leaky clone is
+    // save-scumming the attract. Deep-snapshot around every call until a
+    // schedule actually commits (the commit tick is the one that could leak).
+    const s = makeGame(7, 'run'); s.phase = 'play'
+    const bot = makeSearchBot()
+    let t = 0, leak = null
+    while (t++ < 1800 && bot.nCommit === 0) {
+        const snap = JSON.stringify(s)
+        const p = searchPad(s, bot)
+        if (JSON.stringify(s) !== snap && !leak) leak = `tick ${s.tick}`
+        step(s, p)
+    }
+    ok('#3394 purity: a search never writes the live board', leak === null && bot.nCommit > 0,
+        `${bot.nSearch} searches, ${bot.nCommit} commits${leak ? ' — LEAK ' + leak : ''}`)
+
+    const driveV3 = (seed) => {
+        const g = makeGame(seed, 'run'); g.phase = 'play'
+        const b = makeSearchBot(); const hashes = []
+        for (let k = 1; k <= 1800; k++) { step(g, searchPad(g, b)); if (k % 30 === 0) hashes.push(hashState(g)) }
+        return JSON.stringify(hashes)
+    }
+    ok('#3394 determinism: seed + search ⇒ identical attract lines', driveV3(7) === driveV3(7))
+    ok('#3394 the thinking bot rides a different line than the witness', driveV3(7) !== drive(7))
+
+    for (const seed of [7, 3, 42, 101, 999]) {
+        const g = makeGame(seed, 'run'); g.phase = 'play'
+        const b = makeSearchBot()
+        let k = 0, bails = 0
+        const tricks = []
+        while (!g.done && k++ < 120 * 60) {
+            const p = searchPad(g, b)
+            if (MUT === 'sched') { p.a = false; p.b = false }   // strip overlay presses
+            step(g, p)
+            for (const e of g.events) { if (e === 'bail') bails++; else if (e.startsWith('trick:')) tricks.push(e.slice(6)) }
+            g.events.length = 0
+        }
+        const st = stateOf(g)
+        ok(`#3394 seed ${seed}: the searched line wins, zero bails, all letters + the gap`,
+            st.won === true && bails === 0 && Object.keys(st.letters).length === 5 && st.gapDone && st.score >= SCORE_GOAL + 10000,
+            `score=${st.score} t=${(120 - st.timeLeft) | 0}s bails=${bails} tricks=${[...new Set(tricks)].join(',')}`)
+        ok(`#3394 seed ${seed}: deeper than the witness — searched air banks a Flip and a manual the script never throws`,
+            tricks.some(x => x.startsWith('Flip:')) && tricks.some(x => x.startsWith('Manual')))
+    }
+
+    // Wiring laws read from source: rollouts clone before mutating (MUT=clone
+    // shares the letter map — the purity claim dies), PROVEN AIR filters the
+    // gap commit (MUT=need removes it), and the cabinet actually routes the
+    // thinker through searchPad on the raw sim (MUT=searchwire unbinds it).
+    const seaRaw = readFileSync(new URL('../src/games/GrindCity/search.js', import.meta.url), 'utf8')
+    const cab = readFileSync(new URL('../src/games/GrindCity/index.jsx', import.meta.url), 'utf8')
+    const seaSrc = MUT === 'clone' ? seaRaw.replace('c.letters = { ...s.letters }', 'c.letters = s.letters') : seaRaw
+    ok('#3394 clone law: every mutable field of the sim is copied before rollout',
+        /const c = cloneSim\(s0\)/.test(seaSrc) && /c\.letters = \{ \.\.\.s\.letters \}/.test(seaSrc) &&
+        /c\.chain = s\.chain\.slice\(\)/.test(seaSrc) && /c\.grind = s\.grind \? \{ \.\.\.s\.grind \} : null/.test(seaSrc))
+    const seaNeed = MUT === 'need' ? seaRaw.replace("if (trig.need === 'gap' && !r.gap) continue", 'if (false) continue') : seaRaw
+    ok('#3394 proven-air law: a gap plan commits only when the rollout clears the trench',
+        /if \(trig\.need === 'gap' && !r\.gap\) continue/.test(seaNeed) &&
+        /if \(trig\.need === 'grind' && !r\.grindHit\) continue/.test(seaNeed))
+    const cabThink = MUT === 'searchwire'
+        ? cab.replace('bot.thinks ? searchPad(sim, bot) : botPad(stateOf(sim), bot)', 'botPad(stateOf(sim), bot)')
+        : cab
+    ok('#3394 wiring: attract routes the thinking bot through searchPad on the raw sim',
+        /bot\.thinks \? searchPad\(sim, bot\) : botPad\(stateOf\(sim\), bot\)/.test(cabThink) &&
+        /makeAttractBot = \(v\) => \(v === 3 \? makeSearchBot\(\) : makeBot\(v\)\)/.test(cabThink) &&
+        /nSearch: bot\.nSearch \|\| 0/.test(cabThink))
 }
 
 // ── run replay (#3225): the cabinet logs packed inputs; a replay re-steps ──
@@ -536,14 +611,15 @@ function drive(seed) {
     // the bot stays the no-history fallback, and a fresh harness session forgets.
     // MUT=bankline makes attract ignore the banked log — the pin must see red.
     const cabDrive = MUT === 'bankline'
-        ? cabRaw.replace('bankedPad || botPad(stateOf(sim), bot)', 'botPad(stateOf(sim), bot)')
+        ? cabRaw.replace('bankedPad || (bot.thinks ? searchPad(sim, bot) : botPad(stateOf(sim), bot))',
+            '(bot.thinks ? searchPad(sim, bot) : botPad(stateOf(sim), bot))')
         : cabRaw
     ok('attract loop wiring: banked line drives attract, bot is the fallback, reset forgets (#3374)',
         /bestLog = inputLog\.slice\(\)/.test(cabDrive) &&
         /if \(inputLog\.length >= REPLAY_MIN\) \{\s*bestSeed = sim\.seed/.test(cabDrive) &&
         /attractIdx >= bestLog\.length/.test(cabDrive) &&
         /unpackIn\(bestLog\[attractIdx\+\+\]\)/.test(cabDrive) &&
-        /bankedPad \|\| botPad\(stateOf\(sim\), bot\)/.test(cabDrive) &&
+        /bankedPad \|\| \(bot\.thinks \? searchPad\(sim, bot\) : botPad\(stateOf\(sim\), bot\)\)/.test(cabDrive) &&
         /makeGame\(bestLog\.length \? bestSeed : freshSeed\(\), 'run'\)/.test(cabDrive) &&
         /bestSeed = 0; bestLog = \[\]; attractIdx = 0/.test(cabDrive))
 

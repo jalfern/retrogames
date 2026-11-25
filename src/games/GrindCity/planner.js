@@ -2,7 +2,7 @@
 // grindcheck grades: seed + this rule-set ⇒ every goal inside 2:00.
 // Rule-based over the sim's JSON state; emits one pad per tick.
 
-const WP = [
+export const WP = [
     { x: 5, z: -16, r: 3.0 },      // bottom of the drop-in (speed!)
     { x: 4, z: -4.5, r: 2.0 },     // letter T, the gap lane
     { x: 4, z: 3.2, r: 1.5 },      // kicker lip — launch

@@ -14,6 +14,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, REPLAY_MAX, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank } from './sim.js'
 import { botPad, makeBot } from './planner.js'
+import { makeSearchBot, searchPad } from './search.js'
 import { STEP, bedVoices, landThud, ATTRACT_SFX } from './music.js'
 import { buildPark, buildSky, buildLetters, buildGems, buildRoofLine, buildSkater, poseSkater, buildParticles, buildSecretHint, emit, burst, stepParticles } from './art.js'
 import { GEMS, RAILS } from './park.js'
@@ -117,8 +118,15 @@ const GrindCityGame = () => {
 
         let sim = makeGame(sharedLine ? sharedLine.seed : (storedBank ? storedBank.seed : freshSeed()), 'run')
         sim.phase = 'play'          // attract: the autopilot rides behind the title
-        let bot = makeBot()
-        let attractV = 0           // style rotation (#3233 item 4): classic → flip → grab
+        // #3394 style v3 = THE THINKER: planner's recited line gains a fourth
+        // rider that searches the real sim at every trick decision (?style=n
+        // shifts the rotation origin — the QA drive leg rides v3 at once).
+        const STYLE_N = 4
+        const makeAttractBot = (v) => (v === 3 ? makeSearchBot() : makeBot(v))
+        const styleQ = parseInt(new URLSearchParams(window.location.search).get('style'), 10)
+        const style0 = Number.isInteger(styleQ) && styleQ >= 0 && styleQ < STYLE_N ? styleQ : 0
+        let bot = makeAttractBot(style0)
+        let attractV = style0           // style rotation (#3233 item 4): classic → flip → grab → think
         let attractMode = true
         let tickEvents = []
         let pumpCd = 0
@@ -214,8 +222,8 @@ const GrindCityGame = () => {
             attractIdx = 0
             sim = makeGame(bestLog.length ? bestSeed : freshSeed(), 'run')
             sim.phase = 'play'
-            attractV = (attractV + 1) % 3   // each idle loop rides a different style
-            bot = makeBot(attractV)
+            attractV = (attractV + 1) % STYLE_N   // each idle loop rides a different style
+            bot = makeAttractBot(attractV)
             attractMode = true
             screenRef.current = 'attract'
             setScreen('attract')
@@ -454,7 +462,9 @@ const GrindCityGame = () => {
                     bankedPad = unpackIn(bestLog[attractIdx++])
                 }
             }
-            const input = inputOverride || (attractMode ? (bankedPad || botPad(stateOf(sim), bot)) : pad())
+            const input = inputOverride || (attractMode
+                ? (bankedPad || (bot.thinks ? searchPad(sim, bot) : botPad(stateOf(sim), bot)))
+                : pad())
             if (!attractMode && screenRef.current === 'play') inputLog.push(packIn(input))
             step(sim, input)
             tickEvents.push(...sim.events.splice(0, sim.events.length))
@@ -697,7 +707,7 @@ const GrindCityGame = () => {
         // ── DEV hooks + contract ────────────────────────────────────────────
         if (import.meta.env.DEV) {
             window.__grindTest = {
-                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, sfxDuck: attractMode ? ATTRACT_SFX : 1, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode }),
+                state: () => ({ ...stateOf(sim), cam: camMode, replay: replayProgress(), screen: screenRef.current, bed: bedT, sfxDuck: attractMode ? ATTRACT_SFX : 1, orbit: !!orbitOn, orbitA: Math.round(orbitA * 100) / 100, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode, attractStyle: attractV, thinks: !!bot.thinks, nSearch: bot.nSearch || 0, nCommit: bot.nCommit || 0 }),
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
@@ -750,7 +760,7 @@ const GrindCityGame = () => {
                     return stateOf(sim)
                 },
                 tick: (p) => { simTick(p); return stateOf(sim) },
-                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), sfxDuck: attractMode ? ATTRACT_SFX : 1, orbit: !!orbitOn, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode }),
+                state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), sfxDuck: attractMode ? ATTRACT_SFX : 1, orbit: !!orbitOn, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode, attractStyle: attractV, thinks: !!bot.thinks, nSearch: bot.nSearch || 0, nCommit: bot.nCommit || 0 }),
                 canvas: () => canvas,
             })
         }
