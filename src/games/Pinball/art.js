@@ -104,19 +104,27 @@ export function paintField(ctx, W, H) {
     ctx.fillText('LOCK', 310, 424);
     ctx.restore();
     // rung 3: orbit channel — amber rails up the left flank with climbing
-    // chevrons ("this lane runs UP around the dome") + a vertical nameplate.
+    // chevrons ("this lane runs UP around the dome"), an amber bed wash so the
+    // lane reads as a lane, and a vertical nameplate. Kept clear of the magnet
+    // halo (x=240) — the orbit run is unmistakably its own lane.
     ctx.save();
-    ctx.globalAlpha = 0.16; ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(12, 250); ctx.lineTo(12, 412); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(38, 258); ctx.lineTo(38, 412); ctx.stroke();
-    ctx.globalAlpha = 0.24;
-    for (let i = 0; i < 5; i++) {
-        const yy = 396 - i * 34;
+    // faint amber bed under the rails — the lane reads as a track, not a gap
+    ctx.globalAlpha = 0.09; ctx.fillStyle = PAL.lane;
+    ctx.fillRect(13, 128, 24, 282);
+    // the two rails
+    ctx.globalAlpha = 0.34; ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(12, 128); ctx.lineTo(12, 412); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(38, 128); ctx.lineTo(38, 412); ctx.stroke();
+    // climbing chevrons — placed clear of the nameplate band (y≈248..302)
+    ctx.globalAlpha = 0.30; ctx.lineWidth = 2.5;
+    for (const yy of [156, 192, 318, 352, 386]) {
         ctx.beginPath(); ctx.moveTo(16, yy); ctx.lineTo(25, yy - 11); ctx.lineTo(34, yy); ctx.stroke();
     }
-    ctx.globalAlpha = 0.4; ctx.fillStyle = PAL.lane;
-    ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center';
-    ctx.fillText('O', 25, 262); ctx.fillText('R', 25, 271); ctx.fillText('B', 25, 280); ctx.fillText('I', 25, 289); ctx.fillText('T', 25, 298);
+    // vertical nameplate — "O R B I T" down the middle of the channel
+    ctx.globalAlpha = 0.6; ctx.fillStyle = PAL.lane;
+    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+    const lbl = 'ORBIT';
+    for (let i = 0; i < lbl.length; i++) ctx.fillText(lbl[i], 25, 250 + i * 13);
     ctx.restore();
     // rung 3: magnet plate — a violet halo ring right-mid; the dynamic field
     // pulse draws live in index.jsx.
@@ -133,7 +141,7 @@ export function paintField(ctx, W, H) {
 // cluster and the drop bank — the classic insert-display position. Own 5x7
 // font, column-major (bit r = row r). The strip's TEXT is sim state
 // (gs.msg); everything here is pure rendering of that state.
-export const DMD = { x: 116, y: 250, cols: 64, rows: 8, dot: 2 };
+export const DMD = { x: 100, y: 249, cols: 64, rows: 8, dot: 2.5 };  // wide, legible on phone
 
 export const FONT = {
     ' ': [0, 0, 0, 0, 0],
@@ -178,36 +186,53 @@ export function dmdIdle(score, mult, balls, locks, orbitBank, orbitLit, magCharg
 }
 
 // Scroll offset in virtual px for the marquee. e = elapsed ticks.
-function dmdScroll(text, t, T) {
+// Hot announcements run backwards: crawl in from the LEFT, hold, sweep out to the RIGHT
+// (a marquee is departing, not arriving — that reads as an event, not a status line).
+function hotScroll(text, t, T) {
     const span = text.length * 6;
+    if (t < 14) return -4 * (14 - t);                  // in from the left
     const e = T - t;
-    if (e < span / 3) return span - 3 * e;      // scroll in from the right
-    if (t < 14) return -4 * (14 - t);           // scroll out to the left
+    if (e < span / 3) return span - 3 * e;            // out to the right
     return 0;
 }
 
 export function drawDMD(ctx, view) {
     const { x, y, cols, rows, dot } = DMD;
     // bezel + dark glass
+    const hot = /TILT|MULTIBALL|MULT x[0-9]|ORBIT SET|ORBIT LOCK|RAMP SET|SAVE/.test(view.text);
+    const multi = view.text.startsWith('MULTIBALL');
+    const bezelGlow = hot ? (multi ? 22 : 12) : 6;
     ctx.save();
-    ctx.fillStyle = 'rgba(4,6,16,0.92)';
+    ctx.shadowColor = hot ? PAL.hot : 'rgba(201,212,232,0.4)';
+    ctx.shadowBlur = bezelGlow;
+    ctx.fillStyle = 'rgba(4,6,16,0.94)';
     ctx.fillRect(x - 4, y - 4, cols * dot + 8, rows * dot + 8);
-    ctx.strokeStyle = 'rgba(201,212,232,0.35)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = hot ? 'rgba(255,61,94,0.85)' : 'rgba(201,212,232,0.35)';
+    ctx.lineWidth = hot ? 2 : 1.5;
     ctx.strokeRect(x - 4.5, y - 4.5, cols * dot + 9, rows * dot + 9);
-    // unlit dot grid — the glass is never fully dark
-    ctx.fillStyle = PAL.dmdOff;
+    ctx.shadowBlur = 0;
+    // unlit dot grid — the glass is never fully dark; chunkier lit dots vs hairline unlit
+    ctx.fillStyle = hot ? 'rgba(255,61,94,0.20)' : PAL.dmdOff;
+    const uDot = dot * 0.34;
     for (let cx = 0; cx < cols; cx++) {
-        for (let ry = 0; ry < rows; ry++) ctx.fillRect(x + cx * dot, y + ry * dot, 1, 1);
+        for (let ry = 0; ry < rows; ry++) {
+            ctx.fillRect(x + cx * dot + (dot - uDot) / 2, y + ry * dot + (dot - uDot) / 2, uDot, uDot);
+        }
     }
     // content
-    const hot = /TILT|MULTIBALL|ORBIT LOCK|SAVE/.test(view.text);
     const color = hot ? PAL.hot : PAL.dmd;
     let off, text;
-    if (view.text) { text = view.text; off = dmdScroll(text, view.t, view.T); }
-    else { text = view.idle; off = -(view.tick * 2) % (text.length * 6 + cols + 16) + cols; }
+    if (view.text) {
+        text = view.text;
+        off = hot ? hotScroll(text, view.t, view.T) : -(view.tick * 1.5) % (text.length * 6 + cols + 16) + cols;
+    } else {
+        text = view.idle;
+        off = -(view.tick * 1.5) % (text.length * 6 + cols + 16) + cols;
+    }
     const up = text.toUpperCase();
-    ctx.shadowColor = color; ctx.shadowBlur = 6;
+    // hot messages pulse while they hold — alive, not a static banner
+    if (hot) ctx.globalAlpha = 0.72 + 0.28 * Math.sin(view.t / 3);
+    ctx.shadowColor = color; ctx.shadowBlur = hot ? 10 : 6;
     ctx.fillStyle = color;
     for (let ci = 0; ci < up.length; ci++) {
         const glyph = FONT[up[ci]] || FONT[' '];
@@ -219,7 +244,7 @@ export function drawDMD(ctx, view) {
             const px = gx0 + c;
             if (px < 0 || px >= cols) continue;
             for (let r = 0; r < rows; r++) {
-                if (colv & (1 << r)) ctx.fillRect(x + px * dot, y + r * dot, dot, dot);
+                if (colv & (1 << r)) ctx.fillRect(x + px * dot, y + r * dot, dot * 0.92, dot * 0.92);
             }
         }
     }

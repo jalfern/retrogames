@@ -65,14 +65,24 @@ const sfxFor = (ev) => {
         // ---- rung 3 ----
         case 'curl': a.playSweep(300, 720, 0.16, 'triangle', 0.08); a.playNoise(0.04, 0.05); break
         case 'orbitarm': a.playTone(1180, 0.03, 'square', 0.07); break
+        // magnet grab: a gentler triangle sweep + a breath of air, no sawtooth snarl —
+        // it must not mask the chain it feeds into.
+        case 'maggrab': a.playSweep(520, 220, 0.10, 'triangle', 0.07); a.playNoise(0.04, 0.05); break
+        // orbit completion: a low kick under the triad — bigger than a lane rollover
         case 'orbit':
-            [523, 659, 784].forEach((f, i) => a.playTone(f, 0.06, 'square', 0.1, i * 0.05))
-            a.playNoise(0.05, 0.08); break
+            a.playTone(196, 0.12, 'square', 0.09);
+            [523, 659, 784].forEach((f, i) => a.playTone(f, 0.06, 'square', 0.1, i * 0.05 + 0.02))
+            a.playNoise(0.04, 0.06); break
+        // orbit set: low kick + triad — louder than the routine ramp set
         case 'orbitset':
-            [587, 740, 880, 1175].forEach((f, i) => a.playTone(f, 0.08, 'square', 0.11, i * 0.07)); break
-        case 'orbitlock': a.playTone(196, 0.12, 'square', 0.14); a.playSweep(900, 300, 0.18, 'sawtooth', 0.08); break
-        case 'maggrab': a.playSweep(900, 200, 0.12, 'sawtooth', 0.1); a.playNoise(0.05, 0.1); break
-        case 'magfree': a.playSweep(300, 1046, 0.1, 'square', 0.09); break
+            a.playTone(147, 0.15, 'square', 0.1);
+            [587, 740, 880, 1175].forEach((f, i) => a.playTone(f, 0.08, 'square', 0.11, i * 0.07 + 0.02)); break
+        // orbit lock: a low thump under the ring — chunky, not glassy
+        case 'orbitlock':
+            a.playTone(98, 0.16, 'sawtooth', 0.09)
+            a.playTone(196, 0.12, 'square', 0.14); a.playSweep(900, 300, 0.18, 'sawtooth', 0.08); break
+        case 'magfree':
+            a.playSweep(320, 1568, 0.12, 'square', 0.09); a.playNoise(0.03, 0.06); break
         case 'magready': a.playTone(1568, 0.05, 'square', 0.05); break
         case 'start': a.playTone(392, 0.07, 'square', 0.1); a.playTone(523, 0.07, 'square', 0.1, 0.07); a.playTone(659, 0.1, 'square', 0.1, 0.14); break
         default: break
@@ -90,6 +100,7 @@ const PinballGame = () => {
     const flashRef = useRef({ bumpers: TABLE.bumpers.map(() => 0), slings: TABLE.slings.map(() => 0), targets: TABLE.targets.map(() => 0), bank: 0, spinner: 0, drain: 0, tilt: 0, ramp: 0, lane: TABLE.laneRollovers.map(() => 0), lock: 0, mb: 0, orbit: 0, orbitArm: 0, mag: 0, magFree: 0 })
     const shakeRef = useRef(0)
     const trailRef = useRef([])
+    const ringsRef = useRef([])  // rung 3: expanding event rings (presentation only)
     const fieldRef = useRef(null)
     const screenRef = useRef('attract')
     const [screen, setScreen] = useState('attract')
@@ -132,6 +143,10 @@ const PinballGame = () => {
 
         const padNow = () => keysRef.current
 
+        const spawnRing = (x, y, color, max = 34, ticks = 16) => {
+            ringsRef.current.push({ x, y, color, t: 0, ticks, max })
+        }
+
         const spawn = (x, y, n, color, spd = 130) => {
             for (let i = 0; i < n; i++) {
                 const a = Math.random() * Math.PI * 2
@@ -162,12 +177,33 @@ const PinballGame = () => {
                 else if (ev.type === 'multiball') { fl.mb = 90; shakeRef.current = 8 }
                 // ---- rung 3 (messages are SIM state now — drawn by the DMD) ----
                 else if (ev.type === 'curl') spawn(ev.x, ev.y, 4, PAL.glow, 90)
-                else if (ev.type === 'orbitarm') { fl.orbitArm = 8; spawn(ev.x, ev.y, 4, PAL.lane, 90) }
-                else if (ev.type === 'orbit') { fl.orbit = 14; shakeRef.current = Math.max(shakeRef.current, 4); spawn(ev.x, ev.y, 10, PAL.lane, 170) }
-                else if (ev.type === 'orbitset') { fl.orbit = 30; shakeRef.current = Math.max(shakeRef.current, 6) }
-                else if (ev.type === 'orbitlock') { fl.orbit = 24; shakeRef.current = Math.max(shakeRef.current, 5); spawn(ev.x ?? 290, ev.y ?? 120, 8, PAL.hot, 150) }
+                else if (ev.type === 'orbitarm') { fl.orbitArm = 8; spawn(ev.x, ev.y, 6, PAL.lane, 100) }
+                // orbit completion: a bigger punch than a lane rollover — ring + shower + shake
+                else if (ev.type === 'orbit') {
+                    fl.orbit = 20; shakeRef.current = Math.max(shakeRef.current, 6)
+                    spawn(ev.x, ev.y, 18, PAL.lane, 200)
+                    spawnRing(ev.x, ev.y, PAL.lane, 34, 16)
+                }
+                // orbit set: the set wave off the done pad — stronger than a ramp set
+                else if (ev.type === 'orbitset') {
+                    fl.orbit = 34; shakeRef.current = Math.max(shakeRef.current, 8)
+                    spawn(TABLE.orbit.donePad.x, TABLE.orbit.donePad.y, 16, PAL.lane, 180)
+                    spawnRing(TABLE.orbit.donePad.x, TABLE.orbit.donePad.y, PAL.hot, 40, 18)
+                }
+                // orbit lock: chunky ring + shower at the done pad
+                else if (ev.type === 'orbitlock') {
+                    fl.orbit = 28; shakeRef.current = Math.max(shakeRef.current, 7)
+                    const dx = ev.x ?? TABLE.orbit.donePad.x, dy = ev.y ?? TABLE.orbit.donePad.y
+                    spawn(dx, dy, 14, PAL.hot, 180)
+                    spawnRing(dx, dy, PAL.hot, 36, 18)
+                }
                 else if (ev.type === 'maggrab') { fl.mag = 14; spawn(ev.x, ev.y, 8, PAL.mag, 120) }
-                else if (ev.type === 'magfree') { fl.magFree = 12; spawn(ev.x, ev.y, 6, PAL.mag, 140) }
+                // magfree snap deserves the same treatment as an orbit beat
+                else if (ev.type === 'magfree') {
+                    fl.magFree = 18; shakeRef.current = Math.max(shakeRef.current, 2)
+                    spawn(ev.x, ev.y, 16, PAL.mag, 190)
+                    spawnRing(ev.x, ev.y, PAL.mag, 30, 16)
+                }
                 else if (ev.type === 'magready') { fl.mag = 8 }
                 else if (ev.type === 'ballhit') spawn(ev.x, ev.y, 5, PAL.chrome, 150)
             }
@@ -267,11 +303,20 @@ const PinballGame = () => {
             // ---- rung 3: orbit pads + bank lamps + magnet post ----
             {
                 const armed = gs.pucks.some((p) => p.orbitArmed)
-                // climbing-rail glow while a ball is armed for the wrap
+                // climbing-rail glow while a ball is armed for the wrap:
+                // a thicker rail + 3 chevrons sweeping up the channel
                 if (armed) {
-                    ctx.save(); ctx.globalAlpha = 0.3 + 0.2 * Math.sin(gs.tick / 6)
-                    ctx.strokeStyle = PAL.lane; ctx.lineWidth = 2
-                    ctx.beginPath(); ctx.moveTo(25, 415); ctx.lineTo(25, 250); ctx.stroke()
+                    ctx.save(); ctx.globalAlpha = 0.5 + 0.2 * Math.sin(gs.tick / 6)
+                    ctx.strokeStyle = PAL.lane; ctx.lineWidth = 3
+                    ctx.beginPath(); ctx.moveTo(25, 415); ctx.lineTo(25, 128); ctx.stroke()
+                    ctx.restore()
+                    ctx.save(); ctx.globalAlpha = 0.75; ctx.lineWidth = 2.5
+                    ctx.strokeStyle = PAL.lane
+                    for (let i = 0; i < 3; i++) {
+                        const yy = 415 - ((gs.tick * 2.2 + i * 85) % 287)
+                        if (yy < 128) continue
+                        ctx.beginPath(); ctx.moveTo(15, yy); ctx.lineTo(25, yy - 12); ctx.lineTo(35, yy); ctx.stroke()
+                    }
                     ctx.restore()
                 }
                 // arm pad (left flank) — hot while armed
@@ -279,18 +324,18 @@ const PinballGame = () => {
                 const al = armed || fl.orbitArm > 0
                 ctx.strokeStyle = al ? '#ffffff' : PAL.lane
                 ctx.globalAlpha = al ? 0.95 : 0.45
-                ctx.lineWidth = 2.5
-                ctx.beginPath(); ctx.arc(TABLE.orbit.armPad.x, TABLE.orbit.armPad.y, 7, 0, 7); ctx.stroke()
-                if (al) { ctx.shadowColor = PAL.lane; ctx.shadowBlur = 14; ctx.stroke() }
+                ctx.lineWidth = 3
+                ctx.beginPath(); ctx.arc(TABLE.orbit.armPad.x, TABLE.orbit.armPad.y, 8, 0, 7); ctx.stroke()
+                if (al) { ctx.shadowColor = PAL.lane; ctx.shadowBlur = 18; ctx.stroke() }
                 ctx.restore()
                 // done pad (right flank) — hot while the set is lit / just scored
                 ctx.save()
                 const dl = gs.orbitLit || fl.orbit > 0
                 ctx.strokeStyle = dl ? PAL.hot : PAL.lane
                 ctx.globalAlpha = dl ? 0.95 : 0.45
-                ctx.lineWidth = 2.5
-                ctx.beginPath(); ctx.arc(TABLE.orbit.donePad.x, TABLE.orbit.donePad.y, 7, 0, 7); ctx.stroke()
-                if (dl) { ctx.shadowColor = PAL.hot; ctx.shadowBlur = 14; ctx.stroke() }
+                ctx.lineWidth = 3
+                ctx.beginPath(); ctx.arc(TABLE.orbit.donePad.x, TABLE.orbit.donePad.y, 8, 0, 7); ctx.stroke()
+                if (dl) { ctx.shadowColor = PAL.hot; ctx.shadowBlur = 18; ctx.stroke() }
                 ctx.restore()
                 // orbit bank lamps, seated under the DMD insert
                 for (let i = 0; i < TABLE.orbit.need; i++) {
@@ -452,6 +497,19 @@ const PinballGame = () => {
             }
             ctx.globalAlpha = 1
 
+            // rung 3: expanding event rings (orbit beats, mag snap)
+            ringsRef.current = ringsRef.current.filter((r) => r.t < r.ticks)
+            for (const r of ringsRef.current) {
+                r.t += 1
+                const p = r.t / r.ticks
+                const rad = 6 + r.max * p
+                ctx.globalAlpha = (1 - p) * 0.8
+                ctx.strokeStyle = r.color
+                ctx.lineWidth = 2.5
+                ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, 7); ctx.stroke()
+            }
+            ctx.globalAlpha = 1
+
             // HUD — 7-seg score centred (corner clearance law #2899 respected)
             ctx.fillStyle = 'rgba(4,6,16,0.72)'
             ctx.fillRect(SCORE_X - 12, SCORE_Y - 10, SCORE_DIGITS * 22 + 24, 44)
@@ -532,6 +590,13 @@ const PinballGame = () => {
                 }
                 react(gs)
                 if (gs.done) { screenRef.current = 'over'; setScreen('over') }
+            }
+            // rung 3: magnet-hold hum bed — quiet under the chain, never a drone
+            if (screenRef.current === 'play' && !pausedRef.current && gs.magHold > 0) {
+                audioController.startLoopVoice(80, 0.04)
+                audioController.setLoopVoice(78, 0.035)
+            } else {
+                audioController.stopLoopVoice()
             }
             ctx.clearRect(0, 0, W, H)
             if (screenRef.current === 'attract') drawAttract(now)
@@ -626,6 +691,7 @@ const PinballGame = () => {
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             cvs.removeEventListener('pointerdown', onPointer)
+            audioController.stopLoopVoice()
             unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__pinballTest) delete window.__pinballTest; unexposeGame() }
         }
