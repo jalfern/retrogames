@@ -753,7 +753,7 @@ export function sockPose(wind, t, gust) {
     const wx = (Number.isFinite(wind?.x) ? wind.x : 0) + (Number.isFinite(gust?.x) ? gust.x : 0)
     const wz = (Number.isFinite(wind?.z) ? wind.z : 0) + (Number.isFinite(gust?.z) ? gust.z : 0)
     const sp = Math.hypot(wx, wz)
-    if (sp < 0.05) return { dir: null, droop: 0.9, sway: 0, flutter: 0 }
+    if (!Number.isFinite(sp) || sp < 0.05) return { dir: null, droop: 0.9, sway: 0, flutter: 0 }
     const flutter = clamp(sp / 4.4, 0, 1) // the seed wind's own full strength
     const droop = clamp(1 - sp / 2.2, 0, 1) * 0.9 // a stiff breeze streams it flat
     const sway = Math.sin(t * 2.7) * 0.10 * flutter + Math.sin(t * 5.3 + 1.7) * 0.045 * flutter
