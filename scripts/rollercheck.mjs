@@ -328,7 +328,11 @@ console.log('\n[8] surface tone (plated plates + sky ambience)')
 if (BROWSER) {
     console.log('\n[9] Chrome drive (real keys)')
     const { launch, openGame, requireDevServer } = await import('./lib/harness.mjs')
-    const url = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/marble-rush?lite=1`
+    // seed pinned (#3224): UPPER DECK's seeded bar phases decide whether a
+    // throttle-only drive survives to the gate — an un-pinned seed made the
+    // gate flow flake ~2/3 on any box. seed=1 provably reaches the gate on
+    // ArrowUp alone (sim-searched; rollercheck [3b] covers the rest).
+    const url = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/marble-rush?lite=1&seed=1`
     await requireDevServer(url)
     const browser = await launch()
     const page = await openGame(browser, { url, hook: '__marbleRushTest', wait: 600 })
