@@ -84,6 +84,8 @@ if (MUT) {
         // #3281: a wind-over misread as a hold would pose the rider wrong —
         // the pin is the read itself, so the mutant is the read.
         airhold: { from: "if (c.flipAng <= -HAND_VERT) return 'hold'", to: "if (c.flipAng <= 0.45) return 'hold'", note: 'hold misread on any wind-over' },
+        // #3281: CPU handstands off — armed 3 gone (the pin above rides this).
+        cpuhs: { from: 'armRoll < 0.45 ? 2 : armRoll < 0.70 ? 3 : 1', to: 'armRoll < 0.45 ? 2 : 1', note: 'armed 3 vanished — CPU handstands gone' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -415,6 +417,18 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         if (aiGrab) break
     }
     ok('CPU riders grab on their armed flips too (pose hangs off the commit bit)', aiGrab)
+    // #3281: armed 3 (handstand intent) — the braking CPU-gas commit, the
+    // pose hanging off brake+gas exactly like the human verb.
+    let aiHandstand = false
+    for (const seed of [7, 31, 42, 99, 1234, 555]) {
+        const g5 = makeGame(seed)
+        for (let t = 0; t < 60 * 90 && !g5.done; t++) {
+            step(g5, autoPad(g5))
+            if (g5.crafts.some((c) => c.grab === 'handstand')) { aiHandstand = true; break }
+        }
+        if (aiHandstand) break
+    }
+    ok('CPU riders grab on their armed handstands too (brake+gas, pose hangs off the commit bit)', aiHandstand)
 }
 // 6d. #3281: airPose reads the pitch verbs the way the shell does — the pose
 // is a state-out like any other, so the harness pins it and the shell can't

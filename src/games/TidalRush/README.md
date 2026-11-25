@@ -176,8 +176,10 @@ static job; every pushed commit is commented on #3104.
   holding the handstand commit across a landing dead-stopped the hull — under
   throttle the anchor now caps just below the thrust line and the dual-commit
   settles at a ~11 km/h crawl (coasting brake keeps its full anchor).
-  Honest gap left: CPUs still never handstand — armed 2 is flip intent; the
-  human hold verb stays un-AI'd.
+  ~~Honest gap: CPUs still never handstand — armed 2 is flip intent~~ **CLOSED
+  by #3281:** armed 3 is handstand intent — brake+gas, the gas stays on
+  (never eased like a flip), so the commit IS the handstand verb (~25 % of
+  CPU tricks). The old flip share (~45 %) and the spin head (~30 %) stay.
 - **CLOSED by #3191** — rain is gameplay now: extra drag in the band
   (v_term −10 %), seeded crosswind drift along the new swell, spatial drops
   at Kai's hull, gates dimmed toward storm fog, wind cue at the band edges.

@@ -554,19 +554,25 @@ function rivalPad(gs, c) {
     const corner = Math.abs(d) > 0.5 && c.speed > 11 ? 0.55 : 1
     let throttle = corner * c.skill + (gs.t > 3 ? 0.02 * (rand(gs) - 0.5) : 0)
     // tricks on big air: a seeded maybe, held for the whole air pocket —
-    // armed 1 spins flat, armed 2 tips a back-flip on the brake (#3276).
+    // armed 1 spins flat, armed 2 tips a back-flip on the brake (#3276),
+    // armed 3 holds the rail inverted — brake+gas, the handstand verb (#3281).
     // One extra seeded draw at arm time only; both sides of the wire roll the
     // same stream, so lockstep stays identical.
     let a = false
     let brake = false
-    if (c.airborne) { a = c.trickArmed === 1; brake = c.trickArmed === 2 }
+    if (c.airborne) { a = c.trickArmed === 1; brake = c.trickArmed === 2 || c.trickArmed === 3 }
     // #3280: armed 2 is FLIP intent — but skills hold gas ≥0.94 in the air,
     // and the commit law reads brake+gas as a HANDSTAND. Without easing the
     // throttle, every "flip" armed here actually inverted (68 handstand pays
     // across six seeds, zero flips — the pin caught it). A flipping CPU lifts
     // off the gas so the nose can wind over the tail, like the human verb.
-    if (brake) throttle = Math.min(throttle, 0.4)
-    if (!c.airborne && c.vy < -1.2 && rand(gs) < 0.004) c.trickArmed = rand(gs) < 0.45 ? 2 : 1
+    // #3281: armed 3 is the mirror — intent is to hold, so the gas stays on:
+    // the brake+gas commit IS the handstand.
+    if (brake && c.trickArmed === 2) throttle = Math.min(throttle, 0.4)
+    if (!c.airborne && c.vy < -1.2 && rand(gs) < 0.004) {
+        const armRoll = rand(gs)
+        c.trickArmed = armRoll < 0.45 ? 2 : armRoll < 0.70 ? 3 : 1
+    }
     if (!c.airborne && c.vy > 0) c.trickArmed = 0
     const b = c.boost > 0.5 && Math.abs(d) < 0.25 && !c.finished
     return { throttle: Math.min(1, throttle), steer, brake, a, b }
