@@ -1408,11 +1408,14 @@ const wrap = (gs) => {
     gs.done = true
     r.check('#3304 game over cuts the bed', soloBed(gs) === 0, `law=${soloBed(gs)}`)
     const sh2 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/index.jsx'), 'utf8')
-    r.check('#3304 the #3178 mb seam is untouched (trigger gs.multiball, track pinballMb, level 0.55)',
-        sh2.includes("const bedOn = screenRef.current === 'play' && !pausedRef.current && gs.multiball") &&
+    r.check('#3304 the #3178 mb seam keeps its shape (pack gates the bed, track pinballMb, level 0.55)',
+        sh2.includes("const bedOn = screenRef.current === 'play' && !pausedRef.current && (gs.multiball || devMbRef.current)") &&
         sh2.includes("audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55)"))
     r.check('#3304 the solo seam rides the law, quantized to 0.02, and the pack never hears it',
         sh2.includes('soloBed(gs) : 0') && sh2.includes('Math.round(lvl / 0.02) * 0.02') && sh2.includes('if (!bedOn) {'))
+    r.check('#3304 the dev mb-rig is seam-only — it overlays the bed ref, never gs.multiball',
+        sh2.includes('devMb: (on = true) => { devMbRef.current = Boolean(on)') &&
+        !sh2.includes('gsRef.current.multiball ='))
 }
 
 restoreAll()
