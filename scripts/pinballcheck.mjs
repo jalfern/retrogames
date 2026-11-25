@@ -1381,6 +1381,14 @@ const wrap = (gs) => {
         sh.includes('openEditor()') && sh.includes('!CABS[2].saved'))
     r.check('TEST drops home to the bench, not the row', sh.includes('testBackRef.current'))
     r.check('the pad labels B as TOOL on the bench', sh.includes("screen === 'edit' ? 'TOOL'"))
+    // #3338: the saved custom row tells the truth — B means REDESIGN there, not KIT.
+    r.check('the pad labels B as REDESIGN on the saved custom',
+        sh.includes("cabIdx === 2 && CABS[2]?.saved ? 'REDESIGN'"))
+    r.check('the attract hint line promises REDESIGN on the saved custom',
+        sh.includes('◀ ▶ CABINET · ▲▼ KIT · B REDESIGN · SPACE START') &&
+        sh.includes('cabRef.current === 2 && CABS[2].saved ?'))
+    r.check('the saved custom still dresses with ▲▼ (B means REDESIGN, not the kit)',
+        sh.includes("cabRef.current === 2 && CABS[2].saved && (e.code === 'KeyB' || e.code === 'ShiftLeft')"))
     // #3237 tilt-to-nudge shell wiring: honest grant, play-only fire, pulse release.
     r.check('tilt nudge offers an honest grant tap (iOS permission path)',
         sh.includes('data-tilt="nudge-enable"') && sh.includes('requestPermission'))

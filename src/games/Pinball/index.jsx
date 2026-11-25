@@ -1163,10 +1163,14 @@ const PinballGame = () => {
             }
             ctx.save(); ctx.textAlign = 'center'
             if (Math.floor(t / 500) % 2 === 0) {
-                ctx.font = 'bold 12px monospace'
+                // #3338: on the SAVED custom cabinet, B means REDESIGN — the
+                // line must not promise the kit-cycle it no longer does
+                const hint = cabRef.current === 2 && CABS[2].saved ? '◀ ▶ CABINET · ▲▼ KIT · B REDESIGN · SPACE START' : '◀ ▶ CABINET · B / ▲▼ KIT · SPACE START'
+                const hf = textFit(hint, 330, [12, 10, 9])
+                ctx.font = `bold ${hf.size}px monospace`
                 ctx.shadowColor = '#fff'; ctx.shadowBlur = 6
                 ctx.fillStyle = '#fff'
-                ctx.fillText('◀ ▶ CABINET · B / ▲▼ KIT · SPACE START', 180, 520)
+                ctx.fillText(hf.text, 180, 520)
             }
             ctx.restore()
         }
@@ -1747,7 +1751,7 @@ const PinballGame = () => {
                 )
             })()}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'PINBALL')} onResume={() => setPaused(false)} />}
-            <VirtualControls visible={(screen === 'play' || screen === 'attract' || screen === 'edit') && !paused} secondAction={{ label: screen === 'attract' ? 'KIT' : screen === 'edit' ? 'TOOL' : 'NUDGE', code: 'KeyB' }} />
+            <VirtualControls visible={(screen === 'play' || screen === 'attract' || screen === 'edit') && !paused} secondAction={{ label: screen === 'attract' ? (cabIdx === 2 && CABS[2]?.saved ? 'REDESIGN' : 'KIT') : screen === 'edit' ? 'TOOL' : 'NUDGE', code: 'KeyB' }} />
         </div>
     )
 }

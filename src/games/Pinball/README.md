@@ -178,8 +178,11 @@ cycle-wrap law, the `?style` parse, and a bit-identical replay.
 
 - CABINET ONE: **MIDNIGHT** (house) · **TIDAL RUN** (teal field, coral lanes, mint neon) · **NOIR** (#3237: black glass, magenta lanes, violet neon)
 - EMBER RIDER: **EMBER** (house) · **TOXIC** (moss field, lime lanes, magenta neon) · **GLACIER** (#3237: ice field, silver lanes, cyan neon)
-- Attract row: **B / Shift / ▲▼** cycles the selected cabinet's kit live; the
-  marquee shows `TAG · KIT` and a `◆ KIT:` badge sits under the selected card.
+- Attract row: **B / Shift / ▲▼** cycles the selected cabinet's kit live — except on the
+  **saved custom** (slot 2 once saved), where **B / Shift** opens the bench instead (a
+  redesign beats a dress) and **▲▼** alone still dresses. The marquee shows `TAG · KIT`
+  and a `◆ KIT:` (or `◆ B TO REDESIGN` / `◆ START OPENS THE SMITH`) badge rides under
+  the row (unsaved card 2 gets it live).
 - `?style=<id|label>` preselects the kit on every cabinet that ships it
   (unknown name = house dress; per-cabinet, start-pick not lock) — the old
   TidyBot/QBert URL convention, finally honored here.
