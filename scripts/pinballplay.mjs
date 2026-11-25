@@ -24,11 +24,45 @@ const ffToOver = async (page, rounds = 20) => {
     return s
 }
 try {
+    // #3237 kit memory: every run starts from a clean slate — the house-dress
+    // expectation below and the memory pins at the tail both depend on it.
+    const seedPage = await browser.newPage()
+    await seedPage.goto(`${BASE}/pinball`)
+    await seedPage.evaluate(() => localStorage.clear())
+    await seedPage.close()
+
     const page = await openGame(browser, { url: `${BASE}/pinball?lite=1`, hook: '__pinballTest' })
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
     await page.waitForFunction('window.__game', { timeout: 20000 })
     ok('boots clean', errors.length === 0, errors.join(';'))
+
+    // ---- #3237 ATTRACT SHOW-OFF: the row plays itself ----
+    const dm0 = await page.evaluate(() => window.__pinballTest.demoState())
+    await wait(700)
+    const dm1 = await page.evaluate(() => window.__pinballTest.demoState())
+    ok('the attract demo is driven — its sim clock runs while the row waits', dm1.tick > dm0.tick, `${dm0.tick}→${dm1.tick}`)
+    ok('the demo launches its own ball (no player touched the keys)', dm1.launched === true, `launched=${dm1.launched} score=${dm1.score}`)
+    // re-deal (cab switch) fires the lamp chase: bumper 3-2-1, lane ripple,
+    // ramp pad, orbit pads, lock slam — poll the flash fields across ~2 s.
+    await page.evaluate(() => { window.__pinballTest.setCab(1); window.__pinballTest.setCab(0) })
+    const saw = { bump: 0, lane: 0, ramp: 0, arm: 0, lock: 0 }
+    for (let i = 0; i < 40 && !(saw.bump && saw.lane && saw.ramp && saw.arm && saw.lock); i++) {
+        const s = await page.evaluate(() => window.__pinballTest.demoState())
+        if (s.lamps.bumpers.some((v) => v > 0)) saw.bump = 1
+        if (s.lamps.lane.some((v) => v > 0)) saw.lane = 1
+        if (s.lamps.ramp > 0) saw.ramp = 1
+        if (s.lamps.orbitArm > 0) saw.arm = 1
+        if (s.lamps.lock > 0) saw.lock = 1
+        await wait(50)
+    }
+    ok('re-deal lamp chase ripples every lamp group (bumpers, lane, ramp, orbit pad, lock)',
+        saw.bump === 1 && saw.lane === 1 && saw.ramp === 1 && saw.arm === 1 && saw.lock === 1, JSON.stringify(saw))
+    // a dress flip names the kit on the attract DMD (#3259 owed, #3237 pays).
+    await page.evaluate(() => window.__pinballTest.setSkin(1))
+    const dmAnn = await page.evaluate(() => window.__pinballTest.demoState())
+    ok('the dress names itself on the attract DMD (KIT TIDAL RUN)', dmAnn.dmd.text === 'KIT TIDAL RUN', `dmd="${dmAnn.dmd.text}"`)
+    await page.evaluate(() => window.__pinballTest.setSkin(0))
 
     // real key: Space starts the game out of attract
     await page.keyboard.press('Space')
@@ -76,7 +110,17 @@ try {
     ok('the world clock keeps running during the hold', held1.tick > held0.tick, `${held0.tick}→${held1.tick}`)
 
     // #3250 rig: a fast drop down the right drain column gets SAVED — latched
-    // kbUsed, +100 on the run, KICKBACK announce (sim-owned state)
+    // kbUsed, +100 on the run, KICKBACK announce (sim-owned state).
+    // Readiness gate (#3237 run): earlier rigs (orbit/magnet) can spend this
+    // ball's save before we get here — one save per ball is the RULE, so wait
+    // for a fresh ball instead of blaming the device. Rig timing, not a game
+    // change.
+    for (let i = 0; i < 40; i++) {
+        const s = await page.evaluate(() => window.__pinballTest.state())
+        if (s.done) { await page.keyboard.press('Space'); await wait(400); continue }
+        if (!s.kbUsed) break
+        await wait(100)
+    }
     const kbBefore = await page.evaluate(() => window.__pinballTest.state())
     await page.evaluate(() => window.__pinballTest.kbDrop())
     let kb = null
@@ -121,6 +165,8 @@ try {
     // die and restart: fast-forward drains via the DEV step rig, real key restarts
     const over = await ffToOver(page);
     ok('the game ends after the balls run out', over.done && over.screen === 'over', `screen=${over.screen}`)
+    const kitLine = await page.evaluate(() => document.body.innerText.includes('KIT MIDNIGHT'))
+    ok('the results screen wears the kit line (#3237)', kitLine)
     await page.keyboard.press('Space')
     await wait(400)
     const restart = await page.evaluate(() => window.__pinballTest.state())
@@ -223,7 +269,10 @@ try {
     // ---- #3259 ART KITS: B dresses the row, the dress survives retries ----
     const pxKit = () => page.evaluate(() => {
         const c = document.querySelector('canvas')
-        const d = c.getContext('2d').getImageData(73, 230, 40, 40).data   // selected card, below the marquee
+        // selected card, upper-center band: palette-dominated field above the
+        // bumper glow and below the arc — the card is a LIVE demo view now
+        // (#3237 show-off), so stay clear of the lamp cluster and ball paths.
+        const d = c.getContext('2d').getImageData(60, 232, 40, 24).data
         let r = 0, g = 0, b = 0
         const n = d.length / 4
         for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2] }
@@ -243,6 +292,10 @@ try {
     ok('the field really repaints under the kit (green up, red down)',
         pxTid.g > pxMid.g + 6 && pxTid.r < pxMid.r - 3,
         `mid r/g=${pxMid.r.toFixed(0)}/${pxMid.g.toFixed(0)} tid r/g=${pxTid.r.toFixed(0)}/${pxTid.g.toFixed(0)}`)
+    await page.keyboard.press('KeyB')
+    await wait(250)
+    const kitN = await page.evaluate(() => window.__pinballTest.state())
+    ok('the third kit NOIR rides the B cycle (#3237)', kitN.skinId === 'noir', `skin=${kitN.skinId}`)
     await page.keyboard.press('KeyB')
     await wait(250)
     const kitBack = await page.evaluate(() => window.__pinballTest.state())
@@ -299,6 +352,48 @@ try {
     const stQ3 = await page2.evaluate(() => window.__pinballTest.state())
     ok('B still cycles from a ?style preselect (override is a start-pick, not a lock)', stQ3.skinId === 'toxic', `skin=${stQ3.skinId}`)
     await page2.close()
+
+    // ---- #3237 kit memory: survives reload, stale falls back, ?style rules ----
+    const page3 = await openGame(browser, { url: `${BASE}/pinball?lite=1`, hook: '__pinballTest' })
+    page3.on('pageerror', (e) => errors.push('page3: ' + e.message))
+    await page3.evaluate(() => localStorage.setItem('retrogames.pinball.kits', JSON.stringify({ 'cabinet-one': 'noir' })))
+    await page3.reload()
+    await page3.waitForFunction('window.__game', { timeout: 20000 })
+    await wait(300)
+    const memA = await page3.evaluate(() => window.__pinballTest.state())
+    ok('a remembered kit survives a reload (#3237 — the walk-away dress stays)', memA.skinId === 'noir', `skin=${memA.skinId}`)
+    await page3.evaluate(() => window.__pinballTest.setSkin(0))
+    await page3.reload()
+    await page3.waitForFunction('window.__game', { timeout: 20000 })
+    await wait(300)
+    const memB = await page3.evaluate(() => window.__pinballTest.state())
+    ok('the kit pick write-path persists (pick → reload → keeps it)', memB.skinId === 'midnight', `skin=${memB.skinId}`)
+    await page3.evaluate(() => localStorage.setItem('retrogames.pinball.kits', JSON.stringify({ 'cabinet-one': 'retired-kit' })))
+    await page3.reload()
+    await page3.waitForFunction('window.__game', { timeout: 20000 })
+    await wait(300)
+    const memC = await page3.evaluate(() => window.__pinballTest.state())
+    ok('a stale remembered kit falls back to the house dress', memC.skinId === 'midnight', `skin=${memC.skinId}`)
+    await page3.evaluate(() => localStorage.setItem('retrogames.pinball.kits', JSON.stringify({ 'cabinet-one': 'noir' })))
+    await page3.goto(`${BASE}/pinball?lite=1&style=tidalrun`)
+    await page3.waitForFunction('window.__game', { timeout: 20000 })
+    await wait(300)
+    const memD = await page3.evaluate(() => window.__pinballTest.state())
+    ok('?style outranks the remembered kit', memD.skinId === 'tidal', `skin=${memD.skinId}`)
+    await page3.evaluate(() => localStorage.removeItem('retrogames.pinball.kits'))
+    await page3.close()
+
+    // ---- #3237 NO SUCH KIT: a URL style the picked cabinet doesn't ship ----
+    const page4 = await openGame(browser, { url: `${BASE}/pinball?lite=1&style=toxic`, hook: '__pinballTest' })
+    page4.on('pageerror', (e) => errors.push('page4: ' + e.message))
+    const warn0 = await page4.evaluate(() => window.__pinballTest.demoState())
+    ok('a ?style the picked cabinet lacks answers NO SUCH KIT on the attract DMD',
+        warn0.dmd.text === 'NO SUCH KIT', `dmd="${warn0.dmd.text}"`)
+    await page4.keyboard.press('Space')
+    await wait(300)
+    const warn1 = await page4.evaluate(() => window.__pinballTest.state())
+    ok('the dress that cannot ship says NO SUCH KIT on the play DMD too', warn1.dmd.text === 'NO SUCH KIT', `dmd="${warn1.dmd.text}"`)
+    await page4.close()
 
     ok('zero page errors through the whole drive', errors.length === 0, errors.join(';'))
 } finally {
