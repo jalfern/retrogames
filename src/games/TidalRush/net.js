@@ -66,4 +66,66 @@ export function hostSeed(now = Date.now) {
     return ((now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0) || 0x9e37
 }
 
+// --- desync evidence (#3244 item 5) -------------------------------------------
+// The referee freezes the bay on divergence (#863 law: never silent) — but a
+// player reporting a freeze had nothing to attach. So every hash boundary gets
+// a row: tick, my hash, every peer hash that landed. The last EVIDENCE_LIMIT
+// rows stay in a ring; when the referee bites, the bad row is marked and the
+// whole block is on screen, copyable. Pure data + formatting lives here so
+// tidalcheck can pin the report without a browser.
+export const EVIDENCE_LIMIT = 8
+
+export function hex32(h) { return (h >>> 0).toString(16).toUpperCase().padStart(8, '0') }
+
+export function createEvidence(limit = EVIDENCE_LIMIT) {
+    const ring = []
+    const at = (k) => {
+        let e = ring.find((x) => x.k === k)
+        if (!e) {
+            e = { k, mine: null, peers: {}, bad: false, badSlot: -1 }
+            ring.push(e)
+            if (ring.length > limit) ring.shift()
+        }
+        return e
+    }
+    return {
+        get rows() { return ring },
+        reset() { ring.length = 0 },
+        // mine records MY hash at boundary k (the box computed it).
+        mine(k, h) { at(k).mine = h >>> 0 },
+        // peer records a hash that arrived from `slot` at boundary k.
+        peer(k, h, slot) { at(k).peers[slot | 0] = h >>> 0 },
+        // mismatchSlot answers "who disagreed?" for the hash() path, where
+        // lockstep reports the mismatch but not the slot — the ring has every
+        // peer hash, so the culprit is the one that differs from mine.
+        mismatchSlot(k) {
+            const e = ring.find((x) => x.k === k)
+            if (!e) return -1
+            for (const s of Object.keys(e.peers)) if (e.peers[s] !== e.mine) return s | 0
+            return -1
+        },
+        markBad(k, slot, mine, theirs) {
+            const e = at(k)
+            e.bad = true
+            e.badSlot = slot | 0
+            e.mine = mine >>> 0
+            e.theirs = theirs >>> 0
+        },
+        // text renders the copyable block: header, aligned columns, and a
+        // MISMATCH arrow on the boundary the referee froze on.
+        text(roomCode = '', seat = 0) {
+            const slots = [...new Set(ring.flatMap((e) => Object.keys(e.peers).map(Number)))].sort((a, b) => a - b)
+            const pad = (s, w) => String(s).padEnd(w)
+            const cell = (h) => (h === null || h === undefined ? '--------' : hex32(h))
+            const out = [`TIDAL RUSH desync evidence — room ${roomCode || '????'} · seat ${seat}`]
+            out.push(pad('tick', 6) + pad('mine', 9) + slots.map((s) => pad(`seat${s}`, 9)).join(''))
+            for (const e of ring) {
+                out.push(pad(e.k, 6) + pad(cell(e.mine), 9) + slots.map((s) => pad(cell(e.peers[s]), 9)).join('')
+                    + (e.bad ? `  ← MISMATCH seat${e.badSlot}` : ''))
+            }
+            return out.join('\n')
+        },
+    }
+}
+
 export { HOST_SLOT }
