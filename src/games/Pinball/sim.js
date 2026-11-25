@@ -1253,3 +1253,18 @@ export const SMITH_REFS = {
     lone: { name: 'LONE STAR', bumpers: [[180, 150]], slingL: null, slingR: [285, 440], bank: [150, 250], magnet: [240, 380] },
     wild: { name: 'WILD TIDE', bumpers: [[100, 200], [180, 130], [262, 195]], slingL: [80, 400], slingR: [268, 460], bank: null, magnet: [180, 330] },
 };
+
+// #3237 TILT-TO-NUDGE — a phone lean becomes a cabinet nudge. The law is pure
+// (pinballcheck pins it; the shell feeds it screen-rotated lean from
+// padTypes.tiltVec): crossing `fire` nudges ONCE and latches, so holding the
+// phone sideways can never farm the 3-strike tilt-out — the same honesty the
+// button nudge earns. Re-arm only happens when the phone returns inside the
+// dead zone, so one lean-and-return = exactly one nudge. Both directions fire
+// (the cabinet does not care which way you nudge).
+export const TILT_NUDGE = { fire: 0.55, rearm: 0.12 } // ≈8° to fire, ≈1.7° to re-arm (TILT_MAX_DEG 14)
+export function tiltImpulse(x, latched, law = TILT_NUDGE) {
+    let fire = false;
+    if (!latched && Math.abs(x) >= law.fire) { fire = true; latched = true; }
+    else if (latched && Math.abs(x) <= law.rearm) latched = false;
+    return { fire, latched };
+}

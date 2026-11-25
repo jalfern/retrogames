@@ -14,8 +14,9 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R, demoPad, demoOver,
-    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk,
+    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, tiltImpulse,
 } from './sim.js'
+import { tiltVec } from '../../components/padTypes.js'
 import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD } from './art.js'
 
 const FIXED_DT = 1000 / 60
@@ -197,6 +198,18 @@ const PinballGame = () => {
     const skinRef = useRef(CABS.map((c) => styleIndex(c.tb.id, parseStyle(qStyle()), kitIndex(c.tb.id, loadKits()[c.tb.id]))))
     const gsRef = useRef(makeGame(freshSeed()))
     const keysRef = useRef({ left: false, right: false, a: false, down: false, b: false })
+    // #3237 TILT-TO-NUDGE: lean the phone and the cabinet takes a nudge.
+    // Consent is the honest tap (iOS wants a gesture, same law as the pad's
+    // ENABLE TILT); the lean maps through padTypes.tiltVec (screen-rotation
+    // aware, re-centres on the pose in hand) and the fire/latch/re-arm law
+    // lives in sim.js — one nudge per lean-and-return, never farmed.
+    const [tiltOn, setTiltOn] = useState(false)
+    const tiltOnRef = useRef(false)
+    tiltOnRef.current = tiltOn
+    const tiltBaseRef = useRef({ b: 0, g: 0 })
+    const tiltSeenRef = useRef({ b: 0, g: 0 })
+    const tiltLatchRef = useRef(false)
+    const tiltPulseRef = useRef(0)
     const partsRef = useRef([])
     const flashRef = useRef(mkFlash(TABLE))
     const shakeRef = useRef(0)
@@ -218,6 +231,44 @@ const PinballGame = () => {
     const pausedRef = useRef(false)
     pausedRef.current = paused
     screenRef.current = screen
+
+    // #3237: tilt nudge lives on touch devices with orientation sensors; a
+    // desktop with a keyboard keeps B as its nudge.
+    const tiltCapable = typeof window !== 'undefined' && 'DeviceOrientationEvent' in window
+        && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+    const enableTiltNudge = () => {
+        const DOE = window.DeviceOrientationEvent
+        if (DOE && typeof DOE.requestPermission === 'function') {
+            DOE.requestPermission().then((s) => setTiltOn(s === 'granted')).catch(() => setTiltOn(false))
+        } else {
+            setTiltOn(true)
+        }
+    }
+    const recenterTiltNudge = () => { tiltBaseRef.current = { ...tiltSeenRef.current }; tiltLatchRef.current = false }
+    useEffect(() => {
+        if (!tiltOn) return undefined
+        const onOri = (e) => {
+            tiltSeenRef.current = { b: e.beta || 0, g: e.gamma || 0 }
+            const angle = (window.screen && window.screen.orientation && window.screen.orientation.angle) || window.orientation || 0
+            const v = tiltVec(e.beta || 0, e.gamma || 0, angle, tiltBaseRef.current.b, tiltBaseRef.current.g)
+            const r = tiltImpulse(v.x, tiltLatchRef.current)
+            tiltLatchRef.current = r.latched
+            // Nudges exist only inside an unpaused run, and a finger already
+            // holding NUDGE owns the button — a lean that lands on a held b
+            // is skipped (it would be swallowed) and re-arms on the return.
+            if (r.fire && screenRef.current === 'play' && !pausedRef.current && !keysRef.current.b) {
+                keysRef.current.b = true
+                tiltPulseRef.current = 2
+            }
+        }
+        const onRot = () => { tiltBaseRef.current = { ...tiltSeenRef.current } }
+        window.addEventListener('deviceorientation', onOri)
+        window.addEventListener('orientationchange', onRot)
+        return () => {
+            window.removeEventListener('deviceorientation', onOri)
+            window.removeEventListener('orientationchange', onRot)
+        }
+    }, [tiltOn])
 
     const setCab = useCallback((i) => {
         const j = ((Math.trunc(i) % CABS.length) + CABS.length) % CABS.length   // #3284: the row wraps through slot 2
@@ -976,6 +1027,10 @@ const PinballGame = () => {
                 let steps = 0
                 while (acc >= FIXED_DT && steps < 8) {
                     stepGame(gs, padNow()); acc -= FIXED_DT; steps++
+                    // #3237 tilt pulse: b rides the sim for two steps (a solid
+                    // rising edge), then the lean releases it — never longer,
+                    // so a lean can never hold-nudge into TILT.
+                    if (tiltPulseRef.current > 0 && --tiltPulseRef.current === 0) keysRef.current.b = false
                 }
                 react(gs)
                 if (gs.done) { screenRef.current = 'over'; setScreen('over') }
@@ -1230,6 +1285,9 @@ const PinballGame = () => {
 
         if (import.meta.env.DEV) {
             window.__pinballTest = {
+                // #3237 dev rig: peek the tilt-nudge channel (grant + latch),
+                // ref-backed so the harness never reads a stale closure.
+                tiltInfo: () => ({ on: tiltOnRef.current, latched: tiltLatchRef.current, held: keysRef.current.b }),
                 state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current, skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
                 // dev rig: pick a cabinet without keys (#3232) — re-deals its
                 // attract demo too, same law as the arrow keys.
@@ -1345,6 +1403,20 @@ const PinballGame = () => {
             {screen === 'attract' && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-[6%] flex flex-col items-center">
                     <AttractMessage className="text-cyan-200/85 mt-2" messages={CABS[cabIdx].msgs} />
+                </div>
+            )}
+            {/* #3237 tilt-to-nudge affordance: one honest tap grants the lean,
+                RE-CENTER pins the pose in hand. z-30 — under the pad (z-50). */}
+            {tiltCapable && screen === 'play' && !paused && (
+                <div className="absolute left-1/2 top-2 z-30 flex -translate-x-1/2 items-center gap-2">
+                    {tiltOn ? (
+                        <>
+                            <span className="font-mono text-[8px] font-bold tracking-[0.2em] text-cyan-200/70" style={{ textShadow: '0 0 8px rgba(49,225,255,0.5)' }}>LEAN = NUDGE</span>
+                            <button data-tilt="recenter" onPointerDown={(e) => { e.preventDefault(); recenterTiltNudge() }} className="rounded border border-cyan-400/40 bg-cyan-950/70 px-2 py-1 font-mono text-[8px] font-bold tracking-[0.2em] text-cyan-200">RE-CENTER</button>
+                        </>
+                    ) : (
+                        <button data-tilt="nudge-enable" onPointerDown={(e) => { e.preventDefault(); enableTiltNudge() }} className="rounded border border-amber-400/50 bg-amber-950/70 px-2 py-1 font-mono text-[8px] font-bold tracking-[0.2em] text-amber-200">TILT NUDGE — TAP</button>
+                    )}
                 </div>
             )}
             {screen === 'over' && (() => {

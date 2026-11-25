@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -75,6 +75,14 @@ if (MUT) {
             to: 'const tb = CABINETS[cab] || TABLE',
             note: 'makeGame ignores compiled smith tables — the player-built cabinet is a lie',
         },
+        // the tilt impulse forgets its latch — a held lean re-nudges every
+        // sample and farms the 3-strike tilt-out (#3237 honesty law).
+        tiltnudge: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'if (!latched && Math.abs(x) >= law.fire) { fire = true; latched = true; }',
+            to: 'if (Math.abs(x) >= law.fire) { fire = true; latched = true; }',
+            note: 'tilt latch dropped — holding the phone sideways spams nudges into a free TILT',
+        },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -85,7 +93,7 @@ if (MUT) {
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
-const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32, demoPad, demoOver, compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS } = await import('../src/games/Pinball/sim.js')
+const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32, demoPad, demoOver, compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, tiltImpulse, TILT_NUDGE } = await import('../src/games/Pinball/sim.js')
 const { SKINS, skinsFor, skinAt, parseStyle, styleIndex, PAL, PAL_EMBER, PAL_TIDE, PAL_TOXIC, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, FONT } = await import('../src/games/Pinball/art.js')
 
 const r = new Report('pinballcheck')
@@ -268,6 +276,42 @@ const setBall = (gs, x, y, vx, vy) => { gs.bx = x; gs.by = y; gs.vx = vx; gs.vy 
     drive(gsd, {}, 70)                              // ~1.1 s later
     drive(gsd, { b: true }, 3); clear(gsd)
     r.check('nudges spaced over the decay window do NOT accumulate into a tilt', !gsd.tilt && gsd.nudgeMeter === 1)
+}
+
+// --------------------------------------------- tilt-to-nudge (#3237) ----
+{
+    // the shell maps a screen-rotated lean through this law (padTypes.tiltVec
+    // → tiltImpulse): crossing fire nudges ONCE, a held lean never re-fires
+    // (no farming the tilt-out), a return inside dead re-arms. Mirrored both
+    // ways — the cabinet does not care which way you nudge.
+    const F = TILT_NUDGE.fire
+    const a1 = tiltImpulse(F + 0.2, false)
+    r.check('lean past the line fires exactly one nudge and latches', a1.fire && a1.latched)
+    const a2 = tiltImpulse(F + 0.2, a1.latched)
+    r.check('the held lean never re-nudges (tilt-out cannot be farmed)', !a2.fire && a2.latched)
+    const a3 = tiltImpulse(TILT_NUDGE.rearm - 0.02, a2.latched)
+    r.check('returning inside the dead zone re-arms the lean', !a3.fire && !a3.latched)
+    const a4 = tiltImpulse(-(F + 0.2), a3.latched)
+    r.check('the other direction fires too (mirrored law)', a4.fire && a4.latched)
+    r.check('drift inside the dead zone never fires', !tiltImpulse(0.05, false).fire && !tiltImpulse(-TILT_NUDGE.rearm, false).fire)
+    r.check('the fire line sits at ~8° of lean', F * 14 >= 7 && F * 14 <= 9, `${(F * 14).toFixed(1)}°`)
+    // an end-to-end walk of the law through the SIM: each lean is a full
+    // tilt-and-return cycle and pays exactly one nudge; the third TILT-out
+    // rides the same three-strike law as the button.
+    const gs = makeGame(77); gs.launched = true
+    setBall(gs, 180, 400, 0, 0); clear(gs)
+    let latch = false
+    const lean = () => {
+        const p = tiltImpulse(F + 0.3, latch); latch = p.latched
+        if (p.fire) { drive(gs, { b: true }, 2); drive(gs, {}, 1) }
+        latch = tiltImpulse(0, latch).latched          // swing back to level
+        return p.fire
+    }
+    lean(); const w = gs.nudgeMeter === 1
+    lean()
+    r.check('lean pulses drive the sim: two nudges bank, meter reads true', gs.nudgeMeter === 2 && w, `meter=${gs.nudgeMeter}`)
+    lean()
+    r.check('the third lean lands the machine in TILT (same law as B)', gs.tilt)
 }
 
 // ---------------------------------------------------- determinism ----
@@ -1287,6 +1331,14 @@ const wrap = (gs) => {
         sh.includes('openEditor()') && sh.includes('!CABS[2].saved'))
     r.check('TEST drops home to the bench, not the row', sh.includes('testBackRef.current'))
     r.check('the pad labels B as TOOL on the bench', sh.includes("screen === 'edit' ? 'TOOL'"))
+    // #3237 tilt-to-nudge shell wiring: honest grant, play-only fire, pulse release.
+    r.check('tilt nudge offers an honest grant tap (iOS permission path)',
+        sh.includes('data-tilt="nudge-enable"') && sh.includes('requestPermission'))
+    r.check('the lean only nudges inside an unpaused run',
+        sh.includes("screenRef.current === 'play' && !pausedRef.current"))
+    r.check('a held NUDGE button owns b — the lean never stomps it', sh.includes('!keysRef.current.b'))
+    r.check('the tilt pulse rides the sim steps then releases b', sh.includes('if (tiltPulseRef.current > 0 && --tiltPulseRef.current === 0) keysRef.current.b = false'))
+    r.check('the lean maps through the shared screen-rotation law', sh.includes("import { tiltVec } from '../../components/padTypes.js'"))
 }
 
 restoreAll()

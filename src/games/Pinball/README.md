@@ -306,10 +306,10 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
 - Phone-width HUD density and ball-vs-amber-lane-bed contrast have not been
   audited at 375pt/#?lite=1 (the #3237 tail's audit items — pixel thresholds
   need a calibration pass, not a code guess).
-- No tilt-to-nudge (B is NUDGE on desktop; a shake gesture would match the
-  cabinet fantasy — tilt law #3118 supports-only). Extras still owed: a
-  lock-gate slam animation, plunger 3-step power ticks, tilt-warning cabinet
-  wobble.
+- Tilt-to-nudge SHIPPED (#3237): a lean-and-return pays one nudge via a
+  tap-granted deviceorientation channel (law pinned in sim.js `tiltImpulse`).
+  Extras still owed: a lock-gate slam animation, plunger 3-step power ticks,
+  tilt-warning cabinet wobble.
 - The music bed covers MULTIBALL only (#3178); single-ball play stays dry.
 - The magnet holds one ball and the orbit one loop at a time (real tables run
   both per-ball); the wrap's curl assist is a fixed push, not a shaped rail.
