@@ -147,6 +147,17 @@ only the broad strokes — depth cool-down, sun-warm decks, curvature AO
 (`shadeAt`) and grind wear near rails — and stay deterministic. Visual only:
 no sim, hash or pin changes.
 
+**Phone-width HUD (#3233 tail).** The goal/trick banner (the widest string the
+sim prints, `OFF THE MAP! SECRET SPOT +2500`) used to sit centred at `top-12`
+and run straight through the top-left S-K-A-T-E checklist — and overflow both
+edges on a 320px screen. On phones it now drops below the checklist (`top-40`),
+insets from both edges and wraps (`inset-x-2 text-center whitespace-normal`);
+the ROOF GRIND callout lowers to `top-[46%]` at `text-2xl`, and the combo/mult
+lines lift past the tall score number. The `sm:` (≥640px) look is byte-unchanged.
+`gcdrive` pins it: 8 legs assert zero banner×checklist overlap, zero horizontal
+overflow and a score/clear-combo gap at 390px and 320px. Layout only — no sim,
+hash or pin change.
+
 ## Honest gaps
 
 - **Replay is auto-only.** Last-10 s window, one cam, a 1×/2×/0.5× speed
