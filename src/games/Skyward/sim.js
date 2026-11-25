@@ -94,6 +94,7 @@ export function makeGame(seed, opts = {}) {
         _depart: 0,         // #3319 — grace to climb clear after a rollout abort
         park: null,         // #3332 — non-null while the belt sits parked on the deck
         beltLand: 0,        // #3332 — best belt landing banked on the strip
+        _air: true,         // #3332 — crossing arming: the decision belongs to the deck-crossing tick, once
         respawnT: 0, ditchT: 0,
         lastSafe: { x: 0, y: 34, z: 320, heading: Math.PI },
         events: [],
@@ -145,7 +146,7 @@ function placeBeltStart(g) {
     g.p = { x: s.x + 30, y: 18, z: s.z + 40 }
     g.heading = 0; g.pitch = 0; g.roll = 0; g.speed = 0; g.vy = 0
     g.vel.x = 0; g.vel.z = 0 // #3332 — handed over still, not still-drifting
-    g.park = null
+    g.park = null; g._air = true
     g.dropIdx = 0; g.crates = []; g.dropped = []
 }
 function placePassStart(g) {
@@ -588,13 +589,20 @@ function stepBelt(g, w, sx, sy, a, dt) {
 
     const ter = w.terrainHeight(g.p.x, g.p.z)
     const floor = Math.max(ter, w.waterHeightAt(g.p.x, g.p.z, g.t))
+    // #3332 — away and back re-arms the crossing: airborne above the deck, or
+    // climbing under throttle off it (a hop is a departure; gravity-only deck
+    // jitters never re-arm, so a firm settle can't sneak a park)
+    if (g.p.y > floor + 0.8 || g.vy > 0.05) g._air = true
     if (g.p.y < floor + 0.8) {
         if (g.vy < -5.2 || g.speed > 10) { crash(g, 'belt') ; return }
-        // #3332 — the strip REPAYS a quiet arrival before the plain settle:
-        // soft, slow and on-strip in free flight parks with the zone score.
-        // Off-strip and mid-event arrivals keep today's silent settle and hot
-        // ones keep today's crash — the plain-settle branch stays untouched.
-        if (g.phase === 'free' && g.respawnT <= 0) {
+        // #3332 — the strip REPAYS a quiet arrival at the instant it crosses
+        // the deck: soft, slow and on-strip in free flight parks with the zone
+        // score. The crossing fires the law ONCE (g._air) — an arrival too
+        // firm for the band settles, and stays settled: a zeroed vy from the
+        // settle must never sneak a park on the next tick. Off-strip and
+        // mid-event arrivals keep today's silent settle, hot ones today's crash.
+        if (g.phase === 'free' && g.respawnT <= 0 && g._air) {
+            g._air = false
             const zn = stripZone(w, g.p.x, g.p.z)
             if (zn) {
                 const touch = beltTouch(w, g.p.x, g.p.z, g.heading, g.vy, g.speed)

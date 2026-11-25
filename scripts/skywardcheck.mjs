@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, stripZone, stripScore, planeTouch } from '../src/games/Skyward/sim.js'
+import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, stripZone, stripScore, planeTouch, beltTouch } from '../src/games/Skyward/sim.js'
 import { decide } from '../src/games/Skyward/planner.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { Report } from './lib/harness.mjs'
@@ -828,6 +828,107 @@ void runAuto
             stp.land === 700 && JSON.stringify(stp).length > 10, `land=${stp.land}`)
     }
 
+    // ── #3332 — the belt answers the runway (park law) ──────────────────────
+    {
+        const w = makeGame(21).world
+        // pure beltTouch: zones mirror the strip table; quietness is the belt's own
+        const full = beltTouch(w, 120, 130, Math.PI / 2, -1, 3)
+        r.check('beltTouch: deep + aligned + quiet = FULL STRIP 700',
+            full && full.zone === 4 && full.score === 700 && full.aligned === true, JSON.stringify(full))
+        const short = beltTouch(w, -10, 130, Math.PI / 2, -1, 3)
+        r.check('beltTouch: first quarter pays 150', short && short.zone === 1 && short.score === 150, JSON.stringify(short))
+        const crab = beltTouch(w, 120, 130, Math.PI / 2 + 0.45, -1, 3)
+        r.check('beltTouch: crabbed past ~17° is a scuff (60), not a zone',
+            crab && crab.zone === 0 && crab.score === 60 && crab.aligned === false, JSON.stringify(crab))
+        r.check('beltTouch: a firm sink (−2.5) is not quiet — no catch', beltTouch(w, 120, 130, Math.PI / 2, -2.5, 3) === null)
+        r.check('beltTouch: crossing at 4.5 m/s is not quiet — no catch', beltTouch(w, 120, 130, Math.PI / 2, -1, 4.5) === null)
+        r.check('beltTouch: climbing away (+1.5) is a departure, not an arrival', beltTouch(w, 120, 130, Math.PI / 2, 1.5, 3) === null)
+        r.check('beltTouch: off-strip — no catch', beltTouch(w, 120, 160, Math.PI / 2, -1, 3) === null)
+
+        // whole-hull: a QUIET descent (throttle-pulsed, what a pilot does) parks
+        const quiet = (h) => ({ a: h.vy < -1.6 })
+        const beltDrop = (seed, x, vy0, ctrl, cap = 500) => {
+            const h = makeGame(seed)
+            h.craft = 'belt'; h.phase = 'free'
+            const y = Math.max(w.terrainHeight(x, 130), w.waterHeightAt(x, 130, 0)) + 1.2
+            h.p = { x, y, z: 130 }
+            h.heading = Math.PI / 2; h.speed = 3; h.vy = vy0
+            h.vel = { x: 3, z: 0 }
+            const evs = []
+            let n = 0
+            while (n++ < cap && !h.park && evs.every((e) => e.kind !== 'crash')) { step(h, ctrl ? ctrl(h) : {}); evs.push(...clear(h)) }
+            return { h, evs }
+        }
+        const pk = beltDrop(41, 100, -1, quiet)
+        r.check('the belt parks on a quiet arrival: strip touchdown event (belt, strip, FULL STRIP)',
+            pk.evs.some((e) => e.kind === 'land' && e.craft === 'belt' && e.zone === 4 && e.aligned === true),
+            pk.evs.map((e) => e.kind).join(','))
+        r.check('a belt landing banks the HOVER (beltLand=700), NOT the licence score',
+            pk.h.beltLand === 700 && pk.h.score === 0 && pk.h.grad.drop === null && !pk.h.done,
+            `beltLand=${pk.h.beltLand} score=${pk.h.score} done=${pk.h.done}`)
+
+        // today's edges stay today's: firm sinks settle (no park, no crash, no
+        // score), hot arrivals crash — the crossing law fires ONCE, so a
+        // zeroed settle vy must never sneak a park on the next tick
+        const f = beltDrop(42, 100, -1, null)
+        r.check('a firm arrival (no throttle) settles unscored — today\'s law intact, no park next tick',
+            !f.h.park && f.evs.every((e) => e.kind !== 'crash' && e.kind !== 'land') && f.h.beltLand === 0,
+            `park=${!!f.h.park} evs=${f.evs.map((e) => e.kind).join(',')} bank=${f.h.beltLand}`)
+        const hot = beltDrop(42, 100, -6, null)
+        r.check('a hot arrival (−6 m/s) on the strip still crashes — the school does not forgive dives',
+            hot.evs.some((e) => e.kind === 'crash') && hot.h.beltLand === 0, hot.evs.map((e) => e.kind).join(','))
+
+        // parked is parked: locked on the deck, crew-chocked against the wind;
+        // throttle lets go and a second quiet arrival pays again (best kept)
+        const px = pk.h.p.x, pz = pk.h.p.z
+        for (let i = 0; i < 40; i++) step(pk.h, {})
+        r.check('parked is parked: 40 ticks on the deck, locked and crash-free',
+            pk.h.park !== null && Math.abs(pk.h.p.x - px) < 1e-9 && Math.abs(pk.h.p.z - pz) < 1e-9 && pk.h.crashes === 0,
+            `x=${pk.h.p.x.toFixed(2)} z=${pk.h.p.z.toFixed(2)} crashes=${pk.h.crashes}`)
+        const lkv = pk.evs
+        let ln = 0
+        while (ln++ < 60 && lkv.every((e) => e.kind !== 'liftoff')) { step(pk.h, { a: true }); lkv.push(...clear(pk.h)) }
+        while (ln++ < 120 && pk.h.p.y < 3.9) { step(pk.h, { a: true }); lkv.push(...clear(pk.h)) } // climb clear of the deck
+        const glide = (h) => ({ a: h.vy < -1.0 }) // damp the descent before the deck reaches the firm band
+        ln = 0
+        while (ln++ < 600 && !pk.h.park) { step(pk.h, glide(pk.h)); lkv.push(...clear(pk.h)) }
+        r.check('throttle lifts her off (liftoff) and a second quiet arrival parks again with the best banked',
+            lkv.some((e) => e.kind === 'liftoff') && pk.h.park !== null && pk.h.beltLand === 700 && pk.h.crashes === 0,
+            `evs=${lkv.map((e) => e.kind).join(',')} bank=${pk.h.beltLand}`)
+
+        // autopilot honesty: the mat/drop-seeking planner never parks the belt
+        // on the strip while graduating
+        let beltStripAuto = 0
+        for (const s of [1, 7, 42, 99, 123]) {
+            const h = makeGame(s)
+            let n = 0
+            while (n++ < 20000 && !h.done) {
+                for (const e of h.events) if (e.kind === 'land' && e.craft === 'belt') beltStripAuto++
+                step(h, decide(h))
+            }
+        }
+        r.check('honesty: the autopilot never parks the belt on the strip (5 seeds)', beltStripAuto === 0, `n=${beltStripAuto}`)
+
+        // determinism: a scripted quiet arrival replays to an identical hash
+        const replayHash = () => {
+            const h = makeGame(88)
+            h.craft = 'belt'; h.phase = 'free'
+            const y = Math.max(w.terrainHeight(100, 130), w.waterHeightAt(100, 130, 0)) + 1.2
+            h.p = { x: 100, y: y, z: 130 }; h.heading = Math.PI / 2; h.speed = 3; h.vy = -1
+            h.vel = { x: 3, z: 0 }
+            let n = 0
+            while (n++ < 200 && !h.park) step(h, quiet(h))
+            return `${h.hash}:${h.beltLand}:${h.park && h.park.zone}`
+        }
+        r.check('determinism: a belt landing replays identical (hash + banked HOVER + zone)', replayHash() === replayHash(), replayHash())
+
+        // stateOf exposes the belt's strip work to the harness/contract
+        const sb = stateOf(pk.h)
+        r.check('stateOf: reports the banked belt landing and the park (plain JSON)',
+            sb.beltLand === 700 && sb.parked === true && JSON.stringify(sb).length > 10,
+            `beltLand=${sb.beltLand} parked=${sb.parked}`)
+    }
+
 if (process.argv.includes('--mutate')) {
     const MUTANTS = [
         ['the ring pass stops counting', SIMF, 'g.ringsPassed++', 'g.ringsPassed += 0'],
@@ -866,6 +967,13 @@ if (process.argv.includes('--mutate')) {
         ['#3319 the rollout has no friction (coasts off the end, no crew)', SIMF, 'g.speed *= CFG.PLANE_FRICTION', 'g.speed *= 1'],
         ['#3319 the wheels-abort is dead (no touch-and-go)', SIMF, 'if (sy > 0 && g.speed >= CFG.PLANE_LIFTOFF) {', 'if (false) {'],
         ['#3319 the departure grace never arms (the deck splats its own go-around)', SIMF, 'g._depart = 1.5 // grace to climb clear before the crash law re-arms', 'g._depart = 0'],
+        ['#3332 the strip forgets the belt (settle stays scoreless)', SIMF, "ev(g, 'land', { craft: 'belt', strip: true,", "ev(g, 'settle', { craft: 'belt', strip: false,"],
+        ['#3332 the park band ignores the sink (dives park too)', SIMF, 'if (!(vy > -CFG.BELT_SINK && vy < CFG.BELT_RISE && speed < CFG.BELT_SPEED)) return null', 'if (!(vy < CFG.BELT_RISE && speed < CFG.BELT_SPEED)) return null'],
+        ['#3332 the park band ignores the drift (fast crossings park)', SIMF, 'if (!(vy > -CFG.BELT_SINK && vy < CFG.BELT_RISE && speed < CFG.BELT_SPEED)) return null', 'if (!(vy > -CFG.BELT_SINK && vy < CFG.BELT_RISE)) return null'],
+        ['#3332 the bank forgets the belt (HOVER stays empty)', SIMF, 'g.beltLand = Math.max(g.beltLand, touch.score)', 'g.beltLand = Math.max(g.beltLand, 0)'],
+        ['#3332 the park never releases (throttle-deaf pad)', SIMF, "if (a) { g.park = null; ev(g, 'liftoff') }", "if (false) { g.park = null; ev(g, 'liftoff') }"],
+        ['#3332 the crossing fires every tick (a firm settle parks a tick late)', SIMF, 'if (g.phase === \'free\' && g.respawnT <= 0 && g._air) {', 'if (g.phase === \'free\' && g.respawnT <= 0) {'],
+        ['#3332 the crew never chocks (a parked belt blows downwind)', SIMF, 'g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0\n        g.roll = lerp(g.roll, 0, 0.2)', 'g.vy = 0; g.vel.x = w.wind.x * 0.35; g.vel.z = w.wind.z * 0.35; g.speed = 0\n        g.roll = lerp(g.roll, 0, 0.2)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
