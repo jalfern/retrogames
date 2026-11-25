@@ -519,5 +519,5 @@ export const KIT_STORE = 'retrogames.pinball.kits';
 // crawl completes inside the 200-tick window they're given.
 export const ATTRACT_DMD = {
     'cabinet-one': ['LOCK 3 FOR THE TOWER', 'ORBIT ROUND THE DOME', 'KICKBACK FREES BALLS', 'MULT LADDER UP TO X5'],
-    'ember-rider': ['EMBER RIDER RUNS MIRRORED', 'LEFT LANE LOCKS AT 400', 'PACK PAYS DOUBLE HERE', 'NUDGE CAREFULLY HERE'],
+    'ember-rider': ['RIDER RUNS MIRRORED', 'LEFT LANE LOCKS AT 400', 'PACK PAYS DOUBLE HERE', 'NUDGE CAREFULLY HERE'],
 };

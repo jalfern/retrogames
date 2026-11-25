@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -52,6 +52,14 @@ if (MUT) {
             to: "    hotRgbX: '255,159,28',\n    magRgb: '69,201,255',",
             note: 'TOXIC kit loses its hotRgb key — the renderer would paint undefined',
         },
+        // the attract demo bot stops plunging — the machine never plays itself
+        // and never reaches MULTIBALL; the show-off pins must catch it.
+        demo: {
+            file: 'src/games/Pinball/sim.js',
+            from: '? { down: true } : {};',
+            to: '? {} : {};',
+            note: 'demoPad never pulls the plunger — the attract show-off is a screensaver',
+        },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -62,8 +70,8 @@ if (MUT) {
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
-const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32 } = await import('../src/games/Pinball/sim.js')
-const { SKINS, skinsFor, skinAt, parseStyle, styleIndex, PAL, PAL_EMBER, PAL_TIDE, PAL_TOXIC } = await import('../src/games/Pinball/art.js')
+const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32, demoPad, demoOver } = await import('../src/games/Pinball/sim.js')
+const { SKINS, skinsFor, skinAt, parseStyle, styleIndex, PAL, PAL_EMBER, PAL_TIDE, PAL_TOXIC, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, FONT } = await import('../src/games/Pinball/art.js')
 
 const r = new Report('pinballcheck')
 r.info('boot', 'sim.js imported in Node, zero DOM, zero Math.random')
@@ -1108,6 +1116,85 @@ const wrap = (gs) => {
     // dress, kit and DMD announcements, but never the machine under them.
     const runKit = () => stateHash(drive(makeGame(7, 0), { down: true, right: true }, 240))
     r.check('a kit never touches physics: seed 7 replays bit-identical', runKit() === runKit())
+}
+
+// =============== #3237 tail: ATTRACT SHOW-OFF + KIT TAIL ===============
+// The attract mode drives a REAL sim through demoPad — the same 4-tick
+// medium-plunge protocol the HUMAN LINE pins above — so every pin below
+// audits the exact code path the browser runs. No DOM, no RNG.
+{
+    const cabIds = Object.keys(SKINS)
+    // the bot protocol: at the plunger hold four ticks, release, otherwise idle.
+    {
+        const gs = makeGame(1337)
+        r.check('demoPad holds the plunger ticks 0..3 and releases on 4',
+            demoPad(gs, 0).down === true && demoPad(gs, 3).down === true && demoPad(gs, 4).down === undefined)
+        const ghost = { ...gs, pucks: [{ ...gs.pucks[0], by: 300, launched: true }] }
+        r.check('demoPad ignores a ball that is not at the plunger',
+            Object.keys(demoPad(ghost, 90)).length === 0)
+    }
+    // THE demo run: from seed 1337 the machine plays itself to MULTIBALL —
+    // same shape as the human-line pins (lock jackpots first, never empty).
+    {
+        const gs = makeGame(1337)
+        let mb = false, empties = 0, scoreAtLock = 0
+        for (let i = 0; i < 3000 && !mb; i++) {
+            stepGame(gs, demoPad(gs, gs.tick))
+            if (gs.pucks.length === 0 && !gs.done) empties++
+            if (scoreAtLock === 0 && gs.events.some((e) => e.type === 'lock')) scoreAtLock = gs.score
+            if (gs.multiball) mb = true
+            gs.events.length = 0
+        }
+        r.check('ATTRACT DEMO (cab one): the bot drives to MULTIBALL within 3000 ticks', mb, `first lock score=${scoreAtLock}`)
+        r.check('the demo banks lock jackpots before the pack — it really locks', scoreAtLock >= 500, `first lock score=${scoreAtLock}`)
+        r.check('the demo never leaves the table empty', empties === 0, `empties=${empties}`)
+    }
+    {
+        const gs = makeGame(1337, 1)
+        let mb = false
+        for (let i = 0; i < 3000 && !mb; i++) {
+            stepGame(gs, demoPad(gs, gs.tick))
+            if (gs.multiball) mb = true
+            gs.events.length = 0
+        }
+        r.check('ATTRACT DEMO (ember rider): the mirrored bot reaches MULTIBALL too', mb)
+    }
+    r.check('demoOver: only done, or a beat after the pack, ends a demo run',
+        demoOver({ done: false }, false, 9999) === false &&
+        demoOver({ done: true }, false, 0) === true &&
+        demoOver({ done: false }, true, 421) === true &&
+        demoOver({ done: false }, true, 100) === false)
+    // kit tail — memory, warnings, the third dress.
+    r.check('#3237: three art kits ride every cabinet (the row cycles deeper)',
+        cabIds.every((id) => SKINS[id].length >= 3), cabIds.map((id) => `${id}=${SKINS[id].length}`).join(' '))
+    r.check('the third kit is a real third dress (lane and neon distinct from kits one and two)',
+        cabIds.every((id) => {
+            const [a, b, c] = SKINS[id]
+            return c.pal.lane !== a.pal.lane && c.pal.lane !== b.pal.lane && c.pal.neon !== b.pal.neon && c.pal.fieldTop !== b.pal.fieldTop
+        }))
+    r.check('kitIndex: remembered ids resolve, stale ids fall back to the house dress',
+        kitIndex('cabinet-one', 'noir') === 2 && kitIndex('cabinet-one', 'glacier') === 0 &&
+        kitIndex('cabinet-one', 'retired-kit') === 0 && kitIndex('ember-rider', 'toxic') === 1)
+    r.check('styleWarn: only a NAMED style the picked cabinet does not ship warns',
+        styleWarn('cabinet-one', 'toxic') === true && styleWarn('ember-rider', 'glacier') === false &&
+        styleWarn('cabinet-one', null) === false && styleWarn('ember-rider', 'tidal') === true)
+    r.check('kit memory lives at the pinned storage slot', KIT_STORE === 'retrogames.pinball.kits')
+    r.check('attract DMD lines: >=3 per cabinet, in-font, crawl-length, no shout words',
+        cabIds.every((id) => Array.isArray(ATTRACT_DMD[id]) && ATTRACT_DMD[id].length >= 3 &&
+            ATTRACT_DMD[id].every((s) => s.length <= 23 &&
+                [...s.toUpperCase()].every((ch) => FONT[ch] !== undefined) &&
+                !/TILT|MULTIBALL|MULT x|ORBIT SET|ORBIT LOCK|RAMP SET|SAVE/.test(s))))
+    // shell anchors — presentation laws the browser carries (text-scan idiom).
+    const shell = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/index.jsx'), 'utf8')
+    r.check('shell gives the kit cycle its own dress-flip sound (#3259 owed)',
+        /case 'dressflip'/.test(shell) && /sfxFor\(\{ type: 'dressflip' \}\)/.test(shell))
+    r.check('shell persists the kit pick through the pinned memory key',
+        shell.includes('localStorage.setItem(KIT_STORE') && shell.includes('saveKit('))
+    r.check('shell says NO SUCH KIT on the DMD and on the row badge',
+        shell.includes("'NO SUCH KIT'") && shell.includes('NO SUCH KIT HERE'))
+    r.check('the results screen wears the kit line (#3237)', shell.includes('◆ KIT {k.label}'))
+    r.check('attract drives the demo through the game\'s own drawTable (one renderer)',
+        shell.includes('stepDemo(dt)') && shell.includes('drawTable(d.gs, DLIVE)') && shell.includes('demoPad(gs, t)'))
 }
 
 restoreAll()
