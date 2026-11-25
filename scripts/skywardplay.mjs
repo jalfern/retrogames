@@ -31,6 +31,7 @@ const browser = await chromium.launchPersistentContext(
   resolve(process.env.TMPDIR || '/tmp', 'skywardplay-profile'), {
     executablePath: CHROME,
     viewport: { width: 1280, height: 800 },
+    hasTouch: true, // #3310 — the pad hides behind keyboard use (device law); the pad-verb leg needs a real touch
     args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'],
   })
 const page = await browser.newPage()
@@ -329,6 +330,32 @@ try {
   ok(banner6.includes('NO ENGINE'), `the glider banners the wind law ("${banner6}")`)
   await shot('skyward-glider-banner.png')
 
+  /* #3310 item 1 — the B pad names the verb it actually carries: DROP on the
+     drop course, RECYCLE at the school apron, inert 'B' everywhere else (the
+     glider's approach must not promise a button that does nothing). */
+  const chipText = () => page.evaluate(() => {
+    const el = document.querySelector('[data-vc="b"]')
+    return el ? el.textContent.trim() : null
+  })
+  // the pad shows on touch (and hides again under keyboard use), so wake it
+  // with a screen tap in empty sky before every read
+  const wakePad = () => page.touchscreen.tap(640, 300)
+  await page.evaluate(() => window.__skywardTest.checkout('drop'))
+  await wakePad()
+  let dropChip = null
+  for (let i = 0; i < 25 && dropChip !== 'DROP'; i++) { dropChip = await chipText(); if (dropChip !== 'DROP') { await wakePad(); await page.waitForTimeout(100) } }
+  ok(dropChip === 'DROP', `the B pad reads DROP on the drop course (${dropChip})`)
+  await page.evaluate(() => window.__skywardTest.start())
+  await wakePad()
+  await simSleep(0.25)
+  const inertChip = await chipText()
+  ok(inertChip === 'B', `far from the apron the B pad promises nothing (${inertChip})`)
+  await page.evaluate(() => window.__skywardTest.teleport({ x: 0, y: 20, z: 150, speed: 8 }))
+  await wakePad()
+  let apChip = null
+  for (let i = 0; i < 25 && apChip !== 'RECYCLE'; i++) { apChip = await chipText(); if (apChip !== 'RECYCLE') { await wakePad(); await page.waitForTimeout(100) } }
+  ok(apChip === 'RECYCLE', `at the apron the pad says what B does — RECYCLE (${apChip})`)
+
   /* #3300 item 5 — phone widths: at 390×844 the canvas must fill the stage,
      and no HUD readout may sit under the virtual pad or collide with another. */
   await page.setViewportSize({ width: 390, height: 844 })
@@ -358,6 +385,33 @@ try {
     `phone stage fills the viewport (canvas ${audit.canvas} of ${audit.vw}x${audit.vh})`)
   ok(audit.bad === 0, `390px HUD: no pad overlap, no text collision, nothing offscreen (${audit.bad} violations)`)
   await shot('skyward-phone-hud.png')
+
+  /* #3310 item 3 — the longest words the strip ever says, at phone width:
+     `RUNWAY FULL STRIP +700` (the zone banner) and the spot-phase law line
+     must stay inside the viewport, off the pad band, and off each other. */
+  const fit = await page.evaluate(() => {
+    const b = document.querySelector('[data-h="banner"]')
+    b.textContent = 'RUNWAY FULL STRIP +700'
+    b.style.opacity = '1'
+    const h = document.querySelector('[data-h="hint"]')
+    h.textContent = 'RUNWAY — TOUCH DEEP, KEEP IT STRAIGHT · far end pays 700'
+    const r = (el) => { const q = el.getBoundingClientRect(); return { x: q.x, y: q.y, w: q.width, h: q.height, sw: el.scrollWidth, cw: el.clientWidth } }
+    const ovl = (a, c) => a.x < c.x + c.w && c.x < a.x + a.w && a.y < c.y + c.h && c.y < a.y + a.h
+    const bb = r(b), hb = r(h)
+    const chips = r(document.querySelector('[data-h="chips"]'))
+    const pads = [...document.querySelectorAll('[data-vc]')].map(r)
+    const bad = []
+    if (bb.sw > bb.cw + 4) bad.push(`banner text overflows (${bb.sw}>${bb.cw})`)
+    if (bb.x < -2 || bb.x + bb.w > innerWidth + 2) bad.push('banner offscreen')
+    if (ovl(bb, chips)) bad.push('banner covers the chips')
+    if (hb.sw > hb.cw + 4) bad.push(`hint overflows (${hb.sw}>${hb.cw})`)
+    if (hb.x + hb.w > innerWidth + 2 || hb.x < -2) bad.push('hint offscreen')
+    for (const p of pads) if (ovl(hb, p)) bad.push('hint sits under the pad')
+    if (ovl(hb, bb) || ovl(hb, chips)) bad.push('hint collides with banner/chips')
+    return { bad, bbw: bb.sw, hbLines: Math.round(hb.h) }
+  })
+  ok(fit.bad.length === 0, `390px longest strings fit: banner ${fit.bbw}px, hint ${fit.hbLines}px tall (${fit.bad.join('; ') || 'clean'})`)
+  await shot('skyward-phone-banner.png')
 } catch (e) {
   fails.push(`exception: ${e.message}`)
   console.log(`FAIL  exception: ${e.message}`)

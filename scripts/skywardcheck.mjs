@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, windBed, stripZone, stripScore, planeTouch, beltTouch } from '../src/games/Skyward/sim.js'
+import { makeGame, step, checkout, stateOf, stormBed, stormCue, engineBed, engineCue, windBed, sockPose, stripZone, stripScore, planeTouch, beltTouch } from '../src/games/Skyward/sim.js'
 import { decide } from '../src/games/Skyward/planner.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { Report } from './lib/harness.mjs'
@@ -705,6 +705,62 @@ void runAuto
             (b) => Number.isFinite(b.gain) && Number.isFinite(b.cut) && b.gain >= 0))
 }
 
+// ─────────────── the airfield speaks and shows itself (#3310) ───────────────
+{
+    // item 6 — sockPose: the sock streams DOWNWIND, droops at slack wind and
+    // flutters on the sim clock. Literals, not the law's own constants.
+    const east = sockPose({ x: 3, z: 0 }, 1.0)
+    r.check('a steady east stream blows the sock east, flat and mid-flutter',
+        east.dir && east.dir.x === 1 && east.dir.z === 0 && east.droop === 0 && east.flutter === 0.682,
+        JSON.stringify(east))
+    const north = sockPose({ x: 0, z: 4.4 }, 3.7)
+    r.check('the sock heading follows the wind vector (a z-only stream streams along z, at full strength)',
+        north.dir && north.dir.x === 0 && north.dir.z === 1 && north.flutter === 1)
+    const calm = sockPose({ x: 0, z: 0 }, 2.2)
+    r.check('dead calm: the sock points nowhere and hangs at full droop',
+        calm.dir === null && calm.droop === 0.9 && calm.sway === 0)
+    r.check('slack wind droops the tail and the droop dries out at 2.2 m/s',
+        Math.abs(sockPose({ x: 0.5, z: 0 }, 1).droop - 0.695) < 0.001 && sockPose({ x: 2.2, z: 0 }, 1).droop === 0)
+    let droopMono = true
+    for (let v = 0.2; v <= 4; v += 0.2) if (sockPose({ x: v, z: 0 }, 1).droop > sockPose({ x: v - 0.2, z: 0 }, 1).droop + 1e-9) droopMono = false
+    r.check('the droop is monotonic in wind strength', droopMono)
+    const snap = sockPose({ x: 2, z: 0 }, 1.0, { x: -2.5, z: 0 })
+    r.check('a stronger gust flips the sock (the snap is real wind, not decoration)',
+        snap.dir && snap.dir.x === -1 && snap.droop > 0.6)
+    let swayBound = true, swayLo = 9, swayHi = -9
+    for (let t = 0; t <= 120; t += 0.05) {
+        const s = sockPose({ x: 4.4, z: 0 }, t).sway
+        if (!(Math.abs(s) <= 0.15)) swayBound = false
+        if (s < swayLo) swayLo = s
+        if (s > swayHi) swayHi = s
+    }
+    r.check('flutter rides the sim clock — bounded and swinging, never a statue',
+        swayBound && swayHi - swayLo > 0.1, `${swayLo.toFixed(3)}..${swayHi.toFixed(3)}`)
+    r.check('the sock pose survives garbage (NaN/±∞ wind ⇒ finite angles or a resting null dir)',
+        Number.isFinite(sockPose({ x: NaN, z: Infinity }, 1).droop) && sockPose({}, 1).dir === null
+        && [sockPose({ x: Infinity, z: 2 }, 5), sockPose({ x: NaN, z: NaN }, 5)].every(
+            (p) => p.dir === null || Number.isFinite(p.dir.x)))
+
+    // item 2 — the numbers painted on the asphalt must read exactly what the
+    // scoring pays, and every decal must sit inside the zone it names.
+    r.check('the four painted numbers equal the scoring table',
+        readFileSync('src/games/Skyward/renderer.js', 'utf8').includes('[150, 300, 450, 700]'))
+    {
+        const gS = makeGame(5)
+        const R = gS.world.runway
+        const frac = [0, 1, 2, 3].map((i) => { const q = stripZone(gS.world, R.ax + ((i + 0.5) / 4) * gS.world.STRIP_LEN, R.az); return q ? q.frac : -1 })
+        r.check('band centres carry their own zone (0.125/0.375/0.625/0.875 on the deck)',
+            frac.every((f, i) => Math.abs(f - (i + 0.5) / 4) < 1e-9), frac.join(','))
+    }
+
+    // item 4 — dusk contrast: deck and markings must carry an emissive floor,
+    // or the strip sinks into dimmed sand when the cell soaks the beach.
+    r.check('deck and markings carry emissive floors (dusk cannot sink the airfield)', (() => {
+        const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
+        return src.includes('emissive: 0x10151c') && src.includes('emissive: 0x7b8187')
+    })())
+}
+
 // -------------------------------------------------------- graduation ----
 {
     const SEEDS = [1, 7, 42, 99, 123]
@@ -1026,6 +1082,9 @@ if (process.argv.includes('--mutate')) {
         ['#3300 the rush ignores airspeed (a constant hiss teaches nothing)', SIMF, 'if (v <= 9) return { gain: 0, cut: 0 } // a slow float stays hushed', 'if (v <= 999) return { gain: 0, cut: 0 } // a slow float stays hushed'],
         ['#3300 the wind bed shouts (rush drowns the ring tones)', SIMF, 'gain: +((0.003 + 0.024 * k * k) * (1 - 0.5 * d)).toFixed(4)', 'gain: +((0.03 + 0.24 * k * k) * (1 - 0.5 * d)).toFixed(4)'],
         ['#3300 the engine stays dark at full throttle (cut frozen shut)', SIMF, 'cut = 600 + 1600 * load', 'cut = 600'],
+        ['#3310 a slack sock streams as if in a gale (the droop law dies)', SIMF, 'const droop = clamp(1 - sp / 2.2, 0, 1) * 0.9', 'const droop = 0'],
+        ['#3310 the sock flies in dead calm (dir never rests)', SIMF, 'if (!Number.isFinite(sp) || sp < 0.05) return { dir: null, droop: 0.9, sway: 0, flutter: 0 }', 'if (false) return { dir: null, droop: 0.9, sway: 0, flutter: 0 }'],
+        ['#3310 the painted zone whites sink into dusk again (no emissive floor)', 'src/games/Skyward/renderer.js', 'const white = new THREE.MeshLambertMaterial({ color: 0xf2f4f5, emissive: 0x7b8187 })', 'const white = new THREE.MeshLambertMaterial({ color: 0xf2f4f5 })'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
