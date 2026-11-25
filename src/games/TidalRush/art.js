@@ -12,6 +12,7 @@
 
 import * as THREE from 'three'
 import { seaGLSLFront, seaUniforms, frontUniforms, sunnySea } from './water.js'
+import { RX, RZ } from './sim.js' // the moorings anchor to the same ellipse the gates ride
 
 export const SEA_COLOR_DEEP = new THREE.Color(0x0a3648)
 export const SEA_COLOR_SHALLOW = new THREE.Color(0x1e93a8)
@@ -405,6 +406,77 @@ export function makeWake(n = 44) {
 export function wakePush(w, x, y, z, heading, width) {
     w.pts.push({ x, y: y + 0.05, z, heading, width, age: 0 })
     if (w.pts.length > w.n) w.pts.shift()
+}
+
+// ---- the moorings: bay scenery inside the bounds (#3159) ----------------------
+// A sunny bay is never empty water. Moored sloops and one bell buoy sit inside
+// the infield, seeded from the course seed so each bay owns its anchorage and it
+// holds still for the whole race. Pure geometry, original shapes — flat-shaded
+// silhouettes in the headlands' language, dimmed by rain like the gates.
+// The spots live here (not in sim.js) because the sim never sees them: props
+// ride the drawn sea, never the ridden rules — no collisions, no gameplay.
+export function boatSpots(seed) {
+    let s = (seed >>> 0) || 1
+    const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
+    const hulls = [0xb2472f, 0x2e6f8e, 0xd9a441]
+    const out = []
+    for (let i = 0; i < hulls.length; i++) {
+        const a = (i / hulls.length) * Math.PI * 2 + rnd() * 1.1
+        const k = 0.26 + rnd() * 0.22 // fraction inside the gate ellipse — deep infield
+        out.push({
+            x: RX * k * Math.cos(a), z: RZ * k * Math.sin(a),
+            yaw: rnd() * Math.PI * 2, swing: rnd() * Math.PI * 2,
+            hue: hulls[i], bell: false,
+        })
+    }
+    // the bell buoy just inside the ring off the beach — close enough that
+    // rounding the first gates carries Kai past within earshot
+    out.push({ x: RX * 0.8 * Math.cos(-Math.PI / 2 + 0.55), z: RZ * 0.8 * Math.sin(-Math.PI / 2 + 0.55), yaw: 0, swing: 0, hue: 0x2f6b57, bell: true })
+    return out
+}
+
+export function makeBoat(hullColor) {
+    const g = new THREE.Group()
+    const hullMat = new THREE.MeshStandardMaterial({ color: hullColor, roughness: 0.55, flatShading: true })
+    const cream = new THREE.MeshStandardMaterial({ color: 0xf1e8d4, roughness: 0.6, flatShading: true })
+    const wood = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 0.7 })
+    const hull = new THREE.Mesh(new THREE.SphereGeometry(1.7, 10, 8), hullMat)
+    hull.scale.set(0.62, 0.3, 1)
+    hull.position.y = 0.12
+    g.add(hull)
+    const bow = new THREE.Mesh(new THREE.ConeGeometry(1.02, 1.5, 8), hullMat)
+    bow.rotation.x = -Math.PI / 2
+    bow.scale.set(0.62, 0.42, 1)
+    bow.position.set(0, 0.14, 2.1)
+    g.add(bow)
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.5, 1.15), cream)
+    cabin.position.set(0, 0.48, -0.55)
+    g.add(cabin)
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.075, 4.2, 5), wood)
+    mast.position.set(0, 2.2, 0.35)
+    g.add(mast)
+    // slack jib: a tall thin cone squashed to a sail plane — canvas, not taut racing kit
+    const sail = new THREE.Mesh(new THREE.ConeGeometry(1.15, 3.4, 3), cream)
+    sail.scale.set(0.07, 1, 0.92)
+    sail.position.set(0, 2.1, 1.05)
+    g.add(sail)
+    g.userData.swayer = sail // a loose sail twirls a little at its mooring
+    return g
+}
+
+export function makeBellBuoy() {
+    const g = new THREE.Group()
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 8), new THREE.MeshStandardMaterial({ color: 0x2f6b57, roughness: 0.45, flatShading: true }))
+    ball.position.y = 0.1
+    g.add(ball)
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.5, 5), new THREE.MeshStandardMaterial({ color: 0xdadfe2, roughness: 0.6 }))
+    mast.position.y = 1.35
+    g.add(mast)
+    const bell = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), new THREE.MeshStandardMaterial({ color: 0xd8b34a, roughness: 0.25, metalness: 0.75 }))
+    bell.position.set(0, 2.0, 0)
+    g.add(bell)
+    g.userData.bell = bell
+    return g
 }
 
 export function wakeStep(w, dt) {

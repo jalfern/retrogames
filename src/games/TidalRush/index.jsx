@@ -17,7 +17,7 @@ import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, s
 import { makeGame, step, autoPad, stateOf, stateHash, LAPS, SIM_MS, DT, rainAt, RAIN_VIS } from './sim.js'
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
-import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea } from './art.js'
+import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
 const MESSAGES = [
@@ -103,6 +103,17 @@ const TidalRushGame = () => {
             buoys.push(b)
         }
 
+        // the moorings (#3159): seeded props in the infield — sloops + a bell
+        // buoy so the bay is lived-in. No colliders, no sim: pure decoration.
+        const scenery = boatSpots(gs.course.seed).map((s) => {
+            const g = s.bell ? makeBellBuoy() : makeBoat(s.hue)
+            scene.add(g)
+            return { ...s, g }
+        })
+        const bellSpot = scenery.find((s) => s.bell)
+        let bellCool = 0
+        let moorSeed = gs.course.seed
+
         const skiMeshes = gs.crafts.map((c) => {
             const s = makeSki(c.color)
             scene.add(s.root)
@@ -127,6 +138,7 @@ const TidalRushGame = () => {
         const _euler = new THREE.Euler()
         const _up = new THREE.Vector3(0, 1, 0)
         const _down = new THREE.Vector3(0, -1, 0)
+        const _qy = new THREE.Quaternion()
         let skiJolt = gs.crafts.map(() => 0)
         let waveAmbT = 2.0
         let camInit = false
@@ -170,6 +182,7 @@ const TidalRushGame = () => {
                 else audioController.playSweep(150, 480, 0.5, 'sine', 0.05)
             },
             airLand: () => { audioController.playSweep(1500, 320, 0.24, 'sine', 0.09); audioController.playNoise(0.14, 0.06) },
+            bell: () => { audioController.playTone(1568, 0.5, 'sine', 0.05); audioController.playTone(2349, 0.3, 'sine', 0.016, 0.02) },
             thunder: () => { audioController.playNoise(0.5, 0.12); audioController.playSweep(70, 38, 0.8, 'sawtooth', 0.1) },
             finish: (win) => {
                 const base = win ? [523, 659, 784, 1047] : [392, 330, 262]
@@ -319,6 +332,39 @@ const TidalRushGame = () => {
                 b.position.set(g0.x + w.dx, w.y, g0.z + w.dz)
                 b.userData.flag.rotation.y = Math.sin(t * 6 + i) * 0.35
             })
+
+            // moorings (#3159): ride the same sea Kai rides, swing at their
+            // anchors, dim storm-side like the gates. A new course seed
+            // re-hitches the fleet to new spots — the bay changes with the course.
+            if (gs.course.seed !== moorSeed) {
+                moorSeed = gs.course.seed
+                const spots = boatSpots(moorSeed)
+                scenery.forEach((s, i) => {
+                    s.x = spots[i].x; s.z = spots[i].z; s.yaw = spots[i].yaw; s.swing = spots[i].swing
+                })
+            }
+            scenery.forEach((s) => {
+                const wb = frontW(s.x, s.z, gs.front)
+                const w = mixWater(s.x, s.z, t, gs.seaCur, gs.seaTarget, wb)
+                const hs = (px, pz) => mixHeight(px, pz, t, gs.seaCur, gs.seaTarget, wb)
+                const eN = 0.6
+                const nx = hs(s.x - eN, s.z) - hs(s.x + eN, s.z)
+                const nz = hs(s.x, s.z - eN) - hs(s.x, s.z + eN)
+                const nInv = 1 / Math.hypot(nx, 2 * eN, nz)
+                _v3a.set(nx * nInv, Math.max(0.55, 2 * eN * nInv), nz * nInv).normalize()
+                s.g.quaternion.setFromUnitVectors(_up, _v3a)
+                    .multiply(_qy.setFromAxisAngle(_up, s.yaw + Math.sin(t * 0.35 + s.swing) * 0.25))
+                // moored: the swell rolls and lifts the hull but the anchor holds
+                // the station — only a fourth of the horizontal flow gets through
+                s.g.position.set(s.x + w.dx * 0.4, w.y, s.z + w.dz * 0.4)
+                if (s.g.userData.swayer) s.g.userData.swayer.rotation.y = Math.sin(t * 0.9 + s.swing) * 0.35
+                buoyDim(s.g, RAIN_VIS * rainAt(gs, s.x, s.z))
+            })
+            bellCool = Math.max(0, bellCool - DT)
+            if (bellCool === 0 && screenRef.current === 'play') {
+                const k = gs.crafts[0]
+                if (bellSpot && Math.hypot(k.x - bellSpot.x, k.z - bellSpot.z) < 16) { bellCool = 5; sfx.bell() }
+            }
 
             gs.crafts.forEach((c, i) => {
                 const m = skiMeshes[i]
