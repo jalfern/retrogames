@@ -46,11 +46,10 @@ npm run skywardcheck -- --mutate   # proves the harness can fail
 node scripts/skywardplay.mjs       # headless Chrome: boot → play → events → zero page errors
 ```
 ## Honest gaps
-- **MOVED by #3319:** the plane takes the strip now — wheels-down, rollout and
-  touch-and-go (see *Wheels down* below). What remains of the old bullet: no
-  online (issue: not yet), and the belt still can't be landed (it settles on
-  soft terrain without crashing, but scores nothing there). (The engine-audio
-  half closed in #3295, the glider's runway in #3302/#3306.)
+- **MOVED by #3332:** the plane landed at #3319 and the belt now answers the
+  strip too — a quiet arrival parks with the zone banked (see *Quiet landing*
+  below). What remains of the old bullet: no online (issue: not yet).
+  (The engine-audio half closed in #3295, the glider's runway in #3302/#3306.)
 - A strip touchdown is judged at the instant the hull crosses the deck (gh<0.7),
   same as the mat — there is no flare-quality or ground-roll law; a smooth
   approach that sinks 0.6 m at the threshold reads the same as a perfect one.
@@ -157,3 +156,38 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   Cabinet: RUNWAY zone banner on touchdown, WHEELS UP / GROUND CREW banners,
   a rising flourish and deck dust on landing, ✈ chip, WHEELS badge on the
   completion card, and free-flight cockpit hints that teach slow-over-hot.
+
+## Quiet landing (#3332)
+- **The belt parks on the runway** — Pilotwings' landing test in the belt's
+  own keys. The belt already forgave the ground (soft, slow contact settles
+  anywhere, silently); now the strip PAYs it. In FREE flight (mid-event the
+  drop course owns the hull), a belt crossing the strip deck inside the crash
+  window with a sink under 2 m/s (`BELT_SINK`), across under 4 m/s
+  (`BELT_SPEED`) and not climbing away (`BELT_RISE`) parks with the zone
+  score — the #3302 table (SHORT 150 → FULL STRIP 700), the same crab law
+  scuffs it to 60. The bands are the belt's own: unlike the plane it cruises
+  slow, so the skill is the HOLD — pulse the throttle and put it in the
+  deepest zone you can carry straight in.
+- **Parked means parked** — on the deck the hull rides the swell, locked:
+  wind and gusts don't drag it (the crew chocks it), the bed still hears the
+  rain, and only the throttle lets her go (`liftoff`). The banked best
+  answers the plane's ✈ WHEELS with ✺ HOVER (chips line, completion card);
+  licence math stays core-three (the STORM WINGS/#3319 precedent): landings
+  never touch `score`, `grad` or `done`; hash inputs unchanged.
+- **Today's edges untouched** — `vy < −5.2` or crossing > 10 m/s still crashes
+  byte-identically; a sink a shade too firm, and off-strip or mid-event
+  arrivals, keep the silent settle. The catch fires ONCE per deck crossing
+  (`_air`): a settled hull can't sneak a park a tick later, and leaving the
+  deck (airborne, or climbing under throttle) re-arms it — touch-and-park is
+  a rhythm, and a second arrival pays again (best kept). Autopilot honesty:
+  the planner graduates all seeds without ever parking the belt on the strip
+  (5-seed pin).
+- Pure law `beltTouch(w,x,z,heading,vy,speed)` lives in `sim.js` beside the
+  plane's; `skywardcheck` pins zones, bands, scuff, the once-per-crossing
+  arming, park lock, liftoff-and-re-land, crash/settle precedence, honesty,
+  determinism and the stateOf add (+16 pins, 7 new mutants — 43/43).
+  `skywardplay` drives it live: a wind-true approach banners
+  `RUNWAY LONG +450 — PARKED`, the throttle answers `OFF THE PAD — AIRBORNE`.
+  Cabinet: hints teach quiet-over-firm, the ✺ chip appears only once earned
+  (phone width), deck dust on parks (shared strip flourish), and a `padfinal`
+  F1 cheat.
