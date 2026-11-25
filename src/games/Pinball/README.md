@@ -176,8 +176,8 @@ physics — pinballcheck pins the registry shape, full palette key-parity (a
 missing key would silently paint `undefined`), real visual difference, the
 cycle-wrap law, the `?style` parse, and a bit-identical replay.
 
-- CABINET ONE: **MIDNIGHT** (house) · **TIDAL RUN** (teal field, coral lanes, mint neon)
-- EMBER RIDER: **EMBER** (house) · **TOXIC** (moss field, lime lanes, magenta neon)
+- CABINET ONE: **MIDNIGHT** (house) · **TIDAL RUN** (teal field, coral lanes, mint neon) · **NOIR** (#3237: black glass, magenta lanes, violet neon)
+- EMBER RIDER: **EMBER** (house) · **TOXIC** (moss field, lime lanes, magenta neon) · **GLACIER** (#3237: ice field, silver lanes, cyan neon)
 - Attract row: **B / Shift / ▲▼** cycles the selected cabinet's kit live; the
   marquee shows `TAG · KIT` and a `◆ KIT:` badge sits under the selected card.
 - `?style=<id|label>` preselects the kit on every cabinet that ships it
@@ -187,11 +187,44 @@ cycle-wrap law, the `?style` parse, and a bit-identical replay.
   quick-retry, and announces `KIT <NAME>` on the DMD as the ball loads.
   `__pinballTest.setSkin(i)` drives it without keys.
 
+## Attract show-off (#3237 tail)
+
+A row of arcades earns its quarters in attract mode: the machines play
+themselves. The row's background and the **selected** mini-card are now a
+LIVE demo — a real `makeGame` sim run through `demoPad` (sim.js), the same
+4-tick medium-plunge protocol `pinballcheck` proves human-winnable, driven
+through the game's own `drawTable`. `drawTable(gs, L)` takes a live-renderer
+bundle (`ctx`/flash/trail/particles/rings/shake) — `MAIN` wraps the game refs
+through getters so the play path keeps identical pixels; the demo paints into
+an offscreen canvas once per frame.
+
+- **Lamp chase at re-deal** (`stepDemo`, ticks 0..84): bumper 3-2-1 chase,
+  lane rollover ripple, ramp pad, orbit pad pair, lock-pair slam — the
+  cabinet does its trick before the ball earns it. Presentation-only, driven
+  by the demo clock.
+- **Attract DMD** (`ATTRACT_DMD` in art.js): short crawl lines (kept off the
+  shout-word list so they crawl fully), rotated one per demo run; a
+  `?style` naming a kit the picked cabinet doesn't ship answers
+  `NO SUCH KIT` instead of silence (badge on the card says it too).
+- **Restart law** (`demoOver`): the run re-deals when its game ends, or a
+  beat after MULTIBALL lands — the money shot, then fresh. Seeds cycle
+  deterministically per run (`0xa11ce + runs*7919`).
+- Demo is silent (no `sfxFor` in `reactDemo`) and deterministic: `demoPad`
+  and `demoOver` are pure sim exports, Node-pinned to MULTIBALL on both
+  cabinets (check §#3237), and `__pinballTest.demoState()` exposes sim
+  state + lamp flashes to the browser rig.
+
+`#3259 owed, paid`: kit picks persist across reload (`KIT_STORE`,
+`kitIndex` — stale ids fall back to house dress; `?style` outranks
+memory), the kit cycle has its own `dressflip` sound, the results screen
+wears a `◆ KIT <LABEL>` line, and each cabinet ships a third dress —
+**NOIR** (CABINET ONE) and **GLACIER** (EMBER RIDER), palette-only.
+
 ## Verify
 
 ```bash
-npm run pinballcheck          # 160 literal physics/rules/determinism/mirror/skins checks, plain Node (+6 mutants: seed/economy/mirror/search/kickback/skin)
-npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits: cycle/persist/?style/dress pixels)
+npm run pinballcheck          # 178 literal physics/rules/determinism/mirror/skins/demo pins, plain Node (+7 mutants: seed/economy/mirror/search/kickback/skin/demo)
+npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
 ```
@@ -214,13 +247,25 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   reads sim state (`kbUsed`, `kbFlash`), and the DMD announces `KICKBACK! +N`
   deterministically. Straight-centre deaths and resting balls are untouched.
 - No table editor (#3103: not yet).
-- **CLOSED by #3259:** the `?style` skin override. Each cabinet now ships two
-  art kits (dress-only palettes, parity-pinned), the attract row cycles them
-  with B/▲▼, and `?style=<id|label>` preselects one. See "Art kits" above.
-- Kits don't persist across a page reload (per-load pick — localStorage is the
-  next rung), the kit switch borrows the cabinet-pick sound, and kits don't
-  reach the results screen.
-- The attract demo is a title card with a rolling ball, not a driven run.
+- **CLOSED by #3259:** the `?style` skin override. Each cabinet now ships art
+  kits (dress-only palettes, parity-pinned), the attract row cycles them with
+  B/▲▼, and `?style=<id|label>` preselects one. See "Art kits" above.
+- **CLOSED by #3237:** kit memory (`KIT_STORE`/localStorage per cabinet,
+  `?style` outranks it, stale ids fall back), the dedicated `dressflip`
+  sound, the results-screen `◆ KIT` line, `NO SUCH KIT` DMD/badge hints for
+  a style the picked cabinet doesn't ship, and a third dress per cabinet
+  (NOIR, GLACIER).
+- **CLOSED by #3237:** the attract demo was a title card with a rolling
+  ball; it is now a driven run — the selected machine plays itself
+  (`demoPad`, the pinned human line) with a lamp chase, rotate-through
+  attract ad lines, and a `demoOver` re-deal. See "Attract show-off".
+- Phone-width HUD density and ball-vs-amber-lane-bed contrast have not been
+  audited at 375pt/#?lite=1 (the #3237 tail's audit items — pixel thresholds
+  need a calibration pass, not a code guess).
+- No tilt-to-nudge (B is NUDGE on desktop; a shake gesture would match the
+  cabinet fantasy — tilt law #3118 supports-only). Extras still owed: a
+  lock-gate slam animation, plunger 3-step power ticks, tilt-warning cabinet
+  wobble.
 - The music bed covers MULTIBALL only (#3178); single-ball play stays dry.
 - The magnet holds one ball and the orbit one loop at a time (real tables run
   both per-ball); the wrap's curl assist is a fixed push, not a shaped rail.

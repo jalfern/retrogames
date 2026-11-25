@@ -13,9 +13,9 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
-    makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R,
+    makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R, demoPad, demoOver,
 } from './sim.js'
-import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex } from './art.js'
+import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD } from './art.js'
 
 const FIXED_DT = 1000 / 60
 
@@ -31,6 +31,13 @@ const CARDS = [{ x: 18, y: 210 }, { x: 192, y: 210 }]
 
 // ?style=<kit> (#3259) — same URL-override idiom as TidyBot/QBert.
 const qStyle = () => { try { return new URLSearchParams(window.location.search).get('style') } catch { return null } }
+
+// Kit memory (#3237 tail): per-cabinet art-kit picks survive a page reload —
+// the cabinet you dressed is still dressed when you walk back. ?style=<kit>
+// outranks memory; a stale id (kit retired from the registry) falls back to
+// the house dress through kitIndex. Private-mode failures are silent by law.
+const loadKits = () => { try { const j = JSON.parse(localStorage.getItem(KIT_STORE)); return j && typeof j === 'object' ? j : {} } catch { return {} } }
+const saveKit = (tableId, kitId) => { try { const m = loadKits(); m[tableId] = kitId; localStorage.setItem(KIT_STORE, JSON.stringify(m)) } catch { /* private mode: memory is best-effort */ } }
 
 const sfxFor = (ev) => {
     const a = audioController
@@ -107,6 +114,9 @@ const sfxFor = (ev) => {
         case 'start': a.playTone(392, 0.07, 'square', 0.1); a.playTone(523, 0.07, 'square', 0.1, 0.07); a.playTone(659, 0.1, 'square', 0.1, 0.14); break
         // cabinet select click (#3232): a dry relay tick, not a jingle
         case 'cabinet': a.playTone(460, 0.025, 'square', 0.07); a.playNoise(0.012, 0.05); break
+        // kit dress-flip (#3237): the dress deserves its own sound — a brighter
+        // snap than the cabinet relay, so a flip on the row *sounds* different.
+        case 'dressflip': a.playSweep(300, 900, 0.06, 'triangle', 0.09); a.playNoise(0.02, 0.05, 0.02); break
         default: break
     }
 }
@@ -126,9 +136,10 @@ const PinballGame = () => {
     const freshSeed = () => (seedFromQuery() ?? (Date.now() >>> 0))
     const cabRef = useRef(0)                    // selected cabinet (#3232), persists across games
     const [cabIdx, setCabIdx] = useState(0)
-    // #3259 art kit per cabinet — persists across games and quick-retries;
-    // ?style=<kit> preselects it on every cabinet that ships the kit.
-    const skinRef = useRef(CABS.map((c) => styleIndex(c.tb.id, parseStyle(qStyle()), 0)))
+    // #3259 art kit per cabinet — persists across games and quick-retries, and
+    // #3237 across page reloads (localStorage, per cabinet). ?style=<kit>
+    // outranks memory on every cabinet that ships the kit.
+    const skinRef = useRef(CABS.map((c) => styleIndex(c.tb.id, parseStyle(qStyle()), kitIndex(c.tb.id, loadKits()[c.tb.id]))))
     const gsRef = useRef(makeGame(freshSeed()))
     const keysRef = useRef({ left: false, right: false, a: false, down: false, b: false })
     const partsRef = useRef([])
@@ -138,6 +149,8 @@ const PinballGame = () => {
     const trailRef = useRef([])
     const ringsRef = useRef([])  // rung 3: expanding event rings (presentation only)
     const fieldsRef = useRef({}) // painted playfield canvas per cabinet id
+    // #3237 attract show-off: the self-playing demo sim + its own fx kit.
+    const demoRef = useRef(null)
     const screenRef = useRef('attract')
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
@@ -154,11 +167,18 @@ const PinballGame = () => {
 
     // #3259: cycle the selected cabinet's art kit (B / ▲▼ on the row). The
     // wrap law lives in art.js (skinsFor) so pinballcheck pins the same one.
+    // #3237 tail: its own dress-flip sound, memory across reloads, and the
+    // dress names itself on the attract DMD of the machine being dressed.
     const cycleSkin = useCallback((d) => {
         const id = CABS[cabRef.current].tb.id
         const n = skinsFor(id).length
-        skinRef.current[cabRef.current] = (((skinRef.current[cabRef.current] + d) % n) + n) % n
-        sfxFor({ type: 'cabinet' })
+        const i = (((skinRef.current[cabRef.current] + d) % n) + n) % n
+        skinRef.current[cabRef.current] = i
+        const kit = skinAt(id, i)
+        sfxFor({ type: 'dressflip' })
+        saveKit(id, kit.id)
+        const dgs = demoRef.current && demoRef.current.gs
+        if (dgs) dgs.msg = { text: `KIT ${kit.label}`, t: 110, T: 110 }
     }, [])
 
     const startPlay = useCallback((cab = cabRef.current) => {
@@ -166,8 +186,13 @@ const PinballGame = () => {
         const tb = CABS[cabRef.current].tb
         gsRef.current = makeGame(freshSeed(), cabRef.current)
         flashRef.current = mkFlash(tb)
-        // #3259: the dress announces itself on the DMD as the ball loads.
-        gsRef.current.msg = { text: `KIT ${skinAt(tb.id, skinRef.current[cabRef.current]).label}`, t: 110, T: 110 }
+        // #3259: the dress announces itself on the DMD as the ball loads;
+        // #3237 tail: if the URL named a kit this cabinet doesn't ship, the
+        // strip says NO SUCH KIT instead of dressing silently.
+        const sid0 = parseStyle(qStyle())
+        gsRef.current.msg = sid0 && styleWarn(tb.id, sid0)
+            ? { text: 'NO SUCH KIT', t: 110, T: 110 }
+            : { text: `KIT ${skinAt(tb.id, skinRef.current[cabRef.current]).label}`, t: 110, T: 110 }
         partsRef.current = []
         trailRef.current = []
         screenRef.current = 'play'; setScreen('play')
@@ -286,13 +311,122 @@ const PinballGame = () => {
             gs.events.length = 0
         }
 
+        // ---- attract show-off (#3237): the row plays itself ----
+        // The attract background and the selected mini-card are the SELECTED
+        // cabinet running the demo bot (sim.js demoPad — the same medium-plunge
+        // line pinballcheck proves human-winnable) through the game's own
+        // drawTable, painted into an offscreen canvas once per frame. The play
+        // path stays byte-identical: MAIN wraps the live refs through getters
+        // (startPlay swaps flashRef/partsRef/trailRef — getters track that).
+        const dCan = document.createElement('canvas')
+        dCan.width = W; dCan.height = H
+        const dCtx = dCan.getContext('2d')
+        const MAIN = {
+            ctx,
+            getFl: () => flashRef.current, getTrail: () => trailRef.current,
+            getParts: () => partsRef.current, getRings: () => ringsRef.current,
+            getShk: () => shakeRef,
+        }
+        let demoRuns = 0
+        const attractLine = (id) => { const l = ATTRACT_DMD[id] || ATTRACT_DMD['cabinet-one']; return l[demoRuns % l.length] }
+        const demoRebuild = () => {
+            const gs = makeGame((0xa11ce + demoRuns * 7919) >>> 0, cabRef.current)
+            demoRuns += 1
+            const sid = parseStyle(qStyle())
+            // every run opens with an ad line on the strip; a ?style naming a
+            // kit this cabinet doesn't ship answers instead of silence.
+            gs.msg = { text: sid && styleWarn(gs.table.id, sid) ? 'NO SUCH KIT' : attractLine(gs.table.id), t: 200, T: 200 }
+            demoRef.current = { gs, fl: mkFlash(gs.table), trail: [], parts: [], rings: [], shk: { current: 0 }, mbSeen: false, sinceMb: 0, acc: 0, sid }
+        }
+        demoRebuild()
+        const DLIVE = {
+            ctx: dCtx,
+            getFl: () => demoRef.current.fl, getTrail: () => demoRef.current.trail,
+            getParts: () => demoRef.current.parts, getRings: () => demoRef.current.rings,
+            getShk: () => demoRef.current.shk,
+        }
+        const sparkD = (d, x, y, n, color, spd = 160) => {
+            for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2
+                const v = spd * (0.4 + Math.random() * 0.8)
+                d.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, life: 0.4 + Math.random() * 0.3, color })
+            }
+        }
+        const ringD = (d, x, y, color, max = 30, ticks = 15) => { d.rings.push({ x, y, color, t: 0, ticks, max }) }
+        // event juice for the demo — the same lamps the player's hits light,
+        // minus the audio: an attract mode that talks over the row stays quiet.
+        const reactDemo = (gs, d) => {
+            const fl = d.fl
+            const pal = skinAt(gs.table.id, skinRef.current[cabIndexOf(gs.table.id)]).pal
+            for (const ev of gs.events) {
+                if (ev.type === 'bumper') { fl.bumpers[ev.i] = 9; sparkD(d, ev.x, ev.y, 8, pal.hot, 190) }
+                else if (ev.type === 'sling') { fl.slings[ev.i] = 7; sparkD(d, ev.x, ev.y, 5, pal.sling) }
+                else if (ev.type === 'target') { fl.targets[ev.i] = 8 }
+                else if (ev.type === 'bank') { fl.bank = 40; d.shk.current = Math.max(d.shk.current, 4) }
+                else if (ev.type === 'spinner') { fl.spinner = 6 }
+                else if (ev.type === 'kicker') { sparkD(d, ev.x, ev.y, 9, pal.lane, 220) }
+                else if (ev.type === 'kickback') { fl.kb = 18; sparkD(d, ev.x, ev.y, 12, pal.hot, 240) }
+                else if (ev.type === 'ramp') { fl.ramp = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
+                else if (ev.type === 'rampset') { fl.ramp = 20 }
+                else if (ev.type === 'lane') { fl.lane[ev.i] = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
+                else if (ev.type === 'lock') {
+                    fl.lock = 16; d.shk.current = Math.max(d.shk.current, 4)
+                    ringD(d, gs.table.view.lockCx, gs.table.view.lockGlowY, pal.hot)
+                }
+                else if (ev.type === 'multiball') {
+                    fl.mb = 90; fl.flash = 14; d.shk.current = Math.max(d.shk.current, 10)
+                    for (const k of gs.table.mbKick) { ringD(d, k.x, k.y, pal.glow, 24, 13); sparkD(d, k.x, k.y, 10, pal.glow, 200) }
+                }
+                else if (ev.type === 'orbitarm') { fl.orbitArm = 8 }
+                else if (ev.type === 'orbit') { fl.orbit = 20; sparkD(d, ev.x, ev.y, 12, pal.lane, 180); ringD(d, ev.x, ev.y, pal.lane) }
+                else if (ev.type === 'orbitset') { fl.orbit = 34; ringD(d, gs.table.orbit.donePad.x, gs.table.orbit.donePad.y, pal.hot, 36, 18) }
+                else if (ev.type === 'orbitlock') { fl.orbit = 28 }
+                else if (ev.type === 'maggrab') { fl.mag = 14 }
+                else if (ev.type === 'magfree') { fl.magFree = 18; ringD(d, ev.x, ev.y, pal.mag) }
+            }
+            gs.events.length = 0
+        }
+        // the demo clock: fixed steps through the real sim, a lamp chase over
+        // the first bars of a run (bumpers chase, lane ripple, pad + lock
+        // slam — the cabinet does its trick before the ball even earns it),
+        // and the demoOver law re-deals after the money shot.
+        const stepDemo = (dt) => {
+            const d = demoRef.current
+            d.acc += dt
+            let steps = 0
+            while (d.acc >= FIXED_DT && steps < 8) {
+                const gs = d.gs
+                const t = gs.tick
+                if (t <= 84) {
+                    const b = t % 12
+                    if (b < 3) d.fl.bumpers[b] = Math.max(d.fl.bumpers[b], 9)
+                    const l = t - 30
+                    if (l >= 0 && l < 15 && l % 5 === 0) d.fl.lane[l / 5] = 8
+                    if (t === 50) d.fl.ramp = 10
+                    if (t === 58) d.fl.orbitArm = 8
+                    if (t === 66) d.fl.orbit = 20
+                    if (t === 74) d.fl.lock = 14
+                }
+                stepGame(gs, demoPad(gs, t))
+                reactDemo(gs, d)
+                if (gs.multiball) { d.mbSeen = true; d.sinceMb = 0 } else if (d.mbSeen) d.sinceMb += 1
+                if (demoOver(gs, d.mbSeen, d.sinceMb)) demoRebuild()
+                d.acc -= FIXED_DT; steps += 1
+            }
+        }
+        // picking a machine re-deals its demo — the card you look at is the
+        // machine you're about to play, dressed in the kit you left it in.
+        const selCab = (i) => { setCab(i); demoRebuild() }
+
         // ---------------------------------------------------------------- draw ----
-        const drawTable = (gs) => {
+        const drawTable = (gs, L = MAIN) => {
+            const ctx = L.ctx
+            const shk = L.getShk()
             const tb = gs.table, pal = skinAt(tb.id, skinRef.current[cabIndexOf(tb.id)]).pal, v = tb.view
             ctx.save()
-            if (shakeRef.current > 0) {
-                ctx.translate((Math.random() - 0.5) * shakeRef.current, (Math.random() - 0.5) * shakeRef.current)
-                shakeRef.current = Math.max(0, shakeRef.current - 0.7)
+            if (shk.current > 0) {
+                ctx.translate((Math.random() - 0.5) * shk.current, (Math.random() - 0.5) * shk.current)
+                shk.current = Math.max(0, shk.current - 0.7)
             }
             ctx.drawImage(fieldFor(tb), 0, 0)
 
@@ -322,7 +456,7 @@ const PinballGame = () => {
             ctx.beginPath(); ctx.moveTo(tb.plunger.x, 520); ctx.lineTo(tb.plunger.x, 210); ctx.stroke()
             ctx.restore()
 
-            const fl = flashRef.current
+            const fl = L.getFl()
             Object.keys(fl).forEach((k) => { if (Array.isArray(fl[k])) fl[k] = fl[k].map((x) => Math.max(0, x - 1)); else fl[k] = Math.max(0, fl[k] - 1) })
 
             // ---- rung 2: firelane lamp set + rollover rings + lock tower ----
@@ -567,15 +701,16 @@ const PinballGame = () => {
             }
 
             // trails + every live ball (MULTIBALL draws the whole pack)
+            const tr = L.getTrail()
             if (gs.pucks.length) {
-                trailRef.current.push({ x: gs.pucks[0].bx, y: gs.pucks[0].by })
-                if (trailRef.current.length > 7) trailRef.current.shift()
-                trailRef.current.forEach((p, i) => {
-                    const a = (i / trailRef.current.length) * 0.28
+                tr.push({ x: gs.pucks[0].bx, y: gs.pucks[0].by })
+                if (tr.length > 7) tr.shift()
+                tr.forEach((p, i) => {
+                    const a = (i / tr.length) * 0.28
                     ctx.fillStyle = `rgba(${pal.trailRgb},${a.toFixed(3)})`
-                    ctx.beginPath(); ctx.arc(p.x, p.y, BALL_R * (0.5 + 0.5 * i / trailRef.current.length), 0, 7); ctx.fill()
+                    ctx.beginPath(); ctx.arc(p.x, p.y, BALL_R * (0.5 + 0.5 * i / tr.length), 0, 7); ctx.fill()
                 })
-            } else trailRef.current.length = 0
+            } else tr.length = 0
             for (const p of gs.pucks) {
                 const bg = ctx.createRadialGradient(p.bx - 3, p.by - 4, 1, p.bx, p.by, BALL_R)
                 bg.addColorStop(0, '#ffffff'); bg.addColorStop(0.55, '#aab8cf'); bg.addColorStop(1, '#39435a')
@@ -589,18 +724,23 @@ const PinballGame = () => {
             sheen.addColorStop(0, 'rgba(255,255,255,0.07)'); sheen.addColorStop(1, 'rgba(255,255,255,0)')
             ctx.fillStyle = sheen; ctx.fillRect(0, 0, W, H)
 
-            // particles
-            partsRef.current = partsRef.current.filter((p) => p.life > 0)
-            for (const p of partsRef.current) {
+            // particles — mutated in place so the renderer bundle keeps its
+            // array identity across frames (MAIN's getters track ref swaps).
+            const ps = L.getParts()
+            for (let i = ps.length - 1; i >= 0; i--) {
+                const p = ps[i]
                 p.life -= 1 / 60; p.x += p.vx / 60; p.y += p.vy / 60; p.vy += 300 / 60
+                if (p.life <= 0) { ps.splice(i, 1); continue }
                 ctx.globalAlpha = Math.max(0, p.life)
                 ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 2, 2)
             }
             ctx.globalAlpha = 1
 
             // rung 3: expanding event rings (orbit beats, mag snap)
-            ringsRef.current = ringsRef.current.filter((r) => r.t < r.ticks)
-            for (const r of ringsRef.current) {
+            const rs = L.getRings()
+            for (let i = rs.length - 1; i >= 0; i--) {
+                const r = rs[i]
+                if (r.t >= r.ticks) { rs.splice(i, 1); continue }
                 r.t += 1
                 const p = r.t / r.ticks
                 const rad = 6 + r.max * p
@@ -652,25 +792,17 @@ const PinballGame = () => {
             ctx.restore()
         }
 
-        // ---- attract: the ROW OF CABINETS (#3232) ----
+        // ---- attract: the ROW OF CABINETS (#3232) + show-off (#3237) ----
         const drawAttract = (t) => {
             const sel = cabRef.current
             ctx.fillStyle = '#04060f'; ctx.fillRect(0, 0, W, H)
-            // living preview: the selected playfield, dimmed, with the demo ball
-            ctx.save(); ctx.globalAlpha = 0.24
-            ctx.drawImage(fieldFor(CABS[sel].tb), 0, 0)
+            // living preview (#3237): the selected machine, playing itself —
+            // real sim, real lamps, real DMD — dimmed behind the row.
+            const d = demoRef.current
+            drawTable(d.gs, DLIVE)
+            ctx.save(); ctx.globalAlpha = 0.3
+            ctx.drawImage(dCan, 0, 0)
             ctx.restore()
-            {
-                const tb = CABS[sel].tb
-                const a = Math.PI + (Math.sin(t / 700) * 0.5 + 0.5) * Math.PI
-                const bx = tb.arc.cx + Math.cos(a) * tb.arc.rx
-                const by = tb.arc.cy + Math.sin(a) * tb.arc.ry + BALL_R + 6
-                ctx.save(); ctx.globalAlpha = 0.55
-                const bg = ctx.createRadialGradient(bx - 3, by - 4, 1, bx, by, BALL_R)
-                bg.addColorStop(0, '#fff'); bg.addColorStop(1, '#39435a')
-                ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(bx, by, BALL_R, 0, 7); ctx.fill()
-                ctx.restore()
-            }
             ctx.save(); ctx.textAlign = 'center'
             const sp = skinAt(CABS[sel].tb.id, skinRef.current[sel]).pal
             ctx.font = 'bold 34px monospace'
@@ -700,7 +832,7 @@ const PinballGame = () => {
                 if (isSel) { ctx.shadowColor = k.pal.lane; ctx.shadowBlur = 14 }
                 ctx.strokeRect(-CARD_W / 2 - 5, -CARD_H / 2 - 5, CARD_W + 10, CARD_H + 10)
                 ctx.shadowBlur = 0
-                ctx.drawImage(fieldFor(c.tb), -CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H)
+                ctx.drawImage(isSel ? dCan : fieldFor(c.tb), -CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H)
                 // marquee name plate on the card's crown — with the live kit
                 ctx.fillStyle = 'rgba(4,6,16,0.85)'
                 ctx.fillRect(-CARD_W / 2, -CARD_H / 2, CARD_W, 20)
@@ -724,7 +856,7 @@ const PinballGame = () => {
                     ctx.font = 'bold 10px monospace'
                     ctx.shadowColor = k.pal.dmd; ctx.shadowBlur = 7
                     ctx.fillStyle = k.pal.dmd
-                    ctx.fillText(`◆ KIT: ${k.label}`, r.x + CARD_W / 2, r.y + CARD_H + 26 + bob * 0.4)
+                    ctx.fillText(d.sid && styleWarn(c.tb.id, d.sid) ? '◆ NO SUCH KIT HERE' : `◆ KIT: ${k.label}`, r.x + CARD_W / 2, r.y + CARD_H + 26 + bob * 0.4)
                     ctx.restore()
                 }
             }
@@ -766,8 +898,10 @@ const PinballGame = () => {
             if (bedOn && !mbBedRef.current) { audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55); mbBedRef.current = true }
             else if (!bedOn && mbBedRef.current) { audioController.stopMusic(); mbBedRef.current = false }
             ctx.clearRect(0, 0, W, H)
-            if (screenRef.current === 'attract') drawAttract(now)
-            else drawTable(gs)
+            if (screenRef.current === 'attract') {
+                if (!pausedRef.current) stepDemo(dt)
+                drawAttract(now)
+            } else drawTable(gs)
         }
         raf = requestAnimationFrame(frame)
 
@@ -783,14 +917,14 @@ const PinballGame = () => {
                 // the row of cabinets answers the arrows first (#3232): in
                 // attract they switch picks; at GAME OVER they step back to the
                 // row. SPACE/tap keeps the original quick-retry on the same cab.
-                if (screenRef.current === 'attract' && (e.code === 'ArrowLeft' || e.code === 'KeyA')) { setCab(0); e.preventDefault(); return }
-                if (screenRef.current === 'attract' && (e.code === 'ArrowRight' || e.code === 'KeyD')) { setCab(1); e.preventDefault(); return }
+                if (screenRef.current === 'attract' && (e.code === 'ArrowLeft' || e.code === 'KeyA')) { selCab(0); e.preventDefault(); return }
+                if (screenRef.current === 'attract' && (e.code === 'ArrowRight' || e.code === 'KeyD')) { selCab(1); e.preventDefault(); return }
                 // #3259: B / ▲▼ dress the selected cabinet in its next art kit
                 if (screenRef.current === 'attract' && (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ArrowUp' || e.code === 'ArrowDown')) {
                     cycleSkin(e.code === 'ArrowUp' ? -1 : 1); e.preventDefault(); return
                 }
                 if (screenRef.current === 'over' && (e.code === 'ArrowLeft' || e.code === 'KeyA' || e.code === 'ArrowRight' || e.code === 'KeyD')) {
-                    if (e.code === 'ArrowLeft' || e.code === 'KeyA') setCab(0); else setCab(1)
+                    if (e.code === 'ArrowLeft' || e.code === 'KeyA') selCab(0); else selCab(1)
                     screenRef.current = 'attract'; setScreen('attract'); e.preventDefault(); return
                 }
                 if (!paused) startPlay()
@@ -835,14 +969,31 @@ const PinballGame = () => {
         if (import.meta.env.DEV) {
             window.__pinballTest = {
                 state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current, skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
-                // dev rig: pick a cabinet without keys (#3232)
-                setCab: (i) => { cabRef.current = i ? 1 : 0; setCabIdx(i); return { cab: CABS[cabRef.current].tb.id } },
-                // dev rig: set/cycle the art kit (#3259) — absolute index wraps
+                // dev rig: pick a cabinet without keys (#3232) — re-deals its
+                // attract demo too, same law as the arrow keys.
+                setCab: (i) => { cabRef.current = i ? 1 : 0; setCabIdx(i); demoRebuild(); return { cab: CABS[cabRef.current].tb.id } },
+                // dev rig: set/cycle the art kit (#3259) — absolute index wraps;
+                // #3237 persists it and announces it on the attract DMD.
                 setSkin: (i) => {
                     const id = CABS[cabRef.current].tb.id
                     const n = skinsFor(id).length
-                    skinRef.current[cabRef.current] = ((Math.trunc(i) % n) + n) % n
-                    return { skin: skinAt(id, skinRef.current[cabRef.current]).id }
+                    const j = ((Math.trunc(i) % n) + n) % n
+                    skinRef.current[cabRef.current] = j
+                    const kit = skinAt(id, j)
+                    saveKit(id, kit.id)
+                    const dgs = demoRef.current && demoRef.current.gs
+                    if (dgs) dgs.msg = { text: `KIT ${kit.label}`, t: 110, T: 110 }
+                    return { skin: kit.id }
+                },
+                // dev rig: peek at the attract demo (#3237) — sim state +
+                // lamp flashes, so the driven show-off is assertable, not vibes.
+                demoState: () => {
+                    const d = demoRef.current
+                    return {
+                        ...stateOf(d.gs),
+                        lamps: { bumpers: [...d.fl.bumpers], lane: [...d.fl.lane], ramp: d.fl.ramp, lock: d.fl.lock, orbitArm: d.fl.orbitArm },
+                        runs: demoRuns,
+                    }
                 },
                 // dev rig: drop a ball straight into the firelane (visual QA of
                 // the lamp set / tower / pack — the rules themselves are pinned
@@ -920,13 +1071,18 @@ const PinballGame = () => {
                     <AttractMessage className="text-cyan-200/85 mt-2" messages={CABS[cabIdx].msgs} />
                 </div>
             )}
-            {screen === 'over' && (
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2">
-                    <p className="font-mono text-2xl font-bold text-rose-300" style={{ textShadow: '0 0 12px rgba(255,61,94,0.8)' }}>GAME OVER</p>
-                    <p className="font-mono text-sm text-amber-200">FINAL {String(gsRef.current.score).padStart(6, '0')}</p>
-                    <p className="font-mono text-[11px] text-white/70">PICK A CABINET</p>
-                </div>
-            )}
+            {screen === 'over' && (() => {
+                const k = skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current])
+                return (
+                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2">
+                        <p className="font-mono text-2xl font-bold text-rose-300" style={{ textShadow: '0 0 12px rgba(255,61,94,0.8)' }}>GAME OVER</p>
+                        <p className="font-mono text-sm text-amber-200">FINAL {String(gsRef.current.score).padStart(6, '0')}</p>
+                        {/* #3237 tail: the dress reaches the results screen */}
+                        <p className="font-mono text-[11px]" style={{ color: k.pal.dmd, textShadow: `0 0 8px ${k.pal.dmd}` }}>◆ KIT {k.label}</p>
+                        <p className="font-mono text-[11px] text-white/70">PICK A CABINET</p>
+                    </div>
+                )
+            })()}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'PINBALL')} onResume={() => setPaused(false)} />}
             <VirtualControls visible={(screen === 'play' || screen === 'attract') && !paused} secondAction={{ label: screen === 'attract' ? 'KIT' : 'NUDGE', code: 'KeyB' }} />
         </div>
