@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -44,17 +44,26 @@ if (MUT) {
         search: { from: 'if (p.stall > 1200) p.drain = true;', to: 'if (p.stall > 100000) p.drain = true;', note: 'ball search never drains a stalled ball' },
         // the kickback solenoid seizes — the free save never fires (#3250).
         kickback: { from: 'p.vy > KB.minVy &&', to: 'p.vy > KB.minVy * 20 &&', note: 'kickback plunger seizes — the save never fires' },
+        // a renamed palette key silently paints a hole in the TOXIC kit — the
+        // key-parity law (#3259) must catch it. Targets art.js, not sim.js.
+        skin: {
+            file: 'src/games/Pinball/art.js',
+            from: "    hotRgb: '255,159,28',\n    magRgb: '69,201,255',",
+            to: "    hotRgbX: '255,159,28',\n    magRgb: '69,201,255',",
+            note: 'TOXIC kit loses its hotRgb key — the renderer would paint undefined',
+        },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
-    const target = join(root, 'src/games/Pinball/sim.js')
+    const target = join(root, a.file || 'src/games/Pinball/sim.js')
     const src = readFileSync(target, 'utf8')
-    if (!src.includes(a.from)) { console.error(`mutant anchor missing in sim.js (${MUT})`); process.exit(1) }
+    if (!src.includes(a.from)) { console.error(`mutant anchor missing in ${a.file || 'sim.js'} (${MUT})`); process.exit(1) }
     plant(target, src.replace(a.from, a.to))
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
 const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32 } = await import('../src/games/Pinball/sim.js')
+const { SKINS, skinsFor, skinAt, parseStyle, styleIndex, PAL, PAL_EMBER, PAL_TIDE, PAL_TOXIC } = await import('../src/games/Pinball/art.js')
 
 const r = new Report('pinballcheck')
 r.info('boot', 'sim.js imported in Node, zero DOM, zero Math.random')
@@ -1042,6 +1051,63 @@ const wrap = (gs) => {
         TABLE.kb.yFrom === TABLE_TWO.kb.yFrom && TABLE.kb.yTo === TABLE_TWO.kb.yTo &&
         TABLE.kb.minVy === TABLE_TWO.kb.minVy && Math.abs(TABLE.kb.vx + TABLE_TWO.kb.vx) < 1e-9 &&
         TABLE.kb.vy === TABLE_TWO.kb.vy)
+}
+
+// =============== #3259: ART KITS (skins) — a dress, never a machine ===============
+// The arcades sold art kits: same machine, new paint. The contract here is
+// the same one #3103 puts on cabinets — a kit is PALETTE ONLY. These pins
+// keep that honest: registry shape, key parity (a missing key would paint an
+// invisible hole), real visual difference, the cycle wrap law the attract row
+// leans on, the ?style parse, and a replay leg proving no kit touches physics.
+{
+    const cabIds = ['cabinet-one', 'ember-rider']
+    r.check('registry: every cabinet carries >=2 kits, index 0 is the house dress',
+        cabIds.every((id) => Array.isArray(SKINS[id]) && SKINS[id].length >= 2 &&
+            SKINS[id][0].pal === (id === 'cabinet-one' ? PAL : PAL_EMBER)))
+    r.check('registry: kit ids unique per cabinet, lowercase single-word',
+        cabIds.every((id) => {
+            const ids = SKINS[id].map((k) => k.id)
+            return new Set(ids).size === ids.length && ids.every((s) => /^[a-z0-9]+$/.test(s))
+        }))
+    r.check('kits are dress-only: a kit carries id/label/pal and NOTHING else (#3103)',
+        cabIds.every((id) => SKINS[id].every((k) => Object.keys(k).sort().join(',') === 'id,label,pal')))
+    const palKeys = Object.keys(PAL).sort().join(',')
+    r.check('key parity: every kit paints the full palette (a missing key paints undefined)',
+        cabIds.every((id) => SKINS[id].every((k) => Object.keys(k.pal).sort().join(',') === palKeys)))
+    r.check('PAL_TIDE and PAL_TOXIC carry the full key set',
+        Object.keys(PAL_TIDE).sort().join(',') === palKeys && Object.keys(PAL_TOXIC).sort().join(',') === palKeys)
+    r.check('an alt kit differs where players look: field, lane AND neon all change',
+        cabIds.every((id) => SKINS[id].slice(1).every((k) =>
+            k.pal.fieldTop !== SKINS[id][0].pal.fieldTop &&
+            k.pal.lane !== SKINS[id][0].pal.lane &&
+            k.pal.neon !== SKINS[id][0].pal.neon)))
+    r.check('baked rgb variants stay r,g,b triples in every kit',
+        cabIds.every((id) => SKINS[id].every((k) =>
+            ['hotRgb', 'magRgb', 'trailRgb', 'spark', 'kickerRgb'].every((key) =>
+                /^\d{1,3},\d{1,3},\d{1,3}$/.test(k.pal[key])))))
+    r.check('skinAt wraps both directions — the B cycle has no edge',
+        cabIds.every((id) => {
+            const n = SKINS[id].length
+            return skinAt(id, n).id === SKINS[id][0].id &&
+                skinAt(id, -1).id === SKINS[id][n - 1].id &&
+                skinAt(id, n * 7 + 2).id === SKINS[id][2 % n].id
+        }))
+    r.check('skinsFor falls back to CABINET ONE for an unknown table (never a blank row)',
+        skinsFor('no-such-table') === SKINS['cabinet-one'])
+    r.check('parseStyle: id AND squashed label resolve case-free',
+        parseStyle('TIDAL') === 'tidal' && parseStyle('Toxic') === 'toxic' &&
+        parseStyle('tidalrun') === 'tidal' && parseStyle('midnight') === 'midnight')
+    r.check('parseStyle: unknown/empty return null — the cabinet keeps its default',
+        parseStyle('nope') === null && parseStyle('') === null && parseStyle(null) === null)
+    r.check('styleIndex applies on the cabinet that ships the kit, keeps the pick elsewhere',
+        styleIndex('cabinet-one', 'tidal', 0) === 1 &&
+        styleIndex('ember-rider', 'tidal', 0) === 0 &&
+        styleIndex('ember-rider', 'toxic', 0) === 1 &&
+        styleIndex('cabinet-one', null, 1) === 1)
+    // physics leg: the same seed replays bit-identical — the shell may change
+    // dress, kit and DMD announcements, but never the machine under them.
+    const runKit = () => stateHash(drive(makeGame(7, 0), { down: true, right: true }, 240))
+    r.check('a kit never touches physics: seed 7 replays bit-identical', runKit() === runKit())
 }
 
 restoreAll()

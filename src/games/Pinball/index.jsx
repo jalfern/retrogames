@@ -15,7 +15,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedb
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R,
 } from './sim.js'
-import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle } from './art.js'
+import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex } from './art.js'
 
 const FIXED_DT = 1000 / 60
 
@@ -28,6 +28,9 @@ const CABS = [
 // Mini-cabinet card geometry on the 360x600 attract field (#3232).
 const CARD_W = 150, CARD_H = 250
 const CARDS = [{ x: 18, y: 210 }, { x: 192, y: 210 }]
+
+// ?style=<kit> (#3259) — same URL-override idiom as TidyBot/QBert.
+const qStyle = () => { try { return new URLSearchParams(window.location.search).get('style') } catch { return null } }
 
 const sfxFor = (ev) => {
     const a = audioController
@@ -123,6 +126,9 @@ const PinballGame = () => {
     const freshSeed = () => (seedFromQuery() ?? (Date.now() >>> 0))
     const cabRef = useRef(0)                    // selected cabinet (#3232), persists across games
     const [cabIdx, setCabIdx] = useState(0)
+    // #3259 art kit per cabinet — persists across games and quick-retries;
+    // ?style=<kit> preselects it on every cabinet that ships the kit.
+    const skinRef = useRef(CABS.map((c) => styleIndex(c.tb.id, parseStyle(qStyle()), 0)))
     const gsRef = useRef(makeGame(freshSeed()))
     const keysRef = useRef({ left: false, right: false, a: false, down: false, b: false })
     const partsRef = useRef([])
@@ -146,11 +152,22 @@ const PinballGame = () => {
         sfxFor({ type: 'cabinet' })
     }, [])
 
+    // #3259: cycle the selected cabinet's art kit (B / ▲▼ on the row). The
+    // wrap law lives in art.js (skinsFor) so pinballcheck pins the same one.
+    const cycleSkin = useCallback((d) => {
+        const id = CABS[cabRef.current].tb.id
+        const n = skinsFor(id).length
+        skinRef.current[cabRef.current] = (((skinRef.current[cabRef.current] + d) % n) + n) % n
+        sfxFor({ type: 'cabinet' })
+    }, [])
+
     const startPlay = useCallback((cab = cabRef.current) => {
         cabRef.current = cab ? 1 : 0; setCabIdx(cabRef.current)
         const tb = CABS[cabRef.current].tb
         gsRef.current = makeGame(freshSeed(), cabRef.current)
         flashRef.current = mkFlash(tb)
+        // #3259: the dress announces itself on the DMD as the ball loads.
+        gsRef.current.msg = { text: `KIT ${skinAt(tb.id, skinRef.current[cabRef.current]).label}`, t: 110, T: 110 }
         partsRef.current = []
         trailRef.current = []
         screenRef.current = 'play'; setScreen('play')
@@ -164,13 +181,15 @@ const PinballGame = () => {
         const ctx = cvs.getContext('2d')
         ctx.imageSmoothingEnabled = true
         const fieldFor = (tb) => {
-            if (!fieldsRef.current[tb.id]) {
+            const k = skinAt(tb.id, skinRef.current[cabIndexOf(tb.id)])
+            const key = `${tb.id}#${k.id}`
+            if (!fieldsRef.current[key]) {
                 const f = document.createElement('canvas')
                 f.width = W; f.height = H
-                paintField(f.getContext('2d'), W, H, CABS[cabIndexOf(tb.id)].pal, tb)
-                fieldsRef.current[tb.id] = f
+                paintField(f.getContext('2d'), W, H, k.pal, tb)
+                fieldsRef.current[key] = f
             }
-            return fieldsRef.current[tb.id]
+            return fieldsRef.current[key]
         }
         fieldFor(TABLE); fieldFor(TABLE_TWO)
 
@@ -201,7 +220,7 @@ const PinballGame = () => {
 
         const react = (gs) => {
             const fl = flashRef.current
-            const tb = gs.table, pal = CABS[cabIndexOf(tb.id)].pal, v = tb.view
+            const tb = gs.table, pal = skinAt(tb.id, skinRef.current[cabIndexOf(tb.id)]).pal, v = tb.view
             for (const ev of gs.events) {
                 sfxFor(ev)
                 if (ev.type === 'bumper') { fl.bumpers[ev.i] = 9; spawn(ev.x, ev.y, 10, pal.hot, 190) }
@@ -269,7 +288,7 @@ const PinballGame = () => {
 
         // ---------------------------------------------------------------- draw ----
         const drawTable = (gs) => {
-            const tb = gs.table, pal = CABS[cabIndexOf(tb.id)].pal, v = tb.view
+            const tb = gs.table, pal = skinAt(tb.id, skinRef.current[cabIndexOf(tb.id)]).pal, v = tb.view
             ctx.save()
             if (shakeRef.current > 0) {
                 ctx.translate((Math.random() - 0.5) * shakeRef.current, (Math.random() - 0.5) * shakeRef.current)
@@ -653,18 +672,20 @@ const PinballGame = () => {
                 ctx.restore()
             }
             ctx.save(); ctx.textAlign = 'center'
+            const sp = skinAt(CABS[sel].tb.id, skinRef.current[sel]).pal
             ctx.font = 'bold 34px monospace'
-            ctx.shadowColor = PAL.neon; ctx.shadowBlur = 16 + 6 * Math.sin(t / 350)
+            ctx.shadowColor = sp.neon; ctx.shadowBlur = 16 + 6 * Math.sin(t / 350)
             ctx.fillStyle = '#e9fbff'
             ctx.fillText('PINBALL', 180, 116)
             ctx.font = 'bold 13px monospace'
-            ctx.shadowColor = PAL_EMBER.lane; ctx.shadowBlur = 8
+            ctx.shadowColor = sp.lane; ctx.shadowBlur = 8
             ctx.fillStyle = 'rgba(255,223,158,0.9)'
             ctx.fillText('PICK A CABINET', 180, 142)
             ctx.restore()
             // the cabinets: lit mini playfields, selected one lifted + roped
             for (let i = 0; i < CABS.length; i++) {
                 const c = CABS[i], r = CARDS[i]
+                const k = skinAt(c.tb.id, skinRef.current[i])   // #3259 art kit
                 const isSel = i === sel
                 const bob = isSel ? -6 + Math.sin(t / 420) * 2 : 8
                 ctx.save()
@@ -674,28 +695,36 @@ const PinballGame = () => {
                 ctx.globalAlpha = isSel ? 1 : 0.55
                 ctx.fillStyle = 'rgba(4,6,16,0.92)'
                 ctx.fillRect(-CARD_W / 2 - 5, -CARD_H / 2 - 5, CARD_W + 10, CARD_H + 10)
-                ctx.strokeStyle = isSel ? c.pal.lane : 'rgba(201,212,232,0.25)'
+                ctx.strokeStyle = isSel ? k.pal.lane : 'rgba(201,212,232,0.25)'
                 ctx.lineWidth = isSel ? 2.5 : 1.5
-                if (isSel) { ctx.shadowColor = c.pal.lane; ctx.shadowBlur = 14 }
+                if (isSel) { ctx.shadowColor = k.pal.lane; ctx.shadowBlur = 14 }
                 ctx.strokeRect(-CARD_W / 2 - 5, -CARD_H / 2 - 5, CARD_W + 10, CARD_H + 10)
                 ctx.shadowBlur = 0
                 ctx.drawImage(fieldFor(c.tb), -CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H)
-                // marquee name plate on the card's crown
+                // marquee name plate on the card's crown — with the live kit
                 ctx.fillStyle = 'rgba(4,6,16,0.85)'
                 ctx.fillRect(-CARD_W / 2, -CARD_H / 2, CARD_W, 20)
-                ctx.strokeStyle = `rgba(${c.pal.hotRgb},0.5)`; ctx.lineWidth = 1
+                ctx.strokeStyle = `rgba(${k.pal.hotRgb},0.5)`; ctx.lineWidth = 1
                 ctx.beginPath(); ctx.moveTo(-CARD_W / 2, -CARD_H / 2 + 20); ctx.lineTo(CARD_W / 2, -CARD_H / 2 + 20); ctx.stroke()
-                ctx.fillStyle = c.pal.glow
+                ctx.fillStyle = k.pal.glow
                 ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
-                ctx.fillText(c.tag, 0, -CARD_H / 2 + 14)
+                ctx.fillText(isSel ? `${c.tag} · ${k.label}` : c.tag, 0, -CARD_H / 2 + 14)
                 ctx.restore()
                 // picker chevron above the selected card
                 if (isSel) {
                     ctx.save()
                     ctx.globalAlpha = 0.75 + 0.25 * Math.sin(t / 260)
-                    ctx.fillStyle = c.pal.lane
+                    ctx.fillStyle = k.pal.lane
                     const px = r.x + CARD_W / 2, py = r.y - 20 + Math.sin(t / 420) * 2
                     ctx.beginPath(); ctx.moveTo(px - 8, py - 8); ctx.lineTo(px + 8, py - 8); ctx.lineTo(px, py + 2); ctx.closePath(); ctx.fill()
+                    ctx.restore()
+                    // art-kit badge under the selected card (#3259)
+                    ctx.save()
+                    ctx.textAlign = 'center'
+                    ctx.font = 'bold 10px monospace'
+                    ctx.shadowColor = k.pal.dmd; ctx.shadowBlur = 7
+                    ctx.fillStyle = k.pal.dmd
+                    ctx.fillText(`◆ KIT: ${k.label}`, r.x + CARD_W / 2, r.y + CARD_H + 26 + bob * 0.4)
                     ctx.restore()
                 }
             }
@@ -704,7 +733,7 @@ const PinballGame = () => {
                 ctx.font = 'bold 12px monospace'
                 ctx.shadowColor = '#fff'; ctx.shadowBlur = 6
                 ctx.fillStyle = '#fff'
-                ctx.fillText('◀ ▶ SWITCH · SPACE / TAP START', 180, 520)
+                ctx.fillText('◀ ▶ CABINET · B / ▲▼ KIT · SPACE START', 180, 520)
             }
             ctx.restore()
         }
@@ -756,6 +785,10 @@ const PinballGame = () => {
                 // row. SPACE/tap keeps the original quick-retry on the same cab.
                 if (screenRef.current === 'attract' && (e.code === 'ArrowLeft' || e.code === 'KeyA')) { setCab(0); e.preventDefault(); return }
                 if (screenRef.current === 'attract' && (e.code === 'ArrowRight' || e.code === 'KeyD')) { setCab(1); e.preventDefault(); return }
+                // #3259: B / ▲▼ dress the selected cabinet in its next art kit
+                if (screenRef.current === 'attract' && (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ArrowUp' || e.code === 'ArrowDown')) {
+                    cycleSkin(e.code === 'ArrowUp' ? -1 : 1); e.preventDefault(); return
+                }
                 if (screenRef.current === 'over' && (e.code === 'ArrowLeft' || e.code === 'KeyA' || e.code === 'ArrowRight' || e.code === 'KeyD')) {
                     if (e.code === 'ArrowLeft' || e.code === 'KeyA') setCab(0); else setCab(1)
                     screenRef.current = 'attract'; setScreen('attract'); e.preventDefault(); return
@@ -801,9 +834,16 @@ const PinballGame = () => {
 
         if (import.meta.env.DEV) {
             window.__pinballTest = {
-                state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current }),
+                state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current, skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
                 // dev rig: pick a cabinet without keys (#3232)
                 setCab: (i) => { cabRef.current = i ? 1 : 0; setCabIdx(i); return { cab: CABS[cabRef.current].tb.id } },
+                // dev rig: set/cycle the art kit (#3259) — absolute index wraps
+                setSkin: (i) => {
+                    const id = CABS[cabRef.current].tb.id
+                    const n = skinsFor(id).length
+                    skinRef.current[cabRef.current] = ((Math.trunc(i) % n) + n) % n
+                    return { skin: skinAt(id, skinRef.current[cabRef.current]).id }
+                },
                 // dev rig: drop a ball straight into the firelane (visual QA of
                 // the lamp set / tower / pack — the rules themselves are pinned
                 // deterministically by pinballcheck in Node)
@@ -853,7 +893,7 @@ const PinballGame = () => {
                 buttons: ['left', 'right', 'a', 'b', 'down'],
                 reset: (seed) => { gsRef.current = makeGame(seed >>> 0, cabRef.current); flashRef.current = mkFlash(CABS[cabRef.current].tb); screenRef.current = 'play'; setScreen('play'); return stateOf(gsRef.current) },
                 tick: (pad) => { stepGame(gsRef.current, pad || {}); react(gsRef.current); return stateOf(gsRef.current) },
-                state: () => stateOf(gsRef.current),
+                state: () => ({ ...stateOf(gsRef.current), skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
                 canvas: () => canvasRef.current,
             })
         }
@@ -888,7 +928,7 @@ const PinballGame = () => {
                 </div>
             )}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'PINBALL')} onResume={() => setPaused(false)} />}
-            <VirtualControls visible={(screen === 'play' || screen === 'attract') && !paused} secondAction={{ label: 'NUDGE', code: 'KeyB' }} />
+            <VirtualControls visible={(screen === 'play' || screen === 'attract') && !paused} secondAction={{ label: screen === 'attract' ? 'KIT' : 'NUDGE', code: 'KeyB' }} />
         </div>
     )
 }

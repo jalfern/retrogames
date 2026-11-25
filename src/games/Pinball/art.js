@@ -68,6 +68,78 @@ export const PAL_EMBER = {
     kickerRgb: '255,158,74',
 };
 
+// ---- SKINS (#3259) — alternate art kits, one rung of the #3103 ladder ----
+// The arcades sold ART KITS (Bally/Williams, late '70s): the same machine in a
+// new dress. Same contract here: a kit is PALETTE ONLY — field, lamps, score,
+// wood — every element paintField already colours from `pal`. No table data, no
+// physics (#3103: a new look must never mean new physics). The check script
+// audits key-parity across kits: a kit missing one key would silently paint a
+// hole, so PAL's key set is the contract.
+
+// CABINET ONE kit "TIDAL RUN" — the ocean dress: deep teal field, coral lane
+// graphics, mint neon, sun-yellow alerts, ocean-blue magnet.
+export const PAL_TIDE = {
+    fieldTop: '#083038',
+    fieldBot: '#02141a',
+    lane: '#ff7a59',
+    laneDim: 'rgba(255,122,89,0.25)',
+    neon: '#52f0b8',
+    hot: '#ffd23d',
+    sling: '#8ae0c0',
+    chrome: '#d7f2ea',
+    glow: '#7af0d8',
+    score: '#5ee0b0',
+    wood: '#123033',
+    woodHi: '#1e4a4e',
+    dmd: '#66e8c2',
+    dmdOff: 'rgba(102,232,194,0.06)',
+    mag: '#4fa8ff',
+    hotRgb: '255,210,61',
+    magRgb: '79,168,255',
+    trailRgb: '150,240,210',
+    spark: '170,235,220',
+    capHi: '#ffe08a',
+    hotOff: 'rgba(255,210,61,0.18)',
+    magOff: 'rgba(79,168,255,0.25)',
+    hotSoft: 'rgba(255,210,61,0.85)',
+    hotGlass: 'rgba(255,210,61,0.20)',
+    glowOff: 'rgba(122,240,216,0.15)',
+    hotDim: 'rgba(255,210,61,0.25)',
+    kickerRgb: '255,122,89',
+};
+
+// EMBER RIDER kit "TOXIC" — the acid dress: moss field, lime lanes, magenta
+// neon, keep-the-fire alerts (legibility), electric-cyan magnet.
+export const PAL_TOXIC = {
+    fieldTop: '#10280f',
+    fieldBot: '#050f04',
+    lane: '#b6ff3d',
+    laneDim: 'rgba(182,255,61,0.25)',
+    neon: '#ff5ce1',
+    hot: '#ff9f1c',
+    sling: '#d8ff7a',
+    chrome: '#e3f0c8',
+    glow: '#c8ff8a',
+    score: '#b6ff3d',
+    wood: '#1c2a10',
+    woodHi: '#33491d',
+    dmd: '#c6ff6e',
+    dmdOff: 'rgba(198,255,110,0.06)',
+    mag: '#45c9ff',
+    hotRgb: '255,159,28',
+    magRgb: '69,201,255',
+    trailRgb: '200,255,138',
+    spark: '210,245,160',
+    capHi: '#ffcf70',
+    hotOff: 'rgba(255,159,28,0.18)',
+    magOff: 'rgba(69,201,255,0.25)',
+    hotSoft: 'rgba(255,159,28,0.85)',
+    hotGlass: 'rgba(255,159,28,0.20)',
+    glowOff: 'rgba(200,255,138,0.15)',
+    hotDim: 'rgba(255,159,28,0.25)',
+    kickerRgb: '182,255,61',
+};
+
 export const SCORE_DIGITS = 6;
 export const SEG_W = 14, SEG_H = 24;    // 7-segment glyph size
 export const SCORE_X = 96, SCORE_Y = 44; // centred between the reserved corners
@@ -323,3 +395,42 @@ export const MESSAGES_EMBER = [
     'BALL SAVE IS ONLY 4 SECONDS — FIRST DRAIN',
     'BANK CLEAR PAYS 300 — MULT CLIMBS TO x4',
 ];
+
+// ---- the skin registry (#3259) — keyed by table id, index 0 = house dress.
+// The shell resolves a cabinet's live palette through skinFor(); the attract
+// row cycles it with B, `?style=<kit>` pre-selects it, and pinballcheck pins
+// the registry structure, key-parity and the cycle/parse laws in Node.
+export const SKINS = {
+    'cabinet-one': [
+        { id: 'midnight', label: 'MIDNIGHT', pal: PAL },
+        { id: 'tidal', label: 'TIDAL RUN', pal: PAL_TIDE },
+    ],
+    'ember-rider': [
+        { id: 'ember', label: 'EMBER', pal: PAL_EMBER },
+        { id: 'toxic', label: 'TOXIC', pal: PAL_TOXIC },
+    ],
+};
+export const skinsFor = (tableId) => SKINS[tableId] || SKINS['cabinet-one'];
+export const skinAt = (tableId, i) => {
+    const s = skinsFor(tableId);
+    return s[((i % s.length) + s.length) % s.length];
+};
+// ?style override: a kit id (or its label, squashed) any cabinet may carry
+// (unknown name = null → the cabinet's own default). Case-insensitive, like
+// the TidyBot/QBert override.
+export const parseStyle = (name) => {
+    const n = String(name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!n) return null;
+    for (const list of Object.values(SKINS)) {
+        const hit = list.find((k) => k.id === n || k.label.toLowerCase().replace(/[^a-z0-9]/g, '') === n);
+        if (hit) return hit.id;
+    }
+    return null;
+};
+// A style name applies to a cabinet only if THAT cabinet ships the kit —
+// otherwise the cabinet keeps its current pick (unknown style = default).
+export const styleIndex = (tableId, styleId, cur = 0) => {
+    if (!styleId) return cur;
+    const i = skinsFor(tableId).findIndex((k) => k.id === styleId);
+    return i < 0 ? cur : i;
+};

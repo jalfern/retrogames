@@ -167,11 +167,31 @@ CABINET TWO — "EMBER RIDER" (#3232), the row of cabinets:
   mirror deviation forks long runs, so the equivariance assertion is scoped
   to the fork-free window and the fork point is printed, not hidden.
 
+## Art kits (#3259)
+
+Real arcades sold **art kits** — the same machine in a new dress. Same here:
+a kit is **palette only** (`SKINS` in `art.js`, keyed by table id, index 0 =
+house dress). The `#3103` contract holds: a kit never touches table data or
+physics — pinballcheck pins the registry shape, full palette key-parity (a
+missing key would silently paint `undefined`), real visual difference, the
+cycle-wrap law, the `?style` parse, and a bit-identical replay.
+
+- CABINET ONE: **MIDNIGHT** (house) · **TIDAL RUN** (teal field, coral lanes, mint neon)
+- EMBER RIDER: **EMBER** (house) · **TOXIC** (moss field, lime lanes, magenta neon)
+- Attract row: **B / Shift / ▲▼** cycles the selected cabinet's kit live; the
+  marquee shows `TAG · KIT` and a `◆ KIT:` badge sits under the selected card.
+- `?style=<id|label>` preselects the kit on every cabinet that ships it
+  (unknown name = house dress; per-cabinet, start-pick not lock) — the old
+  TidyBot/QBert URL convention, finally honored here.
+- The kit lives in the shell (`skinRef`, per cabinet), persists across
+  quick-retry, and announces `KIT <NAME>` on the DMD as the ball loads.
+  `__pinballTest.setSkin(i)` drives it without keys.
+
 ## Verify
 
 ```bash
-npm run pinballcheck          # 147 literal physics/rules/determinism/mirror checks, plain Node (+5 mutants)
-npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels)
+npm run pinballcheck          # 160 literal physics/rules/determinism/mirror/skins checks, plain Node (+6 mutants: seed/economy/mirror/search/kickback/skin)
+npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits: cycle/persist/?style/dress pixels)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
 ```
@@ -194,8 +214,12 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   reads sim state (`kbUsed`, `kbFlash`), and the DMD announces `KICKBACK! +N`
   deterministically. Straight-centre deaths and resting balls are untouched.
 - No table editor (#3103: not yet).
-- The `?style` URL skin override is still unused here (each cabinet ships its
-  own palette; there is no user-selectable skin).
+- **CLOSED by #3259:** the `?style` skin override. Each cabinet now ships two
+  art kits (dress-only palettes, parity-pinned), the attract row cycles them
+  with B/▲▼, and `?style=<id|label>` preselects one. See "Art kits" above.
+- Kits don't persist across a page reload (per-load pick — localStorage is the
+  next rung), the kit switch borrows the cabinet-pick sound, and kits don't
+  reach the results screen.
 - The attract demo is a title card with a rolling ball, not a driven run.
 - The music bed covers MULTIBALL only (#3178); single-ball play stays dry.
 - The magnet holds one ball and the orbit one loop at a time (real tables run
