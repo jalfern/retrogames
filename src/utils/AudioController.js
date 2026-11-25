@@ -631,6 +631,17 @@ export const MUSIC = {
             33, 0, 0, 0, 33, 0, 0, 0, 31, 0, 0, 0, 31, 0, 0, 0,
             29, 0, 0, 0, 29, 0, 0, 0, 28, 0, 0, 0, 28, 0, 0, 33,
         ],
+        // #3336 item 1 — PHONE voicing: the bass (41–55 Hz) is under a phone
+        // speaker's mechanical knee (~150 Hz), so on the smallest speaker the
+        // bed was only sparse lead + a thin hat. The mid line walks the SAME
+        // i–VII–VI–v harmony as a root–5th ostinato (A3/E4 · G3/D4 · F3/C4 ·
+        // E3/B3) every 2 steps, in the band the phone can carry. Patient: a
+        // pulsing bed at vol 0.3 peaks ~18 dB under one bumper hit (#3304
+        // stays the law — the volley is still the rhythm section).
+        mid: [
+            57, 0, 64, 0, 57, 0, 64, 0, 55, 0, 62, 0, 55, 0, 62, 0,
+            53, 0, 60, 0, 53, 0, 60, 0, 52, 0, 59, 0, 52, 0, 59, 0,
+        ],
         perc: [
             0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2,
             0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 2, 0, 2,
@@ -1223,6 +1234,11 @@ class AudioController {
             if (ln) this._note(f(ln), m.nextTime, m.stepDur * 0.9, 'square', 0.5, m.vibrato)
             const bn = P.bass && P.bass[i]
             if (bn) this._note(f(bn), m.nextTime, m.stepDur * 1.1, 'triangle', 0.6)
+            // #3336: optional fourth voice — a mid-register line for bands a
+            // phone speaker can carry. Opt-in like bass/perc: tracks without
+            // `mid` schedule byte-identically to before.
+            const mn = P.mid && P.mid[i]
+            if (mn) this._note(f(mn), m.nextTime, m.stepDur * 1.1, 'square', 0.3)
             const pv = P.perc && P.perc[i]
             if (pv) this._perc(pv, m.nextTime)
             m.nextTime += m.stepDur
