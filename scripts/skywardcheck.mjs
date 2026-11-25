@@ -973,7 +973,7 @@ if (process.argv.includes('--mutate')) {
         ['#3332 the bank forgets the belt (HOVER stays empty)', SIMF, 'g.beltLand = Math.max(g.beltLand, touch.score)', 'g.beltLand = Math.max(g.beltLand, 0)'],
         ['#3332 the park never releases (throttle-deaf pad)', SIMF, "if (a) { g.park = null; ev(g, 'liftoff') }", "if (false) { g.park = null; ev(g, 'liftoff') }"],
         ['#3332 the crossing fires every tick (a firm settle parks a tick late)', SIMF, 'if (g.phase === \'free\' && g.respawnT <= 0 && g._air) {', 'if (g.phase === \'free\' && g.respawnT <= 0) {'],
-        ['#3332 the crew never chocks (a parked belt blows downwind)', SIMF, 'g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0\n        g.roll = lerp(g.roll, 0, 0.2)', 'g.vy = 0; g.vel.x = w.wind.x * 0.35; g.vel.z = w.wind.z * 0.35; g.speed = 0\n        g.roll = lerp(g.roll, 0, 0.2)'],
+        ['#3332 the crew never chocks (a parked belt blows downwind)', SIMF, 'g.p.y = deck + 0.8\n        g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0\n        g.roll = lerp(g.roll, 0, 0.2)', 'g.p.y = deck + 0.8\n        g.p.x += w.wind.x * dt; g.p.z += w.wind.z * dt\n        g.vy = 0; g.vel.x = 0; g.vel.z = 0; g.speed = 0\n        g.roll = lerp(g.roll, 0, 0.2)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
