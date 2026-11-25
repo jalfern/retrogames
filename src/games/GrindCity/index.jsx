@@ -476,8 +476,8 @@ const GrindCityGame = () => {
                         <div ref={hud.mult} className="absolute bottom-16 left-3 text-xl font-black italic text-white drop-shadow-[0_2px_0_rgba(0,0,0,.85)]" />
                         <div ref={hud.combo} className="absolute bottom-11 left-3 text-sm font-bold tracking-widest text-white/90" />
                         <div ref={hud.flash} className="absolute bottom-24 left-1/2 -translate-x-1/2 text-5xl font-black italic text-[#7dffb0] drop-shadow-[0_3px_0_rgba(0,0,0,.85)] transition-opacity duration-150" style={{ opacity: 0 }} />
-                        <div className="absolute left-3 top-16 space-y-1 text-xs tracking-widest text-white">
-                            <div ref={hud.letters}>
+                        <div className="absolute left-3 top-16 space-y-1 text-xs tracking-widest text-white drop-shadow-[0_2px_2px_rgba(0,0,0,.9)]">
+                            <div ref={hud.letters} className="font-bold tracking-[0.2em]">
                                 <b className="text-lg">S</b>{' '}<b className="text-lg">K</b>{' '}<b className="text-lg">A</b>{' '}<b className="text-lg">T</b>{' '}<b className="text-lg">E</b>
                             </div>
                             <div ref={hud.gap} className="font-bold">◇ GAP OF THE DAY</div>
