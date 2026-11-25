@@ -80,7 +80,7 @@ pauses; ◀ ▶ on the menu picks SUNNY or STORM BAY.
 ## Verify
 
 ```
-npm run tidalcheck                     # 124 gates: boot, rules, win (both bays), determinism,
+npm run tidalcheck                     # 122 gates: boot, rules, win (both bays), determinism,
                                        #   sea-bridge parity, lightning, barrel, swell re-roll,
                                        #   squall-front spatial law + GLSL twin + air-bonus math,
                                        #   rain field/drift/drag/dim laws (#3191), gulls &
