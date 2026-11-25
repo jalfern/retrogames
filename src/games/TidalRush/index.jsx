@@ -20,7 +20,7 @@ import { createLockStep } from '../../utils/lockstep.js'
 import { makeGame, step, autoPad, stateOf, stateHash, rankAt, LAPS, SIM_MS, DT, rainAt, RAIN_VIS } from './sim.js'
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
-import { SEATS, PAD_DELAY, HASH_EVERY, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence } from './net.js'
+import { SEATS, PAD_DELAY, HASH_EVERY, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence, podiumRows, podWire, podRows } from './net.js'
 import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
@@ -48,6 +48,7 @@ const TidalRushGame = () => {
     const [netMsg, setNetMsg] = useState('')           // desync / dropout banner (never silent)
     const netMsgRef = useRef('')
     const [netReport, setNetReport] = useState('')      // #3244: copyable desync evidence under the banner
+    const [podium, setPodium] = useState(null)           // #3244 item 4: the room's finish sheet
     const bayRef = useRef('sunny')
     const previewRef = useRef(null)                     // effect republishes: reroll attract preview sim
     const startRaceRef = useRef(null)                   // effect republishes: tap-to-start
@@ -198,7 +199,7 @@ const TidalRushGame = () => {
         const net = {
             active: !!netRole, role: netRole, phase: netRole ? 'idle' : 'off',
             slot: netRole === 'host' ? 0 : -1, code: '', joinHref: '',
-            humans: [], racing: false, solo: false,
+            humans: [], racing: false, solo: false, podium: null,
         }
         // mySeat doubles as my hull: seat i rides hull i, canonical on every box.
         const mySeat = () => (net.active && net.slot >= 0 ? net.slot : 0)
@@ -351,7 +352,17 @@ const TidalRushGame = () => {
                 // then, so a peer never starves behind my finish screen.
                 if (gs.crafts.every((c) => c.finished)) {
                     net.racing = false
-                    if (net.role === 'host' && net.room) net.room.setPhase('waiting')
+                    // #3244 item 4: the race ends INTO a room moment — the sheet
+                    // of every seat by finish time, identical on every cabinet
+                    // (lockstep holds the same numbers); the host answers the
+                    // room with its rows so guests read the authority, not a
+                    // local sort, and the rematch button can light up.
+                    net.podium = podiumRows(gs, net.humans)
+                    setPodium(net.podium)
+                    if (net.role === 'host' && net.room) {
+                        net.room.send('pod', { rows: podWire(net.podium) })
+                        net.room.setPhase('waiting')
+                    }
                 }
                 if (playing) drainEvents()
             } else {
@@ -679,6 +690,8 @@ const TidalRushGame = () => {
             if (h.countText) h.countText.textContent = ''
             audioController.startLoopVoice(52)
             setResult(null)
+            net.podium = null
+            setPodium(null)
             setMode('play')
         }
         const startRace = () => {
@@ -697,6 +710,8 @@ const TidalRushGame = () => {
         const endToMenu = () => {
             net.racing = false
             net.solo = false
+            net.podium = null
+            setPodium(null)
             if (net.role === 'host' && net.room) net.room.setPhase('waiting')
             audioController.stopLoopVoice()
             setMode('attract')
@@ -711,8 +726,11 @@ const TidalRushGame = () => {
         }
         startRaceRef.current = () => {
             if (net.active) {
-                if (screenRef.current === 'over') endToMenu()
-                else if (net.role === 'host' && net.phase === 'waiting') net.lobby.start({ seed: hostSeed(), bay: bayRef.current })
+                // #3244 item 4: from the podium the host calls the rematch — the
+                // room re-races on a fresh seed; seated guests ride the 'go'
+                // without re-entering a code. A guest steps back to the lobby.
+                if (screenRef.current === 'over' && net.role !== 'host') { endToMenu(); return }
+                if (net.role === 'host' && net.phase === 'waiting') net.lobby.start({ seed: hostSeed(), bay: bayRef.current })
                 return
             }
             startRace()
@@ -754,6 +772,16 @@ const TidalRushGame = () => {
                         }
                     },
                     gone: () => { if (net.role === 'guest') { net.racing = false; netSay('THE HOST SAILED HOME') } },
+                    // #3244 item 4: the host's finish sheet — the guest's podium
+                    // comes from the room, and its phase rides back to waiting so
+                    // the lobby knows the bay is open for the rematch.
+                    pod: (m) => {
+                        if (net.role !== 'guest' || net.podium) return
+                        net.podium = podRows(m.rows, RIDE_NAMES)
+                        setPodium(net.podium)
+                        if (net.room) net.room.setPhase('waiting')
+                        pushNetUi()
+                    },
                 },
             })
             net.lobby = lobby
@@ -780,10 +808,11 @@ const TidalRushGame = () => {
                     return
                 }
                 if (net.active) {
-                    // #3220: on a live room the host's key starts the ROOM;
-                    // a guest's keys idle until the 'go' lands. The over screen
-                    // steps back to the waiting room.
-                    if (screenRef.current === 'over') { endToMenu(); return }
+                    // #3220/#3244: on a live room the host's key starts the ROOM —
+                    // from the podium that same key is the REMATCH (fresh seed,
+                    // guests ride the 'go', nobody re-enters a code). A guest's
+                    // over-screen key steps back to the waiting room.
+                    if (screenRef.current === 'over' && net.role !== 'host') { endToMenu(); return }
                     if (net.role === 'host' && net.phase === 'waiting') net.lobby.start({ seed: hostSeed(), bay: bayRef.current })
                     return
                 }
@@ -864,7 +893,7 @@ const TidalRushGame = () => {
                 restore: (s) => { gs = JSON.parse(JSON.stringify(s)); camInit = false; return stateOf(gs) },
             })
         }
-        exposeFeedbackState(() => ({ seed: gs.seed, tick: gs.tick, score: gs.score, done: gs.done, rank: gs.rank }))
+        exposeFeedbackState(() => ({ seed: gs.seed, tick: gs.tick, score: gs.score, done: gs.done, rank: gs.rank, podium: net.podium }))
 
         let rafStarted = false
         if (!rafStarted) { rafStarted = true; raf = requestAnimationFrame(loop) }
@@ -963,7 +992,7 @@ const TidalRushGame = () => {
                 </div>
             )}
 
-            {screen === 'over' && result && (
+            {screen === 'over' && result && !(netUi && podium) && (
                 <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-cyan-50 font-mono px-6">
                     <h2 className={`text-4xl font-black mb-1 ${result.place === 1 ? 'text-yellow-300' : 'text-cyan-200'}`}>
                         {result.place === 1 ? (result.stage === 'storm' ? 'STORM MASTER' : 'BAY CHAMPION') : `P${result.place} — THE FIELD TOOK IT`}
@@ -971,6 +1000,33 @@ const TidalRushGame = () => {
                     <p className="text-lg mb-3">{result.stage === 'storm' ? 'storm bay' : 'sunny bay'} · time {fmt(result.t)} · score {result.score}</p>
                     <p className="text-sm text-cyan-200/80 mb-4">{result.place === 1 ? (result.stage === 'storm' ? 'You read a sea that re-rolled under you. The bay never saw you coming.' : 'Mako never saw your wake.') : 'Cleaner gates charge more sprint — try the crests.'}</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY · ◀ ▶ PICK BAY</p>
+                </div>
+            )}
+
+            {/* #3244 item 4: the ROOM PODIUM — one finish sheet for the whole
+                bay, every seat by finish time. The host calls the rematch from
+                the line (any key / GO AGAIN); seated guests wait on the 'go'
+                and never re-enter the code. */}
+            {screen === 'over' && netUi && podium && (
+                <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-cyan-50 font-mono px-6">
+                    <h2 className="text-3xl font-black mb-1 text-yellow-300">ROOM PODIUM</h2>
+                    <p className="text-xs text-cyan-300/70 mb-3">{`ROOM ${netUi.code || '····'} · ${netUi.phase === 'waiting' ? 'THE BAY IS SET' : 'COMING ABOUT…'}`}</p>
+                    <div className="flex flex-col gap-1 w-72 max-w-full mb-4">
+                        {podium.map((r, i) => (
+                            <div key={r.seat} className={`flex items-center gap-2 rounded border px-3 py-1.5 text-sm font-bold ${i === 0 ? 'border-yellow-300/60 bg-yellow-300/10 text-yellow-200' : 'border-cyan-300/25 bg-cyan-300/5 text-cyan-100'}`}>
+                                <span className="w-6 shrink-0">{`P${i + 1}`}</span>
+                                <span className="flex-1 text-left">{r.name}</span>
+                                <span className="tabular-nums">{fmt(r.t)}</span>
+                                <span className="tabular-nums opacity-80">{r.score}</span>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded ${r.seat === netUi.slot ? 'bg-yellow-300/25 text-yellow-100' : r.human ? 'bg-cyan-300/20 text-cyan-100' : 'bg-white/10 text-white/60'}`}>
+                                    {r.seat === netUi.slot ? 'YOU' : r.human ? 'RIDER' : 'ACE'}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                    <p className="animate-pulse font-bold text-yellow-300">
+                        {netUi.role === 'host' ? 'ANY KEY — GO AGAIN · REMATCH THE ROOM' : 'WAITING FOR THE HOST TO CALL THE REMATCH…'}
+                    </p>
                 </div>
             )}
 
