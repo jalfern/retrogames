@@ -141,6 +141,7 @@ const TidalRushGame = () => {
         scene.add(spray.pts)
         const wakes = gs.crafts.map(() => {
             const w = makeWake(LITE ? 30 : 44)
+            scene.add(w.darkMesh)
             scene.add(w.mesh)
             return w
         })
@@ -157,6 +158,7 @@ const TidalRushGame = () => {
         const _down = new THREE.Vector3(0, -1, 0)
         const _qy = new THREE.Quaternion()
         let skiJolt = gs.crafts.map(() => 0)
+        let airT = gs.crafts.map(() => 0)
         let waveAmbT = 2.0
         let camInit = false
         let engineTick = 0
@@ -502,9 +504,22 @@ const TidalRushGame = () => {
                 if (c.boosting) m.flame.scale.set(1, 1 + Math.sin(t * 40) * 0.25, 1)
                 // head lag on landing: jolt the head pivot, decaying
                 skiJolt[i] = Math.max(0, (skiJolt[i] || 0) - DT * 2.6)
+                // airborne tuck, smoothed — rises fast on takeoff, eases down on
+                // landing; separate from the jolt so the air reads differently
+                const tuckTarget = c.airborne ? 1 : 0
+                airT[i] = (airT[i] || 0) + (tuckTarget - (airT[i] || 0)) * (1 - Math.exp(-DT * (tuckTarget > (airT[i] || 0) ? 11 : 6)))
+                const tuck = airT[i]
+                const land = skiJolt[i]
+                if (m.lowerBody) {
+                    // knees flex on the slap, tuck lifts the feet mid-air
+                    m.lowerBody.rotation.x = -0.22 * land - 0.32 * tuck
+                    m.lowerBody.position.y = 0.85 + 0.15 * tuck - 0.10 * land
+                }
+                // the torso absorbs the slap; the head rides the same jolt
+                m.lean.position.y = -0.16 * land
                 if (m.headPivot) {
-                    m.headPivot.position.y = 1.62 - 0.17 * skiJolt[i]
-                    m.headPivot.rotation.x = skiJolt[i] * 0.5
+                    m.headPivot.position.y = 1.62 - 0.17 * skiJolt[i] - 0.10 * tuck
+                    m.headPivot.rotation.x = skiJolt[i] * 0.5 + tuck * 0.55
                 }
                 // arms track the bar grip through the local lean
                 if (m.arms) {
@@ -645,6 +660,7 @@ const TidalRushGame = () => {
             goFlash = 0
             waveAmbT = 2.0
             skiJolt = gs.crafts.map(() => 0)
+            airT = gs.crafts.map(() => 0)
             wakes.forEach((w) => { w.pts.length = 0 })
             trickPop = ''
             const h = hudRef.current
@@ -808,6 +824,7 @@ const TidalRushGame = () => {
                     gs = makeGame(humanSeed, bayRef.current)
                     buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
                     wakes.forEach((w) => { w.pts.length = 0 })
+                    airT = gs.crafts.map(() => 0)
                     camInit = false
                     prevGo = false
                     setMode('play')
@@ -857,7 +874,7 @@ const TidalRushGame = () => {
             sea.mat.dispose()
             spray.geo.dispose()
             spray.mat.dispose()
-            wakes.forEach((w) => { w.geo.dispose(); w.mat.dispose() })
+            wakes.forEach((w) => { w.geo.dispose(); w.mat.dispose(); w.darkGeo.dispose(); w.darkMat.dispose() })
             rain.geo.dispose()
             rain.mat.dispose()
             canvas.remove()
