@@ -105,6 +105,32 @@ try {
         !!bed3 && bed3.track === 'pinballSolo' && bed3.solo > 0 && bed3.law > 0,
         `track=${bed3 && bed3.track} law=${bed3 && bed3.law} solo=${bed3 && bed3.solo}`)
 
+    // #3313 item 1 seam glide, off the live bus: the bed DIPS before it swaps
+    // and RISES after — a slope, not a splice. Sampled every 16 ms through the
+    // seam (the contracheck #3052 pattern), so the record-skip shape can't hide.
+    const busAt = () => page.evaluate(() => { const m = window.__audioMix(), b = window.__pinballTest.bed(); return { g: m && m.gain, t: b.track, s: b.seam, h: b.heat } })
+    const bh = await busAt()
+    ok('#3313 the heat tell rides the law (swell fraction = bed level over cap)',
+        bh.t === 'pinballSolo' && bh.h > 0 && bh.h <= 1 && bh.g > 0.004,
+        `heat=${bh.h} track=${bh.t} gain=${bh.g}`)
+    await page.evaluate(() => window.__pinballTest.devMb(true))
+    const s0 = await busAt()
+    let swapIn = null, prev = s0, rise = 0
+    for (let i = 0; i < 50 && !swapIn; i++) { const s = await busAt(); if (s.t === 'pinballMb') { swapIn = s; break } prev = s; await wait(16) }
+    ok('#3313 the seam is reportable mid-glide (bed.seam counts down the dip, track still solo at the bottom)',
+        (s0.s > 0 || prev.s > 0) && prev.t === 'pinballSolo', `seam@0=${s0.s} seam@last=${prev.s} track=${prev.t}`)
+    for (let i = 0; i < 40; i++) { await wait(16); const s = await busAt(); rise = Math.max(rise, s.g || 0); if (rise >= 0.05) break }
+    ok('#3313 pack arrival glides: the bus dips below half its pre-seam gain before the swap, then rises into the mb bed',
+        !!swapIn && swapIn.g <= bh.g * 0.5 && rise >= 0.05,
+        `pre=${bh.g} at-swap=${swapIn && swapIn.g} rise=${rise}`)
+    await page.evaluate(() => window.__pinballTest.devMb(false))
+    let swapOut = null, recover = 0
+    for (let i = 0; i < 50 && !swapOut; i++) { await wait(16); const s = await busAt(); if (s.t === 'pinballSolo') swapOut = s }
+    for (let i = 0; i < 40; i++) { await wait(16); const s = await busAt(); recover = Math.max(recover, s.g || 0); if (recover >= 0.008) break }
+    ok('#3313 pack departure glides too: dip before the hand-back, and the solo bed is audible again after',
+        !!swapOut && swapOut.g <= 0.044 && recover >= 0.008,
+        `at-swap=${swapOut && swapOut.g} recover=${recover}`)
+
     // rung 3 rig: feed the climbing rail — the wrap pays ORBIT in the browser.
     // Re-feed while nothing lands: on a loaded box the RAF runs slower than
     // 60 fps, so a fixed wall-clock window is fewer world ticks; a second

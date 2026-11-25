@@ -1471,7 +1471,24 @@ const wrap = (gs) => {
         sh2.includes("const bedOn = screenRef.current === 'play' && !pausedRef.current && (gs.multiball || devMbRef.current)") &&
         sh2.includes("audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55)"))
     r.check('#3304 the solo seam rides the law, quantized to 0.02, and the pack never hears it',
-        sh2.includes('soloBed(gs) : 0') && sh2.includes('Math.round(lvl / 0.02) * 0.02') && sh2.includes('if (!bedOn) {'))
+        sh2.includes('soloBed(gs) : 0') && sh2.includes('Math.round(lvl / 0.02) * 0.02') && sh2.includes('if (!bedOn && !bedSeamRef.current) {'))
+    // #3313 item 1: the seam is a glide, not a splice — dip the bus, swap at
+    // the bottom, rise into the new bed; both swaps relight in the SAME turn.
+    r.check('#3313 pack arrival is a dip-then-swap glide (150 ms dip, track swap at the bottom)',
+        sh2.includes("else if (bedOn && !mbBedRef.current) { audioController.setMusicLevel(0.001); bedSeamRef.current = { left: 150 } }") &&
+        sh2.includes("audioController.startMusic('pinballMb'); audioController.setMusicLevel(0.55)") &&
+        sh2.includes('seam.left -= dt'))
+    r.check('#3313 pack departure hands back in the SAME turn (stop and start share one automation frame — no burst)',
+        sh2.includes("else if (!bedOn && mbBedRef.current) { audioController.setMusicLevel(0.001); bedSeamRef.current = { left: 150 } }") &&
+        sh2.includes("audioController.startMusic('pinballSolo'); audioController.setMusicLevel(q); soloBedRef.current = q; mbBedRef.current = false"))
+    // #3313 item 2: the heat tell rides the SAME law value the bus reads.
+    r.check('#3313 the DMD heat tell is wired to the bed law (index passes law/SOLO_CAP, art scales the glow)',
+        sh2.includes('heat: Math.max(0, Math.min(1, soloBed(gs) / SOLO_CAP))') &&
+        readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/art.js'), 'utf8')
+            .includes('const bezelGlow = (hot ? (multi ? 22 : 12) : 6) + heat * 7;'))
+    r.check('#3313 heat spans 0..1 exactly where the swell does (base→cap)',
+        Math.abs(soloBed({ done: false, multiball: false, tilt: false, pucks: [{ launched: true }], score: 0 }) / SOLO_CAP - SOLO_BASE / SOLO_CAP) < 1e-9 &&
+        Math.abs(soloBed({ done: false, multiball: false, tilt: false, pucks: [{ launched: true }], score: SOLO_HEAT_AT }) / SOLO_CAP - 1) < 1e-9)
     r.check('#3304 the dev mb-rig is seam-only — it overlays the bed ref, never gs.multiball',
         sh2.includes('devMb: (on = true) => { devMbRef.current = Boolean(on)') &&
         !sh2.includes('gsRef.current.multiball ='))
