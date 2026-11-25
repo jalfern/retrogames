@@ -120,6 +120,13 @@ static job; every pushed commit is commented on #3104.
   `net.js`); when the referee bites, the diverged row is marked
   `← MISMATCH seatN` and the block + COPY REPORT button appear under the
   banner, so a reported freeze ships with numbers. Ring wipes at kickoff.
+- **Room finish + rematch (#3244 item 4)** — when every hull crosses, the host
+  broadcasts `pod` (SSX's precedent): seat/time/score/rider rows. Every cabinet
+  paints a ROOM PODIUM in place of the lone sheet; the host calls the rematch
+  from the line (any key → fresh seed, seated guests ride the `go`, nobody
+  re-enters a code). A guest reads the host's sheet instead of trusting its own
+  sort. What the room still owes: mid-race spectate and a survivable rejoin
+  (#3244 items 2–3).
 - The wire is digital by design (six lockstep bits): local analog stick/lean
   feel stays local — remote riders' skis carry committed leans, not fractional
   ones. Analog-over-wire would need a pad-shape change to the shared pipeline.

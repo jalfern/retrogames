@@ -61,6 +61,11 @@ if (MUT) {
         wirefeed: { file: 'src/games/TidalRush/index.jsx', from: 'fromWire(mirrors[0].get(k) || toWire({}))', to: 'readPad()', note: 'hull 0 fed local analog — boxes diverge' },
         // the freeze keeps no receipts (#3244 item 5) — the hash-path stamp gone.
         evidoff: { file: 'src/games/TidalRush/index.jsx', from: 'evidence.markBad(k, evidence.mismatchSlot(k), r.mine, r.theirs)', to: '', note: 'desync stamps no evidence' },
+        // the room ends in silence (#3244 item 4) — the host never answers with
+        // the podium, guests sit on their own sheet waiting for nothing.
+        podmute: { file: 'src/games/TidalRush/index.jsx', from: "net.room.send('pod', { rows: podWire(net.podium) })", to: 'void net.podium', note: 'host stops broadcasting the room podium' },
+        // the podium ranks last-first (#3244 item 4) — the sheet lies about who won.
+        podrank: { file: 'src/games/TidalRush/net.js', from: '.sort((a, b) => (a.finishT - b.finishT) || (a.id - b.id))', to: '.sort((a, b) => (b.finishT - a.finishT) || (a.id - b.id))', note: 'podium inverted — slowest first' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -619,7 +624,7 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
 {
     const HERE = join(dirname(fileURLToPath(import.meta.url)), '..')
     const jsxNet = readFileSync(join(HERE, 'src/games/TidalRush/index.jsx'), 'utf8')
-    const { SEATS, PAD_DELAY, HASH_EVERY, toWire, fromWire, assembleSeatPads, createEvidence, EVIDENCE_LIMIT, hex32 } = await import('../src/games/TidalRush/net.js')
+    const { SEATS, PAD_DELAY, HASH_EVERY, toWire, fromWire, assembleSeatPads, createEvidence, EVIDENCE_LIMIT, hex32, podiumRows, podWire, podRows } = await import('../src/games/TidalRush/net.js')
     const { createLockStep } = await import('../src/utils/lockstep.js')
 
     // --- desync evidence (#3244 item 5): the ring + the copyable block ------
@@ -782,6 +787,36 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         bd[0].gs.tick >= tickAtDrop + 150)
     ok('takeover: the abandoned ski flies the autopilot again',
         bd[0].gs.crafts[1].speed > 5)
+
+    // --- #3244 item 4: the room finish — podium sheet + rematch wire ---------
+    {
+        const gsF = makeGame(SEED, 'sunny')
+        for (let g = 0; g < 40000 && !gsF.crafts.every((c) => c.finished); g++) step(gsF, autoPad(gsF))
+        ok('a CPU field finishes the bay — there is a podium to share',
+            gsF.crafts.every((c) => c.finished))
+        const rowsF = podiumRows(gsF, [1])
+        ok('the podium ranks swift-course-first and marks who actually rode (seat 1 here)',
+            rowsF.length === 3 && rowsF[0].t <= rowsF[1].t && rowsF[1].t <= rowsF[2].t
+            && rowsF.some((r) => r.seat === 1 && r.human) && rowsF.filter((r) => r.human).length === 1
+            && rowsF.every((r) => Number.isFinite(r.score) && r.score > 0))
+        const back = podRows(podWire(rowsF), ['KAI', 'MAKO', 'TUNDRA'])
+        ok('the pod wire round-trips seat/time/score/rider — the host answers the room',
+            back.length === 3 && back.every((r, i) => r.seat === rowsF[i].seat && r.rank === i + 1
+                && Math.abs(r.t - rowsF[i].t) <= 0.05 && r.human === rowsF[i].human
+                && r.name === ['KAI', 'MAKO', 'TUNDRA'][rowsF[i].seat]
+                && r.score === Math.round(rowsF[i].score)))
+        const gsF2 = makeGame(SEED, 'sunny')
+        for (let g = 0; g < 40000 && !gsF2.crafts.every((c) => c.finished); g++) step(gsF2, autoPad(gsF2))
+        ok('two boxes, one sea — the podium agrees to the tenth from the same seed',
+            JSON.stringify(podiumRows(gsF2, [1])) === JSON.stringify(rowsF))
+    }
+    ok('the host answers the line with a pod broadcast, and the guest reads it (#3244)',
+        jsxNet.includes("net.room.send('pod', { rows: podWire(net.podium) })") && jsxNet.includes("pod: (m) =>"))
+    ok('the podium paints the room sheet with the rematch call; a new race wipes it (#3244)',
+        jsxNet.includes('ROOM PODIUM') && jsxNet.includes('GO AGAIN') && jsxNet.includes('net.podium = null'))
+    ok('from the podium one key re-races the room on a fresh seed — no code re-entry (#3244)',
+        /if \(screenRef\.current === 'over' && net\.role !== 'host'\) \{ endToMenu\(\); return \}/.test(jsxNet)
+        && (jsxNet.match(/net\.lobby\.start\(\{ seed: hostSeed\(\), bay: bayRef\.current \}\)/g) || []).length >= 2)
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)

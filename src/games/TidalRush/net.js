@@ -128,4 +128,41 @@ export function createEvidence(limit = EVIDENCE_LIMIT) {
     }
 }
 
+// --- room podium (#3244 item 4) ----------------------------------------------
+// The race ends INTO a room moment: the standings of every seat, by finish
+// time. Lockstep means both boxes already hold identical times/scores, but the
+// host still broadcasts the rows (SSX's `pod` precedent, room.js §14) so a
+// guest reads the ROOM's answer instead of trusting its own sort — and the
+// phase can come back to 'waiting' on every cabinet, not just the host's.
+// The rematch itself is the host pressing GO again: lobby.start re-broadcasts
+// 'go' with a fresh seed, and seated guests race without re-entering a code.
+
+// podiumRows ranks every hull swift-course-first. `humans` marks who actually
+// rode to the line — a seat the autopilot coasted home is not a rider.
+export function podiumRows(gs, humans) {
+    const live = new Set(humans)
+    return gs.crafts.slice()
+        .sort((a, b) => (a.finishT - b.finishT) || (a.id - b.id))
+        .map((c) => ({ seat: c.id, t: c.finishT, score: c.score, human: live.has(c.id) }))
+}
+
+// podWire squashes rows onto the wire: time in tenths of a second (the sheet
+// only shows tenths), seat id keeps the column honest, human rides as a bit.
+export function podWire(rows) {
+    return rows.map((r) => [r.seat, Math.round(r.t * 10), Math.round(r.score), r.human ? 1 : 0])
+}
+
+// podRows inflates the host's broadcast into the local sheet — names come from
+// this cabinet's own table, rank is the row order the host settled.
+export function podRows(rows, names) {
+    return (rows || []).map((r, i) => ({
+        seat: r[0] | 0,
+        rank: i + 1,
+        name: names[r[0] | 0] || `SEAT ${r[0]}`,
+        t: (r[1] | 0) / 10,
+        score: r[2] | 0,
+        human: !!r[3],
+    }))
+}
+
 export { HOST_SLOT }
