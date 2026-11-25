@@ -56,6 +56,15 @@ surface of truth:
   incoming, `uF*` = live front; and each hull drags a **ribbon wake**
   (`makeWake`): a stitched triangle-strip of stern points that widens and
   fades over ~2.4 s — WR64's solid white trail, additive, no depth write.
+- `net.js` — online rooms (#3220) on the shared plumbing: `src/utils/lobby.js`
+  (#1039 waiting room + 4-letter code, deployed relay) and `src/utils/
+  lockstep.js` (#531 sample-once-D-ahead law, #1705 N-peer referee). Wire pad
+  = six bits {l,r,u,d,s,a}; hull i consumes seat i's wire bytes on EVERY box
+  (hull 0 rides its mirror, never local analog — the divergence trap). Human
+  seats skip `rivalPad` entirely, so the seeded rng stream stays room-wide.
+  The sim's only online-facing state: `c.human` (pad source), `c.score` (own
+  bank; hull 0 also fills the hero bank `gs.score`), hull-tagged events — all
+  inert when nobody joins, which is what keeps offline bytes untouched.
 - `index.jsx` — the shell: fixed-timestep loop (one driver), attract driven
   by the SAME autopilot the harness wins with (`autoPad`), **bay picker**
   (◀ ▶ keys or tap the chips; the attract preview re-rolls live), tap-to-
@@ -71,11 +80,13 @@ pauses; ◀ ▶ on the menu picks SUNNY or STORM BAY.
 ## Verify
 
 ```
-npm run tidalcheck                     # 106 gates: boot, rules, win (both bays), determinism,
+npm run tidalcheck                     # 122 gates: boot, rules, win (both bays), determinism,
                                        #   sea-bridge parity, lightning, barrel, swell re-roll,
                                        #   squall-front spatial law + GLSL twin + air-bonus math,
                                        #   rain field/drift/drag/dim laws (#3191), gulls &
-                                       #   beach caustics (#3218)
+                                       #   beach caustics (#3218), online: wire bits, seat rng
+                                       #   law, 2P/3P hash parity, desync referee, dropout
+                                       #   takeover (#3220)
 node scripts/tidalcheck.mjs --mutate=judge   # red-side judgement muted — must go red
 node scripts/tidalcheck.mjs --mutate=swell   # per-lap re-roll pinned — must go red
 node scripts/tidalcheck.mjs --mutate=front   # squall front frozen — must go red
@@ -84,6 +95,7 @@ node scripts/tidalcheck.mjs --mutate=causticoff  # beach shimmer disabled — mu
 node scripts/tidalcheck.mjs --mutate=trickdry    # flat-360 lands without a whoosh — must go red (#3218)
 node scripts/tidalcheck.mjs --mutate=rainoff # rain wallpaper again — must go red
 node scripts/tidalcheck.mjs --mutate=push    # crosswind drift zeroed — must go red
+node scripts/tidalcheck.mjs --mutate=wirefeed # hull 0 fed local analog — must go red (#3220)
 npm run dev -- --port 5178 --strictPort   # then:
 CONTRACT_ONLY=tidal-rush npm run contractcheck
 DEV_PORT=5178 npm run tidaldrive         # headless Chrome: real keys/taps start-steer-
@@ -95,12 +107,23 @@ static job; every pushed commit is commented on #3104.
 
 ## Honest gaps (rung 3)
 
-- No online rooms (the SSX lobby reuse is on the issue's "not yet" list).
+- ~~No online rooms~~ **CLOSED by #3220** — `?net=host` / `?net=join&room=CODE`
+  on the shared lobby (#1039, deployed relay): seat i rides hull i (KAI/MAKO/
+  TUNDRA), open seats fly the autopilot, the host's bay pick rides the start
+  payload. Wire pads are six bits (throttle/lean×2/brake/spin/boost) on the
+  #531 sampling law with #1705 N-peer roster; hash referee every 30 ticks
+  freezes on desync (never silent); a dropped rider's ski coasts while peers
+  remain and returns to the autopilot when you're alone. See `net.js`.
+- The wire is digital by design (six lockstep bits): local analog stick/lean
+  feel stays local — remote riders' skis carry committed leans, not fractional
+  ones. Analog-over-wire would need a pad-shape change to the shared pipeline.
+- Three-hull rooms are proven in Node over an in-memory pipe (tidalcheck); a
+  real three-human relay run (phones on the QR code) is the QA pass.
+- Three airborne verbs (flat 360, barrel, air-time bonus); flips/handstands
+  would ride the same airborne spin budget.
 - **CLOSED by #3191** — rain is gameplay now: extra drag in the band
   (v_term −10 %), seeded crosswind drift along the new swell, spatial drops
   at Kai's hull, gates dimmed toward storm fog, wind cue at the band edges.
-- Three airborne verbs (flat 360, barrel, air-time bonus); flips/handstands
-  would ride the same airborne spin budget.
 - The squall front mixes two whole-bay tables linearly across the band — real
   seas beat and interfere; a per-wave cross-fade (phase-matched slot swaps) is
   the next fidelity step.

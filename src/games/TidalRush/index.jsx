@@ -9,14 +9,18 @@ import * as THREE from 'three'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { padState } from '../../utils/padState'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, autoPad, stateOf, stateHash, LAPS, SIM_MS, DT, rainAt, RAIN_VIS } from './sim.js'
+import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
+import { createLockStep } from '../../utils/lockstep.js'
+import { makeGame, step, autoPad, stateOf, stateHash, rankAt, LAPS, SIM_MS, DT, rainAt, RAIN_VIS } from './sim.js'
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
+import { SEATS, PAD_DELAY, HASH_EVERY, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed } from './net.js'
 import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
@@ -40,6 +44,9 @@ const TidalRushGame = () => {
     const [paused, setPaused] = useState(false)
     const [result, setResult] = useState(null)
     const [bay, setBay] = useState('sunny')            // 'sunny' | 'storm' — attract picker
+    const [netUi, setNetUi] = useState(null)           // #3220 shared Lobby overlay state
+    const [netMsg, setNetMsg] = useState('')           // desync / dropout banner (never silent)
+    const netMsgRef = useRef('')
     const bayRef = useRef('sunny')
     const previewRef = useRef(null)                     // effect republishes: reroll attract preview sim
     const startRaceRef = useRef(null)                   // effect republishes: tap-to-start
@@ -175,6 +182,68 @@ const TidalRushGame = () => {
             return padRef
         }
 
+        // ------------------------------------------------------------- online ----
+        // #3220 lockstep race on the #1039 shared lobby: ?net=host /
+        // ?net=join&room=CODE / ?relay=ws(s)://host — the same join flow, code
+        // and waiting room every multiplayer game uses. Seat i rides hull i:
+        // KAI · MAKO · TUNDRA; open seats fly the seeded autopilot. Wire
+        // semantics in ./net.js; sampling law in src/utils/lockstep.js;
+        // N-peer roster law (#1705) rides ls.setPeers, GravelYard's precedent.
+        const nq = new URLSearchParams(window.location.search)
+        const netRole = lobbyRole(window.location.search)
+        const relayUrl = relayFromQuery(window.location.search)
+        const net = {
+            active: !!netRole, role: netRole, phase: netRole ? 'idle' : 'off',
+            slot: netRole === 'host' ? 0 : -1, code: '', joinHref: '',
+            humans: [], racing: false, solo: false,
+        }
+        // mySeat doubles as my hull: seat i rides hull i, canonical on every box.
+        const mySeat = () => (net.active && net.slot >= 0 ? net.slot : 0)
+        let ws = null
+        const makeTransport = (url) => {
+            ws = new WebSocket(url)
+            return {
+                send: (s) => { try { if (ws && ws.readyState === 1) ws.send(s) } catch { /* gone */ } },
+                onMessage: (cb) => { ws.onmessage = (ev) => cb(ev.data) },
+                onClose: (cb) => { ws.onclose = () => cb() },
+                close: () => { try { if (ws) ws.close() } catch { /* gone */ } },
+            }
+        }
+        // per-seat pad mirrors holding EXACTLY the bytes each seat sent — both
+        // boxes apply identical pads per hull, which is the whole determinism
+        // claim (the sim consumes wire bits, never local analog).
+        const mirrors = [new Map(), new Map(), new Map()]
+        let stalledTicks = 0
+        const ls = createLockStep({
+            delay: PAD_DELAY,
+            hashEvery: HASH_EVERY,
+            send: (m) => {
+                if (m.t === 'pad') mirrors[mySeat()].set(m.k, m.p)
+                if (net.room) net.room.send(m.t, m)
+            },
+        })
+        const pushNetUi = () => setNetUi(net.active ? {
+            role: net.role, phase: net.phase, code: net.code, slot: net.slot,
+            seats: seatModel(SEATS, net.room ? net.room.slots : (net.slot >= 0 ? [net.slot] : [])),
+            joinHref: net.joinHref,
+            names: RIDE_NAMES,
+        } : null)
+        const netSay = (m) => { netMsgRef.current = m; setNetMsg(m) }
+
+        // a seat dropped mid-race (#863 law — say so, never stall silently).
+        // With peers left, their hull coasts on empty wire pads and the pad
+        // streams stay absolute, so the remaining boxes keep hashing equal.
+        // Alone, the bay hands open seats back to the autopilot to finish.
+        const seatGone = (seat) => {
+            if (!net.racing) return
+            net.humans = net.humans.filter((s) => s !== seat)
+            ls.setPeers(net.humans.filter((s) => s !== mySeat()))
+            gs.crafts.forEach((c, i) => { if (!net.humans.includes(i)) c.human = false })
+            net.solo = net.humans.length <= 1
+            netSay(net.solo ? 'RIDER DROPPED — FINISHING SOLO' : 'RIDER DROPPED — THEIR SKI COASTS')
+            pushNetUi()
+        }
+
         const sfx = {
             pass: () => { audioController.playTone(880, 0.07, 'square', 0.10); audioController.playTone(1320, 0.09, 'square', 0.09, 0.07) },
             miss: () => audioController.playSweep(240, 110, 0.28, 'sawtooth', 0.12),
@@ -202,7 +271,11 @@ const TidalRushGame = () => {
 
         let trickPop = ''
         function drainEvents() {
+            const mine = mySeat()
             for (const e of gs.events) {
+                // #3220: hull-tagged events belong to that rider's cabinet;
+                // untaged ones (swell, flash, frontDone) are the bay's own voice.
+                if ('id' in e && e.id !== mine) continue
                 const hud = hudRef.current
                 if (e.type === 'pass') { sfx.pass(); flashPop = 1; if (hud.pop) { hud.pop.textContent = `CLEAN +100`; hud.pop.style.opacity = 1 } }
                 if (e.type === 'miss') { sfx.miss(); flashPop = 1; trickPop = ''; if (hud.pop) { hud.pop.textContent = 'MISS — THROTTLE DOWN'; hud.pop.style.opacity = 1 } }
@@ -236,9 +309,44 @@ const TidalRushGame = () => {
         let prevGo = false
         function simTick() {
             const playing = screenRef.current === 'play'
-            const pad = playing ? readPad() : autoPad(gs)
             const wasAir = gs.crafts.map((c) => c.airborne)
-            step(gs, pad)
+            if (net.racing && net.active) {
+                // Wire law (#531): pump pads exactly D ahead, run tick k only
+                // when every peer's pad for k has landed. While stalled the bay
+                // keeps painting; after ~2 s the banner says why.
+                const k = gs.tick
+                ls.pumpTo(k + PAD_DELAY, () => toWire(readPad()))
+                const alone = net.solo || net.humans.length <= 1
+                if (!alone && !ls.ready(k)) {
+                    stalledTicks++
+                    if (stalledTicks === 120) netSay('HOLD ON — SYNCING THE FIELD…')
+                    return
+                }
+                if (stalledTicks > 0 && netMsgRef.current.startsWith('HOLD ON')) netSay('')
+                stalledTicks = 0
+                // hull 0 is fed from ITS own wire bytes (mine as host, the
+                // host's as guest) — never local analog, or the boxes diverge.
+                const padIn = fromWire(mirrors[0].get(k) || toWire({}))
+                step(gs, padIn, assembleSeatPads(mirrors, k, net.humans))
+                if (!alone && k % HASH_EVERY === 0) {
+                    const r = ls.hash(k, stateHash(gs))
+                    if (r && r.desync !== undefined) {
+                        net.racing = false
+                        pausedRef.current = true
+                        netSay('SIMS DIVERGED — THE HOST RESTARTS THE BAY')
+                    }
+                }
+                // the world ends when every hull has crossed — stream pads until
+                // then, so a peer never starves behind my finish screen.
+                if (gs.crafts.every((c) => c.finished)) {
+                    net.racing = false
+                    if (net.role === 'host' && net.room) net.room.setPhase('waiting')
+                }
+                if (playing) drainEvents()
+            } else {
+                step(gs, playing ? readPad() : autoPad(gs))
+                if (playing) drainEvents()
+            }
             if (!prevGo && gs.lightPhase >= 1 && playing) {
                 sfx.go(); goFlash = 1.1
                 // the start-line swell sting — the bay answering the light (#3135 gap)
@@ -249,11 +357,10 @@ const TidalRushGame = () => {
             }
             prevGo = gs.lightPhase >= 1
             if (playing) {
-                drainEvents()
                 // engine: one persistent sawtooth that winds up with the hull
                 // (#3135) — no per-frame one-shots to machine-gun the bus
                 engineTick += 1
-                const p = gs.crafts[0]
+                const p = gs.crafts[mySeat()]
                 audioController.setLoopVoice(52 + p.speed * 7.5 + (p.boosting ? 40 : 0), 0.035 + Math.min(0.05, p.speed * 0.004))
                 if (engineTick % 9 === 0 && p.speed > 5) audioController.playNoise(0.05, 0.022)
                 // a quiet, periodic wave swell — the bay breathing under the ride
@@ -314,7 +421,7 @@ const TidalRushGame = () => {
             // KAI'S HULL: the band edge is where the weather actually starts
             // and stops, not the stage flag (#3191). Smoothed so the bay
             // picker still fades weather in, but the squall crosses in ~1 s.
-            const rainHere = rainAt(gs, gs.crafts[0].x, gs.crafts[0].z)
+            const rainHere = rainAt(gs, gs.crafts[mySeat()].x, gs.crafts[mySeat()].z)
             rainVis += (rainHere - rainVis) * (1 - Math.exp(-10 * DT))
             if (rainVis > 0.3) rainSpawn(rain, camera.position.x, camera.position.y, camera.position.z, Math.max(2, Math.round(rainVis * (LITE ? 5 : 8))))
             rainStep(rain, DT)
@@ -380,7 +487,7 @@ const TidalRushGame = () => {
             })
             bellCool = Math.max(0, bellCool - DT)
             if (bellCool === 0 && screenRef.current === 'play') {
-                const k = gs.crafts[0]
+                const k = gs.crafts[mySeat()]
                 if (bellSpot && Math.hypot(k.x - bellSpot.x, k.z - bellSpot.z) < 16) { bellCool = 5; sfx.bell() }
             }
 
@@ -413,8 +520,10 @@ const TidalRushGame = () => {
             sprayStep(spray, DT)
             wakes.forEach((w) => wakeStep(w, DT))
 
-            // chase-cam: sit behind and low over the water, FOV rides speed
-            const p = gs.crafts[0]
+            // chase-cam: sit behind and low over the water, FOV rides speed.
+            // #3220: it follows MY hull — guests ride MAKO/TUNDRA, the bay
+            // belongs to whoever is at the bar.
+            const p = gs.crafts[mySeat()]
             const fx = Math.sin(p.heading), fz = Math.cos(p.heading)
             const behind = 9.2 - Math.min(2, p.speed * 0.06)
             const cx = p.x - fx * behind, cz = p.z - fz * behind
@@ -439,10 +548,10 @@ const TidalRushGame = () => {
 
             // HUD (DOM refs — no per-frame React)
             const hud = hudRef.current
-            if (hud.score) hud.score.firstChild.nodeValue = String(gs.score)
+            if (hud.score) hud.score.firstChild.nodeValue = String(gs.crafts[mySeat()].score)
             if (hud.speed) hud.speed.firstChild.nodeValue = String(Math.round(p.speed * 3.6))
             if (hud.lap) hud.lap.textContent = `LAP ${Math.min(p.lap, LAPS)}/${LAPS}`
-            if (hud.rank) hud.rank.textContent = `P${gs.rank}/${gs.crafts.length}`
+            if (hud.rank) hud.rank.textContent = `P${rankAt(gs, mySeat())}/${gs.crafts.length}`
             if (hud.clock) hud.clock.textContent = fmt(gs.t)
             if (hud.boost) hud.boost.style.width = `${Math.round(p.boost * 100)}%`
             if (hud.pen) hud.pen.style.opacity = p.penalty > 0 ? 1 : 0
@@ -518,9 +627,18 @@ const TidalRushGame = () => {
 
         // --- input / screens ----------------------------------------------------
         let humanSeed = seedFromQuery() ?? freshSeed()
-        const startRace = () => {
-            humanSeed = seedFromQuery() ?? freshSeed()
-            gs = makeGame(humanSeed, bayRef.current)
+        const startRaceWith = (seed, bayName, online) => {
+            gs = makeGame(seed >>> 0, bayName)
+            net.humans = online && net.room ? net.room.slots.slice() : []
+            net.racing = !!online
+            net.solo = online && net.humans.length <= 1
+            // seats freeze at kickoff (the #1705 roster law): who rides which
+            // hull is fixed for the whole race on every box.
+            gs.crafts.forEach((c, i) => { c.human = online && net.humans.includes(i) })
+            ls.reset()
+            if (online) ls.setPeers(net.humans.filter((s) => s !== mySeat()))
+            mirrors.forEach((m) => m.clear())
+            stalledTicks = 0
             buoys.forEach((b, i) => b.position.set(gs.course.gates[i].x, 0, gs.course.gates[i].z))
             camInit = false
             prevGo = false
@@ -536,6 +654,26 @@ const TidalRushGame = () => {
             setResult(null)
             setMode('play')
         }
+        const startRace = () => {
+            humanSeed = seedFromQuery() ?? freshSeed()
+            netSay('')
+            startRaceWith(humanSeed, bayRef.current, false)
+        }
+        // kickoff (host's local start AND the guest's 'go' both land here):
+        // one seed, one bay, one field — the room races the same water.
+        const startOnline = (m) => {
+            netSay('')
+            pausedRef.current = false
+            setPaused(false)
+            startRaceWith(m.seed >>> 0, m.bay === 'storm' ? 'storm' : 'sunny', true)
+        }
+        const endToMenu = () => {
+            net.racing = false
+            net.solo = false
+            if (net.role === 'host' && net.room) net.room.setPhase('waiting')
+            audioController.stopLoopVoice()
+            setMode('attract')
+        }
         // attract/over preview reroll when the picker changes bays
         previewRef.current = () => {
             gs = makeGame(freshSeed(), bayRef.current)
@@ -544,10 +682,62 @@ const TidalRushGame = () => {
             camInit = false
             prevGo = false
         }
-        startRaceRef.current = startRace
+        startRaceRef.current = () => {
+            if (net.active) {
+                if (screenRef.current === 'over') endToMenu()
+                else if (net.role === 'host' && net.phase === 'waiting') net.lobby.start({ seed: hostSeed(), bay: bayRef.current })
+                return
+            }
+            startRace()
+        }
+
+        if (net.active) {
+            const lobby = createLobby({
+                slug: 'tidal-rush',
+                cap: SEATS,
+                relay: relayUrl,
+                makeTransport,
+                shareRelay: !!nq.get('relay'),
+                onState: (s) => {
+                    net.phase = s.phase
+                    net.code = s.code
+                    if (s.slot >= 0) net.slot = s.slot
+                    net.joinHref = s.joinHref
+                    pushNetUi()
+                },
+                onRoster: () => { pushNetUi() },
+                onJoin: () => pushNetUi(),
+                onLeave: ({ slot }) => { seatGone(slot | 0); pushNetUi() },
+                onStart: (m) => startOnline(m),
+                on: {
+                    pad: (m) => {
+                        const s = m.s | 0
+                        if (mirrors[s]) mirrors[s].set(m.k | 0, m.p)
+                        if (s !== mySeat()) ls.gotPad(m.k | 0, m.p, s)
+                    },
+                    hs: (m) => {
+                        const r = ls.gotHash(m.k | 0, m.h >>> 0, m.s | 0)
+                        if (r && r.desync !== undefined && net.racing) {
+                            net.racing = false
+                            pausedRef.current = true
+                            netSay('SIMS DIVERGED — THE HOST RESTARTS THE BAY')
+                        }
+                    },
+                    gone: () => { if (net.role === 'guest') { net.racing = false; netSay('THE HOST SAILED HOME') } },
+                },
+            })
+            net.lobby = lobby
+            net.room = lobby.room
+            if (net.role === 'host') lobby.open()
+            else lobby.join(nq.get('room'))
+            pushNetUi()
+        }
+
         const onKeyDown = (e) => {
             if (e.code === 'Escape' || e.code === 'Backquote' || e.code === 'Slash') {
-                if (screenRef.current === 'play') setPause(!pausedRef.current)
+                // the bay pauses; a live room doesn't — stepping out mid-
+                // lockstep would starve the field of pads (pause is offline-only)
+                if (screenRef.current === 'play' && !net.racing) setPause(!pausedRef.current)
                 return
             }
             if (pausedRef.current) return
@@ -557,6 +747,14 @@ const TidalRushGame = () => {
                 if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
                     const next = bayRef.current === 'sunny' ? 'storm' : 'sunny'
                     bayRef.current = next; setBay(next); previewRef.current()
+                    return
+                }
+                if (net.active) {
+                    // #3220: on a live room the host's key starts the ROOM;
+                    // a guest's keys idle until the 'go' lands. The over screen
+                    // steps back to the waiting room.
+                    if (screenRef.current === 'over') { endToMenu(); return }
+                    if (net.role === 'host' && net.phase === 'waiting') net.lobby.start({ seed: hostSeed(), bay: bayRef.current })
                     return
                 }
                 if (e.code !== 'Tab') startRace()
@@ -641,6 +839,7 @@ const TidalRushGame = () => {
 
         return () => {
             cancelAnimationFrame(raf)
+            if (net.room) { try { net.room.reset() } catch { /* gone */ } }
             window.removeEventListener('resize', resize)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
@@ -740,6 +939,37 @@ const TidalRushGame = () => {
                     <p className="text-lg mb-3">{result.stage === 'storm' ? 'storm bay' : 'sunny bay'} · time {fmt(result.t)} · score {result.score}</p>
                     <p className="text-sm text-cyan-200/80 mb-4">{result.place === 1 ? (result.stage === 'storm' ? 'You read a sea that re-rolled under you. The bay never saw you coming.' : 'Mako never saw your wake.') : 'Cleaner gates charge more sprint — try the crests.'}</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY · ◀ ▶ PICK BAY</p>
+                </div>
+            )}
+
+            {/* #3220: the shared waiting room sits over the idle bay — the
+                attract keep streaming behind it like every other lobby game. */}
+            {netUi && netUi.phase !== 'racing' && screen === 'attract' && (
+                <Lobby
+                    state={netUi}
+                    title="OPEN BAY"
+                    names={netUi.names}
+                    startHint="PICK A BAY · PRESS ANY KEY TO SEND THE FIELD"
+                    accent={{
+                        text: 'text-cyan-50',
+                        dim: 'text-cyan-300/70',
+                        live: 'border-cyan-300/40 text-cyan-100',
+                        codeGlow: { textShadow: '3px 0 0 #0a7fb8, -3px 0 0 #ff5a3c' },
+                    }}
+                />
+            )}
+
+            {/* #3220: live-room identity chip — which ski you ride, which bay you're in */}
+            {netUi && (screen === 'play' || screen === 'over') && (
+                <div className="absolute top-16 left-1/2 -translate-x-1/2 pointer-events-none bg-black/45 border border-cyan-300/30 rounded px-2 py-0.5 text-[10px] tracking-[0.3em] text-cyan-100 font-mono">
+                    {`ROOM ${netUi.code || '····'} · YOU: ${RIDE_NAMES[Math.max(0, netUi.slot)]}`}
+                </div>
+            )}
+
+            {/* #3220: dropout/desync say — #863 law: never stall silently */}
+            {netMsg && (
+                <div className="absolute top-[38%] left-1/2 -translate-x-1/2 pointer-events-none bg-black/70 border border-red-300/50 rounded px-4 py-2 text-sm font-black tracking-[0.25em] text-red-200 font-mono">
+                    {netMsg}
                 </div>
             )}
 

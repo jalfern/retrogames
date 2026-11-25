@@ -56,6 +56,9 @@ if (MUT) {
         causticoff: { file: 'src/games/TidalRush/art.js', from: 'float shoreK = length(vWorld.xz) / 180.0;', to: 'float shoreK = 0.0;', note: 'beach caustics disabled' },
         // the flat 360 lands in silence again (#3218) — no whoosh-in.
         trickdry: { file: 'src/games/TidalRush/index.jsx', from: "trick: () => { audioController.playSweep(1250, 240, 0.2, 'triangle', 0.06);", to: 'trick: () => {', note: 'flat-360 landing loses its whoosh-in' },
+        // hull 0 is fed the local analog pad instead of its wire bytes (#3220) —
+        // the exact divergence trap: host runs analog, guest runs the bits.
+        wirefeed: { file: 'src/games/TidalRush/index.jsx', from: 'fromWire(mirrors[0].get(k) || toWire({}))', to: 'readPad()', note: 'hull 0 fed local analog — boxes diverge' },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -550,7 +553,7 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     const jsx = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/index.jsx'), 'utf8')
     const artJs2 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/TidalRush/art.js'), 'utf8')
     ok('gates dim toward storm fog by rain at THEIR point', jsx.includes('buoyDim(b, RAIN_VIS * rainAt(gs, g0.x, g0.z))') && artJs2.includes('lerp(BUOY_DIM_COL'))
-    ok('drop density follows the rain at Kai hull', jsx.includes('rainAt(gs, gs.crafts[0].x, gs.crafts[0].z)') && jsx.includes('rainVis > 0.3'))
+    ok('drop density follows the rain at MY hull (Kai offline, my ski online #3220)', jsx.includes('rainAt(gs, gs.crafts[mySeat()].x, gs.crafts[mySeat()].z)') && jsx.includes('rainVis > 0.3'))
     ok('the crossing gets a wind cue', jsx.includes("e.type === 'rain'") && jsx.includes('sfx.rain(e.on)'))
 }
 
@@ -608,6 +611,138 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
     ok('storm water swallows the shimmer', artJs.includes('shallow * (1.0 - uStorm * 0.85)'))
     // the flat 360 lands with air in it: sfx.trick carries a whoosh sweep.
     ok('the flat-360 landing carries a whoosh-in', /trick: \(\) => \{ audioController\.playSweep\(/.test(jsx2))
+}
+
+// --- online rooms (#3220): wire semantics, lockstep parity, takeover ----------
+{
+    const HERE = join(dirname(fileURLToPath(import.meta.url)), '..')
+    const jsxNet = readFileSync(join(HERE, 'src/games/TidalRush/index.jsx'), 'utf8')
+    const { SEATS, PAD_DELAY, HASH_EVERY, toWire, fromWire, assembleSeatPads } = await import('../src/games/TidalRush/net.js')
+    const { createLockStep } = await import('../src/utils/lockstep.js')
+
+    ok('the room seats three — KAI MAKO TUNDRA', SEATS === 3)
+    ok('the wire carries six bits, and full-lock survives it exactly (the BARREL input)',
+        JSON.stringify(toWire({ throttle: 1, steer: 0.8, brake: true, a: true, b: true })) === JSON.stringify({ l: false, r: true, u: true, d: true, a: true, s: true })
+        && fromWire({ l: true, r: false, u: false, d: false, a: false, s: false }).steer === -1)
+    ok('a half-commit quantises (steer 0.4 is not a lean on the wire)',
+        fromWire(toWire({ throttle: 1, steer: 0.4, brake: false, a: false, b: false })).steer === 0)
+    ok('hull 0 rides its wire bytes, never local analog (the divergence trap)',
+        jsxNet.includes('fromWire(mirrors[0].get(k) || toWire({}))') && !/step\(gs, readPad\(\)/.test(jsxNet))
+    ok('received pads are stamped by seat and fed to the referee',
+        jsxNet.includes('if (mirrors[s]) mirrors[s].set(m.k | 0, m.p)') && jsxNet.includes('ls.gotPad(m.k | 0, m.p, s)'))
+    ok('the bay pauses offline only — a live room never starves the pad stream',
+        jsxNet.includes("screenRef.current === 'play' && !net.racing"))
+
+    // --- human seats in the sim -------------------------------------------------
+    const SEED = 0x5eed01
+    const NEUTRAL = () => ({ throttle: 0, steer: 0, brake: false, a: false, b: false })
+    const soloRun = (humans, late) => {
+        const gs = makeGame(SEED, 'sunny')
+        gs.crafts.forEach((c, i) => { c.human = humans.includes(i) })
+        for (let k = 0; k < 600; k++) {
+            const seatPads = humans.includes(1)
+                ? { 1: k > 120 ? { throttle: 1, steer: 0, brake: false, a: false, b: false } : NEUTRAL() }
+                : {}
+            step(gs, { throttle: 1, steer: 0, brake: false, a: false, b: false }, seatPads)
+        }
+        return gs
+    }
+    const cpuAll = soloRun([], false)
+    const h1a = soloRun([1], true), h1b = soloRun([1], true)
+    ok('the human-seat path is deterministic (same seed, same pads, same hash)',
+        stateHash(h1a) === stateHash(h1b))
+    ok('a seat on empty pads coasts — it never flies itself',
+        h1a.crafts[1].progress < cpuAll.crafts[1].progress - 5)
+    ok('a human seat skips the autopilot rng draw (streams stay room-wide)',
+        h1a.rngS !== cpuAll.rngS && h1a.tick === cpuAll.tick)
+
+    // --- two boxes, one sea ------------------------------------------------------
+    const makeBox = (seat, humans, padOf) => {
+        const gs = makeGame(SEED, 'storm')
+        gs.crafts.forEach((c, i) => { c.human = humans.includes(i) })
+        const mirrors = [new Map(), new Map(), new Map()]
+        const box = { seat, gs, mirrors, hashes: [], desync: false, alone: false, dead: false, sibs: [] }
+        box.ls = createLockStep({
+            delay: PAD_DELAY, hashEvery: HASH_EVERY,
+            // mirrors the room layer: every frame gets the sender's seat stamp.
+            send: (m) => { if (m.t === 'pad') box.mirrors[seat].set(m.k, m.p); for (const b of box.sibs) if (!b.dead) b.onMsg(Object.assign({}, m, { s: seat })) },
+        })
+        box.ls.setPeers(humans.filter((s) => s !== seat))
+        box.onMsg = (m) => {
+            if (box.dead) return
+            if (m.t === 'pad') { box.mirrors[m.s].set(m.k, m.p); if (m.s !== seat) box.ls.gotPad(m.k, m.p, m.s) }
+            else if (m.t === 'hs') { const r = box.ls.gotHash(m.k, m.h, m.s); if (r && r.desync !== undefined) box.desync = true }
+        }
+        box.stepOnce = () => {
+            if (box.dead) return false
+            const k = gs.tick
+            box.ls.pumpTo(k + PAD_DELAY, () => toWire(padOf(k)))
+            if (!box.alone && !box.ls.ready(k)) return false
+            const padIn = fromWire(box.mirrors[0].get(k) || toWire({}))
+            step(gs, padIn, assembleSeatPads(box.mirrors, k, humans))
+            if (!box.alone && k % HASH_EVERY === 0) {
+                const h = stateHash(gs)
+                box.hashes.push(h)
+                const r = box.ls.hash(k, h)
+                if (r && r.desync !== undefined) box.desync = true
+            }
+            return true
+        }
+        return box
+    }
+    const wig = (ph, amp) => (k) => ({ throttle: 1, steer: Math.sin(k / 15 + ph) > 0 ? amp : -amp * 0.7, brake: false, a: false, b: false })
+
+    const pairUp = (arr) => { arr.forEach((b) => { b.sibs = arr.filter((x) => x !== b) }) }
+    const runTo = (arr, target, hook = null) => {
+        for (let guard = 0; guard < 12000 && arr.some((b) => b.gs.tick < target); guard++) {
+            for (const b of arr) b.stepOnce()
+            if (hook) hook(arr)
+        }
+    }
+    const sameHashes = (arr) => {
+        const n = Math.min(...arr.map((b) => b.hashes.length))
+        return n >= 15 && arr.every((b) => b.hashes.slice(0, n).join(',') === arr[0].hashes.slice(0, n).join(','))
+    }
+    const b1 = [makeBox(0, [0, 1], wig(0, 0.9)), makeBox(1, [0, 1], wig(2.1, 0.8))]
+    pairUp(b1)
+    runTo(b1, 600)
+    ok('two boxes, two riders: hashes agree at every boundary — the room rides ONE sea',
+        sameHashes(b1))
+    ok('neither box declared a desync on the honest run', !b1[0].desync && !b1[1].desync)
+    ok('the pad streams ran ahead of the sim (sampling delay live)', b1[0].gs.tick + PAD_DELAY > 600 - 1)
+
+    // the referee bites: a box that cheats the sea gets frozen, not shuffled.
+    const b2 = [makeBox(0, [0, 1], wig(0, 0.9)), makeBox(1, [0, 1], wig(2.1, 0.8))]
+    pairUp(b2)
+    runTo(b2, 330, (arr) => { if (arr[0].gs.tick === 210) arr[1].gs.crafts[1].x += 1 })
+    ok('a perturbed box IS caught — the hash referee reports desync, both sides',
+        b2[0].desync && b2[1].desync)
+
+    // three-hull room: host + two wire riders, autopilot fills nothing.
+    const b3 = [makeBox(0, [0, 1, 2], wig(0, 0.9)), makeBox(1, [0, 1, 2], wig(2.1, 0.8)), makeBox(2, [0, 1, 2], wig(4.2, 0.75))]
+    pairUp(b3)
+    runTo(b3, 600)
+    ok('a three-rider room is one world — all three hash-equal, no desync',
+        sameHashes(b3) && !b3.some((b) => b.desync))
+
+    // dropout: the guest goes silent; the host re-freezes the roster, takes the
+    // open seat back on the autopilot, and finishes the race (never a stall).
+    const bd = [makeBox(0, [0, 1], wig(0, 0.9)), makeBox(1, [0, 1], wig(2.1, 0.8))]
+    pairUp(bd)
+    for (let guard = 0; guard < 4000 && bd[0].gs.tick < 240; guard++) for (const b of bd) b.stepOnce()
+    const tickAtDrop = bd[0].gs.tick
+    bd[1].dead = true
+    // — the component's seatGone: roster minus the gone seat, peers re-frozen,
+    //   the orphan hull handed back to the seeded autopilot (the survivor is
+    //   the authority: no hash peer left to disagree with).
+    bd[0].gs.crafts[1].human = false
+    bd[0].ls.setPeers([])
+    bd[0].alone = true
+    for (let g2 = 0; g2 < 300 && bd[0].gs.tick < tickAtDrop + 180; g2++) bd[0].stepOnce()
+    ok('takeover: the race keeps ticking after a dropout (no silent stall)',
+        bd[0].gs.tick >= tickAtDrop + 150)
+    ok('takeover: the abandoned ski flies the autopilot again',
+        bd[0].gs.crafts[1].speed > 5)
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)
