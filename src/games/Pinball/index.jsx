@@ -14,10 +14,10 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, seedFromQuery, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeGame, stepGame, stateOf, stateHash, TABLE, TABLE_TWO, CABINETS, cabIndexOf, W, H, BALL_R, demoPad, demoOver,
-    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, tiltImpulse, soloBed,
+    compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, zoneGuidePath, tiltImpulse, soloBed,
 } from './sim.js'
 import { tiltVec } from '../../components/padTypes.js'
-import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD } from './art.js'
+import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, textFit, marqueeFit } from './art.js'
 
 const FIXED_DT = 1000 / 60
 
@@ -39,6 +39,12 @@ const CABS = [
     { tb: TABLE_TWO, pal: PAL_EMBER, tag: 'EMBER RIDER', msgs: MESSAGES_EMBER },
     { tb: myDef0 ? compileTable(myDef0).tb : TABLE, pal: PAL, tag: (myDef0 && myDef0.name) || 'DESIGN YOUR OWN', msgs: MESSAGES, custom: true, saved: !!myDef0 },
 ]
+// #3290 item 2 — the unsaved ghost stops lying. Until the player saves, the
+// demo and the card face show the bench's OWN default layout (openEditor
+// starts from SMITH_REFS.nova), so the card previews exactly what the smith
+// opens with. Saved cabinets are untouched (their real table rides the row).
+const NOVA_TB = compileTable(SMITH_REFS.nova).tb
+const previewTb = (ci) => (CABS[ci].custom && !CABS[ci].saved ? NOVA_TB : CABS[ci].tb)
 // Mini-cabinet card geometry on the 360x600 attract field (#3232; #3284 grew
 // the row to three — narrower cards keep the original's portrait proportions).
 const CARD_W = 104, CARD_H = 173
@@ -49,6 +55,10 @@ const CARDS = [{ x: 16, y: 224 }, { x: 128, y: 224 }, { x: 240, y: 224 }]
 // palette, instant playtest, and your name on the marquee. Pad-first: the
 // arrows walk the cursor, A acts, B cycles the tool, ? leaves.
 const TOOLS = ['BUMPER', 'SLING', 'BANK', 'MAGNET', 'WIPE', 'NAME', 'TEST', 'SAVE']
+// #3290 item 4: one source for the palette rect — drawEditor paints it and
+// onPointer hit-tests it. y488 clears the VirtualControls pad (the up-arrow
+// nub's top measures ≈y515 at 375×812; the old y560 sat fully under it).
+const SMITH_BAR = { bw: 38, x0: 28, y0: 488, h: 22 }
 const NAME_A = ['SUPER', 'NOVA', 'HYPER', 'IRON', 'MOON', 'TURBO', 'NEON', 'GOLD']
 const NAME_B = ['RIDER', 'STAR', 'RUSH', 'COMET', 'KNIGHT', 'DRIFT', 'FANG', 'TIDE']
 
@@ -467,12 +477,15 @@ const PinballGame = () => {
         let demoRuns = 0
         const attractLine = (id) => { const l = ATTRACT_DMD[id] || ATTRACT_DMD['cabinet-one']; return l[demoRuns % l.length] }
         const demoRebuild = () => {
-            const gs = makeGame((0xa11ce + demoRuns * 7919) >>> 0, CABS[cabRef.current].tb)
+            // #3290 item 2: an unsaved smith slot demos NOVA — the layout the
+            // bench opens with — and sells the bench itself on the strip.
+            const ghost = !!CABS[cabRef.current].custom && !CABS[cabRef.current].saved
+            const gs = makeGame((0xa11ce + demoRuns * 7919) >>> 0, previewTb(cabRef.current))
             demoRuns += 1
             const sid = parseStyle(qStyle())
             // every run opens with an ad line on the strip; a ?style naming a
             // kit this cabinet doesn't ship answers instead of silence.
-            gs.msg = { text: sid && styleWarn(gs.table.id, sid) ? 'NO SUCH KIT' : attractLine(gs.table.id), t: 200, T: 200 }
+            gs.msg = { text: sid && !ghost && styleWarn(gs.table.id, sid) ? 'NO SUCH KIT' : attractLine(ghost ? 'ghost' : gs.table.id), t: 200, T: 200 }
             demoRef.current = { gs, fl: mkFlash(gs.table), trail: [], parts: [], rings: [], shk: { current: 0 }, mbSeen: false, sinceMb: 0, acc: 0, sid }
         }
         demoRebuild()
@@ -1024,7 +1037,10 @@ const PinballGame = () => {
                     ctx.fillStyle = 'rgba(57,225,255,0.05)'
                     ctx.fillRect(-CARD_W / 2, -CARD_H / 2 + 20, CARD_W, CARD_H - 20)
                     ctx.setLineDash([6, 5])
-                    ctx.strokeStyle = 'rgba(57,225,255,0.45)'; ctx.lineWidth = 1.5
+                    // #3290 item 1: the blueprint shimmers unselected too — a
+                    // still card on the row reads as furniture; a shimmering one
+                    // reads as an invitation.
+                    ctx.strokeStyle = `rgba(57,225,255,${(isSel ? 0.45 : 0.25 + 0.2 * Math.sin(t / 320)).toFixed(3)})`; ctx.lineWidth = 1.5
                     ctx.strokeRect(-CARD_W / 2 + 6, -CARD_H / 2 + 26, CARD_W - 12, CARD_H - 32)
                     ctx.setLineDash([])
                     ctx.textAlign = 'center'
@@ -1037,7 +1053,28 @@ const PinballGame = () => {
                     ctx.fillText('TABLE SMITH', 0, 26)
                     ctx.fillText('A CURSOR B PART', 0, 42)
                 } else {
-                    ctx.drawImage(isSel ? dCan : fieldFor(c.tb, i), -CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H)
+                    // #3290 item 2: an unsaved slot's face paints the bench default,
+                    // not CABINET ONE's field — the card previews the smith's opening.
+                    ctx.drawImage(isSel ? dCan : fieldFor(previewTb(i), i), -CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H)
+                }
+                // #3290 item 4: a legible line on the selected mini-card — the
+                // full-frame crawl shrinks to illegibility at card scale, so the
+                // card carries its own fitted copy of the demo's current line.
+                if (isSel) {
+                    const mt = d.gs.msg.t > 0 ? d.gs.msg.text : ''
+                    if (mt) {
+                        const mf = textFit(mt, CARD_W - 10, [9, 8, 7, 6])
+                        ctx.fillStyle = 'rgba(4,6,16,0.88)'
+                        ctx.fillRect(-CARD_W / 2 + 3, 48, CARD_W - 6, 16)
+                        ctx.strokeStyle = 'rgba(201,212,232,0.3)'; ctx.lineWidth = 1
+                        ctx.strokeRect(-CARD_W / 2 + 2.5, 47.5, CARD_W - 5, 17)
+                        ctx.textAlign = 'center'
+                        ctx.font = `bold ${mf.size}px monospace`
+                        ctx.shadowColor = k.pal.dmd; ctx.shadowBlur = 6
+                        ctx.fillStyle = k.pal.dmd
+                        ctx.fillText(mf.text, 0, 59)
+                        ctx.shadowBlur = 0
+                    }
                 }
                 // marquee name plate on the card's crown — with the live kit
                 ctx.fillStyle = 'rgba(4,6,16,0.85)'
@@ -1045,8 +1082,12 @@ const PinballGame = () => {
                 ctx.strokeStyle = `rgba(${k.pal.hotRgb},0.5)`; ctx.lineWidth = 1
                 ctx.beginPath(); ctx.moveTo(-CARD_W / 2, -CARD_H / 2 + 20); ctx.lineTo(CARD_W / 2, -CARD_H / 2 + 20); ctx.stroke()
                 ctx.fillStyle = k.pal.glow
-                ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
-                ctx.fillText(isSel ? `${c.tag} · ${k.label}` : c.tag, 0, -CARD_H / 2 + 14)
+                ctx.textAlign = 'center'
+                // #3290 item 4: marquee labels never clip the card (fit law; a
+                // too-long ` · KIT` tail drops — the badge below names the kit).
+                const mq = marqueeFit(isSel ? `${c.tag} · ${k.label}` : c.tag, CARD_W)
+                ctx.font = `bold ${mq.size}px monospace`
+                ctx.fillText(mq.text, 0, -CARD_H / 2 + 14)
                 ctx.restore()
                 // picker chevron above the selected card
                 if (isSel) {
@@ -1056,16 +1097,26 @@ const PinballGame = () => {
                     const px = r.x + CARD_W / 2, py = r.y - 20 + Math.sin(t / 420) * 2
                     ctx.beginPath(); ctx.moveTo(px - 8, py - 8); ctx.lineTo(px + 8, py - 8); ctx.lineTo(px, py + 2); ctx.closePath(); ctx.fill()
                     ctx.restore()
-                    // art-kit badge under the selected card (#3259)
+                }
+                // badge under the card (#3259 kit / #3284 smith). #3290 item 1:
+                // the unsaved bench advertises itself from EVERY frame, pulsing
+                // while unselected — a first-time phone player can't miss it.
+                const ghostCard = i === 2 && !CABS[2].saved
+                if (isSel || ghostCard) {
                     ctx.save()
                     ctx.textAlign = 'center'
-                    ctx.font = 'bold 10px monospace'
-                    ctx.shadowColor = k.pal.dmd; ctx.shadowBlur = 7
-                    ctx.fillStyle = k.pal.dmd
-                    ctx.fillText(i === 2 && !CABS[2].saved ? '◆ START OPENS THE SMITH'
-                        : i === 2 ? '◆ B TO REDESIGN'
+                    ctx.shadowColor = ghostCard && !isSel ? '#39e1ff' : k.pal.dmd
+                    ctx.shadowBlur = 7
+                    ctx.fillStyle = ghostCard ? '#39e1ff' : k.pal.dmd
+                    if (ghostCard && !isSel) ctx.globalAlpha = 0.5 + 0.4 * Math.sin(t / 300)
+                    // #3290 item 4: badges hug the screen edge at side cards —
+                    // fit law keeps the whole line on the 360-wide field.
+                    const bg = textFit(ghostCard ? '◆ START OPENS THE SMITH'
+                        : isSel && i === 2 ? '◆ B TO REDESIGN'
                         : d.sid && styleWarn(c.tb.id, d.sid) ? '◆ NO SUCH KIT HERE'
-                        : `◆ KIT: ${k.label}`, r.x + CARD_W / 2, r.y + CARD_H + 26 + bob * 0.4)
+                        : `◆ KIT: ${k.label}`, 126, [10, 9, 8])
+                    ctx.font = `bold ${bg.size}px monospace`
+                    ctx.fillText(bg.text, r.x + CARD_W / 2, r.y + CARD_H + 26 + bob * 0.4)
                     ctx.restore()
                 }
             }
@@ -1209,6 +1260,20 @@ const PinballGame = () => {
             for (let x = 40; x <= 320; x += 20) { ctx.beginPath(); ctx.moveTo(x, 76); ctx.lineTo(x, 548); ctx.stroke() }
             for (let y = 76; y <= 548; y += 20) { ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(320, y); ctx.stroke() }
             ctx.restore()
+            // #3290 item 3: while the BUMPER tool is selected the dome zone is
+            // DRAWN (same law zoneGuidePath traces from bumperZoneOk's own
+            // bounds) — refusals become rules, the way construction-set
+            // screens showed part bounds.
+            if (TOOLS[ed.tool] === 'BUMPER') {
+                ctx.save()
+                ctx.fillStyle = 'rgba(57,225,255,0.045)'
+                ctx.strokeStyle = 'rgba(57,225,255,0.55)'
+                ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5
+                ctx.beginPath()
+                zoneGuidePath(SMITH_LIMITS).forEach(([x, y], i) => { if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y) })
+                ctx.closePath(); ctx.fill(); ctx.stroke()
+                ctx.restore()
+            }
             // marquee
             ctx.save(); ctx.textAlign = 'center'
             ctx.font = 'bold 22px monospace'; ctx.shadowColor = '#39e1ff'; ctx.shadowBlur = 10 + 4 * Math.sin(t / 400)
@@ -1235,9 +1300,13 @@ const PinballGame = () => {
             ctx.beginPath(); ctx.arc(cx, cy, 2, 0, 7); ctx.stroke()
             ctx.beginPath(); ctx.moveTo(cx - 20, cy); ctx.lineTo(cx - 6, cy); ctx.moveTo(cx + 6, cy); ctx.lineTo(cx + 20, cy)
             ctx.moveTo(cx, cy - 20); ctx.lineTo(cx, cy - 6); ctx.moveTo(cx, cy + 6); ctx.lineTo(cx, cy + 20); ctx.stroke(); ctx.restore()
-            // palette strip: 8 tools, current one boxed and named (construction-set icon row)
+            // palette strip: 8 tools, current one boxed and named (construction-set icon row).
+            // #3290 item 4: the strip lives at SMITH_BAR y488 — the old y560 sat
+            // under the VirtualControls pad on phones (measured up-arrow nub top
+            // ≈y515, face-button tops ≈y555 at 375×812), so SAVE/TEST were
+            // invisible AND untappable for phone smiths.
             ctx.save(); ctx.textAlign = 'center'
-            const bw = 38, x0 = 180 - (TOOLS.length * bw) / 2, y0 = 560
+            const { bw, x0, y0 } = SMITH_BAR
             TOOLS.forEach((name, i) => {
                 const on = i === ed.tool
                 ctx.fillStyle = on ? 'rgba(57,225,255,0.18)' : 'rgba(8,12,26,0.9)'
@@ -1253,13 +1322,13 @@ const PinballGame = () => {
             ctx.save(); ctx.textAlign = 'center'; ctx.font = 'bold 11px monospace'
             if (ed.noticeT > 0) {
                 ctx.fillStyle = '#ff3d5e'; ctx.shadowColor = '#ff3d5e'; ctx.shadowBlur = 8
-                ctx.fillText(`! ${ed.notice}`, 180, 552)
+                ctx.fillText(`! ${ed.notice}`, 180, 482)
             } else if (r.error) {
                 ctx.fillStyle = '#ff9f43'
-                ctx.fillText(`! ${r.error}`, 180, 552)
+                ctx.fillText(`! ${r.error}`, 180, 482)
             } else {
                 ctx.fillStyle = 'rgba(93,255,155,0.9)'
-                ctx.fillText('LAYOUT OK · A PLACE · B PART · ? DONE', 180, 552)
+                ctx.fillText('LAYOUT OK · A PLACE · B PART · ? DONE', 180, 482)
             }
             ctx.restore()
             // bumper count + part census under the marquee
@@ -1270,11 +1339,21 @@ const PinballGame = () => {
 
         // ------------------------------------------------------------- input ----
         const startable = () => screenRef.current === 'attract' || screenRef.current === 'over'
+        // #3290: tapStart (#GAME-SHELL) answers ANY canvas tap with a synthetic
+        // Space keydown — in the bench that meant every tap secretly pressed A
+        // and dropped a part at the cursor. The bench owns its taps (palette
+        // cells, and field taps are cursor-free by design), so a tap arms a
+        // one-shot guard that swallows the matching Space. The pad's A button
+        // dispatches its own Space WITHOUT a canvas pointerdown (it is
+        // [data-vc], App skips those) and a real key press is trusted — both
+        // still act normally.
+        let tapSpaceGuard = false
         const onKeyDown = (e) => {
             // #3284 TABLE SMITH: the editor answers first — arrows walk the
             // cursor (held repeat ON, unlike game keys), A acts, B cycles the
             // part, ? walks back out to the row. A draft never saved stays a
             // draft: leaving is safe.
+            if (e.isTrusted) tapSpaceGuard = false    // a real keystroke outranks the guard
             if (screenRef.current === 'edit') {
                 const ed = edRef.current
                 if (e.code === 'Escape' || e.code === 'QuestionMark' || e.key === '?' || e.code === 'Backquote') {
@@ -1283,9 +1362,9 @@ const PinballGame = () => {
                 if (e.code === 'ArrowLeft') { ed.cx = Math.max(40, ed.cx - 6); e.preventDefault(); return }
                 if (e.code === 'ArrowRight') { ed.cx = Math.min(320, ed.cx + 6); e.preventDefault(); return }
                 if (e.code === 'ArrowUp') { ed.cy = Math.max(80, ed.cy - 6); e.preventDefault(); return }
-                if (e.code === 'ArrowDown') { ed.cy = Math.min(540, ed.cy + 6); e.preventDefault(); return }
+                if (e.code === 'ArrowDown') { ed.cy = Math.min(468, ed.cy + 6); e.preventDefault(); return }
                 if (e.repeat) return
-                if (e.code === 'Space') { editAct(); e.preventDefault(); return }
+                if (e.code === 'Space') { if (tapSpaceGuard) { tapSpaceGuard = false; e.preventDefault(); return } editAct(); e.preventDefault(); return }
                 if (e.code === 'KeyB' || e.code === 'ShiftLeft') { ed.tool = (ed.tool + 1) % TOOLS.length; sfxFor({ type: 'ratchet' }); e.preventDefault(); return }
                 return
             }
@@ -1329,6 +1408,7 @@ const PinballGame = () => {
             if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
         }
         const onKeyUp = (e) => {
+            if (e.code === 'Space') tapSpaceGuard = false
             const k = keysRef.current
             if (e.code === 'ArrowLeft' || e.code === 'KeyA') k.left = false
             else if (e.code === 'ArrowRight' || e.code === 'KeyD') k.right = false
@@ -1336,19 +1416,44 @@ const PinballGame = () => {
             else if (e.code === 'KeyB' || e.code === 'ShiftLeft') k.b = false
         }
         const onPointer = (e) => {
-            if (pausedRef.current || !startable()) return
+            if (pausedRef.current) return
+            // Any canvas tap is answered by App's tapStart with a synthetic
+            // Space — arm the guard for EVERY canvas tap so a tap that OPENS
+            // the bench (attract slot 2) can't also press A inside it.
+            tapSpaceGuard = true
+            // #3290 item 4: bench taps pick tools from the palette (the pad
+            // still drives cursor + A/B); the bench is not a start surface.
+            if (screenRef.current === 'edit') {
+                const rectE = cvs.getBoundingClientRect()
+                const pxE = (e.clientX - rectE.left) * (W / rectE.width)
+                const pyE = (e.clientY - rectE.top) * (H / rectE.height)
+                if (pyE >= SMITH_BAR.y0 && pyE <= SMITH_BAR.y0 + SMITH_BAR.h && pxE >= SMITH_BAR.x0) {
+                    const ti = Math.floor((pxE - SMITH_BAR.x0) / SMITH_BAR.bw)
+                    if (ti >= 0 && ti < TOOLS.length) { edRef.current.tool = ti; sfxFor({ type: 'ratchet' }) }
+                }
+                return
+            }
+            if (!startable()) return
             if (screenRef.current === 'over') {
                 if (testBackRef.current) { testBackRef.current = false; screenRef.current = 'edit'; setScreen('edit'); return }
                 screenRef.current = 'attract'; setScreen('attract'); return
             }
-            // tap a cabinet card to pick AND start it in one input (#3232)
+            // tap a cabinet card to pick AND start it in one input (#3232).
+            // #3290 item 4: among the cards a tap touches, the NEAREST centre
+            // wins — the 8 px seams used to hand the tap to whichever card the
+            // loop met first (±8 margins made every seam a coin-toss).
             const rect = cvs.getBoundingClientRect()
             const px = (e.clientX - rect.left) * (W / rect.width)
             const py = (e.clientY - rect.top) * (H / rect.height)
+            let best = -1, bd = Infinity
             for (let i = 0; i < CARDS.length; i++) {
                 const r = CARDS[i]
-                if (px >= r.x - 8 && px <= r.x + CARD_W + 8 && py >= r.y - 26 && py <= r.y + CARD_H + 12) { cabRef.current = i; setCabIdx(i); startPlay(i); return }
+                if (px >= r.x - 8 && px <= r.x + CARD_W + 8 && py >= r.y - 26 && py <= r.y + CARD_H + 12) {
+                    const dd = Math.abs(px - (r.x + CARD_W / 2))
+                    if (dd < bd) { bd = dd; best = i }
+                }
             }
+            if (best >= 0) { cabRef.current = best; setCabIdx(best); startPlay(best); return }
             startPlay()
         }
         window.addEventListener('keydown', onKeyDown)
@@ -1452,6 +1557,11 @@ const PinballGame = () => {
                     tag: CABS[2].tag,
                     sel: cabRef.current,
                     tbId: gsRef.current.table.id,
+                    // #3290: what the ghost demo honestly runs (bench default
+                    // until the first save) + the strip line it advertises —
+                    // so the honesty legs assert state, not pixels-of-vibes.
+                    demoTbId: demoRef.current.gs.table.id,
+                    demoMsg: demoRef.current.gs.msg.text,
                 }),
                 reset: (seed) => { gsRef.current = makeGame(seed >>> 0, CABS[cabRef.current].tb); devMbRef.current = false; return stateOf(gsRef.current) },
                 press: (code) => {

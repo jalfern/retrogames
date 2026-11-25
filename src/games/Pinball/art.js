@@ -520,6 +520,27 @@ export const KIT_STORE = 'retrogames.pinball.kits';
 // MULTIBALL/TILT/… as shouty holds) so these crawl fully, ≤ 23 chars so the
 // crawl completes inside the 200-tick window they're given.
 export const ATTRACT_DMD = {
-    'cabinet-one': ['LOCK 3 FOR THE TOWER', 'ORBIT ROUND THE DOME', 'KICKBACK FREES BALLS', 'MULT LADDER UP TO X5'],
-    'ember-rider': ['RIDER RUNS MIRRORED', 'LEFT LANE LOCKS AT 400', 'PACK PAYS DOUBLE HERE', 'NUDGE CAREFULLY HERE'],
+    'cabinet-one': ['LOCK 3 FOR THE TOWER', 'ORBIT ROUND THE DOME', 'KICKBACK FREES BALLS', 'MULT LADDER UP TO X5', 'BUILD YOUR OWN TABLE'],
+    'ember-rider': ['RIDER RUNS MIRRORED', 'LEFT LANE LOCKS AT 400', 'PACK PAYS DOUBLE HERE', 'NUDGE CAREFULLY HERE', 'BUILD YOUR OWN TABLE'],
+    // #3290 item 1: the unsaved smith slot demos the bench default and sells
+    // the bench while it does — the card that shows the workshop also says so.
+    ghost: ['BUILD YOUR OWN TABLE', 'TEST IT BEFORE YOU SAVE', 'SAVE IT - RIDES THE ROW'],
 };
+
+// #3290 item 4 — phone-width legibility laws (pure, Node-pinned). Canvas
+// monospace advances at 0.6 em, so fit is arithmetic, not measurement.
+// textFit shrinks a line until it fits the box; truncation is the last resort.
+export function textFit(text, maxW, sizes = [11, 10, 9, 8, 7]) {
+    for (const s of sizes) if (text.length * s * 0.6 <= maxW) return { text, size: s };
+    const s = sizes[sizes.length - 1];
+    return { text: text.slice(0, Math.max(1, Math.floor(maxW / (s * 0.6)))), size: s };
+}
+// A card marquee never runs past its card: shrink first, then drop the
+// ` · KIT` tail (the kit is named again by the badge below the card anyway).
+export function marqueeFit(label, maxW) {
+    const full = textFit(label, maxW);
+    if (full.text === label) return full;
+    const t = label.lastIndexOf(' · ');
+    if (t > 0) return textFit(label.slice(0, t), maxW);
+    return full;
+}

@@ -1182,6 +1182,31 @@ export const bumperZoneOk = (L, x, y) =>
     x >= L.domX[0] && x <= L.domX[1] && y >= L.domY[0] && y <= L.domY[1] &&
     ((x - 180) / 144) ** 2 + ((y - 160) / 124) ** 2 <= 1
 
+// #3290 item 3 — the same law DRAWN. The bench shows this rim (faint cyan)
+// while the BUMPER tool is selected, the way the Construction Set screens
+// showed part bounds: refused territory stops being magic. The rim is the
+// ellipse param-sampled and clamped into the zone rect — both constraints
+// hold at every vertex, so the guide and bumperZoneOk can never disagree.
+export const zoneGuidePath = (L) => {
+    const pts = []; const N = 96;
+    for (let i = 0; i <= N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        let x = Math.min(L.domX[1], Math.max(L.domX[0], 180 + 144 * Math.cos(a)));
+        let y = Math.min(L.domY[1], Math.max(L.domY[0], 160 + 124 * Math.sin(a)));
+        // float noise at the rim can land a vertex a hair outside the ellipse;
+        // pull it back along the centre ray (the centre is strictly inside the
+        // rect, so the pull can never break a clamp) — every vertex then obeys
+        // bumperZoneOk EXACTLY, and a check can pin guide == law.
+        const e = ((x - 180) / 144) ** 2 + ((y - 160) / 124) ** 2;
+        // an ulp of float noise can leave e at 1+2⁻⁵² even after renormalising
+        // (sqrt then square rounds back over 1); back off by a nanometre of
+        // radius instead — invisible, and bumperZoneOk then holds exactly.
+        if (e > 1) { const s = (1 - 1e-9) / Math.sqrt(e); x = 180 + (x - 180) * s; y = 160 + (y - 160) * s; }
+        pts.push([x, y]);
+    }
+    return pts;
+}
+
 export function compileTable(defRaw) {
     const def = sanitizeDef(defRaw);
     const L = SMITH_LIMITS;
