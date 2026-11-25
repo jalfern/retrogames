@@ -174,4 +174,97 @@ export function podRows(rows, names) {
     }))
 }
 
+// --- spectate (#3244 item 2) --------------------------------------------------
+// A watcher holds NO seat: it sends no pads, referees nothing, and never
+// changes the field. It rides the truth instead — the room's pad stream is
+// absolute per tick (item 3's law), and the sim is deterministic, so a box
+// that knows seed + bay + every rider's pads IS the race. Joining mid-race is
+// only a history problem: the host rings every applied pad byte from tick 0
+// and replays it in 'sh' chunks; the watcher fast-forwards its own sim to the
+// live tick, then coasts on the live wire like any peer.
+export const WATCH_CAP = SEATS + 1  // one extra member slot = the watch seat
+
+// padToByte squashes a wire pad {l,r,u,d,a,s} into one byte (bit7 = present,
+// so a byte of 0 means "no pad for this seat at this tick", distinct from an
+// idle pad). 6 bits of pad, 1 bit of presence: the whole race history is one
+// byte per seat per tick.
+const PAD_BITS = ['l', 'r', 'u', 'd', 'a', 's']
+export function padToByte(p) {
+    if (!p) return 0
+    let b = 0x80
+    PAD_BITS.forEach((k, i) => { if (p[k]) b |= 1 << i })
+    return b
+}
+export function padFromByte(b) {
+    if (!(b & 0x80)) return null // presence bit unset = no pad, whatever else rides the byte
+    const p = {}
+    PAD_BITS.forEach((k, i) => { p[k] = !!(b & (1 << i)) })
+    return p
+}
+
+const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+const fromHex = (s) => { const out = new Uint8Array(s.length / 2); for (let i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16); return out }
+
+// SH_CHUNK bytes per 'sh' message and SH_TICKS the ticks that fit in it:
+// 40 ticks x 3 seats = 120 bytes = 240 hex chars + JSON, under the relay's
+// 512B cap.
+export const SH_CHUNK = 120
+export const SH_TICKS = Math.floor(SH_CHUNK / SEATS)
+
+// createHist rings SEATS pad-bytes per tick from kickoff. record() stores what
+// the sim APPLIED at tick k (the same mirror bytes the riders consumed), so a
+// watcher replaying the ring consumes the riders' exact streams.
+export function createHist(limitTicks = 12000) {
+    const bytes = new Uint8Array(limitTicks * SEATS)
+    let filled = 0
+    return {
+        get len() { return filled },
+        reset() { filled = 0 },
+        record(k, mirrors) {
+            // Pads are final once pumped (#531), and every box pumps D ticks
+            // AHEAD — so store the whole pump window, not just k. A watcher
+            // joining while the host rides tick k never receives pads k..k+D on
+            // the live wire (they left the pump before it joined); the ring is
+            // the only way it can get them.
+            let hi = k
+            for (let j = k; j <= k + PAD_DELAY && j < limitTicks; j++) {
+                for (let s = 0; s < SEATS; s++) {
+                    const m = mirrors[s]
+                    const v = padToByte(m && m.get(j))
+                    if (v) bytes[j * SEATS + s] = v
+                }
+                hi = j
+            }
+            if (hi + 1 > filled) filled = hi + 1
+        },
+        // chunks slices [0, filled) into {i, n, hex} messages, relay-safe.
+        chunks() {
+            const n = Math.ceil(filled / SH_TICKS)
+            const out = []
+            for (let i = 0; i < n; i++) {
+                const from = i * SH_TICKS * SEATS
+                const to = Math.min(filled * SEATS, from + SH_TICKS * SEATS)
+                out.push({ i, n, hex: toHex(bytes.subarray(from, to)) })
+            }
+            return out
+        },
+    }
+}
+
+// inflateSh decodes one 'sh' chunk straight into per-seat mirror maps
+// (watcher side). Returns the highest tick touched.
+export function inflateSh(msg, mirrors) {
+    const bytes = fromHex(msg.hex || '')
+    let hi = -1
+    const base = (msg.i | 0) * SH_TICKS
+    for (let t = 0; t * SEATS < bytes.length; t++) {
+        const k = base + t
+        for (let s = 0; s < SEATS; s++) {
+            const p = padFromByte(bytes[t * SEATS + s])
+            if (p && mirrors[s]) { mirrors[s].set(k, p); if (k > hi) hi = k }
+        }
+    }
+    return hi
+}
+
 export { HOST_SLOT }

@@ -25,11 +25,15 @@ export { decodeCode, makeCode, CODE_ALPHABET, CODE_RE, HOST_SLOT }
 export const LOBBY_PARAM = 'net'
 export const ROOM_PARAM = 'room'
 
-// lobbyRole reads the canonical query: ?net=host / ?net=join&room=CODE.
+// lobbyRole reads the canonical query: ?net=host / ?net=join&room=CODE /
+// ?net=watch&room=CODE (#3244 item 2 — read-only spectate, games that support
+// it ride the extra 'watch' role; games that don't simply never see it since a
+// watcher only lands on a room they opted into).
 // Every game parses the join flow the same way — that sameness IS the feature.
 export function lobbyRole(search) {
     const q = new URLSearchParams(String(search || ''))
-    return q.get(LOBBY_PARAM) === 'host' ? 'host' : q.get(LOBBY_PARAM) === 'join' ? 'guest' : null
+    const v = q.get(LOBBY_PARAM)
+    return v === 'host' ? 'host' : v === 'watch' ? 'watch' : v === 'join' ? 'guest' : null
 }
 
 export function relayFromQuery(search, fallback = 'wss://retrogames.jalfern.workers.dev') {

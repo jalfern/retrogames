@@ -20,7 +20,7 @@ import { createLockStep, retryDelay } from '../../utils/lockstep.js'
 import { makeGame, step, autoPad, stateOf, stateHash, rankAt, LAPS, SIM_MS, DT, rainAt, RAIN_VIS } from './sim.js'
 import { mixWater, mixHeight, frontW } from './water.js'
 import { contractHoldsLoop } from '../../utils/gameContract'
-import { SEATS, PAD_DELAY, HASH_EVERY, HOLD_MS, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence, podiumRows, podWire, podRows } from './net.js'
+import { SEATS, PAD_DELAY, HASH_EVERY, HOLD_MS, WATCH_CAP, RIDE_NAMES, toWire, fromWire, assembleSeatPads, hostSeed, createEvidence, podiumRows, podWire, podRows, createHist, inflateSh } from './net.js'
 import { makeSea, makeSky, makeBuoy, buoyDim, makeSki, makeSpray, spraySpawn, sprayStep, makeWake, wakePush, wakeStep, makeRain, rainSpawn, rainStep, makeLights, pushSea, boatSpots, makeBoat, makeBellBuoy, gullSpots, makeGull, gullFrame } from './art.js'
 
 const PRESS = 'PRESS ANY KEY OR TAP'
@@ -200,6 +200,10 @@ const TidalRushGame = () => {
             active: !!netRole, role: netRole, phase: netRole ? 'idle' : 'off',
             slot: netRole === 'host' ? 0 : -1, code: '', joinHref: '',
             humans: [], racing: false, solo: false, podium: null, hold: null,
+            // #3244 item 2 spectate: watch = I'm riding the room's truth (no
+            // seat, no pads out); watchers = seats OTHER boxes watch (never
+            // riders); hist = the host's pad ring for mid-race joiners.
+            watch: false, watchers: new Set(), hist: createHist(), shBuf: null,
         }
         // mySeat doubles as my hull: seat i rides hull i, canonical on every box.
         const mySeat = () => (net.active && net.slot >= 0 ? net.slot : 0)
@@ -232,7 +236,9 @@ const TidalRushGame = () => {
         })
         const pushNetUi = () => setNetUi(net.active ? {
             role: net.role, phase: net.phase, code: net.code, slot: net.slot,
-            seats: seatModel(SEATS, net.room ? net.room.slots : (net.slot >= 0 ? [net.slot] : [])),
+            // watchers never show as riders (#3244 item 2) — the field a seat
+            // fills is the field that races.
+            seats: seatModel(SEATS, net.room ? net.room.slots.filter((s) => !net.watchers.has(s)) : (net.slot >= 0 && net.role !== 'watch' ? [net.slot] : [])),
             joinHref: net.joinHref,
             names: RIDE_NAMES,
         } : null)
@@ -379,6 +385,9 @@ const TidalRushGame = () => {
                 // host's as guest) — never local analog, or the boxes diverge.
                 const padIn = fromWire(mirrors[0].get(k) || toWire({}))
                 step(gs, padIn, assembleSeatPads(mirrors, k, net.humans))
+                // #3244 item 2: the host rings every pad it applies, so a
+                // watcher that arrives mid-race can replay the race to now.
+                if (net.role === 'host') net.hist.record(k, mirrors)
                 if (!alone && k % HASH_EVERY === 0) {
                     const h = stateHash(gs)
                     evidence.mine(k, h)
@@ -406,6 +415,33 @@ const TidalRushGame = () => {
                         net.room.send('pod', { rows: podWire(net.podium) })
                         net.room.setPhase('waiting')
                     }
+                }
+                if (playing) drainEvents()
+            } else if (net.watch && net.active) {
+                // #3244 item 2 — spectate: same seed, same sea, the same
+                // absolute pads the riders applied. No seat, no pads out, no
+                // referee in. The gate opens when every rider pad for k has
+                // landed — a held field stalls the watcher too, which is how
+                // it stays bit-identical to the race; pads that never return
+                // (~10 s) mean that seat has left, and its ski coasts on, as
+                // for a rider.
+                const k = gs.tick
+                const allIn = net.humans.every((s) => mirrors[s] && mirrors[s].has(k))
+                if (!allIn) {
+                    stalledTicks++
+                    if (stalledTicks === 120) netSay('SYNCING THE FIELD…')
+                    if (stalledTicks < 600) return
+                    net.humans = net.humans.filter((s) => mirrors[s] && mirrors[s].has(k))
+                    netSay('A RIDER LEFT — THEIR SKI COASTS')
+                    stalledTicks = 0
+                } else if (stalledTicks > 0) {
+                    stalledTicks = 0
+                    if (netMsgRef.current.startsWith('SYNCING')) netSay('')
+                }
+                step(gs, fromWire(mirrors[0].get(k) || toWire({})), assembleSeatPads(mirrors, k, net.humans))
+                if (gs.crafts.every((c) => c.finished)) {
+                    net.watch = false
+                    if (!net.podium) { net.podium = podiumRows(gs, net.humans); setPodium(net.podium) }
                 }
                 if (playing) drainEvents()
             } else {
@@ -705,9 +741,16 @@ const TidalRushGame = () => {
 
         // --- input / screens ----------------------------------------------------
         let humanSeed = seedFromQuery() ?? freshSeed()
-        const startRaceWith = (seed, bayName, online) => {
+        const startRaceWith = (seed, bayName, online, humansArg) => {
             gs = makeGame(seed >>> 0, bayName)
-            net.humans = online && net.room ? net.room.slots.slice() : []
+            // #3244 item 2: watchers never ride — racing seats are < SEATS and
+            // never a slot that announced itself with 'spec'. When the host's
+            // 'go' carries the roster it is the authority: every rider freezes
+            // the SAME humans list, or the overrides (and the sims) diverge.
+            net.humans = online
+                ? (humansArg ? humansArg.slice() : net.room.slots.filter((s) => s < SEATS && !net.watchers.has(s)))
+                : []
+            net.watch = false
             net.hold = null
             net.racing = !!online
             net.solo = online && net.humans.length <= 1
@@ -750,8 +793,42 @@ const TidalRushGame = () => {
             netSay('')
             pausedRef.current = false
             setPaused(false)
-            startRaceWith(m.seed >>> 0, m.bay === 'storm' ? 'storm' : 'sunny', true)
+            if (net.role === 'watch') {
+                // #3244 item 2: a watcher at kickoff needs no history — it can
+                // spectate from tick 0 on the live wire alone.
+                startRaceWith(m.seed >>> 0, m.bay === 'storm' ? 'storm' : 'sunny', false)
+                net.humans = (net.room ? net.room.slots : []).filter((s) => s !== net.slot && s < SEATS && !net.watchers.has(s))
+                gs.crafts.forEach((c, i) => { c.human = net.humans.includes(i) })
+                net.watch = true
+                netSay('SPECTATING — NO SEAT, ALL SEA')
+                setMode('play')
+                return
+            }
+            startRaceWith(m.seed >>> 0, m.bay === 'storm' ? 'storm' : 'sunny', true, m.humans || null)
         }
+        // beginSpectate (#3244 item 2): the watcher now holds the race spine
+        // (sv0) and, if it joined mid-race, every history chunk. Build the
+        // game, inflate the pads into mirrors, fast-forward the deterministic
+        // sim to the live tick — all synchronously, so the paint loop never
+        // sees a half-built sea — then ride the live wire from here.
+        const beginSpectate = () => {
+            const b = net.shBuf
+            if (!b || b.got.size < b.n) return
+            startRaceWith(b.seed, b.bay, false)
+            net.humans = b.humans
+            // the riders' hulls must skip the autopilot rng here too, or the
+            // watcher's sea drifts from the room's.
+            gs.crafts.forEach((c, i) => { c.human = b.humans.includes(i) })
+            for (let i = 0; i < b.n; i++) inflateSh({ i, hex: b.got.get(i) || '' }, mirrors)
+            for (let k = 0; k < b.k && k < gs.tick + 4000; k++) {
+                step(gs, fromWire(mirrors[0].get(k) || toWire({})), assembleSeatPads(mirrors, k, net.humans))
+            }
+            net.watch = true
+            net.shBuf = null
+            netSay('SPECTATING — NO SEAT, ALL SEA')
+            setMode('play')
+        }
+
         const endToMenu = () => {
             net.racing = false
             net.solo = false
@@ -776,7 +853,7 @@ const TidalRushGame = () => {
                 // room re-races on a fresh seed; seated guests ride the 'go'
                 // without re-entering a code. A guest steps back to the lobby.
                 if (screenRef.current === 'over' && net.role !== 'host') { endToMenu(); return }
-                if (net.role === 'host' && net.phase === 'waiting') net.lobby.start({ seed: hostSeed(), bay: bayRef.current })
+                if (net.role === 'host' && net.phase === 'waiting') net.lobby.start({ seed: hostSeed(), bay: bayRef.current, humans: net.room.slots.filter((s) => s < SEATS && !net.watchers.has(s)) })
                 return
             }
             startRace()
@@ -785,11 +862,14 @@ const TidalRushGame = () => {
         if (net.active) {
             const lobby = createLobby({
                 slug: 'tidal-rush',
-                cap: SEATS,
+                cap: WATCH_CAP,
                 relay: relayUrl,
                 makeTransport,
                 shareRelay: !!nq.get('relay'),
                 onState: (s) => {
+                    // #3244 item 2: a watcher announces itself the moment it is
+                    // in the room — every box then knows that seat never rides.
+                    if (net.role === 'watch' && s.phase === 'waiting' && net.room) net.room.send('spec', {})
                     // #3244 item 3: a welcome that lands mid-race, same code and
                     // same seat, IS the rejoin — my seat was held for me. Ride
                     // straight back in (the waiting-room overlay never swallows a
@@ -810,7 +890,13 @@ const TidalRushGame = () => {
                 },
                 onRoster: () => { pushNetUi() },
                 onJoin: () => pushNetUi(),
-                onLeave: ({ slot }) => { seatGone(slot | 0); pushNetUi() },
+                onLeave: ({ slot }) => {
+                    const s = slot | 0
+                    // #3244 item 2: a watcher leaving changes nothing — it was
+                    // never in the field.
+                    if (net.watchers.delete(s)) { pushNetUi(); return }
+                    seatGone(s); pushNetUi()
+                },
                 onDrop: () => {
                     // my own socket died mid-race: the field holds for me while
                     // I climb the backoff ladder (#546 law) and reclaim the same
@@ -821,19 +907,50 @@ const TidalRushGame = () => {
                     const climb = () => {
                         if (!net.racing || net.phase === 'racing' || attempt >= 8) return
                         attempt++
-                        net.room.connect(net.code, SEATS)
+                        net.room.connect(net.code, WATCH_CAP)
                         setTimeout(climb, retryDelay(attempt))
                     }
                     climb()
                 },
                 onStart: (m) => startOnline(m),
                 on: {
+                    // #3244 item 2 — spec: "I'm watching, not racing". Every box
+                    // records the seat so kickoff rosters exclude it; the host —
+                    // the only box holding the full pad ring — answers with the
+                    // race's spine (sv0) and the history chunks (sh) that let the
+                    // watcher fast-forward its own sim to the live tick.
+                    spec: (m) => {
+                        const s = m.s | 0
+                        if (s === mySeat()) return
+                        net.watchers.add(s)
+                        if (net.role === 'host' && net.racing && net.room) {
+                            net.room.send('sv0', { seed: gs.seed, bay: gs.stage, k: gs.tick, humans: net.humans })
+                            for (const c of net.hist.chunks()) if (c.n) net.room.send('sh', c)
+                        }
+                        pushNetUi()
+                    },
+                    sv0: (m) => {
+                        if (net.role !== 'watch' || net.watch) return
+                        net.shBuf = {
+                            seed: m.seed >>> 0, bay: m.bay === 'storm' ? 'storm' : 'sunny', k: m.k | 0,
+                            humans: (m.humans || []).filter((s) => s !== net.slot && s < SEATS),
+                            n: 0, got: new Map(),
+                        }
+                        if (!m.k) beginSpectate() // at the line already — no history to wait for
+                    },
+                    sh: (m) => {
+                        if (net.role !== 'watch' || !net.shBuf || net.watch) return
+                        net.shBuf.n = m.n | 0
+                        net.shBuf.got.set(m.i | 0, m.hex || '')
+                        if (net.shBuf.got.size >= net.shBuf.n) beginSpectate()
+                    },
                     pad: (m) => {
                         const s = m.s | 0
                         if (mirrors[s]) mirrors[s].set(m.k | 0, m.p)
                         if (s !== mySeat()) ls.gotPad(m.k | 0, m.p, s)
                     },
                     hs: (m) => {
+                        if (net.watch) return // the referee's table is for riders
                         const r = ls.gotHash(m.k | 0, m.h >>> 0, m.s | 0)
                         if (net.racing) evidence.peer(m.k | 0, m.h >>> 0, m.s | 0)
                         if (r && r.desync !== undefined && net.racing) {
@@ -844,12 +961,12 @@ const TidalRushGame = () => {
                             setNetReport(evidence.text(net.code, mySeat()))
                         }
                     },
-                    gone: () => { if (net.role === 'guest') { net.racing = false; netSay('THE HOST SAILED HOME') } },
+                    gone: () => { if (net.role === 'guest' || net.role === 'watch') { net.racing = false; net.watch = false; netSay('THE HOST SAILED HOME') } },
                     // #3244 item 4: the host's finish sheet — the guest's podium
                     // comes from the room, and its phase rides back to waiting so
                     // the lobby knows the bay is open for the rematch.
                     pod: (m) => {
-                        if (net.role !== 'guest' || net.podium) return
+                        if ((net.role !== 'guest' && net.role !== 'watch') || net.podium) return
                         net.podium = podRows(m.rows, RIDE_NAMES)
                         setPodium(net.podium)
                         if (net.room) net.room.setPhase('waiting')
@@ -886,7 +1003,7 @@ const TidalRushGame = () => {
                     // guests ride the 'go', nobody re-enters a code). A guest's
                     // over-screen key steps back to the waiting room.
                     if (screenRef.current === 'over' && net.role !== 'host') { endToMenu(); return }
-                    if (net.role === 'host' && net.phase === 'waiting') net.lobby.start({ seed: hostSeed(), bay: bayRef.current })
+                    if (net.role === 'host' && net.phase === 'waiting') net.lobby.start({ seed: hostSeed(), bay: bayRef.current, humans: net.room.slots.filter((s) => s < SEATS && !net.watchers.has(s)) })
                     return
                 }
                 if (e.code !== 'Tab') startRace()

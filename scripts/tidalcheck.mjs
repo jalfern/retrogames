@@ -861,7 +861,73 @@ const ampEq = (a, b, eps = 1e-9) => a.length === b.length && a.every((w, i) =>
         jsxNet.includes('ROOM PODIUM') && jsxNet.includes('GO AGAIN') && jsxNet.includes('net.podium = null'))
     ok('from the podium one key re-races the room on a fresh seed — no code re-entry (#3244)',
         /if \(screenRef\.current === 'over' && net\.role !== 'host'\) \{ endToMenu\(\); return \}/.test(jsxNet)
-        && (jsxNet.match(/net\.lobby\.start\(\{ seed: hostSeed\(\), bay: bayRef\.current \}\)/g) || []).length >= 2)
+        && (jsxNet.match(/net\.lobby\.start\(\{ seed: hostSeed\(\), bay: bayRef\.current, humans:/g) || []).length >= 2)
+
+    // --- spectate (#3244 item 2) ---------------------------------------------
+    const { padToByte, padFromByte, createHist, inflateSh, WATCH_CAP, SEATS: S } = await import('../src/games/TidalRush/net.js')
+    let rt = true
+    for (let b = 0; b < 256; b++) {
+        if (b & 0x40) continue // bit6 is unused — only 6 pad bits + presence exist
+        const p = padFromByte(b); if (padToByte(p) !== (b & 0x80 ? b : 0)) rt = false
+    }
+    ok('pad byte pack/unpack round-trips every bit pattern (presence bit honest)', rt)
+
+    const hm = [new Map(), new Map(), new Map()]
+    hm[0].set(5, { l: true, r: false, u: true, d: false, a: false, s: true })
+    hm[2].set(5, { l: false, r: true, u: false, d: true, a: true, s: false })
+    hm[1].set(9, { l: false, r: false, u: true, d: false, a: false, s: false })
+    const hist = createHist()
+    for (let k = 0; k < 300; k++) hist.record(k, hm)
+    const chunks = hist.chunks()
+    const wm = [new Map(), new Map(), new Map()]
+    for (const c of chunks) inflateSh(c, wm)
+    ok('history chunks re-inflate mirrors exactly (mid-race join has the whole past)',
+        wm[0].get(5).l === true && wm[0].get(5).u === true && wm[0].get(5).s === true && wm[0].get(5).r === false
+        && wm[2].get(5).r === true && wm[2].get(5).d === true && wm[1].get(9).u === true && !wm[0].has(6)
+        && chunks.every((c) => c.hex.length <= 512 - 40))
+    ok('the watch seat exists (cap = seats + 1, relay cap 4)', WATCH_CAP === 4 && S === 3)
+
+    // a watcher box: same seed, host's ring replayed, then the live wire.
+    const WSEED = 0x5eed01
+    const w = { gs: makeGame(WSEED, 'storm'), mirrors: [new Map(), new Map(), new Map()], hashes: [] }
+    w.gs.crafts.forEach((c, i) => { c.human = [0, 1].includes(i) })
+    const wStep = () => {
+        const k = w.gs.tick
+        if (![0, 1].every((s) => w.mirrors[s].has(k))) return false
+        step(w.gs, fromWire(w.mirrors[0].get(k) || toWire({})), assembleSeatPads(w.mirrors, k, [0, 1]))
+        if (k % HASH_EVERY === 0) w.hashes.push(stateHash(w.gs))
+        return true
+    }
+    const sbx = [makeBox(0, [0, 1], wig(0, 0.9)), makeBox(1, [0, 1], wig(2.1, 0.8))]
+    sbx[0].hist = createHist()
+    const step0 = sbx[0].stepOnce
+    sbx[0].stepOnce = () => { const k = sbx[0].gs.tick; const r = step0.call(sbx[0]); if (r) sbx[0].hist.record(k, sbx[0].mirrors); return r }
+    pairUp(sbx)
+    runTo(sbx, 320)
+    // mid-race join: sv0 + history chunks, then fast-forward the deterministic
+    // sim to the live tick — and from here the live wire carries the race.
+    const sv0 = { seed: sbx[0].gs.seed, bay: sbx[0].gs.stage, k: sbx[0].gs.tick, humans: [0, 1] }
+    sbx[0].hist.chunks().forEach((c) => inflateSh(c, w.mirrors))
+    for (let k = 0; k < sv0.k; k++) wStep()
+    ok('the watcher joined mid-race and caught the field (fast-forward ran)',
+        w.gs.tick === sv0.k && w.gs.tick > 300)
+    sbx.forEach((b) => { const om = b.onMsg; b.onMsg = (m) => { om(m); if (m.t === 'pad') w.mirrors[m.s].set(m.k, m.p) } })
+    runTo(sbx, 900, () => wStep())
+    ok('spectator rides the SAME sea: hashes bit-identical to the riders through replay + pad buffer',
+        (() => {
+            const n = Math.min(w.hashes.length, sbx[0].hashes.length)
+            return n >= 10 && w.hashes.slice(0, n).join(',') === sbx[0].hashes.slice(0, n).join(',')
+        })())
+    ok('the pump-window ring leaves no hole at the join tick (pads k..k+D ride sv0)',
+        (() => {
+            const fresh = [new Map(), new Map(), new Map()]
+            sbx[0].hist.chunks().forEach((c) => inflateSh(c, fresh))
+            return [0, 1].every((s) => fresh[s].has(sv0.k))
+        })())
+    ok('watchers are excluded from the field at kickoff (host roster law in the cabinet)',
+        jsxNet.includes("s < SEATS && !net.watchers.has(s)") && jsxNet.includes("net.room.send('spec', {})") && jsxNet.includes("net.room.send('sv0'"))
+    ok('the relay forwards the spectate wire (spec/sv0/sh allowlisted)',
+        /'spec', 'sv0', 'sh'/.test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../relay/core.js'), 'utf8')))
 }
 
 console.log(`\ntidalcheck: ${pass}/${pass + fail} ${fail ? 'FAILURES' : 'ok'}${MUT ? ` (mutant: ${MUT})` : ''}`)
