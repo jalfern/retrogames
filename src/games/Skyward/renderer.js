@@ -83,10 +83,10 @@ export function createSkywardGL(canvas, opts = {}) {
     // ── sky: gradient dome + sun glow, dimmed by the storm, flashed by it ──
     const skyMat = new THREE.ShaderMaterial({
         side: THREE.BackSide, depthWrite: false, fog: false,
-        uniforms: { uSun: { value: sunDir }, uFlash: { value: 0 } },
-        vertexShader: `varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        uniforms: { uSun: { value: sunDir }, uFlash: { value: 0 }, uStormDir: { value: new THREE.Vector3(0.86, 0.34, -0.06) }, uCam: { value: new THREE.Vector3(0, 60, 520) } },
+        vertexShader: `varying vec3 vP; varying vec3 vW; void main(){ vP = normalize(position); vW = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
         fragmentShader: `
-varying vec3 vP; uniform vec3 uSun; uniform float uFlash;
+varying vec3 vP; varying vec3 vW; uniform vec3 uSun; uniform float uFlash; uniform vec3 uStormDir; uniform vec3 uCam;
 void main(){
     float h = clamp(vP.y * 1.15 + 0.06, 0.0, 1.0);
     vec3 zen = mix(vec3(0.16,0.38,0.66), vec3(0.24,0.52,0.84), h);
@@ -94,7 +94,10 @@ void main(){
     float s = max(dot(normalize(vP), uSun), 0.0);
     col += vec3(1.0,0.92,0.72) * pow(s, 220.0) * 1.6;
     col += vec3(1.0,0.85,0.6) * pow(s, 10.0) * 0.16;
-    float storm = smoothstep(0.35, 0.9, dot(normalize(vec3(0.86,0.34,-0.06)), normalize(vP)));
+    // #3272 item 3: dim toward where the CELL is (uStormDir = camera→deck),
+    // camera-relative so the darkening sits behind the painted clouds at any
+    // point on the course — the old fixed east vector lagged the ±64 m drift.
+    float storm = smoothstep(0.35, 0.9, dot(normalize(uStormDir), normalize(vW - uCam)));
     col = mix(col, vec3(0.30,0.33,0.38), storm * 0.55);
     col += vec3(0.85,0.9,1.0) * uFlash * storm;
     gl_FragColor = vec4(col, 1.0);
@@ -613,6 +616,13 @@ void main(){
         const fovT = g.craft === 'plane' ? 60 + clamp((g.speed - 32) * 0.45, 0, 16) : g.craft === 'glider' ? 58 : 64
         camera.fov = lerp(camera.fov, fovT, 1 - Math.pow(0.01, dt))
         camera.updateProjectionMatrix()
+
+        // #3272 item 3 — the sky's dim band aims where the cell STANDS, from
+        // this frame's camera (after the chase-cam move, so it matches the
+        // pixels the painted clouds land on).
+        const sd = world.skyDimDir(t, camera.position.x, camera.position.y, camera.position.z)
+        skyMat.uniforms.uStormDir.value.set(sd.x, sd.y, sd.z)
+        skyMat.uniforms.uCam.value.copy(camera.position)
 
         renderer.render(scene, camera)
     }

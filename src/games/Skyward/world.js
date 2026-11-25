@@ -189,6 +189,19 @@ export function makeWorld(seed) {
             z: storm.z + Math.cos(t * 0.033 + stormPh * 1.37) * 34 + wind.z * Math.sin(t * 0.014 + stormPh) * 1.8,
         }
     }
+    // #3272 item 3: where the sky should go dark. The dim band used to lean
+    // on a fixed east-ish vector, so while the cell wandered ±64 m its shadow
+    // lagged the paint — the darkening, and worse the lightning flash, lit the
+    // wrong air. The sky-dome shader can't see the clouds; it takes this unit
+    // bearing from the camera to the deck centre, and it reads the SAME
+    // stormPos(t) the weather answers at, so what you see is what you fly.
+    const SKY_DECK_Y = 185
+    function skyDimDir(t, cx, cy, cz) {
+        const q = stormPos(t)
+        const dx = q.x - cx, dy = SKY_DECK_Y - cy, dz = q.z - cz
+        const n = Math.hypot(dx, dy, dz) || 1
+        return { x: dx / n, y: dy / n, z: dz / n }
+    }
     function stormAt(x, z, t) {
         const p = stormPos(t)
         const d = Math.hypot(x - p.x, z - p.z)
@@ -278,6 +291,7 @@ export function makeWorld(seed) {
 
     return {
         seed: seed >>> 0, wind, terrainHeight, thermalLift, thermalPos, stormAt, stormPos, stormFlash,
+        skyDimDir, SKY_DECK_Y,
         waves, waterHeightAt, waterVy, waterGLSL, thermals, storm,
         rings, targets, pad, school, launch, passStart, passRings,
     }

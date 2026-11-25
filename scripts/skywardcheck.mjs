@@ -277,6 +277,66 @@ void runAuto
             lo >= -19.5 && hi <= -8 && hi - lo <= 7.0, `worst=${lo.toFixed(1)} best=${hi.toFixed(1)} spread=${(hi - lo).toFixed(1)}`)
     }
 
+    // ------------------------------------------ sky-dim bearing (#3272 item 3) ----
+    // The sky dome dims toward world.skyDimDir(t, cam) — a camera→deck bearing
+    // off the SAME stormPos(t) the weather answers at. The old shader leaned on
+    // a fixed east vector, so the darkening (and the lightning flash) lit air
+    // the drifting cell had left behind. Expectations are literal bearings
+    // dumped from the drift law — a check that recomputes the formula cannot
+    // see the formula move.
+{
+        const RENDERF = 'src/games/Skyward/renderer.js'
+        const src = readFileSync(RENDERF, 'utf8')
+        const CAM = [208, 30, -70] // chase-cam parked at the pass start line
+        const LIT = [
+            [7, 0, 0.917572, 0.396486, 0.029318],
+            [7, 105, 0.933818, 0.345363, 0.093321],
+            [7, 315, 0.878704, 0.475734, 0.039455],
+            [11, 75, 0.937451, 0.348012, 0.008564],
+            [11, 135, 0.880061, 0.469667, 0.070036],
+            [42, 45, 0.870337, 0.465483, 0.160748],
+            [42, 390, 0.936075, 0.350917, 0.024914],
+        ]
+        let litBad = 0
+        for (const [s, t, x, y, z] of LIT) {
+            const d = makeGame(s).world.skyDimDir(t, CAM[0], CAM[1], CAM[2])
+            if (Math.abs(d.x - x) > 5e-4 || Math.abs(d.y - y) > 5e-4 || Math.abs(d.z - z) > 5e-4) litBad++
+        }
+        r.check('the dim bearing matches the drift law (literal bearings, 3 seeds × times)', litBad === 0, `off=${litBad}`)
+        r.check('the bearing is a unit vector over seeds, hours and cameras', (() => {
+            for (const s of [7, 11, 42, 2026]) {
+                const ws = makeGame(s).world
+                for (const t of [0, 61, 173, 400]) {
+                    for (const c of [[0, 60, 520], [470, 30, -70], [-300, 15, 200]]) {
+                        const d = ws.skyDimDir(t, ...c)
+                        if (Math.abs(Math.hypot(d.x, d.y, d.z) - 1) > 1e-9) return false
+                    }
+                }
+            }
+            return true
+        })())
+        // the cell wanders ±64 m — from the pass line that swings the bearing
+        // a visible 12°+. A fixed vector (the bug) never moves: zero spread.
+        let zlo = 9, zhi = -9
+        for (let t = 0; t <= 420; t += 5) { const d = makeGame(7).world.skyDimDir(t, ...CAM); zlo = Math.min(zlo, d.z); zhi = Math.max(zhi, d.z) }
+        r.check('the dim tracks the drift — the bearing swings > 0.12 over one sweep (fixed vector = 0)', zhi - zlo > 0.12, `z spread=${(zhi - zlo).toFixed(3)}`)
+        // and it aims at the DECK, not the water: from the pass line the cell
+        // centre sits 18–28° up; the whole band would sink below the horizon
+        // if the deck height were dropped.
+        let yBad = 0
+        for (const s of [7, 11, 42]) {
+            const ws = makeGame(s).world
+            for (let t = 0; t <= 420; t += 15) { const d = ws.skyDimDir(t, ...CAM); if (d.y < 0.30 || d.y > 0.55) yBad++ }
+        }
+        r.check('the dim centres on the cloud deck (elevation 0.30–0.55, not the waterline)', yBad === 0, `out=${yBad}`)
+        // wiring: the shader must consume the bearing, and the dead fixed
+        // vector must be gone from the dim expression.
+        r.check('the renderer feeds skyDimDir(this frame, camera) into the sky',
+            src.includes('world.skyDimDir(t, camera.position.x') && src.includes('skyMat.uniforms.uStormDir.value.set(sd.x, sd.y, sd.z)'))
+        r.check('the sky shader dims on the camera-relative bearing (and the fixed east vector is gone)',
+            src.includes('dot(normalize(uStormDir), normalize(vW - uCam))') && !src.includes('dot(normalize(vec3(0.86,0.34,-0.06))'))
+    }
+
 // --------------------------------------------------- juice (#3138) ----
 {
     const fly = (s, xOff, until) => {
@@ -505,6 +565,10 @@ if (process.argv.includes('--mutate')) {
         ['the glider stops reading storm depth (silent bed on the saddle craft)', SIMF, 'g.stormS = storm.s // #3272: the bed follows EVERY craft, not just the plane\n    g.lift = w.thermalLift(g.p.x, g.p.z, g.t)', 'g.lift = w.thermalLift(g.p.x, g.p.z, g.t)'],
         ['the ring edge goes hard again (phase lottery returns)', WORLDF, 'const ring = 1.4 * Math.exp(-(dr * dr) / (2 * 34 * 34))', 'const ring = Math.abs(dr) < 55 ? 1.4 : 0'],
         ['storm phase collapses to one for small seeds (the clock-only lottery)', WORLDF, '((r * 2654435761) >>> 0) % 6283', '(r >>> 13) % 6283'],
+        ['the sky dims toward the dead east again (JS-side fixed bearing)', 'src/games/Skyward/renderer.js', 'const sd = world.skyDimDir(t, camera.position.x, camera.position.y, camera.position.z)', 'const sd = { x: 0.86, y: 0.34, z: -0.06 }'],
+        ['the sky shader ignores the bearing uniform (fixed east returns in GLSL)', 'src/games/Skyward/renderer.js', 'dot(normalize(uStormDir), normalize(vW - uCam))', 'dot(normalize(vec3(0.86,0.34,-0.06)), normalize(vP))'],
+        ['the dim bearing aims at the cell home, not its place (#3272-3)', WORLDF, 'const q = stormPos(t)', 'const q = storm'],
+        ['the sky deck sinks to the waterline (#3272-3)', WORLDF, 'const SKY_DECK_Y = 185', 'const SKY_DECK_Y = 2'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
