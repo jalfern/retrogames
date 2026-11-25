@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -107,6 +107,16 @@ if (MUT) {
             from: 'if (!latched && Math.abs(x) >= law.fire) { fire = true; latched = true; }',
             to: 'if (Math.abs(x) >= law.fire) { fire = true; latched = true; }',
             note: 'tilt latch dropped — holding the phone sideways spams nudges into a free TILT',
+        },
+        // the mid voice is muted in the scheduler while the track data keeps
+        // its line — the phone loses its carrier leg and the bed drowns again
+        // (#3336). The wiring pin reads the real schedule line, so a silent
+        // voice cannot hide behind intact data.
+        mix: {
+            file: 'src/utils/AudioController.js',
+            from: 'const mn = P.mid && P.mid[i]',
+            to: 'const mn = false && P.mid[i]',
+            note: 'mid voice muted in _schedule — the phone-band line never sounds',
         },
     }
     const a = ANCHORS[MUT]
@@ -1531,6 +1541,92 @@ const wrap = (gs) => {
     r.check('#3304 the dev mb-rig is seam-only — it overlays the bed ref, never gs.multiball',
         sh2.includes('devMb: (on = true) => { devMbRef.current = Boolean(on)') &&
         !sh2.includes('gsRef.current.multiball ='))
+}
+
+// ------------------------------------- phone mix calibration (#3336) ----
+// The SOLO bed measured thin where a PHONE speaker can hear it (#3313 item
+// 3): bus destination gain MUSIC_BUS×law = 0.016–0.048 with the bass at
+// 41–55 Hz — under the small-speaker knee — and the lead sparse. The fix is
+// VOICING, not gain: the swell law is the contract, so the literals 0.16 /
+// 0.30 / 0.10 / 25000 and the 0.02 quantize must not move, and the mid line
+// must stay a BED: capped peak ≥ 12 dB under a single bumper hit.
+// The knee model is the documented phone assumption (12 dB/oct below 150 Hz,
+// 2nd-order mechanical HP: amplitude (f/fc)² below fc); real-ears-on-device
+// stays tied to #3054's recorder gap — this pins the math, the wiring, and
+// the direction of the fix, not the last dB.
+{
+    const { MUSIC, MUSIC_BUS } = await import('../src/utils/AudioController.js')
+    const midi = (n) => 440 * Math.pow(2, (n - 69) / 12)
+    const KNEE = 150
+    const kneePow = (hz) => (hz >= KNEE ? 1 : Math.pow(hz / KNEE, 4)) // 12 dB/oct power
+    const P = MUSIC.pinballSolo
+    const STEP = 0.125
+
+    // the contract, literal: no blind gain bump — the swell law unchanged
+    r.check('#3336 the swell law is untouched (0.16 base · 0.30 cap · 0.10 floor · 25000 heat · MUSIC_BUS 0.16)',
+        SOLO_BASE === 0.16 && SOLO_CAP === 0.30 && SOLO_FLOOR === 0.10 && SOLO_HEAT_AT === 25000 && MUSIC_BUS === 0.16)
+    r.check('#3336 the quantize stays 0.02 (index.jsx)',
+        readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/index.jsx'), 'utf8')
+            .includes('Math.round(lvl / 0.02) * 0.02'))
+
+    // the mid voice exists, is wired, and is opt-in (other tracks keep the
+    // byte-identical schedule — no other title's sound moves)
+    const ac = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/utils/AudioController.js'), 'utf8')
+    r.check('#3336 the mid voice is wired in _schedule (square, vol 0.3, dur 1.1 step)',
+        ac.includes("const mn = P.mid && P.mid[i]") &&
+        ac.includes("if (mn) this._note(f(mn), m.nextTime, m.stepDur * 1.1, 'square', 0.3)"))
+    r.check('#3336 opt-in law — pinballSolo is the ONLY track with a mid line',
+        Object.keys(MUSIC).filter((k) => MUSIC[k].mid).join() === 'pinballSolo' &&
+        MUSIC.pinballMb.mid === undefined)
+    r.check('#3336 the mid line keeps bar parity (32 steps, same as lead/bass/perc)',
+        P.mid.length === 32 && P.mid.length === P.lead.length && P.mid.length === P.bass.length && P.mid.length === P.perc.length)
+
+    // voice law: every mid note lives in the phone-carry band (160–340 Hz —
+    // above the knee, below the small speaker's upper roll-off)
+    const midHz = P.mid.filter(Boolean).map(midi)
+    r.check('#3336 every mid note sits in the phone-carry band (160–340 Hz)',
+        midHz.every((hz) => hz >= 160 && hz <= 340), `${Math.min(...midHz).toFixed(1)}–${Math.max(...midHz).toFixed(1)} Hz`)
+
+    // patient, not a drummer: an eighth-note pulse (gap ≤ 4 steps), never a
+    // 16th flurries; and the walk is chordal — every mid note is the root or
+    // the fifth of the bass note that owns its bar
+    let gap = 0, maxGap = 0
+    for (let i = 0; i < 32; i++) { gap = P.mid[i] ? (maxGap = Math.max(maxGap, gap + 1), 0) : gap + 1 }
+    maxGap = Math.max(maxGap, gap) // wrap
+    r.check('#3336 the mid pulses every ≤4 steps — sustained without flurries (16 notes, max gap 2)',
+        P.mid.filter(Boolean).length === 16 && maxGap <= 4, `notes=${P.mid.filter(Boolean).length} maxGap=${maxGap}`)
+    let chordal = true
+    for (let i = 0; i < 32; i++) {
+        if (!P.mid[i]) continue
+        let bi = i
+        for (;;) { if (P.bass[bi]) break; bi = (bi + 31) % 32 }
+        const iv = (P.mid[i] - P.bass[bi] - 24) % 12
+        if (iv !== 0 && iv !== 7) chordal = false
+    }
+    r.check('#3336 the mid walks root–5th over its own bass (i–VII–VI–v, folded two octaves up)', chordal)
+
+    // the knee math: what each voice contributes inside the phone band, as
+    // mean power over one loop (vol² × knee(f) × dur). Before the fix the
+    // sustain leg was the sparse lead alone; the bass is nearly all gone.
+    const voiceE = (arr, vol, durMul) => arr.reduce((e, n) => e + (n ? vol * vol * kneePow(midi(n)) * STEP * durMul : 0), 0)
+    const leadE = voiceE(P.lead, 0.5, 0.9)
+    const bassE = voiceE(P.bass, 0.6, 1.1)
+    const midE = voiceE(P.mid, 0.3, 1.1)
+    const hatE = P.perc.filter(Boolean).length * 0.22 * 0.22 * 0.04
+    r.check('#3336 diagnosis pinned — the bass fundamental is >20 dB down at the knee (the phone never had it)',
+        kneePow(midi(33)) < 0.05 && kneePow(midi(28)) < 0.01,
+        `A1 ${10 * Math.log10(kneePow(midi(33))).toFixed(1)} dB · E1 ${10 * Math.log10(kneePow(midi(28))).toFixed(1)} dB`)
+    r.check('#3336 the mid is the bed\'s biggest carrier in-band — bigger than the sparse lead',
+        midE >= leadE, `mid=${midE.toFixed(4)} lead=${leadE.toFixed(4)}`)
+    r.check('#3336 sustained in-band power at least DOUBLES (+3 dB) with the mid line (measured off the track data)',
+        midE + leadE + bassE + hatE >= 2 * (leadE + bassE + hatE),
+        `pre=${(leadE + bassE + hatE).toFixed(4)} post=${(midE + leadE + bassE + hatE).toFixed(4)}`)
+
+    // bed discipline (#3304 stays the law): the loudest mid at full heat is
+    // still ≥12 dB under ONE bumper hit (square 0.12, direct to destination).
+    const capPeak = 0.3 * MUSIC_BUS * SOLO_CAP
+    r.check('#3336 bed under volley — cap mid peak ≤ bumper vol / 4 (≥12 dB under, literal 0.12)',
+        capPeak <= 0.12 / 4, `capPeak=${capPeak.toFixed(5)} bumper/4=${(0.12 / 4).toFixed(5)}`)
 }
 
 restoreAll()

@@ -218,6 +218,53 @@ try {
     const restart = await page.evaluate(() => window.__pinballTest.state())
     ok('SPACE restarts after game over', !restart.done && restart.balls === 3 && restart.screen === 'play', `screen=${restart.screen}`)
 
+    // #3336 item 1 — live phone mix, per-frame at the bus tap. Chrome's
+    // analyser puts these quiet notes at −74…−85 dBFS on this engine (measured
+    // 2026-11-25), so absolute floors are engine-normalization, not mix truth:
+    // every threshold here is a RATIO of what the same run measured. Proof of
+    // audibility-on-a-phone: (a) the 160–340 Hz band is OCCUPIED through most
+    // of the loop (the sparse lead can't fake occupancy — it idles ~85 % of
+    // the bar), and (b) past the knee the mid outweighs the bass fundamentals
+    // the phone never plays. Real-ears-on-device stays #3054's gap.
+    {
+        const b0 = await page.evaluate(() => window.__pinballTest.bed())
+        const fr = []
+        for (let i = 0; i < 30; i++) { fr.push(await page.evaluate(() => window.__audioMix())); await wait(160) }
+        const mx = await page.evaluate((frames) => {
+            const bins = frames[0].db.length, binHz = frames[0].binHz
+            const lin = (db) => (db > -Infinity ? Math.pow(10, db / 10) : 0)
+            const bandP = (f, lo, hi, knee) => {
+                let p = 0
+                for (let i = 1; i < bins; i++) {
+                    const hz = i * binHz
+                    if (hz < lo || hz > hi || !(f.db[i] > -Infinity)) continue
+                    p += lin(f.db[i]) * (knee && hz < 150 ? Math.pow(hz / 150, 4) : 1) // 12 dB/oct by power
+                }
+                return p
+            }
+            const midP = frames.map((f) => bandP(f, 160, 340, false))
+            const midMax = Math.max(...midP)
+            let occ = 0, counted = 0
+            for (let i = 4; i < frames.length; i++) { counted++; if (midMax > 0 && midP[i] >= midMax * 0.01) occ++ }
+            const env = frames.reduce((e, f) => e.map((v, i) => Math.max(v, f.db[i])), new Array(bins).fill(-Infinity))
+            const envF = { db: env }
+            const mid = bandP(envF, 160, 340, false)
+            const bassK = bandP(envF, 20, 149, true)
+            return {
+                occFrac: counted ? occ / counted : 0,
+                midOverBassK: bassK > 0 ? mid / bassK : 0,
+                maxDb: Math.max(...env), t0: frames[0].t, t1: frames[frames.length - 1].t, st: frames[frames.length - 1].st,
+            }
+        }, fr)
+        ok('#3336 the tap is LIVE — audio clock runs a full loop, bed solo, real signal on the wire',
+            b0.track === 'pinballSolo' && mx.st === 'running' && mx.t1 - mx.t0 >= 1.5 && mx.maxDb >= -90,
+            `track=${b0.track} dt=${(mx.t1 - mx.t0).toFixed(2)}s maxDb=${Math.round(mx.maxDb)}`)
+        ok('#3336 the mid line OCCUPIES the phone band — energy in ≥60 % of frames across a full loop (the sparse lead sat idle here)',
+            mx.occFrac >= 0.6, `occupancy=${mx.occFrac.toFixed(2)}`)
+        ok('#3336 past the phone knee the mid outweighs the bass fundamentals ≥3× — the bed the small speaker never had',
+            mx.midOverBassK >= 3, `mid/bass(post-knee)=${mx.midOverBassK.toFixed(1)}`)
+    }
+
     // ================= #3232: CABINET TWO "EMBER RIDER" live legs =================
     // finish the cab-one game, then from GAME OVER an arrow steps to the row…
     const row0 = await ffToOver(page);

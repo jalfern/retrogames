@@ -306,8 +306,8 @@ compile reads ghost, never as a save.
 ## Verify
 
 ```bash
-npm run pinballcheck          # 251 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage pins, plain Node (+12 mutants incl. smithzone/smithload)
-npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs)
+npm run pinballcheck          # 279 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix pins, plain Node (+14 mutants incl. smithzone/smithload/mix)
+npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs, + #3336 live phone-mix legs)
 npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284 + #3359): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence, garage: slot switch (Digit1/2/3), SAVE into a garage slot, slot-choice persistence, legacy-blob one-shot migration (+#3290: badge-while-unselected, nova-demo honesty, drawn-rim delta, seam nearest-centre, touch tap-guard + tool taps)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
@@ -371,6 +371,28 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   the run, a tilted cabinet plays thin, the pack and the drain-out stay silent
   for `pinballMb`/silence). Quantized 0.02 steps; hash and the #3178 mb seam
   byte-identical.
+- **CLOSED by #3336 (item 1):** the SOLO bed drowned under the bumper volley on
+  phone speakers (#3313 item 3). Measured diagnosis: its bass (MIDI 28–33,
+  41–55 Hz) sits 14–22 dB under the ~150 Hz mechanical knee of a phone
+  speaker, and the lead idles ~85 % of the 4 s bar — the always-on voice was
+  only a thin hat. Fix by VOICING, not gain (the swell law is the contract —
+  0.16/0.30/0.10/25000 and the 0.02 quantize pinned unchanged): the music
+  engine grew an optional fourth voice `mid` (opt-in like bass/perc — every
+  other track schedules byte-identically), and `pinballSolo` walks a root–5th
+  ostinato (A3/E4 · G3/D4 · F3/C4 · E3/B3, eighth-note pulse, square vol 0.3)
+  in the phone-carry band 164–330 Hz. At full heat the mid peaks ~18 dB under
+  one bumper hit — still a bed, but a sustained one. Proof: pinballcheck §mix
+  (knee math over the real track data, chordal-walk/duty/parity law, swell
+  literals) + three live legs in pinballplay (audio clock runs a full loop;
+  the mid band OCCUPIES ≥60 % of frames — measured 0.92–1.00; post-knee
+  mid/bass ≥3× — measured 4.4–10.6×). Live thresholds are ratios because
+  Chrome's analyser normalization puts these quiet notes at −71…−85 dBFS
+  (measured 2026-11-25) — absolute floors there are engine, not mix.
+  Real-ears-on-device calibration stays tied to #3054's recorder gap.
+- **OPEN (#3336 item 2):** tilt slump is level-only (0.10→0.05). A filter
+  muffle (music-bus low-pass in AudioController) awaits Jon's #3335; the
+  recorded default is keep level-only, and this lane will not implement
+  against an open decision.
 - The magnet holds one ball and the orbit one loop at a time (real tables run
   both per-ball); the wrap's curl assist is a fixed push, not a shaped rail.
 - No left ramp / kickback, and the spinner is still outlane-only.
