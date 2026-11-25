@@ -7,6 +7,13 @@
 //   MARBLE MADNESS TILT: ENABLE pill → RE-CENTER pill; a deviceorientation
 //                sample steers and re-centre zeroes it (synthetic sensor events
 //                — listeners don't check isTrusted).
+//   MARBLE RUSH  #3129 tilt grant live: pause row offers STICK/TILT/D-PAD;
+//                the pill flow works AND a held lean really drives the sim —
+//                same-seed hash divergence through the padState holder the
+//                game's readPad() consumes (deterministic, no wall-clock race).
+//   COMET DRIFT HD  #3129 tilt grant live: pause row offers the three types,
+//                tilt pill flow works, and the DRIFT chip stays (actzone
+//                keeps its declared verb — tilt orphans nothing).
 //   PAC-MAN      dpad default (gate); pause row switches to STICK (floating
 //                half); a horizontal drag pushes the knob (the digital read
 //                rides the holder, so no arrows on the wire — padtypecheck
@@ -141,6 +148,81 @@ const clickLast = async (page, sel) => page.evaluate((s) => {
     r.check('marble: re-centre zeroes the pose', (await page.evaluate(() => window.__dirs)).length === 0, (await page.evaluate(() => window.__dirs.join(','))) || 'ok')
     r.check('marble: zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
     await page.screenshot({ path: 'qa-art/padtype-marble-tilt.png' })
+    await page.close()
+}
+
+// --- MARBLE RUSH: tilt (#3129 — the #3107 roller takes the tail grant) ---
+{
+    const { page, errors } = await mkPage('/marble-rush?padtype=tilt')
+    const v = await vcs(page)
+    r.check('rush: tilt pill renders (no stick zone)', v.includes('tilt-enable') && !v.includes('fixedstick'), v.join(','))
+    await tapEl(page, '[data-vc="tilt-enable"]')
+    await page.waitForTimeout(300)
+    r.check('rush: enable -> RE-CENTER pill', (await vcs(page)).includes('tilt-recenter'), (await vcs(page)).join(','))
+    // Honest input-reach proof, wall-clock-free: one synchronous block (the
+    // live loop cannot interleave) resets the deterministic sim to the same
+    // seed and steps 90 ticks neutral, then 90 with a held right-tilt pose
+    // (synthetic deviceorientation, same convention as the marble leg). A
+    // diverging hash means the lean reached padState through the tilt rail
+    // and readPad() consumed it — exactly the holder path this method-stick
+    // game reads, not just the arrow codes the legacy titles hear.
+    const res = await page.evaluate(() => {
+        const T = window.__marbleRushTest
+        T.setMode('play')
+        window.__game.reset(4242)
+        const neutral = T.step(90).hash
+        window.__game.reset(4242)
+        window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: 10 }))
+        const leaned = T.step(90).hash
+        window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: 0 }))
+        return { neutral, leaned }
+    })
+    r.check('rush: held right-tilt drives the marble (hash diverges, same seed/ticks)', res.neutral !== res.leaned, `neutral=${res.neutral} leaned=${res.leaned}`)
+    // RE-CENTER zeroes the held pose: after re-centring, the same gamma=10
+    // pose must replay the neutral trajectory byte-for-byte. (Re-dispatch the
+    // pose FIRST — tiltSeen only updates on events, and re-centre pins the
+    // LAST SEEN pose; re-centering on a stale gamma=0 would freeze a fake
+    // −10° baseline instead of nulling this 10° lean.)
+    await page.evaluate(() => window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: 10 })))
+    await tapEl(page, '[data-vc="tilt-recenter"]')
+    await page.waitForTimeout(150)
+    const after = await page.evaluate(() => {
+        const T = window.__marbleRushTest
+        window.__game.reset(4242)
+        window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: 10 }))
+        return T.step(90).hash
+    })
+    r.check('rush: RE-CENTER makes the held pose neutral', after === res.neutral, `after=${after} neutral=${res.neutral}`)
+    // pause -> CONTROLLER row offers all three granted types. (Marble Rush
+    // binds pause to Escape/Slash — a real '?' IS Shift+Slash, so the
+    // synthetic event must carry code 'Slash', not 'Question'.)
+    await page.evaluate(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Slash', key: '?', bubbles: true })); window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Slash', bubbles: true })) })
+    await page.waitForTimeout(400)
+    const chips = await page.evaluate(() => [...document.querySelectorAll('[data-padtype]')].map((e) => e.getAttribute('data-padtype')))
+    r.check('rush: pause CONTROLLER row (STICK/TILT/D-PAD)', [...new Set(chips)].join(',') === 'stick,tilt,dpad', 'chips=' + chips.join(','))
+    r.check('rush: zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
+    await page.screenshot({ path: 'qa-art/padtype-marble-rush-tilt.png' })
+    await page.evaluate(() => localStorage.removeItem('retrogames:padtype:/marble-rush'))
+    await page.close()
+}
+
+// --- COMET DRIFT HD: tilt affordances (#3129 kart grant; DRIFT keeps a chip) ---
+{
+    const { page, errors } = await mkPage('/comet-drift-hd?padtype=tilt&gl=webgl2')
+    const v = await vcs(page)
+    r.check('comet-hd: tilt pill renders (no stick zone)', v.includes('tilt-enable') && !v.includes('fixedstick'), v.join(','))
+    await tapEl(page, '[data-vc="tilt-enable"]')
+    await page.waitForTimeout(300)
+    const v2 = await vcs(page)
+    r.check('comet-hd: enable -> RE-CENTER pill', v2.includes('tilt-recenter'), v2.join(','))
+    r.check('comet-hd: DRIFT chip stays in tilt (verb not orphaned)', v2.includes('a'), v2.join(','))
+    await page.evaluate(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Question', key: '?', bubbles: true })) })
+    await page.waitForTimeout(400)
+    const chips = await page.evaluate(() => [...document.querySelectorAll('[data-padtype]')].map((e) => e.getAttribute('data-padtype')))
+    r.check('comet-hd: pause CONTROLLER row (STICK/TILT/FULL PAD)', [...new Set(chips)].join(',') === 'stick,tilt,full', 'chips=' + chips.join(','))
+    r.check('comet-hd: zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
+    await page.screenshot({ path: 'qa-art/padtype-comet-hd-tilt.png' })
+    await page.evaluate(() => localStorage.removeItem('retrogames:padtype:/comet-drift-hd'))
     await page.close()
 }
 
