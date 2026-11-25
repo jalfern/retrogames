@@ -59,7 +59,10 @@ if (MUT) {
         trickdry: { file: 'src/games/TidalRush/index.jsx', from: "trick: () => { audioController.playSweep(1250, 240, 0.2, 'triangle', 0.06);", to: 'trick: () => {', note: 'flat-360 landing loses its whoosh-in' },
         // hull 0 is fed the local analog pad instead of its wire bytes (#3220) —
         // the exact divergence trap: host runs analog, guest runs the bits.
-        wirefeed: { file: 'src/games/TidalRush/index.jsx', from: 'fromWire(mirrors[0].get(k) || toWire({}))', to: 'readPad()', note: 'hull 0 fed local analog — boxes diverge' },
+        // #3280 sweep: the law now lives at THREE call sites (race step, the
+        // padIn feed added by #3257 rejoin, the spectate fast-forward #3265) —
+        // replacing only the first left the pin blind on main. Mutate them ALL.
+        wirefeed: { all: true, file: 'src/games/TidalRush/index.jsx', from: 'fromWire(mirrors[0].get(k) || toWire({}))', to: 'readPad()', note: 'hull 0 fed local analog — boxes diverge' },
         // the freeze keeps no receipts (#3244 item 5) — the hash-path stamp gone.
         evidoff: { file: 'src/games/TidalRush/index.jsx', from: 'evidence.markBad(k, evidence.mismatchSlot(k), r.mine, r.theirs)', to: '', note: 'desync stamps no evidence' },
         // the room ends in silence (#3244 item 4) — the host never answers with
@@ -84,7 +87,7 @@ if (MUT) {
     const target = join(root, a.file || 'src/games/TidalRush/sim.js')
     const src = readFileSync(target, 'utf8')
     if (!src.includes(a.from)) { console.error(`mutant anchor missing in ${a.file || 'sim.js'} (${MUT})`); process.exit(1) }
-    plant(target, src.replace(a.from, a.to))
+    plant(target, a.all ? src.split(a.from).join(a.to) : src.replace(a.from, a.to))
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
