@@ -32,6 +32,9 @@ Monkey Ball / Marble Blast, with none of their names, courses or art.
   lookahead target line (centerline, minus bumper avoidance, plus the mover
   deck at the crossing time, minus the sweeper bar at the crossing time),
   speed capped by the tightest curve ahead, throttle committed before a kicker.
+  The player's trick hop (`pad.a` — Space/A) pops off any grounded deck for
+  ~0.47 s at a 12% speed cost; air skips sweeper knocks, and a down over open
+  sky still falls — `autoPad` never hops, so bot hashes are untouched.
 - `art.js` — MODERN bar: floor ribbons extruded through `pointOf` with per-
   segment plate shading, seam bands and start/finish checkers; neon edge-rail
   tubes along every solid run; PMREM env cube from a procedural equirect
@@ -60,12 +63,13 @@ on purpose.
 ## Verify
 
 ```bash
-npm run rollercheck                 # 64 checks: rules, verbs, win-by-bot, parity bridge, surface tone
+npm run rollercheck                 # 70 checks: rules, verbs, win-by-bot, parity bridge, surface tone, trick hop
 npm run rollercheck -- --browser  #  + 13 Chrome-drive checks incl. the gate-flow UX
 node scripts/rollercheck.mjs --mutate            # edge fall muted     → red
 node scripts/rollercheck.mjs --mutate=budget    # grip budget muted   → red
 node scripts/rollercheck.mjs --mutate=sweep     # bar knock muted     → red
 node scripts/rollercheck.mjs --mutate=gate      # gate arming muted   → red
+node scripts/rollercheck.mjs --mutate=hop       # trick hop muted     → red
 CONTRACT_ONLY=marble-rush npm run contractcheck
 ```
 
@@ -79,9 +83,12 @@ off the bot; humans earn it differently.
 
 ## Honest gaps (rung 3+ backlog)
 
-1. Trick system absent — Monkey Ball's jumps/spins; the kicker only flies.
-   (Blocked by design: Jon's brief keeps the input at one analog vector;
-   a jump button would break the tilt contract.)
+1. Trick system partial — the TRICK HOP ships (Space/A pops off the deck at a
+   12% speed cost; air skips sweeping bars, sim.js pins + `--mutate=hop`), but
+   spins/tricks-with-points are still absent. The hop rides the pad's existing
+   A button and Space — the one-analog-vector steering and the tilt contract
+   (#3129) are untouched, and autoPad never presses it, so every pinned bot
+   line and hash baseline predates and survives it.
 2. Ghost of your best run (or a rival marble) racing the shelf.
 3. Tilt controller — deliberately untouched: the pad `method: 'stick'` shape
    is the contract the platform tilt issue will drive.

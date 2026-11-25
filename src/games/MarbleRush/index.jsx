@@ -26,6 +26,7 @@ const MESSAGES = [
     'SWING BRIDGES BOARD AT THE RIGHT PHASE',
     'HIT THE LIP HOT TO FLY THE GAP',
     'TIME THE SWEEPING BARS · THE OPEN SIDE WAITS',
+    'SPACE / A: TRICK HOP — SKIPS BARS, COSTS SPEED',
     'GATES ARM FOR SHELVES 6 TO 10 · FALL LATE, RETURN AT THE GATE',
     'GOLD SILVER BRONZE · TEN SKY SHELVES',
 ]
@@ -214,6 +215,7 @@ const MarbleRushGame = () => {
             go: () => audioController.playSweep(440, 880, 0.25, 'square', 0.13),
             bumper: () => { audioController.playTone(720, 0.06, 'square', 0.12); audioController.playTone(1080, 0.09, 'square', 0.1, 0.06) },
             jump: () => audioController.playSweep(240, 620, 0.22, 'sine', 0.09),
+            hop: () => audioController.playSweep(300, 700, 0.16, 'triangle', 0.08),
             land: () => { audioController.playNoise(0.09, 0.09); audioController.playTone(90, 0.09, 'sine', 0.12) },
             fall: () => audioController.playSweep(320, 60, 0.9, 'sawtooth', 0.12),
             gate: () => { audioController.playTone(660, 0.1, 'triangle', 0.11); audioController.playTone(990, 0.16, 'triangle', 0.1, 0.09) },
@@ -242,6 +244,7 @@ const MarbleRushGame = () => {
                     sparkSpawn(sparks, p.x, p.y + 0.7, p.z, 18, 4.5, 5.5)
                 }
                 if (e.type === 'jump') { sfx.jump(); if (hud.pop) { hud.pop.textContent = 'SKY SHOT!'; hud.pop.style.opacity = 1 }; flashPop = 1 }
+                if (e.type === 'hop') { sfx.hop(); flashPop = Math.max(flashPop, 0.55) }
                 if (e.type === 'land') { sfx.land(); shake = Math.min(0.4, shake + 0.14) }
                 if (e.type === 'sweep') {
                     sfx.sweep(); shake = Math.min(0.55, shake + 0.3); flashPop = 1
@@ -305,6 +308,11 @@ const MarbleRushGame = () => {
 
         function simTick() {
             const playing = screenRef.current === 'play'
+            // the result card is up: hold the dead run frozen. Replacing gs with
+            // an attract preview one tick after death (the old behaviour) erased
+            // cpArmed/fail under the card and made the gate respawn reference a
+            // game that never raced — it only ever worked by winning a ~16 ms race.
+            if (screenRef.current === 'over') return
             const pad = playing ? readPad() : autoPad(gs)
             step(gs, pad)
             if (!playing && gs.done) { attractLoop(); return }
@@ -490,7 +498,7 @@ const MarbleRushGame = () => {
             if (screenRef.current !== 'over' || !r) return
             if (r.kind === 'clear') startStageRef.current && startStageRef.current(r.next)
             else if (r.kind === 'cp-fall') {
-                respawn(gs)
+                if (!respawn(gs)) { startStageRef.current && startStageRef.current(gs.stageIdx); return }
                 camInit = false
                 flashPop = 0
                 goFlash = 0.9
