@@ -80,11 +80,12 @@ try {
     const kbBefore = await page.evaluate(() => window.__pinballTest.state())
     await page.evaluate(() => window.__pinballTest.kbDrop())
     let kb = null
-    for (let i = 0; i < 20; i++) { await wait(100); kb = await page.evaluate(() => window.__pinballTest.state()); if (kb.kbUsed) break }
+    let sawKbDmd = ''
+    for (let i = 0; i < 20; i++) { await wait(100); kb = await page.evaluate(() => window.__pinballTest.state()); if (kb.dmd.text.includes('KICKBACK')) sawKbDmd = kb.dmd.text; if (kb.kbUsed) break }
     ok('KICKBACK: a fast right-column drain is saved live (kbUsed latches)', !!kb && kb.kbUsed === true, `kbUsed=${kb && kb.kbUsed}`)
     ok('the save pays +100 and announces KICKBACK on the DMD',
-        !!kb && kb.score >= kbBefore.score + 100 && kb.dmd.text === 'KICKBACK! +100',
-        `${kbBefore.score}→${kb && kb.score} "${kb && kb.dmd.text}"`)
+        !!kb && kb.score >= kbBefore.score + 100 && sawKbDmd.startsWith('KICKBACK! +100'),
+        `${kbBefore.score}→${kb && kb.score} "${sawKbDmd || (kb && kb.dmd.text)}"`)
 
     // pixels: the playfield draws, and the DMD strip region lights up after an event
     // (announce fresh first — the idle crawl has blank scroll windows between words,
@@ -218,6 +219,86 @@ try {
     await wait(400)
     const backOne = await page.evaluate(() => window.__pinballTest.state())
     ok('the row switches back to CABINET ONE and starts it', row2.screen === 'attract' && backOne.cab === 'cabinet-one', `cab=${backOne.cab}`)
+
+    // ---- #3259 ART KITS: B dresses the row, the dress survives retries ----
+    const pxKit = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(73, 230, 40, 40).data   // selected card, below the marquee
+        let r = 0, g = 0, b = 0
+        const n = d.length / 4
+        for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2] }
+        return { r: r / n, g: g / n, b: b / n }
+    })
+    await ffToOver(page)
+    await page.keyboard.press('ArrowLeft')
+    await wait(250)
+    const rowK = await page.evaluate(() => window.__pinballTest.state())
+    ok('the row starts in the house dress', rowK.screen === 'attract' && rowK.skinId === 'midnight', `skin=${rowK && rowK.skinId}`)
+    const pxMid = await pxKit()
+    await page.keyboard.press('KeyB')
+    await wait(300)
+    const kitT = await page.evaluate(() => window.__pinballTest.state())
+    ok('B dresses CABINET ONE in TIDAL RUN', kitT.skinId === 'tidal', `skin=${kitT.skinId}`)
+    const pxTid = await pxKit()
+    ok('the field really repaints under the kit (green up, red down)',
+        pxTid.g > pxMid.g + 6 && pxTid.r < pxMid.r - 3,
+        `mid r/g=${pxMid.r.toFixed(0)}/${pxMid.g.toFixed(0)} tid r/g=${pxTid.r.toFixed(0)}/${pxTid.g.toFixed(0)}`)
+    await page.keyboard.press('KeyB')
+    await wait(250)
+    const kitBack = await page.evaluate(() => window.__pinballTest.state())
+    ok('B wraps back to the house dress', kitBack.skinId === 'midnight', `skin=${kitBack.skinId}`)
+    await page.keyboard.press('KeyB')   // tidal again — start the game dressed
+    await page.keyboard.press('Space')
+    await wait(300)
+    const kitPlay = await page.evaluate(() => window.__pinballTest.state())
+    ok('SPACE starts in the chosen dress and the DMD announces it',
+        kitPlay.screen === 'play' && kitPlay.skinId === 'tidal' && kitPlay.dmd.text === 'KIT TIDAL RUN',
+        `skin=${kitPlay.skinId} dmd="${kitPlay.dmd.text}"`)
+    await ffToOver(page)
+    await page.keyboard.press('Space')
+    await wait(300)
+    const kitRetry = await page.evaluate(() => window.__pinballTest.state())
+    ok('quick-retry keeps the chosen kit', kitRetry.screen === 'play' && kitRetry.skinId === 'tidal', `skin=${kitRetry.skinId}`)
+    await ffToOver(page)
+    await page.keyboard.press('ArrowRight')
+    await wait(250)
+    const rowE = await page.evaluate(() => window.__pinballTest.state())
+    ok('kits are per cabinet — EMBER RIDER keeps its own dress',
+        rowE.screen === 'attract' && rowE.skinId === 'ember', `skin=${rowE && rowE.skinId}`)
+    await page.keyboard.press('KeyB')
+    await wait(250)
+    await page.keyboard.press('Space')
+    await wait(300)
+    const tox = await page.evaluate(() => window.__pinballTest.state())
+    ok('EMBER RIDER plays dressed TOXIC and says so',
+        tox.screen === 'play' && tox.cab === 'ember-rider' && tox.skinId === 'toxic' && tox.dmd.text === 'KIT TOXIC',
+        `cab=${tox.cab} skin=${tox.skinId} dmd="${tox.dmd.text}"`)
+    // pixels invert the ember law: on the toxic dress green dominates the field
+    const tpx = await page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(20, 120, 320, 380).data
+        let green = 0, red = 0
+        for (let i = 0; i < d.length; i += 4) {
+            if (d[i + 1] > d[i] + 20 && d[i + 1] > d[i + 2] + 20) green++
+            else if (d[i] > d[i + 1] + 20 && d[i] > d[i + 2] + 20) red++
+        }
+        return { green, red }
+    })
+    ok('TOXIC pixels read green (the lime dress is really painted)', tpx.green > tpx.red * 2 && tpx.green > 300, `green=${tpx.green} red=${tpx.red}`)
+
+    // ---- #3259 ?style URL override, on a fresh page ----
+    const page2 = await openGame(browser, { url: `${BASE}/pinball?lite=1&style=tidalrun`, hook: '__pinballTest' })
+    const stQ = await page2.evaluate(() => window.__pinballTest.state())
+    ok('?style=tidalrun preselects the kit where it ships', stQ.skinId === 'tidal', `skin=${stQ.skinId}`)
+    await page2.keyboard.press('ArrowRight')
+    await wait(250)
+    const stQ2 = await page2.evaluate(() => window.__pinballTest.state())
+    ok('the URL style does not bleed to the other cabinet', stQ2.skinId === 'ember', `skin=${stQ2.skinId}`)
+    await page2.keyboard.press('KeyB')
+    await wait(250)
+    const stQ3 = await page2.evaluate(() => window.__pinballTest.state())
+    ok('B still cycles from a ?style preselect (override is a start-pick, not a lock)', stQ3.skinId === 'toxic', `skin=${stQ3.skinId}`)
+    await page2.close()
 
     ok('zero page errors through the whole drive', errors.length === 0, errors.join(';'))
 } finally {

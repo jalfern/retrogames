@@ -834,7 +834,7 @@ const PinballGame = () => {
 
         if (import.meta.env.DEV) {
             window.__pinballTest = {
-                state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current, cab: cabRef.current, skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
+                state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current, skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
                 // dev rig: pick a cabinet without keys (#3232)
                 setCab: (i) => { cabRef.current = i ? 1 : 0; setCabIdx(i); return { cab: CABS[cabRef.current].tb.id } },
                 // dev rig: set/cycle the art kit (#3259) — absolute index wraps
