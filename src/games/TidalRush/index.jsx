@@ -912,7 +912,7 @@ const TidalRushGame = () => {
             <div ref={stageRef} className="absolute inset-0" />
 
             <div className={`absolute inset-0 pointer-events-none font-mono transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5 text-cyan-50">
+                <div className="absolute top-[4.75rem] left-3 bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5 text-cyan-50">
                     <div className="text-[9px] tracking-widest opacity-70">SCORE</div>
                     <div ref={setHud('score')} className="text-xl font-black text-yellow-200 leading-6">0</div>
                     <div ref={setHud('lap')} className="text-[11px] tracking-widest">LAP 1/3</div>
@@ -933,7 +933,7 @@ const TidalRushGame = () => {
                     </div>
                     <div ref={setHud('countText')} className="text-8xl font-black italic text-yellow-300" style={{ textShadow: '0 0 26px rgba(0,0,0,0.9), 4px 4px 0 #0a6' }} />
                 </div>
-                <div className="absolute top-2 right-3 text-right">
+                <div className="absolute top-[4.75rem] right-3 text-right text-cyan-50">
                     <div className="bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5">
                         <div className="text-[9px] tracking-widest opacity-70">SPEED</div>
                         <div ref={setHud('speed')} className="text-2xl font-black leading-6">0<span className="text-[10px]"> km/h</span></div>
