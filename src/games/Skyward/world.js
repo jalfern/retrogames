@@ -176,7 +176,13 @@ export function makeWorld(seed) {
     // pass gates keep feeling the cell through the whole sweep.
     // scripts/skywardcheck.mjs sweeps the clock and pins every one of it.
     const storm = { x: 560, z: -40, r: 300 }
-    const stormPh = ((r >>> 13) % 6283) / 1000   // per-seed phase, 0..2π
+    // #3272 item 2: avalanche the seed before taking the phase. The old
+    // (r >>> 13) read only bits 13+ — every seed under 8192 (every seed the
+    // game actually rolls) shared phase 0, so the promised per-seed drift was
+    // silently degenerate and the pass dunk was a pure wall-clock lottery,
+    // identical on every seed. Knuth multiply spreads low bits; still 0..2π,
+    // still seed-deterministic.
+    const stormPh = (((r * 2654435761) >>> 0) % 6283) / 1000   // per-seed phase, 0..2π
     function stormPos(t) {
         return {
             x: storm.x + Math.sin(t * 0.045 + stormPh) * 64 + wind.x * Math.sin(t * 0.012 + stormPh) * 1.8,
@@ -188,7 +194,13 @@ export function makeWorld(seed) {
         const d = Math.hypot(x - p.x, z - p.z)
         if (d > storm.r * 1.25) return { s: 0, gust: { x: 0, z: 0 }, vy: 0 }
         const s = bell(d, storm.r)
-        const ring = Math.abs(d - storm.r * 0.86) < 55 ? 1.4 : 0
+        // #3272 item 2: the rising ring is a CONTINUOUS annulus. The old
+        // ±55 m hard edge switched +2.7 m/s of updraft on across zero
+        // distance, so whether the memorised keyboard line caught the west
+        // rise or punched dead air became a phase lottery. Peak unchanged
+        // (1.4 at 0.86 r), edge gone: the rise is a slope you can feel.
+        const dr = d - storm.r * 0.86
+        const ring = 1.4 * Math.exp(-(dr * dr) / (2 * 34 * 34))
         const gx = (fbm(x * 0.02 + t * 0.55, z * 0.02, 3) - 0.5) * 2
         const gz = (fbm(x * 0.02, z * 0.02 + t * 0.5, 3) - 0.5) * 2
         return { s, gust: { x: gx * 5.2 * s, z: gz * 5.2 * s }, vy: (ring * 1.9 - s * 2.2) }

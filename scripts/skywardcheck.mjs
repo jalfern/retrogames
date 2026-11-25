@@ -221,6 +221,62 @@ void runAuto
     }
 }
 
+// ------------------------------------------- fair weather line (#3272-2) ----
+    // Gates stay fixed and the cell moves — that stays. But the air the
+    // memorised keyboard line ploughs must be CONTINUOUS (the old ±55 m hard
+    // ring edge switched +2.7 m/s of updraft across zero distance — a phase
+    // lottery, not a lesson), the dunk must stay within one taught correction,
+    // and the drift phase must actually differ per seed (the old (r>>>13)
+    // read bits 13+, so every seed under 8192 shared phase 0 — the sweep was
+    // the SAME wall-clock lottery on every seed).
+    {
+        const w = makeGame(11).world
+        // (a) no vertical-current cliff anywhere on the field: |Δvy| ≤ 0.9 m/s
+        // per 4 m along a radius, at several clocks across the drift envelope.
+        let cliff = 0, upMax = -9
+        for (const tc of [0, 17, 41, 73, 119, 220, 281]) {
+            let prev = null
+            for (let d = 0; d <= 400; d += 4) {
+                const p = w.stormPos(tc)
+                const vy = w.stormAt(p.x + d, p.z, tc).vy
+                if (prev !== null && Math.abs(vy - prev) > 0.9) cliff++
+                prev = vy
+                upMax = Math.max(upMax, vy)
+            }
+        }
+        r.check('the rising ring is continuous — no cliff deeper than 0.9 m/s per 4 m (#3272-2)', cliff === 0, `cliffs=${cliff}`)
+        r.check('the west-edge rise still exists — updraft peaks at ≥ 1.4 m/s (#3267 design kept)', upMax >= 1.4, `up=${upMax.toFixed(2)}`)
+        // (b) the per-seed phase is real: cells at t=0 spread across the drift,
+        // ≥ 40 distinct offsets over seeds 1..64 (the degenerate law gave one).
+        const ph0 = new Set()
+        for (let s = 1; s <= 64; s++) ph0.add(makeGame(s).world.stormPos(0).x.toFixed(1))
+        r.check('every small seed gets its own drift phase (≥ 40 of 64 distinct)', ph0.size >= 40, `distinct=${ph0.size}`)
+        r.check('the phase is still seed-deterministic', (() => {
+            const a = makeGame(77).world.stormPos(0), b = makeGame(77).world.stormPos(0)
+            return Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.z - b.z) < 1e-9
+        })())
+        // (c) the straight-and-level keyboard line still dunks (that is the
+        // course) but within ONE taught correction: the air integral over the
+        // core segment stays in [−19.5, −8] m with total spread ≤ 7.0 m across
+        // seeds and clock extremes. Measured pre-fix spread: 7.2 m AND the seed
+        // axis added nothing (phase pinned at 0).
+        let lo = 0, hi = -99
+        for (const s of [1, 7, 13, 42, 99, 2026]) {
+            const ws = makeGame(s).world
+            for (const t0 of [0, 60, 120, 180, 240, 300]) {
+                let sink = 0
+                const g1 = ws.passRings[1].x - ws.passStart.x, g3 = ws.passRings[3].x - ws.passStart.x
+                for (let d = g1 - 8; d <= g3 + 8; d += 4) {
+                    const t = t0 + d / 38
+                    sink += ws.stormAt(ws.passStart.x + d, ws.passStart.z, t).vy / 38 * 4
+                }
+                lo = Math.min(lo, sink); hi = Math.max(hi, sink)
+            }
+        }
+        r.check('the keyboard-line dunk is bounded — a taught correction covers every phase',
+            lo >= -19.5 && hi <= -8 && hi - lo <= 7.0, `worst=${lo.toFixed(1)} best=${hi.toFixed(1)} spread=${(hi - lo).toFixed(1)}`)
+    }
+
 // --------------------------------------------------- juice (#3138) ----
 {
     const fly = (s, xOff, until) => {
@@ -447,6 +503,8 @@ if (process.argv.includes('--mutate')) {
         ['the rain bed ignores cell depth', SIMF, 'return { gain: +(0.006 + 0.048 * d * d).toFixed(4), cut: Math.round(240 + 760 * d) }', 'return { gain: 0, cut: 0 }'],
         ['the core sting loses its hysteresis (machine-gun thunder)', SIMF, "if (a >= 0.5 && b < 0.38) return 'core'", "if (a >= 0.5) return 'core'"],
         ['the glider stops reading storm depth (silent bed on the saddle craft)', SIMF, 'g.stormS = storm.s // #3272: the bed follows EVERY craft, not just the plane\n    g.lift = w.thermalLift(g.p.x, g.p.z, g.t)', 'g.lift = w.thermalLift(g.p.x, g.p.z, g.t)'],
+        ['the ring edge goes hard again (phase lottery returns)', WORLDF, 'const ring = 1.4 * Math.exp(-(dr * dr) / (2 * 34 * 34))', 'const ring = Math.abs(dr) < 55 ? 1.4 : 0'],
+        ['storm phase collapses to one for small seeds (the clock-only lottery)', WORLDF, '((r * 2654435761) >>> 0) % 6283', '(r >>> 13) % 6283'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
