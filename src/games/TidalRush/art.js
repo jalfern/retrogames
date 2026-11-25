@@ -422,6 +422,16 @@ export function sprayStep(sp, dt) {
     sp.geo.attributes.position.needsUpdate = true
 }
 
+// #3368 — storm spray headroom. Same law the crest lines use (#3349): under
+// storm the near-white droplets cool toward cyan and leave alpha headroom, so
+// the spray never saturates over whitecap water. Pure law — the material
+// carries the result, the pool math (placement/geometry) is untouched and the
+// additive law is intact: the spray still only adds light.
+export function sprayTint(storm = 0) {
+    const s = Math.max(0, Math.min(1, storm))
+    return { r: 0.95 - 0.28 * s, g: 0.98 - 0.06 * s, b: 1.0, opacity: 0.9 * (1 - 0.38 * s) }
+}
+
 // ---- ribbon wake: the WR64 signature streak -------------------------------------
 // Not dots — a stitched white ribbon that trails each hull: a ring buffer of
 // stern points turned into a triangle strip that widens and fades as it ages.
@@ -645,7 +655,7 @@ export function gullFrame(g, flock, b, t) {
     wr.rotation.z = dihedral - beat * 0.55
 }
 
-export function wakeStep(w, dt, storm = 0) {
+export function wakeStep(w, dt, storm = 0, budget = 1) {
     // #3349 item 1 — storm headroom. On whitecap water the additive wake
     // clipped to a posterized white slab: white-on-white can only win by
     // HUE, never by brightness. Under storm the crest lines cool toward
@@ -654,6 +664,10 @@ export function wakeStep(w, dt, storm = 0) {
     // headroom so the V shapes the water instead of saturating it.
     // Additive-only law intact — the wake still never takes light away,
     // it just adds smarter. Geometry (V/spread/shoulder/channel) untouched.
+    // #3368 item 3 — the pile-up budget: additive is no cap, so a pack of
+    // riders converging on the first gate rides 3 wakes at once. Under a
+    // convergence signal the crests and haze step BACK — same law, less
+    // light, never a new blend. Default 1 keeps the solo law byte-identical.
     const pts = w.pts
     for (let i = 0; i < pts.length; i++) pts[i].age += dt
     while (pts.length && pts[0].age > w.life) pts.shift()
@@ -678,7 +692,7 @@ export function wakeStep(w, dt, storm = 0) {
         // the V arms spread with age; the fresh end stays narrow and hot
         const hw = p.width * (0.22 + 0.78 * t)
         const px = Math.cos(p.heading), pz = -Math.sin(p.heading)
-        const ea = foam * tw * 0.70 * (1 - storm * 0.38) // crest-line alpha (the bright V arms); storm keeps headroom (#3349)
+        const ea = foam * tw * 0.70 * (1 - storm * 0.38) * budget // crest-line alpha (the bright V arms); storm keeps headroom (#3349), convergence steps back (#3368)
         const j = i * 5
         // #3342 crest emphasis: the shoulder falls off HARDER (0.34→0.22) and
         // the channel goes quieter (0.10→0.07) — at the shallow chase angle the
@@ -697,7 +711,7 @@ export function wakeStep(w, dt, storm = 0) {
         // the arms — restrained so the V lines stay the read. Strictly
         // light-adding: the darkening-strip artifact is gone (#3337).
         const dw = hw * 1.18
-        const ga = foam * tw * 0.05 * (1 - storm * 0.7) // the haze rides out at full storm — on whitecaps it is only pile-up (#3349)
+        const ga = foam * tw * 0.05 * (1 - storm * 0.7) * budget // the haze rides out at full storm — on whitecaps it is only pile-up (#3349), and it steps back too under convergence (#3368)
         const dy = p.y - 0.02
         const q = i * 2
         dPos[q * 3] = p.x + px * dw; dPos[q * 3 + 1] = dy; dPos[q * 3 + 2] = p.z + pz * dw
