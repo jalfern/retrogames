@@ -333,24 +333,26 @@ function stepPlane(g, w, sx, sy, dt) {
             if (znR.v > g.ground.rollV) g.ground.rollV = znR.v
         }
         // A rollout that carries ≥ ROLL_MIN metres without leaving the dash
-        // pays onto the badge the instant it ends — whatever ends it.
-        const bankRoll = (via) => {
-            const gd = g.ground
+        // pays onto the badge the instant it ends — whatever ends it. Emitted
+        // AFTER the wheels/crew event so the cabinet's last word is the reward.
+        const bankRoll = (gd, via) => {
             const clean = gd.rollD >= CFG.ROLL_MIN && gd.rollV <= CFG.ROLL_LINE
             if (clean) g.land = Math.max(g.land, gd.score + CFG.ROLL_CREDIT)
             ev(g, 'rollout', { clean, via, dist: +gd.rollD.toFixed(1), maxV: +gd.rollV.toFixed(1), credit: clean ? CFG.ROLL_CREDIT : 0 })
         }
         if (sy > 0 && g.speed >= CFG.PLANE_LIFTOFF) {
-            bankRoll('abort')
+            const gd = g.ground
             g.ground = null
             g._depart = 1.5 // grace to climb clear before the crash law re-arms
             ev(g, 'wheels')
+            bankRoll(gd, 'abort')
         } else if (g.speed < CFG.PLANE_STOP) {
-            bankRoll('crew')
+            const gd = g.ground
             g.ground = null
             ev(g, 'crew')
             placePlaneAtStart(g)
             g.respawnT = 1.0
+            bankRoll(gd, 'crew')
         }
         return
     }
