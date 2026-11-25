@@ -110,8 +110,8 @@ if (MUT) {
     console.log(`[mutant] ${a.note} — check must go red`)
 }
 
-const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32, demoPad, demoOver, compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, tiltImpulse, TILT_NUDGE, soloBed, SOLO_FLOOR, SOLO_BASE, SOLO_CAP, SOLO_HEAT_AT } = await import('../src/games/Pinball/sim.js')
-const { SKINS, skinsFor, skinAt, parseStyle, styleIndex, PAL, PAL_EMBER, PAL_TIDE, PAL_TOXIC, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, FONT } = await import('../src/games/Pinball/art.js')
+const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32, demoPad, demoOver, compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, zoneGuidePath, tiltImpulse, TILT_NUDGE, soloBed, SOLO_FLOOR, SOLO_BASE, SOLO_CAP, SOLO_HEAT_AT } = await import('../src/games/Pinball/sim.js')
+const { SKINS, skinsFor, skinAt, parseStyle, styleIndex, PAL, PAL_EMBER, PAL_TIDE, PAL_TOXIC, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, FONT, textFit, marqueeFit } = await import('../src/games/Pinball/art.js')
 
 const r = new Report('pinballcheck')
 r.info('boot', 'sim.js imported in Node, zero DOM, zero Math.random')
@@ -1381,6 +1381,65 @@ const wrap = (gs) => {
     r.check('a held NUDGE button owns b — the lean never stomps it', sh.includes('!keysRef.current.b'))
     r.check('the tilt pulse rides the sim steps then releases b', sh.includes('if (tiltPulseRef.current > 0 && --tiltPulseRef.current === 0) keysRef.current.b = false'))
     r.check('the lean maps through the shared screen-rotation law', sh.includes("import { tiltVec } from '../../components/padTypes.js'"))
+}
+
+// ═══ #3290 stage 1: honest ghost, drawn rules, phone fits ═══
+{
+    r.info('smith-ui', 'discoverability, ghost-demo honesty, the zone guide and the phone-width laws')
+    // the drawn rim IS the law: every vertex passes bumperZoneOk,
+    // and the rim touches all four clamps plus the live ellipse.
+    const zone = zoneGuidePath(SMITH_LIMITS)
+    r.check('#3290 zoneGuidePath: every vertex legal under bumperZoneOk (guide == law)',
+        zone.every(([x, y]) => bumperZoneOk(SMITH_LIMITS, x, y)))
+    r.check('#3290 zoneGuidePath traces all clamps and the ellipse rim',
+        zone.some(([x]) => x === SMITH_LIMITS.domX[0]) && zone.some(([x]) => x === SMITH_LIMITS.domX[1]) &&
+        zone.some(([, y]) => y === SMITH_LIMITS.domY[0]) && zone.some(([, y]) => y === SMITH_LIMITS.domY[1]) &&
+        zone.some(([x, y]) => Math.abs(((x - 180) / 144) ** 2 + ((y - 160) / 124) ** 2 - 1) < 1e-9))
+    r.check('#3290 rim agreement: just-outside refuses, the clamp edge passes',
+        !bumperZoneOk(SMITH_LIMITS, 268, 160) === false && !bumperZoneOk(SMITH_LIMITS, 269, 160) &&
+        !bumperZoneOk(SMITH_LIMITS, 180, 271) && !bumperZoneOk(SMITH_LIMITS, 82, 260) &&
+        bumperZoneOk(SMITH_LIMITS, 82, 160))  // the clamp edge where the ellipse is widest-short
+    // the ghost ad-line set is crawl-legal (same three laws as every cabinet)
+    r.check('#3290 ghost sell-lines: >=3, in-font, crawl-length, no shout words',
+        Array.isArray(ATTRACT_DMD.ghost) && ATTRACT_DMD.ghost.length >= 3 &&
+        ATTRACT_DMD.ghost.every((x) => x.length <= 23 &&
+            [...x.toUpperCase()].every((ch) => FONT[ch] !== undefined) &&
+            !/TILT|MULTIBALL|MULT x|ORBIT SET|ORBIT LOCK|RAMP SET|SAVE/.test(x)))
+    r.check('#3290 both stock cabinets now sell BUILD YOUR OWN TABLE',
+        ATTRACT_DMD['cabinet-one'].includes('BUILD YOUR OWN TABLE') &&
+        ATTRACT_DMD['ember-rider'].includes('BUILD YOUR OWN TABLE'))
+    // phone-width fit laws: every marquee the row can show stays inside its card
+    const CARDW = 104
+    const labels = []
+    for (const tag of ['CABINET ONE', 'EMBER RIDER', 'DESIGN YOUR OWN', 'SUPER NOVA RIDER'])
+        for (const id of ['cabinet-one', 'ember-rider', 'my-table'])
+            for (const k of skinsFor(id)) labels.push(tag + ' \u00b7 ' + k.label)
+    r.check('#3290 marqueeFit: every tag x kit marquee stays inside its card',
+        labels.every((lb) => { const m = marqueeFit(lb, CARDW); return m.text.length * m.size * 0.6 <= CARDW }),
+        labels.length + ' labels tried')
+    r.check('#3290 marqueeFit drops the \u00b7 KIT tail before truncating a name',
+        marqueeFit('SOME LONG NAME \u00b7 MIDNIGHT', CARDW).text === 'SOME LONG NAME')
+    r.check('#3290 textFit truncation is a last resort that still fits', (() => {
+        const m = textFit('X'.repeat(40), 60); return m.size === 7 && m.text.length * 7 * 0.6 <= 60 && m.text.length >= 1
+    })())
+    // shell anchors: the honesty, the always-badge, the pad-zone lift, the tap plumbing
+    const sh2 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/index.jsx'), 'utf8')
+    r.check('#3290 the unsaved ghost demos the bench default (NOVA), not CABINET ONE',
+        sh2.includes('previewTb(cabRef.current)') && sh2.includes('compileTable(SMITH_REFS.nova).tb'))
+    r.check('#3290 the ghost badge rides the row from every frame (isSel || ghostCard)',
+        sh2.includes('const ghostCard = i === 2 && !CABS[2].saved') && sh2.includes('if (isSel || ghostCard)'))
+    r.check('#3290 the blueprint shimmers unselected (invitation, not furniture)',
+        sh2.includes('0.25 + 0.2 * Math.sin(t / 320)'))
+    r.check('#3290 the bench palette lives above the phone pad zone (SMITH_BAR y488)',
+        /SMITH_BAR = \{ bw: 38, x0: 28, y0: 488, h: 22 \}/.test(sh2))
+    r.check('#3290 bench taps answer their own tool cells',
+        sh2.includes('ti = Math.floor((pxE - SMITH_BAR.x0) / SMITH_BAR.bw)'))
+    r.check('#3290 a tap that opens the bench never presses A through tapStart',
+        sh2.includes('tapSpaceGuard = true') && sh2.includes('if (tapSpaceGuard) { tapSpaceGuard = false'))
+    r.check('#3290 card-tap seams pick the nearest centre (no first-match coin-toss)',
+        sh2.includes('const dd = Math.abs(px - (r.x + CARD_W / 2))') && sh2.includes('if (dd < bd) { bd = dd; best = i }'))
+    r.check('#3290 the selected mini-card carries its own legible message strip',
+        sh2.includes('textFit(mt, CARD_W - 10') && sh2.includes('mf.size'))
 }
 
 // --------------------------------------------- solo bed (#3304) ----

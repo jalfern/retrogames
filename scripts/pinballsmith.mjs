@@ -35,11 +35,50 @@ try {
     // ---- the ghost slot waits on the row ----
     const s0 = await smith(page)
     ok('fresh browser: slot 2 is the ghost smith card', s0.saved === false && s0.tag === 'DESIGN YOUR OWN', s0.tag)
+
+    // ---- #3290 item 1: the bench advertises itself from the unselected row ----
+    let badge = 0
+    for (let k = 0; k < 18 && badge === 0; k++) {
+        badge = await page.evaluate(() => {
+            const c = document.querySelector('canvas')
+            const d = c.getContext('2d').getImageData(200, 410, 156, 26).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i + 2] > 100 && d[i + 2] - d[i] > 50 && d[i + 1] > 90) n++
+            return n
+        })
+        await wait(60)
+    }
+    ok('#3290 the smith badge rides the row while slot 2 is UNSELECTED', badge > 20, `px=${badge}`)
     await keys(page, 'ArrowRight', 2)
     ok('the row cycles to the smith slot', (await smith(page)).sel === 2)
+    const gh = await smith(page)
+    ok('#3290 the unsaved slot demos the bench default table (NOVA), not CABINET ONE',
+        gh.demoTbId === 'my-table' && gh.saved === false, gh.demoTbId)
+    ok('#3290 the ghost demo sells the bench on the strip',
+        ['BUILD YOUR OWN TABLE', 'TEST IT ON THE SPOT', 'NAME IT RIDES THE ROW'].includes(gh.demoMsg), gh.demoMsg)
     await page.keyboard.press('Space')
     await wait(120)
     ok('START on the ghost opens the bench', (await smith(page)).screen === 'edit')
+
+    // ---- #3290 item 3: the dome rule is DRAWN while BUMPER is selected ----
+    // differential probe: the painted dome graphic is static chrome at these
+    // spots, so only the DELTA between tool frames can be the guide rim.
+    const rimHit = () => page.evaluate(() => {
+        const g = document.querySelector('canvas').getContext('2d')
+        let n = 0
+        for (const [x, y] of [[82, 160], [268, 160], [180, 70], [180, 270]]) {
+            const d = g.getImageData(x - 2, y - 2, 5, 5).data
+            for (let i = 0; i < d.length; i += 4) if (d[i + 2] > 110 && d[i + 2] - d[i] > 60) n++
+        }
+        return n
+    })
+    const rimBumper = await rimHit()
+    await keys(page, 'KeyB', 1)                        // SLING: the rim is the bumper's rule, not decor
+    await wait(150)                                    // let a frame present after the tool switch
+    const rimSling = await rimHit()
+    ok('#3290 the BUMPER tool draws the dome zone rim — and SLING drops it',
+        rimBumper - rimSling > 4, `bumper=${rimBumper} sling=${rimSling}`)
+    await keys(page, 'KeyB', 7)                        // back to BUMPER for the suite's placement legs
 
     // ---- refusals bite with real keys ----
     await keys(page, 'ArrowLeft', 17)                  // x clamps at 40 — inside the row, left of the bumper zone (82)
@@ -131,7 +170,43 @@ try {
     s = await smith(page)
     ok('the cabinet survives a reload', s.saved === true && s.tag === keepName, s.tag)
 
-    ok('zero page errors across the whole smith run', errors.length === 0, errors.join(';'))
+        // ---- #3290 item 4: nearest-centre seams and the phone tap path ----
+    const seam = await page.evaluate(() => {
+        const r = document.querySelector('canvas').getBoundingClientRect()
+        return { x: r.left + 126 * r.width / 360, y: r.top + 310 * r.height / 600 }
+    })
+    await page.mouse.click(seam.x, seam.y)
+    await wait(300)
+    const ss = await smith(page)
+    ok('#3290 a tap on the card seam takes the NEAREST cabinet (ember)',
+        ss.sel === 1 && ss.tbId === 'ember-rider', JSON.stringify({ sel: ss.sel, tbId: ss.tbId, screen: ss.screen }))
+
+    const tp = await browser.newPage({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true })
+    await tp.goto(`${BASE}/pinball`)
+    await tp.waitForFunction('window.__pinballTest', { timeout: 20000 })
+    await tp.evaluate(() => localStorage.clear())
+    await tp.reload()
+    await tp.waitForFunction('window.__pinballTest', { timeout: 20000 })
+    await wait(800)
+    await tp.touchscreen.tap(304, 417)                 // ghost card: pick + open the bench, pad visible
+    await wait(400)
+    const t0 = await tp.evaluate(() => window.__pinballTest.smith())
+    ok('#3290 tap-to-bench opens the editor WITHOUT pressing A (tapStart guard)',
+        t0.screen === 'edit' && t0.notice === '' && t0.draft.bumpers.length === 3,
+        JSON.stringify({ sc: t0.screen, n: t0.notice }))
+    const cell = await tp.evaluate(() => {
+        const r = document.querySelector('canvas').getBoundingClientRect()
+        return { x: r.left + (28 + 3.5 * 38) * r.width / 360, y: r.top + 499 * r.height / 600 }
+    })
+    await tp.touchscreen.tap(cell.x, cell.y)           // MAGNET cell
+    await wait(250)
+    const t1 = await tp.evaluate(() => window.__pinballTest.smith())
+    ok('#3290 a phone tap picks a bench tool directly and stays on the bench',
+        t1.tool === 'MAGNET' && t1.screen === 'edit' && t1.notice === '',
+        JSON.stringify({ tool: t1.tool, sc: t1.screen, n: t1.notice }))
+    await tp.close()
+
+ok('zero page errors across the whole smith run', errors.length === 0, errors.join(';'))
 } catch (e) {
     ok('no crash', false, e.message)
 } finally {

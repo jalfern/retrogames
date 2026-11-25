@@ -524,7 +524,8 @@ export const ATTRACT_DMD = {
     'ember-rider': ['RIDER RUNS MIRRORED', 'LEFT LANE LOCKS AT 400', 'PACK PAYS DOUBLE HERE', 'NUDGE CAREFULLY HERE', 'BUILD YOUR OWN TABLE'],
     // #3290 item 1: the unsaved smith slot demos the bench default and sells
     // the bench while it does — the card that shows the workshop also says so.
-    ghost: ['BUILD YOUR OWN TABLE', 'TEST IT BEFORE YOU SAVE', 'SAVE IT - RIDES THE ROW'],
+    // (No word from drawDMD's shout list in here: these lines must crawl.)
+    ghost: ['BUILD YOUR OWN TABLE', 'TEST IT ON THE SPOT', 'NAME IT RIDES THE ROW'],
 };
 
 // #3290 item 4 — phone-width legibility laws (pure, Node-pinned). Canvas
