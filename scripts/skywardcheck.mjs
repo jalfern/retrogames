@@ -850,6 +850,23 @@ void runAuto
         r.check('planeTouch: a steep sink (−3) is not soft — no catch', planeTouch(w, 120, 130, Math.PI / 2, -3, 30) === null)
         r.check('planeTouch: off-strip — no catch', planeTouch(w, 120, 160, Math.PI / 2, -1, 30) === null)
 
+        // #3375 — the flare: a blended sink well inside the catch band pays
+        // FLARE_CREDIT on top of the zone payout; an instant-only caller
+        // (soft omitted) still scores plain, and the credit never moves the
+        // catch band, the crab law or the zone table.
+        const flared = planeTouch(w, 120, 130, Math.PI / 2, -1, 30, -1.0)
+        r.check('#3375 planeTouch: a flared arrival (blended sink inside the band) banks zone + flare credit',
+            flared && flared.zone === 4 && flared.score === 750 && flared.flare === true && flared.blend === -1.0 && flared.aligned === true, JSON.stringify(flared))
+        const straightIn = planeTouch(w, 120, 130, Math.PI / 2, -1, 30, -2.1)
+        r.check('#3375 planeTouch: a straight-in plunger at the band floor banks no credit',
+            straightIn && straightIn.zone === 4 && straightIn.score === 700 && straightIn.flare === false, JSON.stringify(straightIn))
+        r.check('#3375 planeTouch: omitted soft (pure instant caller) scores plain, flare false',
+            (() => { const p = planeTouch(w, 120, 130, Math.PI / 2, -1, 30); return p && p.score === 700 && p.flare === false && p.blend === null })(),
+            JSON.stringify(planeTouch(w, 120, 130, Math.PI / 2, -1, 30)))
+        r.check('#3375 planeTouch: crabbed still scuffs flat, no flare credit',
+            (() => { const p = planeTouch(w, 120, 130, Math.PI / 2 + 0.45, -1, 30, -1.0); return p && p.zone === 0 && p.score === 60 && p.aligned === false && p.flare === undefined })(),
+            JSON.stringify(planeTouch(w, 120, 130, Math.PI / 2 + 0.45, -1, 30, -1.0)))
+
         // #3331 item 1 — the go-around window, pure law beside the catch.
         r.check('#3331 planeGoAround: hot (≥ ceiling), shallow, straight, on-strip is the bounce window', (() => {
             const a = planeGoAround(w, 100, 130, Math.PI / 2, -1, 34.5) // exactly at the ceiling
@@ -900,8 +917,8 @@ void runAuto
         r.check('the plane touches down: wheels-down event (plane, strip, FULL STRIP)',
             ld.evs.some((e) => e.kind === 'land' && e.craft === 'plane' && e.zone === 4 && e.aligned === true),
             ld.evs.map((e) => e.kind).join(','))
-        r.check('a plane landing banks to the WHEELS badge (land=700), NOT the licence score',
-            ld.h.land === 700 && ld.h.score === 0 && ld.h.grad.spot === null && !ld.h.done,
+        r.check('a plane landing banks to the WHEELS badge (land=700 + flare credit 750), NOT the licence score',
+            ld.h.land === 750 && ld.h.score === 0 && ld.h.grad.spot === null && !ld.h.done,
             `land=${ld.h.land} score=${ld.h.score} done=${ld.h.done}`)
 
         // #3331 item 1 SUPERSEDES #3319's "hot still crashes": a hot-but-
@@ -944,7 +961,7 @@ void runAuto
         {
             const ro = rollEvs.find((e) => e.kind === 'rollout')
             r.check('#3331 a clean rollout pays +100 onto the ✈ best (crew end, dist ≥ 12, offset ≤ 2)',
-                !!ro && ro.clean === true && ro.via === 'crew' && ro.dist >= 12 && ro.maxV <= 2 && ro.credit === 100 && roll.land === 800,
+                !!ro && ro.clean === true && ro.via === 'crew' && ro.dist >= 12 && ro.maxV <= 2 && ro.credit === 100 && roll.land === 850,
                 `ro=${JSON.stringify(ro)} land=${roll.land}`)
             r.check('#3331 the rollout reward never touches the licence spine (score/grad/done clean)',
                 roll.score === 0 && roll.grad.spot === null && !roll.done, `score=${roll.score} done=${roll.done}`)
@@ -1042,8 +1059,8 @@ void runAuto
 
         // stateOf exposes the plane's strip work to the harness/contract
         const stp = stateOf(ld.h)
-        r.check('stateOf: reports the banked plane landing (land 700), plain JSON',
-            stp.land === 700 && JSON.stringify(stp).length > 10, `land=${stp.land}`)
+        r.check('stateOf: reports the banked plane landing (land 750 incl. flare credit), plain JSON',
+            stp.land === 750 && JSON.stringify(stp).length > 10, `land=${stp.land}`)
     }
 
     // ── #3332 — the belt answers the runway (park law) ──────────────────────

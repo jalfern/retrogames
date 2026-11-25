@@ -50,10 +50,17 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   strip too — a quiet arrival parks with the zone banked (see *Quiet landing*
   below). What remains of the old bullet: no online (issue: not yet).
   (The engine-audio half closed in #3295, the glider's runway in #3302/#3306.)
-- A strip touchdown is judged at the instant the hull crosses the deck (gh<0.7),
-  same as the mat — there is no flare-quality law; a smooth approach that sinks
-  0.6 m at the threshold reads the same as a perfect one. Ground roll is no
-  longer one of them: #3331 added the centreline rollout credit (see the tail).
+- **Flare quality (#3375 item 1)** — a strip touchdown is no longer judged at
+  the instant the hull crosses the deck: the flare is a path law. The hull
+  feeds a rolling sink history (last 50 ticks ≈ 0.83 s, reset on every flight
+  start); at touchdown, planeTouch averages it and banks FLARE_CREDIT
+  (+50) on top of the zone payout when the blend is well inside the catch
+  band (mean ≥ −1.5 vs the −2.2 band floor). The catch band, crab law, zone
+  table and rollout credit are unchanged — a straight-in plunger at the
+  floor earns nothing, and omitted blend (pure instant caller) still scores
+  plain. Cabinet banner gains a `· SMOOTH` nudge on a flared touchdown.
+  Ground roll is no longer one of them: #3331 added the centreline rollout
+  credit (see the tail).
 - The cell drifts on a fixed seeded ellipse, not a steered weather sim (no
   cell-to-cell travel, no squall line); a long run learns the sweep the way
   rungs 1's lines were learned.
@@ -298,3 +305,23 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
 - **Not done here (item 6)** — repeat FULL STRIP farming: the badge banks
   best-only, so laps can't inflate it beyond 800; the issue called
   do-nothing valid, and that's what this stage did.
+
+## Flare quality (#3375)
+- **The flare earns (item 1)** — Pilotwings judges the arrival on the path,
+  not the instant. The hull feeds a rolling sink history (last 50 ticks,
+  reset on every flight start: `placePlaneAtStart`, `placePassStart`,
+  `placeRingStart` and the DEV teleport hook); at touchdown the call site
+  averages it and passes the blend as `soft` to `planeTouch`, which banks
+  `FLARE_CREDIT` (+50) on top of the zone payout when the blend clears
+  `FLARE_BAND_MIN` (−1.5 vs the −2.2 catch floor). Omission (pure instant
+  caller) scores plain; a straight-in plunger at the floor earns nothing;
+  crabbed-in scuffs still pay the flat 60 and never the credit; the wheels
+  badge can now carry the credit (e.g. FULL STRIP lands at 750, clean roll
+  850). Badge-only: no licence spine change, hash inputs unchanged, replay
+  byte-identical. Cabinet banner gains `· SMOOTH` on a flared touchdown.
+- **Harness** — +4 pure pins (blend credit / straight-in-plunger-no-credit /
+  omitted-soft-plain / crabbed-no-credit) and deliberate re-anchors:
+  whole-hull `land` 700→750, clean-roll `land` 800→850, stateOf 700→750.
+  `skywardplay` expects ✈350 (plane catch), ✈850 (clean roll), banner
+  `RUNWAY MIDDLE +350`. Items 3 (gear anim), 4 (bounce escalation) and 5
+  (phone eyeball) remain open on #3375 — this PR only closes item 1.
