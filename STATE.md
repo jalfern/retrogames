@@ -1,62 +1,68 @@
-# STATE — forge board snapshot (slot a, 2026-11-25 — SMITH GETS FOUND)
+# STATE — forge board snapshot (slot a, 2026-11-25 — THE BAND BEATS)
 
 ## This session — one ship, landed
-- Warden TARGET **#3290 PINBALL smith polish** claimed at the first call
-  (`forge-claim.sh 3290 a` accepted; it is a multi-stage QA tail — items 1–4
-  shipped, 5–7 stay open).
-- **SMITH POLISH STAGE 1 DONE** (`2d563fd`, PR #3320): the bench is now
-  findable, honest and phone-legible. Unsaved ghost badge rides the row every
-  frame (pulsing), blueprint shimmers, `BUILD YOUR OWN TABLE` crawls on both
-  stock cabs + a `ghost` ad set; the ghost demo plays NOVA (`previewTb` — the
-  layout openEditor actually opens with); selected mini-card carries its own
-  fitted message strip; the bumper dome zone is DRAWN while BUMPER is selected
-  (`zoneGuidePath`, guide==law pinned at every vertex); fit laws
-  (`textFit`/`marqueeFit` in art.js) keep marquees/badges on-screen; card-tap
-  seams resolve nearest-centre; bench palette lifted to `SMITH_BAR` y488 above
-  the measured pad zone (nub top ≈y515 @375×812) + tool-cell taps.
-- **Bonus bug killed**: App's `tapStart` synthesises Space on every canvas tap
-  — inside the bench every tap secretly pressed A and dropped a part at the
-  cursor. `tapSpaceGuard` (one-shot, canvas-armed) fixes it; touch leg pins it.
-- Proof: pinballcheck **251/251** (+16 pins, guide-clamp mutant proven red;
-  full mutant run 12/12), pinballsmith **29/29** (+6 legs incl. touch),
-  pinballplay 57/57 (one pre-existing DMD-text flake, rerun green),
-  contractcheck 14/14; eslint + 3 scoped gates + build green.
+- Warden TARGET **#3319 SKYWARD plane landing** REFUSED at claim — slot b
+  claimed it 13 min earlier and died mid-edit (uncommitted sim.js in
+  `retrogames-forge-skyward-wheels`, branch never pushed: NOT a resumable
+  corpse per step 1b, and the liveness namespace holds it until ~14:24Z).
+  Normal ladder: no halt/steer, `next` #1712 waiting-jon, `game-queue` empty,
+  QA MASTER live (no feedback borrow), flagship stage spent → **NEVER-DRY
+  `KICK TIDAL RUSH 0 weak`** (score 7).
+- **Score 7 was partly phantom**: the README's two declined bullets used
+  compound `**BLOCKED — …:**` bold markers; idle.mjs declines only the exact
+  `**BLOCKED**` token. Oldest honest builder gap was #2 (the cross-fade one);
+  markers re-marked in my PR so the shelf stops re-kicking declined work.
+- Filed + claimed my own POLISH **#3323**, shipped **`b7b32dc`** (PR #3328):
+  the squall band cross-fades **PER WAVE**. `frontGains(w)={√(1−w),√w}`
+  scales every outgoing/incoming Gerstner slot before one sum — equal power
+  (ga²+gb²≡1), swell trains at OWN phases ⇒ real BEATING: sweep margins
+  +0.95 m stack / −0.95 m glassy, impossible for the old convex mix. Edges
+  byte-exact tables all three mix paths; GLSL `heightFront` rebuilt as 8
+  gain-scaled unrolled terms in CPU order (drawn ≡ ridden kept); rain, hull
+  rules, tables, rng, wire untouched.
+- Proof: tidalcheck **186/186** (+8 pins: energy, monotone, per-slot-sum,
+  mixVy≡d/dt, byte-exact edges×3, live-band both-signs beat search, GLSL
+  twin shape) + new mutant `beats` caught (3 red), `front` still caught
+  (7 red). tidaldrive green :5173 (front live, win P1, zero page errors),
+  contractcheck 15/15; eslint + 3 scoped gates + build green.
+- Prod verified: served chunk `TidalRush-J4E0XuG6.js` contains
+  `sqrt(1.0 - w)`. #3323 shipped+closed. **QA tail filed: #3329**
+  (beat legibility on lite, crossing fairness vs old blend, sky-lags-sea
+  now more visible, HUD chrome, props at band edges).
 
 ## Harness lessons (worth one line each)
-- **Global synth keys are a shared bus**: App tapStart's Space reaches games
-  as untrusted keydowns — any screen that treats Space as an ACTION must
-  distinguish pad-button Space (`[data-vc]`, no canvas pointerdown) from
-  canvas-tap Space. Guard pattern: arm on canvas pointerdown, swallow the
-  matching Space, trusted keys reset.
-- **A pixel probe on art must be differential**: the painted dome graphic sits
-  under the guide rim and satisfies a naive cyan threshold in BOTH tool states;
-  only the tool-toggle delta measures the guide.
-- **Headless frame settle**: 16 ms after an input can read the pre-switch
-  frame — wait ≥150 ms before pixel-sensing a state change (fixes the last
-  smith leg flake family).
-- `1/sqrt(e)` can round back over 1 — renormalise with a 1−1e-9 hair when a
-  float-noise vertex must satisfy a strict `<= 1` law.
+- `parseGaps` declines only the exact `**BLOCKED**` token — a compound bold
+  (`**BLOCKED — …:**`) reads as a live gap and phantom-scores the title on
+  every weakestStage. Mark BLOCKED bullets with the bare token.
+- Beat search: sample the LIVE front band by `frontW ∈ (0.15,0.85)` along
+  travel+perp, both signs (above-max AND below-min of the two tables) are the
+  proof convexity left. Floor sample count from a measured n, not bay guesses.
+- Never edit in the main checkout — one mis-aimed edit this session, reverted
+  clean before anything staged; the lane worktree is the only workspace.
 
 ## PLAYABLE on main right now
-- `/retrogames/pinball` smith polish (#3320) + TABLE SMITH + tilt-nudge +
-  tidal rooms + SOLO bed; `/retrogames/skyward` engine bed + living storm;
-  `/retrogames/grind-city` rail grabs + coping stalls + manuals chip;
-  `/retrogames/pinball` rooms, mario-kart (tilt), ice-climber, marble-rush
-  (tilt, trick hop), comet-drift pair (tilt), ssx (tilt), marble-madness,
-  pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT,
-  TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga,
+- `/retrogames/tidal-rush` BEATING squall band (#3328) + rain gameplay +
+  5 airborne verbs + rooms/spectate/rejoin; `/retrogames/pinball` smith polish
+  (#3320) + TABLE SMITH + tilt-nudge + SOLO bed; `/retrogames/skyward` engine
+  bed + living storm (+ plane wheels law building on #3319);
+  `/retrogames/grind-city` rail grabs + coping stalls + manual chip; mario-kart,
+  ice-climber, marble-rush, comet-drift pair, ssx, marble-madness, pacman,
+  mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP
+  SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, galaga,
   missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
 
 ## Board watch (facts, not questions)
-- #3290 **stays open** (`feedback`) — items 5 (kits in the bench), 6
-  (unified carry-and-drop idiom), 7 (garage of cabinets) are the next smith
-  stage; do NOT redo items 1–4 (see ship comment on the issue).
-- `game-queue` EMPTY at session start/claim; `next` #1712 waiting-jon (not
-  work). QA holds: #3237, #3290 tail, #3281, #3244, #3233, #3300.
-- Next builder claim: run `idle-kick` LIVE — slot b's notes expect `KICK
-  SKYWARD 0 weak` (gap 0 keeps the online remnant; the honest single-stage
-  slice there is the second landing strip).
-- Nightly: main-ok green at claim and at merge.
+- `game-queue` EMPTY at my close; `next` #1712 waiting-jon (not work).
+- **Next builder claim: run `idle-kick` LIVE** — at my session end it answered
+  `KICK PINBALL 0 weak`. Slot b's #3304 session already DECLINED pinball gap 0
+  (phone-HUD audit = #3290 item 4, contrast pass ran via #3297) — derive the
+  next unowned pinball bullet honestly from README + open issues, don't redo it.
+- Holds: **#3319 building `lane:games`** (Skyward plane landing — slot b's
+  claim live; its stale worktree `retrogames-forge-skyward-wheels` holds
+  uncommitted sim.js — if slot b does not resume it after the lock ages out,
+  the corpse rule applies then, not before). #3281 building-qa→merged; QA
+  tails open: #3329 (new), #3233, #3290 (feedback, items 5–7), #3244/#2971.
+- Merges today incl. #3320–#3328 pair-lanes; main-ok green at my claim/merge.
 
 ## Open questions (links only — #605)
 - #3054 — QA: native TestFlight ports have no recorder/upload (lane:qa, AWAITING).
@@ -65,9 +71,9 @@
 - No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot a: dev server on :5173 stopped via scripts/devstop.sh at session end;
-  worktree `~/Dev/retrogames-forge-pinball-smith` detached clean at
-  origin/main by mergeclean — remove when convenient.
+- Slot a: dev :5173 stopped via scripts/devstop.sh; worktree
+  `~/Dev/retrogames-forge-tidal-beats` detached clean at origin/main by
+  mergeclean — remove when convenient.
 - Game merged this session ⇒ this STATE.md ships via its own docs/state PR;
   parked at /tmp/forge/STATE.a.parked.md via statepark.
-- Time-box: ~2 h 35 min of 3 h.
+- Time-box: ~1 h of 3 h at ship.
