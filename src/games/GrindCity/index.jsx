@@ -67,6 +67,7 @@ const GrindCityGame = () => {
         share: { current: null },
         shareChip: { current: null },
         shareFn: { current: null },
+        styleChip: { current: null },
     }).current
 
     useEffect(() => {
@@ -122,6 +123,7 @@ const GrindCityGame = () => {
         // rider that searches the real sim at every trick decision (?style=n
         // shifts the rotation origin — the QA drive leg rides v3 at once).
         const STYLE_N = 4
+        const STYLE_NAMES = ['CLASSIC', 'FLIP', 'GRAB', 'THINKING']
         const makeAttractBot = (v) => (v === 3 ? makeSearchBot() : makeBot(v))
         const styleQ = parseInt(new URLSearchParams(window.location.search).get('style'), 10)
         const style0 = Number.isInteger(styleQ) && styleQ >= 0 && styleQ < STYLE_N ? styleQ : 0
@@ -131,6 +133,11 @@ const GrindCityGame = () => {
         let tickEvents = []
         let pumpCd = 0
         let lastSec = 999
+        // #3401 style tell: the attract corner names the rider, and the thinker
+        // flashes each commit — the search was invisible except by its tricks.
+        let stylePrevCommit = 0
+        let styleFlashT = 0
+        let lastInputByBot = false
 
         // ── run replay (#3225) ──────────────────────────────────────────────
         // The cabinet logs one packed input word per played tick. When a run
@@ -224,6 +231,7 @@ const GrindCityGame = () => {
             sim.phase = 'play'
             attractV = (attractV + 1) % STYLE_N   // each idle loop rides a different style
             bot = makeAttractBot(attractV)
+            stylePrevCommit = 0; styleFlashT = 0
             attractMode = true
             screenRef.current = 'attract'
             setScreen('attract')
@@ -465,6 +473,7 @@ const GrindCityGame = () => {
             const input = inputOverride || (attractMode
                 ? (bankedPad || (bot.thinks ? searchPad(sim, bot) : botPad(stateOf(sim), bot)))
                 : pad())
+            lastInputByBot = attractMode && !bankedPad && !inputOverride
             if (!attractMode && screenRef.current === 'play') inputLog.push(packIn(input))
             step(sim, input)
             tickEvents.push(...sim.events.splice(0, sim.events.length))
@@ -690,6 +699,29 @@ const GrindCityGame = () => {
                 hud.share.current.style.opacity = shareFlashT > 0 ? String(Math.min(1, shareFlashT)) : '0'
                 if (shareFlashT > 0) shareFlashT -= DT
             }
+            // #3401 style tell — the attract corner names its rider, and the
+            // searcher flashes every commit (the thinking loop was invisible
+            // except by its tricks). Honest chip: it only speaks while the BOT
+            // rides — a banked best line or a shared line is the player's own.
+            if (hud.styleChip.current) {
+                if (bot.nCommit > stylePrevCommit) { stylePrevCommit = bot.nCommit; styleFlashT = 0.6 }
+                if (styleFlashT > 0) styleFlashT -= DT
+                const ridesBot = attractMode && lastInputByBot
+                if (!ridesBot) {
+                    hud.styleChip.current.style.opacity = 0
+                } else {
+                    const lit = styleFlashT > 0
+                    hud.styleChip.current.textContent = lit
+                        ? `LOOP ${attractV + 1}/${STYLE_N} · \u2713 COMMIT`
+                        : `LOOP ${attractV + 1}/${STYLE_N} · ${STYLE_NAMES[attractV]}`
+                    hud.styleChip.current.className = `absolute left-3 bottom-3 whitespace-nowrap rounded border px-2 py-0.5 text-[10px] font-black italic tracking-[0.2em] drop-shadow-[0_2px_0_rgba(0,0,0,.9)] ${
+                        bot.thinks
+                            ? lit ? 'border-[#7dffb0] bg-[#7dffb0]/20 text-[#7dffb0]' : 'border-[#7dffb0]/40 text-[#7dffb0]/90 animate-pulse'
+                            : 'border-white/25 text-white/45'
+                    }`
+                    hud.styleChip.current.style.opacity = 1
+                }
+            }
         }
         raf = requestAnimationFrame(frame)
 
@@ -825,6 +857,12 @@ const GrindCityGame = () => {
                 )}
                 {screen === 'attract' && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        {/* #3401 rider chip — names the attract style, pulses +
+                            flashes on commits while the searcher thinks. */}
+                        {/* #3401 rider chip — names the attract style, pulses +
+                            flashes on commits while the searcher thinks. Bottom-left:
+                            the top-left corner belongs to the ARCADE/FEEDBACK chrome. */}
+                        <div ref={hud.styleChip} data-q="attract-style" className="absolute left-3 bottom-3 rounded border border-white/25 px-2 py-0.5 text-[10px] font-black italic tracking-[0.2em] text-white/45 drop-shadow-[0_2px_0_rgba(0,0,0,.9)]" style={{ opacity: 0 }} />
                         <div className="text-6xl font-black italic tracking-tight text-[#ffd35e] drop-shadow-[0_4px_0_rgba(0,0,0,.9)]">GRIND CITY</div>
                         <div className="mt-1 text-sm tracking-[0.5em] text-white/80">ONE PARK · LONG LINES</div>
                         {best && (
