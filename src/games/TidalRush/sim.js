@@ -46,6 +46,17 @@ const LAUNCH_VY_STORM = -2.35 // storm seas are bigger; a hair higher threshold 
 const G = 9.81
 const TRICK_RATE = 9.5        // rad/s spin while A held airborne
 const BARREL_RATE = 10.0      // rad/s barrel roll while steer is pinned airborne
+// #3276 flips + handstands — pitch verbs on the SAME six bits the wire already
+// carries: brake-alone airborne tips the nose over the tail (FLIP, harder than
+// a flat spin, worth more); brake WITH throttle commits nose-down past vertical
+// and HOLD it (HANDSTAND, paid by the half-second inverted). Autopilots never
+// brake, so a flip/handstand is always a committed input — never an accident.
+const FLIP_RATE = 11.0        // rad/s back-flip pitch while brake held alone
+const HAND_RATE = 7.0         // rad/s nose-down pitch while brake + throttle held
+const HAND_VERT = 1.15        // rad nose-down past which the rider reads inverted
+const HAND_STEP = 0.5         // seconds inverted per payment
+const HAND_PAY = 150          // points per inverted half-second
+const HAND_CAP = 3            // pays per air — the hold must end sometime
 const AIR_BONUS_RATE = 50     // score per second of hang-time under a landed trick
 const AIR_BONUS_CAP = 100     // a 2 s send gets the whole cap
 const BOOST_DRAIN = 0.30      // meter per second while sprinting
@@ -146,6 +157,7 @@ function makeCraft(id, name, color, startArc, skill) {
         lean: 0, pitch: 0, roll: 0,
         airborne: false, vy: 0, spin: 0, spinArmed: false, trickPts: 0, trickArmed: 0,
         rollSpin: 0, airT: 0,        // barrel radians + hang-time accumulated this air
+        flipAng: 0, hsT: 0, hsPaid: 0, trickClaimed: false, // #3276: flip radians + inverted hold
         boost: 0, boosting: false,
         penalty: 0,                   // seconds of choked throttle left
         score: 0,                     // #3220: this hull's own bank — humans ride
@@ -392,17 +404,43 @@ function stepCraft(gs, c, pad) {
         c.y += c.vy * DT
         if (pad.a) c.spin += TRICK_RATE * DT
         if (Math.abs(c.steer) > 0.7) c.rollSpin += Math.sign(c.steer) * BARREL_RATE * DT
+        // #3276 — the pitch verbs. Brake alone tips back (a FLIP winds over);
+        // brake AND throttle commit harder, nose past vertical — hold it and the
+        // handstand pays by the half-second. The air belongs to whichever trick
+        // lands (or pays) first: spin/barrel/flip score only on an unclaimed air.
+        const up = pad.throttle > 0.5
+        if (pad.brake && !up) c.flipAng += FLIP_RATE * DT
+        else if (pad.brake && up) {
+            c.flipAng -= HAND_RATE * DT
+            if (c.flipAng <= -HAND_VERT) {
+                c.hsT += DT
+                while (c.hsPaid < HAND_CAP && c.hsT >= (c.hsPaid + 1) * HAND_STEP) {
+                    c.hsPaid += 1
+                    c.trickClaimed = true
+                    c.score += HAND_PAY
+                    if (c.id === 0) gs.score += HAND_PAY
+                    if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'handstand', pts: HAND_PAY, n: c.hsPaid, id: c.id })
+                }
+            }
+        }
         if (c.y <= surfY) {
             c.airborne = false; c.y = surfY; c.vy = surfVy
             const spun = c.spin >= Math.PI * 2 - 0.6
             const rolled = Math.abs(c.rollSpin) >= Math.PI * 2 - 0.8
-            if (spun) {
+            const flipped = Math.abs(c.flipAng) >= Math.PI * 2 - 0.6
+            if (!c.trickClaimed && flipped) {
+                // flip: nose over tail and back — harder than the flat 360, worth more
+                c.boost = Math.min(1, c.boost + 0.34)
+                c.score += 300
+                if (c.id === 0) gs.score += 300
+                if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'flip', id: c.id })
+            } else if (!c.trickClaimed && spun) {
                 c.trickPts = 1
                 c.boost = Math.min(1, c.boost + 0.30)
                 c.score += 250
                 if (c.id === 0) gs.score += 250
                 if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'trick', id: c.id })
-            } else if (rolled) {
+            } else if (!c.trickClaimed && rolled) {
                 // barrel roll: carved hard off a crest, landed clean
                 c.boost = Math.min(1, c.boost + 0.22)
                 c.score += 200
@@ -411,8 +449,9 @@ function stepCraft(gs, c, pad) {
             } else if (c.spin > 0.3 && (c.id === 0 || c.human)) {
                 gs.events.push({ t: gs.tick, type: 'splashes', id: c.id })
             }
-            // the hang-time pays: a landed trick banks its air (rung 3)
-            if ((spun || rolled) && (c.id === 0 || c.human)) {
+            // the hang-time pays: a landed trick banks its air (rung 3) — an
+            // air whose handstand already paid banks its hang-time too (#3276)
+            if ((spun || rolled || flipped || c.trickClaimed) && (c.id === 0 || c.human)) {
                 const airR = Math.round(c.airT * 100) / 100 // what the event reports
                 const bonus = Math.min(AIR_BONUS_CAP, Math.round(airR * AIR_BONUS_RATE))
                 if (bonus > 0) {
@@ -424,6 +463,7 @@ function stepCraft(gs, c, pad) {
             c.spin = 0
             c.rollSpin = 0
             c.airT = 0
+            c.flipAng = 0; c.hsT = 0; c.hsPaid = 0; c.trickClaimed = false
             c.speed *= 0.985 // slap the water, lose a whisper
         }
     } else {
@@ -433,6 +473,7 @@ function stepCraft(gs, c, pad) {
         if (surfVy < (gs.stage === 'storm' ? LAUNCH_VY_STORM : LAUNCH_VY) && c.speed > 7.5 && !c.finished) {
             c.airborne = true
             c.airT = 0
+            c.flipAng = 0; c.hsT = 0; c.hsPaid = 0; c.trickClaimed = false // every air starts clean
             c.vy = surfVy * 0.85 + c.speed * 0.18 // carry off the crest: up, not down
             if (c.id === 0 || c.human) gs.events.push({ t: gs.tick, type: 'air', id: c.id })
         }
@@ -491,13 +532,17 @@ function rivalPad(gs, c) {
     // skill decides throttle discipline in the turns and when to send it
     const corner = Math.abs(d) > 0.5 && c.speed > 11 ? 0.55 : 1
     const throttle = corner * c.skill + (gs.t > 3 ? 0.02 * (rand(gs) - 0.5) : 0)
-    // tricks on big air: a seeded maybe, held for the whole air pocket
+    // tricks on big air: a seeded maybe, held for the whole air pocket —
+    // armed 1 spins flat, armed 2 tips a back-flip on the brake (#3276).
+    // One extra seeded draw at arm time only; both sides of the wire roll the
+    // same stream, so lockstep stays identical.
     let a = false
-    if (c.airborne) a = c.trickArmed === 1
-    if (!c.airborne && c.vy < -1.2 && rand(gs) < 0.004) c.trickArmed = 1
+    let brake = false
+    if (c.airborne) { a = c.trickArmed === 1; brake = c.trickArmed === 2 }
+    if (!c.airborne && c.vy < -1.2 && rand(gs) < 0.004) c.trickArmed = rand(gs) < 0.45 ? 2 : 1
     if (!c.airborne && c.vy > 0) c.trickArmed = 0
     const b = c.boost > 0.5 && Math.abs(d) < 0.25 && !c.finished
-    return { throttle: Math.min(1, throttle), steer, brake: false, a, b }
+    return { throttle: Math.min(1, throttle), steer, brake, a, b }
 }
 
 // --- the attract/check autopilot (drives slot 0 — Kai) ------------------------
@@ -643,6 +688,8 @@ export function stateOf(gs) {
         rain: Math.round(p.rain * 100) / 100,  // squall at Kai's hull (#3191)
         boost: Math.round(p.boost * 100) / 100,
         airborne: p.airborne, penalty: p.penalty > 0,
+        // #3276 trick state for harness/HUD: pitch radians this air + handstand pays
+        flip: Math.round(p.flipAng * 100) / 100, hsPaid: p.hsPaid,
         stage: gs.stage,
         // swell as KAI feels it: front-mixed dominant amplitude at the hull
         swell: Math.round((gs.seaCur[0].amp + (gs.seaTarget[0].amp - gs.seaCur[0].amp) * frontW(gs.crafts[0].x, gs.crafts[0].z, gs.front)) * 100) / 100,
