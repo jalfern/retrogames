@@ -46,11 +46,13 @@ npm run skywardcheck -- --mutate   # proves the harness can fail
 node scripts/skywardplay.mjs       # headless Chrome: boot → play → events → zero page errors
 ```
 ## Honest gaps
-- **MOVED by #3267:** the storm cell no longer stands still — `stormPos(t)`
-  drifts the whole cell (weather AND paint) while the gates stay fixed, so a
-  memorised THUNDERPASS line is a stale line. What remains of the old bullet:
-  no online (issue: not yet), no second landing strip. (The engine-audio half
-  of this bullet closed in #3295 — see the Engine bed section.)
+- **MOVED by #3302:** there is now a second strip — a painted, zone-scored
+  runway on the south beach (see *Second strip* below). What remains of the old
+  bullet: no online (issue: not yet), and the plane/belt still can't be landed
+  (only the glider takes strips). (The engine-audio half closed in #3295.)
+- A strip touchdown is judged at the instant the hull crosses the deck (gh<0.7),
+  same as the mat — there is no flare-quality or ground-roll law; a smooth
+  approach that sinks 0.6 m at the threshold reads the same as a perfect one.
 - The cell drifts on a fixed seeded ellipse, not a steered weather sim (no
   cell-to-cell travel, no squall line); a long run learns the sweep the way
   rungs 1's lines were learned.
@@ -101,3 +103,27 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
 - **Presentation-only** — the laws read state and never write it: hash,
   `stateOf`, scoring are byte-identical with the bed on (pinned), so replays
   and the QA robot's views are untouched.
+
+## Second strip (#3302)
+- **Runway landings, zone-scored** — Pilotwings' landing test in our keys: the
+  painted strip on the south beach (west→east, threshold at x −30, deck 2.6,
+  full-weight corridor + k² shoulders → exact and dry on every seed). A soft,
+  aligned touchdown INSIDE the strip scores by how far down it carries: SHORT
+  150 / MIDDLE 300 / LONG 450 / FULL STRIP 700. Past ~17° of crab (0.30 rad)
+  it's a scuff (+60); hard arrivals tumble as before; anything off the strip
+  keeps the mat law untouched. The bullseye (1000) stays the precision prize —
+  no pad-band point lies on the strip (pinned), and the autopilot still aims
+  at the mat (honesty pin: 5 seeds, strip lands = 0).
+- Pure laws `stripZone(w,x,z)` / `stripScore(w,x,z,heading,vy,speed)` live in
+  `sim.js` beside the glider; `skywardcheck` pins literals (7 seeds deck+storm,
+  4 zones, alignment boundary, tumble/pool/beside precedence) and runs 4 new
+  mutants. `stateOf` gained `strip` (where the glider is on it) and `stripD`;
+  hash inputs are unchanged — the strip never rewrites the replay spine.
+- Cabinet: threshold piano keys, edge lines, centreline dashes, zone ticks,
+  windsock + RUNWAY board (renderer); the spot-phase HUD names the range and
+  then the law ("TOUCH DEEP, KEEP IT STRAIGHT"); a deep landing gets a gold
+  dust + rising flourish and the banner calls the zone.
+- Live drive (`skywardplay`): a wind-crabbed short-final — heading
+  `acos(−wind.z/speed)` holds a straight ground track against the seed wind —
+  banks FULL STRIP +700 with zero console errors. Lesson kept: ±2.2 m/s of
+  seed wind drifts a hull off a 14 m strip over a long final; drive legs short.
