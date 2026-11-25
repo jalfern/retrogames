@@ -89,6 +89,19 @@ const SkywardGame = () => {
   [data-h=tell]{width:92vw;top:92px;font-size:11px;letter-spacing:.14em}
   [data-h=hint]{bottom:auto;top:58%;left:4%;transform:none;width:92%;font-size:10px;letter-spacing:.1em;line-height:1.6;text-align:center}
 }
+/* #3370 item 7 — landscape phones (844×390 and kin): the width query never
+   fires, but the pad still owns the bottom ~200px of a 390px-tall screen.
+   Same remedy as portrait — readouts up top, hint floating below the tell
+   and above the pad band. Pinned by the skywardplay landscape audit. */
+@media (max-height: 480px){
+  [data-h=speed]{left:10px;bottom:auto;top:76px}
+  [data-h=alt]{left:10px;bottom:auto;top:94px}
+  [data-h=score]{right:auto;left:10px;bottom:auto;top:112px;text-align:left}
+  [data-h=chips]{right:auto;left:10px;bottom:auto;top:130px;font-size:9px;letter-spacing:.06em;text-align:left;max-width:520px;white-space:nowrap}
+  [data-h=banner]{width:92vw;font-size:17px;letter-spacing:.12em}
+  [data-h=tell]{width:92vw;font-size:11px;letter-spacing:.14em}
+  [data-h=hint]{bottom:auto;top:154px;left:4%;transform:none;width:92%;font-size:10px;letter-spacing:.1em;text-align:center}
+}
 </style>
 <div data-h="speed">000 KTS</div>
 <div data-h="alt">000 M</div>

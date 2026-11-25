@@ -809,6 +809,18 @@ void runAuto
         const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
         return src.includes('sockSegs.push(joint)') && src.includes('sockChain(world.wind, t, gust)') && src.includes('emissive: 0x595d61')
     })())
+    // item 2 (view side) — the builder call recorded in the README: each
+    // direction reads its own set, so the south lane carries a FAINT mirrored
+    // echo of the ladder. Item 5 (view side) — once per cycle the attract look
+    // glides onto the airfield so the paint sells itself on the idle screen.
+    r.check('the south lane carries a faint mirrored echo set (abort traffic reads upright too)', (() => {
+        const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
+        return src.includes('echo.rotation.y = Math.PI / 2') && src.includes('opacity: 0.6') && src.includes('cz + 3.6')
+    })())
+    r.check('the attract vista glides onto the strip once per cycle (camera path only)', (() => {
+        const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
+        return src.includes('Math.pow(Math.max(0, (Math.cos(a) + 1) / 2), 3)') && src.includes('tmp.set(50 * south, 30 - 20 * south, -60 + 190 * south)')
+    })())
 
     // item 4 — the ladder banner marks the live zone with a ▸. Literals here:
     // the string a first-timer reads must be exactly the table, one ▸ deep.
@@ -1362,6 +1374,8 @@ if (process.argv.includes('--mutate')) {
         ['#3370 the marker lights the wrong zone (off-by-one)', SIMF, 'zone === i + 1 ? `▸${n}`', 'zone === i ? `▸${n}`'],
         ['#3370 dust ignores the hull (a parked belt puffs a full plume)', SIMF, 'return +clamp((v - CFG.DUST_WALK) / (CFG.DUST_PLOW - CFG.DUST_WALK), 0, 1).toFixed(3)', 'return 1'],
         ['#3370 the park forgets its arrival speed (the touchdown puff loses its meter)', SIMF, 'aligned: touch.aligned, speed: vIn })', 'aligned: touch.aligned, speed: 0 })'],
+        ['#3370 south-lane echo reads upside-down again (mirror dies)', 'src/games/Skyward/renderer.js', 'echo.rotation.y = Math.PI / 2', 'echo.rotation.y = -Math.PI / 2'],
+        ['#3370 the attract vista never sells the strip (look stays north)', 'src/games/Skyward/renderer.js', 'tmp.set(50 * south, 30 - 20 * south, -60 + 190 * south)', 'tmp.set(0, 30, -60)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
