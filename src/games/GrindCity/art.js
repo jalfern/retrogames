@@ -25,77 +25,94 @@ function rnd01(i) {
 function concreteColor(x, z, y, out) {
     const g = gradAt(x, z)
     const slope = Math.hypot(g.gx, g.gz)
-    let r = 0.92, gr = 0.88, b = 0.80                      // sun-baked concrete
+    let r = 0.93, gr = 0.91, b = 0.86                      // sun-baked concrete (warm neutral; #3233 de-mud)
     if (y < -0.2) { const d = Math.min(1, -y / 5); r -= d * 0.34; gr -= d * 0.30; b -= d * 0.14 }  // bowls darken cool
     if (y > 1.5) { r += 0.05; gr += 0.04 }                 // decks catch sun
     if (slope > 0.5) { r -= 0.10; gr -= 0.10; b -= 0.04 }   // steep walls shade
     // mod-park accents: kicker faces get a warm tint
     if (x > 10 && x < 15.2 && z > -8 && z < 4.6 && y > 0.15) { r = 0.86; gr = 0.42; b = 0.20 }
     if (x > -3.5 && x < 13.5 && y > 0.15 && y < 1.1 && z > 1 && z < 4.6) { r = 0.86; gr = 0.42; b = 0.20 }
-    // low-frequency mottling (~2.5 m cells, ±6%)
+    // low-frequency mottling (~2.5 m cells, ±6%) — vertex colours hold ONLY the
+    // broad strokes: at the 0.8 m mesh grid, finer noise bakes into flat blocks
+    // (the #3233 "reads flat up close" diagnosis). Fine detail lives in the texture.
     const low = n2(Math.round(x * 0.4), Math.round(z * 0.4))
     const m = 0.94 + low * 0.12
     r *= m; gr *= m; b *= m
-    // fine grain (~0.2 m cells, ±6%)
-    const v = 0.94 + n2(Math.round(x * 5), Math.round(z * 5)) * 0.12
     // wear near rails: packed darker where skaters grind (visual only)
     let wear = 1
     for (const rail of RAILS) {
         const d = railClosest(rail, x, z).d
         if (d < 0.85) wear = Math.min(wear, 1 - (1 - d / 0.85) * 0.28)
     }
-    return out.setRGB(r * v * wear, gr * v * wear, b * v * wear)
+    return out.setRGB(r * wear, gr * wear, b * wear)
 }
 
-/** Baked-in concrete texture: speckle, mottled patches, hairline cracks, and
- *  thin expansion joints at the tile border (4 m tile). Neutral-bright on
- *  purpose — it multiplies the vertex colors, so it must not darken the park. */
+/** Baked-in concrete texture: aggregate speckle, mottled patches, polish/scuff
+ *  arcs, hairline cracks, and thin expansion joints at the tile border (4 m
+ *  tile). 512 px over 4 m = 128 texels/m — the fine detail the 0.8 m vertex
+ *  grid physically cannot carry (#3233). Neutral-bright on purpose — it
+ *  multiplies the vertex colors, so it must not darken the park. */
 function makeConcreteTexture() {
-    const S = 256
+    const S = 512
     const cv = document.createElement('canvas')
     cv.width = cv.height = S
     const g = cv.getContext('2d')
     g.fillStyle = '#f4f2ec'
     g.fillRect(0, 0, S, S)
     // large soft mottled patches
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 60; i++) {
         const bx = rnd01(i * 3 + 1) * S, by = rnd01(i * 3 + 2) * S
-        const br = 18 + rnd01(i * 3 + 3) * 52
+        const br = 30 + rnd01(i * 3 + 3) * 100
         const dark = rnd01(i * 7) < 0.5
-        const alpha = 0.05 + rnd01(i * 11) * 0.05
+        const alpha = 0.04 + rnd01(i * 11) * 0.045
         const grad = g.createRadialGradient(bx, by, 0, bx, by, br)
         grad.addColorStop(0, dark ? `rgba(118,110,96,${alpha})` : `rgba(255,255,255,${alpha})`)
         grad.addColorStop(1, 'rgba(0,0,0,0)')
         g.fillStyle = grad
         g.beginPath(); g.arc(bx, by, br, 0, Math.PI * 2); g.fill()
     }
-    // speckle grain
-    for (let i = 0; i < 3400; i++) {
+    // exposed-aggregate speckle: dark chipped stones with a lit edge (the grit
+    // poured concrete shows once you are a metre off the deck)
+    for (let i = 0; i < 11000; i++) {
         const x = rnd01(i * 3 + 1) * S, y = rnd01(i * 3 + 2) * S
-        const dark = rnd01(i * 3 + 3) < 0.55
-        g.fillStyle = dark ? `rgba(96,89,78,${0.08 + rnd01(i) * 0.16})` : `rgba(255,255,255,${0.10 + rnd01(i) * 0.20})`
-        g.fillRect(x, y, rnd01(i * 5) < 0.9 ? 1 : 2, 1)
+        const dark = rnd01(i * 3 + 3) < 0.6
+        const w = rnd01(i * 5) < 0.85 ? 1 : 2
+        g.fillStyle = dark
+            ? `rgba(88,82,72,${0.10 + rnd01(i) * 0.20})`
+            : `rgba(255,255,255,${0.12 + rnd01(i) * 0.22})`
+        g.fillRect(x, y, w, w)
+    }
+    // polish/scuff arcs: faint directional drag marks a broom and a hundred
+    // wheels leave in the slab (low alpha so tiling stays quiet)
+    g.lineWidth = 1.4
+    for (let i = 0; i < 26; i++) {
+        const cx = rnd01(i * 23 + 5) * S, cy = rnd01(i * 29 + 7) * S
+        const br = 40 + rnd01(i * 31 + 3) * 130
+        const a0 = rnd01(i * 37 + 1) * Math.PI * 2
+        const sweep = 0.5 + rnd01(i * 41 + 2) * 1.4
+        g.strokeStyle = `rgba(70,66,58,${0.04 + rnd01(i * 43) * 0.05})`
+        g.beginPath(); g.arc(cx, cy, br, a0, a0 + sweep); g.stroke()
     }
     // hairline cracks
     g.strokeStyle = 'rgba(82,77,70,0.30)'
     g.lineWidth = 1
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
         let cx = rnd01(i * 13 + 1) * S, cy = rnd01(i * 13 + 2) * S * 0.4
         g.beginPath(); g.moveTo(cx, cy)
-        for (let j = 0; j < 6; j++) {
-            cx += (rnd01(i * 17 + j) - 0.5) * 30
-            cy += 14 + rnd01(i * 19 + j) * 18
+        for (let j = 0; j < 9; j++) {
+            cx += (rnd01(i * 17 + j) - 0.5) * 34
+            cy += 10 + rnd01(i * 19 + j) * 16
             g.lineTo(cx, cy)
         }
         g.stroke()
     }
     // expansion joints at the tile border (thin — no wireframe look)
     g.fillStyle = 'rgba(72,68,62,0.5)'
-    g.fillRect(0, 0, S, 1.5); g.fillRect(0, S - 1.5, S, 1.5)
-    g.fillRect(0, 0, 1.5, S); g.fillRect(S - 1.5, 0, 1.5, S)
+    g.fillRect(0, 0, S, 2); g.fillRect(0, S - 2, S, 2)
+    g.fillRect(0, 0, 2, S); g.fillRect(S - 2, 0, 2, S)
     const tex = new THREE.CanvasTexture(cv)
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping
-    tex.anisotropy = 4
+    tex.anisotropy = 16
     tex.colorSpace = THREE.SRGBColorSpace
     return tex
 }
