@@ -14,6 +14,10 @@
 //   COMET DRIFT HD  #3129 tilt grant live: pause row offers the three types,
 //                tilt pill flow works, and the DRIFT chip stays (actzone
 //                keeps its declared verb — tilt orphans nothing).
+//   SSX TILT     #3129 chrome audit live: pause row offers TILT, the game-side
+//                #894 stick yields to the lean (its trick row stays — the tilt
+//                pad draws no diamond), and a held lean ramps the #791 edge
+//                press in a real race through the padState rail.
 //   PAC-MAN      dpad default (gate); pause row switches to STICK (floating
 //                half); a horizontal drag pushes the knob (the digital read
 //                rides the holder, so no arrows on the wire — padtypecheck
@@ -104,7 +108,7 @@ const clickLast = async (page, sel) => page.evaluate((s) => {
     await page.evaluate(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Question', key: '?', bubbles: true })); window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Question', bubbles: true })) })
     await page.waitForTimeout(400)
     const chips = await page.evaluate(() => [...document.querySelectorAll('[data-padtype]')].map((e) => e.getAttribute('data-padtype')))
-    r.check('ssx: pause CONTROLLER row (STICK/FULL PAD)', [...new Set(chips)].join(',') === 'full,stick', 'chips=' + chips.join(','))
+    r.check('ssx: pause CONTROLLER row (STICK/TILT/FULL PAD)', [...new Set(chips)].join(',') === 'full,stick,tilt', 'chips=' + chips.join(','))
     await clickLast(page, '[data-padtype="stick"]')
     await page.waitForTimeout(200)
     r.check('ssx: choice persisted', await page.evaluate(() => localStorage.getItem('retrogames:padtype:/ssx')) === 'stick')
@@ -124,6 +128,56 @@ const clickLast = async (page, sel) => page.evaluate((s) => {
     const v = await vcs(page)
     r.check('ssx: default restored after clear', v.includes('facediamond'))
     await page.screenshot({ path: 'qa-art/padtype-ssx-full.png' })
+    await page.close()
+}
+
+// --- SSX: tilt (#3129 chrome audit — the game-side stick yields, lean drives) ---
+{
+    const { page, errors } = await mkPage('/ssx?padtype=tilt')
+    const v = await vcs(page)
+    r.check('ssx-tilt: pill renders (no VC stick)', v.includes('tilt-enable') && !v.includes('fixedstick'), v.join(','))
+    const c0 = await page.evaluate(() => ({
+        stick: !!document.querySelector('[data-ssx-stick]'),
+        tricks: document.querySelectorAll('[data-ssx-trick]').length,
+    }))
+    r.check('ssx-tilt: game-side stick yields, trick row stays', !c0.stick && c0.tricks === 3, JSON.stringify(c0))
+    await tapEl(page, '[data-vc="tilt-enable"]')
+    await page.waitForTimeout(250)
+    const v1 = await vcs(page)
+    r.check('ssx-tilt: enable -> RE-CENTER pill', v1.includes('tilt-recenter'), v1.join(','))
+    await page.evaluate(() => {
+        window.__dirs = []
+        window.addEventListener('keydown', (e) => { if (e.code.startsWith('Arrow')) window.__dirs.push(e.code) })
+    })
+    await page.evaluate(() => window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: 10 })))
+    await page.waitForTimeout(150)
+    r.check('ssx-tilt: right lean steers ArrowRight', (await page.evaluate(() => window.__dirs)).includes('ArrowRight'), ((await page.evaluate(() => window.__dirs)) || []).join(',') || 'no arrows')
+    // reach, not just codes: hold the lean in a live race and watch the #791
+    // edge press ramp — the steer line that moves it is padState, which is
+    // only reachable through the tilt rail once the game stick has yielded.
+    const P = () => page.evaluate(() => (window.__ssxTest ? window.__ssxTest.probe() : null))
+    let inRun = false
+    for (let i = 0; i < 120; i++) { const s = await P(); if (s && s.phase === 'run') { inRun = true; break } await page.waitForTimeout(100) }
+    r.check('ssx-tilt: race is running for the reach proof', inRun, inRun ? 'run' : `phase=${(await P()) ? (await P()).phase : '?'}`)
+    let ramp = null
+    const t0 = Date.now()
+    while (Date.now() - t0 < 3000) {
+        await page.evaluate(() => window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: 10 })))
+        const s = await P()
+        if (s && s.p.press >= 0.35) { ramp = s.p.press; break }
+        await page.waitForTimeout(50)
+    }
+    r.check('ssx-tilt: held lean ramps the analog edge press (real race)', ramp !== null, `press=${ramp === null ? '?' : ramp.toFixed(2)}`)
+    // re-centre on the leaned pose zeroes the output (same law as the marble leg)
+    await page.evaluate(() => window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: 10 })))
+    await tapEl(page, '[data-vc="tilt-recenter"]')
+    await page.evaluate(() => { window.__dirs = [] })
+    await page.evaluate(() => window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: 10 })))
+    await page.waitForTimeout(150)
+    r.check('ssx-tilt: re-centre zeroes the leaned pose', (await page.evaluate(() => window.__dirs)).length === 0, ((await page.evaluate(() => window.__dirs)) || []).join(',') || 'ok')
+    r.check('ssx-tilt: zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
+    await page.screenshot({ path: 'qa-art/padtype-ssx-tilt.png' })
+    await page.evaluate(() => localStorage.removeItem('retrogames:padtype:/ssx'))
     await page.close()
 }
 

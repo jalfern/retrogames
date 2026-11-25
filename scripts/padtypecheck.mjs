@@ -137,7 +137,7 @@ ok(Object.keys(PAD_TYPE_LABELS).length === PAD_TYPES.length, 'every type has a l
         const j = src.indexOf('path: ', i + 1)
         return src.slice(i, j === -1 ? src.length : j)
     }
-    ok(/type: 'full', supports: \['stick', 'full'\]/.test(blockOf('/ssx')), 'SSX pilots the full pad')
+    ok(/type: 'full', supports: \['stick', 'tilt', 'full'\]/.test(blockOf('/ssx')), 'SSX pilots the full pad (TILT offered #3129 audit)')
     ok(/supports: \['stick', 'tilt'\]/.test(blockOf('/marble-madness')), 'MARBLE MADNESS pilots tilt')
     ok(/supports: \['dpad', 'stick'\]/.test(blockOf('/pacman')), 'PAC-MAN pilots the switch')
     // #3118 rollout grants — supports WITHOUT type: the default stays derived,
@@ -192,6 +192,21 @@ ok(Object.keys(PAD_TYPE_LABELS).length === PAD_TYPES.length, 'every type has a l
         ok(defaultTypeFor({ layout: 'stick', buttons: [], analog: true, method: 'stick', supports: ['stick', 'tilt', 'dpad'] }) === 'stick', 'tilt grant keeps the derived stick default')
         const vcTilt = readFileSync(new URL('../src/components/VirtualControls.jsx', import.meta.url), 'utf8')
         ok(vcTilt.includes('setStickVec(v.x, v.y)') && vcTilt.includes('setStick(v.x, v.y, v.mag'), 'tilt feeds the holder path method-stick games read (not just arrow codes)')
+    }
+    // #3129 SSX chrome audit (studio QA tail): SSX is the one tilt title with
+    // game-side chrome. Its #894 stick is type-gated; it must yield to TILT
+    // exactly as it yields to FULL — the lean writes the same padState vector,
+    // and one verb gets one driver (#3118 law). The trick row STAYS: the tilt
+    // pad draws only A/B + the pill (the Sony diamond is full-only), so
+    // GRAB/FLIP/INV would orphan without it.
+    {
+        ok(/supports: \['stick', 'tilt', 'full'\]/.test(blockOf('/ssx')), 'SSX offers TILT (#3129 audit — declared full default stays)')
+        ok(/analog: true/.test(blockOf('/ssx')), '/ssx consumes the analog vector tilt writes')
+        const ssxIdx = readFileSync(new URL('../src/games/SSX/index.jsx', import.meta.url), 'utf8')
+        const stickAt = ssxIdx.indexOf('data-ssx-stick=')
+        ok(stickAt > 0 && /padTypeUI !== 'full' && padTypeUI !== 'tilt'/.test(ssxIdx.slice(stickAt - 300, stickAt)), 'SSX game-side stick yields to TILT (the gate sits right above data-ssx-stick)')
+        ok((ssxIdx.match(/padTypeUI !== 'tilt'/g) || []).length === 1, 'exactly the stick chrome yields — the trick row stays mounted in tilt')
+        ok(ssxIdx.includes('padState.engaged ? padState.x'), 'SSX steer reads the padState holder tilt writes')
     }
     // #3129 rollout tail 2 — pointer supports (taste calls). A game may offer
     // POINTER only when its canvas taps already ARE the verbs; these three
