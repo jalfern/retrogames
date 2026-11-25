@@ -950,12 +950,19 @@ void runAuto
                 roll.score === 0 && roll.grad.spot === null && !roll.done, `score=${roll.score} done=${roll.done}`)
         }
         {
-            const cr = planeStrip(35, 100, 130, Math.PI / 2 + 0.25, -1, 30, {}, 1400)
-            const ro = cr.evs.find((e) => e.kind === 'rollout')
-            const ldEv = cr.evs.find((e) => e.kind === 'land')
-            r.check('#3331 a crabbed rollout drifts off the centreline dash and earns nothing (the law can\'t be faced)',
-                !!ro && ro.clean === false && ro.maxV > 2 && ro.credit === 0 && ldEv && cr.h.land === ldEv.score,
-                `ro=${JSON.stringify(ro)} land=${cr.h.land}`)
+            const cr = makeGame(35)
+            cr.craft = 'plane'; cr.phase = 'free'
+            const y0c = Math.max(cr.world.terrainHeight(100, 130), cr.world.waterHeightAt(100, 130, 0))
+            cr.p = { x: 100, y: y0c + 1.2, z: 130 }
+            cr.heading = Math.PI / 2 + 0.25; cr.speed = 30; cr.vy = -1
+            const crEvs = []
+            let cn = 0
+            while (cn++ < 1400 && crEvs.every((e) => e.kind !== 'crew') && crEvs.every((e) => e.kind !== 'crash')) { step(cr, {}); crEvs.push(...clear(cr)) }
+            const ro = crEvs.find((e) => e.kind === 'rollout')
+            const ldEv = crEvs.find((e) => e.kind === 'land')
+            r.check('#3331 a crabbed rollout drifts off the centreline dash and earns nothing (the law can\'t be faked)',
+                !!ro && ro.clean === false && ro.maxV > 2 && ro.credit === 0 && ldEv && cr.land === ldEv.score,
+                `ro=${JSON.stringify(ro)} land=${cr.land}`)
         }
         // stateOf addenda: the tell on approach, the roll meter on the deck
         {
@@ -985,6 +992,12 @@ void runAuto
         let an = 0
         while (an++ < 40 && !ab.ground) { step(ab, {}); abEvs.push(...clear(ab)) }
         const groundedAt = ab.ground !== null
+        {
+            const rf = ab.ground
+            let fn = 0
+            while (fn++ < 40 && ab.ground) { step(ab, {}); abEvs.push(...clear(ab)) } // #3331: let her roll a line first
+            void rf
+        }
         an = 0
         while (an++ < 120 && abEvs.every((e) => e.kind !== 'wheels')) { step(ab, { y: 1 }); abEvs.push(...clear(ab)) }
         let an2 = 0
