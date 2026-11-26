@@ -208,6 +208,14 @@ function resetPlayer(gs) {
     gs.swing = 0
     gs.swingSeq = 0
     gs.hammers.forEach(h => { h.taken = false })
+    // #3598 — screen reset rebuilds the finale too: fresh rivets, girders
+    // back level, the ape back on his perch (both respawn and lap ride this).
+    gs.rivets.forEach(r => { r.pulled = false })
+    gs.pullTimer = 0
+    gs.pullIdx = -1
+    gs.rivetPhase = false
+    gs.collapse = 0
+    gs.dkFall = 0
 }
 
 function killPlayer(gs, ev) {
@@ -403,15 +411,7 @@ export function tickDonkeyKong(gs, input = null) {
         gs.winTimer--
         if (gs.winTimer <= 0) {
             gs.score += WIN_SCORE
-            resetPlayer(gs)
-            // #3598 — the board rebuilds for the next lap: fresh rivets,
-            // girders back level, the ape back on his perch.
-            gs.rivets.forEach(r => { r.pulled = false })
-            gs.pullTimer = 0
-            gs.pullIdx = -1
-            gs.rivetPhase = false
-            gs.collapse = 0
-            gs.dkFall = 0
+            resetPlayer(gs) // #3598 — rebuilds the board too: fresh rivets, level girders, ape back on his perch
         }
         return ev
     }

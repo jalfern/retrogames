@@ -14,7 +14,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel } from '../src/games/DonkeyKong/sim.js'
+import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -169,15 +169,137 @@ console.log('rules: gravity, jump, crush, dive, arc, lap, terminal')
     }
     ok(scoreEv === 1 && g2.score === 100, 'clearing a barrel underfoot scores the arcade 100', `score=${g2.score}`)
 
-    // The lap: stand on her girder → win flag, +1000, back to the start.
+    // #3598 — the lap IS the rivet finale: reaching her girder ARMS it,
+    // walking the row pulls all four rivets (+100 each), the last one out
+    // starts the collapse, and ~2.5 s later the lap banks +1000 and the
+    // board rebuilds fresh. The old instant-win is gone.
     const w = makeRun(7)
     w.attract = false
     w.player.x = 100
     w.player.y = getPlatformY(w.platforms[6], 105) - w.player.h
-    const evW = tickDonkeyKong(w, null)
-    ok(evW.won && w.winTimer === 90, 'the top girder rings the lap', `won=${evW.won}`)
+    const evA = tickDonkeyKong(w, null)
+    ok(evA.reached && w.rivetPhase && !evA.won && w.winTimer === 0, 'reaching her girder arms the finale, it no longer rings the lap', `reached=${evA.reached} won=${evA.won}`)
+    let lapPulls = 0
+    for (let i = 0; i < 1500 && lapPulls < 4; i++) {
+        const cx = w.player.x + w.player.w / 2
+        const r = w.rivets.find(rr => !rr.pulled)
+        const inp = r && Math.abs(r.x - cx) > 5 ? (r.x > cx ? { right: true } : { left: true }) : {}
+        const ev = tickDonkeyKong(w, inp)
+        if (ev.rivet) lapPulls++
+    }
+    ok(lapPulls === 4 && w.collapse === 1, 'walking the row pulls all four rivets and the last starts the collapse', `pulls=${lapPulls} collapse=${w.collapse}`)
+    let lapWon = false
+    for (let i = 0; i < COLLAPSE_TICKS + 5 && !lapWon; i++) lapWon = tickDonkeyKong(w, null).won
+    ok(lapWon && w.winTimer === 90, 'the collapse ends in the lap flag', `won=${lapWon}`)
     for (let i = 0; i < 95; i++) tickDonkeyKong(w, null)
-    ok(w.score === WIN_SCORE && w.player.x === 24 && w.player.y === 216, 'the lap banks 1000 and resets the board', `score=${w.score}`)
+    ok(w.score === WIN_SCORE + 4 * RIVET_SCORE && w.player.x === 24 && w.player.y === 216,
+        'the lap banks 1000 (+ the four rivets) and resets the board', `score=${w.score}`)
+    ok(w.rivets.every(r => !r.pulled) && w.collapse === 0 && w.dkFall === 0 && !w.rivetPhase && w.pullTimer === 0,
+        'the board rebuilds for the next lap: fresh rivets, level girders, ape back on his perch')
+}
+
+// ---------------------------------------------------------- rivet finale ----
+// #3598: fairness + mechanics. Four rivets ride her girder at the joints,
+// clear of the ladder mouths and reachable from the deck. Walking onto one
+// grounded starts the yank: PULL_TICKS of frozen feet, then the arcade 100
+// banks and a dark hole stays. The pull refuses feet on the girder below,
+// the ape stops throwing once the finale is armed, the collapse takes both
+// top girders out of the collision (the runner steps DOWN one level, never
+// crushed), the ape drops the full DK_FALL_STOP onto the pile, death resets
+// the finale with the screen, and the whole phase rides the replay hash.
+console.log('#3598 rivet finale: fairness, pull mechanics, collapse, honesty')
+{
+    const mk = () => { const g = makeRun(909); g.attract = false; return g }
+    const lvl = buildLevel()
+    const top = lvl.platforms[TOP_PLAT]
+    ok(RIVET_X.length === 4, 'four rivets ride the finale')
+    ok(RIVET_X.every((x) => x >= top.x + 4 && x <= top.x + top.w - 4), 'every rivet sits on the girder, not off its ends')
+    ok(RIVET_X.every((x) => lvl.ladders.filter((l) => !l.broken).every((l) => Math.abs(l.x - x) >= 10)), 'no rivet sits in a mountable ladder mouth')
+
+    // Pull freeze + bank.
+    const f = mk()
+    f.player.x = 100
+    f.player.y = getPlatformY(f.platforms[TOP_PLAT], 105) - f.player.h
+    tickDonkeyKong(f, null) // arm
+    let pullStarted = false
+    for (let i = 0; i < 200 && !pullStarted; i++) {
+        const cx = f.player.x + f.player.w / 2
+        const r = f.rivets.find((rr) => !rr.pulled)
+        const ev = tickDonkeyKong(f, r && Math.abs(r.x - cx) > 5 ? (r.x > cx ? { right: true } : { left: true }) : {})
+        if (ev.pull) pullStarted = true
+    }
+    ok(pullStarted && f.pullTimer === PULL_TICKS, 'walking onto a rivet starts the yank', `pullTimer=${f.pullTimer}`)
+    const frozenX = f.player.x
+    let froze = true
+    for (let i = 0; i < PULL_TICKS - 1; i++) {
+        tickDonkeyKong(f, { left: true, right: true, jump: true, up: true })
+        if (f.player.x !== frozenX) froze = false
+    }
+    ok(froze, 'the pull freeze locks the feet (input held, no movement)')
+    const evB = tickDonkeyKong(f, null)
+    ok(evB.rivet && f.score === RIVET_SCORE && f.rivets.some((r) => r.pulled), 'the yank banks the arcade 100 and leaves a hole')
+    ok(f.rivets.filter((r) => r.pulled).length === 1 && f.collapse === 0, 'three holes left before the crash')
+
+    // Honesty: a pull never fires from the girder below.
+    const u = mk()
+    u.rivetPhase = true
+    u.player.x = RIVET_X[0] - u.player.w / 2
+    u.player.y = getPlatformY(u.platforms[DK_PLAT], RIVET_X[0]) - u.player.h
+    u.player.grounded = true
+    const evU = tickDonkeyKong(u, null)
+    ok(!evU.pull, 'a rivet does not open its hand for feet on the girder below')
+
+    // The ape stops throwing once the finale is armed.
+    const s = mk()
+    s.player.x = 100
+    s.player.y = getPlatformY(s.platforms[TOP_PLAT], 105) - s.player.h
+    tickDonkeyKong(s, null)
+    const t0 = s.barrelTimer
+    let spawned = 0
+    for (let i = 0; i < 400; i++) if (tickDonkeyKong(s, {}).barrel) spawned++
+    ok(s.barrelTimer === t0 && spawned === 0, 'the ape stops throwing at the finale', `timer ${t0}->${s.barrelTimer} spawned=${spawned}`)
+
+    // Collapse: girders 5/6 out of the collision, runner steps down, ape
+    // topples to the pile, the lap flag lands.
+    const c = mk()
+    c.player.x = 100
+    c.player.y = getPlatformY(c.platforms[TOP_PLAT], 105) - c.player.h
+    tickDonkeyKong(c, null)
+    let pulls = 0
+    for (let i = 0; i < 1500 && pulls < 4; i++) {
+        const cx = c.player.x + c.player.w / 2
+        const r = c.rivets.find((rr) => !rr.pulled)
+        if (tickDonkeyKong(c, r && Math.abs(r.x - cx) > 5 ? (r.x > cx ? { right: true } : { left: true }) : {}).rivet) pulls++
+    }
+    ok(c.barrels.length === 0, 'the crash shakes the deck clean', `barrels=${c.barrels.length}`)
+    let minPlat = 9, dkMax = 0, wonAt = -1
+    for (let i = 0; i < COLLAPSE_TICKS + 10; i++) {
+        const ev = tickDonkeyKong(c, null)
+        const pi = c.player.grounded ? platformIndex(c, c.player.x + c.player.w / 2, c.player.y, c.player.h) : null
+        if (pi !== null && pi < minPlat) minPlat = pi
+        dkMax = Math.max(dkMax, c.dkFall)
+        if (ev.won && wonAt < 0) wonAt = i
+    }
+    ok(minPlat <= 4, 'the runner steps down through the girders that fell — never crushed', `lowest girder ${minPlat}`)
+    ok(dkMax === DK_FALL_STOP, 'the ape drops the whole fall onto the pile', `dkFall=${dkMax}`)
+    ok(wonAt === COLLAPSE_TICKS - 2, 'the crash runs its full length, then the lap flags', `wonAt=${wonAt}`) // collapse already counted 1 at the bank tick
+
+    // Death resets the finale with the screen.
+    const d = mk()
+    d.player.x = 100
+    d.player.y = getPlatformY(d.platforms[TOP_PLAT], 105) - d.player.h
+    tickDonkeyKong(d, null)
+    d.rivets[0].pulled = true
+    d.pullTimer = 7
+    d.player.grounded = true
+    d.deathTimer = 1
+    tickDonkeyKong(d, null) // lives-- and the screen resets
+    ok(!d.rivetPhase && d.rivets.every((r) => !r.pulled) && d.pullTimer === 0 && d.lives === START_LIVES - 1,
+        'a death resets the finale with the screen', `rivetPhase=${d.rivetPhase}`)
+
+    // The finale state rides the replay witness (#1473).
+    const h1 = stateHash(Object.assign(mk(), { rivetPhase: true, collapse: 3, dkFall: 12, pullTimer: 4 }))
+    ok(h1 !== stateHash(mk()), 'rivets, pull and fall ride the replay hash')
 }
 
 // --------------------------------------------------------------- hammer ----
@@ -326,6 +448,9 @@ console.log('seat semantics: driver in, driver out, honest waits')
     att.deathTimer = 0
     att.winTimer = 40
     ok(watchStep(att) === null, 'watchStep waits through the lap animation')
+    att.winTimer = 0
+    att.collapse = 1 // #3598 — the crash is the same honest wait
+    ok(watchStep(att) === null, 'watchStep waits through the collapse')
 }
 
 // ---------------------------------------------------- WATCH driver sweep ----
@@ -500,9 +625,28 @@ if (process.argv.includes('--mutant')) {
                 killPlayer(gs, ev)`,
             `if (Math.abs(dx) < 2 && Math.abs(dy) < 2) {
                 killPlayer(gs, ev)`],
-        ['the lap never rings (win zone deleted)', S,
-            `if (p.y + p.h < 56 && p.x > 72 && p.x < 152) {`,
-            `if (false && p.y + p.h < 56 && p.x > 72 && p.x < 152) {`],
+        ['the lap never rings (the finale never arms)', S,
+            `if (p.y + p.h < 56 && p.x > 72 && p.x < 152 && !gs.rivetPhase) {`,
+            `if (false && p.y + p.h < 56 && p.x > 72 && p.x < 152 && !gs.rivetPhase) {`],
+        ['#3598 the pull never completes (rivets stay armed, the seat can never finish)', S,
+            `            if (gs.pullTimer <= 0) {`,
+            `            if (false && gs.pullTimer <= 0) {`],
+        ['#3598 the freeze lets you walk (the yank becomes a free hover)', S,
+            `    if (gs.pullTimer > 0) {
+        moveDir = 0`,
+            `    if (false && gs.pullTimer > 0) {
+        moveDir = 0`],
+        ['#3598 the crash never starts (four holes and no lap, ever)', S,
+            `if (gs.rivets.every(rr => rr.pulled)) gs.collapse = 1`,
+            `if (false && gs.rivets.every(rr => rr.pulled)) gs.collapse = 1`],
+        ['#3598 the seat cannot see the collapse win (the stall we shipped against)', S,
+            `if (ev.collapse) return 100000000000 + (WATCH_HORIZON - t) * 1000`,
+            `if (false && ev.collapse) return 100000000000 + (WATCH_HORIZON - t) * 1000`],
+        ['#3598 the ape keeps throwing through the finale (his last stand is a crossfire)', S,
+            `    if (!gs.rivetPhase) {
+        gs.barrelTimer--`,
+            `    if (true) {
+        gs.barrelTimer--`],
         ['the lap banks 0 (win bonus hollow)', S,
             `gs.score += WIN_SCORE`,
             `gs.score += 0`],
