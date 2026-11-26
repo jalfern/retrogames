@@ -598,8 +598,6 @@ function* fetchItem(sim, id, depth = 0) {
             // again — the swap fires the tick the bat steps in, whenever that
             // is. The march-order is untouched: currency, then post, then the
             // dwell wait (V2 seed 2 proves trading on time beats chasing).
-            let bait = null
-            let baitRoom = -1
             for (let c = 0; c < 8 && sim.bat.carrying === id && !sim.dead && !sim.won && cr.w > 400; c++) {
                 if (roomThreat(sim) && roomThreat(sim).dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) break }
                 const br = sim.bat.room
@@ -627,20 +625,34 @@ function* fetchItem(sim, id, depth = 0) {
                 if (sim.room !== post && !(yield* walkTo(sim, post))) continue
                 if (sim.room !== post) continue
                 if (sim.carrying && !baitOut) {
-                    bait = sim.carrying; baitRoom = post
                     yield* dropCarrySafe(sim)      // plant on the post's open floor
-                    if (sim.carrying) { bait = null; break }  // refused at an edge — re-plan
+                    if (sim.carrying) break        // refused at an edge — re-plan
                 } else if (!sim.carrying && !baitOut) continue  // nothing planted — re-plan
                 // A long wait at an EMPTY post is camping, not trading (that
                 // is the shape of the 19k-tick burn, seed 7 V3): spend the
                 // dwell-length wait only while the bat actually occupies the
                 // post; when it is elsewhere, hold the step and re-march.
+                // A long wait at an EMPTY post is camping, not trading (that
+                // is the shape of the 19k-tick burn, seed 7 V3): spend the
+                // dwell-length wait only while the bat actually occupies the
+                // post; when it is elsewhere, hold the step and re-march.
+                // #3524 armed wait: the stray-break must watch the BAIT, not
+                // the hand — but only while the BAT IS IN THE ROOM. Seed 2 V3
+                // died standing next to its planted magnet with the sword still
+                // in hand (armSword from the long walk): the burst broke on
+                // tick 1 every round, 16 rounds, while the bat sat swap-ready
+                // in the same room. The trade law needs a LOOSE item beside a
+                // present bat, not an empty hand: hold the wait while both hold.
+                // With the bat away, the old instant break stays (seed 4
+                // regressed 12k ticks sitting out waits at empty posts).
+                const baitLoose = () => sim.items.some(i => i.room === post && !i.carried
+                    && i.id !== id && i.id !== 'bridge' && openFloor(i))
                 let burst = sim.bat.room === post ? 700 : 350
                 while (burst > 0 && cr.w > 0 && sim.bat.carrying === id && !sim.dead && !sim.won) {
                     burst--; cr.w--
                     const th = roomThreat(sim)
                     if (th && th.dist <= DODGE_SAFE) break
-                    if (sim.carrying) break        // a stray landed in hand — replant fresh
+                    if (sim.carrying && !(baitLoose() && sim.bat.room === sim.room)) break   // no live trade in this room — replant / re-march
                     if (sim.room !== post) break   // slipped a seam — re-march
                     yield {}
                 }

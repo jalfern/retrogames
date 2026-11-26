@@ -386,3 +386,26 @@ Honest gaps from this pass: on seeds OUTSIDE the pinned contract (11–30 spot
 probe) the bridge fetch still loses ~10% of runs to a bat that camps the haul
 behind den doors (why `bridge`/`red floor`); and roam uses the cart's own dice
 stream, so adding roam re-pinned every replay hash.
+
+## #3524 — roam-era polish round 2 (bat dens, patient decoy)
+
+- **Locked rooms out of the shuffle pool** — seeds 21/22 dealt the BRIDGE
+  itself into Red Maze 1 (reachable only WITH the bridge → dead quest).
+- **Patient currency** — a planted bait IS the trade: a round that finds its
+  own decoy still on the floor skips the errand and re-sits the wait instead
+  of abandoning the plant exactly when a den-camped bat comes out.
+- **One bait per post** — a spare lying on OPEN floor at the post suppresses
+  a second plant; spares inside wall bands are junk, not bait (a bridge
+  ghost once blocked every plant).
+- **Swap-timing grab** — the tick the bat swaps, empty the hand and drive
+  onto the freed cell: swapTimer=180 is the whole window before the
+  re-steal, so never march cross-map to a stale room entry.
+- **Armed wait** — the decoy wait watches the BAT and the BAIT, never the
+  hand: an armed guide standing beside a live decoy with the bat IN the room
+  holds the wait (the old stray-break died on tick 1, 16 rounds straight,
+  seed 2 V3, with the bat sitting swap-ready), while an absent bat keeps
+  the instant break (the broad form regressed seed 4 by 12k ticks sitting
+  waits at empty posts).
+
+Gated in `adventurecheck` 212/0 (route wins V1/V2/V3 10/10). Left open by
+design: the wanderer-heading look (still the plain dot) rides a follow-up.
