@@ -203,8 +203,12 @@ const sfxFor = (ev) => {
         case 'nudge': a.playNoise(0.05, 0.07); break
         case 'ballstart': a.playTone(784, 0.06, 'square', 0.1); a.playTone(1046, 0.08, 'square', 0.1, 0.07); break
         // ---- rung 2 ----
-        case 'ramp': a.playTone(980, 0.04, 'square', 0.09); break
-        case 'rampset':
+        case 'ramp': case 'rampL': a.playTone(980, 0.04, 'square', 0.09); break
+        // #3432: the flank set rings the same chord as the launch-lane set —
+        // same money, same read. kbarm is the save clicking back on.
+        case 'kbarm':
+            a.playTone(660, 0.04, 'square', 0.08); a.playTone(990, 0.07, 'square', 0.08, 0.05); break
+        case 'rampset': case 'ramplset':
             a.playTone(587, 0.07, 'square', 0.1); a.playTone(740, 0.07, 'square', 0.1, 0.06)
             a.playTone(880, 0.1, 'square', 0.11, 0.12); break
         // lane rollovers step up a pitch ladder with the sweep: each of the
@@ -266,6 +270,7 @@ const mkFlash = (tb) => ({
     flash: 0, // #3178 tower-kick white-out
     orbit: 0, orbitArm: 0, mag: 0, magFree: 0,
     kb: 0, // #3250 kickback pop
+    rampL: 0, kbL: 0, kbLArm: 0, // #3432 JET LANE wires + mirror save + re-arm pulse
     wobble: 0, // #3297 tilt-warning cabinet wobble (22 → 0, a damped lean)
     pzone: 0, // #3297 fresh power-zone tick (lights the meter steps briefly)
 })
@@ -481,9 +486,11 @@ const PinballGame = () => {
                 else if (ev.type === 'spinner') { fl.spinner = 6; spawn(ev.x, ev.y, 3, pal.glow, 90) }
                 else if (ev.type === 'kicker') { spawn(ev.x, ev.y, 12, pal.lane, 220) }
                 // #3250 kickback: the loudest rescue on the table — plunger pop,
-                // ring, upward shower and a shake (it saves the ball from death)
+                // ring, upward shower and a shake (it saves the ball from death).
+                // #3432: the left save reads its own lamp (ev.side).
                 else if (ev.type === 'kickback') {
-                    fl.kb = 18; shakeRef.current = Math.max(shakeRef.current, 8)
+                    fl[ev.side === 'L' ? 'kbL' : 'kb'] = 18
+                    shakeRef.current = Math.max(shakeRef.current, 8)
                     spawn(ev.x, ev.y, 16, pal.hot, 260)
                     spawnRing(ev.x, ev.y, pal.hot, 30, 16)
                 }
@@ -497,6 +504,11 @@ const PinballGame = () => {
                 else if (ev.type === 'powerzone') { fl.pzone = 10; spawn(v.meterX + 3, 592 - 60 * (ev.power || 0), 3, pal.hot, 90) }
                 else if (ev.type === 'ramp') { fl.ramp = 8; spawn(ev.x, ev.y, 4, pal.lane, 110) }
                 else if (ev.type === 'rampset') { fl.ramp = 20; shakeRef.current = Math.max(shakeRef.current, 3) }
+                // #3432: the flank lamps live on their own flash field, and the
+                // SET gets its own (smaller) shake + a charged ring on the re-arm.
+                else if (ev.type === 'rampL') { fl.rampL = 8; spawn(ev.x, ev.y, 4, pal.lane, 110) }
+                else if (ev.type === 'ramplset') { fl.rampL = 20; shakeRef.current = Math.max(shakeRef.current, 3) }
+                else if (ev.type === 'kbarm') { fl.kbLArm = 24; spawnRing(ev.x, ev.y, pal.hot, 22, 14) }
                 else if (ev.type === 'lane') { fl.lane[ev.i] = 8; spawn(v.laneCx, ev.y, 4, pal.lane, 110) }
                 else if (ev.type === 'lanesweep') { shakeRef.current = Math.max(shakeRef.current, 3) }
                 else if (ev.type === 'lock') { fl.lock = 16; shakeRef.current = Math.max(shakeRef.current, 4) }
@@ -598,9 +610,12 @@ const PinballGame = () => {
                 else if (ev.type === 'bank') { fl.bank = 40; d.shk.current = Math.max(d.shk.current, 4) }
                 else if (ev.type === 'spinner') { fl.spinner = 6 }
                 else if (ev.type === 'kicker') { sparkD(d, ev.x, ev.y, 9, pal.lane, 220) }
-                else if (ev.type === 'kickback') { fl.kb = 18; sparkD(d, ev.x, ev.y, 12, pal.hot, 240) }
+                else if (ev.type === 'kickback') { fl[ev.side === 'L' ? 'kbL' : 'kb'] = 18; sparkD(d, ev.x, ev.y, 12, pal.hot, 240) }
                 else if (ev.type === 'ramp') { fl.ramp = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
                 else if (ev.type === 'rampset') { fl.ramp = 20 }
+                else if (ev.type === 'rampL') { fl.rampL = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
+                else if (ev.type === 'ramplset') { fl.rampL = 20 }
+                else if (ev.type === 'kbarm') { fl.kbLArm = 24 }
                 else if (ev.type === 'lane') { fl.lane[ev.i] = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
                 else if (ev.type === 'powerzone') { fl.pzone = 10 }
                 else if (ev.type === 'lock') {
@@ -747,6 +762,39 @@ const PinballGame = () => {
                     ctx.beginPath(); ctx.arc(v.rampCx, rr.y, 7, 0, 7); ctx.stroke()
                     ctx.restore()
                 })
+                // #3432: JET LANE — the left ramp. Flank rope, chrome wire pair,
+                // two progress lamps and a SET lamp; the flank has its own flash
+                // field so the two ramps never cross-light.
+                if (tb.rampL) {
+                    const rcx = (tb.rampL.x1 + tb.rampL.x2) / 2
+                    if (gs.rampLHits > 0 || fl.rampL > 0) {
+                        ctx.save()
+                        ctx.globalAlpha = 0.18 + 0.14 * Math.sin(gs.tick / 9)
+                        ctx.strokeStyle = pal.lane; ctx.lineWidth = 2
+                        ctx.beginPath(); ctx.moveTo(rcx, 284); ctx.lineTo(rcx, 372); ctx.stroke()
+                        ctx.restore()
+                    }
+                    tb.rampL.rolls.forEach((rr) => {
+                        ctx.save()
+                        ctx.strokeStyle = fl.rampL > 0 ? '#ffffff' : pal.lane
+                        ctx.globalAlpha = fl.rampL > 0 ? 0.95 : 0.45
+                        ctx.lineWidth = 2.5
+                        ctx.beginPath(); ctx.arc(rcx, rr.y, 7, 0, 7); ctx.stroke()
+                        ctx.restore()
+                    })
+                    for (let i = 0; i < tb.rampL.rolls.length; i++) {
+                        const on = gs.rampLHits > i || fl.rampL > 0
+                        ctx.fillStyle = on ? '#ffffff' : pal.hotOff
+                        ctx.beginPath(); ctx.arc(rcx - 6 + i * 12, 288, 2.4, 0, 7); ctx.fill()
+                    }
+                    if (gs.rampLLit) {
+                        ctx.save()
+                        ctx.shadowColor = pal.hot; ctx.shadowBlur = 8 + 4 * Math.sin(gs.tick / 6)
+                        ctx.fillStyle = (gs.tick >> 3) % 2 === 0 ? '#ffffff' : pal.hot
+                        ctx.beginPath(); ctx.arc(rcx, 276, 3, 0, 7); ctx.fill()
+                        ctx.restore()
+                    }
+                }
                 // lock tower — a chrome gate housing with three lock lamps
                 ctx.save()
                 const tg = ctx.createLinearGradient(v.towerX1, 0, v.towerX2, 0)
@@ -945,26 +993,35 @@ const PinballGame = () => {
 
             // #3250 KICKBACK — chrome button in a rubber ring at the drain mouth,
             // armed-pulse while its one save per ball is live, plunger pop on fire.
-            const KB = tb.kb
-            const kbCx = (KB.x1 + KB.x2) / 2, kbCy = KB.yFrom - 3
-            const kbArmed = !gs.kbUsed && gs.launched && !gs.done
-            const kbLit = fl.kb > 0
-            ctx.save()
-            if (kbLit) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 16 }
-            else if (kbArmed) { ctx.shadowColor = pal.hot; ctx.shadowBlur = 8 + 5 * Math.sin(gs.tick / 6) }
-            // plunger shaft pops up through the ring on fire
-            if (kbLit) {
-                ctx.fillStyle = pal.chrome
-                ctx.fillRect(kbCx - 4, kbCy - (fl.kb / 18) * 10, 8, (fl.kb / 18) * 10 + 4)
+            // #3432: the mirror save shares the draw; a freshly RE-armed left
+            // save rings white (kbLArm) so the ramp→save combo is visible.
+            const kbUnits = [[tb.kb, gs.kbUsed, fl.kb, 0]]
+            if (tb.kbL) kbUnits.push([tb.kbL, gs.kbLUsed, fl.kbL, fl.kbLArm])
+            for (const [KB, used, lit, arm] of kbUnits) {
+                const kbCx = (KB.x1 + KB.x2) / 2, kbCy = KB.yFrom - 3
+                const kbArmed = !used && gs.launched && !gs.done
+                const kbLit = lit > 0
+                ctx.save()
+                if (kbLit) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 16 }
+                else if (arm > 0) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 12 + 6 * Math.sin(gs.tick / 4) }
+                else if (kbArmed) { ctx.shadowColor = pal.hot; ctx.shadowBlur = 8 + 5 * Math.sin(gs.tick / 6) }
+                // plunger shaft pops up through the ring on fire
+                if (kbLit) {
+                    ctx.fillStyle = pal.chrome
+                    ctx.fillRect(kbCx - 4, kbCy - (lit / 18) * 10, 8, (lit / 18) * 10 + 4)
+                }
+                // rubber ring
+                ctx.strokeStyle = kbLit || arm > 0 ? '#ffffff' : (kbArmed ? pal.hot : 'rgba(148,163,184,0.5)')
+                ctx.lineWidth = 3
+                ctx.beginPath(); ctx.arc(kbCx, kbCy, 7.5, 0, 7); ctx.stroke()
+                // chrome face
+                ctx.fillStyle = kbLit ? '#ffffff'
+                    : arm > 0 ? `rgba(255,255,255,${0.55 + 0.35 * Math.sin(gs.tick / 4)})`
+                    : kbArmed ? `rgba(${pal.hotRgb},${0.55 + 0.3 * Math.sin(gs.tick / 6)})`
+                    : 'rgba(148,163,184,0.35)'
+                ctx.beginPath(); ctx.arc(kbCx, kbCy, 4.5, 0, 7); ctx.fill()
+                ctx.restore()
             }
-            // rubber ring
-            ctx.strokeStyle = kbLit ? '#ffffff' : (kbArmed ? pal.hot : 'rgba(148,163,184,0.5)')
-            ctx.lineWidth = 3
-            ctx.beginPath(); ctx.arc(kbCx, kbCy, 7.5, 0, 7); ctx.stroke()
-            // chrome face
-            ctx.fillStyle = kbLit ? '#ffffff' : (kbArmed ? `rgba(${pal.hotRgb},${0.55 + 0.3 * Math.sin(gs.tick / 6)})` : 'rgba(148,163,184,0.35)')
-            ctx.beginPath(); ctx.arc(kbCx, kbCy, 4.5, 0, 7); ctx.fill()
-            ctx.restore()
 
             // flippers — chrome capsules
             const f = tb.flippers
@@ -1745,12 +1802,22 @@ const PinballGame = () => {
                     gs.pucks.push({ bx, by: 498, vx: gs.table.kicker.vx, vy: gs.table.kicker.vy, prevY: 498, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
                     return stateOf(gs)
                 },
-                // dev rig: drop a ball fast down the kickback column (#3250,
-                // visual QA of the pop; rules are pinned in Node by pinballcheck)
-                kbDrop: () => {
+                // dev rig: drop a ball fast down a kickback column (#3250, side
+                // param #3432 — 'L' takes the mirror column; visual QA of the
+                // pop; rules are pinned in Node by pinballcheck)
+                kbDrop: (side) => {
                     const gs = gsRef.current
-                    const KB = gs.table.kb
+                    const KB = side === 'L' ? gs.table.kbL : gs.table.kb
                     gs.pucks.push({ bx: (KB.x1 + KB.x2) / 2, by: KB.yFrom + 2, vx: 0, vy: 300, prevY: KB.yFrom + 2, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
+                    return stateOf(gs)
+                },
+                // dev rig (#3432): feed a ball up the JET LANE corridor — crosses
+                // both flank wires on the way to the dome flank (visual QA; the
+                // ladder is pinned in Node).
+                rampLFeed: () => {
+                    const gs = gsRef.current
+                    const RL = gs.table.rampL
+                    gs.pucks.push({ bx: (RL.x1 + RL.x2) / 2, by: 400, vx: 0, vy: -520, prevY: 400, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
                     return stateOf(gs)
                 },
                 magDrop: () => {

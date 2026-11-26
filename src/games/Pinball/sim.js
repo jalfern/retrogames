@@ -117,6 +117,18 @@ export const TABLE = {
     // instead of draining, pays its own price, and the device stays spent
     // until the next ball (minVy keeps resting balls off the plunger).
     kb: { x1: 190, x2: 205, yFrom: 552, yTo: 604, minVy: 150, vx: -40, vy: -900 },
+    // KICKBACK L (#3432): the mirror save behind the LEFT flipper tip — one
+    // free save per ball on a fast descent (same rests-off law as #3250).
+    // A RAMP L SET re-arms it: the flank feeds the save, the save keeps the
+    // flank alive. EMBER RIDER mirrors it as x 190..205.
+    kbL: { x1: 155, x2: 170, yFrom: 552, yTo: 604, minVy: 150, vx: 40, vy: -900 },
+    // JET LANE (#3432): the left ramp — two rollover wires crossed UPWARD in
+    // the flank corridor (x 44..76, between the orbit guide x40 and the dome's
+    // left inside line). Fed by the left flipper's flank line; each wire pays
+    // `ramp`, both in one ball pay `rampSet` AND re-arm kbL. The descent off
+    // the flank runs down the roped outer channel through the spinner/kicker:
+    // the spinner finally lives on a ramp, not only on a drain miss.
+    rampL: { x1: 44, x2: 76, rolls: [{ y: 300 }, { y: 360 }] },
     // ---- rung 2 primitives (data; the engine only knows the shapes) ----
     // RAMP rollovers: crossed UPWARD inside the launch lane (x 326..346).
     rampRollovers: [{ y: 250 }, { y: 330 }],
@@ -241,6 +253,10 @@ export const TABLE_TWO = {
     kicker: { xMax: 314, side: -1, yAt: 498, vx: -10, vy: -880 },
     // kickback, exact W-x mirror of CABINET ONE's pocket (#3250, #3103 contract)
     kb: { x1: 155, x2: 170, yFrom: 552, yTo: 604, minVy: 150, vx: 40, vy: -900 },
+    // #3432 mirrors: the left save lands on the right column, the JET LANE
+    // corridor flips to x 284..316 (W-x of 44..76, endpoints swapped).
+    kbL: { x1: 190, x2: 205, yFrom: 552, yTo: 604, minVy: 150, vx: -40, vy: -900 },
+    rampL: { x1: 284, x2: 316, rolls: [{ y: 300 }, { y: 360 }] },
     rampRollovers: [{ y: 250 }, { y: 330 }],
     laneRollovers: [{ y: 250 }, { y: 310 }, { y: 370 }],
     laneX: { x1: 42, x2: 58 },
@@ -339,6 +355,8 @@ export function makeGame(seed = 1, cab = 0) {
         spinnerTurns: 0,   // per-puck spin/spinArm live on gs.pucks[i]
         kickCd: 0,
         kbUsed: false, kbFlash: 0,   // #3250: the kickback save — one per ball
+        kbLUsed: false, kbLFlash: 0, kbLArmFlash: 0,   // #3432: mirror save + re-arm flash
+        rampLHits: 0, rampLLit: false, rampLFlash: 0,   // #3432: JET LANE set counter
         bbCd: 0,           // steel-clack event cooldown in substeps (#3217)
         nudgeMeter: 0, nudgeDecay: 0, tilt: false,
         lastBonus: 0, drainFx: 0,
@@ -389,6 +407,7 @@ export function resetBall(gs) {
     gs.spinnerTurns = 0; gs.tilt = false;
     gs.nudgeMeter = 0; gs.nudgeDecay = 0; gs.mult = 1; gs.banksThisBall = 0;
     gs.kbUsed = false;   // the kickback re-arms with every new ball
+    gs.kbLUsed = false; gs.rampLHits = 0; gs.rampLLit = false;   // #3432 mirror devices too
     gs.bbCd = 0;
     // rung 2: the tower drops its locks with the ball; the pack ends with it
     gs.locks = 0; gs.multiball = false; gs.saveT = 0; gs.saveUsed = false;
@@ -813,6 +832,31 @@ export function stepGame(gs, pad = {}) {
             }
         }
 
+        // ---- #3432: JET LANE — the left ramp (crossed UPWARD in the flank
+        // corridor). Two wires per ball pay the same ladder as the launch-lane
+        // RAMP; the SET also re-arms the left kickback once, so the flank
+        // feeds the save. Repeatable per ball (the counter resets on the SET). ----
+        const RL = T.rampL;
+        if (RL) {
+            for (const rr of RL.rolls) {
+                if (p.prevY > rr.y && p.by <= rr.y && p.bx > RL.x1 && p.bx < RL.x2) {
+                    gs.rampLHits += 1; gs.rampLFlash = 8;
+                    add(gs, T.rules.ramp);
+                    gs.events.push({ type: 'rampL', x: (RL.x1 + RL.x2) / 2, y: rr.y });
+                    if (gs.rampLHits >= RL.rolls.length) {
+                        gs.rampLHits = 0; gs.rampLLit = true;
+                        add(gs, T.rules.rampSet);
+                        say(gs, `RAMP L SET! +${T.rules.rampSet}`);
+                        gs.events.push({ type: 'ramplset', x: (RL.x1 + RL.x2) / 2, y: RL.rolls[0].y });
+                        if (T.kbL && gs.kbLUsed) {   // the combo law: a SET buys the save back
+                            gs.kbLUsed = false; gs.kbLArmFlash = 24;
+                            gs.events.push({ type: 'kbarm', x: (T.kbL.x1 + T.kbL.x2) / 2, y: T.kbL.yFrom - 3 });
+                        }
+                    }
+                }
+            }
+        }
+
         // ---- rung 2: LANE rollovers (crossed downward in the firelane) ----
         const { x1, x2 } = T.laneX;
         if (p.bx > x1 && p.bx < x2) {
@@ -853,6 +897,20 @@ export function stepGame(gs, pad = {}) {
             add(gs, T.rules.kb);
             say(gs, `KICKBACK! +${T.rules.kb}`, 90);
             gs.events.push({ type: 'kickback', x: p.bx, y: p.by });
+        }
+
+        // ---- #3432: KICKBACK L — the mirror save behind the left flipper tip.
+        // Same once-per-ball, fast-descent-only law; a RAMP L SET re-arms it
+        // (one ball can therefore be saved once per side). Columns are disjoint
+        // (x 155..170 vs 190..205) so one fall can never fire both. ----
+        const KBL = T.kbL;
+        if (KBL && !gs.kbLUsed && p.vy > KBL.minVy &&
+            p.bx > KBL.x1 && p.bx < KBL.x2 && p.by > KBL.yFrom && p.by < KBL.yTo) {
+            gs.kbLUsed = true; gs.kbLFlash = 18;
+            p.vx = KBL.vx; p.vy = KBL.vy; p.stall = 0;
+            add(gs, T.rules.kb);
+            say(gs, `KICKBACK! +${T.rules.kb}`, 90);
+            gs.events.push({ type: 'kickback', x: p.bx, y: p.by, side: 'L' });
         }
 
         // ---- rung 3: ORBIT — flank curl assist (mirrors the lane-guide curl
@@ -931,6 +989,9 @@ export function stepGame(gs, pad = {}) {
 
     if (gs.rampFlash > 0) gs.rampFlash -= 1;
     if (gs.kbFlash > 0) gs.kbFlash -= 1;
+    if (gs.rampLFlash > 0) gs.rampLFlash -= 1;
+    if (gs.kbLFlash > 0) gs.kbLFlash -= 1;
+    if (gs.kbLArmFlash > 0) gs.kbLArmFlash -= 1;
     gs.laneFlash = gs.laneFlash.map((v) => Math.max(0, v - 1));
     if (gs.lockFlash > 0) gs.lockFlash -= 1;
     if (gs.mbFlash > 0) gs.mbFlash -= 1;
@@ -1102,6 +1163,8 @@ export function stateOf(gs) {
         liveBalls: gs.pucks.length, locks: gs.locks,
         multiball: gs.multiball, extraBall: gs.extraBall,
         rampHits: gs.rampHits, saveT: gs.saveT, kbUsed: gs.kbUsed,
+        // #3432: the flank devices are observable state too — the hash must move when they do
+        rampLHits: gs.rampLHits, rampLLit: gs.rampLLit, kbLUsed: gs.kbLUsed,
         // ---- rung 3 ----
         orbits: gs.orbits, orbitBank: gs.orbitBank, orbitLit: gs.orbitLit,
         magCharge: gs.magCharge, magHold: gs.magHold, magTouched: gs.magTouched,
@@ -1119,6 +1182,7 @@ export function stateHash(gs) {
         gs.targetDown.map((d) => (d ? 1 : 0)).join(''), gs.mult, gs.tilt ? 1 : 0,
         gs.spinnerTurns, gs.launched ? 1 : 0,
         gs.locks, gs.multiball ? 1 : 0, gs.extraBall, gs.rampHits, gs.saveUsed ? 1 : 0, gs.kbUsed ? 1 : 0,
+        gs.rampLHits, gs.rampLLit ? 1 : 0, gs.kbLUsed ? 1 : 0,
         gs.orbitBank, gs.orbitLit ? 1 : 0, gs.magCharge, gs.magHold, gs.magTouched ? 1 : 0,
         gs.seed >>> 0];
     let h = 0x811c9dc5;
@@ -1241,6 +1305,7 @@ export function compileTable(defRaw) {
         spinner: TABLE.spinner,
         kicker: TABLE.kicker,
         kb: TABLE.kb,
+        kbL: TABLE.kbL, rampL: TABLE.rampL,   // #3432: flank devices ride the fixed chassis
         rampRollovers: TABLE.rampRollovers,
         laneRollovers: TABLE.laneRollovers,
         laneX: TABLE.laneX,
