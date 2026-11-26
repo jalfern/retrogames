@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot', 'spinrung', 'spincool', 'spingrade']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot', 'holoring', 'spinrung', 'spincool', 'spingrade']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -173,6 +173,15 @@ if (MUT) {
             from: 'const step = 2 * Math.asin(BALL_R / holdR) + 0.01;',
             to: 'const step = 0.001;',
             note: 'rosette relax collapses — chained pins overlap on the ring',
+        },
+        // #3461 item 3: the affordance edge collapses back to the old fixed blob.
+        // The halo is the only read of the swallow window (the cone is invisible),
+        // so pinning the honest radius is load-bearing for the player's eye.
+        holoring: {
+            file: 'src/games/Pinball/index.jsx',
+            from: 'const edgeR = M.field + BALL_R',
+            to: 'const edgeR = 30',
+            note: 'field-edge affordance ring reverted to a fixed blob — the swallow window goes untelegraphed',
         },
         // #3446: the ladder rung dies — the callout stops counting turns.
         spinrung: {
@@ -1095,6 +1104,22 @@ const wrap = (gs) => {
     r.check('#3452 EMBER RIDER mirrors the chain — and pays its hotter 75 twice',
         gs3.table.id === 'ember-rider' && g3 === 2 && snaps3 === 2 && gs3.score - score3 === 2 * TABLE_TWO.rules.magnet,
         `cab=${gs3.table.id} grabs=${g3} snaps=${snaps3} paid=${gs3.score - score3}`)
+}
+
+// ------------------------------------ energised-pack halo (#3461 item 3) ----
+// The swallow window is invisible in the sim (a lateral touch just bounces off
+// the pin), so index.jsx must ring the honest affordance edge and fade it on the
+// episode clock; a chained pack must read as one live magnet. Render-only, so the
+// pin reads the shell source (like the #3446 spinner-read pin). These break when
+// the --mutate holoring rule reverts the affordance ring to a fixed blob.
+{
+    const sh = readFileSync(new URL('../src/games/Pinball/index.jsx', import.meta.url), 'utf8')
+    r.check('#3461 held pack rings the honest swallow edge (field + BALL_R) and fades on the episode clock',
+        /const edgeR = M\.field \+ BALL_R/.test(sh) && /Math\.min\(1, gs\.magHold \/ M\.hold\)/.test(sh),
+        'the field-edge ring must sit at the grab radius and dim with gs.magHold / M.hold')
+    r.check('#3461 a chained pack reads as one magnet — rosette ring at the pin radius + a tether to EVERY held ball',
+        /const ringR = M\.r \+ BALL_R/.test(sh) && /const pack = gs\.pucks\.filter\(\(p\) => p\.magHeld\)/.test(sh) && /for \(const hp of pack\)/.test(sh),
+        'pack-sized rosette and per-ball tethers replace the first-ball-only line')
 }
 
 // ---- #3422 the orbit lane is per-ball — verified, not assumed ----

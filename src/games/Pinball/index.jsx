@@ -925,14 +925,39 @@ const PinballGame = () => {
                         ctx.beginPath(); ctx.arc(M.x, M.y, M.field * (0.7 + 0.3 * Math.sin(gs.tick / 9)), 0, 7); ctx.stroke()
                     }
                     if (held) {
-                        const rg = ctx.createRadialGradient(M.x, M.y, 4, M.x, M.y, 30)
-                        rg.addColorStop(0, `rgba(${pal.magRgb},0.55)`); rg.addColorStop(1, `rgba(${pal.magRgb},0)`)
-                        ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(M.x, M.y, 30, 0, 7); ctx.fill()
-                        const hp = gs.pucks.find((p) => p.magHeld)
-                        if (hp) {
-                            ctx.globalAlpha = 0.7; ctx.strokeStyle = pal.mag; ctx.lineWidth = 1.5
+                        // Energised-pack halo (#3461 item 3). The swallow window is
+                        // otherwise invisible: a lateral touch just bounces off the pin
+                        // (the cone), so nothing tells the player where the magnet will
+                        // take a ball, nor when it lets go. Ring the honest affordance
+                        // edge (M.field + BALL_R — exactly where md < field + BALL_R
+                        // marks/grabs in the sim) and fade it on the episode clock
+                        // (gs.magHold / M.hold), so the player sees both that the mouth
+                        // is open and WHEN it closes. A rosette ring at the pin radius
+                        // (M.r + BALL_R) and a tether to EVERY held ball make a chained
+                        // pack read as one live magnet, not one pinned ball. Render-only,
+                        // keyed entirely to sim state — deterministic, gameplay unchanged.
+                        const fade = M.hold > 0 ? Math.min(1, gs.magHold / M.hold) : 1
+                        const edgeR = M.field + BALL_R
+                        const ringR = M.r + BALL_R
+                        const pack = gs.pucks.filter((p) => p.magHeld)
+                        const rg = ctx.createRadialGradient(M.x, M.y, 4, M.x, M.y, edgeR)
+                        rg.addColorStop(0, `rgba(${pal.magRgb},${(0.55 * (0.4 + 0.6 * fade)).toFixed(3)})`)
+                        rg.addColorStop(1, `rgba(${pal.magRgb},0)`)
+                        ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(M.x, M.y, edgeR, 0, 7); ctx.fill()
+                        // the affordance edge — the open swallow window, closing with the clock
+                        ctx.strokeStyle = pal.mag; ctx.lineWidth = 2
+                        ctx.globalAlpha = 0.35 + 0.55 * fade
+                        ctx.beginPath(); ctx.arc(M.x, M.y, edgeR, 0, 7); ctx.stroke()
+                        // the rosette the pack rides — so a chained pack reads as energised
+                        ctx.lineWidth = 1.5; ctx.globalAlpha = 0.3 + 0.55 * fade
+                        ctx.beginPath(); ctx.arc(M.x, M.y, ringR, 0, 7); ctx.stroke()
+                        // energy tethers to every held ball (was: the first only)
+                        ctx.lineWidth = 1.5
+                        for (const hp of pack) {
+                            ctx.globalAlpha = 0.5 + 0.4 * fade
                             ctx.beginPath(); ctx.moveTo(M.x, M.y); ctx.lineTo(hp.bx, hp.by); ctx.stroke()
                         }
+                        ctx.globalAlpha = 1
                     }
                     ctx.globalAlpha = 1
                     if (fl.mag > 0) { ctx.shadowColor = pal.mag; ctx.shadowBlur = 16 }
@@ -1793,6 +1818,26 @@ const PinballGame = () => {
                 // Seam-only: it never touches gs.multiball, so drains, locks and
                 // scoring stay the sim's honest rules.
                 devMb: (on = true) => { devMbRef.current = Boolean(on); return { rigMb: devMbRef.current } },
+                // dev rig (#3461): pin `n` balls onto the magnet rosette so the
+                // energised-pack halo can be screenshotted without farming a chain.
+                // Seam-only: positions/clocks only — no scoring, no drain, no real
+                // coil grab — and DEV-only, like devLock/devMb.
+                devMag: (n = 3) => {
+                    const g = gsRef.current, MG = g.table.magnet
+                    if (!MG) return null
+                    const holdR = MG.r + BALL_R
+                    const step = 2 * Math.asin(BALL_R / holdR) + 0.01
+                    let held = g.pucks.filter((p) => p.magHeld).length
+                    const add = Math.max(0, Math.trunc(n) - held)
+                    for (let k = 0; k < add; k++) {
+                        const ang = -Math.PI / 2 + (held + k) * step
+                        const bx = MG.x + Math.cos(ang) * holdR, by = MG.y + Math.sin(ang) * holdR
+                        g.pucks.push({ bx, by, vx: 0, vy: 0, prevY: by, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: true, magHoldT: MG.hold, magX: bx, magY: by })
+                        held++
+                    }
+                    g.magHold = MG.hold
+                    return { held, magHold: g.magHold }
+                },
                 state: () => ({ ...stateOf(gsRef.current), power: gsRef.current.power, screen: screenRef.current, skinId: skinAt(CABS[cabRef.current].tb.id, skinRef.current[cabRef.current]).id }),
                 // dev rig: pick a cabinet without keys (#3232) — re-deals its
                 // attract demo too, same law as the arrow keys.
