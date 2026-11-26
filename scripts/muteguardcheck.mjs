@@ -148,6 +148,10 @@ const SAFE = {
     // mkdtempSync(tmpdir()/wtcheck-*); the tool it audits removes ONLY through
     // `git worktree remove` inside those throwaway repos.
     'worktreepurgecheck.mjs': 'mkdtemp fixture repos + mutant copy under tmpdir; never rewrites tracked files',
+    // Read 2026-11-25 (#3419): every write/append/utimes in sections D and G
+    // targets mkdtempSync(tmpdir()/lanecheck-probe-*|statepark) dirs — wiring
+    // pins read scripts by path but never write; nothing tracked is rewritten.
+    'lanecheck.mjs': 'mkdtemp fixture dirs under tmpdir only; reads scripts, writes nothing tracked',
 }
 
 function audit() {

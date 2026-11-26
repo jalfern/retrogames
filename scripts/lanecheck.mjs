@@ -29,15 +29,19 @@
 // exempt from never-dry forever); in idle-kick.mjs revert the catch to
 // `issues = []` — F4 goes red (a GitHub blip fabricates a KICK), and revert
 // the held union to building-qa-only — F5 goes red (one lane per game breaks
-// for builders, the Nov 22 double-kick). All four verified by hand.
+// for builders, the Nov 22 double-kick). All four verified by hand. For #3419
+// flip the `stampCapMin` default to 0 in scripts/lib/slotlive.mjs — G2 goes
+// red (a mid-sweep mutant stamp would stop blocking kicks, the Nov 25
+// double-spawn). Verified by hand.
 
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, utimesSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, utimesSync, mkdirSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { builderLadder, lanePlan } from './lib/lanes.mjs'
 import { laneVerdict } from './lib/lanebusy.mjs'
+import { slotVerdict, slotLive, DEFAULT_STAMP_CAP_MIN, DEFAULT_LOG_CAP_MIN } from './lib/slotlive.mjs'
 import { parkPath, newestReport, readReport, parkReport } from './lib/statepark.mjs'
 import { flagshipStage, heldGames, qaIdleStage, weakestStage } from './lib/idle.mjs'
 import { slotsLine, throughputLine } from '../src/pages/floor.js'
@@ -766,6 +770,80 @@ section('D. statepark — race-proof STATE.md handoff (#1430)')
         && flagshipStage({ gapsByGame: RG, qaIssues: [], buildingQa: heldGames([{ title: 'POLISH — R-TYPE: Options pods' }]) }) === null
         && flagshipStage({ gapsByGame: RG, qaIssues: [], buildingQa: [] }).index === 0,
         'F6 fixture: a live building issue naming R-TYPE holds the title and the stage dies with it; unheld, the same gaps still kick')
+}
+
+// ---- G. SLOT LIVENESS BEYOND PGREP/PORT (#3419) --------------------------
+// Both E-witnesses go dark TOGETHER on a long quiet stretch inside a live
+// session: pgrep is blind to serve hosts, and the port witness caps dev-server
+// age — a 3 h session or a 30+-min `--mutate` sweep re-looks idle. On
+// 2026-11-25 that spawned a second slot-b session onto one worktree mid-sweep
+// (#3370/#3408; mutateguard #2049 was the only thing that kept it honest).
+// G1-G6 pin the pure verdict, G7-G10 that warden.sh consults it at every
+// spawn site, G11 the collector's pgrep self-match filter.
+{
+    const caps = { stampCapMin: 120, logCapMin: 45 }
+    ok(DEFAULT_STAMP_CAP_MIN === 120 && DEFAULT_LOG_CAP_MIN === 45,
+        'G0 the caps are the documented ones: a 30–60 min sweep stays inside, a crashed lane recovers in ≤45 min of silence')
+    ok(slotVerdict({ pidAlive: true, stampAgeMin: null, logAgeMin: null }).why === 'pid',
+        'G1 the slot\'s own pid outranks every other signal (planner→kick race close)')
+    ok(slotVerdict({ pidAlive: false, stampAgeMin: 20, logAgeMin: 32, logExited: false }).why === 'mutant-sweep',
+        'G2 the #3419 sighting: 32 min of silent stream, fresh .mutant-running on the named worktree — LIVE, not idle (default caps)')
+    ok(slotVerdict({ pidAlive: false, stampAgeMin: 121, logAgeMin: 60, logExited: false }).busy === false,
+        'G3 stamp residue past the cap (SIGKILL, no trap ran) with an expired stream must NOT wedge the lane forever (default caps)')
+    ok(slotVerdict({ pidAlive: false, stampAgeMin: null, logAgeMin: 44, logExited: false }, caps).why === 'stream',
+        'G4 a session log written inside the stream cap is a live session even with no pgrep or stamp')
+    ok(slotVerdict({ pidAlive: false, stampAgeMin: null, logAgeMin: 2, logExited: true }, caps).busy === false
+        && slotVerdict({ pidAlive: false, stampAgeMin: null, logAgeMin: -5, logExited: false }, caps).busy === false,
+        'G5 a log ending `session exit=N` is a DONE session, not silence — normal turnaround pays no tax; negative (clock-skew) ages never block')
+    ok(slotVerdict(undefined, caps).busy === false && slotVerdict({}, caps).busy === false,
+        'G6 a missing or empty signal set is QUIET — the witness holds back duplicates, never the factory')
+    ok(warden.includes('origin/main:scripts/lib/slotlive.mjs') && warden.includes('[[ -s "$SLV" ]] || return 1'),
+        'G7 warden materialises slotlive from origin/main (sleepwatch law) and fail-opens on a missing lib')
+    const aliveAt = warden.search(/session live beyond pgrep\/port \(#3419\)/)
+    const stallAt2 = warden.search(/add_label "\$n" stalled/)
+    ok(aliveAt > -1 && stallAt2 > -1 && aliveAt < stallAt2,
+        'G8 the liveness skip returns BEFORE the 3-kick stall rule — a quiet-but-live slot never stacks toward a false stalled')
+    ok(/slot_live "opencode run\.\*QA MASTER on node \$node\\\\\." "\$qa_log"/.test(warden)
+        && warden.includes('qa_log="$LOG_DIR/last-qa${node:+-${node}}.log"')
+        && warden.includes('qa_log="$LOG_DIR/last-qa.log"'),
+        'G9 the QA loop gates every node on its own witnesses, with mini\'s suffix-free log named')
+    ok((warden.match(/slot_live[ (]/g) || []).length >= 4,
+        'G10 the guard sits at kick_slot AND the never-dry loop AND the QA loop (definition plus >=3 call sites)')
+    const sl = read('lib/slotlive.mjs')
+    ok(/pid !== process\.pid && pid !== process\.ppid/.test(sl),
+        'G11 the collector filters pgrep self-matches — the pattern rides in our own argv')
+    // G12 end-to-end collector fixture — the fake-probe bug: a log path that
+    // only matches from /Dev/ onward resolves to a rooted /Dev/… and the stamp
+    // stat silently misses, degrading LIVE mutant-sweep to LIVE stream.
+    {
+        const tmp = mkdtempSync(join(tmpdir(), 'lanecheck-probe-'))
+        const wt = join(tmp, 'retrogames-qa-fake')
+        const log = join(tmp, 'session.log')
+        try {
+            mkdirSync(wt, { recursive: true })
+            writeFileSync(join(wt, '.mutant-running'), 'sweep')
+            writeFileSync(log, 'step 1: work in ' + wt + '\n')
+            // deterministic ages — the #3419 sighting (stamp 20 min, stream 32)
+            const ago = (min) => new Date(Date.now() - min * 60000)
+            utimesSync(join(wt, '.mutant-running'), ago(20), ago(20))
+            utimesSync(log, ago(32), ago(32))
+            ok(slotLive({ pat: 'lanecheck-never-matches-xyz', log }).why === 'mutant-sweep',
+                'G12a the collector resolves the worktree from the log and sees the fresh stamp')
+            rmSync(join(wt, '.mutant-running'))
+            appendFileSync(log, 'done\nsession exit=0\n')
+            ok(slotLive({ pat: 'lanecheck-never-matches-xyz', log }).busy === false,
+                'G12b stamp gone + clean exit line in the tail ⇒ QUIET: a finished session never blocks its own resume')
+            ok(slotLive({ pat: '', log: join(tmp, 'no-such.log') }).busy === false,
+                'G12c missing log and empty pattern answer QUIET (fail-open)')
+            // G12d the mtime-negatives clamp: files written THIS instant can age
+            // a hair below zero (APFS sub-ms vs ms clock) — the freshest signals
+            // must still count, or the witness dies in its own race.
+            writeFileSync(join(wt, '.mutant-running'), 'sweep')
+            writeFileSync(log, 'fresh work in ' + wt + '\n')
+            ok(slotLive({ pat: 'lanecheck-never-matches-xyz', log }).why === 'mutant-sweep',
+                'G12d a just-written log/stamp (age rounds negative) still reads LIVE, not nonsense')
+        } finally { rmSync(tmp, { recursive: true, force: true }) }
+    }
 }
 
 console.log(`\x1b[1m\nlanecheck: ${pass} gates, ${fails.length} failures\x1b[0m`)

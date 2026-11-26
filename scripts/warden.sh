@@ -156,6 +156,23 @@ main() {
         [[ "$(node "$LBJ" --port "$1" --cap 5400 2>/dev/null | tail -1)" == BUSY* ]]
     }
 
+    # ---- 1d. SLOT-LIVENESS LIB (#3419) --------------------------------------
+    # Both witnesses above go dark TOGETHER on a long quiet stretch inside a
+    # live session: pgrep cannot name a serve-hosted session (#2121), and its
+    # dev server ages out of the 5400s cap during a 3 h session or stops for
+    # a `--mutate` sweep. On 2026-11-25 slot b was double-spawned exactly this
+    # way while a 30+-min mutant sweep ran. Before any spawn also ask: the
+    # slot's own pid, a fresh `.mutant-running` stamp (#2049) on the worktree
+    # named in its session log, or a recent session-log write. Caps inside
+    # slotlive.mjs keep the guard self-terminating; a missing lib fail-opens.
+    SLV="$LOG_DIR/slotlive.mjs"
+    git -C "$REPO" show origin/main:scripts/lib/slotlive.mjs > "$SLV" 2>/dev/null \
+        || cp "$REPO/scripts/lib/slotlive.mjs" "$SLV" 2>/dev/null || true
+    slot_live() {  # $1 = pgrep pattern for the session, $2 = its session log
+        [[ -s "$SLV" ]] || return 1
+        [[ "$(node "$SLV" --pat "$1" --log "$2" 2>/dev/null | tail -1)" == LIVE* ]]
+    }
+
     # Every open issue (REST lists PRs as issues too; drop them).
     ISSUES=$(gh api "repos/$GH/issues?state=open&per_page=100" \
              --jq '[.[] | select(.pull_request | not)]') || { log "gh failed"; return 1; }
@@ -452,6 +469,16 @@ main() {
             ACTIONS+=("lane-busy:$s")
             return 0
         fi
+        # #3419: the port witness has an age cap and pgrep is blind to serve
+        # hosts — ask the slot's OWN liveness (pid / fresh mutant stamp on its
+        # worktree / recent session-log write) before spawning a second driver.
+        local spat="opencode run.*THE FORGE on slot $s\\." slog="$LOG_DIR/last-forge-b.log"
+        [[ "$s" == a ]] && { spat="opencode run.*THE FORGE( on slot a)?\\."; slog="$LOG_DIR/last.log"; }
+        if slot_live "$spat" "$slog"; then
+            log "#$n: slot $s skip-kick — session live beyond pgrep/port (#3419)"
+            ACTIONS+=("slot-alive:$s")
+            return 0
+        fi
         # #2797: target-held skip. The planner reads `building` LABELS and the
         # comments are not in its input, so a slot can be targeted at an issue
         # the OTHER slot is demonstrably live inside — the claim layer catches
@@ -585,6 +612,15 @@ main() {
             [[ "$STAGE" == KICK* ]] || break   # NONE = every gap owned, STOP legal
             nd_job=com.jalfern.forge
             [[ "$nd_slot" == b ]] && nd_job="$SLOTB_JOB"
+            # #3419: never-dry respects the same session witnesses as kick_slot
+            # — a slot quiet only because it is mid-sweep must not be re-kicked.
+            nd_pat="opencode run.*THE FORGE on slot $nd_slot\\."; nd_log="$LOG_DIR/last-forge-b.log"
+            [[ "$nd_slot" == a ]] && { nd_pat="opencode run.*THE FORGE( on slot a)?\\."; nd_log="$LOG_DIR/last.log"; }
+            if slot_live "$nd_pat" "$nd_log"; then
+                log "never-dry: slot $nd_slot skip-kick — session live (#3419)"
+                ACTIONS+=("slot-alive:$nd_slot")
+                continue
+            fi
             if [[ "$DRY" != 1 ]]; then
                 print -r -- "$(date +%s)" > "$LOG_DIR/neverdry-$nd_slot.last"
                 print -r -- "${STAGE#KICK }" > "$LOG_DIR/neverdry-$nd_slot"   # forge.sh puts it in the prompt
@@ -644,6 +680,17 @@ main() {
         if [[ -n "$dev" ]] && lane_driven "$dev"; then
             log "QA $node skip-kick — dev :$dev driven by a live session (invisible to pgrep?)"
             ACTIONS+=("lane-busy:qa-$node")
+            continue
+        fi
+        # #3419: a QA session mid-`--mutant` freezes its worktree in silence —
+        # pgrep (serve hosts) and the port cap miss it. Ask the node's own
+        # witnesses: pid, fresh mutant stamp on the worktree named in its log,
+        # recent log write. (mini's log carries no node suffix — empty TAG.)
+        qa_log="$LOG_DIR/last-qa${node:+-${node}}.log"
+        [[ "$node" == mini ]] && qa_log="$LOG_DIR/last-qa.log"
+        if slot_live "opencode run.*QA MASTER on node $node\\." "$qa_log"; then
+            log "QA $node skip-kick — session live beyond pgrep/port (#3419)"
+            ACTIONS+=("slot-alive:qa-$node")
             continue
         fi
         # studio also earns a session for the QUEUE (#1258 whole queue): no
