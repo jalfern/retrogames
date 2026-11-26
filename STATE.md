@@ -1,78 +1,92 @@
-# STATE — forge board snapshot (slot a, 2026-11-26 — ADVENTURE seam follow SHIPPED: #3552 closed)
+# STATE — forge board snapshot (slot b, 2026-11-26 — ASTEROIDS learns to shoot)
 
-## Slot a ran TWO sessions today (warden double-kick, #1782 pattern)
-- Builder session (kicked by the 1258 prompt, TARGET #3536): REFUSED at claim — slot b
-  held #3536 fresh (they shipped it as #3550). Ladder: steer 0 · `next` #1712
-  waiting-jon (skipped) · game-queue empty · zero unclaimed feedback · QA MASTER live
-  → flagship spent → never-dry: `KICK ADVENTURE 0 weak`. Rule-8 audit BEFORE building:
-  the 13-gap score was stale (variant-selector shipped in #1572, silent-cart was a
-  note, nine `### Restored` bullets parsed as gaps — #3558 now fixes the parser too).
-  Filed + claimed **#3552**, built at `~/Dev/retrogames-forge-adventure-seam`:
-  exact sprite-rect seam admission + 7 pins + slack-regression mutant + README hygiene
-  (parseGaps 13→1). Held through the red-main freeze (#3557 fixed attractcheck);
-  rebased to f8598a8. Its watch-chain then died on an API rate-limit 403.
-- Resume session (warden's "builder a idle" kick at 17:17 — the builder was alive,
-  see handoff note): step-1b found #3552 as a pushed slot-a corpse, claim said
-  "already yours: resume", re-verified main-ok + the rule-5 chain and merged.
-- **SHIPPED (#3552 → PR #3560 merged as `8490932`):** `seamFollow` admits a hunting
-  dragon only when its `DRAGON_BOX` sprite rect genuinely overlaps the doorway rect
-  (x∈(50,100) vertical, y∈(60,120) side) — no more phase-following through solid
-  stone beside the door. Mirror entry, parallel axis and jaw gate untouched;
-  `DRAGON_FOLLOW_SLACK` deleted.
-
-## Proof at ship
-- adventurecheck **223/0** (+7 §3552 pins) · all **60 mutants die** (incl. the new
-  slack-regression plant) · advedrive **10/10** real Chrome zero page errors ·
-  feedbackcheck **291/291** (seed pins unmoved) · CI `static` pass at head f8598a8
-  + scope + Vercel; prod live: https://jalfern.com/retrogames/adventure (200).
-- Advisory `smoke` failed twice (its rerun too) — the same red #3559 carried across
-  lanes today; flake pattern, not chased (rule 3), noted for the next smoke owner.
-- Builder lessons (each once): a timed-out foreground `--mutant` leaves its plant() in
-  the tree and IGNORES SIGTERM while spawning children — kill -9 the parent pid (check
-  lsof cwd = own worktree), `git checkout --`, rm stale `.mutant-running`; a cold Vite
-  dev server starves fixed-ms key holds (first advedrive leg flaked — byte-swap probe
-  proved it wasn't the change); long `gh run watch` chains can eat the shared API
-  rate budget — prefer single `gh pr checks --watch` on the PR instead.
-
-## ASTEROIDS handoff (#3553 is slot b's, PR #3559 open)
-- b's fix for the two surviving driver mutants landed on its branch (fast wave-floor
-  raise). Full-tree mutant truth from the pre-yield run: **27/29** — survivors were
-  `rollout dodges too late` (threat window <45→<2) and `the driver's eye forgets the
-  wrap`. Pre-yield work uncommitted (tree reverted by b's resume — correct liveness):
-  deterministic eye gates, measured **116/0**: export `scan` + `wrapDelta` from sim.js
-  (zero behaviour change), pin ttc=12 is THE threat under `< 45`, ttc=45.5 is drift,
-  wrapDelta(±590,600)=∓10. Both survivors die on these deterministically. If b's
-  sweep floors prove flaky at full scale, adopt these instead — detail on #3553.
+## This session — never-dry stage shipped, red main caught en route
+- Ladder empty again (steer 0 · `next` #1712 waiting-jon · queue 0 · all
+  feedback building/building-qa/waiting-jon · QA-borrow blocked: QA MASTER live
+  ×2) → flagshipStage null → NEVER-DRY. idle-kick first answered ADVENTURE 0
+  weak (score 13) — **phantom**: verified at HEAD the variant selector shipped
+  (#1572) and nine "gaps" were `### Restored in #…` bullets. Honest picker
+  (README sanity) = ASTEROIDS score 4, oldest of the score-4 tie at registry
+  #3 — matches the warden tick. Filed + claimed **#3553**.
+- **SHIPPED (#3553 → PR #3559): the small saucer learning curve.**
+  `SAUCER_AIM {start 1.1, floor 0.3, learn 600}`: rookie small UFOs spray the
+  large-UFO width, error eases monotone to the verbatim ±0.15 floor over 10 s
+  of the saucer's own `life` clock — no new field, no extra dice. Leaving a
+  small saucer alive is now the mistake; fast kills win, as on the 1979
+  cabinet. Large UFO never eases.
+- Proof: asteroidscheck **113/0** (stale locked-±0.15 pin → 8 learning gates:
+  rookie >±0.15 over 6 shots bounded ±0.55, mature ±0.15 over 4, monotone,
+  floor-exact, large constant) · `--mutant` **29/29** (2 new: learning
+  deleted, ease never lands — deletion effects measured) · full 40-seed sweep
+  floors ALL HOLD (40/40 byte-equal, zero-death 34+, worst 6000+) ·
+  watchcheck(asteroids) **318/318** · eslint + lint:asteroids/mario/fps/ai +
+  build green.
+- **Wave-floor re-tune (#3553, honest harness calib):** first mutant pass was
+  27/29 — two b26 driver mutants survived because rookie-spray legitimately
+  eases early pressure. Measured: clean fast banks 12/12 waves (minScore
+  4620); mutant-1 11/12 (3350); mutant-2 11/12 (4420). FAST wave floor 11 →
+  SEEDS (the full sweep's own 40/40 law), mutants mortal again, clean clears
+  at the pinned seeds.
+- **Cross-lane probe parked, never destroyed:** mid-session, uncommitted
+  edits by another hand appeared in this worktree (a `driver's eye` gate +
+  `export` of wrapDelta/scan from sim.js, both anchored to #3553's mutant
+  problem). Parked to /tmp/forge/{asteroidscheck,sim-stranger-exports}-
+  20261126.diff, worktree restored, floor fix shipped instead (no game-file
+  exports for harness convenience). Commented on #3553 for the other lane.
+- **Picker-honesty follow-up shipped too (#3556 → PR #3558):** parseGaps now
+  stops at `###` (h3 nests inside the h2 — old stop ran through it) and
+  declines `Restored in/by #N` bullets; neverbudry +5 gates (41/0), jonqcheck
+  164/0, ADVENTURE honest score 13→1, post-fix kick answers DONKEY KONG 0
+  weak. (Rebased off slot a's better retro-markers of the Adventure README in
+  #3552 — only the parser + gates remain in this PR.)
+- **MAIN RED hit mid-session (#601 freeze):** nightly 45862031640 failed —
+  3 GALAGA stale attract anchors + `rollercheck edge`. The parallel lane
+  merged the GALAGA re-pin (#3557) while I diagnosed; rollercheck is 70/70
+  green locally at `bba9d74`. Dispatched nightlies rode the workflow's
+  concurrency-cancel (main-ok treats cancelled as pass); a fresh nightly is
+  running on main to prove the fix for real.
+- #3536 (PONG polish) was found MERGED-but-unclosed from the dead session —
+  actually already closed with `shipped` + URL comment at 17:19; verified prod
+  independently (`HOLD AFTER` marker in live bundle). Nothing to close.
 
 ## BOARD facts at close
-- building: #3553 (slot b). building-qa: #3547 INVADERS, #3533 DEFENDER 2p.
-- game-queue empty · steer empty · `next` #1712 (waiting-jon).
-- feedback open: #2971, #3244 (both waiting-jon) · #3547, #3533 (QA holds).
-- Rule-4 satisfied: game code merged this session (`8490932`).
+- game-queue = 0 · building = #3565 (PONG RANGE-switch knob — another lane's
+  never-dry pick) · building-qa = #3564, #3566 · feedback open: #3244/#2971
+  waiting-jon · shipped this session: #3553 (game), #3556 (picker honesty).
+- Slot a shipped beside me all day (#3552 seam follow, #3555 invaders QA,
+  #3557 GALAGA anchors, #3561 two-player Defender, #3560/#3563). Healthy board.
+- Rule-4: game code merged this session (#3559). No STALLED.
 
 ## PLAYABLE on main right now
-- ADVENTURE with honest doorway-overlap seam follow — https://jalfern.com/retrogames/adventure
-- PONG cabinet voice + block numerals, DEFENDER wall veto, INVADERS wave laws.
+- ASTEROIDS — small UFOs now learn: kill them fast or their shots tighten to
+  pinpoint: https://jalfern.com/retrogames/asteroids
+- DEFENDER hot-seat two-player (#3561) + per-type blossoms. PONG cabinet voice
+  (serve double-clack, rally pitch rides the strike law, block numerals).
+  SPACE INVADERS flow pilot + re-adjudicated bonus-life QA. ADVENTURE exact
+  seam + armed decoy wait.
 
 ## Open questions (links only — #605)
-- #3335 — QA music-bus low-pass (AWAITING, deadline Nov 27; PINBALL gate).
+- #3335 — QA music-bus low-pass (AWAITING, Nov 27; PINBALL gate).
 - #3516 — Arkanoid art rung (AWAITING, Nov 28).
 - #3054 — TestFlight recorder; #2971 — contra polish; #1712 — PLAICRAFT S2.
-- No new jonq questions this session (no taste calls).
+- No new jonq questions this session (measured law + harness honesty, no
+  taste calls).
 
 ## Slot state at handoff
-- Main checkout detached at origin/main (`8490932`); STATE.md ships via this docs PR.
-- forge-adventure-seam worktree auto-pruned by mergeclean (it was clean) — gone.
-  (Its node_modules was a SYMLINK to the main checkout's install — nothing leaked.)
-- forge-asteroids-aim-ease worktree belongs to the LIVE slot-b session — never touch.
-- Slot-a dev server (:5173) was stopped via `scripts/devstop.sh` at the builder's
-  close; :5178 is slot b's server — do not stop.
+- Slot-b dev server :5178 stopped via `scripts/devstop.sh` at close.
+- Worktrees ~/Dev/retrogames-forge-asteroids-aim-ease and
+  …-idle-phantom-gaps are DONE with (merged; safe to prune next session).
+- Main checkout detached at origin/main; STATE.md ships via docs PR and parks
+  with `statepark.mjs park b`.
 
 ## Next claims (for whoever is free)
-1. When b lands #3553 the ladder is empty → never-dry rung. Flagship stage (#841) in
-   Jon's order — derive with idle.mjs (post-#3558 parseGaps is honest, and ADVENTURE's
-   README is now clean: one real gap, the gate-rite manual); skip building-qa holds.
-2. Biggest unowned flagship gap on word-of-mouth: DOUBLE DRAGON two-player alternating
-   turns (desktop-keyboard option; CPU stays the phone default, Jon's ruling) — verify
-   against idle.mjs output before claiming.
-3. When jonq answers land (#3335 Nov 27, #3516 Nov 28), execute them at the next claim.
+1. Picker is honest again: expect `KICK DONKEY KONG 0 weak` — but sanity-check
+   gap 0 ("rivet level + collapse", multi-screen) before filing; DONKEY KONG
+   gap 2 (barrels mid-air over ladders) is the smaller real fix if the rivet
+   level outruns one session.
+2. #3553 left two ASTEROIDS gaps open: kiting (heavy) and snapshot/restore
+   plumbing (#391 law). Asteroids sits at score 2 now.
+3. QA lanes hold invaders/adventure/defender polish; the phantom fix (#3558)
+   keeps future never-dry ticks from aiming at shipped history — if a kick
+   again names a `### Restored` or shipped-feature gap, that's a README
+   honesty bug: mark CLOSED/DISCLAIMER per convention, don't build it.
