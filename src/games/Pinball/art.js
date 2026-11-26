@@ -309,6 +309,27 @@ export function paintField(ctx, W, H, pal = PAL, tb = null) {
     const lbl = 'ORBIT';
     for (let i = 0; i < lbl.length; i++) ctx.fillText(lbl[i], v.railCx, 250 + i * 13);
     ctx.restore();
+    // JET LANE bed (#3438 item 1) — the flank ramp reads as a RAISED lane, not
+    // two rings on felt: a bed wash, side mouldings (dark shadow + lane-colour
+    // highlight, the raised-rail idiom) and climbing chevrons ("this lane runs
+    // UP the flank"), all from tb.rampL so both cabinets follow the data.
+    if (tb.rampL) {
+        const lx = tb.rampL.x1 + 2, rx = tb.rampL.x2 - 2, rcx = (tb.rampL.x1 + tb.rampL.x2) / 2;
+        ctx.save();
+        ctx.globalAlpha = 0.10; ctx.fillStyle = pal.lane;
+        ctx.fillRect(lx, 282, rx - lx, 148);
+        for (const mx of [lx, rx]) {
+            ctx.globalAlpha = 0.55; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(mx, 282); ctx.lineTo(mx, 430); ctx.stroke();
+            ctx.globalAlpha = 0.5; ctx.strokeStyle = pal.lane; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(mx + (mx === lx ? 1.5 : -1.5), 282); ctx.lineTo(mx + (mx === lx ? 1.5 : -1.5), 430); ctx.stroke();
+        }
+        ctx.globalAlpha = 0.3; ctx.strokeStyle = pal.lane; ctx.lineWidth = 2.5;
+        for (const yy of [386, 404]) {
+            ctx.beginPath(); ctx.moveTo(rcx - 9, yy); ctx.lineTo(rcx, yy - 11); ctx.lineTo(rcx + 9, yy); ctx.stroke();
+        }
+        ctx.restore();
+    }
     // magnet plate — a halo ring mid-field; the dynamic field pulse lives in index.jsx.
     if (tb.magnet) {                                   // #3284: smithed tables may skip the magnet
         ctx.save();

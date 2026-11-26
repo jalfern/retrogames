@@ -206,11 +206,16 @@ const sfxFor = (ev) => {
         case 'ramp': case 'rampL': a.playTone(980, 0.04, 'square', 0.09); break
         // #3432: the flank set rings the same chord as the launch-lane set —
         // same money, same read. kbarm is the save clicking back on.
+        // #3438 item 5: the left set now rings a LOWER voicing (D–E–G under the
+        // right's D–F#–A) so the two ramps tell apart by ear.
         case 'kbarm':
             a.playTone(660, 0.04, 'square', 0.08); a.playTone(990, 0.07, 'square', 0.08, 0.05); break
-        case 'rampset': case 'ramplset':
+        case 'rampset':
             a.playTone(587, 0.07, 'square', 0.1); a.playTone(740, 0.07, 'square', 0.1, 0.06)
             a.playTone(880, 0.1, 'square', 0.11, 0.12); break
+        case 'ramplset':
+            a.playTone(523, 0.07, 'square', 0.1); a.playTone(659, 0.07, 'square', 0.1, 0.06)
+            a.playTone(784, 0.1, 'square', 0.11, 0.12); break
         // lane rollovers step up a pitch ladder with the sweep: each of the
         // three LANE rollovers rings brighter than the last, so the descent
         // teaches its own progress by ear (#3178)
@@ -794,6 +799,17 @@ const PinballGame = () => {
                         ctx.beginPath(); ctx.arc(rcx, 276, 3, 0, 7); ctx.fill()
                         ctx.restore()
                     }
+                    // #3438 item 2: lane-entry chevrons above the flank flipper —
+                    // a steady upward pulse teaching the line into the corridor;
+                    // brighter once the flank is scoring. Visual only, no law.
+                    ctx.save()
+                    ctx.strokeStyle = pal.lane
+                    ctx.globalAlpha = 0.28 + 0.18 * Math.sin(gs.tick / 10) + (gs.rampLHits > 0 ? 0.25 : 0)
+                    ctx.lineWidth = 2.5
+                    for (const yy of [428, 442]) {
+                        ctx.beginPath(); ctx.moveTo(rcx - 9, yy); ctx.lineTo(rcx, yy - 11); ctx.lineTo(rcx + 9, yy); ctx.stroke()
+                    }
+                    ctx.restore()
                 }
                 // lock tower — a chrome gate housing with three lock lamps
                 ctx.save()
