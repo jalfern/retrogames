@@ -15,7 +15,7 @@ export const INFO_MSGS = [
     // player reads before starting, so holding position reads as intent.
     'PADDLES HOLD AFTER A POINT',
     // #3565 — the switch bank now has two dials; tell them before starting.
-    'SET GAME AND RANGE, THEN START',
+    'SET GAME AND RANGE FIRST',
 ]
 
 export const PRESS = 'PRESS ANY KEY TO START'
