@@ -29,7 +29,8 @@
 // rite opens the creator's room (see README "Honest gaps"). Restored in the
 // #3441 never-dry stage: a hunting dragon aligned on the doorway follows the dot
 // through a room warp (seam law) — the bite/slay is judged inside the new room.
-// Remaining gap: a non-hunting dragon still never wanders across a seam itself.
+// #3489 roam law closed the wanderer half (idle dragons cross seams on their own);
+// #3552 tightened the follow box to exact sprite-rect overlap of the opening.
 
 export const GW = 160  // Atari 2600 resolution (approx)
 export const GH = 192
@@ -38,12 +39,12 @@ export const MAX_ITEMS = 8   // distinct item KINDS for score: sword, goldKey, b
 // #3482: the sim carries 9 item INSTANCES — the duplicate chalice shares the
 // 'chalice' kind, so the score ceiling stays 8 while the world holds 9 objects.
 export const ITEM_INSTANCES = 9
-export const DRAGON_FOLLOW_SLACK = 10  // #3441 seam alignment: gap edge ± one tick of speed
 // #3489 roam law: the cart's dragons wandered the whole world; rooms caged
 // only the dot. An idle dragon keeps a steady heading and takes new course
 // dice at the bat's rhythm (#1560 course-change law) — one roaming voice for
 // the cart's two animals. DRAGON_BOX is its collision box (the seam law's
-// anchor size, the clamp bound [10, GW−20] the Feb shell already used).
+// admission box — #3552 admits a follower only when this rect overlaps the
+// doorway rect — and the clamp bound [10, GW−20] the Feb shell already used).
 export const WANDER_REROLL = 0.02  // per-tick chance an idle dragon picks a new course
 export const DRAGON_BOX = 10
 // The cart's classic variants crawl at speed 1: a wandering dragon drifts at
@@ -550,21 +551,27 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
         // bite landing inside the new room. When the dot warps A→B through a seam,
         // every living dragon left in A that is (a) actively hunting (jaw open —
         // the port's own <30 px sight law, so idle wanderers never self-leave a
-        // room) and (b) aligned on the shared doorway (gap column/row ± a tick of
-        // speed slack — #2255 aligned every seam column, so the seam the dot used
-        // is the follower's door too), enters B through that same doorway at the
-        // mirror entry point. No barrier re-check: a seam the dot just crossed is
-        // passable for the run by every law this port owns (portcullis, sealed
-        // door and stone floor all open run-wide). Arithmetic only — no dice.
+        // room) and (b) ON the doorway enters B through that same doorway at the
+        // mirror entry point. (b) is #3552's exact sprite-rect law: the 2600 knew
+        // only hardware sprite-rect overlap, so a follower is admitted when its
+        // DRAGON_BOX body rect genuinely overlaps the door opening (gap span
+        // GAP_L..GAP_L+GAP_W / SIDE_GAP_Y..+H) — the anchor may sit outside the
+        // span as long as the body reaches into it, but a body that merely touches
+        // or stands beside the opening stays behind: walls stay walls. (The first
+        // cut used gap ± DRAGON_FOLLOW_SLACK, an anchor box that let dragons up to
+        // 10 px clear of the doorway phase through the stone beside it.)
+        // No barrier re-check: a seam the dot just crossed is passable for the run
+        // by every law this port owns (portcullis, sealed door and stone floor all
+        // open run-wide). Arithmetic only — no dice.
         const seamFollow = (to, dir) => {
             for (const d of sim.dragons) {
                 if (!d.alive || d.room !== from || !d.mouthOpen) continue
                 if (dir === 'up' || dir === 'down') {
-                    if (d.x < GAP_L - DRAGON_FOLLOW_SLACK || d.x > GAP_L + GAP_W + DRAGON_FOLLOW_SLACK) continue
+                    if (d.x >= GAP_L + GAP_W || d.x + DRAGON_BOX <= GAP_L) continue
                     d.room = to
                     d.y = dir === 'up' ? GH - 20 : 10
                 } else {
-                    if (d.y < SIDE_GAP_Y - DRAGON_FOLLOW_SLACK || d.y > SIDE_GAP_Y + SIDE_GAP_H + DRAGON_FOLLOW_SLACK) continue
+                    if (d.y >= SIDE_GAP_Y + SIDE_GAP_H || d.y + DRAGON_BOX <= SIDE_GAP_Y) continue
                     d.room = to
                     d.x = dir === 'left' ? GW - 20 : 10
                 }

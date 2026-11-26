@@ -59,13 +59,14 @@ ceiling stays 8.
 ## Harness
 
 ```bash
-npm run adventurecheck          # 212 gates: determinism, gate/key/bridge/dragon law,
+npm run adventurecheck          # 223 gates: determinism, gate/key/bridge/dragon law,
                                 # placed-bridge law, gray dot + sealed-door rite, magnet
                                 # attract, dragon respawn, variants, gate-rite affordance,
-                                # juice signals, seam law (#3441), Blue Castle + duplicate
+                                # juice signals, seam law (#3441) + exact sprite-box
+                                # admission (#3552), Blue Castle + duplicate
                                 # chalice (#3482), scripted chalice win on
                                 # 10 seeds, static wiring
-npm run adventurecheck -- --mutant   # +57 mutants — every one must turn the suite red
+npm run adventurecheck -- --mutant   # +60 mutants — every one must turn the suite red
 npm run lint:adventure
 ```
 
@@ -75,27 +76,34 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
 
 ## Honest gaps (vs the original)
 
-- **CLOSED by #3441:** collisions ignored exact room-warp edges — dragons never
-  followed between rooms. The seam law now runs: a living, jaw-open dragon aligned
-  on the doorway (gap column/row ± `DRAGON_FOLLOW_SLACK`) warps through with the
-  dot at the mirror entry, so the chase — bite *and* sword-turn — is judged inside
-  the new room (see "#3441 — dragons follow through the door" below). What stays
-  honestly open now: the follow box is anchor-based, not the original's exact
-  sprite-rect overlap. (The wanderer half CLOSED by **#3489** — idle dragons
-  hold a seeded heading and cross seams through open doorways on their own.)
+- **CLOSED by #3441, box tightened by #3552:** collisions ignored exact
+  room-warp edges — dragons never followed between rooms. The seam law now runs:
+  a living, jaw-open dragon whose `DRAGON_BOX` body rect genuinely overlaps the
+  doorway rect (gap span 60–100 vertical / 70–120 side) warps through with the
+  dot at the mirror entry, so the chase — bite *and* sword-turn — is judged
+  inside the new room (see "#3552 — exact sprite-rect admission at the seam"
+  below; #3552 replaced the anchor ± `DRAGON_FOLLOW_SLACK` band with the
+  hardware-overlap law the 2600 enforced). (The wanderer half CLOSED by
+  **#3489** — idle dragons hold a seeded heading and cross seams through open
+  doorways on their own.)
 - The original duplicates the **chalice** (a second one sits in its Blue
   Castle); this 18-room port keeps a single chalice and no Blue Castle. Note
   the #1545 gap list's "two bridges" was a misremembering — the original has
   ONE bridge (cartridge record, verified 2026-11); its duplication is the
   chalice, not the bridge. **CLOSED by #3482** — see "Restored in #3482".
-- The original is a silent cart; the #1545 "pen-shaped dragon sounds" item has
-  no documented counterpart to restore. New sim events (`bridge`, `secret`)
-  carry synthesized audio where the port adds meaning (placement, door rite).
-- No variant selector. The original cart opens on a "SELECT GAME" dot-matrix
-  screen with 30+ numbered variants (item placement, dragon speed, difficulty);
-  this port ships exactly ONE fixed ruleset — no variant knob exists in
-  `attract.js`, `index.jsx` or `sim.js` (grep-verified #1568). A variant table
-  (at least slow/fast dragons + seeded-layout shuffle) is owed.
+- **DISCLAIMER** (audited #3552): the original is a silent cart; the #1545
+  "pen-shaped dragon sounds" item has no documented counterpart to restore.
+  All eight sim event kinds (nine push sites: pickup, gate ×2, slay, death,
+  steal, bridge, secret, win) already carry synthesized audio in `index.jsx` —
+  the bullet sat in Honest gaps as a note, not owed work. New sim events
+  (`bridge`, `secret`) carry synthesized audio where the port adds meaning
+  (placement, door rite).
+- **CLOSED by #1572 — retro-marked in #3552:** the original cart opens on a
+  "SELECT GAME" dot-matrix screen with 30+ numbered variants (item placement,
+  dragon speed, difficulty). The line was grep-verified at #1568 but predates
+  its own fix: `VARIANTS` (V1 CLASSIC / V2 FAST / V3 SHUFFLE) and
+  `DEFAULT_VARIANT` live in `sim.js`; the dot-matrix SELECT GAME page, the
+  arrow pick and the `?variant=N` pin live in `attract.js`/`index.jsx`.
 - The drop-the-key gate rite keeps no written manual. A first-timer probe
   (#1568: 200 novice seeds x 5000 ticks, seeded random-walk in Node):
   56/200 seeds pick up the gold key, but **0/200 open any castle gate** and
@@ -104,14 +112,15 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
   (see Restored below) — teaching where the drop counts; actually performing
   the rite is still the player's discovery, and the secret rite stays
   Robinett's (no hint by design).
-- No guidance surface. The original shipped a fold-out map and hint sheet (the
-  manual was half the game); this port's only in-game text was `PauseOverlay`'s
+- **CLOSED by #1572 — retro-marked in #3552:** no guidance surface. The
+  original shipped a fold-out map and hint sheet (the manual was half the game);
+  this port's only in-game text was `PauseOverlay`'s
   control list. First-timer metrics back the need: median 6/18 rooms seen,
   57.5% of seeds never pick up any item, 0% win. A "?"-tab hint page (castles,
   keys, the drop rite — not the secret) is honest help the original itself gave.
   Restored in the #1572 feel pass item 2 (see below).
 
-### Restored in the #1545 polish pass
+## Restored in the #1545 polish pass
 
 - The magnet **attracts** nearby loose items toward the player while carried
   (was decoration you could carry) — `MAGNET_RANGE` / `MAGNET_PULL` in `sim.js`.
@@ -122,7 +131,7 @@ Both are gated in `adventurecheck` (a gate each, plus a mutant that re-removes
 the behavior and must turn the suite red). The scripted chalice route is
 unaffected: it never carries the sword (no slays → no respawns) nor the magnet.
 
-### Restored in the #1551 polish pass
+## Restored in the #1551 polish pass
 
 - The bridge is **placed, not consumed**: crossing a wall with it leaves it on
   the wall it spans, the crossing stays open for the run, and the bridge is
@@ -141,7 +150,7 @@ Gated in `adventurecheck`: five placed-bridge gates and nine dot/door gates,
 plus five mutants (stranded bridge, magnet-on-dot, rite threshold, removed
 barrier, visible dot).
 
-### Restored in the #1572 feel pass
+## Restored in the #1572 feel pass
 
 - The **gate-rite affordance**: a threshold mat sits below each closed
   portcullis (the `GATE_ZONE` in `sim.js` — the drop-the-key law's rect is
@@ -177,7 +186,7 @@ states the bridge and magnet laws, leaks no secret, and the shared
 (drop rite removed, magnet law removed, secret leaked, tab shown for every
 game).
 
-### Restored in the #1588 juice pass
+## Restored in the #1588 juice pass
 
 The look/juice half of the #1572 polish list (item 4), spun to its own issue.
 Three mid-game effects, all pure output computed in the sim from state + tick
@@ -281,6 +290,8 @@ the doorway (vertical warp: anchor x inside the shared gap column 60–100 ±
 slack — #2255 aligned every seam column, so the seam the dot used is the
 follower's door too) enters B at the mirror entry: `y = GH−20` after an up-warp,
 `y = 10` after down, `x = GW−20`/`10` for left/right, parallel axis preserved.
+(*#3552 superseded the alignment clause with exact sprite-rect admission — see
+"#3552 — exact sprite-rect admission at the seam"; the mirror-entry law stands.*)
 
 **Why passability needs no re-check:** the dot just crossed that seam, and every
 barrier this port owns — portcullis, sealed secret door, stone floor — opens for
@@ -409,3 +420,44 @@ stream, so adding roam re-pinned every replay hash.
 
 Gated in `adventurecheck` 212/0 (route wins V1/V2/V3 10/10). Left open by
 design: the wanderer-heading look (still the plain dot) rides a follow-up.
+
+## #3552 — exact sprite-rect admission at the seam (never-dry stage)
+
+The honest remainder of #3441, named by that pass itself: *"the follow box is
+anchor-based, not the original's exact sprite-rect overlap."* `seamFollow`
+admitted any hunter whose 10 px **anchor** sat in gap ± `DRAGON_FOLLOW_SLACK`
+— top/bottom gap 60–100 admitted anchors 50–110, so a dragon whose body
+(10×10) stood entirely beside the opening (anchor 100–110 = rect 110–120)
+phase-followed through solid stone. The 2600 knew only hardware sprite-rect
+overlap, and this port already owns `rectsOverlap` for every other contact —
+the seam was the one place a body could pass through a wall.
+
+The law (`sim.js`, arithmetic only — still no dice): a hunting, living dragon
+left in room A follows the dot A→B iff its `DRAGON_BOX` rect genuinely
+**overlaps** the doorway rect of the seam used — `d.x ∈ (GAP_L−BOX, GAP_L+GAP_W)`
+vertical (exactly `(50,100)`), `d.y ∈ (SIDE_GAP_Y−BOX, SIDE_GAP_Y+SIDE_GAP_H)`
+side (exactly `(60,120)`). Mirror entry, parallel-axis preservation and the
+jaw gate are untouched. `DRAGON_FOLLOW_SLACK` is deleted — nothing else read it.
+
+**Honest measurement:** the outcome-relevant difference from the slack era is
+exactly one 10-px band per axis (anchors 100–110 / 120–130 — the left/top edges
+differ only at a corner touch, and dragons take a wander step before admission,
+so a single-pixel edge is not honestly testable). Two leak pins (anchor 105 and
+125 must NOT follow), one mirror-entry pin, and four over-tightening guards
+(anchors 95/52/115/62 must still follow) ride the seam on both axes.
+A slack-regression mutant (`exact admission → anchor±10`) dies on the leak pins,
+and the alignment-deletion mutant still pours the room through the door.
+
+**README hygiene (why-weakest audit):** this stage was picked because ADVENTURE
+scored weakest (13 = parseGaps count, zero open QA naming it) — but the score
+was inflated by stale bullets: the variant-selector gap shipped in #1572
+(SELECT GAME + `VARIANTS` exist), the silent-cart note was a note, and four
+`### Restored in …` subsections sat **inside** `## Honest gaps`, so `parseGaps`
+(parsed to the next `##`) counted nine restored features as open gaps. Fixed
+here: the subsections are level-2 headings now, shipped notes carry CLOSED /
+DISCLAIMER markers — the picker sees one real gap (the gate-rite manual, with
+the 0/200 first-timer metrics) instead of thirteen.
+
+Gated in `adventurecheck` 223/0 (+7 §3552 pins; route wins V1/V2/V3 10/10) and
+`advedrive` 10/10 real Chrome. Left open: the drop-the-key gate rite still has
+no written manual (the last honest gap above).

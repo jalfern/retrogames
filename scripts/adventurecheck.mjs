@@ -1381,6 +1381,57 @@ console.log('#3441 dragons follow through the door (room-warp seam law)')
         'a raised portcullis is a follow-seam too (dragon enters the foyer)', `foyer? gy.room=${gy.room}`)
 }
 
+// ------------------------------------ #3552 exact sprite-rect admission at the seam ----
+console.log('#3552 seam followers must overlap the doorway rect (exact sprite box)')
+{
+    // The 2600 knew only hardware sprite-rect overlap. The first seam cut admitted
+    // any hunter whose 10 px ANCHOR sat in gap ± DRAGON_FOLLOW_SLACK: top/bottom
+    // gap 60..100 admitted anchors 50..110, so a body standing entirely beside
+    // the opening (anchor 100..110 = rect 110..120) followed through solid stone.
+    // The exact admission band is x ∈ (50,100) — the difference is the right-side
+    // leak anchors 100..110 (the left edge differs only at anchor 50, a corner
+    // touch; dragons take one wander step before admission, so only the 10-px
+    // leak band is honestly testable, and it is tested twice, one axis each).
+    const lairCase = (seed, x) => {
+        const s = createSim(seedRng(seed))
+        s.room = R.DRAGON_LAIR; s.player.x = 80; s.player.y = 1
+        const d = s.dragons[2]; d.room = R.DRAGON_LAIR; d.x = x; d.y = 30; d.alive = true; d.mouthOpen = true
+        step(s, { dy: -S })
+        return d.room
+    }
+    ok(lairCase(3552, 105) === R.DRAGON_LAIR,
+        'anchor 105 (body 105..115, entirely beside the 60..100 gap) does NOT follow — the slack-era leak is stone now',
+        `leaked? room=${lairCase(3552, 105)}`)
+    ok(lairCase(3553, 95) === R.OVERWORLD_5,
+        'anchor 95 (body reaches into the gap) follows', `room=${lairCase(3553, 95)}`)
+    {
+        const s = createSim(seedRng(3553))
+        s.room = R.DRAGON_LAIR; s.player.x = 80; s.player.y = 1
+        const d = s.dragons[2]; d.room = R.DRAGON_LAIR; d.x = 95; d.y = 30; d.alive = true; d.mouthOpen = true
+        step(s, { dy: -S })
+        ok(d.y === GH - 20 && d.x >= 90 && d.x <= 95,
+            'the exact follower keeps the parallel axis (± one wander step) and mirrors into the neighbour', `x=${d.x} y=${d.y}`)
+    }
+    ok(lairCase(3554, 52) === R.OVERWORLD_5,
+        'anchor 52 (body penetrates the left gap edge by 2 px) follows — the band was not over-tightened', `room=${lairCase(3554, 52)}`)
+
+    // Side seam: OLD band 60..130 (side gap 70..120 ± slack) vs exact (60,120).
+    const labCase = (seed, y) => {
+        const s = createSim(seedRng(seed))
+        s.room = R.OVERWORLD_5; s.player.x = 1; s.player.y = 95
+        const d = s.dragons[2]; d.room = R.OVERWORLD_5; d.x = 140; d.y = y; d.alive = true; d.mouthOpen = true
+        step(s, { dx: -S })
+        return d.room
+    }
+    ok(labCase(3555, 125) === R.OVERWORLD_5,
+        'side-seam mirror: anchor 125 (body 125..135 beside the 70..120 gap) does NOT follow',
+        `leaked? room=${labCase(3555, 125)}`)
+    ok(labCase(3556, 115) === R.BLUE_LAB_1,
+        'side-seam: anchor 115 (body penetrates 5 px) follows', `room=${labCase(3556, 115)}`)
+    ok(labCase(3557, 62) === R.BLUE_LAB_1,
+        'side-seam: anchor 62 (body 62..72 penetrates the top edge by 2 px) follows — no over-tightening', `room=${labCase(3557, 62)}`)
+}
+
 // ------------------------------------------------- #3482 Blue Castle & the duplicate chalice ----
 console.log('#3482 the Blue Castle and the duplicate chalice (either cup wins)')
 {
@@ -1661,8 +1712,11 @@ if (process.argv.includes('--mutant')) {
             'const gen = sim.variant >= 3 ? runRoute(sim) : scriptRun(sim)',
             'const gen = runRoute(sim)'],
         ['#3441: seam alignment is deleted (the whole room pours through any door)', SM,
-            'if (d.x < GAP_L - DRAGON_FOLLOW_SLACK || d.x > GAP_L + GAP_W + DRAGON_FOLLOW_SLACK) continue',
+            'if (d.x >= GAP_L + GAP_W || d.x + DRAGON_BOX <= GAP_L) continue',
             'if (false) continue'],
+        ['#3552: exact admission regresses to anchor±slack (dragons phase beside the door)', SM,
+            'if (d.x >= GAP_L + GAP_W || d.x + DRAGON_BOX <= GAP_L) continue',
+            'if (d.x < GAP_L - 10 || d.x > GAP_L + GAP_W + 10) continue'],
         ['#3441: jaw-shut wanderers follow too (the room-binding law is gone)', SM,
             'if (!d.alive || d.room !== from || !d.mouthOpen) continue',
             'if (!d.alive || d.room !== from) continue'],
