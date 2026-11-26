@@ -562,9 +562,14 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
 // meteor storms): SURVIVED 20/20 + 20/20, banks min 26,900 + 15,550, waves
 // 20/20 + 20/20, rescues 54 + 51 catches, 52 + 47 deliveries, diedHauling
 // 2 + 4 (stage 4: 1 + 3; stage 3: 4 + 6; stage 2: 12 + 11), lives spent
-// 37 + 47, terrain deaths 1 + 3 (the #3456-s4 autopsy read 6 + 3). The pilot
-// is still MORTAL: 84 honest GAME OVER-grazing lives across 40 runs, worst
-// seed bleeds 3 — frozen grace caps a seed at 1 hit, so >= 3 is its own
+// 37 + 47, terrain deaths 1 + 3 (the #3456-s4 autopsy read 6 + 3). #3528's
+// wall veto then closed the last column — crawl-speed jobs could accelerate
+// into out-climbing risers the braking-projected race never saw: SURVIVED
+// 20/20 + 20/20, banks min 43,500 + 15,550, rescues 55 + 52 catches,
+// 54 + 48 deliveries, diedHauling 1 + 4, lives spent 38 + 42, terrain
+// deaths 0 + 0. The pilot
+// is still MORTAL: 80 honest GAME OVER-grazing lives across 40 runs, worst
+// seed bleeds 5 — frozen grace caps a seed at 1 hit, so >= 3 is its own
 // immortality tripwire. The copy claim ("survives 20/20") is pinned here so
 // copy and witness cannot drift apart.
 {
