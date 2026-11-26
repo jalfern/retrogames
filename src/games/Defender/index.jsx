@@ -82,7 +82,18 @@ const DefenderGame = () => {
                     audioController.playTone(600, 0.08, 'square', 0.12); audioController.playTone(900, 0.12, 'square', 0.12, 0.08)
                     popups.push({ x: sim.player.x, y: sim.player.y + 24, text: '+500 RESCUED', life: 90 }) // #1907: names b19's delivery beat
                 }
-                else if (ev.t === 'wave') audioController.playSweep(200, 500 + Math.min(500, sim.wave * 80), 0.25, 'square', 0.12) // pitch ramps per wave (#1531)
+                else if (ev.t === 'wave') {
+                    // #3453 item 3: the cabinet raises the pitch of its wave
+                    // kit every wave. Ours was one sweep; now three square
+                    // notes — root, third, fifth — stagger up the ladder, the
+                    // whole kit climbing with the wave number (the #1531 ramp,
+                    // now in tune), the old sweep kept as a quieter riser bed.
+                    const root = 220 + Math.min(7, sim.wave) * 40
+                    audioController.playTone(root, 0.09, 'square', 0.12)
+                    audioController.playTone(root * 1.26, 0.09, 'square', 0.12, 0.09)
+                    audioController.playTone(root * 1.5, 0.16, 'square', 0.12, 0.18)
+                    audioController.playSweep(200, 500 + Math.min(500, sim.wave * 80), 0.25, 'square', 0.08)
+                }
                 else if (ev.t === 'die') { audioController.playNoise(0.25, 0.25); audioController.playTone(70, 0.3, 'sawtooth', 0.2) }
                 else if (ev.t === 'over') {
                     audioController.playSweep(300, 60, 0.6, 'sawtooth', 0.18)
@@ -95,12 +106,15 @@ const DefenderGame = () => {
                 else if (ev.t === 'speedup') audioController.playSweep(300, 950, 0.3, 'square', 0.14) // #3456 stage 3: the fleet just went hot
                 // #3453: the wave clock expired — a two-voice rising klaxon, square
                 // lead with a sawtooth echo, the landers going aggressive.
-                else if (ev.t === 'waveUrgent') { audioController.playSweep(600, 1200, 0.2, 'square', 0.15); audioController.playSweep(500, 1000, 0.25, 'sawtooth', 0.1, 0.22) }
+                // the echo must LAND after the lead: playSweep's 6th slot is
+                // pan, its 7th is delay — 0.22 in slot 6 panned the echo right
+                // instead of delaying it (#3453 fidelity fix).
+                else if (ev.t === 'waveUrgent') { audioController.playSweep(600, 1200, 0.2, 'square', 0.15); audioController.playSweep(500, 1000, 0.25, 'sawtooth', 0.1, null, 0.22) }
                 else if (ev.t === 'abduct') audioController.playTone(120, 0.12, 'triangle', 0.1)
                 else if (ev.t === 'humanDied') audioController.playSweep(500, 120, 0.2, 'sawtooth', 0.14)
                 // #3443: the smart bomb's boom — a subsonic sweep under a white
                 // noise crack, layered over the per-kill pops already fired.
-                else if (ev.t === 'bomb') { audioController.playNoise(0.3, 0.3); audioController.playSweep(90, 30, 0.45, 'sawtooth', 0.22) }
+                else if (ev.t === 'bomb') { audioController.playNoise(0.3, 0.3); audioController.playSweep(90, 30, 0.45, 'sawtooth', 0.22); audioController.playFilteredNoise(0.55, 0.24, 140, 0.08) } // #3453 item 3: a low-passed rumble rolls in just after the crack — three voices, a cabinet-sized boom
             }
         }
 
@@ -226,7 +240,11 @@ const DefenderGame = () => {
         }
 
         const drawLander = (e) => {
-            ctx.strokeStyle = e.type === 'mutant' ? (sim.speedMode ? '#ff9d3c' : '#ff5555') : '#cccccc'
+            // #3453 item 2: when the fleet runs hot the mutant ITSELF blinks —
+            // the cabinet's Speeders flashed bright against the plain hull, so
+            // the hot body alternates blaze-yellow / hot-orange on the same
+            // 4-frame cadence the radar dots use. Plain mutant keeps red.
+            ctx.strokeStyle = e.type === 'mutant' ? (sim.speedMode ? ((tickN >> 2) % 2 === 0 ? '#ffd23c' : '#ff9d3c') : '#ff5555') : '#cccccc'
             ctx.lineWidth = 2
             ctx.save()
             ctx.translate(e.x, e.y)
@@ -242,6 +260,9 @@ const DefenderGame = () => {
                 ctx.moveTo(-tr * 20, 4 + (tickN % 4))
                 ctx.lineTo(-tr * 27, 0)
                 ctx.stroke()
+                // the flashing core — a blaze square inside the hull that lights
+                // on the yellow half of the blink (#3453 item 2, original art).
+                if ((tickN >> 2) % 2 === 0) { ctx.fillStyle = '#ffd23c'; ctx.fillRect(-4, -4, 8, 8); ctx.fillStyle = '#cccccc' }
             }
             // Abduction telegraph: a flickering tractor beam down to the human
             // being dive-targeted, so the chain reads before the grab (#1531).

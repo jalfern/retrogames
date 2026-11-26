@@ -520,6 +520,20 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     ok(/playTone\(hum, 0\.1, 'sawtooth', 0\.045\)/.test(src), 'the thrust tone itself fires at the pitch thrustHum sets')
     ok(/holdTell && \(tickN >> 3\)/.test(src), 'the held trigger shows a yellow bracket off the nose')
     ok(/pt\.col \|\| 'white'/.test(src), 'particles are drawn in their kill color')
+    // #3453 item 3 — the audio kit: the wave fanfare is a rising three-note
+    // ladder that climbs per wave, and the smart bomb lands a third voice.
+    ok(/const root = 220 \+ Math\.min\(7, sim\.wave\) \* 40/.test(src) && /playTone\(root \* 1\.5, 0\.16, 'square', 0\.12, 0\.18\)/.test(src),
+        '#3453 the wave fanfare is a rising three-note kit, higher every wave (item 3)')
+    ok(/playFilteredNoise\(0\.55, 0\.24, 140, 0\.08\)/.test(src),
+        '#3453 the bomb boom carries a low-passed rumble tail — three voices (item 3)')
+    // playSweep's 6th slot is pan, 7th is delay — the klaxon echo must land
+    // AFTER its lead, and the argument order is easy to get wrong. Pin it.
+    ok(/playSweep\(500, 1000, 0\.25, 'sawtooth', 0\.1, null, 0\.22\)/.test(src),
+        '#3453 the klaxon echo is delayed 0.22 s (slot 6 is pan, not delay)')
+    // #3453 item 2 — the speeder tell: the cabinet flashed the Speeders
+    // themselves; our hot mutants blink blaze/orange with a lit core.
+    ok(/sim\.speedMode \? \(\(tickN >> 2\) % 2 === 0 \? '#ffd23c' : '#ff9d3c'\)/.test(src) && /ctx\.fillRect\(-4, -4, 8, 8\)/.test(src),
+        '#3453 hot mutants flash blaze-yellow with a lit core (item 2)')
 }
 
 
@@ -1164,6 +1178,18 @@ if (process.argv.includes('--mutant')) {
         ['#3456 s4 the hop band shrinks back inside the kill box (17->14)', S,
             `if (huntD < 80 && Math.abs(hunt.by) < 17) {`,
             `if (huntD < 80 && Math.abs(hunt.by) < 14) {`],
+        ['#3453 s2 the wave kit loses its top note (fanfare flattened again)', I,
+            `audioController.playTone(root * 1.5, 0.16, 'square', 0.12, 0.18)`,
+            `/* mutant: no fifth */`],
+        ['#3453 s2 the bomb boom loses its rumble tail (back to two voices)', I,
+            `audioController.playFilteredNoise(0.55, 0.24, 140, 0.08)`,
+            `/* mutant: dry boom */`],
+        ['#3453 s2 the klaxon echo is panned instead of delayed (slot swap)', I,
+            `audioController.playSweep(500, 1000, 0.25, 'sawtooth', 0.1, null, 0.22)`,
+            `audioController.playSweep(500, 1000, 0.25, 'sawtooth', 0.1, 0.22)`],
+        ['#3453 s2 the speeder stops flashing (static hull returns)', I,
+            `(sim.speedMode ? ((tickN >> 2) % 2 === 0 ? '#ffd23c' : '#ff9d3c') : '#ff5555')`,
+            `(sim.speedMode ? '#ff9d3c' : '#ff5555')`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
