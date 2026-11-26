@@ -14,8 +14,10 @@ big faint numerals, dashed net. First version. Ours is the same table.
   score cap (players agreed a target); this port ships none, so the honest
   terminal is a quit press: `q`/Escape during play ends the match
   (`state.over = true`), the final score stays on the table under a blinking
-  MATCH OVER card, and any key/click/tap starts a fresh match. The report
-  carries `done: over` — never a fake winner.
+  MATCH OVER card that reports the TRUE result — solo: YOU WIN / YOU LOSE /
+  MATCH TIED; 2P: PLAYER ONE WINS / PLAYER TWO WINS / MATCH TIED — and any
+  key/click/tap starts a fresh match. The report carries `done: over` —
+  never a fake winner.
 - `startRun()` regenerates the seed honoring `?seed=N` and **zeroes both
   scores** (pre-port, a dead "Reset score? Maybe" comment let the score
   persist across "runs"; pongcheck calls this out by name).
@@ -56,11 +58,11 @@ physics, not a paraphrase.
 
 ## Verify
 ```
-npm run pongcheck            # attract rule-6 + seedpin law + driver sweep + #3502 tiers (66 checks)
+npm run pongcheck            # attract rule-6 + seedpin law + driver sweep + #3502 tiers (68 checks)
 npm run pongcheck -- --mutant  # 13 seedpin/driver/tier mutants (incl. walls-pulled,
                                #   sign-flip, seat-poses, dead-select, dead-ceiling, dead-2P), all must die
 npm run pongcheck -- --mutate  # 5 attract mutants, all must die
-npm run pongdrive            # real Chrome, real keys: selector cycles, pick starts, W/S 2P legs (18 checks)
+npm run pongdrive            # real Chrome, real keys: selector cycles, tap-dial, pick starts, W/S 2P legs (19 checks)
 npm run watchcheck -- --only pong   # browser pilot: seats, returns balls, steers back
 npm run lint:pong
 ```
@@ -70,8 +72,9 @@ DEV probes: `__pongTest` — `watching / probe (tick,hits,scores,paddles) / watc
 
 The 1972 coin door had an AUTO/HUMAN selector for the machine paddle and a
 RANGE switch labeled Easy/Difficult. Attract now carries that as a real pick:
-LEFT/RIGHT cycles `EASY · NORMAL · HARD · 2P`, any other key or a tap starts
-with the pick standing, and `?diff=N` pins it (1–4). `NORMAL` is the shipped
+LEFT/RIGHT or a tap on the pick label cycles `EASY · NORMAL · HARD · 2P`
+(both reach the same dial); any other key or a tap starts with the pick
+standing, and `?diff=N` pins it (1–4). `NORMAL` is the shipped
 physics VERBATIM — pongcheck traces a 3000-tick match at seed 90210
 bit-identical against a pre-#3502 (diff-less) replay, so every existing
 proof (seedpin, 39/40 driver floor) runs under the default untouched.
@@ -100,6 +103,8 @@ collapse into one selector (four picks) because the port ships one knob.
   actually win it.)
 - No selectable max-score knob (the machine's RANGE switch) — quit is the
   terminal by design; a selectable cap would be a feature, not a restoration.
-- Touch: pad arrows only; no on-screen quit (desktop `q`/Escape).
+- Touch: pad arrows only; no on-screen quit (desktop `q`/Escape) — the attract
+  pick label IS tappable (it cycles the same dial LEFT/RIGHT drives), but the
+  in-match quit path is not.
 - Sound is the Feb-port sketch: single tones per hit/score; no crowd, no
   spin pitch variation.
