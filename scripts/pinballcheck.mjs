@@ -1341,6 +1341,161 @@ const wrap = (gs) => {
         TABLE.kb.vy === TABLE_TWO.kb.vy)
 }
 
+// --- 8b. JET LANE + KICKBACK L (#3432): the left flank comes alive ----------
+// The never-dry stage gave CABINET ONE a left ramp (two upward wires in the
+// flank corridor) and a mirror kickback behind the left flipper tip, joined by
+// the combo law (a flank SET re-arms the left save once). These pins hold the
+// ladder, the per-side once-only law, the disjointness of the two columns, the
+// wire zone gates, the mirror build on EMBER RIDER, and the observable state.
+{
+    const { TABLE_TWO } = await import('../src/games/Pinball/sim.js')
+    const mx = (x) => W - x
+
+    // structural: the mirror data law (same contract shape as #3250's)
+    r.check('#3432 kbL + rampL mirror exactly between cabinets (zone flip, vx flip)',
+        Math.abs(mx(TABLE.kbL.x2) - TABLE_TWO.kbL.x1) < 1e-9 && Math.abs(mx(TABLE.kbL.x1) - TABLE_TWO.kbL.x2) < 1e-9 &&
+        TABLE.kbL.yFrom === TABLE_TWO.kbL.yFrom && TABLE.kbL.yTo === TABLE_TWO.kbL.yTo &&
+        TABLE.kbL.minVy === TABLE_TWO.kbL.minVy && Math.abs(TABLE.kbL.vx + TABLE_TWO.kbL.vx) < 1e-9 &&
+        TABLE.kbL.vy === TABLE_TWO.kbL.vy &&
+        Math.abs(mx(TABLE.rampL.x2) - TABLE_TWO.rampL.x1) < 1e-9 && Math.abs(mx(TABLE.rampL.x1) - TABLE_TWO.rampL.x2) < 1e-9 &&
+        JSON.stringify(TABLE.rampL.rolls) === JSON.stringify(TABLE_TWO.rampL.rolls))
+    r.check('the two kickback columns are disjoint — one fall can never fire both',
+        TABLE.kb.x1 > TABLE.kbL.x2 && TABLE_TWO.kbL.x1 > TABLE_TWO.kb.x2)
+
+    // the left save: fire, price, direction, observable
+    const gs = drive(makeGame(140))
+    setBall(gs, 165, 556, 0, 300); clear(gs)
+    drive(gs, {}, 1)
+    r.check('KICKBACK L: a fast left-column descent is saved — +100 literal, fired up-RIGHT',
+        gs.events.some((e) => e.type === 'kickback' && e.side === 'L') && gs.score === 100 && gs.vy < -800 && gs.vx > 0,
+        `vy=${gs.vy.toFixed(0)} vx=${gs.vx.toFixed(0)} score=${gs.score}`)
+    r.check('the left save reads spent in state (kbLUsed) and names itself on the DMD',
+        stateOf(gs).kbLUsed === true && gs.msg.text === 'KICKBACK! +100', gs.msg.text)
+    // once per SIDE: right kb stays live after the left save fires
+    setBall(gs, 196, 558, 0, 300); clear(gs)
+    drive(gs, {}, 1)
+    r.check('a ball may be saved once per side — the right kickback stays live (#3432)',
+        gs.events.some((e) => e.type === 'kickback' && e.side !== 'L') && gs.score === 200,
+        `score=${gs.score}`)
+    // spent both sides → the next fall in either column dies
+    const spentSeen = []
+    setBall(gs, 165, 556, 0, 300); clear(gs)
+    for (let i = 0; i < 40; i++) { drive(gs, {}, 1); spentSeen.push(...types(gs)) }
+    r.check('with both saves spent, the left column drains — one save per side per ball',
+        !spentSeen.includes('kickback') && spentSeen.includes('drain'), spentSeen.join(','))
+    // rests never launch (search law), per side
+    const rs = drive(makeGame(141))
+    setBall(rs, 163, 598, 0, 0); clear(rs)
+    drive(rs, {}, 12)
+    r.check('a resting ball never trips KICKBACK L (minVy gate — search law intact)',
+        rs.kbLUsed === false && rs.balls < rs.table.balls, `kbLUsed=${rs.kbLUsed} balls=${rs.balls}`)
+
+    // JET LANE wires: progress then SET, ladder literals (25 + 25 + 500)
+    const jl = drive(makeGame(142))
+    setBall(jl, 60, 380, 0, -200); clear(jl)          // apex ~358 → crosses only the lower wire
+    const oneSeen = []
+    for (let i = 0; i < 15; i++) { drive(jl, {}, 1); oneSeen.push(...types(jl)) }
+    r.check('one flank wire pays 25 and lights progress — no SET yet',
+        jl.score === 25 && jl.rampLHits === 1 && jl.rampLLit === false &&
+        oneSeen.filter((t) => t === 'rampL').length === 1 && !oneSeen.includes('ramplset'),
+        `score=${jl.score} hits=${jl.rampLHits} ${oneSeen.join(',')}`)
+    setBall(jl, 60, 400, 0, -520); clear(jl)          // apex ~280 → crosses both wires
+    const twoSeen = []
+    for (let i = 0; i < 70; i++) { drive(jl, {}, 1); twoSeen.push(...types(jl)) }
+    r.check('crossing both wires completes the SET — 2×25 + 500 and the DMD names it',
+        jl.score === 575 && twoSeen.filter((t) => t === 'rampL').length === 2 &&
+        twoSeen.includes('ramplset') && jl.rampLLit === true && jl.msg.text === 'RAMP L SET! +500',
+        `score=${jl.score} msg=${jl.msg.text}`)
+    r.check('the flank return runs down the LEFT half toward the spinner/kicker channel',
+        jl.bx < 112 && jl.by > 380, `x=${jl.bx.toFixed(0)} y=${jl.by.toFixed(0)}`)
+    // gates: outside the corridor UP, or inside DOWN, never score
+    const gj = drive(makeGame(143))
+    setBall(gj, 90, 430, 0, -520); clear(gj)
+    const gjSeen = []
+    for (let i = 0; i < 60; i++) { drive(gj, {}, 1); gjSeen.push(...types(gj)) }
+    r.check('an upward crossing OUTSIDE the corridor never scores the flank ramp',
+        !gjSeen.includes('rampL'), gjSeen.join(','))
+    const gd = drive(makeGame(144))
+    setBall(gd, 60, 280, 0, 300); clear(gd)
+    const gdSeen = []
+    for (let i = 0; i < 60; i++) { drive(gd, {}, 1); gdSeen.push(...types(gd)) }
+    r.check('the wires are one-way law: a DOWNWARD pass through the corridor never scores',
+        !gdSeen.includes('rampL'), gdSeen.join(','))
+    const gl = drive(makeGame(145))
+    setBall(gl, 336, 430, 0, -520); clear(gl)
+    const glSeen = []
+    for (let i = 0; i < 60; i++) { drive(gl, {}, 1); glSeen.push(...types(gl)) }
+    r.check('the launch-lane RAMP stays its own device — flank never cross-lights',
+        glSeen.includes('ramp') && !glSeen.includes('rampL'), glSeen.join(','))
+
+    // combo law: spend the left save, then a SET buys it back — once, audibly
+    const cb = drive(makeGame(146))
+    setBall(cb, 165, 556, 0, 300); clear(cb)
+    drive(cb, {}, 1)                                    // spend kbL
+    setBall(cb, 60, 400, 0, -520); clear(cb)          // flank SET
+    const cbSeen = []
+    let armFlash = 0
+    for (let i = 0; i < 60; i++) { drive(cb, {}, 1); cbSeen.push(...types(cb)); armFlash = Math.max(armFlash, cb.kbLArmFlash) }
+    r.check('combo law: a RAMP L SET re-arms the spent left save (kbarm + un-spent state)',
+        cbSeen.includes('ramplset') && cbSeen.includes('kbarm') && cb.kbLUsed === false && armFlash > 0,
+        `${cbSeen.join(',')} kbLUsed=${cb.kbLUsed}`)
+    setBall(cb, 165, 556, 0, 300); clear(cb)
+    drive(cb, {}, 1)
+    r.check('the re-armed save actually fires — two left saves on one ball',
+        cb.events.some((e) => e.type === 'kickback' && e.side === 'L'), cb.events.map((e) => e.type).join(','))
+    const ca = drive(makeGame(147))
+    setBall(ca, 60, 400, 0, -520); clear(ca)
+    const caSeen = []
+    for (let i = 0; i < 60; i++) { drive(ca, {}, 1); caSeen.push(...types(ca)) }
+    r.check('a SET while the save is still armed announces nothing (no phantom kbarm)',
+        caSeen.includes('ramplset') && !caSeen.includes('kbarm') && ca.kbLUsed === false, caSeen.join(','))
+
+    // EMBER RIDER: hotter flank, same laws
+    const em = drive(makeGame(148, 1))
+    setBall(em, 300, 400, 0, -520); clear(em)
+    const emSeen = []
+    for (let i = 0; i < 70; i++) { drive(em, {}, 1); emSeen.push(...types(em)) }
+    r.check('EMBER RIDER flank pays its own hotter ladder (30×2 + 600, mirrored)',
+        em.score === 660 && emSeen.filter((t) => t === 'rampL').length === 2 && emSeen.includes('ramplset') &&
+        em.msg.text === 'RAMP L SET! +600', `score=${em.score} msg=${em.msg.text}`)
+    r.check('EMBER RIDER returns down the RIGHT half (the mirror flank)',
+        em.bx > W - 112 && em.by > 380, `x=${em.bx.toFixed(0)} y=${em.by.toFixed(0)}`)
+    const ek = drive(makeGame(149, 1))
+    setBall(ek, 195, 556, 0, 300); clear(ek)
+    drive(ek, {}, 1)
+    r.check('EMBER RIDER saves its mirror column for 75, fired up-LEFT',
+        ek.events.some((e) => e.type === 'kickback' && e.side === 'L') && ek.score === 75 && ek.vx < 0 && ek.vy < -800,
+        `vx=${ek.vx.toFixed(0)} vy=${ek.vy.toFixed(0)} score=${ek.score}`)
+
+    // observable state: hash covers the new devices; reset re-arms them
+    const hs = drive(makeGame(150))
+    const h0 = stateHash(hs)
+    hs.kbLUsed = true
+    r.check('the hash covers the left save (spent and armed cannot hide)', stateHash(hs) !== h0)
+    hs.kbLUsed = false; hs.rampLLit = true
+    r.check('the hash covers the flank SET lamp too', stateHash(hs) !== h0)
+    const rb = drive(makeGame(151))
+    setBall(rb, 165, 556, 0, 300); drive(rb, {}, 1)
+    setBall(rb, 60, 400, 0, -520)
+    for (let i = 0; i < 60; i++) drive(rb, {}, 1)
+    resetBall(rb)
+    r.check('a new ball re-arms both flank devices (save, progress, SET lamp)',
+        rb.kbLUsed === false && rb.rampLHits === 0 && rb.rampLLit === false)
+
+    // determinism of the whole flank story, and the smith chassis carries it
+    const flankScript = (seed) => {
+        const g = drive(makeGame(seed))
+        setBall(g, 165, 556, 0, 300); drive(g, {}, 2)
+        setBall(g, 60, 400, 0, -520); for (let i = 0; i < 60; i++) drive(g, {}, 1)
+        return JSON.stringify(stateOf(g))
+    }
+    r.check('the flank story is deterministic: same seed ⇒ identical observable state',
+        flankScript(152) === flankScript(152))
+    const sm = compileTable(SMITH_REFS.nova).tb
+    r.check('TABLE SMITH builds carry the flank chassis (kbL + rampL ride every table)',
+        !!sm.kbL && !!sm.rampL && sm.kbL.x1 === TABLE.kbL.x1 && sm.rampL.x1 === TABLE.rampL.x1)
+}
+
 // =============== #3259: ART KITS (skins) — a dress, never a machine ===============
 // The arcades sold art kits: same machine, new paint. The contract here is
 // the same one #3103 puts on cabinets — a kit is PALETTE ONLY. These pins
