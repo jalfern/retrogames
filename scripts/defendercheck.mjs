@@ -400,6 +400,7 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     ok(/const wrapBlink = cameraX \+ viewWidth > WORLD_WIDTH/.test(src),
         'radar player dot takes priority — blinks big across a wrap pass')
     ok(/playSweep\(hum \* 2/.test(src), 'thrust layers a rising harmonic over the hum — speed is audible')
+    ok(/playTone\(hum, 0\.1, 'sawtooth', 0\.045\)/.test(src), 'the thrust tone itself fires at the pitch thrustHum sets')
     ok(/holdTell && \(tickN >> 3\)/.test(src), 'the held trigger shows a yellow bracket off the nose')
     ok(/pt\.col \|\| 'white'/.test(src), 'particles are drawn in their kill color')
 }
@@ -674,10 +675,8 @@ if (process.argv.includes('--mutant')) {
             `if (s.freeze > 0) { s.freeze -= 1; return s }`,
             `if (false) { s.freeze -= 1; return s }`],
         ['thrust goes silent again', I,
-            `const hum = 50 + Math.abs(sim.player.vx) * 8
-                audioController.playTone(hum, 0.1, 'sawtooth', 0.045)`,
-            `const hum = 50 + Math.abs(sim.player.vx) * 8
-                /* silent */`],
+            `audioController.playTone(hum, 0.1, 'sawtooth', 0.045)`,
+            `/* silent */`],
         ['the abduction telegraph hum is muted', I,
             `audioController.playSweep(140, 70, 0.2, 'triangle', 0.06)`,
             `/* muted */`],
