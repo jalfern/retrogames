@@ -880,18 +880,20 @@ const wrap = (gs) => {
 
     // re-arm clears the spent markers for balls still riding the table — in a
     // PACK drain (a plain drain resets the whole table, which would measure a
-    // brand-new puck instead of the survivor: toothless, so multiball it is).
+    // brand-new puck instead of the survivor: toothless, so a fat pack it is —
+    // three balls, drain one, the witness must still be the SAME puck).
     const gs5 = makeGame(344)
     gs5.multiball = true; gs5.saveUsed = true; gs5.saveT = 0
     rung3Ball(gs5, MG.x, MG.y - 40, 0, 60)
     gs5.pucks[0].magHoldT = -1          // spent on the last drive, currently free
     gs5.magCharge = 0; gs5.magTouched = true
-    gs5.pucks.push(mkPuck(120, 250, 0, 0))   // witness puck that survives the drain
+    gs5.pucks.push(mkPuck(120, 250, 0, 0), mkPuck(200, 250, 0, 0))   // two witnesses survive the drain
     gs5.pucks[0].by = TABLE.drainY + 5
     drive(gs5, {}, 2); types(gs5)
+    const wit = gs5.pucks.find((p) => Math.abs(p.bx - 120) < 1)
     r.check('#3422 a drain that re-arms the coil re-arms its balls too (spent marker clears with the charge)',
-        gs5.magCharge === 1 && gs5.pucks.length === 1 && gs5.pucks[0].magHoldT === 0,
-        `charge=${gs5.magCharge} packs=${gs5.pucks.length} holdT=${gs5.pucks[0] && gs5.pucks[0].magHoldT}`)
+        gs5.magCharge === 1 && gs5.pucks.length === 2 && wit && wit.magHoldT === 0,
+        `charge=${gs5.magCharge} packs=${gs5.pucks.length} wit=${wit ? wit.magHoldT : 'gone'}`)
 }
 
 // ---- #3422 the orbit lane is per-ball — verified, not assumed ----
