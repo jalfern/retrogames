@@ -1114,9 +1114,12 @@ const PinballGame = () => {
             // armed-pulse while its one save per ball is live, plunger pop on fire.
             // #3432: the mirror save shares the draw; a freshly RE-armed left
             // save rings white (kbLArm) so the ramp→save combo is visible.
-            const kbUnits = [[tb.kb, gs.kbUsed, fl.kb, 0]]
-            if (tb.kbL) kbUnits.push([tb.kbL, gs.kbLUsed, fl.kbL, fl.kbLArm])
-            for (const [KB, used, lit, arm] of kbUnits) {
+            // #3451: a per-side lamp label under each ring — the two saves
+            // share the #3250 draw and read identically at 375 pt; the label
+            // names the once-per-side save (KB L / KB R, near the drain).
+            const kbUnits = [[tb.kb, gs.kbUsed, fl.kb, 0, 'KB R']]
+            if (tb.kbL) kbUnits.push([tb.kbL, gs.kbLUsed, fl.kbL, fl.kbLArm, 'KB L'])
+            for (const [KB, used, lit, arm, label] of kbUnits) {
                 const kbCx = (KB.x1 + KB.x2) / 2, kbCy = KB.yFrom - 3
                 const kbArmed = !used && gs.launched && !gs.done
                 const kbLit = lit > 0
@@ -1139,6 +1142,14 @@ const PinballGame = () => {
                     : kbArmed ? `rgba(${pal.hotRgb},${0.55 + 0.3 * Math.sin(gs.tick / 6)})`
                     : 'rgba(148,163,184,0.35)'
                 ctx.beginPath(); ctx.arc(kbCx, kbCy, 4.5, 0, 7); ctx.fill()
+                // #3451: per-side label — white on fire/arm, hot when live,
+                // dim chrome once spent (the once-per-side law reads at a glance)
+                ctx.fillStyle = kbLit || arm > 0 ? '#ffffff'
+                    : kbArmed ? `rgba(${pal.hotRgb},0.9)`
+                    : 'rgba(148,163,184,0.55)'
+                ctx.font = 'bold 8px monospace'
+                ctx.textAlign = 'center'
+                ctx.fillText(label, kbCx, kbCy + 17)
                 ctx.restore()
             }
 
@@ -1952,11 +1963,15 @@ const PinballGame = () => {
                 },
                 // dev rig (#3432): feed a ball up the JET LANE corridor — crosses
                 // both flank wires on the way to the dome flank (visual QA; the
-                // ladder is pinned in Node).
+                // ladder is pinned in Node). The slight left drift (vx: -60) is
+                // deliberate: the descent off the flank runs down the roped
+                // outer channel (left of the orbit guide), so the ball passes
+                // the spinner zone — a straight-up feed clips the outlane-guide
+                // cap and bounces back into play, never reaching the spinner.
                 rampLFeed: () => {
                     const gs = gsRef.current
                     const RL = gs.table.rampL
-                    gs.pucks.push({ bx: (RL.x1 + RL.x2) / 2, by: 400, vx: 0, vy: -520, prevY: 400, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
+                    gs.pucks.push({ bx: (RL.x1 + RL.x2) / 2, by: 400, vx: -60, vy: -520, prevY: 400, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
                     return stateOf(gs)
                 },
                 magDrop: () => {
@@ -2017,6 +2032,7 @@ const PinballGame = () => {
                     else if (code === 'b') k.b = false
                 },
                 step: (n = 1) => { for (let i = 0; i < n; i++) stepGame(gsRef.current, keysRef.current); react(gsRef.current); return stateOf(gsRef.current) },
+                pose: () => gsRef.current.pucks.map(p => ({ bx: Math.round(p.bx * 10) / 10, by: Math.round(p.by * 10) / 10, vy: Math.round(p.vy), spin: Math.round((p.spin || 0) * 10) / 10, spinArm: p.spinArm })),
             }
             exposeGame({
                 id: 'pinball',

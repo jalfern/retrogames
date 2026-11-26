@@ -553,6 +553,22 @@ try {
     ok('the SET announces itself and re-arms the spent left save (combo law live)',
         sawSetDmd === `JET LANE! +${price.set}` && !!setS && setS.kbLUsed === false,
         `"${sawSetDmd}" kbLUsed=${setS && setS.kbLUsed}`)
+    // #3451: the return off the flank must run down the outer channel and
+    // through the spinner zone — a straight feed clips the outlane-guide cap
+    // and never passes it. The same feed the SET check proves is still in
+    // flight here (it survives ~190 ticks), so poll it: wait for the spinner
+    // counter to rise, then stop. A wall-clock poll cannot outrun resetBall
+    // because no drain happens inside this window (the feed is still live).
+    const spin0 = (await flankSt()).spinnerTurns
+    let spinS = null
+    for (let i = 0; i < 60; i++) {
+        await wait(40); spinS = await flankSt()
+        const pose = await page.evaluate(() => window.__pinballTest.pose())
+        if (i % 10 === 0 || spinS.spinnerTurns > spin0) console.log(`  spin-poll i=${i} tick=${spinS.tick} turns=${spinS.spinnerTurns} live=${spinS.liveBalls} lit=${spinS.rampLLit} pose=${JSON.stringify(pose)}`)
+        if (spinS.spinnerTurns > spin0) break
+    }
+    ok('JET LANE return: spinner turns rise (the feed returns through the spinner)',
+        !!spinS && spinS.spinnerTurns > spin0, `spinnerTurns ${spin0}→${spinS && spinS.spinnerTurns}`)
 
     ok('zero page errors through the whole drive', errors.length === 0, errors.join(';'))
 } finally {
