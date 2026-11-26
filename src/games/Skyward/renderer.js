@@ -9,6 +9,7 @@
 import * as THREE from 'three'
 import { sockChain, dustFlow } from './sim.js'
 import { scuffTell } from './sim.js'
+import { PILOT_COLORS } from './net.js' // #3429 — seat identity for remote hulls
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
 const lerp = (a, b, t) => a + (b - a) * t
@@ -570,6 +571,32 @@ void main(){
         return g
     }
     const craft = { plane: buildPlane(), glider: buildGlider(), belt: buildBelt() }
+    // #3429 — remote pilots share these exact procedural hulls: one tinted
+    // clone set per seat, posed from that seat's locked-step instance. No pose
+    // bytes ever travel — lockstep means every box computes the same truth —
+    // so a remote hull agrees with the referee the same tick as its hash.
+    const remoteCraft = {}
+    const beaconGeo = new THREE.SphereGeometry(0.55, 10, 8)
+    const remoteSet = (seat) => {
+        if (remoteCraft[seat]) return remoteCraft[seat]
+        const tint = PILOT_COLORS[seat % PILOT_COLORS.length]
+        const clones = { plane: craft.plane.clone(true), glider: craft.glider.clone(true), belt: craft.belt.clone(true) }
+        Object.values(clones).forEach((c) => c.traverse((o) => {
+            if (o.isMesh) {
+                o.material = o.material.clone()
+                o.material.color = new THREE.Color(tint) // vertex colors survive: color multiplies
+                o.castShadow = false
+            }
+        }))
+        const beacon = new THREE.Mesh(beaconGeo, new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.85 }))
+        beacon.position.set(0, 2.8, 0)
+        const grp = new THREE.Group()
+        Object.values(clones).forEach((c) => grp.add(c))
+        grp.add(beacon)
+        scene.add(grp)
+        remoteCraft[seat] = { grp, clones, beacon }
+        return remoteCraft[seat]
+    }
     Object.values(craft).forEach((c) => scene.add(c))
 
     // blob shadow — no shadow maps (by design), but a craft without ground
@@ -635,7 +662,7 @@ void main(){
         camera.updateProjectionMatrix()
     }
 
-    const render = (g, dt, fx = null) => {
+    const render = (g, dt, fx = null, remoteList = null) => {
         const t = g.t
         seaMat.uniforms.uTime.value = t
         seaMat.uniforms.uCam.value.copy(camera.position)
@@ -928,6 +955,25 @@ void main(){
         skyMat.uniforms.uStormDir.value.set(sd.x, sd.y, sd.z)
         skyMat.uniforms.uCam.value.copy(camera.position)
 
+        const seen = new Set()
+        if (remoteList) {
+            for (const rm of remoteList) {
+                const rg = rm && rm.g
+                if (!rg || rg.tick <= 0) continue
+                const rs = remoteSet(rm.seat)
+                seen.add(rm.seat)
+                rs.grp.visible = true
+                rs.grp.position.set(rg.p.x, rg.p.y + (rg.craft === 'plane' ? 0.9 : rg.craft === 'glider' ? 1.1 : 1.4), rg.p.z)
+                // the same attitude law the own hull wears — a wing reads the
+                // same from any sky; the beacon pulse keeps the seat identity
+                // legible even at distance (renderer-only, never hashed)
+                rs.grp.rotation.set(-rg.pitch * 0.75, -rg.heading + Math.PI, rg.roll * 0.9, 'YXZ')
+                rs.beacon.material.opacity = 0.55 + 0.35 * Math.sin(t * 4 + rm.seat * 1.7)
+                Object.entries(rs.clones).forEach(([k, cc]) => { cc.visible = k === rg.craft })
+                if (rg.respawnT > 0) rs.grp.visible = false // their crew has her
+            }
+        }
+        Object.entries(remoteCraft).forEach(([seat, rs]) => { if (!seen.has(Number(seat))) rs.grp.visible = false })
         renderer.render(scene, camera)
     }
 

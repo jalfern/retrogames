@@ -46,10 +46,39 @@ npm run skywardcheck -- --mutate   # proves the harness can fail
 node scripts/skywardplay.mjs       # headless Chrome: boot → play → events → zero page errors
 ```
 ## Honest gaps
-- **MOVED by #3332:** the plane landed at #3319 and the belt now answers the
-  strip too — a quiet arrival parks with the zone banked (see *Quiet landing*
-  below). What remains of the old bullet: no online (issue: not yet).
-  (The engine-audio half closed in #3295, the glider's runway in #3302/#3306.)
+- ~~**MOVED by #3332:** … What remains of the old bullet: no online~~ **CLOSED
+  by #3429** — the room is live: `?net=host` / `?net=join&room=CODE`, up to
+  4 pilots on one seeded sky, 180 s on the bell, score wins (tie on fewer
+  crashes, then seat). See *Online (#3429)* below.
+
+## Online (#3429)
+- Shape: **every box simulates EVERY seat.** The world is seed-deterministic,
+  so one seed = one island, one weather cell, one strip everywhere; each seat's
+  instance consumes one pad stream — humans over the wire, open seats on
+  `planner.decide` (pure, so CPU bytes never travel). `gs` is my seat's
+  instance, so the whole solo HUD/audio/juice stack answers the race untouched.
+- Wire (`net.js`, pure + pinned): 6 lockstep bits + analog `x,y` at 1/100
+  (lockstep `normalizeWirePad` carries them — the #1705 `m`-field law extended);
+  folded hash (all instance hashes + tick) every 30 ticks; podium rows host-
+  broadcast (`pod`); evidence ring for desyncs (copyable block).
+- Seats are ROSTER ORDER, never relay slot numbers — a slot is an address, and
+  reconnects can leave gaps. Wire/mirrors/peers key by slot; instances by seat.
+- Takeover, two laws: the relay's `onLeave` (ordered behind every pad the dead
+  peer sent) hands the seat to the autopilot at the same stream position on
+  every box; a member whose pads never arrive at all (a socket that completed
+  its handshake on a dead tab) is caught by `STALL_CAP` tick-anchored silence
+  and dropped the same way. Both resume without divergence because pads are
+  absolute bytes and the planner is deterministic. `lockstep.dropPeer` is the
+  surgical primitive (`setPeers` resets buffers and would stall survivors).
+- Proof: `npm run skywardcheck` (+28 room pins incl. virtual rooms over
+  in-memory pipes: 4-sky agreement, takeover, poisoned-box referee) and
+  `npm run skywardroom` (two real Chromes over the deployed relay: roster,
+  go, drive, fold convergence after silent-seat takeover, R-abort; plus the
+  solo leg proving `?lite` alone opens no socket).
+- Known gaps: no spectate; no mid-race rejoin of a human seat once the
+  autopilot took it (the pilot's next go is the next room); remote hulls carry
+  a beacon + seat tint but no floating names (the pilots bar names everyone).
+
 - **Flare quality (#3375 item 1)** — a strip touchdown is no longer judged at
   the instant the hull crosses the deck: the flare is a path law. The hull
   feeds a rolling sink history (last 50 ticks ≈ 0.83 s, reset on every flight

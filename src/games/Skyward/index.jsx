@@ -17,6 +17,10 @@ import { makeGame, step, stateOf, randomSeed, checkout, recycleCraft, FIXED_DT, 
 import { decide } from './planner.js'
 import { createSkywardGL } from './renderer.js'
 import { PRESS, MESSAGES } from './attract.js'
+import Lobby from '../../components/Lobby'
+import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
+import { createLockStep } from '../../utils/lockstep.js'
+import { SEATS, PAD_DELAY, HASH_EVERY, RACE_T, STALL_CAP, PILOT_NAMES, PILOT_CSS, toWire, fromWire, foldHash, hostSeed, podiumRows, podWire, podRows, createEvidence, hex32 } from './net.js'
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
 
@@ -28,6 +32,9 @@ const SkywardGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
+    const [netUi, setNetUi] = useState(null) // #3429 shared Lobby state
+    const [podium, setPodium] = useState(null) // #3429 room finish sheet
+    const [netReport, setNetReport] = useState('') // #3429 copyable desync evidence
     const bannerRef = useRef({ until: 0 })
     const glRef = useRef(null)
     const passEnterUntilRef = useRef(0)
@@ -79,6 +86,7 @@ const SkywardGame = () => {
 [data-h=banner]{position:absolute;left:50%;top:56px;transform:translateX(-50%);font-size:22px;letter-spacing:.22em;opacity:0;transition:opacity .25s;text-align:center}
 [data-h=tell]{position:absolute;left:50%;top:92px;transform:translateX(-50%);font-size:13px;letter-spacing:.26em;color:#ff9d4d;opacity:0;transition:opacity .3s;text-align:center;text-shadow:0 1px 4px rgba(0,0,0,.7)}
 [data-h=hint]{position:absolute;left:50%;bottom:70px;transform:translateX(-50%);font-size:11px;letter-spacing:.18em;color:#cfe6ff;opacity:.9;text-align:center}
+[data-h=pilots]{position:absolute;right:34px;top:14px;letter-spacing:.14em;font-size:11px;text-align:right;color:#cfe6ff;display:none}
 @media (max-width: 480px){
   /* everything the HUD shows lives in the left column BELOW the corner
      chrome (ARCADE + FEEDBACK reach ~y70); the mute icon owns the top-right
@@ -91,6 +99,7 @@ const SkywardGame = () => {
   [data-h=banner]{width:92vw;font-size:16px;letter-spacing:.1em;white-space:nowrap}
   [data-h=tell]{width:92vw;top:92px;font-size:11px;letter-spacing:.14em}
   [data-h=hint]{bottom:auto;top:58%;left:4%;transform:none;width:92%;font-size:10px;letter-spacing:.1em;line-height:1.6;text-align:center}
+  [data-h=pilots]{right:10px;left:auto;top:76px;bottom:auto;font-size:10px;letter-spacing:.08em}
 }
 /* #3370 item 7 — landscape phones (844×390 and kin): the width query never
    fires, but the pad still owns the bottom ~200px of a 390px-tall screen.
@@ -104,6 +113,7 @@ const SkywardGame = () => {
   [data-h=banner]{width:92vw;font-size:17px;letter-spacing:.12em}
   [data-h=tell]{width:92vw;font-size:11px;letter-spacing:.14em}
   [data-h=hint]{bottom:auto;top:154px;left:4%;transform:none;width:92%;font-size:10px;letter-spacing:.1em;text-align:center}
+  [data-h=pilots]{right:10px;left:auto;top:76px;bottom:auto;font-size:10px;letter-spacing:.08em}
 }
 @media (max-width: 360px){
   /* iPhone SE 320px (#3362 item 5): the 480 column sizes clip here — chips
@@ -123,14 +133,15 @@ const SkywardGame = () => {
 <div data-h="chips">RING — · SPOT — · DROP — · ⚡—</div>
 <div data-h="banner"></div>
 <div data-h="tell"></div>
-<div data-h="hint"></div>`
+<div data-h="hint"></div>
+<div data-h="pilots"></div>`
         // NOTE: wrap is `absolute inset-0` from JSX — never override its
         // position inline: a relative box ignores the insets and the stage
         // collapses to the canvas' intrinsic ratio (found in the #3300 phone
         // audit — the sky shrank to a 2:1 strip at every width).
         wrap.appendChild(hudEl)
         const q = (k) => hudEl.querySelector(`[data-h="${k}"]`)
-        const E = { speed: q('speed'), alt: q('alt'), score: q('score'), chips: q('chips'), banner: q('banner'), tell: q('tell'), hint: q('hint') }
+        const E = { speed: q('speed'), alt: q('alt'), score: q('score'), chips: q('chips'), banner: q('banner'), tell: q('tell'), hint: q('hint'), pilots: q('pilots') }
 
         gs.attract = true
 
@@ -349,13 +360,233 @@ const SkywardGame = () => {
             y: clamp((held.up ? 1 : 0) - (held.down ? 1 : 0) + padState.y, -1, 1),
         })
 
+        // ---- #3429 online rooms ----
+        // Every box simulates EVERY seat: the same seed makes the same island
+        // (world.js is seed-deterministic), each seat's instance consumes one
+        // pad stream — humans over the wire (lockstep sampling law), open or
+        // lost seats on the planner. `gs` IS my seat's instance, so every HUD
+        // readout, banner, bed and juice the solo cabinet already had answers
+        // the race untouched; the folded hash referees all four skies agree.
+        // Solo play never touches any of this: no ?net= param, no connection.
+        const netRole = lobbyRole(window.location.search)
+        const nq = new URLSearchParams(window.location.search)
+        const relayUrl = relayFromQuery(window.location.search)
+        const net = {
+            active: !!netRole, role: netRole, phase: netRole ? 'idle' : 'off',
+            slot: netRole === 'host' ? 0 : -1, code: '', joinHref: '',
+            room: null, lobby: null, racing: false, frozen: false, podOn: false,
+            roster: [], humans: [], lost: new Set(), insts: null, seed: 0, raceT: 0, stallRun: 0,
+        }
+        // #3429 — a relay slot is an ADDRESS, not a seat: the field is built
+        // from whoever is actually home at kickoff, in roster order. Slots may
+        // skip (a reconnecting tab briefly holds its old seat at the relay),
+        // so nothing about the sim may key off slot numbers — only the wire
+        // (mirrors, lockstep peers) is slot-keyed.
+        const mySeat = () => { const i = net.roster.indexOf(net.slot); return i >= 0 ? i : 0 }
+        let ws = null
+        const makeTransport = (url) => {
+            ws = new WebSocket(url)
+            return {
+                send: (s) => { try { if (ws && ws.readyState === 1) ws.send(s) } catch { /* gone */ } },
+                onMessage: (cb) => { ws.onmessage = (ev) => cb(ev.data) },
+                onClose: (cb) => { ws.onclose = () => cb() },
+                close: () => { try { if (ws) ws.close() } catch { /* gone */ } },
+            }
+        }
+        const mirrors = Object.fromEntries(Array.from({ length: SEATS }, (_, s) => [s, new Map()]))
+        const ls = createLockStep({
+            delay: PAD_DELAY, hashEvery: HASH_EVERY,
+            send: (m) => {
+                // own pads enter own mirrors via the send path (the Tidal law:
+                // mirrors hold EXACTLY the bytes the seat sent) — keyed by SLOT
+                if (m.t === 'pad' && net.slot >= 0) mirrors[net.slot].set(m.k, m.p)
+                if (net.room) net.room.send(m.t, m)
+            },
+        })
+        const evNet = createEvidence()
+        const netSay = (m) => banner(m, 2.8)
+        const pushNetUi = () => setNetUi(net.active ? {
+            role: net.role, phase: net.phase, code: net.code, slot: net.slot,
+            seats: seatModel(SEATS, net.room ? net.room.slots : []),
+            joinHref: net.joinHref,
+            names: PILOT_NAMES,
+        } : null)
+        const restoreSolo = () => {
+            net.insts = null
+            gs = makeGame(seedFromQuery() ?? randomSeed())
+            gs.attract = true
+        }
+        const startRace = (m) => {
+            net.seed = (Number(m.seed) >>> 0) || 1
+            const roster = (Array.isArray(m.roster) ? m.roster : []).filter((s) => Number.isInteger(s) && s >= 0).sort((a, b) => a - b)
+            if (net.slot >= 0 && !roster.includes(net.slot)) roster.push(net.slot)
+            roster.sort((a, b) => a - b)
+            net.roster = roster // slot addresses, roster order = seat order
+            net.humans = roster.map((_, i) => i) // every rostered seat is human at kickoff
+            net.lost.clear()
+            net.insts = Array.from({ length: SEATS }, () => makeGame(net.seed))
+            gs = net.insts[mySeat()] // THE trick: the cabinet's world is my seat's instance
+            for (const mm of Object.values(mirrors)) mm.clear()
+            ls.reset()
+            ls.setPeers(roster.filter((s) => s !== net.slot)) // wire peers are SLOT ids
+            evNet.reset()
+            net.racing = true; net.frozen = false; net.podOn = false; net.raceT = 0; net.stallRun = 0
+            setPodium(null); setNetReport('')
+            prevStormRef.current = 0; prevEngRawRef.current = 0; stormWarnedRef.current = false
+            ladderRef.current = false; ladderAtRef.current = 0; ladderLiveRef.current = 0
+            setOver(null); setMode('play')
+            sweep(440, 880, 0.3, 'square', 0.12)
+            banner(`ROOM ${net.code || '????'} · ${roster.length} PILOT${roster.length > 1 ? 'S' : ''} · ${RACE_T}s ON THE BELL`, 3)
+        }
+        const endRace = () => {
+            net.racing = false
+            net.podOn = true
+            if (net.role === 'host' && net.room) {
+                const wire = podWire(podiumRows(net.insts, net.humans))
+                net.room.send('pod', { rows: wire })
+                setPodium(podRows(wire))
+                net.room.setPhase('waiting') // the rematch rides lobby.start's waiting-only gate
+            }
+        }
+        const abortRoom = () => {
+            if (net.room && net.role === 'host') { net.room.send('res', {}); net.room.setPhase('waiting') }
+            net.racing = false; net.frozen = false; net.podOn = false
+            setPodium(null); setNetReport('')
+            restoreSolo()
+            setMode('attract')
+            pushNetUi()
+        }
+        const desynced = (k, d) => {
+            if (net.frozen) return
+            net.frozen = true; net.racing = false
+            const seat = evNet.mismatchSlot(k)
+            evNet.markBad(k, seat, d.mine, d.theirs ?? d.mine)
+            setNetReport(evNet.text(net.code, mySeat()))
+            banner(`DESYNC AT TICK ${k}${seat >= 0 ? ` — ${PILOT_NAMES[seat]}` : ''} · R TO LEAVE THE SKY`, 6)
+        }
+        const stepRoom = () => {
+            const k = gs.tick
+            ls.pumpTo(k + PAD_DELAY, () => toWire(padNow()))
+            if (!ls.ready(k)) {
+                ls.stall()
+                net.stallRun++
+                // #3429 — a rostered member whose pads never arrive (a tab that
+                // finished its handshake and then died) must never freeze the
+                // sky. Tick-anchored takeover: after STALL_CAP blocked ticks,
+                // every seat still missing pads goes to the autopilot. Safe
+                // across boxes even though their caps bite at different ticks:
+                // pads are absolute bytes and decide() is deterministic, so
+                // every box runs every tick with identical content — the fold
+                // converges at the very next boundary.
+                if (net.stallRun > STALL_CAP) {
+                    for (const slot of net.roster) {
+                        if (net.lost.has(slot) || slot === net.slot) continue
+                        if (!mirrors[slot].has(k)) {
+                            net.lost.add(slot)
+                            ls.dropPeer(slot)
+                            netSay(`${PILOT_NAMES[net.roster.indexOf(slot)]} SILENT — AUTOPILOT HOLDS THEIR SKY`)
+                        }
+                    }
+                    net.humans = net.roster.map((sl, i) => [sl, i]).filter(([sl]) => !net.lost.has(sl)).map(([, i]) => i)
+                    net.stallRun = 0
+                }
+                return // the sky waits for every live pilot
+            }
+            net.stallRun = 0
+            net.insts.forEach((inst, seat) => {
+                const slot = net.roster[seat]
+                const live = slot !== undefined && !net.lost.has(slot)
+                const wp = live ? mirrors[slot].get(k) : undefined
+                step(inst, live ? fromWire(wp) : decide(inst))
+                if (inst !== gs) inst.events.length = 0 // remote juice lives on its own box
+            })
+            net.raceT += FIXED_DT / 1000
+            if (k % HASH_EVERY === 0) {
+                const h = foldHash(net.insts)
+                evNet.mine(k, h)
+                const d = ls.hash(k, h)
+                if (d && d.desync !== undefined) desynced(k, d)
+            }
+            if (net.raceT >= RACE_T) endRace()
+        }
+        const entryTap = () => {
+            if (!net.active) return startPlay()
+            if (net.role === 'host' && net.room && net.room.phase === 'waiting') {
+                net.lobby.start({ seed: hostSeed(), roster: net.room.slots.slice().sort((a, b) => a - b) })
+            } else if (net.role === 'host') netSay('FIELD NOT READY')
+            else netSay(net.code ? `ROOM ${net.code} — WAITING FOR THE HOST` : 'JOINING ROOM…')
+        }
+        if (net.active) {
+            const lobby = createLobby({
+                slug: 'skyward', cap: SEATS, relay: relayUrl, makeTransport,
+                shareRelay: !!nq.get('relay'),
+                onState: (s) => {
+                    net.phase = s.phase
+                    net.code = s.code
+                    if (s.slot >= 0) net.slot = s.slot
+                    net.joinHref = s.joinHref
+                    pushNetUi()
+                },
+                onRoster: () => pushNetUi(),
+                onJoin: () => pushNetUi(),
+                onLeave: ({ slot }) => {
+                    // roster-driven takeover (net.js law): the relay orders this
+                    // broadcast behind every pad the departed pilot ever sent, so
+                    // every box swaps that seat to the autopilot at the same
+                    // stream position — the fold keeps agreeing, never silent.
+                    if (net.racing && net.roster.includes(slot) && slot !== net.slot && !net.lost.has(slot)) {
+                        net.lost.add(slot)
+                        net.humans = net.roster.map((sl, i) => [sl, i]).filter(([sl]) => !net.lost.has(sl)).map(([, i]) => i)
+                        ls.dropPeer(slot)
+                        netSay(`${PILOT_NAMES[net.roster.indexOf(slot)]} DOWN — AUTOPILOT HOLDS THEIR SKY`)
+                    }
+                    pushNetUi()
+                },
+                onStart: (m) => startRace(m),
+                onDrop: () => netSay('CONNECTION DROPPED — RETRYING…'),
+                on: {
+                    pad: (m) => {
+                        if (m.s >= 0 && m.s < SEATS) { mirrors[m.s].set(m.k, m.p); ls.gotPad(m.k, m.p, m.s) }
+                    },
+                    hs: (m) => {
+                        evNet.peer(m.k, m.h, m.s)
+                        const d = ls.gotHash(m.k, m.h, m.s)
+                        if (d && d.desync !== undefined) desynced(m.k, d)
+                    },
+                    pod: (m) => { setPodium(podRows(m.rows)); net.racing = false; net.podOn = true },
+                    res: () => {
+                        if (net.room) net.room.setPhase('waiting')
+                        net.racing = false; net.frozen = false; net.podOn = false
+                        setPodium(null); setNetReport('')
+                        restoreSolo()
+                        setMode('attract')
+                        pushNetUi()
+                    },
+                },
+            })
+            net.lobby = lobby
+            net.room = lobby.room
+            if (net.role === 'host') lobby.open()
+            else lobby.join(nq.get('room'))
+        }
+
         const onDown = (e) => {
             const code = e.code
             if (code === 'Escape' || code === 'Backquote' || code === 'Slash') {
                 if (screenRef.current === 'play') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current) }
                 return
             }
-            if (screenRef.current === 'attract') { startPlay(); return }
+            // #3429 — the room owns the keys when its sheet is up: R leaves,
+            // any other key is the host's rematch call (guests just wait).
+            if (net.active && (net.podOn || net.frozen)) {
+                if (code === 'KeyR') abortRoom()
+                else if (net.podOn && net.role === 'host' && net.room && net.room.phase === 'waiting') {
+                    net.lobby.start({ seed: hostSeed(), roster: net.room.slots.slice().sort((a, b) => a - b) })
+                }
+                return
+            }
+            if (net.active && net.racing && net.role === 'host' && code === 'KeyR') { abortRoom(); return }
+            if (screenRef.current === 'attract') { entryTap(); return }
             if (screenRef.current === 'over') { startPlay(); return }
             if (code === 'ArrowLeft' || code === 'KeyA') held.left = true
             else if (code === 'ArrowRight' || code === 'KeyD') held.right = true
@@ -374,7 +605,8 @@ const SkywardGame = () => {
             else if (code === 'KeyB' || code === 'KeyK' || code === 'KeyE') held.b = false
         }
         const onPointer = () => {
-            if (screenRef.current === 'attract' || screenRef.current === 'over') startPlay()
+            if (screenRef.current === 'attract') entryTap()
+            else if (screenRef.current === 'over') startPlay()
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
@@ -411,11 +643,18 @@ const SkywardGame = () => {
                         drain(demo)
                         if (demo.done) demo = makeGame((gs.seed ^ 0xbeef) >>> 0)
                     } else if (screenRef.current === 'play') {
-                        step(gs, padNow())
-                        drain(gs)
-                        if (gs.done) {
-                            setOver({ score: gs.score, license: gs.license, stormWings: gs.stormWings, land: gs.land, belt: gs.beltLand })
-                            setMode('over')
+                        if (net.racing) { stepRoom(); drain(gs) }
+                        else if (net.active && (net.frozen || net.podOn)) {
+                            // the room holds the sky — bell sheet or desync;
+                            // rendering continues, the sims wait (never silent:
+                            // the banner and sheet say why)
+                        } else {
+                            step(gs, padNow())
+                            drain(gs)
+                            if (gs.done) {
+                                setOver({ score: gs.score, license: gs.license, stormWings: gs.stormWings, land: gs.land, belt: gs.beltLand })
+                                setMode('over')
+                            }
                         }
                     } else {
                         step(gs, decide(gs)) // over: keep the world alive under the card
@@ -542,7 +781,8 @@ const SkywardGame = () => {
             }
 
             if (screenRef.current === 'attract') gl.orbitAttract(demo, ft / 1000)
-            else gl.render(gs, ft / 1000, engNow)
+            else gl.render(gs, ft / 1000, engNow,
+                net.insts ? net.insts.map((g, i) => ({ seat: i, g })).filter((x) => x.seat !== mySeat()) : null)
 
             // on-entry hint + warning tick for the pass (HUD/audio only)
             const sc = screenRef.current
@@ -601,6 +841,17 @@ const SkywardGame = () => {
                             || 'CRUISE · markers glow near launches · B at school recycles craft' : '')
                 : ''
             if (E.hint.textContent !== hint) E.hint.textContent = hint
+            // #3429 — the pilots bar: who shares this sky, their scores live,
+            // ⚠ marks a seat the autopilot holds, ◄ marks you, ⏱ the bell.
+            const pText = (net.racing || net.podOn) && net.insts
+                ? `⏱ ${Math.max(0, Math.ceil(RACE_T - net.raceT))}s  ·  `
+                    + net.insts.map((g, i) => `${PILOT_NAMES[i]} ${g.score}${net.lost.has(net.roster[i]) ? ' ⚠' : ''}${i === mySeat() ? ' ◄' : ''}`).join(' · ')
+                : ''
+            if (E.pilots._last !== pText) {
+                E.pilots._last = pText
+                E.pilots.style.display = pText ? 'block' : 'none'
+                E.pilots.textContent = pText
+            }
             // #3331 item 4 — the scuff gauge: climbs as the crab opens toward
             // the alignment limit while the plane is on short final, falls as
             // the pilot straightens. Nothing to warn about → nothing shown.
@@ -686,6 +937,22 @@ const SkywardGame = () => {
                 // hold a straight ground track (what a pilot would do)
                 wind: () => ({ x: gs.world.wind.x, z: gs.world.wind.z }),
                 hash: () => gs.hash,
+                // #3429 — room probes: what seat am I, who's live, do the
+                // skies agree right now (fold over every instance)?
+                netProbe: () => ({
+                    role: net.role, phase: net.phase, slot: net.slot, seat: mySeat(), code: net.code,
+                    slots: net.room ? net.room.slots.slice() : [],
+                    roster: net.roster.slice(),
+                    humans: net.humans.slice(), lost: [...net.lost],
+                    racing: net.racing, frozen: net.frozen, pod: net.podOn,
+                    raceT: +net.raceT.toFixed(1),
+                    scores: net.insts ? net.insts.map((g) => g.score) : null,
+                    fold: net.insts ? hex32(foldHash(net.insts)) : null,
+                }),
+                netGo: () => {
+                    if (net.role === 'host' && net.room && net.room.phase === 'waiting') net.lobby.start({ seed: hostSeed(), roster: net.room.slots.slice().sort((a, b) => a - b) })
+                    return net.room ? net.room.phase : 'off'
+                },
                 gameTime: () => gs.tick / 60,
                 // #3267 — where the cell stands in sim time right now (the ONE
                 // position sim weather and painted clouds share), plus how deep
@@ -739,6 +1006,7 @@ const SkywardGame = () => {
             unexposeGame()
             unexposeFeedbackState()
             unmountDbg()
+            if (net.lobby) net.lobby.close() // #3429 — leave the room cleanly
             if (import.meta.env.DEV) delete window.__skywardTest
             gl.dispose()
             canvas.remove()
@@ -775,6 +1043,44 @@ const SkywardGame = () => {
                     <div className="mt-3 text-lg tracking-[0.2em] text-white">FINAL SCORE {over.score}</div>
                     <div className="mt-2 text-xs tracking-[0.2em] text-white/70">INSTRUCTORS VOSS · NIMBUS · PIP SALUTE YOU</div>
                     <div className="mt-8 text-[11px] tracking-[0.25em] text-white/70 animate-pulse">ANY KEY · TAP TO FLY AGAIN</div>
+                </div>
+            )}
+            {netUi && netUi.phase !== 'racing' && screen === 'attract' && !podium && (
+                <Lobby
+                    state={netUi}
+                    title="SKYWARD ROOM"
+                    names={PILOT_NAMES}
+                    accent={{
+                        text: 'text-cyan-50',
+                        dim: 'text-cyan-200/70',
+                        live: 'border-sky-300/40 text-sky-100',
+                        codeGlow: { textShadow: '3px 0 0 #2a7fff, -3px 0 0 #ff7a2f' },
+                    }}
+                    startHint="ANY KEY SENDS THE FIELD — ONE SEEDED SKY"
+                />
+            )}
+            {podium && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/55">
+                    <div className="text-2xl font-black tracking-[0.3em] text-amber-300">ROOM PODIUM</div>
+                    <div className="mt-4 flex flex-col gap-1 text-sm tracking-[0.18em] text-white">
+                        {podium.map((p) => (
+                            <div key={p.seat} className="flex items-center gap-3">
+                                <span className="w-4 h-4 rounded-sm inline-block shrink-0" style={{ background: PILOT_CSS[p.seat] || '#fff' }} />
+                                <span className="w-8 text-right text-white/60">{p.rank}.</span>
+                                <span className={p.human ? 'font-bold' : 'opacity-60'}>
+                                    {p.name}{p.seat === (netUi ? netUi.slot : -1) ? ' · YOU' : ''}{p.human ? '' : ' · AUTOPILOT'}
+                                </span>
+                                <span className="ml-6 tabular-nums">{p.score}</span>
+                                {p.crashes > 0 && <span className="text-xs text-orange-300/80">✕{p.crashes}</span>}
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-6 text-[11px] tracking-[0.25em] text-white/70 animate-pulse">
+                        {netUi && netUi.role === 'host' ? 'ANY KEY — REMATCH · R LEAVES THE SKY' : 'WAITING FOR THE HOST · R LEAVES'}
+                    </div>
+                    {netReport && (
+                        <pre className="mt-4 max-w-[92vw] overflow-auto p-3 text-[10px] leading-tight text-orange-200/90 select-text rounded border border-orange-300/30 bg-black/60">{netReport}</pre>
+                    )}
                 </div>
             )}
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'SKYWARD')} onResume={() => { pausedRef.current = false; setPaused(false) }} />}

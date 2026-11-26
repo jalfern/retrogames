@@ -18,6 +18,7 @@ import { Report } from './lib/harness.mjs'
 const SELF = fileURLToPath(import.meta.url)
 const SIMF = 'src/games/Skyward/sim.js'
 const WORLDF = 'src/games/Skyward/world.js'
+const NETF = 'src/games/Skyward/net.js'
 const r = new Report('skywardcheck')
 r.info('boot', 'sim.js + planner.js imported in Node, zero DOM, zero Math.random')
 
@@ -1323,6 +1324,221 @@ void runAuto
             `beltLand=${sb.beltLand} parked=${sb.parked}`)
     }
 
+// ------------------------------------------------------------ room (#3429) ----
+// Online rooms, proven in plain Node: net.js is pure, lockstep.js is pure, the
+// sim is seed-deterministic — so a whole room can run over in-memory pipes
+// before a browser ever loads. Two (or three, or four) virtual boxes, each
+// simulating EVERY seat, exchanging pad/hash bytes through a synchronous
+// router: the folded hash must agree at every boundary, a departed seat must
+// switch to the autopilot without the skies diverging, and a deliberately
+// poisoned box must be caught, named and copyable.
+{
+    const { toWire, fromWire, EMPTY_PAD, assembleSeatPads, foldHash, hostSeed, SEATS, PAD_DELAY, HASH_EVERY, RACE_T,
+        PILOT_NAMES, PILOT_CSS, podiumRows, podWire, podRows, humansMinus, createEvidence, hex32 } = await import('../src/games/Skyward/net.js')
+    const { createLockStep, normalizeWirePad } = await import('../src/utils/lockstep.js')
+
+    // ---- the wire law: bits + analog at 1/100 ----
+    const wire = toWire({ left: true, b: true, x: 0.37, y: -0.92 })
+    r.check('toWire: bits ride, s carries B, analog at literal 0.37/-0.92',
+        wire.l === true && wire.r === false && wire.s === true && wire.a === false && wire.x === 0.37 && wire.y === -0.92,
+        JSON.stringify(wire))
+    r.check('toWire quantises the stick to 1/100 (0.3333 -> 0.33)', toWire({ x: 0.3333 }).x === 0.33)
+    r.check('toWire clamps a broken stick (5 -> 1)', toWire({ x: 5, y: -5 }).x === 1 && toWire({ x: 5, y: -5 }).y === -1)
+    const norm = normalizeWirePad({ r: true, x: 0.5, y: -0.25 })
+    r.check('#3429 law: normalizeWirePad CARRIES the analog pair (#1705 precedent)',
+        norm.x === 0.5 && norm.y === -0.25 && norm.r === true, JSON.stringify(norm))
+    r.check('normalizeWirePad clamps carried numbers to the stick box', normalizeWirePad({ x: 2, y: -9 }).x === 1 && normalizeWirePad({ x: 2, y: -9 }).y === -1)
+    const rt = fromWire(normalizeWirePad(toWire({ right: true, up: true, a: true, x: 0.62, y: -0.4 })))
+    r.check('the stick survives the full wire round trip (toWire->normalize->fromWire)',
+        rt.x === 0.62 && rt.y === -0.4 && rt.a === true && rt.b === false)
+    const dig = fromWire({ r: true, u: true, s: true })
+    r.check('fromWire falls back to bits when no numbers ride (x=1,y=1, b from s)',
+        dig.x === 1 && dig.y === 1 && dig.b === true)
+    r.check('EMPTY_PAD is a full idle pad', EMPTY_PAD().x === 0 && EMPTY_PAD().a === false && EMPTY_PAD().b === false)
+    r.check('the room is four skies, four identities', SEATS === 4 && PILOT_NAMES.length === 4 && PILOT_CSS.length === 4)
+    r.check('the bell is literal 180 s', RACE_T === 180)
+
+    // ---- the fold ----
+    const sk = (seed) => Array.from({ length: SEATS }, () => makeGame(seed))
+    const fly = (insts, k0, k1, padOf) => { for (let k = k0; k < k1; k++) insts.forEach((g, s) => step(g, padOf(g, s, k))) }
+    const fa = sk(11), fb = sk(11)
+    fly(fa, 0, 40, (g, s) => (s === 0 ? { x: 0.2, y: -0.1 } : {})); fly(fb, 0, 40, (g, s) => (s === 0 ? { x: 0.2, y: -0.1 } : {}))
+    r.check('foldHash: identical skies agree', foldHash(fa) === foldHash(fb), `${hex32(foldHash(fa))}`)
+    fb[2].hash = (fb[2].hash ^ 0x1) >>> 0
+    r.check('foldHash: one hash in one sky breaks the fold', foldHash(fa) !== foldHash(fb))
+    fb[2].hash ^= 0x1
+    const fk = sk(11)
+    fly(fk, 0, 40, (g, s) => (s === 0 ? { x: 0.2, y: -0.1 } : {}))
+    fk.pop()
+    r.check('foldHash: a missing sky breaks the fold', foldHash(fa) !== foldHash(fk))
+
+    // ---- podium ----
+    const mk = (score, crashes) => ({ score, crashes })
+    const rows = podiumRows([mk(900, 2), mk(900, 0), mk(1500, 5), mk(0, 0)], [0, 1])
+    r.check('podium ranks score first, then calmer, then seat — literal order',
+        rows.map((x) => x.seat).join(',') === '2,1,0,3', rows.map((x) => x.seat).join(','))
+    r.check('podium marks humans, keeps numbers literal', rows[0].score === 1500 && rows[0].human === false && rows[1].human === true && rows[3].score === 0)
+    const rtRows = podRows(podWire(rows), PILOT_NAMES)
+    r.check('podium survives the wire round trip, ranks settled on the host order',
+        rtRows.map((x) => `${x.rank}:${x.name}:${x.score}:${x.crashes}:${x.human ? 1 : 0}`).join('|') === '1:LIME:1500:5:0|2:MAGENTA:900:0:1|3:CYAN:900:2:1|4:AMBER:0:0:0',
+        rtRows.map((x) => x.rank + ':' + x.name).join('|'))
+    r.check('humansMinus drops the ghost and stays ordered, input untouched',
+        humansMinus([2, 0, 3], 0).join(',') === '2,3' && [2, 0, 3].join(',') === '2,0,3')
+    r.check('hostSeed never returns 0', hostSeed(() => 0) !== 0)
+
+    // ---- evidence ring ----
+    const ev0 = createEvidence(3)
+    ev0.mine(30, 0x11111111); ev0.peer(30, 0x22222222, 1)
+    r.check('evidence: mismatchSlot names the disagreeing seat', ev0.mismatchSlot(30) === 1)
+    ev0.mine(60, 0x33333333); ev0.peer(60, 0x33333333, 1)
+    r.check('evidence: an agreeing boundary names nobody', ev0.mismatchSlot(60) === -1)
+    ev0.markBad(30, 1, 0x11111111, 0x22222222)
+    const evTxt = ev0.text('ABCD', 0)
+    r.check('evidence: the copyable block carries header, peer columns and the MISMATCH arrow',
+        evTxt.includes('room ABCD') && evTxt.includes('seat1') && evTxt.includes('22222222') && /MISMATCH seat1/.test(evTxt))
+    ev0.mine(90, 1); ev0.mine(120, 2)
+    r.check('evidence: the ring evicts to its limit, newest first', ev0.rows.length === 3 && ev0.rows[2].k === 120)
+
+    // ---- virtual rooms over in-memory pipes ----
+    // Every box simulates EVERY seat (index.jsx law); humans pump their own pad
+    // into the router, the router stamps it into every other box's mirrors AND
+    // the lockstep referee — exactly the double-entry the cabinet does
+    // (mirrors feed the sim, ls feeds the gate).
+    const virtualRoom = (seed, humanSlots) => {
+        const boxes = {}
+        const route = (target, from, m) => {
+            const tb = boxes[target]
+            if (!tb) return
+            if (m.t === 'pad') { tb.mirrors[from].set(m.k, m.p); tb.ls.gotPad(m.k, m.p, from) }
+            if (m.t === 'hs') {
+                tb.ev.peer(m.k, m.h, from)
+                const d = tb.ls.gotHash(m.k, m.h, from)
+                if (d && d.desync !== undefined && !tb.desync) {
+                    tb.ev.markBad(m.k, from, tb.ev.rows.find((x) => x.k === m.k)?.mine ?? d.mine, m.h)
+                    tb.desync = { k: d.desync, mine: d.mine, theirs: d.theirs, seat: from }
+                }
+            }
+        }
+        for (const s of humanSlots) {
+            const bx = {
+                slot: s, tick: 0, stalls: 0, desync: null, lost: -1,
+                insts: Array.from({ length: SEATS }, () => makeGame(seed)),
+                mirrors: Object.fromEntries(humanSlots.map((x) => [x, new Map()])),
+                humans: humanSlots.slice(),
+                ev: createEvidence(),
+                ls: null,
+            }
+            // own pads enter own mirrors via the send path (index.jsx law) —
+            // wrap send so the mirror sees what the wire saw.
+            const raw = (m) => { if (m.t === 'pad') bx.mirrors[s].set(m.k, m.p); for (const o of humanSlots) if (o !== s) route(o, s, m) }
+            bx.raw = raw
+            bx.ls = createLockStep({ delay: PAD_DELAY, hashEvery: HASH_EVERY, send: raw })
+            bx.ls.setPeers(humanSlots.filter((x) => x !== s))
+            boxes[s] = bx
+        }
+        const stepBox = (bx, k) => {
+            const pads = assembleSeatPads(bx.mirrors, k, bx.humans)
+            bx.insts.forEach((inst, seat) => {
+                const human = bx.humans.includes(seat)
+                step(inst, human ? (pads[seat] || EMPTY_PAD()) : decide(inst))
+            })
+            bx.tick++
+            if (k % HASH_EVERY === 0) {
+                const h = foldHash(bx.insts)
+                bx.ev.mine(k, h)
+                const d = bx.ls.hash(k, h)
+                if (d && d.desync !== undefined && !bx.desync) {
+                    const seat = bx.ev.mismatchSlot(k)
+                    bx.ev.markBad(k, seat, h, d.theirs ?? d.mine)
+                    bx.desync = { k: d.desync, mine: d.mine, theirs: d.theirs, seat }
+                }
+                bx.ls.prune(k)
+            }
+        }
+        return { boxes, stepBox }
+    }
+    const driveRoom = (room, humanSlots, n, padOf, events = {}) => {
+        let stalls = 0
+        for (let i = 0; i < n; i++) {
+            const k = room.boxes[humanSlots[0]].tick
+            for (const s of humanSlots) room.boxes[s].ls.pumpTo(k + PAD_DELAY, (j) => padOf(s, j))
+            const ready = humanSlots.every((s) => room.boxes[s].ls.ready(k))
+            if (!ready) { stalls++; continue }
+            if (events.at === k && events.fn) events.fn(room, k)
+            for (const s of humanSlots) room.stepBox(room.boxes[s], k)
+        }
+        return stalls
+    }
+    const padOf = (s, k) => {
+        // scripted stick: a lazy bank and a slow climb, quantised at 1/100
+        const v = (c) => Math.round(Math.sin((k + c * 17) / 23) * 80) / 100
+        return toWire({ x: v(s), y: v(s + 1) * 0.5, a: k % 90 === 0, b: false })
+    }
+
+    // four human skies
+    {
+        const H = [0, 1, 2, 3]
+        const room = virtualRoom(2027, H)
+        const stalls = driveRoom(room, H, 360, padOf)
+        const fs = H.map((s) => foldHash(room.boxes[s].insts))
+        r.check('room: four skies, 360 ticks, zero stalls over the pipe', stalls === 0, `stalls=${stalls}`)
+        r.check('room: every box agrees the folded hash at the finish', fs.every((h) => h === fs[0]), fs.map(hex32).join(' '))
+        r.check('room: no box saw a desync', H.every((s) => !room.boxes[s].desync))
+        r.check('room: evidence kept the boundary ring full to its limit', room.boxes[0].ev.rows.length === 8 && room.boxes[0].ev.rows[7].k === 330, `rows=${room.boxes[0].ev.rows.length}`)
+        r.check('room: autopilot-free skies still flew (seat 3 ticked 360)', room.boxes[0].insts[3].tick === 360)
+    }
+
+    // two humans + two planner skies — the phone-with-one-friend case
+    {
+        const H = [0, 2]
+        const room = virtualRoom(77, H)
+        driveRoom(room, H, 300, padOf)
+        const fs = H.map((s) => foldHash(room.boxes[s].insts))
+        r.check('room: CPU seats fly identically on every box (fold agrees, 300 ticks)', fs.every((h) => h === fs[0]) && room.boxes[0].insts[1].tick === 300)
+        r.check('room: the planner actually touched the open skies', room.boxes[0].insts[1].p.z !== makeGame(77).p.z)
+    }
+
+    // roster-law takeover: seat 1 vanishes at tick 150 — its box goes dark
+    // (no pumps, no steps), and the roster tells the survivors, who switch it
+    // to the planner at the same stream position — the skies stay folded-equal.
+    {
+        const H = [0, 1, 2]
+        const room = virtualRoom(404, H)
+        driveRoom(room, H, 150, padOf)
+        for (const s of [0, 2]) {
+            const bx = room.boxes[s]
+            bx.humans = humansMinus(bx.humans, 1)
+            // #3429 law: a mid-race roster change uses dropPeer, never
+            // setPeers — survivors keep the pads already pumped for the
+            // stall window, so the sky resumes on tick 150 without a replay.
+            bx.ls.dropPeer(1)
+            bx.lost = 1
+        }
+        driveRoom(room, [0, 2], 240, padOf)
+        const fs = [0, 2].map((s) => foldHash(room.boxes[s].insts))
+        r.check('takeover: the ghost seat never stalls the sky (survivors ran to 390)',
+            room.boxes[0].tick === 390 && room.boxes[2].tick === 390, `t0=${room.boxes[0].tick} t2=${room.boxes[2].tick}`)
+        r.check('takeover: the skies still fold equal after the autopilot takes the seat', fs[0] === fs[1], `${hex32(fs[0])} ${hex32(fs[1])}`)
+        r.check('takeover: neither honest box reports a desync', !room.boxes[0].desync && !room.boxes[2].desync)
+        r.check('takeover: seat 1 is marked lost on both survivors', room.boxes[0].lost === 1 && room.boxes[2].lost === 1)
+    }
+
+    // referee: poison ONE box after a boundary — must be caught, named, copyable
+    {
+        const H = [0, 1]
+        const room = virtualRoom(9, H)
+        driveRoom(room, H, 360, padOf, {
+            at: 301, fn: (r2) => { r2.boxes[1].insts[0].score += 7 },
+        })
+        r.check('referee: a poisoned sky is caught at the next boundary', !!room.boxes[0].desync && room.boxes[0].desync.k === 330, JSON.stringify(room.boxes[0].desync))
+        r.check('referee: the honest box names the guilty seat', room.boxes[0].desync && room.boxes[0].desync.seat === 1)
+        r.check('referee: the guilty box sees it too (never silent)', !!room.boxes[1].desync)
+        r.check('referee: the evidence block is copyable and carries the arrow', /MISMATCH seat1/.test(room.boxes[0].ev.text('WXYZ', 0)))
+    }
+
+    r.info('room', `#3429 online: wire law, fold, podium, takeover, referee — pinned in plain Node (sim.js + net.js + lockstep.js, zero DOM)`)
+}
+
 if (process.argv.includes('--mutate')) {
     const MUTANTS = [
         ['the ring pass stops counting', SIMF, 'g.ringsPassed++', 'g.ringsPassed += 0'],
@@ -1389,6 +1605,11 @@ if (process.argv.includes('--mutate')) {
         ['#3370 the park forgets its arrival speed (the touchdown puff loses its meter)', SIMF, 'aligned: touch.aligned, speed: vIn })', 'aligned: touch.aligned, speed: 0 })'],
         ['#3370 south-lane echo reads upside-down again (mirror dies)', 'src/games/Skyward/renderer.js', 'echo.rotation.y = Math.PI / 2', 'echo.rotation.y = -Math.PI / 2'],
         ['#3370 the attract vista never sells the strip (look stays north)', 'src/games/Skyward/renderer.js', 'tmp.set(50 * south, (portrait ? 20 : 30) - 10 * south, -40 + 190 * south)', 'tmp.set(0, 30, -60)'],
+        ['#3429 the wire erases the stick (remote pilots go bang-bang)', NETF, 'x: Math.round(clamp1(p.x || 0) * 100) / 100,', 'x: 0,'],
+        ['#3429 the normalizer drops the analog pair (the #1705 law unwinds)', 'src/utils/lockstep.js', 'if (Number.isFinite(o.x)) n.x = Math.max(-1, Math.min(1, o.x))', 'void 0'],
+        ['#3429 the podium ranks the crashers first', NETF, '(b.score - a.score) || (a.crashes - b.crashes)', '(b.crashes - a.crashes) || (b.score - a.score)'],
+        ['#3429 the fold hashes only the first sky', NETF, 'for (const g of instances) {', 'for (const g of instances.slice(0, 1)) {'],
+        ['#3429 the ghost seat is never released (the sky stalls forever)', NETF, 'return (slots || []).filter((s) => s !== gone)', 'return (slots || []).slice()'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
