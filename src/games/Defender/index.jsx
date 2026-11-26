@@ -412,7 +412,32 @@ const DefenderGame = () => {
 
             // Particles — #1907: kills read by COLOR (green lander, red mutant,
             // orange wreck, gold human), like the cabinet's bursts.
-            sim.particles.forEach((pt) => { ctx.fillStyle = pt.col || 'white'; ctx.fillRect(pt.x, pt.y, 2, 2) })
+            // #3540: the three hostile blossoms read differently — lander puffs
+            // (a slow growing cloud), mutant cracks (a fast streaking sliver),
+            // meteor shards (cold-blue rock that arcs down) — all from the same
+            // draw.
+            sim.particles.forEach((pt) => {
+                ctx.fillStyle = pt.col || 'white'
+                if (pt.kind === 'puff') {
+                    const age = 40 - pt.life
+                    const grow = 2 + Math.round((age / 40) * 3)
+                    ctx.globalAlpha = 0.35 + 0.65 * (pt.life / 40)
+                    ctx.fillRect(pt.x - grow / 2, pt.y - grow / 2, grow, grow)
+                    ctx.globalAlpha = 1
+                } else if (pt.kind === 'crack') {
+                    // a sliver trailing the velocity
+                    ctx.strokeStyle = pt.col || 'white'
+                    ctx.lineWidth = 1.5
+                    ctx.beginPath()
+                    ctx.moveTo(pt.x, pt.y)
+                    ctx.lineTo(pt.x - pt.vx * 1.5, pt.y - pt.vy * 1.5)
+                    ctx.stroke()
+                } else if (pt.kind === 'shard') {
+                    ctx.fillRect(pt.x, pt.y, 2, 4)
+                } else {
+                    ctx.fillRect(pt.x, pt.y, 2, 2)
+                }
+            })
 
             // Player — the Jupiter fighter (dark during respawn blink).
             if (p.dark <= 0 && !(p.invuln > 0 && Math.floor(tickN / 6) % 2 === 0)) {
