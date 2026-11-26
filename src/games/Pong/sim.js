@@ -10,9 +10,10 @@
 // paddle scatter and hit-spin are gone — deflection is strike-position law.
 //
 // Fidelity note (the b15 map sketched "first-to-N, N=7?"): the 1972 machine
-// played to a player-selected score, but this port ships no selectable cap and
-// the map's own ruling stands — faithful terminal = play-to-quit (`q`/Escape
-// ends the match; see index.jsx).
+// played to an agreed score but shipped no cap switch — so the port's DEFAULT
+// terminal is play-to-quit (`q`/Escape ends the match; see index.jsx), and
+// #3565 added a selectable target (RANGES below): choosing N makes reaching N
+// the honest terminal. The default (FREE) keeps the b16 ruling verbatim.
 
 export const PADDLE_WIDTH = 10
 export const PADDLE_HEIGHT = 80

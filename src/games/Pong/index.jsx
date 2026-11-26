@@ -468,7 +468,7 @@ const PongGame = () => {
                 ballX: Math.round(state.ball.x),
                 ballY: Math.round(state.ball.y),
                 diff: DIFFS[diff],
-                range: RANGES[rangeIdx], // #3565 — the target in force ('FREE' = none)
+                range: String(RANGES[rangeIdx]), // #3565 — the target in force ('FREE' = none)
             }),
             canvas: () => canvas,
             // snapshot/restore omitted: the seeded rand closure cannot JSON
@@ -493,7 +493,7 @@ const PongGame = () => {
                     rightY: Math.round(state.right.y),
                     dl: Math.round(Math.abs(state.left.y + PADDLE_HEIGHT / 2 - (state.ball.y + 4))),
                     diff: DIFFS[diff],
-                    range: RANGES[rangeIdx], // #3565 — the attract pick in force
+                    range: String(RANGES[rangeIdx]), // #3565 — the attract pick in force
                     // #3529 — the touch-quit leg needs the UI screen without
                     // a keyboard: attract / play / over, mirrored from the
                     // effect-local flags (no stale useState in this closure).
@@ -512,7 +512,7 @@ const PongGame = () => {
 
         // production report carries the seed (#1473)
         exposeFeedbackState(() => ({
-            tick: tickN, score: state.left.score, done: state.over, seed: seed, opp: state.right.score, diff: DIFFS[diff], range: RANGES[rangeIdx],
+            tick: tickN, score: state.left.score, done: state.over, seed: seed, opp: state.right.score, diff: DIFFS[diff], range: String(RANGES[rangeIdx]),
         }))
 
         return () => {

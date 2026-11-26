@@ -282,6 +282,42 @@ try {
     await p.close()
 }
 
+// ---- leg 9 (#3565): the RANGE knob in real Chrome — dial, thumb, honest cap ----
+try {
+    p = await open(`${BASE}?seed=4242`)
+    r.check('attract defaults to FREE (the b16 uncapped table)', (await probe(p)).range === 'FREE')
+    await p.keyboard.press('ArrowUp')
+    const a1 = await probe(p)
+    r.check('ArrowUp on attract turns RANGE FREE → 1 without starting', a1.range === '1' && a1.screen === 'attract' && a1.score === 0)
+    await p.keyboard.press('ArrowDown')
+    r.check('ArrowDown cycles back 1 → FREE', (await probe(p)).range === 'FREE')
+    await p.click('.pong-range-zone')
+    r.check('a thumb on the RANGE label rides the dial (FREE → 1)', (await probe(p)).range === '1')
+    await p.keyboard.press('KeyY') // seat the proven driver, starts the match
+    const capped = await until(p, async () => {
+        const q = await probe(p)
+        return q.screen === 'over' ? q : null
+    }, 60000, 'the RANGE 1 cap closes the match')
+    r.check('RANGE 1 binds: the first point ends the match at play time',
+        capped.score + capped.opp === 1 && capped.screen === 'over', `${capped.score}-${capped.opp}`)
+    const winSfx = await p.evaluate(() => window.__pongTest.sfx().filter((s) => s.kind === 'win'))
+    r.check('the cap rings the ascending win sting (660 → 880)',
+        winSfx.length === 2 && winSfx[0].freq === 660 && winSfx[1].freq > winSfx[0].freq, JSON.stringify(winSfx))
+    await p.keyboard.press('Enter') // any key restarts
+    const again = await until(p, async () => {
+        const q = await probe(p)
+        return q.screen === 'play' ? q : null
+    }, 5000, 'restart after the cap')
+    r.check('restart after a cap win: fresh scores, the target stands',
+        again.score === 0 && again.opp === 0 && again.range === '1')
+    await p.close()
+    p = await open(`${BASE}?seed=777&range=3`) // the QA pin
+    r.check('?range=3 pins the target on attract', (await probe(p)).range === '3')
+    await p.close()
+} catch (e) {
+    r.check('leg 9 RANGE knob ride completed without timeout', false, String(e))
+}
+
 r.check('zero page errors across the ride', errors.length === 0, errors.join(' | '))
 
 // ---- chip mutants (#3529): each MUST die ----

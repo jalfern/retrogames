@@ -569,7 +569,7 @@ console.log('range: the selectable max-score knob (#3565)')
         ok(/sfx\('win'/.test(idx), 'the cap win rings its own sting (distinct from the quit saw)')
         ok(/className="pong-range-zone"/.test(idx) && /cycleRangeRef\.current\(1\)/.test(idx),
             'the RANGE dial answers a thumb, not just the keyboard')
-        ok(/range: RANGES\[rangeIdx\]/.test(idx), 'the QA report and probes carry the range')
+        ok(/range: String\(RANGES\[rangeIdx\]\)/.test(idx), 'the QA report and probes carry the range (string-stable)')
     }
 }
 
