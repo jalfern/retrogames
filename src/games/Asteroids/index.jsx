@@ -423,6 +423,10 @@ const AsteroidsGame = () => {
                 gs.watching = false // watch never lingers
                 setWatching(false)
             },
+            // #3586 — sim-only tick means a synchronous reset+step+frame burst in
+            // one evaluate never gets an rAF repaint, and frame() showed attract
+            // chrome while state() said mid-play. One repaint per drive call fixes it.
+            draw: () => draw(),
             tick: (pad) => {
                 applyEvents(tickAsteroids(gs, {
                     left: !!pad.left,

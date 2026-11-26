@@ -10,7 +10,12 @@
 // the uniform surface. The loop lock is one module-level latch: `step` closes
 // it, `release` opens it, and the game's rAF loop checks contractHoldsLoop()
 // before simulating — the driver owns the clock while it is closed. The loop
-// keeps drawing, so frame() always shows the live canvas.
+// keeps drawing, so frame() always shows the live canvas — but rAF cannot run
+// INSIDE a synchronous drive (one evaluate that resets, steps and samples
+// pixels never gets a frame boundary, and frame() then returns stale chrome
+// from before the drive, #3586). Games whose tick is sim-only therefore also
+// pass `draw` in the spec; reset() and step() invoke it synchronously after
+// the sim, so frame() shows exactly what state() reports at any instant.
 
 import { normalizePad, rawPad } from './onePad.js'
 import { createRecorder, verifyRecording, DEFAULT_HASH_EVERY } from './recording.js'
@@ -245,6 +250,7 @@ export function exposeGame(spec) {
         reset: (seed = 0, players = 1, rec = null) => {
             lastPlayers = Math.max(1, Math.min(4, players | 0 || 1))
             spec.reset(seed, lastPlayers, rec)
+            if (spec.draw) spec.draw() // #3586: repaint now — rAF can't run mid-evaluate
             return api.state()
         },
         step: (pad = {}, n = 1) => {
@@ -273,6 +279,7 @@ export function exposeGame(spec) {
                     }
                 }
             }
+            if (spec.draw) spec.draw() // #3586: one sync repaint per step() call, after the whole batch
             return api.state()
         },
         release: () => { loopLock = false },
