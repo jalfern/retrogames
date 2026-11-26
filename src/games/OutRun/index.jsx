@@ -274,10 +274,11 @@ const OutRunGame = () => {
             if (gs.speed > HIGH_TOP * 0.4 && !gs.spin) {
                 smokePhase += 1
                 ctx.fillStyle = 'rgba(180,180,180,0.20)'
-                for (let i = 0; i < 2; i++) ctx.beginPath(), ctx.arc(W / 2 - 16 + i * 32 + Math.sin((smokePhase / 4) + i) * 3, H - 4 + i, 4 + (smokePhase % 5), 0, Math.PI * 2), ctx.fill()
+                for (let i = 0; i < 2; i++) ctx.beginPath(), ctx.arc(W / 2 - 16 + i * 32 + Math.sin((smokePhase / 4) + i) * 3, H - 11 + i, 4 + (smokePhase % 5), 0, Math.PI * 2), ctx.fill()
             }
             ctx.save()
-            ctx.translate(W / 2, H - 6 + bob)
+            // keep the 58px sprite fully inside the canvas: center at H - 34 (not H - 6, which clips half the body)
+            ctx.translate(W / 2, H - 34 + bob)
             ctx.rotate(angle)
             if (gs.flip > 0 && (Math.floor(gs.flip / 6) % 2 === 0)) ctx.scale(1, -1)
             ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(0, ph / 2 - 4, pw * 0.42, 6, 0, 0, Math.PI * 2); ctx.fill()
