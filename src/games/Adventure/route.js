@@ -589,23 +589,38 @@ function* fetchItem(sim, id, depth = 0) {
                     || pool.find((x) => sim.items.some((i) => i.id === x && !i.carried))
             }
             let traded = false
+            // #3524 patient currency: currency planted at a post stays the
+            // trade bait. Re-fetching every round left the post EMPTY exactly
+            // when a den-camped bat came out (the seed 19/21/22/29 bridge
+            // burns): the visit landed, the wait expired, and the next march
+            // abandoned the plant it had just made. A round that finds its own
+            // bait still lying at this post skips the errand and sits the wait
+            // again — the swap fires the tick the bat steps in, whenever that
+            // is. The march-order is untouched: currency, then post, then the
+            // dwell wait (V2 seed 2 proves trading on time beats chasing).
+            let bait = null
+            let baitRoom = -1
             for (let c = 0; c < 8 && sim.bat.carrying === id && !sim.dead && !sim.won && cr.w > 400; c++) {
                 if (roomThreat(sim) && roomThreat(sim).dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) break }
-                if (!sim.carrying) {
-                    const decoyId = safeDecoy()
-                    if (!decoyId) break
-                    if (!(yield* fetchItem(sim, decoyId, 1))) break
-                }
-                // march to the bat's room (calm) or its calmest doorstep
                 const br = sim.bat.room
                 const calmBatRoom = !residents(sim, br).length
                 const post = calmBatRoom ? br
                     : neighbors(sim, br).map(([, n]) => n).find((n) => !residents(sim, n).length)
                 if (post === undefined) continue   // the bat sits deep in a den — revisit later
+                const baitOut = bait !== null && post === baitRoom
+                    && sim.items.some((i) => i.id === bait && !i.carried && i.room === post)
+                if (!sim.carrying && !baitOut) {
+                    const decoyId = safeDecoy()
+                    if (!decoyId) break
+                    if (!(yield* fetchItem(sim, decoyId, 1))) break
+                }
                 if (sim.room !== post && !(yield* walkTo(sim, post))) continue
-                if (sim.room !== post || !sim.carrying) continue
-                yield* dropCarrySafe(sim)          // plant on the post's open floor
-                if (sim.carrying) break            // drop refused at an edge — re-plan
+                if (sim.room !== post) continue
+                if (sim.carrying) {
+                    bait = sim.carrying; baitRoom = post
+                    yield* dropCarrySafe(sim)      // plant on the post's open floor
+                    if (sim.carrying) { bait = null; break }  // refused at an edge — re-plan
+                } else if (!baitOut) continue      // hand empty, nothing planted — re-plan
                 // A long wait at an EMPTY post is camping, not trading (that
                 // is the shape of the 19k-tick burn, seed 7 V3): spend the
                 // dwell-length wait only while the bat actually occupies the

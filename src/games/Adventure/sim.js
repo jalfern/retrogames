@@ -376,10 +376,19 @@ const rectsOverlap = (ax, ay, aw, ah, bx, by, bw, bh) => {
 const homeItems = (items, rand) => {
     const foyers = new Set(Object.values(CASTLE_INSIDES))
     const lairs = new Set(DRAGON_TEMPLATES.map((d) => d.room))
+    // #3524: the Red Maze lies behind the black gate AND the bridge gap — it
+    // is not open country either, so nothing may be dealt there. The rule the
+    // shuffle must honour is that every item stays reachable: seeds 21/22 dealt
+    // the BRIDGE itself into Red Maze 1, a room no law can then enter — no
+    // walk, no bat trade (the swap needs the player in the room). The pool is
+    // rooms the player can always reach; locked cells are out exactly like the
+    // foyers, the lairs and the seal. White Castle's foyer is already covered
+    // by `foyers`, and Red Maze 2 is a dragon lair.
+    const redMaze = new Set([R.RED_LAB_1, R.RED_LAB_2])
     // #3482: the Blue Castle is dealt out like a foyer is not — it is the
     // duplicate chalice's home, and pinned items take no dice (the V3 stream
     // for everything else is untouched: same seeds, same placements as before).
-    const pool = ROOMS.map((rm) => rm.id).filter((id) => id !== R.SECRET && id !== R.BLUE_CASTLE && !foyers.has(id) && !lairs.has(id))
+    const pool = ROOMS.map((rm) => rm.id).filter((id) => id !== R.SECRET && id !== R.BLUE_CASTLE && !foyers.has(id) && !lairs.has(id) && !redMaze.has(id))
     const inWall = (room, x, y, w, h) => room.walls.some((wl) =>
         x < wl.x + wl.w && x + w > wl.x && y < wl.y + wl.h && y + h > wl.y)
     for (const item of items) {
