@@ -885,5 +885,191 @@ console.log('flee moment fx (#3514)')
     }
 }
 
+// ── 14. traps (#3579) — the 1980 minefield ──────────────────────────────────
+console.log('traps: generation, spring law, fall grudge, honesty (#3579)')
+{
+    const ROSTER = new Set(['door', 'teleport', 'sleep', 'str', 'confuse', 'snare', 'darts'])
+    // generation sweep — every level is mined, fairly, on walkable ground
+    let countOk = true, kindOk = true, cellOk = true, startOk = true, occOk = true
+    const seeds = []
+    for (let i = 0; i < 40; i++) seeds.push(1000 + i * 137)
+    for (const sd of seeds) {
+        const s = createInitialState(sd)
+        const ts = s.traps
+        if (!(ts.length >= 2)) countOk = false
+        for (const t of ts) {
+            if (!ROSTER.has(t.kind)) kindOk = false
+            const c = s.map[t.y][t.x]
+            if (c !== '.' && c !== '#') cellOk = false
+            if (Math.abs(t.x - s.player.x) <= 1 && Math.abs(t.y - s.player.y) <= 1) startOk = false
+            if (s.monsters.some(m => m.x === t.x && m.y === t.y)) occOk = false
+            if (s.items.some(it => it.x === t.x && it.y === t.y)) occOk = false
+        }
+    }
+    ok('40 seeds: every level carries ≥ 2 traps', countOk)
+    ok('trap kinds are the cart roster', kindOk)
+    ok('traps sit on walkable floor/corridor cells only', cellOk)
+    ok('no trap in the start ring — a fresh hero is never dead on arrival', startOk)
+    ok('never under a monster or an item', occOk)
+
+    // depth scaling: the upper bound grows with dlvl
+    const maxAt = (lvl) => {
+        let mx = 0
+        for (let i = 0; i < 60; i++) {
+            setSeed(5000 + i * 613)
+            mx = Math.max(mx, generateDungeon(lvl).traps.length)
+        }
+        return mx
+    }
+    const m1 = maxAt(1), m20 = maxAt(20)
+    ok('mine density scales with depth (level 20 reaches more traps than level 1)', m20 > m1, `l1=${m1} l20=${m20}`)
+
+    // stream contract: traps are borrowed, not spent — same seed same mines,
+    // and the identification maps downstream stay anchored (rewound rng slice)
+    const A = createInitialState(777), B = createInitialState(777)
+    ok('same seed, same mines (deterministic placement)',
+        JSON.stringify(A.traps) === JSON.stringify(B.traps), JSON.stringify(A.traps))
+    ok('golden seed 777 keeps its stream anchor (trap rolls never shift downstream)',
+        JSON.stringify(A.traps) === JSON.stringify([{ x: 51, y: 5, kind: 'str', armed: true, seen: false }, { x: 52, y: 5, kind: 'sleep', armed: true, seen: false }, { x: 69, y: 12, kind: 'sleep', armed: true, seen: false }]) && A.potionColorMap[0] === 'red' && A.scrollTitleMap[0] === 'NATRIX AN',
+        JSON.stringify(A.traps) + ' ' + A.potionColorMap[0] + '/' + A.scrollTitleMap[0])
+    ok('hidden traps are invisible: backtick never drawn for an un-sprung trap',
+        !buildGrid(A).flat().some(c => c.char === '`'))
+}
+
+// spring law per kind — forged mines on scanned walkable ground, real moves
+const spotPair = (s) => {
+    // any cell with a walkable west neighbour — deterministic in the map
+    for (let y = 1; y < MAP_H - 1; y++)
+        for (let x = 2; x < MAP_W - 1; x++)
+            if ((s.map[y][x] === '.' || s.map[y][x] === '#') && (s.map[y][x - 1] === '.' || s.map[y][x - 1] === '#')) return { x, y }
+    throw new Error('no walkable pair found')
+}
+const mineAt = (s, kind) => {
+    const { x, y } = spotPair(s)
+    return {
+        ...s,
+        traps: [{ x, y, kind, armed: true, seen: false }],
+        monsters: s.monsters.filter(m => Math.abs(m.x - x) > 2 || Math.abs(m.y - y) > 2),
+        player: { ...s.player, x: x - 1, y, sleeping: 0, held: 0, confused: 0, blind: 0 },
+    }
+}
+{
+    // strength trap
+    let s = mineAt(createInitialState(3001), 'str')
+    const str0 = s.player.str
+    s = stepGame(s, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('strength trap drains 1..3 and narrates', s.player.x === s.traps[0].x && s.player.str >= str0 - 3 && s.player.str < str0 && /drains your strength/.test(s.messages.at(-1)))
+
+    // darts trap: damage in band
+    let d = mineAt(createInitialState(3002), 'darts')
+    const hp0 = d.player.hp
+    d = stepGame(d, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('dart trap bites 1..6 with its sting', hp0 - d.player.hp >= 1 && hp0 - d.player.hp <= 6 && /Darts spring/.test(d.messages.at(-1)))
+
+    // darts kill honestly
+    let k = mineAt(createInitialState(3003), 'darts')
+    k = { ...k, player: { ...k.player, hp: 1 } }
+    k = stepGame(k, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('a dart at 1 hp is an honest terminal', done(k) && k.killer === 'a dart trap' && k.finalScore > 0, k.killer)
+
+    // sleep trap: the mine then eats the hero's turns
+    let sl = mineAt(createInitialState(3004), 'sleep')
+    sl = stepGame(sl, { type: 'MOVE', dx: 1, dy: 0 })
+    const slept = sl.player.sleeping
+    const turnBefore = sl.turn, posBefore = { x: sl.player.x, y: sl.player.y }
+    sl = stepGame(sl, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('sleep trap drugs the hero 5..9 turns', slept >= 5 && slept <= 9 && /fall asleep/.test(sl.messages[sl.messages.length - 2]), `sleeping=${slept}`)
+    ok('while asleep the turn still burns (monsters move, hero stays)', sl.turn === turnBefore + 1 && sl.player.x === posBefore.x && sl.player.y === posBefore.y && /asleep/.test(sl.messages.at(-1)))
+
+    // snare trap: struggle costs turns in place
+    let sn = mineAt(createInitialState(3005), 'snare')
+    sn = stepGame(sn, { type: 'MOVE', dx: 1, dy: 0 })
+    const held0 = sn.player.held
+    sn = stepGame(sn, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('snare catches for 3..6 turns', held0 >= 3 && held0 <= 6 && /caught in a snare/.test(sn.messages[sn.messages.length - 2]), `held=${held0}`)
+    ok('struggling spends the turn without moving the hero', sn.player.held === held0 - 1 && /struggle/.test(sn.messages.at(-1)))
+
+    // confusion trap
+    let cf = mineAt(createInitialState(3006), 'confuse')
+    cf = stepGame(cf, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('gas trap confuses 10..20 turns', cf.player.confused >= 10 && cf.player.confused <= 20 && /confuses you/.test(cf.messages.at(-1)))
+
+    // teleport trap: relocated on the same level, armed after — the 1980 joke
+    let tp = mineAt(createInitialState(3007), 'teleport')
+    const tpos = { x: tp.traps[0].x, y: tp.traps[0].y }
+    tp = stepGame(tp, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('teleport trap hurls the hero across the same level', tp.dungeonLevel === 1 && tp.traps[0].seen && /teleports you/.test(tp.messages.at(-1)))
+    ok('the teleport trap STAYS ARMED after springing', tp.traps[0].armed === true)
+    // walk back onto it: it fires again
+    let tp2 = { ...tp, monsters: tp.monsters.filter(m => Math.abs(m.x - tpos.x) > 2 || Math.abs(m.y - tpos.y) > 2), player: { ...tp.player, x: tpos.x - 1, y: tpos.y, confused: 0, sleeping: 0, held: 0 } }
+    tp2 = stepGame(tp2, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('step two: the same mine fires again', /teleports you/.test(tp2.messages.at(-1)))
+
+    // trap door: fall grudge 0 → 2d6 → 4d6, stairs settle it
+    let dr = mineAt(createInitialState(3008), 'door')
+    const hpA = dr.player.hp
+    dr = stepGame(dr, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('first trap door drops a level, grudge unpaid (no damage)', dr.dungeonLevel === 2 && dr.falls === 1 && dr.player.hp === hpA && /fall through a trap door/.test(dr.messages.at(-1)), `hp ${hpA}->${dr.player.hp}`)
+    ok('the new level carries its own fresh mines', dr.traps.length >= 2 && dr.traps.every(t => !t.seen))
+    // second consecutive fall: 2d6 minimum 2
+    let dr2 = mineAt(dr, 'door')
+    const hpB = dr2.player.hp
+    dr2 = stepGame(dr2, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('second consecutive fall hurts (2d6 or more)', dr2.dungeonLevel === 3 && dr2.falls === 2 && hpB - dr2.player.hp >= 2 && /fall hurls you deeper/.test(dr2.messages.at(-1)), `dmg=${hpB - dr2.player.hp}`)
+    // walking the stairs honest settles the grudge
+    let st = { ...dr2, map: dr2.map.map(r => [...r]) }
+    st.map[st.player.y][st.player.x] = '%'
+    st = stepGame(st, { type: 'DESCEND' })
+    ok('walking the stairs honest wipes the fall grudge', st.falls === 0 && st.dungeonLevel === 4)
+}
+
+// honesty + drawing: sprung traps are known, secrets stay secret
+{
+    // backtick appears where the mine went off
+    let s = mineAt(createInitialState(3009), 'str')
+    const tx = s.traps[0].x, ty = s.traps[0].y
+    s = stepGame(s, { type: 'MOVE', dx: 1, dy: 0 })
+    // step away — the mark persists in the lit field
+    let s2 = stepGame(s, { type: 'MOVE', dx: -1, dy: 0 })
+    const marked = buildGrid(s2)[ty][tx]
+    ok('a sprung trap is marked with the original backtick and survives the retreat', marked.char === '`' && s2.player.x === tx - 1 && s2.player.y === ty, marked.char)
+
+    // SEARCH never reveals traps — the ring-of-warning gap stays honest
+    let sc = mineAt(createInitialState(3010), 'str')
+    const hidden0 = sc.traps.filter(t => t.seen).length
+    sc = stepGame(sc, { type: 'SEARCH' })
+    sc = stepGame(sc, { type: 'SEARCH' })
+    ok('searching one\u2019s own minefield never uncovers a mine', sc.traps.filter(t => t.seen).length === hidden0 && sc.traps[0].seen === false)
+
+    // monsters spring nothing (no monster-trap interaction, by design):
+    // a hunter on a clear run between the hero and its mine crosses the
+    // trap cell on its way to bite.
+    let mm = createInitialState(3011)
+    let run = null
+    for (let y = 1; y < MAP_H - 1 && !run; y++) {
+        let start = null
+        for (let x = 1; x <= MAP_W - 2; x++) {
+            const walk = mm.map[y][x] === '.' || mm.map[y][x] === '#'
+            if (walk) { if (start === null) start = x }
+            else if (start !== null && x - start >= 8) { run = { y, start }; break }
+            else start = null
+        }
+    }
+    if (!run) run = { y: spotPair(mm).y, start: spotPair(mm).x }
+    const mky = run.y, trapX = run.start + 4, monX = run.start + 6, heroX = run.start
+    mm = {
+        ...mm,
+        traps: [{ x: trapX, y: mky, kind: 'str', armed: true, seen: false }],
+        monsters: [{ id: 99, x: monX, y: mky, letter: 'K', name: 'kestrel', hp: 4, maxHp: 4, dmg: '1d4', ac: 4, xp: 1, chasing: true, energy: 0, fleeing: false, bitten: false, speed: 1 }],
+        player: { ...mm.player, x: heroX, y: mky },
+    }
+    let crossed = false
+    for (let i = 0; i < 12 && !done(mm); i++) {
+        mm = advanceMonsters(mm)
+        if (mm.monsters[0].x <= trapX) crossed = true
+    }
+    ok('creatures cross the minefield untouched — monsters spring no traps', crossed && mm.traps[0].seen === false && mm.monsters[0].hp === 4, `crossed=${crossed}`)
+}
+
 console.log(`\nroguecheck: ${pass} pass, ${fail} fail`)
 process.exit(fail ? 1 : 0)
