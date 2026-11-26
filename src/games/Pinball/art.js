@@ -313,20 +313,41 @@ export function paintField(ctx, W, H, pal = PAL, tb = null) {
     // two rings on felt: a bed wash, side mouldings (dark shadow + lane-colour
     // highlight, the raised-rail idiom) and climbing chevrons ("this lane runs
     // UP the flank"), all from tb.rampL so both cabinets follow the data.
+    // #3468 item 5: the hotter kit (EMBER RIDER) re-dresses the flank — hotter
+    // washed bed, ember-red moulding rim and chevrons — not just a hue swap.
     if (tb.rampL) {
         const lx = tb.rampL.x1 + 2, rx = tb.rampL.x2 - 2, rcx = (tb.rampL.x1 + tb.rampL.x2) / 2;
+        const hotKit = tb.id === 'ember-rider';
         ctx.save();
-        ctx.globalAlpha = 0.10; ctx.fillStyle = pal.lane;
+        ctx.globalAlpha = hotKit ? 0.13 : 0.10; ctx.fillStyle = hotKit ? pal.hot : pal.lane;
         ctx.fillRect(lx, 282, rx - lx, 148);
         for (const mx of [lx, rx]) {
+            const inward = mx === lx ? 1 : -1;
             ctx.globalAlpha = 0.55; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 3;
             ctx.beginPath(); ctx.moveTo(mx, 282); ctx.lineTo(mx, 430); ctx.stroke();
-            ctx.globalAlpha = 0.5; ctx.strokeStyle = pal.lane; ctx.lineWidth = 1.5;
-            ctx.beginPath(); ctx.moveTo(mx + (mx === lx ? 1.5 : -1.5), 282); ctx.lineTo(mx + (mx === lx ? 1.5 : -1.5), 430); ctx.stroke();
+            ctx.globalAlpha = 0.5; ctx.strokeStyle = hotKit ? pal.hot : pal.lane; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(mx + inward * 1.5, 282); ctx.lineTo(mx + inward * 1.5, 430); ctx.stroke();
+            if (hotKit) {
+                // hot rim — a thin warm edge just inside the moulding
+                ctx.globalAlpha = 0.38; ctx.strokeStyle = pal.glow; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(mx + inward * 3.2, 282); ctx.lineTo(mx + inward * 3.2, 430); ctx.stroke();
+            }
         }
-        ctx.globalAlpha = 0.22; ctx.strokeStyle = pal.lane; ctx.lineWidth = 2.5;
+        ctx.globalAlpha = hotKit ? 0.30 : 0.22; ctx.strokeStyle = hotKit ? pal.hot : pal.lane; ctx.lineWidth = 2.5;
         for (const yy of [386, 404]) {
             ctx.beginPath(); ctx.moveTo(rcx - 9, yy); ctx.lineTo(rcx, yy - 11); ctx.lineTo(rcx + 9, yy); ctx.stroke();
+        }
+        if (hotKit) {
+            // #3468 item 5: a rivet strip just inside the bed edge — small
+            // ticks in the bands clear of the chevrons (y 375-404), reading
+            // as a riveted rail without stealing the entry chevrons.
+            ctx.globalAlpha = 0.45; ctx.strokeStyle = pal.hot; ctx.lineWidth = 1.6;
+            for (const yy of [296, 318, 341, 363, 415, 425]) {
+                ctx.beginPath();
+                ctx.moveTo(lx + 2, yy); ctx.lineTo(lx + 7, yy);
+                ctx.moveTo(rx - 2, yy); ctx.lineTo(rx - 7, yy);
+                ctx.stroke();
+            }
         }
         ctx.restore();
     }

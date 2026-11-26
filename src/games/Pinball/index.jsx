@@ -781,6 +781,10 @@ const PinballGame = () => {
                 // field so the two ramps never cross-light.
                 if (tb.rampL) {
                     const rcx = (tb.rampL.x1 + tb.rampL.x2) / 2
+                    // #3468 item 5: the hotter kit (EMBER RIDER) gets its own
+                    // lamp dress — bezels around the progress lamps and a
+                    // housing around the SET lamp, not the default bare dots.
+                    const hotKit = tb.id === 'ember-rider'
                     if (gs.rampLHits > 0 || fl.rampL > 0) {
                         ctx.save()
                         ctx.globalAlpha = 0.18 + 0.14 * Math.sin(gs.tick / 9)
@@ -798,15 +802,41 @@ const PinballGame = () => {
                     })
                     for (let i = 0; i < tb.rampL.rolls.length; i++) {
                         const on = gs.rampLHits > i || fl.rampL > 0
+                        const lx = rcx - 6 + i * 12
+                        if (hotKit) {
+                            // bronze bezel: dark seat + warm bone ring
+                            ctx.save()
+                            ctx.globalAlpha = 0.85
+                            ctx.strokeStyle = 'rgba(0,0,0,0.6)'
+                            ctx.lineWidth = 2
+                            ctx.beginPath(); ctx.arc(lx, 288, 4.6, 0, 7); ctx.stroke()
+                            ctx.globalAlpha = 0.8
+                            ctx.strokeStyle = pal.chrome
+                            ctx.lineWidth = 1.2
+                            ctx.beginPath(); ctx.arc(lx, 288, 3.4, 0, 7); ctx.stroke()
+                            ctx.restore()
+                        }
                         ctx.fillStyle = on ? pal.lane : pal.hotOff
                         ctx.globalAlpha = on ? 0.8 : 0.4
-                        ctx.beginPath(); ctx.arc(rcx - 6 + i * 12, 288, 2.4, 0, 7); ctx.fill()
+                        ctx.beginPath(); ctx.arc(lx, 288, 2.4, 0, 7); ctx.fill()
                         ctx.globalAlpha = 1
                     }
                     if (gs.rampLLit) {
                         ctx.save()
                         ctx.shadowColor = pal.hot; ctx.shadowBlur = 8 + 4 * Math.sin(gs.tick / 6)
                         ctx.fillStyle = (gs.tick >> 3) % 2 === 0 ? '#ffffff' : pal.hot
+                        if (hotKit) {
+                            // SET housing: dark seat + warm bone ring, then the bulb
+                            ctx.globalAlpha = 0.9
+                            ctx.strokeStyle = 'rgba(0,0,0,0.65)'
+                            ctx.lineWidth = 2.2
+                            ctx.beginPath(); ctx.arc(rcx, 276, 5.4, 0, 7); ctx.stroke()
+                            ctx.globalAlpha = 0.85
+                            ctx.strokeStyle = pal.chrome
+                            ctx.lineWidth = 1.2
+                            ctx.beginPath(); ctx.arc(rcx, 276, 4.2, 0, 7); ctx.stroke()
+                            ctx.globalAlpha = 1
+                        }
                         ctx.beginPath(); ctx.arc(rcx, 276, 3, 0, 7); ctx.fill()
                         ctx.restore()
                     }
