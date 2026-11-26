@@ -494,6 +494,8 @@ if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
     const I = 'src/games/Pong/index.jsx'
     const S = 'src/games/Pong/sim.js'
+    const V = 'src/games/Pong/voice.js'
+    const N = 'src/games/Pong/numerals.js'
     const MUTANTS = [
         ['human start ignores ?seed (pin removed)', I,
             `seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)`,
@@ -571,6 +573,34 @@ if (process.argv.includes('--mutant')) {
         ["player two's W key is unplugged", S,
             `        if (input?.up2) gs.right.y -= PAD_SPEED`,
             `        if (input?.up2) gs.right.y -= 0`],
+        // #3536 voice/numerals/serve anchors — the widened vocabulary and the
+        // block face must die when their law is gutted.
+        ['rally pitch ignores the strike (flat ping)', V,
+            `    const angle = Math.min(Math.abs(dy), 5)`,
+            `    const angle = 0`],
+        ['the wall tick outranks the rally ping', V,
+            `    return { freq: 170, dur: 0.045, type: 'square', vol: 0.07 }`,
+            `    return { freq: 700, dur: 0.045, type: 'square', vol: 0.07 }`],
+        ['EASY loses its soft character', V,
+            `        type: easy ? 'triangle' : 'square',`,
+            `        type: 'square',`],
+        ['the score thud is just another ping', V,
+            `    return { freq: 98, dur: 0.3, type: 'sawtooth', vol: 0.16, noise: { dur: 0.09, vol: 0.12 } }`,
+            `    return { freq: 400, dur: 0.05, type: 'square', vol: 0.1, noise: { dur: 0.09, vol: 0.12 } }`],
+        ['the serve flag double-fires (never cleared)', S,
+            `        ev.serve = gs.servePending === true
+        gs.servePending = false`,
+            `        ev.serve = gs.servePending === true`],
+        ['the serve never re-arms after a point', S,
+            `        gs.servePending = true // new ball in play — its first return is the serve (#3536)
+        ev.scored = 1`,
+            `        ev.scored = 1`],
+        ['the seven-segment map miswires the 1', N,
+            `0: 'abcdef', 1: 'bc',`,
+            `0: 'abcdef', 1: 'ab',`],
+        ['the segment gaps collapse (bars merge)', N,
+            `    const half = Math.max(2, mid - t - 2 * g)`,
+            `    const half = Math.max(2, mid - g)`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
