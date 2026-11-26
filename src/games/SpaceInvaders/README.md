@@ -215,16 +215,19 @@ decay granularity rewires the proven route and needs its own session.
   carry-exact average (the #3517 law owns the cadence, not the width),
   flush landings on the wall, and the descending four fired on the step
   ticks (see "The machine step").
-- The cabinet's drop was a wave-stepped row count; ours is a flat 8px per
-  edge — the half of the old granularity line #3573 leaves open.
-- **Bonus life (#3530):** one spare cannon per 100-point crossing, cap 5, with
-  its jingle and the BONUS stamp. The cabinet's dip-switched one-life-at-1000
-  headline is UNVERIFIED in-repo and never re-tuned silently — left to Jon
-  (#3547 open question). This line was stale: the spare cannon shipped after it
-  was written and the gap bullet was not updated.
-- No tilt/coin mechanics — browser-realistic coin / tilt is out of scope
-  (the cabinet's coin box is hardware, not a browser feature); one UFO type,
+- **BLOCKED**: the cabinet's drop was a wave-stepped row count; ours is a flat 8px
+  per edge — the half of the old granularity line #3573 leaves open. The wave-stepped
+  claim itself is UNVERIFIED in-repo: no period ROM or timing sheet here defines the
+  drop, and the network boundary says don't guess. Flat 8px stands until material lands.
+- **CLOSED by #3530**: ~~one spare cannon per 100-point crossing, cap 5, with its
+  jingle and the BONUS stamp~~ — the spare cannon shipped (the line was stale: it was
+  written before the shipping pass). What remains is not a gap but Jon's question: the
+  cabinet's dip-switched one-life-at-1000 headline is UNVERIFIED in-repo and never
+  re-tuned silently — left to Jon (#3547 open question).
+- **DISCLAIMER**: no tilt/coin mechanics — browser-realistic coin / tilt is out of
+  scope (the cabinet's coin box is hardware, not a browser feature); one UFO type,
   faithful to the cabinet (both decided by #3547's DO-NOT-FIX).
-- Sound is the synthesized descending four + effect blips (studio audio law);
-  the original's exact march waveform is absent (the bonus-life jingle IS
-  shipped — this line was stale too).
+- **BLOCKED**: sound is the synthesized descending four + effect blips (studio audio
+  law); the original's exact march waveform is absent — no period audio material in
+  repo defines it, and #3582 judged the closer two-pulse envelope an unprovable
+  re-tune, not owed against ART.md (the bonus-life jingle IS shipped).
