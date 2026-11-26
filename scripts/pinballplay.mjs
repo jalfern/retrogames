@@ -34,6 +34,19 @@ try {
     const page = await openGame(browser, { url: `${BASE}/pinball?lite=1`, hook: '__pinballTest' })
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
+    // #3452 lesson (slot b's flank pattern): the DMD is a single-slot announce
+    // and the magnet chain keeps extra balls alive longer — a roaming pack can
+    // stomp an announce between polls. Rig legs wait for a QUIET table:
+    // one live ball, silent DMD (restart on drain-out).
+    const quiet = async () => {
+        for (let i = 0; i < 100; i++) {
+            const s = await page.evaluate(() => window.__pinballTest.state())
+            if (s.done) { await page.keyboard.press('Space'); await wait(400); continue }
+            if (s.liveBalls === 1 && s.dmd.text === '') return true
+            await wait(100)
+        }
+        return false
+    }
     await page.waitForFunction('window.__game', { timeout: 20000 })
     ok('boots clean', errors.length === 0, errors.join(';'))
 
@@ -137,6 +150,7 @@ try {
     // feed is another genuine wrap attempt, never a lowered bar.
     await page.evaluate(() => window.__pinballTest.orbitFeed())
     let st = null
+    await quiet()
     for (let i = 0; i < 80; i++) {
         await wait(100); st = await page.evaluate(() => window.__pinballTest.state())
         if (st.orbits >= 1) break
@@ -167,6 +181,8 @@ try {
         if (!s.kbUsed) break
         await wait(100)
     }
+    // Hold the rig until the table is QUIET (#3452, see quiet() at the top).
+    await quiet()
     const kbBefore = await page.evaluate(() => window.__pinballTest.state())
     await page.evaluate(() => window.__pinballTest.kbDrop())
     let kb = null
@@ -180,7 +196,8 @@ try {
 
     // pixels: the playfield draws, and the DMD strip region lights up after an event
     // (announce fresh first — the idle crawl has blank scroll windows between words,
-    // sampling blind was a standing flake)
+    // sampling blind was a standing flake; quiet-table too, #3452)
+    await quiet()
     await page.evaluate(() => window.__pinballTest.laneDrop())
     let dmdLive = null
     for (let i = 0; i < 30; i++) { await wait(100); dmdLive = await page.evaluate(() => window.__pinballTest.state()); if (dmdLive.dmd.text) break }
