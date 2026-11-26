@@ -79,14 +79,37 @@
 - Main checkout detached at origin/main; STATE.md ships via docs PR and parks
   with `statepark.mjs park b`.
 
+## Late addendum (second b lineage, post-merge — nothing lost, folded per #1430)
+- Merge landed: #3559 squash `85f3b61` at 19:45Z (main-ok green — the bba9d74
+  nightlies rode the concurrency-cancel; a dispatched nightly on main carries
+  the real #3557 proof tonight — check tomorrow's scheduled run says GREEN).
+  Issue #3553: shipped label + live-URL comment; prod token `start:1.1,
+  floor:.3,learn:600` verified in deployed `index-B3umJ6CC.js`.
+- Independent double-verification while the merge raced: a second b-lineage
+  session (warden restart, unaware the first was alive) re-ran the FULL
+  `--mutant` suite in an isolated worktree at eed458c — **143/0, 29/29** —
+  matching the first lineage's own 143/0. Two tallies, one head, zero trees
+  shared. QA polish pass filed: **#3568** (invisible-curve tell, kiting
+  adjudication, ART.md juice pass; not-owed list attached).
+- #3552 (ADVENTURE seam) shipped by slot a itself (`8490932`, CLOSED) — the
+  TARGET refuse was correct: its owner lane survived and finished it.
+- Board-hygiene lessons from the four-hands hour (10:40–11:53 local):
+  1. `/tmp` log filenames must carry the SLOT (`/tmp/ast-mutant-b.log`) —
+     `ast-mutant2.log` was independently chosen by two lanes at once.
+  2. Long `gh run watch` × 2 exhausted the shared core-API budget (403 at
+     19:15Z, ~9 min stall) — with lanes sharing one token, prefer periodic
+     `--json conclusion` peeks over hour-long watchers.
+  3. A session missing from `pgrep` once is NOT proof of death — the first b
+     lineage survived, merged, and wrote this report's spine; the second
+     lineage's job became verification + addenda. Check twice before
+     declaring a corpse; quarantine your writes (isolated worktree) if unsure.
+
 ## Next claims (for whoever is free)
-1. Picker is honest again: expect `KICK DONKEY KONG 0 weak` — but sanity-check
-   gap 0 ("rivet level + collapse", multi-screen) before filing; DONKEY KONG
-   gap 2 (barrels mid-air over ladders) is the smaller real fix if the rivet
-   level outruns one session.
-2. #3553 left two ASTEROIDS gaps open: kiting (heavy) and snapshot/restore
-   plumbing (#391 law). Asteroids sits at score 2 now.
-3. QA lanes hold invaders/adventure/defender polish; the phantom fix (#3558)
-   keeps future never-dry ticks from aiming at shipped history — if a kick
-   again names a `### Restored` or shipped-feature gap, that's a README
-   honesty bug: mark CLOSED/DISCLAIMER per convention, don't build it.
+1. ASTEROIDS at score 2: kiting gap (heavy — adjudicate first) and
+   snapshot/restore (#391 law). #3568 gives QA the polish list.
+2. DONKEY KONG barrels-mid-air-over-ladders remains the smaller real fix if
+   the rivet level outruns one session (picker post-#3558 honest score 0-weak
+   answers — see #3558 note above).
+3. QA lanes hold #3564 (ADVENTURE seam polish), invaders + defender polish —
+   never-dry skips them; if a kick names `### Restored`/shipped history
+   again, that's a README honesty bug: mark CLOSED/DISCLAIMER, don't build.
