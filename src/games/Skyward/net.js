@@ -16,6 +16,7 @@
 import { HOST_SLOT } from '../../utils/room.js'
 
 export const SEATS = 4               // cap 4 pilots; open seats fly the planner
+export const WATCH_CAP = SEATS + 1   // #3447 item 1: one extra member slot = the watch seat
 export const PAD_DELAY = 8          // ~133 ms: past round-trip, below feel (the Blob law)
 export const HASH_EVERY = 30
 export const STALL_CAP = 90         // ticks a silent seat may freeze the sky before the autopilot takes it (~1.5 s: far above D+RTT jitter, far below "it's stuck forever")
@@ -86,6 +87,15 @@ export function foldHash(instances) {
         }
     }
     return h >>> 0
+}
+
+// pilotSlots (#3447 item 1) turns the relay roster into the kickoff field:
+// watch members (they announced with `spec`) get no seat, and out-of-range
+// slots can never push the field past SEATS instances. Sorted slot order, so
+// every box derives the identical seat order.
+export function pilotSlots(slots, watchers) {
+    const w = watchers || new Set()
+    return (slots || []).filter((s) => Number.isInteger(s) && s >= 0 && s < WATCH_CAP && !w.has(s)).sort((a, b) => a - b)
 }
 
 // hostSeed rolls a 32-bit room seed at kickoff.

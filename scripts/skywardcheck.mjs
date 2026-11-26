@@ -858,7 +858,7 @@ void runAuto
     })())
     r.check('#3447 the pose rig is paint-only — remotes ride the render arg, never gs/net/hash', (() => {
         const cab = readFileSync('src/games/Skyward/index.jsx', 'utf8')
-        return cab.includes('seat !== mySeat()) : dbgRemotes)')
+        return cab.includes('seat !== rideSeat()) : dbgRemotes)') // #3447 item 1: the filter follows the CAM seat (rideSeat), still render-arg-only
             && cab.includes('poseRemotes: (seats = [1, 2, 3])')
             && !cab.includes('gs.remotes') // no fake truth ever enters the sim
     })())
@@ -1360,7 +1360,7 @@ void runAuto
 // switch to the autopilot without the skies diverging, and a deliberately
 // poisoned box must be caught, named and copyable.
 {
-    const { toWire, fromWire, EMPTY_PAD, assembleSeatPads, foldHash, hostSeed, SEATS, PAD_DELAY, HASH_EVERY, RACE_T,
+    const { toWire, fromWire, EMPTY_PAD, assembleSeatPads, foldHash, hostSeed, SEATS, WATCH_CAP, pilotSlots, PAD_DELAY, HASH_EVERY, RACE_T,
         PILOT_NAMES, PILOT_CSS, podiumRows, podWire, podRows, humansMinus, createEvidence, hex32 } = await import('../src/games/Skyward/net.js')
     const { createLockStep, normalizeWirePad } = await import('../src/utils/lockstep.js')
 
@@ -1412,6 +1412,22 @@ void runAuto
     r.check('humansMinus drops the ghost and stays ordered, input untouched',
         humansMinus([2, 0, 3], 0).join(',') === '2,3' && [2, 0, 3].join(',') === '2,0,3')
     r.check('hostSeed never returns 0', hostSeed(() => 0) !== 0)
+
+    // ---- #3447 item 1: the spectate law (watch seat + pilot field) ----
+    r.check('WATCH_CAP is SEATS + 1 — one extra member slot for the watcher', WATCH_CAP === 5)
+    r.check('pilotSlots: an announced watcher gets no seat, even on a low slot',
+        pilotSlots([0, 1, 2, 3], new Set([1])).join(',') === '0,2,3',
+        pilotSlots([0, 1, 2, 3], new Set([1])).join(','))
+    r.check('pilotSlots: the last relay slot still rides when the watcher took an early seat (slot-skip)',
+        pilotSlots([0, 1, 2, 3, 4], new Set([1])).join(',') === '0,2,3,4',
+        pilotSlots([0, 1, 2, 3, 4], new Set([1])).join(','))
+    r.check('pilotSlots: no watchers, no losses — everyone home is a pilot, sorted',
+        pilotSlots([3, 0, 2], undefined).join(',') === '0,2,3')
+    r.check('pilotSlots: junk and out-of-range slots can never join the field',
+        pilotSlots([0, null, '2', -1, 7, 1.5], new Set()).join(',') === '0',
+        pilotSlots([0, null, '2', -1, 7, 1.5], new Set()).join(','))
+    r.check('pilotSlots: two watchers, two seats back for the planners',
+        pilotSlots([0, 1, 2, 3, 4], new Set([1, 3])).join(',') === '0,2,4')
 
     // ---- evidence ring ----
     const ev0 = createEvidence(3)
