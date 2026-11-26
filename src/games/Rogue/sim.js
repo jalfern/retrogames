@@ -503,13 +503,12 @@ export function getItemName(item, state) {
     if (state.identifiedScrolls[item.subtype]) return `scroll of ${SCROLL_TYPES[item.subtype].name}`
     return `scroll titled '${state.scrollTitleMap[item.subtype]}'`
   }
-  if (item.type === ')') return `${item.name}${item.bonus ? ` (+${item.bonus})` : ''}`
+  if (item.type === ')') return item.missile ? `${item.qty} arrows` : `${item.name}${item.bonus ? ` (+${item.bonus})` : ''}`
   if (item.type === '[') return `${item.name}${item.bonus ? ` (+${item.bonus})` : ''}`
   if (item.type === '*') return `${item.amount} gold pieces`
   if (item.type === ':') return 'food ration'
   if (item.type === '/') return `staff of ${WAND_TYPES[item.subtype].name}${item.charges !== undefined ? ` (${item.charges} charges)` : ''}`
   if (item.type === '=' ) return 'ring'
-  if (item.type === ')' && item.missile) return `${item.qty} arrows`
   return '?'
 }
 
@@ -836,14 +835,20 @@ export function handlePickup(state) {
   // missiles as counted piles).
   if (item.missile) {
     const mergeIdx = player.inventory.findIndex(p => p.missile && p.name === item.name)
+    const pickupMsg = `You pick up ${item.qty} arrows.`
     if (mergeIdx >= 0) {
       const merged = { ...player.inventory[mergeIdx], qty: player.inventory[mergeIdx].qty + item.qty }
       return addMsg({
         ...state,
         player: { ...player, inventory: player.inventory.map((p, i) => (i === mergeIdx ? merged : p)) },
         items: items.filter((_, i) => i !== idx),
-      }, `You pick up ${item.qty} arrows.`)
+      }, pickupMsg)
     }
+    return addMsg({
+      ...state,
+      player: { ...player, inventory: [...player.inventory, item] },
+      items: items.filter((_, i) => i !== idx),
+    }, pickupMsg)
   }
   const name = getItemName(item, state)
   return addMsg({
@@ -1075,13 +1080,14 @@ export function handleThrow(state, invIndex, dx, dy) {
     if (charges > 0) s = { ...s, player: { ...s.player, inventory: [...s.player.inventory, { ...item, charges }] } }
     else msgs.push(`The staff of ${WAND_TYPES[item.subtype].name} crumbles to dust.`)
   } else {
-    // Arrows: one spent per throw; a MISS leaves the remainder on the last
-    // free cell of the flight — the salvage loop (the original let you walk
-    // back and pack them up again). A hit arrow is stuck and lost.
+    // Arrows: ONE arrow leaves the quiver per throw (the quiver stays in the
+    // pack); a MISS leaves that arrow on the last free cell of the flight to
+    // be salvaged — the original's retrieval loop. A hit arrow is stuck and
+    // lost. An empty quiver is just gone.
     const qty = item.qty - 1
-    if (qty > 0 && !hitLanded) {
-      s = { ...s, items: [...s.items, { ...item, qty, x: ray.x, y: ray.y }] }
-    }
+    if (qty > 0) s = { ...s, player: { ...s.player, inventory: [...s.player.inventory, { ...item, qty }] } }
+    else msgs.push('That was your last arrow.')
+    if (!hitLanded) s = { ...s, items: [...s.items, { ...item, qty: 1, x: ray.x, y: ray.y }] }
   }
 
   for (const m of msgs) s = addMsg(s, m)

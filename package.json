@@ -213,6 +213,7 @@
     "watchmeasure": "node scripts/watchmeasure.mjs",
     "adventure-playtest": "node scripts/adventure-playtest.mjs",
     "advedrive": "node scripts/advedrive.mjs",
+    "roguedrive": "node scripts/roguedrive.mjs",
     "adventurecheck": "node scripts/adventurecheck.mjs",
     "froggercheck": "node scripts/froggercheck.mjs",
     "attractcheck": "node scripts/attractcheck.mjs",

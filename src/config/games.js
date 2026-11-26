@@ -860,8 +860,8 @@ export const GAMES = [
         component: RogueGame,
         label: 'ROGUE',
         theme: 'dark',
-        description: 'The original dungeon crawler. Descend through procedurally generated dungeons, battle monsters, collect treasure, and go as deep as you dare. Permadeath — every run is unique.',
-        controls: ['Arrow Keys / hjkl: Move', ',: Pick up', 'i: Inventory', 'q: Quaff potion', 'r: Read scroll', '>: Descend stairs', '?: Help', WATCH_HELP + ' — the BFS crawler that clears every test seed descends for you']
+        description: 'The ur-dungeon of 1980. Descend through seeded dungeons, battle with steel or at range — f throws arrows you can salvage and zaps charged staves — collect treasure, and go as deep as you dare. Permadeath — every run is unique.',
+        controls: ['Arrow Keys / hjkl: Move', ',: Pick up', 'i: Inventory', 'q: Quaff potion', 'r: Read scroll', 'f: Fire arrows / zap a staff', '>: Descend stairs', '?: Help', WATCH_HELP + ' — the BFS crawler that clears every test seed descends for you']
     }
     ,
     {

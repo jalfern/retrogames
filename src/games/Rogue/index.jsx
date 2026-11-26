@@ -259,6 +259,11 @@ export default function RogueGame() {
             turn: s.turn, dlvl: s.dungeonLevel, gold: s.player.gold, score: runScore(s),
             x: s.player.x, y: s.player.y, hp: s.player.hp, phase: s.phase,
             monsters: s.monsters.length, done: done(s),
+            // #3491 ranged drive legs: the pack (type/missile/qty/charges) and
+            // the last message lines, so the browser proof sees what the sim saw.
+            inv: s.player.inventory.map((i) => ({ t: i.type, m: !!i.missile, q: i.qty || 0, ch: i.charges || 0 })),
+            floor: s.items.filter((i) => i.missile).map((i) => ({ q: i.qty, x: i.x, y: i.y })),
+            msgs: s.messages.slice(-4),
           }
         },
         hash: () => hash(stateRef.current),

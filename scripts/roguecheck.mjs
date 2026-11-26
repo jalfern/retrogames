@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import {
   MAP_W, MAP_H, createInitialState, stepGame, hash, done, runScore,
   buildGrid, monsterAttack, rng, setSeed, generateDungeon, isWall, blocksMove,
+  isThrowable, shootRay, watchStep,
 } from '../src/games/Rogue/sim.js'
 
 let pass = 0, fail = 0
@@ -491,6 +492,174 @@ console.log('rng bounds')
     ok('rng(min,max) is integer-valued and inclusive over 5000 draws', inBound)
     const d = generateDungeon(5)
     ok('deep level generation (dlvl 5) yields monsters with depth-scaled letters', d.monsters.length >= 3)
+}
+
+// ── 9. ranged combat (#3491) — staves, arrows, the away-game ────────────────
+console.log('ranged combat (#3491)')
+{
+    // generation: both new families show up on the shelf
+    let sawStaff = 0, sawArrows = 0
+    for (let seed = 1; seed <= 60; seed++) {
+        const g = createInitialState(seed)
+        if (g.items.some((i) => i.type === '/')) sawStaff++
+        if (g.items.some((i) => i.missile)) sawArrows++
+    }
+    ok('staves generate across seeds (>=5 of 60)', sawStaff >= 5, `saw ${sawStaff}`)
+    ok('arrows generate across seeds (>=5 of 60)', sawArrows >= 5, `saw ${sawArrows}`)
+
+    // the throw set: staves + counted arrows — never a mace
+    ok('isThrowable: staff yes, arrows yes, mace no, armor no',
+        isThrowable({ type: '/' }) && isThrowable({ type: ')', missile: true })
+        && !isThrowable({ type: ')', name: 'mace' }) && !isThrowable({ type: '[' }))
+    {
+        const s = createInitialState(5)
+        const withArrows = { ...s, player: { ...s.player, inventory: [{ type: ')', missile: true, name: 'arrows', qty: 5 }] } }
+        const w = stepGame(withArrows, { type: 'WIELD_ITEM', index: 0 })
+        ok('arrows refuse the sword hand (wield keeps the mace)', w.player.weapon.name === 'mace' && w.player.inventory.length === 1)
+    }
+
+    // ray physics on a synthetic hall: floor everywhere, wall at x=+6
+    const pxWall = 6
+    {
+        const base = createInitialState(12345)
+        const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => '.'))
+        for (let y = 0; y < MAP_H; y++) map[y][base.player.x + 6] = '|'
+        const s = { ...base, map, hiddenDoors: [], doors: [] }
+        const ray = shootRay(s, 1, 0)
+        ok('bolt stops before the wall', ray.monster === -1 && ray.blocked && ray.x === base.player.x + 5, JSON.stringify(ray))
+        const near = { ...s, monsters: [
+            { id: 901, x: base.player.x + 2, y: base.player.y, letter: 'K', name: 'kestrel', hp: 3, maxHp: 3, dmg: '1d3', ac: 7, xp: 1, chasing: false },
+            { id: 902, x: base.player.x + 4, y: base.player.y, letter: 'S', name: 'snake', hp: 3, maxHp: 3, dmg: '1d3', ac: 5, xp: 2, chasing: false },
+        ] }
+        const ray2 = shootRay(near, 1, 0)
+        ok('first body in the line stops the shot', ray2.monster === 0 && ray2.x === base.player.x + 2)
+        // a closed VISIBLE door blocks; a hidden door passes (the dungeon's own law)
+        const doorMap = map.map((r) => [...r]); doorMap[base.player.y][base.player.x + 3] = '+'
+        const closed = shootRay({ ...s, map: doorMap }, 1, 0)
+        ok('a closed door stops the arrow', closed.monster === -1 && closed.blocked && closed.x === base.player.x + 2)
+        const hidden = shootRay({ ...s, map: doorMap, hiddenDoors: [{ x: base.player.x + 3, y: base.player.y }] }, 1, 0)
+        ok('a hidden door lets it fly (the creatures know their doors)', !hidden.blocked || hidden.x > base.player.x + 2)
+    }
+
+    // hit/kill books like melee; the aim/salvage law cycles both ways over seeds
+    {
+        const base = createInitialState(12345)
+        const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => '.'))
+        let sawKill = false, sawMissSalvage = false, xpOk = false, chargeOk = true
+        for (let seed = 1; seed <= 120 && !(sawKill && sawMissSalvage); seed++) {
+            const mk = (hp) => [{ id: 909, x: base.player.x + 2, y: base.player.y, letter: 'K', name: 'kestrel', hp, maxHp: hp, dmg: '1d3', ac: 7, xp: 1, chasing: false }]
+            const world = (inv) => ({ ...base, map, hiddenDoors: [], doors: [], monsters: mk(hpOf(seed)),
+                randState: (base.randState + seed * 7919) | 0,
+                player: { ...base.player, inventory: inv } })
+            const hpOf = (sd) => (sd % 2 ? 1 : 50) // odd seeds: killable kestrel; even: unkillable wall of hp
+            const a = stepGame(world([{ type: ')', missile: true, name: 'arrows', qty: 5 }]), { type: 'THROW', index: 0, dx: 1, dy: 0 })
+            if (a.messages.some((m) => m.startsWith('You defeated'))) {
+                sawKill = true
+                if (a.player.exp >= 1) xpOk = true
+                const salvage = a.items.filter((i) => i.missile)
+                if (salvage.length !== 0) ok('a kill loses the arrow (no salvage)', false, 'found remains')
+            } else if (a.messages.some((m) => m.startsWith('You miss'))) {
+                const salvage = a.items.filter((i) => i.missile)
+                const q = a.player.inventory.find((i) => i.missile)?.qty
+                if (salvage.length === 1 && salvage[0].qty === 1 && q === 4) sawMissSalvage = true
+            }
+            const z = stepGame(world([{ type: '/', subtype: 0, charges: 3 }]), { type: 'THROW', index: 0, dx: 1, dy: 0 })
+            const st = z.player.inventory.find((i) => i.type === '/')
+            if (!st || st.charges !== 2) chargeOk = false
+        }
+        ok('ranged kills book xp like melee', sawKill && xpOk)
+        ok('a miss leaves the bundle to be salvaged (qty-1)', sawMissSalvage)
+        ok('every staff shot spends exactly one charge', chargeOk)
+    }
+
+    // salvage round-trip: pack up the bundle you missed with
+    {
+        const base = createInitialState(12345)
+        const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => '.'))
+        const s = { ...base, map, hiddenDoors: [], doors: [], monsters: [],
+            player: { ...base.player, inventory: [] } }
+        let a = stepGame({ ...s, player: { ...s.player, inventory: [{ type: ')', missile: true, name: 'arrows', qty: 3 }] } },
+            { type: 'THROW', index: 0, dx: 1, dy: 0 })
+        const landed = a.items.find((i) => i.missile)
+        ok('one arrow per throw — the quiver stays packed', a.player.inventory.some((i) => i.missile && i.qty === 2))
+        ok('the missed arrow lands on the flight line to salvage', !!landed && landed.qty === 1, JSON.stringify(landed))
+        if (landed) {
+            a = { ...a, player: { ...a.player, x: landed.x, y: landed.y } }
+            a = stepGame(a, { type: 'PICKUP' })
+            ok('salvage: the arrow goes back into the quiver', a.player.inventory.some((i) => i.missile && i.qty === 3))
+            // stacking: a found bundle joins the carried quiver
+            a = { ...a, items: [...a.items, { type: ')', missile: true, name: 'arrows', qty: 4, x: landed.x, y: landed.y }] }
+            a = stepGame(a, { type: 'PICKUP' })
+            ok('arrow bundles stack into one quiver',
+                a.player.inventory.filter((i) => i.missile).length === 1 && a.player.inventory.find((i) => i.missile).qty === 7)
+        } else {
+            ok('salvage: the arrow goes back into the quiver', false, 'nothing landed')
+            ok('arrow bundles stack into one quiver', false, 'nothing landed')
+        }
+    }
+
+    // staff crumbles with its last charge
+    {
+        const base = createInitialState(12345)
+        const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => '.'))
+        const s = { ...base, map, hiddenDoors: [], doors: [], monsters: [] }
+        const one = { ...s, player: { ...s.player, inventory: [{ type: '/', subtype: 1, charges: 1 }] } }
+        const z = stepGame(one, { type: 'THROW', index: 0, dx: 1, dy: 0 })
+        ok('the staff crumbles with its last charge',
+            z.player.inventory.length === 0 && z.messages.some((m) => /crumbles/.test(m)))
+    }
+
+    // fx + turn law + menu flow
+    {
+        const base = createInitialState(12345)
+        const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => '.'))
+        const s = { ...base, map, hiddenDoors: [], doors: [], monsters: [] }
+        const armed = { ...s, player: { ...s.player, inventory: [{ type: '/', subtype: 0, charges: 2 }, { type: ')', missile: true, name: 'arrows', qty: 3 }] } }
+        const z = stepGame(armed, { type: 'THROW', index: 0, dx: 1, dy: 0 })
+        const t = stepGame(armed, { type: 'THROW', index: 1, dx: 0, dy: 1 })
+        ok('zap and shoot are audible moments in the fx log',
+            z.fx.some((f) => f.k === 'zap') && t.fx.some((f) => f.k === 'shoot'))
+        ok('THROW costs exactly one turn', t.turn === armed.turn + 1)
+        ok('empty-hand SHOW_THROW says no',
+            /nothing to fire/.test(stepGame(s, { type: 'SHOW_THROW' }).messages.slice(-1)[0]))
+        const m = stepGame(armed, { type: 'SHOW_THROW' })
+        ok('f opens the missile menu (throw phase)', m.phase === 'throw')
+        const aim = stepGame(m, { type: 'AIM_THROW', index: 1 })
+        ok('the pack answers with the direction prompt', aim.phase === 'aim' && aim.aimIndex === 1 && /Which direction/.test(aim.messages.slice(-1)[0]))
+        const cancel = stepGame(aim, { type: 'CLOSE_MENU' })
+        ok('ESC unaims cleanly', cancel.phase === 'playing' && cancel.aimIndex === null)
+        const aimShot = stepGame(aim, { type: 'THROW', index: aim.aimIndex, dx: -1, dy: 0 })
+        ok('the aimed throw fires and returns to play', aimShot.phase === 'playing' && aimShot.fx.some((f) => f.k === 'shoot'))
+    }
+
+    // determinism across the new dice — two interleaved worlds firing
+    {
+        const A0 = createInitialState(31), B0 = createInitialState(31), J = createInitialState(99)
+        const fire = (st) => stepGame({ ...st, player: { ...st.player, inventory: [{ type: ')', missile: true, name: 'arrows', qty: 4 }] } },
+            { type: 'THROW', index: 0, dx: 1, dy: 0 })
+        let A = fire(A0); stepGame(J, { type: 'SEARCH' }); let B = fire(B0)
+        stepGame(J, { type: 'MOVE', dx: 1, dy: 0 })
+        let A2 = fire(A); let B2 = fire(B)
+        ok('interleaved ranged replays are byte-identical',
+            hash(A2) === hash(B2) && A2.randState === B2.randState && JSON.stringify(A2.messages) === JSON.stringify(B2.messages))
+        void J
+    }
+
+    // the grid shows the new shelf: staff `/` and arrows `)` draw their glyphs
+    {
+        const s = createInitialState(12345)
+        const gx = s.player.x + 1, gy = s.player.y
+        const withShelf = { ...s, items: [...s.items, { type: '/', subtype: 0, charges: 3, x: gx, y: gy }] }
+        const grid = buildGrid(withShelf)
+        ok('a staff on the floor draws /', grid[gy][gx].char === '/')
+    }
+
+    // the WATCH pilot keeps the proven melee law — no ranged shortcuts
+    {
+        const s = createInitialState(4242)
+        const w = watchStep(s)
+        ok('watchStep still moves the proven way (never throws)', !w || w.type === 'MOVE' || w.type === 'DESCEND')
+    }
 }
 
 console.log(`\nroguecheck: ${pass} pass, ${fail} fail`)
