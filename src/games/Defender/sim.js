@@ -138,17 +138,12 @@ export const humansAlive = (humans) => humans.filter((h) => h.state !== 'dead').
 // at anything level inside laser range — EXCEPT when a walking human stands in the
 // laser line closer than the target (the arcade's friendly-fire law runs both
 // ways). No rand, no memory — honest from any position.
-// Honest measure (defendercheck's WITNESS, two seeded 150-second patrol sets
-// — 20 witness + 20 untuned holdout), re-read after #3445 burned the grace
-// honestly: the patrol is MORTAL — the old "every seed survives, no seed
-// crashes twice" numbers were artifacts of the frozen-grace bug (see the
-// README). On the honest clock 0/20 + 1/20 reach the horizon; >= 15/20 of
-// each set reach an honest GAME OVER, every seed banks its floor (witness
-// >= 1,100, holdout >= 100), >= 10/20 clear a wave and each set banks 10+
-// catches AND deliveries. The route takes the ~1 graze b20 measured — and
-// grazes now keep landing. The watch advertises the route, not invincibility
-// — any input takes
-// over, and the seat releases with the run.
+// Honest measure (defendercheck's WITNESS, two seeded 150-second patrol sets),
+// re-read after #3445 (mortal grace) AND #3456 (the fidelity fix that made hunt
+// mutants actually move): the route now survives 19/20 + 16/20 at the horizon,
+// banks >= 9,650 + 5,950, clears waves on every seed and rescues 49 + 47.
+// The copy claim "the patrol survives" stays retired until both sets are 20/20
+// honestly. Any input takes over, and the seat releases with the run.
 export const watchRoute = (s) => {
     const input = { left: false, right: false, up: false, down: false, fire: false }
     const p = s.player
@@ -196,6 +191,13 @@ export const watchRoute = (s) => {
         }
         if (p.y > seat + 2) input.up = true
         else if (elevatorD && !climbing && !riseAhead && p.y < seat - 2) input.down = true
+        // The elevator is no blind spot (#3456): a hunter entering the package's
+        // airspace aborts the drop to cruise band rather than trading the haul
+        // for a hull; the resume happens next tick once the threat clears.
+        const dangerNear = s.enemies.some(e => Math.abs(wrapDelta(e.x - p.x)) < 120 && Math.abs(e.y - p.y) < 46)
+        if (dangerNear && clrNow < 70) { input.up = true; input.down = false }
+        else if (p.y > seat + 2) input.up = true
+        else if (elevatorD && !climbing && !riseAhead && p.y < seat - 2) input.down = true
         if (p.vx > 1.2) input.left = true
         else if (p.vx < -1.2) input.right = true
         if (input.up && input.down) input.down = false
@@ -240,7 +242,9 @@ export const watchRoute = (s) => {
         else if (e.type === 'lander' && e.state === 'descend') d *= 0.7
         const edx = wrapDelta(e.x - p.x)
         const eface = edx === 0 ? p.facing : Math.sign(edx)
-        if (eface !== p.facing) d *= 3.5
+        // A hauler is never demoted by the facing gate — the rescue job outranks
+        // the sweep risk (the planet's own law, pinned in defendercheck).
+        if (eface !== p.facing && !(e.type === 'lander' && e.carry !== null)) d *= 3.5
         if (d < bestD) { bestD = d; best = e }
     }
     if (best) {
@@ -271,7 +275,9 @@ export const watchRoute = (s) => {
             const onRear = p.vx >= 0 ? bx < -8 : bx > 8
             if (onRear && Math.abs(bx) < 150 && Math.abs(e.y - p.y) < 40 && Math.abs(bx) < rearD) { rearD = Math.abs(bx); rear = e }
         }
-        const chaserBehind = rear !== null
+        // The rescue job outranks the brace (the planet's law): while a hauler is
+        // THE job, steer the job, not the duel.
+        const chaserBehind = rear !== null && !(best.type === 'lander' && best.carry !== null)
         // Hover-kill (#3456 — the elevator's ±1.2 rule generalized): INSIDE the
         // late bracket the hull stops paying the duel with its body — the laser
         // closes at 20 whatever the hull does, so braking just keeps the hull out
@@ -289,8 +295,15 @@ export const watchRoute = (s) => {
             if (ex < 70 && Math.abs(e.y - p.y) < 24 && ex < closeD) { closeD = ex; close = e }
         }
         if (close) {
-            if (close.y - p.y > 4) input.up = true
+            // Flee the hug in BOTH axes at cruise (> the mutant's 2.4 cap) —
+            // braking inside the danger bubble is how v1 fed the route to the
+            // hunters; separation first, the brace kills it at range after.
+            const cy = close.y - p.y
+            if (cy > 4) input.up = true
             else if (canDown && aheadFloor - p.y > 70) input.down = true
+            const cx = wrapDelta(close.x - p.x)
+            if (cx > 0) { if (p.vx > -4.5) input.left = true }
+            else if (p.vx < 4.5) input.right = true
         } else if (shield) {
             // The shot the rules refuse, the body must also refuse: RUN from a
             // blocked line (mutants cap at 2.4 — cruise outruns them) until the
