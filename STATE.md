@@ -1,61 +1,82 @@
-# STATE — Forge status (slot a)
+# STATE — forge board snapshot (slot b, 2026-11-26 — DEFENDER SMART BOMB SHIPPED)
 
-## Shift report — 26 Nov 2026, 03:15Z (slot a, ~1.2 h)
-**Goal:** ADVENTURE never-dry stage (#3441, self-filed). **Shipped:** PR #3444
-(merge `f782759`) — seam law: a living, jaw-open dragon aligned on a doorway
-follows the dot through a room warp at the mirror entry; bite/sword-turn are
-judged inside the new room; multi-dragon rooms now reachable. **Closed:** #3441.
-Production verified (seam law visible in `index-BlipdWRI.js`).
+## This session — one ship + a law-grade discovery
+- Warden TARGET **#3441** REFUSED at claim (slot a held live, 8 min fresh —
+  dragons/seam is theirs). Normal ladder: steer empty, `next` #1712 is
+  waiting-jon, game-queue empty, the one unclaimed feedback (#3438) owned by
+  LIVE QA sessions (studio+mini) ⇒ flagship stage spent ⇒ **never-dry #1571**.
+- Corrected shelf (#3440 — parseRegistry still blind on main): **DEFENDER 6**
+  weakest unheld (tie w/ ROGUE, registry order wins; ADVENTURE held by slot a,
+  FROGGER by building-qa). Oldest gap = the b21 patrol essay (pins its own
+  optimum — not buildable); oldest BUILDABLE gap carried Jon's answered #2016
+  ⇒ **execute A: port the smart bomb.** Filed **#3443**, claimed, shipped
+  **PR #3449 (merge 8af78d4)**, closed shipped.
+- **The bomb (sim law):** B (ShiftLeft / pad BOMB / contract `b`) vaporizes
+  every hostile in the wrap-aware 1000 px window (¼ planet), table values
+  150/1500, haulers drop cargo FALLING (catchable), blast spares pilot+humans,
+  supply 3 refilled at wave beat (cap), edge-triggered, dark-suppressed,
+  **rand-free** ⇒ watchRoute untouched ⇒ 40-seed WITNESS replay IDENTICAL
+  (7800/1350 floors, 46/47 rescues, worst 1 crash — re-measured in-PR).
+- HUD bomb icons mirror the spare-ships row; white screen-wash + subsonic boom;
+  attract line; registry pad `BOMB` + controls; vpadcheck batch-1 calibrated
+  (DEFENDER left move-/fire-only).
 
-**TARGET note:** warden pointed #3432 at slot a — REFUSED (slot b held and had
-already shipped it: PR #3437 merged 02:04Z, issue auto-closed, `building` label
-stranded). Normal ladder then found nothing claimable (queue empty, #1712 is
-waiting-jon, live QA session owns the feedback borrow) and the flagship stage is
-spent — but the NEVER-DRY pick needed care, see the measurement bug below.
+## THE FIND (#3445, filed with full evidence — NOT fixed here, one ship/session)
+`defenderplay`'s crash loop proved **GAME OVER is unreachable**: `invuln` only
+decrements while `dark > 0`, so grace freezes at 120 forever — invulnerable
+after the first crash. Corollary measured: b18-b21 witness laws ("all 40
+survive", "no seed crashes twice") are ARTIFACTS — honest one-line fix scores
+witness 0/20, holdout 1/20 survived. Real fix = grace burn + patrol re-earned
++ all watch laws re-pinned = its own batch. `defenderplay` pins BOTH sides by
+name so the fix must invert them deliberately.
 
-### The measurement find (#3440) — read this before trusting idle-kick
-`scripts/lib/idle.mjs:parseRegistry` matches only brace-imports and `lazy()` —
-every statically-imported game (all of `games.js:1-19`) is invisible: 21 titles off
-the shelf, incl. ADVENTURE (15 unowned gaps), Rogue/Defender (6 each), Frogger.
-Idle-kick's `KICK PINBALL 0 weak` was a phantom (gap 0 declines action against
-open decision #3335, whose jonq default is keep-level-only — that kick would have
-burned this session). Corrected pick: ADVENTURE at 15. Evidence posted on #2910;
-fix (regex + re-calibration) owned by **#3440** (lane:platform). Until #3440
-lands, derive weakestStage by hand (corrected shelf: Adventure 15 > Rogue/Defender
-6 > DonkeyKong/MissileCommand/Centipede/Asteroids/Pong 4–5 > visible-shelf 0–1).
+## Proof
+- defendercheck **118/118** (+31 pins: window edge inclusive-500, seam kill,
+  spare/drop/dark/dry/determinism, zero-rand inspection, pad/contract/flash) +
+  `--mutant` **150/150** (32/32 die) — revived a DEAD #2167-era thrust-silence
+  mutant anchor (un-firable on main since thrustHum refactor).
+- New **defenderplay** (advisory alias, real Chrome :5178): **17/17** — bomb
+  spend visible in canvas PIXELS (calm 0→flash 117), held≠stream, Y seat never
+  bombs, takeover, zero page errors.
+- Chrome law before merge (#3427 lesson): watchcheck --only defender 322/322,
+  watchpillcheck 227/227, vpadcheck 738/738, attractcheck 694/694,
+  contractcheck 857/857, muteguardcheck, lint:mario/fps/ai, build green.
+- Prod verified: bundle `index-e1aLcqlU.js` carries `SMART BOMB` at jalfern.com.
 
-### What landed (#3441)
-- `sim.js`: seam law in `tryTransition` (all five branches incl. gate→foyer);
-  alignment = shared gap column/row ± `DRAGON_FOLLOW_SLACK`; passability implied
-  by the dot's own crossing (barriers open for the run); arithmetic only, no dice.
-- `adventurecheck` 196/196 (+10 gates: real-walk heels-bite repro, no-dice hash
-  pair, misalignment/jaw-shut stay, left-seam mirror, sword-turn slay, foyer
-  follow) + 3 new mutants — all 52 mutants die. Skilled-route playtest still 98%.
-- Real-Chrome drive (`shot.mjs` ?seed=4241, real keys): start→run→walk, drawn dot
-  matches input position, zero page/console errors.
+## PLAYABLE on main right now
+- `/retrogames/defender` — B clears the screen, 3 per wave (phones: BOMB pad).
+  Plus prior shelf: pinball flank+art, skyward rooms, grind-city, tidal-rush,
+  pinball SOLO+smith, ssx, comet-drift pair, marble pair, galaga bee,
+  mario-kart, ice-climber, pacman, mario, minesweeper/garden-guard/homebody,
+  TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
+  spy-hunter, iron keep, missile, pucks, mines, zork, ultima, king's quest,
+  Joust, Q*bert, forge board.
 
-### Board hygiene done this shift (tails left by earlier dead sessions)
-- **#3195 verified-fixed + closed** (GrindCity dvh landed in #3193; nobody said
-  Closes; dvhcheck 7/7, quarantine already empty).
-- **#3432** prod-verified (`Pinball-fm41zBdE.js` carries rampL/kbL/KICKBACK),
-  URL commented, `building`→`shipped`.
-- 8b polish passes finally filed: **#3446 PINBALL**, **#3447 SKYWARD** (+ #3441's
-  own follow-ups folded into #3447).
+## Board watch (facts)
+- 8b filed: **#3453** QA — DEFENDER polish (hyperspace, meteor-swarm,
+  re-descent, seam collisions; #3445 explicitly excluded from it).
+- Slot a held #3441 at my claim; their park (02:05Z + newer tail) shipped an
+  ADVENTURE stage; ADVENTURE ~14 gaps remain ⇒ corrected weak pick stays
+  ADVENTURE next dry kick (gap 1: duplicated chalice / Blue Castle).
+- #3445 is games-lane labeled — next free builder takes it from the ladder
+  honestly; it outranks polish in value by a mile.
+- Slot a note #3439-fold: slot-b sessions kept dying post-merge before
+  post-steps — this session completed them (labels, close, 8b, report).
 
-### Board (03:15Z)
-- `game-queue`: empty. `next`: #1712 (waiting-jon). `building`: none.
-  `building-qa`: #3419, #3436. `feedback`: #2971/#3244 (waiting-jon), #3446,
-  #3447, plus QA-held above. New platform items: **#3440** (idle-kick blind shelf),
-  #2910 updated with tonight's three phantom classes.
-- ADVENTURE still carries 14 unowned honest gaps → the corrected weak pick stays
-  ADVENTURE next dry kick (gap 1: the duplicated chalice / Blue Castle).
+## Open questions (links only — #605)
+- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane; gates
+  PINBALL tilt-muffle — do NOT implement against it until answered/defaulted).
+- #3054 — native TestFlight ports have no recorder/upload (AWAITING).
+- #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
+- #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
+- No new jonq questions filed this session (bomb was already answered; #3445
+  is a bug report, not a question).
 
-### Known / residue
-- `adventure-playtest` route failure mode "no bridge" (2%) pre-exists this change.
-- Slot b's sessions keep dying after merge before post-steps (#3432 labels, 8b) —
-  the auto-close via `Closes #n` helped this time; consider warden sweep for
-  closed-but-`building` issues (#3013 family).
-
-## Open questions (none filed this session)
-- #3335 (lane:qa, AWAITING, due 27 Nov) gates PINBALL's tilt-muffle — not mine;
-  do NOT implement against it until answered/defaulted.
+## Slot state at handoff
+- Slot b: dev :5178 stopped via scripts/devstop.sh; lane worktree
+  `~/Dev/retrogames-forge-defender-smart-bomb` detached at origin/main after
+  the merge (state PR rides `docs/state-b-smart-bomb`).
+- Game code merged ⇒ STATE ships via its own docs/state PR; parked at
+  /tmp/forge/STATE.b.parked.md via statepark (#1430).
+- Time-box: ship + discovery report well inside 3 h (CI queue ate ~30 min of
+  the merge wait).
