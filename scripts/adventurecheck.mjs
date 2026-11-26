@@ -15,7 +15,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS, DRAGON_RESPAWN_TICKS, EXITS, CASTLE_INSIDES, SIDE_GAP_Y, SIDE_GAP_H, ROOM_WIPE_TICKS, stateHash } from '../src/games/Adventure/sim.js'
+import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS, ITEM_INSTANCES, DRAGON_RESPAWN_TICKS, EXITS, CASTLE_INSIDES, SIDE_GAP_Y, SIDE_GAP_H, ROOM_WIPE_TICKS, stateHash } from '../src/games/Adventure/sim.js'
 import { seedRng } from '../src/utils/gameContract.js'
 import { makeRoute } from '../src/games/Adventure/route.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -56,7 +56,12 @@ console.log('fresh run: the 1993 starting layout')
 {
     const s = createSim(seedRng(1))
     ok(s.room === R.GOLD_CASTLE && s.player.x === 80 && s.player.y === 150, 'starts outside the Gold Castle')
-    ok(s.items.length === MAX_ITEMS && s.dragons.length === 3, `${MAX_ITEMS} items and 3 dragons in the world`)
+    ok(s.items.length === ITEM_INSTANCES && s.dragons.length === 3,
+        `${ITEM_INSTANCES} item instances (8 kinds — #3482 duplicate chalice) and 3 dragons in the world`)
+    // #3482 cartridge record: the duplicate sits in the Blue Castle every run —
+    // pinned through the shuffle, home on every seed.
+    ok(s.items.some((i) => i.id === 'chalice2' && i.room === R.BLUE_CASTLE && !i.carried),
+        'the duplicate chalice sits in the Blue Castle on a fresh run (pinned)')
     ok(s.bat.room === R.OVERWORLD_3, 'the bat starts in the overworld')
     ok(s.score === 0 && !s.won && !s.dead && s.tick === 0, 'clean report: score 0, alive, tick 0')
     ok(ROOMS[R.GOLD_CASTLE].gate && ROOMS[R.BLACK_CASTLE].gate && ROOMS[R.WHITE_CASTLE].gate,
@@ -1346,6 +1351,96 @@ console.log('#3441 dragons follow through the door (room-warp seam law)')
         'a raised portcullis is a follow-seam too (dragon enters the foyer)', `foyer? gy.room=${gy.room}`)
 }
 
+// ------------------------------------------------- #3482 Blue Castle & the duplicate chalice ----
+console.log('#3482 the Blue Castle and the duplicate chalice (either cup wins)')
+{
+    // Structure: an open keep off Blue Lab 2 — the cart's blue castle has no
+    // portcullis and no foyer; it is entered straight through a side door.
+    const blue = ROOMS[R.BLUE_CASTLE]
+    ok(!!blue && !blue.gate && CASTLE_INSIDES[R.BLUE_CASTLE] === undefined,
+        'the Blue Castle exists and is an OPEN keep (no gate, no foyer)')
+    ok(EXITS[R.BLUE_CASTLE].left === R.BLUE_LAB_2 && EXITS[R.BLUE_LAB_2].right === R.BLUE_CASTLE,
+        'the keep answers Blue Lab 2 both ways (no one-way door)')
+    const leftOpen = blue.walls.some((w) => w.x === 0 && w.y === SIDE_GAP_Y && w.h !== GH)
+        || !blue.walls.some((w) => w.x === 0 && w.h === GH)
+    ok(leftOpen, 'the keep bricks every side but the west door')
+
+    // Reachability: BFS over the exit graph — the keep is in the world, and
+    // its treasure can carry itself home.
+    const bfs = (from, to) => {
+        const seen = new Set([from]); const q = [from]
+        while (q.length) {
+            const r = q.shift()
+            if (r === to) return true
+            for (const to2 of Object.values(EXITS[r] || {})) if (to2 >= 0 && !seen.has(to2)) { seen.add(to2); q.push(to2) }
+        }
+        return false
+    }
+    ok(bfs(R.GOLD_CASTLE, R.BLUE_CASTLE), 'the keep is reachable from the start')
+    ok(bfs(R.BLUE_CASTLE, R.GOLD_CASTLE), 'and the walk home from it exists')
+
+    // The cartridge record: the duplicate sits in the keep — pinned through
+    // every variant, including the V3 shuffle (which may not deal the keep
+    // out to anything else).
+    let pinned = 0; let dealt = 0
+    for (let sd = 1; sd <= 20; sd++) {
+        const s = createSim(seedRng(sd), 3)
+        if (s.items.some((i) => i.id === 'chalice2' && i.room === R.BLUE_CASTLE)) pinned++
+        if (s.items.some((i) => i.id !== 'chalice2' && i.room === R.BLUE_CASTLE)) dealt++
+    }
+    ok(pinned === 20, 'the duplicate stays home through the shuffle — 20/20 seeds', `${pinned}/20`)
+    ok(dealt === 0, 'the keep is not dealt out — no shuffled item lands inside', `${dealt} seeds invaded`)
+
+    // Either cup wins: deliver the DUPLICATE to the Gold Castle.
+    const w2 = createSim(seedRng(42))
+    w2.room = R.GOLD_CASTLE; w2.carrying = 'chalice2'
+    step(w2, {})
+    ok(w2.won, 'the duplicate delivered home is a win too — both are the Grail')
+    // and only the cup, not any old carried object
+    const w3 = createSim(seedRng(42))
+    w3.room = R.GOLD_CASTLE; w3.carrying = 'magnet'
+    step(w3, {})
+    ok(!w3.won, 'a magnet at the Gold Castle is not a win (the cup law is not a blanket)')
+
+    // Kind-honest score: both cups together are ONE distinct item.
+    const ks = createSim(seedRng(11))
+    ks.room = R.OVERWORLD_1
+    ks.carrying = null
+    const c1 = ks.items.find((i) => i.id === 'chalice')
+    const c2 = ks.items.find((i) => i.id === 'chalice2')
+    ks.player.x = 80; ks.player.y = 90
+    c1.room = R.OVERWORLD_1; c1.carried = false; c1.x = 80; c1.y = 96
+    c2.room = R.OVERWORLD_1; c2.carried = false; c2.x = 80; c2.y = 96
+    step(ks, {})
+    ok(ks.carrying === 'chalice' && ks.score === 1, 'the first cup scores the chalice kind once', `carry=${ks.carrying} score=${ks.score}`)
+    c1.room = R.BLUE_CASTLE; c1.carried = false; c1.x = 20; c1.y = 20
+    ks.carrying = null
+    step(ks, {})
+    ok(ks.carrying === 'chalice2' && ks.score === 1,
+        'the second cup joins the hand without inflating the score — distinct KINDS, 0..8 holds', `carry=${ks.carrying} score=${ks.score}`)
+
+    // Sparkle: either cup in hand glints.
+    const sp = createSim(seedRng(7))
+    sp.room = R.OVERWORLD_2
+    sp.carrying = 'chalice2'
+    step(sp, {})
+    ok(sp.sparkle === true, 'the duplicate sparkles in hand like its twin')
+    sp.carrying = null
+    step(sp, {})
+    ok(sp.sparkle === false, 'hands empty — the glint goes out')
+
+    // Seam law at the new door: a hunting dragon aligned on the west gap
+    // rides out with the player into the keep.
+    const seam = createSim(seedRng(9))
+    seam.room = R.BLUE_LAB_2
+    seam.player.x = 154; seam.player.y = 90
+    const dg = seam.dragons.find((d) => d.id === 'yorgle')
+    dg.room = R.BLUE_LAB_2; dg.x = 132; dg.y = 90; dg.mouthOpen = true
+    step(seam, { dx: PLAYER_SPEED })
+    ok(seam.room === R.BLUE_CASTLE, 'the dot slips into the keep', `room=${seam.room}`)
+    ok(dg.room === R.BLUE_CASTLE, 'the hunter follows through the new door (seam law rides every exit)', `dragon=${dg.room}`)
+}
+
 // --------------------------------------------------------------- mutants -----
 if (process.argv.includes('--mutant')) {
     console.log('\nmutants (each MUST turn the suite red)')
@@ -1364,13 +1459,25 @@ if (process.argv.includes('--mutant')) {
             room: sim.room,`,
             `            room: sim.room,`],
         ['the chalice win condition is deleted (pre-port dead terminal)', SM,
-            `if (sim.room === R.GOLD_CASTLE && sim.carrying === 'chalice') {`,
+            `if (sim.room === R.GOLD_CASTLE && (sim.carrying === 'chalice' || sim.carrying === 'chalice2')) {`,
             `if (false) {`],
+        ['#3482: the duplicate is decoration (only the twin can win)', SM,
+            `if (sim.room === R.GOLD_CASTLE && (sim.carrying === 'chalice' || sim.carrying === 'chalice2')) {`,
+            `if (sim.room === R.GOLD_CASTLE && sim.carrying === 'chalice') {`],
+        ['#3482: the pin is ignored (the duplicate wanders off its keep)', SM,
+            `if (item.pin) continue`,
+            `if (item.pin && false) continue`],
+        ['#3482: the keep bricks its west door (the two-way law dies)', SM,
+            `bg: COLORS.blue, walls: makeWalls(false, false, true, false)`,
+            `bg: COLORS.blue, walls: makeWalls(false, false, false, false)`],
+        ['#3482: score counts instances not kinds (the second cup inflates it)', SM,
+            `const pk = item.kind || item.id`,
+            `const pk = item.id`],
         ['castle top re-solidifies (the foyer-lock bug returns)', SM,
             `{ id: R.WHITE_CASTLE, name: 'White Castle', bg: '#c0c0c0', walls: makeWalls(true, true, false, false)`,
             `{ id: R.WHITE_CASTLE, name: 'White Castle', bg: '#c0c0c0', walls: makeWalls(false, true, false, false)`],
         ['score counts duplicate pickups (progress metric inflated)', SM,
-            `if (!sim.pickedUp[item.id]) {`,
+            `if (!sim.pickedUp[pk]) {`,
             `if (true) {`],
         ['the dragon bite is deleted (pre-port invincibility)', SM,
             `if (dist < 8 && dragon.mouthOpen) {`,
@@ -1497,11 +1604,14 @@ if (process.argv.includes('--mutant')) {
             'sim.chew = hunting && (sim.tick % CHEW_TICKS < CHEW_TICKS / 2)',
             'sim.chew = true && (sim.tick % CHEW_TICKS < CHEW_TICKS / 2)'],
         ['#1588: the carried chalice never sparkles (the goal item loses its glint)', SM,
-            "sim.sparkle = sim.carrying === 'chalice'",
+            "sim.sparkle = sim.carrying === 'chalice' || sim.carrying === 'chalice2'",
             'sim.sparkle = false'],
         ['#1588: every carried item sparkles (the sword lies about being the prize)', SM,
-            "sim.sparkle = sim.carrying === 'chalice'",
+            "sim.sparkle = sim.carrying === 'chalice' || sim.carrying === 'chalice2'",
             'sim.sparkle = !!sim.carrying'],
+        ['#3482: the duplicate stops sparkling (the second cup is second-class)', SM,
+            "sim.sparkle = sim.carrying === 'chalice' || sim.carrying === 'chalice2'",
+            "sim.sparkle = sim.carrying === 'chalice'"],
         ['#1588: the room-change flash never fires (the hard-cut returns)', SM,
             'sim.wipe = sim.tick - sim.wipeAt < ROOM_WIPE_TICKS',
             'sim.wipe = false'],
