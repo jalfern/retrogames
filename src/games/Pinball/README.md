@@ -473,3 +473,13 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   Honest residue: the ramp is wire-scored (no raised lane wall), so a
   flank-line ball scores whether or not the player aimed it — same law the
   launch-lane RAMP has always had.
+- **#3446 item 1:** the spinner read is graduated. A feed pass now calls its
+  ladder on the DMD — `SPINNER x1, x2 …` one rung per turn (`gs.spinPass`,
+  cooled by `gs.spinCool` 24 ticks after the last turn, so the next pass
+  starts at x1) — and spinner events carry the feed speed (`v = |vy|`), which
+  the shell rides: flash persistence and blade motion-ghosts scale with it, so
+  a fast ramp feed blurs and a limp outlane trickle does not. Display state
+  only: physics, scoring and `stateHash` are untouched (gates §spinner +
+  mutants spinrung/spincool/spingrade). Still open on #3446: the kickback
+  save sweep + distinct grapple sound, ramp ball-motion read, lit-hierarchy
+  pass, EMBER re-dress, JET LANE combo banner.

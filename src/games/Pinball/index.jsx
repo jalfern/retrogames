@@ -103,6 +103,11 @@ const NAME_B = ['RIDER', 'STAR', 'RUSH', 'COMET', 'KNIGHT', 'DRIFT', 'FANG', 'TI
 // The one shape every action takes: candidate def for the tool at (cx,cy),
 // or null when the action isn't a placement. act() and the editor's ghost
 // both read this, so what the cursor shows green IS what will be accepted.
+// #3446 item 1: graduated spinner read — the feed speed carried on the spinner
+// event (ev.v = |vy| at the turn) sets how long the flash persists and whether
+// the blade smears. A fast ramp feed blurs; a limp outlane trickle does not.
+function spinPersist(ev) { return Math.min(14, 4 + Math.round((ev.v || 0) / 60)) }
+
 function toolCandidate(d, cx, cy, tool) {
     const t = TOOLS[tool]
     if (t === 'BUMPER') {
@@ -488,7 +493,7 @@ const PinballGame = () => {
                 else if (ev.type === 'sling') { fl.slings[ev.i] = 7; spawn(ev.x, ev.y, 6, pal.sling, 150) }
                 else if (ev.type === 'target') { fl.targets[ev.i] = 8; spawn(ev.x, ev.y, 7, pal.neon) }
                 else if (ev.type === 'bank') { fl.bank = 40; shakeRef.current = Math.max(shakeRef.current, 5) }
-                else if (ev.type === 'spinner') { fl.spinner = 6; spawn(ev.x, ev.y, 3, pal.glow, 90) }
+                else if (ev.type === 'spinner') { fl.spinner = Math.max(fl.spinner, spinPersist(ev)); spawn(ev.x, ev.y, 3, pal.glow, 90) }
                 else if (ev.type === 'kicker') { spawn(ev.x, ev.y, 12, pal.lane, 220) }
                 // #3250 kickback: the loudest rescue on the table — plunger pop,
                 // ring, upward shower and a shake (it saves the ball from death).
@@ -613,7 +618,7 @@ const PinballGame = () => {
                 else if (ev.type === 'sling') { fl.slings[ev.i] = 7; sparkD(d, ev.x, ev.y, 5, pal.sling) }
                 else if (ev.type === 'target') { fl.targets[ev.i] = 8 }
                 else if (ev.type === 'bank') { fl.bank = 40; d.shk.current = Math.max(d.shk.current, 4) }
-                else if (ev.type === 'spinner') { fl.spinner = 6 }
+                else if (ev.type === 'spinner') { fl.spinner = Math.max(fl.spinner, spinPersist(ev)) }
                 else if (ev.type === 'kicker') { sparkD(d, ev.x, ev.y, 9, pal.lane, 220) }
                 else if (ev.type === 'kickback') { fl[ev.side === 'L' ? 'kbL' : 'kb'] = 18; sparkD(d, ev.x, ev.y, 12, pal.hot, 240) }
                 else if (ev.type === 'ramp') { fl.ramp = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
@@ -999,7 +1004,19 @@ const PinballGame = () => {
             const sp = tb.spinner
             ctx.save()
             ctx.translate(v.spinnerX, (sp.yFrom + sp.yTo) / 2)
-            ctx.rotate(p0.spinArm ? 0.4 : 0.4 + (p0.spin / sp.pxPerTurn) * Math.PI * 2 + gs.spinnerTurns * 0.6)
+            const bladeA = p0.spinArm ? 0.4 : 0.4 + (p0.spin / sp.pxPerTurn) * Math.PI * 2 + gs.spinnerTurns * 0.6
+            // #3446 item 1: motion ghosts trail the blade — flash persistence encodes
+            // feed speed (spinPersist), so a fast feed smears, a trickle doesn't.
+            if (!p0.spinArm && fl.spinner > 8) {
+                for (let g = 2; g >= 1; g--) {
+                    ctx.save()
+                    ctx.rotate(bladeA - g * (0.08 + fl.spinner * 0.011))
+                    ctx.fillStyle = `rgba(255,255,255,${(0.28 - g * 0.1).toFixed(2)})`
+                    ctx.fillRect(-2, -14, 4, 28)
+                    ctx.restore()
+                }
+            }
+            ctx.rotate(bladeA)
             ctx.fillStyle = fl.spinner > 0 ? '#ffffff' : pal.chrome
             ctx.fillRect(-2, -14, 4, 28)
             ctx.restore()
