@@ -714,14 +714,14 @@ export const GAMES = [
     {
         path: '/defender',
         tapStart: true,
-        pad: { layout: 'stick', buttons: [], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BOMB', code: 'ShiftLeft' }], analog: false },
         builtBy: 'claude',
         added: '2026-02-26',
         component: DefenderGame,
         label: 'DEFENDER',
         theme: 'dark',
         description: 'Protect the humanoids from abduction in this side-scrolling shooter.',
-        controls: ['Arrow Keys: Move', 'Space: Shoot', WATCH_HELP + ' — the patrol that survives the planet and clears waves does it for real']
+        controls: ['Arrow Keys: Move', 'Space: Shoot', 'Shift: Smart bomb (3 per wave)', WATCH_HELP + ' — the patrol that survives the planet and clears waves does it for real']
     },
     {
         path: '/pitfall',

@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { createSim, WORLD_WIDTH, START_LIVES, watchRoute, thrustHum } from './sim.js'
+import { createSim, WORLD_WIDTH, START_LIVES, BOMBS_PER_WAVE, watchRoute, thrustHum } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -52,7 +52,8 @@ const DefenderGame = () => {
         try { hiScore = Number(localStorage.getItem(HI_KEY)) || 0 } catch { hiScore = 0 }
 
         // INPUT
-        const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false }
+        // #3443: ShiftLeft is the smart-bomb B (VirtualControls secondAction code).
+        const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false, ShiftLeft: false }
 
         const startRun = (forcedSeed) => {
             seed = forcedSeed !== undefined && forcedSeed !== null
@@ -93,6 +94,9 @@ const DefenderGame = () => {
                 else if (ev.t === 'mutate') audioController.playTone(500, 0.06, 'square', 0.08)
                 else if (ev.t === 'abduct') audioController.playTone(120, 0.12, 'triangle', 0.1)
                 else if (ev.t === 'humanDied') audioController.playSweep(500, 120, 0.2, 'sawtooth', 0.14)
+                // #3443: the smart bomb's boom — a subsonic sweep under a white
+                // noise crack, layered over the per-kill pops already fired.
+                else if (ev.t === 'bomb') { audioController.playNoise(0.3, 0.3); audioController.playSweep(90, 30, 0.45, 'sawtooth', 0.22) }
             }
         }
 
@@ -112,6 +116,7 @@ const DefenderGame = () => {
             if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
             if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'Space') keys.Space = true
+            if (e.code === 'ShiftLeft') keys.ShiftLeft = true // #3443: B = smart bomb
             if (e.code === 'ArrowUp' || e.key === 'w') keys.ArrowUp = true
             if (e.code === 'ArrowDown' || e.key === 's') keys.ArrowDown = true
             if (e.code === 'ArrowLeft' || e.key === 'a') keys.ArrowLeft = true
@@ -120,6 +125,7 @@ const DefenderGame = () => {
 
         const handleKeyUp = (e) => {
             if (e.code === 'Space') keys.Space = false
+            if (e.code === 'ShiftLeft') keys.ShiftLeft = false
             if (e.code === 'ArrowUp' || e.key === 'w') keys.ArrowUp = false
             if (e.code === 'ArrowDown' || e.key === 's') keys.ArrowDown = false
             if (e.code === 'ArrowLeft' || e.key === 'a') keys.ArrowLeft = false
@@ -160,7 +166,7 @@ const DefenderGame = () => {
                     ? { left: false, right: false, up: false, down: false, fire: false }
                     : watchingRef.current
                         ? watchRoute(sim)
-                        : { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Space }
+                        : { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Space, bomb: keys.ShiftLeft }
             if (isAttractMode) sim.player.invuln = 999999 // the demo does not die
             thrustFacing = input.left ? -1 : input.right ? 1 : 0
             // #1907: when the patrol holds fire to spare a human, tell the player.
@@ -392,6 +398,13 @@ const DefenderGame = () => {
 
             ctx.restore()
 
+            // #3443: the smart-bomb detonation — the cabinet washed the whole
+            // screen white for a beat; the HUD drawn after stays legible.
+            if (sim.bombFlash > 0) {
+                ctx.fillStyle = `rgba(255,255,255,${(sim.bombFlash / 18 * 0.75).toFixed(3)})`
+                ctx.fillRect(0, 0, viewWidth, viewHeight)
+            }
+
             // --- SCANNER (radar): the whole planet compressed up top ---
             const sc = viewWidth / WORLD_WIDTH
             ctx.fillStyle = 'black'
@@ -441,6 +454,18 @@ const DefenderGame = () => {
                 const bx = viewWidth - 16 - i * 18
                 const by = MINIMAP_HEIGHT + 44
                 ctx.moveTo(bx, by); ctx.lineTo(bx - 10, by + 4); ctx.lineTo(bx - 10, by - 4); ctx.closePath()
+                ctx.stroke()
+            }
+            // #3443: smart-bomb stock — icons under the radar on the left, mirroring
+            // the spare-ships row (the cabinet's bomb readout).
+            for (let i = 0; i < sim.bombs; i++) {
+                const bx = 14 + i * 16
+                const by = MINIMAP_HEIGHT + 44
+                ctx.strokeStyle = '#9fd8ff'
+                ctx.lineWidth = 1
+                ctx.beginPath()
+                ctx.arc(bx, by + 1, 4, 0, Math.PI * 2)
+                ctx.moveTo(bx + 3, by - 2); ctx.lineTo(bx + 5, by - 5)
                 ctx.stroke()
             }
 
@@ -530,7 +555,7 @@ const DefenderGame = () => {
         // QA contract (#377)
         exposeGame({
             id: 'defender',
-            buttons: ['left', 'right', 'up', 'down', 'a'],
+            buttons: ['left', 'right', 'up', 'down', 'a', 'b'], // #3443: b = smart bomb
             reset: (s) => {
                 tickN = 0
                 startRun(s >>> 0)
@@ -543,6 +568,7 @@ const DefenderGame = () => {
                 keys.ArrowUp = !!pad.up
                 keys.ArrowDown = !!pad.down
                 keys.Space = !!pad.a
+                keys.ShiftLeft = !!pad.b // #3443
                 update()
             },
             state: () => ({
@@ -555,6 +581,7 @@ const DefenderGame = () => {
                 humans: sim ? sim.humans.filter((h) => h.state !== 'dead').length : 0,
                 enemies: sim ? sim.enemies.length : 0,
                 playerX: sim ? Math.round(sim.player.x) : 0,
+                bombs: sim ? sim.bombs : BOMBS_PER_WAVE, // #3443 (additive)
             }),
             canvas: () => canvas,
             // snapshot/restore omitted: the seeded rand closure is not JSON-serializable (#391).
@@ -582,6 +609,7 @@ const DefenderGame = () => {
                     wave: sim ? sim.wave : 1, enemies: sim ? sim.enemies.length : 0,
                     humans: sim ? sim.humans.filter((h) => h.state !== 'dead').length : 0,
                     playerX: sim ? Math.round(sim.player.x) : 0, playerY: sim ? Math.round(sim.player.y) : 0,
+                    bombs: sim ? sim.bombs : BOMBS_PER_WAVE, bombFlash: sim ? sim.bombFlash : 0, // #3443
                 }),
             }
         }
@@ -618,7 +646,7 @@ const DefenderGame = () => {
                     </div>
                 )}
             </div>
-            <VirtualControls />
+            <VirtualControls secondAction={{ label: 'BOMB', code: 'ShiftLeft' }} />
         </div>
     )
 }

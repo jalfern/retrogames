@@ -40,6 +40,17 @@ on one seeded stream.
 - **Look** (docs/ART.md, RETRO): black starfield with twinkle, white mountain
   wireframe, grey lander shells with tractor bar, red diamond mutants, small
   yellow humanoids, thrust flame, red/yellow score sheet under the radar.
+- **Smart bomb (#3443 — Jon's #2016 answer A, "port it. Smart bomb on the
+  B/secondAction button, 3 per wave")**: B (Shift / pad **BOMB**) vaporizes
+  every hostile inside the 1000 px screen window — wrap-aware, centered on the
+  fighter, a quarter of the planet like the cabinet's view. Kills pay the
+  normal table, a bombed hauler drops its human *falling* (catchable), and the
+  blast never touches the pilot or a foot soldier. Stock 3, refilled on every
+  wave beat (icons under the radar, left of the spare-ships row); edge-
+  triggered (held ≠ stream), wasted presses suppressed while dead, and the
+  whole press path is rand-FREE — the seed stream cannot shift, `watchRoute`
+  never presses, so the WITNESS replay is byte-identical with the bomb aboard.
+  White screen-wash + subsonic boom.
 - Attract mode flies the route on its own (chase + shoot) and is invulnerable;
   any key or tap starts (b16 pattern).
 
@@ -58,6 +69,9 @@ npm run defendercheck            # Node: determinism, score law, rescue chain, d
                                #   + WITNESS: the WATCH patrol survives both 20-seed sets
                                #     (witness + holdout) @150 s, never crashes twice
 npm run defendercheck -- --mutant   # pre-port bugs re-planted; every mutant must go red
+npm run defenderplay               # Chrome, REAL keys: Shift spends one bomb, pixels flash
+                               #     white, held ≠ stream, the WATCH seat never bombs, and
+                               #     the crash law pinned both sides (#3445 grace freeze)
 npm run watchcheck -- --only defender  # seat pilot: one-tap ▶ WATCH, Y seat/takeover,
                                #   blips, idle-hands proof (browser, needs dev server)
 npm run feedbackcheck          # floor law now 55 report+pin titles
@@ -77,9 +91,21 @@ a diving lander is next, then nearest threats; a falling human is flown into
 when a walking human stands in the laser line closer than the target. The
 patrol still climbs clear of the terrain and stays out of the dark. Any
 driving key or a tap hands the wheel back (shared blips).
+**#3443 re-pin:** with the smart bomb in the build the floors were re-measured
+on this PR and are IDENTICAL (witness min 7800, holdout min 1350, 46/47
+rescues, one crash worst-case) — the route carries no bomb field and the press
+path draws no rand, so the witness never moved.
 
 ## Honest gaps
 
+- **KNOWN BUG (#3445, filed 2026-11-26)**: the respawn grace never burns below
+  120 ticks — `invuln` only decrements while `dark > 0` — so after the FIRST
+  crash the pilot is permanently invulnerable and GAME OVER is unreachable.
+  Consequence: the b18-b21 WITNESS laws (all 40 seeds survive, no seed crashes
+  twice) are artifacts of the bug — measured with the honest one-line fix, the
+  same seeds collapse to witness 0/20 and holdout 1/20 survived. Fixing it
+  honestly means re-earning the patrol route; see #3445 for the full evidence
+  and the batch plan. `defenderplay` pins both sides by name meanwhile.
 - The WATCH patrol is honest-proven, not perfect: WITNESS now replays BOTH a
   20-seed witness set and a 20-seed HOLDOUT (never tuned against) — all 40
   survive a 150 s patrol (witness min 7800 banked, holdout min 1350; 19/20
@@ -103,10 +129,15 @@ driving key or a tap hands the wheel back (shared blips).
   (any rule nudge reshuffles 20 runs), so the LAW is what ships pinned —
   40-seed survival, per-seed single-crash, holdout floors — and the
   interception gap stands too.)
-- No smart bomb, no hyperspace, no meteor-swarm bonus (documented 1981
-  features left out of this port; the original's bonus table values 250/500/
-  1000/10k are honored for what IS here). Smart bomb port-or-mock is asked
-  of Jon in #2016 — default: it stays out.
+- **CLOSED by #3443** — the smart bomb is in (Jon's #2016 answer A, "port it.
+  Smart bomb on the B/secondAction button, 3 per wave"): B vaporizes every
+  hostile inside the wrap-aware 1000 px screen window at table value, haulers
+  drop their human falling (catchable), the blast spares pilot and humans,
+  stock refills to 3 on the wave beat; edge-triggered and rand-free so the
+  WITNESS floors are byte-identical (re-measured in the PR, identical).
+  The mock option is retired. **Still out: hyperspace and the meteor-swarm
+  bonus** — documented 1981 features left out of this port (the original's
+  bonus table values 250/500/1000/10k are honored for what IS here).
 - A hauled human dies near the top of the screen instead of the lander
   circling back down with it (original re-descends; simplification).
 - Collisions within ~20 px of the wrap seam are skipped (20 px bodies on a
