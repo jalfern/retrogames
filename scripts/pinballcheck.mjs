@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -157,6 +157,22 @@ if (MUT) {
             from: 'const stallExempt = p.magHeld || p.cap ||',
             to: 'const stallExempt = gs.magHold > 0 || p.cap ||',
             note: 'stall exemption goes game-wide — a stuck free ball never counts during any hold',
+        },
+        // the cone dies — every contact swallows, the pinned-post law (#3217)
+        // is eaten by the chain: a lateral touch gets grabbed off the flank.
+        chaincone: {
+            file: 'src/games/Pinball/sim.js',
+            from: '+ (dy / bd) * (py / pd) >= 0.5;',
+            to: '+ (dy / bd) * (py / pd) >= -2;',
+            note: 'outer-face cone removed — lateral contacts are swallowed too',
+        },
+        // the rosette relax dies — chained balls pin on top of each other
+        // (packCollide skips held pairs, so nothing else keeps them apart).
+        chainslot: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'const step = 2 * Math.asin(BALL_R / holdR) + 0.01;',
+            to: 'const step = 0.001;',
+            note: 'rosette relax collapses — chained pins overlap on the ring',
         },
     }
     const a = ANCHORS[MUT]
