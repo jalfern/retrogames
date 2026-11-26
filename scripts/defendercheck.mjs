@@ -1055,7 +1055,7 @@ console.log('Meteor Storm (#3453):')
         s.bonus = true; s.bonusTimer = METEOR_BONUS_TICKS; s.meteorsDown = 0
         s.enemies = [rock(2600, 200), far()]; level(s)
         const before = s.score
-        for (let i = 0; i < 20 && s.meteorsDown === 0; i++) s.step({ fire: true })
+        for (let i = 0; i < 20 && !s.events.some((ev) => ev.t === "killMeteor"); i++) s.step({ fire: true })
         ok(s.score - before === SCORE_METEOR && s.events.some(e => e.t === 'killMeteor' && e.pts === SCORE_METEOR),
             `a laser vaporizes a rock at table value +${SCORE_METEOR}`, `got ${s.score - before}`)
     }
@@ -1065,7 +1065,7 @@ console.log('Meteor Storm (#3453):')
         s.bonus = true; s.bonusTimer = 60; s.meteorsDown = METEOR_COUNT - 1
         s.enemies = [rock(2600, 200), far()]; level(s)
         const before = s.score
-        for (let i = 0; i < 20 && s.meteorsDown === 0; i++) s.step({ fire: true })
+        for (let i = 0; i < 20 && !s.events.some((ev) => ev.t === "killMeteor"); i++) s.step({ fire: true })
         ok(s.events.some(e => e.t === 'meteorBonus' && e.pts === METEOR_BONUS) && s.score - before === SCORE_METEOR + METEOR_BONUS,
             `twelve inside 5 s pays the cabinet's +${METEOR_BONUS} ALL CLEAR on top of the rock`, `got ${s.score - before}`)
     }
@@ -1074,7 +1074,7 @@ console.log('Meteor Storm (#3453):')
         const s = newSim(7)
         s.bonus = true; s.bonusTimer = 3; s.meteorsDown = METEOR_COUNT - 1
         s.enemies = [rock(2600, 200), far()]; level(s)
-        for (let i = 0; i < 20 && s.meteorsDown === 0; i++) s.step({ fire: true }) // the window burns before the shot lands
+        for (let i = 0; i < 20 && !s.events.some((ev) => ev.t === "killMeteor"); i++) s.step({ fire: true }) // the window burns before the shot lands
         ok(!s.events.some(e => e.t === 'meteorBonus'), 'a twelfth rock after the window pays the rock but never the storm bonus')
     }
     // 5) lethality reads the wrap
