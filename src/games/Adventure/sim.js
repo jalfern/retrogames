@@ -46,6 +46,16 @@ export const DRAGON_FOLLOW_SLACK = 10  // #3441 seam alignment: gap edge ± one 
 // anchor size, the clamp bound [10, GW−20] the Feb shell already used).
 export const WANDER_REROLL = 0.02  // per-tick chance an idle dragon picks a new course
 export const DRAGON_BOX = 10
+// The cart's classic variants crawl at speed 1: a wandering dragon drifts at
+// half its hunt pace (the dot always outruns a wanderer; the hunt is the
+// threat). Keeps the roam honest — every seam reachable — without turning
+// every corridor into an unavoidable pass-by.
+export const ROAM_SCALE = 0.5
+// At an open doorway an idle dragon still has to decide to use it: one die
+// per tick at the seam (the cart's dragons loitered in their keeps and
+// wandered out on their own time). Rare but never zero — every room stays
+// reachable, and the world never falls silent.
+export const SEAM_CHANCE = 0.005
 
 // Wall geometry shared by makeWalls() and the secret-door barrier rect.
 export const WALL_T = 4      // wall thickness
@@ -831,8 +841,9 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                     dragon.wy = Math.sin(course)
                 }
                 const dRoom = ROOMS[dragon.room]
-                const nx = dragon.x + dragon.wx * dragon.speed
-                const ny = dragon.y + dragon.wy * dragon.speed
+                const wSpeed = dragon.speed * ROAM_SCALE
+                const nx = dragon.x + dragon.wx * wSpeed
+                const ny = dragon.y + dragon.wy * wSpeed
                 if (!collidesWithWalls(dRoom, nx, dragon.y, DRAGON_BOX, DRAGON_BOX)) dragon.x = nx
                 if (!collidesWithWalls(dRoom, dragon.x, ny, DRAGON_BOX, DRAGON_BOX)) dragon.y = ny
                 dragon.mouthOpen = false
@@ -845,11 +856,11 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                     const to = (dir === 'up' && dRoom.gate && sim.gateOpen[dRoom.gateKey]
                         && CASTLE_INSIDES[dragon.room] !== undefined)
                         ? CASTLE_INSIDES[dragon.room] : dex[dir]
-                    if (to >= 0) { dragon.room = to; dragon.y = dir === 'up' ? GH - 20 : 10 } else dragon.y = dir === 'up' ? 10 : GH - 20
+                    if (to >= 0 && rand() < SEAM_CHANCE) { dragon.room = to; dragon.y = dir === 'up' ? GH - 20 : 10 } else dragon.y = dir === 'up' ? 10 : GH - 20
                 } else if (dragon.x < 0 || dragon.x + DRAGON_BOX > GW) {
                     const dir = dragon.x < 0 ? 'left' : 'right'
                     const to = dex[dir]
-                    if (to >= 0) { dragon.room = to; dragon.x = dir === 'left' ? GW - 20 : 10 } else dragon.x = dir === 'left' ? 10 : GW - 20
+                    if (to >= 0 && rand() < SEAM_CHANCE) { dragon.room = to; dragon.x = dir === 'left' ? GW - 20 : 10 } else dragon.x = dir === 'left' ? 10 : GW - 20
                 }
                 continue  // roam positioned itself; the in-room clamp is the hunt branch's
             }

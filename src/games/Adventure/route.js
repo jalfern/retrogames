@@ -93,12 +93,15 @@ const roomThreat = (sim) => {
 
 // Kite a dragon that wandered into the player's room: run the away-vector at
 // full speed (the dot is faster than every cart dragon — 1.8 vs ≤1.5); when a
-// wall pins the flee, sweep one axis at a time until the run resumes. Escape
-// through a doorway wins outright: jaws shut beyond 30 px, so the #3441
-// follow law leaves a chased-at-distance dragon behind. True when the coast is
-// clear (dragon left, died, or out of DODGE_SAFE), false on death/exhaustion.
-function* dodge(sim, cap = 800) {
+// wall pins the flee, sweep one axis, and when the sweep still cannot free it,
+// EVICT: run for the exit whose anchor sits farthest from the dragon into a
+// calm neighbour. Escape wins outright: jaws shut beyond 30 px, so the #3441
+// follow law leaves a chased-at-distance dragon behind, and the cross law
+// waits for the room to empty before the route walks back in. True when the
+// coast is clear (dragon left, died, or out of DODGE_SAFE), false on death.
+function* dodge(sim, cap = 1500) {
     const p = sim.player
+    let pinned = 0
     for (let i = 0; i < cap; i++) {
         if (sim.won) return true
         if (sim.dead) return false
@@ -114,27 +117,32 @@ function* dodge(sim, cap = 800) {
             // pinned against stone: sweep one axis at a time until free again
             const sweep = [[S, 0], [-S, 0], [0, S], [0, -S]][i % 4]
             yield { dx: sweep[0], dy: sweep[1] }
-        }
+            if (sim.room !== r0) return true
+            if (++pinned < 8) continue
+            // EVICT: the farthest doorway into a calm neighbour room
+            const calm = neighbors(sim, r0)
+                .map(([d, to]) => ({ d, to, a: ANCHORS[d][0] }))
+                .filter((e) => !sim.dragons.some((dg) => dg.alive && dg.room === e.to))
+                .sort((A, B) => Math.hypot(B.a[0] - t.d.x, B.a[1] - t.d.y)
+                    - Math.hypot(A.a[0] - t.d.x, A.a[1] - t.d.y))[0]
+            if (!calm) { pinned = 0; continue }
+            for (let k = 0; k < 240 && sim.room === r0 && !sim.dead && !sim.won; k++) {
+                yield { dx: Math.sign(calm.a[0] - p.x) * S || 0, dy: Math.sign(calm.a[1] - p.y) * S || 0 }
+            }
+            if (sim.room !== r0) return true
+            pinned = 0
+        } else pinned = 0
     }
     return false
 }
 
 // #3489 — a doorway is no longer a safe threshold: a roaming dragon can sit
-// just inside it and bite the instant you arrive (dist < 8 lands on the entry
-// tick). Before pushing through, wait for the landing point in `want` to be
-// clear, capped so a loitering hunter cannot deadlock the guide.
-const ENTRY_SAFE = 34   // bite 8 + jaw law 30 + a tick of slack
+// anywhere inside the next room and close the instant you arrive. Before
+// pushing through, wait for `want` to be dragon-free (whole room, not just
+// the landing spot), capped so a loitering hunter cannot deadlock the guide.
 function* entryClear(sim, dir, want) {
-    const p = sim.player
-    for (let i = 0; i < 600 && !sim.won && !sim.dead; i++) {
-        let threat = false
-        for (const d of sim.dragons) {
-            if (!d.alive || d.room !== want) continue
-            const lx = dir === 'left' ? GW - 20 : dir === 'right' ? 10 : p.x
-            const ly = dir === 'up' ? GH - 20 : dir === 'down' ? 10 : p.y
-            if (Math.hypot(lx - d.x, ly - d.y) < ENTRY_SAFE) threat = true
-        }
-        if (!threat) return true
+    for (let i = 0; i < 1500 && !sim.won && !sim.dead; i++) {
+        if (!sim.dragons.some((d) => d.alive && d.room === want)) return true
         yield {}
     }
     return !sim.dragons.some((d) => d.alive && d.room === want)
@@ -269,12 +277,32 @@ function* walkTo(sim, to, avoidDragons = true) {
 // Fetch an item wherever it currently is (the shuffle moved it, the bat may
 // hold it): walk to its room, drive onto it, retry; when the bat carries it,
 // wait in a shelter room holding a loose partner (the swap law) and re-walk.
+// #3489: with dragons roaming, the WALK rides with the sword when one is in
+// hand (dragon rooms are then passable — the contact law slays anything that
+// closes to <14); the sword comes OFF at the item, not at the start, so the
+// guarded fetch happens right after the guard died, inside its respawn delay.
 function* fetchItem(sim, id) {
     const item = sim.items.find((i) => i.id === id)
-    for (let attempt = 0; attempt < 6; attempt++) {
+    for (let attempt = 0; attempt < 10; attempt++) {
         if (sim.carrying === id) return true
         if (sim.dead || sim.won) return sim.carrying === id
         if (sim.carrying) yield { drop: true }
+        // #3489 guard cycle: with roaming dragons, a room can host a resident
+        // hunter that outlasts any single doorway wait (it patrols the seam
+        // right outside). Step out to a calm doorstep, wait for a LONG absence
+        // — several hundred clear ticks — then take the walk while the room
+        // stays quiet.
+        if (sim.dragons.some((d) => d.alive && d.room === item.room)) {
+            const calm = neighbors(sim, item.room)
+                .filter(([, n]) => !sim.dragons.some((dg) => dg.alive && dg.room === n))
+                .map(([, n]) => n)[0]
+            if (calm !== undefined && sim.room !== calm && !(yield* walkTo(sim, calm, false))) continue
+            let clearRun = 0
+            for (let i = 0; i < 4000 && clearRun < 260 && !sim.dead && !sim.won; i++) {
+                clearRun = sim.dragons.some((d) => d.alive && d.room === item.room) ? 0 : clearRun + 1
+                yield {}
+            }
+        }
         if (sim.bat.carrying === id) {
             const prev = new Map([[sim.room, null]])
             const order = [sim.room]
@@ -311,17 +339,32 @@ function* openGate(sim, keyId) {
 // The full quest, start to finish. Returns { ok, why } — the honest verdict
 // the seat reports when the guide runs out of proven road.
 function* runRoute(sim) {
-    if (!(yield* fetchItem(sim, 'blackKey'))) return { ok: false, why: 'blackKey' }
-    if (!(yield* walkTo(sim, R.BLACK_CASTLE))) return { ok: false, why: 'to black gate' }
-    if (!(yield* driveTo(sim, 80, 32))) return { ok: false, why: 'black threshold' }
-    if (!(yield* openGate(sim, 'blackKey'))) return { ok: false, why: 'gateB' }
-    if (!(yield* fetchItem(sim, 'bridge'))) return { ok: false, why: 'bridge' }
-    if (!(yield* walkTo(sim, R.BLACK_FOYER))) return { ok: false, why: 'to black foyer' }
-    if (!(yield* cross(sim, 'down', R.RED_LAB_1))) return { ok: false, why: 'red floor' }
-    if (!(yield* fetchItem(sim, 'whiteKey'))) return { ok: false, why: 'whiteKey' }
-    if (!(yield* walkTo(sim, R.WHITE_CASTLE))) return { ok: false, why: 'to white gate' }
-    if (!(yield* driveTo(sim, 80, 32))) return { ok: false, why: 'white threshold' }
-    if (!(yield* openGate(sim, 'whiteKey'))) return { ok: false, why: 'gateW' }
+    // #3489 resume law: the planner reads the LIVE world — a gate already
+    // open stays open, a bridge already laid stays laid — so a hand-over
+    // from the scripted map mid-quest resumes exactly where the road left
+    // off instead of re-running errands the world has already done.
+    if (!sim.gateOpen.blackKey) {
+        if (!(yield* fetchItem(sim, 'blackKey'))) return { ok: false, why: 'blackKey' }
+        if (!(yield* walkTo(sim, R.BLACK_CASTLE))) return { ok: false, why: 'to black gate' }
+        if (!(yield* driveTo(sim, 80, 32))) return { ok: false, why: 'black threshold' }
+        if (!(yield* openGate(sim, 'blackKey'))) return { ok: false, why: 'gateB' }
+    }
+    if (!sim.bridged.has(`${R.BLACK_FOYER}:down`)) {
+        if (!(yield* fetchItem(sim, 'bridge'))) return { ok: false, why: 'bridge' }
+        if (!(yield* walkTo(sim, R.BLACK_FOYER))) return { ok: false, why: 'to black foyer' }
+        if (!(yield* cross(sim, 'down', R.RED_LAB_1))) {
+            // the bat may have lifted the bridge on the walk — the stone floor
+            // answers only to the bridge, so recover it and try the drop again.
+            if (!(yield* recover(sim, 'bridge', 80, GH - 24))) return { ok: false, why: 'red floor' }
+            if (!(yield* cross(sim, 'down', R.RED_LAB_1))) return { ok: false, why: 'red floor' }
+        }
+    }
+    if (!sim.gateOpen.whiteKey) {
+        if (!(yield* fetchItem(sim, 'whiteKey'))) return { ok: false, why: 'whiteKey' }
+        if (!(yield* walkTo(sim, R.WHITE_CASTLE))) return { ok: false, why: 'to white gate' }
+        if (!(yield* driveTo(sim, 80, 32))) return { ok: false, why: 'white threshold' }
+        if (!(yield* openGate(sim, 'whiteKey'))) return { ok: false, why: 'gateW' }
+    }
     if (!(yield* fetchItem(sim, 'chalice'))) return { ok: false, why: 'chalice' }
     if (!sim.won && !(yield* walkTo(sim, R.GOLD_CASTLE))) return { ok: false, why: 'home' }
     for (let i = 0; i < 400 && !sim.won; i++) {
@@ -340,46 +383,63 @@ function* runRoute(sim) {
 // the guide never jumps the sprite; the script only emits legal inputs.
 // (V3 SHUFFLE re-homes the loot, where this script cannot look, so those runs
 // dispatch to the adaptive runRoute below instead.)
-function* scriptRun(sim) {
+function* scriptCore(sim) {
     const P = sim.player
-    const R1 = (tx, ty) => driveTo(sim, tx, ty)
+    // #3489: the fixed map yields to the planner the moment the roam law
+    // disturbs its lane — a dragon inside the player's room (checked before
+    // and after every segment) bails to scriptRun's adaptive fallback, which
+    // resumes the quest from live state, instead of fighting in corridors.
+    const R1 = function* (tx, ty) {
+        if (roomThreat(sim)) return false
+        const r = yield* driveTo(sim, tx, ty)
+        return r && !roomThreat(sim)
+    }
+    const W = function* (_s, dir, want, max) {
+        if (roomThreat(sim)) return false
+        const r = yield* cross(sim, dir, want, max)
+        return r && !roomThreat(sim) && sim.room === want
+    }
+    const OG = function* (k) {
+        const r = yield* openGate(sim, k)
+        return r && !roomThreat(sim)
+    }
     // trip 1: blackKey into front of the black gate
     if (!(yield* R1(80, P.y))) return { ok: false, why: 'castle align' }
-    if (!(yield* cross(sim, 'down', R.OVERWORLD_1))) return { ok: false, why: 'castle exit' }
-    if (!(yield* cross(sim, 'down', R.OVERWORLD_2))) return { ok: false, why: 'ow2' }
+    if (!(yield* W(sim, 'down', R.OVERWORLD_1))) return { ok: false, why: 'castle exit' }
+    if (!(yield* W(sim, 'down', R.OVERWORLD_2))) return { ok: false, why: 'ow2' }
     if (!(yield* R1(P.x, 90))) return { ok: false, why: 'ow2 align' }
-    if (!(yield* cross(sim, 'left', R.BLUE_LAB_1))) return { ok: false, why: 'lab1a' }
+    if (!(yield* W(sim, 'left', R.BLUE_LAB_1))) return { ok: false, why: 'lab1a' }
     if (!(yield* R1(140, 90)) || !(yield* R1(140, 170)) || !(yield* R1(80, 170))) return { ok: false, why: 'lab1 descent' }
-    if (!(yield* cross(sim, 'down', R.BLUE_LAB_2))) return { ok: false, why: 'lab2' }
+    if (!(yield* W(sim, 'down', R.BLUE_LAB_2))) return { ok: false, why: 'lab2' }
     if (!(yield* R1(76, 92))) return { ok: false, why: 'blackKey spot' }
     if (sim.carrying !== 'blackKey') {
         if (!(yield* recover(sim, 'blackKey', 76, 92))) return { ok: false, why: 'no blackKey' }
     }
     if (!(yield* R1(80, 16))) return { ok: false, why: 'lab2 exit' }
-    if (!(yield* cross(sim, 'up', R.BLUE_LAB_1))) return { ok: false, why: 'lab1b' }
+    if (!(yield* W(sim, 'up', R.BLUE_LAB_1))) return { ok: false, why: 'lab1b' }
     if (!(yield* R1(140, 168)) || !(yield* R1(140, 44)) || !(yield* R1(110, 16)) || !(yield* R1(80, 16))) return { ok: false, why: 'lab1 climb' }
-    if (!(yield* cross(sim, 'up', R.OVERWORLD_2))) return { ok: false, why: 'ow2b' }
+    if (!(yield* W(sim, 'up', R.OVERWORLD_2))) return { ok: false, why: 'ow2b' }
     if (!(yield* R1(P.x, 90))) return { ok: false, why: 'ow2b align' }
-    if (!(yield* cross(sim, 'right', R.OVERWORLD_4))) return { ok: false, why: 'ow4' }
+    if (!(yield* W(sim, 'right', R.OVERWORLD_4))) return { ok: false, why: 'ow4' }
     if (!(yield* R1(80, P.y))) return { ok: false, why: 'ow4 align' }
-    if (!(yield* cross(sim, 'down', R.OVERWORLD_3))) return { ok: false, why: 'ow3' }
-    if (!(yield* cross(sim, 'down', R.BLACK_CASTLE))) return { ok: false, why: 'castleB' }
+    if (!(yield* W(sim, 'down', R.OVERWORLD_3))) return { ok: false, why: 'ow3' }
+    if (!(yield* W(sim, 'down', R.BLACK_CASTLE))) return { ok: false, why: 'castleB' }
     if (!(yield* R1(80, 32))) return { ok: false, why: 'black threshold' }
-    if (!(yield* openGate(sim, 'blackKey'))) return { ok: false, why: 'gateB' }
+    if (!(yield* OG('blackKey'))) return { ok: false, why: 'gateB' }
     if (!(yield* R1(65, 24))) return { ok: false, why: 'key dodge' }
     // trip 2: bridge through the black foyer floor, into the Red Maze
-    if (!(yield* cross(sim, 'down', R.OVERWORLD_3))) return { ok: false, why: 'castleB out' }
-    if (!(yield* cross(sim, 'up', R.OVERWORLD_2))) return { ok: false, why: 'ow2c' }
+    if (!(yield* W(sim, 'down', R.OVERWORLD_3))) return { ok: false, why: 'castleB out' }
+    if (!(yield* W(sim, 'up', R.OVERWORLD_2))) return { ok: false, why: 'ow2c' }
     if (!(yield* R1(95, 70))) return { ok: false, why: 'bridge corner' }
     if (!(yield* R1(96, 76))) return { ok: false, why: 'bridge spot' }
     if (sim.carrying !== 'bridge') {
         if (!(yield* recover(sim, 'bridge', 96, 76))) return { ok: false, why: 'no bridge' }
     }
     if (!(yield* R1(P.x, 90))) return { ok: false, why: 'ow3 align' }
-    if (!(yield* cross(sim, 'down', R.OVERWORLD_3))) return { ok: false, why: 'ow3c' }
-    if (!(yield* cross(sim, 'down', R.BLACK_CASTLE))) return { ok: false, why: 'castleB2' }
-    if (!(yield* cross(sim, 'up', R.BLACK_FOYER))) return { ok: false, why: 'foyerB' }
-    if (!(yield* cross(sim, 'down', R.RED_LAB_1))) return { ok: false, why: 'red floor' }
+    if (!(yield* W(sim, 'down', R.OVERWORLD_3))) return { ok: false, why: 'ow3c' }
+    if (!(yield* W(sim, 'down', R.BLACK_CASTLE))) return { ok: false, why: 'castleB2' }
+    if (!(yield* W(sim, 'up', R.BLACK_FOYER))) return { ok: false, why: 'foyerB' }
+    if (!(yield* W(sim, 'down', R.RED_LAB_1))) return { ok: false, why: 'red floor' }
     if (!(yield* R1(140, 12))) return { ok: false, why: 'red enter' }
     if (!(yield* R1(140, 86))) return { ok: false, why: 'red right column' }
     yield { drop: true }                       // no-op: the bridge placed itself at the crossing
@@ -391,29 +451,29 @@ function* scriptRun(sim) {
     if (!(yield* R1(140, 86))) return { ok: false, why: 'red lower right' }
     if (!(yield* R1(140, 12))) return { ok: false, why: 'red right column up' }
     if (!(yield* R1(80, 12))) return { ok: false, why: 'red top exit' }
-    if (!(yield* cross(sim, 'up', R.BLACK_FOYER))) return { ok: false, why: 'foyer out red' }
+    if (!(yield* W(sim, 'up', R.BLACK_FOYER))) return { ok: false, why: 'foyer out red' }
     if (!(yield* R1(65, 24))) return { ok: false, why: 'key dodge 2' }
     // trip 3: white key to its gate, chalice, and the ride home
-    if (!(yield* cross(sim, 'up', R.BLACK_CASTLE))) return { ok: false, why: 'castleB3' }
+    if (!(yield* W(sim, 'up', R.BLACK_CASTLE))) return { ok: false, why: 'castleB3' }
     if (!(yield* R1(P.x, 150))) return { ok: false, why: 'castleB3 align' }
-    if (!(yield* cross(sim, 'down', R.OVERWORLD_3))) return { ok: false, why: 'ow3b' }
+    if (!(yield* W(sim, 'down', R.OVERWORLD_3))) return { ok: false, why: 'ow3b' }
     if (!(yield* R1(P.x, 90))) return { ok: false, why: 'ow3b align' }
-    if (!(yield* cross(sim, 'right', R.OVERWORLD_4))) return { ok: false, why: 'ow4b' }
+    if (!(yield* W(sim, 'right', R.OVERWORLD_4))) return { ok: false, why: 'ow4b' }
     if (!(yield* R1(P.x, 90))) return { ok: false, why: 'ow4b align' }
-    if (!(yield* cross(sim, 'right', R.WHITE_CASTLE))) return { ok: false, why: 'castleW' }
+    if (!(yield* W(sim, 'right', R.WHITE_CASTLE))) return { ok: false, why: 'castleW' }
     if (!(yield* R1(80, 32))) return { ok: false, why: 'white threshold' }
-    if (!(yield* openGate(sim, 'whiteKey'))) return { ok: false, why: 'gateW' }
-    if (!(yield* cross(sim, 'up', R.WHITE_FOYER))) return { ok: false, why: 'foyerW' }
+    if (!(yield* OG('whiteKey'))) return { ok: false, why: 'gateW' }
+    if (!(yield* W(sim, 'up', R.WHITE_FOYER))) return { ok: false, why: 'foyerW' }
     if (!(yield* R1(80, 88))) return { ok: false, why: 'chalice spot' }
     if (sim.carrying !== 'chalice') {
         if (!(yield* recover(sim, 'chalice', 80, 88))) return { ok: false, why: 'no chalice' }
     }
     if (!(yield* R1(80, 12))) return { ok: false, why: 'foyerW exit' }
-    if (!(yield* cross(sim, 'up', R.WHITE_CASTLE))) return { ok: false, why: 'castleW out' }
+    if (!(yield* W(sim, 'up', R.WHITE_CASTLE))) return { ok: false, why: 'castleW out' }
     if (!(yield* R1(P.x, 150))) return { ok: false, why: 'castleW align' }
-    if (!(yield* cross(sim, 'down', R.OVERWORLD_4))) return { ok: false, why: 'ow4 home' }
+    if (!(yield* W(sim, 'down', R.OVERWORLD_4))) return { ok: false, why: 'ow4 home' }
     if (!(yield* R1(80, P.y))) return { ok: false, why: 'ow4 home align' }
-    if (!sim.won && !(yield* cross(sim, 'up', R.OVERWORLD_1))) return { ok: false, why: 'ow1 home' }
+    if (!sim.won && !(yield* W(sim, 'up', R.OVERWORLD_1))) return { ok: false, why: 'ow1 home' }
     for (let i = 0; i < 400 && !sim.won; i++) {
         const th = roomThreat(sim)
         if (th && th.dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) return { ok: false, why: 'died at home' }; continue }
@@ -423,6 +483,19 @@ function* scriptRun(sim) {
     return sim.won
         ? { ok: true, why: 'won' }
         : { ok: false, why: `end room=${sim.room} carry=${sim.carrying} dead=${sim.dead}` }
+}
+
+// #3489 — the fixed map bends, the guide does not quit. With dragons roaming
+// (the cart's own law), a waypoint script can be pushed off its proven road:
+// a wandering hunter blocks a corridor, a kite escapes through another door.
+// When the script cannot finish and the run is still alive, hand over to the
+// adaptive planner — it re-reads the live world (carried item, open gates,
+// placed bridge, item locations) and walks the quest from wherever the dot
+// stands, recovering the same way it already recovers from bat thefts.
+function* scriptRun(sim) {
+    const res = yield* scriptCore(sim)
+    if (res.ok || sim.dead || sim.won) return res
+    return yield* runRoute(sim)
 }
 
 // Bat-theft recovery (the #1560 law, ported): a drop always lands in the
