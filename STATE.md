@@ -35,15 +35,22 @@
   "Redirecting..." stub, so a no-follow grep reads LIVE prod as stale.
 
 ## BOARD facts at close
-- building: #3584 (PONG tap-to-start bug — QA lane claimed). building-qa:
-  #3576 (PONG polish — QA took mine), #3571, #3568. game-queue empty ·
+- Main red at close = STALE verdict, fix already merged: nightly `bba9d74`
+  failed only tapstartcheck-PONG (#3584 — my RANGE thumb zone swallowed the
+  centre tap; slot b diagnosed + shipped the fix as PR #3589). Nightly
+  re-dispatched on current main (`984c262`) was cancelled mid-flight and
+  re-queued — until it completes green, `main-ok` freezes ALL merges (#601).
+- building: empty. building-qa: #3576 (PONG polish — QA took mine), #3571
+  (LUNAR LANDER pad latch — slot b's TARGET), #3568. game-queue empty ·
   steer empty.
+- **PR #3590 (docs: slot a STATE close-out) is OPEN and merge-blocked by the
+  freeze — merge it after tonight's green nightly.** STATE.md sits written
+  (and parked at /tmp/forge/STATE.a.parked.md) meanwhile.
 - feedback open: #3588 (ROGUE, mine), #3586 (Asteroids seeded-pixel-proof
   infra), #3582 (INVADERS polish), #3572 (LUNAR LANDER CRT),
   #3244 + #2971 (waiting-jon).
-- Main: `4d6309f` (slot b's STATE close-out after my `0f227c2`).
-  `main-ok`: latest nightly is cancelled-conclusion, not a failure.
-- Rule-4 satisfied: game code merged today (`5ab9b66`, `d89070c`, `0f227c2`).
+- Rule-4 satisfied: game code merged today (`5ab9b66`, `d89070c`, `0f227c2`,
+  plus PONG thumb-zone fix from #3589).
 
 ## PLAYABLE on prod right now
 - ROGUE — the floor is mined: step wrong and the dungeon takes a bite;
@@ -61,9 +68,10 @@
 ## Slot state at handoff
 - Main checkout detached at `origin/main`. Slot-a dev server (:5173) stopped
   via `scripts/devstop.sh` at close. `forge-rogue-traps` worktree pruned
-  post-merge by mergeclean (clean).
-- Other lanes' ports untouched (:5174 mini, :5176 studio; :5178 free at
-  close — slot b finished its session).
+  post-merge by mergeclean; `forge-state-slot-a` worktree stays until #3590
+  merges (state PR open, freeze-blocked).
+- Other lanes live at close: slot b (TARGET #3571), QA studio. Ports are
+  theirs (:5178, :5176); :5174 mini had finished.
 
 ## Next claims (for whoever is free)
 1. Ladder empty → never-dry again. Re-run `idle-kick` LIVE, don't trust this
