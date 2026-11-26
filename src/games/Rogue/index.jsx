@@ -46,6 +46,9 @@ const fxSound = (e) => {
       case 'descend':   ac.playSweep(420, 110, 0.3, 'triangle', 0.06); break
       case 'door-open': ac.playNoise(0.05, 0.06); ac.playTone(260, 0.07, 'triangle', 0.05); break
       case 'door-found': ac.playTone(660, 0.06, 'triangle', 0.05); ac.playTone(990, 0.09, 'triangle', 0.05, 0.06); break
+      // #3514: the break — a nervous rising chirp then a drop, unlike any other
+      // cue in this kit (kill falls long, door-found rises steady in two notes).
+      case 'flee': ac.playSweep(700, 980, 0.09, 'triangle', 0.05); ac.playTone(520, 0.07, 'triangle', 0.04, 0.09); break
       default: break
     }
   } catch { /* audio is best-effort — never break a turn over a tone */ }
@@ -190,12 +193,19 @@ export default function RogueGame() {
   // #1502: drain the sim's fx log into audio. The log grows through the run
   // and resets to [] on NEW_GAME — the length compare handles both.
   const fxSeenRef = useRef(0)
+  // #3514: glyphs of monsters that broke THIS hero turn get a one-turn amber
+  // tint (the port's accent). Keyed by the turn stamp, so the flash ages out
+  // exactly when turn advances — no timer, turn-based honest like the seat.
+  const [fleeFlash, setFleeFlash] = useState(null) // { turn, ids:Set }
   useEffect(() => {
     const n = state.fx.length
     let seen = fxSeenRef.current
     if (seen > n) seen = 0
     if (seen < n) {
-      state.fx.slice(seen, n).forEach(fxSound)
+      const batch = state.fx.slice(seen, n)
+      batch.forEach(fxSound)
+      const broke = batch.filter(e => e.k === 'flee').map(e => e.id)
+      if (broke.length) setFleeFlash({ turn: state.turn, ids: new Set(broke) })
       fxSeenRef.current = n
     }
   }, [state])
@@ -556,7 +566,17 @@ export default function RogueGame() {
       ['/', COLORS['/'], 'Magic staff (f to fire)'],
       ['[', COLORS['['], 'Armor'],
       [':', COLORS[':'], 'Food'],
-      ['A-Z', '#ff4444', 'Monsters'],
+      ['A-Z', '#ff4444', 'Monsters — wounded ones (¼ hp or less) flee for good'],
+    ]
+    // #3514: honest legibility — the speed roster was invisible before it moved.
+    // The help screen is the port's teaching voice (like the wall grammar legend),
+    // so the 1980 energy clocks get stated, not guessed at mid-dungeon.
+    const mobility = [
+      ['K B C L J', 'Swift races — act 1½× (they double-step)'],
+      ['T M', 'Heavy races — act ¾× (they hesitate one turn in four)'],
+      ['all others', 'Act at your pace, one action per turn'],
+      ['wounded', 'A creature at ¼ hp that sees you breaks and runs — forever'],
+      ['S', 'The snake recoils and flees for good after it bites you'],
     ]
     return (
       <div ref={containerRef} style={base} tabIndex={0} className="rogue-crt">
@@ -578,6 +598,13 @@ export default function RogueGame() {
                 <span style={{ color: '#bbb', fontSize: '13px' }}>{name}</span>
               </div>
             ))}
+            <div style={{ color: '#ffff55', fontSize: '16px', margin: '16px 0 12px' }}>Mobility</div>
+            {mobility.map(([k, d], i) => (
+              <div key={i} style={{ display: 'flex', gap: '12px', marginBottom: '3px' }}>
+                <span style={{ color: '#88ddaa', minWidth: '90px', fontSize: '13px' }}>{k}</span>
+                <span style={{ color: '#bbb', fontSize: '13px' }}>{d}</span>
+              </div>
+            ))}
             <div style={{ marginTop: '16px', color: '#444', fontSize: '12px' }}>Press ?, SPACE, or ESC to close</div>
           </div>
         </div>
@@ -596,6 +623,14 @@ export default function RogueGame() {
   const charW = isMobile ? 9.6 * mapScale : 9.6
   const charH = isMobile ? 19 * mapScale : 19
   const fontSize = isMobile ? 15 * mapScale : 15
+
+  // #3514: the flee-break tint — a creature that broke under the hero's eye
+  // this turn burns amber for exactly one turn (the port's accent, cf. the
+  // amber door jambs). Turn-stamped, so the next hero action ages it out.
+  const flashCells = new Set()
+  if (fleeFlash && fleeFlash.turn === state.turn) {
+    for (const m of state.monsters) if (fleeFlash.ids.has(m.id)) flashCells.add(`${m.x},${m.y}`)
+  }
 
   return (
     <div ref={containerRef} style={base} tabIndex={0} className="rogue-crt"
@@ -624,7 +659,7 @@ export default function RogueGame() {
           {grid.map((row, y) => (
             <div key={y} style={{ height: charH, display: 'flex' }}>
               {row.map((cell, x) => (
-                <span key={x} style={{ color: cell.color, minWidth: charW, display: 'inline-block', textAlign: 'center' }}>
+                <span key={x} style={{ color: flashCells.has(`${x},${y}`) && /[A-Z]/.test(cell.char) ? '#ffd75e' : cell.color, minWidth: charW, display: 'inline-block', textAlign: 'center' }}>
                   {cell.char}
                 </span>
               ))}
