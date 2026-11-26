@@ -18,6 +18,7 @@ import { HOST_SLOT } from '../../utils/room.js'
 export const SEATS = 4               // cap 4 pilots; open seats fly the planner
 export const PAD_DELAY = 8          // ~133 ms: past round-trip, below feel (the Blob law)
 export const HASH_EVERY = 30
+export const STALL_CAP = 90         // ticks a silent seat may freeze the sky before the autopilot takes it (~1.5 s: far above D+RTT jitter, far below "it's stuck forever")
 export const RACE_T = 180          // seconds on the bell; the ROOM podium ranks by score
 export const REMATCH = true        // host GO re-seeds without anyone re-entering a code
 

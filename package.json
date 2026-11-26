@@ -59,6 +59,7 @@
     "pinballsmith": "node scripts/pinballsmith.mjs",
     "stompcheck": "node scripts/stompcheck.mjs",
     "skywardcheck": "node scripts/skywardcheck.mjs",
+    "skywardroom": "node scripts/skywardroom.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
     "modelindexcheck": "node scripts/modelindexcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",
