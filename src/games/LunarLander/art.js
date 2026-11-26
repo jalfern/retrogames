@@ -42,7 +42,11 @@ export function drawStars(ctx, stars, camX, tick) {
 
 // terrain polyline: bright line with a soft glow, pads drawn heavier and
 // labelled with their point values — the arcade's landing announcements.
-export function drawTerrain(ctx, terrain, cam, camX, camY) {
+// #3571 — latch feedback: while the feet span a pad (padSpan, descent only),
+// that pad answers — the bar thickens to a hot white-amber, the value tag
+// brightens and pulses on the cabinet's 8-tick flash. Visual only: no rule,
+// no difficulty moves; span lost, cue gone.
+export function drawTerrain(ctx, terrain, cam, camX, camY, latchPad = null, tick = 0) {
     const pts = terrain.pts
     ctx.save()
     ctx.lineJoin = 'round'
@@ -68,11 +72,16 @@ export function drawTerrain(ctx, terrain, cam, camX, camY) {
         const x1 = cam.px(p.i1 * STEP, camX)
         const y = cam.py(p.y, camY)
         if (x1 < -10 || x0 > 522) continue
-        ctx.strokeStyle = '#ffd76b'
-        ctx.lineWidth = 2.4
+        const latched = p === latchPad // #3571 — the span is held
+        ctx.strokeStyle = latched ? '#fff0b8' : '#ffd76b'
+        ctx.lineWidth = latched ? 3.6 : 2.4
+        if (latched) { ctx.shadowColor = 'rgba(255,215,107,0.85)'; ctx.shadowBlur = 7 }
         ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke()
+        ctx.shadowBlur = 0
         if (cam.s > 0.7) {
-            ctx.fillStyle = 'rgba(255,215,107,0.85)'
+            ctx.fillStyle = latched
+                ? ((tick >> 3) & 1 ? '#fff6d8' : '#ffe9a0')
+                : 'rgba(255,215,107,0.85)'
             ctx.font = 'bold 8px monospace'
             ctx.fillText(String(p.val), (x0 + x1) / 2, y - 5)
         }

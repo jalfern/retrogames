@@ -89,6 +89,60 @@ const hudAlt = await page.evaluate(() => document.body.innerText.match(/ALT\s+(\
 const simAlt = (await probe()).alt
 r.check('the ALT readout mirrors the sim', hudAlt === String(simAlt), `hud ${hudAlt} sim ${simAlt}`)
 
+// ---- leg #3571: pad latch — the pad answers while the feet span it ----
+// Park the lander straight and level, 24u over the widest pad. span mirrors
+// the sim's padSpan law; the tag pixels carry the visual half. STEP=8 is
+// terrain.js's world step. Off-span parks a full pad half-width + 24 clear.
+let parkVal = 20
+// value tags paint only zoomed-in (cam.s > 0.7): put the view in that state.
+const ensureZoom = () => page.evaluate(() => {
+    const T = window.__landerTest
+    if (!T.probe().zoom) T.zoom()
+})
+const park = (on) => page.evaluate((keep) => {
+    const T = window.__landerTest
+    const g = T.state()
+    const pad = g.terrain.pads.reduce((b, p) => (!b || (p.i1 - p.i0) > (b.i1 - b.i0) ? p : b), null)
+    const dx = keep ? 0 : (pad.i1 - pad.i0) * 8 / 2 + 24 // STEP=8, clear of the span
+    g.x = pad.cx + dx
+    g.y = pad.y + 24; g.vx = 0; g.vy = 0; g.rot = 0
+    return pad.val
+}, on)
+const tagLum = () => page.evaluate((val) => {
+    const T = window.__landerTest
+    const c = document.querySelector('canvas[data-lunar-lander-stage]')
+    const g2 = c.getContext('2d')
+    // canvas backing is a fixed W×H buffer (canvas.width = W): padPix already
+    // lands in backing px — no CSS scale.
+    const pix = T.padPix()
+    const p = pix.find((q) => q.val === val) || pix[0]
+    const img = g2.getImageData(0, 0, c.width, c.height).data
+    const cxp = Math.round(p.cx), yp = Math.round(p.y)
+    let mx = 0
+    for (let x = cxp - 7; x <= cxp + 7; x++) {
+        for (let y = yp - 12; y <= yp - 2; y++) {
+            const i = (y * c.width + x) * 4
+            if (i < 0 || i + 2 >= img.length) continue
+            const v = img[i] + img[i + 1] + img[i + 2]
+            if (v > mx) mx = v
+        }
+    }
+    return { mx, span: T.span() }
+}, parkVal)
+parkVal = await park(true); await ensureZoom(); await page.waitForTimeout(140)
+const j1 = await tagLum()
+r.check('feet spanning a pad latch the span', j1.span === parkVal, `span ${j1.span}, pad ${parkVal}`)
+r.check('the latched tag burns hot (>640)', j1.mx >= 640, `tag max ${j1.mx}`)
+const seq = []
+for (let i = 0; i < 14; i++) { await park(true); await page.waitForTimeout(60); seq.push((await tagLum()).mx) }
+r.check('the tag pulses while latched (two cabinet levels)',
+    Math.max(...seq) - Math.min(...seq) >= 20 && Math.min(...seq) >= 600, seq.join(','))
+parkVal = 20
+await park(false); await page.waitForTimeout(140)
+const j0 = await tagLum()
+r.check('off-span the span clears', j0.span === null, `span ${j0.span}`)
+r.check('an idle pad sits dark (<600)', j0.mx < 600, `tag max ${j0.mx}`)
+
 r.check('zero page errors', errors.length === 0, errors.slice(0, 3).join(' | '))
 
 await r.exit(browser)
