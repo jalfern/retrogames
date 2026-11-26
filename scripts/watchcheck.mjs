@@ -2444,16 +2444,28 @@ const PILOTS = [
             await seatPoll(page, H)
             rep.check('defender: Y seats the proven patrol', await watching())
             rep.check('defender: handoff blip at seat', (await sfx()).at(-1) === 'start')
-            // Honest bar (matches defendercheck WITNESS, 20 seeds): the patrol
-            // banks ~300 pts/10 s, grazes ~1 hit per 150 s, and after the player
-            // steers away it may need seconds to find the next lander — a lander
-            // pays 150/75. Demand at least one kill's worth of progress, allow one graze.
-            const adv = (x, y) => y.score >= x.score + 150 && y.lives >= x.lives - 1
+            // Honest bar (re-read after #3445 — the old "allow one graze" was
+            // computed while the grace freeze made a second crash impossible):
+            // the patrol banks ~300 pts/10 s and a lander pays 150/75, but the
+            // seat is MORTAL — demand progress and allow the run to honestly
+            // reach GAME OVER inside the window (a terminal is proof of the
+            // fix, not a stall).
+            const adv = (x, y) => y.score >= x.score + 150 && (y.lives >= x.lives - 1 || y.screen === 'over')
             const a = await probe()
             const b = await pollAdvance(page, probe, adv, a, 12000)
             rep.check('defender: the prover patrols untouched (idle hands fire nothing)', adv(a, b),
                 `score ${a.score} -> ${b.score}, enemies ${a.enemies} -> ${b.enemies}, lives ${b.lives}`)
             rep.check('defender: still watching mid-patrol', await watching() || (await probe()).screen === 'over')
+            // #3445: the mortal patrol may finish its lives inside the window. The
+            // takeover legs need a live run — restart (any key) and re-seat, so
+            // the takeover/resume assertions stay strict instead of going slack.
+            if ((await probe()).screen === 'over') {
+                await key(page, 'Space')
+                await page.waitForTimeout(350)
+                await key(page, 'KeyY')
+                await seatPoll(page, H)
+                rep.check('defender: the seat lives in a fresh run after an honest GAME OVER (#3445)', await watching())
+            }
             await page.keyboard.down('ArrowLeft')
             rep.check('defender: steer key takes over', !(await watching()))
             rep.check('defender: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
