@@ -224,6 +224,36 @@ console.log('bat roam: the purple bat changes rooms and roves the world (#1560)'
     ok(gate.bat.room === R.BLACK_FOYER, 'an open gate lets the bat into the foyer')
 }
 
+console.log('wanderer heading: the sprite reads where it travels (#3545)')
+{
+    // The look leg for #3489: hx/hy record the movement actually applied each
+    // tick, and drawDragon mirrors/leans on them. The record must be honest
+    // (sign matches the applied displacement on every moved tick) and must
+    // stay dice-free — the seed pins elsewhere catch any stream shift.
+    const drawSrc = readFileSync(IDX, 'utf8')
+    ok(/const face = dragon\.hx < 0 \? -1 : 1/.test(drawSrc) && /ctx\.scale\(face, 1\)/.test(drawSrc),
+        'drawDragon mirrors the sprite along dragon.hx')
+    ok(/const tilt = dragon\.hy > 0\.3 \? 1 : dragon\.hy < -0\.3 \? -1 : 0/.test(drawSrc),
+        'the head/tail lean along dragon.hy within one pixel')
+    let mismatches = 0, moved = 0
+    const s = createSim(seedRng(3545))
+    for (let i = 0; i < 4000; i++) {
+        const live = s.dragons.filter((d) => d.alive)
+        const before = live.map((d) => ({ x: d.x, y: d.y, room: d.room }))
+        step(s, {})
+        for (let k = 0; k < live.length; k++) {
+            const d = live[k], b = before[k]
+            if (d.room !== b.room) continue // seam teleports keep the last heading
+            const mx = d.x - b.x, my = d.y - b.y
+            if (mx !== 0 && Math.sign(d.hx) !== Math.sign(mx)) mismatches++
+            if (my !== 0 && Math.sign(d.hy) !== Math.sign(my)) mismatches++
+            if (mx !== 0 || my !== 0) moved++
+        }
+    }
+    ok(moved > 3000, `the wanderers drift (${moved} dragon-ticks with movement in 4000)`)
+    ok(mismatches === 0, `heading signs match the applied movement (${mismatches} mismatches)`)
+}
+
 console.log('gates: park the key in front of its gate')
 {
     const s = createSim(seedRng(5))
@@ -1639,6 +1669,14 @@ if (process.argv.includes('--mutant')) {
         ['#3441: the follower lands deep in the room, not in the doorway', SM,
             `d.y = dir === 'up' ? GH - 20 : 10`,
             `d.y = dir === 'up' ? GH - 90 : 10`],
+        ['#3545: the sim stops recording the applied movement (heading freezes)', SM,
+            `                dragon.hx = dragon.x - rox
+                dragon.hy = dragon.y - roy`,
+            `                dragon.hx = 0
+                dragon.hy = 0`],
+        ['#3545: the renderer ignores the heading (dragons never turn)', I,
+            'const face = dragon.hx < 0 ? -1 : 1',
+            'const face = 1'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
