@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import {
   MAP_W, MAP_H, createInitialState, stepGame, hash, done, runScore,
   buildGrid, monsterAttack, rng, setSeed, generateDungeon, isWall, blocksMove,
-  isThrowable, shootRay, watchStep, advanceMonsters, MONSTER_DEFS, MONSTER_ENERGY,
+  isThrowable, shootRay, watchStep, advanceMonsters, MONSTER_DEFS, MONSTER_ENERGY, qaSeatLevel,
 } from '../src/games/Rogue/sim.js'
 
 let pass = 0, fail = 0
@@ -1069,6 +1069,114 @@ const mineAt = (s, kind) => {
         if (mm.monsters[0].x <= trapX) crossed = true
     }
     ok('creatures cross the minefield untouched — monsters spring no traps', crossed && mm.traps[0].seen === false && mm.monsters[0].hp === 4, `crossed=${crossed}`)
+}
+
+// ── #3592 §amulet — the Amulet of Yendor (Rogue, 1980): dlvl 20 goal object
+// and the you-win terminal. Spawn law, BFS reachability, byte-honest shallow
+// replay, and the win driven through the REAL reducer.
+console.log('\namulet (#3592)')
+{
+    const SEEDS = [1, 2, 3, 7, 42, 123, 90210, 3579]
+    // Independent 8-dir BFS over the shipped map — the harness proves the
+    // Amulet's cell is reachable from the level mouth, not trusting the sim.
+    const route = (s, tx, ty) => {
+        const start = `${s.player.x},${s.player.y}`
+        const prev = new Map([[start, null]])
+        const q = [[s.player.x, s.player.y]]
+        while (q.length) {
+            const [x, y] = q.shift()
+            if (x === tx && y === ty) {
+                const path = []
+                let k = `${x},${y}`
+                while (prev.get(k)) {
+                    const [cx, cy] = k.split(',').map(Number)
+                    const [px, py] = prev.get(k).split(',').map(Number)
+                    path.unshift({ dx: Math.sign(cx - px), dy: Math.sign(cy - py) })
+                    k = prev.get(k)
+                }
+                return path
+            }
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                if (!dx && !dy) continue
+                const nx = x + dx, ny = y + dy
+                if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H || blocksMove(s.map[ny][nx])) continue
+                const k = `${nx},${ny}`
+                if (prev.has(k)) continue
+                prev.set(k, `${x},${y}`); q.push([nx, ny])
+            }
+        }
+        return null
+    }
+
+    // Byte-honest shallow replay (#3579 law): the amulet dice roll ONLY at
+    // dlvl 20, so the dungeon structure and stream position below it are the
+    // pre-#3592 cart's, exactly. Goldens were captured from origin/main's
+    // sim.js (djb2 over map+items+monsters+traps+rooms+doors, randState).
+    const GOLDEN = [{"s":1,"d":3141928902,"rs":1872778111},{"s":2,"d":264926641,"rs":-782446962},{"s":3,"d":2961130871,"rs":-1045788049},{"s":7,"d":1764222880,"rs":545165580},{"s":42,"d":1465172412,"rs":1368824876},{"s":123,"d":3733699308,"rs":-1004575632},{"s":90210,"d":3602691012,"rs":-1982086897},{"s":3579,"d":1800104612,"rs":-1677620143}]
+    const djb2 = (x) => { let h = 5381; for (let i = 0; i < x.length; i++) h = ((h * 33) ^ x.charCodeAt(i)) >>> 0; return h }
+    const shallow = GOLDEN.every((g) => {
+        const st = createInitialState(g.s)
+        const d = djb2(JSON.stringify([st.map, st.items, st.monsters, st.traps, st.rooms, st.doors]))
+        return d === g.d && st.randState === g.rs
+    })
+    ok('dlvl 1 dungeons + stream replay byte-identical to the pre-#3592 cart (goldens)', shallow)
+
+    let spawnOk = true, reachOk = true, noneShallow = true
+    for (const s of SEEDS) {
+        for (let lv = 1; lv <= 19; lv++) if (qaSeatLevel(createInitialState(s), lv).items.some(i => i.amulet)) noneShallow = false
+        const st = qaSeatLevel(createInitialState(s), 20)
+        const am = st.items.filter(i => i.amulet)
+        if (am.length !== 1) spawnOk = false
+        else {
+            const a = am[0]
+            if (st.map[a.y][a.x] !== '.') spawnOk = false
+            if (Math.max(Math.abs(a.x - st.player.x), Math.abs(a.y - st.player.y)) <= 1) spawnOk = false
+            if (st.traps.some(t => t.x === a.x && t.y === a.y)) spawnOk = false
+            if (!route(st, a.x, a.y)) reachOk = false
+        }
+    }
+    ok('no amulet on levels 1..19 — the goal sleeps only at dlvl 20', noneShallow)
+    ok('exactly one amulet at dlvl 20: floor cell, off the start ring, trap-free', spawnOk)
+    ok('the amulet is BFS-reachable from the level mouth on every seed', reachOk)
+
+    // The you-win terminal through the real reducer: ride the guide's route
+    // (it hunts the amulet and answers neighbours), then press ',' on the
+    // spot — PICKUP is the harness's own keypress, not the guide's.
+    // dlvl 20 is the cart's depth and it does kill: the two seeds the guide
+    // cannot cross must die HONEST at the same terminal (won === false) —
+    // honest losses are the win condition's other half, pinned per seed.
+    let winOk = true, fxOk = true, scoreOk = true
+    for (const s of [1, 2, 3, 7, 42, 123]) {
+        let st = qaSeatLevel(createInitialState(s), 20)
+        for (let n = 0; n < 800 && !st.won && st.phase === 'playing'; n++) {
+            const a2 = st.items.find(i => i.amulet)
+            if (!a2) { winOk = false; break }
+            if (st.player.x === a2.x && st.player.y === a2.y) { st = stepGame(st, { type: 'PICKUP' }); break }
+            st = stepGame(st, watchStep(st) || { type: 'WAIT' })
+        }
+        if (!(st.phase === 'gameover' && st.won === true && done(st))) { winOk = false; continue }
+        if (!st.fx.some(f => f.k === 'win')) fxOk = false
+        if (st.finalScore !== st.player.gold + 20 * 50) scoreOk = false
+        if (!/Amulet of Yendor/.test(st.messages[st.messages.length - 1])) winOk = false
+    }
+    ok('the pickup ends the run: gameover+won, the cart names the Amulet', winOk)
+    ok('the win rings its own fx (the view turns it into the sting)', fxOk)
+    ok('the win tallies by the cart law: gold + dlvl*50 (dlvl 20)', scoreOk)
+    let loseOk = true
+    for (const s of [90210, 3579]) {
+        let st = qaSeatLevel(createInitialState(s), 20)
+        for (let n = 0; n < 800 && !st.won && st.phase === 'playing'; n++) st = stepGame(st, watchStep(st) || { type: 'WAIT' })
+        if (!(st.phase === 'gameover' && st.won === false && !!st.killer)) loseOk = false
+    }
+    ok('depth still kills: the doomed seeds die honest (won false, killer named)', loseOk)
+
+    // Honest terminals stay honest: quitting the amulet floor short of it is a
+    // loss, not a silent win; the guide's own hunt reaches the terminal.
+    const quit20 = stepGame(qaSeatLevel(createInitialState(7), 20), { type: 'QUIT' })
+    ok('QUIT at dlvl 20 short of the Amulet is the loss terminal (won stays false)', quit20.phase === 'gameover' && quit20.won === false)
+    let guided = qaSeatLevel(createInitialState(7), 20)
+    for (let n = 0; n < 600 && !guided.won && done(guided) === false; n++) guided = stepGame(guided, watchStep(guided) || { type: 'WAIT' })
+    ok('the watch brain hunts the Amulet and wins (seed 7, ≤600 turns)', guided.won === true, `turn ${guided.turn}`)
 }
 
 console.log(`\nroguecheck: ${pass} pass, ${fail} fail`)

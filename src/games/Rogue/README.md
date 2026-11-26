@@ -34,7 +34,7 @@ Dungeons of Doom keep whatever you bring them.
 ## Verify
 
 ```bash
-npm run roguecheck        # 123 checks: boot+purity, determinism (incl.
+npm run roguecheck        # 160 checks: boot+purity, determinism (incl.
                          # interleaved replays), BFS stairs-reachability on 40
                          # seeds, combat/xp/hunger/descend/pickup/wield/eat/
                          # quaff/scroll rules, the door mechanic (closed
@@ -54,13 +54,22 @@ npm run roguecheck        # 123 checks: boot+purity, determinism (incl.
                          # then flees, bump-skip accrual, hash coverage), and
                          # the #3514 flee-moment cues (one fx per creature,
                          # decision-turn timing, silent unseen/healthy,
-                         # snake recoil line + blip)
-npm run roguedrive       # real Chrome, real keys only (#3491/#3509): walk onto
+                         # snake recoil line + blip), and the #3592 Amulet laws
+                         # (dlvl-20 single spawn off the start ring and trap-free,
+                         # no shallow amulets, BFS reachability, the pre-#3592
+                         # shallow cart goldens byte-honest, the pickup you-win
+                         # terminal + sting + cart-law score on six seeds, two
+                         # doomed seeds dying honest at the same terminal, and an
+                         # honest QUIT on the bottom floor)
+npm run roguedrive       # real Chrome, real keys only (#3491/#3509/#3592): walk onto
                          # a quiver, f → menu → direction, one arrow spent, the
                          # miss lies east to salvage, help teaches f; the mobility
                          # leg scans seeds for a route whose laws fire, replays it
                          # with real keys to hash-equality, and watches a snake
-                         # bite-then-flee in the browser — 18/18
+                         # bite-then-flee in the browser; the #3592 leg seats at
+                         # dlvl 20 via ?dlvl=, lets the guide hunt the Amulet on
+                         # the real loop, and reads the YOU WIN card off the DOM
+                         # — 28/28
 npm run feedbackcheck    # seedpin law + floor (Rogue = title 45)
 npm run watchcheck -- --only rogue    # the WATCH pilot + batch-23 source pins
 ```
@@ -213,10 +222,16 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
   published, so the ×1.5/×0.75 roster table and the ¼-hp flee threshold are
   approximations; and the original's flee sometimes routes to a specific
   room — ours takes the greedy farthest step.
-- No Amulet of Yendor win condition: the original's goal object and "you win"
-  terminal don't exist; descending forever + the QUIT score tally is the loop.
-  (Win/lose semantics: dlvl≥2 reached on every seed, death terminal proven;
-  "won" here = the descent, not the amulet.)
+- **CLOSED by #3592:** the Amulet of Yendor. One goal object generates on
+  monster level 20 — the cart's depth, unlowered — drawn `%` in gold, never on
+  the start ring, the staircase, or a cell shared with an item, monster or
+  trap, BFS-reachable on every seed. Step onto it and press `,` and the run
+  ends at the you-win terminal: `you have found the Amulet of Yendor!!`, a
+  ✦ YOU WIN ✦ card, score still gold + dlvl×50. The dice roll only at level
+  20, so every seed's shallower dungeon replays byte-identical against the
+  cart's golden (roguecheck pins them). And dlvl 20 still kills — the harness
+  pins both halves: six seeds pick up and win, two die honest en route. The
+  guide (WATCH) hunts it when you dare the depth.
 - Level-up is xp-table + hp gain only — no class-based gain rolls, no hit dice
   display, no intelligence/charisma/wisdom spread (str only, per the port).
 - Food is the only light-source clock; no lamp/oil and torch-lit radius.

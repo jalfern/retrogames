@@ -187,6 +187,12 @@ export function hpRoll([lo, hi]) {
 // ============================================================
 // DUNGEON GENERATION
 // ============================================================
+// #3592 — the Amulet of Yendor (Rogue, 1980): ONE goal object, generated on
+// monster level 20. Stepping onto it and picking it up ends the run — the
+// cart's you-win terminal. The dice roll only at dlvl 20, so the stream at
+// levels 1..19 is untouched and every pre-existing trace replays identical.
+const AMULET_LEVEL = 20
+
 export function generateDungeon(dungeonLevel) {
   const map = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(' '))
   const rooms = []
@@ -411,6 +417,26 @@ export function generateDungeon(dungeonLevel) {
   const explored = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(false))
   const visible = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(false))
 
+  // #3592 — the Amulet settles on monster level 20, the cart's depth: a room
+  // floor cell, never the start ring, never the staircase (the stairs cell is
+  // '%', and only '.' cells qualify here), never sharing ground with an item,
+  // a monster or a mine.
+  if (dungeonLevel === AMULET_LEVEL) {
+    const free = []
+    for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
+      if (map[y][x] !== '.') continue
+      if (Math.max(Math.abs(x - startX), Math.abs(y - startY)) <= 1) continue
+      if (items.some(i => i.x === x && i.y === y)) continue
+      if (monsters.some(m => m.x === x && m.y === y)) continue
+      if (traps.some(t => t.x === x && t.y === y)) continue
+      free.push([x, y])
+    }
+    if (free.length) {
+      const [ax, ay] = free[rng(0, free.length - 1)]
+      items.push({ type: '%', amulet: true, x: ax, y: ay })
+    }
+  }
+
   return { map, rooms, doors, hiddenDoors, items, monsters, traps, startX, startY, explored, visible }
 }
 
@@ -521,13 +547,15 @@ export function createInitialState(seed) {
       confused: 0, blind: 0, haste: 0, sleeping: 0, held: 0,
     },
     messages: ['Welcome to the Dungeons of Doom!  Press ? for help.',
-      'Goal: find the stairs (%) and descend — the deeper you go, the richer you die.'],
+      'Goal: find the stairs (%) and descend — dlvl 20 keeps the Amulet of Yendor; the deeper you go, the richer you die.'],
     potionColorMap,
     scrollTitleMap,
     identifiedPotions: {},
     identifiedScrolls: {},
     aimIndex: null, // #3491: the pack item awaiting a direction at the aim prompt
     finalScore: 0,
+    // #3592: the amulet terminal — won runs end at the pickup, not at death.
+    won: false,
   }
 }
 
@@ -611,7 +639,8 @@ export function buildGrid(state) {
             color = COLORS[mon.letter] || '#ff4444'
           } else if (itm) {
             char = itm.type
-            color = COLORS[itm.type] || '#aaaaaa'
+            // #3592 — the Amulet wears gold even among the other % glyphs.
+            color = itm.amulet ? '#ffd700' : (COLORS[itm.type] || '#aaaaaa')
           } else {
             // #1502: an unfound hidden door draws as wall — it is found,
             // not seen. #3579: a sprung trap marks the map with the
@@ -958,6 +987,20 @@ export function handlePickup(state) {
   if (idx < 0) return addMsg(state, "There is nothing here.")
   const item = items[idx]
 
+  // #3592 — the cart's you-win terminal: the run ends at the moment of
+  // pickup, the line is the one the cabinet printed, and the score keeps the
+  // cart's own law (gold + depth). The amulet never fills a slot away.
+  if (item.amulet) {
+    const s = emitFx({
+      ...state,
+      items: items.filter((_, i) => i !== idx),
+      player: { ...player, inventory: [...player.inventory, item] },
+      won: true,
+      finalScore: player.gold + state.dungeonLevel * 50,
+    }, 'win')
+    return addMsg({ ...s, phase: 'gameover' }, 'you have found the Amulet of Yendor!!')
+  }
+
   if (item.type === '*') {
     const s = addMsg({
       ...state,
@@ -1269,6 +1312,28 @@ export function handleDescend(state) {
   return addMsg(s, `You descend to dungeon level ${newLevel}.`)
 }
 
+// #3592 — QA pin (?dlvl=N): seat the hero at the mouth of dungeon level N.
+// Same dice a true descent would roll, minus nineteen fights. Harness plumbing
+// only — everything after the seating rides the real reducer.
+export function qaSeatLevel(state, n) {
+  let s = state
+  while (s.dungeonLevel < n) {
+    const d = generateDungeon(s.dungeonLevel + 1)
+    revealAround(d.startX, d.startY, d.map, d.visible, d.explored, d.rooms)
+    s = {
+      ...s,
+      dungeonLevel: s.dungeonLevel + 1,
+      map: d.map, rooms: d.rooms, doors: d.doors, hiddenDoors: d.hiddenDoors,
+      items: d.items, monsters: d.monsters, traps: d.traps,
+      visible: d.visible, explored: d.explored,
+      falls: 0,
+      player: { ...s.player, x: d.startX, y: d.startY },
+    }
+  }
+  // Bank the stream position the seating rolled, so stepGame resumes honest.
+  return addMsg({ ...s, randState: getRandState() }, `You enter dungeon level ${s.dungeonLevel}.`)
+}
+
 // SEARCH (1980): one turn, and the 3x3 around the hero is raked over for
 // hidden doors. Found without the hero on the cell, a door stands closed
 // ('+') from that moment — the creatures may keep passing through; if one is
@@ -1576,13 +1641,14 @@ export function stepGame(state, action) {
 // attack, the 1980 way), otherwise the first step of the 8-dir BFS toward
 // the `%` stairs; standing on the stairs descends. No route from here ->
 // null, and the watcher honestly holds instead of faking progress.
-function watchPath(state) {
+function watchPath(state, goal = null) {
   const start = `${state.player.x},${state.player.y}`
   const prev = new Map([[start, null]])
   const q = [[state.player.x, state.player.y]]
   while (q.length) {
     const [x, y] = q.shift()
-    if (state.map[y][x] === '%') {
+    const hit = goal ? (x === goal.x && y === goal.y) : state.map[y][x] === '%'
+    if (hit) {
       const path = []
       let k = `${x},${y}`
       while (prev.get(k)) {
@@ -1607,6 +1673,14 @@ function watchPath(state) {
 
 export function watchStep(state) {
   if (state.phase !== 'playing') return null
+  // #3592 — on the amulet floor the guide hunts the Amulet instead of the
+  // stairs: walk onto it, then open the pack like any other floor object.
+  const am = state.items.find(i => i.amulet)
+  if (am) {
+    if (state.player.x === am.x && state.player.y === am.y) return { type: 'PICKUP' }
+    const hunt = watchPath(state, am)
+    if (hunt) return { type: 'MOVE', dx: hunt[0].dx, dy: hunt[0].dy }
+  }
   if (state.map[state.player.y][state.player.x] === '%') return { type: 'DESCEND' }
   const foe = state.monsters.find(m =>
     Math.abs(m.x - state.player.x) <= 1 && Math.abs(m.y - state.player.y) <= 1 &&
