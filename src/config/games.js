@@ -649,7 +649,7 @@ export const GAMES = [
         label: 'PONG',
         theme: 'light',
         description: 'The classic table tennis arcade game. Defeat the AI by hitting the ball past their paddle.',
-        controls: ['Arrow Up/Down: Move Left Paddle', WATCH_HELP + ' — the predictor that wins the seeded sweep takes your paddle', 'Left/Right on attract: pick EASY / NORMAL / HARD / 2P (2P: W/S drives the right paddle)', '?: pause and read the controls']
+        controls: ['Arrow Up/Down: Move Left Paddle', WATCH_HELP + ' — the predictor that wins the seeded sweep takes your paddle', 'Left/Right on attract: pick EASY / NORMAL / HARD / 2P (2P: W/S drives the right paddle)', 'QUIT chip on the pad (or q/Escape): end the match honestly — tap restarts', '?: pause and read the controls']
     },
     {
         path: '/invaders',
