@@ -64,6 +64,9 @@ const kickWired = (t) => /flagshipStage\(/.test(t) && /\|\|\s*weakestStage\(/.te
 const idleExports = (t) => /export function weakestStage/.test(t) && /export function parseRegistry/.test(t)
     && /export function heldDirs/.test(t)
 const idleDeclinesFrozen = (t) => /includes\('waiting-jon'\)/.test(t)
+// #3479: the import regex must carry the default-alias branch — a shelf that
+// silently drops `import XGame from '../games/X'` mis-scores never-dry.
+const idleParsesDefaults = (t) => /\(\?:\\\{\[\^\}\]\*\\\}\|\\w\+\)\\s\+from/.test(t)
 const wardenNeverAsks = (t) => !/jonq\.mjs"? ask/.test(t)
 const wardenNeverDryRung = (t) => /NEVER-DRY KICK/.test(t) && /#1571/.test(t)
 const jonqRefusesDry = (t) => /DRY_QUEUE_SHAPE\.test\(/.test(t)
@@ -155,6 +158,16 @@ ok(unlabeledQuestions([
 // ----------------------------------------------------- registry (the shelf) ----
 const shelf = parseRegistry(registry)
 ok(shelf.length >= 50, `the registry enumerates the shelf (${shelf.length} titles — fewer means the parser broke)`)
+// #3479: the loose floor hid a parser that silently dropped every DEFAULT import
+// (`import DefenderGame from '../games/Defender'`) — 21 titles vanished off the
+// never-dry shelf while this check stayed green. Cross-check against the source
+// text itself: every dir ANY import style references must be enumerated.
+const referenced = new Set([...registry.matchAll(/['"]\.\.\/games\/([\w]+)['"]/g)].map((m) => m[1]))
+const parsedDirs = new Set(shelf.map((g) => g.dir))
+const missing = [...referenced].filter((d) => !parsedDirs.has(d))
+ok(missing.length === 0, `parseRegistry enumerates every imported dir (${missing.length} missing: ${missing.slice(0, 5).join(', ')})`)
+ok(shelf.some((g) => g.dir === 'Defender' && g.label) && shelf.some((g) => g.dir === 'Adventure' && g.label),
+'the shelf carries the static default imports (Defender, Adventure) — the #3479 hole')
 ok(shelf.some((g) => g.label === 'SSX') && shelf.some((g) => g.dir === 'CometDrift' && g.label),
 'the shelf carries labels so feedback naming a game counts toward weakness')
 
@@ -166,7 +179,7 @@ if (process.argv.includes('--mutant')) {
     const spec = {
         forge: [forgeMd, [rungPresent, rungAfterFlagship, stopOnFlagshipsGone, rungDemands]],
         kick: [kick, [kickWired]],
-        idleLib: [idleLib, [idleExports, idleDeclinesFrozen]],
+        idleLib: [idleLib, [idleExports, idleDeclinesFrozen, idleParsesDefaults]],
         warden: [warden, [wardenNeverAsks, wardenNeverDryRung]],
         jonqLib: [jonqLib, [jonqRefusesDry, jonqCapsTitle, flagIsRobotShaped]],
         jonqCli: [jonqCli, [cliChecksCap, sweepFlagsUnlabeled]],
@@ -180,6 +193,7 @@ if (process.argv.includes('--mutant')) {
         ['why-weakest bar removed', 'forge', (t) => t.replace(/why-weakest/g, 'nice')],
         ['idle-kick stops at flagships', 'kick', (t) => t.replace(/\n\s*\|\| weakestStage\([\s\S]*?\)\n/, '\n')],
         ['waiting-jon filter removed (#3074)', 'idleLib', (t) => t.replace("includes('waiting-jon')", "includes('never-jon')")],
+        ['registry drops default imports (#3479)', 'idleLib', (t) => t.replace('(?:\\{[^}]*\\}|\\w+)', '(?:\\{[^}]*\\})')],
         ['warden files questions again', 'warden', (t) => t.replace('ACTIONS+=("questions:$N")', 'node "$REPO/scripts/jonq.mjs" ask --lane games --title t --question "queue empty, what next?" --option a --option b --default a; ACTIONS+=("questions:$N")')],
         ['warden forgets the rung', 'warden', (t) => t.replace(/IDLE NEVER-DRY KICK \(#869[^)]*\)/, 'IDLE FLAGSHIP KICK (#869)')],
         ['jonq accepts dry asks', 'jonqLib', (t) => t.replace("DRY_QUEUE_SHAPE.test(String(question || ''))", 'false')],
