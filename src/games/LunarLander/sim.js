@@ -44,7 +44,17 @@ export const CFG = {
 }
 
 // three foot points in ship-local space (x right, y up)
-const FEET = [[-9.5, -10], [9.5, -10], [0, -9]]
+export const FEET = [[-9.5, -10], [9.5, -10], [0, -9]]
+
+// #3571 — the pad-span law: all three feet stand over some pad (this is the
+// horizontal span only, exactly what land() asks when it awards the pad value).
+// The HUD latch cue mirrors THIS predicate, so art and sim never diverge.
+export function padSpan(g) {
+    const c = Math.cos(g.rot), s = Math.sin(g.rot)
+    return FEET.every((f) => padAt(g.terrain, g.x + f[0] * c + f[1] * s))
+        ? padAt(g.terrain, g.x)
+        : null
+}
 
 const rnd = (g) => { g._rs = (Math.imul(g._rs, 1664525) + 1013904223) >>> 0; return g._rs / 4294967296 }
 
@@ -119,11 +129,7 @@ function settle(g) {
 }
 
 function land(g) {
-    const allOnPad = FEET.every((f) => {
-        const fx = g.x + f[0] * Math.cos(g.rot) + f[1] * Math.sin(g.rot)
-        return padAt(g.terrain, fx)
-    })
-    const pad = allOnPad ? padAt(g.terrain, g.x) : null
+    const pad = padSpan(g) // #3571 — the span law lives in padSpan now; the HUD cue mirrors it
     let pts = 0
     if (CFG.padScoring) {
         const base = pad ? pad.val : 10

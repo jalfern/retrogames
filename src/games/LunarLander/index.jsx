@@ -14,7 +14,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H } from './sim.js'
+import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H, padSpan } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
 import { plan, decide } from './planner.js'
@@ -312,7 +312,11 @@ const LunarLanderGame = () => {
             ctx.setLineDash([4, 6])
             ctx.beginPath(); ctx.moveTo(0, cam.py(ORBIT_Y, camY)); ctx.lineTo(W, cam.py(ORBIT_Y, camY)); ctx.stroke()
             ctx.setLineDash([])
-            drawTerrain(ctx, gs.terrain, cam, camX, camY)
+            // #3571 — pad latch: while the descent holds all three feet over
+            // one pad, that pad answers (hot bar + pulsing tag). Mirrors the
+            // sim's own predicate via padSpan — visual only, zero rules.
+            drawTerrain(ctx, gs.terrain, cam, camX, camY,
+                gs.phase === 'descent' ? padSpan(gs) : null, gs.tick)
             drawOrbiter(ctx, gs, cam, camX, camY)
             if (gs.phase !== 'crashed' && gs.phase !== 'landed') drawLander(ctx, gs, cam, camX, camY, thrustVis, gs.tick)
             if (gs.phase === 'landed') drawLander(ctx, gs, cam, camX, camY, thrustVis, gs.tick)
@@ -473,6 +477,21 @@ const LunarLanderGame = () => {
                     zoom, end: gs.end, hash: stateHash(gs),
                 }),
                 gameTime: () => gs.tick / 60,
+                // #3571 — the latch, and where every pad lands on screen under
+                // the same cam drawWorld builds (CSS px; harness multiplies by
+                // the canvas backing ratio). The gates park the lander and then
+                // read the painted tag pixels through these.
+                span: () => (gs.phase === 'descent' ? (padSpan(gs) || {}).val ?? null : null),
+                padPix: () => {
+                    const cam = makeCam(zoom && screenRef.current === 'play')
+                    const camX = cam.clampX(gs.x), camY = cam.clampY(Math.min(gs.y, 200))
+                    return gs.terrain.pads.map((p) => ({
+                        val: p.val,
+                        cx: (cam.px(p.i0 * STEP, camX) + cam.px(p.i1 * STEP, camX)) / 2,
+                        y: cam.py(p.y, camY),
+                        tags: cam.s > 0.7,
+                    }))
+                },
                 replay: () => ({ on: replayOn, failed: replayFailed, idx: replayIdx, seed: replay ? replay.seed : null }),
             }
             exposeGame({
