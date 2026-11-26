@@ -1,82 +1,73 @@
-# STATE — forge board snapshot (slot b, 2026-11-26 — DEFENDER SMART BOMB SHIPPED)
+# STATE — forge board snapshot (slot a, 2026-11-26 — PINBALL CHAIN-PIN SHIPPED)
 
-## This session — one ship + a law-grade discovery
-- Warden TARGET **#3441** REFUSED at claim (slot a held live, 8 min fresh —
-  dragons/seam is theirs). Normal ladder: steer empty, `next` #1712 is
-  waiting-jon, game-queue empty, the one unclaimed feedback (#3438) owned by
-  LIVE QA sessions (studio+mini) ⇒ flagship stage spent ⇒ **never-dry #1571**.
-- Corrected shelf (#3440 — parseRegistry still blind on main): **DEFENDER 6**
-  weakest unheld (tie w/ ROGUE, registry order wins; ADVENTURE held by slot a,
-  FROGGER by building-qa). Oldest gap = the b21 patrol essay (pins its own
-  optimum — not buildable); oldest BUILDABLE gap carried Jon's answered #2016
-  ⇒ **execute A: port the smart bomb.** Filed **#3443**, claimed, shipped
-  **PR #3449 (merge 8af78d4)**, closed shipped.
-- **The bomb (sim law):** B (ShiftLeft / pad BOMB / contract `b`) vaporizes
-  every hostile in the wrap-aware 1000 px window (¼ planet), table values
-  150/1500, haulers drop cargo FALLING (catchable), blast spares pilot+humans,
-  supply 3 refilled at wave beat (cap), edge-triggered, dark-suppressed,
-  **rand-free** ⇒ watchRoute untouched ⇒ 40-seed WITNESS replay IDENTICAL
-  (7800/1350 floors, 46/47 rescues, worst 1 crash — re-measured in-PR).
-- HUD bomb icons mirror the spare-ships row; white screen-wash + subsonic boom;
-  attract line; registry pad `BOMB` + controls; vpadcheck batch-1 calibrated
-  (DEFENDER left move-/fire-only).
-
-## THE FIND (#3445, filed with full evidence — NOT fixed here, one ship/session)
-`defenderplay`'s crash loop proved **GAME OVER is unreachable**: `invuln` only
-decrements while `dark > 0`, so grace freezes at 120 forever — invulnerable
-after the first crash. Corollary measured: b18-b21 witness laws ("all 40
-survive", "no seed crashes twice") are ARTIFACTS — honest one-line fix scores
-witness 0/20, holdout 1/20 survived. Real fix = grace burn + patrol re-earned
-+ all watch laws re-pinned = its own batch. `defenderplay` pins BOTH sides by
-name so the fix must invert them deliberately.
+## This session — one ship (never-dry)
+- Warden TARGET #3443 (DEFENDER smart bomb) REFUSED at claim (slot b live, 14 min) —
+  b shipped it mid-session (#3449 → main). #3445 (DEFENDER respawn bug) also taken by
+  b within 1 min of my probe. steer/next(game-queue)/feedback ladder: #1712 is
+  waiting-jon, the rest lane:qa + live QA MASTER session ⇒ #841 flagship stage
+  (`idle-kick`): **KICK PINBALL 0 weak**.
+- Oldest PINBALL gap is self-deferring (#3336 item 2 tilt-muffle awaits open #3335;
+  recorded default = keep level-only ⇒ do NOT implement). Took the oldest BUILDABLE
+  gap: #3422 honest residue "a ball queued behind a pin bounces off it instead of
+  chain-pinning through it". Filed + claimed **#3452**, shipped **PR #3458 (merge
+  1f77501)**.
+- **CHAIN-PIN**: during a hold episode, an outer-face pack contact (cone
+  dot(post→member, member→ball) ≥ ½) is swallowed: rosette ring `MG.r+BALL_R` at
+  arrival angle, relaxes clockwise in steps ≥ `2·asin(BALL_R/holdR)` ≈ 57° until
+  clear; own clock, own snap pay, marks `magTouched`. Zero RNG, index order.
+- Laws kept honest: cone refuses lateral touches (#3217 steel survives its live
+  habitat); spent ball (`magHoldT<0`) never re-rides (#3422); first-ball face grab
+  byte-identical; EMBER mirrors, pays 75. Issue-body deviation recorded in PR:
+  "no-episode pack" is unreachable (a held ball ⇒ `magHold>0`) — the cone is the
+  real cross-fire law.
 
 ## Proof
-- defendercheck **118/118** (+31 pins: window edge inclusive-500, seam kill,
-  spare/drop/dark/dry/determinism, zero-rand inspection, pad/contract/flash) +
-  `--mutant` **150/150** (32/32 die) — revived a DEAD #2167-era thrust-silence
-  mutant anchor (un-firable on main since thrustHum refactor).
-- New **defenderplay** (advisory alias, real Chrome :5178): **17/17** — bomb
-  spend visible in canvas PIXELS (calm 0→flash 117), held≠stream, Y seat never
-  bombs, takeover, zero page errors.
-- Chrome law before merge (#3427 lesson): watchcheck --only defender 322/322,
-  watchpillcheck 227/227, vpadcheck 738/738, attractcheck 694/694,
-  contractcheck 857/857, muteguardcheck, lint:mario/fps/ai, build green.
-- Prod verified: bundle `index-e1aLcqlU.js` carries `SMART BOMB` at jalfern.com.
+- pinballcheck **326/326** (+11 §chain: column swallow, ring placement, non-overlap,
+  own clocks, episode-through-first-snap, exact payout, touched law, spent-refusal,
+  lateral-refusal, determinism replay, EMBER mirror price). `--mutate` **21/21**
+  (new: chaincone, chainslot — both die).
+- pinballplay **68/68** real Chrome; watchcheck --only pinball 309/309; watchpill
+  227/227; attractcheck 694/694; contractcheck 14/14; eslint + 3 lint gates + build
+  green. Prod verified: `Pinball-CiyW9x5E.js` carries `asin` at jalfern.com.
+
+## Harness lessons (one line each)
+- A live coil bends fast shots: the magnet field pulls cross-fire into a legit face
+  grab mid-arc — a "thrown-at-the-pack deflects" pin must hold the pull-free window
+  (lateral-rest rig) or fire before the bend, not sample blindly.
+- Column rigs over the magnet spawn BELOW the drop-target row (y 300): y288/280 sits
+  on target i3 and silently pays +50 into "exact payout" pins.
+- The chain keeps balls alive longer ⇒ more announce stomps: quiet-table gates
+  (`liveBalls===1 && dmd.text===''`) now precede the orbit/kickback/pixel legs of
+  pinballplay (slot b's flank pattern, widened).
+- jalfern.com `…/retrogames/` answers a Redirecting… body — prod polls need `curl -L`;
+  chunks are `Pinball-*.js` reached via the entry's relative `./index-*.js` map.
 
 ## PLAYABLE on main right now
-- `/retrogames/defender` — B clears the screen, 3 per wave (phones: BOMB pad).
-  Plus prior shelf: pinball flank+art, skyward rooms, grind-city, tidal-rush,
-  pinball SOLO+smith, ssx, comet-drift pair, marble pair, galaga bee,
-  mario-kart, ice-climber, pacman, mario, minesweeper/garden-guard/homebody,
-  TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
-  spy-hunter, iron keep, missile, pucks, mines, zork, ultima, king's quest,
-  Joust, Q*bert, forge board.
+- `/retrogames/pinball`: chain-pin multiball magnet + flank jet lane + kickbacks both
+  sides + smith + kits; `/retrogames/defender`: smart bomb (slot b, #3449);
+  skyward (online rooms #3429), grind-city bot, tidal-rush, ssx, comet-drift pair,
+  marble pair, galaga bee, mario-kart, ice-climber, pacman, mario, minesweeper/
+  garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON,
+  RACCOON HEIST, spy-hunter, iron keep, missile, pucks, mines, zork, ultima,
+  king's quest, Joust, Q*bert, adventure, forge board.
 
-## Board watch (facts)
-- 8b filed: **#3453** QA — DEFENDER polish (hyperspace, meteor-swarm,
-  re-descent, seam collisions; #3445 explicitly excluded from it).
-- Slot a held #3441 at my claim; their park (02:05Z + newer tail) shipped an
-  ADVENTURE stage; ADVENTURE ~14 gaps remain ⇒ corrected weak pick stays
-  ADVENTURE next dry kick (gap 1: duplicated chalice / Blue Castle).
-- #3445 is games-lane labeled — next free builder takes it from the ladder
-  honestly; it outranks polish in value by a mile.
-- Slot a note #3439-fold: slot-b sessions kept dying post-merge before
-  post-steps — this session completed them (labels, close, 8b, report).
+## Board watch (facts, not questions)
+- `game-queue` empty at close; `next` #1712 waiting-jon. Slot b live on #3445.
+- Feedback open: #3445(b, building), #3446/#3451/#3461 (PINBALL, lane:qa — #3461 filed
+  this shift: chain polish), #3447 (SKYWARD rooms), #3430/#3419 (Joust/QA), #3244/
+  #2971 waiting-jon.
 
 ## Open questions (links only — #605)
-- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane; gates
-  PINBALL tilt-muffle — do NOT implement against it until answered/defaulted).
+- #3335 — QA: music-bus low-pass in AudioController (AWAITING; tilts the PINBALL
+  gap 1 — do NOT implement until answered/defaulted).
 - #3054 — native TestFlight ports have no recorder/upload (AWAITING).
 - #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
-- No new jonq questions filed this session (bomb was already answered; #3445
-  is a bug report, not a question).
+- No new jonq questions filed this session.
 
 ## Slot state at handoff
-- Slot b: dev :5178 stopped via scripts/devstop.sh; lane worktree
-  `~/Dev/retrogames-forge-defender-smart-bomb` detached at origin/main after
-  the merge (state PR rides `docs/state-b-smart-bomb`).
-- Game code merged ⇒ STATE ships via its own docs/state PR; parked at
-  /tmp/forge/STATE.b.parked.md via statepark (#1430).
-- Time-box: ship + discovery report well inside 3 h (CI queue ate ~30 min of
-  the merge wait).
+- Slot a: dev :5173 stopped via scripts/devstop.sh; lane worktree
+  `~/Dev/retrogames-forge-pinball-chainpin` detached clean at origin/main;
+  main checkout untouched (detached at origin/main).
+- Game merged this session ⇒ STATE ships via its own docs/state PR.
+- Time-box: shipped + verified ≈ 2 h 25 m of 3 h.
