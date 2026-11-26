@@ -11,7 +11,7 @@ four-tone march accelerates as the fleet shrinks.
 
 | File | Job | Proven by |
 |------|-----|-----------|
-| `sim.js` | one `step(state, input, rand)` — **zero `Math.random`**, every dice roll (invader fire, shooter choice, UFO arrival) drawn from the injected `rand` stream; the saucer's bounty is the shot-count table, not a roll | `npm run invaderscheck` (64 checks incl. 11 mutants proven RED→GREEN) |
+| `sim.js` | one `step(state, input, rand)` — **zero `Math.random`**, every dice roll (invader fire, shooter choice, UFO arrival) drawn from the injected `rand` stream; the saucer's bounty is the shot-count table, not a roll | `npm run invaderscheck` (74 checks incl. 13 mutants proven RED→GREEN) |
 | `index.jsx` | render (pixel sprites from bit-rows, 2-frame march), input, seed lifecycle, attract autopilot, harness contract | eslint + `feedbackcheck` laws |
 | `attract.js` | attract screen frames | intact from the original port |
 
@@ -21,14 +21,26 @@ The first port (Feb 2026) had **no terminal at all**: a hit, a landing or a
 cleared wave silently re-initialised, and `score` was a dead field. This
 batch rebuilt the original's honest end-of-run model:
 
-- Rows score **30 / 20 / 20 / 10** top-to-bottom (the original's 30/20/20/10/10
-  bands folded to four rows); the mystery UFO banks 50/100/150/300.
+- Rows score **30 / 20 / 20 / 10 / 10** top-to-bottom (squid / crab / crab /
+  octopus / octopus — the machine's literal score table, #3517); the mystery
+  UFO banks 50/100/150/300.
 - **Three lives**; a hit clears the screen's shots, blinks the cannon, holds
   the formation in place (original behavior) and respawns after 90 ticks.
 - **A landing ends the game** — with lives left on screen, `done=true`. So
   does the third death. The score you die with is the score you report.
-- Waves rebuild full and march faster (`0.8 + 0.25·wave`), start 8px lower
-  per wave up to +48, and fire more often (capped 5%/tick).
+- **The wave table (#3517)**: wave 1 opens the base formation **11 x 5 = 55**,
+  wave 2 returns the top **44** (bottom octopus row stays home), wave 3+ the
+  top **33**; every wave starts 8px lower per wave (max +48), marches faster
+  (`0.8 + 0.25·wave`), and fires more often (capped 5%/tick).
+- **The speed law (#3517)**: `marchSpeed = waveSpeed(wave) x clamp(0.3·sqrt(55/n), 0.3, 3)`
+  — the full fleet CRAWLS at 0.3x base, the march accelerates as the fleet
+  thins (the cabinet's interrupt timer ran ∝ aliens on screen), peaking at
+  ~2.3x on wave 1 (sqrt(55); the 3x cap binds only from wave 3). The same
+  function drives `step` and the WATCH lead prediction — one law, one brain.
+  Without it the 55-wide wall (only ~42 px of sweep between the walls) lands
+  ~tick 777, before fifty-five one-shot kills can fit; the player missile
+  moved 5 -> 8 px/t (the cabinet's ~3:1 ratio over the 2.5 bombs) for the
+  same reason.
 
 ## The forts (#1495)
 
@@ -65,10 +77,13 @@ omitted — the rand closure can't JSON round-trip (#391).
 ## Verify
 
 ```bash
-npm run invaderscheck          # Node: boot, rules, winnable, determinism, contract,
-                             #   + WITNESS: the WATCH brain clears wave 1 on 20/20 seeds
-npm run invaderscheck -- --mutant  # 3 mutants (column-stand, fire-gate, lead-fort
-                             #   tiebreak) must all go red
+npm run invaderscheck          # Node: boot, rules, wave table, speed law, winnable,
+                             #   determinism, contract, + WITNESS: the WATCH brain
+                             #   clears wave 1 on 20/20 seeds (slowest ~1506)
+npm run invaderscheck -- --mutant  # 13 mutants (incl. flat-march and frozen growth
+                             #   table, #3517) must all go red
+npm run invadersdrive          # real Chrome real keys: attract, start, arrows, fire,
+                             #   landing death, restart-to-attract, zero page errors
 npm run watchcheck -- --only invaders  # seat pilot: one-tap ▶ WATCH, Y seat/takeover,
                              #   blips, idle-hands proof (browser, needs dev server)
 npm run feedbackcheck          # the seedpin law incl. this title
@@ -137,9 +152,18 @@ decay granularity rewires the proven route and needs its own session.
 ## Honest gaps
 
 - The WATCH route clears wave 1 on all 20 WITNESS seeds (0 deaths, slowest
-  ~1265 ticks); between kills the worst seed now pauses ~3 s (172 ticks,
-  shot-tempo + re-alignment, pinned <= 220) crossing dense shot patterns.
-- 4 rows × 8 = 32 invaders; the original opens with 55 and grows per wave.
+  ~1506 ticks — #3517 re-measured with the 55 wall; one shot on screen means
+  ~1.4x the 32-invader era's runway); between kills the worst seed pauses
+  ~3.3 s (196 ticks, shot-tempo + re-alignment, pinned <= 220) crossing
+  dense shot patterns.
+- **CLOSED by #3517:** ~~4 rows × 8 = 32 invaders; the original opens with 55
+  and grows per wave.~~ — 11x5 = 55 opening, growth table 55/44/33, five-band
+  score table, cabinet thinning speed law and 3:1 missile ratio (see Terminal
+  model).
+- The march is continuous px/tick; the cabinet moved in discrete 2px steps on
+  an interrupt timer (and its drop was a wave-stepped row count, our drop is a
+  flat 8px). The law's SHAPE — crawl at full strength, sprint at the end — is
+  the fidelity target; the step granularity is not yet the machine's.
 - No 100-point bonus life; no tilt/coin mechanics; one UFO type.
 - Sound is the synthesized descending four + effect blips (studio audio law);
   the original's exact march waveform and the bonus-life jingle are absent.
