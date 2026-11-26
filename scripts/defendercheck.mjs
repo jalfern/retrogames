@@ -501,18 +501,35 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     ok(ho.catches >= 10 && ho.delivers >= 10, `the untuned holdout rescues too: ${ho.catches} catches, ${ho.delivers} deliveries`)
     ok(humansAlive(createSim({ rand: seedRng(2000), height: 420 }).humans) === HUMAN_COUNT,
         'witness seeds start with the street full (five humans)')
-    // The law, tested directly: a hauler outranks a CLOSER idle lander.
+    // The law, tested directly: a hauler outranks a CLOSER idle lander. The
+    // targets now sit on OPPOSITE sides so the steer direction itself is the
+    // verdict — the old both-left rig passed even with the weighting deleted.
     {
         const s = createSim({ rand: seedRng(7), height: 420 })
         s.enemies = [
             { x: 120, y: 150, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null },
-            { x: -50, y: 150, vx: 0, vy: 0, type: 'lander', state: 'ascend', carry: 0 },
+            { x: 320, y: 150, vx: 0, vy: 0, type: 'lander', state: 'ascend', carry: 0 },
         ]
         s.humans[0].state = 'abducted'
         s.player.x = 200; s.player.y = 150; s.player.vx = 0; s.player.vy = 0
         s.player.facing = -1; s.player.dark = 0; s.player.invuln = 1
         const inp = watchRoute(s)
-        ok(inp.left && !inp.right, 'a lander HAULING a human outranks a nearer idle one (the planet\'s job comes first)', `dx-steer left=${inp.left} right=${inp.right}`)
+        ok(inp.right && !inp.left, 'a lander HAULING a human outranks a nearer idle one (the planet\'s job comes first)', `left=${inp.left} right=${inp.right}`)
+    }
+    // The delivery elevator, tested directly: holding a human up high, the route
+    // must ride it DOWN to the wireframe. (The old fleet-total pin only killed
+    // this by immortality scale; a mortal patrol meanders low sometimes and
+    // still books deliveries — so the LAW of the steer is what gets pinned.)
+    {
+        const s = createSim({ rand: seedRng(13), height: 420 })
+        s.enemies = []
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        s.humans[0].state = 'carried'
+        s.carrying = 0
+        s.player.x = 200; s.player.y = 120; s.player.vx = 0; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.down && !inp.up, 'a carried human is flown down the elevator to the surface', `down=${inp.down} up=${inp.up}`)
     }
     // Friendly fire stays honest at the brain too: a walking human in the laser
     // line closer than the target holds the trigger.
