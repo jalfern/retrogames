@@ -191,31 +191,42 @@ hash or pin change.
 
 ## Waiting line (#3474): the run outlives the page
 
-A live run writes `{v, seed, mode, tick, sim, log}` to
+A live run writes `{v, ms, seed, mode, tick, sim, log}` to
 `localStorage['grindcity.run.v1']` every 2 s of play (`saveCd` 120 ticks) and
-again on `pagehide`/hidden. Come back and the attract offers
+again on `pagehide`/hidden — never while paused (#3476: a paused screen is not
+a line in motion; the last live save stands). Come back and the attract offers
 `LINE WAITS · {pts} PTS — R / TAP`; resuming continues the exact tick — and
 because the sim is pure + seeded (rng lives in `state.rng`) it is not a
-replay, it is the same ride. Clearing is total: `checkEnd` retires a finished
-line (a record is not a waiting one), resume consumes it, `reset()` forgets
-it alongside the #3381 record, and no-storage (private mode) degrades the
-offer to this-visit-only, never an error.
+replay, it is the same ride. Resume flashes `RETURNED AT {mm:ss} · {pts} PTS`
+through the sim's own `msg`/`msgT` channel (#3476 — the HUD shows what was
+carried, and a snapshot taken right after resume is honest). Clearing is
+total: `checkEnd` retires a finished line (a record is not a waiting one),
+resume consumes it, `reset()` forgets it alongside the #3381 record, a line
+older than `RUN_MAX_AGE_MS` (24 h) retires on read — store entry included —
+and no-storage (private mode) degrades the offer to this-visit-only, never an
+error.
 
 The pack *is* the contract `snapshot()`; `restore(s)` (gameContract deep-copies
 per #381, and `unpackRun` deep-copies too, so one pack may be restored any
 number of times) drives it back into play. `validRun` is the `validBank` law
 for a paused run: schema key-set equals today's `makeGame` — old-engine stores
-refuse, bump `RUN_V` when sim state changes shape — plus `phase==='play' &&
-!done && !won`, finite kinematics, `log.length === tick` (the pad log spans
-the run exactly), pads 0..63 capped at `RUN_MAX` (the 300 s free clock plus
-settle headroom). A tumble mid-throttle never overwrites a rideable save:
-`savePending` only packs a phase-`play` state, so the store always holds the
-last skatable instant.
+refuse, bump `RUN_V` when sim state changes shape (2 = the `ms` stamp, #3476)
+— plus a mandatory positive `ms` wall-clock stamp refused once older than
+`RUN_MAX_AGE_MS`, `phase==='play' && !done && !won`, finite kinematics,
+`log.length === tick` (the pad log spans the run exactly), pads 0..63 capped
+at `RUN_MAX` (the 300 s free clock plus settle headroom). The finished-record
+bank (`validBank`) caps at the same `RUN_MAX` (#3476 — a long free-skate line
+that waited mid-run must find its record next visit); the shorter
+`SHARE_MAX_TICKS` stays the *wire* cap: `encodeLine` refuses >2:00 lines, so
+share codes remain short and long lines replay locally. A tumble mid-throttle
+never overwrites a rideable save: `savePending` only packs a phase-`play`
+state, so the store always holds the last skatable instant.
 
 `grindcheck` pins the math — restore-then-continue hashes equal the
 continuous line, double-restore identity (#381), `validRun` junk table, and
-the cabinet wiring (mutants `restore`, `unpackclone`, `valid`, `runwire`).
-`grindlinedrive` makes the browser-only claims. Note found en route: `step()`
+the cabinet wiring (mutants `restore`, `unpackclone`, `valid`, `runwire`, and
+#3476's `runage` + `bankcap`). `grindlinedrive` makes the browser-only
+claims. Note found en route: `step()`
 attaches `airVXZ` (launch speed) lazily; `makeGame` now declares it — both
 falsy at its single read site, behavior-identical — so the snapshot schema
 sees every field the sim can carry.

@@ -26,6 +26,9 @@ const chip = () => page.evaluate(() => {
 const storageTick = () => page.evaluate(() => {
     try { const r = JSON.parse(window.localStorage.getItem('grindcity.run.v1')); return r && r.tick } catch { return null }
 })
+const storageMs = () => page.evaluate(() => {
+    try { const r = JSON.parse(window.localStorage.getItem('grindcity.run.v1')); return r && r.ms } catch { return null }
+})
 const waitForHook = () => page.waitForFunction(() => !!window.__grindTest, { timeout: 15000 })
 
 // clean slate — no waiting line from a previous visit
@@ -71,6 +74,35 @@ const t0 = st1.tick
 await page.waitForTimeout(500)
 const t1 = (await probe()).tick
 r.check('resumed sim advances', t1 > t0, `tick ${t0} -> ${t1}`)
+
+// #3476: resume tells the player what it carried (the flash rides sim.msg)
+let flash = null
+try {
+    await page.waitForFunction(() => ((document.querySelector('[data-q="msg"]') || {}).textContent || '').includes('RETURNED AT'), { timeout: 1500 })
+} catch { /* fall through to the check below */ }
+flash = await page.evaluate(() => ((document.querySelector('[data-q="msg"]') || {}).textContent) || null)
+r.check('resume flashes what was carried', (flash || '').includes('RETURNED AT'), flash)
+
+// #3476: pause must not stamp the store — the ms is the tell (the throttle
+// saveCd keeps ticking while paused, so without the gate the pack would get a
+// fresh ms at the same frozen tick).
+await page.evaluate(() => window.__grindTest.forceSave())
+const pPaused = await storageTick()
+const msPaused = await storageMs()
+r.check('a fresh pack is stamped before the pause', pPaused !== null && msPaused !== null, `tick ${pPaused}`)
+await page.keyboard.press('Escape')
+await page.waitForTimeout(2600)
+r.check('paused holds the store (no mid-pause save)', (await storageMs()) === msPaused,
+    `ms ${msPaused} -> ${await storageMs()}`)
+await page.evaluate(() => {
+    const raw = window.localStorage.getItem('grindcity.run.v1')
+    if (raw) { const r = JSON.parse(raw); r.ms = Date.now() - 26 * 3600 * 1000; window.localStorage.setItem('grindcity.run.v1', JSON.stringify(r)) }
+})
+await page.reload()
+await waitForHook()
+r.check('a day-old line retires instead of waiting',
+    (await chip()) === null && (await pending()) === null && (await storageTick()) === null,
+    `chip ${await chip()}, stored ${await storageTick()}`)
 
 r.check('zero page errors', errors.length === 0, errors.slice(0, 3).join(' | '))
 r.exit(browser)

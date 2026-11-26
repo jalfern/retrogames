@@ -6,6 +6,14 @@ import { makeRing, startKeyboardRing, captureFeedback, submitFeedback, probeFeed
 import { startSpeechListen } from '../utils/speechListen'
 import RotateHint from './RotateHint'
 
+// Safari private mode makes the window.localStorage ACCESSOR itself throw
+// (SecurityError) — every read or write of the property, not just quota
+// failures. One safe accessor for the whole chrome (#3476, autoRecord's ls()
+// law): blocked storage answers as a silent empty store, so drafts and the
+// outbox degrade to this-visit-only instead of throwing page errors.
+const EMPTY_STORE = { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+const lsSafe = () => { try { return window.localStorage } catch { return EMPTY_STORE } }
+
 // Shared in-game chrome (#437): two always-visible corner buttons on every game
 // screen, sized for a thumb inside the iOS safe area. Installed in fullscreen
 // PWA mode there is no address bar and no '?' key, so without these a phone
@@ -47,7 +55,7 @@ const FeedbackButton = ({ theme }) => {
     const [heard, setHeard] = useState('')
     const [micErr, setMicErr] = useState(null)
     const [keySaved, setKeySaved] = useState(() => {
-        try { return !!readJonKey(window.localStorage) } catch { return false }
+        try { return !!readJonKey(lsSafe()) } catch { return false }
     })
 
     useEffect(() => {
@@ -67,12 +75,12 @@ const FeedbackButton = ({ theme }) => {
     const [tick, setTick] = useState(0)
 
     const deliver = useCallback(async () => {
-        if (!outboxPending(window.localStorage)) { attemptRef.current = 0; setPending(0); return }
-        const res = await flushOutbox({ storage: window.localStorage })
+        if (!outboxPending(lsSafe())) { attemptRef.current = 0; setPending(0); return }
+        const res = await flushOutbox({ storage: lsSafe() })
         if (res.sent.length) {
             // A delivered report is no longer a draft — but only its own text is
             // cleared: a fresh note being typed right now is the player's, never ours.
-            if (loadDraft(window.localStorage) === res.sent[0].note) clearDraft(window.localStorage)
+            if (loadDraft(lsSafe()) === res.sent[0].note) clearDraft(lsSafe())
             const n = String(res.sent[0].issue || '?').split('/').pop()
             setToast(`kept report delivered #${n}`)
             setTimeout(() => setToast(null), 2600)
@@ -86,7 +94,7 @@ const FeedbackButton = ({ theme }) => {
         if (!ready) return undefined
         // next-tick so the flush (and its state updates) is not a sync cascade:
         // the outbox is an external store, its answer arrives async anyway.
-        const t = setTimeout(() => { if (outboxPending(window.localStorage)) deliver() }, 0)
+        const t = setTimeout(() => { if (outboxPending(lsSafe())) deliver() }, 0)
         return () => clearTimeout(t)
     }, [ready, deliver])
 
@@ -131,7 +139,7 @@ const FeedbackButton = ({ theme }) => {
         // Next-tick: localStorage is external state, and the panel itself animates
         // in for ~220 ms — the words land before the box is fully on screen.
         const t0 = setTimeout(() => {
-            const draft = loadDraft(window.localStorage)
+            const draft = loadDraft(lsSafe())
             if (draft && noteRef.current && !noteRef.current.value) setNote(draft)
         }, 0)
         const unguard = installTypingGuard(panelRef.current, undefined, (e) => {
@@ -142,7 +150,7 @@ const FeedbackButton = ({ theme }) => {
         // what is visible gets enabled, drafted and sent.
         const unsync = installNoteSync(noteRef.current, (v) => {
             setNote(v)
-            saveDraft(v, window.localStorage)
+            saveDraft(v, lsSafe())
         })
         return () => { clearTimeout(t0); unguard(); unsync() }
     }, [open, closePanel])
@@ -153,7 +161,7 @@ const FeedbackButton = ({ theme }) => {
     // the restore reads the stored draft, and saving that blank would delete it.
     // (A user emptying the box clears the draft through the native listener.)
     useEffect(() => {
-        if (open && note) saveDraft(note, window.localStorage)
+        if (open && note) saveDraft(note, lsSafe())
     }, [open, note])
 
     const send = async () => {
@@ -171,16 +179,16 @@ const FeedbackButton = ({ theme }) => {
             const n = (res.issue || '').split('/').pop()
             setNote('')
             if (noteRef.current) noteRef.current.value = ''
-            clearDraft(window.localStorage)
+            clearDraft(lsSafe())
             closePanel()
             setToast(`sent #${n}`)
             setTimeout(() => setToast(null), 1800)
         } else {
             setNote(text)
             // Kept on the device and retried until the relay takes it — never lost.
-            outboxAdd(payload, window.localStorage)
+            outboxAdd(payload, lsSafe())
             attemptRef.current = 0
-            setPending(outboxPending(window.localStorage))
+            setPending(outboxPending(lsSafe()))
             setTick((t) => t + 1)
             setStatus(`failed: ${res.err} — kept on device, retrying`)
         }
@@ -214,7 +222,7 @@ const FeedbackButton = ({ theme }) => {
 
     const saveKey = () => {
         const v = keyInputRef.current ? keyInputRef.current.value : ''
-        const stored = saveJonKey(v, window.localStorage)
+        const stored = saveJonKey(v, lsSafe())
         if (stored) {
             setKeySaved(true)
             if (keyInputRef.current) keyInputRef.current.value = ''
