@@ -377,6 +377,9 @@ const SkywardGame = () => {
             room: null, lobby: null, racing: false, frozen: false, podOn: false,
             roster: [], humans: [], lost: new Set(), insts: null, seed: 0, raceT: 0, stallRun: 0,
         }
+        // #3447 — phantom remote hulls for the nameplate drive: DEV paint only
+        // (the sim, the wire and the fold never see them), see poseRemotes.
+        let dbgRemotes = null
         // #3429 — a relay slot is an ADDRESS, not a seat: the field is built
         // from whoever is actually home at kickoff, in roster order. Slots may
         // skip (a reconnecting tab briefly holds its old seat at the relay),
@@ -782,7 +785,7 @@ const SkywardGame = () => {
 
             if (screenRef.current === 'attract') gl.orbitAttract(demo, ft / 1000)
             else gl.render(gs, ft / 1000, engNow,
-                net.insts ? net.insts.map((g, i) => ({ seat: i, g })).filter((x) => x.seat !== mySeat()) : null)
+                net.insts ? net.insts.map((g, i) => ({ seat: i, g })).filter((x) => x.seat !== mySeat()) : dbgRemotes)
 
             // on-entry hint + warning tick for the pass (HUD/audio only)
             const sc = screenRef.current
@@ -953,6 +956,22 @@ const SkywardGame = () => {
                     if (net.role === 'host' && net.room && net.room.phase === 'waiting') net.lobby.start({ seed: hostSeed(), roster: net.room.slots.slice().sort((a, b) => a - b) })
                     return net.room ? net.room.phase : 'off'
                 },
+                // #3447 item 3 — pose phantom remote hulls ahead of my seat so
+                // the nameplate law is drivable without a relay (paint-only:
+                // gs, the wire and foldHash never see these objects).
+                poseRemotes: (seats = [1, 2, 3]) => {
+                    const ahead = (dist, lat) => ({
+                        tick: 120, respawnT: 0, craft: 'plane', pitch: 0, roll: 0, heading: gs.heading,
+                        p: {
+                            x: gs.p.x + Math.sin(gs.heading) * dist + Math.cos(gs.heading) * lat,
+                            y: gs.p.y + 2,
+                            z: gs.p.z + Math.cos(gs.heading) * dist - Math.sin(gs.heading) * lat,
+                        },
+                    })
+                    dbgRemotes = seats.map((seat, i) => ({ seat, g: ahead(40 + i * 55, (i - 1) * 22) }))
+                    return dbgRemotes.length
+                },
+                clearRemotes: () => { dbgRemotes = null; return 0 },
                 gameTime: () => gs.tick / 60,
                 // #3267 — where the cell stands in sim time right now (the ONE
                 // position sim weather and painted clouds share), plus how deep

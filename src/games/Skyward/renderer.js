@@ -9,7 +9,7 @@
 import * as THREE from 'three'
 import { sockChain, dustFlow } from './sim.js'
 import { scuffTell } from './sim.js'
-import { PILOT_COLORS } from './net.js' // #3429 — seat identity for remote hulls
+import { PILOT_COLORS, PILOT_NAMES, PILOT_CSS } from './net.js' // #3429 — seat identity for remote hulls
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
 const lerp = (a, b, t) => a + (b - a) * t
@@ -594,7 +594,17 @@ void main(){
         Object.values(clones).forEach((c) => grp.add(c))
         grp.add(beacon)
         scene.add(grp)
-        remoteCraft[seat] = { grp, clones, beacon }
+        // #3447 item 3 — a floating nameplate rides above each remote hull.
+        // At distance the seat tint is too subtle to say who is who (the
+        // honest gap #3429 recorded); the plate names the seat in its own
+        // colour. Renderer-only: names come from the seat table every box
+        // already shares — no new truth on the wire, never hashed.
+        const plate = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: labelSprite(PILOT_NAMES[seat % PILOT_NAMES.length], PILOT_CSS[seat % PILOT_CSS.length]),
+            transparent: true, depthWrite: false, opacity: 0,
+        }))
+        scene.add(plate)
+        remoteCraft[seat] = { grp, clones, beacon, plate }
         return remoteCraft[seat]
     }
     Object.values(craft).forEach((c) => scene.add(c))
@@ -969,11 +979,22 @@ void main(){
                 // legible even at distance (renderer-only, never hashed)
                 rs.grp.rotation.set(-rg.pitch * 0.75, -rg.heading + Math.PI, rg.roll * 0.9, 'YXZ')
                 rs.beacon.material.opacity = 0.55 + 0.35 * Math.sin(t * 4 + rm.seat * 1.7)
+                // #3447 item 3 — nameplate law: scale ∝ range keeps the type at
+                // one screen height from a far duel down to close escort; it
+                // fades out inside ~24 m (where the tinted hull and pulsing
+                // beacon already answer) and dims past the haze line so four
+                // plates never turn the sky into signage.
+                const d = camera.position.distanceTo(rs.grp.position)
+                const ps = Math.min(7.5, Math.max(0.9, d * 0.047))
+                rs.plate.position.set(rg.p.x, rs.grp.position.y + 3.1 + ps * 0.5, rg.p.z)
+                rs.plate.scale.set(ps * 4.44, ps, 1) // the 320×72 label canvas aspect
+                rs.plate.material.opacity = Math.min(Math.max(0, (d - 24) / 16), Math.max(0.35, (320 - d) / 80))
                 Object.entries(rs.clones).forEach(([k, cc]) => { cc.visible = k === rg.craft })
                 if (rg.respawnT > 0) rs.grp.visible = false // their crew has her
+                rs.plate.visible = rs.grp.visible && rs.plate.material.opacity > 0.02
             }
         }
-        Object.entries(remoteCraft).forEach(([seat, rs]) => { if (!seen.has(Number(seat))) rs.grp.visible = false })
+        Object.entries(remoteCraft).forEach(([seat, rs]) => { if (!seen.has(Number(seat))) rs.grp.visible = rs.plate.visible = false })
         renderer.render(scene, camera)
     }
 

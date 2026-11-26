@@ -836,6 +836,33 @@ void runAuto
         return src.includes('Math.pow(Math.max(0, (Math.cos(a) + 1) / 2), 3)') && src.includes('tmp.set(50 * south, (portrait ? 20 : 30) - 10 * south, -40 + 190 * south)')
     })())
 
+    // #3447 item 3 — floating nameplates over remote hulls. The gap #3429
+    // shipped with: at distance the seat tint is too subtle to identify a
+    // pilot. The plate names the seat in its seat colour, holds one screen
+    // height (scale ∝ range), fades close aboard and past the haze, and
+    // disappears exactly when its hull does. Source law (renderer needs DOM):
+    // the mutants prove each clause is load-bearing.
+    r.check('#3447 every remote hull carries a plate named from the seat table in its seat colour', (() => {
+        const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
+        return src.includes('labelSprite(PILOT_NAMES[seat % PILOT_NAMES.length], PILOT_CSS[seat % PILOT_CSS.length])')
+            && /const plate = new THREE\.Sprite/.test(src)
+    })())
+    r.check('#3447 the plate holds one screen height (scale ∝ range) and fades close aboard / past the haze', (() => {
+        const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
+        return src.includes('d * 0.047') && src.includes('(d - 24) / 16') && src.includes('(320 - d) / 80')
+    })())
+    r.check('#3447 the plate vanishes with its hull — respawn and the seen law', (() => {
+        const src = readFileSync('src/games/Skyward/renderer.js', 'utf8')
+        return src.includes('rs.plate.visible = rs.grp.visible && rs.plate.material.opacity > 0.02')
+            && src.includes('rs.grp.visible = rs.plate.visible = false')
+    })())
+    r.check('#3447 the pose rig is paint-only — remotes ride the render arg, never gs/net/hash', (() => {
+        const cab = readFileSync('src/games/Skyward/index.jsx', 'utf8')
+        return cab.includes('seat !== mySeat()) : dbgRemotes)')
+            && cab.includes('poseRemotes: (seats = [1, 2, 3])')
+            && !cab.includes('gs.remotes') // no fake truth ever enters the sim
+    })())
+
     // item 4 — the ladder banner marks the live zone with a ▸. Literals here:
     // the string a first-timer reads must be exactly the table, one ▸ deep.
     r.check('off the strip the ladder is the untouched #3310 line',
@@ -1605,6 +1632,10 @@ if (process.argv.includes('--mutate')) {
         ['#3370 the park forgets its arrival speed (the touchdown puff loses its meter)', SIMF, 'aligned: touch.aligned, speed: vIn })', 'aligned: touch.aligned, speed: 0 })'],
         ['#3370 south-lane echo reads upside-down again (mirror dies)', 'src/games/Skyward/renderer.js', 'echo.rotation.y = Math.PI / 2', 'echo.rotation.y = -Math.PI / 2'],
         ['#3370 the attract vista never sells the strip (look stays north)', 'src/games/Skyward/renderer.js', 'tmp.set(50 * south, (portrait ? 20 : 30) - 10 * south, -40 + 190 * south)', 'tmp.set(0, 30, -60)'],
+        ['#3447 every plate wears the same name (seat identity dies on the plate)', 'src/games/Skyward/renderer.js', 'labelSprite(PILOT_NAMES[seat % PILOT_NAMES.length], PILOT_CSS[seat % PILOT_CSS.length])', 'labelSprite(PILOT_NAMES[0], PILOT_CSS[0])'],
+        ['#3447 the plate stops tracking range (far duel loses the name)', 'src/games/Skyward/renderer.js', 'Math.max(0.9, d * 0.047)', 'Math.max(0.9, 0.047)'],
+        ['#3447 the plate outlives its hull (ghost name over a crashed pilot)', 'src/games/Skyward/renderer.js', 'rs.plate.visible = rs.grp.visible && rs.plate.material.opacity > 0.02', 'rs.plate.visible = true'],
+        ['#3447 a departed seat keeps signage (seen law forgets the plate)', 'src/games/Skyward/renderer.js', 'rs.grp.visible = rs.plate.visible = false', 'rs.grp.visible = false'],
         ['#3429 the wire erases the stick (remote pilots go bang-bang)', NETF, 'x: Math.round(clamp1(p.x || 0) * 100) / 100,', 'x: 0,'],
         ['#3429 the normalizer drops the analog pair (the #1705 law unwinds)', 'src/utils/lockstep.js', 'if (Number.isFinite(o.x)) n.x = Math.max(-1, Math.min(1, o.x))', 'void 0'],
         ['#3429 the podium ranks the crashers first', NETF, '(b.score - a.score) || (a.crashes - b.crashes)', '(b.crashes - a.crashes) || (b.score - a.score)'],
