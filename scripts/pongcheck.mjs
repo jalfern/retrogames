@@ -606,9 +606,9 @@ console.log('range: the selectable max-score knob (#3565)')
         // Half-width zones meeting at 50% swallowed the centre tap and the
         // nightly tapstartcheck went red.
         const zoneEdges = (cls) => {
-            const m = idx.match(new RegExp(`className="${cls}"[\s\S]{0,1400}?style=\{\{([^}]+)\}\}`))
+            const m = idx.match(new RegExp(`className="${cls}"[\\s\\S]{0,1400}?style=\\{\\{([^}]+)\\}\\}`))
             if (!m) return null
-            const g = (k) => { const mm = m[1].match(new RegExp(`${k}: '(\d+(?:\.\d+)?)%'`)); return mm ? parseFloat(mm[1]) : null }
+            const g = (k) => { const mm = m[1].match(new RegExp(`${k}: '(\\d+(?:\\.\\d+)?)%'`)); return mm ? parseFloat(mm[1]) : null }
             const l = g('left'), w = g('width')
             return l === null || w === null ? null : { l, r: l + w }
         }
