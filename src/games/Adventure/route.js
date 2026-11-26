@@ -80,6 +80,21 @@ const cellPath = (sim, fx, fy, tx, ty) => {
 // kite below instead of walking into a maw.
 const DODGE_SAFE = 48   // kite while a live dragon is nearer than this in your room
 
+// #3489 — shared quest wait-credit. Every "wait for the world" the guide does
+// (calm-entry, door-clear, guard cycle, bat trade, theft recovery) draws from
+// ONE pool per drive instead of a fresh cap per attempt: ten fresh 1600-tick
+// waits on one stubborn fetch burned the 60k budget on seeds 3/8 V1 (the bat
+// hoarded the bridge for 40k ticks while each retry re-armed its own timer).
+// When the credit is spent the guide stops waiting and drives — which is what
+// the honest part of the quest still needs the budget for. Lives beside the
+// sim in a WeakMap, never inside it: the guide still emits inputs only.
+const CREDIT = new WeakMap()
+const credit = (sim) => {
+    let c = CREDIT.get(sim)
+    if (!c) { c = { w: 30000 }; CREDIT.set(sim, c) }
+    return c
+}
+
 
 const roomThreat = (sim) => {
     // #3489 sword ride: with the blade in hand a dragon is not a threat but
@@ -189,7 +204,11 @@ function* driveTo(sim, tx, ty, stop = 1.2, ignoreThreat = false) {
     let path = [], stuck = 0, slow = 0, lastDc = Infinity
     const plan = () => { path = cellPath(sim, p.x + p.w / 2, p.y + p.h / 2, txc, tyc); stuck = 0 }
     plan()
-    for (let i = 0; i < 5000; i++) {
+    // #3489: the room-local cap. A drive inside one room needs ~600 honest
+    // ticks end-to-end; 5000 only ever fed the crawl-replan vortex (seed 7 V3
+    // burned 20k ticks in driveTo alone). Snags re-plan once, then the
+    // caller's own retry law takes over in a moved world.
+    for (let i = 0; i < 1800; i++) {
         const th = roomThreat(sim)
         if (!ignoreThreat && th && th.dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) return false; continue }
         const ddx = tx - p.x, ddy = ty - p.y
@@ -498,9 +517,13 @@ function* dropCarrySafe(sim) {
 
 function* fetchItem(sim, id, depth = 0) {
     const item = sim.items.find((i) => i.id === id)
+    const cr = credit(sim)
+    const isGrail = id === 'chalice' || id === 'chalice2'
     let armed = false
     for (let attempt = 0; attempt < 10; attempt++) {
-        if (sim.carrying === id) return true
+        // #3482: both chalices are the goal item — any cup in hand satisfies
+        // a cup fetch (and the retry below must never drop one to re-fetch it).
+        if (sim.carrying === id || (isGrail && (sim.carrying === 'chalice' || sim.carrying === 'chalice2'))) return true
         if (sim.dead || sim.won) return sim.carrying === id
         // #3489 retry floor: a failed attempt can return synchronously (a
         // blocked hop yields nothing) — ten zero-tick attempts burn the whole
@@ -533,47 +556,70 @@ function* fetchItem(sim, id, depth = 0) {
                 .filter(([, n]) => !sim.dragons.some((dg) => dg.alive && dg.room === n))
                 .map(([, n]) => n)[0]
             if (calm !== undefined && sim.room !== calm && !(yield* walkTo(sim, calm, false))) continue
+            const cap = Math.min(1600, cr.w)
             let clearRun = 0
-            for (let i = 0; i < 1600 && clearRun < 160 && !sim.dead && !sim.won; i++) {
+            for (let i = 0; i < cap && clearRun < 160 && !sim.dead && !sim.won; i++) {
                 clearRun = sim.dragons.some((d) => d.alive && d.room === item.room) ? 0 : clearRun + 1
+                cr.w--
                 yield {}
             }
         }
         if (depth === 0 && sim.bat.carrying === id) {
-            // #3489 decoy trade: this port's bat steals only inside the
-            // PLAYER's room (opportunistic shadow), so its haul cannot be
-            // traded at distance and waiting in its last-seen room misses it
-            // (seed 6 V1 burned 19k ticks — swapTimer never rang). Chase the
-            // bat WITH a decoy: enter its room carrying something (the route
-            // always arms the sword), drop the decoy at the feet, then close
-            // on the bat until its own swap law takes the decoy and drops the
-            // haul right there. One hop, the loot comes home.
-            let traded = false, dead_chase = 0
-            for (let c = 0; c < 12 && sim.bat.carrying === id && !sim.dead && !sim.won; c++) {
+            // #3489 decoy post: this port's bat swaps its haul for a loose
+            // item it bumps INSIDE the player's room — proximity to the dot is
+            // irrelevant, but the room is everything. Chasing the bat's exact
+            // pixel burned thousands (old law), and camping where the route
+            // happened to stand burned thousands more (seed 8 V2 camped in Blue
+            // Lab 2 forty thousand ticks while the bat loitered the Gold
+            // Foyer). The post that wins is the bat's own room when calm, its
+            // doorstep otherwise: plant currency on that floor and let the
+            // dwell-time law do the rest — a hunter stays in a room a few
+            // hundred ticks, and so does a bat.
+            // Currency is filtered: a key is only spendable AFTER its gate is
+            // open (seeds died re-locking keeps with keys they still needed),
+            // and the same room is offered first — that is usually the decoy
+            // this very round planted, back within arm's reach.
+            const safeDecoy = () => {
+                const pool = ['sword', 'magnet', 'dot',
+                    ...(sim.gateOpen.goldKey ? ['goldKey'] : []),
+                    ...(sim.gateOpen.blackKey ? ['blackKey'] : []),
+                    ...(sim.gateOpen.whiteKey ? ['whiteKey'] : []),
+                    'chalice', 'chalice2'].filter((x) => x !== id && x !== 'bridge')
+                return pool.find((x) => sim.items.some((i) => i.id === x && !i.carried && i.room === sim.room))
+                    || pool.find((x) => sim.items.some((i) => i.id === x && !i.carried))
+            }
+            let traded = false
+            for (let c = 0; c < 8 && sim.bat.carrying === id && !sim.dead && !sim.won && cr.w > 400; c++) {
+                if (roomThreat(sim) && roomThreat(sim).dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) break }
                 if (!sim.carrying) {
-                    // decoy first — any loose item that is not the haul and
-                    // not already in the bat's claws (the route armed the
-                    // sword once already, so it usually lies nearby)
-                    const decoyId = ['sword', 'goldKey', 'magnet', 'dot']
-                        .find((x) => x !== id && sim.items.some((i) => i.id === x && !i.carried))
+                    const decoyId = safeDecoy()
                     if (!decoyId) break
                     if (!(yield* fetchItem(sim, decoyId, 1))) break
                 }
-                if (!(yield* walkTo(sim, sim.bat.room))) {
-                    // pocket the route cannot reach (bat behind a closed keep
-                    // gate): it will leave on its own; re-chase on the next
-                    // fetch attempt, but never spin zero-tick failures here
-                    if (++dead_chase >= 3) break
-                    continue
+                // march to the bat's room (calm) or its calmest doorstep
+                const br = sim.bat.room
+                const calmBatRoom = !residents(sim, br).length
+                const post = calmBatRoom ? br
+                    : neighbors(sim, br).map(([, n]) => n).find((n) => !residents(sim, n).length)
+                if (post === undefined) continue   // the bat sits deep in a den — revisit later
+                if (sim.room !== post && !(yield* walkTo(sim, post))) continue
+                if (sim.room !== post || !sim.carrying) continue
+                yield* dropCarrySafe(sim)          // plant on the post's open floor
+                if (sim.carrying) break            // drop refused at an edge — re-plan
+                // A long wait at an EMPTY post is camping, not trading (that
+                // is the shape of the 19k-tick burn, seed 7 V3): spend the
+                // dwell-length wait only while the bat actually occupies the
+                // post; when it is elsewhere, hold the step and re-march.
+                let burst = sim.bat.room === post ? 700 : 350
+                while (burst > 0 && cr.w > 0 && sim.bat.carrying === id && !sim.dead && !sim.won) {
+                    burst--; cr.w--
+                    const th = roomThreat(sim)
+                    if (th && th.dist <= DODGE_SAFE) break
+                    if (sim.carrying) break        // a stray landed in hand — replant fresh
+                    if (sim.room !== post) break   // slipped a seam — re-march
+                    yield {}
                 }
-                dead_chase = 0
-                if (sim.bat.room !== sim.room) continue
-                if (sim.carrying && sim.carrying !== 'sword') yield* dropCarrySafe(sim)
-                if (sim.carrying === 'sword') yield* dropCarrySafe(sim)
-                if (sim.bat.room !== sim.room) continue
-                yield* driveTo(sim, sim.bat.x, sim.bat.y, 8, true)
                 if (sim.bat.carrying !== id) { traded = true; break }
-                if (roomThreat(sim)) break   // jaws in the trade room — re-plan
             }
             if (!traded) continue
         }
@@ -599,6 +645,31 @@ function* openGate(sim, keyId) {
     yield { drop: true }
     for (let i = 0; i < 4 && !sim.gateOpen[keyId]; i++) yield {}
     return sim.gateOpen[keyId] === true
+}
+
+// #3482 — two Grails ride the board (the duplicate sits in the open Blue
+// Castle) and either one home wins. Fetch the CUP THE ROUTE IS NEARER: in the
+// shuffle the original can be re-homed across the map or hoarded by the bat,
+// while the pin copy waits by the road. Reachability is read on the same
+// gated graph the walk uses, so a cup behind a closed keep is skipped honestly.
+function* fetchGrail(sim) {
+    if (sim.carrying === 'chalice' || sim.carrying === 'chalice2') return true
+    const reach = new Map([[sim.room, 0]])
+    const order = [sim.room]
+    for (let i = 0; i < order.length; i++) {
+        for (const [, n] of neighbors(sim, order[i])) {
+            if (!reach.has(n)) { reach.set(n, reach.get(order[i]) + 1); order.push(n) }
+        }
+    }
+    const cups = sim.items
+        .filter((i) => i.id === 'chalice' || i.id === 'chalice2')
+        .map((i) => ({ id: i.id, d: reach.has(i.room) ? reach.get(i.room) : Infinity }))
+        .sort((a, b) => a.d - b.d)
+    for (const c of cups) {
+        if (c.d === Infinity) continue
+        if (yield* fetchItem(sim, c.id)) return true
+    }
+    return sim.carrying === 'chalice' || sim.carrying === 'chalice2'
 }
 
 // The full quest, start to finish. Returns { ok, why } — the honest verdict
@@ -636,7 +707,7 @@ function* runRoute(sim) {
         if (!(yield* driveTo(sim, 80, 32))) return { ok: false, why: 'white threshold' }
         if (!(yield* openGate(sim, 'whiteKey'))) return { ok: false, why: 'gateW' }
     }
-    if (!(yield* fetchItem(sim, 'chalice'))) return { ok: false, why: 'chalice' }
+    if (!(yield* fetchGrail(sim))) return { ok: false, why: 'chalice' }
     if (!sim.won && !(yield* walkTo(sim, R.GOLD_CASTLE))) return { ok: false, why: 'home' }
     for (let i = 0; i < 400 && !sim.won; i++) {
         const th = roomThreat(sim)
@@ -736,7 +807,9 @@ function* scriptCore(sim) {
     if (!(yield* OG('whiteKey'))) return { ok: false, why: 'gateW' }
     if (!(yield* W(sim, 'up', R.WHITE_FOYER))) return { ok: false, why: 'foyerW' }
     if (!(yield* R1(80, 88))) return { ok: false, why: 'chalice spot' }
-    if (sim.carrying !== 'chalice') {
+    if (sim.carrying !== 'chalice' && sim.carrying !== 'chalice2') {
+        // #3482: a duplicate cup picked up along the way IS the goal item —
+        // do not trade it for the original, drive it home.
         if (!(yield* recover(sim, 'chalice', 80, 88))) return { ok: false, why: 'no chalice' }
     }
     if (!(yield* R1(80, 12))) return { ok: false, why: 'foyerW exit' }
@@ -790,7 +863,10 @@ function* recover(sim, id, backX, backY) {
             !sim.dragons.some((dg) => dg.alive && dg.room === room))
         if (shelter === undefined) return false
         if (!(yield* walkTo(sim, shelter))) return false
-        for (let i = 0; i < 3000 && sim.bat.carrying === id; i++) {
+        const cr = credit(sim)
+        const cap = Math.min(3000, cr.w)
+        for (let i = 0; i < cap && sim.bat.carrying === id; i++) {
+            cr.w--
             yield {}
             if (sim.dead || sim.won) return false
         }
@@ -818,6 +894,7 @@ export function watchVoice(sim) {
 // V1/V2 (fixed maps) run the proven waypoint script; V3 (shuffle) runs the
 // adaptive route — both ported from the drivers adventurecheck proves with.
 export function makeRoute(sim) {
+    CREDIT.set(sim, { w: 30000 })   // #3489 — one wait-credit pool per drive
     const gen = sim.variant >= 3 ? runRoute(sim) : scriptRun(sim)
     let result = { ok: false, why: 'not started' }
     return {
