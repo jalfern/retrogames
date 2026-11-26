@@ -153,8 +153,22 @@ function DPad({ onAction }) {
   )
 }
 
+// #3514: the flee-moment flash lives in the view layer's reducer — the fx the
+// sim just recorded get stamped onto the next state with the turn they belong
+// to, so the glyph tint ages out exactly when turn advances (no timer, no
+// setState-in-effect; the sim and its replay hash stay untouched).
+function stepWithFlash(state, action) {
+  const next = stepGame(state, action)
+  const prevLen = state.fx.length
+  if (next.fx.length > prevLen) {
+    const broke = next.fx.slice(prevLen).filter(e => e.k === 'flee').map(e => e.id)
+    if (broke.length) return { ...next, fleeFlashIds: broke, fleeFlashTurn: next.turn }
+  }
+  return next
+}
+
 export default function RogueGame() {
-  const [state, dispatch] = useReducer(stepGame, null, () => createInitialState(freshSeed()))
+  const [state, dispatch] = useReducer(stepWithFlash, null, () => createInitialState(freshSeed()))
   const containerRef = useRef(null)
   const [isMobile, setIsMobile] = useState(false)
   const [mapScale, setMapScale] = useState(1)
@@ -193,19 +207,12 @@ export default function RogueGame() {
   // #1502: drain the sim's fx log into audio. The log grows through the run
   // and resets to [] on NEW_GAME — the length compare handles both.
   const fxSeenRef = useRef(0)
-  // #3514: glyphs of monsters that broke THIS hero turn get a one-turn amber
-  // tint (the port's accent). Keyed by the turn stamp, so the flash ages out
-  // exactly when turn advances — no timer, turn-based honest like the seat.
-  const [fleeFlash, setFleeFlash] = useState(null) // { turn, ids:Set }
   useEffect(() => {
     const n = state.fx.length
     let seen = fxSeenRef.current
     if (seen > n) seen = 0
     if (seen < n) {
-      const batch = state.fx.slice(seen, n)
-      batch.forEach(fxSound)
-      const broke = batch.filter(e => e.k === 'flee').map(e => e.id)
-      if (broke.length) setFleeFlash({ turn: state.turn, ids: new Set(broke) })
+      state.fx.slice(seen, n).forEach(fxSound)
       fxSeenRef.current = n
     }
   }, [state])
@@ -628,8 +635,8 @@ export default function RogueGame() {
   // this turn burns amber for exactly one turn (the port's accent, cf. the
   // amber door jambs). Turn-stamped, so the next hero action ages it out.
   const flashCells = new Set()
-  if (fleeFlash && fleeFlash.turn === state.turn) {
-    for (const m of state.monsters) if (fleeFlash.ids.has(m.id)) flashCells.add(`${m.x},${m.y}`)
+  if (state.fleeFlashTurn === state.turn) {
+    for (const m of state.monsters) if (state.fleeFlashIds?.includes(m.id)) flashCells.add(`${m.x},${m.y}`)
   }
 
   return (
