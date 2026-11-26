@@ -1124,23 +1124,28 @@ ok('demo: injector exposes __demoFeedback in plain Node',
 
 // ── #3407: the game panel's own wiring ────────────────────────────────────────
 {
+    // #3476 Safari private mode: the localStorage ACCESSOR itself throws — one
+    // safe accessor, silent empty store; no uncaught SecurityError on any page.
+    ok('#3476 private-mode law: chrome sees storage only through lsSafe',
+        /const lsSafe = \(\) => \{ try \{ return window\.localStorage \} catch \{ return EMPTY_STORE \} \}/.test(chromeSrc) &&
+        /const EMPTY_STORE = \{ getItem: \(\) => null, setItem: \(\) => \{\}, removeItem: \(\) => \{\} \}/.test(chromeSrc))
     ok('game panel: failed sends go to the outbox instead of evaporating',
-        /outboxAdd\(payload, window\.localStorage\)/.test(chromeSrc) && /kept on device, retrying/.test(chromeSrc))
+        /outboxAdd\(payload, lsSafe\(\)\)/.test(chromeSrc) && /kept on device, retrying/.test(chromeSrc))
     ok('game panel: sends read the visible box, not the state that dictation may have missed',
         /const text = noteRef\.current \? noteRef\.current\.value : note/.test(chromeSrc) && /ref=\{noteRef\}/.test(chromeSrc))
     ok('game panel: dictation is caught by the native note-sync',
         /installNoteSync\(noteRef\.current/.test(chromeSrc))
     ok('game panel: an empty box answers with words', /nothing to send — type or dictate first/.test(chromeSrc))
     ok('game panel: kept reports retry until they go through',
-        /flushOutbox\(\{ storage: window\.localStorage \}\)/.test(chromeSrc) && /retryDelayMs\(attemptRef\.current\)/.test(chromeSrc))
+        /flushOutbox\(\{ storage: lsSafe\(\) \}\)/.test(chromeSrc) && /retryDelayMs\(attemptRef\.current\)/.test(chromeSrc))
     ok('game panel: a delivered retry confirms with the issue number',
         /kept report delivered #\$\{n\}/.test(chromeSrc) && /const n = String\(res\.sent\[0\]\.issue \|\| '\?'\)\.split\('\/'\)\.pop\(\)/.test(chromeSrc))
     ok('game panel: a delivered retry clears its own draft (never a fresher one)',
-        /if \(loadDraft\(window\.localStorage\) === res\.sent\[0\]\.note\) clearDraft\(window\.localStorage\)/.test(chromeSrc))
+        /if \(loadDraft\(lsSafe\(\)\) === res\.sent\[0\]\.note\) clearDraft\(lsSafe\(\)\)/.test(chromeSrc))
     ok('game panel: the accepted send clears the draft and the box',
-        /if \(res\.ok\) \{[\s\S]{0,320}clearDraft\(window\.localStorage\)/.test(chromeSrc))
+        /if \(res\.ok\) \{[\s\S]{0,320}clearDraft\(lsSafe\(\)\)/.test(chromeSrc))
     ok('game panel: the draft is saved while composing and restored on reopen',
-        /saveDraft\(note, window\.localStorage\)/.test(chromeSrc) && /loadDraft\(window\.localStorage\)/.test(chromeSrc))
+        /saveDraft\(note, lsSafe\(\)\)/.test(chromeSrc) && /loadDraft\(lsSafe\(\)\)/.test(chromeSrc))
     ok('game panel: reopen never writes the blank state over a stored draft (the tick race)',
         /if \(open && note\) saveDraft/.test(chromeSrc))
     ok('game panel: an accepted send still files the note it showed', (() => {
