@@ -900,9 +900,12 @@ const wrap = (gs) => {
         const other = gs5.pucks.find((p) => p !== w5)
         if (other) { other.bx = 150; other.by = TABLE.drainY + 5 }   // drain the OTHER ball
         drive(gs5, {}, 2); types(gs5)
-        r.check('#3422 a drain that re-arms the coil re-arms its balls too (spent marker clears with the charge)',
-            gs5.magCharge === 1 && gs5.pucks.includes(w5) && w5.magHoldT === 0,
-            `charge=${gs5.magCharge} packs=${gs5.pucks.length} holdT=${w5.magHoldT}`)
+        // the proof is the RE-CATCH: w5 is still inside the field, and catching
+        // it again required BOTH laws at once — the drain re-armed the coil
+        // (charge gate) AND re-armed the ball (spent marker cleared).
+        r.check('#3422 a drain re-arms the coil AND its balls: the spent survivor is catchable again mid-field',
+            gs5.pucks.length === 1 && gs5.pucks.includes(w5) && w5.magHeld === true && w5.magHoldT > 0,
+            `packs=${gs5.pucks.length} held=${w5.magHeld} holdT=${w5.magHoldT}`)
     }
 }
 
