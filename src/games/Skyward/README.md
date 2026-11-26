@@ -76,8 +76,11 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   go, drive, fold convergence after silent-seat takeover, R-abort; plus the
   solo leg proving `?lite` alone opens no socket).
 - Known gaps: no spectate; no mid-race rejoin of a human seat once the
-  autopilot took it (the pilot's next go is the next room); remote hulls carry
-  a beacon + seat tint but no floating names (the pilots bar names everyone).
+  autopilot took it (the pilot's next go is the next room). ~~no floating
+  names~~ **CLOSED by #3447 item 3** — every remote hull carries a seat-named
+  plate in its seat colour (scale ∝ range for one screen height, faded close
+  aboard and past the haze, vanishing with its hull; paint-only, the fold
+  never sees it — `__skywardTest.poseRemotes` drives it without a relay).
 
 - **Flare quality (#3375 item 1)** — a strip touchdown is no longer judged at
   the instant the hull crosses the deck: the flare is a path law. The hull
