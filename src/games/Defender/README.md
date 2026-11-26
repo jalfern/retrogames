@@ -109,9 +109,9 @@ driving key or a tap hands the wheel back (shared blips). Since #3445 the seat
 is **mortal**, and since #3456 the planet is honest too (hunt mutants actually
 move and the landerless wave runs its speeders — see Honest gaps). **The claim
 is re-earned: the patrol survives 20/20 on both audit sets** (witness +
-untuned holdout) at the 150 s horizon, banks min 26,900 + 15,550, clears
-waves on every seed and hauls 52 + 47 deliveries — all still mortal (84 honest
-lives spent across 40 runs, worst seed bleeds 6; WITNESS pins the claim to
+untuned holdout) at the 150 s horizon, banks min 43,500 + 15,550, clears
+waves on every seed and hauls 54 + 48 deliveries — all still mortal (80 honest
+lives spent across 40 runs, worst seed bleeds 5; WITNESS pins the claim to
 the witness so copy and measurement cannot drift apart).
 
 ## Honest gaps
@@ -130,11 +130,27 @@ the witness so copy and measurement cannot drift apart).
   to the facing press** — the dash into the laser line is the weapon. Honest
   measure: SURVIVED 20/20 + 20/20, diedHauling 2 + 4, terrain deaths
   **1 + 3** (autopsy baseline 6 + 3), lives spent 37 + 47 with the storm
-  fleet live. The surviving terrain deaths (three holdout seeds: low cruise
-  into fast risers at vx ≈ 3, braking horizon too short to see the spike)
-  stay honestly open — widening the projection re-buys the brace-timing loss
-  v1 of the interlock measured (minScore 35,850→20,200).
-- **#3456 stage 4 (2026-11-26) — the overhead pocket.** This stage read the
+  fleet live. **CLOSED by #3531 (2026-11-26) — the wall veto.** The
+  surviving terrain deaths (seeds #3274/#5910/#6547: low cruise into fast
+  risers at vx ≈ 3, braking horizon too short to see the spike) closed with
+  the law the race could not see from inside: the race PROJECTS BRAKING,
+  but the hover/aim jobs ACCELERATE — the throttle stayed pinned toward a
+  ~1.6 px/px riser while the crawl-speed horizon (look = 24 + |vx|·20 ≈
+  30 px) never reached it (at the killing tick of #3274 the floor ran 12 px
+  ABOVE the hull 20 px ahead, `up` held, vx building 0.3 → 2.2). The veto
+  runs the REAL flight model in the pressed direction with the lift pressed
+  from now; when that line grinds the wireframe the press is lifted — and
+  when even coasting climbs into the grind (a deep slot), the hull climbs,
+  reversing when backing away clears. Widening the race horizon itself stays
+  REJECTED — it re-buys the brace-timing loss v1 measured (minScore
+  35,850→20,200). A physics fact the rig work pinned: a climbing fighter
+  gains only ~0.7 px of altitude per px travelled at full thrust, so a
+  gradient ≥ ~0.7 px/px is beatable only at reduced throttle — the veto is
+  that law written down. Honest measure after: terrain deaths **0 + 0**,
+  banks min **43,500** + 15,550, rescues 55 + 52 catches / 54 + 48
+  deliveries, diedHauling 1 + 4 — pinned by five new witness gates
+  (`defendercheck` 179/0; bypass mutant reds the pin and the rig).
+- **CLOSED by #3496 — #3456 stage 4 (2026-11-26): the overhead pocket.** This stage read the
   killing ticks themselves (`npm run watchmeasure -- --autopsy` dumps position,
   velocity, killer approach and the route's own presses at every death). The
   remaining package deaths all sat in the same geometric hole: a diver ON the
@@ -154,7 +170,7 @@ the witness so copy and measurement cannot drift apart).
   terrain deaths press `up` into ridges that rise faster than 0.5/tick at
   dash speed — the mid-horizon turn wants a smarter rule than a blunt
   height test (closed by #3497 above, still honest about its column).
-- **#3456 stage 3 (2026-11-26) — the patrol earns its survival back.** Two
+- **CLOSED by #3484 — #3456 stage 3 (2026-11-26): the patrol earns its survival back.** Two
   fidelity facts drove the stage. **(1) The arcade fighter never mutes its guns
   while carrying** — the port's haul block returned before the gun rule, so the
   package was silent *and* braked (±1.2 px/tick against a mutant's 2.4 cap);
@@ -175,7 +191,7 @@ the witness so copy and measurement cannot drift apart).
   lives spent 20 + 19. The survival copy claim is back — pinned to the
   witness in `defendercheck`, and the `worstSeedHits >= 3` law keeps frozen
   grace (#3445's shape) impossible under it. Superseded by stage 4 above.
-- **Stage 2 (same arc, #3456) — the planet woke up.** Hunt-state mutants never
+- **CLOSED by #3472 — Stage 2 (same arc, #3456): the planet woke up.** Hunt-state mutants never
   integrated position (statues) — fixed; watchRoute gained the terrain seat,
   canyon turn, pulsed descents, valley-site veto, hover-kill, fresh-facing gate
   and the hauler-outranks-the-duel law. Honest measure then: survived 19 + 16,
@@ -195,16 +211,16 @@ the witness so copy and measurement cannot drift apart).
   rocks that cross the planet unseen burn up so every storm ends; the deal is
   rand-free, so the seed stream cannot shift. **Still out: hyperspace** — B is
   the bomb and the pad has no third action; that ergonomics call is Jon's.
-- The hauled human is lost at the top — and that IS the arcade law (#3453,
+- **DISCLAIMER** — the hauled human is lost at the top — and that IS the arcade law (#3453,
   re-verified): the lander carries its catch to the top "at which point they
   turn into fast-moving mutants"; mutants are the captured humans turned
   hostile. An earlier note here wrongly claimed the cabinet re-descends with
   its catch — no top turn exists. The port now mutates the top-reached hauler
   on the spot (the pre-fix shell survived as a wandering lander); the save
   window is the ascent — shoot the hauler, catch the falling human (+250).
-- The wrap seam is not a dead zone: lasers, friendly fire, catch, ship contact,
+- **DISCLAIMER** — the wrap seam is not a dead zone: lasers, friendly fire, catch, ship contact,
   the lander's descent and the bomb blast are all wrapDelta-aware — pinned in
   defendercheck's wrap-seam section (#3453).
-- Terrain collision is ship-only; landers clip the mountains visually by design
+- **DISCLAIMER** — terrain collision is ship-only; landers clip the mountains visually by design
   (they hover above the ground line).
 - Two-player mode not ported (original: alternating turns).

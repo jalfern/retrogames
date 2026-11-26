@@ -216,7 +216,53 @@ const lineGun = (s, p) => {
     return { gun, hold }
 }
 
-export const watchRoute = (s) => {
+// Wall veto (#3528): no job may ACCELERATE the hull into a riser it cannot
+// out-climb. The #3497 race projects BRAKING and fires only while climbing —
+// but the surviving holdout deaths were its mirror: the hover/aim jobs kept
+// the throttle pressed toward a ~2 px/px ridge while cruising at vx ≈ 0.3, so
+// the speed-scaled horizon (look = 24 + |vx|·20 ≈ 30 px) never reached the
+// riser, and the projected line braked while the real hull accelerated (#3274
+// at the killing tick: clr 17 with the floor 12 px ABOVE the hull just 20 px
+// ahead, vx +0.28 and building). Braking stays the race's job — the veto
+// refuses only presses that add speed toward the grind: it runs the REAL
+// flight model (thrust as keyed, climb pressed from now) and lifts the press
+// when that line grinds the wireframe; if coasting still grinds, the hull
+// reverses; if even reversing grinds (a deep slot), climb alone. The guns
+// keep firing — an escape never muzzles the fighter. Cruise-only: the
+// package owns its brace laws (the #3497 diedHauling lesson).
+const wallVeto = (s, input) => {
+    const p = s.player
+    if (s.over || p.dark > 0 || s.carrying !== null) return input
+    const push = (input.right ? 1 : 0) - (input.left ? 1 : 0)
+    if (!push || push * p.vx < -0.05) return input
+    // The escape question is always the CLIMB line: thrust as keyed (thrust arg,
+    // 0 = coast, −push = reverse) with the lift pressed from now. A line that
+    // grinds despite climbing is a riser the job must not drive into; a valley
+    // an elevator descends into is NOT — climbing out of it never grinds, so
+    // the rescue dive keeps its horizontal press untouched.
+    const fly = (thrust) => {
+        let sx = p.x, sy = p.y, svx = p.vx, svy = p.vy
+        for (let t = 0; t < 18; t++) {
+            svx = Math.max(-8, Math.min(8, (svx + thrust * 0.5) * 0.98))
+            svy = Math.max(-8, Math.min(8, (svy - 0.5) * 0.95))
+            sx = ((sx + svx) % WORLD_WIDTH + WORLD_WIDTH) % WORLD_WIDTH
+            sy = Math.max(60, sy + svy)
+            if (groundAt(s.terrain, sx) - sy < 10) return true
+        }
+        return false
+    }
+    if (!fly(push)) return input
+    if (push > 0) input.right = false; else input.left = false
+    if (!fly(0)) return input // coast + climb clears — lift the press, keep the job's vertical
+    input.up = true
+    input.down = false
+    if (!fly(-push)) { if (push > 0) input.left = true; else input.right = true }
+    return input
+}
+
+export const watchRoute = (s) => wallVeto(s, cruiseRoute(s))
+
+const cruiseRoute = (s) => {
     const input = { left: false, right: false, up: false, down: false, fire: false }
     const p = s.player
     if (s.over || p.dark > 0) return input

@@ -22,6 +22,7 @@ import {
     SCORE_METEOR, METEOR_BONUS, METEOR_COUNT, METEOR_SPEED, METEOR_BONUS_TICKS, spawnBonusWave,
 } from '../src/games/Defender/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
+import { patrol } from './watchmeasure.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 const jsx = readFileSync('src/games/Defender/index.jsx', 'utf8')
@@ -561,48 +562,37 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
 // meteor storms): SURVIVED 20/20 + 20/20, banks min 26,900 + 15,550, waves
 // 20/20 + 20/20, rescues 54 + 51 catches, 52 + 47 deliveries, diedHauling
 // 2 + 4 (stage 4: 1 + 3; stage 3: 4 + 6; stage 2: 12 + 11), lives spent
-// 37 + 47, terrain deaths 1 + 3 (the #3456-s4 autopsy read 6 + 3). The pilot
-// is still MORTAL: 84 honest GAME OVER-grazing lives across 40 runs, worst
-// seed bleeds 3 — frozen grace caps a seed at 1 hit, so >= 3 is its own
+// 37 + 47, terrain deaths 1 + 3 (the #3456-s4 autopsy read 6 + 3). #3528's
+// wall veto then closed the last column — crawl-speed jobs could accelerate
+// into out-climbing risers the braking-projected race never saw: SURVIVED
+// 20/20 + 20/20, banks min 43,500 + 15,550, rescues 55 + 52 catches,
+// 54 + 48 deliveries, diedHauling 1 + 4, lives spent 38 + 42, terrain
+// deaths 0 + 0. The pilot
+// is still MORTAL: 80 honest GAME OVER-grazing lives across 40 runs, worst
+// seed bleeds 5 — frozen grace caps a seed at 1 hit, so >= 3 is its own
 // immortality tripwire. The copy claim ("survives 20/20") is pinned here so
 // copy and witness cannot drift apart.
 {
-    const patrol = (base) => {
-        let survived = 0, overs = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0, livesLost = 0, worstSeedHits = 0, diedHauling = 0
-        for (let k = 0; k < 20; k++) {
-            const rand = seedRng(base + k * 91)
-            const w = createSim({ rand, height: 420 })
-            let waves = 0, hits = 0
-            let cap = 9000
-            while (!w.over && cap > 0) {
-                const hauling = w.carrying !== null
-                w.step(watchRoute(w))
-                for (const e of w.events) {
-                    if (e.t === 'wave') waves++
-                    if (e.t === 'catch') catches++
-                    if (e.t === 'deliver') delivers++
-                    if (e.t === 'die') { hits++; livesLost++; if (hauling) diedHauling++ }
-                }
-                cap--
-            }
-            if (!w.over) survived++
-            else overs++
-            if (waves >= 1) waveSeeds++
-            minScore = Math.min(minScore, w.score)
-            worstSeedHits = Math.max(worstSeedHits, hits)
-        }
-        return { survived, overs, waveSeeds, minScore, catches, delivers, livesLost, worstSeedHits, diedHauling }
-    }
+    // One patrol implementation (#3528): the witness here and watchmeasure's
+    // autopsy driver must classify kills by the SAME law — killProbe mirrors one
+    // integration tick (die() rewinds the seat, so a raw pre-step read calls a
+    // graze "safe"); two copies of that law drift, so there is only one.
     const wi = patrol(2000)
     const ho = patrol(5000)
     ok(wi.survived >= 20 && ho.survived >= 20,
         `the seat pilot SURVIVES its horizon on BOTH audit sets — ${wi.survived}/20 + ${ho.survived}/20 alive at 150 s (#3456 s3 haul guns + close-out + momentum law; s4 column-dash + full-box brace)`)
-    ok(wi.livesLost >= 10 && ho.livesLost >= 10,
-        `both sets still bleed (${wi.livesLost} + ${ho.livesLost} honest lives spent) — mortal, never immortal`)
+    ok(wi.livesSpent >= 10 && ho.livesSpent >= 10,
+        `both sets still bleed (${wi.livesSpent} + ${ho.livesSpent} honest lives spent) — mortal, never immortal`)
     ok(wi.worstSeedHits >= 3 && ho.worstSeedHits >= 3,
         `seeds bleed ACROSS respawns (worst ${wi.worstSeedHits} + ${ho.worstSeedHits} hits) — frozen grace caps every seed at 1 hit (#3445's bug shape)`)
     ok(wi.diedHauling <= 4 && ho.diedHauling <= 4,
         `the package is no longer hunted to death while descending: diedHauling ${wi.diedHauling} + ${ho.diedHauling} (stage 3: 4 + 6; stage 2: 12 + 11 — #3456 s4 broke the column the divers dropped into)`)
+    // #3528 wall veto: the last terrain column — #3497 closed 6+3 to 1+3 and the
+    // README named the shape ("low cruise into fast risers at vx ≈ 3, braking
+    // horizon too short to see the spike"); the veto lifts accelerate-into-riser
+    // presses whatever the job wanted. 0+0 is pinned: terrain is terrain.
+    ok(wi.why.terrain === 0 && ho.why.terrain === 0,
+        `the seat never grinds the wireframe on the audit sets: terrain deaths ${wi.why.terrain} + ${ho.why.terrain} (#3528 wall veto — was 1 + 3)`)
     ok(wi.minScore >= 12000, `every witness patrol banks >= 12,000 against the live planet (min ${wi.minScore} — was 6,000 at stage 2)`)
     ok(ho.minScore >= 8000, `untuned holdout banks >= 8,000 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
     ok(wi.waveSeeds >= 18, `>= 18/20 witness seeds clear a wave (${wi.waveSeeds}/20 — the last-hunter close-out ends waves instead of trailing them)`)
@@ -765,6 +755,50 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
         const inp = watchRoute(s)
         ok(!inp.left && !inp.right,
             'a climbable mid-horizon rise keeps its heading — the race is judged by achievable lift at arrival, not by height gained', `left=${inp.left} right=${inp.right}`)
+    }
+    // #3528 wall veto, direct: the mirror of the ridge race — a hull at CRAWL
+    // speed whose job presses toward a 2 px/px riser. The #3497 race never saw
+    // these (look = 24 + |vx|·20 ≈ 30 px, and it projects braking while the
+    // hover/aim jobs ACCELERATE): the holdout died with `up` held and the
+    // throttle pinned toward the wall. The veto runs the real flight model in
+    // the pressed direction with the lift from now, and lifts the press when
+    // that line grinds.
+    {
+        const mkRiserRig = () => {
+            const s = createSim({ rand: seedRng(53), height: 420 })
+            s.terrain = s.terrain.map(() => 380)
+            for (let i = 12; i < 32; i++) s.terrain[i] = 380 - (i - 12) * 16 // 1.6 px/px from x120
+            s.enemies = []
+            s.humans.forEach((h) => { h.state = 'dead' })
+            // the seat #3274 died from: sunk into the approach, floor already
+            // ABOVE the hull 20 px ahead, a crawl under way, the job pressing on
+            s.player.x = 123; s.player.y = 355; s.player.vx = 0.3; s.player.vy = 0
+            s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+            s.enemies = [{ x: 500, y: 355, vx: 0, vy: 0, type: 'lander', state: 'abduct', carry: null }]
+            return s
+        }
+        const s = mkRiserRig()
+        const inp = watchRoute(s)
+        ok(!inp.right && inp.left !== true,
+            'a crawl-speed press toward a 1.6 px/px riser is REFUSED — the climb cannot beat the slope, the job yields the line', `right=${inp.right} left=${inp.left}`)
+        ok(inp.up === true,
+            'the refused tick keeps the lift (the climb IS the escape)', `up=${inp.up}`)
+        // Control: the SAME rig on flat ground must keep the press (the veto is
+        // a wall law, not a speed law).
+        const f = mkRiserRig()
+        f.terrain = f.terrain.map(() => 380)
+        const fin = watchRoute(f)
+        ok(fin.right === true,
+            'flat ground keeps the identical job press — the veto reads the wireframe, not the throttle', `right=${fin.right}`)
+        // And a hill the climb beats even at full thrust (≈0.4 px/px — the
+        // thrust/accel ratio lets a climbing fighter gain ~0.7 px per px once
+        // saturated): heading preserved — no over-refusal.
+        const g = mkRiserRig()
+        g.terrain = g.terrain.map(() => 380)
+        for (let i = 12; i < 32; i++) g.terrain[i] = 380 - (i - 12) * 4
+        const gin = watchRoute(g)
+        ok(gin.right === true,
+            'a 0.4 px/px hill the climb out-gains at full thrust keeps its press — the veto fires on gradients that lose the race, not on height', `right=${gin.right}`)
     }
     // #3497 L/R interlock (the holdout's kill shape): braced close, the facing
     // press IS the law — the dash cap demanding the OPPOSITE key cancels thrust
