@@ -279,6 +279,108 @@ console.log('the ship can die (pre-port it could not): lives, grace, GAME OVER')
     ok(w.wave === 2 && w.score === SCORE_WAVE && w.enemies.length === 9, 'wiping every enemy clears the wave (+1000, nine fresh landers)', `w=${w.wave} s=${w.score} n=${w.enemies.length}`)
 }
 
+// ------------------------------------------------------------- hot-seat 2P (#3533) --
+// Jon's 2026-10-11 multiplayer call: one fighter, one world, two scorecards,
+// alternating seats. P1 = arrows + Space + LeftShift; P2 = WASD + Enter +
+// ShiftRight. The turn passes when the active seat dies with the other still
+// alive; the shared planet, enemies, humans, wave clock and stock bombs do
+// NOT reset. A seat's dead hull is only ever re-seated in the next turn.
+// 1P stays byte-identical (the 179 pins above are untouched).
+console.log('hot-seat two-player (#3533): two scorecards, one shared world, turn passes honestly')
+{
+    // Shape: a 2P sim carries both scorecards + the active marker; the 1P-shaped
+    // s.* mirrors the ACTIVE seat so 1P readers keep working.
+    const s = createSim({ rand: seedRng(21), height: 800, twoPlayer: true })
+    ok(s.twoPlayer === true && s.active === 0 && s.players.length === 2 &&
+        s.players[0].lives === START_LIVES && s.players[1].lives === START_LIVES &&
+        s.players[0].score === 0 && s.players[1].score === 0 &&
+        s.score === 0 && s.lives === START_LIVES && s.bonusLives === 0,
+        'a 2P sim opens with two scorecards, seat 1 active, s.* mirroring seat 1',
+        `players=${s.players.length} active=${s.active} score=${s.score} lives=${s.lives}`)
+    const p1 = newSim(21)
+    ok(p1.twoPlayer === false && p1.active === 0 && p1.players.length === 1 && p1.score === 0 && p1.lives === START_LIVES,
+        'a 1P sim keeps one seat and flat s.* (the witness contract)', `players=${p1.players.length}`)
+
+    // Seat 1 burns its last ship — seat 2 takes the stick on the SAME world.
+    const s2 = createSim({ rand: seedRng(22), height: 800, twoPlayer: true })
+    const terrainBefore = s2.terrain.join(',')
+    const tickBefore = s2.tick
+    s2.players[0].lives = 1
+    s2.players[1].score = 4321
+    s2.enemies = [{ x: s2.player.x, y: s2.player.y, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+    s2.player.invuln = 0
+    s2.step({})
+    ok(s2.active === 1 && s2.players[0].lives === 0 && s2.players[1].lives === START_LIVES && s2.players[1].score === 4321,
+        'seat 1 dies out: seat 2 takes the stick, its score untouched',
+        `active=${s2.active} p0=${s2.players[0].lives} p1=${s2.players[1].lives} p1score=${s2.players[1].score}`)
+    ok(s2.events.some((e) => e.t === 'turn' && e.player === 2) && !s2.events.some((e) => e.t === 'over'),
+        'the handoff fires the turn beat (player 2), not the game-over beat', s2.events.map((e) => e.t).join(','))
+    ok(s2.score === 4321 && s2.lives === START_LIVES && s2.bonusLives === 0,
+        's.* mirrors the NEW active seat — one live scorecard for the HUD', `score=${s2.score} lives=${s2.lives}`)
+    ok(s2.terrain.join(',') === terrainBefore && s2.tick === tickBefore + 1 && s2.player.dark === 0 && s2.freeze === 0 && !s2.over,
+        'the world does not reset: same planet, tick chain continues, no respawn dark/freeze on the pass',
+        `tick=${s2.tick} dark=${s2.player.dark} freeze=${s2.freeze}`)
+
+    // A carried human drops at the handoff — catchable by the next seat.
+    const s3 = createSim({ rand: seedRng(23), height: 800, twoPlayer: true })
+    s3.carrying = 0
+    s3.humans[0].state = 'carried'
+    s3.humans[0].y = 200 // high in the air — no auto-delivery on this step
+    s3.players[0].lives = 1
+    s3.enemies = [{ x: s3.player.x, y: s3.player.y, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+    s3.player.invuln = 0
+    s3.step({})
+    ok(s3.carrying === null && s3.humans[0].state === 'falling' && s3.humans[0].vy === 1,
+        'a human carried at a seat death drops — the next seat can catch it',
+        `carrying=${s3.carrying} state=${s3.humans[0].state} vy=${s3.humans[0].vy}`)
+
+    // Both seats out: the honest terminal, with no resurrection.
+    const s4 = createSim({ rand: seedRng(24), height: 800, twoPlayer: true })
+    s4.players[0].lives = 1
+    s4.players[1].lives = 1
+    s4.enemies = [{ x: s4.player.x, y: s4.player.y, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+    s4.player.invuln = 0
+    s4.step({})
+    ok(s4.active === 1 && s4.players[0].lives === 0 && s4.players[1].lives === 1,
+        'seat 1 out, seat 2 alive: the pass hands over without dying', `active=${s4.active} p0=${s4.players[0].lives} p1=${s4.players[1].lives}`)
+    s4.players[1].lives = 1
+    s4.player.invuln = 0
+    s4.enemies = [{ x: s4.player.x, y: s4.player.y, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+    s4.step({})
+    ok(s4.over === true && s4.events.some((e) => e.t === 'over') && !s4.events.some((e) => e.t === 'turn') &&
+        s4.players[0].lives === 0 && s4.players[1].lives === 0,
+        'both seats out: honest terminal, no turn beat, nobody a resurrected',
+        `active=${s4.active} events=${s4.events.map((e) => e.t).join(',')}`)
+
+    // Credits land on the ACTIVE seat — a laser kill pays 150, not 300.
+    // (A decoy keeps the wave alive so the wave bonus cannot pollute the score.)
+    const s5 = createSim({ rand: seedRng(31), height: 800, twoPlayer: true })
+    s5.enemies = [
+        { x: (s5.player.x + 120) % WORLD_WIDTH, y: s5.player.y, vx: 0, vy: 0, type: 'lander', state: 'hunt', carry: null },
+        { x: (s5.player.x + 2000) % WORLD_WIDTH, y: 70, vx: 0, vy: -0.3, type: 'lander', state: 'ascend', carry: null },
+    ]
+    s5.player.invuln = 100000
+    let got = 0
+    for (let i = 0; i < 60 && !got; i++) {
+        s5.step({ right: true, fire: true })
+        if (s5.events.some((e) => e.t === 'killLander')) got = s5.score
+    }
+    ok(got === SCORE_LANDER && s5.players[0].score === SCORE_LANDER && s5.players[1].score === 0,
+        'a laser kill in 2P pays the ACTIVE seat exactly 150 (the other card stays 0)', `got=${got} p0=${s5.players[0].score} p1=${s5.players[1].score}`)
+
+    // Face: the handoff banner reports the NEW seat (1-based), so the renderer
+    // draws "PLAYER 2" — not the seat that just died.
+    const s6 = createSim({ rand: seedRng(32), height: 800, twoPlayer: true })
+    s6.players[0].lives = 1
+    s6.enemies = [{ x: s6.player.x, y: s6.player.y, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+    s6.player.invuln = 0
+    s6.step({})
+    const turnEv = s6.events.find((e) => e.t === 'turn')
+    ok(turnEv && turnEv.player === 2 && s6.players[s6.active].lives === START_LIVES,
+        'the turn event carries the NEW seat as a 1-based number (2), not the seat that died (1)',
+        `player=${turnEv && turnEv.player}`)
+}
+
 // ------------------------------------------------- honest respawn grace (#3445) --
 // The pre-fix sim decremented invuln ONLY while dark, so once dark hit 0 the
 // grace FROZE at INVULN_TICKS — every collision check (invuln <= 0) was false
@@ -1395,6 +1497,9 @@ if (process.argv.includes('--mutant')) {
         ['#3453 s2 the klaxon echo is panned instead of delayed (slot swap)', I,
             `audioController.playSweep(500, 1000, 0.25, 'sawtooth', 0.1, null, 0.22)`,
             `audioController.playSweep(500, 1000, 0.25, 'sawtooth', 0.1, 0.22)`],
+        ['#3533 the 2P turn pass is dead (both seats 1 and 2 always survive)', S,
+            `if (other && other.lives > 0) {`,
+            `if (false) {`],
         ['#3453 s2 the speeder stops flashing (static hull returns)', I,
             `(sim.speedMode ? ((tickN >> 2) % 2 === 0 ? '#ffd23c' : '#ff9d3c') : '#ff5555')`,
             `(sim.speedMode ? '#ff9d3c' : '#ff5555')`],

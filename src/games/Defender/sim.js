@@ -642,7 +642,7 @@ const cruiseRoute = (s) => {
 // One full simulation step. `input` = {left,right,up,down,fire}; the planet
 // wrap, scoring, abduction chain, mutation and terminal all live here, driven
 // by a single mulberry32 stream `rand` (seedRng(seed)).
-export function createSim({ rand, height }) {
+export function createSim({ rand, height, twoPlayer = false }) {
     const s = {
         tick: 0,
         score: 0,
@@ -650,6 +650,13 @@ export function createSim({ rand, height }) {
         wave: 1,
         over: false,
         bonusLives: 0,
+        // #3533: hot-seat 2P — alternating turns. One fighter, one world, two
+        // scorecards. `players` holds per-player {score, lives, bonusLives};
+        // s.score/s.lives/s.bonusLives stay mirrored to the ACTIVE player, so
+        // every 1P reader (and every witness) keeps the exact same value.
+        players: [{ score: 0, lives: START_LIVES, bonusLives: 0 }],
+        active: 0,
+        twoPlayer: twoPlayer === true,
         terrain: makeTerrain(rand, WORLD_WIDTH, height),
         humans: [],
         enemies: [],
@@ -670,8 +677,28 @@ export function createSim({ rand, height }) {
         bonusTimer: 0,         // the storm's 5-second full-clear window
         events: [],
     }
+    if (s.twoPlayer) s.players.push({ score: 0, lives: START_LIVES, bonusLives: 0 })
     s.humans = makeHumans(rand, s.terrain)
     s.enemies = spawnWave(rand, 1, height)
+
+    // 1P reads s.score/s.lives/s.bonusLives directly (the 1P witness keeps the
+    // exact same stream); the players[0] mirror exists so the 2P scorecards
+    // report honestly — the canonical score lives in s.score for 1P.
+    // 2P's canonical score lives in players[active]; s.* mirrors it back so
+    // 1P-shaped readers (and the harness) still work, and addScore/die route
+    // through the active player.
+    const syncActive = () => {
+        const a = s.players[s.active]
+        s.score = a.score
+        s.lives = a.lives
+        s.bonusLives = a.bonusLives
+    }
+    const syncMirror = () => {
+        const a = s.players[0]
+        a.score = s.score
+        a.lives = s.lives
+        a.bonusLives = s.bonusLives
+    }
 
     // #1907: kills read by COLOR, like the cabinet — landers pop green, mutants
     // burst red, the wreck burns orange, a lost human sparks gold.
@@ -705,8 +732,16 @@ export function createSim({ rand, height }) {
     }
 
     const addScore = (pts) => {
-        s.score += pts
-        if (livesForScore(s.score) > s.bonusLives) { s.bonusLives += 1; s.lives += 1; s.events.push({ t: 'bonus' }) }
+        if (s.twoPlayer) {
+            const a = s.players[s.active]
+            a.score += pts
+            if (livesForScore(a.score) > a.bonusLives) { a.bonusLives += 1; a.lives += 1; s.events.push({ t: 'bonus' }) }
+            syncActive()
+        } else {
+            s.score += pts
+            if (livesForScore(s.score) > s.bonusLives) { s.bonusLives += 1; s.lives += 1; s.events.push({ t: 'bonus' }) }
+            syncMirror()
+        }
     }
 
     // #3453: a vaporized rock — table value 250, and twelve inside the 5 s
@@ -763,14 +798,55 @@ export function createSim({ rand, height }) {
     }
 
     const die = () => {
-        s.lives -= 1
         s.events.push({ t: 'die' })
         killFx(s.player.x, s.player.y, 16, '#ff8a3c')
-        if (s.lives <= 0) {
-            s.lives = 0
-            s.over = true
-            s.events.push({ t: 'over' })
-            return
+        if (s.twoPlayer) {
+            const a = s.players[s.active]
+            a.lives -= 1
+            if (a.lives <= 0) {
+                a.lives = 0
+                syncActive()
+                const other = s.players[s.active ^ 1]
+                if (other && other.lives > 0) {
+                    // #3533: the seat passes — the waiting player takes the
+                    // stick on the same world. No freeze, no respawn countdown:
+                    // the handoff is its own beat.
+                    s.active ^= 1
+                    syncActive()
+                    s.player.x = 200
+                    s.player.y = 200
+                    s.player.vx = 3
+                    s.player.vy = 0
+                    s.player.dark = 0
+                    s.player.invuln = INVULN_TICKS
+                    s.player.cooldown = 0
+                    s.freeze = 0
+                    s.events.push({ t: 'turn', player: s.active + 1 })
+                    // A human carried at death drops — catchable by the new seat.
+                    if (s.carrying !== null) {
+                        const h = s.humans[s.carrying]
+                        h.state = 'falling'
+                        h.vy = 1
+                        s.carrying = null
+                    }
+                    return
+                }
+                syncActive()
+                s.over = true
+                s.events.push({ t: 'over' })
+                return
+            }
+            syncActive()
+        } else {
+            s.lives -= 1
+            if (s.lives <= 0) {
+                s.lives = 0
+                syncMirror()
+                s.over = true
+                s.events.push({ t: 'over' })
+                return
+            }
+            syncMirror()
         }
         s.player.x = 200
         s.player.y = 200

@@ -62,6 +62,17 @@ on one seeded stream.
   White screen-wash + subsonic boom.
 - Attract mode flies the route on its own (chase + shoot) and is invulnerable;
   any key or tap starts (b16 pattern).
+- **Hot-seat two-player (#3533)**: press `2` in the attract shell (or `1`/`2` at
+  the game-over card) to start a two-seat run — P1 = arrows + Space +
+  LeftShift, P2 = WASD + Enter + ShiftRight, both on the same desk. One fighter,
+  one shared planet and wave clock; each seat holds its own {score, lives,
+  bonusLives} card. When the active seat burns its last ship the handoff fires
+  (`PLAYER N — GO!` beat + a synthesized two-note blip) and the OTHER seat
+  takes the stick on the same planet — no reset, no freeze, no respawn countdown.
+  A human carried at a turn-pass drops (catchable by the next seat); both seats
+  out is the honest terminal (both cards shown, winner line, `1`/`2` to switch
+  mode). Solo WATCH is hidden in 2P — it is a single-demo feature. 2P is
+  keyboard-only by design (no extra on-screen touchpad).
 
 ## Seed pinning (#1473)
 `src/games/Defender/sim.js` is the whole simulation, pure and deterministic:
@@ -223,4 +234,3 @@ the witness so copy and measurement cannot drift apart).
   defendercheck's wrap-seam section (#3453).
 - **DISCLAIMER** — terrain collision is ship-only; landers clip the mountains visually by design
   (they hover above the ground line).
-- Two-player mode not ported (original: alternating turns).

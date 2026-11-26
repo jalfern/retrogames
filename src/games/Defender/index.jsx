@@ -19,6 +19,7 @@ const DefenderGame = () => {
     const [attractUi, setAttractUi] = React.useState(true) // #1637: DOM mirror of the attract flag
     const [watching, setWatching] = React.useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
     const watchingRef = useRef(false)
+    const [twoPlayer, setTwoPlayer] = React.useState(false) // #3533: hot-seat mode, mirrors the sim for the chrome
 
     // Resume callback
     const handleResume = () => {
@@ -47,26 +48,32 @@ const DefenderGame = () => {
         let sim = null
         let thrustFacing = 0
         let popups = [] // #1907: floating score beats that NAME the rescue chain
+        let banner = null // #3533: the PLAYER N card on a seat handoff
         let holdTell = false
         let hiScore = 0
         try { hiScore = Number(localStorage.getItem(HI_KEY)) || 0 } catch { hiScore = 0 }
 
         // INPUT
         // #3443: ShiftLeft is the smart-bomb B (VirtualControls secondAction code).
-        const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false, ShiftLeft: false }
+        // #3533: in 2P mode the same pad keys belong to P1 and P2's keys are
+        // separate (WASD move, Enter fire, ShiftRight bomb) — 1P keys never change.
+        const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false, ShiftLeft: false, KeyW: false, KeyA: false, KeyD: false, KeyS: false, Enter: false, ShiftRight: false }
 
-        const startRun = (forcedSeed) => {
+        const startRun = (forcedSeed, twoPlayerMode = false) => {
+            const is2P = twoPlayerMode === true
             seed = forcedSeed !== undefined && forcedSeed !== null
                 ? forcedSeed >>> 0
                 : (seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000))
             rand = seedRng(seed)
             const h = viewHeight || (containerRef.current ? containerRef.current.getBoundingClientRect().height : 600)
-            sim = createSim({ rand, height: h })
+            sim = createSim({ rand, height: h, twoPlayer: is2P })
             isAttractMode = false
             setAttractUi(false)
+            setTwoPlayer(is2P)
             watchingRef.current = false // #1637 a new run starts with the stick in your hand
             setWatching(false)
             popups = [] // #1907: a new sky, no leftovers
+            banner = null // #3533: a new sky, no leftover PLAYER N card
             Object.keys(keys).forEach((k) => { keys[k] = false })
         }
 
@@ -95,6 +102,13 @@ const DefenderGame = () => {
                     audioController.playSweep(200, 500 + Math.min(500, sim.wave * 80), 0.25, 'square', 0.08)
                 }
                 else if (ev.t === 'die') { audioController.playNoise(0.25, 0.25); audioController.playTone(70, 0.3, 'sawtooth', 0.2) }
+                // #3533: a seat handoff — two notes (P1 warm, P2 bright) and a PLAYER N card
+                else if (ev.t === 'turn') {
+                    const root = ev.player === 2 ? 700 : 500
+                    audioController.playTone(root, 0.09, 'square', 0.12)
+                    audioController.playTone(root * 1.5, 0.14, 'square', 0.12, 0.09)
+                    banner = { player: ev.player, life: 130 }
+                }
                 else if (ev.t === 'over') {
                     audioController.playSweep(300, 60, 0.6, 'sawtooth', 0.18)
                     // #1637 WATCH: the end of the patrol is the end of the
@@ -138,27 +152,52 @@ const DefenderGame = () => {
             }
             if (pausedRef.current) return
 
-            if (isAttractMode || sim.over) { startRun(); return }
+            if (isAttractMode || sim.over) {
+                // #3533: the mode key picks the hot-seat. Any other key restarts
+                // the CURRENT mode — 1P attract stays 1P, a 2P over screen stays 2P.
+                if (e.code === 'Digit2' || e.key === '2') { startRun(undefined, true); return }
+                if (e.code === 'Digit1' || e.key === '1') { startRun(undefined, false); return }
+                startRun(undefined, !isAttractMode && sim.twoPlayer === true)
+                return
+            }
             // #1637 WATCH: Y seats the proven patrol (watchRoute drives the
             // real sim); any driving key hands the wheel back and the player
             // continues from exactly where the prover left it.
-            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            // #3533: solo-demo chrome gets no seat in 2P hot-seat.
+            if (!sim.twoPlayer && isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
             if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'Space') keys.Space = true
             if (e.code === 'ShiftLeft') keys.ShiftLeft = true // #3443: B = smart bomb
-            if (e.code === 'ArrowUp' || e.key === 'w') keys.ArrowUp = true
-            if (e.code === 'ArrowDown' || e.key === 's') keys.ArrowDown = true
-            if (e.code === 'ArrowLeft' || e.key === 'a') keys.ArrowLeft = true
-            if (e.code === 'ArrowRight' || e.key === 'd') keys.ArrowRight = true
+            if (e.code === 'ArrowUp' || (!sim.twoPlayer && e.key === 'w')) keys.ArrowUp = true
+            if (e.code === 'ArrowDown' || (!sim.twoPlayer && e.key === 's')) keys.ArrowDown = true
+            if (e.code === 'ArrowLeft' || (!sim.twoPlayer && e.key === 'a')) keys.ArrowLeft = true
+            if (e.code === 'ArrowRight' || (!sim.twoPlayer && e.key === 'd')) keys.ArrowRight = true
+            if (sim.twoPlayer) {
+                // #3533: P2's keyboard — WASD move, Enter fire, ShiftRight bomb
+                if (e.code === 'KeyW') keys.KeyW = true
+                if (e.code === 'KeyA') keys.KeyA = true
+                if (e.code === 'KeyS') keys.KeyS = true
+                if (e.code === 'KeyD') keys.KeyD = true
+                if (e.code === 'Enter') keys.Enter = true
+                if (e.code === 'ShiftRight') keys.ShiftRight = true
+            }
         }
 
         const handleKeyUp = (e) => {
             if (e.code === 'Space') keys.Space = false
             if (e.code === 'ShiftLeft') keys.ShiftLeft = false
-            if (e.code === 'ArrowUp' || e.key === 'w') keys.ArrowUp = false
-            if (e.code === 'ArrowDown' || e.key === 's') keys.ArrowDown = false
-            if (e.code === 'ArrowLeft' || e.key === 'a') keys.ArrowLeft = false
-            if (e.code === 'ArrowRight' || e.key === 'd') keys.ArrowRight = false
+            if (e.code === 'ArrowUp' || (!sim.twoPlayer && e.key === 'w')) keys.ArrowUp = false
+            if (e.code === 'ArrowDown' || (!sim.twoPlayer && e.key === 's')) keys.ArrowDown = false
+            if (e.code === 'ArrowLeft' || (!sim.twoPlayer && e.key === 'a')) keys.ArrowLeft = false
+            if (e.code === 'ArrowRight' || (!sim.twoPlayer && e.key === 'd')) keys.ArrowRight = false
+            if (sim.twoPlayer) {
+                if (e.code === 'KeyW') keys.KeyW = false
+                if (e.code === 'KeyA') keys.KeyA = false
+                if (e.code === 'KeyS') keys.KeyS = false
+                if (e.code === 'KeyD') keys.KeyD = false
+                if (e.code === 'Enter') keys.Enter = false
+                if (e.code === 'ShiftRight') keys.ShiftRight = false
+            }
         }
 
         // Phones: any tap starts or restarts the run.
@@ -167,8 +206,8 @@ const DefenderGame = () => {
             // #1637: the WATCH pill lives over the canvas on phones — its press
             // is the seat key, never a takeover tap.
             if (e && e.target && e.target.closest && e.target.closest('[data-watch-toggle]')) return
-            if (isAttractMode || sim.over) { startRun(); return }
-            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1637 a tap takes the stick back
+            if (isAttractMode || sim.over) { startRun(undefined, !isAttractMode && sim.twoPlayer === true); return }
+            if (watchingRef.current && !sim.twoPlayer) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1637 a tap takes the stick back
         }
 
         const resize = () => {
@@ -195,7 +234,11 @@ const DefenderGame = () => {
                     ? { left: false, right: false, up: false, down: false, fire: false }
                     : watchingRef.current
                         ? watchRoute(sim)
-                        : { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Space, bomb: keys.ShiftLeft }
+                        : sim.twoPlayer
+                            ? sim.active === 1
+                                ? { left: keys.KeyA, right: keys.KeyD, up: keys.KeyW, down: keys.KeyS, fire: keys.Enter, bomb: keys.ShiftRight }
+                                : { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Space, bomb: keys.ShiftLeft }
+                            : { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Space, bomb: keys.ShiftLeft }
             if (isAttractMode) sim.player.invuln = 999999 // the demo does not die
             thrustFacing = input.left ? -1 : input.right ? 1 : 0
             // #1907: when the patrol holds fire to spare a human, tell the player.
@@ -216,7 +259,8 @@ const DefenderGame = () => {
             if (!sim.over && tickN % 14 === 0 && sim.enemies.some((e) => e.state === 'descend')) {
                 audioController.playSweep(140, 70, 0.2, 'triangle', 0.06)
             }
-            if (sim.score > hiScore) {
+            if (banner) { banner.life -= 1; if (banner.life <= 0) banner = null }
+            if (!sim.twoPlayer && sim.score > hiScore) {
                 hiScore = sim.score
                 try { localStorage.setItem(HI_KEY, String(hiScore)) } catch { /* private mode */ }
             }
@@ -533,39 +577,87 @@ const DefenderGame = () => {
             // --- HUD: score sheet under the radar, arcade-style ---
             ctx.textAlign = 'left'
             ctx.font = '14px monospace'
-            ctx.fillStyle = '#ff5555'
-            ctx.fillText(String(sim.score).padStart(6, '0'), 8, MINIMAP_HEIGHT + 16)
-            ctx.fillStyle = '#ffd23f'
-            ctx.fillText(String(hiScore).padStart(6, '0'), 8, MINIMAP_HEIGHT + 32)
-            ctx.textAlign = 'right'
-            // #3453: the per-wave clock rides the WAVE row; once it hits zero and
-            // the landers go urgent it blinks red — pressure you can read at a glance.
-            const secsLeft = Math.max(0, Math.ceil(sim.waveClock / 60))
-            ctx.fillStyle = sim.urgent ? ((sim.tick >> 3) % 2 ? '#ff5555' : '#ffd23f') : '#9fe39f'
-            ctx.fillText(`WAVE ${sim.wave}  ${String(secsLeft).padStart(2, '0')}`, viewWidth - 8, MINIMAP_HEIGHT + 16)
-            ctx.fillStyle = '#ffffff'
-            ctx.fillText(`${sim.humans.filter((h) => h.state !== 'dead').length}/${sim.humans.length}`, viewWidth - 8, MINIMAP_HEIGHT + 32)
-            // remaining ships
-            for (let i = 0; i < sim.lives - 1; i++) {
-                ctx.strokeStyle = '#ffffff'
-                ctx.lineWidth = 1
-                ctx.beginPath()
-                const bx = viewWidth - 16 - i * 18
-                const by = MINIMAP_HEIGHT + 44
-                ctx.moveTo(bx, by); ctx.lineTo(bx - 10, by + 4); ctx.lineTo(bx - 10, by - 4); ctx.closePath()
-                ctx.stroke()
-            }
-            // #3443: smart-bomb stock — icons under the radar on the left, mirroring
-            // the spare-ships row (the cabinet's bomb readout).
-            for (let i = 0; i < sim.bombs; i++) {
-                const bx = 14 + i * 16
-                const by = MINIMAP_HEIGHT + 44
-                ctx.strokeStyle = '#9fd8ff'
-                ctx.lineWidth = 1
-                ctx.beginPath()
-                ctx.arc(bx, by + 1, 4, 0, Math.PI * 2)
-                ctx.moveTo(bx + 3, by - 2); ctx.lineTo(bx + 5, by - 5)
-                ctx.stroke()
+            if (sim.twoPlayer) {
+                // 2P hot-seat: P1 left, P2 right — the active player bright, the
+                // inactive one dimmed. Wave/humans/bombs are shared; each player's
+                // spare-ships row shows their own count.
+                const p1 = sim.players[0], p2 = sim.players[1]
+                const fP = (pl) => String(pl.score).padStart(6, '0')
+                ctx.textAlign = 'left'
+                ctx.fillStyle = sim.active === 0 ? '#ff5555' : 'rgba(255,85,85,0.4)'
+                ctx.fillText(`P1 ${fP(p1)}`, 8, MINIMAP_HEIGHT + 16)
+                ctx.textAlign = 'right'
+                ctx.fillStyle = sim.active === 1 ? '#ffd23f' : 'rgba(255,210,63,0.4)'
+                ctx.fillText(`P2 ${fP(p2)}`, viewWidth - 8, MINIMAP_HEIGHT + 16)
+                ctx.textAlign = 'center'
+                const secsLeft2 = Math.max(0, Math.ceil(sim.waveClock / 60))
+                ctx.fillStyle = sim.urgent ? ((sim.tick >> 3) % 2 ? '#ff5555' : '#ffd23f') : '#9fe39f'
+                ctx.fillText(`WAVE ${sim.wave}  ${String(secsLeft2).padStart(2, '0')}`, viewWidth / 2, MINIMAP_HEIGHT + 16)
+                ctx.fillStyle = '#ffffff'
+                ctx.fillText(`${sim.humans.filter((h) => h.state !== 'dead').length}/${sim.humans.length}`, viewWidth / 2, MINIMAP_HEIGHT + 32)
+                // shared bomb stock, centered
+                for (let i = 0; i < sim.bombs; i++) {
+                    const bx = viewWidth / 2 - ((sim.bombs - 1) * 16) / 2 + i * 16
+                    const by = MINIMAP_HEIGHT + 44
+                    ctx.strokeStyle = '#9fd8ff'
+                    ctx.lineWidth = 1
+                    ctx.beginPath()
+                    ctx.arc(bx, by + 1, 4, 0, Math.PI * 2)
+                    ctx.moveTo(bx + 3, by - 2); ctx.lineTo(bx + 5, by - 5)
+                    ctx.stroke()
+                }
+                // per-player spare ships: P1 left, P2 right
+                for (let i = 0; i < p1.lives - 1; i++) {
+                    const bx = 14 + i * 18, by = MINIMAP_HEIGHT + 44
+                    ctx.strokeStyle = sim.active === 0 ? '#ffffff' : 'rgba(255,255,255,0.4)'
+                    ctx.lineWidth = 1
+                    ctx.beginPath()
+                    ctx.moveTo(bx, by); ctx.lineTo(bx - 10, by + 4); ctx.lineTo(bx - 10, by - 4); ctx.closePath()
+                    ctx.stroke()
+                }
+                for (let i = 0; i < p2.lives - 1; i++) {
+                    const bx = viewWidth - 14 - i * 18, by = MINIMAP_HEIGHT + 44
+                    ctx.strokeStyle = sim.active === 1 ? '#ffffff' : 'rgba(255,255,255,0.4)'
+                    ctx.lineWidth = 1
+                    ctx.beginPath()
+                    ctx.moveTo(bx, by); ctx.lineTo(bx + 10, by + 4); ctx.lineTo(bx + 10, by - 4); ctx.closePath()
+                    ctx.stroke()
+                }
+            } else {
+                ctx.fillStyle = '#ff5555'
+                ctx.fillText(String(sim.score).padStart(6, '0'), 8, MINIMAP_HEIGHT + 16)
+                ctx.fillStyle = '#ffd23f'
+                ctx.fillText(String(hiScore).padStart(6, '0'), 8, MINIMAP_HEIGHT + 32)
+                ctx.textAlign = 'right'
+                // #3453: the per-wave clock rides the WAVE row; once it hits zero and
+                // the landers go urgent it blinks red — pressure you can read at a glance.
+                const secsLeft = Math.max(0, Math.ceil(sim.waveClock / 60))
+                ctx.fillStyle = sim.urgent ? ((sim.tick >> 3) % 2 ? '#ff5555' : '#ffd23f') : '#9fe39f'
+                ctx.fillText(`WAVE ${sim.wave}  ${String(secsLeft).padStart(2, '0')}`, viewWidth - 8, MINIMAP_HEIGHT + 16)
+                ctx.fillStyle = '#ffffff'
+                ctx.fillText(`${sim.humans.filter((h) => h.state !== 'dead').length}/${sim.humans.length}`, viewWidth - 8, MINIMAP_HEIGHT + 32)
+                // remaining ships
+                for (let i = 0; i < sim.lives - 1; i++) {
+                    ctx.strokeStyle = '#ffffff'
+                    ctx.lineWidth = 1
+                    ctx.beginPath()
+                    const bx = viewWidth - 16 - i * 18
+                    const by = MINIMAP_HEIGHT + 44
+                    ctx.moveTo(bx, by); ctx.lineTo(bx - 10, by + 4); ctx.lineTo(bx - 10, by - 4); ctx.closePath()
+                    ctx.stroke()
+                }
+                // #3443: smart-bomb stock — icons under the radar on the left, mirroring
+                // the spare-ships row (the cabinet's bomb readout).
+                for (let i = 0; i < sim.bombs; i++) {
+                    const bx = 14 + i * 16
+                    const by = MINIMAP_HEIGHT + 44
+                    ctx.strokeStyle = '#9fd8ff'
+                    ctx.lineWidth = 1
+                    ctx.beginPath()
+                    ctx.arc(bx, by + 1, 4, 0, Math.PI * 2)
+                    ctx.moveTo(bx + 3, by - 2); ctx.lineTo(bx + 5, by - 5)
+                    ctx.stroke()
+                }
             }
 
             // #1907: wave-clear celebration — an expanding shock ring over the
@@ -602,6 +694,17 @@ const DefenderGame = () => {
                 }
             }
 
+            // 2P: the turn banner — the fresh-spawn tell after a hot-seat pass.
+            if (banner) {
+                ctx.save()
+                ctx.globalAlpha = Math.min(1, banner.life / 30)
+                ctx.textAlign = 'center'
+                ctx.font = 'bold 22px monospace'
+                ctx.fillStyle = '#ffffff'
+                ctx.fillText(`PLAYER ${banner.player} — GO!`, viewWidth / 2, viewHeight * 0.32)
+                ctx.restore()
+            }
+
             if (!isAttractMode && sim.over) {
                 ctx.fillStyle = 'rgba(0,0,0,0.6)'
                 ctx.fillRect(0, 0, viewWidth, viewHeight)
@@ -611,9 +714,22 @@ const DefenderGame = () => {
                 ctx.fillText('GAME OVER', viewWidth / 2, viewHeight / 2 - 10)
                 ctx.fillStyle = '#ffffff'
                 ctx.font = '14px monospace'
-                ctx.fillText(`SCORE ${sim.score}  WAVE ${sim.wave}`, viewWidth / 2, viewHeight / 2 + 16)
-                ctx.fillStyle = '#ffd23f'
-                ctx.fillText('ANY KEY / TAP TO RESTART', viewWidth / 2, viewHeight / 2 + 40)
+                if (sim.twoPlayer) {
+                    const s1 = sim.players[0].score, s2 = sim.players[1].score
+                    ctx.fillText(`P1  ${String(s1).padStart(6, '0')}      P2  ${String(s2).padStart(6, '0')}`, viewWidth / 2, viewHeight / 2 + 16)
+                    ctx.fillStyle = '#ffd23f'
+                    ctx.fillText(s1 > s2 ? 'PLAYER 1 WINS' : s2 > s1 ? 'PLAYER 2 WINS' : 'DEAD EVEN', viewWidth / 2, viewHeight / 2 + 40)
+                    ctx.fillStyle = '#ffffff'
+                    ctx.font = '13px monospace'
+                    ctx.fillText('ANY KEY / TAP TO RESTART', viewWidth / 2, viewHeight / 2 + 64)
+                    ctx.fillStyle = '#8fa8b0'
+                    ctx.font = '11px monospace'
+                    ctx.fillText('1 / 2 — SWITCH MODE', viewWidth / 2, viewHeight / 2 + 86)
+                } else {
+                    ctx.fillText(`SCORE ${sim.score}  WAVE ${sim.wave}`, viewWidth / 2, viewHeight / 2 + 16)
+                    ctx.fillStyle = '#ffd23f'
+                    ctx.fillText('ANY KEY / TAP TO RESTART', viewWidth / 2, viewHeight / 2 + 40)
+                }
             }
         }
 
@@ -683,6 +799,10 @@ const DefenderGame = () => {
                 bombs: sim ? sim.bombs : BOMBS_PER_WAVE, // #3443 (additive)
                 urgent: sim ? sim.urgent : false, // #3453: wave clock expired — landers hot
                 clock: sim ? sim.waveClock : 0,
+                // #3533: additive hot-seat fields (1P reports twoPlayer:false, active:0)
+                twoPlayer: sim ? sim.twoPlayer : false,
+                active: sim ? sim.active : 0,
+                players: sim ? sim.players.map((p) => ({ score: p.score, lives: p.lives })) : undefined,
             }),
             canvas: () => canvas,
             // snapshot/restore omitted: the seeded rand closure is not JSON-serializable (#391).
@@ -711,6 +831,10 @@ const DefenderGame = () => {
                     humans: sim ? sim.humans.filter((h) => h.state !== 'dead').length : 0,
                     playerX: sim ? Math.round(sim.player.x) : 0, playerY: sim ? Math.round(sim.player.y) : 0,
                     bombs: sim ? sim.bombs : BOMBS_PER_WAVE, bombFlash: sim ? sim.bombFlash : 0, // #3443
+                    // #3533: additive hot-seat fields (1P reports twoPlayer:false, active:0)
+                    twoPlayer: sim ? sim.twoPlayer : false,
+                    active: sim ? sim.active : 0,
+                    players: sim ? sim.players.map((p) => ({ score: p.score, lives: p.lives })) : undefined,
                 }),
             }
         }
@@ -736,12 +860,15 @@ const DefenderGame = () => {
                 {attractUi && !paused && (
                     <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
                         <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
+                        {/* #3533: the solo demo gets no seat in 2P hot-seat; the line says how to take it. */}
+                        <div className="text-neutral-200/80 font-mono text-[11px] tracking-widest">PRESS 2 — 2 PLAYER HOT-SEAT (DESKTOP KEYBOARD)</div>
                         <AttractWatchButton />
                     </div>
                 )}
-                {/* #1637 WATCH — the proven patrol flies; any key, pad push or tap takes over. */}
-                {!attractUi && watching && <WatchToast className="fixed z-50" />}
-                {!attractUi && !paused && (
+                {/* #1637 WATCH — the proven patrol flies; any key, pad push or tap takes over.
+                    #3533: the seat is 1P-only — phones get the 1P pad, so no WATCH in 2P. */}
+                {!attractUi && !twoPlayer && watching && <WatchToast className="fixed z-50" />}
+                {!attractUi && !twoPlayer && !paused && (
                     <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                         <WatchButton on={watching} />
                     </div>
