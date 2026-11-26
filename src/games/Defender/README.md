@@ -109,13 +109,31 @@ driving key or a tap hands the wheel back (shared blips). Since #3445 the seat
 is **mortal**, and since #3456 the planet is honest too (hunt mutants actually
 move and the landerless wave runs its speeders — see Honest gaps). **The claim
 is re-earned: the patrol survives 20/20 on both audit sets** (witness +
-untuned holdout) at the 150 s horizon, banks min 43,500 + 35,850, clears
-waves on every seed and hauls 55 + 39 deliveries — all still mortal (36 honest
-lives spent across 40 runs, worst seed bleeds 3; WITNESS pins the claim to
+untuned holdout) at the 150 s horizon, banks min 26,900 + 15,550, clears
+waves on every seed and hauls 52 + 47 deliveries — all still mortal (84 honest
+lives spent across 40 runs, worst seed bleeds 6; WITNESS pins the claim to
 the witness so copy and measurement cannot drift apart).
 
 ## Honest gaps
 
+- **#3497 (2026-11-26) — the mid-horizon ridge + the L/R interlock.** The
+  stage-4 autopsy's surviving terrain column closed: every remaining terrain
+  death pressed `up` at the killing tick while a ridge **mid-horizon** gained
+  faster than the climb — invisible to the canyon rule, which reads the
+  horizon's END. The fix runs the race instead of a height threshold (the
+  rejected max-rise shape): project this hull BRAKING AND CLIMBING and break
+  the line only when even that best line grinds the wireframe inside the
+  horizon. Survivors of that fix then died a new shape — the autopsy read
+  `left+right` together: braced, the dash cap demanded the opposite key from
+  the facing press, thrust cancelled to ~0 and the package parked in the ±16
+  kill box. The interlock: **inside hop distance (huntD < 80) the cap yields
+  to the facing press** — the dash into the laser line is the weapon. Honest
+  measure: SURVIVED 20/20 + 20/20, diedHauling 2 + 4, terrain deaths
+  **1 + 3** (autopsy baseline 6 + 3), lives spent 37 + 47 with the storm
+  fleet live. The surviving terrain deaths (three holdout seeds: low cruise
+  into fast risers at vx ≈ 3, braking horizon too short to see the spike)
+  stay honestly open — widening the projection re-buys the brace-timing loss
+  v1 of the interlock measured (minScore 35,850→20,200).
 - **#3456 stage 4 (2026-11-26) — the overhead pocket.** This stage read the
   killing ticks themselves (`npm run watchmeasure -- --autopsy` dumps position,
   velocity, killer approach and the route's own presses at every death). The
@@ -135,7 +153,7 @@ the witness so copy and measurement cannot drift apart).
   horizon's high point instead of its end (lives 36 → 48). The surviving
   terrain deaths press `up` into ridges that rise faster than 0.5/tick at
   dash speed — the mid-horizon turn wants a smarter rule than a blunt
-  height test, so it stays honestly open.
+  height test (closed by #3497 above, still honest about its column).
 - **#3456 stage 3 (2026-11-26) — the patrol earns its survival back.** Two
   fidelity facts drove the stage. **(1) The arcade fighter never mutes its guns
   while carrying** — the port's haul block returned before the gun rule, so the

@@ -359,6 +359,7 @@ export const watchRoute = (s) => {
         // The elevator is no blind spot (#3456): too close at delivery height
         // aborts the drop to cruise band rather than trading the haul for a
         // hull; the resume happens next tick once the threat clears.
+        let facingLive = false
         if (hunt && huntD < 120 && Math.abs(hunt.by) < 46 && clrNow < 70) {
             input.up = true
             input.down = false
@@ -367,8 +368,8 @@ export const watchRoute = (s) => {
             // approach walks into the 20/tick laser, hop off the kill band when
             // it comes level, and keep the seat line — the delivery resumes the
             // tick the lane clears.
-            if (hunt.bx > 0) input.right = true
-            else if (hunt.bx < 0) input.left = true
+            if (hunt.bx > 0) { input.right = true; facingLive = true }
+            else if (hunt.bx < 0) { input.left = true; facingLive = true }
             if (huntD < 80 && Math.abs(hunt.by) < 17) {
                 if (hunt.by >= 0 || clrNow < 100) input.up = true
                 else if (canDown) input.down = true
@@ -380,10 +381,19 @@ export const watchRoute = (s) => {
         }
         // Station-keeping: brake into the hover only while the airspace is
         // clear; braced, cap the dash instead of pinning the hull still.
+        // L/R interlock (#3497, the holdout's kill shape): the cap yields
+        // while a facing press is live inside hop distance — demanding the
+        // OPPOSITE key there cancels thrust to ~0 and parks the package in
+        // the ±16 kill box (holdout #6638 read left+right together at
+        // vx −4.2, kdx 2). The dash INTO the laser line is the weapon
+        // (mutants track at 2.4); braking at point-blank hands over the
+        // kill. v1 yielded on any live facing press and re-scattered the
+        // brace timing (minScore 35,850→20,200) — the <80 gate keeps the
+        // cap everywhere the hop band hasn't committed.
         if (!hunt || huntD > 120) {
             if (p.vx > 1.2) input.left = true
             else if (p.vx < -1.2) input.right = true
-        } else {
+        } else if (!(facingLive && huntD < 80)) {
             if (p.vx > 4) input.left = true
             else if (p.vx < -4) input.right = true
         }

@@ -552,10 +552,12 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
 // column (|bx| < 18, kvy ±2…3) the horizontal laser cannot answer — so the
 // package now breaks the column (cruise dash, hold height) and the brace hop
 // covers the whole ±16 kill box, not a ±14 wish. Honest measure at this
-// commit: SURVIVED 20/20 + 20/20, banks min 43,500 + 35,850, waves
-// 20/20 + 20/20, rescues 56 + 42 catches, 55 + 39 deliveries, diedHauling
-// 1 + 3 (stage 3: 4 + 6; stage 2: 12 + 11), lives spent 21 + 15. The pilot
-// is still MORTAL: 36 honest GAME OVER-grazing lives across 40 runs, worst
+// commit (#3497 mid-horizon ridge law + L/R interlock, on top of #3503's
+// meteor storms): SURVIVED 20/20 + 20/20, banks min 26,900 + 15,550, waves
+// 20/20 + 20/20, rescues 54 + 51 catches, 52 + 47 deliveries, diedHauling
+// 2 + 4 (stage 4: 1 + 3; stage 3: 4 + 6; stage 2: 12 + 11), lives spent
+// 37 + 47, terrain deaths 1 + 3 (the #3456-s4 autopsy read 6 + 3). The pilot
+// is still MORTAL: 84 honest GAME OVER-grazing lives across 40 runs, worst
 // seed bleeds 3 — frozen grace caps a seed at 1 hit, so >= 3 is its own
 // immortality tripwire. The copy claim ("survives 20/20") is pinned here so
 // copy and witness cannot drift apart.
@@ -752,6 +754,40 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
         const inp = watchRoute(s)
         ok(!inp.left && !inp.right,
             'a climbable mid-horizon rise keeps its heading — the race is judged by achievable lift at arrival, not by height gained', `left=${inp.left} right=${inp.right}`)
+    }
+    // #3497 L/R interlock (the holdout's kill shape): braced close, the facing
+    // press IS the law — the dash cap demanding the OPPOSITE key cancels thrust
+    // to ~0 and parks the package in the ±16 kill box (holdout #6638 read
+    // left+right together at vx −4.2, kdx 2). Inside hop distance the cap
+    // yields to facing…
+    {
+        const s = createSim({ rand: seedRng(51), height: 420 })
+        s.terrain = s.terrain.map(() => 380)
+        s.enemies = [{ x: 265, y: 350, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        s.humans[0].state = 'carried'
+        s.carrying = 0
+        s.player.x = 200; s.player.y = 300; s.player.vx = 6; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.right && !inp.left,
+            'braced at huntD 5 facing right at vx 6, the dash cap YIELDS to the facing press — left+right together parks the package in the kill box', `left=${inp.left} right=${inp.right}`)
+    }
+    // …and ONLY inside hop distance: at huntD 80+ the cap still brakes the
+    // dash (v1 of this interlock yielded on ANY facing press and re-scattered
+    // the brace timing, minScore 35,850→20,200 — the gate pins the boundary).
+    {
+        const s = createSim({ rand: seedRng(53), height: 420 })
+        s.terrain = s.terrain.map(() => 380)
+        s.enemies = [{ x: 340, y: 350, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        s.humans[0].state = 'carried'
+        s.carrying = 0
+        s.player.x = 200; s.player.y = 300; s.player.vx = 6; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.right && inp.left,
+            'outside hop distance (huntD 80) the cap keeps braking the dash while facing — the yield is the hop band, not the whole brace', `left=${inp.left} right=${inp.right}`)
     }
     // The 1981 endgame rule, tested directly: with the wave's landers gone the
     // surviving mutants run hotter than MUTANT_SPEED — and the transition fires
@@ -1222,6 +1258,9 @@ if (process.argv.includes('--mutant')) {
         ['#3497 mid-horizon ridges go blind again (end-point-only canyon restored)', S,
             `            if (groundAt(s.terrain, p.x + dir * travelled) - sy < 10) { doomed = true; break }`,
             `            if (false) { doomed = true; break }`],
+        ['#3497 L/R interlock unplugged (the dash cap outranks the facing press again)', S,
+            `        } else if (!(facingLive && huntD < 80)) {`,
+            `        } else if (true) {`],
         ['#1907 lander pops lose their green', S,
             `killFx(e.x, e.y, 10, '#3dff5e') // the arcade's green lander pop (#1907)`,
             `killFx(e.x, e.y, 10, '#ffffff')`],
