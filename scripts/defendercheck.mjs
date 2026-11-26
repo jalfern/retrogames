@@ -160,6 +160,14 @@ console.log('lander behaviour: abduction, mutation, hostile landings')
     for (let i = 0; i < 300 && !mutated; i++) { m.step({}); mutated = m.events.some((e) => e.t === 'mutate') }
     ok(mutated && m.enemies[0].type === 'mutant', 'an empty lander touching the ground mutates (the 1981 law)')
 
+    // #3453 top-of-haul law, re-verified against the original (Wikipedia/
+    // Williams docs): "Landers capture humans and attempt to carry them to the
+    // top of the screen at which point they turn into fast-moving mutants" —
+    // and mutants ARE the captured humans ("captured humans that had turned
+    // hostile", Jarvis). The human is lost at the top AND the shell mutates
+    // there. Pre-fix bug: the emptied shell wandered the sky as a lander.
+    // (The old README gap claiming the cabinet "re-descends" its catch was
+    // wrong — no top turn exists; the save window is the ascent.)
     const d = newSim(17)
     const hv = d.humans[2]
     d.enemies = [{ x: hv.x, y: groundAt(d.terrain, hv.x) - 60, vx: 0, vy: 0, type: 'lander', state: 'ascend', carry: 2 }]
@@ -167,7 +175,21 @@ console.log('lander behaviour: abduction, mutation, hostile landings')
     d.player.invuln = 100000
     let humanLost = false
     for (let i = 0; i < 1500 && !humanLost; i++) { d.step({}); humanLost = d.events.some((e) => e.t === 'humanDied') }
-    ok(humanLost && hv.state === 'dead', 'a hauled human dies at the top if you never shoot the hauler')
+    ok(humanLost && hv.state === 'dead', 'a hauled human is lost at the top if you never shoot the hauler (the 1981 law)')
+    ok(d.enemies[0].type === 'mutant' && d.enemies[0].state === 'hunt' && d.enemies[0].carry === null,
+       'the hauler that reached the top MUTATED into a mutant on the spot — the shell never survives the top as a lander (#3453)')
+
+    const dr = newSim(18)
+    const hr = dr.humans[1]
+    hr.state = 'abducted'
+    dr.enemies = [{ x: hr.x, y: 110, vx: 0, vy: -0.72, type: 'lander', state: 'ascend', carry: 1 }]
+    dr.player.x = (hr.x - 40 + WORLD_WIDTH) % WORLD_WIDTH
+    dr.player.y = 110
+    dr.player.facing = 1
+    dr.player.invuln = 100000
+    let nearTopSave = false
+    for (let i = 0; i < 60 && !nearTopSave; i++) { dr.step({ right: true, fire: true }); nearTopSave = hr.state === 'falling' }
+    ok(nearTopSave && hr.vy >= 1, 'a shot near the top still frees the catch — the save window stays open until the mutation moment')
 
     const dg = newSim(27)
     const hd2 = dg.humans[0]

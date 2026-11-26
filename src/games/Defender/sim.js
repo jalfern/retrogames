@@ -11,7 +11,9 @@
 // haul it skyward; shot while carrying, the human falls — catch it (+250) and
 // deliver it back to the surface (+500); a human that hits the ground is gone
 // for the whole game. A lander that reaches the ground empty mutates into a
-// mutant (1500) and hunts the ship. Clearing every lander and mutant resurfaces
+// mutant (1500) and hunts the ship — and so does one that reaches the TOP with
+// its catch: the hauled human turns hostile there (#3453, the original's own
+// mutant genesis). Clearing every lander and mutant resurfaces
 // the wave (+1000). 3 lives, extra ship every 10,000, ~0.5 s death freeze
 // (#1531), respawn grace, and the
 // run ends honestly at GAME OVER. Documented gaps (see README): hyperspace,
@@ -625,13 +627,28 @@ export function createSim({ rand, height }) {
                         }
                     }
                     if (e.state === 'ascend' && e.y < 70) {
-                        e.state = 'wander'
-                        e.carry = null
+                        // 1981 law, re-verified for #3453 against the original's
+                        // documented mechanics: the lander takes its catch TO THE
+                        // TOP and there the pair turns into a mutant — "Mutants,
+                        // captured humans that had turned hostile" (Jarvis). The
+                        // human is lost at the top; the shell does NOT survive as
+                        // a lander (pre-fix bug: it wandered the sky empty). The
+                        // README's older note that the cabinet "re-descends" its
+                        // catch was wrong — no top turn exists; the save window is
+                        // the ascent itself (shoot: the catch falls, catchable).
                         if (held) {
                             held.state = 'dead'
                             held.vy = 0
                             held.y = groundAt(s.terrain, held.x) - 4
+                            e.carry = null
+                            e.state = 'hunt'
+                            e.type = 'mutant'
+                            e.vy = -1.5
                             s.events.push({ t: 'humanDied' })
+                            s.events.push({ t: 'mutate' })
+                            flashBurst(e.x, e.y, '#b1ff5e') // the mutation flash, same tell as a ground mutate
+                        } else {
+                            e.state = 'wander'
                         }
                     }
                 }

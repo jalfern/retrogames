@@ -130,8 +130,13 @@ at 20/20.
   hyperspace and the meteor-swarm bonus** — documented 1981 features left out
   of this port (the original's bonus table values 250/500/1000/10k are honored
   for what IS here).
-- A hauled human dies near the top of the screen instead of the lander
-  circling back down with it (original re-descends; simplification).
+- The hauled human is lost at the top — and that IS the arcade law (#3453,
+  re-verified): the lander carries its catch to the top "at which point they
+  turn into fast-moving mutants"; mutants are the captured humans turned
+  hostile. An earlier note here wrongly claimed the cabinet re-descends with
+  its catch — no top turn exists. The port now mutates the top-reached hauler
+  on the spot (the pre-fix shell survived as a wandering lander); the save
+  window is the ascent — shoot the hauler, catch the falling human (+250).
 - The wrap seam is not a dead zone: lasers, friendly fire, catch, ship contact,
   the lander's descent and the bomb blast are all wrapDelta-aware — pinned in
   defendercheck's wrap-seam section (#3453).
