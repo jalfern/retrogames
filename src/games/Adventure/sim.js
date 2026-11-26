@@ -26,13 +26,16 @@
 // Restored in the #1551 polish pass: the bridge is PLACED on the wall it
 // spans (a permanent, re-pickable crossing — the original bridge law, so the
 // single bridge can no longer strand itself), and the gray dot + sealed-door
-// rite opens the creator's room (see README "Honest gaps"). Remaining gap:
-// collisions ignore exact room-warp edges.
+// rite opens the creator's room (see README "Honest gaps"). Restored in the
+// #3441 never-dry stage: a hunting dragon aligned on the doorway follows the dot
+// through a room warp (seam law) — the bite/slay is judged inside the new room.
+// Remaining gap: a non-hunting dragon still never wanders across a seam itself.
 
 export const GW = 160  // Atari 2600 resolution (approx)
 export const GH = 192
 export const PLAYER_SPEED = 1.8
 export const MAX_ITEMS = 8   // sword, goldKey, blackKey, whiteKey, chalice, bridge, magnet, gray dot
+export const DRAGON_FOLLOW_SLACK = 10  // #3441 seam alignment: gap edge ± one tick of speed
 
 // Wall geometry shared by makeWalls() and the secret-door barrier rect.
 export const WALL_T = 4      // wall thickness
@@ -106,11 +109,14 @@ export const R = {
 // =============================================
 // WALLS / ROOM DEFINITIONS
 // =============================================
+const GAP_L = 60   // top/bottom gap column — shared by makeWalls and the seam law (#3441)
+const GAP_W = 40
+
 const makeWalls = (openTop, openBot, openLeft, openRight) => {
     const walls = []
     const T = WALL_T
-    const gapL = 60  // gap position/size for top/bottom
-    const gapW = 40
+    const gapL = GAP_L
+    const gapW = GAP_W
     const sideGapY = SIDE_GAP_Y
     const sideGapH = SIDE_GAP_H
 
@@ -475,6 +481,36 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
         const room = ROOMS[sim.room]
         const ex = EXITS[sim.room]
         if (!ex) return
+        const from = sim.room
+
+        // #3441 — DRAGONS FOLLOW THROUGH THE DOOR (seam law). Rooms cage the dot,
+        // not the dragons: 1979 chase did not stop at the room line, and a dragon
+        // at your heels when you slipped through a doorway came through with you,
+        // bite landing inside the new room. When the dot warps A→B through a seam,
+        // every living dragon left in A that is (a) actively hunting (jaw open —
+        // the port's own <30 px sight law, so idle wanderers never self-leave a
+        // room) and (b) aligned on the shared doorway (gap column/row ± a tick of
+        // speed slack — #2255 aligned every seam column, so the seam the dot used
+        // is the follower's door too), enters B through that same doorway at the
+        // mirror entry point. No barrier re-check: a seam the dot just crossed is
+        // passable for the run by every law this port owns (portcullis, sealed
+        // door and stone floor all open run-wide). Arithmetic only — no dice.
+        const seamFollow = (to, dir) => {
+            for (const d of sim.dragons) {
+                if (!d.alive || d.room !== from || !d.mouthOpen) continue
+                if (dir === 'up' || dir === 'down') {
+                    if (d.x < GAP_L - DRAGON_FOLLOW_SLACK || d.x > GAP_L + GAP_W + DRAGON_FOLLOW_SLACK) continue
+                    d.room = to
+                    d.y = dir === 'up' ? GH - 20 : 10
+                } else {
+                    if (d.y < SIDE_GAP_Y - DRAGON_FOLLOW_SLACK || d.y > SIDE_GAP_Y + SIDE_GAP_H + DRAGON_FOLLOW_SLACK) continue
+                    d.room = to
+                    d.x = dir === 'left' ? GW - 20 : 10
+                }
+                d.x = Math.max(10, Math.min(GW - 20, d.x))
+                d.y = Math.max(10, Math.min(GH - 20, d.y))
+            }
+        }
 
         // Top exit
         if (sim.player.y < 0) {
@@ -484,6 +520,7 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                 sim.room = CASTLE_INSIDES[sim.room]
                 sim.player.y = GH - sim.player.h - 8
                 dewedge()
+                seamFollow(sim.room, 'up')
                 return
             }
             if (ex.up >= 0) {
@@ -491,6 +528,7 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                 sim.room = ex.up
                 sim.player.y = GH - sim.player.h - 8
                 dewedge()
+                seamFollow(sim.room, 'up')
             } else {
                 sim.player.y = 0
             }
@@ -502,6 +540,7 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                 sim.room = ex.down
                 sim.player.y = 8
                 dewedge()
+                seamFollow(sim.room, 'down')
             } else {
                 sim.player.y = GH - sim.player.h
             }
@@ -513,6 +552,7 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                 sim.room = ex.left
                 sim.player.x = GW - sim.player.w - 8
                 dewedge()
+                seamFollow(sim.room, 'left')
             } else {
                 sim.player.x = 0
             }
@@ -524,6 +564,7 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                 sim.room = ex.right
                 sim.player.x = 8
                 dewedge()
+                seamFollow(sim.room, 'right')
             } else {
                 sim.player.x = GW - sim.player.w
             }
