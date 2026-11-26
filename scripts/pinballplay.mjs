@@ -177,6 +177,7 @@ try {
         !!kb && kb.score >= kbBefore.score + 100 && sawKbDmd.startsWith('KICKBACK! +100'),
         `${kbBefore.score}→${kb && kb.score} "${sawKbDmd || (kb && kb.dmd.text)}"`)
 
+
     // pixels: the playfield draws, and the DMD strip region lights up after an event
     // (announce fresh first — the idle crawl has blank scroll windows between words,
     // sampling blind was a standing flake)
@@ -488,6 +489,53 @@ try {
     const warn1 = await page4.evaluate(() => window.__pinballTest.state())
     ok('the dress that cannot ship says NO SUCH KIT on the play DMD too', warn1.dmd.text === 'NO SUCH KIT', `dmd="${warn1.dmd.text}"`)
     await page4.close()
+
+    // #3432 flank leg — KICKBACK L + JET LANE over the real clock. Placed at
+    // the tail on purpose: its rigs add a puck, and the DMD is a single-slot
+    // channel — last position means it cannot steal any earlier leg's announce,
+    // and it waits for a QUIET table (save fresh, one live ball, DMD free) so
+    // its own announces are not stomped inside the polling window.
+    const flankSt = () => page.evaluate(() => window.__pinballTest.state())
+    for (let i = 0; i < 80; i++) {
+        const s2 = await flankSt()
+        if (s2.done) { await page.keyboard.press('Space'); await wait(400); continue }
+        if (!s2.kbLUsed && s2.liveBalls === 1 && s2.dmd.text === '') break
+        await wait(60)
+    }
+    // prices are per cabinet (EMBER RIDER runs the hotter ladder)
+    const flankCab = (await flankSt()).cab
+    const price = flankCab === 'ember-rider' ? { kb: 75, wire: 30, set: 600 } : { kb: 100, wire: 25, set: 500 }
+    const flankBefore = await flankSt()
+    await page.evaluate(() => window.__pinballTest.kbDrop('L'))
+    let kbL = null
+    let sawKbLDmd = ''
+    for (let i = 0; i < 40; i++) {
+        await wait(40); kbL = await flankSt()
+        if (!sawKbLDmd && kbL.dmd.text.startsWith('KICKBACK')) sawKbLDmd = kbL.dmd.text
+        if (kbL.kbLUsed) break
+    }
+    ok('KICKBACK L: a fast left-column drain is saved live (kbLUsed latches)',
+        !!kbL && kbL.kbLUsed === true, `kbLUsed=${kbL && kbL.kbLUsed}`)
+    ok('the mirror save pays and announces KICKBACK on the DMD',
+        !!kbL && kbL.score >= flankBefore.score + price.kb && sawKbLDmd === `KICKBACK! +${price.kb}`,
+        `${flankBefore.score}→${kbL && kbL.score} "${sawKbLDmd || (kbL && kbL.dmd.text)}"`)
+    // JET LANE: feed the flank — both wires cross, the SET pays its 550 and
+    // (combo law) buys the spent left save back.
+    const setBefore = await flankSt()
+    await page.evaluate(() => window.__pinballTest.rampLFeed())
+    let setS = null
+    let sawSetDmd = ''
+    for (let i = 0; i < 40; i++) {
+        await wait(40); setS = await flankSt()
+        if (!sawSetDmd && setS.dmd.text.includes('RAMP L SET')) sawSetDmd = setS.dmd.text
+        if (setS.rampLLit) break
+    }
+    ok('JET LANE: a flank feed crosses both wires and SETs live (min +set, lamp latches)',
+        !!setS && setS.rampLLit === true && setS.score >= setBefore.score + price.wire * 2 + price.set,
+        `${setBefore.score}→${setS && setS.score} rampLLit=${setS && setS.rampLLit}`)
+    ok('the SET announces itself and re-arms the spent left save (combo law live)',
+        sawSetDmd === `RAMP L SET! +${price.set}` && !!setS && setS.kbLUsed === false,
+        `"${sawSetDmd}" kbLUsed=${setS && setS.kbLUsed}`)
 
     ok('zero page errors through the whole drive', errors.length === 0, errors.join(';'))
 } finally {

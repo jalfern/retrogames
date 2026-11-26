@@ -1817,7 +1817,7 @@ const PinballGame = () => {
                 rampLFeed: () => {
                     const gs = gsRef.current
                     const RL = gs.table.rampL
-                    gs.pucks.push({ bx: (RL.x1 + RL.x2) / 2, by: 430, vx: 0, vy: -520, prevY: 430, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
+                    gs.pucks.push({ bx: (RL.x1 + RL.x2) / 2, by: 400, vx: 0, vy: -520, prevY: 400, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
                     return stateOf(gs)
                 },
                 magDrop: () => {
