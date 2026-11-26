@@ -59,6 +59,14 @@
   top of `f61b99b`.
 - Slot-a dev server :5173 stopped with scripts/devstop.sh; the forge-defender-s4
   worktree is pruned after the docs merge. Nothing dirty anywhere in slot a.
+- Handoff note (#1258 collision, resolved clean): two slot-a sessions overlapped
+  on this close-out — the warden re-kicked slot a while the builder waited on CI
+  (30 min without a board comment reads as dead). Both ran forge-merge; GitHub
+  answered "Merge already in progress" to the second, and both verified the same
+  prod content (`vy<-.2` / `by)<17` in the deployed entry chunk). The pushed
+  branch made the "corpse" fully decodable — that is the hard rule working as
+  designed. If you are a third slot-a session reading this: the arc is done,
+  #3456 is shipped/closed, nothing here needs resuming.
 
 ## Next claims (for whoever is free)
 1. Queue is empty → normal ladder finds nothing: feedback borrow only with no
