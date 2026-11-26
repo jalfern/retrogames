@@ -1,68 +1,78 @@
-# STATE — forge board snapshot (slot b, 2026-11-26 — PONG cabinet voice + block numerals SHIPPED: #3536 closed)
+# STATE — forge board snapshot (slot a, 2026-11-26 — ADVENTURE seam follow SHIPPED: #3552 closed)
 
-## This session — TARGET accepted first try, shipped
-- TARGET #3536 (QA — PONG polish pass) ACCEPTED at claim (warden kick
-  #1258). Normal ladder untouched.
-- **SHIPPED (#3536 → PR #3550 → `d55f7a6`): the cabinet's voice + type.**
-  `voice.js` (pure law, Node-tested): serve-return double-clack (echo a
-  fifth above), rally ping pitch rides the strike law (post-return |dy| +
-  speed), per-tier character (EASY triangle/soft, HARD brighter-louder-
-  shorter), wall = uniform dry tick below every rally ping, score = low saw
-  thud + noise body. `gs.servePending`/`ev.serve` observation-only —
-  §serve proves same-seed trace identical without the flag; dice still only
-  at `serveBall`. `numerals.js`: 7-segment block score on the table +
-  rebuilt MATCH OVER card (net-dash border, block final score, blinking
-  prompt) + fitted block P·O·N·G attract word-mark.
-- Rule-8 finds: ① first attract cut CLIPPED P/G at the 242px phone table —
-  caught on the 667×375 screenshot, `titleFit` added (measured gate at the
-  real width). ② first static CI run red: attractcheck's 28-char cap killed
-  my hold-law line — real break, trimmed to 25 chars, 694/0 local.
-- Paddle-hold legibility (jalfern's scope update): net-dash serve-flash
-  ring (~0.6 s, re-arms every point) + attract line + pad/QUIT-chip now
-  play-only (attract/over chip-free per AGENTS convention).
+## Slot a ran TWO sessions today (warden double-kick, #1782 pattern)
+- Builder session (kicked by the 1258 prompt, TARGET #3536): REFUSED at claim — slot b
+  held #3536 fresh (they shipped it as #3550). Ladder: steer 0 · `next` #1712
+  waiting-jon (skipped) · game-queue empty · zero unclaimed feedback · QA MASTER live
+  → flagship spent → never-dry: `KICK ADVENTURE 0 weak`. Rule-8 audit BEFORE building:
+  the 13-gap score was stale (variant-selector shipped in #1572, silent-cart was a
+  note, nine `### Restored` bullets parsed as gaps — #3558 now fixes the parser too).
+  Filed + claimed **#3552**, built at `~/Dev/retrogames-forge-adventure-seam`:
+  exact sprite-rect seam admission + 7 pins + slack-regression mutant + README hygiene
+  (parseGaps 13→1). Held through the red-main freeze (#3557 fixed attractcheck);
+  rebased to f8598a8. Its watch-chain then died on an API rate-limit 403.
+- Resume session (warden's "builder a idle" kick at 17:17 — the builder was alive,
+  see handoff note): step-1b found #3552 as a pushed slot-a corpse, claim said
+  "already yours: resume", re-verified main-ok + the rule-5 chain and merged.
+- **SHIPPED (#3552 → PR #3560 merged as `8490932`):** `seamFollow` admits a hunting
+  dragon only when its `DRAGON_BOX` sprite rect genuinely overlaps the doorway rect
+  (x∈(50,100) vertical, y∈(60,120) side) — no more phase-following through solid
+  stone beside the door. Mirror entry, parallel axis and jaw gate untouched;
+  `DRAGON_FOLLOW_SLACK` deleted.
 
 ## Proof at ship
-- pongcheck **112/0** (+31: §serve once-per-point, §voice law, §numerals
-  shape/fit) · mutants **28/28 die** (+8 on the new lines) · pongdrive
-  **39/39** (+13: leg 7 audio-spy — serve clack opens, never mid-rally,
-  re-arms after thud, rally pitch variety, walls uniform-under; leg 8
-  667×375 chip/pill/score clearance) · drive mutants **5/5 die** (+2) ·
-  watchcheck pong **318/318** · attractcheck 694/0 · eslint +
-  lint:mario/fps/ai/pong + build green. One advisory pongdrive timeout flake
-  on the first run — rerun green per rule 3.
+- adventurecheck **223/0** (+7 §3552 pins) · all **60 mutants die** (incl. the new
+  slack-regression plant) · advedrive **10/10** real Chrome zero page errors ·
+  feedbackcheck **291/291** (seed pins unmoved) · CI `static` pass at head f8598a8
+  + scope + Vercel; prod live: https://jalfern.com/retrogames/adventure (200).
+- Advisory `smoke` failed twice (its rerun too) — the same red #3559 carried across
+  lanes today; flake pattern, not chased (rule 3), noted for the next smoke owner.
+- Builder lessons (each once): a timed-out foreground `--mutant` leaves its plant() in
+  the tree and IGNORES SIGTERM while spawning children — kill -9 the parent pid (check
+  lsof cwd = own worktree), `git checkout --`, rm stale `.mutant-running`; a cold Vite
+  dev server starves fixed-ms key holds (first advedrive leg flaked — byte-swap probe
+  proved it wasn't the change); long `gh run watch` chains can eat the shared API
+  rate budget — prefer single `gh pr checks --watch` on the PR instead.
+
+## ASTEROIDS handoff (#3553 is slot b's, PR #3559 open)
+- b's fix for the two surviving driver mutants landed on its branch (fast wave-floor
+  raise). Full-tree mutant truth from the pre-yield run: **27/29** — survivors were
+  `rollout dodges too late` (threat window <45→<2) and `the driver's eye forgets the
+  wrap`. Pre-yield work uncommitted (tree reverted by b's resume — correct liveness):
+  deterministic eye gates, measured **116/0**: export `scan` + `wrapDelta` from sim.js
+  (zero behaviour change), pin ttc=12 is THE threat under `< 45`, ttc=45.5 is drift,
+  wrapDelta(±590,600)=∓10. Both survivors die on these deterministically. If b's
+  sweep floors prove flaky at full scale, adopt these instead — detail on #3553.
 
 ## BOARD facts at close
-- game-queue = 0 · building = 0 · building-qa = #3547 (INVADERS polish,
-  claimed after filing), #3533 (mine was DEFENDER polish, QA holds).
-- feedback open: #3547, #3533, #3244 (TIDAL RUSH rooms), #2971 (contra).
-- #3545 (ADVENTURE wanderer) left the feedback list mid-session (other lane).
-- Rule-4 satisfied: game code merged this session (#3550).
+- building: #3553 (slot b). building-qa: #3547 INVADERS, #3533 DEFENDER 2p.
+- game-queue empty · steer empty · `next` #1712 (waiting-jon).
+- feedback open: #2971, #3244 (both waiting-jon) · #3547, #3533 (QA holds).
+- Rule-4 satisfied: game code merged this session (`8490932`).
 
 ## PLAYABLE on main right now
-- PONG with the widened cabinet sound, block numerals, serve-flash, cabinet
-  MATCH OVER card — https://jalfern.com/retrogames/pong
-  (prod token verified: new attract copy in deployed bundle `index-BRDipF-x.js`).
-- DEFENDER wall veto, SPACE INVADERS wave laws, pong cabinet serve.
+- ADVENTURE with honest doorway-overlap seam follow — https://jalfern.com/retrogames/adventure
+- PONG cabinet voice + block numerals, DEFENDER wall veto, INVADERS wave laws.
 
 ## Open questions (links only — #605)
 - #3335 — QA music-bus low-pass (AWAITING, deadline Nov 27; PINBALL gate).
 - #3516 — Arkanoid art rung (AWAITING, Nov 28).
 - #3054 — TestFlight recorder; #2971 — contra polish; #1712 — PLAICRAFT S2.
-- No new jonq questions this session (polish pass, no taste calls).
+- No new jonq questions this session (no taste calls).
 
 ## Slot state at handoff
-- Slot-b dev server (:5178) stopped via `scripts/devstop.sh` at close.
-- Worktree ~/Dev/retrogames-forge-pong-polish DONE with (PR merged, branch
-  deleted remote+local by mergeclean, worktree detached at origin/main —
-  safe to `git worktree remove` next session).
-- Main checkout detached at origin/main; STATE.md ships via docs PR (never
-  push main) and parks with `statepark.mjs park b`.
+- Main checkout detached at origin/main (`8490932`); STATE.md ships via this docs PR.
+- forge-adventure-seam worktree auto-pruned by mergeclean (it was clean) — gone.
+  (Its node_modules was a SYMLINK to the main checkout's install — nothing leaked.)
+- forge-asteroids-aim-ease worktree belongs to the LIVE slot-b session — never touch.
+- Slot-a dev server (:5173) was stopped via `scripts/devstop.sh` at the builder's
+  close; :5178 is slot b's server — do not stop.
 
 ## Next claims (for whoever is free)
-1. Ladder thin: steer 0, next = #1712 (waiting-jon), queue empty → builders-
-   the-reverse: oldest unclaimed feedback = #3244 (TIDAL RUSH rooms, 6
-   comments) then #2971 (contra adapter); both plain `feedback`, no QA lane
-   holds them — check for a live QA MASTER session before borrowing.
-2. Never-dry stays ranked: idle-kick last said DEFENDER 1 weak — two-player
-   alternating turns (desktop keyboard option per Jon's multiplayer ruling;
-   CPU stays the phone default) is the biggest unowned flagship gap.
+1. When b lands #3553 the ladder is empty → never-dry rung. Flagship stage (#841) in
+   Jon's order — derive with idle.mjs (post-#3558 parseGaps is honest, and ADVENTURE's
+   README is now clean: one real gap, the gate-rite manual); skip building-qa holds.
+2. Biggest unowned flagship gap on word-of-mouth: DOUBLE DRAGON two-player alternating
+   turns (desktop-keyboard option; CPU stays the phone default, Jon's ruling) — verify
+   against idle.mjs output before claiming.
+3. When jonq answers land (#3335 Nov 27, #3516 Nov 28), execute them at the next claim.
