@@ -10,6 +10,9 @@
 //   5. sim.js shotVsBunkers return true without clearing a bit (no chew → RED)
 //   6. sim.js waveRows always 5               (growth table RED)
 //   7. sim.js marchSpeed return flat waveSpeed (flat march: 55 lands too soon → WITNESS RED)
+//   8. sim.js march step width 2 → 2.5 (off-grid positions + drift → §13 RED)  #3573
+//   9. sim.js marchAcc carry dropped (average speed slides off the law → §13 RED)
+//  10. sim.js flush clamp deleted (fast fleet overshoots the margin → §13 RED)
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -21,6 +24,7 @@ import {
     GW, PLAYER_Y, PLAYER_W, ROW_SCORE, RESPAWN_TICKS, UFO_Y,
     BUNKER_W, BUNKER_ROWS, bunkerBricks, ufoBounty, COLS, waveRows, marchSpeed,
     makeWorld, step, loseLife, hash, done, activeCount, waveSpeed, watchRoute,
+    INVADER_W, MARCH_STEP,
 } from '../src/games/SpaceInvaders/sim.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -321,8 +325,8 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
     }
     ok(clean >= 20, `WATCH route clears wave 1 untouched on ${clean}/20 seeds (>=20 — #3517: 55 targets, the thinning speed law gives the route its runway; deleting the #3540 HOLD fallback lands seed 1308, deleting the time-aware crossing lands seed 1770)`)
     ok(deaths === 0, `the route never banks a life across 20 seeded flights (${deaths})`)
-    ok(slowest <= 1500, `slowest clean clear tick ${slowest} <= 1500 (#3540: time-aware crossing + hold cut 1506 -> 1443; deleting the crossing runs 1732, the HOLD fallback 1651, the b20 fold 2007)`)
-    ok(slowestGap <= 150, `no seed stalls longer than 150 ticks between kills (slowest ${slowestGap}; #3540 cut 197 -> 128; deleting the time-aware crossing runs 189, the b20 re-aim pass 193, the b20 fold 686; b18's fort stall ran 511)`)
+    ok(slowest <= 1560, `slowest clean clear tick ${slowest} <= 1560 (#3573: whole-step release delays each target's arrival by <1 step — the law's average speed is exact, only phase quantizes; #3540: time-aware crossing + hold cut 1506 -> 1443, stepped march lands ~+90; deleting the crossing runs 1732, the HOLD fallback 1651, the b20 fold 2007)`)
+    ok(slowestGap <= 155, `no seed stalls longer than 155 ticks between kills (slowest ${slowestGap}; #3573 step phase adds <1 step of arrival lag; #3540 cut 197 -> 128; deleting the time-aware crossing runs 189, the b20 re-aim pass 193, the b20 fold 686; b18's fort stall ran 511)`)
     ok(bricksAtClear >= 5500, `the route wastes few bricks on shots that cannot reach (forts still stand ${bricksAtClear}/6560 at clear — #3517: the crawl era lets the fleet shelter more targets, honest chewing is ~1060/6560 across 20 seeds, was ~360 in the 32-invader era)`)
     ok(/watchRoute\(world\)/.test(jsx) && !/attractInput/.test(jsx),
         'index.jsx runs watchRoute from sim.js — attract and seat share one brain')
@@ -391,6 +395,79 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
         '#1906 attract holds its GAME OVER beat ~2.5 s (ART.md attract law: show losing too)')
 }
 
+// ---------- 13. #3573 machine-step granularity: the wall ticks, never slides ----------
+{
+    // quiet stream (no enemy fire, no saucer inside the window): pure march law
+    const rr = () => 0.99
+    const s = makeWorld(rr)
+    let even = true           // every x on the machine's 2px grid
+    let pastMargin = false    // never a pixel past the flush walls
+    let firstStepTick = 0     // cadence at full strength (the crawl)
+    let maxGap = 0            // ticks between steps at wave 1
+    const flipFlush = []      // did every drop/reverse land square on a margin?
+    let cont = 0
+    let prevDir = s.dir
+    let prevEv = 0
+    let prevStepT = 0
+    for (let t = 1; t <= 600 && s.phase === 'play'; t++) {
+        cont += marchSpeed(s)
+        step(s, {}, rr)
+        if (!firstStepTick && s.marchEvents > 0) firstStepTick = t
+        if (s.marchEvents > prevEv) {
+            if (prevEv > 0) maxGap = Math.max(maxGap, t - prevStepT)
+            prevStepT = t
+            prevEv = s.marchEvents
+        }
+        if (s.dir !== prevDir) {
+            prevDir = s.dir
+            const xs = s.invaders.filter((i) => i.alive).map((i) => i.x)
+            flipFlush.push(Math.min(...xs) === 4 || Math.max(...xs) + INVADER_W === GW - 4)
+        }
+        for (const i of s.invaders) {
+            if (i.x % 2 !== 0) even = false
+            if (i.x < 4 || i.x + INVADER_W > GW - 4) pastMargin = true
+        }
+    }
+    ok(even, 'every invader x is an integer multiple of 2 — the cabinet\'s grid, not a smooth slide (#3573)')
+    ok(!pastMargin, 'the wall never crosses a pixel past its flush margin (#3573)')
+    ok(flipFlush.length >= 3 && flipFlush.every(Boolean),
+        `the column lands flush on the wall before every drop-and-reverse (${flipFlush.length} flips, all square — the cabinet's jerk, #3573)`)
+    ok(firstStepTick >= 6 && firstStepTick <= 8,
+        `first machine step lands on tick ${firstStepTick} at 55 strong (2px / 0.3125px-per-tick = 6.4 — the law owns the cadence, #3573)`)
+    ok(maxGap <= 8, `no stretch of silence: at wave 1 a step fires within ${maxGap} ticks, <= ceil(2/0.3)+1 (crawl never stalls, #3573)`)
+    ok(Math.abs(cont - s.marchEvents * MARCH_STEP) <= MARCH_STEP * 4,
+        `whole-step release keeps the average exact: ${s.marchEvents * MARCH_STEP}px stepped vs ${cont.toFixed(1)}px the continuous law over ${s.tick} ticks (drift ${(cont - s.marchEvents * MARCH_STEP).toFixed(2)}px <= one step x flips, #3573)`)
+
+    // the sprint side: one invader left releases >1 step per tick at late waves
+    const s2 = makeWorld(rr)
+    s2.wave = 9
+    s2.invaders.forEach((i, k) => { i.alive = k === 0 })
+    for (let t = 0; t < 20; t++) step(s2, {}, rr)
+    ok(s2.marchEvents >= 20,
+        `thin fleet at wave 9 fires ${s2.marchEvents} steps in 20 ticks (${(s2.marchEvents / 20).toFixed(2)}/tick >= 1 — the death spiral sprints past one-step-per-frame, #3573)`)
+
+    // flush clamp AT speed: a fast thin fleet must stop square, not overshoot
+    const s3 = makeWorld(rr)
+    s3.wave = 9
+    s3.invaders.forEach((i, k) => { i.alive = k === 0 || k === 5 })
+    s3.invaders[0].x = 200; s3.invaders[5].x = 6
+    let fastPast = false
+    let fastFlush = []
+    let pd = s3.dir
+    for (let t = 0; t < 200 && s3.phase === 'play'; t++) {
+        step(s3, {}, rr)
+        const xs = s3.invaders.filter((i) => i.alive).map((i) => i.x)
+        if (xs.some((x) => x < 4 || x + INVADER_W > GW - 4)) fastPast = true
+        if (s3.dir !== pd) { pd = s3.dir; fastFlush.push(Math.min(...xs) === 4 || Math.max(...xs) + INVADER_W === GW - 4) }
+    }
+    ok(!fastPast && fastFlush.length >= 5 && fastFlush.every(Boolean),
+        `at ${marchSpeed(s3).toFixed(1)}px/tick the whole-step batch still lands flush (${fastFlush.length} fast flips, none past margin — the flush clamp earns its keep at speed, #3573)`)
+
+    // presentation: the descending four shares the march clock
+    ok(/world\.marchEvents > prevMarchEvents/.test(jsx) && /prevMarchEvents = world\.marchEvents/.test(jsx),
+        '#3573: the march notes fire on sim step events (one shared clock), refreshed every tick — no parallel metronome')
+}
+
 // prove-it-can-fail: planted bugs the witness MUST die on
 if (process.argv.includes('--mutant')) {
     const S = 'src/games/SpaceInvaders/sim.js'
@@ -429,6 +506,18 @@ if (process.argv.includes('--mutant')) {
         [S, 'shots under the saucer stop counting (#1906 table starved)',
             'if (s.ufo) s.ufo.shots++',
             ''],
+        [S, 'step width drifts off the machine\'s 2px grid (#3573 granularity)',
+            'const nSteps = Math.floor(s.marchAcc / MARCH_STEP)',
+            'const nSteps = Math.floor(s.marchAcc / 2.5)'],
+        [S, 'the substep carry is dropped (average speed slides off the law, #3573)',
+            's.marchAcc -= nSteps * MARCH_STEP',
+            's.marchAcc = 0'],
+        [S, 'the fast batch overshoots the flush margin (clamp deleted, #3573 jerk)',
+            'const move = Math.min(want, room)',
+            'const move = want'],
+        [J, 'the march notes return to a parallel metronome (#3573 shared clock deleted)',
+            'const stepped = world.marchEvents > prevMarchEvents',
+            'const stepped = true'],
         [J, 'the march rate ignores the fleet size (#1906 flutter deleted)',
             'const interval = Math.max(3, Math.round(2 + n * 0.95))',
             'const interval = 16'],

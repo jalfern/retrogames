@@ -41,6 +41,18 @@ batch rebuilt the original's honest end-of-run model:
   ~tick 777, before fifty-five one-shot kills can fit; the player missile
   moved 5 -> 8 px/t (the cabinet's ~3:1 ratio over the 2.5 bombs) for the
   same reason.
+- **The machine step (#3573)**: the march is released in whole **2px steps**
+  (`MARCH_STEP`), not a continuous slide — `marchSpeed` now sets only *how
+  often* a step fires (the substep carry lives in `marchAcc`, so average
+  px/tick is the #3517 law exactly; measured drift over 600 idle ticks is
+  1px, less than one step). A fast thin fleet releases several steps in one
+  tick (the cabinet's timer shortened past the frame the same way). The
+  column lands **flush** on the wall — integer geometry plus the flush clamp
+  make overscroll impossible — then drops 8px and reverses on the same step
+  event: the cabinet's jerk. `marchEvents`/`marchDrops` are monotonic, and
+  the descending four fires on those ticks (index.jsx gates the #1906
+  ∝fleet rate law on step edges — sound and march share one clock, as on
+  the machine).
 
 ## The forts (#1495)
 
@@ -79,9 +91,12 @@ omitted — the rand closure can't JSON round-trip (#391).
 ```bash
 npm run invaderscheck          # Node: boot, rules, wave table, speed law, winnable,
                              #   determinism, contract, + WITNESS: the WATCH brain
-                             #   clears wave 1 on 20/20 seeds (slowest ~1443)
-npm run invaderscheck -- --mutant  # 15 mutants (incl. flat-march and frozen growth
-                             #   table, #3517; #3540 crossing + HOLD) must all go red
+                             #   clears wave 1 on 20/20 seeds (slowest ~1534 at the
+                             #   #3573 step grid), + §13 machine-step granularity
+npm run invaderscheck -- --mutant  # 19 mutants (incl. flat-march and frozen growth
+                             #   table, #3517; #3540 crossing + HOLD; #3573 off-grid
+                             #   step, dropped carry, deleted flush clamp, parallel
+                             #   metronome) must all go red
 npm run invadersdrive          # real Chrome real keys: attract, start, arrows, fire,
                              #   landing death, restart-to-attract, zero page errors
 npm run watchcheck -- --only invaders  # seat pilot: one-tap ▶ WATCH, Y seat/takeover,
@@ -194,10 +209,14 @@ decay granularity rewires the proven route and needs its own session.
   and grows per wave.~~ — 11x5 = 55 opening, growth table 55/44/33, five-band
   score table, cabinet thinning speed law and 3:1 missile ratio (see Terminal
   model).
-- The march is continuous px/tick; the cabinet moved in discrete 2px steps on
-  an interrupt timer (and its drop was a wave-stepped row count, our drop is a
-  flat 8px). The law's SHAPE — crawl at full strength, sprint at the end — is
-  the fidelity target; the step granularity is not yet the machine's.
+- **CLOSED by #3573:** ~~The march is continuous px/tick; the cabinet moved
+  in discrete 2px steps on an interrupt timer; the step granularity is not
+  yet the machine's.~~ — whole-step release: integer 2px ticks with a
+  carry-exact average (the #3517 law owns the cadence, not the width),
+  flush landings on the wall, and the descending four fired on the step
+  ticks (see "The machine step").
+- The cabinet's drop was a wave-stepped row count; ours is a flat 8px per
+  edge — the half of the old granularity line #3573 leaves open.
 - **Bonus life (#3530):** one spare cannon per 100-point crossing, cap 5, with
   its jingle and the BONUS stamp. The cabinet's dip-switched one-life-at-1000
   headline is UNVERIFIED in-repo and never re-tuned silently — left to Jon
