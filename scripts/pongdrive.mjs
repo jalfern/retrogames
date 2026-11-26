@@ -298,6 +298,8 @@ if (process.argv.includes('--mutant')) {
         ['the QUIT chip is never rendered', CHIP, `thirdAction={null}`],
         ['the chip appears on attract and hides in play', `thirdAction={screen === 'play' && !paused`, `thirdAction={screen === 'attract' && !paused`],
         ['the chip fires a dead key', `{ label: 'QUIT', code: 'Escape' } : null}`, `{ label: 'QUIT', code: 'KeyM' } : null}`],
+        ['#3536: the serve clack fires on every hit', `if (ev.serve)`, `if (true)`],
+        ['#3536: the rally pitch is pinned flat (strike law inaudible)', `rallyVoice(state.ball.dy, state.ball.dx, state.diff)`, `rallyVoice(0, 4, state.diff)`],
     ]
     let died = 0
     for (const [name, from, to] of MUTANTS) {
