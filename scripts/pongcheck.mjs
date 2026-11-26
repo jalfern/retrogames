@@ -570,6 +570,24 @@ console.log('range: the selectable max-score knob (#3565)')
         ok(/className="pong-range-zone"/.test(idx) && /cycleRangeRef\.current\(1\)/.test(idx),
             'the RANGE dial answers a thumb, not just the keyboard')
         ok(/range: String\(RANGES\[rangeIdx\]\)/.test(idx), 'the QA report and probes carry the range (string-stable)')
+        // #3584 — the dial bands are columns under their labels; the field
+        // centre (x=50%) must reach the canvas so any tap starts (#430 law).
+        // Half-width zones meeting at 50% swallowed the centre tap and the
+        // nightly tapstartcheck went red.
+        const zoneEdges = (cls) => {
+            const m = idx.match(new RegExp(`className="${cls}"[\\s\\S]{0,1400}?style=\\{\\{([^}]+)\\}\\}`))
+            if (!m) return null
+            const g = (k) => { const mm = m[1].match(new RegExp(`${k}: '(\\d+(?:\\.\\d+)?)%'`)); return mm ? parseFloat(mm[1]) : null }
+            const l = g('left'), w = g('width')
+            return l === null || w === null ? null : { l, r: l + w }
+        }
+        const pz = zoneEdges('pong-pick-zone'), rz = zoneEdges('pong-range-zone')
+        ok(pz && rz && pz.r <= 48 && rz.l >= 52,
+            '#3584: both dial zones leave the centre column open (pick right edge ≤48%, range left edge ≥52%)',
+            JSON.stringify({ pz, rz }))
+        ok(pz && rz && pz.l <= 20 && pz.r >= 36 && rz.l <= 64 && rz.r >= 80,
+            '#3584: the zones still cover their dial columns (labels at 28%/72% stay tappable)',
+            JSON.stringify({ pz, rz }))
     }
 }
 

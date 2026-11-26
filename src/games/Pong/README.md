@@ -110,13 +110,14 @@ distinct corners, everything inside the viewport.
 ## Verify
 ```
 npm run pongcheck            # attract rule-6 + seedpin + deflection + driver sweep + tiers + serve/voice/numerals
-                             #   + range-knob law (134 checks)
+                             #   + range-knob law + #3584 centre-open zone pins (136 checks)
 npm run pongcheck -- --mutant  # 31 mutants — seedpin/driver/tier/cabinet law, the #3536 lines and the
                                #   #3565 range trio (cap silent / cap at N+1 / FREE misread as cap), all must die
 npm run pongcheck -- --mutate  # 5 attract mutants, all must die
 npm run pongdrive            # real Chrome: selector/tap-dial/2P/touch-quit legs + audio-spy (serve clack opens,
                              #   rally pitches vary, walls under every ping, low thud, no mid-rally clack)
-                             #   + 667×375 chip-ergonomics legs + RANGE dial thumb/pin/honest-cap legs (47 checks)
+                             #   + 667×375 chip-ergonomics legs + RANGE dial thumb/pin/honest-cap legs
+                             #   + #3584 centre-tap-open + dial-column legs (51 checks)
 npm run pongdrive -- --mutant  # 5 mutants: 3 chip + serve-refire + flat-pitch, all must die
 npm run watchcheck -- --only pong   # browser pilot: seats, returns balls, steers back (318)
 npm run lint:pong
@@ -164,8 +165,12 @@ cap** — the b16 ruling stands, and FREE is the default pick so every existing
 pin, seed and bit-trace replays untouched. What ships is a cabinet-native
 **feature** stacked on top of that honest terminal: a second attract dial,
 `RANGE`, cycling `FREE · 1 · 3 · 5 · 7 · 9` (the classic Pong-family score-dial
-ladder). ↑/↓ turn it, a thumb on the label rides the same dial (right half of
-the switch row; GAME keeps the left half), and `?range=N` pins it for QA.
+ladder). ↑/↓ turn it, a thumb on the label rides the same dial, and `?range=N`
+pins it for QA. The thumb zones are columns under their labels (GAME 4–46%,
+RANGE 54–96%) — **#3584**: when they were halves meeting at x=50%, the centre
+tap died on the RANGE button's stopPropagation and the field could no longer be
+tapped awake on a phone; the switch bank may never cover the field centre
+(#430 any-tap-to-start law).
 
 A chosen number binds **in the sim**, where it must: `sim.js` grew a
 `capHit(gs, score)` guard in the scoring branch. When a player reaches the
