@@ -1,86 +1,66 @@
-# STATE — forge board snapshot (slot a, 2026-11-26 — ROGUE trap floor SHIPPED `0f227c2`; polish #3588 filed)
+# STATE — forge board snapshot (slot b, 2026-11-26 — ROGUE gets its Amulet, and main got healed first)
 
-## This session (slot a)
-- TARGET #3573 REFUSED at claim (slot b held it live — it shipped later as
-  #3578, INVADERS machine-step). Normal ladder: steer/next/game-queue empty
-  (#1712 is waiting-jon, skipped per #605); feedback-borrow blocked (live QA
-  MASTER ×2) → flagship stage spent → #1571 never-dry: `idle-kick` LIVE
-  picked **ROGUE** — 4 unowned README gaps, zero open QA naming it, oldest
-  of the tied score-4 titles by registry order.
-- Filed + claimed **#3579** (POLISH — ROGUE: trap floor). Shipped: every
-  level mined (2..4+⌊dlvl/2⌋ hidden traps on floor/corridor, never start
-  ring/stairs/items/monsters). Roster: trap door (escalating fall grudge
-  (n−1)·2d6, stairs reset), teleport (stays armed — the 1980 joke), sleep,
-  lose-strength, confusion, snare (burns your turns while monsters close),
-  darts. Sprung traps mark the map with the original backtick. Generation
-  rides a borrowed, rewound rng slice — existing seeds replay byte-identical
-  until a trap springs (golden anchor gate pins seed 777's mines + ident
-  maps). Search never finds traps; monsters spring nothing — both stay as
-  honest README gaps. Spring snap + trap-door fall sounds; help legend +
-  honesty line.
-- Harness: roguecheck **150/0** (+27 gates: generation fairness, depth
-  scaling, every kind's band, grudge escalation + stairs reset, re-arm,
-  backtick draw lit+dim, invisibility, search/monster honesty, stream
-  anchor). Mutants mortal: rng-rewind drop kills the anchor (1 fail),
-  disarmed spring kills 15. roguedrive **25/25** real keys: pinned seed 115's
-  arrow-salvage run now crosses a sleep mine — drive springs it, waits the
-  drug out in place, salvages to quiver 8 (existing leg honestly re-routed
-  around the new floor); fresh-seed snare spring replays byte-identical in
-  Chrome. eslint + lint:mario/fps/ai + build green.
-- Ship: PR #3581 squash-merged `0f227c2`, zero CI red. Prod verified
-  (`index-BzfZjjPP.js` carries `fall through a trap door`). #3579
-  shipped+closed. Polish pass filed: **#3588** (feedback).
-- Probe lesson (mine, twice this session): asset checks against jalfern.com
-  need `curl -L` — the proxy answers asset paths with a 15-byte
-  "Redirecting..." stub, so a no-follow grep reads LIVE prod as stale.
+## This session — red-main fix, TARGET yield, then never-dry SHIP
+- **Red main (kick warning #601) outranked everything.** Nightly 45875546378 red
+  with one cause: tapstartcheck PONG (centre tap dead post-#3575). Owned issue
+  #3584 existed; claimed it, root-caused: the RANGE thumb-zone spans `left:'50%'`
+  and the 3:4 cabinet puts the canvas centre INSIDE the dial band — the exact
+  tapstart tap died on the button's stopPropagation; the shell's #430 any-tap
+  skips `closest('button')`. Fix: dial zones become label columns (GAME 4–46%,
+  RANGE 54–96%), switch bank never covers the field centre.
+  **SHIPPED #3584 → PR #3589 (`984c262`)** via the red-main-fix precedent
+  (#2957/#3208: forge-merge's main-ok refuses by design while red → direct
+  squash once static green → dispatch refresh). Prod verified (`left:"54%"`);
+  refresh run **45902410013 went GREEN** — freeze lifted before session end.
+- TARGET #3571 (LUNAR LANDER pad latch) **REFUSED at claim** — studio holds it
+  live (9 min at kick). Yielded, per precedent.
+- Ladder: steer 0 · `next` #1712 is waiting-jon (skip, #605) · game-queue 0 ·
+  feedback-borrow blocked (QA MASTER live) · flagship stage spent → NEVER-DRY
+  honest `idle-kick` = **KICK ROGUE 0 weak** (score 5 = 3 unowned README gaps
+  + 2 QA items naming ROGUE; Pong/Asteroids/LunarLander held). Verified
+  ownership first: gap 0 (Amulet) is not #3588's list.
+- **SHIPPED #3592 → PR #3593 (`0f7b3ea`): the Amulet of Yendor.** One goal
+  object on monster level 20 — the cart's depth, unlowered: gold `%`, never the
+  start ring/stairs/item/monster/trap cell, BFS-reachable every seed.
+  Pickup `,` = you-win terminal: `you have found the Amulet of Yendor!!`,
+  ✦ YOU WIN ✦ card, ascending sting, gold + dlvl×50. Shallow dice untouched —
+  roguecheck pins dlvl-1 dungeon+stream against **goldens captured from
+  origin/main's sim.js**. WATCH-brain hunts it at depth; `?dlvl=N` QA pin.
+- Proof: roguecheck **160/0** (+10 §amulet) · can-fail: pickup-branch mutant →
+  2 red, restored · roguedrive **28/28** (real-key guide win at turn 410, DOM
+  reads YOU WIN/Amulet/Final Score, zero page errors) · eslint + lint:rogue/
+  mario/fps/ai + build green. Honest depth pinned both ways: six seeds win,
+  two die en route (killer named) — fidelity beats provability, proved anyway.
 
 ## BOARD facts at close
-- Main red at close = STALE verdict, fix already merged: nightly `bba9d74`
-  failed only tapstartcheck-PONG (#3584 — my RANGE thumb zone swallowed the
-  centre tap; slot b diagnosed + shipped the fix as PR #3589). Nightly
-  re-dispatched on current main (`984c262`) was cancelled mid-flight and
-  re-queued — until it completes green, `main-ok` freezes ALL merges (#601).
-- building: empty. building-qa: #3576 (PONG polish — QA took mine), #3571
-  (LUNAR LANDER pad latch — slot b's TARGET), #3568. game-queue empty ·
-  steer empty.
-- **PR #3590 (docs: slot a STATE close-out) is OPEN and merge-blocked by the
-  freeze — merge it after tonight's green nightly.** STATE.md sits written
-  (and parked at /tmp/forge/STATE.a.parked.md) meanwhile.
-- feedback open: #3588 (ROGUE, mine), #3586 (Asteroids seeded-pixel-proof
-  infra), #3582 (INVADERS polish), #3572 (LUNAR LANDER CRT),
-  #3244 + #2971 (waiting-jon).
-- Rule-4 satisfied: game code merged today (`5ab9b66`, `d89070c`, `0f227c2`,
-  plus PONG thumb-zone fix from #3589).
+- **main GREEN at `0f7b3ea`** (nightly 45902410013 success) · game-queue 0 ·
+  building 0 · building-qa: #3571/#3576/#3568 (studio) · new feedback: **#3601**
+  (ROGUE polish: amulet pack-name `?`, find-bloom, glyph shimmer, dlvl-20
+  ambience) · #3588 (ROGUE trap sound pass) still open.
+- Rule-4 satisfied twice: game code merged as #3589 AND #3593.
 
-## PLAYABLE on prod right now
-- ROGUE — the floor is mined: step wrong and the dungeon takes a bite;
-  repeated trap-door falls hurt harder, walking stairs settles the grudge:
+## PLAYABLE on main right now
+- ROGUE — down to dlvl 20, the Amulet glows gold, and the pickup WINS:
   https://jalfern.com/retrogames/rogue
-- INVADERS machine-step march, PONG RANGE dial, ASTEROIDS saucer curve,
-  ADVENTURE seam law + breathing dot.
+- PONG tap-starts again on phones + RANGE dial. SPACE INVADERS machine-step
+  march. ASTEROIDS learning saucers. DEFENDER hot-seat 2P.
 
 ## Open questions (links only — #605)
-- #3335 — QA music-bus low-pass (AWAITING, deadline Nov 27; PINBALL gate).
+- #3335 — QA music-bus low-pass (AWAITING, Nov 27).
 - #3516 — Arkanoid art rung (AWAITING, Nov 28).
 - #3054 — TestFlight recorder; #2971 — contra polish; #1712 — PLAICRAFT S2.
-- No new jonq questions this session (no taste calls).
-
-## Slot state at handoff
-- Main checkout detached at `origin/main`. Slot-a dev server (:5173) stopped
-  via `scripts/devstop.sh` at close. `forge-rogue-traps` worktree pruned
-  post-merge by mergeclean; `forge-state-slot-a` worktree stays until #3590
-  merges (state PR open, freeze-blocked).
-- Other lanes live at close: slot b (TARGET #3571), QA studio. Ports are
-  theirs (:5178, :5176); :5174 mini had finished.
+- No new jonq questions (all calls were measured law/harness, none of taste).
 
 ## Next claims (for whoever is free)
-1. Ladder empty → never-dry again. Re-run `idle-kick` LIVE, don't trust this
-   note. ROGUE's remaining gaps (Amulet of Yendor, class hp rolls, lamp/oil)
-   are now 3 unowned + #3588 self-handled via QA — #3588 makes ROGUE
-   QA-owned soon. #2910 note: body-named scores from polish passes still
-   inflate picks; ownership is what matters.
-2. QA lanes: #3588 (ROGUE polish) + #3582 (INVADERS polish) join the board;
-   #3586 is harness-infra feedback (seeded pixel proof) — lane:platform
-   triage, not a game stage.
-3. When jonq answers land (#3335 Nov 27, #3516 Nov 28), execute at the next
-   claim.
+1. #3601 items 1–2 are quick honest wins (pack naming + find-bloom) — but they
+   are feedback: QA lane's first grab unless idle.
+2. Honest `idle-kick` next; if it names shipped history, mark CLOSED per the
+   README-phantom rule, don't build.
+3. DONKEY KONG barrels-mid-air-over-ladders — still the smaller real fix.
+
+## Slot state at handoff
+- Slot-b dev server :5178 stopped via `scripts/devstop.sh` at close.
+- Worktrees ~/Dev/retrogames-forge-pong-tapstart and …-forge-rogue-amulet DONE
+  (both merged; safe to prune next session). Main checkout re-pinned detached at
+  origin/main.
+- STATE.md ships via this docs PR and parks with `statepark.mjs park b`.
