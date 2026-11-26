@@ -199,6 +199,31 @@ Both are TABLE DATA first, engine second (same law as every rung):
   probes at `yFrom+4` (556), not 558, and the flank feed above the outlane
   guide's upper tip (y 400, not 430) or the guide end knocks the line flat.
 
+## Chain-pin (#3452) — the pack swallows
+
+The #3422 episode proved the coil stays hot through a hold, but its honest
+residue admitted the pack couldn't grow: a ball queued behind a pin bounced
+off the front ball (the #3217 pinned-post law) before its own centre could
+reach the clamp. Now **the pack's outer face is the mouth**: while an episode
+is live (`gs.magHold > 0`), a fresh ball that touches a held member on its
+outward side — the column the magnet itself feeds — is swallowed: it pins at
+the rosette (post-face ring, `MG.r + BALL_R`) at its arrival angle and
+relaxes clockwise in steps of ≥ ball-contact spacing until clear of every
+member (`2·asin(BALL_R/holdR) ≈ 57°`; packs never overlap because
+`packCollide` skips held pairs, so placement is load-bearing at capture).
+Each chained ball owns its `magHold` clock and pays its own snap — three fed
+balls means three `maggrab`s, three own clocks, three × `rules.magnet`.
+
+Laws the chain does NOT touch, pinned by §chain: the outer-face cone (dot of
+post→member and member→ball ≥ ½) refuses lateral touches — steel stays
+steel-on-steel and the coil's own pull (the #3422 energised field) still
+owns everything inside it; a spent ball (`magHoldT < 0`) crossing the live
+column never re-rides; the first-ball face grab is byte-identical; the whole
+path draws zero RNG and replays bit-identical. EMBER RIDER mirrors the law
+and pays its hotter 75. `pinballcheck` §chain: 11 pins; mutants `chaincone`
+(cone removed — lateral grabs) and `chainslot` (relax collapses — overlapping
+pins) both die.
+
 ## Art kits (#3259)
 
 Real arcades sold **art kits** — the same machine in a new dress. Same here:
@@ -338,8 +363,8 @@ compile reads ghost, never as a save.
 ## Verify
 
 ```bash
-npm run pinballcheck          # 312 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix/pack/flank pins, plain Node (+19 mutants incl. packmagnet/magspent/magclock/magstall/magrearm)
-npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs, + #3336 live phone-mix legs, + #3432 flank leg: KICKBACK L / JET LANE SET / combo rearm)
+npm run pinballcheck          # 326 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix/pack/flank/chain pins, plain Node (+21 mutants incl. packmagnet/magspent/magclock/magstall/magrearm/chaincone/chainslot)
+npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs, + #3336 live phone-mix legs, + #3432 flank leg: KICKBACK L / JET LANE SET / combo rearm; announce legs gated on a quiet table, #3452)
 npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284 + #3359): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence, garage: slot switch (Digit1/2/3), SAVE into a garage slot, slot-choice persistence, legacy-blob one-shot migration (+#3290: badge-while-unselected, nova-demo honesty, drawn-rim delta, seam nearest-centre, touch tap-guard + tool taps)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
@@ -436,9 +461,9 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   were already per-puck — and is now PINNED that way (two balls in the channel
   arm twice, score twice, bank twice). Ball search is per-ball too: the stall
   exemption is `p.magHeld`, so a stuck free ball is searched out even while
-  the magnet holds its pack. Honest residue: a ball queued directly behind a
-  pin bounces off it (the pin is a post) instead of chain-pinning through it,
-  and the wrap's curl assist is still a fixed push, not a shaped rail.
+  the magnet holds its pack. Honest residue closed later (#3452, chain-pin —
+  see below); still open: the wrap's curl assist is a fixed push, not a
+  shaped rail.
 - **CLOSED by #3432:** no left ramp / kickback, and the spinner was
   outlane-only. The flank now runs JET LANE (two UP wires x 44..76, 25/500
   ladder, SET lamp) and KICKBACK L (x 155..170, one save per ball per side),
