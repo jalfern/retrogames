@@ -37,7 +37,7 @@ const GAMES = [
     { id: 'garden-guard', path: '/garden-guard' },
     { id: 'homebody', path: '/homebody' },
     { id: 'frogger', path: '/frogger' },
-    { id: 'asteroids', path: '/asteroids' },
+    { id: 'asteroids', path: '/asteroids', syncPixel: true }, // #3586 — pixel proof wired (spec.draw)
     { id: 'donkeykong', path: '/donkeykong' }, // #1637 b27: whole-tick lift + WATCH seat
     { id: 'iron-ring', path: '/iron-ring' },
     { id: 'viper-pit', path: '/viper-pit' },

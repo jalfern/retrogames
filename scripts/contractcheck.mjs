@@ -21,7 +21,7 @@ import { GAMES, TICKS, scriptFor, LIVE } from './lib/contractGames.mjs'
 
 const BASE = process.env.CONTRACT_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
 const ONLY = process.env.CONTRACT_ONLY
-const DRIVE = ({ seed, script }) => {
+const DRIVE = ({ seed, script, sample }) => {
     const g = window.__game
     const zero = g.reset(seed)
     const samples = []
@@ -31,6 +31,23 @@ const DRIVE = ({ seed, script }) => {
         if ((i + 1) % 100 === 0) samples.push(s.hash)
     }
     const heldTick = s.tick
+    // #3586 pixel proof: state() is mid-play at this instant; the canvas must
+    // agree WITHOUT an rAF frame (sampled here, inside the drive, before
+    // release() — a second evaluate would repaint and hide staleness). The
+    // HUD row (y 8..24 CSS px) is painted only when not attract: a canvas
+    // frozen on attract or black since before the drive has nothing there.
+    let syncPix = null
+    if (sample) {
+        const can = document.querySelector('canvas')
+        if (can) {
+            const c2 = can.getContext('2d')
+            const dpr = window.devicePixelRatio || 1
+            const img = c2.getImageData(0, Math.round(8 * dpr), Math.round(160 * dpr), Math.round(16 * dpr)).data
+            let lit = 0
+            for (let i = 0; i < img.length; i += 4) if (img[i] + img[i + 1] + img[i + 2] > 90) lit++
+            syncPix = { hudLit: lit, seed: s.seed, tick: s.tick }
+        }
+    }
     const snap = g.snapshot ? g.snapshot() : null
     const atSnap = JSON.stringify(g.state())
     let restoreOk = null
@@ -43,7 +60,7 @@ const DRIVE = ({ seed, script }) => {
         restoreOk = first && JSON.stringify(g.state()) === atSnap
     }
     g.release()
-    return { zeroTick: zero.tick, zeroDone: !!zero.done, final: JSON.stringify(s), samples, heldTick, restoreOk }
+    return { zeroTick: zero.tick, zeroDone: !!zero.done, final: JSON.stringify(s), samples, heldTick, restoreOk, syncPix }
 }
 
 // #496 co-op games: reset(seed, 2) must open seat 2, and the same script must
@@ -91,7 +108,7 @@ for (const p of RUN) {
     // road-and-sky frame compresses to ~4 KB, so 5 KB was too high a bar.
     r.check(`${p.id}: frame() is a PNG data URL`, typeof png === 'string' && png.startsWith('data:image/png;base64,') && png.length > 2000, `${png?.length}b`)
 
-    const r1 = await page.evaluate(DRIVE, { seed: 7, script: scripts[p.id] })
+    const r1 = await page.evaluate(DRIVE, { seed: 7, script: scripts[p.id], sample: !!p.syncPixel })
     const r2 = await page.evaluate(DRIVE, { seed: 7, script: scripts[p.id] })
     const r3 = await page.evaluate(DRIVE, { seed: 9, script: scripts[p.id] })
 
@@ -111,6 +128,9 @@ for (const p of RUN) {
         r1.final === r2.final ? `${r1.final.length}b equal` : `A=${r1.final}\n                 B=${r2.final}`)
     r.check(`${p.id}: seed 7 twice → identical per-100-tick hashes`, JSON.stringify(r1.samples) === JSON.stringify(r2.samples), r1.samples.join(' '))
     r.check(`${p.id}: seed 9 → different JSON`, r1.final !== r3.final, `hash ${JSON.parse(r3.final).hash} vs ${JSON.parse(r1.final).hash}`)
+    if (p.syncPixel) r.check(`${p.id}: mid-play pixels without an rAF frame (#3586)`,
+        !!r1.syncPix && r1.syncPix.hudLit > 0 && r1.syncPix.tick === TICKS,
+        r1.syncPix ? `hudLit=${r1.syncPix.hudLit} tick=${r1.syncPix.tick}` : 'no canvas')
     if ((meta?.players || 1) > 1) {
         const c1 = await page.evaluate(DRIVE_COOP, { seed: 7, script: scripts[p.id] })
         const c2 = await page.evaluate(DRIVE_COOP, { seed: 7, script: scripts[p.id] })
