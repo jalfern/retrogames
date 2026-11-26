@@ -72,9 +72,11 @@ npm run defendercheck            # Node: determinism, score law, rescue chain, d
                                #   §grace (#3445: the grace burns to zero on the clock alone, a
                                #   second crash lands nudged-free, ArrowDown reaches GAME OVER,
                                #   attract invulnerability pinned BY COPY)
-                               #   + WITNESS: honest mortal-pilot floors on both 20-seed sets
-                               #     (banks, waves, rescues — survival is no longer claimed)
-npm run defendercheck -- --mutant   # pre-port bugs re-planted; every mutant must go red
+                               #   + WITNESS: survival CLAIMED — 20/20 on both 20-seed sets,
+                               #     banks/waves/rescues re-pinned, haul guns + speeder +
+                               #     close-out + momentum laws each tested directly, and the
+                               #     copy claim pinned to the witness (#3456 stage 3)
+npm run defendercheck -- --mutant   # pre-port + stage-2/3 bugs re-planted; every mutant must go red
 npm run defenderplay               # Chrome, REAL keys: Shift spends one bomb, pixels flash
                                #     white, held ≠ stream, the WATCH seat never bombs, and
                                #     the crash law pinned both sides (#3445 grace freeze)
@@ -98,27 +100,41 @@ when a walking human stands in the laser line closer than the target. The
 patrol still climbs clear of the terrain and stays out of the dark. Any
 driving key or a tap hands the wheel back (shared blips). Since #3445 the seat
 is **mortal**, and since #3456 the planet is honest too (hunt mutants actually
-move — see Honest gaps); the patrol survives most horizons and WITNESS pins what
-it banks, clears and rescues, while the survival copy claim waits for both sets
-at 20/20.
+move and the landerless wave runs its speeders — see Honest gaps). **The claim
+is re-earned: the patrol survives 20/20 on both audit sets** (witness +
+untuned holdout) at the 150 s horizon, banks min 18,900 + 12,800, clears
+waves on every seed and hauls 57 + 43 deliveries — all still mortal (39 honest
+lives spent across 40 runs, worst seed bleeds 3; WITNESS pins the claim to
+the witness so copy and measurement cannot drift apart).
 
 ## Honest gaps
 
-- **#3456 stage 2 (2026-11-26) — the planet woke up.** Auditing why mortal survival
-  was so brutal found a second artifact under #3445's: **hunt-state mutants never
-  integrated position** — the movement block is lander-only, so every mutant since
-  the port was a STATUE its whole life while this README swore "chases you". The
-  fix makes the 1981 hunter real, and watchRoute was re-tuned against it: terrain
-  seat with sink + terrain-rise margins, canyon turn, pulsed descents (a U/D
-  interlock — both keys together used to cancel into the ground), valley-site
-  delivery veto, hover-kill, fresh-facing gate, turn-and-brace vs astern hunters,
-  crossfire bail, and a hauler-job-outranks-the-duel rule (the law test pins it).
-  Honest measure: survived 19/20 + 16/20 at the 150 s horizon, banks 9,650 + 5,950,
-  waves 20 + 20, catches 49 + 47, deliveries 37 + 36. WITNESS re-pinned to these
-  floors and the mortality tripwire flipped (>=15 honest GAME OVERs became <=5 —
-  survival progress breaks the old form by design; zero deaths is still the bug).
-  The copy claim "the patrol survives" still stays retired until both sets are
-  20/20 honestly, and diedHauling (12 + 11) says the package still gets hunted.
+- **#3456 stage 3 (2026-11-26) — the patrol earns its survival back.** Two
+  fidelity facts drove the stage. **(1) The arcade fighter never mutes its guns
+  while carrying** — the port's haul block returned before the gun rule, so the
+  package was silent *and* braked (±1.2 px/tick against a mutant's 2.4 cap);
+  diedHauling 12 + 11 was the predictable result. Guns are now live during the
+  elevator (same flat-line law, same walking-human veto), with a turn-and-brace
+  on any hostile entering the package's airspace. **(2) The 1981 endgame:**
+  when the wave's last lander dies, the surviving mutants speed up —
+  `SPEEDER_SPEED` 3.0 with hotter drive, a rand-free transition edge, a
+  hot-orange sprite/radar tell and a rising alarm; the route answers with the
+  last-hunter close-out (face the lone survivor when it is already level and
+  at clean range) instead of trailing it past the horizon. The stage's real
+  find was the **momentum law**: every autopsy death was velocity committed by
+  *earlier* ticks that a contact-distance reaction cannot null — the crossfire
+  band, the haul brace and the vertical aim now read the hull's PROJECTED
+  position, and the aim refuses to climb or dive into a contact column.
+  Honest measure: SURVIVED 20/20 + 20/20, diedHauling 4 + 6, waves 20/20 +
+  20/20, catches 62 + 49, deliveries 57 + 43, banks min 18,900 + 12,800,
+  lives spent 20 + 19. The survival copy claim is back — pinned to the
+  witness in `defendercheck`, and the `worstSeedHits >= 3` law keeps frozen
+  grace (#3445's shape) impossible under it.
+- **Stage 2 (same arc, #3456) — the planet woke up.** Hunt-state mutants never
+  integrated position (statues) — fixed; watchRoute gained the terrain seat,
+  canyon turn, pulsed descents, valley-site veto, hover-kill, fresh-facing gate
+  and the hauler-outranks-the-duel law. Honest measure then: survived 19 + 16,
+  banks 9,650 + 5,950. Superseded by stage 3 above.
 - **CLOSED by #3443** — the smart bomb is in (Jon's #2016 answer A, "port it.
   Smart bomb on the B/secondAction button, 3 per wave"): B vaporizes every
   hostile inside the wrap-aware 1000 px screen window at table value, haulers

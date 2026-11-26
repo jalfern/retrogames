@@ -721,7 +721,7 @@ export const GAMES = [
         label: 'DEFENDER',
         theme: 'dark',
         description: 'Protect the humanoids from abduction in this side-scrolling shooter.',
-        controls: ['Arrow Keys: Move', 'Space: Shoot', 'Shift: Smart bomb (3 per wave)', WATCH_HELP + ' — the patrol that survives the planet and clears waves does it for real']
+        controls: ['Arrow Keys: Move', 'Space: Shoot', 'Shift: Smart bomb (3 per wave)', WATCH_HELP + ' — the patrol survives 20/20 on both audit sets, banks waves and hauls the humans home — re-measured at every commit (#3456)']
     },
     {
         path: '/pitfall',
