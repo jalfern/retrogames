@@ -47,7 +47,7 @@ const REACT_TITLES = [
         mf: 'src/games/Galaga/attract.js',
         import: '../src/games/Galaga/attract.js',
         slot: '<AttractMessage className="text-cyan-100/85" messages={MESSAGES} />',
-        dimFrom: 'bg-black/40',
+        dimFrom: 'absolute inset-0 bg-black/40',
         wrap: `    'DIVE PATHS ARE SCRIPTED AND READABLE',\n`,
         leak: `    "DON'T GET CORNERED AT THE WALLS",\n`,
     },
