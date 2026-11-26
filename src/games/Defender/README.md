@@ -116,6 +116,14 @@ not survival.
   deliveries per set. Re-earning survival (a watchRoute interception redesign against a mortal
   pilot) tracked as #3456: b20/b21 measured nine designs but never against a
   pilot that could die twice, so all of it needs re-reading in the new light.
+  Stage 1 measured (2026-11-26, #3456): npm run watchmeasure = the dual sets
+  plus a death taxonomy - 74 % of mortal losses are TERRAIN grazes (48/65 +
+  49/66), enemy proximity the rest. Six look-ahead brake designs (V1-V6, full
+  table on the issue) raise survival to 20/19 of 40 and drive terrain deaths
+  to ~0, but every one breaches a bank/wave/delivery floor: the brake can see
+  terrain, not purpose - flow is the hard half. Stage 2 brief: fresh-facing
+  gate, hover-kill (brake vx inside the 16 px kill band - guns and death
+  share that band), valley-site delivery seats.
 - **CLOSED by #3443** — the smart bomb is in (Jon's #2016 answer A, "port it.
   Smart bomb on the B/secondAction button, 3 per wave"): B vaporizes every
   hostile inside the wrap-aware 1000 px screen window at table value, haulers
