@@ -95,7 +95,12 @@ paddle-hold reads as intent: the table waits with you, then serves.
 `numerals.js` draws the machine's video type: 7-segment score digits (gapped
 bars — no two segments touch) live on the table and inside the MATCH OVER
 card, which is now a solid panel with the table's own net-dash border and
-the final score in the same block face. The attract title is a 5×7 block
+the final score in the same block face. **Honest wrap (#3576):** a score past
+99 cycles 00–99 — never lies by clamping the digits to 99; the alternative
+(clamp-and-flash) was rejected as dishonest. Every path past 99 — FREE at
+large N, a wrap-prone dial — renders the true modulo rather than a cap.
+pongcheck §numerals pins the wrap shape (123 ≡ 23, distinct from 99) and a
+mutant that clamps back to 99 must die. The attract title is a 5×7 block
 P·O·N·G word-mark, fitted by `titleFit` (at iPhone-SE landscape the table is
 ~242px wide — the mark shrinks rather than clipping).
 
@@ -110,15 +115,17 @@ distinct corners, everything inside the viewport.
 ## Verify
 ```
 npm run pongcheck            # attract rule-6 + seedpin + deflection + driver sweep + tiers + serve/voice/numerals
-                             #   + range-knob law + #3584 centre-open zone pins (136 checks)
-npm run pongcheck -- --mutant  # 31 mutants — seedpin/driver/tier/cabinet law, the #3536 lines and the
-                               #   #3565 range trio (cap silent / cap at N+1 / FREE misread as cap), all must die
+                             #   + range-knob law + #3584 centre-open zone pins + #3576 polish pins
+npm run pongcheck -- --mutant  # mutants — seedpin/driver/tier/cabinet law, the #3536 lines,
+                               #   the #3565 range trio (cap silent / cap at N+1 / FREE misread as cap)
+                               #   + the #3576 honest wrap, all must die
 npm run pongcheck -- --mutate  # 5 attract mutants, all must die
 npm run pongdrive            # real Chrome: selector/tap-dial/2P/touch-quit legs + audio-spy (serve clack opens,
                              #   rally pitches vary, walls under every ping, low thud, no mid-rally clack)
                              #   + 667×375 chip-ergonomics legs + RANGE dial thumb/pin/honest-cap legs
-                             #   + #3584 centre-tap-open + dial-column legs (51 checks)
-npm run pongdrive -- --mutant  # 5 mutants: 3 chip + serve-refire + flat-pitch, all must die
+                             #   + #3584 centre-tap-open + dial-column legs + #3576 detent/chip/flash-beat legs
+npm run pongdrive -- --mutant  # mutants: 3 chip + serve-refire + flat-pitch + the #3576 cap-beat/detent wirings,
+                               #   all must die
 npm run watchcheck -- --only pong   # browser pilot: seats, returns balls, steers back (318)
 npm run lint:pong
 ```
@@ -187,8 +194,27 @@ pongcheck §range proves the target binds *exactly* in the shipped physics: at
 range 3 the driver wins **all 40 seeds**, every match ending at exactly 3–<3,
 conceding a pinned **5** points, and never leaving the ball on the table at the
 win (the no-dead-serve law); range 1 closes on the first point across 20 seeds;
-FREE is verified uncapped at 4000 ticks; three range mutants (cap never fires,
-cap fires at N+1, FREE misread as a cap) all die.
+range 5, 7 and 9 each close across their seeds (concede counts pinned: 5 / 31 /
+44); FREE is verified uncapped at 4000 ticks; three range mutants (cap never
+fires, cap fires at N+1, FREE misread as a cap) plus the honest-wrap mutant
+all die.
+
+### The dial's polish (#3576)
+
+The RANGE knob earned its voice. Every turn of the dial answers with a ~5 ms
+**detent pip** (`detentVoice`: 210 Hz / square / vol 0.028 — quieter than the
+wall tick, out of the serve/rally/wall/thud vocabulary), new DEV sfx kind,
+airly one line. The **target chip** renders during play — a small `FIRST TO`
+label and the block-face digit under the numeral band, `#ffd23f`, drawn only
+while `range !== null` (FREE shows nothing: a contract that does not exist is
+not a chip). The **cap beat** is the one chrome moment the match gets: on the
+winning point the card is NOT drawn immediately — the conceded edge blinks a
+net-dash line (`#ffd23f`, the net motif, no new dice) for one beat (36 ticks,
+~0.6 s) while the table holds the dead ball, then the card lands and
+`state.over && flashTicks <= 0` gates it. The win sting still fires at the
+terminal point. pongdrive leg 9 proves the beat in the shipped cabinet —
+play screen alive, conceded edge flashed, chip pixels on the table through
+the beat — plus the detent shape, and pongcheck §range pins the r7/r9 sweeps.
 
 ## Touch quit (#3529)
 
