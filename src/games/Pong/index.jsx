@@ -6,7 +6,7 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { serveBall, paddleStart, tickPong, BASE_SPEED, PADDLE_HEIGHT, DIFFS } from './sim.js'
+import { serveBall, tickPong, BASE_SPEED, PADDLE_HEIGHT, DIFFS } from './sim.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 // PONG (#1473 batch 16) — the Feb port had no terminal, no restart and dice
@@ -81,9 +81,10 @@ const PongGame = () => {
         let isAttractMode = true
         const resetBall = () => {
             state.ball = serveBall(state.rand, state.width, state.height)
-            // Randomize paddle positions (on the run's stream)
-            state.left.y = paddleStart(state.rand, state.height)
-            state.right.y = paddleStart(state.rand, state.height)
+            // #3532 — cabinet power-on: paddles center at match start, and a
+            // score never moves them (the port's scatter dice are gone).
+            state.left.y = (state.height - PADDLE_HEIGHT) / 2
+            state.right.y = (state.height - PADDLE_HEIGHT) / 2
         }
 
         // Fresh match: score zero, stream regenerated honoring ?seed=N.

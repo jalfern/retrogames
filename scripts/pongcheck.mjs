@@ -9,13 +9,16 @@
 // Batch 24 (#1637): the whole tick-rule set lives in sim.js (tickPong), and
 // §driver proves the seat's route — predictive intercept (watchStep) vs the
 // shipped tracker — deterministic, sweeping 40 seeds, reporting the measured
-// floor. Seed 25 is a documented forced loss: the port's post-point paddle
-// scatter plus a steep serve outruns the 6px/tick paddle there for EVERY
-// policy tested (center, ball-track, through-opponent); the machine is not
-// unbeatable, the seed just is.
+// floor. #3532 then restored the cabinet: the post-point paddle scatter and
+// the random hit-spin are gone (strike-position deflection, dice only at
+// serve), seed 25's forced loss fell off with them, and the sweep floor is
+// re-pinned at the measured 40/40. §deflection owns the new law (edge hits
+// steepen, |dy| floor, paddles hold across points, the wall-flip direction
+// guard that stops the deterministic ceiling-park).
 // #3502 — the cabinet AUTO/RANGE switches: §tiers pins the EASY/NORMAL/HARD
-// CPU tiers (measured sweeps 40/39/38) + the human 2P seat, and proves the
-// default pick replays the pre-#3502 physics bit-identical.
+// CPU tiers (measured sweeps 40/40/38) + the human 2P seat, and proves the
+// default pick replays the tier-era physics bit-identical — the trace is
+// re-baselined at the #3532 head (NORMAL itself changed shape there).
 // `--mutate` re-plants the broken behaviours in attract.js; the child MUST die.
 // `--mutant` re-plants pre-port seedpin regressions + driver guttings in
 // sim/index; same rule.
@@ -23,7 +26,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, estWidth } from '../src/games/Pong/attract.js'
-import { serveBall, paddleStart, paddleSpin, predictLand, tickPong, cpuTier, DIFFS, BASE_SPEED, PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_OFFSET, BALL_SIZE } from '../src/games/Pong/sim.js'
+import { serveBall, strikeSpin, SPIN_K, DY_MIN, stepBall, predictLand, tickPong, cpuTier, DIFFS, BASE_SPEED, PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_OFFSET, BALL_SIZE } from '../src/games/Pong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -69,7 +72,7 @@ console.log('seedpin: one stream, honest terminal')
         const out = []
         for (let i = 0; i < n; i++) {
             const b = serveBall(rand, 600, 800)
-            out.push(`${b.dx}|${b.dy.toFixed(6)}|${paddleStart(rand, 800).toFixed(6)}|${paddleStart(rand, 800).toFixed(6)}|${paddleSpin(rand).toFixed(6)}`)
+            out.push(`${b.dx}|${b.dy.toFixed(6)}`)
         }
         return out.join(';')
     }
@@ -82,15 +85,15 @@ console.log('seedpin: one stream, honest terminal')
             const b = serveBall(rand, 600, 800)
             if (Math.abs(b.dx) !== BASE_SPEED) bad++
             if (Math.abs(b.dy) >= BASE_SPEED) bad++
-            const p = paddleStart(rand, 800)
-            if (!(p >= 0 && p <= 800 - PADDLE_HEIGHT)) bad++
-            paddleStart(rand, 800)
-            const sp = paddleSpin(rand)
-            if (!(sp >= -2 && sp <= 2)) bad++
         }
     }
-    ok(bad === 0, 'seeded draws in range: serve speed/angle, paddle starts, spin (12 seeds × 200)', `${bad}`)
-    ok(paddleStart(seedRng(7), 40) >= 0, 'paddleStart survives a table shorter than the paddle')
+    ok(bad === 0, 'seeded serve draws in range: speed + angle (12 seeds × 200)', `${bad}`)
+    // #3532 — the cabinet has exactly two dice: serve direction and angle.
+    // Everything else (deflection) is state, not chance. Counting rand() in
+    // sim.js pins it: the scatter/spin dice may not come back.
+    const simDice = readFileSync('src/games/Pong/sim.js', 'utf8')
+    const streamRolls = (simDice.match(/\brand\(\)/g) || []).length
+    ok(streamRolls === 2, 'sim.js rolls exactly two dice — both in serveBall (#3532)', `${streamRolls}/2`)
     ok(seedFromQuery('?seed=777') === 777, '?seed=N parses for the pin')
 
     const src = readFileSync('src/games/Pong/index.jsx', 'utf8')
@@ -115,13 +118,54 @@ console.log('seedpin: one stream, honest terminal')
     ok(/exposeGame\(\{[\s\S]*?id: 'pong'/.test(src), 'QA contract exposeGame wired')
 }
 
+// --------------------------------------------------------------- deflection ----
+// #3532 — the cabinet law: returns steer by WHERE the ball struck the paddle
+// (edge steepens, center flattens, ±SPIN_K envelope — what the spin dice used
+// to roll, now from state), an |dy| floor ends the converging flat rallies
+// that deadlocked the capped EASY table, scoring never touches the paddles,
+// and the wall-flip is direction-guarded (penetration stays — the ball simply
+// can't park in the ceiling band anymore).
+console.log('deflection: strike-position law (#3532)')
+{
+    ok(strikeSpin(36, 0) === 0, 'a center hit returns flat', `${strikeSpin(36, 0)}`)
+    ok(strikeSpin(4, 0) < 0, 'a hit above center kicks UP', `${strikeSpin(4, 0)}`)
+    ok(strikeSpin(68, 0) > 0, 'a hit below center kicks DOWN', `${strikeSpin(68, 0)}`)
+    ok(strikeSpin(-40, 0) === -SPIN_K && strikeSpin(120, 0) === SPIN_K,
+        'edge kicks clamp at ±SPIN_K — the ±2 envelope the spin die had', `${strikeSpin(-40, 0)}/${strikeSpin(120, 0)}`)
+    const mkHit = (ballY, dy) => ({
+        ball: { x: 30, y: ballY, dx: -4, dy },
+        left: { y: 300, score: 0 }, right: { y: 300, score: 0 },
+        width: 600, height: 800, over: false, watching: false, rand: seedRng(5),
+    })
+    const gTop = mkHit(310, 1)
+    const dyTop0 = gTop.ball.dy
+    tickPong(gTop, null)
+    ok(gTop.ball.dy < dyTop0 - 1, 'end-to-end: an upper-half return steepens UP through tickPong', `${dyTop0} -> ${gTop.ball.dy}`)
+    const gBot = mkHit(370, -1)
+    const dyBot0 = gBot.ball.dy
+    tickPong(gBot, null)
+    ok(gBot.ball.dy > dyBot0 + 1, 'end-to-end: a lower-half return steepens DOWN', `${dyBot0} -> ${gBot.ball.dy}`)
+    const gFlat = mkHit(336, 0.2)
+    tickPong(gFlat, null)
+    ok(Math.abs(gFlat.ball.dy) >= DY_MIN, `a near-flat return keeps the anti-loop floor |dy| ≥ ${DY_MIN}`, `${gFlat.ball.dy}`)
+    const gHold = mkHit(300, 1)
+    gHold.ball = { x: 2, y: 500, dx: -6, dy: 1 }
+    gHold.right.y = 460 // tracker parked inside its dead zone — nothing moves it this tick
+    const holdEv = tickPong(gHold, null)
+    ok(holdEv.scored === 1 && gHold.left.y === 300 && gHold.right.y === 460,
+        'scoring NEVER moves a paddle (the cabinet held them; the port scattered)', `L${gHold.left.y} R${gHold.right.y}`)
+    const gCeil = { x: 300, y: -2, dx: 4, dy: 1 } // just bounced off the ceiling, still in the penetration band
+    const ceilBounced = stepBall(gCeil, 800)
+    ok(!ceilBounced && gCeil.dy === 1, 'the wall-flip guards direction: a penetrating ball keeps climbing (no ceiling-park)', `dy ${gCeil.dy}, bounced ${ceilBounced}`)
+}
+
 // ------------------------------------------------------------------ driver ----
 // #1637 batch 24 — the seat's route, proven through the shipped physics.
-// watchStep (predictive intercept, human paddle speed) vs cpuStep (the same
-// tracker the player faces). The sweep is the number a seat rests on, so it
-// reports its floor honestly: 39 wins in 40 seeds; seed 25 concedes five
-// forced points (post-point paddle scatter + serve angle outruns 6px/tick —
-// measured across center/track/through-opponent policies; none wins it).
+// watchStep (predictive intercept + #3532 edge-aim, human paddle speed) vs
+// cpuStep (the same tracker the player faces). The sweep is the number a
+// seat rests on, so it reports its floor honestly: at the #3532 cabinet head
+// the driver wins ALL 40 seeds (15 points conceded) — the old seed-25 forced
+// loss was a scatter artifact and died with it.
 console.log('driver: the proven route (seat of the WATCH key)')
 {
     const playSeed = (sd, target = 5, cap = 60 * 600) => {
@@ -132,8 +176,8 @@ console.log('driver: the proven route (seat of the WATCH key)')
             width: 600, height: 800, over: false, watching: true, rand,
         }
         gs.ball = serveBall(rand, 600, 800)
-        gs.left.y = paddleStart(rand, 800)
-        gs.right.y = paddleStart(rand, 800)
+        gs.left.y = (800 - PADDLE_HEIGHT) / 2 // #3532: match start centers (cabinet power-on)
+        gs.right.y = (800 - PADDLE_HEIGHT) / 2
         let t = 0
         while (gs.left.score < target && gs.right.score < target && t < cap) { tickPong(gs, null); t++ }
         return { l: gs.left.score, r: gs.right.score, t }
@@ -148,15 +192,30 @@ console.log('driver: the proven route (seat of the WATCH key)')
         con += r.r
         if (r.t > worstT) worstT = r.t
     }
-    ok(wins === 39, 'the driver beats the machine on 39 of 40 seeds (floor pinned)',
+    ok(wins === 40, 'the driver beats the machine on ALL 40 seeds (floor pinned at the cabinet head)',
         `wins ${wins}, losses ${losses.join(' ')}`)
-    ok(losses.length === 1 && losses[0].startsWith('25:'),
-        'the one loss is the documented forced seed 25, nothing else fell', losses.join(' '))
-    ok(con <= 40, 'the driver never gets outscored across the sweep', `${con} points conceded`)
+    ok(losses.length === 0, 'no forced losses remain — seed 25 fell off with the scatter (#3532)', losses.join(' '))
+    ok(con === 15, 'the driver concedes exactly the measured 15 points across the sweep', `${con} points conceded`)
     ok(worstT < 60 * 600, 'no rally runs out the hour cap (no ping-pong deadlock)', `${worstT}t`)
     const d1 = [], d2 = []
     for (let i = 0; i < 15; i++) { d1.push(JSON.stringify(playSeed(424242 + i))); d2.push(JSON.stringify(playSeed(424242 + i))) }
     ok(d1.join('|') === d2.join('|'), 'same seed → identical match, driver side included')
+    // #3532 — the seat must actually AIM now: with strike deflection, a dead-
+    // center return is a flat gift. Count how the driver strikes across the
+    // sweep; the majority of returns must land outside the middle band.
+    let steepL = 0, totalL = 0
+    for (let s = 1; s <= SEEDS; s++) {
+        const rand = seedRng(s * 7919 + 13)
+        const gs = { ball: { x: 0, y: 0, dx: BASE_SPEED, dy: BASE_SPEED }, left: { y: (800 - PADDLE_HEIGHT) / 2, score: 0 }, right: { y: (800 - PADDLE_HEIGHT) / 2, score: 0 }, width: 600, height: 800, over: false, watching: true, rand }
+        gs.ball = serveBall(rand, 600, 800)
+        for (let t = 0; t < 60 * 600 && gs.left.score < 5 && gs.right.score < 5; t++) {
+            if (tickPong(gs, null).hitL) {
+                totalL++
+                if (Math.abs((gs.ball.y + BALL_SIZE / 2) - (gs.left.y + PADDLE_HEIGHT / 2)) >= 0.4 * (PADDLE_HEIGHT / 2)) steepL++
+            }
+        }
+    }
+    ok(steepL * 2 > totalL, 'the seat aims edge strikes — over half its returns hit off-center (#3532)', `${steepL}/${totalL}`)
     // the driver's edge is prediction: aim must match the TRUE folded path
     // (triangle-wave mirror at both walls — an independent arithmetic, not a
     // replay of sim.js, so a predictor that forgets the walls disagrees here).
@@ -171,8 +230,25 @@ console.log('driver: the proven route (seat of the WATCH key)')
     })()
     ok(land === fold, 'predictLand replays the wall mirrors exactly (folded-path cross-check)',
         `land ${land} vs folded ${fold}`)
+    // #3532 — the ideal fold only proves the clean-crossing case. The other
+    // half of the law: the predictor matches the SHIPPED step physics tick
+    // for tick, including a flight that starts inside the penetration band
+    // (the guarded-flip path). Without this, an unguarded predictor could
+    // survive every check while disagreeing with the table mid-rally.
+    const truthLand = (b0, h) => {
+        const b = { ...b0 }
+        let guard = 0
+        while (b.x > PADDLE_OFFSET + PADDLE_WIDTH && guard++ < 10000) stepBall(b, h)
+        return b.y + BALL_SIZE / 2
+    }
+    ok(predictLand(appr, 800) === truthLand(appr, 800),
+        'predictLand matches stepBall tick-for-tick on a clean flight', `${predictLand(appr, 800)} vs ${truthLand(appr, 800)}`)
+    const pen = { x: 580, y: -2, dx: -4, dy: 1 } // rising, already through the ceiling line
+    ok(predictLand(pen, 800) === truthLand(pen, 800),
+        'and through the penetration band (the guarded flip is shared, not just claimed)',
+        `${predictLand(pen, 800)} vs ${truthLand(pen, 800)}`)
     ok(predictLand({ x: 300, y: 100, dx: 5, dy: -7 }, 800) === null,
-        'predictLand is honest about a ball heading away (spin is unknowable)')
+        'predictLand is honest about a ball heading away (the opponent strike offset is unknowable)')
     // seat + chrome source pins: the seat wired in index, advertised in the registry
     const src = readFileSync('src/games/Pong/index.jsx', 'utf8')
     ok(/isWatchKey\(e\)/.test(src) && /if \(state\.watching && isTakeoverKey\(e\)\) release\(\)/.test(src),
@@ -188,9 +264,12 @@ console.log('driver: the proven route (seat of the WATCH key)')
 
 // ------------------------------------------------------------------- tiers ----
 // #3502 — the cabinet AUTO/RANGE switches: EASY / NORMAL / HARD / 2P.
-// NORMAL must replay the shipped physics bit-identical (seedpin + the 39/40
-// floor above run under that default), EASY is the Easy RANGE (slower,
-// sloppier tracker + a 5.5 horizontal ceiling), HARD the Difficult table.
+// NORMAL is the default pick and falls back for every diff-less replay;
+// EASY is the Easy RANGE (slower, sloppier tracker + a 5.5 horizontal
+// ceiling), HARD the Difficult table. #3502's promise was "diff-less ≡ the
+// shipped physics, bit-identical"; #3532 corrected that physics (cabinet
+// serve), so this trace is RE-BASELINED at the new head — it still proves
+// the tier default touches nothing, now against the corrected table.
 // Every number below is MEASURED, then pinned; ordering law: the driver's
 // wins fall monotonically EASY ≥ NORMAL ≥ HARD.
 console.log('tiers: the cabinet switches (#3502)')
@@ -210,8 +289,8 @@ console.log('tiers: the cabinet switches (#3502)')
             width: 600, height: 800, over: false, watching: true, rand, diff,
         }
         gs.ball = serveBall(rand, 600, 800)
-        gs.left.y = paddleStart(rand, 800)
-        gs.right.y = paddleStart(rand, 800)
+        gs.left.y = (800 - PADDLE_HEIGHT) / 2 // #3532 centers (cabinet power-on)
+        gs.right.y = (800 - PADDLE_HEIGHT) / 2
         let t = 0
         let maxDx = 0
         while (gs.left.score < target && gs.right.score < target && t < cap) {
@@ -232,25 +311,25 @@ console.log('tiers: the cabinet switches (#3502)')
         }
         return { wins, con, losses, maxDx }
     }
-    const easy = sweep('EASY'), hard = sweep('HARD')
+    const easy = sweep('EASY'), normalM = sweep(undefined), hard = sweep('HARD')
     ok(easy.wins === 40, 'the driver beats the EASY table on all 40 seeds (measured floor pinned)',
         `wins ${easy.wins}, losses ${easy.losses.join(' ') || '-'}`)
-    ok(easy.con === 3, 'EASY concedes exactly the measured 3 points', `${easy.con}`)
-    ok(hard.wins === 38 && hard.losses.length === 2 && hard.losses[0].startsWith('13:') && hard.losses[1].startsWith('29:'),
-        'the driver beats HARD on 38 of 40 — seeds 13 and 25 fall (measured, pinned)',
+    ok(easy.con === 0, 'EASY concedes exactly the measured 0 points (#3532 re-pin)', `${easy.con}`)
+    ok(normalM.wins === 40, 'NORMAL — the default pick — sweeps clean at the cabinet head', `wins ${normalM.wins}`)
+    ok(hard.wins === 38 && hard.losses.length === 2 && hard.losses[0].startsWith('14:') && hard.losses[1].startsWith('24:'),
+        'the driver beats HARD on 38 of 40 — seeds 14 and 24 fall (measured, pinned; the old 13/29 pair was scatter-drawn)',
         `wins ${hard.wins}, losses ${hard.losses.join(' ')}`)
-    ok(easy.wins >= 39 && 39 >= hard.wins, 'ordering law: the driver wins at least as much on EASY as NORMAL as HARD',
-        `${easy.wins}/${hard.wins}`)
+    ok(easy.wins >= normalM.wins && normalM.wins >= hard.wins, 'ordering law: the driver wins at least as much on EASY as NORMAL as HARD',
+        `${easy.wins}/${normalM.wins}/${hard.wins}`)
     ok(easy.maxDx <= 5.5 + 1e-9, 'the Easy RANGE ceiling holds every tick of the 40-seed sweep', `${easy.maxDx.toFixed(4)}`)
     ok(Math.abs(easy.maxDx - 5.5) < 1e-9, 'and it actually engages (max |dx| lands on the ceiling)', `${easy.maxDx}`)
-    const normalM = sweep(undefined)
     ok(normalM.maxDx > 9, 'NORMAL/HARD stay uncapped (the ceiling is EASY-only)', `${normalM.maxDx.toFixed(4)}`)
     const trace = (diff) => {
         const rand = seedRng(90210)
         const gs = { ball: { x: 0, y: 0, dx: BASE_SPEED, dy: BASE_SPEED }, left: { y: 0, score: 0 }, right: { y: 0, score: 0 }, width: 600, height: 800, over: false, watching: true, rand, diff }
         gs.ball = serveBall(rand, 600, 800)
-        gs.left.y = paddleStart(rand, 800)
-        gs.right.y = paddleStart(rand, 800)
+        gs.left.y = (800 - PADDLE_HEIGHT) / 2 // #3532 centers (cabinet power-on)
+        gs.right.y = (800 - PADDLE_HEIGHT) / 2
         const out = []
         for (let t = 0; t < 3000; t++) {
             tickPong(gs, null)
@@ -324,7 +403,7 @@ if (process.argv.includes('--mutant')) {
             `        const act = null`],
         ['prediction forgets the walls (straight-line lie)', S,
             `        y += dy
-        if (y <= 0 || y + BALL_SIZE >= height) dy *= -1
+        if ((y <= 0 && dy < 0) || (y + BALL_SIZE >= height && dy > 0)) dy *= -1 // the same guarded flip — replay it exactly or the answer lies
     }`,
             `        y += dy
     }`],
@@ -334,6 +413,34 @@ if (process.argv.includes('--mutant')) {
         ['a steer no longer takes the wheel back', I,
             `            if (state.watching && isTakeoverKey(e)) release()`,
             `            if (false && state.watching && isTakeoverKey(e)) release()`],
+        // #3532 cabinet-law anchors — where the scatter/spin dice used to be.
+        // The regressions they guard (re-planted dice, flat/steer-blind returns,
+        // ceiling-park, deadlocks) must die with the law pinned.
+        ['paddles scatter again after a point', S,
+            `        gs.right.score++
+        gs.ball = serveBall(gs.rand, gs.width, gs.height)`,
+            `        gs.right.score++
+        gs.ball = serveBall(gs.rand, gs.width, gs.height)
+        gs.left.y = gs.rand() * (gs.height - PADDLE_HEIGHT)
+        gs.right.y = gs.rand() * (gs.height - PADDLE_HEIGHT)`],
+        ['deflection ignores strike position (flat returns)', S,
+            `    ball.dy += strikeSpin(ball.y, paddleY)`,
+            `    ball.dy += 0`],
+        ['strike deflection sign-flipped (edges steer the wrong way)', S,
+            `    ball.dy += strikeSpin(ball.y, paddleY)`,
+            `    ball.dy += -strikeSpin(ball.y, paddleY)`],
+        ['the anti-loop floor is gone (deadlock reborn)', S,
+            `    if (Math.abs(ball.dy) < DY_MIN) ball.dy = (ball.dy < 0 ? -1 : 1) * DY_MIN`,
+            `    // floor removed`],
+        ['the wall-flip guard is gone (ceiling-park reborn)', S,
+            `    if ((ball.y <= 0 && ball.dy < 0) || (ball.y + BALL_SIZE >= height && ball.dy > 0)) {`,
+            `    if (ball.y <= 0 || ball.y + BALL_SIZE >= height) {`],
+        ['prediction re-flips inside the wall (unguarded vs physics)', S,
+            `        if ((y <= 0 && dy < 0) || (y + BALL_SIZE >= height && dy > 0)) dy *= -1 // the same guarded flip — replay it exactly or the answer lies`,
+            `        if (y <= 0 || y + BALL_SIZE >= height) dy *= -1`],
+        ['the seat stops aiming (dead-center flat gifts)', S,
+            `const AIM_RATIO = 0.75 // fraction of paddle half-height aimed (edge strike)`,
+            `const AIM_RATIO = 0 // fraction of paddle half-height aimed (edge strike)`],
         // #3502 tier guttings — each must break a pinned tiers gate.
         ['tier select is dead: every pick runs the NORMAL table', S,
             `export const cpuTier = (diff) => CPU_TIERS[diff] || CPU_TIERS.NORMAL`,
