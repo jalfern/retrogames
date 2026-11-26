@@ -19,6 +19,24 @@ export const PADDLE_OFFSET = 20
 export const BASE_SPEED = 4
 export const AI_SPEED = 3.5
 
+// #3502 — the cabinet's switches, restored. The 1972 coin door carried an
+// AUTO/HUMAN selector for the machine paddle and a RANGE switch labeled
+// Easy/Difficult. Here that becomes four attract picks: three CPU tiers plus
+// TWO (right paddle = human, desktop W/S — the multiplayer ruling: CPU is
+// the default, 2P is a keyboard option). NORMAL is the shipped physics
+// VERBATIM (speed 3.5, zone ±10, no ceiling) so the #1473 seedpin and the
+// #1637 39/40 driver floor replay bit-identical under the default pick.
+// EASY is the Easy RANGE: the horizontal speed ceiling (5.5) plus a slower,
+// sloppier tracker; HARD is the Difficult table — faster, tighter machine.
+export const DIFFS = ['EASY', 'NORMAL', 'HARD', 'TWO']
+const CPU_TIERS = {
+    EASY: { speed: 2.2, zone: 16, cap: 5.5 },
+    NORMAL: { speed: AI_SPEED, zone: 10, cap: Infinity },
+    HARD: { speed: 4.5, zone: 5, cap: Infinity },
+}
+// undefined/unknown (every pre-#3502 gs, every replay) → NORMAL, exactly.
+export const cpuTier = (diff) => CPU_TIERS[diff] || CPU_TIERS.NORMAL
+
 // Serve from the center: direction coin-flip + vertical angle, both on the stream.
 export function serveBall(rand, width, height) {
     return {
@@ -61,11 +79,13 @@ export function stepBall(ball, height) {
 // The machine's paddle (right side): the dead-zone tracker the Feb port
 // shipped and the 1972 circuit roughly behaved like — chase the ball's top
 // edge, ±10px dead zone, capped at AI_SPEED. Lifted into sim.js (#1637 b24)
-// so the harness faces the SAME opponent the player does.
-export function cpuStep(paddle, ball, height) {
+// so the harness faces the SAME opponent the player does. #3502: the zone
+// and speed come from the selected CPU tier; default (no cfg) is NORMAL.
+export function cpuStep(paddle, ball, height, cfg) {
+    const { speed, zone } = cfg || CPU_TIERS.NORMAL
     const center = paddle.y + PADDLE_HEIGHT / 2
-    if (center < ball.y - 10) paddle.y += AI_SPEED
-    else if (center > ball.y + 10) paddle.y -= AI_SPEED
+    if (center < ball.y - zone) paddle.y += speed
+    else if (center > ball.y + zone) paddle.y -= speed
     paddle.y = Math.max(0, Math.min(height - PADDLE_HEIGHT, paddle.y))
 }
 
@@ -125,7 +145,15 @@ export function tickPong(gs, input) {
         if (input?.up) gs.left.y -= PAD_SPEED
         if (input?.down) gs.left.y += PAD_SPEED
     }
-    cpuStep(gs.right, gs.ball, gs.height)
+    // #3502 — the AUTO/HUMAN switch: TWO seats a human on W/S (the keyboard
+    // 2P option; no CPU). Every other diff runs the tier's tracker.
+    const tier = cpuTier(gs.diff)
+    if (gs.diff === 'TWO') {
+        if (input?.up2) gs.right.y -= PAD_SPEED
+        if (input?.down2) gs.right.y += PAD_SPEED
+    } else {
+        cpuStep(gs.right, gs.ball, gs.height, tier)
+    }
     gs.left.y = Math.max(0, Math.min(gs.height - PADDLE_HEIGHT, gs.left.y))
     gs.right.y = Math.max(0, Math.min(gs.height - PADDLE_HEIGHT, gs.right.y))
 
@@ -133,6 +161,7 @@ export function tickPong(gs, input) {
     if (b.x <= PADDLE_OFFSET + PADDLE_WIDTH && b.x >= PADDLE_OFFSET &&
         b.y + BALL_SIZE >= gs.left.y && b.y <= gs.left.y + PADDLE_HEIGHT) {
         b.dx *= -1.05 // Slight speed up
+        if (Math.abs(b.dx) > tier.cap) b.dx = Math.sign(b.dx) * tier.cap // Easy RANGE ceiling (#3502)
         b.x = PADDLE_OFFSET + PADDLE_WIDTH + 1 // Push out to avoid sticking
         b.dy += paddleSpin(gs.rand) // seeded anti-loop spin
         ev.hitL = true
@@ -141,6 +170,7 @@ export function tickPong(gs, input) {
         b.x + BALL_SIZE <= gs.width - PADDLE_OFFSET &&
         b.y + BALL_SIZE >= gs.right.y && b.y <= gs.right.y + PADDLE_HEIGHT) {
         b.dx *= -1.05
+        if (Math.abs(b.dx) > tier.cap) b.dx = Math.sign(b.dx) * tier.cap // Easy RANGE ceiling (#3502)
         b.x = gs.width - PADDLE_OFFSET - PADDLE_WIDTH - BALL_SIZE - 1
         b.dy += paddleSpin(gs.rand)
         ev.hitR = true

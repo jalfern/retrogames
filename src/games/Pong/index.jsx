@@ -6,7 +6,7 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { serveBall, paddleStart, tickPong, BASE_SPEED, PADDLE_HEIGHT } from './sim.js'
+import { serveBall, paddleStart, tickPong, BASE_SPEED, PADDLE_HEIGHT, DIFFS } from './sim.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 // PONG (#1473 batch 16) — the Feb port had no terminal, no restart and dice
@@ -57,6 +57,16 @@ const PongGame = () => {
         // human start; ?seed=N pins it (the reported seed replays the match).
         let seed = Math.floor(Math.random() * 1000000)
         state.rand = seedRng(seed)
+        // #3502 — the cabinet switches on the attract screen: LEFT/RIGHT
+        // cycles EASY · NORMAL · HARD · 2P; ?diff=N pins the pick for QA.
+        // NORMAL (index 1) is the shipped physics — default untouched.
+        let diff = 1
+        const readDiffPin = () => {
+            const d = Number(new URLSearchParams(window.location.search).get('diff'))
+            if (Number.isInteger(d) && d >= 1 && d <= DIFFS.length) diff = d - 1
+        }
+        readDiffPin()
+        state.diff = DIFFS[diff]
         let tickN = 0
         let hitN = 0
         let isAttractMode = true
@@ -71,6 +81,8 @@ const PongGame = () => {
         const startRun = () => {
             seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
             state.rand = seedRng(seed)
+            readDiffPin() // #3502: the pin wins over any attract cycling
+            state.diff = DIFFS[diff]
             state.left.score = 0
             state.right.score = 0
             state.over = false
@@ -102,7 +114,7 @@ const PongGame = () => {
 
         // INPUT
         let attractTick = 0
-        const keys = { ArrowUp: false, ArrowDown: false }
+        const keys = { ArrowUp: false, ArrowDown: false, KeyW: false, KeyS: false }
 
         // #1637 b24 — the seat. watchStep is reactive against live state
         // (Rogue law), so the seat is honest from any rally state: seat
@@ -135,7 +147,17 @@ const PongGame = () => {
                 return
             }
             if (state.over) { startRun(); return }
-            if (isAttractMode) { startRun(); return }
+            if (isAttractMode) {
+                // #3502 — the cabinet selector: LEFT/RIGHT cycles the pick on
+                // attract (silent, like the coin-door switches); any other key
+                // starts the match with the pick standing.
+                if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+                    diff = (diff + (e.code === 'ArrowRight' ? 1 : DIFFS.length - 1)) % DIFFS.length
+                    state.diff = DIFFS[diff]
+                    return
+                }
+                startRun(); return
+            }
             // play-to-quit terminal (#1473): the machine had no cap, so a quit
             // press ends the match honestly and the score stays visible.
             if (e.code === 'KeyQ' || e.code === 'Escape') {
@@ -170,7 +192,7 @@ const PongGame = () => {
         const update = () => {
             tickN++
             if (state.over) return
-            const ev = tickPong(state, { up: keys.ArrowUp, down: keys.ArrowDown })
+            const ev = tickPong(state, { up: keys.ArrowUp, down: keys.ArrowDown, up2: keys.KeyW, down2: keys.KeyS })
             if (ev.wall) audioController.playTone(300, 0.05, 'square')
             if (ev.hitL || ev.hitR) audioController.playTone(400, 0.1, 'square')
             if (ev.scored) audioController.playTone(200, 0.2, 'sawtooth')
@@ -216,12 +238,26 @@ const PongGame = () => {
                 ctx.font = '11px monospace'
                 ctx.fillStyle = '#7dd39a'
                 ctx.fillText(WATCH_ATTRACT_HINT, state.width / 2, state.height * 0.66)
+                // #3502 — the AUTO/RANGE selector, drawn here for the same
+                // reason: the rule-6 audit owns attract.js, this is chrome.
+                ctx.font = '11px monospace'
+                ctx.fillStyle = '#9aa4b2'
+                ctx.fillText('SELECT GAME', state.width / 2, state.height * 0.50)
+                ctx.font = '13px monospace'
+                ctx.fillStyle = '#ffd23f'
+                ctx.fillText(`< ${DIFFS[diff]} >`, state.width / 2, state.height * 0.535)
             } else {
                 // Game Score
                 ctx.font = '44px monospace'
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.42)'
                 ctx.fillText(state.left.score, state.width / 4, 50)
                 ctx.fillText(state.right.score, 3 * state.width / 4, 50)
+                if (state.diff === 'TWO') {
+                    // #3502 — the second seat needs to know its keys.
+                    ctx.font = '10px monospace'
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
+                    ctx.fillText('2P — LEFT: ARROWS   RIGHT: W/S', state.width / 2, state.height * 0.92)
+                }
                 if (state.over && Math.floor(tickN / 30) % 2 === 0) {
                     ctx.font = '16px monospace'
                     ctx.fillStyle = '#ffffff'
@@ -283,6 +319,7 @@ const PongGame = () => {
                 opp: state.right.score,
                 ballX: Math.round(state.ball.x),
                 ballY: Math.round(state.ball.y),
+                diff: DIFFS[diff],
             }),
             canvas: () => canvas,
             // snapshot/restore omitted: the seeded rand closure cannot JSON
@@ -306,13 +343,15 @@ const PongGame = () => {
                     leftY: Math.round(state.left.y),
                     rightY: Math.round(state.right.y),
                     dl: Math.round(Math.abs(state.left.y + PADDLE_HEIGHT / 2 - (state.ball.y + 4))),
+                    diff: DIFFS[diff],
                 }),
+                setDiff: (n) => { diff = ((n % DIFFS.length) + DIFFS.length) % DIFFS.length; state.diff = DIFFS[diff] },
             }
         }
 
         // production report carries the seed (#1473)
         exposeFeedbackState(() => ({
-            tick: tickN, score: state.left.score, done: state.over, seed: seed, opp: state.right.score,
+            tick: tickN, score: state.left.score, done: state.over, seed: seed, opp: state.right.score, diff: DIFFS[diff],
         }))
 
         return () => {

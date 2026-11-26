@@ -56,23 +56,48 @@ physics, not a paraphrase.
 
 ## Verify
 ```
-npm run pongcheck            # attract rule-6 + seedpin law + driver sweep (43 checks)
-npm run pongcheck -- --mutant  # 9 seedpin/driver mutants (incl. walls-pulled,
-                               #   sign-flip, seat-poses), all must die
+npm run pongcheck            # attract rule-6 + seedpin law + driver sweep + #3502 tiers (66 checks)
+npm run pongcheck -- --mutant  # 13 seedpin/driver/tier mutants (incl. walls-pulled,
+                               #   sign-flip, seat-poses, dead-select, dead-ceiling, dead-2P), all must die
 npm run pongcheck -- --mutate  # 5 attract mutants, all must die
+npm run pongdrive            # real Chrome, real keys: selector cycles, pick starts, W/S 2P legs (18 checks)
 npm run watchcheck -- --only pong   # browser pilot: seats, returns balls, steers back
 npm run lint:pong
 ```
 DEV probes: `__pongTest` — `watching / probe (tick,hits,scores,paddles) / watchSfx / start`.
 
+## The cabinet switches (#3502)
+
+The 1972 coin door had an AUTO/HUMAN selector for the machine paddle and a
+RANGE switch labeled Easy/Difficult. Attract now carries that as a real pick:
+LEFT/RIGHT cycles `EASY · NORMAL · HARD · 2P`, any other key or a tap starts
+with the pick standing, and `?diff=N` pins it (1–4). `NORMAL` is the shipped
+physics VERBATIM — pongcheck traces a 3000-tick match at seed 90210
+bit-identical against a pre-#3502 (diff-less) replay, so every existing
+proof (seedpin, 39/40 driver floor) runs under the default untouched.
+
+- `EASY` — the Easy RANGE: tracker 2.2 px/tick, ±16 dead zone, and a 5.5
+  ceiling on horizontal speed. Measured: the driver sweeps **40/40** on EASY
+  (seed 25 gets humane there — the ceiling slows the very returns that beat
+  it on NORMAL) and the ceiling engages every sweep run (max |dx| lands on
+  it exactly).
+- `HARD` — the Difficult table: tracker 4.5 px/tick, ±5 dead zone. Measured:
+  driver **38/40**, seeds 13 and 25 fall (both pinned, honest).
+- `2P` — AUTO off: no CPU at all, W/S drive the right paddle at PAD_SPEED
+  (desktop keyboard option per the multiplayer ruling; the pad stays single
+  seat, CPU remains the default). The ball rules under 2P are NORMAL.
+
+Fidelity notes: the cabinet's DIFFICULT range raised the ball's *ceiling*;
+this port already accelerates uncapped on NORMAL, so HARD sharpens the
+tracker instead and no tier lowers the ceiling below EASY's. The two switches
+collapse into one selector (four picks) because the port ships one knob.
+
 ## Honest gaps
-- AI opponent is a simple tracker; the original's right paddle was human
-  (2-player) or a much later silicon. No difficulty tiers (the driver plays
-  one speed — the human speed — by design of the proof).
-- Seed 25 is unbeatable against the machine because of the ported paddle
-  scatter after every point (see the driver section). Removing the scatter
-  would be more faithful to the cabinet but re-litigates the #1473 seedpin —
-  deliberately not touched here.
+- Seed 25 is unbeatable on NORMAL against the machine because of the ported
+  paddle scatter after every point (see the driver section). Removing the
+  scatter would be more faithful to the cabinet but re-litigates the #1473
+  seedpin — deliberately not touched here. (EASY is where a beginner can
+  actually win it.)
 - No selectable max-score knob (the machine's RANGE switch) — quit is the
   terminal by design; a selectable cap would be a feature, not a restoration.
 - Touch: pad arrows only; no on-screen quit (desktop `q`/Escape).

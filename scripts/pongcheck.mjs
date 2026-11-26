@@ -13,6 +13,9 @@
 // scatter plus a steep serve outruns the 6px/tick paddle there for EVERY
 // policy tested (center, ball-track, through-opponent); the machine is not
 // unbeatable, the seed just is.
+// #3502 — the cabinet AUTO/RANGE switches: §tiers pins the EASY/NORMAL/HARD
+// CPU tiers (measured sweeps 40/39/38) + the human 2P seat, and proves the
+// default pick replays the pre-#3502 physics bit-identical.
 // `--mutate` re-plants the broken behaviours in attract.js; the child MUST die.
 // `--mutant` re-plants pre-port seedpin regressions + driver guttings in
 // sim/index; same rule.
@@ -20,7 +23,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, estWidth } from '../src/games/Pong/attract.js'
-import { serveBall, paddleStart, paddleSpin, predictLand, tickPong, BASE_SPEED, PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_OFFSET, BALL_SIZE } from '../src/games/Pong/sim.js'
+import { serveBall, paddleStart, paddleSpin, predictLand, tickPong, cpuTier, DIFFS, BASE_SPEED, PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_OFFSET, BALL_SIZE } from '../src/games/Pong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -183,6 +186,110 @@ console.log('driver: the proven route (seat of the WATCH key)')
     ok(/path: '\/pong'[\s\S]{0,700}WATCH_HELP/.test(reg), 'the registry advertises WATCH for PONG')
 }
 
+// ------------------------------------------------------------------- tiers ----
+// #3502 — the cabinet AUTO/RANGE switches: EASY / NORMAL / HARD / 2P.
+// NORMAL must replay the shipped physics bit-identical (seedpin + the 39/40
+// floor above run under that default), EASY is the Easy RANGE (slower,
+// sloppier tracker + a 5.5 horizontal ceiling), HARD the Difficult table.
+// Every number below is MEASURED, then pinned; ordering law: the driver's
+// wins fall monotonically EASY ≥ NORMAL ≥ HARD.
+console.log('tiers: the cabinet switches (#3502)')
+{
+    const E = cpuTier('EASY'), N = cpuTier('NORMAL'), H = cpuTier('HARD')
+    ok(DIFFS.join(',') === 'EASY,NORMAL,HARD,TWO', 'the pick list is EASY · NORMAL · HARD · 2P')
+    ok(E.speed === 2.2 && E.zone === 16 && E.cap === 5.5, 'EASY: 2.2 px/tick, ±16 dead zone, 5.5 ceiling', JSON.stringify(E))
+    ok(N.speed === 3.5 && N.zone === 10 && N.cap === Infinity, 'NORMAL: the shipped table verbatim (3.5, ±10, uncapped)', JSON.stringify(N))
+    ok(H.speed === 4.5 && H.zone === 5 && H.cap === Infinity, 'HARD: 4.5 px/tick, ±5 dead zone, uncapped', JSON.stringify(H))
+    ok(cpuTier(undefined) === N && cpuTier('TWO') === N && cpuTier('nonsense') === N, 'unknown/undefined diff falls to NORMAL (every pre-#3502 replay)')
+
+    const playSeed = (sd, diff, target = 5, cap = 60 * 600) => {
+        const rand = seedRng(sd)
+        const gs = {
+            ball: { x: 0, y: 0, dx: BASE_SPEED, dy: BASE_SPEED },
+            left: { y: 0, score: 0 }, right: { y: 0, score: 0 },
+            width: 600, height: 800, over: false, watching: true, rand, diff,
+        }
+        gs.ball = serveBall(rand, 600, 800)
+        gs.left.y = paddleStart(rand, 800)
+        gs.right.y = paddleStart(rand, 800)
+        let t = 0
+        let maxDx = 0
+        while (gs.left.score < target && gs.right.score < target && t < cap) {
+            tickPong(gs, null); t++
+            if (Math.abs(gs.ball.dx) > maxDx) maxDx = Math.abs(gs.ball.dx)
+        }
+        return { l: gs.left.score, r: gs.right.score, t, maxDx }
+    }
+    const sweep = (diff) => {
+        let wins = 0, con = 0, maxDx = 0
+        const losses = []
+        for (let s = 1; s <= 40; s++) {
+            const r = playSeed(s * 7919 + 13, diff)
+            if (r.l > r.r) wins++
+            else losses.push(`${s}:${r.l}-${r.r}`)
+            con += r.r
+            if (r.maxDx > maxDx) maxDx = r.maxDx
+        }
+        return { wins, con, losses, maxDx }
+    }
+    const easy = sweep('EASY'), hard = sweep('HARD')
+    ok(easy.wins === 40, 'the driver beats the EASY table on all 40 seeds (measured floor pinned)',
+        `wins ${easy.wins}, losses ${easy.losses.join(' ') || '-'}`)
+    ok(easy.con === 3, 'EASY concedes exactly the measured 3 points', `${easy.con}`)
+    ok(hard.wins === 38 && hard.losses.length === 2 && hard.losses[0].startsWith('13:') && hard.losses[1].startsWith('29:'),
+        'the driver beats HARD on 38 of 40 — seeds 13 and 25 fall (measured, pinned)',
+        `wins ${hard.wins}, losses ${hard.losses.join(' ')}`)
+    ok(easy.wins >= 39 && 39 >= hard.wins, 'ordering law: the driver wins at least as much on EASY as NORMAL as HARD',
+        `${easy.wins}/${hard.wins}`)
+    ok(easy.maxDx <= 5.5 + 1e-9, 'the Easy RANGE ceiling holds every tick of the 40-seed sweep', `${easy.maxDx.toFixed(4)}`)
+    ok(Math.abs(easy.maxDx - 5.5) < 1e-9, 'and it actually engages (max |dx| lands on the ceiling)', `${easy.maxDx}`)
+    const normalM = sweep(undefined)
+    ok(normalM.maxDx > 9, 'NORMAL/HARD stay uncapped (the ceiling is EASY-only)', `${normalM.maxDx.toFixed(4)}`)
+    const trace = (diff) => {
+        const rand = seedRng(90210)
+        const gs = { ball: { x: 0, y: 0, dx: BASE_SPEED, dy: BASE_SPEED }, left: { y: 0, score: 0 }, right: { y: 0, score: 0 }, width: 600, height: 800, over: false, watching: true, rand, diff }
+        gs.ball = serveBall(rand, 600, 800)
+        gs.left.y = paddleStart(rand, 800)
+        gs.right.y = paddleStart(rand, 800)
+        const out = []
+        for (let t = 0; t < 3000; t++) {
+            tickPong(gs, null)
+            out.push(`${gs.ball.x.toFixed(9)}|${gs.ball.y.toFixed(9)}|${gs.ball.dx.toFixed(9)}|${gs.right.y.toFixed(9)}`)
+        }
+        return out.join(';')
+    }
+    ok(trace(undefined) === trace('NORMAL'), 'diff-less replays and NORMAL are bit-identical (3000-tick trace, seed 90210)')
+    ok(JSON.stringify(sweep('HARD')) === JSON.stringify(sweep('HARD')) &&
+        JSON.stringify(easy) === JSON.stringify(sweep('EASY')), 'tier sweeps are deterministic (seeded, twice identical)')
+
+    // 2P — AUTO off: no input, the right paddle never moves; W/S drive it.
+    const mkTwo = () => ({
+        ball: { x: 300, y: 400, dx: BASE_SPEED, dy: 1 },
+        left: { y: 0, score: 0 }, right: { y: 400, score: 0 },
+        width: 600, height: 800, over: false, watching: false, rand: seedRng(777), diff: 'TWO',
+    })
+    const gs2 = mkTwo()
+    for (let t = 0; t < 120; t++) tickPong(gs2, null)
+    ok(gs2.right.y === 400, '2P: the right paddle is inert with no player (the AUTO switch is off)', `${gs2.right.y}`)
+    const gs3 = mkTwo()
+    tickPong(gs3, { up2: true })
+    const afterUp = gs3.right.y
+    ok(afterUp === 400 - 6, '2P: W drives the right paddle at PAD_SPEED', `${afterUp}`)
+    tickPong(gs3, { down2: true })
+    ok(gs3.right.y === afterUp + 6, '2P: S drives it back', `${gs3.right.y}`)
+
+    // shell wiring pins
+    const src = readFileSync('src/games/Pong/index.jsx', 'utf8')
+    ok(/ArrowLeft' \|\| e\.code === 'ArrowRight/.test(src) && /diff = \(diff \+/.test(src),
+        'attract LEFT/RIGHT cycles the pick (and is the only attract key that does not start)')
+    ok(/get\('diff'\)/.test(src) && /diff = d - 1/.test(src), '?diff=N pins the pick for QA')
+    ok(/up2: keys\.KeyW, down2: keys\.KeyS/.test(src), 'W/S reach the sim as player two')
+    ok(/SELECT GAME/.test(src) && /DIFFS\[diff\]/.test(src), 'the attract screen shows the pick (drawn in the shell, rule-6 audit untouched)')
+    ok(/diff: DIFFS\[diff\]/.test(src), 'the report carries the pick')
+    const reg = readFileSync('src/config/games.js', 'utf8')
+    ok(/Left\/Right on attract: pick EASY \/ NORMAL \/ HARD \/ 2P/.test(reg), 'the registry teaches the selector')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -222,6 +329,21 @@ if (process.argv.includes('--mutant')) {
         ['a steer no longer takes the wheel back', I,
             `            if (state.watching && isTakeoverKey(e)) release()`,
             `            if (false && state.watching && isTakeoverKey(e)) release()`],
+        // #3502 tier guttings — each must break a pinned tiers gate.
+        ['tier select is dead: every pick runs the NORMAL table', S,
+            `export const cpuTier = (diff) => CPU_TIERS[diff] || CPU_TIERS.NORMAL`,
+            `export const cpuTier = () => CPU_TIERS.NORMAL`],
+        ['the Easy RANGE ceiling never clamps', S,
+            `        b.dx *= -1.05 // Slight speed up
+        if (Math.abs(b.dx) > tier.cap) b.dx = Math.sign(b.dx) * tier.cap // Easy RANGE ceiling (#3502)`,
+            `        b.dx *= -1.05 // Slight speed up
+        if (Math.abs(b.dx) > Infinity) b.dx = Math.sign(b.dx) * tier.cap // Easy RANGE ceiling (#3502)`],
+        ['the AUTO switch ignores HUMAN: 2P still runs the machine', S,
+            `    if (gs.diff === 'TWO') {`,
+            `    if (false && gs.diff === 'TWO') {`],
+        ["player two's W key is unplugged", S,
+            `        if (input?.up2) gs.right.y -= PAD_SPEED`,
+            `        if (input?.up2) gs.right.y -= 0`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
