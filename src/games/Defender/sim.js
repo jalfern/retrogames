@@ -412,7 +412,7 @@ export const watchRoute = (s) => {
             // blocked line (mutants cap at 2.4 — cruise outruns them) until the
             // foot soldier has walked out (0.3/tick); creeping into a shielded
             // target was the front-+dy enemy bucket this stage had to close.
-            input.holdTell = true // #1907: the brain SHOWS why it held the trigger
+            // (#1907 tell lives in the gun block — one source, one mutant.)
             if (Math.abs(dx) < 300) {
                 if (dx > 0) { if (p.vx > -4.2) input.left = true }
                 else if (p.vx < 4.2) input.right = true
