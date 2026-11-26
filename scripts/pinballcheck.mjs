@@ -1494,6 +1494,21 @@ const wrap = (gs) => {
     const sm = compileTable(SMITH_REFS.nova).tb
     r.check('TABLE SMITH builds carry the flank chassis (kbL + rampL ride every table)',
         !!sm.kbL && !!sm.rampL && sm.kbL.x1 === TABLE.kbL.x1 && sm.rampL.x1 === TABLE.rampL.x1)
+
+    // #3438 dress pins — the flank's raised-lane look and its own voicing are
+    // the shipped art contract: bed from the DATA, entry chevrons in the live
+    // layer, and a LEFT set chord that sits below the right's (tell-apart by ear).
+    const artSrc = readFileSync(new URL('../src/games/Pinball/art.js', import.meta.url), 'utf8')
+    const shellSrc = readFileSync(new URL('../src/games/Pinball/index.jsx', import.meta.url), 'utf8')
+    r.check('#3438 the JET LANE bed is painted from tb.rampL — data-driven, both cabinets follow',
+        artSrc.includes('JET LANE bed') && /if \(tb\.rampL\)/.test(artSrc) && /tb\.rampL\.x1/.test(artSrc))
+    r.check("#3438 lane-entry chevrons live in the flank's live block above the flipper",
+        shellSrc.includes('#3438 item 2') && shellSrc.includes('[428, 442]'))
+    r.check('#3438 the left SET rings its own voicing — lower than the launch-lane set',
+        !shellSrc.includes("case 'rampset': case 'ramplset':") &&
+        +shellSrc.match(/case 'ramplset':\s*a\.playTone\((\d+)/)[1] <
+        +shellSrc.match(/case 'rampset':\s*\n?\s*a\.playTone\((\d+)/)[1],
+        "left set top note must sit under the right set's")
 }
 
 // =============== #3259: ART KITS (skins) — a dress, never a machine ===============
