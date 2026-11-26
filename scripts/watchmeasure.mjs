@@ -53,7 +53,7 @@ const deathRecord = (snap, inp, kind) => {
         carry: snap.carry, pressed }
 }
 
-export const patrol = (base, autopsy = false) => {
+export const patrol = (base, autopsy = false, horizon = 9000) => {
     let survived = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0, livesSpent = 0, worstSeedHits = 0
     const why = { terrain: 0, enemy: 0, other: 0 }
     let diedHauling = 0
@@ -63,7 +63,7 @@ export const patrol = (base, autopsy = false) => {
         const rand = seedRng(base + k * 91)
         const w = createSim({ rand, height: 420 })
         let waves = 0, hits = 0
-        let cap = 9000
+        let cap = horizon
         while (!w.over && cap > 0) {
             const probe = killProbe(w)
             const hauling = w.carrying !== null
