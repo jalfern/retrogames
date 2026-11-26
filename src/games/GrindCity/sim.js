@@ -669,10 +669,14 @@ export function decodeLine(code) {
 /** Stored-bank law (#3381): what may live in localStorage — the same shape
  *  the attract bank rides (a bankable line with honest numbers), so a corrupt
  *  or hand-edited store falls back to a plain cold plaza instead of parading
- *  a fake record behind the title. */
+ *  a fake record behind the title. #3476: the bank is the cabinet's own
+ *  shelf, so it rides the whole free clock (RUN_MAX) — a 3-minute line that
+ *  waited mid-run must not lose its record on the next visit. The SHORTER
+ *  SHARE_MAX_TICKS law stays the wire cap (encodeLine): share codes stay
+ *  short and honest, long lines just replay locally. */
 export const validBank = (b) => !!b && typeof b === 'object' && !Array.isArray(b) && b.v === 1
     && Number.isInteger(b.seed) && b.seed >= 0 && b.seed <= 0xffffffff
-    && Array.isArray(b.log) && b.log.length >= REPLAY_MIN && b.log.length <= SHARE_MAX_TICKS
+    && Array.isArray(b.log) && b.log.length >= REPLAY_MIN && b.log.length <= RUN_MAX
     && b.log.every((w) => Number.isInteger(w) && w >= 0 && w <= 63)
     && Number.isInteger(b.score) && b.score >= 0
     && Number.isInteger(b.letters) && b.letters >= 0 && b.letters <= 5
@@ -695,13 +699,17 @@ export function hashState(s) {
 // validRun is the validBank law for a paused run: wrong shape, wrong schema
 // (an older engine's store), a finished run or hand-edited junk never resumes.
 // Bump RUN_V when sim state changes shape — old waiting lines then retire.
-export const RUN_V = 1
+// #3476: packs carry the wall clock (`ms`) and a line older than a day
+// retires — yesterday's grind is stale concrete, not a waiting friend.
+// A missing stamp is junk (strict), so a hand-made pack can't dodge the age law.
+export const RUN_V = 2
 export const RUN_MAX = FREE_TIME * 60 + 600   // the 5:00 free clock + settle headroom
+export const RUN_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 export function packRun(s, log) {
     const sim = JSON.parse(JSON.stringify(s))
     sim.events = []                       // drained — sound is not state
-    return { v: RUN_V, seed: s.seed, mode: s.mode, tick: s.tick, sim, log: log.slice() }
+    return { v: RUN_V, ms: Date.now(), seed: s.seed, mode: s.mode, tick: s.tick, sim, log: log.slice() }
 }
 
 export function unpackRun(r) {
@@ -714,6 +722,8 @@ export function unpackRun(r) {
 export function validRun(r) {
     if (!r || typeof r !== 'object' || Array.isArray(r)) return false
     if (r.v !== RUN_V) return false
+    if (!Number.isInteger(r.ms) || r.ms <= 0) return false
+    if (Date.now() - r.ms > RUN_MAX_AGE_MS) return false    // #3476: a day old, and the line has gone home
     if (!Number.isInteger(r.seed) || r.seed < 0 || r.seed > 0xffffffff) return false
     if (r.mode !== 'run' && r.mode !== 'free') return false
     if (!Number.isInteger(r.tick) || r.tick < 0) return false

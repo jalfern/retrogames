@@ -72,5 +72,29 @@ await page.waitForTimeout(500)
 const t1 = (await probe()).tick
 r.check('resumed sim advances', t1 > t0, `tick ${t0} -> ${t1}`)
 
+// #3476: resume tells the player what it carried (the flash rides sim.msg)
+let flash = null
+try {
+    await page.waitForFunction(() => ((document.querySelector('[data-q="msg"]') || {}).textContent || '').includes('RETURNED AT'), { timeout: 1500 })
+} catch { /* fall through to the check below */ }
+flash = await page.evaluate(() => ((document.querySelector('[data-q="msg"]') || {}).textContent) || null)
+r.check('resume flashes what was carried', (flash || '').includes('RETURNED AT'), flash)
+
+// #3476: a line older than a day retires on read — stamp today's stored pack
+// 26 h into the past, reload, and the plaza must be clean (offer gone AND
+// the stale store cleared, not squatting until the next save replaces it).
+await page.evaluate(() => window.__grindTest.forceSave())
+const pNow = await storageTick()
+r.check('forceSave stamps a fresh pack', pNow !== null, `tick ${pNow}`)
+await page.evaluate(() => {
+    const raw = window.localStorage.getItem('grindcity.run.v1')
+    if (raw) { const r = JSON.parse(raw); r.ms = Date.now() - 26 * 3600 * 1000; window.localStorage.setItem('grindcity.run.v1', JSON.stringify(r)) }
+})
+await page.reload()
+await waitForHook()
+r.check('a day-old line retires instead of waiting',
+    (await chip()) === null && (await pending()) === null && (await storageTick()) === null,
+    `chip ${await chip()}, stored ${await storageTick()}`)
+
 r.check('zero page errors', errors.length === 0, errors.slice(0, 3).join(' | '))
 r.exit(browser)

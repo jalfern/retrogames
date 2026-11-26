@@ -117,11 +117,17 @@ const GrindCityGame = () => {
         // #3470 waiting line — a run left mid-page waits here (throttled auto-save
         // below). Read is as strict as the record store's: invalidRun junk, a
         // finished line or an older engine's schema never resumes the plaza.
+        // #3476: a line older than a day retires on read — the store is cleared
+        // then too, so stale concrete doesn't squat until the next save overwrites it.
         const RUN_KEY = 'grindcity.run.v1'
         let pendingRun = null
         try {
             const raw = window.localStorage.getItem(RUN_KEY)
-            if (raw) { const r = JSON.parse(raw); if (validRun(r)) { pendingRun = r; setPendingV(r) } }
+            if (raw) {
+                const r = JSON.parse(raw)
+                if (validRun(r)) { pendingRun = r; setPendingV(r) }
+                else window.localStorage.removeItem(RUN_KEY)
+            }
         } catch { /* no storage — the plaza starts without a waiting line */ }
         let saveCd = 0
         const sharedLine = decodeLine(new URLSearchParams(window.location.search).get('line'))
@@ -226,6 +232,7 @@ const GrindCityGame = () => {
         // replays). Clearing is total: a finished run, the plaza menu or a
         // harness reset retires the line.
         const savePending = () => {
+            if (pausedRef.current) return   // #3476: a paused screen is not a line in motion — the last live save stands
             if (attractMode || replayMode || screenRef.current !== 'play') return
             if (!sim || sim.phase !== 'play' || sim.done) return
             pendingRun = packRun(sim, inputLog)
@@ -254,6 +261,12 @@ const GrindCityGame = () => {
         }
         const resumePending = () => {
             if (!pendingRun || !resumeInto(pendingRun)) { clearPending(); return }
+            // #3476: say what was carried — the flash rides the sim's own msg
+            // vocabulary (msg/msgT), so a snapshot taken right after resume
+            // honestly shows the return, and the HUD draws it with no new parts.
+            const rs = Math.floor(pendingRun.tick / 60)
+            sim.msg = `RETURNED AT ${Math.floor(rs / 60)}:${String(rs % 60).padStart(2, '0')} · ${sim.score} PTS`
+            sim.msgT = 2.2
             clearPending()   // consumed — the live save will re-arm it from here
             audioController.playTone(520, 0.08, 'square', 0.09)
             audioController.playTone(740, 0.1, 'square', 0.09, 0.08)
@@ -917,7 +930,7 @@ const GrindCityGame = () => {
                         </div>
                         {/* Goal/trick banner: below the checklist + inset on phones so it
                             never runs through S-K-A-T-E or off a narrow edge (#3233 tail). */}
-                        <div ref={hud.msg} className="absolute inset-x-2 top-40 text-center whitespace-normal text-sm font-bold italic tracking-wider text-[#ffe98a] drop-shadow-[0_2px_0_rgba(0,0,0,.85)] sm:left-1/2 sm:right-auto sm:top-12 sm:-translate-x-1/2 sm:whitespace-nowrap sm:text-lg" />
+                        <div data-q="msg" ref={hud.msg} className="absolute inset-x-2 top-40 text-center whitespace-normal text-sm font-bold italic tracking-wider text-[#ffe98a] drop-shadow-[0_2px_0_rgba(0,0,0,.85)] sm:left-1/2 sm:right-auto sm:top-12 sm:-translate-x-1/2 sm:whitespace-nowrap sm:text-lg" />
                         <div ref={hud.callout} className="absolute left-1/2 top-[46%] whitespace-nowrap text-2xl font-black italic tracking-[0.18em] text-[#ffd35e] drop-shadow-[0_0_16px_rgba(242,169,60,.7)] drop-shadow-[0_3px_0_rgba(0,0,0,.9)] sm:top-[32%] sm:text-4xl" style={{ opacity: 0 }} />
                     </>
                 )}

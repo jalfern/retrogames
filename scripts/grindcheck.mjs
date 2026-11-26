@@ -3,7 +3,7 @@
 // goal inside the 2:00 run, and seed + pads replay identical hashes.
 // Run: npm run grindcheck [-- --mutate <rule>]  (--mutate proves it can fail)
 
-import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, CRUISE_MIN, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, SHARE_MAX_TICKS, packRun, unpackRun, validRun, RUN_V } from '../src/games/GrindCity/sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, CRUISE_MIN, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, SHARE_MAX_TICKS, RUN_MAX, RUN_MAX_AGE_MS, packRun, unpackRun, validRun, RUN_V } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
 import { parkHeight, LETTERS, RAILS, GEMS, GEM_PTS, SECRET, ROOF_Y, shadeAt } from '../src/games/GrindCity/park.js'
 import { BAR, bedVoices, landThud, ATTRACT_SFX, sfxGain } from '../src/games/GrindCity/music.js'
@@ -25,7 +25,7 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'momentum', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck', 'clone', 'need', 'sched', 'searchwire', 'restore', 'unpackclone', 'valid', 'runwire']
+    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'momentum', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck', 'clone', 'need', 'sched', 'searchwire', 'restore', 'unpackclone', 'valid', 'runwire', 'runage', 'bankcap']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
@@ -814,13 +814,39 @@ import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
             negativeRng].every((j) => validRun(j) === false) &&
         /Number\.isInteger\(s\.rng\)/.test(simSrcV))
 
+    // #3476 age law: the stamp is mandatory and a day is the shelf life.
+    const noStamp = JSON.parse(JSON.stringify(r)); delete noStamp.ms
+    const simSrcAge = MUT === 'runage'
+        ? cabSrc2.replace('Date.now() - r.ms > RUN_MAX_AGE_MS', 'false')
+        : cabSrc2
+    ok('#3476 age law: a day-old line retires; no stamp, zero stamp — junk',
+        validRun(r) === true &&
+        validRun({ ...r, ms: Date.now() - RUN_MAX_AGE_MS - 1000 }) === false &&
+        validRun({ ...r, ms: 0 }) === false && validRun(noStamp) === false &&
+        /Date\.now\(\) - r\.ms > RUN_MAX_AGE_MS/.test(simSrcAge))
+
+    // #3476 cap law: the local shelf covers the whole free clock (a mid-run
+    // save that outlived its page must find its record on the next visit — the
+    // old SHARE_MAX_TICKS cap silently dropped >2:00 finished lines), while
+    // encodeLine keeps the short wire cap for share codes.
+    const simSrcCap = MUT === 'bankcap'
+        ? cabSrc2.replace('b.log.length <= RUN_MAX', 'b.log.length <= SHARE_MAX_TICKS')
+        : cabSrc2
+    const capBank = (n) => ({ v: 1, seed: 7, log: new Array(n).fill(2), score: 500, letters: 2, won: false })
+    ok('#3476 cap law: bank rides the free clock (RUN_MAX), the wire stays 2:00-capped',
+        validBank(capBank(RUN_MAX)) === true &&
+        validBank(capBank(RUN_MAX + 1)) === false &&
+        encodeLine({ seed: 1, log: new Array(RUN_MAX).fill(1), score: 0 }) === null &&
+        /b\.log\.length <= RUN_MAX/.test(simSrcCap))
+
     // wiring: the cabinet saves on hide + throttle, offers R + tap, clears on
     // finish, and the contract routes snapshot/restore through the same pack.
     const cabRaw70 = readFileSync(new URL('../src/games/GrindCity/index.jsx', import.meta.url), 'utf8')
     const cab70 = MUT === 'runwire' ? cabRaw70.split("c === 'KeyR'").join("c === 'KeyQ'") : cabRaw70
     ok('#3470 wiring: store read validated + written, pagehide saves, R and tap resume, finish clears, contract wired',
         /const RUN_KEY = 'grindcity\.run\.v1'/.test(cab70) &&
-        /if \(raw\) \{ const r = JSON\.parse\(raw\); if \(validRun\(r\)\)/.test(cab70) &&
+        /if \(raw\) \{[\s\S]{0,140}if \(validRun\(r\)\) \{ pendingRun = r/.test(cab70) &&
+        /else window\.localStorage\.removeItem\(RUN_KEY\)/.test(cab70) &&   // #3476: stale/junk retires on read
         /window\.localStorage\.setItem\(RUN_KEY, JSON\.stringify\(pendingRun\)\)/.test(cab70) &&
         /window\.addEventListener\('pagehide', savePending\)/.test(cab70) &&
         /document\.addEventListener\('visibilitychange', onHide\)/.test(cab70) &&
@@ -829,6 +855,14 @@ import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
         /if \(sim\.phase !== 'over'\) return\s+clearPending\(\)/.test(cab70) &&
         /snapshot: \(\) => packRun\(sim, inputLog\)/.test(cab70) &&
         /restore: \(p\) => \{ resumeInto\(p\); return stateOf\(sim\) \}/.test(cab70))
+
+    // #3476 cabinet law: a paused screen is not a line in motion (pagehide
+    // while paused must not stamp a mid-pause-exit instant), and resuming
+    // tells the player what was carried, through the sim's own msg channel.
+    ok('#3476 cabinet law: paused never saves, resume flashes RETURNED AT',
+        /const savePending = \(\) => \{\n\s+if \(pausedRef\.current\) return/.test(cabRaw70) &&
+        /sim\.msg = `RETURNED AT/.test(cabRaw70) &&
+        /data-q="msg"/.test(cabRaw70))
 }
 
 if (MUT) {
