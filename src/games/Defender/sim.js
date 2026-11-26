@@ -347,13 +347,18 @@ export function createSim({ rand, height }) {
         // --- Player flight (inertia like the Jupiter fighter) ---
         if (p.dark > 0) {
             p.dark -= 1
-            p.invuln -= 1
         } else {
             if (input.left) { p.vx -= 0.5; p.facing = -1 }
             if (input.right) { p.vx += 0.5; p.facing = 1 }
             if (input.up) p.vy -= 0.5
             if (input.down) p.vy += 0.5
         }
+        // #3445: the grace burns EVERY tick, not only while dark. The pre-fix
+        // line sat inside the dark branch, so once dark hit 0 invuln froze at
+        // 120 — every collision check (invuln <= 0) was false forever and the
+        // pilot was immortal after its first crash. The cabinet promises ~1 s
+        // dark + ~2 s blinking invulnerability, then you are mortal again.
+        if (p.invuln > 0) p.invuln -= 1
         p.vx *= 0.98
         p.vy *= 0.95
         p.vx = Math.max(-8, Math.min(8, p.vx))
