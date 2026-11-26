@@ -252,8 +252,7 @@ export function outboxAdd(payload, storage) {
     const list = loadOutbox(storage)
     list.push({ id, ts, attempts: 0, payload })
     while (list.length > OUTBOX_MAX) list.shift() // oldest, already-kept reports go first
-    persistOutbox(list, storage)
-    return id
+    return persistOutbox(list, storage) ? id : null // storage refused everything → honest null
 }
 
 export function outboxRemove(id, storage) {

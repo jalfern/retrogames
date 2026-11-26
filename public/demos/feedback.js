@@ -374,8 +374,7 @@
     var list = loadOutbox(storage)
     list.push({ id: id, ts: ts, attempts: 0, payload: payload })
     while (list.length > OUTBOX_MAX) list.shift()
-    persistOutbox(list, storage)
-    return id
+    return persistOutbox(list, storage) ? id : null // storage refused everything → honest null
   }
 
   function outboxRemove(id, storage) {
@@ -762,6 +761,14 @@
     doc.body.appendChild(toastEl)
     // keep the toast element referenced for textContent + class
     toastEl = doc.getElementById('dfeedback-toast')
+    // Harness handles (#3407): feedbackcheck drives the REAL card in a fake DOM
+    // (dictate → send → refused → kept), so the check grades the shipping code
+    // path, not a re-implementation of it.
+    api._noteEl = noteEl
+    api._statusEl = statusEl
+    api._toastEl = toastEl
+    api._send = send
+    api._close = closePanel
     // reports kept from an earlier visit deliver themselves as soon as we are up
     if (outboxPending(win.localStorage)) deliver()
   }
