@@ -1,82 +1,61 @@
-# STATE — forge board snapshot (slot b, 2026-11-26 — PINBALL FLANK SHIPPED)
+# STATE — Forge status (slot a)
 
-## This session — one ship (never-dry)
-- Warden TARGET #3429 (SKYWARD online rooms) was REFUSED at claim (slot a held
-  it live, 14 min fresh — they've since shipped; #3429 CLOSED). Normal ladder:
-  steer/next/game-queue/feedback all empty-or-held ⇒ flagship stage spent (all
-  flagship README gaps CLOSED/owned) ⇒ never-dry #1571: `weakestStage` scored
-  **PINBALL 2** (highest unheld). Oldest gap awaits Jon's #3335 (declines
-  action itself); actionable gap = *"no left ramp / kickback, spinner outlane-only"*.
-- Filed + claimed **#3432**, shipped **PR #3437 (merge 2c93544)**.
-- **JET LANE**: left ramp, two UP wires in the flank corridor (x 44..76; TWO
-  mirrors x 284..316), pays ramp/rampSet ladder, SET + progress lamps,
-  repeatable. Dome-flank return drops the ball down the roped outer channel
-  through spinner+kicker — spinner finally lives on a ramp line.
-- **KICKBACK L**: mirror save column x 155..170 (TWO 190..205), #3250 law
-  (one/ball, fast-descent, rests-off). Columns disjoint → one save per SIDE.
-- **Combo law**: a RAMP L SET re-arms the spent left save once (`kbarm` pulse).
-  Issue-body deviation recorded in design comment: SET *is* the arm (symmetry
-  with the shipped auto-column idiom beats an arming button).
-- All TABLE data (mirror-general), smith chassis carries devices, stateOf+hash
-  coverage, chrome wire/lamp/ring art, synth events, dev rigs `kbDrop('L')`,
-  `rampLFeed()`.
+## Shift report — 26 Nov 2026, 03:15Z (slot a, ~1.2 h)
+**Goal:** ADVENTURE never-dry stage (#3441, self-filed). **Shipped:** PR #3444
+(merge `f782759`) — seam law: a living, jaw-open dragon aligned on a doorway
+follows the dot through a room warp at the mirror entry; bite/sword-turn are
+judged inside the new room; multi-dragon rooms now reachable. **Closed:** #3441.
+Production verified (seam law visible in `index-BlipdWRI.js`).
 
-## Proof
-- pinballcheck **312/312** (+24 §flank pins: ladder literals, gates, once-per-
-  side, rests-off, combo, EMBER mirror prices 30/600/75, mirror data law, hash,
-  smith chassis, determinism). Mutation-proven: killing the combo law reddens
-  exactly those pins; restored before commit.
-- pinballplay **68/68** (new tail leg, cabinet-aware prices); contractcheck 14/14;
-  eslint + three scoped gates + build green. Prod verified: `Pinball-fm41zBdE.js`
-  carries `RAMP L SET` at jalfern.com.
+**TARGET note:** warden pointed #3432 at slot a — REFUSED (slot b held and had
+already shipped it: PR #3437 merged 02:04Z, issue auto-closed, `building` label
+stranded). Normal ladder then found nothing claimable (queue empty, #1712 is
+waiting-jon, live QA session owns the feedback borrow) and the flagship stage is
+spent — but the NEVER-DRY pick needed care, see the measurement bug below.
 
-## Harness lessons (one line each)
-- Flipper-tip shadow: kb column spawn probes must use `yFrom+4` (556); y558 gets
-  pushed by the shaft before the gs-level device check sees vy — spawn-in-column
-  ≠ spawn-in-column-clean.
-- A flank feed under the outlane guide's upper tip (y>420 at x~60) gets knocked
-  flat by the guide END; feed at y400.
-- The DMD is a single-slot announce: multi-ball rigs before a message assert
-  stomp it. Put rig-legs at the TAIL and wait for a quiet table
-  (liveBalls===1 && dmd.text==='') — pinballplay flank leg is that pattern.
-- Tail legs inherit the cabinet the kit legs left selected — price literals must
-  read the cab id (EMBER runs 75/30/600), not assume CABINET ONE.
-- My prod poll greped with a typo'd var for 10 min before reading output once
-  (rule 8 again: read the result before re-probing).
+### The measurement find (#3440) — read this before trusting idle-kick
+`scripts/lib/idle.mjs:parseRegistry` matches only brace-imports and `lazy()` —
+every statically-imported game (all of `games.js:1-19`) is invisible: 21 titles off
+the shelf, incl. ADVENTURE (15 unowned gaps), Rogue/Defender (6 each), Frogger.
+Idle-kick's `KICK PINBALL 0 weak` was a phantom (gap 0 declines action against
+open decision #3335, whose jonq default is keep-level-only — that kick would have
+burned this session). Corrected pick: ADVENTURE at 15. Evidence posted on #2910;
+fix (regex + re-calibration) owned by **#3440** (lane:platform). Until #3440
+lands, derive weakestStage by hand (corrected shelf: Adventure 15 > Rogue/Defender
+6 > DonkeyKong/MissileCommand/Centipede/Asteroids/Pong 4–5 > visible-shelf 0–1).
 
-## Corpse found (not mine, untouched)
-- Main checkout had a dirty `src/games/Joust/index.jsx` at boot (attract banner/
-  toast double-draw fix, uncommitted). Parked at
-  `/tmp/forge/joust-banner-corpse.patch`, checkout reverted. QA lane holds
-  #3430 (JOUST art & fidelity) — that patch likely belongs to whoever wrote it;
-  QA lane should look before re-doing it.
+### What landed (#3441)
+- `sim.js`: seam law in `tryTransition` (all five branches incl. gate→foyer);
+  alignment = shared gap column/row ± `DRAGON_FOLLOW_SLACK`; passability implied
+  by the dot's own crossing (barriers open for the run); arithmetic only, no dice.
+- `adventurecheck` 196/196 (+10 gates: real-walk heels-bite repro, no-dice hash
+  pair, misalignment/jaw-shut stay, left-seam mirror, sword-turn slay, foyer
+  follow) + 3 new mutants — all 52 mutants die. Skilled-route playtest still 98%.
+- Real-Chrome drive (`shot.mjs` ?seed=4241, real keys): start→run→walk, drawn dot
+  matches input position, zero page/console errors.
 
-## PLAYABLE on main right now
-- `/retrogames/pinball`: both cabinets now have a left ramp + a second save +
-  the ramp→save combo. Plus prior shelf: skyward (now online rooms too, #3429
-  shipped by slot a), grind-city bot, tidal-rush, pinball SOLO+smith, ssx,
-  comet-drift pair, marble pair, galaga bee, mario-kart, ice-climber, pacman,
-  mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP
-  SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, missile,
-  pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge board.
+### Board hygiene done this shift (tails left by earlier dead sessions)
+- **#3195 verified-fixed + closed** (GrindCity dvh landed in #3193; nobody said
+  Closes; dvhcheck 7/7, quarantine already empty).
+- **#3432** prod-verified (`Pinball-fm41zBdE.js` carries rampL/kbL/KICKBACK),
+  URL commented, `building`→`shipped`.
+- 8b polish passes finally filed: **#3446 PINBALL**, **#3447 SKYWARD** (+ #3441's
+  own follow-ups folded into #3447).
 
-## Board watch (facts, not questions)
-- `game-queue` empty at close; `next` #1712 waiting-jon. Feedback open:
-  #3430 (Joust, building-qa), #3419 (building-qa), #3438 (filed this shift —
-  PINBALL flank polish), #3244/#2971 waiting-jon.
-- Slot a shipped #3429 (SKYWARD online) mid/after my session.
+### Board (03:15Z)
+- `game-queue`: empty. `next`: #1712 (waiting-jon). `building`: none.
+  `building-qa`: #3419, #3436. `feedback`: #2971/#3244 (waiting-jon), #3446,
+  #3447, plus QA-held above. New platform items: **#3440** (idle-kick blind shelf),
+  #2910 updated with tonight's three phantom classes.
+- ADVENTURE still carries 14 unowned honest gaps → the corrected weak pick stays
+  ADVENTURE next dry kick (gap 1: the duplicated chalice / Blue Castle).
 
-## Open questions (links only — #605)
-- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane).
-- #3054 — native TestFlight ports have no recorder/upload (AWAITING).
-- #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
-- #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
-- No new jonq questions filed this session.
+### Known / residue
+- `adventure-playtest` route failure mode "no bridge" (2%) pre-exists this change.
+- Slot b's sessions keep dying after merge before post-steps (#3432 labels, 8b) —
+  the auto-close via `Closes #n` helped this time; consider warden sweep for
+  closed-but-`building` issues (#3013 family).
 
-## Slot state at handoff
-- Slot b: dev :5178 stopped via scripts/devstop.sh; lane worktree
-  `~/Dev/retrogames-forge-pinball-ramp` detached clean at origin/main;
-  main checkout detached at origin/main (Joust corpse reverted after parking).
-- Game code merged this session ⇒ STATE ships via its own docs/state PR;
-  parked via statepark at /tmp/forge/STATE.b.parked.md.
-- Time-box: shipped + verified in ~2 h 15 m of 3 h.
+## Open questions (none filed this session)
+- #3335 (lane:qa, AWAITING, due 27 Nov) gates PINBALL's tilt-muffle — not mine;
+  do NOT implement against it until answered/defaulted.
