@@ -20,7 +20,7 @@ import { PRESS, MESSAGES } from './attract.js'
 import Lobby from '../../components/Lobby'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createLockStep } from '../../utils/lockstep.js'
-import { SEATS, PAD_DELAY, HASH_EVERY, RACE_T, STALL_CAP, PILOT_NAMES, PILOT_CSS, toWire, fromWire, foldHash, hostSeed, podiumRows, podWire, podRows, createEvidence, hex32 } from './net.js'
+import { SEATS, WATCH_CAP, PAD_DELAY, HASH_EVERY, RACE_T, STALL_CAP, PILOT_NAMES, PILOT_CSS, toWire, fromWire, foldHash, hostSeed, podiumRows, podWire, podRows, pilotSlots, createEvidence, hex32 } from './net.js'
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
 
@@ -376,6 +376,10 @@ const SkywardGame = () => {
             slot: netRole === 'host' ? 0 : -1, code: '', joinHref: '',
             room: null, lobby: null, racing: false, frozen: false, podOn: false,
             roster: [], humans: [], lost: new Set(), insts: null, seed: 0, raceT: 0, stallRun: 0,
+            // #3447 item 1 spectate: watch = I hold no seat, only the room's
+            // truth; watchers = members OTHER boxes announced with `spec`
+            // (they never ride, never hold a seat at kickoff).
+            watch: false, watchers: new Set(), riding: 0,
         }
         // #3447 — phantom remote hulls for the nameplate drive: DEV paint only
         // (the sim, the wire and the fold never see them), see poseRemotes.
@@ -386,6 +390,14 @@ const SkywardGame = () => {
         // so nothing about the sim may key off slot numbers — only the wire
         // (mirrors, lockstep peers) is slot-keyed.
         const mySeat = () => { const i = net.roster.indexOf(net.slot); return i >= 0 ? i : 0 }
+        // #3447 item 1 — the seat the CAM rides: a watcher floats with its
+        // chosen leader (no seat of its own), a pilot rides its own seat.
+        const rideSeat = () => (net.watch ? net.riding : mySeat())
+        const topSeat = () => {
+            let b = 0
+            for (let i = 1; i < SEATS; i++) if ((net.insts[i].score | 0) > (net.insts[b].score | 0)) b = i
+            return b
+        }
         let ws = null
         const makeTransport = (url) => {
             ws = new WebSocket(url)
@@ -396,13 +408,16 @@ const SkywardGame = () => {
                 close: () => { try { if (ws) ws.close() } catch { /* gone */ } },
             }
         }
-        const mirrors = Object.fromEntries(Array.from({ length: SEATS }, (_, s) => [s, new Map()]))
+        // mirrors are slot-keyed up to the WATCH_CAP: a spectated room can
+        // hold SEATS pilots + 1 watcher, and a pilot may draw the last slot
+        const mirrors = Object.fromEntries(Array.from({ length: WATCH_CAP }, (_, s) => [s, new Map()]))
         const ls = createLockStep({
             delay: PAD_DELAY, hashEvery: HASH_EVERY,
             send: (m) => {
+                if (net.watch) return // the watcher sends nothing — pads out and referee in are a seat's job
                 // own pads enter own mirrors via the send path (the Tidal law:
                 // mirrors hold EXACTLY the bytes the seat sent) — keyed by SLOT
-                if (m.t === 'pad' && net.slot >= 0) mirrors[net.slot].set(m.k, m.p)
+                if (m.t === 'pad' && net.slot >= 0 && mirrors[net.slot]) mirrors[net.slot].set(m.k, m.p)
                 if (net.room) net.room.send(m.t, m)
             },
         })
@@ -410,7 +425,7 @@ const SkywardGame = () => {
         const netSay = (m) => banner(m, 2.8)
         const pushNetUi = () => setNetUi(net.active ? {
             role: net.role, phase: net.phase, code: net.code, slot: net.slot,
-            seats: seatModel(SEATS, net.room ? net.room.slots : []),
+            seats: seatModel(SEATS, net.room ? pilotSlots(net.room.slots, net.watchers) : []),
             joinHref: net.joinHref,
             names: PILOT_NAMES,
         } : null)
@@ -421,17 +436,19 @@ const SkywardGame = () => {
         }
         const startRace = (m) => {
             net.seed = (Number(m.seed) >>> 0) || 1
-            const roster = (Array.isArray(m.roster) ? m.roster : []).filter((s) => Number.isInteger(s) && s >= 0).sort((a, b) => a - b)
-            if (net.slot >= 0 && !roster.includes(net.slot)) roster.push(net.slot)
+            net.watch = net.role === 'watch' // #3447 item 1 — no seat, all sky
+            const roster = pilotSlots(Array.isArray(m.roster) ? m.roster : [], net.watchers)
+            if (!net.watch && net.slot >= 0 && !roster.includes(net.slot)) roster.push(net.slot)
             roster.sort((a, b) => a - b)
             net.roster = roster // slot addresses, roster order = seat order
             net.humans = roster.map((_, i) => i) // every rostered seat is human at kickoff
             net.lost.clear()
             net.insts = Array.from({ length: SEATS }, () => makeGame(net.seed))
-            gs = net.insts[mySeat()] // THE trick: the cabinet's world is my seat's instance
+            net.riding = 0
+            gs = net.insts[net.watch ? net.riding : mySeat()] // THE trick: the cabinet's world is my seat's instance
             for (const mm of Object.values(mirrors)) mm.clear()
             ls.reset()
-            ls.setPeers(roster.filter((s) => s !== net.slot)) // wire peers are SLOT ids
+            ls.setPeers(roster.filter((s) => s !== net.slot)) // wire peers are SLOT ids (a watcher is none of them)
             evNet.reset()
             net.racing = true; net.frozen = false; net.podOn = false; net.raceT = 0; net.stallRun = 0
             setPodium(null); setNetReport('')
@@ -439,7 +456,8 @@ const SkywardGame = () => {
             ladderRef.current = false; ladderAtRef.current = 0; ladderLiveRef.current = 0
             setOver(null); setMode('play')
             sweep(440, 880, 0.3, 'square', 0.12)
-            banner(`ROOM ${net.code || '????'} · ${roster.length} PILOT${roster.length > 1 ? 'S' : ''} · ${RACE_T}s ON THE BELL`, 3)
+            if (net.watch) banner(`SPECTATING ROOM ${net.code || '????'} · NO SEAT, CAM RIDES THE LEADER`, 3)
+            else banner(`ROOM ${net.code || '????'} · ${roster.length} PILOT${roster.length > 1 ? 'S' : ''} · ${RACE_T}s ON THE BELL`, 3)
         }
         const endRace = () => {
             net.racing = false
@@ -469,7 +487,7 @@ const SkywardGame = () => {
         }
         const stepRoom = () => {
             const k = gs.tick
-            ls.pumpTo(k + PAD_DELAY, () => toWire(padNow()))
+            if (!net.watch) ls.pumpTo(k + PAD_DELAY, () => toWire(padNow()))
             if (!ls.ready(k)) {
                 ls.stall()
                 net.stallRun++
@@ -503,8 +521,19 @@ const SkywardGame = () => {
                 step(inst, live ? fromWire(wp) : decide(inst))
                 if (inst !== gs) inst.events.length = 0 // remote juice lives on its own box
             })
+            // #3447 item 1 — the watcher's camera: ride the leader; when that
+            // hull goes down, hop to whoever now tops the board. Paint choice
+            // only — every seat stepped from the same pads either way.
+            if (net.watch && gs.done) {
+                const t = topSeat()
+                if (t !== net.riding) {
+                    net.riding = t
+                    gs = net.insts[t]
+                    netSay(`${PILOT_NAMES[t]} TAKES THE LEAD — CAM HOPS`)
+                }
+            }
             net.raceT += FIXED_DT / 1000
-            if (k % HASH_EVERY === 0) {
+            if (!net.watch && k % HASH_EVERY === 0) {
                 const h = foldHash(net.insts)
                 evNet.mine(k, h)
                 const d = ls.hash(k, h)
@@ -515,19 +544,22 @@ const SkywardGame = () => {
         const entryTap = () => {
             if (!net.active) return startPlay()
             if (net.role === 'host' && net.room && net.room.phase === 'waiting') {
-                net.lobby.start({ seed: hostSeed(), roster: net.room.slots.slice().sort((a, b) => a - b) })
+                net.lobby.start({ seed: hostSeed(), roster: pilotSlots(net.room.slots, net.watchers) })
             } else if (net.role === 'host') netSay('FIELD NOT READY')
             else netSay(net.code ? `ROOM ${net.code} — WAITING FOR THE HOST` : 'JOINING ROOM…')
         }
         if (net.active) {
             const lobby = createLobby({
-                slug: 'skyward', cap: SEATS, relay: relayUrl, makeTransport,
+                slug: 'skyward', cap: WATCH_CAP, relay: relayUrl, makeTransport,
                 shareRelay: !!nq.get('relay'),
                 onState: (s) => {
                     net.phase = s.phase
                     net.code = s.code
                     if (s.slot >= 0) net.slot = s.slot
                     net.joinHref = s.joinHref
+                    // #3447 item 1 — a watcher announces itself the moment it
+                    // is in the room: every box then knows it holds no seat.
+                    if (net.role === 'watch' && s.phase === 'waiting' && net.room) net.room.send('spec', {})
                     pushNetUi()
                 },
                 onRoster: () => pushNetUi(),
@@ -549,12 +581,19 @@ const SkywardGame = () => {
                 onDrop: () => netSay('CONNECTION DROPPED — RETRYING…'),
                 on: {
                     pad: (m) => {
-                        if (m.s >= 0 && m.s < SEATS) { mirrors[m.s].set(m.k, m.p); ls.gotPad(m.k, m.p, m.s) }
+                        if (m.s >= 0 && m.s < WATCH_CAP) { mirrors[m.s].set(m.k, m.p); ls.gotPad(m.k, m.p, m.s) }
                     },
                     hs: (m) => {
                         evNet.peer(m.k, m.h, m.s)
                         const d = ls.gotHash(m.k, m.h, m.s)
                         if (d && d.desync !== undefined) desynced(m.k, d)
+                    },
+                    // #3447 item 1 — "I watch, I don't ride". Remembered at
+                    // kickoff (pilotSlots) and dropped from the seat strip; no
+                    // pad ever arrives for it, and none is ever asked for.
+                    spec: (m) => {
+                        const s = m.s | 0
+                        if (s >= 0 && s < WATCH_CAP && !net.watchers.has(s)) { net.watchers.add(s); pushNetUi() }
                     },
                     pod: (m) => { setPodium(podRows(m.rows)); net.racing = false; net.podOn = true },
                     res: () => {
@@ -576,7 +615,9 @@ const SkywardGame = () => {
         const onDown = (e) => {
             const code = e.code
             if (code === 'Escape' || code === 'Backquote' || code === 'Slash') {
-                if (screenRef.current === 'play') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current) }
+                // a watcher never pauses: its sky is the room's, and parked
+                // mirrors would flush while it looked away
+                if (screenRef.current === 'play' && !(net.active && net.watch)) { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current) }
                 return
             }
             // #3429 — the room owns the keys when its sheet is up: R leaves,
@@ -584,11 +625,13 @@ const SkywardGame = () => {
             if (net.active && (net.podOn || net.frozen)) {
                 if (code === 'KeyR') abortRoom()
                 else if (net.podOn && net.role === 'host' && net.room && net.room.phase === 'waiting') {
-                    net.lobby.start({ seed: hostSeed(), roster: net.room.slots.slice().sort((a, b) => a - b) })
+                    net.lobby.start({ seed: hostSeed(), roster: pilotSlots(net.room.slots, net.watchers) })
                 }
                 return
             }
             if (net.active && net.racing && net.role === 'host' && code === 'KeyR') { abortRoom(); return }
+            // #3447 item 1 — the watcher has no controls: its hands stay off.
+            if (net.active && net.watch && net.racing) return
             if (screenRef.current === 'attract') { entryTap(); return }
             if (screenRef.current === 'over') { startPlay(); return }
             if (code === 'ArrowLeft' || code === 'KeyA') held.left = true
@@ -785,7 +828,7 @@ const SkywardGame = () => {
 
             if (screenRef.current === 'attract') gl.orbitAttract(demo, ft / 1000)
             else gl.render(gs, ft / 1000, engNow,
-                net.insts ? net.insts.map((g, i) => ({ seat: i, g })).filter((x) => x.seat !== mySeat()) : dbgRemotes)
+                net.insts ? net.insts.map((g, i) => ({ seat: i, g })).filter((x) => x.seat !== rideSeat()) : dbgRemotes)
 
             // on-entry hint + warning tick for the pass (HUD/audio only)
             const sc = screenRef.current
@@ -848,7 +891,7 @@ const SkywardGame = () => {
             // ⚠ marks a seat the autopilot holds, ◄ marks you, ⏱ the bell.
             const pText = (net.racing || net.podOn) && net.insts
                 ? `⏱ ${Math.max(0, Math.ceil(RACE_T - net.raceT))}s  ·  `
-                    + net.insts.map((g, i) => `${PILOT_NAMES[i]} ${g.score}${net.lost.has(net.roster[i]) ? ' ⚠' : ''}${i === mySeat() ? ' ◄' : ''}`).join(' · ')
+                    + net.insts.map((g, i) => `${PILOT_NAMES[i]} ${g.score}${net.lost.has(net.roster[i]) ? ' ⚠' : ''}${i === rideSeat() ? ' ◄' : ''}`).join(' · ')
                 : ''
             if (E.pilots._last !== pText) {
                 E.pilots._last = pText
@@ -944,6 +987,9 @@ const SkywardGame = () => {
                 // skies agree right now (fold over every instance)?
                 netProbe: () => ({
                     role: net.role, phase: net.phase, slot: net.slot, seat: mySeat(), code: net.code,
+                    // #3447 item 1 — the spectate law, observable: who watches,
+                    // who announced watching, which seat the cam rides.
+                    watch: net.watch, riding: net.riding, watchers: [...net.watchers].sort((a, b) => a - b),
                     slots: net.room ? net.room.slots.slice() : [],
                     roster: net.roster.slice(),
                     humans: net.humans.slice(), lost: [...net.lost],
@@ -1103,7 +1149,7 @@ const SkywardGame = () => {
                 </div>
             )}
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'SKYWARD')} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: bLabel, code: 'KeyB' }} />
+            <VirtualControls visible={play && !paused && !(netUi && netUi.role === 'watch')} secondAction={{ label: bLabel, code: 'KeyB' }} />
         </div>
     )
 }

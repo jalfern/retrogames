@@ -75,7 +75,16 @@ node scripts/skywardplay.mjs       # headless Chrome: boot → play → events �
   `npm run skywardroom` (two real Chromes over the deployed relay: roster,
   go, drive, fold convergence after silent-seat takeover, R-abort; plus the
   solo leg proving `?lite` alone opens no socket).
-- Known gaps: no spectate; no mid-race rejoin of a human seat once the
+- Known gaps: ~~no spectate~~ **CLOSED by #3447 item 1** — `?net=watch&room=CODE`
+  joins as a fifth member (`WATCH_CAP = SEATS + 1`): it announces itself with
+  `spec`, gets no seat at kickoff (`pilotSlots`), sends no pads and referees
+  nothing, and its camera rides the leader's instance — when that hull goes
+  down the cam hops to whoever now tops the board (paint choice only; every
+  seat steps from the same pads either way, so the watcher's sky stays
+  identical to the room's). No mid-race spectate: a watcher joins in the
+  waiting room and watches from the bell (mid-race entry would need Tidal's
+  history-shard law — still a gap). Spectators can't pause and hold no seat
+  across a takeover. No mid-race rejoin of a human seat once the
   autopilot took it (the pilot's next go is the next room). ~~no floating
   names~~ **CLOSED by #3447 item 3** — every remote hull carries a seat-named
   plate in its seat colour (scale ∝ range for one screen height, faded close
