@@ -3168,8 +3168,8 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         pg.includes('playWatchStart') && pg.includes('playWatchStop') && pg.includes('watchSfxLog'))
     rep.check('PONG: attract carries the shared start-and-watch button',
         pg.includes('<AttractWatchButton'))
-    rep.check('batch 24: pongcheck stamps the driver sweep (39/40, seed 25 documented)',
-        /the driver beats the machine on 39 of 40 seeds/.test(pc) && /Seed 25 is a documented forced loss/.test(pc))
+    rep.check('batch 24/#3532: pongcheck stamps the driver sweep (40/40 at the cabinet head, seed 25 retired with the scatter)',
+        /the driver beats the machine on ALL 40 seeds/.test(pc) && /no forced losses remain/.test(pc))
 }
 // #1637 batch 25 — FROGGER's planner is new-built; pin that the seat, the tick
 // and the check all stand on ONE engine (the whole rule set lifted into sim.js).

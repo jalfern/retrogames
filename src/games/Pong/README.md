@@ -7,9 +7,20 @@ big faint numerals, dashed net. First version. Ours is the same table.
 - Ball speeds up 1.05× per paddle return (`dx *= -1.05` in `sim.js`);
   wall bounces flip `dy` only (position keeps its penetration — the Feb-port
   arithmetic, and the seat's predictor replays the SAME rule or it would lie).
+  #3532: the flip is **direction-guarded** (`dy` must point INTO the wall) —
+  the cabinet's flip was the contact event. Without the guard, deterministic
+  edge kicks parked the ball inside the ceiling band (measured: y≈−6.6, an
+  endless shuttle); with it, penetration stays and escape is guaranteed one
+  step later (penetration ≤ |dy|).
 - Serve is from the center each point: direction coin-flip + vertical angle,
-  both drawn from the run's seeded stream (`sim.js serveBall`), plus paddle
-  start scatter (`paddleStart`) and anti-loop paddle-hit spin (`paddleSpin`).
+  both drawn from the run's seeded stream (`sim.js serveBall`) — those are the
+  game's ONLY two dice. #3532 restored the cabinet: paddles **hold** wherever
+  the player left them across points (no scatter), match start centers them,
+  and deflection is **strike-position law**: `dy += SPIN_K · offset/half`
+  (edge hits steepen, center hits flatten, ±2 clamp — the envelope the random
+  spin die used to roll). An anti-loop floor `|dy| ≥ DY_MIN` after returns
+  ends the converging flat rallies that deadlocked the capped EASY table —
+  from state, no dice.
 - **Play-to-quit terminal (#1473 batch 16).** The 1972 machine had no enforced
   score cap (players agreed a target); this port ships none, so the honest
   terminal is a quit press: `q`/Escape during play ends the match
@@ -22,10 +33,11 @@ big faint numerals, dashed net. First version. Ours is the same table.
   scores** (pre-port, a dead "Reset score? Maybe" comment let the score
   persist across "runs"; pongcheck calls this out by name).
 
-## Seeding (#1473)
+## Seeding (#1473, re-baselined by #3532)
 One mulberry32 stream per run (`seedRng`), regenerated at every human start;
-every die in the game (serve dir/angle, paddle starts, hit spin) draws from
-it — zero `Math.random` outside the two seed generations. Report:
+the two serve dice are the ONLY draws — deflection is pure state (strike
+offset), so pongcheck counts `rand()` calls in `sim.js` and pins it at two.
+Report:
 `{tick, score(player), done, seed, opp}`; QA contract `exposeGame` id `pong`,
 buttons `up/down`.
 
@@ -39,28 +51,37 @@ physics, not a paraphrase.
   (±10px, AI_SPEED) the Feb port shipped; lifted so the sweep faces the same
   opponent the player does.
 - `predictLand(ball, height)` — where the ball crosses the left paddle plane:
-  forward replay of the game's own step arithmetic (same wall-flip rule), so
-  the answer is exact. `null` when the ball heads away — the opponent's return
-  spin is drawn at contact and cannot be known early.
+  forward replay of the game's own step arithmetic (same guarded wall-flip
+  rule), so the answer is exact — pongcheck replays `stepBall` itself and
+  compares tick-for-tick, clean flights and penetration-band starts alike.
+  `null` when the ball heads away — the opponent's return steepens by where
+  it strikes the ball, and the tracker commits to that offset only at
+  contact, so it cannot be known early.
 - `watchStep(gs)` — THE DRIVER: approaching ball → aim the exact predicted
-  crossing; departing ball → table-center (minimax under the unknowable spin),
-  at HUMAN paddle speed (PAD_SPEED), so the proof transfers to the seat.
-  Reactive every tick (Rogue law): seats anywhere mid-rally, steer takes over,
-  re-seat re-plans from live state, quit releases with the match.
-- **The sweep's honest floor (pongcheck §driver):** 40 seeds vs the machine,
-  driver wins **39** (36 points conceded total, deterministic). Seed 25
-  (`197988`) is a DOCUMENTED forced loss: the post-point paddle scatter plus
-  a steep serve outruns 6 px/tick there — measured against center-hold,
-  ball-track and through-opponent policies, none wins that seed, so the game
-  physics (not the driver) loses it. The floor is pinned at exactly 39 with
-  seed 25 named: if a change wins it, the check goes red and the documentation
-  must catch up (that is the point of pinning a floor, not a ceiling).
+  crossing, then meet it OFF-center (#3532): the paddle target sits
+  `AIM_RATIO·half` above or below the crossing so the return steers toward
+  the wall farthest from the machine — the shot a PONG player aims, and it
+  restored HARD from 26/40 (dead-center flat gifts) to 38/40. Departing ball
+  → table-center (minimax under the unknowable strike offset), at HUMAN
+  paddle speed (PAD_SPEED), so the proof transfers to the seat.
+  Reactive every tick (Rogue law): seats anywhere mid-rally, steer takes
+  over, re-seat re-plans from live state, quit releases with the match.
+- **The sweep's honest floor (pongcheck §driver, re-pinned by #3532):**
+  40 seeds vs the machine, driver wins **40** (15 points conceded total,
+  deterministic). The old 39/40 pin named seed 25 (`197988`) as a forced
+  loss — that loss was the port's post-point paddle scatter, and it fell
+  off when the scatter did. §deflection pins the new law itself (center=
+  flat, edges steepen ±SPIN_K clamp, |dy| floor, scoring never moves a
+  paddle, the direction-guarded flip), and §driver proves the seat actually
+  aims (majority of returns strike off-center).
 
 ## Verify
 ```
-npm run pongcheck            # attract rule-6 + seedpin law + driver sweep + #3502 tiers (68 checks)
-npm run pongcheck -- --mutant  # 13 seedpin/driver/tier mutants (incl. walls-pulled,
-                               #   sign-flip, seat-poses, dead-select, dead-ceiling, dead-2P), all must die
+npm run pongcheck            # attract rule-6 + seedpin law + deflection law + driver sweep + #3502 tiers (81 checks)
+npm run pongcheck -- --mutant  # 20 seedpin/driver/tier/cabinet-law mutants (incl. walls-pulled,
+                               #   sign-flip, seat-poses, dead-select, dead-ceiling, dead-2P, plus
+                               #   re-planted scatter, flat/steer-blind deflection, ceiling-park,
+                               #   unguarded predictor, no-aim seat), all must die
 npm run pongcheck -- --mutate  # 5 attract mutants, all must die
 npm run pongdrive            # real Chrome, real keys: selector cycles, tap-dial, pick starts, W/S 2P legs, touch quit (#3529) (26 checks)
 npm run pongdrive -- --mutant  # 3 chip mutants (never-rendered, attract-flip, dead-key), all must die
@@ -75,18 +96,20 @@ The 1972 coin door had an AUTO/HUMAN selector for the machine paddle and a
 RANGE switch labeled Easy/Difficult. Attract now carries that as a real pick:
 LEFT/RIGHT or a tap on the pick label cycles `EASY · NORMAL · HARD · 2P`
 (both reach the same dial); any other key or a tap starts with the pick
-standing, and `?diff=N` pins it (1–4). `NORMAL` is the shipped
-physics VERBATIM — pongcheck traces a 3000-tick match at seed 90210
-bit-identical against a pre-#3502 (diff-less) replay, so every existing
-proof (seedpin, 39/40 driver floor) runs under the default untouched.
+standing, and `?diff=N` pins it (1–4). `NORMAL` is the shipped physics —
+pongcheck traces a 3000-tick match at seed 90210 bit-identical against a
+diff-less replay, so the tier default touches nothing. #3502's original
+promise referenced the pre-#3502 table; **#3532 re-baselined that trace at
+the cabinet-serve head** (NORMAL itself changed shape — scatter gone, strike
+deflection in), which is exactly what the trace now points at.
 
 - `EASY` — the Easy RANGE: tracker 2.2 px/tick, ±16 dead zone, and a 5.5
-  ceiling on horizontal speed. Measured: the driver sweeps **40/40** on EASY
-  (seed 25 gets humane there — the ceiling slows the very returns that beat
-  it on NORMAL) and the ceiling engages every sweep run (max |dx| lands on
-  it exactly).
-- `HARD` — the Difficult table: tracker 4.5 px/tick, ±5 dead zone. Measured:
-  driver **38/40**, seeds 13 and 25 fall (both pinned, honest).
+  ceiling on horizontal speed. Measured at the #3532 head: the driver sweeps
+  **40/40** conceding **0** points, and the ceiling engages every sweep run
+  (max |dx| lands on it exactly).
+- `HARD` — the Difficult table: tracker 4.5 px/tick, ±5 dead zone. Measured
+  at the #3532 head: driver **38/40**, seeds 14 and 24 fall (both pinned,
+  honest — the old 13/29 pair was drawn by the scatter dice and is gone).
 - `2P` — AUTO off: no CPU at all, W/S drive the right paddle at PAD_SPEED
   (desktop keyboard option per the multiplayer ruling; the pad stays single
   seat, CPU remains the default). The ball rules under 2P are NORMAL.
@@ -108,14 +131,6 @@ untouched; the chip is chrome, not a rule. A fat-finger costs one re-tap,
 because the terminal it reaches is honest, not fatal.
 
 ## Honest gaps
-- **OPEN as #3532:** Seed 25 is unbeatable on NORMAL against the machine
-  because of the ported paddle scatter after every point (see the driver
-  section). Removing the scatter would be more faithful to the cabinet but
-  re-litigates the #1473 seedpin — deliberately not touched here. (EASY is
-  where a beginner can actually win it.) Decision path: a jonq ask was
-  REFUSED by #2176 (pin/calibration calls are taken, not asked), and
-  fidelity beats provability (AGENTS.md) — so the fix ships as its own
-  dedicated re-baseline pass, #3532.
 - No selectable max-score knob (the machine's RANGE switch) — quit is the
   terminal by design; a selectable cap would be a feature, not a restoration.
 - **CLOSED by #3529:** touch quit shipped — a QUIT chip on the thirdAction
