@@ -50,23 +50,30 @@ export const COLORS = {
   V: '#cc00cc', W: '#cccccc', M: '#ff55ff', J: '#00ffcc',
 }
 
+// speed is the 1980 mobility clock in quarter-energy units (#3509): the hero
+// spends one turn, every monster accrues `speed` quanta per hero turn and a
+// full MONSTER_ENERGY buys one action — so ×1.5 races double-step on some
+// turns and ×0.75 races skip others. Approximation table (same honesty class
+// as the damage bands below): fast = small/flying/legendary swift, slow =
+// lumbering.
+export const MONSTER_ENERGY = 4
 export const MONSTER_DEFS = {
-  K: { name: 'kestrel',    hp: [1, 4],   dmg: '1d3', ac: 7,  xp: 1,   minLevel: 1 },
-  S: { name: 'snake',      hp: [2, 6],   dmg: '1d3', ac: 5,  xp: 2,   minLevel: 1 },
-  B: { name: 'bat',        hp: [1, 8],   dmg: '1d2', ac: 3,  xp: 1,   minLevel: 1 },
-  G: { name: 'gnome',      hp: [2, 8],   dmg: '1d6', ac: 5,  xp: 3,   minLevel: 1 },
-  H: { name: 'hobgoblin',  hp: [3, 8],   dmg: '1d8', ac: 5,  xp: 3,   minLevel: 2 },
-  E: { name: 'emu',        hp: [2, 8],   dmg: '1d2', ac: 7,  xp: 2,   minLevel: 2 },
-  O: { name: 'orc',        hp: [5, 10],  dmg: '1d8', ac: 6,  xp: 5,   minLevel: 4 },
-  A: { name: 'aquator',    hp: [5, 10],  dmg: '0d0', ac: 2,  xp: 9,   minLevel: 4 },
-  C: { name: 'centaur',    hp: [6, 12],  dmg: '1d6', ac: 4,  xp: 8,   minLevel: 5 },
-  T: { name: 'troll',      hp: [8, 18],  dmg: '1d8', ac: 4,  xp: 10,  minLevel: 6 },
-  L: { name: 'leprechaun', hp: [3, 8],   dmg: '1d1', ac: 3,  xp: 10,  minLevel: 5 },
-  D: { name: 'dragon',     hp: [15, 30], dmg: '3d8', ac: -1, xp: 100, minLevel: 8 },
-  V: { name: 'vampire',    hp: [8, 15],  dmg: '1d10',ac: 1,  xp: 50,  minLevel: 8 },
-  W: { name: 'wraith',     hp: [5, 15],  dmg: '1d6', ac: 4,  xp: 25,  minLevel: 8 },
-  M: { name: 'medusa',     hp: [8, 18],  dmg: '3d4', ac: 2,  xp: 80,  minLevel: 8 },
-  J: { name: 'jabberwock', hp: [15, 25], dmg: '2d8', ac: 6,  xp: 75,  minLevel: 9 },
+  K: { name: 'kestrel',    hp: [1, 4],   dmg: '1d3', ac: 7,  xp: 1,   minLevel: 1, speed: 6 },
+  S: { name: 'snake',      hp: [2, 6],   dmg: '1d3', ac: 5,  xp: 2,   minLevel: 1, speed: 4 },
+  B: { name: 'bat',        hp: [1, 8],   dmg: '1d2', ac: 3,  xp: 1,   minLevel: 1, speed: 6 },
+  G: { name: 'gnome',      hp: [2, 8],   dmg: '1d6', ac: 5,  xp: 3,   minLevel: 1, speed: 4 },
+  H: { name: 'hobgoblin',  hp: [3, 8],   dmg: '1d8', ac: 5,  xp: 3,   minLevel: 2, speed: 4 },
+  E: { name: 'emu',        hp: [2, 8],   dmg: '1d2', ac: 7,  xp: 2,   minLevel: 2, speed: 4 },
+  O: { name: 'orc',        hp: [5, 10],  dmg: '1d8', ac: 6,  xp: 5,   minLevel: 4, speed: 4 },
+  A: { name: 'aquator',    hp: [5, 10],  dmg: '0d0', ac: 2,  xp: 9,   minLevel: 4, speed: 4 },
+  C: { name: 'centaur',    hp: [6, 12],  dmg: '1d6', ac: 4,  xp: 8,   minLevel: 5, speed: 6 },
+  T: { name: 'troll',      hp: [8, 18],  dmg: '1d8', ac: 4,  xp: 10,  minLevel: 6, speed: 3 },
+  L: { name: 'leprechaun', hp: [3, 8],   dmg: '1d1', ac: 3,  xp: 10,  minLevel: 5, speed: 6 },
+  D: { name: 'dragon',     hp: [15, 30], dmg: '3d8', ac: -1, xp: 100, minLevel: 8, speed: 4 },
+  V: { name: 'vampire',    hp: [8, 15],  dmg: '1d10',ac: 1,  xp: 50,  minLevel: 8, speed: 4 },
+  W: { name: 'wraith',     hp: [5, 15],  dmg: '1d6', ac: 4,  xp: 25,  minLevel: 8, speed: 4 },
+  M: { name: 'medusa',     hp: [8, 18],  dmg: '3d4', ac: 2,  xp: 80,  minLevel: 8, speed: 3 },
+  J: { name: 'jabberwock', hp: [15, 25], dmg: '2d8', ac: 6,  xp: 75,  minLevel: 9, speed: 6 },
 }
 
 export const POTION_TYPES = [
@@ -349,7 +356,7 @@ export function generateDungeon(dungeonLevel) {
       x: mx, y: my, letter,
       name: def.name, hp, maxHp: hp,
       dmg: def.dmg, ac: def.ac, xp: def.xp,
-      chasing: false, moved: false,
+      chasing: false, energy: 0, fleeing: false, bitten: false, speed: def.speed,
     })
   }
 
@@ -601,7 +608,7 @@ export function hash(state) {
   }
   mix(`L${state.dungeonLevel}T${state.turn}R${state.randState}P${state.player.x},${state.player.y}:${state.player.hp}/${state.player.gold}/${state.player.level}`)
   for (const row of state.map) mix(row.join(''))
-  for (const m of state.monsters) mix(`M${m.letter}@${m.x},${m.y}:${m.hp}:${m.chasing ? 1 : 0}`)
+  for (const m of state.monsters) mix(`M${m.letter}@${m.x},${m.y}:${m.hp}:${m.chasing ? 1 : 0}:${m.energy || 0}:${m.fleeing ? 1 : 0}:${m.bitten ? 1 : 0}`)
   for (const it of state.items) mix(`I${it.type}${it.x},${it.y}${it.amount || ''}${it.charges || ''}${it.qty || ''}`)
   return h >>> 0
 }
@@ -684,6 +691,10 @@ export function monsterAttack(state, mIdx) {
     if (newHp <= 0) {
       return { ...emitFx(s, 'die', { killer: mon.letter }), player: newPlayer, phase: 'gameover', killer: mon.name, finalScore: player.gold + state.dungeonLevel * 50 }
     }
+    // #3509, the snake's own 1980 law: it flees for good once it has bitten.
+    if (mon.letter === 'S') {
+      s = { ...s, monsters: s.monsters.map((mm, ii) => (ii === mIdx ? { ...mm, bitten: true, fleeing: true, chasing: false } : mm)) }
+    }
     return { ...s, player: newPlayer }
   } else {
     return addMsg(state, `The ${mon.name} misses.`)
@@ -693,6 +704,10 @@ export function monsterAttack(state, mIdx) {
 // ============================================================
 // MONSTER AI
 // ============================================================
+// Fixed 8-neighbour order (N, NE, E, SE, S, SW, W, NW): the flee law breaks
+// distance ties on this order, so seeded replays stay byte-equal.
+const DIRS8 = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]]
+
 export function advanceMonsters(state, skipId = -1) {
   if (state.phase === 'gameover') return state
   const { player, map, visible } = state
@@ -701,7 +716,15 @@ export function advanceMonsters(state, skipId = -1) {
 
   for (let i = 0; i < newMonsters.length; i++) {
     let m = newMonsters[i]
-    if (m.id === skipId) continue
+    const speed = m.speed || MONSTER_ENERGY
+    const gain = (m.energy || 0) + speed
+
+    // The bumped monster already bought its bite this turn: energy accrues,
+    // the step is spent.
+    if (m.id === skipId) {
+      newMonsters[i] = { ...m, energy: Math.max(0, gain - MONSTER_ENERGY) }
+      continue
+    }
 
     const dist = Math.abs(m.x - player.x) + Math.abs(m.y - player.y)
     const playerVisible = visible[m.y]?.[m.x]
@@ -709,67 +732,116 @@ export function advanceMonsters(state, skipId = -1) {
     // Wake up if sees player
     let chasing = m.chasing
     if (playerVisible && dist <= 8) chasing = true
+    // #3509, the 1980 flee law: a wounded creature that sees the hero runs
+    // (hp ≤ ¼ max); the snake's bite flag is set in monsterAttack. Fleeing
+    // is for good — wounded things do not get brave again.
+    let fleeing = m.fleeing || (chasing && playerVisible && m.hp * 4 <= m.maxHp)
 
-    // Decide action
-    if (chasing) {
-      // Try to move toward player, or attack if adjacent
-      if (dist <= 1.5) {
-        // Adjacent - attack
-        newMonsters[i] = { ...m, chasing }
-        s = { ...s, monsters: newMonsters }
-        s = monsterAttack(s, i)
-        if (s.phase === 'gameover') return s
-        newMonsters = [...s.monsters]
-      } else {
-        // Move toward player
-        const dx = Math.sign(player.x - m.x)
-        const dy = Math.sign(player.y - m.y)
-        const moves = []
-        if (dx !== 0 && dy !== 0) moves.push([dx, dy], [dx, 0], [0, dy])
-        else if (dx !== 0) moves.push([dx, 0], [0, 1], [0, -1])
-        else moves.push([0, dy], [1, 0], [-1, 0])
+    // Energy clock (#3509): a full MONSTER_ENERGY buys one action; the
+    // remainder carries, so ×1.5 races double-step and ×0.75 races skip.
+    let energy = gain
+    if (energy < MONSTER_ENERGY) {
+      newMonsters[i] = { ...m, chasing, fleeing, energy }
+      continue
+    }
 
-        let moved = false
-        for (const [mx, my] of moves) {
-          const nx = m.x + mx, ny = m.y + my
-          if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue
-          const tile = map[ny][nx]
-          if (blocksMove(tile)) continue
-          // closed VISIBLE doors block monsters; hidden doors are known to
-          // the creatures (1980 rule) and pass
-          if (tile === '+' && !doorIsHidden(s, nx, ny)) continue
-          if (newMonsters.some(other => other !== m && other.x === nx && other.y === ny)) continue
-          if (nx === player.x && ny === player.y) {
-            // Attack
-            newMonsters[i] = { ...m, chasing }
-            s = { ...s, monsters: newMonsters }
-            s = monsterAttack(s, i)
-            if (s.phase === 'gameover') return s
-            newMonsters = [...s.monsters]
+    while (energy >= MONSTER_ENERGY) {
+      m = newMonsters[i]
+      energy -= MONSTER_ENERGY
+      const stepDist = Math.abs(m.x - player.x) + Math.abs(m.y - player.y)
+
+      const blockedBy = (nx, ny) => {
+        if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) return true
+        const tile = map[ny][nx]
+        if (blocksMove(tile)) return true
+        // closed VISIBLE doors block monsters; hidden doors are known to
+        // the creatures (1980 rule) and pass
+        if (tile === '+' && !doorIsHidden(s, nx, ny)) return true
+        return newMonsters.some((other, ii) => ii !== i && other.x === nx && other.y === ny)
+      }
+
+      if (fleeing) {
+        // Farthest walkable step from the hero; cornered rats fight — no
+        // step flees and it is adjacent, it bites.
+        let bx = -1, by = -1, bestD = stepDist
+        for (const [dx, dy] of DIRS8) {
+          const nx = m.x + dx, ny = m.y + dy
+          if (blockedBy(nx, ny)) continue
+          if (nx === player.x && ny === player.y) continue
+          const d = Math.abs(nx - player.x) + Math.abs(ny - player.y)
+          if (d > bestD) { bestD = d; bx = nx; by = ny }
+        }
+        if (bx >= 0) {
+          newMonsters[i] = { ...m, x: bx, y: by, chasing, fleeing, energy }
+        } else if (stepDist <= 1) {
+          newMonsters[i] = { ...m, chasing, fleeing, energy }
+          s = { ...s, monsters: newMonsters }
+          s = monsterAttack(s, i)
+          if (s.phase === 'gameover') return s
+          newMonsters = [...s.monsters]
+          newMonsters[i] = { ...newMonsters[i], energy }
+        } else {
+          newMonsters[i] = { ...m, chasing, fleeing, energy }
+        }
+      } else if (chasing) {
+        // Try to move toward player, or attack if adjacent
+        if (stepDist <= 1.5) {
+          // Adjacent - attack
+          newMonsters[i] = { ...m, chasing, fleeing, energy }
+          s = { ...s, monsters: newMonsters }
+          s = monsterAttack(s, i)
+          if (s.phase === 'gameover') return s
+          newMonsters = [...s.monsters]
+          newMonsters[i] = { ...newMonsters[i], energy }
+          if (newMonsters[i].fleeing) fleeing = true
+        } else {
+          // Move toward player
+          const dx = Math.sign(player.x - m.x)
+          const dy = Math.sign(player.y - m.y)
+          const moves = []
+          if (dx !== 0 && dy !== 0) moves.push([dx, dy], [dx, 0], [0, dy])
+          else if (dx !== 0) moves.push([dx, 0], [0, 1], [0, -1])
+          else moves.push([0, dy], [1, 0], [-1, 0])
+
+          let moved = false
+          for (const [mx, my] of moves) {
+            const nx = m.x + mx, ny = m.y + my
+            if (blockedBy(nx, ny)) continue
+            if (nx === player.x && ny === player.y) {
+              // Attack
+              newMonsters[i] = { ...m, chasing, fleeing, energy }
+              s = { ...s, monsters: newMonsters }
+              s = monsterAttack(s, i)
+              if (s.phase === 'gameover') return s
+              newMonsters = [...s.monsters]
+              newMonsters[i] = { ...newMonsters[i], energy }
+              if (newMonsters[i].fleeing) fleeing = true
+              moved = true
+              break
+            }
+            newMonsters[i] = { ...m, x: nx, y: ny, chasing, fleeing, energy }
             moved = true
             break
           }
-          newMonsters[i] = { ...m, x: nx, y: ny, chasing }
-          moved = true
-          break
+          if (!moved) newMonsters[i] = { ...m, chasing, fleeing, energy }
         }
-        if (!moved) newMonsters[i] = { ...m, chasing }
-      }
-    } else {
-      // Wander randomly
-      newMonsters[i] = { ...m, chasing }
-      if (rng(0, 2) === 0) {
-        const dx = rng(-1, 1), dy = rng(-1, 1)
-        const nx = m.x + dx, ny = m.y + dy
-        if (nx >= 0 && nx < MAP_W && ny >= 0 && ny < MAP_H && !blocksMove(map[ny][nx])
-            && !(map[ny][nx] === '+' && !doorIsHidden(s, nx, ny))) {
-          if (!newMonsters.some((other, ii) => ii !== i && other.x === nx && other.y === ny)) {
-            if (!(nx === player.x && ny === player.y)) {
-              newMonsters[i] = { ...newMonsters[i], x: nx, y: ny }
-            }
+      } else {
+        // Wander randomly
+        newMonsters[i] = { ...m, chasing, fleeing, energy }
+        if (rng(0, 2) === 0) {
+          const dx = rng(-1, 1), dy = rng(-1, 1)
+          const nx = m.x + dx, ny = m.y + dy
+          if (!blockedBy(nx, ny) && !(nx === player.x && ny === player.y)) {
+            newMonsters[i] = { ...newMonsters[i], x: nx, y: ny }
           }
         }
       }
+    }
+
+    // Stamp the carry-over if the last branch didn't (gameover returns exit
+    // early, so this only runs on live turns).
+    if (newMonsters[i] && newMonsters[i].energy !== energy) {
+      newMonsters[i] = { ...newMonsters[i], energy }
     }
   }
 
@@ -942,7 +1014,7 @@ export function handleRead(state, invIndex) {
         if (eligible.length === 0) break
         const [letter, def] = eligible[rng(0, eligible.length - 1)]
         const hp = hpRoll(def.hp)
-        s = { ...s, monsters: [...s.monsters, { id: -1 - s.turn, x: nx, y: ny, letter, name: def.name, hp, maxHp: hp, dmg: def.dmg, ac: def.ac, xp: def.xp, chasing: true }] }
+        s = { ...s, monsters: [...s.monsters, { id: -1 - s.turn, x: nx, y: ny, letter, name: def.name, hp, maxHp: hp, dmg: def.dmg, ac: def.ac, xp: def.xp, chasing: true, energy: 0, fleeing: false, bitten: false, speed: def.speed }] }
         break
       }
       break

@@ -263,6 +263,10 @@ export default function RogueGame() {
             // the last message lines, so the browser proof sees what the sim saw.
             inv: s.player.inventory.map((i) => ({ t: i.type, m: !!i.missile, q: i.qty || 0, ch: i.charges || 0 })),
             floor: s.items.filter((i) => i.missile).map((i) => ({ q: i.qty, x: i.x, y: i.y })),
+            // #3509 mobility drive leg: per-monster state, so the browser
+            // proof watches real energy accrual and real flees.
+            mob: s.monsters.map((mm) => ({ x: mm.x, y: mm.y, l: mm.letter, hp: mm.hp,
+              en: mm.energy || 0, fl: !!mm.fleeing, ch: !!mm.chasing })),
             msgs: s.messages.slice(-4),
           }
         },
