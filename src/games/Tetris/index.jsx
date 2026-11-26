@@ -457,7 +457,7 @@ const TetrisGame = () => {
             {/* #1637 WATCH — the prover stacks the well; any input takes over.
                 (pill first in the DOM, #1637: the phone contract wants its window
                 clear of the attract block's bottom anchor; z-index keeps the look) */}
-            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50 top-[calc(8rem + var(--sat,0px))]" />}
             {screen === 'play' && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(4.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
