@@ -167,6 +167,38 @@ CABINET TWO — "EMBER RIDER" (#3232), the row of cabinets:
   mirror deviation forks long runs, so the equivariance assertion is scoped
   to the fork-free window and the fork point is printed, not hidden.
 
+## The left flank (#3432) — JET LANE + KICKBACK L
+
+The never-dry stage gave the left side its own counted shot and its own save.
+Both are TABLE DATA first, engine second (same law as every rung):
+
+- **JET LANE** (`TABLE.rampL`) — two rollover wires UP in the flank corridor
+  (x 44..76; EMBER RIDER mirrors to x 284..316), fed by the left flipper's
+  flank line. Each wire pays `rules.ramp` × MULT; both in one ball pay
+  `rules.rampSet` × MULT and light the SET lamp (repeatable — the counter
+  resets on the SET). No new walls: the dome's left flank already rebounds a
+  flank shot into the roped outer channel, so the return drops past the spinner
+  and the kicker — the spinner finally lives on a ramp line, not only on a
+  drain miss (the wire zone is disjoint from the orbit channel at x<40 and
+  one-way law keeps downward passes free).
+- **KICKBACK L** (`TABLE.kbL`) — the mirror save column behind the LEFT
+  flipper tip (x 155..170 / TWO x 190..205): one free save per ball, fast
+  descent only (`minVy` rests-off law identical to #3250), pays `rules.kb`,
+  fires up-field toward the centre. The two columns are disjoint, so one fall
+  can never fire both — a ball may be saved once per SIDE per ball.
+- **Combo law** — a RAMP L SET re-arms the spent left kickback once (`kbarm`
+  event, `kbLArmFlash` white pulse on the ring): the flank feeds the save, the
+  save keeps the flank alive. Deviation note from the filed issue: no separate
+  arming button-target — the SET *is* the arm, so both kickbacks keep the
+  auto-column idiom #3250 shipped.
+- State & juice: `rampLHits`/`rampLLit`/`kbLUsed` join `stateOf` and the hash;
+  chrome wire pair + progress lamps + SET lamp draw on the flank; the mirrored
+  plunger-shape ring shares the #3250 draw (`kbUnits` loop). Dev rigs:
+  `kbDrop('L')`, `rampLFeed()`.
+- Gotcha learned: both column centres sit under a flipper-tip shadow — spawn
+  probes at `yFrom+4` (556), not 558, and the flank feed above the outlane
+  guide's upper tip (y 400, not 430) or the guide end knocks the line flat.
+
 ## Art kits (#3259)
 
 Real arcades sold **art kits** — the same machine in a new dress. Same here:
@@ -306,8 +338,8 @@ compile reads ghost, never as a save.
 ## Verify
 
 ```bash
-npm run pinballcheck          # 288 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix/pack pins, plain Node (+19 mutants incl. packmagnet/magspent/magclock/magstall/magrearm)
-npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs, + #3336 live phone-mix legs)
+npm run pinballcheck          # 312 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix/pack/flank pins, plain Node (+19 mutants incl. packmagnet/magspent/magclock/magstall/magrearm)
+npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs, + #3336 live phone-mix legs, + #3432 flank leg: KICKBACK L / JET LANE SET / combo rearm)
 npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284 + #3359): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence, garage: slot switch (Digit1/2/3), SAVE into a garage slot, slot-choice persistence, legacy-blob one-shot migration (+#3290: badge-while-unselected, nova-demo honesty, drawn-rim delta, seam nearest-centre, touch tap-guard + tool taps)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
 npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
@@ -407,4 +439,12 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   the magnet holds its pack. Honest residue: a ball queued directly behind a
   pin bounces off it (the pin is a post) instead of chain-pinning through it,
   and the wrap's curl assist is still a fixed push, not a shaped rail.
-- No left ramp / kickback, and the spinner is still outlane-only.
+- **CLOSED by #3432:** no left ramp / kickback, and the spinner was
+  outlane-only. The flank now runs JET LANE (two UP wires x 44..76, 25/500
+  ladder, SET lamp) and KICKBACK L (x 155..170, one save per ball per side),
+  joined by the combo law (a SET re-arms the save). The ramp's dome-flank
+  return runs the ball down the roped outer channel through the spinner/kicker.
+  EMBER RIDER mirrors everything with its hotter prices (30/600/75).
+  Honest residue: the ramp is wire-scored (no raised lane wall), so a
+  flank-line ball scores whether or not the player aimed it — same law the
+  launch-lane RAMP has always had.
