@@ -26,6 +26,9 @@ const chip = () => page.evaluate(() => {
 const storageTick = () => page.evaluate(() => {
     try { const r = JSON.parse(window.localStorage.getItem('grindcity.run.v1')); return r && r.tick } catch { return null }
 })
+const storageMs = () => page.evaluate(() => {
+    try { const r = JSON.parse(window.localStorage.getItem('grindcity.run.v1')); return r && r.ms } catch { return null }
+})
 const waitForHook = () => page.waitForFunction(() => !!window.__grindTest, { timeout: 15000 })
 
 // clean slate — no waiting line from a previous visit
@@ -80,12 +83,17 @@ try {
 flash = await page.evaluate(() => ((document.querySelector('[data-q="msg"]') || {}).textContent) || null)
 r.check('resume flashes what was carried', (flash || '').includes('RETURNED AT'), flash)
 
-// #3476: a line older than a day retires on read — stamp today's stored pack
-// 26 h into the past, reload, and the plaza must be clean (offer gone AND
-// the stale store cleared, not squatting until the next save replaces it).
+// #3476: pause must not stamp the store — the ms is the tell (the throttle
+// saveCd keeps ticking while paused, so without the gate the pack would get a
+// fresh ms at the same frozen tick).
 await page.evaluate(() => window.__grindTest.forceSave())
-const pNow = await storageTick()
-r.check('forceSave stamps a fresh pack', pNow !== null, `tick ${pNow}`)
+const pPaused = await storageTick()
+const msPaused = await storageMs()
+r.check('a fresh pack is stamped before the pause', pPaused !== null && msPaused !== null, `tick ${pPaused}`)
+await page.keyboard.press('Escape')
+await page.waitForTimeout(2600)
+r.check('paused holds the store (no mid-pause save)', (await storageMs()) === msPaused,
+    `ms ${msPaused} -> ${await storageMs()}`)
 await page.evaluate(() => {
     const raw = window.localStorage.getItem('grindcity.run.v1')
     if (raw) { const r = JSON.parse(raw); r.ms = Date.now() - 26 * 3600 * 1000; window.localStorage.setItem('grindcity.run.v1', JSON.stringify(r)) }

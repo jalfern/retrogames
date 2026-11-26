@@ -974,7 +974,7 @@ const GrindCityGame = () => {
                         {/* #3470 waiting line — a run left mid-page waits right here;
                             R or tap continues it at the exact tick. */}
                         {pendingV && (
-                            <span data-q="resume-line" onPointerDown={(e) => { e.stopPropagation(); if (hud.resumeFn.current) hud.resumeFn.current() }} className="pointer-events-auto mt-3 rounded border border-[#7dffb0]/60 bg-black/50 px-3 py-1 text-sm font-black italic tracking-[0.2em] text-[#7dffb0] drop-shadow-[0_2px_0_rgba(0,0,0,.9)] animate-pulse">LINE WAITS · {pendingV.sim.score} PTS — R / TAP</span>
+                            <span data-q="resume-line" onPointerDown={(e) => { e.stopPropagation(); if (hud.resumeFn.current) hud.resumeFn.current() }} className="pointer-events-auto mt-3 rounded border border-[#7dffb0]/60 bg-black/50 px-3 py-1 text-sm font-black italic tracking-[0.12em] text-[#7dffb0] drop-shadow-[0_2px_0_rgba(0,0,0,.9)] animate-pulse sm:tracking-[0.2em]">LINE WAITS · {pendingV.sim.score} PTS — R / TAP</span>
                         )}
                         <div className="mt-10"><AttractMessage messages={[...MESSAGES, PRESS]} /></div>
                     </div>
