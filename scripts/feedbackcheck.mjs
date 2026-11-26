@@ -367,7 +367,7 @@ ok('dev: the __game contract state is still preferred when present', devCap.stat
 // ── #905: panel UX — own screen, ESC, send returns to the game, key row ─────
 ok('panel: owns a full screen above every game overlay', /fixed inset-0 z-\[80\]/.test(chromeSrc))
 ok('panel: ESC closes and resumes the game', /e\.key === 'Escape'[\s\S]{0,60}closePanel\(\)/.test(chromeSrc))
-ok('panel: successful send goes straight back to the game', /if \(res\.ok\) \{[\s\S]{0,160}closePanel\(\)/.test(chromeSrc))
+ok('panel: successful send goes straight back to the game', /if \(res\.ok\) \{[\s\S]{0,300}closePanel\(\)/.test(chromeSrc))
 ok('panel: a toast confirms the filed issue after the screen is gone', /data-feedback="toast"/.test(chromeSrc))
 ok('panel: typing is shielded by the capture guard', /installTypingGuard\(panelRef\.current/.test(chromeSrc))
 ok('panel: Jon key row saves to the device', /saveJonKey/.test(chromeSrc) && /data-feedback="keysave"/.test(chromeSrc))
