@@ -738,6 +738,9 @@ export const GAMES = [
     {
         path: '/frogger',
         pad: { layout: 'stick', buttons: [], analog: false },
+        // #3436: the bottom-centre JALFERN.COM mark floats on the canvas' bottom bank (the
+        // canvas HUD already carries the title) — canvas-HUD-as-title opt-out, Britannia precedent (#1221).
+        footer: 'none',
         builtBy: 'forge',
         added: '2026-10-09',
         component: FroggerGame,

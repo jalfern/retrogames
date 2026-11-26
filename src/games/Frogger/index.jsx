@@ -459,17 +459,17 @@ const FroggerGame = () => {
             ctx.fillRect(0, 0, W, HUD_H)
             ctx.font = 'bold 8px monospace'
             ctx.textAlign = 'left'
-            ctx.fillStyle = '#8f8f8f'
+            ctx.fillStyle = '#a9a9a9'
             ctx.fillText('SCORE', 6, 9)
             ctx.fillText('HI-SCORE', 6, 21)
             ctx.fillStyle = '#ffffff'
             ctx.fillText(String(gs.score).padStart(6, '0'), 40, 9)
             ctx.fillText(String(Math.max(gs.score, hiScore)).padStart(6, '0'), 60, 21)
-            ctx.fillStyle = '#8f8f8f'
+            ctx.fillStyle = '#a9a9a9'
             ctx.fillText('LEVEL', 110, 9)
             ctx.fillStyle = '#ffffff'
             ctx.fillText(String(gs.level), 142, 9)
-            ctx.fillStyle = '#8f8f8f'
+            ctx.fillStyle = '#a9a9a9'
             ctx.fillText('TIME', 110, 21)
             const tw = 104
             ctx.fillStyle = '#333333'
@@ -549,7 +549,9 @@ const FroggerGame = () => {
             <div ref={containerRef} className="relative w-full max-w-[420px] h-full max-h-[460px] flex items-center justify-center border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block" style={{ imageRendering: 'pixelated' }} />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'FROGGER')} onResume={handleResume} />}
-                {/* #1654: the discoverable WATCH line, before the first Y press. */}
+                {/* #1654: the discoverable WATCH line, before the first Y press. bottom:'24%' is the
+                    harness-pinned clear-band-above-the-pad law (watchphonecheck) — do not "improve"
+                    this without changing that check first (#3436). */}
                 {attractUi && !paused && (
                     <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
                         <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
