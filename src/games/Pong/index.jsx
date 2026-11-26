@@ -549,11 +549,14 @@ const PongGame = () => {
                             // #3506 — the pick dial answers a tap like a
                             // LEFT/RIGHT press; the label itself stays visible
                             // under the transparent band (the canvas draws it).
+                            // #3584 — the band is the label's COLUMN, not half
+                            // the table: any tap in the centre column must still
+                            // reach the canvas and start the match (#430 law).
                             e.preventDefault()
                             e.stopPropagation()
                             cyclePickRef.current(1)
                         }}
-                        style={{ position: 'absolute', top: '47%', height: '10%', left: 0, right: '50%', zIndex: 60, background: 'transparent', border: 0, cursor: 'pointer', padding: 0 }}
+                        style={{ position: 'absolute', top: '47%', height: '10%', left: '4%', width: '42%', zIndex: 60, background: 'transparent', border: 0, cursor: 'pointer', padding: 0 }}
                     />
                 )}
                 {screen === 'attract' && (
@@ -564,13 +567,16 @@ const PongGame = () => {
                         title="Tap to cycle the score target (RANGE)"
                         onPointerDown={(e) => {
                             // #3565 — the second dial: a tap on the RANGE label
-                            // rides the same cycle as UP/DOWN. Left half stays
-                            // GAME (the pick-zone above), right half is RANGE.
+                            // rides the same cycle as UP/DOWN. #3584 — the two
+                            // dials are columns under their labels (4–46% and
+                            // 54–96%); before, the halves met at x=50% and the
+                            // centre tap died on this button's stopPropagation —
+                            // the switch bank may never cover the field centre.
                             e.preventDefault()
                             e.stopPropagation()
                             cycleRangeRef.current(1)
                         }}
-                        style={{ position: 'absolute', top: '47%', height: '10%', left: '50%', right: 0, zIndex: 60, background: 'transparent', border: 0, cursor: 'pointer', padding: 0 }}
+                        style={{ position: 'absolute', top: '47%', height: '10%', left: '54%', width: '42%', zIndex: 60, background: 'transparent', border: 0, cursor: 'pointer', padding: 0 }}
                     />
                 )}
                 {screen === 'play' && !paused && (

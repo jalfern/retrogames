@@ -318,6 +318,43 @@ try {
     r.check('leg 9 RANGE knob ride completed without timeout', false, String(e))
 }
 
+// ---- leg 10 (#3584): the switch bank leaves the field centre open ----
+// The nightly tapstartcheck taps the exact canvas centre. When the GAME/RANGE
+// dials grew half-width bands meeting at x=50%, that tap died on the RANGE
+// button's stopPropagation — attract could not be tapped away on a phone.
+try {
+    p = await openGame(browser, { url: `${BASE}?seed=99`, hook: '__pongTest', viewport: { width: 390, height: 844 }, touch: true, wait: 400 })
+    p.on('pageerror', (e) => errors.push(String(e)))
+    const centre = await p.evaluate(() => {
+        const r = document.querySelector('canvas').getBoundingClientRect()
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    })
+    await p.touchscreen.tap(centre.x, centre.y)
+    const live = await until(p, async () => { const q = await probe(p); return q.screen === 'play' ? q : null }, 3000, 'centre tap starts the match')
+    r.check('#3584: a centre tap on attract starts the match (centre column is open)', live.score === 0 && live.opp === 0, `score ${live.score}-${live.opp}`)
+    r.check('#3584: the centre tap rode no dial (RANGE stands FREE after the start)', live.range === 'FREE')
+    await p.close()
+    p = await openGame(browser, { url: `${BASE}?seed=99`, hook: '__pongTest', viewport: { width: 390, height: 844 }, touch: true, wait: 400 })
+    p.on('pageerror', (e) => errors.push(String(e)))
+    const onCanvas = (fx, fy) => p.evaluate(({ fx, fy }) => {
+        const r = document.querySelector('canvas').getBoundingClientRect()
+        return { x: r.left + r.width * fx, y: r.top + r.height * fy }
+    }, { fx, fy })
+    const rc = await onCanvas(0.75, 0.52) // RANGE column, off the centre gap
+    await p.touchscreen.tap(rc.x, rc.y)
+    const afterRange = await probe(p)
+    r.check('#3584: the RANGE column still answers a thumb (FREE → 1, still attract)',
+        afterRange.range === '1' && afterRange.screen === 'attract', JSON.stringify(afterRange).slice(0, 120))
+    const gc = await onCanvas(0.25, 0.52) // GAME column
+    await p.touchscreen.tap(gc.x, gc.y)
+    const afterPick = await probe(p)
+    r.check('#3584: the GAME column still cycles the pick (NORMAL → HARD, still attract)',
+        afterPick.diff === 'HARD' && afterPick.screen === 'attract', JSON.stringify(afterPick).slice(0, 120))
+    await p.close()
+} catch (e) {
+    r.check('leg 10 centre-tap ride completed without timeout', false, String(e))
+}
+
 r.check('zero page errors across the ride', errors.length === 0, errors.join(' | '))
 
 // ---- chip mutants (#3529): each MUST die ----
