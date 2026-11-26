@@ -878,22 +878,32 @@ const wrap = (gs) => {
     r.check('#3422 the pinned ball itself stays exempt (a catch is never a stall)',
         heldPin && heldPin.stall === 0, `stall=${heldPin && heldPin.stall}`)
 
-    // re-arm clears the spent markers for balls still riding the table — in a
-    // PACK drain (a plain drain resets the whole table, which would measure a
-    // brand-new puck instead of the survivor: toothless, so a fat pack it is —
-    // three balls, drain one, the witness must still be the SAME puck).
+    // re-arm clears the spent marker of a ball STILL RIDING THE TABLE: pin the
+    // pack (two grabs), let both snap for real (both carry magHoldT −1), then
+    // drain one — that drain re-arms the coil (touch law) and must re-arm the
+    // survivor too (#3422).
     const gs5 = makeGame(344)
     gs5.multiball = true; gs5.saveUsed = true; gs5.saveT = 0
     rung3Ball(gs5, MG.x, MG.y - 40, 0, 60)
-    gs5.pucks[0].magHoldT = -1          // spent on the last drive, currently free
-    gs5.magCharge = 0; gs5.magTouched = true
-    gs5.pucks.push(mkPuck(120, 250, 0, 0), mkPuck(200, 250, 0, 0))   // two witnesses survive the drain
-    gs5.pucks[0].by = TABLE.drainY + 5
-    drive(gs5, {}, 2); types(gs5)
-    const wit = gs5.pucks.find((p) => Math.abs(p.bx - 120) < 1)
-    r.check('#3422 a drain that re-arms the coil re-arms its balls too (spent marker clears with the charge)',
-        gs5.magCharge === 1 && gs5.pucks.length === 2 && wit && wit.magHoldT === 0,
-        `charge=${gs5.magCharge} packs=${gs5.pucks.length} wit=${wit ? wit.magHoldT : 'gone'}`)
+    let snaps5 = 0, inj5 = false
+    const a5 = gs5.pucks[0]
+    for (let i = 0; i < 200 && snaps5 < 2; i++) {
+        drive(gs5, {}, 1)
+        const t = types(gs5)
+        snaps5 += t.filter((x) => x === 'magfree').length
+        if (!inj5 && gs5.magHold > 0) { inj5 = true; gs5.pucks.push(mkPuck(MG.x + 32, MG.y + 4, -320, 0)) }
+    }
+    const w5 = gs5.pucks.find((p) => p.magHoldT === -1)
+    r.check('#3422 setup: both pack balls really snapped spent (both carry the −1 marker)',
+        snaps5 === 2 && gs5.pucks.filter((p) => p.magHoldT === -1).length === 2, `snaps=${snaps5}`)
+    if (w5) {
+        const other = gs5.pucks.find((p) => p !== w5)
+        if (other) { other.bx = 150; other.by = TABLE.drainY + 5 }   // drain the OTHER ball
+        drive(gs5, {}, 2); types(gs5)
+        r.check('#3422 a drain that re-arms the coil re-arms its balls too (spent marker clears with the charge)',
+            gs5.magCharge === 1 && gs5.pucks.includes(w5) && w5.magHoldT === 0,
+            `charge=${gs5.magCharge} packs=${gs5.pucks.length} holdT=${w5.magHoldT}`)
+    }
 }
 
 // ---- #3422 the orbit lane is per-ball — verified, not assumed ----
