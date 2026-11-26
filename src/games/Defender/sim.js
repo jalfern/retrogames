@@ -15,7 +15,9 @@
 // the wave (+1000). 3 lives, extra ship every 10,000, ~0.5 s death freeze
 // (#1531), respawn grace, and the
 // run ends honestly at GAME OVER. Documented gaps (see README): hyperspace,
-// meteor-swarm bonus; collisions at the wrap seam are skipped.
+// meteor-swarm bonus. Every position-based collision reads the wrap through
+// wrapDelta — lasers, catch, friendly fire, ship contact, the diver's
+// descent and the bomb blast — so the wrap seam is not a dead zone.
 //
 // The smart bomb (#3443 — Jon's #2016 answer A, "port it. Smart bomb on the
 // B/secondAction button, 3 per wave"): B vaporizes every hostile inside the

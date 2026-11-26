@@ -140,8 +140,9 @@ path draws no rand, so the witness never moved.
   bonus table values 250/500/1000/10k are honored for what IS here).
 - A hauled human dies near the top of the screen instead of the lander
   circling back down with it (original re-descends; simplification).
-- Collisions within ~20 px of the wrap seam are skipped (20 px bodies on a
-  4000 px world — the miss window is 0.5 %).
+- The wrap seam is not a dead zone: lasers, friendly fire, catch, ship contact,
+  the lander's descent and the bomb blast are all wrapDelta-aware — pinned in
+  defendercheck's wrap-seam section (#3453).
 - Terrain collision is ship-only; landers clip the mountains visually by design
   (they hover above the ground line).
 - Two-player mode not ported (original: alternating turns).
