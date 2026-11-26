@@ -1310,6 +1310,42 @@ console.log('#1588 juice: the renderer draws each effect only on its signal (sta
         'the room-change flash stays inside the 1993 palette (white)')
 }
 
+// -------------------------------------------------------- #3564 breathe ----
+console.log('#3564 breathe: the player dot pulses (a live dot, not a static box)')
+{
+    // The dot BREATHES — a 2-frame expand/contract driven off sim.breathe, a
+    // pure function of tick. A stuck dot (one frame forever, or a jitter) is
+    // the bug this gate exists to catch: so we require BOTH frames to appear,
+    // an actual flip within the 6-tick frame window, a 12-tick period, and a
+    // replay-identical sequence (never rand — it cannot tilt a pinned seed).
+    const seq = []
+    const s = createSim(seedRng(5))
+    for (let i = 0; i < 120; i++) { step(s, { dx: 0, dy: 0 }); seq.push(s.breathe ? '1' : '0') }
+    const both = seq.includes('1') && seq.includes('0')
+    const flips = seq.filter((v, i) => i > 0 && v !== seq[i - 1]).length
+    ok(both, 'the dot breathes — both frames appear in 120 ticks (a stuck dot never passes)', `seq=${seq.slice(0, 24)}`)
+    ok(flips > 0 && flips <= 20, 'the pulse is a fixed flip rate, not a strobe — one flip per 6-tick frame', `flips=${flips}`)
+    ok(seq[6] !== seq[0], 'the frame actually changes within 6 ticks (the pulse is visible)', `frame0=${seq[0]} frame1=${seq[6]}`)
+    ok(seq[12] === seq[0], 'the pulse is a 12-tick period (a frame, not a random jitter)', `seq=${seq.slice(0, 18)}`)
+    const again = []
+    const s2 = createSim(seedRng(5))
+    for (let i = 0; i < 120; i++) { step(s2, { dx: 0, dy: 0 }); again.push(s2.breathe ? '1' : '0') }
+    ok(again.join('') === seq.join(''), 'the pulse replays byte-identically off a pinned seed (pure function of tick)')
+    // The nightly digest stays a gameplay fingerprint: stateHash ignores the
+    // cosmetic signal by construction (it reads room|carrying|afford|secretOpen
+    // and the world body, never breathe) — so this gate is really the one above.
+}
+
+console.log('#3564 breathe: the renderer draws the pulse (static)')
+{
+    const src = readFileSync(IDX, 'utf8')
+    ok(/const frame = sim\.breathe/.test(src), 'the renderer reads the breathe signal (the dot pulses on screen)')
+    ok(/fillRect\(bx, player\.y, bw, player\.h\)/.test(src),
+        'the player draws on the frame-width (expanding/contracting dot — the hitbox is unchanged)')
+    ok(/if \(frame\) \{[\s\S]*COLORS\.white[\s\S]*\}/.test(src),
+        'the wide frame carries a white glint pixel (the dot reads alive against a flat room)')
+}
+
 // ---------------------------------------------------------- #3441 seam law ----
 console.log('#3441 dragons follow through the door (room-warp seam law)')
 {
@@ -1731,6 +1767,12 @@ if (process.argv.includes('--mutant')) {
         ['#3545: the renderer ignores the heading (dragons never turn)', I,
             'const face = dragon.hx < 0 ? -1 : 1',
             'const face = 1'],
+        ['#3564: the sim stops breathing (the dot sits frozen)', SM,
+            'sim.breathe = Math.floor(sim.tick / 6) % 2 === 0',
+            'sim.breathe = false'],
+        ['#3564: the renderer ignores the breathe (the dot pulses in code, not on screen)', I,
+            'const frame = sim.breathe',
+            'const frame = false'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

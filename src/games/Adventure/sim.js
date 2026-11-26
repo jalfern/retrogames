@@ -460,6 +460,7 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
         sparkle: false,    // the Enchanted Chalice is being carried (worth a glint in hand)
         wipe: false,       // a room-change flash is sweeping this tick
         wipeAt: -999,      // tick of the last room change (wipe covers wipeAt..wipeAt+ROOM_WIPE_TICKS)
+        breathe: false,    // the player dot breathes (2-frame cosmetic pulse — hitbox unchanged)
         prevRoom: R.GOLD_CASTLE, // room last tick, so no wipe fires on the opening draw
     }
 
@@ -999,6 +1000,11 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
         //   wipe: arm a short flash the instant the room actually changes.
         if (sim.room !== sim.prevRoom) { sim.prevRoom = sim.room; sim.wipeAt = sim.tick }
         sim.wipe = sim.tick - sim.wipeAt < ROOM_WIPE_TICKS
+        //   breathe: the player dot breathes — a 2-frame expand/contract at
+        //   a fixed refresh rate, the 2600's pulse on a living dot, drawn as a
+        //   cosmetic only (the hitbox is unchanged). Pure function of tick:
+        //   never `rand`, never a rule, so a pinned seed replays byte-identically.
+        sim.breathe = Math.floor(sim.tick / 6) % 2 === 0
     }
 
     return sim
