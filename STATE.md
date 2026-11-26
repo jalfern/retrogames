@@ -1,67 +1,63 @@
-# STATE — forge board snapshot (slot a, 2026-11-26 — PONG RANGE knob SHIPPED `5ab9b66`; polish #3576 filed)
+# STATE — forge board snapshot (slot b, 2026-11-26 — ASTEROIDS's successor: the INVADERS march learns to tick)
 
-## This session (slot a)
-- TARGET #3553 REFUSED at claim (slot b held it — it shipped later today as #3559,
-  ASTEROIDS saucer curve). Normal ladder: steer/next/game-queue empty (#1712 is
-  waiting-jon, skipped per #605); feedback-borrow blocked (live QA mini + studio)
-  → flagship stage: all six flagships' README gaps owned/closed → #1571 never-dry:
-  `weakestStage` (live issues) picked **PONG**, score 4 (2 unowned README gaps +
-  2 body-named), held dirs Asteroids/Adventure/SpaceInvaders skipped.
-- Filed + claimed **#3565** (POLISH — PONG: selectable max-score knob). Shipped:
-  a `RANGE` dial on the attract switch bank — `FREE · 1 · 3 · 5 · 7 · 9`, ↑/↓ keys
-  + right-half thumb zone + `?range=` pin. The cap binds IN THE SIM: reaching N is
-  an honest terminal (`ev.winner`, no dead re-serve, no extra dice); FREE is the
-  untouched b16 play-to-quit default — every pre-existing pin replays verbatim.
-  Honest framing (issue design note + README): the 1972 RANGE switch was the
-  Easy/Difficult *speed* control (already the #3502 tiers) — this dial is a
-  cabinet-native FEATURE, not a claimed restoration.
-- Harness: pongcheck §range — range-3 sweep 40/40 wins ending at exactly 3, pinned
-  5 conceded, zero dead serves; range-1 closes on the first point (20 seeds); FREE
-  uncapped at 4000 ticks; seed+range replay determinism; 3 range mutants die; the
-  scatter mutant re-armed after the scoring-branch restructure; +280px audit width
-  keeps the clip mutant honest after the prompt trim (`PRESS ANY KEY TO START` now
-  matches the two-dial truth). pongdrive leg 9 (dial keys, thumb, honest cap win
-  with ascending sting, restart with target standing, pin) — 47/47 + 5/5 chip
-  mutants. Local: pongcheck 172/0, attractcheck 694/0, lint gates + build green.
-- Ship: PR #3575 squash-merged `5ab9b66`. One `static` red (my 30-char attract
-  line vs the shared 28-char law) — genuine fix within the one-PR budget, trimmed,
-  green. #3565 shipped+closed; prod verified (`index-Z-PXDI8s.js` carries
-  `SELECT RANGE`). Polish pass filed: **#3576** (feedback).
+## This session — TARGET refused (correctly), never-dry shipped
+- Warden TARGET #3565 (PONG RANGE) was **REFUSED at claim** — slot a held it
+  live (claim 19:40Z, checkpoint 30 min old at kick). Not a corpse; yielded.
+  Slot a shipped it later the same night.
+- Normal ladder: steer 0 · `next` #1712 waiting-jon · game-queue 0 · only
+  unheld feedback #3568 (ASTEROIDS polish) — QA-borrow blocked (QA MASTER live
+  ×2). Flagship stage spent → NEVER-DRY: honest `idle-kick` answered
+  `KICK SPACE INVADERS 0 weak`; verified before building: #3547/#3555 closed,
+  no open issue owns gap #0, picker score 4 = 4 unowned gaps, registry #2.
+- **SHIPPED (#3573 → PR #3578, squash `d89070c`): the machine-step march.**
+  Wall releases whole 2px steps (carry in `marchAcc` keeps average px/tick
+  exactly the #3517 law — drift 1px/600t); lands flush on the wall before
+  every drop-and-reverse (speed-proof clamp — the cabinet's jerk); descending
+  four now fires on `marchEvents` edges — one shared clock, parallel
+  metronome deleted. Thin fleet sprints >1 step/tick (2.6 at wave 9 n=1).
+- Proof: invaderscheck **104/0** (§13 = 9 granularity gates) · `--mutant`
+  **19/19** (4 new: off-grid width, carry deleted, clamp deleted, metronome
+  returns) · WITNESS 20/20 clean 0 deaths, floors re-anchored 1500→1560 /
+  150→155 with measured truth (step phase adds <1-step arrival lag; deletion
+  mutants die at 1651/1732/2007) · invadersdrive 8/8 real Chrome, zero page
+  errors · eslint + lint:mario/fps/ai + build green.
+- Prod verified: token `marchEvents` in live bundle `index-BX-_DTOg.js`
+  (~4 min after merge; first poll attempts failed because jalfern.com 308s to
+  **www** — prod-token probes need `curl -L`, worth remembering).
+- One 30-second fix mid-flight: mutant anchor `let nSteps` vs shipped
+  `const nSteps` — anchor-missing failures name themselves, good design.
 
 ## BOARD facts at close
-- building: #3573 (INVADERS discrete-step march — slot b LIVE). building-qa:
-  #3568 (ASTEROIDS), #3564 (ADVENTURE). game-queue empty · steer empty.
-- feedback open: #3576 (PONG, mine), #3572/#3571 (LUNAR LANDER, lane:qa),
-  #3244 + #2971 (waiting-jon).
-- Main GREEN at `5ab9b66` (my merge; `main-ok`: latest nightly is
-  cancelled-conclusion, not a failure). #3554 (nightly red, needs-approval) is the
-  warden's, not a builder item.
-- Rule-4 satisfied: game code merged today (`8490932`, `85f3b61`, `5ab9b66`).
+- game-queue = 0 · building = 0 (PONG #3565 closed by slot a) ·
+  building-qa = #3564, #3566 · this session filed #3573 (shipped+closed) and
+  **QA polish #3582** (drop wave-stepper, README phantom line, per-column
+  ripple adjudication, waveform, juice).
+- Rule-4 satisfied (game code merged twice tonight across slots).
 
-## PLAYABLE on prod right now
-- PONG — turn the RANGE dial; pick a number and first to it wins honestly:
-  https://jalfern.com/retrogames/pong
-- ASTEROIDS saucer learning curve, ADVENTURE seam law, PONG cabinet voice,
-  DEFENDER wall veto, INVADERS flowing pilot.
+## PLAYABLE on main right now
+- SPACE INVADERS — the march ticks in 2px machine steps with flush wall
+  contacts and the four notes landing on the ticks:
+  https://jalfern.com/retrogames/space-invaders
+- PONG RANGE switch (slot a, #3565). ASTEROIDS learning saucers (#3553).
+  DEFENDER hot-seat 2P. PONG cabinet voice. ADVENTURE exact seam.
 
 ## Open questions (links only — #605)
-- #3335 — QA music-bus low-pass (AWAITING, deadline Nov 27; PINBALL gate).
+- #3335 — QA music-bus low-pass (AWAITING, Nov 27).
 - #3516 — Arkanoid art rung (AWAITING, Nov 28).
 - #3054 — TestFlight recorder; #2971 — contra polish; #1712 — PLAICRAFT S2.
-- No new jonq questions this session (no taste calls).
-
-## Slot state at handoff
-- Main checkout detached at `origin/main` (`5ab9b66`). Slot-a dev server (:5173)
-  stopped via `scripts/devstop.sh` at close. `forge-pong-range` worktree pruned
-  post-merge (clean).
-- :5178 = slot b LIVE (#3573), :5174 = QA mini, :5176 = QA studio — do not stop.
+- No new jonq questions this session (all calls were measured law/harness,
+  none of taste).
 
 ## Next claims (for whoever is free)
-1. Ladder is empty → never-dry again. Re-run `idle.mjs` LIVE, don't trust this
-   note: PONG's gaps are now self-handled (its README gap 0 carries CLOSED-by),
-   and #3576 makes PONG QA-owned. Fresh `weakestStage` will point elsewhere
-   (Centipede / MissileCommand / Rogue / DonkeyKong all carry 4 unowned gaps;
-   registry order breaks ties). #2910 note: body-named scores from OTHER lanes'
-   polish passes still inflate picks — ownership is what matters.
-2. QA lanes: #3576 (PONG polish) joins #3568 + #3564 on the board.
-3. When jonq answers land (#3335 Nov 27, #3516 Nov 28), execute at the next claim.
+1. Next weakest via honest `idle-kick` — ASTEROIDS kiting adjudication and
+   snapshot/restore (#391 law) remain heavy candidates behind #3568's list.
+2. README-phantom sweep: several READMEs carry stale-but-open gap lines
+   (SpaceInvaders bonus-life one named in #3582 item 2); if a kick names
+   shipped history, mark CLOSED/DISCLAIMER, don't build.
+3. DONKEY KONG barrels-mid-air-over-ladders — still the smaller real fix.
+
+## Slot state at handoff
+- Slot-b dev server :5178 stopped via `scripts/devstop.sh` at close.
+- Worktree ~/Dev/retrogames-forge-si-march-steps DONE (merged #3578; safe to
+  prune next session). Main checkout re-pinned detached at origin/main.
+- STATE.md ships via this docs PR and parks with `statepark.mjs park b`.
