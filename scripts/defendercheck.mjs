@@ -695,6 +695,17 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     // presses whatever the job wanted. 0+0 is pinned: terrain is terrain.
     ok(wi.why.terrain === 0 && ho.why.terrain === 0,
         `the seat never grinds the wireframe on the audit sets: terrain deaths ${wi.why.terrain} + ${ho.why.terrain} (#3528 wall veto — was 1 + 3)`)
+    // #3533 300 s soak: the veto is pinned at 150 s on the audit sets above;
+    // read it once more over the 300 s horizon on fresh seed bands beyond the
+    // holdout band (5000+k*91 ends at 6729). Same law, longer horizon.
+    const soak8000 = patrol(8000, false, 18000)
+    const soak12000 = patrol(12000, false, 18000)
+    ok(soak8000.survived === 20 && soak12000.survived === 20,
+        `the 300 s horizon, fresh bands beyond 5000: ${soak8000.survived}/20 (8000+) + ${soak12000.survived}/20 (12000+) — survival 20/20`)
+    ok(soak8000.why.terrain === 0 && soak12000.why.terrain === 0,
+        `the 300 s horizon, fresh bands beyond 5000: terrain deaths ${soak8000.why.terrain} + ${soak12000.why.terrain} — the crawl-into-riser class stays closed`)
+    ok(soak8000.livesSpent >= 10 && soak12000.livesSpent >= 10,
+        `the 300 s horizon, fresh bands beyond 5000: ${soak8000.livesSpent} + ${soak12000.livesSpent} honest lives spent — still mortal`)
     ok(wi.minScore >= 12000, `every witness patrol banks >= 12,000 against the live planet (min ${wi.minScore} — was 6,000 at stage 2)`)
     ok(ho.minScore >= 8000, `untuned holdout banks >= 8,000 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
     ok(wi.waveSeeds >= 18, `>= 18/20 witness seeds clear a wave (${wi.waveSeeds}/20 — the last-hunter close-out ends waves instead of trailing them)`)
@@ -1409,11 +1420,11 @@ if (process.argv.includes('--mutant')) {
             `        } else if (!(facingLive && huntD < 80)) {`,
             `        } else if (true) {`],
         ['#1907 lander pops lose their green', S,
-            `killFx(e.x, e.y, 10, '#3dff5e') // the arcade's green lander pop (#1907)`,
-            `killFx(e.x, e.y, 10, '#ffffff')`],
+            `killFx(e.x, e.y, 10, '#3dff5e', 'puff')`,
+            `killFx(e.x, e.y, 10, '#ffffff', 'puff')`],
         ['#1907 mutant bursts lose their red', S,
-            `killFx(e.x, e.y, 10, '#ff5555') // mutants burst red (#1907)`,
-            `killFx(e.x, e.y, 10, '#ffffff')`],
+            `killFx(e.x, e.y, 10, '#ff5555', 'crack')`,
+            `killFx(e.x, e.y, 10, '#ffffff', 'crack')`],
         ['#1907 the wave-clear celebration never arms', S,
             `s.celebrate = 100 // #1907: the planet-exploses celebration beat before the new wave settles`,
             `s.celebrate = 0`],
