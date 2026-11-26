@@ -110,6 +110,14 @@ const DashGame = () => {
         let lastTurnSfx = -99, lastDropSfx = -99, lastForkSfx = -99, lastFlapSfx = -99, lastDroneSfx = -99
         let turnSeen = 0, forkSeen = 0, dropHeard = 0, flapHeard = 0, dronesHeard = 0, ferrySeen = 0, doneSeen = 0
         let slideSeen = 0   // #2468 receipts: the rumbled ticks of a wall walking its lane
+        // #3599 art pass (renderer only — sim untouched): the digger gets era
+        // motion. Legs pedal ONLY while actually moving (they used to cycle on
+        // raw tick, pedalling on air while standing still), the body faces the
+        // way you went, and a pick arm swings when a dig event fires.
+        let pPrev = { x: -1, y: -1 }   // player cell at the last CA tick
+        let pFace = 1                  // 1 right, -1 left
+        let pMoveUntil = -1           // gs.tick until which the step cycle runs
+        let pDigUntil = -1            // gs.tick until which the pick is swung
         let tubesSet = new Set()
         let pillarSet = new Set()
 
@@ -127,6 +135,7 @@ const DashGame = () => {
             boltDir.clear(); (meta.bolts || []).forEach(([x, y, d]) => boltDir.set(y * W + x, d))
             amoBorn.clear()
             trail.clear(); alarmed = false
+            pPrev = { x: -1, y: -1 }; pFace = 1; pMoveUntil = -1; pDigUntil = -1   // #3599: fresh cave, fresh digger
             turnFlash.clear(); forkFlash.clear(); trailB.clear()
             visePairs = []; viseHot = false
             lastTurnSfx = lastDropSfx = lastForkSfx = lastFlapSfx = lastDroneSfx = -99
@@ -245,7 +254,9 @@ const DashGame = () => {
             if (okd) runMoves++
             lastMoveTick = gs.tick
             // player events were appended to gs.events before step() clears them
-            handleEvents(gs.events.slice(before))
+            const got = gs.events.slice(before)
+            for (const e of got) if (e.type === 'dig') pDigUntil = gs.tick + 2   // #3599: the arm answers the soil breaking
+            handleEvents(got)
         }
 
         // #2374 juice, per CA tick: the fly drags a fading amber comet so its
@@ -256,6 +267,13 @@ const DashGame = () => {
         const trailAndCue = () => {
             for (const [i, s] of trail) { if (s <= 1) trail.delete(i); else trail.set(i, s - 1) }
             for (const [i, s] of trailB) { if (s <= 1) trailB.delete(i); else trailB.set(i, s - 1) }
+            // #3599: read the digger's step from real cell changes, not the clock.
+            const pp = gs.player
+            if (pp.x !== pPrev.x || pp.y !== pPrev.y) {
+                if (pp.x !== pPrev.x && pPrev.x >= 0) pFace = pp.x > pPrev.x ? 1 : -1
+                pMoveUntil = gs.tick + 2
+                pPrev = { x: pp.x, y: pp.y }
+            }
             for (const f of gs.flies) {
                 if (f.drift && f.digs === 0) trailB.set(f.y * W + f.x, TRAIL_LIFE)   // #2438: the butterfly drags a cooler comet
                 else trail.set(f.y * W + f.x, TRAIL_LIFE)
@@ -564,16 +582,47 @@ const DashGame = () => {
                 }
             }
 
-            // the digger
+            // the digger — #3599 art pass: a 1984 miner, not a colour stack.
+            // Shaded overalls with straps, a face that looks where you walk, a
+            // pick that swings when soil breaks, and a two-frame step earned by
+            // real cell changes — feet stay planted when the cave holds still.
             const p = gs.player
             if (p.alive) {
                 const px = p.x * TS, py = p.y * TS
-                ctx.fillStyle = '#2a5f9e'; ctx.fillRect(px + 4, py + 7, 8, 7)         // body
-                ctx.fillStyle = '#ffd9a0'; ctx.fillRect(px + 5, py + 2, 6, 5)         // head
-                ctx.fillStyle = '#c98a2a'; ctx.fillRect(px + 4, py + 1, 8, 2)         // helmet
+                const f = pFace
+                const moving = gs.tick <= pMoveUntil
+                const swinging = gs.tick <= pDigUntil
+                ctx.fillStyle = '#8a5c1a'; ctx.fillRect(px + 3, py + 1, 10, 2)             // brim
+                ctx.fillStyle = '#d99b35'; ctx.fillRect(px + 4, py, 8, 2)                  // crown
+                ctx.fillStyle = '#ffd9a0'; ctx.fillRect(px + 4, py + 2, 8, 5)              // head
+                ctx.fillStyle = '#3a2a1a'; ctx.fillRect(px + (f > 0 ? 9 : 6), py + 4, 1, 1)   // eye
+                ctx.fillStyle = '#d8c08a'; ctx.fillRect(px + 3, py + 7, 10, 2)            // shirt
+                ctx.fillStyle = '#2a5f9e'; ctx.fillRect(px + 4, py + 8, 8, 5)             // overalls
+                ctx.fillStyle = f > 0 ? '#1d4573' : '#3d7ac2'                              // far side shade, near side light
+                ctx.fillRect(px + (f > 0 ? 4 : 11), py + 8, 1, 5)
+                ctx.fillStyle = '#2a5f9e'; ctx.fillRect(px + 5, py + 7, 1, 1); ctx.fillRect(px + 10, py + 7, 1, 1)  // straps
+                const ax = px + (f > 0 ? 12 : 3)                                           // arm column
                 ctx.fillStyle = '#ffd9a0'
-                const leg = Math.floor(gs.tick / 3 + p.x + p.y) % 2
-                ctx.fillRect(px + 4, py + 14, 3, 2 - leg); ctx.fillRect(px + 9, py + 14, 3, 2 - (1 - leg))
+                if (swinging) {
+                    const up = gs.tick % 2 === 0
+                    ctx.fillRect(ax, py + (up ? 6 : 8), 2, 3)                             // arm up / strike
+                    ctx.fillStyle = '#8a5c1a'; ctx.fillRect(ax + (f > 0 ? 1 : -1), py + (up ? 3 : 5), 1, 4)   // handle
+                    ctx.fillStyle = '#9aa7b2'; ctx.fillRect(ax + (f > 0 ? 1 : -2), py + (up ? 2 : 4), 3, 2)   // steel head
+                    ctx.fillStyle = '#c8d2da'; ctx.fillRect(ax + (f > 0 ? 3 : -2), py + (up ? 2 : 4), 1, 2)   // glint
+                } else {
+                    ctx.fillRect(ax, py + 9, 2, 3)                                        // arm at rest
+                }
+                ctx.fillStyle = '#1d4573'
+                if (moving) {
+                    const step = gs.tick % 2
+                    ctx.fillRect(px + 4, py + 13, 3, 2 + step); ctx.fillRect(px + 9, py + 13, 3, 3 - step)     // stride
+                    ctx.fillStyle = '#4a3018'
+                    ctx.fillRect(px + 4, py + 14 + step, 3, 1); ctx.fillRect(px + 9, py + 15 - step, 3, 1)     // boots
+                } else {
+                    ctx.fillRect(px + 4, py + 13, 3, 3); ctx.fillRect(px + 9, py + 13, 3, 3)                   // planted
+                    ctx.fillStyle = '#4a3018'
+                    ctx.fillRect(px + 4, py + 15, 3, 1); ctx.fillRect(px + 9, py + 15, 3, 1)
+                }
             }
         }
 
