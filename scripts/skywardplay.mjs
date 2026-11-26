@@ -61,6 +61,20 @@ try {
     await page.evaluate((t) => window.__skywardTest.attractT(t), tv)
     await page.waitForTimeout(1300) // the orbit lerp converges well inside a second
     vista.push(await page.evaluate(() => window.__skywardTest.attractCam()))
+    // #3411 — the sky dome's far rim sat outside the camera far plane (2600 m),
+    // so the far cap of the 24×16 dome clipped to a black polygon. Count
+    // near-black px over the whole canvas at every leg; ~2% tolerance keeps a
+    // busy weather frame legitimate while still catching the polygon.
+    const darkPct = await page.evaluate(() => {
+      const c = document.querySelector('canvas')
+      const off = document.createElement('canvas'); off.width = c.width; off.height = c.height
+      const g = off.getContext('2d'); g.drawImage(c, 0, 0)
+      const d = g.getImageData(0, 0, off.width, off.height).data
+      let dark = 0
+      for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] < 90) dark++
+      return dark / (off.width * off.height)
+    })
+    ok(darkPct < 0.02, `attract vista paints its whole sky at t=${tv}s (${(darkPct * 100).toFixed(2)}% near-black px)`)
     await shot(`skyward-vista-${tv}.png`)
   }
   ok(vista.every((v) => v && (v.stormS <= 0.05 || v.cell === false)),
@@ -84,7 +98,7 @@ try {
     for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] > 90) lit++
     return lit
   })
-  ok(painted >= 0, `canvas exposes a live GL context (samples ${painted}; visual proof in shots)`)
+  ok(painted >= 4, `canvas paints the world (centre samples lit: ${painted} of 64; visual proof in shots)`)
 
   /* key-to-start (any key takes the school from attract) */
   await page.keyboard.press('Space')
