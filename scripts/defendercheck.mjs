@@ -18,6 +18,7 @@ import {
     SCORE_LANDER, SCORE_MUTANT, SCORE_CATCH, SCORE_DELIVER, SCORE_WAVE,
     BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT, DEATH_FREEZE, RESPAWN_DELAY, INVULN_TICKS, watchRoute,
     thrustHum, BOMBS_PER_WAVE, BOMB_SCREEN, MUTANT_SPEED, SPEEDER_SPEED,
+    LANDER_SPEED, WAVE_TIME, URGENT_LANDER_SPEED,
 } from '../src/games/Defender/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -326,6 +327,48 @@ console.log('respawn grace burns honestly (#3445): it expires, death comes back,
         'the honest-burn line is in the engine (source pin)')
     ok(/if \(isAttractMode\) sim\.player\.invuln = 999999/.test(jsx),
         'attract stays invulnerable BY COPY (#3445: the demo dying is a decision, and it is pinned as one)')
+}
+
+// ------------------------------------------------ wave clock (#3453 polish) ---
+console.log('wave clock: countdown, urgent landers, klaxon once, reset on the wave beat (#3453)')
+{
+    const s = createSim({ rand: seedRng(77), height: 420 })
+    ok(s.waveClock === WAVE_TIME && s.urgent === false, 'the wave opens with a full clock and calm landers')
+    s.step({})
+    ok(s.waveClock === WAVE_TIME - 1, 'the clock burns one tick per step')
+    s.events.length = 0
+    s.waveClock = 1
+    s.step({})
+    ok(s.urgent === true && s.events.filter((ev) => ev.t === 'waveUrgent').length === 1,
+        'at zero the wave goes urgent and the klaxon fires exactly once')
+    s.events.length = 0
+    for (let i = 0; i < 60; i++) s.step({})
+    ok(s.events.filter((ev) => ev.t === 'waveUrgent').length === 0, 'the klaxon never re-fires inside one wave')
+    // Urgent dives bite: full URGENT_LANDER_SPEED per tick, vs LANDER_SPEED calm.
+    const dive = (urgent) => {
+        const t = createSim({ rand: seedRng(79), height: 420 })
+        t.urgent = urgent
+        const L = t.enemies.find((e) => e.type === 'lander')
+        const hIdx = t.humans.findIndex((h) => h.state === 'walk')
+        L.state = 'descend'; L.target = hIdx; L.carry = null
+        const y0 = L.y
+        t.step({})
+        return Math.abs(L.y - y0)
+    }
+    // Urgent dives bite: same seed, same setup — the per-tick step grows by
+    // exactly the cap difference (landers also carry residual vy, so compare
+    // calm vs urgent rather than against the raw constant).
+    const calm = dive(false); const hot = dive(true)
+    ok(hot > LANDER_SPEED && Math.abs((hot - calm) - (URGENT_LANDER_SPEED - LANDER_SPEED)) < 1e-9,
+        `urgent landers dive faster (calm ${calm.toFixed(2)} → urgent ${hot.toFixed(2)} px/tick)`)
+    const r = createSim({ rand: seedRng(78), height: 420 })
+    r.urgent = true; r.waveClock = 0
+    r.enemies.length = 0
+    r.step({})
+    ok(r.wave === 2 && r.waveClock === WAVE_TIME && r.urgent === false,
+        'the wave-turn beat refills the clock and stands the landers down')
+    ok(/ev\.t === 'waveUrgent'/.test(jsx) && /sim\.waveClock/.test(jsx) && /sim\.urgent/.test(jsx),
+        'the klaxon and the blinking HUD clock are wired in the renderer')
 }
 
 // ---------------------------------------------------- component wiring (#1473) --
@@ -935,6 +978,12 @@ if (process.argv.includes('--mutant')) {
     const I = 'src/games/Defender/index.jsx'
     const S = 'src/games/Defender/sim.js'
     const MUTANTS = [
+        ['urgent never arms (#3453 clock dies)', S,
+            `if (s.waveClock === 0 && !s.urgent) {`,
+            `if (false && s.waveClock === 0 && !s.urgent) {`],
+        ['wave-turn never refills the clock (#3453)', S,
+            `s.waveClock = WAVE_TIME // #3453: new wave, fresh countdown`,
+            `// mutant: clock stays dead after wave 1`],
         ['human start ignores ?seed (pin removed)', I,
             `seed = forcedSeed !== undefined && forcedSeed !== null
                 ? forcedSeed >>> 0

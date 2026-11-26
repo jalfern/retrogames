@@ -37,6 +37,11 @@ export const MUTANT_SPEED = 2.4
 // quietly; the duel gets faster.
 export const SPEEDER_SPEED = 3.0
 export const WALK_SPEED = 0.3
+// #3453 polish — the 1981 wave pressure timer: each wave runs a countdown and
+// when it expires the LANDERS run hot (steeper dives, faster hauls). The
+// cabinet's beat; rand-free, so the witness stream cannot shift.
+export const WAVE_TIME = 60 * 60            // seconds × ticks-per-second
+export const URGENT_LANDER_SPEED = LANDER_SPEED * 1.5
 
 // Arcade score table: lander 150, mutant 1500, falling human caught 250,
 // carried human delivered 500, wave cleared 1000, extra ship every 10,000.
@@ -495,6 +500,8 @@ export function createSim({ rand, height }) {
         prevBomb: false,       // edge-trigger: one press = one bomb, held ≠ stream
         bombFlash: 0,          // the white detonation beat the renderer paints
         speedMode: false,      // #3456 stage 3: landerless wave — the mutants run hot
+        waveClock: WAVE_TIME,  // #3453: per-wave countdown; at 0 the landers go urgent
+        urgent: false,
         events: [],
     }
     s.humans = makeHumans(rand, s.terrain)
@@ -590,6 +597,15 @@ export function createSim({ rand, height }) {
         if (s.freeze > 0) { s.freeze -= 1; return s }
         if (s.celebrate > 0) s.celebrate -= 1 // #1907: the wave-clear beat burns its own clock
         if (s.bombFlash > 0) s.bombFlash -= 1 // #3443: the detonation white fades
+
+        // #3453: the per-wave countdown. At zero the wave goes urgent — landers
+        // dive and haul at URGENT_LANDER_SPEED until the wave turns over. The
+        // edge fires once per wave; freeze (GAME OVER beat) pauses the clock.
+        if (s.waveClock > 0) s.waveClock -= 1
+        if (s.waveClock === 0 && !s.urgent) {
+            s.urgent = true
+            s.events.push({ t: 'waveUrgent' })
+        }
 
         const p = s.player
 
@@ -716,8 +732,9 @@ export function createSim({ rand, height }) {
                     } else {
                         const dx = wrapDelta(h.x - e.x)
                         const dy = (h.y - 14) - e.y
-                        e.x += Math.sign(dx) * Math.min(Math.abs(dx), LANDER_SPEED)
-                        e.y += Math.sign(dy) * Math.min(Math.abs(dy), LANDER_SPEED)
+                        const lsp = s.urgent ? URGENT_LANDER_SPEED : LANDER_SPEED // #3453: expired clock, steeper dives
+                        e.x += Math.sign(dx) * Math.min(Math.abs(dx), lsp)
+                        e.y += Math.sign(dy) * Math.min(Math.abs(dy), lsp)
                         if (Math.abs(dx) < 6 && Math.abs(dy) < 8) {
                             // Abduction: the human dangles below and rises with it.
                             h.state = 'abducted'
@@ -728,7 +745,7 @@ export function createSim({ rand, height }) {
                         }
                     }
                 } else if (e.state === 'ascend') {
-                    e.vy = -(LANDER_SPEED * 0.8)
+                    e.vy = -(s.urgent ? URGENT_LANDER_SPEED : LANDER_SPEED) * 0.8 // #3453: urgent hauls race the surface
                     if (held) {
                         // Haul the human toward the surface again — if it lands
                         // with its catch, the human is gone and the shell mutates.
@@ -870,6 +887,8 @@ export function createSim({ rand, height }) {
             s.wave += 1
             s.enemies = spawnWave(rand, s.wave, height)
             s.bombs = BOMBS_PER_WAVE // #3443 (Jon #2016): 3 per wave — the wave beat restocks
+            s.waveClock = WAVE_TIME // #3453: new wave, fresh countdown
+            s.urgent = false
             s.celebrate = 100 // #1907: the planet-exploses celebration beat before the new wave settles
             s.events.push({ t: 'wave', pts: SCORE_WAVE })
         }

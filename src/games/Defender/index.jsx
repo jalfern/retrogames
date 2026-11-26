@@ -93,6 +93,9 @@ const DefenderGame = () => {
                 else if (ev.t === 'bonus') audioController.playTone(1200, 0.15, 'square', 0.12)
                 else if (ev.t === 'mutate') audioController.playTone(500, 0.06, 'square', 0.08)
                 else if (ev.t === 'speedup') audioController.playSweep(300, 950, 0.3, 'square', 0.14) // #3456 stage 3: the fleet just went hot
+                // #3453: the wave clock expired — a two-voice rising klaxon, square
+                // lead with a sawtooth echo, the landers going aggressive.
+                else if (ev.t === 'waveUrgent') { audioController.playSweep(600, 1200, 0.2, 'square', 0.15); audioController.playSweep(500, 1000, 0.25, 'sawtooth', 0.1, 0.22) }
                 else if (ev.t === 'abduct') audioController.playTone(120, 0.12, 'triangle', 0.1)
                 else if (ev.t === 'humanDied') audioController.playSweep(500, 120, 0.2, 'sawtooth', 0.14)
                 // #3443: the smart bomb's boom — a subsonic sweep under a white
@@ -454,8 +457,11 @@ const DefenderGame = () => {
             ctx.fillStyle = '#ffd23f'
             ctx.fillText(String(hiScore).padStart(6, '0'), 8, MINIMAP_HEIGHT + 32)
             ctx.textAlign = 'right'
-            ctx.fillStyle = '#9fe39f'
-            ctx.fillText(`WAVE ${sim.wave}`, viewWidth - 8, MINIMAP_HEIGHT + 16)
+            // #3453: the per-wave clock rides the WAVE row; once it hits zero and
+            // the landers go urgent it blinks red — pressure you can read at a glance.
+            const secsLeft = Math.max(0, Math.ceil(sim.waveClock / 60))
+            ctx.fillStyle = sim.urgent ? ((sim.tick >> 3) % 2 ? '#ff5555' : '#ffd23f') : '#9fe39f'
+            ctx.fillText(`WAVE ${sim.wave}  ${String(secsLeft).padStart(2, '0')}`, viewWidth - 8, MINIMAP_HEIGHT + 16)
             ctx.fillStyle = '#ffffff'
             ctx.fillText(`${sim.humans.filter((h) => h.state !== 'dead').length}/${sim.humans.length}`, viewWidth - 8, MINIMAP_HEIGHT + 32)
             // remaining ships
@@ -594,6 +600,8 @@ const DefenderGame = () => {
                 enemies: sim ? sim.enemies.length : 0,
                 playerX: sim ? Math.round(sim.player.x) : 0,
                 bombs: sim ? sim.bombs : BOMBS_PER_WAVE, // #3443 (additive)
+                urgent: sim ? sim.urgent : false, // #3453: wave clock expired — landers hot
+                clock: sim ? sim.waveClock : 0,
             }),
             canvas: () => canvas,
             // snapshot/restore omitted: the seeded rand closure is not JSON-serializable (#391).
