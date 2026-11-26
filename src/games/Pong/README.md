@@ -109,19 +109,19 @@ distinct corners, everything inside the viewport.
 
 ## Verify
 ```
-npm run pongcheck            # attract rule-6 + seedpin + deflection + driver sweep + tiers + serve/voice/numerals law (112 checks)
-npm run pongcheck -- --mutant  # 28 mutants — seedpin/driver/tier/cabinet law plus the #3536 lines
-                               #   (flat strike pitch, wall-above-rally, EASY edge gone, thud flattened,
-                               #   serve re-fire, serve never re-arms, miswired 1, gaps collapse), all must die
+npm run pongcheck            # attract rule-6 + seedpin + deflection + driver sweep + tiers + serve/voice/numerals
+                             #   + range-knob law (134 checks)
+npm run pongcheck -- --mutant  # 31 mutants — seedpin/driver/tier/cabinet law, the #3536 lines and the
+                               #   #3565 range trio (cap silent / cap at N+1 / FREE misread as cap), all must die
 npm run pongcheck -- --mutate  # 5 attract mutants, all must die
 npm run pongdrive            # real Chrome: selector/tap-dial/2P/touch-quit legs + audio-spy (serve clack opens,
                              #   rally pitches vary, walls under every ping, low thud, no mid-rally clack)
-                             #   + 667×375 chip-ergonomics legs (39 checks)
+                             #   + 667×375 chip-ergonomics legs + RANGE dial thumb/pin/honest-cap legs (47 checks)
 npm run pongdrive -- --mutant  # 5 mutants: 3 chip + serve-refire + flat-pitch, all must die
 npm run watchcheck -- --only pong   # browser pilot: seats, returns balls, steers back (318)
 npm run lint:pong
 ```
-DEV probes: `__pongTest` — `watching / probe (tick,hits,scores,paddles) / watchSfx / start / sfx / servePending / serveFlash`.
+DEV probes: `__pongTest` — `watching / probe (tick,hits,scores,paddles,range) / watchSfx / start / sfx / servePending / serveFlash / setDiff / setRange`.
 
 ## The cabinet switches (#3502)
 
@@ -149,8 +149,41 @@ deflection in), which is exactly what the trace now points at.
 
 Fidelity notes: the cabinet's DIFFICULT range raised the ball's *ceiling*;
 this port already accelerates uncapped on NORMAL, so HARD sharpens the
-tracker instead and no tier lowers the ceiling below EASY's. The two switches
-collapse into one selector (four picks) because the port ships one knob.
+tracker instead and no tier lowers the ceiling below EASY's. The two original
+coin-door functions (AUTO/HUMAN paddle, Easy/Difficult range) collapse into one
+GAME selector, and the word RANGE is reused by the score-target dial below — the
+1972 table's RANGE switch was speed, not the cap, so the score dial is a named
+homage, not a claim that the machine capped scores (it didn't — see "The RANGE
+knob").
+
+## The RANGE knob (#3565)
+
+The never-dry ladder pointed at the README's oldest gap, "selectable max-score
+knob". Handshake with history, stated plainly: **the 1972 table had no score
+cap** — the b16 ruling stands, and FREE is the default pick so every existing
+pin, seed and bit-trace replays untouched. What ships is a cabinet-native
+**feature** stacked on top of that honest terminal: a second attract dial,
+`RANGE`, cycling `FREE · 1 · 3 · 5 · 7 · 9` (the classic Pong-family score-dial
+ladder). ↑/↓ turn it, a thumb on the label rides the same dial (right half of
+the switch row; GAME keeps the left half), and `?range=N` pins it for QA.
+
+A chosen number binds **in the sim**, where it must: `sim.js` grew a
+`capHit(gs, score)` guard in the scoring branch. When a player reaches the
+target the match ends there (`gs.over`, `ev.winner` names who got there), and —
+faithful to the cabinet — the winning ball is **never re-served**: no point
+after the target, no die burned on a dead ball. `tickPong` still rolls exactly
+two dice (the serve); the target is scoring-only state, zero physics change.
+FREE (null, and every pre-#3565 game state) fails `capHit` and rolls uncapped
+forever. On the over card a capped match shows `FIRST TO N` — the contract it
+played — and the cap point rings an **ascending** two-note sting, distinct from
+the falling saw of a quit.
+
+pongcheck §range proves the target binds *exactly* in the shipped physics: at
+range 3 the driver wins **all 40 seeds**, every match ending at exactly 3–<3,
+conceding a pinned **5** points, and never leaving the ball on the table at the
+win (the no-dead-serve law); range 1 closes on the first point across 20 seeds;
+FREE is verified uncapped at 4000 ticks; three range mutants (cap never fires,
+cap fires at N+1, FREE misread as a cap) all die.
 
 ## Touch quit (#3529)
 
@@ -164,8 +197,11 @@ untouched; the chip is chrome, not a rule. A fat-finger costs one re-tap,
 because the terminal it reaches is honest, not fatal.
 
 ## Honest gaps
-- No selectable max-score knob (the machine's RANGE switch) — quit is the
-  terminal by design; a selectable cap would be a feature, not a restoration.
+- **CLOSED by #3565:** the selectable max-score knob shipped as a FEATURE, not a
+  restoration — the 1972 table's own RANGE switch was the Easy/Difficult *speed*
+  control (that one is the #3502 tiers). A second attract dial (`RANGE`) offers the
+  classic ladder 1·3·5·7·9 plus FREE; FREE stays the factory default so the b16
+  play-to-quit ruling is the untouched ship-state. See "The RANGE knob".
 - **CLOSED by #3529:** touch quit shipped — a QUIT chip on the thirdAction
   rail (play-only, `Escape` code) reaches the honest terminal from a thumb;
   pongdrive leg 6 drives start → chip → card → restart in real Chrome.
@@ -173,5 +209,5 @@ because the terminal it reaches is honest, not fatal.
   wall/thud are four distinct voices, rally pitch rides the strike law, and
   the tiers color it (see "The cabinet's voice"). Still no crowd and no music
   over the table: the machine never had either — that restraint is the spec.
-- 2P is the desktop keyboard option (W/S); the phone keeps the CPU seat per
-  the multiplayer ruling — not a gap, a ruling.
+- **DISCLAIMER:** 2P is the desktop keyboard option (W/S); the phone keeps the CPU
+  seat per the multiplayer ruling — not a gap, a ruling.
