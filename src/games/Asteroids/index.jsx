@@ -8,7 +8,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
 import { fitStage } from '../../utils/fitCanvas'
-import { SHIP_HULL, START_LIVES, makeRun, tickAsteroids, rebuildBoard, stateHash } from './sim.js'
+import { SHIP_HULL, START_LIVES, makeRun, tickAsteroids, rebuildBoard, stateHash, saucerTell, SAUCER_TELL_PITCH } from './sim.js'
 
 // ASTEROIDS (#1473 batch 16) — the Feb port had no score, no lives and no
 // terminal: the ship could not die and the field never refilled. Restored to
@@ -182,7 +182,7 @@ const AsteroidsGame = () => {
             if (ev.died) audioController.playNoise(0.4, 0.4)
             if (ev.wave) audioController.playSweep(300, 900, 0.5, 'sine')
             if (ev.saucerSpawn) audioController.playSweep(180, 640, 0.45, 'square', 0.06)
-            if (ev.saucerShot) audioController.playTone(300, 0.05, 'square', 0.07)
+            if (ev.saucerShot) audioController.playTone(SAUCER_TELL_PITCH.base + ev.saucerShot.m * SAUCER_TELL_PITCH.climb, 0.05, 'square', 0.07) // #3568: the higher it zips, the deadlier it has become
             if (ev.hyper) { // #2001 — vanish down, rematerialise up
                 audioController.playSweep(1400, 120, 0.12, 'square', 0.08)
                 audioController.playSweep(120, 1400, 0.18, 'sine', 0.08)
@@ -287,18 +287,28 @@ const AsteroidsGame = () => {
             // draws them as a stacked ellipse with a cap, lines only).
             gs.saucers.forEach(s => {
                 const r = s.big ? 22 : 12
+                // #3568 — the age tell. A rookie fires wide and draws once; as its
+                // aim tightens the hull is re-struck in place (overplot — how the
+                // real vector beam got brighter), so the veteran glows hotter.
+                // The frame never dims below the shipped look.
+                const m = saucerTell(s)
                 ctx.save()
                 ctx.translate(s.x, s.y)
-                ctx.beginPath()
-                ctx.ellipse(0, 0, r, r * 0.42, 0, 0, Math.PI * 2)
-                ctx.stroke()
-                ctx.beginPath()
-                ctx.ellipse(0, -r * 0.12, r * 0.45, r * 0.4, 0, Math.PI, Math.PI * 2)
-                ctx.stroke()
-                ctx.beginPath()
-                ctx.moveTo(-r, 0)
-                ctx.lineTo(r, 0)
-                ctx.stroke()
+                for (let pass = 0; pass < 3; pass++) {
+                    if (pass === 1 && m <= 0) break
+                    ctx.globalAlpha = pass === 0 ? 1 : pass === 1 ? m * 0.55 : m * 0.45
+                    ctx.beginPath()
+                    ctx.ellipse(0, 0, r, r * 0.42, 0, 0, Math.PI * 2)
+                    ctx.stroke()
+                    ctx.beginPath()
+                    ctx.ellipse(0, -r * 0.12, r * 0.45, r * 0.4, 0, Math.PI, Math.PI * 2)
+                    ctx.stroke()
+                    ctx.beginPath()
+                    ctx.moveTo(-r, 0)
+                    ctx.lineTo(r, 0)
+                    ctx.stroke()
+                }
+                ctx.globalAlpha = 1
                 ctx.restore()
             })
 
@@ -379,6 +389,7 @@ const AsteroidsGame = () => {
                 probe: () => ({
                     tick: gs.tickN, score: gs.score, wave: gs.wave, lives: gs.lives,
                     rocks: gs.asteroids.length, saucers: gs.saucers.length,
+                    saucerTells: gs.saucers.map(s => ({ big: s.big, m: +saucerTell(s).toFixed(3) })), // #3568 — QA reads the maturity tell off the frame
                     shipX: Math.round(gs.ship.x), shipY: Math.round(gs.ship.y),
                     alive: gs.respawnAt < 0,
                     attract: gs.attract, over: gs.over,
