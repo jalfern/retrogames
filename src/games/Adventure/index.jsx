@@ -697,6 +697,9 @@ const AdventureGame = () => {
                 score: sim.score,
                 won: sim.won,
                 dead: sim.dead,
+                // #3482 advedrive: a harness-visible read of the hunters (the
+                // drive needs to see what chases it; read-only, feeds nothing).
+                dragons: sim.dragons.map((d) => ({ room: d.room, x: d.x, y: d.y, mouth: d.mouthOpen, alive: d.alive })),
             }),
             press: (code) => { keys[code] = true; setTimeout(() => { keys[code] = false }, 120) },
         }

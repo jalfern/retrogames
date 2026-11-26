@@ -1,9 +1,9 @@
 # ADVENTURE — engine notes
 
-Atari 2600 cartridge (Warren Robinett, 1993): 18 connected rooms, three
-color-coded castles with portcullis gates, blue/red labyrinths, three
-dragons, an item-swapping bat, and the quest — carry the chalice to the
-Gold Castle.
+Atari 2600 cartridge (Warren Robinett, 1993): 19 connected rooms, three
+color-coded castles with portcullis gates plus an open Blue keep, blue/red
+labyrinths, three dragons, an item-swapping bat, and the quest — carry the
+chalice (either of the cart's two) to the Gold Castle.
 
 ## Engine
 
@@ -52,17 +52,20 @@ on-screen. The production report's `score` is a report-only progress metric
 — **distinct items picked up this run (0..8, the 8th being the gray dot)** —
 so a filed feedback report can pinpoint a run (Britannia's moons-visited
 precedent, #1473). A full win scores 4 (bridge, black key, white key,
-chalice).
+chalice). #3482: the world holds 9 item *instances* but the duplicate chalice
+shares its twin's KIND — carrying both cups is still one distinct item, the
+ceiling stays 8.
 
 ## Harness
 
 ```bash
-npm run adventurecheck          # 196 gates: determinism, gate/key/bridge/dragon law,
+npm run adventurecheck          # 212 gates: determinism, gate/key/bridge/dragon law,
                                 # placed-bridge law, gray dot + sealed-door rite, magnet
                                 # attract, dragon respawn, variants, gate-rite affordance,
-                                # juice signals, seam law (#3441), scripted chalice win on
+                                # juice signals, seam law (#3441), Blue Castle + duplicate
+                                # chalice (#3482), scripted chalice win on
                                 # 10 seeds, static wiring
-npm run adventurecheck -- --mutant   # +52 mutants — every one must turn the suite red
+npm run adventurecheck -- --mutant   # +57 mutants — every one must turn the suite red
 npm run lint:adventure
 ```
 
@@ -84,7 +87,7 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
   Castle); this 18-room port keeps a single chalice and no Blue Castle. Note
   the #1545 gap list's "two bridges" was a misremembering — the original has
   ONE bridge (cartridge record, verified 2026-11); its duplication is the
-  chalice, not the bridge.
+  chalice, not the bridge. **CLOSED by #3482** — see "Restored in #3482".
 - The original is a silent cart; the #1545 "pen-shaped dragon sounds" item has
   no documented counterpart to restore. New sim events (`bridge`, `secret`)
   carry synthesized audio where the port adds meaning (placement, door rite).
@@ -304,3 +307,35 @@ bite), a no-dice hash pair, misalignment stays (12 px past the column), jaw-shut
 stays, a left-warp mirror into lab1 with y preserved, the sword-turn slay after
 a follow, and the raised-portcullis foyer follow — plus three mutants (alignment
 deleted, jaw-shut follow, deep landing).
+
+## #3482 — the Blue Castle and the duplicate chalice (never-dry stage)
+
+The cart duplicates the enchanted grail: a second chalice sits in the **Blue
+Castle**, an open keep (no portcullis, no foyer) that this port never had. It
+ships now:
+
+- **Room 19 — Blue Castle**: hung east of Blue Labyrinth 2 (the cart parks the
+  keep beside the blue catacombs). Every side bricked except the west door at
+  the standard side gap; LAB_2's east pocket (past the x90 pillar, down the
+  x141–156 column) keeps the gap lane walkable both ways (#2255 reciprocity —
+  the two-way door gate covers the new seam).
+- **The duplicate (`chalice2`)**: same item, same laws — magnet attracts it,
+  the bat can steal it, it sparkles in hand, dragons guard it by the seam law,
+  and delivering **either** cup to the Gold Castle wins (the cart's duplication
+  law: both are the Grail).
+- **Pinned, not shuffled**: the cartridge record sits it in the keep, so the
+  V3 shuffle neither re-homes it (`pin`, zero dice) nor deals the keep out to
+  anything else. Pinned on 20/20 seeds.
+- **Score honesty unchanged**: score counts distinct KINDS — both chalices are
+  `chalice`, so the ceiling stays 8 and the winning route still scores exactly
+  4 (bridge, black key, white key, one cup).
+- **Guidance**: the `?` tab names the Blue Castle and the either-cup law (the
+  gray-dot secret still stays Robinett's).
+
+Gated in `adventurecheck`: seventeen #3482 gates — instance count, the
+duplicate sits home on a fresh run, open-keep structure, west
+door two-way, BFS there and home, pin-through-shuffle (20 seeds), keep never
+dealt out, duplicate wins / magnet does not, kind-honest score (both cups, one
+point), sparkle on either cup, seam-follow through the new door — plus five
+mutants (duplicate loses the win, pin ignored, keep bricked, score counts
+instances, duplicate loses its glint).
