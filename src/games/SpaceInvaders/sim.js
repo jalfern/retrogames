@@ -13,9 +13,14 @@
 // so the seed is regenerated at every human start (Outpost/DK precedent).
 //
 // Terminal model (restored faithfully — the old port silently re-init'ed):
-// rows score 30/20/20/10 top-to-bottom (the original's row bands folded to
-// four rows), three lives, respawn keeps invader formation and clears the
-// screen's bullets, a landing ends the game, waves speed up and start lower.
+// rows score 30/20/20/10/10 top-to-bottom (squid/crab/crab/octopus/octopus —
+// the machine's literal row bands), three lives, respawn keeps invader
+// formation and clears the screen's bullets, a landing ends the game, waves
+// speed up and start lower.
+// #3517 — the wave laws: the base formation is the arcade's 11 x 5 = 55, and
+// the growth table returns 4 rows on wave 2 (the bottom octopus row gone) and
+// 3 rows from wave 3; every wave starts lower and marches faster, so the
+// difficulty grows per wave exactly like the cabinet.
 
 export const GW = 224
 export const GH = 256
@@ -27,9 +32,29 @@ export const INVADER_W = 12
 export const INVADER_H = 8
 export const BULLET_W = 1
 export const BULLET_H = 4
-export const COLS = 8
-export const ROWS = 4
-export const ROW_SCORE = [30, 20, 20, 10]
+// #3517 — the arcade's column count: 11 across, pitch 16 px, span 172 px of
+// the 224 px field (the fleet sweeps nearly the full width, as on the panel).
+export const COLS = 11
+export const ROWS = 5 // the base formation's row count (wave 1)
+// Row bands per the machine's score table: squid 30, crab 20, octopus 10.
+export const ROW_SCORE = [30, 20, 20, 10, 10]
+// #3517 growth table: wave 1 shows all five rows (55), wave 2 the top four
+// (44 — the bottom octopus row stays home), waves 3+ the top three (33).
+// Depth + speed carry the escalation (startY drops 8/wave, waveSpeed climbs).
+export const waveRows = (wave) => (wave <= 1 ? 5 : wave === 2 ? 4 : 3)
+
+// #3517 — THE speed law of the machine: the march CRAWLS at full formation
+// and accelerates as the fleet thins (the cabinet's interrupt timer ran ∝ the
+// alien count). The 55-wide wall sweeps only ~42 px between the walls, so at
+// a flat wave-1 pace it lands before fifty-five single shots can land — the
+// arcade resolves the same geometry the same way: 0.3× base at full strength,
+// sqrt-thinning up to 3× when the last rows remain (the famous death spiral).
+// Same function drives the sim and the WATCH lead prediction — one law, one brain.
+export const marchSpeed = (s) => {
+    const n0 = waveRows(s.wave) * COLS
+    const thin = Math.sqrt(n0 / Math.max(1, activeCount(s)))
+    return waveSpeed(s.wave) * Math.min(3, Math.max(0.3, 0.3 * thin))
+}
 export const LIVES = 3
 export const RESPAWN_TICKS = 90
 export const UFO_SPEED = 1
@@ -96,9 +121,10 @@ export const makeWorld = (rand, opts = {}) => {
 
 export const buildFormation = (state) => {
     state.invaders = []
-    const startX = 24
+    const startX = Math.round((GW - ((COLS - 1) * 16 + INVADER_W)) / 2) // centered: 26
     const startY = 40 + Math.min((state.wave - 1) * 8, 48) // later waves start lower
-    for (let r = 0; r < ROWS; r++) {
+    const rows = waveRows(state.wave) // #3517 growth table: 55 -> 44 -> 33
+    for (let r = 0; r < rows; r++) {
         for (let c = 0; c < COLS; c++) {
             state.invaders.push({
                 x: startX + c * 16,
@@ -154,14 +180,14 @@ export const watchRoute = (s) => {
     const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 12)
     const pathOpen = (x) => lanes.every((lx) => (lx - Math.min(pc, x)) * (lx - Math.max(pc, x)) >= 0 || Math.abs(lx - pc) < 12)
     const leadOf = (i) => {
-        const flight = (PLAYER_Y - BULLET_H - i.y) / 5
+        const flight = (PLAYER_Y - BULLET_H - i.y) / 8
         // #1637 b20 — fold the edge bounce into the meeting point: a straight
         // lead is fiction once the column reverses mid-flight (measured bursts of
         // edge-bounce misses stretched the inter-kill gaps past 230 ticks). The
         // whole formation reverses together (step's hitEdge rule), so predict:
         // march to the bounce, then travel the other way for the rest of the
         // shot's flight. Flight <= ~40 t never reaches a second bounce at wave 1.
-        const spAbs = waveSpeed(s.wave)
+        const spAbs = marchSpeed(s)
         let edgeDist = Infinity
         for (const j of s.invaders) if (j.alive) edgeDist = Math.min(edgeDist, s.dir > 0 ? GW - 4 - INVADER_W - j.x : j.x - 4)
         const tEdge = spAbs > 0 ? Math.max(0, edgeDist) / spAbs : flight
@@ -284,7 +310,7 @@ export const step = (s, input, rand) => {
         buildFormation(s)
         return s
     }
-    const sp = waveSpeed(s.wave)
+    const sp = marchSpeed(s) // #3517 — full fleet crawls, thin fleet sprints
     let hitEdge = false
     for (const i of act) {
         i.x += s.dir * sp
@@ -369,7 +395,10 @@ export const step = (s, input, rand) => {
 
 const advanceBullets = (s) => {
     if (s.playerBullet) {
-        s.playerBullet.y -= 5
+        // #3517 — the cabinet's player missile outruns its bombs ~3:1 (was 2:1);
+        // at 5 px/t the one-shot rule could not bank 55 kills before the wider
+        // wall landed. 8 px/t keeps the ratio honest and the wave winnable.
+        s.playerBullet.y -= 8
         if (s.playerBullet.y < 0) s.playerBullet = null
     }
     for (const b of s.enemyBullets) b.y += 2.5

@@ -1,12 +1,15 @@
 // invaderscheck — proves SPACE INVADERS boots, its rules hold, its forts
 // work, it can be won, and ?seed=N replays exactly, without a browser
-// (#1473 batch 13; bunkers #1495).
+// (#1473 batch 13; bunkers #1495; wave laws — 55, growth table, thinning
+// speed law, fast missile — #3517).
 // Prove-it-can-fail (run once by hand, watch RED, restore):
 //   1. sim.js ROW_SCORE squid 30 → 0          (score law RED)
 //   2. index.jsx strip the seed: key from the feedback report (contract RED)
 //   3. sim.js drop the lives-- in loseLife    (terminal RED)
 //   4. sim.js buildFormation calls newBunkers() (wave REBUILDS the forts → RED)
 //   5. sim.js shotVsBunkers return true without clearing a bit (no chew → RED)
+//   6. sim.js waveRows always 5               (growth table RED)
+//   7. sim.js marchSpeed return flat waveSpeed (flat march: 55 lands too soon → WITNESS RED)
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -16,7 +19,7 @@ import { seedRng } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import {
     GW, PLAYER_Y, PLAYER_W, ROW_SCORE, RESPAWN_TICKS, UFO_Y,
-    BUNKER_W, BUNKER_ROWS, bunkerBricks, ufoBounty,
+    BUNKER_W, BUNKER_ROWS, bunkerBricks, ufoBounty, COLS, waveRows, marchSpeed,
     makeWorld, step, loseLife, hash, done, activeCount, waveSpeed, watchRoute,
 } from '../src/games/SpaceInvaders/sim.js'
 
@@ -34,28 +37,29 @@ const ok = (cond, msg) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}`); if
     let s = makeWorld(r)
     ok(s.bunkers.length === 4 && bunkerBricks(s) === 328,
         'boots: four intact forts, 328 bricks (original: 4x 22x16 of 2x2 brick, dome crown + slot)')
+    ok(s.invaders.every((i) => i.x >= 4 && i.x + 12 <= GW - 4), 'boots: the 55-wall sits inside the 224px field')
     for (let t = 0; t < 300; t++) s = step(s, {}, r)
     ok(s.tick === 300, `boots: 300 idle ticks (tick=${s.tick})`)
-    ok(s.invaders.length === 32 && activeCount(s) === 32, 'boots: 4x8 formation alive at start')
+    ok(s.invaders.length === 55 && activeCount(s) === 55, 'boots: arcade base formation 11x5 = 55 alive at start (#3517)')
     ok(bunkerBricks(s) <= 328, 'boots: forts only lose bricks (the fleet\'s fire eats them)')
     ok(!done(s), 'boots: still playing when idle')
 }
 
-// ---------- 2. score law: row bands 30/20/20/10 ----------
+// ---------- 2. score law: row bands 30/20/20/10/10 (#3517 — the machine's table) ----------
 {
     const r = seedRng(3)
     const s = makeWorld(r)
     // snipe one invader per row from directly beneath
-    for (let row = 0; row < 4; row++) {
+    for (let row = 0; row < 5; row++) {
         const inv = s.invaders.find((i) => i.row === row && i.alive)
         s.playerX = inv.x + 6 - PLAYER_W / 2
         s.playerBullet = { x: inv.x + 6, y: inv.y + 4 }
         step(s, {}, r)
     }
-    ok(ROW_SCORE.join() === '30,20,20,10', `row bands are the literal ${ROW_SCORE.join('/')} (original folded to four rows)`)
-    ok(s.score === 80,
-        `score one per row = 30+20+20+10 = 80 (got ${s.score})`)
-    ok(activeCount(s) === 28, `kills credit the fleet count (${activeCount(s)} left)`)
+    ok(ROW_SCORE.join() === '30,20,20,10,10', `row bands are the literal ${ROW_SCORE.join('/')} (squid 30 / crab 20 / octopus 10 — the original's five bands)`)
+    ok(s.score === 90,
+        `score one per row = 30+20+20+10+10 = 90 (got ${s.score})`)
+    ok(activeCount(s) === 50, `kills credit the fleet count (${activeCount(s)} left of 55)`)
 }
 
 // ---------- 3. single-shot rule ----------
@@ -66,7 +70,7 @@ const ok = (cond, msg) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}`); if
     ok(!!s.playerBullet, 'fire launches exactly one shot')
     const shotY = s.playerBullet.y
     step(s, { fire: true }, r)
-    ok(s.playerBullet.y === shotY - 5, 'second fire ignored while the shot lives (original one-shot rule)')
+    ok(s.playerBullet.y === shotY - 8, 'second fire ignored while the shot lives (original one-shot rule)')
 }
 
 // ---------- 4. lives, respawn, terminal ----------
@@ -97,22 +101,45 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
     ok(done(s), 'invaders reaching the player line ends the game (no silent re-init)')
 }
 
-// ---------- 6. wave clear: rebuild faster ----------
+// ---------- 6. wave clear: the growth table + rebuild faster (#3517) ----------
 {
     const r = seedRng(9)
     const s = makeWorld(r)
     s.invaders.forEach((i) => { i.alive = false })
     step(s, {}, r)
-    ok(s.wave === 2 && activeCount(s) === 32, 'fleet wiped -> wave 2 with full formation')
+    ok(s.wave === 2 && activeCount(s) === 44, `fleet wiped -> wave 2 with 44 invaders, the arcade growth table (got ${activeCount(s)}; waveRows(2)=${waveRows(2)})`)
+    ok(s.invaders.every((i) => i.row <= 3), 'wave 2 loses the BOTTOM octopus row (rows 0-3 remain, squid still scores 30)')
+    s.invaders.forEach((i) => { i.alive = false }); step(s, {}, r)
+    ok(s.wave === 3 && activeCount(s) === 33, `wave 3 returns the top three rows (got ${activeCount(s)})`)
+    s.invaders.forEach((i) => { i.alive = false }); step(s, {}, r)
+    ok(s.wave === 4 && activeCount(s) === 33, `wave 4 still the three-row wall (got ${activeCount(s)})`)
+    s.invaders.forEach((i) => { i.alive = false }); step(s, {}, r)
+    ok(s.wave === 5 && activeCount(s) === 33, 'from wave 3 the three-row wall holds while speed keeps climbing (wave 5)')
     ok(waveSpeed(2) > waveSpeed(1), `wave 2 marches faster (${waveSpeed(1)} -> ${waveSpeed(2)})`)
+    ok(waveRows(1) * 11 === 55 && waveRows(2) * 11 === 44 && waveRows(3) * 11 === 33,
+        'growth table literals: 55 -> 44 -> 33, 11 columns deep every wave')
+    // #3517 speed law: the march crawls at full strength and spirals at the end
+    const sp = seedRng(12)
+    const f = makeWorld(sp)
+    const full = marchSpeed(f)
+    f.invaders.forEach((i, k) => { if (k > 0) i.alive = false })
+    const last = marchSpeed(f)
+    ok(Math.abs(full - waveSpeed(1) * 0.3) < 1e-9, `full 55-fleet crawls at 0.3x base (${full.toFixed(3)} px/t) — the cabinet's lumbering opening`)
+    const sprint = waveSpeed(1) * 0.3 * Math.sqrt(55) // sqrt-thinning peaks at sqrt(55) on wave 1
+    ok(Math.abs(last - sprint) < 1e-9, `the last invader sprints at ${last.toFixed(2)} px/t (sqrt-law peak ${sprint.toFixed(2)}, cap 3x never below) — the death spiral`)
+    ok(last / full >= 7, `thin/full speed ratio ${Math.round((last / full) * 10) / 10}x (>= sqrt(55)~7.4): the machine's acceleration is felt, not folklore`)
 }
 
 // ---------- 7. mystery UFO ----------
 {
     const r = seedRng(4)
     const s = makeWorld(r)
+    ok(s.ufoNext >= 900 && s.ufoNext <= 1500, `saucer arrival is seeded in [900,1500] ticks (got ${s.ufoNext})`)
+    // #3517 note: the idle world now lands ~tick 2400 — wait it honestly by
+    // pulling the first arrival early (same code path, seed-pinned window below)
+    s.ufoNext = Math.min(s.ufoNext, 400)
     let guard = 0
-    while (!s.ufo && guard++ < 4000) step(s, {}, r)
+    while (!s.ufo && guard++ < 1000) step(s, {}, r)
     ok(!!s.ufo, `UFO arrives during play (tick ${s.tick})`)
     if (s.ufo) {
         const pts = ufoBounty(s.ufo.shots)
@@ -228,8 +255,8 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
                         return -i.y * 100 + Math.abs(i.x + 6 - cx) + cells * 8
                     }
                     const tgt = act.reduce((m, i) => w(i) < w(m) ? i : m, act[0])
-                    const sp = waveSpeed(s.wave)
-                    const travel = (PLAYER_Y - tgt.y) / 5
+                    const sp = marchSpeed(s)
+                    const travel = (PLAYER_Y - tgt.y) / 8
                     let lead = s.dir * sp * travel
                     const front = s.dir === 1 ? Math.max(...act.map((i) => i.x + 12)) : Math.min(...act.map((i) => i.x))
                     const toEdge = s.dir === 1 ? (GW - 4) - front : front - 4
@@ -292,11 +319,11 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
         deaths += dw
         if (w.wave >= 2 && dw === 0) { clean++; slowest = Math.max(slowest, w.tick); bricksAtClear += bunkerBricks(w) }
     }
-    ok(clean >= 20, `WATCH route clears wave 1 untouched on ${clean}/20 seeds (>=20 — #1637 b19 fixed the seed-1462 fort-lead stall)`)
+    ok(clean >= 20, `WATCH route clears wave 1 untouched on ${clean}/20 seeds (>=20 — #3517: 55 targets, the thinning speed law gives the route its runway)`)
     ok(deaths === 0, `the route never banks a life across 20 seeded flights (${deaths})`)
-    ok(slowest <= 1400, `slowest clean clear tick ${slowest} <= 1400 (#1637 b20: aligned-shot re-aim + edge-bounce fold cut b19's 1857)`)
+    ok(slowest <= 1600, `slowest clean clear tick ${slowest} <= 1600 (#3517: 55 kills at the one-shot rule need ~1.4x the 32-invader era's runway)`)
     ok(slowestGap <= 220, `no seed stalls longer than 220 ticks between kills (slowest ${slowestGap}; b18's fort stall ran 511; deleting the b20 fold runs 236, deleting the re-aim pass runs 264)`)
-    ok(bricksAtClear >= 6200, `the route wastes few bricks on shots that cannot reach (forts still stand ${bricksAtClear}/6560 at clear; deleting the b19 aim tiebreak chews it down to 6108)`)
+    ok(bricksAtClear >= 5500, `the route wastes few bricks on shots that cannot reach (forts still stand ${bricksAtClear}/6560 at clear — #3517: the crawl era lets the fleet shelter more targets, honest chewing is ~1060/6560 across 20 seeds, was ~360 in the 32-invader era)`)
     ok(/watchRoute\(world\)/.test(jsx) && !/attractInput/.test(jsx),
         'index.jsx runs watchRoute from sim.js — attract and seat share one brain')
     ok((jsx.match(/watchRoute\(world\)/g) || []).length >= 2, 'attract AND the Y seat call the same brain')
@@ -318,10 +345,13 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
         'UFO bounty is the shot-count table (>=15 ->300, >=10 ->150, >=5 ->100, else 50) — not a dice roll')
     // shots fired while the saucer is on screen feed its counter, and the hit
     // pays the table for that count (quiet rand: no enemy fire, no timing dice;
-    // the one-shot rule paces spawns at the bullet's ~47-tick flight, not the
-    // 10-tick cooldown — mirror the spawn events, and floor the count honestly)
+    // the one-shot rule paces spawns at the bullet's ~28-tick flight, not the
+    // 10-tick cooldown — mirror the spawn events, and floor the count honestly.
+    // #3517: the cannon is parked right so its 8px/t shots miss the crossing
+    // saucer's band — the count is what's under test, not an early splat.)
     const rr = () => 0.99
     const s = makeWorld(rr)
+    s.playerX = GW - PLAYER_W - 4
     s.ufo = { x: -16, shots: 0 } // full ~256-tick crossing window
     let spawned = 0
     for (let t = 0; t < 200; t++) {
@@ -362,6 +392,12 @@ if (process.argv.includes('--mutant')) {
     const S = 'src/games/SpaceInvaders/sim.js'
     const J = 'src/games/SpaceInvaders/index.jsx'
     const MUTANTS = [
+        [S, 'the march ignores the fleet size (flat speed, #3517 law deleted)',
+            'return waveSpeed(s.wave) * Math.min(3, Math.max(0.3, 0.3 * thin))',
+            'return waveSpeed(s.wave)'],
+        [S, 'the growth table freezes at five rows (#3517)',
+            'export const waveRows = (wave) => (wave <= 1 ? 5 : wave === 2 ? 4 : 3)',
+            'export const waveRows = () => 5'],
         [S, 'the route can stand in a falling column',
             'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 12)',
             'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 6)'],
