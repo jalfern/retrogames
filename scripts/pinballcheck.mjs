@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot', 'spinrung', 'spincool', 'spingrade']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -173,6 +173,27 @@ if (MUT) {
             from: 'const step = 2 * Math.asin(BALL_R / holdR) + 0.01;',
             to: 'const step = 0.001;',
             note: 'rosette relax collapses — chained pins overlap on the ring',
+        },
+        // #3446: the ladder rung dies — the callout stops counting turns.
+        spinrung: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'say(gs, `SPINNER x${gs.spinPass}`, 50);',
+            to: "say(gs, 'SPINNER!', 50);",
+            note: 'SPINNER xN loses its rung — the ladder no longer ticks with the spin',
+        },
+        // #3446: the ladder never cools — rungs stick across separate outlane passes.
+        spincool: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'if (gs.spinCool > 0) { gs.spinCool -= 1; if (gs.spinCool === 0) gs.spinPass = 0; }',
+            to: 'if (gs.spinCool > 0) { gs.spinCool -= 1; }',
+            note: 'cooldown never resets — the pass counter sticks between feeds',
+        },
+        // #3446: the graded read dies — feed speed never reaches the shell.
+        spingrade: {
+            file: 'src/games/Pinball/sim.js',
+            from: "gs.events.push({ type: 'spinner', x: sp.xMax - 8 * sp.side, y: b.by, v: Math.abs(b.vy) });",
+            to: "gs.events.push({ type: 'spinner', x: sp.xMax - 8 * sp.side, y: b.by });",
+            note: 'spinner events drop v — persistence cannot grade with feed speed',
         },
     }
     const a = ANCHORS[MUT]
@@ -349,6 +370,37 @@ const setBall = (gs, x, y, vx, vy) => { gs.bx = x; gs.by = y; gs.vx = vx; gs.vy 
     }
     r.check('the outlane spinner ticks at 10 per turn as the ball rolls down', spun && gs.score % 100 >= 10, `turns=${gs.spinnerTurns}`)
     r.check('the outlane kicker hurls the ball back into play (100 pts, hard upward)', kicked && gs.balls === 3, `vx=${gs.vx.toFixed(0)} vy=${gs.vy.toFixed(0)}`)
+}
+
+// #3446 item 1: graduated spinner read — SPINNER xN ladder ticks with the spin,
+// events carry the feed speed, and the run cools between passes.
+{
+    const gs = makeGame(57); gs.launched = true
+    setBall(gs, 30, 435, 10, 640); clear(gs)
+    const texts = [], vs = []
+    for (let i = 0; i < 16; i++) {
+        const p = gs.pucks[0]
+        if (p && p.by > 430 && p.by < 500) { p.bx = 30; p.by = 442; p.vx = 10; p.vy = 640 }
+        for (const e of gs.events) if (e.type === 'spinner') { texts.push(gs.msg.text); vs.push(e.v) }
+        clear(gs); drive(gs, {}, 1)
+    }
+    const ladder = texts.map((t) => (/^SPINNER x(\d+)$/.exec(t) || [])[1]).filter((n) => n !== undefined).map(Number)
+    r.check('a fast feed ticks the SPINNER xN ladder one rung per turn',
+        ladder.length >= 2 && ladder[0] === 1 && ladder[ladder.length - 1] >= 2, ladder.join(','))
+    r.check('spinner events carry the feed speed (v) so the flash can grade with it',
+        vs.length >= 2 && vs.every((v) => v > 400), vs.map((v) => (v == null ? 'none' : v.toFixed(0))).join(','))
+}
+{
+    const gs = makeGame(58); gs.launched = true
+    gs.spinPass = 5; gs.spinCool = 5
+    drive(gs, {}, 40)
+    r.check('the ladder cools when the feed stops — the next pass starts at x1',
+        gs.spinPass === 0 && gs.spinCool === 0, `pass=${gs.spinPass} cool=${gs.spinCool}`)
+}
+{
+    const sh = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/index.jsx'), 'utf8')
+    r.check('#3446 shell grades the spinner read — persist from ev.v in play AND attract, blade ghosts present',
+        /function spinPersist\(ev\)/.test(sh) && (sh.match(/spinPersist\(ev\)/g) || []).length >= 3 && /bladeA - g \* /.test(sh))
 }
 
 // -------------------------------------------------------- flippers ----

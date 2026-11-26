@@ -353,6 +353,7 @@ export function makeGame(seed = 1, cab = 0) {
         targetDown: tb.targets.map(() => false),
         bankLit: false, bankHits: 0, banksThisBall: 0, mult: 1,
         spinnerTurns: 0,   // per-puck spin/spinArm live on gs.pucks[i]
+        spinPass: 0, spinCool: 0,   // #3446 item 1: SPINNER xN ladder — turns this outlane pass
         kickCd: 0,
         kbUsed: false, kbFlash: 0,   // #3250: the kickback save — one per ball
         kbLUsed: false, kbLFlash: 0, kbLArmFlash: 0,   // #3432: mirror save + re-arm flash
@@ -405,6 +406,7 @@ export function resetBall(gs) {
     gs.launched = false; gs.power = 0; gs.plungerNotch = 0; gs.powerZone = 0; gs.laneIdle = 0; gs.plungerHold = false; gs.laneCurved = false;
     gs.targetDown = T.targets.map(() => false); gs.bankLit = false;
     gs.spinnerTurns = 0; gs.tilt = false;
+    gs.spinPass = 0; gs.spinCool = 0;   // #3446: the ladder restarts with the ball
     gs.nudgeMeter = 0; gs.nudgeDecay = 0; gs.mult = 1; gs.banksThisBall = 0;
     gs.kbUsed = false;   // the kickback re-arms with every new ball
     gs.kbLUsed = false; gs.rampLHits = 0; gs.rampLLit = false;   // #3432 mirror devices too
@@ -601,7 +603,12 @@ function substepBall(gs, b, dt) {
             while (b.spin >= sp.pxPerTurn) {
                 b.spin -= sp.pxPerTurn; gs.spinnerTurns += 1;
                 add(gs, T.rules.spinner);
-                gs.events.push({ type: 'spinner', x: sp.xMax - 8 * sp.side, y: b.by });
+                // #3446 item 1: DMD ladder ticks with the spin — one rung per turn
+                // of the current feed pass. Display state only: physics, scoring and
+                // stateHash are untouched.
+                gs.spinPass += 1; gs.spinCool = 24;
+                say(gs, `SPINNER x${gs.spinPass}`, 50);
+                gs.events.push({ type: 'spinner', x: sp.xMax - 8 * sp.side, y: b.by, v: Math.abs(b.vy) });
             }
         }
     } else b.spinArm = true;
@@ -1046,6 +1053,8 @@ export function stepGame(gs, pad = {}) {
     if (gs.magFlash > 0) gs.magFlash -= 1;
     if (gs.magFreeFlash > 0) gs.magFreeFlash -= 1;
     if (gs.msg.t > 0) gs.msg.t -= 1;
+    // #3446 item 1: the ladder cools when the feed stops — next pass starts at x1
+    if (gs.spinCool > 0) { gs.spinCool -= 1; if (gs.spinCool === 0) gs.spinPass = 0; }
     return gs;
 }
 
