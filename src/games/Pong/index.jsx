@@ -6,7 +6,9 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { serveBall, tickPong, BASE_SPEED, PADDLE_HEIGHT, DIFFS } from './sim.js'
+import { serveBall, tickPong, BASE_SPEED, PADDLE_HEIGHT, BALL_SIZE, DIFFS } from './sim.js'
+import { rallyVoice, serveEcho, wallVoice, scoreThud } from './voice.js'
+import { drawBlockScore, drawBlockTitle } from './numerals.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 // PONG (#1473 batch 16) — the Feb port had no terminal, no restart and dice
@@ -52,6 +54,7 @@ const PongGame = () => {
             over: false,
             watching: false,
             rand: null,
+            servePending: true, // #3536: observation for the serve voice/flash
         }
 
         // #1473: one seeded stream per run. seed is regenerated at every
@@ -78,9 +81,12 @@ const PongGame = () => {
         cyclePickRef.current = cyclePick
         let tickN = 0
         let hitN = 0
+        let serveFlash = 0 // #3536 — net-dash ring ticks left on the served ball
         let isAttractMode = true
         const resetBall = () => {
             state.ball = serveBall(state.rand, state.width, state.height)
+            state.servePending = true // fresh ball in play — its first return is the serve
+            serveFlash = 36
             // #3532 — cabinet power-on: paddles center at match start, and a
             // score never moves them (the port's scatter dice are gone).
             state.left.y = (state.height - PADDLE_HEIGHT) / 2
@@ -198,13 +204,32 @@ const PongGame = () => {
         canvas.addEventListener('pointerdown', handleCanvasTap)
         resize() // Initial sizing
 
+        // #3536 — the widened cabinet vocabulary (voice.js): serve / rally /
+        // wall / thud, rally pitch riding the strike law. The DEV log lets
+        // pongdrive assert the sequence from real Chrome.
+        const sfxLog = []
+        const sfx = (kind, v) => {
+            audioController.playTone(v.freq, v.dur, v.type, v.vol, v.delay || 0)
+            if (import.meta.env.DEV) sfxLog.push({ kind, freq: Math.round(v.freq), dur: v.dur, vol: v.vol })
+        }
+
         const update = () => {
             tickN++
             if (state.over) return
+            if (serveFlash > 0) serveFlash--
             const ev = tickPong(state, { up: keys.ArrowUp, down: keys.ArrowDown, up2: keys.KeyW, down2: keys.KeyS })
-            if (ev.wall) audioController.playTone(300, 0.05, 'square')
-            if (ev.hitL || ev.hitR) audioController.playTone(400, 0.1, 'square')
-            if (ev.scored) audioController.playTone(200, 0.2, 'sawtooth')
+            if (ev.wall) sfx('wall', wallVoice())
+            if (ev.hitL || ev.hitR) {
+                const v = rallyVoice(state.ball.dy, state.ball.dx, state.diff)
+                if (ev.serve) { sfx('serve', v); sfx('serve', serveEcho(v)) }
+                else sfx('rally', v)
+            }
+            if (ev.scored) {
+                const th = scoreThud()
+                sfx('thud', th)
+                audioController.playNoise(th.noise.dur, th.noise.vol)
+                serveFlash = 36 // the new ball answers with the ring too
+            }
             if (ev.hitL) hitN++ // proof of interception for the pilot (b24)
         }
 
@@ -238,10 +263,14 @@ const PongGame = () => {
                 ctx.fillStyle = DIM
                 ctx.fillRect(0, 0, state.width, state.height)
                 for (const l of attractFrame(attractTick, state.width, state.height)) {
+                    if (l.text === 'PONG') continue // the word-mark below (#3536)
                     ctx.font = `${l.size}px monospace`
                     ctx.fillStyle = l.col
                     ctx.fillText(l.text, l.x, l.y)
                 }
+                // #3536 — the video word-mark: block P·O·N·G, the machine's
+                // type instead of the browser's.
+                drawBlockTitle(ctx, state.width / 2, state.height * 0.26, 'PONG', Math.floor(Math.min(state.height * 0.13, 64)), '#ffffff')
                 // #1656 discoverability, drawn here (not in attract.js) the way
                 // GravelYard does it — the rule-6 audit owns the cycling lines.
                 ctx.font = '11px monospace'
@@ -252,34 +281,81 @@ const PongGame = () => {
                 ctx.font = '11px monospace'
                 ctx.fillStyle = '#9aa4b2'
                 ctx.fillText('SELECT GAME', state.width / 2, state.height * 0.50)
-                ctx.font = '13px monospace'
+                ctx.font = '14px monospace'
                 ctx.fillStyle = '#ffd23f'
                 ctx.fillText(`< ${DIFFS[diff]} >`, state.width / 2, state.height * 0.535)
+                // #3536 — the switch's rail, in the table's own net-dash.
+                ctx.save()
+                ctx.setLineDash([3, 4])
+                ctx.strokeStyle = 'rgba(255, 210, 63, 0.4)'
+                ctx.beginPath()
+                ctx.moveTo(state.width / 2 - 44, state.height * 0.555)
+                ctx.lineTo(state.width / 2 + 44, state.height * 0.555)
+                ctx.stroke()
+                ctx.restore()
             } else {
-                // Game Score
-                ctx.font = '44px monospace'
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.42)'
-                ctx.fillText(state.left.score, state.width / 4, 50)
-                ctx.fillText(state.right.score, 3 * state.width / 4, 50)
+                // #3536 — the machine's seven-segment face: scores as block
+                // numerals, kept on screen through the quit card like the
+                // table kept showing them.
+                drawBlockScore(ctx, state.width / 4, 10, state.left.score, 46, 'rgba(255, 255, 255, 0.42)')
+                drawBlockScore(ctx, 3 * state.width / 4, 10, state.right.score, 46, 'rgba(255, 255, 255, 0.42)')
                 if (state.diff === 'TWO') {
                     // #3502 — the second seat needs to know its keys.
                     ctx.font = '10px monospace'
                     ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
                     ctx.fillText('2P — LEFT: ARROWS   RIGHT: W/S', state.width / 2, state.height * 0.92)
                 }
-                if (state.over && Math.floor(tickN / 30) % 2 === 0) {
+                // #3536 — the serve-flash: a net-dash ring rides the ball while
+                // the point is fresh. The #3532 paddle-hold reads as intent,
+                // not a frozen game: the table waits with you, then serves.
+                if (serveFlash > 0 && !state.over) {
+                    ctx.save()
+                    ctx.globalAlpha = Math.min(1, serveFlash / 30)
+                    ctx.setLineDash([4, 6])
+                    ctx.lineWidth = 2
+                    ctx.strokeStyle = '#ffffff'
+                    ctx.beginPath()
+                    ctx.arc(state.ball.x + BALL_SIZE / 2, state.ball.y + BALL_SIZE / 2, 16, 0, Math.PI * 2)
+                    ctx.stroke()
+                    ctx.restore()
+                }
+                if (state.over) {
                     // #3506 — the quit card never lies: 2P reports the TRUE
                     // winner (or a tie), solo reports YOU WIN / YOU LOSE / TIED.
+                    // #3536 — the card becomes cabinet: solid panel, net-dash
+                    // border (the table's own motif), final score in the same
+                    // block numerals; only the restart prompt blinks now.
+                    const cw = Math.min(state.width * 0.88, 330)
+                    const chh = 158
+                    const cx = (state.width - cw) / 2
+                    const cy = (state.height - chh) / 2
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.88)'
+                    ctx.fillRect(cx, cy, cw, chh)
+                    ctx.save()
+                    ctx.setLineDash([10, 15])
+                    ctx.lineWidth = 2
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)'
+                    ctx.strokeRect(cx + 4, cy + 4, cw - 8, chh - 8)
+                    ctx.restore()
+                    ctx.font = '14px monospace'
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+                    ctx.fillText('MATCH OVER', state.width / 2, cy + 26)
                     const leftWins = state.left.score > state.right.score
                     const rightWins = state.right.score > state.left.score
                     const result = state.diff === 'TWO'
                         ? (leftWins ? 'PLAYER ONE WINS' : rightWins ? 'PLAYER TWO WINS' : 'MATCH TIED')
                         : (leftWins ? 'YOU WIN' : rightWins ? 'YOU LOSE' : 'MATCH TIED')
-                    ctx.font = '16px monospace'
-                    ctx.fillStyle = '#ffffff'
-                    ctx.fillText(`MATCH OVER  ${result}`, state.width / 2, state.height / 2)
-                    ctx.font = '12px monospace'
-                    ctx.fillText('PRESS ANY KEY TO PLAY AGAIN', state.width / 2, state.height / 2 + 24)
+                    ctx.font = '13px monospace'
+                    ctx.fillStyle = '#ffd23f'
+                    ctx.fillText(result, state.width / 2, cy + 48)
+                    drawBlockScore(ctx, state.width / 2 - cw * 0.16, cy + 62, state.left.score, 42, 'rgba(255, 255, 255, 0.85)')
+                    drawBlockScore(ctx, state.width / 2 + cw * 0.16, cy + 62, state.right.score, 42, 'rgba(255, 255, 255, 0.85)')
+                    ctx.fillRect(state.width / 2 - 8, cy + 84, 16, 4) // the net between the scores
+                    if (Math.floor(tickN / 30) % 2 === 0) {
+                        ctx.font = '11px monospace'
+                        ctx.fillStyle = '#ffffff'
+                        ctx.fillText('PRESS ANY KEY TO PLAY AGAIN', state.width / 2, cy + chh - 14)
+                    }
                 }
             }
         }
@@ -319,6 +395,8 @@ const PongGame = () => {
                 isAttractMode = false
                 setScreen('play')
                 keys.ArrowUp = keys.ArrowDown = false
+                state.servePending = true
+                serveFlash = 36
                 if (state.width > 0) resetBall()
             },
             tick: (pad) => {
@@ -365,6 +443,11 @@ const PongGame = () => {
                     // effect-local flags (no stale useState in this closure).
                     screen: isAttractMode ? 'attract' : (state.over ? 'over' : 'play'),
                 }),
+                // #3536 — the sound sequence + serve state, for pongdrive's
+                // audio-spy leg (what the player hears, in order).
+                sfx: () => sfxLog.slice(-240),
+                servePending: () => state.servePending === true,
+                serveFlash: () => serveFlash,
                 setDiff: (n) => { diff = ((n % DIFFS.length) + DIFFS.length) % DIFFS.length; state.diff = DIFFS[diff] },
             }
         }

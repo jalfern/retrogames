@@ -181,7 +181,10 @@ export function watchStep(gs) {
 // them, exactly as the 1972 machine. Mutates gs; returns the events index.jsx
 // turns into sound.
 export function tickPong(gs, input) {
-    const ev = { wall: false, hitL: false, hitR: false, scored: 0 }
+    // #3536: ev.serve marks the FIRST paddle return after a serve (the voice
+    // answers it twice). gs.servePending is observation, not physics — it
+    // never touches ball or paddles, and rolls no dice.
+    const ev = { wall: false, hitL: false, hitR: false, scored: 0, serve: false }
     if (gs.over) return ev
     ev.wall = stepBall(gs.ball, gs.height)
 
@@ -213,6 +216,8 @@ export function tickPong(gs, input) {
         b.x = PADDLE_OFFSET + PADDLE_WIDTH + 1 // Push out to avoid sticking
         applyReturn(b, gs.left.y) // cabinet deflection + dice-free anti-loop
         ev.hitL = true
+        ev.serve = gs.servePending === true
+        gs.servePending = false
     }
     if (b.x + BALL_SIZE >= gs.width - PADDLE_OFFSET - PADDLE_WIDTH &&
         b.x + BALL_SIZE <= gs.width - PADDLE_OFFSET &&
@@ -222,6 +227,8 @@ export function tickPong(gs, input) {
         b.x = gs.width - PADDLE_OFFSET - PADDLE_WIDTH - BALL_SIZE - 1
         applyReturn(b, gs.right.y)
         ev.hitR = true
+        ev.serve = gs.servePending === true
+        gs.servePending = false
     }
 
     // #3532 — scoring: serve from center; the paddles HOLD. The cabinet never
@@ -229,10 +236,12 @@ export function tickPong(gs, input) {
     if (b.x < 0) {
         gs.right.score++
         gs.ball = serveBall(gs.rand, gs.width, gs.height)
+        gs.servePending = true // new ball in play — its first return is the serve (#3536)
         ev.scored = 1 // left conceded
     } else if (b.x > gs.width) {
         gs.left.score++
         gs.ball = serveBall(gs.rand, gs.width, gs.height)
+        gs.servePending = true // new ball in play — its first return is the serve (#3536)
         ev.scored = 2 // left scored
     }
     return ev

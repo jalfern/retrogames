@@ -11,6 +11,9 @@ export const HOLD = 144
 export const INFO_MSGS = [
     'UP/DOWN MOVE YOUR PADDLE',
     'THE RIGHT PADDLE IS THE CPU',
+    // #3536 — the cabinet law the #3532 serve restored; say it where the
+    // player reads before starting, so holding position reads as intent.
+    'PADDLES HOLD SPOT BETWEEN POINTS',
 ]
 
 export const PRESS = 'PRESS ARROW KEYS TO START'
