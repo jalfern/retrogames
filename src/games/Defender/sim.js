@@ -51,6 +51,18 @@ export const SCORE_CATCH = 250
 export const SCORE_DELIVER = 500
 export const SCORE_WAVE = 1000
 export const BONUS_LIFE_EVERY = 10000
+// #3453 — the 1981 Meteor Storm. Every fifth wave is a BONUS wave: twelve
+// meteors streak west across the planet in a staggered column, each worth 250,
+// and all twelve down inside 5 s pays the cabinet's 5,000 bonus. A meteor kills
+// the fighter on contact (the existing contact law, read through the wrap) and
+// is vaporized by laser or smart bomb at table value. No landers share a bonus
+// wave — the storm IS the wave. rand-FREE spawn: the seedpin law holds.
+export const BONUS_WAVE_EVERY = 5
+export const METEOR_COUNT = 12
+export const METEOR_SPEED = 8
+export const SCORE_METEOR = 250
+export const METEOR_BONUS = 5000
+export const METEOR_BONUS_TICKS = 5 * 60
 
 export const START_LIVES = 3
 export const RESPAWN_DELAY = 60     // ~1 s dark before the ship returns
@@ -133,6 +145,28 @@ export function spawnWave(rand, wave, height) {
 
 // How many extra ships the score has earned (arcade: one per 10,000).
 export const livesForScore = (score) => Math.floor(score / BONUS_LIFE_EVERY)
+
+// Meteor Storm (#3453): the bonus wave's column. Fixed geometry, NOT the seed
+// stream — the storm enters at a deterministic place, westbound at 8 px/tick,
+// twelve rocks in a diagonal band 70…334 so the low sky and the high line stay
+// flyable. `burn` bounds the sweep: a rock that crosses the planet unseen burns
+// up (no score) instead of orbiting forever, so every bonus wave still ends.
+export function spawnBonusWave() {
+    const meteors = []
+    for (let i = 0; i < METEOR_COUNT; i++) {
+        meteors.push({
+            x: (2600 + i * 60) % WORLD_WIDTH,
+            y: 70 + i * 24,
+            vx: -METEOR_SPEED,
+            vy: 0,
+            type: 'meteor',
+            state: 'streak',
+            carry: null,
+            burn: Math.ceil((WORLD_WIDTH + i * 60) / METEOR_SPEED) + 60,
+        })
+    }
+    return meteors
+}
 
 // Count of still-living humans (walk/abducted/falling/carried all count;
 // only `dead` is gone).
@@ -219,6 +253,26 @@ export const watchRoute = (s) => {
     // dives inside the near-ground zone (the elevator auto-delivers at clearance
     // 18, comfortably above this line).
     const canDown = p.vy < 2.6 && groundAt(s.terrain, p.x) - p.y > 26
+
+    // Meteor Storm dodge (#3453): at 8 px/tick a streak owns the horizontal —
+    // the escape is altitude, and it has to START while the fuse is long,
+    // because ~1 px/tick of elevator cannot clear a ±16 kill band late. Reads
+    // the projected hull like every momentum law on this planet: the press
+    // starts before the rock is visible-dangerous, and terrain stays the boss
+    // (prefer the dive only with real floor room, else climb).
+    let rock = null
+    let rockD = Infinity
+    for (const e of s.enemies) {
+        if (e.type !== 'meteor') continue
+        const fx = ((p.x + p.vx * 20) % WORLD_WIDTH + WORLD_WIDTH) % WORLD_WIDTH
+        const ex = Math.min(Math.abs(wrapDelta(e.x - p.x)), Math.abs(wrapDelta(e.x - fx)))
+        if (ex < 460 && Math.abs(e.y - p.y) < 64 && ex < rockD) { rockD = ex; rock = e }
+    }
+    if (rock) {
+        if (rock.y > p.y && canDown && aheadFloor - p.y > 110) input.down = true
+        else input.up = true
+        if (input.up && input.down) input.down = false
+    }
 
     // Delivery, valley-site (#3456 stage 2): the held human only commits to the
     // floor while the floor within reach still admits the seat — if any sampled
@@ -334,6 +388,10 @@ export const watchRoute = (s) => {
     let best = null
     let bestD = Infinity
     for (const e of s.enemies) {
+        // #3453: a storm rock is not a job — it comes to you, and the flat-line
+        // gun below still takes every legal shot at it. Chasing one is how the
+        // hull parks itself in an 8 px/tick lane.
+        if (e.type === 'meteor') continue
         let d = Math.abs(wrapDelta(e.x - p.x)) + Math.abs(e.y - p.y) * 6
         if (e.type === 'lander' && e.carry !== null) d *= 0.25
         else if (e.type === 'lander' && e.state === 'descend') d *= 0.7
@@ -515,6 +573,9 @@ export function createSim({ rand, height }) {
         speedMode: false,      // #3456 stage 3: landerless wave — the mutants run hot
         waveClock: WAVE_TIME,  // #3453: per-wave countdown; at 0 the landers go urgent
         urgent: false,
+        bonus: false,          // #3453: the fifth wave is a Meteor Storm
+        meteorsDown: 0,        // rocks vaporized this bonus wave (12 in 5 s = +5,000)
+        bonusTimer: 0,         // the storm's 5-second full-clear window
         events: [],
     }
     s.humans = makeHumans(rand, s.terrain)
@@ -538,6 +599,19 @@ export function createSim({ rand, height }) {
     const addScore = (pts) => {
         s.score += pts
         if (livesForScore(s.score) > s.bonusLives) { s.bonusLives += 1; s.lives += 1; s.events.push({ t: 'bonus' }) }
+    }
+
+    // #3453: a vaporized rock — table value 250, and twelve inside the 5 s
+    // window pay the cabinet's 5,000 storm bonus. rand-FREE FX (seedpin).
+    const meteorKill = (e, fx) => {
+        addScore(SCORE_METEOR)
+        s.meteorsDown += 1
+        s.events.push({ t: 'killMeteor', pts: SCORE_METEOR })
+        fx(e.x, e.y, '#9ad8ff') // cold-blue ice-rock burst — distinct from green/red
+        if (s.bonus && s.bonusTimer > 0 && s.meteorsDown >= METEOR_COUNT) {
+            addScore(METEOR_BONUS)
+            s.events.push({ t: 'meteorBonus', pts: METEOR_BONUS })
+        }
     }
 
     // #3443 — the smart bomb (Jon's #2016 answer A). One press vaporizes every
@@ -565,6 +639,8 @@ export function createSim({ rand, height }) {
                     h.vy = 1
                     e.carry = null
                 }
+            } else if (e.type === 'meteor') {
+                meteorKill(e, flashBurst)
             } else {
                 addScore(SCORE_MUTANT)
                 s.events.push({ t: 'killMutant', pts: SCORE_MUTANT })
@@ -615,6 +691,8 @@ export function createSim({ rand, height }) {
         // dive and haul at URGENT_LANDER_SPEED until the wave turns over. The
         // edge fires once per wave; freeze (GAME OVER beat) pauses the clock.
         if (s.waveClock > 0) s.waveClock -= 1
+        // #3453: the storm's full-clear window burns on the same clock.
+        if (s.bonus && s.bonusTimer > 0) s.bonusTimer -= 1
         if (s.waveClock === 0 && !s.urgent) {
             s.urgent = true
             s.events.push({ t: 'waveUrgent' })
@@ -694,6 +772,16 @@ export function createSim({ rand, height }) {
 
         // --- Enemies: landers (wander → descend → abduct → ascend) and mutants ---
         s.enemies.forEach((e) => {
+            if (e.type === 'meteor') {
+                // #3453: a streak flies straight and holds its altitude — the storm
+                // is weather, not a hunter. rand-FREE: the sweep cannot shift the
+                // seed stream. A rock that crosses the planet unseen burns up
+                // (no score), which is what makes every bonus wave END.
+                e.x = ((e.x + e.vx) % WORLD_WIDTH + WORLD_WIDTH) % WORLD_WIDTH
+                e.burn -= 1
+                if (e.burn <= 0) e.dead = true
+                return
+            }
             if (e.type === 'mutant') {
                 // Fast, evasive chase on the wrap. In the speeder endgame
                 // (#3456 stage 3) the same hunt runs hotter — the cabinet's
@@ -844,6 +932,8 @@ export function createSim({ rand, height }) {
                             h.vy = 1
                             e.carry = null
                         }
+                    } else if (e.type === 'meteor') {
+                        meteorKill(e, (x, y, c) => killFx(x, y, 8, c))
                     } else {
                         addScore(SCORE_MUTANT)
                         s.events.push({ t: 'killMutant', pts: SCORE_MUTANT })
@@ -898,7 +988,18 @@ export function createSim({ rand, height }) {
         if (s.enemies.length === 0) {
             addScore(SCORE_WAVE)
             s.wave += 1
-            s.enemies = spawnWave(rand, s.wave, height)
+            // #3453: every fifth wave is the Meteor Storm — the cabinet's bonus
+            // wave. No landers join a storm; the column IS the wave.
+            if (s.wave % BONUS_WAVE_EVERY === 0) {
+                s.bonus = true
+                s.meteorsDown = 0
+                s.bonusTimer = METEOR_BONUS_TICKS
+                s.enemies = spawnBonusWave()
+                s.events.push({ t: 'bonusWave' })
+            } else {
+                s.bonus = false
+                s.enemies = spawnWave(rand, s.wave, height)
+            }
             s.bombs = BOMBS_PER_WAVE // #3443 (Jon #2016): 3 per wave — the wave beat restocks
             s.waveClock = WAVE_TIME // #3453: new wave, fresh countdown
             s.urgent = false

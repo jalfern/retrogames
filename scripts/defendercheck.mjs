@@ -19,6 +19,7 @@ import {
     BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT, DEATH_FREEZE, RESPAWN_DELAY, INVULN_TICKS, watchRoute,
     thrustHum, BOMBS_PER_WAVE, BOMB_SCREEN, MUTANT_SPEED, SPEEDER_SPEED,
     LANDER_SPEED, WAVE_TIME, URGENT_LANDER_SPEED,
+    SCORE_METEOR, METEOR_BONUS, METEOR_COUNT, METEOR_SPEED, METEOR_BONUS_TICKS, spawnBonusWave,
 } from '../src/games/Defender/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1023,6 +1024,93 @@ console.log('thrust hum is finite at the source (#2167):')
 }
 
 // ------------------------------------------------------------------ mutants ----
+// ------------------------------------------------------- Meteor Storm (#3453) --
+// The 1981 bonus wave: every fifth wave is the storm — twelve rocks at 250,
+// westbound 8 px/tick in a fixed column, lethal on contact through the wrap,
+// all twelve inside 5 s pays the cabinet's 5,000. rand-FREE deal; the wave
+// still ends (rocks that cross unseen burn up).
+console.log('Meteor Storm (#3453):')
+{
+    const rock = (x, y, burn = 500) => ({ x, y, vx: -METEOR_SPEED, vy: 0, type: 'meteor', state: 'streak', carry: null, burn })
+    // antipode anchor: keeps the wave-clear beat out of the score deltas
+    const far = () => ({ x: 600, y: 120, vx: 0, vy: 0.2, type: 'lander', state: 'wander', carry: null })
+    const level = (s) => { s.player.x = 2500; s.player.y = 200; s.player.vx = 0; s.player.vy = 0; s.player.facing = 1 }
+    // 1) the fifth wave enters as the storm
+    {
+        const s = newSim(7)
+        s.wave = 4
+        s.enemies = [] // force the wave beat
+        s.step({})
+        const rocks = s.enemies.filter(e => e.type === 'meteor')
+        ok(s.wave === 5 && s.bonus && rocks.length === METEOR_COUNT && s.enemies.length === METEOR_COUNT,
+            `wave 5 is a twelve-rock Meteor Storm, no landers (wave ${s.wave}, ${rocks.length}/${METEOR_COUNT})`)
+        ok(s.events.some(e => e.t === 'bonusWave'), 'the storm is announced (bonusWave event)')
+        ok(rocks.every((e, i) => e.vx === -METEOR_SPEED && e.y === 70 + i * 24),
+            'the column is a fixed westbound band — the deal draws no dice (seedpin law)')
+        ok(s.bombs === BOMBS_PER_WAVE, 'the wave beat still restocks bombs into the storm')
+    }
+    // 2) table value
+    {
+        const s = newSim(7)
+        s.bonus = true; s.bonusTimer = METEOR_BONUS_TICKS; s.meteorsDown = 0
+        s.enemies = [rock(2600, 200), far()]; level(s)
+        const before = s.score
+        for (let i = 0; i < 20 && !s.events.some((ev) => ev.t === "killMeteor"); i++) s.step({ fire: true })
+        ok(s.score - before === SCORE_METEOR && s.events.some(e => e.t === 'killMeteor' && e.pts === SCORE_METEOR),
+            `a laser vaporizes a rock at table value +${SCORE_METEOR}`, `got ${s.score - before}`)
+    }
+    // 3) all twelve inside the window
+    {
+        const s = newSim(7)
+        s.bonus = true; s.bonusTimer = 60; s.meteorsDown = METEOR_COUNT - 1
+        s.enemies = [rock(2600, 200), far()]; level(s)
+        const before = s.score
+        for (let i = 0; i < 20 && !s.events.some((ev) => ev.t === "killMeteor"); i++) s.step({ fire: true })
+        ok(s.events.some(e => e.t === 'meteorBonus' && e.pts === METEOR_BONUS) && s.score - before === SCORE_METEOR + METEOR_BONUS,
+            `twelve inside 5 s pays the cabinet's +${METEOR_BONUS} ALL CLEAR on top of the rock`, `got ${s.score - before}`)
+    }
+    // 4) outside the window
+    {
+        const s = newSim(7)
+        s.bonus = true; s.bonusTimer = 3; s.meteorsDown = METEOR_COUNT - 1
+        s.enemies = [rock(2600, 200), far()]; level(s)
+        for (let i = 0; i < 20 && !s.events.some((ev) => ev.t === "killMeteor"); i++) s.step({ fire: true }) // the window burns before the shot lands
+        ok(!s.events.some(e => e.t === 'meteorBonus'), 'a twelfth rock after the window pays the rock but never the storm bonus')
+    }
+    // 5) lethality reads the wrap
+    {
+        const s = newSim(7)
+        s.player.x = 3994; s.player.y = 400; s.player.vx = 0; s.player.vy = 0
+        s.enemies = [rock(6, 400), rock(2000, 90)]
+        const lives = s.lives
+        s.step({})
+        ok(s.events.some(e => e.t === 'die') && s.lives === lives - 1,
+            'a streak just over the seam kills the fighter — meteor contact reads the wrap')
+    }
+    // 6) the storm passes on its own
+    {
+        const s = newSim(9)
+        s.wave = 4; s.enemies = []
+        s.step({}) // wave 5 opens with the column
+        s.player.y = 372; s.player.vy = 0 // under the band's floor (y 70…334)
+        for (let i = 0; i < 700 && s.wave === 5; i++) { s.player.y = 372; s.step({}) }
+        ok(s.wave === 6 && s.lives === START_LIVES,
+            `rocks burn up after their sweep and the storm closes itself (wave ${s.wave}, lives ${s.lives})`)
+    }
+    // 7) the patrol yields altitude
+    {
+        const s = newSim(7)
+        s.enemies = [rock(2320, 212)]
+        s.player.x = 2000; s.player.y = 200; s.player.vx = 3; s.player.vy = 0; s.player.facing = 1
+        const inp = watchRoute(s)
+        ok((inp.up && !inp.down) || (inp.down && !inp.up),
+            'watchRoute gives altitude to a rock in its lane instead of holding the line')
+    }
+    // 8) rand-free deal
+    ok(JSON.stringify(spawnBonusWave()) === JSON.stringify(spawnBonusWave()),
+        'the storm column is identical every deal — the seed stream never shifts')
+}
+
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
     const I = 'src/games/Defender/index.jsx'

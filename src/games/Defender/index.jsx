@@ -104,6 +104,17 @@ const DefenderGame = () => {
                 else if (ev.t === 'bonus') audioController.playTone(1200, 0.15, 'square', 0.12)
                 else if (ev.t === 'mutate') audioController.playTone(500, 0.06, 'square', 0.08)
                 else if (ev.t === 'speedup') audioController.playSweep(300, 950, 0.3, 'square', 0.14) // #3456 stage 3: the fleet just went hot
+                // #3453: the Meteor Storm. Two low descending notes as the column
+                // enters, and the all-clear is the 5,000 beat the cabinet paid.
+                else if (ev.t === 'bonusWave') {
+                    audioController.playSweep(950, 300, 0.5, 'sawtooth', 0.12)
+                    audioController.playSweep(750, 240, 0.5, 'square', 0.08, null, 0.12)
+                    popups.push({ x: sim.player.x, y: sim.player.y - 26, text: 'METEOR STORM', life: 110 })
+                }
+                else if (ev.t === 'meteorBonus') {
+                    audioController.playTone(880, 0.1, 'square', 0.14); audioController.playTone(1170, 0.1, 'square', 0.14, 0.1); audioController.playTone(1760, 0.24, 'square', 0.16, 0.2)
+                    popups.push({ x: sim.player.x, y: sim.player.y - 26, text: '+5000 ALL CLEAR', life: 110 })
+                }
                 // #3453: the wave clock expired — a two-voice rising klaxon, square
                 // lead with a sawtooth echo, the landers going aggressive.
                 // the echo must LAND after the lead: playSweep's 6th slot is
@@ -357,7 +368,31 @@ const DefenderGame = () => {
 
             // Enemies
             sim.enemies.forEach((e) => {
+                if (e.type === 'meteor') return
                 atSeam((off) => { if (e.x + off >= cameraX - 24 && e.x + off <= camR + 24) { ctx.save(); ctx.translate(off, 0); drawLander(e); ctx.restore() } })
+            })
+
+            // Meteor Storm (#3453): jagged wireframe ice-rocks with westbound
+            // speed streaks and a slow tumble — this port's own line language,
+            // pale ice-blue so a rock never reads as a lander or a mutant.
+            ctx.strokeStyle = '#9ad8ff'
+            ctx.lineWidth = 1
+            sim.enemies.forEach((e, i) => {
+                if (e.type !== 'meteor') return
+                atSeam((off) => {
+                    const x = e.x + off
+                    if (x < cameraX - 60 || x > camR + 60) return
+                    ctx.save()
+                    ctx.translate(x, e.y)
+                    ctx.rotate(Math.sin((tickN + i * 9) * 0.05) * 0.35)
+                    ctx.beginPath()
+                    ctx.moveTo(-7, -2); ctx.lineTo(-3, -6); ctx.lineTo(3, -5); ctx.lineTo(7, -1)
+                    ctx.lineTo(5, 5); ctx.lineTo(-2, 7); ctx.lineTo(-7, 3); ctx.closePath()
+                    ctx.moveTo(8, -3); ctx.lineTo(16, -4)
+                    ctx.moveTo(7, 2); ctx.lineTo(14, 3)
+                    ctx.stroke()
+                    ctx.restore()
+                })
             })
 
             // Lasers
@@ -459,7 +494,7 @@ const DefenderGame = () => {
             ctx.stroke()
             // radar dots flicker like the CRT scanner (#1531)
             sim.humans.forEach((h, i) => { if (h.state !== 'dead' && (tickN + i * 7) % 24 > 3) { ctx.fillStyle = '#ffd23f'; ctx.fillRect(h.x * sc - 1, MINIMAP_HEIGHT - 8, 2, 2) } })
-            sim.enemies.forEach((e, i) => { if ((tickN + i * 5) % 18 > 2) { ctx.fillStyle = e.type === 'mutant' ? (sim.speedMode ? '#ff9d3c' : '#ff5555') : '#aaaaaa'; ctx.fillRect(e.x * sc - 1, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, e.y * 0.05 + 3)), 2, 2) } })
+            sim.enemies.forEach((e, i) => { if ((tickN + i * 5) % 18 > 2) { ctx.fillStyle = e.type === 'meteor' ? '#9ad8ff' : e.type === 'mutant' ? (sim.speedMode ? '#ff9d3c' : '#ff5555') : '#aaaaaa'; ctx.fillRect(e.x * sc - 1, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, e.y * 0.05 + 3)), 2, 2) } })
             ctx.fillStyle = '#ffffff'
             // #1907: player priority — when the camera window is split by the
             // seam, the dot blinks big so you can find yourself on the far side.

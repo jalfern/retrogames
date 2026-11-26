@@ -169,10 +169,14 @@ the witness so copy and measurement cannot drift apart).
   stock refills to 3 on the wave beat; edge-triggered and rand-free — the bomb
   draws nothing from the seed stream (its own re-measure was byte-identical,
   honest *then*: the grace freeze was still live; #3445's honest burn moved the
-  floors — see the gap above). The mock option is retired. **Still out:
-  hyperspace and the meteor-swarm bonus** — documented 1981 features left out
-  of this port (the original's bonus table values 250/500/1000/10k are honored
-  for what IS here).
+  floors — see the gap above). The mock option is retired. **The Meteor Storm
+  is IN (#3453):** every fifth wave is the bonus wave — twelve rocks in a
+  fixed westbound column at 8 px/tick, 250 each, and all twelve inside 5 s
+  pays the cabinet's 5,000 ALL CLEAR. Contact kills (the wrap law reads it),
+  laser and smart bomb vaporize at table value, no landers share a storm, and
+  rocks that cross the planet unseen burn up so every storm ends; the deal is
+  rand-free, so the seed stream cannot shift. **Still out: hyperspace** — B is
+  the bomb and the pad has no third action; that ergonomics call is Jon's.
 - The hauled human is lost at the top — and that IS the arcade law (#3453,
   re-verified): the lander carries its catch to the top "at which point they
   turn into fast-moving mutants"; mutants are the captured humans turned
