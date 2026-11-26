@@ -1617,7 +1617,7 @@ const wrap = (gs) => {
     for (let i = 0; i < 70; i++) { drive(jl, {}, 1); twoSeen.push(...types(jl)) }
     r.check('crossing both wires completes the SET — 2×25 + 500 and the DMD names it',
         jl.score === 575 && twoSeen.filter((t) => t === 'rampL').length === 2 &&
-        twoSeen.includes('ramplset') && jl.rampLLit === true && jl.msg.text === 'RAMP L SET! +500',
+        twoSeen.includes('ramplset') && jl.rampLLit === true && jl.msg.text === 'JET LANE! +500',
         `score=${jl.score} msg=${jl.msg.text}`)
     r.check('the flank return runs down the LEFT half toward the spinner/kicker channel',
         jl.bx < 112 && jl.by > 380, `x=${jl.bx.toFixed(0)} y=${jl.by.toFixed(0)}`)
@@ -1670,7 +1670,7 @@ const wrap = (gs) => {
     for (let i = 0; i < 70; i++) { drive(em, {}, 1); emSeen.push(...types(em)) }
     r.check('EMBER RIDER flank pays its own hotter ladder (30×2 + 600, mirrored)',
         em.score === 660 && emSeen.filter((t) => t === 'rampL').length === 2 && emSeen.includes('ramplset') &&
-        em.msg.text === 'RAMP L SET! +600', `score=${em.score} msg=${em.msg.text}`)
+        em.msg.text === 'JET LANE! +600', `score=${em.score} msg=${em.msg.text}`)
     r.check('EMBER RIDER returns down the RIGHT half (the mirror flank)',
         em.bx > W - 112 && em.by > 380, `x=${em.bx.toFixed(0)} y=${em.by.toFixed(0)}`)
     const ek = drive(makeGame(149, 1))

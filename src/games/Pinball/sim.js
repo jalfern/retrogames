@@ -897,7 +897,7 @@ export function stepGame(gs, pad = {}) {
                     if (gs.rampLHits >= RL.rolls.length) {
                         gs.rampLHits = 0; gs.rampLLit = true;
                         add(gs, T.rules.rampSet);
-                        say(gs, `RAMP L SET! +${T.rules.rampSet}`);
+                        say(gs, `JET LANE! +${T.rules.rampSet}`);
                         gs.events.push({ type: 'ramplset', x: (RL.x1 + RL.x2) / 2, y: RL.rolls[0].y });
                         if (T.kbL && gs.kbLUsed) {   // the combo law: a SET buys the save back
                             gs.kbLUsed = false; gs.kbLArmFlash = 24;

@@ -188,7 +188,8 @@ Both are TABLE DATA first, engine second (same law as every rung):
   can never fire both — a ball may be saved once per SIDE per ball.
 - **Combo law** — a RAMP L SET re-arms the spent left kickback once (`kbarm`
   event, `kbLArmFlash` white pulse on the ring): the flank feeds the save, the
-  save keeps the flank alive. Deviation note from the filed issue: no separate
+  save keeps the flank alive. The SET announces itself `JET LANE! +<set>` — the
+  capstone of the ramp → spinner×N → top lane route. Deviation note from the filed issue: no separate
   arming button-target — the SET *is* the arm, so both kickbacks keep the
   auto-column idiom #3250 shipped.
 - State & juice: `rampLHits`/`rampLLit`/`kbLUsed` join `stateOf` and the hash;
@@ -482,4 +483,6 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   only: physics, scoring and `stateHash` are untouched (gates §spinner +
   mutants spinrung/spincool/spingrade). Still open on #3446: the kickback
   save sweep + distinct grapple sound, ramp ball-motion read, lit-hierarchy
-  pass, EMBER re-dress, JET LANE combo banner.
+  pass, EMBER re-dress. The JET LANE combo banner landed with #3468: the
+  flank SET announces itself `JET LANE! +<set>` (hot, pulsing, crawl-in — the
+  same class as the right-ramp RAMP SET), mirroring the launch-lane SET.

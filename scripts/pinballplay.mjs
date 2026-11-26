@@ -544,14 +544,14 @@ try {
     let sawSetDmd = ''
     for (let i = 0; i < 40; i++) {
         await wait(40); setS = await flankSt()
-        if (!sawSetDmd && setS.dmd.text.includes('RAMP L SET')) sawSetDmd = setS.dmd.text
+        if (!sawSetDmd && setS.dmd.text.includes('JET LANE')) sawSetDmd = setS.dmd.text
         if (setS.rampLLit) break
     }
     ok('JET LANE: a flank feed crosses both wires and SETs live (min +set, lamp latches)',
         !!setS && setS.rampLLit === true && setS.score >= setBefore.score + price.wire * 2 + price.set,
         `${setBefore.score}→${setS && setS.score} rampLLit=${setS && setS.rampLLit}`)
     ok('the SET announces itself and re-arms the spent left save (combo law live)',
-        sawSetDmd === `RAMP L SET! +${price.set}` && !!setS && setS.kbLUsed === false,
+        sawSetDmd === `JET LANE! +${price.set}` && !!setS && setS.kbLUsed === false,
         `"${sawSetDmd}" kbLUsed=${setS && setS.kbLUsed}`)
 
     ok('zero page errors through the whole drive', errors.length === 0, errors.join(';'))

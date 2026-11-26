@@ -355,7 +355,7 @@ export const FONT = {
     E: [0x7F, 0x49, 0x49, 0x49, 0x41], F: [0x7F, 0x09, 0x09, 0x01, 0x01],
     G: [0x3E, 0x41, 0x49, 0x49, 0x3A], H: [0x7F, 0x08, 0x08, 0x08, 0x7F],
     K: [0x7F, 0x08, 0x14, 0x22, 0x40],
-    I: [0x00, 0x41, 0x7F, 0x41, 0x00], L: [0x7F, 0x40, 0x40, 0x40, 0x40],
+    J: [0x40, 0x40, 0x40, 0x40, 0x7F], I: [0x00, 0x41, 0x7F, 0x41, 0x00], L: [0x7F, 0x40, 0x40, 0x40, 0x40],
     M: [0x7F, 0x38, 0x0C, 0x38, 0x7F], N: [0x7F, 0x06, 0x09, 0x18, 0x7F],
     O: [0x3E, 0x41, 0x41, 0x41, 0x3E], P: [0x7F, 0x09, 0x09, 0x09, 0x06],
     R: [0x7F, 0x09, 0x09, 0x09, 0x76], S: [0x26, 0x49, 0x49, 0x49, 0x32],
@@ -380,6 +380,7 @@ export const DMD_MSGS = [
     'MULTIBALL!', 'BALL SAVE!', 'EXTRA BALL', 'MAGNET!', 'SNAP! +50', 'EXTRA x1',
     // #3232 EMBER RIDER variants (same charset, new literals — pinned anyway)
     'RAMP SET! +600', 'ORBIT! +150', 'SNAP! +75', 'MULT x4', 'BALL SAVE!',
+    'JET LANE! +500', 'JET LANE! +600',
 ];
 
 // idle crawl lines for the strip when nothing is announced
@@ -406,7 +407,7 @@ function hotScroll(text, t, T) {
 export function drawDMD(ctx, view, pal = PAL) {
     const { x, y, cols, rows, dot } = DMD;
     // bezel + dark glass
-    const hot = /TILT|MULTIBALL|MULT x[0-9]|ORBIT SET|ORBIT LOCK|RAMP SET|SAVE/.test(view.text);
+    const hot = /TILT|MULTIBALL|MULT x[0-9]|ORBIT SET|ORBIT LOCK|RAMP SET|JET LANE|SAVE/.test(view.text);
     const multi = view.text.startsWith('MULTIBALL');
     // #3313 item 2 heat tell: a sustained warmth (0..1) riding the solo-bed
     // swell. The glow rises with the run but never flashes — a hot message
