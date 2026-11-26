@@ -646,6 +646,50 @@ function substepBall(gs, b, dt) {
                 }
             }
         }
+        // CHAIN-PIN (#3452): while a hold episode is live, a ball that arrives
+        // at the PACK'S OUTER FACE is swallowed instead of bounced. #3422 opened
+        // the episode — but its honest residue admitted "a ball queued directly
+        // behind a pin bounces off it (the pin is a post) instead of chain-
+        // pinning through it". Queued means queued: contact on a member's outward
+        // side (dot ≥ ½ between post→member and member→ball — the column the
+        // magnet itself feeds) captures onto the rosette at the arrival angle and
+        // relaxes clockwise to the first slot clear of every member (packs never
+        // overlap — packCollide skips held pairs, so placement is load-bearing).
+        // Cross-fire stays steel-on-steel: the #3217 pinned-post bounce owns any
+        // contact not in the column, and a spent ball (magHoldT < 0) still never
+        // re-rides a drive. Each chained ball owns its clock and pays its own
+        // snap. Zero RNG, index order — deterministic like every law here.
+        if (!b.magHeld && (b.magHoldT ?? 0) >= 0 && gs.magHold > 0) {
+            const RR = BALL_R * 2;
+            const swallowed = gs.pucks.some((p) => {
+                if (p === b || !p.magHeld) return false;
+                const dx = b.bx - p.bx, dy = b.by - p.by;
+                if (dx * dx + dy * dy > RR * RR) return false;
+                const px = (p.magX ?? p.bx) - MG.x, py = (p.magY ?? p.by) - MG.y;
+                const pd = Math.hypot(px, py);
+                if (pd < 0.001) return true;
+                const bd = Math.hypot(dx, dy);
+                return (dx / bd) * (px / pd) + (dy / bd) * (py / pd) >= 0.5;   // outward face = column
+            });
+            if (swallowed) {
+                const holdR = MG.r + BALL_R;
+                const step = 2 * Math.asin(BALL_R / holdR) + 0.01;   // ≥ contact spacing on the ring
+                let ang = Math.atan2(b.by - MG.y, b.bx - MG.x);
+                for (let s = 0; s < 8; s++) {
+                    const clear = gs.pucks.every((p) => p === b || !p.magHeld
+                        || Math.abs(((Math.atan2((p.magY ?? p.by) - MG.y, (p.magX ?? p.bx) - MG.x) - ang + Math.PI * 3) % (Math.PI * 2)) - Math.PI) >= step);
+                    if (clear) break;
+                    ang += step;
+                }
+                b.bx = MG.x + Math.cos(ang) * holdR; b.by = MG.y + Math.sin(ang) * holdR;
+                b.magX = b.bx; b.magY = b.by;
+                b.vx = 0; b.vy = 0; b.magHeld = true; b.magHoldT = MG.hold;
+                gs.magTouched = true;   // the pack's mouth is the field
+                gs.magHold = Math.max(gs.magHold, MG.hold); gs.magFlash = 14;
+                say(gs, 'MAGNET!', 90);
+                gs.events.push({ type: 'maggrab', x: MG.x, y: MG.y });
+            }
+        }
     }
 
     // flipper collision (animation is game-wide, see substep; dead while tilted

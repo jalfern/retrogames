@@ -909,6 +909,126 @@ const wrap = (gs) => {
     }
 }
 
+// ═══════════════════════════════ chain-pin (#3452) ══════════════════════
+// A queued ball is swallowed, not bounced: contact on the pack's OUTER FACE
+// during a live episode captures onto the post rosette; the ring relaxes
+// clockwise to ≥ ball-contact spacing; chained balls own their clocks and pay
+// their own snap. Cross-fire still bounces (#3217); spent balls still never
+// re-ride (#3422).
+{
+    const MG = TABLE.magnet
+    const mkChain = (x, y, vx, vy) => ({ bx: x, by: y, vx, vy, prevY: y, launched: true, laneCurved: false,
+        spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false, magHoldT: 0 })
+
+    // the column run: face pin, then two queued balls fed straight down the
+    // pin's own line. Expect three grabs, three own clocks, three snaps, exact
+    // payout — and a pack that never overlaps.
+    const gs = makeGame(452)
+    const score0 = gs.score
+    rung3Ball(gs, MG.x, MG.y - 40, 0, 60)
+    let grabs = 0, snaps = 0, inj2 = false, inj3 = false
+    let packSeen = null, episodeAtSnap1 = -1, multEnd = 0
+    for (let i = 0; i < 400 && snaps < 3; i++) {
+        drive(gs, {}, 1)
+        const t = types(gs)
+        grabs += t.filter((x) => x === 'maggrab').length
+        if (!inj2 && gs.pucks.some((p) => p.magHeld)) { inj2 = true; gs.pucks.push(mkChain(MG.x + 1, MG.y - 40, 0, 240)) }
+        if (!inj3 && grabs === 2) { inj3 = true; gs.pucks.push(mkChain(MG.x - 2, MG.y - 40, 0, 200)) }
+        if (inj3 && !packSeen && gs.pucks.filter((p) => p.magHeld).length === 3) {
+            packSeen = gs.pucks.filter((p) => p.magHeld).map((p) => ({ bx: p.bx, by: p.by, t: p.magHoldT }))
+        }
+        snaps += t.filter((x) => x === 'magfree').length
+        if (snaps === 1 && episodeAtSnap1 < 0) episodeAtSnap1 = gs.magHold
+        if (snaps === 3) multEnd = gs.mult
+    }
+    r.check('#3452 the column is swallowed: two queued balls chain onto the live pin (3 grabs)',
+        grabs === 3 && inj2 && inj3, `grabs=${grabs}`)
+    r.check('#3452 the rosette sits on the ring (every pin at post r + BALL_R)',
+        packSeen && packSeen.every((p) => Math.abs(Math.hypot(p.bx - MG.x, p.by - MG.y) - (MG.r + BALL_R)) < 0.5),
+        packSeen ? packSeen.map((p) => `${(p.bx - MG.x).toFixed(1)},${(p.by - MG.y).toFixed(1)}`).join(' ') : 'never pinned 3')
+    r.check('#3452 the ring relaxes clockwise clear of every member — a 3-pack never overlaps',
+        packSeen && (() => {
+            for (let i = 0; i < packSeen.length; i++) {
+                for (let j = i + 1; j < packSeen.length; j++) {
+                    if (Math.hypot(packSeen[i].bx - packSeen[j].bx, packSeen[i].by - packSeen[j].by) < 17.9) return false
+                }
+            }
+            return true
+        })(), packSeen ? 'clean' : 'n/a')
+    r.check('#3452 each chained ball owns its clock (distinct live magHoldT at the 3-pack)',
+        packSeen && new Set(packSeen.map((p) => p.t)).size === 3 && packSeen.every((p) => p.t > 0),
+        packSeen ? packSeen.map((p) => p.t).join(',') : 'n/a')
+    r.check('#3452 the episode outlives the first snap — the coil stays hot till the LAST chained ball drops',
+        snaps === 3 && episodeAtSnap1 > 0, `magHold@snap1=${episodeAtSnap1} snaps=${snaps}`)
+    r.check('#3452 three swallowed balls pay exactly 3 × magnet at mult 1',
+        gs.score - score0 === 3 * TABLE.rules.magnet && multEnd === 1,
+        `paid=${gs.score - score0} mult=${multEnd}`)
+    r.check('#3452 chain capture marks the field touched (the pack\u2019s mouth recharges the coil)',
+        gs.magTouched === true || gs.magCharge === 1, `touched=${gs.magTouched} charge=${gs.magCharge}`)
+    // spent balls cross the column and STILL bounce: after the snaps the
+    // spent markers ride past the (dying) pack — no fourth grab, ever.
+    const grabsMid = grabs
+    for (let i = 0; i < 60; i++) { drive(gs, {}, 1); grabs += types(gs).filter((x) => x === 'maggrab').length }
+    r.check('#3452 a spent chained ball never re-rides (crossing the live column is still never a grab)',
+        grabs === grabsMid, `grabs ${grabsMid}\u2192${grabs}`)
+
+    // the cone law: a lateral touch of the pack is NOT the column. Spawn a
+    // ball in side-contact with the pin at rest — the chain refuses it (dot ≈ 0
+    // against the post→member axis) while packCollide's separation push keeps
+    // it to the flank. (After a few ticks the coil's own pull — the #3422
+    // energised-field law — may still swing it into a legitimate face grab;
+    // this pin measures the refusal window, before that happens.)
+    const gs2 = makeGame(453)
+    rung3Ball(gs2, MG.x, MG.y - 40, 0, 60)
+    for (let i = 0; i < 40 && !gs2.pucks[0].magHeld; i++) drive(gs2, {}, 1)
+    types(gs2)
+    gs2.pucks.push(mkChain(MG.x + 17, MG.y - 19, 0, 0))   // side-contact with the pin, at rest
+    let g2 = 0, lateral = true, pinHeld = true
+    for (let i = 0; i < 4; i++) {
+        drive(gs2, {}, 1)
+        g2 += types(gs2).filter((x) => x === 'maggrab').length
+        const free = gs2.pucks[1]
+        if (free) lateral = lateral && free.bx > gs2.pucks[0].bx + 9 && !free.magHeld
+        pinHeld = pinHeld && gs2.pucks[0].magHeld && gs2.pucks[0].bx === MG.x && gs2.pucks[0].by === MG.y - 19
+    }
+    r.check('#3452 a lateral touch is not the column: the cone refuses the grab, steel stays off the pin, the pin never budges',
+        g2 === 0 && lateral && pinHeld, `grabs=${g2} lateral=${lateral} pinHeld=${pinHeld}`)
+
+    // determinism: the SAME scripted column replays bit-identical
+    const replay = (seed) => {
+        const g = makeGame(seed)
+        rung3Ball(g, MG.x, MG.y - 40, 0, 60)
+        let a = false, b = false
+        for (let i = 0; i < 200; i++) {
+            drive(g, {}, 1)
+            const ev = types(g)
+            if (!a && g.pucks.some((p) => p.magHeld)) { a = true; g.pucks.push(mkChain(MG.x + 1, MG.y - 40, 0, 240)) }
+            if (!b && ev.includes('maggrab') && a && g.pucks.filter((p) => p.magHeld).length >= 2) { b = true; g.pucks.push(mkChain(MG.x - 2, MG.y - 40, 0, 200)) }
+        }
+        return stateOf(g).hash
+    }
+    r.check('#3452 determinism: the column replays bit-identical (zero RNG in the chain path)',
+        replay(454) === replay(454), `${replay(454)} vs ${replay(454)}`)
+
+    // EMBER RIDER mirrors the law — and pays its hotter price
+    const { TABLE_TWO } = await import('../src/games/Pinball/sim.js')
+    const MG2 = TABLE_TWO.magnet
+    const gs3 = makeGame(455, 1)
+    const score3 = gs3.score
+    rung3Ball(gs3, MG2.x, MG2.y - 40, 0, 60)
+    let g3 = 0, injE = false, snaps3 = 0
+    for (let i = 0; i < 240 && snaps3 < 2; i++) {
+        drive(gs3, {}, 1)
+        const t = types(gs3)
+        g3 += t.filter((x) => x === 'maggrab').length
+        snaps3 += t.filter((x) => x === 'magfree').length
+        if (!injE && gs3.pucks.some((p) => p.magHeld)) { injE = true; gs3.pucks.push(mkChain(MG2.x + 1, MG2.y - 40, 0, 240)) }
+    }
+    r.check('#3452 EMBER RIDER mirrors the chain — and pays its hotter 75 twice',
+        gs3.table.id === 'ember-rider' && g3 === 2 && snaps3 === 2 && gs3.score - score3 === 2 * TABLE_TWO.rules.magnet,
+        `cab=${gs3.table.id} grabs=${g3} snaps=${snaps3} paid=${gs3.score - score3}`)
+}
+
 // ---- #3422 the orbit lane is per-ball — verified, not assumed ----
 // The gap claimed the orbit ran one loop at a time; the arm/curl/done flags
 // were already per-puck. This pins that truth so a later refactor cannot
