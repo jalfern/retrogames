@@ -194,6 +194,94 @@ try {
     await p.close()
 }
 
+// ---- leg 7: #3536 audio-spy — the widened vocabulary, in order ----
+// The voice LAW lives in voice.js (pongcheck §voice proves it); this leg
+// proves the shipped shell actually plays it: a serve double-clack opens the
+// match, mid-rally never re-clacks, walls sit below every ping, the point
+// closes with a low thud, and rally pitches VARY (the strike law made audible
+// — the old fixed 400 Hz tone can pass none of this).
+try {
+    p = await open(`${BASE}?seed=4242`)
+    const audio = await p.evaluate(() => {
+        window.__game.reset(4242)
+        let steps = 0
+        const kinds = () => window.__pongTest.sfx().map((e) => e.kind)
+        for (; steps < 180; steps++) {
+            window.__game.step({ up: false, down: false }, 50)
+            const k = kinds()
+            const thuds = k.filter((x) => x === 'thud').length
+            const pitches = new Set(window.__pongTest.sfx().filter((e) => e.kind === 'rally').map((e) => e.freq))
+            if (thuds >= 2 && pitches.size >= 3) break
+        }
+        const log = window.__pongTest.sfx()
+        const serve0 = log[0], serve1 = log[1]
+        const rally = log.filter((e) => e.kind === 'rally')
+        const walls = log.filter((e) => e.kind === 'wall')
+        const thud = log.filter((e) => e.kind === 'thud')
+        const nonWallBefore = (i) => { for (let j = i - 1; j >= 0; j--) if (log[j].kind !== 'wall') return log[j].kind; return null }
+        return {
+            steps,
+            opensWithServe: !!serve0 && serve0.kind === 'serve' && !!serve1 && serve1.kind === 'serve' && serve1.freq > serve0.freq,
+            rallyVar: new Set(rally.map((e) => e.freq)).size,
+            rallyN: rally.length,
+            wallBelowRally: walls.length > 0 && rally.length > 0 && walls.every((w) => rally.every((v) => w.freq < v.freq)),
+            wallsUniform: walls.length > 0 && walls.every((w) => w.freq === 170),
+            thudLow: thud.length >= 2 && thud.every((t) => t.freq === 98),
+            midRallyServe: log.findIndex((e, i) => e.kind === 'serve' && nonWallBefore(i) === 'rally'),
+            serveAfterThud: log.some((e, i) => e.kind === 'serve' && nonWallBefore(i) === 'thud'),
+        }
+    })
+    r.check('the match opens with the serve double-clack (echo above)', audio.opensWithServe, JSON.stringify(audio).slice(0, 160))
+    r.check('rally pitches vary — the strike law is audible', audio.rallyVar >= 3, `${audio.rallyVar} distinct over ${audio.rallyN} pings`)
+    r.check('every wall tick sits below every rally ping', audio.wallBelowRally)
+    r.check('walls are one uniform dry voice', audio.wallsUniform)
+    r.check('points close with the low thud', audio.thudLow)
+    r.check('the serve clack never fires mid-rally', audio.midRallyServe === -1, `idx ${audio.midRallyServe}`)
+    r.check('the serve clack re-arms after a point', audio.serveAfterThud)
+} catch (e) {
+    r.check('leg 7 audio-spy ride completed without timeout', false, String(e))
+} finally {
+    await p.close()
+}
+
+// ---- leg 8: #3536 chip ergonomics at the small end (iPhone SE landscape) ----
+// 667×375 is the tightest landscape phone: the QUIT chip must not crowd the
+// floating-stick reach, WATCH and QUIT must read as two clear corners, and
+// neither may cover the block-numeral band.
+try {
+    p = await openGame(browser, { url: `${BASE}?seed=555`, hook: '__pongTest', viewport: { width: 667, height: 375 }, touch: true, wait: 400 })
+    p.on('pageerror', (e) => errors.push(String(e)))
+    const geo = () => p.evaluate(() => {
+        const rect = (sel) => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom } }
+        const cv = rect('canvas')
+        const zone = (fx) => ({ l: cv.l + (cv.r - cv.l) * fx - 24, t: cv.t + 10, r: cv.l + (cv.r - cv.l) * fx + 24, b: cv.t + 55 })
+        return {
+            chip: rect('[data-vc="c"]'),
+            pill: rect('[data-watch-toggle]'),
+            stick: rect('[data-vc="stick"]'),
+            pick: !!document.querySelector('.pong-pick-zone'),
+            canvas: cv,
+            scoreR: zone(0.75),
+            scoreL: zone(0.25),
+        }
+    })
+    const hit = (a, b) => a && b && a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b
+    const g0 = await geo()
+    r.check('attract: pick band + WATCH affordance present, QUIT chip absent', g0.pick && !g0.chip && !!g0.pill, JSON.stringify(g0).slice(0, 140))
+    await p.touchscreen.tap(g0.canvas.l + (g0.canvas.r - g0.canvas.l) * 0.5, g0.canvas.t + (g0.canvas.b - g0.canvas.t) * 0.35)
+    await until(p, async () => { const q = await probe(p); return q.screen === 'play' ? q : null }, 3000, 'tap-to-start at 667×375')
+    const g = await geo()
+    r.check('play: pick band retires (no phantom dial under the pad)', !g.pick)
+    r.check('QUIT chip clears the stick reach', g.chip && g.stick && !hit(g.chip, g.stick), JSON.stringify({ chip: g.chip, stick: g.stick }).slice(0, 200))
+    r.check('WATCH pill never covers the right numerals band', g.pill && !hit(g.pill, g.scoreR), JSON.stringify({ pill: g.pill, scoreR: g.scoreR }).slice(0, 200))
+    r.check('WATCH (top-right) and QUIT (rail) are distinct corners', g.pill && g.chip && g.chip.t > g.pill.b + 8)
+    r.check('the chip stays inside the viewport', g.chip && g.chip.r <= 667 && g.chip.b <= 375)
+} catch (e) {
+    r.check('leg 8 phone-ergonomics ride completed without timeout', false, String(e))
+} finally {
+    await p.close()
+}
+
 r.check('zero page errors across the ride', errors.length === 0, errors.join(' | '))
 
 // ---- chip mutants (#3529): each MUST die ----

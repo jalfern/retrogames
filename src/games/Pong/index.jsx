@@ -393,6 +393,7 @@ const PongGame = () => {
                 state.right.score = 0
                 state.over = false
                 hitN = 0
+                sfxLog.length = 0 // #3536 — the audio-spy leg reads one clean match per reset
                 release(false)
                 isAttractMode = false
                 setScreen('play')
