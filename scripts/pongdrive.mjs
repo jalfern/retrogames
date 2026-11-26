@@ -36,7 +36,12 @@ const until = async (p, fn, ms, label) => {
 }
 
 // ---- leg 1: attract carries the pick; LEFT/RIGHT cycles without starting ----
-let p = await open(BASE)
+// Pinned seed (#1473): the FIRST HIT wait faces a seeded serve + paddle
+// scatter; an unpinned draw could starve it (two luck-dependent reds on
+// 2026-11-26). The rules below are what this leg proves; the seed they
+// replay on is pinned, exactly like leg 5. Seed entropy itself is
+// pongcheck's seedpin law, not the drive's job.
+let p = await open(`${BASE}?seed=4242`)
 try {
     r.check('attract defaults to NORMAL (shipped physics)', (await probe(p)).diff === 'NORMAL')
     await p.keyboard.press('ArrowRight')
