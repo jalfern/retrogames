@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { attractFrame, DIM } from './attract.js'
-import { GW, GH, PLAYER_W, PLAYER_H, PLAYER_Y, INVADER_W, INVADER_H, BULLET_W, BULLET_H, UFO_Y, BUNKER_ROWS, ROW_SCORE, bunkerBricks, makeWorld, step, hash, done, activeCount, watchRoute } from './sim.js'
+import { GW, GH, PLAYER_W, PLAYER_H, PLAYER_Y, INVADER_W, INVADER_H, BULLET_W, BULLET_H, UFO_Y, BUNKER_ROWS, ROW_SCORE, COLS, waveRows, bunkerBricks, makeWorld, step, hash, done, activeCount, watchRoute } from './sim.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
@@ -31,7 +31,7 @@ const SPR = {
     player: ['0000001000000', '0000011100000', '0000011100000', '0111111111110', '1111111111111', '1111111111111', '1111111111111', '1111111111111'],
     ufo: ['0000011111100000', '0011111111111100', '0111111111111110', '1111111111111111', '0111111111111110', '0011100110011100', '0001000000001000'],
 }
-const ROW_SPRITE = ['squid', 'crab', 'crab', 'octo']
+const ROW_SPRITE = ['squid', 'crab', 'crab', 'octo', 'octo'] // #3517 five bands: squid 30 / crab 20 / octopus 10
 
 const drawSprite = (ctx, rows, x, y, col) => {
     ctx.fillStyle = col
@@ -279,7 +279,7 @@ const SpaceInvadersGame = () => {
 
             // invaders, marching 2-frame animation; overlay zone colors
             const frame = Math.floor(world.tick / 16) % 2
-            const ROW_COL = ['#ff3b30', '#ffffff', '#ffffff', '#ffffff']
+            const ROW_COL = ['#ff3b30', '#ffffff', '#ffffff', '#9be7ff', '#9be7ff'] // squid red, crab white, octopus cyan (#3517 bands)
             for (const i of world.invaders) {
                 if (!i.alive) continue
                 const sp = SPR[ROW_SPRITE[i.row]][frame]
@@ -448,7 +448,7 @@ const SpaceInvadersGame = () => {
             title: 'SPACE INVADERS',
             getState: () => [
                 `wave ${world.wave}  score ${world.score}  lives ${world.lives}  phase ${world.phase}`,
-                `player ${Math.round(world.playerX)}  fleet ${activeCount(world)}/32  fort bricks ${bunkerBricks(world)}/328`,
+                `player ${Math.round(world.playerX)}  fleet ${activeCount(world)}/${waveRows(world.wave) * COLS}  fort bricks ${bunkerBricks(world)}/328`,
                 `seed ${seed}  tick ${world.tick}  hash ${hash(world)}`,
             ],
             actions: [

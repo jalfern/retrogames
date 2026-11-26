@@ -399,7 +399,8 @@
     "foxcheck": "node scripts/foxcheck.mjs",
     "grindcheck": "node scripts/grindcheck.mjs",
     "grindlinedrive": "node scripts/grindlinedrive.mjs",
-    "tidaldrive": "node scripts/tidaldrive.mjs"
+    "tidaldrive": "node scripts/tidaldrive.mjs",
+    "invadersdrive": "node scripts/invadersdrive.mjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
