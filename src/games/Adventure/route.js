@@ -80,8 +80,6 @@ const cellPath = (sim, fx, fy, tx, ty) => {
 // kite below instead of walking into a maw.
 const DODGE_SAFE = 48   // kite while a live dragon is nearer than this in your room
 
-// TEMP(debug) — phase tracer for dbg traces; removed before ship.
-const PH = (m) => { if (typeof globalThis !== 'undefined' && globalThis.PH) globalThis.PH(m) }
 
 const roomThreat = (sim) => {
     // #3489 sword ride: with the blade in hand a dragon is not a threat but
@@ -163,7 +161,6 @@ function* dodge(sim, cap = 1500) {
                 .sort((A, B) => A.len - B.len
                     || Math.hypot(B.a[0] - t.d.x, B.a[1] - t.d.y) - Math.hypot(A.a[0] - t.d.x, A.a[1] - t.d.y))[0]
             if (!calm) { pinned = 0; winDist = null; continue }
-            PH(`evict->r${calm.to}`)
             // cell-path to the exit anchor (sign-steering dies in mazes —
             // #1560 law), threat-blind: the calm door is the escape, and the
             // dot outruns every cart dragon in a straight race (1.8 vs ≤1.0).
@@ -256,11 +253,6 @@ function* driveTo(sim, tx, ty, stop = 1.2, ignoreThreat = false) {
 const residents = (sim, room) => sim.dragons.filter((d) => d.alive && d.room === room)
 
 function* cross(sim, dir, want, maxTicks = 400) {
-    const rr = yield* cross_(sim, dir, want, maxTicks)
-    PH(`cross ${dir}->r${want} = ${rr} @room${sim.room}`)
-    return rr
-}
-function* cross_(sim, dir, want, maxTicks = 400) {
     const v = { up: [0, -S], down: [0, S], left: [-S, 0], right: [S, 0] }[dir]
     if (sim.room !== want && sim.carrying !== 'sword' && residents(sim, want).length) {
         // Calm-entry law: never step onto a dragon without the blade. Wait
@@ -269,9 +261,8 @@ function* cross_(sim, dir, want, maxTicks = 400) {
         // deadlocking the route). Fetches that must cross a resident's
         // territory arm the sword first — that is the cart's own answer —
         // so calm-waiting here is the exception path, not the grind.
-        PH(`calmwait:r${want}`)
         let calmRun = 0
-        for (let i = 0; i < 3000 && calmRun < 40 && !sim.won && !sim.dead; i++) {
+        for (let i = 0; i < 1200 && calmRun < 25 && !sim.won && !sim.dead; i++) {
             if (sim.carrying === 'sword') break   // armed while waiting — the room is prey now
             if (roomThreat(sim) && roomThreat(sim).dist <= 20) return false
             calmRun = residents(sim, want).length ? 0 : calmRun + 1
@@ -330,11 +321,6 @@ const ANCHORS = {
 
 // Walk one room edge: an anchor that reaches, then push through the gap.
 function* hop(sim, from, to) {
-    const r = yield* hop_(sim, from, to)
-    PH(`hop r${from}->r${to} = ${r} @room${sim.room}`)
-    return r
-}
-function* hop_(sim, from, to) {
     const edge = neighbors(sim, from).find(([, n]) => n === to)
     if (!edge) return false
     const d = edge[0]
@@ -351,7 +337,6 @@ function* hop_(sim, from, to) {
 // Room-to-room walk: prefer paths that never cross a living dragon's room,
 // retry on the plain graph when a preferred hop dead-ends.
 function* walkTo(sim, to, avoidDragons = true) {
-    PH(`walkTo:r${to}`)
     // #3489 escape law: standing in a resident's room without a sword is the
     // death position, whatever the target. Leave first — nearest calm
     // neighbour — then take the real route from there. (BlackKey in Blue
@@ -361,7 +346,6 @@ function* walkTo(sim, to, avoidDragons = true) {
         const calm = neighbors(sim, sim.room)
             .filter(([, n]) => !sim.dragons.some((dg) => dg.alive && dg.room === n))[0]
         if (calm) {
-            PH(`escape r${sim.room}->r${calm[1]}`)
             if (!(yield* hop(sim, sim.room, calm[1]))) return false
             if (sim.room === to) return true
         }
@@ -455,21 +439,6 @@ function* driveOntoItem(sim, item) {
     return false
 }
 
-// #3489 — is every dragon-free road to `to` closed? (A resident in `to`
-// itself counts as gated: the room must be entered past its jaws.)
-const dragonGated = (sim, to) => {
-    if (sim.room === to) return sim.dragons.some((d) => d.alive && d.room === to)
-    const prev = new Map([[sim.room, null]])
-    const order = [sim.room]
-    for (let i = 0; i < order.length; i++) {
-        for (const [, n] of neighbors(sim, order[i])) {
-            if (prev.has(n) || sim.dragons.some((d) => d.alive && d.room === n)) continue
-            prev.set(n, order[i]); order.push(n)
-        }
-    }
-    return !prev.has(to)
-}
-
 // #3489 — does the shortest room-path to `to` pass through a resident? Gating
 // only sees total closure; the corridor is the true risk — Yorgle home in the
 // Blue Labyrinth does not gate Black Key (a detour exists) but it does own
@@ -497,15 +466,11 @@ function* armSword(sim) {
     const sword = sim.items.find((i) => i.id === 'sword')
     if (!sword || sword.carried) return false
     if (!sim.gateOpen.goldKey) {
-        PH('arm:goldKey')
         if (!(yield* fetchItem(sim, 'goldKey'))) return false
-        PH('arm:toCastle')
         if (!(yield* walkTo(sim, R.GOLD_CASTLE))) return false
         if (!(yield* driveTo(sim, 80, 32))) return false
-        PH('arm:gate')
         if (!(yield* openGate(sim, 'goldKey'))) return false
     }
-    PH('arm:sword')
     return yield* fetchItem(sim, 'sword')
 }
 
@@ -516,20 +481,34 @@ function* armSword(sim) {
 // hand (dragon rooms are then passable — the contact law slays anything that
 // closes to <14); the sword comes OFF at the item, not at the start, so the
 // guarded fetch happens right after the guard died, inside its respawn delay.
-function* fetchItem(sim, id) {
+// #3489 — a drop on a door threshold spawns the item INSIDE the wall band
+// (y = 194 on a 192-tall room — forever unreachable, and a key there dead-
+// locks the quest, seeds 6/8 V1). Never hand an item to an edge: stand on
+// open floor before releasing.
+function* dropCarrySafe(sim) {
+    if (!sim.carrying) return
+    const p = sim.player
+    if (p.y < 20 || p.y > GH - 32 || p.x < 20 || p.x > GW - 24) {
+        if (!(yield* driveTo(sim, 80, 100))) return
+        if (p.y < 20 || p.y > GH - 32 || p.x < 20 || p.x > GW - 24) return
+    }
+    yield { drop: true }
+    yield {}
+}
+
+function* fetchItem(sim, id, depth = 0) {
     const item = sim.items.find((i) => i.id === id)
     let armed = false
     for (let attempt = 0; attempt < 10; attempt++) {
         if (sim.carrying === id) return true
         if (sim.dead || sim.won) return sim.carrying === id
-        PH(`fetch:${id}#${attempt}`)
         // #3489 retry floor: a failed attempt can return synchronously (a
         // blocked hop yields nothing) — ten zero-tick attempts burn the whole
         // quest budget inside one frame. Kite if jaws are close, breathe
         // otherwise, so every retry happens in a moved world.
         if (roomThreat(sim) && roomThreat(sim).dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) return sim.carrying === id }
         else yield {}
-        if (sim.carrying && sim.carrying !== 'sword') yield { drop: true }
+        if (sim.carrying && sim.carrying !== 'sword') yield* dropCarrySafe(sim)
         // #3489 sword ride: a wanderer squatting on the loot room or on its
         // only approach is answered the cart's own way — the Gold Foyer sword,
         // whose key waits in Overworld 4 (and Yorgle flees the gold key by
@@ -542,7 +521,6 @@ function* fetchItem(sim, id) {
         if (!armed && id !== 'sword' && id !== 'goldKey' && sim.carrying !== 'sword'
             && (corridorBusy(sim, item.room) || residents(sim, sim.room).length)) {
             armed = true
-            PH(`arm:${id}`)
             yield* armSword(sim)
             if (sim.dead || sim.won) return sim.carrying === id
         }
@@ -551,42 +529,57 @@ function* fetchItem(sim, id) {
         // absence — several hundred clear ticks — then take the walk while the
         // room stays quiet.
         if (sim.carrying !== 'sword' && sim.dragons.some((d) => d.alive && d.room === item.room)) {
-            PH(`guard:${id}@r${item.room}`)
             const calm = neighbors(sim, item.room)
                 .filter(([, n]) => !sim.dragons.some((dg) => dg.alive && dg.room === n))
                 .map(([, n]) => n)[0]
             if (calm !== undefined && sim.room !== calm && !(yield* walkTo(sim, calm, false))) continue
             let clearRun = 0
-            for (let i = 0; i < 4000 && clearRun < 260 && !sim.dead && !sim.won; i++) {
+            for (let i = 0; i < 1600 && clearRun < 160 && !sim.dead && !sim.won; i++) {
                 clearRun = sim.dragons.some((d) => d.alive && d.room === item.room) ? 0 : clearRun + 1
                 yield {}
             }
         }
-        if (sim.bat.carrying === id) {
-            const prev = new Map([[sim.room, null]])
-            const order = [sim.room]
-            for (let i = 0; i < order.length; i++) {
-                for (const [, n] of neighbors(sim, order[i])) {
-                    if (!prev.has(n)) { prev.set(n, order[i]); order.push(n) }
+        if (depth === 0 && sim.bat.carrying === id) {
+            // #3489 decoy trade: this port's bat steals only inside the
+            // PLAYER's room (opportunistic shadow), so its haul cannot be
+            // traded at distance and waiting in its last-seen room misses it
+            // (seed 6 V1 burned 19k ticks — swapTimer never rang). Chase the
+            // bat WITH a decoy: enter its room carrying something (the route
+            // always arms the sword), drop the decoy at the feet, then close
+            // on the bat until its own swap law takes the decoy and drops the
+            // haul right there. One hop, the loot comes home.
+            let traded = false, dead_chase = 0
+            for (let c = 0; c < 12 && sim.bat.carrying === id && !sim.dead && !sim.won; c++) {
+                if (!sim.carrying) {
+                    // decoy first — any loose item that is not the haul and
+                    // not already in the bat's claws (the route armed the
+                    // sword once already, so it usually lies nearby)
+                    const decoyId = ['sword', 'goldKey', 'magnet', 'dot']
+                        .find((x) => x !== id && sim.items.some((i) => i.id === x && !i.carried))
+                    if (!decoyId) break
+                    if (!(yield* fetchItem(sim, decoyId, 1))) break
                 }
+                if (!(yield* walkTo(sim, sim.bat.room))) {
+                    // pocket the route cannot reach (bat behind a closed keep
+                    // gate): it will leave on its own; re-chase on the next
+                    // fetch attempt, but never spin zero-tick failures here
+                    if (++dead_chase >= 3) break
+                    continue
+                }
+                dead_chase = 0
+                if (sim.bat.room !== sim.room) continue
+                if (sim.carrying && sim.carrying !== 'sword') yield* dropCarrySafe(sim)
+                if (sim.carrying === 'sword') yield* dropCarrySafe(sim)
+                if (sim.bat.room !== sim.room) continue
+                yield* driveTo(sim, sim.bat.x, sim.bat.y, 8, true)
+                if (sim.bat.carrying !== id) { traded = true; break }
+                if (roomThreat(sim)) break   // jaws in the trade room — re-plan
             }
-            const shelter = order.find((room) =>
-                sim.items.some((i) => i.id !== id && i.room === room && !i.carried) &&
-                !sim.dragons.some((dg) => dg.alive && dg.room === room))
-            if (shelter === undefined) continue
-            PH(`batwait:${id}->r${shelter}`)
-            if (!(yield* walkTo(sim, shelter))) continue
-            for (let i = 0; i < 8000 && sim.bat.carrying === id; i++) {
-                yield {}
-                if (sim.dead || sim.won) return sim.carrying === id
-            }
-            if (sim.bat.carrying === id) continue
+            if (!traded) continue
         }
-        PH(`walk:${id}->r${item.room}`)
         if (!(yield* walkTo(sim, item.room))) continue
         // riding: close the gap and let the contact law do the slaying
         if (sim.carrying === 'sword') {
-            PH(`ride:${id}`)
             for (let round = 0; round < 6 && !sim.dead && !sim.won; round++) {
                 const g = roomDragon(sim)
                 if (!g || g.dist < 12) break
@@ -594,7 +587,7 @@ function* fetchItem(sim, id) {
                 if (!sim.dragons.some((d) => d.alive && d.room === sim.room)) break
             }
         }
-        if (sim.carrying === 'sword') yield { drop: true }
+        if (sim.carrying === 'sword') yield* dropCarrySafe(sim)
         if (!(yield* driveOntoItem(sim, item))) continue
         if (sim.carrying === id) return true
     }
@@ -611,6 +604,12 @@ function* openGate(sim, keyId) {
 // The full quest, start to finish. Returns { ok, why } — the honest verdict
 // the seat reports when the guide runs out of proven road.
 function* runRoute(sim) {
+    // #3489 arm first: the cart's opening is goldKey → Gold Castle → sword.
+    // Yorgle flees the gold key by his own law, and once the blade is in
+    // hand the corridor rooms are prey, not peril — the route stops waiting
+    // at doors entirely. Best-effort: if the errand fails (bat took the
+    // key, shuffle re-homed it badly) the calm-wait laws below still work.
+    yield* armSword(sim)
     // #3489 resume law: the planner reads the LIVE world — a gate already
     // open stays open, a bridge already laid stays laid — so a hand-over
     // from the scripted map mid-quest resumes exactly where the road left
@@ -765,9 +764,9 @@ function* scriptCore(sim) {
 // placed bridge, item locations) and walks the quest from wherever the dot
 // stands, recovering the same way it already recovers from bat thefts.
 function* scriptRun(sim) {
+    yield* armSword(sim)   // #3489 arm first — see runRoute
     const res = yield* scriptCore(sim)
     if (res.ok || sim.dead || sim.won) return res
-    PH(`scriptBail:${res.why}`)
     return yield* runRoute(sim)
 }
 
@@ -791,7 +790,7 @@ function* recover(sim, id, backX, backY) {
             !sim.dragons.some((dg) => dg.alive && dg.room === room))
         if (shelter === undefined) return false
         if (!(yield* walkTo(sim, shelter))) return false
-        for (let i = 0; i < 8000 && sim.bat.carrying === id; i++) {
+        for (let i = 0; i < 3000 && sim.bat.carrying === id; i++) {
             yield {}
             if (sim.dead || sim.won) return false
         }
