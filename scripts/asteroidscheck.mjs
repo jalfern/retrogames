@@ -163,7 +163,15 @@ console.log('WATCH driver sweep: 40 seeds x 120 s of seated play on the shipped 
     // The full fleet re-measure rides with it below. A driver that lost the
     // reserve lands back at ~9 and this floor kills it — progress is pinned.
     ok(zeroDeath >= (FAST ? 11 : 34), `zero-death runs on ${FAST ? 11 : 34}+ seeds`, `${zeroDeath}/${SEEDS}`)
-    ok(wavesBanked >= (FAST ? SEEDS - 1 : SEEDS), 'every seed banks at least one full wave', `${wavesBanked}/${SEEDS}`)
+    // #3553 re-measure: the rookie-spread law (small UFOs open wide) eased
+    // early-watch pressure, and two b26 driver mutants ("rollout dodges too
+    // late", "the driver's eye forgets the wrap") stopped being mortal —
+    // measured fast-scale: clean 12/12 waves banked / minScore 4620; mutant 1
+    // 11/12 / 3350; mutant 2 11/12 / 4420. The fast wave floor rises to the
+    // full sweep's own law (SEEDS/SEEDS, already required at 40): a banked
+    // wave IS the driver's quality signal, and seeded luck that hides a dead
+    // eye is exactly what this sweep exists to refuse.
+    ok(wavesBanked >= SEEDS, 'every seed banks at least one full wave', `${wavesBanked}/${SEEDS}`)
     ok(minScore >= (FAST ? 2500 : 6000), `worst seed still scores ${FAST ? 2500 : 6000}+ under the watch`, `${minScore}`)
     ok(total >= (FAST ? SEEDS * 2500 : 300000), 'the fleet banks its combined floor (score is real progress, not coasting)', `${total}`)
     // The reserve is SPENT when cornered and STAYS scarce otherwise: measured
