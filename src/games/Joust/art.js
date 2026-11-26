@@ -148,30 +148,41 @@ const FONT = {
     Q: ['010', '101', '101', '110', '011'], R: ['110', '101', '110', '110', '101'],
     S: ['011', '000', '010', '001', '110'], T: ['111', '010', '010', '010', '010'],
     U: ['101', '101', '101', '101', '111'], V: ['101', '101', '101', '101', '010'],
-    W: ['101', '101', '111', '111', '101'], X: ['101', '101', '010', '101', '101'],
+    W: ['10001', '10001', '10101', '01010', '01110'], X: ['101', '101', '010', '101', '101'],
     Y: ['101', '101', '010', '010', '010'], Z: ['111', '001', '010', '100', '111'],
     '-': ['000', '000', '111', '000', '000'], ':': ['000', '010', '000', '010', '000'],
     '.': ['000', '000', '000', '000', '010'], '!': ['010', '010', '010', '000', '010'],
     ' ': ['000', '000', '000', '000', '000'], '?': ['110', '001', '010', '000', '010'],
 }
 
+// glyphs are 3 columns wide, except W (5) — a 3-wide W read as H.
+const WIDE_GLYPHS = { W: 5 }
+function glyphW(ch) { return (ch in WIDE_GLYPHS) ? WIDE_GLYPHS[ch] : 3 }
+
 export function text5(ctx, str, x, y, color = '#fff', scale = 1) {
     ctx.fillStyle = color
     let cx = x
     for (const ch of String(str).toUpperCase()) {
         const glyph = FONT[ch] || FONT[' ']
+        const gw = glyphW(ch)
         for (let r = 0; r < 5; r++) {
-            for (let c = 0; c < 3; c++) {
+            for (let c = 0; c < gw; c++) {
                 if (glyph[r][c] === '1') ctx.fillRect(cx + c * scale, y + r * scale, scale, scale)
             }
         }
-        cx += 4 * scale
+        cx += (gw + 1) * scale
     }
     return cx
 }
 
 export function textWidth(str, scale = 1) {
-    return String(str).length * 4 * scale - scale
+    const s = String(str).toUpperCase()
+    let w = 0
+    for (let i = 0; i < s.length; i++) {
+        w += glyphW(s[i]) * scale
+        if (i < s.length - 1) w += scale
+    }
+    return w
 }
 
 // deterministic starfield: fixed positions, gentle twinkle
