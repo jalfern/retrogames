@@ -1,57 +1,67 @@
-# STATE — forge board snapshot (slot b, 2026-11-26 late — session closed: #3481 + #3487 shipped, QA folded)
+# STATE — forge board snapshot (slot b, 2026-11-26 — ROGUE learns ranged combat)
 
-## Since the slot-a snapshot (which stays mostly true — deltas only)
-- **#3482 fully closed out**: auto-closed by merge `847311c`, label `shipped`,
-  live-URL comment added. Prod re-verified by content: bundle `index-CaRqk7Ez.js`
-  contains `Blue Castle` + `chalice2` (grep live JS with `-L --compressed` — the
-  apex→www 308 returns a 15-byte stub otherwise; false "missing deploys" twice).
-- **QA pass consolidated**: slot a filed #3489 (ADVENTURE polish); a parallel
-  pass here (#3492) was closed `duplicate` after folding its three unique items
-  into #3489's checklist (attract never shows the keep; no sound for the
-  duplication; bat + keep fairness read). The `parseGaps` ###Restored inflation
-  (ADVENTURE 14 vs ~5 true) is on #3489 — harness item worth landing first:
-  it skews every idle-kick aim.
-- **Shift report pushed** (slot b, 4 h window): "ADVENTURE wakes the Blue Castle
-  — and the shelf learns to count its oldest titles".
+## This session — TARGET taken by the other lane, never-dry found the shelf's next job
+- TARGET #3482 was ALREADY done while I was booting: the previous slot-b session
+  died after creating PR #3487 but before merging; slot a resumed it 08:54Z,
+  merged 847311c 09:00Z, prod-verified and CLOSED #3482 (shipped) by 09:06Z.
+  My TARGET claim answered "already yours: resume it" (stale b-liveness) — there
+  was nothing to resume; I removed the misclaim `building` label my `--dry`
+  test fired on merged PR #3490 (forge-claim has NO --dry flag — never pass one)
+  and retracted on the issue. Slot a verified + filed the #3482 QA pass (#3489).
+- Normal ladder: steer 0 · `next` #1712 waiting-jon (skipped) · game-queue
+  #3456 REFUSED (held by live slot a, 28-min freshness) · feedback borrow
+  BLOCKED (QA MASTER mini live) · flagship stage spent → never-dry kick said
+  ADVENTURE, but every ADVENTURE gap is #3489-owned (paraphrase defeats the
+  ownership matcher — #2910 + the parseGaps phantom item 5 of #3489). Walked
+  the scoreboard myself: next unowned title = **ROGUE, 6 unowned gaps**.
+- **SHIPPED (#3491 → PR #3495, squash 89770d6): ROGUE ranged combat.** Staves `/`
+  (4 types,
+  3–9 charges, crumble-at-zero) + counted arrow quivers on the original's
+  single weapon/missile glyph `)` (refuses the `w` sword hand). `f` → missile
+  menu → direction key fires: one arrow per throw, miss leaves it on the flight
+  line to SALVAGE, quivers stack. Shots stop at rock/walls/closed doors, pass
+  hidden doors (the creatures' 1980 law), stop at first body; d20 with
+  steady-hand +2 replacing strength; xp via shared `grantExp`; all dice on the
+  state-carried `randState` (interleaved replays byte-identical). Rings `=`,
+  the staff-name cipher and the exact cart tables stay honestly on the gap list.
+- Proof: roguecheck **102/102** (+26 ranged gates) · 4 mutants all die
+  (through-body 3, charge 2, salvage-drop 4, wieldable 1) · NEW
+  `npm run roguedrive` **12/12** real Chrome real keys (pinned seed 115:
+  walk onto quiver, `,` up 8, f→a→l fires east, quiver 7, salvage back to 8,
+  help teaches f, zero page errors) · watchcheck(rogue) 318/318 live ·
+  feedbackcheck 291/291 · lint rogue/mario/fps/ai · build green.
+
+## BOARD notes
+- game-queue: #3456 stays slot a's (stage 4 hyperspace brief posted).
+- ADVENTURE idle-kick is a PARAPHRASE phantom until #3489 item 5 (parseGaps
+  `### Restored` counting) is fixed — expect the kick to name ADVENTURE until
+  then; the honest next-weakest after ROGUE gaps is ROGUE again (5 left:
+  flee/energy, traps, Amulet win, class rolls, lamp) or PONG/SPACE INVADERS.
+- #3490 retraction comment documents the no-`--dry` lesson (#1258 hygiene).
 
 ## PLAYABLE on main right now
-- `/retrogames/adventure` — 19 rooms incl. the Blue Castle; duplicate chalice;
-  either cup home to the Gold Castle wins. `npm run advedrive` proves it in real
-  Chrome (10/10). `/retrogames/defender` — stage-3 hunters.
-- Plus prior shelf: grind-city waiting line, pinball chain-pin + flanks + smith,
-  skyward rooms, tidal-rush, ssx, comet-drift pair, marble pair, galaga bee,
-  mario-kart, ice-climber, pacman, mario, minesweeper/garden-guard/homebody,
-  TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
-  spy-hunter, iron keep, missile, pucks, mines, zork, ultima, king's quest,
-  Joust, Q*bert, forge board.
-
-## BOARD facts at close
-- game-queue = #3456 (DEFENDER stage 4: watchRoute vs a MORTAL pilot — slot a's
-  arc, stages 1–3 shipped). building = 0; building-qa = 2; feedback = 6 (#3489
-  is the ADVENTURE polish owner).
-- idle-kick scores the FULL 93-title shelf since #3481 — expect kicks at old
-  statically-imported titles (that fix's whole point).
-- Rule-4: slot b SHIPPED game code this session (#3487) + a harness fix (#3481).
-  No STALLED.
+- `/retrogames/rogue` — NEW: fight at range — f throws salvageable arrows,
+  zaps charged staves. `/retrogames/adventure` — Blue Castle + duplicate
+  chalice. `/retrogames/defender` — stage-3 hunters. Plus prior shelf:
+  grind-city waiting line, pinball chain-pin + flanks + smith, skyward rooms,
+  tidal-rush, ssx, comet-drift pair, marble pair, galaga bee, mario-kart,
+  ice-climber, pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT,
+  STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter,
+  iron keep, missile, pucks, mines, zork, ultima, king's quest, Joust,
+  Q*bert, forge board.
 
 ## Open questions (links only — #605)
-- #3335 — QA: music-bus low-pass in AudioController (AWAITING, deadline Nov 27;
-  gates PINBALL tilt-muffle — do NOT implement until answered/defaulted).
+- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane,
+  deadline Nov 27 — not mine, do not pre-empt).
 - #3054 — native TestFlight ports have no recorder/upload (AWAITING).
 - #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
-- No new jonq questions this session.
+- No new jonq questions this session (never-dry pick, no taste calls).
 
 ## Slot state at handoff
-- Main checkout: detached, clean (was at `563f9ae` this pass; re-fetch before
-  use — QA #3485 and later merges keep landing).
-- Slot-b worktrees (`forge-idle-shelf`, `forge-adventure-blue`): both already
-  pruned by cleanup; confirmed gone in `git worktree list`. Dev server :5178
-  stopped via `scripts/devstop.sh`. Nothing dirty anywhere in slot b.
-
-## Next claims (for whoever is free)
-1. #3456 DEFENDER stage 4 (slot a's arc — last-hunter endgame + survival copy).
-2. #3489 item 5 (`parseGaps` ###Restored markers + mutant in neverbudrycheck)
-   — small harness fix, makes idle scoring honest before the next kick.
-3. Idle-kick against the full shelf now that #3481 is in — the board's aim
-   changed; run `node scripts/idle-kick.mjs` fresh before choosing.
+- Slot-b dev server (:5178) still up when the merge lands — stop it with
+  `scripts/devstop.sh` at close; do not pattern-kill.
+- Game merged ⇒ STATE ships via its own docs/state PR + `statepark.mjs park b`.
+- Worktree ~/Dev/retrogames-forge-rogue-ranged removed after the docs merge;
+  main checkout stays detached at origin/main, never a checkout of main.
+- Rule-4: slot b SHIPPED game code this session (#3495). Time-box ~1h40m used.
