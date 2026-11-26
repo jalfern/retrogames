@@ -230,6 +230,23 @@ console.log('driver: the proven route (seat of the WATCH key)')
     })()
     ok(land === fold, 'predictLand replays the wall mirrors exactly (folded-path cross-check)',
         `land ${land} vs folded ${fold}`)
+    // #3532 — the ideal fold only proves the clean-crossing case. The other
+    // half of the law: the predictor matches the SHIPPED step physics tick
+    // for tick, including a flight that starts inside the penetration band
+    // (the guarded-flip path). Without this, an unguarded predictor could
+    // survive every check while disagreeing with the table mid-rally.
+    const truthLand = (b0, h) => {
+        const b = { ...b0 }
+        let guard = 0
+        while (b.x > PADDLE_OFFSET + PADDLE_WIDTH && guard++ < 10000) stepBall(b, h)
+        return b.y + BALL_SIZE / 2
+    }
+    ok(predictLand(appr, 800) === truthLand(appr, 800),
+        'predictLand matches stepBall tick-for-tick on a clean flight', `${predictLand(appr, 800)} vs ${truthLand(appr, 800)}`)
+    const pen = { x: 580, y: -2, dx: -4, dy: 1 } // rising, already through the ceiling line
+    ok(predictLand(pen, 800) === truthLand(pen, 800),
+        'and through the penetration band (the guarded flip is shared, not just claimed)',
+        `${predictLand(pen, 800)} vs ${truthLand(pen, 800)}`)
     ok(predictLand({ x: 300, y: 100, dx: 5, dy: -7 }, 800) === null,
         'predictLand is honest about a ball heading away (the opponent strike offset is unknowable)')
     // seat + chrome source pins: the seat wired in index, advertised in the registry
