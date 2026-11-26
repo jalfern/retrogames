@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED, SHIP_SIZE, SHIP_HULL, RESPAWN_DELAY, INVULN_TICKS, HYPER_COOLDOWN, HYPER_INVULN, HYPER_BLINK } from '../src/games/Asteroids/sim.js'
+import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED, SAUCER_AIM, saucerAimWidth, SHIP_SIZE, SHIP_HULL, RESPAWN_DELAY, INVULN_TICKS, HYPER_COOLDOWN, HYPER_INVULN, HYPER_BLINK } from '../src/games/Asteroids/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -163,7 +163,15 @@ console.log('WATCH driver sweep: 40 seeds x 120 s of seated play on the shipped 
     // The full fleet re-measure rides with it below. A driver that lost the
     // reserve lands back at ~9 and this floor kills it — progress is pinned.
     ok(zeroDeath >= (FAST ? 11 : 34), `zero-death runs on ${FAST ? 11 : 34}+ seeds`, `${zeroDeath}/${SEEDS}`)
-    ok(wavesBanked >= (FAST ? SEEDS - 1 : SEEDS), 'every seed banks at least one full wave', `${wavesBanked}/${SEEDS}`)
+    // #3553 re-measure: the rookie-spread law (small UFOs open wide) eased
+    // early-watch pressure, and two b26 driver mutants ("rollout dodges too
+    // late", "the driver's eye forgets the wrap") stopped being mortal —
+    // measured fast-scale: clean 12/12 waves banked / minScore 4620; mutant 1
+    // 11/12 / 3350; mutant 2 11/12 / 4420. The fast wave floor rises to the
+    // full sweep's own law (SEEDS/SEEDS, already required at 40): a banked
+    // wave IS the driver's quality signal, and seeded luck that hides a dead
+    // eye is exactly what this sweep exists to refuse.
+    ok(wavesBanked >= SEEDS, 'every seed banks at least one full wave', `${wavesBanked}/${SEEDS}`)
     ok(minScore >= (FAST ? 2500 : 6000), `worst seed still scores ${FAST ? 2500 : 6000}+ under the watch`, `${minScore}`)
     ok(total >= (FAST ? SEEDS * 2500 : 300000), 'the fleet banks its combined floor (score is real progress, not coasting)', `${total}`)
     // The reserve is SPENT when cornered and STAYS scarce otherwise: measured
@@ -264,14 +272,15 @@ console.log('flying saucers (#2001): tables, fire discipline, bonus law')
         ok(saw > 0 && hostile === 0, 'attract mode shows saucers but never fires or dies', `saw=${saw} hostile=${hostile}`)
     }
 
-    // The small UFO flies nearly dead-on (±0.15 rad of the true bearing);
-    // the large one sprays (wider gate, still centred on you).
+    // #3553 — the LEARNING CURVE. A fresh small saucer sprays (the large
+    // UFO's old width); the same saucer after its learn horizon flies the
+    // shipped ±0.15 floor, and in between the error eases monotonically.
     {
         const gs = makeRun(1234, { width: 600, height: 800 })
         gs.attract = false
         gs.saucers.push({ big: false, x: 300, y: 200, vx: 2.7, vy: 0, phase: 0, amp: 1.2, cooldown: 1, life: 900 })
-        let err = null
-        for (let i = 0; i < 10 && err === null; i++) {
+        let worst = 0, shots = 0
+        for (let i = 0; i < 400 && shots < 6; i++) {
             gs.saucers[0].x = 300; gs.saucers[0].y = 200
             const ev = tickAsteroids(gs, null)
             if (ev.saucerShot) {
@@ -280,10 +289,54 @@ console.log('flying saucers (#2001): tables, fire discipline, bonus law')
                 let d = Math.atan2(b.vy, b.vx) - trueBear
                 while (d > Math.PI) d -= Math.PI * 2
                 while (d < -Math.PI) d += Math.PI * 2
-                err = Math.abs(d)
+                worst = Math.max(worst, Math.abs(d))
+                shots++
             }
         }
-        ok(err !== null && err <= 0.15 + 1e-9, 'small UFO aims within ±0.15 rad of the ship', `${err}`)
+        ok(shots >= 4 && worst > 0.15 + 1e-9, 'a rookie small UFO sprays wider than the old ±0.15 (6 shots, worst)', `shots=${shots} worst=${worst}`)
+        ok(worst <= SAUCER_AIM.start / 2 + 1e-9, 'the rookie spray stays inside the large-UFO ±0.55', `${worst}`)
+    }
+
+    // Mature = the shipped law verbatim: after AIM.learn ticks the same
+    // saucer lands dead-on exactly as the ±0.15 UFO did pre-#3553.
+    {
+        const gs = makeRun(1234, { width: 600, height: 800 })
+        gs.attract = false
+        gs.saucers.push({ big: false, x: 300, y: 200, vx: 2.7, vy: 0, phase: 0, amp: 1.2, cooldown: 1, life: 900 - SAUCER_AIM.learn })
+        let worst = 0, shots = 0
+        for (let i = 0; i < 400 && shots < 4; i++) {
+            gs.saucers[0].x = 300; gs.saucers[0].y = 200
+            const ev = tickAsteroids(gs, null)
+            if (ev.saucerShot) {
+                const b = gs.bullets.find(bb => bb.hostile)
+                const trueBear = Math.atan2(gs.ship.y - 200, gs.ship.x - 300)
+                let d = Math.atan2(b.vy, b.vx) - trueBear
+                while (d > Math.PI) d -= Math.PI * 2
+                while (d < -Math.PI) d += Math.PI * 2
+                worst = Math.max(worst, Math.abs(d))
+                shots++
+            }
+        }
+        ok(shots >= 4 && worst <= SAUCER_AIM.floor / 2 + 1e-9, 'after the learn horizon the small UFO lands within ±0.15 again', `shots=${shots} worst=${worst}`)
+    }
+
+    // The ease is monotone and reaches the floor — the exported law itself
+    // (no dice, pure age): width(start)=start, width(learn)=floor, never a
+    // step up in between; the large UFO never eases.
+    {
+        let prev = saucerAimWidth({ big: false, life: 900 })
+        ok(prev === SAUCER_AIM.start, 'a brand-new small UFO carries the full rookie width', `${prev}`)
+        let mono = true
+        for (let life = 899; life >= 900 - SAUCER_AIM.learn; life--) {
+            const w = saucerAimWidth({ big: false, life })
+            if (w > prev + 1e-12) mono = false
+            prev = w
+        }
+        ok(mono, 'the spread only ever tightens — the ease is monotone')
+        ok(saucerAimWidth({ big: false, life: 900 - SAUCER_AIM.learn }) === SAUCER_AIM.floor, 'the ease lands exactly on the shipped ±0.15 floor')
+        ok(saucerAimWidth({ big: false, life: 0 }) === SAUCER_AIM.floor, 'the floor holds for the rest of its life')
+        ok(saucerAimWidth({ big: true, life: 900 }) === SAUCER_AIM.big && saucerAimWidth({ big: true, life: 1 }) === SAUCER_AIM.big,
+            'the large UFO sprays the same at any age — no curve on the big one')
     }
 
     // Bonus law: a saucer bullet splitting a large rock pays 5000 (small UFO)
@@ -702,6 +755,12 @@ if (process.argv.includes('--mutant')) {
             `    if (gs.tickN >= gs.hyperReadyAt && gs.tickN >= gs.hyperUntil) {
         best = { left: false, right: false, thrust: false, fire: false, hyper: true }
     }`],
+        ['#3553 learning deleted — small UFO locks back to the ±0.15 floor', S,
+            `ang += (rnd(gs) - 0.5) * saucerAimWidth(s) // #3553: small UFO eases wide→dead-on with age`,
+            `ang += (rnd(gs) - 0.5) * (s.big ? SAUCER_AIM.big : SAUCER_AIM.floor)`],
+        ['#3553 ease never reaches the floor', S,
+            `const k = age >= SAUCER_AIM.learn ? 0 : 1 - age / SAUCER_AIM.learn`,
+            `const k = 1 - age / (SAUCER_AIM.learn * 2)`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

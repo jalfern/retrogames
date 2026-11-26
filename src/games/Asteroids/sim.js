@@ -224,9 +224,27 @@ function addScore(gs, pts) {
 
 // Saucers (#2001): enter from a random edge, cross and wrap, and fire at the
 // ship — the large one sprays (±0.55 rad of error, erratic course changes),
-// the small one flies the arcade's sine weave nearly dead-on (±0.15). Attract
-// mode gets the sight but never the fire. Dice all ride the run's stream, so
-// ?seed=N replays every alarm's arrival, size, path and shot.
+// the small one flies the arcade's sine weave. Attract mode gets the sight but
+// never the fire. Dice all ride the run's stream, so ?seed=N replays every
+// alarm's arrival, size, path and shot.
+//
+// #3553 — the machine's LEARNING CURVE. The small saucer does not arrive
+// sharp-shooting: its aim error starts at the large UFO's spray width and
+// eases to the shipped ±0.15 floor after AIM_LEARN ticks of survival (the
+// saucer's own age from spawn — 900-tick life minus remaining life, so no
+// new field and no extra dice: the same single rnd() per shot just scales by
+// the eased width). Player-visible law: leaving a small saucer alive is the
+// mistake — fresh ones spray, veterans land pinpoint shots, so killing the
+// saucers fast is the optimal play, as on the 1979 cabinet.
+export const SAUCER_AIM = { big: 1.1, start: 1.1, floor: 0.3, learn: 600 }
+const SAUCER_LIFE = 900
+// Full aim-error width of one saucer's shot, in radians (±half of it).
+export function saucerAimWidth(s) {
+    if (s.big) return SAUCER_AIM.big
+    const age = SAUCER_LIFE - s.life
+    const k = age >= SAUCER_AIM.learn ? 0 : 1 - age / SAUCER_AIM.learn
+    return SAUCER_AIM.floor + (SAUCER_AIM.start - SAUCER_AIM.floor) * k
+}
 function tickSaucers(gs, ev) {
     if (gs.asteroids.length > 0 && gs.tickN >= gs.nextSaucerAt) {
         const big = rnd(gs) < 0.5
@@ -241,7 +259,7 @@ function tickSaucers(gs, ev) {
             phase: rnd(gs) * Math.PI * 2,
             amp: big ? 0 : 1.1 + rnd(gs) * 0.7,
             cooldown: big ? 60 : 40,
-            life: 900, // an alarm that outlives its set piece leaves with the night
+            life: SAUCER_LIFE, // an alarm that outlives its set piece leaves with the night
         })
         gs.nextSaucerAt = saucerGap(gs)
         ev.saucerSpawn = big ? 'big' : 'small' // truthy for ANY alarm — both sizes arrive with their sound
@@ -264,7 +282,7 @@ function tickSaucers(gs, ev) {
         s.cooldown--
         if (s.cooldown <= 0 && !gs.attract && shipAlive(gs)) {
             let ang = Math.atan2(gs.ship.y - s.y, gs.ship.x - s.x)
-            ang += (rnd(gs) - 0.5) * (s.big ? 1.1 : 0.3)
+            ang += (rnd(gs) - 0.5) * saucerAimWidth(s) // #3553: small UFO eases wide→dead-on with age
             gs.bullets.push({
                 x: s.x, y: s.y,
                 vx: Math.cos(ang) * SAUCER_BULLET_SPEED,
