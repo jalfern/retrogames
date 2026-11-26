@@ -163,12 +163,24 @@ export const watchRoute = (s) => {
     const look = 24 + Math.abs(p.vx) * 20
     let aheadFloor = groundAt(s.terrain, p.x)
     for (let d = 14; d <= look; d += 14) aheadFloor = Math.min(aheadFloor, groundAt(s.terrain, p.x + dir * d))
-    const climbing = aheadFloor - p.y < 14 + sink
+    // Margin = current sink + terrain RISE across the horizon (closing
+    // horizontally into rising ground adds relative descent vy alone misses).
+    const climbMargin = 14 + sink + Math.max(0, groundAt(s.terrain, p.x) - aheadFloor) * 0.6
+    const climbing = aheadFloor - p.y < climbMargin
     if (climbing) input.up = true
-    // Pulsed descent law: no branch free-falls past a gentle gait; every dive
-    // decelerates before it needs to. (Free-fall into the 8 px kill line was the
-    // single biggest terrain bucket once the route started living low.)
-    const canDown = p.vy < 2.6
+    // Canyon rule (#3456): a wall that gains more height over the horizon than a
+    // full climb can gain is not a hill, it is a trap — turn off it and come back
+    // along the contour. (Terrain here climbs up to 2 px per px; at dash speed
+    // that outruns the fighter's lift, and /wasup deaths were exactly this.)
+    const tRemain = Math.abs(p.vx) > 0.5 ? look / Math.abs(p.vx) : 60
+    const climbGain = Math.min(8 * tRemain, 0.25 * tRemain * tRemain) * 0.8
+    const riseAhead = groundAt(s.terrain, p.x) - groundAt(s.terrain, p.x + dir * look)
+    const canyon = climbing && riseAhead > climbGain + 12
+    if (canyon) { if (p.vx >= 0) input.left = true; else input.right = true; return input }
+    // Pulsed descent law: no branch free-falls past a gentle gait, and nothing
+    // dives inside the near-ground zone (the elevator auto-delivers at clearance
+    // 18, comfortably above this line).
+    const canDown = p.vy < 2.6 && groundAt(s.terrain, p.x) - p.y > 26
 
     // Delivery, valley-site (#3456 stage 2): the held human only commits to the
     // floor while the floor within reach still admits the seat — if any sampled
@@ -176,14 +188,17 @@ export const watchRoute = (s) => {
     // ridge has passed (the seat itself is safe; it is the RIDING to it that died).
     if (s.carrying !== null) {
         const seat = groundAt(s.terrain, p.x) - 13
+        const clrNow = groundAt(s.terrain, p.x) - p.y
+        const elevatorD = p.vy < (clrNow > 26 ? 2.6 : 1.0)
         let riseAhead = false
         for (let d = 14; d <= 60 + Math.abs(p.vx) * 12; d += 14) {
-            if (groundAt(s.terrain, p.x + dir * d) - p.y < 16 + sink) { riseAhead = true; break }
+            if (groundAt(s.terrain, p.x + dir * d) - p.y < 8 + sink) { riseAhead = true; break }
         }
         if (p.y > seat + 2) input.up = true
-        else if (canDown && !riseAhead && p.y < seat - 2) input.down = true
+        else if (elevatorD && !climbing && !riseAhead && p.y < seat - 2) input.down = true
         if (p.vx > 1.2) input.left = true
         else if (p.vx < -1.2) input.right = true
+        if (input.up && input.down) input.down = false
         return input
     }
 
@@ -205,9 +220,10 @@ export const watchRoute = (s) => {
             else if (fdx < -4) input.left = true
         } else if (p.vx > 1.6) input.left = true
         else if (p.vx < -1.6) input.right = true
-        const wantY = fall.y - 12
+        const wantY = Math.min(fall.y - 12, groundAt(s.terrain, fall.x) - 18)
         if (canDown && p.y < wantY - 4) input.down = true
         else if (p.y > wantY + 6) input.up = true
+        if (input.up && input.down) input.down = false
         return input
     }
 
@@ -242,46 +258,93 @@ export const watchRoute = (s) => {
                 if (Math.abs(hd) < Math.abs(dx) + 8 && Math.sign(hd || p.facing) === Math.sign(dx || p.facing) && Math.abs(h.y - p.y) < 10) shield = true
             }
         }
-        // A hostile closing from astern outruns nothing but is outrun by cruise:
-        // while one is on the tail the route runs THE OTHER WAY at speed
-        // (mutants cap at 2.4 px/tick — a dashing fighter is food-proof, a
-        // hovering one is a sitting duck).
-        let chaserBehind = false
+        // A hostile closing from astern (#3456): turn and BRACE, don't flee.
+        // Fleeing at cruise outruns a mutant (cap 2.4) forever — several holdout
+        // seeds scored 7,800 and never cleared the wave because they could never
+        // shake or kill the last hunter. Facing it makes its own approach close
+        // the duel at 2.4 while the laser (20/tick, and the guns are already
+        // level-aligned) wins the range war; vertical dodge stays live under it.
+        let rear = null
+        let rearD = Infinity
         for (const e of s.enemies) {
             const bx = wrapDelta(e.x - p.x)
             const onRear = p.vx >= 0 ? bx < -8 : bx > 8
-            if (onRear && Math.abs(bx) < 150 && Math.abs(e.y - p.y) < 40) chaserBehind = true
+            if (onRear && Math.abs(bx) < 150 && Math.abs(e.y - p.y) < 40 && Math.abs(bx) < rearD) { rearD = Math.abs(bx); rear = e }
         }
+        const chaserBehind = rear !== null
         // Hover-kill (#3456 — the elevator's ±1.2 rule generalized): INSIDE the
         // late bracket the hull stops paying the duel with its body — the laser
         // closes at 20 whatever the hull does, so braking just keeps the hull out
         // of the ±16 band while the shot walks the rest. Late, not early: dwelling
         // at range is what fed chasers in v1.
         const hover = !chaserBehind && !shield && f === p.facing && Math.abs(dy) < 24 && Math.abs(dx) < 220
-        if (shield) {
-            // The shot the rules refuse, the body must also refuse: hold off the
-            // target and let the foot soldier walk out of the line (0.3 px/tick of
-            // patience beats 16 px of suicide — creeping into a shielded target
-            // was the front-+dy enemy bucket this stage had to close).
+        // Crossfire bail (#3456): anything already inside the outer band is
+        // dodged out of the kill band VERTICALLY, whatever the target list says —
+        // mutants match horizontal speed, but few vertical sprints. Autopsy: the
+        // route kept dying at dy +9..14 with its guns aimed elsewhere.
+        let close = null
+        let closeD = Infinity
+        for (const e of s.enemies) {
+            const ex = Math.abs(wrapDelta(e.x - p.x))
+            if (ex < 70 && Math.abs(e.y - p.y) < 24 && ex < closeD) { closeD = ex; close = e }
+        }
+        if (close) {
+            if (close.y - p.y > 4) input.up = true
+            else if (canDown && aheadFloor - p.y > 70) input.down = true
+        } else if (shield) {
+            // The shot the rules refuse, the body must also refuse: RUN from a
+            // blocked line (mutants cap at 2.4 — cruise outruns them) until the
+            // foot soldier has walked out (0.3/tick); creeping into a shielded
+            // target was the front-+dy enemy bucket this stage had to close.
             input.holdTell = true // #1907: the brain SHOWS why it held the trigger
-            if (Math.abs(dx) < 140) { if (dx > 0) input.left = true; else input.right = true }
+            if (Math.abs(dx) < 300) {
+                if (dx > 0) { if (p.vx > -4.2) input.left = true }
+                else if (p.vx < 4.2) input.right = true
+            }
             if (canDown && dy > 24) input.down = true
             else if (dy < -12) input.up = true
         } else if (chaserBehind) {
-            if (p.vx >= 0) { if (p.vx < 4.5) input.right = true }
-            else if (p.vx > -4.5) input.left = true
+            const rr = Math.sign(wrapDelta(rear.x - p.x))
+            if (p.vx * rr > -1.4) { if (rr > 0) input.right = true; else input.left = true }
+            const ry = rear.y - p.y
+            if (canDown && ry > 10) input.down = true
+            else if (ry < -10) input.up = true
         } else if (hover) {
             if (p.vx > 2.2) input.left = true
             else if (p.vx < -2.2) input.right = true
             else if (Math.abs(p.vx) < 0.9) { if (f > 0) input.right = true; else input.left = true }
         } else if (dx > 6) input.right = true
         else if (dx < -6) input.left = true
-        if (!climbing && !shield) {
+        if (!climbing && !shield && !close) {
             if (canDown && dy > 10) input.down = true
             else if (dy < -10) input.up = true
         }
-        if (aligned && !shield) input.fire = true
     }
+    // The gun is independent of the patrol's chosen job (#3456): anything legally
+    // shootable down this flat line takes the shot — nearest first — whatever the
+    // threat list decided, and walking human-closer-than-target vetoes the line
+    // (the arcade friendly-fire law runs both ways). An aligned-but-vetoed line
+    // still shows the hold tell.
+    let gunD = Infinity
+    let gun = false
+    for (const e of s.enemies) {
+        const ex = wrapDelta(e.x - p.x)
+        if (ex === 0 || Math.abs(ex) > 560 || Math.sign(ex) !== p.facing) continue
+        if (Math.abs(e.y - p.y) >= 15) continue
+        let blocked = false
+        for (const h of s.humans) {
+            if (h.state !== 'walk') continue
+            const hd = wrapDelta(h.x - p.x)
+            if ((hd === 0 ? p.facing : Math.sign(hd)) === Math.sign(ex) && Math.abs(hd) < Math.abs(ex) + 8 && Math.abs(h.y - p.y) < 10) blocked = true
+        }
+        if (blocked) { input.holdTell = true; continue }
+        if (Math.abs(ex) < gunD) { gunD = Math.abs(ex); gun = true }
+    }
+    if (gun) input.fire = true
+    // Thrust interlock (#3456): lift always outranks dive. U-and-D together used
+    // to cancel to ~0 and the trace showed the route sinking into rising ground
+    // one neutered tick at a time while both keys were held.
+    if (input.up && input.down) input.down = false
     return input
 }
 
@@ -479,6 +542,14 @@ export function createSim({ rand, height }) {
                 if (rand() < 0.03) e.vy += (rand() - 0.5) * 3
                 e.vx = Math.max(-MUTANT_SPEED, Math.min(MUTANT_SPEED, e.vx))
                 e.vy = Math.max(-MUTANT_SPEED, Math.min(MUTANT_SPEED, e.vy))
+                // #3456 fidelity fix: hunt mutants' chase velocity was tracked
+                // every tick but never integrated — the state-machine movement
+                // block below belongs to the landers, so mutants were STATUES
+                // that the README (and two seasons of WITNESS prose) swore were
+                // chasing. The 1981 mutant hunts the fighter; now it actually
+                // moves, and the route's braces/dodges face a real hunter.
+                e.x = ((e.x + e.vx) % WORLD_WIDTH + WORLD_WIDTH) % WORLD_WIDTH
+                e.y += e.vy
             } else {
                 const held = e.carry !== null ? s.humans[e.carry] : null
                 if (e.state === 'wander') {
