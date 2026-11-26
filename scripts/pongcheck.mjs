@@ -41,7 +41,7 @@ const ok = (cond, name, detail = '') => {
 // ------------------------------------------------------------- attract rule 6 ----
 console.log('attract (rule 6)')
 {
-    const WIDTHS = [320, 600]
+    const WIDTHS = [280, 320, 600] // 280 = narrow-phone cabinet: keeps the clip mutant honest even when the prompt text is trimmed
     const HEIGHTS = [426, 800]
     const span = HOLD * INFO_MSGS.length + 5
     for (const w of WIDTHS) for (const h of HEIGHTS) {
