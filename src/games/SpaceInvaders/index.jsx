@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { attractFrame, DIM } from './attract.js'
-import { GW, GH, PLAYER_W, PLAYER_H, PLAYER_Y, INVADER_W, INVADER_H, BULLET_W, BULLET_H, UFO_Y, BUNKER_ROWS, ROW_SCORE, COLS, waveRows, bunkerBricks, makeWorld, step, hash, done, activeCount, watchRoute } from './sim.js'
+import { GW, GH, PLAYER_W, PLAYER_H, PLAYER_Y, INVADER_W, INVADER_H, BULLET_W, BULLET_H, UFO_Y, BUNKER_ROWS, ROW_SCORE, COLS, waveRows, bunkerBricks, makeWorld, step, hash, done, activeCount, watchRoute, ufoBounty } from './sim.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
@@ -162,10 +162,36 @@ const SpaceInvadersGame = () => {
         // Decor juice (index.jsx only; sim stays pure). Kill bursts are
         // deterministic from tick — no entropy outside the audited default-seed draw.
         const parts = []
-        const burst = (x, y) => {
-            for (let k = 0; k < 6; k++) {
-                const a = ((x + y + k * 37) % 62) / 62 * Math.PI * 2 // pseudo-angle from state, no RNG
-                parts.push({ x, y, vx: Math.cos(a) * 1.6, vy: Math.sin(a) * 1.6, life: 18 })
+        // Per-row kill bursts (render only, sim stays pure): the squid (row 0)
+        // is a tight red spark fan, crabs (1-2) spray white sideways, octopus
+        // (3-4) drops cyan droplets. Deterministic pseudo-angles — no RNG.
+        const burst = (x, y, row = 0) => {
+            if (row <= 0) {
+                for (let k = 0; k < 6; k++) {
+                    const a = ((x + y + k * 37) % 62) / 62 * Math.PI * 2 // pseudo-angle from state, no RNG
+                    parts.push({ x, y, vx: Math.cos(a) * 1.6, vy: Math.sin(a) * 1.6, life: 18, col: '#ff3b30', h: 1, grav: 0 })
+                }
+            } else if (row <= 2) {
+                for (let k = 0; k < 7; k++) {
+                    const a = ((x + y + k * 29) % 55) / 55 // pseudo-spread from state, no RNG
+                    parts.push({ x, y, vx: (a - 0.5) * 2.4, vy: -0.6 - a * 0.6, life: 16, col: '#ffffff', h: 2, grav: 0.05 })
+                }
+            } else {
+                for (let k = 0; k < 5; k++) {
+                    const a = ((x + y + k * 23) % 41) / 41
+                    parts.push({ x, y, vx: (a - 0.5) * 0.9, vy: 0.9, life: 20, col: '#9be7ff', h: 1, grav: 0.06 })
+                }
+            }
+        }
+        // Saucer boom: the payout pays out in bigger chunks — 50: a spark,
+        // 100: a spray, 150: a wash, 300: a firework. Tier colour, deterministic.
+        const UFO_TIER = { 50: ['#ff3b30', 6], 100: ['#ffaa00', 10], 150: ['#ffe066', 14], 300: ['#ffffff', 20] }
+        const ufoBurst = (x, y, bounty) => {
+            const tier = UFO_TIER[bounty] || UFO_TIER[50]
+            const [col, n] = tier
+            for (let k = 0; k < n; k++) {
+                const a = ((x + y + k * 31) % 57) / 57 * Math.PI * 2 // pseudo-angle, no RNG
+                parts.push({ x, y, vx: Math.cos(a) * 1.9, vy: Math.sin(a) * 1.9, life: 20, col, h: 1, grav: 0.04 })
             }
         }
         const MARCH_TONES = [110, 98, 87, 78] // the original's descending four
@@ -175,6 +201,7 @@ const SpaceInvadersGame = () => {
         let prevShot = false
         let lastKillTick = 0
         let attractOver = 0 // #1906 — the attract loop's losing moment, held visible
+        let waveBannerAt = -999 // #1906 attract — wave-advance stamp
         // #1906 — the original flashes the killed invader's value where it died
         // (10/20/30, and the saucer's bounty). Blinking text decor, deterministic.
         const popups = []
@@ -185,6 +212,8 @@ const SpaceInvadersGame = () => {
             const before = world.invaders.map((i) => i.alive)
             const prevCount = activeCount(world)
             const prevScore = world.score
+            const prevLives = world.lives
+            const prevWave = world.wave
             const prevUfo = world.ufo
             world = step(world, input, rand)
             if (world.score > prevScore) audioController.playNoise(0.08, 0.12)
@@ -200,7 +229,7 @@ const SpaceInvadersGame = () => {
             let invaderPts = 0
             for (let k = 0; k < before.length; k++) {
                 if (before[k] && !world.invaders[k].alive) {
-                    burst(world.invaders[k].x + 6, world.invaders[k].y + 4)
+                    burst(world.invaders[k].x + 6, world.invaders[k].y + 4, world.invaders[k].row)
                     invaderPts += ROW_SCORE[world.invaders[k].row]
                     popup(world.invaders[k].x + 6, world.invaders[k].y, ROW_SCORE[world.invaders[k].row])
                     lastKillTick = world.tick
@@ -209,7 +238,19 @@ const SpaceInvadersGame = () => {
             // #1906 — the saucer's payout pops where it fell too (the score delta
             // not owned by invader rows is the table bounty, whatever it was)
             const ufoPts = world.score - prevScore - invaderPts
-            if (prevUfo && !world.ufo && ufoPts > 0) popup(prevUfo.x + 8, UFO_Y, ufoPts)
+            if (prevUfo && !world.ufo && ufoPts > 0) {
+                popup(prevUfo.x + 8, UFO_Y, ufoPts)
+                ufoBurst(prevUfo.x + 8, UFO_Y + 4, ufoPts)
+            }
+            // #1906 attract law — an advance beat when the demo crosses a wave.
+            if (isAttractMode && world.wave !== prevWave && world.phase === 'play') waveBannerAt = world.tick
+            // #1906 bonus spare cannon: jingles + stamps when a 100-pt crossing pays.
+            if (world.lives > prevLives) {
+                audioController.playTone(523, 0.09, 'square', 0.05)
+                audioController.playTone(784, 0.10, 'square', 0.05, 0.08)
+                audioController.playTone(1046, 0.13, 'square', 0.05, 0.17)
+                popup(world.playerX + 6, PLAYER_Y - 14, 'BONUS')
+            }
             // fire tone: the shot appearing is the event
             const shotNow = !!world.playerBullet
             if (shotNow && !prevShot) audioController.playTone(980, 0.04, 'square', 0.08)
@@ -222,14 +263,15 @@ const SpaceInvadersGame = () => {
                 if (world.ufo) {
                     if (world.tick - warbleAt >= 4) {
                         warbleAt = world.tick
-                        audioController.playTone(marchStep % 2 ? 340 : 250, 0.05, 'square', 0.06)
+                        audioController.playSweep(240, 350, 0.13, 'sawtooth', 0.05)
                         marchStep++
                     }
                 } else {
                     const interval = Math.max(3, Math.round(2 + n * 0.95))
                     if (world.tick - marchAt >= interval) {
                         marchAt = world.tick
-                        audioController.playTone(MARCH_TONES[marchStep % 4], 0.07, 'square', 0.06)
+                        audioController.playTone(MARCH_TONES[marchStep % 4] * 0.5, 0.09, 'sawtooth', 0.04)
+                        audioController.playTone(MARCH_TONES[marchStep % 4], 0.08, 'square', 0.05)
                         marchStep++
                     }
                 }
@@ -238,7 +280,7 @@ const SpaceInvadersGame = () => {
             if (world.phase === 'over' && !isAttractMode && !uiOverMirror) { uiOverMirror = true; setUiOver(true) }
         }
         const updateParts = () => {
-            for (const p of parts) { p.x += p.vx; p.y += p.vy; p.life-- }
+            for (const p of parts) { p.x += p.vx; p.y += p.vy; p.vy += p.grav || 0; p.life-- }
             for (let k = parts.length - 1; k >= 0; k--) if (parts[k].life <= 0) parts.splice(k, 1)
             for (const p of popups) p.life--
             for (let k = popups.length - 1; k >= 0; k--) if (popups[k].life <= 0) popups.splice(k, 1)
@@ -295,18 +337,28 @@ const SpaceInvadersGame = () => {
                 }
             }
 
-            // UFO (red)
-            if (world.ufo) drawSprite(ctx, SPR.ufo, world.ufo.x, UFO_Y, '#ff3b30')
+            // the saucer's tier colour tracks its shot count — 50 red, 100 amber,
+            // 150 gold, 300 white. The draw reads the same table the sim pays out.
+            const UFO_TIER_COL = { 50: '#ff3b30', 100: '#ffaa00', 150: '#ffe066', 300: '#ffffff' }
+            if (world.ufo) drawSprite(ctx, SPR.ufo, world.ufo.x, UFO_Y, UFO_TIER_COL[ufoBounty(world.ufo.shots)])
 
             // shots
             ctx.fillStyle = '#ffffff'
-            if (world.playerBullet) ctx.fillRect(world.playerBullet.x, world.playerBullet.y, BULLET_W, BULLET_H)
+            if (world.playerBullet) {
+                // 1x5 with a cyan tip: the sim bullet is 1x4 (hash and WATCH
+                // route ride the sim box — keep it untouched); the missile's
+                // tip is pure render, one pixel above the sim box.
+                ctx.fillStyle = '#e8e8e8'
+                ctx.fillRect(world.playerBullet.x, world.playerBullet.y, BULLET_W, BULLET_H)
+                ctx.fillStyle = '#00e5ff'
+                ctx.fillRect(world.playerBullet.x, world.playerBullet.y - 1, BULLET_W, 1)
+            }
             for (const b of world.enemyBullets) ctx.fillRect(b.x, b.y, BULLET_W, BULLET_H)
 
             // kill bursts (deterministic decor)
             for (const p of parts) {
-                ctx.fillStyle = p.life > 9 ? '#ff3b30' : '#ffffff'
-                ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1)
+                ctx.fillStyle = p.col
+                ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, p.h || 1)
             }
 
             // #1906 — value flash where an invader (or the saucer) fell: the
@@ -376,6 +428,13 @@ const SpaceInvadersGame = () => {
                         ctx.font = `${l.size}px monospace`
                         ctx.fillStyle = l.col
                         ctx.fillText(l.text, l.x, l.y)
+                    }
+                    // #1906 — an advance beat: the demo stamps the new wave for
+                    // a beat like the cabinet's wave table tick.
+                    if (world.tick - waveBannerAt >= 0 && world.tick - waveBannerAt < 55) {
+                        ctx.font = `bold ${Math.max(16, Math.floor(viewW / 14))}px monospace`
+                        ctx.fillStyle = '#00e5ff'
+                        ctx.fillText(`WAVE ${world.wave}`, viewW / 2, viewH / 2 + 48)
                     }
                 }
             } else if (done(world)) {

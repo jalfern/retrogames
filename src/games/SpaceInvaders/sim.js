@@ -64,6 +64,12 @@ export const UFO_Y = 26
 // and pay the table. Zero entropy at the saucer: the bounty is honest math.
 export const ufoBounty = (shots) => (shots >= 15 ? 300 : shots >= 10 ? 150 : shots >= 5 ? 100 : 50)
 
+// The machine's spare cannon: a 100-pt crossing awards one life per crossing.
+// Capped (never more cannons than sprites worth of lives) so the terminal model
+// stays honest; the hash still carries `lives`, so the replay stream stays exact.
+export const BONUS_LIFE_POINTS = 100
+export const BONUS_LIFE_CAP = 5
+
 // The 1978 bunkers: four destructible forts of 2x2 bricks (11x8 cells =
 // 22x16 px each), dome corners cut, a 6x4 slot in the crown. They sit
 // between the fleet and the player. A shot eats exactly ONE brick and is
@@ -114,6 +120,7 @@ export const makeWorld = (rand, opts = {}) => {
         phase: 'play',      // play | dying | over
         respawn: 0,
         overTick: 0,
+        bonusLifeMult: Math.floor((opts.score || 0) / BONUS_LIFE_POINTS),
     }
     buildFormation(state)
     return state
@@ -389,6 +396,14 @@ export const step = (s, input, rand) => {
         }
     }
     s.enemyBullets = s.enemyBullets.filter((b) => b.y < GH)
+
+    // The 100-point spare cannon: one life per 100-point crossing, capped.
+    const mult = Math.floor(s.score / BONUS_LIFE_POINTS)
+    if (mult > s.bonusLifeMult) {
+        const crossed = mult - s.bonusLifeMult
+        s.bonusLifeMult = mult
+        if (s.lives < BONUS_LIFE_CAP) s.lives = Math.min(BONUS_LIFE_CAP, s.lives + crossed)
+    }
 
     return s
 }
