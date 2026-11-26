@@ -92,6 +92,17 @@ const LunarLanderGame = () => {
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
 
+        // #3572 — CRT phosphor dressing (visual only, no sim change): a quarter-res
+        // buffer for cheap additive bloom, and a cached vignette gradient. The 1979
+        // cabinet's vector tube bloomed, darkened at the corners and ran scanlines.
+        const bloom = document.createElement('canvas')
+        bloom.width = Math.max(1, W >> 2); bloom.height = Math.max(1, H >> 2)
+        const bctx = bloom.getContext('2d')
+        const vignette = ctx.createRadialGradient(
+            W / 2, H / 2, Math.min(W, H) * 0.38, W / 2, H / 2, Math.max(W, H) * 0.72)
+        vignette.addColorStop(0, 'rgba(0,0,0,0)')
+        vignette.addColorStop(1, 'rgba(0,0,0,0.55)')
+
         const gsScale = gravityScale()
         const scaledLab = (labRequested() || replayRequested()) && gsScale !== 1
         if (scaledLab) CFG.gravity = GRAV_BASE * gsScale
@@ -399,7 +410,21 @@ const LunarLanderGame = () => {
                 text(`${gs.crashes} Lander${gs.crashes === 1 ? '' : 's'} lost on the way`, W / 2, 148, 9, '#8fa3d8')
                 if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY', W / 2, 190, 11, '#e9f7ff', 4)
             }
-            ctx.fillStyle = 'rgba(0,0,0,0.10)'; for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1)
+            // #3572 — phosphor tube over the whole frame: glyph bloom (additive
+            // blurred copy), corner vignette, scanline veil. Readability first: the
+            // bloom is subtle and the veil keeps the original period; terrain strokes
+            // stay the brightest thing on screen (landerplay gates the veil + vignette).
+            bctx.clearRect(0, 0, bloom.width, bloom.height)
+            bctx.drawImage(canvas, 0, 0, bloom.width, bloom.height)
+            ctx.imageSmoothingEnabled = true
+            ctx.globalCompositeOperation = 'lighter'
+            ctx.globalAlpha = 0.16
+            ctx.drawImage(bloom, 0, 0, W, H)
+            ctx.globalAlpha = 1
+            ctx.globalCompositeOperation = 'source-over'
+            ctx.imageSmoothingEnabled = false
+            ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H)
+            ctx.fillStyle = 'rgba(0,0,0,0.12)'; for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1)
         }
 
         // --------------------------------------------------------------- loop ----
