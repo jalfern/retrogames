@@ -26,7 +26,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, estWidth } from '../src/games/Pong/attract.js'
-import { serveBall, strikeSpin, SPIN_K, DY_MIN, stepBall, predictLand, tickPong, cpuTier, DIFFS, BASE_SPEED, PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_OFFSET, BALL_SIZE } from '../src/games/Pong/sim.js'
+import { serveBall, strikeSpin, SPIN_K, DY_MIN, stepBall, predictLand, tickPong, cpuTier, DIFFS, RANGES, BASE_SPEED, PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_OFFSET, BALL_SIZE } from '../src/games/Pong/sim.js'
 import { rallyVoice, serveEcho, wallVoice, scoreThud } from '../src/games/Pong/voice.js'
 import { digitSegments, digitRects, titleRects, titleFit } from '../src/games/Pong/numerals.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
@@ -499,6 +499,80 @@ console.log('numerals: block video digits (#3536)')
     ok(/drawBlockTitle\(/.test(idx) && /titleFit\(/.test(idx), 'the attract title is a fitted block word-mark')
 }
 
+// ------------------------------------------------------------------- range ----
+// #3565 — the selectable max-score knob (a FEATURE, not a restoration: the
+// 1972 RANGE switch was the Easy/Difficult speed control, already restored
+// by #3502's tiers; the b16 play-to-quit ruling stands as the FREE default).
+// Proves: FREE never caps (the b16 default replays uncapped), a chosen target
+// binds in the SHIPPED physics — sweeps end at EXACTLY N with the honest
+// winner — and the terminal point never re-serves (no dead ball, no dice
+// burned on it). Plus the classic ladder and the shell wiring: ↑/↓ cycle the
+// dial, the ?range= pin, the FIRST TO line on the card, the win sting.
+console.log('range: the selectable max-score knob (#3565)')
+{
+    const mk = (sd, range) => {
+        const rand = seedRng(sd)
+        const gs = {
+            ball: { x: 0, y: 0, dx: BASE_SPEED, dy: BASE_SPEED },
+            left: { y: 0, score: 0 }, right: { y: 0, score: 0 },
+            width: 600, height: 800, over: false, watching: true, rand, range,
+        }
+        gs.ball = serveBall(rand, 600, 800)
+        gs.left.y = gs.right.y = (800 - PADDLE_HEIGHT) / 2
+        return gs
+    }
+    const sweep = (target, seeds) => {
+        let badEnd = 0, con = 0, deadServe = 0, worstT = 0
+        for (let s = 1; s <= seeds; s++) {
+            const gs = mk(s * 7919 + 13, target)
+            let t = 0, ev = null
+            while (!gs.over && t < 60 * 600) { ev = tickPong(gs, null); t++ }
+            if (t >= 60 * 600) { badEnd++; continue }
+            if (!(gs.left.score === target && gs.right.score < target && ev?.winner === 1)) badEnd++
+            if (gs.ball.x > 0 && gs.ball.x < gs.width) deadServe++ // the win point must not re-serve
+            con += gs.right.score
+            if (t > worstT) worstT = t
+        }
+        return { wins: seeds - badEnd, con, deadServe, worstT }
+    }
+    ok(RANGES.join(',') === 'FREE,1,3,5,7,9', 'the ladder is FREE · 1 · 3 · 5 · 7 · 9 (the classic dial steps)', RANGES.join(','))
+    const r3 = sweep(3, 40)
+    ok(r3.wins === 40 && r3.deadServe === 0, 'range 3: the driver wins ALL 40 seeds, every match ending at exactly 3, never a dead serve', `wins ${r3.wins}, dead ${r3.deadServe}`)
+    ok(r3.con === 5, 'the range-3 sweep concedes exactly the measured 5 points (pinned)', `${r3.con}`)
+    ok(r3.worstT < 60 * 600, 'no range-3 match runs out the hour cap', `${r3.worstT}t`)
+    const r1 = sweep(1, 20)
+    ok(r1.wins === 20 && r1.deadServe === 0, 'range 1: the very first point ends the match honestly (20 seeds)', `wins ${r1.wins}, dead ${r1.deadServe}`)
+    const r5 = sweep(5, 12)
+    ok(r5.wins >= 11 && r5.deadServe === 0, 'range 5 terminates honestly too (the driver still owns the table)', `wins ${r5.wins}/12`)
+    const one = (sd, r) => { const gs = mk(sd, r); let t = 0; while (!gs.over && t < 60 * 600) { tickPong(gs, null); t++ } return `${gs.left.score}-${gs.right.score}@${t}` }
+    ok(one(888888, 3) === one(888888, 3), 'seed + range replay bit-identical')
+    {
+        const gs = mk(17, null)
+        let t = 0
+        while (t < 4000) { tickPong(gs, null); t++ }
+        ok(!gs.over && gs.left.score >= 3, 'FREE is no cap: 4000 ticks uncapped, the match rolls on (b16 default untouched)', `${gs.left.score}-${gs.right.score}`)
+    }
+    {
+        const a = mk(17, undefined), b = mk(17, undefined)
+        let t = 0
+        while (t < 1500) { tickPong(a, null); tickPong(b, null); t++ }
+        ok(!a.over && a.left.score === b.left.score && a.right.score === b.right.score,
+            'a gs without range behaves exactly like the pre-#3565 table')
+    }
+    {
+        const idx = readFileSync('src/games/Pong/index.jsx', 'utf8')
+        ok(/e\.code === 'ArrowUp' \|\| e\.code === 'ArrowDown'/.test(idx) && /cycleRange\(e\.code === 'ArrowUp' \? 1 : -1\)/.test(idx),
+            'attract: UP/DOWN turn the RANGE dial')
+        ok(/get\('range'\)/.test(idx), 'the ?range= pin reaches the dial')
+        ok(/RANGES\[rangeIdx\]/.test(idx), 'the attract dial shows the pick in force')
+        ok(/FIRST TO \$\{state\.range\}/.test(idx), 'the over card names the contract it played (FIRST TO N)')
+        ok(/sfx\('win'/.test(idx), 'the cap win rings its own sting (distinct from the quit saw)')
+        ok(/className="pong-range-zone"/.test(idx) && /cycleRangeRef\.current\(1\)/.test(idx),
+            'the RANGE dial answers a thumb, not just the keyboard')
+        ok(/range: RANGES\[rangeIdx\]/.test(idx), 'the QA report and probes carry the range')
+    }
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -544,10 +618,8 @@ if (process.argv.includes('--mutant')) {
         // The regressions they guard (re-planted dice, flat/steer-blind returns,
         // ceiling-park, deadlocks) must die with the law pinned.
         ['paddles scatter again after a point', S,
-            `        gs.right.score++
-        gs.ball = serveBall(gs.rand, gs.width, gs.height)`,
-            `        gs.right.score++
-        gs.ball = serveBall(gs.rand, gs.width, gs.height)
+            `        ev.scored = 1 // left conceded`,
+            `        ev.scored = 1 // left conceded
         gs.left.y = gs.rand() * (gs.height - PADDLE_HEIGHT)
         gs.right.y = gs.rand() * (gs.height - PADDLE_HEIGHT)`],
         ['deflection ignores strike position (flat returns)', S,
@@ -611,6 +683,17 @@ if (process.argv.includes('--mutant')) {
         ['the segment gaps collapse (bars merge)', N,
             `    const half = Math.max(2, mid - t - 2 * g)`,
             `    const half = Math.max(2, mid - g)`],
+        // #3565 range anchors — the target must bind EXACTLY, and FREE must
+        // stay free: each of these breaks a §range pin.
+        ['the RANGE cap never fires (targets ignored)', S,
+            `const capHit = (gs, score) => typeof gs.range === 'number' && score >= gs.range`,
+            `const capHit = () => false`],
+        ['the cap fires one point late (N+1)', S,
+            `&& score >= gs.range`,
+            `&& score > gs.range`],
+        ['FREE is misread as a cap (every point ends it)', S,
+            `typeof gs.range === 'number'`,
+            `gs.range !== undefined`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

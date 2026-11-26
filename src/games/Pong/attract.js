@@ -14,9 +14,11 @@ export const INFO_MSGS = [
     // #3536 — the cabinet law the #3532 serve restored; say it where the
     // player reads before starting, so holding position reads as intent.
     'PADDLES HOLD AFTER A POINT',
+    // #3565 — the switch bank now has two dials; tell them before starting.
+    'SET GAME AND RANGE, THEN START',
 ]
 
-export const PRESS = 'PRESS ARROW KEYS TO START'
+export const PRESS = 'PRESS ANY KEY TO START'
 export const DIM = 'rgba(0,0,0,0.55)'
 
 const CHAR_EM = 0.6

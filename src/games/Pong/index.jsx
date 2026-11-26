@@ -6,7 +6,7 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { serveBall, tickPong, BASE_SPEED, PADDLE_HEIGHT, BALL_SIZE, DIFFS } from './sim.js'
+import { serveBall, tickPong, BASE_SPEED, PADDLE_HEIGHT, BALL_SIZE, DIFFS, RANGES } from './sim.js'
 import { rallyVoice, serveEcho, wallVoice, scoreThud } from './voice.js'
 import { drawBlockScore, drawBlockTitle, titleFit } from './numerals.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -29,6 +29,7 @@ const PongGame = () => {
     const [watching, setWatching] = React.useState(false)
     const [screen, setScreen] = React.useState('attract')
     const cyclePickRef = React.useRef(() => {})
+    const cycleRangeRef = React.useRef(() => {})
 
     // Resume callback
     const handleResume = () => {
@@ -55,6 +56,7 @@ const PongGame = () => {
             watching: false,
             rand: null,
             servePending: true, // #3536: observation for the serve voice/flash
+            range: null, // #3565: null = FREE (the b16 uncapped default)
         }
 
         // #1473: one seeded stream per run. seed is regenerated at every
@@ -79,6 +81,25 @@ const PongGame = () => {
         }
         // the tap band (attract) lives in JSX, so the dial rides a ref
         cyclePickRef.current = cyclePick
+        // #3565 — the second dial on the switch bank: RANGE, the score target.
+        // ↑/↓ cycle FREE · 1 · 3 · 5 · 7 · 9 on attract (silent, like the
+        // coin-door switches); ?range=FREE|1|3|5|7|9 pins it for QA. FREE is
+        // the b16 default — uncapped, quit stays the terminal — so every
+        // existing pin replays untouched; a number binds in sim.js (tickPong).
+        let rangeIdx = 0
+        const rangeVal = () => (typeof RANGES[rangeIdx] === 'number' ? RANGES[rangeIdx] : null)
+        const readRangePin = () => {
+            const r = (new URLSearchParams(window.location.search).get('range') || '').toUpperCase()
+            const i = RANGES.findIndex((v) => String(v) === r)
+            if (i >= 0) rangeIdx = i
+        }
+        readRangePin()
+        state.range = rangeVal()
+        const cycleRange = (dir) => {
+            rangeIdx = (rangeIdx + dir + RANGES.length) % RANGES.length
+            state.range = rangeVal()
+        }
+        cycleRangeRef.current = cycleRange
         let tickN = 0
         let hitN = 0
         let serveFlash = 0 // #3536 — net-dash ring ticks left on the served ball
@@ -99,6 +120,8 @@ const PongGame = () => {
             state.rand = seedRng(seed)
             readDiffPin() // #3502: the pin wins over any attract cycling
             state.diff = DIFFS[diff]
+            readRangePin() // #3565: and so does the RANGE pin
+            state.range = rangeVal()
             state.left.score = 0
             state.right.score = 0
             state.over = false
@@ -166,9 +189,14 @@ const PongGame = () => {
             if (isAttractMode) {
                 // #3502 — the cabinet selector: LEFT/RIGHT cycles the pick on
                 // attract (silent, like the coin-door switches); any other key
-                // starts the match with the pick standing.
+                // starts the match with the pick standing. #3565 adds the
+                // second dial: UP/DOWN turns RANGE, the score target.
                 if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
                     cyclePick(e.code === 'ArrowRight' ? 1 : -1)
+                    return
+                }
+                if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+                    cycleRange(e.code === 'ArrowUp' ? 1 : -1)
                     return
                 }
                 startRun(); return
@@ -228,7 +256,17 @@ const PongGame = () => {
                 const th = scoreThud()
                 sfx('thud', th)
                 audioController.playNoise(th.noise.dur, th.noise.vol)
-                serveFlash = 36 // the new ball answers with the ring too
+                if (!ev.winner) serveFlash = 36 // the new ball answers with the ring too
+            }
+            // #3565 — the RANGE target landed: the honest terminal at play
+            // time. The seat releases with the match (watch contract), the
+            // card takes the table, and the win rings ASCENDING — reaching a
+            // target you chose is not the falling saw of a quit (#1473).
+            if (ev.winner) {
+                release(false)
+                setScreen('over')
+                sfx('win', { freq: 660, dur: 0.11, type: 'square', vol: 0.12 })
+                sfx('win', { freq: 880, dur: 0.16, type: 'square', vol: 0.12, delay: 0.12 })
             }
             if (ev.hitL) hitN++ // proof of interception for the pilot (b24)
         }
@@ -280,20 +318,26 @@ const PongGame = () => {
                 ctx.fillText(WATCH_ATTRACT_HINT, state.width / 2, state.height * 0.62)
                 // #3502 — the AUTO/RANGE selector, drawn here for the same
                 // reason: the rule-6 audit owns attract.js, this is chrome.
+                // #3565 — the bank is two dials side by side: GAME (←/→) and
+                // RANGE (↑/↓), each on its own net-dash rail. Two columns fit
+                // the phone cabinet; the PRESS prompt keeps its line below.
                 ctx.font = '11px monospace'
                 ctx.fillStyle = '#9aa4b2'
-                ctx.fillText('SELECT GAME', state.width / 2, state.height * 0.50)
+                ctx.fillText('SELECT GAME', state.width * 0.28, state.height * 0.50)
+                ctx.fillText('SELECT RANGE', state.width * 0.72, state.height * 0.50)
                 ctx.font = '14px monospace'
                 ctx.fillStyle = '#ffd23f'
-                ctx.fillText(`< ${DIFFS[diff]} >`, state.width / 2, state.height * 0.535)
-                // #3536 — the switch's rail, in the table's own net-dash.
+                ctx.fillText(`< ${DIFFS[diff]} >`, state.width * 0.28, state.height * 0.535)
+                ctx.fillText(`< ${RANGES[rangeIdx]} >`, state.width * 0.72, state.height * 0.535)
                 ctx.save()
                 ctx.setLineDash([3, 4])
                 ctx.strokeStyle = 'rgba(255, 210, 63, 0.4)'
-                ctx.beginPath()
-                ctx.moveTo(state.width / 2 - 44, state.height * 0.555)
-                ctx.lineTo(state.width / 2 + 44, state.height * 0.555)
-                ctx.stroke()
+                for (const rx of [state.width * 0.28, state.width * 0.72]) {
+                    ctx.beginPath()
+                    ctx.moveTo(rx - 40, state.height * 0.555)
+                    ctx.lineTo(rx + 40, state.height * 0.555)
+                    ctx.stroke()
+                }
                 ctx.restore()
             } else {
                 // #3536 — the machine's seven-segment face: scores as block
@@ -353,6 +397,13 @@ const PongGame = () => {
                     drawBlockScore(ctx, state.width / 2 - cw * 0.16, cy + 62, state.left.score, 42, 'rgba(255, 255, 255, 0.85)')
                     drawBlockScore(ctx, state.width / 2 + cw * 0.16, cy + 62, state.right.score, 42, 'rgba(255, 255, 255, 0.85)')
                     ctx.fillRect(state.width / 2 - 8, cy + 84, 16, 4) // the net between the scores
+                    // #3565 — a capped match names its contract: this terminal
+                    // was the target you set, not a quit.
+                    if (state.range !== null) {
+                        ctx.font = '10px monospace'
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+                        ctx.fillText(`FIRST TO ${state.range}`, state.width / 2, cy + 120)
+                    }
                     if (Math.floor(tickN / 30) % 2 === 0) {
                         ctx.font = '11px monospace'
                         ctx.fillStyle = '#ffffff'
@@ -417,6 +468,7 @@ const PongGame = () => {
                 ballX: Math.round(state.ball.x),
                 ballY: Math.round(state.ball.y),
                 diff: DIFFS[diff],
+                range: RANGES[rangeIdx], // #3565 — the target in force ('FREE' = none)
             }),
             canvas: () => canvas,
             // snapshot/restore omitted: the seeded rand closure cannot JSON
@@ -441,6 +493,7 @@ const PongGame = () => {
                     rightY: Math.round(state.right.y),
                     dl: Math.round(Math.abs(state.left.y + PADDLE_HEIGHT / 2 - (state.ball.y + 4))),
                     diff: DIFFS[diff],
+                    range: RANGES[rangeIdx], // #3565 — the attract pick in force
                     // #3529 — the touch-quit leg needs the UI screen without
                     // a keyboard: attract / play / over, mirrored from the
                     // effect-local flags (no stale useState in this closure).
@@ -452,12 +505,14 @@ const PongGame = () => {
                 servePending: () => state.servePending === true,
                 serveFlash: () => serveFlash,
                 setDiff: (n) => { diff = ((n % DIFFS.length) + DIFFS.length) % DIFFS.length; state.diff = DIFFS[diff] },
+                // #3565 — the second dial, mirrored for the harness.
+                setRange: (n) => { rangeIdx = ((n % RANGES.length) + RANGES.length) % RANGES.length; state.range = rangeVal() },
             }
         }
 
         // production report carries the seed (#1473)
         exposeFeedbackState(() => ({
-            tick: tickN, score: state.left.score, done: state.over, seed: seed, opp: state.right.score, diff: DIFFS[diff],
+            tick: tickN, score: state.left.score, done: state.over, seed: seed, opp: state.right.score, diff: DIFFS[diff], range: RANGES[rangeIdx],
         }))
 
         return () => {
@@ -498,7 +553,24 @@ const PongGame = () => {
                             e.stopPropagation()
                             cyclePickRef.current(1)
                         }}
-                        style={{ position: 'absolute', top: '47%', height: '10%', left: 0, right: 0, zIndex: 60, background: 'transparent', border: 0, cursor: 'pointer', padding: 0 }}
+                        style={{ position: 'absolute', top: '47%', height: '10%', left: 0, right: '50%', zIndex: 60, background: 'transparent', border: 0, cursor: 'pointer', padding: 0 }}
+                    />
+                )}
+                {screen === 'attract' && (
+                    <button
+                        type="button"
+                        className="pong-range-zone"
+                        aria-label="Tap to cycle the score target"
+                        title="Tap to cycle the score target (RANGE)"
+                        onPointerDown={(e) => {
+                            // #3565 — the second dial: a tap on the RANGE label
+                            // rides the same cycle as UP/DOWN. Left half stays
+                            // GAME (the pick-zone above), right half is RANGE.
+                            e.preventDefault()
+                            e.stopPropagation()
+                            cycleRangeRef.current(1)
+                        }}
+                        style={{ position: 'absolute', top: '47%', height: '10%', left: '50%', right: 0, zIndex: 60, background: 'transparent', border: 0, cursor: 'pointer', padding: 0 }}
                     />
                 )}
                 {screen === 'play' && !paused && (
