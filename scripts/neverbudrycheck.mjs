@@ -27,7 +27,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { parseRegistry, weakestStage, heldDirs } from './lib/idle.mjs'
+import { parseGaps, parseRegistry, weakestStage, heldDirs } from './lib/idle.mjs'
 import { validateAsk, titleAskBlocked, unlabeledQuestions, UNLABELED_FLAG } from './lib/jonq.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -129,6 +129,27 @@ ok(weakestStage({ games: [], qaIssues: [], heldDirs: [] }) === null,
 'an empty shelf answers null — ONLY then is STOP legal')
 ok(heldDirs(GS, [{ labels: ['building'], title: 'POLISH — HELD GAME: q', body: '' }]).join() === 'Held',
 'heldDirs skips titles a building/building-qa issue is inside')
+
+// ---- Restored subsections do not score (#3553 follow-up, 2026-11-26) ----
+// `### Restored in …` subsections inside Honest gaps are shipped history. The
+// old parser stopped only at h2 and counted nine restored Adventure bullets as
+// open gaps — ADVENTURE scored 13 on never-dry where the honest count was 1,
+// and idle-kick aimed slot b at a phantom.
+ok(parseGaps('## Honest gaps\n- Real open A.\n- Real open B.\n\n### Restored in the #1545 polish pass\n- the magnet attracts items now\n\n## Other section\n- outside the list\n').join('|')
+    === 'Real open A.|Real open B.',
+'h3 subsections end the Honest gaps list — Restored bullets do not score')
+ok(parseGaps('- No guidance surface — restored in the #1572 feel pass item 2 (see below).').length === 0,
+'"Restored in the #N pass" bullets are CLOSED-class history, not gaps')
+{
+    const md = read('src/games/Adventure/README.md')
+    const gaps = parseGaps(md)
+    ok(!gaps.some((g) => /variant selector/i.test(g)),
+        'ADVENTURE: the variant-selector line is marked CLOSED by #1572 (VARIANTS + SELECT GAME ship today)')
+    ok(!gaps.some((g) => /pen-shaped dragon sounds/.test(g)),
+        'ADVENTURE: the silent-cart adjudication carries **DISCLAIMER** and is not scored weakness')
+    ok(!gaps.some((g) => /magnet \*\*attracts|dragon \*\*respawns|guidance tab|chew|sparkle|rooms cut/i.test(g)),
+        'ADVENTURE: no Restored-subsection bullet counts against the title anymore')
+}
 ok(heldDirs(GS, [{ labels: ['building-qa'], title: 'QA — HELD GAME: polish pass',
     body: 'PONG scores 2 but held; Adventure is gap-free — SSX/Emberwood/COMET/Myst gap-free' }]).join() === 'Held',
 '#2571: heldDirs matches TITLES only — a why-weakest body that verbatim-names skipped titles must not phantom-hold them')
