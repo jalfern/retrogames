@@ -146,21 +146,47 @@ const DigDugGame = () => {
             h = ((h ^ (h >>> 13)) * 1274126177) >>> 0
             return (h ^ (h >>> 16)) >>> 0
         }
+        const shade = (hex, mult) => {
+            const n = parseInt(hex.slice(1), 16)
+            const r = Math.min(255, Math.round(((n >> 16) & 255) * mult))
+            const g = Math.min(255, Math.round(((n >> 8) & 255) * mult))
+            const b = Math.min(255, Math.round((n & 255) * mult))
+            return `rgb(${r},${g},${b})`
+        }
         const drawDirt = () => {
             for (let r = DIRT_TOP; r <= DIRT_BOT; r++) {
                 for (let c = 0; c < COLS; c++) {
                     if (!gs.dirt[r][c]) continue
                     const x = c * CELL, y = FIELD_Y0 + r * CELL
                     const layer = layerOf(r)
-                    ctx.fillStyle = LAYERS[layer]
+                    const depth = (r - DIRT_TOP) / (DIRT_BOT - DIRT_TOP)
+                    const base = LAYERS[layer]
+                    const grad = ctx.createLinearGradient(0, y, 0, y + CELL)
+                    grad.addColorStop(0, shade(base, 1.22))
+                    grad.addColorStop(0.55, base)
+                    grad.addColorStop(1, shade(base, 0.70))
+                    ctx.fillStyle = grad
                     ctx.fillRect(x, y, CELL, CELL)
+                    // deeper bands darken overall — reads as "digging down"
+                    ctx.fillStyle = `rgba(0,0,0,${(depth * 0.18).toFixed(3)})`
+                    ctx.fillRect(x, y, CELL, CELL)
+                    // mortar-like cell borders: dark seam up top, rim below
+                    ctx.fillStyle = 'rgba(0,0,0,0.28)'
+                    ctx.fillRect(x, y, CELL, 1)
                     ctx.fillStyle = 'rgba(0,0,0,0.18)'
                     ctx.fillRect(x, y + CELL - 1, CELL, 1)
-                    ctx.fillStyle = 'rgba(255,255,255,0.10)'
-                    ctx.fillRect(x, y, CELL, 1)
+                    ctx.fillStyle = 'rgba(255,255,255,0.12)'
+                    ctx.fillRect(x, y + 1, 1, CELL - 2)
+                    ctx.fillStyle = 'rgba(0,0,0,0.14)'
+                    ctx.fillRect(x + CELL - 1, y + 1, 1, CELL - 2)
+                    // subtle vertical-column shading (odd columns slightly darker)
+                    if (c % 2 === 1) {
+                        ctx.fillStyle = 'rgba(0,0,0,0.06)'
+                        ctx.fillRect(x, y, CELL, CELL)
+                    }
                     for (let i = 0; i < 4; i++) {
                         const hh = hash2(c * 8 + i, r)
-                        ctx.fillStyle = hh & 1 ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.08)'
+                        ctx.fillStyle = hh & 1 ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.10)'
                         ctx.fillRect(x + (hh % (CELL - 2)), y + ((hh >> 4) % (CELL - 2)), 2, 1)
                     }
                 }
