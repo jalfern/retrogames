@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import {
   MAP_W, MAP_H, createInitialState, stepGame, hash, done, runScore,
   buildGrid, monsterAttack, rng, setSeed, generateDungeon, isWall, blocksMove,
-  isThrowable, shootRay, watchStep,
+  isThrowable, shootRay, watchStep, advanceMonsters, MONSTER_DEFS, MONSTER_ENERGY,
 } from '../src/games/Rogue/sim.js'
 
 let pass = 0, fail = 0
@@ -659,6 +659,141 @@ console.log('ranged combat (#3491)')
         const s = createInitialState(4242)
         const w = watchStep(s)
         ok('watchStep still moves the proven way (never throws)', !w || w.type === 'MOVE' || w.type === 'DESCEND')
+    }
+}
+
+// ── 8. mobility laws (#3509): per-monster energy + wounded flee ─────────────
+console.log('mobility laws (#3509)')
+{
+    const mkState = (px, py, monsters) => {
+        const base = createInitialState(1)
+        const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => ' '))
+        const vis = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(true))
+        return {
+            ...base, dungeonLevel: 1, turn: 0, phase: 'playing', map, visible: vis,
+            monsters, items: [], hiddenDoors: [], fx: [], msgs: [],
+            player: { ...base.player, x: px, y: py },
+        }
+    }
+    const floorPatch = (st, cells) => { for (const [x, y] of cells) st.map[y][x] = '.' }
+    const mkMon = (id, letter, x, y, hp, extra = {}) => ({
+        id, x, y, letter, name: letter, hp, maxHp: 8, dmg: '1d1', ac: 4, xp: 1,
+        chasing: true, energy: 0, fleeing: false, bitten: false,
+        speed: MONSTER_DEFS[letter].speed, ...extra,
+    })
+
+    // race table (spec section 4)
+    const fast = ['K', 'B', 'C', 'L', 'J'], slow = ['T', 'M']
+    ok('speed table: fast races x1.5, slow x0.75, rest x1.0',
+        fast.every(l => MONSTER_DEFS[l].speed === 6) &&
+        slow.every(l => MONSTER_DEFS[l].speed === 3) &&
+        Object.values(MONSTER_DEFS).every(d => [3, 4, 6].includes(d.speed)))
+
+    // energy clock: steps per hero turn, counted from energy spend
+    const runClock = (letter, turns) => {
+        const st = mkState(10, 10, [mkMon(1, letter, 17, 10, 8)])
+        floorPatch(st, [])
+        for (let x = 9; x <= 20; x++) for (let y = 8; y <= 12; y++) st.map[y][x] = '.'
+        let s = st, prevEnergy = 0, steps = 0, perTurn = []
+        for (let t = 0; t < turns; t++) {
+            s = advanceMonsters(s)
+            const m = s.monsters[0]
+            const acted = (prevEnergy + m.speed - m.energy) / MONSTER_ENERGY
+            steps += acted; perTurn.push(acted)
+            prevEnergy = m.energy
+        }
+        return { steps, perTurn, final: s.monsters[0] }
+    }
+    const norm = runClock('O', 4)   // orc x1.0
+    const fastR = runClock('K', 4)  // kestrel x1.5
+    const slowR = runClock('T', 4)  // troll x0.75
+    ok('x1.0 race steps exactly once per hero turn', norm.steps === 4 && norm.perTurn.every(n => n === 1), JSON.stringify(norm.perTurn))
+    ok('x1.5 race double-steps (6 actions in 4 turns)', fastR.steps === 6, JSON.stringify(fastR.perTurn))
+    ok('x0.75 race skips a turn (3 actions in 4)', slowR.steps === 3 && slowR.perTurn.includes(0), JSON.stringify(slowR.perTurn))
+    ok('energy carries, never borrows: every race holds 0..3 leftover',
+        [norm, fastR, slowR].every(r => r.final.energy >= 0 && r.final.energy < MONSTER_ENERGY))
+
+    // flee law: wounded kestrel (hp 1 of 4) turns its back and runs
+    {
+        const st = mkState(10, 10, [mkMon(1, 'K', 12, 10, 1, { maxHp: 4 })])
+        for (let x = 8; x <= 16; x++) for (let y = 8; y <= 12; y++) st.map[y][x] = '.'
+        const d0 = Math.abs(12 - 10) + Math.abs(10 - 10)
+        const s = advanceMonsters({ ...st, monsters: st.monsters.map(m => ({ ...m, energy: 4 })) })
+        const m = s.monsters[0]
+        const d1 = Math.abs(m.x - 10) + Math.abs(m.y - 10)
+        ok('wounded monster flees: distance grows, no bite lands',
+            m.fleeing && d1 > d0 && s.player.hp === st.player.hp, `d ${d0}->${d1} fleeing=${m.fleeing}`)
+        ok('fleeing is for good (wounded never gets brave)', advanceMonsters(s).monsters[0].fleeing)
+    }
+
+    // boundary: hp just above the quarter threshold still fights
+    {
+        const st = mkState(10, 10, [mkMon(1, 'O', 13, 10, 3, { maxHp: 8 })]) // 12 > 8
+        for (let x = 8; x <= 16; x++) for (let y = 8; y <= 12; y++) st.map[y][x] = '.'
+        const s = advanceMonsters({ ...st, monsters: st.monsters.map(m => ({ ...m, energy: 4 })) })
+        ok('3/8 hp is not wounded: keeps its nerve (no flee at the boundary)',
+            !s.monsters[0].fleeing && s.monsters[0].x < 13)
+    }
+
+    // cornered rat bites: no flee step, adjacent -> attack
+    {
+        let s = mkState(10, 10, [mkMon(1, 'O', 10, 11, 1, { maxHp: 8 })]) // wounded, adjacent
+        s.map[10][10] = '.'; s.map[10][11] = '.' // two-cell corridor: nowhere to run
+        for (let t = 0; t < 60; t++) {
+            s = advanceMonsters({ ...s, monsters: s.monsters.map(m => ({ ...m, energy: 4 })) })
+            if (s.phase !== 'playing') break
+        }
+        const attacked = s.msgs.some(x => x.includes('hits you') || x.includes('misses')) ||
+            s.player.hp < createInitialState(1).player.hp || s.phase === 'gameover'
+        ok('cornered wounded monster fights (no fleeing step exists)', attacked)
+    }
+
+    // the snake's own law: flees for good once it has bitten
+    {
+        let s = mkState(10, 10, [mkMon(1, 'S', 11, 10, 6)]) // full hp — no flee trigger yet
+        for (let x = 8; x <= 18; x++) for (let y = 8; y <= 12; y++) s.map[y][x] = '.'
+        let bit = false
+        for (let t = 0; t < 200 && !bit; t++) {
+            const before = s.player.hp
+            s = advanceMonsters({ ...s, monsters: s.monsters.map(m => ({ ...m, energy: 4 })) })
+            if (s.player.hp < before) bit = true
+            // if it slipped away unbit, pin it adjacent again (the law is
+            // about the aftermath of a bite, not about the chase)
+            if (!bit && !s.monsters.some(m => m.x === 11 && m.y === 10)) {
+                s = { ...s, monsters: s.monsters.map(m => ({ ...m, x: 11, y: 10, fleeing: false })) }
+            }
+        }
+        const snake = s.monsters[0]
+        ok('snake bites (harness can drive the bite)', bit, `snake hp ${snake.hp} fleeing=${snake.fleeing}`)
+        ok('the bitten snake flees for good: bitten+fleeing set, and it gains ground fleeing', (() => {
+            if (!bit || !snake.bitten || !snake.fleeing) return false
+            let s2 = { ...s, monsters: s.monsters.map(m => ({ ...m, energy: 4 })) }
+            const d0 = Math.abs(s2.monsters[0].x - s2.player.x) + Math.abs(s2.monsters[0].y - s2.player.y)
+            s2 = advanceMonsters(s2)
+            const d1 = Math.abs(s2.monsters[0].x - s2.player.x) + Math.abs(s2.monsters[0].y - s2.player.y)
+            return d1 >= d0 && d1 >= 2
+        })())
+    }
+
+    // bump skip: the counterattacked monster accrues but spends its step
+    {
+        const st = mkState(10, 10, [mkMon(1, 'K', 11, 10, 8)]) // fast, adjacent
+        st.map[10][10] = '.'; st.map[10][11] = '.'
+        const s = advanceMonsters(st, 1) // monster 1 is the bumped one
+        ok('bumped monster accrues but spends its step (no double-tap)',
+            s.monsters[0].energy === 2 && s.monsters[0].x === 11)
+    }
+
+    // determinism of the new state bits
+    {
+        const mk = (fleec) => {
+            const st = mkState(10, 10, [mkMon(1, 'K', 12, 10, 1, { maxHp: 4, fleeing: fleec })])
+            for (let x = 8; x <= 16; x++) for (let y = 8; y <= 12; y++) st.map[y][x] = '.'
+            return advanceMonsters(st)
+        }
+        ok('mobility bits are inside the replay hash (fleeing is proven state)',
+            hash(mk(false)) !== hash({ ...mk(false), monsters: mk(false).monsters.map(m => ({ ...m, fleeing: !m.fleeing })) }))
+        ok('mobility replays byte-equal (same scene twice)', hash(mk(true)) === hash(mk(true)))
     }
 }
 
