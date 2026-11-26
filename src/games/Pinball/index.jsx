@@ -194,8 +194,10 @@ const sfxFor = (ev) => {
             a.playTone(784, 0.12, 'square', 0.11, 0.16); a.playNoise(0.06, 0.1, 0.2); break
         case 'spinner': a.playTone(1500, 0.025, 'square', 0.05); break
         case 'kicker': a.playSweep(220, 660, 0.15, 'triangle', 0.12); break
-        case 'kickback': // #3250: solenoid snap + a harder, higher launch than the kicker
-            a.playNoise(0.05, 0.16); a.playSweep(140, 920, 0.14, 'square', 0.13); a.playTone(880, 0.05, 'square', 0.07, 0.1); break
+        case 'kickback': // #3250: solenoid snap + launch; #3468 item 2: a distinct
+            // grapple read — low clunk + snap + a latched high ring, not the ramp whoosh
+            a.playTone(110, 0.06, 'square', 0.16); a.playNoise(0.04, 0.15)
+            a.playTone(247, 0.09, 'triangle', 0.12, 0.06); a.playTone(880, 0.04, 'square', 0.05, 0.13); break
         case 'plunge': a.playSweep(120, 700, 0.22, 'triangle', 0.14); break
         case 'ratchet': a.playTone(160 + 460 * (ev.power || 0), 0.02, 'square', 0.06); a.playNoise(0.015, 0.05); break
         case 'powerzone': a.playTone(110 + ev.zone * 45, 0.05, 'square', 0.12); a.playNoise(0.03, 0.08); break
@@ -280,7 +282,8 @@ const mkFlash = (tb) => ({
     flash: 0, // #3178 tower-kick white-out
     orbit: 0, orbitArm: 0, mag: 0, magFree: 0,
     kb: 0, // #3250 kickback pop
-    rampL: 0, kbL: 0, kbLArm: 0, // #3432 JET LANE wires + mirror save + re-arm pulse
+    rampL: 0, kbL: 0, kbLArm: 0,   // #3432 JET LANE wires + mirror save + re-arm pulse
+    sweep: 0, // #3468 item 2: the kickback highlight sweep up the outlane
     wobble: 0, // #3297 tilt-warning cabinet wobble (22 → 0, a damped lean)
     pzone: 0, // #3297 fresh power-zone tick (lights the meter steps briefly)
 })
@@ -500,6 +503,7 @@ const PinballGame = () => {
                 // #3432: the left save reads its own lamp (ev.side).
                 else if (ev.type === 'kickback') {
                     fl[ev.side === 'L' ? 'kbL' : 'kb'] = 18
+                    if (ev.side === 'L') fl.sweep = 18   // #3468 item 2: the save shows
                     shakeRef.current = Math.max(shakeRef.current, 8)
                     spawn(ev.x, ev.y, 16, pal.hot, 260)
                     spawnRing(ev.x, ev.y, pal.hot, 30, 16)
@@ -620,7 +624,7 @@ const PinballGame = () => {
                 else if (ev.type === 'bank') { fl.bank = 40; d.shk.current = Math.max(d.shk.current, 4) }
                 else if (ev.type === 'spinner') { fl.spinner = Math.max(fl.spinner, spinPersist(ev)) }
                 else if (ev.type === 'kicker') { sparkD(d, ev.x, ev.y, 9, pal.lane, 220) }
-                else if (ev.type === 'kickback') { fl[ev.side === 'L' ? 'kbL' : 'kb'] = 18; sparkD(d, ev.x, ev.y, 12, pal.hot, 240) }
+                else if (ev.type === 'kickback') { fl[ev.side === 'L' ? 'kbL' : 'kb'] = 18; if (ev.side === 'L') fl.sweep = 18; sparkD(d, ev.x, ev.y, 12, pal.hot, 240) }
                 else if (ev.type === 'ramp') { fl.ramp = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
                 else if (ev.type === 'rampset') { fl.ramp = 20 }
                 else if (ev.type === 'rampL') { fl.rampL = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
@@ -1048,6 +1052,31 @@ const PinballGame = () => {
             // kicker mouth
             ctx.fillStyle = `rgba(${pal.kickerRgb},${0.25 + 0.2 * Math.sin(gs.tick / 7)})`
             ctx.beginPath(); ctx.moveTo(v.outMouthX1, 505); ctx.lineTo(v.outMouthX2, 505); ctx.lineTo(v.outMouthTip, 526); ctx.closePath(); ctx.fill()
+
+            // #3468 item 2: KICKBACK L rescue — a brief highlight sweep rides
+            // UP the outlane (head travels drain→top, a short fading tail
+            // behind) so the save reads as the save, not only as a flash.
+            if (fl.sweep > 0) {
+                const og = tb.outlaneGuide
+                const total = 18
+                const elapsed = total - fl.sweep
+                const t = Math.min(1, elapsed / 14)
+                const yBot = og.y2, yTop = og.y1
+                const yNow = yBot + (yTop - yBot) * t
+                const xAt = (y) => og.x1 + (og.x2 - og.x1) * ((y - og.y1) / (og.y2 - og.y1))
+                ctx.save()
+                ctx.globalAlpha = 0.15 + 0.85 * Math.min(1, fl.sweep / 12)
+                ctx.strokeStyle = '#ffffff'
+                ctx.shadowColor = pal.hot
+                ctx.shadowBlur = 18
+                ctx.lineWidth = 3.5
+                ctx.lineCap = 'round'
+                const yTail = Math.min(yBot, yNow + 44)
+                ctx.beginPath(); ctx.moveTo(xAt(yNow), yNow); ctx.lineTo(xAt(yTail), yTail); ctx.stroke()
+                ctx.fillStyle = '#ffffff'
+                ctx.beginPath(); ctx.arc(xAt(yNow), yNow, 4.5, 0, 7); ctx.fill()
+                ctx.restore()
+            }
 
             // #3250 KICKBACK — chrome button in a rubber ring at the drain mouth,
             // armed-pulse while its one save per ball is live, plunger pop on fire.
