@@ -34,7 +34,10 @@
 export const GW = 160  // Atari 2600 resolution (approx)
 export const GH = 192
 export const PLAYER_SPEED = 1.8
-export const MAX_ITEMS = 8   // sword, goldKey, blackKey, whiteKey, chalice, bridge, magnet, gray dot
+export const MAX_ITEMS = 8   // distinct item KINDS for score: sword, goldKey, blackKey, whiteKey, chalice, bridge, magnet, gray dot
+// #3482: the sim carries 9 item INSTANCES — the duplicate chalice shares the
+// 'chalice' kind, so the score ceiling stays 8 while the world holds 9 objects.
+export const ITEM_INSTANCES = 9
 export const DRAGON_FOLLOW_SLACK = 10  // #3441 seam alignment: gap edge ± one tick of speed
 
 // Wall geometry shared by makeWalls() and the secret-door barrier rect.
@@ -104,6 +107,10 @@ export const R = {
     WHITE_FOYER: 15,
     DRAGON_LAIR: 16,
     SECRET: 17,
+    // #3482: the Blue Castle — the open keep off the blue labyrinth whose
+    // treasure is the original's DUPLICATE chalice. No gate: the cart's blue
+    // keep stands open, and either cup delivered to the Gold Castle wins.
+    BLUE_CASTLE: 18,
 }
 
 // =============================================
@@ -235,7 +242,12 @@ export const ROOMS = [
     // (#2255) BLUE_LAB_1 opens right: EXITS[OVERWORLD_5].left leads INTO it,
     // so the return side must exist or OW5's left door is one-way.
     { id: R.BLUE_LAB_1, name: 'Blue Labyrinth', bg: COLORS.darkBlue, walls: makeLabyrinthWalls(1, true) },
-    { id: R.BLUE_LAB_2, name: 'Blue Labyrinth', bg: '#101060', walls: makeLabyrinthWalls(2) },
+    // #3482: LAB_2 opens east into the Blue Castle — the original's open keep
+    // sits right beside the blue catacombs. The east pocket (rows y64–90 past
+    // the x90 pillar, down the x141–156 column) keeps the side-gap lane
+    // y70–120 walkable from inside the maze, and the castle answers with an
+    // open left wall, so the door is two-way (#2255 law).
+    { id: R.BLUE_LAB_2, name: 'Blue Labyrinth', bg: '#101060', walls: makeLabyrinthWalls(2, true) },
     { id: R.BLUE_LAB_3, name: 'Blue Labyrinth', bg: COLORS.darkBlue, walls: makeLabyrinthWalls(3) },
     // 10: Black Castle
     { id: R.BLACK_CASTLE, name: 'Black Castle', bg: '#282828', walls: makeWalls(true, true, false, false), gate: true, gateColor: '#555555', gateKey: 'blackKey' },
@@ -259,6 +271,11 @@ export const ROOMS = [
     // sealed-door barrier lives. It used to be carved on the left while
     // EXITS declared right, so the easter-egg room was a one-way trap.
     { id: R.SECRET, name: '???', bg: '#000000', walls: makeWalls(false, false, false, true) },
+    // #3482: the Blue Castle — open keep (no gate, no foyer: the cart's blue
+    // keep has nothing to lock). Its left wall carries the side-gap door into
+    // Blue Labyrinth 2; the treasure is the duplicate chalice (see
+    // ITEM_TEMPLATES), pinned here exactly as the cartridge record sits it.
+    { id: R.BLUE_CASTLE, name: 'Blue Castle', bg: COLORS.blue, walls: makeWalls(false, false, true, false) },
 ]
 
 // Room connectivity: exits[roomId] = { up, down, left, right }
@@ -271,7 +288,9 @@ EXITS[R.OVERWORLD_3] =  { up: R.OVERWORLD_2, down: R.BLACK_CASTLE, left: R.BLUE_
 EXITS[R.OVERWORLD_4] =  { up: R.OVERWORLD_1, down: R.OVERWORLD_3, left: R.OVERWORLD_2, right: R.WHITE_CASTLE }
 EXITS[R.OVERWORLD_5] =  { up: R.OVERWORLD_1, down: R.DRAGON_LAIR, left: R.BLUE_LAB_1, right: R.OVERWORLD_1 }
 EXITS[R.BLUE_LAB_1] =   { up: R.OVERWORLD_2, down: R.BLUE_LAB_2, left: -1, right: R.OVERWORLD_5 }
-EXITS[R.BLUE_LAB_2] =   { up: R.BLUE_LAB_1, down: R.BLUE_LAB_3, left: -1, right: -1 }
+// #3482: Blue Lab 2 opens east into the Blue Castle; the castle answers west.
+EXITS[R.BLUE_LAB_2] =   { up: R.BLUE_LAB_1, down: R.BLUE_LAB_3, left: -1, right: R.BLUE_CASTLE }
+EXITS[R.BLUE_CASTLE] =  { up: -1, down: -1, left: R.BLUE_LAB_2, right: -1 }
 EXITS[R.BLUE_LAB_3] =   { up: R.BLUE_LAB_2, down: R.OVERWORLD_3, left: -1, right: -1 }
 EXITS[R.BLACK_CASTLE] = { up: -1, down: R.OVERWORLD_3, left: -1, right: -1 }
 EXITS[R.BLACK_FOYER] =  { up: -1, down: R.RED_LAB_1, left: -1, right: -1 }
@@ -300,7 +319,13 @@ const ITEM_TEMPLATES = [
     { id: 'goldKey', name: 'Gold Key', room: R.OVERWORLD_4, x: 120, y: 90, w: 8, h: 14, color: COLORS.yellow },
     { id: 'blackKey', name: 'Black Key', room: R.BLUE_LAB_2, x: 70, y: 100, w: 8, h: 14, color: '#555555' },
     { id: 'whiteKey', name: 'White Key', room: R.RED_LAB_1, x: 60, y: 80, w: 8, h: 14, color: COLORS.white },
-    { id: 'chalice', name: 'Chalice', room: R.WHITE_FOYER, x: 80, y: 100, w: 10, h: 16, color: COLORS.gold },
+    { id: 'chalice', name: 'Chalice', kind: 'chalice', room: R.WHITE_FOYER, x: 80, y: 100, w: 10, h: 16, color: COLORS.gold },
+    // #3482: the duplicate chalice — the cart keeps a second Enchanted Grail
+    // in the Blue Castle. Same item, same laws (magnet, bat, sparkle, and it
+    // wins at the Gold Castle too); `pin` keeps it at home: the cartridge
+    // record sits it in the blue keep, so the V3 shuffle must not re-home it,
+    // and scoring counts the KIND once — the distinct-items honesty stays 0..8.
+    { id: 'chalice2', name: 'Chalice', kind: 'chalice', room: R.BLUE_CASTLE, x: 80, y: 100, w: 10, h: 16, color: COLORS.gold, pin: true },
     { id: 'bridge', name: 'Bridge', room: R.OVERWORLD_2, x: 100, y: 80, w: 28, h: 6, color: COLORS.purple },
     { id: 'magnet', name: 'Magnet', room: R.BLACK_FOYER, x: 80, y: 90, w: 10, h: 12, color: COLORS.white },
     // The gray dot (original easter egg): a one-pixel object sealed along the
@@ -334,10 +359,14 @@ const rectsOverlap = (ax, ay, aw, ah, bx, by, bw, bh) => {
 const homeItems = (items, rand) => {
     const foyers = new Set(Object.values(CASTLE_INSIDES))
     const lairs = new Set(DRAGON_TEMPLATES.map((d) => d.room))
-    const pool = ROOMS.map((rm) => rm.id).filter((id) => id !== R.SECRET && !foyers.has(id) && !lairs.has(id))
+    // #3482: the Blue Castle is dealt out like a foyer is not — it is the
+    // duplicate chalice's home, and pinned items take no dice (the V3 stream
+    // for everything else is untouched: same seeds, same placements as before).
+    const pool = ROOMS.map((rm) => rm.id).filter((id) => id !== R.SECRET && id !== R.BLUE_CASTLE && !foyers.has(id) && !lairs.has(id))
     const inWall = (room, x, y, w, h) => room.walls.some((wl) =>
         x < wl.x + wl.w && x + w > wl.x && y < wl.y + wl.h && y + h > wl.y)
     for (const item of items) {
+        if (item.pin) continue // #3482: pinned treasure stays at home — and consumes no dice
         item.room = pool[Math.floor(rand() * pool.length)]
         if (inWall(ROOMS[item.room], item.x, item.y, item.w, item.h)) {
             for (let y = 120; y <= 160; y += 10) {
@@ -662,8 +691,12 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                         sim.carrying = item.id
                         item.carried = true
                         sim.events.push('pickup')
-                        if (!sim.pickedUp[item.id]) {
-                            sim.pickedUp[item.id] = 1
+                        // #3482: score counts distinct ITEMS, not instances —
+                        // both chalices are the same kind, the second cup's
+                        // pickup adds no point (the 0..8 honesty is unchanged).
+                        const pk = item.kind || item.id
+                        if (!sim.pickedUp[pk]) {
+                            sim.pickedUp[pk] = 1
                             sim.score++
                         }
                         break
@@ -853,8 +886,10 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
         }
 
         // ---- WIN CONDITION ----
-        // Bring the chalice to the Gold Castle
-        if (sim.room === R.GOLD_CASTLE && sim.carrying === 'chalice') {
+        // Bring the chalice to the Gold Castle — #3482: the original keeps a
+        // DUPLICATE Enchanted Grail in the Blue Castle, and either cup is the
+        // goal item; delivering one home wins exactly the same.
+        if (sim.room === R.GOLD_CASTLE && (sim.carrying === 'chalice' || sim.carrying === 'chalice2')) {
             sim.won = true
             sim.events.push('win')
         }
@@ -870,8 +905,9 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
         //         a slain one never chew.
         const hunting = sim.dragons.some((d) => d.alive && d.room === sim.room && d.mouthOpen)
         sim.chew = hunting && (sim.tick % CHEW_TICKS < CHEW_TICKS / 2)
-        //   sparkle: the chalice is literally in hand (the goal item glints).
-        sim.sparkle = sim.carrying === 'chalice'
+        //   sparkle: the chalice is literally in hand (the goal item glints)
+        //   — #3482: either cup is the goal item.
+        sim.sparkle = sim.carrying === 'chalice' || sim.carrying === 'chalice2'
         //   wipe: arm a short flash the instant the room actually changes.
         if (sim.room !== sim.prevRoom) { sim.prevRoom = sim.room; sim.wipeAt = sim.tick }
         sim.wipe = sim.tick - sim.wipeAt < ROOM_WIPE_TICKS

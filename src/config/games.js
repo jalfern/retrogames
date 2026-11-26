@@ -780,6 +780,8 @@ export const GAMES = [
             { color: '#ffd840', text: 'Golden Castle — its gate wants the golden key.' },
             { color: '#1a1a1a', text: 'Black Castle — its gate wants the black key.' },
             { color: '#ffffff', text: 'White Castle — its gate wants the white key.' },
+            { color: '#3030d0', text: 'Blue Castle — no gate, east of the deep blue labyrinth: a second Chalice waits inside.' },
+            { text: 'Either Chalice home to the Golden Castle wins — the cart kept two.' },
             { text: 'Walk its matching key up to a gate and it rises — or drop the key in front (Space).' },
             { text: 'Carry the bridge straight through any wall — it stays set and keeps the way open.' },
             { text: 'The magnet pulls loose items toward you as you walk.' },

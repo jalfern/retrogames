@@ -337,7 +337,7 @@ const AdventureGame = () => {
                 ctx.fillRect(item.x + 2, item.y + 8, 2, 6)
                 ctx.fillRect(item.x + 4, item.y + 10, 3, 2)
                 ctx.fillRect(item.x + 4, item.y + 13, 2, 2)
-            } else if (item.id === 'chalice') {
+            } else if (item.id === 'chalice' || item.id === 'chalice2') {
                 // Chalice / goblet shape
                 ctx.fillRect(item.x + 2, item.y, 6, 3)
                 ctx.fillRect(item.x + 3, item.y + 3, 4, 2)
