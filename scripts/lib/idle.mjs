@@ -54,12 +54,19 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim()
 // (#2488: GardenGuard's "No puzzle-slack solver" + auto-bank prose kept
 // topping the ladder at 2 while the whole shelf waited for real work).
 // Only the bold marker declines — the bare word must not, same law as BLOCKED.
+// A `### Restored in …` subsection inside Honest gaps is shipped history, not
+// an open gap: an h3 heading ends the section (h3 is nested in the h2, so the
+// old h2-only stop ran straight through the restored bullets), and a bullet
+// reading "Restored in the #N pass" is the same class as CLOSED by #N.
+// Evidence (#3553, 2026-11-26): ADVENTURE scored 13 on never-dry where the
+// honest count was 1 — nine of thirteen came from Restored subsections or the
+// variant-selector line whose own SELECT GAME text names its shipping pass.
 export function parseGaps(md) {
     const out = []
     let inSection = false
     for (const line of String(md || '').split('\n')) {
         if (/^##\s+Honest gaps/i.test(line)) { inSection = true; continue }
-        if (inSection && /^##\s/.test(line)) break
+        if (inSection && /^##+\s/.test(line)) break
         if (!inSection) continue
         const bullet = line.match(/^\s*- (.+)/)
         if (bullet) {
@@ -69,7 +76,8 @@ export function parseGaps(md) {
             out[out.length - 1] += ' ' + line.trim()
         }
     }
-    return out.filter((g) => !/CLOSED by #\d+/i.test(g) && !/\*\*BLOCKED\*\*/.test(g) && !/\*\*DISCLAIMER\*\*/.test(g))
+    return out.filter((g) => !/CLOSED by #\d+/i.test(g) && !/\*\*BLOCKED\*\*/.test(g) && !/\*\*DISCLAIMER\*\*/.test(g)
+        && !/Restored (in|by)( the)? #\d+/i.test(g))
 }
 
 // A gap is OWNED when an open QA issue already says it: the issue names its
