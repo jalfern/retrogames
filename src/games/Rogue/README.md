@@ -34,7 +34,7 @@ Dungeons of Doom keep whatever you bring them.
 ## Verify
 
 ```bash
-npm run roguecheck        # 101 checks: boot+purity, determinism (incl.
+npm run roguecheck        # 116 checks: boot+purity, determinism (incl.
                          # interleaved replays), BFS stairs-reachability on 40
                          # seeds, combat/xp/hunger/descend/pickup/wield/eat/
                          # quaff/scroll rules, the door mechanic (closed
@@ -43,14 +43,21 @@ npm run roguecheck        # 101 checks: boot+purity, determinism (incl.
                          # BFS autopilot wins (20/20 reach dlvl 2, ≥15 reach
                          # dlvl 4), draw-vs-logic, rng bounds, the #1502
                          # audibility gate (hit/kill/die/descend/quaff/door
-                         # fx all asserted in the sim), and the #3491 ranged
+                         # fx all asserted in the sim), the #3491 ranged
                          # gates (generation, ray physics vs wall/door/body,
                          # xp-through-grantExp, charge spend + crumble, arrow
                          # spend/salvage/stack, aim flow, interleaved ranged
-                         # replay, grid draws /, pilot stays melee)
-npm run roguedrive       # real Chrome, real keys only (#3491): walk onto a
-                         # quiver, f → menu → direction, one arrow spent, the
-                         # miss lies east to salvage, help teaches f — 12/12
+                         # replay, grid draws /, pilot stays melee), and the
+                         # #3509 mobility laws (speed table, clock arithmetic
+                         # x1.0/x1.5/x0.75, carry rule, wounded flee +
+                         # quarter-hp boundary, cornered-fights, snake bites
+                         # then flees, bump-skip accrual, hash coverage)
+npm run roguedrive       # real Chrome, real keys only (#3491/#3509): walk onto
+                         # a quiver, f → menu → direction, one arrow spent, the
+                         # miss lies east to salvage, help teaches f; the mobility
+                         # leg scans seeds for a route whose laws fire, replays it
+                         # with real keys to hash-equality, and watches a snake
+                         # bite-then-flee in the browser — 18/18
 npm run feedbackcheck    # seedpin law + floor (Rogue = title 45)
 npm run watchcheck -- --only rogue    # the WATCH pilot + batch-23 source pins
 ```
@@ -125,6 +132,31 @@ stream, so the seat consumes no more entropy than the same moves typed).
 - No attract screen — the dungeon boots straight into play, so the pill sits
   on live ground from the first frame (named in watchphonecheck SKIP_ATTRACT).
 
+## Mobility (#3509) — energy clocks and the flee law
+
+Monsters no longer march in lockstep with the hero. Each creature carries an
+`energy` pool; every hero turn it accrues `speed` quanta (quarter units,
+`MONSTER_ENERGY = 4` per action) and every full threshold buys one action —
+a step toward the hero, a bite, a wander, or a flee. The remainder carries,
+so ×1.5 races (kestrel, bat, centaur, leprechaun, jabberwock) pattern
+step-double-step-step-… and ×0.75 races (troll, medusa) skip one turn in
+four. The monster bumped by the hero accrues but spends its step on the
+counterattack already resolved (no double-tap for free).
+
+An awake monster that SEES the hero and is wounded — hp ≤ ¼ of its max —
+turns and runs: the DIRS8-ordered step maximising Manhattan distance, ties
+broken by the fixed order (determinism, not dice). Fleeing is for good. A
+cornered one (no step increases distance) fights — a rat with its back to
+the rock still bites. The snake has its own law: once it bites you it flees
+for good, healthy or not (`bitten`, set in `monsterAttack`).
+
+The speed column and the ¼-hp threshold are documented approximations of the
+1980 per-race energy constants (which the cart never published), the same
+honesty class as the staff-damage bands above. What the law *is* — fast
+races act more often, wounded things run — is the original's, and roguecheck
+§8 measures the arithmetic (4/6/3 steps per 4 hero turns) rather than
+trusting the table.
+
 ## Honest gaps (vs the 1980 original)
 
 - **CLOSED by #3491:** ranged combat. Staves `/` generate with 3–9 charges
@@ -140,8 +172,14 @@ stream, so the seat consumes no more entropy than the same moves typed).
   still never generate, staves carry no unidentified-name cipher (scrolls and
   potions have one), and the original's exact per-level staff damage tables
   are approximated by the four dice bands above.
-- Monsters never flee, and `moved` bookkeeping is per-frame rather than the
-  original's per-monster energy (fast/ slow creature races).
+- **CLOSED by #3509:** monster mobility. Per-monster energy clocks (fast
+  races double-step, slow ones skip turns — roguecheck §8 measures the
+  arithmetic), the wounded flee law (hp ≤ ¼ max, flees when seen, flees for
+  good, cornered rats fight), and the snake's bite-then-flee. What stays
+  honestly open: the original's exact per-race energy constants were never
+  published, so the ×1.5/×0.75 roster table and the ¼-hp flee threshold are
+  approximations; and the original's flee sometimes routes to a specific
+  room — ours takes the greedy farthest step.
 - No traps at all: search finds hidden doors, but the original's trap floor
   (no rings of warning, no trap SPIRIT) is absent.
 - No Amulet of Yendor win condition: the original's goal object and "you win"
