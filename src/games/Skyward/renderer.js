@@ -92,7 +92,7 @@ export function createSkywardGL(canvas, opts = {}) {
 
     const scene = new THREE.Scene()
     scene.fog = new THREE.Fog(0xbfdcec, 600, 2100)
-    const camera = new THREE.PerspectiveCamera(62, 1, 0.5, 2600)
+    const camera = new THREE.PerspectiveCamera(62, 1, 0.5, 3400)
     scene.add(camera)
 
     const hemi = new THREE.HemisphereLight(0xdff1ff, 0x3f5d4a, 1.1)
