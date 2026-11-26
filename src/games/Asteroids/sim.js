@@ -245,6 +245,19 @@ export function saucerAimWidth(s) {
     const k = age >= SAUCER_AIM.learn ? 0 : 1 - age / SAUCER_AIM.learn
     return SAUCER_AIM.floor + (SAUCER_AIM.start - SAUCER_AIM.floor) * k
 }
+
+// #3568 — the curve's TELL. The ease above is player-invisible unless the frame
+// and the sound say it: maturity maps the live aim width onto 0 (rookie, sprays
+// wide) → 1 (its shots now land within the ±0.15 floor). The shell rides this
+// number: the shot sfx climbs with it, and the vector hull is overplotted (the
+// intensity trick the real vector beam used) so a veteran glows hotter. Pure
+// function of age — the large saucer reads 0 at any age — so it changes nothing
+// about where bullets go.
+export const SAUCER_TELL_PITCH = { base: 300, climb: 260 }
+export function saucerTell(s) {
+    if (s.big) return 0
+    return (SAUCER_AIM.start - saucerAimWidth(s)) / (SAUCER_AIM.start - SAUCER_AIM.floor)
+}
 function tickSaucers(gs, ev) {
     if (gs.asteroids.length > 0 && gs.tickN >= gs.nextSaucerAt) {
         const big = rnd(gs) < 0.5
@@ -290,7 +303,7 @@ function tickSaucers(gs, ev) {
                 life: 140, hostile: true, owner: s.big ? 'big' : 'small',
             })
             s.cooldown = s.big ? 80 + Math.floor(rnd(gs) * 40) : 45 + Math.floor(rnd(gs) * 25)
-            ev.saucerShot = true
+            ev.saucerShot = { size: s.big ? 'big' : 'small', m: saucerTell(s) } // #3568: the shot carries its own maturity
         }
     }
 }

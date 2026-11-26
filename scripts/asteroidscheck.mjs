@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED, SAUCER_AIM, saucerAimWidth, SHIP_SIZE, SHIP_HULL, RESPAWN_DELAY, INVULN_TICKS, HYPER_COOLDOWN, HYPER_INVULN, HYPER_BLINK } from '../src/games/Asteroids/sim.js'
+import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED, SAUCER_AIM, saucerAimWidth, saucerTell, SAUCER_TELL_PITCH, SHIP_SIZE, SHIP_HULL, RESPAWN_DELAY, INVULN_TICKS, HYPER_COOLDOWN, HYPER_INVULN, HYPER_BLINK } from '../src/games/Asteroids/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -337,6 +337,45 @@ console.log('flying saucers (#2001): tables, fire discipline, bonus law')
         ok(saucerAimWidth({ big: false, life: 0 }) === SAUCER_AIM.floor, 'the floor holds for the rest of its life')
         ok(saucerAimWidth({ big: true, life: 900 }) === SAUCER_AIM.big && saucerAimWidth({ big: true, life: 1 }) === SAUCER_AIM.big,
             'the large UFO sprays the same at any age — no curve on the big one')
+    }
+
+    // #3568 — the TELL. The ease above must be SEEABLE and HEARABLE: maturity
+    // warms 0 (rookie, sprays wide) → 1 (shots land on the ±0.15 floor), the
+    // large saucer never matures, and every shot event carries its maturity so
+    // the shell's pitch and the hull's glow can only ever follow the curve.
+    {
+        ok(saucerTell({ big: false, life: 900 }) === 0, 'a brand-new small UFO reads rookie (tell 0)')
+        ok(saucerTell({ big: false, life: 900 - SAUCER_AIM.learn }) === 1 && saucerTell({ big: false, life: 0 }) === 1,
+            'after the learn horizon the tell reads veteran (1)')
+        let prevT = saucerTell({ big: false, life: 900 }), monoT = true
+        for (let life = 899; life >= 0; life--) {
+            const t = saucerTell({ big: false, life })
+            if (t < prevT - 1e-12 || t > 1 + 1e-12) monoT = false
+            prevT = t
+        }
+        ok(monoT, 'the tell only ever warms, and never past veteran')
+        ok(saucerTell({ big: true, life: 900 }) === 0 && saucerTell({ big: true, life: 1 }) === 0,
+            'the large saucer never matures — no tell on the big one')
+        const shotM = (life0) => {
+            const g = makeRun(1234, { width: 600, height: 800 })
+            g.attract = false
+            g.saucers.push({ big: false, x: 300, y: 200, vx: 2.7, vy: 0, phase: 0, amp: 1.2, cooldown: 1, life: life0 })
+            for (let i = 0; i < 50; i++) {
+                g.saucers[0].x = 300; g.saucers[0].y = 200
+                const ev = tickAsteroids(g, null)
+                if (ev.saucerShot) return ev.saucerShot.m
+            }
+            return null
+        }
+        const mRookie = shotM(900), mVet = shotM(900 - SAUCER_AIM.learn)
+        ok(mRookie !== null && mRookie < 0.02, 'a rookie shot event carries tell≈0', `${mRookie}`)
+        ok(mVet === 1, 'a veteran shot event carries tell=1 — the pitch maxes as the aim bottoms out', `${mVet}`)
+        ok(SAUCER_TELL_PITCH.base === 300 && SAUCER_TELL_PITCH.base + SAUCER_TELL_PITCH.climb === 560,
+            'the shot ladder spans 300→560 Hz (the rookie note up to the veteran’s)')
+        ok(/ev\.saucerShot\) audioController\.playTone\(SAUCER_TELL_PITCH\.base \+ ev\.saucerShot\.m \* SAUCER_TELL_PITCH\.climb/.test(srcIndex),
+            'the shell pitches the shot sfx by the event’s maturity')
+        ok(/const m = saucerTell\(s\)/.test(srcIndex) && /pass === 1 \? m \* 0\.55 : m \* 0\.45/.test(srcIndex),
+            'the shell overplots the hull by maturity (the veteran glows hotter, the rookie never dims)')
     }
 
     // Bonus law: a saucer bullet splitting a large rock pays 5000 (small UFO)
@@ -761,6 +800,26 @@ if (process.argv.includes('--mutant')) {
         ['#3553 ease never reaches the floor', S,
             `const k = age >= SAUCER_AIM.learn ? 0 : 1 - age / SAUCER_AIM.learn`,
             `const k = 1 - age / (SAUCER_AIM.learn * 2)`],
+        // #3568 tell mutants — the curve must stay visible and audible.
+        ['the tell never warms (the curve goes invisible again)', S,
+            `export function saucerTell(s) {
+    if (s.big) return 0
+    return (SAUCER_AIM.start - saucerAimWidth(s)) / (SAUCER_AIM.start - SAUCER_AIM.floor)
+}`,
+            `export function saucerTell(s) {
+    return 0
+}`],
+        ['the tell lies (every saucer arrives veteran)', S,
+            `export function saucerTell(s) {
+    if (s.big) return 0
+    return (SAUCER_AIM.start - saucerAimWidth(s)) / (SAUCER_AIM.start - SAUCER_AIM.floor)
+}`,
+            `export function saucerTell(s) {
+    return 1
+}`],
+        ['the shot pitch ignores maturity (the audible tell is deleted)', I,
+            `SAUCER_TELL_PITCH.base + ev.saucerShot.m * SAUCER_TELL_PITCH.climb`,
+            `SAUCER_TELL_PITCH.base`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
