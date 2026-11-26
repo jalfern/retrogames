@@ -139,6 +139,8 @@ const ArkanoidGame = () => {
             ctx.fillRect(b.x, b.y, CFG.colW - 1, CFG.rowH - 1)
             ctx.fillStyle = 'rgba(255,255,255,0.35)'
             ctx.fillRect(b.x, b.y, CFG.colW - 1, 1)
+            ctx.fillStyle = 'rgba(0,0,0,0.22)'
+            ctx.fillRect(b.x, b.y + CFG.rowH - 3, CFG.colW - 1, 1)
             ctx.fillStyle = b.kind === 'normal' ? dark : '#00000050'
             ctx.fillRect(b.x, b.y + CFG.rowH - 2, CFG.colW - 1, 1)
             if (b.kind === 'silver' && b.hp > 1) { ctx.fillStyle = '#4d5a78'; ctx.fillRect(b.x + 3, b.y + 3, 3, 2) }
@@ -153,10 +155,18 @@ const ArkanoidGame = () => {
             ctx.fillStyle = '#ff5db0'
             ctx.fillRect(P.x - P.w / 2, CFG.paddleY, 3, CFG.paddleH)
             ctx.fillRect(P.x + P.w / 2 - 3, CFG.paddleY, 3, CFG.paddleH)
+            // body tone + contact shadow — the paddle reads as a lit plate, not a bar
+            ctx.fillStyle = '#2a5a7a'
+            ctx.fillRect(P.x - P.w / 2 + 3, CFG.paddleY + 4, P.w - 6, 2)
+            ctx.fillStyle = 'rgba(0,0,0,0.5)'
+            ctx.fillRect(P.x - P.w / 2, CFG.paddleY + CFG.paddleH + 1, P.w, 2)
         }
         const drawCapsule = (c) => {
             ctx.fillStyle = CAPCOL[c.kind] || '#fff'
             ctx.fillRect(c.x - 7, c.y - 3, 14, 6)
+            ctx.strokeStyle = '#06121f'
+            ctx.lineWidth = 1
+            ctx.strokeRect(c.x - 7.5, c.y - 3.5, 14, 6)
             ctx.fillStyle = '#06121f'
             ctx.font = 'bold 6px monospace'
             ctx.textAlign = 'center'
@@ -165,6 +175,8 @@ const ArkanoidGame = () => {
         const drawEnemy = (e) => {
             ctx.fillStyle = e.kind === 'crab' ? '#ff8a5d' : '#b08cff'
             ctx.fillRect(e.x - 5, e.y - 3, 10, 6)
+            ctx.fillStyle = 'rgba(255,255,255,0.35)'
+            ctx.fillRect(e.x - 5, e.y - 3, 10, 1)
             ctx.fillStyle = '#06121f'
             ctx.fillRect(e.x - 3, e.y - 1, 2, 2); ctx.fillRect(e.x + 1, e.y - 1, 2, 2)
             ctx.fillStyle = e.kind === 'crab' ? '#ffd23f' : '#e9f7ff'
@@ -172,9 +184,14 @@ const ArkanoidGame = () => {
         }
         const drawBoss = (bo) => {
             const x = bo.x, y = bo.y
+            ctx.fillStyle = '#0a2013'
+            ctx.fillRect(x - 42, y + 40, 84, 3)
             ctx.fillStyle = '#1d5c33'
             ctx.fillRect(x - 40, y + 8, 80, 32)
             ctx.beginPath(); ctx.arc(x, y + 20, 40, Math.PI, 0); ctx.fill()
+            ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+            ctx.lineWidth = 2
+            ctx.beginPath(); ctx.arc(x, y + 22, 33, Math.PI * 1.2, Math.PI * 1.8); ctx.stroke()
             ctx.fillStyle = '#2f8f4e'
             ctx.fillRect(x - 34, y + 12, 68, 8)
             ctx.fillStyle = '#0a2013'
@@ -200,7 +217,7 @@ const ArkanoidGame = () => {
             ctx.fillStyle = '#050510'
             ctx.fillRect(0, 0, W, H)
             const g = ctx.createLinearGradient(0, 0, 0, H)
-            g.addColorStop(0, '#0a0a24'); g.addColorStop(1, '#050510')
+            g.addColorStop(0, '#0d0d28'); g.addColorStop(0.55, '#0a0a22'); g.addColorStop(1, '#140e20')
             ctx.fillStyle = g
             ctx.fillRect(0, 0, W, H)
             ctx.save()
@@ -210,19 +227,36 @@ const ArkanoidGame = () => {
             wg.addColorStop(0, '#7a1f4f'); wg.addColorStop(1, '#241236')
             ctx.fillStyle = wg
             ctx.fillRect(0, 0, CFG.wallX, H)
+            // ridged inner edge: a lit cap + notched ridges, inside edge dark seam
+            ctx.fillStyle = '#b34a7d'
+            ctx.fillRect(CFG.wallX - 2, 0, 2, H)
+            ctx.fillStyle = 'rgba(0,0,0,0.5)'
+            for (let y = 2; y < H; y += 7) ctx.fillRect(2, y, 4, 1)
             const wg2 = ctx.createLinearGradient(W - CFG.wallX, 0, W, 0)
             wg2.addColorStop(0, '#241236'); wg2.addColorStop(1, '#7a1f4f')
             ctx.fillStyle = wg2
             ctx.fillRect(W - CFG.wallX, 0, CFG.wallX, H)
+            ctx.fillStyle = '#b34a7d'
+            ctx.fillRect(W - CFG.wallX, 0, 2, H)
+            ctx.fillStyle = 'rgba(0,0,0,0.5)'
+            for (let y = 2; y < H; y += 7) ctx.fillRect(W - 6, y, 4, 1)
             ctx.fillStyle = '#12081f'
             ctx.fillRect(0, 0, W, CFG.ceilY)
+            ctx.fillStyle = 'rgba(255,255,255,0.05)'
+            ctx.fillRect(0, CFG.ceilY - 1, W, 1)
+            ctx.fillStyle = 'rgba(0,0,0,0.5)'
+            ctx.fillRect(0, CFG.ceilY, W, 3)
 
             if (gs.boss) drawBoss(gs.boss)
             for (const b of gs.bricks) if (b.alive) drawBrick(b)
             for (const c of gs.capsules) drawCapsule(c)
             for (const e of gs.enemies) if (e.alive) drawEnemy(e)
-            ctx.fillStyle = '#ffd23f'
-            for (const u of gs.bullets) ctx.fillRect(u.x - 1, u.y - 3, 2, 6)
+            for (const u of gs.bullets) {
+                ctx.fillStyle = '#ffd23f'
+                ctx.fillRect(u.x - 1, u.y - 3, 2, 6)
+                ctx.fillStyle = '#fff8d8'
+                ctx.fillRect(u.x, u.y - 2, 1, 4)
+            }
 
             trail.push(gs.balls.map((b) => [b.x, b.y]))
             if (trail.length > 6) trail.shift()
@@ -231,6 +265,8 @@ const ArkanoidGame = () => {
                 for (const [bx, by] of fr) { ctx.fillStyle = `rgba(233,247,255,${0.12 * a})`; ctx.beginPath(); ctx.arc(bx, by, CFG.ballR * a, 0, Math.PI * 2); ctx.fill() }
             })
             for (const b of gs.balls) {
+                ctx.fillStyle = 'rgba(0,0,0,0.35)'
+                ctx.fillRect(b.x - 2, b.y + CFG.ballR + 1, 4, 1)
                 ctx.fillStyle = '#e9f7ff'
                 ctx.beginPath(); ctx.arc(b.x, b.y, CFG.ballR, 0, Math.PI * 2); ctx.fill()
                 ctx.fillStyle = '#fff'
@@ -246,6 +282,12 @@ const ArkanoidGame = () => {
             }
             while (parts.length && parts[0].t >= 18) parts.shift()
             ctx.restore()
+
+            // soft vignette — the field reads as a lit panel, not a void
+            const v = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.3, W / 2, H * 0.45, H * 0.95)
+            v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.4)')
+            ctx.fillStyle = v
+            ctx.fillRect(0, 0, W, H)
 
             ctx.fillStyle = 'rgba(0,0,0,0.16)'
             for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1)
