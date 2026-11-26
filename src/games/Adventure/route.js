@@ -81,6 +81,22 @@ const cellPath = (sim, fx, fy, tx, ty) => {
 const DODGE_SAFE = 48   // kite while a live dragon is nearer than this in your room
 
 const roomThreat = (sim) => {
+    // #3489 sword ride: with the blade in hand a dragon is not a threat but
+    // prey — the contact law (<14 px, sim.js) slays it. The guide then walks
+    // straight through guarded rooms instead of kiting them.
+    if (sim.carrying === 'sword') return null
+    const p = sim.player
+    let best = null
+    for (const d of sim.dragons) {
+        if (!d.alive || d.room !== sim.room) continue
+        const dist = Math.hypot(p.x - d.x, p.y - d.y)
+        if (!best || dist < best.dist) best = { d, dist }
+    }
+    return best
+}
+
+// The raw room hazard, blade or no blade — used when the dot WANTS the gap.
+const roomDragon = (sim) => {
     const p = sim.player
     let best = null
     for (const d of sim.dragons) {
@@ -101,7 +117,7 @@ const roomThreat = (sim) => {
 // coast is clear (dragon left, died, or out of DODGE_SAFE), false on death.
 function* dodge(sim, cap = 1500) {
     const p = sim.player
-    let pinned = 0
+    let pinned = 0, lastDist = Infinity
     for (let i = 0; i < cap; i++) {
         if (sim.won) return true
         if (sim.dead) return false
@@ -113,25 +129,31 @@ function* dodge(sim, cap = 1500) {
         yield { dx: (ax / n) * S, dy: (ay / n) * S }
         if (sim.room !== r0) return true   // slipped out a doorway — follower stays (jaws shut)
         if (sim.dead || sim.won) continue
+        // #3489: collision jitter in a corner shifts the dot ±1 px per tick —
+        // that fake progress must NOT clear the pinned count, or EVICT never
+        // fires and the guide flees into stone forever (seed 1 burned 48k
+        // ticks this way). Only real distance gained releases the pin.
+        const gained = t.dist > lastDist + 0.5
         if (p.x === rx && p.y === ry) {
             // pinned against stone: sweep one axis at a time until free again
             const sweep = [[S, 0], [-S, 0], [0, S], [0, -S]][i % 4]
             yield { dx: sweep[0], dy: sweep[1] }
             if (sim.room !== r0) return true
-            if (++pinned < 8) continue
+            if (++pinned < 8) { lastDist = t.dist; continue }
             // EVICT: the farthest doorway into a calm neighbour room
             const calm = neighbors(sim, r0)
                 .map(([d, to]) => ({ d, to, a: ANCHORS[d][0] }))
                 .filter((e) => !sim.dragons.some((dg) => dg.alive && dg.room === e.to))
                 .sort((A, B) => Math.hypot(B.a[0] - t.d.x, B.a[1] - t.d.y)
                     - Math.hypot(A.a[0] - t.d.x, A.a[1] - t.d.y))[0]
-            if (!calm) { pinned = 0; continue }
-            for (let k = 0; k < 240 && sim.room === r0 && !sim.dead && !sim.won; k++) {
-                yield { dx: Math.sign(calm.a[0] - p.x) * S || 0, dy: Math.sign(calm.a[1] - p.y) * S || 0 }
-            }
-            if (sim.room !== r0) return true
-            pinned = 0
-        } else pinned = 0
+            if (!calm) { pinned = 0; lastDist = t.dist; continue }
+            // cell-path to the exit anchor (sign-steering dies in mazes —
+            // #1560 law), threat-blind: the calm door is the escape, and a
+            // cornered chaser cannot close while the dot is at full speed.
+            if ((yield* driveTo(sim, calm.a[0], calm.a[1], 1.2, true)) && sim.room !== r0) return true
+            pinned = 0; lastDist = t.dist
+        } else if (gained) pinned = 0
+        lastDist = t.dist
     }
     return false
 }
@@ -148,7 +170,7 @@ function* entryClear(sim, dir, want) {
     return !sim.dragons.some((d) => d.alive && d.room === want)
 }
 
-function* driveTo(sim, tx, ty, stop = 1.2) {
+function* driveTo(sim, tx, ty, stop = 1.2, ignoreThreat = false) {
     const p = sim.player
     const txc = tx + p.w / 2, tyc = ty + p.h / 2
     let path = [], stuck = 0
@@ -156,7 +178,7 @@ function* driveTo(sim, tx, ty, stop = 1.2) {
     plan()
     for (let i = 0; i < 5000; i++) {
         const th = roomThreat(sim)
-        if (th && th.dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) return false; continue }
+        if (!ignoreThreat && th && th.dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) return false; continue }
         const ddx = tx - p.x, ddy = ty - p.y
         if (Math.abs(ddx) <= stop && Math.abs(ddy) <= stop) return true
         let wx = txc, wy = tyc
@@ -198,7 +220,11 @@ function* driveTo(sim, tx, ty, stop = 1.2) {
 function* cross(sim, dir, want, maxTicks = 400) {
     const v = { up: [0, -S], down: [0, S], left: [-S, 0], right: [S, 0] }[dir]
     if (sim.room !== want) yield* entryClear(sim, dir, want)
-    for (let i = 0; i < maxTicks && sim.room !== want && !sim.won && !sim.dead; i++) yield { dx: v[0], dy: v[1] }
+    const from = sim.room
+    // #3489: a dodge mid-push can change the room to something that is not
+    // `want` — pushing `dir` from there would punch into a third room (seed 2
+    // slid from Overworld 5 down into the Dragon Lair this way). Abort instead.
+    for (let i = 0; i < maxTicks && sim.room !== want && sim.room === from && !sim.won && !sim.dead; i++) yield { dx: v[0], dy: v[1] }
     if (sim.room === want && !sim.won && !sim.dead && roomThreat(sim)) { if (!(yield* dodge(sim))) return false }
     return sim.room === want
 }
@@ -241,8 +267,12 @@ function* hop(sim, from, to) {
     const edge = neighbors(sim, from).find(([, n]) => n === to)
     if (!edge) return false
     const d = edge[0]
+    // #3489: a dodge mid-drive can slip a seam and land in a different
+    // room than `from` — pushing the doorway from there would punch into
+    // the wrong neighbour. Require the room to still be `from`.
     for (const [ax, ay] of ANCHORS[d]) {
-        if (yield* driveTo(sim, ax, ay)) return yield* cross(sim, d, to, 400)
+        if ((yield* driveTo(sim, ax, ay)) && sim.room === from) return yield* cross(sim, d, to, 400)
+        if (sim.room !== from || sim.dead || sim.won) return false
     }
     return false
 }
@@ -268,10 +298,90 @@ function* walkTo(sim, to, avoidDragons = true) {
         const path = [to]
         while (prev.get(path[0]) !== null) path.unshift(prev.get(path[0]))
         let ok = true
-        for (let i = 0; i + 1 < path.length && ok; i++) ok = yield* hop(sim, path[i], path[i + 1])
+        // #3489: a dodge can slip the sprite into a neighbour mid-path; the
+        // stale BFS no longer matches reality. Bail and re-plan from the room
+        // we are actually in instead of pushing from a room the route left.
+        for (let i = 0; i + 1 < path.length && ok; i++) {
+            if (sim.room !== path[i]) { ok = false; break }
+            ok = yield* hop(sim, path[i], path[i + 1])
+        }
         if (ok) return sim.room === to
+        // the walk slipped a seam: recompute a fresh route from wherever we landed
+        if (sim.room !== path[0]) {
+            const prev2 = bfs(skip, sim.room)
+            if (prev2) {
+                const path2 = [to]
+                while (prev2.get(path2[0]) !== null) path2.unshift(prev2.get(path2[0]))
+                let ok2 = true
+                for (let i = 0; i + 1 < path2.length && ok2; i++) {
+                    if (sim.room !== path2[i]) { ok2 = false; break }
+                    ok2 = yield* hop(sim, path2[i], path2[i + 1])
+                }
+                if (ok2) return sim.room === to
+            }
+        }
     }
     return false
+}
+
+// #3489 — cart loot can rest ON a wall cell: the classic whiteKey sits on the
+// Red Maze bar, so its own cell is solid and cellPath to the exact spot is
+// unwinnable (the fetch burned all ten retries on that dead goal). Pickup is
+// a rect overlap, so when the exact spot has no path, take the nearest stop
+// whose player cell is free and whose box still touches the item — the same
+// corner the proven waypoint script drives to (66,86 for the whiteKey).
+function* driveOntoItem(sim, item) {
+    const p = sim.player
+    if (yield* driveTo(sim, item.x, item.y)) return true
+    if (sim.dead || sim.won || sim.room !== item.room) return sim.carrying === item.id
+    const stops = []
+    for (let oy = -(p.h - 1); oy <= item.h - 1; oy++) {
+        for (let ox = -(p.w - 1); ox <= item.w - 1; ox++) {
+            if (!ox && !oy) continue
+            const tx = Math.max(0, Math.min(GW - p.w, item.x + ox))
+            const ty = Math.max(0, Math.min(GH - p.h, item.y + oy))
+            stops.push([Math.abs(ox) + Math.abs(oy), tx, ty])
+        }
+    }
+    stops.sort((a, b) => a[0] - b[0])
+    const pxx = p.x + p.w / 2, pyy = p.y + p.h / 2
+    for (const [, tx, ty] of stops) {
+        if (!cellPath(sim, pxx, pyy, tx + p.w / 2, ty + p.h / 2).length) continue
+        if (yield* driveTo(sim, tx, ty)) return true
+        if (sim.dead || sim.won || sim.room !== item.room) return sim.carrying === item.id
+    }
+    return false
+}
+
+// #3489 — is every dragon-free road to `to` closed? (A resident in `to`
+// itself counts as gated: the room must be entered past its jaws.)
+const dragonGated = (sim, to) => {
+    if (sim.room === to) return sim.dragons.some((d) => d.alive && d.room === to)
+    const prev = new Map([[sim.room, null]])
+    const order = [sim.room]
+    for (let i = 0; i < order.length; i++) {
+        for (const [, n] of neighbors(sim, order[i])) {
+            if (prev.has(n) || sim.dragons.some((d) => d.alive && d.room === n)) continue
+            prev.set(n, order[i]); order.push(n)
+        }
+    }
+    return !prev.has(to)
+}
+
+// #3489 — the sword errand: goldKey (Overworld 4) opens the Gold Castle, the
+// Gold Foyer holds the blade. Best-effort — the guard cycle is the fallback
+// when the ride cannot be armed (the bat absconded with both, say).
+function* armSword(sim) {
+    if (sim.carrying === 'sword') return true
+    const sword = sim.items.find((i) => i.id === 'sword')
+    if (!sword || sword.carried) return false
+    if (!sim.gateOpen.goldKey) {
+        if (!(yield* fetchItem(sim, 'goldKey'))) return false
+        if (!(yield* walkTo(sim, R.GOLD_CASTLE))) return false
+        if (!(yield* driveTo(sim, 80, 32))) return false
+        if (!(yield* openGate(sim, 'goldKey'))) return false
+    }
+    return yield* fetchItem(sim, 'sword')
 }
 
 // Fetch an item wherever it currently is (the shuffle moved it, the bat may
@@ -283,16 +393,26 @@ function* walkTo(sim, to, avoidDragons = true) {
 // guarded fetch happens right after the guard died, inside its respawn delay.
 function* fetchItem(sim, id) {
     const item = sim.items.find((i) => i.id === id)
+    let armed = false
     for (let attempt = 0; attempt < 10; attempt++) {
         if (sim.carrying === id) return true
         if (sim.dead || sim.won) return sim.carrying === id
-        if (sim.carrying) yield { drop: true }
-        // #3489 guard cycle: with roaming dragons, a room can host a resident
-        // hunter that outlasts any single doorway wait (it patrols the seam
-        // right outside). Step out to a calm doorstep, wait for a LONG absence
-        // — several hundred clear ticks — then take the walk while the room
-        // stays quiet.
-        if (sim.dragons.some((d) => d.alive && d.room === item.room)) {
+        if (sim.carrying && sim.carrying !== 'sword') yield { drop: true }
+        // #3489 sword ride: a wanderer squatting on the loot room or on its
+        // only approach is answered the cart's own way — the Gold Foyer sword,
+        // whose key waits in Overworld 4. With the blade in hand the walk is
+        // the kill: chase the guard into the contact law (<14 px, sim.js),
+        // sword OFF at the item so the fetch lands inside the respawn delay.
+        if (!armed && id !== 'sword' && id !== 'goldKey' && sim.carrying !== 'sword' && dragonGated(sim, item.room)) {
+            armed = true
+            yield* armSword(sim)
+            if (sim.dead || sim.won) return sim.carrying === id
+        }
+        // #3489 guard cycle (no blade): a resident hunter can outlast any
+        // single doorway wait. Step out to a calm doorstep, wait for a LONG
+        // absence — several hundred clear ticks — then take the walk while the
+        // room stays quiet.
+        if (sim.carrying !== 'sword' && sim.dragons.some((d) => d.alive && d.room === item.room)) {
             const calm = neighbors(sim, item.room)
                 .filter(([, n]) => !sim.dragons.some((dg) => dg.alive && dg.room === n))
                 .map(([, n]) => n)[0]
@@ -323,7 +443,17 @@ function* fetchItem(sim, id) {
             if (sim.bat.carrying === id) continue
         }
         if (!(yield* walkTo(sim, item.room))) continue
-        if (!(yield* driveTo(sim, item.x, item.y))) continue
+        // riding: close the gap and let the contact law do the slaying
+        if (sim.carrying === 'sword') {
+            for (let round = 0; round < 6 && !sim.dead && !sim.won; round++) {
+                const g = roomDragon(sim)
+                if (!g || g.dist < 12) break
+                yield* driveTo(sim, g.d.x, g.d.y, 10, true)
+                if (!sim.dragons.some((d) => d.alive && d.room === sim.room)) break
+            }
+        }
+        if (sim.carrying === 'sword') yield { drop: true }
+        if (!(yield* driveOntoItem(sim, item))) continue
         if (sim.carrying === id) return true
     }
     return sim.carrying === id
