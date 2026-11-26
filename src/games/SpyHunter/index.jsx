@@ -33,6 +33,14 @@ const provenRun = () => { if (!proven) proven = plan(); return proven }
 const RIFF = [294, 311, 330, 349, 392, 349, 330, 311]
 const BASS = [73, 73, 82, 82, 73, 73, 98, 98]
 
+// deterministic 0..1 hash for texture — no Math.random, no per-frame jitter.
+const texHash = (x, y) => {
+    let h = (x * 374761393 + y * 668265263) | 0
+    h = Math.imul(h ^ (h >>> 13), 1274126177)
+    h ^= h >>> 16
+    return (h >>> 0) / 4294967295
+}
+
 const SpyHunterGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
@@ -171,7 +179,7 @@ const SpyHunterGame = () => {
             if (shake > 0) { shake *= 0.85; if (shake < 0.4) shake = 0 }
             const scr = gs.d % H
             // grass
-            ctx.fillStyle = '#1d7a2a'
+            ctx.fillStyle = '#1c7129'
             ctx.fillRect(0, 0, ROAD_L, H)
             ctx.fillStyle = '#186623'
             ctx.fillRect(ROAD_R, 0, W - ROAD_R, H)
@@ -196,6 +204,46 @@ const SpyHunterGame = () => {
             // rumble stripes right of road (the shoulder you must not keep)
             ctx.fillStyle = '#c33'
             for (let y = -20; y < H + 20; y += 16) ctx.fillRect(ROAD_R + 3, (y + scr) % (H + 20), 3, 8)
+            // === texture pass (gap #1): deterministic speckle + tonal steps —
+            // grass, road and river all get a 2-3 tone treatment instead of flat fills.
+            // rect ink is integer-only, matching the 1:1 pixel contract.
+            ctx.fillStyle = '#2a8f38'
+            for (let y = 0; y < H; y += 3) {
+                for (let x = 1; x < ROAD_L; x += 3) {
+                    if (texHash(x, y) < 0.28) ctx.fillRect(x, (y + scr) % H, 1, 1)
+                }
+            }
+            ctx.fillStyle = '#0f5c1e'
+            for (let y = 1; y < H; y += 4) {
+                for (let x = ROAD_R; x < ROAD_R + 6; x += 2) {
+                    if (texHash(x + 97, y) < 0.3) ctx.fillRect(x, (y + scr) % H, 1, 1)
+                }
+            }
+            ctx.fillStyle = '#7a7a84'
+            for (let y = 0; y < H; y += 3) {
+                for (let x = ROAD_L + 1; x < ROAD_R - 1; x += 4) {
+                    if (texHash(x, y + 31) < 0.12) ctx.fillRect(x, (y + scr) % H, 1, 1)
+                }
+            }
+            ctx.fillStyle = '#54545e'
+            for (let y = 2; y < H; y += 3) {
+                for (let x = ROAD_L + 2; x < ROAD_R - 1; x += 4) {
+                    if (texHash(x + 13, y + 55) < 0.10) ctx.fillRect(x, (y + scr) % H, 1, 1)
+                }
+            }
+            // river: deterministic ripple rows — 2px light dashes + 1px dark seam
+            for (let y = 0; y < H; y += 5) {
+                const wy = (y + scr * 1.15) % (H + 20) - 10
+                if (wy < 0 || wy >= H) continue
+                const rx = ROAD_R + 10 + Math.floor(texHash(3, y) * 30)
+                if (texHash(7, y) < 0.5) {
+                    ctx.fillStyle = '#4d7fe0'
+                    ctx.fillRect(rx, wy, 10, 2)
+                } else {
+                    ctx.fillStyle = '#20499c'
+                    ctx.fillRect(rx, wy, 9, 1)
+                }
+            }
             // palms
             for (const [tx, ty0, v] of trees) {
                 const ty = (ty0 + scr * 1.0) % (H + 24) - 12
@@ -263,6 +311,12 @@ const SpyHunterGame = () => {
             for (const c of gs.crates) {
                 ctx.fillStyle = c.kind === 'missile' ? '#ff5d5d' : c.kind === 'gun' ? '#ffd23f' : '#5df75d'
                 ctx.fillRect(c.x - 6, c.y - 6, 12, 12)
+                ctx.fillStyle = '#00000066'
+                ctx.fillRect(c.x - 6, c.y + 5, 12, 1)
+                ctx.fillRect(c.x - 6, c.y - 6, 1, 12)
+                ctx.fillStyle = '#ffffff55'
+                ctx.fillRect(c.x - 5, c.y - 5, 11, 1)
+                ctx.fillRect(c.x - 5, c.y - 4, 1, 11)
                 ctx.fillStyle = '#111'
                 ctx.font = '8px monospace'
                 ctx.fillText(c.kind[0].toUpperCase(), c.x - 2, c.y + 3)
