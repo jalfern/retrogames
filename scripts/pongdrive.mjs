@@ -45,8 +45,11 @@ try {
     r.check('the pick wraps: LEFT from EASY lands on 2P', (await probe(p)).diff === 'TWO')
     r.check('cycling never started the match (still attract)', (await probe(p)).score === 0 && (await probe(p)).opp === 0)
 
+    // ---- leg 1b: a tap on the pick label rides the same dial (touch path) ----
+    await p.click('.pong-pick-zone')
+    r.check('a tap on the pick label cycles the pick (TWO → EASY, still attract)', (await probe(p)).diff === 'EASY' && (await probe(p)).score === 0)
+
     // ---- leg 2: any other key starts with the pick standing (EASY) ----
-    await p.keyboard.press('ArrowRight') // back to EASY
     await p.keyboard.press('Enter')
     const started = await until(p, async () => {
         const q = await probe(p)
