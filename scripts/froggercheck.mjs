@@ -29,6 +29,7 @@ console.log('attract (rule 6)')
         let stacked = 0
         let clipped = 0
         let overHud = 0
+        let overPill = 0
         const seen = new Set()
         for (let t = 0; t < span; t++) {
             const lines = attractFrame(t, w, h, HUD)
@@ -38,11 +39,16 @@ console.log('attract (rule 6)')
             for (const l of lines) {
                 if (estWidth(l) > w || l.y + l.size > h) clipped++
                 if (l.y - l.size < HUD) overHud++
+                // #3436: the WATCH hint + pill overlay sits at bottom:'24%' of the
+                // frame (watchphonecheck law) and grows upward ~10% more — canvas
+                // attract text must stay out of that band (bottom 34%).
+                if (l.y + l.size > h * 0.66) overPill++
             }
         }
         ok(stacked === 0, `one informational message at a time (${w}x${h})`, `${stacked} stacked frames`)
         ok(clipped === 0, `no attract line clips the frame edge (${w}x${h})`, `${clipped} clipped lines`)
         ok(overHud === 0, `attract text stays below the HUD (${w}x${h})`, `${overHud} lines over the HUD`)
+        ok(overPill === 0, `attract text stays clear of the WATCH-pill band (${w}x${h})`, `${overPill} lines in the pill band`)
         ok(seen.size === INFO_MSGS.length, `attract cycles every message (${w}x${h})`, `${seen.size}/${INFO_MSGS.length}`)
     }
     let on = 0
@@ -225,8 +231,8 @@ if (process.argv.includes('--mutate')) {
             `const flyIdx = Math.floor(Math.random() * gs.houses.length)`,
             'src/games/Frogger/sim.js'],
         ['attract stacks a second message',
-            `        { text: msg, x: w / 2, y: hud + region * 0.52, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },`,
-            `        { text: msg, x: w / 2, y: hud + region * 0.52, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },
+            `        { text: msg, x: w / 2, y: hud + region * 0.36, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },`,
+            `        { text: msg, x: w / 2, y: hud + region * 0.36, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },
         { text: 'HOP ON LOGS', x: w / 2, y: hud + region * 0.86, size: 8, col: '#8f8f8f', glow: 0 },`],
         ['attract message never cycles',
             `cycleAttract(tick, INFO_MSGS, HOLD)`,
@@ -235,8 +241,11 @@ if (process.argv.includes('--mutate')) {
             `size: fitSize(msg, w, 11),`,
             `size: 60,`],
         ['text creeps up over the HUD',
-            `y: hud + region * 0.36,`,
+            `y: hud + region * 0.20,`,
             `y: hud * 0.4,`],
+        ['the prompt drops into the WATCH-pill band (#3436)',
+            `y: hud + region * 0.48,`,
+            `y: hud + region * 0.70,`],
         ['the press prompt never blinks',
             `!l.blink || Math.floor(tick / 24) % 2 === 0`,
             `true`],

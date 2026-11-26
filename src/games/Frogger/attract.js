@@ -4,6 +4,9 @@
 // FLATTENED." over "HOP ON LOGS - AVOID THE TURTLES' NAPS" at once, a wall of
 // rules text on the demo. The canvas is fixed 260x266 (13 cols x 20px, HUD 26);
 // lines stay inside the dimmed gameplay area below the HUD.
+// #3436: the bands live in the UPPER half only. The lower band belongs to the
+// harness WATCH overlay (hint + pill at bottom:'24%', watchphonecheck law) —
+// canvas text must never enter it (froggercheck pins the clearance).
 
 import { cycleAttract } from '../../utils/attractLines.js'
 
@@ -28,9 +31,9 @@ export function attractFrame(tick, w, h, hud = HUD) {
     const msg = cycleAttract(tick, INFO_MSGS, HOLD)
     const region = h - hud
     const lines = [
-        { text: 'FROGGER', x: w / 2, y: hud + region * 0.36, size: fitSize('FROGGER', w, 26), col: '#5adb5a', glow: 0 },
-        { text: msg, x: w / 2, y: hud + region * 0.52, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },
-        { text: PRESS, x: w / 2, y: hud + region * 0.70, size: fitSize(PRESS, w, 11), col: '#ffe14d', glow: 0, blink: true },
+        { text: 'FROGGER', x: w / 2, y: hud + region * 0.20, size: fitSize('FROGGER', w, 26), col: '#5adb5a', glow: 0 },
+        { text: msg, x: w / 2, y: hud + region * 0.36, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },
+        { text: PRESS, x: w / 2, y: hud + region * 0.48, size: fitSize(PRESS, w, 11), col: '#ffe14d', glow: 0, blink: true },
     ]
     return lines.filter((l) => !l.blink || Math.floor(tick / 24) % 2 === 0)
 }
