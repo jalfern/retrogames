@@ -163,7 +163,11 @@ export function parseRegistry(text) {
     const out = []
     const seen = new Set()
     for (const line of String(text || '').split('\n')) {
-        const imp = line.match(/import\s+(?:\{[^}]*\}\s+from\s+)?'\.\.\/games\/([\w]+)'/)
+        // #3479: the alias slot needs `\w+` — every *default* import
+        // (`import DefenderGame from '../games/Defender'`) failed the old
+        // optional-braces group, silently dropping 21 statically-imported
+        // titles off the never-dry shelf (phantom idle-kick, 2026-11-26).
+        const imp = line.match(/import\s+(?:\{[^}]*\}|\w+)\s+from\s+'\.\.\/games\/([\w]+)'/)
         if (imp) {
             const alias = line.match(/import\s+(\w+)\s+from/)?.[1]
             if (alias) aliasToDir.set(alias, imp[1])
