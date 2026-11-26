@@ -32,6 +32,16 @@ export const HAMMER_SWING_TICKS = 12 // one swing animation (the hit window)
 export const DK_PLAT = 5   // the girder the ape stands on
 export const TOP_PLAT = 6   // the girder she stands on
 
+// #3598 — the rivet finale. Four rivets ride her girder at its joints; walk
+// onto one and the pull takes PULL_TICKS (the arcade's crouch-and-yank beat).
+// The last rivet out starts the collapse: both top girders lose their grip,
+// DK topples off the tower, and COLLAPSE_TICKS later the lap banks.
+export const RIVET_SCORE = 100
+export const PULL_TICKS = 30
+export const COLLAPSE_TICKS = 150
+export const RIVET_X = [76, 88, 136, 148] // on girder 6 (x 72..152), clear of both ladder mouths
+export const DK_FALL_STOP = 160           // px the ape drops from his perch onto the barrels
+
 // One mulberry32 state carried INSIDE gs — identical steps to seedRng(seed).
 export function rnd(gs) {
     gs.rngState = (gs.rngState + 0x6D2B79F5) | 0
@@ -154,6 +164,13 @@ export function makeRun(seed, opts = {}) {
         barrelTimer: 180,
         dkThrowing: false,
         dkThrowTimer: 0,
+        // #3598 — the rivet finale state
+        rivets: RIVET_X.map((x) => ({ x, pulled: false })),
+        pullTimer: 0,   // ticks remaining in the current pull animation
+        pullIdx: -1,    // rivet being pulled (index into rivets)
+        rivetPhase: false, // she has been reached — the finale is armed
+        collapse: 0,    // 0 = standing; 1..COLLAPSE_TICKS = the crash plays out
+        dkFall: 0,      // px DK has fallen during the collapse
         hammer: 0, // swings left on the carried mallet (0 = empty-handed)
         swing: 0, // ticks remaining in the current swing animation
         swingSeq: 0, // total swings this life — %3 picks the angle, arcade order
@@ -310,6 +327,14 @@ function attractPlan(gs) {
 
     if (p.climbing) {
         wantClimbUp = true
+    } else if (gs.rivetPhase && gs.collapse === 0 && platformIndex(gs, p.x + p.w / 2, p.y, p.h) === TOP_PLAT) {
+        // #3598 — the demo finishes the job: at her girder, walk the rivets out.
+        const r = gs.rivets.find(rr => !rr.pulled)
+        if (r) {
+            const cx = p.x + p.w / 2
+            moveDir = Math.abs(cx - r.x) <= 5 ? 0 : (r.x > cx ? 1 : -1)
+            return { moveDir, wantJump: false, wantClimbUp: false, wantClimbDown: false }
+        }
     } else {
         let bestLadder = null
         let bestDist = Infinity
@@ -351,7 +376,7 @@ function attractPlan(gs) {
 // human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickDonkeyKong(gs, input = null) {
-    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, noClimb: false }
+    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false }
     const p = gs.player
     gs.tickN++
     if (gs.swing > 0) gs.swing--
@@ -379,6 +404,55 @@ export function tickDonkeyKong(gs, input = null) {
         if (gs.winTimer <= 0) {
             gs.score += WIN_SCORE
             resetPlayer(gs)
+            // #3598 — the board rebuilds for the next lap: fresh rivets,
+            // girders back level, the ape back on his perch.
+            gs.rivets.forEach(r => { r.pulled = false })
+            gs.pullTimer = 0
+            gs.pullIdx = -1
+            gs.rivetPhase = false
+            gs.collapse = 0
+            gs.dkFall = 0
+        }
+        return ev
+    }
+
+    // #3598 — THE COLLAPSE. The girders have lost their grip: the ape drops
+    // off the tower onto the barrel pile, and the runner is helpless on the
+    // falling boards — gravity only, stepping down through the girders that
+    // still hold. When the dust settles, the lap banks.
+    if (gs.collapse > 0) {
+        if (gs.collapse === 1) {
+            ev.collapse = true
+            gs.barrels = []           // the crash shakes the deck clean
+            p.climbing = false        // no hanging on a ladder that just fell
+        }
+        gs.collapse++
+        gs.dkFall = Math.min(DK_FALL_STOP, gs.dkFall + 0.5 + gs.collapse * 0.05)
+        if (!p.climbing) {
+            p.vx = 0
+            p.vy += GRAVITY
+            p.y += p.vy
+        }
+        p.grounded = false
+        if (p.vy >= 0) {
+            for (let i = 0; i < gs.platforms.length; i++) {
+                if (i === DK_PLAT || i === TOP_PLAT) continue // these two are down
+                const pl = gs.platforms[i]
+                const cx = p.x + p.w / 2
+                if (cx >= pl.x && cx <= pl.x + pl.w) {
+                    const surfaceY = getPlatformY(pl, cx)
+                    if (p.y + p.h >= surfaceY && p.y + p.h < surfaceY + 8) {
+                        p.y = surfaceY - p.h
+                        p.vy = 0
+                        p.grounded = true
+                        break
+                    }
+                }
+            }
+        }
+        if (gs.collapse >= COLLAPSE_TICKS) {
+            gs.winTimer = 90
+            ev.won = true
         }
         return ev
     }
@@ -403,6 +477,14 @@ export function tickDonkeyKong(gs, input = null) {
         }
     }
     let { moveDir, wantJump, wantClimbUp, wantClimbDown } = plan
+    // #3598 — the pull freeze: hands are on the rivet. No walk, no jump,
+    // no climb until the yank completes.
+    if (gs.pullTimer > 0) {
+        moveDir = 0
+        wantJump = false
+        wantClimbUp = false
+        wantClimbDown = false
+    }
     // #3147: the player asked to climb; the shell voices the deny when the run
     // cannot climb (no ladder in reach, or the mallet trade forces climbs off).
     const wantClimb = !!(wantClimbUp || wantClimbDown)
@@ -533,11 +615,43 @@ export function tickDonkeyKong(gs, input = null) {
     // Fall death
     if (p.y > GH + 10) killPlayer(gs, ev)
 
+    // ---- RIVET PULLS (#3598) ----
+    // Walk onto a rivet on her girder grounded: hands close, PULL_TICKS of
+    // yank, then the rivet comes out for the arcade 100 and the hole stays
+    // dark in the girder. Four holes — the last one out starts the collapse.
+    if (gs.rivetPhase) {
+        if (gs.pullTimer > 0) {
+            gs.pullTimer--
+            if (gs.pullTimer <= 0) {
+                const r = gs.rivets[gs.pullIdx]
+                if (r && !r.pulled) {
+                    r.pulled = true
+                    gs.score += RIVET_SCORE
+                    ev.rivet = true
+                }
+                gs.pullIdx = -1
+                if (gs.rivets.every(rr => rr.pulled)) gs.collapse = 1
+            }
+        } else if (p.grounded && !p.climbing) {
+            const cx = p.x + p.w / 2
+            const ri = gs.rivets.findIndex(r => !r.pulled && Math.abs(cx - r.x) <= 5 && p.y + p.h >= 44 && p.y + p.h <= 58)
+            if (ri >= 0) {
+                gs.pullIdx = ri
+                gs.pullTimer = PULL_TICKS
+                ev.pull = true
+            }
+        }
+    }
+
     // ---- BARRELS ----
-    gs.barrelTimer--
-    if (gs.barrelTimer <= 0) {
-        spawnBarrel(gs, ev)
-        gs.barrelTimer = 150 + Math.floor(rnd(gs) * 100)
+    // #3598 — the ape has stopped throwing once you've reached her: the finale
+    // is his last stand, not a crossfire.
+    if (!gs.rivetPhase) {
+        gs.barrelTimer--
+        if (gs.barrelTimer <= 0) {
+            spawnBarrel(gs, ev)
+            gs.barrelTimer = 150 + Math.floor(rnd(gs) * 100)
+        }
     }
 
     for (let i = gs.barrels.length - 1; i >= 0; i--) {
@@ -589,10 +703,12 @@ export function tickDonkeyKong(gs, input = null) {
         }
     }
 
-    // ---- WIN CONDITION ----
-    if (p.y + p.h < 56 && p.x > 72 && p.x < 152) {
-        gs.winTimer = 90
-        ev.won = true
+    // ---- WIN CONDITION → THE RIVET FINALE (#3598) ----
+    // Reaching her girder no longer rings the lap — the arrival ARMS the
+    // finale. Pull the rivets out from under the tower and the crash banks it.
+    if (p.y + p.h < 56 && p.x > 72 && p.x < 152 && !gs.rivetPhase) {
+        gs.rivetPhase = true
+        ev.reached = true
     }
     return ev
 }
@@ -639,6 +755,12 @@ function cloneWorld(gs) {
         barrelTimer: gs.barrelTimer,
         dkThrowing: false,
         dkThrowTimer: 0,
+        rivets: gs.rivets.map(r => ({ ...r })), // #3598 — rollouts judge the finale
+        pullTimer: gs.pullTimer,
+        pullIdx: gs.pullIdx,
+        rivetPhase: gs.rivetPhase,
+        collapse: gs.collapse,
+        dkFall: gs.dkFall,
         hammer: gs.hammer,
         swing: gs.swing,
         swingSeq: gs.swingSeq,
@@ -662,14 +784,23 @@ function progress(c) {
     const p = c.player
     const footY = p.y + p.h
     const h = Math.max(0, 232 - footY) // px of height above the ground girder
-    if (p.climbing) return h * 10 + 8 // on a ladder = fully committed to the route
-    let align = 0
-    const pi = platformIndex(c, p.x + p.w / 2, p.y, p.h)
-    if (pi !== null) {
-        const wp = ROUTE.find(r => r.plat === pi)
-        if (wp) align = Math.max(0, 8 - Math.abs(wp.x - (p.x + p.w / 2)) * 0.1)
+    let base = h * 10
+    if (p.climbing) base += 8 // on a ladder = fully committed to the route
+    else {
+        const pi = platformIndex(c, p.x + p.w / 2, p.y, p.h)
+        if (pi !== null) {
+            const wp = ROUTE.find(r => r.plat === pi)
+            if (wp) base += Math.max(0, 8 - Math.abs(wp.x - (p.x + p.w / 2)) * 0.1)
+        }
     }
-    return h * 10 + align
+    // #3598 — reaching her arms the finale, and each rivet out is the highest
+    // thing a run can do: the bonus dominates girder heights so the seat
+    // walks the rivets instead of milling on her girder.
+    if (c.rivetPhase) {
+        const pulls = c.rivets.reduce((n, r) => n + (r.pulled ? 1 : 0), 0)
+        return base + 100000 + pulls * 50000
+    }
+    return base
 }
 
 // The obvious play: climb the route's ladder when nothing is riding it, wait
@@ -689,6 +820,20 @@ function greedy(c) {
         }
         if (gapUp < 16) return { left: false, right: false, up: false, down: true, jump: false }
         return { left: false, right: false, up: true, down: false, jump: false }
+    }
+
+    // #3598 — the finale: once her girder is reached, the job is walking the
+    // rivets out. Nearest unpulled rivet, hands on it; the sim's freeze owns
+    // the yank. Greedy must own this too — rollout hands the wheel back to
+    // greedy after HOLD, and a mute girder-6 policy strands the seat mid-row.
+    if (c.rivetPhase && c.collapse === 0 && platformIndex(c, p.x + p.w / 2, p.y, p.h) === TOP_PLAT) {
+        const r = c.rivets.find(rr => !rr.pulled)
+        if (r) {
+            const cx = p.x + p.w / 2
+            const d = r.x - cx
+            if (Math.abs(d) <= 5) return { left: false, right: false, up: false, down: false, jump: false }
+            return { left: d < -1, right: d > 1, up: false, down: false, jump: false }
+        }
     }
 
     const pi = platformIndex(c, p.x + p.w / 2, p.y, p.h)
@@ -781,6 +926,13 @@ function rollout(gs, cand) {
         const ev = tickDonkeyKong(c, t < HOLD ? cand : greedy(c))
         if (ev.died) return t * 10 // dying at any tick is the bottom of the class
         if (ev.won) return WATCH_HORIZON * 100000 + (WATCH_HORIZON - t) * 1000
+        // #3598 — the collapse IS the win: the last rivet out banks the lap
+        // 150 ticks later unconditionally. Score it above every shaping term
+        // (progress carries pull bonuses of 100k+ that reach ~300k, and the
+        // shaping multiplies by 900 — the finish must out-rank them all), and
+        // sooner is better; otherwise the shaping sees the falling height
+        // mid-crash and punishes the candidate that finished the job.
+        if (ev.collapse) return 100000000000 + (WATCH_HORIZON - t) * 1000
         jumped += ev.jumpedBarrel
         maxP = Math.max(maxP, progress(c))
         let gap = Infinity
@@ -838,7 +990,7 @@ const JUMP_CANDS = [
 // credit flows through the route's ladders.
 export function watchStep(gs) {
     if (gs.over || gs.attract) return null
-    if (gs.deathTimer > 0 || gs.winTimer > 0) return null
+    if (gs.deathTimer > 0 || gs.winTimer > 0 || gs.collapse > 0) return null // #3598 — the crash is an honest wait
     const cands = barrelThreat(gs) ? [...WALK_CANDS, ...JUMP_CANDS] : WALK_CANDS
     let best = null
     let bestV = -Infinity
@@ -859,6 +1011,7 @@ export function stateHash(gs) {
     const p = gs.player
     let s = `K${gs.tickN}|${gs.score}|${gs.lives}|${gs.over ? 1 : 0}|${gs.deathTimer}|${gs.winTimer}|${gs.barrelTimer}|${gs.rngState}|`
     s += `H${gs.hammer}|${gs.swingSeq}|${gs.hammers.map(h => (h.taken ? 1 : 0)).join('')}|`
+    s += `R${gs.rivetPhase ? 1 : 0}${gs.rivets.map(r => (r.pulled ? 1 : 0)).join('')}|${gs.pullTimer}|${gs.collapse}|${Math.round(gs.dkFall * 1e4)}|`
     s += `${r4(p.x)},${r4(p.y)},${r4(p.vx)},${r4(p.vy)},${p.grounded ? 1 : 0},${p.climbing ? 1 : 0},${p.dir},${p.jumpedBarrels.size}|`
     s += gs.barrels.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.vx)},${r4(b.vy)},${b.onLadder ? 1 : 0},${b.falling ? 1 : 0},${b.ladderBot || 0}`).join(';')
     let h = 0x811c9dc5
