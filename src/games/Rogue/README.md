@@ -180,6 +180,18 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
 
 ## Honest gaps (vs the 1980 original)
 
+- **CLOSED by #3579:** the trap floor. Every level is mined — 2..(4+⌊dlvl/2⌋)
+  hidden traps on floor and corridor cells, never the start ring, stairs, or
+  under an item/monster; rolls ride a borrowed, rewound slice of the stream,
+  so every pre-existing seed's dungeon replays byte-identical until a trap
+  actually springs. The cart's roster fires underfoot: trap door (the fall
+  grudge — nth consecutive fall costs (n−1)·2d6, walking the stairs settles
+  it), teleport, sleep (monsters close in while you snooze), lose-strength,
+  confusion, snare (turns spent struggling) and the dart launcher. Sprung
+  traps mark the map with the original's backtick `` ` `` and stay armed —
+  the teleport trap keeps its 1980 joke. Monsters spring nothing (no
+  monster-trap interaction), and search never reveals traps — exactly the
+  ring-of-warning gap this file always admitted.
 - **CLOSED by #3491:** ranged combat. Staves `/` generate with 3–9 charges
   (lightning/fire/cold/striking, the cart's four-shots flavour); arrows are a
   counted quiver on the original's single weapon/missile glyph `)`. `f` picks
@@ -201,8 +213,6 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
   published, so the ×1.5/×0.75 roster table and the ¼-hp flee threshold are
   approximations; and the original's flee sometimes routes to a specific
   room — ours takes the greedy farthest step.
-- No traps at all: search finds hidden doors, but the original's trap floor
-  (no rings of warning, no trap SPIRIT) is absent.
 - No Amulet of Yendor win condition: the original's goal object and "you win"
   terminal don't exist; descending forever + the QUIT score tally is the loop.
   (Win/lose semantics: dlvl≥2 reached on every seed, death terminal proven;

@@ -56,15 +56,25 @@ r.check('the missed arrow lies east, awaiting salvage',
     p.floor.some((i) => i.q === 1 && i.x > p.x && i.y === p.y), JSON.stringify(p.floor))
 r.check('the shot made its sound-in-words', p.msgs.some((m) => /arrow hits the wall|arrow flies into the dark/.test(m)), p.msgs.join(' | '))
 
-// 4. walking back over the drop puts the arrow home
+// 4. walking back over the drop puts the arrow home — except #3579 mined
+//    this exact corridor: the pinned seed's route runs over a sleep trap at
+//    (32,9). So the drive does what the 1980 dungeon asks: spring it, burn
+//    the drugged turns in place, take the last step, and haul the bundle
+//    home anyway — every key a real one.
 const drop = p.floor.find((i) => i.q === 1)
 if (drop) {
-    const back = drop.x - p.x
-    for (let i = 0; i < back; i++) { await page.keyboard.press('ArrowRight'); await sleep(120) }
+    let slept = 0, guard = 0
+    while ((p.x < drop.x || p.sleeping > 0) && p.phase === 'playing' && ++guard < 30) {
+        await page.keyboard.press('ArrowRight'); await sleep(120)
+        p = await probe()
+        if (p.sleeping > 0 && slept === 0) slept = p.sleeping
+    }
     await page.keyboard.press(',')
     await sleep(150)
     p = await probe()
     r.check('salvaged: the arrow rejoins the quiver (8 again)', p.inv.some((i) => i.m && i.q >= 8), JSON.stringify(p.inv))
+    r.check('#3579: the salvage run sprung the sleep mine and lived to tell',
+        slept >= 5 && slept <= 9 && p.traps.some(t => t.seen && t.x === 32 && t.y === 9), `slept=${slept}`)
 } else {
     r.check('salvaged: the arrow rejoins the quiver (8 again)', false, 'nothing to walk back to')
 }
@@ -173,6 +183,52 @@ await sleep(120)
         r.check('the fleeing monster keeps running while the hero searches', !!run && hd >= plan.d2 - 1, `dist ${hd} vs ${plan.d2}`)
         r.check('seed pin honors the mobility world (browser hash matches sim seed)', hd > 0, `seed ${plan.seed}`)
     }
+}
+
+// 9. #3579 traps — scan node for a mine the hero walks onto from the start
+//    room itself (clear rectangle, honest route), replay those keys with REAL
+//    key events, and prove the spring is real: seen mark, the effect, and
+//    byte-identical hash equality between the sim route and Chrome.
+let planT = null
+outerT: for (let seed = 115; seed < 415 && !planT; seed++) {
+    const s = createInitialState(seed)
+    const r0 = s.rooms[0]
+    const inR0 = (x, y) => x > r0.x && x < r0.x + r0.w - 1 && y > r0.y && y < r0.y + r0.h - 1
+    for (const t of s.traps) {
+        if (!inR0(t.x, t.y)) continue
+        const dx = t.x - s.player.x, dy = t.y - s.player.y
+        const dist = Math.abs(dx) + Math.abs(dy)
+        if (dist < 2 || dist > 9) continue
+        if (!['darts', 'sleep', 'snare', 'teleport', 'door'].includes(t.kind)) continue
+        const keys = []
+        for (let i = 0; i < Math.abs(dx); i++) keys.push(dx > 0 ? 'ArrowRight' : 'ArrowLeft')
+        for (let i = 0; i < Math.abs(dy); i++) keys.push(dy > 0 ? 'ArrowDown' : 'ArrowUp')
+        let st = s
+        for (const k of keys) {
+            const d = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[k]
+            st = stepGame(st, { type: 'MOVE', dx: d[0], dy: d[1] })
+        }
+        const sprung = st.traps.find(tt => tt.x === t.x && tt.y === t.y)
+        if (!sprung || !sprung.seen) continue
+        planT = { seed, keys, kind: t.kind, routeHash: hash(st), dlvl: st.dungeonLevel, sleeping: st.player.sleeping, held: st.player.held, hp: st.player.hp, px: st.player.x, py: st.player.y }
+        break outerT
+    }
+}
+r.check('node scan found a seed whose mine sits on a straight route from the start', !!planT, planT ? `seed ${planT.seed} ${planT.kind}` : 'none')
+if (planT) {
+    await page.goto(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/rogue?seed=${planT.seed}`)
+    await sleep(500)
+    const t0 = await probe()
+    r.check('the pinned world opens mined and un-sprung', Array.isArray(t0.traps) && t0.traps.length >= 2 && t0.traps.every(t => !t.seen), JSON.stringify(t0.traps && t0.traps.slice(0, 2)))
+    for (const k of planT.keys) { await page.keyboard.press(k); await sleep(110) }
+    const bhT = await page.evaluate(() => window.__rogueTest.hash())
+    const pt = await probe()
+    r.check('browser key replay springs the exact scanned mine (hash equality)', bhT === planT.routeHash, `browser ${bhT} vs node ${planT.routeHash}`)
+    r.check('the sprung trap is seen-knowledge in the live state', pt.traps.some(t => t.seen), JSON.stringify(pt.traps))
+    const effectOk = pt.dlvl === planT.dlvl && pt.sleeping === planT.sleeping && pt.held === planT.held && pt.x === planT.px && pt.y === planT.py && pt.hp === planT.hp
+    r.check(`the ${planT.kind} trap's effect lands identically in Chrome`, effectOk, `dlvl ${pt.dlvl}/${planT.dlvl} sleep ${pt.sleeping}/${planT.sleeping} held ${pt.held}/${planT.held} pos ${pt.x},${pt.y}@${pt.hp}hp`)
+    const sprungMsg = pt.msgs.some(m => /trap|snare|Darts|fall through/i.test(m))
+    r.check('the spring is narrated on the message line', sprungMsg, pt.msgs.join(' | '))
 }
 
 r.check('zero page errors', errors.length === 0, errors.join(' | '))

@@ -46,6 +46,10 @@ const fxSound = (e) => {
       case 'descend':   ac.playSweep(420, 110, 0.3, 'triangle', 0.06); break
       case 'door-open': ac.playNoise(0.05, 0.06); ac.playTone(260, 0.07, 'triangle', 0.05); break
       case 'door-found': ac.playTone(660, 0.06, 'triangle', 0.05); ac.playTone(990, 0.09, 'triangle', 0.05, 0.06); break
+      // #3579: the minefield — a spring is a metallic snap; a trap door is
+      // the floor leaving under you.
+      case 'trap': ac.playNoise(0.05, 0.10); ac.playTone(150, 0.09, 'square', 0.07); break
+      case 'trapdoor': ac.playSweep(480, 55, 0.35, 'sawtooth', 0.08); break
       // #3514: the break — a nervous rising chirp then a drop, unlike any other
       // cue in this kit (kill falls long, door-found rises steady in two notes).
       case 'flee': ac.playSweep(700, 980, 0.09, 'triangle', 0.05); ac.playTone(520, 0.07, 'triangle', 0.04, 0.09); break
@@ -284,6 +288,10 @@ export default function RogueGame() {
             // proof watches real energy accrual and real flees.
             mob: s.monsters.map((mm) => ({ x: mm.x, y: mm.y, l: mm.letter, hp: mm.hp,
               en: mm.energy || 0, fl: !!mm.fleeing, ch: !!mm.chasing })),
+            // #3579 trap leg: what the hero knows (sprung traps), the hidden
+            // count, and the body's shackles — sleep/snare/fall grudge.
+            traps: s.traps.map((tt) => ({ x: tt.x, y: tt.y, seen: tt.seen, armed: tt.armed })),
+            falls: s.falls || 0, held: s.player.held || 0, sleeping: s.player.sleeping || 0,
             msgs: s.messages.slice(-4),
           }
         },
@@ -553,6 +561,7 @@ export default function RogueGame() {
       ['f', 'Fire: throw arrows / zap a staff (then a direction)'],
       ['>', 'Go down stairs (%)'],
       ['s', 'Search for hidden doors'],
+      ['careful', 'Traps hide until sprung — search finds doors, never traps'],
       ['?', 'This help screen'],
       ['Q', 'Quit the game'],
       ['GOAL', 'Descend as deep as you dare — gold multiplies with depth'],
@@ -566,6 +575,7 @@ export default function RogueGame() {
       ['+', COLORS['+'], 'Door (bump to open)'],
       ["'", COLORS["'"], 'Open doorway'],
       ['%', COLORS['%'], 'Stairs down'],
+      ['`', '#dd6644', 'Trap — sprung once, still armed. Step aside.'],
       ['*', COLORS['*'], 'Gold'],
       ['!', COLORS['!'], 'Potion'],
       ['?', COLORS['?'], 'Scroll'],

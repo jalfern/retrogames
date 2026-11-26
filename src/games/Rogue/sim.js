@@ -131,6 +131,20 @@ export const ARMOR_TYPES = [
   { name: 'plate mail',      ac: 7 },
 ]
 
+// #3579: the 1980 trap floor. Traps hide until sprung — there is no trap
+// search and no ring of warning; the hero finds a trap by being wrong, and
+// from then on it is marked with the original's backtick glyph and (unlike
+// the trap door it fell through) stays armed.
+export const TRAP_TYPES = [
+  { kind: 'door', msg: 'You fall through a trap door!' },
+  { kind: 'teleport', msg: 'A trap teleports you away!' },
+  { kind: 'sleep', msg: 'A poisoned needle pricks you — you fall asleep!' },
+  { kind: 'str', msg: 'A trap drains your strength!' },
+  { kind: 'confuse', msg: 'A cloud of gas confuses you!' },
+  { kind: 'snare', msg: 'You are caught in a snare!' },
+  { kind: 'darts', msg: 'Darts spring from the wall!' },
+]
+
 export const POTION_COLORS = ['red', 'blue', 'green', 'yellow', 'bubbly', 'smoky', 'fizzy', 'dark', 'clear', 'murky', 'pink', 'white']
 export const SCROLL_TITLES = ['XIXAXA XOXO', 'ZELGO MER', 'FOOBIE BLETCH', 'NATRIX AN', 'PONCHO WIGG', 'YZAX VORN', 'BLIBBER BLUBBER', 'JUYED AWK']
 
@@ -365,10 +379,39 @@ export function generateDungeon(dungeonLevel) {
   const startX = rng(sr.x + 1, sr.x + sr.w - 2)
   const startY = rng(sr.y + 1, sr.y + sr.h - 2)
 
+  // Traps (#3579, the 1980 minefield): hidden on any walkable cell — room
+  // floor or corridor — never the start square or its ring, never stairs,
+  // never under an item or a monster. The rolls are taken on a borrowed
+  // slice of the stream and rewound (getRandState/setRandState), so traps
+  // vary per seed yet nothing downstream shifts: every existing seed's
+  // dungeon, items, monsters and later levels replay byte-identical —
+  // traps appear on the same dungeon, they do not reshuffle it.
+  const traps = []
+  const randSnap = getRandState()
+  const numTraps = rng(2, 4 + Math.floor(dungeonLevel / 2))
+  const freeForTrap = (x, y) => {
+    const c = map[y][x]
+    if (c !== '.' && c !== '#') return false
+    if (Math.abs(x - startX) <= 1 && Math.abs(y - startY) <= 1) return false
+    if (monsters.some(m => m.x === x && m.y === y)) return false
+    if (items.some(i => i.x === x && i.y === y)) return false
+    return !traps.some(t => t.x === x && t.y === y)
+  }
+  for (let i = 0; i < numTraps; i++) {
+    for (let tries = 0; tries < 60; tries++) {
+      const tx = rng(1, MAP_W - 2)
+      const ty = rng(1, MAP_H - 2)
+      if (!freeForTrap(tx, ty)) continue
+      traps.push({ x: tx, y: ty, kind: TRAP_TYPES[rng(0, TRAP_TYPES.length - 1)].kind, armed: true, seen: false })
+      break
+    }
+  }
+  setRandState(randSnap)
+
   const explored = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(false))
   const visible = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(false))
 
-  return { map, rooms, doors, hiddenDoors, items, monsters, startX, startY, explored, visible }
+  return { map, rooms, doors, hiddenDoors, items, monsters, traps, startX, startY, explored, visible }
 }
 
 export function digH(map, x1, x2, y) {
@@ -436,7 +479,7 @@ function shuffle(arr) {
 export function createInitialState(seed) {
   setSeed(seed)
   const dungeon = generateDungeon(1)
-  const { map, rooms, doors, hiddenDoors, items, monsters, startX, startY, explored, visible } = dungeon
+  const { map, rooms, doors, hiddenDoors, items, monsters, traps, startX, startY, explored, visible } = dungeon
 
   const potionColorMap = {}
   const shuffledColors = shuffle(POTION_COLORS)
@@ -454,8 +497,12 @@ export function createInitialState(seed) {
     turn: 0,
     randState: getRandState(),
     dungeonLevel: 1,
-    map, rooms, doors, hiddenDoors, items, monsters,
+    map, rooms, doors, hiddenDoors, items, monsters, traps,
     explored, visible,
+    // #3579 fall grudge: consecutive trap-door falls without ever walking
+    // down the stairs honest. The nth fall hurts (n−1)·2d6 — the original's
+    // escalating law; a stair descent wipes the slate.
+    falls: 0,
     // fx log (#1502): one event per audible moment (hit, kill, door, ...).
     // The sim only RECORDS — index.jsx drains it into audioController tones,
     // and roguecheck asserts the events fire (the audibility gate).
@@ -471,7 +518,7 @@ export function createInitialState(seed) {
       weapon: { name: 'mace', dmg: '2d4', bonus: 0 },
       armor: { name: 'ring mail', ac: 3, bonus: 0 },
       inventory: [],
-      confused: 0, blind: 0, haste: 0, sleeping: 0,
+      confused: 0, blind: 0, haste: 0, sleeping: 0, held: 0,
     },
     messages: ['Welcome to the Dungeons of Doom!  Press ? for help.',
       'Goal: find the stairs (%) and descend — the deeper you go, the richer you die.'],
@@ -567,26 +614,32 @@ export function buildGrid(state) {
             color = COLORS[itm.type] || '#aaaaaa'
           } else {
             // #1502: an unfound hidden door draws as wall — it is found,
-            // not seen.
+            // not seen. #3579: a sprung trap marks the map with the
+            // original's backtick; hidden traps draw as plain floor.
             char = map[y][x]
             if (char === '+' && doorIsHidden(state, x, y)) char = '-'
+            const seenTrap = state.traps?.some(t => t.seen && t.x === x && t.y === y)
+            if (seenTrap) char = '`'
             if (char === '.') color = '#3a5a3a'
             else if (char === '#') color = '#666'
             else if (isWall(char)) color = '#999'
             else if (char === '+') color = '#cc8833'
             else if (char === "'") color = '#aa7744'
             else if (char === '%') color = '#00dddd'
+            else if (char === '`') color = '#dd6644'
             else color = '#555'
           }
         } else if (isExp) {
           char = map[y][x]
           if (char === '+' && doorIsHidden(state, x, y)) char = '-'
+          if (state.traps?.some(t => t.seen && t.x === x && t.y === y)) char = '`'
           if (char === '.') color = '#223322'
           else if (char === '#') color = '#444'
           else if (isWall(char)) color = '#555'
           else if (char === '+') color = '#664400'
           else if (char === "'") color = '#554022'
           else if (char === '%') color = '#006666'
+          else if (char === '`') color = '#7a3a28'
           else color = '#333'
         }
       }
@@ -610,6 +663,8 @@ export function hash(state) {
   for (const row of state.map) mix(row.join(''))
   for (const m of state.monsters) mix(`M${m.letter}@${m.x},${m.y}:${m.hp}:${m.chasing ? 1 : 0}:${m.energy || 0}:${m.fleeing ? 1 : 0}:${m.bitten ? 1 : 0}`)
   for (const it of state.items) mix(`I${it.type}${it.x},${it.y}${it.amount || ''}${it.charges || ''}${it.qty || ''}`)
+  mix(`F${state.falls || 0}`)
+  for (const t of state.traps || []) mix(`R${t.kind}@${t.x},${t.y}${t.seen ? 1 : 0}${t.armed ? 1 : 0}`)
   return h >>> 0
 }
 
@@ -1205,8 +1260,10 @@ export function handleDescend(state) {
     ...state,
     dungeonLevel: newLevel,
     map: d.map, rooms: d.rooms, doors: d.doors, hiddenDoors: d.hiddenDoors,
-    items: d.items, monsters: d.monsters,
+    items: d.items, monsters: d.monsters, traps: d.traps,
     visible: d.visible, explored: d.explored,
+    // #3579: walking the stairs honest settles the fall grudge.
+    falls: 0,
     player: { ...player, x: d.startX, y: d.startY },
   }, 'descend')
   return addMsg(s, `You descend to dungeon level ${newLevel}.`)
@@ -1239,6 +1296,80 @@ export function handleSearch(state) {
 }
 
 // ============================================================
+// TRAPS (#3579 — the 1980 minefield)
+// ============================================================
+// The hero just landed on an armed trap; this owns the rest of the turn.
+// The sprung trap stays marked (backtick), and — bar the trap door the hero
+// fell through — stays ARMED: the teleport trap is the 1980 running joke.
+// Every branch spends the turn through the same door: advanceMonsters.
+export function trapSpring(state, trap) {
+  let s = { ...state, traps: state.traps.map(t => (t.x === trap.x && t.y === trap.y ? { ...t, seen: true } : t)) }
+  const { player } = s
+  s = emitFx(s, 'trap', { kind: trap.kind })
+  s = addMsg(s, TRAP_TYPES.find(t => t.kind === trap.kind).msg)
+
+  switch (trap.kind) {
+    case 'door': {
+      // Escalating fall grudge: the nth consecutive trap-door fall without
+      // walking the stairs costs (n−1)·2d6 — first free, then 2d6, 4d6...
+      const falls = (s.falls || 0) + 1
+      const dice = (falls - 1) * 2
+      const dmg = dice > 0 ? rollDice(`${dice}d6`) : 0
+      const hp = player.hp - dmg
+      if (hp <= 0) {
+        return { ...emitFx(s, 'die', { killer: 'trap door' }), player: { ...player, hp: 0 }, phase: 'gameover', killer: 'the trap door', finalScore: player.gold + s.dungeonLevel * 50 }
+      }
+      const newLevel = s.dungeonLevel + 1
+      const d = generateDungeon(newLevel)
+      revealAround(d.startX, d.startY, d.map, d.visible, d.explored, d.rooms)
+      s = emitFx({
+        ...s,
+        dungeonLevel: newLevel,
+        map: d.map, rooms: d.rooms, doors: d.doors, hiddenDoors: d.hiddenDoors,
+        items: d.items, monsters: d.monsters, traps: d.traps,
+        visible: d.visible, explored: d.explored, falls,
+        player: { ...player, x: d.startX, y: d.startY, hp },
+      }, 'trapdoor')
+      if (dmg > 0) s = addMsg(emitFx(s, 'hurt'), `The fall hurls you deeper — ${dmg} damage!`)
+      break
+    }
+    case 'teleport': {
+      const room = s.rooms[rng(0, s.rooms.length - 1)]
+      const tx = rng(room.x + 1, room.x + room.w - 2)
+      const ty = rng(room.y + 1, room.y + room.h - 2)
+      const newVis = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(false))
+      const newExp = s.explored.map(r => [...r])
+      revealAround(tx, ty, s.map, newVis, newExp, s.rooms)
+      s = { ...s, player: { ...player, x: tx, y: ty }, visible: newVis, explored: newExp }
+      break
+    }
+    case 'sleep':
+      s = { ...s, player: { ...player, sleeping: rng(5, 9) } }
+      break
+    case 'snare':
+      s = { ...s, player: { ...player, held: rng(3, 6) } }
+      break
+    case 'str':
+      s = { ...s, player: { ...player, str: Math.max(1, player.str - rng(1, 3)) } }
+      break
+    case 'confuse':
+      s = { ...s, player: { ...player, confused: rng(10, 20) } }
+      break
+    case 'darts': {
+      const dmg = rng(1, 6)
+      const hp = player.hp - dmg
+      if (hp <= 0) {
+        return { ...emitFx(s, 'die', { killer: 'darts' }), player: { ...player, hp: 0 }, phase: 'gameover', killer: 'a dart trap', finalScore: player.gold + s.dungeonLevel * 50 }
+      }
+      s = emitFx({ ...s, player: { ...player, hp } }, 'hurt')
+      break
+    }
+    default: break
+  }
+  return s
+}
+
+// ============================================================
 // REDUCER
 // ============================================================
 // Actions that consume player time (the report's `tick`).
@@ -1263,6 +1394,12 @@ export function reducer(state, action) {
       if (player.sleeping > 0) {
         s = tickHunger({ ...s, player: { ...player, sleeping: player.sleeping - 1 } })
         s = addMsg(s, "You are asleep.")
+        return advanceMonsters(s)
+      }
+
+      if (player.held > 0) {
+        s = tickHunger({ ...s, player: { ...player, held: player.held - 1 } })
+        s = addMsg(s, 'You struggle in the snare.')
         return advanceMonsters(s)
       }
 
@@ -1335,6 +1472,15 @@ export function reducer(state, action) {
       s = { ...s, player: newPlayer, visible: newVis, explored: newExp }
       s = tickHunger(s)
       if (s.phase === 'gameover') return s
+
+      // #3579: the minefield — the hero has landed; if the square was mined,
+      // the trap owns the turn (and relocation ends the move outright).
+      const trap = s.traps.find(t => t.armed && t.x === finalX && t.y === finalY)
+      if (trap) {
+        s = trapSpring(s, trap)
+        if (s.phase === 'gameover') return s
+        return advanceMonsters(s)
+      }
 
       // Auto-pickup gold
       const goldItem = s.items.find(i => i.x === finalX && i.y === finalY && i.type === '*')
