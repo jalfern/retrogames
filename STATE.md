@@ -1,83 +1,68 @@
-# STATE — forge board snapshot (slot b, 2026-11-26 — DEFENDER MORTAL AGAIN)
+# STATE — forge board snapshot (slot a, 2026-11-26 — DEFENDER'S PLANET WAKES UP, #3456 stage 2)
 
-## This session — one ship (TARGET #3445, merged a6c8982 via PR #3457)
-- Warden TARGET #3445 claimed clean at slot b. No halt; the only `building`
-  issue (#3443 smart bomb) was slot a's LIVE resume of the dead FORGE(b)
-  corpse — untouched; it merged mid-session (#3449) and I rebased over it.
-- **THE BUG**: sim.js decremented `invuln` only while `dark > 0` → grace froze
-  at 120 after the first crash → pilot immortal, GAME OVER unreachable. The
-  #1473 terminal test had been zeroing `invuln` by hand — the cheat that hid
-  it 9 batches. Fix: `if (p.invuln > 0) p.invuln -= 1` every tick (README's
-  ~1 s dark + ~2 s blink promise now true).
-- **§grace pins**: freeze spends no grace; blink = INVULN_TICKS when dark
-  ends; burns to 0 on clock alone; 2nd crash nudged-free; hands-down
-  ArrowDown→GAME OVER as Node law; attract invulnerable BY COPY pinned.
-- **WITNESS honestly re-pinned**: b18-b21 survival/crash laws were immortality
-  artifacts (0/20 + 1/20 survive). New floors: overs >=15+15 (never-die
-  pinned both ways), banks >=1100/100, waves >=10/10, rescues >=10/10 per set.
-  Survival claim retired from README/WATCH/sim-header copy.
-- Two weakened law tests hardened (rank decided by steer side — the old
-  both-left rig passed with weighting deleted; direct delivery-elevator pin) —
-  loosened totals had stopped killing the b19 mutants.
-- **defenderplay inverted as promised** (it shipped from #3443 pinning the
-  bug by name): crash-leg now asserts a SECOND death lands; budgets moved to
-  WORLD ticks + fresh `__game.reset(7)` — multi-lane frame starvation (~5 tps
-  observed live) makes wall-ms ceilings flake.
-- watchcheck defender legs: idle-hands accepts honest GAME OVER; takeover legs
-  restart+re-seat at `over` instead of going slack.
-- Filed **#3456** (game-queue, lane:games): re-earn patrol survival vs a mortal
-  pilot — b20/b21's nine interception designs were measured against the
-  half-immortal pilot; verdicts need re-reading before any survival claim
-  returns to the copy.
+## This session — a fidelity bug bigger than the arc it served
+- Warden TARGET #3456 claimed (resume: stage 1 landed mid-session as 787b1b4 via
+  #3465 — merged 05:35Z while I tuned; worktree cleanup detached it, repaired,
+  branch continued). Slot-a's own report from last session read from
+  /tmp/forge/STATE.a.parked.md (statepark verified).
+- MAIN CHECKOUT CORPSE: the #3453 wrap-seam work (defendercheck+sim+README) sat
+  uncommitted in ~/Dev/retrogames at session start (QA-mini's, mtimes fresh).
+  Named on #3453 with the new consequence: `git checkout --detach origin/main`
+  now REFUSES there (git protecting it). Slot a committed/stashed/reverted
+  nothing. QA landed it as c7138a2 (#3466) during this session — corpse resolved
+  by its owner.
+- **THE FIND:** `hunt`-state mutants NEVER integrated position (movement block is
+  lander-only). Mutants were STATUES since the port while the README swore
+  "chases you". Fixed (#3472). Every seasons-long "mutant kill" was flying into a
+  fixture; WITNESS ever measured a half-dead planet.
 
-## Proof
-- defendercheck 127/127; --mutant **32/32 die** (slot a's #2167 anchor
-  re-pin landed on main; my freeze mutant among them).
-- watchcheck --only defender 322/322; defenderplay 17/17 (one pre-fix run
-  flaked under load — advisory, tick-budget fix is the honest remedy).
-- Real-Chrome drive 9/9 (lives ladder 3>2>1>0 → GAME OVER → restart; scratch
-  at /tmp/forge/defender-drive-3445.mjs — repo defenderplay belongs to #3443).
-- Prod: Vercel success at a6c8982; live smoke — attract draws, crashes reach
-  terminal, zero page errors. eslint + lint:mario/fps/ai/defender + build.
-- #3269 struck twice this session (GitHub dropped pull_request at the ref;
-  `gh workflow run ci.yml --ref` re-attached; merge waits read the API).
+## Stage 2 shipped on the branch (PR #3472, Part of #3456)
+- Route: sink+terrain-rise climb margins, canyon turn, U/D interlock + pulsed
+  descents, valley delivery veto, hover-kill, fresh-facing gate (haulers EXEMPT —
+  rescue law outranks the duel, law-test pins it), turn-and-brace vs astern
+  hunters, crossfire bail (guns independent of target), cargo-lift,
+  hauler-outranks-brace.
+- Honest vs REAL hunters: survived 19+16/20 (baseline 0+1), banks 9650/5950,
+  waves 20+20, catches 49+47, delivers 37+36. Terrain deaths 48+49 -> 2+4.
+  diedHauling 12+11 = the NEXT gap (stage 3 brief).
+- WITNESS re-pinned per issue item 3: banks >=6000/4000, waves >=15, rescues
+  >=25/20, mortality tripwire FLIPPED overs>=15 -> overs<=5 && livesLost>=20
+  (survival progress breaks the old form by design; zero deaths stays the bug).
+  Copy claim "patrol survives" stays RETIRED until both sets 20/20 honestly.
+- Gates: defendercheck 128/0, lint mario/fps/ai, build, defenderplay 17/17
+  (one flake: dead-state bomb suppression timing — rerun clean once per law).
 
 ## PLAYABLE on main right now
-- `/retrogames/defender`: honest mortality + smart bomb (3/wave); seat pilot
-  mortal too. Plus prior shelf: pinball JET LANE+KICKBACK L+chain-pin,
-  skyward (spectate cam, online rooms), grind-city bot, tidal-rush, ssx,
-  comet-drift pair, marble pair, galaga bee, mario-kart, ice-climber, pacman,
-  mario, minesweeper/garden-guard/homebody, TIDY BOT, STARRY NIGHT, TOP
-  SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron keep, missile,
-  pucks, mines, zork, ultima, king's quest, Joust, Q*bert, FireCrew, forge
-  board.
+- `/retrogames/defender` — stage 1 watchmeasure lands after #3465; mutants begin
+  honestly hunting the moment #3472 merges. Plus prior shelf: pinball chain-pin,
+  skyward spectate, asteroid clamp, tidal-rush, ssx, comet-drift, marble pair,
+  galaga bee, mario-kart, ice-climber, pacman, mario, minesweeper/garden-guard/
+  homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
+  spy-hunter, iron keep, missile, pucks, mines, zork, ultima, king's quest,
+  Joust, Q*bert, adventure, forge board.
 
-## Board watch (facts, not questions)
-- `game-queue` at close: #3456 (mine, fresh). `building`: whatever slot a
-  took next (#3443 closed). Feedback open: #3430 (Joust art, building-qa),
-  #3419 (warden-fixed via #3423).
-- #3445 CLOSED (shipped). #3449/#3454–#3459 all merged today — queue moves fast.
-- **LIVE WRITE IN MAIN CHECKOUT at close**: `scripts/defendercheck.mjs`,
-  `src/games/Defender/{sim,README}.js` carry uncommitted #3453 wrap-seam work,
-  mtimes 1–4 min before this write — QA mini (live, claimed #3453 04:32Z) is
-  editing in the MAIN checkout against the worktrees-only rule, on a stale
-  HEAD (e56a3de, pre-my a6c8982 merge). NOT reverted (live work). Patch
-  parked at /tmp/forge/wrap-seam-3453-in-main-checkout.patch; #3453
-  commented. Whoever owns mini: its next commit must be rebased to origin/main
-  or it will silently undo #3445 (main's sim.js has the honest burn; mini's
-  base does not).
+## Board watch (facts)
+- #3456 OPEN after #3472 (multistage, Part of): stage 3 = diedHauling (elevators
+  get hunted; 12+11) + the last-hunter endgame + survival copy claim when 20/20.
+  Post that brief on the issue at merge verify.
+- Slot b live this session (omlxtapb); QA-mini/QA-studio live; #3453 shipped by
+  its owner mid-session. My :5173 dev server stopped at close via devstop.sh.
+- WITNESS pins are DETERMINISTIC floors, now much higher — any future route
+  regression shows in red with names, not vibes.
 
 ## Open questions (links only — #605)
-- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane).
-- #3054 — native TestFlight ports have no recorder/upload (AWAITING).
-- #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
-- #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
-- No new jonq questions filed this session.
+- #3335 — QA: music-bus low-pass (AWAITING, qa lane — not mine).
+- #3054 — native TestFlight recorder (AWAITING).
+- #1712 — PLAICRAFT S2 versioned dataset (waiting-jon).
+- No new jonq questions this session (statue fix + re-pin were measurement, not
+  taste; the arc continues on the board).
 
 ## Slot state at handoff
-- Slot b: dev :5178 stopped via scripts/devstop.sh; lane worktree
-  `~/Dev/retrogames-forge-defender-grace` detached clean at origin/main
-  (forge-merge cleanup #3013 ran); main checkout detached at origin/main.
-- Game code merged this session ⇒ STATE ships via its own docs/state PR;
-  parked via statepark at /tmp/forge/STATE.b.parked.md.
-- Time-box: shipped + verified in ~2 h 45 m of 3 h.
+- #3472 MERGED (79482be) — prod verified (deployed bundle embeds the merge sha;
+  Vercel success on 79482be). #3456 relabeled `game-queue` with the stage 3
+  brief posted; survival copy claim stays retired until 20 + 20 honest.
+- STATE ships via docs/state PR (game merged this session); lane worktree detached
+  clean at origin/main; slot-a dev :5173 stopped via scripts/devstop.sh.
+- #1430 note: slot b's step-1 reverted my STATE.md in the shared main checkout
+  mid-closeout; the slot-scoped park is what saved the report — its first-run
+  hazard documented, this is the shape it protects against.
