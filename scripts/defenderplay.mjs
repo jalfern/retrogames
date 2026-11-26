@@ -112,11 +112,33 @@ r.check('the QA contract declares b (bots/replays can press the bomb)', !!meta &
 // the immortality bug by name; flipping it here is the deliberate inversion,
 // not a silent drift.
 {
+    // Fresh seeded run so the leg's lives ledger is honest (earlier legs are
+    // mortal now too) and every budget below counts WORLD ticks.
+    await page.evaluate(() => window.__game.reset(7))
+    await page.waitForTimeout(200)
     await page.keyboard.down('ArrowDown')
-    const dead = await settle((q) => q.lives < 3, 10000)
-    r.check('the pilot can genuinely crash — the first death lands', dead.lives === 2, `lives=${dead.lives}`)
+    let first = null
+    const tf0 = (await probe()).tick
+    for (let i = 0; i < 400; i++) {
+        first = await probe()
+        if (first.lives < 3 || first.screen === 'over') break
+        if (first.tick - tf0 > 400) break
+        await page.waitForTimeout(150)
+    }
+    r.check('the pilot can genuinely crash — the first death lands', first.lives === 2, `lives=${first.lives}`)
     let secondDeath = false
-    for (let t = 0; t < 12000; t += 250) { const q = await probe(); if (q.lives < 2 || q.screen === 'over') { secondDeath = true; break } }
+    // The budget is WORLD ticks, not wall ms (AGENTS: harness waits are sim
+    // time — this box once ran the world at ~5 tps under multi-lane load and
+    // a 24 s wall ceiling watched the pilot respawn mid-blink and called it
+    // grace). One honest cycle = freeze 30 + dark 60 + blink 120 + re-dive
+    // ~60 ≈ 270 ticks; 700 covers two with margin.
+    const t0 = (await probe()).tick
+    for (let i = 0; i < 400; i++) {
+        const q = await probe()
+        if (q.lives < 2 || q.screen === 'over') { secondDeath = true; break }
+        if (q.tick - t0 > 700) break
+        await page.waitForTimeout(150)
+    }
     await page.keyboard.up('ArrowDown')
     r.check('#3445 inverted: the grace burns — a SECOND crash lands, mortality restored', secondDeath, `lives=${(await probe()).lives}`)
     const after = await probe()
