@@ -857,11 +857,15 @@ const DefenderGame = () => {
                 <canvas ref={canvasRef} className="block w-full h-full" />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'DEFENDER')} onResume={handleResume} />}
                 {/* #1654: the discoverable WATCH line, before the first Y press. */}
+                {/* #3533: the solo demo gets no seat in 2P hot-seat; the line says how to take it. */}
+                {attractUi && !paused && (
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center pointer-events-none" style={{ bottom: '32%' }}>
+                        <div className="text-neutral-200/80 font-mono text-[11px] tracking-widest">PRESS 2 — 2 PLAYER HOT-SEAT (DESKTOP KEYBOARD)</div>
+                    </div>
+                )}
                 {attractUi && !paused && (
                     <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
                         <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
-                        {/* #3533: the solo demo gets no seat in 2P hot-seat; the line says how to take it. */}
-                        <div className="text-neutral-200/80 font-mono text-[11px] tracking-widest">PRESS 2 — 2 PLAYER HOT-SEAT (DESKTOP KEYBOARD)</div>
                         <AttractWatchButton />
                     </div>
                 )}
