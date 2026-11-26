@@ -675,9 +675,25 @@ export function createSim({ rand, height }) {
 
     // #1907: kills read by COLOR, like the cabinet — landers pop green, mutants
     // burst red, the wreck burns orange, a lost human sparks gold.
-    const killFx = (x, y, n, col = '#ffffff') => {
+    // #3540: the same draw, three shapes. The lander puffs — slow, lingering,
+    // growing cloud. The mutant cracks — a fast streak. The meteor shards —
+    // cold rock that falls. Every kind consumes the same rand draws (one vx,
+    // one vy per particle), so the seed stream cannot shift; the shape comes
+    // from how the drawn velocity is scaled, how long the particle lives and
+    // how the renderer draws it.
+    const killFx = (x, y, n, col = '#ffffff', kind = null) => {
         for (let i = 0; i < n; i++) {
-            s.particles.push({ x, y, vx: (rand() - 0.5) * 10, vy: (rand() - 0.5) * 10, life: 30, col })
+            const vx = (rand() - 0.5) * 10
+            const vy = (rand() - 0.5) * 10
+            if (kind === 'puff') {
+                s.particles.push({ x, y, vx: vx * 0.5, vy: vy * 0.5, life: 40, col, kind })
+            } else if (kind === 'crack') {
+                s.particles.push({ x, y, vx: vx * 1.6, vy: vy * 1.6, life: 22, col, kind })
+            } else if (kind === 'shard') {
+                s.particles.push({ x, y, vx: vx * 0.8, vy: vy * 0.8 - 1.2, life: 34, col, kind, grav: 0.18 })
+            } else {
+                s.particles.push({ x, y, vx, vy, life: 30, col })
+            }
         }
     }
     // #1907: a rand-FREE burst — the seedpin law says the witness stream may
@@ -1017,7 +1033,7 @@ export function createSim({ rand, height }) {
                     if (e.type === 'lander') {
                         addScore(SCORE_LANDER)
                         s.events.push({ t: 'killLander', pts: SCORE_LANDER })
-                        killFx(e.x, e.y, 10, '#3dff5e') // the arcade's green lander pop (#1907)
+                        killFx(e.x, e.y, 10, '#3dff5e', 'puff') // the arcade's green lander pop (#1907) — a soft puff, #3540
                         if (e.carry !== null) {
                             const h = s.humans[e.carry]
                             h.state = 'falling'
@@ -1025,11 +1041,11 @@ export function createSim({ rand, height }) {
                             e.carry = null
                         }
                     } else if (e.type === 'meteor') {
-                        meteorKill(e, (x, y, c) => killFx(x, y, 8, c))
+                        meteorKill(e, (x, y, c) => killFx(x, y, 8, c, 'shard'))
                     } else {
                         addScore(SCORE_MUTANT)
                         s.events.push({ t: 'killMutant', pts: SCORE_MUTANT })
-                        killFx(e.x, e.y, 10, '#ff5555') // mutants burst red (#1907)
+                        killFx(e.x, e.y, 10, '#ff5555', 'crack') // mutants burst red (#1907) — a fast crack, #3540
                     }
                 }
             })
@@ -1100,7 +1116,11 @@ export function createSim({ rand, height }) {
         }
 
         // --- Particles ---
-        s.particles.forEach((pt) => { pt.x += pt.vx; pt.y += pt.vy; pt.life -= 1 })
+        s.particles.forEach((pt) => {
+            pt.x += pt.vx; pt.y += pt.vy
+            if (pt.grav) pt.vy += pt.grav // #3540: meteor shards fall as they fly
+            pt.life -= 1
+        })
         s.particles = s.particles.filter((pt) => pt.life > 0)
         return s
     }
