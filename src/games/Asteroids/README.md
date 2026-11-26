@@ -149,7 +149,7 @@ npm run lint:asteroids
 ```
 
 ## Honest gaps
-- No rock-vs-rock interaction (the machine had neither).
+- **DISCLAIMER**: No rock-vs-rock interaction (the machine had neither).
 - **CLOSED by #3553:** Small saucers ease their aim over time in the original;
   ours were locked at ±0.15 rad. The learning curve is now modelled — see
   "#3553 — the small saucer learning curve" below.
