@@ -28,7 +28,7 @@ import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, estWidth } from '../src/games/Pong/attract.js'
 import { serveBall, strikeSpin, SPIN_K, DY_MIN, stepBall, predictLand, tickPong, cpuTier, DIFFS, BASE_SPEED, PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_OFFSET, BALL_SIZE } from '../src/games/Pong/sim.js'
 import { rallyVoice, serveEcho, wallVoice, scoreThud } from '../src/games/Pong/voice.js'
-import { digitSegments, digitRects, titleRects } from '../src/games/Pong/numerals.js'
+import { digitSegments, digitRects, titleRects, titleFit } from '../src/games/Pong/numerals.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -411,6 +411,8 @@ console.log('serve: the first return of a point (#3536)')
     ok(trace(true) === trace(false), 'servePending moves nothing but the flag')
     const idx = readFileSync('src/games/Pong/index.jsx', 'utf8')
     ok(/servePending = true/.test(idx) && /serveFlash/.test(idx), 'the shell arms the serve at match start and flashes the ball')
+    ok(/visible=\{screen === 'play' && !paused\}/.test(idx), 'the pad + chip rail live only in play (menu/death stay chip-free)')
+    ok(/WATCH_ATTRACT_HINT, state\.width \/ 2, state\.height \* 0\.62/.test(idx), 'the attract WATCH hint sits clear of the pill (0.62h)')
 }
 
 // --------------------------------------------------------------- #3536 voice ----
@@ -484,9 +486,17 @@ console.log('numerals: block video digits (#3536)')
     ok(t.cells.length >= 60 && t.h === 70 && t.w > 0 && t.cells.every(([, gy]) => gy >= 0 && gy < 7),
         'the P·O·N·G word-mark draws on a 7-row grid', `${t.cells.length} cells`)
     ok(titleRects('P', 70).cells.length === 15, 'P lights 15 blocks (map sanity)')
+    // #3536 measurement: at iPhone-SE landscape the table is ~242px wide — the
+    // mark must shrink to fit (the first cut clipped the P and the G).
+    let fits = true
+    for (const [w, h] of [[242, 343], [480, 640], [600, 800]]) {
+        const th = titleFit(w, h)
+        if (titleRects('PONG', th).w > w * 0.92 + 1 || th < 20) fits = false
+    }
+    ok(fits, 'the word-mark fits the phone-width cabinet (242px measured)')
     const idx = readFileSync('src/games/Pong/index.jsx', 'utf8')
     ok(/drawBlockScore\(/.test(idx), 'the live score is drawn as block numerals')
-    ok(/drawBlockTitle\(/.test(idx), 'the attract title is a block word-mark')
+    ok(/drawBlockTitle\(/.test(idx) && /titleFit\(/.test(idx), 'the attract title is a fitted block word-mark')
 }
 
 // ------------------------------------------------------------------ mutants ----

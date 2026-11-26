@@ -8,7 +8,7 @@ import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { serveBall, tickPong, BASE_SPEED, PADDLE_HEIGHT, BALL_SIZE, DIFFS } from './sim.js'
 import { rallyVoice, serveEcho, wallVoice, scoreThud } from './voice.js'
-import { drawBlockScore, drawBlockTitle } from './numerals.js'
+import { drawBlockScore, drawBlockTitle, titleFit } from './numerals.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 // PONG (#1473 batch 16) — the Feb port had no terminal, no restart and dice
@@ -269,13 +269,15 @@ const PongGame = () => {
                     ctx.fillText(l.text, l.x, l.y)
                 }
                 // #3536 — the video word-mark: block P·O·N·G, the machine's
-                // type instead of the browser's.
-                drawBlockTitle(ctx, state.width / 2, state.height * 0.26, 'PONG', Math.floor(Math.min(state.height * 0.13, 64)), '#ffffff')
+                // type instead of the browser's, sized to fit the cabinet.
+                drawBlockTitle(ctx, state.width / 2, state.height * 0.26, 'PONG', titleFit(state.width, state.height), '#ffffff')
                 // #1656 discoverability, drawn here (not in attract.js) the way
                 // GravelYard does it — the rule-6 audit owns the cycling lines.
+                // #3536 — 0.66→0.62: at phone height the big WATCH pill covers
+                // the hint at 0.66 (measured 667×375); above it both read.
                 ctx.font = '11px monospace'
                 ctx.fillStyle = '#7dd39a'
-                ctx.fillText(WATCH_ATTRACT_HINT, state.width / 2, state.height * 0.66)
+                ctx.fillText(WATCH_ATTRACT_HINT, state.width / 2, state.height * 0.62)
                 // #3502 — the AUTO/RANGE selector, drawn here for the same
                 // reason: the rule-6 audit owns attract.js, this is chrome.
                 ctx.font = '11px monospace'
@@ -511,6 +513,7 @@ const PongGame = () => {
                 play-to-quit terminal (#1473): the honest MATCH OVER card,
                 then any tap restarts. sim.js untouched — zero physics. */}
             <VirtualControls
+                visible={screen === 'play' && !paused}
                 thirdAction={screen === 'play' && !paused ? { label: 'QUIT', code: 'Escape' } : null}
             />
         </div>

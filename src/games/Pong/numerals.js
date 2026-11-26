@@ -66,9 +66,10 @@ export const TITLE_GLYPHS = {
 }
 
 // Lit cells for a word-mark, unit grid; one cell is (h/7)² on screen.
+const TITLE_GAP = 1 // fixed one-cell letter gap — never scales with cell size
+
 export function titleRects(text, h) {
     const cell = h / 7
-    const gap = cell * 1.2
     const cells = []
     let cols = 0
     for (const ch of text) {
@@ -76,9 +77,17 @@ export function titleRects(text, h) {
         g.forEach((row, ry) => {
             for (let rx = 0; rx < 5; rx++) if (row[rx] === 'X') cells.push([cols + rx, ry])
         })
-        cols += 5 + Math.round(gap)
+        cols += 5 + TITLE_GAP
     }
-    return { w: (cols - Math.round(gap)) * cell, h: h, cell, cells }
+    return { w: (cols - TITLE_GAP) * cell, h: cell * 7, cell, cells }
+}
+
+// Largest word-mark height that still fits 92% of a w-wide canvas — at the
+// small end (667×375 phone table, 242px wide) a fixed 64px title clipped the
+// P and G; the mark must shrink with the cabinet.
+export const titleFit = (w, h) => {
+    const ratio = titleRects('PONG', 7).w / 7 // ≈ 23/7, height-independent
+    return Math.floor(Math.min(h * 0.13, 64, (w * 0.92) / ratio))
 }
 
 // Word-mark centered at cx, baseline-ish bottom at y.
