@@ -548,7 +548,9 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     const batch1 = {
         '/mario-classic': 'KeyX', '/galaga': null, '/pong': null, '/invaders': null,
         '/pacman': null, '/asteroids': null, '/donkeykong': null, '/centipede': null,
-        '/defender': null, '/pitfall': null,
+        // #3443: DEFENDER left the move-/fire-only set — Jon's #2016 answer A
+        // put the smart bomb on B (ShiftLeft, 3 per wave).
+        '/defender': 'ShiftLeft', '/pitfall': null,
     }
     for (const [path, code] of Object.entries(batch1)) {
         const g = GAMES.find((e) => e.path === path)
