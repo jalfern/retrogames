@@ -17,7 +17,7 @@ import {
     livesForScore, humansAlive,
     SCORE_LANDER, SCORE_MUTANT, SCORE_CATCH, SCORE_DELIVER, SCORE_WAVE,
     BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT, DEATH_FREEZE, RESPAWN_DELAY, INVULN_TICKS, watchRoute,
-    thrustHum, BOMBS_PER_WAVE, BOMB_SCREEN,
+    thrustHum, BOMBS_PER_WAVE, BOMB_SCREEN, MUTANT_SPEED, SPEEDER_SPEED,
 } from '../src/games/Defender/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -481,35 +481,38 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
 
 
 // ---------- WATCH witness (#1637 batch 18; dual-set b21; #3445 retired the
-// survival claim; #3456 stage 2 re-earned a real one) ---------------------------
+// survival claim; #3456 stage 3 RE-EARNED it honestly) -------------------------
 // b18-b21 pinned "all 40 seeds survive 150 s" — #3445 proved that was the
 // frozen-grace artifact; honest clock measured 0/20 + 1/20. #3456 stage 2
-// re-tuned watchRoute against the MORTAL pilot — and uncovered a second artifact
-// hiding under the first: hunt-state mutants never integrated position (statues),
-// so even the 0/20 baseline had been flying a half-dead planet. Fixing the
-// fidelity bug AND the route measures (npm run watchmeasure): banks 13,550 +
-// 5,050, waves 20/20 + 19/20, rescues 44 + 37, deliveries 37 + 27, and
-// SURVIVED at the horizon 17/20 + 17/20. That is survival most horizons, not
-// proof — so the copy claim stays retired and the witness pins move here: the
-// job floors rise to what the honest patrol delivers, and the mortality tripwire
-// flips from ">=15 honest GAME OVERs" (which survival progress would break by
-// design, see #3445) to "<=5" — an honest pilot loses ships to real hunters, and
-// a return of 0-deaths patrols is the immortality bug back.
+// woke the planet (statue mutants hunt, mortal duel) and measured 19 + 16.
+// Stage 3 gave the route the arcade's own answers — guns during the haul,
+// turn-and-brace with the package, the last-hunter close-out, and the
+// momentum law (threat bands read the projected hull, because a memoryless
+// brain that reacts only at contact distance can never null 8 px/tick) —
+// against the faster endgame fleet. Honest measure at this commit:
+// SURVIVED 20/20 + 20/20, banks min 18,900 + 12,800, waves 20/20 + 20/20,
+// rescues 62 + 49 catches, 57 + 43 deliveries, diedHauling 4 + 6 (was
+// 12 + 11), lives spent 20 + 19. The pilot is still MORTAL: 39 honest GAME
+// OVER-grazing lives across 40 runs, worst seed bleeds 3 — frozen grace caps
+// a seed at 1 hit, so >= 3 is its own immortality tripwire. The copy claim
+// ("survives 20/20") is now back in README + registry, and pinned here so
+// copy and witness cannot drift apart.
 {
     const patrol = (base) => {
-        let survived = 0, overs = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0, livesLost = 0
+        let survived = 0, overs = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0, livesLost = 0, worstSeedHits = 0, diedHauling = 0
         for (let k = 0; k < 20; k++) {
             const rand = seedRng(base + k * 91)
             const w = createSim({ rand, height: 420 })
-            let waves = 0
+            let waves = 0, hits = 0
             let cap = 9000
             while (!w.over && cap > 0) {
+                const hauling = w.carrying !== null
                 w.step(watchRoute(w))
                 for (const e of w.events) {
                     if (e.t === 'wave') waves++
                     if (e.t === 'catch') catches++
                     if (e.t === 'deliver') delivers++
-                    if (e.t === 'die') livesLost++
+                    if (e.t === 'die') { hits++; livesLost++; if (hauling) diedHauling++ }
                 }
                 cap--
             }
@@ -517,21 +520,34 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
             else overs++
             if (waves >= 1) waveSeeds++
             minScore = Math.min(minScore, w.score)
+            worstSeedHits = Math.max(worstSeedHits, hits)
         }
-        return { survived, overs, waveSeeds, minScore, catches, delivers, livesLost }
+        return { survived, overs, waveSeeds, minScore, catches, delivers, livesLost, worstSeedHits, diedHauling }
     }
     const wi = patrol(2000)
     const ho = patrol(5000)
-    ok(wi.overs <= 5 && ho.overs <= 5,
-        `the seat pilot SURVIVES its horizon vs the real hunters — ${wi.survived}/20 + ${ho.survived}/20 alive at 150 s (#3456 stage 2; ${wi.overs + ho.overs} honest GAME OVERs across 40 sets: mortal, never immortal — 0 deaths on both sets would be the grace bug back)`)
-    ok(wi.livesLost >= 20 && ho.livesLost >= 20,
-        `both sets spend >= 20 lives under honest fire (${wi.livesLost} + ${ho.livesLost}) — the pilot bleeds; immortality is still the bug, not the fix`)
-    ok(wi.minScore >= 6000, `every witness patrol banks >= 6,000 against the live planet (min ${wi.minScore} — was 1,100 pre-#3456)`)
-    ok(ho.minScore >= 4000, `untuned holdout banks >= 4,000 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
-    ok(wi.waveSeeds >= 15, `>= 15/20 witness seeds clear a wave (${wi.waveSeeds}/20 — the hunters clear themselves now, so waves close)`)
-    ok(ho.waveSeeds >= 15, `>= 15/20 holdout seeds clear a wave (${ho.waveSeeds}/20)`)
-    ok(wi.catches >= 25 && wi.delivers >= 20, `rescue law under real fire: ${wi.catches} catches, ${wi.delivers} deliveries on the witness set`)
-    ok(ho.catches >= 25 && ho.delivers >= 20, `the untuned holdout rescues too: ${ho.catches} catches, ${ho.delivers} deliveries`)
+    ok(wi.survived >= 20 && ho.survived >= 20,
+        `the seat pilot SURVIVES its horizon on BOTH audit sets — ${wi.survived}/20 + ${ho.survived}/20 alive at 150 s (#3456 stage 3 re-earned: haul guns, package brace, last-hunter close-out, momentum law)`)
+    ok(wi.livesLost >= 10 && ho.livesLost >= 10,
+        `both sets still bleed (${wi.livesLost} + ${ho.livesLost} honest lives spent) — mortal, never immortal`)
+    ok(wi.worstSeedHits >= 3 && ho.worstSeedHits >= 3,
+        `seeds bleed ACROSS respawns (worst ${wi.worstSeedHits} + ${ho.worstSeedHits} hits) — frozen grace caps every seed at 1 hit (#3445's bug shape)`)
+    ok(wi.diedHauling <= 8 && ho.diedHauling <= 8,
+        `the package is no longer hunted to death while descending: diedHauling ${wi.diedHauling} + ${ho.diedHauling} (stage 2 measured 12 + 11 — the arcade never mutes its cargo)`)
+    ok(wi.minScore >= 12000, `every witness patrol banks >= 12,000 against the live planet (min ${wi.minScore} — was 6,000 at stage 2)`)
+    ok(ho.minScore >= 8000, `untuned holdout banks >= 8,000 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
+    ok(wi.waveSeeds >= 18, `>= 18/20 witness seeds clear a wave (${wi.waveSeeds}/20 — the last-hunter close-out ends waves instead of trailing them)`)
+    ok(ho.waveSeeds >= 18, `>= 18/20 holdout seeds clear a wave (${ho.waveSeeds}/20)`)
+    ok(wi.catches >= 40 && wi.delivers >= 35, `rescue law under real fire: ${wi.catches} catches, ${wi.delivers} deliveries on the witness set`)
+    ok(ho.catches >= 40 && ho.delivers >= 35, `the untuned holdout rescues too: ${ho.catches} catches, ${ho.delivers} deliveries`)
+    // The copy claim and the witness are one law (#3456): README/registry may
+    // claim survival ONLY while both sets are honestly 20/20.
+    {
+        const copy = readFileSync('src/games/Defender/README.md', 'utf8') + readFileSync('src/config/games.js', 'utf8')
+        const claims = /survives 20\/20/i.test(copy)
+        ok(!claims || (wi.survived === 20 && ho.survived === 20),
+            `the "survives 20/20" copy (${claims ? 'LIVE' : 'silent'}) and the witness (${wi.survived}/${ho.survived}) move together — no claim without both sets, ever`)
+    }
     ok(humansAlive(createSim({ rand: seedRng(2000), height: 420 }).humans) === HUMAN_COUNT,
         'witness seeds start with the street full (five humans)')
     // The law, tested directly: a hauler outranks a CLOSER idle lander. The
@@ -566,16 +582,99 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     }
     // Friendly fire stays honest at the brain too: a walking human in the laser
     // line closer than the target holds the trigger.
+    const sFF = createSim({ rand: seedRng(11), height: 420 })
     {
-        const s = createSim({ rand: seedRng(11), height: 420 })
-        s.enemies = [{ x: 500, y: 300, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
-        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
-        const h = s.humans[0]
+        sFF.enemies = [{ x: 480, y: 300, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
+        sFF.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        const h = sFF.humans[0]
         h.state = 'walk'; h.x = 300; h.y = 300
-        s.player.x = 200; s.player.y = 300; s.player.vx = 3; s.player.vy = 0
+        sFF.player.x = 200; sFF.player.y = 300; sFF.player.vx = 3; sFF.player.vy = 0
+        sFF.player.facing = 1; sFF.player.dark = 0; sFF.player.invuln = 1
+        const inp = watchRoute(sFF)
+        // The shot the rules refuse, the body must also refuse (#3456 law):
+        // shielded lines get RUN, not creeped — so the verdict reads on the
+        // steer (left, away), the fire veto AND the tell, and a blinded
+        // shield-guard that forgets any one of the three goes red.
+        ok(!inp.fire && inp.holdTell === true && inp.left && !inp.right,
+            'the brain will not shoot past a walking human standing in the line — and runs from the blocked line instead of creeping into it',
+            `fire=${inp.fire} hold=${inp.holdTell} left=${inp.left} right=${inp.right}`)
+    }
+    // #3456 stage 3 — the arcade never mutes its cargo: the haul elevator fires
+    // the same flat-line law…
+    {
+        const s = createSim({ rand: seedRng(23), height: 420 })
+        s.enemies = [{ x: 500, y: 200, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        s.humans[0].state = 'carried'
+        s.carrying = 0
+        s.player.x = 200; s.player.y = 200; s.player.vx = 0; s.player.vy = 0
         s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
         const inp = watchRoute(s)
-        ok(!inp.fire, 'the brain will not shoot past a walking human standing between it and the target', `fire=${inp.fire}`)
+        ok(inp.fire, 'a hauler FIRING in self-defence is legal: guns live during the elevator', `fire=${inp.fire}`)
+    }
+    // …with the friendly-fire veto intact while carrying (the veto outranks the
+    // defence reflex — the package never pays for the shot with a foot soldier).
+    {
+        const s = createSim({ rand: seedRng(23), height: 420 })
+        s.enemies = [{ x: 500, y: 200, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
+        s.humans.forEach((h, i) => { if (i > 1) h.state = 'dead' })
+        s.humans[0].state = 'carried'
+        s.carrying = 0
+        s.humans[1].state = 'walk'; s.humans[1].x = 300; s.humans[1].y = 200
+        s.player.x = 200; s.player.y = 200; s.player.vx = 0; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(!inp.fire && inp.holdTell === true, 'the haul gun holds when a walking human stands in the line', `fire=${inp.fire} hold=${inp.holdTell}`)
+    }
+    // The 1981 endgame rule, tested directly: with the wave's landers gone the
+    // surviving mutants run hotter than MUTANT_SPEED — and the transition fires
+    // exactly once, rand-free. While a lander lives, the fleet stays cold.
+    {
+        const s = createSim({ rand: seedRng(31), height: 420 })
+        s.enemies = [{ x: 320, y: 200, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+        s.player.invuln = 100000
+        let speedupEvents = 0
+        let peak = 0
+        for (let i = 0; i < 60; i++) { s.step({}); if (s.events.some(e => e.t === 'speedup')) speedupEvents++; peak = Math.max(peak, Math.abs(s.enemies[0].vx)) }
+        ok(speedupEvents === 1 && peak >= SPEEDER_SPEED - 0.01, `a landerless wave speeds its mutants up to the speeder cap (peak |vx| ${peak.toFixed(2)} -> ${SPEEDER_SPEED} vs cold ${MUTANT_SPEED}), speedup announced exactly once`, `events=${speedupEvents} peak=${peak}`)
+        const s2 = createSim({ rand: seedRng(31), height: 420 })
+        s2.player.invuln = 100000
+        s2.enemies = [
+            { x: 320, y: 200, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null },
+            { x: 3200, y: 150, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null },
+        ]
+        let peak2 = 0, su2 = 0
+        for (let i = 0; i < 60; i++) { s2.step({}); peak2 = Math.max(peak2, Math.abs(s2.enemies[0].vx)); if (s2.events.some(e => e.t === 'speedup')) su2++ }
+        ok(peak2 <= MUTANT_SPEED + 0.01 && su2 === 0,
+            `while a lander lives the hunters stay at MUTANT_SPEED (peak |vx| ${peak2.toFixed(2)}, ${su2} speedup events)`, `peak=${peak2}`)
+    }
+    // The last-hunter close-out: the lone remaining mutant, ALREADY level and at
+    // clean range astern, must be FACED (the wave can only close by killing).
+    {
+        const s = createSim({ rand: seedRng(37), height: 420 })
+        s.enemies = [{ x: 70, y: 200, vx: -3, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+        s.player.x = 200; s.player.y = 200; s.player.vx = 3; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.left && !inp.right, 'the last hunter, level and astern, gets faced for the close-out', `left=${inp.left} right=${inp.right}`)
+    }
+    // The momentum law: a threat only inside the PROJECTED band (a dash is
+    // carrying the hull toward it) must already read as crossfire — bail up —
+    // while a target merely in the contact COLUMN overhead must NOT be aimed
+    // into (hold height; the close band owns the escape when it arrives).
+    {
+        const s = createSim({ rand: seedRng(41), height: 420 })
+        s.enemies = [{ x: 330, y: 220, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+        s.player.x = 200; s.player.y = 200; s.player.vx = 6; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.up && !inp.down, 'a threat only the projected hull reaches yet already triggers the crossfire bail', `up=${inp.up} down=${inp.down}`)
+        const s2 = createSim({ rand: seedRng(43), height: 420 })
+        s2.enemies = [{ x: 255, y: 130, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+        s2.player.x = 200; s2.player.y = 200; s2.player.vx = 0; s2.player.vy = 0
+        s2.player.facing = 1; s2.player.dark = 0; s2.player.invuln = 1
+        const inp2 = watchRoute(s2)
+        ok(!inp2.up && !inp2.down, 'the vertical aim never commits the hull into a contact column — hold height instead', `up=${inp2.up} down=${inp2.down}`)
     }
     ok(/watchRoute\(sim\)/.test(jsx) && !/autopilot/.test(jsx),
         'index.jsx runs watchRoute for attract AND seat — the forked autopilot is gone')
@@ -879,14 +978,10 @@ if (process.argv.includes('--mutant')) {
             `if (p.dark <= 0 && p.invuln <= 0 && ceil - p.y < 8) { die(); return s }`,
             `if (false) { die(); return s }`],
         ['the patrol loses its elevator (vertical aim deleted)', S,
-            `        if (!climbing) {
-            if (dy > 10) input.down = true
-            else if (dy < -10) input.up = true
-        }`,
-            `        if (false) {
-            if (dy > 10) input.down = true
-            else if (dy < -10) input.up = true
-        }`],
+            `        if (!climbing && !shield && !close) {
+            // Stage 3: vertical AIM never commits the hull into a contact`,
+            `        if (false && !climbing && !shield && !close) {
+            // Stage 3: vertical AIM never commits the hull into a contact`],
         ['haulers lose their rank (b19 rescue weighting deleted)', S,
             `if (e.type === 'lander' && e.carry !== null) d *= 0.25`,
             `if (false && e.type === 'lander' && e.carry !== null) d *= 0.25`],
@@ -898,9 +993,9 @@ if (process.argv.includes('--mutant')) {
             `if (false) {`],
         ['the rescued human is never set down (b19 delivery elevator deleted)', S,
             `if (s.carrying !== null) {
-        const want = groundAt(s.terrain, p.x) - 13`,
+        const seat = groundAt(s.terrain, p.x) - 13`,
             `if (false && s.carrying !== null) {
-        const want = groundAt(s.terrain, p.x) - 13`],
+        const seat = groundAt(s.terrain, p.x) - 13`],
         ['the patrol stops lifting off the wireframe (b21 crash-law sentinel)', S,
             `    if (climbing) input.up = true`,
             `    if (false) input.up = true`],
@@ -917,7 +1012,7 @@ if (process.argv.includes('--mutant')) {
             `if (s.celebrate > 0) s.celebrate -= 1 // #1907: the wave-clear beat burns its own clock`,
             `if (false) { s.celebrate -= 1 }`],
         ['#1907 the held-trigger tell is muted', S,
-            `else input.holdTell = true // #1907: the brain SHOWS why it held the trigger`,
+            `if (line.hold) input.holdTell = true`,
             `/* tell muted */`],
         ['#1907 the falling pod loses its chute', I,
             `const tumble = h.state === 'falling'`,
@@ -949,6 +1044,30 @@ if (process.argv.includes('--mutant')) {
         ['#3445 the respawn grace freezes when dark ends (the immortality bug)', S,
             `if (p.invuln > 0) p.invuln -= 1`,
             `if (p.dark > 0) p.invuln -= 1`],
+        ['#3456 s3 the haul goes mute again (cargo guns deleted)', S,
+            `if (haulGun.gun) input.fire = true`,
+            `/* haul guns muted */`],
+        ['#3456 s3 the package never braces (turn-and-brace deleted)', S,
+            `        } else if (hunt) {
+            // Turn-and-brace WITH the package`,
+            `        } else if (false && hunt) {
+            // Turn-and-brace WITH the package`],
+        ['#3456 s3 the endgame runs cold (speedup rule deleted)', S,
+            `const cap = speedMode ? SPEEDER_SPEED : MUTANT_SPEED`,
+            `const cap = MUTANT_SPEED`],
+        ['#3456 s3 the route trails the last hunter forever (close-out deleted)', S,
+            `if (onlyMutants && s.enemies.length === 1 && rearD > 90 && Math.abs(rear.y - p.y) < 12) {`,
+            `if (false) {`],
+        ['#3456 s3 momentum goes blind (projected threat scan deleted)', S,
+            `const ex = Math.min(Math.abs(wrapDelta(e.x - p.x)), Math.abs(wrapDelta(e.x - qx)))
+            const ey = Math.min(Math.abs(e.y - p.y), Math.abs(e.y - qy))`,
+            `const ex = Math.abs(wrapDelta(e.x - p.x))
+            const ey = Math.abs(e.y - p.y)`],
+        ['#3456 s3 the aim dives into the contact column (gate deleted)', S,
+            `if (canDown && dy > 10 && !contactColumn(true)) input.down = true
+            else if (dy < -10 && !contactColumn(false)) input.up = true`,
+            `if (canDown && dy > 10) input.down = true
+            else if (dy < -10) input.up = true`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

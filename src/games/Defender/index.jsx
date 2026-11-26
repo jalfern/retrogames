@@ -92,6 +92,7 @@ const DefenderGame = () => {
                 }
                 else if (ev.t === 'bonus') audioController.playTone(1200, 0.15, 'square', 0.12)
                 else if (ev.t === 'mutate') audioController.playTone(500, 0.06, 'square', 0.08)
+                else if (ev.t === 'speedup') audioController.playSweep(300, 950, 0.3, 'square', 0.14) // #3456 stage 3: the fleet just went hot
                 else if (ev.t === 'abduct') audioController.playTone(120, 0.12, 'triangle', 0.1)
                 else if (ev.t === 'humanDied') audioController.playSweep(500, 120, 0.2, 'sawtooth', 0.14)
                 // #3443: the smart bomb's boom — a subsonic sweep under a white
@@ -222,12 +223,23 @@ const DefenderGame = () => {
         }
 
         const drawLander = (e) => {
-            ctx.strokeStyle = e.type === 'mutant' ? '#ff5555' : '#cccccc'
+            ctx.strokeStyle = e.type === 'mutant' ? (sim.speedMode ? '#ff9d3c' : '#ff5555') : '#cccccc'
             ctx.lineWidth = 2
             ctx.save()
             ctx.translate(e.x, e.y)
             // #1531: the machine's sprites pulsed — legs/wings flare every few frames.
             const pulse = (tickN >> 3) % 2 === 0 ? 0 : 2
+            // Speeder tell (#3456 stage 3): landerless-wave mutants run hot —
+            // exhaust chevrons off the tail so the fleet going fast READS fast.
+            if (e.type === 'mutant' && sim.speedMode) {
+                const tr = Math.sign(e.vx) || 1
+                ctx.beginPath()
+                ctx.moveTo(-tr * 20, -4 - (tickN % 4))
+                ctx.lineTo(-tr * 27, 0)
+                ctx.moveTo(-tr * 20, 4 + (tickN % 4))
+                ctx.lineTo(-tr * 27, 0)
+                ctx.stroke()
+            }
             // Abduction telegraph: a flickering tractor beam down to the human
             // being dive-targeted, so the chain reads before the grab (#1531).
             if (e.type === 'lander' && e.state === 'descend' && e.target != null && sim.humans[e.target] && sim.humans[e.target].state === 'walk') {
@@ -423,7 +435,7 @@ const DefenderGame = () => {
             ctx.stroke()
             // radar dots flicker like the CRT scanner (#1531)
             sim.humans.forEach((h, i) => { if (h.state !== 'dead' && (tickN + i * 7) % 24 > 3) { ctx.fillStyle = '#ffd23f'; ctx.fillRect(h.x * sc - 1, MINIMAP_HEIGHT - 8, 2, 2) } })
-            sim.enemies.forEach((e, i) => { if ((tickN + i * 5) % 18 > 2) { ctx.fillStyle = e.type === 'mutant' ? '#ff5555' : '#aaaaaa'; ctx.fillRect(e.x * sc - 1, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, e.y * 0.05 + 3)), 2, 2) } })
+            sim.enemies.forEach((e, i) => { if ((tickN + i * 5) % 18 > 2) { ctx.fillStyle = e.type === 'mutant' ? (sim.speedMode ? '#ff9d3c' : '#ff5555') : '#aaaaaa'; ctx.fillRect(e.x * sc - 1, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, e.y * 0.05 + 3)), 2, 2) } })
             ctx.fillStyle = '#ffffff'
             // #1907: player priority — when the camera window is split by the
             // seam, the dot blinks big so you can find yourself on the far side.
