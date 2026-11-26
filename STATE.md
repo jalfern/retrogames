@@ -1,75 +1,84 @@
-# STATE — forge board snapshot (slot b, 2026-11-26 — DEFENDER wall veto SHIPPED: #3528 closed)
+# STATE — forge board snapshot (slot b, 2026-11-26 — PONG gets the cabinet's laws back)
 
-## This session — TARGET refused, never-dry walked, shipped
-- TARGET #3525 (Invaders polish) REFUSED at claim — mini held it fresh (0 min).
-  Normal ladder: steer 0 · `next` #1712 waiting-jon (skipped) · game-queue
-  empty · QA-borrow BLOCKED (mini + studio QA live) → never-dry rung.
-- `idle-kick` answered `KICK DEFENDER 0 weak` — the SAME kick the last two
-  sessions declined. Rule-8 sanity check before re-declining: this time README
-  gap 0's tail named SURVIVING kills (terrain 1 + 3) as still open, and the
-  autopsy reproduced them → real work, take it. Filed + claimed **#3528**.
-- **SHIPPED (#3528 → PR #3531 → `e3ab8b9`): the wall veto.** Autopsy of the
-  4 killing ticks found why the #3497 race couldn't see these: the race
-  projects BRAKING behind a px-scaled horizon (look = 24+|vx|·20 ≈ 30 px at
-  crawl) while the hover/aim jobs ACCELERATE — throttle pinned toward a
-  ~1.6 px/px riser, floor 12 px ABOVE the hull 20 px ahead at the kill.
-  The veto runs the REAL flight model in the pressed direction with lift from
-  now; grind → lift the press; coast also grinds → climb (+reverse when
-  backing clears). Braking stays the race's law; haul keeps its braces.
-  Widening the race horizon itself stays measured-rejected (#3497: brace-timing
-  loss minScore 35,850→20,200). Pinned physics: a climbing fighter gains only
-  ~0.7 px altitude per px travelled at full thrust — gradients ≥ ~0.7 px/px
-  are beatable only at reduced throttle.
-- Honest measure (both audit sets): terrain deaths **0 + 0** (was 1+3), banks
-  min **43,500** + 15,550, survived 20/20+20/20, rescues 55+52/54+48,
-  diedHauling 1+4, lives spent 38+42 (mortal, worst seed 5).
-- Proof: defendercheck **179/0** (+5 gates incl. 0+0 pin + refusal rig with
-  flat & gentle-hill controls) · bypass mutant reds both new gates, restored ·
-  `--mutant` **all 49 existing mutants still die** (229/0) · NEW
-  `watchmeasure`-shared patrol in defendercheck (raw pre-step read had
-  misclassified graze deaths — one kill-taxonomy implementation now) ·
-  watchcheck **908/908** · defenderplay **17/17** real Chrome · eslint +
-  lint:mario/fps/ai + build green. Smoke CI failed on PONG tap-start
-  (unrelated shared-shell flake) — rerun once per rule 3.
-- Filed **#3533** (`QA — DEFENDER: polish pass (#3531 follow-on)`): two-player,
-  per-type kill blossoms, 300 s+ soak of the veto, + a DO-NOT-FIX note (our
-  B-button is Jon's #2016 smart-bomb answer, not cabinet Hyperspace).
-- README honesty: gap column re-marked with idle.mjs's own vocabulary —
-  CLOSED by #3531/#3496/#3484/#3472, decided states **DISCLAIMER**, only
-  two-player left scored. Defender's idle score: phantom 7 → honest 1.
+## This session — TARGET refused, ladder item shipped
+- TARGET #3529 (PONG touch quit) REFUSED at claim — slot a held it fresh (their
+  checkpoint 13 min old). Normal ladder: steer 0 · `next` #1712 waiting-jon
+  (skipped) · game-queue had ONE item → claimed **#3532** (drop the ported
+  paddle scatter, seedpin re-baseline). Slot a later SHIPPED #3529 mid-flight
+  (PR #3534) — one README conflict at rebase, trivially resolved.
+- **SHIPPED (#3532 → PR #3541 → `e3ff846`): PONG cabinet serve.** Scatter +
+  spin dice gone (`paddleStart`/`paddleSpin` deleted; exactly two `rand()`
+  calls remain, both serve — pongcheck counts and pins it). Deflection =
+  strike-position law (`dy += SPIN_K·offset/half`, ±2 clamp, zero new
+  entropy). Paddles HOLD across points; match start centers.
+- Rule-8 finds en route (the pass's real gold):
+  1. **Ceiling-park bug** — the unguarded wall-flip (`y<=0` re-test) parked
+     the ball above the ceiling once kicks became deterministic (y≈−6.6, dy
+     +2/hit, endless shuttle). Flip now direction-guarded (contact event, like
+     the cabinet); penetration kept verbatim; `predictLand` shares the guard.
+  2. **Flat-return deadlock** — centered returns → flat → forever (EASY seed 5
+     0–0 at cap). Dice-free anti-loop floor `|dy| ≥ DY_MIN` (0.5) after returns.
+  3. HARD collapsed 38→26 with dead-center returns — the DRIVER needed the new
+     law, not the sim: `watchStep` now aims off-center (`AIM_RATIO 0.75`) at
+     the wall farthest from the machine. HARD 38/40, NORMAL concessions halved.
+- Proof: pongcheck **81/81** (serve-only seedpin script + dice-count + NEW
+  §deflection + driver **40/40 con 15, seed 25 retired by name** + tiers
+  **EASY 40/40 con 0 / NORMAL 40/40 / HARD 38/40 seeds 14+24 named** +
+  predictor-vs-`stepBall` tick-for-tick incl. penetration band) · mutants
+  **20/20 + 5/5 die** (7 new anchored on replaced lines: re-planted scatter,
+  flat/sign-flip deflection, floor/guard removed, unguarded predictor, no-aim
+  seat) · pongdrive **26/26** (incl. slot a's touch-quit legs post-rebase) ·
+  watchcheck(pong) **318/318** · lint:mario/fps/ai + lint:pong + eslint + build green.
+- #3502 VERBATIM trace RE-BASELINED at this head (diff-less ≡ NORMAL still —
+  NORMAL is now the corrected table; README + PR + issue all say so).
 
-## BOARD facts at close
-- game-queue = 0 · building = #3532 (PONG serve, another lane) ·
-  building-qa = #3535, #3524 · feedback = #3536 (new), #3533 (mine), #3244, #2971.
-- main moved fast while I merged: mini shipped the Invaders polish (#3530 —
-  its #3525 TARGET closed) and pong quit-path (#3534) landed after me.
-- Rule-4 satisfied: game code merged this session (#3531).
+## BOARD facts at close (~17:20Z)
+- game-queue = 0 · building = 0 · building-qa = #3533 (QA's DEFENDER polish) ·
+  feedback = #3545 (NEW: ADVENTURE wanderer heading, other lane) + #3536
+  (PONG polish — I added a scope-update comment: strike-angle sound feedback +
+  making paddle-hold legible on phones) + #3533 + #3244 + #2971.
+- Other lanes shipped during my run: PONG quit #3534, dig-dug art #3539,
+  invaders watch pilot #3542, adventure decoy #3543.
+- Rule-4: slot b SHIPPED game code this session (#3541). No STALLED.
+- #3532 closed + `shipped` + live URL. Prod verified via content marker
+  `.dy<0` in bundle `index-C2MRbBPW.js` (exact-hash compare impossible — two
+  lanes merged atop within minutes; the marker is absent from all pre-#3541 bundles).
 
 ## PLAYABLE on main right now
-- DEFENDER: mortal watch patrol, wall veto live —
-  https://jalfern.com/retrogames/defender (prod token verified in the
-  deployed entry bundle).
-- SPACE INVADERS with per-row bursts + wave laws, pong touch-quit terminal.
+- `/retrogames/pong` — NEW: cabinet serve (no scatter, hold across points),
+  strike-position deflection, QUIT chip on the pad (#3534), driver 40/40.
+- `/retrogames/invaders` — wave laws (#3521) + aiming watch pilot (#3542).
+- `/retrogames/adventure` — roam dragons (#3489) + armed decoy wait (#3543).
+- `/retrogames/defender` — ridge race + wall veto (#3528). `/retrogames/rogue`
+  — wounded flee (#3513). Plus prior shelf (dig-dug textured, pinball, skyward,
+  tidal-rush, ssx, comet-drift pair, marble pair, galaga bee, mario-kart,
+  ice-climber, pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT,
+  STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron
+  keep, missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert, forge).
 
 ## Open questions (links only — #605)
-- #3335 — QA music-bus low-pass (AWAITING, deadline Nov 27; PINBALL gate).
-- #3516 — Arkanoid art rung (AWAITING, Nov 28).
-- #3054 — TestFlight recorder; #2971 — contra polish; #1712 — PLAICRAFT S2.
-- No new jonq questions this session (mechanical fix, no taste calls).
+- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane,
+  deadline Nov 27; gates PINBALL tilt-muffle — do NOT implement until answer).
+- #3516 — Arkanoid art pass: one more texture rung, or done? (AWAITING).
+- #3054 — native TestFlight ports have no recorder/upload (AWAITING).
+- #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
+- No new jonq questions this session (fidelity call was already made by the
+  issue; no taste decisions left to me).
 
 ## Slot state at handoff
-- Slot-b dev server (:5178) stopped via `scripts/devstop.sh` at close.
-- Worktree ~/Dev/retrogames-forge-defender-riser is DONE with (PR merged;
-  branch deleted remote+local by mergeclean; worktree left detached at
-  origin/main — safe to `git worktree remove` next session).
-- Main checkout detached at origin/main; STATE.md shipped via docs PR
-  (never push main) and parked with `statepark.mjs park b`.
+- Slot-b dev server :5178 stopped with scripts/devstop.sh at close.
+- Worktree ~/Dev/retrogames-forge-pong-cabinet-serve prunable (all merged);
+  main checkout stays detached at origin/main, never main-checked-out.
+- GitHub 503s from yesterday did NOT recur; forge-merge rode a 15-min `static`
+  wait to green cleanly.
 
 ## Next claims (for whoever is free)
-1. Ladder still thin: steer 0, next = #1712 (waiting-jon), queue empty →
-   never-dry again; idle-kick now returns DEFENDER 1 weak (two-player) —
-   DEFENDER two-player alternating turns is a real, sizable game-code stage
-   (desktop keyboard option per Jon's multiplayer decision; CPU stays the
-   phone default). #3533's per-type kill blossoms are the smaller pick.
-2. Builders-the-reverse stays: when QA lanes free up, feedback #3524
-   (ADVENTURE hoard-camp) and #3244 (TIDAL RUSH rooms) are the oldest.
+1. Never-dry expected: run `idle-kick` FRESH — PONG's gap list just shrank
+   (gap 0 closed, gap 2 closed by slot a; what remains: the score-knob and
+   sound gaps). ASTEROIDS/DONKEY KONG/CENTIPEDE/MISSILE COMMAND/ROGUE tie the
+   score-4 shelf — sanity-check each named index against its README + closed
+   issues first (phantom class bit #3529 itself last session).
+2. `PONG sound` is now the cheapest honest pick if kickers remain: strike
+   deflection made hit-angle meaningful but the tone is still one pitch —
+   owned by #3536 (QA polish), builders shouldn't steal it.
+3. `invadersdrive` remains the browser-proof template for one-sim games.
