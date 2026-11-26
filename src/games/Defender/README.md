@@ -97,33 +97,28 @@ a diving lander is next, then nearest threats; a falling human is flown into
 when a walking human stands in the laser line closer than the target. The
 patrol still climbs clear of the terrain and stays out of the dark. Any
 driving key or a tap hands the wheel back (shared blips). Since #3445 the seat
-is **mortal** — the old grace-freeze had made it (and the numbers WITNESS
-audited) half-immortal; an honest patrol loses ships to the graze b20 measured,
-and WITNESS now certifies what it banks and rescues before an honest GAME OVER,
-not survival.
+is **mortal**, and since #3456 the planet is honest too (hunt mutants actually
+move — see Honest gaps); the patrol survives most horizons and WITNESS pins what
+it banks, clears and rescues, while the survival copy claim waits for both sets
+at 20/20.
 
 ## Honest gaps
 
-  respawn grace only while dark, then FROZE it at ~2 s — the pilot could not
-  crash twice, and the b18–b21 WITNESS laws ("all 40 survive 150 s", "no
-  patrol crashes twice") were artifacts of that immortality, not of flying. On
-  the honest clock the SAME seeds measure **0/20 witness + 1/20 holdout alive
-  at 150 s**: the seat takes the ~1 graze b20 measured, and the graze now
-  keeps landing. The survival claim is retired from the copy; what ships pinned
-  is the honest floor — >= 15/20 of each set reaches an honest GAME OVER inside
-  the horizon (the never-die bug is pinned too), every seed banks >= 1100
-  witness / >= 100 holdout, >= 10/20 clear a wave, >= 10 catches AND >= 10
-  deliveries per set. Re-earning survival (a watchRoute interception redesign against a mortal
-  pilot) tracked as #3456: b20/b21 measured nine designs but never against a
-  pilot that could die twice, so all of it needs re-reading in the new light.
-  Stage 1 measured (2026-11-26, #3456): npm run watchmeasure = the dual sets
-  plus a death taxonomy - 74 % of mortal losses are TERRAIN grazes (48/65 +
-  49/66), enemy proximity the rest. Six look-ahead brake designs (V1-V6, full
-  table on the issue) raise survival to 20/19 of 40 and drive terrain deaths
-  to ~0, but every one breaches a bank/wave/delivery floor: the brake can see
-  terrain, not purpose - flow is the hard half. Stage 2 brief: fresh-facing
-  gate, hover-kill (brake vx inside the 16 px kill band - guns and death
-  share that band), valley-site delivery seats.
+- **#3456 stage 2 (2026-11-26) — the planet woke up.** Auditing why mortal survival
+  was so brutal found a second artifact under #3445's: **hunt-state mutants never
+  integrated position** — the movement block is lander-only, so every mutant since
+  the port was a STATUE its whole life while this README swore "chases you". The
+  fix makes the 1981 hunter real, and watchRoute was re-tuned against it: terrain
+  seat with sink + terrain-rise margins, canyon turn, pulsed descents (a U/D
+  interlock — both keys together used to cancel into the ground), valley-site
+  delivery veto, hover-kill, fresh-facing gate, turn-and-brace vs astern hunters,
+  crossfire bail, and a hauler-job-outranks-the-duel rule (the law test pins it).
+  Honest measure: survived 19/20 + 16/20 at the 150 s horizon, banks 9,650 + 5,950,
+  waves 20 + 20, catches 49 + 47, deliveries 37 + 36. WITNESS re-pinned to these
+  floors and the mortality tripwire flipped (>=15 honest GAME OVERs became <=5 —
+  survival progress breaks the old form by design; zero deaths is still the bug).
+  The copy claim "the patrol survives" still stays retired until both sets are
+  20/20 honestly, and diedHauling (12 + 11) says the package still gets hunted.
 - **CLOSED by #3443** — the smart bomb is in (Jon's #2016 answer A, "port it.
   Smart bomb on the B/secondAction button, 3 per wave"): B vaporizes every
   hostile inside the wrap-aware 1000 px screen window at table value, haulers

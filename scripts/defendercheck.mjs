@@ -277,6 +277,11 @@ console.log('respawn grace burns honestly (#3445): it expires, death comes back,
     ok(s.player.dark === 0 && s.player.invuln === INVULN_TICKS,
         'when the dark ends the blink grace is exactly INVULN_TICKS strong (~2 s)', `dark=${s.player.dark} invuln=${s.player.invuln}`)
     ticks = 0
+    // #3456: the hunt mutant now really chases (it used to be a fixture), and it
+    // spawned on the wreck = on the respawn seat — a free bite at grace-zero.
+    // Park it clear so this loop measures nothing but the clock.
+    s.enemies[0].x = (s.player.x + 2000) % 4000
+    s.enemies[0].y = 80
     while (s.player.invuln > 0 && ticks < 600) { s.step({}); ticks++ }
     ok(s.player.invuln === 0 && ticks === INVULN_TICKS,
         'the grace burns to ZERO on the clock alone — nothing forces it', `ticks=${ticks}`)
@@ -453,21 +458,24 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
 }
 
 
-// ---------- WATCH witness (#1637 batch 18; defends the humans since batch 19;
-// dual-set since batch 21; #3445 RETIRED the survival claim) -------------------
-// b18-b21 pinned "all 40 seeds survive 150 s, none crashes twice". #3445 proved
-// that was an ARTIFACT of the frozen-grace bug: the pilot could not crash twice
-// because after its first death invuln never expired. With the grace burning
-// honestly, the same seeds measure 0/20 + 1/20 alive at 150 s — the patrol is
-// mortal and usually loses. What ships now is the honest floor: the seat still
-// banks, clears waves and rescues before the wrecks pile up, AND the terminal
-// still arrives on its own (a seat that could not die would be the bug back).
-// Re-earning SURVIVAL against a mortal pilot is a watchRoute redesign arc —
-// tracked as its own issue; b20/b21's interception data was measured against a
-// half-immortal pilot and every number there needs re-reading.
+// ---------- WATCH witness (#1637 batch 18; dual-set b21; #3445 retired the
+// survival claim; #3456 stage 2 re-earned a real one) ---------------------------
+// b18-b21 pinned "all 40 seeds survive 150 s" — #3445 proved that was the
+// frozen-grace artifact; honest clock measured 0/20 + 1/20. #3456 stage 2
+// re-tuned watchRoute against the MORTAL pilot — and uncovered a second artifact
+// hiding under the first: hunt-state mutants never integrated position (statues),
+// so even the 0/20 baseline had been flying a half-dead planet. Fixing the
+// fidelity bug AND the route measures (npm run watchmeasure): banks 13,550 +
+// 5,050, waves 20/20 + 19/20, rescues 44 + 37, deliveries 37 + 27, and
+// SURVIVED at the horizon 17/20 + 17/20. That is survival most horizons, not
+// proof — so the copy claim stays retired and the witness pins move here: the
+// job floors rise to what the honest patrol delivers, and the mortality tripwire
+// flips from ">=15 honest GAME OVERs" (which survival progress would break by
+// design, see #3445) to "<=5" — an honest pilot loses ships to real hunters, and
+// a return of 0-deaths patrols is the immortality bug back.
 {
     const patrol = (base) => {
-        let survived = 0, overs = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0
+        let survived = 0, overs = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0, livesLost = 0
         for (let k = 0; k < 20; k++) {
             const rand = seedRng(base + k * 91)
             const w = createSim({ rand, height: 420 })
@@ -479,6 +487,7 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
                     if (e.t === 'wave') waves++
                     if (e.t === 'catch') catches++
                     if (e.t === 'deliver') delivers++
+                    if (e.t === 'die') livesLost++
                 }
                 cap--
             }
@@ -487,18 +496,20 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
             if (waves >= 1) waveSeeds++
             minScore = Math.min(minScore, w.score)
         }
-        return { survived, overs, waveSeeds, minScore, catches, delivers }
+        return { survived, overs, waveSeeds, minScore, catches, delivers, livesLost }
     }
     const wi = patrol(2000)
     const ho = patrol(5000)
-    ok(wi.overs >= 15 && ho.overs >= 15,
-        `the seat pilot is MORTAL — ${wi.overs}/20 + ${ho.overs}/20 patrols reach an honest GAME OVER inside 150 s (#3445: the old 40/40 survival claim was the freeze's artifact; invulnerability is not the fix)`)
-    ok(wi.minScore >= 1100, `even mortal, every witness patrol banks >= 1100 (min ${wi.minScore})`)
-    ok(ho.minScore >= 100, `untuned holdout banks >= 100 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
-    ok(wi.waveSeeds >= 10, `>= 10/20 witness seeds clear at least a wave before the wrecks pile up (${wi.waveSeeds}/20)`)
-    ok(ho.waveSeeds >= 10, `>= 10/20 holdout seeds clear at least a wave (${ho.waveSeeds}/20)`)
-    ok(wi.catches >= 10 && wi.delivers >= 10, `the rescue law holds for a mortal pilot: ${wi.catches} catches, ${wi.delivers} deliveries (b21 pinned 40 — that fleet of rescues was half-immortal flying)`)
-    ok(ho.catches >= 10 && ho.delivers >= 10, `the untuned holdout rescues too: ${ho.catches} catches, ${ho.delivers} deliveries`)
+    ok(wi.overs <= 5 && ho.overs <= 5,
+        `the seat pilot SURVIVES its horizon vs the real hunters — ${wi.survived}/20 + ${ho.survived}/20 alive at 150 s (#3456 stage 2; ${wi.overs + ho.overs} honest GAME OVERs across 40 sets: mortal, never immortal — 0 deaths on both sets would be the grace bug back)`)
+    ok(wi.livesLost >= 20 && ho.livesLost >= 20,
+        `both sets spend >= 20 lives under honest fire (${wi.livesLost} + ${ho.livesLost}) — the pilot bleeds; immortality is still the bug, not the fix`)
+    ok(wi.minScore >= 6000, `every witness patrol banks >= 6,000 against the live planet (min ${wi.minScore} — was 1,100 pre-#3456)`)
+    ok(ho.minScore >= 4000, `untuned holdout banks >= 4,000 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
+    ok(wi.waveSeeds >= 15, `>= 15/20 witness seeds clear a wave (${wi.waveSeeds}/20 — the hunters clear themselves now, so waves close)`)
+    ok(ho.waveSeeds >= 15, `>= 15/20 holdout seeds clear a wave (${ho.waveSeeds}/20)`)
+    ok(wi.catches >= 25 && wi.delivers >= 20, `rescue law under real fire: ${wi.catches} catches, ${wi.delivers} deliveries on the witness set`)
+    ok(ho.catches >= 25 && ho.delivers >= 20, `the untuned holdout rescues too: ${ho.catches} catches, ${ho.delivers} deliveries`)
     ok(humansAlive(createSim({ rand: seedRng(2000), height: 420 }).humans) === HUMAN_COUNT,
         'witness seeds start with the street full (five humans)')
     // The law, tested directly: a hauler outranks a CLOSER idle lander. The
