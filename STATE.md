@@ -1,78 +1,75 @@
-# STATE — forge board snapshot (slot a, 2026-11-26 — SPACE INVADERS gets the cabinet's wave laws)
+# STATE — forge board snapshot (slot a, 2026-11-26 — PONG's terminal reaches the phone)
 
-## This session — TARGET refused, never-dry walked, shipped
-- TARGET #3489 (ADVENTURE polish) REFUSED at claim — slot b held it fresh
-  (38 min). Normal ladder: steer 0 · `next` #1712 waiting-jon (skipped) ·
-  game-queue empty · feedback borrow BLOCKED (QA mini + studio live) → never-dry.
-- `idle-kick` answered `KICK DEFENDER 0 weak` — DECLINED after sanity check:
-  its gap-0 open clause (mid-horizon ridges) shipped via #3497 while I claimed
-  (closed 12:40Z, PR #3511 in main); phantom class per prior STATE. Named the
-  next-honest pick: SPACE INVADERS (score 4 = 4 unowned README gaps, first of
-  the score-4 ties in registry order). Filed + claimed **#3517**.
-- **SHIPPED (#3517 → PR #3521 → `9f9f8ee`): arcade wave laws.** 11x5 = 55
-  opening at pitch 16 on native 224x256; five-band score 30/20/20/10/10
-  (squid/crab/crab/octopus/octopus); growth table 55 → 44 → 33 (wave 2 loses
-  the bottom octopus row); **thinning speed law** `marchSpeed = waveSpeed x
-  clamp(0.3·sqrt(n0/n), 0.3, 3)` — full fleet crawls, last rows sprint ~2.3x;
-  player missile 5 → 8 px/t (cabinet ~3:1 over the 2.5 bombs). Zero new
-  entropy; seed determinism untouched.
-- Root-cause found en route (rule-8 wins): a 55-wide wall sweeps only ~42px
-  between the walls — at the port's flat speed it LANDS ~tick 777, before 55
-  one-shot kills fit (≥2000 ticks). The cabinet breaks the same geometry with
-  crawl-at-full + fast-missile; so did we (calibration sweep picked the law:
-  sqrt-thinning beat harmonic 10/10 vs 0/10; cap 3 kept for feel).
-- Proof: invaderscheck **74/74** (+growth +speed-law gates; WITNESS 20/20
-  clean wave-1 clears, slowest 1506 pin 1600, worst gap 196 pin 220, bricks
-  5854/6560 recalibrated honestly) + **13 mutants red** (incl. flat-march and
-  frozen-growth, restored) · NEW `npm run invadersdrive` **8/8** real Chrome
-  real keys (start/arrows/fire/landing-death/restart/0 errors) ·
-  watchcheck(invaders) **322/322** · eslint + lint:mario/fps/ai + build green.
+## This session — TARGET refused, ladder thin, shipped anyway
+- TARGET #3528 (DEFENDER terrain look-ahead) REFUSED at claim — slot b held it
+  fresh (3 min). Normal ladder: steer 0 · `next` #1712 waiting-jon (skipped) ·
+  game-queue empty · feedback all building-qa/waiting-jon + live QA MASTER →
+  flagship stage spent → never-dry.
+- `idle-kick` answered `KICK PONG 0 weak`. Phantom-check held the line: gap 0
+  (seed-25 forced loss) names its own fix (drop paddle scatter) but the README
+  declined it twice — regenerating the #1473 seedpins + #3502 NORMAL bit-trace.
+  jonq ask REFUSED (#2176: calibration-class is taken, not asked) → decided on
+  the ladder: shipped the oldest ACTIONABLE gap, filed the scatter re-baseline
+  as **game-queue #3532** (slot b claimed it within the hour — the ladder works).
+- **SHIPPED (#3529 → PR #3534 → `238ff7b`): PONG touch quit.** QUIT chip on
+  the #2324 thirdAction rail (Excitebike's EXIT chip precedent), rendered ONLY
+  during play; tap fires the existing Escape terminal verbatim → honest MATCH
+  OVER card → tap restarts at zeroes. Phones could not reach the terminal at all
+  before (quit-only-keyboard, reload was the only escape). `sim.js` untouched —
+  every seedpin verbatim.
+- Found + fixed a pre-existing flake en route: pongdrive leg 1 opened UNPINNED
+  — the first-hit wait faced a random serve + paddle scatter and starved (two
+  luck reds). Pinned per the #1473 drive law; 3x green.
 
-## BOARD facts at close (14:11Z)
-- game-queue = 0 · building = 0 (slot b SHIPPED #3489 during this session —
-  roam law landed; follow-up feedback #3524 filed) · building-qa = 0 (QA's
-  OUTRUN art pass #3523 shipped as #3526 right at handoff) · feedback =
-  #3525 (my SPACE INVADERS polish pass) + #3524 + #3244 + #2971.
-- Rule-4: slot a SHIPPED game code this session (#3521). No STALLED.
-- #3517 closed + `shipped` + live-URL comment. Live verified by content
-  marker (hashes differ between local/Vercel builds — poll the bundle for
-  `#9be7ff`, the new octopus band color).
+## Proof
+- pongdrive **26/26** (was 19; leg 6 = 7 real-touch gates: attract-no-chip /
+  tap-start / chip-present / tap-quit-honest(done+seed) / chip-retires /
+  tap-restart-zeroed / chip-returns) + NEW `pongdrive --mutant` **3/3 die**
+  (never-rendered, attract-flip, dead-key; tree clean before/after).
+- pongcheck **68/68** verbatim · eslint + lint:mario/fps/ai + build green ·
+  prod verified by content marker (bundle `index-Cr-cc-4M.js` carries
+  "QUIT chip on the pad").
+
+## BOARD facts at close (~15:5xZ)
+- game-queue = 0 (#3532 claimed `building` by slot b after its DEFENDER ship —
+  #3531/#3533 arrived mid-session). building-qa = #3535 (DIG DUG art, mini).
+- feedback = #3536 (my PONG polish pass) + #3533 + #3524 + #3244 + #2971.
+- Rule-4: slot a SHIPPED game code (#3534). No STALLED. No new jonq questions
+  (the one candidate was refused as #2176-class — noted here, not re-asked).
 
 ## PLAYABLE on main right now
-- `/retrogames/invaders` — NEW: the 55-wall crawls in, four-rows on wave 2,
-  three-row sprint from wave 3; banded squid/crab/octopus kills.
-- `/retrogames/adventure` — roam dragons (#3489 landed while I shipped).
-  `/retrogames/rogue` — wounded monsters flee, races double-step (#3513).
-- `/retrogames/pong` — EASY/HARD/2P. `/retrogames/defender` — ridge race
-  (#3497) + stage-4 column-dash. Plus prior shelf (grind-city, pinball,
-  skyward, tidal-rush, ssx, comet-drift pair, marble pair, galaga bee,
-  mario-kart, ice-climber, pacman, mario, minesweeper/garden-guard/homebody,
-  TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
-  spy-hunter, iron keep, missile, pucks, mines, zork, ultima, king's quest,
-  Joust, Q*bert, forge board).
+- `/retrogames/pong` — NEW: QUIT chip on the pad; phones can end a match.
+  Plus EASY/NORMAL/HARD/2P, WATCH driver, honest quit card.
+- `/retrogames/defender` — slot b's terrain wall-veto (#3531): holdout terrain
+  deaths closed without widening the horizon.
+- `/retrogames/invaders` — the 55-wall wave laws (earlier today).
+- Plus prior shelf (adventure roam, rogue flee, grind-city, pinball, skyward,
+  tidal-rush, ssx, comet-drift pair, marble pair, galaga bee, mario-kart,
+  ice-climber, pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT,
+  STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter, iron
+  keep, missile, pucks, mines, zork, ultima, king's quest, Joust, Q*bert,
+  forge board).
 
 ## Open questions (links only — #605)
-- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane,
-  deadline Nov 27; gates PINBALL tilt-muffle — do NOT implement until answer).
+- #3335 — QA: music-bus low-pass in AudioController (AWAITING, deadline Nov 27;
+  gates PINBALL tilt-muffle — do NOT implement until answer).
 - #3516 — Arkanoid art pass: one more texture rung, or done? (AWAITING).
 - #3054 — native TestFlight ports have no recorder/upload (AWAITING).
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
-- No new jonq questions this session (never-dry pick; no taste calls).
 
 ## Slot state at handoff
 - Slot-a dev server :5173 stopped with scripts/devstop.sh at close.
-- Worktree ~/Dev/retrogames-forge-invaders-55 pruned after this docs PR
-  merges; main checkout stays detached at origin/main, never main-checked-out.
-- GitHub threw a 503 mid-merge-cleanup; forge-merge.sh's mergeclean rode it
-  out correctly (server-truth merge, branch deleted, lane re-detached).
+- Worktree ~/Dev/retrogames-forge-pong-touch-quit detached at origin/main after
+  merge — next session may `git worktree remove` it. Main checkout stays
+  detached at origin/main, never main-checked-out.
+- `#3532` carries the full scatter re-baseline scope (physics + pin-regen +
+  mutant anchors move with the code) — its claimer needs no re-derivation.
 
 ## Next claims (for whoever is free)
-1. Never-dry expected again: ROGUE (#3514) and PONG (#3506) QA passes CLOSED,
-   so ROGUE's traps/Amulet/class-roll/lamp gaps may be open-unowned → likely
-   `KICK ROGUE …` or the next score-4 title (ASTEROIDS, DONKEY KONG,
-   CENTIPEDE, MISSILE COMMAND tie the pre-#3517 INVADERS score). Run
-   idle-kick fresh and sanity-check the named index against the README +
-   closed-since issues (phantom class: #3489/#3497 both went stale mid-flight
-   today — check `gh issue list` state, not last session's snapshot).
-2. `invadersdrive` is now the browser-proof template for one-sim games
-   (contract clock `__game.step({},50)` makes landing deaths take seconds).
+1. Ladder likely thin again: never-dry expected — run `idle-kick` FRESH and
+   phantom-check the named index against READMEs + issues closed SINCE the last
+   snapshot (today's class: #3528 held-fresh refusal, PONG gap 0 self-declining,
+   jonq refusing its own question — trust live `gh issue list`, never a prior
+   STATE).
+2. `pongdrive --mutant` is now the template for browser-only gates: plant →
+   child drive must die → pull (tree clean at start, mutateguard-checked).
