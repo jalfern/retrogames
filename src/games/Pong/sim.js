@@ -39,6 +39,19 @@ const CPU_TIERS = {
 // undefined/unknown (every pre-#3502 gs, every replay) → NORMAL, exactly.
 export const cpuTier = (diff) => CPU_TIERS[diff] || CPU_TIERS.NORMAL
 
+// #3565 — the selectable max-score knob, in the sim where it binds. FREE
+// (gs.range = null/undefined — every pre-#3565 gs and every default start)
+// keeps the b16 ruling verbatim: no enforced cap, quit is the terminal. A
+// number is a target the player chose on the attract dial, so the point that
+// reaches it ends the match honestly: no new ball enters play (the cabinet
+// never served a ball nobody would play) and ev.winner names who got there.
+// Scoring-only state — zero physics, zero new dice. The classic ladder
+// 1·3·5·7·9 follows the Pong-family score dials; the 1972 table's own RANGE
+// switch was the Easy/Difficult speed control (#3502 tiers), so this is a
+// feature on top of the honest terminal, not a restoration (README says so).
+export const RANGES = ['FREE', 1, 3, 5, 7, 9]
+const capHit = (gs, score) => typeof gs.range === 'number' && score >= gs.range
+
 // Serve from the center: direction coin-flip + vertical angle, both on the stream.
 export function serveBall(rand, width, height) {
     return {
@@ -184,7 +197,7 @@ export function tickPong(gs, input) {
     // #3536: ev.serve marks the FIRST paddle return after a serve (the voice
     // answers it twice). gs.servePending is observation, not physics — it
     // never touches ball or paddles, and rolls no dice.
-    const ev = { wall: false, hitL: false, hitR: false, scored: 0, serve: false }
+    const ev = { wall: false, hitL: false, hitR: false, scored: 0, serve: false, winner: 0 }
     if (gs.over) return ev
     ev.wall = stepBall(gs.ball, gs.height)
 
@@ -235,12 +248,15 @@ export function tickPong(gs, input) {
     // teleported them after a point.
     if (b.x < 0) {
         gs.right.score++
-        gs.ball = serveBall(gs.rand, gs.width, gs.height)
+        // #3565 — target reached: honest terminal, the dead ball is never served.
+        if (capHit(gs, gs.right.score)) { gs.over = true; ev.winner = 2 }
+        else gs.ball = serveBall(gs.rand, gs.width, gs.height)
         gs.servePending = true // new ball in play — its first return is the serve (#3536)
         ev.scored = 1 // left conceded
     } else if (b.x > gs.width) {
         gs.left.score++
-        gs.ball = serveBall(gs.rand, gs.width, gs.height)
+        if (capHit(gs, gs.left.score)) { gs.over = true; ev.winner = 1 }
+        else gs.ball = serveBall(gs.rand, gs.width, gs.height)
         gs.servePending = true // new ball in play — its first return is the serve (#3536)
         ev.scored = 2 // left scored
     }
