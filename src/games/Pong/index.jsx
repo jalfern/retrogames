@@ -359,6 +359,10 @@ const PongGame = () => {
                     rightY: Math.round(state.right.y),
                     dl: Math.round(Math.abs(state.left.y + PADDLE_HEIGHT / 2 - (state.ball.y + 4))),
                     diff: DIFFS[diff],
+                    // #3529 — the touch-quit leg needs the UI screen without
+                    // a keyboard: attract / play / over, mirrored from the
+                    // effect-local flags (no stale useState in this closure).
+                    screen: isAttractMode ? 'attract' : (state.over ? 'over' : 'play'),
                 }),
                 setDiff: (n) => { diff = ((n % DIFFS.length) + DIFFS.length) % DIFFS.length; state.diff = DIFFS[diff] },
             }
@@ -416,7 +420,15 @@ const PongGame = () => {
                     </div>
                 )}
             </div>
-            <VirtualControls />
+            {/* #3529 — the touch quit path: a QUIT chip on the #2324
+                thirdAction rail (beside the pad, its own pointer), present
+                ONLY while a match is alive (never on attract or over, never
+                behind the pause card). Its Escape press lands on the existing
+                play-to-quit terminal (#1473): the honest MATCH OVER card,
+                then any tap restarts. sim.js untouched — zero physics. */}
+            <VirtualControls
+                thirdAction={screen === 'play' && !paused ? { label: 'QUIT', code: 'Escape' } : null}
+            />
         </div>
     )
 }

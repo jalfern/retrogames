@@ -6,7 +6,11 @@
 //   - arrows drive the left paddle, hits accrue, pixels follow the logic,
 //   - quit is honest; any key restarts at fresh scores,
 //   - 2P (diff=4): W/S move ONLY the right paddle, arrows only the left,
+//   - #3529: touch quit — a tap starts, the QUIT chip ends the match, a
+//     tap restarts, and the chip exists only while a match is alive,
 //   - zero page errors across the ride.
+// `--mutant` re-plants broken chip wirings in index.jsx; each child MUST die.
+import { spawnSync } from 'node:child_process'
 import { launch, openGame, Report, requireDevServer } from './lib/harness.mjs'
 
 const BASE = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/pong`
@@ -32,7 +36,12 @@ const until = async (p, fn, ms, label) => {
 }
 
 // ---- leg 1: attract carries the pick; LEFT/RIGHT cycles without starting ----
-let p = await open(BASE)
+// Pinned seed (#1473): the FIRST HIT wait faces a seeded serve + paddle
+// scatter; an unpinned draw could starve it (two luck-dependent reds on
+// 2026-11-26). The rules below are what this leg proves; the seed they
+// replay on is pinned, exactly like leg 5. Seed entropy itself is
+// pongcheck's seedpin law, not the drive's job.
+let p = await open(`${BASE}?seed=4242`)
 try {
     r.check('attract defaults to NORMAL (shipped physics)', (await probe(p)).diff === 'NORMAL')
     await p.keyboard.press('ArrowRight')
@@ -140,5 +149,80 @@ try {
     await p.close()
 }
 
+// ---- leg 6: #3529 touch quit — the terminal reaches the phone ----
+// Phone viewport, REAL touch events only, no keyboard: a tap starts the
+// match, the QUIT chip rides the #2324 rail beside the pad, its Escape
+// press lands on the shipped play-to-quit terminal (#1473), and a tap
+// restarts. The chip exists ONLY while a match is alive.
+try {
+    p = await openGame(browser, { url: `${BASE}?seed=777`, hook: '__pongTest', viewport: { width: 390, height: 844 }, touch: true, wait: 400 })
+    p.on('pageerror', (e) => errors.push(String(e)))
+    const chip = () => p.evaluate(() => {
+        const el = document.querySelector('[data-vc="c"]')
+        if (!el) return null
+        const r = el.getBoundingClientRect()
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2, key: el.getAttribute('data-key'), text: el.textContent.trim() }
+    })
+    const tapTable = async (fx, fy) => {
+        const b = await p.evaluate(() => {
+            const r = document.querySelector('canvas').getBoundingClientRect()
+            return { x: r.x, y: r.y, w: r.width, h: r.height }
+        })
+        await p.touchscreen.tap(b.x + b.w * fx, b.y + b.h * fy)
+    }
+    r.check('attract carries no QUIT chip (nothing to quit)', (await chip()) === null && (await probe(p)).screen === 'attract')
+    // right of the floating-stick half, above the pick band and the chrome bar
+    await tapTable(0.6, 0.3)
+    const live = await until(p, async () => { const q = await probe(p); return q.screen === 'play' ? q : null }, 3000, 'tap-to-start reaches play')
+    r.check('a tap starts the match (screen play, scores zeroed)', live.score === 0 && live.opp === 0)
+    const c1 = await chip()
+    r.check('the QUIT chip rides the rail beside the pad in play', !!c1 && c1.key === 'Escape' && c1.text === 'QUIT', JSON.stringify(c1))
+    await p.touchscreen.tap(c1.x, c1.y)
+    const overT = await until(p, async () => {
+        const st = await p.evaluate(() => window.__game && window.__game.state && window.__game.state())
+        return st && st.done ? st : null
+    }, 3000, 'chip tap ends the match')
+    r.check('tapping QUIT ends the match honestly (done + seed in the report)', overT.done === true && typeof overT.seed === 'number', `seed ${overT.seed}`)
+    r.check('the chip retires with the match (no QUIT on the over card)', (await chip()) === null && (await probe(p)).screen === 'over')
+    await tapTable(0.6, 0.75) // below the pick band, clear of the chrome bar
+    const fresh6 = await until(p, async () => { const q = await probe(p); return q.screen === 'play' ? q : null }, 3000, 'tap restarts')
+    r.check('a tap after quit restarts at fresh scores', fresh6.score === 0 && fresh6.opp === 0, `${fresh6.score}-${fresh6.opp}`)
+    r.check('the chip returns with the fresh match', (await chip())?.text === 'QUIT')
+} catch (e) {
+    r.check('leg 6 touch-quit ride completed without timeout', false, String(e))
+} finally {
+    await p.close()
+}
+
 r.check('zero page errors across the ride', errors.length === 0, errors.join(' | '))
+
+// ---- chip mutants (#3529): each MUST die ----
+// The chip gates are browser-level, so the mutants ride this script: plant a
+// broken chip into index.jsx, re-run pongdrive childless, expect red. The tree
+// must be CLEAN at start (mutateguard law, #2047) — commit, then mutate.
+if (process.argv.includes('--mutant')) {
+    const { plant, pull } = await import('./lib/mutateguard.mjs')
+    const { readFileSync } = await import('node:fs')
+    console.log('chip mutants (each MUST die)')
+    const I = 'src/games/Pong/index.jsx'
+    const CHIP = `thirdAction={screen === 'play' && !paused ? { label: 'QUIT', code: 'Escape' } : null}`
+    const MUTANTS = [
+        ['the QUIT chip is never rendered', CHIP, `thirdAction={null}`],
+        ['the chip appears on attract and hides in play', `thirdAction={screen === 'play' && !paused`, `thirdAction={screen === 'attract' && !paused`],
+        ['the chip fires a dead key', `{ label: 'QUIT', code: 'Escape' } : null}`, `{ label: 'QUIT', code: 'KeyM' } : null}`],
+    ]
+    let died = 0
+    for (const [name, from, to] of MUTANTS) {
+        const orig = readFileSync(I, 'utf8')
+        if (!orig.includes(from)) { console.log(`  FAIL mutant anchor: ${name} — missing`); continue }
+        plant(I, orig.replace(from, to))
+        const res = spawnSync(process.execPath, ['scripts/pongdrive.mjs'], { encoding: 'utf8' })
+        if (res.status !== 0) { died++; console.log(`  ok   mutant dies: ${name}`) }
+        else { console.log(`  FAIL mutant dies: ${name} — child passed despite the bug`) }
+        pull(I)
+    }
+    console.log(died === MUTANTS.length ? `all ${MUTANTS.length} chip mutants die` : `FAIL ${died}/${MUTANTS.length} chip mutants die`)
+    if (died !== MUTANTS.length) errors.push('a chip mutant survived')
+}
+
 r.exit(browser)

@@ -62,7 +62,8 @@ npm run pongcheck            # attract rule-6 + seedpin law + driver sweep + #35
 npm run pongcheck -- --mutant  # 13 seedpin/driver/tier mutants (incl. walls-pulled,
                                #   sign-flip, seat-poses, dead-select, dead-ceiling, dead-2P), all must die
 npm run pongcheck -- --mutate  # 5 attract mutants, all must die
-npm run pongdrive            # real Chrome, real keys: selector cycles, tap-dial, pick starts, W/S 2P legs (19 checks)
+npm run pongdrive            # real Chrome, real keys: selector cycles, tap-dial, pick starts, W/S 2P legs, touch quit (#3529) (26 checks)
+npm run pongdrive -- --mutant  # 3 chip mutants (never-rendered, attract-flip, dead-key), all must die
 npm run watchcheck -- --only pong   # browser pilot: seats, returns balls, steers back
 npm run lint:pong
 ```
@@ -95,16 +96,30 @@ this port already accelerates uncapped on NORMAL, so HARD sharpens the
 tracker instead and no tier lowers the ceiling below EASY's. The two switches
 collapse into one selector (four picks) because the port ships one knob.
 
+## Touch quit (#3529)
+
+Quit is the terminal (#1473) but the phone could not reach it — q/Escape
+were the only path. A QUIT chip rides the #2324 thirdAction rail (beside
+the pad, its own pointer) and renders ONLY while a match is alive: attract,
+the over card, and the pause card are chip-free. Its tap fires the same
+`Escape` the keyboard fires — honest MATCH OVER card, any tap restarts at
+fresh zeroes. Zero physics: `sim.js`, the seedpins and the bit-trace are
+untouched; the chip is chrome, not a rule. A fat-finger costs one re-tap,
+because the terminal it reaches is honest, not fatal.
+
 ## Honest gaps
-- Seed 25 is unbeatable on NORMAL against the machine because of the ported
-  paddle scatter after every point (see the driver section). Removing the
-  scatter would be more faithful to the cabinet but re-litigates the #1473
-  seedpin — deliberately not touched here. (EASY is where a beginner can
-  actually win it.)
+- **OPEN as #3532:** Seed 25 is unbeatable on NORMAL against the machine
+  because of the ported paddle scatter after every point (see the driver
+  section). Removing the scatter would be more faithful to the cabinet but
+  re-litigates the #1473 seedpin — deliberately not touched here. (EASY is
+  where a beginner can actually win it.) Decision path: a jonq ask was
+  REFUSED by #2176 (pin/calibration calls are taken, not asked), and
+  fidelity beats provability (AGENTS.md) — so the fix ships as its own
+  dedicated re-baseline pass, #3532.
 - No selectable max-score knob (the machine's RANGE switch) — quit is the
   terminal by design; a selectable cap would be a feature, not a restoration.
-- Touch: pad arrows only; no on-screen quit (desktop `q`/Escape) — the attract
-  pick label IS tappable (it cycles the same dial LEFT/RIGHT drives), but the
-  in-match quit path is not.
+- **CLOSED by #3529:** touch quit shipped — a QUIT chip on the thirdAction
+  rail (play-only, `Escape` code) reaches the honest terminal from a thumb;
+  pongdrive leg 6 drives start → chip → card → restart in real Chrome.
 - Sound is the Feb-port sketch: single tones per hit/score; no crowd, no
   spin pitch variation.
