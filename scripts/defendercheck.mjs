@@ -17,7 +17,7 @@ import {
     livesForScore, humansAlive,
     SCORE_LANDER, SCORE_MUTANT, SCORE_CATCH, SCORE_DELIVER, SCORE_WAVE,
     BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT, DEATH_FREEZE, watchRoute,
-    thrustHum,
+    thrustHum, BOMBS_PER_WAVE, BOMB_SCREEN,
 } from '../src/games/Defender/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -485,6 +485,128 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     ok(/data-watch-toggle/.test(jsx), 'the pill press is not eaten by the canvas tap')
     ok(/label: 'DEFENDER'[\s\S]{0,400}WATCH_HELP/.test(readFileSync('src/config/games.js', 'utf8')),
         'registry advertises WATCH for Defender')
+    // #3443: the witness floors below are re-pinned ON TOP OF the bomb build —
+    // honest only while the route never reaches for it. The patrol must not
+    // press B with a simulated key, pad field or input shape.
+    ok(!/bomb/i.test((readFileSync('src/games/Defender/sim.js', 'utf8').match(/export const watchRoute[\s\S]*?\n}/) || [''])[0]),
+        'watchRoute\'s body never mentions the smart bomb — the 40-seed witness is unchanged by #3443')
+    {
+        const s = createSim({ rand: seedRng(2000), height: 420 })
+        ok(watchRoute(s).bomb === undefined, 'patrol input carries no bomb field')
+    }
+}
+
+// ---------- SMART BOMB (#3443 — Jon's #2016 answer A) ------------------------
+// B vaporizes every hostile inside the 1000 px screen window, wrap-aware; the
+// blast spares pilot and humans; a hauler's cargo drops FALLING; 3 per wave,
+// refilled on the wave beat; edge-triggered; rand-free (seedpin law).
+console.log('smart bomb (Jon #2016, #3443):')
+{
+    const far = () => ({ x: 2000, y: 200, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }) // antipode anchor: keeps wave-clear out of the test
+    ok(BOMBS_PER_WAVE === 3 && BOMB_SCREEN === 1000,
+        'supply is 3 and the screen window is 1000 px — Jon\'s exact words, a quarter of the planet')
+    // 1) starts stocked
+    ok(newSim(7).bombs === BOMBS_PER_WAVE, 'a new run starts with 3 bombs')
+    // 2) window law: <= half a screen dies, beyond lives
+    {
+        const s = newSim(7)
+        s.player.x = 200; s.player.invuln = 99999
+        s.enemies = [
+            { x: 260, y: 200, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null },
+            { x: 700, y: 200, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null },
+            { x: 900, y: 200, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null },
+            far(),
+        ]
+        s.step({ bomb: true })
+        ok(s.enemies.length === 2 && s.enemies.every((e) => e.x === 900 || e.x === 2000),
+            'kills exactly inside the 1000 px window (260 + 700 die; 700-away… 900 and the antipode live)',
+            s.enemies.map((e) => e.x).join(','))
+        ok(s.score === SCORE_LANDER + SCORE_MUTANT, 'bomb kills pay the normal table (150 + 1500)', `${s.score}`)
+        ok(s.events.some((e) => e.t === 'bomb' && e.kills === 2), 'the bomb event names its kill count')
+    }
+    // 3) seam-aware: 50 px across the wrap is IN
+    {
+        const s = newSim(7)
+        s.player.x = 10; s.player.invuln = 99999
+        s.enemies = [{ x: 3960, y: 200, vx: 0, vy: 0, type: 'lander', state: 'hunt', carry: null }, far()]
+        s.step({ bomb: true })
+        ok(s.enemies.length === 1 && s.enemies[0].x === 2000, 'the blast crosses the wrap seam — a kill 50 px the other way')
+    }
+    // 4) the blast spares the good guys
+    {
+        const s = newSim(7)
+        s.player.x = 200; s.player.invuln = 0; s.lives = START_LIVES
+        s.enemies = [far()]
+        const before = humansAlive(s.humans)
+        for (let i = 0; i < 5; i++) s.step({ bomb: i === 0 })
+        ok(s.lives === START_LIVES && humansAlive(s.humans) === before,
+            'one press, five ticks: the pilot is untouched and the street is unharmed')
+    }
+    // 5) hauler drops its cargo FALLING (the catchable law, same as a laser)
+    {
+        const s = newSim(7)
+        s.player.x = 200; s.player.invuln = 99999
+        const h = s.humans[0]
+        h.state = 'abducted'; h.x = 210; h.y = 166
+        s.enemies = [{ x: 210, y: 150, vx: 0, vy: 0, type: 'lander', state: 'ascend', carry: 0 }, far()]
+        s.step({ bomb: true })
+        ok(s.enemies.length === 1 && h.state === 'falling' && h.vy === 1.05,
+            'a bombed hauler dies and its human falls — catchable, never collateral')
+    }
+    // 6) edge trigger + dry clicks
+    {
+        const s = newSim(7)
+        s.player.invuln = 99999
+        s.enemies = [far()]
+        s.step({ bomb: true }); s.step({ bomb: true }); s.step({ bomb: true })
+        ok(s.bombs === BOMBS_PER_WAVE - 1, 'HELD bomb is one blast, not a stream (edge-trigger)', `${s.bombs}`)
+        s.step({ bomb: false }); s.step({ bomb: true })
+        ok(s.bombs === BOMBS_PER_WAVE - 2, 'release + press fires again')
+        s.bombs = 0
+        s.step({ bomb: false }); s.step({ bomb: true })
+        ok(s.bombs === 0 && !s.events.some((e) => e.t === 'bomb'), 'a dry click at zero says nothing and spends nothing')
+    }
+    // 7) the wave beat restocks
+    {
+        const s = newSim(7)
+        s.bombs = 0
+        s.enemies = []
+        s.step({})
+        ok(s.bombs === BOMBS_PER_WAVE && s.events.some((e) => e.t === 'wave'),
+            'clearing a wave refills to 3 (cap, not stack)', `${s.bombs}`)
+    }
+    // 8) never during dark (dead)
+    {
+        const s = newSim(7)
+        s.player.dark = 30; s.bombs = 3
+        s.step({ bomb: true })
+        ok(s.bombs === 3, 'no wasted bomb while the ship is dead and respawning')
+    }
+    // 9) rand-free: the press cannot shift the seed stream. Proof: identical
+    // pads twice, AND the blast path calls no rand — a hand-kill and a bomb at
+    // the same tick leave the NEXT rand output identical to a no-kill tick when
+    // both kill nothing.
+    {
+        const drive = () => {
+            const w = createSim({ rand: seedRng(99), height: 420 })
+            let t = 0
+            while (!w.over && t < 1200) { w.step({ bomb: t % 37 === 0, fire: t % 11 === 0, right: t % 5 === 0 }); t++ }
+            return `${w.tick}|${w.score}|${w.wave}|${w.player.x.toFixed(6)}`
+        }
+        ok(drive() === drive(), 'bomb-padded runs replay byte-identical (deterministic press path)')
+        const bombPath = (readFileSync('src/games/Defender/sim.js', 'utf8').match(/const smartBomb[\s\S]*?\n    \}/) || [''])[0]
+        ok(bombPath && !/rand\(\)/.test(bombPath), 'smartBomb draws ZERO rand — the seedpin law holds even under a human hammering B')
+    }
+    // 10) view + pad wiring
+    ok(/secondAction=\{\{ label: 'BOMB', code: 'ShiftLeft' \}\}/.test(jsx),
+        'the pad shows BOMB as B (secondAction, ShiftLeft)')
+    ok(/buttons: \['left', 'right', 'up', 'down', 'a', 'b'\]/.test(jsx),
+        'the QA contract declares b — replay and bots can press the bomb')
+    ok(/keys\.ShiftLeft = !!pad\.b/.test(jsx), 'pad.b lands on the keyboard field the sim reads')
+    ok(/bombs: sim \? sim\.bombs/.test(jsx), 'state() carries the bomb stock (additive to the contract)')
+    ok(/bombFlash/.test(jsx) && /rgba\(255,255,255,/.test(jsx), 'the detonation washes the screen white like the cabinet')
+    ok(/label: 'DEFENDER'[\s\S]{0,500}Shift: Smart bomb/.test(readFileSync('src/config/games.js', 'utf8')),
+        'registry controls advertise the smart bomb')
 }
 
 // ---------------------------------------------------------------- hum NaN ----
@@ -630,6 +752,9 @@ if (process.argv.includes('--mutant')) {
         ['#2167 the hum clamp is peeled off (raw vx reaches the AudioParam)', S,
             `export const thrustHum = (vx) => 50 + (Number.isFinite(vx) ? Math.abs(vx) : 0) * 8`,
             `export const thrustHum = (vx) => 50 + Math.abs(vx) * 8`],
+        ['#3443 waves stop restocking the smart bomb', S,
+            `s.bombs = BOMBS_PER_WAVE // #3443 (Jon #2016): 3 per wave — the wave beat restocks`,
+            `/* dry waves */`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
