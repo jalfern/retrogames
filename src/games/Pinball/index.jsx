@@ -1963,15 +1963,17 @@ const PinballGame = () => {
                 },
                 // dev rig (#3432): feed a ball up the JET LANE corridor — crosses
                 // both flank wires on the way to the dome flank (visual QA; the
-                // ladder is pinned in Node). The slight left drift (vx: -60) is
-                // deliberate: the descent off the flank runs down the roped
-                // outer channel (left of the orbit guide), so the ball passes
-                // the spinner zone — a straight-up feed clips the outlane-guide
-                // cap and bounces back into play, never reaching the spinner.
+                // ladder is pinned in Node). The drift is deliberate: the descent
+                // off the flank runs down the roped outer channel — CABINET ONE
+                // on the left of the orbit guide, EMBER RIDER mirrored on the
+                // right — so the ball must be carried toward that wall (the
+                // spinner zone's own side), not left straight up: a straight
+                // feed clips the outlane-guide cap and bounces back into play,
+                // never passing the spinner zone.
                 rampLFeed: () => {
                     const gs = gsRef.current
                     const RL = gs.table.rampL
-                    gs.pucks.push({ bx: (RL.x1 + RL.x2) / 2, by: 400, vx: -60, vy: -520, prevY: 400, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
+                    gs.pucks.push({ bx: (RL.x1 + RL.x2) / 2, by: 400, vx: -60 * gs.table.spinner.side, vy: -520, prevY: 400, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false })
                     return stateOf(gs)
                 },
                 magDrop: () => {
@@ -2032,7 +2034,6 @@ const PinballGame = () => {
                     else if (code === 'b') k.b = false
                 },
                 step: (n = 1) => { for (let i = 0; i < n; i++) stepGame(gsRef.current, keysRef.current); react(gsRef.current); return stateOf(gsRef.current) },
-                pose: () => gsRef.current.pucks.map(p => ({ bx: Math.round(p.bx * 10) / 10, by: Math.round(p.by * 10) / 10, vy: Math.round(p.vy), spin: Math.round((p.spin || 0) * 10) / 10, spinArm: p.spinArm })),
             }
             exposeGame({
                 id: 'pinball',
