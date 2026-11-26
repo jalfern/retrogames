@@ -66,7 +66,7 @@ npm run adventurecheck          # 223 gates: determinism, gate/key/bridge/dragon
                                 # admission (#3552), Blue Castle + duplicate
                                 # chalice (#3482), scripted chalice win on
                                 # 10 seeds, static wiring
-npm run adventurecheck -- --mutant   # +43 mutants — every one must turn the suite red
+npm run adventurecheck -- --mutant   # +60 mutants — every one must turn the suite red
 npm run lint:adventure
 ```
 
