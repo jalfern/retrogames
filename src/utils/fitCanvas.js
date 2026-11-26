@@ -45,6 +45,20 @@ export function fitFill(W, H, cssW, cssH) {
   return Math.abs(s - Math.round(s)) <= 1e-6 ? Math.round(s) : s
 }
 
+// #3460: stage fit — for titles whose PLAYFIELD box itself carries the aspect
+// (vector titles draw at screen resolution, so there is no source W×H to scale).
+// `w-full max-w-[Npx] aspect-[r]` alone caps only the WIDTH: on a short
+// landscape window the box grows taller than the viewport, flex-centers, and
+// spills past top and bottom — the score row clipped off-screen at 1280×720.
+// fitStage answers the widest CSS px the stage may take so it fits BOTH the
+// available width and height while keeping the ratio (cap = the old max-w).
+// Portrait phones answer exactly what w-full gave before — nothing changes.
+export function fitStage(availW, availH, ratio = 3 / 4, cap = 600) {
+  const w = Number.isFinite(availW) ? availW : 0
+  const h = Number.isFinite(availH) ? availH : 0
+  return Math.max(0, Math.min(cap, w, h * ratio))
+}
+
 // #1147: where a `w-full h-full object-contain` canvas actually placed its
 // picture inside its CSS box. The element still fills the box; the content is
 // centered with letterbox bars. Pointer code that maps client coords to game

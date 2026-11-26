@@ -7,6 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
+import { fitStage } from '../../utils/fitCanvas'
 import { SHIP_HULL, START_LIVES, makeRun, tickAsteroids, rebuildBoard, stateHash } from './sim.js'
 
 // ASTEROIDS (#1473 batch 16) — the Feb port had no score, no lives and no
@@ -84,6 +85,20 @@ const AsteroidsGame = () => {
         let initialized = false
         const resize = () => {
             if (containerRef.current && canvas) {
+                // #3460 — the stage fits the viewport, not just the width cap:
+                // `w-full max-w-[600px] aspect-[3/4]` grew to 600×800 on short
+                // landscape windows and the flex-centered spill clipped the
+                // SCORE/WAVE/lives row off-screen. fitStage caps width by height
+                // too (the p-4 shell leaves −32px); portrait phones answer the
+                // same as before, so the touch laws are untouched.
+                const parent = containerRef.current.parentElement
+                if (parent) {
+                    const sw = fitStage(parent.clientWidth - 32, parent.clientHeight - 32)
+                    if (sw > 0) {
+                        containerRef.current.style.width = `${sw}px`
+                        containerRef.current.style.height = `${sw * 4 / 3}px`
+                    }
+                }
                 const { width, height } = containerRef.current.getBoundingClientRect()
                 const dpr = window.devicePixelRatio || 1
                 canvas.width = width * dpr

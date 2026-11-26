@@ -6,7 +6,7 @@
 // Two mutants that die: one forgets dpr (underscales on Retina), one rounds up
 // with ceil (overflows the container and re-introduces a fractional crop).
 
-import { fitScale, fitFill } from '../src/utils/fitCanvas.js'
+import { fitScale, fitFill, fitStage } from '../src/utils/fitCanvas.js'
 import { readFileSync } from 'node:fs'
 
 let pass = 0, fail = 0
@@ -150,6 +150,38 @@ for (const game of ['QBert', 'Tetris', 'Joust']) {
   ok(/from '\.\.\/\.\.\/utils\/fitCanvas'/.test(src), `${game} imports fitCanvas`)
   ok(/const s = fitFill\(W, H, r\.width - 8, r\.height - 60\)/.test(src), `${game} resize uses fitFill`)
   ok(!/Math\.floor\(Math\.min\(\(r\.width/.test(src), `${game} has no leftover integer-floor resize (the #739 bug)`)
+}
+
+// --- 15. #3460 fitStage: the aspect-box stage fits BOTH axes (#3460 bug) ---
+// `w-full max-w-[600px] aspect-[3/4]` caps only width: on a short landscape
+// window (the harness standard 1280x720 minus a p-4 shell = 1248x688 usable)
+// the stage grew 800 px tall, flex-centering spilled 40 px past top and
+// bottom, and the SCORE/WAVE/lives row clipped off-screen. fitStage must cap
+// by height too, keep the old cap on big desktops, and leave portrait phones
+// exactly as w-full had them.
+{
+  const landscape = fitStage(1248, 688) // 1280x720 minus p-4
+  ok(landscape * 4 / 3 <= 688 + 1e-6 && landscape <= 1248, `landscape stage fits both axes (got ${landscape}x${(landscape * 4 / 3).toFixed(1)} in 1248x688)`)
+  ok(Math.abs(landscape - 516) < 1e-6, `landscape stage = 516 wide at 1280x720 (got ${landscape})`)
+  const portrait = fitStage(358, 812) // iPhone-class minus p-4: w-full's answer
+  ok(Math.abs(portrait - 358) < 1e-6, `portrait phone unchanged by the clamp (got ${portrait}, w-full gave 358)`)
+  ok(fitStage(1888, 1048) === 600, `big desktop keeps the 600 cap (got ${fitStage(1888, 1048)})`)
+  ok(fitStage(0, 0) === 0 && fitStage(-5, -5) === 0 && fitStage(NaN, NaN) === 0, `degenerate input -> 0, never negative (got ${fitStage(0, 0)}/${fitStage(-5, -5)}/${fitStage(NaN, NaN)})`)
+  ok(Math.abs(fitStage(1248, 688, 1, 900) - 688) < 1e-6, `square ratio honors height (got ${fitStage(1248, 688, 1, 900)})`)
+  // Mutants that die: height-ignored IS the shipped bug; cap-ignored breaks max-w.
+  const noHeight = Math.min(600, 1248)
+  ok(noHeight * 4 / 3 > 688, `ignore-height mutant overflows exactly like #3460 (${(noHeight * 4 / 3).toFixed(0)} px tall > 688)`)
+  ok(Math.min(1248, 688 * 3 / 4) > 0 && fitStage(1888, 1048) < Math.min(1888, 1048 * 3 / 4), `ignore-cap mutant breaks the 600 cap on desktop`)
+}
+
+// --- 16. #3460 source gate: ASTEROIDS clamps its stage in resize ---
+// The bug lived in the bare class chain. A game drifting back to it (or to a
+// hand-rolled width-only min) reds this gate without a browser.
+{
+  const src = readFileSync(new URL('../src/games/Asteroids/index.jsx', import.meta.url), 'utf8')
+  ok(/from '\.\.\/\.\.\/utils\/fitCanvas'/.test(src), 'Asteroids imports fitCanvas')
+  ok(/const sw = fitStage\(parent\.clientWidth - 32, parent\.clientHeight - 32\)/.test(src), 'Asteroids resize caps the stage by both axes')
+  ok(/style\.width = `\$\{sw\}px`/.test(src) && /style\.height = `\$\{sw \* 4 \/ 3\}px`/.test(src), 'Asteroids pins the clamped box on the container')
 }
 
 // --- Summary ---
