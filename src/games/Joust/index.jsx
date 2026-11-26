@@ -246,13 +246,18 @@ const JoustGame = () => {
                 ctx.fillRect(0, 0, W, H)
                 flash--
             }
-            // wave banner
-            if (s.phase === 'banner' && !s.pending && screenRef.current !== 'over') {
+            // wave banner — one message at a time (ART bar #6): the attract
+            // overlay owns the message stack, so the canvas paints no banner
+            // there; in play the toast never double-draws the same intro.
+            const attract = screenRef.current === 'attract'
+            if (!attract && screenRef.current !== 'over' && s.phase === 'banner' && !s.pending) {
                 const b = WAVES[s.wave].name
                 text5(ctx, b, W / 2 - textWidth(b, 3) / 2, 90, '#00e8f8', 3)
             }
             if (toast > 0) {
-                text5(ctx, toastMsg, W / 2 - textWidth(toastMsg, 2) / 2, 118, toastCol, 2)
+                if (!attract && s.phase !== 'banner') {
+                    text5(ctx, toastMsg, W / 2 - textWidth(toastMsg, 2) / 2, 118, toastCol, 2)
+                }
                 toast--
             }
             ctx.restore()
