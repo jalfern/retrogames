@@ -193,10 +193,16 @@ const llIdx = read('../src/games/LunarLander/index.jsx')
 const llSim = read('../src/games/LunarLander/sim.js')
 const llWrap = llIdx.slice(0, llIdx.indexOf('WatchButton on=')).split('\n').reverse().find((l) => l.includes('style={{')) || ''
 const llPillTop = (OFF(llWrap, 'top') || { base: 3.5 * REM }).base
-rep.check('pin: LL stage 512x384 + right-column readouts unchanged',
+// #3566 — the gauges moved from the corners (the FEEDBACK/PADS chrome covered
+// them at every viewport) to one centred token row at y≈46, play-screen only.
+// The pin keeps the row where the check below measures it, and keeps the stage.
+rep.check('pin: LL stage 512x384 + centred gauge row unchanged',
     llSim.includes('export const W = 512') && llSim.includes('export const H = 384') &&
-    llIdx.includes('aspect-[512/384]') && /readout\('ALT'.*W - 10, 16/.test(llIdx) && /readout\('HORIZ'.*W - 10, 40/.test(llIdx))
-const LL_BANDS = [[8, 32], [30, 58]]   // canvas-unit glyph bands incl. glow/descender
+    llIdx.includes('aspect-[512/384]') &&
+    llIdx.includes("text(s, x, 46, 9, col, 0, 'left')") &&
+    llIdx.includes("screenRef.current === 'play'"))
+const LL_BANDS = [[38, 50]]           // centred gauge-row band incl. glow/descender
+const LL_HALF_W = 118                // canvas units, half the token row (~220 wide + glow)
 const ROWS = 24
 let llWorst = Infinity
 for (const vp of VPS) {
@@ -207,7 +213,7 @@ for (const vp of VPS) {
     const ys = h / 384
     const pill = { x: vp.w - 0.75 * REM - (vp.sar || 0) - PILL_W, y: vp.sat + llPillTop, w: PILL_W, h: PILL_H }
     for (const [b0, b1] of LL_BANDS) {
-        const hud = { x: (vp.w - stageW) / 2 + (512 - 10 - 40) * (stageW / 512), y: top + b0 * ys, w: 50, h: (b1 - b0) * ys }
+        const hud = { x: (vp.w - stageW) / 2 + (256 - LL_HALF_W) * (stageW / 512), y: top + b0 * ys, w: 2 * LL_HALF_W * (stageW / 512), h: (b1 - b0) * ys }
         if (intersect(hud, pill)) rep.check(`LunarLander HUD clears pill on ${vp.name}`, false, JSON.stringify({ hud, pill }))
         const vertGap = hud.y + hud.h <= pill.y ? pill.y - (hud.y + hud.h) : hud.y - (pill.y + pill.h)
         if (hud.x + hud.w > pill.x && vertGap < llWorst) llWorst = vertGap

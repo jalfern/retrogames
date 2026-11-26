@@ -298,10 +298,7 @@ const LunarLanderGame = () => {
             ctx.fillStyle = col; ctx.fillText(s, x, y); ctx.shadowBlur = 0
         }
 
-        const readout = (label, val, unit, x, y, align, col = '#ffd76b') => {
-            text(label, x, y, 8, '#8fa3d8', 0, align)
-            text(unit ? `${val} ${unit}` : `${val}`, x, y + 12, 13, col, 4, align)
-        }
+
 
         const drawWorld = () => {
             const cam = makeCam(zoom && screenRef.current === 'play')
@@ -334,15 +331,33 @@ const LunarLanderGame = () => {
         }
 
         const drawHud = () => {
-            const alt = Math.max(0, Math.round(gs.y - 10 - terrainY(gs.terrain.pts, gs.x)))
-            const hz = Math.round(gs.vx)
-            const vt = Math.round(gs.vy)
-            readout('FUEL', String(Math.round(gs.fuel)).padStart(3, '0'), '', 10, 16, 'left', gs.fuel < 25 ? ((gs.tick >> 3) % 2 ? '#ff5d5d' : '#ffd76b') : '#ffd76b')
-            readout('ALT', String(alt).padStart(3, '0'), '', W - 10, 16, 'right')
-            readout('VERT', `${vt > 0 ? '+' : ''}${vt}`, '', 10, 40, 'left', Math.abs(vt) > CFG.softVert ? '#ff5d5d' : '#8fff9f')
-            readout('HORIZ', `${hz > 0 ? 'R' : hz < 0 ? 'L' : '-'} ${Math.abs(hz)}`, '', W - 10, 40, 'right', Math.abs(hz) > CFG.softHoriz ? '#ff5d5d' : '#8fff9f')
             text(`SCORE ${String(Math.round(gs.score)).padStart(6, '0')}`, W / 2, 14, 10, '#e9f7ff', 2)
             text(`×${gs.mult}  LEM ${gs.cycle}/${TARGET_CYCLES}`, W / 2, 28, 8, '#8fa3d8')
+            // #3566 — the landing gauges ride the centred banner, not the corners:
+            // the FEEDBACK/PADS chrome covers the corner zones at every viewport,
+            // and the corner readouts were exactly the numbers that matter at
+            // touchdown. One measured token row under the score line; the centre
+            // column is chrome-free. Attract shows the title, not live gauges of
+            // a demo nobody steers.
+            if (screenRef.current === 'play') {
+                const alt = Math.max(0, Math.round(gs.y - 10 - terrainY(gs.terrain.pts, gs.x)))
+                const hz = Math.round(gs.vx)
+                const vt = Math.round(gs.vy)
+                const tokens = [
+                    [`FUEL ${String(Math.round(gs.fuel)).padStart(3, '0')}`, gs.fuel < 25 ? ((gs.tick >> 3) % 2 ? '#ff5d5d' : '#ffd76b') : '#ffd76b'],
+                    [`ALT ${String(alt).padStart(3, '0')}`, '#e9f7ff'],
+                    [`VERT ${vt > 0 ? '+' : ''}${vt}`, Math.abs(vt) > CFG.softVert ? '#ff5d5d' : '#8fff9f'],
+                    [`HORIZ ${hz > 0 ? 'R' : hz < 0 ? 'L' : '-'} ${Math.abs(hz)}`, Math.abs(hz) > CFG.softHoriz ? '#ff5d5d' : '#8fff9f'],
+                ]
+                const gap = 14
+                ctx.font = 'bold 9px monospace'
+                const tw = tokens.reduce((a, [s]) => a + ctx.measureText(s).width, 0)
+                let x = (W - (tw + gap * (tokens.length - 1))) / 2
+                for (const [s, col] of tokens) {
+                    text(s, x, 46, 9, col, 0, 'left')
+                    x += ctx.measureText(s).width + gap
+                }
+            }
             for (let i = 0; i < gs.landers; i++) {
                 ctx.fillStyle = '#e8b64a'
                 ctx.beginPath(); ctx.moveTo(12 + i * 12, H - 10); ctx.lineTo(9 + i * 12, H - 14); ctx.lineTo(15 + i * 12, H - 14); ctx.closePath(); ctx.fill()
@@ -530,10 +545,15 @@ const LunarLanderGame = () => {
     return (
         <div className={`relative w-full h-full flex flex-col items-center justify-center bg-[#05070d] select-none ${labMode ? 'pb-24' : ''}`}>
             <div ref={stageRef} className={`relative w-full ${labMode ? 'max-w-[640px]' : 'max-w-[900px]'} aspect-[512/384] shadow-[0_0_44px_rgba(255,215,107,0.18)]`} />
-            <div className="flex gap-6 mt-2 text-[11px] font-mono tracking-widest text-[#8fa3d8]">
-                <span>ALT <span ref={setHud('alt')} className="text-[#e9f7ff]">---</span></span>
-                <span>FUEL <span ref={setHud('fuel')} className="text-[#ffd76b]">100</span></span>
-                <span>MULT <span ref={setHud('mult')} className="text-[#8fff9f]">×1</span></span>
+            {/* #3566 — the visible gauges live in the canvas banner (the corner
+                chrome buried the old corner readouts, and this strip overlapped
+                the site footer band at 900×800). Keep a screen-reader mirror:
+                the numbers stay announced, and landerplay's HUD-mirrors-sim
+                pin still reads them. */}
+            <div aria-live="polite" className="sr-only">
+                <span>ALT <span ref={setHud('alt')}>---</span></span>
+                <span>FUEL <span ref={setHud('fuel')}>100</span></span>
+                <span>MULT <span ref={setHud('mult')}>×1</span></span>
             </div>
             {/* #1637 WATCH — the proven pilot lands the legs; any input takes over. */}
             {screen === 'play' && watching && (
