@@ -720,6 +720,39 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
         ok(inp.up && !inp.down,
             'the brace hop band reaches 17 — the whole ±16 kill box gets an answer (a hunter at by 15 is dodged, not watched)', `up=${inp.up} down=${inp.down}`)
     }
+    // #3497 mid-horizon ridge law: a spike with clear air past its far side —
+    // the canyon rule is blind to it (riseAhead reads the horizon END: 10 vs a
+    // gain of 115) and the climb margin is already holding `up`. When the
+    // brake+climb line still grinds the wireframe, the ridge law breaks the
+    // line. (Autopsy basis: every #3456-s4 terrain death pressed up at the
+    // killing tick — up wasn't the problem, the commit was.)
+    {
+        const s = createSim({ rand: seedRng(47), height: 420 })
+        s.terrain = s.terrain.map(() => 380)
+        ;[347, 315, 282, 250, 280, 310, 340, 370].forEach((v, i) => { s.terrain[21 + i] = v })
+        s.enemies = []
+        s.humans.forEach((h) => { h.state = 'dead' })
+        s.player.x = 200; s.player.y = 300; s.player.vx = 6; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.left && !inp.right && !inp.fire,
+            'a mid-horizon spike that out-climbs the brake line gets the line broken, horizon END be damned (canyon reads riseAhead 10)', `left=${inp.left} right=${inp.right}`)
+    }
+    // …and the shape that must NOT fire: a rise the climb can beat at cruise
+    // keeps its heading. The rejected max-rise rule turned off these and spent
+    // 48 lives; the ridge law races the hill instead and usually wins it.
+    {
+        const s = createSim({ rand: seedRng(49), height: 420 })
+        s.terrain = s.terrain.map(() => 380)
+        for (let i = 20; i <= 34; i++) s.terrain[i] = 380 - (i - 20) * 6
+        s.enemies = []
+        s.humans.forEach((h) => { h.state = 'dead' })
+        s.player.x = 200; s.player.y = 300; s.player.vx = 6; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(!inp.left && !inp.right,
+            'a climbable mid-horizon rise keeps its heading — the race is judged by achievable lift at arrival, not by height gained', `left=${inp.left} right=${inp.right}`)
+    }
     // The 1981 endgame rule, tested directly: with the wave's landers gone the
     // surviving mutants run hotter than MUTANT_SPEED — and the transition fires
     // exactly once, rand-free. While a lander lives, the fleet stays cold.
@@ -1186,6 +1219,9 @@ if (process.argv.includes('--mutant')) {
         ['the patrol stops lifting off the wireframe (b21 crash-law sentinel)', S,
             `    if (climbing) input.up = true`,
             `    if (false) input.up = true`],
+        ['#3497 mid-horizon ridges go blind again (end-point-only canyon restored)', S,
+            `            if (groundAt(s.terrain, p.x + dir * travelled) - sy < 10) { doomed = true; break }`,
+            `            if (false) { doomed = true; break }`],
         ['#1907 lander pops lose their green', S,
             `killFx(e.x, e.y, 10, '#3dff5e') // the arcade's green lander pop (#1907)`,
             `killFx(e.x, e.y, 10, '#ffffff')`],

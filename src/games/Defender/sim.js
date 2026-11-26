@@ -248,6 +248,42 @@ export const watchRoute = (s) => {
     const climbGain = Math.min(8 * tRemain, 0.25 * tRemain * tRemain) * 0.8
     const riseAhead = groundAt(s.terrain, p.x) - groundAt(s.terrain, p.x + dir * look)
     const canyon = climbing && riseAhead > climbGain + 12
+    // Mid-horizon ridge law (#3497): the canyon rule judges the horizon's END, so a
+    // spike with clear air past it never fires — and every terrain death in the stage-4
+    // autopsy (witness 6 + holdout 3, none of them hauling) reads the same: `up` was
+    // HELD at the killing tick (vy down to −4.9) while the ridge gained faster than the
+    // climb could buy. The race is decided by speed, not distance, so run the race:
+    // project this hull BRAKING AND CLIMBING (the escape both presses at once — braking
+    // lengthens the arrival time so ridges out-climbed at cruise pass under the climb,
+    // and the horizon shrinks with the speed until the law releases by itself) and fire
+    // only when even that best line grinds the wireframe inside the horizon. Slope
+    // thresholds were measured first and rejected: they stole the haul (diedHauling
+    // 1→6) and turned off climbable hills, the max-rise rule's 36→48 shape again.
+    // Cruise-only — the package has its own brace laws below.
+    if (climbing && !canyon && s.carrying === null) {
+        let sy = p.y
+        let svy = p.vy
+        let svx = Math.abs(p.vx)
+        let travelled = 0
+        let doomed = false
+        for (let t = 0; t < 40 && travelled < Math.min(look, 90); t++) {
+            svy = Math.max(-8, (svy - 0.5) * 0.95)
+            svx = Math.max(0, svx - 0.5) * 0.98
+            sy += svy
+            travelled += svx
+            if (groundAt(s.terrain, p.x + dir * travelled) - sy < 10) { doomed = true; break }
+        }
+        if (doomed) {
+            if (p.vx >= 0) input.left = true; else input.right = true
+            // The gun stays live through the maneuver (#3456 architecture: the
+            // flat-line law is independent of the steering job) — an escape from
+            // the wireframe never muzzles the fighter.
+            const escGun = lineGun(s, p)
+            if (escGun.hold) input.holdTell = true
+            if (escGun.gun) input.fire = true
+            return input
+        }
+    }
     if (canyon) { if (p.vx >= 0) input.left = true; else input.right = true; return input }
     // Pulsed descent law: no branch free-falls past a gentle gait, and nothing
     // dives inside the near-ground zone (the elevator auto-delivers at clearance
