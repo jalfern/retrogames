@@ -304,7 +304,7 @@ export function paintField(ctx, W, H, pal = PAL, tb = null) {
         ctx.beginPath(); ctx.moveTo(v.railCx - 9, yy); ctx.lineTo(v.railCx, yy - 11); ctx.lineTo(v.railCx + 9, yy); ctx.stroke();
     }
     // vertical nameplate — "O R B I T" down the middle of the channel
-    ctx.globalAlpha = 0.6; ctx.fillStyle = pal.lane;
+    ctx.globalAlpha = 0.42; ctx.fillStyle = pal.lane;
     ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
     const lbl = 'ORBIT';
     for (let i = 0; i < lbl.length; i++) ctx.fillText(lbl[i], v.railCx, 250 + i * 13);
@@ -324,7 +324,7 @@ export function paintField(ctx, W, H, pal = PAL, tb = null) {
             ctx.globalAlpha = 0.5; ctx.strokeStyle = pal.lane; ctx.lineWidth = 1.5;
             ctx.beginPath(); ctx.moveTo(mx + (mx === lx ? 1.5 : -1.5), 282); ctx.lineTo(mx + (mx === lx ? 1.5 : -1.5), 430); ctx.stroke();
         }
-        ctx.globalAlpha = 0.3; ctx.strokeStyle = pal.lane; ctx.lineWidth = 2.5;
+        ctx.globalAlpha = 0.22; ctx.strokeStyle = pal.lane; ctx.lineWidth = 2.5;
         for (const yy of [386, 404]) {
             ctx.beginPath(); ctx.moveTo(rcx - 9, yy); ctx.lineTo(rcx, yy - 11); ctx.lineTo(rcx + 9, yy); ctx.stroke();
         }

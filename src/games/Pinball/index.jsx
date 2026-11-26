@@ -790,16 +790,18 @@ const PinballGame = () => {
                     }
                     tb.rampL.rolls.forEach((rr) => {
                         ctx.save()
-                        ctx.strokeStyle = fl.rampL > 0 ? '#ffffff' : pal.lane
-                        ctx.globalAlpha = fl.rampL > 0 ? 0.95 : 0.45
+                        ctx.strokeStyle = pal.lane
+                        ctx.globalAlpha = fl.rampL > 0 ? 0.7 : 0.3
                         ctx.lineWidth = 2.5
                         ctx.beginPath(); ctx.arc(rcx, rr.y, 7, 0, 7); ctx.stroke()
                         ctx.restore()
                     })
                     for (let i = 0; i < tb.rampL.rolls.length; i++) {
                         const on = gs.rampLHits > i || fl.rampL > 0
-                        ctx.fillStyle = on ? '#ffffff' : pal.hotOff
+                        ctx.fillStyle = on ? pal.lane : pal.hotOff
+                        ctx.globalAlpha = on ? 0.8 : 0.4
                         ctx.beginPath(); ctx.arc(rcx - 6 + i * 12, 288, 2.4, 0, 7); ctx.fill()
+                        ctx.globalAlpha = 1
                     }
                     if (gs.rampLLit) {
                         ctx.save()
@@ -813,7 +815,7 @@ const PinballGame = () => {
                     // brighter once the flank is scoring. Visual only, no law.
                     ctx.save()
                     ctx.strokeStyle = pal.lane
-                    ctx.globalAlpha = 0.28 + 0.18 * Math.sin(gs.tick / 10) + (gs.rampLHits > 0 ? 0.25 : 0)
+                    ctx.globalAlpha = 0.22 + 0.12 * Math.sin(gs.tick / 10) + (gs.rampLHits > 0 ? 0.2 : 0)
                     ctx.lineWidth = 2.5
                     for (const yy of [428, 442]) {
                         ctx.beginPath(); ctx.moveTo(rcx - 9, yy); ctx.lineTo(rcx, yy - 11); ctx.lineTo(rcx + 9, yy); ctx.stroke()
