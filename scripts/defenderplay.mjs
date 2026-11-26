@@ -76,24 +76,49 @@ r.check('the QA contract declares b (bots/replays can press the bomb)', !!meta &
 
 // held ≠ stream
 {
-    const before = (await probe()).bombs
-    await page.keyboard.down('Shift')
-    await page.waitForTimeout(500)
-    await page.keyboard.up('Shift')
-    await page.waitForTimeout(120)
-    const after = (await probe()).bombs
+    // #3456 s4 calibration: the ship idles during the earlier legs, and the
+    // death window it can wander into suppresses presses (an honest law) —
+    // fixed 120 ms waits made this leg a coin-flip on the attract route's
+    // start position. Seat the patrol (Shift is not a takeover key, so the
+    // stick stays busy flying its own evasions), wait for a healthy pilot,
+    // land the edge on a HOLD while settled, and retry if a restock or a
+    // death interrupts. A stream still fails identically: held ≠ 1 spent.
+    let before = null, after = null
+    await page.keyboard.press('y')
+    for (let attempt = 0; attempt < 6 && after === null; attempt++) {
+        const healthy = await settle((q) => q.screen === 'play' && q.lives > 1 && q.bombs > 0, 8000)
+        if (healthy.screen !== 'play' || healthy.bombs < 1) continue
+        before = healthy.bombs
+        await page.keyboard.down('Shift')
+        const consumed = await settle((q) => q.bombs !== before, 4000)
+        await page.keyboard.up('Shift')
+        if (consumed.bombs === before - 1 || consumed.bombs < before - 1) after = consumed.bombs
+        else await page.waitForTimeout(300) // restock mid-leg — try again
+    }
     r.check('HELD Shift spends one bomb, not a stream', after === before - 1, `${before} -> ${after}`)
-    await page.keyboard.down('Shift')
-    await page.waitForTimeout(150)
-    await page.keyboard.up('Shift')
-    await settle((q) => q.bombs === after - 1)
-    const again = (await probe()).bombs
-    r.check('release + press fires again', again === after - 1, `${after} -> ${again}`)
+    let again = null
+    for (let attempt = 0; attempt < 6 && again === null; attempt++) {
+        const healthy = await settle((q) => q.screen === 'play' && q.lives > 1 && q.bombs > 0, 8000)
+        if (healthy.screen !== 'play' || healthy.bombs < 1) continue
+        await page.keyboard.down('Shift')
+        await page.waitForTimeout(150)
+        await page.keyboard.up('Shift')
+        const q = await settle((x) => x.bombs !== healthy.bombs, 4000)
+        if (q.bombs === healthy.bombs - 1) again = q.bombs
+        else await page.waitForTimeout(300) // suppressed or restocked mid-leg — try again
+    }
+    r.check('release + press fires again', again === (after ?? before) - 1, `${after ?? before} -> ${again}`)
 }
 
 // the WATCH seat refuses the bomb — the witness stays honest on real Chrome too
 {
     const isWatching = () => page.evaluate(() => window.__defenderTest.watching())
+    // the bomb legs above may leave the patrol seated — hand the stick back
+    // first so this leg really tests the seat key, not a leftover state.
+    if (await isWatching()) {
+        await page.keyboard.press('y')
+        for (let t = 0; t < 2000 && (await isWatching()); t += 50) await page.waitForTimeout(50)
+    }
     await page.keyboard.press('y')
     let w = false
     for (let t = 0; t < 5000 && !w; t += 50) { w = await isWatching(); if (!w) await page.waitForTimeout(50) }

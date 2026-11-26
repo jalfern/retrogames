@@ -81,8 +81,9 @@ npm run defendercheck            # Node: determinism, score law, rescue chain, d
                                #   + WITNESS: survival CLAIMED — 20/20 on both 20-seed sets,
                                #     banks/waves/rescues re-pinned, haul guns + speeder +
                                #     close-out + momentum laws each tested directly, and the
-                               #     copy claim pinned to the witness (#3456 stage 3)
-npm run defendercheck -- --mutant   # pre-port + stage-2/3 bugs re-planted; every mutant must go red
+                               #     copy claim pinned to the witness (#3456 stage 3) —
+                               #     plus the s4 column-dash and full-box brace band (#3456 s4)
+npm run defendercheck -- --mutant   # pre-port + stage-2/3/4 bugs re-planted; every mutant must go red
 npm run defenderplay               # Chrome, REAL keys: Shift spends one bomb, pixels flash
                                #     white, held ≠ stream, the WATCH seat never bombs, and
                                #     the crash law pinned both sides (#3445 grace freeze)
@@ -108,13 +109,33 @@ driving key or a tap hands the wheel back (shared blips). Since #3445 the seat
 is **mortal**, and since #3456 the planet is honest too (hunt mutants actually
 move and the landerless wave runs its speeders — see Honest gaps). **The claim
 is re-earned: the patrol survives 20/20 on both audit sets** (witness +
-untuned holdout) at the 150 s horizon, banks min 18,900 + 12,800, clears
-waves on every seed and hauls 57 + 43 deliveries — all still mortal (39 honest
+untuned holdout) at the 150 s horizon, banks min 43,500 + 35,850, clears
+waves on every seed and hauls 55 + 39 deliveries — all still mortal (36 honest
 lives spent across 40 runs, worst seed bleeds 3; WITNESS pins the claim to
 the witness so copy and measurement cannot drift apart).
 
 ## Honest gaps
 
+- **#3456 stage 4 (2026-11-26) — the overhead pocket.** This stage read the
+  killing ticks themselves (`npm run watchmeasure -- --autopsy` dumps position,
+  velocity, killer approach and the route's own presses at every death). The
+  remaining package deaths all sat in the same geometric hole: a diver ON the
+  column (|bx| < 18, |by| 11–15, kvy ±2…3) — the horizontal laser cannot
+  answer a hunter directly above or below, and the vertical race was lost
+  before it started (climb is 0.5/tick, a speeder dives at 3). Two fixes:
+  the brace hop band reaches **17**, covering the whole ±16 kill box (the old
+  ±14 band watched deaths at by 15), and a **column-dash** — an overhead
+  closer gets the column broken at full cruise (trackers cap at 2.4) with
+  height held, the elevator resuming once the lane clears. Honest measure:
+  SURVIVED 20/20 + 20/20, lives spent 22 + 24 → **21 + 15**, diedHauling
+  3 + 7 → **1 + 3**, enemy deaths 12 + 17 → 11 + 11, banks min
+  43,500 + 35,850, worst seed 3 + 3 (still mortal). Two candidates were
+  measured and REJECTED: hopping away-from-hunter unconditionally (holdout
+  deliveries fell to 34, under the 35 floor) and judging the canyon by the
+  horizon's high point instead of its end (lives 36 → 48). The surviving
+  terrain deaths press `up` into ridges that rise faster than 0.5/tick at
+  dash speed — the mid-horizon turn wants a smarter rule than a blunt
+  height test, so it stays honestly open.
 - **#3456 stage 3 (2026-11-26) — the patrol earns its survival back.** Two
   fidelity facts drove the stage. **(1) The arcade fighter never mutes its guns
   while carrying** — the port's haul block returned before the gun rule, so the
@@ -135,7 +156,7 @@ the witness so copy and measurement cannot drift apart).
   20/20, catches 62 + 49, deliveries 57 + 43, banks min 18,900 + 12,800,
   lives spent 20 + 19. The survival copy claim is back — pinned to the
   witness in `defendercheck`, and the `worstSeedHits >= 3` law keeps frozen
-  grace (#3445's shape) impossible under it.
+  grace (#3445's shape) impossible under it. Superseded by stage 4 above.
 - **Stage 2 (same arc, #3456) — the planet woke up.** Hunt-state mutants never
   integrated position (statues) — fixed; watchRoute gained the terrain seat,
   canyon turn, pulsed descents, valley-site veto, hover-kill, fresh-facing gate

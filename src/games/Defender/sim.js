@@ -251,7 +251,20 @@ export const watchRoute = (s) => {
             const bx = Math.min(Math.abs(wrapDelta(e.x - p.x)), Math.abs(wrapDelta(e.x - hx)))
             const by = Math.min(Math.abs(e.y - p.y), Math.abs(e.y - hy))
             if (bx > 170 || by > 70) continue
-            if (bx < huntD) { huntD = bx; hunt = { bx: wrapDelta(e.x - p.x), by: e.y - p.y } }
+            if (bx < huntD) { huntD = bx; hunt = { bx: wrapDelta(e.x - p.x), by: e.y - p.y, vy: e.vy } }
+        }
+        // Overhead pocket (#3456 stage 4): a hunter nearly ON the column and
+        // closing vertically is beyond the horizontal laser — and the vertical
+        // race is lost before it starts (climb is 0.5/tick, its dive is 3).
+        // Every stage-4 package death read |bx| < 18, |by| 11–15, kvy ±2…3.
+        // The package breaks the COLUMN instead: dash off the contact line at
+        // full cruise (mutants track at 2.4 — cruise outruns), hold height,
+        // and the elevator resumes once the tracker has passed.
+        if (hunt && huntD < 40 && Math.abs(hunt.by) < 60 && hunt.by * hunt.vy < -0.2) {
+            if (hunt.bx >= 0) input.left = true
+            else input.right = true
+            if (input.up && input.down) input.down = false
+            return input
         }
         // The elevator is no blind spot (#3456): too close at delivery height
         // aborts the drop to cruise band rather than trading the haul for a
@@ -266,7 +279,7 @@ export const watchRoute = (s) => {
             // tick the lane clears.
             if (hunt.bx > 0) input.right = true
             else if (hunt.bx < 0) input.left = true
-            if (huntD < 80 && Math.abs(hunt.by) < 14) {
+            if (huntD < 80 && Math.abs(hunt.by) < 17) {
                 if (hunt.by >= 0 || clrNow < 100) input.up = true
                 else if (canDown) input.down = true
             } else if (p.y > seat + 2) input.up = true

@@ -532,13 +532,17 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
 // turn-and-brace with the package, the last-hunter close-out, and the
 // momentum law (threat bands read the projected hull, because a memoryless
 // brain that reacts only at contact distance can never null 8 px/tick) —
-// against the faster endgame fleet. Honest measure at this commit:
-// SURVIVED 20/20 + 20/20, banks min 18,900 + 12,800, waves 20/20 + 20/20,
-// rescues 62 + 49 catches, 57 + 43 deliveries, diedHauling 4 + 6 (was
-// 12 + 11), lives spent 20 + 19. The pilot is still MORTAL: 39 honest GAME
-// OVER-grazing lives across 40 runs, worst seed bleeds 3 — frozen grace caps
-// a seed at 1 hit, so >= 3 is its own immortality tripwire. The copy claim
-// ("survives 20/20") is now back in README + registry, and pinned here so
+// against the faster endgame fleet. Stage 4 read the KILLING TICKS and found
+// the overhead pocket: every remaining package death was a diver ON the
+// column (|bx| < 18, kvy ±2…3) the horizontal laser cannot answer — so the
+// package now breaks the column (cruise dash, hold height) and the brace hop
+// covers the whole ±16 kill box, not a ±14 wish. Honest measure at this
+// commit: SURVIVED 20/20 + 20/20, banks min 43,500 + 35,850, waves
+// 20/20 + 20/20, rescues 56 + 42 catches, 55 + 39 deliveries, diedHauling
+// 1 + 3 (stage 3: 4 + 6; stage 2: 12 + 11), lives spent 21 + 15. The pilot
+// is still MORTAL: 36 honest GAME OVER-grazing lives across 40 runs, worst
+// seed bleeds 3 — frozen grace caps a seed at 1 hit, so >= 3 is its own
+// immortality tripwire. The copy claim ("survives 20/20") is pinned here so
 // copy and witness cannot drift apart.
 {
     const patrol = (base) => {
@@ -570,13 +574,13 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     const wi = patrol(2000)
     const ho = patrol(5000)
     ok(wi.survived >= 20 && ho.survived >= 20,
-        `the seat pilot SURVIVES its horizon on BOTH audit sets — ${wi.survived}/20 + ${ho.survived}/20 alive at 150 s (#3456 stage 3 re-earned: haul guns, package brace, last-hunter close-out, momentum law)`)
+        `the seat pilot SURVIVES its horizon on BOTH audit sets — ${wi.survived}/20 + ${ho.survived}/20 alive at 150 s (#3456 s3 haul guns + close-out + momentum law; s4 column-dash + full-box brace)`)
     ok(wi.livesLost >= 10 && ho.livesLost >= 10,
         `both sets still bleed (${wi.livesLost} + ${ho.livesLost} honest lives spent) — mortal, never immortal`)
     ok(wi.worstSeedHits >= 3 && ho.worstSeedHits >= 3,
         `seeds bleed ACROSS respawns (worst ${wi.worstSeedHits} + ${ho.worstSeedHits} hits) — frozen grace caps every seed at 1 hit (#3445's bug shape)`)
-    ok(wi.diedHauling <= 8 && ho.diedHauling <= 8,
-        `the package is no longer hunted to death while descending: diedHauling ${wi.diedHauling} + ${ho.diedHauling} (stage 2 measured 12 + 11 — the arcade never mutes its cargo)`)
+    ok(wi.diedHauling <= 4 && ho.diedHauling <= 4,
+        `the package is no longer hunted to death while descending: diedHauling ${wi.diedHauling} + ${ho.diedHauling} (stage 3: 4 + 6; stage 2: 12 + 11 — #3456 s4 broke the column the divers dropped into)`)
     ok(wi.minScore >= 12000, `every witness patrol banks >= 12,000 against the live planet (min ${wi.minScore} — was 6,000 at stage 2)`)
     ok(ho.minScore >= 8000, `untuned holdout banks >= 8,000 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
     ok(wi.waveSeeds >= 18, `>= 18/20 witness seeds clear a wave (${wi.waveSeeds}/20 — the last-hunter close-out ends waves instead of trailing them)`)
@@ -668,6 +672,38 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
         s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
         const inp = watchRoute(s)
         ok(!inp.fire && inp.holdTell === true, 'the haul gun holds when a walking human stands in the line', `fire=${inp.fire} hold=${inp.holdTell}`)
+    }
+    // #3456 stage 4 — the OVERHEAD POCKET: a diver ON the package's column is
+    // beyond the horizontal laser, and the vertical race (0.5 climb vs 3 dive)
+    // is lost before it starts — the autopsy read every stage-4 package death
+    // at |bx| < 18, |by| 11–15, kvy ±2…3. The package breaks the COLUMN:
+    // dash off the contact line at cruise (trackers cap at 2.4), hold height.
+    {
+        const s = createSim({ rand: seedRng(41), height: 420 })
+        s.enemies = [{ x: 214, y: 170, vx: 0, vy: 2.4, type: 'mutant', state: 'hunt', carry: null }]
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        s.humans[0].state = 'carried'
+        s.carrying = 0
+        s.player.x = 200; s.player.y = 200; s.player.vx = 0; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.left && !inp.right && !inp.up && !inp.down,
+            'a diver closing on the column gets the COLUMN BROKEN: dash away, hold height (the vertical race is lost at 0.5-vs-3)', `left=${inp.left} right=${inp.right} up=${inp.up} down=${inp.down}`)
+    }
+    // …and the brace hop covers the FULL kill box: the sim kills inside
+    // |dy| < 16, so the hop band stops no shorter — two package deaths read
+    // by 15: seen, not dodged, inside the old ±14 band.
+    {
+        const s = createSim({ rand: seedRng(43), height: 420 })
+        s.enemies = [{ x: 214, y: 135, vx: 0, vy: 0.1, type: 'mutant', state: 'hunt', carry: null }]
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        s.humans[0].state = 'carried'
+        s.carrying = 0
+        s.player.x = 200; s.player.y = 120; s.player.vx = 0; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.up && !inp.down,
+            'the brace hop band reaches 17 — the whole ±16 kill box gets an answer (a hunter at by 15 is dodged, not watched)', `up=${inp.up} down=${inp.down}`)
     }
     // The 1981 endgame rule, tested directly: with the wave's landers gone the
     // surviving mutants run hotter than MUTANT_SPEED — and the transition fires
@@ -1117,6 +1153,17 @@ if (process.argv.includes('--mutant')) {
             else if (dy < -10 && !contactColumn(false)) input.up = true`,
             `if (canDown && dy > 10) input.down = true
             else if (dy < -10) input.up = true`],
+        ['#3456 s4 the overhead diver goes answered again (column-dash deleted)', S,
+            `if (hunt && huntD < 40 && Math.abs(hunt.by) < 60 && hunt.by * hunt.vy < -0.2) {`,
+            `if (false) {`],
+        ['#3456 s4 the dash runs INTO the overhead hunter (direction inverted)', S,
+            `            if (hunt.bx >= 0) input.left = true
+            else input.right = true`,
+            `            if (hunt.bx >= 0) input.right = true
+            else input.left = true`],
+        ['#3456 s4 the hop band shrinks back inside the kill box (17->14)', S,
+            `if (huntD < 80 && Math.abs(hunt.by) < 17) {`,
+            `if (huntD < 80 && Math.abs(hunt.by) < 14) {`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
