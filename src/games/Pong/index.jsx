@@ -26,6 +26,7 @@ const PongGame = () => {
     const pausedRef = useRef(false)
     const [watching, setWatching] = React.useState(false)
     const [screen, setScreen] = React.useState('attract')
+    const cyclePickRef = React.useRef(() => {})
 
     // Resume callback
     const handleResume = () => {
@@ -67,6 +68,14 @@ const PongGame = () => {
         }
         readDiffPin()
         state.diff = DIFFS[diff]
+        // #3506 — the pick dial: LEFT/RIGHT and a tap on the label both drive
+        // the same dial. Any other key or tap starts with the pick standing.
+        const cyclePick = (dir) => {
+            diff = (diff + dir + DIFFS.length) % DIFFS.length
+            state.diff = DIFFS[diff]
+        }
+        // the tap band (attract) lives in JSX, so the dial rides a ref
+        cyclePickRef.current = cyclePick
         let tickN = 0
         let hitN = 0
         let isAttractMode = true
@@ -152,8 +161,7 @@ const PongGame = () => {
                 // attract (silent, like the coin-door switches); any other key
                 // starts the match with the pick standing.
                 if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
-                    diff = (diff + (e.code === 'ArrowRight' ? 1 : DIFFS.length - 1)) % DIFFS.length
-                    state.diff = DIFFS[diff]
+                    cyclePick(e.code === 'ArrowRight' ? 1 : -1)
                     return
                 }
                 startRun(); return
@@ -259,9 +267,16 @@ const PongGame = () => {
                     ctx.fillText('2P — LEFT: ARROWS   RIGHT: W/S', state.width / 2, state.height * 0.92)
                 }
                 if (state.over && Math.floor(tickN / 30) % 2 === 0) {
+                    // #3506 — the quit card never lies: 2P reports the TRUE
+                    // winner (or a tie), solo reports YOU WIN / YOU LOSE / TIED.
+                    const leftWins = state.left.score > state.right.score
+                    const rightWins = state.right.score > state.left.score
+                    const result = state.diff === 'TWO'
+                        ? (leftWins ? 'PLAYER ONE WINS' : rightWins ? 'PLAYER TWO WINS' : 'MATCH TIED')
+                        : (leftWins ? 'YOU WIN' : rightWins ? 'YOU LOSE' : 'MATCH TIED')
                     ctx.font = '16px monospace'
                     ctx.fillStyle = '#ffffff'
-                    ctx.fillText('MATCH OVER  YOU WIN', state.width / 2, state.height / 2)
+                    ctx.fillText(`MATCH OVER  ${result}`, state.width / 2, state.height / 2)
                     ctx.font = '12px monospace'
                     ctx.fillText('PRESS ANY KEY TO PLAY AGAIN', state.width / 2, state.height / 2 + 24)
                 }
@@ -377,6 +392,23 @@ const PongGame = () => {
                     <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
                         <AttractWatchButton />
                     </div>
+                )}
+                {screen === 'attract' && (
+                    <button
+                        type="button"
+                        className="pong-pick-zone"
+                        aria-label="Tap to cycle the game pick"
+                        title="Tap to cycle the game pick"
+                        onPointerDown={(e) => {
+                            // #3506 — the pick dial answers a tap like a
+                            // LEFT/RIGHT press; the label itself stays visible
+                            // under the transparent band (the canvas draws it).
+                            e.preventDefault()
+                            e.stopPropagation()
+                            cyclePickRef.current(1)
+                        }}
+                        style={{ position: 'absolute', top: '47%', height: '10%', left: 0, right: 0, zIndex: 60, background: 'transparent', border: 0, cursor: 'pointer', padding: 0 }}
+                    />
                 )}
                 {screen === 'play' && !paused && (
                     <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>

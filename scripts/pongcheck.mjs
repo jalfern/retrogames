@@ -280,8 +280,13 @@ console.log('tiers: the cabinet switches (#3502)')
 
     // shell wiring pins
     const src = readFileSync('src/games/Pong/index.jsx', 'utf8')
-    ok(/ArrowLeft' \|\| e\.code === 'ArrowRight/.test(src) && /diff = \(diff \+/.test(src),
+    ok(/ArrowLeft' \|\| e\.code === 'ArrowRight/.test(src) && /cyclePick\(/.test(src),
         'attract LEFT/RIGHT cycles the pick (and is the only attract key that does not start)')
+    ok(/className="pong-pick-zone"/.test(src) && /cyclePickRef\.current/.test(src),
+        'the pick label is tappable on attract (the band rides the same dial)')
+    ok(!/MATCH OVER  YOU WIN/.test(src) && /PLAYER ONE WINS/.test(src) && /PLAYER TWO WINS/.test(src)
+        && /MATCH TIED/.test(src) && /YOU LOSE/.test(src),
+        'the quit card reports the TRUE result (2P winners, solo YOU WIN/LOSE/TIED)')
     ok(/get\('diff'\)/.test(src) && /diff = d - 1/.test(src), '?diff=N pins the pick for QA')
     ok(/up2: keys\.KeyW, down2: keys\.KeyS/.test(src), 'W/S reach the sim as player two')
     ok(/SELECT GAME/.test(src) && /DIFFS\[diff\]/.test(src), 'the attract screen shows the pick (drawn in the shell, rule-6 audit untouched)')
