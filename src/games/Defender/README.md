@@ -104,7 +104,6 @@ not survival.
 
 ## Honest gaps
 
-- **The immortality bug (#3445) is FIXED by this batch**: the pre-fix sim burned
   respawn grace only while dark, then FROZE it at ~2 s — the pilot could not
   crash twice, and the b18–b21 WITNESS laws ("all 40 survive 150 s", "no
   patrol crashes twice") were artifacts of that immortality, not of flying. On
@@ -115,7 +114,7 @@ not survival.
   the horizon (the never-die bug is pinned too), every seed banks >= 1100
   witness / >= 100 holdout, >= 10/20 clear a wave, >= 10 catches AND >= 10
   deliveries per set. Re-earning survival (a watchRoute interception redesign against a mortal
-  pilot) is its own issue: b20/b21 measured nine designs but never against a
+  pilot) tracked as #3456: b20/b21 measured nine designs but never against a
   pilot that could die twice, so all of it needs re-reading in the new light.
 - **CLOSED by #3443** — the smart bomb is in (Jon's #2016 answer A, "port it.
   Smart bomb on the B/secondAction button, 3 per wave"): B vaporizes every
