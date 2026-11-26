@@ -1275,6 +1275,77 @@ console.log('#1588 juice: the renderer draws each effect only on its signal (sta
         'the room-change flash stays inside the 1993 palette (white)')
 }
 
+// ---------------------------------------------------------- #3441 seam law ----
+console.log('#3441 dragons follow through the door (room-warp seam law)')
+{
+    // The 1979 chase never stopped at the room line. When the dot warps out, a
+    // living, jaw-open dragon aligned on the shared doorway comes through the
+    // same door — the bite/slay is judged inside the new room. The classic
+    // repro, driven by real walking: stand close to Rhindle at the lair's top
+    // gap and run. Too slow and it follows you into the Overworld and eats you.
+    const a = createSim(seedRng(4241))
+    a.room = R.DRAGON_LAIR; a.player.x = 80; a.player.y = 20
+    const rh = a.dragons[2]
+    rh.room = R.DRAGON_LAIR; rh.x = 80; rh.y = 32; rh.alive = true; rh.mouthOpen = false
+    for (let i = 0; i < 40 && a.room === R.DRAGON_LAIR; i++) step(a, { dy: -S })
+    ok(a.room === R.OVERWORLD_5, 'up-walk out of the lair reaches OW5', `room=${a.room}`)
+    ok(rh.room === R.OVERWORLD_5, 'Rhindle followed the dot through the top seam', `lair? rh.room=${rh.room}`)
+    ok(rh.y === GH - 20, 'the follower enters at the mirror entry (bottom seam of OW5)', `y=${rh.y}`)
+    ok(a.dead === true, 'the heels-bite lands INSIDE the new room (the classic catch)', `dead=${a.dead}`)
+
+    // Determinism: the law is arithmetic — no dice. Same seed, same outcome.
+    const a2 = createSim(seedRng(4241))
+    a2.room = R.DRAGON_LAIR; a2.player.x = 80; a2.player.y = 20
+    const rh2 = a2.dragons[2]
+    rh2.room = R.DRAGON_LAIR; rh2.x = 80; rh2.y = 32; rh2.alive = true; rh2.mouthOpen = false
+    for (let i = 0; i < 40 && a2.room === R.DRAGON_LAIR; i++) step(a2, { dy: -S })
+    ok(stateHash(a) === stateHash(a2), 'the seam law consumes no dice (identical hashes)')
+
+    // A hunter misaligned on the seam (12 px past the column + slack) stays
+    // behind: doors keep being the doorway, not a portal for the whole room.
+    const b = createSim(seedRng(5))
+    b.room = R.DRAGON_LAIR; b.player.x = 94; b.player.y = 1
+    const bh = b.dragons[2]; bh.room = R.DRAGON_LAIR; bh.x = 112; bh.y = 29; bh.alive = true; bh.mouthOpen = true
+    step(b, { dy: -S })
+    ok(b.room === R.OVERWORLD_5 && bh.room === R.DRAGON_LAIR,
+        'a jaw-open dragon 12 px off the column does NOT follow (alignment is the law)', `rh.room=${bh.room}`)
+
+    // Idle wanderers never self-leave: jaw shut = no follow (world-roam stays
+    // an honest gap, rewritten honestly — dragons follow THE DOT, not the world).
+    const c = createSim(seedRng(6))
+    c.room = R.DRAGON_LAIR; c.player.x = 80; c.player.y = 1
+    const ch = c.dragons[2]; ch.room = R.DRAGON_LAIR; ch.x = 82; ch.y = 30; ch.alive = true; ch.mouthOpen = false
+    step(c, { dy: -S })
+    ok(c.room === R.OVERWORLD_5 && ch.room === R.DRAGON_LAIR, 'a jaw-shut dragon stays in the room it guards')
+
+    // Horizontal seam: the parallel axis is preserved, the anchor mirrors into
+    // the neighbour's opposite side gap.
+    const d = createSim(seedRng(7))
+    d.room = R.OVERWORLD_5; d.player.x = 1; d.player.y = 95
+    const dh = d.dragons[2]; dh.room = R.OVERWORLD_5; dh.x = 140; dh.y = 92; dh.alive = true; dh.mouthOpen = true
+    step(d, { dx: -S })
+    ok(d.room === R.BLUE_LAB_1 && dh.room === R.BLUE_LAB_1 && dh.x === GW - 20 && dh.y === 92,
+        'left-warp carries an aligned hunter into the lab1 right seam (y preserved)', `lab? dh.room=${dh.room} x=${dh.x} y=${dh.y}`)
+
+    // The sword law survives the door: face it in the doorway and the FOLLOWER
+    // is the one that dies, one tick behind you, in the new room.
+    const e = createSim(seedRng(8))
+    e.room = R.DRAGON_LAIR; e.player.x = 80; e.player.y = 1; e.carrying = 'sword'
+    const eh = e.dragons[2]; eh.room = R.DRAGON_LAIR; eh.x = 82; eh.y = 30; eh.alive = true; eh.mouthOpen = true
+    e.step({ dy: -S })   // direct call — the step() helper clears events; this gate reads them
+    ok(e.room === R.OVERWORLD_5 && eh.alive === false && e.dead === false && e.events.includes('slay'),
+        'the sword-turn slay works against a dragon that followed through (#1545 law holds at seams)')
+
+    // Castles are doors too: with the portcullis raised, a hunter lines up at
+    // the gate and follows the dot into the foyer.
+    const g = createSim(seedRng(9))
+    g.room = R.GOLD_CASTLE; g.gateOpen.goldKey = true; g.player.x = 80; g.player.y = 1
+    const gy = g.dragons[0]; gy.room = R.GOLD_CASTLE; gy.x = 82; gy.y = 30; gy.alive = true; gy.mouthOpen = true
+    step(g, { dy: -S })
+    ok(g.room === R.GOLD_FOYER && gy.room === R.GOLD_FOYER,
+        'a raised portcullis is a follow-seam too (dragon enters the foyer)', `foyer? gy.room=${gy.room}`)
+}
+
 // --------------------------------------------------------------- mutants -----
 if (process.argv.includes('--mutant')) {
     console.log('\nmutants (each MUST turn the suite red)')
@@ -1449,6 +1520,15 @@ if (process.argv.includes('--mutant')) {
         ['#1637: route.js drops the fixed-map dispatch (V1/V2 lose their proven script)', RTF,
             'const gen = sim.variant >= 3 ? runRoute(sim) : scriptRun(sim)',
             'const gen = runRoute(sim)'],
+        ['#3441: seam alignment is deleted (the whole room pours through any door)', SM,
+            'if (d.x < GAP_L - DRAGON_FOLLOW_SLACK || d.x > GAP_L + GAP_W + DRAGON_FOLLOW_SLACK) continue',
+            'if (false) continue'],
+        ['#3441: jaw-shut wanderers follow too (the room-binding law is gone)', SM,
+            'if (!d.alive || d.room !== from || !d.mouthOpen) continue',
+            'if (!d.alive || d.room !== from) continue'],
+        ['#3441: the follower lands deep in the room, not in the doorway', SM,
+            `d.y = dir === 'up' ? GH - 20 : 10`,
+            `d.y = dir === 'up' ? GH - 90 : 10`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
