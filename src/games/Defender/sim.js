@@ -139,13 +139,15 @@ export const humansAlive = (humans) => humans.filter((h) => h.state !== 'dead').
 // laser line closer than the target (the arcade's friendly-fire law runs both
 // ways). No rand, no memory — honest from any position.
 // Honest measure (defendercheck's WITNESS, two seeded 150-second patrol sets
-// — 20 witness + 20 untuned holdout): every seed survives to the horizon with
-// lives to spare, banks its floor (witness >= 7,000, holdout >= 1,300), and
-// NO seed crashes twice (b21 crash law). The patrol rescues a human
-// (catch + deliver) on most seeds, does NOT fly collision-free (a graze about
-// once a patrol — see the README for the six b21 policing designs that all
-// traded flow or floors), and cannot always reach a far-side haul before it
-// crests. The watch advertises the route, not invincibility — any input takes
+// — 20 witness + 20 untuned holdout), re-read after #3445 burned the grace
+// honestly: the patrol is MORTAL — the old "every seed survives, no seed
+// crashes twice" numbers were artifacts of the frozen-grace bug (see the
+// README). On the honest clock 0/20 + 1/20 reach the horizon; >= 15/20 of
+// each set reach an honest GAME OVER, every seed banks its floor (witness
+// >= 1,100, holdout >= 100), >= 10/20 clear a wave and each set banks 10+
+// catches AND deliveries. The route takes the ~1 graze b20 measured — and
+// grazes now keep landing. The watch advertises the route, not invincibility
+// — any input takes
 // over, and the seat releases with the run.
 export const watchRoute = (s) => {
     const input = { left: false, right: false, up: false, down: false, fire: false }
@@ -347,13 +349,18 @@ export function createSim({ rand, height }) {
         // --- Player flight (inertia like the Jupiter fighter) ---
         if (p.dark > 0) {
             p.dark -= 1
-            p.invuln -= 1
         } else {
             if (input.left) { p.vx -= 0.5; p.facing = -1 }
             if (input.right) { p.vx += 0.5; p.facing = 1 }
             if (input.up) p.vy -= 0.5
             if (input.down) p.vy += 0.5
         }
+        // #3445: the grace burns EVERY tick, not only while dark. The pre-fix
+        // line sat inside the dark branch, so once dark hit 0 invuln froze at
+        // 120 — every collision check (invuln <= 0) was false forever and the
+        // pilot was immortal after its first crash. The cabinet promises ~1 s
+        // dark + ~2 s blinking invulnerability, then you are mortal again.
+        if (p.invuln > 0) p.invuln -= 1
         p.vx *= 0.98
         p.vy *= 0.95
         p.vx = Math.max(-8, Math.min(8, p.vx))

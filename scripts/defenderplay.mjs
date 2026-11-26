@@ -2,8 +2,8 @@
 // the attract demo moves, a key starts the run, the smart bomb fires on a real
 // Shift press (stock drops, the screen washes white in PIXELS, held ≠ stream),
 // the HUD stock matches the sim, the WATCH seat never reaches for the bomb,
-// and the crash law is pinned on both sides — first death lands, and the
-// second one does NOT (#3445: grace freezes; the fix must invert that pin).
+// and the crash law (#3445 INVERTED — grace burns honestly, so the second
+// death lands too; pre-fix this drive pinned the immortality by name).
 // Advisory verify tier — the deterministic gate is defendercheck in `static`.
 
 import { launch, openGame, Report } from './lib/harness.mjs'
@@ -106,19 +106,41 @@ r.check('the QA contract declares b (bots/replays can press the bomb)', !!meta &
     r.check('a driving key takes the stick back from the patrol', !(await isWatching()))
 }
 
-// crash law. KNOWN #3445: the respawn grace never burns below 120, so the
-// first crash makes the pilot immortal and GAME OVER is unreachable on today's
-// build. These pins assert BOTH sides — the crash works, and the second death
-// does NOT — so when QA fixes #3445 this drive goes red LOUDLY and the pins
-// invert on purpose, never silently.
+// crash law (#3445 INVERTED exactly as promised): the grace burns every tick,
+// so a held ArrowDown crashes the pilot AGAIN — second death lands, mortality
+// restored. Pre-fix this leg asserted the OPPOSITE (no second death) to pin
+// the immortality bug by name; flipping it here is the deliberate inversion,
+// not a silent drift.
 {
+    // Fresh seeded run so the leg's lives ledger is honest (earlier legs are
+    // mortal now too) and every budget below counts WORLD ticks.
+    await page.evaluate(() => window.__game.reset(7))
+    await page.waitForTimeout(200)
     await page.keyboard.down('ArrowDown')
-    const dead = await settle((q) => q.lives < 3, 10000)
-    r.check('the pilot can genuinely crash — the first death lands', dead.lives === 2, `lives=${dead.lives}`)
+    let first = null
+    const tf0 = (await probe()).tick
+    for (let i = 0; i < 400; i++) {
+        first = await probe()
+        if (first.lives < 3 || first.screen === 'over') break
+        if (first.tick - tf0 > 400) break
+        await page.waitForTimeout(150)
+    }
+    r.check('the pilot can genuinely crash — the first death lands', first.lives === 2, `lives=${first.lives}`)
     let secondDeath = false
-    for (let t = 0; t < 12000; t += 250) { const q = await probe(); if (q.lives < 2 || q.screen === 'over') { secondDeath = true; break } }
+    // The budget is WORLD ticks, not wall ms (AGENTS: harness waits are sim
+    // time — this box once ran the world at ~5 tps under multi-lane load and
+    // a 24 s wall ceiling watched the pilot respawn mid-blink and called it
+    // grace). One honest cycle = freeze 30 + dark 60 + blink 120 + re-dive
+    // ~60 ≈ 270 ticks; 700 covers two with margin.
+    const t0 = (await probe()).tick
+    for (let i = 0; i < 400; i++) {
+        const q = await probe()
+        if (q.lives < 2 || q.screen === 'over') { secondDeath = true; break }
+        if (q.tick - t0 > 700) break
+        await page.waitForTimeout(150)
+    }
     await page.keyboard.up('ArrowDown')
-    r.check('#3445 pinned: no second death — grace freezes, GAME OVER unreachable on this build', !secondDeath, 'the fix for #3445 must INVERT this pin')
+    r.check('#3445 inverted: the grace burns — a SECOND crash lands, mortality restored', secondDeath, `lives=${(await probe()).lives}`)
     const after = await probe()
     r.check('a crashed run still plays on (world keeps turning)', after.screen === 'play', JSON.stringify({ screen: after.screen, bombs: after.bombs, humans: after.humans }))
 }

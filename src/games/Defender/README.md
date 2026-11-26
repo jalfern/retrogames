@@ -19,6 +19,9 @@ on one seeded stream.
 - **Arcade score table**: lander 150, mutant 1500, catch 250, delivery 500,
   wave clear 1000, extra ship every 10,000. 3 lives, ~0.5 s death freeze (the
   cabinet holds the wreck on screen) + ~1 s dark + ~2 s blinking respawn grace.
+  The grace expires ON THE CLOCK (#3445 — it used to freeze after the dark, so
+  the pilot was immortal from its first crash on); then you are mortal again and
+  the third wreck ends the run.
   Wave clear resurfaces the wave (8 landers at wave 1, +1 per wave cap 12).
   Friendly fire is real — your own shots kill humans, like the original.
 - **Feel (#1531)**: thrust hums while accelerating, diving landers flash a
@@ -66,8 +69,11 @@ not JSON-serializable (#391).
 ## Verify
 ```
 npm run defendercheck            # Node: determinism, score law, rescue chain, deaths, terminal,
-                               #   + WITNESS: the WATCH patrol survives both 20-seed sets
-                               #     (witness + holdout) @150 s, never crashes twice
+                               #   §grace (#3445: the grace burns to zero on the clock alone, a
+                               #   second crash lands nudged-free, ArrowDown reaches GAME OVER,
+                               #   attract invulnerability pinned BY COPY)
+                               #   + WITNESS: honest mortal-pilot floors on both 20-seed sets
+                               #     (banks, waves, rescues — survival is no longer claimed)
 npm run defendercheck -- --mutant   # pre-port bugs re-planted; every mutant must go red
 npm run defenderplay               # Chrome, REAL keys: Shift spends one bomb, pixels flash
                                #     white, held ≠ stream, the WATCH seat never bombs, and
@@ -90,54 +96,37 @@ a diving lander is next, then nearest threats; a falling human is flown into
 (+250) and carried down the elevator to the surface (+500); the guns hold
 when a walking human stands in the laser line closer than the target. The
 patrol still climbs clear of the terrain and stays out of the dark. Any
-driving key or a tap hands the wheel back (shared blips).
-**#3443 re-pin:** with the smart bomb in the build the floors were re-measured
-on this PR and are IDENTICAL (witness min 7800, holdout min 1350, 46/47
-rescues, one crash worst-case) — the route carries no bomb field and the press
-path draws no rand, so the witness never moved.
+driving key or a tap hands the wheel back (shared blips). Since #3445 the seat
+is **mortal** — the old grace-freeze had made it (and the numbers WITNESS
+audited) half-immortal; an honest patrol loses ships to the graze b20 measured,
+and WITNESS now certifies what it banks and rescues before an honest GAME OVER,
+not survival.
 
 ## Honest gaps
 
-- **KNOWN BUG (#3445, filed 2026-11-26)**: the respawn grace never burns below
-  120 ticks — `invuln` only decrements while `dark > 0` — so after the FIRST
-  crash the pilot is permanently invulnerable and GAME OVER is unreachable.
-  Consequence: the b18-b21 WITNESS laws (all 40 seeds survive, no seed crashes
-  twice) are artifacts of the bug — measured with the honest one-line fix, the
-  same seeds collapse to witness 0/20 and holdout 1/20 survived. Fixing it
-  honestly means re-earning the patrol route; see #3445 for the full evidence
-  and the batch plan. `defenderplay` pins both sides by name meanwhile.
-- The WATCH patrol is honest-proven, not perfect: WITNESS now replays BOTH a
-  20-seed witness set and a 20-seed HOLDOUT (never tuned against) — all 40
-  survive a 150 s patrol (witness min 7800 banked, holdout min 1350; 19/20
-  and 16/20 clear >= 1 wave; 46/47 rescues per set), and the b21 crash law
-  pins that NO seed loses two of its three lives inside a patrol — the ~1
-  graze per patrol is measured law, not luck. (#1637 b20 measured three
-  interception redesigns — reachability-budget concessions, a dive pivot while
-  hauls are lost, and reachable-diver VIP — each RAISED patrol totals (best
-  +18% score, +15 waves) but regressed a seed floor (7800 -> 3150-5850) and
-  cost lives: at 4000 px the far side is out of the fighter's 210-tick
-  rescue window, and b19's engage-everything law is the honest optimum.
-  #1637 b21 attacked the graze itself and the planet won: six more policing
-  designs measured on the same 40 seeds — velocity-vector run-out guards
-  (thr 10-20) starve the guns (104 waves -> 17-33, kills need the low
-  band), momentum-braked delivery/rescue elevators and a fresh-facing fire
-  gate each buy flow (best 125 waves, 55 rescues) but reshuffle one seed
-  into b20's own reject band (floor 7800 -> 4500), a dy-standoff plus hot
-  window trades paint for stalemates (15 waves), and duel-priority tracking
-  collapses the job list. The route's one early crash per patrol is the
-  price of that flow at this sim's knife-edge: the seed outcomes are chaotic
-  (any rule nudge reshuffles 20 runs), so the LAW is what ships pinned —
-  40-seed survival, per-seed single-crash, holdout floors — and the
-  interception gap stands too.)
+  respawn grace only while dark, then FROZE it at ~2 s — the pilot could not
+  crash twice, and the b18–b21 WITNESS laws ("all 40 survive 150 s", "no
+  patrol crashes twice") were artifacts of that immortality, not of flying. On
+  the honest clock the SAME seeds measure **0/20 witness + 1/20 holdout alive
+  at 150 s**: the seat takes the ~1 graze b20 measured, and the graze now
+  keeps landing. The survival claim is retired from the copy; what ships pinned
+  is the honest floor — >= 15/20 of each set reaches an honest GAME OVER inside
+  the horizon (the never-die bug is pinned too), every seed banks >= 1100
+  witness / >= 100 holdout, >= 10/20 clear a wave, >= 10 catches AND >= 10
+  deliveries per set. Re-earning survival (a watchRoute interception redesign against a mortal
+  pilot) tracked as #3456: b20/b21 measured nine designs but never against a
+  pilot that could die twice, so all of it needs re-reading in the new light.
 - **CLOSED by #3443** — the smart bomb is in (Jon's #2016 answer A, "port it.
   Smart bomb on the B/secondAction button, 3 per wave"): B vaporizes every
   hostile inside the wrap-aware 1000 px screen window at table value, haulers
   drop their human falling (catchable), the blast spares pilot and humans,
-  stock refills to 3 on the wave beat; edge-triggered and rand-free so the
-  WITNESS floors are byte-identical (re-measured in the PR, identical).
-  The mock option is retired. **Still out: hyperspace and the meteor-swarm
-  bonus** — documented 1981 features left out of this port (the original's
-  bonus table values 250/500/1000/10k are honored for what IS here).
+  stock refills to 3 on the wave beat; edge-triggered and rand-free — the bomb
+  draws nothing from the seed stream (its own re-measure was byte-identical,
+  honest *then*: the grace freeze was still live; #3445's honest burn moved the
+  floors — see the gap above). The mock option is retired. **Still out:
+  hyperspace and the meteor-swarm bonus** — documented 1981 features left out
+  of this port (the original's bonus table values 250/500/1000/10k are honored
+  for what IS here).
 - A hauled human dies near the top of the screen instead of the lander
   circling back down with it (original re-descends; simplification).
 - Collisions within ~20 px of the wrap seam are skipped (20 px bodies on a

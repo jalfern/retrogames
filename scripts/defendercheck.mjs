@@ -16,7 +16,7 @@ import {
     createSim, wrapDelta, groundAt, makeTerrain, makeHumans, spawnWave,
     livesForScore, humansAlive,
     SCORE_LANDER, SCORE_MUTANT, SCORE_CATCH, SCORE_DELIVER, SCORE_WAVE,
-    BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT, DEATH_FREEZE, watchRoute,
+    BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT, DEATH_FREEZE, RESPAWN_DELAY, INVULN_TICKS, watchRoute,
     thrustHum, BOMBS_PER_WAVE, BOMB_SCREEN,
 } from '../src/games/Defender/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
@@ -254,6 +254,53 @@ console.log('the ship can die (pre-port it could not): lives, grace, GAME OVER')
     ok(w.wave === 2 && w.score === SCORE_WAVE && w.enemies.length === 9, 'wiping every enemy clears the wave (+1000, nine fresh landers)', `w=${w.wave} s=${w.score} n=${w.enemies.length}`)
 }
 
+// ------------------------------------------------- honest respawn grace (#3445) --
+// The pre-fix sim decremented invuln ONLY while dark, so once dark hit 0 the
+// grace FROZE at INVULN_TICKS — every collision check (invuln <= 0) was false
+// forever: the first crash made the pilot immortal and GAME OVER unreachable.
+// The 1981 cabinet promises ~1 s dark + ~2 s blinking grace, then you are
+// mortal again. These pins prove the promise burns honestly WITHOUT the old
+// test-side invuln = 0 cheat that hid the bug (#1473's terminal test cheated).
+console.log('respawn grace burns honestly (#3445): it expires, death comes back, the terminal is natural')
+{
+    // 1. The clock: dark clears first, blink lasts exactly INVULN_TICKS more.
+    const s = newSim(29)
+    s.enemies = [{ x: s.player.x, y: s.player.y, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+    s.step({})
+    ok(s.events.some((e) => e.t === 'die') && s.player.invuln === RESPAWN_DELAY + INVULN_TICKS,
+        'death sets dark + grace (no freeze at the top)', `invuln=${s.player.invuln}`)
+    for (let i = 0; i < DEATH_FREEZE; i++) s.step({}) // the wreck-hold burns before the countdown
+    ok(s.player.invuln === RESPAWN_DELAY + INVULN_TICKS,
+        'the death freeze spends no grace (the cabinet holds the screen)', `invuln=${s.player.invuln}`)
+    let ticks = 0
+    while (s.player.dark > 0 && ticks < 600) { s.step({}); ticks++ }
+    ok(s.player.dark === 0 && s.player.invuln === INVULN_TICKS,
+        'when the dark ends the blink grace is exactly INVULN_TICKS strong (~2 s)', `dark=${s.player.dark} invuln=${s.player.invuln}`)
+    ticks = 0
+    while (s.player.invuln > 0 && ticks < 600) { s.step({}); ticks++ }
+    ok(s.player.invuln === 0 && ticks === INVULN_TICKS,
+        'the grace burns to ZERO on the clock alone — nothing forces it', `ticks=${ticks}`)
+
+    // 2. Mortality restored: the NEXT collision takes another life untouched.
+    const livesBefore = s.lives
+    s.enemies = [{ x: s.player.x, y: s.player.y, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+    s.step({})
+    ok(s.lives === livesBefore - 1 && s.events.some((e) => e.t === 'die'),
+        'the pilot is MORTAL after grace — a second crash lands without test-side nudges', `lives=${s.lives}`)
+
+    // 3. The browser repro: hold ArrowDown. Three honest terrain hits reach the
+    //    terminal with zero invuln manipulation (pre-fix this ran forever).
+    const d = newSim(31)
+    let cap = 2000
+    while (!d.over && cap > 0) { d.step({ down: true }); cap-- }
+    ok(d.over && d.lives === 0,
+        'hands-down ArrowDown reaches GAME OVER naturally (the #3445 repro)', `over=${d.over} lives=${d.lives} ticks=${d.tick}`)
+    ok(/if \(p\.invuln > 0\) p\.invuln -= 1/.test(readFileSync('src/games/Defender/sim.js', 'utf8')),
+        'the honest-burn line is in the engine (source pin)')
+    ok(/if \(isAttractMode\) sim\.player\.invuln = 999999/.test(jsx),
+        'attract stays invulnerable BY COPY (#3445: the demo dying is a decision, and it is pinned as one)')
+}
+
 // ---------------------------------------------------- component wiring (#1473) --
 console.log('component wiring: pin, report, contract, terminal UI')
 {
@@ -407,21 +454,24 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
 
 
 // ---------- WATCH witness (#1637 batch 18; defends the humans since batch 19;
-// dual-set + crash-law pins since batch 21): the seat brain patrols it ----------
+// dual-set since batch 21; #3445 RETIRED the survival claim) -------------------
+// b18-b21 pinned "all 40 seeds survive 150 s, none crashes twice". #3445 proved
+// that was an ARTIFACT of the frozen-grace bug: the pilot could not crash twice
+// because after its first death invuln never expired. With the grace burning
+// honestly, the same seeds measure 0/20 + 1/20 alive at 150 s — the patrol is
+// mortal and usually loses. What ships now is the honest floor: the seat still
+// banks, clears waves and rescues before the wrecks pile up, AND the terminal
+// still arrives on its own (a seat that could not die would be the bug back).
+// Re-earning SURVIVAL against a mortal pilot is a watchRoute redesign arc —
+// tracked as its own issue; b20/b21's interception data was measured against a
+// half-immortal pilot and every number there needs re-reading.
 {
-    // b20 measured ~1 graze per patrol and pinned "what is MEASURED, not wishes".
-    // b21 replays the identical loop over an independent HOLDOUT set (5000+k*91)
-    // beside the witness set, adds the per-seed crash law (no patrol may lose two
-    // lives inside 150 s — measured: every one of the 40 seeds loses at most one),
-    // and raises the rescue pins to the measured truth (b19 sat at 46; the old
-    // pin 30 had 16 points of slack). The holdout is never tuned against — it is
-    // proof the pins are law and not seed-fitting.
     const patrol = (base) => {
-        let survived = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0, worstSeedHits = 0
+        let survived = 0, overs = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0
         for (let k = 0; k < 20; k++) {
             const rand = seedRng(base + k * 91)
             const w = createSim({ rand, height: 420 })
-            let waves = 0, hits = 0
+            let waves = 0
             let cap = 9000
             while (!w.over && cap > 0) {
                 w.step(watchRoute(w))
@@ -429,42 +479,57 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
                     if (e.t === 'wave') waves++
                     if (e.t === 'catch') catches++
                     if (e.t === 'deliver') delivers++
-                    if (e.t === 'die') hits++
                 }
                 cap--
             }
             if (!w.over) survived++
+            else overs++
             if (waves >= 1) waveSeeds++
             minScore = Math.min(minScore, w.score)
-            worstSeedHits = Math.max(worstSeedHits, hits)
         }
-        return { survived, waveSeeds, minScore, catches, delivers, worstSeedHits }
+        return { survived, overs, waveSeeds, minScore, catches, delivers }
     }
     const wi = patrol(2000)
     const ho = patrol(5000)
-    ok(wi.survived === 20 && ho.survived === 20,
-        `every seeded patrol survives its 150 s horizon, witness AND holdout (${wi.survived}/20 + ${ho.survived}/20)`)
-    ok(wi.minScore >= 7000, `patrol banks >= 7000 on every witness seed (min ${wi.minScore} — b19's rescues raised the floor from 4000)`)
-    ok(ho.minScore >= 1300, `untuned holdout banks >= 1300 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
-    ok(wi.waveSeeds >= 19, `>= 19/20 witness seeds clear at least a wave (${wi.waveSeeds}/20)`)
-    ok(wi.catches >= 40 && wi.delivers >= 40, `the patrol rescues humans across the fleet: ${wi.catches} catches, ${wi.delivers} deliveries (b18: 8 and 8; b21 raised the pin from 30)`)
-    ok(ho.catches >= 40 && ho.delivers >= 40, `the untuned holdout rescues too: ${ho.catches} catches, ${ho.delivers} deliveries`)
-    ok(Math.max(wi.worstSeedHits, ho.worstSeedHits) <= 1,
-        `no patrol crashes twice — worst of 40 seeds loses ${Math.max(wi.worstSeedHits, ho.worstSeedHits)} of 3 lives in 150 s (the ~1 graze per patrol is the b20 law; a SECOND crash means the route broke)`)
+    ok(wi.overs >= 15 && ho.overs >= 15,
+        `the seat pilot is MORTAL — ${wi.overs}/20 + ${ho.overs}/20 patrols reach an honest GAME OVER inside 150 s (#3445: the old 40/40 survival claim was the freeze's artifact; invulnerability is not the fix)`)
+    ok(wi.minScore >= 1100, `even mortal, every witness patrol banks >= 1100 (min ${wi.minScore})`)
+    ok(ho.minScore >= 100, `untuned holdout banks >= 100 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
+    ok(wi.waveSeeds >= 10, `>= 10/20 witness seeds clear at least a wave before the wrecks pile up (${wi.waveSeeds}/20)`)
+    ok(ho.waveSeeds >= 10, `>= 10/20 holdout seeds clear at least a wave (${ho.waveSeeds}/20)`)
+    ok(wi.catches >= 10 && wi.delivers >= 10, `the rescue law holds for a mortal pilot: ${wi.catches} catches, ${wi.delivers} deliveries (b21 pinned 40 — that fleet of rescues was half-immortal flying)`)
+    ok(ho.catches >= 10 && ho.delivers >= 10, `the untuned holdout rescues too: ${ho.catches} catches, ${ho.delivers} deliveries`)
     ok(humansAlive(createSim({ rand: seedRng(2000), height: 420 }).humans) === HUMAN_COUNT,
         'witness seeds start with the street full (five humans)')
-    // The law, tested directly: a hauler outranks a CLOSER idle lander.
+    // The law, tested directly: a hauler outranks a CLOSER idle lander. The
+    // targets now sit on OPPOSITE sides so the steer direction itself is the
+    // verdict — the old both-left rig passed even with the weighting deleted.
     {
         const s = createSim({ rand: seedRng(7), height: 420 })
         s.enemies = [
             { x: 120, y: 150, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null },
-            { x: -50, y: 150, vx: 0, vy: 0, type: 'lander', state: 'ascend', carry: 0 },
+            { x: 320, y: 150, vx: 0, vy: 0, type: 'lander', state: 'ascend', carry: 0 },
         ]
         s.humans[0].state = 'abducted'
         s.player.x = 200; s.player.y = 150; s.player.vx = 0; s.player.vy = 0
         s.player.facing = -1; s.player.dark = 0; s.player.invuln = 1
         const inp = watchRoute(s)
-        ok(inp.left && !inp.right, 'a lander HAULING a human outranks a nearer idle one (the planet\'s job comes first)', `dx-steer left=${inp.left} right=${inp.right}`)
+        ok(inp.right && !inp.left, 'a lander HAULING a human outranks a nearer idle one (the planet\'s job comes first)', `left=${inp.left} right=${inp.right}`)
+    }
+    // The delivery elevator, tested directly: holding a human up high, the route
+    // must ride it DOWN to the wireframe. (The old fleet-total pin only killed
+    // this by immortality scale; a mortal patrol meanders low sometimes and
+    // still books deliveries — so the LAW of the steer is what gets pinned.)
+    {
+        const s = createSim({ rand: seedRng(13), height: 420 })
+        s.enemies = []
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        s.humans[0].state = 'carried'
+        s.carrying = 0
+        s.player.x = 200; s.player.y = 120; s.player.vx = 0; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.down && !inp.up, 'a carried human is flown down the elevator to the surface', `down=${inp.down} up=${inp.up}`)
     }
     // Friendly fire stays honest at the brain too: a walking human in the laser
     // line closer than the target holds the trigger.
@@ -754,6 +819,9 @@ if (process.argv.includes('--mutant')) {
         ['#3443 waves stop restocking the smart bomb', S,
             `s.bombs = BOMBS_PER_WAVE // #3443 (Jon #2016): 3 per wave — the wave beat restocks`,
             `/* dry waves */`],
+        ['#3445 the respawn grace freezes when dark ends (the immortality bug)', S,
+            `if (p.invuln > 0) p.invuln -= 1`,
+            `if (p.dark > 0) p.invuln -= 1`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
