@@ -306,7 +306,7 @@ compile reads ghost, never as a save.
 ## Verify
 
 ```bash
-npm run pinballcheck          # 279 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix pins, plain Node (+14 mutants incl. smithzone/smithload/mix)
+npm run pinballcheck          # 288 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix/pack pins, plain Node (+19 mutants incl. packmagnet/magspent/magclock/magstall/magrearm)
 npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs, + #3336 live phone-mix legs)
 npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284 + #3359): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence, garage: slot switch (Digit1/2/3), SAVE into a garage slot, slot-choice persistence, legacy-blob one-shot migration (+#3290: badge-while-unselected, nova-demo honesty, drawn-rim delta, seam nearest-centre, touch tap-guard + tool taps)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
@@ -393,6 +393,18 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   muffle (music-bus low-pass in AudioController) awaits Jon's #3335; the
   recorded default is keep level-only, and this lane will not implement
   against an open decision.
-- The magnet holds one ball and the orbit one loop at a time (real tables run
-  both per-ball); the wrap's curl assist is a fixed push, not a shaped rail.
+- **CLOSED by #3422:** the magnet held one ball and the orbit one loop at a
+  time. The coil now stays energised through a hold EPISODE: every ball that
+  finds the post face while another is pinned pins too, each on its own `hold`
+  clock, each snapping with its own payout; `gs.magHold` is the episode clock
+  (max of live holds) so art, hum and hash read one truth — bit-identical for
+  one ball. A snapped ball carries a spent marker (`magHoldT −1`) and never
+  rides the same drive twice; a drain that re-arms the coil re-arms its balls
+  too. The orbit half of the claim was stale on arrival — arm/curl/done flags
+  were already per-puck — and is now PINNED that way (two balls in the channel
+  arm twice, score twice, bank twice). Ball search is per-ball too: the stall
+  exemption is `p.magHeld`, so a stuck free ball is searched out even while
+  the magnet holds its pack. Honest residue: a ball queued directly behind a
+  pin bounces off it (the pin is a post) instead of chain-pinning through it,
+  and the wrap's curl assist is still a fixed push, not a shaped rail.
 - No left ramp / kickback, and the spinner is still outlane-only.

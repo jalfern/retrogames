@@ -378,7 +378,7 @@ function proxyFlag(gs, key) {
 }
 
 function newPuck(x, y, vx, vy) {
-    return { bx: x, by: y, vx, vy, prevY: y, launched: false, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false };
+    return { bx: x, by: y, vx, vy, prevY: y, launched: false, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false, magHoldT: 0 };
 }
 
 export function resetBall(gs) {
@@ -606,7 +606,12 @@ function substepBall(gs, b, dt) {
         const md = Math.hypot(mdx, mdy);
         if (md < MG.field + BALL_R) {
             if (!gs.magTouched) gs.magTouched = true;
-            if (!b.magHeld && gs.magCharge > 0 && gs.magHold === 0) {
+            // #3422 per-ball: the coil stays energised through a hold episode, so
+            // a second ball that finds the post face while another ball is pinned
+            // is grabbed too — each holds on its own clock and pays its own snap.
+            // A ball that already snapped on this drive (magHoldT < 0) never rides
+            // the same episode twice — the charge-dies-with-the-hold law stands.
+            if (!b.magHeld && (b.magHoldT ?? 0) >= 0 && (gs.magCharge > 0 || gs.magHold > 0)) {
                 // pull toward the post along the field
                 if (md > 0.001) { b.vx += (mdx / md) * MG.pull * dt; b.vy += (mdy / md) * MG.pull * dt; }
                 // clamp at the post face → held (velocity dies at the clamp)
@@ -614,8 +619,9 @@ function substepBall(gs, b, dt) {
                 if (md < holdR && md > 0.001) {
                     b.bx = MG.x - (mdx / md) * holdR; b.by = MG.y - (mdy / md) * holdR;
                     b.magX = b.bx; b.magY = b.by;
-                    b.vx = 0; b.vy = 0; b.magHeld = true;
-                    gs.magHold = MG.hold; gs.magCharge = 0; gs.magFlash = 14;
+                    b.vx = 0; b.vy = 0; b.magHeld = true; b.magHoldT = MG.hold;
+                    if (gs.magCharge > 0) gs.magCharge = 0;   // the ball's one charge is spent by the first grab
+                    gs.magHold = Math.max(gs.magHold, MG.hold); gs.magFlash = 14;
                     say(gs, 'MAGNET!', 90);
                     gs.events.push({ type: 'maggrab', x: MG.x, y: MG.y });
                 }
@@ -727,20 +733,22 @@ export function stepGame(gs, pad = {}) {
     if (gs.saveT > 0) gs.saveT -= 1;
 
     // magnet hold clock — decremented on the WORLD clock (a hold bites time
-    // off the magnet, never off the game); at zero the puck drops free.
-    if (gs.magHold > 0) {
-        gs.magHold -= 1;
-        if (gs.magHold === 0) {
-            const hp = gs.pucks.find((p) => p.magHeld);
-            if (hp) {
-                hp.magHeld = false;
-                add(gs, T.rules.magnet);
-                gs.magFreeFlash = 12;
-                say(gs, `SNAP! +${T.rules.magnet}`);
-                gs.events.push({ type: 'magfree', x: hp.bx, y: hp.by });
-            }
-        }
+    // off the magnet, never off the game). #3422: the clock is PER BALL — each
+    // pinned puck counts down its own hold and snaps free with its own payout;
+    // gs.magHold stays the episode clock (max of the live holds) so art, hum
+    // and the state hash read one truth as before, bit-identical for one ball.
+    for (const hp of gs.pucks) {
+        if (!hp.magHeld) continue;
+        if (hp.magHoldT == null) hp.magHoldT = T.magnet ? T.magnet.hold : 0;   // hand-pinned pucks get a fresh hold
+        hp.magHoldT -= 1;
+        if (hp.magHoldT > 0) continue;
+        hp.magHeld = false; hp.magHoldT = -1;   // spent on this drive: no re-grab till the magnet re-arms
+        add(gs, T.rules.magnet);
+        gs.magFreeFlash = 12;
+        say(gs, `SNAP! +${T.rules.magnet}`);
+        gs.events.push({ type: 'magfree', x: hp.bx, y: hp.by });
     }
+    gs.magHold = gs.pucks.reduce((m, p) => (p.magHeld && p.magHoldT > m ? p.magHoldT : m), 0);
 
     // remember each ball's height for rollover cross-detection, then run physics
     for (const p of gs.pucks) p.prevY = p.by;
@@ -892,7 +900,7 @@ export function stepGame(gs, pad = {}) {
         // world clock; after 20 world-seconds the search ends the ball, so no
         // rest position (rare mirrored geometry included) can wedge a game
         // open forever. Deterministic: no rng, pure state.
-        const stallExempt = gs.magHold > 0 || p.cap || ((p.bx - T.lane.innerX) * T.lane.side > 0 && p.by > T.lane.bottomY)
+        const stallExempt = p.magHeld || p.cap || ((p.bx - T.lane.innerX) * T.lane.side > 0 && p.by > T.lane.bottomY)
         if (!stallExempt && Math.hypot(p.vx, p.vy) < 18) p.stall = (p.stall || 0) + 1
         else p.stall = 0
         if (p.stall > 1200) p.drain = true;
@@ -993,6 +1001,9 @@ function packDrain(gs, idx) {
     // of the design: magnet play costs risk, pack drains pay the recharge)
     if (gs.magTouched && gs.magCharge === 0 && gs.magHold === 0) {
         gs.magCharge = 1; gs.magTouched = false; gs.events.push({ type: 'magready' });
+        // a re-armed coil re-arms its balls too: a puck spent on the last drive
+        // gets its fresh hold back with the charge (#3422)
+        for (const p of gs.pucks) if (!p.magHeld && p.magHoldT != null && p.magHoldT < 0) p.magHoldT = 0;
     }
     if (!gs.saveUsed && gs.saveT > 0) {
         gs.saveUsed = true;

@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -117,6 +117,46 @@ if (MUT) {
             from: 'const mn = P.mid && P.mid[i]',
             to: 'const mn = false && P.mid[i]',
             note: 'mid voice muted in _schedule — the phone-band line never sounds',
+        },
+        // #3422 the coil dies at the first grab again — the pack sails past a
+        // live magnet and only one ball per drive ever gets caught.
+        packmagnet: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'if (!b.magHeld && (b.magHoldT ?? 0) >= 0 && (gs.magCharge > 0 || gs.magHold > 0)) {',
+            to: 'if (!b.magHeld && (b.magHoldT ?? 0) >= 0 && gs.magCharge > 0) {',
+            note: 'magnet de-energises at the first grab — a second ball never pins while one is held',
+        },
+        // the per-puck clock collapses onto one shared freeze: no snap can drop
+        // while another pin still rides, so the pack hangs on the post forever.
+        magclock: {
+            file: 'src/games/Pinball/sim.js',
+            from: '        if (hp.magHoldT > 0) continue;',
+            to: '        if (hp.magHoldT > 0 || gs.pucks.some((p) => p.magHeld && p !== hp)) continue;',
+            note: 'a held ball cannot snap while another ball rides the coil',
+        },
+        // the spent marker is dropped — a snapped ball re-rides the same drive
+        // and the magnet farms holds for free.
+        magspent: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'hp.magHeld = false; hp.magHoldT = -1;',
+            to: 'hp.magHeld = false; hp.magHoldT = 0;',
+            note: 'spent marker never set — a snapped ball re-grabs on the same energised drive',
+        },
+        // the re-arm forgets its balls: the coil lights up but every ball still
+        // carries the spent mark, so the magnet reads armed and catches nothing.
+        magrearm: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'for (const p of gs.pucks) if (!p.magHeld && p.magHoldT != null && p.magHoldT < 0) p.magHoldT = 0;',
+            to: 'for (const p of gs.pucks) if (!p.magHeld && p.magHoldT != null && p.magHoldT < 0) p.magHoldT = -1;',
+            note: 're-arm leaves the spent marks on the balls still riding the table',
+        },
+        // ball search freezes game-wide again — a motionless ball off the post
+        // can never be searched out while the magnet holds, wedging the pack.
+        magstall: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'const stallExempt = p.magHeld || p.cap ||',
+            to: 'const stallExempt = gs.magHold > 0 || p.cap ||',
+            note: 'stall exemption goes game-wide — a stuck free ball never counts during any hold',
         },
     }
     const a = ANCHORS[MUT]
@@ -769,6 +809,126 @@ const wrap = (gs) => {
         gs2.magCharge === 1 && !gs2.magTouched)
 }
 
+// ======================================= the pack magnet (#3422) ----
+// Real machines run the magnet coil per PACK: while a hold is live the field
+// stays energised, every ball that finds the post face pins on its own clock
+// and pays its own snap; a ball never rides the same drive twice; the ball
+// search exempts each pinned ball individually, never the whole table.
+{
+    const MG = TABLE.magnet
+    const mkPuck = (x, y, vx, vy) => ({ bx: x, by: y, vx, vy, prevY: y, launched: true, laneCurved: false,
+        spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false, magHoldT: 0 })
+
+    // CABINET ONE, multiball-shaped: first ball pinned top-face, second driven
+    // at the free side face while the coil is hot.
+    const gs = makeGame(342)
+    rung3Ball(gs, MG.x, MG.y - 40, 0, 60)
+    const score0 = gs.score
+    let grabs = 0, snaps = 0, bothTicks = 0, injected = false, heldBothAtGrab2 = false
+    let clockAfterFirstSnap = -1, multSeen = 0
+    for (let i = 0; i < 320; i++) {
+        drive(gs, {}, 1)
+        const t = types(gs)
+        grabs += t.filter((x) => x === 'maggrab').length
+        snaps += t.filter((x) => x === 'magfree').length
+        const held = gs.pucks.filter((p) => p.magHeld).length
+        if (held >= 2) bothTicks++
+        if (grabs === 2 && !heldBothAtGrab2) heldBothAtGrab2 = held >= 2
+        if (snaps === 1 && clockAfterFirstSnap < 0) clockAfterFirstSnap = gs.magHold
+        if (snaps === 2) { multSeen = gs.mult; break }
+        if (!injected && grabs === 1) {
+            injected = true
+            gs.pucks.push(mkPuck(MG.x + 32, MG.y + 4, -320, 0))   // the pack's second ball drives the free face
+        }
+    }
+    r.check('#3422 the live coil catches the pack: a second ball pins while the first is held (two grabs, shared faces)',
+        grabs === 2 && heldBothAtGrab2 && bothTicks > 0, `grabs=${grabs} both=${bothTicks}`)
+    r.check('#3422 each pin holds its own clock and snaps with its own payout (2 × magnet at mult 1)',
+        snaps === 2 && multSeen === 1 && gs.score - score0 === 2 * TABLE.rules.magnet,
+        `snaps=${snaps} mult=${multSeen} paid=${gs.score - score0}`)
+    r.check('#3422 the episode clock survives the first snap — the coil stays energised till the LAST ball drops',
+        clockAfterFirstSnap > 0, `magHold@snap1=${clockAfterFirstSnap}`)
+    // after the snaps both balls ride the field (the top pin sits 19 px off the
+    // post centre — well inside the 33 px reach) yet neither may re-ride the
+    // dead drive: the spent marker (magHoldT < 0) must refuse re-grabs.
+    const grabsEnd = grabs
+    for (let i = 0; i < 60; i++) {
+        drive(gs, {}, 1)
+        grabs += types(gs).filter((x) => x === 'maggrab').length
+    }
+    r.check('#3422 a snapped ball never rides the same drive twice (drifting through the live field, no re-grab)',
+        grabs === grabsEnd, `grabs ${grabsEnd}→${grabs}`)
+
+    // per-ball ball-search exemption: a motionless FREE ball counts its stall
+    // while the coil holds ANOTHER ball (the old game-wide exemption froze it).
+    const gs4 = makeGame(343)
+    rung3Ball(gs4, MG.x, MG.y - 40, 0, 60)
+    let inj4 = false, stallMax = 0
+    for (let i = 0; i < 100; i++) {
+        drive(gs4, {}, 1); types(gs4)
+        if (!inj4 && gs4.magHold > 0) { inj4 = true; gs4.pucks.push(mkPuck(120, 400, 0, 0)) }
+        const f = gs4.pucks[1]
+        // count ONLY inside the hot window — after the coil dies every version
+        // counts stalls, so a sample from there has no teeth (#3422)
+        if (f) { f.vx = 0; f.vy = 0; if (gs4.magHold > 0) stallMax = Math.max(stallMax, f.stall || 0) }
+    }
+    r.check('#3422 ball search is per-ball: a motionless free ball counts stall while the coil holds another',
+        stallMax >= 10, `stall=${stallMax}`)
+    const heldPin = gs4.pucks[0]
+    r.check('#3422 the pinned ball itself stays exempt (a catch is never a stall)',
+        heldPin && heldPin.stall === 0, `stall=${heldPin && heldPin.stall}`)
+
+    // re-arm clears the spent marker of a ball STILL RIDING THE TABLE: pin the
+    // pack (two grabs), let both snap for real (both carry magHoldT −1), then
+    // drain one — that drain re-arms the coil (touch law) and must re-arm the
+    // survivor too (#3422).
+    const gs5 = makeGame(344)
+    gs5.multiball = true; gs5.saveUsed = true; gs5.saveT = 0
+    rung3Ball(gs5, MG.x, MG.y - 40, 0, 60)
+    let snaps5 = 0, inj5 = false
+    const a5 = gs5.pucks[0]
+    for (let i = 0; i < 200 && snaps5 < 2; i++) {
+        drive(gs5, {}, 1)
+        const t = types(gs5)
+        snaps5 += t.filter((x) => x === 'magfree').length
+        if (!inj5 && gs5.magHold > 0) { inj5 = true; gs5.pucks.push(mkPuck(MG.x + 32, MG.y + 4, -320, 0)) }
+    }
+    const w5 = gs5.pucks.find((p) => p.magHoldT === -1)
+    r.check('#3422 setup: both pack balls really snapped spent (both carry the −1 marker)',
+        snaps5 === 2 && gs5.pucks.filter((p) => p.magHoldT === -1).length === 2, `snaps=${snaps5}`)
+    if (w5) {
+        const other = gs5.pucks.find((p) => p !== w5)
+        if (other) { other.bx = 150; other.by = TABLE.drainY + 5 }   // drain the OTHER ball
+        drive(gs5, {}, 2); types(gs5)
+        // the proof is the RE-CATCH: w5 is still inside the field, and catching
+        // it again required BOTH laws at once — the drain re-armed the coil
+        // (charge gate) AND re-armed the ball (spent marker cleared).
+        r.check('#3422 a drain re-arms the coil AND its balls: the spent survivor is catchable again mid-field',
+            gs5.pucks.length === 1 && gs5.pucks.includes(w5) && w5.magHeld === true && w5.magHoldT > 0,
+            `packs=${gs5.pucks.length} held=${w5.magHeld} holdT=${w5.magHoldT}`)
+    }
+}
+
+// ---- #3422 the orbit lane is per-ball — verified, not assumed ----
+// The gap claimed the orbit ran one loop at a time; the arm/curl/done flags
+// were already per-puck. This pins that truth so a later refactor cannot
+// silently regress it: two balls in the channel arm and score independently.
+{
+    const gs = makeGame(345)
+    rung3Ball(gs, 20, 498, TABLE.kicker.vx, TABLE.kicker.vy)
+    let arms = 0, orbs = 0, inj = false
+    for (let i = 0; i < 500 && !(inj && orbs >= 2); i++) {
+        drive(gs, {}, 1)
+        const t = types(gs)
+        arms += t.filter((x) => x === 'orbitarm').length
+        orbs += t.filter((x) => x === 'orbit').length
+        if (!inj && t.includes('orbitarm')) { inj = true; gs.pucks.push({ bx: 20, by: 498, vx: TABLE.kicker.vx, vy: TABLE.kicker.vy, prevY: 498, launched: true, laneCurved: false, spin: 0, spinArm: true, laneHits: 0, orbitArmed: false, orbitCurled: false, magHeld: false, magHoldT: 0 }) }
+    }
+    r.check('#3422 the orbit lane is per-ball: two wrapped balls arm twice, score twice, bank twice',
+        arms === 2 && orbs === 2 && gs.orbits === 2 && gs.orbitBank === 2,
+        `arms=${arms} orbs=${orbs} bank=${gs.orbitBank}`)
+}
+
 // ----------------------------------------------------- the DMD ----
 {
     // message state lives in the SIM — Node pins what the strip says.
@@ -1092,7 +1252,8 @@ const wrap = (gs) => {
         gs.balls < balls || gs.done === true, `balls=${gs.balls}/${balls} done=${gs.done}`)
     const gs2 = drive(makeGame(8))
     gs2.bx = 100; gs2.by = 250; gs2.vx = 0; gs2.vy = 0; gs2.launched = true; clear(gs2)
-    gs2.pucks[0].stall = 1199; gs2.magHold = 5
+    gs2.pucks[0].stall = 1199; gs2.pucks[0].magHeld = true; gs2.pucks[0].magHoldT = 5
+    gs2.pucks[0].magX = 100; gs2.pucks[0].magY = 250; gs2.magHold = 5  // #3422: the episode clock is derived from the held puck
     drive(gs2, {}, 1)
     r.check('the search exempts a magnet-held ball (never eats a catch) and resets its counter',
         gs2.pucks[0] && gs2.pucks[0].stall === 0 && gs2.balls === gs2.table.balls, `stall=${gs2.pucks[0]?.stall} balls=${gs2.balls}`)
