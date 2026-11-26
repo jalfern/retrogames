@@ -313,10 +313,19 @@ const AdventureGame = () => {
                 return
             }
 
-            // The player is a simple square (like the original)
+            // The player is a square (like the original) — it BREATHES now:
+            // a 2-frame expand/contract on the tick-driven sim.breathe signal
+            // (hitbox unchanged — drawn only), with a white glint pixel on the
+            // wide frame so the dot reads as alive on a flat dark room.
+            const frame = sim.breathe
+            const bx = frame ? player.x - 1 : player.x
+            const bw = frame ? player.w + 2 : player.w
             ctx.fillStyle = COLORS.yellow
-            ctx.fillRect(player.x, player.y, player.w, player.h)
-            // Small arrow showing facing direction (cosmetic)
+            ctx.fillRect(bx, player.y, bw, player.h)
+            if (frame) {
+                ctx.fillStyle = COLORS.white
+                ctx.fillRect(bx + bw - 2, player.y + 1, 1, 2)
+            }
         }
 
         const drawItem = (item) => {
