@@ -675,6 +675,100 @@ console.log('smart bomb (Jon #2016, #3443):')
         'registry controls advertise the smart bomb')
 }
 
+// ---------------------------------------------------------------- seam laws ----
+// #3453: the documented wrap-seam skip was stale — every position-based
+// collision in the sim already reads the wrap through wrapDelta. These pins
+// hold that law so it cannot rot back into a documented dead zone.
+console.log('wrap seam laws (#3453):')
+{
+    // antipode anchor: keeps wave-clear out of the test
+    const far = () => ({ x: 2000, y: 200, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null })
+    // 1) fire path: a laser spawned on the ship kills a mutant across the seam
+    {
+        const s = newSim(7)
+        s.player.x = 3960; s.player.y = 200; s.player.vx = 0; s.player.vy = 0
+        s.enemies = [
+            { x: 6, y: 200, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null },
+            far(),
+        ]
+        s.step({ fire: true })
+        ok(s.events.some((e) => e.t === 'killMutant'),
+            'a laser fired on the ship crosses the seam and kills a mutant on the far side')
+    }
+    // 2) friendly fire across the seam
+    {
+        const s = newSim(7)
+        const h = s.humans[0]
+        h.state = 'walk'; h.x = 4; h.dir = 1
+        h.y = groundAt(s.terrain, h.x) - 4
+        s.enemies = [far()]
+        s.lasers = [{ x: 3980, y: h.y, vx: 20, life: 60 }]
+        s.step({})
+        ok(h.state === 'dead' && s.events.some((e) => e.t === 'humanDied'),
+            'friendly fire across the wrap — a walking human just over the seam dies to the blast')
+    }
+    // 3) the catch reads the wrap
+    {
+        const s = newSim(7)
+        const h = s.humans[1]
+        h.state = 'falling'; h.x = 6; h.y = 400; h.vy = 1
+        s.player.x = 3994; s.player.y = h.y - 12; s.player.vx = 0; s.player.vy = 0
+        s.enemies = [far()]
+        s.step({})
+        ok(s.carrying === 1 && h.state === 'carried' && s.events.some((e) => e.t === 'catch'),
+            'a falling human on the far side of the seam is caught — the catch reads the wrap')
+    }
+    // 4) ship contact across the seam kills the fighter
+    {
+        const s = newSim(7)
+        s.player.x = 3994; s.player.y = 400; s.player.vx = 0; s.player.vy = 0
+        s.enemies = [
+            { x: 6, y: 400, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null },
+            far(),
+        ]
+        const lives = s.lives
+        s.step({})
+        ok(s.events.some((e) => e.t === 'die') && s.lives === lives - 1,
+            'enemy contact on the far side of the seam kills the fighter — ship contact reads the wrap')
+    }
+    // 5) the empty-lander mutation law reads the wrap
+    {
+        const s = newSim(7)
+        const g = groundAt(s.terrain, 3995)
+        s.enemies = [
+            { x: 3995, y: g - 11, vx: 0, vy: 0.5, type: 'lander', state: 'wander', carry: null },
+            far(),
+        ]
+        s.step({})
+        ok(s.enemies.some((e) => e.x === 3995 && e.type === 'mutant') && s.events.some((e) => e.t === 'mutate'),
+            'an empty lander reaching the ground on the far side of the seam mutates (the 1981 law)')
+    }
+    // 6) a diver crosses the seam and abducts the human on the far side
+    {
+        const s = newSim(13)
+        const h = s.humans[0]
+        h.state = 'walk'; h.x = 1; h.dir = -1
+        h.y = groundAt(s.terrain, h.x) - 4
+        const band = groundAt(s.terrain, h.x) - 18
+        s.enemies = [
+            { x: 3999, y: band - 4, vx: 0, vy: 0.2, type: 'lander', state: 'descend', carry: null, target: 0 },
+            far(),
+        ]
+        s.player.invuln = 99999
+        let crossSeam = false
+        for (let i = 0; i < 60; i++) {
+            const preHuman = h.x, preDiver = s.enemies[0].x
+            s.step({})
+            if (s.events.some((e) => e.t === 'abduct')) {
+                crossSeam = preHuman < 10 && preDiver > 3990 && Math.abs(wrapDelta(preHuman - preDiver)) < 6
+                break
+            }
+        }
+        ok(s.humans[0].state === 'abducted' && crossSeam,
+            'a diver descends across the seam and abducts the human on the far side')
+    }
+}
+
 // ---------------------------------------------------------------- hum NaN ----
 // #2167: the nightly page-error family — the thrust hum fed a non-finite
 // freq into setValueAtTime. The hum pitch now lives in sim.js (thrustHum) and
