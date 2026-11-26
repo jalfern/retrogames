@@ -1,67 +1,70 @@
-# STATE — forge board snapshot (slot b, 2026-11-26 — ROGUE learns ranged combat)
+# STATE — forge board snapshot (slot a, 2026-11-26 — DEFENDER survival arc CLOSED)
 
-## This session — TARGET taken by the other lane, never-dry found the shelf's next job
-- TARGET #3482 was ALREADY done while I was booting: the previous slot-b session
-  died after creating PR #3487 but before merging; slot a resumed it 08:54Z,
-  merged 847311c 09:00Z, prod-verified and CLOSED #3482 (shipped) by 09:06Z.
-  My TARGET claim answered "already yours: resume it" (stale b-liveness) — there
-  was nothing to resume; I removed the misclaim `building` label my `--dry`
-  test fired on merged PR #3490 (forge-claim has NO --dry flag — never pass one)
-  and retracted on the issue. Slot a verified + filed the #3482 QA pass (#3489).
-- Normal ladder: steer 0 · `next` #1712 waiting-jon (skipped) · game-queue
-  #3456 REFUSED (held by live slot a, 28-min freshness) · feedback borrow
-  BLOCKED (QA MASTER mini live) · flagship stage spent → never-dry kick said
-  ADVENTURE, but every ADVENTURE gap is #3489-owned (paraphrase defeats the
-  ownership matcher — #2910 + the parseGaps phantom item 5 of #3489). Walked
-  the scoreboard myself: next unowned title = **ROGUE, 6 unowned gaps**.
-- **SHIPPED (#3491 → PR #3495, squash 89770d6): ROGUE ranged combat.** Staves `/`
-  (4 types,
-  3–9 charges, crumble-at-zero) + counted arrow quivers on the original's
-  single weapon/missile glyph `)` (refuses the `w` sword hand). `f` → missile
-  menu → direction key fires: one arrow per throw, miss leaves it on the flight
-  line to SALVAGE, quivers stack. Shots stop at rock/walls/closed doors, pass
-  hidden doors (the creatures' 1980 law), stop at first body; d20 with
-  steady-hand +2 replacing strength; xp via shared `grantExp`; all dice on the
-  state-carried `randState` (interleaved replays byte-identical). Rings `=`,
-  the staff-name cipher and the exact cart tables stay honestly on the gap list.
-- Proof: roguecheck **102/102** (+26 ranged gates) · 4 mutants all die
-  (through-body 3, charge 2, salvage-drop 4, wieldable 1) · NEW
-  `npm run roguedrive` **12/12** real Chrome real keys (pinned seed 115:
-  walk onto quiver, `,` up 8, f→a→l fires east, quiver 7, salvage back to 8,
-  help teaches f, zero page errors) · watchcheck(rogue) 318/318 live ·
-  feedbackcheck 291/291 · lint rogue/mario/fps/ai · build green.
+## This session — resumed my slot's corpse and shipped the arc's last stage
+- Slot a died after creating PR #3496 (tip `0808d0b`); the warden kicked a fresh
+  session and #3456 was already mine ("resume it"). I verified every dead-session
+  claim at the tip myself — all honest: `defendercheck` **148/0** (the PR body's
+  190 = 148 + 42 mutant-mode tallies), mutants **41/41** (3 new: dash-deleted,
+  dash-inverted, band-shrunk), WITNESS pins every copy number (survived 20/20 +
+  20/20 · banks 43,500 + 35,850 · lives 21 + 15 · deliveries 55 + 39 · worst
+  3 + 3), `defenderplay` **17/17 twice** (the recalibrated bomb legs hold),
+  eslint + lint:mario/fps/ai + build + main-ok green.
+- **Merged #3496 → `f61b99b`** via forge-merge.sh; main also absorbed slot b's
+  docs #3499 (`41ad0fe`) mid-session. Prod verified by content:
+  `index-CZOC2ESJ.js` carries the column-dash law (`vy<-.2`). #3456 → shipped,
+  closed, live URL commented.
+- **The #3456 arc is complete**: stage 4 added the column-dash (break the column
+  under an overhead closer at cruise — trackers cap at 2.4) and the full-box
+  brace band 14→17. Lives spent 46→36, diedHauling 10→4. The claim "the patrol
+  survives 20/20 on both audit sets" is back in the copy, pinned to the witness.
+  Measured-and-rejected designs (hop-flip, max-rise canyon) are on the issue;
+  the terrain gap stage 4 could not close honestly is QA **#3497**.
 
-## BOARD notes
-- game-queue: #3456 stays slot a's (stage 4 hyperspace brief posted).
-- ADVENTURE idle-kick is a PARAPHRASE phantom until #3489 item 5 (parseGaps
-  `### Restored` counting) is fixed — expect the kick to name ADVENTURE until
-  then; the honest next-weakest after ROGUE gaps is ROGUE again (5 left:
-  flee/energy, traps, Amulet win, class rolls, lamp) or PONG/SPACE INVADERS.
-- #3490 retraction comment documents the no-`--dry` lesson (#1258 hygiene).
+## Main-checkout debris (step-1 corpse rule — reported, not guessed)
+- At start, main held three untracked read-only pinball sim probes
+  (`scripts/tmp-flank-trace*.mjs` — #3451-era autopsy leftovers; no tracked
+  edits in flight). Preserved, not destroyed: `/tmp/forge/corpse-main-2026-11-26/`;
+  porcelain clean after. Janitor candidate: name-and-park `scripts/tmp-*` in main.
 
 ## PLAYABLE on main right now
-- `/retrogames/rogue` — NEW: fight at range — f throws salvageable arrows,
-  zaps charged staves. `/retrogames/adventure` — Blue Castle + duplicate
-  chalice. `/retrogames/defender` — stage-3 hunters. Plus prior shelf:
-  grind-city waiting line, pinball chain-pin + flanks + smith, skyward rooms,
-  tidal-rush, ssx, comet-drift pair, marble pair, galaga bee, mario-kart,
-  ice-climber, pacman, mario, minesweeper/garden-guard/homebody, TIDY BOT,
-  STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST, spy-hunter,
-  iron keep, missile, pucks, mines, zork, ultima, king's quest, Joust,
-  Q*bert, forge board.
+- `/retrogames/defender` — stage-4 patrol: overhead column-dash + full-box
+  brace; survival re-earned honestly (mortal — worst seed still bleeds 3).
+- `/retrogames/rogue` — staves + salvageable arrows at range (slot b, #3491).
+- `/retrogames/adventure` — 19 rooms incl. the Blue Castle; duplicate chalice.
+- Plus prior shelf: grind-city waiting line, pinball chain-pin + flanks + smith,
+  skyward rooms, tidal-rush, ssx, comet-drift pair, marble pair, galaga bee,
+  mario-kart, ice-climber, pacman, mario, minesweeper/garden-guard/homebody,
+  TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
+  spy-hunter, iron keep, missile, pucks, mines, zork, ultima, king's quest,
+  Joust, Q*bert, forge board.
+
+## BOARD facts at close
+- game-queue = EMPTY (I just closed #3456). building = 0 · building-qa = 2 ·
+  feedback = 6 (#3497 DEFENDER terrain rules; #3489 owns ADVENTURE polish).
+- Rule-4: slot a SHIPPED game code this session (#3496). No STALLED.
+- Slot b shipped ROGUE (#3495) + its STATE close-out today; a newer slot-b
+  session may still be live — check `pgrep` before borrowing anything.
 
 ## Open questions (links only — #605)
-- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane,
-  deadline Nov 27 — not mine, do not pre-empt).
+- #3335 — QA: music-bus low-pass in AudioController (AWAITING, deadline Nov 27;
+  gates PINBALL tilt-muffle — do NOT implement until answered/defaulted).
 - #3054 — native TestFlight ports have no recorder/upload (AWAITING).
 - #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
 - #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
-- No new jonq questions this session (never-dry pick, no taste calls).
+- No new jonq questions this session (resumed build; every call was at a
+  checkpoint — nothing taste-level left open).
 
 ## Slot state at handoff
-- Slot-b dev server (:5178) still up when the merge lands — stop it with
-  `scripts/devstop.sh` at close; do not pattern-kill.
-- Game merged ⇒ STATE ships via its own docs/state PR + `statepark.mjs park b`.
-- Worktree ~/Dev/retrogames-forge-rogue-ranged removed after the docs merge;
-  main checkout stays detached at origin/main, never a checkout of main.
-- Rule-4: slot b SHIPPED game code this session (#3495). Time-box ~1h40m used.
+- Main checkout: detached, clean — re-fetch first, the docs/state commit lands on
+  top of `f61b99b`.
+- Slot-a dev server :5173 stopped with scripts/devstop.sh; the forge-defender-s4
+  worktree is pruned after the docs merge. Nothing dirty anywhere in slot a.
+
+## Next claims (for whoever is free)
+1. Queue is empty → normal ladder finds nothing: feedback borrow only with no
+   live QA session, else flagship/never-dry — run `node scripts/idle-kick.mjs`
+   fresh first (since #3481 it scores the full 93-title shelf).
+2. #3489 item 5 (`parseGaps` `### Restored` markers + mutant) is the honest
+   fix that makes those kicks trustworthy — small, worth landing first.
+3. Known unowned weak titles behind the phantoms: ROGUE (~5 gaps — flee/energy,
+   traps, Amulet win, class rolls, lamp), PONG, SPACE INVADERS.
