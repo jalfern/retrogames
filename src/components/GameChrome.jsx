@@ -70,6 +70,9 @@ const FeedbackButton = ({ theme }) => {
         if (!outboxPending(window.localStorage)) { attemptRef.current = 0; setPending(0); return }
         const res = await flushOutbox({ storage: window.localStorage })
         if (res.sent.length) {
+            // A delivered report is no longer a draft — but only its own text is
+            // cleared: a fresh note being typed right now is the player's, never ours.
+            if (loadDraft(window.localStorage) === res.sent[0].note) clearDraft(window.localStorage)
             const n = String(res.sent[0].issue || '?').split('/').pop()
             setToast(`kept report delivered #${n}`)
             setTimeout(() => setToast(null), 2600)
@@ -145,9 +148,12 @@ const FeedbackButton = ({ theme }) => {
     }, [open, closePanel])
 
     // Every state-side change (the mic button's appendPhrase, restores) rides the
-    // draft too — the native listener only sees user-side insertions.
+    // draft too — the native listener only sees user-side insertions. Empty is
+    // NEVER saved from here: on reopen the state is still blank for a tick while
+    // the restore reads the stored draft, and saving that blank would delete it.
+    // (A user emptying the box clears the draft through the native listener.)
     useEffect(() => {
-        if (open) saveDraft(note, window.localStorage)
+        if (open && note) saveDraft(note, window.localStorage)
     }, [open, note])
 
     const send = async () => {

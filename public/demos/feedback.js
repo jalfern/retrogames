@@ -410,7 +410,7 @@
         return submit(e.payload, { base: opts.base, fetchImpl: opts.fetchImpl, storage: storage }).then(function (res) {
           if (res.ok) {
             outboxRemove(e.id, storage)
-            sent.push({ id: e.id, issue: res.issue || null })
+            sent.push({ id: e.id, issue: res.issue || null, note: String((e.payload && e.payload.note) || '') })
           } else {
             var a = bumpAttempt(e.id, storage)
             if (a > maxAttempts) maxAttempts = a
@@ -558,7 +558,11 @@
     clearTimeout(retryTimer)
     if (!outboxPending(win.localStorage)) { attemptN = 0; return }
     flushOutbox({ storage: win.localStorage }).then(function (res) {
-      if (res.sent.length) showToast('kept report delivered #' + String(res.sent[0].issue || '?').split('/').pop())
+      if (res.sent.length) {
+        // the delivered report is no longer a draft — only its own text is cleared
+        if (loadDraft(win.localStorage) === res.sent[0].note) clearDraft(win.localStorage)
+        showToast('kept report delivered #' + String(res.sent[0].issue || '?').split('/').pop())
+      }
       if (res.pending) {
         if (res.maxAttempts > attemptN) attemptN = res.maxAttempts
         retryTimer = setTimeout(deliver, retryDelayMs(attemptN))
@@ -734,6 +738,9 @@
     // window/document in the bubble phase, so a capture-phase shield keeps
     // keystrokes out of the game while the browser default still writes them.
     var shield = function (e) {
+      // synthetic events dispatched on window (the '?' pause dialect) have window
+      // as their target — card.contains() on them throws; they are not ours.
+      if (!e.target || e.target === win) return
       if (card.classList.contains('open') && card.contains(e.target)) {
         if (e.key === 'Escape') closePanel()
         e.stopPropagation()

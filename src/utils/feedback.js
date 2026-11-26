@@ -163,6 +163,11 @@ export function startKeyboardRing(ring, win = HAS_WIN ? window : null) {
 export function installTypingGuard(panelEl, win = HAS_WIN ? window : null, onKey = null) {
     if (!win || !panelEl) return () => {}
     const shield = (e) => {
+        // dispatchPause() synthesizes '?' directly on window (#437) — that event's
+        // target is window itself, not an element. panelEl.contains(window) throws,
+        // so the pause keystroke must be let past untouched. Only element targets
+        // can be in-panel; anything else is not ours to stop.
+        if (!e.target || e.target === win) return
         if (panelEl.contains && panelEl.contains(e.target)) {
             if (onKey) { try { onKey(e) } catch { /* panel handler failed */ } }
             e.stopPropagation()
@@ -291,7 +296,7 @@ export async function flushOutbox({ base = FB_RELAY, fetchImpl = null, storage =
         const res = await submitOne(e.payload, { base, fetchImpl, storage })
         if (res && res.ok) {
             outboxRemove(e.id, storage)
-            sent.push({ id: e.id, issue: res.issue || null })
+            sent.push({ id: e.id, issue: res.issue || null, note: String(e.payload && e.payload.note || '') })
         } else {
             const attempts = bumpAttempt(e.id, storage)
             maxAttempts = Math.max(maxAttempts, attempts)

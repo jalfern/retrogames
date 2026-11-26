@@ -338,6 +338,12 @@ const e2 = win1.dispatch('keydown', {}, 'ArrowRight')
 ok('guard: keys outside the panel still reach the game', e2.stopped === false && ringG.size() === 1)
 win1.dispatch('keydown', noteEl, 'Escape')
 ok('guard: Escape inside the panel reaches the panel callback', escapeSeen === 1)
+// dispatchPause() synthesizes '?' on window (#437): that event's target IS
+// window, and panelEl.contains(window) throws — the feedbackplay browser run
+// caught the real crash (#3407). The shield must let targetless events pass.
+const pauseEv = win1.dispatch('keydown', win1, 'Slash')
+ok('guard: the synthetic pause (target = window) is let past, never crashed on',
+    pauseEv.stopped === false && escapeSeen === 1)
 stopGuard()
 const e3 = win1.dispatch('keydown', noteEl, 'Space')
 ok('guard: removing the shield hands keys back to the game', e3.stopped === false && ringG.size() === 2)
@@ -725,6 +731,11 @@ ok('demo: injector exposes __demoFeedback in plain Node',
     ok('panel1452: tapping the note box again still does not close it', card.classList.contains('open') === true)
     backdropClick({ target: card, stopPropagation() {} })
     ok('panel1452: a tap on the backdrop (target === card) still closes it', card.classList.contains('open') === false)
+    // #3407: the demo twin of the pause pass-through — window-targeted synthetic
+    // events must never crash the shield (real Chrome threw on card.contains).
+    let shieldThrew = false
+    try { for (const fn of (fdoc.listeners.keydown || [])) fn({ target: dwin, key: '?', stopPropagation() {} }) } catch { shieldThrew = true }
+    ok('demo guard: a window-targeted synthetic passes the shield untouched', !shieldThrew)
 }
 
 // ── #3407: nothing vanishes — the outbox keeps what the relay wouldn't take ──
@@ -837,9 +848,9 @@ ok('demo: injector exposes __demoFeedback in plain Node',
     ok('flush: a refused report names the reason and counts the attempt',
         fl.failed.length === 1 && fl.failed[0].id === keepId && fl.failed[0].err === 'relay at capacity'
         && fl.maxAttempts === 1 && loadOutbox(mixed)[0].attempts === 1)
-    ok('flush: success carries the issue number for the confirmation',
+    ok('flush: success carries the issue number and the note for the confirmation',
         fl.sent[0].issue === 'https://github.com/jalfern/retrogames/issues/3407'
-        && fl.sent[0].issue.split('/').pop() === '3407')
+        && fl.sent[0].issue.split('/').pop() === '3407' && fl.sent[0].note === 'this one goes through')
     const fl2 = await flushOutbox({ storage: mixed, fetchImpl: async () => { throw new Error('offline') } })
     ok('flush: a thrown transport failure keeps the report and names it',
         fl2.pending === 1 && fl2.sent.length === 0 && /offline/.test(fl2.failed[0].err)
@@ -969,6 +980,8 @@ ok('demo: injector exposes __demoFeedback in plain Node',
     ok('demo twin: draft round-trips',
         dfb.saveDraft('half a demo note', ds2) === true && dfb.loadDraft(ds2) === 'half a demo note'
         && (dfb.clearDraft(ds2), dfb.loadDraft(ds2) === ''))
+    ok('demo twin: a delivered retry clears its own draft, never a fresher one',
+        /if \(loadDraft\(win\.localStorage\) === res\.sent\[0\]\.note\) clearDraft\(win\.localStorage\)/.test(fbSrc))
 }
 
 // ── #3407: the demo panel end-to-end in a fake DOM (dictation → fail → kept) ─
@@ -1122,10 +1135,14 @@ ok('demo: injector exposes __demoFeedback in plain Node',
         /flushOutbox\(\{ storage: window\.localStorage \}\)/.test(chromeSrc) && /retryDelayMs\(attemptRef\.current\)/.test(chromeSrc))
     ok('game panel: a delivered retry confirms with the issue number',
         /kept report delivered #\$\{n\}/.test(chromeSrc) && /const n = String\(res\.sent\[0\]\.issue \|\| '\?'\)\.split\('\/'\)\.pop\(\)/.test(chromeSrc))
+    ok('game panel: a delivered retry clears its own draft (never a fresher one)',
+        /if \(loadDraft\(window\.localStorage\) === res\.sent\[0\]\.note\) clearDraft\(window\.localStorage\)/.test(chromeSrc))
     ok('game panel: the accepted send clears the draft and the box',
         /if \(res\.ok\) \{[\s\S]{0,320}clearDraft\(window\.localStorage\)/.test(chromeSrc))
     ok('game panel: the draft is saved while composing and restored on reopen',
         /saveDraft\(note, window\.localStorage\)/.test(chromeSrc) && /loadDraft\(window\.localStorage\)/.test(chromeSrc))
+    ok('game panel: reopen never writes the blank state over a stored draft (the tick race)',
+        /if \(open && note\) saveDraft/.test(chromeSrc))
     ok('game panel: an accepted send still files the note it showed', (() => {
         const boxVal = 'dusk deck windsock reads backwards'
         const cap = captureFeedback({ note: boxVal, ring: null, route: '/retrogames/skyward' })
