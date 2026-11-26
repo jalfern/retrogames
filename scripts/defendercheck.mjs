@@ -584,14 +584,20 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     // line closer than the target holds the trigger.
     const sFF = createSim({ rand: seedRng(11), height: 420 })
     {
-        sFF.enemies = [{ x: 500, y: 300, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
+        sFF.enemies = [{ x: 480, y: 300, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
         sFF.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
         const h = sFF.humans[0]
         h.state = 'walk'; h.x = 300; h.y = 300
         sFF.player.x = 200; sFF.player.y = 300; sFF.player.vx = 3; sFF.player.vy = 0
         sFF.player.facing = 1; sFF.player.dark = 0; sFF.player.invuln = 1
         const inp = watchRoute(sFF)
-        ok(!inp.fire, 'the brain will not shoot past a walking human standing between it and the target', `fire=${inp.fire}`)
+        // The shot the rules refuse, the body must also refuse (#3456 law):
+        // shielded lines get RUN, not creeped — so the verdict reads on the
+        // steer (left, away), the fire veto AND the tell, and a blinded
+        // shield-guard that forgets any one of the three goes red.
+        ok(!inp.fire && inp.holdTell === true && inp.left && !inp.right,
+            'the brain will not shoot past a walking human standing in the line — and runs from the blocked line instead of creeping into it',
+            `fire=${inp.fire} hold=${inp.holdTell} left=${inp.left} right=${inp.right}`)
     }
     // #3456 stage 3 — the arcade never mutes its cargo: the haul elevator fires
     // the same flat-line law…
@@ -1006,7 +1012,7 @@ if (process.argv.includes('--mutant')) {
             `if (s.celebrate > 0) s.celebrate -= 1 // #1907: the wave-clear beat burns its own clock`,
             `if (false) { s.celebrate -= 1 }`],
         ['#1907 the held-trigger tell is muted', S,
-            `else input.holdTell = true // #1907: the brain SHOWS why it held the trigger`,
+            `if (line.hold) input.holdTell = true`,
             `/* tell muted */`],
         ['#1907 the falling pod loses its chute', I,
             `const tumble = h.state === 'falling'`,
