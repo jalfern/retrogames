@@ -33,6 +33,12 @@ export function normalizeWirePad(p) {
     // normalizer used to erase `m`, which left every yard pad empty on the
     // mirror side. Numbers pass through intact; field-shaped pads unchanged.
     if (Number.isFinite(o.m)) n.m = o.m | 0
+    // #3429: the same law carries Skyward's analog stick {x,y} — erasing them
+    // would send a stick game bang-bang over the wire. Values ride already
+    // quantised by the game (net.js at 1/100); the normalizer keeps them
+    // clamped so a broken peer can never feed the sim ±∞.
+    if (Number.isFinite(o.x)) n.x = Math.max(-1, Math.min(1, o.x))
+    if (Number.isFinite(o.y)) n.y = Math.max(-1, Math.min(1, o.y))
     return n
 }
 
@@ -82,6 +88,19 @@ export function createLockStep(opts = {}) {
         setPeers(slots) {
             peers = Array.isArray(slots) && slots.length ? slots.slice() : null
             bySlot = new Map(); hBySlot = new Map()
+        },
+        // #3429: mid-race the roster can shrink (a pilot vanishes) — setPeers
+        // would wipe the SURVIVORS' buffered pads and stall their gates on
+        // ticks whose pads already landed (pads are pumped D ahead; wiping at
+        // tick k loses k..k+D that never come back). dropPeer removes one
+        // slot surgically: ready() stops asking for its pads, every other
+        // slot's buffer stays intact, and bytes that are already in flight
+        // from the departed peer land harmlessly into a map nobody reads.
+        // Pure so skywardcheck can pin the ghost-free takeover.
+        dropPeer(slot) {
+            if (peers) peers = peers.filter((s) => s !== (slot | 0))
+            bySlot.delete(slot | 0)
+            hBySlot.delete(slot | 0)
         },
         // Sample every tick from nextSend up to target (= simTick + delay),
         // stamp it and send it — final, once. readPad(t) answers the live pad.
