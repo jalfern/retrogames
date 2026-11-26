@@ -37,6 +37,31 @@ await page.waitForTimeout(300)
 p0 = await probe()
 r.check('press any key starts the descent', p0.screen === 'play' && p0.phase === 'descent', `${p0.screen}/${p0.phase}`)
 
+// #3572 — CRT phosphor dressing proven from a live frame (visual law, no sim):
+// the scanline veil must modulate rows, and the vignette must darken the sky
+// corners against the centre. Fail-capable: delete the veil/vignette fills from
+// the renderer and these flip red.
+const crt = await page.evaluate(() => {
+    const c = document.querySelector('canvas[data-lunar-lander-stage]')
+    const g = c.getContext('2d')
+    const w = c.width, h = c.height
+    const d = g.getImageData(0, 0, w, h).data
+    const lum = (x, y) => { const i = (y * w + x) << 2; return d[i] + d[i + 1] + d[i + 2] }
+    let dark = 0, dn = 0, lit = 0, ln = 0
+    for (let y = 1; y < h - 1; y++) for (let x = 4; x < w - 4; x++) {
+        if (y % 3 === 0) { dark += lum(x, y); dn++ } else { lit += lum(x, y); ln++ }
+    }
+    const veil = (dark / dn) / (lit / ln)
+    let corner = 0, cn = 0, centre = 0, mn = 0
+    const xw = Math.floor(w * 0.20), yh = Math.floor(h * 0.28)
+    for (let y = 4; y < yh; y++) for (let x = 4; x < xw; x++) { corner += lum(x, y) + lum(w - 1 - x, y); cn += 2 }
+    for (let y = Math.floor(h * 0.30); y < Math.floor(h * 0.70); y++)
+        for (let x = Math.floor(w * 0.42); x < Math.floor(w * 0.58); x++) { centre += lum(x, y); mn++ }
+    return { veil, vig: (corner / cn) / Math.max(1e-6, centre / mn) }
+})
+r.check('CRT scanline veil rides the frame', crt.veil <= 0.92, `dark/lit row ratio ${crt.veil.toFixed(3)}`)
+r.check('CRT vignette dims the sky corners', crt.vig <= 0.88, `corner/centre sky luminance ${crt.vig.toFixed(3)}`)
+
 // thrust: the stick lights the engine and the sim responds
 await page.keyboard.down('Space')
 await page.waitForTimeout(600)
