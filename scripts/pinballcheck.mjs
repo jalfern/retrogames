@@ -868,7 +868,9 @@ const wrap = (gs) => {
         drive(gs4, {}, 1); types(gs4)
         if (!inj4 && gs4.magHold > 0) { inj4 = true; gs4.pucks.push(mkPuck(120, 400, 0, 0)) }
         const f = gs4.pucks[1]
-        if (f) { f.vx = 0; f.vy = 0; stallMax = Math.max(stallMax, f.stall || 0) }
+        // count ONLY inside the hot window — after the coil dies every version
+        // counts stalls, so a sample from there has no teeth (#3422)
+        if (f) { f.vx = 0; f.vy = 0; if (gs4.magHold > 0) stallMax = Math.max(stallMax, f.stall || 0) }
     }
     r.check('#3422 ball search is per-ball: a motionless free ball counts stall while the coil holds another',
         stallMax >= 10, `stall=${stallMax}`)
@@ -876,8 +878,11 @@ const wrap = (gs) => {
     r.check('#3422 the pinned ball itself stays exempt (a catch is never a stall)',
         heldPin && heldPin.stall === 0, `stall=${heldPin && heldPin.stall}`)
 
-    // re-arm clears the spent markers for balls still riding the table.
+    // re-arm clears the spent markers for balls still riding the table — in a
+    // PACK drain (a plain drain resets the whole table, which would measure a
+    // brand-new puck instead of the survivor: toothless, so multiball it is).
     const gs5 = makeGame(344)
+    gs5.multiball = true; gs5.saveUsed = true; gs5.saveT = 0
     rung3Ball(gs5, MG.x, MG.y - 40, 0, 60)
     gs5.pucks[0].magHoldT = -1          // spent on the last drive, currently free
     gs5.magCharge = 0; gs5.magTouched = true
@@ -885,8 +890,8 @@ const wrap = (gs) => {
     gs5.pucks[0].by = TABLE.drainY + 5
     drive(gs5, {}, 2); types(gs5)
     r.check('#3422 a drain that re-arms the coil re-arms its balls too (spent marker clears with the charge)',
-        gs5.magCharge === 1 && gs5.pucks[0] && gs5.pucks[0].magHoldT === 0,
-        `charge=${gs5.magCharge} holdT=${gs5.pucks[0] && gs5.pucks[0].magHoldT}`)
+        gs5.magCharge === 1 && gs5.pucks.length === 1 && gs5.pucks[0].magHoldT === 0,
+        `charge=${gs5.magCharge} packs=${gs5.pucks.length} holdT=${gs5.pucks[0] && gs5.pucks[0].magHoldT}`)
 }
 
 // ---- #3422 the orbit lane is per-ball — verified, not assumed ----
