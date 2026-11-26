@@ -1,115 +1,67 @@
-# STATE — forge board snapshot (slot b, 2026-11-26 — ASTEROIDS learns to shoot)
+# STATE — forge board snapshot (slot a, 2026-11-26 — PONG RANGE knob SHIPPED `5ab9b66`; polish #3576 filed)
 
-## This session — never-dry stage shipped, red main caught en route
-- Ladder empty again (steer 0 · `next` #1712 waiting-jon · queue 0 · all
-  feedback building/building-qa/waiting-jon · QA-borrow blocked: QA MASTER live
-  ×2) → flagshipStage null → NEVER-DRY. idle-kick first answered ADVENTURE 0
-  weak (score 13) — **phantom**: verified at HEAD the variant selector shipped
-  (#1572) and nine "gaps" were `### Restored in #…` bullets. Honest picker
-  (README sanity) = ASTEROIDS score 4, oldest of the score-4 tie at registry
-  #3 — matches the warden tick. Filed + claimed **#3553**.
-- **SHIPPED (#3553 → PR #3559): the small saucer learning curve.**
-  `SAUCER_AIM {start 1.1, floor 0.3, learn 600}`: rookie small UFOs spray the
-  large-UFO width, error eases monotone to the verbatim ±0.15 floor over 10 s
-  of the saucer's own `life` clock — no new field, no extra dice. Leaving a
-  small saucer alive is now the mistake; fast kills win, as on the 1979
-  cabinet. Large UFO never eases.
-- Proof: asteroidscheck **113/0** (stale locked-±0.15 pin → 8 learning gates:
-  rookie >±0.15 over 6 shots bounded ±0.55, mature ±0.15 over 4, monotone,
-  floor-exact, large constant) · `--mutant` **29/29** (2 new: learning
-  deleted, ease never lands — deletion effects measured) · full 40-seed sweep
-  floors ALL HOLD (40/40 byte-equal, zero-death 34+, worst 6000+) ·
-  watchcheck(asteroids) **318/318** · eslint + lint:asteroids/mario/fps/ai +
-  build green.
-- **Wave-floor re-tune (#3553, honest harness calib):** first mutant pass was
-  27/29 — two b26 driver mutants survived because rookie-spray legitimately
-  eases early pressure. Measured: clean fast banks 12/12 waves (minScore
-  4620); mutant-1 11/12 (3350); mutant-2 11/12 (4420). FAST wave floor 11 →
-  SEEDS (the full sweep's own 40/40 law), mutants mortal again, clean clears
-  at the pinned seeds.
-- **Cross-lane probe parked, never destroyed:** mid-session, uncommitted
-  edits by another hand appeared in this worktree (a `driver's eye` gate +
-  `export` of wrapDelta/scan from sim.js, both anchored to #3553's mutant
-  problem). Parked to /tmp/forge/{asteroidscheck,sim-stranger-exports}-
-  20261126.diff, worktree restored, floor fix shipped instead (no game-file
-  exports for harness convenience). Commented on #3553 for the other lane.
-- **Picker-honesty follow-up shipped too (#3556 → PR #3558):** parseGaps now
-  stops at `###` (h3 nests inside the h2 — old stop ran through it) and
-  declines `Restored in/by #N` bullets; neverbudry +5 gates (41/0), jonqcheck
-  164/0, ADVENTURE honest score 13→1, post-fix kick answers DONKEY KONG 0
-  weak. (Rebased off slot a's better retro-markers of the Adventure README in
-  #3552 — only the parser + gates remain in this PR.)
-- **MAIN RED hit mid-session (#601 freeze):** nightly 45862031640 failed —
-  3 GALAGA stale attract anchors + `rollercheck edge`. The parallel lane
-  merged the GALAGA re-pin (#3557) while I diagnosed; rollercheck is 70/70
-  green locally at `bba9d74`. Dispatched nightlies rode the workflow's
-  concurrency-cancel (main-ok treats cancelled as pass); a fresh nightly is
-  running on main to prove the fix for real.
-- #3536 (PONG polish) was found MERGED-but-unclosed from the dead session —
-  actually already closed with `shipped` + URL comment at 17:19; verified prod
-  independently (`HOLD AFTER` marker in live bundle). Nothing to close.
+## This session (slot a)
+- TARGET #3553 REFUSED at claim (slot b held it — it shipped later today as #3559,
+  ASTEROIDS saucer curve). Normal ladder: steer/next/game-queue empty (#1712 is
+  waiting-jon, skipped per #605); feedback-borrow blocked (live QA mini + studio)
+  → flagship stage: all six flagships' README gaps owned/closed → #1571 never-dry:
+  `weakestStage` (live issues) picked **PONG**, score 4 (2 unowned README gaps +
+  2 body-named), held dirs Asteroids/Adventure/SpaceInvaders skipped.
+- Filed + claimed **#3565** (POLISH — PONG: selectable max-score knob). Shipped:
+  a `RANGE` dial on the attract switch bank — `FREE · 1 · 3 · 5 · 7 · 9`, ↑/↓ keys
+  + right-half thumb zone + `?range=` pin. The cap binds IN THE SIM: reaching N is
+  an honest terminal (`ev.winner`, no dead re-serve, no extra dice); FREE is the
+  untouched b16 play-to-quit default — every pre-existing pin replays verbatim.
+  Honest framing (issue design note + README): the 1972 RANGE switch was the
+  Easy/Difficult *speed* control (already the #3502 tiers) — this dial is a
+  cabinet-native FEATURE, not a claimed restoration.
+- Harness: pongcheck §range — range-3 sweep 40/40 wins ending at exactly 3, pinned
+  5 conceded, zero dead serves; range-1 closes on the first point (20 seeds); FREE
+  uncapped at 4000 ticks; seed+range replay determinism; 3 range mutants die; the
+  scatter mutant re-armed after the scoring-branch restructure; +280px audit width
+  keeps the clip mutant honest after the prompt trim (`PRESS ANY KEY TO START` now
+  matches the two-dial truth). pongdrive leg 9 (dial keys, thumb, honest cap win
+  with ascending sting, restart with target standing, pin) — 47/47 + 5/5 chip
+  mutants. Local: pongcheck 172/0, attractcheck 694/0, lint gates + build green.
+- Ship: PR #3575 squash-merged `5ab9b66`. One `static` red (my 30-char attract
+  line vs the shared 28-char law) — genuine fix within the one-PR budget, trimmed,
+  green. #3565 shipped+closed; prod verified (`index-Z-PXDI8s.js` carries
+  `SELECT RANGE`). Polish pass filed: **#3576** (feedback).
 
 ## BOARD facts at close
-- game-queue = 0 · building = #3565 (PONG RANGE-switch knob — another lane's
-  never-dry pick) · building-qa = #3564, #3566 · feedback open: #3244/#2971
-  waiting-jon · shipped this session: #3553 (game), #3556 (picker honesty).
-- Slot a shipped beside me all day (#3552 seam follow, #3555 invaders QA,
-  #3557 GALAGA anchors, #3561 two-player Defender, #3560/#3563). Healthy board.
-- Rule-4: game code merged this session (#3559). No STALLED.
+- building: #3573 (INVADERS discrete-step march — slot b LIVE). building-qa:
+  #3568 (ASTEROIDS), #3564 (ADVENTURE). game-queue empty · steer empty.
+- feedback open: #3576 (PONG, mine), #3572/#3571 (LUNAR LANDER, lane:qa),
+  #3244 + #2971 (waiting-jon).
+- Main GREEN at `5ab9b66` (my merge; `main-ok`: latest nightly is
+  cancelled-conclusion, not a failure). #3554 (nightly red, needs-approval) is the
+  warden's, not a builder item.
+- Rule-4 satisfied: game code merged today (`8490932`, `85f3b61`, `5ab9b66`).
 
-## PLAYABLE on main right now
-- ASTEROIDS — small UFOs now learn: kill them fast or their shots tighten to
-  pinpoint: https://jalfern.com/retrogames/asteroids
-- DEFENDER hot-seat two-player (#3561) + per-type blossoms. PONG cabinet voice
-  (serve double-clack, rally pitch rides the strike law, block numerals).
-  SPACE INVADERS flow pilot + re-adjudicated bonus-life QA. ADVENTURE exact
-  seam + armed decoy wait.
+## PLAYABLE on prod right now
+- PONG — turn the RANGE dial; pick a number and first to it wins honestly:
+  https://jalfern.com/retrogames/pong
+- ASTEROIDS saucer learning curve, ADVENTURE seam law, PONG cabinet voice,
+  DEFENDER wall veto, INVADERS flowing pilot.
 
 ## Open questions (links only — #605)
-- #3335 — QA music-bus low-pass (AWAITING, Nov 27; PINBALL gate).
+- #3335 — QA music-bus low-pass (AWAITING, deadline Nov 27; PINBALL gate).
 - #3516 — Arkanoid art rung (AWAITING, Nov 28).
 - #3054 — TestFlight recorder; #2971 — contra polish; #1712 — PLAICRAFT S2.
-- No new jonq questions this session (measured law + harness honesty, no
-  taste calls).
+- No new jonq questions this session (no taste calls).
 
 ## Slot state at handoff
-- Slot-b dev server :5178 stopped via `scripts/devstop.sh` at close.
-- Worktrees ~/Dev/retrogames-forge-asteroids-aim-ease and
-  …-idle-phantom-gaps are DONE with (merged; safe to prune next session).
-- Main checkout detached at origin/main; STATE.md ships via docs PR and parks
-  with `statepark.mjs park b`.
-
-## Late addendum (second b lineage, post-merge — nothing lost, folded per #1430)
-- Merge landed: #3559 squash `85f3b61` at 19:45Z (main-ok green — the bba9d74
-  nightlies rode the concurrency-cancel; a dispatched nightly on main carries
-  the real #3557 proof tonight — check tomorrow's scheduled run says GREEN).
-  Issue #3553: shipped label + live-URL comment; prod token `start:1.1,
-  floor:.3,learn:600` verified in deployed `index-B3umJ6CC.js`.
-- Independent double-verification while the merge raced: a second b-lineage
-  session (warden restart, unaware the first was alive) re-ran the FULL
-  `--mutant` suite in an isolated worktree at eed458c — **143/0, 29/29** —
-  matching the first lineage's own 143/0. Two tallies, one head, zero trees
-  shared. QA polish pass filed: **#3568** (invisible-curve tell, kiting
-  adjudication, ART.md juice pass; not-owed list attached).
-- #3552 (ADVENTURE seam) shipped by slot a itself (`8490932`, CLOSED) — the
-  TARGET refuse was correct: its owner lane survived and finished it.
-- Board-hygiene lessons from the four-hands hour (10:40–11:53 local):
-  1. `/tmp` log filenames must carry the SLOT (`/tmp/ast-mutant-b.log`) —
-     `ast-mutant2.log` was independently chosen by two lanes at once.
-  2. Long `gh run watch` × 2 exhausted the shared core-API budget (403 at
-     19:15Z, ~9 min stall) — with lanes sharing one token, prefer periodic
-     `--json conclusion` peeks over hour-long watchers.
-  3. A session missing from `pgrep` once is NOT proof of death — the first b
-     lineage survived, merged, and wrote this report's spine; the second
-     lineage's job became verification + addenda. Check twice before
-     declaring a corpse; quarantine your writes (isolated worktree) if unsure.
+- Main checkout detached at `origin/main` (`5ab9b66`). Slot-a dev server (:5173)
+  stopped via `scripts/devstop.sh` at close. `forge-pong-range` worktree pruned
+  post-merge (clean).
+- :5178 = slot b LIVE (#3573), :5174 = QA mini, :5176 = QA studio — do not stop.
 
 ## Next claims (for whoever is free)
-1. ASTEROIDS at score 2: kiting gap (heavy — adjudicate first) and
-   snapshot/restore (#391 law). #3568 gives QA the polish list.
-2. DONKEY KONG barrels-mid-air-over-ladders remains the smaller real fix if
-   the rivet level outruns one session (picker post-#3558 honest score 0-weak
-   answers — see #3558 note above).
-3. QA lanes hold #3564 (ADVENTURE seam polish), invaders + defender polish —
-   never-dry skips them; if a kick names `### Restored`/shipped history
-   again, that's a README honesty bug: mark CLOSED/DISCLAIMER, don't build.
+1. Ladder is empty → never-dry again. Re-run `idle.mjs` LIVE, don't trust this
+   note: PONG's gaps are now self-handled (its README gap 0 carries CLOSED-by),
+   and #3576 makes PONG QA-owned. Fresh `weakestStage` will point elsewhere
+   (Centipede / MissileCommand / Rogue / DonkeyKong all carry 4 unowned gaps;
+   registry order breaks ties). #2910 note: body-named scores from OTHER lanes'
+   polish passes still inflate picks — ownership is what matters.
+2. QA lanes: #3576 (PONG polish) joins #3568 + #3564 on the board.
+3. When jonq answers land (#3335 Nov 27, #3516 Nov 28), execute at the next claim.
