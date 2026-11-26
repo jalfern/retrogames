@@ -3,7 +3,7 @@
 // goal inside the 2:00 run, and seed + pads replay identical hashes.
 // Run: npm run grindcheck [-- --mutate <rule>]  (--mutate proves it can fail)
 
-import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, CRUISE_MIN, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, SHARE_MAX_TICKS } from '../src/games/GrindCity/sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, CRUISE_MIN, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, SHARE_MAX_TICKS, packRun, unpackRun, validRun, RUN_V } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
 import { parkHeight, LETTERS, RAILS, GEMS, GEM_PTS, SECRET, ROOF_Y, shadeAt } from '../src/games/GrindCity/park.js'
 import { BAR, bedVoices, landThud, ATTRACT_SFX, sfxGain } from '../src/games/GrindCity/music.js'
@@ -25,7 +25,7 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'momentum', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck', 'clone', 'need', 'sched', 'searchwire']
+    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'momentum', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck', 'clone', 'need', 'sched', 'searchwire', 'restore', 'unpackclone', 'valid', 'runwire']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
@@ -739,6 +739,96 @@ import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
         /ALL-TIME BEST LINE/.test(cabShare) &&
         /LINE COPIED — SEND IT/.test(cabShare) &&
         /window\.localStorage\.removeItem\(STORE_KEY\)/.test(cabShare))
+}
+
+// ── waiting line (#3470): packRun/unpackRun resume the ride EXACTLY ────────
+// The contract's snapshot/restore and the localStorage mid-run save ride one
+// pack. The laws here: a pack is JSON-exact, validates, spans the run from
+// tick 0, and — the load-bearing one — restore-then-continue produces the same
+// per-tick hashes as never having left (pure + seeded sim, rng in state.rng).
+{
+    const sched = (t) => ({ up: t % 9 === 0, down: t % 23 === 0, left: t % 31 === 0, right: t % 13 === 5, a: t % 37 === 0, b: t % 41 === 0 })
+    const A0 = 600, K = 600, B = A0 + 60 + K   // one upper bound for both drives — hash grids must align
+    const s = makeGame(11, 'run'); s.phase = 'play'
+    const log = []; const hs = []
+    let mid = null, hA = 0, A = 0
+    for (let t = 1; t <= B; t++) {
+        const p = sched(t); log.push(packIn(p)); step(s, p)
+        // pack at the first tick >= A0 the run is rideable again (a tumble at
+        // exactly t=A0 is not a saveable instant — validRun says so too)
+        if (!mid && t >= A0 && s.phase === 'play' && !s.done) { mid = packRun(s, log); hA = hashState(s); A = t }
+        if (t % 30 === 0) hs.push({ t, h: hashState(s) })
+    }
+    ok('#3470 pack taken mid-run', A >= A0 && mid !== null, `tick ${A}`)
+    // the store holds JSON, so round-trip the pack before restoring it
+    const r = JSON.parse(JSON.stringify(mid))
+    ok('#3470 pack is JSON-exact', JSON.stringify(JSON.parse(JSON.stringify(r))) === JSON.stringify(r))
+    ok('#3470 a live pack validates', validRun(r) === true && r.v === RUN_V)
+    ok('#3470 log spans the run from tick 0', r.log.length === r.tick && r.tick === A)
+    const back = unpackRun(r)
+    ok('#3470 restore lands on the packed instant', back !== null && back.tick === A && hashState(back) === hA)
+    if (back) {
+        // corrupt the restored world where stateOf can see it — one wrong lane
+        // mark and a faked score: a restore that lies about the ride must die.
+        if (MUT === 'restore') { back.x += 0.5; back.score += 7 }
+        const hs2 = []
+        for (let t = A + 1; t <= B; t++) {
+            const p = sched(t); log.push(packIn(p)); step(back, p)
+            if (t % 30 === 0) hs2.push({ t, h: hashState(back) })
+        }
+        ok('#3470 restore-then-continue == the continuous line', hs2.length > 0 && JSON.stringify(hs2) === JSON.stringify(hs.filter((x) => x.t > A)))
+    }
+
+    // #381 double law: one pack restored twice drives identically — unpackRun
+    // must hand out deep copies, never aliases of the pack's nested objects.
+    const b1 = unpackRun(r); const b2 = unpackRun(r)
+    const cabSrc2 = readFileSync(new URL('../src/games/GrindCity/sim.js', import.meta.url), 'utf8')
+    const unpackSrc = MUT === 'unpackclone'
+        ? cabSrc2.replace('const s = JSON.parse(JSON.stringify(r.sim))', 'const s = r.sim')
+        : cabSrc2
+    ok('#3470 unpack law: the restored sim is a fresh deep copy, not an alias of the pack',
+        /const s = JSON\.parse\(JSON\.stringify\(r\.sim\)\)/.test(unpackSrc))
+    const hs1 = []; const hs3 = []
+    if (b1 && b2) {
+        for (let t = A + 1; t <= A + 120; t++) {
+            const p = sched(t)
+            step(b1, p); if (t % 30 === 0) hs1.push(hashState(b1))
+            step(b2, p); if (t % 30 === 0) hs3.push(hashState(b2))
+        }
+    }
+    ok('#3470 double restore drives identically (#381)', b1 !== null && b2 !== null && JSON.stringify(hs1) === JSON.stringify(hs3))
+
+    // strict validator: junk, drift and finished lines never resume
+    const simJunk = { ...r.sim }
+    const drift = JSON.parse(JSON.stringify(r)); delete drift.sim.rng
+    const extra = JSON.parse(JSON.stringify(r)); extra.sim.fictional = 1
+    const finished = JSON.parse(JSON.stringify(r)); finished.sim.phase = 'over'; finished.sim.done = true
+    const shifted = JSON.parse(JSON.stringify(r)); shifted.tick += 1
+    const badPad = JSON.parse(JSON.stringify(r)); badPad.log[10] = 64
+    const fractional = JSON.parse(JSON.stringify(r)); fractional.log[10] = 1.5
+    const simSrcV = MUT === 'valid' ? cabSrc2.replace('if (!Number.isInteger(s.rng) || s.rng < 0) return false', 'if (false) return false') : cabSrc2
+    const negativeRng = JSON.parse(JSON.stringify(r)); negativeRng.sim.rng = -3
+    ok('#3470 validator refuses junk, schema drift, finished lines and clock lies',
+        [null, {}, [], 'x', { ...r, v: 0 }, { ...r, seed: -1 }, { ...r, mode: 'menu' },
+            drift, extra, finished, shifted, badPad, fractional,
+            negativeRng].every((j) => validRun(j) === false) &&
+        /Number\.isInteger\(s\.rng\)/.test(simSrcV))
+
+    // wiring: the cabinet saves on hide + throttle, offers R + tap, clears on
+    // finish, and the contract routes snapshot/restore through the same pack.
+    const cabRaw70 = readFileSync(new URL('../src/games/GrindCity/index.jsx', import.meta.url), 'utf8')
+    const cab70 = MUT === 'runwire' ? cabRaw70.split("c === 'KeyR'").join("c === 'KeyQ'") : cabRaw70
+    ok('#3470 wiring: store read validated + written, pagehide saves, R and tap resume, finish clears, contract wired',
+        /const RUN_KEY = 'grindcity\.run\.v1'/.test(cab70) &&
+        /if \(raw\) \{ const r = JSON\.parse\(raw\); if \(validRun\(r\)\)/.test(cab70) &&
+        /window\.localStorage\.setItem\(RUN_KEY, JSON\.stringify\(pendingRun\)\)/.test(cab70) &&
+        /window\.addEventListener\('pagehide', savePending\)/.test(cab70) &&
+        /document\.addEventListener\('visibilitychange', onHide\)/.test(cab70) &&
+        /c === 'KeyR' && pendingRun/.test(cab70) &&
+        /data-q="resume-line"/.test(cab70) &&
+        /if \(sim\.phase !== 'over'\) return\s+clearPending\(\)/.test(cab70) &&
+        /snapshot: \(\) => packRun\(sim, inputLog\)/.test(cab70) &&
+        /restore: \(p\) => \{ resumeInto\(p\); return stateOf\(sim\) \}/.test(cab70))
 }
 
 if (MUT) {

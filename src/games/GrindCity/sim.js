@@ -60,6 +60,7 @@ export function makeGame(seed = 1, mode = 'run') {
         airTrick: null,          // {t,grab,flip,flipDir,spin,spinDir,rot,flipRot,spaceWas}
         manualT: 0,
         grindCd: 0,
+        airVXZ: 0,             // scratch: speed at the last launch (read falsy-safe; declared so the #3470 snapshot schema sees every field step() can carry)
         gapArmed: false, overHole: false,
         chain: [],               // trick names this chain (uniques drive mult)
         chainPts: 0, chainClean: 0,
