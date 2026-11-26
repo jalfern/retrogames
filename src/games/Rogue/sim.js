@@ -692,7 +692,12 @@ export function monsterAttack(state, mIdx) {
       return { ...emitFx(s, 'die', { killer: mon.letter }), player: newPlayer, phase: 'gameover', killer: mon.name, finalScore: player.gold + state.dungeonLevel * 50 }
     }
     // #3509, the snake's own 1980 law: it flees for good once it has bitten.
+    // #3514: the port's message voice already narrates doors and salvage, so the
+    // recoil gets a line too — the 1980 cart printed nothing here, and this stays
+    // an honestly-labelled port addition (README mobility section).
     if (mon.letter === 'S') {
+      s = addMsg(s, 'The snake recoils!')
+      s = emitFx(s, 'flee', { id: mon.id, letter: 'S' })
       s = { ...s, monsters: s.monsters.map((mm, ii) => (ii === mIdx ? { ...mm, bitten: true, fleeing: true, chasing: false } : mm)) }
     }
     return { ...s, player: newPlayer }
@@ -736,6 +741,11 @@ export function advanceMonsters(state, skipId = -1) {
     // (hp ≤ ¼ max); the snake's bite flag is set in monsterAttack. Fleeing
     // is for good — wounded things do not get brave again.
     let fleeing = m.fleeing || (chasing && playerVisible && m.hp * 4 <= m.maxHp)
+    // #3514: the flee MOMENT is a witnessed event — this creature broke and now
+    // runs for good. The sim records it once per creature (a for-good fleer never
+    // re-breaks); index.jsx turns it into a distinctive blip + a one-turn glyph
+    // tint so the break reads at a glance. No rng — replay hashes untouched.
+    if (!m.fleeing && fleeing) s = emitFx(s, 'flee', { id: m.id, letter: m.letter })
 
     // Energy clock (#3509): a full MONSTER_ENERGY buys one action; the
     // remainder carries, so ×1.5 races double-step and ×0.75 races skip.

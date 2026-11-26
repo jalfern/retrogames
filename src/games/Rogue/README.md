@@ -34,7 +34,7 @@ Dungeons of Doom keep whatever you bring them.
 ## Verify
 
 ```bash
-npm run roguecheck        # 116 checks: boot+purity, determinism (incl.
+npm run roguecheck        # 123 checks: boot+purity, determinism (incl.
                          # interleaved replays), BFS stairs-reachability on 40
                          # seeds, combat/xp/hunger/descend/pickup/wield/eat/
                          # quaff/scroll rules, the door mechanic (closed
@@ -51,7 +51,10 @@ npm run roguecheck        # 116 checks: boot+purity, determinism (incl.
                          # #3509 mobility laws (speed table, clock arithmetic
                          # x1.0/x1.5/x0.75, carry rule, wounded flee +
                          # quarter-hp boundary, cornered-fights, snake bites
-                         # then flees, bump-skip accrual, hash coverage)
+                         # then flees, bump-skip accrual, hash coverage), and
+                         # the #3514 flee-moment cues (one fx per creature,
+                         # decision-turn timing, silent unseen/healthy,
+                         # snake recoil line + blip)
 npm run roguedrive       # real Chrome, real keys only (#3491/#3509): walk onto
                          # a quiver, f → menu → direction, one arrow spent, the
                          # miss lies east to salvage, help teaches f; the mobility
@@ -156,6 +159,24 @@ honesty class as the staff-damage bands above. What the law *is* — fast
 races act more often, wounded things run — is the original's, and roguecheck
 §8 measures the arithmetic (4/6/3 steps per 4 hero turns) rather than
 trusting the table.
+
+**The break reads (#3514 polish).** A creature fleeing for good used to be
+invisible at a glance — it just stepped away. Now the sim records the flee
+MOMENT (`fx: flee`, once per creature, on the turn it breaks — the decision
+turn, even for ¾ races that have no step yet that turn), and index.jsx turns
+it into a distinctive nervous chirp + a one-turn amber tint on the glyph (the
+port's accent, cf. the door jambs). The tint is turn-stamped, not time-based:
+it ages out with the next hero action, honest to the turn model. The snake's
+recoil gets the port's message voice ("The snake recoils!") — the 1980 cart
+printed nothing at this moment; this is a labelled port addition in the same
+class as the narrated doors. The `?` help gained a **Mobility** block stating
+the speed roster (K B C L J swift ×1½, T M heavy ×¾, wounded ≤¼ hp flee for
+good, snake recoils) — the speed table the cart never printed, in the port's
+teaching voice. The turn model is discrete, so a double-step never draws two
+cells at once: the frame shows the resolved cell after the burst, which is the
+honest picture of a turn-based world. roguecheck §9 gates the cue: exactly one
+fx per creature, decision-turn timing, silence when unseen or healthy, and the
+snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
 
 ## Honest gaps (vs the 1980 original)
 

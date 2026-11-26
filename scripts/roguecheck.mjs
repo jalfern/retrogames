@@ -797,5 +797,93 @@ console.log('mobility laws (#3509)')
     }
 }
 
+// ── 9. the flee moment (#3514 polish): fx fires once, snake narrates ────────
+console.log('flee moment fx (#3514)')
+{
+    const mkState = (px, py, monsters, vis = true) => {
+        const base = createInitialState(1)
+        const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => ' '))
+        const visible = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(vis))
+        return {
+            ...base, dungeonLevel: 1, turn: 0, phase: 'playing', map, visible,
+            monsters, items: [], hiddenDoors: [], fx: [], msgs: [],
+            player: { ...base.player, x: px, y: py },
+        }
+    }
+    const mkMon = (id, letter, x, y, hp, extra = {}) => ({
+        id, x, y, letter, name: letter, hp, maxHp: 8, dmg: '1d1', ac: 4, xp: 1,
+        chasing: true, energy: 0, fleeing: false, bitten: false,
+        speed: MONSTER_DEFS[letter].speed, ...extra,
+    })
+    const pad = (st, x0, x1, y0, y1) => { for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) st.map[y][x] = '.' }
+    const fleeFx = (s) => s.fx.filter(e => e.k === 'flee')
+
+    // the break is witnessed once: a wounded kestrel flees for good, so exactly
+    // one blip over eight turns — no re-fire while it keeps running
+    {
+        const st = mkState(10, 10, [mkMon(1, 'K', 12, 10, 1, { maxHp: 4 })])
+        pad(st, 8, 16, 8, 12)
+        let s = st, all = []
+        for (let t = 0; t < 8; t++) { s = advanceMonsters(s); all = all.concat(fleeFx(s)); s = { ...s, fx: [] } }
+        ok('the break fires exactly one flee fx (no re-fire for a for-good fleer)',
+            all.length === 1 && all[0].id === 1 && all[0].letter === 'K', JSON.stringify(all))
+        ok('the fx stamp carries the fleeing creature (index.jsx tints by id)',
+            s.monsters[0].fleeing === true)
+    }
+
+    // heavy race: the break is the DECISION turn, not the first step — a troll
+    // (0.75x) has no action yet on its break turn, and the blip still sounds
+    {
+        const st = mkState(10, 10, [mkMon(1, 'T', 12, 10, 1, { maxHp: 4 })])
+        pad(st, 8, 16, 8, 12)
+        const s = advanceMonsters(st)
+        ok('heavy race: break fx sounds on the decision turn (before any step)',
+            fleeFx(s).length === 1 && s.monsters[0].x === 12 && s.monsters[0].fleeing === true,
+            `fx ${fleeFx(s).length} x ${s.monsters[0].x}`)
+    }
+
+    // silent when unseen: an unwitnessed break never fakes a cue
+    {
+        const st = mkState(10, 10, [mkMon(1, 'K', 12, 10, 1, { maxHp: 4 })], false)
+        pad(st, 8, 16, 8, 12)
+        let s = st, n = 0
+        for (let t = 0; t < 8; t++) { s = advanceMonsters(s); n += fleeFx(s).length; s = { ...s, fx: [] } }
+        ok('unseen wounded monster stays silent (fx needs the hero\'s eye)', n === 0)
+    }
+
+    // healthy never breaks: full-hp kestrel, eight turns, no cue
+    {
+        const st = mkState(10, 10, [mkMon(1, 'K', 12, 10, 4, { maxHp: 4 })])
+        pad(st, 8, 16, 8, 12)
+        let s = st, n = 0
+        for (let t = 0; t < 8; t++) { s = advanceMonsters(s); n += fleeFx(s).length; s = { ...s, fx: [] } }
+        ok('healthy monster never emits the flee cue', n === 0)
+    }
+
+    // the snake's recoil is narrated in the port's voice and cues the blip
+    {
+        let s = mkState(10, 10, [mkMon(1, 'S', 11, 10, 6)])
+        pad(s, 8, 18, 8, 12)
+        let bit = false, recoiled = null, cued = []
+        for (let t = 0; t < 200 && !bit; t++) {
+            const before = s.player.hp
+            s = advanceMonsters({ ...s, monsters: s.monsters.map(m => ({ ...m, energy: 4 })) })
+            cued = cued.concat(fleeFx(s).filter(e => e.id === 1))
+            if (s.player.hp < before) {
+                bit = true
+                recoiled = s.messages[s.messages.length - 1]
+            }
+            if (!bit && !s.monsters.some(m => m.x === 11 && m.y === 10)) {
+                s = { ...s, monsters: s.monsters.map(m => ({ ...m, x: 11, y: 10, fleeing: false })) }
+            }
+        }
+        ok('snake bite prints the recoil line in the port\'s voice',
+            bit && recoiled === 'The snake recoils!', String(recoiled))
+        ok('the recoil cues exactly one flee blip for the snake, and it flees',
+            bit && cued.length === 1 && cued[0].letter === 'S' && s.monsters[0].fleeing === true,
+            JSON.stringify(cued))
+    }
+}
+
 console.log(`\nroguecheck: ${pass} pass, ${fail} fail`)
 process.exit(fail ? 1 : 0)
