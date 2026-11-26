@@ -34,16 +34,23 @@ Dungeons of Doom keep whatever you bring them.
 ## Verify
 
 ```bash
-npm run roguecheck        # 76 checks: boot+purity, determinism (incl.
+npm run roguecheck        # 101 checks: boot+purity, determinism (incl.
                          # interleaved replays), BFS stairs-reachability on 40
                          # seeds, combat/xp/hunger/descend/pickup/wield/eat/
                          # quaff/scroll rules, the door mechanic (closed
                          # blocks, bump opens, hidden ⊂ doors, search +
                          # stumble reveal, monsters vs doors), both terminals,
                          # BFS autopilot wins (20/20 reach dlvl 2, ≥15 reach
-                         # dlvl 4), draw-vs-logic, rng bounds, and the #1502
+                         # dlvl 4), draw-vs-logic, rng bounds, the #1502
                          # audibility gate (hit/kill/die/descend/quaff/door
-                         # fx all asserted in the sim)
+                         # fx all asserted in the sim), and the #3491 ranged
+                         # gates (generation, ray physics vs wall/door/body,
+                         # xp-through-grantExp, charge spend + crumble, arrow
+                         # spend/salvage/stack, aim flow, interleaved ranged
+                         # replay, grid draws /, pilot stays melee)
+npm run roguedrive       # real Chrome, real keys only (#3491): walk onto a
+                         # quiver, f → menu → direction, one arrow spent, the
+                         # miss lies east to salvage, help teaches f — 12/12
 npm run feedbackcheck    # seedpin law + floor (Rogue = title 45)
 npm run watchcheck -- --only rogue    # the WATCH pilot + batch-23 source pins
 ```
@@ -51,7 +58,9 @@ npm run watchcheck -- --only rogue    # the WATCH pilot + batch-23 source pins
 Mutant proof: flipping the descend guard in `handleDescend` (`!== '%'` →
 `=== '%'`) turns roguecheck red on 4 checks incl. winnability 20/20 → 0/20.
 Collapsing the search-reveal radius in `handleSearch` kills 3 door checks
-(reveal / drawn `+` / door-found fx). Restore → green.
+(reveal / drawn `+` / door-found fx). Restore → green. #3491 planted four:
+shot passes through bodies (3 red), charge never spent (2), salvage dropped
+(4), arrows wieldable (1). Restore → green.
 
 ## Walls are solid — the glyph grammar (#1833)
 
@@ -118,8 +127,19 @@ stream, so the seat consumes no more entropy than the same moves typed).
 
 ## Honest gaps (vs the 1980 original)
 
-- No ranged combat: wands `/`, rings `=` and thrown missiles are named in the
-  legend but never generated; ammo (`!`) potions cover the spell slot loosely.
+- **CLOSED by #3491:** ranged combat. Staves `/` generate with 3–9 charges
+  (lightning/fire/cold/striking, the cart's four-shots flavour); arrows are a
+  counted quiver on the original's single weapon/missile glyph `)`. `f` picks
+  the missile, then a direction answers (arrows refuse the `w` sword hand).
+  A shot walks the line, stopped by rock, walls, closed doors — and the first
+  body; hidden doors pass, the same 1980 law the creatures live by. d20 to-hit
+  with steady-hand +2 (no strength at range), the item's damage dice, xp and
+  level-ups booked through `grantExp` like melee. One arrow spent per throw,
+  a miss leaves the bundle on the flight line to salvage, quivers stack, and
+  a staff crumbles with its last charge. What stays honestly open: rings `=`
+  still never generate, staves carry no unidentified-name cipher (scrolls and
+  potions have one), and the original's exact per-level staff damage tables
+  are approximated by the four dice bands above.
 - Monsters never flee, and `moved` bookkeeping is per-frame rather than the
   original's per-monster energy (fast/ slow creature races).
 - No traps at all: search finds hidden doors, but the original's trap floor

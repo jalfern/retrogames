@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog }
 import {
   COLORS,
   createInitialState, stepGame, buildGrid, watchStep,
-  getItemName, playerAC, runScore, done, hash,
+  getItemName, playerAC, runScore, done, hash, isThrowable,
 } from './sim.js'
 
 // ROGUE (1980, Eglit/Upl — the ur-dungeon). The whole game logic lives in
@@ -39,6 +39,8 @@ const fxSound = (e) => {
         break
       case 'levelup':   [440, 550, 660, 880].forEach((f, i) => ac.playTone(f, 0.09, 'square', 0.05, i * 0.08)); break
       case 'quaff':     ac.playSweep(320, 720, 0.18, 'sine', 0.06); break
+      case 'shoot':     ac.playSweep(900, 220, 0.09, 'square', 0.05); break
+      case 'zap':       ac.playSweep(1200, 140, 0.14, 'sawtooth', 0.07); ac.playNoise(0.04, 0.08); break
       case 'eat':       ac.playNoise(0.05, 0.05); ac.playTone(200, 0.07, 'triangle', 0.05); break
       case 'gold':      ac.playTone(988, 0.05, 'square', 0.05); ac.playTone(1319, 0.07, 'square', 0.05, 0.05); break
       case 'descend':   ac.playSweep(420, 110, 0.3, 'triangle', 0.06); break
@@ -123,6 +125,7 @@ function DPad({ onAction }) {
       <div style={{ display: 'flex', gap: 5, justifyContent: 'center', flexWrap: 'wrap' }}>
         {ab('w wield',  { type: 'SHOW_WIELD' },  '#446')}
         {ab('W wear',   { type: 'SHOW_WEAR' },   '#446')}
+        {ab('f fire',   { type: 'SHOW_THROW' },  '#464')}
         {ab('T takeoff',{ type: 'TAKE_OFF' },    '#446')}
         {ab('s srch',   { type: 'SEARCH' },      '#664')}
         {ab('. rest',   { type: 'MOVE', dx:0, dy:0 }, '#444')}
@@ -256,6 +259,11 @@ export default function RogueGame() {
             turn: s.turn, dlvl: s.dungeonLevel, gold: s.player.gold, score: runScore(s),
             x: s.player.x, y: s.player.y, hp: s.player.hp, phase: s.phase,
             monsters: s.monsters.length, done: done(s),
+            // #3491 ranged drive legs: the pack (type/missile/qty/charges) and
+            // the last message lines, so the browser proof sees what the sim saw.
+            inv: s.player.inventory.map((i) => ({ t: i.type, m: !!i.missile, q: i.qty || 0, ch: i.charges || 0 })),
+            floor: s.items.filter((i) => i.missile).map((i) => ({ q: i.qty, x: i.x, y: i.y })),
+            msgs: s.messages.slice(-4),
           }
         },
         hash: () => hash(stateRef.current),
@@ -312,8 +320,24 @@ export default function RogueGame() {
         return
       }
 
+      // #3491 aim prompt: the next direction key fires the chosen missile.
+      if (phase === 'aim') {
+        if (e.key === 'Escape' || e.key === ' ' || e.key === '.') { dispatch({ type: 'CLOSE_MENU' }); return }
+        const dirBy = {
+          ArrowUp: [0, -1], k: [0, -1], 8: [0, -1],
+          ArrowDown: [0, 1], j: [0, 1], 2: [0, 1],
+          ArrowLeft: [-1, 0], h: [-1, 0], 4: [-1, 0],
+          ArrowRight: [1, 0], l: [1, 0], 6: [1, 0],
+          y: [-1, -1], 7: [-1, -1], u: [1, -1], 9: [1, -1],
+          b: [-1, 1], 1: [-1, 1], n: [1, 1], 3: [1, 1],
+        }
+        const dir = dirBy[e.key]
+        if (dir) dispatch({ type: 'THROW', index: state.aimIndex ?? -1, dx: dir[0], dy: dir[1] })
+        return
+      }
+
       // Menu phases: select by letter
-      const menuPhases = { drop: 'DROP_ITEM', quaff: 'QUAFF_ITEM', read: 'READ_ITEM', wield: 'WIELD_ITEM', wear: 'WEAR_ITEM', eat: 'EAT_ITEM' }
+      const menuPhases = { drop: 'DROP_ITEM', quaff: 'QUAFF_ITEM', read: 'READ_ITEM', wield: 'WIELD_ITEM', wear: 'WEAR_ITEM', eat: 'EAT_ITEM', throw: 'AIM_THROW' }
       if (menuPhases[phase]) {
         if (e.key === 'Escape') { dispatch({ type: 'CLOSE_MENU' }); return }
         const idx = e.key.charCodeAt(0) - 97 // 'a' = 97
@@ -339,6 +363,7 @@ export default function RogueGame() {
         case 'w': dispatch({ type: 'SHOW_WIELD' }); break
         case 'W': dispatch({ type: 'SHOW_WEAR' }); break
         case 'T': dispatch({ type: 'TAKE_OFF' }); break
+        case 'f': dispatch({ type: 'SHOW_THROW' }); break
         case '>': dispatch({ type: 'DESCEND' }); break
         case 'e': dispatch({ type: 'SHOW_EAT' }); break
         case 's': dispatch({ type: 'SEARCH' }); break
@@ -434,18 +459,22 @@ export default function RogueGame() {
     wield:  'Wield which weapon?',
     wear:   'Wear which armor?',
     eat:    'Eat which food?',
+    throw:  'Fire which missile? (arrows or a staff)',
   }
 
   const menuTypeFilter = {
     drop: null, inventory: null,
     quaff: '!', read: '?', wield: ')', wear: '[', eat: ':',
+    throw: isThrowable, // #3491: a predicate, not one glyph — missiles live on `/` and `)`
   }
 
   if (menuPhaseTitle[phase]) {
     const filterType = menuTypeFilter[phase]
-    const shown = filterType
-      ? player.inventory.map((item, i) => ({ item, i })).filter(({ item }) => item.type === filterType)
-      : player.inventory.map((item, i) => ({ item, i }))
+    const shown = typeof filterType === 'function'
+      ? player.inventory.map((item, i) => ({ item, i })).filter(({ item }) => filterType(item))
+      : filterType
+        ? player.inventory.map((item, i) => ({ item, i })).filter(({ item }) => item.type === filterType)
+        : player.inventory.map((item, i) => ({ item, i }))
 
     return (
       <div ref={containerRef} style={base} tabIndex={0} className="rogue-crt">
@@ -500,6 +529,7 @@ export default function RogueGame() {
       ['w', 'Wield a weapon'],
       ['W', 'Wear armor'],
       ['T', 'Take off armor'],
+      ['f', 'Fire: throw arrows / zap a staff (then a direction)'],
       ['>', 'Go down stairs (%)'],
       ['s', 'Search for hidden doors'],
       ['?', 'This help screen'],
@@ -518,7 +548,8 @@ export default function RogueGame() {
       ['*', COLORS['*'], 'Gold'],
       ['!', COLORS['!'], 'Potion'],
       ['?', COLORS['?'], 'Scroll'],
-      [')', COLORS[')'], 'Weapon'],
+      [')', COLORS[')'], 'Weapon or arrows (f to throw)'],
+      ['/', COLORS['/'], 'Magic staff (f to fire)'],
       ['[', COLORS['['], 'Armor'],
       [':', COLORS[':'], 'Food'],
       ['A-Z', '#ff4444', 'Monsters'],

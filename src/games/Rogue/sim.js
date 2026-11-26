@@ -99,6 +99,21 @@ export const WEAPON_TYPES = [
   { name: 'war hammer',       dmg: '2d5' },
 ]
 
+// #3491 ranged combat — the cart's staves (`/`) and arrows. The 1980 legend
+// keeps every weapon AND missile on the single `)` glyph (the original map
+// draws arrows as `)` too — the item line tells you what it is), and staves
+// share the `/` glyph the sim already coloured. The damage bands are the
+// cart's flavour: lightning is the hard one, cold the soft one, striking the
+// reliable one; the exact per-level tables of the original are approximated
+// honestly (README gap). Arrows are the salvage loop: spend one per throw,
+// a missed bundle lies where it fell and can be picked back up.
+export const WAND_TYPES = [
+  { name: 'lightning', dmg: '2d4' },
+  { name: 'fire',      dmg: '2d3' },
+  { name: 'cold',      dmg: '1d6' },
+  { name: 'striking',  dmg: '2d6' },
+]
+
 export const ARMOR_TYPES = [
   { name: 'leather armor',   ac: 2 },
   { name: 'ring mail',       ac: 3 },
@@ -290,8 +305,19 @@ export function generateDungeon(dungeonLevel) {
     } else if (roll <= 3) {
       item = { type: '?', subtype: rng(0, SCROLL_TYPES.length - 1) }
     } else if (roll === 4) {
-      const wt = rng(0, WEAPON_TYPES.length - 1)
-      item = { type: ')', subtype: wt, name: WEAPON_TYPES[wt].name, dmg: WEAPON_TYPES[wt].dmg, bonus: 0 }
+      // #3491: the weapon bin also carries the ranged shelf — 3-in-5 a hand
+      // weapon, 1-in-5 a staff `/`, 1-in-5 a quiver of arrows (`)` glyph, the
+      // original's single weapon/missile symbol).
+      const kind = rng(0, 4)
+      if (kind <= 2) {
+        const wt = rng(0, WEAPON_TYPES.length - 1)
+        item = { type: ')', subtype: wt, name: WEAPON_TYPES[wt].name, dmg: WEAPON_TYPES[wt].dmg, bonus: 0 }
+      } else if (kind === 3) {
+        const st = rng(0, WAND_TYPES.length - 1)
+        item = { type: '/', subtype: st, charges: rng(3, 9) }
+      } else {
+        item = { type: ')', missile: true, name: 'arrows', qty: rng(4, 9) }
+      }
     } else if (roll === 5) {
       const at = rng(0, ARMOR_TYPES.length - 1)
       item = { type: '[', subtype: at, name: ARMOR_TYPES[at].name, ac: ARMOR_TYPES[at].ac, bonus: 0 }
@@ -446,6 +472,7 @@ export function createInitialState(seed) {
     scrollTitleMap,
     identifiedPotions: {},
     identifiedScrolls: {},
+    aimIndex: null, // #3491: the pack item awaiting a direction at the aim prompt
     finalScore: 0,
   }
 }
@@ -476,12 +503,12 @@ export function getItemName(item, state) {
     if (state.identifiedScrolls[item.subtype]) return `scroll of ${SCROLL_TYPES[item.subtype].name}`
     return `scroll titled '${state.scrollTitleMap[item.subtype]}'`
   }
-  if (item.type === ')') return `${item.name}${item.bonus ? ` (+${item.bonus})` : ''}`
+  if (item.type === ')') return item.missile ? `${item.qty} arrows` : `${item.name}${item.bonus ? ` (+${item.bonus})` : ''}`
   if (item.type === '[') return `${item.name}${item.bonus ? ` (+${item.bonus})` : ''}`
   if (item.type === '*') return `${item.amount} gold pieces`
   if (item.type === ':') return 'food ration'
-  if (item.type === '/') return 'wand'
-  if (item.type === '=') return 'ring'
+  if (item.type === '/') return `staff of ${WAND_TYPES[item.subtype].name}${item.charges !== undefined ? ` (${item.charges} charges)` : ''}`
+  if (item.type === '=' ) return 'ring'
   return '?'
 }
 
@@ -575,7 +602,7 @@ export function hash(state) {
   mix(`L${state.dungeonLevel}T${state.turn}R${state.randState}P${state.player.x},${state.player.y}:${state.player.hp}/${state.player.gold}/${state.player.level}`)
   for (const row of state.map) mix(row.join(''))
   for (const m of state.monsters) mix(`M${m.letter}@${m.x},${m.y}:${m.hp}:${m.chasing ? 1 : 0}`)
-  for (const it of state.items) mix(`I${it.type}${it.x},${it.y}${it.amount || ''}`)
+  for (const it of state.items) mix(`I${it.type}${it.x},${it.y}${it.amount || ''}${it.charges || ''}${it.qty || ''}`)
   return h >>> 0
 }
 
@@ -804,6 +831,25 @@ export function handlePickup(state) {
   }
 
   if (player.inventory.length >= 26) return addMsg(state, "Your pack is full!")
+  // #3491: arrows stack onto the quiver already carried (the original kept
+  // missiles as counted piles).
+  if (item.missile) {
+    const mergeIdx = player.inventory.findIndex(p => p.missile && p.name === item.name)
+    const pickupMsg = `You pick up ${item.qty} arrows.`
+    if (mergeIdx >= 0) {
+      const merged = { ...player.inventory[mergeIdx], qty: player.inventory[mergeIdx].qty + item.qty }
+      return addMsg({
+        ...state,
+        player: { ...player, inventory: player.inventory.map((p, i) => (i === mergeIdx ? merged : p)) },
+        items: items.filter((_, i) => i !== idx),
+      }, pickupMsg)
+    }
+    return addMsg({
+      ...state,
+      player: { ...player, inventory: [...player.inventory, item] },
+      items: items.filter((_, i) => i !== idx),
+    }, pickupMsg)
+  }
   const name = getItemName(item, state)
   return addMsg({
     ...state,
@@ -911,7 +957,9 @@ export function handleWield(state, invIndex) {
   const { player } = state
   if (invIndex < 0 || invIndex >= player.inventory.length) return { ...state, phase: 'playing' }
   const item = player.inventory[invIndex]
-  if (item.type !== ')') return { ...state, phase: 'playing' }
+  // #3491: arrows share the original's weapon glyph but are not wieldable —
+  // they answer to the throw command, not the sword hand.
+  if (item.type !== ')' || item.missile) return { ...state, phase: 'playing' }
   let inv = player.inventory.filter((_, i) => i !== invIndex)
   if (player.weapon) inv = [...inv, player.weapon]
   return addMsg({ ...state, phase: 'playing', player: { ...player, weapon: item, inventory: inv } },
@@ -935,6 +983,121 @@ export function handleTakeOff(state) {
   const armor = player.armor
   return addMsg({ ...state, player: { ...player, armor: null, inventory: [...player.inventory, armor] } },
     `You take off the ${armor.name}.`)
+}
+
+// ============================================================
+// RANGED COMBAT (#3491 — the cart's away-game)
+// ============================================================
+// XP + the level-up fanfare, factored out of playerAttack so a kill by arrow
+// or staff books exactly like a kill by mace.
+function grantExp(s, xp, msgs) {
+  const p = { ...s.player, exp: s.player.exp + xp }
+  if (p.exp >= xpNeeded(p.level + 1)) {
+    p.level += 1
+    const gain = rng(3, 10)
+    p.maxHp += gain
+    p.hp = Math.min(p.hp + gain, p.maxHp)
+    msgs.push(`Welcome to level ${p.level}! Hp:${p.hp}`)
+  }
+  return { ...s, player: p }
+}
+
+// What answers to the throw command: counted arrows and charged staves.
+export const isThrowable = (item) => item.type === '/' || (item.type === ')' && item.missile === true)
+
+// Walk the shot line cell by cell from the hero. It stops at the first solid
+// (rock and walls; a closed visible door, too — arrows stick in doors) and at
+// the first monster. Hidden doors pass: the 1980 law says the dungeon's
+// creatures know their own doors, and so does a bolt fired down one.
+export function shootRay(state, dx, dy) {
+  let lastX = state.player.x, lastY = state.player.y
+  const steps = Math.max(MAP_W, MAP_H)
+  for (let i = 1; i <= steps; i++) {
+    const nx = lastX + dx, ny = lastY + dy
+    if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) return { monster: -1, x: lastX, y: lastY, blocked: true }
+    const tile = state.map[ny][nx]
+    if (blocksMove(tile) || (tile === '+' && !doorIsHidden(state, nx, ny))) {
+      return { monster: -1, x: lastX, y: lastY, blocked: true }
+    }
+    const mi = state.monsters.findIndex(m => m.x === nx && m.y === ny)
+    if (mi >= 0) return { monster: mi, x: nx, y: ny, blocked: false }
+    lastX = nx; lastY = ny
+  }
+  return { monster: -1, x: lastX, y: lastY, blocked: true }
+}
+
+// Fire one shot: pick the pack item, aim down (dx,dy). Missiles resolve the
+// same law — d20 like melee but with the steady-hand +2 in place of strength,
+// the item's damage dice, first body stops the flight. Arrows spend one from
+// the bundle; a miss leaves the remainder on the floor to be salvaged. A
+// staff spends a charge and crumbles with its last.
+export function handleThrow(state, invIndex, dx, dy) {
+  const { player } = state
+  const item = player.inventory[invIndex]
+  if (!item || !isThrowable(item) || Math.abs(dx) > 1 || Math.abs(dy) > 1 || (dx === 0 && dy === 0)) {
+    return { ...state, phase: 'playing' }
+  }
+
+  const rest = player.inventory.filter((_, i) => i !== invIndex)
+  let s = { ...state, phase: 'playing', player: { ...player, inventory: rest }, aimIndex: null }
+
+  const isStaff = item.type === '/'
+  s = emitFx(s, isStaff ? 'zap' : 'shoot')
+  const ray = shootRay(s, dx, dy)
+  const msgs = []
+  const label = isStaff ? 'bolt' : 'arrow'
+  let hitLanded = false
+
+  if (ray.monster >= 0) {
+    const mon = s.monsters[ray.monster]
+    const hitRoll = rng(1, 20)
+    const toHit = 10 - mon.ac + 2
+    if (hitRoll === 20 || hitRoll + toHit >= 10) {
+      hitLanded = true
+      const dmg = Math.max(1, rollDice(isStaff ? WAND_TYPES[item.subtype].dmg : '1d4'))
+      const newHp = mon.hp - dmg
+      msgs.push(`You hit the ${mon.name} with your ${label} for ${dmg} damage.`)
+      if (newHp <= 0) {
+        msgs.push(`You defeated the ${mon.name}!`)
+        s = grantExp({ ...s, monsters: s.monsters.filter((_, i) => i !== ray.monster) }, mon.xp, msgs)
+        if (!isStaff) msgs.push('your arrow is lost.')
+      } else {
+        s = { ...s, monsters: s.monsters.map((m, i) => (i === ray.monster ? { ...m, hp: newHp, chasing: true } : m)) }
+        if (isStaff) msgs.push('the bolt crackles and dies.')
+        else msgs.push('the arrow sticks and is lost.')
+      }
+    } else {
+      msgs.push(`You miss the ${mon.name}.`)
+      if (isStaff) msgs.push('the bolt fizzles past it.')
+    }
+  } else {
+    msgs.push(ray.blocked ? `Your ${label} hits the wall.` : `Your ${label} flies into the dark.`)
+  }
+
+  // Staff charges — spend one, crumble at zero.
+  if (isStaff) {
+    const charges = (item.charges || 0) - 1
+    if (charges > 0) s = { ...s, player: { ...s.player, inventory: [...s.player.inventory, { ...item, charges }] } }
+    else msgs.push(`The staff of ${WAND_TYPES[item.subtype].name} crumbles to dust.`)
+  } else {
+    // Arrows: ONE arrow leaves the quiver per throw (the quiver stays in the
+    // pack); a MISS leaves that arrow on the last free cell of the flight to
+    // be salvaged — the original's retrieval loop. A hit arrow is stuck and
+    // lost. An empty quiver is just gone.
+    const qty = item.qty - 1
+    if (qty > 0) s = { ...s, player: { ...s.player, inventory: [...s.player.inventory, { ...item, qty }] } }
+    else msgs.push('That was your last arrow.')
+    if (!hitLanded) s = { ...s, items: [...s.items, { ...item, qty: 1, x: ray.x, y: ray.y }] }
+  }
+
+  for (const m of msgs) s = addMsg(s, m)
+  if (msgs.some(m => m.startsWith('You hit'))) s = emitFx(s, 'hit')
+  if (msgs.some(m => m.startsWith('You defeated'))) s = emitFx(s, 'kill')
+  if (msgs.some(m => m.startsWith('Welcome to level'))) s = emitFx(s, 'levelup')
+
+  s = tickHunger(s)
+  if (s.phase === 'gameover') return s
+  return advanceMonsters(s)
 }
 
 export function handleEat(state, invIndex) {
@@ -999,7 +1162,7 @@ export function handleSearch(state) {
 // Actions that consume player time (the report's `tick`).
 const TURN_ACTIONS = new Set([
   'MOVE', 'PICKUP', 'DESCEND', 'SEARCH', 'DROP_ITEM', 'QUAFF_ITEM',
-  'READ_ITEM', 'WIELD_ITEM', 'WEAR_ITEM', 'TAKE_OFF', 'EAT_ITEM',
+  'READ_ITEM', 'WIELD_ITEM', 'WEAR_ITEM', 'TAKE_OFF', 'EAT_ITEM', 'THROW',
 ])
 
 export function reducer(state, action) {
@@ -1104,7 +1267,7 @@ export function reducer(state, action) {
 
     case 'SHOW_INVENTORY': return { ...state, phase: 'inventory' }
     case 'SHOW_HELP':      return { ...state, phase: 'help' }
-    case 'CLOSE_MENU':     return { ...state, phase: 'playing' }
+    case 'CLOSE_MENU':     return { ...state, phase: 'playing', aimIndex: null }
 
     case 'SHOW_DROP': {
       if (state.player.inventory.length === 0) return addMsg(state, "You have nothing to drop.")
@@ -1145,6 +1308,18 @@ export function reducer(state, action) {
       return { ...state, phase: 'eat' }
     }
     case 'EAT_ITEM': return handleEat(state, action.index)
+
+    // #3491 — throw/zap: pick the missile, then answer the direction prompt.
+    case 'SHOW_THROW': {
+      if (!state.player.inventory.some(isThrowable)) return addMsg(state, 'You have nothing to fire.')
+      return { ...state, phase: 'throw' }
+    }
+    case 'AIM_THROW': {
+      const it = state.player.inventory[action.index]
+      if (!it || !isThrowable(it)) return { ...state, phase: 'playing' }
+      return addMsg({ ...state, phase: 'aim', aimIndex: action.index }, 'Which direction?')
+    }
+    case 'THROW': return handleThrow(state, action.index, action.dx, action.dy)
 
     case 'QUIT': {
       const finalScore = state.player.gold + state.dungeonLevel * 50
