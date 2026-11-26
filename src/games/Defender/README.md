@@ -40,6 +40,12 @@ on one seeded stream.
   radar player dot blinks big when the camera window crosses the seam; thrust
   layers a rising harmonic so speed is audible; and when the patrol holds fire
   to spare a human, a yellow bracket off the nose says WHY.
+- **Wave clock (#3453)**: the per-wave pressure timer — 60 s counted on the
+  WAVE row; at zero it blinks red/yellow and the LANDERS go urgent
+  (URGENT_LANDER_SPEED = 1.5×: steeper dives, faster hauls) until the wave
+  turns over. A two-voice rising klaxon announces it; the death freeze pauses
+  the clock, and the whole mechanic is rand-free, so the seed stream cannot
+  shift.
 - **Look** (docs/ART.md, RETRO): black starfield with twinkle, white mountain
   wireframe, grey lander shells with tractor bar, red diamond mutants, small
   yellow humanoids, thrust flame, red/yellow score sheet under the radar.
