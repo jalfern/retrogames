@@ -60,6 +60,7 @@ export function makeGame(seed = 1, mode = 'run') {
         airTrick: null,          // {t,grab,flip,flipDir,spin,spinDir,rot,flipRot,spaceWas}
         manualT: 0,
         grindCd: 0,
+        airVXZ: 0,             // scratch: speed at the last launch (read falsy-safe; declared so the #3470 snapshot schema sees every field step() can carry)
         gapArmed: false, overHole: false,
         chain: [],               // trick names this chain (uniques drive mult)
         chainPts: 0, chainClean: 0,
@@ -682,4 +683,60 @@ export function hashState(s) {
     const str = JSON.stringify(stateOf(s))
     for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) }
     return h >>> 0
+}
+
+// ── waiting line (#3470) — the run outlives the page ──────────────────────
+// The contract's snapshot/restore plus the localStorage mid-run save ride one
+// pack: the plain sim state + the cabinet's pad log (the same words the replay
+// engine steps, #3225). The README long claimed sim state "holds functions" —
+// stale: makeGame returns a fully plain object (normals are derived in art.js
+// at draw time), so a JSON round trip is EXACT, and determinism (pure + seeded,
+// rng in state.rng) makes restore identical to never having left.
+// validRun is the validBank law for a paused run: wrong shape, wrong schema
+// (an older engine's store), a finished run or hand-edited junk never resumes.
+// Bump RUN_V when sim state changes shape — old waiting lines then retire.
+export const RUN_V = 1
+export const RUN_MAX = FREE_TIME * 60 + 600   // the 5:00 free clock + settle headroom
+
+export function packRun(s, log) {
+    const sim = JSON.parse(JSON.stringify(s))
+    sim.events = []                       // drained — sound is not state
+    return { v: RUN_V, seed: s.seed, mode: s.mode, tick: s.tick, sim, log: log.slice() }
+}
+
+export function unpackRun(r) {
+    if (!validRun(r)) return null
+    const s = JSON.parse(JSON.stringify(r.sim))   // fresh deep copy — one snapshot may be restored many times (#381)
+    s.events = []
+    return s
+}
+
+export function validRun(r) {
+    if (!r || typeof r !== 'object' || Array.isArray(r)) return false
+    if (r.v !== RUN_V) return false
+    if (!Number.isInteger(r.seed) || r.seed < 0 || r.seed > 0xffffffff) return false
+    if (r.mode !== 'run' && r.mode !== 'free') return false
+    if (!Number.isInteger(r.tick) || r.tick < 0) return false
+    if (!Array.isArray(r.log) || r.log.length > RUN_MAX) return false
+    if (!r.log.every((w) => Number.isInteger(w) && w >= 0 && w <= 63)) return false
+    const s = r.sim
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return false
+    // schema check: today's makeGame keys, exactly — truncation, drift or
+    // hand-edited extras all refuse the resume instead of crashing the ride
+    const schema = Object.keys(makeGame(r.seed, r.mode)).sort().join(',')
+    if (Object.keys(s).sort().join(',') !== schema) return false
+    if (s.seed !== r.seed || s.mode !== r.mode || s.tick !== r.tick) return false
+    if (r.log.length !== s.tick) return false    // the log spans the run from tick 0 — exact, not approximate
+    if (s.phase !== 'play' || s.done !== false || s.won !== false) return false
+    if (!Number.isInteger(s.rng) || s.rng < 0) return false
+    if (s.score < 0 || s.timeLeft < 0) return false
+    for (const k of ['x', 'y', 'z', 'heading', 'speed', 'vy', 'lastSlope', 'chainPts']) {
+        if (typeof s[k] !== 'number' || !Number.isFinite(s[k])) return false
+    }
+    if (!Array.isArray(s.chain) || !s.chain.every((n) => typeof n === 'string')) return false
+    if (typeof s.msg !== 'string' && s.msg !== null) return false
+    for (const k of ['grind', 'stall', 'manual', 'airTrick']) {
+        if (!(s[k] === null || (typeof s[k] === 'object' && !Array.isArray(s[k])))) return false
+    }
+    return true
 }

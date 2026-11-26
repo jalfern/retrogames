@@ -22,16 +22,21 @@ determinism proof, the #3246 gem/secret/roof physics legs, the #3233 manual
 identity legs, the #3381 saved/shared-run laws (codec round-trip through the
 sim, total-junk decode, `beatsLine`, `validBank`), the #3394 thinking-bot
 laws (clone purity, search determinism, proven air, searched-line wins five
-seeds) and 22 mutants: letters, gap, replay, bed, gems, shade, grab, stall,
-tell, variety, nearmiss, bestline, bankline, codec, beats, store, sharewire,
-sfxduck, clone, need, sched, searchwire). Deep-drive the cabinet with
+seeds), the #3474 waiting-line laws (restore-then-continue hashes, double
+restore, `validRun` junk table) and 27 mutants: letters, gap, replay, bed,
+gems, shade, grab, stall, tell, variety, nearmiss, bestline, bankline, codec,
+beats, store, sharewire, sfxduck, clone, need, sched, searchwire, restore,
+unpackclone, valid, runwire). Deep-drive the cabinet with
 `DEV_PORT=5178 node scripts/lib/gcdrive.mjs` (also proves the REPLAY screen,
 the skip and the action-cam cut-in, the #3374 near-miss replay + badge, the
 attract best-line loop, and #3381: the store landing, a reload that still
 re-rides the record marked ALL-TIME, a tie leaving history alone, the strict
 beat earning the badge, `S` flashing the copy verdict, `?line=` riding a guest
 line, a junk code booting clean, and #3394: attract riding the thinking bot
-(`?style=3`, planning + committing live, scoring, never tumbling).
+(`?style=3`, planning + committing live, scoring, never tumbling). The #3474
+waiting line gets its own browser leg: `npm run grindlinedrive` — real skate,
+reload, visible `LINE WAITS` chip, real `R` resumes the exact tick, zero page
+errors.
 
 ## Controls
 
@@ -42,6 +47,7 @@ line, a junk code booting clean, and #3394: attract riding the thinking bot
 | A (`Space`) | ollie · **hold in the air** = grab (MONGOL, MEND, STALEFISH…) · **press on landing** = manual · **↓+A at a coping lip** = STALL (#3289) |
 | B (`Shift`) | kickflip on the ground · flat spin in the air · **hold on a rail** = rail grab (FEEBLE/CROOKED, #3289) |
 | `?` | how-to-play overlay |
+| `R` (attract, #3474) | resume the waiting line — the run you left mid-page |
 
 Touch pad (phones): **A = OLLIE** (Space), **B = PUMP** (Shift) — verb labels from the registry `pad:` block (`src/config/games.js`), not letters.
 
@@ -183,6 +189,37 @@ lines lift past the tall score number. The `sm:` (≥640px) look is byte-unchang
 overflow and a score/clear-combo gap at 390px and 320px. Layout only — no sim,
 hash or pin change.
 
+## Waiting line (#3474): the run outlives the page
+
+A live run writes `{v, seed, mode, tick, sim, log}` to
+`localStorage['grindcity.run.v1']` every 2 s of play (`saveCd` 120 ticks) and
+again on `pagehide`/hidden. Come back and the attract offers
+`LINE WAITS · {pts} PTS — R / TAP`; resuming continues the exact tick — and
+because the sim is pure + seeded (rng lives in `state.rng`) it is not a
+replay, it is the same ride. Clearing is total: `checkEnd` retires a finished
+line (a record is not a waiting one), resume consumes it, `reset()` forgets
+it alongside the #3381 record, and no-storage (private mode) degrades the
+offer to this-visit-only, never an error.
+
+The pack *is* the contract `snapshot()`; `restore(s)` (gameContract deep-copies
+per #381, and `unpackRun` deep-copies too, so one pack may be restored any
+number of times) drives it back into play. `validRun` is the `validBank` law
+for a paused run: schema key-set equals today's `makeGame` — old-engine stores
+refuse, bump `RUN_V` when sim state changes shape — plus `phase==='play' &&
+!done && !won`, finite kinematics, `log.length === tick` (the pad log spans
+the run exactly), pads 0..63 capped at `RUN_MAX` (the 300 s free clock plus
+settle headroom). A tumble mid-throttle never overwrites a rideable save:
+`savePending` only packs a phase-`play` state, so the store always holds the
+last skatable instant.
+
+`grindcheck` pins the math — restore-then-continue hashes equal the
+continuous line, double-restore identity (#381), `validRun` junk table, and
+the cabinet wiring (mutants `restore`, `unpackclone`, `valid`, `runwire`).
+`grindlinedrive` makes the browser-only claims. Note found en route: `step()`
+attaches `airVXZ` (launch speed) lazily; `makeGame` now declares it — both
+falsy at its single read site, behavior-identical — so the snapshot schema
+sees every field the sim can carry.
+
 ## Honest gaps
 
 - **CLOSED by #3386** — ~~Saved/shared runs: nothing persists.~~ The record now
@@ -228,6 +265,11 @@ hash or pin change.
   searched commit. It only speaks while the BOT rides — a banked best line
   or a shared line is the player's own, so the chip stays silent for those.
   `gcdrive` pins the naming, the commit flash, phone fit and chrome peace.
-- `snapshot`/`restore` are intentionally absent from the contract — the sim
-  state holds functions (`park.height/normals`), so JSON can't copy it (#391);
-  drivers use `reset(seed)` + long `tick()` batches instead, like IronKeep.
+- **CLOSED by #3474** — ~~`snapshot`/`restore` are intentionally absent from the
+  contract — the sim state holds functions (`park.height/normals`), so JSON
+  can't copy it (#391); drivers use `reset(seed)` + long `tick()` batches
+  instead, like IronKeep.~~ The #391 note was stale — `makeGame` returns a
+  fully plain object (the analytic normals are derived at draw time in
+  `art.js`, never stored on sim), so the pack is JSON-exact: the contract now
+  ships `snapshot()`/`restore(s)` (#381 double-restore law) and the cabinet
+  waits a run across the page — see "Waiting line" above.
