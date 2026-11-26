@@ -80,9 +80,9 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
   on the doorway (gap column/row ± `DRAGON_FOLLOW_SLACK`) warps through with the
   dot at the mirror entry, so the chase — bite *and* sword-turn — is judged inside
   the new room (see "#3441 — dragons follow through the door" below). What stays
-  honestly open: a **non-hunting** dragon still never wanders across a seam by
-  itself (the cart's dragons roamed the whole world; these follow *you*), and the
-  follow box is anchor-based, not the original's exact sprite-rect overlap.
+  honestly open now: the follow box is anchor-based, not the original's exact
+  sprite-rect overlap. (The wanderer half CLOSED by **#3489** — idle dragons
+  hold a seeded heading and cross seams through open doorways on their own.)
 - The original duplicates the **chalice** (a second one sits in its Blue
   Castle); this 18-room port keeps a single chalice and no Blue Castle. Note
   the #1545 gap list's "two bridges" was a misremembering — the original has
@@ -339,3 +339,50 @@ dealt out, duplicate wins / magnet does not, kind-honest score (both cups, one
 point), sparkle on either cup, seam-follow through the new door — plus five
 mutants (duplicate loses the win, pin ignored, keep bricked, score counts
 instances, duplicate loses its glint).
+
+## #3489 — dragons roam, and the guide learns to wait (polish pass)
+
+The cart's dragons own the whole world; until now these only hunted the room
+they guard. `sim.js` adds the roam law: an idle (non-hunting, jaw-shut) dragon
+holds a seeded heading on the #1560 course-change rhythm, drifts at half hunt
+pace (`ROAM_SCALE`), and crosses room seams **through open doorways only**
+(`SEAM_CHANCE` at the edge, mirrors of the player's barrier law — closed gates
+and the sealed secret door stay sealed for dragons too). Constants exported:
+`WANDER_REROLL / ROAM_SCALE / SEAM_CHANCE / DRAGON_BOX`. Barrier audit: 40
+seeds × full quest, 0 breaches; replays byte-equal; mirror entries match #3441.
+
+`route.js` mobility v3 — with roam, the waypoint script can be pushed off its
+road, so the planner answers the world instead of the map:
+
+- **arm-first** — goldKey → Gold Castle → sword is the cart's own opening;
+  Yorgle flees the gold key by his own law, so the corridor becomes prey and
+  most door-waits vanish.
+- **calm-entry** — never step onto a resident without the blade; wait at the
+  doorstep for the far side to empty.
+- **window-pin EVICT** — collision jitter lies to per-tick pin checks; the
+  guide now evicts on a 24-tick no-progress window toward the nearest calm door.
+- **decoy post** — the bat's swap law is room-bound (it takes a loose item it
+  bumps *inside the player's room*), so chasing its pixel is wasted motion:
+  march to the bat's room (or its calm doorstep), plant spare currency on open
+  floor, and let dwell-time do the trade. The haul lands where the decoy lay.
+  Currency is filtered — a key spends only after its gate is already open.
+- **shared wait-credit** — every world-wait (guard cycle, trade burst, theft
+  recovery) draws from ONE pool per drive (`CREDIT`, 30k) instead of fresh caps
+  per attempt: a hoarding bat can no longer burn the whole 60k budget in ten
+  stacked waits. Lives beside the sim in a WeakMap — the guide still emits
+  inputs only.
+- **either cup** — #3482's duplicate made two cups win; `fetchGrail` now
+  fetches the nearer one and never trades a cup away to re-fetch its twin.
+- **edge-drop safety** — a drop on a door threshold spawned items INSIDE the
+  wall band (y=194 on a 192-tall room — dead keys, dead quests, seeds 6/8 V1);
+  the guide releases only on open floor.
+
+Gated in `adventurecheck`: V1/V2/V3 route wins 10/10 (was 8/10 on V1), zero
+deaths on the pinned 30, seed 6 still recovers late (>2.2k), determinism and
+the inputs-only law untouched; mutants (wait-credit starved to 1 tick) turn
+four gates red.
+
+Honest gaps from this pass: on seeds OUTSIDE the pinned contract (11–30 spot
+probe) the bridge fetch still loses ~10% of runs to a bat that camps the haul
+behind den doors (why `bridge`/`red floor`); and roam uses the cart's own dice
+stream, so adding roam re-pinned every replay hash.
