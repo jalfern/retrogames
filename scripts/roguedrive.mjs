@@ -231,5 +231,26 @@ if (planT) {
     r.check('the spring is narrated on the message line', sprungMsg, pt.msgs.join(' | '))
 }
 
+// ---- #3592: the Amulet of Yendor in real Chrome — seat, hunt, win card ----
+{
+    const p2 = await openGame(browser, { url: `${URL.split('?')[0]}?seed=7&dlvl=20`, hook: '__rogueTest', wait: 500 })
+    p2.on('pageerror', (e) => errors.push(String(e)))
+    const t0 = await p2.evaluate(() => window.__rogueTest.probe())
+    r.check('the ?dlvl=20 pin seats the hero on the amulet floor, goal on the map', t0.dlvl === 20 && !!t0.am && t0.won === false, JSON.stringify({ dlvl: t0.dlvl, am: t0.am }))
+    await p2.keyboard.press('KeyY') // the guide hunts it down, on the real loop
+    let winT = null
+    const tEnd = Date.now()
+    while (!winT && Date.now() - tEnd < 60000) {
+        const q = await p2.evaluate(() => window.__rogueTest.probe())
+        if (q.won) winT = q
+        else await new Promise((res) => setTimeout(res, 150))
+    }
+    r.check('the guide reaches the Amulet in a real tab and the pickup wins', !!winT, winT ? `turn ${winT.turn}` : 'never won')
+    const card = await p2.evaluate(() => document.body.innerText)
+    r.check('the WIN card renders: YOU WIN, the Amulet named, the score tallied',
+        /YOU WIN/.test(card) && /Amulet of Yendor/.test(card) && /Final Score/.test(card))
+    await p2.close()
+}
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)

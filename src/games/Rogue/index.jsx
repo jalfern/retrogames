@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog }
 import {
   COLORS,
   createInitialState, stepGame, buildGrid, watchStep,
-  getItemName, playerAC, runScore, done, hash, isThrowable,
+  getItemName, playerAC, runScore, done, hash, isThrowable, qaSeatLevel,
 } from './sim.js'
 
 // ROGUE (1980, Eglit/Upl — the ur-dungeon). The whole game logic lives in
@@ -20,6 +20,13 @@ import {
 // Roll the seed for the next world: the pin wins, else fresh entropy.
 function freshSeed() {
   return seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+}
+
+// #3592 — ?dlvl=N QA pin: seat at the mouth of level N (the amulet-hunt legs
+// drive the real reducer from there; see sim.js qaSeatLevel).
+function dlvlPin() {
+  const v = parseInt(new URLSearchParams(window.location.search).get('dlvl') || '', 10)
+  return Number.isFinite(v) && v >= 1 ? Math.min(v, 60) : 1
 }
 
 // #1502: the sim RECORDS audible moments in state.fx (the audibility gate in
@@ -38,6 +45,7 @@ const fxSound = (e) => {
         else ac.playSweep(300, 50, 0.5, 'sawtooth', 0.1)
         break
       case 'levelup':   [440, 550, 660, 880].forEach((f, i) => ac.playTone(f, 0.09, 'square', 0.05, i * 0.08)); break
+      case 'win':       [660, 880, 1320].forEach((f, i) => ac.playTone(f, 0.12, 'square', 0.06, i * 0.09)); ac.playSweep(880, 1760, 0.3, 'sine', 0.04, 0.28); break
       case 'quaff':     ac.playSweep(320, 720, 0.18, 'sine', 0.06); break
       case 'shoot':     ac.playSweep(900, 220, 0.09, 'square', 0.05); break
       case 'zap':       ac.playSweep(1200, 140, 0.14, 'sawtooth', 0.07); ac.playNoise(0.04, 0.08); break
@@ -172,7 +180,11 @@ function stepWithFlash(state, action) {
 }
 
 export default function RogueGame() {
-  const [state, dispatch] = useReducer(stepWithFlash, null, () => createInitialState(freshSeed()))
+  const [state, dispatch] = useReducer(stepWithFlash, null, () => {
+    const s0 = createInitialState(freshSeed())
+    const pin = dlvlPin()
+    return pin > 1 ? qaSeatLevel(s0, pin) : s0
+  })
   const containerRef = useRef(null)
   const [isMobile, setIsMobile] = useState(false)
   const [mapScale, setMapScale] = useState(1)
@@ -292,6 +304,10 @@ export default function RogueGame() {
             // count, and the body's shackles — sleep/snare/fall grudge.
             traps: s.traps.map((tt) => ({ x: tt.x, y: tt.y, seen: tt.seen, armed: tt.armed })),
             falls: s.falls || 0, held: s.player.held || 0, sleeping: s.player.sleeping || 0,
+            // #3592 amulet legs: the goal's seat on this level, and the truth
+            // the browser proof reads at the terminal.
+            won: !!s.won,
+            am: (() => { const a = s.items.find(i => i.amulet); return a ? { x: a.x, y: a.y } : null })(),
             msgs: s.messages.slice(-4),
           }
         },
@@ -428,7 +444,7 @@ export default function RogueGame() {
     dispatch(action)
   }, [releaseWatch])
 
-  const { player, phase, messages, dungeonLevel, finalScore, killer } = state
+  const { player, phase, messages, dungeonLevel, finalScore, killer, won } = state
   // #1637: the dungeon only drives while phase is playing — every menu/help/
   // death screen already returned above, so this also mirrors the pill's door.
   const paused = phase !== 'playing'
@@ -458,11 +474,24 @@ export default function RogueGame() {
       <div ref={containerRef} style={base} tabIndex={0} className="rogue-crt"
            onPointerDown={() => dispatch({ type: 'NEW_GAME', seed: freshSeed() })}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-          <div style={{ color: '#ff4444', fontSize: '30px', letterSpacing: '4px' }}>✝  GAME OVER  ✝</div>
-          <div style={{ color: '#ff6644', fontSize: '20px', letterSpacing: '1px' }}>
-            {killer === 'starvation' ? 'Starved to death' : killer ? `Killed by a ${killer}` : ''}
-          </div>
-          <div style={{ color: '#aaa', marginTop: '8px' }}>Slain in the Dungeons of Doom!</div>
+          {won ? (
+            <>
+              {/* #3592 — the cart's other terminal: the Amulet, recovered. */}
+              <div style={{ color: '#ffd700', fontSize: '30px', letterSpacing: '4px' }}>✦  YOU WIN  ✦</div>
+              <div style={{ color: '#ffee88', fontSize: '20px', letterSpacing: '1px' }}>
+                You have found the Amulet of Yendor!!
+              </div>
+              <div style={{ color: '#aaa', marginTop: '8px' }}>The Amulet leaves the Dungeons of Doom… with you.</div>
+            </>
+          ) : (
+            <>
+              <div style={{ color: '#ff4444', fontSize: '30px', letterSpacing: '4px' }}>✝  GAME OVER  ✝</div>
+              <div style={{ color: '#ff6644', fontSize: '20px', letterSpacing: '1px' }}>
+                {killer === 'starvation' ? 'Starved to death' : killer ? `Killed by a ${killer}` : ''}
+              </div>
+              <div style={{ color: '#aaa', marginTop: '8px' }}>Slain in the Dungeons of Doom!</div>
+            </>
+          )}
           <div style={{ marginTop: '16px', color: '#ccc' }}>
             <div>Dungeon Level: <span style={{ color: '#ffff55' }}>{dungeonLevel}</span></div>
             <div>Gold: <span style={{ color: '#ffff00' }}>{player.gold}</span></div>
