@@ -30,8 +30,14 @@ const SPR = {
     ],
     player: ['0000001000000', '0000011100000', '0000011100000', '0111111111110', '1111111111111', '1111111111111', '1111111111111', '1111111111111'],
     ufo: ['0000011111100000', '0011111111111100', '0111111111111110', '1111111111111111', '0111111111111110', '0011100110011100', '0001000000001000'],
+    // #3582 — the death boom: the cabinet flashed a scrambled glyph where an
+    // invader fell. Original shape (our own starburst, two frames — ART.md die
+    // law), drawn at the kill spot in the row's colour over the spark fan.
+    boomA: ['10000000001', '01000000010', '00110001100', '00001110000', '00110001100', '01000000010', '10000000001'],
+    boomB: ['00000000000', '00010001000', '00001010000', '00111111100', '00001010000', '00010001000', '00000000000'],
 }
 const ROW_SPRITE = ['squid', 'crab', 'crab', 'octo', 'octo'] // #3517 five bands: squid 30 / crab 20 / octopus 10
+const ROW_COL = ['#ff3b30', '#ffffff', '#ffffff', '#9be7ff', '#9be7ff'] // squid red, crab white, octopus cyan (#3517 bands)
 
 const drawSprite = (ctx, rows, x, y, col) => {
     ctx.fillStyle = col
@@ -162,6 +168,11 @@ const SpaceInvadersGame = () => {
         // Decor juice (index.jsx only; sim stays pure). Kill bursts are
         // deterministic from tick — no entropy outside the audited default-seed draw.
         const parts = []
+        // #3582 — death booms: a two-frame glyph blinks at the kill spot (the
+        // cabinet's scrambled explosion flash). Render decor, deterministic from
+        // the death event itself — the sim and its seed anchors stay untouched.
+        const booms = []
+        const boom = (x, y, col) => booms.push({ x: Math.round(x), y: Math.round(y), life: 12, col })
         // Per-row kill bursts (render only, sim stays pure): the squid (row 0)
         // is a tight red spark fan, crabs (1-2) spray white sideways, octopus
         // (3-4) drops cyan droplets. Deterministic pseudo-angles — no RNG.
@@ -231,6 +242,8 @@ const SpaceInvadersGame = () => {
             for (let k = 0; k < before.length; k++) {
                 if (before[k] && !world.invaders[k].alive) {
                     burst(world.invaders[k].x + 6, world.invaders[k].y + 4, world.invaders[k].row)
+                    // #3582 — the boom centres the 11px glyph on the 12px cell
+                    boom(world.invaders[k].x + (INVADER_W - 11) / 2, world.invaders[k].y, ROW_COL[world.invaders[k].row])
                     invaderPts += ROW_SCORE[world.invaders[k].row]
                     popup(world.invaders[k].x + 6, world.invaders[k].y, ROW_SCORE[world.invaders[k].row])
                     lastKillTick = world.tick
@@ -291,6 +304,8 @@ const SpaceInvadersGame = () => {
             for (let k = parts.length - 1; k >= 0; k--) if (parts[k].life <= 0) parts.splice(k, 1)
             for (const p of popups) p.life--
             for (let k = popups.length - 1; k >= 0; k--) if (popups[k].life <= 0) popups.splice(k, 1)
+            for (const b of booms) b.life--
+            for (let k = booms.length - 1; k >= 0; k--) if (booms[k].life <= 0) booms.splice(k, 1)
         }
 
         const update = () => {
@@ -328,7 +343,8 @@ const SpaceInvadersGame = () => {
 
             // invaders, marching 2-frame animation; overlay zone colors
             const frame = Math.floor(world.tick / 16) % 2
-            const ROW_COL = ['#ff3b30', '#ffffff', '#ffffff', '#9be7ff', '#9be7ff'] // squid red, crab white, octopus cyan (#3517 bands)
+            // the row band colours live at module scope (ROW_COL) so the kill
+            // path can paint the #3582 boom in the fallen invader's own colour
             for (const i of world.invaders) {
                 if (!i.alive) continue
                 const sp = SPR[ROW_SPRITE[i.row]][frame]
@@ -366,6 +382,13 @@ const SpaceInvadersGame = () => {
             for (const p of parts) {
                 ctx.fillStyle = p.col
                 ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, p.h || 1)
+            }
+
+            // #3582 — the death boom blinks its two frames at the kill spot in
+            // the fallen invader's row colour; the spark fan shows through the
+            // glyph's gaps, so the burst reads as one event, not two layers.
+            for (const b of booms) {
+                drawSprite(ctx, Math.floor(b.life / 2) % 2 === 0 ? SPR.boomA : SPR.boomB, b.x, b.y, b.col)
             }
 
             // #1906 — value flash where an invader (or the saucer) fell: the

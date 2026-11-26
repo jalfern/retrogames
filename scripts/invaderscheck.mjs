@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { seedRng } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
+import { parseGaps } from './lib/idle.mjs'
 import {
     GW, PLAYER_Y, PLAYER_W, ROW_SCORE, RESPAWN_TICKS, UFO_Y,
     BUNKER_W, BUNKER_ROWS, bunkerBricks, ufoBounty, COLS, waveRows, marchSpeed,
@@ -468,6 +469,27 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
         '#3573: the march notes fire on sim step events (one shared clock), refreshed every tick — no parallel metronome')
 }
 
+// ---------- 14. #3582 polish: death boom sprite + honest README ----------
+{
+    // the cabinet flashed a scrambled glyph where an invader fell (ART.md die
+    // law: a death animation). Two original frames, blinked at the kill spot.
+    ok(/boomA: \[/.test(jsx) && /boomB: \[/.test(jsx),
+        '#3582: the boom glyph ships two frames (ART.md 2-4 frame die law)')
+    ok(/SPR\.boomA : SPR\.boomB/.test(jsx),
+        '#3582: the boom blinks its frames at the kill spot (life/2, cabinet cadence)')
+    ok(/boom\(world\.invaders\[k\]\.x \+ \(INVADER_W - 11\) \/ 2, world\.invaders\[k\]\.y, ROW_COL\[world\.invaders\[k\]\.row\]\)/.test(jsx),
+        '#3582: every invader death blooms a boom in its own row colour')
+    ok(/for \(const b of booms\) b\.life--/.test(jsx),
+        '#3582: booms expire on the tick loop (decor joins the parts/updateParts cadence)')
+
+    // README honesty (#3582 items 1+2): parseGaps must come back empty — every
+    // remaining shortfall is a shipped (CLOSED), hardware-decided (DISCLAIMER)
+    // or original-material-blocked (BLOCKED) line, never a phantom kick (#961).
+    const gaps = parseGaps(readFileSync(join(here, '../src/games/SpaceInvaders/README.md'), 'utf8'))
+    ok(gaps.length === 0,
+        `#3582: Honest gaps parses to zero phantom lines (${gaps.length}: ${gaps.map((g) => g.slice(0, 42)).join(' | ')})`)
+}
+
 // prove-it-can-fail: planted bugs the witness MUST die on
 if (process.argv.includes('--mutant')) {
     const S = 'src/games/SpaceInvaders/sim.js'
@@ -530,6 +552,18 @@ if (process.argv.includes('--mutant')) {
         [J, 'the attract loop loses instantly again (#1906 hold deleted)',
             'attractOver > 150',
             'attractOver > 0'],
+        [J, 'the death boom never blooms (#3582 decor deleted)',
+            'boom(world.invaders[k].x + (INVADER_W - 11) / 2, world.invaders[k].y, ROW_COL[world.invaders[k].row])',
+            'void 0'],
+        [J, 'the boom freezes on one frame (#3582 blink deleted, ART.md die law)',
+            'SPR.boomA : SPR.boomB',
+            'SPR.boomA : SPR.boomA'],
+        ['src/games/SpaceInvaders/README.md', 'the bonus-life CLOSED marker is stripped (#3582 phantom gap returns)',
+            '**CLOSED by #3530**:',
+            '**Bonus life (#3530):**'],
+        ['src/games/SpaceInvaders/README.md', 'the drop BLOCKED marker is stripped (#3582 phantom gap returns)',
+            '**BLOCKED:** the cabinet\'s drop',
+            'The cabinet\'s drop'],
     ]
     for (const [F, what, from, to] of MUTANTS) {
         const orig = readFileSync(F, 'utf8')
