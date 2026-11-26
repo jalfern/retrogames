@@ -607,8 +607,18 @@ function* fetchItem(sim, id, depth = 0) {
                 const post = calmBatRoom ? br
                     : neighbors(sim, br).map(([, n]) => n).find((n) => !residents(sim, n).length)
                 if (post === undefined) continue   // the bat sits deep in a den — revisit later
-                const baitOut = bait !== null && post === baitRoom
-                    && sim.items.some((i) => i.id === bait && !i.carried && i.room === post)
+                // #3524 one bait per post: a loose SPARE that lies on OPEN floor
+                // at the post IS a live bait — but only floor you and the bat can
+                // actually reach counts. Seeds 2/10 V3 died in a plant pile: the
+                // swap freed the haul onto a decoy cell, and the pickup loop then
+                // kept handing the player its own leftover (first loose overlap
+                // wins, and the fetch exempts the sword from dropping) instead of
+                // the freed key. The bridge never counts: it is quest-essential,
+                // and a spare deep in a wall band is junk, not bait — the old
+                // #3489 re-plant-every-round law stays for those posts.
+                const openFloor = (it) => it.y >= 20 && it.y <= GH - 32 && it.x >= 20 && it.x <= GW - 24
+                const baitOut = sim.items.some((i) => i.room === post && !i.carried
+                    && i.id !== id && i.id !== 'bridge' && openFloor(i))
                 if (!sim.carrying && !baitOut) {
                     const decoyId = safeDecoy()
                     if (!decoyId) break
@@ -616,11 +626,11 @@ function* fetchItem(sim, id, depth = 0) {
                 }
                 if (sim.room !== post && !(yield* walkTo(sim, post))) continue
                 if (sim.room !== post) continue
-                if (sim.carrying) {
+                if (sim.carrying && !baitOut) {
                     bait = sim.carrying; baitRoom = post
                     yield* dropCarrySafe(sim)      // plant on the post's open floor
                     if (sim.carrying) { bait = null; break }  // refused at an edge — re-plan
-                } else if (!baitOut) continue      // hand empty, nothing planted — re-plan
+                } else if (!sim.carrying && !baitOut) continue  // nothing planted — re-plan
                 // A long wait at an EMPTY post is camping, not trading (that
                 // is the shape of the 19k-tick burn, seed 7 V3): spend the
                 // dwell-length wait only while the bat actually occupies the
@@ -637,6 +647,23 @@ function* fetchItem(sim, id, depth = 0) {
                 if (sim.bat.carrying !== id) { traded = true; break }
             }
             if (!traded) continue
+            // #3524 swap-timing grab: the freed haul drops onto the bait's exact
+            // cell — the bat's own patrol floor — and swapTimer (180) is the only
+            // window before the re-steal (seed 2: steal@37480 lifted the goldKey
+            // back off the post, and every later decoy round marched cross-map
+            // after the moving bat and bled cr.w). Don't walk to the stale room
+            // entry: with the hand emptied, drive onto the freed spot right here —
+            // same room, a few dozen ticks, well inside the window.
+            {
+                const freed = sim.items.find((i) => i.id === id)
+                if (sim.carrying) yield* dropCarrySafe(sim)
+                if (freed && !freed.carried && freed.room === sim.room) {
+                    if (yield* driveTo(sim, freed.x, freed.y)) {
+                        if (sim.carrying === id) return true
+                        if (sim.carrying) yield* dropCarrySafe(sim)   // junk in hand — empty it
+                    }
+                }
+            }
         }
         if (!(yield* walkTo(sim, item.room))) continue
         // riding: close the gap and let the contact law do the slaying
