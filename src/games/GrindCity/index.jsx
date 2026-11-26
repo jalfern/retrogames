@@ -12,7 +12,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, REPLAY_MAX, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank } from './sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, REPLAY_MAX, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, packRun, unpackRun, validRun } from './sim.js'
 import { botPad, makeBot } from './planner.js'
 import { makeSearchBot, searchPad } from './search.js'
 import { STEP, bedVoices, landThud, ATTRACT_SFX } from './music.js'
@@ -51,6 +51,7 @@ const GrindCityGame = () => {
     const [best, setBest] = useState(null)   // #3374: {score, letters, won} — attract card memory
     const [allTime, setAllTime] = useState(false)   // #3381: the chip's bank came from storage
     const [sharedPts, setSharedPts] = useState(null) // #3381: a ?line= guest line rides the attract
+    const [pendingV, setPendingV] = useState(null) // #3470: a waiting line offers resume on the attract
     const pausedRef = useRef(false)
     const screenRef = useRef('attract')
     const modeRef = useRef('run')
@@ -67,6 +68,7 @@ const GrindCityGame = () => {
         share: { current: null },
         shareChip: { current: null },
         shareFn: { current: null },
+        resumeFn: { current: null },
         styleChip: { current: null },
     }).current
 
@@ -112,6 +114,16 @@ const GrindCityGame = () => {
             const raw = window.localStorage.getItem(STORE_KEY)
             if (raw) { const b = JSON.parse(raw); if (validBank(b)) storedBank = b }
         } catch { /* private mode or corrupt JSON — the plaza just starts cold */ }
+        // #3470 waiting line — a run left mid-page waits here (throttled auto-save
+        // below). Read is as strict as the record store's: invalidRun junk, a
+        // finished line or an older engine's schema never resumes the plaza.
+        const RUN_KEY = 'grindcity.run.v1'
+        let pendingRun = null
+        try {
+            const raw = window.localStorage.getItem(RUN_KEY)
+            if (raw) { const r = JSON.parse(raw); if (validRun(r)) { pendingRun = r; setPendingV(r) } }
+        } catch { /* no storage — the plaza starts without a waiting line */ }
+        let saveCd = 0
         const sharedLine = decodeLine(new URLSearchParams(window.location.search).get('line'))
         let sharedIdx = 0
         let sharedMode = !!sharedLine
@@ -206,6 +218,48 @@ const GrindCityGame = () => {
             setSharedPts(null)
         }
 
+        // ── waiting line (#3470) — the run outlives the page ───────────────
+        // A live run auto-saves packed state (~every 2 s, and again the moment
+        // the page hides). Return to the plaza and the attract offers it:
+        // R or tap resumes at the exact tick — score, letters, gems, chain and
+        // clock intact (sim is pure + seeded, so the ride continues, not
+        // replays). Clearing is total: a finished run, the plaza menu or a
+        // harness reset retires the line.
+        const savePending = () => {
+            if (attractMode || replayMode || screenRef.current !== 'play') return
+            if (!sim || sim.phase !== 'play' || sim.done) return
+            pendingRun = packRun(sim, inputLog)
+            setPendingV(pendingRun)
+            try { window.localStorage.setItem(RUN_KEY, JSON.stringify(pendingRun)) } catch { /* no storage — this visit can still resume */ }
+        }
+        const clearPending = () => {
+            pendingRun = null
+            setPendingV(null)
+            try { window.localStorage.removeItem(RUN_KEY) } catch { /* nothing to forget */ }
+        }
+        const resumeInto = (r) => {
+            const s = unpackRun(r)
+            if (!s) return false
+            clearReplay()
+            sim = s
+            modeRef.current = s.mode; setMode(s.mode)
+            inputLog = r.log.slice()
+            bot = makeBot()
+            attractMode = false
+            screenRef.current = 'play'
+            setScreen('play')
+            setResult(null)
+            saveCd = 0
+            return true
+        }
+        const resumePending = () => {
+            if (!pendingRun || !resumeInto(pendingRun)) { clearPending(); return }
+            clearPending()   // consumed — the live save will re-arm it from here
+            audioController.playTone(520, 0.08, 'square', 0.09)
+            audioController.playTone(740, 0.1, 'square', 0.09, 0.08)
+        }
+        hud.resumeFn.current = resumePending   // tap path from the attract chip JSX
+
         const startGame = (m) => {
             modeRef.current = m
             clearReplay()
@@ -216,6 +270,8 @@ const GrindCityGame = () => {
             screenRef.current = 'play'
             setScreen('play')
             setResult(null)
+            saveCd = 0
+            savePending()   // #3470: the new line is the waiting line from tick 0
             audioController.playTone(660, 0.09, 'square', 0.09)
             audioController.playTone(880, 0.12, 'square', 0.09, 0.09)
         }
@@ -326,6 +382,7 @@ const GrindCityGame = () => {
             if (pausedRef.current) return
             if (screenRef.current === 'attract') {
                 if (c === 'ArrowLeft' || c === 'ArrowRight') { cycleMode(c === 'ArrowRight' ? 1 : -1); return }
+                if (c === 'KeyR' && pendingRun) { resumePending(); return }   // #3470: the line waits no more
                 if (c === 'Space' || c.startsWith('Arrow') || /^Key/.test(c)) { startGame(modeRef.current); return }
             } else if (screenRef.current === 'replay') {
                 if (c === 'Space') finishOver()
@@ -351,6 +408,11 @@ const GrindCityGame = () => {
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
         canvas.addEventListener('pointerdown', onPointer)
+        // #3470: the moment the tab hides or the page unloads is exactly when
+        // a skater walks away — bank the live line then, not only on the tick.
+        const onHide = () => { if (document.visibilityState === 'hidden') savePending() }
+        window.addEventListener('pagehide', savePending)
+        document.addEventListener('visibilitychange', onHide)
 
         // ── the loop ────────────────────────────────────────────────────────
         let raf = 0
@@ -391,6 +453,7 @@ const GrindCityGame = () => {
 
         const checkEnd = () => {
             if (sim.phase !== 'over') return
+            clearPending()   // #3470: a finished line is a record, not a waiting one
             if (attractMode) { toAttract(); return }
             if (screenRef.current === 'over' || replayMode) return
             pendingResult = { score: sim.score, won: sim.won, goals: { ...sim.goalsDone }, best: sim.stats.bestChain, allTime: false, ...((j) => ({ gems: j.gems, gemTotal: j.gemTotal, gemsAll: j.gemsAll, secret: j.secret }))(stateOf(sim)) }
@@ -478,6 +541,9 @@ const GrindCityGame = () => {
             step(sim, input)
             tickEvents.push(...sim.events.splice(0, sim.events.length))
             checkEnd()
+            // #3470 waiting line — every 2 s of live skating leaves a fresh
+            // copy in the store, so closing the tab loses at most one lap.
+            if (screenRef.current === 'play' && ++saveCd >= 120) { saveCd = 0; savePending() }
             // bed scheduling rides the same fixed step — paused screens and the
             // over screen never reach simTick with a live board, so it stops itself
             if (++bedT % STEP === 0 && (screenRef.current === 'play' || screenRef.current === 'attract')) {
@@ -743,6 +809,13 @@ const GrindCityGame = () => {
                 press: (code) => { keysRef.current[code] = true },
                 release: (code) => { keysRef.current[code] = false },
                 start: () => startGame('run'),
+                // #3470 QA legs: pack/restore the live run, inspect + force the
+                // waiting-line store without waiting for the 2 s throttle.
+                snapshot: () => packRun(sim, inputLog),
+                restore: (p) => { resumeInto(p); return { ...stateOf(sim), hash: hashState(sim) } },
+                pending: () => pendingRun && { v: pendingRun.v, tick: pendingRun.tick, score: pendingRun.sim.score, letters: Object.keys(pendingRun.sim.letters).length },
+                forceSave: () => { savePending(); return !!pendingRun },
+                clearWait: () => clearPending(),
                 // DEV-only QA teleport (#3289 drive legs reach the coping/rail without
                 // burning 10 s of real skating; the verbs still fire through real keys)
                 teleport: (p) => { Object.assign(sim, p); sim.air = false },
@@ -779,6 +852,7 @@ const GrindCityGame = () => {
                     // #3381: forgetting is total — the all-time store, the chip
                     // marker, the guest line and the share code all go cold.
                     try { window.localStorage.removeItem(STORE_KEY) } catch { /* nothing to forget */ }
+                    clearPending()   // #3470: total forgetting includes the waiting line too
                     storedBank = null
                     allTimeV = false; setAllTime(false)
                     sharedMode = false; setSharedPts(null)
@@ -792,6 +866,11 @@ const GrindCityGame = () => {
                     return stateOf(sim)
                 },
                 tick: (p) => { simTick(p); return stateOf(sim) },
+                // #3470: the contract's mid-run state save — snapshot packs the
+                // plain sim + pad log, restore resumes the exact tick. One pack
+                // may be restored any number of times (#381 — unpackRun deep-copies).
+                snapshot: () => packRun(sim, inputLog),
+                restore: (p) => { resumeInto(p); return stateOf(sim) },
                 state: () => ({ ...stateOf(sim), seed: sim.seed, hash: hashState(sim), attract: attractMode, cam: camMode, replay: replayProgress(), sfxDuck: attractMode ? ATTRACT_SFX : 1, orbit: !!orbitOn, best: bestLine && { ...bestLine }, bestLog: bestLog.length, attractLine: attractMode && bestLog.length > 0, allTime: allTimeV, stored: storedBank ? storedBank.score : null, shared: sharedMode && sharedLine ? sharedLine.score : null, shareCode: lastShareCode, attractStyle: attractV, thinks: !!bot.thinks, nSearch: bot.nSearch || 0, nCommit: bot.nCommit || 0 }),
                 canvas: () => canvas,
             })
@@ -803,6 +882,8 @@ const GrindCityGame = () => {
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             canvas.removeEventListener('pointerdown', onPointer)
+            window.removeEventListener('pagehide', savePending)
+            document.removeEventListener('visibilitychange', onHide)
             unexposeFeedbackState()
             if (import.meta.env.DEV) { unmountDbg(); unexposeGame(); delete window.__grindTest }
             renderer.dispose()
@@ -877,6 +958,11 @@ const GrindCityGame = () => {
                             <span className={`rounded border px-3 py-1 ${mode === 'run' ? 'border-[#ffd35e] text-[#ffd35e]' : 'border-white/30 text-white/40'}`}>◀ RUN 01</span>
                             <span className={`rounded border px-3 py-1 ${mode === 'free' ? 'border-[#ffd35e] text-[#ffd35e]' : 'border-white/30 text-white/40'}`}>FREE SKATE ▶</span>
                         </div>
+                        {/* #3470 waiting line — a run left mid-page waits right here;
+                            R or tap continues it at the exact tick. */}
+                        {pendingV && (
+                            <span data-q="resume-line" onPointerDown={(e) => { e.stopPropagation(); if (hud.resumeFn.current) hud.resumeFn.current() }} className="pointer-events-auto mt-3 rounded border border-[#7dffb0]/60 bg-black/50 px-3 py-1 text-sm font-black italic tracking-[0.2em] text-[#7dffb0] drop-shadow-[0_2px_0_rgba(0,0,0,.9)] animate-pulse">LINE WAITS · {pendingV.sim.score} PTS — R / TAP</span>
+                        )}
                         <div className="mt-10"><AttractMessage messages={[...MESSAGES, PRESS]} /></div>
                     </div>
                 )}
