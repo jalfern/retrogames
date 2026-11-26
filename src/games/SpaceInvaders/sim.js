@@ -121,6 +121,11 @@ export const makeWorld = (rand, opts = {}) => {
         respawn: 0,
         overTick: 0,
         bonusLifeMult: Math.floor((opts.score || 0) / BONUS_LIFE_POINTS),
+        // #3573 — machine-step march clock: substep carry, monotonic step events
+        // (index.jsx lands the descending four on these ticks), drop count.
+        marchAcc: 0,
+        marchEvents: 0,
+        marchDrops: 0,
     }
     buildFormation(state)
     return state
@@ -145,9 +150,19 @@ export const buildFormation = (state) => {
     state.enemyBullets = []
     state.playerBullet = null
     state.ufo = null
+    state.marchAcc = 0 // #3573 — the rebuilt wall restarts its step phase centered
 }
 
 export const waveSpeed = (wave) => 0.8 + wave * 0.25
+// #3573 — the cabinet's granularity: the wall advances in integer 2px steps on
+// the interrupt-timer cadence, never a smooth slide. The pinned #3517 speed law
+// now sets how OFTEN a step fires (marchSpeed accumulates, whole steps are
+// released with the carry kept in marchAcc), while the step WIDTH stays the
+// machine's 2 px. Average speed is the law exactly; only the granularity moved.
+// Because the formation's x-geometry is all even (startX 26, pitch 16) and the
+// margins (4, GW-4-INVADER_W = 208) are even, whole 2px steps land the column
+// flush on the wall — then it drops and reverses on the same event (the jerk).
+export const MARCH_STEP = 2
 export const fireChance = (wave) => Math.min(0.02 + wave * 0.004, 0.05)
 
 export const activeCount = (s) => s.invaders.reduce((n, i) => n + (i.alive ? 1 : 0), 0)
@@ -349,18 +364,31 @@ export const step = (s, input, rand) => {
         return s
     }
     const sp = marchSpeed(s) // #3517 — full fleet crawls, thin fleet sprints
-    let hitEdge = false
-    for (const i of act) {
-        i.x += s.dir * sp
-        if (i.x <= 4 || i.x + INVADER_W >= GW - 4) hitEdge = true
-    }
-    if (hitEdge) {
-        s.dir *= -1
-        for (const i of act) i.y += 8
-        if (act.some((i) => i.y + INVADER_H >= PLAYER_Y)) {
-            // invaders reached the player line — the original ends the game
-            s.phase = 'over'
-            return s
+    // #3573 — release whole machine steps: the law owns the cadence (the carry
+    // in marchAcc keeps average px/tick exactly the #3517 law), the wall owns
+    // the 2px grid. At speed a single tick may release several steps — the
+    // cabinet's interrupt timer shortened past the frame the same way.
+    s.marchAcc += sp
+    const nSteps = Math.floor(s.marchAcc / MARCH_STEP)
+    if (nSteps > 0) {
+        s.marchAcc -= nSteps * MARCH_STEP
+        s.marchEvents += nSteps
+        // flush contact: the batch stops square on the margin, never past it
+        let room = Infinity
+        for (const i of act) room = Math.min(room, s.dir > 0 ? GW - 4 - INVADER_W - i.x : i.x - 4)
+        const want = nSteps * MARCH_STEP
+        const move = Math.min(want, room)
+        for (const i of act) i.x += s.dir * move
+        if (move < want || act.some((i) => i.x <= 4 || i.x + INVADER_W >= GW - 4)) {
+            // flush on the wall — drop and reverse on the same step event (the jerk)
+            s.dir *= -1
+            for (const i of act) i.y += 8
+            s.marchDrops++
+            if (act.some((i) => i.y + INVADER_H >= PLAYER_Y)) {
+                // invaders reached the player line — the original ends the game
+                s.phase = 'over'
+                return s
+            }
         }
     }
     // the fleet grinds the forts down as it descends (original overwrite)

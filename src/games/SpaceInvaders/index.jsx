@@ -197,6 +197,7 @@ const SpaceInvadersGame = () => {
         const MARCH_TONES = [110, 98, 87, 78] // the original's descending four
         let marchStep = 0
         let marchAt = 0
+        let prevMarchEvents = 0 // #3573 — the notes land ON the sim's march steps
         let warbleAt = 0
         let prevShot = false
         let lastKillTick = 0
@@ -255,6 +256,7 @@ const SpaceInvadersGame = () => {
             const shotNow = !!world.playerBullet
             if (shotNow && !prevShot) audioController.playTone(980, 0.04, 'square', 0.08)
             prevShot = shotNow
+            prevMarchEvents = world.marchEvents // #3573 — step-edge detection refreshes every tick
             // the descending four — #1906: the rate tracks the REMAINING fleet
             // (original march), so the last pair flutters at 3-tick steps; and a
             // saucer overhead replaces the march with its warble, like the arcade.
@@ -268,7 +270,12 @@ const SpaceInvadersGame = () => {
                     }
                 } else {
                     const interval = Math.max(3, Math.round(2 + n * 0.95))
-                    if (world.tick - marchAt >= interval) {
+                    // #3573 — one shared clock: the ∝n rate law still decides
+                    // WHEN, but a note only fires on a tick where the sim's
+                    // march actually stepped (the machine's sound and march
+                    // were the same loop — never a parallel metronome).
+                    const stepped = world.marchEvents > prevMarchEvents
+                    if (stepped && world.tick - marchAt >= interval) {
                         marchAt = world.tick
                         audioController.playTone(MARCH_TONES[marchStep % 4] * 0.5, 0.09, 'sawtooth', 0.04)
                         audioController.playTone(MARCH_TONES[marchStep % 4], 0.08, 'square', 0.05)
