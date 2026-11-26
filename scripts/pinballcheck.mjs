@@ -146,8 +146,8 @@ if (MUT) {
         // carries the spent mark, so the magnet reads armed and catches nothing.
         magrearm: {
             file: 'src/games/Pinball/sim.js',
-            from: '        for (const p of gs.pucks) if (!p.magHeld && p.magHoldT != null && p.magHoldT < 0) p.magHoldT = 0;',
-            to: '        for (const p of gs.pucks) if (p.magHoldT != null && p.magHoldT < 0) p.magHoldT = -1;',
+            from: 'for (const p of gs.pucks) if (!p.magHeld && p.magHoldT != null && p.magHoldT < 0) p.magHoldT = 0;',
+            to: 'for (const p of gs.pucks) if (!p.magHeld && p.magHoldT != null && p.magHoldT < 0) p.magHoldT = -1;',
             note: 're-arm leaves the spent marks on the balls still riding the table',
         },
         // ball search freezes game-wide again — a motionless ball off the post
