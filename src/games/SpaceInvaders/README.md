@@ -144,6 +144,13 @@ seed 1770 lands), re-aim 193, fold 686, HOLD 1651 (seed 1308 lands) — all
 still red, with the two new laws pinned by static lines and two new mutants
 (15/15 mutants die).
 
+**#3547 40-seed soak (not closed):** k = 0..39 (seeds 1000 + k*77), live sim,
+same witness walk — 40/40 clean, 0 deaths, no seed lands with lives left,
+slowest clear 1460 t (pin 1500), slowest stall 172 t (seed 3618, k = 34) —
+one fresh seed past the 150 pin the 20-seed witness never saw; seed 3156 (k =
+30) lands at 149. The double-alley case is NOT called closed — the stall is
+recorded here rather than silently loosening the pin or the gap line (#3547).
+
 ## Polish batch #1906 (2026-11-10)
 
 Mid-game feel, from the issue list (QA polish pass):
@@ -191,6 +198,14 @@ decay granularity rewires the proven route and needs its own session.
   an interrupt timer (and its drop was a wave-stepped row count, our drop is a
   flat 8px). The law's SHAPE — crawl at full strength, sprint at the end — is
   the fidelity target; the step granularity is not yet the machine's.
-- No 100-point bonus life; no tilt/coin mechanics; one UFO type.
+- **Bonus life (#3530):** one spare cannon per 100-point crossing, cap 5, with
+  its jingle and the BONUS stamp. The cabinet's dip-switched one-life-at-1000
+  headline is UNVERIFIED in-repo and never re-tuned silently — left to Jon
+  (#3547 open question). This line was stale: the spare cannon shipped after it
+  was written and the gap bullet was not updated.
+- No tilt/coin mechanics — browser-realistic coin / tilt is out of scope
+  (the cabinet's coin box is hardware, not a browser feature); one UFO type,
+  faithful to the cabinet (both decided by #3547's DO-NOT-FIX).
 - Sound is the synthesized descending four + effect blips (studio audio law);
-  the original's exact march waveform and the bonus-life jingle are absent.
+  the original's exact march waveform is absent (the bonus-life jingle IS
+  shipped — this line was stale too).
