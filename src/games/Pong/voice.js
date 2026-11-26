@@ -48,3 +48,10 @@ export function wallVoice() {
 export function scoreThud() {
     return { freq: 98, dur: 0.3, type: 'sawtooth', vol: 0.16, noise: { dur: 0.09, vol: 0.12 } }
 }
+
+// The rotary RANGE dial: one quiet ~5 ms square pip on the turn. Quieter than
+// the wall tick (weather → knob) — a knob is chrome, not a rally. One tone,
+// no echo; outside the serve/rally/wall/thud partition entirely (§voice pins it).
+export function detentVoice() {
+    return { freq: 210, dur: 0.005, type: 'square', vol: 0.028 }
+}

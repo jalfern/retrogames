@@ -7,7 +7,7 @@ import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { serveBall, tickPong, BASE_SPEED, PADDLE_HEIGHT, BALL_SIZE, DIFFS, RANGES } from './sim.js'
-import { rallyVoice, serveEcho, wallVoice, scoreThud } from './voice.js'
+import { rallyVoice, serveEcho, wallVoice, scoreThud, detentVoice } from './voice.js'
 import { drawBlockScore, drawBlockTitle, titleFit } from './numerals.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
@@ -98,11 +98,17 @@ const PongGame = () => {
         const cycleRange = (dir) => {
             rangeIdx = (rangeIdx + dir + RANGES.length) % RANGES.length
             state.range = rangeVal()
+            sfx('detent', detentVoice()) // #3576 — the knob answers its turn, quietly
         }
         cycleRangeRef.current = cycleRange
         let tickN = 0
         let hitN = 0
         let serveFlash = 0 // #3536 — net-dash ring ticks left on the served ball
+        // #3576 — the cap beat: on a winning point the table holds the dead ball
+        // one blink on the conceded edge (net-dash motif) BEFORE the card comes
+        // up. flashSide = the edge the match conceded (winner 1 → right, 2 → left).
+        let flashTicks = 0
+        let flashSide = null
         let isAttractMode = true
         const resetBall = () => {
             state.ball = serveBall(state.rand, state.width, state.height)
@@ -129,6 +135,8 @@ const PongGame = () => {
             release(false) // a fresh match starts under your own feet
             isAttractMode = false
             setScreen('play')
+            flashTicks = 0
+            flashSide = null
             resetBall()
         }
 
@@ -243,8 +251,13 @@ const PongGame = () => {
 
         const update = () => {
             tickN++
-            if (state.over) return
+            if (state.over && flashTicks <= 0) return
             if (serveFlash > 0) serveFlash--
+            if (flashTicks > 0) {
+                flashTicks--
+                if (flashTicks === 0) setScreen('over') // the card lands with the last blink
+                return
+            }
             const ev = tickPong(state, { up: keys.ArrowUp, down: keys.ArrowDown, up2: keys.KeyW, down2: keys.KeyS })
             if (ev.wall) sfx('wall', wallVoice())
             if (ev.hitL || ev.hitR) {
@@ -264,7 +277,8 @@ const PongGame = () => {
             // target you chose is not the falling saw of a quit (#1473).
             if (ev.winner) {
                 release(false)
-                setScreen('over')
+                flashTicks = 36 // one beat, ~0.6 s at 60 fps — the card waits for it
+                flashSide = ev.winner === 1 ? 'right' : 'left' // the edge the match conceded
                 sfx('win', { freq: 660, dur: 0.11, type: 'square', vol: 0.12 })
                 sfx('win', { freq: 880, dur: 0.16, type: 'square', vol: 0.12, delay: 0.12 })
             }
@@ -345,6 +359,31 @@ const PongGame = () => {
                 // table kept showing them.
                 drawBlockScore(ctx, state.width / 4, 10, state.left.score, 46, 'rgba(255, 255, 255, 0.42)')
                 drawBlockScore(ctx, 3 * state.width / 4, 10, state.right.score, 46, 'rgba(255, 255, 255, 0.42)')
+                // #3576 — the target, on the table for the whole match (not only on the
+                // over card): a small label + the block-face digit, top-center under the
+                // numeral band. The 1972 table had none of this chrome; this is QA honesty
+                // — the chip is the contract the match played, never a sixth seat.
+                if (state.range !== null && (!state.over || flashTicks > 0)) {
+                    ctx.font = '10px monospace'
+                    ctx.fillStyle = 'rgba(255, 210, 63, 0.55)'
+                    ctx.fillText('FIRST TO', state.width / 2, 66)
+                    drawBlockScore(ctx, state.width / 2, 70, state.range, 22, '#ffd23f')
+                }
+                // #3576 — the cap beat: the conceded edge blinks net-dash, one blink
+                // before the card lands (the win sting rings the same frame; the card
+                // is not drawn until flashTicks hits 0).
+                if (flashTicks > 0 && Math.floor(flashTicks / 6) % 2 === 0) {
+                    ctx.save()
+                    ctx.setLineDash([10, 15])
+                    ctx.lineWidth = 3
+                    ctx.strokeStyle = '#ffd23f'
+                    const fx = flashSide === 'right' ? state.width - 4 : 4
+                    ctx.beginPath()
+                    ctx.moveTo(fx, 0)
+                    ctx.lineTo(fx, state.height)
+                    ctx.stroke()
+                    ctx.restore()
+                }
                 if (state.diff === 'TWO') {
                     // #3502 — the second seat needs to know its keys.
                     ctx.font = '10px monospace'
@@ -365,7 +404,7 @@ const PongGame = () => {
                     ctx.stroke()
                     ctx.restore()
                 }
-                if (state.over) {
+                if (state.over && flashTicks <= 0) {
                     // #3506 — the quit card never lies: 2P reports the TRUE
                     // winner (or a tie), solo reports YOU WIN / YOU LOSE / TIED.
                     // #3536 — the card becomes cabinet: solid panel, net-dash
@@ -444,6 +483,8 @@ const PongGame = () => {
                 state.right.score = 0
                 state.over = false
                 hitN = 0
+                flashTicks = 0
+                flashSide = null
                 sfxLog.length = 0 // #3536 — the audio-spy leg reads one clean match per reset
                 release(false)
                 isAttractMode = false
@@ -454,7 +495,14 @@ const PongGame = () => {
                 if (state.width > 0) resetBall()
             },
             tick: (pad) => {
-                if (state.over) { tickN += 1; return }
+                if (state.over) {
+                    tickN += 1
+                    if (flashTicks > 0) {
+                        flashTicks--
+                        if (flashTicks === 0) setScreen('over')
+                    }
+                    return
+                }
                 keys.ArrowUp = !!pad.up
                 keys.ArrowDown = !!pad.down
                 update()
@@ -497,7 +545,10 @@ const PongGame = () => {
                     // #3529 — the touch-quit leg needs the UI screen without
                     // a keyboard: attract / play / over, mirrored from the
                     // effect-local flags (no stale useState in this closure).
-                    screen: isAttractMode ? 'attract' : (state.over ? 'over' : 'play'),
+                    screen: isAttractMode ? 'attract' : (state.over && flashTicks <= 0 ? 'over' : 'play'),
+                    // #3576 — the cap beat, observable for pongdrive's leg 9
+                    flashTicks,
+                    flashSide,
                 }),
                 // #3536 — the sound sequence + serve state, for pongdrive's
                 // audio-spy leg (what the player hears, in order).

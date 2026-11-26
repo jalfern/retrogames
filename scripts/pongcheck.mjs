@@ -27,8 +27,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, estWidth } from '../src/games/Pong/attract.js'
 import { serveBall, strikeSpin, SPIN_K, DY_MIN, stepBall, predictLand, tickPong, cpuTier, DIFFS, RANGES, BASE_SPEED, PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_OFFSET, BALL_SIZE } from '../src/games/Pong/sim.js'
-import { rallyVoice, serveEcho, wallVoice, scoreThud } from '../src/games/Pong/voice.js'
-import { digitSegments, digitRects, titleRects, titleFit } from '../src/games/Pong/numerals.js'
+import { rallyVoice, serveEcho, wallVoice, scoreThud, detentVoice } from '../src/games/Pong/voice.js'
+import { digitSegments, digitRects, titleRects, titleFit, drawBlockScore } from '../src/games/Pong/numerals.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -456,6 +456,13 @@ console.log('voice: the widened cabinet sound law (#3536)')
     const idx = readFileSync('src/games/Pong/index.jsx', 'utf8')
     ok(/rallyVoice\(/.test(idx) && /serveEcho\(/.test(idx) && /wallVoice\(/.test(idx) && /scoreThud\(/.test(idx),
         'the shell plays the widened vocabulary (not the old fixed tones)')
+    // #3576 — the RANGE knob answers its turn with one quiet pip.
+    const d = detentVoice()
+    ok(d.freq > 0 && d.dur > 0 && d.vol > 0 && d.type === 'square'
+        && d.dur <= 0.01 && d.vol < w.vol && d.freq > w.freq,
+        'the dial detent is one ~5 ms square pip — quieter than the wall, not a rally', `detent ${d.freq}/${d.dur}/${d.vol}`)
+    ok(/sfx\('detent'/.test(idx) && /detentVoice\(/.test(idx),
+        'the shell pips the RANGE knob on every dial turn (keyboard and thumb)')
     ok(!/playTone\(400, 0\.1, 'square'\)/.test(idx), 'the old one-tone-per-hit ping is gone')
 }
 
@@ -496,6 +503,21 @@ console.log('numerals: block video digits (#3536)')
     ok(fits, 'the word-mark fits the phone-width cabinet (242px measured)')
     const idx = readFileSync('src/games/Pong/index.jsx', 'utf8')
     ok(/drawBlockScore\(/.test(idx), 'the live score is drawn as block numerals')
+    // #3576 — the honest wrap: the video counter cycles 00–99 (the 1972
+    // counter could not lie either). 123 draws "23", not a clamped 99.
+    const drawRects = (n, h) => {
+        const calls = []
+        const stub = { fillStyle: '', fillRect: (x, y, w, hh) => calls.push([x, y, w, hh]) }
+        drawBlockScore(stub, 100, 10, n, h, 'x')
+        return calls
+    }
+    ok(JSON.stringify(drawRects(123, 40)) === JSON.stringify(drawRects(23, 40))
+        && JSON.stringify(drawRects(147, 40)) === JSON.stringify(drawRects(47, 40)),
+        'honest wrap: 123 draws 23 and 147 draws 47 (the 00–99 cycle)')
+    ok(JSON.stringify(drawRects(123, 40)) !== JSON.stringify(drawRects(99, 40)),
+        'and 123 is not mis-clamped to 99')
+    // A single-digit score and a two-digit score both center (layout never shifts)
+    ok(drawRects(0, 40).length > 0 && drawRects(9, 40).length > 0, '0 and 9 draw')
     ok(/drawBlockTitle\(/.test(idx) && /titleFit\(/.test(idx), 'the attract title is a fitted block word-mark')
 }
 
@@ -544,6 +566,14 @@ console.log('range: the selectable max-score knob (#3565)')
     ok(r1.wins === 20 && r1.deadServe === 0, 'range 1: the very first point ends the match honestly (20 seeds)', `wins ${r1.wins}, dead ${r1.deadServe}`)
     const r5 = sweep(5, 12)
     ok(r5.wins >= 11 && r5.deadServe === 0, 'range 5 terminates honestly too (the driver still owns the table)', `wins ${r5.wins}/12`)
+    const r7 = sweep(7, 60)
+    ok(r7.wins === 60 && r7.deadServe === 0, 'range 7: the driver wins ALL 60 seeds, every match ending at exactly 7', `wins ${r7.wins}, dead ${r7.deadServe}`)
+    ok(r7.con === 31, 'the range-7 sweep concedes exactly the measured 31 points (pinned)', `${r7.con}`)
+    ok(r7.worstT < 60 * 600, 'no range-7 match runs out the hour cap', `${r7.worstT}t`)
+    const r9 = sweep(9, 60)
+    ok(r9.wins === 60 && r9.deadServe === 0, 'range 9: the driver wins ALL 60 seeds, every match ending at exactly 9', `wins ${r9.wins}, dead ${r9.deadServe}`)
+    ok(r9.con === 44, 'the range-9 sweep concedes exactly the measured 44 points (pinned)', `${r9.con}`)
+    ok(r9.worstT < 60 * 600, 'no range-9 match runs out the hour cap', `${r9.worstT}t`)
     const one = (sd, r) => { const gs = mk(sd, r); let t = 0; while (!gs.over && t < 60 * 600) { tickPong(gs, null); t++ } return `${gs.left.score}-${gs.right.score}@${t}` }
     ok(one(888888, 3) === one(888888, 3), 'seed + range replay bit-identical')
     {
@@ -575,9 +605,9 @@ console.log('range: the selectable max-score knob (#3565)')
         // Half-width zones meeting at 50% swallowed the centre tap and the
         // nightly tapstartcheck went red.
         const zoneEdges = (cls) => {
-            const m = idx.match(new RegExp(`className="${cls}"[\\s\\S]{0,1400}?style=\\{\\{([^}]+)\\}\\}`))
+            const m = idx.match(new RegExp(`className="${cls}"[\s\S]{0,1400}?style=\{\{([^}]+)\}\}`))
             if (!m) return null
-            const g = (k) => { const mm = m[1].match(new RegExp(`${k}: '(\\d+(?:\\.\\d+)?)%'`)); return mm ? parseFloat(mm[1]) : null }
+            const g = (k) => { const mm = m[1].match(new RegExp(`${k}: '(\d+(?:\.\d+)?)%'`)); return mm ? parseFloat(mm[1]) : null }
             const l = g('left'), w = g('width')
             return l === null || w === null ? null : { l, r: l + w }
         }
@@ -588,6 +618,14 @@ console.log('range: the selectable max-score knob (#3565)')
         ok(pz && rz && pz.l <= 20 && pz.r >= 36 && rz.l <= 64 && rz.r >= 80,
             '#3584: the zones still cover their dial columns (labels at 28%/72% stay tappable)',
             JSON.stringify({ pz, rz }))
+        // #3576 polish pins — the chip, the flash beat, and the detent pip
+        // must not be gutted in the shell.
+        ok(/flashTicks/.test(idx) && /flashSide/.test(idx),
+            'the cap beat is wired (flashTicks countdown + conceded-side flashSide)')
+        ok(/FIRST TO \$\{state\.range\}/.test(idx) && /drawBlockScore\(ctx, state\.width \/ 2, 70, state\.range, 22, '#ffd23f'\)/.test(idx),
+            'the target chip renders during play (block-face N under the band)')
+        ok(/sfx\('detent', detentVoice\(\)\)/.test(idx),
+            'the RANGE dial answers a turn with a detent pip')
     }
 }
 
@@ -712,6 +750,10 @@ if (process.argv.includes('--mutant')) {
         ['FREE is misread as a cap (every point ends it)', S,
             `typeof gs.range === 'number'`,
             `gs.range !== undefined`],
+        // #3576 honest-wrap anchor — the clamp-to-99 lie must die here.
+        ['the honest wrap clamps to 99 (score 123 lies)', N,
+            `const s = String(((Math.round(n) % 100) + 100) % 100)`,
+            `const s = String(Math.min(99, Math.max(0, Math.round(n))))`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

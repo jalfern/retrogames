@@ -39,10 +39,12 @@ export function digitRects(d, h) {
     return { w, rects: r }
 }
 
-// A score (0–99) centered at cx, top at y. One digit below ten, two above —
-// the field centers like the port's fillText did, so layout never shifts.
+// A score centered at cx, top at y. One digit below ten, two above — the
+// field centers like the port's fillText did, so layout never shifts.
+// Honest wrap (#3576): a score past 99 cycles 00–99 like the 1972 video
+// counter did — never lies by pinning the digits to 99.
 export function drawBlockScore(ctx, cx, y, n, h, color) {
-    const s = String(Math.max(0, Math.min(99, Math.round(n))))
+    const s = String(((Math.round(n) % 100) + 100) % 100)
     const gap = Math.round(h * 0.18)
     const rects = [...s].map((d) => digitRects(Number(d), h))
     const total = rects.reduce((a, r) => a + r.w, 0) + gap * (rects.length - 1)
