@@ -553,6 +553,20 @@ try {
     ok('the SET announces itself and re-arms the spent left save (combo law live)',
         sawSetDmd === `JET LANE! +${price.set}` && !!setS && setS.kbLUsed === false,
         `"${sawSetDmd}" kbLUsed=${setS && setS.kbLUsed}`)
+    // #3451: the return off the flank must run down the outer channel and
+    // through the spinner zone. The same feed the SET check just proved is
+    // still in flight here — poll for the counter to rise, then stop. A
+    // wall-clock poll waits inside a window where no drain can happen (the
+    // feed is still live), so the counter it reads is the feed's, not a new
+    // ball's.
+    const spin0 = (await flankSt()).spinnerTurns
+    let spinS = null
+    for (let i = 0; i < 60; i++) {
+        await wait(40); spinS = await flankSt()
+        if (spinS.spinnerTurns > spin0) break
+    }
+    ok('JET LANE return: spinner turns rise (the feed returns through the spinner)',
+        !!spinS && spinS.spinnerTurns > spin0, `spinnerTurns ${spin0}→${spinS && spinS.spinnerTurns}`)
 
     ok('zero page errors through the whole drive', errors.length === 0, errors.join(';'))
 } finally {
