@@ -482,8 +482,13 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     ok(c.celebrate === 0, 'the celebration burns down and never hangs', `celebrate=${c.celebrate}`)
 
     // The hold-fire tell: the brain flags WHY it stayed quiet, and only then.
+    // Flat ground pins the rig out of the #3497 ridge escape — without it the
+    // hilly default rides the doomed-spike line and escGun re-raises the tell
+    // the mutant muted (survived mutant found in #3497); the tell must be
+    // proven where only the cruise line can answer.
     {
         const s = createSim({ rand: seedRng(11), height: 420 })
+        s.terrain = s.terrain.map(() => 380)
         s.enemies = [{ x: 500, y: 300, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
         s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
         const h = s.humans[0]
@@ -552,10 +557,12 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
 // column (|bx| < 18, kvy ±2…3) the horizontal laser cannot answer — so the
 // package now breaks the column (cruise dash, hold height) and the brace hop
 // covers the whole ±16 kill box, not a ±14 wish. Honest measure at this
-// commit: SURVIVED 20/20 + 20/20, banks min 43,500 + 35,850, waves
-// 20/20 + 20/20, rescues 56 + 42 catches, 55 + 39 deliveries, diedHauling
-// 1 + 3 (stage 3: 4 + 6; stage 2: 12 + 11), lives spent 21 + 15. The pilot
-// is still MORTAL: 36 honest GAME OVER-grazing lives across 40 runs, worst
+// commit (#3497 mid-horizon ridge law + L/R interlock, on top of #3503's
+// meteor storms): SURVIVED 20/20 + 20/20, banks min 26,900 + 15,550, waves
+// 20/20 + 20/20, rescues 54 + 51 catches, 52 + 47 deliveries, diedHauling
+// 2 + 4 (stage 4: 1 + 3; stage 3: 4 + 6; stage 2: 12 + 11), lives spent
+// 37 + 47, terrain deaths 1 + 3 (the #3456-s4 autopsy read 6 + 3). The pilot
+// is still MORTAL: 84 honest GAME OVER-grazing lives across 40 runs, worst
 // seed bleeds 3 — frozen grace caps a seed at 1 hit, so >= 3 is its own
 // immortality tripwire. The copy claim ("survives 20/20") is pinned here so
 // copy and witness cannot drift apart.
@@ -600,8 +607,13 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     ok(ho.minScore >= 8000, `untuned holdout banks >= 8,000 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
     ok(wi.waveSeeds >= 18, `>= 18/20 witness seeds clear a wave (${wi.waveSeeds}/20 — the last-hunter close-out ends waves instead of trailing them)`)
     ok(ho.waveSeeds >= 18, `>= 18/20 holdout seeds clear a wave (${ho.waveSeeds}/20)`)
-    ok(wi.catches >= 40 && wi.delivers >= 35, `rescue law under real fire: ${wi.catches} catches, ${wi.delivers} deliveries on the witness set`)
-    ok(ho.catches >= 40 && ho.delivers >= 35, `the untuned holdout rescues too: ${ho.catches} catches, ${ho.delivers} deliveries`)
+    // #3497 re-calibration: the ridge law + interlock route the patrol so the
+    // old 40/35 floors sat only 1 catch above the deleted-weighting mutant
+    // (41 + 43 catches with `d *= 0.25` for hauling landers removed — the
+    // b19 rank proof went blind). Measured clean 54 + 51, mutant 41 + 43:
+    // floors move to split them, law unchanged.
+    ok(wi.catches >= 48 && wi.delivers >= 46, `rescue law under real fire: ${wi.catches} catches, ${wi.delivers} deliveries on the witness set`)
+    ok(ho.catches >= 47 && ho.delivers >= 44, `the untuned holdout rescues too: ${ho.catches} catches, ${ho.delivers} deliveries`)
     // The copy claim and the witness are one law (#3456): README/registry may
     // claim survival ONLY while both sets are honestly 20/20.
     {
@@ -646,6 +658,7 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
     // line closer than the target holds the trigger.
     const sFF = createSim({ rand: seedRng(11), height: 420 })
     {
+        sFF.terrain = sFF.terrain.map(() => 380) // flat — same ridge-escape pin as the tell gate above
         sFF.enemies = [{ x: 480, y: 300, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
         sFF.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
         const h = sFF.humans[0]
@@ -719,6 +732,73 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
         const inp = watchRoute(s)
         ok(inp.up && !inp.down,
             'the brace hop band reaches 17 — the whole ±16 kill box gets an answer (a hunter at by 15 is dodged, not watched)', `up=${inp.up} down=${inp.down}`)
+    }
+    // #3497 mid-horizon ridge law: a spike with clear air past its far side —
+    // the canyon rule is blind to it (riseAhead reads the horizon END: 10 vs a
+    // gain of 115) and the climb margin is already holding `up`. When the
+    // brake+climb line still grinds the wireframe, the ridge law breaks the
+    // line. (Autopsy basis: every #3456-s4 terrain death pressed up at the
+    // killing tick — up wasn't the problem, the commit was.)
+    {
+        const s = createSim({ rand: seedRng(47), height: 420 })
+        s.terrain = s.terrain.map(() => 380)
+        ;[347, 315, 282, 250, 280, 310, 340, 370].forEach((v, i) => { s.terrain[21 + i] = v })
+        s.enemies = []
+        s.humans.forEach((h) => { h.state = 'dead' })
+        s.player.x = 200; s.player.y = 300; s.player.vx = 6; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.left && !inp.right && !inp.fire,
+            'a mid-horizon spike that out-climbs the brake line gets the line broken, horizon END be damned (canyon reads riseAhead 10)', `left=${inp.left} right=${inp.right}`)
+    }
+    // …and the shape that must NOT fire: a rise the climb can beat at cruise
+    // keeps its heading. The rejected max-rise rule turned off these and spent
+    // 48 lives; the ridge law races the hill instead and usually wins it.
+    {
+        const s = createSim({ rand: seedRng(49), height: 420 })
+        s.terrain = s.terrain.map(() => 380)
+        for (let i = 20; i <= 34; i++) s.terrain[i] = 380 - (i - 20) * 6
+        s.enemies = []
+        s.humans.forEach((h) => { h.state = 'dead' })
+        s.player.x = 200; s.player.y = 300; s.player.vx = 6; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(!inp.left && !inp.right,
+            'a climbable mid-horizon rise keeps its heading — the race is judged by achievable lift at arrival, not by height gained', `left=${inp.left} right=${inp.right}`)
+    }
+    // #3497 L/R interlock (the holdout's kill shape): braced close, the facing
+    // press IS the law — the dash cap demanding the OPPOSITE key cancels thrust
+    // to ~0 and parks the package in the ±16 kill box (holdout #6638 read
+    // left+right together at vx −4.2, kdx 2). Inside hop distance the cap
+    // yields to facing…
+    {
+        const s = createSim({ rand: seedRng(51), height: 420 })
+        s.terrain = s.terrain.map(() => 380)
+        s.enemies = [{ x: 265, y: 350, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        s.humans[0].state = 'carried'
+        s.carrying = 0
+        s.player.x = 200; s.player.y = 300; s.player.vx = 6; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.right && !inp.left,
+            'braced at huntD 5 facing right at vx 6, the dash cap YIELDS to the facing press — left+right together parks the package in the kill box', `left=${inp.left} right=${inp.right}`)
+    }
+    // …and ONLY inside hop distance: at huntD 80+ the cap still brakes the
+    // dash (v1 of this interlock yielded on ANY facing press and re-scattered
+    // the brace timing, minScore 35,850→20,200 — the gate pins the boundary).
+    {
+        const s = createSim({ rand: seedRng(53), height: 420 })
+        s.terrain = s.terrain.map(() => 380)
+        s.enemies = [{ x: 340, y: 350, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        s.humans[0].state = 'carried'
+        s.carrying = 0
+        s.player.x = 200; s.player.y = 300; s.player.vx = 6; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.right && inp.left,
+            'outside hop distance (huntD 80) the cap keeps braking the dash while facing — the yield is the hop band, not the whole brace', `left=${inp.left} right=${inp.right}`)
     }
     // The 1981 endgame rule, tested directly: with the wave's landers gone the
     // surviving mutants run hotter than MUTANT_SPEED — and the transition fires
@@ -1186,6 +1266,12 @@ if (process.argv.includes('--mutant')) {
         ['the patrol stops lifting off the wireframe (b21 crash-law sentinel)', S,
             `    if (climbing) input.up = true`,
             `    if (false) input.up = true`],
+        ['#3497 mid-horizon ridges go blind again (end-point-only canyon restored)', S,
+            `            if (groundAt(s.terrain, p.x + dir * travelled) - sy < 10) { doomed = true; break }`,
+            `            if (false) { doomed = true; break }`],
+        ['#3497 L/R interlock unplugged (the dash cap outranks the facing press again)', S,
+            `        } else if (!(facingLive && huntD < 80)) {`,
+            `        } else if (true) {`],
         ['#1907 lander pops lose their green', S,
             `killFx(e.x, e.y, 10, '#3dff5e') // the arcade's green lander pop (#1907)`,
             `killFx(e.x, e.y, 10, '#ffffff')`],

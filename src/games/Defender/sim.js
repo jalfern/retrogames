@@ -248,6 +248,42 @@ export const watchRoute = (s) => {
     const climbGain = Math.min(8 * tRemain, 0.25 * tRemain * tRemain) * 0.8
     const riseAhead = groundAt(s.terrain, p.x) - groundAt(s.terrain, p.x + dir * look)
     const canyon = climbing && riseAhead > climbGain + 12
+    // Mid-horizon ridge law (#3497): the canyon rule judges the horizon's END, so a
+    // spike with clear air past it never fires — and every terrain death in the stage-4
+    // autopsy (witness 6 + holdout 3, none of them hauling) reads the same: `up` was
+    // HELD at the killing tick (vy down to −4.9) while the ridge gained faster than the
+    // climb could buy. The race is decided by speed, not distance, so run the race:
+    // project this hull BRAKING AND CLIMBING (the escape both presses at once — braking
+    // lengthens the arrival time so ridges out-climbed at cruise pass under the climb,
+    // and the horizon shrinks with the speed until the law releases by itself) and fire
+    // only when even that best line grinds the wireframe inside the horizon. Slope
+    // thresholds were measured first and rejected: they stole the haul (diedHauling
+    // 1→6) and turned off climbable hills, the max-rise rule's 36→48 shape again.
+    // Cruise-only — the package has its own brace laws below.
+    if (climbing && !canyon && s.carrying === null) {
+        let sy = p.y
+        let svy = p.vy
+        let svx = Math.abs(p.vx)
+        let travelled = 0
+        let doomed = false
+        for (let t = 0; t < 40 && travelled < Math.min(look, 90); t++) {
+            svy = Math.max(-8, (svy - 0.5) * 0.95)
+            svx = Math.max(0, svx - 0.5) * 0.98
+            sy += svy
+            travelled += svx
+            if (groundAt(s.terrain, p.x + dir * travelled) - sy < 10) { doomed = true; break }
+        }
+        if (doomed) {
+            if (p.vx >= 0) input.left = true; else input.right = true
+            // The gun stays live through the maneuver (#3456 architecture: the
+            // flat-line law is independent of the steering job) — an escape from
+            // the wireframe never muzzles the fighter.
+            const escGun = lineGun(s, p)
+            if (escGun.hold) input.holdTell = true
+            if (escGun.gun) input.fire = true
+            return input
+        }
+    }
     if (canyon) { if (p.vx >= 0) input.left = true; else input.right = true; return input }
     // Pulsed descent law: no branch free-falls past a gentle gait, and nothing
     // dives inside the near-ground zone (the elevator auto-delivers at clearance
@@ -323,6 +359,7 @@ export const watchRoute = (s) => {
         // The elevator is no blind spot (#3456): too close at delivery height
         // aborts the drop to cruise band rather than trading the haul for a
         // hull; the resume happens next tick once the threat clears.
+        let facingLive = false
         if (hunt && huntD < 120 && Math.abs(hunt.by) < 46 && clrNow < 70) {
             input.up = true
             input.down = false
@@ -331,8 +368,8 @@ export const watchRoute = (s) => {
             // approach walks into the 20/tick laser, hop off the kill band when
             // it comes level, and keep the seat line — the delivery resumes the
             // tick the lane clears.
-            if (hunt.bx > 0) input.right = true
-            else if (hunt.bx < 0) input.left = true
+            if (hunt.bx > 0) { input.right = true; facingLive = true }
+            else if (hunt.bx < 0) { input.left = true; facingLive = true }
             if (huntD < 80 && Math.abs(hunt.by) < 17) {
                 if (hunt.by >= 0 || clrNow < 100) input.up = true
                 else if (canDown) input.down = true
@@ -344,10 +381,19 @@ export const watchRoute = (s) => {
         }
         // Station-keeping: brake into the hover only while the airspace is
         // clear; braced, cap the dash instead of pinning the hull still.
+        // L/R interlock (#3497, the holdout's kill shape): the cap yields
+        // while a facing press is live inside hop distance — demanding the
+        // OPPOSITE key there cancels thrust to ~0 and parks the package in
+        // the ±16 kill box (holdout #6638 read left+right together at
+        // vx −4.2, kdx 2). The dash INTO the laser line is the weapon
+        // (mutants track at 2.4); braking at point-blank hands over the
+        // kill. v1 yielded on any live facing press and re-scattered the
+        // brace timing (minScore 35,850→20,200) — the <80 gate keeps the
+        // cap everywhere the hop band hasn't committed.
         if (!hunt || huntD > 120) {
             if (p.vx > 1.2) input.left = true
             else if (p.vx < -1.2) input.right = true
-        } else {
+        } else if (!(facingLive && huntD < 80)) {
             if (p.vx > 4) input.left = true
             else if (p.vx < -4) input.right = true
         }
