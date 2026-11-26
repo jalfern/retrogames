@@ -13,6 +13,9 @@
 // scatter plus a steep serve outruns the 6px/tick paddle there for EVERY
 // policy tested (center, ball-track, through-opponent); the machine is not
 // unbeatable, the seed just is.
+// #3502 — the cabinet AUTO/RANGE switches: §tiers pins the EASY/NORMAL/HARD
+// CPU tiers (measured sweeps 40/39/38) + the human 2P seat, and proves the
+// default pick replays the pre-#3502 physics bit-identical.
 // `--mutate` re-plants the broken behaviours in attract.js; the child MUST die.
 // `--mutant` re-plants pre-port seedpin regressions + driver guttings in
 // sim/index; same rule.

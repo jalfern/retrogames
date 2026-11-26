@@ -205,6 +205,7 @@
     "homebodydrive": "node scripts/homebodydrive.mjs",
     "pacmancheck": "node scripts/pacmancheck.mjs",
     "pongcheck": "node scripts/pongcheck.mjs",
+    "pongdrive": "node scripts/pongdrive.mjs",
     "asteroidscheck": "node scripts/asteroidscheck.mjs",
     "kongcheck": "node scripts/kongcheck.mjs",
     "centipedechek": "node scripts/centipedechek.mjs",
