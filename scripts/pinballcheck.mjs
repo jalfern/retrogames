@@ -388,7 +388,7 @@ const setBall = (gs, x, y, vx, vy) => { gs.bx = x; gs.by = y; gs.vx = vx; gs.vy 
     r.check('a fast feed ticks the SPINNER xN ladder one rung per turn',
         ladder.length >= 2 && ladder[0] === 1 && ladder[ladder.length - 1] >= 2, ladder.join(','))
     r.check('spinner events carry the feed speed (v) so the flash can grade with it',
-        vs.length >= 2 && vs.every((v) => v > 400), vs.map((v) => v.toFixed(0)).join(','))
+        vs.length >= 2 && vs.every((v) => v > 400), vs.map((v) => (v == null ? 'none' : v.toFixed(0))).join(','))
 }
 {
     const gs = makeGame(58); gs.launched = true
