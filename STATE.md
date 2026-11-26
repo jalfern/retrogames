@@ -1,68 +1,68 @@
-# STATE — forge board snapshot (slot a, 2026-11-26 — DEFENDER'S PLANET WAKES UP, #3456 stage 2)
+# STATE — forge board snapshot (slot b, 2026-11-26 — GRIND CITY WAITING LINE SHIPPED; #3470 → PR #3474)
 
-## This session — a fidelity bug bigger than the arc it served
-- Warden TARGET #3456 claimed (resume: stage 1 landed mid-session as 787b1b4 via
-  #3465 — merged 05:35Z while I tuned; worktree cleanup detached it, repaired,
-  branch continued). Slot-a's own report from last session read from
-  /tmp/forge/STATE.a.parked.md (statepark verified).
-- MAIN CHECKOUT CORPSE: the #3453 wrap-seam work (defendercheck+sim+README) sat
-  uncommitted in ~/Dev/retrogames at session start (QA-mini's, mtimes fresh).
-  Named on #3453 with the new consequence: `git checkout --detach origin/main`
-  now REFUSES there (git protecting it). Slot a committed/stashed/reverted
-  nothing. QA landed it as c7138a2 (#3466) during this session — corpse resolved
-  by its owner.
-- **THE FIND:** `hunt`-state mutants NEVER integrated position (movement block is
-  lander-only). Mutants were STATUES since the port while the README swore
-  "chases you". Fixed (#3472). Every seasons-long "mutant kill" was flying into a
-  fixture; WITNESS ever measured a half-dead planet.
+## This session — shipped a game-code stage after TARGET refused
+- TARGET #3456 REFUSED at claim (`held by a, newest comment 16 min`) — slot a's
+  live arc. Normal ladder: steer 0 · `next` #1712 waiting-jon (skip) · game-queue
+  = #3456 (slot a) · free feedback = none claimable (QA-borrow blocked, 2 live
+  `QA MASTER` sessions) · flagship stage spent (six READMEs gap-free) → NEVER-DRY:
+  `idle-kick` = `KICK GRIND CITY 0 weak` (Pinball score 5 now HELD by QA #3461/
+  #3468; GrindCity's sole unmarked #391 gap scored 1).
+- **Built it (#3470 → PR #3474, merged 3466f69):** GRIND CITY **waiting line** —
+  a live run auto-saves (~2 s + `pagehide`) to `grindcity.run.v1`; the attract
+  offers `LINE WAITS · {pts} PTS — R / TAP` and resumes the exact tick with
+  score/letters/gems/chain/clock intact (sim pure + seeded → same ride, not a
+  replay). Contract `snapshot()`/`restore(s)` wired (GAME-SHELL #381 double law,
+  now enforced by contractcheck); strict `validRun` (schema==makeGame, phase play,
+  log==tick, pads 0..63, RUN_MAX cap; bump `RUN_V` on shape change). Found en
+  route: `step()` grew an undeclared `airVXZ` scratch field — declared in
+  `makeGame` (falsy-safe, behavior-identical).
+- Proof: grindcheck ALL GREEN + 4 new mutants (`restore`, `unpackclone`, `valid`,
+  `runwire`) 27/27 · contractcheck grind-city 15/15 · NEW `npm run grindlinedrive`
+  11/11 in real Chrome (skate → reload → visible chip → real `R` → resumes) ·
+  lint gates + build green · prod verified (chunk GrindCity-D_1DY9-T.js carries
+  `grindcity.run.v1` + `LINE WAITS`). Live: https://jalfern.com/retrogames/grind-city
+- Polish pass filed for QA: **#3476** (expiry/timestamp, RUN_MAX vs SHARE_MAX
+  cap mismatch, resume confirmation, pause-save gate, 390 px + Safari-private
+  touch legs, `?` overlay copy). It re-arms GrindCity on the weakest board by
+  design — real next work, not a phantom.
 
-## Stage 2 shipped on the branch (PR #3472, Part of #3456)
-- Route: sink+terrain-rise climb margins, canyon turn, U/D interlock + pulsed
-  descents, valley delivery veto, hover-kill, fresh-facing gate (haulers EXEMPT —
-  rescue law outranks the duel, law-test pins it), turn-and-brace vs astern
-  hunters, crossfire bail (guns independent of target), cargo-lift,
-  hauler-outranks-brace.
-- Honest vs REAL hunters: survived 19+16/20 (baseline 0+1), banks 9650/5950,
-  waves 20+20, catches 49+47, delivers 37+36. Terrain deaths 48+49 -> 2+4.
-  diedHauling 12+11 = the NEXT gap (stage 3 brief).
-- WITNESS re-pinned per issue item 3: banks >=6000/4000, waves >=15, rescues
-  >=25/20, mortality tripwire FLIPPED overs>=15 -> overs<=5 && livesLost>=20
-  (survival progress breaks the old form by design; zero deaths stays the bug).
-  Copy claim "patrol survives" stays RETIRED until both sets 20/20 honestly.
-- Gates: defendercheck 128/0, lint mario/fps/ai, build, defenderplay 17/17
-  (one flake: dead-state bomb suppression timing — rerun clean once per law).
+## BOARD notes
+- #3456 stays open (`game-queue`) — slot a shipped stage 1 (#3465) and the
+  mutants-were-statues fix (#3472); the survival arc has more stages. Its lock
+  is comment-liveness; a claim by b after slot a goes quiet should succeed.
+- The #391 "sim holds functions" claim was stale — verified plain-JSON sim
+  (correction shipped in the README's CLOSED marker).
 
 ## PLAYABLE on main right now
-- `/retrogames/defender` — stage 1 watchmeasure lands after #3465; mutants begin
-  honestly hunting the moment #3472 merges. Plus prior shelf: pinball chain-pin,
-  skyward spectate, asteroid clamp, tidal-rush, ssx, comet-drift, marble pair,
+- `/retrogames/grind-city` — NEW: a run now outlives the page (waiting line).
+  Plus prior shelf: defender (smart bomb + mortal grace), pinball chain-pin +
+  flank + smith, skyward rooms, tidal-rush, ssx, comet-drift pair, marble pair,
   galaga bee, mario-kart, ice-climber, pacman, mario, minesweeper/garden-guard/
   homebody, TIDY BOT, STARRY NIGHT, TOP SOLDIERS, DOUBLE DRAGON, RACCOON HEIST,
   spy-hunter, iron keep, missile, pucks, mines, zork, ultima, king's quest,
   Joust, Q*bert, adventure, forge board.
 
-## Board watch (facts)
-- #3456 OPEN after #3472 (multistage, Part of): stage 3 = diedHauling (elevators
-  get hunted; 12+11) + the last-hunter endgame + survival copy claim when 20/20.
-  Post that brief on the issue at merge verify.
-- Slot b live this session (omlxtapb); QA-mini/QA-studio live; #3453 shipped by
-  its owner mid-session. My :5173 dev server stopped at close via devstop.sh.
-- WITNESS pins are DETERMINISTIC floors, now much higher — any future route
-  regression shows in red with names, not vibes.
+## Board facts at close
+- game-queue = #3456 (slot a's arc); `next` #1712 waiting-jon; building = 0
+  open; feedback = 7 open (6 QA-owned/waiting + new #3476); flagship shelf
+  gap-free; never-dry re-aims at GrindCity #3476 (named) / wherever the score
+  lands after this merge.
+- Rule-4: slot b SHIPPED game code this session (#3474). Slot a shipped #3465/
+  #3472/#3475 earlier tonight. No STALLED.
 
 ## Open questions (links only — #605)
-- #3335 — QA: music-bus low-pass (AWAITING, qa lane — not mine).
-- #3054 — native TestFlight recorder (AWAITING).
-- #1712 — PLAICRAFT S2 versioned dataset (waiting-jon).
-- No new jonq questions this session (statue fix + re-pin were measurement, not
-  taste; the arc continues on the board).
+- #3335 — QA: music-bus low-pass in AudioController (AWAITING, qa lane, deadline
+  Nov 27; gates PINBALL tilt-muffle — do NOT implement until answered/defaulted).
+- #3054 — native TestFlight ports have no recorder/upload (AWAITING).
+- #2971 — qa(contra): trainable-adapter polish pass (waiting-jon).
+- #1712 — PLAICRAFT S2 — versioned dataset from human recordings (big-build).
+- No new jonq questions — the line-age question is taste-but-reversible polish,
+  filed to QA (#3476 item 1), not worth a deadline.
 
 ## Slot state at handoff
-- #3472 MERGED (79482be) — prod verified (deployed bundle embeds the merge sha;
-  Vercel success on 79482be). #3456 relabeled `game-queue` with the stage 3
-  brief posted; survival copy claim stays retired until 20 + 20 honest.
-- STATE ships via docs/state PR (game merged this session); lane worktree detached
-  clean at origin/main; slot-a dev :5173 stopped via scripts/devstop.sh.
-- #1430 note: slot b's step-1 reverted my STATE.md in the shared main checkout
-  mid-closeout; the slot-scoped park is what saved the report — its first-run
-  hazard documented, this is the shape it protects against.
+- Slot b dev server: stopped via scripts/devstop.sh (port 5178) at close;
+  worktree ~/Dev/retrogames-forge-grindcity-line-save removed after ship.
+- Main checkout: detached at origin/main, clean (STATE.md rides the docs PR —
+  a game merged this session, so the report is committed, slot-a precedent
+  #3475).
+- Time-box: ~2h of 3h used.
