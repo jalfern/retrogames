@@ -32,6 +32,10 @@ export const WORLD_WIDTH = 4000
 export const HUMAN_COUNT = 5
 export const LANDER_SPEED = 0.9      // descend/ascend pace, px per tick
 export const MUTANT_SPEED = 2.4
+// #3456 stage 3 — the 1981 endgame rule: when the wave's last LANDER dies, the
+// surviving mutants speed up (the cabinet's "speeders"). The wave never ends
+// quietly; the duel gets faster.
+export const SPEEDER_SPEED = 3.0
 export const WALK_SPEED = 0.3
 
 // Arcade score table: lander 150, mutant 1500, falling human caught 250,
@@ -148,11 +152,41 @@ export const humansAlive = (humans) => humans.filter((h) => h.state !== 'dead').
 // banks >= 9,650 + 5,950, clears waves on every seed and rescues 49 + 47.
 // The copy claim "the patrol survives" stays retired until both sets are 20/20
 // honestly. Any input takes over, and the seat releases with the run.
+// The flat-line gun law (#3456 stage 3, factored so the HAUL can use it too):
+// anything legally shootable down this level line takes the shot — nearest
+// first — and a walking human closer than the target vetoes the line (the
+// arcade friendly-fire law runs both ways). Returns { gun, hold } so the
+// held-trigger tell travels with the veto wherever the route is working.
+const lineGun = (s, p) => {
+    let gunD = Infinity
+    let gun = false
+    let hold = false
+    for (const e of s.enemies) {
+        const ex = wrapDelta(e.x - p.x)
+        if (ex === 0 || Math.abs(ex) > 560 || Math.sign(ex) !== p.facing) continue
+        if (Math.abs(e.y - p.y) >= 15) continue
+        let blocked = false
+        for (const h of s.humans) {
+            if (h.state !== 'walk') continue
+            const hd = wrapDelta(h.x - p.x)
+            if ((hd === 0 ? p.facing : Math.sign(hd)) === Math.sign(ex) && Math.abs(hd) < Math.abs(ex) + 8 && Math.abs(h.y - p.y) < 10) blocked = true
+        }
+        if (blocked) { hold = true; continue }
+        if (Math.abs(ex) < gunD) { gunD = Math.abs(ex); gun = true }
+    }
+    return { gun, hold }
+}
+
 export const watchRoute = (s) => {
     const input = { left: false, right: false, up: false, down: false, fire: false }
     const p = s.player
     if (s.over || p.dark > 0) return input
     const dir = p.vx >= 0 ? 1 : -1
+    // The endgame shape (#3456 stage 3): the wave's landers are all dead and
+    // the surviving mutants run hot (SPEEDER_SPEED). Fleeing at cruise no
+    // longer outlasts the last hunter — the route must fight the duel instead
+    // of trailing it, and the wave can only close by killing.
+    const onlyMutants = s.enemies.length > 0 && s.enemies.every(e => e.type === 'mutant')
     // Terrain seat (#3456 stage 2): the look-ahead horizon scales with speed AND
     // with arrest distance — pressing up only buys ~0.5/tick of lift while inertia
     // keeps sinking ~2.7×vy, so the margin must cover the SINK, not the climb rate
@@ -193,17 +227,58 @@ export const watchRoute = (s) => {
         for (let d = 14; d <= 60 + Math.abs(p.vx) * 12; d += 14) {
             if (groundAt(s.terrain, p.x + dir * d) - p.y < 8 + sink) { riseAhead = true; break }
         }
-        if (p.y > seat + 2) input.up = true
-        else if (elevatorD && !climbing && !riseAhead && p.y < seat - 2) input.down = true
-        // The elevator is no blind spot (#3456): a hunter entering the package's
-        // airspace aborts the drop to cruise band rather than trading the haul
-        // for a hull; the resume happens next tick once the threat clears.
-        const dangerNear = s.enemies.some(e => Math.abs(wrapDelta(e.x - p.x)) < 120 && Math.abs(e.y - p.y) < 46)
-        if (dangerNear && clrNow < 70) { input.up = true; input.down = false }
-        else if (p.y > seat + 2) input.up = true
-        else if (elevatorD && !climbing && !riseAhead && p.y < seat - 2) input.down = true
-        if (p.vx > 1.2) input.left = true
-        else if (p.vx < -1.2) input.right = true
+        // Guns live during the haul (#3456 stage 3): the arcade fighter never
+        // muzzles its cargo. The same flat-line law and friendly-fire veto that
+        // guard the cruise apply at the elevator — ±1.2 px/tick of brake never
+        // outran a 2.4 cap anyway; diedHauling (12 + 11) was the package being
+        // hunted by a route that could neither flee nor answer.
+        const haulGun = lineGun(s, p)
+        if (haulGun.hold) input.holdTell = true
+        if (haulGun.gun) input.fire = true
+        // Nearest hostile in the package's airspace — with the same momentum
+        // law (#3456 stage 3): read the fighter's projected position too, so
+        // the brace starts before a dash commits the package into the hunter.
+        let hunt = null
+        let huntD = Infinity
+        const hx = ((p.x + p.vx * 10) % WORLD_WIDTH + WORLD_WIDTH) % WORLD_WIDTH
+        const hy = p.y + p.vy * 6
+        for (const e of s.enemies) {
+            const bx = Math.min(Math.abs(wrapDelta(e.x - p.x)), Math.abs(wrapDelta(e.x - hx)))
+            const by = Math.min(Math.abs(e.y - p.y), Math.abs(e.y - hy))
+            if (bx > 170 || by > 70) continue
+            if (bx < huntD) { huntD = bx; hunt = { bx: wrapDelta(e.x - p.x), by: e.y - p.y } }
+        }
+        // The elevator is no blind spot (#3456): too close at delivery height
+        // aborts the drop to cruise band rather than trading the haul for a
+        // hull; the resume happens next tick once the threat clears.
+        if (hunt && huntD < 120 && Math.abs(hunt.by) < 46 && clrNow < 70) {
+            input.up = true
+            input.down = false
+        } else if (hunt) {
+            // Turn-and-brace WITH the package: flip toward the hunter so its own
+            // approach walks into the 20/tick laser, hop off the kill band when
+            // it comes level, and keep the seat line — the delivery resumes the
+            // tick the lane clears.
+            if (hunt.bx > 0) input.right = true
+            else if (hunt.bx < 0) input.left = true
+            if (huntD < 80 && Math.abs(hunt.by) < 14) {
+                if (hunt.by >= 0 || clrNow < 100) input.up = true
+                else if (canDown) input.down = true
+            } else if (p.y > seat + 2) input.up = true
+            else if (elevatorD && !climbing && !riseAhead && p.y < seat - 2) input.down = true
+        } else {
+            if (p.y > seat + 2) input.up = true
+            else if (elevatorD && !climbing && !riseAhead && p.y < seat - 2) input.down = true
+        }
+        // Station-keeping: brake into the hover only while the airspace is
+        // clear; braced, cap the dash instead of pinning the hull still.
+        if (!hunt || huntD > 120) {
+            if (p.vx > 1.2) input.left = true
+            else if (p.vx < -1.2) input.right = true
+        } else {
+            if (p.vx > 4) input.left = true
+            else if (p.vx < -4) input.right = true
+        }
         if (input.up && input.down) input.down = false
         return input
     }
@@ -247,7 +322,9 @@ export const watchRoute = (s) => {
         const edx = wrapDelta(e.x - p.x)
         const eface = edx === 0 ? p.facing : Math.sign(edx)
         // A hauler is never demoted by the facing gate — the rescue job outranks
-        // the sweep risk (the planet's own law, pinned in defendercheck).
+        // the sweep risk (the planet's own law, pinned in defendercheck). Nor is
+        // anything in the speeder endgame: with only hunters left, EVERY target
+        // is the duel and the tax would have the route fly with its back turned.
         if (eface !== p.facing && !(e.type === 'lander' && e.carry !== null)) d *= 3.5
         if (d < bestD) { bestD = d; best = e }
     }
@@ -272,10 +349,20 @@ export const watchRoute = (s) => {
         // shake or kill the last hunter. Facing it makes its own approach close
         // the duel at 2.4 while the laser (20/tick, and the guns are already
         // level-aligned) wins the range war; vertical dodge stays live under it.
+        // A hostile on the side the nose does NOT point at (#3456 stage 3,
+        // re-keyed from velocity to FACING — the death taxonomy showed 123/151
+        // witness contacts landing while the hull faced away from the killer):
+        // that hunter gets FACED. Its own closing speed walks it into the
+        // 20/tick laser, the wave actually ends, and braked drift no longer
+        // presents a free back to anything astern. Vertical: match its altitude
+        // with room, hop off the line if it arrives level before the gun can.
         let rear = null
         let rearD = Infinity
         for (const e of s.enemies) {
             const bx = wrapDelta(e.x - p.x)
+            // In the speeder endgame the duel is whatever the nose does not
+            // point at; otherwise stage 2's velocity-key (an astern chaser of a
+            // fleeing hull) stands.
             const onRear = p.vx >= 0 ? bx < -8 : bx > 8
             if (onRear && Math.abs(bx) < 150 && Math.abs(e.y - p.y) < 40 && Math.abs(bx) < rearD) { rearD = Math.abs(bx); rear = e }
         }
@@ -291,12 +378,24 @@ export const watchRoute = (s) => {
         // Crossfire bail (#3456): anything already inside the outer band is
         // dodged out of the kill band VERTICALLY, whatever the target list says —
         // mutants match horizontal speed, but few vertical sprints. Autopsy: the
-        // route kept dying at dy +9..14 with its guns aimed elsewhere.
+        // route kept dying at dy +9..14 with its guns aimed elsewhere. Stage 3
+        // widens the band (90/34): the failing seeds died at dy 18–30 with the
+        // general aim still steering the hull TOWARD the hunter one axis while
+        // it closed on the other — bail starts before the aim can deliver it.
         let close = null
         let closeD = Infinity
+        // Stage 3 momentum law: the band reads the ship's PROJECTED position
+        // (10 ticks of velocity ahead), not just its foot. Every stage-3
+        // autopsy death was momentum — a dash or vy built by the aim/flight of
+        // earlier ticks carrying the hull into a threat the escape already
+        // "saw"; a memoryless brain that only reacts at contact distance can
+        // never null 8 px/tick in 20 px. Reading ahead is the fix.
+        const qx = ((p.x + p.vx * 10) % WORLD_WIDTH + WORLD_WIDTH) % WORLD_WIDTH
+        const qy = p.y + p.vy * 6
         for (const e of s.enemies) {
-            const ex = Math.abs(wrapDelta(e.x - p.x))
-            if (ex < 70 && Math.abs(e.y - p.y) < 24 && ex < closeD) { closeD = ex; close = e }
+            const ex = Math.min(Math.abs(wrapDelta(e.x - p.x)), Math.abs(wrapDelta(e.x - qx)))
+            const ey = Math.min(Math.abs(e.y - p.y), Math.abs(e.y - qy))
+            if (ex < 90 && ey < 34 && ex < closeD) { closeD = ex; close = e }
         }
         if (close) {
             // Flee the hug in BOTH axes at cruise (> the mutant's 2.4 cap) —
@@ -322,10 +421,20 @@ export const watchRoute = (s) => {
             else if (dy < -12) input.up = true
         } else if (chaserBehind) {
             const rr = Math.sign(wrapDelta(rear.x - p.x))
-            if (p.vx * rr > -1.4) { if (rr > 0) input.right = true; else input.left = true }
-            const ry = rear.y - p.y
-            if (canDown && ry > 10) input.down = true
-            else if (ry < -10) input.up = true
+            if (onlyMutants && s.enemies.length === 1 && rearD > 90 && Math.abs(rear.y - p.y) < 12) {
+                // Last-hunter endgame (#3456 stage 3): with the wave's landers
+                // gone, trailing the survivor past the horizon never closes it.
+                // When it is ALREADY level (the gun will fire the tick the nose
+                // comes around) and at clean range, flip and let its approach
+                // walk into the laser — a bounded, shootable duel, not a trade.
+                if (rr > 0) input.right = true
+                else input.left = true
+            } else {
+                if (p.vx * rr > -1.4) { if (rr > 0) input.right = true; else input.left = true }
+                const ry = rear.y - p.y
+                if (canDown && ry > 10) input.down = true
+                else if (ry < -10) input.up = true
+            }
         } else if (hover) {
             if (p.vx > 2.2) input.left = true
             else if (p.vx < -2.2) input.right = true
@@ -333,8 +442,18 @@ export const watchRoute = (s) => {
         } else if (dx > 6) input.right = true
         else if (dx < -6) input.left = true
         if (!climbing && !shield && !close) {
-            if (canDown && dy > 10) input.down = true
-            else if (dy < -10) input.up = true
+            // Stage 3: vertical AIM never commits the hull into a contact
+            // column — an enemy just off the nose vertically closes into the
+            // ±16 kill band faster than a built-up vy nulls. When the shot
+            // line is also a contact column, hold height; the target presents
+            // itself (and `close` owns the escape) long before the climb does.
+            const contactColumn = (towardDown) => s.enemies.some(e => {
+                const ex = Math.abs(wrapDelta(e.x - p.x))
+                const ey = e.y - p.y
+                return ex < 60 && (towardDown ? (ey > 10 && ey < 90) : (ey < -10 && ey > -90))
+            })
+            if (canDown && dy > 10 && !contactColumn(true)) input.down = true
+            else if (dy < -10 && !contactColumn(false)) input.up = true
         }
     }
     // The gun is independent of the patrol's chosen job (#3456): anything legally
@@ -342,22 +461,9 @@ export const watchRoute = (s) => {
     // threat list decided, and walking human-closer-than-target vetoes the line
     // (the arcade friendly-fire law runs both ways). An aligned-but-vetoed line
     // still shows the hold tell.
-    let gunD = Infinity
-    let gun = false
-    for (const e of s.enemies) {
-        const ex = wrapDelta(e.x - p.x)
-        if (ex === 0 || Math.abs(ex) > 560 || Math.sign(ex) !== p.facing) continue
-        if (Math.abs(e.y - p.y) >= 15) continue
-        let blocked = false
-        for (const h of s.humans) {
-            if (h.state !== 'walk') continue
-            const hd = wrapDelta(h.x - p.x)
-            if ((hd === 0 ? p.facing : Math.sign(hd)) === Math.sign(ex) && Math.abs(hd) < Math.abs(ex) + 8 && Math.abs(h.y - p.y) < 10) blocked = true
-        }
-        if (blocked) { input.holdTell = true; continue }
-        if (Math.abs(ex) < gunD) { gunD = Math.abs(ex); gun = true }
-    }
-    if (gun) input.fire = true
+    const line = lineGun(s, p)
+    if (line.hold) input.holdTell = true
+    if (line.gun) input.fire = true
     // Thrust interlock (#3456): lift always outranks dive. U-and-D together used
     // to cancel to ~0 and the trace showed the route sinking into rising ground
     // one neutered tick at a time while both keys were held.
@@ -388,6 +494,7 @@ export function createSim({ rand, height }) {
         bombs: BOMBS_PER_WAVE, // #3443: smart-bomb stock, refilled at every wave beat
         prevBomb: false,       // edge-trigger: one press = one bomb, held ≠ stream
         bombFlash: 0,          // the white detonation beat the renderer paints
+        speedMode: false,      // #3456 stage 3: landerless wave — the mutants run hot
         events: [],
     }
     s.humans = makeHumans(rand, s.terrain)
@@ -486,6 +593,14 @@ export function createSim({ rand, height }) {
 
         const p = s.player
 
+        // Speeder endgame (#3456 stage 3, the 1981 rule): with every lander of
+        // the wave dead, the surviving mutants hunt faster — the wave cannot be
+        // finished by outlasting the last hunter. The transition is rand-free
+        // (a state edge, not a draw), so the seed stream cannot shift.
+        const speedMode = s.enemies.length > 0 && s.enemies.every((e) => e.type === 'mutant')
+        if (speedMode && !s.speedMode) s.events.push({ t: 'speedup' })
+        s.speedMode = speedMode
+
         // --- Player flight (inertia like the Jupiter fighter) ---
         if (p.dark > 0) {
             p.dark -= 1
@@ -551,14 +666,18 @@ export function createSim({ rand, height }) {
         // --- Enemies: landers (wander → descend → abduct → ascend) and mutants ---
         s.enemies.forEach((e) => {
             if (e.type === 'mutant') {
-                // Fast, evasive chase on the wrap.
+                // Fast, evasive chase on the wrap. In the speeder endgame
+                // (#3456 stage 3) the same hunt runs hotter — the cabinet's
+                // landerless-wave speedup: more drive, higher cap, tighter jitter.
+                const cap = speedMode ? SPEEDER_SPEED : MUTANT_SPEED
+                const drive = speedMode ? 0.155 : 0.12
                 const dx = wrapDelta(p.x - e.x)
                 const dy = p.y - e.y
-                e.vx += Math.sign(dx) * 0.12
-                e.vy += Math.sign(dy) * 0.12
-                if (rand() < 0.03) e.vy += (rand() - 0.5) * 3
-                e.vx = Math.max(-MUTANT_SPEED, Math.min(MUTANT_SPEED, e.vx))
-                e.vy = Math.max(-MUTANT_SPEED, Math.min(MUTANT_SPEED, e.vy))
+                e.vx += Math.sign(dx) * drive
+                e.vy += Math.sign(dy) * drive
+                if (rand() < (speedMode ? 0.05 : 0.03)) e.vy += (rand() - 0.5) * 3
+                e.vx = Math.max(-cap, Math.min(cap, e.vx))
+                e.vy = Math.max(-cap, Math.min(cap, e.vy))
                 // #3456 fidelity fix: hunt mutants' chase velocity was tracked
                 // every tick but never integrated — the state-machine movement
                 // block below belongs to the landers, so mutants were STATUES
