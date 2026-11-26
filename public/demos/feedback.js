@@ -77,13 +77,13 @@
       if (!doc || !doc.createElement) return 'n/a'
       var c = doc.createElement('canvas')
       var gl = null
-      try { gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl') } catch (e) { /* no GL */ }
+      try { gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl') } catch { /* no GL */ }
       if (!gl) return 'n/a'
       var ext = null
-      try { ext = gl.getExtension('WEBGL_debug_renderer_info') } catch (e) { /* fine */ }
+      try { ext = gl.getExtension('WEBGL_debug_renderer_info') } catch { /* fine */ }
       var s = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)
       return String(s || 'n/a').slice(0, 200)
-    } catch (e) { return 'n/a' }
+    } catch { return 'n/a' }
   }
 
   function demoNameFrom(route) {
@@ -93,7 +93,7 @@
   }
 
   function bLen(s) {
-    try { return new TextEncoder().encode(s).length } catch (e) { return s.length }
+    try { return new TextEncoder().encode(s).length } catch { return s.length }
   }
 
   // The #737 diagnostics block: browser, GPU, settings, and the last ~10 s of
@@ -111,7 +111,7 @@
       var hook = win && win.DEMO_DIAG
       if (typeof hook === 'function') extra = hook()
       else if (hook && typeof hook === 'object') extra = hook
-    } catch (e) { extra = null }
+    } catch { extra = null }
     if (extra && typeof extra !== 'object') extra = null
     var cfg = (win && win.DEMO_CREDITS) || null
     var settings = { demo: demoNameFrom(route) }
@@ -215,19 +215,19 @@
     var m = new RegExp('[?&]' + JONKEY_PARAM + '=([^&#]+)').exec(search || '')
     if (!m || !storage) return null
     var key = m[1]
-    try { key = decodeURIComponent(key) } catch (e) { /* raw value */ }
+    try { key = decodeURIComponent(key) } catch { /* raw value */ }
     if (!key) return null
-    try { storage.setItem(JONKEY_STORE, key) } catch (e) { /* private mode */ }
+    try { storage.setItem(JONKEY_STORE, key) } catch { /* private mode */ }
     return key
   }
   function readJonKey(storage) {
     if (!storage) return null
-    try { return storage.getItem(JONKEY_STORE) } catch (e) { return null }
+    try { return storage.getItem(JONKEY_STORE) } catch { return null }
   }
   function saveJonKey(value, storage) {
     var key = String(value == null ? '' : value).trim()
     if (!key || !storage) return null
-    try { storage.setItem(JONKEY_STORE, key) } catch (e) { /* private mode */ }
+    try { storage.setItem(JONKEY_STORE, key) } catch { /* private mode */ }
     return key
   }
 
@@ -256,7 +256,7 @@
     function startOne() {
       if (!armed) return
       var SRx = win.SpeechRecognition || win.webkitSpeechRecognition
-      try { rec = new SRx() } catch (e) { armed = false; if (cb.done) cb.done('init-failed'); return }
+      try { rec = new SRx() } catch { armed = false; if (cb.done) cb.done('init-failed'); return }
       rec.lang = 'en-US'
       rec.continuous = true
       rec.interimResults = true
@@ -287,7 +287,7 @@
         clearTimeout(timer)
         timer = setTimeout(startOne, 150)
       }
-      try { rec.start() } catch (e) { /* already starting — onend rearms */ }
+      try { rec.start() } catch { /* already starting — onend rearms */ }
     }
     return {
       supported: supported,
@@ -301,11 +301,140 @@
       stop: function () {
         armed = false
         clearTimeout(timer)
-        if (rec) { rec.onend = null; try { rec.stop() } catch (e) { /* gone */ } rec = null }
+        if (rec) { rec.onend = null; try { rec.stop() } catch { /* gone */ } rec = null }
       },
       active: function () { return armed },
     }
   }
+
+  // ── #3407: NOTHING VANISHES (twin of src/utils/feedback.js) ────────────────
+  // A failed demo report used to live only in the textarea — close the card,
+  // navigate, or reload and it was gone. Kept reports ride localStorage and are
+  // retried until the relay takes them; the draft survives closing the card.
+  var OUTBOX_STORE = 'rg.feedback.outbox' // same store as the game side (one origin)
+  var DRAFT_STORE = 'rg.feedback.draft'
+  var OUTBOX_MAX = 5
+  var RETRY_BASE_MS = 10000
+  var RETRY_MAX_MS = 300000
+
+  function storeGet(storage, key) {
+    if (!storage) return null
+    try { return storage.getItem(key) } catch { return null }
+  }
+  function storeSet(storage, key, value) {
+    if (!storage) return false
+    try { storage.setItem(key, value); return true } catch { return false } // quota / private mode
+  }
+  function storeDel(storage, key) {
+    if (!storage) return
+    try { storage.removeItem(key) } catch { /* nothing to remove */ }
+  }
+
+  // The heavy part of a demo payload is the screenshot; the NOTE is the report.
+  function slimForStore(payload) {
+    if (!payload || typeof payload !== 'object') return {}
+    var rest = {}
+    for (var k in payload) {
+      if (Object.prototype.hasOwnProperty.call(payload, k) && k !== 'screenshot' && k !== 'input') rest[k] = payload[k]
+    }
+    return rest
+  }
+
+  function loadOutbox(storage) {
+    var raw = storeGet(storage, OUTBOX_STORE)
+    if (!raw) return []
+    try {
+      var a = JSON.parse(raw)
+      if (!Array.isArray(a)) return []
+      return a.filter(function (e) { return e && e.id && e.payload })
+    } catch { return [] } // corrupt → start clean, never throw
+  }
+
+  function persistOutbox(list, storage) {
+    if (!storage) return false
+    if (storeSet(storage, OUTBOX_STORE, JSON.stringify(list))) return true
+    var slim = list.map(function (e) {
+      return { id: e.id, ts: e.ts, attempts: e.attempts | 0, payload: slimForStore(e.payload) }
+    })
+    if (storeSet(storage, OUTBOX_STORE, JSON.stringify(slim))) return true
+    for (var n = 0; n < slim.length; n++) {
+      var notesOnly = slim.slice(n).map(function (e) {
+        return { id: e.id, ts: e.ts, attempts: e.attempts | 0, payload: { note: String(e.payload.note || ''), gameId: e.payload.gameId || 'unknown', route: e.payload.route || '', ts: e.ts } }
+      })
+      if (storeSet(storage, OUTBOX_STORE, JSON.stringify(notesOnly))) return true
+    }
+    return false
+  }
+
+  function outboxAdd(payload, storage) {
+    if (!storage || !payload || typeof payload !== 'object') return null
+    if (!String(payload.note == null ? '' : payload.note).trim()) return null
+    var ts = isFinite(payload.ts) ? payload.ts : Date.now()
+    var id = ts + '-' + Math.random().toString(36).slice(2, 8)
+    var list = loadOutbox(storage)
+    list.push({ id: id, ts: ts, attempts: 0, payload: payload })
+    while (list.length > OUTBOX_MAX) list.shift()
+    return persistOutbox(list, storage) ? id : null // storage refused everything → honest null
+  }
+
+  function outboxRemove(id, storage) {
+    var list = loadOutbox(storage)
+    var next = list.filter(function (e) { return e.id !== id })
+    if (next.length !== list.length) persistOutbox(next, storage)
+    return next.length
+  }
+
+  function outboxPending(storage) { return loadOutbox(storage).length }
+
+  function bumpAttempt(id, storage) {
+    var list = loadOutbox(storage)
+    var attempts = 1
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) { list[i].attempts = (list[i].attempts | 0) + 1; attempts = list[i].attempts }
+    persistOutbox(list, storage)
+    return attempts
+  }
+
+  function retryDelayMs(attempt) {
+    return Math.min(RETRY_BASE_MS * Math.pow(2, Math.max(0, attempt | 0)), RETRY_MAX_MS)
+  }
+
+  // Try every kept report once; successes leave the outbox, failures stay.
+  function flushOutbox(opts) {
+    opts = opts || {}
+    var storage = opts.storage != null ? opts.storage : (typeof window !== 'undefined' ? window.localStorage : null)
+    var list = loadOutbox(storage)
+    var sent = [], failed = [], maxAttempts = 0
+    var chain = Promise.resolve()
+    list.forEach(function (e) {
+      chain = chain.then(function () {
+        return submit(e.payload, { base: opts.base, fetchImpl: opts.fetchImpl, storage: storage }).then(function (res) {
+          if (res.ok) {
+            outboxRemove(e.id, storage)
+            sent.push({ id: e.id, issue: res.issue || null, note: String((e.payload && e.payload.note) || '') })
+          } else {
+            var a = bumpAttempt(e.id, storage)
+            if (a > maxAttempts) maxAttempts = a
+            failed.push({ id: e.id, err: res.err || 'send failed' })
+          }
+        })
+      })
+    })
+    return chain.then(function () {
+      return { sent: sent, failed: failed, pending: loadOutbox(storage).length, maxAttempts: maxAttempts }
+    })
+  }
+
+  function saveDraft(text, storage) {
+    var t = String(text == null ? '' : text)
+    if (!storage) return false
+    if (!t.trim()) { storeDel(storage, DRAFT_STORE); return true }
+    return storeSet(storage, DRAFT_STORE, t.slice(0, 2000))
+  }
+  function loadDraft(storage) {
+    var v = storeGet(storage, DRAFT_STORE)
+    return v == null ? '' : String(v)
+  }
+  function clearDraft(storage) { storeDel(storage, DRAFT_STORE) }
 
   var api = {
     makeFrameRing: makeFrameRing,
@@ -320,8 +449,21 @@
     storeJonKey: storeJonKey,
     readJonKey: readJonKey,
     saveJonKey: saveJonKey,
+    outboxAdd: outboxAdd,
+    outboxRemove: outboxRemove,
+    outboxPending: outboxPending,
+    loadOutbox: loadOutbox,
+    slimForStore: slimForStore,
+    flushOutbox: flushOutbox,
+    retryDelayMs: retryDelayMs,
+    saveDraft: saveDraft,
+    loadDraft: loadDraft,
+    clearDraft: clearDraft,
     RELAY: RELAY,
     JONKEY_STORE: JONKEY_STORE,
+    OUTBOX_STORE: OUTBOX_STORE,
+    DRAFT_STORE: DRAFT_STORE,
+    OUTBOX_MAX: OUTBOX_MAX,
     HITCH_MS: HITCH_MS,
     FRAME_WINDOW_MS: FRAME_WINDOW_MS,
     DIAG_MAX_BYTES: DIAG_MAX_BYTES,
@@ -342,7 +484,7 @@
         .replace('?&', '?')
       win.history.replaceState({}, '', win.location.pathname + cleaned + (win.location.hash || ''))
     }
-  } catch (e) { /* storage blocked */ }
+  } catch { /* storage blocked */ }
 
   // The real frame-time ring: one sample per presentation frame from page load.
   var ring = makeFrameRing()
@@ -362,7 +504,7 @@
       try {
         var url = c.toDataURL('image/png')
         if (url && url.length > 64) return url
-      } catch (e) { /* tainted / WebGL: fall through */ }
+      } catch { /* tainted / WebGL: fall through */ }
     }
     return null
   }
@@ -398,7 +540,37 @@
   }
 
   var statusEl, noteEl, toastEl, keyInputEl, micBtnEl, heardEl
+  var retryTimer = 0
+  var attemptN = 0
   function setStatus(t) { if (statusEl) statusEl.textContent = t }
+  function showToast(t) {
+    if (!toastEl) return
+    toastEl.textContent = t
+    toastEl.classList.add('on')
+    setTimeout(function () {
+      if (toastEl) { toastEl.textContent = ''; toastEl.classList.remove('on') }
+    }, 2600)
+  }
+
+  // #3407: kept reports ride until they go through — first flush at mount (an
+  // offline night's report rides the next visit), then backoff 10 s → 300 s.
+  function deliver() {
+    clearTimeout(retryTimer)
+    if (!outboxPending(win.localStorage)) { attemptN = 0; return }
+    flushOutbox({ storage: win.localStorage }).then(function (res) {
+      if (res.sent.length) {
+        // the delivered report is no longer a draft — only its own text is cleared
+        if (loadDraft(win.localStorage) === res.sent[0].note) clearDraft(win.localStorage)
+        showToast('kept report delivered #' + String(res.sent[0].issue || '?').split('/').pop())
+      }
+      if (res.pending) {
+        if (res.maxAttempts > attemptN) attemptN = res.maxAttempts
+        retryTimer = setTimeout(deliver, retryDelayMs(attemptN))
+      } else {
+        attemptN = 0
+      }
+    })
+  }
 
   function closePanel() {
     var card = doc.getElementById('dfeedback-card')
@@ -409,7 +581,7 @@
 
   function send() {
     var note = noteEl ? noteEl.value : ''
-    if (!note.trim()) return
+    if (!note.trim()) { setStatus('nothing to send — type or dictate first'); return }
     setStatus('sending…')
     var payload = captureDemoFeedback({
       note: note,
@@ -422,16 +594,16 @@
       if (res.ok) {
         var n = String(res.issue || '').split('/').pop()
         noteEl.value = ''
+        clearDraft(win.localStorage)
         closePanel()
-        if (toastEl) {
-          toastEl.textContent = 'sent #' + n
-          toastEl.classList.add('on')
-          setTimeout(function () {
-            if (toastEl) { toastEl.textContent = ''; toastEl.classList.remove('on') }
-          }, 1800)
-        }
+        showToast('sent #' + n)
       } else {
-        setStatus('failed: ' + res.err)
+        // Kept on the device and retried until the relay accepts it — never lost.
+        outboxAdd(payload, win.localStorage)
+        attemptN = 0
+        clearTimeout(retryTimer)
+        retryTimer = setTimeout(deliver, retryDelayMs(0))
+        setStatus('failed: ' + res.err + ' — kept on device, retrying')
       }
     })
   }
@@ -533,7 +705,7 @@
     var sendBtn = box.querySelector('[data-feedback="send"]')
 
     var hasKey = false
-    try { hasKey = !!readJonKey(win.localStorage) } catch (e) { /* fine */ }
+    try { hasKey = !!readJonKey(win.localStorage) } catch { /* fine */ }
     if (!hasKey) {
       var row = box.querySelector('#dfeedback-keyrow')
       var ki = doc.createElement('input')
@@ -566,6 +738,9 @@
     // window/document in the bubble phase, so a capture-phase shield keeps
     // keystrokes out of the game while the browser default still writes them.
     var shield = function (e) {
+      // synthetic events dispatched on window (the '?' pause dialect) have window
+      // as their target — card.contains() on them throws; they are not ours.
+      if (!e.target || e.target === win) return
       if (card.classList.contains('open') && card.contains(e.target)) {
         if (e.key === 'Escape') closePanel()
         e.stopPropagation()
@@ -577,11 +752,32 @@
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() }
     })
 
+    // #3407: the draft of an unfinished report survives closing the card, and
+    // every insertion path (typing, dictation without keypresses, paste) keeps
+    // it fresh — a complaint made on this device is never silently lost.
+    var draft = loadDraft(win.localStorage)
+    if (draft && noteEl && !noteEl.value) noteEl.value = draft
+    if (noteEl) {
+      var saveNote = function () { saveDraft(noteEl.value, win.localStorage) }
+      noteEl.addEventListener('input', saveNote)
+      noteEl.addEventListener('compositionend', saveNote)
+    }
+
     doc.body.appendChild(tag)
     doc.body.appendChild(card)
     doc.body.appendChild(toastEl)
     // keep the toast element referenced for textContent + class
     toastEl = doc.getElementById('dfeedback-toast')
+    // Harness handles (#3407): feedbackcheck drives the REAL card in a fake DOM
+    // (dictate → send → refused → kept), so the check grades the shipping code
+    // path, not a re-implementation of it.
+    api._noteEl = noteEl
+    api._statusEl = statusEl
+    api._toastEl = toastEl
+    api._send = send
+    api._close = closePanel
+    // reports kept from an earlier visit deliver themselves as soon as we are up
+    if (outboxPending(win.localStorage)) deliver()
   }
 
   probe({ win: win }).then(function (on) {

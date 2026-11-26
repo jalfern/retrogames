@@ -163,6 +163,11 @@ export function startKeyboardRing(ring, win = HAS_WIN ? window : null) {
 export function installTypingGuard(panelEl, win = HAS_WIN ? window : null, onKey = null) {
     if (!win || !panelEl) return () => {}
     const shield = (e) => {
+        // dispatchPause() synthesizes '?' directly on window (#437) — that event's
+        // target is window itself, not an element. panelEl.contains(window) throws,
+        // so the pause keystroke must be let past untouched. Only element targets
+        // can be in-panel; anything else is not ours to stop.
+        if (!e.target || e.target === win) return
         if (panelEl.contains && panelEl.contains(e.target)) {
             if (onKey) { try { onKey(e) } catch { /* panel handler failed */ } }
             e.stopPropagation()
@@ -173,6 +178,165 @@ export function installTypingGuard(panelEl, win = HAS_WIN ? window : null, onKey
     return () => {
         win.removeEventListener('keydown', shield, true)
         win.removeEventListener('keyup', shield, true)
+    }
+}
+
+// ── #3407: NOTHING VANISHES ───────────────────────────────────────────────────
+// Jon sent two reports; only one reached GitHub. A failed send used to live only
+// in component state — close the panel, navigate, or reload and it evaporated —
+// and a dictated note could miss React's synthetic change tracking entirely. The
+// law here: a report that was composed is kept ON THE DEVICE until the relay
+// accepts it, and the text you SEE is the text that is SENT.
+
+export const OUTBOX_STORE = 'rg.feedback.outbox'
+export const DRAFT_STORE = 'rg.feedback.draft'
+export const OUTBOX_MAX = 5
+export const RETRY_BASE_MS = 10_000
+export const RETRY_MAX_MS = 300_000
+
+function storeGet(storage, key) {
+    if (!storage) return null
+    try { return storage.getItem(key) } catch { return null }
+}
+function storeSet(storage, key, value) {
+    if (!storage) return false
+    try { storage.setItem(key, value); return true } catch { return false } // quota / private mode
+}
+function storeDel(storage, key) {
+    if (!storage) return
+    try { storage.removeItem(key) } catch { /* nothing to remove */ }
+}
+
+// The heavy parts of a payload (a multi-MB screenshot data URL, the 30 s pad
+// stream) are what burst localStorage's ~5 MB. Slimming drops them before a
+// NOTE ever is — the words are the report; the extras are proof that rides when
+// there is room.
+export function slimForStore(payload) {
+    if (!payload || typeof payload !== 'object') return {}
+    const rest = {}
+    for (const k of Object.keys(payload)) {
+        if (k !== 'screenshot' && k !== 'input') rest[k] = payload[k]
+    }
+    return rest
+}
+
+export function loadOutbox(storage) {
+    const raw = storeGet(storage, OUTBOX_STORE)
+    if (!raw) return []
+    try {
+        const a = JSON.parse(raw)
+        return Array.isArray(a) ? a.filter((e) => e && e.id && e.payload) : []
+    } catch { return [] } // corrupt → start clean, never throw
+}
+
+// Persist the outbox, shrinking before losing everything: full payloads →
+// slimmed payloads → notes-only, newest last. Any list that fits counts — the
+// note is what must survive.
+function persistOutbox(list, storage) {
+    if (!storage) return false
+    if (storeSet(storage, OUTBOX_STORE, JSON.stringify(list))) return true
+    const slim = list.map((e) => ({ ...e, payload: slimForStore(e.payload) }))
+    if (storeSet(storage, OUTBOX_STORE, JSON.stringify(slim))) return true
+    for (let n = 0; n < slim.length; n++) {
+        const notesOnly = slim.slice(n).map((e) => ({
+            id: e.id, ts: e.ts, attempts: e.attempts | 0,
+            payload: { note: String(e.payload.note || ''), gameId: e.payload.gameId || 'unknown', route: e.payload.route || '', ts: e.ts },
+        }))
+        if (storeSet(storage, OUTBOX_STORE, JSON.stringify(notesOnly))) return true
+    }
+    return false
+}
+
+// Keep a failed report. Blank notes are not kept (the relay would refuse them
+// forever) — that is what the panel's honest empty-note line is for.
+export function outboxAdd(payload, storage) {
+    if (!storage || !payload || typeof payload !== 'object') return null
+    if (!String(payload.note == null ? '' : payload.note).trim()) return null
+    const ts = Number.isFinite(payload.ts) ? payload.ts : Date.now()
+    const id = `${ts}-${Math.random().toString(36).slice(2, 8)}`
+    const list = loadOutbox(storage)
+    list.push({ id, ts, attempts: 0, payload })
+    while (list.length > OUTBOX_MAX) list.shift() // oldest, already-kept reports go first
+    return persistOutbox(list, storage) ? id : null // storage refused everything → honest null
+}
+
+export function outboxRemove(id, storage) {
+    const list = loadOutbox(storage)
+    const next = list.filter((e) => e.id !== id)
+    if (next.length !== list.length) persistOutbox(next, storage)
+    return next.length
+}
+
+export function outboxPending(storage) {
+    return loadOutbox(storage).length
+}
+
+function bumpAttempt(id, storage) {
+    const list = loadOutbox(storage)
+    let attempts = 1
+    for (const e of list) if (e.id === id) { e.attempts = (e.attempts | 0) + 1; attempts = e.attempts }
+    persistOutbox(list, storage)
+    return attempts
+}
+
+// 10 s → 20 → 40 … 300 s cap: patient enough to outlive a flaky train,
+// quiet enough never to hammer the relay.
+export function retryDelayMs(attempt) {
+    return Math.min(RETRY_BASE_MS * 2 ** Math.max(0, attempt | 0), RETRY_MAX_MS)
+}
+
+// Try every kept report once; successes leave the outbox, failures stay (with
+// their attempt count upped, which is what backs the backoff). Never throws.
+export async function flushOutbox({ base = FB_RELAY, fetchImpl = null, storage = HAS_WIN ? window.localStorage : null, submitOne = submitFeedback } = {}) {
+    const list = loadOutbox(storage)
+    const sent = []
+    const failed = []
+    let maxAttempts = 0
+    for (const e of list) {
+        const res = await submitOne(e.payload, { base, fetchImpl, storage })
+        if (res && res.ok) {
+            outboxRemove(e.id, storage)
+            sent.push({ id: e.id, issue: res.issue || null, note: String(e.payload && e.payload.note || '') })
+        } else {
+            const attempts = bumpAttempt(e.id, storage)
+            maxAttempts = Math.max(maxAttempts, attempts)
+            failed.push({ id: e.id, err: (res && res.err) || 'send failed' })
+        }
+    }
+    return { sent, failed, pending: loadOutbox(storage).length, maxAttempts }
+}
+
+// The in-progress note rides the device while it is being composed: closing the
+// panel, navigating, or a crash must not eat a dictated complaint. Blank clears
+// the draft (a report that went out or was erased leaves nothing behind).
+export function saveDraft(text, storage) {
+    const t = String(text == null ? '' : text)
+    if (!storage) return false
+    if (!t.trim()) { storeDel(storage, DRAFT_STORE); return true }
+    return storeSet(storage, DRAFT_STORE, t.slice(0, 2000))
+}
+export function loadDraft(storage) {
+    const v = storeGet(storage, DRAFT_STORE)
+    return v == null ? '' : String(v)
+}
+export function clearDraft(storage) {
+    storeDel(storage, DRAFT_STORE)
+}
+
+// Dictation and IME commit text WITHOUT keypresses. React's synthetic onChange
+// usually rides the same input event — when its value tracking dedupes a native
+// insertion anyway (mobile dictation on iOS), the textarea looks full while the
+// state stays empty: the send button is dead and the visible report evaporates.
+// These listeners sit on the textarea itself, so every insertion path — keys,
+// dictation, paste, autofill — lands in onText: what you see is what gets sent.
+export function installNoteSync(el, onText) {
+    if (!el || typeof el.addEventListener !== 'function' || typeof onText !== 'function') return () => {}
+    const sync = () => onText(String(el.value == null ? '' : el.value))
+    el.addEventListener('input', sync)
+    el.addEventListener('compositionend', sync)
+    return () => {
+        el.removeEventListener('input', sync)
+        el.removeEventListener('compositionend', sync)
     }
 }
 

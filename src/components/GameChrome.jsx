@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import { dispatchPause } from '../utils/pauseEvent'
-import { makeRing, startKeyboardRing, captureFeedback, submitFeedback, probeFeedback, installTypingGuard, saveJonKey, readJonKey, appendPhrase, dictationSupported } from '../utils/feedback'
+import { makeRing, startKeyboardRing, captureFeedback, submitFeedback, probeFeedback, installTypingGuard, saveJonKey, readJonKey, appendPhrase, dictationSupported, outboxAdd, flushOutbox, outboxPending, retryDelayMs, saveDraft, loadDraft, clearDraft, installNoteSync } from '../utils/feedback'
 import { startSpeechListen } from '../utils/speechListen'
 import RotateHint from './RotateHint'
 
@@ -31,6 +31,8 @@ const FeedbackButton = ({ theme }) => {
     const ringRef = useRef(null)
     const panelRef = useRef(null)
     const keyInputRef = useRef(null)
+    const noteRef = useRef(null)
+    const attemptRef = useRef(0)
     const [ready, setReady] = useState(false)
     const [open, setOpen] = useState(false)
     const [note, setNote] = useState('')
@@ -53,6 +55,46 @@ const FeedbackButton = ({ theme }) => {
         probeFeedback().then((ok) => { if (alive) setReady(ok) })
         return () => { alive = false }
     }, [])
+
+    // #3407: a failed send lives on in localStorage until the relay takes it. The
+    // first flush runs the moment the button is ready — a report kept on a phone
+    // that was offline all night rides the next launch — then attempts back off
+    // (10 s → 300 s cap). A delivered retry confirms with its issue number.
+    // The scheduler is this effect (one driver, one timer): `pending` says there
+    // is work, `tick` re-arms after every failed attempt even when the count is
+    // unchanged, and the attempt counter (a ref) sets the backoff.
+    const [pending, setPending] = useState(0)
+    const [tick, setTick] = useState(0)
+
+    const deliver = useCallback(async () => {
+        if (!outboxPending(window.localStorage)) { attemptRef.current = 0; setPending(0); return }
+        const res = await flushOutbox({ storage: window.localStorage })
+        if (res.sent.length) {
+            // A delivered report is no longer a draft — but only its own text is
+            // cleared: a fresh note being typed right now is the player's, never ours.
+            if (loadDraft(window.localStorage) === res.sent[0].note) clearDraft(window.localStorage)
+            const n = String(res.sent[0].issue || '?').split('/').pop()
+            setToast(`kept report delivered #${n}`)
+            setTimeout(() => setToast(null), 2600)
+        }
+        attemptRef.current = res.pending ? Math.max(1, res.maxAttempts) : 0
+        setPending(res.pending)
+        setTick((t) => t + 1)
+    }, [])
+
+    useEffect(() => {
+        if (!ready) return undefined
+        // next-tick so the flush (and its state updates) is not a sync cascade:
+        // the outbox is an external store, its answer arrives async anyway.
+        const t = setTimeout(() => { if (outboxPending(window.localStorage)) deliver() }, 0)
+        return () => clearTimeout(t)
+    }, [ready, deliver])
+
+    useEffect(() => {
+        if (!ready || !pending) return undefined
+        const t = setTimeout(deliver, retryDelayMs(attemptRef.current))
+        return () => clearTimeout(t)
+    }, [ready, pending, tick, deliver])
 
     useEffect(() => {
         if (!ready) return undefined
@@ -84,24 +126,63 @@ const FeedbackButton = ({ theme }) => {
     // gameplay, not the complaint.
     useEffect(() => {
         if (!open) return undefined
-        return installTypingGuard(panelRef.current, undefined, (e) => {
+        // #3407: a reopened panel restores the draft — a dictated complaint survives
+        // closing, navigating, even a killed tab; the report was made, it stays made.
+        // Next-tick: localStorage is external state, and the panel itself animates
+        // in for ~220 ms — the words land before the box is fully on screen.
+        const t0 = setTimeout(() => {
+            const draft = loadDraft(window.localStorage)
+            if (draft && noteRef.current && !noteRef.current.value) setNote(draft)
+        }, 0)
+        const unguard = installTypingGuard(panelRef.current, undefined, (e) => {
             if (e.key === 'Escape') closePanel()
         })
+        // Native listeners on the box itself: dictation inserts WITHOUT keypresses,
+        // and where React's synthetic change dedupes one away, this catches it —
+        // what is visible gets enabled, drafted and sent.
+        const unsync = installNoteSync(noteRef.current, (v) => {
+            setNote(v)
+            saveDraft(v, window.localStorage)
+        })
+        return () => { clearTimeout(t0); unguard(); unsync() }
     }, [open, closePanel])
 
+    // Every state-side change (the mic button's appendPhrase, restores) rides the
+    // draft too — the native listener only sees user-side insertions. Empty is
+    // NEVER saved from here: on reopen the state is still blank for a tick while
+    // the restore reads the stored draft, and saving that blank would delete it.
+    // (A user emptying the box clears the draft through the native listener.)
+    useEffect(() => {
+        if (open && note) saveDraft(note, window.localStorage)
+    }, [open, note])
+
     const send = async () => {
-        if (!note.trim()) return
+        // Read from the DOM when possible: whatever is visible in the box is what
+        // gets sent (dictation can write the textarea through a path React missed).
+        const text = noteRef.current ? noteRef.current.value : note
+        if (!text.trim()) {
+            setStatus('nothing to send — type or dictate first')
+            return
+        }
         setStatus('sending…')
-        const payload = captureFeedback({ note, ring: ringRef.current, route: window.location.pathname })
+        const payload = captureFeedback({ note: text, ring: ringRef.current, route: window.location.pathname })
         const res = await submitFeedback(payload)
         if (res.ok) {
             const n = (res.issue || '').split('/').pop()
             setNote('')
+            if (noteRef.current) noteRef.current.value = ''
+            clearDraft(window.localStorage)
             closePanel()
             setToast(`sent #${n}`)
             setTimeout(() => setToast(null), 1800)
         } else {
-            setStatus(`failed: ${res.err}`)
+            setNote(text)
+            // Kept on the device and retried until the relay takes it — never lost.
+            outboxAdd(payload, window.localStorage)
+            attemptRef.current = 0
+            setPending(outboxPending(window.localStorage))
+            setTick((t) => t + 1)
+            setStatus(`failed: ${res.err} — kept on device, retrying`)
         }
     }
 
@@ -193,6 +274,7 @@ const FeedbackButton = ({ theme }) => {
                         </div>
                         <textarea
                             data-feedback="note"
+                            ref={noteRef}
                             autoFocus
                             value={note}
                             onChange={(e) => setNote(e.target.value)}

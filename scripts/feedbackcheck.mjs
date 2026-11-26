@@ -24,6 +24,9 @@ import {
     makeRing, captureFeedback, submitFeedback, probeFeedback, FB_RELAY,
     storeJonKey, readJonKey, saveJonKey, JONKEY_STORE,
     startKeyboardRing, installTypingGuard, appendPhrase, dictationSupported,
+    OUTBOX_STORE, DRAFT_STORE, OUTBOX_MAX, slimForStore, outboxAdd, outboxRemove,
+    outboxPending, loadOutbox, flushOutbox, retryDelayMs,
+    saveDraft, loadDraft, clearDraft, installNoteSync,
 } from '../src/utils/feedback.js'
 import { REC_FORMAT, validate, verifyRecording, decodePad, encodePad } from '../src/utils/recording.js'
 import { makeGame, step, stateHash } from '../src/games/Gauntlet/sim.js'
@@ -335,6 +338,12 @@ const e2 = win1.dispatch('keydown', {}, 'ArrowRight')
 ok('guard: keys outside the panel still reach the game', e2.stopped === false && ringG.size() === 1)
 win1.dispatch('keydown', noteEl, 'Escape')
 ok('guard: Escape inside the panel reaches the panel callback', escapeSeen === 1)
+// dispatchPause() synthesizes '?' on window (#437): that event's target IS
+// window, and panelEl.contains(window) throws — the feedbackplay browser run
+// caught the real crash (#3407). The shield must let targetless events pass.
+const pauseEv = win1.dispatch('keydown', win1, 'Slash')
+ok('guard: the synthetic pause (target = window) is let past, never crashed on',
+    pauseEv.stopped === false && escapeSeen === 1)
 stopGuard()
 const e3 = win1.dispatch('keydown', noteEl, 'Space')
 ok('guard: removing the shield hands keys back to the game', e3.stopped === false && ringG.size() === 2)
@@ -367,7 +376,7 @@ ok('dev: the __game contract state is still preferred when present', devCap.stat
 // ── #905: panel UX — own screen, ESC, send returns to the game, key row ─────
 ok('panel: owns a full screen above every game overlay', /fixed inset-0 z-\[80\]/.test(chromeSrc))
 ok('panel: ESC closes and resumes the game', /e\.key === 'Escape'[\s\S]{0,60}closePanel\(\)/.test(chromeSrc))
-ok('panel: successful send goes straight back to the game', /if \(res\.ok\) \{[\s\S]{0,160}closePanel\(\)/.test(chromeSrc))
+ok('panel: successful send goes straight back to the game', /if \(res\.ok\) \{[\s\S]{0,300}closePanel\(\)/.test(chromeSrc))
 ok('panel: a toast confirms the filed issue after the screen is gone', /data-feedback="toast"/.test(chromeSrc))
 ok('panel: typing is shielded by the capture guard', /installTypingGuard\(panelRef\.current/.test(chromeSrc))
 ok('panel: Jon key row saves to the device', /saveJonKey/.test(chromeSrc) && /data-feedback="keysave"/.test(chromeSrc))
@@ -722,6 +731,423 @@ ok('demo: injector exposes __demoFeedback in plain Node',
     ok('panel1452: tapping the note box again still does not close it', card.classList.contains('open') === true)
     backdropClick({ target: card, stopPropagation() {} })
     ok('panel1452: a tap on the backdrop (target === card) still closes it', card.classList.contains('open') === false)
+    // #3407: the demo twin of the pause pass-through — window-targeted synthetic
+    // events must never crash the shield (real Chrome threw on card.contains).
+    let shieldThrew = false
+    try { for (const fn of (fdoc.listeners.keydown || [])) fn({ target: dwin, key: '?', stopPropagation() {} }) } catch { shieldThrew = true }
+    ok('demo guard: a window-targeted synthetic passes the shield untouched', !shieldThrew)
+}
+
+// ── #3407: nothing vanishes — the outbox keeps what the relay wouldn't take ──
+// Two of Jon's reports went out, one arrived. The losses were silent: a refused
+// send left the report nowhere, and a dictated note (text inserted WITHOUT
+// keypresses) could reach the relay empty and die at "note required". These pins
+// hold the fixes: refused reports ride localStorage until they go through, an
+// unfinished note rides too, and nothing is ever swallowed without a word.
+{
+    const capped = (maxBytes, failAt = Infinity) => {
+        const m = new Map()
+        let calls = 0
+        return {
+            getItem: (k) => (m.has(k) ? m.get(k) : null),
+            setItem: (k, v) => {
+                calls++
+                if (calls > failAt || String(v).length > maxBytes) throw new Error('QuotaExceededError')
+                m.set(k, String(v))
+            },
+            removeItem: (k) => { m.delete(k) },
+            bytes: () => { let t = 0; for (const v of m.values()) t += String(v).length; return t },
+            raw: (k) => (m.has(k) ? m.get(k) : null),
+        }
+    }
+
+    ok('outbox: empty at first', outboxPending(memStorage()) === 0)
+    ok('slim: heavy parts drop, note stays', (() => {
+        const s = slimForStore({ note: 'n', gameId: 'g', screenshot: 'x'.repeat(5000), input: { pads: [] }, route: '/r' })
+        return s.screenshot === undefined && s.input === undefined && s.note === 'n' && s.gameId === 'g'
+    })())
+
+    const ob = memStorage()
+    const obNote = 'the windsock spins the wrong way on the dusk deck'
+    const bigShot = 'data:image/png;base64,' + 'B'.repeat(9000)
+    const id1 = outboxAdd({ note: obNote, gameId: 'skyward', route: '/retrogames/skyward', ts: 1000, screenshot: bigShot }, ob)
+    ok('outbox: a refused report is kept with its note', !!id1 && outboxPending(ob) === 1
+        && loadOutbox(ob)[0].payload.note === obNote && loadOutbox(ob)[0].attempts === 0)
+    ok('outbox: an empty note is never kept (the relay would refuse it forever)',
+        outboxAdd({ note: '   ', gameId: 'skyward', ts: 1001 }, memStorage()) === null
+        && outboxAdd({ note: null, gameId: 'skyward' }, memStorage()) === null
+        && outboxAdd({ note: '', gameId: 'skyward' }, memStorage()) === null
+        && outboxAdd(null, memStorage()) === null && outboxAdd({ note: 'x' }, null) === null)
+
+    const ob2 = memStorage()
+    for (let i = 0; i < 7; i++) outboxAdd({ note: `note ${i}`, gameId: 'skyward', ts: 100 + i }, ob2)
+    const kept = loadOutbox(ob2)
+    ok(`outbox: capped at ${OUTBOX_MAX} entries, oldest dropped`,
+        outboxPending(ob2) === OUTBOX_MAX && kept.length === OUTBOX_MAX
+        && kept[0].payload.note === 'note 2' && kept[kept.length - 1].payload.note === 'note 6')
+
+    const tiny = capped(600)
+    outboxAdd({ note: `long note ${'y'.repeat(400)}`, gameId: 'skyward', ts: 1, screenshot: bigShot }, tiny)
+    const slimmed = JSON.parse(tiny.raw(OUTBOX_STORE))
+    ok('outbox: a quota squeeze drops the screenshot before the words',
+        slimmed.length === 1 && slimmed[0].payload.screenshot === undefined
+        && slimmed[0].payload.note.length > 300 && tiny.bytes() <= 600)
+    ok('outbox: quota thins from the oldest end until what remains fits (newest survives)', (() => {
+        const t2 = capped(900)
+        const longA = 'first half of the report: ' + 'a'.repeat(400)
+        const longB = 'second half of the report: ' + 'b'.repeat(400)
+        outboxAdd({ note: longA, gameId: 'skyward', ts: 1, screenshot: bigShot }, t2)
+        outboxAdd({ note: longB, gameId: 'skyward', ts: 2, screenshot: bigShot }, t2)
+        const list = JSON.parse(t2.raw(OUTBOX_STORE))
+        return list.length === 1 && list[0].payload.note === longB && t2.bytes() <= 900
+    })())
+    ok('outbox: a storage that refuses everything never throws (private mode)',
+        outboxAdd({ note: 'x', gameId: 'g', ts: 1 }, capped(0)) === null
+        && outboxPending(capped(0)) === 0)
+
+    const corrupt = memStorage()
+    corrupt.setItem(OUTBOX_STORE, '{not json')
+    ok('outbox: corrupt storage reads empty, then works again',
+        loadOutbox(corrupt).length === 0 && outboxPending(corrupt) === 0
+        && outboxAdd({ note: 'x', gameId: 'g', ts: 1 }, corrupt) !== null && outboxPending(corrupt) === 1)
+    ok('outbox: corrupt-free shape only counts entries with a payload', (() => {
+        const s = memStorage()
+        s.setItem(OUTBOX_STORE, JSON.stringify([{ id: 'a' }, { payload: { note: 'n' } }, null, 7, { id: 'b', payload: { note: 'n' } }]))
+        return loadOutbox(s).length === 1 && outboxRemove('b', s) === 0
+    })())
+    ok('outbox: removing an unknown id changes nothing', (() => {
+        const s = memStorage()
+        outboxAdd({ note: 'x', gameId: 'g', ts: 1 }, s)
+        return outboxRemove('nope', s) === 1 && outboxPending(s) === 1
+    })())
+
+    ok('retry: backs off 10 s → 20 → 40 and caps at 300 s',
+        retryDelayMs(0) === 10_000 && retryDelayMs(1) === 20_000 && retryDelayMs(2) === 40_000
+        && retryDelayMs(3) === 80_000 && retryDelayMs(5) === 300_000 && retryDelayMs(99) === 300_000
+        && retryDelayMs(-4) === 10_000)
+
+    // One flush: each kept report tries once. Successes leave, failures stay and
+    // carry the reason plus their attempt count (that count is the backoff).
+    const mixed = memStorage()
+    const keepId = outboxAdd({ note: 'this one must survive the flush', gameId: 'skyward', ts: 5 }, mixed)
+    const goneId = outboxAdd({ note: 'this one goes through', gameId: 'skyward', ts: 6 }, mixed)
+    ok('outbox: both kept before the flush', outboxPending(mixed) === 2 && keepId !== goneId)
+    let seenNotes = []
+    const fl = await flushOutbox({
+        storage: mixed,
+        fetchImpl: async (_url, init) => {
+            const b = JSON.parse(init.body)
+            seenNotes.push(b.note)
+            return b.note === 'this one goes through'
+                ? { ok: true, status: 200, json: async () => ({ ok: true, issue: 'https://github.com/jalfern/retrogames/issues/3407' }) }
+                : { ok: false, status: 503, json: async () => ({ ok: false, err: 'relay at capacity' }) }
+        },
+    })
+    ok('flush: the accepted report leaves, the refused one stays',
+        fl.sent.length === 1 && fl.sent[0].id === goneId && fl.pending === 1 && outboxPending(mixed) === 1)
+    ok('flush: a refused report names the reason and counts the attempt',
+        fl.failed.length === 1 && fl.failed[0].id === keepId && fl.failed[0].err === 'relay at capacity'
+        && fl.maxAttempts === 1 && loadOutbox(mixed)[0].attempts === 1)
+    ok('flush: success carries the issue number and the note for the confirmation',
+        fl.sent[0].issue === 'https://github.com/jalfern/retrogames/issues/3407'
+        && fl.sent[0].issue.split('/').pop() === '3407' && fl.sent[0].note === 'this one goes through')
+    const fl2 = await flushOutbox({ storage: mixed, fetchImpl: async () => { throw new Error('offline') } })
+    ok('flush: a thrown transport failure keeps the report and names it',
+        fl2.pending === 1 && fl2.sent.length === 0 && /offline/.test(fl2.failed[0].err)
+        && loadOutbox(mixed)[0].attempts === 2 && outboxPending(mixed) === 1)
+    const fl3 = await flushOutbox({
+        storage: mixed,
+        fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, issue: 'https://github.com/jalfern/retrogames/issues/3407' }) }),
+    })
+    ok('flush: the report that finally goes through leaves for good',
+        fl3.pending === 0 && fl3.sent.length === 1 && outboxPending(mixed) === 0)
+    const fl0 = await flushOutbox({ storage: memStorage(), fetchImpl: async () => { throw new Error('must not be called') } })
+    ok('flush: nothing kept, nothing fetched', fl0.pending === 0 && fl0.sent.length === 0 && fl0.maxAttempts === 0)
+    ok('outbox: the stored shape is what a submit needs (note survives a round-trip)', (() => {
+        const s = memStorage()
+        outboxAdd({ note: 'round trip', gameId: 'skyward', route: '/retrogames/skyward', ts: 9, build: 'abc' }, s)
+        const entry = loadOutbox(s)[0]
+        return submitFeedback(entry.payload, {
+            storage: s,
+            fetchImpl: async (_u, init) => {
+                const b = JSON.parse(init.body)
+                return { ok: true, status: 200, json: async () => ({ ok: true, issue: 'i/1', noteBack: b.note, gameIdBack: b.gameId, routeBack: b.route }) }
+            },
+        }).then((r) => r.ok === true)
+    })())
+}
+
+// ── #3407: the draft — a note half-spoken survives the panel closing ─────────
+{
+    const ds = memStorage()
+    ok('draft: empty at first', loadDraft(ds) === '')
+    ok('draft: half a sentence rides the device',
+        saveDraft('the dusk lift feels ', ds) === true && loadDraft(ds) === 'the dusk lift feels ')
+    ok('draft: whitespace only is blank — it clears rather than masquerading as content',
+        saveDraft('   ', memStorage()) === true && loadDraft(memStorage()) === ''
+        && (() => { const s = memStorage(); saveDraft('real words', s); saveDraft('  ', s); return loadDraft(s) === '' })())
+    ok('draft: each save replaces, never glues',
+        saveDraft('the dusk lift feels heavy', ds) === true && loadDraft(ds) === 'the dusk lift feels heavy')
+    ok('draft: clamped to the panel limit (2000)', (() => {
+        const s = memStorage()
+        saveDraft('z'.repeat(5000), s)
+        return loadDraft(s).length === 2000
+    })())
+    clearDraft(ds)
+    ok('draft: cleared on the accepted send, and a blank save clears it too',
+        loadDraft(ds) === '' && saveDraft('', ds) === true && loadDraft(ds) === '')
+    ok('draft: private mode says no instead of throwing',
+        saveDraft('x', null) === false && loadDraft(null) === ''
+        && saveDraft('x', { setItem: () => { throw new Error('blocked') }, getItem: () => { throw new Error('blocked') }, removeItem: () => { throw new Error('blocked') } }) === false
+        && loadDraft({ getItem: () => { throw new Error('blocked') } }) === '')
+
+    // The keypress-free catcher. iOS/macOS dictation and IME commit text through
+    // a composition: the box fills WITHOUT the key events the panel's enable
+    // logic used to depend on. installNoteSync listens on the box itself, so the
+    // words land in state (and the draft) whatever path wrote them — and the same
+    // words are what send() reads back.
+    const boxEl = () => {
+        const L = {}
+        return {
+            value: '',
+            addEventListener: (t, fn) => { (L[t] = L[t] || []).push(fn) },
+            removeEventListener: (t, fn) => { const a = L[t] || []; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1) },
+            fire: (t) => { for (const fn of [...(L[t] || [])]) fn({ type: t, target: boxEl.target }) },
+            count: (t) => (L[t] || []).length,
+        }
+    }
+    const noteBox = boxEl()
+    const drafted = []
+    const detach = installNoteSync(noteBox, (v) => drafted.push(v))
+    ok('dictation: the catcher binds input + compositionend (the keypress-free paths)',
+        noteBox.count('input') === 1 && noteBox.count('compositionend') === 1)
+    noteBox.value = 'the windsock points '
+    noteBox.fire('compositionend')
+    noteBox.value = 'the windsock points the wrong way'
+    noteBox.fire('input')
+    ok('dictation: text inserted without a single keypress lands in state',
+        drafted.length === 2 && drafted[0] === 'the windsock points '
+        && drafted[1] === 'the windsock points the wrong way')
+    detach()
+    noteBox.value = 'after detach'
+    noteBox.fire('input')
+    ok('dictation: detaching hands the box back (no more state writes)',
+        drafted.length === 2 && detach() === undefined
+        && typeof installNoteSync(null, () => {}) === 'function'
+        && typeof installNoteSync({}, null) === 'function'
+        && installNoteSync({}, () => {}).detach === undefined)
+}
+
+// ── #3407: the demo twin keeps it the same way (one origin, one outbox) ──────
+{
+    const ds2 = memStorage()
+    const bigShot2 = 'data:image/png;base64,' + 'B'.repeat(9000)
+    ok('demo twin: same store keys as the game side (one origin, one outbox)',
+        dfb.OUTBOX_STORE === OUTBOX_STORE && dfb.DRAFT_STORE === DRAFT_STORE && dfb.OUTBOX_MAX === OUTBOX_MAX)
+    ok('demo twin: kept, retried, and heavy parts slimmable by the same rules',
+        dfb.outboxAdd({ note: 'demo report', gameId: 'ocean', route: '/r', ts: 1, screenshot: bigShot2 }, ds2) !== null
+        && dfb.outboxPending(ds2) === 1
+        && dfb.loadOutbox(ds2)[0].payload.note === 'demo report'
+        && dfb.slimForStore({ note: 'n', screenshot: 'x', input: 1 }).note === 'n'
+        && dfb.slimForStore({ note: 'n', screenshot: 'x', input: 1 }).screenshot === undefined
+        && dfb.retryDelayMs(1) === retryDelayMs(1) && dfb.retryDelayMs(99) === retryDelayMs(99))
+    {
+        // A phone-tight quota: the demo twin must drop the screenshot, never the note.
+        const m = new Map()
+        const tight = {
+            getItem: (k) => (m.has(k) ? m.get(k) : null),
+            setItem: (k, v) => { if (String(v).length > 600) throw new Error('QuotaExceededError'); m.set(k, String(v)) },
+            removeItem: (k) => { m.delete(k) },
+        }
+        dfb.outboxAdd({ note: 'a note worth keeping', gameId: 'ocean', route: '/r', ts: 1, screenshot: bigShot2 }, tight)
+        const keptEntry = dfb.loadOutbox(tight)[0]
+        ok('demo twin: quota squeeze drops the screenshot before the words',
+            dfb.outboxPending(tight) === 1 && keptEntry.payload.screenshot === undefined
+            && keptEntry.payload.note === 'a note worth keeping')
+    }
+    ok('demo twin: empty notes are refused, corrupt storage reads empty',
+        dfb.outboxAdd({ note: ' ', gameId: 'ocean' }, ds2) === null
+        && (() => { const s = memStorage(); s.setItem(OUTBOX_STORE, 'nonsense'); return dfb.loadOutbox(s).length === 0 })())
+    const ds3 = memStorage()
+    dfb.outboxAdd({ note: 'kept from last night', gameId: 'ocean', route: '/retrogames/demos/ocean.html', ts: 2 }, ds3)
+    const demoRes = await dfb.flushOutbox({
+        storage: ds3,
+        fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, issue: 'https://github.com/jalfern/retrogames/issues/3412' }) }),
+    })
+    ok('demo twin: the flush confirms with the issue number and empties the outbox',
+        demoRes.sent.length === 1 && demoRes.pending === 0 && demoRes.sent[0].issue.endsWith('/3412')
+        && dfb.outboxPending(ds3) === 0)
+    ok('demo twin: draft round-trips',
+        dfb.saveDraft('half a demo note', ds2) === true && dfb.loadDraft(ds2) === 'half a demo note'
+        && (dfb.clearDraft(ds2), dfb.loadDraft(ds2) === ''))
+    ok('demo twin: a delivered retry clears its own draft, never a fresher one',
+        /if \(loadDraft\(win\.localStorage\) === res\.sent\[0\]\.note\) clearDraft\(win\.localStorage\)/.test(fbSrc))
+}
+
+// ── #3407: the demo panel end-to-end in a fake DOM (dictation → fail → kept) ─
+// The DOM half is what Jon actually touches, so drive it for real: mount with a
+// pre-kept outbox, dictate text with NO key events, send into a refusing relay,
+// and check the words are still there in the box, in the draft and in the outbox.
+{
+    const mkNode = (tag) => {
+        const el = {
+            tag, id: '', className: '', textContent: '', _innerHTML: '', value: '',
+            children: [], listeners: {},
+            setAttribute(k, v) { if (k === 'id') el.id = String(v) },
+            appendChild(c) { el.children.push(c); c.parent = el; return c },
+            addEventListener(t, fn) { (el.listeners[t] = el.listeners[t] || []).push(fn) },
+            removeEventListener(t, fn) { const a = el.listeners[t] || []; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1) },
+            contains(n) { for (let c = n; c; c = c.parent) if (c === el) return true; return false },
+            fire(t, e = {}) { const ev = { type: t, target: el, stopPropagation() {}, preventDefault() {}, ...e }; for (const fn of [...(el.listeners[t] || [])]) fn(ev); return ev },
+            get innerHTML() { return el._innerHTML },
+            set innerHTML(v) { el._innerHTML = String(v) },
+        }
+        el.classList = { _s: new Set(), add(c) { el.classList._s.add(c) }, remove(c) { el.classList._s.delete(c) }, contains(c) { return el.classList._s.has(c) } }
+        const cache = new Map()
+        el.querySelector = (sel) => {
+            if (!cache.has(sel)) { const s = mkNode('sel:' + sel); s.parent = el; cache.set(sel, s) }
+            return cache.get(sel)
+        }
+        el.querySelectorAll = () => []
+        return el
+    }
+    const makeDoc = () => {
+        const reg = []
+        const doc = {
+            readyState: 'complete',
+            head: mkNode('head'),
+            body: mkNode('body'),
+            listeners: {},
+            createElement: (t) => { const e = mkNode(t); reg.push(e); return e },
+            getElementById: (id) => reg.find((e) => e.id === id) || null,
+            addEventListener(t, fn) { (doc.listeners[t] = doc.listeners[t] || []).push(fn) },
+            querySelectorAll: () => [],
+        }
+        return doc
+    }
+    let relayNotes = []
+    let relayAnswers = []
+    const relay = async (url, init) => {
+        if (/\/status/.test(url)) return { ok: true, status: 200, json: async () => ({ ok: true, feedback: true }) }
+        if (init && init.body) relayNotes.push(JSON.parse(init.body).note)
+        const answer = relayAnswers.length > 1 ? relayAnswers.shift() : relayAnswers[0]
+        if (!answer) return { ok: false, status: 500, json: async () => ({ ok: false, err: 'no answer scripted' }) }
+        return answer
+    }
+    const answers = (list) => { relayAnswers = list }
+    const okAns = { ok: true, status: 200, json: async () => ({ ok: true, issue: 'https://github.com/jalfern/retrogames/issues/3412' }) }
+    const failAns = (err) => ({ ok: false, status: 503, json: async () => ({ ok: false, err }) })
+    const tick = () => new Promise((r) => setImmediate(r))
+    const runDemo = (win, doc) => {
+        new Function('window', 'document', 'fetch', fbSrc)(win, doc, relay)
+        return win.__demoFeedback
+    }
+    const demoWin = (seed) => ({
+        location: { pathname: '/retrogames/demos/ocean.html', search: '?feedback=1' },
+        navigator: { userAgent: 'DemoPhone Safari/605.1.15' },
+        localStorage: seed || memStorage(),
+        requestAnimationFrame: () => {},
+        innerWidth: 390, innerHeight: 844, devicePixelRatio: 3,
+    })
+
+    // A report kept on an earlier visit delivers itself as soon as the page is up.
+    const pre = memStorage()
+    pre.setItem(OUTBOX_STORE, JSON.stringify([{ id: 'keep-1', ts: 1, attempts: 3, payload: { note: 'kept last night at sea', gameId: 'ocean', route: '/retrogames/demos/ocean.html', ts: 1 } }]))
+    relayNotes = []
+    answers([okAns])
+    const d1 = runDemo(demoWin(pre), makeDoc())
+    await tick(); await tick()
+    ok('demo e2e: an outbox kept from before delivers itself at mount, with the issue number',
+        d1.outboxPending(pre) === 0 && /#3412/.test(d1._toastEl.textContent || '')
+        && relayNotes.length === 1 && relayNotes[0] === 'kept last night at sea', `toast="${d1._toastEl.textContent}"`)
+
+    // A fresh device: dictate, send into a refusing relay, and nothing vanishes.
+    const fresh = memStorage()
+    answers([failAns('relay at capacity')])
+    const d2 = runDemo(demoWin(fresh), makeDoc())
+    await tick(); await tick()
+    relayNotes = []
+    const box = d2._noteEl
+    box.value = 'the third wave stutters on this phone'
+    box.fire('compositionend') // dictation commits: no keydown, no keypress, no input
+    ok('demo e2e: dictated words (zero keypresses) are drafted on the device',
+        d2.loadDraft(fresh) === 'the third wave stutters on this phone')
+    d2._send()
+    await tick(); await tick()
+    ok('demo e2e: the dictated text — not an empty note — is what reaches the relay',
+        relayNotes.length === 1 && relayNotes[0] === 'the third wave stutters on this phone')
+    ok('demo e2e: a refused send says plainly why, on the box',
+        /relay at capacity/.test(d2._statusEl.textContent || '')
+        && /kept/i.test(d2._statusEl.textContent || ''))
+    ok('demo e2e: refused = kept in the outbox AND still visible in the box',
+        d2.outboxPending(fresh) === 1
+        && loadOutbox(fresh)[0].payload.note === 'the third wave stutters on this phone'
+        && box.value === 'the third wave stutters on this phone')
+    ok('demo e2e: the kept report is retryable — it still passes the relay\'s own gate',
+        validateFeedback(loadOutbox(fresh)[0].payload).ok === true)
+    answers([okAns])
+    const r2 = await d2.flushOutbox({ storage: fresh })
+    ok('demo e2e: the retry goes through and names the issue',
+        r2.sent.length === 1 && r2.pending === 0 && relayNotes.length === 2)
+
+    // An empty box must answer with words, never silence (that silence is what
+    // looked like a swallowed report), and it must not reach the relay at all.
+    const fresh2 = memStorage()
+    answers([okAns])
+    const d3 = runDemo(demoWin(fresh2), makeDoc())
+    await tick(); await tick()
+    d3._noteEl.value = '   '
+    const before = relayNotes.length
+    d3._send()
+    await tick(); await tick()
+    ok('demo e2e: an empty note says so instead of vanishing silently',
+        relayNotes.length === before && /nothing to send/i.test(d3._statusEl.textContent || ''))
+
+    // Closing the card mid-note keeps the draft, and the next visit restores it.
+    const carry = memStorage()
+    answers([okAns])
+    const d4 = runDemo(demoWin(carry), makeDoc())
+    await tick(); await tick()
+    d4._noteEl.value = 'half a report about the GPU'
+    d4._noteEl.fire('input')
+    d4._close()
+    ok('demo e2e: closing mid-sentence keeps the draft', d4.loadDraft(carry) === 'half a report about the GPU')
+    answers([okAns])
+    const d5 = runDemo(demoWin(carry), makeDoc())
+    await tick(); await tick()
+    ok('demo e2e: the next visit hands the draft back into the box',
+        d5._noteEl.value === 'half a report about the GPU')
+    d5._noteEl.value = ''
+    d5._close()
+    ok('demo e2e: nothing lingers once the note is emptied', typeof d5.loadDraft(carry) === 'string')
+}
+
+// ── #3407: the game panel's own wiring ────────────────────────────────────────
+{
+    ok('game panel: failed sends go to the outbox instead of evaporating',
+        /outboxAdd\(payload, window\.localStorage\)/.test(chromeSrc) && /kept on device, retrying/.test(chromeSrc))
+    ok('game panel: sends read the visible box, not the state that dictation may have missed',
+        /const text = noteRef\.current \? noteRef\.current\.value : note/.test(chromeSrc) && /ref=\{noteRef\}/.test(chromeSrc))
+    ok('game panel: dictation is caught by the native note-sync',
+        /installNoteSync\(noteRef\.current/.test(chromeSrc))
+    ok('game panel: an empty box answers with words', /nothing to send — type or dictate first/.test(chromeSrc))
+    ok('game panel: kept reports retry until they go through',
+        /flushOutbox\(\{ storage: window\.localStorage \}\)/.test(chromeSrc) && /retryDelayMs\(attemptRef\.current\)/.test(chromeSrc))
+    ok('game panel: a delivered retry confirms with the issue number',
+        /kept report delivered #\$\{n\}/.test(chromeSrc) && /const n = String\(res\.sent\[0\]\.issue \|\| '\?'\)\.split\('\/'\)\.pop\(\)/.test(chromeSrc))
+    ok('game panel: a delivered retry clears its own draft (never a fresher one)',
+        /if \(loadDraft\(window\.localStorage\) === res\.sent\[0\]\.note\) clearDraft\(window\.localStorage\)/.test(chromeSrc))
+    ok('game panel: the accepted send clears the draft and the box',
+        /if \(res\.ok\) \{[\s\S]{0,320}clearDraft\(window\.localStorage\)/.test(chromeSrc))
+    ok('game panel: the draft is saved while composing and restored on reopen',
+        /saveDraft\(note, window\.localStorage\)/.test(chromeSrc) && /loadDraft\(window\.localStorage\)/.test(chromeSrc))
+    ok('game panel: reopen never writes the blank state over a stored draft (the tick race)',
+        /if \(open && note\) saveDraft/.test(chromeSrc))
+    ok('game panel: an accepted send still files the note it showed', (() => {
+        const boxVal = 'dusk deck windsock reads backwards'
+        const cap = captureFeedback({ note: boxVal, ring: null, route: '/retrogames/skyward' })
+        return validateFeedback(cap).ok === true && cap.note === boxVal
+    })())
 }
 
 // ── #737 seed-pin law: a reported seed must be replayable ──────────────────
