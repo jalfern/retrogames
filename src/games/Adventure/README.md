@@ -57,11 +57,12 @@ chalice).
 ## Harness
 
 ```bash
-npm run adventurecheck          # 163 gates: determinism, gate/key/bridge/dragon law,
+npm run adventurecheck          # 196 gates: determinism, gate/key/bridge/dragon law,
                                 # placed-bridge law, gray dot + sealed-door rite, magnet
                                 # attract, dragon respawn, variants, gate-rite affordance,
-                                # juice signals, scripted chalice win on 10 seeds, static wiring
-npm run adventurecheck -- --mutant   # +42 mutants — every one must turn the suite red
+                                # juice signals, seam law (#3441), scripted chalice win on
+                                # 10 seeds, static wiring
+npm run adventurecheck -- --mutant   # +52 mutants — every one must turn the suite red
 npm run lint:adventure
 ```
 
@@ -71,7 +72,14 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
 
 ## Honest gaps (vs the original)
 
-- Collisions ignore exact room-warp edges (dragons never follow between rooms).
+- **CLOSED by #3441:** collisions ignored exact room-warp edges — dragons never
+  followed between rooms. The seam law now runs: a living, jaw-open dragon aligned
+  on the doorway (gap column/row ± `DRAGON_FOLLOW_SLACK`) warps through with the
+  dot at the mirror entry, so the chase — bite *and* sword-turn — is judged inside
+  the new room (see "#3441 — dragons follow through the door" below). What stays
+  honestly open: a **non-hunting** dragon still never wanders across a seam by
+  itself (the cart's dragons roamed the whole world; these follow *you*), and the
+  follow box is anchor-based, not the original's exact sprite-rect overlap.
 - The original duplicates the **chalice** (a second one sits in its Blue
   Castle); this 18-room port keeps a single chalice and no Blue Castle. Note
   the #1545 gap list's "two bridges" was a misremembering — the original has
@@ -253,3 +261,46 @@ after the rite), and the carried-key law (opens without a drop, key stays in
 hand, walk-through into the foyer, wrong key stays shut) — plus six mutants
 (gap x regression, OW4/OW5/SECRET sides re-bricked, lab1 door lost, carried
 key ignored).
+
+## #3441 — dragons follow through the door (room-warp seam law)
+
+Rooms are the dot's cage, not the dragons'. The 1979 chase never skidded to a
+halt at the room line: run through a doorway with a dragon at your heels and it
+comes through with you, the bite landing inside the new room. The Feb shell pinned
+dragons with `clamp(10, GW−20)` and a wander branch that could not change room, so
+doors were hard walls for them.
+
+The law (`sim.js`, arithmetic only — **no dice**): when `tryTransition` warps the
+dot A→B, every living dragon left in A that is *hunting* (`mouthOpen` — the port's
+own <30 px jaw law, so idle wanderers never self-leave a room) and *aligned* on
+the doorway (vertical warp: anchor x inside the shared gap column 60–100 ±
+`DRAGON_FOLLOW_SLACK`; horizontal warp: anchor y inside the side-gap band 70–120 ±
+slack — #2255 aligned every seam column, so the seam the dot used is the
+follower's door too) enters B at the mirror entry: `y = GH−20` after an up-warp,
+`y = 10` after down, `x = GW−20`/`10` for left/right, parallel axis preserved.
+
+**Why passability needs no re-check:** the dot just crossed that seam, and every
+barrier this port owns — portcullis, sealed secret door, stone floor — opens for
+the *run*, not the tick. A seam crossed once is crossable by the follower in the
+same instant (the foyer case is a gate, and gates answer open when the dot gets
+through them).
+
+Same-tick consequences, and they are the fun part: dragon AI runs after the
+transition, so a follower lands at your heels and `dist < 8 && mouthOpen` bites
+the tick you both arrive — too slow through the door is a death *in the new room*
+— while the #1545 sword law turns the follow into a slay (`dist < 14`) the moment
+you face it. Multi-dragon rooms become reachable for the first time (a follower
+visiting a resident), the original's signature chaos with no new entity kinds.
+
+Determinism note: seed replay stays self-consistent, but dice timing shifts where
+a followed dragon takes the chase branch (0 draws) instead of wander (2) — every
+digest, scripted-win and terminal gate re-ran green unchanged, and the playtest's
+skilled-route win rate with the law live is 98% (failures are the pre-existing
+"no bridge" class only).
+
+Gated in `adventurecheck`: ten #3441 gates — a real-walk repro (start at
+Rhindle's jaw in the lair, run up: OW5 room change, Rhindle at `GH−20`, heels
+bite), a no-dice hash pair, misalignment stays (12 px past the column), jaw-shut
+stays, a left-warp mirror into lab1 with y preserved, the sword-turn slay after
+a follow, and the raised-portcullis foyer follow — plus three mutants (alignment
+deleted, jaw-shut follow, deep landing).
