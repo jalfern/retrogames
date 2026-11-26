@@ -14,8 +14,15 @@
 // mutant (1500) and hunts the ship. Clearing every lander and mutant resurfaces
 // the wave (+1000). 3 lives, extra ship every 10,000, ~0.5 s death freeze
 // (#1531), respawn grace, and the
-// run ends honestly at GAME OVER. Documented gaps (see README): smart bomb,
-// hyperspace, meteor-swarm bonus; collisions at the wrap seam are skipped.
+// run ends honestly at GAME OVER. Documented gaps (see README): hyperspace,
+// meteor-swarm bonus; collisions at the wrap seam are skipped.
+//
+// The smart bomb (#3443 — Jon's #2016 answer A, "port it. Smart bomb on the
+// B/secondAction button, 3 per wave"): B vaporizes every hostile inside the
+// 1000 px screen window (a quarter of the planet — 2000 px at the arcade's
+// 2:1 aspect), credits the normal table, drops a hauler's human falling, and
+// never touches the fighter or a foot soldier. 3 per wave, refilled on the
+// wave beat. Press-driven and rand-free: the witness stream cannot shift.
 
 export const WORLD_WIDTH = 4000
 export const HUMAN_COUNT = 5
@@ -37,6 +44,13 @@ export const RESPAWN_DELAY = 60     // ~1 s dark before the ship returns
 export const INVULN_TICKS = 120     // ~2 s blinking grace after respawn
 export const DEATH_FREEZE = 30      // ~0.5 s the machine holds the dead frame
                                     // before the respawn countdown (#1531)
+
+// #3443 (Jon's #2016 answer A): the smart bomb — 3 per wave, and the blast
+// window is 1000 px of the 4000 px planet, wrap-aware and centered on the
+// fighter. The cabinet showed a quarter of the field; 1000 px covers this
+// port's widest view, so "everything on screen" is honest on every device.
+export const BOMBS_PER_WAVE = 3
+export const BOMB_SCREEN = 1000
 
 // #2167: thrust-hum pitch from the fighter's speed, finite AT THE SOURCE.
 // A non-finite vx (any physics edge) must not silence the hum into a dropped
@@ -229,6 +243,9 @@ export function createSim({ rand, height }) {
         carrying: null,
         freeze: 0,
         celebrate: 0, // #1907: wave-clear celebration ticks (the planet-explode beat)
+        bombs: BOMBS_PER_WAVE, // #3443: smart-bomb stock, refilled at every wave beat
+        prevBomb: false,       // edge-trigger: one press = one bomb, held ≠ stream
+        bombFlash: 0,          // the white detonation beat the renderer paints
         events: [],
     }
     s.humans = makeHumans(rand, s.terrain)
@@ -252,6 +269,44 @@ export function createSim({ rand, height }) {
     const addScore = (pts) => {
         s.score += pts
         if (livesForScore(s.score) > s.bonusLives) { s.bonusLives += 1; s.lives += 1; s.events.push({ t: 'bonus' }) }
+    }
+
+    // #3443 — the smart bomb (Jon's #2016 answer A). One press vaporizes every
+    // hostile inside the 1000 px screen window around the fighter, wrap-aware,
+    // each dying at its table value; a hauler's cargo drops FALLING (catchable,
+    // the same law as a shot hauler). The blast is selective like the cabinet's:
+    // never the pilot, never a foot soldier. rand-FREE end to end — the FX use
+    // the fixed flash pattern, so even a human pressing B cannot shift the seed
+    // stream (the seedpin law), and watchRoute never presses at all.
+    const smartBomb = (p) => {
+        s.bombs -= 1
+        s.bombFlash = 18
+        let kills = 0
+        for (const e of s.enemies) {
+            if (e.dead || Math.abs(wrapDelta(e.x - p.x)) > BOMB_SCREEN / 2) continue
+            e.dead = true
+            kills += 1
+            if (e.type === 'lander') {
+                addScore(SCORE_LANDER)
+                s.events.push({ t: 'killLander', pts: SCORE_LANDER })
+                flashBurst(e.x, e.y, '#3dff5e')
+                if (e.carry !== null) {
+                    const h = s.humans[e.carry]
+                    h.state = 'falling'
+                    h.vy = 1
+                    e.carry = null
+                }
+            } else {
+                addScore(SCORE_MUTANT)
+                s.events.push({ t: 'killMutant', pts: SCORE_MUTANT })
+                flashBurst(e.x, e.y, '#ff5555')
+            }
+        }
+        // The detonation ring — fixed pattern, deterministic, no rand.
+        for (let i = 0; i < 16; i++) {
+            s.particles.push({ x: p.x, y: p.y, vx: Math.cos(i * Math.PI / 8) * 7, vy: Math.sin(i * Math.PI / 8) * 7, life: 18, col: '#ffffff' })
+        }
+        s.events.push({ t: 'bomb', kills })
     }
 
     const die = () => {
@@ -285,6 +340,7 @@ export function createSim({ rand, height }) {
         // particles included; only the clock runs.
         if (s.freeze > 0) { s.freeze -= 1; return s }
         if (s.celebrate > 0) s.celebrate -= 1 // #1907: the wave-clear beat burns its own clock
+        if (s.bombFlash > 0) s.bombFlash -= 1 // #3443: the detonation white fades
 
         const p = s.player
 
@@ -309,6 +365,11 @@ export function createSim({ rand, height }) {
         if (p.dark <= 0 && p.invuln <= 0 && ceil - p.y < 8) { die(); return s }
         if (p.y > groundAt(s.terrain, p.x) - 8) p.y = groundAt(s.terrain, p.x) - 8
         if (p.cooldown > 0) p.cooldown -= 1
+
+        // --- Smart bomb (#3443): edge-triggered B, never during dark/death ---
+        const bombPress = !!input.bomb && !s.prevBomb
+        s.prevBomb = !!input.bomb
+        if (bombPress && s.bombs > 0 && p.dark <= 0) smartBomb(p)
 
         // --- Lasers ---
         if (input.fire && p.cooldown <= 0 && p.dark <= 0) {
@@ -519,6 +580,7 @@ export function createSim({ rand, height }) {
             addScore(SCORE_WAVE)
             s.wave += 1
             s.enemies = spawnWave(rand, s.wave, height)
+            s.bombs = BOMBS_PER_WAVE // #3443 (Jon #2016): 3 per wave — the wave beat restocks
             s.celebrate = 100 // #1907: the planet-exploses celebration beat before the new wave settles
             s.events.push({ t: 'wave', pts: SCORE_WAVE })
         }
