@@ -73,8 +73,73 @@ const cellPath = (sim, fx, fy, tx, ty) => {
 }
 
 // Drive to a point in the current room, one input per tick. Diagonal first,
-// then each axis alone (a side-biting wall can kill one axis mid-hop; the
+// then each axis alone (a side-biting wall can kill one tick mid-hop; the
 // other still gets its tick). True on arrival, false on death/win/exhaustion.
+// #3489: rooms no longer cage dragons — idle ones wander through doorways —
+// so every drive is dragon-aware: a threat inside DODGE_SAFE triggers the
+// kite below instead of walking into a maw.
+const DODGE_SAFE = 48   // kite while a live dragon is nearer than this in your room
+
+const roomThreat = (sim) => {
+    const p = sim.player
+    let best = null
+    for (const d of sim.dragons) {
+        if (!d.alive || d.room !== sim.room) continue
+        const dist = Math.hypot(p.x - d.x, p.y - d.y)
+        if (!best || dist < best.dist) best = { d, dist }
+    }
+    return best
+}
+
+// Kite a dragon that wandered into the player's room: run the away-vector at
+// full speed (the dot is faster than every cart dragon — 1.8 vs ≤1.5); when a
+// wall pins the flee, sweep one axis at a time until the run resumes. Escape
+// through a doorway wins outright: jaws shut beyond 30 px, so the #3441
+// follow law leaves a chased-at-distance dragon behind. True when the coast is
+// clear (dragon left, died, or out of DODGE_SAFE), false on death/exhaustion.
+function* dodge(sim, cap = 800) {
+    const p = sim.player
+    for (let i = 0; i < cap; i++) {
+        if (sim.won) return true
+        if (sim.dead) return false
+        const t = roomThreat(sim)
+        if (!t || t.dist > DODGE_SAFE) return true
+        const ax = p.x - t.d.x, ay = p.y - t.d.y
+        const n = Math.hypot(ax, ay) || 1
+        const rx = p.x, ry = p.y, r0 = sim.room
+        yield { dx: (ax / n) * S, dy: (ay / n) * S }
+        if (sim.room !== r0) return true   // slipped out a doorway — follower stays (jaws shut)
+        if (sim.dead || sim.won) continue
+        if (p.x === rx && p.y === ry) {
+            // pinned against stone: sweep one axis at a time until free again
+            const sweep = [[S, 0], [-S, 0], [0, S], [0, -S]][i % 4]
+            yield { dx: sweep[0], dy: sweep[1] }
+        }
+    }
+    return false
+}
+
+// #3489 — a doorway is no longer a safe threshold: a roaming dragon can sit
+// just inside it and bite the instant you arrive (dist < 8 lands on the entry
+// tick). Before pushing through, wait for the landing point in `want` to be
+// clear, capped so a loitering hunter cannot deadlock the guide.
+const ENTRY_SAFE = 34   // bite 8 + jaw law 30 + a tick of slack
+function* entryClear(sim, dir, want) {
+    const p = sim.player
+    for (let i = 0; i < 600 && !sim.won && !sim.dead; i++) {
+        let threat = false
+        for (const d of sim.dragons) {
+            if (!d.alive || d.room !== want) continue
+            const lx = dir === 'left' ? GW - 20 : dir === 'right' ? 10 : p.x
+            const ly = dir === 'up' ? GH - 20 : dir === 'down' ? 10 : p.y
+            if (Math.hypot(lx - d.x, ly - d.y) < ENTRY_SAFE) threat = true
+        }
+        if (!threat) return true
+        yield {}
+    }
+    return !sim.dragons.some((d) => d.alive && d.room === want)
+}
+
 function* driveTo(sim, tx, ty, stop = 1.2) {
     const p = sim.player
     const txc = tx + p.w / 2, tyc = ty + p.h / 2
@@ -82,6 +147,8 @@ function* driveTo(sim, tx, ty, stop = 1.2) {
     const plan = () => { path = cellPath(sim, p.x + p.w / 2, p.y + p.h / 2, txc, tyc); stuck = 0 }
     plan()
     for (let i = 0; i < 5000; i++) {
+        const th = roomThreat(sim)
+        if (th && th.dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) return false; continue }
         const ddx = tx - p.x, ddy = ty - p.y
         if (Math.abs(ddx) <= stop && Math.abs(ddy) <= stop) return true
         let wx = txc, wy = tyc
@@ -117,10 +184,14 @@ function* driveTo(sim, tx, ty, stop = 1.2) {
     return false
 }
 
-// Push toward a room edge until the transition lands in `want`.
+// Push toward a room edge until the transition lands in `want`. #3489: first
+// wait for the landing spot to be dragon-free (a roaming dragon can camp the
+// doorway), and kite immediately if one closes on the arrival anyway.
 function* cross(sim, dir, want, maxTicks = 400) {
     const v = { up: [0, -S], down: [0, S], left: [-S, 0], right: [S, 0] }[dir]
-    for (let i = 0; i < maxTicks && sim.room !== want && !sim.won; i++) yield { dx: v[0], dy: v[1] }
+    if (sim.room !== want) yield* entryClear(sim, dir, want)
+    for (let i = 0; i < maxTicks && sim.room !== want && !sim.won && !sim.dead; i++) yield { dx: v[0], dy: v[1] }
+    if (sim.room === want && !sim.won && !sim.dead && roomThreat(sim)) { if (!(yield* dodge(sim))) return false }
     return sim.room === want
 }
 
@@ -253,7 +324,9 @@ function* runRoute(sim) {
     if (!(yield* openGate(sim, 'whiteKey'))) return { ok: false, why: 'gateW' }
     if (!(yield* fetchItem(sim, 'chalice'))) return { ok: false, why: 'chalice' }
     if (!sim.won && !(yield* walkTo(sim, R.GOLD_CASTLE))) return { ok: false, why: 'home' }
-    for (let i = 0; i < 200 && !sim.won; i++) {
+    for (let i = 0; i < 400 && !sim.won; i++) {
+        const th = roomThreat(sim)
+        if (th && th.dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) return { ok: false, why: 'died at home' }; continue }
         yield { dx: 0, dy: -S }
         if (sim.dead) return { ok: false, why: 'died at home' }
     }
@@ -341,7 +414,9 @@ function* scriptRun(sim) {
     if (!(yield* cross(sim, 'down', R.OVERWORLD_4))) return { ok: false, why: 'ow4 home' }
     if (!(yield* R1(80, P.y))) return { ok: false, why: 'ow4 home align' }
     if (!sim.won && !(yield* cross(sim, 'up', R.OVERWORLD_1))) return { ok: false, why: 'ow1 home' }
-    for (let i = 0; i < 200 && !sim.won; i++) {
+    for (let i = 0; i < 400 && !sim.won; i++) {
+        const th = roomThreat(sim)
+        if (th && th.dist <= DODGE_SAFE) { if (!(yield* dodge(sim))) return { ok: false, why: 'died at home' }; continue }
         yield { dx: 0, dy: -S }
         if (sim.dead) return { ok: false, why: 'died at home' }
     }

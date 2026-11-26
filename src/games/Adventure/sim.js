@@ -39,6 +39,13 @@ export const MAX_ITEMS = 8   // distinct item KINDS for score: sword, goldKey, b
 // 'chalice' kind, so the score ceiling stays 8 while the world holds 9 objects.
 export const ITEM_INSTANCES = 9
 export const DRAGON_FOLLOW_SLACK = 10  // #3441 seam alignment: gap edge ± one tick of speed
+// #3489 roam law: the cart's dragons wandered the whole world; rooms caged
+// only the dot. An idle dragon keeps a steady heading and takes new course
+// dice at the bat's rhythm (#1560 course-change law) — one roaming voice for
+// the cart's two animals. DRAGON_BOX is its collision box (the seam law's
+// anchor size, the clamp bound [10, GW−20] the Feb shell already used).
+export const WANDER_REROLL = 0.02  // per-tick chance an idle dragon picks a new course
+export const DRAGON_BOX = 10
 
 // Wall geometry shared by makeWalls() and the secret-door barrier rect.
 export const WALL_T = 4      // wall thickness
@@ -399,9 +406,12 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
         player: { x: 80, y: 150, w: 6, h: 10 },
         gateOpen: { goldKey: false, blackKey: false, whiteKey: false },
         items,
-        dragons: DRAGON_TEMPLATES.map((t) => ({
+        dragons: DRAGON_TEMPLATES.map((t, i) => ({
             ...t, speed: t.speed * spec.dragonScale, alive: true, mouthOpen: false,
             homeRoom: t.room, homeX: t.x, homeY: t.y, respawnAt: Infinity,
+            // #3489: the first wander course — golden-angle spread, deterministic,
+            // zero dice (the course dice below own the randomness).
+            wx: Math.cos(i * 2.39996), wy: Math.sin(i * 2.39996),
         })),
         bat: { room: R.OVERWORLD_3, x: 90, y: 50, vx: 1.5, vy: 0.8, carrying: null, swapTimer: 0 },
         pickedUp: {},
@@ -801,13 +811,50 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                     sim.events.push('death')
                 }
             } else {
-                // Dragon wanders in its room (seeded dice, #1473)
-                dragon.x += (rand() - 0.5) * dragon.speed
-                dragon.y += (rand() - 0.5) * dragon.speed
+                // #3489 — DRAGONS ROAM. Rooms are the dot's cage, not the
+                // dragons' (the law #3441 stated; this closes its remaining
+                // half). An idle dragon keeps a steady heading at its own
+                // speed, takes course dice on the bat's rhythm, and obeys the
+                // SAME walls the dot obeys — collidesWithWalls carries the
+                // maze, the placed-bridge law, the closed portcullis and the
+                // sealed secret door — so it slides along stone to an open
+                // doorway and steps through it, arriving at the seam law's
+                // mirror entry (#3441 geometry: up→GH−20, down→10, left→GW−20,
+                // right→10, parallel axis preserved). No alignment slack is
+                // needed: the carved gap *is* the alignment, and a bricked
+                // side has no gap to slide through. Hunting, bite, sword-turn
+                // and the #3441 follow are untouched — the roam branch is only
+                // what an idle dragon does while the dot is elsewhere.
+                if (rand() < WANDER_REROLL) {
+                    const course = rand() * Math.PI * 2
+                    dragon.wx = Math.cos(course)
+                    dragon.wy = Math.sin(course)
+                }
+                const dRoom = ROOMS[dragon.room]
+                const nx = dragon.x + dragon.wx * dragon.speed
+                const ny = dragon.y + dragon.wy * dragon.speed
+                if (!collidesWithWalls(dRoom, nx, dragon.y, DRAGON_BOX, DRAGON_BOX)) dragon.x = nx
+                if (!collidesWithWalls(dRoom, dragon.x, ny, DRAGON_BOX, DRAGON_BOX)) dragon.y = ny
                 dragon.mouthOpen = false
+
+                const dex = EXITS[dragon.room]
+                if (dragon.y < 0 || dragon.y + DRAGON_BOX > GH) {
+                    const dir = dragon.y < 0 ? 'up' : 'down'
+                    // Gate rooms: the courtyard's up seam is its foyer, through
+                    // the portcullis (the closed gate already blocked the walk).
+                    const to = (dir === 'up' && dRoom.gate && sim.gateOpen[dRoom.gateKey]
+                        && CASTLE_INSIDES[dragon.room] !== undefined)
+                        ? CASTLE_INSIDES[dragon.room] : dex[dir]
+                    if (to >= 0) { dragon.room = to; dragon.y = dir === 'up' ? GH - 20 : 10 } else dragon.y = dir === 'up' ? 10 : GH - 20
+                } else if (dragon.x < 0 || dragon.x + DRAGON_BOX > GW) {
+                    const dir = dragon.x < 0 ? 'left' : 'right'
+                    const to = dex[dir]
+                    if (to >= 0) { dragon.room = to; dragon.x = dir === 'left' ? GW - 20 : 10 } else dragon.x = dir === 'left' ? 10 : GW - 20
+                }
+                continue  // roam positioned itself; the in-room clamp is the hunt branch's
             }
 
-            // Clamp dragons to room bounds
+            // Clamp dragons to room bounds (hunt branch — chase stays on-screen)
             dragon.x = Math.max(10, Math.min(GW - 20, dragon.x))
             dragon.y = Math.max(10, Math.min(GH - 20, dragon.y))
         }
