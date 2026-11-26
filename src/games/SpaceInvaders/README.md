@@ -11,7 +11,7 @@ four-tone march accelerates as the fleet shrinks.
 
 | File | Job | Proven by |
 |------|-----|-----------|
-| `sim.js` | one `step(state, input, rand)` — **zero `Math.random`**, every dice roll (invader fire, shooter choice, UFO arrival) drawn from the injected `rand` stream; the saucer's bounty is the shot-count table, not a roll | `npm run invaderscheck` (74 checks incl. 13 mutants proven RED→GREEN) |
+| `sim.js` | one `step(state, input, rand)` — **zero `Math.random`**, every dice roll (invader fire, shooter choice, UFO arrival) drawn from the injected `rand` stream; the saucer's bounty is the shot-count table, not a roll | `npm run invaderscheck` (76 checks incl. 15 mutants proven RED→GREEN) |
 | `index.jsx` | render (pixel sprites from bit-rows, 2-frame march), input, seed lifecycle, attract autopilot, harness contract | eslint + `feedbackcheck` laws |
 | `attract.js` | attract screen frames | intact from the original port |
 
@@ -79,9 +79,9 @@ omitted — the rand closure can't JSON round-trip (#391).
 ```bash
 npm run invaderscheck          # Node: boot, rules, wave table, speed law, winnable,
                              #   determinism, contract, + WITNESS: the WATCH brain
-                             #   clears wave 1 on 20/20 seeds (slowest ~1506)
-npm run invaderscheck -- --mutant  # 13 mutants (incl. flat-march and frozen growth
-                             #   table, #3517) must all go red
+                             #   clears wave 1 on 20/20 seeds (slowest ~1443)
+npm run invaderscheck -- --mutant  # 15 mutants (incl. flat-march and frozen growth
+                             #   table, #3517; #3540 crossing + HOLD) must all go red
 npm run invadersdrive          # real Chrome real keys: attract, start, arrows, fire,
                              #   landing death, restart-to-attract, zero page errors
 npm run watchcheck -- --only invaders  # seat pilot: one-tap ▶ WATCH, Y seat/takeover,
@@ -118,6 +118,32 @@ flight. Measured: slowest clean clear 1857 → **1265**, inter-kill stall
 deletion, plus a fort-preservation pin (6215/6560 bricks standing at clear;
 deleting b19's aim tiebreak chews it to 6108).
 
+## Batch #3540 — aim while travelling
+
+Batch 20 cut the mis-aiming; what remained was the pilot FREEZING instead of
+travelling. Two static rules caused it, both measured in the seed-1924 (197 t)
+and seed-2001 traces:
+
+- **Time-aware lane crossing** — `pathOpen` blocked the walk if ANY band bullet
+  sat in a column between the ship and the goal, even one with 50+ ticks to
+  live. Now the bullet's clock is compared with ours: it grinds the whole 8-px
+  hull, killing until `(PLAYER_Y + PLAYER_H − y)/2.5`; we clear the lane's band
+  at `(|lx − pc| + 8)/3`. Cross behind the clock and the shot lands after we
+  have walked past. (First cut timed to the hull TOP and let seed 2001 die with
+  lives > 0 — the kill window is hull-DEEP.)
+- **HOLD, don't flee** — when no goal was reachable within ±48 px, the old
+  fallback sprinted to the wall OPPOSITE the shots. Seed 2001's endgame
+  ping-ponged 88..148 for ~500 ticks, finally landing two invaders that died
+  nowhere. If our column is free we now HOLD: every bullet leaves the band
+  within ~30 t, so holding always costs less than the lost commute.
+
+Measured: 20/20 clean, 0 deaths, worst stall
+197 → **128**, slowest clear 1506 → **1443**, bricks at clear 5902/6560.
+Pins tightened 1600/220 → **1500/150**; deletions measured — crossing 189 (and
+seed 1770 lands), re-aim 193, fold 686, HOLD 1651 (seed 1308 lands) — all
+still red, with the two new laws pinned by static lines and two new mutants
+(15/15 mutants die).
+
 ## Polish batch #1906 (2026-11-10)
 
 Mid-game feel, from the issue list (QA polish pass):
@@ -151,11 +177,12 @@ decay granularity rewires the proven route and needs its own session.
 
 ## Honest gaps
 
-- The WATCH route clears wave 1 on all 20 WITNESS seeds (0 deaths, slowest
-  ~1506 ticks — #3517 re-measured with the 55 wall; one shot on screen means
-  ~1.4x the 32-invader era's runway); between kills the worst seed pauses
-  ~3.3 s (196 ticks, shot-tempo + re-alignment, pinned <= 220) crossing
-  dense shot patterns.
+- **CLOSED by #3540:** ~~between kills the worst seed pauses ~3.3 s
+  (196 ticks, shot-tempo + re-alignment, pinned <= 220) crossing dense shot
+  patterns.~~ — time-aware lane crossing + HOLD fallback: worst pause ~2.1 s
+  (128 t, pinned <= 150), slowest clear 1443 (pinned <= 1500). The WATCH
+  route clears wave 1 on all 20 WITNESS seeds (0 deaths; one shot on screen
+  means ~1.4x the 32-invader era's runway).
 - **CLOSED by #3517:** ~~4 rows × 8 = 32 invaders; the original opens with 55
   and grows per wave.~~ — 11x5 = 55 opening, growth table 55/44/33, five-band
   score table, cabinet thinning speed law and 3:1 missile ratio (see Terminal

@@ -183,9 +183,24 @@ export const watchRoute = (s) => {
     const maxX = GW - 4 - PLAYER_W / 2
     // A column is contested when its shot is inside our approach band (~40
     // ticks out); higher shots keep falling and get re-judged as they drop.
-    const lanes = s.enemyBullets.filter((b) => b.y > GH - 100).map((b) => b.x)
-    const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 12)
-    const pathOpen = (x) => lanes.every((lx) => (lx - Math.min(pc, x)) * (lx - Math.max(pc, x)) >= 0 || Math.abs(lx - pc) < 12)
+    // #3540 TIME-AWARE CROSSING: a lane between us and the goal only blocks
+    // while its bullet can still bite — the kill window closes at
+    // (PLAYER_Y + PLAYER_H - y)/2.5 (the shot grinds the whole 8-px hull, not
+    // just its top row); we clear the lane's band at (|lx-pc| + 8)/3. Cross
+    // behind the bullet's clock and it lands after we have walked past.
+    // Measured (seed 1924): the old static law dithered 197 ticks against a
+    // wall of five falling columns 150 px from the target; this cuts it to 93.
+    const lanes = s.enemyBullets.filter((b) => b.y > GH - 100)
+    const freeAt = (x) => lanes.every((b) => Math.abs(b.x - x) >= 12)
+    const pathOpen = (x) => lanes.every((b) => {
+        const lx = b.x
+        if ((lx - Math.min(pc, x)) * (lx - Math.max(pc, x)) >= 0 || Math.abs(lx - pc) < 12) return true
+        // we must traverse this lane: leave its kill band at (|lx-pc|+8)/3;
+        // the bullet bites from PLAYER_Y down through the hull, so its kill
+        // window closes at (PLAYER_Y + PLAYER_H - y)/2.5 — cross iff that is
+        // still ahead of our exit + 2 ticks.
+        return (PLAYER_Y + PLAYER_H - b.y) / 2.5 > (Math.abs(lx - pc) + 8) / 3 + 2
+    })
     const leadOf = (i) => {
         const flight = (PLAYER_Y - BULLET_H - i.y) / 8
         // #1637 b20 — fold the edge bounce into the meeting point: a straight
@@ -266,7 +281,23 @@ export const watchRoute = (s) => {
             else if (d > 0 && aimX - d >= minX && freeAt(aimX - d) && pathOpen(aimX - d)) goal = aimX - d
         }
     }
-    if (goal === null) goal = lanes.some((lx) => lx >= pc) ? minX : maxX
+    if (goal === null) {
+        // #3540 HOLD, DON'T FLEE: the old fallback sprinted to the wall OPPOSITE
+        // the shots — away from the target, 100+ ticks per blockage (seed 2001
+        // endgame ping-ponged 88..148 for 500 ticks with an empty sky between
+        // volleys). If our column is free, holding costs at most one bullet's
+        // fall through the band (~30 t) before the path re-opens; fleeing costs
+        // the commute back. Only a contested column still flees, to the nearest
+        // free column.
+        if (freeAt(pc)) goal = pc
+        else {
+            for (let d = 1; d <= 48 && goal === null; d++) {
+                if (pc + d <= maxX && freeAt(pc + d)) goal = pc + d
+                else if (pc - d >= minX && freeAt(pc - d)) goal = pc - d
+            }
+            if (goal === null) goal = lanes.some((b) => b.x >= pc) ? minX : maxX
+        }
+    }
     const dx = goal - pc
     if (dx > 1) input.right = true
     else if (dx < -1) input.left = true

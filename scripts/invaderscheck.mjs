@@ -319,10 +319,10 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
         deaths += dw
         if (w.wave >= 2 && dw === 0) { clean++; slowest = Math.max(slowest, w.tick); bricksAtClear += bunkerBricks(w) }
     }
-    ok(clean >= 20, `WATCH route clears wave 1 untouched on ${clean}/20 seeds (>=20 — #3517: 55 targets, the thinning speed law gives the route its runway)`)
+    ok(clean >= 20, `WATCH route clears wave 1 untouched on ${clean}/20 seeds (>=20 — #3517: 55 targets, the thinning speed law gives the route its runway; deleting the #3540 HOLD fallback lands seed 1308, deleting the time-aware crossing lands seed 1770)`)
     ok(deaths === 0, `the route never banks a life across 20 seeded flights (${deaths})`)
-    ok(slowest <= 1600, `slowest clean clear tick ${slowest} <= 1600 (#3517: 55 kills at the one-shot rule need ~1.4x the 32-invader era's runway)`)
-    ok(slowestGap <= 220, `no seed stalls longer than 220 ticks between kills (slowest ${slowestGap}; b18's fort stall ran 511; deleting the b20 fold runs 236, deleting the re-aim pass runs 264)`)
+    ok(slowest <= 1500, `slowest clean clear tick ${slowest} <= 1500 (#3540: time-aware crossing + hold cut 1506 -> 1443; deleting the crossing runs 1732, the HOLD fallback 1651, the b20 fold 2007)`)
+    ok(slowestGap <= 150, `no seed stalls longer than 150 ticks between kills (slowest ${slowestGap}; #3540 cut 197 -> 128; deleting the time-aware crossing runs 189, the b20 re-aim pass 193, the b20 fold 686; b18's fort stall ran 511)`)
     ok(bricksAtClear >= 5500, `the route wastes few bricks on shots that cannot reach (forts still stand ${bricksAtClear}/6560 at clear — #3517: the crawl era lets the fleet shelter more targets, honest chewing is ~1060/6560 across 20 seeds, was ~360 in the 32-invader era)`)
     ok(/watchRoute\(world\)/.test(jsx) && !/attractInput/.test(jsx),
         'index.jsx runs watchRoute from sim.js — attract and seat share one brain')
@@ -333,6 +333,10 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
         '#1637 b20: the route takes an aligned shot NOW instead of marching to the lowest target\s column')
     ok(/let edgeDist = Infinity[\s\S]*?Math\.min\(flight, tEdge\)/.test(simSrc),
         '#1637 b20: the meeting point folds the edge bounce into the shot\s flight prediction')
+    ok(/return \(PLAYER_Y \+ PLAYER_H - b\.y\) \/ 2\.5 > \(Math\.abs\(lx - pc\) \+ 8\) \/ 3 \+ 2/.test(simSrc),
+        '#3540: pathOpen times the crossing against the bullet\s kill clock (hull-deep), not the static column')
+    ok(/if \(goal === null\) \{[\s\S]*?if \(freeAt\(pc\)\) goal = pc/.test(simSrc),
+        '#3540: an unreachable aim makes the route HOLD a free column, not flee to the far wall')
     ok(/isWatchKey\(e\)/.test(jsx) && /isTakeoverKey\(e\)/.test(jsx), 'seat + takeover wired in index.jsx')
     ok(/label: 'SPACE INVADERS'[\s\S]{0,400}WATCH_HELP/.test(readFileSync('src/config/games.js', 'utf8')),
         'registry advertises WATCH for Space Invaders')
@@ -399,8 +403,14 @@ if (process.argv.includes('--mutant')) {
             'export const waveRows = (wave) => (wave <= 1 ? 5 : wave === 2 ? 4 : 3)',
             'export const waveRows = () => 5'],
         [S, 'the route can stand in a falling column',
-            'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 12)',
-            'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 6)'],
+            'const freeAt = (x) => lanes.every((b) => Math.abs(b.x - x) >= 12)',
+            'const freeAt = (x) => lanes.every((b) => Math.abs(b.x - x) >= 6)'],
+        [S, 'lanes block statically again (#3540 time-aware crossing deleted)',
+            'return (PLAYER_Y + PLAYER_H - b.y) / 2.5 > (Math.abs(lx - pc) + 8) / 3 + 2',
+            'return false'],
+        [S, 'a blocked aim route flees to the far wall again (#3540 HOLD deleted)',
+            'if (goal === null) {\n        // #3540 HOLD, DON\'T FLEE:',
+            'goal = lanes.some((b) => b.x >= pc) ? minX : maxX\n    if (false && goal === null) {\n        // #3540 HOLD, DON\'T FLEE:'],
         [S, 'shots cross forts again (b19 fire gate deleted)',
             'if (Math.abs(aimX - pc) <= 2.5 && !s.playerBullet && freeAt(pc) && (bestBlocked || !fortBlocks(s, pc))) input.fire = true',
             'if (Math.abs(aimX - pc) <= 2.5 && !s.playerBullet && freeAt(pc)) input.fire = true'],
