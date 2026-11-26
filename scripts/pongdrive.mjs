@@ -293,13 +293,47 @@ try {
     r.check('ArrowDown cycles back 1 → FREE', (await probe(p)).range === 'FREE')
     await p.click('.pong-range-zone')
     r.check('a thumb on the RANGE label rides the dial (FREE → 1)', (await probe(p)).range === '1')
+    // #3576 — the knob answers every turn with a quiet detent pip
+    const detents = await p.evaluate(() => window.__pongTest.sfx().filter((e) => e.kind === 'detent'))
+    r.check('the dial turn plays a quiet ~5 ms square detent pip (vol ≤ 0.04)',
+        detents.length >= 3 && detents.every((e) => e.freq === 210 && e.dur <= 0.01 && e.vol <= 0.04),
+        JSON.stringify(detents).slice(0, 200))
     await p.keyboard.press('KeyY') // seat the proven driver, starts the match
+    // #3576 — the cap beat: the card waits a beat on the conceded edge, and the
+    // chip is on the table THROUGH it. Capture both while the flash blinks.
+    let beat = null
     const capped = await until(p, async () => {
         const q = await probe(p)
+        if (q.flashTicks > 0 && beat === null) {
+            const chipPx = await p.evaluate(() => {
+                const canvas = document.querySelector('canvas')
+                const ctx = canvas.getContext('2d')
+                const dpr = canvas.width / canvas.getBoundingClientRect().width
+                const w = canvas.getBoundingClientRect().width
+                const x0 = Math.round((w / 2 - 60) * dpr)
+                const y0 = Math.round(68 * dpr)
+                const rw = Math.round(120 * dpr)
+                const rh = Math.round(30 * dpr)
+                const d = ctx.getImageData(x0, y0, rw, rh).data
+                let hit = 0
+                for (let i = 0; i < d.length; i += 4)
+                    if (d[i] === 0xff && d[i + 1] === 0xd2 && d[i + 2] === 0x3f) hit++
+                return hit
+            })
+            beat = { ...q, chipPx }
+        }
         return q.screen === 'over' ? q : null
     }, 60000, 'the RANGE 1 cap closes the match')
     r.check('RANGE 1 binds: the first point ends the match at play time',
         capped.score + capped.opp === 1 && capped.screen === 'over', `${capped.score}-${capped.opp}`)
+    r.check('the target chip renders through the beat (#ffd23f block-face px on the table)',
+        beat !== null && beat.chipPx > 12, JSON.stringify(beat).slice(0, 200))
+    r.check('the cap beat holds the play screen, the conceded edge and the chip — then the card lands',
+        beat !== null
+        && beat.screen === 'play'
+        && beat.flashSide !== null
+        && beat.flashSide === (capped.score > capped.opp ? 'right' : 'left'),
+        JSON.stringify(beat).slice(0, 200))
     const winSfx = await p.evaluate(() => window.__pongTest.sfx().filter((s) => s.kind === 'win'))
     r.check('the cap rings the ascending win sting (660 → 880)',
         winSfx.length === 2 && winSfx[0].freq === 660 && winSfx[1].freq > winSfx[0].freq, JSON.stringify(winSfx))
@@ -373,6 +407,8 @@ if (process.argv.includes('--mutant')) {
         ['the chip fires a dead key', `{ label: 'QUIT', code: 'Escape' } : null}`, `{ label: 'QUIT', code: 'KeyM' } : null}`],
         ['#3536: the serve clack fires on every hit', `if (ev.serve)`, `if (true)`],
         ['#3536: the rally pitch is pinned flat (strike law inaudible)', `rallyVoice(state.ball.dy, state.ball.dx, state.diff)`, `rallyVoice(0, 4, state.diff)`],
+        ['#3576: the cap beat never arms (the card lands the same frame)', `flashTicks = 36`, `flashTicks = 0`],
+        ['#3576: the dial turn plays no detent pip', `sfx('detent', detentVoice())`, `if (false) sfx('detent', detentVoice())`],
     ]
     let died = 0
     for (const [name, from, to] of MUTANTS) {
