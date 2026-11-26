@@ -153,17 +153,35 @@ export const watchRoute = (s) => {
     const input = { left: false, right: false, up: false, down: false, fire: false }
     const p = s.player
     if (s.over || p.dark > 0) return input
-    const lookX = ((p.x + p.vx * 12) % WORLD_WIDTH + WORLD_WIDTH) % WORLD_WIDTH
-    const floorY = Math.min(groundAt(s.terrain, p.x), groundAt(s.terrain, lookX))
-    const climbing = p.y > floorY - 30
+    const dir = p.vx >= 0 ? 1 : -1
+    // Terrain seat (#3456 stage 2): the look-ahead horizon scales with speed AND
+    // with arrest distance — pressing up only buys ~0.5/tick of lift while inertia
+    // keeps sinking ~2.7×vy, so the margin must cover the SINK, not the climb rate
+    // (the old flat 30 px panic-climb fired late on a fast dive and grazed anyway;
+    // the /wasup taxonomy proved the press was already down when the hull died).
+    const sink = Math.max(0, p.vy) * 3
+    const look = 24 + Math.abs(p.vx) * 20
+    let aheadFloor = groundAt(s.terrain, p.x)
+    for (let d = 14; d <= look; d += 14) aheadFloor = Math.min(aheadFloor, groundAt(s.terrain, p.x + dir * d))
+    const climbing = aheadFloor - p.y < 14 + sink
     if (climbing) input.up = true
+    // Pulsed descent law: no branch free-falls past a gentle gait; every dive
+    // decelerates before it needs to. (Free-fall into the 8 px kill line was the
+    // single biggest terrain bucket once the route started living low.)
+    const canDown = p.vy < 2.6
 
-    // Delivery: a held human rides below the ship — descend the elevator and hold
-    // the ~10 px band above the wireframe so it touches down and walks (+500).
+    // Delivery, valley-site (#3456 stage 2): the held human only commits to the
+    // floor while the floor within reach still admits the seat — if any sampled
+    // ground ahead rises into the descent line, hold height and drift until the
+    // ridge has passed (the seat itself is safe; it is the RIDING to it that died).
     if (s.carrying !== null) {
-        const want = groundAt(s.terrain, p.x) - 13
-        if (p.y < want - 2) input.down = true
-        else if (p.y > want + 2) input.up = true
+        const seat = groundAt(s.terrain, p.x) - 13
+        let riseAhead = false
+        for (let d = 14; d <= 60 + Math.abs(p.vx) * 12; d += 14) {
+            if (groundAt(s.terrain, p.x + dir * d) - p.y < 16 + sink) { riseAhead = true; break }
+        }
+        if (p.y > seat + 2) input.up = true
+        else if (canDown && !riseAhead && p.y < seat - 2) input.down = true
         if (p.vx > 1.2) input.left = true
         else if (p.vx < -1.2) input.right = true
         return input
@@ -182,45 +200,87 @@ export const watchRoute = (s) => {
     }
     if (fall && fallD < 1000 && !climbing) {
         const fdx = wrapDelta(fall.x - p.x)
-        if (fdx > 4) input.right = true
-        else if (fdx < -4) input.left = true
+        if (Math.abs(fdx) > 16) {
+            if (fdx > 4) input.right = true
+            else if (fdx < -4) input.left = true
+        } else if (p.vx > 1.6) input.left = true
+        else if (p.vx < -1.6) input.right = true
         const wantY = fall.y - 12
-        if (p.y < wantY - 4) input.down = true
+        if (canDown && p.y < wantY - 4) input.down = true
         else if (p.y > wantY + 6) input.up = true
         return input
     }
 
     // Threat choice, weighted by the planet's job: a hauler is the top priority,
-    // a diver next, everything else nearest-first.
+    // a diver next, everything else nearest-first. Fresh-facing gate (#3456):
+    // nearest-after-wrap is NOT nearest — a target behind the nose only wins by
+    // flipping the fighter and sweeping the corridor through its kill band, the
+    // channel the enemy-death column counted under V6. It costs 3.5× here.
     let best = null
     let bestD = Infinity
     for (const e of s.enemies) {
         let d = Math.abs(wrapDelta(e.x - p.x)) + Math.abs(e.y - p.y) * 6
         if (e.type === 'lander' && e.carry !== null) d *= 0.25
         else if (e.type === 'lander' && e.state === 'descend') d *= 0.7
+        const edx = wrapDelta(e.x - p.x)
+        const eface = edx === 0 ? p.facing : Math.sign(edx)
+        if (eface !== p.facing) d *= 3.5
         if (d < bestD) { bestD = d; best = e }
     }
     if (best) {
         const dx = wrapDelta(best.x - p.x)
         const dy = best.y - p.y
-        if (dx > 6) input.right = true
-        else if (dx < -6) input.left = true
-        if (!climbing) {
-            if (dy > 10) input.down = true
-            else if (dy < -10) input.up = true
-        }
-        if (Math.abs(dy) < 15 && Math.abs(dx) < 560 && (dx === 0 || Math.sign(dx) === p.facing)) {
-            // Friendly-fire guard: never send a laser down a line where a walking
-            // human stands closer than the target — your shots kill humans too.
-            let shield = false
+        const f = dx === 0 ? p.facing : Math.sign(dx)
+        const aligned = Math.abs(dy) < 15 && Math.abs(dx) < 560 && (dx === 0 || Math.sign(dx) === p.facing)
+        // Friendly-fire guard: never send a laser down a line where a walking
+        // human stands closer than the target — your shots kill humans too.
+        let shield = false
+        if (aligned) {
             for (const h of s.humans) {
                 if (h.state !== 'walk') continue
                 const hd = wrapDelta(h.x - p.x)
                 if (Math.abs(hd) < Math.abs(dx) + 8 && Math.sign(hd || p.facing) === Math.sign(dx || p.facing) && Math.abs(h.y - p.y) < 10) shield = true
             }
-            if (!shield) input.fire = true
-            else input.holdTell = true // #1907: the brain SHOWS why it held the trigger
         }
+        // A hostile closing from astern outruns nothing but is outrun by cruise:
+        // while one is on the tail the route runs THE OTHER WAY at speed
+        // (mutants cap at 2.4 px/tick — a dashing fighter is food-proof, a
+        // hovering one is a sitting duck).
+        let chaserBehind = false
+        for (const e of s.enemies) {
+            const bx = wrapDelta(e.x - p.x)
+            const onRear = p.vx >= 0 ? bx < -8 : bx > 8
+            if (onRear && Math.abs(bx) < 150 && Math.abs(e.y - p.y) < 40) chaserBehind = true
+        }
+        // Hover-kill (#3456 — the elevator's ±1.2 rule generalized): INSIDE the
+        // late bracket the hull stops paying the duel with its body — the laser
+        // closes at 20 whatever the hull does, so braking just keeps the hull out
+        // of the ±16 band while the shot walks the rest. Late, not early: dwelling
+        // at range is what fed chasers in v1.
+        const hover = !chaserBehind && !shield && f === p.facing && Math.abs(dy) < 24 && Math.abs(dx) < 220
+        if (shield) {
+            // The shot the rules refuse, the body must also refuse: hold off the
+            // target and let the foot soldier walk out of the line (0.3 px/tick of
+            // patience beats 16 px of suicide — creeping into a shielded target
+            // was the front-+dy enemy bucket this stage had to close).
+            input.holdTell = true // #1907: the brain SHOWS why it held the trigger
+            if (Math.abs(dx) < 140) { if (dx > 0) input.left = true; else input.right = true }
+            if (canDown && dy > 24) input.down = true
+            else if (dy < -12) input.up = true
+        } else if (chaserBehind) {
+            if (p.vx >= 0) { if (p.vx < 4.5) input.right = true }
+            else if (p.vx > -4.5) input.left = true
+        } else if (hover) {
+            if (p.vx > 2.2) input.left = true
+            else if (p.vx < -2.2) input.right = true
+            else if (Math.abs(p.vx) < 0.9) { if (f > 0) input.right = true; else input.left = true }
+        } else if (dx > 6) input.right = true
+        else if (dx < -6) input.left = true
+        if (!climbing && !shield) {
+            if (canDown && dy > 10) input.down = true
+            else if (dy < -10) input.up = true
+        }
+        if (aligned && !shield) input.fire = true
     }
     return input
 }
