@@ -70,7 +70,8 @@ are on the field (first after ~18 s), entering from a random edge and wrapping.
 The **large saucer** (r 22, speed 2.0) drifts with erratic course changes and
 **sprays** — its shots carry ±0.55 rad of error. The **small saucer**
 (r 12, speed 2.7) flies the arcade's sine weave and fires nearly dead-on
-(±0.15 rad). Saucer bullets fly at 4 (outrunnable), kill the ship on hit,
+(±0.15 rad) — once it has learned (#3553 below: rookies spray, veterans pin).
+Saucer bullets fly at 4 (outrunnable), kill the ship on hit,
 hull contact kills — and the respawn grace covers all three death paths.
 
 Scoring is the machine's table: **200 large / 1000 small** for the saucers,
@@ -84,6 +85,38 @@ All arrival/path/shot dice ride the run's seeded stream (`?seed=N` replays
 every alarm); the stateHash covers saucers, and the WATCH driver treats hulls
 and hostile fire as threats and discounts a saucer's range by 120 px when
 choosing what to hunt — the 1000-point kill is worth closing on.
+
+## #3553 — the small saucer learning curve
+
+On the machine the small saucer's aim was not a constant: it started loose and
+tightened the longer that saucer survived, so leaving one alive was the
+mistake. `SAUCER_AIM` (`sim.js`) now models it: the small UFO's shot error is
+full width **1.1 rad** (the large UFO's spray, ±0.55) at spawn and eases
+**monotonically** to the shipped ±0.15 floor over `learn = 600` ticks (10 s of
+its 15 s life); after the horizon it stays at the floor, i.e. exactly the
+pre-#3553 shooter. The age rides the saucer's own `life` countdown, so:
+
+- **no new field and no extra dice** — the shot line still makes its single
+  `rnd()` call per shot; the draw is just scaled by the eased width, and the
+  dice stream stays aligned with every pre-#3553 seed at spawn/arrival;
+- the large UFO never eases (`saucerAimWidth` short-circuits it);
+- mature small-saucer shots are the verbatim ±0.15 law — the old pin, moved
+  one notch later in a saucer's life, never weakened.
+
+Gated in `asteroidscheck`: eight gates — rookie spray observed >±0.15 across
+six shots on the pinned seed, bounded by ±0.55; mature (age ≥ learn) lands
+within ±0.15 across four shots (the old dead-on law, now the *floor*);
+brand-new width = start; monotone tighten across the whole ease; floor reached
+exactly at `learn`; floor holds to `life → 0`; large UFO constant at both life
+ends. Plus two mutants: **learning deleted** (locked to the floor — kills the
+rookie gate) and **ease never reaches the floor** (halved rate — kills the
+mature pin).
+
+#3553's never-dry note: the pick was ASTEROIDS (weakestStage score 4, oldest
+of the score-4 tie at registry #3); line 0 of the honest-gaps list ("no
+rock-vs-rock") is an adjudication — the machine had none — so the oldest real
+gap was this one. The WATCH driver keeps its shipped floors (re-measured at
+this head in the full sweep).
 
 ## Sound ladder (#2001)
 Runtime-synthesized, all through `audioController`: the arcade's two-tone
@@ -108,8 +141,8 @@ probe would need the live seat).
 
 ## Verify
 ```
-npm run asteroidscheck            # determinism + 1979 law + wiring + driver sweep + seat/saucer/hyper/look/panic rules (106 gates)
-npm run asteroidscheck -- --mutant  # 27 mutants (6 b16 + 7 b26 driver + 6 saucer/heartbeat + 3 hyperspace + 3 look polish + 2 panic reserve), all must die
+npm run asteroidscheck            # determinism + 1979 law + wiring + driver sweep + seat/saucer/hyper/look/panic/learning rules (113 gates)
+npm run asteroidscheck -- --mutant  # 29 mutants (6 b16 + 7 b26 driver + 6 saucer/heartbeat + 3 hyperspace + 3 look polish + 2 panic reserve + 2 learning curve), all must die
 ASTEROID_SWEEP=fast npm run asteroidscheck  # 12-seed × 60 s sweep (what the mutant children run)
 npm run watchcheck -- --only asteroids      # live seat: seat/blips/takeover/re-seat
 npm run lint:asteroids
@@ -117,8 +150,9 @@ npm run lint:asteroids
 
 ## Honest gaps
 - No rock-vs-rock interaction (the machine had neither).
-- Small saucers ease their aim over time in the original; ours are locked at
-  ±0.15 rad — the learning curve is not modelled.
+- **CLOSED by #3553:** Small saucers ease their aim over time in the original;
+  ours were locked at ±0.15 rad. The learning curve is now modelled — see
+  "#3553 — the small saucer learning curve" below.
 - Deliberate kiting (drawing the saucer, beating its fire back) is not
   modelled; the panic reserve (#2001 pt4) stopped the tight-wave bleed, but the
   driver flees honestly rather than playing for the docked-bounty dance.
