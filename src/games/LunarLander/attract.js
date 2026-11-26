@@ -32,7 +32,10 @@ export function attractFrame(tick, w, h, hi = 0) {
         { text: msg, x: w / 2, y: h * 0.42, size: fitSize(msg, w, 10), col: '#5d7094', glow: 0 },
         { text: PRESS, x: w / 2, y: h * 0.58, size: fitSize(PRESS, w, 18), col: '#e9f7ff', glow: 4, blink: true },
         { text: WATCH_ATTRACT_HINT, x: w / 2, y: h * 0.64, size: fitSize(WATCH_ATTRACT_HINT, w, 9), col: '#5d7094', glow: 0 },
-        { text: hiLine, x: w / 2, y: h * 0.70, size: fitSize(hiLine, w, 9), col: '#ffd76b', glow: 3 },
+        // #3566 — HI rides the top band (under the canvas SCORE/LEM strip):
+        // the pill-free centre. The old y (0.70) slid under the WATCH pill
+        // once the duplicate DOM strip went and the stage re-centred.
+        { text: hiLine, x: w / 2, y: h * 0.11, size: fitSize(hiLine, w, 9), col: '#ffd76b', glow: 3 },
     ]
     return lines.filter((l) => !l.blink || Math.floor(tick / 24) % 2 === 0)
 }
