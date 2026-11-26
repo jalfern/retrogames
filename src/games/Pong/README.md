@@ -75,20 +75,53 @@ physics, not a paraphrase.
   paddle, the direction-guarded flip), and §driver proves the seat actually
   aims (majority of returns strike off-center).
 
+## The cabinet's voice (#3536)
+
+`voice.js` widens the Feb-port's one-tone-per-event sketch inside the
+machine's world — square/triangle/sawtooth pulses only, no crowd, no shimmer:
+**rally ping** pitch rides the strike law (post-return |dy| — steep return =
+higher ping, faster ball = brighter), colored per tier (EASY triangle/soft/
+flat, NORMAL square, HARD brighter-louder-shorter); **serve** — the first
+return of a point answers twice (drop + hit, echo a fifth above). The serve
+flag (`ev.serve` from `gs.servePending` in sim.js) is observation, not
+physics: the same-seed trace with/without the flag is identical, and dice
+remain only at `serveBall`. **Wall** is one uniform dry 170 Hz tick — always
+below the quietest rally ping; **score** is a low saw thud + noise body.
+The serve also arms a net-dash ring around the ball (~0.6 s) so the #3532
+paddle-hold reads as intent: the table waits with you, then serves.
+
+## Block numerals (#3536)
+
+`numerals.js` draws the machine's video type: 7-segment score digits (gapped
+bars — no two segments touch) live on the table and inside the MATCH OVER
+card, which is now a solid panel with the table's own net-dash border and
+the final score in the same block face. The attract title is a 5×7 block
+P·O·N·G word-mark, fitted by `titleFit` (at iPhone-SE landscape the table is
+~242px wide — the mark shrinks rather than clipping).
+
+## Chip ergonomics (#3536)
+
+The pad bar (and with it the QUIT chip and WATCH pill) renders only while a
+match is alive — attract and the over card stay chip-free. At 667×375
+pongdrive pins: chip clear of the stick reach, pill clear of the numerals
+band (pill top aligns exactly with the numeral floor), chip and pill as two
+distinct corners, everything inside the viewport.
+
 ## Verify
 ```
-npm run pongcheck            # attract rule-6 + seedpin law + deflection law + driver sweep + #3502 tiers (81 checks)
-npm run pongcheck -- --mutant  # 20 seedpin/driver/tier/cabinet-law mutants (incl. walls-pulled,
-                               #   sign-flip, seat-poses, dead-select, dead-ceiling, dead-2P, plus
-                               #   re-planted scatter, flat/steer-blind deflection, ceiling-park,
-                               #   unguarded predictor, no-aim seat), all must die
+npm run pongcheck            # attract rule-6 + seedpin + deflection + driver sweep + tiers + serve/voice/numerals law (112 checks)
+npm run pongcheck -- --mutant  # 28 mutants — seedpin/driver/tier/cabinet law plus the #3536 lines
+                               #   (flat strike pitch, wall-above-rally, EASY edge gone, thud flattened,
+                               #   serve re-fire, serve never re-arms, miswired 1, gaps collapse), all must die
 npm run pongcheck -- --mutate  # 5 attract mutants, all must die
-npm run pongdrive            # real Chrome, real keys: selector cycles, tap-dial, pick starts, W/S 2P legs, touch quit (#3529) (26 checks)
-npm run pongdrive -- --mutant  # 3 chip mutants (never-rendered, attract-flip, dead-key), all must die
-npm run watchcheck -- --only pong   # browser pilot: seats, returns balls, steers back
+npm run pongdrive            # real Chrome: selector/tap-dial/2P/touch-quit legs + audio-spy (serve clack opens,
+                             #   rally pitches vary, walls under every ping, low thud, no mid-rally clack)
+                             #   + 667×375 chip-ergonomics legs (39 checks)
+npm run pongdrive -- --mutant  # 5 mutants: 3 chip + serve-refire + flat-pitch, all must die
+npm run watchcheck -- --only pong   # browser pilot: seats, returns balls, steers back (318)
 npm run lint:pong
 ```
-DEV probes: `__pongTest` — `watching / probe (tick,hits,scores,paddles) / watchSfx / start`.
+DEV probes: `__pongTest` — `watching / probe (tick,hits,scores,paddles) / watchSfx / start / sfx / servePending / serveFlash`.
 
 ## The cabinet switches (#3502)
 
@@ -136,5 +169,9 @@ because the terminal it reaches is honest, not fatal.
 - **CLOSED by #3529:** touch quit shipped — a QUIT chip on the thirdAction
   rail (play-only, `Escape` code) reaches the honest terminal from a thumb;
   pongdrive leg 6 drives start → chip → card → restart in real Chrome.
-- Sound is the Feb-port sketch: single tones per hit/score; no crowd, no
-  spin pitch variation.
+- **CLOSED by #3536:** sound is no longer the Feb-port sketch — serve/rally/
+  wall/thud are four distinct voices, rally pitch rides the strike law, and
+  the tiers color it (see "The cabinet's voice"). Still no crowd and no music
+  over the table: the machine never had either — that restraint is the spec.
+- 2P is the desktop keyboard option (W/S); the phone keeps the CPU seat per
+  the multiplayer ruling — not a gap, a ruling.

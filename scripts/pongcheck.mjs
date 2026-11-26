@@ -27,6 +27,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, estWidth } from '../src/games/Pong/attract.js'
 import { serveBall, strikeSpin, SPIN_K, DY_MIN, stepBall, predictLand, tickPong, cpuTier, DIFFS, BASE_SPEED, PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_OFFSET, BALL_SIZE } from '../src/games/Pong/sim.js'
+import { rallyVoice, serveEcho, wallVoice, scoreThud } from '../src/games/Pong/voice.js'
+import { digitSegments, digitRects, titleRects, titleFit } from '../src/games/Pong/numerals.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -374,11 +376,136 @@ console.log('tiers: the cabinet switches (#3502)')
     ok(/Left\/Right on attract: pick EASY \/ NORMAL \/ HARD \/ 2P/.test(reg), 'the registry teaches the selector')
 }
 
+// ------------------------------------------------- #3536 serve (voice + flash) ----
+console.log('serve: the first return of a point (#3536)')
+{
+    const mk = () => ({
+        ball: { x: 300, y: 400, dx: BASE_SPEED, dy: 1 },
+        left: { y: 360, score: 0 }, right: { y: 360, score: 0 },
+        width: 600, height: 800, over: false, watching: false,
+        rand: seedRng(7), diff: 'NORMAL', servePending: true,
+    })
+    const atLeft = (gs) => { gs.ball = { x: PADDLE_OFFSET + PADDLE_WIDTH, y: 200, dx: -BASE_SPEED, dy: 1 }; gs.left.y = 196 }
+    const g1 = mk()
+    atLeft(g1)
+    const e1 = tickPong(g1, {})
+    ok(e1.hitL && e1.serve, 'the first return after a serve is marked', `hitL=${e1.hitL} serve=${e1.serve}`)
+    atLeft(g1)
+    const e2 = tickPong(g1, {})
+    ok(e2.hitL && !e2.serve, 'the serve mark does not repeat mid-rally', `serve=${e2.serve}`)
+    g1.ball = { x: 2, y: 400, dx: -BASE_SPEED, dy: 0 }
+    const e3 = tickPong(g1, {})
+    ok(e3.scored === 1, 'a conceded point scores (setup)', `scored=${e3.scored}`)
+    ok(g1.servePending === true, 'the new ball re-arms the serve', String(g1.servePending))
+    atLeft(g1)
+    const e4 = tickPong(g1, {})
+    ok(e4.hitL && e4.serve, 'the next point’s first return is marked again', `serve=${e4.serve}`)
+    // observation, not physics: same seed, servePending removed → identical trace
+    const trace = (withFlag) => {
+        const g = mk()
+        if (!withFlag) delete g.servePending
+        let out = ''
+        for (let i = 0; i < 600; i++) { tickPong(g, {}); out += `${g.ball.x.toFixed(3)},${g.ball.y.toFixed(3)},${g.left.y},${g.right.y};` }
+        return out
+    }
+    ok(trace(true) === trace(false), 'servePending moves nothing but the flag')
+    const idx = readFileSync('src/games/Pong/index.jsx', 'utf8')
+    ok(/servePending = true/.test(idx) && /serveFlash/.test(idx), 'the shell arms the serve at match start and flashes the ball')
+    ok(/visible=\{screen === 'play' && !paused\}/.test(idx), 'the pad + chip rail live only in play (menu/death stay chip-free)')
+    ok(/WATCH_ATTRACT_HINT, state\.width \/ 2, state\.height \* 0\.62/.test(idx), 'the attract WATCH hint sits clear of the pill (0.62h)')
+}
+
+// --------------------------------------------------------------- #3536 voice ----
+console.log('voice: the widened cabinet sound law (#3536)')
+{
+    const tiers = DIFFS
+    const dys = [0, 0.5, 1, 2, 3, 4, 5, -0.5, -2, -5]
+    const dxs = [4, 5, 6, 8, 10, 12, 14]
+    const all = []
+    for (const t of tiers) for (const dy of dys) for (const dx of dxs) all.push({ t, v: rallyVoice(dy, dx, t) })
+    ok(all.every(({ v }) => [v.freq, v.dur, v.vol].every(Number.isFinite) && v.freq > 0 && v.dur > 0 && v.vol > 0 && v.vol <= 0.2),
+        'every rally voice is a finite, audible, in-budget pulse', `${all.length} voices`)
+    ok(all.every(({ v }) => ['square', 'triangle', 'sawtooth'].includes(v.type)), 'the voice stays in the oscillator family')
+    let mono = true
+    for (const t of tiers) for (const dx of dxs) {
+        const f = (dy) => rallyVoice(dy, dx, t).freq
+        if (!(f(0.5) > f(0) && f(2) > f(1) && f(4) > f(3) && f(5) === f(5))) mono = false
+        if (Math.abs(f(-2) - f(2)) > 1e-9) mono = false // the law rides |dy|, not sign
+    }
+    ok(mono, 'pitch rides the strike angle (steeper return = higher ping, sign-free)')
+    let bright = true
+    for (const t of tiers) for (const dy of dys) {
+        if (!(rallyVoice(dy, 8, t).freq > rallyVoice(dy, 4, t).freq)) bright = false
+    }
+    ok(bright, 'faster rally = brighter ping')
+    ok(rallyVoice(2, 6, 'EASY').type === 'triangle' && rallyVoice(2, 6, 'EASY').vol < rallyVoice(2, 6, 'NORMAL').vol
+        && rallyVoice(2, 6, 'EASY').freq < rallyVoice(2, 6, 'NORMAL').freq,
+    'EASY sounds softer (triangle, lower, quieter)')
+    ok(rallyVoice(2, 6, 'HARD').freq > rallyVoice(2, 6, 'NORMAL').freq && rallyVoice(2, 6, 'HARD').vol > rallyVoice(2, 6, 'NORMAL').vol
+        && rallyVoice(2, 6, 'HARD').dur < rallyVoice(2, 6, 'NORMAL').dur,
+    'HARD sounds edgier (brighter, louder, shorter)')
+    ok(Math.abs(rallyVoice(2, 6, 'TWO').freq - rallyVoice(2, 6, 'NORMAL').freq) < 1e-9, '2P keeps the NORMAL voice')
+    const w = wallVoice(), th = scoreThud()
+    const minRally = Math.min(...all.map(({ v }) => v.freq))
+    ok(w.freq < minRally && w.dur <= 0.05, 'the wall tick sits below every rally ping', `wall ${w.freq} vs min ${minRally.toFixed(1)}`)
+    ok(th.freq < w.freq && th.type === 'sawtooth' && th.dur > w.dur * 4 && th.noise,
+        'the score is a low thud with a noise body — distinct from every ping')
+    const echo = serveEcho(rallyVoice(2, 6, 'NORMAL'))
+    ok(echo.freq > rallyVoice(2, 6, 'NORMAL').freq && echo.delay > 0 && echo.vol <= rallyVoice(2, 6, 'NORMAL').vol
+        && echo.dur <= 0.05, 'the serve answers the first return with a higher quick echo')
+    const idx = readFileSync('src/games/Pong/index.jsx', 'utf8')
+    ok(/rallyVoice\(/.test(idx) && /serveEcho\(/.test(idx) && /wallVoice\(/.test(idx) && /scoreThud\(/.test(idx),
+        'the shell plays the widened vocabulary (not the old fixed tones)')
+    ok(!/playTone\(400, 0\.1, 'square'\)/.test(idx), 'the old one-tone-per-hit ping is gone')
+}
+
+// ------------------------------------------------------------- #3536 numerals ----
+console.log('numerals: block video digits (#3536)')
+{
+    const SEGS = [6, 2, 5, 5, 4, 5, 6, 3, 7, 6] // bars per digit 0..9
+    ok(digitSegments(1) === 'bc' && SEGS.every((n, d) => digitSegments(d).length === n),
+        'the segment map lights like a seven-segment display')
+    const sizes = [24, 32, 44, 56]
+    let boxed = true, gapped = true, sized = true
+    for (const h of sizes) for (let d = 0; d <= 9; d++) {
+        const { w, rects } = digitRects(d, h)
+        if (rects.length !== SEGS[d]) sized = false
+        for (const [x, y, rw, rh] of rects) if (x < 0 || y < 0 || x + rw > w || y + rh > h || rw <= 0 || rh <= 0) boxed = false
+        for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+            const [ax, ay, aw, ah] = rects[i], [bx, by, bw, bh] = rects[j]
+            if (ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah) gapped = false
+        }
+    }
+    ok(sized, 'every digit carries its proper bar count')
+    ok(boxed, 'no bar leaves the digit box')
+    ok(gapped, 'no two bars touch — the notches are the look')
+    const one = digitRects(1, 44)
+    ok(one.rects.length === 2 && one.rects.every(([x]) => x === one.w - Math.max(2, Math.round(44 / 8))),
+        'a "1" is the two right-hand bars')
+    const t = titleRects('PONG', 70)
+    ok(t.cells.length >= 60 && t.h === 70 && t.w > 0 && t.cells.every(([, gy]) => gy >= 0 && gy < 7),
+        'the P·O·N·G word-mark draws on a 7-row grid', `${t.cells.length} cells`)
+    ok(titleRects('P', 70).cells.length === 15, 'P lights 15 blocks (map sanity)')
+    // #3536 measurement: at iPhone-SE landscape the table is ~242px wide — the
+    // mark must shrink to fit (the first cut clipped the P and the G).
+    let fits = true
+    for (const [w, h] of [[242, 343], [480, 640], [600, 800]]) {
+        const th = titleFit(w, h)
+        if (titleRects('PONG', th).w > w * 0.92 + 1 || th < 20) fits = false
+    }
+    ok(fits, 'the word-mark fits the phone-width cabinet (242px measured)')
+    const idx = readFileSync('src/games/Pong/index.jsx', 'utf8')
+    ok(/drawBlockScore\(/.test(idx), 'the live score is drawn as block numerals')
+    ok(/drawBlockTitle\(/.test(idx) && /titleFit\(/.test(idx), 'the attract title is a fitted block word-mark')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
     const I = 'src/games/Pong/index.jsx'
     const S = 'src/games/Pong/sim.js'
+    const V = 'src/games/Pong/voice.js'
+    const N = 'src/games/Pong/numerals.js'
     const MUTANTS = [
         ['human start ignores ?seed (pin removed)', I,
             `seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)`,
@@ -456,6 +583,34 @@ if (process.argv.includes('--mutant')) {
         ["player two's W key is unplugged", S,
             `        if (input?.up2) gs.right.y -= PAD_SPEED`,
             `        if (input?.up2) gs.right.y -= 0`],
+        // #3536 voice/numerals/serve anchors — the widened vocabulary and the
+        // block face must die when their law is gutted.
+        ['rally pitch ignores the strike (flat ping)', V,
+            `    const angle = Math.min(Math.abs(dy), 5)`,
+            `    const angle = 0`],
+        ['the wall tick outranks the rally ping', V,
+            `    return { freq: 170, dur: 0.045, type: 'square', vol: 0.07 }`,
+            `    return { freq: 700, dur: 0.045, type: 'square', vol: 0.07 }`],
+        ['EASY loses its soft character', V,
+            `        type: easy ? 'triangle' : 'square',`,
+            `        type: 'square',`],
+        ['the score thud is just another ping', V,
+            `    return { freq: 98, dur: 0.3, type: 'sawtooth', vol: 0.16, noise: { dur: 0.09, vol: 0.12 } }`,
+            `    return { freq: 400, dur: 0.05, type: 'square', vol: 0.1, noise: { dur: 0.09, vol: 0.12 } }`],
+        ['the serve flag double-fires (never cleared)', S,
+            `        ev.serve = gs.servePending === true
+        gs.servePending = false`,
+            `        ev.serve = gs.servePending === true`],
+        ['the serve never re-arms after a point', S,
+            `        gs.servePending = true // new ball in play — its first return is the serve (#3536)
+        ev.scored = 1`,
+            `        ev.scored = 1`],
+        ['the seven-segment map miswires the 1', N,
+            `0: 'abcdef', 1: 'bc',`,
+            `0: 'abcdef', 1: 'ab',`],
+        ['the segment gaps collapse (bars merge)', N,
+            `    const half = Math.max(2, mid - t - 2 * g)`,
+            `    const half = Math.max(2, mid - g)`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
