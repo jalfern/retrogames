@@ -431,6 +431,9 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
             // #3489: the first wander course — golden-angle spread, deterministic,
             // zero dice (the course dice below own the randomness).
             wx: Math.cos(i * 2.39996), wy: Math.sin(i * 2.39996),
+            // #3545: last tick's APPLIED movement, the sprite's heading read.
+            // Pure bookkeeping: no rule reads it, it consumes no dice.
+            hx: 0, hy: 0,
         })),
         bat: { room: R.OVERWORLD_3, x: 90, y: 50, vx: 1.5, vy: 0.8, carrying: null, swapTimer: 0 },
         pickedUp: {},
@@ -812,6 +815,7 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                 }
 
                 // Flee from certain items
+                const hox = dragon.x, hoy = dragon.y
                 if (dragon.fleesFrom && sim.carrying === dragon.fleesFrom) {
                     dragon.x -= (ddx / (dist || 1)) * dragon.speed
                     dragon.y -= (ddy / (dist || 1)) * dragon.speed
@@ -822,6 +826,10 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                     // Open mouth when close
                     dragon.mouthOpen = dist < 30
                 }
+                // #3545: same applied-movement record as the roam branch — a
+                // hunter turns to face its chase, a fleeing dragon faces off.
+                dragon.hx = dragon.x - hox
+                dragon.hy = dragon.y - hoy
 
                 // Bite! — kill player
                 if (dist < 8 && dragon.mouthOpen) {
@@ -853,6 +861,7 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                 const wSpeed = dragon.speed * ROAM_SCALE
                 const nx = dragon.x + dragon.wx * wSpeed
                 const ny = dragon.y + dragon.wy * wSpeed
+                const rox = dragon.x, roy = dragon.y
                 if (!collidesWithWalls(dRoom, nx, dragon.y, DRAGON_BOX, DRAGON_BOX)) dragon.x = nx
                 if (!collidesWithWalls(dRoom, dragon.x, ny, DRAGON_BOX, DRAGON_BOX)) dragon.y = ny
                 dragon.mouthOpen = false
@@ -871,6 +880,11 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
                     const to = dex[dir]
                     if (to >= 0 && rand() < SEAM_CHANCE) { dragon.room = to; dragon.x = dir === 'left' ? GW - 20 : 10 } else dragon.x = dir === 'left' ? 10 : GW - 20
                 }
+                // #3545: heading = the movement actually applied, seam bounces
+                // included — a dragon scraping stone reads as sliding parallel
+                // to it, because that is exactly what it does. Dice-free record.
+                dragon.hx = dragon.x - rox
+                dragon.hy = dragon.y - roy
                 continue  // roam positioned itself; the in-room clamp is the hunt branch's
             }
 

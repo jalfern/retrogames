@@ -404,40 +404,52 @@ const AdventureGame = () => {
             ctx.fillStyle = dragon.color
             const dx = dragon.x, dy = dragon.y
 
+            // #3545 — the heading reads: the sprite faces and leans along the
+            // movement it actually made last tick (dragon.hx/hy). A wanderer
+            // shows where it's going; cosmetics only, no rule reads these.
+            const face = dragon.hx < 0 ? -1 : 1
+            const tilt = dragon.hy > 0.3 ? 1 : dragon.hy < -0.3 ? -1 : 0
+            ctx.save()
+            ctx.translate(dx + 6, 0)
+            ctx.scale(face, 1)
+            ctx.translate(-(dx + 6), 0)
+
             // Body
             ctx.fillRect(dx, dy, 12, 16)
 
             // Head (with mouth). #1588: while the dragon hunts with its maw open
             // the jaws alternate on sim.chew — a 2-frame chew, not a frozen grin.
             // A calm/distant/slain dragon keeps the closed head drawn below.
+            // The head rides the tilt (+ into travel); the tail sags against it.
+            const hy = dy + tilt
             if (dragon.mouthOpen) {
                 if (sim.chew) {
                     // Wide open — the bite frame: top jaw, bottom jaw, fangs.
-                    ctx.fillRect(dx + 10, dy - 2, 10, 5)
-                    ctx.fillRect(dx + 10, dy + 6, 10, 5)
+                    ctx.fillRect(dx + 10, hy - 2, 10, 5)
+                    ctx.fillRect(dx + 10, hy + 6, 10, 5)
                     ctx.fillStyle = COLORS.white
-                    ctx.fillRect(dx + 16, dy + 3, 2, 2)
-                    ctx.fillRect(dx + 16, dy + 6, 2, 2)
+                    ctx.fillRect(dx + 16, hy + 3, 2, 2)
+                    ctx.fillRect(dx + 16, hy + 6, 2, 2)
                     ctx.fillStyle = dragon.color
                 } else {
                     // Snapped shut mid-chew: both jaws close onto the gap so the
                     // mouth visibly clamps as it chews.
-                    ctx.fillRect(dx + 10, dy + 1, 10, 4)
-                    ctx.fillRect(dx + 10, dy + 5, 10, 4)
+                    ctx.fillRect(dx + 10, hy + 1, 10, 4)
+                    ctx.fillRect(dx + 10, hy + 5, 10, 4)
                     ctx.fillStyle = COLORS.white
-                    ctx.fillRect(dx + 16, dy + 4, 2, 2)
+                    ctx.fillRect(dx + 16, hy + 4, 2, 2)
                     ctx.fillStyle = dragon.color
                 }
             } else {
                 // Closed mouth (not hunting)
-                ctx.fillRect(dx + 10, dy + 2, 8, 6)
+                ctx.fillRect(dx + 10, hy + 2, 8, 6)
             }
 
             // Eye
             ctx.fillStyle = COLORS.white
-            ctx.fillRect(dx + 12, dy + 1, 2, 2)
+            ctx.fillRect(dx + 12, hy + 1, 2, 2)
             ctx.fillStyle = COLORS.black
-            ctx.fillRect(dx + 13, dy + 1, 1, 1)
+            ctx.fillRect(dx + 13, hy + 1, 1, 1)
 
             // Legs
             ctx.fillStyle = dragon.color
@@ -445,8 +457,9 @@ const AdventureGame = () => {
             ctx.fillRect(dx + 8, dy + 16, 3, 5)
 
             // Tail
-            ctx.fillRect(dx - 6, dy + 10, 6, 3)
-            ctx.fillRect(dx - 8, dy + 8, 3, 3)
+            const ty = dy - tilt
+            ctx.fillRect(dx - 6, ty + 10, 6, 3)
+            ctx.fillRect(dx - 8, ty + 8, 3, 3)
 
             // Wings (flap)
             if (sim.tick % 20 < 10) {
@@ -454,6 +467,7 @@ const AdventureGame = () => {
             } else {
                 ctx.fillRect(dx + 2, dy - 4, 8, 3)
             }
+            ctx.restore()
         }
 
         const drawBat = () => {
@@ -699,7 +713,8 @@ const AdventureGame = () => {
                 dead: sim.dead,
                 // #3482 advedrive: a harness-visible read of the hunters (the
                 // drive needs to see what chases it; read-only, feeds nothing).
-                dragons: sim.dragons.map((d) => ({ room: d.room, x: d.x, y: d.y, mouth: d.mouthOpen, alive: d.alive })),
+                // #3545 adds hx/hy — the heading the sprite is drawn facing.
+                dragons: sim.dragons.map((d) => ({ room: d.room, x: d.x, y: d.y, mouth: d.mouthOpen, alive: d.alive, hx: d.hx, hy: d.hy })),
             }),
             press: (code) => { keys[code] = true; setTimeout(() => { keys[code] = false }, 120) },
         }
