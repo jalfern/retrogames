@@ -209,6 +209,7 @@
     "kongcheck": "node scripts/kongcheck.mjs",
     "centipedechek": "node scripts/centipedechek.mjs",
     "defendercheck": "node scripts/defendercheck.mjs",
+    "defenderplay": "node scripts/defenderplay.mjs",
     "adventure-playtest": "node scripts/adventure-playtest.mjs",
     "adventurecheck": "node scripts/adventurecheck.mjs",
     "froggercheck": "node scripts/froggercheck.mjs",

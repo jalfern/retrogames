@@ -609,6 +609,7 @@ const DefenderGame = () => {
                     wave: sim ? sim.wave : 1, enemies: sim ? sim.enemies.length : 0,
                     humans: sim ? sim.humans.filter((h) => h.state !== 'dead').length : 0,
                     playerX: sim ? Math.round(sim.player.x) : 0, playerY: sim ? Math.round(sim.player.y) : 0,
+                    bombs: sim ? sim.bombs : BOMBS_PER_WAVE, bombFlash: sim ? sim.bombFlash : 0, // #3443
                 }),
             }
         }
