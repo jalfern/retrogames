@@ -257,6 +257,18 @@ const DonkeyKongGame = () => {
 
         const drawLadder = (l) => {
             ctx.fillStyle = COL_LADDER
+            // #3622 — corner ladders hang off the girder end on a brace; the
+            // arcade's end-of-girder ladders bolted to the last metre of steel.
+            if (l.braceFrom) {
+                ctx.strokeStyle = COL_LADDER
+                ctx.lineWidth = 1.5
+                ctx.beginPath()
+                ctx.moveTo(l.braceFrom.x - 3, l.braceFrom.y + 2)
+                ctx.lineTo(l.x - 3, l.yTop + 2)
+                ctx.moveTo(l.braceFrom.x + 3, l.braceFrom.y + 2)
+                ctx.lineTo(l.x + 3, l.yTop + 2)
+                ctx.stroke()
+            }
             // #3618 half-rungs: a broken ladder is drawn as what it is — the
             // span survives from its base to breakY, the rungs above are gone,
             // two snapped upright stubs mark where they broke.

@@ -139,6 +139,30 @@ export function buildLevel() {
     addLadder(100, 6, 5, false)
     addLadder(124, 6, 5, false)
 
+    // #3622 — the arcade's end-of-girder pair, mounted at the RIGHT fall-gap
+    // corner. Measured fall column (trace): barrels leaving girder 3's end at
+    // cx≈210.5 drift +1.2/tick through the ~18px drop and reach girder 2 at
+    // cx≈222-224 — the girder TIP (a first pick at x=218 sat left of the
+    // landing spot and mounted nothing: zero rides). So the pair stands at
+    // x=222, two px inside girder 2's end, where arcade ladders hooked a
+    // girder's last metre. R1 (girder 2 → girder 1) has its foot DANGLING
+    // into girder 1's end-gap (nothing under x=222 at the computed foot);
+    // R2 (girder 1 → ground) is the catch below it. A barrel that misses the
+    // x=180 dive rolls off the corner, lands on the tip and boards R1; a
+    // barrel rolling off R1's dangling foot meets R2's span mid-air. P1
+    // corner-miss fallers cross R2's span mid-air directly. takenBits in
+    // updateBarrel keeps each retake once-per-barrel-per-ladder.
+    addLadder(222, 2, 1, false)
+    ladders[ladders.length - 1].dangles = true // foot hangs over girder 1's gap
+    addLadder(222, 1, 0, false)
+    // R2 is a barrel-only outside ladder: its mouth hangs past girder 1's end,
+    // so the runner can meet it with falling barrels but never stands on it.
+    // The attract demo and the runner's mount scan skip it; barrels don't.
+    ladders[ladders.length - 1].barrelOnly = true
+    // Purely visual: the brace that hangs R2 off girder 1's corner (drawn by
+    // the shell; physics never reads it).
+    ladders[ladders.length - 1].braceFrom = { x: 208, y: getPlatformY(platforms[1], 208) }
+
     // Hammers (#2018) — two mallets ride the girders like the arcade's pair.
     // Placed at the RIGHT-hand ends of the ground floor and DK's girder: the
     // WATCH route (ROUTE in watchStep) never walks its centre past x≈185, so
@@ -253,6 +277,7 @@ function spawnBarrel(gs, ev) {
         rot: 0,
         onLadder: false,
         falling: false,
+        takenBits: 0, // #3622 — one dive roll per barrel per ladder (bit = index)
     })
 }
 
@@ -276,9 +301,12 @@ function updateBarrel(gs, b) {
                 else if (onPlat.slope > 0) b.vx = BARREL_SPEED
                 else b.vx = BARREL_SPEED
             } else {
-                // Fell off — just apply gravity
+                // #3622 — rolled off a DANGLING foot (the girder-end ladder's
+                // foot hangs over the gap below): the barrel is airborne again,
+                // and `falling` must say so or the mid-air take never arms.
                 b.vy = 0
                 b.vx = BARREL_SPEED
+                b.falling = true
             }
         }
         return
@@ -330,10 +358,42 @@ function updateBarrel(gs, b) {
         }
     }
 
-    // Edge of platform — fall off
+    // #3622 — mid-air ladder take: a falling barrel that meets a ladder's span
+    // rolls down it, the arcade's barrels catching the end-of-girder ladders
+    // at the fall-gap corners. ONE dive roll per barrel per ladder — takenBits
+    // is spent even on a miss, so a barrel sinking through the span never
+    // re-rolls per tick, and a barrel dropping off a dangling foot can retake
+    // the NEXT ladder down but never the same one twice (the loop the issue
+    // names). Dice stream shifts: every seed floor rebuilds with it.
+    if (!landed && b.falling && b.vy > 0) {
+        const cx = b.x + b.w / 2
+        const fy = b.y + b.h
+        for (let li = 0; li < gs.ladders.length; li++) {
+            const l = gs.ladders[li]
+            if (l.broken || (b.takenBits & (1 << li))) continue
+            if (Math.abs(cx - l.x) < 5 && fy >= l.yTop - 8 && fy <= l.yBot) {
+                b.takenBits |= (1 << li)
+                if (rnd(gs) < BARREL_DIVE_CHANCE) {
+                    b.onLadder = true
+                    b.falling = false
+                    b.x = l.x - b.w / 2
+                    b.vx = 0
+                    b.vy = 0
+                    b.ladderBot = l.yBot
+                    break
+                }
+            }
+        }
+    }
+
+    // Edge of platform — fall off. (The vy===0 test once made this unreachable:
+    // gravity already has vy>0 on the tick support is lost, so a barrel leaving
+    // a girder end ran with falling=false — no mid-air state existed at all,
+    // which is why #3618 measured zero airborne crossings. Any unsupported,
+    // non-rising barrel IS falling.)
     if (!b.onLadder) {
         const onPlat = findPlatform(gs.platforms, b.x + b.w / 2, b.y, b.h)
-        if (!onPlat && b.vy === 0) {
+        if (!onPlat && b.vy >= 0) {
             b.falling = true
         }
     }
@@ -361,7 +421,7 @@ function attractPlan(gs) {
         let bestLadder = null
         let bestDist = Infinity
         for (const l of gs.ladders) {
-            if (l.broken) continue
+            if (l.broken || l.barrelOnly) continue
             const footY = p.y + p.h
             if (Math.abs(l.yBot - footY) < 6) {
                 const dist = Math.abs(p.x - l.x)
@@ -554,6 +614,7 @@ export function tickDonkeyKong(gs, input = null) {
     // girder below, never clings to rungs the route cannot prove.
     const human = !!(input && input.human)
     const nearLadder = gs.ladders.find(l => {
+        if (l.barrelOnly) return false // #3622 — the outside rung is the barrels'
         const cx = p.x + p.w / 2
         if (Math.abs(cx - l.x) >= 8) return false
         return l.broken
@@ -1061,7 +1122,7 @@ export function stateHash(gs) {
     s += `H${gs.hammer}|${gs.swingSeq}|${gs.hammers.map(h => (h.taken ? 1 : 0)).join('')}|`
     s += `R${gs.rivetPhase ? 1 : 0}${gs.rivets.map(r => (r.pulled ? 1 : 0)).join('')}|${gs.pullTimer}|${gs.collapse}|${Math.round(gs.dkFall * 1e4)}|`
     s += `${r4(p.x)},${r4(p.y)},${r4(p.vx)},${r4(p.vy)},${p.grounded ? 1 : 0},${p.climbing ? 1 : 0},${p.dir},${p.jumpedBarrels.size}|`
-    s += gs.barrels.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.vx)},${r4(b.vy)},${b.onLadder ? 1 : 0},${b.falling ? 1 : 0},${b.ladderBot || 0}`).join(';')
+    s += gs.barrels.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.vx)},${r4(b.vy)},${b.onLadder ? 1 : 0},${b.falling ? 1 : 0},${b.ladderBot || 0},${b.takenBits || 0}`).join(';')
     let h = 0x811c9dc5
     for (let i = 0; i < s.length; i++) {
         h ^= s.charCodeAt(i)
