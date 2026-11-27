@@ -69,8 +69,8 @@ await sleep(400)
     rep.check('`2` opens the hot-seat: live run, P1 on duty, CPU holding seat 2',
         a.twoP === true && a.turn === 1 && a.p2cpu === true && a.wave === 1 && a.cities === 6,
         `twoP ${a.twoP} turn ${a.turn} cpu ${a.p2cpu} w${a.wave}`)
-    const left = await inkAt(30, 24, 40, 14)
-    const right = await inkAt(770, 24, 40, 14)
+    const left = await inkAt(30, 62, 70, 20)
+    const right = await inkAt(770, 62, 70, 20)
     rep.check('both score blocks are on the HUD from wave 1 (manual §6: both scores display)',
         left > 10 && right > 10, `L ${left} R ${right} px`)
 }

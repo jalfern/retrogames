@@ -571,13 +571,20 @@ const MissileCommandGame = () => {
                 // #3630 slice 2: the arcade hot-seat board — both ledgers in
                 // the top corners (manual §6: both scores displayed), and the
                 // on-duty player's line blinks so the hand-off is unmistakable.
+                // Zero-padded fixed-width so the corner never re-flows as the
+                // score grows (#3689): 28px survives the ~0.71 phone letterbox
+                // at device scale 1 (~20px on a 600px board). The row sits at
+                // y=62 so the fixed ARCADE/FEEDBACK/PADS chrome pills — which
+                // overlay the top of the phone page — clear it.
                 const blink = Math.floor(gs.tick / 30) % 2 === 0
+                ctx.font = '28px monospace'
                 ctx.textAlign = 'left'
                 ctx.fillStyle = gs.turn === 1 && blink ? '#ffff00' : '#ffffff'
-                ctx.fillText(`1 ${gs.score}`, 16, 30)
+                ctx.fillText(`P1 · ${String(gs.score).padStart(6, '0')}`, 16, 62)
                 ctx.textAlign = 'right'
                 ctx.fillStyle = gs.turn === 2 && blink ? '#ffff00' : '#ffffff'
-                ctx.fillText(`${gs.score2} 2`, SCREEN_WIDTH - 16, 30)
+                ctx.fillText(`P2 · ${String(gs.score2).padStart(6, '0')}`, SCREEN_WIDTH - 16, 62)
+                ctx.font = '24px monospace'
                 ctx.textAlign = 'center'
                 ctx.fillStyle = '#0000ff'
                 ctx.fillText(`WAVE: ${gs.wave}`, SCREEN_WIDTH / 2, 30)
@@ -621,6 +628,9 @@ const MissileCommandGame = () => {
                 ctx.font = '60px monospace'
                 ctx.fillText(`THE END`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
                 // #3630 slice 2: the hot-seat verdict — winner plus both books.
+                // Zero-padded like the corners (#3689) — the final tally keeps
+                // its fixed width too.
+                let hintY = SCREEN_HEIGHT / 2 + 55 // solo: right under THE END
                 if (gs.twoP) {
                     const w = winner(gs)
                     ctx.font = '30px monospace'
@@ -628,15 +638,23 @@ const MissileCommandGame = () => {
                     ctx.fillText(w === 0 ? 'A DRAW' : `PLAYER ${w} WINS`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50)
                     ctx.font = '20px monospace'
                     ctx.fillStyle = '#ffffff'
-                    ctx.fillText(`P1 ${gs.score}   P2 ${gs.score2}`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 85)
+                    ctx.fillText(`P1 ${String(gs.score).padStart(6, '0')}   P2 ${String(gs.score2).padStart(6, '0')}`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 85)
+                    hintY = SCREEN_HEIGHT / 2 + 115
                 }
+                // #3689: the winner screen invites a rematch — the mode keys
+                // are otherwise only in the attract cycle and PauseOverlay.
+                ctx.font = '18px monospace'
+                ctx.fillStyle = '#999999'
+                ctx.fillText('any key — rematch    1 solo    2 hot-seat', SCREEN_WIDTH / 2, hintY)
             }
 
             // #3630 slice 2: a joining human gets named on the board once —
             // the CPU seat just handed over, the player needs to see that.
             if (gs.twoP && !gs.p2cpu && gs.tick < joinFlashUntil && !attractUiRef.current && !gs.over) {
                 ctx.fillStyle = Math.floor(gs.tick / 10) % 2 === 0 ? '#00ff00' : '#ffffff'
-                ctx.font = '22px monospace'
+                // 30px survives the ~0.71 phone letterbox (~21px) — the card is
+                // the whole point of the join moment and must clear ART.md phone legibility (#3689)
+                ctx.font = '30px monospace'
                 ctx.fillText('PLAYER 2 JOINED — WASD + F', SCREEN_WIDTH / 2, 120)
             }
 
