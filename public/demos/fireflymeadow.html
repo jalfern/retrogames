@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Firefly Meadow</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0b0620; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  #hud {
+    position:fixed; left:max(12px, env(safe-area-inset-left)); bottom:max(12px, env(safe-area-inset-bottom));
+    z-index:4; max-width:56vw; font:10px/1.7 Georgia, serif; letter-spacing:.14em; text-transform:uppercase;
+    color:#e8e4d0; background:rgba(10,8,30,.45); border:1px solid rgba(232,228,208,.28);
+    border-radius:999px; padding:8px 14px; pointer-events:none; transition:opacity 1.2s;
+  }
+  #hud.gone { opacity:0; }
+  @media (max-width: 640px) {
+    #hud { font-size: 9px; letter-spacing:.1em; max-width: 62vw; }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="hud">tap · hold</div>
+<script>
+(() => {
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+  const hintEl = document.getElementById('hud');
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.floor(W * DPR); canvas.height = Math.floor(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  let brushTex = null;
+  function makeBrushTexture() {
+    const w = Math.max(64, Math.floor(W / 3)), h = Math.max(64, Math.floor(H / 3));
+    brushTex = document.createElement('canvas');
+    brushTex.width = w; brushTex.height = h;
+    const bctx = brushTex.getContext('2d');
+    bctx.fillStyle = '#808080';
+    bctx.fillRect(0, 0, w, h);
+    // soft blotches
+    for (let i = 0; i < 260; i++) {
+      const x = Math.random() * w, y = Math.random() * h;
+      const r = (0.02 + Math.random() * 0.09) * w;
+      const val = Math.random() < 0.5 ? 255 : 0;
+      const g = bctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(${val},${val},${val},${0.05 + Math.random() * 0.08})`);
+      g.addColorStop(1, 'rgba(128,128,128,0)');
+      bctx.fillStyle = g;
+      bctx.beginPath(); bctx.arc(x, y, r, 0, Math.PI * 2); bctx.fill();
+    }
+    // fine grain
+    const img = bctx.getImageData(0, 0, w, h);
+    const data = img.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const n = (Math.random() - 0.5) * 14;
+      data[i] = Math.min(255, Math.max(0, data[i] + n));
+      data[i+1] = Math.min(255, Math.max(0, data[i+1] + n));
+      data[i+2] = Math.min(255, Math.max(0, data[i+2] + n));
+    }
+    bctx.putImageData(img, 0, 0);
+  }
+  window.addEventListener('resize', () => { makeBrushTexture(); });
+  window.addEventListener('resize', resize);
+  resize();
+  makeBrushTexture();
+
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const lerpColor = (c1, c2, t) => [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)];
+  const css = (c, a = 1) => `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`;
+
+  // --- Sky palette across dusk ---
+  const SKY = [
+    { top: [46, 34, 92],   mid: [120, 62, 108], horizon: [240, 130, 66] },
+    { top: [10, 8, 34],    mid: [52, 30, 74],   horizon: [148, 60, 66] },
+    { top: [3, 4, 18],     mid: [18, 14, 44],   horizon: [58, 30, 58] }
+  ];
+  function skyColors(dusk) {
+    const seg = dusk < 0.5 ? 0 : 1;
+    const local = dusk < 0.5 ? dusk / 0.5 : (dusk - 0.5) / 0.5;
+    const a = SKY[seg], b = SKY[seg + 1];
+    return { top: lerpColor(a.top, b.top, local), mid: lerpColor(a.mid, b.mid, local), horizon: lerpColor(a.horizon, b.horizon, local) };
+  }
+
+  const STAR_COUNT = 150;
+  const stars = [];
+  for (let i = 0; i < STAR_COUNT; i++) {
+    stars.push({ x: Math.random(), y: Math.random() * 0.62, r: 0.4 + Math.random() * 1.3, phase: Math.random() * Math.PI * 2, speed: 0.5 + Math.random() * 1.5 });
+  }
+
+  // --- Forest silhouette along the back ---
+  const forestNear = []; // {x, h, w}
+  const forestFar = [];
+  (function buildForest() {
+    const rng = mulberry(1234);
+    let x = -0.05;
+    while (x < 1.08) {
+      const h = 0.05 + rng() * 0.075;
+      forestFar.push({ x, h: 0.06 + rng() * 0.05, w: 0.07 + rng() * 0.08 });
+      x += 0.05 + rng() * 0.05;
+    }
+    x = -0.05;
+    while (x < 1.08) {
+      forestNear.push({ x, h: 0.08 + rng() * 0.07, w: 0.09 + rng() * 0.10 });
+      x += 0.06 + rng() * 0.07;
+    }
+  })();
+  function mulberry(seed) {
+    let a = seed;
+    return function() {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // --- Grass and wildflowers ---
+  // Each blade: x (0..1), baseY (fraction of H), height, lean, phase, layer
+  const grass = [];
+  const flowers = [];
+  (function buildMeadow() {
+    const rng = mulberry(777);
+    // far meadow texture band
+    for (let i = 0; i < 220; i++) {
+      grass.push({ x: rng(), base: 0.40 + rng() * 0.20, h: 0.03 + rng() * 0.05, lean: (rng() - 0.5) * 0.012, phase: rng() * Math.PI * 2, layer: 0 });
+    }
+    // mid grass
+    for (let i = 0; i < 70; i++) {
+      grass.push({ x: rng(), base: 0.55 + rng() * 0.22, h: 0.05 + rng() * 0.07, lean: (rng() - 0.5) * 0.02, phase: rng() * Math.PI * 2, layer: 1 });
+    }
+    // foreground silhouette grass: big blades at the bottom
+    for (let i = 0; i < 46; i++) {
+      grass.push({ x: rng(), base: 0.86 + rng() * 0.16, h: 0.10 + rng() * 0.16, lean: (rng() - 0.5) * 0.05, phase: rng() * Math.PI * 2, layer: 2 });
+    }
+    // wildflowers in mid layer
+    for (let i = 0; i < 42; i++) {
+      flowers.push({ x: rng(), base: 0.46 + rng() * 0.30, h: 0.05 + rng() * 0.07, phase: rng() * Math.PI * 2, size: 3 + rng() * 4 });
+    }
+  })();
+
+  // --- Fireflies ---
+  const FIREFLY_COUNT = 160;
+  const flies = [];
+  (function buildFlies() {
+    const rng = mulberry(4242);
+    for (let i = 0; i < FIREFLY_COUNT; i++) {
+      const nearTrees = rng() < 0.35;
+      flies.push({
+        x: rng(),
+        y: nearTrees ? 0.33 + rng() * 0.10 : 0.40 + rng() * 0.42,
+        vx: (rng() - 0.5) * 0.006,
+        vy: (rng() - 0.5) * 0.004,
+        phase: rng() * Math.PI * 2,
+        blinkSpeed: 0.7 + rng() * 0.9,
+        size: 1.2 + rng() * 1.8,
+        wander: rng() * Math.PI * 2,
+        glow: 0.6 + rng() * 0.8
+      });
+    }
+  })();
+
+  function drawFireflies(now, dusk, taps, hold) {
+    const t = now * 0.001;
+    const hy = horizonY();
+    // sync drifts from 0 -> 1 over ~50s, then hovers
+    const sync = Math.min(1, (state.t / 50)) * (0.85 + 0.15 * Math.sin(t * 0.13));
+    const wavePhase = t * 1.35;
+    const brightness = 0.35 + dusk * 0.9;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const f of flies) {
+      // lazy drift + wander
+      f.wander += 0.008 + Math.sin(t * 0.7 + f.phase) * 0.004;
+      let ax = (f.vx + Math.sin(f.wander) * 0.0009) * 1.6;
+      let ay = (f.vy + Math.cos(f.wander * 0.8) * 0.0006);
+      // hold attraction toward pointer
+      if (hold && hold.active) {
+        const px = f.x * W, py = f.y * H;
+        const dx = hold.x - px, dy = hold.y - py;
+        const d = Math.hypot(dx, dy) || 1;
+        const R = Math.min(W, H) * 0.42;
+        if (d < R) {
+          const strength = (1 - d / R) * 0.0045;
+          ax += (dx / d) * strength;
+          ay += (dy / d) * strength;
+          f._attract = Math.min(1, (f._attract || 0) + 0.06);
+        } else {
+          f._attract = Math.max(0, (f._attract || 0) - 0.05);
+        }
+      } else {
+        f._attract = Math.max(0, (f._attract || 0) - 0.05);
+      }
+      f.x += ax;
+      f.y += ay;
+      if (f.x < -0.03) f.x = 1.03; if (f.x > 1.03) f.x = -0.03;
+      if (f.y < 0.30) f.y = 0.40; if (f.y > 0.88) f.y = 0.40;
+
+      // shared wave phase + individual phase, mixed by sync
+      const individ = Math.sin(t * f.blinkSpeed + f.phase);
+      const wave = Math.sin(wavePhase + (f.x - 0.5) * 2.6 + (f.y - 0.55) * 1.4);
+      const raw = lerp(individ, wave, sync);
+      // blink shape: sharp flash with decay tail
+      let flash = Math.max(0, raw);
+      flash = flash * flash * flash;
+      flash = Math.max(flash, (f._attract || 0) * (0.5 + raw * 0.25));
+      if (_forceFlash !== null) flash = Math.max(flash, _forceFlash);
+
+      // tap pulses: ring expanding from tap point
+      for (const tap of taps) {
+        const age = (now - tap.time) / 1000;
+        if (age < 0 || age > 2.4) continue;
+        const dx = f.x * W - tap.x, dy = f.y * H - tap.y;
+        const d = Math.hypot(dx, dy);
+        const ring = age * 320;
+        const band = Math.max(0, 1 - Math.abs(d - ring) / 90);
+        flash = Math.max(flash, band * (1 - age / 2.4) * 1.6);
+      }
+
+      if (flash < 0.02) continue;
+      const px = f.x * W, py = f.y * H;
+      const r = f.size * (1 + flash * 0.6);
+      // glow bleed
+      const glowR = r * (7 + flash * 9);
+      const g = ctx.createRadialGradient(px, py, 0, px, py, glowR);
+      const body = lerpColor([188, 246, 140], [168, 240, 130], dusk);
+      g.addColorStop(0, `rgba(${body[0]|0},${body[1]|0},${body[2]|0},${(0.55 * flash * brightness).toFixed(3)})`);
+      g.addColorStop(0.35, `rgba(${body[0]|0},${body[1]|0},${body[2]|0},${(0.18 * flash * brightness).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(px, py, glowR, 0, Math.PI * 2);
+      ctx.fill();
+      // hot core
+      ctx.fillStyle = `rgba(238,255,190,${(flash * brightness).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  const _q = new URLSearchParams(location.search);
+  const _duskStart = Math.min(1, Math.max(0, parseFloat(_q.get('dusk') || '0') || 0));
+  const state = { start: performance.now() - _duskStart * 90000, frames: 0, t: 0 };
+  let _forceFlash = null;
+  const DUSK_SECONDS = 90;
+  const horizonY = () => H * 0.34;
+
+  function drawSky(now, dusk) {
+    const hy = horizonY();
+    const sc = skyColors(dusk);
+
+    const g = ctx.createLinearGradient(0, 0, 0, hy);
+    g.addColorStop(0, css(sc.top));
+    g.addColorStop(0.55, css(sc.mid));
+    g.addColorStop(1, css(sc.horizon));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, hy + 2);
+
+    // stars
+    const starAlpha = Math.max(0, (dusk - 0.15) / 0.6);
+    if (starAlpha > 0) {
+      for (const s of stars) {
+        const y = s.y * hy * 1.4;
+        if (y > hy) continue;
+        const tw = 0.6 + 0.4 * Math.sin(now * 0.001 * s.speed + s.phase);
+        const a = starAlpha * tw * Math.min(1, 1.4 - y / hy);
+        if (a <= 0.02) continue;
+        ctx.fillStyle = `rgba(255,250,235,${a.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(s.x * W, y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // warm horizon glow
+    const glowColor = lerpColor([255, 190, 110], [150, 70, 60], dusk);
+    const glow = ctx.createLinearGradient(0, hy - 110, 0, hy);
+    glow.addColorStop(0, css(glowColor, 0));
+    glow.addColorStop(1, css(glowColor, 0.4 * (1 - dusk * 0.6)));
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, hy - 110, W, 110);
+  }
+
+  function drawForest(dusk) {
+    const hy = horizonY();
+    const fade = 1 - dusk * 0.55;
+    // far layer: soft ridge of tree clumps
+    ctx.fillStyle = css(lerpColor([34, 22, 50], [10, 8, 24], dusk), 0.9 * fade);
+    for (const t of forestFar) {
+      const cx = t.x * W, base = hy + 6, hgt = t.h * H * 1.15;
+      ctx.beginPath();
+      ctx.arc(cx, base - hgt * 0.45, hgt * 0.55, Math.PI, 0);
+      ctx.quadraticCurveTo(cx + hgt * 0.6, base, cx + hgt * 0.55, base);
+      ctx.lineTo(cx - hgt * 0.55, base);
+      ctx.quadraticCurveTo(cx - hgt * 0.6, base, cx - hgt * 0.5, base - hgt * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      // canopy bumps
+      ctx.beginPath();
+      ctx.arc(cx - hgt * 0.35, base - hgt * 0.55, hgt * 0.32, 0, Math.PI * 2);
+      ctx.arc(cx + hgt * 0.30, base - hgt * 0.50, hgt * 0.30, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // near layer: darker, lower, closer band of trees
+    ctx.fillStyle = css(lerpColor([12, 8, 24], [3, 2, 10], dusk), 0.97 * fade);
+    for (const t of forestNear) {
+      const cx = t.x * W, base = hy + 12, hgt = t.h * H * 1.05;
+      ctx.beginPath();
+      ctx.moveTo(cx - t.w * W * 0.7, base);
+      ctx.quadraticCurveTo(cx - t.w * W * 0.5, base - hgt * 0.9, cx - t.w * W * 0.15, base - hgt * 0.95);
+      ctx.quadraticCurveTo(cx, base - hgt * 1.08, cx + t.w * W * 0.18, base - hgt * 0.95);
+      ctx.quadraticCurveTo(cx + t.w * W * 0.55, base - hgt * 0.9, cx + t.w * W * 0.7, base);
+      ctx.closePath();
+      ctx.fill();
+      // trunk
+      ctx.fillRect(cx - 2, base - hgt * 0.30, 4, hgt * 0.34);
+    }
+  }
+
+  function drawMeadow(dusk, now) {
+    const hy = horizonY();
+    // meadow body: three depth bands
+    const g2 = ctx.createLinearGradient(0, hy, 0, H);
+    g2.addColorStop(0, css(lerpColor([38, 30, 52], [8, 7, 18], dusk)));
+    g2.addColorStop(0.45, css(lerpColor([26, 21, 38], [5, 5, 14], dusk)));
+    g2.addColorStop(1, css(lerpColor([12, 9, 22], [2, 2, 6], dusk)));
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, hy, W, H - hy);
+    // subtle horizon light falling on grass
+    const fall = ctx.createLinearGradient(0, hy, 0, hy + H * 0.22);
+    fall.addColorStop(0, css(lerpColor([120, 70, 66], [40, 24, 44], dusk), 0.35 * (1 - dusk * 0.5)));
+    fall.addColorStop(1, css([0, 0, 0], 0));
+    ctx.fillStyle = fall;
+    ctx.fillRect(0, hy, W, H * 0.22);
+
+    // grass blades
+    const t = now * 0.001;
+    for (const b of grass) {
+      const sway = Math.sin(t * 1.1 + b.phase + b.x * 3.0) * (0.014 + b.layer * 0.008);
+      const x = b.x * W;
+      const baseY = b.base * H;
+      const h = b.h * H;
+      const tipX = x + (b.lean * H + sway * H * (b.layer + 1) * 0.6);
+      const tipY = baseY - h;
+      if (b.layer === 0) ctx.fillStyle = css(lerpColor([58, 44, 66], [12, 10, 24], dusk));
+      else if (b.layer === 1) ctx.fillStyle = css(lerpColor([30, 22, 40], [7, 6, 18], dusk));
+      else ctx.fillStyle = css(lerpColor([16, 11, 26], [2, 2, 6], dusk));
+      if (b.layer === 2) {
+        // filled tapered blade
+        const w = 2.5 + (b.x % 1) * 2;
+        const midX = x + (tipX - x) * 0.35, midY = baseY - h * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(x - w, baseY);
+        ctx.quadraticCurveTo(midX - w * 0.5, midY, tipX, tipY);
+        ctx.quadraticCurveTo(midX + w * 0.5, midY, x + w, baseY);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = b.layer === 1 ? 1.6 : 1.1;
+        ctx.beginPath();
+        ctx.moveTo(x, baseY);
+        ctx.quadraticCurveTo(x + (tipX - x) * 0.3, baseY - h * 0.6, tipX, tipY);
+        ctx.stroke();
+      }
+    }
+
+    // wildflowers (dark silhouette stems with a soft rim-lit bud)
+    for (const f of flowers) {
+      const sway = Math.sin(t * 1.2 + f.phase + f.x * 4.0) * 0.012;
+      const x = f.x * W, baseY = f.base * H, h = f.h * H;
+      const tipX = x + sway * H * 3;
+      const tipY = baseY - h;
+      ctx.strokeStyle = css(lerpColor([26, 20, 34], [6, 5, 14], dusk));
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x, baseY);
+      ctx.quadraticCurveTo(x + (tipX - x) * 0.4, baseY - h * 0.6, tipX, tipY);
+      ctx.stroke();
+      // petals: five small lobes around a dark heart
+      const budR = f.size * 0.85;
+      ctx.fillStyle = css(lerpColor([74, 52, 82], [16, 14, 30], dusk));
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2 + f.phase;
+        ctx.beginPath();
+        ctx.arc(tipX + Math.cos(a) * budR * 0.55, tipY + Math.sin(a) * budR * 0.55, budR * 0.52, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = css(lerpColor([46, 30, 52], [10, 9, 22], dusk));
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, budR * 0.42, 0, Math.PI * 2);
+      ctx.fill();
+      // rim light on the upper-left petal
+      ctx.fillStyle = css(lerpColor([235, 180, 140], [120, 70, 80], dusk), 0.5 * (1 - dusk * 0.35));
+      ctx.beginPath();
+      ctx.arc(tipX - budR * 0.35, tipY - budR * 0.35, budR * 0.30, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  const taps = []; // tap pulses: {x,y,time}
+  function draw(now) {
+    const el = (now - state.start) / 1000;
+    const dusk = Math.min(1, el / DUSK_SECONDS);
+    state.t = el;
+    state.frames++;
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    drawSky(now, dusk);
+    drawForest(dusk);
+    drawMeadow(dusk, now);
+    drawFireflies(now, dusk, taps, hold);
+
+    // vignette
+    const vg = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.35, W / 2, H * 0.5, Math.max(W, H) * 0.75);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, `rgba(2,2,8,${0.38 + dusk * 0.18})`);
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+
+    // watercolour brush texture
+    if (brushTex) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.globalAlpha = 0.28;
+      ctx.drawImage(brushTex, 0, 0, W, H);
+      ctx.restore();
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  // --- Interaction: tap = pulse, hold = attract ---
+  const hold = { active: false, x: 0, y: 0, startTime: 0, moved: 0 };
+  function pointerPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    hintEl.classList.add('gone');
+    const p = pointerPos(e);
+    hold.active = true; hold.x = p.x; hold.y = p.y;
+    hold.startTime = performance.now(); hold.moved = 0;
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  }, { passive: false });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!hold.active) return;
+    const p = pointerPos(e);
+    hold.moved += Math.hypot(p.x - hold.x, p.y - hold.y);
+    hold.x = p.x; hold.y = p.y;
+  }, { passive: true });
+  function endPointer(e) {
+    if (!hold.active) return;
+    hold.active = false;
+    const dur = performance.now() - hold.startTime;
+    if (dur < 350 && hold.moved < 14 && e && e.clientX !== undefined) {
+      const p = pointerPos(e);
+      taps.push({ x: p.x, y: p.y, time: performance.now() });
+      while (taps.length > 4) taps.shift();
+    }
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', () => { hold.active = false; });
+
+  window.__fireflymeadowTest = {
+    ready: true, frames: 0, t: 0,
+    taps: () => taps.length,
+    hold: () => hold.active,
+    setDusk: (v) => {
+      const d = Math.min(1, Math.max(0, Number(v) || 0));
+      state.start = performance.now() - d * DUSK_SECONDS * 1000;
+    },
+    setHold: (on, x, y) => {
+      hold.active = !!on; hold.x = x ?? W / 2; hold.y = y ?? H * 0.5; hold.moved = 0;
+      hold.startTime = performance.now();
+    },
+    setTaps: (x, y) => { taps.push({ x, y, time: performance.now() }); },
+    setFlash: (v) => { _forceFlash = (v === null || v === undefined) ? null : Math.max(0, Math.min(1.6, Number(v) || 0)); return v === null || v === undefined ? null : _forceFlash; },
+    flash: () => _forceFlash
+  };
+  setInterval(() => {
+    window.__fireflymeadowTest.frames = state.frames;
+    window.__fireflymeadowTest.t = state.t;
+  }, 250);
+
+  requestAnimationFrame(draw);
+})();
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'FIREFLY MEADOW', accent: '#b8f68c',
+  builder: { tag: 'INKLING', model: 'Inkling-2-Mini-oQ4e-mtp', where: 'via opencode' },
+  issues: [3650], span: '~1 h', shipped: '2026-11-26',
+  assist: 'guided', note: 'Jon\'s prototype demo shipped as a demo: painted dusk meadow with syncing fireflies; polish and harness left to this pass'
+};
+</script>
+<script src="credits.js"></script>
+<script src="feedback.js"></script>
+</body>
+</html>
