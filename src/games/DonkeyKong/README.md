@@ -47,10 +47,22 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   (Was: a barrel meeting a ladder mid-air kept rolling; the edge-check could
   never set `falling=true` — gravity beats it to `vy>0` — so no airborne
   barrel state existed at all; fixed to `vy >= 0`.)
-- The arcade's true barrel-drop onto an already-boarded ladder (two barrels
-  sharing one span) is still simplified: each span takes only its first
-  boarder per tick, and the pair stands at the right corner only — the left
-  fall column drifts barrels off-screen before any rung reaches it.
+- **Item 1 CLOSED by #3657 (span body law):** two barrels sharing one span —
+  the arcade's double-board — is now explicit law: `spanBoardY` lets a second
+  barrel board an occupied span only by joining above the top rider, settling
+  onto its head whenever bodies would overlap (equal descent speed then holds
+  the offset — no clipping, ever); an arrival at/below that head is refused with its dice
+  already spent, so the gap carries it toward the next rung. Measured on the
+  natural stream (400 seeds): arrivals never coincide with an occupied span,
+  so seeded floors are byte-identical — the law is enforceable insurance, and
+  `kongcheck` §double board gates the unit law, a planted synthetic head-rest
+  on R2, and a clip-free scan of the corner seeds. The arcade's *stacking*
+  behaviour beyond head-rest (piling, queue slowdown) has no sourceable spec
+  in-repo (atari.com/fandom 403; 2600 manual covers the same rule only), so
+  it stays retired, not guessed.
+- The corner pair stands at the right corner only — the left fall column
+  drifts barrels off-screen before any rung reaches it (left-column corner
+  parity: needs the arcade reference check + measured column trace).
 - **CLOSED by #3618:** broken ladders climbed part-way — see Half-rungs
   below. (Was: the original let Mario climb part-way some rounds; barrels and
   the player both refused them outright.)
